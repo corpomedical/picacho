@@ -145,13 +145,40 @@ export const SET_LIMITS = {
   minFovDeg: 20,
   maxFovDeg: 90,
   /**
-   * The narrowest a person's own camera keeps (normaliseSetLayout): the
-   * stage's longest lens chip, 135 mm, is 10.16° (build-scene.ts fovForLens).
-   * Held at Astra's 20° until 2026-09-11, a saved 85 or 135 mm came back from
-   * a reload at about 68 mm. Astra's cameras keep minFovDeg, which its
-   * instructions quote, so what it is told is unchanged.
+   * The narrowest a person's own camera keeps (normaliseSetLayout) and the
+   * narrowest a shot's camera may be to be recorded at all (look-cutout.ts
+   * normaliseShotCamera): the longest lens chip, 135 mm, on the SMALLEST
+   * frame the rig offers — a phone's 7.3 mm under a landscape format, which
+   * is 3.10° (build-scene.ts fovForLens, rig.ts RIG_SENSORS and
+   * sensorHeightMm).
+   *
+   * Held at Astra's 20° until 2026-09-11, then at full frame's 10.16° until
+   * 2026-09-18 — a floor in degrees named for one sensor, while the ring
+   * picks millimetres on six. Nine lens-and-sensor pairs fell under it: a
+   * 135 mm on Super 35 is 7.92°, so it came back from a reload as an 85 mm,
+   * and the still it took could never be a look, because a camera under the
+   * floor is not clamped there but refused. Astra's own cameras keep
+   * minFovDeg, which its instructions quote, so what it is told is
+   * unchanged. set-spec.test.ts holds this against both tables.
    */
-  minLayoutFovDeg: 10,
+  minLayoutFovDeg: 3,
+  /**
+   * The longest lens a MATCH may solve to, and a film move may fly to
+   * (match-shot.ts solveMatchPose, moves.ts): the 135 mm chip on full frame,
+   * 10.16°, so the line under a match and the ring name a lens that exists.
+   * A reference longer than this is taken at this lens and the camera moves
+   * in instead, which is what `fovClampedNarrow` says.
+   */
+  minMatchFovDeg: 10,
+  /**
+   * The widest a person's own camera keeps, the same rule read from the
+   * other end: the widest chip, 18 mm, on the LARGEST frame the rig offers —
+   * a large-format sensor's 36.7 mm under an upright format, which is
+   * 91.10°. Astra's own cameras keep maxFovDeg, which its instructions
+   * quote. Held at 90° until 2026-09-18, when that one pair came back a
+   * degree narrower than the stage drew it.
+   */
+  maxLayoutFovDeg: 92,
   maxSkyColors: 3,
   /** A normalised spec cannot exceed this once serialised. */
   maxSpecBytes: 256 * 1024,
@@ -582,7 +609,7 @@ export function normaliseSetLayout(input: unknown, spec: SetSpec): SetLayout | n
   if (c && position) {
     const target = vec3(c.target, -SET_LIMITS.maxCoordinate, SET_LIMITS.maxCoordinate, [mark.x, 1.4, mark.z]);
     if (Math.hypot(target[0] - position[0], target[1] - position[1], target[2] - position[2]) >= 0.1) {
-      camera = { position, target, fovDeg: num(c.fovDeg, SET_LIMITS.minLayoutFovDeg, SET_LIMITS.maxFovDeg, 40) };
+      camera = { position, target, fovDeg: num(c.fovDeg, SET_LIMITS.minLayoutFovDeg, SET_LIMITS.maxLayoutFovDeg, 40) };
     }
   }
   const pose = pick(root.pose, STAND_POSES, "stand");

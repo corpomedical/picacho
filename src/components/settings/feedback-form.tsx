@@ -4,6 +4,7 @@ import { useState } from "react";
 import { submitFeedback } from "@/lib/feedback/actions";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/provider";
+import { localizeServerText } from "@/lib/i18n/server-text";
 
 // Atelier form idiom (settings-popover, extended): caps label over an
 // ink-hairline field at the control radius; accent only marks focus.
@@ -61,7 +62,7 @@ export function FeedbackForm() {
           disabled={pending}
         />
       </div>
-      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400">{localizeServerText(error, t)}</p>}
       <div className="flex justify-end">
         <Button
           type="submit"

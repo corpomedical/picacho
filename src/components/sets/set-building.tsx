@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/provider";
-import { isStaleDeployError } from "@/lib/stale-deploy";
+import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { pollSetBuild } from "@/lib/sets/actions";
 import { SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_SUSPENDED, SETS_UNAVAILABLE, SET_NOT_FOUND } from "@/lib/sets/messages";
 
@@ -51,7 +51,9 @@ export function SetBuilding({ setId, ask, hint }: { setId: string; ask: string |
         }
       } catch (err) {
         if (isStaleDeployError(err)) {
-          window.location.reload();
+          // The one shared guard (stale-deploy.ts): a tick that keeps failing
+          // cannot reload this page on every poll.
+          reloadForNewDeploy();
           return;
         }
         threw = true;

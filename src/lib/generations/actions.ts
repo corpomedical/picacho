@@ -137,7 +137,7 @@ import {
   consumePurchasedCredits,
   getMonthlyUsageWith,
   persistGeneratedImage, fitLayerToOriginal, persistImageBytes } from "@/lib/generations/core";
-import { formatFrame, isRigFormat, type RigFormat } from "@/lib/sets/rig";
+import { formatFrame, isRigFormat, isRigSqueeze, type RigFormat } from "@/lib/sets/rig";
 import { cutToBand } from "@/lib/sets/frame-cut";
 import { develop, labLine, negativePathFor, normaliseLabLooks } from "@/lib/sets/lab";
 
@@ -545,7 +545,12 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // alone. GPT Image renders the format's 3:2 (or 2:3) shape; the picture is
   // cut to the frame lines before it is stored. Anything else is the square.
   const setFormat = isSetShot && isRigFormat(formData.get("set_format")) ? (formData.get("set_format") as RigFormat) : "square";
-  const setFrame = formatFrame(setFormat);
+  // An anamorphic squeeze widens the band the picture is cut to (rig.ts
+  // formatFrame, 2026-09-18). Worked out here from the two names alone, like
+  // the format; a page that sends none cuts exactly as it did.
+  const squeezeSent = Number(formData.get("set_squeeze"));
+  const setSqueeze = isSetShot && isRigSqueeze(squeezeSent) ? squeezeSent : 1;
+  const setFrame = formatFrame(setFormat, setSqueeze);
   const setCut = setFrame.cut ? setFrame.bandAspect : null;
   // The lab (sets/lab-grade.ts, 2026-09-15): the film stock, the lens's
   // character and black and white are made after the cut, on the pixels,

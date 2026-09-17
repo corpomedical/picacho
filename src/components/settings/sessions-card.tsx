@@ -4,6 +4,7 @@ import { useState } from "react";
 import { signOutOtherDevices } from "@/lib/auth/actions";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/provider";
+import { localizeServerText } from "@/lib/i18n/server-text";
 import { SettingsStatus } from "@/components/settings/settings-status";
 
 // "Sign out other devices" (2026-09-11). Supabase can't enumerate sessions
@@ -36,7 +37,7 @@ export function SessionsCard() {
       </div>
       <SettingsStatus
         state={error ? "error" : status === "saved" ? "saved" : "idle"}
-        message={error || (status === "saved" ? s.signedOutOthers : null)}
+        message={error ? localizeServerText(error, t) : status === "saved" ? s.signedOutOthers : null}
       />
       <Button type="button" variant="secondary" onClick={run} pending={status === "saving"} pendingLabel={t.common.saving}>
         {s.signOutOthers}

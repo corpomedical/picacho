@@ -19,6 +19,7 @@
 import type * as ThreeNS from "three";
 import type { AstraInput, AstraJobRequest } from "../generations/providers/astra";
 import { lensForFov } from "./build-scene";
+import { widenFovDeg } from "./compare";
 import { SET_MATCH_EFFORT, SET_MATCH_MAX_OUTPUT_TOKENS, SET_MAX_TILT_DOWN_DEG, SET_MAX_TILT_UP_DEG } from "./set-config";
 import { SET_LIMITS, type SetSpec, type Vec3 } from "./set-spec";
 
@@ -289,7 +290,7 @@ const finite = (v: unknown, fallback: number) => (typeof v === "number" && Numbe
  *   field of view. So the square takes the reference's field of view across
  *   its SHORTER side: a landscape reference's vertical, a portrait one's
  *   horizontal — 2·atan(aspect·tan(vfov/2)). Held to the field of view a
- *   saved camera keeps (SET_LIMITS minLayoutFovDeg–maxFovDeg, 10–90°: the
+ *   match may solve to (SET_LIMITS minMatchFovDeg–maxFovDeg, 10–90°: the
  *   135 mm chip to the widest; normaliseSetLayout): a longer lens uses 10°
  *   and moves the camera in by tan(ref/2)/tan(5°), so the subject keeps its
  *   size in frame; a wider one uses 90°.
@@ -334,6 +335,16 @@ export function solveMatchPose(
      * figure is placed for the still this canvas takes.
      */
     canvasAspect: number;
+    /**
+     * The picture the still is actually cut to (rig.ts formatFrame): the
+     * band's width over its height, and the band's share of the render's
+     * height. The field of view is measured across the RENDER, of which a
+     * Scope band keeps 643 rows of 1024 — so a reference matched without
+     * this came back with its subject a quarter too large in frame, and a
+     * subject read near the left edge landed outside an upright picture
+     * (2026-09-18). Left out: the whole render, which is what the square is.
+     */
+    frame?: { bandAspect: number; heightShare: number };
   },
 ): { pose: CameraPose; notes: MatchNotes } {
   const notes: MatchNotes = {};
@@ -350,19 +361,33 @@ export function solveMatchPose(
   // the centre square spans the vertical field of view on a landscape canvas,
   // and only the canvas's width on a portrait one.
   const rawCanvas = finite(input.canvasAspect, 1);
-  const stillShare = rawCanvas > 0 ? Math.min(1, Math.max(0.2, rawCanvas)) : 1;
+  // The band's share of the render's height: a Scope still is 643 of the
+  // render's 1024 rows, so the camera must see taller than the picture.
+  const bandH = input.frame && input.frame.heightShare > 0 ? Math.min(1, input.frame.heightShare) : 1;
+  // The still's half-width against the RENDER's half-height — the band's
+  // shape times its share of the height. The square's is 1, a Scope band's
+  // 1.5, an upright band's 0.5625.
+  const stillShare = input.frame
+    ? input.frame.bandAspect * bandH
+    : rawCanvas > 0
+      ? Math.min(1, Math.max(0.2, rawCanvas))
+      : 1;
 
   // --- lens ---
   const vfov = Math.min(MATCH_BOUNDS.verticalFovDeg[1], Math.max(MATCH_BOUNDS.verticalFovDeg[0], finite(match.verticalFovDeg, 40)));
   const shortSide = aspect >= 1 ? vfov : (2 * Math.atan(aspect * Math.tan((vfov * DEG) / 2))) / DEG;
-  let fovDeg = shortSide;
+  // The reference's shorter side spans the BAND, not the render, so the
+  // camera sees wider by the band's share (compare.ts widenFovDeg is the
+  // same widening, for a photo set's comparison frame).
+  const renderFov = widenFovDeg(shortSide, 1 / bandH);
+  let fovDeg = renderFov;
   let distanceScale = 1;
-  if (shortSide < SET_LIMITS.minLayoutFovDeg) {
-    fovDeg = SET_LIMITS.minLayoutFovDeg;
-    distanceScale = Math.tan((shortSide * DEG) / 2) / Math.tan((SET_LIMITS.minLayoutFovDeg * DEG) / 2);
+  if (renderFov < SET_LIMITS.minMatchFovDeg) {
+    fovDeg = SET_LIMITS.minMatchFovDeg;
+    distanceScale = Math.tan((renderFov * DEG) / 2) / Math.tan((SET_LIMITS.minMatchFovDeg * DEG) / 2);
     notes.fovClampedNarrow = true;
     notes.distanceScaled = distanceScale;
-  } else if (shortSide > SET_LIMITS.maxFovDeg) {
+  } else if (renderFov > SET_LIMITS.maxFovDeg) {
     fovDeg = SET_LIMITS.maxFovDeg;
     notes.fovClampedWide = true;
   }

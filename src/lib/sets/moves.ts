@@ -89,7 +89,7 @@ function hold(p: Vec3, reach: Reach): Vec3 {
   return [r3(Math.min(rx, Math.max(-rx, p[0]))), r3(Math.min(reach.height * 2, Math.max(0.2, p[1]))), r3(Math.min(rz, Math.max(-rz, p[2])))];
 }
 
-const clampFov = (fov: number) => r2(Math.min(SET_LIMITS.maxFovDeg, Math.max(SET_LIMITS.minLayoutFovDeg, fov)));
+const clampFov = (fov: number) => r2(Math.min(SET_LIMITS.maxFovDeg, Math.max(SET_LIMITS.minMatchFovDeg, fov)));
 
 /**
  * The end of a beat that makes `move` from `from`, round the figure on its
@@ -164,8 +164,8 @@ export function layMove(
       const t0 = Math.tan((from.fovDeg * DEG) / 2) * dist;
       let back = dist * 3.5;
       let fov = (2 * Math.atan(t0 / back)) / DEG;
-      if (fov < SET_LIMITS.minLayoutFovDeg) {
-        fov = SET_LIMITS.minLayoutFovDeg;
+      if (fov < SET_LIMITS.minMatchFovDeg) {
+        fov = SET_LIMITS.minMatchFovDeg;
         back = t0 / Math.tan((fov * DEG) / 2);
       }
       return aimed(place(bearing, back, y), subject, fov);

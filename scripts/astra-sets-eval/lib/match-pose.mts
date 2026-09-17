@@ -18,14 +18,18 @@
 // a photo keeps its set when other photos come or go.
 
 import type * as ThreeNS from "three";
-import { buildSetScene } from "../../../src/lib/sets/build-scene.ts";
+import { STAND_IN_EYE_M, buildSetScene } from "../../../src/lib/sets/build-scene.ts";
 import { matchSummary, placeMatchedCamera, solveMatchPose, type CameraMove, type CameraPose, type MatchNotes, type ShotMatch } from "../../../src/lib/sets/match-shot.ts";
 import type { SetSpec, Vec3 } from "../../../src/lib/sets/set-spec.ts";
 import type { Pose } from "../render/chrome.mts";
 import { sha256 } from "./util.mts";
 
-/** set-view.tsx: const FRAME_EYE_Y = 1.45; */
-export const FRAME_EYE_Y = 1.45;
+/**
+ * set-view.tsx: `const eyeY = () => STAND_IN_EYE_M[standPose];` — the eyes
+ * of the pose the figure is in, not a constant (2026-09-17). The eval
+ * arranges nobody, so its figure stands.
+ */
+export const FRAME_EYE_Y = STAND_IN_EYE_M.stand;
 /** set-view.tsx: controls.maxDistance = Math.max(spec.bounds.x, spec.bounds.z) * 1.2 + 10; */
 export const orbitReach = (bounds: SetSpec["bounds"]): number => Math.max(bounds.x, bounds.z) * 1.2 + 10;
 /** The snapshot page's canvas is square: 1024 × 1024. */

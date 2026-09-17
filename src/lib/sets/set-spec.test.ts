@@ -9,6 +9,8 @@ import {
   type SetSpec,
 } from "./set-spec";
 import { LENSES_MM, fovForLens, nearestLens } from "./build-scene";
+import { RIG_FORMAT_ORDER, RIG_SENSOR_ORDER, sensorHeightMm } from "./rig";
+import { normaliseShotCamera } from "./look-cutout";
 import rainyMarket from "./fixtures-rainy-market.json";
 
 // normaliseSetSpec is the trust boundary between what GPT-6 Astra writes
@@ -279,6 +281,37 @@ describe("the person's arrangement", () => {
     }
     // Astra's own cameras keep the floor its instructions quote.
     expect(SET_LIMITS.minLayoutFovDeg).toBeLessThan(SET_LIMITS.minFovDeg);
+  });
+
+  it("keeps every lens on every SENSOR too, and lets each one's still be a look", () => {
+    // The floor was 10°, which is the 135 mm chip on full frame — a number
+    // in degrees named for one sensor while the ring picks millimetres on
+    // six. Nine lens-and-sensor pairs fell under it: a 135 mm on Super 35 is
+    // 7.92°, so it came back from a reload as an 85 mm, and its still could
+    // never be a look, because a camera under the floor is refused rather
+    // than clamped (found reviewing Helios, fixed 2026-09-18).
+    for (const sensor of RIG_SENSOR_ORDER) {
+      for (const format of RIG_FORMAT_ORDER) {
+        const h = sensorHeightMm(sensor, format);
+        for (const mm of LENSES_MM) {
+          const where = `${mm} mm on ${sensor}/${format}`;
+          // As the stage hands it over: api.pose() rounds to two decimals.
+          const fovDeg = Math.round(fovForLens(mm, h) * 100) / 100;
+          const l = normaliseSetLayout({ camera: { position: [0, 1.6, 6], target: [0, 1.4, 0], fovDeg } }, spec);
+          expect(l?.camera?.fovDeg, where).toBe(fovDeg);
+          expect(nearestLens(l?.camera?.fovDeg ?? 0, h), where).toBe(mm);
+          // And the frame it was shot from is a camera, so the still can be a look.
+          expect(
+            normaliseShotCamera({ position: [0, 1.6, 6], target: [0, 1.4, 0], fovDeg, canvasAspect: 1, figure: { x: 0, z: 0 } }),
+            where,
+          ).not.toBeNull();
+        }
+      }
+    }
+    // The two floors: what a camera KEEPS, and the longest lens a match may
+    // solve to and name — which is still the 135 mm chip on full frame.
+    expect(SET_LIMITS.minLayoutFovDeg).toBeLessThan(SET_LIMITS.minMatchFovDeg);
+    expect(SET_LIMITS.minMatchFovDeg).toBeLessThanOrEqual(fovForLens(Math.max(...LENSES_MM)));
   });
 
   it("refuses what is not an arrangement", () => {

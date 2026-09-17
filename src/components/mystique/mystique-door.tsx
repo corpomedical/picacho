@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useLocale } from "@/lib/i18n/provider";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { formatMsg } from "@/lib/i18n/format";
-import { isStaleDeployError } from "@/lib/stale-deploy";
+import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { pollUntilSettled } from "@/lib/generations/poll-client";
 import {
   discardRecastUpload,
@@ -178,7 +178,7 @@ export function MystiqueDoor({ characters, initialTakes }: { characters: RecastC
     } catch (err) {
       const stale = isStaleDeployError(err);
       fail(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
-      if (stale) setTimeout(() => window.location.reload(), 1800);
+      if (stale) reloadForNewDeploy({ delayMs: 1800 });
     }
   }
 
@@ -192,7 +192,7 @@ export function MystiqueDoor({ characters, initialTakes }: { characters: RecastC
     } catch (err) {
       const stale = isStaleDeployError(err);
       setError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
-      if (stale) setTimeout(() => window.location.reload(), 1800);
+      if (stale) reloadForNewDeploy({ delayMs: 1800 });
       return;
     } finally {
       setStarting(false);

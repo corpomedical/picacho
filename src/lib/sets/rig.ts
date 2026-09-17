@@ -66,17 +66,38 @@ export type FormatFrame = {
   bandH: number;
   renderAspect: number;
   bandAspect: number;
+  /**
+   * How much of the pose's own field the picture spans, as tangents: the
+   * negative is widened by the squeeze and the band is cut back out of it.
+   * The one number the stage, the matcher and the film all reckon with.
+   */
+  heightShare: number;
+  /** The anamorphic squeeze this frame was worked out at (1 = spherical). */
+  squeeze: number;
   size: RigRenderSize;
   /** Whether anything is cut at all (the square is its own picture). */
   cut: boolean;
 };
 
-export function formatFrame(format: RigFormat): FormatFrame {
+/** A squeeze the rig actually has; anything else is none. */
+export function isRigSqueeze(v: unknown): v is RigSqueeze {
+  return typeof v === "number" && (RIG_SQUEEZES as readonly number[]).includes(v);
+}
+
+export function formatFrame(format: RigFormat, squeeze: number = 1): FormatFrame {
   const f = RIG_FORMATS[format] ?? RIG_FORMATS.square;
   const renderW: number = f.render[0];
   const renderH: number = f.render[1];
   const renderAspect = renderW / renderH;
-  const bandAspect = f.band;
+  // An anamorphic squeeze (RIG_SQUEEZES): the negative sees `squeeze` times
+  // wider for the same lens, and the picture cut from it is that much wider,
+  // undistorted — which is what an anamorphic lens is for. Until 2026-09-18
+  // the squeeze was a scale on the projection's x, so the sketch the picture
+  // model read was the negative, squashed, never desqueezed: it drew thin
+  // people in a narrow world, and the band, the words and the look cutout
+  // all knew nothing about it.
+  const s = isRigSqueeze(squeeze) ? squeeze : 1;
+  const bandAspect = f.band * s;
   let bandW = renderW;
   let bandH = renderH;
   if (bandAspect >= renderAspect) bandH = Math.round(renderW / bandAspect);
@@ -88,6 +109,8 @@ export function formatFrame(format: RigFormat): FormatFrame {
     bandH,
     renderAspect,
     bandAspect,
+    heightShare: (bandH / renderH) * s,
+    squeeze: s,
     size: `${renderW}x${renderH}` as RigRenderSize,
     cut: bandW !== renderW || bandH !== renderH,
   };
@@ -810,7 +833,6 @@ export type RigShotContext = {
 export function rigWordsByItem(rig: SetRig, ctx: RigShotContext): Partial<Record<RigCheckItem, string>> {
   const push = new Set(ctx.push ?? []);
   const say = (item: RigCheckItem, l: RigLook | null) => (l ? (push.has(item) ? l.pushed : l.block) : "");
-  const frame = formatFrame(rig.format);
   const out: Partial<Record<RigCheckItem, string>> = {};
   const light = rig.light ? findLook(RIG_LIGHTS, rig.light.scheme) : null;
   if (rig.light && light) out.light = `${say("light", light)} ${lightDirectionWords(rig.light, ctx.cameraBearingDeg)}`;
@@ -851,9 +873,19 @@ const PROMPT_ORDER: readonly RigCheckItem[] = ["light", "focus", "lens", "stock"
  */
 export function rigSentences(rig: SetRig, ctx: RigShotContext): string[] {
   const words = rigWordsByItem(rig, ctx);
-  const cut = formatFrame(rig.format).cut ? (FORMAT_CUT_SENTENCE[rig.format] ?? "") : "";
+  const fr = formatFrame(rig.format, rig.squeeze);
+  const cut = !fr.cut ? "" : rig.squeeze > 1 ? SQUEEZED_CUT_SENTENCE : (FORMAT_CUT_SENTENCE[rig.format] ?? "");
   return [cut, ...PROMPT_ORDER.map((item) => words[item] ?? "")].filter(Boolean);
 }
+
+/**
+ * The cut under an anamorphic squeeze, which widens every format's band past
+ * its own ratio (formatFrame): the strips say where the picture is, so no
+ * ratio is named — and under a squeeze every band is wider than its render,
+ * so the strips are always across the top and bottom.
+ */
+const SQUEEZED_CUT_SENTENCE =
+  "This frame will be cut to a wide band across its middle: keep the person and everything that matters inside that band.";
 
 const FORMAT_CUT_SENTENCE: Partial<Record<RigFormat, string>> = {
   scope: "This frame will be cut to a wide 2.39 : 1 band across its middle: keep the person and everything that matters inside that band.",
@@ -866,10 +898,30 @@ const FORMAT_CUT_SENTENCE: Partial<Record<RigFormat, string>> = {
 /** Every fixed rig sentence, for the scaffold stripper (set-shot-prompt.ts). */
 export const RIG_FIXED_SENTENCES: readonly string[] = [
   ...Object.values(FORMAT_CUT_SENTENCE),
+  SQUEEZED_CUT_SENTENCE,
   ...[RIG_STOCKS, RIG_LENSES, RIG_ERAS, RIG_PALETTES, RIG_LIGHTS].flatMap((list) =>
     (list as readonly RigLook[]).flatMap((l) => [l.block, l.pushed]),
   ),
 ];
 
-/** The rig's two sentences that carry numbers: "Light direction: …" and "Focus: …", to the full stop that ends them. */
-export const RIG_NUMBERED_SENTENCE = /(?:Light direction|Focus): .*?(?<!\d)\.(?!\d)/g;
+/**
+ * The rig's two sentences that carry numbers: "Light direction: …" and
+ * "Focus: …", written out in full so the scaffold stripper removes THEM and
+ * nothing else. It was `/(?:Light direction|Focus): .*?\./g`, which also ate
+ * a person's own "Focus: the Rolex on her wrist." from what the brand-rule
+ * check reads, while the model was sent it (fixed 2026-09-18). m1 prints one
+ * decimal always, so every number here is \d+\.\d.
+ */
+export const RIG_NUMBERED_SENTENCE = (() => {
+  const n = "\\d+\\.\\d";
+  return new RegExp(
+    "Light direction: the key light stands (?:low|high|almost overhead), " +
+      "(?:behind the person|from behind the camera, onto the person|from (?:the front, |behind, )?frame (?:left|right)), " +
+      "exactly as the sketch lights it\\." +
+      `|Focus: (?:very shallow — only the person, ${n} m from the camera, is sharp, from ${n} to ${n} m; everything nearer or farther melts into soft blur` +
+      `|deep — everything from ${n} m to the horizon is crisp, the person ${n} m from the camera included; nothing is blurred` +
+      `|the person, ${n} m from the camera, is sharp; the depth of field runs from ${n} to ${n} m, and everything nearer or farther falls progressively soft` +
+      `|the person, ${n} m from the camera, is sharp, and so is everything from ${n} m to the horizon)\\.`,
+    "g",
+  );
+})();

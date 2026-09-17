@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { formatMsg } from "@/lib/i18n/format";
 import type { Messages } from "@/lib/i18n/messages/en";
 import { LENSES_MM, nearestLens } from "@/lib/sets/build-scene";
@@ -748,7 +748,9 @@ export function RigPanel({
   const set = (patch: Partial<SetRig>) => onChange({ ...rig, ...patch });
   const toggle = <K extends keyof SetRig>(key: K, value: SetRig[K]) => set({ [key]: rig[key] === value ? null : value } as Partial<SetRig>);
   const nf = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  const frame = formatFrame(rig.format);
+  // The frame the shot will really have: the squeeze widens its band (rig.ts
+  // formatFrame, 2026-09-18), so the panel shows the picture, not the gate.
+  const frame = formatFrame(rig.format, rig.squeeze);
   // The lens on the rig's own sensor (the camera department, cut 2).
   const sensorH = sensorHeightMm(rig.sensor, rig.format);
   const focal = focalMm(fovDeg, sensorH);
@@ -764,6 +766,7 @@ export function RigPanel({
   // The dock's tabs (rig-dock.ts): Film joins while the film is open and
   // takes the front; closing the film on it goes back to Camera.
   const filmOn = film !== null;
+  const uid = useId();
   const [tabOwn, setTabOwn] = useState<RigTab>("camera");
   const [filmWas, setFilmWas] = useState(filmOn);
   if (!docked && filmWas !== filmOn) {
@@ -831,13 +834,32 @@ export function RigPanel({
         </span>
       </div>
 
-      <div role="tablist" aria-label={r.title} className="flex items-stretch border-b border-white/[0.07] px-2">
+      {/* The same tab bar the dock has (studio-frame.tsx): one tab stop, the
+          arrow keys between them, and each tab pointing at the panel below —
+          the roles were here, the way to use them was not (2026-09-18). */}
+      <div
+        role="tablist"
+        aria-label={r.title}
+        onKeyDown={(e) => {
+          const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+          if (!step) return;
+          e.preventDefault();
+          const all = tabsFor(filmOn);
+          const next = all[(all.indexOf(tab) + step + all.length) % all.length];
+          setTabOwn(next);
+          document.getElementById(`${uid}-rigtab-${next}`)?.focus();
+        }}
+        className="flex items-stretch border-b border-white/[0.07] px-2"
+      >
         {tabsFor(filmOn).map((t) => (
           <button
             key={t}
+            id={`${uid}-rigtab-${t}`}
             type="button"
             role="tab"
             aria-selected={tab === t}
+            aria-controls={`${uid}-rigpanel`}
+            tabIndex={tab === t ? 0 : -1}
             onClick={() => setTabOwn(t)}
             className={`flex h-9 flex-1 cursor-pointer items-center justify-center border-b-2 text-[11.5px] font-medium ${
               tab === t ? "border-[#e0a468] text-[#f0cda6]" : "border-transparent text-[#6b6f7a] hover:text-[#ecedf1]"
@@ -852,7 +874,7 @@ export function RigPanel({
   const body = (
     <>
       <RigDefs />
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div id={`${uid}-rigpanel`} role="tabpanel" aria-labelledby={`${uid}-rigtab-${tab}`} tabIndex={0} className="min-h-0 flex-1 overflow-y-auto">
         {film && (
           <Section tags={tags} title={film.beat ? formatMsg(r.move, { n: film.beat }) : r.moveTitle} hidden={!show("move")} tag="held">
             {film.beat === null && <p className="mb-2 text-[11.5px] leading-4 text-[#9aa0ad]">{r.movePick}</p>}
@@ -966,7 +988,7 @@ export function RigPanel({
         <Section tags={tags} title={r.frame} hidden={!show("frame")} tag="held">
           <div className="flex gap-1.5" role="radiogroup" aria-label={r.frame}>
             {RIG_FORMAT_ORDER.map((f: RigFormat) => {
-              const ff = formatFrame(f);
+              const ff = formatFrame(f, rig.squeeze);
               const on = rig.format === f;
               const h = ff.bandAspect >= 1 ? 15 : 22;
               return (

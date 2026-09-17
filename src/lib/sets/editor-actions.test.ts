@@ -200,11 +200,40 @@ describe("the editor's prompt bar", () => {
     expect(editor).toContain("const astraTooBig = useMemo(() => JSON.stringify(spec).length > SET_EDIT_MAX_SPEC_CHARS, [spec]);");
     expect(editor).toContain("{editsLeft !== null && (");
     expect(editor).toContain("editsLeft === 0 ? s.editorAskLeftNone : editsLeft === 1 ? s.editorAskLeftOne : formatMsg(s.editorAskLeft, { n: editsLeft })");
-    expect(editor).toContain("disabled={asking || ask.trim().length === 0 || editsLeft === 0 || astraTooBig}");
+    // Send is no longer held at the cap in silence: it says why (below).
+    expect(editor).toContain("disabled={asking || ask.trim().length === 0 || astraTooBig}");
     expect(editor).toContain("<span className=\"text-[#9aa0ad]\">{localizeServerText(SET_EDIT_TOO_BIG, t)}</span>");
     expect(send).toContain("if (!text || asking || astraTooBig) return;");
     // Whatever the server says of the count, the bar keeps.
     expect(send).toContain("if (r.editsLeft !== undefined) setEditsLeft(r.editsLeft);");
+  });
+
+  it("says why at the month's cap instead of holding Send in silence, and spends nothing", () => {
+    // Send was disabled with no sentence anywhere, and Enter was not held at
+    // all: it flushed a save and called the action, which reads the words
+    // through the gate and takes one of the pace's hits before answering
+    // with the cap (found reviewing Helios, fixed 2026-09-18).
+    const cap = send.indexOf("if (editsLeft === 0) {");
+    expect(cap).toBeGreaterThan(-1);
+    expect(send.slice(cap, send.indexOf("}", cap))).toContain("setAskError(s.editorAskCapped);");
+    // Before the flush and before the call: nothing saved, gated or paced.
+    expect(cap).toBeLessThan(send.indexOf("await saveCopy("));
+    expect(cap).toBeLessThan(send.indexOf("r = await editSetWithAstra(setId, text);"));
+  });
+
+  it("names a history row for what it holds, not for where it sits", () => {
+    // Row 0 is the copy the editor OPENED on — Astra's original only when
+    // nothing had been saved before — and the original can sit further down,
+    // put back by restoreOriginal. It was named by its index, so every return
+    // visit to an edited set promised "Astra's original" and restored the
+    // working copy, and the bar read "Edit 0" (fixed 2026-09-18).
+    expect(editor).toContain("const originalKey = useMemo(() => JSON.stringify(original), [original]);");
+    expect(editor).toContain(
+      "history[i] === originalKey ? s.editorOriginal : i === 0 ? s.editorOpened : formatMsg(s.editorEditN, { n: i });",
+    );
+    expect(editor).toContain("<span>{rowLabel(i)}</span>");
+    expect(editor).toContain("{rowLabel(at)}");
+    expect(editor).not.toContain("{i === 0 ? s.editorOriginal : formatMsg(s.editorEditN, { n: i })}");
   });
 
   it("never stays on 'Astra is changing the set…' when the call throws", () => {

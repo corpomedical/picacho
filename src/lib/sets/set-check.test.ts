@@ -62,6 +62,50 @@ describe("checkSet", () => {
     expect(found).toContainEqual({ kind: "sunk", object: 1, depthM: 1.5 });
   });
 
+  it("leaves two turned boxes alone when they do not touch", () => {
+    // A 12 m wall turned 45° has a world box 8.8 m across, so a crate 4.2 m
+    // clear of its face stood "through" it with a share of 1.00, where the
+    // truth is nothing at all (found reviewing Helios, fixed 2026-09-18).
+    const base = load(showroom);
+    const one: SetObject = { ...base.objects[0], shape: "box", rotation: [0, 0, 0], repeat: null };
+    const spec = (objects: SetObject[]): SetSpec => ({ ...base, objects, cameras: [], marks: [] });
+    const wall = { ...one, size: [12, 3, 0.4] as [number, number, number], position: [0, 1.5, 0] as [number, number, number], rotation: [0, 45, 0] as [number, number, number] };
+    const crate = { ...one, size: [1, 1, 1] as [number, number, number], position: [3, 0.5, 3] as [number, number, number] };
+    expect(checkSet(spec([wall, crate]))).toEqual([]);
+    // A grazing corner is still nothing: the truth is under two per cent.
+    expect(checkSet(spec([{ ...wall, rotation: [0, 30, 0] }, { ...crate, rotation: [0, 45, 0] }]))).toEqual([]);
+    // And a wall thick enough to bury the crate still says so.
+    const thick = { ...wall, size: [12, 4, 3] as [number, number, number], position: [0, 2, 0] as [number, number, number] };
+    expect(checkSet(spec([thick, { ...crate, position: [0, 2, 0] as [number, number, number], rotation: [0, 45, 0] as [number, number, number] }]))).toContainEqual({
+      kind: "through",
+      big: 0,
+      small: 1,
+      share: 1,
+    });
+  });
+
+  it("does not call a ball resting on the ground sunk, whatever it is turned by", () => {
+    const base = load(showroom);
+    const one: SetObject = { ...base.objects[0], shape: "sphere", size: [2, 2, 2], position: [0, 1, 0], rotation: [0, 0, 0], repeat: null };
+    const spec = (objects: SetObject[]): SetSpec => ({ ...base, objects, cameras: [], marks: [] });
+    for (const rotation of [[0, 0, 0], [0, 45, 0], [0, 0, 45], [45, 0, 0], [12, 30, 7]] as [number, number, number][]) {
+      expect(checkSet(spec([{ ...one, rotation }])), String(rotation)).toEqual([]);
+    }
+    // A box on its corner really is through the floor, and still says so.
+    expect(checkSet(spec([{ ...one, shape: "box", rotation: [0, 0, 45] }]))).toContainEqual({ kind: "sunk", object: 0, depthM: 0.4 });
+    // A box half under the ground too.
+    expect(checkSet(spec([{ ...one, shape: "box", position: [0, 0, 0] }]))).toContainEqual({ kind: "sunk", object: 0, depthM: 1 });
+    // A ball buried whole is a mistake, and is still found.
+    expect(checkSet(spec([{ ...one, position: [0, -2.4, 0] }]))).toContainEqual({ kind: "sunk", object: 0, depthM: 3.4 });
+  });
+
+  it("reads a dune as the shape it is, as the marks do", () => {
+    // The beach's dunes are half-buried balls, which is how a dune is built:
+    // three "sunk" findings and two marks "inside" one, while marks.ts —
+    // the rule the normaliser itself applies — says every mark is clear.
+    expect(checkSet(load(beach))).toEqual([]);
+  });
+
   it("never reads a sheet as a finding, on either side", () => {
     const base = load(showroom);
     const sheet: SetObject = { ...base.objects[0], shape: "plane", position: [0, 0.01, 0], size: [200, 0.01, 200], rotation: [0, 0, 0], repeat: null };

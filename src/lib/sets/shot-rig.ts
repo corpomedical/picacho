@@ -18,15 +18,21 @@
 // exactly as before; it just carries no rig line and no check.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isRigCheckItem, isRigFormat, type RigCheckItem, type RigFormat } from "./rig";
+import { isRigCheckItem, isRigFormat, isRigSqueeze, type RigCheckItem, type RigFormat } from "./rig";
 import { normaliseRigCheck, type RigCheck } from "./rig-check";
 import { cleanText } from "./set-spec";
 
 const RIG = "rig";
 const CHECK = "rig_check";
 
-/** What a shot keeps of its rig: the format it was cut to, and each checked look's words exactly as sent. */
-export type ShotRig = { format: RigFormat; words: Partial<Record<RigCheckItem, string>> };
+/**
+ * What a shot keeps of its rig: the format it was cut to, the anamorphic
+ * squeeze it was cut at (2026-09-18 — the squeeze widens the band, so a take
+ * shot at 2× plays in a band twice as wide as its format's own), and each
+ * checked look's words exactly as sent. An older row carries no squeeze and
+ * reads as 1, which is what every shot before that day was.
+ */
+export type ShotRig = { format: RigFormat; squeeze: number; words: Partial<Record<RigCheckItem, string>> };
 
 const WORDS_MAX = 600;
 
@@ -35,6 +41,7 @@ export function normaliseShotRig(v: unknown): ShotRig | null {
   if (!v || typeof v !== "object" || Array.isArray(v)) return null;
   const r = v as Record<string, unknown>;
   const format: RigFormat = isRigFormat(r.format) ? r.format : "square";
+  const squeeze = isRigSqueeze(r.squeeze) ? r.squeeze : 1;
   const words: Partial<Record<RigCheckItem, string>> = {};
   const w = r.words && typeof r.words === "object" && !Array.isArray(r.words) ? (r.words as Record<string, unknown>) : {};
   for (const [k, text] of Object.entries(w)) {
@@ -42,7 +49,7 @@ export function normaliseShotRig(v: unknown): ShotRig | null {
     const said = cleanText(text, WORDS_MAX);
     if (said) words[k] = said;
   }
-  return { format, words };
+  return { format, squeeze, words };
 }
 
 const warned = new Set<string>();

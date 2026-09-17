@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderTemplate, type TemplateVars } from "./render";
+import { PLAY_LISTING_LIVE, PLAY_STORE_URL } from "../play-listing";
 
 // The renderer's contract in executable form. The security model under test:
 // template BODIES are admin-authored and sanitized to a tiny allowlist;
@@ -63,16 +64,32 @@ describe("body dialect", () => {
 });
 
 describe("<playbadge>", () => {
-  it("emits the official badge image linked to the Play listing", () => {
+  // The badge follows the listing (play-listing.ts). Suspended since
+  // 2026-09-09, it answers 404, so the tag emits nothing and the footer says
+  // nothing — both come back with the one switch, and this test follows it
+  // rather than pinning whichever way it currently sits.
+  it("emits the official badge image linked to the Play listing, while the listing is there", () => {
     const { html } = render("<playbadge>");
-    expect(html).toContain('href="https://play.google.com/store/apps/details?id=ai.picacho.app"');
-    expect(html).toContain('src="https://picacho.ai/google-play-badge.png"');
-    // The CTA survives blocked remote images as the anchor's alt text.
-    expect(html).toContain('alt="Get it on Google Play"');
+    if (PLAY_LISTING_LIVE) {
+      expect(html).toContain(`href="${PLAY_STORE_URL}"`);
+      expect(html).toContain('src="https://picacho.ai/google-play-badge.png"');
+      // The CTA survives blocked remote images as the anchor's alt text.
+      expect(html).toContain('alt="Get it on Google Play"');
+    } else {
+      expect(html).not.toContain("google-play-badge.png");
+      expect(html).not.toContain("play.google.com");
+    }
   });
 
   it("accepts the self-closing spelling too", () => {
-    expect(render("<playbadge />").html).toContain("google-play-badge.png");
+    const { html } = render("<playbadge />");
+    expect(html.includes("google-play-badge.png")).toBe(PLAY_LISTING_LIVE);
+  });
+
+  it("never sends anyone to the listing while it is suspended", () => {
+    // The footer line went out with every email the app sends.
+    const { html } = render("hello");
+    if (!PLAY_LISTING_LIVE) expect(html).not.toContain("play.google.com");
   });
 
   it("strips the tag entirely once it carries attributes", () => {

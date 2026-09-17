@@ -8,7 +8,7 @@
 // fill the slots; the tables come from lib/sets/studio.ts.
 
 import Link from "next/link";
-import { useSyncExternalStore, type ReactNode } from "react";
+import { useId, useSyncExternalStore, type ReactNode } from "react";
 import { VIEW_MODES, type ViewMode } from "@/lib/sets/view-modes";
 import { RAIL_TOOLS, railToolsFor, type DockTab, type RailTool, type RailToolNote, type StudioMode } from "@/lib/sets/studio";
 
@@ -95,7 +95,7 @@ export function StudioBar({
   /** Build, Shoot, Film: a link (a page of its own) or a switch on this page. */
   modes: Record<StudioMode, StudioModeLink>;
   /** The viewport's modes, when the page draws them. */
-  view?: { mode: ViewMode; onChange: (mode: ViewMode) => void; names: Record<ViewMode, string> } | null;
+  view?: { mode: ViewMode; onChange: (mode: ViewMode) => void; names: Record<ViewMode, string>; label: string } | null;
   /** Find anything: opens the commands. */
   find?: { label: string; kbd: string; onOpen: () => void } | null;
   /** What is rendering right now, said next to the primary action. */
@@ -148,7 +148,7 @@ export function StudioBar({
         {modeButton("cut")}
       </span>
       {view && (
-        <span role="radiogroup" aria-label={view.names.lit} className={`${SEG} ml-1 hidden min-[1440px]:flex`}>
+        <span role="radiogroup" aria-label={view.label} className={`${SEG} ml-1 hidden min-[1440px]:flex`}>
           {VIEW_MODES.map((m, i) => (
             <button
               key={m}
@@ -269,15 +269,37 @@ export function StudioDock({
   children: ReactNode;
   foot?: ReactNode;
 }) {
+  // One panel is on screen at a time: every tab points at it and it is named
+  // by whichever tab is open. The roles were here; what a reader could not
+  // do was find the panel, or move between the tabs with the arrow keys the
+  // roles promise (found reviewing Helios, fixed 2026-09-18).
+  const uid = useId();
+  const tabId = (t: DockTab) => `${uid}-tab-${t}`;
+  const panelId = `${uid}-panel`;
   return (
     <aside aria-label={label} className={`flex w-[340px] flex-none flex-col border-l ${STUDIO_HAIR} ${STUDIO_PANEL_BG} min-h-0`}>
-      <div role="tablist" aria-label={label} className={`flex flex-none items-stretch border-b ${STUDIO_HAIR} px-1`}>
+      <div
+        role="tablist"
+        aria-label={label}
+        onKeyDown={(e) => {
+          const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+          if (!step) return;
+          e.preventDefault();
+          const next = tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length];
+          onTab(next);
+          document.getElementById(tabId(next))?.focus();
+        }}
+        className={`flex flex-none items-stretch border-b ${STUDIO_HAIR} px-1`}
+      >
         {tabs.map((t) => (
           <button
             key={t}
+            id={tabId(t)}
             type="button"
             role="tab"
             aria-selected={tab === t}
+            aria-controls={panelId}
+            tabIndex={tab === t ? 0 : -1}
             data-tab={t}
             onClick={() => onTab(t)}
             className={`flex h-9 min-w-0 flex-1 cursor-pointer items-center justify-center truncate border-b-2 px-1 text-[11px] font-medium ${
@@ -288,7 +310,9 @@ export function StudioDock({
           </button>
         ))}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      <div id={panelId} role="tabpanel" aria-labelledby={tabId(tab)} tabIndex={0} className="min-h-0 flex-1 overflow-y-auto">
+        {children}
+      </div>
       {foot && <div className={`flex-none border-t ${STUDIO_HAIR}`}>{foot}</div>}
     </aside>
   );

@@ -74,7 +74,7 @@ describe("shootInSet: the look", () => {
     expect(branch.match(/lookDropped = true;/g)).toHaveLength(2);
     // Dropping is only ever that: the shot goes on without it.
     expect(branch).not.toMatch(/return \{ error/);
-    expect(shoot).toMatch(/hasLookObjects,\s*lookDropped,\s*format: rig\.format,\s*checks: rigCheckItems\(rig\),\s*};/);
+    expect(shoot).toMatch(/hasLookObjects,\s*lookDropped,\s*format: rig\.format,[\s\S]*?squeeze: rig\.squeeze,\s*checks: rigCheckItems\(rig\),\s*};/);
   });
 
   it("leaves the rest of the shot as it was: the prompt, its refusal attribution, the frame", () => {

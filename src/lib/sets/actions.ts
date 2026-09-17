@@ -54,6 +54,7 @@ import {
   type RigCheckItem,
   type RigFormat,
 } from "@/lib/sets/rig";
+import { hourWords, timeApplies } from "@/lib/sets/time-of-day";
 import { bearingDeg } from "@/lib/sets/light-schemes";
 import { readShotRigs, recordShotRig } from "@/lib/sets/shot-rig";
 import { recordShotTake } from "@/lib/sets/shot-take";
@@ -588,6 +589,8 @@ type ShootResult =
       lookDropped: boolean;
       /** The rig format the still was cut to (rig.ts); "square" when none. */
       format: RigFormat;
+      /** The anamorphic squeeze it was cut at: 1 unless the rig had one (2026-09-18). */
+      squeeze: number;
       /** The looks the look check will read it against (rig.ts rigCheckItems); none when the rig asked for none. */
       checks: RigCheckItem[];
     };
@@ -767,7 +770,7 @@ export async function shootInSet(
       }
     : { distanceM: 0, fovDeg: 40, cameraBearingDeg: 0, push };
   const rigWords = rigWordsByItem(rig, rigCtx);
-  const rigFrame = formatFrame(rig.format);
+  const rigFrame = formatFrame(rig.format, rig.squeeze);
   const fd = new FormData();
   // `lifted` only chooses whether the prompt explains a brightened sketch;
   // a false value from a crafted request changes one sentence, still gated.
@@ -781,11 +784,20 @@ export async function shootInSet(
     sourcePhoto: sourcePhotoUrl !== null,
     rig: rigSentences(rig, rigCtx),
     rigLight: rig.light !== null,
+    // The hour the STAGE drew (time-of-day.ts): the description is the set as
+    // Astra built it, and the rig can stage another — a night market at noon
+    // was still described as night, over a noon sketch (2026-09-18). Silent
+    // under a plot whose key is a sun, where the plot's words describe the
+    // light: timeApplies is the rule the stage itself follows.
+    hour: hourWords(timeApplies(rig) ? rig.time : null),
     // The band's strips on the sketch (rig.ts letterbox): the picture is what lies between them.
     band: bandSide(rigFrame),
   };
   fd.set("prompt", buildSetShotPrompt({ ...shot, direction }));
   fd.set("set_format", rig.format);
+  // The anamorphic squeeze: the band it widens is worked out server-side
+  // from these two names alone, as the format always was (2026-09-18).
+  fd.set("set_squeeze", String(rig.squeeze));
   // What the lab develops after the cut (lab-grade.ts): the stock, the
   // lens's character, black and white. Never in the words above.
   const lab = labLooksOf(rig);
@@ -855,7 +867,7 @@ export async function shootInSet(
   // The rig it was shot with: the format and each checked look's words as
   // sent, for the line under it and the look check (shot-rig.ts). Its own
   // update, failure ignored, like the camera's.
-  if (!shotError) await recordShotRig(admin, { setId, generationId: result.id, userId }, { format: rig.format, words: rigWords });
+  if (!shotError) await recordShotRig(admin, { setId, generationId: result.id, userId }, { format: rig.format, squeeze: rig.squeeze, words: rigWords });
   const recorded = camera ? await recordShotCamera(admin, { setId, generationId: result.id, userId }, camera) : false;
   // Offered as a look only when there is something to cut out of it clear
   // of the person — the same rule the set page reads (data.ts).
@@ -878,6 +890,8 @@ export async function shootInSet(
     hasLookObjects,
     lookDropped,
     format: rig.format,
+    /** The squeeze it was cut at: a take shot from it plays in the band that widened. */
+    squeeze: rig.squeeze,
     checks: rigCheckItems(rig),
   };
 }
@@ -1023,6 +1037,7 @@ export async function takeInSet(
       hasLookObjects: false,
       lookDropped: false,
       format: rigs.get(reuseId)?.rig?.format ?? "square",
+      squeeze: rigs.get(reuseId)?.rig?.squeeze ?? 1,
       checks: [],
     };
     endUrl = reusedUrl;
@@ -1099,7 +1114,7 @@ export async function takeInSet(
     const key = { setId, generationId: clip.id, userId };
     const words = cleanText(typeof input.words === "string" ? input.words : "", SHOT_WORDS_STORED_MAX_CHARS);
     if (words.length > 0) await recordShotWords(admin, key, words);
-    if (still.format !== "square") await recordShotRig(admin, key, { format: still.format, words: {} });
+    if (still.format !== "square" || still.squeeze > 1) await recordShotRig(admin, key, { format: still.format, squeeze: still.squeeze, words: {} });
     // What the clip was rendered from, so a clip that fails can be rendered
     // again between the same two stills on a later visit too (shot-take.ts).
     // Its own update, failure ignored, like the rig's.

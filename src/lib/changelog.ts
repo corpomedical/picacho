@@ -20,6 +20,30 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.46.0",
+    build: 85,
+    date: "2026-09-18",
+    title: "Everything the review left open",
+    items: [
+      "Yesterday's review of Helios found about seventy faults and fixed the worst of them; this closes the rest — every one that costs nothing to prove — and a handful of older things owed elsewhere in the app.",
+      "The time of day now reaches the picture. A set Astra built at night and staged at noon was still described to the picture model as night, over a sketch lit at noon, and the sketch's own sentence told the model to believe the description: a shot now says the hour the stage drew, with the sun's height and colour, and a film beat says its own.",
+      "The brightness of the sketch follows the set. It was measured once, when the page opened, so an hour or a light plot set afterwards rendered through the old measurement.",
+      "An anamorphic squeeze widens the picture instead of squashing it. The squeeze made the camera see wider and drew the result into the same frame, so a 2× lens sent the model thin people in a narrow world; now the frame widens with the lens, the picture keeps its proportions, and the band, the words and the look all know its shape.",
+      "A lens keeps its length on every sensor. Nine lens-and-sensor pairs — a 135 mm on Super 35 among them — came back from a reload as a different lens, and a still shot on one could never be used as a look.",
+      "\"Close-up\", \"wide\" and a matched shot mean the same in every format. They were measured on the whole render while every format but the square is cut to a band, so a close-up came back closer than asked, a \"full\" shot cut the head off, and a matched reference came back a quarter too large.",
+      "The set check stopped reporting things that are not there: two turned walls no longer stand \"through\" a crate that is metres clear of both, and a ball resting on the ground is no longer sunk into it. A dune half under the sand is a dune.",
+      "A film stops rendering when you leave the page. Following a link inside the app left it rendering — and charging — the beats you were not watching, though the warning said it would stop.",
+      "On the Sets home, the composer no longer changes under a message that is on its way, and two quick presses of Enter cannot start two builds.",
+      "In Build: the History list names each row for what it holds, instead of promising \"Astra's original\" and restoring your own copy; and at the month's limit the prompt bar says so instead of refusing in silence — and no longer spends a check on a change it cannot make.",
+      "The studio's panels can be used with the keyboard and read aloud: the dock and the rig are proper tab bars, and every field in Build's inspector has a name.",
+      "A page left behind by a deploy reloads once, wherever the failure happened — fourteen places reloaded on their own, one of them on every failing poll.",
+      "Settings now speaks your language when something goes wrong, and so does the community feed's own answer — eighteen sentences that reached everyone in English, in all four languages.",
+      "The privacy policy says what an automatic error report contains, which it had never mentioned.",
+      "While a render runs, the steps say what happened — \"Prompt written\", \"Rendering\", \"Result checked\" — instead of our own words for them.",
+      "The Google Play badge and the Play line in every email are hidden while the listing is down, so nobody follows them to a missing page.",
+    ],
+  },
+  {
     version: "1.45.0",
     build: 84,
     date: "2026-09-17",

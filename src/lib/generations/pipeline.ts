@@ -71,14 +71,12 @@ export type PipelineStepLog = {
   detail: string;
 };
 
-export const STEP_LABELS: Record<PipelineStepLog["step"], string> = {
-  draft: "Drafted",
-  review: "Reviewed",
-  generate: "Generating",
-  validate: "Validated",
-  speech: "Voice generated",
-  lipsync: "Lip-synced",
-};
+// (The English STEP_LABELS map that used to sit here was read by nothing:
+// every surface names a step from its own catalog — generate.stepDraft… in
+// the composer's trace, history.stepDrafted… on the render page. It was
+// removed with the 2026-09-18 relabel so the pipeline's internal words —
+// draft, review, validate — survive only as the `step` KEY, which is what
+// the log stores, and never as something a person reads.)
 
 export type AttemptLog = {
   attempt: number;

@@ -21,18 +21,26 @@ export const MIRRORED_LINES = [
   "renderer.shadowMap.enabled = !coarse;",
   "renderer.shadowMap.type = THREE.PCFShadowMap;",
   // the scene and the stand-in
-  "const built = buildSetScene(THREE, spec, { shadows: !coarse });",
+  "const stageOpts = { shadows: !coarse, quality, textures, sky: pmrem ? { Sky, pmrem } : null };",
+  "const built = buildSetScene(THREE, spec, stageOpts);",
   "if (built.background) scene.background = built.background;",
   "if (built.fog) scene.fog = built.fog;",
   'const ACCENT = "#c8923a";',
-  "const standIn = buildStandIn(THREE, ACCENT);",
+  "const standIn = buildStandIn(THREE, ACCENT, undefined, layoutRef.current.pose);",
+  "const eyeY = () => STAND_IN_EYE_M[standPose];",
   "placeStandIn(standIn, layoutRef.current.mark);",
   "const camera = new THREE.PerspectiveCamera(startPose.fovDeg, 1, 0.05, built.farPlane);",
-  // the lift, measured without the figure
+  // The SKETCH and its own lift (2026-09-17): what the picture model is sent
+  // is not the stage the person turns but the flat grey sketch, drawn at the
+  // sketch's own lift — measured on the sketch, without the figure, and
+  // measured again whenever the stage is rebuilt (2026-09-18).
   "standIn.group.visible = false;",
-  "lift = liftSet(THREE, renderer, scene, spec, built.farPlane);",
+  "sketchStage(scene, built.root, true);",
+  "sketchLift = liftSet(THREE, renderer, scene, forSpec, farPlane);",
+  "sketchStage(scene, built.root, false);",
+  "lift = liftSet(THREE, renderer, scene, forSpec, farPlane);",
   "standIn.group.visible = true;",
-  "lifted: lift.fill > 1 || lift.exposure > BASE_EXPOSURE,",
+  "lifted: sketchLift.fill > 1 || sketchLift.exposure > BASE_EXPOSURE,",
   // a snapshot
   "standIn.helpers.visible = false;",
   "if (opts?.hideFigure) standIn.figure.visible = false;",
@@ -70,15 +78,16 @@ export const MIRRORED_PHOTO_LINES = [
 /**
  * What E mirrors (lib/match-pose.mts): a fresh set's stage — the first
  * camera in hand, the figure on the first mark — solving a read into a pose
- * and placing it against the set as built, the figure's eye height and the
- * orbit's reach it places it with, and the pose the page's line is said from.
+ * and placing it against the set as built, the orbit's reach it places it
+ * with, and the pose the page's line is said from. The figure's eye height
+ * is one of the base lines above (2026-09-18: it is the POSE's eye, not the
+ * constant this once mirrored).
  */
 export const MIRRORED_MATCH_LINES = [
   "position: spec.cameras[0].position,",
   "target: spec.cameras[0].target,",
   "fovDeg: spec.cameras[0].fovDeg,",
   "const startMarkId = initialLayout?.markId ?? spec.marks[0].id;",
-  "const FRAME_EYE_Y = 1.45;",
   "controls.maxDistance = Math.max(spec.bounds.x, spec.bounds.z) * 1.2 + 10;",
   "const solved = solveMatchPose(res.match, {",
   "mark: layoutRef.current.mark,",
@@ -88,7 +97,7 @@ export const MIRRORED_MATCH_LINES = [
   "const moved = api.matchTo(solved.pose);",
   "const placed = placeMatchedCamera(THREE, built.root, pose, {",
   "mark: { x: p.x, z: p.z, facingDeg: layoutRef.current.mark.facingDeg },",
-  "eyeY: FRAME_EYE_Y,",
+  "eyeY: eyeY(),",
   "maxDistance: controls.maxDistance,",
   "camera.position.set(...placed.position);",
   "controls.target.set(...placed.target);",

@@ -82,26 +82,35 @@ describe("the lens rule on the pages", () => {
   });
 });
 
-describe("the squeeze on the projection", () => {
-  it("follows every projection the person sees or shoots, and never the snapshot the matcher reads", () => {
-    // Each updateProjectionMatrix() on the live camera, the frame's camera
-    // and the rebuilt camera is followed by squeezeProjection(); the
-    // snapshot's clone is the one projection left spherical, on purpose.
-    const lines = view.split("\n");
-    const updates = lines.map((l, i) => [l, i] as const).filter(([l]) => /\b(camera|cam)\.updateProjectionMatrix\(\)/.test(l));
-    expect(updates.length).toBe(4);
-    let squeezed = 0;
-    let spherical = 0;
-    for (const [, i] of updates) {
-      // Within the next few lines: a comment may sit between the two.
-      const next = lines.slice(i + 1, i + 7).join("\n");
-      if (/squeezeProjection\(/.test(next)) squeezed += 1;
-      else spherical += 1;
+describe("the squeeze on the frame", () => {
+  it("widens the negative and the band, and squashes nothing", () => {
+    // It used to be a scale on the projection's x: the picture model was
+    // handed the negative, squashed, never desqueezed — thin people in a
+    // narrow world — while the band, the words and the look cutout knew
+    // nothing of it (found reviewing Helios, fixed 2026-09-18).
+    expect(view).not.toContain("squeezeProjection");
+    expect(read("build-scene.ts")).not.toContain("squeezeProjection");
+    // Every frame the page works out is the rig's, squeeze and all.
+    for (const args of calls(view, "formatFrame")) {
+      expect(args.length, `set-view.tsx: formatFrame(${args.join(", ")})`).toBe(2);
+      expect(args[1], `set-view.tsx: formatFrame(${args.join(", ")})`).toMatch(/squeeze/i);
     }
-    expect(squeezed).toBe(3);
-    expect(spherical).toBe(1);
-    const snapshotStart = view.indexOf("snapshot(px, opts) {");
-    const snapshotEnd = view.indexOf("frameFigure() {", snapshotStart);
-    expect(view.slice(snapshotStart, snapshotEnd)).not.toContain("squeezeProjection(");
+    expect(view).toContain("camera.fov = widenFovDeg(poseFov, (fullH / Math.max(1, renderPx)) * rigRef.current.squeeze);");
+    expect(view).toContain("const from = { ...pose, fovDeg: widenFovDeg(pose.fovDeg, rigRef.current.squeeze) };");
+    // The snapshot stays spherical: the matcher and the compare read it.
+    const from = view.indexOf("snapshot(px, opts) {");
+    expect(view.slice(from, view.indexOf("frameFigure() {", from))).not.toContain("squeeze");
+    // And the band's share of the pose's field is the frame's own number,
+    // never bandH / renderH written out again beside a squeeze it forgot.
+    expect(view).not.toMatch(/bandH \/ \w+\.renderH/);
+  });
+
+  it("rides to the server, which works the cut out from the two names alone", () => {
+    const actions = read("actions.ts");
+    const lane = read("../generations/actions.ts");
+    expect(actions).toContain("const rigFrame = formatFrame(rig.format, rig.squeeze);");
+    expect(actions).toContain('fd.set("set_squeeze", String(rig.squeeze));');
+    expect(lane).toContain("const setFrame = formatFrame(setFormat, setSqueeze);");
+    expect(lane).toContain("isRigSqueeze(squeezeSent) ? squeezeSent : 1");
   });
 });

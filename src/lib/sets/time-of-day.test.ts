@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { DEFAULT_SET_RIG, normaliseSetRig } from "./rig";
 import { SET_LIMITS, normaliseSetSpec } from "./set-spec";
-import { compassWord, lookAt, stagedSpec, sunAt, sunLight, timeApplies, timeLabel, timedSpec } from "./time-of-day";
+import { TIME_OF_DAY_SENTENCE, compassWord, hourWords, lookAt, stagedSpec, sunAt, sunLight, timeApplies, timeLabel, timedSpec } from "./time-of-day";
 import { schemeDefaults } from "./light-schemes";
 import { nearestKelvin } from "./light-kelvin";
 import showroom from "./fixtures-showroom-open.json";
@@ -143,5 +145,44 @@ describe("an hour over a lamp plot", () => {
     expect(staged.lights.some((l) => l.kind === "spot" && l.color === key!.color)).toBe(true);
     // And the hour's own sun and fill are there too.
     expect(staged.lights.some((l) => l.kind === "sun")).toBe(true);
+  });
+});
+
+describe("the hour in a shot's words", () => {
+  it("says the hour the stage drew, with the sun's own height and colour", () => {
+    expect(hourWords(12)).toBe("Time of day: 12:00 — the sun 52° above the horizon, its light about 5600 K.");
+    expect(hourWords(21)).toBe("Time of day: 21:00 — night: no sun, a low moon, the place lit by its own lamps.");
+    expect(hourWords(null)).toBe("");
+    // Never a second table: the numbers are sunAt's, the clock is timeLabel's.
+    const sun = sunAt(16.25);
+    expect(hourWords(16.25)).toContain(`${Math.round(sun.elevationDeg)}° above the horizon`);
+    expect(hourWords(16.25)).toContain(`${sun.kelvin} K`);
+    expect(hourWords(16.25)).toContain(timeLabel(16.25));
+  });
+
+  it("is one sentence, which the scaffold stripper takes out whole", () => {
+    for (const h of [5, 6.25, 12, 16.75, 21, 22]) {
+      const said = hourWords(h);
+      expect(said.replace(TIME_OF_DAY_SENTENCE, "").trim(), String(h)).toBe("");
+    }
+  });
+});
+
+// The shot is described at the hour the stage drew it, by the stage's own
+// rule — read as source, since actions.ts is "use server" and the page needs
+// a browser (found reviewing Helios, fixed 2026-09-18).
+describe("what sends the hour", () => {
+  const actions = readFileSync(join(__dirname, "actions.ts"), "utf8");
+  const view = readFileSync(join(__dirname, "../../components/sets/set-view.tsx"), "utf8");
+
+  it("a still is described at the rig's hour, when the stage draws it", () => {
+    expect(actions).toContain("hour: hourWords(timeApplies(rig) ? rig.time : null),");
+    // The one rule: the words are on exactly when the stage draws the hour.
+    expect(actions).not.toContain("rig.time !== null ? hourWords(");
+  });
+
+  it("a film beat is described at the beat's hour, the one its stage was rebuilt at", () => {
+    const render = view.slice(view.indexOf("  async function renderFilm("), view.indexOf("\n  }\n", view.indexOf("  async function renderFilm(")));
+    expect(render).toContain("rig: { ...rigRef.current, time: staged.time },");
   });
 });

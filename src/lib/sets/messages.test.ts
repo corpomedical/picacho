@@ -330,6 +330,8 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     "comparePhoto",
     "compareNote",
     "figureMovedOut",
+    "editorAskCapped",
+    "editorOpened",
     "editorAskLeft",
     "editorAskLeftOne",
     "editorAskLeftNone",

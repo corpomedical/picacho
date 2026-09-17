@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useLocale } from "@/lib/i18n/provider";
 import { cn } from "@/lib/cn";
+import { PLAY_LISTING_LIVE, PLAY_STORE_URL } from "@/lib/play-listing";
 
 // Everything that offers the PWA install: the marketing-footer badge row and
 // the header's "Get the app" button both drive the same flow, so the
@@ -29,8 +30,6 @@ type BeforeInstallPromptEvent = Event & {
 };
 
 type ModalKind = "ios" | "android" | "desktop" | null;
-
-const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=ai.picacho.app";
 
 function useInstallFlow() {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
@@ -66,14 +65,20 @@ function useInstallFlow() {
     },
     openAndroid() {
       // Straight to the Play listing — on Android the store app intercepts,
-      // elsewhere the web listing opens in a new tab.
-      window.open(PLAY_STORE_URL, "_blank", "noopener");
+      // elsewhere the web listing opens in a new tab. While the listing is
+      // down (play-listing.ts) nobody is sent to a 404: the PWA install is
+      // the app on Android too, and it is what this button has always been
+      // for on every other platform.
+      if (PLAY_LISTING_LIVE) window.open(PLAY_STORE_URL, "_blank", "noopener");
+      else setModal("android");
     },
     // Platform-agnostic entry point (the header button, which isn't
     // per-platform): real dialog if we have one, otherwise the card that
     // matches the device.
     async openAny() {
-      if (isAndroid) window.open(PLAY_STORE_URL, "_blank", "noopener");
+      if (isAndroid && PLAY_LISTING_LIVE) window.open(PLAY_STORE_URL, "_blank", "noopener");
+      else if (isAndroid && installEvent) await installEvent.prompt();
+      else if (isAndroid) setModal("android");
       else if (installEvent) await installEvent.prompt();
       else if (isIos) setModal("ios");
       else setModal("desktop");
@@ -118,19 +123,24 @@ export function InstallBadges({
             </span>
           </span>
         </button>
-        <a
-          href={PLAY_STORE_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex transition-transform hover:-translate-y-px"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/google-play-badge.png"
-            alt="Get it on Google Play"
-            className={variant === "hero" ? "h-[42px] w-auto" : "h-[34px] w-auto"}
-          />
-        </a>
+        {/* The badge only exists while the listing does: Google's artwork may
+            only be used to link to it, and a suspended listing answers 404
+            (play-listing.ts). The install flow above is unaffected. */}
+        {PLAY_LISTING_LIVE && (
+          <a
+            href={PLAY_STORE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex transition-transform hover:-translate-y-px"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/google-play-badge.png"
+              alt="Get it on Google Play"
+              className={variant === "hero" ? "h-[42px] w-auto" : "h-[34px] w-auto"}
+            />
+          </a>
+        )}
       </div>
       {variant === "hero" && <p className="mt-2.5 text-[11px] text-slate-400">{m.note}</p>}
 

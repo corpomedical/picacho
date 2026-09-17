@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/provider";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { formatMsg } from "@/lib/i18n/format";
-import { isStaleDeployError } from "@/lib/stale-deploy";
+import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { pollSetBuild } from "@/lib/sets/actions";
 import { submitSetRecceBuild } from "@/lib/sets/recce-actions";
 import { prepareClip, type PreparedClip } from "@/lib/sets/recce-client";
@@ -107,7 +107,7 @@ export function RecceDoor({ initialReads, finisherOn }: { initialReads: RecceRea
     } catch (err) {
       const stale = isStaleDeployError(err);
       setError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
-      if (stale) setTimeout(() => window.location.reload(), 1800);
+      if (stale) reloadForNewDeploy({ delayMs: 1800 });
       return;
     } finally {
       setStarting(false);

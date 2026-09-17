@@ -2,6 +2,7 @@
 // and vitest has no "@/" alias — an aliased import here fails the whole test
 // file at load time (seen 2026-09-08, the first time this import was added).
 import { CANONICAL_ORIGIN } from "../domains";
+import { PLAY_LISTING_LIVE, PLAY_STORE_URL } from "../play-listing";
 
 // Template rendering for the admin announcement emails (see
 // lib/admin/email-actions.ts for the only two paths that ever send one).
@@ -69,9 +70,12 @@ function substitute(text: string, vars: TemplateVars, escapeValues: boolean): st
 // into it. Absolute URLs because email renders nowhere near our origin.
 // 155×60 keeps the 646×250 artwork's exact ratio and stays crisp on retina;
 // the alt text keeps the CTA readable when a client blocks remote images.
-const PLAY_BADGE_HTML =
-  '<a href="https://play.google.com/store/apps/details?id=ai.picacho.app" style="display:inline-block;">' +
-  `<img src="${CANONICAL_ORIGIN}/google-play-badge.png" alt="Get it on Google Play" width="155" height="60" style="display:block;border:0;"></a>`;
+// While the listing is suspended it emits NOTHING rather than a badge over a
+// 404 (play-listing.ts holds the one switch).
+const PLAY_BADGE_HTML = !PLAY_LISTING_LIVE
+  ? ""
+  : `<a href="${PLAY_STORE_URL}" style="display:inline-block;">` +
+    `<img src="${CANONICAL_ORIGIN}/google-play-badge.png" alt="Get it on Google Play" width="155" height="60" style="display:block;border:0;"></a>`;
 
 // The body dialect's entire tag allowlist. Returns the normalized safe tag,
 // or null for anything unrecognized (which the sanitizer then STRIPS — a
@@ -148,8 +152,7 @@ ${bodyHtml}
     </div>
     <div style="padding:18px 4px 0;font-size:12px;line-height:1.6;color:#a3a3a3;">
       <p style="margin:0;">Sent by Picacho &mdash; the same character, in every single frame. <a href="${CANONICAL_ORIGIN}" style="color:#a3a3a3;">${new URL(CANONICAL_ORIGIN).host}</a></p>
-      <p style="margin:4px 0 0;">Get the Android app on <a href="https://play.google.com/store/apps/details?id=ai.picacho.app" style="color:#a3a3a3;">Google Play</a>.</p>
-      <p style="margin:4px 0 0;">Don&#39;t want these emails? <a href="${escapeHtml(unsubscribeUrl)}" style="color:#a3a3a3;">Unsubscribe</a>.</p>
+${PLAY_LISTING_LIVE ? `      <p style="margin:4px 0 0;">Get the Android app on <a href="${PLAY_STORE_URL}" style="color:#a3a3a3;">Google Play</a>.</p>\n` : ""}      <p style="margin:4px 0 0;">Don&#39;t want these emails? <a href="${escapeHtml(unsubscribeUrl)}" style="color:#a3a3a3;">Unsubscribe</a>.</p>
     </div>
   </div>
 </body>

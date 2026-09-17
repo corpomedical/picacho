@@ -135,3 +135,33 @@ export function compassWord(azimuthDeg: number): "north" | "north-east" | "east"
   const words = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"] as const;
   return words[Math.round((((azimuthDeg % 360) + 360) % 360) / 45) % 8];
 }
+
+/**
+ * The hour in a SHOT's words (2026-09-18). Astra's description carries the
+ * hour the set was BUILT at — a market written at night stays "misty night"
+ * however the rig stages it — while the stage draws the rig's hour
+ * (timedSpec). Without this the picture model was told night over a noon
+ * sketch, and the lifted-sketch sentence told it to believe the words.
+ *
+ * English, like every prompt: a prompt is never translated. "" says nothing
+ * — no hour set, or a scheme whose key is a sun, where the plot's own words
+ * already describe the light (timeApplies is the same rule the stage uses).
+ * The numbers are sunAt's own, so the words cannot drift from what was drawn.
+ */
+export function hourWords(hour: number | null): string {
+  if (hour === null) return "";
+  const sun = sunAt(hour);
+  return sun.night
+    ? `Time of day: ${timeLabel(hour)} — night: no sun, a low moon, the place lit by its own lamps.`
+    : `Time of day: ${timeLabel(hour)} — the sun ${Math.round(sun.elevationDeg)}° above the horizon, its light about ${sun.kelvin} K.`;
+}
+
+/**
+ * The hour's sentence, written out in full: the scaffold stripper's pattern
+ * (set-shot-prompt.ts). Anchored, not `Time of day: .*?\.`, so a person's own
+ * "Time of day: golden hour outside the Apple Store." stays in what the
+ * brand-rule check reads — the check may never read less than the model is
+ * sent, except Picacho's own words.
+ */
+export const TIME_OF_DAY_SENTENCE =
+  /Time of day: \d{2}:\d{2} — (?:night: no sun, a low moon, the place lit by its own lamps|the sun -?\d+° above the horizon, its light about \d+ K)\./g;

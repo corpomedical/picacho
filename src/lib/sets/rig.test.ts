@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_RIG_OVERLAYS, DEFAULT_SET_RIG, RIG_ERAS, RIG_FIXED_SENTENCES, RIG_FORMATS, RIG_FORMAT_ORDER, RIG_GENRES, RIG_GENRE_SUGGESTS, RIG_LENSES, RIG_LIGHTS, RIG_NUMBERED_SENTENCE, RIG_PALETTES, RIG_STOCKS, depthOfField, exposureGain, exposureStops, focalMm, formatFrame, isLabPalette, labLooksOf, lightDirectionWords, lookStill, normaliseSetRig, rigCheckItems, rigSentences, rigWordsByItem, sensorCocMm, sensorHeightMm, shutterFraction, type SetRig, letterbox, bandSide } from "./rig";
+import { DEFAULT_RIG_OVERLAYS, DEFAULT_SET_RIG, RIG_SQUEEZES, RIG_ERAS, RIG_FIXED_SENTENCES, RIG_FORMATS, RIG_FORMAT_ORDER, RIG_GENRES, RIG_GENRE_SUGGESTS, RIG_LENSES, RIG_LIGHTS, RIG_NUMBERED_SENTENCE, RIG_PALETTES, RIG_STOCKS, depthOfField, exposureGain, exposureStops, focalMm, formatFrame, isLabPalette, labLooksOf, lightDirectionWords, lookStill, normaliseSetRig, rigCheckItems, rigSentences, rigWordsByItem, sensorCocMm, sensorHeightMm, shutterFraction, type SetRig, letterbox, bandSide } from "./rig";
 import { fovForLens } from "./build-scene";
 import { FILM_MOVES } from "./moves";
 
@@ -345,5 +345,45 @@ describe("the camera department (cut 2)", () => {
     // The same field of view is a shorter lens on Super 35, judged by a
     // smaller circle: more is sharp, and the far limit moves out.
     expect(Number(/to ([\d.]+) m/.exec(s35 ?? "")?.[1])).toBeGreaterThan(5.0);
+  });
+});
+
+// An anamorphic squeeze (2026-09-18): it used to be a scale on the
+// projection's x, so the picture the model was sent was the negative,
+// squashed — an anamorphic negative is desqueezed on the way out, and ours
+// never was. The frame carries it now: the negative sees that much wider and
+// the band cut from it is that much wider, undistorted.
+describe("an anamorphic squeeze", () => {
+  it("widens the band by the squeeze, leaving the render and the lens's height alone", () => {
+    const scope2 = formatFrame("scope", 2);
+    expect(scope2.bandAspect).toBeCloseTo(2.39 * 2, 10);
+    expect([scope2.renderW, scope2.renderH, scope2.bandW, scope2.bandH, scope2.cut]).toEqual([1536, 1024, 1536, 321, true]);
+    // The picture keeps the lens's height and gains the width: the share of
+    // the pose's own field is what it was unsqueezed.
+    // (To the pixel: the band's height is whole pixels, so 2× scope keeps
+    // 321 of 1,024 rows rather than 321.5.)
+    expect(scope2.heightShare).toBeCloseTo(formatFrame("scope").heightShare, 2);
+    // Even the square is cut once a squeeze has widened it.
+    expect(formatFrame("square", 2).bandH).toBe(512);
+    expect(bandSide(formatFrame("square", 2))).toBe("rows");
+    // A squeeze the rig does not have changes nothing at all.
+    expect(formatFrame("scope", 1.5)).toEqual(formatFrame("scope"));
+    expect(formatFrame("scope", Number.NaN)).toEqual(formatFrame("scope"));
+    // The strips and the band are still the whole render, at every squeeze.
+    for (const f of RIG_FORMAT_ORDER) {
+      for (const q of RIG_SQUEEZES) {
+        const fr = formatFrame(f, q);
+        expect(letterbox(fr).reduce((a, r) => a + r.w * r.h, 0) + fr.bandW * fr.bandH, `${f} ${q}`).toBe(fr.renderW * fr.renderH);
+        expect(fr.squeeze, `${f} ${q}`).toBe(q);
+      }
+    }
+  });
+
+  it("says the cut without naming a ratio the squeeze has changed", () => {
+    const line = rigSentences({ ...full, squeeze: 2 }, ctx)[0];
+    expect(line).not.toContain("2.39");
+    expect(line).toMatch(/^This frame will be cut to a wide band across its middle/);
+    // Picacho's own sentence, so the brand-rule check never reads it.
+    expect(RIG_FIXED_SENTENCES).toContain(line);
   });
 });

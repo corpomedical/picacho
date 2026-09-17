@@ -6,6 +6,7 @@ import { createApiKey, revokeApiKey } from "@/lib/api/actions";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { LocalDate } from "@/components/local-date";
 import { useLocale } from "@/lib/i18n/provider";
+import { localizeServerText } from "@/lib/i18n/server-text";
 
 // Atelier paper sheet + form idiom (settings-popover, extended): raised warm
 // surface with hairline rules, caps label over an ink-hairline input at the
@@ -155,7 +156,7 @@ export function ApiKeysCard({ keys, enabled }: { keys: ApiKeyRow[]; enabled: boo
         </>
       )}
 
-      {error && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{localizeServerText(error, t)}</p>}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { FULL_STAGE, buildSetScene, buildStandIn, fovForLens, lensForFov, moveBuildInto, nearestLens, placeStandIn, sketchStage, squeezeProjection } from "./build-scene";
+import { FULL_STAGE, buildSetScene, buildStandIn, fovForLens, lensForFov, moveBuildInto, nearestLens, placeStandIn, sketchStage } from "./build-scene";
 import { normaliseSetSpec, specInstanceCount, type SetSpec } from "./set-spec";
 import rainyMarket from "./fixtures-rainy-market.json";
 import showroomOpen from "./fixtures-showroom-open.json";
@@ -336,19 +336,6 @@ describe("the lens on a sensor (the camera department, cut 2)", () => {
     expect(nearestLens(s35)).toBe(50);
   });
 
-  it("squeezes the projection: the same frame sees wider, and the inverse follows", () => {
-    const cam = new THREE.PerspectiveCamera(40, 1.5, 0.1, 100);
-    cam.updateProjectionMatrix();
-    const x0 = cam.projectionMatrix.elements[0];
-    squeezeProjection(cam, 2);
-    expect(cam.projectionMatrix.elements[0]).toBeCloseTo(x0 / 2, 9);
-    const check = cam.projectionMatrix.clone().multiply(cam.projectionMatrixInverse);
-    for (let i = 0; i < 16; i++) expect(check.elements[i]).toBeCloseTo(i % 5 === 0 ? 1 : 0, 6);
-    const plain = new THREE.PerspectiveCamera(40, 1.5, 0.1, 100);
-    plain.updateProjectionMatrix();
-    squeezeProjection(plain, 1);
-    expect(plain.projectionMatrix.elements[0]).toBeCloseTo(x0, 9);
-  });
 });
 
 describe("an area light (the light department, cut 3)", () => {

@@ -807,14 +807,9 @@ export function nearestLens(fovDeg: number, sensorHeightMm = FULL_FRAME_HEIGHT_M
   return LENSES_MM.reduce((best, l) => (Math.abs(l - mm) < Math.abs(best - mm) ? l : best), LENSES_MM[0]);
 }
 
-/**
- * An anamorphic squeeze: the same lens sees `squeeze` times wider across
- * the frame, drawn unsqueezed. Applied to the projection after
- * updateProjectionMatrix (which resets it), so a raycast through the camera
- * sees the same picture the person does. 1 leaves the camera alone.
- */
-export function squeezeProjection(camera: ThreeNS.PerspectiveCamera, squeeze: number): void {
-  if (!(squeeze > 1)) return;
-  camera.projectionMatrix.elements[0] /= squeeze;
-  camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
-}
+// (The anamorphic squeeze used to live here, as a scale on the projection's
+// x: the same lens saw wider and the picture was drawn squashed, which is the
+// negative an anamorphic lens records and a projector desqueezes — ours never
+// did. Since 2026-09-18 the squeeze is the frame's: rig.ts formatFrame widens
+// the band by it and the camera's own field with it, so nothing is distorted
+// and the band, the words and the look cutout all know the picture's shape.)

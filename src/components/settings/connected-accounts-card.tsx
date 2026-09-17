@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/provider";
+import { localizeServerText } from "@/lib/i18n/server-text";
 
 // Which ways this account can sign in, and the controls to add or remove
 // one (2026-09-11). Two real states were unhandled before this existed: a
@@ -99,7 +100,7 @@ export function ConnectedAccountsCard() {
       {row(s.connectedEmail, email)}
       {error && (
         <p role="alert" className="text-sm text-atelier-accent">
-          {error}
+          {localizeServerText(error, t)}
         </p>
       )}
     </div>

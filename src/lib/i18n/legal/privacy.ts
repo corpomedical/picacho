@@ -12,11 +12,14 @@ import type { LegalDoc } from "./types";
 // complaint route) was added — a material change that sat under "August 12"
 // for a week because nothing tied the date to the wording. The 2026-09-07
 // commit only localized this date; it changed no terms and did not move it.
+// September 18, 2026 is the day the automatic error reports were disclosed:
+// AppErrorReporter has filed them on the account since before the policy was
+// written, and no section mentioned them (found reviewing what was owed).
 const UPDATED: Record<Locale, string> = {
-  en: "September 1, 2026",
-  es: "1 de septiembre de 2026",
-  it: "1 settembre 2026",
-  pt: "1 de setembro de 2026",
+  en: "September 18, 2026",
+  es: "18 de septiembre de 2026",
+  it: "18 settembre 2026",
+  pt: "18 de setembro de 2026",
 };
 
 const privacy: Record<Locale, LegalDoc> = {
@@ -39,6 +42,7 @@ const privacy: Record<Locale, LegalDoc> = {
           "Account information: your email address and password (handled by our authentication provider), and optionally a username, company, and self-reported gender.",
           "Character and content data: the character profiles you create (traits, reference images), the prompts you write, the images and videos generated for you, your notes, and your project organization.",
           "Usage data: pages you visit and when, plus (once the app is deployed to production) an approximate country derived from your IP address, used to understand product usage.",
+          "Error reports: if the app hits a fault while you are signed in, we record an automatic report on your account — what went wrong, the page you were on, your browser and device, the browser's own identifier (user agent), and the technical trace, trimmed to 1,000 characters. Administrators read these to fix the fault, and they are deleted with your account. Nothing is recorded for signed-out visitors.",
           "Cookies: small identifiers used to remember your theme and language, and — for logged-out visitors — an anonymous visitor ID for basic traffic analytics.",
           "Payment information: payment details are collected and processed directly by our payment processor, Stripe. We never see or store your full card number — we keep only a reference to your Stripe customer and subscription so we can manage your plan.",
         ],
@@ -126,6 +130,7 @@ const privacy: Record<Locale, LegalDoc> = {
           "Información de la cuenta: tu correo electrónico y contraseña (gestionados por nuestro proveedor de autenticación) y, opcionalmente, un nombre de usuario, empresa y género autoinformado.",
           "Datos de personajes y contenido: los perfiles de personaje que creas (rasgos, imágenes de referencia), las instrucciones que escribes, las imágenes y videos generados para ti, tus notas y la organización de tus proyectos.",
           "Datos de uso: las páginas que visitas y cuándo, además (una vez que la app esté desplegada en producción) de un país aproximado derivado de tu dirección IP, usado para entender el uso del producto.",
+          "Informes de errores: si la app falla mientras tienes la sesión iniciada, guardamos un informe automático en tu cuenta — qué falló, la página en la que estabas, tu navegador y dispositivo, el identificador del propio navegador (user agent) y la traza técnica, recortada a 1.000 caracteres. Los administradores los leen para arreglar el fallo y se borran con tu cuenta. No se registra nada de los visitantes sin sesión.",
           "Cookies: identificadores pequeños que recuerdan tu tema e idioma y, para visitantes sin sesión iniciada, un ID de visitante anónimo para analítica básica de tráfico.",
           "Información de pago: los datos de pago los recopila y procesa directamente nuestro procesador de pagos, Stripe. Nunca vemos ni almacenamos tu número de tarjeta completo; solo guardamos una referencia a tu cliente y suscripción de Stripe para gestionar tu plan.",
         ],
@@ -215,6 +220,7 @@ const privacy: Record<Locale, LegalDoc> = {
           "Informações da conta: seu e-mail e senha (gerenciados pelo nosso provedor de autenticação) e, opcionalmente, um nome de usuário, empresa e gênero autodeclarado.",
           "Dados de personagens e conteúdo: os perfis de personagem que você cria (características, imagens de referência), os prompts que você escreve, as imagens e vídeos gerados para você, suas notas e a organização dos seus projetos.",
           "Dados de uso: as páginas que você visita e quando, além (assim que o app estiver em produção) de um país aproximado derivado do seu endereço IP, usado para entender o uso do produto.",
+          "Relatórios de erro: se o app falhar enquanto você está conectado, guardamos um relatório automático na sua conta — o que deu errado, a página em que você estava, seu navegador e dispositivo, o identificador do próprio navegador (user agent) e o rastreamento técnico, cortado em 1.000 caracteres. Os administradores leem isso para corrigir a falha, e tudo é apagado junto com sua conta. Nada é registrado de visitantes sem sessão.",
           "Cookies: pequenos identificadores usados para lembrar seu tema e idioma e, para visitantes sem login, um ID de visitante anônimo para análises básicas de tráfego.",
           "Informações de pagamento: os dados de pagamento são coletados e processados diretamente pelo nosso processador de pagamentos, a Stripe. Nunca vemos nem armazenamos o número completo do seu cartão — mantemos apenas uma referência ao seu cliente e assinatura na Stripe para gerenciar seu plano.",
         ],
@@ -304,6 +310,7 @@ const privacy: Record<Locale, LegalDoc> = {
           "Informazioni sull'account: la tua email e password (gestite dal nostro fornitore di autenticazione) e, facoltativamente, un nome utente, azienda e genere autodichiarato.",
           "Dati sui personaggi e sui contenuti: i profili personaggio che crei (tratti, immagini di riferimento), i prompt che scrivi, le immagini e i video generati per te, le tue note e l'organizzazione dei tuoi progetti.",
           "Dati di utilizzo: le pagine che visiti e quando, oltre (una volta che l'app sarà in produzione) a un paese approssimativo derivato dal tuo indirizzo IP, usato per capire l'utilizzo del prodotto.",
+          "Segnalazioni di errore: se l'app va in errore mentre hai la sessione attiva, registriamo una segnalazione automatica sul tuo account — che cosa non ha funzionato, la pagina in cui eri, il tuo browser e dispositivo, l'identificativo del browser stesso (user agent) e la traccia tecnica, tagliata a 1.000 caratteri. Gli amministratori le leggono per correggere il guasto e vengono cancellate insieme al tuo account. Nulla viene registrato per i visitatori non autenticati.",
           "Cookie: piccoli identificatori usati per ricordare il tuo tema e la tua lingua e, per i visitatori non registrati, un ID visitatore anonimo per analisi di base del traffico.",
           "Informazioni di pagamento: i dati di pagamento sono raccolti ed elaborati direttamente dal nostro processore di pagamenti, Stripe. Non vediamo né memorizziamo mai il numero completo della tua carta — conserviamo solo un riferimento al tuo cliente e abbonamento Stripe per gestire il tuo piano.",
         ],

@@ -46,9 +46,12 @@ describe("the frame the image model reads (set-view.tsx frame)", () => {
     const lifts = view.slice(start, view.indexOf("raf = requestAnimationFrame(loop);", start));
     expect(lifts.length).toBeGreaterThan(0);
     const sketchOn = lifts.indexOf("sketchStage(scene, built.root, true);");
-    const sketchLift = lifts.indexOf("sketchLift = liftSet(THREE, renderer, scene, spec, built.farPlane);");
+    // Measured for whichever set is drawn (2026-09-18: measureLift runs again
+    // on every rebuild — an hour, a light plot, an Astra change — so the
+    // sketch the prompt describes is the sketch that was measured).
+    const sketchLift = lifts.indexOf("sketchLift = liftSet(THREE, renderer, scene, forSpec, farPlane);");
     const sketchOff = lifts.indexOf("sketchStage(scene, built.root, false);");
-    const stageLift = lifts.indexOf("lift = liftSet(THREE, renderer, scene, spec, built.farPlane);", sketchLift + 1);
+    const stageLift = lifts.indexOf("lift = liftSet(THREE, renderer, scene, forSpec, farPlane);", sketchLift + 1);
     expect(sketchOn).toBeGreaterThan(-1);
     expect(sketchLift).toBeGreaterThan(sketchOn);
     expect(sketchOff).toBeGreaterThan(sketchLift);
@@ -58,10 +61,36 @@ describe("the frame the image model reads (set-view.tsx frame)", () => {
     expect(lifts.indexOf("sketchFill.intensity = 0;")).toBeLessThan(stageLift);
     // A basic build has one lift, shared.
     expect(lifts).toContain("if (!full) sketchLift = lift;");
+    // And it is measured again whenever the stage is rebuilt, with the lights
+    // the last measurement left freed first.
+    expect(view).toContain("measureLift(spec, built.farPlane);");
+    expect(view).toContain("measureLift(next, fresh.farPlane);");
+    expect(lifts).toContain("scene.remove(old);");
   });
 
   it("tells the prompt about the sketch's lift, not the stage's", () => {
     expect(view).toContain("lifted: sketchLift.fill > 1 || sketchLift.exposure > BASE_EXPOSURE,");
     expect(view).not.toContain("lifted: lift.fill > 1 || lift.exposure > BASE_EXPOSURE,");
+  });
+});
+
+describe("the squeeze, and the lift that follows the set", () => {
+  const view = readFileSync(join(__dirname, "../../components/sets/set-view.tsx"), "utf8");
+  const frame = view.slice(view.indexOf("          frame(opts) {"), view.indexOf("          relayout() {"));
+
+  it("draws the negative the squeeze widened, at the band it widened", () => {
+    // It used to scale the projection's x, so the model was sent the
+    // negative, squashed (2026-09-18).
+    expect(frame).toContain("const fr = formatFrame(rigRef.current.format, rigRef.current.squeeze);");
+    expect(frame).toContain("fovDeg: widenFovDeg(pose.fovDeg, rigRef.current.squeeze)");
+    expect(view).not.toContain("squeezeProjection");
+  });
+
+  it("measures the lift again whenever the set is rebuilt", () => {
+    const rebuild = view.slice(view.indexOf("          rebuild(next) {"), view.indexOf("          setFilmOverlay("));
+    expect(rebuild).toContain("measureLift(next, fresh.farPlane);");
+    // One measurement, one place: the hour, the plot, an edit and a beat all
+    // rebuild, and nothing else lifts.
+    expect(view.match(/liftSet\(/g)).toHaveLength(2);
   });
 });

@@ -12,7 +12,7 @@ import { saveSetLayout, saveSetThumbnail, shootInSet, takeInSet } from "@/lib/se
 import { editSetWithAstra, saveSetEdit } from "@/lib/sets/editor-actions";
 import { matchSetShot } from "@/lib/sets/match-actions";
 import { readShotWords } from "@/lib/sets/words-actions";
-import { STAND_IN_EYE_M, fovForLens, nearestLens, squeezeProjection, type StageQuality } from "@/lib/sets/build-scene";
+import { STAND_IN_EYE_M, fovForLens, nearestLens, type StageQuality } from "@/lib/sets/build-scene";
 import { dockTabAfter, dockTabsFor, railToolForKey, studioChecked, studioHeld, studioLab, type DockTab, type RailTool, type StatusItem, type StudioMode } from "@/lib/sets/studio";
 import { VIEW_MODES, viewModeMaterial, type ViewMode } from "@/lib/sets/view-modes";
 import { azimuthOf, hourFromAzimuth, measureMetres, scaleBar, sunDirection, type MeasurePoint } from "@/lib/sets/furniture";
@@ -523,16 +523,28 @@ export function SetView({
   const staleRef = useRef(false);
   const refreshNeeded = t.generate.refreshNeeded;
   /** Whether `err` is that; if so, the reload is on its way. */
+  /**
+   * Whether `err` is a deploy that left this tab behind — and, if so, the one
+   * shared reload is on its way (stale-deploy.ts: at most one per tab per
+   * 30 s, the guard AppErrorReporter uses). Every place that used to call
+   * reloaded the page itself now asks this, so a failure a reload
+   * cannot cure reloads an autosaving page once, not over and over
+   * (2026-09-18). The caller says it in its own words, on its own line.
+   */
+  const staleHere = useCallback((err: unknown): boolean => {
+    if (!isStaleDeployError(err)) return false;
+    if (staleRef.current) return true;
+    if (reloadForNewDeploy({ delayMs: 1800 })) staleRef.current = true;
+    return true;
+  }, []);
+  /** The same, said on the page's own error line. */
   const leftBehind = useCallback(
     (err: unknown): boolean => {
-      if (!isStaleDeployError(err)) return false;
-      if (staleRef.current) return true;
-      if (!reloadForNewDeploy({ delayMs: 1800 })) return false;
-      staleRef.current = true;
+      if (!staleHere(err)) return false;
       setError(refreshNeeded);
       return true;
     },
-    [refreshNeeded],
+    [staleHere, refreshNeeded],
   );
   const [loadFailed, setLoadFailed] = useState(false);
   // The stage is a dynamic import plus a WebGL context: until it exists,
@@ -595,6 +607,22 @@ export function SetView({
    * would leave the next one in the wrong beat's place (filmBusyRef).
    */
   const filmBusyRef = useRef(false);
+  /**
+   * This page is still on screen. A film renders beat after beat from here
+   * (renderFilm), and a link inside the app unmounts the page without ending
+   * that chain: the beats that were left were still rendered and still
+   * charged, while filmLeaveConfirm promises the render stops after the beat
+   * it is on (found reviewing Helios, fixed 2026-09-18). Nothing in flight is
+   * abandoned — that beat is paid for, so it is waited for and kept — but no
+   * new beat is started.
+   */
+  const aliveRef = useRef(true);
+  useEffect(
+    () => () => {
+      aliveRef.current = false;
+    },
+    [],
+  );
   /**
    * Save the film, never throwing. A film that does not save is kept for
    * this tab (unsaved.ts) and said in the dock; once a deploy has left the
@@ -1195,12 +1223,14 @@ export function SetView({
         /** The projection's full height when the frame lines sit off the canvas's centre (fit). */
         let fullH = 1;
         const applyFov = () => {
-          camera.fov = widenFovDeg(poseFov, fullH / Math.max(1, renderPx));
+          // The rig's anamorphic squeeze: the negative sees that much wider
+          // for the same lens and the band widens with it (rig.ts
+          // formatFrame), so the stage draws the wider field UNDISTORTED —
+          // where the projection's x used to be scaled, which squashed
+          // everything the person arranged and everything the model was sent
+          // (2026-09-18).
+          camera.fov = widenFovDeg(poseFov, (fullH / Math.max(1, renderPx)) * rigRef.current.squeeze);
           camera.updateProjectionMatrix();
-          // The rig's anamorphic squeeze (build-scene.ts squeezeProjection),
-          // on every projection the person sees or shoots — never on the
-          // snapshot, which the matcher and the compare read as spherical.
-          squeezeProjection(camera, rigRef.current.squeeze);
         };
         const fit = () => {
           const w = host.clientWidth;
@@ -1226,7 +1256,7 @@ export function SetView({
           // height; the projection is widened until that height on screen
           // does (compare.ts widenFovDeg), and the dark round the lines is
           // scene the still will not hold.
-          const fr = formatFrame(format);
+          const fr = formatFrame(format, rigRef.current.squeeze);
           const left = Math.min(ins.left, w / 2 - 40);
           const right = Math.min(ins.right, w / 2 - 40);
           const top = Math.min(ins.top, h / 2 - 40);
@@ -1617,31 +1647,55 @@ export function SetView({
         let sketchFillOn = 0;
         let stageFill: import("three").HemisphereLight | null = null;
         let stageFillOn = 0;
-        standIn.group.visible = false;
-        try {
-          if (full) {
-            sketchStage(scene, built.root, true);
-            try {
-              sketchLift = liftSet(THREE, renderer, scene, spec, built.farPlane);
-            } finally {
-              sketchStage(scene, built.root, false);
-            }
-            sketchFill = (scene.getObjectByName("lift-fill") as import("three").HemisphereLight | undefined) ?? null;
-            if (sketchFill) {
-              sketchFill.name = "lift-fill-sketch";
-              sketchFillOn = sketchFill.intensity;
-              sketchFill.intensity = 0;
-            }
+        /**
+         * Measure the set's lift, and the sketch's own. Run at load and
+         * again on every rebuild — an hour, a light plot, an Astra change:
+         * it was measured ONCE, so a night set staged at noon rendered
+         * through the night's exposure and the prompt's "lifted" sentence
+         * described a sketch that no longer existed (found reviewing Helios,
+         * fixed 2026-09-18). liftSet adds its own neutral fill and leaves it
+         * on the scene, so the lights the last measurement left go first —
+         * else every hour would leave one behind, brightening the stage.
+         */
+        const measureLift = (forSpec: SetSpec, farPlane: number) => {
+          for (const old of [sketchFill, stageFill]) {
+            if (!old) continue;
+            scene.remove(old);
+            old.dispose();
           }
-          lift = liftSet(THREE, renderer, scene, spec, built.farPlane);
-          stageFill = (scene.getObjectByName("lift-fill") as import("three").HemisphereLight | undefined) ?? null;
-          stageFillOn = stageFill?.intensity ?? 0;
-          if (!full) sketchLift = lift;
-        } catch (err) {
-          console.warn("SetView lighting measurement failed:", err);
-        } finally {
-          standIn.group.visible = true;
-        }
+          sketchFill = null;
+          stageFill = null;
+          sketchFillOn = 0;
+          stageFillOn = 0;
+          lift = NO_LIFT;
+          sketchLift = NO_LIFT;
+          standIn.group.visible = false;
+          try {
+            if (full) {
+              sketchStage(scene, built.root, true);
+              try {
+                sketchLift = liftSet(THREE, renderer, scene, forSpec, farPlane);
+              } finally {
+                sketchStage(scene, built.root, false);
+              }
+              sketchFill = (scene.getObjectByName("lift-fill") as import("three").HemisphereLight | undefined) ?? null;
+              if (sketchFill) {
+                sketchFill.name = "lift-fill-sketch";
+                sketchFillOn = sketchFill.intensity;
+                sketchFill.intensity = 0;
+              }
+            }
+            lift = liftSet(THREE, renderer, scene, forSpec, farPlane);
+            stageFill = (scene.getObjectByName("lift-fill") as import("three").HemisphereLight | undefined) ?? null;
+            stageFillOn = stageFill?.intensity ?? 0;
+            if (!full) sketchLift = lift;
+          } catch (err) {
+            console.warn("SetView lighting measurement failed:", err);
+          } finally {
+            standIn.group.visible = true;
+          }
+        };
+        measureLift(spec, built.farPlane);
         raf = requestAnimationFrame(loop);
         if (full) ensureComposer();
 
@@ -1703,12 +1757,16 @@ export function SetView({
             viewOverride = viewModeMaterial(THREE, mode);
           },
           frame(opts) {
-            const fr = formatFrame(rigRef.current.format);
-            const from = opts?.from ?? {
+            const fr = formatFrame(rigRef.current.format, rigRef.current.squeeze);
+            const pose = opts?.from ?? {
               position: [camera.position.x, camera.position.y, camera.position.z] as Vec3,
               target: [controls.target.x, controls.target.y, controls.target.z] as Vec3,
               fovDeg: poseFov,
             };
+            // The negative the picture is cut from: the squeeze widens what
+            // the lens sees, and fr's band widens by the same, so the picture
+            // keeps the lens's height and gains the width — undistorted.
+            const from = { ...pose, fovDeg: widenFovDeg(pose.fovDeg, rigRef.current.squeeze) };
             // The ring and arrow are for arranging; the image model must
             // never see them and draw a ring on the floor.
             standIn.helpers.visible = false;
@@ -1717,7 +1775,6 @@ export function SetView({
             cam.position.set(...from.position);
             cam.lookAt(new THREE.Vector3(...from.target));
             cam.updateProjectionMatrix();
-            squeezeProjection(cam, rigRef.current.squeeze);
             // Drawn at the render's own size, then the canvas goes back as it
             // was before the browser shows a frame.
             const ratio = renderer.getPixelRatio();
@@ -1874,8 +1931,8 @@ export function SetView({
             const eye = new THREE.Vector3(p.x, eyeY(), p.z);
             // The whole figure inside the PICTURE: a rig format's band is only
             // part of the render's height (Scope keeps 643 of 1024 rows).
-            const fr = formatFrame(rigRef.current.format);
-            const want = FRAME_HEIGHT_M / 2 / (Math.tan((poseFov * Math.PI) / 360) * (fr.bandH / fr.renderH));
+            const fr = formatFrame(rigRef.current.format, rigRef.current.squeeze);
+            const want = FRAME_HEIGHT_M / 2 / (Math.tan((poseFov * Math.PI) / 360) * fr.heightShare);
             // How far the camera can stand from the figure on a bearing
             // before something built is in the way (0.3 m short of it).
             const room = (dir: InstanceType<typeof THREE.Vector3>) => {
@@ -1965,8 +2022,10 @@ export function SetView({
             scene.environmentIntensity = fresh.environmentIntensity;
             camera.far = fresh.farPlane;
             camera.updateProjectionMatrix();
-            squeezeProjection(camera, rigRef.current.squeeze);
             placeStandIn(standIn, layoutRef.current.mark);
+            // The lift belongs to the set that is drawn: an hour, a light
+            // plot or an Astra change is another set to measure.
+            measureLift(next, fresh.farPlane);
           },
           setFilmOverlay(plan, names) {
             clearOverlay();
@@ -2601,9 +2660,8 @@ export function SetView({
       try {
         res = await matchSetShot(setId, { photoDataUri: prepared.dataUri });
       } catch (err) {
-        const stale = isStaleDeployError(err);
+        const stale = staleHere(err);
         setMatchError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
-        if (stale) setTimeout(() => window.location.reload(), 1800);
         return;
       }
       if (res.error !== null) {
@@ -2615,12 +2673,19 @@ export function SetView({
         setMatchError(s.loadFailed);
         return;
       }
+      // The picture a match is compared with is the BAND the still is cut to
+      // (frame-cut.ts), not the whole render: Scope keeps 643 of its 1024
+      // rows, so a reference matched without it came back with its subject a
+      // quarter too large, and a subject near an upright picture's left edge
+      // landed outside the frame (2026-09-18).
+      const matchFrame = formatFrame(rig.format, rig.squeeze);
       const solved = solveMatchPose(res.match, {
         mark: layoutRef.current.mark,
         current: api.pose(),
         referenceAspect: prepared.width / prepared.height,
         bounds: spec.bounds,
         canvasAspect: api.canvasAspect(),
+        frame: { bandAspect: matchFrame.bandAspect, heightShare: matchFrame.heightShare },
       });
       keepStage();
       const moved = api.matchTo(solved.pose);
@@ -2794,9 +2859,8 @@ export function SetView({
     } catch (err) {
       // The take may still be running on the server (a dropped connection
       // does not stop it); it lands in History either way.
-      const stale = isStaleDeployError(err);
+      const stale = staleHere(err);
       setError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
-      if (stale) setTimeout(() => window.location.reload(), 1800);
       return;
     } finally {
       busyRef.current.shooting = false;
@@ -2819,6 +2883,7 @@ export function SetView({
       hasLookObjects: result.hasLookObjects,
       words: asked ?? null,
       format: result.format,
+      squeeze: result.squeeze,
       rigAsked: result.checks,
       rigCheck: null,
       pose,
@@ -2917,9 +2982,8 @@ export function SetView({
         rig: rigRef.current,
       });
     } catch (err) {
-      const stale = isStaleDeployError(err);
+      const stale = staleHere(err);
       setError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
-      if (stale) setTimeout(() => window.location.reload(), 1800);
       return;
     } finally {
       busyRef.current.taking = false;
@@ -2942,6 +3006,7 @@ export function SetView({
       hasLookObjects: result.still.hasLookObjects,
       words: asked ?? null,
       format: result.still.format,
+      squeeze: result.still.squeeze,
       rigAsked: result.still.checks,
       rigCheck: null,
       pose,
@@ -2963,6 +3028,7 @@ export function SetView({
             hasLookObjects: false,
             words: asked ?? null,
             format: result.still.format,
+        squeeze: result.still.squeeze,
             rigAsked: [],
             rigCheck: null,
             pose: null,
@@ -3035,7 +3101,7 @@ export function SetView({
       const d = Math.hypot(end.position[0] - m.x, end.position[2] - m.z);
       if (d > 0.1) {
         const fov = (2 * Math.atan(size / d) * 180) / Math.PI;
-        end = { ...end, fovDeg: Math.round(Math.min(SET_LIMITS.maxFovDeg, Math.max(SET_LIMITS.minLayoutFovDeg, fov)) * 100) / 100 };
+        end = { ...end, fovDeg: Math.round(Math.min(SET_LIMITS.maxFovDeg, Math.max(SET_LIMITS.minMatchFovDeg, fov)) * 100) / 100 };
       }
     }
     return { at, from, end };
@@ -3302,9 +3368,8 @@ export function SetView({
     try {
       refused = (await checkFilmCredits(setId, film.engine, filmJobCount(plan.jobs))).error;
     } catch (err) {
-      const stale = isStaleDeployError(err);
+      const stale = staleHere(err);
       refused = stale ? t.generate.refreshNeeded : t.generate.submitFailed;
-      if (stale) setTimeout(() => window.location.reload(), 1800);
     }
     if (refused) {
       filmBusyRef.current = false;
@@ -3346,6 +3411,9 @@ export function SetView({
     // is said in the dock rather than left to the console.
     try {
       for (const job of plan.jobs) {
+        // Left the page: the beat just rendered is kept and paid for, and the
+        // chain ends here rather than spending on beats nobody is watching.
+        if (!aliveRef.current) break;
         const i = job.beat;
         const beat = film.beats[i];
         // A beat opens on the frame the one before it closed on, as this render left it.
@@ -3383,7 +3451,11 @@ export function SetView({
             engine: film.engine,
             lifted: api.lifted === true,
             canvasAspect: api.canvasAspect(),
-            rig: rigRef.current,
+            // The beat's own hour, which is what the stage was rebuilt at
+            // (filmStages above) and now what the beat's words say too
+            // (time-of-day.ts hourWords, 2026-09-18). The film's context key
+            // is worked out apart from this, so no cached clip moves.
+            rig: { ...rigRef.current, time: staged.time },
             move: beat.move,
             textures: beat.textures,
             rack: beat.rack,
@@ -3391,9 +3463,8 @@ export function SetView({
             film: true,
           });
         } catch (err) {
-          const stale = isStaleDeployError(err);
+          const stale = staleHere(err);
           setFilmError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
-          if (stale) setTimeout(() => window.location.reload(), 1800);
           break;
         }
         if (result.error !== null) {
@@ -3421,6 +3492,7 @@ export function SetView({
               hasLookObjects: false,
               words: beat.words || null,
               format: result.still.format,
+        squeeze: result.still.squeeze,
               rigAsked: [],
               rigCheck: null,
               pose: null,
@@ -3447,6 +3519,7 @@ export function SetView({
             hasLookObjects: result.still.hasLookObjects,
             words: beat.words || null,
             format: result.still.format,
+        squeeze: result.still.squeeze,
             rigAsked: result.still.checks,
             rigCheck: null,
             pose: beat.end,
@@ -3473,10 +3546,13 @@ export function SetView({
       setFilmError(s.loadFailed);
     } finally {
       filmBusyRef.current = false;
-      // The stage as arranged, whatever the beats did to it.
-      if (stagedHour) api.rebuild(stagedSpec(spec, rigRef.current, layoutRef.current.mark));
-      api.placeMark(layoutRef.current.mark);
-      api.setPose(layoutRef.current.pose);
+      // The stage as arranged, whatever the beats did to it — only while
+      // there is a stage: a page that has gone has disposed it.
+      if (aliveRef.current && apiRef.current) {
+        if (stagedHour) api.rebuild(stagedSpec(spec, rigRef.current, layoutRef.current.mark));
+        api.placeMark(layoutRef.current.mark);
+        api.setPose(layoutRef.current.pose);
+      }
       setFilmBusy(null);
     }
   }
@@ -3509,9 +3585,8 @@ export function SetView({
         rig: rigRef.current,
       });
     } catch (err) {
-      const stale = isStaleDeployError(err);
+      const stale = staleHere(err);
       setError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
-      if (stale) setTimeout(() => window.location.reload(), 1800);
       // The frames stay on offer: nothing was rendered.
       setTakeRetry(f);
       return;
@@ -3544,6 +3619,7 @@ export function SetView({
         hasLookObjects: false,
         words: f.words ?? null,
         format: result.still.format,
+        squeeze: result.still.squeeze,
         rigAsked: [],
         rigCheck: null,
         pose: null,
@@ -3594,7 +3670,15 @@ export function SetView({
       cameraNow = words.cameraId;
       if (words.lensMm) pickLens(words.lensMm);
     } else if (hasCameraWords(words)) {
-      const { match, from } = wordsToMatch(words, { mark: m, current: api.pose(), sensorHeightMm: sensorHeightMm(rigRef.current.sensor, rigRef.current.format) });
+      const wordFrame = formatFrame(rigRef.current.format, rigRef.current.squeeze);
+      const { match, from } = wordsToMatch(words, {
+        mark: m,
+        current: api.pose(),
+        sensorHeightMm: sensorHeightMm(rigRef.current.sensor, rigRef.current.format),
+        // A size word is how large the person stands in the PICTURE, which is
+        // the band, so the camera stands back by its share (2026-09-18).
+        frame: { heightShare: wordFrame.heightShare },
+      });
       const solved = solveMatchPose(match, {
         mark: m,
         current: from,
@@ -3602,6 +3686,10 @@ export function SetView({
         referenceAspect: 1,
         bounds: spec.bounds,
         canvasAspect: api.canvasAspect(),
+        // No `frame` here on purpose: what wordsToMatch hands over is already
+        // the RENDER's field of view — the lens said in words, on the rig's
+        // own sensor — so widening it again would make "50 mm" another lens,
+        // and the figure is centred, so the band's width cannot move it.
       });
       moved = api.matchTo(solved.pose);
       cameraNow = null;
@@ -3725,10 +3813,9 @@ export function SetView({
       if (res.error !== null) setError(res.error);
       else words = res.words;
     } catch (err) {
-      const stale = isStaleDeployError(err);
+      const stale = staleHere(err);
       if (stale) {
         setError(t.generate.refreshNeeded);
-        setTimeout(() => window.location.reload(), 1800);
         setReading(false);
         return;
       }
@@ -3857,13 +3944,13 @@ export function SetView({
       api.setFilmOverlay(null, []);
       return;
     }
-    const fr = formatFrame(rig.format);
+    const fr = formatFrame(rig.format, rig.squeeze);
     const plan = planFilmOverlay({
       start: shots.find((sh) => sh.generationId === film.startId)?.pose ?? null,
       beats: film.beats,
       selected: filmSel,
       mark,
-      frame: { bandAspect: fr.bandAspect, heightShare: fr.bandH / fr.renderH },
+      frame: { bandAspect: fr.bandAspect, heightShare: fr.heightShare },
       sensorHeightMm: sensorHeightMm(rig.sensor, rig.format),
     });
     const metres = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -4236,7 +4323,9 @@ export function SetView({
   const formatNote = (shot: SetShot) => (shot.format !== "square" ? s.rig.formats[shot.format] : null);
   /** A take whose frames were cut wider or squarer than the 16:9 it renders at: the band it plays inside. */
   const takeBand = (shot: SetShot) =>
-    shot.kind === "take" && (shot.format === "scope" || shot.format === "flat" || shot.format === "classic") ? formatFrame(shot.format).bandAspect : null;
+    shot.kind === "take" && (shot.squeeze > 1 || shot.format === "scope" || shot.format === "flat" || shot.format === "classic")
+      ? formatFrame(shot.format, shot.squeeze).bandAspect
+      : null;
   // Oldest first: the thread reads down to the frame.
   const thread = [...shots].reverse();
   const viewingAt = viewing ? shots.findIndex((x) => x.generationId === viewing) : -1;
@@ -4966,7 +5055,7 @@ export function SetView({
         meta={shotCount}
         mode={studioMode}
         modes={studioModes}
-        view={{ mode: viewMode, onChange: setViewMode, names: { lit: s.editorViewLit, clay: s.editorViewClay, wire: s.editorViewWire, depth: s.editorViewDepth } }}
+        view={{ mode: viewMode, onChange: setViewMode, label: s.studio.viewLabel, names: { lit: s.editorViewLit, clay: s.editorViewClay, wire: s.editorViewWire, depth: s.editorViewDepth } }}
         find={{ label: s.studio.find, kbd: s.palette.open, onOpen: () => setPaletteOpen(true) }}
         rendering={renderingCount > 0 ? { label: renderingCount === 1 ? s.studio.renderingOne : formatMsg(s.studio.rendering, { n: renderingCount }) } : null}
         primary={
@@ -6218,7 +6307,7 @@ export function SetView({
 
         {wide && (
           <StudioDock
-            label={s.studio.dock.astra}
+            label={s.studio.dockLabel}
             tabs={dockTabs}
             names={s.studio.dock}
             tab={dockTab}

@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 import { buildSetScene } from "../../../src/lib/sets/build-scene.ts";
 import { matchSummary, placeMatchedCamera, solveMatchPose, type ShotMatch } from "../../../src/lib/sets/match-shot.ts";
 import { normaliseSetSpec, type SetSpec, type Vec3 } from "../../../src/lib/sets/set-spec.ts";
-import { MIRRORED_MATCH_LINES } from "../render/viewer-parity.mts";
+import { MIRRORED_LINES, MIRRORED_MATCH_LINES } from "../render/viewer-parity.mts";
+import { STAND_IN_EYE_M } from "../../../src/lib/sets/build-scene.ts";
 import { buildForMatching, FRAME_EYE_Y, matchedStagePose, matchFramePose, orbitReach, photoSquare, pinnedSet, SNAP_CANVAS_ASPECT } from "./match-pose.mts";
 import { REPO_ROOT } from "./util.mts";
 
@@ -54,7 +55,7 @@ describe("matchedStagePose", () => {
   it("says its line from the pose as the stage reports it, rounded as api.pose() rounds", () => {
     const spec = fixture("rainy-market");
     const built = buildForMatching(THREE, spec);
-    // 8°: longer than the stage keeps (SET_LIMITS.minLayoutFovDeg, 10°, the 135 mm chip).
+    // 8°: longer than the stage keeps (SET_LIMITS.minMatchFovDeg, 10°, the 135 mm chip).
     const got = matchedStagePose(THREE, spec, built, match({ verticalFovDeg: 8 }), 16 / 9);
     const r = (n: number) => Math.round(n * 1000) / 1000;
     const reported = { position: got.position.map(r) as [number, number, number], target: got.target.map(r) as [number, number, number], fovDeg: Math.round(got.fovDeg * 100) / 100 };
@@ -74,7 +75,11 @@ describe("matchedStagePose", () => {
   });
 
   it("mirrors the page's own numbers, which the run checks are still in set-view.tsx", () => {
-    expect(MIRRORED_MATCH_LINES).toContain(`const FRAME_EYE_Y = ${FRAME_EYE_Y};`);
+    // The page takes the eyes from the POSE (2026-09-17): the eval arranges
+    // nobody, so its figure stands, and the mirror's own constant is that
+    // pose's eye height, pinned against the product's table.
+    expect(MIRRORED_LINES).toContain("const eyeY = () => STAND_IN_EYE_M[standPose];");
+    expect(FRAME_EYE_Y).toBe(STAND_IN_EYE_M.stand);
     expect(MIRRORED_MATCH_LINES).toContain("controls.maxDistance = Math.max(spec.bounds.x, spec.bounds.z) * 1.2 + 10;");
     expect(orbitReach({ x: 20, z: 30, height: 4 })).toBe(30 * 1.2 + 10);
     expect(SNAP_CANVAS_ASPECT).toBe(1);

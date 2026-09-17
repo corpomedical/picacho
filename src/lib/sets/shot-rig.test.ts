@@ -9,11 +9,16 @@ import { normaliseShotRig } from "./shot-rig";
 
 describe("normaliseShotRig", () => {
   it("keeps the format and each checked look's words; drops the rest", () => {
-    expect(normaliseShotRig({ format: "scope", words: { lens: "  An  anamorphic lens. ", mood: "x", focus: "" } })).toEqual({
+    expect(normaliseShotRig({ format: "scope", squeeze: 2, words: { lens: "  An  anamorphic lens. ", mood: "x", focus: "" } })).toEqual({
       format: "scope",
+      squeeze: 2,
       words: { lens: "An anamorphic lens." },
     });
-    expect(normaliseShotRig({ format: "imax" })).toEqual({ format: "square", words: {} });
+    // A row from before the squeeze was kept, and one with a squeeze the rig
+    // does not have, both read as spherical (2026-09-18).
+    expect(normaliseShotRig({ format: "scope" })).toEqual({ format: "scope", squeeze: 1, words: {} });
+    expect(normaliseShotRig({ format: "scope", squeeze: 3 })).toEqual({ format: "scope", squeeze: 1, words: {} });
+    expect(normaliseShotRig({ format: "imax" })).toEqual({ format: "square", squeeze: 1, words: {} });
     for (const junk of [null, 7, "rig", []]) expect(normaliseShotRig(junk)).toBeNull();
   });
 });

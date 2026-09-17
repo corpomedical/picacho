@@ -1,4 +1,7 @@
 import { DEFAULT_SET_RIG, rigSentences } from "./rig";
+import { hourWords } from "./time-of-day";
+import { gazeWords, type Gaze } from "./people";
+import { SET_SHAPES, type SetSpec } from "./set-spec";
 import { describe, expect, it } from "vitest";
 import { LOOK_SENTENCE, SET_SHOT_FIXED_SENTENCES, SOURCE_PHOTO_SENTENCE, buildSetShotPrompt, describeFacing, stripSetShotScaffold } from "./set-shot-prompt";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
@@ -171,10 +174,69 @@ describe("stripSetShotScaffold", () => {
     expect(stripSetShotScaffold(buildSetShotPrompt({ description: "", direction: "" }))).toBe("");
   });
 
+  it("removes every eye-line Picacho can write, for a still and for a take", () => {
+    const objects = SET_SHAPES.map((shape) => ({ shape, size: [1, 0.85, 12.25] }));
+    const spec = { objects } as unknown as Pick<SetSpec, "objects">;
+    const mark = { x: 0, z: 0, facingDeg: 0 };
+    const points: Gaze[] = [
+      { at: "point", x: 5, z: 0 },
+      { at: "point", x: 0, z: -2 },
+      { at: "point", x: 3, z: 4 },
+      { at: "point", x: -3.05, z: 0 },
+    ];
+    for (const lead of ["still", "take"] as const) {
+      const gazes: Gaze[] = [{ at: "camera" }, ...objects.map((_, index) => ({ at: "object", index }) as Gaze), ...points];
+      for (const g of gazes) {
+        const said = gazeWords(g, spec, mark, lead);
+        expect(said, JSON.stringify(g)).not.toBe("");
+        const full = buildSetShotPrompt({ description: "d", direction: "x", gaze: said });
+        expect(stripSetShotScaffold(full), `${lead} ${JSON.stringify(g)}`).toBe("d In this frame: x.");
+      }
+    }
+  });
+
+  it("never removes a word of the person's direction or Astra's description", () => {
+    // The patterns used to be `.*?\.` and `[^.]*`, matched anywhere: a
+    // direction that merely opened a sentence the way Picacho does was
+    // deleted from what the BRAND-RULE CHECK reads, while the model was sent
+    // it whole — the check must never read less (fixed 2026-09-18).
+    const spec = { objects: [{ shape: "box", size: [1, 1, 1] }] } as unknown as Pick<SetSpec, "objects">;
+    const mark = { x: 0, z: 0, facingDeg: 0 };
+    for (const words of [
+      "They look like they just left the Apple Store, holding a Starbucks cup.",
+      "A quiet street. They look up at the Coca-Cola billboard. Rain on the kerb.",
+      "Focus: the Rolex on her wrist. She smiles.",
+      "Light direction: the neon of the Pepsi sign. She turns.",
+      "Time of day: golden hour outside the Apple Store.",
+      "The person stands where the grey figure stands, at its scale; their body is covered in Nike logos.",
+      "By the end of the shot they look at the Ferrari badge.",
+    ]) {
+      const full = buildSetShotPrompt({
+        description: words,
+        direction: words,
+        lifted: true,
+        layout,
+        look: {},
+        sourcePhoto: true,
+        hour: hourWords(12),
+        rig: rigSentences(DEFAULT_SET_RIG, { distanceM: 4, fovDeg: 40, cameraBearingDeg: 180 }),
+        gaze: gazeWords({ at: "camera" }, spec, mark),
+      });
+      expect(stripSetShotScaffold(full), words).toBe(`${words} In this frame: ${words}`);
+    }
+  });
+
   it("every fixed sentence is one the prompt is built from", () => {
-    const shot = { description: "d", direction: "x", lifted: true, layout: null, look: {}, sourcePhoto: true } as const;
-    // The band's two sentences are one or the other: a frame is cut across or down, never both.
-    const full = buildSetShotPrompt({ ...shot, band: "rows" }) + " " + buildSetShotPrompt({ ...shot, band: "columns" });
+    // An hour among them: a staged hour rides a shot's words (2026-09-18).
+    const shot = { description: "d", direction: "x", lifted: true, layout: null, look: {}, sourcePhoto: true, hour: hourWords(12) } as const;
+    // The band's two sentences are one or the other: a frame is cut across or
+    // down, never both. The lifted sketch's two the same way: a staged hour
+    // hands the light to the words below, as a light plot does.
+    const full = [
+      buildSetShotPrompt({ ...shot, band: "rows" }),
+      buildSetShotPrompt({ ...shot, band: "columns" }),
+      buildSetShotPrompt({ ...shot, hour: "" }),
+    ].join(" ");
     for (const fixed of SET_SHOT_FIXED_SENTENCES) {
       if (fixed.endsWith("looks:") || fixed.endsWith("looks.")) continue;
       expect(full, fixed.slice(0, 40)).toContain(fixed);
@@ -231,3 +293,38 @@ describe("the rig's words (Helios Cinema)", () => {
   });
 });
 
+
+// The hour the stage drew (found reviewing Helios, fixed 2026-09-18): the
+// description carries the hour the set was BUILT at, the rig can stage
+// another, and only the description used to reach the picture model — so a
+// night market staged at noon was described as night over a noon sketch,
+// and the lifted-sketch sentence told the model to believe the description.
+describe("the hour the stage drew", () => {
+  const night = "Rain-dark cobbles under amber lamps, gutters shining in the misty night.";
+  const noon = hourWords(12);
+
+  it("a set built at night and staged at noon is described at noon", () => {
+    const p = buildSetShotPrompt({ description: night, direction: "", hour: noon });
+    expect(p).toContain(noon);
+    expect(p).toContain("Where the description's hour differs from the time of day above, the hour above wins.");
+    // After the description, so "above" is true.
+    expect(p.indexOf(night)).toBeLessThan(p.indexOf(noon));
+    // And none of it is the person's words: the brand-rule check reads none of it.
+    expect(stripSetShotScaffold(p)).toBe(night);
+  });
+
+  it("a lifted sketch at a staged hour takes its hour from the words below, not the description", () => {
+    const lifted = buildSetShotPrompt({ description: night, direction: "", lifted: true, hour: noon });
+    expect(lifted).toContain("take the light's direction from the sketch, and its mood, hour and colour from the light described below");
+    expect(lifted).not.toContain("take the time of day, how dark it is and the colour of the light from the description");
+    expect(stripSetShotScaffold(lifted)).toBe(night);
+  });
+
+  it("says nothing with no hour: the set as built is the description's own", () => {
+    expect(buildSetShotPrompt({ description: "d", direction: "", hour: "" })).toBe(buildSetShotPrompt({ description: "d", direction: "" }));
+    // A night hour reads as night, and strips as cleanly.
+    const dark = buildSetShotPrompt({ description: "d", direction: "", hour: hourWords(21) });
+    expect(dark).toContain("night: no sun, a low moon");
+    expect(stripSetShotScaffold(dark)).toBe("d");
+  });
+});

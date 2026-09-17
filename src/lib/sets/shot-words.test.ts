@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import raceTrack from "./fixtures-race-track.json";
-import { fovForLens } from "./build-scene";
+import { STAND_IN_HEIGHT_M, fovForLens } from "./build-scene";
+import { formatFrame } from "./rig";
 import { normaliseSetSpec } from "./set-spec";
 import { SET_MAX_TILT_DOWN_DEG, SET_MAX_TILT_UP_DEG } from "./set-config";
 import {
@@ -184,6 +185,31 @@ describe("wordsToMatch", () => {
   const mark = { x: 2, z: 3, facingDeg: 0 };
   const current = { position: [2, 1.6, 8] as [number, number, number], target: [2, 1, 3] as [number, number, number], fovDeg: 44.7 };
   const none = { side: null, size: null, height: null, tiltDeg: null, lensMm: null } as const;
+
+  it("stands back by the band's share, so a size word means the same person in the picture", () => {
+    // A size is how large the figure stands in the PICTURE, and every format
+    // but the square is cut to a band on the server (frame-cut.ts): Scope
+    // keeps 643 of the render's 1024 rows, so the square's 1.4 m close-up
+    // came back an extreme close-up and its "full" cut the head off (found
+    // reviewing Helios, fixed 2026-09-18).
+    const scope = formatFrame("scope");
+    const share = { heightShare: scope.bandH / scope.renderH };
+    const { match: m } = wordsToMatch({ ...none, size: "close_up" }, { mark, current, frame: share });
+    expect(m.subjectDistanceM).toBeCloseTo(SIZE_DISTANCE_M.close_up / share.heightShare, 6);
+    expect(m.subjectDistanceM ?? 0).toBeGreaterThan(SIZE_DISTANCE_M.close_up);
+    // The whole figure stays whole in a Scope "full": 1.75 m inside the band.
+    const full = wordsToMatch({ ...none, size: "full" }, { mark, current, frame: share }).match;
+    const shown = 2 * (full.subjectDistanceM ?? 0) * Math.tan((full.verticalFovDeg * Math.PI) / 360) * share.heightShare;
+    expect(shown).toBeGreaterThan(STAND_IN_HEIGHT_M);
+    // The square, the classic and the upright frame keep the plain distance.
+    for (const format of ["square", "classic", "vertical"] as const) {
+      const fr = formatFrame(format);
+      const got = wordsToMatch({ ...none, size: "close_up" }, { mark, current, frame: { heightShare: fr.bandH / fr.renderH } });
+      expect(got.match.subjectDistanceM, format).toBe(SIZE_DISTANCE_M.close_up);
+    }
+    // And left out entirely, nothing changes.
+    expect(wordsToMatch({ ...none, size: "close_up" }, { mark, current }).match.subjectDistanceM).toBe(SIZE_DISTANCE_M.close_up);
+  });
 
   it("stands the camera on the side asked for, at the size's distance, at the height's lens height", () => {
     const { match, from } = wordsToMatch({ ...none, side: "back", size: "close_up", height: "low" }, { mark, current });

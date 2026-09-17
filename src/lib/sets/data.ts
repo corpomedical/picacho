@@ -368,6 +368,7 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
           hasLookObjects: lendsLook(g.id as string),
           words: words.get(g.id as string) ?? null,
           format: rigs.get(g.id as string)?.rig?.format ?? "square",
+          squeeze: rigs.get(g.id as string)?.rig?.squeeze ?? 1,
           rigAsked: RIG_CHECK_ITEMS.filter((item) => Boolean(rigs.get(g.id as string)?.rig?.words[item])),
           rigCheck: rigs.get(g.id as string)?.check ?? null,
           pose: (() => {

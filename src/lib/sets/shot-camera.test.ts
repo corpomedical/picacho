@@ -63,7 +63,11 @@ describe("shotCameraOf", () => {
   });
 
   it("records nothing, rather than a camera moved to fit, for a pose no stage can have", () => {
-    expect(shotCameraOf({ ...LAYOUT, camera: { ...POSE, fovDeg: 5 } }, 1.6)).toBeNull();
+    // Under the floor, which is the longest lens on the smallest frame the
+    // rig offers (SET_LIMITS minLayoutFovDeg, 2026-09-18) — a 135 mm on
+    // Super 35 is 7.92° and is an ordinary camera.
+    expect(shotCameraOf({ ...LAYOUT, camera: { ...POSE, fovDeg: 2 } }, 1.6)).toBeNull();
+    expect(shotCameraOf({ ...LAYOUT, camera: { ...POSE, fovDeg: 7.92 } }, 1.6)).not.toBeNull();
     expect(shotCameraOf({ ...LAYOUT, camera: { ...POSE, position: [0, 1.6, 900] } }, 1.6)).toBeNull();
     expect(shotCameraOf(LAYOUT, 40)).toBeNull();
   });

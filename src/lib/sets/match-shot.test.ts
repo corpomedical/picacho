@@ -21,6 +21,7 @@ import {
   type ShotMatch,
 } from "./match-shot";
 import { SET_MATCH_INPUT_TOKENS, SET_MATCH_MAX_OUTPUT_TOKENS } from "./set-config";
+import { formatFrame, type RigFormat } from "./rig";
 import { normaliseSetSpec, SET_LIMITS } from "./set-spec";
 
 // Match this shot (2026-09-11): what the model is asked, what its answer may
@@ -513,7 +514,7 @@ describe("solveMatchPose — the lens", () => {
     // at its middle; the stage keeps down to 10°, the 135 mm chip's.
     const { pose, notes } = solve(6, 1.5, { subjectDistanceM: 20, cameraHeightM: 0.85 });
     const factor = Math.tan(3 * DEG) / Math.tan(5 * DEG);
-    expect(pose.fovDeg).toBe(SET_LIMITS.minLayoutFovDeg);
+    expect(pose.fovDeg).toBe(SET_LIMITS.minMatchFovDeg);
     expect(notes.fovClampedNarrow).toBe(true);
     expect(notes.distanceScaled).toBeCloseTo(factor, 9);
     expect(Math.hypot(pose.position[0] - MARK.x, pose.position[2] - MARK.z)).toBeCloseTo(20 * factor, 9);
@@ -676,7 +677,7 @@ describe("solveMatchPose — where the camera stands", () => {
       expect(finiteDeep(solved), label).toBe(true);
       const { position: p, target: t } = solved.pose;
       expect(Math.hypot(t[0] - p[0], t[1] - p[1], t[2] - p[2]), label).toBeGreaterThanOrEqual(0.5 - 1e-9);
-      expect(solved.pose.fovDeg, label).toBeGreaterThanOrEqual(SET_LIMITS.minLayoutFovDeg);
+      expect(solved.pose.fovDeg, label).toBeGreaterThanOrEqual(SET_LIMITS.minMatchFovDeg);
       expect(solved.pose.fovDeg, label).toBeLessThanOrEqual(90);
     }
   });
@@ -1100,5 +1101,73 @@ describe("pollUntilDeadline", () => {
     const f = fakeClock(2_000);
     expect(await pollUntilDeadline(f.poll(["done"]), (a) => a === "working", f.clock)).toBeNull();
     expect(f.polledAt).toEqual([]);
+  });
+});
+
+// The picture a match is compared with is the BAND the still is cut to
+// (rig.ts formatFrame, frame-cut.ts), not the whole render. Matched without
+// it, a Scope reference came back with its subject a quarter too large in
+// frame, and a subject read near an upright picture's left edge landed
+// outside it altogether (found reviewing Helios, fixed 2026-09-18).
+describe("solveMatchPose — the picture is the band, not the render", () => {
+  const shareOf = (format: RigFormat) => {
+    const fr = formatFrame(format);
+    return { bandAspect: fr.bandAspect, heightShare: fr.bandH / fr.renderH };
+  };
+  /** Where the mark's line crosses the BAND, 0 left to 1 right. */
+  const inBand = (pose: CameraPose, format: RigFormat) => {
+    const fr = formatFrame(format);
+    const cam = cameraAt(pose, fr.renderW / fr.renderH);
+    const ndc = new THREE.Vector3(MARK.x, pose.position[1], MARK.z).project(cam);
+    return 0.5 + ndc.x / (2 * (fr.bandW / fr.renderW));
+  };
+
+  it("sees taller by the band's share, so the reference's height spans the band", () => {
+    for (const format of ["scope", "flat", "wide"] as const) {
+      const share = shareOf(format);
+      const solved = solveMatchPose(match({ verticalFovDeg: 30, pitchDeg: 0, subjectX: 0.5 }), {
+        mark: MARK,
+        current: CURRENT,
+        referenceAspect: 1.5,
+        bounds: BOUNDS,
+        canvasAspect: 1,
+        frame: share,
+      });
+      const band = (2 * Math.atan(Math.tan((solved.pose.fovDeg * DEG) / 2) * share.heightShare)) / DEG;
+      expect(band, format).toBeCloseTo(30, 4);
+      expect(solved.pose.fovDeg, format).toBeGreaterThan(30);
+    }
+  });
+
+  it("leaves the square, the classic and the upright frame exactly as they were", () => {
+    const plain = solveMatchPose(match(), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS, canvasAspect: 1 });
+    for (const format of ["square", "classic", "vertical"] as const) {
+      const got = solveMatchPose(match(), {
+        mark: MARK,
+        current: CURRENT,
+        referenceAspect: 1.5,
+        bounds: BOUNDS,
+        canvasAspect: 1,
+        frame: shareOf(format),
+      });
+      expect(got.pose.fovDeg, format).toBeCloseTo(plain.pose.fovDeg, 9);
+    }
+  });
+
+  it("puts the subject where the reference had it across the band's width, upright frames included", () => {
+    for (const format of ["scope", "vertical"] as const) {
+      const solved = solveMatchPose(match({ subjectX: 0.2, pitchDeg: 0, verticalFovDeg: 40 }), {
+        mark: MARK,
+        current: CURRENT,
+        referenceAspect: 1,
+        bounds: BOUNDS,
+        canvasAspect: 1,
+        frame: shareOf(format),
+      });
+      const x = inBand(solved.pose, format);
+      expect(Math.abs(x - expectedX(0.2, 1)), format).toBeLessThanOrEqual(0.02);
+      // An upright picture is the one that used to push it off the edge.
+      expect(x, format).toBeGreaterThan(0);
+    }
   });
 });

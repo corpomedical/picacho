@@ -180,10 +180,19 @@ describe("the set page", () => {
   });
 
   it("reloads a tab a deploy left behind once, and says so", () => {
-    const behind = between(view, "const leftBehind = useCallback(", "[refreshNeeded],");
-    expect(behind).toContain("if (!isStaleDeployError(err)) return false;");
-    expect(behind).toContain("if (!reloadForNewDeploy({ delayMs: 1800 })) return false;");
+    // The guard is staleHere's, and leftBehind is that plus the page's own
+    // error line: every place that used to reload by itself — the match, the
+    // shoot, the take, a film beat, a retry, the words reader — now asks
+    // staleHere, so one tab reloads once (2026-09-18).
+    const guard = between(view, "const staleHere = useCallback((err: unknown): boolean => {", "}, []);");
+    expect(guard).toContain("if (!isStaleDeployError(err)) return false;");
+    expect(guard).toContain("if (reloadForNewDeploy({ delayMs: 1800 })) staleRef.current = true;");
+    const behind = between(view, "const leftBehind = useCallback(", "[staleHere, refreshNeeded],");
+    expect(behind).toContain("if (!staleHere(err)) return false;");
     expect(behind).toContain("setError(refreshNeeded);");
+    // And nothing on this page reloads on its own any more.
+    expect(view).not.toContain("location.reload");
+    expect(view.match(/const stale = staleHere\(err\);/g)?.length ?? 0).toBeGreaterThanOrEqual(6);
     // The polls and the best-effort saves reload through it too.
     expect(view).toContain("(err) => void leftBehind(err),");
     expect(view).toContain("saveSetLayout(setId, { ...layoutRef.current, camera: api.pose() }).catch((err) => void leftBehind(err));");

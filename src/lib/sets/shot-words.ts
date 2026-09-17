@@ -65,7 +65,7 @@ export type ShotWords = {
   facing: FigureFacing | null;
 };
 
-/** Lens to figure along the ground, metres, for each size of shot. */
+/** Lens to figure along the ground, metres, for each size of shot IN THE WHOLE RENDER — the band's share divides it (wordsToMatch). */
 export const SIZE_DISTANCE_M: Record<ShotSize, number> = { close_up: 1.4, medium: 2.4, full: 3.6, wide: 6.5 };
 /** Lens height for each height word: a low camera, eye level (set-view.tsx FRAME_EYE_Y), a high one. */
 export const HEIGHT_M: Record<CameraHeight, number> = { low: 0.7, eye: 1.45, high: 2.6 };
@@ -202,7 +202,13 @@ function pitchOf(pose: CameraPose): number {
  */
 export function wordsToMatch(
   w: Pick<ShotWords, "side" | "size" | "height" | "tiltDeg" | "lensMm">,
-  input: { mark: { x: number; z: number; facingDeg: number }; current: CameraPose; sensorHeightMm?: number },
+  input: {
+    mark: { x: number; z: number; facingDeg: number };
+    current: CameraPose;
+    sensorHeightMm?: number;
+    /** The band's share of the render's height (rig.ts formatFrame bandH / renderH); the whole render when left out. */
+    frame?: { heightShare: number };
+  },
 ): { match: ShotMatch; from: CameraPose } {
   const { mark, current } = input;
   const cx = current.position[0] - mark.x;
@@ -218,7 +224,13 @@ export function wordsToMatch(
   } else {
     [ux, uz] = sideUnit("front", mark.facingDeg);
   }
-  const distance = w.size ? SIZE_DISTANCE_M[w.size] : Math.max(MIN_DISTANCE_M, currentDistance);
+  // A size is how large the person stands in the PICTURE, and the picture is
+  // the band the still is cut to: Scope keeps 643 of the render's 1024 rows,
+  // so the square's 1.4 m close-up came back an extreme close-up and its
+  // "full" cut the head off (2026-09-18). The camera stands back by the
+  // band's share, which is the rule the page's own frameFigure follows.
+  const heightShare = input.frame && input.frame.heightShare > 0 ? Math.min(1, input.frame.heightShare) : 1;
+  const distance = w.size ? SIZE_DISTANCE_M[w.size] / heightShare : Math.max(MIN_DISTANCE_M, currentDistance);
   const height = w.height ? HEIGHT_M[w.height] : current.position[1];
   const pitch = w.tiltDeg ?? (w.height ? HEIGHT_TILT_DEG[w.height] : pitchOf(current));
   const fov = w.lensMm ? fovForLens(w.lensMm, input.sensorHeightMm) : current.fovDeg;

@@ -88,7 +88,7 @@ export function SharedPostsList({ initial }: { initial: SharedPostRow[] }) {
           </li>
         ))}
       </ul>
-      {error && <SettingsStatus state="error" message={error} className="mt-2" />}
+      {error && <SettingsStatus state="error" message={localizeServerText(error, t)} className="mt-2" />}
     </div>
   );
 }
@@ -133,7 +133,7 @@ export function BlockedAccountsList({ initial }: { initial: BlockedRow[] }) {
           </li>
         ))}
       </ul>
-      {error && <SettingsStatus state="error" message={error} className="mt-2" />}
+      {error && <SettingsStatus state="error" message={localizeServerText(error, t)} className="mt-2" />}
     </div>
   );
 }

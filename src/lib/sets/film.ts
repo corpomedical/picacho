@@ -9,7 +9,7 @@
 // page, the save action and the test all read the same shape.
 
 import type { StandPose, Vec3 } from "./set-spec";
-import { cleanText, STAND_POSES } from "./set-spec";
+import { cleanText, SET_LIMITS, STAND_POSES } from "./set-spec";
 import { RIG_TIME_MAX, RIG_TIME_MIN, RIG_TIME_STEP } from "./rig";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 import { isSetTakeEngine, SET_TAKE_DEFAULT_ENGINE, SET_TAKE_ENGINES, type SetTakeEngine } from "./take";
@@ -132,7 +132,10 @@ const pose = (v: unknown): FilmPose | null => {
   const target = vec3(p.target);
   const fov = typeof p.fovDeg === "number" && Number.isFinite(p.fovDeg) ? p.fovDeg : null;
   if (!position || !target || fov === null) return null;
-  return { position, target, fovDeg: Math.min(120, Math.max(10, Math.round(fov * 100) / 100)) };
+  // The floor is the one a saved camera keeps (SET_LIMITS), not a 10 written
+  // out here: a beat laid on a 135 mm Super 35 rig is 7.92° and was stored
+  // at 10°, which is another lens (2026-09-18).
+  return { position, target, fovDeg: Math.min(120, Math.max(SET_LIMITS.minLayoutFovDeg, Math.round(fov * 100) / 100)) };
 };
 
 /**

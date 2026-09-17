@@ -41,7 +41,7 @@ import {
   isBudgetExhaustedDetail,
   SESSION_EXPIRED_MESSAGE,
 } from "@/lib/generations/user-facing-error";
-import { isStaleDeployError } from "@/lib/stale-deploy";
+import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { createPortal } from "react-dom";
 import {
   storyboardCreditCost,
@@ -3635,7 +3635,7 @@ function GenerateFormInner({
       );
       setLiveMultiAngle(null);
       setSubmitting(false);
-      if (stale) setTimeout(() => window.location.reload(), 1800);
+      if (stale) reloadForNewDeploy({ delayMs: 1800 });
       return false;
     }
 
@@ -4752,7 +4752,7 @@ function GenerateFormInner({
       // nothing registered" until Pull up to edit).
       setComposerFolded(false);
       if (shouldSpeak) speak(formatMsg(g.speakError, { error: localizeServerText(message, t) }));
-      if (stale) setTimeout(() => window.location.reload(), 1800);
+      if (stale) reloadForNewDeploy({ delayMs: 1800 });
       return;
     }
 

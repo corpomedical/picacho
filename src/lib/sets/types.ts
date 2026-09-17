@@ -53,6 +53,8 @@ export type SetShot = {
   seconds: number | null;
   /** The rig format it was cut to (rig.ts, Helios Cinema); "square" for every shot before the rig, or with none. */
   format: RigFormat;
+  /** The anamorphic squeeze it was cut at (rig.ts formatFrame): the band is that much wider. 1 on every shot before 2026-09-18. */
+  squeeze: number;
   /** The looks its rig asked for in words, which the rig check reads it against (shot-rig.ts); [] when none. */
   rigAsked: RigCheckItem[];
   /** What the rig check read, once it has (rig-check.ts); null before, or when it asked nothing. */

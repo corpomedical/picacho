@@ -160,10 +160,13 @@ describe("normaliseShotCamera", () => {
 
   it("moves nothing: a lens, a canvas or a place no stage can have is no camera, never one brought inside the bounds", () => {
     // A camera held to a bound is not the camera the frame was drawn from.
-    for (const bad of [{ fovDeg: 5 }, { fovDeg: 170 }, { canvasAspect: 0.01 }, { canvasAspect: 50 }, { position: [0, 1.6, 401] }, { figure: { x: 0, z: 201 } }]) {
+    for (const bad of [{ fovDeg: 2 }, { fovDeg: 170 }, { canvasAspect: 0.01 }, { canvasAspect: 50 }, { position: [0, 1.6, 401] }, { figure: { x: 0, z: 201 } }]) {
       expect(normaliseShotCamera({ ...STILL_1, ...bad }), JSON.stringify(bad)).toBeNull();
     }
-    // The edges themselves are kept as they are.
+    // The edges themselves are kept as they are: the floor is the longest
+    // lens on the smallest frame the rig has (SET_LIMITS minLayoutFovDeg,
+    // 2026-09-18), so a 5° camera is now an ordinary one.
+    expect(normaliseShotCamera({ ...STILL_1, fovDeg: 5 })).toEqual({ ...STILL_1, fovDeg: 5 });
     expect(normaliseShotCamera({ ...STILL_1, fovDeg: 10, canvasAspect: 0.2 })).toEqual({ ...STILL_1, fovDeg: 10, canvasAspect: 0.2 });
     expect(normaliseShotCamera({ ...STILL_1, fovDeg: 90, canvasAspect: 10 })).toEqual({ ...STILL_1, fovDeg: 90, canvasAspect: 10 });
   });
@@ -683,6 +686,21 @@ describe("a rig frame's band (Helios Cinema)", () => {
     expect(top.v).toBeCloseTo(0, 6);
     expect(top.u).toBeCloseTo(0.5, 6);
     expect(right.u).toBeCloseTo(1, 6);
+  });
+
+  it("measures a squeezed still on the band the squeeze widened", () => {
+    // An anamorphic squeeze widens the negative and the band with it (rig.ts
+    // formatFrame, 2026-09-18): twice the width for the same lens, and
+    // exactly the same height — so every box was measured on the wrong shape
+    // while the cutout knew nothing of it.
+    const squeezed = { ...camera, frame: { render: 1.5, band: 2.39 * 2, squeeze: 2 } };
+    const project = sketchProjector(squeezed);
+    const d = 10;
+    expect(project([d * tv * 1.5 * 2, 0, -d])!.u).toBeCloseTo(1, 6);
+    expect(project([0, d * tv * (1.5 / 2.39), -d])!.v).toBeCloseTo(0, 6);
+    expect(normaliseShotCamera(squeezed)?.frame).toEqual({ render: 1.5, band: 2.39 * 2, squeeze: 2 });
+    // A squeeze no rig has is no camera at all.
+    expect(normaliseShotCamera({ ...camera, frame: { render: 1.5, band: 2.39, squeeze: 3 } })).toBeNull();
   });
 
   it("keeps the frame through the one door, and refuses a frame out of shape", () => {

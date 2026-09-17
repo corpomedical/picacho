@@ -4,6 +4,7 @@ import { useState } from "react";
 import { updatePassword } from "@/lib/profile/actions";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/provider";
+import { localizeServerText } from "@/lib/i18n/server-text";
 import { SettingsStatus } from "@/components/settings/settings-status";
 
 // Atelier form idiom (settings-popover, extended): caps label over an
@@ -106,7 +107,7 @@ export function PasswordForm({ hasPassword = true }: { hasPassword?: boolean }) 
         // `||`, not `??`: error starts as "" and an empty string is not
         // nullish, so the saved message — the one instruction this flow
         // depends on — never rendered (2026-09-11).
-        message={error || (status === "saved" ? t.settings.passwordUpdated : null)}
+        message={error ? localizeServerText(error, t) : status === "saved" ? t.settings.passwordUpdated : null}
       />
       <Button
         type="submit"

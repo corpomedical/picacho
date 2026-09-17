@@ -23,7 +23,7 @@
 <script type="module">
 import * as THREE from "three";
 import { normaliseSetSpec } from "./set-spec.js";
-import { buildSetScene, buildStandIn, placeStandIn } from "./build-scene.js";
+import { STAND_IN_EYE_M, buildSetScene, buildStandIn, placeStandIn, sketchStage } from "./build-scene.js";
 import { BASE_EXPOSURE, NO_LIFT, liftSet } from "./exposure.js";
 import { compareCrop, compareOutputSize, widenFovDeg } from "./compare.js";
 
@@ -95,16 +95,26 @@ window.renderSet = async (key, mark, poses) => {
   if (built.background) scene.background = built.background;
   if (built.fog) scene.fog = built.fog;
 
-  const standIn = buildStandIn(THREE, ACCENT);
+  // The figure stands as the set's arrangement has it; the eval arranges
+  // nobody, so it is the standing pose the page opens on — and its eyes are
+  // the pose's (set-view.tsx eyeY), not a constant.
+  const standIn = buildStandIn(THREE, ACCENT, undefined, "stand");
   const m0 = spec.marks[0];
   placeStandIn(standIn, mark ?? { x: m0.x, z: m0.z, facingDeg: m0.facingDeg });
   scene.add(standIn.group);
 
   const camera = new THREE.PerspectiveCamera(poses[0]?.fovDeg ?? spec.cameras[0].fovDeg, 1, 0.05, built.farPlane);
 
-  // The lift, measured without the grey figure (set-view.tsx, 2026-09-11).
+  // THE SKETCH, and its own lift (set-view.tsx frame(), build-scene.ts
+  // sketchStage, 2026-09-17): since the full stage arrived, what the picture
+  // model is sent is not the stage the person turns — it is the flat grey
+  // sketch, drawn at the sketch's own lift. Every frame this page hands over
+  // is a frame for the model, so the sketch stays on from here (the page
+  // turns it on around frame() and off again), and the lift is measured on
+  // it, without the grey figure (2026-09-11).
   let lift = NO_LIFT;
   standIn.group.visible = false;
+  sketchStage(scene, built.root, true);
   try {
     lift = liftSet(THREE, renderer, scene, spec, built.farPlane);
   } catch (err) {

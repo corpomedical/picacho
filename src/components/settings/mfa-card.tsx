@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/provider";
+import { localizeServerText } from "@/lib/i18n/server-text";
 
 // TOTP two-step verification for EVERY account (2026-09-11) — the admin
 // console has carried this since the 2026-09-05 flaw hunt (admin-mfa-card,
@@ -160,7 +161,7 @@ export function MfaCard() {
       )}
       {error && (
         <p role="alert" className="text-sm text-atelier-accent">
-          {error}
+          {localizeServerText(error, t)}
         </p>
       )}
     </div>

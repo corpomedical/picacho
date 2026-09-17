@@ -24,7 +24,7 @@ describe("layMove", () => {
   it("a dolly zoom meets the stage's longest lens by giving up distance, never size", () => {
     const tele: FilmPose = { ...from, fovDeg: 18 };
     const end = layMove("dolly-zoom", tele, mark, bounds);
-    expect(end.fovDeg).toBe(SET_LIMITS.minLayoutFovDeg);
+    expect(end.fovDeg).toBe(SET_LIMITS.minMatchFovDeg);
     const size = (p: FilmPose) => groundDistance(p, mark) * Math.tan((p.fovDeg * Math.PI) / 360);
     expect(size(end)).toBeCloseTo(size(tele), 1);
   });
@@ -67,7 +67,7 @@ describe("layMove", () => {
         expect(Math.abs(end.position[0]), m).toBeLessThanOrEqual(bounds.x / 2 + 10);
         expect(Math.abs(end.position[2]), m).toBeLessThanOrEqual(bounds.z / 2 + 10);
         expect(end.position[1], m).toBeGreaterThanOrEqual(0.2);
-        expect(end.fovDeg, m).toBeGreaterThanOrEqual(SET_LIMITS.minLayoutFovDeg);
+        expect(end.fovDeg, m).toBeGreaterThanOrEqual(SET_LIMITS.minMatchFovDeg);
         expect(end.fovDeg, m).toBeLessThanOrEqual(SET_LIMITS.maxFovDeg);
       }
     }

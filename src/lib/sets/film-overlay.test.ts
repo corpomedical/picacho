@@ -170,7 +170,7 @@ describe("the stage's overlay", () => {
     const plan = between("// Film's overlay (canvas pages H and I): the move's path through the set,", "// The moves closing, or the page going");
     expect(plan).toMatch(/if \(!filmOpen\) \{\s*api\.setFilmOverlay\(null, \[\]\);\s*return;\s*\}/);
     expect(plan).toContain("start: shots.find((sh) => sh.generationId === film.startId)?.pose ?? null,");
-    expect(plan).toContain("frame: { bandAspect: fr.bandAspect, heightShare: fr.bandH / fr.renderH },");
+    expect(plan).toContain("frame: { bandAspect: fr.bandAspect, heightShare: fr.heightShare },");
     expect(plan).toContain('apiRef.current?.holdFilmOverlay("previz", previz);');
     expect(between("const stopMovePreview = useCallback(() => {", "}, []);")).toContain('apiRef.current?.holdFilmOverlay("hover", false);');
     expect(between("function previewFilmMove(move: FilmMove | null) {", "MOVE_PREVIEW_REST_MS);")).toMatch(

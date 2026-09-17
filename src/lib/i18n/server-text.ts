@@ -215,6 +215,31 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   // The rig check (lib/sets/messages.ts, 2026-09-15, Helios Cinema).
   "The rig check couldn't read this still — the still is kept as it is.": "setRigCheckFailed",
   "You're checking stills quickly — give it a moment.": "setRigCheckTooFast",
+  // Settings (lib/profile/actions.ts) — the inline line under a settings
+  // form. English on the wire like every other server string; mapped here so
+  // the localized app stops answering in English (found 2026-09-18).
+  "Usernames are 3-24 characters — lowercase letters, numbers, and underscores only.": "usernameRules",
+  "That username is taken.": "usernameTaken",
+  "Invalid setting.": "settingInvalid",
+  "Enter a valid email address.": "emailInvalid",
+  "Password must be at least 8 characters.": "passwordTooShort",
+  "Passwords don't match.": "passwordsDontMatch",
+  "Enter your current password to confirm this change.": "currentPasswordNeeded",
+  "Too many attempts — wait a minute and try again.": "tooManyAttempts",
+  "That password isn't right — check it and try again.": "currentPasswordWrong",
+  "This reset link session has expired — use the link from your reset email again, or change your password from Settings.": "resetLinkExpired",
+  // The community feed's definer functions (supabase/applied/**/community*.sql
+  // and the moderation migrations): Postgres raises these sentences, the
+  // share and report actions strip the "Exception: " prefix and return them
+  // as they are, and the buttons render them through this map.
+  "Sign in required.": "shareSignInRequired",
+  "Couldn't find that generation.": "shareGenerationMissing",
+  "Only finished renders can be shared.": "shareOnlyFinished",
+  "This render has no shareable media.": "shareNoMedia",
+  "This post was removed by moderation and can't be shared again.": "shareRemovedByModeration",
+  "Post not found.": "sharePostNotFound",
+  "Pick a reason for the report.": "reportPickReason",
+  "You're reporting quickly — give it a moment.": "reportTooFast",
 };
 
 // The prompt gate's answers (content-policy.ts refusalMessages). The composer

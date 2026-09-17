@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/provider";
 import { localizeServerText } from "@/lib/i18n/server-text";
@@ -172,6 +172,7 @@ function Num({
   ax,
   unit,
   className,
+  label,
 }: {
   value: number;
   onCommit: (v: number) => void;
@@ -180,7 +181,11 @@ function Num({
   ax?: string;
   unit?: string;
   className?: string;
+  /** Its own name, where it sits outside a row (the context bar). */
+  label?: string;
 }) {
+  const row = useContext(RowLabel);
+  const name = [label ?? row, ax].filter(Boolean).join(" ");
   const [text, setText] = useState(() => String(value));
   // A fresh value from outside replaces the draft, the render-time way.
   const [seen, setSeen] = useState(value);
@@ -207,6 +212,7 @@ function Num({
       <input
         type="text"
         inputMode="decimal"
+        aria-label={name || undefined}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onBlur={commitText}
@@ -220,24 +226,37 @@ function Num({
   );
 }
 
+/**
+ * The row a field sits in, so the fields can name themselves. The
+ * inspector's numbers, sliders and colours are bare inputs under a <span>
+ * that only LOOKS like a label, so a screen reader read every one of them as
+ * "edit text" (found reviewing Helios, fixed 2026-09-18). PRow provides its
+ * words; a number adds its axis.
+ */
+const RowLabel = createContext("");
+
 function Vec3Row({
   value,
   onCommit,
   min,
   max,
   axes = ["X", "Y", "Z"],
+  label,
 }: {
   value: Vec3;
   onCommit: (v: Vec3) => void;
   min?: number;
   max?: number;
   axes?: [string, string, string];
+  /** Its own name, where the row is not one (the context bar). */
+  label?: string;
 }) {
   return (
     <span className="flex min-w-0 flex-1 items-center gap-1.5">
       {([0, 1, 2] as const).map((i) => (
         <Num
           key={axes[i]}
+          label={label}
           ax={axes[i]}
           value={value[i]}
           min={min}
@@ -254,7 +273,8 @@ function Vec3Row({
 }
 
 /** A colour the panel edits: the picker debounced, the hex checked. */
-function ColorField({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+function ColorField({ value, onCommit, hexLabel }: { value: string; onCommit: (v: string) => void; hexLabel: string }) {
+  const row = useContext(RowLabel);
   const [text, setText] = useState(value);
   const [seen, setSeen] = useState(value);
   if (seen !== value) {
@@ -278,6 +298,7 @@ function ColorField({ value, onCommit }: { value: string; onCommit: (v: string) 
       <span className="relative h-6 w-7 flex-none overflow-hidden rounded-[4px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.15)]" style={{ background: value }}>
         <input
           type="color"
+          aria-label={row || undefined}
           value={value}
           onChange={(e) => {
             const v = e.target.value;
@@ -289,6 +310,7 @@ function ColorField({ value, onCommit }: { value: string; onCommit: (v: string) 
         />
       </span>
       <input
+        aria-label={row ? `${row} ${hexLabel}` : hexLabel}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onBlur={commitHex}
@@ -314,6 +336,7 @@ function Slider({
   step: number;
   onCommit: (v: number) => void;
 }) {
+  const row = useContext(RowLabel);
   const [v, setV] = useState(value);
   const [seen, setSeen] = useState(value);
   if (seen !== value) {
@@ -327,6 +350,7 @@ function Slider({
     <span className="flex min-w-0 flex-1 items-center gap-2">
       <input
         type="range"
+        aria-label={row || undefined}
         min={min}
         max={max}
         step={step}
@@ -391,7 +415,7 @@ function PRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex min-h-[30px] items-center gap-1.5 px-3">
       <span className={ROW_LABEL}>{label}</span>
-      {children}
+      <RowLabel.Provider value={label}>{children}</RowLabel.Provider>
     </div>
   );
 }
@@ -426,6 +450,19 @@ export function SetEditor({
   const [checkOpen, setCheckOpen] = useState(false);
   const [snap, setSnap] = useState(true);
   const [history, setHistory] = useState<string[]>(() => [JSON.stringify(initialEdited ?? original)]);
+  /** Astra's original as the history keeps a copy, for naming the rows that hold it. */
+  const originalKey = useMemo(() => JSON.stringify(original), [original]);
+  /**
+   * What a history row IS. Row 0 is the copy the editor opened on — Astra's
+   * original only when nothing had been saved before — and the original can
+   * also sit further down, put back by restoreOriginal; past sixty edits the
+   * list is sliced and row 0 is neither. It was labelled by its index, so on
+   * every return visit to an edited set the first row promised Astra's
+   * original and restored the working copy, and the bar read "Edit 0", which
+   * names nothing (found reviewing Helios, fixed 2026-09-18).
+   */
+  const rowLabel = (i: number) =>
+    history[i] === originalKey ? s.editorOriginal : i === 0 ? s.editorOpened : formatMsg(s.editorEditN, { n: i });
   const [at, setAt] = useState(0);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "failed">("idle");
   // What the server holds, compared the way unsaved.ts compares it: the copy
@@ -812,6 +849,15 @@ export function SetEditor({
   async function sendAsk() {
     const text = ask.trim();
     if (!text || asking || astraTooBig) return;
+    // The month's changes are spent. Said here rather than sent: the server
+    // refuses it anyway, but only after a gated, paid read of the words and
+    // one of the pace's hits (editor-actions.ts). Send was held silently and
+    // Enter was not held at all (found reviewing Helios, fixed 2026-09-18).
+    if (editsLeft === 0) {
+      setAskNote(null);
+      setAskError(s.editorAskCapped);
+      return;
+    }
     setAsking(true);
     setAskError("");
     setAskNote(null);
@@ -835,9 +881,12 @@ export function SetEditor({
     } catch (err) {
       // A dropped connection or a stale deploy: the bar is let go and says
       // so, rather than saying Astra is still at work for good.
+      // A stale deploy reloads through the one shared guard, and saveMissed
+      // keeps the working copy across it — the reload here used to take the
+      // unsaved change with it (2026-09-18).
       const stale = isStaleDeployError(err);
+      if (stale) saveMissed(specRef.current, err);
       setAskError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
-      if (stale) setTimeout(() => window.location.reload(), 1800);
       return;
     } finally {
       setAsking(false);
@@ -1548,7 +1597,7 @@ export function SetEditor({
                 <button
                   type="button"
                   onClick={() => void sendAsk()}
-                  disabled={asking || ask.trim().length === 0 || editsLeft === 0 || astraTooBig}
+                  disabled={asking || ask.trim().length === 0 || astraTooBig}
                   className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-[7px] bg-[#e0a468] text-[#1b1c20] disabled:cursor-default disabled:bg-white/[0.06] disabled:text-[#9aa0ad]"
                   aria-label={s.editorAskSend}
                 >
@@ -1591,7 +1640,7 @@ export function SetEditor({
           film: { label: s.filmTab, onClick: () => void done(`${closeHref}?film=1`) },
           cut: { label: s.studio.cutMode, onClick: () => void done(`${closeHref}?cut=1`) },
         }}
-        view={{ mode: view, onChange: setView, names: { lit: s.editorViewLit, clay: s.editorViewClay, wire: s.editorViewWire, depth: s.editorViewDepth } }}
+        view={{ mode: view, onChange: setView, label: s.studio.viewLabel, names: { lit: s.editorViewLit, clay: s.editorViewClay, wire: s.editorViewWire, depth: s.editorViewDepth } }}
         find={{ label: s.studio.find, kbd: s.palette.open, onOpen: openFind }}
         primary={
           <button
@@ -1609,7 +1658,7 @@ export function SetEditor({
         <button type="button" onClick={redo} disabled={at >= history.length - 1} className={ICON_BTN} title={s.editorRedo} aria-label={s.editorRedo}>
           <Svg d={D.redo} className="h-[15px] w-[15px]" />
         </button>
-        <span className="text-[12px] tabular-nums text-[#9aa0ad]">{formatMsg(s.editorEditN, { n: at })}</span>
+        <span className="text-[12px] tabular-nums text-[#9aa0ad]">{rowLabel(at)}</span>
         <span aria-hidden className="h-5 w-px bg-white/[0.09]" />
         <span className="text-[12px] text-[#6b6f7a]">{saveLine}</span>
         <button
@@ -1745,7 +1794,7 @@ export function SetEditor({
         </div>
 
         {/* The dock (studio-frame.tsx): the scene and its properties, the edits, Astra — with Astra's prompt at its foot whatever the tab. */}
-        <StudioDock label={s.editorScene} tabs={dockTabsFor("build", false)} names={s.studio.dock} tab={dockTab} onTab={setDockTab} foot={promptBar}>
+        <StudioDock label={s.studio.dockLabel} tabs={dockTabsFor("build", false)} names={s.studio.dock} tab={dockTab} onTab={setDockTab} foot={promptBar}>
           {dockTab === "scene" && (
             <div className="flex h-full min-h-0 flex-col">
               <div className={`flex flex-none items-center gap-2 border-b ${HAIR} px-3 py-2`}>
@@ -1799,7 +1848,7 @@ export function SetEditor({
                 </PRow>
                 <div className={SHEAD}>{s.editorColor}</div>
                 <PRow label={s.editorColor}>
-                  <ColorField value={selObject.color} onCommit={(v) => commit(patchObject(spec, sel.index, { color: v }))} />
+                  <ColorField hexLabel={s.editorHex} value={selObject.color} onCommit={(v) => commit(patchObject(spec, sel.index, { color: v }))} />
                 </PRow>
                 <PRow label={s.editorRoughness}>
                   <Slider value={selObject.roughness} min={0} max={1} step={0.05} onCommit={(v) => commit(patchObject(spec, sel.index, { roughness: v }))} />
@@ -1818,7 +1867,7 @@ export function SetEditor({
                 <PRow label={s.editorGlow}>
                   {selObject.emissive ? (
                     <span className="flex min-w-0 flex-1 items-center gap-2">
-                      <ColorField value={selObject.emissive} onCommit={(v) => commit(patchObject(spec, sel.index, { emissive: v }))} />
+                      <ColorField hexLabel={s.editorHex} value={selObject.emissive} onCommit={(v) => commit(patchObject(spec, sel.index, { emissive: v }))} />
                       <Num
                         value={selObject.emissiveIntensity}
                         min={0}
@@ -1896,7 +1945,7 @@ export function SetEditor({
                   <span className="text-[12px] text-[#ecedf1]">{lightKindName(selLight.kind)}</span>
                 </PRow>
                 <PRow label={s.editorColor}>
-                  <ColorField value={selLight.color} onCommit={(v) => commit(patchLight(spec, sel.index, { color: v }))} />
+                  <ColorField hexLabel={s.editorHex} value={selLight.color} onCommit={(v) => commit(patchLight(spec, sel.index, { color: v }))} />
                 </PRow>
                 {/* Kelvin writes the colour (light-kelvin.ts): a way of choosing one, not new data. */}
                 <PRow label={s.editorKelvin}>
@@ -1952,7 +2001,7 @@ export function SetEditor({
                 )}
                 {selLight.kind === "hemisphere" && (
                   <PRow label={s.editorGroundBounce}>
-                    <ColorField value={selLight.groundColor ?? spec.ground.color} onCommit={(v) => commit(patchLight(spec, sel.index, { groundColor: v }))} />
+                    <ColorField hexLabel={s.editorHex} value={selLight.groundColor ?? spec.ground.color} onCommit={(v) => commit(patchLight(spec, sel.index, { groundColor: v }))} />
                   </PRow>
                 )}
               </>
@@ -2022,6 +2071,7 @@ export function SetEditor({
                     {spec.sky.colors.map((c, i) => (
                       <PRow key={`sky${i}`} label={i === 0 ? s.editorColor : ""}>
                         <ColorField
+                          hexLabel={s.editorHex}
                           value={c}
                           onCommit={(v) => {
                             const colors = [...spec.sky.colors];
@@ -2037,7 +2087,7 @@ export function SetEditor({
                   <>
                     <div className={SHEAD}>{s.editorGround}</div>
                     <PRow label={s.editorColor}>
-                      <ColorField value={spec.ground.color} onCommit={(v) => commit(patchGround(spec, { color: v }))} />
+                      <ColorField hexLabel={s.editorHex} value={spec.ground.color} onCommit={(v) => commit(patchGround(spec, { color: v }))} />
                     </PRow>
                     <PRow label={s.editorRoughness}>
                       <Slider value={spec.ground.roughness} min={0} max={1} step={0.05} onCommit={(v) => commit(patchGround(spec, { roughness: v }))} />
@@ -2073,7 +2123,7 @@ export function SetEditor({
                     {fogNow && (
                       <>
                         <PRow label={s.editorColor}>
-                          <ColorField value={fogNow.color} onCommit={(v) => commit(patchFog(spec, { ...fogNow, color: v }))} />
+                          <ColorField hexLabel={s.editorHex} value={fogNow.color} onCommit={(v) => commit(patchFog(spec, { ...fogNow, color: v }))} />
                         </PRow>
                         <PRow label={s.editorFogNearFar}>
                           <span className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -2113,7 +2163,7 @@ export function SetEditor({
                       i === at ? "bg-white/[0.08] font-medium text-[#ecedf1]" : "text-[#9aa0ad] hover:bg-white/[0.05] hover:text-[#ecedf1]"
                     }`}
                   >
-                    <span>{i === 0 ? s.editorOriginal : formatMsg(s.editorEditN, { n: i })}</span>
+                    <span>{rowLabel(i)}</span>
                     {i === at && <span aria-hidden>✓</span>}
                   </button>
                 ))}

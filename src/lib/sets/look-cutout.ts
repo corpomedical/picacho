@@ -217,7 +217,7 @@ export type ShotCamera = {
    * Absent for every square still, whose sketch is the canvas's centre
    * square as before.
    */
-  frame?: { render: number; band: number };
+  frame?: { render: number; band: number; squeeze?: number };
 };
 
 /**
@@ -242,7 +242,7 @@ const within = (v: unknown, lo: number, hi: number): v is number => finite(v) &&
 
 /**
  * A shot's frame exactly as it was, or nothing: a pose, a lens a saved
- * layout can hold (SET_LIMITS minLayoutFovDeg–maxFovDeg), a canvas shape
+ * layout can hold (SET_LIMITS minLayoutFovDeg–maxLayoutFovDeg), a canvas shape
  * inside CANVAS_ASPECT and the figure's place, every one as given. Nothing
  * is clamped, because a camera moved to fit a bound is not the camera the
  * frame was drawn from, and its boxes would miss what the still shows. Null
@@ -259,7 +259,7 @@ export function normaliseShotCamera(value: unknown): ShotCamera | null {
   const target = vec(v.target);
   if (!position || !target) return null;
   if (Math.hypot(target[0] - position[0], target[1] - position[1], target[2] - position[2]) < 0.1) return null;
-  if (!within(v.fovDeg, SET_LIMITS.minLayoutFovDeg, SET_LIMITS.maxFovDeg)) return null;
+  if (!within(v.fovDeg, SET_LIMITS.minLayoutFovDeg, SET_LIMITS.maxLayoutFovDeg)) return null;
   if (!within(v.canvasAspect, CANVAS_ASPECT[0], CANVAS_ASPECT[1])) return null;
   const f = v.figure && typeof v.figure === "object" ? (v.figure as Record<string, unknown>) : null;
   const edge = SET_LIMITS.maxCoordinate;
@@ -268,13 +268,24 @@ export function normaliseShotCamera(value: unknown): ShotCamera | null {
   if (v.frame !== undefined) {
     const fr = v.frame && typeof v.frame === "object" ? (v.frame as Record<string, unknown>) : null;
     if (!fr || !within(fr.render, FRAME_ASPECT[0], FRAME_ASPECT[1]) || !within(fr.band, FRAME_ASPECT[0], FRAME_ASPECT[1])) return null;
-    camera.frame = { render: fr.render, band: fr.band };
+    // The anamorphic squeeze the negative was widened by (2026-09-18): a
+    // still shot at 2× spans twice the width for the same lens, and its
+    // boxes are measured on that. Absent on every still shot before, and on
+    // every spherical one, which is the same as 1.
+    if (fr.squeeze !== undefined && !within(fr.squeeze, 1, MAX_SQUEEZE)) return null;
+    camera.frame = { render: fr.render, band: fr.band, ...(fr.squeeze !== undefined ? { squeeze: fr.squeeze } : {}) };
   }
   return camera;
 }
 
-/** A rig frame's shapes, width ÷ height: 9 : 16 at the narrowest, 2.39 : 1 at the widest, with room. */
-const FRAME_ASPECT = [0.4, 3] as const;
+/**
+ * A rig frame's shapes, width ÷ height: 9:16 at the narrowest, and at the
+ * widest a 2.39 band widened by the rig's 2× squeeze (4.78), with room. This
+ * module names no rig, so the squeeze's own ceiling is a number here too.
+ */
+const FRAME_ASPECT = [0.4, 5] as const;
+/** The widest anamorphic squeeze the rig offers (rig.ts RIG_SQUEEZES). */
+const MAX_SQUEEZE = 2;
 
 /** The field of view of the sketch's square: the lens's on a landscape canvas, the canvas's width's on a portrait one. */
 export function sketchFovDeg(fovDeg: number, canvasAspect: number): number {
@@ -312,7 +323,9 @@ export function sketchProjector(camera: ShotCamera): (point: Vec3) => { u: numbe
   let tx: number;
   let ty: number;
   if (camera.frame) {
-    const tv = Math.tan((camera.fovDeg * DEG) / 2);
+    // The negative is widened by the squeeze (rig.ts formatFrame): the band
+    // spans the lens's own height and that much more width.
+    const tv = Math.tan((camera.fovDeg * DEG) / 2) * (camera.frame.squeeze ?? 1);
     const kept = Math.min(camera.frame.render, camera.frame.band);
     tx = tv * kept;
     ty = (tv * kept) / camera.frame.band;

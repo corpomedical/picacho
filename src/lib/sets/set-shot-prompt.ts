@@ -29,9 +29,10 @@
 //
 // Relative imports only: tested without the "@/" alias.
 
-import { cleanText, type SetLayout } from "./set-spec";
+import { SET_SHAPES, cleanText, type SetLayout } from "./set-spec";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 import { RIG_FIXED_SENTENCES, RIG_NUMBERED_SENTENCE } from "./rig";
+import { TIME_OF_DAY_SENTENCE } from "./time-of-day";
 
 const DEG = Math.PI / 180;
 
@@ -131,6 +132,10 @@ const LIFTED_SENTENCE =
 const LIFTED_RIG_SENTENCE =
   "The sketch is lit brighter than the real scene so its layout can be read: take the light's direction from the sketch, and its mood, hour and colour from the light described below.";
 const LIGHT_WINS_SENTENCE = "Where the description's hour or light differs from the light described below, the light below wins.";
+// The hour the STAGE drew (time-of-day.ts hourWords) against the hour Astra
+// wrote: the description is the set as built, the rig can stage another, and
+// until 2026-09-18 only the description reached the model.
+const HOUR_WINS_SENTENCE = "Where the description's hour differs from the time of day above, the hour above wins.";
 const RENDER_PREFIX = "Render the location photorealistically, as it really looks";
 const GAZE_SENTENCE = "Wherever they are looking, make it unmistakable: turn the head and eyes to it.";
 const FACE_SENTENCE = "The grey figure has no face, hair or clothing to copy: take the person's face, hair and features only from the character photos.";
@@ -144,6 +149,7 @@ export const SET_SHOT_FIXED_SENTENCES: readonly string[] = [
   LIFTED_SENTENCE,
   `${RENDER_PREFIX}:`,
   `${RENDER_PREFIX}.`,
+  HOUR_WINS_SENTENCE,
   LOOK_SENTENCE,
   SOURCE_PHOTO_SENTENCE,
   GAZE_SENTENCE,
@@ -158,6 +164,29 @@ export const SET_SHOT_FIXED_SENTENCES: readonly string[] = [
  */
 export const SET_SHOT_RIG_SENTENCES: readonly string[] = [LIFTED_RIG_SENTENCE, LIGHT_WINS_SENTENCE, ...RIG_FIXED_SENTENCES];
 
+// The two sentences Picacho writes ABOUT THE PERSON, anchored to every form
+// they can take: the facings describeFacing can name, and the eye-lines
+// people.ts gazeWords can write (its shape vocabulary and its numbers,
+// which r1 prints with at most one decimal).
+//
+// Anchored because they used to be `[^.]*` and `.*?\.`, matched anywhere in
+// the prompt with the g flag: a direction of the person's own that merely
+// opened a sentence with "They look" — or an Astra description that did —
+// was deleted from what the BRAND-RULE CHECK reads, while the model was
+// sent it whole (found reviewing Helios, fixed 2026-09-18). The check may
+// never read less than the model is sent, except Picacho's own words.
+const GAZE_N = "\\d+(?:\\.\\d)?";
+const SET_SHOT_GAZE_SENTENCE = new RegExp(
+  "(?:By the end of the shot they|They) look " +
+    "(?:straight into the camera, eyes to the lens" +
+    `|at the (?:${SET_SHAPES.join("|")}) ${GAZE_N} × ${GAZE_N} × ${GAZE_N} m, their eyes on it` +
+    `|(?:straight ahead of them|back over their shoulder|off to their (?:left|right)), at something ${GAZE_N} m away, out of the frame` +
+    ")\\.",
+  "g",
+);
+const FIGURE_FACING_SENTENCE =
+  /The person stands where the grey figure stands, at its scale(?:, facing the same way|; their body (?:faces the camera|has their back to the camera|is in profile, facing frame (?:left|right)|is turned three-quarters (?:toward|away from) the camera, facing frame (?:left|right)))\./g;
+
 /**
  * The prompt's fixed sentences — Picacho's own words, the same in every Set
  * shot — with the description and the person's direction left in place.
@@ -171,9 +200,11 @@ export function stripSetShotScaffold(prompt: string): string {
   let out = prompt;
   for (const fixed of [...SET_SHOT_FIXED_SENTENCES, ...SET_SHOT_RIG_SENTENCES]) out = out.split(fixed).join(" ");
   out = out.replace(RIG_NUMBERED_SENTENCE, " ");
-  out = out.replace(/The person stands where the grey figure stands, at its scale(?:; their body [^.]*|, facing the same way)\./g, " ");
-  // The eye-line (people.ts gazeWords): Picacho's sentence, with a thing's size in it.
-  out = out.replace(/(?:By the end of the shot they|They) look .*?(?<!\d)\.(?!\d)/g, " ");
+  // The hour, whose numbers are the sun's (time-of-day.ts): Picacho's words,
+  // so the brand-rule check must not read them as the person's.
+  out = out.replace(TIME_OF_DAY_SENTENCE, " ");
+  out = out.replace(FIGURE_FACING_SENTENCE, " ");
+  out = out.replace(SET_SHOT_GAZE_SENTENCE, " ");
   return out.replace(/\s+/g, " ").trim();
 }
 
@@ -194,6 +225,8 @@ export function buildSetShotPrompt(input: {
   rig?: readonly string[];
   /** Whether the rig re-lights the frame (a light scheme is on). */
   rigLight?: boolean;
+  /** The hour the stage drew, in Picacho's words (time-of-day.ts hourWords); "" says nothing. */
+  hour?: string;
   /** The eye-line (cut D, people.ts gazeWords): where the person looks; "" says nothing. */
   gaze?: string;
   /** The band's strips on the sketch (rig.ts bandSide): across the top and bottom, down the sides, or none. */
@@ -205,8 +238,12 @@ export function buildSetShotPrompt(input: {
   return [
     ...SKETCH_SENTENCES,
     input.band === "rows" ? BAND_ROWS_SENTENCE : input.band === "columns" ? BAND_COLUMNS_SENTENCE : "",
-    input.lifted ? (input.rigLight ? LIFTED_RIG_SENTENCE : LIFTED_SENTENCE) : "",
+    // A staged hour reads like a light plot here: the sketch's own light is
+    // the hour's, so the description's hour is not what to believe.
+    input.lifted ? (input.rigLight || input.hour ? LIFTED_RIG_SENTENCE : LIFTED_SENTENCE) : "",
     description ? `${RENDER_PREFIX}: ${description}` : `${RENDER_PREFIX}.`,
+    input.hour ?? "",
+    input.hour ? HOUR_WINS_SENTENCE : "",
     input.rigLight && !input.lifted ? LIGHT_WINS_SENTENCE : "",
     ...(input.rig ?? []),
     input.look ? LOOK_SENTENCE : "",

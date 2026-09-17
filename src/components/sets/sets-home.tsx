@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/provider";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { formatMsg } from "@/lib/i18n/format";
-import { isStaleDeployError } from "@/lib/stale-deploy";
+import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { deleteSet, pollSetBuild, submitSetBuild, submitSetPhotoBuild } from "@/lib/sets/actions";
 import { readSetRequest } from "@/lib/sets/words-actions";
 import { buildingHintKey, pageSetNotice, photoMetaKey } from "@/lib/sets/leaving";
@@ -201,6 +201,12 @@ export function SetsHome({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const briefRef = useRef<HTMLTextAreaElement | null>(null);
+  /**
+   * A send is on its way. Read the moment a call starts, so a second Enter
+   * before the composer paints as busy cannot start a second paid read and a
+   * second build — the set page's own busyRef rule (2026-09-17).
+   */
+  const sendingRef = useRef(false);
 
   // A refresh brings the server's truth (titles, thumbnails) for sets that
   // finished; it replaces the local list. Adjusted during render, not in an
@@ -236,7 +242,9 @@ export function SetsHome({
           res = await pollSetBuild(id);
         } catch (err) {
           if (isStaleDeployError(err)) {
-            window.location.reload();
+            // Through the one shared guard (stale-deploy.ts): a tick that
+            // keeps failing cannot reload the page over and over.
+            reloadForNewDeploy();
             return;
           }
           threw = true;
@@ -323,12 +331,18 @@ export function SetsHome({
     const message = brief.trim();
     // The send button's own rule, for Enter too: at the month's cap a new
     // place is refused anyway — and only after a paid read of the message.
-    if (!canSend) return;
+    if (!canSend || sendingRef.current) return;
+    // Where this message goes, read ONCE. The chips that decide it are held
+    // while a send is out (below), so what was on screen is what was sent:
+    // picking a set mid-send used to pay for a new place and go to it
+    // (found reviewing Helios, fixed 2026-09-18).
+    const toSet = setPick;
     setError("");
-    if (setPick) {
-      router.push(threadHref(setPick, message));
+    if (toSet) {
+      router.push(threadHref(toSet, message));
       return;
     }
+    sendingRef.current = true;
     setStarting(true);
     let place = message.slice(0, SET_BRIEF_MAX_CHARS);
     let res: Awaited<ReturnType<typeof submitSetBuild>>;
@@ -345,9 +359,10 @@ export function SetsHome({
     } catch (err) {
       const stale = isStaleDeployError(err);
       setError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
-      if (stale) setTimeout(() => window.location.reload(), 1800);
+      if (stale) reloadForNewDeploy({ delayMs: 1800 });
       return;
     } finally {
+      sendingRef.current = false;
       setStarting(false);
     }
     if (res.error !== null) {
@@ -402,7 +417,7 @@ export function SetsHome({
     } catch (err) {
       const stale = isStaleDeployError(err);
       setError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
-      if (stale) setTimeout(() => window.location.reload(), 1800);
+      if (stale) reloadForNewDeploy({ delayMs: 1800 });
       return;
     } finally {
       setPhotoStarting(false);
@@ -440,7 +455,7 @@ export function SetsHome({
     } catch (err) {
       const stale = isStaleDeployError(err);
       setError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
-      if (stale) setTimeout(() => window.location.reload(), 1800);
+      if (stale) reloadForNewDeploy({ delayMs: 1800 });
       return;
     } finally {
       setDeleting(null);
@@ -456,6 +471,9 @@ export function SetsHome({
 
   /** An example, into the composer: its words, with the person's own character's name, for a new place. */
   function recreate(prompt: string) {
+    // Never over a send that is out: it would replace the words that send is
+    // about to clear, and move the composer under it.
+    if (submitting) return;
     setBrief(formatMsg(prompt, { name: characters.find((c) => c.id === characterId)?.name || s.exampleCharacter }));
     setSetPick(null);
     setMode("describe");
@@ -624,6 +642,7 @@ export function SetsHome({
                       <button
                         type="button"
                         onClick={() => setMenu((m) => (m === "character" ? null : "character"))}
+                        disabled={submitting}
                         aria-expanded={menu === "character"}
                         aria-haspopup="listbox"
                         className={`${chip(false)} pl-1`}
@@ -672,7 +691,7 @@ export function SetsHome({
                   <div className="relative">
                     <button
                       type="button"
-                      onClick={() => setMenu((m) => (m === "set" ? null : "set"))}
+                      onClick={() => setMenu((m) => (m === "set" ? null : "set"))} disabled={submitting}
                       aria-expanded={menu === "set"}
                       aria-haspopup="listbox"
                       className={chip(false)}
@@ -723,7 +742,7 @@ export function SetsHome({
                       </div>
                     )}
                   </div>
-                  <button type="button" onClick={() => setAskFirst((v) => !v)} aria-pressed={askFirst} title={s.modeHint} className={chip(askFirst)}>
+                  <button type="button" onClick={() => setAskFirst((v) => !v)} disabled={submitting} aria-pressed={askFirst} title={s.modeHint} className={chip(askFirst)}>
                     {askFirst ? s.askBeforeShooting : s.shootWithoutAsking}
                   </button>
                 </div>
@@ -765,7 +784,7 @@ export function SetsHome({
                 {formatMsg(ex.prompt, { name: character?.name || s.exampleCharacter })}
               </p>
               <div>
-                <button type="button" onClick={() => recreate(ex.prompt)} className={chip(false)}>
+                <button type="button" onClick={() => recreate(ex.prompt)} disabled={submitting} className={chip(false)}>
                   {s.recreate}
                 </button>
               </div>

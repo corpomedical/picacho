@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { UnrecognizedActionError } from "next/dist/client/components/unrecognized-action-error";
 import { isStaleDeployError, reloadForNewDeploy, STALE_RELOAD_GUARD_MS, STALE_RELOAD_KEY } from "./stale-deploy";
@@ -100,6 +100,26 @@ describe("reloadForNewDeploy", () => {
     blocked = true;
     expect(reloadForNewDeploy()).toBe(true);
     expect(steps).toEqual(["reload"]);
+  });
+
+  it("is every page's guard: no page that knows about a stale deploy reloads on its own", () => {
+    // Fourteen call sites reloaded the page themselves, so a failure that
+    // only looks stale — a timed-out function reads as "an unexpected
+    // response" — could reload an autosaving page again and again, and a
+    // reporter reload could stack on a page reload inside the same 30 s
+    // (found reviewing Helios, fixed 2026-09-18).
+    const root = join(__dirname, "..", "components");
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? walk(join(dir, e.name)) : e.name.endsWith(".tsx") ? [join(dir, e.name)] : [],
+      );
+    const offenders = walk(root).filter((file) => {
+      const text = readFileSync(file, "utf8");
+      // Only the pages that know about a stale deploy: a reload for another
+      // reason (settings/privacy-panel.tsx, after a data wipe) is its own.
+      return text.includes("isStaleDeployError") && /window\.location\.reload\(/.test(text);
+    });
+    expect(offenders.map((f) => f.slice(root.length + 1))).toEqual([]);
   });
 
   it("is the error reporter's guard too", () => {

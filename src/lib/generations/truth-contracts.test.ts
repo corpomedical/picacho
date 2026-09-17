@@ -24,6 +24,20 @@ import { MAPPED_SERVER_STRINGS, NOTHING_CHARGED_TAIL } from "../i18n/server-text
 
 const src = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
 
+/** Every migration that has run, as one string, with SQL's doubled apostrophes undone. */
+const migrationSource = () => {
+  const root = new URL("../../../supabase/applied/", import.meta.url);
+  const out: string[] = [];
+  for (const day of readdirSync(root, { withFileTypes: true })) {
+    if (!day.isDirectory()) continue;
+    const dir = new URL(`${day.name}/`, root);
+    for (const file of readdirSync(dir)) {
+      if (file.endsWith(".sql")) out.push(readFileSync(new URL(file, dir), "utf8"));
+    }
+  }
+  return out.join("\n").replace(/''/g, "'");
+};
+
 describe("bucket roster: served ⊆ erased", () => {
   it("every bucket the media route serves is swept by account deletion", () => {
     // The half-update this pins against already happened: generated-videos
@@ -282,11 +296,18 @@ describe("localized server strings still match what the server says", () => {
     "../sets/messages.ts",
     // Recast (the Mystique door): every sentence its actions return.
     "../recast/messages.ts",
+    // Settings: the inline line under a settings form (2026-09-18).
+    "../profile/actions.ts",
   ]
     .map((p) => src(p))
     .join("\n")
     .replace(/["'`]\s*\+\s*["'`]/g, "")
-    .replace(/\\"/g, '"');
+    .replace(/\\"/g, '"')
+    // Some of what a person reads is raised by a definer function, not by
+    // TypeScript: the community feed's share and report actions strip the
+    // "Exception: " prefix and return the sentence as it is. Postgres doubles
+    // an apostrophe inside a quoted literal, so it is unescaped here.
+    .concat("\n", migrationSource());
 
   for (const wire of MAPPED_SERVER_STRINGS) {
     it(`server still says: "${wire.slice(0, 56)}…"`, () => {
