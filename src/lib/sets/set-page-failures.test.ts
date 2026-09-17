@@ -134,7 +134,7 @@ describe("the set page", () => {
   it("lets the conversation go when an Astra change throws", () => {
     const edit = between(view, "async function editSet(message: string) {", "\n  }\n");
     expect(edit).toMatch(/try \{\s*res = await editSetWithAstra\(setId, message\);\s*\} catch \(err\) \{/);
-    expect(edit).toMatch(/\} finally \{\s*setEditingSet\(false\);\s*\}/);
+    expect(edit).toMatch(/\} finally \{\s*(?:busyRef\.current\.editing = false;\s*)?setEditingSet\(false\);\s*\}/);
     expect(edit).toContain("if (!leftBehind(err)) setError(t.generate.submitFailed);");
   });
 

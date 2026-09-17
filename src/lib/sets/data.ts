@@ -336,7 +336,10 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     // load (a few milliseconds for a full contact sheet).
     const lendsLook = (id: string) => {
       const camera = cameras.get(id);
-      return Boolean(spec && camera && seesLookObjects(spec, camera));
+      // Against the set as drawn (the working copy where there is one), as
+      // the shot itself is: `spec` would offer a look cut from objects the
+      // Build editor has moved or removed (2026-09-17).
+      return Boolean(drawn && camera && seesLookObjects(drawn, camera));
     };
     const byId = new Map((gens ?? []).map((g) => [g.id as string, g]));
     shots = ids

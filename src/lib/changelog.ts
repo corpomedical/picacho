@@ -20,6 +20,22 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.44.1",
+    build: 83,
+    date: "2026-09-17",
+    title: "Helios shoots what you see",
+    items: [
+      "A review of Helios end to end — every feature, by reading it and by driving it — found a set of faults, and these are the fixes. The biggest: a still or a take was described from the set as Astra first built it, not the set on your screen. If you had moved something in Build, removed it, or asked Astra to change the place, the words sent with the picture still described the old set, your character was placed against the old floor plan, an eye-line could name the wrong object, and a look was cut from the old geometry. Everything a shot is held against is now the set you see.",
+      "Nothing is charged twice. Sending a message and then pressing Shoot while Astra was still reading it took — and charged for — two stills. Shoot now waits while Astra reads or changes the set, and a second press cannot land on top of a shot already on its way.",
+      "The Shoot button in the top bar says what it charges: with a take set up it read \"Shoot · 1 credit\" while charging 3 or 13. It now reads \"Take · 3 credits\" and does what the button on the frame card does. And a word with nothing to frame in it (\"go\") no longer replaces the direction the card is showing.",
+      "A film beat is shot exactly as the stage shows it. A beat whose hour matched the rig's was shot at the hour of the beat before it, so a film could come back with a beat at noon that you watched at dusk; and every beat's end frame was described with your arrangement's figure and eye-line rather than the beat's own. Rendering a film also no longer moves where your character stands in the set.",
+      "On a phone, the sketch the picture model reads is lit the way it was measured. It was sent darker than intended, so a dark set could come back wrong with a credit spent on it.",
+      "In Build: turning a mark with the gizmo no longer flips the way it faces (a mark facing 135° was saved facing 45°); an Astra change that removes things no longer takes the editor down with it; a hand edit made in the second before Astra answers no longer overwrites the answer; and typing in the Material list no longer adds a camera or deletes what you have in hand.",
+      "The stage gives back what it takes: every rebuild — an hour, a light plot, moving your character, an Astra change — used to leave its lights' shadow maps on the graphics card, and every card picture or comparison left a render target behind.",
+      "Smaller things, all found in the same pass: the timeline numbers a keyframe as the stage's path does and reads the lens on the rig's own sensor, as a lens said in words now does; the Rig chip on a laptop opens the Camera department instead of lighting up and shifting the frame lines; the command palette can leave the Cut, offers every mode, and no longer claims R opens the rig (R turns); 1–4 switch the viewport modes while shooting, as they do in Build; K no longer fires while a list has the keyboard, or repeats when held; laying a path ends when you leave Film; the strip counts stills and takes separately (\"2 stills · 2 takes\"); and History says what it actually keeps.",
+    ],
+  },
+  {
     version: "1.44.0",
     build: 82,
     date: "2026-09-17",

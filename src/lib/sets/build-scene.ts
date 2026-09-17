@@ -279,6 +279,12 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: BuildSetOptions
         // What the balance did to this light, for the sketch to undo (sketchStage).
         if (l.isLight && asWritten > 0 && l.intensity !== asWritten) o.userData.sketchGain = asWritten / l.intensity;
       }
+      // A light's shadow map is a render target three frees only when the
+      // light itself is disposed — never when it is simply removed from the
+      // scene. Every rebuild (an hour, a light plot, a figure moved, an
+      // Astra change) left the old maps on the GPU: the sun's alone is
+      // 4096² of colour and depth (found reviewing Helios, 2026-09-17).
+      if ((o as ThreeNS.Light).isLight) track(o as unknown as { dispose(): void });
       root.add(o);
     }
   }

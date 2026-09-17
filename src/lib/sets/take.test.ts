@@ -272,7 +272,8 @@ describe("a plan without takes is told first (set-view.tsx)", () => {
     expect(take).toContain("if (!takesOn) {\n      setError(SET_TAKE_NEEDS_PLAN);\n      return;\n    }");
     const render = between("async function renderFilm(", "const plan = filmPlanNow();");
     expect(render).toContain("if (!takesOn) {\n      setFilmError(SET_TAKE_NEEDS_PLAN);\n      return;\n    }");
-    expect(view).toContain("if (shooting || matching || !ready || !takesOn) return;");
+    // The retry's own guard: nothing else in flight (the busy ref, 2026-09-17) and the plan.
+    expect(view).toContain("if (busy.shooting || busy.taking || busy.editing || busy.matching || !ready || !takesOn) return;");
     expect(view).toContain("const retryable = takesOn ? retryableTakes(shots) : new Set<string>();");
   });
 

@@ -26,7 +26,10 @@ describe("the frame lines", () => {
     expect(view).not.toContain("md:right-[404px]");
     expect(view).not.toContain("md:right-24");
     expect(view).not.toContain("chatOpen ? 406 : 96");
-    expect(view).toContain("insetsRef.current = { left: wideNow && rigOpen ? 356 : 14, right: 14, top, bottom };");
+    // Nor for the rig: it is the dock's, beside the viewport, so the lines
+    // no longer jump 342 px aside when the Rig chip is pressed (2026-09-17).
+    expect(view).toContain("insetsRef.current = { left: 14, right: 14, top, bottom };");
+    expect(view).not.toContain("wideNow && rigOpen ? 356");
   });
 });
 

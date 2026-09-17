@@ -23,6 +23,7 @@ import {
   type SetRig,
 } from "./rig";
 import { timeLabel } from "./time-of-day";
+import { STUDIO_MODES, type StudioMode } from "./studio";
 
 export type CommandGroup = "modes" | "frame" | "lens" | "focus" | "light" | "time" | "look" | "viewfinder" | "stage" | "shoot";
 
@@ -79,9 +80,8 @@ export const TIME_PRESETS: readonly { id: string; hour: number }[] = [
 ];
 
 export type ShootCommandWords = {
-  build: string;
-  shoot: string;
-  film: string;
+  /** Every mode's own word, for the one command that takes you there. */
+  modes: Record<StudioMode, string>;
   rigShow: string;
   rigHide: string;
   chatShow: string;
@@ -117,8 +117,9 @@ export type ShootCommandContext = {
   words: ShootCommandWords;
   rig: SetRig;
   setRig(patch: Partial<SetRig>): void;
-  filmOpen: boolean;
-  setFilmOpen(open: boolean): void;
+  /** Where the page is now, and the page's own way of going somewhere else (the bar's). */
+  mode: StudioMode;
+  goToMode(mode: StudioMode): void;
   rigOpen: boolean;
   setRigOpen(open: boolean): void;
   chatOpen: boolean;
@@ -132,7 +133,6 @@ export type ShootCommandContext = {
   frameFigure(): void;
   undoStage(): void;
   downloadFrame(): void;
-  openBuild(): void;
   canShoot: boolean;
   shoot(): void;
 };
@@ -143,10 +143,14 @@ export function shootCommands(ctx: ShootCommandContext): Command[] {
   const out: Command[] = [];
   const add = (id: string, group: CommandGroup, label: string, run: () => void, keys?: string) => out.push({ id, group, label, keys, run });
 
-  add("mode:build", "modes", w.build, ctx.openBuild);
-  if (ctx.filmOpen) add("mode:shoot", "modes", w.shoot, () => ctx.setFilmOpen(false));
-  else add("mode:film", "modes", w.film, () => ctx.setFilmOpen(true));
-  add("rig:toggle", "modes", ctx.rigOpen ? w.rigHide : w.rigShow, () => ctx.setRigOpen(!ctx.rigOpen), "R");
+  // Every mode but the one you are in — Cut included, which had no way in
+  // or out of the palette (found reviewing Helios, 2026-09-17), and each
+  // through the bar's own handler, so the address and the stage follow.
+  for (const m of STUDIO_MODES) {
+    if (m !== ctx.mode) add(`mode:${m}`, "modes", w.modes[m], () => ctx.goToMode(m));
+  }
+  // No key: R is the Turn tool since the frame's rail (studio.ts).
+  add("rig:toggle", "modes", ctx.rigOpen ? w.rigHide : w.rigShow, () => ctx.setRigOpen(!ctx.rigOpen));
   add("chat:toggle", "modes", ctx.chatOpen ? w.chatHide : w.chatShow, () => ctx.setChatOpen(!ctx.chatOpen));
 
   add("stage:frame-figure", "stage", w.frameFigure, ctx.frameFigure, "F");

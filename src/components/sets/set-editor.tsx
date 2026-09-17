@@ -85,6 +85,14 @@ const RAIL_OF_TOOL: Record<Tool, RailTool> = { select: "select", move: "move", r
 type GizmoChange = {
   position?: Vec3;
   rotationDeg?: Vec3;
+  /**
+   * The way the thing now faces, degrees, 0 along +Z as a mark's facing is
+   * read (build-scene placeStandIn). Taken from the direction it points
+   * rather than the euler's Y: three re-reads a quaternion as an XYZ euler,
+   * which keeps Y within ±90° and puts the rest into X and Z, so a mark
+   * facing 135° came back facing 45° (found reviewing Helios, 2026-09-17).
+   */
+  facingDeg?: number;
   scale?: { x: number; y: number; z: number };
 };
 
@@ -569,6 +577,20 @@ export function SetEditor({
     const trimmed = [...history.slice(0, at + 1), JSON.stringify(next)].slice(-60);
     setHistory(trimmed);
     setAt(trimmed.length - 1);
+    // The thing in hand stays in hand, as it does through a step of one's
+    // own (goTo): a change that shortens a list — "remove the two carts" —
+    // left the selection pointing past the end, and the editor threw while
+    // drawing its name (found reviewing Helios, 2026-09-17). Set before the
+    // rebuild, which puts the gizmo back on whatever selRef names.
+    const keep = selectionAfter(selRef.current, specRef.current, next);
+    selRef.current = keep;
+    setSel(keep);
+    // A pending save of the copy Astra was given would land on top of the
+    // answer: the answer is already saved, and this is now the copy.
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
     applySpec(next);
     savedKeyRef.current = savedEditKey(next);
     dirtyRef.current = false;
@@ -743,7 +765,7 @@ export function SetEditor({
         patch.x = r2(change.position[0]);
         patch.z = r2(change.position[2]);
       }
-      if (change.rotationDeg) patch.facingDeg = Math.round(((change.rotationDeg[1] % 360) + 360) % 360);
+      if (change.facingDeg !== undefined) patch.facingDeg = Math.round(change.facingDeg) % 360;
       commit(patchMark(cur, target.index, patch));
     } else if (target.kind === "camera" && change.position) {
       commit(patchCamera(cur, target.index, { position: change.position.map(r2) as Vec3 }));
@@ -1064,7 +1086,11 @@ export function SetEditor({
           if (!target || !obj) return;
           const change: GizmoChange = {};
           if (tc.mode === "translate") change.position = [obj.position.x, obj.position.y, obj.position.z];
-          if (tc.mode === "rotate") change.rotationDeg = [obj.rotation.x / DEG, obj.rotation.y / DEG, obj.rotation.z / DEG];
+          if (tc.mode === "rotate") {
+            change.rotationDeg = [obj.rotation.x / DEG, obj.rotation.y / DEG, obj.rotation.z / DEG];
+            const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(obj.quaternion);
+            change.facingDeg = ((Math.atan2(forward.x, forward.z) / DEG) % 360 + 360) % 360;
+          }
           if (tc.mode === "scale") change.scale = { x: obj.scale.x, y: obj.scale.y, z: obj.scale.z };
           gizmoRef.current(target, change);
         });
@@ -1310,7 +1336,11 @@ export function SetEditor({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = document.activeElement as HTMLElement | null;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      // A dropdown too (the Material picker): typing "c" or "m" to reach
+      // concrete or metal added a camera or a mark, and Delete removed the
+      // thing in hand (found reviewing Helios, 2026-09-17). The set page
+      // has always skipped selects.
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
       const meta = e.metaKey || e.ctrlKey;
       if (meta && e.key.toLowerCase() === "z") {
         e.preventDefault();
@@ -1409,7 +1439,10 @@ export function SetEditor({
   const objectName = (o: SetObject) => `${shapeName(o.shape)} · ${r1(o.size[0])}×${r1(o.size[1])}×${r1(o.size[2])}`;
   const markName = (mi: number) => spec.marks[mi].label || formatMsg(s.editorMarkN, { n: mi + 1 });
   const cameraName = (ci: number) => spec.cameras[ci].label || formatMsg(s.editorCameraN, { n: ci + 1 });
-  const selName = !sel
+  // A selection that no longer names anything reads as the set itself: a
+  // list can shorten under it (an Astra change, a step back).
+  const selGone = Boolean(sel && "index" in sel && !(sel.kind === "object" ? spec.objects : sel.kind === "light" ? spec.lights : sel.kind === "mark" ? spec.marks : spec.cameras)[sel.index]);
+  const selName = !sel || selGone
     ? s.editorSetItself
     : sel.kind === "object"
       ? objectName(spec.objects[sel.index])
@@ -1437,10 +1470,12 @@ export function SetEditor({
             ? s.studio.tools.measure
             : s.editorToolScale;
 
-  const selObject = sel?.kind === "object" ? spec.objects[sel.index] : null;
-  const selLight = sel?.kind === "light" ? spec.lights[sel.index] : null;
-  const selMark = sel?.kind === "mark" ? spec.marks[sel.index] : null;
-  const selCamera = sel?.kind === "camera" ? spec.cameras[sel.index] : null;
+  // `?? null` because a list can shorten under the selection (an Astra
+  // change, a step back): the types say a thing is there, the arrays do not.
+  const selObject = sel?.kind === "object" ? (spec.objects[sel.index] ?? null) : null;
+  const selLight = sel?.kind === "light" ? (spec.lights[sel.index] ?? null) : null;
+  const selMark = sel?.kind === "mark" ? (spec.marks[sel.index] ?? null) : null;
+  const selCamera = sel?.kind === "camera" ? (spec.cameras[sel.index] ?? null) : null;
   const selRepeat = selObject?.repeat ?? null;
   const fogNow = spec.fog;
   const C = SET_LIMITS.maxCoordinate;

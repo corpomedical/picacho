@@ -472,12 +472,24 @@ export async function pollSetBuild(setId: string): Promise<PollResult & { settle
 // Arranging and shooting
 // ---------------------------------------------------------------------------
 
+/**
+ * The set as the page draws it: the person's own, not deleted, ready, and
+ * the WORKING copy where the Build editor has saved one (`edited_spec`),
+ * exactly as the page (data.ts `drawn`) and the words reader
+ * (words-actions.ts) read it. The still is composed on the sketch of that
+ * copy, so everything held against it — the mark, the eye-line's and the
+ * rack's things, the look's boxes, the description — has to be that copy
+ * too, or the words describe a set nobody is looking at (found reviewing
+ * Helios, 2026-09-17). The working copy is read on its own, defensively,
+ * as everywhere else: a read that fails uses the set as Astra built it.
+ */
 async function readyOwnedSpec(
   setId: string,
   userId: string,
 ): Promise<{ error: string } | { error: null; spec: SetSpec }> {
   if (!UUID_RE.test(setId)) return { error: SET_NOT_FOUND };
-  const { data: row } = await createAdminClient()
+  const admin = createAdminClient();
+  const { data: row } = await admin
     .from("location_sets")
     .select("status, spec")
     .eq("id", setId)
@@ -488,6 +500,18 @@ async function readyOwnedSpec(
   if (row.status !== "ready") return { error: SET_NOT_READY };
   const n = normaliseSetSpec(row.spec);
   if (!n.ok) return { error: SET_NOT_FOUND };
+  const { data: editedRow, error: editedError } = await admin
+    .from("location_sets")
+    .select("edited_spec")
+    .eq("id", setId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (editedError) console.warn("[sets] could not read the working copy:", editedError.message);
+  else if (editedRow?.edited_spec) {
+    const edited = normaliseSetSpec(editedRow.edited_spec);
+    if (edited.ok) return { error: null, spec: edited.spec };
+  }
   return { error: null, spec: n.spec };
 }
 
@@ -590,6 +614,13 @@ export async function shootInSet(
     rig?: unknown;
     /** Looks to say harder this time ("Shoot again, pushed"): check items, anything else dropped. */
     push?: unknown;
+    /**
+     * A film beat's end frame (renderFilm): its layout is the BEAT's — the
+     * figure where the beat leaves it, its pose and its eye-line — so it
+     * says what the frame shows, and is not saved as the set's arrangement
+     * (2026-09-17).
+     */
+    beat?: boolean;
   },
 ): Promise<ShootResult> {
   const access = await setsAccess();
@@ -828,7 +859,7 @@ export async function shootInSet(
   // Offered as a look only when there is something to cut out of it clear
   // of the person — the same rule the set page reads (data.ts).
   const hasLookObjects = recorded && camera !== null && seesLookObjects(owned.spec, camera);
-  if (layout) {
+  if (layout && input.beat !== true) {
     await admin
       .from("location_sets")
       .update({ layout, updated_at: new Date().toISOString() })
@@ -1004,6 +1035,7 @@ export async function takeInSet(
       words: input.words,
       lookGenerationId: startId,
       rig: input.rig,
+      beat: input.film === true,
     });
     if (shot.error !== null) return { error: shot.error };
     still = shot;

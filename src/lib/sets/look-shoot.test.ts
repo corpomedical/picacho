@@ -149,7 +149,9 @@ describe("the set page reads cameras on their own", () => {
   });
 
   it("offers a still as a look only when there is something to cut out of it, from its camera and the set", () => {
-    expect(data).toContain("return Boolean(spec && camera && seesLookObjects(spec, camera));");
+    // Against the set as DRAWN (the Build editor's working copy where there
+    // is one), as the shot itself is (2026-09-17).
+    expect(data).toContain("return Boolean(drawn && camera && seesLookObjects(drawn, camera));");
     expect(data).toContain("hasLookObjects: lendsLook(g.id as string),");
   });
 });

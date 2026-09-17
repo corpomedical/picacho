@@ -40,6 +40,8 @@ export type SequencerProps = {
   /** Each beat's clip status (the shot's), or null with no clip. */
   clipStatus: readonly (string | null)[];
   rigTime: number | null;
+  /** The rig's sensor height for this format (rig.ts sensorHeightMm): the lens a keyframe reads. */
+  sensorHeightMm: number;
   /** The key light's name when a plot is on; null for the set as built. */
   light: string | null;
   /** The start still: its tile words, and the menu that picks one (drawn by the page, under the tile). */
@@ -246,7 +248,7 @@ export function Sequencer(p: SequencerProps) {
               />
             )}
             {spans.map((sp) => {
-              const k = keyframeAt(film.beats[sp.index].end);
+              const k = keyframeAt(film.beats[sp.index].end, p.sensorHeightMm);
               const on = p.selected === sp.index;
               return (
                 <button
@@ -256,8 +258,8 @@ export function Sequencer(p: SequencerProps) {
                     e.stopPropagation();
                     p.onSelect(sp.index);
                   }}
-                  title={formatMsg(w.keyframe, { n: sp.index + 1, lens: k.lensMm, m: k.heightM })}
-                  aria-label={formatMsg(w.keyframe, { n: sp.index + 1, lens: k.lensMm, m: k.heightM })}
+                  title={formatMsg(w.keyframe, { n: sp.index + 2, lens: k.lensMm, m: k.heightM })}
+                  aria-label={formatMsg(w.keyframe, { n: sp.index + 2, lens: k.lensMm, m: k.heightM })}
                   data-keyframe={sp.index}
                   className="absolute top-1/2 z-[1] flex -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center gap-1.5"
                   style={{ left: pct(sp.end) }}
@@ -271,7 +273,11 @@ export function Sequencer(p: SequencerProps) {
                 className="pointer-events-none absolute top-1/2 -translate-y-1/2 whitespace-nowrap text-[10px] text-[#f0cda6]"
                 style={{ left: `calc(${pct(selSpan.start)} + 8px)` }}
               >
-                {formatMsg(w.keyframe, { n: selSpan.index + 1, lens: keyframeAt(sel.end).lensMm, m: keyframeAt(sel.end).heightM })}
+                {formatMsg(w.keyframe, {
+                  n: selSpan.index + 2,
+                  lens: keyframeAt(sel.end, p.sensorHeightMm).lensMm,
+                  m: keyframeAt(sel.end, p.sensorHeightMm).heightM,
+                })}
               </span>
             )}
           </div>

@@ -59,9 +59,7 @@ function context(over: Partial<ShootCommandContext> = {}): ShootCommandContext &
       (calls[name] ??= []).push(args);
     };
   const words: ShootCommandContext["words"] = {
-    build: "Build",
-    shoot: "Shoot",
-    film: "Film",
+    modes: { build: "Build", shoot: "Shoot", film: "Film", cut: "The cut" },
     rigShow: "Show the rig",
     rigHide: "Hide the rig",
     chatShow: "Show the conversation",
@@ -97,8 +95,8 @@ function context(over: Partial<ShootCommandContext> = {}): ShootCommandContext &
     words,
     rig: DEFAULT_SET_RIG,
     setRig: spy("setRig"),
-    filmOpen: false,
-    setFilmOpen: spy("setFilmOpen"),
+    mode: "shoot" as const,
+    goToMode: spy("goToMode"),
     rigOpen: false,
     setRigOpen: spy("setRigOpen"),
     chatOpen: true,
@@ -112,7 +110,6 @@ function context(over: Partial<ShootCommandContext> = {}): ShootCommandContext &
     frameFigure: spy("frameFigure"),
     undoStage: spy("undoStage"),
     downloadFrame: spy("downloadFrame"),
-    openBuild: spy("openBuild"),
     canShoot: true,
     shoot: spy("shoot"),
     ...over,
@@ -155,16 +152,23 @@ describe("the set page's commands", () => {
     run("shoot");
     expect(ctx.calls.shoot).toHaveLength(1);
     run("mode:build");
-    expect(ctx.calls.openBuild).toHaveLength(1);
+    expect(ctx.calls.goToMode.at(-1)).toEqual(["build"]);
   });
 
-  it("say Film when the film is closed and Shoot when it is open, and hide Shoot when nothing can be shot", () => {
+  it("offer every mode but the one you are in, the cut included, and hide Shoot when nothing can be shot", () => {
     const closed = shootCommands(context()).map((c) => c.id);
     expect(closed).toContain("mode:film");
+    expect(closed).toContain("mode:cut");
+    expect(closed).toContain("mode:build");
     expect(closed).not.toContain("mode:shoot");
-    const open = shootCommands(context({ filmOpen: true }));
-    expect(open.map((c) => c.id)).toContain("mode:shoot");
-    open.find((c) => c.id === "mode:shoot")?.run();
+    // From the cut, every other mode — the palette had no way out of it.
+    const inCut = shootCommands(context({ mode: "cut" }));
+    expect(inCut.map((c) => c.id)).toContain("mode:shoot");
+    const ctxCut = context({ mode: "cut" });
+    shootCommands(ctxCut).find((c) => c.id === "mode:shoot")?.run();
+    expect(ctxCut.calls.goToMode.at(-1)).toEqual(["shoot"]);
+    // R is the Turn tool now: the rig command no longer claims it.
+    expect(shootCommands(context()).find((c) => c.id === "rig:toggle")?.keys).toBeUndefined();
     const ctx = context({ canShoot: false, rigOpen: true });
     const cmds = shootCommands(ctx);
     expect(cmds.map((c) => c.id)).not.toContain("shoot");
@@ -176,7 +180,8 @@ describe("the set page's commands", () => {
   it("name the keys that do the same", () => {
     const all = shootCommands(context());
     expect(all.find((c) => c.id === "stage:frame-figure")?.keys).toBe("F");
-    expect(all.find((c) => c.id === "rig:toggle")?.keys).toBe("R");
+    // The rig's command names no key: R picks the Turn tool (studio.ts).
+    expect(all.find((c) => c.id === "rig:toggle")?.keys).toBeUndefined();
     vi.restoreAllMocks();
   });
 });

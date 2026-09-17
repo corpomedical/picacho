@@ -24,6 +24,11 @@ describe("the frame the image model reads (set-view.tsx frame)", () => {
     // The sketch's neutral lift light on for the render, the stage's off, and back.
     expect(frame).toContain("if (sketchFill) sketchFill.intensity = sketchFillOn;");
     expect(frame).toContain("if (stageFill) stageFill.intensity = stageFillOn;");
+    // Only a full build's stage light is turned off: a basic build has one
+    // lift light, which IS the sketch's, so turning it off would send a
+    // dark sketch (a phone, or any coarse pointer).
+    expect(frame).toContain("if (full && stageFill) stageFill.intensity = 0;");
+    expect(frame).not.toMatch(/(?<!full && )if \(stageFill\) stageFill\.intensity = 0;/);
     // The stage comes back even when the render throws.
     expect(frame.slice(render, off)).toContain("finally");
   });

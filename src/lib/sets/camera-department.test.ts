@@ -55,6 +55,11 @@ describe("the lens rule on the pages", () => {
       ["set-view.tsx", view],
       ["rig-panel.tsx", panel],
       ["film-overlay.ts", overlay],
+      // The timeline and the words reader were outside this scan, and both
+      // named another lens than the stage did (2026-09-17).
+      ["sequencer.ts", read("sequencer.ts")],
+      ["sequencer.tsx", read("../../components/sets/sequencer.tsx")],
+      ["shot-words.ts", read("shot-words.ts")],
     ] as const) {
       for (const name of ["nearestLens", "fovForLens", "lensForFov", "focalMm"]) {
         for (const args of calls(source, name)) {

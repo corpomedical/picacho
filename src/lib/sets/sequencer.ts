@@ -45,9 +45,15 @@ export function rulerSeconds(duration: number): number[] {
   return Array.from({ length: end + 1 }, (_, i) => i);
 }
 
-/** What a keyframe says of itself: the lens it was framed with (full frame) and how high the camera stands. */
-export function keyframeAt(pose: FilmPose): { lensMm: number; heightM: number } {
-  return { lensMm: nearestLens(pose.fovDeg), heightM: Math.round(pose.position[1] * 10) / 10 };
+/**
+ * What a keyframe says of itself: the lens it was framed with on the rig's
+ * own body, and how high the camera stands. The sensor decides the lens —
+ * the timeline read a keyframe "50 mm" where the stage's own path said
+ * "35 mm" on Super 35 (found reviewing Helios, 2026-09-17); left out, it is
+ * full frame, as everywhere else.
+ */
+export function keyframeAt(pose: FilmPose, sensorHeightMm?: number): { lensMm: number; heightM: number } {
+  return { lensMm: nearestLens(pose.fovDeg, sensorHeightMm), heightM: Math.round(pose.position[1] * 10) / 10 };
 }
 
 /** The beat under a time, and how far into it (0–1). Before the film: its first beat's start; after: its last beat's end. Null with no beats. */

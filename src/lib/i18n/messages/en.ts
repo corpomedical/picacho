@@ -2076,6 +2076,8 @@ const en = {
     statsBuilds: "Builds this month",
     shotsOne: "1 still",
     shotsMany: "{n} stills",
+    takesOne: "1 take",
+    takesMany: "{n} takes",
     noShots: "No stills yet",
     shotOpen: "Open",
     backToCamera: "Back to this camera",
@@ -2445,7 +2447,7 @@ const en = {
       lookAt: "Look at it",
       sceneHint: "A camera or a mark takes the figure there; a thing turns the view to it.",
       historyFrames: "Frames",
-      historyEmpty: "No earlier frames yet: every move of the camera is kept here.",
+      historyEmpty: "No earlier frames yet: every shot, reading and new angle is kept here.",
       historyEdits: "Edits",
       threadHint: "The conversation with Astra: what you asked, what came back.",
       // Cut C: the Cut mode and the viewport's furniture.

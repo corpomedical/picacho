@@ -44,6 +44,47 @@ export type FilmBeat = {
 
 export type FilmFigure = { x: number; z: number; facingDeg: number; pose: StandPose };
 
+/** Where the figure stands and how the stage is lit at a beat's end. */
+export type BeatStage = {
+  figure: { x: number; z: number; facingDeg: number };
+  pose: StandPose;
+  /** The hour the stage draws for this beat; null is the set as built. */
+  time: number | null;
+  /** The eye-line for the beat's end frame and its clip. */
+  gaze: Gaze | null;
+};
+
+/**
+ * The stage each beat's end frame is shot on, in beat order: one rule for
+ * the previz, the render and the path, so what a person watches for free is
+ * what a credit buys (found reviewing Helios, 2026-09-17 — the render
+ * compared a beat's hour with the RIG's, so a beat whose hour matched it
+ * kept whatever the beat before it had drawn, and the end frames were
+ * described with the arrangement's figure while the sketch showed the
+ * beat's).
+ *
+ * The tracks fall back as the beats say they do: a beat with no figure
+ * keeps the figure where the film left it (the beat before it, else the
+ * arrangement), and a beat with no hour takes the rig's, which is what the
+ * sun track draws. The eye-line is the beat's own: the arrangement's
+ * belongs to Shoot and is not in the film's context, so it would change a
+ * beat's frame without the film knowing.
+ */
+export function filmStages(
+  beats: readonly Pick<FilmBeat, "figure" | "time" | "gaze">[],
+  arrangement: { mark: { x: number; z: number; facingDeg: number }; pose: StandPose; time: number | null },
+): BeatStage[] {
+  let figure = { x: arrangement.mark.x, z: arrangement.mark.z, facingDeg: arrangement.mark.facingDeg };
+  let pose = arrangement.pose;
+  return beats.map((beat) => {
+    if (beat.figure) {
+      figure = { x: beat.figure.x, z: beat.figure.z, facingDeg: beat.figure.facingDeg };
+      pose = beat.figure.pose;
+    }
+    return { figure, pose, time: beat.time ?? arrangement.time, gaze: beat.gaze };
+  });
+}
+
 export type SetFilm = {
   engine: SetTakeEngine;
   /** The finished still the film opens on — frame one, and the first beat's look. */

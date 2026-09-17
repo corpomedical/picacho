@@ -194,10 +194,15 @@ function pitchOf(pose: CameraPose): number {
  * the bearing they were shooting from holds. Every field the words leave
  * out keeps the camera's own value: its distance, height, tilt and lens.
  * Pure; the page then solves and places it (set-view.tsx applyWords).
+ *
+ * A lens named in words is the lens on the rig's own body: "50 mm" on
+ * Super 35 is not the 50 of full frame, and without the sensor the chip
+ * came back reading another number than the one the person said (found
+ * reviewing Helios, 2026-09-17). Left out, it is full frame, as the ring is.
  */
 export function wordsToMatch(
   w: Pick<ShotWords, "side" | "size" | "height" | "tiltDeg" | "lensMm">,
-  input: { mark: { x: number; z: number; facingDeg: number }; current: CameraPose },
+  input: { mark: { x: number; z: number; facingDeg: number }; current: CameraPose; sensorHeightMm?: number },
 ): { match: ShotMatch; from: CameraPose } {
   const { mark, current } = input;
   const cx = current.position[0] - mark.x;
@@ -216,7 +221,7 @@ export function wordsToMatch(
   const distance = w.size ? SIZE_DISTANCE_M[w.size] : Math.max(MIN_DISTANCE_M, currentDistance);
   const height = w.height ? HEIGHT_M[w.height] : current.position[1];
   const pitch = w.tiltDeg ?? (w.height ? HEIGHT_TILT_DEG[w.height] : pitchOf(current));
-  const fov = w.lensMm ? fovForLens(w.lensMm) : current.fovDeg;
+  const fov = w.lensMm ? fovForLens(w.lensMm, input.sensorHeightMm) : current.fovDeg;
   const r = (n: number) => Math.round(n * 1000) / 1000;
   return {
     from: { position: [r(mark.x + ux * distance), r(height), r(mark.z + uz * distance)], target: [mark.x, 1, mark.z], fovDeg: fov },

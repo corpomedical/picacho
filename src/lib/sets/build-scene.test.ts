@@ -21,6 +21,29 @@ describe("buildSetScene", () => {
     built.dispose();
   });
 
+  it("frees every light with the build: a shadow map is three's to free only on dispose", () => {
+    // Every rebuild — an hour, a light plot, the figure moved, an Astra
+    // change — swapped the build and left the old lights' shadow maps on
+    // the GPU (found reviewing Helios, 2026-09-17). The sun's alone is
+    // 4096² of colour and depth.
+    const built = buildSetScene(THREE, spec, { shadows: true, quality: "full" });
+    const lights: THREE.Light[] = [];
+    built.root.traverse((o) => {
+      if ((o as THREE.Light).isLight) lights.push(o as THREE.Light);
+    });
+    expect(lights.length).toBeGreaterThan(0);
+    let freed = 0;
+    for (const l of lights) {
+      const own = l.dispose.bind(l);
+      l.dispose = () => {
+        freed += 1;
+        own();
+      };
+    }
+    built.dispose();
+    expect(freed).toBe(lights.length);
+  });
+
   it("adds one light object per spec light (plus targets for suns and spots)", () => {
     const built = buildSetScene(THREE, spec);
     const lights: THREE.Light[] = [];

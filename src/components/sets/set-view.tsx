@@ -14,7 +14,7 @@ import { matchSetShot } from "@/lib/sets/match-actions";
 import { readShotWords } from "@/lib/sets/words-actions";
 import { STAND_IN_EYE_M, fovForLens, nearestLens, squeezeProjection, type StageQuality } from "@/lib/sets/build-scene";
 import { dockTabAfter, dockTabsFor, railToolForKey, studioChecked, studioHeld, studioLab, type DockTab, type RailTool, type StatusItem, type StudioMode } from "@/lib/sets/studio";
-import { viewModeMaterial, type ViewMode } from "@/lib/sets/view-modes";
+import { VIEW_MODES, viewModeMaterial, type ViewMode } from "@/lib/sets/view-modes";
 import { azimuthOf, hourFromAzimuth, measureMetres, scaleBar, sunDirection, type MeasurePoint } from "@/lib/sets/furniture";
 import { PATH_MAX_POINTS, alongPath, pathLength, type Gaze } from "@/lib/sets/people";
 import type { RigTab } from "@/lib/sets/rig-dock";
@@ -34,6 +34,7 @@ import {
 } from "@/lib/sets/take";
 import {
   FILM_MAX_BEATS,
+  filmStages,
   filmAfterEdit,
   filmContextKey,
   filmJobCount,
@@ -682,7 +683,6 @@ export function SetView({
   const [viewMode, setViewMode] = useState<ViewMode>("lit");
   const [fps, setFps] = useState(0);
   const [sceneQuery, setSceneQuery] = useState("");
-  const composerFormRef = useRef<HTMLFormElement>(null);
   // The viewport's furniture (cut C): the measure tool's points on the
   // ground, the sun's drag, and the elements the loop moves.
   const [measurePts, setMeasurePts] = useState<MeasurePoint[]>([]);
@@ -766,6 +766,15 @@ export function SetView({
   // reference itself — held in this page's memory for the note beside the
   // line, never saved.
   const [matching, setMatching] = useState(false);
+  /**
+   * What the page has in hand THIS moment. A call that comes back after an
+   * await reads its state from the closure it was made in, which is the
+   * state when it started: a message sent and then Shoot pressed while
+   * Astra read the words took, and charged, two stills (found reviewing
+   * Helios, 2026-09-17). Set before anything is sent, cleared in the same
+   * `finally` as the flag it stands for.
+   */
+  const busyRef = useRef({ shooting: false, taking: false, editing: false, matching: false });
   const [matchError, setMatchError] = useState("");
   const [matched, setMatched] = useState<{
     photo: string;
@@ -958,6 +967,8 @@ export function SetView({
         // for the live draw only — set just before it, cleared right after,
         // so frame() and snapshot() never see it.
         let viewOverride: import("three").Material | null = null;
+        /** The one camera every snapshot renders through (see snapshot). */
+        let snapCam: import("three").PerspectiveCamera | null = null;
         const labOn = () => lab.stock > 0 || lab.lens > 0;
         // The camera department (cut 2): the exposure over the lift, the
         // viewfinder's false colour and histogram, the focus readout.
@@ -1719,7 +1730,11 @@ export function SetView({
             // shows a frame.
             sketchStage(scene, built.root, true);
             if (sketchFill) sketchFill.intensity = sketchFillOn;
-            if (stageFill) stageFill.intensity = 0;
+            // Only a full build has two lifts: on a basic one (a phone, a
+            // coarse pointer) this light IS the sketch's own lift, and
+            // turning it off would hand the model a dark sketch while the
+            // prompt says it was brightened.
+            if (full && stageFill) stageFill.intensity = 0;
             renderer.toneMappingExposure = sketchLift.exposure * exposureGainNow;
             try {
               renderer.render(scene, cam);
@@ -1828,7 +1843,13 @@ export function SetView({
             const crop =
               opts?.from && opts.aspect ? compareCrop(renderer.domElement.width, renderer.domElement.height, opts.aspect) : null;
             if (opts?.from) {
-              const cam = camera.clone();
+              // One camera for every snapshot, kept with the stage: three
+              // holds a transmission render target per CAMERA ID, the size
+              // of the drawing buffer, and never frees it — a clone each
+              // time left one behind on every thumbnail, compare and Astra
+              // edit (found reviewing Helios, 2026-09-17).
+              const cam = snapCam ?? (snapCam = camera.clone());
+              cam.copy(camera);
               // The live camera looks through a view offset (fit); a snapshot
               // at the canvas's own shape and centre does not.
               cam.clearViewOffset();
@@ -2096,13 +2117,20 @@ export function SetView({
   // dock's Camera and Light; M the marks — when no field holds the
   // keyboard. Kept current each render, so each key does what the page
   // would do now.
-  const studioKeysRef = useRef<{ frame(): void; palette(): void; tool(id: RailTool): void; escape(): void }>({ frame() {}, palette() {}, tool() {}, escape() {} });
+  const studioKeysRef = useRef<{ frame(): void; palette(): void; tool(id: RailTool): void; escape(): void; view(mode: ViewMode): void }>({
+    frame() {},
+    palette() {},
+    tool() {},
+    escape() {},
+    view() {},
+  });
   useEffect(() => {
     studioKeysRef.current = {
       frame: () => {
         if (ready) frameFigure();
       },
       palette: () => setPaletteOpen((v) => !v),
+      view: (m) => setViewMode(m),
       escape: () => {
         setMeasurePts([]);
         setLaying(null);
@@ -2134,6 +2162,11 @@ export function SetView({
       if (k === "f") {
         e.preventDefault();
         studioKeysRef.current.frame();
+        return;
+      }
+      if (k >= "1" && k <= "4") {
+        e.preventDefault();
+        studioKeysRef.current.view(VIEW_MODES[Number(k) - 1]);
         return;
       }
       const tool = railToolForKey("shoot", k);
@@ -2190,7 +2223,12 @@ export function SetView({
               ? formatMsg(s.studio.lookAtThing, { thing: spec.objects[gaze.index] ? names.objectName(spec.objects[gaze.index]) : "" })
               : s.studio.lookAtPoint,
       pathSvg: pathRef.current,
-      pathFrom: filmOpen && filmSel !== null && film.beats[filmSel]?.figure ? (filmSel > 0 && film.beats[filmSel - 1].figure ? film.beats[filmSel - 1].figure : { x: mark.x, z: mark.z }) : null,
+      pathFrom:
+        filmOpen && filmSel !== null && film.beats[filmSel]?.figure
+          ? filmSel > 0
+            ? filmStages(film.beats, { mark, pose, time: rig.time })[filmSel - 1].figure
+            : { x: mark.x, z: mark.z }
+          : null,
       pathPoints: filmOpen && filmSel !== null ? (film.beats[filmSel]?.path ?? []) : [],
       pathTo: filmOpen && filmSel !== null && film.beats[filmSel]?.figure ? film.beats[filmSel].figure : null,
     });
@@ -2264,7 +2302,9 @@ export function SetView({
       const top = chips ? chips.offsetTop + chips.offsetHeight + 26 : 14;
       const hostH = hostRef.current?.clientHeight ?? 0;
       const bottom = strip && hostH ? hostH - strip.offsetTop + 10 : wideNow && (filmOpen || cutOpen) ? 76 : filmOpen ? 196 : 112;
-      insetsRef.current = { left: wideNow && rigOpen ? 356 : 14, right: 14, top, bottom };
+      // Nothing stands over the stage from the left any more: the rig is the
+      // dock's, beside the viewport (2026-09-17).
+      insetsRef.current = { left: 14, right: 14, top, bottom };
       apiRef.current?.relayout();
     };
     measure();
@@ -2543,6 +2583,7 @@ export function SetView({
     if (!file || matching || shooting || !ready) return;
     setMatchError("");
     setMatched(null);
+    busyRef.current.matching = true;
     setMatching(true);
     try {
       let prepared: Awaited<ReturnType<typeof preparePhoto>>;
@@ -2590,6 +2631,7 @@ export function SetView({
       // something built: a limit it was moved off is not said (matchSummary).
       setMatched({ photo: prepared.dataUri, summary: matchSummary(res.match, solved, api.pose()), moved });
     } finally {
+      busyRef.current.matching = false;
       setMatching(false);
     }
   }
@@ -2705,8 +2747,11 @@ export function SetView({
    */
   async function shoot(directionNow?: string, push: RigCheckItem[] = []) {
     // Not during a match (pickReference says why): the frame would be taken
-    // now, from a camera the match is about to move.
-    if (shooting || matching || !characterId || !ready) return;
+    // now, from a camera the match is about to move. Read from the ref, not
+    // from this render's state, so a shot that follows an await cannot land
+    // on top of one already in flight.
+    const busy = busyRef.current;
+    if (busy.shooting || busy.taking || busy.editing || busy.matching || !characterId || !ready) return;
     setError("");
     setTakeRetry(null);
     setLastMiss(null);
@@ -2718,6 +2763,7 @@ export function SetView({
       setError(s.loadFailed);
       return;
     }
+    busy.shooting = true;
     setShooting(true);
     const startedAt = new Date().getTime();
     // The camera, the figure's mark (in the layout) and the canvas shape the
@@ -2753,6 +2799,7 @@ export function SetView({
       if (stale) setTimeout(() => window.location.reload(), 1800);
       return;
     } finally {
+      busyRef.current.shooting = false;
       setShooting(false);
     }
     if (result.error !== null) {
@@ -2830,7 +2877,8 @@ export function SetView({
    * the background, and lands in the filmstrip as a take.
    */
   async function take(directionNow?: string) {
-    if (!takeStart || shooting || matching || !characterId || !ready) return;
+    const busy = busyRef.current;
+    if (!takeStart || busy.shooting || busy.taking || busy.editing || busy.matching || !characterId || !ready) return;
     if (!takesOn) {
       setError(SET_TAKE_NEEDS_PLAN);
       return;
@@ -2845,6 +2893,7 @@ export function SetView({
       setError(s.loadFailed);
       return;
     }
+    busy.taking = true;
     setShooting(true);
     const startedAt = new Date().getTime();
     const pose = apiRef.current?.pose() ?? null;
@@ -2873,6 +2922,7 @@ export function SetView({
       if (stale) setTimeout(() => window.location.reload(), 1800);
       return;
     } finally {
+      busyRef.current.taking = false;
       setShooting(false);
     }
     if (result.error !== null) {
@@ -3074,18 +3124,20 @@ export function SetView({
 
   function filmGoTo(i: number) {
     stopMovePreview();
+    setLaying(null);
     const b = film.beats[i];
     if (b) {
       keepStage();
       const api = apiRef.current;
       api?.goTo(b.end);
-      // The beat's figure and hour (cut 5), as its end frame will be shot.
-      if (api && b.time !== null && b.time !== rigRef.current.time) {
-        api.rebuild(stagedSpec(spec, { light: rigRef.current.light, time: b.time }, b.figure ?? layoutRef.current.mark));
-      }
-      if (api && b.figure) {
-        api.placeMark(b.figure);
-        api.setPose(b.figure.pose);
+      // The beat's figure, pose and hour (cut 5), as its end frame will be
+      // shot: the film's own rule, so going to a beat shows what the render
+      // takes (filmStages, 2026-09-17).
+      const staged = filmStages(film.beats, { mark: layoutRef.current.mark, pose: layoutRef.current.pose, time: rigRef.current.time })[i];
+      if (api && staged) {
+        api.rebuild(stagedSpec(spec, { light: rigRef.current.light, time: staged.time }, staged.figure));
+        api.placeMark(staged.figure);
+        api.setPose(staged.pose);
       }
       setFovDeg(b.end.fovDeg);
       setPoseNow(b.end);
@@ -3112,11 +3164,13 @@ export function SetView({
     // The people and sun tracks (cut 5): the figure walks from where it
     // stands to each beat's figure as the camera flies, and the hour steps
     // at each beat's end. The stage goes back to the arrangement after.
+    const stages = filmStages(film.beats, { mark: layoutRef.current.mark, pose: layoutRef.current.pose, time: rigRef.current.time });
     let figureFrom: Mark = { ...layoutRef.current.mark };
     let hourNow: number | null = rigRef.current.time;
     for (const [bi, beat] of film.beats.entries()) {
       if (!alive()) break;
       const to = beat.figure;
+      const staged = stages[bi];
       const walkFrom = figureFrom;
       await tweenPose(api, from, beat.end, MOVE_FLIGHT_MS, beat.move, alive, (e) => {
         setPlayhead(timeOf(spans, bi, e));
@@ -3130,9 +3184,11 @@ export function SetView({
         figureFrom = { x: to.x, z: to.z, facingDeg: to.facingDeg };
         api.setPose(to.pose);
       }
-      if (beat.time !== null && beat.time !== hourNow) {
-        hourNow = beat.time;
-        api.rebuild(stagedSpec(spec, { light: rigRef.current.light, time: beat.time }, figureFrom));
+      // The beat's hour, or the rig's where the beat sets none — as the
+      // render draws it, not whatever the beat before it left (2026-09-17).
+      if (staged.time !== hourNow) {
+        hourNow = staged.time;
+        api.rebuild(stagedSpec(spec, { light: rigRef.current.light, time: staged.time }, figureFrom));
         api.placeMark(figureFrom);
       }
       from = beat.end;
@@ -3278,7 +3334,12 @@ export function SetView({
     keep(kept);
     setReel(null);
     setViewing(null);
-    // Whether a beat's hour was drawn: the arrangement's hour comes back after.
+    // What the stage is drawing right now — the arrangement until a beat
+    // moves it. A beat is redrawn when its hour or its figure differ from
+    // this, never from the rig (2026-09-17): the light plot and the sun
+    // stand round the figure, so both move the light.
+    let drawn = { time: rigRef.current.time, figure: layoutRef.current.mark as { x: number; z: number; facingDeg: number } };
+    const stages = filmStages(film.beats, { mark: layoutRef.current.mark, pose: layoutRef.current.pose, time: rigRef.current.time });
     let stagedHour = false;
     // Whatever stops the chain — a refusal, a lost stage, anything thrown —
     // the film is let go, or it would stay locked as rendering, and a throw
@@ -3293,14 +3354,16 @@ export function SetView({
         setFilmBusy({ beat: i, clipOnly: job.end !== null });
         // The people and sun tracks (cut 5): the end frame is shot with the
         // figure where, and how, the beat says, at the beat's hour.
+        const staged = stages[i];
         if (!job.end) {
-          const figure = beat.figure ?? layoutRef.current.mark;
-          if (beat.time !== null && beat.time !== rigRef.current.time) {
-            api.rebuild(stagedSpec(spec, { light: rigRef.current.light, time: beat.time }, figure));
+          const figure = staged.figure;
+          if (staged.time !== drawn.time || figure.x !== drawn.figure.x || figure.z !== drawn.figure.z) {
+            api.rebuild(stagedSpec(spec, { light: rigRef.current.light, time: staged.time }, figure));
+            drawn = { time: staged.time, figure };
             stagedHour = true;
           }
           api.placeMark(figure);
-          api.setPose(beat.figure?.pose ?? layoutRef.current.pose);
+          api.setPose(staged.pose);
         }
         // Only a beat rendered whole shoots a frame; a clip alone ends on its own.
         const frame = job.end ? "" : api.frame({ from: beat.end });
@@ -3316,7 +3379,7 @@ export function SetView({
             frameDataUri: frame,
             characterId,
             direction: beat.words,
-            layout: { ...layoutRef.current, camera: beat.end },
+            layout: { ...layoutRef.current, camera: beat.end, mark: staged.figure, pose: staged.pose, gaze: staged.gaze },
             engine: film.engine,
             lifted: api.lifted === true,
             canvasAspect: api.canvasAspect(),
@@ -3424,7 +3487,9 @@ export function SetView({
    * only the clip is paid for. The failed take stays where it is.
    */
   async function retryClip(f: TakeFrames) {
-    if (shooting || matching || !ready || !takesOn) return;
+    const busy = busyRef.current;
+    if (busy.shooting || busy.taking || busy.editing || busy.matching || !ready || !takesOn) return;
+    busy.taking = true;
     setError("");
     setTakeRetry(null);
     setShooting(true);
@@ -3451,6 +3516,7 @@ export function SetView({
       setTakeRetry(f);
       return;
     } finally {
+      busyRef.current.taking = false;
       setShooting(false);
     }
     if (result.error !== null) {
@@ -3528,7 +3594,7 @@ export function SetView({
       cameraNow = words.cameraId;
       if (words.lensMm) pickLens(words.lensMm);
     } else if (hasCameraWords(words)) {
-      const { match, from } = wordsToMatch(words, { mark: m, current: api.pose() });
+      const { match, from } = wordsToMatch(words, { mark: m, current: api.pose(), sensorHeightMm: sensorHeightMm(rigRef.current.sensor, rigRef.current.format) });
       const solved = solveMatchPose(match, {
         mark: m,
         current: from,
@@ -3578,6 +3644,7 @@ export function SetView({
    * Astra's original stay one press away for anything by hand.
    */
   async function editSet(message: string) {
+    busyRef.current.editing = true;
     setEditingSet(true);
     const before = spec;
     let res: Awaited<ReturnType<typeof editSetWithAstra>>;
@@ -3589,6 +3656,7 @@ export function SetView({
       if (!leftBehind(err)) setError(t.generate.submitFailed);
       return;
     } finally {
+      busyRef.current.editing = false;
       setEditingSet(false);
     }
     if (res.error !== null) {
@@ -3692,7 +3760,11 @@ export function SetView({
     }
     const moved = applyWords(words);
     setNote({ fallback: false, talk: false, moved: moved && moved !== "none" ? moved : null });
-    if (words.intent === "shoot" || !askFirst) await (takeStart ? take(words.direction || message) : shoot(words.direction || message));
+    // The direction is what the card shows: the reader's own words when it
+    // read any ("she leans on the counter"), otherwise the direction already
+    // framed. The raw message would put "go" in the picture's words
+    // (found reviewing Helios, 2026-09-17).
+    if (words.intent === "shoot" || !askFirst) await (takeStart ? take(words.direction || direction) : shoot(words.direction || direction));
   }
 
   // The message from the Sets home, once the stage can act on it — then the
@@ -3740,9 +3812,9 @@ export function SetView({
     if (!filmOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "k" && e.key !== "K") return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
       const el = document.activeElement as HTMLElement | null;
-      if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) return;
+      if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT" || el.tagName === "SELECT" || el.isContentEditable)) return;
       // The view kept is the stage's own, not a hover's flight.
       stopMovePreview();
       const pose = apiRef.current?.pose();
@@ -4036,6 +4108,15 @@ export function SetView({
     : quote.totalCredits === 1
       ? s.shootButtonOne
       : formatMsg(s.shootButton, { n: quote.totalCredits });
+  const canShootNow = !(shooting || matching || reading || editingSet || !characterId || loadFailed || !ready);
+  const shotCount = (() => {
+    const stills = shots.filter((sh) => sh.kind === "still").length;
+    const takes = shots.length - stills;
+    const words: string[] = [];
+    if (stills > 0 || takes === 0) words.push(stills === 1 ? s.shotsOne : formatMsg(s.shotsMany, { n: stills }));
+    if (takes > 0) words.push(takes === 1 ? s.takesOne : formatMsg(s.takesMany, { n: takes }));
+    return words.join(" · ");
+  })();
   const frameLead = note?.planned
     ? s.justTalkNote
     : note?.talk
@@ -4119,7 +4200,7 @@ export function SetView({
             <button
               type="button"
               onClick={() => void shoot(undefined, missed)}
-              disabled={shooting || matching || !characterId || !ready || Boolean(takeStart)}
+              disabled={!canShootNow || Boolean(takeStart)}
               className="inline-flex h-9 cursor-pointer items-center justify-center rounded-[8px] bg-[#e0a468] px-3.5 text-[13px] font-semibold text-[#1b1c20] transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               {againLabel}
@@ -4260,13 +4341,59 @@ export function SetView({
     </>
   );
 
+  const studioMode: StudioMode = cutOpen ? "cut" : filmOpen ? "film" : "shoot";
+  /** Whether the rig is showing: the dock's own tabs on a wide screen, the phone's panel below it. */
+  const rigShown = wide ? dockTab === "camera" || dockTab === "light" || dockTab === "look" : rigOpen;
+  // The modes the bar switches between, and the palette's own route to
+  // each (2026-09-17: the palette knew nothing of Cut, so from Cut its
+  // "Film" command set a flag Cut kept overriding and nothing happened).
+  const studioModes = {
+    build: { label: s.editorBuildTab, href: `/app/sets/${setId}?build=1` },
+    shoot: {
+      label: s.editorShootTab,
+      onClick: () => {
+        setFilmOpen(false);
+        setCutOpen(false);
+        setLaying(null);
+        setReel(null);
+        window.history.replaceState(null, "", `/app/sets/${setId}`);
+      },
+    },
+    film: {
+      label: s.filmTab,
+      onClick: () => {
+        setFilmOpen(true);
+        setCutOpen(false);
+        setTakeStart(null);
+        setViewing(null);
+        window.history.replaceState(null, "", `/app/sets/${setId}?film=1`);
+      },
+    },
+    // The cut (cut C): the film's clips in order; the reel plays in the viewport when every clip is in.
+    cut: {
+      label: s.studio.cutMode,
+      onClick: () => {
+        setFilmOpen(false);
+        setCutOpen(true);
+        setLaying(null);
+        setTakeStart(null);
+        setViewing(null);
+        setDockTab((d) => (dockTabsFor("cut", false).includes(d) ? d : "history"));
+        if (reelReady) {
+          reelFailedRef.current = new Set();
+          setReelWaiting(false);
+          setReel(0);
+        }
+        window.history.replaceState(null, "", `/app/sets/${setId}?cut=1`);
+      },
+    },
+  } as const;
+
   // The commands the palette lists (commands.ts), from this render's handlers and words — built only while it is open.
   const paletteCommands = paletteOpen
     ? shootCommands({
         words: {
-          build: s.editorBuildTab,
-          shoot: s.editorShootTab,
-          film: s.filmTab,
+          modes: { build: s.editorBuildTab, shoot: s.editorShootTab, film: s.filmTab, cut: s.studio.cutMode },
           rigShow: s.palette.rigShow,
           rigHide: s.palette.rigHide,
           chatShow: s.palette.chatShow,
@@ -4307,8 +4434,11 @@ export function SetView({
         },
         rig,
         setRig: (patch) => setRig((r) => ({ ...r, ...patch })),
-        filmOpen,
-        setFilmOpen,
+        mode: studioMode,
+        goToMode: (m) => {
+          if (m === "build") window.location.href = studioModes.build.href;
+          else studioModes[m].onClick();
+        },
         rigOpen: wide ? dockTab === "camera" || dockTab === "light" || dockTab === "look" : rigOpen,
         setRigOpen: (open) => (wide ? setDockTab(open ? "camera" : "astra") : setRigOpen(open)),
         chatOpen: wide ? dockTab === "astra" : chatOpen,
@@ -4322,18 +4452,13 @@ export function SetView({
         frameFigure,
         undoStage: () => stepStage(stageUndoRef, stageRedoRef),
         downloadFrame,
-        openBuild: () => {
-          window.location.href = `/app/sets/${setId}?build=1`;
-        },
-        canShoot: !(shooting || matching || !characterId || loadFailed || !ready),
-        shoot: () => void shoot(),
+        canShoot: canShootNow,
+        shoot: () => void (takeStart ? take() : shoot()),
       })
     : [];
 
   // ---- the studio's frame (cut A): what the bar, the dock and the status bar show ----
-  const studioMode: StudioMode = cutOpen ? "cut" : filmOpen ? "film" : "shoot";
   const dockTabs = dockTabsFor(studioMode, filmOpen);
-  const canShootNow = !(shooting || matching || !characterId || loadFailed || !ready);
   const renderingCount = (shooting ? 1 : 0) + (matching ? 1 : 0) + shots.filter((sh) => sh.status === "generating").length;
   const statusWords = (items: readonly StatusItem[]) => items.map((i) => s.studio.status.items[i]);
   const heldItems = statusWords(studioHeld(rig, { move: filmOpen && filmSel !== null && Boolean(film.beats[filmSel]?.move), pose: pose !== "stand" }));
@@ -4653,7 +4778,7 @@ export function SetView({
                           <button
                             type="button"
                             onClick={() => void (takeStart ? take() : shoot())}
-                            disabled={shooting || matching || !characterId || loadFailed || !ready}
+                            disabled={!canShootNow}
                             className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-[#e0a468] px-[18px] text-sm font-semibold text-[#1b1c20] transition-opacity hover:opacity-90 disabled:opacity-40"
                           >
                             {takeStart ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel}
@@ -4661,7 +4786,7 @@ export function SetView({
                           <button
                             type="button"
                             onClick={anotherAngle}
-                            disabled={!ready || shooting}
+                            disabled={!ready || shooting || reading || editingSet}
                             className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-white/[0.06] px-4 text-sm font-medium text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] transition-colors hover:bg-white/[0.1] disabled:opacity-40"
                           >
                             {s.anotherAngle}
@@ -4672,7 +4797,7 @@ export function SetView({
                           <button
                             type="button"
                             onClick={() => void retryClip(takeRetry)}
-                            disabled={shooting || matching || !ready}
+                            disabled={shooting || matching || reading || editingSet || !ready}
                             title={s.takeRetryHint}
                             className={chip(false)}
                           >
@@ -4713,7 +4838,6 @@ export function SetView({
   );
   const chatComposer = (
             <form
-              ref={composerFormRef}
               onSubmit={(e) => {
                 e.preventDefault();
                 if (mentionOpen && mentionList[0]) pickMention(mentionList[0]);
@@ -4839,58 +4963,20 @@ export function SetView({
       <StudioBar
         back={{ href: "/app/sets", label: s.back }}
         title={title || s.untitled}
-        meta={shots.length === 1 ? s.shotsOne : formatMsg(s.shotsMany, { n: shots.length })}
+        meta={shotCount}
         mode={studioMode}
-        modes={{
-          build: { label: s.editorBuildTab, href: `/app/sets/${setId}?build=1` },
-          shoot: {
-            label: s.editorShootTab,
-            onClick: () => {
-              setFilmOpen(false);
-              setCutOpen(false);
-              setReel(null);
-              window.history.replaceState(null, "", `/app/sets/${setId}`);
-            },
-          },
-          film: {
-            label: s.filmTab,
-            onClick: () => {
-              setFilmOpen(true);
-              setCutOpen(false);
-              setTakeStart(null);
-              setViewing(null);
-              window.history.replaceState(null, "", `/app/sets/${setId}?film=1`);
-            },
-          },
-          // The cut (cut C): the film's clips in order; the reel plays in the viewport when every clip is in.
-          cut: {
-            label: s.studio.cutMode,
-            onClick: () => {
-              setFilmOpen(false);
-              setCutOpen(true);
-              setTakeStart(null);
-              setViewing(null);
-              setDockTab((d) => (dockTabsFor("cut", false).includes(d) ? d : "history"));
-              if (reelReady) {
-                reelFailedRef.current = new Set();
-                setReelWaiting(false);
-                setReel(0);
-              }
-              window.history.replaceState(null, "", `/app/sets/${setId}?cut=1`);
-            },
-          },
-        }}
+        modes={studioModes}
         view={{ mode: viewMode, onChange: setViewMode, names: { lit: s.editorViewLit, clay: s.editorViewClay, wire: s.editorViewWire, depth: s.editorViewDepth } }}
         find={{ label: s.studio.find, kbd: s.palette.open, onOpen: () => setPaletteOpen(true) }}
         rendering={renderingCount > 0 ? { label: renderingCount === 1 ? s.studio.renderingOne : formatMsg(s.studio.rendering, { n: renderingCount }) } : null}
         primary={
           <button
             type="button"
-            onClick={() => composerFormRef.current?.requestSubmit()}
+            onClick={() => void (takeStart ? take() : shoot())}
             disabled={!canShootNow}
             className="flex h-7 flex-none cursor-pointer items-center whitespace-nowrap rounded-[6px] bg-[#e0a468] px-3.5 text-[12px] font-semibold text-[#1b1c20] disabled:cursor-default disabled:opacity-40"
           >
-            {s.studio.shootCredit}
+            {takeStart ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel}
           </button>
         }
       >
@@ -5143,11 +5229,11 @@ export function SetView({
               </div>
               <button
                 type="button"
-                onClick={() => setRigOpen((v) => !v)}
-                aria-pressed={rigOpen}
-                aria-expanded={rigOpen}
+                onClick={() => (wide ? setDockTab((d) => (d === "camera" ? "astra" : "camera")) : setRigOpen((v) => !v))}
+                aria-pressed={rigShown}
+                aria-expanded={rigShown}
                 disabled={!ready}
-                className={rigOpen ? DCHIP_ON : DCHIP}
+                className={rigShown ? DCHIP_ON : DCHIP}
               >
                 {rigChipLabel}
                 <Chevron />
@@ -5297,7 +5383,7 @@ export function SetView({
               </span>
               <button
                 type="button"
-                disabled={editingSet}
+                disabled={editingSet || reading || shooting}
                 onClick={() => {
                   setScaleDismissed(true);
                   void editSet(s.scaleFixAsk);
@@ -5635,7 +5721,7 @@ export function SetView({
             ))}
             {shots.length > 0 && (
               <span className="mx-1.5 whitespace-nowrap text-[11px] text-[#9aa0ad] tabular-nums">
-                {shots.length === 1 ? s.shotsOne : formatMsg(s.shotsMany, { n: shots.length })} · {s.newestFirst}
+                {shotCount} · {s.newestFirst}
               </span>
             )}
           </div>
@@ -5933,6 +6019,7 @@ export function SetView({
             busy={filmBusy}
             clipStatus={filmClipShots.map((sh) => sh?.status ?? null)}
             rigTime={rig.time}
+            sensorHeightMm={sensorHeightMm(rig.sensor, rig.format)}
             light={rig.light ? s.rig.lights[rig.light.scheme] : null}
             startLabel={filmStartShot ? formatMsg(s.stillTile, { n: stillNumber(filmStartShot) }) : null}
             startImage={filmStartShot?.resultUrl ?? null}

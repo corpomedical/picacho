@@ -123,8 +123,12 @@ describe("the page runs a match and a shot one at a time", () => {
   const view = readFileSync(join(__dirname, "../../components/sets/set-view.tsx"), "utf8");
   it("a match does not start during a shot, nor a shot during a match", () => {
     expect(view).toContain("if (!file || matching || shooting || !ready) return;");
-    expect(view).toContain("if (shooting || matching || !characterId || !ready) return;");
+    // A shot asks the busy ref, which a match holds too (2026-09-17).
+    expect(view).toContain("if (busy.shooting || busy.taking || busy.editing || busy.matching || !characterId || !ready) return;");
+    expect(view).toContain("busyRef.current.matching = true;");
     expect(view).toContain("disabled={!ready || matching || shooting}");
-    expect(view).toContain("disabled={shooting || matching || !characterId || loadFailed || !ready}");
+    // Every button that spends reads one answer, which counts a match in.
+    expect(view).toContain("const canShootNow = !(shooting || matching || reading || editingSet || !characterId || loadFailed || !ready);");
+    expect(view).toContain("disabled={!canShootNow}");
   });
 });
