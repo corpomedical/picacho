@@ -48,9 +48,11 @@ export function shotCameraOf(
   layout: unknown,
   canvasAspect: unknown,
   // A rig format's frame (rig.ts formatFrame): the render's and the band's
-  // shapes, worked out on the server from the format's name. Absent for the
+  // shapes, worked out on the server from the format's name — and the
+  // anamorphic squeeze the negative was widened by, which the boxes are
+  // measured with (look-cutout.ts sketchProjector). Absent for a spherical
   // square, recorded exactly as before.
-  frame?: { render: number; band: number } | null,
+  frame?: { render: number; band: number; squeeze?: number } | null,
 ): ShotCamera | null {
   const record = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
   const sent = record(layout);

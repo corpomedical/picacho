@@ -87,7 +87,7 @@ type TagStrings = { held: string; checked: string; lab: string };
 const SELECT =
   "h-7 min-w-0 flex-1 cursor-pointer rounded-[6px] bg-[#111217] px-2 text-[12px] text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] outline-none focus:shadow-[inset_0_0_0_1px_rgba(224,164,104,0.6)]";
 const STEP_BTN =
-  "flex h-7 w-7 flex-none cursor-pointer items-center justify-center rounded-[6px] bg-white/[0.05] text-[14px] leading-none text-[#c6c9d1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)] hover:text-[#ecedf1] disabled:cursor-default disabled:opacity-40";
+  "flex h-7 w-7 flex-none cursor-pointer items-center justify-center rounded-[6px] bg-white/[0.05] text-[14px] leading-none text-[#c6c9d1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#6b6f7a]";
 
 const OVERLAY_NAMES: Record<RigOverlayKey, (r: Strings["rig"]) => string> = {
   thirds: (r) => r.overlayThirds,
@@ -578,7 +578,7 @@ function Ring<T extends number>({
           onClick={() => onPick(v)}
           style={{ left: `calc(50% + ${(i - centre) * 46}px)` }}
           className={`absolute top-[5px] -translate-x-1/2 cursor-pointer px-1.5 text-[11px] font-semibold tabular-nums transition-[left,color] duration-200 ${
-            i === at ? "text-[#f0cda6]" : "text-[#6b6f7a] hover:text-[#ecedf1]"
+            i === at ? "text-[#f0cda6]" : "text-[#868b96] hover:text-[#ecedf1]"
           }`}
         >
           {format(v)}
@@ -821,13 +821,13 @@ export function RigPanel({
       <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3">
         <span className="text-[11px] font-medium uppercase tracking-widest text-[#9aa0ad]">{r.title}</span>
         <span className="flex items-center gap-2">
-          <span className="text-[11px] text-[#6b6f7a]">{r.saved}</span>
+          <span className="text-[11px] text-[#868b96]">{r.saved}</span>
           <button
             type="button"
             onClick={onClose}
             title={r.hide}
             aria-label={r.hide}
-            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded text-[#6b6f7a] hover:text-[#ecedf1]"
+            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded text-[#868b96] hover:text-[#ecedf1]"
           >
             ‹
           </button>
@@ -862,7 +862,7 @@ export function RigPanel({
             tabIndex={tab === t ? 0 : -1}
             onClick={() => setTabOwn(t)}
             className={`flex h-9 flex-1 cursor-pointer items-center justify-center border-b-2 text-[11.5px] font-medium ${
-              tab === t ? "border-[#e0a468] text-[#f0cda6]" : "border-transparent text-[#6b6f7a] hover:text-[#ecedf1]"
+              tab === t ? "border-[#e0a468] text-[#f0cda6]" : "border-transparent text-[#868b96] hover:text-[#ecedf1]"
             }`}
           >
             {tabName[t]}
@@ -937,7 +937,7 @@ export function RigPanel({
         <Section tags={tags} title={r.story} hidden={!show("story")}>
           <div className="flex gap-1.5">
             <label className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-[8px] bg-[#141519] px-2.5 text-xs text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
-              <span className="text-[11px] font-medium text-[#6b6f7a]">{r.genre}</span>
+              <span className="text-[11px] font-medium text-[#868b96]">{r.genre}</span>
               <select
                 value={rig.genre ?? ""}
                 onChange={(e) => set({ genre: (e.target.value || null) as RigGenre | null })}
@@ -952,7 +952,7 @@ export function RigPanel({
               </select>
             </label>
             <label className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-[8px] bg-[#141519] px-2.5 text-xs text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
-              <span className="text-[11px] font-medium text-[#6b6f7a]">{r.era}</span>
+              <span className="text-[11px] font-medium text-[#868b96]">{r.era}</span>
               <select
                 value={rig.era ?? ""}
                 onChange={(e) => set({ era: (e.target.value || null) as SetRig["era"] })}
@@ -971,7 +971,7 @@ export function RigPanel({
             <p className="mt-2 text-[11.5px] leading-4 text-[#9aa0ad]">
               {formatMsg(r.suggests, { genre: r.genres[rig.genre], light: r.lights[suggestion.light], palette: r.palettes[suggestion.palette] })}{" "}
               {suggestionInUse ? (
-                <span className="font-medium text-[#6b6f7a]">{r.inUse}</span>
+                <span className="font-medium text-[#868b96]">{r.inUse}</span>
               ) : (
                 <button
                   type="button"
@@ -1107,7 +1107,7 @@ export function RigPanel({
           tag="checked"
           right={
             rig.stop !== null ? (
-              <button type="button" onClick={() => set({ stop: null })} className="ml-auto mr-2 cursor-pointer text-[11px] font-medium text-[#6b6f7a] hover:text-[#ecedf1]">
+              <button type="button" onClick={() => set({ stop: null })} className="ml-auto mr-2 cursor-pointer text-[11px] font-medium text-[#868b96] hover:text-[#ecedf1]">
                 {r.off}
               </button>
             ) : null
@@ -1153,7 +1153,7 @@ export function RigPanel({
               <button
                 type="button"
                 onClick={() => set({ ev: 0, iso: RIG_REFERENCE_EXPOSURE.iso, shutterDeg: RIG_REFERENCE_EXPOSURE.shutterDeg })}
-                className="ml-auto mr-2 cursor-pointer text-[11px] font-medium text-[#6b6f7a] hover:text-[#ecedf1]"
+                className="ml-auto mr-2 cursor-pointer text-[11px] font-medium text-[#868b96] hover:text-[#ecedf1]"
               >
                 {r.exposureReset}
               </button>
@@ -1222,7 +1222,7 @@ export function RigPanel({
           tag="checked"
           right={
             rig.light !== null ? (
-              <button type="button" onClick={() => pickScheme(null)} className="ml-auto mr-2 cursor-pointer text-[11px] font-medium text-[#6b6f7a] hover:text-[#ecedf1]">
+              <button type="button" onClick={() => pickScheme(null)} className="ml-auto mr-2 cursor-pointer text-[11px] font-medium text-[#868b96] hover:text-[#ecedf1]">
                 {r.asBuilt}
               </button>
             ) : null
@@ -1288,7 +1288,7 @@ export function RigPanel({
           tag="held"
           right={
             rig.time !== null ? (
-              <button type="button" onClick={() => set({ time: null })} className="ml-auto mr-2 cursor-pointer text-[11px] font-medium text-[#6b6f7a] hover:text-[#ecedf1]">
+              <button type="button" onClick={() => set({ time: null })} className="ml-auto mr-2 cursor-pointer text-[11px] font-medium text-[#868b96] hover:text-[#ecedf1]">
                 {r.timeAsBuilt}
               </button>
             ) : null
@@ -1375,7 +1375,7 @@ export function RigPanel({
           </p>
         </Section>
 
-        {ANY_UNTESTED && <p className="px-3.5 py-3 text-[11px] leading-[15px] text-[#6b6f7a]">{r.untested}</p>}
+        {ANY_UNTESTED && <p className="px-3.5 py-3 text-[11px] leading-[15px] text-[#868b96]">{r.untested}</p>}
       </div>
     </>
   );

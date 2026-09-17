@@ -98,7 +98,7 @@ describe("shootInSet: the camera", () => {
     // and the figure's mark — never from the normalised layout, whose camera
     // is held to the set's reach; and only when the row went in.
     expect(shoot).toMatch(
-      /const camera = shotError\s*\?\s*null\s*:\s*shotCameraOf\(input\.layout, input\.canvasAspect, rigFrame\.cut \? \{ render: rigFrame\.renderAspect, band: rigFrame\.bandAspect \} : null\);/,
+      /const camera = shotError\s*\?\s*null\s*:\s*shotCameraOf\([\s\S]*?rigFrame\.cut \? \{ render: rigFrame\.renderAspect, band: rigFrame\.bandAspect, squeeze: rigFrame\.squeeze \} : null,?\s*\);/,
     );
     expect(shoot).not.toMatch(/shotCameraOf\(layout/);
     // Nothing about it can fail the shot: its answer is only reported.

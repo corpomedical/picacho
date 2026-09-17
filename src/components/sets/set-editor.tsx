@@ -119,10 +119,10 @@ const FLD =
 const TOOL_BTN = "flex h-8 w-8 cursor-pointer items-center justify-center rounded-[6px] text-[#9aa0ad] hover:text-[#ecedf1]";
 const TOOL_ON = "flex h-8 w-8 cursor-pointer items-center justify-center rounded-[6px] bg-[rgba(224,164,104,0.13)] text-[#e0a468]";
 const ICON_BTN =
-  "inline-flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[5px] text-[#9aa0ad] hover:text-[#ecedf1] disabled:cursor-default disabled:opacity-35";
+  "inline-flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[5px] text-[#9aa0ad] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#6b6f7a] disabled:opacity-100";
 const PHEAD =
   "flex h-8 flex-none items-center justify-between px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9aa0ad]";
-const SHEAD = "flex h-6 items-center px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6b6f7a]";
+const SHEAD = "flex h-6 items-center px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#868b96]";
 const ROW_LABEL = "w-[58px] flex-none text-[11px] text-[#9aa0ad]";
 
 function Svg({ d, className, box = "0 0 24 24" }: { d: string; className?: string; box?: string }) {
@@ -208,7 +208,7 @@ function Num({
   };
   return (
     <span className={`flex min-w-0 items-center gap-1 ${className ?? "flex-1"}`}>
-      {ax && <span className="text-[9.5px] font-semibold text-[#6b6f7a]">{ax}</span>}
+      {ax && <span className="text-[9.5px] font-semibold text-[#868b96]">{ax}</span>}
       <input
         type="text"
         inputMode="decimal"
@@ -1587,10 +1587,10 @@ export function SetEditor({
                   }}
                   placeholder={s.editorAskPlaceholder}
                   disabled={asking}
-                  className="h-full min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#ecedf1] outline-none placeholder:text-[#6b6f7a] disabled:opacity-60"
+                  className="h-full min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#ecedf1] outline-none placeholder:text-[#868b96] disabled:text-[#6b6f7a]"
                 />
                 {editsLeft !== null && (
-                  <span title={s.editorAskLeftTitle} className="flex-none whitespace-nowrap text-[11px] tabular-nums text-[#6b6f7a]">
+                  <span title={s.editorAskLeftTitle} className="flex-none whitespace-nowrap text-[11px] tabular-nums text-[#868b96]">
                     {editsLeft === 0 ? s.editorAskLeftNone : editsLeft === 1 ? s.editorAskLeftOne : formatMsg(s.editorAskLeft, { n: editsLeft })}
                   </span>
                 )}
@@ -1660,7 +1660,7 @@ export function SetEditor({
         </button>
         <span className="text-[12px] tabular-nums text-[#9aa0ad]">{rowLabel(at)}</span>
         <span aria-hidden className="h-5 w-px bg-white/[0.09]" />
-        <span className="text-[12px] text-[#6b6f7a]">{saveLine}</span>
+        <span className="text-[12px] text-[#868b96]">{saveLine}</span>
         <button
           type="button"
           onClick={() => void restoreOriginal()}
@@ -1736,7 +1736,7 @@ export function SetEditor({
           {/* context bar */}
           <div className={`${BAR} flex h-9 flex-none items-center gap-2 border-b ${HAIR} px-3`}>
             <span className="text-[12px] font-semibold text-[#ecedf1]">{toolName}</span>
-            <span className="min-w-0 truncate text-[11px] text-[#6b6f7a]">{selName}</span>
+            <span className="min-w-0 truncate text-[11px] text-[#868b96]">{selName}</span>
             {selObject && sel?.kind === "object" && (
               <>
                 <span aria-hidden className="mx-1 h-[18px] w-px bg-white/[0.09]" />
@@ -1758,7 +1758,7 @@ export function SetEditor({
             </Check>
             <span className="flex-1" />
             {flash && <span className="min-w-0 truncate text-[11px] text-[#e0a468]">{flash}</span>}
-            <span className="whitespace-nowrap text-[11px] tabular-nums text-[#6b6f7a]">
+            <span className="whitespace-nowrap text-[11px] tabular-nums text-[#868b96]">
               {formatMsg(s.editorCounts, { things: spec.objects.length, shapes: specInstanceCount(spec), max: SET_LIMITS.maxInstances })}
             </span>
           </div>
@@ -1779,7 +1779,7 @@ export function SetEditor({
               </span>
             )}
             {!ready && !loadFailed && (
-              <p className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[12px] text-[#6b6f7a]">{s.editorLoading}</p>
+              <p className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[12px] text-[#868b96]">{s.editorLoading}</p>
             )}
             {loadFailed && (
               <p className="absolute left-1/2 top-1/2 w-72 -translate-x-1/2 -translate-y-1/2 text-center text-[12px] text-[#9aa0ad]">
@@ -1804,9 +1804,9 @@ export function SetEditor({
                   onChange={(e) => setFind(e.target.value)}
                   placeholder={s.editorFind}
                   aria-label={s.editorFind}
-                  className="h-6 min-w-0 flex-1 rounded-[5px] bg-[#111217] px-2 text-[11px] text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] outline-none placeholder:text-[#6b6f7a] focus:shadow-[inset_0_0_0_1px_rgba(224,164,104,0.6)]"
+                  className="h-6 min-w-0 flex-1 rounded-[5px] bg-[#111217] px-2 text-[11px] text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] outline-none placeholder:text-[#868b96] focus:shadow-[inset_0_0_0_1px_rgba(224,164,104,0.6)]"
                 />
-                <span className="text-[11px] tabular-nums text-[#6b6f7a]">{spec.objects.length}</span>
+                <span className="text-[11px] tabular-nums text-[#868b96]">{spec.objects.length}</span>
               </div>
               <div className="min-h-0 max-h-[44%] flex-[0_0_auto] overflow-y-auto">
                 <SceneTree spec={spec} s={s} selected={sel} onPick={setSel} onRoot={() => setSel(null)} query={find} />
@@ -1934,7 +1934,7 @@ export function SetEditor({
                     {s.editorShadow}
                   </Check>
                 </div>
-                {selObject.shape === "torus" && <p className="px-3 pt-1 text-[11px] text-[#6b6f7a]">{s.editorTorusSize}</p>}
+                {selObject.shape === "torus" && <p className="px-3 pt-1 text-[11px] text-[#868b96]">{s.editorTorusSize}</p>}
               </>
             )}
 
@@ -2150,7 +2150,7 @@ export function SetEditor({
           )}
           {dockTab === "history" && (
             <div className="p-2">
-              <div className="flex h-6 items-center px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6b6f7a]">{s.studio.historyEdits}</div>
+              <div className="flex h-6 items-center px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#868b96]">{s.studio.historyEdits}</div>
               <div role="listbox" aria-label={s.studio.historyEdits} className="flex flex-col gap-0.5">
                 {history.map((_, i) => (
                   <button
@@ -2188,7 +2188,7 @@ export function SetEditor({
           type="button"
           onClick={() => setCheckOpen((v) => !v)}
           aria-expanded={checkOpen}
-          className={`flex h-5 cursor-pointer items-center gap-1.5 rounded-full px-2 ${findings.length ? "bg-[rgba(224,164,104,0.13)] text-[#e0a468]" : "text-[#6b6f7a] hover:text-[#ecedf1]"}`}
+          className={`flex h-5 cursor-pointer items-center gap-1.5 rounded-full px-2 ${findings.length ? "bg-[rgba(224,164,104,0.13)] text-[#e0a468]" : "text-[#868b96] hover:text-[#ecedf1]"}`}
         >
           <span aria-hidden className={`h-[5px] w-[5px] rounded-full ${findings.length ? "bg-[#e0a468]" : "bg-[#5f9e6e]"}`} />
           {s.editorCheck} · {findings.length ? formatMsg(s.editorCheckN, { n: findings.length }) : s.editorCheckClean}

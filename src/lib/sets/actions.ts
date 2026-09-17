@@ -863,7 +863,15 @@ export async function shootInSet(
   // missing, and naming it in the insert above would fail every shot.
   const camera = shotError
     ? null
-    : shotCameraOf(input.layout, input.canvasAspect, rigFrame.cut ? { render: rigFrame.renderAspect, band: rigFrame.bandAspect } : null);
+    : shotCameraOf(
+        input.layout,
+        input.canvasAspect,
+        // The squeeze rides too: the band is already widened by it, but the
+        // stored lens is the pose's own, so the boxes are only measured on
+        // the shape the still really has if the squeeze is there to widen it
+        // (look-cutout.ts sketchProjector).
+        rigFrame.cut ? { render: rigFrame.renderAspect, band: rigFrame.bandAspect, squeeze: rigFrame.squeeze } : null,
+      );
   // The rig it was shot with: the format and each checked look's words as
   // sent, for the line under it and the look check (shot-rig.ts). Its own
   // update, failure ignored, like the camera's.

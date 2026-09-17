@@ -41,7 +41,10 @@ describe("buildSetShotPrompt", () => {
   it("works with no direction, and bounds a long one", () => {
     expect(buildSetShotPrompt({ description: "d", direction: "" })).not.toContain("In this frame");
     const long = buildSetShotPrompt({ description: "d", direction: "x".repeat(5000) });
-    expect(long.length).toBeLessThan(1500);
+    // 1,500 until 2026-09-18, when the sketch stopped calling itself grey and
+    // said what its colours are for (they are the only thing that says which
+    // way round a thing stands).
+    expect(long.length).toBeLessThan(1700);
     expect(long).toContain("x".repeat(SET_DIRECTION_MAX_CHARS));
   });
 
@@ -84,7 +87,15 @@ describe("buildSetShotPrompt", () => {
   it("with a look, says the tested sentence about the sheet, word for word, and only then", () => {
     const withLook = buildSetShotPrompt({ description: "d", direction: "", look: { url: "/api/media/generated-images/u/sets/s.sheet-g.jpg" } });
     expect(withLook).toContain(C3);
-    expect(LOOK_SENTENCE).toBe(C3);
+    // The measured words are still the measured words, first and whole; what
+    // 2026-09-18 added is one sentence AFTER them, naming the sheet's grid so
+    // the model reads the cell that matches the sketch's side rather than the
+    // sheet whole — three of its four cells face rearward, and a front-on
+    // shot came back as the car's rear. Unproven on a render.
+    expect(LOOK_SENTENCE.startsWith(C3)).toBe(true);
+    expect(LOOK_SENTENCE.slice(C3.length)).toBe(
+      " That sheet is a two-by-two grid: top left the object's front three-quarter, top right its side, bottom left its rear three-quarter, bottom right its rear. Read whichever of the four shows the side the layout sketch sees, and never another.",
+    );
     expect(withLook.split(C3).length - 1).toBe(1);
     expect(p).not.toContain("design sheet");
     expect(buildSetShotPrompt({ description: "d", direction: "", look: null })).not.toContain("design sheet");

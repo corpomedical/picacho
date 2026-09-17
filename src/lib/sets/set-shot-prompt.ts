@@ -91,7 +91,13 @@ export function describeFacing(layout: Pick<SetLayout, "mark" | "camera"> | null
  * sentence says nothing of one.
  */
 export const LOOK_SENTENCE =
-  "One reference photo is a design sheet of objects from this same place: each shown several times on a plain grey ground, from different sides. Draw each of them exactly as it looks there — its shape, design, colour, materials and details — in the place, at the size and turned the way the layout sketch shows it, seen from the sketch's camera. Take nothing else from that photo: not its layout, angle, crop, framing or light.";
+  "One reference photo is a design sheet of objects from this same place: each shown several times on a plain grey ground, from different sides. Draw each of them exactly as it looks there — its shape, design, colour, materials and details — in the place, at the size and turned the way the layout sketch shows it, seen from the sketch's camera. Take nothing else from that photo: not its layout, angle, crop, framing or light." +
+  // Added 2026-09-18, after a front-on shot came back as the car's rear: the
+  // sheet is a two-by-two grid (look-sheet.ts LOOK_SHEET_PROMPT) whose cells
+  // are three sides out of four REAR-ward, so a model that takes the sheet
+  // whole is pulled to the back of a thing. The measured sentence above is
+  // untouched; this says which cell to read. Unproven on a render.
+  " That sheet is a two-by-two grid: top left the object's front three-quarter, top right its side, bottom left its rear three-quarter, bottom right its rear. Read whichever of the four shows the side the layout sketch sees, and never another.";
 
 /**
  * The source photograph (2026-09-15): a photo set's shot now carries the
@@ -107,8 +113,16 @@ export const LOOK_SENTENCE =
 export const SOURCE_PHOTO_SENTENCE =
   "One reference photo is a real photograph of this same location. Wherever the sketch and the photograph show the same thing — walls, floor, ceiling, windows, furniture, what hangs or stands anywhere — copy the photograph's materials, colours, finishes and details exactly. Take the camera, framing, crop and light from the sketch, never from the photograph. If anyone appears in the photograph, they are not in this shot: take only the place from it.";
 
+// What the sketch IS, said truthfully (2026-09-18). It called itself "a grey
+// 3D mock-up" while build-scene.ts sketchMaterialFor draws every thing in its
+// own colour, flat and untextured — so the model was told to discount the one
+// piece of evidence that says which way a thing faces. On a car those colours
+// are the white lamps at the nose, the red ones at the tail and the dark
+// canopy between; without them a block car is the same silhouette either way
+// (the operator's front-on shot came back as the car's rear, 2026-09-18).
 const SKETCH_SENTENCES = [
-  "The attached layout sketch is a grey 3D mock-up of the location — a guide to composition, not a style reference.",
+  "The attached layout sketch is a flat, untextured 3D mock-up of the location in block colours — a guide to composition and to what each thing is, not a style reference.",
+  "Its colours are each thing's own: read them as evidence of what a thing is and which way round it stands — a lamp, a window, a badge, the light at one end of a vehicle and not the other — and draw the real thing they stand for, never these flat colours as a style.",
   "Match its camera position, lens, framing, horizon and the direction of its light exactly.",
   "Every object in it is a rough stand-in built from simple blocks: keep each one's place, size and orientation, but draw the real thing it stands for, with its true shape, detail and materials, at full size. Never reproduce the blocky shapes; nothing may look like a toy, a model or a miniature.",
 ];

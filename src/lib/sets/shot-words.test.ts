@@ -145,6 +145,13 @@ describe("shotWordsInstructions", () => {
     expect(text).toContain('"edit" when they ask to change the PLACE ITSELF');
     expect(text).not.toContain('"place"');
     expect(text).toContain("Never describe the person.");
+    // A side is the CAMERA's, relative to the person — nothing else in a set
+    // has a front the camera can be placed by (objects carry no facing at
+    // all). "A front view of the vehicle" used to come back as side: front,
+    // which stands the camera in front of the PERSON, and the vehicle came
+    // back from whatever side that happened to be (the operator, 2026-09-18).
+    expect(text).toContain("where the camera stands relative to THE PERSON");
+    expect(text).toContain("when they name the side of something else — the front of the car, behind the building, the back of the room — leave side null");
   });
 
   it("asks for the place only on the home, where there is no set", () => {

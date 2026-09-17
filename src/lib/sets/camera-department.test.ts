@@ -110,6 +110,9 @@ describe("the squeeze on the frame", () => {
     const lane = read("../generations/actions.ts");
     expect(actions).toContain("const rigFrame = formatFrame(rig.format, rig.squeeze);");
     expect(actions).toContain('fd.set("set_squeeze", String(rig.squeeze));');
+    // And onto the stored camera, or a squeezed still's look boxes are
+    // measured with the pose's own lens on a band the squeeze widened.
+    expect(actions).toContain("band: rigFrame.bandAspect, squeeze: rigFrame.squeeze }");
     expect(lane).toContain("const setFrame = formatFrame(setFormat, setSqueeze);");
     expect(lane).toContain("isRigSqueeze(squeezeSent) ? squeezeSent : 1");
   });

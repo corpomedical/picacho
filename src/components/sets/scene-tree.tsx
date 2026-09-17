@@ -24,7 +24,7 @@ const ICONS = {
   sky: "M17.5 18a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.7 1.6A4 4 0 0 0 6 18z",
 };
 
-export const TREE_HEAD = "flex h-6 items-center px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6b6f7a]";
+export const TREE_HEAD = "flex h-6 items-center px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#868b96]";
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
@@ -80,7 +80,7 @@ export function TreeRow({
         <StudioSvg d={ICONS[icon]} className={`h-[13px] w-[13px] flex-none ${selected ? "" : "text-[#8b8f9a]"}`} />
       ) : null}
       <span className="min-w-0 flex-1 truncate">{name}</span>
-      {badge && <span className="flex-none text-[11px] tabular-nums text-[#6b6f7a]">{badge}</span>}
+      {badge && <span className="flex-none text-[11px] tabular-nums text-[#868b96]">{badge}</span>}
     </button>
   );
 }
