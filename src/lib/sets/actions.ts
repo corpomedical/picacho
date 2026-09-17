@@ -59,7 +59,6 @@ import { recordShotTake } from "@/lib/sets/shot-take";
 import { isFilmMove, isFilmTexture } from "@/lib/sets/moves";
 
 /** Where the rig's focus is measured to: the figure's eyes (build-scene's stand-in). */
-const RIG_EYE_Y = 1.5;
 import { lookCutout, removeSetLookCutouts, type LookCutoutResult } from "@/lib/sets/look-cutout-store";
 import { lookSheet } from "@/lib/sets/look-sheet";
 import { seesLookObjects } from "@/lib/sets/look-cutout";
@@ -104,6 +103,7 @@ import {
   setMonthlyCapMessage,
 } from "@/lib/sets/messages";
 import { normaliseRack, rackWords } from "@/lib/sets/furniture";
+import { STAND_IN_EYE_M } from "@/lib/sets/build-scene";
 import { gazeWords, normaliseGaze } from "@/lib/sets/people";
 
 // Sets' server actions (Astra Sets, Phase 1, 2026-09-10).
@@ -726,7 +726,7 @@ export async function shootInSet(
     ? {
         distanceM: Math.hypot(
           layout.camera.position[0] - layout.mark.x,
-          layout.camera.position[1] - RIG_EYE_Y,
+          layout.camera.position[1] - STAND_IN_EYE_M[layout.pose],
           layout.camera.position[2] - layout.mark.z,
         ),
         fovDeg: layout.camera.fovDeg,

@@ -12,7 +12,7 @@ import { saveSetLayout, saveSetThumbnail, shootInSet, takeInSet } from "@/lib/se
 import { editSetWithAstra, saveSetEdit } from "@/lib/sets/editor-actions";
 import { matchSetShot } from "@/lib/sets/match-actions";
 import { readShotWords } from "@/lib/sets/words-actions";
-import { fovForLens, nearestLens, squeezeProjection, type StageQuality } from "@/lib/sets/build-scene";
+import { STAND_IN_EYE_M, fovForLens, nearestLens, squeezeProjection, type StageQuality } from "@/lib/sets/build-scene";
 import { dockTabAfter, dockTabsFor, railToolForKey, studioChecked, studioHeld, studioLab, type DockTab, type RailTool, type StatusItem, type StudioMode } from "@/lib/sets/studio";
 import { viewModeMaterial, type ViewMode } from "@/lib/sets/view-modes";
 import { azimuthOf, hourFromAzimuth, measureMetres, scaleBar, sunDirection, type MeasurePoint } from "@/lib/sets/furniture";
@@ -317,7 +317,6 @@ const TURN_STEP = 30;
 // Framing the figure: a full-length shot, a little headroom and floor.
 const FRAME_HEIGHT_M = 2.3;
 const FRAME_TARGET_Y = 0.95;
-const FRAME_EYE_Y = 1.45;
 // How far a tilt may go (SET_MAX_TILT_UP_DEG, SET_MAX_TILT_DOWN_DEG) is in
 // set-config.ts: a matched shot is held to the same limits. The up limit
 // keeps a tilt inside the orbit's maxPolarAngle below.
@@ -899,6 +898,12 @@ export function SetView({
         let disposeLive: () => void = () => built.dispose();
 
         const standIn = buildStandIn(THREE, ACCENT, undefined, layoutRef.current.pose);
+        // Where the figure's eyes are, by its pose (build-scene.ts): the
+        // focus readout, the bracket, the eye-line and the rays from the
+        // eyes all start here. A fixed 1.45 m sat on a standing figure's
+        // chest ("This is a mess", 2026-09-17).
+        let standPose: StandPose = layoutRef.current.pose;
+        const eyeY = () => STAND_IN_EYE_M[standPose];
         placeStandIn(standIn, layoutRef.current.mark);
         scene.add(standIn.group);
 
@@ -1334,7 +1339,7 @@ export function SetView({
             const focusOn = depthStop !== null && focusWords !== null;
             if (focusOn || meterWords) {
               const p = standIn.group.position;
-              eyeHud.set(p.x, FRAME_EYE_Y, p.z);
+              eyeHud.set(p.x, eyeY(), p.z);
               const d = camera.position.distanceTo(eyeHud);
               eyeHud.project(camera);
               const x = ((eyeHud.x + 1) / 2) * lastW;
@@ -1408,8 +1413,8 @@ export function SetView({
               if (depthStop === null) f.bracket.hidden = true;
               else {
                 const p = standIn.group.position;
-                const e = project(ptV.set(p.x, FRAME_EYE_Y, p.z));
-                const t = project(ptV.set(p.x, FRAME_EYE_Y + 0.12, p.z));
+                const e = project(ptV.set(p.x, eyeY(), p.z));
+                const t = project(ptV.set(p.x, eyeY() + 0.12, p.z));
                 const headPx = Math.abs(e.y - t.y) * 2.6;
                 const off = e.behind || e.x < 0 || e.x > lastW || e.y < 0 || e.y > lastH || headPx < 6;
                 f.bracket.hidden = off;
@@ -1454,7 +1459,7 @@ export function SetView({
             // The scale: a round length at the figure's depth.
             if (f.scale && frameCount % 8 === 0) {
               const p = standIn.group.position;
-              const dist = Math.max(0.3, ptV.set(p.x, FRAME_EYE_Y, p.z).distanceTo(camera.position));
+              const dist = Math.max(0.3, ptV.set(p.x, eyeY(), p.z).distanceTo(camera.position));
               const pxPerMetre = lastH / (2 * dist * Math.tan((camera.fov * Math.PI) / 360));
               const bar = scaleBar(pxPerMetre);
               const line = f.scale.querySelector<HTMLElement>("i");
@@ -1471,7 +1476,7 @@ export function SetView({
               svg.style.display = target === null ? "none" : "";
               if (target !== null) {
                 const p = standIn.group.position;
-                const eye = project(ptV.set(p.x, FRAME_EYE_Y, p.z));
+                const eye = project(ptV.set(p.x, eyeY(), p.z));
                 const line = svg.querySelector<SVGLineElement>("line");
                 const label = svg.querySelector<SVGTextElement>("text");
                 const dot = svg.querySelector<SVGCircleElement>("circle");
@@ -1672,6 +1677,7 @@ export function SetView({
           },
           setPose(p) {
             standIn.setPose(p);
+            standPose = p;
           },
           pose() {
             const r = (n: number) => Math.round(n * 1000) / 1000;
@@ -1755,7 +1761,7 @@ export function SetView({
           },
           roomFor(pose) {
             const p = standIn.group.position;
-            const from = new THREE.Vector3(p.x, FRAME_EYE_Y, p.z);
+            const from = new THREE.Vector3(p.x, eyeY(), p.z);
             const to = new THREE.Vector3(...pose.position);
             const dir = new THREE.Vector3().subVectors(to, from);
             const reach = dir.length();
@@ -1844,7 +1850,7 @@ export function SetView({
           },
           frameFigure() {
             const p = standIn.group.position;
-            const eye = new THREE.Vector3(p.x, FRAME_EYE_Y, p.z);
+            const eye = new THREE.Vector3(p.x, eyeY(), p.z);
             // The whole figure inside the PICTURE: a rig format's band is only
             // part of the render's height (Scope keeps 643 of 1024 rows).
             const fr = formatFrame(rigRef.current.format);
@@ -1876,7 +1882,7 @@ export function SetView({
               if (r > best.room) best = { dir, room: r };
             }
             const distance = Math.max(0.6, Math.min(want, best.room));
-            camera.position.set(p.x + best.dir.x * distance, FRAME_EYE_Y, p.z + best.dir.z * distance);
+            camera.position.set(p.x + best.dir.x * distance, eyeY(), p.z + best.dir.z * distance);
             controls.target.set(p.x, FRAME_TARGET_Y, p.z);
             controls.update();
           },
@@ -1906,7 +1912,7 @@ export function SetView({
             const p = standIn.group.position;
             const placed = placeMatchedCamera(THREE, built.root, pose, {
               mark: { x: p.x, z: p.z, facingDeg: layoutRef.current.mark.facingDeg },
-              eyeY: FRAME_EYE_Y,
+              eyeY: eyeY(),
               bounds: spec.bounds,
               maxDistance: controls.maxDistance,
             });
@@ -2241,16 +2247,34 @@ export function SetView({
   // The frame lines follow the format and the panels round the stage: the
   // rig docked left, the conversation right, the setup chips above and the
   // filmstrip or the film dock below (md and up; a phone keeps the edges).
+  // Since the frame (cut A) the dock is a column beside the stage, not a
+  // panel over it, and the setup chips wrap into as many rows as the width
+  // makes them: the insets are measured from the chips and the strip
+  // themselves, not assumed. Before this the lines sat under the chips and
+  // shrank for a chat panel that was no longer there ("This is a mess",
+  // 2026-09-17).
+  const chipsRef = useRef<HTMLDivElement>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const wide = typeof window !== "undefined" && window.matchMedia?.("(min-width: 768px)").matches;
-    insetsRef.current = {
-      left: wide && rigOpen ? 356 : 14,
-      right: wide ? (chatOpen ? 406 : 96) : 14,
-      top: 64,
-      bottom: filmOpen ? 196 : 112,
+    const measure = () => {
+      const wideNow = typeof window !== "undefined" && window.matchMedia?.("(min-width: 768px)").matches;
+      const chips = chipsRef.current;
+      const strip = stripRef.current;
+      // The chips' last row, plus the readout that sits 18 px above the lines.
+      const top = chips ? chips.offsetTop + chips.offsetHeight + 26 : 14;
+      const hostH = hostRef.current?.clientHeight ?? 0;
+      const bottom = strip && hostH ? hostH - strip.offsetTop + 10 : wideNow && (filmOpen || cutOpen) ? 76 : filmOpen ? 196 : 112;
+      insetsRef.current = { left: wideNow && rigOpen ? 356 : 14, right: 14, top, bottom };
+      apiRef.current?.relayout();
     };
-    apiRef.current?.relayout();
-  }, [rig.format, rigOpen, chatOpen, filmOpen, ready]);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    if (chipsRef.current) ro.observe(chipsRef.current);
+    if (stripRef.current) ro.observe(stripRef.current);
+    return () => ro.disconnect();
+    // `viewing`: the chips leave with a still in view and return with the stage.
+  }, [rig.format, rigOpen, filmOpen, cutOpen, ready, viewing]);
 
   // The stop ring's depth of field, previewed on the live view only.
   useEffect(() => {
@@ -5059,11 +5083,7 @@ export function SetView({
 
           {/* The setup, as chips on the picture itself. */}
           {!viewingShot && (
-            <div
-              className={`absolute left-3.5 top-3.5 z-20 flex flex-wrap items-center gap-2 right-3.5  ${
-                chatOpen ? "md:right-[404px]" : "md:right-24"
-              }`}
-            >
+            <div ref={chipsRef} data-setup-chips className="absolute left-3.5 right-3.5 top-3.5 z-20 flex flex-wrap items-center gap-2">
               <div className="relative">
                 <button
                   type="button"
@@ -5494,7 +5514,7 @@ export function SetView({
               >
                 {viewingShot.score === null ? s.unscored : stillLine(viewingShot)}
               </span>
-              <button type="button" onClick={() => setViewing(null)} className={`absolute top-3.5 ${glassBtn} right-3.5 ${chatOpen ? "md:right-[404px]" : ""}`}>
+              <button type="button" onClick={() => setViewing(null)} className={`absolute top-3.5 ${glassBtn} right-3.5`}>
                 <FrameIcon className="h-3.5 w-3.5" />
                 {s.backToFrame}
               </button>
@@ -5514,13 +5534,13 @@ export function SetView({
                     onClick={() => setViewing(shots[(viewingAt + 1) % shots.length].generationId)}
                     aria-label={s.nextStill}
                     title={s.nextStill}
-                    className={`absolute top-1/2 flex h-9 w-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-onmedia/10 bg-black/60 text-lg text-onmedia/80 transition-colors hover:text-onmedia right-3.5 ${chatOpen ? "md:right-[404px]" : ""}`}
+                    className={`absolute top-1/2 flex h-9 w-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-onmedia/10 bg-black/60 text-lg text-onmedia/80 transition-colors hover:text-onmedia right-3.5`}
                   >
                     ›
                   </button>
                 </>
               )}
-              <div className={`absolute bottom-3.5 left-3.5 flex flex-wrap items-center justify-between gap-2 right-3.5 ${chatOpen ? "md:right-[404px]" : ""}`}>
+              <div className="absolute bottom-3.5 left-3.5 right-3.5 flex flex-wrap items-center justify-between gap-2">
                 <span className="rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80 tabular-nums">
                   {formatMsg(viewingShot.kind === "take" ? s.takeTile : s.stillTile, { n: stillNumber(viewingShot) })} · <LocalDate date={viewingShot.createdAt} />
                   {formatNote(viewingShot) ? ` · ${formatNote(viewingShot)}` : ""}
@@ -5564,9 +5584,9 @@ export function SetView({
           {/* The filmstrip — the workspace's timeline: the frame, then every still, newest first */}
           {!filmOpen && (
           <div
-            className={`absolute bottom-3.5 left-3.5 z-10 flex items-center gap-2 overflow-x-auto rounded-[14px] border border-white/[0.08] bg-black/40 p-1.5 backdrop-blur right-3.5 ${
-              chatOpen ? "md:right-[404px]" : "md:right-24"
-            }  ${viewingShot ? "hidden md:flex" : ""}`}
+            ref={stripRef}
+            data-filmstrip
+            className={`absolute bottom-3.5 left-3.5 right-3.5 z-10 flex items-center gap-2 overflow-x-auto rounded-[14px] border border-white/[0.08] bg-black/40 p-1.5 backdrop-blur ${viewingShot ? "hidden md:flex" : ""}`}
           >
             <button
               type="button"
@@ -5626,9 +5646,7 @@ export function SetView({
               beat. The stage stays the stage: orbit, then K keeps the view. */}
           {!wide && filmOpen && (
             <div
-              className={`absolute bottom-3.5 left-3.5 z-10 flex flex-col gap-2 rounded-[14px] border border-white/[0.08] bg-black/40 p-2 backdrop-blur right-3.5 ${
-                chatOpen ? "md:right-[404px]" : "md:right-24"
-              }  ${viewingShot ? "hidden md:flex" : ""}`}
+              className={`absolute bottom-3.5 left-3.5 right-3.5 z-10 flex flex-col gap-2 rounded-[14px] border border-white/[0.08] bg-black/40 p-2 backdrop-blur ${viewingShot ? "hidden md:flex" : ""}`}
             >
               {/* the stage's keys, above the dock (canvas pages H and I); a touch has neither hover nor keys */}
               <span className="pointer-events-none absolute bottom-full left-0 mb-2 hidden max-w-full rounded-[12px] border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] leading-4 text-onmedia/80 md:pointer-fine:block">

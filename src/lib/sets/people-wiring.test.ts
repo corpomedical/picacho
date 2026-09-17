@@ -19,7 +19,7 @@ describe("the eye-line", () => {
     expect(view).toContain("layoutRef.current = { ...layoutRef.current, gaze };");
     expect(view).toContain("gaze: initialLayout?.gaze ?? null");
     const loop = view.slice(view.indexOf("// The eye-line (cut D): from the eyes to what the figure looks at."), view.indexOf("// The measure line, between the points on the ground."));
-    expect(loop).toContain("const eye = project(ptV.set(p.x, FRAME_EYE_Y, p.z));");
+    expect(loop).toContain("const eye = project(ptV.set(p.x, eyeY(), p.z));");
     expect(loop).toContain('if (target === "camera") {');
     expect(view).toContain("data-eyeline");
   });
