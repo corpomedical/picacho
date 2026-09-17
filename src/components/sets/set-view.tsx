@@ -755,7 +755,7 @@ export function SetView({
       try {
         const THREE = await import("three");
         const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");
-        const { buildSetScene, buildStandIn, moveBuildInto, placeStandIn } = await import("@/lib/sets/build-scene");
+        const { buildSetScene, buildStandIn, moveBuildInto, placeStandIn, sketchStage } = await import("@/lib/sets/build-scene");
         const { BASE_EXPOSURE, NO_LIFT, liftSet } = await import("@/lib/sets/exposure");
         const { Sky } = await import("three/examples/jsm/objects/Sky.js");
         const { RectAreaLightUniformsLib } = await import("three/examples/jsm/lights/RectAreaLightUniformsLib.js");
@@ -1200,9 +1200,36 @@ export function SetView({
         // (2026-09-11). The lift belongs to the set, not to where the figure is.
         fit();
         let lift = NO_LIFT;
+        // The sketch's own lift, for the frame the image model reads
+        // (frame(), build-scene.ts sketchStage): measured on the sketch, as
+        // every lift was before the full stage, with a neutral light of its
+        // own that stays off while the stage is shown. The stage's lift is
+        // measured after it, on the stage, with the sketch's light off.
+        let sketchLift = NO_LIFT;
+        let sketchFill: import("three").HemisphereLight | null = null;
+        let sketchFillOn = 0;
+        let stageFill: import("three").HemisphereLight | null = null;
+        let stageFillOn = 0;
         standIn.group.visible = false;
         try {
+          if (full) {
+            sketchStage(scene, built.root, true);
+            try {
+              sketchLift = liftSet(THREE, renderer, scene, spec, built.farPlane);
+            } finally {
+              sketchStage(scene, built.root, false);
+            }
+            sketchFill = (scene.getObjectByName("lift-fill") as import("three").HemisphereLight | undefined) ?? null;
+            if (sketchFill) {
+              sketchFill.name = "lift-fill-sketch";
+              sketchFillOn = sketchFill.intensity;
+              sketchFill.intensity = 0;
+            }
+          }
           lift = liftSet(THREE, renderer, scene, spec, built.farPlane);
+          stageFill = (scene.getObjectByName("lift-fill") as import("three").HemisphereLight | undefined) ?? null;
+          stageFillOn = stageFill?.intensity ?? 0;
+          if (!full) sketchLift = lift;
         } catch (err) {
           console.warn("SetView lighting measurement failed:", err);
         } finally {
@@ -1236,7 +1263,8 @@ export function SetView({
         };
 
         apiRef.current = {
-          lifted: lift.fill > 1 || lift.exposure > BASE_EXPOSURE,
+          // The sketch's lift: it is the sketch the prompt's sentence is about.
+          lifted: sketchLift.fill > 1 || sketchLift.exposure > BASE_EXPOSURE,
           goTo(pose) {
             camera.position.set(...pose.position);
             controls.target.set(...pose.target);
@@ -1283,7 +1311,23 @@ export function SetView({
             const ratio = renderer.getPixelRatio();
             renderer.setPixelRatio(1);
             renderer.setSize(fr.renderW, fr.renderH, false);
-            renderer.render(scene, cam);
+            // The sketch (build-scene.ts sketchStage, 2026-09-17): the full
+            // stage is for the person's eyes; the image model reads the flat
+            // sketch the shot prompt describes, at the sketch's own lift and
+            // this rig's exposure. The stage is back before the browser
+            // shows a frame.
+            sketchStage(scene, built.root, true);
+            if (sketchFill) sketchFill.intensity = sketchFillOn;
+            if (stageFill) stageFill.intensity = 0;
+            renderer.toneMappingExposure = sketchLift.exposure * exposureGainNow;
+            try {
+              renderer.render(scene, cam);
+            } finally {
+              renderer.toneMappingExposure = lift.exposure * exposureGainNow;
+              if (stageFill) stageFill.intensity = stageFillOn;
+              if (sketchFill) sketchFill.intensity = 0;
+              sketchStage(scene, built.root, false);
+            }
             // The band the frame lines draw, centred, when the picture is
             // asked for rather than the frame it is shot in.
             const band = opts?.cut && fr.cut;

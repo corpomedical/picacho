@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { FULL_STAGE, buildSetScene, buildStandIn, fovForLens, lensForFov, moveBuildInto, nearestLens, placeStandIn, squeezeProjection } from "./build-scene";
+import { FULL_STAGE, buildSetScene, buildStandIn, fovForLens, lensForFov, moveBuildInto, nearestLens, placeStandIn, sketchStage, squeezeProjection } from "./build-scene";
 import { normaliseSetSpec, specInstanceCount, type SetSpec } from "./set-spec";
 import rainyMarket from "./fixtures-rainy-market.json";
 import showroomOpen from "./fixtures-showroom-open.json";
@@ -379,5 +379,131 @@ describe("the stand-in's poses (cut 5)", () => {
     expect(standIn.figure.children[parts - 1].position.y).toBeCloseTo(headStanding, 6);
     standIn.dispose();
     expect(buildStandIn(THREE, "#e0a468", 1.75, "sit").pose).toBe("sit");
+  });
+});
+
+describe("the sketch the image model reads (sketchStage, 2026-09-17)", () => {
+  // The full stage is for the person's eyes; the frame that rides to the
+  // image model is the flat sketch the shot prompt describes. On, the live
+  // stage becomes that sketch in place; off, everything is back as it was.
+  const foggy = (): SetSpec => {
+    const r = normaliseSetSpec({ ...showroomOpen, fog: { color: "#c8d0da", near: 20, far: 120 } });
+    if (!r.ok) throw new Error("fixture");
+    return r.spec;
+  };
+  const materialsOf = (root: THREE.Group) =>
+    root.children.filter((c) => (c as THREE.Mesh).isMesh && c.name !== "sky" && c.name !== "sky-sketch").map((c) => (c as THREE.Mesh).material as THREE.Material);
+
+  it("swaps every thing and the ground to the basic stage's flat material, and back", () => {
+    const spec = foggy();
+    const scene = new THREE.Scene();
+    const full = buildSetScene(THREE, spec, { quality: "full" });
+    scene.add(full.root);
+    scene.fog = full.fog;
+    const before = materialsOf(full.root);
+    expect(before.every((m) => (m as THREE.MeshPhysicalMaterial).isMeshPhysicalMaterial)).toBe(true);
+
+    sketchStage(scene, full.root, true);
+    const sketch = materialsOf(full.root);
+    expect(sketch.every((m) => m.type === "MeshStandardMaterial")).toBe(true);
+    // The same colour as the thing, no texture maps: the basic stage's material.
+    const wall = full.root.children.find((c) => (c as THREE.Mesh).isMesh && c.name !== "ground" && c.name !== "sky") as THREE.Mesh;
+    const flat = wall.material as THREE.MeshStandardMaterial;
+    expect(flat.map).toBeNull();
+    expect(flat.color.getHexString()).toBe(new THREE.Color(spec.objects[0].color).getHexString());
+    expect(scene.fog).toBeInstanceOf(THREE.Fog);
+    expect(scene.environment).toBeNull();
+
+    sketchStage(scene, full.root, false);
+    expect(materialsOf(full.root)).toEqual(before);
+    expect(scene.fog).toBe(full.fog);
+    expect(scene.fog).toBeInstanceOf(THREE.FogExp2);
+    full.dispose();
+  });
+
+  it("takes the stage's balance off the lights and puts it back, keeping a change made live in between", () => {
+    const spec = foggy();
+    const scene = new THREE.Scene();
+    const full = buildSetScene(THREE, spec, { quality: "full" });
+    scene.add(full.root);
+    const sun = full.root.children.find((c) => (c as THREE.DirectionalLight).isDirectionalLight) as THREE.DirectionalLight;
+    const written = spec.lights.find((l) => l.kind === "sun")!.intensity;
+    expect(sun.intensity).toBeCloseTo(written * FULL_STAGE.sunGain, 6);
+
+    sketchStage(scene, full.root, true);
+    expect(sun.intensity).toBeCloseTo(written, 6);
+    sketchStage(scene, full.root, false);
+    expect(sun.intensity).toBeCloseTo(written * FULL_STAGE.sunGain, 6);
+
+    // A light the page turned up live keeps its new value across a swap.
+    sun.intensity = 9;
+    sketchStage(scene, full.root, true);
+    expect(sun.intensity).toBeCloseTo(9 / FULL_STAGE.sunGain, 6);
+    sketchStage(scene, full.root, false);
+    expect(sun.intensity).toBe(9);
+    full.dispose();
+  });
+
+  it("shows the gradient dome in place of a real sky, and hides it again", () => {
+    const spec = foggy();
+    const scene = new THREE.Scene();
+    // A stand-in for three's Sky and the page's PMREM generator: enough for
+    // the build to draw a real sky and bake an environment from it.
+    const env = new THREE.Texture();
+    const Sky = class extends THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> {
+      constructor() {
+        super(
+          new THREE.BoxGeometry(1, 1, 1),
+          new THREE.ShaderMaterial({
+            uniforms: { turbidity: { value: 0 }, rayleigh: { value: 0 }, mieCoefficient: { value: 0 }, mieDirectionalG: { value: 0 }, sunPosition: { value: new THREE.Vector3() } },
+          }),
+        );
+      }
+    };
+    const pmrem = { fromScene: () => ({ texture: env, dispose() {} }) } as unknown as THREE.PMREMGenerator;
+    const full = buildSetScene(THREE, spec, { quality: "full", sky: { Sky, pmrem } });
+    scene.add(full.root);
+    scene.environment = full.environment;
+    scene.environmentIntensity = full.environmentIntensity;
+    const sky = full.root.getObjectByName("sky")!;
+    const dome = full.root.getObjectByName("sky-sketch")!;
+    expect(sky.visible).toBe(true);
+    expect(dome.visible).toBe(false);
+    expect(scene.environment).toBe(env);
+
+    sketchStage(scene, full.root, true);
+    expect(sky.visible).toBe(false);
+    expect(dome.visible).toBe(true);
+    expect(scene.environment).toBeNull();
+    sketchStage(scene, full.root, false);
+    expect(sky.visible).toBe(true);
+    expect(dome.visible).toBe(false);
+    expect(scene.environment).toBe(env);
+    expect(scene.environmentIntensity).toBe(full.environmentIntensity);
+    full.dispose();
+  });
+
+  it("survives a rebuild in place, and does nothing to a basic build", () => {
+    const spec = foggy();
+    const scene = new THREE.Scene();
+    const first = buildSetScene(THREE, spec, { quality: "full" });
+    scene.add(first.root);
+    const fresh = buildSetScene(THREE, spec, { quality: "full" });
+    const free = moveBuildInto(first.root, fresh);
+    sketchStage(scene, first.root, true);
+    expect(materialsOf(first.root).every((m) => m.type === "MeshStandardMaterial")).toBe(true);
+    sketchStage(scene, first.root, false);
+    expect(materialsOf(first.root).every((m) => (m as THREE.MeshPhysicalMaterial).isMeshPhysicalMaterial)).toBe(true);
+    free();
+
+    const basic = buildSetScene(THREE, spec);
+    const basicScene = new THREE.Scene();
+    basicScene.add(basic.root);
+    basicScene.fog = basic.fog;
+    const mats = materialsOf(basic.root);
+    sketchStage(basicScene, basic.root, true);
+    expect(materialsOf(basic.root)).toEqual(mats);
+    expect(basicScene.fog).toBe(basic.fog);
+    basic.dispose();
   });
 });

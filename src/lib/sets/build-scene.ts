@@ -138,25 +138,8 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: BuildSetOptions
     environment = target.texture;
     environmentIntensity = intensity;
   };
-  if (spec.sky.kind === "color") {
-    background = new THREE.Color(spec.sky.colors[0]);
-  } else if (full && opts.sky && !night && sunSpec) {
-    // A real sky, from the sun's own height: the horizon warms as the sun
-    // drops, the zenith deepens, and its light falls on every surface.
-    const sky = new opts.sky.Sky();
-    sky.name = "sky";
-    sky.scale.setScalar(domeRadius * 1.8);
-    const u = sky.material.uniforms;
-    u.turbidity.value = lowSun ? 8 : 4;
-    u.rayleigh.value = lowSun ? 3.2 : 1.6;
-    u.mieCoefficient.value = lowSun ? 0.02 : 0.006;
-    u.mieDirectionalG.value = lowSun ? 0.86 : 0.8;
-    (u.sunPosition.value as ThreeNS.Vector3).copy(sunDir);
-    track(sky.material);
-    track(sky.geometry);
-    lightFrom(sky, lowSun ? FULL_STAGE.envIntensityLow : FULL_STAGE.envIntensity);
-    root.add(sky);
-  } else {
+  /** The gradient dome: the basic stage's sky, and the sketch's under a real one. */
+  const makeDome = (): ThreeNS.Mesh => {
     const top = new THREE.Color(spec.sky.colors[0]);
     const horizon = new THREE.Color(spec.sky.colors[1] ?? spec.sky.colors[0]);
     const geo = track(new THREE.SphereGeometry(domeRadius, 32, 16));
@@ -177,17 +160,48 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: BuildSetOptions
     const dome = new THREE.Mesh(geo, mat);
     dome.name = "sky";
     dome.renderOrder = -1;
+    return dome;
+  };
+  if (spec.sky.kind === "color") {
+    background = new THREE.Color(spec.sky.colors[0]);
+  } else if (full && opts.sky && !night && sunSpec) {
+    // A real sky, from the sun's own height: the horizon warms as the sun
+    // drops, the zenith deepens, and its light falls on every surface.
+    const sky = new opts.sky.Sky();
+    sky.name = "sky";
+    sky.scale.setScalar(domeRadius * 1.8);
+    const u = sky.material.uniforms;
+    u.turbidity.value = lowSun ? 8 : 4;
+    u.rayleigh.value = lowSun ? 3.2 : 1.6;
+    u.mieCoefficient.value = lowSun ? 0.02 : 0.006;
+    u.mieDirectionalG.value = lowSun ? 0.86 : 0.8;
+    (u.sunPosition.value as ThreeNS.Vector3).copy(sunDir);
+    track(sky.material);
+    track(sky.geometry);
+    lightFrom(sky, lowSun ? FULL_STAGE.envIntensityLow : FULL_STAGE.envIntensity);
+    sky.userData.stageOnly = true;
+    root.add(sky);
+    // The sketch's sky (sketchStage): the gradient dome the basic stage
+    // draws, hidden until the frame the image model reads is rendered.
+    const dome = makeDome();
+    dome.name = "sky-sketch";
+    dome.userData.sketchOnly = true;
+    dome.visible = false;
+    root.add(dome);
+  } else {
+    const dome = makeDome();
     lightFrom(dome, night ? FULL_STAGE.nightEnvIntensity : FULL_STAGE.envIntensity);
     root.add(dome);
   }
 
   // Daylight fog on the full stage thins with distance the way air does;
   // a night set keeps Astra's near and far as written (its fog is a look).
+  const sketchFog = spec.fog ? new THREE.Fog(new THREE.Color(spec.fog.color), spec.fog.near, spec.fog.far) : null;
   const fog: BuiltSet["fog"] = !spec.fog
     ? null
     : full && !night
       ? new THREE.FogExp2(new THREE.Color(spec.fog.color), FULL_STAGE.fogDensityOverFar / spec.fog.far)
-      : new THREE.Fog(new THREE.Color(spec.fog.color), spec.fog.near, spec.fog.far);
+      : sketchFog;
 
   // --- ground: wider than the set, so no camera inside the bounds sees its edge ---
   {
@@ -203,6 +217,9 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: BuildSetOptions
     ground.name = "ground";
     ground.receiveShadow = shadows;
     if (full) {
+      ground.userData.sketchMaterial = track(
+        new THREE.MeshStandardMaterial({ color: new THREE.Color(spec.ground.color), roughness: spec.ground.roughness }),
+      );
       // A plane geometry is unit-sized nowhere here (it is built at the
       // ground's real size), so the repeat is fitted through the scale it
       // would have had.
@@ -225,6 +242,7 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: BuildSetOptions
         // The full stage's balance (FULL_STAGE), and soft shadows from the
         // lamps too — the first two spots and the first two bulbs.
         const l = o as ThreeNS.Light;
+        const asWritten = l.isLight ? l.intensity : 0;
         if ((o as ThreeNS.DirectionalLight).isDirectionalLight) l.intensity *= lowSun ? FULL_STAGE.sunGainLow : FULL_STAGE.sunGain;
         else if ((o as ThreeNS.HemisphereLight).isHemisphereLight || (o as ThreeNS.AmbientLight).isAmbientLight) {
           if (night) l.intensity *= FULL_STAGE.nightFillGain;
@@ -258,6 +276,8 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: BuildSetOptions
             pt.shadow.camera.near = 0.2;
           }
         }
+        // What the balance did to this light, for the sketch to undo (sketchStage).
+        if (l.isLight && asWritten > 0 && l.intensity !== asWritten) o.userData.sketchGain = asWritten / l.intensity;
       }
       root.add(o);
     }
@@ -307,6 +327,26 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: BuildSetOptions
     return mat;
   };
 
+  /** The basic stage's material for a thing: what the sketch the image model reads draws it in (sketchStage). */
+  const sketchMaterials = new Map<string, ThreeNS.MeshStandardMaterial>();
+  const sketchMaterialFor = (o: SetObject): ThreeNS.MeshStandardMaterial => {
+    const key = [o.color, o.roughness, o.metalness, o.emissive ?? "", o.emissiveIntensity, o.shape === "plane"].join("|");
+    const hit = sketchMaterials.get(key);
+    if (hit) return hit;
+    const mat = track(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color(o.color),
+        roughness: o.roughness,
+        metalness: o.metalness,
+        emissive: new THREE.Color(o.emissive ?? "#000000"),
+        emissiveIntensity: o.emissive ? o.emissiveIntensity : 0,
+        side: o.shape === "plane" ? THREE.DoubleSide : THREE.FrontSide,
+      }),
+    );
+    sketchMaterials.set(key, mat);
+    return mat;
+  };
+
   let meshCount = 0;
   for (const o of spec.objects) {
     const geo = geometryFor(o);
@@ -325,10 +365,16 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: BuildSetOptions
       if (full) {
         const fitted = fitRepeat(mesh, o.shape === "plane");
         if (fitted) mesh.material = adopt(fitted);
+        mesh.userData.sketchMaterial = sketchMaterialFor(o);
       }
       root.add(mesh);
       meshCount += 1;
     }
+  }
+
+  if (full) {
+    const stage: StageRecord = { environment, environmentIntensity, fog, sketchFog };
+    root.userData.stage = stage;
   }
 
   return {
@@ -363,7 +409,67 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: BuildSetOptions
 export function moveBuildInto(root: ThreeNS.Group, fresh: BuiltSet): () => void {
   root.clear();
   for (const child of [...fresh.root.children]) root.add(child);
+  root.userData.stage = fresh.root.userData.stage;
   return () => fresh.dispose();
+}
+
+/** What a full build leaves on its root for sketchStage: the stage's own sky light and fog, and the sketch's fog. */
+type StageRecord = {
+  environment: ThreeNS.Texture | null;
+  environmentIntensity: number;
+  fog: ThreeNS.Fog | ThreeNS.FogExp2 | null;
+  sketchFog: ThreeNS.Fog | null;
+};
+
+/**
+ * The sketch the image model reads (2026-09-17): the full stage is for the
+ * person's eyes; the frame that rides to the image model stays the flat
+ * sketch the basic stage draws, which is what the shot prompt describes
+ * ("a grey 3D mock-up ... a guide to composition, not a style reference").
+ * The operator's first still after the full stage went live ignored its
+ * direction: handed a lit, textured, sky-lit render, the model copies it
+ * the way it copies a finished photograph (set-shot-prompt.ts LOOK_SENTENCE),
+ * whatever the words say.
+ *
+ * `on` turns the live stage into that sketch in place — every thing and
+ * the ground in its flat material, the lights at the intensities Astra
+ * wrote, the gradient dome for the sky, no environment light, linear fog —
+ * and `off` puts everything back exactly as it was, whatever the page
+ * changed live in between (the current material and intensity are
+ * remembered on the way in). A basic build has nothing to swap. The page's
+ * own lift light (exposure.ts) is not the build's: the page swaps that
+ * itself.
+ */
+export function sketchStage(scene: ThreeNS.Scene, root: ThreeNS.Group, on: boolean): void {
+  const stage = root.userData.stage as StageRecord | undefined;
+  if (!stage) return;
+  root.traverse((o) => {
+    const mesh = o as ThreeNS.Mesh;
+    if (mesh.isMesh && mesh.userData.sketchMaterial) {
+      if (on) {
+        mesh.userData.stageMaterial = mesh.material;
+        mesh.material = mesh.userData.sketchMaterial as ThreeNS.Material;
+      } else if (mesh.userData.stageMaterial) {
+        mesh.material = mesh.userData.stageMaterial as ThreeNS.Material;
+        delete mesh.userData.stageMaterial;
+      }
+    }
+    const light = o as ThreeNS.Light;
+    if (light.isLight && typeof o.userData.sketchGain === "number") {
+      if (on) {
+        o.userData.stageIntensity = light.intensity;
+        light.intensity *= o.userData.sketchGain;
+      } else if (typeof o.userData.stageIntensity === "number") {
+        light.intensity = o.userData.stageIntensity;
+        delete o.userData.stageIntensity;
+      }
+    }
+    if (o.userData.stageOnly) o.visible = !on;
+    if (o.userData.sketchOnly) o.visible = on;
+  });
+  scene.environment = on ? null : stage.environment;
+  scene.environmentIntensity = on ? 1 : stage.environmentIntensity;
+  scene.fog = on ? stage.sketchFog : stage.fog;
 }
 
 /** Half the width of the interpreter's own floor (closure.ts measures against it). */
