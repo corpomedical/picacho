@@ -533,10 +533,15 @@ export function specTextForGate(spec: SetSpec): string {
 // model's version is always recoverable — and normalised by the same rules.
 // ---------------------------------------------------------------------------
 
+/** How the stand-in stands (build-scene.ts buildStandIn): the pose the picture model is shown (cut 5). */
+export const STAND_POSES = ["stand", "sit", "walk", "lean"] as const;
+export type StandPose = (typeof STAND_POSES)[number];
+
 export type SetLayout = {
   markId: string;
   mark: { x: number; z: number; facingDeg: number };
   camera: { position: Vec3; target: Vec3; fovDeg: number } | null;
+  pose: StandPose;
 };
 
 export function normaliseSetLayout(input: unknown, spec: SetSpec): SetLayout | null {
@@ -577,5 +582,6 @@ export function normaliseSetLayout(input: unknown, spec: SetSpec): SetLayout | n
       camera = { position, target, fovDeg: num(c.fovDeg, SET_LIMITS.minLayoutFovDeg, SET_LIMITS.maxFovDeg, 40) };
     }
   }
-  return { markId, mark, camera };
+  const pose = pick(root.pose, STAND_POSES, "stand");
+  return { markId, mark, camera, pose };
 }

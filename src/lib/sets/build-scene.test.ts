@@ -357,3 +357,27 @@ describe("an area light (the light department, cut 3)", () => {
     full.dispose();
   });
 });
+
+describe("the stand-in's poses (cut 5)", () => {
+  it("stands, sits, walks and leans by moving its parts, staying one figure", () => {
+    const standIn = buildStandIn(THREE, "#e0a468");
+    expect(standIn.pose).toBe("stand");
+    const parts = standIn.figure.children.length;
+    const headStanding = standIn.figure.children[parts - 1].position.y;
+    standIn.setPose("sit");
+    expect(standIn.pose).toBe("sit");
+    expect(standIn.figure.children.length).toBe(parts);
+    const headSitting = standIn.figure.children[parts - 1].position.y;
+    expect(headSitting).toBeLessThan(headStanding - 0.3);
+    standIn.setPose("walk");
+    const legs = standIn.figure.children.slice(0, 4);
+    // Feet apart fore and aft.
+    expect(legs[0].position.z).not.toBeCloseTo(legs[2].position.z, 3);
+    standIn.setPose("lean");
+    expect(standIn.figure.children[parts - 3].rotation.x).toBeLessThan(0);
+    standIn.setPose("stand");
+    expect(standIn.figure.children[parts - 1].position.y).toBeCloseTo(headStanding, 6);
+    standIn.dispose();
+    expect(buildStandIn(THREE, "#e0a468", 1.75, "sit").pose).toBe("sit");
+  });
+});

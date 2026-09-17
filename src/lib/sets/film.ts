@@ -8,8 +8,9 @@
 // shot by construction. Pure and relative-import only, like take.ts: the
 // page, the save action and the test all read the same shape.
 
-import type { Vec3 } from "./set-spec";
-import { cleanText } from "./set-spec";
+import type { StandPose, Vec3 } from "./set-spec";
+import { cleanText, STAND_POSES } from "./set-spec";
+import { RIG_TIME_MAX, RIG_TIME_MIN, RIG_TIME_STEP } from "./rig";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 import { isSetTakeEngine, SET_TAKE_DEFAULT_ENGINE, SET_TAKE_ENGINES, type SetTakeEngine } from "./take";
 import { isFilmMove, isFilmTexture, type FilmMove, type FilmTexture } from "./moves";
@@ -27,7 +28,13 @@ export type FilmBeat = {
   move: FilmMove | null;
   /** What rides on top of the path as words alone: handheld, slow motion, a whip. */
   textures: FilmTexture[];
+  /** The people track (cut 5): where, and how, the figure stands at the beat's end — its end frame is shot with it there; null keeps the figure where it is. */
+  figure: FilmFigure | null;
+  /** The sun track (cut 5): the hour at the beat's end (rig.ts RIG_TIME_*); null keeps the rig's. */
+  time: number | null;
 };
+
+export type FilmFigure = { x: number; z: number; facingDeg: number; pose: StandPose };
 
 export type SetFilm = {
   engine: SetTakeEngine;
@@ -108,7 +115,7 @@ export function normaliseSetFilm(v: unknown): SetFilm {
       const textures = Array.isArray(raw.textures)
         ? [...new Set(raw.textures.filter((t): t is FilmTexture => isFilmTexture(t)))]
         : [];
-      beats.push({ words, end, move, textures });
+      beats.push({ words, end, move, textures, figure: figureOf(raw.figure), time: hourOf(raw.time) });
     }
   }
   const ids = (list: unknown): (string | null)[] =>
@@ -121,6 +128,21 @@ export function normaliseSetFilm(v: unknown): SetFilm {
 
 const CONTEXT_RE = /^[0-9a-f]{1,16}$/;
 
+const REACH_M = 200;
+const figureOf = (v: unknown): FilmFigure | null => {
+  if (!v || typeof v !== "object") return null;
+  const f = v as Record<string, unknown>;
+  const n = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? Math.round(Math.min(REACH_M, Math.max(-REACH_M, x)) * 1000) / 1000 : null);
+  const x = n(f.x);
+  const z = n(f.z);
+  if (x === null || z === null) return null;
+  const facing = typeof f.facingDeg === "number" && Number.isFinite(f.facingDeg) ? Math.round((((f.facingDeg % 360) + 360) % 360) * 10) / 10 : 0;
+  const pose = typeof f.pose === "string" && (STAND_POSES as readonly string[]).includes(f.pose) ? (f.pose as StandPose) : "stand";
+  return { x, z, facingDeg: facing, pose };
+};
+const hourOf = (v: unknown): number | null =>
+  typeof v === "number" && Number.isFinite(v) ? Math.round(Math.min(RIG_TIME_MAX, Math.max(RIG_TIME_MIN, v)) / RIG_TIME_STEP) * RIG_TIME_STEP : null;
+
 /** Two beats as the same beat: every field the take is rendered from. */
 function sameBeat(a: FilmBeat, b: FilmBeat): boolean {
   return (
@@ -130,7 +152,10 @@ function sameBeat(a: FilmBeat, b: FilmBeat): boolean {
     a.textures.every((t, i) => t === b.textures[i]) &&
     a.end.fovDeg === b.end.fovDeg &&
     a.end.position.every((n, i) => n === b.end.position[i]) &&
-    a.end.target.every((n, i) => n === b.end.target[i])
+    a.end.target.every((n, i) => n === b.end.target[i]) &&
+    a.time === b.time &&
+    (a.figure === null) === (b.figure === null) &&
+    (a.figure === null || (a.figure.x === b.figure!.x && a.figure.z === b.figure!.z && a.figure.facingDeg === b.figure!.facingDeg && a.figure.pose === b.figure!.pose))
   );
 }
 
@@ -202,6 +227,8 @@ export function filmContextKey(input: {
   rig: SetRig;
   mark: { x: number; z: number; facingDeg: number };
   setKey: string;
+  /** The figure's pose (cut 5); standing leaves the key as it was, so films made before the poses keep their clips. */
+  pose?: StandPose;
 }): string {
   const { rig, mark } = input;
   const light = rig.light ? [rig.light.scheme, rig.light.azimuthDeg, rig.light.elevationDeg] : null;
@@ -216,6 +243,7 @@ export function filmContextKey(input: {
       rig.time,
       [mark.x, mark.z, mark.facingDeg],
       input.setKey,
+      ...(input.pose && input.pose !== "stand" ? [input.pose] : []),
     ]),
   );
 }

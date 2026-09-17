@@ -154,7 +154,7 @@ describe("filmAfterEdit", () => {
 
   it("keeps the clips of the beats before a new one, and the film is no longer rendered", () => {
     const f = two();
-    const added = { ...f, beats: [...f.beats, { words: "three", end: pose(1), move: null, textures: [] }] };
+    const added = { ...f, beats: [...f.beats, { words: "three", end: pose(1), move: null, textures: [], figure: null, time: null }] };
     const next = filmAfterEdit(f, added);
     expect(next.clips).toEqual([A, B]);
     expect(filmRendered(next)).toBe(false);
@@ -362,5 +362,35 @@ describe("filmJobCount", () => {
         { beat: 2, end: null },
       ]),
     ).toEqual({ clips: 3, stills: 2 });
+  });
+});
+
+describe("the people and sun tracks (cut 5)", () => {
+  const pose = { position: [0, 1.6, 6] as [number, number, number], target: [0, 1.4, 0] as [number, number, number], fovDeg: 40 };
+  it("keep where the figure stands and the hour at a beat's end, and drop what they cannot read", () => {
+    const f = normaliseSetFilm({
+      beats: [
+        { words: "", end: pose, figure: { x: 2, z: -1, facingDeg: 450, pose: "sit" }, time: 17.6 },
+        { words: "", end: pose, figure: { x: "far" }, time: "noon" },
+        { words: "", end: pose },
+      ],
+    });
+    expect(f.beats[0].figure).toEqual({ x: 2, z: -1, facingDeg: 90, pose: "sit" });
+    expect(f.beats[0].time).toBe(17.5);
+    expect(f.beats[1].figure).toBeNull();
+    expect(f.beats[1].time).toBeNull();
+    expect(f.beats[2].figure).toBeNull();
+    expect(f.beats[2].time).toBeNull();
+    expect(normaliseSetFilm({ beats: [{ words: "", end: pose, figure: { x: 1, z: 1, pose: "fly" } }] }).beats[0].figure?.pose).toBe("stand");
+  });
+
+  it("make a beat another beat: a moved figure or a changed hour drops its clip", () => {
+    const before = normaliseSetFilm({ beats: [{ words: "a", end: pose }], clips: ["00000000-0000-0000-0000-000000000001"], ends: ["00000000-0000-0000-0000-000000000002"] });
+    const moved = { ...before, beats: [{ ...before.beats[0], figure: { x: 1, z: 1, facingDeg: 0, pose: "walk" as const } }] };
+    expect(filmAfterEdit(before, moved).clips).not.toContain(before.clips[0]);
+    const hour = { ...before, beats: [{ ...before.beats[0], time: 12 }] };
+    expect(filmAfterEdit(before, hour).clips).not.toContain(before.clips[0]);
+    const same = { ...before, beats: [{ ...before.beats[0] }] };
+    expect(filmAfterEdit(before, same).clips).toEqual(before.clips);
   });
 });

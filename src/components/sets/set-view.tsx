@@ -40,7 +40,7 @@ import { checkFilmCredits, readTakes, saveSetFilm } from "@/lib/sets/film-action
 import { checkShotRig, saveSetRig } from "@/lib/sets/rig-actions";
 import { RIG_PALETTES, depthOfField, exposureGain, findLook, focalMm, formatFrame, normaliseSetRig, sensorCocMm, sensorHeightMm, shutterFraction, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
 import { bearingDeg } from "@/lib/sets/light-schemes";
-import { stagedSpec } from "@/lib/sets/time-of-day";
+import { stagedSpec, timeLabel } from "@/lib/sets/time-of-day";
 import { shootCommands } from "@/lib/sets/commands";
 import { CommandPalette } from "./command-palette";
 import { labPreviewCodes } from "@/lib/sets/lab-preview";
@@ -61,7 +61,7 @@ import {
   SET_MAX_TILT_UP_DEG,
   SET_THUMB_PX,
 } from "@/lib/sets/set-config";
-import { SET_LIMITS, type SetLayout, type SetSpec, type Vec3 } from "@/lib/sets/set-spec";
+import { SET_LIMITS, STAND_POSES, type SetLayout, type SetSpec, type StandPose, type Vec3 } from "@/lib/sets/set-spec";
 import type { SetCharacter, SetShot } from "@/lib/sets/types";
 import { dropUnsaved, keepUnsaved, savedFilmKey, savedRigKey, takeUnsaved } from "@/lib/sets/unsaved";
 
@@ -116,6 +116,7 @@ function tweenPose(
   ms: number,
   move: FilmMove | null = null,
   alive: () => boolean = () => true,
+  onStep?: (eased: number) => void,
 ): Promise<void> {
   return new Promise((resolve) => {
     const t0 = performance.now();
@@ -127,6 +128,7 @@ function tweenPose(
       const k = Math.min(1, (now - t0) / ms);
       const e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
       api.goTo(poseAlong(move, a, b, e));
+      onStep?.(e);
       if (k < 1) requestAnimationFrame(step);
       else resolve();
     };
@@ -144,6 +146,8 @@ type StageApi = {
   goTo(pose: Pose): void;
   setFov(fovDeg: number): void;
   placeMark(mark: Mark): void;
+  /** How the figure stands (cut 5): the stand-in's pose, in every frame shot from here on. */
+  setPose(pose: StandPose): void;
   pose(): Pose;
   /**
    * A JPEG of the view. Square by default (the still's frame); with `from`
@@ -269,7 +273,7 @@ const sourceOf = (f: TakeFrames): TakeSource => ({ start: f.start, end: f.end, c
 /** A take's frames as the retry sends them: what it was rendered from (SetShot.takeFrom) and the words kept with it. */
 const framesOf = (source: TakeSource, shot: SetShot): TakeFrames => ({ ...source, words: shot.words ?? undefined });
 
-type MenuId = "camera" | "figure" | "history" | "mode" | "who" | "filmStart";
+type MenuId = "camera" | "figure" | "pose" | "history" | "mode" | "who" | "filmStart";
 
 const ACCENT = "#c8923a";
 const TURN_STEP = 30;
@@ -456,6 +460,8 @@ export function SetView({
   const [fovDeg, setFovDeg] = useState(startPose.fovDeg);
   const [markId, setMarkId] = useState(startMarkId);
   const [mark, setMark] = useState<Mark>(startMark);
+  // The figure's pose (cut 5): saved with the arrangement, drawn in the sketch.
+  const [pose, setPose] = useState<StandPose>(initialLayout?.pose ?? "stand");
   // The camera as it stands, for what Astra says about the frame: kept up
   // to date whenever a move settles (scheduleSave), since a ref is not read
   // during render.
@@ -709,7 +715,7 @@ export function SetView({
   // says so for a few seconds, in place of the drag hint.
   const [figureMoved, setFigureMoved] = useState(false);
   const figureMovedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const layoutRef = useRef({ markId: startMarkId, mark: startMark });
+  const layoutRef = useRef({ markId: startMarkId, mark: startMark, pose: initialLayout?.pose ?? "stand" });
   // The open menu, for the Esc handler (a ref is not read during render).
   const menuRef = useRef<MenuId | null>(null);
   // The set as it stood before the last Astra edit, for the changed line's
@@ -799,7 +805,7 @@ export function SetView({
         // matcher above all — keeps working; only its children change.
         let disposeLive: () => void = () => built.dispose();
 
-        const standIn = buildStandIn(THREE, ACCENT);
+        const standIn = buildStandIn(THREE, ACCENT, undefined, layoutRef.current.pose);
         placeStandIn(standIn, layoutRef.current.mark);
         scene.add(standIn.group);
 
@@ -1245,6 +1251,9 @@ export function SetView({
           placeMark(m) {
             placeStandIn(standIn, m);
           },
+          setPose(p) {
+            standIn.setPose(p);
+          },
           pose() {
             const r = (n: number) => Math.round(n * 1000) / 1000;
             return {
@@ -1654,13 +1663,22 @@ export function SetView({
   }, []);
 
   useEffect(() => {
-    layoutRef.current = { markId, mark };
+    layoutRef.current = { markId, mark, pose: layoutRef.current.pose };
     apiRef.current?.placeMark(mark);
     const key = JSON.stringify({ markId, mark });
     if (key === savedMarkRef.current) return;
     savedMarkRef.current = key;
     scheduleSave();
   }, [markId, mark, scheduleSave]);
+  // The pose follows its chip: drawn now, saved with the arrangement.
+  useEffect(() => {
+    layoutRef.current = { ...layoutRef.current, pose };
+    if (!ready) return;
+    apiRef.current?.setPose(pose);
+    scheduleSave();
+    // scheduleSave is stable across renders (useCallback on setId).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, pose]);
 
   useEffect(() => {
     return () => {
@@ -2355,7 +2373,7 @@ export function SetView({
     const pose = apiRef.current?.pose();
     if (!pose) return;
     editFilm((f) =>
-      f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [] }] },
+      f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [], figure: null, time: null }] },
     );
     setFilmSel((n) => n ?? null);
   }
@@ -2421,7 +2439,7 @@ export function SetView({
     keepStage();
     editFilm((f) => {
       const beats = [...f.beats];
-      beats[at] = beats[at] ? { ...beats[at], end, move } : { words: "", end, move, textures: [] };
+      beats[at] = beats[at] ? { ...beats[at], end, move } : { words: "", end, move, textures: [], figure: null, time: null };
       return { ...f, beats };
     });
     setFilmSel(at);
@@ -2489,7 +2507,16 @@ export function SetView({
     const b = film.beats[i];
     if (b) {
       keepStage();
-      apiRef.current?.goTo(b.end);
+      const api = apiRef.current;
+      api?.goTo(b.end);
+      // The beat's figure and hour (cut 5), as its end frame will be shot.
+      if (api && b.time !== null && b.time !== rigRef.current.time) {
+        api.rebuild(stagedSpec(spec, { light: rigRef.current.light, time: b.time }, b.figure ?? layoutRef.current.mark));
+      }
+      if (api && b.figure) {
+        api.placeMark(b.figure);
+        api.setPose(b.figure.pose);
+      }
       setFovDeg(b.end.fovDeg);
       setPoseNow(b.end);
     }
@@ -2508,10 +2535,37 @@ export function SetView({
     const start = shots.find((sh) => sh.generationId === film.startId)?.pose ?? null;
     let from = start ?? api.pose();
     if (start) api.goTo(start);
+    // The people and sun tracks (cut 5): the figure walks from where it
+    // stands to each beat's figure as the camera flies, and the hour steps
+    // at each beat's end. The stage goes back to the arrangement after.
+    let figureFrom: Mark = { ...layoutRef.current.mark };
+    let hourNow: number | null = rigRef.current.time;
     for (const beat of film.beats) {
-      await tweenPose(api, from, beat.end, MOVE_FLIGHT_MS, beat.move);
+      const to = beat.figure;
+      const walkFrom = figureFrom;
+      await tweenPose(
+        api,
+        from,
+        beat.end,
+        MOVE_FLIGHT_MS,
+        beat.move,
+        () => true,
+        to ? (e) => api.placeMark({ x: walkFrom.x + (to.x - walkFrom.x) * e, z: walkFrom.z + (to.z - walkFrom.z) * e, facingDeg: to.facingDeg }) : undefined,
+      );
+      if (to) {
+        figureFrom = { x: to.x, z: to.z, facingDeg: to.facingDeg };
+        api.setPose(to.pose);
+      }
+      if (beat.time !== null && beat.time !== hourNow) {
+        hourNow = beat.time;
+        api.rebuild(stagedSpec(spec, { light: rigRef.current.light, time: beat.time }, figureFrom));
+        api.placeMark(figureFrom);
+      }
       from = beat.end;
     }
+    if (hourNow !== rigRef.current.time) api.rebuild(stagedSpec(spec, rigRef.current, layoutRef.current.mark));
+    api.placeMark(layoutRef.current.mark);
+    api.setPose(layoutRef.current.pose);
     setPreviz(false);
   }
 
@@ -2524,7 +2578,7 @@ export function SetView({
    * mark or set renders from its start: its clips are of another film.
    */
   function filmPlanNow() {
-    const context = filmContextKey({ characterId, rig, mark, setKey });
+    const context = filmContextKey({ characterId, rig, mark, setKey, pose });
     const plan = filmRenderPlan(film, context, (id) => shots.find((sh) => sh.generationId === id)?.status ?? null);
     return { ...plan, context };
   }
@@ -2597,6 +2651,8 @@ export function SetView({
     keep(kept);
     setReel(null);
     setViewing(null);
+    // Whether a beat's hour was drawn: the arrangement's hour comes back after.
+    let stagedHour = false;
     // Whatever stops the chain — a refusal, a lost stage, anything thrown —
     // the film is let go, or it would stay locked as rendering, and a throw
     // is said in the dock rather than left to the console.
@@ -2608,6 +2664,17 @@ export function SetView({
         const startId = i === 0 ? film.startId : kept.ends[i - 1];
         if (!beat || !startId) break;
         setFilmBusy({ beat: i, clipOnly: job.end !== null });
+        // The people and sun tracks (cut 5): the end frame is shot with the
+        // figure where, and how, the beat says, at the beat's hour.
+        if (!job.end) {
+          const figure = beat.figure ?? layoutRef.current.mark;
+          if (beat.time !== null && beat.time !== rigRef.current.time) {
+            api.rebuild(stagedSpec(spec, { light: rigRef.current.light, time: beat.time }, figure));
+            stagedHour = true;
+          }
+          api.placeMark(figure);
+          api.setPose(beat.figure?.pose ?? layoutRef.current.pose);
+        }
         // Only a beat rendered whole shoots a frame; a clip alone ends on its own.
         const frame = job.end ? "" : api.frame({ from: beat.end });
         if (frame === null) {
@@ -2714,6 +2781,10 @@ export function SetView({
       setFilmError(s.loadFailed);
     } finally {
       filmBusyRef.current = false;
+      // The stage as arranged, whatever the beats did to it.
+      if (stagedHour) api.rebuild(stagedSpec(spec, rigRef.current, layoutRef.current.mark));
+      api.placeMark(layoutRef.current.mark);
+      api.setPose(layoutRef.current.pose);
       setFilmBusy(null);
     }
   }
@@ -2852,7 +2923,7 @@ export function SetView({
     if (words.direction) setDirection(words.direction);
     // The frame Astra set, kept to step back to: the mark as it will be
     // after the render, the camera as it stands now.
-    layoutRef.current = { markId: mId, mark: m };
+    layoutRef.current = { markId: mId, mark: m, pose: layoutRef.current.pose };
     keepRevision(directionNow, cameraNow);
     return moved;
   }
@@ -3048,7 +3119,7 @@ export function SetView({
       const pose = apiRef.current?.pose();
       if (!pose) return;
       editFilm((f) =>
-        f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [] }] },
+        f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [], figure: null, time: null }] },
       );
     };
     window.addEventListener("keydown", onKey);
@@ -3897,6 +3968,28 @@ export function SetView({
                   )}
                 </div>
               )}
+              <div className="relative">
+                <button type="button" onClick={() => toggleMenu("pose")} aria-haspopup="listbox" aria-expanded={menu === "pose"} disabled={!ready} className={DCHIP}>
+                  {s.poses[pose]}
+                  <Chevron />
+                </button>
+                {menu === "pose" && (
+                  <div role="listbox" aria-label={s.pose} className={DMENU}>
+                    {STAND_POSES.map((p) => (
+                      <Option
+                        key={p}
+                        active={pose === p}
+                        onPick={() => {
+                          setPose(p);
+                          setMenu(null);
+                        }}
+                      >
+                        {s.poses[p]}
+                      </Option>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button type="button" onClick={() => turn(-TURN_STEP)} disabled={!ready} aria-label={s.turnLeft} title={s.turnLeft} className={`${DCHIP} w-8 justify-center px-0`}>
                 ↺
               </button>
@@ -4504,6 +4597,37 @@ export function SetView({
                       placeholder={s.filmBeatWords}
                       className="h-7 rounded-[6px] bg-black/40 px-2 text-xs text-[#ecedf1] ring-1 ring-white/[0.08] placeholder:text-[#565a64] focus:outline-none focus:ring-[#e0a468]/60"
                     />
+                    {/* The people and sun tracks (cut 5): where the figure stands, and the hour, at this beat's end. */}
+                    <div className="flex flex-wrap items-center gap-1 pt-1">
+                      <button
+                        type="button"
+                        disabled={Boolean(filmBusy)}
+                        onClick={() =>
+                          editFilm((f) => ({
+                            ...f,
+                            beats: f.beats.map((bb, j) => (j === i ? { ...bb, figure: bb.figure ? null : { x: mark.x, z: mark.z, facingDeg: mark.facingDeg, pose } } : bb)),
+                          }))
+                        }
+                        title={b.figure ? s.filmFigureClear : s.filmFigureHere}
+                        className={chip(Boolean(b.figure))}
+                      >
+                        {b.figure ? formatMsg(s.filmFigureSet, { pose: s.poses[b.figure.pose], x: b.figure.x.toFixed(1), z: b.figure.z.toFixed(1) }) : s.filmFigureHere}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={Boolean(filmBusy)}
+                        onClick={() =>
+                          editFilm((f) => ({
+                            ...f,
+                            beats: f.beats.map((bb, j) => (j === i ? { ...bb, time: bb.time !== null ? null : (rig.time ?? 12) } : bb)),
+                          }))
+                        }
+                        title={b.time !== null ? s.filmHourClear : s.filmHourHere}
+                        className={chip(b.time !== null)}
+                      >
+                        {formatMsg(s.filmHourSet, { h: b.time !== null ? timeLabel(b.time) : rig.time !== null ? timeLabel(rig.time) : s.filmHourAsBuilt })}
+                      </button>
+                    </div>
                   </div>
                 ))}
                 {film.beats.length < FILM_MAX_BEATS && (

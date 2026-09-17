@@ -11,7 +11,7 @@
 // counts, sizes and colours are already inside their bounds.
 
 import type * as ThreeNS from "three";
-import type { SetLight, SetObject, SetSpec, Vec3 } from "./set-spec";
+import type { SetLight, SetObject, SetSpec, StandPose, Vec3 } from "./set-spec";
 import { fitRepeat, groundMaterialOf, materialOf, stageMaterial, type StageTextures } from "./stage-materials";
 
 type Three = typeof ThreeNS;
@@ -513,45 +513,120 @@ export type StandIn = {
   figure: ThreeNS.Group;
   /** Ring and facing arrow: shown while arranging, hidden in snapshots. */
   helpers: ThreeNS.Group;
+  /** How it stands (cut 5): standing, sitting, walking, leaning — the parts move, the figure stays one thing. */
+  setPose(pose: StandPose): void;
+  pose: StandPose;
   dispose(): void;
 };
+
+/** Where the eyes are for each pose, metres up, on a 1.75 m figure. */
+export const STAND_IN_EYE_M: Record<StandPose, number> = { stand: 1.65, sit: 1.2, walk: 1.65, lean: 1.58 };
+
+type PartPlan = { at: [number, number, number]; rot: [number, number, number] };
+/**
+ * Where each part goes for a pose, on a 1.75 m figure: feet, shins, thighs
+ * (left then right), hips, torso, neck, head. A sitting figure sits at
+ * 0.45 m — a chair's seat — with its thighs forward; walking staggers the
+ * legs and swings the arms; leaning tips the torso back a little.
+ */
+export function standInPlan(pose: StandPose): { legs: [PartPlan, PartPlan, PartPlan][]; arms: PartPlan[]; hips: PartPlan; torso: PartPlan; neck: PartPlan; head: PartPlan } {
+  const DEGR = Math.PI / 180;
+  const leg = (side: number, foot: PartPlan, shin: PartPlan, thigh: PartPlan): [PartPlan, PartPlan, PartPlan] => [foot, shin, thigh].map((p) => ({ at: [side * p.at[0], p.at[1], p.at[2]] as [number, number, number], rot: p.rot })) as [PartPlan, PartPlan, PartPlan];
+  const arm = (side: number, rot: number): PartPlan => ({ at: [side * 0.25, 1.14, 0], rot: [rot, 0, side * 0.08] });
+  switch (pose) {
+    case "sit":
+      return {
+        legs: [-1, 1].map((sd) => leg(sd, { at: [0.1, 0.03, 0.42], rot: [0, 0, 0] }, { at: [0.1, 0.23, 0.42], rot: [0, 0, 0] }, { at: [0.1, 0.49, 0.2], rot: [90 * DEGR, 0, 0] })),
+        arms: [-1, 1].map((sd) => arm(sd, -20 * DEGR)).map((a) => ({ at: [a.at[0], 0.86, 0.1], rot: a.rot })),
+        hips: { at: [0, 0.52, 0], rot: [0, 0, 0] },
+        torso: { at: [0, 0.82, 0.02], rot: [0, 0, 0] },
+        neck: { at: [0, 1.14, 0], rot: [0, 0, 0] },
+        head: { at: [0, 1.265, 0.005], rot: [0, 0, 0] },
+      };
+    case "walk":
+      return {
+        legs: [-1, 1].map((sd) => leg(sd, { at: [0.1, 0.03, sd * 0.18], rot: [0, 0, 0] }, { at: [0.1, 0.47, sd * 0.1], rot: [sd * 22 * DEGR, 0, 0] }, { at: [0.1, 0.47, sd * 0.1], rot: [sd * 22 * DEGR, 0, 0] })),
+        arms: [-1, 1].map((sd) => arm(sd, -sd * 25 * DEGR)),
+        hips: { at: [0, 0.9, 0], rot: [0, 0, 0] },
+        torso: { at: [0, 1.2, 0], rot: [0, 0, 0] },
+        neck: { at: [0, 1.52, 0], rot: [0, 0, 0] },
+        head: { at: [0, 1.645, 0.005], rot: [0, 0, 0] },
+      };
+    case "lean":
+      return {
+        legs: [-1, 1].map((sd) => leg(sd, { at: [0.1 + (sd > 0 ? 0.08 : 0), 0.03, sd > 0 ? 0.16 : 0], rot: [0, 0, 0] }, { at: [0.1, 0.47, 0], rot: [0, 0, 0] }, { at: [0.1, 0.47, 0], rot: [0, 0, 0] })),
+        arms: [-1, 1].map((sd) => arm(sd, 6 * DEGR)),
+        hips: { at: [0, 0.9, 0.04], rot: [0, 0, 0] },
+        torso: { at: [0, 1.19, -0.04], rot: [-12 * DEGR, 0, 0] },
+        neck: { at: [0, 1.5, -0.1], rot: [0, 0, 0] },
+        head: { at: [0, 1.62, -0.11], rot: [0, 0, 0] },
+      };
+    default:
+      return {
+        legs: [-1, 1].map((sd) => leg(sd, { at: [0.1, 0.03, 0.06], rot: [0, 0, 0] }, { at: [0.1, 0.47, 0], rot: [0, 0, 0] }, { at: [0.1, 0.47, 0], rot: [0, 0, 0] })),
+        arms: [-1, 1].map((sd) => arm(sd, 0)),
+        hips: { at: [0, 0.9, 0], rot: [0, 0, 0] },
+        torso: { at: [0, 1.2, 0], rot: [0, 0, 0] },
+        neck: { at: [0, 1.52, 0], rot: [0, 0, 0] },
+        head: { at: [0, 1.645, 0.005], rot: [0, 0, 0] },
+      };
+  }
+}
 
 // A faceless jointed mannequin, 1.75 m by default. A capsule alone read as a
 // bollard in the first render (2026-09-10), and a still engine told "the
 // person stands where the grey figure stands" needs to recognise a figure to
 // get the scale right. Feet point along +Z, so the silhouette also says which
 // way it faces.
-export function buildStandIn(THREE: Three, accent: string, heightM = STAND_IN_HEIGHT_M): StandIn {
+export function buildStandIn(THREE: Three, accent: string, heightM = STAND_IN_HEIGHT_M, pose: StandPose = "stand"): StandIn {
   const k = heightM / STAND_IN_HEIGHT_M;
   const group = new THREE.Group();
   group.name = "stand-in";
   const figure = new THREE.Group();
   const grey = new THREE.MeshStandardMaterial({ color: new THREE.Color("#b3aea4"), roughness: 0.85 });
   const geos: ThreeNS.BufferGeometry[] = [];
-  const part = (
-    geo: ThreeNS.BufferGeometry,
-    at: [number, number, number],
-    scale: [number, number, number] = [1, 1, 1],
-    rotZ = 0,
-  ) => {
+  const part = (geo: ThreeNS.BufferGeometry, scale: [number, number, number] = [1, 1, 1]) => {
     geos.push(geo);
     const m = new THREE.Mesh(geo, grey);
-    m.position.set(at[0] * k, at[1] * k, at[2] * k);
     m.scale.set(scale[0] * k, scale[1] * k, scale[2] * k);
-    m.rotation.z = rotZ;
     m.castShadow = true;
     figure.add(m);
+    return m;
+  };
+  const place = (m: ThreeNS.Mesh, p: PartPlan, rotZ = 0) => {
+    m.position.set(p.at[0] * k, p.at[1] * k, p.at[2] * k);
+    m.rotation.set(p.rot[0], p.rot[1], p.rot[2] + rotZ);
   };
   const limb = (radius: number, length: number) => new THREE.CapsuleGeometry(radius, Math.max(0.01, length - radius * 2), 6, 12);
-  for (const side of [-1, 1]) {
-    part(new THREE.BoxGeometry(0.1, 0.06, 0.25), [side * 0.1, 0.03, 0.06]);
-    part(limb(0.065, 0.86), [side * 0.1, 0.47, 0]);
-    part(limb(0.045, 0.62), [side * 0.25, 1.14, 0], [1, 1, 1], side * 0.08);
-  }
-  part(new THREE.BoxGeometry(0.33, 0.14, 0.2), [0, 0.9, 0]);
-  part(limb(0.14, 0.6), [0, 1.2, 0], [1.25, 1, 0.8]);
-  part(new THREE.CylinderGeometry(0.05, 0.055, 0.1, 12), [0, 1.52, 0]);
-  part(new THREE.SphereGeometry(0.1, 20, 14), [0, 1.645, 0.005], [1, 1.05, 1.1]);
+  // The parts, once; a pose only moves them (standInPlan). A leg is one
+  // capsule here — thigh and shin drawn as one limb, the plan's shin
+  // entry unused — so sitting folds it at the hip and the knee reads as
+  // the seat's edge; the sketch needs the shape of a person, not a rig.
+  const legs = [-1, 1].map((side) => ({
+    foot: part(new THREE.BoxGeometry(0.1, 0.06, 0.25)),
+    limb: part(limb(0.065, 0.86)),
+    side,
+  }));
+  const arms = [-1, 1].map((side) => ({ mesh: part(limb(0.045, 0.62)), side }));
+  const hips = part(new THREE.BoxGeometry(0.33, 0.14, 0.2));
+  const torso = part(limb(0.14, 0.6), [1.25, 1, 0.8]);
+  const neck = part(new THREE.CylinderGeometry(0.05, 0.055, 0.1, 12));
+  const head = part(new THREE.SphereGeometry(0.1, 20, 14), [1, 1.05, 1.1]);
+  let current: StandPose = pose;
+  const setPose = (next: StandPose) => {
+    current = next;
+    const plan = standInPlan(next);
+    plan.legs.forEach(([foot, , thigh], i) => {
+      place(legs[i].foot, foot);
+      place(legs[i].limb, thigh);
+    });
+    plan.arms.forEach((a, i) => place(arms[i].mesh, a, arms[i].side * 0.08));
+    place(hips, plan.hips);
+    place(torso, plan.torso);
+    place(neck, plan.neck);
+    place(head, plan.head);
+  };
+  setPose(pose);
   group.add(figure);
 
   const helpers = new THREE.Group();
@@ -577,6 +652,10 @@ export function buildStandIn(THREE: Three, accent: string, heightM = STAND_IN_HE
     group,
     figure,
     helpers,
+    setPose,
+    get pose() {
+      return current;
+    },
     dispose() {
       for (const g of [...geos, ringGeo, arrowGeo]) g.dispose();
       grey.dispose();

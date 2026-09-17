@@ -37,6 +37,10 @@ export const RELEASES: Release[] = [
       "The rig is a dock with tabs — Camera, Light, Look, and Film while the film is open — so each department is a glance rather than a scroll.",
       "A command palette: press ⌘K (Ctrl+K), or the ⌘K pill in the bar, and type — a frame, a lens, a stop, a light plot, an hour, a look, a viewfinder aid, a camera, a mark, Frame the figure, Shoot. Enter runs it. On the set page, F frames the figure and R shows or hides the rig; in Build, V G R S pick the tool and 1–4 the view.",
       "Build has viewport modes — Lit, Clay, Wire and Depth — and a search box over the scene tree. The modes are Build's only: what you shoot, and what the picture model is shown, stays lit.",
+      "A set check in Build reads the set for what a build can get wrong: something big standing through something small (a wall through a car), a camera or a mark inside a thing, a thing sunk into the ground. Each finding selects what it names. On the race track it found the two walls Astra had repeated into the middle of the circuit.",
+      "A kit of props in Build's Add menu — a car, a tree, a lamp post, a bench, stairs, a rail — placed at real size, facing the camera, made of the same shapes and materials as everything else, so Astra and the editor treat them like anything else. The set can be downloaded as JSON.",
+      "The figure has a pose: standing, sitting, walking or leaning, chosen on the set page and drawn in every frame the picture model is shown; it is saved with the arrangement.",
+      "A film's beats carry two more tracks: where, and how, the figure stands at the beat's end — its end frame is shot with her there, so a beat can be a walk to the car and a sit — and the hour at the beat's end, so a beat can carry the light from afternoon into evening. Play walks the figure and steps the hour on the stage before a credit is spent.",
     ],
   },
   {

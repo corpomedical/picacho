@@ -12,10 +12,10 @@ import { SET_EDIT_MAX_SPEC_CHARS } from "@/lib/sets/set-config";
 import { dropUnsaved, keepUnsaved, savedEditKey, takeUnsaved } from "@/lib/sets/unsaved";
 import {
   addCamera,
+  addKit,
   addLight,
   addMark,
   addObject,
-  duplicateObject,
   patchCamera,
   patchFog,
   patchGround,
@@ -23,14 +23,15 @@ import {
   patchMark,
   patchObject,
   patchSky,
+  duplicateObject,
+  type EditResult,
+  type EditTarget,
   removeCamera,
   removeLight,
   removeMark,
   removeObject,
   selectionAfter,
   sizeFromScale,
-  type EditResult,
-  type EditTarget,
 } from "@/lib/sets/editor-model";
 import {
   normaliseSetSpec,
@@ -50,6 +51,8 @@ import type { StageQuality } from "@/lib/sets/build-scene";
 import { groundMaterialOf, materialOf } from "@/lib/sets/stage-materials";
 import { KELVIN_MAX, KELVIN_MIN, KELVIN_STEP, kelvinToHex, nearestKelvin } from "@/lib/sets/light-kelvin";
 import { VIEW_MODES, viewModeMaterial, type ViewMode } from "@/lib/sets/view-modes";
+import { KIT_KINDS, type KitKind } from "@/lib/sets/kit";
+import { checkSet, type SetFinding } from "@/lib/sets/set-check";
 
 // The Set Editor (drawn 2026-09-14, canvas page G): Adobe's grammar in
 // Picacho's skin. The set page's second life — Build beside Shoot — laid out
@@ -440,6 +443,7 @@ export function SetEditor({
   const [view, setView] = useState<ViewMode>("lit");
   // The scene tree's search (the outliner): rows whose name holds the words.
   const [find, setFind] = useState("");
+  const [checkOpen, setCheckOpen] = useState(false);
   const [snap, setSnap] = useState(true);
   const [history, setHistory] = useState<string[]>(() => [JSON.stringify(initialEdited ?? original)]);
   const [at, setAt] = useState(0);
@@ -663,6 +667,30 @@ export function SetEditor({
     setSel({ kind: "object", index: r.spec.objects.length - 1 });
   }
 
+  function addAProp(kind: KitKind) {
+    setAddOpen(false);
+    const at = apiRef.current?.viewCenter() ?? [0, 0];
+    // Facing the camera, the way a mark would.
+    const pose = apiRef.current?.viewPose();
+    const facing = pose ? Math.round((Math.atan2(pose.position[0] - at[0], pose.position[2] - at[1]) * 180) / Math.PI) : 0;
+    const r = addKit(specRef.current, kind, at, facing);
+    if (!r.ok) {
+      flashLine(s.editorFull);
+      return;
+    }
+    commit(r);
+    setSel({ kind: "object", index: r.spec.objects.length - 1 });
+  }
+  /** The working copy as a file (cut 5): the set as JSON, for anywhere else. */
+  function exportJson() {
+    const blob = new Blob([JSON.stringify(specRef.current, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(specRef.current.title || "set").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "set"}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
   function addAnAreaLight() {
     setAddOpen(false);
     const r = addLight(specRef.current, "area");
@@ -1279,6 +1307,22 @@ export function SetEditor({
   const viewName = (m: ViewMode) => (m === "lit" ? s.editorViewLit : m === "clay" ? s.editorViewClay : m === "wire" ? s.editorViewWire : s.editorViewDepth);
   const findQuery = find.trim().toLowerCase();
   const hit = (name: string) => !findQuery || name.toLowerCase().includes(findQuery);
+  const findings = useMemo(() => checkSet(spec), [spec]);
+  const findingTarget = (f: SetFinding): EditTarget =>
+    f.kind === "through" ? { kind: "object", index: f.big } : f.kind === "camera-inside" ? { kind: "camera", index: f.camera } : f.kind === "mark-inside" ? { kind: "mark", index: f.mark } : { kind: "object", index: f.object };
+  const findingLine = (f: SetFinding): string => {
+    const name = (i: number) => (spec.objects[i] ? objectName(spec.objects[i]) : `#${i + 1}`);
+    switch (f.kind) {
+      case "through":
+        return formatMsg(s.editorFindingThrough, { big: name(f.big), small: name(f.small) });
+      case "camera-inside":
+        return formatMsg(s.editorFindingCamera, { camera: cameraName(f.camera), object: name(f.object) });
+      case "mark-inside":
+        return formatMsg(s.editorFindingMark, { mark: markName(f.mark), object: name(f.object) });
+      case "sunk":
+        return formatMsg(s.editorFindingSunk, { object: name(f.object), d: f.depthM });
+    }
+  };
   const lightName = (li: number) => {
     const kind = spec.lights[li].kind;
     const before = spec.lights.slice(0, li).filter((l) => l.kind === kind).length;
@@ -1387,6 +1431,13 @@ export function SetEditor({
         >
           {s.editorOriginal}
         </button>
+        <button type="button" onClick={exportJson} className={ICON_BTN} title={s.editorExport} aria-label={s.editorExport}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]" aria-hidden>
+            <path d="M12 3v12" />
+            <path d="m7 10 5 5 5-5" />
+            <path d="M4 19h16" />
+          </svg>
+        </button>
         <button
           type="button"
           onClick={() => void done()}
@@ -1434,6 +1485,13 @@ export function SetEditor({
                 <Svg d={D.bulb} className="h-[13px] w-[13px] text-[#8b8f9a]" />
                 {s.editorAddArea}
               </button>
+              <div className={SHEAD}>{s.editorAddKit}</div>
+              {KIT_KINDS.map((kind) => (
+                <button key={kind} type="button" onClick={() => addAProp(kind)} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#c6c9d1] hover:bg-white/[0.05]">
+                  <Svg d={D.add} className="h-[13px] w-[13px] text-[#8b8f9a]" />
+                  {s.editorKits[kind]}
+                </button>
+              ))}
               <button type="button" onClick={addAMark} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#c6c9d1] hover:bg-white/[0.05]">
                 <Svg d={D.person} className="h-[13px] w-[13px] text-[#8b8f9a]" />
                 {s.editorAddMark}
@@ -1969,9 +2027,37 @@ export function SetEditor({
       </div>
 
       {/* status bar */}
-      <div className={`${BAR} flex h-6 flex-none items-center gap-4 border-t ${HAIR} px-3.5 text-[11px] text-[#6b6f7a]`}>
+      <div className={`${BAR} relative flex h-6 flex-none items-center gap-4 border-t ${HAIR} px-3.5 text-[11px] text-[#6b6f7a]`}>
         <span className="tabular-nums">{formatMsg(s.editorBoundsTall, { x: r1(spec.bounds.x), z: r1(spec.bounds.z), h: r1(spec.bounds.height) })}</span>
         <span className="hidden sm:inline">{s.editorYourCopy}</span>
+        {/* The set check (set-check.ts): what stands through what, read off the working copy after every edit. */}
+        <button
+          type="button"
+          onClick={() => setCheckOpen((v) => !v)}
+          aria-expanded={checkOpen}
+          className={`flex h-5 cursor-pointer items-center gap-1.5 rounded-full px-2 ${findings.length ? "bg-[rgba(224,164,104,0.13)] text-[#e0a468]" : "text-[#6b6f7a] hover:text-[#ecedf1]"}`}
+        >
+          <span aria-hidden className={`h-[5px] w-[5px] rounded-full ${findings.length ? "bg-[#e0a468]" : "bg-[#5f9e6e]"}`} />
+          {s.editorCheck} · {findings.length ? formatMsg(s.editorCheckN, { n: findings.length }) : s.editorCheckClean}
+        </button>
+        {checkOpen && findings.length > 0 && (
+          <div className={`absolute bottom-7 left-3.5 z-30 flex w-[420px] max-w-[calc(100vw-2rem)] flex-col gap-0.5 rounded-[10px] border ${HAIR} ${PANEL} p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]`}>
+            {findings.map((f, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => {
+                  setSel(findingTarget(f));
+                  setCheckOpen(false);
+                }}
+                className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12px] text-[#c6c9d1] hover:bg-white/[0.05]"
+              >
+                <span className="min-w-0 flex-1 truncate">{findingLine(f)}</span>
+                <span className="text-[11px] text-[#e0a468]">{s.editorFindingSelect}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <span className="flex-1" />
         <span className="hidden md:inline">{s.editorRules}</span>
       </div>

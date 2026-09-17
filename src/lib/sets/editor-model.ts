@@ -11,6 +11,7 @@
 // gated build (or a gated Astra edit) wrote — holdEditedText enforces that
 // on the server for anything a browser sends.
 
+import { kitObjects, kitSize, type KitKind } from "./kit";
 import {
   normaliseSetSpec,
   SET_LIMITS,
@@ -131,6 +132,14 @@ export function addObject(spec: SetSpec, shape: SetShape, at: [number, number]):
     material: null,
     repeat: null,
   });
+  return renormalise(next);
+}
+
+/** A prop from the kit (kit.ts), its objects added at the end; refused when it would not fit the set's object count. */
+export function addKit(spec: SetSpec, kind: KitKind, at: [number, number], facingDeg = 0): EditResult {
+  if (spec.objects.length + kitSize(kind) > SET_LIMITS.maxObjects) return { ok: false };
+  const next = clone(spec);
+  next.objects.push(...kitObjects(kind, at, facingDeg));
   return renormalise(next);
 }
 

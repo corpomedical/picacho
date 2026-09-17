@@ -250,6 +250,7 @@ describe("the person's arrangement", () => {
       markId: "m2",
       mark: { x: 5, z: -5, facingDeg: 90 },
       camera: null,
+      pose: "stand",
     });
   });
 
@@ -318,5 +319,15 @@ describe("an area light", () => {
     const bare = normaliseSetSpec({ ...minimal, lights: [{ kind: "area" }] });
     if (!bare.ok) throw new Error("spec");
     expect(bare.spec.lights[0].size).toEqual([1, 1]);
+  });
+});
+
+describe("the layout's pose (cut 5)", () => {
+  it("is one of the stand-in's, standing by default", () => {
+    const r = normaliseSetSpec({ objects: [{ shape: "box", size: [1, 1, 1] }], marks: [{ x: 3, z: 3, facingDeg: 0 }] });
+    if (!r.ok) throw new Error("spec");
+    expect(normaliseSetLayout({ markId: "m1" }, r.spec)?.pose).toBe("stand");
+    expect(normaliseSetLayout({ markId: "m1", pose: "sit" }, r.spec)?.pose).toBe("sit");
+    expect(normaliseSetLayout({ markId: "m1", pose: "fly" }, r.spec)?.pose).toBe("stand");
   });
 });
