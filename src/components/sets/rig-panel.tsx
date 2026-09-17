@@ -49,6 +49,7 @@ import { moveKeyLight, schemeDefaults, schemeHasSun } from "@/lib/sets/light-sch
 import { compassWord, sunAt, timeLabel } from "@/lib/sets/time-of-day";
 import { RIG_TAB_SECTIONS, tabAfterFilm, tabsFor, type RigSection, type RigTab } from "@/lib/sets/rig-dock";
 import { FILM_MOVES, FILM_TEXTURES, type FilmMove, type FilmTexture } from "@/lib/sets/moves";
+import { RIG_BLADES } from "@/lib/sets/furniture";
 
 // The rig (Helios Cinema, 2026-09-15, drawn as canvas page I): the camera
 // department, docked left of the stage — Blender's tool panel to the
@@ -1102,6 +1103,18 @@ export function RigPanel({
                   ? formatMsg(r.focusLine, { name: figureName, d: nf.format(distanceM), near: nf.format(dof.nearM), far: nf.format(dof.farM) })
                   : formatMsg(r.focusDeep, { name: figureName, d: nf.format(distanceM), near: nf.format(dof.nearM) })}
               </p>
+              {/* The iris's blades (cut C, furniture.ts): the shape of the blur's highlights, in the focus words. */}
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 text-[11px] text-[#9aa0ad]">{s.studio.blades}</span>
+                <Pill on={rig.blades === null} onClick={() => set({ blades: null })} role="radio">
+                  {s.studio.bladesOff}
+                </Pill>
+                {RIG_BLADES.map((n) => (
+                  <Pill key={n} on={rig.blades === n} onClick={() => set({ blades: n })} role="radio">
+                    {n}
+                  </Pill>
+                ))}
+              </div>
             </>
           ) : (
             <p className="mt-2 text-[11.5px] leading-4 text-[#9aa0ad]">{r.focusOff}</p>

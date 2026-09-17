@@ -8,7 +8,7 @@
 import { isLabPalette, rigCheckItems, type RigCheckItem, type SetRig } from "./rig";
 import { schemeHasSun } from "./light-schemes";
 
-export const STUDIO_MODES = ["build", "shoot", "film"] as const;
+export const STUDIO_MODES = ["build", "shoot", "film", "cut"] as const;
 export type StudioMode = (typeof STUDIO_MODES)[number];
 
 /** The rail's nine tools, as drawn: transform, place, kit — each on a single key. */
@@ -43,7 +43,7 @@ const BUILD_USE: Record<RailTool, RailToolUse> = {
   camera: "action",
   light: "action",
   mark: "action",
-  measure: "off",
+  measure: "tool",
   kit: "action",
 };
 const SHOOT_USE: Record<RailTool, RailToolUse> = {
@@ -54,11 +54,11 @@ const SHOOT_USE: Record<RailTool, RailToolUse> = {
   camera: "action",
   light: "action",
   mark: "action",
-  measure: "off",
+  measure: "tool",
   kit: "off",
 };
 
-/** The rail for a mode, in drawn order. Shoot and Film share one rail. */
+/** The rail for a mode, in drawn order. Shoot, Film and Cut share one rail (Measure joined every mode in cut C). */
 export function railToolsFor(mode: StudioMode): RailToolState[] {
   const use = mode === "build" ? BUILD_USE : SHOOT_USE;
   return RAIL_TOOLS.map((t) => ({
@@ -89,6 +89,8 @@ export type DockTab = (typeof DOCK_TABS)[number];
  */
 export function dockTabsFor(mode: StudioMode, filmOpen: boolean): DockTab[] {
   if (mode === "build") return ["scene", "history", "astra"];
+  // The cut (cut C): the film's clips in order; the dock keeps the scene, the frames and the conversation.
+  if (mode === "cut") return ["scene", "history", "astra"];
   return filmOpen ? ["scene", "camera", "light", "look", "film", "history", "astra"] : ["scene", "camera", "light", "look", "history", "astra"];
 }
 

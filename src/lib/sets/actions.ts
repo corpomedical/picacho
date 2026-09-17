@@ -102,6 +102,7 @@ import {
   SET_TAKE_FAILED,
   setMonthlyCapMessage,
 } from "@/lib/sets/messages";
+import { normaliseRack, rackWords } from "@/lib/sets/furniture";
 
 // Sets' server actions (Astra Sets, Phase 1, 2026-09-10).
 //
@@ -923,6 +924,8 @@ export async function takeInSet(
     /** A film beat's move and textures (moves.ts): words for the path between the frames. */
     move?: unknown;
     textures?: unknown;
+    /** A film beat's rack of focus (furniture.ts): read against the set's things here, never trusted. */
+    rack?: unknown;
     /** A film's beat (renderFilm): kept as the film's, which renders it again itself (shot-take.ts). */
     film?: boolean;
   },
@@ -938,6 +941,9 @@ export async function takeInSet(
   // The start: a finished still of THIS set, the person's own, not deleted.
   const startId = typeof input?.startGenerationId === "string" ? input.startGenerationId : "";
   const startUrl = await finishedStillUrl(access.supabase, setId, userId, startId);
+  // The set, for the rack's words (cut C): a rack names one of its things.
+  const owned = await readyOwnedSpec(setId, userId);
+  if (owned.error !== null) return { error: owned.error };
   if (!startUrl) return { error: SET_TAKE_BAD_START };
   // An end frame the set already has: the same checks, before a take is counted.
   const reuseId = typeof input?.endGenerationId === "string" && input.endGenerationId.length > 0 ? input.endGenerationId : null;
@@ -1020,6 +1026,7 @@ export async function takeInSet(
     buildSetTakePrompt(typeof input.direction === "string" ? input.direction : "", {
       move: isFilmMove(input.move) ? input.move : null,
       textures,
+      rack: rackWords(normaliseRack(input.rack, owned.spec.objects.length), owned.spec),
     }),
   );
   // A tall frame renders a tall clip; every other rig format renders 16:9

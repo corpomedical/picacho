@@ -40,6 +40,7 @@
 // Relative imports only: the page, the actions and the tests share it.
 
 import type { LabLooks } from "./lab-grade";
+import { RIG_BLADES, bladesWords, type RigBlades } from "./furniture";
 
 export const RIG_FORMATS = {
   square: { band: 1, render: [1024, 1024] },
@@ -558,6 +559,8 @@ export type SetRig = {
   iso: RigIso;
   /** Exposure compensation, stops, in thirds within ±RIG_EV_RANGE. */
   ev: number;
+  /** The iris's blades (cut C, furniture.ts): shapes the blur's highlights in words, with a stop set; null says nothing. */
+  blades: RigBlades | null;
   overlays: RigOverlays;
   /** The light department (cut 3): the hour the sun stands at, or null for the set as built. */
   time: number | null;
@@ -575,6 +578,7 @@ export const DEFAULT_SET_RIG: SetRig = {
   gradeStage: true,
   sensor: DEFAULT_RIG_SENSOR,
   squeeze: 1,
+  blades: null,
   shutterDeg: RIG_REFERENCE_EXPOSURE.shutterDeg,
   iso: RIG_REFERENCE_EXPOSURE.iso,
   ev: 0,
@@ -622,6 +626,7 @@ export function normaliseSetRig(v: unknown): SetRig {
     gradeStage: r.gradeStage !== false,
     sensor: oneOf(r.sensor, RIG_SENSOR_ORDER) ?? DEFAULT_RIG_SENSOR,
     squeeze: numberIn(r.squeeze, RIG_SQUEEZES, 1),
+    blades: typeof r.blades === "number" && (RIG_BLADES as readonly number[]).includes(r.blades) ? (r.blades as RigBlades) : null,
     shutterDeg: numberIn(r.shutterDeg, RIG_SHUTTERS_DEG, RIG_REFERENCE_EXPOSURE.shutterDeg),
     iso: numberIn(r.iso, RIG_ISOS, RIG_REFERENCE_EXPOSURE.iso),
     ev: Math.round(ev * 1000) / 1000,
@@ -779,6 +784,9 @@ export function rigWordsByItem(rig: SetRig, ctx: RigShotContext): Partial<Record
         ? `Focus: the person, ${d} m from the camera, is sharp; the depth of field runs from ${m1(nearM)} to ${m1(farM)} m, and everything nearer or farther falls progressively soft.`
         : `Focus: the person, ${d} m from the camera, is sharp, and so is everything from ${m1(nearM)} m to the horizon.`;
     }
+    // The iris (cut C): only where there is blur to shape.
+    const blades = Number.isFinite(farM) ? bladesWords(rig.blades) : "";
+    if (blades) out.focus = `${out.focus} ${blades}`;
   }
   // The stock and the lens are the lab's (the section above): never words.
   const era = say("era", findLook(RIG_ERAS, rig.era));

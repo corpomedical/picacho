@@ -154,7 +154,7 @@ describe("filmAfterEdit", () => {
 
   it("keeps the clips of the beats before a new one, and the film is no longer rendered", () => {
     const f = two();
-    const added = { ...f, beats: [...f.beats, { words: "three", end: pose(1), move: null, textures: [], figure: null, time: null }] };
+    const added = { ...f, beats: [...f.beats, { words: "three", end: pose(1), move: null, textures: [], figure: null, time: null, rack: null }] };
     const next = filmAfterEdit(f, added);
     expect(next.clips).toEqual([A, B]);
     expect(filmRendered(next)).toBe(false);
@@ -312,9 +312,9 @@ describe("filmContextKey", () => {
     // key in film.ts — or be added here as one that does not.
     expect(Object.keys(DEFAULT_SET_RIG).sort()).toEqual(
       // In the key: format, era, stock, lens, stop, palette, light, sensor,
-      // squeeze, shutterDeg, iso, ev. Not in it: genre (suggests only),
-      // gradeStage and overlays (the stage's own view, never the sketch).
-      ["era", "ev", "format", "genre", "gradeStage", "iso", "lens", "light", "overlays", "palette", "sensor", "shutterDeg", "squeeze", "stock", "stop", "time"].sort(),
+      // squeeze, shutterDeg, iso, ev, blades. Not in it: genre (suggests
+      // only), gradeStage and overlays (the stage's own view, never the sketch).
+      ["blades", "era", "ev", "format", "genre", "gradeStage", "iso", "lens", "light", "overlays", "palette", "sensor", "shutterDeg", "squeeze", "stock", "stop", "time"].sort(),
     );
   });
 });

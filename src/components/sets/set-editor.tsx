@@ -52,6 +52,7 @@ import { groundMaterialOf, materialOf } from "@/lib/sets/stage-materials";
 import { KELVIN_MAX, KELVIN_MIN, KELVIN_STEP, kelvinToHex, nearestKelvin } from "@/lib/sets/light-kelvin";
 import { VIEW_MODES, viewModeMaterial, type ViewMode } from "@/lib/sets/view-modes";
 import { dockTabsFor, railToolForKey, type DockTab, type RailTool } from "@/lib/sets/studio";
+import { measureMetres, type MeasurePoint } from "@/lib/sets/furniture";
 import { SceneTree } from "./scene-tree";
 import { StudioBar, StudioDock, StudioRail, StudioStatus } from "./studio-frame";
 import { KIT_KINDS, type KitKind } from "@/lib/sets/kit";
@@ -77,9 +78,9 @@ import { checkSet, type SetFinding } from "@/lib/sets/set-check";
 // original always brings the untouched set back. Astra's word edits run
 // server-side, gated whole like a build (editSetWithAstra).
 
-type Tool = "select" | "move" | "rotate" | "scale";
+type Tool = "select" | "move" | "rotate" | "scale" | "measure";
 /** The rail's name for the editor's tool (studio.ts): Turn is rotate, Size is scale. */
-const RAIL_OF_TOOL: Record<Tool, RailTool> = { select: "select", move: "move", rotate: "turn", scale: "size" };
+const RAIL_OF_TOOL: Record<Tool, RailTool> = { select: "select", move: "move", rotate: "turn", scale: "size", measure: "measure" };
 
 type GizmoChange = {
   position?: Vec3;
@@ -91,6 +92,8 @@ type EditorApi = {
   rebuild(spec: SetSpec): void;
   applySelection(sel: EditTarget | null): void;
   applyTool(tool: Tool): void;
+  /** The measure tool (cut C): the line's SVG and its points on the ground, moved by the loop. */
+  setMeasure(svg: SVGSVGElement | null, points: readonly MeasurePoint[], words: (metres: number) => string): void;
   applySnap(on: boolean): void;
   /** Build's viewport mode (view-modes.ts): the scene's override material. */
   setViewMode(mode: ViewMode): void;
@@ -440,6 +443,13 @@ export function SetEditor({
   const [kitOpen, setKitOpen] = useState(false);
   const findRef = useRef<HTMLInputElement>(null);
   const railRef = useRef<(id: RailTool) => void>(() => {});
+  // The measure tool (cut C): two points on the ground and the line between them.
+  const [measurePts, setMeasurePts] = useState<MeasurePoint[]>([]);
+  const measureAddRef = useRef<(p: MeasurePoint) => void>(() => {});
+  useEffect(() => {
+    measureAddRef.current = (p) => setMeasurePts((pts) => (pts.length >= 2 ? [p] : [...pts, p]));
+  }, []);
+  const measureRef = useRef<SVGSVGElement>(null);
   const [ask, setAsk] = useState("");
   const [asking, setAsking] = useState(false);
   const [askNote, setAskNote] = useState<number | null>(null);
@@ -963,7 +973,7 @@ export function SetEditor({
           const target = selRef.current;
           const obj = meshFor(target);
           tc.detach();
-          if (!target || !obj || nextTool === "select") return;
+          if (!target || !obj || nextTool === "select" || nextTool === "measure") return;
           let mode: "translate" | "rotate" | "scale" =
             nextTool === "rotate" ? "rotate" : nextTool === "scale" ? "scale" : "translate";
           // Lights and cameras are placed, never turned or sized, by hand;
@@ -1063,7 +1073,60 @@ export function SetEditor({
         // (it captures the pointer), so only still clicks select.
         const raycaster = new THREE.Raycaster();
         const ndc = new THREE.Vector2();
+        const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const groundHit = new THREE.Vector3();
         let downAt: { x: number; y: number } | null = null;
+        // The measure's line (cut C): projected onto the screen every frame.
+        let measureSvg: SVGSVGElement | null = null;
+        let measurePoints: readonly MeasurePoint[] = [];
+        let measureWords: (metres: number) => string = (m) => `${m} m`;
+        const measureV = new THREE.Vector3();
+        const drawMeasure = () => {
+          if (!measureSvg) return;
+          const pts = measurePoints;
+          measureSvg.style.display = pts.length === 0 ? "none" : "";
+          if (pts.length === 0) return;
+          const r = canvas.getBoundingClientRect();
+          const project = (x: number, z: number) => {
+            measureV.set(x, 0.02, z).project(camera);
+            return { x: ((measureV.x + 1) / 2) * r.width, y: ((1 - measureV.y) / 2) * r.height };
+          };
+          const a = project(pts[0].x, pts[0].z);
+          const line = measureSvg.querySelector<SVGLineElement>("line");
+          const c1 = measureSvg.querySelector<SVGCircleElement>('[data-end="a"]');
+          const c2 = measureSvg.querySelector<SVGCircleElement>('[data-end="b"]');
+          const label = measureSvg.querySelector<SVGTextElement>("text");
+          if (c1) {
+            c1.setAttribute("cx", a.x.toFixed(1));
+            c1.setAttribute("cy", a.y.toFixed(1));
+          }
+          if (pts.length > 1) {
+            const b = project(pts[1].x, pts[1].z);
+            if (line) {
+              line.setAttribute("x1", a.x.toFixed(1));
+              line.setAttribute("y1", a.y.toFixed(1));
+              line.setAttribute("x2", b.x.toFixed(1));
+              line.setAttribute("y2", b.y.toFixed(1));
+              line.style.display = "";
+            }
+            if (c2) {
+              c2.setAttribute("cx", b.x.toFixed(1));
+              c2.setAttribute("cy", b.y.toFixed(1));
+              c2.style.display = "";
+            }
+            if (label) {
+              label.setAttribute("x", ((a.x + b.x) / 2).toFixed(1));
+              label.setAttribute("y", ((a.y + b.y) / 2 - 8).toFixed(1));
+              const text = measureWords(measureMetres(pts[0], pts[1]));
+              if (label.textContent !== text) label.textContent = text;
+              label.style.display = "";
+            }
+          } else {
+            if (line) line.style.display = "none";
+            if (c2) c2.style.display = "none";
+            if (label) label.style.display = "none";
+          }
+        };
         const onDown = (e: PointerEvent) => {
           if (e.button !== 0) return;
           downAt = { x: e.clientX, y: e.clientY };
@@ -1076,6 +1139,11 @@ export function SetEditor({
           const r = canvas.getBoundingClientRect();
           ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
           raycaster.setFromCamera(ndc, camera);
+          // Measure (cut C): a click on the ground is a point; two make the line.
+          if (toolRef.current === "measure") {
+            if (raycaster.ray.intersectPlane(groundPlane, groundHit)) measureAddRef.current({ x: Math.round(groundHit.x * 100) / 100, z: Math.round(groundHit.z * 100) / 100 });
+            return;
+          }
           const hits = raycaster.intersectObjects([...handlesGroup.children, ...objectMeshes], true);
           for (const h of hits) {
             let o: InstanceType<typeof THREE.Object3D> | null = h.object;
@@ -1116,6 +1184,7 @@ export function SetEditor({
           controls.update();
           if (camera.position.y < 0.1) camera.position.y = 0.1;
           renderer.render(scene, camera);
+          drawMeasure();
         };
 
         const clampHalf = (v: number, half: number) => Math.min(half, Math.max(-half, v));
@@ -1123,6 +1192,11 @@ export function SetEditor({
           rebuild: rebuildScene,
           applySelection,
           applyTool,
+          setMeasure(svg, points, words) {
+            measureSvg = svg;
+            measurePoints = points;
+            measureWords = words;
+          },
           applySnap,
           setViewMode(mode) {
             const prev = scene.overrideMaterial;
@@ -1205,6 +1279,11 @@ export function SetEditor({
   }, [tool, ready]);
 
   useEffect(() => {
+    if (!ready) return;
+    apiRef.current?.setMeasure(measureRef.current, measurePts, (m) => formatMsg(s.studio.measure, { m }));
+  }, [ready, measurePts, s]);
+
+  useEffect(() => {
     snapRef.current = snap;
     apiRef.current?.applySnap(snap);
   }, [snap, ready]);
@@ -1214,6 +1293,7 @@ export function SetEditor({
       if (id === "select" || id === "move") setTool(id);
       else if (id === "turn") setTool("rotate");
       else if (id === "size") setTool("scale");
+      else if (id === "measure") setTool("measure");
       else if (id === "camera") addACamera();
       else if (id === "light") addALight();
       else if (id === "mark") addAMark();
@@ -1243,8 +1323,9 @@ export function SetEditor({
         e.preventDefault();
         deleteRef.current();
       } else if (e.key === "Escape") {
-        // The open menu first; the thing in hand on the next press.
+        // The open menu first; the measure's line; the thing in hand on the next press.
         setKitOpen(false);
+        setMeasurePts([]);
         if (addOpenRef.current) setAddOpen(false);
         else pickRef.current(null);
       } else if (!meta && !e.altKey && !e.shiftKey) {
@@ -1346,7 +1427,15 @@ export function SetEditor({
   const saveLine =
     saveState === "saving" ? s.editorSaving : saveState === "failed" ? s.editorSaveFailed : saveState === "saved" ? s.editorSaved : "";
   const toolName =
-    tool === "select" ? s.editorToolSelect : tool === "move" ? s.editorToolMove : tool === "rotate" ? s.editorToolRotate : s.editorToolScale;
+    tool === "select"
+      ? s.editorToolSelect
+      : tool === "move"
+        ? s.editorToolMove
+        : tool === "rotate"
+          ? s.editorToolRotate
+          : tool === "measure"
+            ? s.studio.tools.measure
+            : s.editorToolScale;
 
   const selObject = sel?.kind === "object" ? spec.objects[sel.index] : null;
   const selLight = sel?.kind === "light" ? spec.lights[sel.index] : null;
@@ -1445,6 +1534,7 @@ export function SetEditor({
           build: { label: s.editorBuildTab },
           shoot: { label: s.editorShootTab, onClick: () => void done() },
           film: { label: s.filmTab, onClick: () => void done(`${closeHref}?film=1`) },
+          cut: { label: s.studio.cutMode, onClick: () => void done(`${closeHref}?cut=1`) },
         }}
         view={{ mode: view, onChange: setView, names: { lit: s.editorViewLit, clay: s.editorViewClay, wire: s.editorViewWire, depth: s.editorViewDepth } }}
         find={{ label: s.studio.find, kbd: s.palette.open, onOpen: openFind }}
@@ -1572,6 +1662,18 @@ export function SetEditor({
           {/* the stage */}
           <div className="relative min-h-0 flex-1 overflow-hidden bg-[#101116]">
             <div ref={hostRef} className="absolute inset-0" />
+            {/* The measure's line (cut C, furniture.ts), over the stage. */}
+            <svg ref={measureRef} style={{ display: "none" }} aria-hidden data-measure className="pointer-events-none absolute inset-0 z-10 h-full w-full">
+              <line stroke="#f0cda6" strokeWidth="1.5" strokeDasharray="4 3" />
+              <circle data-end="a" r="4" fill="#f0cda6" />
+              <circle data-end="b" r="4" fill="#f0cda6" />
+              <text fill="#ffffff" fontSize="11" fontWeight="600" textAnchor="middle" paintOrder="stroke" stroke="rgba(0,0,0,0.7)" strokeWidth="3" />
+            </svg>
+            {tool === "measure" && (
+              <span className="pointer-events-none absolute left-3 top-3 rounded-[6px] border border-white/[0.09] bg-[rgba(20,21,25,0.85)] px-2.5 py-1 text-[11px] text-[#9aa0ad]">
+                {s.studio.measureHint}
+              </span>
+            )}
             {!ready && !loadFailed && (
               <p className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[12px] text-[#6b6f7a]">{s.editorLoading}</p>
             )}

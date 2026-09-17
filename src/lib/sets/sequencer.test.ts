@@ -13,6 +13,7 @@ const beat = (over: Partial<FilmBeat> = {}): FilmBeat => ({
   textures: [],
   figure: null,
   time: null,
+  rack: null,
   ...over,
 });
 const film = (engine: SetFilm["engine"], beats: FilmBeat[]): SetFilm => normaliseSetFilm({ engine, startId: null, beats, clips: [], ends: [], context: null });

@@ -15,6 +15,7 @@ import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 import { isSetTakeEngine, SET_TAKE_DEFAULT_ENGINE, SET_TAKE_ENGINES, type SetTakeEngine } from "./take";
 import { isFilmMove, isFilmTexture, type FilmMove, type FilmTexture } from "./moves";
 import type { SetRig } from "./rig";
+import { normaliseRack, type FilmRack } from "./furniture";
 
 /** The stage's own camera pose shape (set-view's Pose, held as data). */
 export type FilmPose = { position: Vec3; target: Vec3; fovDeg: number };
@@ -32,6 +33,8 @@ export type FilmBeat = {
   figure: FilmFigure | null;
   /** The sun track (cut 5): the hour at the beat's end (rig.ts RIG_TIME_*); null keeps the rig's. */
   time: number | null;
+  /** The rack of focus (cut C, furniture.ts): where the focus travels during the move; null keeps it on the person. */
+  rack: FilmRack | null;
 };
 
 export type FilmFigure = { x: number; z: number; facingDeg: number; pose: StandPose };
@@ -115,7 +118,7 @@ export function normaliseSetFilm(v: unknown): SetFilm {
       const textures = Array.isArray(raw.textures)
         ? [...new Set(raw.textures.filter((t): t is FilmTexture => isFilmTexture(t)))]
         : [];
-      beats.push({ words, end, move, textures, figure: figureOf(raw.figure), time: hourOf(raw.time) });
+      beats.push({ words, end, move, textures, figure: figureOf(raw.figure), time: hourOf(raw.time), rack: normaliseRack(raw.rack, Number.MAX_SAFE_INTEGER) });
     }
   }
   const ids = (list: unknown): (string | null)[] =>
@@ -154,6 +157,7 @@ function sameBeat(a: FilmBeat, b: FilmBeat): boolean {
     a.end.position.every((n, i) => n === b.end.position[i]) &&
     a.end.target.every((n, i) => n === b.end.target[i]) &&
     a.time === b.time &&
+    JSON.stringify(a.rack) === JSON.stringify(b.rack) &&
     (a.figure === null) === (b.figure === null) &&
     (a.figure === null || (a.figure.x === b.figure!.x && a.figure.z === b.figure!.z && a.figure.facingDeg === b.figure!.facingDeg && a.figure.pose === b.figure!.pose))
   );
@@ -239,6 +243,8 @@ export function filmContextKey(input: {
       // The camera department (cut 2): the body, the squeeze and the exposure
       // are in the sketch; the viewfinder's aids never are.
       [rig.sensor, rig.squeeze, rig.shutterDeg, rig.iso, rig.ev],
+      // The iris's blades (cut C): words in the still's focus sentence.
+      rig.blades,
       // The light department (cut 3): the hour moves the sun in the sketch.
       rig.time,
       [mark.x, mark.z, mark.facingDeg],

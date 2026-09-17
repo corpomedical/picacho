@@ -13,10 +13,11 @@ import { editSetWithAstra, saveSetEdit } from "@/lib/sets/editor-actions";
 import { matchSetShot } from "@/lib/sets/match-actions";
 import { readShotWords } from "@/lib/sets/words-actions";
 import { fovForLens, nearestLens, squeezeProjection, type StageQuality } from "@/lib/sets/build-scene";
-import { dockTabAfter, dockTabsFor, railToolForKey, studioChecked, studioHeld, studioLab, type DockTab, type RailTool, type StatusItem } from "@/lib/sets/studio";
+import { dockTabAfter, dockTabsFor, railToolForKey, studioChecked, studioHeld, studioLab, type DockTab, type RailTool, type StatusItem, type StudioMode } from "@/lib/sets/studio";
 import { viewModeMaterial, type ViewMode } from "@/lib/sets/view-modes";
+import { azimuthOf, hourFromAzimuth, measureMetres, scaleBar, sunDirection, type MeasurePoint } from "@/lib/sets/furniture";
 import type { RigTab } from "@/lib/sets/rig-dock";
-import { SceneTree, type SceneTarget } from "./scene-tree";
+import { SceneTree, sceneNames, type SceneTarget } from "./scene-tree";
 import { Sequencer } from "./sequencer";
 import { beatAtTime, beatSpans, timeOf } from "@/lib/sets/sequencer";
 import { StatusList, StudioBar, StudioDock, StudioRail, StudioStatus, useWide } from "./studio-frame";
@@ -47,7 +48,7 @@ import { checkFilmCredits, readTakes, saveSetFilm } from "@/lib/sets/film-action
 import { checkShotRig, saveSetRig } from "@/lib/sets/rig-actions";
 import { RIG_PALETTES, depthOfField, exposureGain, findLook, focalMm, formatFrame, normaliseSetRig, sensorCocMm, sensorHeightMm, shutterFraction, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
 import { bearingDeg } from "@/lib/sets/light-schemes";
-import { stagedSpec, timeLabel } from "@/lib/sets/time-of-day";
+import { stagedSpec, timeLabel, sunAt } from "@/lib/sets/time-of-day";
 import { shootCommands } from "@/lib/sets/commands";
 import { CommandPalette } from "./command-palette";
 import { labPreviewCodes } from "@/lib/sets/lab-preview";
@@ -147,6 +148,19 @@ type Mark = { x: number; z: number; facingDeg: number };
 type StageState = { pose: Pose; cameraId: string | null; markId: string; mark: Mark };
 const sameStage = (a: StageState, b: StageState) => JSON.stringify(a) === JSON.stringify(b);
 
+/** The viewport's furniture (cut C): what the page hands the loop to move. */
+type Furniture = {
+  sun: HTMLElement | null;
+  sunWords: (hour: number | null, elevationDeg: number) => string;
+  bracket: HTMLElement | null;
+  gizmo: SVGSVGElement | null;
+  scale: HTMLElement | null;
+  scaleWords: (metres: number) => string;
+  measure: SVGSVGElement | null;
+  measureWords: (metres: number) => string;
+  points: readonly MeasurePoint[];
+};
+
 type StageApi = {
   /** Whether exposure.ts lifted this set's fill light or exposure. */
   lifted: boolean;
@@ -206,6 +220,10 @@ type StageApi = {
   setHistogram(canvas: HTMLCanvasElement | null): void;
   /** The focus readout at the figure's eyes while the stop is set: the element, and the words for a distance. */
   setFocusHud(el: HTMLElement | null, words: ((distanceM: number) => string) | null): void;
+  /** The viewport's furniture (cut C, furniture.ts): elements the loop moves — the sun, the focus bracket, the gizmo, the scale, the measure line. */
+  setFurniture(f: Furniture | null): void;
+  /** The hour the sun would stand at, dragged to this point of the canvas; null when the point is below the horizon. */
+  sunHourAt(clientX: number, clientY: number): number | null;
   /** The light meter (cut 3): the words for the face's brightness, a share of white in per cent, or null for off. */
   setMeter(words: ((pct: number) => string) | null): void;
   /** Width ÷ height the recorded frame's field of view is measured against (1: across its height). */
@@ -406,6 +424,7 @@ export function SetView({
   initialAskFirst = true,
   savedFilm = null,
   initialFilmOpen = false,
+  initialCutOpen = false,
   savedRig = null,
 }: {
   setId: string;
@@ -437,6 +456,8 @@ export function SetView({
   savedFilm?: SetFilm | null;
   /** Open on the Film dock (?film=1). */
   initialFilmOpen?: boolean;
+  /** The Cut mode (cut C): the film's clips in order, where the reel plays. */
+  initialCutOpen?: boolean;
   /** The saved rig (Helios Cinema): null until one is kept, or before helios-rig.sql runs. */
   savedRig?: SetRig | null;
 }) {
@@ -544,6 +565,7 @@ export function SetView({
   // stage — orbit to a view, K keeps it as a beat's end. The move autosaves
   // like the editor's working copy; rendering is a chain of takes.
   const [filmOpen, setFilmOpen] = useState(initialFilmOpen);
+  const [cutOpen, setCutOpen] = useState(initialCutOpen);
   const [film, setFilm] = useState<SetFilm>(() => normaliseSetFilm(savedFilm));
   // What the server holds of the film, compared the way unsaved.ts compares
   // it: as loaded, then as each save landed.
@@ -652,6 +674,19 @@ export function SetView({
   const [fps, setFps] = useState(0);
   const [sceneQuery, setSceneQuery] = useState("");
   const composerFormRef = useRef<HTMLFormElement>(null);
+  // The viewport's furniture (cut C): the measure tool's points on the
+  // ground, the sun's drag, and the elements the loop moves.
+  const [measurePts, setMeasurePts] = useState<MeasurePoint[]>([]);
+  const measureAddRef = useRef<(p: MeasurePoint) => void>(() => {});
+  useEffect(() => {
+    measureAddRef.current = (p) => setMeasurePts((pts) => (pts.length >= 2 ? [p] : [...pts, p]));
+  }, []);
+  const sunDragRef = useRef(false);
+  const sunRef = useRef<HTMLButtonElement>(null);
+  const bracketRef = useRef<HTMLDivElement>(null);
+  const gizmoRef = useRef<SVGSVGElement>(null);
+  const scaleRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<SVGSVGElement>(null);
   const [rigError, setRigError] = useState("");
   // The rig check, per still, while it reads or when it could not.
   const [rigChecking, setRigChecking] = useState<Record<string, "checking" | "failed">>({});
@@ -901,6 +936,10 @@ export function SetView({
         let falsePass: import("three/examples/jsm/postprocessing/ShaderPass.js").ShaderPass | null = null;
         let histogramCanvas: HTMLCanvasElement | null = null;
         let focusHud: HTMLElement | null = null;
+        let furniture: Furniture | null = null;
+        const sunV = new THREE.Vector3();
+        const axisV = new THREE.Vector3();
+        const ptV = new THREE.Vector3();
         let focusWords: ((distanceM: number) => string) | null = null;
         let meterWords: ((pct: number) => string) | null = null;
         let meterLast = "";
@@ -960,6 +999,7 @@ export function SetView({
         const hit = new THREE.Vector3();
         const ndc = new THREE.Vector2();
         let dragging = false;
+        let measuring = false;
         let controlsRef: InstanceType<typeof OrbitControls> | null = null;
 
         const toNdc = (e: PointerEvent) => {
@@ -990,6 +1030,18 @@ export function SetView({
         // turns orbiting off before the controls see the same event.
         const onDown = (e: PointerEvent) => {
           const tool = stageToolRef.current;
+          // Measure (cut C): a press on the ground is a point; two make the line.
+          if (tool === "measure") {
+            if (e.button !== 0) return;
+            toNdc(e);
+            if (raycaster.ray.intersectPlane(ground, hit)) measureAddRef.current({ x: Math.round(hit.x * 100) / 100, z: Math.round(hit.z * 100) / 100 });
+            // A measuring press is not an orbit: the controls sit this one out.
+            measuring = true;
+            if (controlsRef) controlsRef.enabled = false;
+            canvas.setPointerCapture(e.pointerId);
+            e.preventDefault();
+            return;
+          }
           if (tool === "select" ? !overFigure(e) : e.button !== 0) return;
           if (tool !== "select") {
             toNdc(e);
@@ -1015,6 +1067,12 @@ export function SetView({
           else moveTo(hit);
         };
         const onUp = (e: PointerEvent) => {
+          if (measuring) {
+            measuring = false;
+            if (controlsRef) controlsRef.enabled = true;
+            if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+            return;
+          }
           if (!dragging) return;
           dragging = false;
           if (controlsRef) controlsRef.enabled = true;
@@ -1261,6 +1319,157 @@ export function SetView({
             } else focusHud.hidden = true;
           }
           if (histogramCanvas && frameCount % 6 === 0) drawHistogram(histogramCanvas);
+          // The viewport's furniture (cut C, furniture.ts): moved every other frame.
+          if (furniture && frameCount % 2 === 0) {
+            const f = furniture;
+            const project = (v: InstanceType<typeof THREE.Vector3>) => {
+              v.project(camera);
+              return { x: ((v.x + 1) / 2) * lastW, y: ((1 - v.y) / 2) * lastH, behind: v.z > 1 };
+            };
+            // The sun, where it stands: the rig's hour, else the set's own sun.
+            if (f.sun) {
+              const hour = rigRef.current.time;
+              let dir: [number, number, number] | null = null;
+              if (hour !== null) dir = sunDirection(hour);
+              else {
+                const sunL = spec.lights.find((l) => l.kind === "sun");
+                if (sunL) {
+                  const dx = sunL.position[0] - sunL.target[0];
+                  const dy = sunL.position[1] - sunL.target[1];
+                  const dz = sunL.position[2] - sunL.target[2];
+                  const len = Math.hypot(dx, dy, dz) || 1;
+                  dir = [dx / len, dy / len, dz / len];
+                }
+              }
+              if (!dir || dir[1] <= 0) f.sun.hidden = true;
+              else {
+                const p = standIn.group.position;
+                sunV.set(p.x + dir[0] * 300, dir[1] * 300, p.z + dir[2] * 300);
+                const sp = project(sunV);
+                // Behind the camera it is not drawn; out of the frame it sits
+                // at the edge, where it can still be taken hold of.
+                const off = sp.behind;
+                f.sun.hidden = off;
+                if (!off) {
+                  const x = Math.min(lastW - 28, Math.max(28, sp.x));
+                  const y = Math.min(lastH - 28, Math.max(28, sp.y));
+                  const clamped = x !== sp.x || y !== sp.y;
+                  f.sun.style.transform = `translate(${x.toFixed(0)}px, ${y.toFixed(0)}px)`;
+                  f.sun.style.opacity = clamped ? "0.6" : "1";
+                  const el = Math.round((Math.asin(Math.max(-1, Math.min(1, dir[1]))) * 180) / Math.PI);
+                  const text = f.sunWords(hour, el);
+                  if (f.sun.dataset.words !== text) {
+                    f.sun.dataset.words = text;
+                    const label = f.sun.querySelector("span");
+                    if (label) label.textContent = text;
+                  }
+                }
+              }
+            }
+            // The focus bracket on the eyes, sized to the head, with a stop set.
+            if (f.bracket) {
+              if (depthStop === null) f.bracket.hidden = true;
+              else {
+                const p = standIn.group.position;
+                const e = project(ptV.set(p.x, FRAME_EYE_Y, p.z));
+                const t = project(ptV.set(p.x, FRAME_EYE_Y + 0.12, p.z));
+                const headPx = Math.abs(e.y - t.y) * 2.6;
+                const off = e.behind || e.x < 0 || e.x > lastW || e.y < 0 || e.y > lastH || headPx < 6;
+                f.bracket.hidden = off;
+                if (!off) {
+                  const size = Math.max(18, Math.min(160, headPx));
+                  f.bracket.style.width = `${size.toFixed(0)}px`;
+                  f.bracket.style.height = `${size.toFixed(0)}px`;
+                  f.bracket.style.transform = `translate(${(e.x - size / 2).toFixed(0)}px, ${(e.y - size / 2).toFixed(0)}px)`;
+                }
+              }
+            }
+            // The gizmo: the set's axes as the camera sees them.
+            if (f.gizmo && frameCount % 4 === 0) {
+              const q = camera.quaternion.clone().invert();
+              const axes: [string, number, number, number][] = [
+                ["x", 1, 0, 0],
+                ["y", 0, 1, 0],
+                ["z", 0, 0, 1],
+              ];
+              for (const [name, ax, ay, az] of axes) {
+                axisV.set(ax, ay, az).applyQuaternion(q);
+                const line = f.gizmo.querySelector<SVGLineElement>(`[data-axis="${name}"]`);
+                const dot = f.gizmo.querySelector<SVGCircleElement>(`[data-axis-dot="${name}"]`);
+                const text = f.gizmo.querySelector<SVGTextElement>(`[data-axis-text="${name}"]`);
+                const x = (axisV.x * 17).toFixed(1);
+                const y = (-axisV.y * 17).toFixed(1);
+                if (line) {
+                  line.setAttribute("x2", x);
+                  line.setAttribute("y2", y);
+                }
+                if (dot) {
+                  dot.setAttribute("cx", x);
+                  dot.setAttribute("cy", y);
+                  dot.setAttribute("r", axisV.z > 0 ? "4.5" : "3.5");
+                }
+                if (text) {
+                  text.setAttribute("x", x);
+                  text.setAttribute("y", (Number(y) + 2.2).toFixed(1));
+                }
+              }
+            }
+            // The scale: a round length at the figure's depth.
+            if (f.scale && frameCount % 8 === 0) {
+              const p = standIn.group.position;
+              const dist = Math.max(0.3, ptV.set(p.x, FRAME_EYE_Y, p.z).distanceTo(camera.position));
+              const pxPerMetre = lastH / (2 * dist * Math.tan((camera.fov * Math.PI) / 360));
+              const bar = scaleBar(pxPerMetre);
+              const line = f.scale.querySelector<HTMLElement>("i");
+              const label = f.scale.querySelector("span");
+              if (line) line.style.width = `${bar.px}px`;
+              const text = f.scaleWords(bar.metres);
+              if (label && label.textContent !== text) label.textContent = text;
+              f.scale.hidden = bar.px < 8;
+            }
+            // The measure line, between the points on the ground.
+            if (f.measure) {
+              const pts = f.points;
+              f.measure.style.display = pts.length === 0 ? "none" : "";
+              if (pts.length > 0) {
+                const a = project(ptV.set(pts[0].x, 0.02, pts[0].z));
+                const line = f.measure.querySelector<SVGLineElement>("line");
+                const c1 = f.measure.querySelector<SVGCircleElement>('[data-end="a"]');
+                const c2 = f.measure.querySelector<SVGCircleElement>('[data-end="b"]');
+                const label = f.measure.querySelector<SVGTextElement>("text");
+                if (c1) {
+                  c1.setAttribute("cx", a.x.toFixed(1));
+                  c1.setAttribute("cy", a.y.toFixed(1));
+                }
+                if (pts.length > 1) {
+                  const b = project(ptV.set(pts[1].x, 0.02, pts[1].z));
+                  if (line) {
+                    line.setAttribute("x1", a.x.toFixed(1));
+                    line.setAttribute("y1", a.y.toFixed(1));
+                    line.setAttribute("x2", b.x.toFixed(1));
+                    line.setAttribute("y2", b.y.toFixed(1));
+                    line.style.display = "";
+                  }
+                  if (c2) {
+                    c2.setAttribute("cx", b.x.toFixed(1));
+                    c2.setAttribute("cy", b.y.toFixed(1));
+                    c2.style.display = "";
+                  }
+                  if (label) {
+                    label.setAttribute("x", ((a.x + b.x) / 2).toFixed(1));
+                    label.setAttribute("y", ((a.y + b.y) / 2 - 8).toFixed(1));
+                    const text = f.measureWords(measureMetres(pts[0], pts[1]));
+                    if (label.textContent !== text) label.textContent = text;
+                    label.style.display = "";
+                  }
+                } else {
+                  if (line) line.style.display = "none";
+                  if (c2) c2.style.display = "none";
+                  if (label) label.style.display = "none";
+                }
+              }
+            }
+          }
         };
         // One lift for the whole set, measured before the first frame is
         // shown (exposure.ts): a dark set gets more fill light, then more
@@ -1468,6 +1677,17 @@ export function SetView({
             focusHud = el;
             focusWords = words;
             if (el && !words && !meterWords) el.hidden = true;
+          },
+          setFurniture(f) {
+            furniture = f;
+          },
+          sunHourAt(clientX, clientY) {
+            const r = canvas.getBoundingClientRect();
+            ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+            raycaster.setFromCamera(ndc, camera);
+            const d = raycaster.ray.direction;
+            if (d.y <= 0.02) return null;
+            return hourFromAzimuth(azimuthOf(d.x, d.z));
           },
           setMeter(words) {
             meterWords = words;
@@ -1754,15 +1974,16 @@ export function SetView({
   // dock's Camera and Light; M the marks — when no field holds the
   // keyboard. Kept current each render, so each key does what the page
   // would do now.
-  const studioKeysRef = useRef<{ frame(): void; palette(): void; tool(id: RailTool): void }>({ frame() {}, palette() {}, tool() {} });
+  const studioKeysRef = useRef<{ frame(): void; palette(): void; tool(id: RailTool): void; escape(): void }>({ frame() {}, palette() {}, tool() {}, escape() {} });
   useEffect(() => {
     studioKeysRef.current = {
       frame: () => {
         if (ready) frameFigure();
       },
       palette: () => setPaletteOpen((v) => !v),
+      escape: () => setMeasurePts([]),
       tool: (id) => {
-        if (id === "select" || id === "move" || id === "turn") setStageTool(id);
+        if (id === "select" || id === "move" || id === "turn" || id === "measure") setStageTool(id);
         else if (id === "camera" || id === "light") {
           if (wide) setDockTab(id);
           else setRigOpen(true);
@@ -1778,6 +1999,10 @@ export function SetView({
       if ((e.metaKey || e.ctrlKey) && k === "k") {
         e.preventDefault();
         studioKeysRef.current.palette();
+        return;
+      }
+      if (e.key === "Escape") {
+        studioKeysRef.current.escape();
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
@@ -1799,6 +2024,28 @@ export function SetView({
   useEffect(() => {
     apiRef.current?.setViewMode(viewMode);
   }, [viewMode, ready]);
+
+  // The viewport's furniture (cut C): the elements and their words, handed to the loop.
+  useEffect(() => {
+    if (!ready) return;
+    apiRef.current?.setFurniture({
+      sun: sunRef.current,
+      sunWords: (hour, el) =>
+        hour === null
+          ? formatMsg(s.studio.sun, { h: s.filmHourAsBuilt, el })
+          : sunAt(hour).night
+            ? formatMsg(s.studio.moon, { h: timeLabel(hour) })
+            : formatMsg(s.studio.sun, { h: timeLabel(hour), el }),
+      bracket: bracketRef.current,
+      gizmo: gizmoRef.current,
+      scale: scaleRef.current,
+      scaleWords: (m) => formatMsg(s.studio.scale, { m }),
+      measure: measureRef.current,
+      measureWords: (m) => formatMsg(s.studio.measure, { m }),
+      points: measurePts,
+    });
+    return () => apiRef.current?.setFurniture(null);
+  }, [ready, s, measurePts]);
 
   useEffect(() => {
     layoutRef.current = { markId, mark, pose: layoutRef.current.pose };
@@ -2511,7 +2758,7 @@ export function SetView({
     const pose = apiRef.current?.pose();
     if (!pose) return;
     editFilm((f) =>
-      f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [], figure: null, time: null }] },
+      f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [], figure: null, time: null, rack: null }] },
     );
     setFilmSel((n) => n ?? null);
   }
@@ -2577,7 +2824,7 @@ export function SetView({
     keepStage();
     editFilm((f) => {
       const beats = [...f.beats];
-      beats[at] = beats[at] ? { ...beats[at], end, move } : { words: "", end, move, textures: [], figure: null, time: null };
+      beats[at] = beats[at] ? { ...beats[at], end, move } : { words: "", end, move, textures: [], figure: null, time: null, rack: null };
       return { ...f, beats };
     });
     setFilmSel(at);
@@ -2887,6 +3134,7 @@ export function SetView({
             rig: rigRef.current,
             move: beat.move,
             textures: beat.textures,
+            rack: beat.rack,
             film: true,
           });
         } catch (err) {
@@ -3310,7 +3558,7 @@ export function SetView({
       const pose = apiRef.current?.pose();
       if (!pose) return;
       editFilm((f) =>
-        f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [], figure: null, time: null }] },
+        f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [], figure: null, time: null, rack: null }] },
       );
     };
     window.addEventListener("keydown", onKey);
@@ -3893,8 +4141,9 @@ export function SetView({
     : [];
 
   // ---- the studio's frame (cut A): what the bar, the dock and the status bar show ----
-  const studioMode = filmOpen ? "film" : "shoot";
-  const dockTabs = dockTabsFor("shoot", filmOpen);
+  const studioMode: StudioMode = cutOpen ? "cut" : filmOpen ? "film" : "shoot";
+  const dockTabs = dockTabsFor(studioMode, filmOpen);
+  const names = sceneNames(spec, s);
   const canShootNow = !(shooting || matching || !characterId || loadFailed || !ready);
   const renderingCount = (shooting ? 1 : 0) + (matching ? 1 : 0) + shots.filter((sh) => sh.status === "generating").length;
   const statusWords = (items: readonly StatusItem[]) => items.map((i) => s.studio.status.items[i]);
@@ -4409,6 +4658,7 @@ export function SetView({
             label: s.editorShootTab,
             onClick: () => {
               setFilmOpen(false);
+              setCutOpen(false);
               setReel(null);
               window.history.replaceState(null, "", `/app/sets/${setId}`);
             },
@@ -4417,9 +4667,27 @@ export function SetView({
             label: s.filmTab,
             onClick: () => {
               setFilmOpen(true);
+              setCutOpen(false);
               setTakeStart(null);
               setViewing(null);
               window.history.replaceState(null, "", `/app/sets/${setId}?film=1`);
+            },
+          },
+          // The cut (cut C): the film's clips in order; the reel plays in the viewport when every clip is in.
+          cut: {
+            label: s.studio.cutMode,
+            onClick: () => {
+              setFilmOpen(false);
+              setCutOpen(true);
+              setTakeStart(null);
+              setViewing(null);
+              setDockTab((d) => (dockTabsFor("cut", false).includes(d) ? d : "history"));
+              if (reelReady) {
+                reelFailedRef.current = new Set();
+                setReelWaiting(false);
+                setReel(0);
+              }
+              window.history.replaceState(null, "", `/app/sets/${setId}?cut=1`);
             },
           },
         }}
@@ -4532,6 +4800,73 @@ export function SetView({
             aria-hidden
             className={`pointer-events-none absolute left-0 top-0 z-20 -translate-x-1/2 whitespace-nowrap rounded-full border border-white/10 bg-black/60 px-2 py-0.5 text-[10.5px] font-medium tabular-nums text-white ${viewingShot ? "hidden" : ""}`}
           />
+          {/* The viewport's furniture (cut C, furniture.ts): the sun where it stands, the focus bracket, the measure line, the gizmo and the scale. */}
+          <button
+            ref={sunRef}
+            type="button"
+            hidden
+            data-sun
+            title={s.studio.sunDrag}
+            aria-label={s.studio.sunDrag}
+            onPointerDown={(e) => {
+              sunDragRef.current = true;
+              e.currentTarget.setPointerCapture(e.pointerId);
+              e.preventDefault();
+            }}
+            onPointerMove={(e) => {
+              if (!sunDragRef.current) return;
+              const h = apiRef.current?.sunHourAt(e.clientX, e.clientY);
+              if (h !== null && h !== undefined) setRig((r) => (r.time === h ? r : { ...r, time: h }));
+            }}
+            onPointerUp={(e) => {
+              sunDragRef.current = false;
+              if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+            }}
+            className={`absolute left-0 top-0 z-20 flex -translate-x-1/2 -translate-y-1/2 cursor-grab touch-none items-center gap-1.5 active:cursor-grabbing ${viewingShot ? "hidden" : ""}`}
+          >
+            <svg viewBox="-20 -20 40 40" className="h-9 w-9" aria-hidden>
+              <circle r="9" fill="none" stroke="#f0cda6" strokeWidth="1.5" />
+              <circle r="3" fill="#f0cda6" />
+              <g stroke="#f0cda6" strokeWidth="1.2">
+                <line x1="0" y1="-14" x2="0" y2="-18" />
+                <line x1="0" y1="14" x2="0" y2="18" />
+                <line x1="-14" y1="0" x2="-18" y2="0" />
+                <line x1="14" y1="0" x2="18" y2="0" />
+              </g>
+            </svg>
+            <span className="whitespace-nowrap rounded-[4px] bg-black/50 px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[#f0cda6]" />
+          </button>
+          <div ref={bracketRef} hidden aria-hidden data-bracket className={`pointer-events-none absolute left-0 top-0 z-10 ${viewingShot ? "hidden" : ""}`}>
+            <span className="absolute left-0 top-0 h-3 w-3 border-l-[1.5px] border-t-[1.5px] border-white/90" />
+            <span className="absolute right-0 top-0 h-3 w-3 border-r-[1.5px] border-t-[1.5px] border-white/90" />
+            <span className="absolute bottom-0 left-0 h-3 w-3 border-b-[1.5px] border-l-[1.5px] border-white/90" />
+            <span className="absolute bottom-0 right-0 h-3 w-3 border-b-[1.5px] border-r-[1.5px] border-white/90" />
+          </div>
+          <svg ref={measureRef} style={{ display: "none" }} aria-hidden data-measure className={`pointer-events-none absolute inset-0 z-10 h-full w-full ${viewingShot ? "hidden" : ""}`}>
+            <line stroke="#f0cda6" strokeWidth="1.5" strokeDasharray="4 3" />
+            <circle data-end="a" r="4" fill="#f0cda6" />
+            <circle data-end="b" r="4" fill="#f0cda6" />
+            <text fill="#ffffff" fontSize="11" fontWeight="600" textAnchor="middle" paintOrder="stroke" stroke="rgba(0,0,0,0.7)" strokeWidth="3" />
+          </svg>
+          <div className={`pointer-events-none absolute right-3.5 z-10 hidden items-end gap-2.5 md:flex ${viewingShot ? "md:hidden" : ""} ${filmOpen || cutOpen ? "bottom-3.5" : "bottom-[104px]"}`}>
+            <div ref={scaleRef} data-scale className="flex items-center gap-1.5 rounded-[6px] border border-white/10 bg-black/50 px-2 py-1 text-[10.5px] text-[#c6c9d1]">
+              <i className="block h-px bg-[#c6c9d1]" style={{ width: 60 }} />
+              <span>1 m</span>
+            </div>
+            <div className="flex h-[58px] w-[58px] items-center justify-center rounded-[8px] border border-white/10 bg-black/50">
+              <svg ref={gizmoRef} data-gizmo viewBox="-23 -23 46 46" className="h-[46px] w-[46px]" aria-hidden>
+                <line data-axis="x" x1="0" y1="0" x2="17" y2="0" stroke="#e05a5a" strokeWidth="1.8" />
+                <line data-axis="y" x1="0" y1="0" x2="0" y2="-17" stroke="#7fc36a" strokeWidth="1.8" />
+                <line data-axis="z" x1="0" y1="0" x2="0" y2="0" stroke="#6a9bcc" strokeWidth="1.8" />
+                <circle data-axis-dot="x" cx="17" cy="0" r="4.5" fill="#e05a5a" />
+                <circle data-axis-dot="y" cx="0" cy="-17" r="4.5" fill="#7fc36a" />
+                <circle data-axis-dot="z" cx="0" cy="0" r="4.5" fill="#6a9bcc" />
+                <text data-axis-text="x" x="17" y="2.2" textAnchor="middle" fontSize="6" fontWeight="700" fill="#1b1c20">X</text>
+                <text data-axis-text="y" x="0" y="-14.8" textAnchor="middle" fontSize="6" fontWeight="700" fill="#1b1c20">Y</text>
+                <text data-axis-text="z" x="0" y="2.2" textAnchor="middle" fontSize="6" fontWeight="700" fill="#1b1c20">Z</text>
+              </svg>
+            </div>
+          </div>
           {/* Film's keyframes, named on the path (the path itself is in the canvas) */}
           <div ref={overlayHostRef} aria-hidden className={`pointer-events-none absolute inset-0 overflow-hidden ${viewingShot ? "hidden" : ""}`} />
           {loadFailed && !viewingShot && (
@@ -5396,6 +5731,108 @@ export function SetView({
           />
         )}
 
+        {/* The cut (cut C): the film's clips in order, under the viewport, where the reel plays. */}
+        {cutOpen && (
+          <div data-cut className="flex flex-none flex-col gap-2 border-t border-white/[0.07] bg-[#191a20] px-3 py-2.5 text-[#c6c9d1]">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9aa0ad]">{s.studio.cutTitle}</span>
+              <span className="text-[11.5px] tabular-nums text-[#6b6f7a]">{formatMsg(s.studio.cutLine, { n: film.beats.length, s: filmSeconds(film) })}</span>
+              <span className="flex-1" />
+              {reelReady && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    reelFailedRef.current = new Set();
+                    setReelWaiting(false);
+                    setReel(0);
+                  }}
+                  className={chip(false)}
+                >
+                  ▶ {s.filmPlayFilm}
+                </button>
+              )}
+              {reelReady && (
+                <button type="button" onClick={() => void downloadFilm()} disabled={filmFileBusy} className={chip(false)}>
+                  {filmFileBusy ? s.filmDownloading : `↓ ${s.filmDownload}`}
+                </button>
+              )}
+              {!reelReady && film.beats.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void renderFilm()}
+                  disabled={!ready || !takesOn || Boolean(filmBusy) || shooting || matching || !film.startId || !characterId || (filmPlan.again && filmPlan.rendering)}
+                  className="inline-flex h-7 cursor-pointer items-center justify-center rounded-[6px] bg-[#e0a468] px-3 text-[11.5px] font-semibold text-[#1b1c20] hover:opacity-90 disabled:cursor-default disabled:opacity-40"
+                >
+                  {filmRenderLabel}
+                </button>
+              )}
+            </div>
+            {film.beats.length === 0 ? (
+              <p className="text-[11.5px] text-[#6b6f7a]">{s.studio.cutEmpty}</p>
+            ) : (
+              <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
+                <div className="flex w-[104px] flex-none flex-col gap-1">
+                  <div className="relative h-[58px] overflow-hidden rounded-[8px] bg-black/50 ring-1 ring-white/[0.08]">
+                    {filmStartShot?.resultUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={filmStartShot.resultUrl} alt="" className="h-full w-full object-cover" />
+                    )}
+                  </div>
+                  <span className="truncate text-[10px] font-semibold uppercase tracking-[0.06em] text-[#9aa0ad]">{s.studio.cutStart}</span>
+                </div>
+                {film.beats.map((b, i) => {
+                  const clip = filmClipShots[i];
+                  const endId = film.ends[i];
+                  const end = endId ? (shots.find((sh) => sh.generationId === endId) ?? null) : null;
+                  const done = clip?.status === "succeeded" && Boolean(clip.resultUrl);
+                  return (
+                    <Fragment key={i}>
+                      <button
+                        type="button"
+                        data-cut-clip={done ? "done" : clip ? clip.status : "missing"}
+                        onClick={() => {
+                          if (done) {
+                            reelFailedRef.current = new Set();
+                            setReelWaiting(false);
+                            setReel(i);
+                          } else filmGoTo(i);
+                        }}
+                        className={`flex w-[168px] flex-none cursor-pointer flex-col gap-1 rounded-[8px] text-left ring-1 ${filmSel === i ? "ring-[#e0a468]" : "ring-transparent"}`}
+                      >
+                        <div className="relative h-[58px] overflow-hidden rounded-[8px] bg-black/50 ring-1 ring-white/[0.08]">
+                          {clip?.posterUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={clip.posterUrl} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <span className="absolute inset-0 flex items-center justify-center text-[11px] text-[#6b6f7a]">{clip ? "…" : "—"}</span>
+                          )}
+                          {done && <span className="absolute bottom-1 left-1 rounded-[3px] bg-black/60 px-1 text-[10px] text-white">▶</span>}
+                        </div>
+                        <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#9aa0ad]">
+                          <span className="truncate">{formatMsg(s.studio.cutClip, { n: i + 1, s: SET_TAKE_ENGINES[film.engine].seconds })}</span>
+                          <span className={`normal-case tracking-normal ${done ? "text-[#5f9e6e]" : clip?.status === "failed" ? "text-red-400" : "text-[#6b6f7a]"}`}>
+                            {done ? s.filmBeatDone : clip?.status === "failed" ? s.filmBeatClipFailed : clip ? s.filmBeatClip : s.studio.cutMissing}
+                          </span>
+                        </span>
+                        {b.move && <span className="truncate text-[10px] text-[#6b6f7a]">{s.rig.moves[b.move]}</span>}
+                      </button>
+                      {end?.resultUrl && (
+                        <div className="flex w-[64px] flex-none flex-col gap-1" title={formatMsg(s.studio.cutEnd, { n: i + 1 })}>
+                          <div className="h-[58px] overflow-hidden rounded-[8px] bg-black/50 ring-1 ring-white/[0.08]">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={end.resultUrl} alt="" className="h-full w-full object-cover" />
+                          </div>
+                          <span className="truncate text-[10px] text-[#6b6f7a]">{formatMsg(s.studio.cutEnd, { n: i + 1 })}</span>
+                        </div>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* On a phone the rig is its own panel over the stage (canvas page I); on the frame it is the dock's departments. */}
         {!wide && rigOpen && rigPanel(null)}
 
@@ -5522,6 +5959,28 @@ export function SetView({
                           h: film.beats[filmSel].time !== null ? timeLabel(film.beats[filmSel].time) : rig.time !== null ? timeLabel(rig.time) : s.filmHourAsBuilt,
                         })}
                       </button>
+                      {/* The rack of focus (cut C, furniture.ts): where the focus travels during this beat's move. */}
+                      <select
+                        value={film.beats[filmSel].rack ? (film.beats[filmSel].rack.to === "figure" ? "figure" : `o${film.beats[filmSel].rack.index}`) : ""}
+                        onChange={(e) => {
+                          const at = filmSel;
+                          const v = e.target.value;
+                          const rack = v === "" ? null : v === "figure" ? { to: "figure" as const } : { to: "object" as const, index: Number(v.slice(1)) };
+                          editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, rack } : bb)) }));
+                        }}
+                        disabled={Boolean(filmBusy)}
+                        aria-label={s.studio.rack}
+                        title={s.studio.rack}
+                        className="h-7 max-w-[170px] cursor-pointer rounded-[6px] bg-black/40 px-2 text-[11px] text-[#c6c9d1] ring-1 ring-white/[0.08] outline-none"
+                      >
+                        <option value="">{s.studio.rack} · {s.studio.rackNone}</option>
+                        <option value="figure">{s.studio.rackFigure}</option>
+                        {spec.objects.map((o, oi) => (
+                          <option key={oi} value={`o${oi}`}>
+                            {names.objectName(o)}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 ) : (

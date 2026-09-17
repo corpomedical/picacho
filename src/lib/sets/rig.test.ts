@@ -108,6 +108,17 @@ describe("the words that ride", () => {
     );
   });
 
+  it("adds the iris's blades to the focus words only with blur to shape (cut C)", () => {
+    const words = rigWordsByItem({ ...full, blades: 9 }, ctx).focus ?? "";
+    expect(words).toContain("The iris has 9 blades");
+    expect(words.indexOf("The iris has")).toBeGreaterThan(words.indexOf("Focus:"));
+    // A deep focus has no blur: the blades say nothing.
+    expect(rigWordsByItem({ ...full, blades: 9, stop: 11 }, { ...ctx, distanceM: 60 }).focus ?? "").not.toContain("iris");
+    expect(normaliseSetRig({ blades: 7 }).blades).toBe(7);
+    expect(normaliseSetRig({ blades: 8 }).blades).toBeNull();
+    expect(normaliseSetRig(null).blades).toBeNull();
+  });
+
   it("says a missed look harder when it is pushed, and only that look", () => {
     const pushed = rigWordsByItem(full, { ...ctx, push: ["era"] });
     expect(pushed.era).toBe(RIG_ERAS.find((l) => l.id === "1980s")!.pushed);

@@ -19,14 +19,13 @@ describe("the rail", () => {
     expect(build.map((t) => t.id)).toEqual(RAIL_TOOLS.map((t) => t.id));
     expect(build.find((t) => t.id === "size")?.use).toBe("tool");
     expect(build.find((t) => t.id === "kit")?.use).toBe("action");
-    expect(build.find((t) => t.id === "measure")).toMatchObject({ use: "off", note: "measure" });
-    for (const mode of ["shoot", "film"] as const) {
+    expect(build.find((t) => t.id === "measure")?.use).toBe("tool");
+    for (const mode of ["shoot", "film", "cut"] as const) {
       const rail = railToolsFor(mode);
       expect(rail.map((t) => t.id)).toEqual(RAIL_TOOLS.map((t) => t.id));
-      expect(rail.filter((t) => t.use === "tool").map((t) => t.id)).toEqual(["select", "move", "turn"]);
+      expect(rail.filter((t) => t.use === "tool").map((t) => t.id)).toEqual(["select", "move", "turn", "measure"]);
       expect(rail.find((t) => t.id === "size")).toMatchObject({ use: "off", note: "build" });
       expect(rail.find((t) => t.id === "kit")).toMatchObject({ use: "off", note: "build" });
-      expect(rail.find((t) => t.id === "measure")).toMatchObject({ use: "off", note: "measure" });
     }
   });
 
@@ -36,7 +35,8 @@ describe("the rail", () => {
     expect(railToolForKey("shoot", "r")).toBe("turn");
     expect(railToolForKey("shoot", "s")).toBeNull();
     expect(railToolForKey("shoot", "k")).toBeNull();
-    expect(railToolForKey("build", "d")).toBeNull();
+    expect(railToolForKey("build", "d")).toBe("measure");
+    expect(railToolForKey("cut", "d")).toBe("measure");
     expect(railToolForKey("shoot", "Shift")).toBeNull();
   });
 });
@@ -46,6 +46,7 @@ describe("the dock", () => {
     expect(dockTabsFor("shoot", false)).toEqual(["scene", "camera", "light", "look", "history", "astra"]);
     expect(dockTabsFor("shoot", true)).toEqual(["scene", "camera", "light", "look", "film", "history", "astra"]);
     expect(dockTabsFor("build", false)).toEqual(["scene", "history", "astra"]);
+    expect(dockTabsFor("cut", false)).toEqual(["scene", "history", "astra"]);
     for (const t of dockTabsFor("shoot", true)) expect(DOCK_TABS).toContain(t);
   });
 

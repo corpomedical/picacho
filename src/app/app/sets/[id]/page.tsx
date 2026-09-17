@@ -97,6 +97,7 @@ export default async function SetPage({
         savedFilm={data.set.film}
         savedRig={data.set.rig}
         initialFilmOpen={first(query.film) === "1"}
+        initialCutOpen={first(query.cut) === "1"}
         initialLayout={data.set.layout}
         hasThumb={data.set.hasThumb}
         sourcePhotoUrl={data.set.sourcePhotoUrl}

@@ -17,8 +17,8 @@ export const STUDIO_PANEL_BG = "bg-[#1f2026]";
 export const STUDIO_HAIR = "border-white/[0.07]";
 
 const SEG = "flex h-7 flex-none items-center gap-0.5 rounded-[6px] bg-white/[0.05] p-0.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)]";
-const SEG_ON = "flex h-6 cursor-default items-center rounded-[4px] bg-[#2a2b33] px-2.5 text-[12px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)] md:px-3.5";
-const SEG_OFF = "flex h-6 cursor-pointer items-center rounded-[4px] px-2.5 text-[12px] font-medium text-[#9aa0ad] hover:text-[#ecedf1] md:px-3.5";
+const SEG_ON = "flex h-6 cursor-default items-center rounded-[4px] bg-[#2a2b33] px-2.5 text-[12px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)] 2xl:px-3.5";
+const SEG_OFF = "flex h-6 cursor-pointer items-center rounded-[4px] px-2.5 text-[12px] font-medium text-[#9aa0ad] hover:text-[#ecedf1] 2xl:px-3.5";
 const VIEW_ON = "flex h-6 cursor-default items-center rounded-[4px] bg-[#2a2b33] px-2.5 text-[11.5px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)]";
 const VIEW_OFF = "flex h-6 cursor-pointer items-center rounded-[4px] px-2.5 text-[11.5px] font-medium text-[#9aa0ad] hover:text-[#ecedf1]";
 const TOOL_BTN = "flex h-8 w-8 cursor-pointer items-center justify-center rounded-[6px] text-[#9aa0ad] hover:text-[#ecedf1]";
@@ -145,6 +145,7 @@ export function StudioBar({
         {modeButton("build")}
         {modeButton("shoot")}
         {modeButton("film")}
+        {modeButton("cut")}
       </span>
       {view && (
         <span role="radiogroup" aria-label={view.names.lit} className={`${SEG} ml-1 hidden min-[1440px]:flex`}>
@@ -170,7 +171,7 @@ export function StudioBar({
           onClick={find.onOpen}
           title={find.label}
           aria-label={find.label}
-          className="hidden h-8 min-w-[96px] basis-[220px] shrink-[4] grow-0 cursor-pointer items-center gap-2 rounded-[7px] bg-[#111217] px-2.5 text-[12px] text-[#6b6f7a] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] hover:text-[#ecedf1] xl:flex"
+          className="hidden h-8 min-w-[96px] basis-[200px] shrink-[4] grow-0 cursor-pointer items-center gap-2 rounded-[7px] bg-[#111217] px-2.5 text-[12px] text-[#6b6f7a] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] hover:text-[#ecedf1] xl:flex"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
             <circle cx="11" cy="11" r="7" />

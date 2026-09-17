@@ -25,7 +25,7 @@ describe("the studio's bar", () => {
     expect(editor).toContain("<StudioDock");
     expect(view).toContain("<StudioStatus>");
     expect(editor).toContain("<StudioStatus>");
-    for (const mode of ["build", "shoot", "film"]) expect(bar).toContain(`modeButton("${mode}")`);
+    for (const mode of ["build", "shoot", "film", "cut"]) expect(bar).toContain(`modeButton("${mode}")`);
   });
 
   it("keeps the switch at every width, and Build from 640 px", () => {
@@ -42,7 +42,7 @@ describe("the studio's bar", () => {
     // Find anything and the rendering count wait for a wide bar, the view modes for 1440 px (Spanish fills the bar below it); the primary action shows from a tablet's width.
     expect(bar).toContain("hidden min-[1440px]:flex");
     expect(bar).toContain('<span className="hidden md:contents">{primary}</span>');
-    expect(bar).toMatch(/className="hidden h-8 min-w-\[96px\] basis-\[220px\] shrink-\[4\] grow-0[^"]*xl:flex"/);
+    expect(bar).toMatch(/className="hidden h-8 min-w-\[96px\] basis-\[200px\] shrink-\[4\] grow-0[^"]*xl:flex"/);
     expect(bar).toMatch(/className="hidden h-8 items-center gap-2[^"]*md:flex"/);
     // The shoot's history menu keeps its words for wide screens and its label for readers.
     expect(view).toContain('<span className="hidden xl:inline">{s.historyLabel} · </span>');
