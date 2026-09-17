@@ -1548,6 +1548,9 @@ export function GenerateForm(props: {
   startOnboarding?: boolean;
   dailyFreeAvailable?: boolean;
   hasGeneratedBefore?: boolean;
+  /** The page's own header (title, transcript toggle, stats, upgrade), drawn
+      over the screen from md up — see the Screening Room block below. */
+  screenHeader?: React.ReactNode;
 }) {
   return (
     <Suspense fallback={null}>
@@ -1574,6 +1577,9 @@ type ChatTurn = HistoryTurn & {
         plate's thumbnail; absent on history-resumed takes */
     characterPhotoUrl?: string | null;
   } | null;
+  /** who was cast, captured at submit time for the screen's slate line;
+      absent on history-resumed takes, which simply show the take number */
+  characterName?: string | null;
 };
 
 type MultiAngleClip = {
@@ -1995,6 +2001,7 @@ function GenerateFormInner({
   startOnboarding = false,
   dailyFreeAvailable = false,
   hasGeneratedBefore = true,
+  screenHeader,
 }: {
   characters: CharacterOption[];
   videoModels: VideoModelOption[];
@@ -2024,6 +2031,7 @@ function GenerateFormInner({
   // dashboard hero) behave exactly as before until they pass the props.
   dailyFreeAvailable?: boolean;
   hasGeneratedBefore?: boolean;
+  screenHeader?: React.ReactNode;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -3166,6 +3174,27 @@ function GenerateFormInner({
   // from History via ?resume=.
   const [stageTakeId, setStageTakeId] = useState<string | null>(null);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  // The shape of each take's media, once its pixels have loaded, keyed by
+  // URL — the screen's frame is cut to it (Screening Room, below).
+  const [stageRatios, setStageRatios] = useState<Record<string, number>>({});
+  // How tall the docked composer is right now (it grows with the receipt
+  // band and shrinks to a pull-up bar after a send). The screen's media box
+  // and filmstrip sit above it, so they follow it: published as --dock-h and
+  // measured, since only the composer knows its own height.
+  const [dockHeight, setDockHeight] = useState(184);
+  const dockRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = dockRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      const h = el.getBoundingClientRect().height;
+      if (h > 0) setDockHeight((prev) => (Math.abs(prev - h) < 1 ? prev : h));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // The transcript's own scroller (a drawer over the screen from md up).
+  const transcriptScrollRef = useRef<HTMLDivElement | null>(null);
   // The stage's <video>, so the fullscreen ghost can drive it.
   const stageVideoRef = useRef<HTMLVideoElement>(null);
   // Keyed on the booleans, not the objects, so a streaming answer's token
@@ -3185,6 +3214,12 @@ function GenerateFormInner({
   useEffect(() => {
     if (liveRenderFailed) setTranscriptOpen(true);
   }, [liveRenderFailed]);
+  // The drawer opens on the newest turn, not on the session's first one.
+  useEffect(() => {
+    if (!transcriptOpen) return;
+    const drawer = transcriptScrollRef.current;
+    if (drawer) drawer.scrollTop = drawer.scrollHeight;
+  }, [transcriptOpen]);
 
   // "Generate anyway" on a rules-block failure: a one-shot flag consumed by
   // the next submit (adds skip_brand_rules=1 — the server logs the send as
@@ -4126,6 +4161,10 @@ function GenerateFormInner({
     const scroller = document.querySelector<HTMLElement>("[data-app-scroll]");
     if (scroller) scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
     else bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    // From md up the transcript is a drawer with its own scroller, and the
+    // page has none to move — follow the newest turn there as well.
+    const drawer = transcriptScrollRef.current;
+    if (drawer) drawer.scrollTo({ top: drawer.scrollHeight, behavior: "smooth" });
   }, [items.length, revealedCount, livePrompt, liveMultiAngle, liveResult, liveProgress]);
 
   // Auto-grow the prompt field with its content: two visible lines at rest,
@@ -4882,6 +4921,7 @@ function GenerateFormInner({
         // (2026-08-31).
         matchScore: result.matchScore ?? null,
         attachments: submittedAttachments,
+        characterName: currentCharacter?.name ?? null,
         // Submit-time snapshot for the Takes rail's microlabel — the model/
         // duration the request actually ran with, not wherever the pickers
         // sit by the time this resolves.
@@ -6008,35 +6048,279 @@ function GenerateFormInner({
       : true
     : false;
 
-  // Everything painted ON the stage uses fixed Darkroom literals, never
-  // theme-mapped colors — the stage deliberately doesn't flip with the
-  // theme (see --color-atelier-stage in globals.css).
-  const stagePanel = isHero ? null : (
-    <div className="mb-4">
-      <div className="relative overflow-hidden rounded-[16px] bg-atelier-stage shadow-[0_1px_2px_rgba(33,29,22,0.06),0_24px_60px_-28px_rgba(33,29,22,0.28)]">
-        {/* The stage is where a render is watched, and it said nothing. All
-            three states swap inside this one box — the in-flight line, the
-            arriving take, and the couldntValidate failure — and none of them
-            was announced, so a screen-reader user got silence from "sending"
-            through to "done". The transcript's own ResultMedia already names
-            its media (line ~570); the stage never did.
+  // ── The Screening Room (operator-chosen direction A, 2026-09-17) ───────
+  // The take is the room. On a phone this is an edge-to-edge screen in the
+  // page's flow; from md up it IS the pane — the page header, the filmstrip,
+  // the transcript and the composer are all drawn over it (see the md:
+  // classes on those wrappers below, and the :has() rule in globals.css that
+  // gives this page the whole content column).
+  //
+  // Everything painted here uses fixed warm literals, never theme-mapped
+  // colors: the screen is dark in both themes, exactly like the stage it
+  // replaces (--color-atelier-stage's old rule, now the whole surface).
+  const stageTakeIndex = stageTake ? stageTakes.indexOf(stageTake) : -1;
+  const stageTakeNo = stageTakeIndex < 0 ? 0 : stageTakes.length - stageTakeIndex;
+  const stageScore =
+    stageTake?.kind === "single" && typeof stageTake.matchScore === "number"
+      ? stageTake.matchScore
+      : null;
+  const stageCharacterName = stageTake?.kind === "single" ? (stageTake.characterName ?? null) : null;
+  const stageCharacterPhoto =
+    stageTake?.kind === "single" ? (stageTake.takeMeta?.characterPhotoUrl ?? null) : null;
+  // The frame is shaped to the media, so a portrait take is a portrait frame
+  // and nothing is ever cropped to fill the screen: the loaded pixels' own
+  // ratio once known, the aspect the request rode with until then, 16:9
+  // before either. Sized in container-query units — no measuring, no
+  // ResizeObserver, correct on the first paint.
+  const stageRatio = (() => {
+    const measured = stageTakeUrl ? stageRatios[stageTakeUrl] : undefined;
+    if (measured) return measured;
+    const asked = stageTake?.kind === "single" ? (stageTake.takeMeta?.aspectRatio ?? null) : null;
+    const parsed = asked ? /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/.exec(asked) : null;
+    return parsed ? Number(parsed[1]) / Number(parsed[2]) : 16 / 9;
+  })();
+  function noteStageRatio(url: string, w: number, h: number) {
+    if (!w || !h) return;
+    const ratio = w / h;
+    setStageRatios((prev) =>
+      prev[url] && Math.abs(prev[url] - ratio) < 0.001 ? prev : { ...prev, [url]: ratio },
+    );
+  }
+  const stageSpec =
+    stageTake === null
+      ? null
+      : stageTake.kind === "multi"
+        ? formatMsg(g.takesAngles, { n: stageTake.angles.length })
+        : stageTake.takeMeta
+          ? `${stageTake.takeMeta.modelName} · ${formatMsg(g.durationSecondsShort, { n: stageTake.takeMeta.durationSeconds })}${stageTake.takeMeta.aspectRatio ? ` · ${stageTake.takeMeta.aspectRatio}` : ""}`
+          : stageTakeIsVideo
+            ? g.video
+            : g.image;
 
-            role="status" rather than alert: this is progress, not an
-            interruption, and the pipeline's steps are distinct stages rather
-            than a ticking percentage, so hearing them is useful. */}
-        <div
-          role="status"
-          aria-live="polite"
-          className="flex h-[300px] w-full items-center justify-center sm:h-[428px]"
-        >
-          {stageInFlightPrompt !== null ? (
-            <div className="flex flex-col items-center gap-3 px-6 text-center">
-              <LoaderIcon className="h-5 w-5 text-[#a39a88]" />
-              <p className="text-sm text-[#cfc8ba]">{liveProgress ? localizeServerText(liveProgress, t) : g.runningPipeline}</p>
-              <p className="max-w-md truncate text-[11px] text-[#a39a88]">{stageInFlightPrompt}</p>
+  // The take numbers on the tiles and the slate line: 01, 02 … counting up
+  // from the session's first send (the strip itself runs newest first).
+  const takeLabelNo = (n: number) => (n < 10 ? `0${n}` : String(n));
+
+  const stageMediaClass = "absolute inset-0 h-full w-full object-contain";
+
+  // One filmstrip, two homes: in the page's flow under the phone screen, and
+  // over the screen itself from md up.
+  function filmstrip(where: "page" | "screen") {
+    const onScreen = where === "screen";
+    return (
+      <div className={cn("flex min-w-0 items-center gap-3", onScreen ? "min-w-0 flex-1" : "w-full")}>
+        <div className="flex flex-shrink-0 flex-col">
+          <span
+            className={cn(
+              "text-[10px] font-medium uppercase tracking-widest",
+              onScreen ? "text-[#cfc6b8]" : "text-atelier-muted",
+            )}
+          >
+            {g.takesShort}
+          </span>
+          <span
+            className={cn(
+              "font-numeral text-lg font-semibold leading-tight tabular-nums",
+              onScreen ? "text-[#f3ede4]" : "text-atelier-ink",
+            )}
+          >
+            {stageTakes.length}
+          </span>
+        </div>
+        {/* Scrolls inside itself (the 2026-08-09 / 2026-08-30 page-overflow
+            incidents both came from strips that couldn't), with 3px of room
+            for the selected tile's ring, which overflow would otherwise
+            clip. */}
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto overscroll-x-contain p-[3px]">
+          {stageInFlightPrompt !== null && (
+            <div
+              title={stageInFlightPrompt}
+              className={cn(
+                "flex h-[66px] w-[116px] flex-shrink-0 flex-col items-center justify-center gap-1.5 rounded-[4px] border border-dashed",
+                onScreen
+                  ? "border-[#f3ede4]/25 bg-[#0e0c0a]/50"
+                  : "border-atelier-rule bg-atelier-surface/40",
+              )}
+            >
+              <span
+                className={cn(
+                  "h-[3px] w-[62px] overflow-hidden rounded-full",
+                  onScreen ? "bg-[#f3ede4]/15" : "bg-atelier-ink/10",
+                )}
+              >
+                <span className="block h-full w-[38%] animate-pulse rounded-full bg-[#e0a468]" />
+              </span>
+              <span
+                className={cn(
+                  "px-2 text-center text-[10px] font-medium uppercase tracking-widest",
+                  onScreen ? "text-[#cfc6b8]" : "text-atelier-muted",
+                )}
+              >
+                {g.takesRendering}
+              </span>
             </div>
-          ) : stageTakeUrl ? (
-            stageTakeIsVideo ? (
+          )}
+          {stageTakes.map((it, i) => {
+            const tid = it.kind === "single" ? it.id : it.groupId;
+            const url =
+              it.kind === "single"
+                ? it.succeeded
+                  ? it.resultUrl
+                  : null
+                : (it.angles.find((a) => a.succeeded && a.resultUrl)?.resultUrl ?? null);
+            const tileIsVideo = it.kind === "single" ? it.contentType === "video" : true;
+            const score =
+              it.kind === "single" && typeof it.matchScore === "number" ? it.matchScore : null;
+            const selected =
+              stageTake !== null &&
+              (stageTake.kind === "single" ? stageTake.id : stageTake.groupId) === tid;
+            return (
+              <button
+                key={tid}
+                type="button"
+                title={it.prompt}
+                onClick={() => {
+                  setStageTakeId(tid);
+                  if (transcriptOpen) {
+                    document
+                      .getElementById(`take-${tid}`)
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }
+                }}
+                className={cn(
+                  "relative h-[66px] w-[116px] flex-shrink-0 overflow-hidden rounded-[4px] bg-[#16130f] transition-shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e0a468]",
+                  selected
+                    ? "shadow-[0_0_0_2px_#e0a468]"
+                    : onScreen
+                      ? "opacity-85 hover:opacity-100 hover:shadow-[0_0_0_1px_rgba(243,237,228,0.35)]"
+                      : "hover:shadow-[0_0_0_1px_var(--color-atelier-rule)]",
+                )}
+              >
+                {url ? (
+                  tileIsVideo ? (
+                    // #t fragment: paints the first frame in Android WebView
+                    // too — see history/page.tsx.
+                    <video
+                      src={`${url}#t=0.1`}
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={url} alt="" className="h-full w-full object-cover" />
+                  )
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center text-[#a39a88]">
+                    <XIcon className="h-4 w-4" />
+                  </span>
+                )}
+                {/* The slate under every take: its number, and the score the
+                    verifier gave it. */}
+                <span className="absolute inset-x-0 bottom-0 flex items-baseline gap-1 bg-[linear-gradient(180deg,rgba(14,12,10,0)_0%,rgba(14,12,10,0.82)_100%)] px-1.5 pb-1 pt-3 text-[9px] font-medium uppercase tracking-widest text-[#f3ede4]">
+                  {takeLabelNo(stageTakes.length - i)}
+                  {score !== null && (
+                    <>
+                      <span aria-hidden className="text-[#f3ede4]/40">
+                        ·
+                      </span>
+                      <span className="font-numeral text-[11px] font-semibold tabular-nums text-[#e0a468]">
+                        {score}
+                      </span>
+                    </>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  const stagePanel = isHero ? null : (
+    <div
+      data-screening-stage
+      style={{ "--frame-h": `calc((100vw - 32px) / ${stageRatio} + 84px)` } as React.CSSProperties}
+      className={cn(
+        "relative -mx-4 mb-3 h-[min(46svh,440px,max(292px,var(--frame-h)))] overflow-hidden bg-[#0e0c0a] sm:-mx-8",
+        "md:absolute md:inset-0 md:mx-0 md:mb-0 md:h-auto",
+      )}
+    >
+      {/* The room's light: the take itself, thrown across the whole screen,
+          blurred and dimmed. Same URL as the frame, so it costs no second
+          download — and it is what makes a portrait take sit in a room
+          instead of on two grey bars. */}
+      {stageTakeUrl && (
+        <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+          {stageTakeIsVideo ? (
+            <video
+              key={`ambient-${stageTakeUrl}`}
+              src={`${stageTakeUrl}#t=0.1`}
+              muted
+              playsInline
+              preload="metadata"
+              tabIndex={-1}
+              className="absolute inset-0 h-full w-full scale-110 object-cover opacity-40 blur-[44px]"
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={`ambient-${stageTakeUrl}`}
+              src={stageTakeUrl}
+              alt=""
+              className="absolute inset-0 h-full w-full scale-110 object-cover opacity-40 blur-[44px]"
+            />
+          )}
+        </div>
+      )}
+      {/* Reading shade — the header at the top, the strip and composer at the
+          bottom, both over whatever the ambient throws up. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(14,12,10,0.72)_0%,rgba(14,12,10,0.06)_20%,rgba(14,12,10,0.06)_46%,rgba(14,12,10,0.9)_100%)]"
+      />
+
+      {/* The page's own header, riding the top of the screen from md up (the
+          phone keeps it in the page's flow — see generate/page.tsx). */}
+      {screenHeader && (
+        <div className="absolute inset-x-0 top-0 z-20 hidden px-8 pt-5 md:block">{screenHeader}</div>
+      )}
+
+      {/* The media box: header above, filmstrip and composer below. Its
+          padding is the room the frame's two slate lines sit in. */}
+      <div
+        role="status"
+        aria-live="polite"
+        className={cn(
+          "absolute inset-x-4 bottom-11 top-10 flex items-center justify-center [container-type:size]",
+          "md:inset-x-8 md:top-[78px] md:transition-[bottom,right] md:duration-300 md:ease-out",
+          // An image may run under the filmstrip — the board drew it that way
+          // and nothing there is clickable. A VIDEO may not: its own control
+          // bar lives at the bottom of the frame, and the strip would sit on
+          // the play button.
+          stageTakeIsVideo ? "md:bottom-[calc(var(--dock-h)+124px)]" : "md:bottom-[calc(var(--dock-h)+34px)]",
+          transcriptOpen && "lg:right-[452px]",
+        )}
+      >
+        {stageInFlightPrompt !== null ? (
+          <div className="flex flex-col items-center gap-3 px-6 text-center">
+            <LoaderIcon className="h-5 w-5 text-[#e0a468]" />
+            <p className="text-sm text-[#e7e0d5]">
+              {liveProgress ? localizeServerText(liveProgress, t) : g.runningPipeline}
+            </p>
+            <p className="max-w-md truncate text-[11px] text-[#a39a88]">{stageInFlightPrompt}</p>
+          </div>
+        ) : stageTakeUrl ? (
+          <div
+            className="relative max-h-full max-w-full"
+            style={{
+              width: `min(100cqw, calc(100cqh * ${stageRatio}))`,
+              aspectRatio: String(stageRatio),
+            }}
+          >
+            {stageTakeIsVideo ? (
               // key remounts the player when the filmstrip picks another
               // take — without it the <video> keeps playing the old src.
               <video
@@ -6047,7 +6331,14 @@ function GenerateFormInner({
                 playsInline
                 preload="metadata"
                 aria-label={stageTakePrompt || g.resultAlt}
-                className="h-full max-h-full w-full object-contain"
+                onLoadedMetadata={(e) =>
+                  noteStageRatio(
+                    stageTakeUrl,
+                    e.currentTarget.videoWidth,
+                    e.currentTarget.videoHeight,
+                  )
+                }
+                className={stageMediaClass}
               />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
@@ -6059,125 +6350,76 @@ function GenerateFormInner({
                 // string — the same rule ResultMedia states for the
                 // transcript copy of this image.
                 alt={stageTakePrompt || g.resultAlt}
-                className="h-full max-h-full w-full object-contain"
+                onLoad={(e) =>
+                  noteStageRatio(
+                    stageTakeUrl,
+                    e.currentTarget.naturalWidth,
+                    e.currentTarget.naturalHeight,
+                  )
+                }
+                className={stageMediaClass}
               />
-            )
-          ) : stageTake ? (
-            <div className="flex flex-col items-center gap-2 px-6 text-center">
-              <XIcon className="h-5 w-5 text-[#a39a88]" />
-              <p className="text-sm text-[#cfc8ba]">{g.couldntValidate}</p>
-              <button
-                type="button"
-                onClick={() => setTranscriptOpen(true)}
-                className="text-[12px] font-medium text-[#e0a468] underline-offset-2 hover:underline"
-              >
-                {g.sessionTranscript}
-              </button>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-media bg-onmedia/10 text-[#cfc8ba]">
-                {contentType === "video" ? <VideoIcon className="h-5 w-5" /> : <ImageIcon className="h-5 w-5" />}
-              </div>
-              <div>
-                <p className="text-sm font-medium text-[#cfc8ba]">
-                  {creationModeActive
-                    ? contentType === "video"
-                      ? g.createVideosTitle
-                      : g.createImagesTitle
-                    : nativeClient
-                      ? g.noMessagesNative
-                      : g.noMessages}
-                </p>
-                {creationModeActive && (
-                  <p className="mt-1 text-xs text-[#a39a88]">{g.createModeSubtitle}</p>
+            )}
+
+            {/* The lock: corner marks on a take the verifier scored, and the
+                number under them. Not a claim that the face passed — a take
+                that misses twice is still delivered (lib/generations/
+                identity-gate.ts) — so the mark says scored and the number
+                says how well. */}
+            {stageScore !== null && (
+              <div aria-hidden className="lock-frame absolute -inset-[7px] [--lock-arm:18px] sm:[--lock-arm:26px]" />
+            )}
+            {(stageCharacterName || stageTakeNo > 0) && (
+              <div className="pointer-events-none absolute -top-[26px] left-0 flex max-w-full items-center gap-2 pr-2 md:left-3 md:top-3 md:rounded-full md:bg-[#0e0c0a]/55 md:py-1 md:pl-1 md:pr-3 md:backdrop-blur-[6px]">
+                {stageCharacterPhoto && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={stageCharacterPhoto}
+                    alt=""
+                    className="h-[18px] w-[18px] flex-shrink-0 rounded-full object-cover [object-position:50%_30%]"
+                  />
                 )}
+                <span className="truncate text-[10.5px] font-medium uppercase tracking-[0.14em] text-[#e0a468]">
+                  {[stageCharacterName, formatMsg(g.stageTakeNumber, { n: takeLabelNo(stageTakeNo) })]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
               </div>
-            </div>
-          )}
-        </div>
-        {/* The proof plate — the identity score as a first-class mark on the
-            render itself, not a footnote in a bubble. pointer-events-none so
-            neither overlay ever blocks the video's own controls. */}
-        {stageTake && stageTakeUrl !== null && stageInFlightPrompt === null && (
-          <>
-            {/* Bottom-left, per the approved board (left 18px, p-3 with an
-                18px right pad, 0.66 scrim). Video lifts the plate clear of
-                the native control bar (bottom-14); images sit at the
-                board's bottom-4. Leads with the character's reference
-                photo when the take carries one (submit-time snapshot;
-                history-resumed takes render text-only). */}
-            <div
-              className={cn(
-                "pointer-events-none absolute left-[18px] flex items-center gap-3.5 rounded-[12px] border border-onmedia/[0.08] bg-[#141519]/[0.66] p-3 pr-[18px] backdrop-blur-[10px]",
-                stageTakeIsVideo ? "bottom-14" : "bottom-4",
-              )}
-            >
-              {stageTake.kind === "single" && stageTake.takeMeta?.characterPhotoUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={stageTake.takeMeta.characterPhotoUrl}
-                  alt=""
-                  className="h-[42px] w-[42px] flex-shrink-0 rounded-[8px] object-cover [object-position:50%_30%]"
-                />
-              )}
-              {stageTake.kind === "single" && typeof stageTake.matchScore === "number" ? (
-                <div>
-                  <p className="text-[10px] font-medium uppercase tracking-widest text-onmedia/55">
-                    {g.identityMatchLabel}
-                  </p>
-                  <p className="flex items-baseline gap-2">
-                    <span className="font-numeral text-2xl font-semibold tabular-nums text-[#e0a468]">
-                      {stageTake.matchScore}%
-                    </span>
-                    {stageTake.attempts.length > 1 && (
-                      <span className="text-xs lowercase text-onmedia/75">
-                        {formatMsg(g.passedOnAttempt, { n: stageTake.attempts.length })}
-                      </span>
-                    )}
-                  </p>
-                </div>
-              ) : (
-                <p className="text-[11px] text-onmedia/75">
-                  {stageTake.kind === "multi"
-                    ? formatMsg(g.takesAngles, { n: stageTake.angles.length })
-                    : stageTakeIsVideo
-                      ? g.video
-                      : g.image}
-                </p>
-              )}
-            </div>
-            {/* The board's soft vignette — reads the plates against any
-                frame; pointer-events-none so video controls stay live. */}
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(27,28,32,0.18)_0%,rgba(27,28,32,0)_22%,rgba(27,28,32,0)_62%,rgba(27,28,32,0.55)_100%)]"
-            />
-            {/* Spec line bottom-right, per the board: bare text, no pill —
-                engine · length · aspect when the take recorded them. Video
-                lifts it clear of the control bar. */}
-            <div
-              className={cn(
-                "pointer-events-none absolute right-[18px] text-[11.5px] tracking-[0.02em] text-onmedia/[0.66]",
-                stageTakeIsVideo ? "bottom-14" : "bottom-5",
-              )}
-            >
-              {stageTake.kind === "single" && stageTake.takeMeta
-                ? `${stageTake.takeMeta.modelName} · ${formatMsg(g.durationSecondsShort, { n: stageTake.takeMeta.durationSeconds })}${stageTake.takeMeta.aspectRatio ? ` · ${stageTake.takeMeta.aspectRatio}` : ""}`
-                : stageTakeIsVideo
-                  ? g.video
-                  : g.image}
-            </div>
-            {/* The board's ghost actions, top-right — only the ones that
-                genuinely work: download (both media kinds) and fullscreen
-                (video). No share ghost: a dead control is worse than a
-                missing one. */}
-            <div className="absolute right-3.5 top-3.5 flex gap-2">
+            )}
+            {stageScore !== null && (
+              <div
+                className={cn(
+                  "pointer-events-none absolute -bottom-[34px] right-0 flex items-baseline gap-2 md:right-3 md:rounded-[8px] md:bg-[#0e0c0a]/55 md:px-2.5 md:py-1.5 md:backdrop-blur-[6px]",
+                  // A video's own control bar owns the bottom of the frame —
+                  // the plate lifts clear of it, exactly as it did on the old
+                  // stage.
+                  stageTakeIsVideo ? "md:bottom-[52px]" : "md:bottom-3",
+                )}
+              >
+                {stageTake?.kind === "single" && stageTake.attempts.length > 1 && (
+                  <span className="text-[11px] lowercase text-[#cfc6b8]">
+                    {formatMsg(g.passedOnAttempt, { n: stageTake.attempts.length })}
+                  </span>
+                )}
+                <span className="text-[10px] font-medium uppercase tracking-widest text-[#cfc6b8]">
+                  {g.identityMatchLabel}
+                </span>
+                <span className="font-numeral text-[26px] font-semibold leading-none tabular-nums text-[#e0a468]">
+                  {stageScore}%
+                </span>
+              </div>
+            )}
+
+            {/* The ghost actions, on the frame's own top-right — only the
+                ones that genuinely work: download (both media kinds) and
+                fullscreen (video). No share ghost: a dead control is worse
+                than a missing one. */}
+            <div className="absolute right-3 top-3 z-10 flex gap-2">
               <DownloadButton
                 url={stageTakeUrl}
                 contentType={stageTakeIsVideo ? "video" : "image"}
                 // A multi-angle take is several rows; the id here is the
-                // representative the Stage is actually showing, which is the
+                // representative the screen is actually showing, which is the
                 // one the person is choosing to keep.
                 generationId={
                   stageTake?.kind === "single"
@@ -6218,104 +6460,60 @@ function GenerateFormInner({
                   />
                 )}
             </div>
-          </>
+          </div>
+        ) : stageTake ? (
+          <div className="flex flex-col items-center gap-2 px-6 text-center">
+            <XIcon className="h-5 w-5 text-[#a39a88]" />
+            <p className="text-sm text-[#e7e0d5]">{g.couldntValidate}</p>
+            <button
+              type="button"
+              onClick={() => setTranscriptOpen(true)}
+              className="text-[12px] font-medium text-[#e0a468] underline-offset-2 hover:underline"
+            >
+              {g.sessionTranscript}
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-media bg-onmedia/10 text-[#e7e0d5]">
+              {contentType === "video" ? <VideoIcon className="h-5 w-5" /> : <ImageIcon className="h-5 w-5" />}
+            </div>
+            <div>
+              <p className="text-sm font-medium text-[#e7e0d5]">
+                {creationModeActive
+                  ? contentType === "video"
+                    ? g.createVideosTitle
+                    : g.createImagesTitle
+                  : nativeClient
+                    ? g.noMessagesNative
+                    : g.noMessages}
+              </p>
+              {creationModeActive && (
+                <p className="mt-1 text-xs text-[#a39a88]">{g.createModeSubtitle}</p>
+              )}
+            </div>
+          </div>
         )}
       </div>
 
-      {/* The filmstrip — the session's takes at every breakpoint, replacing
-          the xl-only Takes rail. Scrolls inside itself (the 2026-08-09 /
-          2026-08-30 page-overflow incidents both came from strips that
-          couldn't). */}
-      <div className="mt-3 flex items-center gap-3">
-        <div className="flex flex-shrink-0 flex-col">
-          <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
-            {g.takesShort}
-          </span>
-          <span className="font-numeral text-base font-semibold tabular-nums text-atelier-ink">
-            {stageTakes.length}
-          </span>
-        </div>
-        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto overscroll-x-contain pb-1">
-          {stageInFlightPrompt !== null && (
-            <div
-              title={stageInFlightPrompt}
-              className="flex h-[66px] w-[118px] flex-shrink-0 flex-col items-center justify-center gap-1.5 rounded-media border border-dashed border-atelier-rule bg-atelier-surface/40"
-            >
-              <span className="h-[3px] w-[62px] overflow-hidden rounded-full bg-atelier-ink/10">
-                <span className="block h-full w-[38%] animate-pulse rounded-full bg-atelier-accent" />
-              </span>
-              <span className="px-2 text-center text-[10.5px] text-atelier-muted">
-                {g.takesRendering}
-              </span>
-            </div>
-          )}
-          {stageTakes.map((it) => {
-            const tid = it.kind === "single" ? it.id : it.groupId;
-            const url =
-              it.kind === "single"
-                ? it.succeeded
-                  ? it.resultUrl
-                  : null
-                : (it.angles.find((a) => a.succeeded && a.resultUrl)?.resultUrl ?? null);
-            const tileIsVideo = it.kind === "single" ? it.contentType === "video" : true;
-            const score =
-              it.kind === "single" && typeof it.matchScore === "number" ? it.matchScore : null;
-            const selected =
-              stageTake !== null &&
-              (stageTake.kind === "single" ? stageTake.id : stageTake.groupId) === tid;
-            return (
-              <button
-                key={tid}
-                type="button"
-                title={it.prompt}
-                onClick={() => {
-                  setStageTakeId(tid);
-                  if (transcriptOpen) {
-                    document
-                      .getElementById(`take-${tid}`)
-                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }
-                }}
-                className={cn(
-                  "relative h-[66px] w-[118px] flex-shrink-0 overflow-hidden rounded-media bg-atelier-stage transition-shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-atelier-accent",
-                  selected
-                    ? "shadow-[0_0_0_2px_var(--color-atelier-accent),0_0_0_5px_rgba(180,90,40,0.18)]"
-                    : "hover:shadow-[0_0_0_1px_var(--color-atelier-rule)]",
-                )}
-              >
-                {url ? (
-                  tileIsVideo ? (
-                    // #t fragment: paints the first frame in Android WebView
-                    // too — see history/page.tsx.
-                    <video
-                      src={`${url}#t=0.1`}
-                      muted
-                      playsInline
-                      preload="metadata"
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={url} alt="" className="h-full w-full object-cover" />
-                  )
-                ) : (
-                  <span className="flex h-full w-full items-center justify-center text-[#a39a88]">
-                    <XIcon className="h-4 w-4" />
-                  </span>
-                )}
-                {score !== null && (
-                  <span className="absolute bottom-1 right-1 rounded-[5px] bg-[#141519]/75 px-1 py-px font-numeral text-[10px] font-semibold tabular-nums text-[#e0a468]">
-                    {score}%
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-        <p className="hidden flex-shrink-0 text-xs text-atelier-muted lg:block">
-          {g.stageScoredNote}
-        </p>
-
+      {/* The filmstrip band, over the screen's bottom from md up — the phone
+          keeps its strip in the page's flow, under the screen. */}
+      <div
+        className={cn(
+          "absolute inset-x-8 z-20 hidden items-end gap-5 md:flex md:bottom-[calc(var(--dock-h)+22px)] md:transition-[bottom,right] md:duration-300 md:ease-out",
+          transcriptOpen && "lg:right-[452px]",
+        )}
+      >
+        {filmstrip("screen")}
+        {stageTake === null ? (
+          <p className="hidden max-w-[300px] flex-shrink-0 text-right text-[11.5px] leading-snug text-[#cfc6b8] lg:block">
+            {g.stageScoredNote}
+          </p>
+        ) : (
+          <p className="hidden max-w-[320px] flex-shrink-0 truncate text-right text-[10.5px] font-medium uppercase tracking-[0.14em] text-[#cfc6b8] lg:block">
+            {stageSpec}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -6348,15 +6546,20 @@ function GenerateFormInner({
           stepsLabel={ob.stepsLabel}
         />
       )}
-    {/* The Stage layout (A×B redesign): a plain column — stage + filmstrip
-        first, then the collapsible transcript card, then the composer. The
-        old xl-only Takes-rail row is gone; the filmstrip serves every
-        breakpoint. */}
-    <div>
+    {/* The Screening Room (direction A, 2026-09-17): on a phone this is the
+        old column — screen, filmstrip, transcript, composer. From md up the
+        screen fills the pane and the rest is drawn over it, so this wrapper
+        becomes the positioning context and publishes the composer's measured
+        height for the screen's own layout. */}
+    <div
+      className="md:relative md:h-full"
+      style={{ "--dock-h": `${Math.round(dockHeight)}px` } as React.CSSProperties}
+    >
     {stagePanel}
+    {!isHero && <div className="mb-4 md:hidden">{filmstrip("page")}</div>}
     <div
       className={cn(
-        "relative flex flex-col transition-all duration-300 ease-out",
+        "relative flex flex-col transition-all duration-300 ease-out md:static",
         // Docked is a plain column now — the glass card belongs to the
         // transcript and the composer individually, not to one shell
         // around everything.
@@ -6372,12 +6575,21 @@ function GenerateFormInner({
       {/* The Session transcript — the chat thread in its own glass card,
           opened from the filmstrip's toggle (and forced open by an Ask
           answer, a failed render, or ?resume= — see transcriptOpen). */}
-      <div className="isolate relative mb-4 transform-gpu rounded-[26px] bg-atelier-surface/80 backdrop-blur-xl">
+      <div
+        className={cn(
+          "isolate relative mb-4 transform-gpu rounded-[26px] bg-atelier-surface/80 backdrop-blur-xl",
+          // From md up it is a drawer down the screen's right side: over the
+          // room below lg (where a 420px column would leave the take
+          // nothing), beside it from lg, where the media box makes way.
+          "md:absolute md:inset-x-4 md:bottom-[calc(var(--dock-h)+22px)] md:top-[86px] md:z-20 md:mb-0 md:overflow-hidden",
+          "lg:left-auto lg:right-4 lg:w-[420px]",
+        )}
+      >
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 -z-10 rounded-[26px] shadow-[0_0_0_1px_var(--frost-ring),0_2px_6px_rgba(0,0,0,0.04),0_24px_56px_-20px_rgba(0,0,0,0.22)] [-webkit-mask-image:-webkit-radial-gradient(white,black)]"
         />
-      <div className="min-h-[280px] space-y-7 p-6">
+      <div ref={transcriptScrollRef} className="min-h-[280px] space-y-7 p-6 md:h-full md:overflow-y-auto md:overscroll-contain">
         {!hasAnyMessages ? (
           creationModeActive ? (
             <div className="flex flex-col items-center gap-3 py-10 text-center">
@@ -6560,7 +6772,15 @@ function GenerateFormInner({
           a live mic session must never be invisible (2026-08-24 incident:
           the mic turned on with nothing on screen to show for it). */}
       {voiceSessionCard && (
-        <div className={cn(isHero ? "mx-auto w-full max-w-5xl" : "mb-3")}>{voiceSessionCard}</div>
+        <div
+          className={cn(
+            isHero
+              ? "mx-auto w-full max-w-5xl"
+              : "mb-3 md:absolute md:inset-x-8 md:bottom-[calc(var(--dock-h)+22px)] md:z-30 md:mx-auto md:mb-0 md:w-auto md:max-w-[880px]",
+          )}
+        >
+          {voiceSessionCard}
+        </div>
       )}
 
       {/* max-w-5xl, matching the app layout's own container.
@@ -6570,8 +6790,15 @@ function GenerateFormInner({
           the layout's width took over. Submitting a prompt is the worst moment
           for the thing you just typed into to change size. */}
       <div
+        ref={dockRef}
         className={cn(
           "relative z-10",
+          // From md up the composer floats over the screen at its bottom
+          // rather than sticking to the end of a scrolling column — the
+          // screen has no scroll to stick to. --native-tab-bar keeps the
+          // native shell's fixed bar clear, exactly as when docked.
+          !isHero &&
+            "md:absolute md:inset-x-8 md:bottom-[calc(1rem+var(--native-tab-bar,0px))] md:z-40 md:mx-auto md:w-auto md:max-w-[880px]",
           // Docked: the composer floats at the approved board's width —
           // narrower than the stage above it, centered — instead of
           // spanning the whole container (fidelity pass, 2026-09-02).
@@ -8391,9 +8618,13 @@ function GenerateFormInner({
                         // The verdict shows in the one place the eye already
                         // goes before committing, so no separate indicator
                         // is needed anywhere else.
+                        // Screening Room (2026-09-17): Render is the ochre
+                        // button of the board, so Ask becomes its outline —
+                        // the verdict stays spelled out by fill, label and
+                        // icon rather than by hue alone.
                         willAsk
-                          ? "bg-atelier-accent hover:bg-atelier-accent/90"
-                          : "bg-atelier-ink hover:bg-atelier-ink/90",
+                          ? "bg-atelier-accent hover:bg-atelier-accent/90 screening:bg-transparent screening:text-atelier-accent screening:shadow-[inset_0_0_0_1px_var(--color-atelier-accent)] screening:hover:bg-atelier-accent/10"
+                          : "bg-atelier-ink hover:bg-atelier-ink/90 screening:bg-[#a84e24] screening:text-white screening:shadow-[0_0_30px_-4px_rgba(224,164,104,0.45)] screening:hover:bg-[#8a3d18]",
                       )}
                     >
                       <span className="hidden sm:inline">

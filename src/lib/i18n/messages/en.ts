@@ -867,6 +867,7 @@ const en = {
     sendRender: "Render",
     renderAnglesN: "Render {n} angles",
     multiAngleArmedNote: "Multi-angle is armed — {n} angles render in parallel. Storyboard stands down while it\u2019s on.",
+    stageTakeNumber: "Take {n}",
     stageScoredNote: "Every take is scored against your character's photo — the number is right on it.",
     identityMatchLabel: "Identity match",
     creditsShortN: "{n} cr",

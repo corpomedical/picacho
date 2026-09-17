@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.45.0",
+    build: 84,
+    date: "2026-09-17",
+    title: "The Screening Room",
+    items: [
+      "The app has a new look, chosen from three drawn on a design canvas after a walk through twelve other AI sites: the Screening Room. One warm-black ground from the rail to the edge of the pane, and the take shown the way a cut is watched — big, whole, and lit by its own colour thrown around it. The website is untouched, the home page above all: the new palette is switched on only inside /app, so the pages your visitors see are exactly as they were.",
+      "The Generate page is now a room rather than a column. The render fills the pane; the page's title, the session's numbers, the filmstrip and the composer float over it. A take is never cropped to fill the screen — the frame is cut to the take's own shape, so a portrait stays a portrait — and a video keeps its own controls clear of everything.",
+      "The score is the mark. Ochre corner marks frame every scored take, with the character's name and the take's number on one corner and the identity match on the other. It says scored, not passed: a take that misses the gate twice is still delivered, and the number tells you which it was.",
+      "Type with a voice, at last. Page titles are set wide in Archivo; every small uppercase label — TAKES, CREDITS LEFT, the NEW chips — speaks in a mono slate; and the numerals that carry the proof (scores, credits, counts) are a real serif we ship, instead of whatever serif the device happened to own. Windows and Android were quietly falling back to Georgia. The faces load on app pages only, so the site downloads none of them.",
+      "Inside the app, Default now means the Screening Room, whatever your system is set to. Light is still there in Settings and keeps the previous Frost look exactly; outside the app, Default follows your system as it always did. The phone gets the same room, edge to edge, sized to the take so there is no dead band under it.",
+      "Nothing about what a render costs, how it is scored or what is saved has changed — this is paint, type and layout. The look before today is kept at the tag pre-screening-room.",
+    ],
+  },
+  {
     version: "1.44.1",
     build: 83,
     date: "2026-09-17",

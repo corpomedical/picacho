@@ -5,6 +5,16 @@
    a choice regardless of the OS setting (only "Default" follows the OS). */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* SCREENING ROOM (2026-09-17, direction A): the logged-in app carries a
+   second class on <html>, `screening` (lib/theme/screening.ts). These two
+   variants are for the few hard literals that must follow it; everything
+   else follows the token block further down. `os-dark` is the OS setting
+   itself, for chrome that has to match the NATIVE splash rather than the
+   page (the brand hold — see .native-intro). */
+@custom-variant screening (&:where(html.screening, html.screening *));
+@custom-variant screening-dark (&:where(html.screening.dark, html.screening.dark *));
+@custom-variant os-dark (@media (prefers-color-scheme: dark));
+
 @theme {
   /* Ink-and-paper neutrals, plus ONE brand accent: Picacho ochre — a
      mountain color, used with discipline (primary CTAs, small marks,
@@ -83,6 +93,12 @@
      Tailwind's `tabular-nums`. System stack for now; the production font
      swap later is this one line. */
   --font-numeral: "Iowan Old Style", Palatino, Georgia, serif;
+  /* Screening Room faces. The app layout loads them (next/font, app routes
+     only — the site never downloads them) and publishes each loaded family
+     as --font-*-face on :root; until it has, these fall back to what the
+     site already uses. */
+  --font-marquee: var(--font-marquee-face, var(--font-archivo)), var(--font-sans);
+  --font-slate: var(--font-slate-face, ui-monospace), "SF Mono", Menlo, Consolas, monospace;
   /* Atelier radii: small on controls; larger radii are for media only. */
   --radius-control: 6px;
   --radius-media: 12px;
@@ -147,6 +163,116 @@
   /* Same near-black as light — the stage is theme-invariant by design; in
      dark mode it simply blends into the surrounding surfaces. */
   --color-atelier-stage: #1b1c20;
+}
+
+/* ── The Screening Room ──────────────────────────────────────────────
+   Operator-chosen direction A (theme canvas, 2026-09-17): "one warm-black
+   ground everywhere, the render shown like a screening". App routes only —
+   `screening` is never on <html> outside /app, so the landing page and the
+   rest of the site keep exactly the tokens above, in both themes, even
+   though they render the same shared components. Inside the app, Default
+   now means dark (lib/theme/screening.ts); an explicit Light keeps Frost.
+   Previous look: git tag pre-screening-room.
+
+   Type first, in both themes: serif numerals from a loaded face instead of
+   whatever serif the device has (Windows and Android were getting Georgia or
+   Palatino), and the mono "slate" voice for every small uppercase label. */
+html.screening {
+  --font-numeral: var(--font-numeral-face, "Iowan Old Style"), "Iowan Old Style", Palatino, Georgia, serif;
+}
+
+/* The palette. Warm black instead of Darkroom's blue-charcoal; ink is a warm
+   off-white; ochre stays the one accent, exactly as reserved as before.
+   Contrast, measured: ink 16.8:1 on the ground, muted 7.5:1 (6.9:1 on a
+   surface sheet — the old dark twin was 6.6:1), accent 9.0:1. Same rule as
+   .dark: every atelier-* color here has a twin in @theme. */
+html.screening.dark {
+  --color-neutral-50: oklch(14.5% 0.004 70);
+  --color-neutral-100: oklch(26.9% 0.006 70);
+  --color-neutral-200: oklch(33% 0.007 70);
+  --color-neutral-300: oklch(43.9% 0.008 72);
+  --color-neutral-400: oklch(55.6% 0.009 74);
+  --color-neutral-500: oklch(70.8% 0.01 76);
+  --color-neutral-600: oklch(87% 0.01 78);
+  --color-neutral-700: oklch(92.2% 0.01 80);
+  --color-neutral-800: oklch(96% 0.01 82);
+  --color-neutral-900: oklch(97.4% 0.01 82);
+  --color-white: oklch(20.5% 0.008 70);
+  --color-paper: #0e0c0a;
+  --color-ink: #f3ede4;
+
+  --color-atelier-paper: #0e0c0a;
+  --color-atelier-surface: rgba(28, 24, 20, 0.86);
+  --color-atelier-ink: #f3ede4;
+  --color-atelier-muted: #a89f92;
+  --color-atelier-rule: rgba(243, 237, 228, 0.1);
+  --color-atelier-accent: #e0a468;
+  /* One ground, no gradient: the Frost hooks (.frost-ground, the native
+     status-bar strip) keep working and simply paint it flat. */
+  --frost-gradient: #0e0c0a;
+  --frost-top: #0e0c0a;
+  --frost-ring: rgba(243, 237, 228, 0.08);
+  --tour-scrim: rgba(6, 5, 4, 0.46);
+  --tour-scrim-deep: rgba(6, 5, 4, 0.42);
+  --color-atelier-stage: #16130f;
+  --skeleton-sheen: rgba(255, 238, 214, 0.06);
+}
+
+/* Wide Archivo for page titles — the marquee. */
+@utility marquee {
+  font-family: var(--font-marquee);
+  font-weight: 800;
+  font-stretch: 125%;
+  font-variation-settings: "wdth" 125;
+  text-transform: uppercase;
+  letter-spacing: 0.005em;
+}
+
+/* The slate: mono, uppercase, spaced — labels, take numbers, spec lines. */
+@utility slate {
+  font-family: var(--font-slate);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Every small uppercase label the app already has speaks in the slate face
+   without touching its markup (190-odd of them: the eyebrows, TAKES, CREDITS
+   LEFT, the NEW chips). In the base layer on purpose: it outranks the
+   preflight reset on buttons by specificity, and any explicit font utility
+   on the element (utilities layer) still wins over it. */
+@layer base {
+  html.screening :where(.uppercase.tracking-widest, .uppercase.tracking-wider, .uppercase[class*="tracking-[0."]) {
+    font-family: var(--font-slate);
+  }
+}
+
+/* Corner marks around a scored take — the lock. Color, arm length and
+   stroke are custom properties so one class serves the stage and a tile. */
+.lock-frame {
+  --lock-color: #e0a468;
+  --lock-arm: 26px;
+  --lock-stroke: 2px;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--lock-color), var(--lock-color)) top left / var(--lock-arm) var(--lock-stroke) no-repeat,
+    linear-gradient(var(--lock-color), var(--lock-color)) top left / var(--lock-stroke) var(--lock-arm) no-repeat,
+    linear-gradient(var(--lock-color), var(--lock-color)) top right / var(--lock-arm) var(--lock-stroke) no-repeat,
+    linear-gradient(var(--lock-color), var(--lock-color)) top right / var(--lock-stroke) var(--lock-arm) no-repeat,
+    linear-gradient(var(--lock-color), var(--lock-color)) bottom left / var(--lock-arm) var(--lock-stroke) no-repeat,
+    linear-gradient(var(--lock-color), var(--lock-color)) bottom left / var(--lock-stroke) var(--lock-arm) no-repeat,
+    linear-gradient(var(--lock-color), var(--lock-color)) bottom right / var(--lock-arm) var(--lock-stroke) no-repeat,
+    linear-gradient(var(--lock-color), var(--lock-color)) bottom right / var(--lock-stroke) var(--lock-arm) no-repeat;
+}
+
+/* The Generate screen (md and up): the page takes the whole pane, edge to
+   edge, and draws its own chrome over the render. Keyed on the page's own
+   marker so no other route loses the content column. */
+@media (min-width: 768px) {
+  html.screening [data-app-content]:has(> [data-screening-generate]) {
+    max-width: none;
+    height: 100%;
+    padding: 0;
+  }
 }
 
 html,
@@ -398,8 +524,14 @@ html.native-app [data-app-content] {
   pointer-events: none;
   animation: native-intro-dissolve 450ms ease-out 8s forwards;
 }
-.dark .native-intro {
-  background: #0d0c0b;
+/* The OS setting, not the page's .dark class: the sheet has to match the
+   NATIVE splash it takes over from, which follows the system — and inside
+   the app the page is dark by default now (Screening Room) whatever the
+   system says, which would have put a black sheet over a white splash. */
+@media (prefers-color-scheme: dark) {
+  .native-intro {
+    background: #0d0c0b;
+  }
 }
 .native-intro img {
   width: min(42vw, 340px);

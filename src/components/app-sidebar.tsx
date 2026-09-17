@@ -660,8 +660,12 @@ export function AppSidebar({
       )}
 
       <aside
+        data-app-sidebar
         className={cn(
           "fixed inset-y-0 left-0 z-40 flex h-screen w-72 flex-shrink-0 flex-col overflow-hidden border-r border-atelier-rule bg-atelier-surface/75 backdrop-blur-xl px-3 py-5 shadow-2xl transition-transform duration-200 ease-in-out",
+          // Screening Room: the rail is darker than the room it sits beside,
+          // so the render reads as the lit thing on the screen.
+          "screening-dark:bg-[#0a0907]/95",
           "md:static md:z-auto md:shadow-none md:transition-[width,padding] md:duration-200",
           mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
           collapsed ? "md:w-14 md:items-center md:px-2" : "md:w-64 md:px-3",

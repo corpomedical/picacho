@@ -76,9 +76,9 @@ export function NativeIntro() {
       }}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/logo.png" alt="" className="dark:hidden" />
+      <img src="/logo.png" alt="" className="os-dark:hidden" />
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/logo-dark.png" alt="" className="hidden dark:block" />
+      <img src="/logo-dark.png" alt="" className="hidden os-dark:block" />
       <div className="native-intro-dots">
         <span />
         <span />

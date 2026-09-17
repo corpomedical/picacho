@@ -179,20 +179,66 @@ export default async function GeneratePage() {
     );
   }
 
+  const creditsNow = Math.max(0, creditsLimit - creditsUsed) + purchasedCredits;
+  // Reader mode: no purchase entry points in the iOS/Android shell (Apple
+  // 3.1.1 / Play payments policy — see lib/native/platform.ts). This CTA was
+  // added with the repricing work, after the original native-gating pass,
+  // and shipped ungated — caught live on the Play internal build,
+  // 2026-08-20.
+  const upgradeVisible = !advancedPlanActive && !nativeApp;
+
+  // The screen's header (md and up): the same title, transcript affordance
+  // and stats, drawn over the Screening Room by GenerateForm instead of
+  // sitting above it. Fixed warm literals, never theme tokens — the room is
+  // dark in both themes, so ink would vanish in the light one.
+  const screenHeader = (
+    <div className="flex items-center gap-x-5">
+      <h1 className="marquee flex-shrink-0 text-[17px] leading-none text-[#f3ede4]">{g.pageTitle}</h1>
+      <TranscriptToggle label={g.sessionTranscript} tone="screen" />
+      <div className="ml-auto flex items-baseline gap-x-[22px]">
+        {stats.total > 0 && (
+          <>
+            <div className="flex items-baseline gap-[7px]">
+              <span className="font-numeral text-[19px] font-semibold tabular-nums text-[#f3ede4]">{stats.firstTryRate}%</span>
+              <span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-widest text-[#cfc6b8]">{g.firstTrySuccess}</span>
+            </div>
+            <div className="flex items-baseline gap-[7px]">
+              <span className="font-numeral text-[19px] font-semibold tabular-nums text-[#f3ede4]">{stats.avgAttempts}</span>
+              <span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-widest text-[#cfc6b8]">{g.avgAttempts}</span>
+            </div>
+          </>
+        )}
+        <div
+          className={`flex items-baseline gap-[7px] ${stats.total > 0 ? "border-l border-[#f3ede4]/15 pl-[22px]" : ""}`}
+        >
+          {/* Credits — the ochre-numeral proof idiom. Display only, same
+              formula the composer's affordability check uses
+              (creditsAvailable in generate-form.tsx); the server
+              re-validates every spend, so this can never oversell. */}
+          <span className="font-numeral text-[19px] font-semibold tabular-nums text-[#e0a468]">{creditsNow}</span>
+          <span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-widest text-[#cfc6b8]">{g.creditsLabel}</span>
+        </div>
+      </div>
+      {upgradeVisible && (
+        <Link
+          href="/app/settings?tab=usage"
+          className="flex-shrink-0 rounded-control bg-[#f3ede4] px-3.5 py-[7px] text-[12.5px] font-semibold text-[#0e0c0a] transition-colors hover:bg-white"
+        >
+          {t.settings.upgrade}
+        </Link>
+      )}
+    </div>
+  );
+
   return (
-    // max-w-5xl matches both the app layout's container and the width the
-    // composer settles at after docking from /app. It used to be max-w-2xl,
-    // which meant this page was 672px when visited directly but 1024px when
-    // reached by submitting from the home page — the same screen at two
-    // different widths depending on how you got there.
-    <div className="mx-auto max-w-5xl">
-      {/* Reader mode: no purchase entry points in the iOS/Android shell
-          (Apple 3.1.1 / Play payments policy — see lib/native/platform.ts).
-          This CTA was added with the repricing work, after the original
-          native-gating pass, and shipped ungated — caught live on the Play
-          internal build, 2026-08-20. */}
-      {!advancedPlanActive && !nativeApp && (
-        <div className="mb-3 flex justify-end">
+    // The Screening Room's marker: from md up, globals.css hands this page
+    // the whole content column (no max width, no padding, full height) and
+    // GenerateForm draws the room edge to edge. The phone keeps the column
+    // it always had — max-w-5xl matches the app layout's container and the
+    // width the composer settles at.
+    <div data-screening-generate className="mx-auto max-w-5xl md:h-full md:max-w-none">
+      {upgradeVisible && (
+        <div className="mb-3 flex justify-end md:hidden">
           <Link href="/app/settings?tab=usage">
             <Button size="sm">{t.settings.upgrade}</Button>
           </Link>
@@ -228,9 +274,9 @@ export default async function GeneratePage() {
           </div>
         );
         return (
-          <div className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+          <div className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-2 md:hidden">
             <div className="flex w-full items-baseline justify-between sm:w-auto sm:justify-start sm:gap-3.5">
-              <h1 className="text-xl font-semibold tracking-tight text-atelier-ink">{g.pageTitle}</h1>
+              <h1 className="marquee text-[19px] leading-none text-atelier-ink">{g.pageTitle}</h1>
               <div className="sm:hidden">{creditsPair("")}</div>
               <div className="hidden sm:block">
                 <TranscriptToggle label={g.sessionTranscript} />
@@ -261,6 +307,7 @@ export default async function GeneratePage() {
       })()}
 
       <GenerateForm
+        screenHeader={screenHeader}
         startOnboarding={onboardingProfile?.has_completed_onboarding !== true}
         characters={charactersForForm}
         videoModels={videoModels}

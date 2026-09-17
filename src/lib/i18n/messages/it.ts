@@ -794,6 +794,7 @@ const it = {
     sendRender: "Renderizza",
     renderAnglesN: "Renderizza {n} angolazioni",
     multiAngleArmedNote: "Multi-angolo è attivo — {n} angolazioni vengono renderizzate in parallelo. Lo storyboard resta disattivato finché è acceso.",
+    stageTakeNumber: "Ripresa {n}",
     stageScoredNote: "Ogni ripresa viene valutata contro la foto del tuo personaggio — il numero è lì sopra.",
     identityMatchLabel: "Corrispondenza identità",
     creditsShortN: "{n} cr",

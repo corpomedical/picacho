@@ -795,6 +795,7 @@ const pt = {
     sendRender: "Renderizar",
     renderAnglesN: "Renderizar {n} ângulos",
     multiAngleArmedNote: "O multiângulo está armado — {n} ângulos são renderizados em paralelo. O storyboard fica desativado enquanto estiver ligado.",
+    stageTakeNumber: "Take {n}",
     stageScoredNote: "Cada take é pontuado contra a foto do seu personagem — o número está bem ali.",
     identityMatchLabel: "Correspondência de identidade",
     creditsShortN: "{n} cr",

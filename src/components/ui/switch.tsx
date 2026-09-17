@@ -38,7 +38,7 @@ export function Switch({
         "relative h-7 w-[58px] flex-shrink-0 rounded-full transition-colors disabled:opacity-50",
         checked
           ? "bg-atelier-accent shadow-[inset_0_1px_2px_rgba(0,0,0,0.15)]"
-          : "bg-[#d2d4da] shadow-[inset_0_1px_2px_rgba(35,37,45,0.12)] dark:bg-[#3d404b]",
+          : "bg-[#d2d4da] shadow-[inset_0_1px_2px_rgba(35,37,45,0.12)] dark:bg-[#3d404b] screening-dark:bg-[#3b352e]",
       )}
     >
       <span
@@ -47,7 +47,7 @@ export function Switch({
           "pointer-events-none absolute inset-y-0 left-[9px] flex items-center text-[9.5px] font-extrabold uppercase tracking-wider transition-opacity",
           // Light theme's ochre track carries white type; dark theme's amber
           // accent is light, so the type flips dark there.
-          "text-white dark:text-[#1a1c24]",
+          "text-white dark:text-[#1a1c24] screening-dark:text-[#100d0a]",
           checked ? "opacity-100" : "opacity-0",
         )}
       >
@@ -56,7 +56,7 @@ export function Switch({
       <span
         aria-hidden
         className={cn(
-          "pointer-events-none absolute inset-y-0 right-[8px] flex items-center text-[9.5px] font-extrabold uppercase tracking-wider text-[#565a66] transition-opacity dark:text-[#b9bcc6]",
+          "pointer-events-none absolute inset-y-0 right-[8px] flex items-center text-[9.5px] font-extrabold uppercase tracking-wider text-[#565a66] transition-opacity dark:text-[#b9bcc6] screening-dark:text-[#c4bbae]",
           checked ? "opacity-0" : "opacity-100",
         )}
       >

@@ -63,7 +63,7 @@ export default async function TutorialPage() {
         <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
           {tu.eyebrow}
         </p>
-        <h1 className="mt-1 font-numeral text-3xl font-semibold tracking-tight text-atelier-ink">
+        <h1 className="mt-1 marquee text-[26px] leading-[1.05] text-atelier-ink sm:text-[28px]">
           {tu.title}
         </h1>
         <p className="mt-1 text-sm text-atelier-muted">{tu.subtitle}</p>

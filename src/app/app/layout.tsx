@@ -18,6 +18,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { AppErrorReporter } from "@/components/app-error-reporter";
 import { ActivityHeartbeat } from "@/components/activity-heartbeat";
 import { SUPPORT_EMAIL_FALLBACK } from "@/lib/domains";
+import { SCREENING_FONT_VARS } from "@/lib/theme/screening-fonts";
 
 export default async function AppLayout({
   children,
@@ -117,6 +118,11 @@ export default async function AppLayout({
   // second, momentum-killing document scroller (the two-swipe dashboard).
   return (
     <div className="frost-ground flex h-full overflow-hidden">
+      {/* The Screening Room's faces, published on :root for the whole app,
+          portals included (lib/theme/screening-fonts.ts). Inline style is
+          allowed by the CSP (style-src 'unsafe-inline'); the string is ours,
+          built from next/font's own family names. */}
+      <style dangerouslySetInnerHTML={{ __html: SCREENING_FONT_VARS }} />
       <AppErrorReporter />
       {/* Times how long this person actually uses the app — see the
           component for why it only beats while the tab is visible. */}

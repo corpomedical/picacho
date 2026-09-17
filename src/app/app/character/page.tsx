@@ -67,7 +67,7 @@ export default async function CharacterListPage() {
           <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
             {c.eyebrow}
           </p>
-          <h1 className="mt-1 font-numeral text-3xl font-semibold tracking-tight text-atelier-ink">
+          <h1 className="mt-1 marquee text-[26px] leading-[1.05] text-atelier-ink sm:text-[28px]">
             {c.listTitle}
           </h1>
         </div>
