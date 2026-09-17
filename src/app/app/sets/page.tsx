@@ -66,6 +66,7 @@ export default async function SetsPage() {
           monthlyLimit={data.monthlyLimit}
           shotsThisMonth={data.shotsThisMonth}
           photoSetsOn={data.photoSetsOn}
+          recceOn={data.recceOn}
           characters={data.characters}
           finisherOn={finisherCanRun()}
           notifyReady={notify.ready}

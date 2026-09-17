@@ -54,3 +54,27 @@ export async function isPhotoSetsEnabled(supabase: SupabaseClient): Promise<bool
     return false;
   }
 }
+
+// The Recce (board K cut 1, 2026-09-17): a THIRD switch, on top of both
+// above — a recce sends the person's footage frames to the readers and one
+// of them to Astra, so everything that gates a photo build gates it too,
+// and its own flag (astra_recce, inserted disabled by
+// supabase/pending/astra-recce.sql) can turn recces off without touching
+// photo sets. Turning astra_photo_sets off also stops a recce build's
+// retry from resending its frame, exactly as for any photo build. Who may
+// use it is decided in the action: admins only, checked on its own.
+export async function isRecceEnabled(supabase: SupabaseClient): Promise<boolean> {
+  if (process.env.ASTRA_DISABLED === "1") return false;
+  if (!process.env.OPENAI_API_KEY) return false;
+  try {
+    const { data, error } = await supabase
+      .from("feature_flags")
+      .select("key, enabled")
+      .in("key", ["astra_sets", "astra_photo_sets", "astra_recce"]);
+    if (error || !data) return false;
+    const on = new Set((data as { key: string; enabled: boolean }[]).filter((r) => r.enabled === true).map((r) => r.key));
+    return on.has("astra_sets") && on.has("astra_photo_sets") && on.has("astra_recce");
+  } catch {
+    return false;
+  }
+}

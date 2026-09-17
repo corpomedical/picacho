@@ -165,6 +165,13 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "We couldn't check this photo, so no set was started. Try again in a moment.": "setPhotoUnchecked",
   "Photo sets need a database update first (astra-photo-sets.sql).": "setPhotoNeedsDatabase",
   "Couldn't save the photo — try again.": "setPhotoSaveFailed",
+  // The Recce (board K cut 1, 2026-09-17).
+  "That clip couldn't be read — try an MP4, MOV or WebM.": "setClipUnreadable",
+  "The clip must be between 3 and 30 seconds.": "setClipLength",
+  "That clip is too large — try a shorter or smaller one.": "setClipTooLarge",
+  "The clip couldn't be read this time — try again in a moment.": "setRecceCouldntRead",
+  "This clip can't be used to build a set. Nothing came off your allowance.": "setRecceRefused",
+  "Clip sets need a database update first (astra-recce.sql).": "setRecceNeedsDatabase",
   "This set couldn't be built from that photo, and the build is back in your allowance. A photo that shows more of the place may work better.":
     "setPhotoBuildFailed",
   // Match this shot (lib/sets/messages.ts, 2026-09-11) — the set page's line

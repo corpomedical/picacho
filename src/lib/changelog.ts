@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.43.0",
+    build: 81,
+    date: "2026-09-17",
+    title: "The Recce: a clip becomes a set",
+    items: [
+      "Helios can read a clip. On the Sets home, next to describing a place or handing Astra a photo, admins can drop 3 to 30 seconds of footage — a walk through a room, a street filmed from a corner. The frames are sampled on the device; the clip itself never uploads.",
+      "A small reader takes the clip apart: the place, the light, the one person it follows and where their walk begins and ends, and which frame shows the place broadest. That frame becomes the set's photograph and the build runs as a photo build — camera 1 where you filmed, the photograph riding every shot as pixels — with the read handed to Astra so mark 1 and mark 2 land where the person's path starts and ends.",
+      "No one in the footage is described to Astra: it is told one person moved from here to there, nothing else, and the same picture check that judges a photo judges the chosen frame before anything is stored or sent. What the reader saw is kept with the set for the Film work to come.",
+      "Off by default behind its own switch (astra_recce, with both Sets switches under it), admins only, and the database wants supabase/pending/astra-recce.sql before the first clip.",
+    ],
+  },
+  {
     version: "1.42.0",
     build: 80,
     date: "2026-09-17",

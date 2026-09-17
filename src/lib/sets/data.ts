@@ -5,7 +5,7 @@ import { monthlyWindowStart } from "@/lib/generations/core";
 import { DEFAULT_IDENTITY_THRESHOLD, resolveIdentityThresholdSetting } from "@/lib/generations/identity-gate";
 import { advancedVideoPlan } from "@/lib/plans";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
-import { isPhotoSetsEnabled } from "@/lib/sets/enabled";
+import { isPhotoSetsEnabled, isRecceEnabled } from "@/lib/sets/enabled";
 import { readPhotoSources } from "@/lib/sets/photo";
 import {
   isCurrentSetThumb,
@@ -196,6 +196,7 @@ export async function getSetsHome(): Promise<SetsHomeData> {
     monthlyLimit: access.monthlyLimit,
     shotsThisMonth,
     photoSetsOn: access.isAdmin && (await isPhotoSetsEnabled(access.supabase)),
+    recceOn: access.isAdmin && (await isRecceEnabled(access.supabase)),
     characters: await shootableCharacters(access.supabase, access.userId),
   };
 }

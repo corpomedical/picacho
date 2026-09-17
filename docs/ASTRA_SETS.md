@@ -621,6 +621,30 @@ Worst case (3,300 cache-write tokens + 2,500 output cap):
 - **Photos with people.** Untested. OpenAI's usage policies ban non-consensual photorealistic likeness (https://openai.com/policies/usage-policies/), and the Astra system card has no likeness or deepfake section (https://deploymentsafety.openai.com/gpt-6-astra). The bar is zero: if Astra identifies a person in any eval case, photos containing people are refused at input.
 - **Cost.** This is the one expensive call. Reasoning tokens were 30% of its cost. Whether effort `low` cuts that without losing fidelity is unmeasured.
 
+### 3.2b The Recce, cut 1: a set from a clip (board K, 2026-09-17)
+
+A 3–30 s clip on the Sets home becomes a set. The browser samples 12 frames
+(recce-client.ts — the clip itself never uploads); the words reader
+(recce-read.ts, the shot-words model) returns shots, one person's start and
+end in metres from the camera, the light, and which frame shows the place
+broadest; that frame becomes the set's photograph and the build IS a photo
+build (3.2, unchanged — retry, Match, the photograph riding every shot),
+with the read appended to Astra's input as a tail (the retry-feedback
+mechanism) so mark 1 and mark 2 land on the person's path. The person is
+never described to Astra — "one person", a path, nothing else — and the
+tail is gated as model text under provider "astra" before anything is sent.
+The read is stored in `location_sets.recce_read` (recce-store.ts, the only
+module naming it; supabase/pending/astra-recce.sql) for cut 2, which lays
+the clip's shots on the Film timeline and adds the follow move the K1 probe
+showed our vocabulary lacks. Admins only, behind astra_recce (with both
+Sets switches under it). Measured 2026-09-17: the place built from a video
+frame at $0.4475/128 s through the unchanged photo pipeline; the read
+~3.2k tokens a call. Known limits, named on board K: cut detection merged
+a three-shot clip at 6 sampled frames (the 12-frame read plus the cut
+guidance is cut 1's answer; several-shot clips may still read as one),
+and blocking depth is approximate — the editor and the set check catch
+the worst.
+
 ### 3.3 Feature 3: Previz board
 
 **User flow**

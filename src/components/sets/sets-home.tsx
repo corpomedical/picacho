@@ -8,9 +8,11 @@ import { localizeServerText } from "@/lib/i18n/server-text";
 import { formatMsg } from "@/lib/i18n/format";
 import { isStaleDeployError } from "@/lib/stale-deploy";
 import { deleteSet, pollSetBuild, submitSetBuild, submitSetPhotoBuild } from "@/lib/sets/actions";
+import { submitSetRecceBuild } from "@/lib/sets/recce-actions";
 import { readSetRequest } from "@/lib/sets/words-actions";
 import { buildingHintKey, pageSetNotice, photoMetaKey } from "@/lib/sets/leaving";
 import { preparePhoto } from "@/lib/sets/photo-client";
+import { prepareClip, type PreparedClip } from "@/lib/sets/recce-client";
 import { SET_BRIEF_MAX_CHARS, SET_PHOTO_NOTES_MAX_CHARS } from "@/lib/sets/set-config";
 import { SHOT_WORDS_MAX_CHARS } from "@/lib/sets/shot-words";
 import {
@@ -153,6 +155,7 @@ export function SetsHome({
   monthlyLimit,
   shotsThisMonth,
   photoSetsOn,
+  recceOn,
   characters,
   finisherOn,
   notifyReady,
@@ -165,6 +168,8 @@ export function SetsHome({
   shotsThisMonth: number;
   /** Sets from a photo are on for this person: the composer offers both ways in. */
   photoSetsOn: boolean;
+  /** Sets from a clip are on for this person (the Recce, board K cut 1). */
+  recceOn: boolean;
   /** Their characters with a saved photo: who the composer can shoot. */
   characters: SetCharacter[];
   /** The finisher can run (finisher.ts finisherCanRun): a build completes with the page closed. */
@@ -187,11 +192,16 @@ export function SetsHome({
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
   const [pollingStopped, setPollingStopped] = useState(false);
-  const [mode, setMode] = useState<"describe" | "photo">("describe");
+  const [mode, setMode] = useState<"describe" | "photo" | "clip">("describe");
   const [photo, setPhoto] = useState<PreparedPhoto | null>(null);
   const [preparing, setPreparing] = useState(false);
   const [notes, setNotes] = useState("");
   const [photoStarting, setPhotoStarting] = useState(false);
+  // The Recce (board K cut 1): the clip's sampled frames — the clip itself
+  // never leaves the device (recce-client.ts).
+  const [clip, setClip] = useState<PreparedClip | null>(null);
+  const [clipPreparing, setClipPreparing] = useState(false);
+  const [clipStarting, setClipStarting] = useState(false);
   // Who is in the frame, where (a set already built, or a new place), and
   // whether Astra waits for the word after framing.
   const [characterId, setCharacterId] = useState(characters[0]?.id ?? "");
@@ -200,6 +210,7 @@ export function SetsHome({
   const [menu, setMenu] = useState<"character" | "set" | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const clipFileRef = useRef<HTMLInputElement | null>(null);
   const briefRef = useRef<HTMLTextAreaElement | null>(null);
 
   // A refresh brings the server's truth (titles, thumbnails) for sets that
@@ -431,6 +442,63 @@ export function SetsHome({
     router.refresh();
   }
 
+  // The clip, sampled in the browser (recce-client.ts): only frames travel.
+  async function pickClip(file: File | undefined) {
+    if (!file) return;
+    setError("");
+    setClip(null);
+    setClipPreparing(true);
+    try {
+      const res = await prepareClip(file);
+      if (res.ok) setClip(res.clip);
+      else setError(res.error);
+    } finally {
+      setClipPreparing(false);
+    }
+  }
+
+  // A recce build lands as a photo build (recce-actions.ts), so from here on
+  // its card, its poll and its page are a photo build's, unchanged.
+  async function buildFromClip() {
+    if (clipStarting || photoStarting || starting || !clip) return;
+    setError("");
+    setClipStarting(true);
+    let res: Awaited<ReturnType<typeof submitSetRecceBuild>>;
+    try {
+      // One string on the wire: the action codec refuses a large array of large strings.
+      res = await submitSetRecceBuild({ frames: clip.frames.join("\n"), seconds: clip.seconds, notes });
+    } catch (err) {
+      const stale = isStaleDeployError(err);
+      setError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
+      if (stale) setTimeout(() => window.location.reload(), 1800);
+      return;
+    } finally {
+      setClipStarting(false);
+    }
+    if (res.error !== null) {
+      setError(res.error);
+      return;
+    }
+    setSets((prev) => [
+      {
+        id: res.id,
+        title: "",
+        brief: notes.trim(),
+        status: "building",
+        createdAt: new Date().toISOString(),
+        thumbUrl: null,
+        failure: null,
+        fromPhoto: true,
+        shots: 0,
+        lastShotAt: null,
+      },
+      ...prev,
+    ]);
+    setClip(null);
+    setNotes("");
+    router.refresh();
+  }
+
   async function remove(id: string) {
     if (!window.confirm(s.deleteConfirm)) return;
     setDeleting(id);
@@ -467,11 +535,12 @@ export function SetsHome({
   const atCap = monthlyLimit >= 0 && used >= monthlyLimit;
   const usageLine = monthlyLimit < 0 ? s.unlimitedUsage : formatMsg(s.monthlyUsage, { used, limit: monthlyLimit });
   const fromPhoto = photoSetsOn && mode === "photo";
+  const fromClip = recceOn && mode === "clip";
   // While a submit runs (the photo check takes up to a minute or two), what
   // it sent stays on screen and cannot change: success clears the words it
   // sent, so an edit made meanwhile would vanish unsent, and switching forms
   // would hide the only line saying what is happening.
-  const submitting = starting || photoStarting;
+  const submitting = starting || photoStarting || clipStarting;
   const chip = (active: boolean) =>
     `flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-[7px] text-xs font-medium transition-colors disabled:cursor-default disabled:opacity-50 ${
       active
@@ -508,21 +577,104 @@ export function SetsHome({
           onSubmit={(e) => {
             e.preventDefault();
             if (fromPhoto) void buildFromPhoto();
+            else if (fromClip) void buildFromClip();
             else void send();
           }}
           className={`isolate relative w-full max-w-2xl rounded-[28px] bg-atelier-surface/80 p-4 text-left ${SHEET_SHADOW} backdrop-blur-xl`}
         >
-          {photoSetsOn && (
+          {(photoSetsOn || recceOn) && (
             <div className="mb-3 flex flex-wrap gap-2">
               <button type="button" aria-pressed={mode === "describe"} onClick={() => setMode("describe")} disabled={submitting} className={chip(mode === "describe")}>
                 {s.modeDescribe}
               </button>
-              <button type="button" aria-pressed={mode === "photo"} onClick={() => setMode("photo")} disabled={submitting} className={chip(mode === "photo")}>
-                {s.fromPhoto}
-              </button>
+              {photoSetsOn && (
+                <button type="button" aria-pressed={mode === "photo"} onClick={() => setMode("photo")} disabled={submitting} className={chip(mode === "photo")}>
+                  {s.fromPhoto}
+                </button>
+              )}
+              {recceOn && (
+                <button type="button" aria-pressed={mode === "clip"} onClick={() => setMode("clip")} disabled={submitting} className={chip(mode === "clip")}>
+                  {s.fromClip}
+                </button>
+              )}
             </div>
           )}
-          {fromPhoto ? (
+          {fromClip ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-start gap-4">
+                <div className="flex h-40 w-full max-w-xs items-center justify-center overflow-hidden rounded-control border border-atelier-rule bg-atelier-stage">
+                  {clipPreparing ? (
+                    <span className="px-3 text-center text-xs text-onmedia/70">{s.clipPreparing}</span>
+                  ) : clip ? (
+                    <div className="grid h-full w-full grid-cols-3 gap-px">
+                      {[0, Math.floor((clip.frames.length - 1) / 2), clip.frames.length - 1].map((i) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img key={i} src={clip.frames[i]} alt={s.clipPreviewAlt} className="h-full w-full object-cover" />
+                      ))}
+                    </div>
+                  ) : (
+                    <div
+                      aria-hidden
+                      className="h-full w-full opacity-40 [background-image:linear-gradient(to_right,rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:28px_28px]"
+                    />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1 space-y-2">
+                  <input
+                    ref={clipFileRef}
+                    type="file"
+                    accept="video/mp4,video/quicktime,video/webm"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      // Cleared, so choosing the same file again still counts as a choice.
+                      e.target.value = "";
+                      void pickClip(file);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => clipFileRef.current?.click()}
+                    disabled={clipPreparing || clipStarting}
+                    className="cursor-pointer rounded-control border border-atelier-rule px-4 py-2 text-sm font-medium text-atelier-ink transition-colors hover:border-atelier-accent disabled:opacity-40"
+                  >
+                    {clip ? s.clipChange : s.clipPick}
+                  </button>
+                  {clip && <p className="text-xs tabular-nums text-atelier-muted">{formatMsg(s.clipMeta, { n: clip.frames.length, seconds: clip.seconds })}</p>}
+                  <p className="text-xs text-atelier-muted">{s.clipHint}</p>
+                </div>
+              </div>
+              <label className="block">
+                <span className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.photoNotesLabel}</span>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value.slice(0, SET_PHOTO_NOTES_MAX_CHARS))}
+                  rows={2}
+                  placeholder={s.photoNotesPlaceholder}
+                  disabled={clipStarting}
+                  className="mt-1.5 w-full rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors placeholder:text-atelier-muted/70 focus:border-atelier-accent disabled:opacity-40"
+                />
+              </label>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-0.5 text-xs text-atelier-muted">
+                  <p>{s[photoMetaKey(finisherOn)]}</p>
+                  <p className="tabular-nums">{usageLine}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs tabular-nums text-atelier-muted">
+                    {notes.length}/{SET_PHOTO_NOTES_MAX_CHARS}
+                  </span>
+                  <button
+                    type="submit"
+                    disabled={clipPreparing || clipStarting || photoStarting || starting || atCap || !clip}
+                    className="cursor-pointer rounded-control bg-atelier-ink px-5 py-2.5 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
+                  >
+                    {clipStarting ? s.clipChecking : s.clipButton}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : fromPhoto ? (
             <div className="space-y-3">
               <div className="flex flex-wrap items-start gap-4">
                 <div className="flex h-40 w-full max-w-xs items-center justify-center overflow-hidden rounded-control border border-atelier-rule bg-atelier-stage">

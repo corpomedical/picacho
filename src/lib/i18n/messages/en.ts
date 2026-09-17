@@ -1923,6 +1923,19 @@ const en = {
     photoPreparing: "Reading the photo…",
     photoChecking: "Checking the photo…",
     photoPreviewAlt: "The photo you chose",
+    // The Recce (board K cut 1, 2026-09-17): a set from a clip. The frames
+    // are sampled on the device; the clip itself never uploads, and the
+    // hint says so.
+    fromClip: "From a clip",
+    clipPick: "Choose a clip",
+    clipChange: "Choose another clip",
+    clipHint:
+      "3–30 seconds of a place, filmed on your phone. The frames are read on this device — the clip itself never uploads. Astra rebuilds the place with camera 1 where you filmed, and puts marks where the clip's person starts and ends; no one is modelled or described.",
+    clipMeta: "{n} frames · {seconds} s",
+    clipPreparing: "Reading the clip…",
+    clipChecking: "Reading the clip into a set…",
+    clipButton: "Read the clip into a set",
+    clipPreviewAlt: "Frames from the clip you chose",
     emptyTitle: "No sets yet",
     emptyBody:
       "Describe a place above. Once it's built, open it, stand your character's stand-in on a mark, frame the shot and shoot.",
@@ -2846,6 +2859,17 @@ const en = {
     setPhotoSaveFailed: "Couldn't save the photo — try again.",
     setPhotoBuildFailed:
       "This set couldn't be built from that photo, and the build is back in your allowance. A photo that shows more of the place may work better.",
+    // The Recce (board K cut 1, 2026-09-17). setRecceRefused is every
+    // refusal of a clip — the read's words, the chosen frame, or OpenAI's —
+    // so it names no reader and says nothing came off the allowance, which
+    // is true on every path. setRecceNeedsDatabase is read by admins only
+    // and keeps the file name.
+    setClipUnreadable: "That clip couldn't be read — try an MP4, MOV or WebM.",
+    setClipLength: "The clip must be between 3 and 30 seconds.",
+    setClipTooLarge: "That clip is too large — try a shorter or smaller one.",
+    setRecceCouldntRead: "The clip couldn't be read this time — try again in a moment.",
+    setRecceRefused: "This clip can't be used to build a set. Nothing came off your allowance.",
+    setRecceNeedsDatabase: "Clip sets need a database update first (astra-recce.sql).",
     // Match this shot (2026-09-11). setMatchRefused is every refusal of a
     // reference picture — our picture check's or OpenAI's — so it names no
     // reader and no category and never says try again; a match moves no

@@ -60,6 +60,23 @@ export const SET_PHOTO_SAVE_FAILED = "Couldn't save the photo — try again.";
 export const SET_PHOTO_BUILD_FAILED =
   "This set couldn't be built from that photo, and the build is back in your allowance. A photo that shows more of the place may work better.";
 
+// The Recce (board K cut 1, 2026-09-17): a set from a clip. The first three
+// are said by the browser as well as the server (recce-client.ts reads the
+// clip before anything is sent), so both are localized by the one map. What
+// goes wrong with the chosen frame itself speaks in the photo sentences
+// above — a recce IS a photo build once its frame is chosen.
+export const SET_CLIP_UNREADABLE = "That clip couldn't be read — try an MP4, MOV or WebM.";
+export const SET_CLIP_LENGTH = "The clip must be between 3 and 30 seconds.";
+export const SET_CLIP_TOO_LARGE = "That clip is too large — try a shorter or smaller one.";
+/** The reader failed or answered no shape: nothing spent, nothing stored. */
+export const SET_RECCE_COULDNT_READ = "The clip couldn't be read this time — try again in a moment.";
+// One sentence for every refusal of a clip — the words the read produced,
+// the chosen frame, or OpenAI refusing the build — so it never says which
+// reader refused. True on every path: released, or never counted.
+export const SET_RECCE_REFUSED = "This clip can't be used to build a set. Nothing came off your allowance.";
+/** Admins only (recces are admins-only): the column the build writes is not there yet. */
+export const SET_RECCE_NEEDS_DATABASE = "Clip sets need a database update first (astra-recce.sql).";
+
 // Match this shot (docs 3.2, 2026-09-11). The picture's own problems (can't
 // be read, too small, too large, the wrong shape) are the photo sentences
 // above, from the same checks. A match takes nothing off any allowance, so
