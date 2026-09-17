@@ -54,6 +54,7 @@ import {
   UPSCALE_MODEL_ID,
   UPSCALE_LABEL,
 } from "@/lib/generations/upscale";
+import { recastEngineLabel } from "@/lib/recast/recast";
 import { formatMsg } from "@/lib/i18n/format";
 
 // The actions this page drives run the picture gate (a poll that finishes a
@@ -278,6 +279,8 @@ export default async function HistoryDetailPage({
       : undefined;
     if (catalogued) return catalogued.name;
     if (generation.model_id === UPSCALE_MODEL_ID) return UPSCALE_LABEL;
+    const recast = recastEngineLabel(generation.model_id as string | null);
+    if (recast) return recast;
     if (generation.model_id === LAYERS_MODEL_ID) return LAYERIZE_LABEL;
     if (generation.model_id === LAYER_EDIT_MODEL_ID) return t.layers.change;
     // An id with no catalogue entry is still better than nothing — an old row

@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.44.0",
+    build: 82,
+    date: "2026-09-17",
+    title: "Mystique: any performance, your character",
+    items: [
+      "A new door in the sidebar, under a working title: Mystique. Drop a clip of someone performing — a dance, a line to camera, a walk — cast one of your characters, and the same performance comes back with your character in it: the acting, the timing and the sound kept. It is the answer to Higgsfield's Genjutsu, whose point is the performance; the Recce stays what it is, a clip read into a place.",
+      "Two jobs, found by putting one photo of Eva through the same three-second performance on two engines the day it was built. Into the clip: your character stands in the clip's own room, light and framing (up to 10 seconds for now, until a longer take has been timed). Photo to life: your character's photo performs the clip — the photo's world stays, the clip's is left behind (up to 30 seconds). Each has a full and a lighter quality.",
+      "The price is read from the uploaded file, not guessed by the browser: the clip goes straight to private storage, the server reads its length and its frame count, and every quality shows its credits before you press — the number on the button is the number charged. One engine bills by frames rather than seconds, so phone footage at 30 frames a second costs more than its length says; the quote knows. Both prices were checked against the provider's own ledger for the day's test: 3 units and 4.5 units, exactly as priced.",
+      "Before anything is spent: a tick that the clip is yours to use, and the clip's own frame judged by the same picture check a finished video meets, in the strict lane — real footage of real people. A refused clip is deleted; a check that could not run keeps it and charges nothing.",
+      "From there a take is an ordinary video render: it finishes on its own with the page closed, the finished film meets the output check, gets its poster and its identity score against the character's first photo, tells your phone, lists in History and Videos, and follows the same refund rules as every video. A finished take opens in the same screen as a before and after — a line you drag between your clip and the take when they share a frame, side by side when they do not — with the sound on, a download, and the way to History.",
+      "Not in this cut, and said so: the read that writes a director's brief, a cheap proof pass, scoring at several frames, more than one person, upscaling a take (its size follows the clip or the photo, so the upscaler's price cannot be trusted for it yet). Admins only, behind its own switch (recast); the database update (recast.sql) adds the private bucket and the switch, off. The name lives in the route and the dictionary only, so it can change without touching a stored id.",
+    ],
+  },
+  {
     version: "1.43.0",
     build: 81,
     date: "2026-09-17",

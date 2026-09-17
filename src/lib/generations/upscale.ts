@@ -14,6 +14,8 @@
 // billed, which is why every failed/cancelled upscale force-refunds in
 // job-runner.ts: a failed upscale provably cost us zero.
 
+import { RECAST_MODEL_IDS } from "../recast/recast";
+
 export const UPSCALE_ENDPOINT = "blackforestlabs/flux-video-upscale";
 export const UPSCALE_LABEL = "FLUX Video Upscale";
 
@@ -99,7 +101,8 @@ export type UpscaleIneligibility =
   | "not-video"
   | "not-succeeded"
   | "too-long"
-  | "already-upscaled";
+  | "already-upscaled"
+  | "unknown-height";
 
 /**
  * Whether a finished take may be upscaled. Pure so both the History page
@@ -121,6 +124,12 @@ export function takeUpscaleIneligibility(row: {
   // regenerate detail the first pass already invented.
   if (row.video_model_id === UPSCALE_MODEL_ID) return "already-upscaled";
   if (row.source_generation_id) return "already-upscaled";
+  // A recast's size is not an engine constant: the 2026-09-17 probe came
+  // back 720×1280 from one engine and 1936×1072 from the other, following
+  // the clip and the photo. takeSourceHeight would assume 720, compute the
+  // wrong factor, and the delivered output would bill at a tier nobody
+  // priced. Not offered until the take's real height is read from its file.
+  if (row.video_model_id && RECAST_MODEL_IDS.includes(row.video_model_id)) return "unknown-height";
   return null;
 }
 

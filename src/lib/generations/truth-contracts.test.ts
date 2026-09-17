@@ -280,6 +280,8 @@ describe("localized server strings still match what the server says", () => {
     "../community/actions.ts",
     // Sets: every sentence its actions and pages return.
     "../sets/messages.ts",
+    // Recast (the Mystique door): every sentence its actions return.
+    "../recast/messages.ts",
   ]
     .map((p) => src(p))
     .join("\n")

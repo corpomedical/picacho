@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import type { PlanId } from "@/lib/plans";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { isRecceEnabled, isSetsEnabled } from "@/lib/sets/enabled";
+import { isRecastEnabled } from "@/lib/recast/enabled";
 import { setsEligible } from "@/lib/sets/set-config";
 import { RatePrompt } from "@/components/rate-prompt";
 import { NativePush } from "@/components/native-push";
@@ -91,6 +92,9 @@ export default async function AppLayout({
   // flag with both Sets switches under it. Admin first: spares everyone
   // else the flag read.
   const recceVisible = isAdmin && (await isRecceEnabled(supabase));
+  // The Mystique door (working title): the same rule — admins only while
+  // the recast lane is proved, behind its own flag.
+  const mystiqueVisible = isAdmin && (await isRecastEnabled(supabase));
 
   // Ask for a rating only once someone has had enough successful results to
   // hold an opinion, and only once ever (rating_prompted_at is stamped by
@@ -129,6 +133,7 @@ export default async function AppLayout({
         voiceModeEnabled={voiceModeEnabled}
         setsVisible={setsVisible}
         recceVisible={recceVisible}
+        mystiqueVisible={mystiqueVisible}
       />
       {/* Registers this device for push, once there's a session to
           attach it to. No-ops entirely on the web. */}

@@ -41,6 +41,9 @@ export const USER_STORAGE_BUCKETS = [
   // added HERE the same day, and nothing mechanical enforces that yet.
   "upscale-sources",
   "layer-sources",
+  // Added 2026-09-17 WITH the lane that created it (recast): uploaded clips
+  // of real people performing, one per take, under `${userId}/`.
+  "recast-sources",
 ];
 
 // The one storage sweep both deletion paths share. This was two hand-copied

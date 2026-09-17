@@ -210,6 +210,18 @@ function RecceIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function MystiqueIcon(props: SVGProps<SVGSVGElement>) {
+  // One performer becoming another: two heads sharing a line.
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="8.5" cy="8" r="3.2" />
+      <path d="M2.5 19.5c.6-3.4 3-5.5 6-5.5 1.2 0 2.3.3 3.2.9" />
+      <circle cx="16.5" cy="10" r="2.7" strokeDasharray="2.2 2.2" />
+      <path d="M11.5 20c.5-2.9 2.5-4.7 5-4.7s4.5 1.8 5 4.7" strokeDasharray="2.2 2.2" />
+    </svg>
+  );
+}
+
 function SetsIcon(props: SVGProps<SVGSVGElement>) {
   // A floor, a back wall and a figure on its mark — a set, not a cube.
   return (
@@ -390,6 +402,7 @@ export function AppSidebar({
   voiceModeEnabled,
   setsVisible = false,
   recceVisible = false,
+  mystiqueVisible = false,
 }: {
   isAdmin: boolean;
   username: string;
@@ -404,6 +417,8 @@ export function AppSidebar({
   setsVisible?: boolean;
   /** The Recce door (board K) — admins only, behind astra_recce. */
   recceVisible?: boolean;
+  /** The Mystique door (working title) — admins only, behind the recast flag. */
+  mystiqueVisible?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -866,6 +881,7 @@ export function AppSidebar({
         {[
           ...(setsVisible ? [{ href: "/app/sets", label: t.nav.sets, Icon: SetsIcon, badge: t.nav.newBadge }] : []),
           ...(recceVisible ? [{ href: "/app/recce", label: t.nav.recce, Icon: RecceIcon, badge: t.nav.newBadge }] : []),
+          ...(mystiqueVisible ? [{ href: "/app/mystique", label: t.nav.mystique, Icon: MystiqueIcon, badge: t.nav.newBadge }] : []),
           { href: "/app/upscale", label: t.nav.upscale, Icon: UpscaleIcon, badge: t.nav.newBadge },
           { href: "/app/layers", label: t.nav.layers, Icon: LayersIcon, badge: t.nav.newBadge },
         ].map((tool) => (

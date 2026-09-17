@@ -26,6 +26,17 @@ describe("probeMp4", () => {
     expect(probe!.seconds).toBeLessThan(16);
   });
 
+  it("counts the video track's frames from its sample table (the recast lane prices on it)", () => {
+    for (const file of ["public/hero-band-3.mp4", "public/hero-band-4.mp4"]) {
+      const probe = probeMp4(readFileSync(file))!;
+      expect(probe.frames).not.toBeNull();
+      // A real render: somewhere between film and phone frame rates.
+      const fps = probe.frames! / probe.seconds;
+      expect(fps).toBeGreaterThan(15);
+      expect(fps).toBeLessThan(61);
+    }
+  });
+
   it("rejects a buffer that is not an MP4", () => {
     expect(probeMp4(Buffer.from("RIFF....WEBPVP8 not a video at all"))).toBeNull();
     expect(probeMp4(Buffer.alloc(4))).toBeNull();

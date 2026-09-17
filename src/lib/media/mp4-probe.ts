@@ -21,7 +21,28 @@ export type Mp4Probe = {
   seconds: number;
   width: number;
   height: number;
+  /**
+   * The video track's frame count, from its sample-size table (stsz/stz2) —
+   * null when the table is not where the spec puts it. Added for the recast
+   * lane (2026-09-17): one of its engines bills by FRAMES, not seconds, so
+   * the frame count is a price and is read from the file like the rest.
+   */
+  frames: number | null;
 };
+
+/** trak → mdia → minf → stbl → stsz|stz2: sample_count sits 8 bytes into either table. */
+function trackFrames(buf: Buffer, trak: { start: number; end: number }): number | null {
+  let scope = trak;
+  for (const type of ["mdia", "minf", "stbl"]) {
+    const next = boxes(buf, scope.start, scope.end).find((b) => b.type === type);
+    if (!next) return null;
+    scope = next;
+  }
+  const table = boxes(buf, scope.start, scope.end).find((b) => b.type === "stsz" || b.type === "stz2");
+  if (!table || table.start + 12 > table.end) return null;
+  const count = buf.readUInt32BE(table.start + 8);
+  return count > 0 ? count : null;
+}
 
 function boxes(buf: Buffer, start: number, end: number): { type: string; start: number; end: number }[] {
   const out: { type: string; start: number; end: number }[] = [];
@@ -85,7 +106,12 @@ export function probeMp4(buf: Buffer): Mp4Probe | null {
     const width = buf.readUInt32BE(dimOffset) / 65536;
     const height = buf.readUInt32BE(dimOffset + 4) / 65536;
     if (width > 0 && height > 0) {
-      return { seconds: duration / timescale, width: Math.round(width), height: Math.round(height) };
+      return {
+        seconds: duration / timescale,
+        width: Math.round(width),
+        height: Math.round(height),
+        frames: trackFrames(buf, trak),
+      };
     }
   }
   return null;

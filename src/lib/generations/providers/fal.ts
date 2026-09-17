@@ -1,5 +1,6 @@
 import { getVideoModel } from "@/lib/generations/providers/video-models";
 import { LAYERIZE_ENDPOINT, LAYERIZE_LABEL } from "@/lib/generations/layers";
+import { RECAST_ENGINES, recastRequestBody, type RecastEngine } from "@/lib/recast/recast";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { canExtractFrameFrom, IDENTITY_FRAME_TYPE } from "@/lib/generations/providers/frame-url";
 import type { VideoResolution } from "@/lib/generations/providers/video-resolution";
@@ -1220,6 +1221,19 @@ export async function submitUpscaleJob(videoUrl: string, upscaleFactor: number):
     "FLUX Video Upscale",
     requireApiKey(),
   );
+}
+
+// Recast (2026-09-17): a saved character performs an uploaded clip. The
+// request bodies live with the engines' contract (lib/recast/recast.ts —
+// the ones the day's probe sent); the output is { video: { url } } like
+// every video model, so fetchQueuedVideoUrl and the ordinary video stage
+// collect it unmodified.
+export async function submitRecastJob(
+  engine: RecastEngine,
+  input: { characterImageUrl: string; clipUrl: string },
+): Promise<QueuedJob> {
+  const spec = RECAST_ENGINES[engine];
+  return submitToQueue(spec.endpoint, recastRequestBody(engine, input), spec.label, requireApiKey());
 }
 
 // One status check. Never throws on a job-level failure — a job that failed on
