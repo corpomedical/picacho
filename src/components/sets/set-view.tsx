@@ -17,6 +17,8 @@ import { dockTabAfter, dockTabsFor, railToolForKey, studioChecked, studioHeld, s
 import { viewModeMaterial, type ViewMode } from "@/lib/sets/view-modes";
 import type { RigTab } from "@/lib/sets/rig-dock";
 import { SceneTree, type SceneTarget } from "./scene-tree";
+import { Sequencer } from "./sequencer";
+import { beatAtTime, beatSpans, timeOf } from "@/lib/sets/sequencer";
 import { StatusList, StudioBar, StudioDock, StudioRail, StudioStatus, useWide } from "./studio-frame";
 import { clearMarks } from "@/lib/sets/marks";
 import {
@@ -611,6 +613,10 @@ export function SetView({
   /** The film's one file is being made (downloadFilm). */
   const [filmFileBusy, setFilmFileBusy] = useState(false);
   const [previz, setPreviz] = useState(false);
+  // The sequencer (cut B): where the playhead stands, seconds into the
+  // film, and which previz run is the live one — Stop retires it.
+  const [playhead, setPlayhead] = useState(0);
+  const previzRunRef = useRef(0);
 
   // ---- the rig (Helios Cinema, drawn as canvas page I) ----
   // The camera department, docked left of the stage: the frame's shape, the
@@ -2652,6 +2658,7 @@ export function SetView({
       setFovDeg(b.end.fovDeg);
       setPoseNow(b.end);
     }
+    setPlayhead(timeOf(beatSpans(film), i, 1));
     setFilmSel(i);
   }
 
@@ -2663,6 +2670,9 @@ export function SetView({
     // The previz leaves the camera on the last beat's end: Undo brings it back.
     keepStage();
     setPreviz(true);
+    const run = ++previzRunRef.current;
+    const alive = () => previzRunRef.current === run;
+    const spans = beatSpans(film);
     // The move flies from the start still's camera when it was recorded.
     const start = shots.find((sh) => sh.generationId === film.startId)?.pose ?? null;
     let from = start ?? api.pose();
@@ -2672,18 +2682,14 @@ export function SetView({
     // at each beat's end. The stage goes back to the arrangement after.
     let figureFrom: Mark = { ...layoutRef.current.mark };
     let hourNow: number | null = rigRef.current.time;
-    for (const beat of film.beats) {
+    for (const [bi, beat] of film.beats.entries()) {
+      if (!alive()) break;
       const to = beat.figure;
       const walkFrom = figureFrom;
-      await tweenPose(
-        api,
-        from,
-        beat.end,
-        MOVE_FLIGHT_MS,
-        beat.move,
-        () => true,
-        to ? (e) => api.placeMark({ x: walkFrom.x + (to.x - walkFrom.x) * e, z: walkFrom.z + (to.z - walkFrom.z) * e, facingDeg: to.facingDeg }) : undefined,
-      );
+      await tweenPose(api, from, beat.end, MOVE_FLIGHT_MS, beat.move, alive, (e) => {
+        setPlayhead(timeOf(spans, bi, e));
+        if (to) api.placeMark({ x: walkFrom.x + (to.x - walkFrom.x) * e, z: walkFrom.z + (to.z - walkFrom.z) * e, facingDeg: to.facingDeg });
+      });
       if (to) {
         figureFrom = { x: to.x, z: to.z, facingDeg: to.facingDeg };
         api.setPose(to.pose);
@@ -2698,7 +2704,60 @@ export function SetView({
     if (hourNow !== rigRef.current.time) api.rebuild(stagedSpec(spec, rigRef.current, layoutRef.current.mark));
     api.placeMark(layoutRef.current.mark);
     api.setPose(layoutRef.current.pose);
+    if (alive()) setPreviz(false);
+  }
+
+  /** The sequencer's Stop (cut B): the previz lands where it is, the reel goes quiet. */
+  function stopPlayback() {
+    previzRunRef.current += 1;
     setPreviz(false);
+    setReel(null);
+  }
+
+  /**
+   * Scrub the film (cut B): the camera goes to that share of that beat's
+   * move — along the move itself (moves.ts poseAlong), from the frame the
+   * beat opens on — for free, the way Play flies it. The beat comes into
+   * hand for the dock's Film tab.
+   */
+  function filmSeek(t: number) {
+    const api = apiRef.current;
+    if (!api || previz) return;
+    const spans = beatSpans(film);
+    const at = beatAtTime(spans, t);
+    if (!at) return;
+    const beat = film.beats[at.index];
+    const startPose = shots.find((sh) => sh.generationId === film.startId)?.pose ?? null;
+    const from = at.index > 0 ? film.beats[at.index - 1].end : (startPose ?? beat.end);
+    stopMovePreview();
+    keepStage();
+    const p = poseAlong(beat.move, from, beat.end, at.u);
+    api.goTo(p);
+    setFovDeg(p.fovDeg);
+    setPoseNow(p);
+    setPlayhead(t);
+    setFilmSel(at.index);
+  }
+
+  /** To the start: the start still's camera, where the film opens. */
+  function filmToStart() {
+    const api = apiRef.current;
+    if (!api) return;
+    stopPlayback();
+    const startPose = shots.find((sh) => sh.generationId === film.startId)?.pose ?? null;
+    if (startPose) {
+      keepStage();
+      api.goTo(startPose);
+      setFovDeg(startPose.fovDeg);
+      setPoseNow(startPose);
+    }
+    setPlayhead(0);
+  }
+
+  /** To the end: the last beat's keyframe. */
+  function filmToEnd() {
+    stopPlayback();
+    if (film.beats.length) filmGoTo(film.beats.length - 1);
   }
 
   /**
@@ -3856,6 +3915,30 @@ export function SetView({
     else if (t.kind === "light") lookAt(spec.lights[t.index].position);
   };
 
+  // The start still's menu (the film's frame one), for the sequencer's Start tile and the phone's dock.
+  const filmStartMenuItems =
+    filmStartOptions.length === 0 ? (
+      <span className="block px-3 py-2 text-xs text-[#9aa0ad]">{s.filmPickStill}</span>
+    ) : (
+      filmStartOptions.map((shot) => (
+        <button
+          key={shot.generationId}
+          type="button"
+          role="option"
+          aria-selected={film.startId === shot.generationId}
+          onClick={() => {
+            editFilm((f) => ({ ...f, startId: shot.generationId }));
+            setMenu(null);
+          }}
+          className={`flex w-full cursor-pointer items-center gap-2 rounded-[8px] px-3 py-1.5 text-left text-xs hover:bg-white/[0.06] ${
+            film.startId === shot.generationId ? "text-[#e0a468]" : "text-[#c6c9d1]"
+          }`}
+        >
+          {formatMsg(s.stillTile, { n: stillNumber(shot) })}
+        </button>
+      ))
+    );
+
   // ---- the studio's frame (studio.ts, cut A): the rig as the dock's departments, the conversation as its Astra tab ----
   const rigPanel = (docked: RigTab | null) => (
     <RigPanel
@@ -4716,6 +4799,10 @@ export function SetView({
                         preload="auto"
                         playsInline
                         onPlaying={() => setReelWaiting(false)}
+                        onTimeUpdate={(e) => {
+                          const v = e.currentTarget;
+                          if (v.duration > 0) setPlayhead(timeOf(beatSpans(film), i, v.currentTime / v.duration));
+                        }}
                         onEnded={() => {
                           // The next clip would not load: say so where the film would have cut to it.
                           if (reelFailedRef.current.has(i + 1)) {
@@ -4963,7 +5050,7 @@ export function SetView({
           {/* The film dock (canvas page H): the move where the filmstrip was —
               transport and price above, then the start still and a cell per
               beat. The stage stays the stage: orbit, then K keeps the view. */}
-          {filmOpen && (
+          {!wide && filmOpen && (
             <div
               className={`absolute bottom-3.5 left-3.5 z-10 flex flex-col gap-2 rounded-[14px] border border-white/[0.08] bg-black/40 p-2 backdrop-blur right-3.5 ${
                 chatOpen ? "md:right-[404px]" : "md:right-24"
@@ -5063,27 +5150,7 @@ export function SetView({
                       aria-label={s.filmStarts}
                       className={DMENU_UP}
                     >
-                      {filmStartOptions.length === 0 ? (
-                        <span className="block px-3 py-2 text-xs text-[#9aa0ad]">{s.filmPickStill}</span>
-                      ) : (
-                        filmStartOptions.map((shot) => (
-                          <button
-                            key={shot.generationId}
-                            type="button"
-                            role="option"
-                            aria-selected={film.startId === shot.generationId}
-                            onClick={() => {
-                              editFilm((f) => ({ ...f, startId: shot.generationId }));
-                              setMenu(null);
-                            }}
-                            className={`flex w-full cursor-pointer items-center gap-2 rounded-[8px] px-3 py-1.5 text-left text-xs hover:bg-white/[0.06] ${
-                              film.startId === shot.generationId ? "text-[#e0a468]" : "text-[#c6c9d1]"
-                            }`}
-                          >
-                            {formatMsg(s.stillTile, { n: stillNumber(shot) })}
-                          </button>
-                        ))
-                      )}
+                      {filmStartMenuItems}
                     </div>
                   )}
                 </div>
@@ -5262,6 +5329,73 @@ export function SetView({
           )}
         </div>
 
+        {/* The sequencer (canvas page J, board J1; cut B): the timeline under the viewport while the film is open. */}
+        {wide && filmOpen && (
+          <Sequencer
+            s={s}
+            film={film}
+            selected={filmSel}
+            playhead={playhead}
+            playing={previz || reel !== null}
+            ready={ready}
+            busy={filmBusy}
+            clipStatus={filmClipShots.map((sh) => sh?.status ?? null)}
+            rigTime={rig.time}
+            light={rig.light ? s.rig.lights[rig.light.scheme] : null}
+            startLabel={filmStartShot ? formatMsg(s.stillTile, { n: stillNumber(filmStartShot) }) : null}
+            startImage={filmStartShot?.resultUrl ?? null}
+            startMenu={
+              <div role="listbox" aria-label={s.filmStarts} className={DMENU}>
+                {filmStartMenuItems}
+              </div>
+            }
+            startOpen={menu === "filmStart"}
+            startDisabled={Boolean(filmBusy)}
+            onStartMenu={() => toggleMenu("filmStart")}
+            poseName={(pz) => s.poses[pz]}
+            onSelect={filmGoTo}
+            onSeek={filmSeek}
+            onPlay={() => void playMove()}
+            onStop={stopPlayback}
+            onToStart={filmToStart}
+            onToEnd={filmToEnd}
+            onPlayTake={(i) => {
+              reelFailedRef.current = new Set();
+              setReelWaiting(false);
+              setReel(i);
+            }}
+            onAddKeyframe={filmAddKeyframe}
+            onShotList={() => setDockTab("film")}
+            engine={film.engine}
+            onEngine={(e) => editFilm((f) => ({ ...f, engine: e }))}
+            engineDisabled={Boolean(filmBusy)}
+            reelReady={reelReady}
+            onPlayFilm={() => {
+              reelFailedRef.current = new Set();
+              setReelWaiting(false);
+              setReel(0);
+            }}
+            onDownload={() => void downloadFilm()}
+            downloading={filmFileBusy}
+            renderLabel={filmRenderLabel}
+            onRender={() => void renderFilm()}
+            renderDisabled={
+              !ready ||
+              !takesOn ||
+              Boolean(filmBusy) ||
+              shooting ||
+              matching ||
+              film.beats.length === 0 ||
+              !film.startId ||
+              !characterId ||
+              (filmPlan.again && filmPlan.rendering)
+            }
+            hint={s.filmHint}
+            note={!takesOn ? localizeServerText(SET_TAKE_NEEDS_PLAN, t) : null}
+            error={filmError ? localizeServerText(filmError, t) : null}
+          />
+        )}
+
         {/* On a phone the rig is its own panel over the stage (canvas page I); on the frame it is the dock's departments. */}
         {!wide && rigOpen && rigPanel(null)}
 
@@ -5297,6 +5431,102 @@ export function SetView({
                 </div>
                 <p className="px-3 pt-2 text-[11px] leading-snug text-[#6b6f7a]">{s.studio.sceneHint}</p>
                 <SceneTree spec={spec} s={s} selected={null} query={sceneQuery} onPick={pickSceneTarget} />
+              </div>
+            )}
+            {dockTab === "film" && (
+              <div className="border-b border-white/[0.07] p-3">
+                {filmSel !== null && film.beats[filmSel] ? (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.07em] text-[#6b6f7a]">
+                      <span className="whitespace-nowrap text-[#f0cda6]">{formatMsg(s.filmBeatLabel, { n: filmSel + 1 })}</span>
+                      <span className="whitespace-nowrap normal-case tabular-nums">{formatMsg(s.takeSeconds, { s: SET_TAKE_ENGINES[film.engine].seconds })}</span>
+                      {filmBusy?.beat === filmSel ? (
+                        <span className="whitespace-nowrap normal-case text-[#e0a468]">{filmBusy.clipOnly ? s.filmBeatClip : s.filmBeatStill}</span>
+                      ) : filmClipShots[filmSel] ? (
+                        <span
+                          className={`whitespace-nowrap normal-case ${
+                            filmClipShots[filmSel]!.status === "succeeded" ? "text-[#5f9e6e]" : filmClipShots[filmSel]!.status === "failed" ? "text-red-400" : "text-[#e0a468]"
+                          }`}
+                        >
+                          {filmClipShots[filmSel]!.status === "succeeded" ? s.filmBeatDone : filmClipShots[filmSel]!.status === "failed" ? s.filmBeatClipFailed : s.filmBeatClip}
+                        </span>
+                      ) : null}
+                      <span className="flex-1" />
+                      <button
+                        type="button"
+                        onClick={() => filmSetBeatEnd(filmSel)}
+                        disabled={Boolean(filmBusy) || previz || !ready}
+                        aria-label={formatMsg(s.filmSetEnd, { n: filmSel + 1 })}
+                        title={formatMsg(s.filmSetEnd, { n: filmSel + 1 })}
+                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:opacity-40"
+                      >
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="h-3.5 w-3.5" aria-hidden>
+                          <path d="M2 5V2h3M11 2h3v3M14 11v3h-3M5 14H2v-3" />
+                          <circle cx="8" cy="8" r="1.4" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const at = filmSel;
+                          editFilm((f) => ({ ...f, beats: f.beats.filter((_, j) => j !== at) }));
+                          setFilmSel(null);
+                        }}
+                        disabled={Boolean(filmBusy)}
+                        aria-label={formatMsg(s.filmRemoveBeat, { n: filmSel + 1 })}
+                        title={formatMsg(s.filmRemoveBeat, { n: filmSel + 1 })}
+                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:opacity-40"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <input
+                      value={film.beats[filmSel].words}
+                      onChange={(e) => {
+                        const at = filmSel;
+                        editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, words: e.target.value } : bb)) }));
+                      }}
+                      disabled={Boolean(filmBusy)}
+                      placeholder={s.filmBeatWords}
+                      className="h-7 rounded-[6px] bg-black/40 px-2 text-xs text-[#ecedf1] ring-1 ring-white/[0.08] placeholder:text-[#565a64] focus:outline-none focus:ring-[#e0a468]/60"
+                    />
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={Boolean(filmBusy)}
+                        onClick={() => {
+                          const at = filmSel;
+                          editFilm((f) => ({
+                            ...f,
+                            beats: f.beats.map((bb, j) => (j === at ? { ...bb, figure: bb.figure ? null : { x: mark.x, z: mark.z, facingDeg: mark.facingDeg, pose } } : bb)),
+                          }));
+                        }}
+                        title={film.beats[filmSel].figure ? s.filmFigureClear : s.filmFigureHere}
+                        className={chip(Boolean(film.beats[filmSel].figure))}
+                      >
+                        {film.beats[filmSel].figure
+                          ? formatMsg(s.filmFigureSet, { pose: s.poses[film.beats[filmSel].figure.pose], x: film.beats[filmSel].figure.x.toFixed(1), z: film.beats[filmSel].figure.z.toFixed(1) })
+                          : s.filmFigureHere}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={Boolean(filmBusy)}
+                        onClick={() => {
+                          const at = filmSel;
+                          editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, time: bb.time !== null ? null : (rig.time ?? 12) } : bb)) }));
+                        }}
+                        title={film.beats[filmSel].time !== null ? s.filmHourClear : s.filmHourHere}
+                        className={chip(film.beats[filmSel].time !== null)}
+                      >
+                        {formatMsg(s.filmHourSet, {
+                          h: film.beats[filmSel].time !== null ? timeLabel(film.beats[filmSel].time) : rig.time !== null ? timeLabel(rig.time) : s.filmHourAsBuilt,
+                        })}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[11.5px] leading-snug text-[#9aa0ad]">{film.beats.length === 0 ? s.sequencer.noBeats : s.rig.movePick}</p>
+                )}
               </div>
             )}
             {(dockTab === "camera" || dockTab === "light" || dockTab === "look" || dockTab === "film") && rigPanel(dockTab)}
