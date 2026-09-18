@@ -4145,7 +4145,7 @@ export function SetView({
   }
 
   const chip = (active: boolean) =>
-    `flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:cursor-default disabled:text-[#6b6f7a] ${
+    `flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:cursor-default disabled:text-[#868b96] ${
       active
         ? "bg-[rgba(224,164,104,0.15)] text-[#f0cda6] shadow-[inset_0_0_0_1px_rgba(240,196,142,0.5)]"
         : "bg-white/[0.06] text-[#9aa0ad] hover:bg-white/[0.1] hover:text-[#ecedf1]"
@@ -4297,7 +4297,7 @@ export function SetView({
           <button
             type="button"
             onClick={() => setRigCheckDismissed((prev) => ({ ...prev, [shot.generationId]: true }))}
-            className="cursor-pointer text-[13px] font-medium text-[#9aa0ad] hover:text-[#ecedf1]"
+            className="cursor-pointer text-[13px] font-medium text-[#c6c9d1] hover:text-[#ecedf1]"
           >
             {s.rig.checkDismiss}
           </button>
@@ -4630,7 +4630,7 @@ export function SetView({
                   onClick={() => setChatOpen(false)}
                   title={s.chatHide}
                   aria-label={s.chatHide}
-                  className="hidden h-6 w-6 cursor-pointer items-center justify-center rounded text-[#868b96] hover:text-[#ecedf1] md:flex"
+                  className="hidden h-6 w-6 cursor-pointer items-center justify-center rounded text-[#c6c9d1] hover:text-[#ecedf1] md:flex"
                 >
                   ›
                 </button>
@@ -4877,7 +4877,7 @@ export function SetView({
                             type="button"
                             onClick={anotherAngle}
                             disabled={!ready || shooting || reading || editingSet}
-                            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-white/[0.06] px-4 text-sm font-medium text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] transition-colors hover:bg-white/[0.1] disabled:text-[#6b6f7a] disabled:opacity-100"
+                            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-white/[0.06] px-4 text-sm font-medium text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] transition-colors hover:bg-white/[0.1] disabled:text-[#868b96] disabled:opacity-100"
                           >
                             {s.anotherAngle}
                           </button>
@@ -4992,7 +4992,7 @@ export function SetView({
                 aria-label={s.threadPlaceholder}
                 placeholder={reading ? s.threadReading : s.threadPlaceholder}
                 disabled={reading || shooting || editingSet}
-                className="block min-h-[44px] w-full resize-none border-none bg-transparent px-2 py-1.5 text-sm text-[#ecedf1] outline-none placeholder:text-[#868b96] disabled:text-[#6b6f7a]"
+                className="block min-h-[44px] w-full resize-none border-none bg-transparent px-2 py-1.5 text-sm text-[#ecedf1] outline-none placeholder:text-[#868b96] disabled:text-[#868b96]"
               />
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <button
@@ -5078,7 +5078,7 @@ export function SetView({
             aria-expanded={menu === "history"}
             disabled={revisions.length < 2}
             aria-label={`${s.historyLabel} · ${formatMsg(s.revisionN, { n: frameNumber })}`}
-            className="flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2 text-xs font-medium text-[#9aa0ad] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#6b6f7a] disabled:opacity-100 md:px-2.5"
+            className="flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2 text-xs font-medium text-[#c6c9d1] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96] disabled:opacity-100 md:px-2.5"
           >
             <span className="hidden xl:inline">{s.historyLabel} · </span>
             {formatMsg(s.revisionN, { n: frameNumber })}
@@ -5096,7 +5096,7 @@ export function SetView({
           disabled={!ready}
           title={s.downloadFrame}
           aria-label={s.downloadFrame}
-          className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-[6px] text-[#9aa0ad] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#6b6f7a] disabled:opacity-100"
+          className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-[6px] text-[#c6c9d1] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96] disabled:opacity-100"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
             <path d="M12 3v12" />
@@ -5973,7 +5973,7 @@ export function SetView({
                         disabled={Boolean(filmBusy) || previz || !ready}
                         aria-label={formatMsg(s.filmSetEnd, { n: i + 1 })}
                         title={formatMsg(s.filmSetEnd, { n: i + 1 })}
-                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#6b6f7a] disabled:opacity-100"
+                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96] disabled:opacity-100"
                       >
                         {/* a viewfinder: this view, as the beat's end */}
                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="h-3.5 w-3.5" aria-hidden>
@@ -5990,7 +5990,7 @@ export function SetView({
                         disabled={Boolean(filmBusy)}
                         aria-label={formatMsg(s.filmRemoveBeat, { n: i + 1 })}
                         title={formatMsg(s.filmRemoveBeat, { n: i + 1 })}
-                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#6b6f7a] disabled:opacity-100"
+                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96] disabled:opacity-100"
                       >
                         ×
                       </button>
@@ -6067,7 +6067,7 @@ export function SetView({
                   onClick={() => setCompareOpen(false)}
                   aria-label={t.common.dismiss}
                   title={t.common.dismiss}
-                  className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full text-sm text-[#9aa0ad] hover:text-[#ecedf1]"
+                  className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full text-sm text-[#c6c9d1] hover:text-[#ecedf1]"
                 >
                   ×
                 </button>
@@ -6366,7 +6366,7 @@ export function SetView({
                         disabled={Boolean(filmBusy) || previz || !ready}
                         aria-label={formatMsg(s.filmSetEnd, { n: filmSel + 1 })}
                         title={formatMsg(s.filmSetEnd, { n: filmSel + 1 })}
-                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#6b6f7a] disabled:opacity-100"
+                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96] disabled:opacity-100"
                       >
                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="h-3.5 w-3.5" aria-hidden>
                           <path d="M2 5V2h3M11 2h3v3M14 11v3h-3M5 14H2v-3" />
@@ -6383,7 +6383,7 @@ export function SetView({
                         disabled={Boolean(filmBusy)}
                         aria-label={formatMsg(s.filmRemoveBeat, { n: filmSel + 1 })}
                         title={formatMsg(s.filmRemoveBeat, { n: filmSel + 1 })}
-                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#6b6f7a] disabled:opacity-100"
+                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96] disabled:opacity-100"
                       >
                         ×
                       </button>

@@ -11,10 +11,13 @@ import { join } from "node:path";
 // ground. And one colour that was always thin: #6b6f7a, the muted ink of the
 // status bar, the dock's tabs and the section heads, at 3.2–3.5:1.
 //
-// Now a state is said in a COLOUR, never in an opacity, and the muted ink is
-// #868b96 — the same hue, one step up the studio's own ramp
-// (#6b6f7a → #868b96 → #9aa0ad → #ecedf1). #6b6f7a stays as the dim ink of a
-// control that is off.
+// Now there are three steps and each says one thing (the operator again, on
+// a screenshot: "Even the available control is dimmed"):
+//   picked      the ochres, #e0a468 and #f0cda6
+//   available   #c6c9d1, 9.8:1 — every control that lights on hover, so a
+//               choice you can make never reads as one you cannot
+//   off / label #868b96, 4.75:1 — dim, and still above the floor
+// A state is said in a COLOUR, never in an opacity.
 //
 // The maths here is WCAG 2.1's, on the source's own literals: nothing is
 // measured in a browser, so this runs in the suite and catches the next one.
@@ -49,13 +52,17 @@ const OCHRE = "#e0a468";
 /** Every text colour the chrome uses, the ground it sits on, and what it is. */
 const INK: { ink: string; on: string; what: string; icon?: boolean }[] = [
   { ink: "#ecedf1", on: BAR, what: "the title and everything hovered" },
-  { ink: "#9aa0ad", on: BAR, what: "a mode or a view not picked" },
+  { ink: "#c6c9d1", on: BAR, what: "a mode, a view or a tool you can pick" },
+  { ink: "#c6c9d1", on: PANEL, what: "a dock tab, a shutter, an ISO, an aid you can pick" },
+  { ink: "#9aa0ad", on: PANEL, what: "the panel's own prose" },
   { ink: "#868b96", on: BAR, what: "the shot count, Find anything, the status bar" },
-  { ink: "#868b96", on: PANEL, what: "a dock tab not selected, a section head" },
-  { ink: "#6b6f7a", on: PANEL, what: "a tool this mode has nothing for", icon: true },
+  { ink: "#868b96", on: PANEL, what: "a tool this mode has nothing for, a section head" },
   { ink: "#e0a468", on: PILL, what: "the mode this page is in" },
   { ink: "#f0cda6", on: PANEL, what: "the dock tab that is open" },
 ];
+
+/** What a control you can use must clear, over what a label must. */
+const CONTROL_INK = "#c6c9d1";
 
 describe("the studio's chrome can be read", () => {
   it("every ink meets WCAG on the ground it is drawn on", () => {
@@ -63,6 +70,19 @@ describe("the studio's chrome can be read", () => {
       const need = icon ? 3 : 4.5;
       expect(ratio(ink, on), `${what}: ${ink} on ${on} is ${ratio(ink, on).toFixed(2)}:1, needs ${need}`).toBeGreaterThanOrEqual(need);
     }
+  });
+
+  it("a control you can use never wears the ink of one you cannot", () => {
+    // The operator's screenshot, 2026-09-18: the shutter angles, the ISOs and
+    // the viewfinder aids are all pickable, and all of them read as switched
+    // off. Anything that lights on hover is a control, so its idle ink is the
+    // control ink — nothing dimmer.
+    for (const name of ["studio-frame.tsx", "set-view.tsx", "set-editor.tsx", "rig-panel.tsx", "sequencer.tsx"]) {
+      const file = readFileSync(join(dir, name), "utf8");
+      const wrong = [...file.matchAll(/text-\[(#[0-9a-f]{6})\] hover:text-\[#ecedf1\]/g)].map((m) => m[1]).filter((c) => c !== CONTROL_INK);
+      expect(wrong, `${name} dims a control that can still be used`).toEqual([]);
+    }
+    expect(ratio(CONTROL_INK, PANEL)).toBeGreaterThanOrEqual(7);
   });
 
   it("names every colour the chrome actually uses, so a new one cannot slip in unmeasured", () => {
@@ -96,7 +116,7 @@ describe("the studio's chrome can be read", () => {
       expect(fades.map((m) => m[0]), `${name} fades a control instead of colouring it`).toEqual([]);
     }
     // And the one that used to: a tool the mode has nothing for.
-    expect(frame).toContain('const TOOL_OFF = "flex h-8 w-8 cursor-default items-center justify-center rounded-[6px] text-[#6b6f7a]";');
+    expect(frame).toContain('const TOOL_OFF = "flex h-8 w-8 cursor-default items-center justify-center rounded-[6px] text-[#868b96]";');
     expect(over("#9aa0ad", 0.35, PANEL)).toBe("#4a4d55");
     expect(ratio(over("#9aa0ad", 0.35, PANEL), PANEL)).toBeLessThan(2);
   });

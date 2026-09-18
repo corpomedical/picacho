@@ -21,8 +21,8 @@ import { timeLabel } from "@/lib/sets/time-of-day";
 type Strings = Messages["sets"];
 
 const TRACK_COLOUR: Record<SequencerTrack, string> = { camera: "#e0a468", figure: "#d8b37c", sun: "#f5d76e", light: "#a9c6df", takes: "#9aa0ad" };
-const BTN = "flex h-7 cursor-pointer items-center whitespace-nowrap rounded-[6px] px-2.5 text-[11.5px] font-medium text-[#9aa0ad] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#6b6f7a]";
-const TBTN = "flex h-7 w-7 cursor-pointer items-center justify-center rounded-[6px] text-[#c6c9d1] hover:bg-white/[0.06] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#6b6f7a]";
+const BTN = "flex h-7 cursor-pointer items-center whitespace-nowrap rounded-[6px] px-2.5 text-[11.5px] font-medium text-[#c6c9d1] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96]";
+const TBTN = "flex h-7 w-7 cursor-pointer items-center justify-center rounded-[6px] text-[#c6c9d1] hover:bg-white/[0.06] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96]";
 const LANE_H = 24;
 
 export type SequencerProps = {
@@ -160,7 +160,7 @@ export function Sequencer(p: SequencerProps) {
               className={
                 film.engine === e
                   ? "flex h-6 cursor-default items-center whitespace-nowrap rounded-[4px] bg-[#2a2b33] px-2 text-[11px] font-medium text-[#e0a468]"
-                  : "flex h-6 cursor-pointer items-center whitespace-nowrap rounded-[4px] px-2 text-[11px] font-medium text-[#9aa0ad] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#6b6f7a]"
+                  : "flex h-6 cursor-pointer items-center whitespace-nowrap rounded-[4px] px-2 text-[11px] font-medium text-[#c6c9d1] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96]"
               }
             >
               {e === "omni" ? w.engineOmni : w.engineVeo} · {SET_TAKE_ENGINES[e].seconds} s
@@ -202,7 +202,7 @@ export function Sequencer(p: SequencerProps) {
               aria-haspopup="listbox"
               aria-expanded={p.startOpen}
               title={s.filmStarts}
-              className="flex h-5 max-w-full cursor-pointer items-center gap-1.5 rounded-[4px] bg-white/[0.05] px-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#c6c9d1] hover:bg-white/[0.09] disabled:cursor-default disabled:text-[#6b6f7a]"
+              className="flex h-5 max-w-full cursor-pointer items-center gap-1.5 rounded-[4px] bg-white/[0.05] px-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#c6c9d1] hover:bg-white/[0.09] disabled:cursor-default disabled:text-[#868b96]"
             >
               {p.startImage && (
                 // eslint-disable-next-line @next/next/no-img-element

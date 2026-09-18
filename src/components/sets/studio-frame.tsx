@@ -18,16 +18,16 @@ export const STUDIO_HAIR = "border-white/[0.07]";
 
 const SEG = "flex h-7 flex-none items-center gap-0.5 rounded-[6px] bg-white/[0.05] p-0.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)]";
 const SEG_ON = "flex h-6 cursor-default items-center rounded-[4px] bg-[#2a2b33] px-2.5 text-[12px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)] 2xl:px-3.5";
-const SEG_OFF = "flex h-6 cursor-pointer items-center rounded-[4px] px-2.5 text-[12px] font-medium text-[#9aa0ad] hover:text-[#ecedf1] 2xl:px-3.5";
+const SEG_OFF = "flex h-6 cursor-pointer items-center rounded-[4px] px-2.5 text-[12px] font-medium text-[#c6c9d1] hover:text-[#ecedf1] 2xl:px-3.5";
 const VIEW_ON = "flex h-6 cursor-default items-center rounded-[4px] bg-[#2a2b33] px-2.5 text-[11.5px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)]";
-const VIEW_OFF = "flex h-6 cursor-pointer items-center rounded-[4px] px-2.5 text-[11.5px] font-medium text-[#9aa0ad] hover:text-[#ecedf1]";
-const TOOL_BTN = "flex h-8 w-8 cursor-pointer items-center justify-center rounded-[6px] text-[#9aa0ad] hover:text-[#ecedf1]";
+const VIEW_OFF = "flex h-6 cursor-pointer items-center rounded-[4px] px-2.5 text-[11.5px] font-medium text-[#c6c9d1] hover:text-[#ecedf1]";
+const TOOL_BTN = "flex h-8 w-8 cursor-pointer items-center justify-center rounded-[6px] text-[#c6c9d1] hover:text-[#ecedf1]";
 const TOOL_ON = "flex h-8 w-8 cursor-pointer items-center justify-center rounded-[6px] bg-[rgba(224,164,104,0.13)] text-[#e0a468]";
 // A tool this mode has nothing for. Dimmed by colour, not by opacity: at
 // 35% it came out at 1.9:1 on the rail's own ground — a shape you cannot
 // read (the operator, 2026-09-18). #6b6f7a is 3.2:1, plainly dimmer than
 // the 6.2:1 of one that works.
-const TOOL_OFF = "flex h-8 w-8 cursor-default items-center justify-center rounded-[6px] text-[#6b6f7a]";
+const TOOL_OFF = "flex h-8 w-8 cursor-default items-center justify-center rounded-[6px] text-[#868b96]";
 
 /** The rail's icons, one a tool, drawn as the editor draws its own. */
 export const RAIL_ICONS: Record<RailTool, string> = {
@@ -136,7 +136,7 @@ export function StudioBar({
   };
   return (
     <div className={`flex h-12 flex-none items-center gap-2 border-b ${STUDIO_HAIR} ${STUDIO_BAR_BG} px-3.5 md:gap-3`}>
-      <Link href={back.href} aria-label={back.label} className="whitespace-nowrap text-xs font-medium text-[#9aa0ad] hover:text-[#ecedf1]">
+      <Link href={back.href} aria-label={back.label} className="whitespace-nowrap text-xs font-medium text-[#c6c9d1] hover:text-[#ecedf1]">
         ←<span className="hidden md:inline"> {back.label}</span>
       </Link>
       <span aria-hidden className="hidden h-5 w-px bg-white/[0.09] md:block" />
@@ -307,7 +307,7 @@ export function StudioDock({
             data-tab={t}
             onClick={() => onTab(t)}
             className={`flex h-9 min-w-0 flex-1 cursor-pointer items-center justify-center truncate border-b-2 px-1 text-[11px] font-medium ${
-              tab === t ? "border-[#e0a468] text-[#f0cda6]" : "border-transparent text-[#868b96] hover:text-[#ecedf1]"
+              tab === t ? "border-[#e0a468] text-[#f0cda6]" : "border-transparent text-[#c6c9d1] hover:text-[#ecedf1]"
             }`}
           >
             {names[t]}

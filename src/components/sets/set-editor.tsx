@@ -116,10 +116,10 @@ const PANEL = "bg-[#1f2026]";
 const HAIR = "border-white/[0.07]";
 const FLD =
   "h-6 w-full min-w-0 rounded-[4px] border-0 bg-[#141519] px-1.5 text-right text-[11.5px] tabular-nums text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)] outline-none focus:shadow-[inset_0_0_0_1px_#e0a468]";
-const TOOL_BTN = "flex h-8 w-8 cursor-pointer items-center justify-center rounded-[6px] text-[#9aa0ad] hover:text-[#ecedf1]";
+const TOOL_BTN = "flex h-8 w-8 cursor-pointer items-center justify-center rounded-[6px] text-[#c6c9d1] hover:text-[#ecedf1]";
 const TOOL_ON = "flex h-8 w-8 cursor-pointer items-center justify-center rounded-[6px] bg-[rgba(224,164,104,0.13)] text-[#e0a468]";
 const ICON_BTN =
-  "inline-flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[5px] text-[#9aa0ad] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#6b6f7a] disabled:opacity-100";
+  "inline-flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[5px] text-[#c6c9d1] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96] disabled:opacity-100";
 const PHEAD =
   "flex h-8 flex-none items-center justify-between px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9aa0ad]";
 const SHEAD = "flex h-6 items-center px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#868b96]";
@@ -1587,7 +1587,7 @@ export function SetEditor({
                   }}
                   placeholder={s.editorAskPlaceholder}
                   disabled={asking}
-                  className="h-full min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#ecedf1] outline-none placeholder:text-[#868b96] disabled:text-[#6b6f7a]"
+                  className="h-full min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#ecedf1] outline-none placeholder:text-[#868b96] disabled:text-[#868b96]"
                 />
                 {editsLeft !== null && (
                   <span title={s.editorAskLeftTitle} className="flex-none whitespace-nowrap text-[11px] tabular-nums text-[#868b96]">
@@ -1664,7 +1664,7 @@ export function SetEditor({
         <button
           type="button"
           onClick={() => void restoreOriginal()}
-          className="cursor-pointer text-[12px] text-[#9aa0ad] hover:text-[#ecedf1]"
+          className="cursor-pointer text-[12px] text-[#c6c9d1] hover:text-[#ecedf1]"
           title={s.editorOriginalHint}
         >
           {s.editorOriginal}
@@ -1746,7 +1746,7 @@ export function SetEditor({
                 <button
                   type="button"
                   onClick={() => commit(patchObject(spec, sel.index, { position: [selObject.position[0], selObject.size[1] / 2, selObject.position[2]] }))}
-                  className="cursor-pointer whitespace-nowrap text-[11px] text-[#9aa0ad] hover:text-[#ecedf1]"
+                  className="cursor-pointer whitespace-nowrap text-[11px] text-[#c6c9d1] hover:text-[#ecedf1]"
                 >
                   {s.editorRestGround}
                 </button>
@@ -1878,7 +1878,7 @@ export function SetEditor({
                       <button
                         type="button"
                         onClick={() => commit(patchObject(spec, sel.index, { emissive: null }))}
-                        className="cursor-pointer text-[11px] text-[#9aa0ad] hover:text-[#ecedf1]"
+                        className="cursor-pointer text-[11px] text-[#c6c9d1] hover:text-[#ecedf1]"
                       >
                         {s.editorNone}
                       </button>
@@ -2188,7 +2188,7 @@ export function SetEditor({
           type="button"
           onClick={() => setCheckOpen((v) => !v)}
           aria-expanded={checkOpen}
-          className={`flex h-5 cursor-pointer items-center gap-1.5 rounded-full px-2 ${findings.length ? "bg-[rgba(224,164,104,0.13)] text-[#e0a468]" : "text-[#868b96] hover:text-[#ecedf1]"}`}
+          className={`flex h-5 cursor-pointer items-center gap-1.5 rounded-full px-2 ${findings.length ? "bg-[rgba(224,164,104,0.13)] text-[#e0a468]" : "text-[#c6c9d1] hover:text-[#ecedf1]"}`}
         >
           <span aria-hidden className={`h-[5px] w-[5px] rounded-full ${findings.length ? "bg-[#e0a468]" : "bg-[#5f9e6e]"}`} />
           {s.editorCheck} · {findings.length ? formatMsg(s.editorCheckN, { n: findings.length }) : s.editorCheckClean}
