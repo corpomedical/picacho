@@ -273,7 +273,7 @@ function overlayKeyLabel(name: string, selected: boolean): HTMLDivElement {
   text.textContent = name;
   text.style.cssText = `position:absolute;left:12px;top:-9px;white-space:nowrap;border-radius:999px;background:rgba(0,0,0,0.55);padding:1px 7px;font-size:11px;line-height:16px;font-weight:${
     selected ? 600 : 500
-  };color:${selected ? "#f0cda6" : "#c6c9d1"}`;
+  };color:${selected ? "#f0cda6" : "#d6d9e0"}`;
   el.append(diamond, text);
   return el;
 }
@@ -409,11 +409,11 @@ function Option({ active, onPick, hint, children }: { active: boolean; onPick: (
       aria-selected={active}
       onClick={onPick}
       className={`flex h-9 w-full cursor-pointer items-center justify-between gap-4 rounded-[7px] px-2.5 text-left text-[13px] transition-colors ${
-        active ? "bg-white/[0.08] font-medium text-[#ecedf1]" : "text-[#9aa0ad] hover:bg-white/[0.05] hover:text-[#ecedf1]"
+        active ? "bg-white/[0.08] font-medium text-[#ecedf1]" : "text-[#c6c9d1] hover:bg-white/[0.05] hover:text-[#ecedf1]"
       }`}
     >
       <span className="tabular-nums">{children}</span>
-      {active ? <span aria-hidden>✓</span> : hint ? <span className="text-[11px] text-[#868b96]">{hint}</span> : null}
+      {active ? <span aria-hidden>✓</span> : hint ? <span className="text-[11px] text-[#9aa0ad]">{hint}</span> : null}
     </button>
   );
 }
@@ -4145,10 +4145,10 @@ export function SetView({
   }
 
   const chip = (active: boolean) =>
-    `flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:cursor-default disabled:text-[#868b96] ${
+    `flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:cursor-default disabled:text-[#9aa0ad] ${
       active
         ? "bg-[rgba(224,164,104,0.15)] text-[#f0cda6] shadow-[inset_0_0_0_1px_rgba(240,196,142,0.5)]"
-        : "bg-white/[0.06] text-[#9aa0ad] hover:bg-white/[0.1] hover:text-[#ecedf1]"
+        : "bg-white/[0.06] text-[#c6c9d1] hover:bg-white/[0.1] hover:text-[#ecedf1]"
     }`;
   const glassBtn =
     "inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-onmedia/10 bg-black/60 px-3 py-1.5 text-xs font-medium text-onmedia transition-colors hover:bg-black/75";
@@ -4225,7 +4225,7 @@ export function SetView({
     const check = shot.rigCheck;
     if (!check) {
       return (
-        <div className="flex flex-wrap items-center gap-2 rounded-[14px] bg-white/[0.05] px-3.5 py-3 text-xs text-[#9aa0ad] ring-1 ring-white/[0.07]">
+        <div className="flex flex-wrap items-center gap-2 rounded-[14px] bg-white/[0.05] px-3.5 py-3 text-xs text-[#c6c9d1] ring-1 ring-white/[0.07]">
           {state === "checking" ? (
             <>
               <Spinner className="h-3.5 w-3.5 flex-shrink-0" />
@@ -4252,7 +4252,7 @@ export function SetView({
     return (
       <div className="space-y-3 rounded-[14px] bg-white/[0.05] p-3.5 ring-1 ring-white/[0.07]">
         <div className="flex items-center justify-between">
-          <span className="text-[11px] font-medium uppercase tracking-widest text-[#9aa0ad]">{s.rig.checkTitle}</span>
+          <span className="text-[11px] font-medium uppercase tracking-widest text-[#c6c9d1]">{s.rig.checkTitle}</span>
           <span className="text-xs tabular-nums text-[#ecedf1]">
             {missed.length === 0 ? s.rig.checkAll : formatMsg(s.rig.checkLanded, { n: landed, m: check.verdicts.length })}
           </span>
@@ -4272,12 +4272,12 @@ export function SetView({
               </span>
               <span className={`text-[13px] leading-[18px] ${v.landed ? "text-[#ecedf1]" : "text-[#f0cda6]"}`}>
                 {s.rig.checkItems[v.item]}
-                {v.evidence && <span className="block text-xs leading-[17px] text-[#9aa0ad]">{v.evidence}</span>}
+                {v.evidence && <span className="block text-xs leading-[17px] text-[#c6c9d1]">{v.evidence}</span>}
               </span>
             </li>
           ))}
         </ul>
-        <p className="flex flex-wrap items-center gap-2 border-t border-white/[0.07] pt-2.5 text-xs text-[#9aa0ad]">
+        <p className="flex flex-wrap items-center gap-2 border-t border-white/[0.07] pt-2.5 text-xs text-[#c6c9d1]">
           <span className="inline-flex h-[18px] items-center whitespace-nowrap rounded-full bg-[rgba(224,164,104,0.08)] px-2 text-[10px] font-medium text-[#e3c9a6] shadow-[inset_0_0_0_1px_rgba(224,164,104,0.25)]">
             {s.rig.held}
           </span>
@@ -4289,7 +4289,7 @@ export function SetView({
               type="button"
               onClick={() => void shoot(undefined, missed)}
               disabled={!canShootNow || Boolean(takeStart)}
-              className="inline-flex h-9 cursor-pointer items-center justify-center rounded-[8px] bg-[#e0a468] px-3.5 text-[13px] font-semibold text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-[#2a2b33] disabled:text-[#9aa0ad] disabled:opacity-100"
+              className="inline-flex h-9 cursor-pointer items-center justify-center rounded-[8px] bg-[#e0a468] px-3.5 text-[13px] font-semibold text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-[#2a2b33] disabled:text-[#c6c9d1] disabled:opacity-100"
             >
               {againLabel}
             </button>
@@ -4297,12 +4297,12 @@ export function SetView({
           <button
             type="button"
             onClick={() => setRigCheckDismissed((prev) => ({ ...prev, [shot.generationId]: true }))}
-            className="cursor-pointer text-[13px] font-medium text-[#c6c9d1] hover:text-[#ecedf1]"
+            className="cursor-pointer text-[13px] font-medium text-[#d6d9e0] hover:text-[#ecedf1]"
           >
             {s.rig.checkDismiss}
           </button>
         </div>
-        <p className="text-[11px] leading-[15px] text-[#868b96]">{s.rig.checkNote}</p>
+        <p className="text-[11px] leading-[15px] text-[#9aa0ad]">{s.rig.checkNote}</p>
       </div>
     );
   };
@@ -4571,7 +4571,7 @@ export function SetView({
   // The start still's menu (the film's frame one), for the sequencer's Start tile and the phone's dock.
   const filmStartMenuItems =
     filmStartOptions.length === 0 ? (
-      <span className="block px-3 py-2 text-xs text-[#9aa0ad]">{s.filmPickStill}</span>
+      <span className="block px-3 py-2 text-xs text-[#c6c9d1]">{s.filmPickStill}</span>
     ) : (
       filmStartOptions.map((shot) => (
         <button
@@ -4584,7 +4584,7 @@ export function SetView({
             setMenu(null);
           }}
           className={`flex w-full cursor-pointer items-center gap-2 rounded-[8px] px-3 py-1.5 text-left text-xs hover:bg-white/[0.06] ${
-            film.startId === shot.generationId ? "text-[#e0a468]" : "text-[#c6c9d1]"
+            film.startId === shot.generationId ? "text-[#e0a468]" : "text-[#d6d9e0]"
           }`}
         >
           {formatMsg(s.stillTile, { n: stillNumber(shot) })}
@@ -4622,15 +4622,15 @@ export function SetView({
   );
   const chatHeader = (
             <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3">
-              <span className="text-[11px] font-medium uppercase tracking-widest text-[#9aa0ad]">{s.astraLabel}</span>
+              <span className="text-[11px] font-medium uppercase tracking-widest text-[#c6c9d1]">{s.astraLabel}</span>
               <span className="flex items-center gap-2">
-                <span className="text-[11px] text-[#868b96]">{s.panelMeta}</span>
+                <span className="text-[11px] text-[#9aa0ad]">{s.panelMeta}</span>
                 <button
                   type="button"
                   onClick={() => setChatOpen(false)}
                   title={s.chatHide}
                   aria-label={s.chatHide}
-                  className="hidden h-6 w-6 cursor-pointer items-center justify-center rounded text-[#c6c9d1] hover:text-[#ecedf1] md:flex"
+                  className="hidden h-6 w-6 cursor-pointer items-center justify-center rounded text-[#d6d9e0] hover:text-[#ecedf1] md:flex"
                 >
                   ›
                 </button>
@@ -4649,7 +4649,7 @@ export function SetView({
                       <div className="flex items-start gap-2.5">
                         <AstraMark />
                         <div className="min-w-0 flex-1 space-y-2.5">
-                          <p className="text-sm leading-relaxed text-[#c6c9d1]">
+                          <p className="text-sm leading-relaxed text-[#d6d9e0]">
                             {shot.status === "succeeded" ? stillLine(shot) : shot.status === "failed" ? s.takeFailedLine : s.takeRendering}
                           </p>
                           <div className="rounded-[14px] bg-white/[0.05] p-3 ring-1 ring-white/[0.07] space-y-3">
@@ -4671,7 +4671,7 @@ export function SetView({
                               </button>
                               <div className="min-w-0 flex flex-col gap-1">
                                 <span className="text-[13px] font-medium text-[#ecedf1]">{formatMsg(s.takeTile, { n: stillNumber(shot) })}</span>
-                                <span className="text-xs text-[#9aa0ad] tabular-nums">
+                                <span className="text-xs text-[#c6c9d1] tabular-nums">
                                   {formatMsg(s.takeSeconds, { s: shot.seconds ?? SET_TAKE_ENGINES[SET_TAKE_DEFAULT_ENGINE].seconds })} · <LocalDate date={shot.createdAt} />
                                 </span>
                               </div>
@@ -4711,7 +4711,7 @@ export function SetView({
                     <div className="flex items-start gap-2.5">
                       <AstraMark />
                       <div className="min-w-0 flex-1 space-y-2.5">
-                        <p className="text-sm leading-relaxed text-[#c6c9d1]">
+                        <p className="text-sm leading-relaxed text-[#d6d9e0]">
                           {facts ? `${formatMsg(s.shotInSeconds, { s: facts.seconds })} ` : ""}
                           {stillLine(shot)}
                           {isLook ? ` ${s.lookOnLine}` : ""}
@@ -4736,11 +4736,11 @@ export function SetView({
                             </button>
                             <div className="min-w-0 flex flex-col gap-1">
                               <span className="text-[13px] font-medium text-[#ecedf1]">{formatMsg(s.stillTile, { n: stillNumber(shot) })}</span>
-                              <span className="text-xs text-[#9aa0ad] tabular-nums">
+                              <span className="text-xs text-[#c6c9d1] tabular-nums">
                                 {shot.score !== null ? `${formatMsg(s.identityScore, { score: shot.score })} · ` : ""}
                                 <LocalDate date={shot.createdAt} />
                               </span>
-                              {facts && <span className="text-xs text-[#9aa0ad]">{facts.frame}</span>}
+                              {facts && <span className="text-xs text-[#c6c9d1]">{facts.frame}</span>}
                             </div>
                           </div>
                           <div className="flex flex-wrap items-center gap-1.5">
@@ -4776,7 +4776,7 @@ export function SetView({
               {setChanged !== null && (
                 <div className="flex items-start gap-2.5">
                   <AstraMark />
-                  <p className="text-sm leading-relaxed text-[#c6c9d1]">
+                  <p className="text-sm leading-relaxed text-[#d6d9e0]">
                     {setChanged === 0 ? s.editorAskNothing : setChanged === 1 ? s.editorAskDoneOne : formatMsg(s.editorAskDone, { n: setChanged })}{" "}
                     {setChanged > 0 && (
                       <button type="button" onClick={() => void undoSetEdit()} className="cursor-pointer font-medium text-[#e0a468]">
@@ -4792,7 +4792,7 @@ export function SetView({
                 <AstraMark />
                 <div className="min-w-0 flex-1 space-y-2.5">
                   {characters.length === 0 ? (
-                    <p className="text-sm leading-relaxed text-[#c6c9d1]">
+                    <p className="text-sm leading-relaxed text-[#d6d9e0]">
                       {s.noCharacters}{" "}
                       <Link href="/app/character/new" className="font-medium text-[#e0a468] underline underline-offset-2">
                         {s.createCharacter}
@@ -4800,17 +4800,17 @@ export function SetView({
                     </p>
                   ) : (
                     <>
-                      <p className="text-sm leading-relaxed text-[#c6c9d1]">
+                      <p className="text-sm leading-relaxed text-[#d6d9e0]">
                         {frameLead ? `${frameLead} ` : ""}
                         {placedLine} {s.frameProse}
                       </p>
                       <div className="rounded-[14px] bg-white/[0.05] p-4 ring-1 ring-white/[0.07] space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-medium uppercase tracking-widest text-[#9aa0ad]">{s.frameCard}</span>
-                          <span className="text-xs text-[#868b96] tabular-nums">{formatMsg(s.revisionN, { n: frameNumber })}</span>
+                          <span className="text-[11px] font-medium uppercase tracking-widest text-[#c6c9d1]">{s.frameCard}</span>
+                          <span className="text-xs text-[#9aa0ad] tabular-nums">{formatMsg(s.revisionN, { n: frameNumber })}</span>
                         </div>
                         <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-[13px] leading-[18px]">
-                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#868b96]">{s.rowWho}</dt>
+                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{s.rowWho}</dt>
                           <dd className="flex items-center gap-1.5 text-[#ecedf1]">
                             {character?.thumbUrl ? (
                               // eslint-disable-next-line @next/next/no-img-element
@@ -4820,24 +4820,24 @@ export function SetView({
                             )}
                             {characterName}
                           </dd>
-                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#868b96]">{s.rowWhere}</dt>
+                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{s.rowWhere}</dt>
                           <dd className="text-[#ecedf1]">
                             {markLabel} · {facingLabel}
                           </dd>
-                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#868b96]">{s.rowCamera}</dt>
+                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{s.rowCamera}</dt>
                           <dd className="text-[#ecedf1] tabular-nums">
                             {cameraLabel} · {lensLabel}
                             {rig.format !== "square" ? ` · ${s.rig.formats[rig.format]}` : ""}
                           </dd>
                           {rigLooksLine && (
                             <>
-                              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#868b96]">{s.rig.rowRig}</dt>
+                              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{s.rig.rowRig}</dt>
                               <dd className="text-[#f0cda6] tabular-nums">{rigLooksLine}</dd>
                             </>
                           )}
                           {rig.light && (
                             <>
-                              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#868b96]">{s.rig.rowLight}</dt>
+                              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{s.rig.rowLight}</dt>
                               <dd className="text-[#f0cda6] tabular-nums">
                                 {s.rig.lights[rig.light.scheme]} · {formatMsg(s.rig.lightHeight, { deg: Math.round(rig.light.elevationDeg) })}
                               </dd>
@@ -4845,13 +4845,13 @@ export function SetView({
                           )}
                           {rig.palette && (
                             <>
-                              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#868b96]">{s.rig.rowPalette}</dt>
+                              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{s.rig.rowPalette}</dt>
                               <dd className="text-[#f0cda6]">{s.rig.palettes[rig.palette]}</dd>
                             </>
                           )}
-                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#868b96]">{s.rowHappens}</dt>
-                          <dd className={direction ? "text-[#ecedf1]" : "text-[#868b96]"}>{direction || "—"}</dd>
-                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#868b96]">{s.rowCost}</dt>
+                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{s.rowHappens}</dt>
+                          <dd className={direction ? "text-[#ecedf1]" : "text-[#9aa0ad]"}>{direction || "—"}</dd>
+                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{s.rowCost}</dt>
                           <dd className="text-[#ecedf1] tabular-nums">{formatMsg(s.costLine, { credits })}</dd>
                         </dl>
                         {takeStart && (
@@ -4869,7 +4869,7 @@ export function SetView({
                             type="button"
                             onClick={() => void (takeStart ? take() : shoot())}
                             disabled={!canShootNow}
-                            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-[#e0a468] px-[18px] text-sm font-semibold text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-[#2a2b33] disabled:text-[#9aa0ad] disabled:opacity-100"
+                            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-[#e0a468] px-[18px] text-sm font-semibold text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-[#2a2b33] disabled:text-[#c6c9d1] disabled:opacity-100"
                           >
                             {takeStart ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel}
                           </button>
@@ -4877,7 +4877,7 @@ export function SetView({
                             type="button"
                             onClick={anotherAngle}
                             disabled={!ready || shooting || reading || editingSet}
-                            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-white/[0.06] px-4 text-sm font-medium text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] transition-colors hover:bg-white/[0.1] disabled:text-[#868b96] disabled:opacity-100"
+                            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-white/[0.06] px-4 text-sm font-medium text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] transition-colors hover:bg-white/[0.1] disabled:text-[#9aa0ad] disabled:opacity-100"
                           >
                             {s.anotherAngle}
                           </button>
@@ -4896,7 +4896,7 @@ export function SetView({
                         )}
                         {rigError && <p className="text-xs text-red-400">{localizeServerText(rigError, t)}</p>}
                         {lastMiss && (
-                          <p className="text-sm text-[#9aa0ad]">
+                          <p className="text-sm text-[#c6c9d1]">
                             {s.shotDidNotFinish}{" "}
                             <Link href={`/app/history/${lastMiss}`} className="font-medium text-[#e0a468] underline underline-offset-2">
                               {s.openTake}
@@ -4904,7 +4904,7 @@ export function SetView({
                           </p>
                         )}
                         {lookDropped && (
-                          <p className="text-xs text-[#9aa0ad]" aria-live="polite">
+                          <p className="text-xs text-[#c6c9d1]" aria-live="polite">
                             {s.lookDropped}
                           </p>
                         )}
@@ -4917,7 +4917,7 @@ export function SetView({
               {(reading || shooting || editingSet) && (
                 <div className="flex items-center gap-2.5">
                   <AstraMark />
-                  <p className="flex items-center gap-2 text-sm text-[#9aa0ad]">
+                  <p className="flex items-center gap-2 text-sm text-[#c6c9d1]">
                     <Spinner className="h-4 w-4 flex-shrink-0" />
                     {editingSet ? s.editorAsking : shooting ? `${s.shooting} ${s.shootingLine}` : s.threadReading}
                   </p>
@@ -4945,9 +4945,9 @@ export function SetView({
                   aria-label={s.mentionTitle}
                   className="absolute bottom-full left-3.5 z-30 mb-2 w-max min-w-[13rem] rounded-[12px] border border-white/[0.11] bg-[#1d1e24] p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]"
                 >
-                  <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium uppercase tracking-widest text-[#9aa0ad]">{s.mentionTitle}</p>
+                  <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium uppercase tracking-widest text-[#c6c9d1]">{s.mentionTitle}</p>
                   {mentionList.length === 0 ? (
-                    <p className="px-2.5 py-1.5 text-xs text-[#9aa0ad]">{s.mentionHint}</p>
+                    <p className="px-2.5 py-1.5 text-xs text-[#c6c9d1]">{s.mentionHint}</p>
                   ) : (
                     mentionList.map((c) => (
                       <button
@@ -4957,7 +4957,7 @@ export function SetView({
                         aria-selected={characterId === c.id}
                         onClick={() => pickMention(c)}
                         className={`flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-[7px] px-2.5 text-left text-[13px] transition-colors ${
-                          characterId === c.id ? "bg-white/[0.08] font-medium text-[#ecedf1]" : "text-[#9aa0ad] hover:bg-white/[0.05] hover:text-[#ecedf1]"
+                          characterId === c.id ? "bg-white/[0.08] font-medium text-[#ecedf1]" : "text-[#c6c9d1] hover:bg-white/[0.05] hover:text-[#ecedf1]"
                         }`}
                       >
                         {c.thumbUrl ? (
@@ -4992,7 +4992,7 @@ export function SetView({
                 aria-label={s.threadPlaceholder}
                 placeholder={reading ? s.threadReading : s.threadPlaceholder}
                 disabled={reading || shooting || editingSet}
-                className="block min-h-[44px] w-full resize-none border-none bg-transparent px-2 py-1.5 text-sm text-[#ecedf1] outline-none placeholder:text-[#868b96] disabled:text-[#868b96]"
+                className="block min-h-[44px] w-full resize-none border-none bg-transparent px-2 py-1.5 text-sm text-[#ecedf1] outline-none placeholder:text-[#9aa0ad] disabled:text-[#9aa0ad]"
               />
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <button
@@ -5018,7 +5018,7 @@ export function SetView({
                   )}
                 </div>
                 {!justTalk && (
-                  <span className="flex h-8 items-center whitespace-nowrap rounded-full bg-white/[0.06] px-3 text-xs text-[#9aa0ad] tabular-nums">
+                  <span className="flex h-8 items-center whitespace-nowrap rounded-full bg-white/[0.06] px-3 text-xs text-[#c6c9d1] tabular-nums">
                     {s.engineChip} · {credits}
                   </span>
                 )}
@@ -5028,7 +5028,7 @@ export function SetView({
                   disabled={reading || shooting || editingSet || !ready || (!draft.trim() && (!characterId || justTalk))}
                   title={draft.trim() || justTalk ? s.threadPlaceholder : shootLabel}
                   aria-label={draft.trim() || justTalk ? s.threadPlaceholder : shootLabel}
-                  className="flex h-9 w-9 flex-shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#e0a468] text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-white/[0.06] disabled:text-[#9aa0ad]"
+                  className="flex h-9 w-9 flex-shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#e0a468] text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-white/[0.06] disabled:text-[#c6c9d1]"
                 >
                   {reading || shooting || editingSet ? <Spinner className="h-4 w-4" /> : <SendIcon className="h-4 w-4" />}
                 </button>
@@ -5037,7 +5037,7 @@ export function SetView({
   );
 
   return (
-    <div data-set-workspace className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-[#101116] text-[#c6c9d1]">
+    <div data-set-workspace className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-[#101116] text-[#d6d9e0]">
       {(menu || mentionForced) && (
         <div
           className="fixed inset-0 z-20"
@@ -5064,7 +5064,7 @@ export function SetView({
             type="button"
             onClick={() => void (takeStart ? take() : shoot())}
             disabled={!canShootNow}
-            className="flex h-7 flex-none cursor-pointer items-center whitespace-nowrap rounded-[6px] bg-[#e0a468] px-3.5 text-[12px] font-semibold text-[#1b1c20] disabled:cursor-default disabled:bg-[#2a2b33] disabled:text-[#9aa0ad]"
+            className="flex h-7 flex-none cursor-pointer items-center whitespace-nowrap rounded-[6px] bg-[#e0a468] px-3.5 text-[12px] font-semibold text-[#1b1c20] disabled:cursor-default disabled:bg-[#2a2b33] disabled:text-[#c6c9d1]"
           >
             {takeStart ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel}
           </button>
@@ -5078,7 +5078,7 @@ export function SetView({
             aria-expanded={menu === "history"}
             disabled={revisions.length < 2}
             aria-label={`${s.historyLabel} · ${formatMsg(s.revisionN, { n: frameNumber })}`}
-            className="flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2 text-xs font-medium text-[#c6c9d1] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96] disabled:opacity-100 md:px-2.5"
+            className="flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2 text-xs font-medium text-[#d6d9e0] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad] disabled:opacity-100 md:px-2.5"
           >
             <span className="hidden xl:inline">{s.historyLabel} · </span>
             {formatMsg(s.revisionN, { n: frameNumber })}
@@ -5096,7 +5096,7 @@ export function SetView({
           disabled={!ready}
           title={s.downloadFrame}
           aria-label={s.downloadFrame}
-          className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-[6px] text-[#c6c9d1] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96] disabled:opacity-100"
+          className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-[6px] text-[#d6d9e0] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad] disabled:opacity-100"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
             <path d="M12 3v12" />
@@ -5127,7 +5127,7 @@ export function SetView({
             className={`pointer-events-none absolute rounded-[2px] shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] outline outline-1 outline-white/45 ${viewingShot ? "hidden" : ""}`}
           >
             {/* The camera department's readout, and the viewfinder's aids (cut 2): on the stage only, never in the picture. */}
-            {/* Over the render, not over the chrome: on a daylight exterior #9aa0ad
+            {/* Over the render, not over the chrome: on a daylight exterior #c6c9d1
                 came out at 1.8:1 — the token that exists for text painted on
                 media reads on any set (2026-09-18). */}
             <div className="absolute -top-[18px] left-0 right-0 flex justify-between gap-3 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.06em] text-onmedia">
@@ -5236,8 +5236,8 @@ export function SetView({
             </span>
           )}
           <div className={`pointer-events-none absolute right-3.5 z-10 hidden items-end gap-2.5 md:flex ${viewingShot ? "md:hidden" : ""} ${filmOpen || cutOpen ? "bottom-3.5" : "bottom-[104px]"}`}>
-            <div ref={scaleRef} data-scale className="flex items-center gap-1.5 rounded-[6px] border border-white/10 bg-black/50 px-2 py-1 text-[10.5px] text-[#c6c9d1]">
-              <i className="block h-px bg-[#c6c9d1]" style={{ width: 60 }} />
+            <div ref={scaleRef} data-scale className="flex items-center gap-1.5 rounded-[6px] border border-white/10 bg-black/50 px-2 py-1 text-[10.5px] text-[#d6d9e0]">
+              <i className="block h-px bg-[#d6d9e0]" style={{ width: 60 }} />
               <span>1 m</span>
             </div>
             <div className="flex h-[58px] w-[58px] items-center justify-center rounded-[8px] border border-white/10 bg-black/50">
@@ -5481,7 +5481,7 @@ export function SetView({
                   setScaleDismissed(true);
                   void editSet(s.scaleFixAsk);
                 }}
-                className="cursor-pointer rounded-full bg-[#e0a468] px-3 py-1.5 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:bg-[#2a2b33] disabled:text-[#9aa0ad] disabled:opacity-100"
+                className="cursor-pointer rounded-full bg-[#e0a468] px-3 py-1.5 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:bg-[#2a2b33] disabled:text-[#c6c9d1] disabled:opacity-100"
               >
                 {s.scaleWarnFix}
               </button>
@@ -5521,7 +5521,7 @@ export function SetView({
           {matchOn && (matching || matched || matchError) && (
             <div className={`absolute left-3.5 top-16 z-20 max-w-md space-y-1.5 rounded-[12px] p-3 ${PANEL_BG}`}>
               {matching ? (
-                <p className="text-xs text-[#9aa0ad]" aria-live="polite">
+                <p className="text-xs text-[#c6c9d1]" aria-live="polite">
                   {s.matchReading}
                 </p>
               ) : matched && matchedLine ? (
@@ -5530,14 +5530,14 @@ export function SetView({
                   <img src={matched.photo} alt={s.matchReferenceAlt} className="h-12 w-auto max-w-[5.5rem] shrink-0 rounded-[4px] border border-white/10 object-cover" />
                   <div className="min-w-0 flex-1 space-y-0.5 text-xs leading-relaxed">
                     <p className="text-[#ecedf1]/90">{matchedLine.line}</p>
-                    {matchedLine.notes && <p className="text-[#9aa0ad]">{matchedLine.notes}</p>}
+                    {matchedLine.notes && <p className="text-[#c6c9d1]">{matchedLine.notes}</p>}
                   </div>
                   <button
                     type="button"
                     onClick={() => setMatched(null)}
                     aria-label={t.common.dismiss}
                     title={t.common.dismiss}
-                    className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full text-sm text-[#9aa0ad] transition-colors hover:text-[#ecedf1]"
+                    className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full text-sm text-[#c6c9d1] transition-colors hover:text-[#ecedf1]"
                   >
                     ×
                   </button>
@@ -5813,7 +5813,7 @@ export function SetView({
               </button>
             ))}
             {shots.length > 0 && (
-              <span className="mx-1.5 whitespace-nowrap text-[11px] text-[#9aa0ad] tabular-nums">
+              <span className="mx-1.5 whitespace-nowrap text-[11px] text-[#c6c9d1] tabular-nums">
                 {shotCount} · {s.newestFirst}
               </span>
             )}
@@ -5840,7 +5840,7 @@ export function SetView({
                 >
                   ▶ {s.filmPlayMove}
                 </button>
-                <span className="whitespace-nowrap text-[11px] text-[#9aa0ad] tabular-nums">
+                <span className="whitespace-nowrap text-[11px] text-[#c6c9d1] tabular-nums">
                   {formatMsg(s.filmLength, { s: filmSeconds(film), n: film.beats.length })}
                 </span>
                 <span className="flex-1" />
@@ -5892,7 +5892,7 @@ export function SetView({
                     !characterId ||
                     (filmPlan.again && filmPlan.rendering)
                   }
-                  className="inline-flex h-8 cursor-pointer items-center justify-center rounded-[8px] bg-[#e0a468] px-3.5 text-xs font-semibold text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-[#2a2b33] disabled:text-[#9aa0ad] disabled:opacity-100"
+                  className="inline-flex h-8 cursor-pointer items-center justify-center rounded-[8px] bg-[#e0a468] px-3.5 text-xs font-semibold text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-[#2a2b33] disabled:text-[#c6c9d1] disabled:opacity-100"
                 >
                   {filmRenderLabel}
                 </button>
@@ -5932,7 +5932,7 @@ export function SetView({
                       filmSel === i ? "ring-[#e0a468]" : "ring-white/[0.08]"
                     }`}
                   >
-                    <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.07em] text-[#868b96]">
+                    <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.07em] text-[#9aa0ad]">
                       <button type="button" onClick={() => filmGoTo(i)} className="cursor-pointer whitespace-nowrap hover:text-[#e0a468]">
                         {formatMsg(s.filmBeatLabel, { n: i + 1 })}
                       </button>
@@ -5973,7 +5973,7 @@ export function SetView({
                         disabled={Boolean(filmBusy) || previz || !ready}
                         aria-label={formatMsg(s.filmSetEnd, { n: i + 1 })}
                         title={formatMsg(s.filmSetEnd, { n: i + 1 })}
-                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96] disabled:opacity-100"
+                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad] disabled:opacity-100"
                       >
                         {/* a viewfinder: this view, as the beat's end */}
                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="h-3.5 w-3.5" aria-hidden>
@@ -5990,7 +5990,7 @@ export function SetView({
                         disabled={Boolean(filmBusy)}
                         aria-label={formatMsg(s.filmRemoveBeat, { n: i + 1 })}
                         title={formatMsg(s.filmRemoveBeat, { n: i + 1 })}
-                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96] disabled:opacity-100"
+                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad] disabled:opacity-100"
                       >
                         ×
                       </button>
@@ -6052,7 +6052,7 @@ export function SetView({
                   </button>
                 )}
               </div>
-              {!takesOn && <p className="px-1 text-xs text-[#9aa0ad]">{localizeServerText(SET_TAKE_NEEDS_PLAN, t)}</p>}
+              {!takesOn && <p className="px-1 text-xs text-[#c6c9d1]">{localizeServerText(SET_TAKE_NEEDS_PLAN, t)}</p>}
               {filmError && <p className="px-1 text-xs text-red-400">{localizeServerText(filmError, t)}</p>}
             </div>
           )}
@@ -6061,13 +6061,13 @@ export function SetView({
           {sourcePhotoUrl && compareOpen && (
             <div className={`absolute bottom-[104px] left-3.5 z-20 w-[min(640px,80%)] space-y-2.5 rounded-[14px] p-3.5 ${PANEL_BG}`}>
               <div className="flex items-center justify-between">
-                <h2 className="text-[11px] font-medium uppercase tracking-widest text-[#9aa0ad]">{s.compareTitle}</h2>
+                <h2 className="text-[11px] font-medium uppercase tracking-widest text-[#c6c9d1]">{s.compareTitle}</h2>
                 <button
                   type="button"
                   onClick={() => setCompareOpen(false)}
                   aria-label={t.common.dismiss}
                   title={t.common.dismiss}
-                  className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full text-sm text-[#c6c9d1] hover:text-[#ecedf1]"
+                  className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full text-sm text-[#d6d9e0] hover:text-[#ecedf1]"
                 >
                   ×
                 </button>
@@ -6078,7 +6078,7 @@ export function SetView({
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img ref={readPhotoShape} src={sourcePhotoUrl} alt={s.comparePhoto} onLoad={(e) => readPhotoShape(e.currentTarget)} className="h-full w-full object-cover" />
                   </div>
-                  <figcaption className="text-xs text-[#9aa0ad]">{s.comparePhoto}</figcaption>
+                  <figcaption className="text-xs text-[#c6c9d1]">{s.comparePhoto}</figcaption>
                 </figure>
                 <figure className="space-y-1.5">
                   <div className="overflow-hidden rounded-media border border-white/10 bg-black/60" style={{ aspectRatio: photoAspect ?? 4 / 3 }}>
@@ -6092,10 +6092,10 @@ export function SetView({
                       />
                     )}
                   </div>
-                  <figcaption className="text-xs text-[#9aa0ad]">{formatMsg(s.cameraN, { n: 1 })}</figcaption>
+                  <figcaption className="text-xs text-[#c6c9d1]">{formatMsg(s.cameraN, { n: 1 })}</figcaption>
                 </figure>
               </div>
-              <p className="text-[11px] text-[#868b96]">{s.compareNote}</p>
+              <p className="text-[11px] text-[#9aa0ad]">{s.compareNote}</p>
             </div>
           )}
         </div>
@@ -6190,10 +6190,10 @@ export function SetView({
 
         {/* The cut (cut C): the film's clips in order, under the viewport, where the reel plays. */}
         {cutOpen && (
-          <div data-cut className="flex flex-none flex-col gap-2 border-t border-white/[0.07] bg-[#191a20] px-3 py-2.5 text-[#c6c9d1]">
+          <div data-cut className="flex flex-none flex-col gap-2 border-t border-white/[0.07] bg-[#191a20] px-3 py-2.5 text-[#d6d9e0]">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9aa0ad]">{s.studio.cutTitle}</span>
-              <span className="text-[11.5px] tabular-nums text-[#868b96]">{formatMsg(s.studio.cutLine, { n: film.beats.length, s: filmSeconds(film) })}</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#c6c9d1]">{s.studio.cutTitle}</span>
+              <span className="text-[11.5px] tabular-nums text-[#9aa0ad]">{formatMsg(s.studio.cutLine, { n: film.beats.length, s: filmSeconds(film) })}</span>
               <span className="flex-1" />
               {reelReady && (
                 <button
@@ -6218,14 +6218,14 @@ export function SetView({
                   type="button"
                   onClick={() => void renderFilm()}
                   disabled={!ready || !takesOn || Boolean(filmBusy) || shooting || matching || !film.startId || !characterId || (filmPlan.again && filmPlan.rendering)}
-                  className="inline-flex h-7 cursor-pointer items-center justify-center rounded-[6px] bg-[#e0a468] px-3 text-[11.5px] font-semibold text-[#1b1c20] hover:opacity-90 disabled:cursor-default disabled:bg-[#2a2b33] disabled:text-[#9aa0ad] disabled:opacity-100"
+                  className="inline-flex h-7 cursor-pointer items-center justify-center rounded-[6px] bg-[#e0a468] px-3 text-[11.5px] font-semibold text-[#1b1c20] hover:opacity-90 disabled:cursor-default disabled:bg-[#2a2b33] disabled:text-[#c6c9d1] disabled:opacity-100"
                 >
                   {filmRenderLabel}
                 </button>
               )}
             </div>
             {film.beats.length === 0 ? (
-              <p className="text-[11.5px] text-[#868b96]">{s.studio.cutEmpty}</p>
+              <p className="text-[11.5px] text-[#9aa0ad]">{s.studio.cutEmpty}</p>
             ) : (
               <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
                 <div className="flex w-[104px] flex-none flex-col gap-1">
@@ -6235,7 +6235,7 @@ export function SetView({
                       <img src={filmStartShot.resultUrl} alt="" className="h-full w-full object-cover" />
                     )}
                   </div>
-                  <span className="truncate text-[10px] font-semibold uppercase tracking-[0.06em] text-[#9aa0ad]">{s.studio.cutStart}</span>
+                  <span className="truncate text-[10px] font-semibold uppercase tracking-[0.06em] text-[#c6c9d1]">{s.studio.cutStart}</span>
                 </div>
                 {film.beats.map((b, i) => {
                   const clip = filmClipShots[i];
@@ -6261,17 +6261,17 @@ export function SetView({
                             // eslint-disable-next-line @next/next/no-img-element
                             <img src={clip.posterUrl} alt="" className="h-full w-full object-cover" />
                           ) : (
-                            <span className="absolute inset-0 flex items-center justify-center text-[11px] text-[#868b96]">{clip ? "…" : "—"}</span>
+                            <span className="absolute inset-0 flex items-center justify-center text-[11px] text-[#9aa0ad]">{clip ? "…" : "—"}</span>
                           )}
                           {done && <span className="absolute bottom-1 left-1 rounded-[3px] bg-black/60 px-1 text-[10px] text-white">▶</span>}
                         </div>
-                        <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#9aa0ad]">
+                        <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#c6c9d1]">
                           <span className="truncate">{formatMsg(s.studio.cutClip, { n: i + 1, s: SET_TAKE_ENGINES[film.engine].seconds })}</span>
-                          <span className={`normal-case tracking-normal ${done ? "text-[#5f9e6e]" : clip?.status === "failed" ? "text-red-400" : "text-[#868b96]"}`}>
+                          <span className={`normal-case tracking-normal ${done ? "text-[#5f9e6e]" : clip?.status === "failed" ? "text-red-400" : "text-[#9aa0ad]"}`}>
                             {done ? s.filmBeatDone : clip?.status === "failed" ? s.filmBeatClipFailed : clip ? s.filmBeatClip : s.studio.cutMissing}
                           </span>
                         </span>
-                        {b.move && <span className="truncate text-[10px] text-[#868b96]">{s.rig.moves[b.move]}</span>}
+                        {b.move && <span className="truncate text-[10px] text-[#9aa0ad]">{s.rig.moves[b.move]}</span>}
                       </button>
                       {end?.resultUrl && (
                         <div className="flex w-[64px] flex-none flex-col gap-1" title={formatMsg(s.studio.cutEnd, { n: i + 1 })}>
@@ -6279,7 +6279,7 @@ export function SetView({
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={end.resultUrl} alt="" className="h-full w-full object-cover" />
                           </div>
-                          <span className="truncate text-[10px] text-[#868b96]">{formatMsg(s.studio.cutEnd, { n: i + 1 })}</span>
+                          <span className="truncate text-[10px] text-[#9aa0ad]">{formatMsg(s.studio.cutEnd, { n: i + 1 })}</span>
                         </div>
                       )}
                     </Fragment>
@@ -6333,11 +6333,11 @@ export function SetView({
                     onChange={(e) => setSceneQuery(e.target.value)}
                     placeholder={s.editorFind}
                     aria-label={s.editorFind}
-                    className="h-6 min-w-0 flex-1 rounded-[5px] bg-[#111217] px-2 text-[11px] text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] outline-none placeholder:text-[#868b96] focus:shadow-[inset_0_0_0_1px_rgba(224,164,104,0.6)]"
+                    className="h-6 min-w-0 flex-1 rounded-[5px] bg-[#111217] px-2 text-[11px] text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] outline-none placeholder:text-[#9aa0ad] focus:shadow-[inset_0_0_0_1px_rgba(224,164,104,0.6)]"
                   />
-                  <span className="text-[11px] tabular-nums text-[#868b96]">{spec.objects.length}</span>
+                  <span className="text-[11px] tabular-nums text-[#9aa0ad]">{spec.objects.length}</span>
                 </div>
-                <p className="px-3 pt-2 text-[11px] leading-snug text-[#868b96]">{s.studio.sceneHint}</p>
+                <p className="px-3 pt-2 text-[11px] leading-snug text-[#9aa0ad]">{s.studio.sceneHint}</p>
                 <SceneTree spec={spec} s={s} selected={null} query={sceneQuery} onPick={pickSceneTarget} />
               </div>
             )}
@@ -6345,7 +6345,7 @@ export function SetView({
               <div className="border-b border-white/[0.07] p-3">
                 {filmSel !== null && film.beats[filmSel] ? (
                   <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.07em] text-[#868b96]">
+                    <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.07em] text-[#9aa0ad]">
                       <span className="whitespace-nowrap text-[#f0cda6]">{formatMsg(s.filmBeatLabel, { n: filmSel + 1 })}</span>
                       <span className="whitespace-nowrap normal-case tabular-nums">{formatMsg(s.takeSeconds, { s: SET_TAKE_ENGINES[film.engine].seconds })}</span>
                       {filmBusy?.beat === filmSel ? (
@@ -6366,7 +6366,7 @@ export function SetView({
                         disabled={Boolean(filmBusy) || previz || !ready}
                         aria-label={formatMsg(s.filmSetEnd, { n: filmSel + 1 })}
                         title={formatMsg(s.filmSetEnd, { n: filmSel + 1 })}
-                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96] disabled:opacity-100"
+                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad] disabled:opacity-100"
                       >
                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="h-3.5 w-3.5" aria-hidden>
                           <path d="M2 5V2h3M11 2h3v3M14 11v3h-3M5 14H2v-3" />
@@ -6383,7 +6383,7 @@ export function SetView({
                         disabled={Boolean(filmBusy)}
                         aria-label={formatMsg(s.filmRemoveBeat, { n: filmSel + 1 })}
                         title={formatMsg(s.filmRemoveBeat, { n: filmSel + 1 })}
-                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96] disabled:opacity-100"
+                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad] disabled:opacity-100"
                       >
                         ×
                       </button>
@@ -6442,7 +6442,7 @@ export function SetView({
                         disabled={Boolean(filmBusy)}
                         aria-label={s.studio.rack}
                         title={s.studio.rack}
-                        className="h-7 max-w-[170px] cursor-pointer rounded-[6px] bg-black/40 px-2 text-[11px] text-[#c6c9d1] ring-1 ring-white/[0.08] outline-none"
+                        className="h-7 max-w-[170px] cursor-pointer rounded-[6px] bg-black/40 px-2 text-[11px] text-[#d6d9e0] ring-1 ring-white/[0.08] outline-none"
                       >
                         <option value="">{s.studio.rack} · {s.studio.rackNone}</option>
                         <option value="figure">{s.studio.rackFigure}</option>
@@ -6465,7 +6465,7 @@ export function SetView({
                         disabled={Boolean(filmBusy)}
                         aria-label={s.studio.eyeline}
                         title={s.studio.eyeline}
-                        className="h-7 max-w-[170px] cursor-pointer rounded-[6px] bg-black/40 px-2 text-[11px] text-[#c6c9d1] ring-1 ring-white/[0.08] outline-none"
+                        className="h-7 max-w-[170px] cursor-pointer rounded-[6px] bg-black/40 px-2 text-[11px] text-[#d6d9e0] ring-1 ring-white/[0.08] outline-none"
                       >
                         <option value="">{s.studio.eyeline} · {s.studio.gazeNone}</option>
                         <option value="camera">{s.studio.gazeCamera}</option>
@@ -6480,8 +6480,8 @@ export function SetView({
                     {/* The path (cut D): the points the figure walks through to this beat's figure, laid on the ground. */}
                     {film.beats[filmSel].figure && (
                       <div className="flex flex-wrap items-center gap-1" data-path-row>
-                        <span className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#868b96]">{s.studio.path}</span>
-                        <span className="text-[11px] text-[#9aa0ad]">
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#9aa0ad]">{s.studio.path}</span>
+                        <span className="text-[11px] text-[#c6c9d1]">
                           {film.beats[filmSel].path.length
                             ? formatMsg(s.studio.pathWalks, {
                                 d: pathLength(filmSel > 0 && film.beats[filmSel - 1].figure ? film.beats[filmSel - 1].figure! : mark, film.beats[filmSel].path, film.beats[filmSel].figure!),
@@ -6509,16 +6509,16 @@ export function SetView({
                     )}
                   </div>
                 ) : (
-                  <p className="text-[11.5px] leading-snug text-[#9aa0ad]">{film.beats.length === 0 ? s.sequencer.noBeats : s.rig.movePick}</p>
+                  <p className="text-[11.5px] leading-snug text-[#c6c9d1]">{film.beats.length === 0 ? s.sequencer.noBeats : s.rig.movePick}</p>
                 )}
               </div>
             )}
             {(dockTab === "camera" || dockTab === "light" || dockTab === "look" || dockTab === "film") && rigPanel(dockTab)}
             {dockTab === "history" && (
               <div className="p-2">
-                <div className="flex h-6 items-center px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#868b96]">{s.studio.historyFrames}</div>
+                <div className="flex h-6 items-center px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#9aa0ad]">{s.studio.historyFrames}</div>
                 {revisions.length < 2 ? (
-                  <p className="px-1 py-1 text-[11px] leading-snug text-[#868b96]">{s.studio.historyEmpty}</p>
+                  <p className="px-1 py-1 text-[11px] leading-snug text-[#9aa0ad]">{s.studio.historyEmpty}</p>
                 ) : (
                   <div role="listbox" aria-label={s.historyLabel} className="flex flex-col gap-0.5">
                     {historyOptions}

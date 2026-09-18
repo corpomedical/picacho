@@ -14,9 +14,15 @@ import { join } from "node:path";
 // Now there are three steps and each says one thing (the operator again, on
 // a screenshot: "Even the available control is dimmed"):
 //   picked      the ochres, #e0a468 and #f0cda6
-//   available   #c6c9d1, 9.8:1 — every control that lights on hover, so a
+//   available   #d6d9e0, 11.5:1 — every control that lights on hover, so a
 //               choice you can make never reads as one you cannot
-//   off / label #868b96, 4.75:1 — dim, and still above the floor
+//   prose       #c6c9d1, 9.8:1
+//   off / label #9aa0ad, 6.2:1 — dim by a step, never by a half
+//
+// The whole scale went up one step on 2026-09-18, after the colours, the
+// states and the typeface had each been fixed and the answer was still
+// "Helios menus still look dimmed": nothing in the chrome is under 6:1 now,
+// and what you can press is over 11:1.
 // A state is said in a COLOUR, never in an opacity.
 //
 // The maths here is WCAG 2.1's, on the source's own literals: nothing is
@@ -52,22 +58,24 @@ const OCHRE = "#e0a468";
 /** Every text colour the chrome uses, the ground it sits on, and what it is. */
 const INK: { ink: string; on: string; what: string; icon?: boolean }[] = [
   { ink: "#ecedf1", on: BAR, what: "the title and everything hovered" },
-  { ink: "#c6c9d1", on: BAR, what: "a mode, a view or a tool you can pick" },
-  { ink: "#c6c9d1", on: PANEL, what: "a dock tab, a shutter, an ISO, an aid you can pick" },
-  { ink: "#9aa0ad", on: PANEL, what: "the panel's own prose" },
-  { ink: "#868b96", on: BAR, what: "the shot count, Find anything, the status bar" },
-  { ink: "#868b96", on: PANEL, what: "a tool this mode has nothing for, a section head" },
+  { ink: "#d6d9e0", on: BAR, what: "a mode, a view or a tool you can pick" },
+  { ink: "#d6d9e0", on: PANEL, what: "a dock tab, a shutter, an ISO, an aid you can pick" },
+  { ink: "#c6c9d1", on: PANEL, what: "the panel's own prose" },
+  { ink: "#9aa0ad", on: BAR, what: "the shot count, Find anything, the status bar" },
+  { ink: "#9aa0ad", on: PANEL, what: "a tool this mode has nothing for, a section head" },
   { ink: "#e0a468", on: PILL, what: "the mode this page is in" },
   { ink: "#f0cda6", on: PANEL, what: "the dock tab that is open" },
 ];
 
 /** What a control you can use must clear, over what a label must. */
-const CONTROL_INK = "#c6c9d1";
+const CONTROL_INK = "#d6d9e0";
 
 describe("the studio's chrome can be read", () => {
   it("every ink meets WCAG on the ground it is drawn on", () => {
     for (const { ink, on, what, icon } of INK) {
-      const need = icon ? 3 : 4.5;
+      // The studio's own floor, above WCAG's: it is a dark room full of small
+      // type, and "dimmed" was the report three times over.
+      const need = icon ? 4.5 : 6;
       expect(ratio(ink, on), `${what}: ${ink} on ${on} is ${ratio(ink, on).toFixed(2)}:1, needs ${need}`).toBeGreaterThanOrEqual(need);
     }
   });
@@ -82,7 +90,7 @@ describe("the studio's chrome can be read", () => {
       const wrong = [...file.matchAll(/text-\[(#[0-9a-f]{6})\] hover:text-\[#ecedf1\]/g)].map((m) => m[1]).filter((c) => c !== CONTROL_INK);
       expect(wrong, `${name} dims a control that can still be used`).toEqual([]);
     }
-    expect(ratio(CONTROL_INK, PANEL)).toBeGreaterThanOrEqual(7);
+    expect(ratio(CONTROL_INK, PANEL)).toBeGreaterThanOrEqual(11);
   });
 
   it("names every colour the chrome actually uses, so a new one cannot slip in unmeasured", () => {
@@ -90,7 +98,7 @@ describe("the studio's chrome can be read", () => {
     const measured = new Set(INK.map((i) => i.ink));
     // The two dark inks are text ON the ochre and on a lit tile, measured with
     // their own ground below, not against the chrome's.
-    for (const onOchre of ["#1b1c22", "#181a1f", "#14161a"]) used.delete(onOchre);
+    for (const onOchre of ["#1b1c22", "#181a1f", "#14161a", "#1b1c20"]) used.delete(onOchre);
     expect([...used].filter((c) => !measured.has(c)), "a text colour in studio-frame.tsx that this test does not measure").toEqual([]);
   });
 
@@ -116,7 +124,7 @@ describe("the studio's chrome can be read", () => {
       expect(fades.map((m) => m[0]), `${name} fades a control instead of colouring it`).toEqual([]);
     }
     // And the one that used to: a tool the mode has nothing for.
-    expect(frame).toContain('const TOOL_OFF = "flex h-8 w-8 cursor-default items-center justify-center rounded-[6px] text-[#868b96]";');
+    expect(frame).toContain('const TOOL_OFF = "flex h-8 w-8 cursor-default items-center justify-center rounded-[6px] text-[#9aa0ad]";');
     expect(over("#9aa0ad", 0.35, PANEL)).toBe("#4a4d55");
     expect(ratio(over("#9aa0ad", 0.35, PANEL), PANEL)).toBeLessThan(2);
   });

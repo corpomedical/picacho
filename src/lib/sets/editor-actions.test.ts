@@ -202,7 +202,7 @@ describe("the editor's prompt bar", () => {
     expect(editor).toContain("editsLeft === 0 ? s.editorAskLeftNone : editsLeft === 1 ? s.editorAskLeftOne : formatMsg(s.editorAskLeft, { n: editsLeft })");
     // Send is no longer held at the cap in silence: it says why (below).
     expect(editor).toContain("disabled={asking || ask.trim().length === 0 || astraTooBig}");
-    expect(editor).toContain("<span className=\"text-[#9aa0ad]\">{localizeServerText(SET_EDIT_TOO_BIG, t)}</span>");
+    expect(editor).toContain("<span className=\"text-[#c6c9d1]\">{localizeServerText(SET_EDIT_TOO_BIG, t)}</span>");
     expect(send).toContain("if (!text || asking || astraTooBig) return;");
     // Whatever the server says of the count, the bar keeps.
     expect(send).toContain("if (r.editsLeft !== undefined) setEditsLeft(r.editsLeft);");

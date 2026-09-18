@@ -283,6 +283,6 @@ describe("a plan without takes is told first (set-view.tsx)", () => {
     expect(button).toContain("title={takesOn ? undefined : localizeServerText(SET_TAKE_NEEDS_PLAN, t)}");
     const render = between("onClick={() => void renderFilm()}", "{filmRenderLabel}");
     expect(render).toContain("!takesOn ||");
-    expect(view).toContain("{!takesOn && <p className=\"px-1 text-xs text-[#9aa0ad]\">{localizeServerText(SET_TAKE_NEEDS_PLAN, t)}</p>}");
+    expect(view).toContain("{!takesOn && <p className=\"px-1 text-xs text-[#c6c9d1]\">{localizeServerText(SET_TAKE_NEEDS_PLAN, t)}</p>}");
   });
 });

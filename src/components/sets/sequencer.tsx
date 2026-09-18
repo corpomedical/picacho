@@ -20,9 +20,9 @@ import { timeLabel } from "@/lib/sets/time-of-day";
 
 type Strings = Messages["sets"];
 
-const TRACK_COLOUR: Record<SequencerTrack, string> = { camera: "#e0a468", figure: "#d8b37c", sun: "#f5d76e", light: "#a9c6df", takes: "#9aa0ad" };
-const BTN = "flex h-7 cursor-pointer items-center whitespace-nowrap rounded-[6px] px-2.5 text-[11.5px] font-medium text-[#c6c9d1] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96]";
-const TBTN = "flex h-7 w-7 cursor-pointer items-center justify-center rounded-[6px] text-[#c6c9d1] hover:bg-white/[0.06] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96]";
+const TRACK_COLOUR: Record<SequencerTrack, string> = { camera: "#e0a468", figure: "#d8b37c", sun: "#f5d76e", light: "#a9c6df", takes: "#c6c9d1" };
+const BTN = "flex h-7 cursor-pointer items-center whitespace-nowrap rounded-[6px] px-2.5 text-[11.5px] font-medium text-[#d6d9e0] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad]";
+const TBTN = "flex h-7 w-7 cursor-pointer items-center justify-center rounded-[6px] text-[#d6d9e0] hover:bg-white/[0.06] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad]";
 const LANE_H = 24;
 
 export type SequencerProps = {
@@ -104,7 +104,7 @@ export function Sequencer(p: SequencerProps) {
   const trackName: Record<SequencerTrack, string> = w.tracks;
 
   return (
-    <div data-sequencer className="flex flex-none flex-col border-t border-white/[0.07] bg-[#191a20] text-[#c6c9d1]">
+    <div data-sequencer className="flex flex-none flex-col border-t border-white/[0.07] bg-[#191a20] text-[#d6d9e0]">
       {/* the transport */}
       <div className="flex h-10 flex-none items-center gap-1.5 border-b border-white/[0.07] px-2.5">
         <button type="button" onClick={p.onToStart} disabled={!p.ready || film.beats.length === 0} className={TBTN} title={w.toStart} aria-label={w.toStart}>
@@ -137,10 +137,10 @@ export function Sequencer(p: SequencerProps) {
           </svg>
         </button>
         <span className="ml-1 whitespace-nowrap text-[12px] tabular-nums text-[#ecedf1]" data-clock>
-          {filmClock(p.playhead)} <span className="text-[#868b96]">/ {filmClock(filmDuration(film))}</span>
+          {filmClock(p.playhead)} <span className="text-[#9aa0ad]">/ {filmClock(filmDuration(film))}</span>
         </span>
         <span aria-hidden className="mx-1 h-5 w-px bg-white/[0.09]" />
-        <span className="min-w-[140px] flex-1 truncate text-[11.5px] text-[#9aa0ad]" data-beat-line>
+        <span className="min-w-[140px] flex-1 truncate text-[11.5px] text-[#c6c9d1]" data-beat-line>
           {beatLine}
         </span>
         <span className="hidden whitespace-nowrap rounded-full bg-[rgba(224,164,104,0.13)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#e0a468] min-[1600px]:inline">{w.held}</span>
@@ -160,7 +160,7 @@ export function Sequencer(p: SequencerProps) {
               className={
                 film.engine === e
                   ? "flex h-6 cursor-default items-center whitespace-nowrap rounded-[4px] bg-[#2a2b33] px-2 text-[11px] font-medium text-[#e0a468]"
-                  : "flex h-6 cursor-pointer items-center whitespace-nowrap rounded-[4px] px-2 text-[11px] font-medium text-[#c6c9d1] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96]"
+                  : "flex h-6 cursor-pointer items-center whitespace-nowrap rounded-[4px] px-2 text-[11px] font-medium text-[#d6d9e0] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad]"
               }
             >
               {e === "omni" ? w.engineOmni : w.engineVeo} · {SET_TAKE_ENGINES[e].seconds} s
@@ -184,7 +184,7 @@ export function Sequencer(p: SequencerProps) {
           type="button"
           onClick={p.onRender}
           disabled={p.renderDisabled}
-          className="flex h-7 cursor-pointer items-center whitespace-nowrap rounded-[6px] bg-[#e0a468] px-3 text-[11.5px] font-semibold text-[#1b1c20] hover:opacity-90 disabled:cursor-default disabled:bg-[#2a2b33] disabled:text-[#9aa0ad]"
+          className="flex h-7 cursor-pointer items-center whitespace-nowrap rounded-[6px] bg-[#e0a468] px-3 text-[11.5px] font-semibold text-[#1b1c20] hover:opacity-90 disabled:cursor-default disabled:bg-[#2a2b33] disabled:text-[#c6c9d1]"
         >
           {p.renderLabel}
         </button>
@@ -194,7 +194,7 @@ export function Sequencer(p: SequencerProps) {
       <div className="flex min-h-0 items-stretch">
         {/* the tracks' names, with the start still above them */}
         <div className="flex w-[168px] flex-none flex-col border-r border-white/[0.07]">
-          <div className="relative flex h-6 items-center gap-2 px-2.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#868b96]">
+          <div className="relative flex h-6 items-center gap-2 px-2.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#9aa0ad]">
             <button
               type="button"
               onClick={p.onStartMenu}
@@ -202,7 +202,7 @@ export function Sequencer(p: SequencerProps) {
               aria-haspopup="listbox"
               aria-expanded={p.startOpen}
               title={s.filmStarts}
-              className="flex h-5 max-w-full cursor-pointer items-center gap-1.5 rounded-[4px] bg-white/[0.05] px-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#c6c9d1] hover:bg-white/[0.09] disabled:cursor-default disabled:text-[#868b96]"
+              className="flex h-5 max-w-full cursor-pointer items-center gap-1.5 rounded-[4px] bg-white/[0.05] px-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#d6d9e0] hover:bg-white/[0.09] disabled:cursor-default disabled:text-[#9aa0ad]"
             >
               {p.startImage && (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -213,7 +213,7 @@ export function Sequencer(p: SequencerProps) {
             {p.startOpen && p.startMenu}
           </div>
           {SEQUENCER_TRACKS.map((t) => (
-            <div key={t} className="flex items-center gap-2 px-2.5 text-[11px] text-[#9aa0ad]" style={{ height: LANE_H }}>
+            <div key={t} className="flex items-center gap-2 px-2.5 text-[11px] text-[#c6c9d1]" style={{ height: LANE_H }}>
               <i aria-hidden className="h-[7px] w-[7px] flex-none rounded-full" style={{ background: TRACK_COLOUR[t] }} />
               <span className="min-w-0 truncate">{trackName[t]}</span>
             </div>
@@ -222,7 +222,7 @@ export function Sequencer(p: SequencerProps) {
 
         {/* the ruler and the lanes, with the playhead over them */}
         <div ref={lanesRef} className="relative min-w-0 flex-1 cursor-crosshair select-none" onClick={seek} title={w.seek} data-lanes>
-          <div className="relative h-6 border-b border-white/[0.07] text-[10px] tabular-nums text-[#868b96]">
+          <div className="relative h-6 border-b border-white/[0.07] text-[10px] tabular-nums text-[#9aa0ad]">
             {rulerSeconds(filmDuration(film)).map((sec) => (
               <span key={sec} className="absolute top-1" style={{ left: pct(sec), transform: "translateX(-50%)" }}>
                 {sec}s
@@ -336,7 +336,7 @@ export function Sequencer(p: SequencerProps) {
                 {p.light}
               </span>
             ) : (
-              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-[#868b96]">{w.lightAsBuilt}</span>
+              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-[#9aa0ad]">{w.lightAsBuilt}</span>
             )}
           </div>
 
@@ -359,7 +359,7 @@ export function Sequencer(p: SequencerProps) {
                     ? { background: "rgba(224,164,104,0.14)", boxShadow: "inset 0 0 0 1px rgba(224,164,104,0.35)", color: "#f0cda6" }
                     : state === "failed"
                       ? { background: "rgba(224,90,90,0.14)", boxShadow: "inset 0 0 0 1px rgba(224,90,90,0.4)", color: "#f0a0a0" }
-                      : { background: "rgba(255,255,255,0.04)", boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.1)", color: "#9aa0ad" };
+                      : { background: "rgba(255,255,255,0.04)", boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.1)", color: "#c6c9d1" };
               return (
                 <button
                   key={`t${sp.index}`}
@@ -389,7 +389,7 @@ export function Sequencer(p: SequencerProps) {
       </div>
 
       {(p.note || p.error || p.hint) && (
-        <div className="flex h-6 flex-none items-center gap-3 border-t border-white/[0.07] px-2.5 text-[10.5px] text-[#868b96]">
+        <div className="flex h-6 flex-none items-center gap-3 border-t border-white/[0.07] px-2.5 text-[10.5px] text-[#9aa0ad]">
           {p.error ? <span className="min-w-0 truncate text-red-400">{p.error}</span> : p.note ? <span className="min-w-0 truncate">{p.note}</span> : <span className="min-w-0 truncate">{p.hint}</span>}
         </div>
       )}

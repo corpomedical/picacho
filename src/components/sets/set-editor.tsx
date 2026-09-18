@@ -116,14 +116,14 @@ const PANEL = "bg-[#1f2026]";
 const HAIR = "border-white/[0.07]";
 const FLD =
   "h-6 w-full min-w-0 rounded-[4px] border-0 bg-[#141519] px-1.5 text-right text-[11.5px] tabular-nums text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)] outline-none focus:shadow-[inset_0_0_0_1px_#e0a468]";
-const TOOL_BTN = "flex h-8 w-8 cursor-pointer items-center justify-center rounded-[6px] text-[#c6c9d1] hover:text-[#ecedf1]";
+const TOOL_BTN = "flex h-8 w-8 cursor-pointer items-center justify-center rounded-[6px] text-[#d6d9e0] hover:text-[#ecedf1]";
 const TOOL_ON = "flex h-8 w-8 cursor-pointer items-center justify-center rounded-[6px] bg-[rgba(224,164,104,0.13)] text-[#e0a468]";
 const ICON_BTN =
-  "inline-flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[5px] text-[#c6c9d1] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#868b96] disabled:opacity-100";
+  "inline-flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[5px] text-[#d6d9e0] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad] disabled:opacity-100";
 const PHEAD =
-  "flex h-8 flex-none items-center justify-between px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9aa0ad]";
-const SHEAD = "flex h-6 items-center px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#868b96]";
-const ROW_LABEL = "w-[58px] flex-none text-[11px] text-[#9aa0ad]";
+  "flex h-8 flex-none items-center justify-between px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#c6c9d1]";
+const SHEAD = "flex h-6 items-center px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#9aa0ad]";
+const ROW_LABEL = "w-[58px] flex-none text-[11px] text-[#c6c9d1]";
 
 function Svg({ d, className, box = "0 0 24 24" }: { d: string; className?: string; box?: string }) {
   return (
@@ -208,7 +208,7 @@ function Num({
   };
   return (
     <span className={`flex min-w-0 items-center gap-1 ${className ?? "flex-1"}`}>
-      {ax && <span className="text-[9.5px] font-semibold text-[#868b96]">{ax}</span>}
+      {ax && <span className="text-[9.5px] font-semibold text-[#9aa0ad]">{ax}</span>}
       <input
         type="text"
         inputMode="decimal"
@@ -368,7 +368,7 @@ function Slider({
 
 function Check({ on, onToggle, children }: { on: boolean; onToggle: () => void; children: ReactNode }) {
   return (
-    <button type="button" role="checkbox" aria-checked={on} onClick={onToggle} className="flex cursor-pointer items-center gap-2 text-[12px] text-[#c6c9d1]">
+    <button type="button" role="checkbox" aria-checked={on} onClick={onToggle} className="flex cursor-pointer items-center gap-2 text-[12px] text-[#d6d9e0]">
       <span
         className={`inline-flex h-3.5 w-3.5 flex-none items-center justify-center rounded-[3px] ${on ? "bg-[#e0a468] text-[#1b1c20]" : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18)]"}`}
       >
@@ -1553,13 +1553,13 @@ export function SetEditor({
   const promptBar = (
             <div className="p-3">
               {(askNote !== null || askError || asking || astraTooBig) && (
-                <div className="mx-auto mb-2 flex w-fit max-w-full items-center gap-2 rounded-[8px] border border-white/[0.11] bg-[rgba(25,26,32,0.94)] px-3 py-1.5 text-[12px] text-[#c6c9d1] shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]">
+                <div className="mx-auto mb-2 flex w-fit max-w-full items-center gap-2 rounded-[8px] border border-white/[0.11] bg-[rgba(25,26,32,0.94)] px-3 py-1.5 text-[12px] text-[#d6d9e0] shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]">
                   {asking ? (
                     <span>{s.editorAsking}</span>
                   ) : askError ? (
                     <span className="text-red-400">{localizeServerText(askError, t)}</span>
                   ) : askNote === null ? (
-                    <span className="text-[#9aa0ad]">{localizeServerText(SET_EDIT_TOO_BIG, t)}</span>
+                    <span className="text-[#c6c9d1]">{localizeServerText(SET_EDIT_TOO_BIG, t)}</span>
                   ) : askNote === 0 ? (
                     <span>{s.editorAskNothing}</span>
                   ) : (
@@ -1587,10 +1587,10 @@ export function SetEditor({
                   }}
                   placeholder={s.editorAskPlaceholder}
                   disabled={asking}
-                  className="h-full min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#ecedf1] outline-none placeholder:text-[#868b96] disabled:text-[#868b96]"
+                  className="h-full min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#ecedf1] outline-none placeholder:text-[#9aa0ad] disabled:text-[#9aa0ad]"
                 />
                 {editsLeft !== null && (
-                  <span title={s.editorAskLeftTitle} className="flex-none whitespace-nowrap text-[11px] tabular-nums text-[#868b96]">
+                  <span title={s.editorAskLeftTitle} className="flex-none whitespace-nowrap text-[11px] tabular-nums text-[#9aa0ad]">
                     {editsLeft === 0 ? s.editorAskLeftNone : editsLeft === 1 ? s.editorAskLeftOne : formatMsg(s.editorAskLeft, { n: editsLeft })}
                   </span>
                 )}
@@ -1598,7 +1598,7 @@ export function SetEditor({
                   type="button"
                   onClick={() => void sendAsk()}
                   disabled={asking || ask.trim().length === 0 || astraTooBig}
-                  className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-[7px] bg-[#e0a468] text-[#1b1c20] disabled:cursor-default disabled:bg-white/[0.06] disabled:text-[#9aa0ad]"
+                  className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-[7px] bg-[#e0a468] text-[#1b1c20] disabled:cursor-default disabled:bg-white/[0.06] disabled:text-[#c6c9d1]"
                   aria-label={s.editorAskSend}
                 >
                   {asking ? (
@@ -1615,12 +1615,12 @@ export function SetEditor({
   );
 
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col overflow-hidden bg-[#141519] font-sans text-[13px] leading-[18px] text-[#c6c9d1]" data-set-editor>
+    <div className="fixed inset-0 z-[70] flex flex-col overflow-hidden bg-[#141519] font-sans text-[13px] leading-[18px] text-[#d6d9e0]" data-set-editor>
       {/* A phone held upright has no room for a rail, a canvas and a 300 px
           panel: it is told so, with the way back, rather than handed an
           editor it cannot see. Turned sideways, most phones clear it. */}
       <div className="absolute inset-0 z-[90] flex flex-col items-center justify-center gap-4 bg-[#141519] px-8 text-center sm:hidden">
-        <p className="max-w-xs text-[14px] leading-[21px] text-[#c6c9d1]">{s.editorNarrow}</p>
+        <p className="max-w-xs text-[14px] leading-[21px] text-[#d6d9e0]">{s.editorNarrow}</p>
         <button
           type="button"
           onClick={() => void done()}
@@ -1658,13 +1658,13 @@ export function SetEditor({
         <button type="button" onClick={redo} disabled={at >= history.length - 1} className={ICON_BTN} title={s.editorRedo} aria-label={s.editorRedo}>
           <Svg d={D.redo} className="h-[15px] w-[15px]" />
         </button>
-        <span className="text-[12px] tabular-nums text-[#9aa0ad]">{rowLabel(at)}</span>
+        <span className="text-[12px] tabular-nums text-[#c6c9d1]">{rowLabel(at)}</span>
         <span aria-hidden className="h-5 w-px bg-white/[0.09]" />
-        <span className="text-[12px] text-[#868b96]">{saveLine}</span>
+        <span className="text-[12px] text-[#9aa0ad]">{saveLine}</span>
         <button
           type="button"
           onClick={() => void restoreOriginal()}
-          className="cursor-pointer text-[12px] text-[#c6c9d1] hover:text-[#ecedf1]"
+          className="cursor-pointer text-[12px] text-[#d6d9e0] hover:text-[#ecedf1]"
           title={s.editorOriginalHint}
         >
           {s.editorOriginal}
@@ -1699,17 +1699,17 @@ export function SetEditor({
           {addOpen && (
             <div className={`absolute left-12 top-[352px] z-20 flex min-w-[12rem] flex-col gap-0.5 rounded-[10px] border ${HAIR} ${PANEL} p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]`}>
               {SET_SHAPES.map((shape) => (
-                <button key={shape} type="button" onClick={() => addThing(shape)} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#c6c9d1] hover:bg-white/[0.05]">
+                <button key={shape} type="button" onClick={() => addThing(shape)} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#d6d9e0] hover:bg-white/[0.05]">
                   <Svg d={D.cube} className="h-[13px] w-[13px] text-[#8b8f9a]" />
                   {shapeName(shape)}
                 </button>
               ))}
               <span aria-hidden className="mx-2 my-1 h-px bg-white/[0.08]" />
-              <button type="button" onClick={addALight} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#c6c9d1] hover:bg-white/[0.05]">
+              <button type="button" onClick={addALight} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#d6d9e0] hover:bg-white/[0.05]">
                 <Svg d={D.bulb} className="h-[13px] w-[13px] text-[#8b8f9a]" />
                 {s.editorAddLight}
               </button>
-              <button type="button" onClick={addAnAreaLight} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#c6c9d1] hover:bg-white/[0.05]">
+              <button type="button" onClick={addAnAreaLight} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#d6d9e0] hover:bg-white/[0.05]">
                 <Svg d={D.bulb} className="h-[13px] w-[13px] text-[#8b8f9a]" />
                 {s.editorAddArea}
               </button>
@@ -1722,7 +1722,7 @@ export function SetEditor({
                 <button key={kind} type="button" onClick={() => {
                     setKitOpen(false);
                     addAProp(kind);
-                  }} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#c6c9d1] hover:bg-white/[0.05]">
+                  }} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#d6d9e0] hover:bg-white/[0.05]">
                   <Svg d={D.add} className="h-[13px] w-[13px] text-[#8b8f9a]" />
                   {s.editorKits[kind]}
                 </button>
@@ -1736,7 +1736,7 @@ export function SetEditor({
           {/* context bar */}
           <div className={`${BAR} flex h-9 flex-none items-center gap-2 border-b ${HAIR} px-3`}>
             <span className="text-[12px] font-semibold text-[#ecedf1]">{toolName}</span>
-            <span className="min-w-0 truncate text-[11px] text-[#868b96]">{selName}</span>
+            <span className="min-w-0 truncate text-[11px] text-[#9aa0ad]">{selName}</span>
             {selObject && sel?.kind === "object" && (
               <>
                 <span aria-hidden className="mx-1 h-[18px] w-px bg-white/[0.09]" />
@@ -1746,7 +1746,7 @@ export function SetEditor({
                 <button
                   type="button"
                   onClick={() => commit(patchObject(spec, sel.index, { position: [selObject.position[0], selObject.size[1] / 2, selObject.position[2]] }))}
-                  className="cursor-pointer whitespace-nowrap text-[11px] text-[#c6c9d1] hover:text-[#ecedf1]"
+                  className="cursor-pointer whitespace-nowrap text-[11px] text-[#d6d9e0] hover:text-[#ecedf1]"
                 >
                   {s.editorRestGround}
                 </button>
@@ -1758,7 +1758,7 @@ export function SetEditor({
             </Check>
             <span className="flex-1" />
             {flash && <span className="min-w-0 truncate text-[11px] text-[#e0a468]">{flash}</span>}
-            <span className="whitespace-nowrap text-[11px] tabular-nums text-[#868b96]">
+            <span className="whitespace-nowrap text-[11px] tabular-nums text-[#9aa0ad]">
               {formatMsg(s.editorCounts, { things: spec.objects.length, shapes: specInstanceCount(spec), max: SET_LIMITS.maxInstances })}
             </span>
           </div>
@@ -1774,19 +1774,19 @@ export function SetEditor({
               <text fill="#ffffff" fontSize="11" fontWeight="600" textAnchor="middle" paintOrder="stroke" stroke="rgba(0,0,0,0.7)" strokeWidth="3" />
             </svg>
             {tool === "measure" && (
-              <span className="pointer-events-none absolute left-3 top-3 rounded-[6px] border border-white/[0.09] bg-[rgba(20,21,25,0.85)] px-2.5 py-1 text-[11px] text-[#9aa0ad]">
+              <span className="pointer-events-none absolute left-3 top-3 rounded-[6px] border border-white/[0.09] bg-[rgba(20,21,25,0.85)] px-2.5 py-1 text-[11px] text-[#c6c9d1]">
                 {s.studio.measureHint}
               </span>
             )}
             {!ready && !loadFailed && (
-              <p className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[12px] text-[#868b96]">{s.editorLoading}</p>
+              <p className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[12px] text-[#9aa0ad]">{s.editorLoading}</p>
             )}
             {loadFailed && (
-              <p className="absolute left-1/2 top-1/2 w-72 -translate-x-1/2 -translate-y-1/2 text-center text-[12px] text-[#9aa0ad]">
+              <p className="absolute left-1/2 top-1/2 w-72 -translate-x-1/2 -translate-y-1/2 text-center text-[12px] text-[#c6c9d1]">
                 {s.editorLoadFailed}
               </p>
             )}
-            <span className="pointer-events-none absolute bottom-4 left-3 rounded-[6px] border border-white/[0.09] bg-[rgba(20,21,25,0.85)] px-2.5 py-1 text-[11px] text-[#9aa0ad]">
+            <span className="pointer-events-none absolute bottom-4 left-3 rounded-[6px] border border-white/[0.09] bg-[rgba(20,21,25,0.85)] px-2.5 py-1 text-[11px] text-[#c6c9d1]">
               {s.editorOrbitHint}
             </span>
 
@@ -1804,9 +1804,9 @@ export function SetEditor({
                   onChange={(e) => setFind(e.target.value)}
                   placeholder={s.editorFind}
                   aria-label={s.editorFind}
-                  className="h-6 min-w-0 flex-1 rounded-[5px] bg-[#111217] px-2 text-[11px] text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] outline-none placeholder:text-[#868b96] focus:shadow-[inset_0_0_0_1px_rgba(224,164,104,0.6)]"
+                  className="h-6 min-w-0 flex-1 rounded-[5px] bg-[#111217] px-2 text-[11px] text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] outline-none placeholder:text-[#9aa0ad] focus:shadow-[inset_0_0_0_1px_rgba(224,164,104,0.6)]"
                 />
-                <span className="text-[11px] tabular-nums text-[#868b96]">{spec.objects.length}</span>
+                <span className="text-[11px] tabular-nums text-[#9aa0ad]">{spec.objects.length}</span>
               </div>
               <div className="min-h-0 max-h-[44%] flex-[0_0_auto] overflow-y-auto">
                 <SceneTree spec={spec} s={s} selected={sel} onPick={setSel} onRoot={() => setSel(null)} query={find} />
@@ -1878,7 +1878,7 @@ export function SetEditor({
                       <button
                         type="button"
                         onClick={() => commit(patchObject(spec, sel.index, { emissive: null }))}
-                        className="cursor-pointer text-[11px] text-[#c6c9d1] hover:text-[#ecedf1]"
+                        className="cursor-pointer text-[11px] text-[#d6d9e0] hover:text-[#ecedf1]"
                       >
                         {s.editorNone}
                       </button>
@@ -1934,7 +1934,7 @@ export function SetEditor({
                     {s.editorShadow}
                   </Check>
                 </div>
-                {selObject.shape === "torus" && <p className="px-3 pt-1 text-[11px] text-[#868b96]">{s.editorTorusSize}</p>}
+                {selObject.shape === "torus" && <p className="px-3 pt-1 text-[11px] text-[#9aa0ad]">{s.editorTorusSize}</p>}
               </>
             )}
 
@@ -2061,7 +2061,7 @@ export function SetEditor({
                           className={`h-6 cursor-pointer rounded-full px-2.5 text-[11px] font-medium ${
                             spec.sky.kind === kind
                               ? "bg-[rgba(224,164,104,0.13)] text-[#e0a468] shadow-[inset_0_0_0_1px_rgba(224,164,104,0.45)]"
-                              : "bg-white/[0.05] text-[#9aa0ad]"
+                              : "bg-white/[0.05] text-[#c6c9d1]"
                           }`}
                         >
                           {s.editorSkyKinds[kind]}
@@ -2138,7 +2138,7 @@ export function SetEditor({
                 {!sel && (
                   <>
                     <div className={SHEAD}>{s.editorBoundsRow}</div>
-                    <p className="px-3 py-1 text-[12px] tabular-nums text-[#c6c9d1]">
+                    <p className="px-3 py-1 text-[12px] tabular-nums text-[#d6d9e0]">
                       {formatMsg(s.editorBoundsTall, { x: r1(spec.bounds.x), z: r1(spec.bounds.z), h: r1(spec.bounds.height) })}
                     </p>
                   </>
@@ -2150,7 +2150,7 @@ export function SetEditor({
           )}
           {dockTab === "history" && (
             <div className="p-2">
-              <div className="flex h-6 items-center px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#868b96]">{s.studio.historyEdits}</div>
+              <div className="flex h-6 items-center px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#9aa0ad]">{s.studio.historyEdits}</div>
               <div role="listbox" aria-label={s.studio.historyEdits} className="flex flex-col gap-0.5">
                 {history.map((_, i) => (
                   <button
@@ -2160,7 +2160,7 @@ export function SetEditor({
                     aria-selected={i === at}
                     onClick={() => goTo(i)}
                     className={`flex h-8 w-full cursor-pointer items-center justify-between rounded-[6px] px-2.5 text-left text-[12px] ${
-                      i === at ? "bg-white/[0.08] font-medium text-[#ecedf1]" : "text-[#9aa0ad] hover:bg-white/[0.05] hover:text-[#ecedf1]"
+                      i === at ? "bg-white/[0.08] font-medium text-[#ecedf1]" : "text-[#c6c9d1] hover:bg-white/[0.05] hover:text-[#ecedf1]"
                     }`}
                   >
                     <span>{rowLabel(i)}</span>
@@ -2171,7 +2171,7 @@ export function SetEditor({
             </div>
           )}
           {dockTab === "astra" && (
-            <div className="flex flex-col gap-3 p-3 text-[12px] leading-relaxed text-[#9aa0ad]">
+            <div className="flex flex-col gap-3 p-3 text-[12px] leading-relaxed text-[#c6c9d1]">
               <p>{s.studio.threadHint}</p>
               <p>{s.editorRules}</p>
             </div>
@@ -2188,7 +2188,7 @@ export function SetEditor({
           type="button"
           onClick={() => setCheckOpen((v) => !v)}
           aria-expanded={checkOpen}
-          className={`flex h-5 cursor-pointer items-center gap-1.5 rounded-full px-2 ${findings.length ? "bg-[rgba(224,164,104,0.13)] text-[#e0a468]" : "text-[#c6c9d1] hover:text-[#ecedf1]"}`}
+          className={`flex h-5 cursor-pointer items-center gap-1.5 rounded-full px-2 ${findings.length ? "bg-[rgba(224,164,104,0.13)] text-[#e0a468]" : "text-[#d6d9e0] hover:text-[#ecedf1]"}`}
         >
           <span aria-hidden className={`h-[5px] w-[5px] rounded-full ${findings.length ? "bg-[#e0a468]" : "bg-[#5f9e6e]"}`} />
           {s.editorCheck} · {findings.length ? formatMsg(s.editorCheckN, { n: findings.length }) : s.editorCheckClean}
@@ -2203,7 +2203,7 @@ export function SetEditor({
                   setSel(findingTarget(f));
                   setCheckOpen(false);
                 }}
-                className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12px] text-[#c6c9d1] hover:bg-white/[0.05]"
+                className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12px] text-[#d6d9e0] hover:bg-white/[0.05]"
               >
                 <span className="min-w-0 flex-1 truncate">{findingLine(f)}</span>
                 <span className="text-[11px] text-[#e0a468]">{s.editorFindingSelect}</span>

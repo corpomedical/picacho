@@ -76,10 +76,10 @@ export function CommandPalette({ open, onClose, commands, words }: { open: boole
           }}
           placeholder={words.placeholder}
           aria-label={words.title}
-          className="h-12 w-full border-b border-white/[0.07] bg-transparent px-4 text-[14px] text-[#ecedf1] outline-none placeholder:text-[#868b96]"
+          className="h-12 w-full border-b border-white/[0.07] bg-transparent px-4 text-[14px] text-[#ecedf1] outline-none placeholder:text-[#9aa0ad]"
         />
         <div ref={listRef} role="listbox" aria-label={words.title} className="max-h-[52vh] overflow-y-auto p-1.5">
-          {shown.length === 0 && <p className="px-3 py-4 text-[12.5px] text-[#868b96]">{words.empty}</p>}
+          {shown.length === 0 && <p className="px-3 py-4 text-[12.5px] text-[#9aa0ad]">{words.empty}</p>}
           {shown.map((c, i) => (
             <button
               key={c.id}
@@ -88,15 +88,15 @@ export function CommandPalette({ open, onClose, commands, words }: { open: boole
               aria-selected={i === pick}
               onMouseEnter={() => setAt(i)}
               onClick={() => run(c)}
-              className={`flex h-9 w-full cursor-pointer items-center gap-3 rounded-[8px] px-3 text-left text-[13px] ${i === pick ? "bg-[rgba(224,164,104,0.13)] text-[#f0cda6]" : "text-[#c6c9d1]"}`}
+              className={`flex h-9 w-full cursor-pointer items-center gap-3 rounded-[8px] px-3 text-left text-[13px] ${i === pick ? "bg-[rgba(224,164,104,0.13)] text-[#f0cda6]" : "text-[#d6d9e0]"}`}
             >
               <span className="min-w-0 flex-1 truncate">{c.label}</span>
-              <span className="whitespace-nowrap text-[10.5px] uppercase tracking-[0.06em] text-[#868b96]">{words.groups[c.group]}</span>
-              {c.keys && <kbd className="rounded-[4px] bg-white/[0.06] px-1.5 py-0.5 font-sans text-[10px] font-semibold text-[#9aa0ad]">{c.keys}</kbd>}
+              <span className="whitespace-nowrap text-[10.5px] uppercase tracking-[0.06em] text-[#9aa0ad]">{words.groups[c.group]}</span>
+              {c.keys && <kbd className="rounded-[4px] bg-white/[0.06] px-1.5 py-0.5 font-sans text-[10px] font-semibold text-[#c6c9d1]">{c.keys}</kbd>}
             </button>
           ))}
         </div>
-        <div className="border-t border-white/[0.07] px-4 py-2 text-[11px] text-[#868b96]">{words.hint}</div>
+        <div className="border-t border-white/[0.07] px-4 py-2 text-[11px] text-[#9aa0ad]">{words.hint}</div>
       </div>
     </div>
   );
