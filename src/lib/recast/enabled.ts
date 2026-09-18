@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // Whether the recast lane is on. Default OFF at three levels, the shape
 // lib/sets/enabled.ts uses: an env kill switch, the provider key the lane
 // cannot run without, and its own feature_flags row (`recast`, inserted
-// disabled by supabase/pending/recast.sql). Who may use it is decided in
+// disabled by supabase/applied/2026-09-18/recast.sql). Who may use it is decided in
 // the actions — admins only while it is proved, then every paid plan (the
 // operator's call, 2026-09-17); this switch only says whether it exists.
 export async function isRecastEnabled(supabase: SupabaseClient): Promise<boolean> {
