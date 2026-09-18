@@ -112,13 +112,43 @@ export function composeRecastBrief(input: {
     return cleanBrief(parts.join("\n"), RECAST_BRIEF_MAX_CHARS);
   }
 
+  const name = input.casting?.characterName ?? "The character";
+
+  if (input.job === "motion") {
+    // THE ONE THE ENGINE ACTUALLY READS, and the one that was wrong until
+    // 2026-09-18. Motion control builds the video OUT OF the reference
+    // image — its person, its clothes, its background, its light — and takes
+    // only the movement from the video. The scene brief below tells it to
+    // keep the source video's setting and that "everything else stays
+    // exactly as it is in the source video", which is the opposite of what
+    // this engine does; sent here, it argues with the model for two
+    // thousand characters. The scene job, whose brief that is, sends no
+    // prompt at all, so the only brief we ever transmitted was the wrong one.
+    parts.push(
+      "TASK",
+      "The person in the reference image performs the movements in the source video. The reference image is the world: the character, what they wear, the place around them and its light all come from it. Only the movement comes from the video.",
+      "",
+      "THE CHARACTER",
+      `${name} — the person in the reference image. Their face, hair and build must stay the same in every frame.`,
+      "",
+      "TAKE FROM THE VIDEO, AND NOTHING ELSE",
+      bullet("The performance: every gesture, every step, every expression, on the same frames."),
+      bullet("The timing, and the way the camera moves."),
+      "",
+      "THE MOVEMENT IN THE VIDEO",
+      ...sourceLines(input.read, input.seconds),
+    );
+    if (direction) parts.push("", "DIRECTION", direction);
+    return cleanBrief(parts.join("\n"), RECAST_BRIEF_MAX_CHARS);
+  }
+
   const who = input.casting?.tag ? `Person ${input.casting.tag}` : "The performer";
   parts.push(
     "TASK",
     `Replace ${who} in the source video with the character in the reference image. Keep the performance exactly as it is.`,
     "",
     "THE CHARACTER",
-    `${input.casting?.characterName ?? "The character"} — the person in the reference image. Their face, hair and build come from the image and must stay the same in every frame.`,
+    `${name} — the person in the reference image. Their face, hair and build come from the image and must stay the same in every frame.`,
     "",
     "THE SOURCE",
     ...sourceLines(input.read, input.seconds),

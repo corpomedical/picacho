@@ -154,7 +154,7 @@ export function MystiqueDoor({
   const cast = castIds.map((id) => castable.find((c) => c.id === id)).filter((c): c is RecastCharacter => Boolean(c));
   const takeCount = needsCast ? Math.max(1, cast.length) : 1;
   const totalCredits = quote ? quote.credits * takeCount : null;
-  const keeps = (read?.keeps ?? []).filter((k) => !dropped.has(k.what));
+  const keeps = job === "scene" ? (read?.keeps ?? []).filter((k) => !dropped.has(k.what)) : [];
   const photo = cast[0]?.photos.find((p) => p.path === photoPath) ?? cast[0]?.photos[0] ?? null;
   const busy = starting || (source !== null && source.phase !== "ready");
   const canTake =
@@ -554,7 +554,11 @@ export function MystiqueDoor({
                       </span>
                       {read.sound === "speech" && <span className={chip}>{m.readSpeech}</span>}
                     </div>
-                    {read.keeps.length > 0 && (
+                    {/* Only the job that keeps the clip's own picture can keep
+                        anything IN it: the other two build the frame from the
+                        photo or redraw it from words, so a watch or a caption
+                        in the source has nothing to survive into. */}
+                    {read.keeps.length > 0 && job === "scene" && (
                       <>
                         <p className={`mt-3 ${label}`}>{m.keepsLabel}</p>
                         <div className="mt-1.5 flex flex-wrap gap-1.5">

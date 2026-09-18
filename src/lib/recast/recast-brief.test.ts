@@ -91,6 +91,39 @@ describe("a recast's brief", () => {
   });
 });
 
+describe("a motion take's brief — the only one an engine actually reads", () => {
+  const brief = composeRecastBrief({ ...base, job: "motion" });
+
+  it("says the IMAGE is the world, not the video", () => {
+    // The fault behind the operator's first real take (2026-09-18): the
+    // scene brief below was sent to motion control, which builds the video
+    // out of the reference image. It told the engine to keep the source
+    // video's setting and that "everything else stays exactly as it is in
+    // the source video" — two thousand characters arguing with the model.
+    expect(brief).toContain("The reference image is the world");
+    expect(brief).toContain("Only the movement comes from the video.");
+    expect(brief).not.toContain("The lighting and the setting.");
+    expect(brief).not.toContain("Everything else stays exactly as it is in the source video.");
+    expect(brief).not.toContain("Replace Person A");
+  });
+
+  it("takes only the performance and the timing from the video", () => {
+    expect(brief).toContain("TAKE FROM THE VIDEO, AND NOTHING ELSE");
+    expect(brief).toContain("The performance: every gesture, every step, every expression, on the same frames.");
+    expect(brief).toContain("The timing, and the way the camera moves.");
+  });
+
+  it("carries no keep list, because nothing in the clip's picture survives it", () => {
+    const withKeeps = composeRecastBrief({ ...base, job: "motion", keeps: [{ what: "a wristwatch on the left wrist", kind: "accessory" }] });
+    expect(withKeeps).not.toContain("wristwatch");
+  });
+
+  it("still ends on the person's own direction", () => {
+    const directed = composeRecastBrief({ ...base, job: "motion", direction: "Keep it cold and blue." });
+    expect(directed.trimEnd().endsWith("Keep it cold and blue.")).toBe(true);
+  });
+});
+
 describe("a restyle's brief", () => {
   const brief = composeRecastBrief({ ...base, job: "world", casting: null, direction: "The same street at night, rain and neon." });
 
