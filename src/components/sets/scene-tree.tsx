@@ -71,7 +71,7 @@ export function TreeRow({
       type="button"
       onClick={onPick}
       className={`flex h-6 w-full cursor-pointer items-center gap-1.5 pr-2.5 text-left text-[12px] ${child ? "pl-7" : "pl-3"} ${
-        selected ? "bg-[rgba(224,164,104,0.12)] text-[#e0a468] shadow-[inset_2px_0_0_#e0a468]" : "text-[#d6d9e0] hover:bg-white/[0.04]"
+        selected ? "bg-[rgba(224,164,104,0.12)] text-[#e0a468] shadow-[inset_2px_0_0_#e0a468]" : "text-[#d6d9e0] hover:bg-[rgba(255,255,255,0.04)]"
       }`}
     >
       {dot ? (

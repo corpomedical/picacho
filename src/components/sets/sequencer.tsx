@@ -22,7 +22,7 @@ type Strings = Messages["sets"];
 
 const TRACK_COLOUR: Record<SequencerTrack, string> = { camera: "#e0a468", figure: "#d8b37c", sun: "#f5d76e", light: "#a9c6df", takes: "#c6c9d1" };
 const BTN = "flex h-7 cursor-pointer items-center whitespace-nowrap rounded-[6px] px-2.5 text-[11.5px] font-medium text-[#d6d9e0] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad]";
-const TBTN = "flex h-7 w-7 cursor-pointer items-center justify-center rounded-[6px] text-[#d6d9e0] hover:bg-white/[0.06] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad]";
+const TBTN = "flex h-7 w-7 cursor-pointer items-center justify-center rounded-[6px] text-[#d6d9e0] hover:bg-[rgba(255,255,255,0.06)] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad]";
 const LANE_H = 24;
 
 export type SequencerProps = {
@@ -104,9 +104,9 @@ export function Sequencer(p: SequencerProps) {
   const trackName: Record<SequencerTrack, string> = w.tracks;
 
   return (
-    <div data-sequencer className="flex flex-none flex-col border-t border-white/[0.07] bg-[#191a20] text-[#d6d9e0]">
+    <div data-sequencer className="flex flex-none flex-col border-t border-[rgba(255,255,255,0.07)] bg-[#191a20] text-[#d6d9e0]">
       {/* the transport */}
-      <div className="flex h-10 flex-none items-center gap-1.5 border-b border-white/[0.07] px-2.5">
+      <div className="flex h-10 flex-none items-center gap-1.5 border-b border-[rgba(255,255,255,0.07)] px-2.5">
         <button type="button" onClick={p.onToStart} disabled={!p.ready || film.beats.length === 0} className={TBTN} title={w.toStart} aria-label={w.toStart}>
           <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5" aria-hidden>
             <path d="M6 5h2v14H6zM20 5v14L9 12z" />
@@ -139,7 +139,7 @@ export function Sequencer(p: SequencerProps) {
         <span className="ml-1 whitespace-nowrap text-[12px] tabular-nums text-[#ecedf1]" data-clock>
           {filmClock(p.playhead)} <span className="text-[#9aa0ad]">/ {filmClock(filmDuration(film))}</span>
         </span>
-        <span aria-hidden className="mx-1 h-5 w-px bg-white/[0.09]" />
+        <span aria-hidden className="mx-1 h-5 w-px bg-[rgba(255,255,255,0.09)]" />
         <span className="min-w-[140px] flex-1 truncate text-[11.5px] text-[#c6c9d1]" data-beat-line>
           {beatLine}
         </span>
@@ -149,7 +149,7 @@ export function Sequencer(p: SequencerProps) {
             + {s.filmKeyframe}
           </button>
         )}
-        <span className="flex h-7 items-center gap-0.5 rounded-[6px] bg-white/[0.05] p-0.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)]">
+        <span className="flex h-7 items-center gap-0.5 rounded-[6px] bg-[rgba(255,255,255,0.05)] p-0.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)]">
           {(["omni", "veo"] as const).map((e) => (
             <button
               key={e}
@@ -193,7 +193,7 @@ export function Sequencer(p: SequencerProps) {
       {/* the lanes */}
       <div className="flex min-h-0 items-stretch">
         {/* the tracks' names, with the start still above them */}
-        <div className="flex w-[168px] flex-none flex-col border-r border-white/[0.07]">
+        <div className="flex w-[168px] flex-none flex-col border-r border-[rgba(255,255,255,0.07)]">
           <div className="relative flex h-6 items-center gap-2 px-2.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#9aa0ad]">
             <button
               type="button"
@@ -202,7 +202,7 @@ export function Sequencer(p: SequencerProps) {
               aria-haspopup="listbox"
               aria-expanded={p.startOpen}
               title={s.filmStarts}
-              className="flex h-5 max-w-full cursor-pointer items-center gap-1.5 rounded-[4px] bg-white/[0.05] px-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#d6d9e0] hover:bg-white/[0.09] disabled:cursor-default disabled:text-[#9aa0ad]"
+              className="flex h-5 max-w-full cursor-pointer items-center gap-1.5 rounded-[4px] bg-[rgba(255,255,255,0.05)] px-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#d6d9e0] hover:bg-[rgba(255,255,255,0.09)] disabled:cursor-default disabled:text-[#9aa0ad]"
             >
               {p.startImage && (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -222,19 +222,19 @@ export function Sequencer(p: SequencerProps) {
 
         {/* the ruler and the lanes, with the playhead over them */}
         <div ref={lanesRef} className="relative min-w-0 flex-1 cursor-crosshair select-none" onClick={seek} title={w.seek} data-lanes>
-          <div className="relative h-6 border-b border-white/[0.07] text-[10px] tabular-nums text-[#9aa0ad]">
+          <div className="relative h-6 border-b border-[rgba(255,255,255,0.07)] text-[10px] tabular-nums text-[#9aa0ad]">
             {rulerSeconds(filmDuration(film)).map((sec) => (
               <span key={sec} className="absolute top-1" style={{ left: pct(sec), transform: "translateX(-50%)" }}>
                 {sec}s
               </span>
             ))}
             {rulerSeconds(filmDuration(film)).map((sec) => (
-              <i key={`t${sec}`} aria-hidden className="absolute bottom-0 h-1.5 w-px bg-white/[0.2]" style={{ left: pct(sec) }} />
+              <i key={`t${sec}`} aria-hidden className="absolute bottom-0 h-1.5 w-px bg-[rgba(255,255,255,0.2)]" style={{ left: pct(sec) }} />
             ))}
           </div>
           {/* the beats' bounds, faintly, through every lane */}
           {spans.map((sp) => (
-            <i key={`b${sp.index}`} aria-hidden className="pointer-events-none absolute bottom-0 top-6 w-px bg-white/[0.06]" style={{ left: pct(sp.end) }} />
+            <i key={`b${sp.index}`} aria-hidden className="pointer-events-none absolute bottom-0 top-6 w-px bg-[rgba(255,255,255,0.06)]" style={{ left: pct(sp.end) }} />
           ))}
 
           {/* camera: the keyframes */}
@@ -389,7 +389,7 @@ export function Sequencer(p: SequencerProps) {
       </div>
 
       {(p.note || p.error || p.hint) && (
-        <div className="flex h-6 flex-none items-center gap-3 border-t border-white/[0.07] px-2.5 text-[10.5px] text-[#9aa0ad]">
+        <div className="flex h-6 flex-none items-center gap-3 border-t border-[rgba(255,255,255,0.07)] px-2.5 text-[10.5px] text-[#9aa0ad]">
           {p.error ? <span className="min-w-0 truncate text-red-400">{p.error}</span> : p.note ? <span className="min-w-0 truncate">{p.note}</span> : <span className="min-w-0 truncate">{p.hint}</span>}
         </div>
       )}

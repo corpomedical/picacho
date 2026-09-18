@@ -48,7 +48,7 @@ export function CommandPalette({ open, onClose, commands, words }: { open: boole
       <div
         role="dialog"
         aria-label={words.title}
-        className="w-full max-w-[560px] overflow-hidden rounded-[14px] border border-white/10 bg-[#191a20] shadow-[0_24px_56px_-16px_rgba(0,0,0,0.7)]"
+        className="w-full max-w-[560px] overflow-hidden rounded-[14px] border border-[rgba(255,255,255,0.1)] bg-[#191a20] shadow-[0_24px_56px_-16px_rgba(0,0,0,0.7)]"
         onClick={(e) => e.stopPropagation()}
       >
         <input
@@ -76,7 +76,7 @@ export function CommandPalette({ open, onClose, commands, words }: { open: boole
           }}
           placeholder={words.placeholder}
           aria-label={words.title}
-          className="h-12 w-full border-b border-white/[0.07] bg-transparent px-4 text-[14px] text-[#ecedf1] outline-none placeholder:text-[#9aa0ad]"
+          className="h-12 w-full border-b border-[rgba(255,255,255,0.07)] bg-transparent px-4 text-[14px] text-[#ecedf1] outline-none placeholder:text-[#9aa0ad]"
         />
         <div ref={listRef} role="listbox" aria-label={words.title} className="max-h-[52vh] overflow-y-auto p-1.5">
           {shown.length === 0 && <p className="px-3 py-4 text-[12.5px] text-[#9aa0ad]">{words.empty}</p>}
@@ -92,11 +92,11 @@ export function CommandPalette({ open, onClose, commands, words }: { open: boole
             >
               <span className="min-w-0 flex-1 truncate">{c.label}</span>
               <span className="whitespace-nowrap text-[10.5px] uppercase tracking-[0.06em] text-[#9aa0ad]">{words.groups[c.group]}</span>
-              {c.keys && <kbd className="rounded-[4px] bg-white/[0.06] px-1.5 py-0.5 font-sans text-[10px] font-semibold text-[#c6c9d1]">{c.keys}</kbd>}
+              {c.keys && <kbd className="rounded-[4px] bg-[rgba(255,255,255,0.06)] px-1.5 py-0.5 font-sans text-[10px] font-semibold text-[#c6c9d1]">{c.keys}</kbd>}
             </button>
           ))}
         </div>
-        <div className="border-t border-white/[0.07] px-4 py-2 text-[11px] text-[#9aa0ad]">{words.hint}</div>
+        <div className="border-t border-[rgba(255,255,255,0.07)] px-4 py-2 text-[11px] text-[#9aa0ad]">{words.hint}</div>
       </div>
     </div>
   );

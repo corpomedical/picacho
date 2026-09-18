@@ -14,9 +14,9 @@ import { RAIL_TOOLS, railToolsFor, type DockTab, type RailTool, type RailToolNot
 
 export const STUDIO_BAR_BG = "bg-[#191a20]";
 export const STUDIO_PANEL_BG = "bg-[#1f2026]";
-export const STUDIO_HAIR = "border-white/[0.07]";
+export const STUDIO_HAIR = "border-[rgba(255,255,255,0.07)]";
 
-const SEG = "flex h-7 flex-none items-center gap-0.5 rounded-[6px] bg-white/[0.05] p-0.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)]";
+const SEG = "flex h-7 flex-none items-center gap-0.5 rounded-[6px] bg-[rgba(255,255,255,0.05)] p-0.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)]";
 const SEG_ON = "flex h-6 cursor-default items-center rounded-[4px] bg-[#2a2b33] px-2.5 text-[12px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)] 2xl:px-3.5";
 const SEG_OFF = "flex h-6 cursor-pointer items-center rounded-[4px] px-2.5 text-[12px] font-medium text-[#d6d9e0] hover:text-[#ecedf1] 2xl:px-3.5";
 const VIEW_ON = "flex h-6 cursor-default items-center rounded-[4px] bg-[#2a2b33] px-2.5 text-[11.5px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)]";
@@ -139,7 +139,7 @@ export function StudioBar({
       <Link href={back.href} aria-label={back.label} className="whitespace-nowrap text-xs font-medium text-[#d6d9e0] hover:text-[#ecedf1]">
         ←<span className="hidden md:inline"> {back.label}</span>
       </Link>
-      <span aria-hidden className="hidden h-5 w-px bg-white/[0.09] md:block" />
+      <span aria-hidden className="hidden h-5 w-px bg-[rgba(255,255,255,0.09)] md:block" />
       {/* The set's name: a truncating block from a tablet's width, only for screen readers below it. */}
       <h1 className="hidden min-w-[80px] max-w-[280px] shrink truncate font-display text-[14px] font-semibold text-[#ecedf1] md:block">{title}</h1>
       <span className="sr-only md:hidden">{title}</span>
@@ -182,7 +182,7 @@ export function StudioBar({
             <path d="m20 20-3.5-3.5" />
           </svg>
           <span className="min-w-0 flex-1 truncate text-left">{find.label}</span>
-          <kbd className="rounded-[4px] bg-white/[0.06] px-1.5 py-0.5 font-sans text-[10px] font-semibold">{find.kbd}</kbd>
+          <kbd className="rounded-[4px] bg-[rgba(255,255,255,0.06)] px-1.5 py-0.5 font-sans text-[10px] font-semibold">{find.kbd}</kbd>
         </button>
       )}
       {children}
@@ -227,7 +227,7 @@ export function StudioRail({
         const title = t.use === "off" ? `${names[t.id]} · ${t.key} — ${notes[t.note ?? "build"]}` : `${names[t.id]} · ${t.key}`;
         return (
           <span key={t.id} className="contents">
-            {first && i > 0 && <span aria-hidden className="my-1 h-px w-6 bg-white/[0.08]" />}
+            {first && i > 0 && <span aria-hidden className="my-1 h-px w-6 bg-[rgba(255,255,255,0.08)]" />}
             <button
               type="button"
               onClick={t.use === "off" ? undefined : () => onTool(t.id)}

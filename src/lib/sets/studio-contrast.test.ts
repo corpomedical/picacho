@@ -145,6 +145,27 @@ describe("the studio's chrome can be read", () => {
     expect(readFileSync(join(dir, "set-editor.tsx"), "utf8")).toContain("data-set-editor>");
   });
 
+  it("paints its own white, never the theme's", () => {
+    // THE ONE THAT SURVIVED THREE COLOUR FIXES. Tailwind's `bg-white/5`
+    // compiles to color-mix(in oklab, var(--color-white) 5%, transparent),
+    // and --color-white is INVERTED in the app's dark theme (globals.css:
+    // "Inverted on purpose … if you are painting over a photo or a video,
+    // this is NOT the colour you want") — oklch(20.5%), a dark grey. The
+    // Screening Room made dark the default inside /app, so every chip fill,
+    // every tray and every hairline in the studio became 5-10% of a dark
+    // grey on a dark ground: invisible. Nothing had an edge or a shape, and
+    // no amount of raising the TEXT colour could answer it ("Helios menus
+    // still look dimmed", three times, 2026-09-18). Read from the deployed
+    // stylesheet, not guessed. The studio paints its own white now.
+    for (const name of ["studio-frame.tsx", "set-view.tsx", "set-editor.tsx", "rig-panel.tsx", "sequencer.tsx", "scene-tree.tsx", "command-palette.tsx"]) {
+      const file = readFileSync(join(dir, name), "utf8");
+      const themed = [...file.matchAll(/\b(?:bg|border|ring|divide|outline|from|to|via)-white\/[[\d.\]]+/g)].map((m) => m[0]);
+      expect(themed, `${name} paints with the theme's white, which is dark inside the app`).toEqual([]);
+    }
+    // And the studio's own hairline is a literal.
+    expect(frame).toContain('export const STUDIO_HAIR = "border-[rgba(255,255,255,0.07)]";');
+  });
+
   it("what is drawn over the render is drawn for a bright one", () => {
     // The stage can be a daylight exterior: text over it is measured against
     // white, not against the chrome (the frame-line readout was 1.8:1).

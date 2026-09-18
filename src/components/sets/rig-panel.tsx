@@ -80,14 +80,14 @@ export type RigFilmContext = {
 /** How long the pointer rests between two tiles before the stage is put back: a sweep across the moves is one preview. */
 const PREVIEW_LEAVE_MS = 150;
 
-const PANEL_BG = "border border-white/[0.11] bg-[rgba(25,26,32,0.96)] shadow-[0_24px_56px_-16px_rgba(0,0,0,0.6)]";
+const PANEL_BG = "border border-[rgba(255,255,255,0.11)] bg-[rgba(25,26,32,0.96)] shadow-[0_24px_56px_-16px_rgba(0,0,0,0.6)]";
 
 type TagStrings = { held: string; checked: string; lab: string };
 
 const SELECT =
   "h-7 min-w-0 flex-1 cursor-pointer rounded-[6px] bg-[#111217] px-2 text-[12px] text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] outline-none focus:shadow-[inset_0_0_0_1px_rgba(224,164,104,0.6)]";
 const STEP_BTN =
-  "flex h-7 w-7 flex-none cursor-pointer items-center justify-center rounded-[6px] bg-white/[0.05] text-[14px] leading-none text-[#d6d9e0] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad]";
+  "flex h-7 w-7 flex-none cursor-pointer items-center justify-center rounded-[6px] bg-[rgba(255,255,255,0.05)] text-[14px] leading-none text-[#d6d9e0] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad]";
 
 const OVERLAY_NAMES: Record<RigOverlayKey, (r: Strings["rig"]) => string> = {
   thirds: (r) => r.overlayThirds,
@@ -109,7 +109,7 @@ function Pill({ on, onClick, role, title, children }: { on: boolean; onClick: ()
       title={title}
       onClick={onClick}
       className={`h-6 cursor-pointer rounded-full px-2.5 text-[11px] font-medium tabular-nums transition-colors ${
-        on ? "bg-[rgba(224,164,104,0.13)] text-[#e0a468] shadow-[inset_0_0_0_1px_rgba(224,164,104,0.45)]" : "bg-white/[0.05] text-[#d6d9e0] hover:text-[#ecedf1]"
+        on ? "bg-[rgba(224,164,104,0.13)] text-[#e0a468] shadow-[inset_0_0_0_1px_rgba(224,164,104,0.45)]" : "bg-[rgba(255,255,255,0.05)] text-[#d6d9e0] hover:text-[#ecedf1]"
       }`}
     >
       {children}
@@ -135,7 +135,7 @@ function Section({
 }) {
   if (hidden) return null;
   return (
-    <section className="border-b border-white/[0.07] px-3.5 pb-3.5 pt-3">
+    <section className="border-b border-[rgba(255,255,255,0.07)] px-3.5 pb-3.5 pt-3">
       <div className="mb-2.5 flex h-[18px] items-center justify-between gap-2">
         <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#c6c9d1]">{title}</h3>
         {right}
@@ -176,7 +176,7 @@ function Tag({ kind, tags }: { kind: TagKind; tags: TagStrings }) {
       {tags.held}
     </span>
   ) : (
-    <span className="inline-flex h-[18px] items-center gap-1 whitespace-nowrap rounded-full bg-white/[0.05] pl-1.5 pr-2 text-[10px] font-medium text-[#c6c9d1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
+    <span className="inline-flex h-[18px] items-center gap-1 whitespace-nowrap rounded-full bg-[rgba(255,255,255,0.05)] pl-1.5 pr-2 text-[10px] font-medium text-[#c6c9d1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" className="h-2.5 w-2.5" aria-hidden>
         <circle cx="12" cy="12" r="9" />
         <path d="m8 12.5 2.8 2.7L16 9.5" />
@@ -218,7 +218,7 @@ function Tile({
       className={`relative cursor-pointer rounded-[8px] px-1 pb-1.5 pt-1 text-center text-[10.5px] leading-[13px] transition-colors ${
         on
           ? "bg-[rgba(224,164,104,0.1)] text-[#f0cda6] shadow-[inset_0_0_0_1.5px_#e0a468]"
-          : "bg-white/[0.03] text-[#c6c9d1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)] hover:bg-white/[0.06] hover:text-[#ecedf1]"
+          : "bg-[rgba(255,255,255,0.03)] text-[#c6c9d1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)] hover:bg-[rgba(255,255,255,0.06)] hover:text-[#ecedf1]"
       }`}
     >
       {dot && <span aria-hidden className="absolute right-1.5 top-1.5 z-[1] h-[5px] w-[5px] rounded-full bg-[#e0a468]" />}
@@ -818,7 +818,7 @@ export function RigPanel({
 
   const chrome = (
     <>
-      <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3">
+      <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.07)] px-4 py-3">
         <span className="text-[11px] font-medium uppercase tracking-widest text-[#c6c9d1]">{r.title}</span>
         <span className="flex items-center gap-2">
           <span className="text-[11px] text-[#9aa0ad]">{r.saved}</span>
@@ -849,7 +849,7 @@ export function RigPanel({
           setTabOwn(next);
           document.getElementById(`${uid}-rigtab-${next}`)?.focus();
         }}
-        className="flex items-stretch border-b border-white/[0.07] px-2"
+        className="flex items-stretch border-b border-[rgba(255,255,255,0.07)] px-2"
       >
         {tabsFor(filmOn).map((t) => (
           <button
@@ -921,7 +921,7 @@ export function RigPanel({
                         className={`flex h-8 cursor-pointer items-center rounded-full px-3 text-xs font-medium transition-colors ${
                           on
                             ? "bg-[rgba(224,164,104,0.15)] text-[#f0cda6] shadow-[inset_0_0_0_1px_rgba(240,196,142,0.5)]"
-                            : "bg-white/[0.06] text-[#c6c9d1] hover:bg-white/[0.1] hover:text-[#ecedf1]"
+                            : "bg-[rgba(255,255,255,0.06)] text-[#c6c9d1] hover:bg-[rgba(255,255,255,0.1)] hover:text-[#ecedf1]"
                         }`}
                       >
                         {r.textures[tx]}
@@ -1001,7 +1001,7 @@ export function RigPanel({
                   className={`flex h-[50px] min-w-0 flex-1 cursor-pointer flex-col items-center justify-center gap-1.5 rounded-[8px] text-[10px] leading-3 transition-colors ${
                     on
                       ? "bg-[rgba(224,164,104,0.1)] text-[#f0cda6] shadow-[inset_0_0_0_1.5px_#e0a468]"
-                      : "bg-white/[0.03] text-[#c6c9d1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)] hover:text-[#ecedf1]"
+                      : "bg-[rgba(255,255,255,0.03)] text-[#c6c9d1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)] hover:text-[#ecedf1]"
                   }`}
                 >
                   <span

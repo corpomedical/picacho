@@ -335,7 +335,7 @@ const DEG = Math.PI / 180;
 // inside it and the setup as glass chips on the picture itself. ----
 /** A glass chip on the stage. */
 const DCHIP =
-  "inline-flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border border-white/10 bg-black/60 px-3 text-xs font-medium text-onmedia/90 backdrop-blur transition-colors hover:bg-black/80 disabled:cursor-default disabled:text-onmedia/60";
+  "inline-flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border border-[rgba(255,255,255,0.1)] bg-black/60 px-3 text-xs font-medium text-onmedia/90 backdrop-blur transition-colors hover:bg-black/80 disabled:cursor-default disabled:text-onmedia/60";
 /** The same chip, lit ochre — the kept look. */
 const DCHIP_ON =
   // A 70% scrim, not 60%: the ochre read at 3.8:1 over a daylight render.
@@ -346,7 +346,7 @@ const DCHIP_ON =
 // the mode menu at the composer's foot collapsed to a 14 px sliver with its
 // three options scrolled out of sight (found on the stage, 2026-09-16).
 const DMENU_BASE =
-  "absolute z-40 flex max-h-80 min-w-[11rem] flex-col gap-0.5 overflow-y-auto rounded-[12px] border border-white/[0.11] bg-[#1d1e24] p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]";
+  "absolute z-40 flex max-h-80 min-w-[11rem] flex-col gap-0.5 overflow-y-auto rounded-[12px] border border-[rgba(255,255,255,0.11)] bg-[#1d1e24] p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]";
 /** A menu opened downward from a chip, dark. */
 const DMENU = `${DMENU_BASE} left-0 top-full mt-2`;
 /** The same menu opened upward, for a chip at the foot of the panel. */
@@ -354,7 +354,7 @@ const DMENU_UP = `${DMENU_BASE} left-0 bottom-full mb-2`;
 /** The same menu, hung from the right edge of a chip near the window's. */
 const DMENU_RIGHT = `${DMENU_BASE} right-0 top-full mt-2`;
 /** The conversation panel's surface. */
-const PANEL_BG = "border border-white/[0.11] bg-[rgba(25,26,32,0.96)] shadow-[0_24px_56px_-16px_rgba(0,0,0,0.6)]";
+const PANEL_BG = "border border-[rgba(255,255,255,0.11)] bg-[rgba(25,26,32,0.96)] shadow-[0_24px_56px_-16px_rgba(0,0,0,0.6)]";
 
 function Chevron() {
   return (
@@ -409,7 +409,7 @@ function Option({ active, onPick, hint, children }: { active: boolean; onPick: (
       aria-selected={active}
       onClick={onPick}
       className={`flex h-9 w-full cursor-pointer items-center justify-between gap-4 rounded-[7px] px-2.5 text-left text-[13px] transition-colors ${
-        active ? "bg-white/[0.08] font-medium text-[#ecedf1]" : "text-[#c6c9d1] hover:bg-white/[0.05] hover:text-[#ecedf1]"
+        active ? "bg-[rgba(255,255,255,0.08)] font-medium text-[#ecedf1]" : "text-[#c6c9d1] hover:bg-[rgba(255,255,255,0.05)] hover:text-[#ecedf1]"
       }`}
     >
       <span className="tabular-nums">{children}</span>
@@ -4148,7 +4148,7 @@ export function SetView({
     `flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:cursor-default disabled:text-[#9aa0ad] ${
       active
         ? "bg-[rgba(224,164,104,0.15)] text-[#f0cda6] shadow-[inset_0_0_0_1px_rgba(240,196,142,0.5)]"
-        : "bg-white/[0.06] text-[#c6c9d1] hover:bg-white/[0.1] hover:text-[#ecedf1]"
+        : "bg-[rgba(255,255,255,0.06)] text-[#c6c9d1] hover:bg-[rgba(255,255,255,0.1)] hover:text-[#ecedf1]"
     }`;
   const glassBtn =
     "inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-onmedia/10 bg-black/60 px-3 py-1.5 text-xs font-medium text-onmedia transition-colors hover:bg-black/75";
@@ -4225,7 +4225,7 @@ export function SetView({
     const check = shot.rigCheck;
     if (!check) {
       return (
-        <div className="flex flex-wrap items-center gap-2 rounded-[14px] bg-white/[0.05] px-3.5 py-3 text-xs text-[#c6c9d1] ring-1 ring-white/[0.07]">
+        <div className="flex flex-wrap items-center gap-2 rounded-[14px] bg-[rgba(255,255,255,0.05)] px-3.5 py-3 text-xs text-[#c6c9d1] ring-1 ring-[rgba(255,255,255,0.07)]">
           {state === "checking" ? (
             <>
               <Spinner className="h-3.5 w-3.5 flex-shrink-0" />
@@ -4250,7 +4250,7 @@ export function SetView({
         ? formatMsg(s.rig.checkAgainOne, { look: s.rig.checkItems[missed[0]].toLowerCase(), credits })
         : formatMsg(s.rig.checkAgainMany, { n: missed.length, credits });
     return (
-      <div className="space-y-3 rounded-[14px] bg-white/[0.05] p-3.5 ring-1 ring-white/[0.07]">
+      <div className="space-y-3 rounded-[14px] bg-[rgba(255,255,255,0.05)] p-3.5 ring-1 ring-[rgba(255,255,255,0.07)]">
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-medium uppercase tracking-widest text-[#c6c9d1]">{s.rig.checkTitle}</span>
           <span className="text-xs tabular-nums text-[#ecedf1]">
@@ -4277,7 +4277,7 @@ export function SetView({
             </li>
           ))}
         </ul>
-        <p className="flex flex-wrap items-center gap-2 border-t border-white/[0.07] pt-2.5 text-xs text-[#c6c9d1]">
+        <p className="flex flex-wrap items-center gap-2 border-t border-[rgba(255,255,255,0.07)] pt-2.5 text-xs text-[#c6c9d1]">
           <span className="inline-flex h-[18px] items-center whitespace-nowrap rounded-full bg-[rgba(224,164,104,0.08)] px-2 text-[10px] font-medium text-[#e3c9a6] shadow-[inset_0_0_0_1px_rgba(224,164,104,0.25)]">
             {s.rig.held}
           </span>
@@ -4345,7 +4345,7 @@ export function SetView({
   };
   const tile = (active: boolean) =>
     `relative h-16 w-16 flex-shrink-0 cursor-pointer overflow-hidden rounded-[10px] bg-black/60 transition-shadow ${
-      active ? "ring-2 ring-[#e0a468]" : "ring-1 ring-white/15 hover:ring-white/40"
+      active ? "ring-2 ring-[#e0a468]" : "ring-1 ring-[rgba(255,255,255,0.15)] hover:ring-[rgba(255,255,255,0.4)]"
     }`;
   const toggleMenu = (id: MenuId) => setMenu((m) => (m === id ? null : id));
 
@@ -4583,7 +4583,7 @@ export function SetView({
             editFilm((f) => ({ ...f, startId: shot.generationId }));
             setMenu(null);
           }}
-          className={`flex w-full cursor-pointer items-center gap-2 rounded-[8px] px-3 py-1.5 text-left text-xs hover:bg-white/[0.06] ${
+          className={`flex w-full cursor-pointer items-center gap-2 rounded-[8px] px-3 py-1.5 text-left text-xs hover:bg-[rgba(255,255,255,0.06)] ${
             film.startId === shot.generationId ? "text-[#e0a468]" : "text-[#d6d9e0]"
           }`}
         >
@@ -4621,7 +4621,7 @@ export function SetView({
     />
   );
   const chatHeader = (
-            <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3">
+            <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.07)] px-4 py-3">
               <span className="text-[11px] font-medium uppercase tracking-widest text-[#c6c9d1]">{s.astraLabel}</span>
               <span className="flex items-center gap-2">
                 <span className="text-[11px] text-[#9aa0ad]">{s.panelMeta}</span>
@@ -4652,13 +4652,13 @@ export function SetView({
                           <p className="text-sm leading-relaxed text-[#d6d9e0]">
                             {shot.status === "succeeded" ? stillLine(shot) : shot.status === "failed" ? s.takeFailedLine : s.takeRendering}
                           </p>
-                          <div className="rounded-[14px] bg-white/[0.05] p-3 ring-1 ring-white/[0.07] space-y-3">
+                          <div className="rounded-[14px] bg-[rgba(255,255,255,0.05)] p-3 ring-1 ring-[rgba(255,255,255,0.07)] space-y-3">
                             <div className="flex items-center gap-3">
                               <button
                                 type="button"
                                 onClick={() => setViewing(shot.generationId)}
                                 title={formatMsg(s.takeTile, { n: stillNumber(shot) })}
-                                className="relative h-24 w-24 flex-shrink-0 cursor-pointer overflow-hidden rounded-[10px] bg-black/60 ring-1 ring-white/15"
+                                className="relative h-24 w-24 flex-shrink-0 cursor-pointer overflow-hidden rounded-[10px] bg-black/60 ring-1 ring-[rgba(255,255,255,0.15)]"
                               >
                                 {shot.posterUrl ? (
                                   // eslint-disable-next-line @next/next/no-img-element
@@ -4717,14 +4717,14 @@ export function SetView({
                           {isLook ? ` ${s.lookOnLine}` : ""}
                           {shot.rigCheck ? ` ${rigCheckedLine(shot.rigCheck)}` : ""}
                         </p>
-                        <div className="rounded-[14px] bg-white/[0.05] p-3 ring-1 ring-white/[0.07] space-y-3">
+                        <div className="rounded-[14px] bg-[rgba(255,255,255,0.05)] p-3 ring-1 ring-[rgba(255,255,255,0.07)] space-y-3">
                           <div className="flex items-center gap-3">
                             <button
                               type="button"
                               onClick={() => setViewing(shot.generationId)}
                               title={formatMsg(s.stillTile, { n: stillNumber(shot) })}
                               className={`relative h-24 w-24 flex-shrink-0 cursor-pointer overflow-hidden rounded-[10px] bg-black/60 ${
-                                isLook ? "ring-2 ring-[#e0a468]" : "ring-1 ring-white/15"
+                                isLook ? "ring-2 ring-[#e0a468]" : "ring-1 ring-[rgba(255,255,255,0.15)]"
                               }`}
                             >
                               {shot.resultUrl ? (
@@ -4804,7 +4804,7 @@ export function SetView({
                         {frameLead ? `${frameLead} ` : ""}
                         {placedLine} {s.frameProse}
                       </p>
-                      <div className="rounded-[14px] bg-white/[0.05] p-4 ring-1 ring-white/[0.07] space-y-3">
+                      <div className="rounded-[14px] bg-[rgba(255,255,255,0.05)] p-4 ring-1 ring-[rgba(255,255,255,0.07)] space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-medium uppercase tracking-widest text-[#c6c9d1]">{s.frameCard}</span>
                           <span className="text-xs text-[#9aa0ad] tabular-nums">{formatMsg(s.revisionN, { n: frameNumber })}</span>
@@ -4816,7 +4816,7 @@ export function SetView({
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={character.thumbUrl} alt="" className="h-[18px] w-[18px] rounded-full object-cover" />
                             ) : (
-                              <span className="h-[18px] w-[18px] rounded-full bg-white/15" />
+                              <span className="h-[18px] w-[18px] rounded-full bg-[rgba(255,255,255,0.15)]" />
                             )}
                             {characterName}
                           </dd>
@@ -4877,7 +4877,7 @@ export function SetView({
                             type="button"
                             onClick={anotherAngle}
                             disabled={!ready || shooting || reading || editingSet}
-                            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-white/[0.06] px-4 text-sm font-medium text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] transition-colors hover:bg-white/[0.1] disabled:text-[#9aa0ad] disabled:opacity-100"
+                            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-[rgba(255,255,255,0.06)] px-4 text-sm font-medium text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] transition-colors hover:bg-[rgba(255,255,255,0.1)] disabled:text-[#9aa0ad] disabled:opacity-100"
                           >
                             {s.anotherAngle}
                           </button>
@@ -4937,13 +4937,13 @@ export function SetView({
                 // to shoot anyway (found in the rundown, 2026-09-16).
                 else if (!justTalk) void (takeStart ? take() : shoot());
               }}
-              className="relative border-t border-white/[0.07] px-3.5 pb-3.5 pt-3"
+              className="relative border-t border-[rgba(255,255,255,0.07)] px-3.5 pb-3.5 pt-3"
             >
               {mentionOpen && (
                 <div
                   role="listbox"
                   aria-label={s.mentionTitle}
-                  className="absolute bottom-full left-3.5 z-30 mb-2 w-max min-w-[13rem] rounded-[12px] border border-white/[0.11] bg-[#1d1e24] p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]"
+                  className="absolute bottom-full left-3.5 z-30 mb-2 w-max min-w-[13rem] rounded-[12px] border border-[rgba(255,255,255,0.11)] bg-[#1d1e24] p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]"
                 >
                   <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium uppercase tracking-widest text-[#c6c9d1]">{s.mentionTitle}</p>
                   {mentionList.length === 0 ? (
@@ -4957,14 +4957,14 @@ export function SetView({
                         aria-selected={characterId === c.id}
                         onClick={() => pickMention(c)}
                         className={`flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-[7px] px-2.5 text-left text-[13px] transition-colors ${
-                          characterId === c.id ? "bg-white/[0.08] font-medium text-[#ecedf1]" : "text-[#c6c9d1] hover:bg-white/[0.05] hover:text-[#ecedf1]"
+                          characterId === c.id ? "bg-[rgba(255,255,255,0.08)] font-medium text-[#ecedf1]" : "text-[#c6c9d1] hover:bg-[rgba(255,255,255,0.05)] hover:text-[#ecedf1]"
                         }`}
                       >
                         {c.thumbUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={c.thumbUrl} alt="" className="h-[22px] w-[22px] rounded-full object-cover" />
                         ) : (
-                          <span className="h-[22px] w-[22px] rounded-full bg-white/15" />
+                          <span className="h-[22px] w-[22px] rounded-full bg-[rgba(255,255,255,0.15)]" />
                         )}
                         {c.name}
                       </button>
@@ -5018,7 +5018,7 @@ export function SetView({
                   )}
                 </div>
                 {!justTalk && (
-                  <span className="flex h-8 items-center whitespace-nowrap rounded-full bg-white/[0.06] px-3 text-xs text-[#c6c9d1] tabular-nums">
+                  <span className="flex h-8 items-center whitespace-nowrap rounded-full bg-[rgba(255,255,255,0.06)] px-3 text-xs text-[#c6c9d1] tabular-nums">
                     {s.engineChip} · {credits}
                   </span>
                 )}
@@ -5028,7 +5028,7 @@ export function SetView({
                   disabled={reading || shooting || editingSet || !ready || (!draft.trim() && (!characterId || justTalk))}
                   title={draft.trim() || justTalk ? s.threadPlaceholder : shootLabel}
                   aria-label={draft.trim() || justTalk ? s.threadPlaceholder : shootLabel}
-                  className="flex h-9 w-9 flex-shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#e0a468] text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-white/[0.06] disabled:text-[#c6c9d1]"
+                  className="flex h-9 w-9 flex-shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#e0a468] text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-[rgba(255,255,255,0.06)] disabled:text-[#c6c9d1]"
                 >
                   {reading || shooting || editingSet ? <Spinner className="h-4 w-4" /> : <SendIcon className="h-4 w-4" />}
                 </button>
@@ -5124,7 +5124,7 @@ export function SetView({
           <div
             ref={guideRef}
             aria-hidden
-            className={`pointer-events-none absolute rounded-[2px] shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] outline outline-1 outline-white/45 ${viewingShot ? "hidden" : ""}`}
+            className={`pointer-events-none absolute rounded-[2px] shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] outline outline-1 outline-[rgba(255,255,255,0.45)] ${viewingShot ? "hidden" : ""}`}
           >
             {/* The camera department's readout, and the viewfinder's aids (cut 2): on the stage only, never in the picture. */}
             {/* Over the render, not over the chrome: on a daylight exterior #c6c9d1
@@ -5166,7 +5166,7 @@ export function SetView({
             ref={focusHudRef}
             hidden
             aria-hidden
-            className={`pointer-events-none absolute left-0 top-0 z-20 -translate-x-1/2 whitespace-nowrap rounded-full border border-white/10 bg-black/60 px-2 py-0.5 text-[10.5px] font-medium tabular-nums text-white ${viewingShot ? "hidden" : ""}`}
+            className={`pointer-events-none absolute left-0 top-0 z-20 -translate-x-1/2 whitespace-nowrap rounded-full border border-[rgba(255,255,255,0.1)] bg-black/60 px-2 py-0.5 text-[10.5px] font-medium tabular-nums text-white ${viewingShot ? "hidden" : ""}`}
           />
           {/* The viewport's furniture (cut C, furniture.ts): the sun where it stands, the focus bracket, the measure line, the gizmo and the scale. */}
           <button
@@ -5205,10 +5205,10 @@ export function SetView({
             <span className="whitespace-nowrap rounded-[4px] bg-black/50 px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[#f0cda6]" />
           </button>
           <div ref={bracketRef} hidden aria-hidden data-bracket className={`pointer-events-none absolute left-0 top-0 z-10 ${viewingShot ? "hidden" : ""}`}>
-            <span className="absolute left-0 top-0 h-3 w-3 border-l-[1.5px] border-t-[1.5px] border-white/90" />
-            <span className="absolute right-0 top-0 h-3 w-3 border-r-[1.5px] border-t-[1.5px] border-white/90" />
-            <span className="absolute bottom-0 left-0 h-3 w-3 border-b-[1.5px] border-l-[1.5px] border-white/90" />
-            <span className="absolute bottom-0 right-0 h-3 w-3 border-b-[1.5px] border-r-[1.5px] border-white/90" />
+            <span className="absolute left-0 top-0 h-3 w-3 border-l-[1.5px] border-t-[1.5px] border-[rgba(255,255,255,0.9)]" />
+            <span className="absolute right-0 top-0 h-3 w-3 border-r-[1.5px] border-t-[1.5px] border-[rgba(255,255,255,0.9)]" />
+            <span className="absolute bottom-0 left-0 h-3 w-3 border-b-[1.5px] border-l-[1.5px] border-[rgba(255,255,255,0.9)]" />
+            <span className="absolute bottom-0 right-0 h-3 w-3 border-b-[1.5px] border-r-[1.5px] border-[rgba(255,255,255,0.9)]" />
           </div>
           <svg ref={measureRef} style={{ display: "none" }} aria-hidden data-measure className={`pointer-events-none absolute inset-0 z-10 h-full w-full ${viewingShot ? "hidden" : ""}`}>
             <line stroke="#f0cda6" strokeWidth="1.5" strokeDasharray="4 3" />
@@ -5236,11 +5236,11 @@ export function SetView({
             </span>
           )}
           <div className={`pointer-events-none absolute right-3.5 z-10 hidden items-end gap-2.5 md:flex ${viewingShot ? "md:hidden" : ""} ${filmOpen || cutOpen ? "bottom-3.5" : "bottom-[104px]"}`}>
-            <div ref={scaleRef} data-scale className="flex items-center gap-1.5 rounded-[6px] border border-white/10 bg-black/50 px-2 py-1 text-[10.5px] text-[#d6d9e0]">
+            <div ref={scaleRef} data-scale className="flex items-center gap-1.5 rounded-[6px] border border-[rgba(255,255,255,0.1)] bg-black/50 px-2 py-1 text-[10.5px] text-[#d6d9e0]">
               <i className="block h-px bg-[#d6d9e0]" style={{ width: 60 }} />
               <span>1 m</span>
             </div>
-            <div className="flex h-[58px] w-[58px] items-center justify-center rounded-[8px] border border-white/10 bg-black/50">
+            <div className="flex h-[58px] w-[58px] items-center justify-center rounded-[8px] border border-[rgba(255,255,255,0.1)] bg-black/50">
               <svg ref={gizmoRef} data-gizmo viewBox="-23 -23 46 46" className="h-[46px] w-[46px]" aria-hidden>
                 <line data-axis="x" x1="0" y1="0" x2="17" y2="0" stroke="#e05a5a" strokeWidth="1.8" />
                 <line data-axis="y" x1="0" y1="0" x2="0" y2="-17" stroke="#7fc36a" strokeWidth="1.8" />
@@ -5275,9 +5275,9 @@ export function SetView({
                 >
                   {character?.thumbUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={character.thumbUrl} alt="" className="h-6 w-6 rounded-full object-cover ring-1 ring-white/25" />
+                    <img src={character.thumbUrl} alt="" className="h-6 w-6 rounded-full object-cover ring-1 ring-[rgba(255,255,255,0.25)]" />
                   ) : (
-                    <span className="h-6 w-6 rounded-full bg-white/15" />
+                    <span className="h-6 w-6 rounded-full bg-[rgba(255,255,255,0.15)]" />
                   )}
                   {character?.name || s.characterLabel}
                   <Chevron />
@@ -5527,7 +5527,7 @@ export function SetView({
               ) : matched && matchedLine ? (
                 <div className="flex items-start gap-2.5" aria-live="polite">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={matched.photo} alt={s.matchReferenceAlt} className="h-12 w-auto max-w-[5.5rem] shrink-0 rounded-[4px] border border-white/10 object-cover" />
+                  <img src={matched.photo} alt={s.matchReferenceAlt} className="h-12 w-auto max-w-[5.5rem] shrink-0 rounded-[4px] border border-[rgba(255,255,255,0.1)] object-cover" />
                   <div className="min-w-0 flex-1 space-y-0.5 text-xs leading-relaxed">
                     <p className="text-[#ecedf1]/90">{matchedLine.line}</p>
                     {matchedLine.notes && <p className="text-[#c6c9d1]">{matchedLine.notes}</p>}
@@ -5765,7 +5765,7 @@ export function SetView({
           <div
             ref={stripRef}
             data-filmstrip
-            className={`absolute bottom-3.5 left-3.5 right-3.5 z-10 flex items-center gap-2 overflow-x-auto rounded-[14px] border border-white/[0.08] bg-black/40 p-1.5 backdrop-blur ${viewingShot ? "hidden md:flex" : ""}`}
+            className={`absolute bottom-3.5 left-3.5 right-3.5 z-10 flex items-center gap-2 overflow-x-auto rounded-[14px] border border-[rgba(255,255,255,0.08)] bg-black/40 p-1.5 backdrop-blur ${viewingShot ? "hidden md:flex" : ""}`}
           >
             <button
               type="button"
@@ -5825,7 +5825,7 @@ export function SetView({
               beat. The stage stays the stage: orbit, then K keeps the view. */}
           {!wide && filmOpen && (
             <div
-              className={`absolute bottom-3.5 left-3.5 right-3.5 z-10 flex flex-col gap-2 rounded-[14px] border border-white/[0.08] bg-black/40 p-2 backdrop-blur ${viewingShot ? "hidden md:flex" : ""}`}
+              className={`absolute bottom-3.5 left-3.5 right-3.5 z-10 flex flex-col gap-2 rounded-[14px] border border-[rgba(255,255,255,0.08)] bg-black/40 p-2 backdrop-blur ${viewingShot ? "hidden md:flex" : ""}`}
             >
               {/* the stage's keys, above the dock (canvas pages H and I); a touch has neither hover nor keys */}
               <span className="pointer-events-none absolute bottom-full left-0 mb-2 hidden max-w-full rounded-[12px] border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] leading-4 text-onmedia/80 md:pointer-fine:block">
@@ -5928,8 +5928,8 @@ export function SetView({
                 {film.beats.map((b, i) => (
                   <div
                     key={i}
-                    className={`flex min-w-[210px] max-w-[280px] flex-1 flex-col gap-1.5 rounded-[10px] bg-white/[0.04] p-2 ring-1 ${
-                      filmSel === i ? "ring-[#e0a468]" : "ring-white/[0.08]"
+                    className={`flex min-w-[210px] max-w-[280px] flex-1 flex-col gap-1.5 rounded-[10px] bg-[rgba(255,255,255,0.04)] p-2 ring-1 ${
+                      filmSel === i ? "ring-[#e0a468]" : "ring-[rgba(255,255,255,0.08)]"
                     }`}
                   >
                     <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.07em] text-[#9aa0ad]">
@@ -6006,7 +6006,7 @@ export function SetView({
                       onFocus={() => setFilmSel(i)}
                       disabled={Boolean(filmBusy)}
                       placeholder={s.filmBeatWords}
-                      className="h-7 rounded-[6px] bg-black/40 px-2 text-xs text-[#ecedf1] ring-1 ring-white/[0.08] placeholder:text-[#565a64] focus:outline-none focus:ring-[#e0a468]/60"
+                      className="h-7 rounded-[6px] bg-black/40 px-2 text-xs text-[#ecedf1] ring-1 ring-[rgba(255,255,255,0.08)] placeholder:text-[#565a64] focus:outline-none focus:ring-[#e0a468]/60"
                     />
                     {/* The people and sun tracks (cut 5): where the figure stands, and the hour, at this beat's end. */}
                     <div className="flex flex-wrap items-center gap-1 pt-1">
@@ -6074,14 +6074,14 @@ export function SetView({
               </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <figure className="space-y-1.5">
-                  <div className="overflow-hidden rounded-media border border-white/10 bg-black/60" style={{ aspectRatio: photoAspect ?? 4 / 3 }}>
+                  <div className="overflow-hidden rounded-media border border-[rgba(255,255,255,0.1)] bg-black/60" style={{ aspectRatio: photoAspect ?? 4 / 3 }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img ref={readPhotoShape} src={sourcePhotoUrl} alt={s.comparePhoto} onLoad={(e) => readPhotoShape(e.currentTarget)} className="h-full w-full object-cover" />
                   </div>
                   <figcaption className="text-xs text-[#c6c9d1]">{s.comparePhoto}</figcaption>
                 </figure>
                 <figure className="space-y-1.5">
-                  <div className="overflow-hidden rounded-media border border-white/10 bg-black/60" style={{ aspectRatio: photoAspect ?? 4 / 3 }}>
+                  <div className="overflow-hidden rounded-media border border-[rgba(255,255,255,0.1)] bg-black/60" style={{ aspectRatio: photoAspect ?? 4 / 3 }}>
                     {cameraOneShot ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={cameraOneShot} alt={formatMsg(s.cameraN, { n: 1 })} className="h-full w-full object-cover" />
@@ -6190,7 +6190,7 @@ export function SetView({
 
         {/* The cut (cut C): the film's clips in order, under the viewport, where the reel plays. */}
         {cutOpen && (
-          <div data-cut className="flex flex-none flex-col gap-2 border-t border-white/[0.07] bg-[#191a20] px-3 py-2.5 text-[#d6d9e0]">
+          <div data-cut className="flex flex-none flex-col gap-2 border-t border-[rgba(255,255,255,0.07)] bg-[#191a20] px-3 py-2.5 text-[#d6d9e0]">
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#c6c9d1]">{s.studio.cutTitle}</span>
               <span className="text-[11.5px] tabular-nums text-[#9aa0ad]">{formatMsg(s.studio.cutLine, { n: film.beats.length, s: filmSeconds(film) })}</span>
@@ -6229,7 +6229,7 @@ export function SetView({
             ) : (
               <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
                 <div className="flex w-[104px] flex-none flex-col gap-1">
-                  <div className="relative h-[58px] overflow-hidden rounded-[8px] bg-black/50 ring-1 ring-white/[0.08]">
+                  <div className="relative h-[58px] overflow-hidden rounded-[8px] bg-black/50 ring-1 ring-[rgba(255,255,255,0.08)]">
                     {filmStartShot?.resultUrl && (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={filmStartShot.resultUrl} alt="" className="h-full w-full object-cover" />
@@ -6256,7 +6256,7 @@ export function SetView({
                         }}
                         className={`flex w-[168px] flex-none cursor-pointer flex-col gap-1 rounded-[8px] text-left ring-1 ${filmSel === i ? "ring-[#e0a468]" : "ring-transparent"}`}
                       >
-                        <div className="relative h-[58px] overflow-hidden rounded-[8px] bg-black/50 ring-1 ring-white/[0.08]">
+                        <div className="relative h-[58px] overflow-hidden rounded-[8px] bg-black/50 ring-1 ring-[rgba(255,255,255,0.08)]">
                           {clip?.posterUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img src={clip.posterUrl} alt="" className="h-full w-full object-cover" />
@@ -6275,7 +6275,7 @@ export function SetView({
                       </button>
                       {end?.resultUrl && (
                         <div className="flex w-[64px] flex-none flex-col gap-1" title={formatMsg(s.studio.cutEnd, { n: i + 1 })}>
-                          <div className="h-[58px] overflow-hidden rounded-[8px] bg-black/50 ring-1 ring-white/[0.08]">
+                          <div className="h-[58px] overflow-hidden rounded-[8px] bg-black/50 ring-1 ring-[rgba(255,255,255,0.08)]">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={end.resultUrl} alt="" className="h-full w-full object-cover" />
                           </div>
@@ -6296,7 +6296,7 @@ export function SetView({
         {/* On a phone the conversation sits under the stage; on the frame it is the dock's Astra tab, with the composer at the dock's foot. */}
         {!wide &&
           (chatOpen ? (
-            <aside className={`z-30 flex h-[42%] min-h-0 flex-none flex-col overflow-hidden border-t border-white/[0.11] bg-[#16171c] ${PANEL_BG} border-x-0 border-b-0 shadow-none`}>
+            <aside className={`z-30 flex h-[42%] min-h-0 flex-none flex-col overflow-hidden border-t border-[rgba(255,255,255,0.11)] bg-[#16171c] ${PANEL_BG} border-x-0 border-b-0 shadow-none`}>
               {chatHeader}
               {chatThread}
               {chatComposer}
@@ -6319,7 +6319,7 @@ export function SetView({
             foot={
               <>
                 {dockTab !== "astra" && (error || rigError) && (
-                  <p className="border-t border-white/[0.07] px-3.5 py-2 text-[12px] text-red-400">{localizeServerText(error || rigError, t)}</p>
+                  <p className="border-t border-[rgba(255,255,255,0.07)] px-3.5 py-2 text-[12px] text-red-400">{localizeServerText(error || rigError, t)}</p>
                 )}
                 {chatComposer}
               </>
@@ -6327,7 +6327,7 @@ export function SetView({
           >
             {dockTab === "scene" && (
               <div className="flex flex-col">
-                <div className="flex items-center gap-2 border-b border-white/[0.07] px-3 py-2">
+                <div className="flex items-center gap-2 border-b border-[rgba(255,255,255,0.07)] px-3 py-2">
                   <input
                     value={sceneQuery}
                     onChange={(e) => setSceneQuery(e.target.value)}
@@ -6342,7 +6342,7 @@ export function SetView({
               </div>
             )}
             {dockTab === "film" && (
-              <div className="border-b border-white/[0.07] p-3">
+              <div className="border-b border-[rgba(255,255,255,0.07)] p-3">
                 {filmSel !== null && film.beats[filmSel] ? (
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.07em] text-[#9aa0ad]">
@@ -6396,7 +6396,7 @@ export function SetView({
                       }}
                       disabled={Boolean(filmBusy)}
                       placeholder={s.filmBeatWords}
-                      className="h-7 rounded-[6px] bg-black/40 px-2 text-xs text-[#ecedf1] ring-1 ring-white/[0.08] placeholder:text-[#565a64] focus:outline-none focus:ring-[#e0a468]/60"
+                      className="h-7 rounded-[6px] bg-black/40 px-2 text-xs text-[#ecedf1] ring-1 ring-[rgba(255,255,255,0.08)] placeholder:text-[#565a64] focus:outline-none focus:ring-[#e0a468]/60"
                     />
                     <div className="flex flex-wrap items-center gap-1">
                       <button
@@ -6442,7 +6442,7 @@ export function SetView({
                         disabled={Boolean(filmBusy)}
                         aria-label={s.studio.rack}
                         title={s.studio.rack}
-                        className="h-7 max-w-[170px] cursor-pointer rounded-[6px] bg-black/40 px-2 text-[11px] text-[#d6d9e0] ring-1 ring-white/[0.08] outline-none"
+                        className="h-7 max-w-[170px] cursor-pointer rounded-[6px] bg-black/40 px-2 text-[11px] text-[#d6d9e0] ring-1 ring-[rgba(255,255,255,0.08)] outline-none"
                       >
                         <option value="">{s.studio.rack} · {s.studio.rackNone}</option>
                         <option value="figure">{s.studio.rackFigure}</option>
@@ -6465,7 +6465,7 @@ export function SetView({
                         disabled={Boolean(filmBusy)}
                         aria-label={s.studio.eyeline}
                         title={s.studio.eyeline}
-                        className="h-7 max-w-[170px] cursor-pointer rounded-[6px] bg-black/40 px-2 text-[11px] text-[#d6d9e0] ring-1 ring-white/[0.08] outline-none"
+                        className="h-7 max-w-[170px] cursor-pointer rounded-[6px] bg-black/40 px-2 text-[11px] text-[#d6d9e0] ring-1 ring-[rgba(255,255,255,0.08)] outline-none"
                       >
                         <option value="">{s.studio.eyeline} · {s.studio.gazeNone}</option>
                         <option value="camera">{s.studio.gazeCamera}</option>
