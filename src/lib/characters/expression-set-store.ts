@@ -1,5 +1,6 @@
-// The one module that names character_profiles.expression_set (pending:
-// supabase/pending/character-expression-set.sql). Everything else goes
+// The one module that names character_profiles.expression_set
+// (supabase/applied/2026-09-19/character-expression-set.sql, run in
+// production 2026-09-19). Everything else goes
 // through here, the Mystique lesson: a statement that names a column the
 // database does not have fails WHOLE, so the column is read in a query of
 // its own, and until the SQL runs every reader sees an empty set and every

@@ -70,11 +70,11 @@ A close-up is one AI photo from the plan's allowance (measured $0.0736 each to m
 - `src/lib/characters/expression-set-store.ts`: the only module that names `character_profiles.expression_set`.
 - `src/lib/characters/expression-actions.ts`: make, upload, remove. Nothing is spent before the set is known to be writable.
 - `src/components/expression-set-panel.tsx`: the section on the character page.
-- `supabase/pending/character-expression-set.sql`: the column and the ownership trigger reaching it. The code runs without it.
+- `supabase/applied/2026-09-19/character-expression-set.sql` (run in production 2026-09-19): the column and the ownership trigger reaching it. The code runs without it.
 
 ## Next
 
-1. The operator runs the SQL, makes a set for a character, and shoots the same smiling and laughing shots as round 3 in the product: the History line shows which close-ups rode.
+1. The SQL ran on 2026-09-19 (catalog check true/true). The operator makes a set for a character, and shoots the same smiling and laughing shots as round 3 in the product: the History line shows which close-ups rode.
 2. Video: Kling elements and Seedance take four references. Give them photo 1 plus the set's picks instead of the first four photos, and the opening frame (opening-frame.ts) a still made with the set.
 3. The face-detail pass for wide shots: redraw the face region at full size with the set.
 4. The per-character trained model, if 1:1 has to mean guaranteed: priced and decided separately.
