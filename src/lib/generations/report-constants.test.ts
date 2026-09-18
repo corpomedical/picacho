@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isProviderBalanceFailure } from "./report-constants";
+import { failureReasonFromLog, isProviderBalanceFailure, summarizeFailureDetail } from "./report-constants";
 
 // Incident-replay tests, same spirit as send-plan.test.ts: the positive
 // cases are the real provider strings that motivated the detector, the
@@ -49,3 +49,66 @@ describe("isProviderBalanceFailure", () => {
     ).toBe(false);
   });
 });
+
+// The reason a failed render gives, read by the auto-filed report and, since
+// 2026-09-18, by the admin's failed-render list from the STORED log — which
+// can be anything an older writer left, so the reader must never throw.
+describe("the reason a failed render gives", () => {
+  const attempt = (issues: string[], steps: { step: string; detail: string }[]) => ({
+    attempt: 1,
+    passed: false,
+    compiledPrompt: "",
+    issues,
+    steps,
+  });
+
+  it("is nothing for a render someone stopped on purpose", () => {
+    const log = [attempt(["cancelled"], [{ step: "generate", detail: "Stopped." }])];
+    expect(failureReasonFromLog(log)).toBeNull();
+    expect(summarizeFailureDetail(log as Parameters<typeof summarizeFailureDetail>[0])).toBeNull();
+  });
+
+  it("is the provider's own message when the provider failed", () => {
+    const log = [
+      attempt(["provider_error"], [
+        { step: "draft", detail: "Generated the prompt." },
+        { step: "generate", detail: '{"detail":[{"message":"Image size is too large"}]} and more' },
+      ]),
+    ];
+    expect(failureReasonFromLog(log)).toBe("Image size is too large");
+  });
+
+  it("is the sentence the person was shown when a content gate refused", () => {
+    const log = [
+      attempt(["content_policy"], [
+        { step: "generate", detail: "Generated." },
+        { step: "validate", detail: "This request can't be made: it asks for a real person's likeness." },
+      ]),
+    ];
+    expect(failureReasonFromLog(log)).toBe("This request can't be made: it asks for a real person's likeness.");
+  });
+
+  it("names what a result missed", () => {
+    expect(failureReasonFromLog([attempt(["face_mismatch"], [])])).toBe("The result was missing: face_mismatch.");
+  });
+
+  it("reads the LAST attempt", () => {
+    const log = [attempt(["cancelled"], []), attempt(["provider_error"], [{ step: "generate", detail: "Timed out" }])];
+    expect(failureReasonFromLog(log)).toBe("Timed out");
+  });
+
+  it("says so, and never throws, on a log it cannot read", () => {
+    expect(failureReasonFromLog(null)).toBe("No reason was recorded.");
+    expect(failureReasonFromLog(undefined)).toBe("No reason was recorded.");
+    expect(failureReasonFromLog({ steps: [] })).toBe("No reason was recorded.");
+    expect(failureReasonFromLog([])).toBe("No reason was recorded.");
+    expect(failureReasonFromLog(["not an attempt", 4])).toBe("No reason was recorded.");
+    // An attempt with no issues and no steps, as an older writer could leave.
+    expect(failureReasonFromLog([{}])).toBe("Generation failed after 1 attempt.");
+    // Wrong types inside are dropped, not trusted.
+    expect(failureReasonFromLog([{ issues: "provider_error", steps: [{ step: "generate" }, 7] }])).toBe(
+      "Generation failed after 1 attempt.",
+    );
+  });
+});
+

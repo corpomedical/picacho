@@ -5,6 +5,7 @@ import type { AttemptLog } from "@/lib/generations/pipeline";
 import {
   REPORT_REASONS,
   isProviderBalanceFailure,
+  summarizeFailureDetail,
   type ReportReason,
 } from "@/lib/generations/report-constants";
 import { notifyAdmins } from "@/lib/push/web-push";
@@ -72,42 +73,6 @@ export async function reportGenerationProblem(
   });
 
   return { error: null };
-}
-
-// Pulls a short, plain-English reason out of a failed attempt's log — same
-// spirit as generate-form.tsx's client-side summarizeFailure (which builds
-// the live "here's why it failed" message the user sees), but server-side
-// and meant for an admin/report audience rather than the composer UI. A
-// user-initiated Stop isn't a real problem, so that case returns null and
-// the caller skips filing a report for it.
-function summarizeFailureDetail(attempts: AttemptLog[]): string | null {
-  const last = attempts[attempts.length - 1];
-  if (!last) return "Generation failed with no recorded attempts.";
-  if (last.issues.includes("cancelled")) return null;
-
-  // Either content gate refused: the validate step already holds the
-  // sentence written for the person (pipeline.ts / job-runner.ts), so the
-  // report says that rather than "The result was missing: output_blocked."
-  if (last.issues.includes("content_policy") || last.issues.includes("output_blocked")) {
-    const step = [...last.steps].reverse().find((s) => s.step === "validate");
-    if (step?.detail) return step.detail.slice(0, 500);
-  }
-
-  if (last.issues.includes("provider_error") || last.issues.includes("unexpected_error")) {
-    const errorStep = [...last.steps]
-      .reverse()
-      .find((s) => !s.detail.startsWith("Generated") && !s.detail.startsWith("Mock "));
-    if (errorStep) {
-      const jsonMatch = errorStep.detail.match(/"message"\s*:\s*"([^"]+)"/);
-      const short = (jsonMatch?.[1] ?? errorStep.detail.split("\n")[0]).trim();
-      if (short) return short.slice(0, 500);
-    }
-  }
-
-  const traitIssues = last.issues.filter((i) => i !== "provider_error" && i !== "unexpected_error");
-  if (traitIssues.length > 0) return `The result was missing: ${traitIssues.join(", ")}.`;
-
-  return `Generation failed after ${attempts.length} attempt${attempts.length === 1 ? "" : "s"}.`;
 }
 
 // Files a report automatically when a generation fails, without waiting on

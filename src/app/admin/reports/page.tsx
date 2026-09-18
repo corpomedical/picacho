@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { AdminErrorBanner } from "@/components/admin-error-banner";
 import { setGenerationReportStatus } from "@/lib/admin/actions";
+import { fetchIn } from "@/lib/admin/fetch-all";
 import { reportSurface, REPORT_SURFACE_LABELS } from "@/lib/stripe/failure";
 
 // Used both for the per-report "Error details" dropdown and the archive
@@ -18,6 +19,12 @@ function ChevronIcon(props: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+// How many of each list the page draws. Open reports are counted exactly
+// whatever this is; worked ones are history, and the newest are enough.
+const OPEN_SHOWN = 200;
+const RESOLVED_SHOWN = 100;
+const REPORT_COLUMNS = "id, generation_id, user_id, reason, details, status, created_at, source";
 
 const REASON_LABELS: Record<string, string> = {
   wrong_result: "Wrong result",
@@ -143,34 +150,49 @@ export default async function AdminReportsPage({
   const { error: actionError } = await searchParams;
   const supabase = await createClient();
 
-  const { data: reports, error } = await supabase
-    .from("generation_reports")
-    .select("id, generation_id, user_id, reason, details, status, created_at, source")
-    .order("created_at", { ascending: false })
-    .limit(200);
+  // Open and worked reports are read apart. They were one read of the newest
+  // 200 of both, split here — so once 200 newer reports existed (the site
+  // files one itself for every failed render and every browser error), an
+  // older OPEN report fell off this page while the badge, which counts every
+  // open one, still showed it (found checking Reports, 2026-09-18). The open
+  // read carries its own exact count, so the heading and the badge are one
+  // number.
+  const [
+    { data: openRows, count: openCount, error: openError },
+    { data: resolvedRows, error: resolvedError },
+  ] = await Promise.all([
+    supabase
+      .from("generation_reports")
+      .select(REPORT_COLUMNS, { count: "exact" })
+      .eq("status", "open")
+      .order("created_at", { ascending: false })
+      .limit(OPEN_SHOWN),
+    supabase
+      .from("generation_reports")
+      .select(REPORT_COLUMNS)
+      .neq("status", "open")
+      .order("created_at", { ascending: false })
+      .limit(RESOLVED_SHOWN),
+  ]);
+  const error = openError ?? resolvedError;
+  const openReports = (openRows ?? []) as ReportRow[];
+  const resolvedReports = (resolvedRows ?? []) as ReportRow[];
+  const openTotal = openCount ?? openReports.length;
+  const shown = [...openReports, ...resolvedReports];
 
-  const generationIds = Array.from(
-    new Set((reports ?? []).map((r) => r.generation_id).filter((id): id is string => Boolean(id))),
-  );
-  const userIds = Array.from(new Set((reports ?? []).map((r) => r.user_id)));
-
-  const [{ data: generations }, { data: users }] = await Promise.all([
-    generationIds.length
-      ? supabase
-          .from("generations")
-          .select("id, prompt_input, content_type, result_url")
-          .in("id", generationIds)
-      : Promise.resolve({ data: [] as GenerationSummary[] }),
-    userIds.length
-      ? supabase.from("profiles").select("id, email").in("id", userIds)
-      : Promise.resolve({ data: [] as { id: string; email: string }[] }),
+  const [generations, users] = await Promise.all([
+    fetchIn<GenerationSummary>(
+      shown.map((r) => r.generation_id).filter((id): id is string => Boolean(id)),
+      (slice) => supabase.from("generations").select("id, prompt_input, content_type, result_url").in("id", slice),
+    ),
+    fetchIn<{ id: string; email: string }>(
+      shown.map((r) => r.user_id),
+      (slice) => supabase.from("profiles").select("id, email").in("id", slice),
+    ),
   ]);
 
-  const generationById = new Map((generations ?? []).map((g) => [g.id, g as GenerationSummary]));
-  const emailById = new Map((users ?? []).map((u) => [u.id, u.email]));
-
-  const openReports = (reports ?? []).filter((r) => r.status === "open");
-  const resolvedReports = (reports ?? []).filter((r) => r.status !== "open");
+  const generationById = new Map(generations.map((g) => [g.id, g]));
+  const emailById = new Map(users.map((u) => [u.id, u.email]));
 
   return (
     <div>
@@ -187,7 +209,12 @@ export default async function AdminReportsPage({
       </p>
 
       <div className="mt-6">
-        <h2 className="text-sm font-semibold text-neutral-900">Open ({openReports.length})</h2>
+        <h2 className="text-sm font-semibold text-neutral-900">Open ({openTotal})</h2>
+        {openTotal > openReports.length && (
+          <p className="mt-1 text-xs text-neutral-500">
+            Showing the newest {openReports.length} of {openTotal}. Resolve these and the older ones take their place.
+          </p>
+        )}
         <div className="mt-3 space-y-3">
           {error ? (
             <Card className="text-center">

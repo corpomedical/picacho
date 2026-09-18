@@ -18,9 +18,11 @@ export async function computeAdminBadgeCounts(
 ): Promise<AdminBadgeCounts> {
   // Reports and Feedback already have a real open/resolved workflow, so
   // their count is genuinely "still needs handling" and shrinks as items get
-  // resolved, same as an iOS Mail unread badge. Moderation has no such state
-  // to hook into, so it's "new in the last 24h" -- a real, non-fabricated
-  // number that still behaves like a notification. Users instead reads
+  // resolved, same as an iOS Mail unread badge. Moderation's is renders
+  // that FAILED -- not content anyone flagged, whatever the notice used to
+  // call it (2026-09-18) -- and has no such state to hook into, so it's
+  // "new in the last 24h", stops left out: a real, non-fabricated number
+  // that still behaves like a notification. Users instead reads
   // app_settings.admin_users_last_viewed_at, the same timestamp
   // admin/users/page.tsx updates on every visit -- so opening that page
   // clears its own badge, rather than the badge just fading out on a fixed
@@ -31,7 +33,7 @@ export async function computeAdminBadgeCounts(
 
   const [
     { data: usersLastViewedSetting },
-    { count: newFlagged },
+    { count: newFailed },
     { count: openReports },
     { count: openFeedback },
   ] = await Promise.all([
@@ -44,6 +46,10 @@ export async function computeAdminBadgeCounts(
       .from("generations")
       .select("*", { count: "exact", head: true })
       .eq("status", "failed")
+      // Not a render someone stopped on purpose: Stop saves the row as
+      // failed with cancel_requested set, and a stop is nobody's problem
+      // (autoReportFailedGeneration files no report for one either).
+      .not("cancel_requested", "is", true)
       .gte("created_at", last24h),
     supabase
       .from("generation_reports")
@@ -62,7 +68,7 @@ export async function computeAdminBadgeCounts(
 
   return {
     "/admin/users": newUsers ?? 0,
-    "/admin/moderation": newFlagged ?? 0,
+    "/admin/moderation": newFailed ?? 0,
     "/admin/reports": openReports ?? 0,
     "/admin/feedback": openFeedback ?? 0,
   };

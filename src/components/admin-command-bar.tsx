@@ -63,12 +63,12 @@ const BADGE_POLL_MS = 10_000;
 // One human-readable line per pollable badge, used for the drop-down
 // notification's text when that badge's count goes up between polls. All
 // four counts here only ever grow from a genuinely new item (a real signup,
-// a real flag, a real report, real feedback) -- none of them can tick up
+// a render that really failed, a real report, real feedback) -- none of them can tick up
 // just because the polling window shifted -- so every increase is worth
 // surfacing, not just the badge going up silently.
 const BADGE_NOTICE: Record<string, (n: number) => string> = {
   "/admin/users": (n) => (n === 1 ? "New signup" : `${n} new signups`),
-  "/admin/moderation": (n) => (n === 1 ? "New flagged content" : `${n} new flagged items`),
+  "/admin/moderation": (n) => (n === 1 ? "A render failed" : `${n} renders failed`),
   "/admin/reports": (n) => (n === 1 ? "New report" : `${n} new reports`),
   "/admin/feedback": (n) => (n === 1 ? "New feedback" : `${n} new feedback messages`),
 };

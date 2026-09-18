@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { AdminErrorBanner } from "@/components/admin-error-banner";
 import { setCommunityPostModeration } from "@/lib/admin/actions";
+import { failureReasonFromLog } from "@/lib/generations/report-constants";
 
 // The moderation area (2026-08-27, operator: "I need a moderation area for
 // it [community]"). Everything currently shared into the community feed —
@@ -56,10 +57,14 @@ export default async function AdminModerationPage({
         )
         .order("created_at", { ascending: false })
         .limit(60),
+      // The failures the badge counts: stops left out (Stop saves a row as
+      // failed with cancel_requested set, and a stop is nobody's problem),
+      // and the log read so each one can say why it failed.
       supabase
         .from("generations")
-        .select("id, user_id, prompt_input, status, attempts, created_at")
+        .select("id, user_id, prompt_input, status, attempts, created_at, pipeline_log")
         .eq("status", "failed")
+        .not("cancel_requested", "is", true)
         .order("created_at", { ascending: false })
         .limit(30),
     ]);
@@ -223,7 +228,9 @@ export default async function AdminModerationPage({
 
       <h2 className="mt-12 text-base font-semibold text-neutral-900">Failed generations</h2>
       <p className="mt-1 text-sm text-neutral-500">
-        Renders that failed to pass validation after every retry.
+        Renders that ended in failure — a provider error, a refusal, a crash, a result that missed —
+        newest first, each with the reason it gave. The badge counts the last 24 hours of these. Renders
+        someone stopped on purpose are left out.
       </p>
       <div className="mt-4 space-y-3">
         {failedError ? (
@@ -232,7 +239,7 @@ export default async function AdminModerationPage({
           </Card>
         ) : !failedRows || failedRows.length === 0 ? (
           <Card className="text-center">
-            <p className="text-sm text-neutral-500">Nothing flagged. All clear.</p>
+            <p className="text-sm text-neutral-500">No failed renders. All clear.</p>
           </Card>
         ) : (
           failedRows.map((g) => (
@@ -242,7 +249,10 @@ export default async function AdminModerationPage({
                   <p className="truncate text-sm font-medium text-neutral-900">{g.prompt_input}</p>
                   <p className="mt-0.5 truncate text-xs text-neutral-500">
                     {emailById.get(g.user_id) ?? "Unknown user"} ·{" "}
-                    {new Date(g.created_at).toLocaleDateString()} · {g.attempts} attempts
+                    {new Date(g.created_at).toLocaleString()} · {g.attempts} attempts
+                  </p>
+                  <p className="mt-1 line-clamp-2 break-words text-xs text-neutral-700">
+                    {failureReasonFromLog(g.pipeline_log) ?? "Stopped on purpose."}
                   </p>
                 </div>
                 <Badge tone="danger" className="flex-shrink-0">
