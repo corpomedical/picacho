@@ -38,6 +38,7 @@ import { ACKNOWLEDGED_WARNING_MARKER } from "@/lib/generations/refund-rules";
 import { assertPromptAllowed, ContentPolicyRefusal } from "@/lib/generations/content-policy";
 import type { Scores } from "@/lib/generations/content-policy";
 import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
+import type { OpeningFrameResult } from "@/lib/generations/opening-frame-run";
 import { recentRefusalCount, recordPolicyRefusal, refusedOnItsOwn } from "@/lib/generations/policy-log";
 import { refusalProviderFor } from "@/lib/generations/refusal-attribution";
 import { OUTPUT_BLOCKED_ISSUE, REFUSED_BEFORE_RENDER_ISSUE } from "@/lib/generations/refund-rules";
@@ -576,6 +577,14 @@ export type RealPipelineOptions = {
   // plan: it's the same "look like the saved character" behavior image
   // generation already gets automatically, not an Elite-exclusive extra.
   videoCharacterAnchorUrl?: string | null;
+  // THE OPENING FRAME (2026-09-18, opening-frame.ts). Set by the caller only
+  // when the send qualifies (a first-frame lane, one character, nothing the
+  // person picked as frame one) and the flag is on. Given the reviewed
+  // prompt, it paints the shot's first instant anchored to
+  // videoCharacterAnchorUrl, face-checks it, and returns the frame to open
+  // on — or url: null, in which case the clip opens on the photo exactly as
+  // before. Called once per prompt, never per submit retry.
+  makeOpeningFrame?: (videoPrompt: string) => Promise<OpeningFrameResult>;
   // Clip continuation — the absolute URL of a prior finished clip, passed
   // through to Seedance as a @Video1 reference (see fal.ts). Caller
   // validates ownership and model support.
@@ -748,6 +757,10 @@ export async function runRealPipeline(
 ): Promise<PipelineResult> {
   const attempts: AttemptLog[] = [];
   let finalPrompt = "";
+  // The opening frame is made once per reviewed prompt (makeOpeningFrame):
+  // a submit retry must not paint — and pay for — the same frame again.
+  let openingFrameFor: string | null = null;
+  let openingFrameMade: Promise<OpeningFrameResult> | null = null;
   // Filled per attempt when the user's own rules block; travels out on the
   // result so the failure UI can show trigger + fix and offer the override.
   let lastRulesBlock: { label: string; evidence: string; fix: string }[] = [];
@@ -1360,11 +1373,38 @@ export async function runRealPipeline(
           const usingSeparateDialoguePipeline = Boolean(
             options.dialogueText?.trim() && options.dialogueVoiceId,
           );
+          // The opening frame (opening-frame.ts): on a first-frame lane the
+          // clip opens on a painted, face-checked frame of the shot instead
+          // of the character's reference photo. url null = open on the photo,
+          // exactly as before. Never allowed to fail the render.
+          let openingFrameUrl: string | null = null;
+          if (options.makeOpeningFrame && usingCharacterAnchor) {
+            const fresh = openingFrameFor !== reviewedPrompt;
+            if (fresh) {
+              openingFrameFor = reviewedPrompt;
+              openingFrameMade = options.makeOpeningFrame(reviewedPrompt).catch(
+                (err): OpeningFrameResult => {
+                  console.warn("Opening frame failed; the clip opens on the photo.", err);
+                  return {
+                    url: null,
+                    storedUrl: null,
+                    scores: [],
+                    usd: 0,
+                    logLine: "The opening frame could not be made — the clip opens on the character's photo.",
+                  };
+                },
+              );
+            }
+            const made = await openingFrameMade!;
+            if (fresh) steps.push({ step: "generate", detail: made.logLine });
+            openingFrameUrl = made.url;
+          }
           const videoOptions = {
             referenceImageUrls: options.videoReferenceImageUrls,
             startImageUrl: options.videoStartImageUrl,
             endImageUrl: options.videoEndImageUrl,
-            characterAnchorImageUrl: options.videoCharacterAnchorUrl,
+            characterAnchorImageUrl: openingFrameUrl ?? options.videoCharacterAnchorUrl,
+            openingFrame: openingFrameUrl !== null,
             continueFromVideoUrl: options.videoContinueFromUrl,
             outfitImageUrl: options.outfitImageUrl,
             propImageUrl: options.propImageUrl,
@@ -1379,7 +1419,9 @@ export async function runRealPipeline(
             : usingStoryboard
               ? " (storyboard)"
               : usingCharacterAnchor
-                ? " (character reference)"
+                ? openingFrameUrl
+                  ? " (opening frame)"
+                  : " (character reference)"
                 : "";
           const durationNote = options.videoDurationSeconds ? `, ${options.videoDurationSeconds}s` : "";
           const aspectNote = options.videoAspectRatio ? `, ${options.videoAspectRatio}` : "";

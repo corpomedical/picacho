@@ -93,7 +93,7 @@ function renderCatalogue(): string {
 ${lines.join("\n")}
 
 Models that render fine with no character at all: ${CHARACTERLESS_MODEL_IDS.join(", ")}.
-Identity mechanisms mean different things: "first-frame" makes the photo the opening shot of the clip, so it fixes the pose too; "elements" and "citation" use the photo as a likeness reference without dictating the framing; "none" means the model never receives a photo.
+Identity mechanisms mean different things: "first-frame" opens the clip on a picture — the character's photo, or, when the opening-frame switch is on, a face-checked frame of the shot painted from that photo — so it fixes the opening pose too; "elements" and "citation" use the photo as a likeness reference without dictating the framing; "none" means the model never receives a photo.
 Images always cost 1 credit. A credit is worth roughly 30-75 US cents depending on plan.`;
 }
 

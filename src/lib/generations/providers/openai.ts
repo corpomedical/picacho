@@ -18,7 +18,7 @@ export async function scoreIdentityMatch(
   resultImageUrl: string,
   identityImageUrl: string,
   traitSummary: string,
-): Promise<{ score: number; notes: string; unusable: boolean; scorerVersion: string } | null> {
+): Promise<{ score: number; notes: string; unusable: boolean; faceVisible: boolean; scorerVersion: string } | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
   try {
@@ -49,9 +49,14 @@ export async function scoreIdentityMatch(
                     "Also judge whether the second image is usable AT ALL: set unusable to true " +
                     "only if it is essentially a solid black/blank frame, corrupted, or failed " +
                     "to load — never merely because it looks different from the reference. " +
+                    "Also say whether enough of this person's face is visible in the second image to " +
+                    "tell who it is: set faceVisible to false when it is not — seen from behind, the " +
+                    "face turned away or covered, too small or too blurred to make out features, or the " +
+                    "person not in the frame. Lower the score only for features that visibly DIFFER " +
+                    "from the reference, never because less of the face can be seen. " +
                     'Reply with ONLY minified JSON: {"score": <integer 0-100>, "notes": "<one ' +
                     'short sentence about what differs, or an empty string>", "unusable": ' +
-                    "<true|false>}",
+                    '<true|false>, "faceVisible": <true|false>}',
                 },
                 { type: "image_url", image_url: { url: identityImageUrl } },
                 { type: "image_url", image_url: { url: resultImageUrl } },
@@ -76,6 +81,7 @@ export async function scoreIdentityMatch(
       score?: unknown;
       notes?: unknown;
       unusable?: unknown;
+      faceVisible?: unknown;
     };
     const score = Math.round(Number(parsed.score));
     if (!Number.isFinite(score) || score < 0 || score > 100) return null;
@@ -83,6 +89,9 @@ export async function scoreIdentityMatch(
       score,
       notes: typeof parsed.notes === "string" ? parsed.notes.slice(0, 300) : "",
       unusable: parsed.unusable === true,
+      // Only an explicit false counts (scorer p2): a reply that leaves it out
+      // is read as a face that was seen and scored, exactly as before.
+      faceVisible: parsed.faceVisible !== false,
       // Stamped next to the value it qualifies, so a score is never a bare
       // number whose origin has to be guessed from its timestamp.
       scorerVersion: identityScorerVersion(utilityModel()),

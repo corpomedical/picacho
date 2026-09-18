@@ -45,6 +45,8 @@ import { getDialogueCreditWeight } from "@/lib/generations/providers/video-model
 import { recordModelFailure, recordModelSuccess } from "@/lib/generations/model-health";
 import { notifyUser, type PushMessage } from "@/lib/push/send";
 import { maybeNotifyLowCredits } from "@/lib/push/low-credits";
+import type { IdentityLock } from "@/lib/generations/face-lock";
+import { removeOpeningFrames } from "@/lib/generations/opening-frame-run";
 
 // Fire-and-poll orchestrator.
 //
@@ -133,7 +135,14 @@ type JobRow = {
     // clip whose face wanders is not the thing they asked for. It is a
     // business decision, so it rides the payload rather than being assumed
     // here, and the lane that sets it reads its own switch.
-    identityLock?: { threshold: number; refund: boolean };
+    //
+    // Since 2026-09-18 every character video carries one (face-lock.ts),
+    // not only Mystique's takes; `skipFirst` spares first-frame lanes the
+    // read of a frame one whose face is already known.
+    identityLock?: IdentityLock;
+    // The send painted opening frames (opening-frame.ts); finish() removes
+    // them once the clip lands or fails.
+    openingFrames?: boolean;
   };
   resume: ResumeState;
   started_at: string;
@@ -852,7 +861,9 @@ export async function saveVideoJob(params: {
   /** The prompt gate's lane for this render — see JobRow.payload.strictLane. */
   strictLane?: boolean;
   /** Judge the whole clip, not one frame of it — see JobRow.payload.identityLock. */
-  identityLock?: { threshold: number; refund: boolean };
+  identityLock?: IdentityLock;
+  /** Opening frames to remove at finish — see JobRow.payload.openingFrames. */
+  openingFrames?: boolean;
 }): Promise<void> {
   const admin = createAdminClient();
   const { error: upsertError } = await admin.from("generation_jobs").upsert({
@@ -875,6 +886,7 @@ export async function saveVideoJob(params: {
       provider: params.job.provider,
       strictLane: params.strictLane === true,
       ...(params.identityLock ? { identityLock: params.identityLock } : {}),
+      ...(params.openingFrames ? { openingFrames: true } : {}),
     },
     resume: {
       dialogueText: params.dialogueText,
@@ -1297,7 +1309,9 @@ async function finish(
           const lock = jobRow?.payload?.identityLock ?? null;
           const [firstFrameUrl, lastFrameUrl] = lock
             ? await Promise.all([
-                extractVideoFrame(providerDownloadUrl(outcome.resultUrl), "first"),
+                lock.skipFirst
+                  ? Promise.resolve(null)
+                  : extractVideoFrame(providerDownloadUrl(outcome.resultUrl), "first"),
                 extractVideoFrame(providerDownloadUrl(outcome.resultUrl), "last"),
               ])
             : [null, null];
@@ -1308,10 +1322,12 @@ async function finish(
           ]);
           // An unusable frame says nothing about the face: a clip may open
           // or close on black by design, so it is dropped rather than
-          // counted as a miss.
-          const lockScores = [firstVerdict, verdict, lastVerdict]
-            .filter((v): v is NonNullable<typeof v> => v !== null && !v.unusable)
-            .map((v) => v.score);
+          // counted as a miss. The same goes for a frame in which no face
+          // is visible at all (scorer p2, 2026-09-18) — the character
+          // walking away from the camera is a shot, not a wrong person.
+          const judges = (v: typeof verdict): v is NonNullable<typeof verdict> =>
+            v !== null && !v.unusable && v.faceVisible !== false;
+          const lockScores = [firstVerdict, verdict, lastVerdict].filter(judges).map((v) => v.score);
           const worstScore = lockScores.length > 0 ? Math.min(...lockScores) : null;
           if (verdict) {
             // Provenance goes where the image lane's goes — pipeline_log — so
@@ -1337,11 +1353,15 @@ async function finish(
                   scorerVersion: verdict.scorerVersion,
                   // Every frame that was read, in the clip's own order — the
                   // labelled data the lock produces for free.
-                  identityAttempts: [
-                    ...(firstVerdict ? [{ score: firstVerdict.score, notes: firstVerdict.notes || null, delivered: true }] : []),
-                    { score: verdict.score, notes: verdict.notes || null, delivered: true },
-                    ...(lastVerdict ? [{ score: lastVerdict.score, notes: lastVerdict.notes || null, delivered: true }] : []),
-                  ],
+                  // A frame with no face in it keeps no number: it was
+                  // not a judgement of anyone.
+                  identityAttempts: [firstVerdict, verdict, lastVerdict]
+                    .filter((v): v is NonNullable<typeof v> => v !== null)
+                    .map((v) => ({
+                      score: v.faceVisible === false ? null : v.score,
+                      notes: (v.faceVisible === false ? "No face visible in this frame." : v.notes) || null,
+                      delivered: true,
+                    })),
                 };
               }
             } catch {
@@ -1355,17 +1375,27 @@ async function finish(
             // Under a lock the row records the WORST frame, because that is
             // what the promise is about; without one it records the middle
             // frame exactly as it always has.
-            const recorded = lock && worstScore !== null ? worstScore : verdict.score;
+            //
+            // With no frame showing a face, nothing was judged: the row
+            // records no score rather than a number about the back of a
+            // head, and nothing can miss.
+            const recorded = lock
+              ? worstScore
+              : verdict.faceVisible === false
+                ? null
+                : verdict.score;
             const missed = lock !== null && worstScore !== null && worstScore < lock.threshold;
             const { error: scoreError } = await admin
               .from("generations")
               .update({
                 match_score: recorded,
-                match_notes: verdict.unusable
+                match_notes: verdict.unusable && !lock
                   ? `${verdict.notes || "Scored from the middle frame."} (Frame read as blank or unusable.)`.slice(0, 500)
-                  : lock
-                    ? `Lowest of ${lockScores.length} frames. ${verdict.notes || ""}`.trim().slice(0, 500)
-                    : verdict.notes || null,
+                  : recorded === null
+                    ? "No frame showed the character's face, so it could not be judged."
+                    : lock
+                      ? `Lowest of ${lockScores.length} frames with a face. ${verdict.notes || ""}`.trim().slice(0, 500)
+                      : verdict.notes || null,
                 ...(stampedLog ? { pipeline_log: stampedLog } : {}),
               })
               .eq("id", generationId);
@@ -1392,6 +1422,13 @@ async function finish(
     } catch (err) {
       console.warn("Video identity scoring failed; the render is unaffected.", err);
     }
+  }
+
+  // The opening frames (opening-frame.ts) served their one purpose when fal
+  // fetched frame one; the clip has landed or failed, so they go now —
+  // AFTER the terminal write, so a cleanup can never cost a finish.
+  if (jobRow?.payload?.openingFrames) {
+    await removeOpeningFrames(admin, userId, generationId);
   }
 
   // NOTE: the session-scoped autoReportFailedGeneration call that used to

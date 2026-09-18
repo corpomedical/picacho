@@ -297,7 +297,8 @@ export async function runApiImageGeneration(params: {
           signed.signedUrl,
           traitSummary,
         );
-        matchScore = verdict?.score ?? null;
+        // No face visible = nothing compared (scorer p2), not a low score.
+        matchScore = verdict && verdict.faceVisible !== false ? verdict.score : null;
 
         // Same automatic fail-and-refund the website applies to a black or
         // corrupted frame: an API customer must not be billed for a picture

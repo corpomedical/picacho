@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.49.0",
+    build: 88,
+    date: "2026-09-18",
+    title: "The face, checked through the whole clip",
+    items: [
+      "Every video with a character is now face-checked at the start, the middle and the end, and the lowest of those is the score it gets. Until today one frame from the middle spoke for the whole clip, and most character videos had no face score at all. On the engines that open on a picture (Kling O3, Kling 2.5, Veo, Wan Turbo) the first frame is skipped, because we already know whose face it is.",
+      "The face check now tells 'no face in this frame' apart from 'the wrong face'. A shot of your character walking away from the camera used to score as a bad match — 18 on the back of her head in today's test — and would have counted against a clip that was fine. Frames with no visible face are now left out, on videos and on pictures alike.",
+      "New switch, off for now: the opening frame. On Kling O3, Kling 2.5, Veo and Wan Turbo the clip used to open on your character's own photo and grow the scene out of it. With the switch on, we first paint the opening moment of the shot from that photo, check the face (one free re-paint if it misses), and open the clip on that instead. Tested side by side on Wan: the old clip opened on a grey studio portrait and jumped into the market; the new one was in the market from the first frame, with the face scoring 88 to 93 all the way through. It costs about 5 cents a clip, and if the face misses twice the clip simply opens on the photo as before.",
+      "New switch, off for now: no charge for a wrong face. With it on, a character video whose lowest face score falls under the identity bar in Admin > Settings is still delivered, but not charged for.",
+    ],
+  },
+  {
     version: "1.48.0",
     build: 87,
     date: "2026-09-18",

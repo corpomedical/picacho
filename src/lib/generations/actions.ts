@@ -75,6 +75,23 @@ import { submitUpscaleJob, cancelQueuedJob, type QueuedJob,
 import { submitVideoJob } from "@/lib/generations/providers/video-queue";
 import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
 import { resolveModel } from "@/lib/generations/model-health";
+import {
+  characterVideoLock,
+  flagOn,
+  readIdentityThreshold,
+  VIDEO_FACE_REFUND_FLAG,
+} from "@/lib/generations/face-lock";
+import { OPENING_FRAME_FLAG, openingFrameApplies, openingFramePath } from "@/lib/generations/opening-frame";
+import {
+  makeOpeningFrame,
+  removeOpeningFrames,
+  type OpeningFrameResult,
+} from "@/lib/generations/opening-frame-run";
+import { providerDownloadUrl } from "@/lib/generations/providers/provider-url";
+
+// How long into the send the opening frame may still be painting. The page
+// allows 300 s; the video submit and the bookkeeping after it need the rest.
+const OPENING_FRAME_DEADLINE_MS = 250_000;
 
 // Appended to the user's prompt when compiling the one scene that every angle
 // in a multi-angle batch will share.
@@ -423,6 +440,11 @@ function withIdentityRecord(
 // Shared cost/abuse guardrail for both single and multi-angle generation.
 
 export async function runGeneration(formData: FormData): Promise<RunResult> {
+  // The platform stops this request at 300 s (maxDuration on the page); the
+  // opening frame reads its deadline from the very first line, not from the
+  // gate's later requestStartedAt, because everything before the render
+  // counts against the same ceiling.
+  const sendStartedAt = Date.now();
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return { error: "Your session expired — please log in again." };
@@ -1944,6 +1966,74 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         console.warn("[send-plan] resolver parity check failed:", planErr);
       }
 
+      // THE OPENING FRAME (opening-frame.ts). On a first-frame lane with one
+      // character and nothing the person picked as frame one, the clip opens
+      // on a painted, face-checked frame of the shot instead of the
+      // character's reference photo. Behind its own flag (off until the
+      // operator turns it on — it costs a picture per clip), and it can
+      // never fail a send: a frame that misses twice, or no time, opens on
+      // the photo exactly as before.
+      let makeOpeningFrameForSend: ((videoPrompt: string) => Promise<OpeningFrameResult>) | undefined;
+      // Paints stored for this send, numbered across redrafts (openingFramePath).
+      let openingFramesPainted = 0;
+      if (
+        contentType === "video" &&
+        videoCharacterAnchorUrl &&
+        openingFrameApplies({
+          flagOn: await flagOn(supabase, OPENING_FRAME_FLAG),
+          contentType,
+          modelId: videoModelId,
+          hasCharacterAnchor: true,
+          hasAttachment: Boolean(attachmentReferenceUrl),
+          hasStoryboard: Boolean(videoStartImageUrl || videoEndImageUrl || storyboardShots),
+          hasMultiReference: (videoReferenceImageUrls?.length ?? 0) >= 2,
+          hasContinuation: Boolean(videoContinueFromUrl),
+        })
+      ) {
+        const anchorUrl = videoCharacterAnchorUrl;
+        const userId = userData.user.id;
+        // The scorer reads the same identity photo the finished clip will be
+        // read against (job-runner.ts: photo #1), so the frame's number and
+        // the clip's number are comparable.
+        const identityPath = ((character?.reference_image_urls ?? []) as string[])[0];
+        const { data: signedIdentity } = identityPath
+          ? await supabase.storage.from("character-references").createSignedUrl(identityPath, 60 * 10)
+          : { data: null };
+        const traits = (character?.traits ?? {}) as { hair?: string; distinguishing_features?: string };
+        const traitSummary = [
+          traits.hair ? `hair: ${traits.hair}` : null,
+          traits.distinguishing_features ? `distinguishing features: ${traits.distinguishing_features}` : null,
+        ]
+          .filter(Boolean)
+          .join("; ");
+        makeOpeningFrameForSend = (videoPrompt) =>
+          makeOpeningFrame({
+            videoPrompt,
+            aspectRatio: videoAspectRatio,
+            anchorUrl,
+            identityUrl: signedIdentity?.signedUrl ?? null,
+            traitSummary,
+            threshold: identityThreshold,
+            deadlineAt: sendStartedAt + OPENING_FRAME_DEADLINE_MS,
+            persist: (base64) => {
+              openingFramesPainted += 1;
+              return persistImageBytes(
+                supabase,
+                userId,
+                openingFramePath(userId, placeholder.id, openingFramesPainted),
+                Buffer.from(base64, "base64"),
+              );
+            },
+            absolutize: providerDownloadUrl,
+            discard: async (stored) => {
+              const path = extractStoragePath(stored, "generated-images");
+              if (!path) return;
+              const { error: sweepError } = await createAdminClient().storage.from("generated-images").remove([path]);
+              if (sweepError) console.warn("Couldn't remove an unused opening frame:", sweepError.message);
+            },
+          });
+      }
+
       const result = await runRealPipeline(
         promptForPipeline,
         characterForPipeline,
@@ -1951,6 +2041,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           contentType,
           videoModelId,
           imageModelId,
+          makeOpeningFrame: makeOpeningFrameForSend,
           referenceImageUrl,
           referenceImageUrls,
           // Same lane the entry gate judged this request in — an UPLOADED
@@ -2037,6 +2128,18 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           dialogueVoiceId: wantsDialogue ? dialogueVoiceId : undefined,
           attempts: result.attempts,
           strictLane: editingAnUpload || continuationFromUpload,
+          // Every character clip is judged whole — start, middle and end,
+          // the lowest counts (face-lock.ts). The refund on a miss is the
+          // operator's switch, off until he turns it on.
+          identityLock: characterVideoLock({
+            hasCharacter: Boolean(character),
+            modelId: videoModelId,
+            threshold: identityThreshold,
+            refundOn: await flagOn(supabase, VIDEO_FACE_REFUND_FLAG),
+          }),
+          // So finish() knows there are opening frames to remove once the
+          // clip lands (opening-frame.ts, openingFramePath).
+          openingFrames: openingFramesPainted > 0,
         });
 
         await createAdminClient()
@@ -2056,6 +2159,13 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           pending: true,
           progress: "Rendering your video",
         };
+      }
+
+      // A video that never reached the queue (a refused submit, a policy
+      // stop) has no finish() to tidy up after it — so its opening frames,
+      // if any were painted, go now.
+      if (openingFramesPainted > 0) {
+        await removeOpeningFrames(createAdminClient(), userData.user.id, placeholder.id);
       }
 
       ({ attempts, succeeded, finalPrompt, resultUrl } = result);
@@ -2934,6 +3044,16 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   if (!angleResolved.ok) return { error: angleResolved.message };
   videoModelId = angleResolved.modelId;
 
+  // Every angle is a character clip, judged whole like any other
+  // (face-lock.ts). Read once here, after the model is final — whether frame
+  // one needs reading depends on the lane.
+  const angleFaceLock = characterVideoLock({
+    hasCharacter: true,
+    modelId: videoModelId,
+    threshold: await readIdentityThreshold(supabase),
+    refundOn: await flagOn(supabase, VIDEO_FACE_REFUND_FLAG),
+  });
+
   // Re-snap the duration for the substituted model, exactly as runGeneration
   // does — only the resolved model's real durations are valid. The reprice
   // itself happens in the quoteSend call below, against this final model.
@@ -3582,6 +3702,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
               // rows carry no attachments, so without this finish() would
               // judge every angle in the ordinary lane.
               strictLane: Boolean(attachmentReferenceUrl) || Boolean(neutralAttachmentUrl),
+              identityLock: angleFaceLock,
             });
           } catch (err) {
             // The render is already in fal's queue but we couldn't record its
@@ -5073,7 +5194,8 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
     if (identityUrl) {
       try {
         const verdict = await scoreIdentityMatch(editedUrl, identityUrl, traitSummary);
-        score = verdict?.score ?? null;
+        // No face visible = nothing compared (scorer p2), not a miss.
+        score = verdict && verdict.faceVisible !== false ? verdict.score : null;
       } catch {
         // Best-effort, exactly as everywhere else: a scoring hiccup must
         // never cost the user the edit they paid for.

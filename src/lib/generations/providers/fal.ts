@@ -29,6 +29,12 @@ export type VideoGenerationOptions = {
   // incident notes below for why this exists and why it shares the
   // "elements" endpoint rather than image-to-video.
   characterAnchorImageUrl?: string | null;
+  // True when characterAnchorImageUrl is an OPENING FRAME (opening-frame.ts,
+  // 2026-09-18): a picture of the shot's first instant, painted and already
+  // cut to the clip's exact 16:9 or 9:16 on our side. The first-frame lanes
+  // must then send it as it is — fal's reframe repaints edges, has refused
+  // photoreal faces (2026-08-19), and would undo the face check it passed.
+  openingFrame?: boolean;
   // Clip continuation (2026-08-21, verified live before wiring): a prior
   // finished clip passed as a VIDEO reference — Seedance's @Video citation
   // makes the new shot pick up that clip's world (setting, light, wardrobe)
@@ -798,7 +804,8 @@ async function buildVideoRequest(
     // generation over framing.
     let startImage = options.characterAnchorImageUrl ?? anchorImages[0];
     try {
-      startImage = await reframeImage(startImage, resolvedAspectRatio, apiKey);
+      // An opening frame is already the clip's exact shape (see openingFrame).
+      if (!options.openingFrame) startImage = await reframeImage(startImage, resolvedAspectRatio, apiKey);
     } catch (err) {
       // Original photo it is — but say so. This fallback was completely
       // silent until 2026-08-19, which is what made the pillarbox incident
@@ -837,7 +844,10 @@ async function buildVideoRequest(
     // rather than failing the whole video generation over a framing nicety.
     let o3ImageUrl = options.characterAnchorImageUrl;
     try {
-      o3ImageUrl = await reframeImage(options.characterAnchorImageUrl, resolvedAspectRatio, apiKey);
+      // An opening frame is already the clip's exact shape (see openingFrame).
+      if (!options.openingFrame) {
+        o3ImageUrl = await reframeImage(options.characterAnchorImageUrl, resolvedAspectRatio, apiKey);
+      }
     } catch (err) {
       // Original photo it is — same behavior as before this fix existed, but
       // no longer silent (see the identical note on the 2.5 call site above:

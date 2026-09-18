@@ -22,7 +22,14 @@
  * When in doubt, bump — a false split is recoverable by merging two versions
  * during analysis, while a missed one silently pools incomparable numbers.
  */
-export const IDENTITY_PROMPT_REVISION = 1;
+//
+// p2 (2026-09-18): the scorer also says whether ANY of the person's face is
+// visible, and a frame without one no longer counts as a miss. Found on the
+// first side-by-side of the opening frame: a clip in which the character
+// walks away from the camera scored 18 on the frame showing the back of her
+// head — not a wrong face, no face at all. Once every character clip is
+// judged by its worst frame, that is a false miss on a shot that was fine.
+export const IDENTITY_PROMPT_REVISION = 2;
 
 /** Fallback when OPENAI_MODEL is unset — must match providers/openai.ts. */
 export const DEFAULT_SCORER_MODEL = "gpt-5.4-mini";

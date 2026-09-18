@@ -130,6 +130,17 @@ async function score(
   try {
     const verdict = await scoreIdentityMatch(imageUrl, identityPhotoUrl, traitSummary);
     if (!verdict) return { score: null, notes: null, unusable: false, scorerVersion: null };
+    // A picture in which none of the person's face is visible (scorer p2) is
+    // not a miss — nothing was compared. It reads as "not measured", which
+    // the gate passes, rather than buying a re-render of a shot from behind.
+    if (verdict.faceVisible === false) {
+      return {
+        score: null,
+        notes: "No face visible to compare.",
+        unusable: Boolean(verdict.unusable),
+        scorerVersion: verdict.scorerVersion,
+      };
+    }
     return {
       score: typeof verdict.score === "number" ? verdict.score : null,
       notes: verdict.notes || null,

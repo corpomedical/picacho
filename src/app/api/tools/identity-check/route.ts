@@ -108,5 +108,6 @@ export async function POST(request: NextRequest) {
     score: verdict.score,
     notes: verdict.notes,
     unusable: verdict.unusable,
+    faceVisible: verdict.faceVisible,
   });
 }
