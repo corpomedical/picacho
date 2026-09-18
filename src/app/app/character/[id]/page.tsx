@@ -2,6 +2,9 @@ import { redirect } from "next/navigation";
 import { isRenderableUrl, mediaUrl, thumbUrl, toMediaUrl } from "@/lib/media/url";
 import { createClient } from "@/lib/supabase/server";
 import { CharacterForm } from "@/components/character-form";
+import { EXPRESSION_SLOTS, isUsable, type ExpressionSlot } from "@/lib/characters/expression-set";
+import { expressionSetOfRow } from "@/lib/characters/expression-set-store";
+import type { ExpressionSlotView } from "@/components/expression-set-panel";
 
 export default async function EditCharacterPage({
   params,
@@ -124,9 +127,22 @@ export default async function EditCharacterPage({
     lastWorkedAt: ((statRows ?? [])[0]?.created_at as string | undefined) ?? null,
   };
 
+  // The expression set (2026-09-19): off the row already loaded with
+  // select("*") — no query names the column — through the one door that
+  // drops any path outside the owner's folder, like `owned` above.
+  const set = expressionSetOfRow(profile, userData.user.id);
+  const expressionSet: Partial<Record<ExpressionSlot, ExpressionSlotView>> = {};
+  for (const slot of EXPRESSION_SLOTS) {
+    const entry = set[slot];
+    if (!entry) continue;
+    const url = mediaUrl("character-references", entry.path);
+    expressionSet[slot] = { url, thumbUrl: thumbUrl(url, 320) ?? undefined, source: entry.source, likeness: entry.likeness, usable: isUsable(entry) };
+  }
+
   return (
     <div>
       <CharacterForm
+        expressionSet={expressionSet}
         userId={userData.user.id}
         initial={profile}
         recentRenders={recentRenders}

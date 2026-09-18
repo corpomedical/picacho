@@ -17,6 +17,8 @@ import { ImageLightbox } from "@/components/image-lightbox";
 import { VoicePreviewButton } from "@/components/voice-preview-button";
 import { LocalDate } from "@/components/local-date";
 import { QuietVideo } from "@/components/quiet-video";
+import { ExpressionSetPanel, type ExpressionSlotView } from "@/components/expression-set-panel";
+import type { ExpressionSlot } from "@/lib/characters/expression-set";
 
 // `url` is the real file (lightbox, and the anchor a generation uses);
 // `thumbUrl` is the small version for the grid tile. Kept as two fields
@@ -113,6 +115,7 @@ export function CharacterForm({
   voices = [],
   recentRenders,
   stats,
+  expressionSet,
 }: {
   userId: string;
   initial?: Initial & { voice_id?: string | null; outfit_description?: string | null };
@@ -137,6 +140,8 @@ export function CharacterForm({
   /** The three figures on the masthead — see the project page for why the
       counts are read separately from the grid they sit above. */
   stats?: { renders: number; meanIdentity: number | null; lastWorkedAt: string | null };
+  /** The expression set's close-ups, by slot (expression-set-panel.tsx). */
+  expressionSet?: Partial<Record<ExpressionSlot, ExpressionSlotView>>;
 }) {
   const { t } = useLocale();
   const c = t.character;
@@ -800,6 +805,18 @@ export function CharacterForm({
             </div>
           )}
         </div>
+      )}
+
+      {/* The expression set (2026-09-19): the close-ups every render picks
+          from, made from the photos below — so it sits between the work and
+          the photos, open, on a character that exists. */}
+      {initial?.id && (
+        <ExpressionSetPanel
+          characterId={initial.id}
+          userId={userId}
+          hasPhotos={keptImages.length > 0}
+          initial={expressionSet ?? {}}
+        />
       )}
 
       {/* The photos never fold while creating: giving the character a face is

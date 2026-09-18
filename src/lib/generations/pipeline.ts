@@ -28,6 +28,7 @@ import {
 } from "@/lib/generations/providers/image";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { referenceNotes } from "@/lib/generations/providers/reference-notes";
+import { FACE_LINE_INSTRUCTION, pickSetForShot, takeFaceLine, type ExpressionSlot, type FaceRead } from "@/lib/characters/expression-set";
 import { ImageSafetyRejection, describeImageUsage, type OpenAiImageSize, type OpenAiImageUsage } from "@/lib/generations/providers/openai-images";
 import { stripSetShotScaffold } from "@/lib/sets/set-shot-prompt";
 import type { VideoAspectRatio } from "@/lib/generations/aspect-ratio";
@@ -615,6 +616,14 @@ export type RealPipelineOptions = {
   placeImageUrl?: string | null;
   /** A Helios rig format's render size (sets/rig.ts): GPT Image only; the set shot cuts it to its frame after. */
   imageSize?: OpenAiImageSize | null;
+  /**
+   * The character's expression set (2026-09-19, lib/characters/expression-set.ts):
+   * signed links to the close-ups a render may use, by slot. The caller signs
+   * only the usable ones, and only beside the character's own saved photo on
+   * a single-character image; WHICH ride is decided here, per shot, from the
+   * drafter's FACE read (pickSetForShot).
+   */
+  expressionSet?: Partial<Record<ExpressionSlot, string>> | null;
   // Does this send carry a user-attached reference photo? (2026-08-29, from
   // the first outside bug report: "I sent an image with the background that
   // I wanted it to use. But it didn't use it. It only used the prompt.")
@@ -769,6 +778,9 @@ export async function runRealPipeline(
   // (see the placeholder object it builds in that case) — everything below
   // that would otherwise reference the character by name skips doing so.
   const hasCharacter = Boolean(character.name?.trim());
+  // The close-ups the character's expression set can offer this render
+  // (none without one: the drafter is then asked nothing new).
+  const expressionSetSlots = Object.keys(options.expressionSet ?? {}) as ExpressionSlot[];
 
   // Account-level brand/compliance rules, narrowed to this generation's
   // medium. "require" rules join the character's own traits and go through
@@ -906,6 +918,10 @@ export async function runRealPipeline(
     // throwing and taking down the whole request with no trace of what
     // happened.
     let reviewedPrompt = "";
+    // The face this attempt's picture shows, as the drafter read it (FACE
+    // line) — null when drafting is skipped or the drafter said nothing, which
+    // pickSetForShot answers with the face at rest and the teeth.
+    let faceRead: FaceRead | null = null;
     if (options.skipRefinement) {
       // Opted out — send the prompt exactly as typed, no Claude/OpenAI calls.
       reviewedPrompt = userInput;
@@ -1019,12 +1035,19 @@ export async function runRealPipeline(
               }
               return out;
             })() +
+            // The expression set's read (2026-09-19): only when the character
+            // has one, so every other render is drafted exactly as before.
+            (expressionSetSlots.length > 0 ? `\n\n${FACE_LINE_INSTRUCTION}` : "") +
             `\n\nAfter the prompt, on its own new line, write exactly "OVERRIDES:" followed by a ` +
             `comma-separated list of rulebook labels (only from: ${overridableLabels}) that THIS ` +
             `request explicitly changes for this one generation. Write "OVERRIDES: none" if it ` +
             `doesn't change any of them.`,
         );
-        const split = splitOverrides(rawDraftResponse);
+        // The FACE line comes out first, wherever the drafter put it, so it
+        // can reach neither the prompt nor the overrides list.
+        const faceTaken = expressionSetSlots.length > 0 ? takeFaceLine(rawDraftResponse) : { text: rawDraftResponse, face: null };
+        faceRead = faceTaken.face;
+        const split = splitOverrides(faceTaken.text);
         draftedPrompt = split.promptText;
         // Hard-strip any brand rule the model claimed as overridden. A
         // character trait can legitimately be changed for one generation; a
@@ -1576,6 +1599,14 @@ export async function runRealPipeline(
           // in the array: with no character selected the attachment is the
           // ONLY reference, and calling it "the person" would be a lie the
           // model acts on.
+          // The expression set (2026-09-19): the close-ups this shot's face
+          // needs, riding right after the character's own photo — never in a
+          // multi-character array, never without that photo.
+          const setPicks =
+            !usingMultiCharacterImages && options.referenceImageUrl && options.expressionSet
+              ? pickSetForShot(expressionSetSlots, faceRead)
+              : [];
+          const setUrls = setPicks.map((slot) => options.expressionSet?.[slot]).filter((u): u is string => Boolean(u));
           const imagePrompt =
             reviewedPrompt +
             referenceNotes({
@@ -1583,6 +1614,7 @@ export async function runRealPipeline(
               attached: propActive,
               look: lookActive || placeActive,
               identity: Boolean(options.referenceImageUrl),
+              expressionSet: setUrls.length > 0,
             });
           let fallbackNote: string | null = null;
           let actualModelName: string | null = null;
@@ -1605,8 +1637,14 @@ export async function runRealPipeline(
               imageUsage = usage;
             },
             options.imageSize ?? null,
+            setUrls.length > 0 ? setUrls : null,
           );
           if (fallbackNote) steps.push({ step: "generate", detail: fallbackNote });
+          // Which close-ups rode, and why — on the same line, so the log reads
+          // as one step.
+          const setNote = setUrls.length
+            ? ` Expression set: ${setPicks.join(", ")}${faceRead ? ` (the face read as ${faceRead.expression}, ${faceRead.angle})` : ""}.`
+            : "";
           // Report the model that ACTUALLY produced the image. This used to
           // always print the requested model, so after a Flux fallback the
           // log claimed "Generated via GPT Image 2 (anchored to reference
@@ -1621,7 +1659,7 @@ export async function runRealPipeline(
                     : options.referenceImageUrl
                       ? " (anchored to reference photo)"
                       : ""
-                }${genTry > 1 ? " (recovered after a retry)" : ""}.${imageUsage ? ` ${describeImageUsage(imageUsage)}` : ""}`,
+                }${genTry > 1 ? " (recovered after a retry)" : ""}.${imageUsage ? ` ${describeImageUsage(imageUsage)}` : ""}${setNote}`,
           });
         }
         // THE OUTPUT GATE. The prompt was judged; now the picture is — the

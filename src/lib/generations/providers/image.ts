@@ -88,6 +88,10 @@ export async function generateImage(
   // shot cuts it to its frame lines after. Measured cheaper than the square
   // (rig.ts, THE MONEY), so the one price holds. Flux keeps its own size.
   imageSize?: OpenAiImageSize | null,
+  // Close-ups from the character's expression set picked for this shot
+  // (lib/characters/expression-set.ts pickSetForShot, 2026-09-19): they ride
+  // right after the identity photo, beside a single one only.
+  expressionSetUrls?: readonly string[] | null,
 ): Promise<string> {
   const model = getImageModel(modelId);
 
@@ -117,6 +121,7 @@ export async function generateImage(
   // fallback went with the safety ladder on 2026-09-09.)
   const combinedRefs = buildImageReferences({
     identity: referenceImageUrl,
+    expressionSet: expressionSetUrls,
     outfit: outfitImageUrl,
     prop: propImageUrl,
     look: lookImageUrl,

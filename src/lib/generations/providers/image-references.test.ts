@@ -48,4 +48,20 @@ describe("buildImageReferences", () => {
     ]);
     expect(buildImageReferences({ identity: "id.png", prop: "sketch.jpg", look: null })).toEqual(["id.png", "sketch.jpg"]);
   });
+
+  it("the expression set rides right after the person, before anything that is not the person (2026-09-19)", () => {
+    expect(
+      buildImageReferences({ identity: "photo1", expressionSet: ["laugh", "teeth"], outfit: "outfit", look: "look" }),
+    ).toEqual(["photo1", "laugh", "teeth", "outfit", "look"]);
+    expect(buildImageReferences({ identity: "photo1", expressionSet: ["smile"] })).toEqual(["photo1", "smile"]);
+    // Nothing picked: the single identity photo passes through as before.
+    expect(buildImageReferences({ identity: "photo1", expressionSet: [] })).toBe("photo1");
+  });
+
+  it("the expression set never joins a multi-character array, and never rides without the person", () => {
+    expect(buildImageReferences({ identity: ["a", "b"], expressionSet: ["smile"] })).toEqual(["a", "b"]);
+    expect(buildImageReferences({ identity: null, expressionSet: ["smile"], prop: "attached" })).toEqual(["attached"]);
+    expect(buildImageReferences({ identity: null, expressionSet: ["smile"] })).toBeNull();
+  });
 });
+

@@ -65,6 +65,10 @@ const COLUMNS = {
   character_profiles: [
     "reference_image_urls", "outfit_image_urls", "outfit_description",
     "render_style", "voice_id", "voice_tone_tags", "motion_style", "project_id",
+    // The expression set (pending/character-expression-set.sql, 2026-09-19):
+    // read on its own and fail-open, so a missing one only means no set —
+    // and making a close-up says the database needs updating.
+    "expression_set",
   ],
   generation_jobs: ["stage", "provider_request_id", "advance_lock", "advance_locked_at", "payload", "resume", "last_polled_at"],
   community_posts: ["media_url", "hidden_at", "hearts_count", "views_count", "username", "caption"],

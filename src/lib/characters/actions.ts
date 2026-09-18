@@ -14,6 +14,7 @@ import { latestMonthlyAnniversary } from "@/lib/generations/core";
 import { ContentPolicyRefusal } from "@/lib/generations/content-policy";
 import { gatePrompt, recordPolicyRefusal } from "@/lib/generations/policy-log";
 import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
+import { readExpressionSet } from "@/lib/characters/expression-set-store";
 
 // Real incident, 2026-08-09: a plan=none account generated an AI reference
 // photo for free — this function had no plan/credit check at all, unlike
@@ -379,6 +380,14 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
     // generating from) someone else's photo.
     (path) => path.startsWith(`${data.user!.id}/`),
   );
+  // A close-up for the character's expression set (expression-actions.ts,
+  // 2026-09-19): made from up to four of its pictures — its photos, and for
+  // a smile or a laugh the set's teeth close-up — where every other photo
+  // here is made from the first photo alone; and kept in the set, never
+  // appended to the five photos that make the character. The allowance, the
+  // prompt gate, the picture check and the refund are this action's own,
+  // unchanged.
+  const forExpressionSet = ((formData.get("expression_slot") as string | null) ?? "").trim().length > 0;
   const traitHair = (formData.get("trait_hair") as string)?.trim() || "";
   const traitOutfit = (formData.get("trait_outfit") as string)?.trim() || "";
   const traitFeatures =
@@ -523,12 +532,20 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
     // very first photo of a brand-new character has nothing to anchor to —
     // that one is legitimately text-only.
     let anchorUrl: string | null = null;
+    // Every reference this photo is made from, the anchor first: the anchor
+    // alone, except for an expression-set close-up.
+    let referenceUrls: string[] = [];
     if (anchorPaths.length > 0) {
-      const { data: signed } = await supabase.storage
-        .from("character-references")
-        .createSignedUrl(anchorPaths[0], 60 * 10);
-      anchorUrl = signed?.signedUrl ?? null;
+      const signed = await Promise.all(
+        anchorPaths.slice(0, forExpressionSet ? 4 : 1).map(async (path) => {
+          const { data: s } = await supabase.storage.from("character-references").createSignedUrl(path, 60 * 10);
+          return s?.signedUrl ?? null;
+        }),
+      );
+      anchorUrl = signed[0] ?? null;
+      referenceUrls = anchorUrl ? signed.filter((u): u is string => Boolean(u)) : [];
     }
+    const references: string | string[] | null = referenceUrls.length > 1 ? referenceUrls : anchorUrl;
 
     // Fold the character sheet's visual traits into the prompt — the scene
     // pipeline already does this (see buildScenePrompt in pipeline.ts), but
@@ -545,7 +562,9 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
     if (visualTraits) fullPrompt += `\n\n${visualTraits}`;
     if (anchorUrl) {
       fullPrompt +=
-        "\n\nThis is the same person as in the reference photo — keep the face, age, build, and identity exactly the same; only the pose, framing, and scene may change.";
+        referenceUrls.length > 1
+          ? "\n\nThis is the same person as in the reference photos — keep the face, age, build, and identity exactly the same; only the pose, framing, expression, and scene may change."
+          : "\n\nThis is the same person as in the reference photo — keep the face, age, build, and identity exactly the same; only the pose, framing, and scene may change.";
     }
 
     const downloadImage = async (url: string): Promise<Buffer> => {
@@ -556,7 +575,7 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
 
     let bytes: Buffer;
     if (model.provider === "fal") {
-      bytes = await downloadImage(await generateImageWithFlux(fullPrompt, anchorUrl));
+      bytes = await downloadImage(await generateImageWithFlux(fullPrompt, references));
     } else {
       // No soften-and-retry, and no hop to Flux on a safety refusal — the
       // same ladder removed from providers/image.ts on 2026-09-09, for the
@@ -567,7 +586,7 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
       // so a refusal at this point means the provider disagreed with a
       // prompt we already passed — which fails, and costs the person their
       // AI-photo allowance back rather than producing something else.
-      const base64 = await generateImageWithOpenAI(fullPrompt, anchorUrl);
+      const base64 = await generateImageWithOpenAI(fullPrompt, references);
       bytes = Buffer.from(base64, "base64");
     }
 
@@ -613,7 +632,8 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
     // and the old Save path persists it.
     let saved = false;
     const characterId = ((formData.get("character_id") as string | null) ?? "").trim();
-    if (characterId) {
+    // A set close-up is kept by the set (expression-actions.ts), never here.
+    if (characterId && !forExpressionSet) {
       const { data: row } = await supabase
         .from("character_profiles")
         .select("id, reference_image_urls")
@@ -687,6 +707,10 @@ export async function removeCharacterProfile(formData: FormData): Promise<{ erro
     .eq("id", id)
     .eq("user_id", data.user.id)
     .single();
+  // The expression set's close-ups go with it — read in a query of its own
+  // (expression-set-store.ts), so a database without the column deletes
+  // exactly as before.
+  const setPaths = Object.values(await readExpressionSet(supabase, id, data.user.id)).map((entry) => entry!.path);
 
   const { error } = await supabase
     .from("character_profiles")
@@ -702,6 +726,7 @@ export async function removeCharacterProfile(formData: FormData): Promise<{ erro
   const paths = [
     ...(((existing?.reference_image_urls as string[] | null) ?? [])),
     ...(((existing?.outfit_image_urls as string[] | null) ?? [])),
+    ...setPaths,
   ];
   if (paths.length > 0) {
     await supabase.storage.from("character-references").remove(paths);
@@ -729,6 +754,10 @@ export async function deleteCharacterProfile(formData: FormData) {
     .eq("id", id)
     .eq("user_id", data.user.id)
     .single();
+  // The expression set's close-ups go with it — read in a query of its own
+  // (expression-set-store.ts), so a database without the column deletes
+  // exactly as before.
+  const setPaths = Object.values(await readExpressionSet(supabase, id, data.user.id)).map((entry) => entry!.path);
 
   const { error } = await supabase
     .from("character_profiles")
@@ -743,6 +772,7 @@ export async function deleteCharacterProfile(formData: FormData) {
   const paths = [
     ...(((existing?.reference_image_urls as string[] | null) ?? [])),
     ...(((existing?.outfit_image_urls as string[] | null) ?? [])),
+    ...setPaths,
   ];
   if (paths.length > 0) {
     await supabase.storage.from("character-references").remove(paths);

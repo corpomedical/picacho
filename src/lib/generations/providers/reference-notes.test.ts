@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ATTACHED_REFERENCE_NOTE,
+  EXPRESSION_SET_NOTE,
   LOOK_REFERENCE_NOTE,
   OUTFIT_REFERENCE_NOTE,
   PERSON_REFERENCE_NOTE,
@@ -45,4 +46,18 @@ describe("referenceNotes", () => {
     expect(notes).toBe(`\n\n${ATTACHED_REFERENCE_NOTE}\n\n${LOOK_REFERENCE_NOTE}\n\n${PERSON_REFERENCE_NOTE}`);
     expect(LOOK_REFERENCE_NOTE).toContain("Never take the face, hair or identity of anyone in it.");
   });
+
+  it("says what the expression set's close-ups are, and only beside a photo of the person (2026-09-19)", () => {
+    const withSet = referenceNotes({ outfit: false, attached: false, look: false, identity: true, expressionSet: true });
+    expect(withSet).toContain(EXPRESSION_SET_NOTE);
+    expect(EXPRESSION_SET_NOTE).toContain("their teeth, lips and expression must be exactly those in the close-ups");
+    expect(referenceNotes({ outfit: false, attached: false, look: false, identity: false, expressionSet: true })).toBe("");
+    // Without the set nothing changes.
+    expect(referenceNotes({ outfit: false, attached: false, look: false, identity: true })).toBe("");
+    // Beside a look photo, the fence on the place still holds.
+    const withLook = referenceNotes({ outfit: false, attached: false, look: true, identity: true, expressionSet: true });
+    expect(withLook).toContain(EXPRESSION_SET_NOTE);
+    expect(withLook).toContain("Never take the face, hair or identity of anyone in it.");
+  });
 });
+

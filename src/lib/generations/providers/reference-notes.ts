@@ -33,6 +33,14 @@ export const LOOK_REFERENCE_NOTE =
 
 export const PERSON_REFERENCE_NOTE =
   "Every other reference photo is the person — match their face, hair, and identity exactly.";
+// The expression set (2026-09-19, lib/characters/expression-set.ts): close-
+// ups of the SAME person, riding right after photo 1 when a shot needs
+// them. What they are for is the one thing a single photo cannot say — how
+// this face looks smiling, laughing, from the side — so the sentence says
+// exactly that, and names the teeth: a model invents what no reference
+// shows, a new set of teeth every time.
+export const EXPRESSION_SET_NOTE =
+  "Some of the reference photos are close-ups of the same person — their face at rest, their teeth, their smile or laugh, their eyes, or their face from the side. Take their face from those exactly: whenever they smile or laugh, their teeth, lips and expression must be exactly those in the close-ups.";
 
 /**
  * The sentences to append for the extra photos that actually ride this
@@ -40,8 +48,16 @@ export const PERSON_REFERENCE_NOTE =
  * references: with none, the extras are the only references, and calling
  * any of them "the person" would be a lie the model acts on.
  */
-export function referenceNotes(input: { outfit: boolean; attached: boolean; look: boolean; identity: boolean }): string {
+export function referenceNotes(input: {
+  outfit: boolean;
+  attached: boolean;
+  look: boolean;
+  identity: boolean;
+  /** Close-ups from the expression set ride beside the identity photo. */
+  expressionSet?: boolean;
+}): string {
   let notes = "";
+  if (input.expressionSet && input.identity) notes += `\n\n${EXPRESSION_SET_NOTE}`;
   if (input.outfit) notes += `\n\n${OUTFIT_REFERENCE_NOTE}`;
   if (input.attached) notes += `\n\n${ATTACHED_REFERENCE_NOTE}`;
   if (input.look) notes += `\n\n${LOOK_REFERENCE_NOTE}`;

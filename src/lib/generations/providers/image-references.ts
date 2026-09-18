@@ -21,6 +21,15 @@ export type ImageReferenceInput = {
   look?: string | null;
   /** The photograph a photo set was built from, for its real materials (2026-09-15). */
   place?: string | null;
+  /**
+   * Close-ups from the character's expression set (2026-09-19,
+   * lib/characters/expression-set.ts): the same person, so they ride right
+   * after the identity photo and before anything that is not the person.
+   * Beside ONE identity photo only — a multi-character array's order is its
+   * meaning, and with no photo of the person a close-up must never be the
+   * only face the model sees.
+   */
+  expressionSet?: readonly string[] | null;
 };
 
 export function buildImageReferences({
@@ -29,7 +38,9 @@ export function buildImageReferences({
   prop,
   look,
   place,
+  expressionSet,
 }: ImageReferenceInput): string | string[] | null | undefined {
+  const closeUps = typeof identity === "string" && identity ? (expressionSet ?? []).filter(Boolean) : [];
   const extras = [
     ...(outfit ? [outfit] : []),
     ...(prop ? [prop] : []),
@@ -41,11 +52,11 @@ export function buildImageReferences({
     // it shows.
     ...(place ? [place] : []),
   ];
-  if (extras.length === 0) return identity;
+  if (extras.length === 0 && closeUps.length === 0) return identity;
   // A multi-character array's ORDER is its meaning (one photo per person) —
   // extras are never merged into it.
   if (Array.isArray(identity)) return identity;
-  if (typeof identity === "string" && identity) return [identity, ...extras];
+  if (typeof identity === "string" && identity) return [identity, ...closeUps, ...extras];
   // No identity photo: the user's attachment IS the reference set. Returning
   // `identity` (null) here is the bug that shipped.
   return extras;

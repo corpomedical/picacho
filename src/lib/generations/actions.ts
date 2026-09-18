@@ -157,6 +157,8 @@ import {
 import { formatFrame, isRigFormat, isRigSqueeze, type RigFormat } from "@/lib/sets/rig";
 import { cutToBand } from "@/lib/sets/frame-cut";
 import { develop, labLine, negativePathFor, normaliseLabLooks } from "@/lib/sets/lab";
+import { usableSlots, type ExpressionSlot } from "@/lib/characters/expression-set";
+import { expressionSetOfRow } from "@/lib/characters/expression-set-store";
 
 // Account-level brand/compliance rules, read straight from the table rather
 // than via the brand-rules server action — a "use server" export is a
@@ -2034,6 +2036,30 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           });
       }
 
+      // The expression set (2026-09-19, lib/characters/expression-set.ts):
+      // the character's usable close-ups, signed for the provider and offered
+      // to the pipeline, which picks the ones this shot's face needs. Only on
+      // a single-character image whose face is the character's OWN saved
+      // photo — an attached photo is this message's face, and the set is the
+      // character's. Read off the row already loaded with select("*"): no
+      // query names the column (expression-set-store.ts).
+      let expressionSetLinks: Partial<Record<ExpressionSlot, string>> | null = null;
+      if (contentType === "image" && !wantsMultiCharacter && character && referenceImageUrl && !attachmentReferenceUrl) {
+        const set = expressionSetOfRow(character, userData.user.id);
+        const slots = usableSlots(set);
+        if (slots.length > 0) {
+          const signed = await Promise.all(
+            slots.map(async (slot) => {
+              const { data } = await supabase.storage.from("character-references").createSignedUrl(set[slot]!.path, 60 * 10);
+              return [slot, data?.signedUrl ?? null] as const;
+            }),
+          );
+          const links: Partial<Record<ExpressionSlot, string>> = {};
+          for (const [slot, url] of signed) if (url) links[slot] = url;
+          if (Object.keys(links).length > 0) expressionSetLinks = links;
+        }
+      }
+
       const result = await runRealPipeline(
         promptForPipeline,
         characterForPipeline,
@@ -2084,6 +2110,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           brandRules: await loadBrandRules(supabase, userData.user!.id),
           persistImage: (base64) => storeSetImage(supabase, userData.user!.id, base64),
           imageSize: setFrame.cut && imageModelId === "gpt-image" ? setFrame.size : null,
+          expressionSet: expressionSetLinks,
           // Video renders get queued and polled instead of awaited — see
           // job-runner.ts. Images stay inline: a single bounded call that
           // finishes well inside one request and gains nothing from staging.
