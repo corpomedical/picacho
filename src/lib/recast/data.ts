@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/server";
 import { isRenderableUrl, mediaUrl, thumbUrl, toMediaUrl } from "@/lib/media/url";
 import { RECAST_BUCKET, RECAST_MAX_SECONDS, RECAST_MIN_SECONDS, RECAST_MODEL_IDS, recastEngineOfModel, type RecastEngine } from "@/lib/recast/recast";
-import { readRecastRecipe, type RecastRecipe } from "@/lib/recast/store";
+import { readRecastRecipe, readRecastRecipes, type RecastRecipe } from "@/lib/recast/store";
 
 // What the door needs: who can be cast, what can be performed, and what has
 // been taken so far.
@@ -47,8 +47,14 @@ export type RecastTake = {
   recipe: RecastRecipe | null;
 };
 
+// `recast` is NOT here on purpose: it arrives with a migration the operator
+// runs by hand, and PostgREST fails a whole statement that names a column
+// the database does not have. Named here, one unapplied file emptied the
+// door — the upload worked, the take was started and charged, and the page
+// showed nothing (2026-09-18). The recipes come from store.ts, in a query of
+// its own whose failure means no recipe.
 const TAKE_COLUMNS =
-  "id, status, result_url, poster_url, created_at, character_profile_id, model_id, video_duration_seconds, credits_used, match_score, prompt_input, recast";
+  "id, status, result_url, poster_url, created_at, character_profile_id, model_id, video_duration_seconds, credits_used, match_score, prompt_input";
 
 export async function getRecastHome(
   supabase: SupabaseClient,
@@ -68,7 +74,11 @@ export async function getRecastHome(
       .eq("user_id", userId)
       .eq("content_type", "video")
       .is("deleted_at", null)
-      .neq("status", "failed")
+      // A failed take is LISTED, and says so. It used to be filtered out
+      // here, so a take that failed left the door looking as though nothing
+      // had been done at all (2026-09-18); the card has always had a line
+      // for it. A failed row can still never be a motion — that filter is
+      // its own, below.
       .order("created_at", { ascending: false })
       .limit(120),
   ]);
@@ -91,9 +101,13 @@ export async function getRecastHome(
     return url && isRenderableUrl(url) ? url : null;
   };
 
-  const takes: RecastTake[] = rows
+  const takeRows = rows
     .filter((g) => RECAST_MODEL_IDS.includes((g.model_id as string | null) ?? ""))
     .filter((g) => g.status !== "succeeded" || playable(g) !== null)
+    .slice(0, 24);
+  const recipes = await readRecastRecipes(supabase, takeRows.map((g) => g.id as string));
+
+  const takes: RecastTake[] = takeRows
     .map((g) => ({
       id: g.id as string,
       status: (g.status === "succeeded" ? "succeeded" : g.status === "failed" ? "failed" : "generating") as RecastTake["status"],
@@ -104,9 +118,8 @@ export async function getRecastHome(
       score: (g.match_score as number | null) ?? null,
       posterUrl: thumbUrl(toMediaUrl(g.poster_url as string | null), 640),
       createdAt: g.created_at as string,
-      recipe: readRecastRecipe(g.recast),
-    }))
-    .slice(0, 24);
+      recipe: recipes.get(g.id as string) ?? null,
+    }));
 
   // Anything finished, playable and the right length can be performed again
   // — including this door's own takes, so a recast can be recast.

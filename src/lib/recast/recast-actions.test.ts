@@ -171,3 +171,38 @@ describe("the lane's own housekeeping", () => {
     }
   });
 });
+
+// What the door shows when the column its recipes live in is not there yet
+// ("I tried mystic, uploaded video generated and it looks like nothing has
+// happened", 2026-09-18). `recast` arrives with a migration the operator
+// runs by hand; PostgREST fails a WHOLE statement that names a column the
+// database does not have. It was named in the door's list of takes, so with
+// the bucket and the flag in place — the upload working, the take started
+// and charged — the page had nothing on it at all. Verified against
+// production the same day: the flag and the bucket were there, the column
+// was not.
+describe("the door survives a migration that has not run", () => {
+  const data = readFileSync(join(__dirname, "data.ts"), "utf8");
+  const store = readFileSync(join(__dirname, "store.ts"), "utf8");
+  const actions = readFileSync(join(__dirname, "actions.ts"), "utf8");
+
+  it("never names the recipe's column in a query that carries anything else", () => {
+    const columns = data.slice(data.indexOf("const TAKE_COLUMNS ="), data.indexOf(";", data.indexOf("const TAKE_COLUMNS =")));
+    expect(columns).not.toContain("recast");
+    // Everywhere it IS named, it is the only thing that query asks for, so a
+    // missing column costs that one answer and nothing else.
+    for (const m of [...data.matchAll(/\.select\("([^"]*)"\)/g), ...actions.matchAll(/\.select\("([^"]*)"\)/g), ...store.matchAll(/\.select\("([^"]*)"\)/g)]) {
+      if (!m[1].includes("recast")) continue;
+      // Only the recipe, and at most the id to hang it on.
+      expect(m[1].replace(/\s/g, "").split(",").sort().filter((c) => c !== "id")).toEqual(["recast"]);
+    }
+    expect(store).toContain("export async function readRecastRecipes(");
+  });
+
+  it("lists a take that failed, instead of hiding it", () => {
+    const home = data.slice(data.indexOf("export async function getRecastHome("), data.indexOf("const ORPHAN_AFTER_MS"));
+    expect(home).not.toContain('.neq("status", "failed")');
+    // A failed take can still never be offered as a performance to recast.
+    expect(home).toContain('.filter((g) => g.status === "succeeded")');
+  });
+});

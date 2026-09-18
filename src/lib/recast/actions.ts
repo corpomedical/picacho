@@ -64,7 +64,7 @@ import {
   type RecastRead,
   type RecastWarning,
 } from "@/lib/recast/recast-read";
-import { RECAST_LOCK_THRESHOLD, recastRow, type RecastSource } from "@/lib/recast/store";
+import { RECAST_LOCK_THRESHOLD, readRecastRecipes, recastRow, type RecastSource } from "@/lib/recast/store";
 
 // Recast — "Mystique" on the door (working title, 2026-09-17).
 //
@@ -599,15 +599,18 @@ export async function getRecastTakeMedia(
   if (access.error !== null) return { error: access.error };
   const { data: take } = await access.supabase
     .from("generations")
-    .select("id, result_url, recast")
+    .select("id, result_url")
     .eq("id", typeof takeId === "string" ? takeId : "")
     .eq("user_id", access.userId)
     .is("deleted_at", null)
     .in("model_id", RECAST_MODEL_IDS)
-    .maybeSingle<{ id: string; result_url: string | null; recast: { source?: RecastSource } | null }>();
+    .maybeSingle<{ id: string; result_url: string | null }>();
   if (!take) return { error: RECAST_UPLOAD_UNREADABLE };
 
-  const source = take.recast?.source ?? null;
+  // The recipe is read through the one module that names its column, in a
+  // query of its own: without the migration a take still plays, it simply
+  // has no before-and-after (store.ts readRecastRecipes).
+  const source = (await readRecastRecipes(access.supabase, [take.id])).get(take.id)?.source ?? null;
   let sourceUrl: string | null = null;
   if (source?.kind === "upload") {
     const admin = createAdminClient();

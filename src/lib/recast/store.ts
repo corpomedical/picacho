@@ -15,6 +15,7 @@
 //
 // — which is why it is one bounded jsonb column rather than four.
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RecastEngine, RecastJob } from "./recast";
 import type { RecastKeep } from "./recast-read";
 
@@ -95,4 +96,36 @@ export function readRecastRecipe(value: unknown): RecastRecipe | null {
     lock: r.lock === true,
     groupId: typeof r.groupId === "string" ? r.groupId : null,
   };
+}
+
+/**
+ * The recipes of these takes, read in a query of THIS module's own — the
+ * rule the column's own migration states ("Only src/lib/recast/store.ts
+ * names this column") and the rule the late columns of Sets follow
+ * (shot-rig.ts, recce-store.ts).
+ *
+ * It is a query of its own because PostgREST fails a WHOLE statement that
+ * names a column the database does not have, and `recast` arrives with a
+ * migration the operator runs by hand. Named inside the door's own list of
+ * takes, one unapplied file emptied the whole door: the upload worked, the
+ * take was started and charged, and the page showed nothing at all — which
+ * is exactly how it was reported ("I tried mystic, uploaded video generated
+ * and it looks like nothing has happened", 2026-09-18). Here, a missing
+ * column means no recipe: no before-and-after, no Recreate, every take
+ * still listed.
+ */
+export async function readRecastRecipes(supabase: SupabaseClient, ids: readonly string[]): Promise<Map<string, RecastRecipe>> {
+  const out = new Map<string, RecastRecipe>();
+  if (ids.length === 0) return out;
+  try {
+    const { data, error } = await supabase.from("generations").select("id, recast").in("id", [...ids]);
+    if (error || !Array.isArray(data)) return out;
+    for (const row of data as { id?: unknown; recast?: unknown }[]) {
+      const recipe = readRecastRecipe(row.recast);
+      if (typeof row.id === "string" && recipe) out.set(row.id, recipe);
+    }
+  } catch {
+    // The column is not there yet: no recipes, and every take still listed.
+  }
+  return out;
 }

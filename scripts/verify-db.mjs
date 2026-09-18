@@ -55,6 +55,11 @@ const COLUMNS = {
     "featured_at", "match_score", "video_model_id", "model_id",
     "video_duration_seconds", "purchased_credits_used", "free_generation_used",
     "pipeline_log", "progress_stage", "poster_url",
+    // Recast, the Mystique door (pending/recast.sql): how a take was made.
+    // Written through jsonb_populate_record, which drops it silently until
+    // the migration runs — so a take starts either way and nothing says the
+    // file is still waiting. This line is what says it.
+    "recast",
   ],
   push_tokens: ["token", "platform", "last_seen_at", "locale"],
   character_profiles: [
@@ -131,7 +136,7 @@ const COLUMNS = {
 // Feature-flag rows the code reads by key. A missing row reads as OFF
 // everywhere (every reader defaults closed), which is why nobody would
 // notice — the switch simply never appears in Admin > Feature flags.
-const FLAGS = ["astra_sets", "astra_photo_sets", "astra_previz", "experimental_models", "chat_agent", "voice_mode"];
+const FLAGS = ["astra_sets", "astra_photo_sets", "astra_previz", "experimental_models", "chat_agent", "voice_mode", "astra_recce", "recast"];
 
 // RPCs the app calls (schema.sql + pending files).
 const RPCS = [
@@ -201,6 +206,8 @@ const BUCKETS = [
   "chat-attachments",
   "upscale-sources",
   "layer-sources",
+  // The clips the Mystique door performs (pending/recast.sql).
+  "recast-sources",
 ];
 
 let missing = 0;
