@@ -244,6 +244,19 @@ html.screening.dark {
   html.screening :where(.uppercase.tracking-widest, .uppercase.tracking-wider, .uppercase[class*="tracking-[0."]) {
     font-family: var(--font-slate);
   }
+
+  /* Except inside Helios's studio, which wears a skin of its own — its own
+     dark literals in both themes, designed in the sans. The rule above
+     reached into it by class name alone and put every one of its 10–11 px
+     labels (EXPOSURE, BLADES, VIEWFINDER, the frame-line readout, the Build
+     section heads) into DM Mono, which is loaded at 400 and 500 only: their
+     `font-semibold` had no weight to land on, so the chrome read faint
+     whatever its colour. The operator, twice: "the text is unreadable from
+     text color" and then, after the colours were raised, "It still looks
+     dimmed" (2026-09-18). */
+  html.screening :is([data-set-workspace], [data-set-editor]) :where(.uppercase.tracking-widest, .uppercase.tracking-wider, .uppercase[class*="tracking-[0."]) {
+    font-family: var(--font-sans);
+  }
 }
 
 /* Corner marks around a scored take — the lock. Color, arm length and

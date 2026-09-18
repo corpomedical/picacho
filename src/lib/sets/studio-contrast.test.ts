@@ -121,6 +121,22 @@ describe("the studio's chrome can be read", () => {
     expect(ratio(over("#9aa0ad", 0.35, PANEL), PANEL)).toBeLessThan(2);
   });
 
+  it("keeps its own face: the app's label rule does not reach into it", () => {
+    // The Screening Room puts every small uppercase label in the app into DM
+    // Mono, which is loaded at 400 and 500 only (theme/screening-fonts.ts).
+    // It caught the studio's own chrome by class name — twenty labels at
+    // 10–11px asking for `font-semibold`, landing on a weight that does not
+    // exist — so the chrome read faint whatever colour it was given. The
+    // studio is excepted by its two roots, and both roots carry the marker
+    // the exception names (the operator, after the colours were raised:
+    // "It still looks dimmed", 2026-09-18).
+    const css = readFileSync(join(__dirname, "../../app/globals.css"), "utf8");
+    expect(css).toContain('html.screening :is([data-set-workspace], [data-set-editor]) :where(.uppercase.tracking-widest, .uppercase.tracking-wider, .uppercase[class*="tracking-[0."]) {');
+    expect(css.slice(css.indexOf("html.screening :is([data-set-workspace]"))).toContain("font-family: var(--font-sans);");
+    expect(view).toContain("<div data-set-workspace");
+    expect(readFileSync(join(dir, "set-editor.tsx"), "utf8")).toContain("data-set-editor>");
+  });
+
   it("what is drawn over the render is drawn for a bright one", () => {
     // The stage can be a daylight exterior: text over it is measured against
     // white, not against the chrome (the frame-line readout was 1.8:1).
