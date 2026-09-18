@@ -52,7 +52,7 @@ import {
   type RecastContainer,
   type RecastEngine,
 } from "@/lib/recast/recast";
-import { composeRecastBrief, RECAST_DIRECTION_MAX_CHARS, type RecastCasting } from "@/lib/recast/recast-brief";
+import { composeRecastBrief, RECAST_DIRECTION_MAX_CHARS, recastCharacterToken, type RecastCasting } from "@/lib/recast/recast-brief";
 import {
   askRecastRead,
   parseRecastRead,
@@ -67,7 +67,7 @@ import {
   type RecastWarning,
 } from "@/lib/recast/recast-read";
 import { RECAST_LOCK_THRESHOLD, readRecastRecipes, recastRow, type RecastSource } from "@/lib/recast/store";
-import { cutsInWindow, isWholeClip, recastWindowCredits, recastWindowProblem, type RecastWindow } from "@/lib/recast/trim";
+import { cutsInWindow, isWholeClip, recastFitFor, recastWindowCredits, recastWindowProblem, type RecastWindow } from "@/lib/recast/trim";
 import { cutRecastWindow } from "@/lib/recast/trim-run";
 
 // Recast — "Mystique" on the door (working title, 2026-09-17).
@@ -396,6 +396,12 @@ export async function startRecastTakes(input: {
   if (windowProblem === "too-long") return { error: RECAST_JOB_TOO_LONG };
   if (windowProblem) return { error: RECAST_WINDOW_INVALID };
   const cutting = !isWholeClip(window, clip.seconds);
+  // Outside the engine's size or frame-rate limits (Kling O3 Edit: 720–3840
+  // px, 24–60 fps) the clip is re-encoded to fit, cut or not — the
+  // operator's own source was 324 px tall at 61 fps and would have been
+  // refused at submit.
+  const fit = recastFitFor(clip, spec.accepts);
+  const preparing = cutting || fit !== null;
   // Price from the source's own numbers scaled to the window — the same call
   // the door quoted with, so the button's number is the number charged.
   const perTake = recastWindowCredits(engine, clip, window);
@@ -416,6 +422,16 @@ export async function startRecastTakes(input: {
   // its own length, and only the cuts that fall inside it, on its own clock.
   const wholeRead = reboundRecastRead(input?.read, clip.seconds);
   const read = wholeRead ? { ...wholeRead, cuts: cutsInWindow(wholeRead.cuts, window) } : null;
+  // The engine that reads names in its prompt is told which photos are the
+  // character's by name; how many photos ride decides which name.
+  const castingFor = (c: { name: string; reference_image_urls: string[] | null } | null): RecastCasting | null =>
+    c
+      ? {
+          tag: castTag,
+          characterName: c.name,
+          ...(engine === "kling-edit" ? { token: recastCharacterToken(c.reference_image_urls?.length ?? 1) } : {}),
+        }
+      : null;
   const briefFor = (casting: RecastCasting | null) =>
     composeRecastBrief({ job: spec.job, read, seconds: windowSeconds, casting, keeps, direction });
 
@@ -424,7 +440,7 @@ export async function startRecastTakes(input: {
   // because it is stored and shown either way.
   let scores: Scores | undefined;
   let priorHits = 0;
-  const judged = spec.takesDirection ? briefFor(cast[0] ? { tag: castTag, characterName: cast[0].name } : null) : direction;
+  const judged = spec.takesDirection ? briefFor(castingFor(cast[0])) : direction;
   if (judged.trim()) {
     try {
       ({ scores, priorHits } = await gatePrompt({ prompt: judged, userId, hasRealPersonReference: true }));
@@ -446,9 +462,9 @@ export async function startRecastTakes(input: {
   // so the take can be recut later.
   let cutPath: string | null = null;
   const fromClipId = source.kind === "upload" ? source.clipId : null;
-  if (cutting) {
+  if (preparing) {
     if (!sourceBytes) return { error: RECAST_TRIM_FAILED };
-    const cut = await cutRecastWindow(admin, userId, sourceBytes, window);
+    const cut = await cutRecastWindow(admin, userId, sourceBytes, window, fit);
     if ("error" in cut) return { error: RECAST_TRIM_FAILED };
     cutPath = cut.path;
     const { data: signedCut } = await admin.storage.from(RECAST_BUCKET).createSignedUrl(cut.path, 60 * 60 * 24);
@@ -492,7 +508,7 @@ export async function startRecastTakes(input: {
 
   const lockOn = await isRecastLockOn(supabase);
   const rows = cast.map((character, i) => {
-    const casting = character ? { tag: castTag, characterName: character.name } : null;
+    const casting = castingFor(character);
     return {
       id: crypto.randomUUID(),
       character_profile_id: character?.id ?? null,
@@ -526,7 +542,7 @@ export async function startRecastTakes(input: {
         lock: lockOn,
         groupId,
         window: cutting ? { start: window.start, end: window.end } : null,
-        fromClipId: cutting ? fromClipId : null,
+        fromClipId: preparing ? fromClipId : null,
       }),
     };
   });

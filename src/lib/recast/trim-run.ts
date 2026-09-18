@@ -7,7 +7,7 @@ import ffmpegPath from "ffmpeg-static";
 import type { createAdminClient } from "@/lib/supabase/server";
 import { probeMp4 } from "@/lib/media/mp4-probe";
 import { RECAST_BUCKET, recastSourcePath, type RecastClip } from "@/lib/recast/recast";
-import { recastTrimArgs, type RecastWindow } from "@/lib/recast/trim";
+import { recastTrimArgs, type RecastFit, type RecastWindow } from "@/lib/recast/trim";
 
 // The cut itself — server only. The window's rules and arguments are pure
 // (trim.ts); this runs them. The same ffmpeg-static binary the reels cron
@@ -31,6 +31,8 @@ export async function cutRecastWindow(
   userId: string,
   source: Buffer,
   window: RecastWindow,
+  /** The size and frame rate the engine needs, when the clip is outside them (trim.ts recastFitFor). */
+  fit: RecastFit | null = null,
 ): Promise<TrimmedClip | { error: "no-encoder" | "cut-failed" | "unreadable" | "store-failed" }> {
   if (!ffmpegPath) {
     console.error("[recast] trim skipped: ffmpeg-static resolved no binary path");
@@ -42,7 +44,7 @@ export async function cutRecastWindow(
   try {
     await writeFile(input, source);
     try {
-      await execFileAsync(ffmpegPath, recastTrimArgs(input, output, window), { timeout: TRIM_TIMEOUT_MS, maxBuffer: 1024 * 1024 });
+      await execFileAsync(ffmpegPath, recastTrimArgs(input, output, window, fit), { timeout: TRIM_TIMEOUT_MS, maxBuffer: 1024 * 1024 });
     } catch (err) {
       console.error("[recast] trim failed:", err instanceof Error ? err.message.slice(0, 300) : err);
       return { error: "cut-failed" };

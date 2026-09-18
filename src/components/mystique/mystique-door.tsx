@@ -32,7 +32,7 @@ import {
   type RecastEngine,
   type RecastJob,
 } from "@/lib/recast/recast";
-import { composeRecastBrief } from "@/lib/recast/recast-brief";
+import { composeRecastBrief, recastCharacterToken } from "@/lib/recast/recast-brief";
 import { clampRecastWindow, defaultRecastWindow, isWholeClip, recastWindowCredits, type RecastWindow } from "@/lib/recast/trim";
 import { sampleClip } from "@/lib/recast/recast-client";
 import type { RecastRead, RecastWarning } from "@/lib/recast/recast-read";
@@ -179,7 +179,14 @@ export function MystiqueDoor({
         job,
         read,
         seconds: seen.seconds,
-        casting: cast[0] ? { tag: read?.people.find((p) => p.lead)?.tag ?? null, characterName: cast[0].name } : null,
+        casting: cast[0]
+          ? {
+              tag: read?.people.find((p) => p.lead)?.tag ?? null,
+              characterName: cast[0].name,
+              // The same name the server gives the engine (actions.ts castingFor).
+              ...(engine === "kling-edit" ? { token: recastCharacterToken(cast[0].photos.length) } : {}),
+            }
+          : null,
         keeps,
         direction,
       })

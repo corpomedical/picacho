@@ -51,7 +51,18 @@ export type RecastCasting = {
   /** The read's tag for the person being replaced ("A"), or null when there was no read. */
   tag: string | null;
   characterName: string;
+  /**
+   * How the engine names the character's photos in its prompt — Kling O3
+   * Edit's "@Element1" (a front photo bound to more angles) or "@Image1"
+   * (a character with one photo). Absent for an engine that takes no names.
+   */
+  token?: string;
 };
+
+/** The engine's name for the character, from how many of their photos ride. */
+export function recastCharacterToken(photoCount: number): string {
+  return photoCount > 1 ? "@Element1" : "@Image1";
+}
 
 const bullet = (s: string) => `- ${s}`;
 
@@ -143,12 +154,22 @@ export function composeRecastBrief(input: {
   }
 
   const who = input.casting?.tag ? `Person ${input.casting.tag}` : "The performer";
+  // With names the engine reads (Kling O3 Edit: @Video1 for the clip, @Element1
+  // or @Image1 for the character), the brief uses them; without, plain words.
+  const token = input.casting?.token;
+  const video = token ? "@Video1" : "the source video";
+  const character = token ?? "the character in the reference image";
   parts.push(
     "TASK",
-    `Replace ${who} in the source video with the character in the reference image. Keep the performance exactly as it is.`,
+    `Replace ${who} in ${video} with ${character}. Keep the performance exactly as it is.`,
     "",
     "THE CHARACTER",
-    `${name} — the person in the reference image. Their face, hair and build come from the image and must stay the same in every frame.`,
+    `${name} — ${token ? `${token}, ` : ""}the person in the reference ${token === "@Element1" ? "images" : "image"}. Their face, hair and build come from ${token === "@Element1" ? "those photos" : "the image"} and must stay the same in every frame.`,
+    // THE LINE THAT MATTERS MOST (2026-09-19). The operator's take on Wan
+    // lost his character the moment the performer turned his back: nothing
+    // said what the back of the character's head looks like. Kling O3 Edit
+    // held Eva through the same turn with this said in so many words.
+    `They stay the same person from every side, including from behind: when they turn away or walk off, it is still their hair and their build we see, never the original performer's.`,
     "",
     "THE SOURCE",
     ...sourceLines(input.read, input.seconds),
@@ -156,9 +177,9 @@ export function composeRecastBrief(input: {
     "KEEP EXACTLY",
     bullet("The performance: every gesture, every step, every expression, on the same frames."),
     bullet("The framing, the camera move, the cuts and the timing."),
-    bullet("The lighting and the setting."),
+    bullet("The lighting, the setting and everyone else in the shot."),
     ...keepLines(input.keeps).map(bullet),
-    bullet("Everything else stays exactly as it is in the source video."),
+    bullet(`Everything else stays exactly as it is in ${video}.`),
   );
   if (direction) parts.push("", "DIRECTION", direction);
   return cleanBrief(parts.join("\n"), RECAST_BRIEF_MAX_CHARS);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composeRecastBrief, RECAST_BRIEF_MAX_CHARS } from "./recast-brief";
+import { composeRecastBrief, RECAST_BRIEF_MAX_CHARS, recastCharacterToken } from "./recast-brief";
 import type { RecastRead } from "./recast-read";
 
 // The brief is what a video model is actually told. Genjutsu's works because
@@ -88,6 +88,31 @@ describe("a recast's brief", () => {
       keeps: Array.from({ length: 6 }, (_, i) => ({ what: `keep number ${i} `.repeat(10), kind: "object" as const })),
     });
     expect(huge.length).toBeLessThanOrEqual(RECAST_BRIEF_MAX_CHARS);
+  });
+});
+
+describe("a brief for an engine that reads names", () => {
+  it("calls the clip @Video1 and the character by the name their photos go under", () => {
+    const many = composeRecastBrief({ ...base, job: "scene", casting: { tag: "A", characterName: "Eva", token: recastCharacterToken(4) } });
+    expect(many).toContain("Replace Person A in @Video1 with @Element1.");
+    expect(many).toContain("Everything else stays exactly as it is in @Video1.");
+    const one = composeRecastBrief({ ...base, job: "scene", casting: { tag: "A", characterName: "Eva", token: recastCharacterToken(1) } });
+    expect(one).toContain("with @Image1.");
+  });
+
+  it("says in so many words that the character stays themselves from behind", () => {
+    // The dissolve (2026-09-19): the operator's character became the source
+    // performer the moment he turned his back. Kling O3 Edit held Eva through
+    // the same turn with this said.
+    const brief = composeRecastBrief({ ...base, job: "scene" });
+    expect(brief).toContain("including from behind");
+    expect(brief).toContain("never the original performer's");
+  });
+
+  it("keeps plain words for an engine that takes no names", () => {
+    const brief = composeRecastBrief({ ...base, job: "scene", casting: { tag: "A", characterName: "Eva" } });
+    expect(brief).not.toContain("@");
+    expect(brief).toContain("the source video");
   });
 });
 

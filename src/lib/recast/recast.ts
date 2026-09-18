@@ -12,7 +12,8 @@
 // things), the third by the 2026-09-18 probe:
 //
 //   scene   The character stands INSIDE the clip: its room, its light, its
-//           framing, its sound. Wan 2.2 Animate Replace.
+//           framing, its sound. Kling O3 Edit, since 2026-09-19 — see THE
+//           DISSOLVE below for why it is no longer Wan.
 //   motion  The character's PHOTO comes alive with the clip's performance;
 //           the photo's world and shape are kept, the clip's are left
 //           behind. Kling V3 Motion Control.
@@ -44,6 +45,31 @@
 //     the list that also animates animals and drawings, so it is worth
 //     coming back to behind a cap of its own once its real curve is known.
 //
+// THE DISSOLVE (2026-09-19, the operator's second real take: "Mid video the
+// added character got dissolved"). Wan Animate Replace is given ONE front
+// photo. It held his character's face while the performer faced the camera;
+// the moment the performer turned his back and walked into the crowd, Wan had
+// nothing saying what the back of the character's head looks like and fell
+// back to the source performer's buzz cut — the character dissolved into the
+// man he replaced. That is the engine's limit, not a setting.
+//
+// Probed on HIS clip, first 10 s, with Eva (long red hair — the hardest back
+// view there is), against the two engines that re-render the whole clip from
+// SEVERAL photos of the character:
+//
+//   Kling O3 Edit Pro     held her through the whole turn · 1916×1080 ·
+//                         559 s · ledger 12 units × $0.14 = $1.68
+//   Happy Horse Edit      held her through the whole turn, kept even the
+//                         cigarette · 1278×720 · 223 s · ledger 20.04 units
+//                         × $0.14 = $2.81 — DOUBLE its page's "$0.14 /
+//                         second" at 720p, so it is not offered
+//
+// Unit prices from fal's own pricing API (api.fal.ai/v1/models/pricing),
+// units from its ledger — the page alone would have mispriced Happy Horse by
+// half. Wan's two scene engines stay in the table, RETIRED: takes made with
+// them still list and still name their engine in History, and no new take
+// can be started on them.
+//
 // Pure and alias-free on purpose: the door quotes with this, the action
 // charges with it, and recast.test.ts audits both against the prices read
 // at source. Change a price and its test together.
@@ -74,6 +100,7 @@ export const RECAST_WORLD_EDIT_STRENGTH = "adhere_2";
 
 export type RecastJob = "scene" | "motion" | "world";
 export type RecastEngine =
+  | "kling-edit"
   | "wan-scene-720"
   | "wan-scene-480"
   | "kling-pro"
@@ -108,9 +135,33 @@ export type RecastEngineSpec = {
   takesMorePhotos: boolean;
   /** Carries the clip's own sound through. */
   keepsSound: boolean;
+  /** No new take may start on it; kept so the takes it made still list and name it. */
+  retired?: true;
+  /**
+   * What the engine refuses, so the clip is brought inside it before it is
+   * sent (trim-run.ts re-encodes every clip for such an engine, cut or not).
+   * Kling O3 Edit's schema, read 2026-09-19: 720–3840 px on each side,
+   * 24–60 fps. The operator's own source was 61 fps and 324 px tall.
+   */
+  accepts?: { minSide: number; maxSide: number; minFps: number; maxFps: number };
 };
 
 export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
+  "kling-edit": {
+    job: "scene",
+    tier: "full",
+    modelId: "recast-kling-edit",
+    label: "Kling O3 Edit Pro",
+    endpoint: "fal-ai/kling-video/o3/pro/video-to-video/edit",
+    // $0.14 a unit (pricing API), 12 units for a 10.0 s take (ledger): the
+    // page's "$0.168 for every second of video you generated", exactly.
+    usdPerBilledSecond: 0.168,
+    billedBy: "seconds",
+    takesDirection: true,
+    takesMorePhotos: true,
+    keepsSound: true,
+    accepts: { minSide: 720, maxSide: 3840, minFps: 24, maxFps: 60 },
+  },
   "wan-scene-720": {
     job: "scene",
     tier: "full",
@@ -123,6 +174,7 @@ export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
     takesDirection: false,
     takesMorePhotos: false,
     keepsSound: true,
+    retired: true,
   },
   "wan-scene-480": {
     job: "scene",
@@ -136,6 +188,7 @@ export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
     takesDirection: false,
     takesMorePhotos: false,
     keepsSound: true,
+    retired: true,
   },
   "kling-pro": {
     job: "motion",
@@ -189,16 +242,15 @@ export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
   },
 };
 
-export const RECAST_ENGINE_ORDER: RecastEngine[] = [
-  "wan-scene-720",
-  "wan-scene-480",
-  "kling-pro",
-  "kling-std",
-  "luma-720",
-  "luma-540",
-];
+/** What the door OFFERS, in order. Retired engines are not in it. */
+export const RECAST_ENGINE_ORDER: RecastEngine[] = ["kling-edit", "kling-pro", "kling-std", "luma-720", "luma-540"];
 export const RECAST_JOB_ORDER: RecastJob[] = ["scene", "motion", "world"];
-export const RECAST_MODEL_IDS: string[] = RECAST_ENGINE_ORDER.map((e) => RECAST_ENGINES[e].modelId);
+/**
+ * Every model id this lane has EVER recorded — retired ones included, so a
+ * take made on Wan before 2026-09-19 still lists on the door and still names
+ * its engine in History.
+ */
+export const RECAST_MODEL_IDS: string[] = (Object.keys(RECAST_ENGINES) as RecastEngine[]).map((e) => RECAST_ENGINES[e].modelId);
 
 /** The one job that recasts nobody — it rewrites the world around the performance. */
 export function recastNeedsCharacter(job: RecastJob): boolean {
@@ -213,12 +265,14 @@ export function recastEngineFor(job: RecastJob, tier: "full" | "lite"): RecastEn
   return recastEnginesOf(job).find((e) => RECAST_ENGINES[e].tier === tier) ?? recastEnginesOf(job)[0];
 }
 
+/** An engine a NEW take may start on — offered, never retired. */
 export function parseRecastEngine(raw: unknown): RecastEngine | null {
-  return typeof raw === "string" && Object.prototype.hasOwnProperty.call(RECAST_ENGINES, raw) ? (raw as RecastEngine) : null;
+  return typeof raw === "string" && (RECAST_ENGINE_ORDER as string[]).includes(raw) ? (raw as RecastEngine) : null;
 }
 
+/** Any engine this lane ever used, retired or not — for reading takes back. */
 export function recastEngineOfModel(modelId: string | null | undefined): RecastEngine | null {
-  return RECAST_ENGINE_ORDER.find((e) => RECAST_ENGINES[e].modelId === modelId) ?? null;
+  return (Object.keys(RECAST_ENGINES) as RecastEngine[]).find((e) => RECAST_ENGINES[e].modelId === modelId) ?? null;
 }
 
 /** The engine's name for a stored model id — History's engine line. */
@@ -247,7 +301,11 @@ export const RECAST_BUCKET = "recast-sources";
 // number to change.
 //
 // WORLD STOPS AT 10 s because Luma's own duration is a 5 s or 10 s slot.
-export const RECAST_JOB_MAX_SECONDS: Record<RecastJob, number> = { scene: 10, motion: 30, world: 10 };
+// SCENE STOPS AT 15 s — Kling O3 Edit's own limit (3–15.05 s in its schema).
+// Measured 559 s for 10 s (2026-09-19), so 15 s lands near 14 minutes, well
+// inside the runner's 45-minute write-off. (Until 2026-09-19 it was 10 s, set
+// by Wan's speed.)
+export const RECAST_JOB_MAX_SECONDS: Record<RecastJob, number> = { scene: 15, motion: 30, world: 10 };
 
 export type RecastClip = { seconds: number; frames: number | null; width: number; height: number; bytes: number };
 
@@ -364,7 +422,27 @@ export function recastRequestBody(
     };
   }
   if (spec.job === "scene") {
-    return { image_url: input.characterImageUrl, video_url: input.clipUrl, resolution: spec.resolution };
+    if (engine !== "kling-edit") {
+      // A retired engine: kept only so the shape it was sent is on record.
+      return { image_url: input.characterImageUrl, video_url: input.clipUrl, resolution: spec.resolution };
+    }
+    // Kling O3 Edit re-renders the whole clip with the character bound to
+    // SEVERAL photos — which is what keeps them themselves when they turn
+    // their back. One element (the front photo plus up to three more
+    // angles), named @Element1 in the brief; a character with only one photo
+    // is given it as @Image1 instead, because an element needs at least one
+    // more angle than its front. The brief names the clip @Video1.
+    const angles = (input.morePhotoUrls ?? []).slice(0, 3);
+    return {
+      video_url: input.clipUrl,
+      prompt: (input.brief ?? "").slice(0, 2500),
+      keep_audio: true,
+      ...(input.characterImageUrl && angles.length > 0
+        ? { elements: [{ frontal_image_url: input.characterImageUrl, reference_image_urls: angles }] }
+        : input.characterImageUrl
+          ? { image_urls: [input.characterImageUrl] }
+          : {}),
+    };
   }
   const more = (input.morePhotoUrls ?? []).slice(0, 3);
   return {

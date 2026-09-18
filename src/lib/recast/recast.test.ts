@@ -57,12 +57,19 @@ describe("the engines", () => {
     expect(RECAST_ENGINES["luma-540"].usdPerBilledSecond * 10).toBeCloseTo(1.44, 6);
   });
 
-  it("are three jobs with a full and a lighter engine each", () => {
+  it("are three jobs, each offering only engines that were proven on it", () => {
     expect(RECAST_JOB_ORDER).toEqual(["scene", "motion", "world"]);
+    // Into the clip is Kling O3 Edit alone since 2026-09-19: it held the
+    // character through the operator's turn-away clip where Wan dissolved
+    // them, and Happy Horse — the other engine that held — bills double its
+    // page (recast.ts THE DISSOLVE).
+    expect(recastEnginesOf("scene")).toEqual(["kling-edit"]);
+    expect(recastEnginesOf("motion").map((e) => RECAST_ENGINES[e].tier)).toEqual(["full", "lite"]);
+    expect(recastEnginesOf("world").map((e) => RECAST_ENGINES[e].tier)).toEqual(["full", "lite"]);
     for (const job of RECAST_JOB_ORDER) {
-      expect(recastEnginesOf(job).map((e) => RECAST_ENGINES[e].tier), job).toEqual(["full", "lite"]);
       expect(RECAST_ENGINES[recastEngineFor(job, "full")].job).toBe(job);
-      expect(RECAST_ENGINES[recastEngineFor(job, "lite")].tier).toBe("lite");
+      // A job with one engine answers "lite" with that engine, never another job's.
+      expect(RECAST_ENGINES[recastEngineFor(job, "lite")].job).toBe(job);
     }
     // Only the world job recasts nobody.
     expect(recastNeedsCharacter("scene")).toBe(true);
@@ -71,7 +78,10 @@ describe("the engines", () => {
   });
 
   it("record model ids that never carry the door's name", () => {
-    expect(new Set(RECAST_MODEL_IDS).size).toBe(RECAST_ENGINE_ORDER.length);
+    // Every id ever recorded, retired ones too, so old takes still list.
+    expect(new Set(RECAST_MODEL_IDS).size).toBe(Object.keys(RECAST_ENGINES).length);
+    expect(RECAST_MODEL_IDS).toContain("recast-wan-720");
+    expect(RECAST_MODEL_IDS).toContain("recast-kling-edit");
     for (const id of RECAST_MODEL_IDS) {
       expect(id).toMatch(/^recast-/);
       expect(id).not.toMatch(/mystique/i);
@@ -83,7 +93,11 @@ describe("the engines", () => {
   });
 
   it("parse only their own names", () => {
-    expect(parseRecastEngine("wan-scene-480")).toBe("wan-scene-480");
+    expect(parseRecastEngine("kling-edit")).toBe("kling-edit");
+    // A retired engine is read back for History, but no new take starts on it.
+    expect(parseRecastEngine("wan-scene-720")).toBeNull();
+    expect(parseRecastEngine("wan-scene-480")).toBeNull();
+    expect(recastEngineOfModel("recast-wan-480")).toBe("wan-scene-480");
     expect(parseRecastEngine("toString")).toBeNull();
     expect(parseRecastEngine("__proto__")).toBeNull();
     expect(parseRecastEngine(7)).toBeNull();
@@ -185,8 +199,9 @@ describe("the clip's limits", () => {
   });
 
   it("gives each job its own ceiling", () => {
-    expect(recastEngineFits("wan-scene-720", { seconds: 10.02 })).toBe(true);
-    expect(recastEngineFits("wan-scene-480", { seconds: 12 })).toBe(false);
+    // Kling O3 Edit's own limit, 3–15.05 s.
+    expect(recastEngineFits("kling-edit", { seconds: 15.02 })).toBe(true);
+    expect(recastEngineFits("kling-edit", { seconds: 16 })).toBe(false);
     expect(recastEngineFits("luma-720", { seconds: 12 })).toBe(false);
     expect(recastEngineFits("kling-pro", { seconds: 30 })).toBe(true);
     expect(recastEngineFits("kling-std", { seconds: 30 })).toBe(true);
@@ -246,6 +261,25 @@ describe("the request each engine receives", () => {
 
   it("binds no element when there is only the one photo to bind", () => {
     expect(recastRequestBody("kling-pro", { ...base, morePhotoUrls: [] })).not.toHaveProperty("elements");
+  });
+
+  it("is the probe's Kling O3 Edit body: the brief, the sound, and the character bound to several photos", () => {
+    const more = ["https://x/a.jpg", "https://x/b.jpg", "https://x/c.jpg", "https://x/d.jpg"];
+    const body = recastRequestBody("kling-edit", { ...base, morePhotoUrls: more, brief: "TASK\nReplace Person A in @Video1 with @Element1." });
+    expect(body).toEqual({
+      video_url: base.clipUrl,
+      prompt: "TASK\nReplace Person A in @Video1 with @Element1.",
+      keep_audio: true,
+      // One element: the front photo plus at most three more angles — the
+      // schema's own limit, and what held Eva through the turn (2026-09-19).
+      elements: [{ frontal_image_url: base.characterImageUrl, reference_image_urls: more.slice(0, 3) }],
+    });
+  });
+
+  it("gives a one-photo character to Kling O3 Edit as an image, because an element needs a second angle", () => {
+    const body = recastRequestBody("kling-edit", { ...base, morePhotoUrls: [], brief: "Replace Person A in @Video1 with @Image1." });
+    expect(body).not.toHaveProperty("elements");
+    expect(body.image_urls).toEqual([base.characterImageUrl]);
   });
 
   it("is the probe's Wan body, which has nowhere to put a prompt", () => {

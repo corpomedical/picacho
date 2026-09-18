@@ -1845,7 +1845,7 @@ const it = {
     modeSceneLine: "Il tuo personaggio sta nella stanza, nella luce e nell'inquadratura della clip.",
     modeMotion: "Foto in vita",
     modeMotionLine: "La foto del tuo personaggio interpreta la clip. Il mondo della foto resta; quello della clip si lascia indietro.",
-    sceneLimit: "Fino a 10 s per ora",
+    sceneLimit: "Fino a 15 s",
     castLabel: "Cast",
     photoLabel: "Foto",
     noCharacters: "Una ripresa ha bisogno di qualcuno nel cast — crea prima un personaggio.",

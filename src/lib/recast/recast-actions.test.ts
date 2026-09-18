@@ -77,7 +77,7 @@ describe("startRecastTakes", () => {
   });
 
   it("cuts after the words and before the picture check, and judges what it sends", () => {
-    const cut = at("await cutRecastWindow(admin, userId, sourceBytes, window)");
+    const cut = at("await cutRecastWindow(admin, userId, sourceBytes, window, fit)");
     expect(at("await gatePrompt({")).toBeLessThan(cut);
     expect(cut).toBeLessThan(at("await judgeRender({"));
     // The URL judged is the URL sent — the cut's, when there is one.
@@ -85,7 +85,15 @@ describe("startRecastTakes", () => {
     // A refused cut goes with the refusal.
     expect(start.slice(at("await judgeRender({"), at("const total = perTake"))).toContain("if (cutPath) await removeSource(admin, cutPath)");
     // And the original is named in the recipe, so the take can be recut.
-    expect(start).toContain("fromClipId: cutting ? fromClipId : null");
+    expect(start).toContain("fromClipId: preparing ? fromClipId : null");
+  });
+
+  it("brings a clip inside the engine's limits before sending it, windowed or not", () => {
+    // The operator's source was 324 px tall at 61 fps: Kling O3 Edit takes
+    // 720–3840 px and 24–60 fps, and would have refused it at submit.
+    expect(start).toContain("const fit = recastFitFor(clip, spec.accepts)");
+    expect(start).toContain("const preparing = cutting || fit !== null");
+    expect(at("const fit = recastFitFor")).toBeLessThan(at("await cutRecastWindow("));
   });
 
   it("judges the words and the clip BEFORE any credit moves", () => {

@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.51.0",
+    build: 90,
+    date: "2026-09-19",
+    title: "Mystique: your character stays themselves when they turn away",
+    items: [
+      "The second real take lost the character halfway through: while the performer faced the camera it was your character, and the moment he turned his back and walked into the crowd, the character melted back into the man he had replaced. That was the engine behind Into the clip — it was given one front photo, knew nothing about the back of your character's head, and fell back on the original performer's.",
+      "Into the clip now runs on a different engine, chosen by putting that exact clip through the two engines that re-render the whole video from several photos of the character. Both kept the character through the whole turn; the one now used is sharper (1080p) and cheaper than the other, whose real bill turned out to be double its advertised price. Your character is now given up to four of their saved photos, and the written instruction tells the engine in plain words that they stay the same person from every side, including from behind.",
+      "Into the clip now takes up to 15 seconds instead of 10.",
+      "Clips the engine would have refused are now fixed on our side first: a small clip is scaled up to the size it needs, and one filmed at more than 60 frames a second is brought to 60. The original you uploaded was both — it would have been turned away.",
+      "Takes made on the old engine stay listed and still say which engine made them; no new take can start on it.",
+    ],
+  },
+  {
     version: "1.50.0",
     build: 89,
     date: "2026-09-18",

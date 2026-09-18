@@ -11,6 +11,7 @@ import {
   cutsInWindow,
   defaultRecastWindow,
   isWholeClip,
+  recastFitFor,
   recastTrimArgs,
   recastWindowCredits,
   recastWindowProblem,
@@ -26,8 +27,8 @@ import {
 describe("the window a job opens with", () => {
   it("is the whole clip when it fits, and the job's own ceiling when it does not", () => {
     expect(defaultRecastWindow(8, "scene")).toEqual({ start: 0, end: 8 });
-    // The operator's clip: 28.4 s into "Into the clip", which takes 10.
-    expect(defaultRecastWindow(28.4, "scene")).toEqual({ start: 0, end: 10 });
+    // The operator's clip: 28.4 s into "Into the clip", which takes 15.
+    expect(defaultRecastWindow(28.4, "scene")).toEqual({ start: 0, end: 15 });
     expect(defaultRecastWindow(28.4, "motion")).toEqual({ start: 0, end: 28.4 });
     expect(defaultRecastWindow(28.4, "world")).toEqual({ start: 0, end: 10 });
   });
@@ -35,26 +36,29 @@ describe("the window a job opens with", () => {
 
 describe("clamping", () => {
   it("keeps the start where it was put and moves the end", () => {
-    expect(clampRecastWindow({ start: 12, end: 28.4 }, 28.4, "scene")).toEqual({ start: 12, end: 22 });
+    expect(clampRecastWindow({ start: 12, end: 28.4 }, 28.4, "scene")).toEqual({ start: 12, end: 27 });
   });
 
   it("never lets a window leave the clip or fall under the shortest take", () => {
     expect(clampRecastWindow({ start: -4, end: 2 }, 28.4, "scene")).toEqual({ start: 0, end: 3 });
     expect(clampRecastWindow({ start: 27, end: 40 }, 28.4, "scene")).toEqual({ start: 25.4, end: 28.4 });
-    expect(clampRecastWindow({ start: NaN, end: NaN }, 28.4, "scene")).toEqual({ start: 0, end: 10 });
+    expect(clampRecastWindow({ start: NaN, end: NaN }, 28.4, "scene")).toEqual({ start: 0, end: 15 });
   });
 
   it("gives way to a job that takes less when the job is changed", () => {
-    // Chosen on Photo to life (30 s), then switched to Into the clip (10 s).
-    expect(clampRecastWindow({ start: 4, end: 28.4 }, 28.4, "scene")).toEqual({ start: 4, end: 14 });
+    // Chosen on Photo to life (30 s), then switched to Into the clip (15 s).
+    expect(clampRecastWindow({ start: 4, end: 28.4 }, 28.4, "scene")).toEqual({ start: 4, end: 19 });
+    // And on to Restyle (10 s).
+    expect(clampRecastWindow({ start: 4, end: 28.4 }, 28.4, "world")).toEqual({ start: 4, end: 14 });
   });
 });
 
 describe("a window from the wire", () => {
   it("is checked against the file, never trusted", () => {
-    expect(recastWindowProblem({ start: 0, end: 10 }, 28.4, "scene")).toBeNull();
-    expect(recastWindowProblem({ start: 0, end: 10.04 }, 28.4, "scene")).toBeNull();
-    expect(recastWindowProblem({ start: 0, end: 12 }, 28.4, "scene")).toBe("too-long");
+    expect(recastWindowProblem({ start: 0, end: 15 }, 28.4, "scene")).toBeNull();
+    expect(recastWindowProblem({ start: 0, end: 15.04 }, 28.4, "scene")).toBeNull();
+    expect(recastWindowProblem({ start: 0, end: 16 }, 28.4, "scene")).toBe("too-long");
+    expect(recastWindowProblem({ start: 0, end: 12 }, 28.4, "world")).toBe("too-long");
     expect(recastWindowProblem({ start: 5, end: 6 }, 28.4, "scene")).toBe("too-short");
     expect(recastWindowProblem({ start: 20, end: 31 }, 28.4, "motion")).toBe("outside");
     expect(recastWindowProblem({ start: 9, end: 4 }, 28.4, "motion")).toBe("outside");
@@ -86,6 +90,34 @@ describe("the read's cuts, on the window's clock", () => {
   it("keeps only the cuts inside, moved to start at zero", () => {
     expect(cutsInWindow([2, 6.5, 13.9, 20], { start: 4, end: 14 })).toEqual([2.5]);
     expect(cutsInWindow([], { start: 0, end: 10 })).toEqual([]);
+  });
+});
+
+describe("fitting a clip to the engine", () => {
+  const kling = { minSide: 720, maxSide: 3840, minFps: 24, maxFps: 60 };
+
+  it("brings the operator's own source inside Kling O3 Edit's limits", () => {
+    // 574×324 at 61.2 fps — two refusals waiting to happen at submit.
+    expect(recastFitFor({ width: 574, height: 324, seconds: 29.9905, frames: 1836 }, kling)).toEqual({ width: 1276, height: 720, fps: 60 });
+  });
+
+  it("leaves a clip alone when it already fits", () => {
+    expect(recastFitFor({ width: 1920, height: 1080, seconds: 10, frames: 300 }, kling)).toBeNull();
+    expect(recastFitFor({ width: 720, height: 1280, seconds: 10, frames: 240 }, kling)).toBeNull();
+    // An engine with no limits takes anything.
+    expect(recastFitFor({ width: 300, height: 200, seconds: 10, frames: 900 }, undefined)).toBeNull();
+  });
+
+  it("scales down what is too big, and fixes only the frame rate when only that is wrong", () => {
+    expect(recastFitFor({ width: 7680, height: 4320, seconds: 10, frames: 300 }, kling)).toEqual({ width: 3840, height: 2160, fps: null });
+    expect(recastFitFor({ width: 1280, height: 720, seconds: 10, frames: 150 }, kling)).toEqual({ width: 1280, height: 720, fps: 24 });
+  });
+
+  it("always lands on even sides the encoder can take, never under the floor", () => {
+    const f = recastFitFor({ width: 577, height: 341, seconds: 5, frames: 150 }, kling)!;
+    expect(f.width % 2).toBe(0);
+    expect(f.height % 2).toBe(0);
+    expect(Math.min(f.width, f.height)).toBeGreaterThanOrEqual(720);
   });
 });
 

@@ -94,6 +94,41 @@ export function cutsInWindow(cuts: number[], window: RecastWindow): number[] {
   return cuts.filter((c) => c > window.start + 0.2 && c < window.end - 0.2).map((c) => tenth(c - window.start));
 }
 
+/** What a clip must be re-encoded to so an engine will take it. */
+export type RecastFit = { width: number; height: number; fps: number | null };
+
+const evenUp = (v: number) => {
+  const n = Math.ceil(v);
+  return n % 2 === 0 ? n : n + 1;
+};
+
+/**
+ * The size and frame rate a clip must be brought to for an engine's limits,
+ * or null when it already fits (recast.ts `accepts`). Kling O3 Edit refuses a
+ * side under 720 px or a frame rate over 60 — and the operator's own source
+ * was 324 px tall at 61 fps (2026-09-19), so without this his clip would have
+ * been refused at submit. A small clip is scaled UP to the floor (it gains no
+ * detail, but it is taken); a frame rate outside the band is brought to its
+ * nearest edge, so nothing is resampled that did not need to be.
+ */
+export function recastFitFor(
+  clip: { width: number; height: number; seconds: number; frames: number | null },
+  accepts: { minSide: number; maxSide: number; minFps: number; maxFps: number } | undefined,
+): RecastFit | null {
+  if (!accepts || clip.width <= 0 || clip.height <= 0) return null;
+  const short = Math.min(clip.width, clip.height);
+  const long = Math.max(clip.width, clip.height);
+  let scale = 1;
+  if (short < accepts.minSide) scale = accepts.minSide / short;
+  if (long * scale > accepts.maxSide) scale = accepts.maxSide / long;
+  const width = scale === 1 ? clip.width : evenUp(clip.width * scale);
+  const height = scale === 1 ? clip.height : evenUp(clip.height * scale);
+  const fps = clip.frames && clip.seconds > 0 ? clip.frames / clip.seconds : null;
+  const fpsFits = fps !== null && fps >= accepts.minFps - 0.01 && fps <= accepts.maxFps + 0.01;
+  if (scale === 1 && fpsFits) return null;
+  return { width, height, fps: fpsFits ? null : fps === null ? 30 : Math.min(accepts.maxFps, Math.max(accepts.minFps, Math.round(fps))) };
+}
+
 /**
  * The ffmpeg arguments that cut a window out of a clip.
  *
@@ -106,7 +141,11 @@ export function cutsInWindow(cuts: number[], window: RecastWindow): number[] {
  * keep sound keep this sound). faststart so the provider can begin reading
  * before the download ends.
  */
-export function recastTrimArgs(inputPath: string, outputPath: string, window: RecastWindow): string[] {
+export function recastTrimArgs(inputPath: string, outputPath: string, window: RecastWindow, fit: RecastFit | null = null): string[] {
+  const filters = [
+    ...(fit ? [`scale=${fit.width}:${fit.height}:flags=lanczos`] : []),
+    ...(fit?.fps ? [`fps=${fit.fps}`] : []),
+  ];
   return [
     "-y",
     "-v",
@@ -117,6 +156,7 @@ export function recastTrimArgs(inputPath: string, outputPath: string, window: Re
     inputPath,
     "-t",
     (window.end - window.start).toFixed(2),
+    ...(filters.length > 0 ? ["-vf", filters.join(",")] : []),
     "-map",
     "0:v:0",
     "-map",

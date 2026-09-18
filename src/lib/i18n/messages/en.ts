@@ -1964,7 +1964,7 @@ const en = {
     modeSceneLine: "Your character stands in the clip's own room, light and framing.",
     modeMotion: "Photo to life",
     modeMotionLine: "Your character's photo performs the clip. The photo's world stays; the clip's is left behind.",
-    sceneLimit: "Up to 10 s for now",
+    sceneLimit: "Up to 15 s",
     castLabel: "Cast",
     photoLabel: "Photo",
     noCharacters: "A take needs someone to cast — create a character first.",

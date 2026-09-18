@@ -1846,7 +1846,7 @@ const pt = {
     modeSceneLine: "Seu personagem aparece na mesma sala, luz e enquadramento do clipe.",
     modeMotion: "Foto com vida",
     modeMotionLine: "A foto do seu personagem interpreta o clipe. O mundo da foto fica; o do clipe é deixado para trás.",
-    sceneLimit: "Até 10 s por enquanto",
+    sceneLimit: "Até 15 s",
     castLabel: "Elenco",
     photoLabel: "Foto",
     noCharacters: "Um take precisa de alguém no elenco — crie primeiro um personagem.",
