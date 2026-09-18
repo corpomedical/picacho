@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.48.0",
+    build: 87,
+    date: "2026-09-18",
+    title: "Mystique: pick the stretch to perform",
+    items: [
+      "The first real take came back wrong, and the door was to blame. A 28-second clip was too long for Into the clip — the job that keeps your clip's own room and people — so the door quietly moved it to Photo to life, the only job that took 28 seconds. That job builds everything from your character's photo; the photo was a close selfie, the clip pulled back into a room full of people, and with nothing in a selfie to pull back into, the room and the crowd were invented.",
+      "Now you pick which stretch to perform. Every clip opens on a stretch the job you chose can take — Starts at and Length sliders over a bar of the whole clip, and the preview plays only that stretch. Changing the job shrinks the stretch, never the job: the door no longer moves you anywhere you did not choose.",
+      "The stretch is cut on our side, exactly at the moment you chose rather than at the nearest keyframe, with the sound kept and the quality high, and it is the cut that is checked and sent. The price is worked out from the clip and the stretch the same way on the door and on the server, so the number on the button is the number charged. The original clip is kept so a take can be recut later.",
+      "Photo to life now says when it will invent things. On a clip with more than one person or a wide view of a place, a box under the jobs explains that none of that is kept, with one button to switch to Into the clip. Warnings about crowds and wide shots now appear only on the job they are about.",
+      "The one written instruction we send went to the wrong job: Photo to life was told to keep the source video's setting, which is the opposite of what it does. It now has its own. Measured honestly, that engine barely reads the instruction, so this was not what spoiled the take — but it was wrong. And the keep list (a watch, a caption) now appears only on Into the clip, the one job where anything in the clip's picture can survive.",
+    ],
+  },
+  {
     version: "1.47.0",
     build: 86,
     date: "2026-09-18",

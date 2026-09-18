@@ -53,6 +53,10 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["ffmpeg-static"],
   outputFileTracingIncludes: {
     "/api/cron/reels": ["./node_modules/ffmpeg-static/ffmpeg"],
+    // The Mystique door's take action cuts a chosen window out of a clip
+    // (lib/recast/trim-run.ts, 2026-09-18). Server actions run inside their
+    // page's function, so the binary is traced into that page.
+    "/app/mystique": ["./node_modules/ffmpeg-static/ffmpeg"],
   },
 
   // Canonical host: www.picacho.ai permanently redirects to picacho.ai.

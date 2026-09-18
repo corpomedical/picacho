@@ -56,6 +56,13 @@ export type RecastRecipe = {
    * lane's own is nobody else's business.
    */
   groupId: string | null;
+  /**
+   * The stretch of the ORIGINAL clip this take performs, when one was cut
+   * (trim.ts). The cut is `source`; the original it came from is
+   * `fromClipId`, kept so the take can be recut differently later.
+   */
+  window: { start: number; end: number } | null;
+  fromClipId: string | null;
 };
 
 /** The column's value for one take. Bounded: nothing hand-written lands here. */
@@ -71,6 +78,8 @@ export function recastRow(input: Omit<RecastRecipe, "v">): RecastRecipe {
     brief: input.brief.slice(0, 2000),
     lock: input.lock,
     groupId: input.groupId,
+    window: input.window,
+    fromClipId: input.fromClipId,
   };
 }
 
@@ -95,6 +104,11 @@ export function readRecastRecipe(value: unknown): RecastRecipe | null {
     brief: typeof r.brief === "string" ? r.brief : "",
     lock: r.lock === true,
     groupId: typeof r.groupId === "string" ? r.groupId : null,
+    window:
+      r.window && typeof r.window === "object" && typeof r.window.start === "number" && typeof r.window.end === "number"
+        ? { start: r.window.start, end: r.window.end }
+        : null,
+    fromClipId: typeof r.fromClipId === "string" ? r.fromClipId : null,
   };
 }
 

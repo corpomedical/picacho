@@ -188,6 +188,8 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "That clip is longer than this job takes — trim it, or choose another job.": "recastSceneTooLong",
   "Choose who performs it first.": "recastNeedsCast",
   "This clip can't be recast. Nothing was charged.": "recastRefusedBrief",
+  "That stretch of the clip can't be used — choose it again.": "recastWindowInvalid",
+  "Couldn't cut that stretch of the clip — nothing was charged. Try again.": "recastTrimFailed",
   "That character has no photo yet — add one first.": "recastCharacterNeedsPhoto",
   "That clip couldn't be checked just now — nothing was charged. Try again.": "recastClipUnchecked",
   "Couldn't start this take — nothing was charged. Try again.": "recastCouldntStart",

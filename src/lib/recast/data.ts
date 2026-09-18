@@ -178,6 +178,8 @@ export async function sweepRecastOrphans(supabase: SupabaseClient, userId: strin
     for (const r of rows) {
       const recipe = readRecastRecipe(r.recast);
       if (recipe?.source.kind === "upload") spokenFor.add(recipe.source.clipId);
+      // The upload a window was cut from stays too: the take can be recut.
+      if (recipe?.fromClipId) spokenFor.add(recipe.fromClipId);
     }
 
     const gone = old

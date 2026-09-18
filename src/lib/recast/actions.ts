@@ -28,6 +28,8 @@ import {
   RECAST_NOT_OPEN,
   RECAST_REFUSED_BRIEF,
   RECAST_TOO_FAST,
+  RECAST_TRIM_FAILED,
+  RECAST_WINDOW_INVALID,
   RECAST_UNAVAILABLE,
   RECAST_UPLOAD_UNREADABLE,
   recastClipProblemMessage,
@@ -65,6 +67,8 @@ import {
   type RecastWarning,
 } from "@/lib/recast/recast-read";
 import { RECAST_LOCK_THRESHOLD, readRecastRecipes, recastRow, type RecastSource } from "@/lib/recast/store";
+import { cutsInWindow, isWholeClip, recastWindowCredits, recastWindowProblem, type RecastWindow } from "@/lib/recast/trim";
+import { cutRecastWindow } from "@/lib/recast/trim-run";
 
 // Recast — "Mystique" on the door (working title, 2026-09-17).
 //
@@ -120,14 +124,14 @@ async function removeSource(admin: Admin, path: string): Promise<void> {
   if (error) console.error("recast source remove failed:", error.message);
 }
 
-/** The bytes of an uploaded clip, read from storage. */
-async function readUpload(admin: Admin, path: string): Promise<{ clip: RecastClip } | { error: string }> {
+/** The bytes of an uploaded clip, read from storage — kept, so a window can be cut from them. */
+async function readUpload(admin: Admin, path: string): Promise<{ clip: RecastClip; bytes: Buffer } | { error: string }> {
   const { data: blob, error } = await admin.storage.from(RECAST_BUCKET).download(path);
   if (error || !blob) return { error: RECAST_UPLOAD_UNREADABLE };
   const buf = Buffer.from(await blob.arrayBuffer());
   const probe = probeMp4(buf);
   if (!probe) return { error: RECAST_NOT_A_VIDEO };
-  return { clip: { seconds: probe.seconds, frames: probe.frames, width: probe.width, height: probe.height, bytes: buf.length } };
+  return { clip: { seconds: probe.seconds, frames: probe.frames, width: probe.width, height: probe.height, bytes: buf.length }, bytes: buf };
 }
 
 /** One of the person's own finished takes, used as the performance. */
@@ -137,7 +141,7 @@ async function readOwnTake(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   takeId: string,
-): Promise<{ clip: RecastClip; url: string } | { error: string }> {
+): Promise<{ clip: RecastClip; url: string; bytes: Buffer | null } | { error: string }> {
   const { data: take } = await supabase
     .from("generations")
     .select("id, result_url, video_duration_seconds")
@@ -166,15 +170,15 @@ async function readOwnTake(
   };
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
-    if (!res.ok) return { clip: fallback, url };
+    if (!res.ok) return { clip: fallback, url, bytes: null };
     const length = Number(res.headers.get("content-length") ?? 0);
-    if (length > TAKE_CLIP_MAX_BYTES) return { clip: fallback, url };
+    if (length > TAKE_CLIP_MAX_BYTES) return { clip: fallback, url, bytes: null };
     const buf = Buffer.from(await res.arrayBuffer());
     const probe = probeMp4(buf);
-    if (!probe) return { clip: fallback, url };
-    return { clip: { seconds: probe.seconds, frames: probe.frames, width: probe.width, height: probe.height, bytes: buf.length }, url };
+    if (!probe) return { clip: fallback, url, bytes: null };
+    return { clip: { seconds: probe.seconds, frames: probe.frames, width: probe.width, height: probe.height, bytes: buf.length }, url, bytes: buf };
   } catch {
-    return { clip: fallback, url };
+    return { clip: fallback, url, bytes: null };
   }
 }
 
@@ -206,6 +210,8 @@ export type RecastQuote = { engine: RecastEngine; credits: number; fits: boolean
 export type RecastInspection = {
   error: null;
   seconds: number;
+  /** The file's own frame count (null when it will not say) — what a window is priced from. */
+  frames: number | null;
   width: number;
   height: number;
   quotes: RecastQuote[];
@@ -264,6 +270,9 @@ export async function inspectRecastClip(input: {
   return {
     error: null,
     seconds: Math.round(clip.seconds * 10) / 10,
+    // The frame count the door prices a window with (trim.ts) — the same
+    // number the action will scale when it charges.
+    frames: clip.frames,
     width: clip.width,
     height: clip.height,
     quotes: RECAST_ENGINE_ORDER.map((engine) => ({
@@ -310,6 +319,8 @@ export async function startRecastTakes(input: {
   castTag?: string;
   /** The read the door was shown — bounded again here, and never trusted for money. */
   read?: unknown;
+  /** Which stretch of the clip to perform, in seconds of the file. */
+  window?: unknown;
   rights: boolean;
 }): Promise<{ error: string } | { error: null; ids: string[] }> {
   const access = await recastAccess();
@@ -348,12 +359,14 @@ export async function startRecastTakes(input: {
   let clip: RecastClip;
   let source: RecastSource;
   let clipUrl: string;
+  let sourceBytes: Buffer | null;
   let uploadPath: string | null = null;
   if (typeof input?.takeId === "string" && input.takeId) {
     const own = await readOwnTake(supabase, userId, input.takeId);
     if ("error" in own) return { error: own.error };
     clip = own.clip;
     clipUrl = own.url;
+    sourceBytes = own.bytes;
     source = { kind: "take", takeId: input.takeId };
   } else {
     const parsed = parseRecastSourcePath(typeof input?.path === "string" ? input.path : "");
@@ -362,6 +375,7 @@ export async function startRecastTakes(input: {
     const read = await readUpload(admin, uploadPath);
     if ("error" in read) return { error: read.error };
     clip = read.clip;
+    sourceBytes = read.bytes;
     source = { kind: "upload", clipId: parsed.takeId, container: parsed.container as RecastContainer };
     const { data: signed } = await admin.storage.from(RECAST_BUCKET).createSignedUrl(uploadPath, 60 * 60 * 24);
     if (!signed?.signedUrl) return { error: RECAST_COULDNT_START };
@@ -373,8 +387,19 @@ export async function startRecastTakes(input: {
     if (uploadPath) await removeSource(admin, uploadPath);
     return { error: recastClipProblemMessage(problem) };
   }
-  // The clip stays: it may still suit another job.
-  if (!recastEngineFits(engine, clip)) return { error: RECAST_JOB_TOO_LONG };
+
+  // THE WINDOW (trim.ts). The door always sends one; a client that predates
+  // it is given the whole clip, and refused only if the whole clip is longer
+  // than the job takes. Checked against the FILE's length, never trusted.
+  const window: RecastWindow = input?.window === undefined ? { start: 0, end: clip.seconds } : (input.window as RecastWindow);
+  const windowProblem = recastWindowProblem(window, clip.seconds, spec.job);
+  if (windowProblem === "too-long") return { error: RECAST_JOB_TOO_LONG };
+  if (windowProblem) return { error: RECAST_WINDOW_INVALID };
+  const cutting = !isWholeClip(window, clip.seconds);
+  // Price from the source's own numbers scaled to the window — the same call
+  // the door quoted with, so the button's number is the number charged.
+  const perTake = recastWindowCredits(engine, clip, window);
+  const windowSeconds = window.end - window.start;
 
   // The read again, from what the door was shown — the brief is composed
   // server-side from the same fields, so what was on the door is what is
@@ -387,9 +412,12 @@ export async function startRecastTakes(input: {
   const direction = typeof input?.direction === "string" ? input.direction.slice(0, RECAST_DIRECTION_MAX_CHARS) : "";
   const castTag = typeof input?.castTag === "string" && /^[A-D]$/.test(input.castTag) ? input.castTag : null;
 
-  const read = reboundRecastRead(input?.read, clip.seconds);
+  // The read described the whole clip; the brief describes the window —
+  // its own length, and only the cuts that fall inside it, on its own clock.
+  const wholeRead = reboundRecastRead(input?.read, clip.seconds);
+  const read = wholeRead ? { ...wholeRead, cuts: cutsInWindow(wholeRead.cuts, window) } : null;
   const briefFor = (casting: RecastCasting | null) =>
-    composeRecastBrief({ job: spec.job, read, seconds: clip.seconds, casting, keeps, direction });
+    composeRecastBrief({ job: spec.job, read, seconds: windowSeconds, casting, keeps, direction });
 
   // The words, judged before anything is spent. The brief is judged when it
   // will actually be sent; otherwise only the person's own direction is,
@@ -412,25 +440,46 @@ export async function startRecastTakes(input: {
     priorHits = await recentRefusalCount(userId);
   }
 
+  // THE CUT. After the words (a refused brief costs no encoding) and before
+  // the picture check, because what is judged must be what is sent. The
+  // cut is a new clip of its own; the original stays, named in the recipe,
+  // so the take can be recut later.
+  let cutPath: string | null = null;
+  const fromClipId = source.kind === "upload" ? source.clipId : null;
+  if (cutting) {
+    if (!sourceBytes) return { error: RECAST_TRIM_FAILED };
+    const cut = await cutRecastWindow(admin, userId, sourceBytes, window);
+    if ("error" in cut) return { error: RECAST_TRIM_FAILED };
+    cutPath = cut.path;
+    const { data: signedCut } = await admin.storage.from(RECAST_BUCKET).createSignedUrl(cut.path, 60 * 60 * 24);
+    if (!signedCut?.signedUrl) {
+      await removeSource(admin, cut.path);
+      return { error: RECAST_COULDNT_START };
+    }
+    clipUrl = signedCut.signedUrl;
+    source = { kind: "upload", clipId: cut.clipId, container: "mp4" };
+  }
+
   // THE CLIP IS JUDGED before anything is spent: real footage of real
   // people, so the strict lane, and a frame that cannot be read is a
   // refusal. Only an UPLOAD — one of our own finished takes met the output
-  // gate on the way out and is not re-judged on the way back in.
+  // gate on the way out and is not re-judged on the way back in (nor is a
+  // window cut from one). What is judged is what is sent: the cut, if any.
   if (uploadPath) {
     try {
       await judgeRender({ url: clipUrl, kind: "video", strictLane: true, promptScores: scores ?? null, sessionPriorHits: priorHits });
     } catch (err) {
       if (!(err instanceof OutputPolicyRefusal)) throw err;
       await recordPolicyRefusal({ userId, gate: "output", reason: err.reason, strictLane: true, bands: err.readings, provider: "recast-source" });
+      if (cutPath) await removeSource(admin, cutPath);
       if (err.reason === "unavailable") return { error: RECAST_CLIP_UNCHECKED };
       await removeSource(admin, uploadPath);
       return { error: err.userMessage };
     }
   }
 
-  const perTake = recastCreditCost(engine, clip);
   const total = perTake * cast.length;
-  const seconds = Math.max(1, Math.round(clip.seconds));
+  const seconds = Math.max(1, Math.round(windowSeconds));
   const groupId = cast.length > 1 ? crypto.randomUUID() : null;
 
   // The free daily slot never covers a recast — plan or purchased credits
@@ -476,6 +525,8 @@ export async function startRecastTakes(input: {
         brief: briefFor(casting),
         lock: lockOn,
         groupId,
+        window: cutting ? { start: window.start, end: window.end } : null,
+        fromClipId: cutting ? fromClipId : null,
       }),
     };
   });
@@ -538,7 +589,7 @@ export async function startRecastTakes(input: {
           ...(photos.first ? { characterImageUrl: photos.first } : {}),
           morePhotoUrls: photos.more,
           ...(spec.takesDirection ? { brief } : {}),
-          clip,
+          clip: { seconds: windowSeconds },
         });
         await saveVideoJob({
           generationId,

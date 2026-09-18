@@ -46,15 +46,46 @@ describe("startRecastTakes", () => {
     expect(at("input?.rights !== true")).toBeLessThan(at("readOwnTake(supabase, userId, input.takeId)"));
   });
 
-  it("prices from the file, never from the form and never from the read", () => {
-    expect(start).toContain("recastCreditCost(engine, clip)");
+  it("prices from the file and the window, never from the form and never from the read", () => {
+    expect(start).toContain("const perTake = recastWindowCredits(engine, clip, window)");
     expect(start).not.toMatch(/input\??\.(seconds|frames|credits|price|quotes)/);
-    expect(at("readUpload(admin, uploadPath)")).toBeLessThan(at("const perTake = recastCreditCost(engine, clip)"));
+    expect(at("readUpload(admin, uploadPath)")).toBeLessThan(at("const perTake = recastWindowCredits"));
+    // The window is checked against the FILE's length before it prices anything.
+    expect(at("recastWindowProblem(window, clip.seconds, spec.job)")).toBeLessThan(at("const perTake = recastWindowCredits"));
     // The read makes a round trip through a browser, so it is re-bounded and
     // may only shape the BRIEF — never the money or the cast.
     expect(start).toContain("reboundRecastRead(input?.read, clip.seconds)");
-    const readLine = at("const read = reboundRecastRead");
-    expect(start.slice(readLine, at("const perTake"))).not.toMatch(/credit|allowance|characterIds/);
+    const readLine = at("const wholeRead = reboundRecastRead");
+    expect(start.slice(readLine, at("await gatePrompt({"))).not.toMatch(/credit|allowance|characterIds/);
+  });
+
+  it("charges what the door quoted: both call the same price", () => {
+    const door = readFileSync(join(__dirname, "..", "..", "components", "mystique", "mystique-door.tsx"), "utf8");
+    expect(door).toContain("recastWindowCredits(e, { seconds: seen.seconds, frames: seen.frames }, clipWindow)");
+    expect(start).toContain("recastWindowCredits(engine, clip, window)");
+    // And the frame count the door uses is the file's, handed back by inspect.
+    expect(inspect).toContain("frames: clip.frames");
+  });
+
+  it("never moves a person to a job they did not choose", () => {
+    // The operator's first real take: a 28 s clip, quietly moved to the one
+    // job that took 28 s, which builds the picture from the photo.
+    const door = readFileSync(join(__dirname, "..", "..", "components", "mystique", "mystique-door.tsx"), "utf8");
+    expect(door).not.toContain("settleJob");
+    expect(door).not.toMatch(/setJob\(\(current\)/);
+    expect(door).toContain("clampRecastWindow(clipWindow, seen.seconds, next)");
+  });
+
+  it("cuts after the words and before the picture check, and judges what it sends", () => {
+    const cut = at("await cutRecastWindow(admin, userId, sourceBytes, window)");
+    expect(at("await gatePrompt({")).toBeLessThan(cut);
+    expect(cut).toBeLessThan(at("await judgeRender({"));
+    // The URL judged is the URL sent — the cut's, when there is one.
+    expect(start.slice(cut, at("await judgeRender({"))).toContain("clipUrl = signedCut.signedUrl");
+    // A refused cut goes with the refusal.
+    expect(start.slice(at("await judgeRender({"), at("const total = perTake"))).toContain("if (cutPath) await removeSource(admin, cutPath)");
+    // And the original is named in the recipe, so the take can be recut.
+    expect(start).toContain("fromClipId: cutting ? fromClipId : null");
   });
 
   it("judges the words and the clip BEFORE any credit moves", () => {
@@ -70,7 +101,7 @@ describe("startRecastTakes", () => {
   it("re-judges an upload but not one of our own finished takes", () => {
     // Our own render met the output gate on the way out; judging it again on
     // the way in would be paying twice to learn the same thing.
-    const guard = start.slice(at("if (uploadPath) {"), at("const perTake"));
+    const guard = start.slice(at("if (uploadPath) {\n    try {"), at("const total = perTake"));
     expect(guard).toContain("judgeRender");
     expect(guard).toContain("recordPolicyRefusal");
     expect(guard.indexOf('err.reason === "unavailable"')).toBeLessThan(guard.indexOf("removeSource(admin, uploadPath)"));
@@ -137,6 +168,16 @@ describe("inspectRecastClip", () => {
 });
 
 describe("the lane's own housekeeping", () => {
+  it("traces the encoder into the route whose action cuts", () => {
+    const config = readFileSync(join(__dirname, "..", "..", "..", "next.config.ts"), "utf8");
+    expect(config).toContain('"/app/mystique": ["./node_modules/ffmpeg-static/ffmpeg"]');
+  });
+
+  it("keeps the upload a window was cut from", () => {
+    const data = readFileSync(join(__dirname, "data.ts"), "utf8");
+    expect(data).toContain("if (recipe?.fromClipId) spokenFor.add(recipe.fromClipId)");
+  });
+
   it("sweeps a bucket that account deletion also sweeps", () => {
     const buckets = readFileSync(join(__dirname, "..", "profile", "storage-buckets.ts"), "utf8");
     expect(buckets).toContain('"recast-sources"');

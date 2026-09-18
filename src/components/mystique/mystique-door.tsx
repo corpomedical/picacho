@@ -22,6 +22,7 @@ import { RECAST_CLIP_TOO_BIG, RECAST_NOT_A_VIDEO, RECAST_UPLOAD_UNREADABLE } fro
 import {
   RECAST_BUCKET,
   RECAST_ENGINES,
+  RECAST_JOB_MAX_SECONDS,
   RECAST_JOB_ORDER,
   RECAST_MAX_BYTES,
   recastContainerOf,
@@ -32,6 +33,7 @@ import {
   type RecastJob,
 } from "@/lib/recast/recast";
 import { composeRecastBrief } from "@/lib/recast/recast-brief";
+import { clampRecastWindow, defaultRecastWindow, isWholeClip, recastWindowCredits, type RecastWindow } from "@/lib/recast/trim";
 import { sampleClip } from "@/lib/recast/recast-client";
 import type { RecastRead, RecastWarning } from "@/lib/recast/recast-read";
 import { TakeViewer } from "@/components/mystique/take-viewer";
@@ -63,6 +65,8 @@ type Source =
   | { kind: "take"; phase: "inspecting" | "ready"; url: string; takeId: string; name: string };
 
 type Viewing = { take: RecastTake; media: { resultUrl: string; sourceUrl: string | null } | null };
+
+const clock = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
 
 const chip = "inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/60 px-3 py-[5px] text-xs font-medium text-white/90";
 const label = "text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[#6b6f7a]";
@@ -97,6 +101,11 @@ export function MystiqueDoor({
   const [source, setSource] = useState<Source | null>(null);
   const [seen, setSeen] = useState<RecastInspection | null>(null);
   const [job, setJob] = useState<RecastJob>("scene");
+  // Which stretch of the clip is performed (trim.ts). Every job takes every
+  // clip through a window, so nobody is moved to a job they did not choose —
+  // which is how the operator's first real take went wrong.
+  const [clipWindow, setClipWindow] = useState<RecastWindow | null>(null);
+  const previewRef = useRef<HTMLVideoElement | null>(null);
   const [tier, setTier] = useState<"full" | "lite">("full");
   const [castIds, setCastIds] = useState<string[]>(castable[0] ? [castable[0].id] : []);
   const [photoPath, setPhotoPath] = useState<string | null>(castable[0]?.photos[0]?.path ?? null);
@@ -148,9 +157,11 @@ export function MystiqueDoor({
   const ready = source?.phase === "ready" && seen !== null;
   const needsCast = recastNeedsCharacter(job);
   const engine: RecastEngine = recastEngineFor(job, tier);
-  const quoteOf = (e: RecastEngine) => seen?.quotes.find((q) => q.engine === e) ?? null;
+  // Priced from the file's own numbers scaled to the window — the same call
+  // the server charges with (trim.ts), so the button's number is the charge.
+  const quoteOf = (e: RecastEngine) =>
+    seen && clipWindow ? { engine: e, credits: recastWindowCredits(e, { seconds: seen.seconds, frames: seen.frames }, clipWindow) } : null;
   const quote = quoteOf(engine);
-  const jobFits = (j: RecastJob) => !seen || recastEnginesOf(j).some((e) => quoteOf(e)?.fits);
   const cast = castIds.map((id) => castable.find((c) => c.id === id)).filter((c): c is RecastCharacter => Boolean(c));
   const takeCount = needsCast ? Math.max(1, cast.length) : 1;
   const totalCredits = quote ? quote.credits * takeCount : null;
@@ -158,7 +169,7 @@ export function MystiqueDoor({
   const photo = cast[0]?.photos.find((p) => p.path === photoPath) ?? cast[0]?.photos[0] ?? null;
   const busy = starting || (source !== null && source.phase !== "ready");
   const canTake =
-    ready && rights && !starting && Boolean(quote?.fits) && (needsCast ? cast.length > 0 : direction.trim().length > 0);
+    ready && rights && !starting && quote !== null && clipWindow !== null && (needsCast ? cast.length > 0 : direction.trim().length > 0);
 
   // The same function the server composes with, so what is shown is what is
   // sent. Not memoised: it is string work over a handful of short fields,
@@ -178,7 +189,10 @@ export function MystiqueDoor({
     if (urlRef.current && urlRef.current !== next?.url) URL.revokeObjectURL(urlRef.current);
     urlRef.current = next?.kind === "upload" ? next.url : null;
     setSource(next);
-    if (next === null) setSeen(null);
+    if (next === null) {
+      setSeen(null);
+      setClipWindow(null);
+    }
   }
 
   /** The read runs on frames sampled here, while the upload is still going. */
@@ -235,7 +249,7 @@ export function MystiqueDoor({
       if (res.error !== null) return fail(res.error);
       setSeen(res);
       setClip({ kind: "upload", phase: "ready", url, path: reserved.path, name: file.name });
-      settleJob(res);
+      setClipWindow(defaultRecastWindow(res.seconds, job));
     } catch (err) {
       const stale = isStaleDeployError(err);
       fail(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
@@ -261,7 +275,7 @@ export function MystiqueDoor({
       }
       setSeen(res);
       setClip({ kind: "take", phase: "ready", url: motion.videoUrl, takeId: motion.takeId, name: motion.title });
-      settleJob(res);
+      setClipWindow(defaultRecastWindow(res.seconds, job));
     } catch {
       setClip(null);
       setError(t.generate.submitFailed);
@@ -269,9 +283,22 @@ export function MystiqueDoor({
   }
 
   /** A clip too long for the job in hand moves to one that takes it. */
-  function settleJob(res: RecastInspection) {
-    const fits = (j: RecastJob) => recastEnginesOf(j).some((e) => res.quotes.find((q) => q.engine === e)?.fits);
-    setJob((current) => (fits(current) ? current : (RECAST_JOB_ORDER.find(fits) ?? current)));
+  /**
+   * A job is only ever chosen by the person. Until 2026-09-18 a clip longer
+   * than the job in hand moved the door to whichever job took it — which is
+   * how a 28 s crowd scene landed in Photo to life and came back as a room of
+   * cloned children. Now the job stays, and the window shrinks to fit it.
+   */
+  function chooseJob(next: RecastJob) {
+    setJob(next);
+    if (seen && clipWindow) setClipWindow(clampRecastWindow(clipWindow, seen.seconds, next));
+  }
+
+  /** The preview plays the chosen stretch and nothing else. */
+  function holdPreviewInWindow() {
+    const v = previewRef.current;
+    if (!v || !clipWindow) return;
+    if (v.currentTime < clipWindow.start - 0.05 || v.currentTime >= clipWindow.end) v.currentTime = clipWindow.start;
   }
 
   async function take() {
@@ -289,6 +316,7 @@ export function MystiqueDoor({
         direction,
         castTag: read?.people.find((p) => p.lead)?.tag,
         read,
+        window: clipWindow ?? undefined,
         rights,
       });
     } catch (err) {
@@ -355,6 +383,18 @@ export function MystiqueDoor({
       if (motion) void pickMotion(motion);
     }
   }
+
+  // A warning is only said where it is true. A crowd is a problem for the
+  // job that keeps the clip's people (one of them is replaced) — for Photo to
+  // life it is a far bigger one, said in its own box below; for Restyle it is
+  // no problem at all, everyone is redrawn.
+  const shownWarnings = (seen?.warnings ?? []).filter(
+    (w) => w === "cuts" || (w === "no-head" && job !== "world") || ((w === "crowd" || w === "wide") && job === "scene"),
+  );
+  // Photo to life builds the whole picture from the character's photo. A
+  // clip that shows a room or other people has all of that INVENTED — the
+  // operator's first real take: a selfie asked to become a classroom.
+  const motionWillInvent = job === "motion" && read !== null && (read.people.length > 1 || read.framing === "full" || read.framing === "wide");
 
   const warningText: Record<RecastWarning, string> = {
     cuts: m.warnCuts,
@@ -438,7 +478,17 @@ export function MystiqueDoor({
                 >
                   {source ? (
                     <>
-                      <video src={source.url} muted loop autoPlay playsInline className="absolute inset-0 h-full w-full object-contain" />
+                      <video
+                        ref={previewRef}
+                        src={source.url}
+                        muted
+                        loop
+                        autoPlay
+                        playsInline
+                        onTimeUpdate={holdPreviewInWindow}
+                        onLoadedMetadata={holdPreviewInWindow}
+                        className="absolute inset-0 h-full w-full object-contain"
+                      />
                       <span className={`absolute left-3.5 top-3 ${chip} tabular-nums`}>
                         {source.kind === "take" ? m.fromTake : m.yourClip}
                         {seen ? ` · ${formatMsg(m.clipMeta, { seconds: seen.seconds, width: seen.width, height: seen.height })}` : ""}
@@ -494,6 +544,69 @@ export function MystiqueDoor({
                 }`}
               />
             </div>
+
+            {/* The stretch to perform (trim.ts). Every job takes every clip
+                through this, so a long clip keeps the job that suits it. */}
+            {ready && seen && clipWindow && (
+              <div className={`mt-3 ${soft}`}>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <p className={label}>{m.trimLabel}</p>
+                  <p className="text-xs tabular-nums text-[#9aa0ad]">
+                    {formatMsg(m.trimMeta, {
+                      from: clock(clipWindow.start),
+                      to: clock(clipWindow.end),
+                      length: (clipWindow.end - clipWindow.start).toFixed(1),
+                      total: seen.seconds.toFixed(1),
+                    })}
+                  </p>
+                </div>
+                <div aria-hidden className="relative mt-2.5 h-2 overflow-hidden rounded-full bg-white/[0.06]">
+                  <div
+                    className="absolute inset-y-0 rounded-full bg-[#f0cda6]/75"
+                    style={{
+                      left: `${(clipWindow.start / seen.seconds) * 100}%`,
+                      width: `${((clipWindow.end - clipWindow.start) / seen.seconds) * 100}%`,
+                    }}
+                  />
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="text-xs text-[#9aa0ad]">{m.trimStart}</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={Math.max(0, seen.seconds - (clipWindow.end - clipWindow.start))}
+                      step={0.1}
+                      value={clipWindow.start}
+                      disabled={starting || isWholeClip(clipWindow, seen.seconds)}
+                      onChange={(e) => {
+                        const start = Number(e.target.value);
+                        const next = clampRecastWindow({ start, end: start + (clipWindow.end - clipWindow.start) }, seen.seconds, job);
+                        setClipWindow(next);
+                        if (previewRef.current) previewRef.current.currentTime = next.start;
+                      }}
+                      className="mt-1 w-full accent-[#f0cda6] disabled:opacity-40"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-[#9aa0ad]">{m.trimLength}</span>
+                    <input
+                      type="range"
+                      min={Math.min(3, seen.seconds)}
+                      max={Math.min(RECAST_JOB_MAX_SECONDS[job], seen.seconds)}
+                      step={0.1}
+                      value={clipWindow.end - clipWindow.start}
+                      disabled={starting}
+                      onChange={(e) => setClipWindow(clampRecastWindow({ start: clipWindow.start, end: clipWindow.start + Number(e.target.value) }, seen.seconds, job))}
+                      className="mt-1 w-full accent-[#f0cda6] disabled:opacity-40"
+                    />
+                  </label>
+                </div>
+                {seen.seconds > RECAST_JOB_MAX_SECONDS[job] + 0.05 && (
+                  <p className="mt-2 text-xs text-[#9aa0ad]">{formatMsg(m.trimWhy, { n: RECAST_JOB_MAX_SECONDS[job] })}</p>
+                )}
+              </div>
+            )}
 
             {/* The motion library: every finished video of theirs, ready to be performed again. */}
             <div className="mt-4">
@@ -588,9 +701,9 @@ export function MystiqueDoor({
                         </div>
                       </>
                     )}
-                    {seen.warnings.length > 0 && (
+                    {shownWarnings.length > 0 && (
                       <ul className="mt-3 space-y-1">
-                        {seen.warnings.map((w) => (
+                        {shownWarnings.map((w) => (
                           <li key={w} className="text-xs text-[#d8b483]">
                             {warningText[w]}
                           </li>
@@ -607,15 +720,14 @@ export function MystiqueDoor({
                 <p className={label}>{m.modeLabel}</p>
                 <div className="mt-2 grid gap-2">
                   {RECAST_JOB_ORDER.map((j) => {
-                    const fits = jobFits(j);
                     const on = job === j;
                     return (
                       <button
                         key={j}
                         type="button"
                         aria-pressed={on}
-                        disabled={!fits || starting}
-                        onClick={() => setJob(j)}
+                        disabled={starting}
+                        onClick={() => chooseJob(j)}
                         className={`cursor-pointer rounded-2xl p-3.5 text-left transition-shadow disabled:cursor-not-allowed disabled:opacity-45 ${
                           on
                             ? "bg-white/[0.06] shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)]"
@@ -631,6 +743,14 @@ export function MystiqueDoor({
                     );
                   })}
                 </div>
+                {motionWillInvent && (
+                  <div className="mt-3 rounded-2xl bg-[#d8b483]/[0.08] p-3.5 shadow-[inset_0_0_0_1px_rgba(216,180,131,0.4)]">
+                    <p className="text-sm leading-relaxed text-[#ecedf1]">{m.motionWarn}</p>
+                    <button type="button" onClick={() => chooseJob("scene")} disabled={starting} className={`mt-2.5 ${ghost}`}>
+                      {m.motionWarnSwitch}
+                    </button>
+                  </div>
+                )}
                 <p className={`mt-4 ${label}`}>{m.qualityLabel}</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {recastEnginesOf(job).map((e) => {
@@ -641,7 +761,7 @@ export function MystiqueDoor({
                         key={e}
                         type="button"
                         aria-pressed={e === engine}
-                        disabled={starting || (q !== null && !q.fits)}
+                        disabled={starting}
                         onClick={() => setTier(spec.tier)}
                         className={pill(e === engine)}
                       >
