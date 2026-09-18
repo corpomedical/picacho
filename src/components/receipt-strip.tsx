@@ -165,6 +165,25 @@ function actionLabel(issue: PlanIssue, g: Messages["generate"]): string | null {
   }
 }
 
+// A column's value: a button when tapping it opens something (the FACE
+// column's photo menu), plain text otherwise — never a div with a click.
+function ValueTag({
+  opens,
+  className,
+  children,
+}: {
+  opens: (() => void) | null;
+  className: string;
+  children: React.ReactNode;
+}) {
+  if (!opens) return <span className={className}>{children}</span>;
+  return (
+    <button type="button" onClick={opens} aria-haspopup="dialog" className={className}>
+      {children}
+    </button>
+  );
+}
+
 export function ReceiptStrip({
   plan,
   headline,
@@ -173,6 +192,7 @@ export function ReceiptStrip({
   onAction,
   dialogueNote,
   showIssues,
+  facePhoto,
 }: {
   plan: SendPlan;
   // Optional since 2026-08-26: the strip now sits directly below the model
@@ -193,6 +213,12 @@ export function ReceiptStrip({
   // submit-time soft-block protects regardless, so hiding rows pre-
   // engagement costs no safety.
   showIssues: boolean;
+  /** Direction B (2026-09-18): when the character has several saved photos
+      and this lane opens on one of them, the FACE column names WHICH one
+      ("photo 1 of 6") and opens the same photo menu as the character's pill.
+      Only ever applied to the character's own saved photos — an attachment
+      or multi-reference keeps its own words. */
+  facePhoto?: { text: string; onOpen: () => void } | null;
 }) {
   // The approved A×B board draws the receipt as a SPEC SHEET, not a
   // sentence: labeled columns (microlabel over value, an ochre check when
@@ -204,19 +230,33 @@ export function ReceiptStrip({
       const text = entryText(e, g);
       if (!text) return null;
       if (e.slot === "dialogue" && dialogueNote) {
-        return { label: g.receiptDialogue, value: dialogueNote, ok: false, accent: true };
+        return { label: g.receiptDialogue, value: dialogueNote, ok: false, accent: true, opens: null };
       }
       const ci = text.indexOf(": ");
+      // The character's own saved photo — the default one, or the one picked
+      // from their photos ("gallery-pick" is that pick, send-plan.ts).
+      const savedFace =
+        e.slot === "identity" &&
+        e.consumption !== "dropped" &&
+        (e.source === "character-default" || e.source === "gallery-pick");
       return {
         label: ci > 0 ? text.slice(0, ci) : null,
-        value: ci > 0 ? text.slice(ci + 2) : text,
+        value: savedFace && facePhoto ? facePhoto.text : ci > 0 ? text.slice(ci + 2) : text,
         ok: e.consumption === "native",
         accent: false,
+        opens: savedFace && facePhoto ? facePhoto.onOpen : null,
       };
     })
     .filter(
-      (p): p is { label: string | null; value: string; ok: boolean; accent: boolean } =>
-        p !== null,
+      (
+        p,
+      ): p is {
+        label: string | null;
+        value: string;
+        ok: boolean;
+        accent: boolean;
+        opens: (() => void) | null;
+      } => p !== null,
     );
   const visibleIssues = showIssues ? plan.issues : [];
   const hasAttachmentRiding = plan.entries.some(
@@ -238,12 +278,15 @@ export function ReceiptStrip({
                 {p.label}
               </span>
             )}
-            <span
+            <ValueTag
+              opens={p.opens}
               className={cn(
                 "flex items-center gap-1 text-[12px] leading-snug",
                 p.accent
                   ? "font-numeral tabular-nums text-atelier-accent"
                   : "text-atelier-ink/90",
+                p.opens &&
+                  "-mx-1 rounded-md px-1 text-left underline decoration-atelier-accent/40 decoration-dotted underline-offset-[3px] transition-colors hover:bg-atelier-ink/[0.06] hover:decoration-atelier-accent",
               )}
             >
               {p.value}
@@ -261,7 +304,7 @@ export function ReceiptStrip({
                   <path d="M5 12.5l4.5 4.5L19 7.5" />
                 </svg>
               )}
-            </span>
+            </ValueTag>
           </span>
         ))}
       </div>

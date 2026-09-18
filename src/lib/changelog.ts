@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.50.0",
+    build: 89,
+    date: "2026-09-18",
+    title: "The take keeps its size when you write the next one",
+    items: [
+      "Opening the composer under a finished take used to shrink the take to a sliver — about 55 px tall on a 632 px window — because everything under it was taken off its height: the composer, the reference-photo row inside it, and a 124 px band kept free for the Takes strip. On the same window with the composer open, the take is now three times the height, and on a 900 px laptop it fills most of the screen.",
+      "The reference-photo row has left the composer. The character's pill now wears the photo this take will match and says which one (1/6); tap it — or FACE in the send receipt, which now reads 'photo 1 of 6' — and the same six photos open in a small menu above it. Pick one and it closes. Switch character is the row at the foot of that menu. On models that use several photos at once the pill works exactly as before.",
+      "The Takes strip moves to a column at the left of the screen whenever that leaves the take bigger — on a short window with the composer open — and stays in its band at the bottom when the take is already wide. Stills keep the band as they always had.",
+      "On a small take the name label steps aside for the download and Upscale buttons, and the identity plate shrinks to its number, so nothing covers the middle of the picture.",
+      "The Upscale receipt opens over the whole page again. It was being drawn inside the take's own box, squeezed to the size of the video.",
+    ],
+  },
+  {
     version: "1.49.0",
     build: 88,
     date: "2026-09-18",

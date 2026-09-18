@@ -2084,6 +2084,11 @@ function GenerateFormInner({
     return characters[0]?.id ?? "";
   });
   const [characterMenuOpen, setCharacterMenuOpen] = useState(false);
+  // Direction B (2026-09-18): the character's photo menu — which saved photo
+  // this take matches — opened from the character's pill (or the receipt's
+  // FACE column) instead of a row inside the composer. It shares the pill's
+  // wrapper, so the same outside-click and Escape rules close it.
+  const [photoMenuOpen, setPhotoMenuOpen] = useState(false);
   const characterMenuRef = useRef<HTMLDivElement>(null);
   const [contentType, setContentType] = useState<ContentType>(() => {
     const fromUrl = searchParams.get("type");
@@ -2886,15 +2891,16 @@ function GenerateFormInner({
   // positioned dropdown (no portal needed) since the composer's outer
   // wrapper no longer clips overflow.
   useEffect(() => {
-    if (!characterMenuOpen) return;
+    if (!characterMenuOpen && !photoMenuOpen) return;
     function onClick(e: MouseEvent) {
       if (characterMenuRef.current && !characterMenuRef.current.contains(e.target as Node)) {
         setCharacterMenuOpen(false);
+        setPhotoMenuOpen(false);
       }
     }
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
-  }, [characterMenuOpen]);
+  }, [characterMenuOpen, photoMenuOpen]);
 
   // Same outside-click-closes pattern for the composer's + menu.
   useEffect(() => {
@@ -2940,17 +2946,18 @@ function GenerateFormInner({
   // the trigger is usually still the focused element, which is exactly
   // where Escape should leave them.
   useEffect(() => {
-    if (!characterMenuOpen && !plusMenuOpen && !videoModelMenuOpen && !durationMenuOpen) return;
+    if (!characterMenuOpen && !photoMenuOpen && !plusMenuOpen && !videoModelMenuOpen && !durationMenuOpen) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
       setCharacterMenuOpen(false);
+      setPhotoMenuOpen(false);
       setPlusMenuOpen(false);
       setVideoModelMenuOpen(false);
       setDurationMenuOpen(false);
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [characterMenuOpen, plusMenuOpen, videoModelMenuOpen, durationMenuOpen]);
+  }, [characterMenuOpen, photoMenuOpen, plusMenuOpen, videoModelMenuOpen, durationMenuOpen]);
 
   // Composer + menu — "Create image"/"Create video" set the content type
   // directly (Picacho has no separate style-template gallery like Gemini's,
@@ -3182,6 +3189,30 @@ function GenerateFormInner({
   // and filmstrip sit above it, so they follow it: published as --dock-h and
   // measured, since only the composer knows its own height.
   const [dockHeight, setDockHeight] = useState(184);
+  // The stage's own size, and which breakpoints the viewport sits past — the
+  // Takes strip goes wherever the take comes out bigger (direction B,
+  // stripBeside below), and that answer needs the pane, not the viewport:
+  // the sidebar and the transcript drawer both take width from it.
+  const stagePanelRef = useRef<HTMLDivElement | null>(null);
+  const [stagePane, setStagePane] = useState({ w: 0, h: 0, md: false, lg: false });
+  useEffect(() => {
+    const el = stagePanelRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const read = () => {
+      const r = el.getBoundingClientRect();
+      const md = window.matchMedia("(min-width: 768px)").matches;
+      const lg = window.matchMedia("(min-width: 1024px)").matches;
+      setStagePane((prev) =>
+        Math.abs(prev.w - r.width) < 1 && Math.abs(prev.h - r.height) < 1 && prev.md === md && prev.lg === lg
+          ? prev
+          : { w: r.width, h: r.height, md, lg },
+      );
+    };
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isHero]);
   const dockRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = dockRef.current;
@@ -5491,23 +5522,61 @@ function GenerateFormInner({
       ? (MODEL_CAPABILITIES[videoModelId as keyof typeof MODEL_CAPABILITIES]?.identity.max ?? 1)
       : 1;
   const anchorPhotoPickerRelevant = identityImageSlots <= 1;
+  // The same condition that used to show the REFERENCE PHOTO row in the
+  // composer; since direction B (2026-09-18) it decides whether the
+  // character's pill names a photo ("1/6") and opens the photo menu.
+  const anchorPickerShown =
+    referencePhotos.length > 1 &&
+    anchorPhotoPickerRelevant &&
+    videoAdvancedMode === "none" &&
+    !isMultiCharacter;
+  const anchorIndex = Math.max(
+    0,
+    referencePhotos.findIndex((ph) => ph.path === anchorPhotoPath),
+  );
+  // The pill wears the photo this take will match, at the size a chip needs.
+  const thumbOf = (url: string) =>
+    url.startsWith("/api/media/") ? `${url}${url.includes("?") ? "&" : "?"}w=320` : url;
 
   const characterPicker =
     characters.length > 0 ? (
       <div ref={characterMenuRef} data-tour-id="tour-character-select" className="min-w-0">
         <button
           type="button"
-          onClick={() => setCharacterMenuOpen((v) => !v)}
+          onClick={() => {
+            // With several saved photos on a one-photo lane, the pill's first
+            // job is WHICH photo (direction B); switching character is one
+            // row inside that menu. Otherwise it opens the cast as before.
+            if (anchorPickerShown) {
+              setCharacterMenuOpen(false);
+              setPhotoMenuOpen((v) => !v);
+            } else {
+              setPhotoMenuOpen(false);
+              setCharacterMenuOpen((v) => !v);
+            }
+          }}
           disabled={locked}
-          aria-haspopup="listbox"
-          aria-expanded={characterMenuOpen}
+          aria-haspopup={anchorPickerShown ? "dialog" : "listbox"}
+          aria-expanded={characterMenuOpen || photoMenuOpen}
+          aria-label={
+            anchorPickerShown && currentCharacter
+              ? formatMsg(g.characterPillPhotoAria, {
+                  name: currentCharacter.name ?? "",
+                  n: anchorIndex + 1,
+                  total: referencePhotos.length,
+                })
+              : undefined
+          }
           className={cn(
             // Casting Bar segment (2026-08-28, operator-approved direction
             // 1 round 3): the pill became one segment of the shared bar —
             // content-width, transparent until open/hover, the bar behind
             // it carries the shape.
             "flex min-w-0 items-center gap-2 rounded-full py-1 pl-1 pr-2.5 text-left transition-colors disabled:opacity-50",
-            characterMenuOpen
+            // Direction B's board: an ochre hairline says this chip holds a
+            // choice (the photo), not just a name.
+            anchorPickerShown && "shadow-[inset_0_0_0_1px_rgba(224,164,104,0.38)]",
+            characterMenuOpen || photoMenuOpen
               ? "bg-atelier-ink/[0.08]"
               : !characterId && warnOnEmptyCharacter
                 ? // Nothing picked yet AND this model cannot render without
@@ -5551,12 +5620,19 @@ function GenerateFormInner({
             </span>
           ) : currentCharacter?.referencePhotos[0]?.url ? (
             // The pill wears the character's real face, not an initial —
-            // same photo the casting sheet leads with.
+            // same photo the casting sheet leads with. When the take matches
+            // one of several photos, it wears THAT photo, ringed (direction B).
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={(() => { const ph = currentCharacter.referencePhotos[0].url; return ph.startsWith("/api/media/") ? `${ph}${ph.includes("?") ? "&" : "?"}w=320` : ph; })()}
+              src={thumbOf(
+                (anchorPickerShown ? referencePhotos[anchorIndex]?.url : undefined) ??
+                  currentCharacter.referencePhotos[0].url,
+              )}
               alt=""
-              className="h-7 w-7 flex-shrink-0 rounded-full bg-atelier-ink/10 object-cover"
+              className={cn(
+                "h-7 w-7 flex-shrink-0 rounded-full bg-atelier-ink/10 object-cover",
+                anchorPickerShown && "shadow-[0_0_0_1.5px_var(--color-atelier-accent)]",
+              )}
             />
           ) : (
             <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink/10 text-xs font-medium text-atelier-muted">
@@ -5592,10 +5668,15 @@ function GenerateFormInner({
               ))}
             </span>
           )}
+          {anchorPickerShown && (
+            <span className="flex-shrink-0 text-[10px] font-medium uppercase tabular-nums tracking-[0.12em] text-atelier-muted">
+              {anchorIndex + 1}/{referencePhotos.length}
+            </span>
+          )}
           <ChevronDownIcon
             className={cn(
               "h-3.5 w-3.5 flex-shrink-0 text-atelier-muted transition-transform",
-              characterMenuOpen && "rotate-180",
+              (characterMenuOpen || photoMenuOpen) && "rotate-180",
             )}
           />
         </button>
@@ -5681,6 +5762,83 @@ function GenerateFormInner({
                 {g.castManage}
               </Link>
             </div>
+          </div>
+        )}
+        {photoMenuOpen && anchorPickerShown && currentCharacter && (
+          /* The photo menu (direction B, 2026-09-18, board "B · Tap Eva's
+             pill — the photo menu"): the REFERENCE PHOTO row that used to
+             sit inside the composer — and cost the screen above it about
+             85 px every time the composer opened — as a small sheet that
+             opens UPWARD from the pill, like every sheet in this row. The
+             same photos, the same choice, the same hint; one tap picks and
+             closes. Switching character is the row at its foot. Its sheet is
+             the composer's glass laid over the solid page ground, so the
+             receipt and the take behind it never read through the photos. */
+          <div
+            role="dialog"
+            aria-label={formatMsg(g.anchorPhotoMenuTitle, { name: currentCharacter.name ?? "" })}
+            className="absolute bottom-full left-0 z-30 mb-2 w-[392px] max-w-[calc(100vw-2rem)] rounded-[16px] px-4 pb-2.5 pt-3.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] [background:linear-gradient(var(--color-atelier-surface),var(--color-atelier-surface)),var(--color-atelier-paper)]"
+          >
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="min-w-0 truncate text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
+                {formatMsg(g.anchorPhotoMenuTitle, { name: currentCharacter.name ?? "" })}
+              </span>
+              <span className="flex-shrink-0 text-[10px] font-medium uppercase tabular-nums tracking-widest text-atelier-accent">
+                {formatMsg(g.anchorPhotoCount, { n: anchorIndex + 1, total: referencePhotos.length })}
+              </span>
+            </div>
+            <p className="mt-1.5 text-[11px] leading-snug text-atelier-muted/80">{g.anchorPhotoHint}</p>
+            {/* min-w-0 + overflow-x-auto + overscroll-x-contain: the
+                2026-08-30 page-overflow incident — the strip scrolls INSIDE
+                itself, and the flick must not chain to the page. */}
+            <div className="mt-2.5 flex min-w-0 gap-2 overflow-x-auto overscroll-x-contain p-[2px]">
+              {referencePhotos.map((ph, i) => {
+                const selected = i === anchorIndex;
+                return (
+                  <button
+                    key={ph.path}
+                    type="button"
+                    onClick={() => {
+                      setAnchorPhotoPath(ph.path);
+                      setPhotoMenuOpen(false);
+                    }}
+                    aria-pressed={selected}
+                    aria-label={formatMsg(g.photoOption, { n: i + 1 })}
+                    className={cn(
+                      "relative h-[50px] w-[50px] flex-shrink-0 overflow-hidden rounded-[10px] bg-atelier-ink/10 transition-shadow",
+                      selected
+                        ? "shadow-[0_0_0_2px_var(--color-atelier-ink)]"
+                        : "shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:shadow-[0_0_0_1.5px_var(--color-atelier-muted)]",
+                    )}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={thumbOf(ph.url)} alt="" className="h-full w-full object-cover" />
+                    {selected && (
+                      <span className="absolute right-1 top-1 flex h-[15px] w-[15px] items-center justify-center rounded-full bg-atelier-ink text-atelier-paper">
+                        <CheckIcon className="h-2 w-2" />
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-2.5 border-t border-atelier-rule/70 pt-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setPhotoMenuOpen(false);
+                  setCharacterMenuOpen(true);
+                }}
+                className="flex w-full items-center justify-between rounded-md px-0.5 py-1 text-[12.5px] text-atelier-ink/85 transition-colors hover:text-atelier-ink"
+              >
+                {g.switchCharacter}
+                <ChevronDownIcon className="h-3.5 w-3.5 -rotate-90 text-atelier-muted" />
+              </button>
+            </div>
+            <span
+              aria-hidden
+              className="absolute -bottom-[6px] left-6 h-3 w-3 rotate-45 shadow-[1px_1px_0_0_var(--frost-ring)] [background:linear-gradient(var(--color-atelier-surface),var(--color-atelier-surface)),var(--color-atelier-paper)]"
+            />
           </div>
         )}
       </div>
@@ -6097,18 +6255,78 @@ function GenerateFormInner({
             ? g.video
             : g.image;
 
+  // ── Direction B (operator-picked, 2026-09-18): where the Takes strip goes.
+  // Until today it always stood in a band over the screen's bottom, and a
+  // VIDEO frame gave up 124 px of height under itself so the strip never sat
+  // on the player's controls. With the composer open on a short window that
+  // band is what the take could not afford: 632 − 78 header − ~375 composer −
+  // 124 band left it 55 px tall. From md up the strip can instead stand in a
+  // column at the screen's left, beside the frame, and the frame then ends
+  // just above the composer — at the cost of a gutter each side, which
+  // narrows a frame that was limited by WIDTH. So it goes wherever the take
+  // comes out bigger: beside it on a short window with the composer open, in
+  // the band (exactly as before) when the take is already wide, and never
+  // for stills, which were already allowed to run under the band.
+  const STAGE_TOP_PX = 78; // md:top-[78px] on the media box
+  const BAND_RESERVE_PX = 124; // video frame's gap for the band (below)
+  const COLUMN_RESERVE_PX = 34; // the slate line's room above the composer
+  const BAND_SIDE_PX = 32; // md:inset-x-8
+  const COLUMN_SIDE_PX = 176; // the column (116 px tiles + ring) and a gutter
+  const DRAWER_SIDE_PX = 452; // lg:right-[452px] while the transcript is open
+  const stripBeside = (() => {
+    if (!stagePane.md || !stageTakeUrl || !stageTakeIsVideo || stageInFlightPrompt !== null) return false;
+    const drawer = transcriptOpen && stagePane.lg;
+    const widthFor = (reserve: number, left: number, right: number) => {
+      const h = stagePane.h - STAGE_TOP_PX - dockHeight - reserve;
+      if (h <= 0) return 0;
+      return Math.min(h * stageRatio, stagePane.w - left - right);
+    };
+    const inBand = widthFor(BAND_RESERVE_PX, BAND_SIDE_PX, drawer ? DRAWER_SIDE_PX : BAND_SIDE_PX);
+    const beside = widthFor(COLUMN_RESERVE_PX, COLUMN_SIDE_PX, drawer ? DRAWER_SIDE_PX : COLUMN_SIDE_PX);
+    // A margin, so a pane on the fence does not flip the strip back and forth.
+    return beside > inBand + 24;
+  })();
+  // The frame's own size from md up (0 × 0 before the stage is measured) —
+  // the same arithmetic the box above runs in CSS. The frame's overlays were
+  // drawn for a big take; on a small one (a short window with the composer
+  // open) the take label ran into the download button and the identity
+  // plate sat over the middle of the picture, so both step back below these
+  // sizes (see stageFrameNarrow / stageFrameShort at their elements).
+  const stageFrame = (() => {
+    if (!stagePane.md || !stageTakeUrl) return { w: 0, h: 0 };
+    const drawer = transcriptOpen && stagePane.lg;
+    const left = stripBeside ? COLUMN_SIDE_PX : BAND_SIDE_PX;
+    const right = drawer ? DRAWER_SIDE_PX : stripBeside ? COLUMN_SIDE_PX : BAND_SIDE_PX;
+    const reserve = stripBeside || !stageTakeIsVideo ? COLUMN_RESERVE_PX : BAND_RESERVE_PX;
+    const boxW = stagePane.w - left - right;
+    const boxH = stagePane.h - STAGE_TOP_PX - dockHeight - reserve;
+    if (boxW <= 0 || boxH <= 0) return { w: 0, h: 0 };
+    const w = Math.min(boxW, boxH * stageRatio);
+    return { w, h: w / stageRatio };
+  })();
+  const stageFrameNarrow = stageFrame.w > 0 && stageFrame.w < 460;
+  const stageFrameShort = stageFrame.h > 0 && stageFrame.h < 240;
+
   // The take numbers on the tiles and the slate line: 01, 02 … counting up
   // from the session's first send (the strip itself runs newest first).
   const takeLabelNo = (n: number) => (n < 10 ? `0${n}` : String(n));
 
   const stageMediaClass = "absolute inset-0 h-full w-full object-contain";
 
-  // One filmstrip, two homes: in the page's flow under the phone screen, and
-  // over the screen itself from md up.
-  function filmstrip(where: "page" | "screen") {
-    const onScreen = where === "screen";
+  // One filmstrip, three homes: in the page's flow under the phone screen,
+  // over the screen's bottom from md up, and — direction B — in a column at
+  // the screen's left, beside the frame (stripBeside).
+  function filmstrip(where: "page" | "screen" | "column") {
+    const onScreen = where !== "page";
+    const column = where === "column";
     return (
-      <div className={cn("flex min-w-0 items-center gap-3", onScreen ? "min-w-0 flex-1" : "w-full")}>
+      <div
+        className={cn(
+          "flex min-w-0 gap-3",
+          column ? "min-h-0 flex-col items-start gap-2" : "items-center",
+          column ? null : onScreen ? "min-w-0 flex-1" : "w-full",
+        )}
+      >
         <div className="flex flex-shrink-0 flex-col">
           <span
             className={cn(
@@ -6131,7 +6349,14 @@ function GenerateFormInner({
             incidents both came from strips that couldn't), with 3px of room
             for the selected tile's ring, which overflow would otherwise
             clip. */}
-        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto overscroll-x-contain p-[3px]">
+        <div
+          className={cn(
+            "flex min-w-0 gap-2 p-[3px]",
+            column
+              ? "min-h-0 flex-col overflow-y-auto overscroll-y-contain"
+              : "flex-1 items-center overflow-x-auto overscroll-x-contain",
+          )}
+        >
           {stageInFlightPrompt !== null && (
             <div
               title={stageInFlightPrompt}
@@ -6241,6 +6466,7 @@ function GenerateFormInner({
 
   const stagePanel = isHero ? null : (
     <div
+      ref={stagePanelRef}
       data-screening-stage
       style={{ "--frame-h": `calc((100vw - 32px) / ${stageRatio} + 84px)` } as React.CSSProperties}
       className={cn(
@@ -6295,12 +6521,19 @@ function GenerateFormInner({
         aria-live="polite"
         className={cn(
           "absolute inset-x-4 bottom-11 top-10 flex items-center justify-center [container-type:size]",
-          "md:inset-x-8 md:top-[78px] md:transition-[bottom,right] md:duration-300 md:ease-out",
+          "md:top-[78px] md:transition-[bottom,right,left] md:duration-300 md:ease-out",
           // An image may run under the filmstrip — the board drew it that way
           // and nothing there is clickable. A VIDEO may not: its own control
           // bar lives at the bottom of the frame, and the strip would sit on
-          // the play button.
-          stageTakeIsVideo ? "md:bottom-[calc(var(--dock-h)+124px)]" : "md:bottom-[calc(var(--dock-h)+34px)]",
+          // the play button. Unless the strip stands beside the frame
+          // (direction B, stripBeside): then the frame keeps a gutter each
+          // side instead and runs down to just above the composer.
+          stripBeside
+            ? "md:left-[176px] md:right-[176px] md:bottom-[calc(var(--dock-h)+34px)]"
+            : cn(
+                "md:inset-x-8",
+                stageTakeIsVideo ? "md:bottom-[calc(var(--dock-h)+124px)]" : "md:bottom-[calc(var(--dock-h)+34px)]",
+              ),
           transcriptOpen && "lg:right-[452px]",
         )}
       >
@@ -6370,7 +6603,15 @@ function GenerateFormInner({
               <div aria-hidden className="lock-frame absolute -inset-[7px] [--lock-arm:18px] sm:[--lock-arm:26px]" />
             )}
             {(stageCharacterName || stageTakeNo > 0) && (
-              <div className="pointer-events-none absolute -top-[26px] left-0 flex max-w-full items-center gap-2 pr-2 md:left-3 md:top-3 md:rounded-full md:bg-[#0e0c0a]/55 md:py-1 md:pl-1 md:pr-3 md:backdrop-blur-[6px]">
+              <div
+                className={cn(
+                  "pointer-events-none absolute -top-[26px] left-0 flex max-w-full items-center gap-2 pr-2 md:left-3 md:top-3 md:rounded-full md:bg-[#0e0c0a]/55 md:py-1 md:pl-1 md:pr-3 md:backdrop-blur-[6px]",
+                  // A narrow frame's top edge belongs to its actions; the
+                  // character's pill and the strip's tile already say who and
+                  // which take (2026-09-18).
+                  stageFrameNarrow && "md:hidden",
+                )}
+              >
                 {stageCharacterPhoto && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -6394,17 +6635,32 @@ function GenerateFormInner({
                   // the plate lifts clear of it, exactly as it did on the old
                   // stage.
                   stageTakeIsVideo ? "md:bottom-[52px]" : "md:bottom-3",
+                  // On a short frame the plate shrinks to its number and sits
+                  // low in the corner, clear of the picture's middle.
+                  stageFrameShort && (stageTakeIsVideo ? "md:bottom-[46px] md:px-2 md:py-1" : "md:px-2 md:py-1"),
                 )}
               >
-                {stageTake?.kind === "single" && stageTake.attempts.length > 1 && (
+                {!stageFrameShort && stageTake?.kind === "single" && stageTake.attempts.length > 1 && (
                   <span className="text-[11px] lowercase text-[#cfc6b8]">
                     {formatMsg(g.passedOnAttempt, { n: stageTake.attempts.length })}
                   </span>
                 )}
-                <span className="text-[10px] font-medium uppercase tracking-widest text-[#cfc6b8]">
+                {/* Kept for screen readers on a short frame, where only the
+                    number shows. */}
+                <span
+                  className={cn(
+                    "text-[10px] font-medium uppercase tracking-widest text-[#cfc6b8]",
+                    stageFrameShort && "sr-only",
+                  )}
+                >
                   {g.identityMatchLabel}
                 </span>
-                <span className="font-numeral text-[26px] font-semibold leading-none tabular-nums text-[#e0a468]">
+                <span
+                  className={cn(
+                    "font-numeral font-semibold leading-none tabular-nums text-[#e0a468]",
+                    stageFrameShort ? "text-[26px] md:text-[17px]" : "text-[26px]",
+                  )}
+                >
                   {stageScore}%
                 </span>
               </div>
@@ -6496,8 +6752,28 @@ function GenerateFormInner({
         )}
       </div>
 
+      {/* Direction B: the strip in a column at the screen's left, beside the
+          frame, and the slate line on its own at the right above the
+          composer — where the band used to end. */}
+      {stripBeside && (
+        <>
+          <div className="absolute left-8 top-[92px] z-20 hidden max-h-[calc(100%-92px-var(--dock-h)-28px)] min-h-0 flex-col md:flex">
+            {filmstrip("column")}
+          </div>
+          {/* Not while the transcript drawer is open: the drawer pulls the
+              line in to the frame's own bottom-right corner, where it sat on
+              the lock's bracket — and the drawer already names the take. */}
+          {!(transcriptOpen && stagePane.lg) && (
+            <p className="absolute right-8 z-20 hidden max-w-[320px] truncate text-right text-[10.5px] font-medium uppercase tracking-[0.14em] text-[#cfc6b8] md:block md:bottom-[calc(var(--dock-h)+22px)] md:transition-[bottom,right] md:duration-300 md:ease-out">
+              {stageSpec}
+            </p>
+          )}
+        </>
+      )}
       {/* The filmstrip band, over the screen's bottom from md up — the phone
-          keeps its strip in the page's flow, under the screen. */}
+          keeps its strip in the page's flow, under the screen. Not mounted
+          while the strip stands beside the frame, so no tile loads twice. */}
+      {!stripBeside && (
       <div
         className={cn(
           "absolute inset-x-8 z-20 hidden items-end gap-5 md:flex md:bottom-[calc(var(--dock-h)+22px)] md:transition-[bottom,right] md:duration-300 md:ease-out",
@@ -6515,6 +6791,7 @@ function GenerateFormInner({
           </p>
         )}
       </div>
+      )}
     </div>
   );
 
@@ -6980,6 +7257,21 @@ function GenerateFormInner({
                     modelName={sendPlanModelName()}
                     onAction={handlePlanAction}
                     showIssues={receiptEngaged}
+                    facePhoto={
+                      anchorPickerShown
+                        ? {
+                            text: formatMsg(g.receiptFacePhoto, {
+                              n: anchorIndex + 1,
+                              total: referencePhotos.length,
+                            }),
+                            onOpen: () => {
+                              setComposerFolded(false);
+                              setCharacterMenuOpen(false);
+                              setPhotoMenuOpen(true);
+                            },
+                          }
+                        : null
+                    }
                     dialogueNote={
                       contentType === "video" && dialogueText.trim().length > 0
                         ? formatMsg(g.dialogueCreditNote, {
@@ -7132,54 +7424,12 @@ function GenerateFormInner({
                 )}
               </div>
             </div>
-            {referencePhotos.length > 1 &&
-              anchorPhotoPickerRelevant &&
-              videoAdvancedMode === "none" &&
-              !isMultiCharacter && (
-                <div>
-                  <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
-                    {g.anchorPhotoLabel}
-                  </p>
-                  <p className="mt-0.5 text-[11px] leading-snug text-atelier-muted/80">
-                    {g.anchorPhotoHint}
-                  </p>
-                  {/* min-w-0 + overflow-x-auto + overscroll-x-contain: the
-                      2026-08-30 page-overflow incident — the strip must
-                      scroll INSIDE itself, and the flick must not chain to
-                      the page scroller. */}
-                  <div className="mt-1.5 flex min-w-0 gap-1.5 overflow-x-auto overscroll-x-contain pb-1">
-                    {referencePhotos.map((p, i) => {
-                      const selected = anchorPhotoPath ? anchorPhotoPath === p.path : i === 0;
-                      return (
-                        <button
-                          key={p.path}
-                          type="button"
-                          onClick={() => setAnchorPhotoPath(p.path)}
-                          // The button's only child is an <img>, so without
-                          // these it had no accessible name at all and its
-                          // selected state was a border colour — invisible to
-                          // a screen reader and to anyone who cannot separate
-                          // those two greys.
-                          aria-pressed={selected}
-                          aria-label={formatMsg(g.photoOption, { n: i + 1 })}
-                          className={cn(
-                            "relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-media border-2",
-                            selected ? "border-atelier-ink" : "border-transparent",
-                          )}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={p.url} alt="" className="h-full w-full object-cover" />
-                          {selected && (
-                            <span className="absolute right-0.5 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper">
-                              <CheckIcon className="h-2 w-2" />
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+            {/* The REFERENCE PHOTO row lived here until direction B
+                (2026-09-18): opening the composer grew it by about 85 px,
+                and the screen above paid for every pixel — on a 632 px
+                window the take shrank to 55 px. The same choice now opens
+                from the character's pill and the receipt's FACE column
+                (the photo menu, in characterPicker). */}
             {isMultiCharacter && castMemberMissingPhoto && (
               <p className="text-xs text-red-500">
                 {formatMsg(g.multiCharacterNeedsPhoto, { name: castMemberMissingPhoto.name })}

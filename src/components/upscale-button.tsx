@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -70,7 +71,12 @@ export function UpscaleButton({ generationId, seconds, tiers, trigger = "chip" }
         {h.upscaleCta}
       </button>
 
-      {open && (
+      {/* Portalled to <body> (2026-09-18): on Generate the button lives inside
+          the stage's media box, which is a size container — and a container
+          is the containing block for position:fixed, so the dialog and its
+          backdrop were being laid out inside the video's own box, squeezed
+          to the size of the take. */}
+      {open && typeof document !== "undefined" && createPortal(
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
           onClick={() => !pending && setOpen(false)}
@@ -157,7 +163,8 @@ export function UpscaleButton({ generationId, seconds, tiers, trigger = "chip" }
               </p>
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );

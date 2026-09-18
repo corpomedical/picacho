@@ -732,6 +732,13 @@ const en = {
     uploadPhotoTitle: "Upload a photo",
     anchorPhotoLabel: "Reference photo",
     anchorPhotoHint: "This character has more than one saved photo — pick which one this take should match.",
+    // Direction B (2026-09-18): the photo choice lives in the character's
+    // pill and opens as a small menu, instead of a row in the composer.
+    anchorPhotoMenuTitle: "{name}'s photo for this take",
+    anchorPhotoCount: "{n} of {total}",
+    receiptFacePhoto: "photo {n} of {total}",
+    switchCharacter: "Switch character",
+    characterPillPhotoAria: "{name}, photo {n} of {total} — change the photo or the character",
     startFrameLabel: "Start frame",
     endFrameLabel: "End frame (optional)",
     storyboardActive: "Start & end frames set",
