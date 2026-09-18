@@ -5121,46 +5121,55 @@ export function SetView({
           <div ref={hostRef} className="absolute inset-0" style={gradeFilter ? { filter: gradeFilter } : undefined} />
           {/* the palette's grade, previewed over the stage (never the sketch) */}
           {gradeTint && <div aria-hidden className="pointer-events-none absolute inset-0 mix-blend-soft-light" style={{ background: gradeTint }} />}
-          <div
-            ref={guideRef}
-            aria-hidden
-            className={`pointer-events-none absolute rounded-[2px] shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] outline outline-1 outline-[rgba(255,255,255,0.45)] ${viewingShot ? "hidden" : ""}`}
-          >
-            {/* The camera department's readout, and the viewfinder's aids (cut 2): on the stage only, never in the picture. */}
-            {/* Over the render, not over the chrome: on a daylight exterior #c6c9d1
-                came out at 1.8:1 — the token that exists for text painted on
-                media reads on any set (2026-09-18). */}
-            <div className="absolute -top-[18px] left-0 right-0 flex justify-between gap-3 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.06em] text-onmedia">
-              <span className="min-w-0 truncate">{hudLeft}</span>
-              <span className="tabular-nums">{hudRight}</span>
+          {/* The dark round the frame lines is a 9,999 px shadow, and this layer —
+              the stage's own box — is what keeps it on the stage. Unclipped it
+              spread over the whole page and, being positioned, painted OVER the
+              bar, the rail and the dock, which are not: everything outside the
+              lines at 45% of itself, in Shoot, Film and Cut and never in Build,
+              which draws no frame lines ("In Build mode the text is not dimmed,
+              when switching to shoot film and cut it gets dimmed", 2026-09-18). */}
+          <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+            <div
+              ref={guideRef}
+              aria-hidden
+              className={`pointer-events-none absolute rounded-[2px] shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] outline outline-1 outline-[rgba(255,255,255,0.45)] ${viewingShot ? "hidden" : ""}`}
+            >
+              {/* The camera department's readout, and the viewfinder's aids (cut 2): on the stage only, never in the picture. */}
+              {/* Over the render, not over the chrome: on a daylight exterior #c6c9d1
+                  came out at 1.8:1 — the token that exists for text painted on
+                  media reads on any set (2026-09-18). */}
+              <div className="absolute -top-[18px] left-0 right-0 flex justify-between gap-3 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.06em] text-onmedia">
+                <span className="min-w-0 truncate">{hudLeft}</span>
+                <span className="tabular-nums">{hudRight}</span>
+              </div>
+              {(rig.overlays.thirds || rig.overlays.golden || rig.overlays.safe || rig.overlays.centre) && (
+                <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  {rig.overlays.thirds &&
+                    [33.333, 66.667].flatMap((t) => [
+                      <line key={`tx${t}`} x1={t} y1="0" x2={t} y2="100" stroke="rgba(255,255,255,0.28)" vectorEffect="non-scaling-stroke" />,
+                      <line key={`ty${t}`} x1="0" y1={t} x2="100" y2={t} stroke="rgba(255,255,255,0.28)" vectorEffect="non-scaling-stroke" />,
+                    ])}
+                  {rig.overlays.golden &&
+                    [38.197, 61.803].flatMap((t) => [
+                      <line key={`gx${t}`} x1={t} y1="0" x2={t} y2="100" stroke="rgba(224,164,104,0.35)" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />,
+                      <line key={`gy${t}`} x1="0" y1={t} x2="100" y2={t} stroke="rgba(224,164,104,0.35)" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />,
+                    ])}
+                  {rig.overlays.safe && (
+                    <>
+                      <rect x="5" y="5" width="90" height="90" fill="none" stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+                      <rect x="10" y="10" width="80" height="80" fill="none" stroke="rgba(255,255,255,0.18)" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+                    </>
+                  )}
+                  {rig.overlays.centre && (
+                    <>
+                      <line x1="48" y1="50" x2="52" y2="50" stroke="rgba(255,255,255,0.55)" vectorEffect="non-scaling-stroke" />
+                      <line x1="50" y1="47" x2="50" y2="53" stroke="rgba(255,255,255,0.55)" vectorEffect="non-scaling-stroke" />
+                    </>
+                  )}
+                </svg>
+              )}
+              {rig.overlays.histogram && <canvas ref={histogramRef} width={128} height={40} className="absolute right-2 top-2 rounded-[4px] bg-black/50" />}
             </div>
-            {(rig.overlays.thirds || rig.overlays.golden || rig.overlays.safe || rig.overlays.centre) && (
-              <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-                {rig.overlays.thirds &&
-                  [33.333, 66.667].flatMap((t) => [
-                    <line key={`tx${t}`} x1={t} y1="0" x2={t} y2="100" stroke="rgba(255,255,255,0.28)" vectorEffect="non-scaling-stroke" />,
-                    <line key={`ty${t}`} x1="0" y1={t} x2="100" y2={t} stroke="rgba(255,255,255,0.28)" vectorEffect="non-scaling-stroke" />,
-                  ])}
-                {rig.overlays.golden &&
-                  [38.197, 61.803].flatMap((t) => [
-                    <line key={`gx${t}`} x1={t} y1="0" x2={t} y2="100" stroke="rgba(224,164,104,0.35)" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />,
-                    <line key={`gy${t}`} x1="0" y1={t} x2="100" y2={t} stroke="rgba(224,164,104,0.35)" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />,
-                  ])}
-                {rig.overlays.safe && (
-                  <>
-                    <rect x="5" y="5" width="90" height="90" fill="none" stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
-                    <rect x="10" y="10" width="80" height="80" fill="none" stroke="rgba(255,255,255,0.18)" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
-                  </>
-                )}
-                {rig.overlays.centre && (
-                  <>
-                    <line x1="48" y1="50" x2="52" y2="50" stroke="rgba(255,255,255,0.55)" vectorEffect="non-scaling-stroke" />
-                    <line x1="50" y1="47" x2="50" y2="53" stroke="rgba(255,255,255,0.55)" vectorEffect="non-scaling-stroke" />
-                  </>
-                )}
-              </svg>
-            )}
-            {rig.overlays.histogram && <canvas ref={histogramRef} width={128} height={40} className="absolute right-2 top-2 rounded-[4px] bg-black/50" />}
           </div>
           <div
             ref={focusHudRef}

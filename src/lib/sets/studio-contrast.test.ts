@@ -25,6 +25,11 @@ import { join } from "node:path";
 // and what you can press is over 11:1.
 // A state is said in a COLOUR, never in an opacity.
 //
+// None of that was THE cause. The frame lines' dark was: a 9,999 px shadow
+// nothing clipped, laid over the whole chrome at 55% black in Shoot, Film
+// and Cut — the colours were right in the source and at 45% on the screen
+// (see "keeps the frame lines' dark on the stage" below).
+//
 // The maths here is WCAG 2.1's, on the source's own literals: nothing is
 // measured in a browser, so this runs in the suite and catches the next one.
 
@@ -164,6 +169,35 @@ describe("the studio's chrome can be read", () => {
     }
     // And the studio's own hairline is a literal.
     expect(frame).toContain('export const STUDIO_HAIR = "border-[rgba(255,255,255,0.07)]";');
+  });
+
+  it("keeps the frame lines' dark on the stage", () => {
+    // THE CAUSE, read off the operator's own screenshot (2026-09-18): the bar
+    // measured #0c0b0e where the source says #191a20 and its words #4d4c4f
+    // where it says #9aa0ad — ground and ink alike at 45% of themselves. The
+    // dark round the frame lines is a box-shadow spread 9,999 px at 55%
+    // black, and nothing round the stage clipped it: it covered the whole
+    // page and, being positioned, painted OVER the bar, the rail and the
+    // dock, which are not. Shoot, Film and Cut draw frame lines and Build
+    // does not ("In Build mode the text is not dimmed, when switching to
+    // shoot film and cut it gets dimmed"), and a still being viewed hides
+    // them ("Sometimes"). No colour in the chrome could answer it, which is
+    // why raising the colours never did. Measured in a harness, before and
+    // after: the Build tab 3.2:1 → 12.3:1, the stage outside the lines still
+    // at 45%.
+    const shadow = view.indexOf("shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]");
+    expect(shadow).toBeGreaterThan(-1);
+    // Its element is the only child of a layer the stage's own size that clips.
+    const clip = view.lastIndexOf('<div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">', shadow);
+    expect(clip).toBeGreaterThan(-1);
+    const between = view.slice(clip, shadow);
+    expect(between.match(/<div\b/g), "the lines sit directly inside the clip").toHaveLength(2);
+    expect(between).toContain("ref={guideRef}");
+    // And no other spread shadow anywhere in the studio to do it again.
+    for (const name of ["studio-frame.tsx", "set-view.tsx", "set-editor.tsx", "rig-panel.tsx", "sequencer.tsx", "scene-tree.tsx", "command-palette.tsx"]) {
+      const spreads = readFileSync(join(dir, name), "utf8").match(/0_0_0_\d{3,}px/g) ?? [];
+      expect(spreads, name).toHaveLength(name === "set-view.tsx" ? 1 : 0);
+    }
   });
 
   it("what is drawn over the render is drawn for a bright one", () => {

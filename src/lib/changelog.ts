@@ -60,6 +60,9 @@ export const RELEASES: Release[] = [
       "The privacy policy says what an automatic error report contains, which it had never mentioned.",
       "While a render runs, the steps say what happened — \"Prompt written\", \"Rendering\", \"Result checked\" — instead of our own words for them.",
       "The Google Play badge and the Play line in every email are hidden while the listing is down, so nobody follows them to a missing page.",
+      "Helios's menus can be read in Shoot, Film and Cut. The shading around the frame lines, meant for the stage alone, spread over the whole page and drew the top bar, the tools on the left and the panel on the right at under half their brightness — which is why Build, which has no frame lines, looked fine, and why no colour the menus were given made them look right. It stays on the stage now. On the way, the studio's own colours, its labels' typeface and its fills were repaired too.",
+      "Three things that pushed a car to come back the wrong way round are gone: asking for \"a front view\" of something other than the person no longer turns the camera to the person's front; the layout sketch is described to the model as the coloured model it is, so the lamps that show which end is the nose count; and a look sheet's four views are named, so the model reads the side the camera sees. Helios still has no idea which end of a thing is its front, so this makes the right side likelier, not certain.",
+      "Mystique no longer looks as if nothing happened after an upload. Its list of takes asked the database for a column that has not been added yet, so the whole list came back empty; it now shows every take — a failed one too, saying so.",
     ],
   },
   {
