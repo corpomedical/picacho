@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.53.0",
+    build: 92,
+    date: "2026-09-19",
+    title: "Mystique: Into the clip now takes 30 seconds",
+    items: [
+      "No engine can put your character into more than 15 seconds of a clip at once — every one available was checked. So a longer stretch is now made in up to three parts and joined into one video, up to 30 seconds.",
+      "Two parts made separately never meet cleanly: each draws your character afresh, so the clothes, the pose and even the people beside them jump at the join. Here every part after the first starts from the actual last second of the part before it, so it carries on from exactly where that one ended — the same clothes, the same hair, the same people around them — and the two meet in a quarter-second dissolve centred on the frame where they agree best.",
+      "Where a part hands over to your footage, it does so at the stillest moment it can reach. Tested on a 30-second clip: a handover in the middle of a gesture showed a jump, one at a still moment did not.",
+      "The door says before you pay that a long take is made in parts and roughly how long it takes — about a minute for every second of video, because each part waits for the one before it.",
+      "The price is the most the parts can cost, shown on the button and charged as shown. A stop while a later part is rendering is not refunded, because the parts before it were already made.",
+    ],
+  },
+  {
     version: "1.52.0",
     build: 91,
     date: "2026-09-19",

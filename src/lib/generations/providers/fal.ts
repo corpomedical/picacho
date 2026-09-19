@@ -1252,6 +1252,17 @@ export async function submitRecastJob(
   return submitToQueue(spec.endpoint, recastRequestBody(engine, input), spec.label, requireApiKey());
 }
 
+/**
+ * A later piece of a long take (lib/generations/chain.ts): its request was
+ * composed whole when the take started and rides the job row; only its clip
+ * is new. The endpoint is checked against fal's own host shape, since the
+ * row is ours but the value is data.
+ */
+export async function submitChainPiece(endpoint: string, body: Record<string, unknown>, label: string): Promise<QueuedJob> {
+  if (!/^[a-z0-9-]+(\/[a-z0-9.\-]+)+$/i.test(endpoint)) throw new Error(`fal.ai (${label}) error: not an endpoint: ${endpoint}`);
+  return submitToQueue(endpoint, body, label, requireApiKey());
+}
+
 // One status check. Never throws on a job-level failure — a job that failed on
 // fal's side comes back as { state: "failed" } so the caller can record a real
 // error against the generation. Only genuine transport problems throw, because

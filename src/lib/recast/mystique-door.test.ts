@@ -86,6 +86,21 @@ describe("the Mystique door", () => {
     expect(page).toContain("isRecastLockOn");
   });
 
+  it("says a long take is made in parts, and how long it waits, before it is paid for", () => {
+    // lib/generations/chain.ts (2026-09-19): past 15 s, Into the clip is
+    // rendered in chained parts. The door says so under the trim, from the
+    // same count the server plans with.
+    expect(door).toContain("chainPieceCount(clipWindow.end - clipWindow.start) > 1");
+    expect(door).toContain("RECAST_ENGINES[engine].chains");
+    expect(door).toContain("formatMsg(m.longTake, {");
+    for (const lang of ["en", "es", "it", "pt"]) {
+      const words = section(lang).match(/\n    longTake: "([^"]+)"/)?.[1] ?? "";
+      expect(words, lang).toContain("{parts}");
+      expect(words, lang).toContain("{minutes}");
+      expect(section(lang), lang).toMatch(/\n    sceneLimit: "[^"]*30 s"/);
+    }
+  });
+
   it("the working title lives in the route and the dictionary — never in the lane", () => {
     const laneDir = join(root, "lib", "recast");
     for (const file of readdirSync(laneDir)) {

@@ -16,6 +16,7 @@ import { isRenderableUrl, toMediaUrl } from "@/lib/media/url";
 import { isRecastEnabled, isRecastLockOn } from "@/lib/recast/enabled";
 import {
   RECAST_ALREADY_STARTED,
+  RECAST_CHAIN_NO_PLAN,
   RECAST_CHARACTER_NEEDS_PHOTO,
   RECAST_CLIP_TOO_BIG,
   RECAST_CLIP_UNCHECKED,
@@ -47,6 +48,7 @@ import {
   recastCreditCost,
   recastEngineFits,
   recastNeedsCharacter,
+  recastRequestBody,
   recastSourcePath,
   type RecastClip,
   type RecastContainer,
@@ -69,6 +71,17 @@ import {
 import { RECAST_LOCK_THRESHOLD, readRecastRecipes, recastRow, type RecastSource } from "@/lib/recast/store";
 import { cutsInWindow, isWholeClip, recastFitFor, recastWindowCredits, recastWindowProblem, type RecastWindow } from "@/lib/recast/trim";
 import { cutRecastWindow } from "@/lib/recast/trim-run";
+import {
+  CHAIN_CLIP_PLACEHOLDER,
+  CHAIN_FPS,
+  CHAIN_PREFIX_FRAMES,
+  chainFolder,
+  chainPieceCount,
+  chainRequestOf,
+  type ChainRequest,
+  type ChainState,
+} from "@/lib/generations/chain";
+import { cleanupChain, prepareChain, storeFirstPiece, type PreparedChain } from "@/lib/generations/chain-run";
 
 // Recast — "Mystique" on the door (working title, 2026-09-17).
 //
@@ -403,9 +416,13 @@ export async function startRecastTakes(input: {
   const fit = recastFitFor(clip, spec.accepts);
   const preparing = cutting || fit !== null;
   // Price from the source's own numbers scaled to the window — the same call
-  // the door quoted with, so the button's number is the number charged.
+  // the door quoted with, so the button's number is the number charged. (For
+  // a long take that is the most its pieces can bill — chain.ts.)
   const perTake = recastWindowCredits(engine, clip, window);
   const windowSeconds = window.end - window.start;
+  // THE LONG TAKE (chain.ts): past the engine's own 15 s, the take is
+  // rendered in chained pieces and joined.
+  const chaining = spec.chains === true && chainPieceCount(windowSeconds) > 1;
 
   // The read again, from what the door was shown — the brief is composed
   // server-side from the same fields, so what was on the door is what is
@@ -434,6 +451,24 @@ export async function startRecastTakes(input: {
       : null;
   const briefFor = (casting: RecastCasting | null) =>
     composeRecastBrief({ job: spec.job, read, seconds: windowSeconds, casting, keeps, direction });
+  // A long take's pieces each carry their own brief: their own length, only
+  // the cuts inside them, and from the second piece on the continuity words
+  // every passing seam test was sent with (recast-brief.ts). Frames count
+  // from the window's start, the prepared window's own clock.
+  const pieceBriefsFor = (casting: RecastCasting | null, plan: PreparedChain["plan"]): string[] =>
+    plan.lengths.map((frames, k) => {
+      const from = k === 0 ? 0 : plan.switches[k - 1] - CHAIN_PREFIX_FRAMES;
+      const pieceRead = wholeRead
+        ? {
+            ...wholeRead,
+            cuts: cutsInWindow(wholeRead.cuts, {
+              start: window.start + from / CHAIN_FPS,
+              end: window.start + (from + frames) / CHAIN_FPS,
+            }),
+          }
+        : null;
+      return composeRecastBrief({ job: spec.job, read: pieceRead, seconds: frames / CHAIN_FPS, casting, keeps, direction, continuing: k > 0 });
+    });
 
   // The words, judged before anything is spent. The brief is judged when it
   // will actually be sent; otherwise only the person's own direction is,
@@ -462,7 +497,31 @@ export async function startRecastTakes(input: {
   // so the take can be recut later.
   let cutPath: string | null = null;
   const fromClipId = source.kind === "upload" ? source.clipId : null;
-  if (preparing) {
+  // A long take's window is prepared at 24 fps, its stillness measured and
+  // its switches placed, all before a credit moves — and the window it
+  // stands on becomes the take's recorded source, like any cut.
+  let chainPrep: PreparedChain | null = null;
+  if (chaining) {
+    if (!sourceBytes) return { error: RECAST_TRIM_FAILED };
+    const windowClipId = crypto.randomUUID();
+    const prep = await prepareChain(admin, {
+      bucket: RECAST_BUCKET,
+      windowPath: recastSourcePath(userId, windowClipId, "mp4"),
+      source: sourceBytes,
+      window,
+      sourceSize: { width: clip.width, height: clip.height },
+    });
+    if ("error" in prep) return { error: prep.error === "no-plan" ? RECAST_CHAIN_NO_PLAN : RECAST_TRIM_FAILED };
+    chainPrep = prep;
+    cutPath = prep.windowPath;
+    const { data: signedWindow } = await admin.storage.from(RECAST_BUCKET).createSignedUrl(prep.windowPath, 60 * 60 * 24);
+    if (!signedWindow?.signedUrl) {
+      await removeSource(admin, prep.windowPath);
+      return { error: RECAST_COULDNT_START };
+    }
+    clipUrl = signedWindow.signedUrl;
+    source = { kind: "upload", clipId: windowClipId, container: "mp4" };
+  } else if (preparing) {
     if (!sourceBytes) return { error: RECAST_TRIM_FAILED };
     const cut = await cutRecastWindow(admin, userId, sourceBytes, window, fit);
     if ("error" in cut) return { error: RECAST_TRIM_FAILED };
@@ -538,11 +597,12 @@ export async function startRecastTakes(input: {
         keeps,
         direction,
         castTag,
-        brief: briefFor(casting),
+        // A long take records its first piece's brief — the one the door showed.
+        brief: chainPrep ? pieceBriefsFor(casting, chainPrep.plan)[0] : briefFor(casting),
         lock: lockOn,
         groupId,
         window: cutting ? { start: window.start, end: window.end } : null,
-        fromClipId: preparing ? fromClipId : null,
+        fromClipId: preparing || chaining ? fromClipId : null,
       }),
     };
   });
@@ -600,12 +660,58 @@ export async function startRecastTakes(input: {
       try {
         const photos = await signPhotos(character);
         if (character && !photos.first) throw new Error("Couldn't prepare the character's photo.");
+        // A long take sends its FIRST piece now; the runner sends the rest,
+        // each as the one before it finishes (job-runner.ts, chain-run.ts).
+        let chain: ChainState | undefined;
+        let sendUrl = clipUrl;
+        let sendSeconds = windowSeconds;
+        let sendBrief = brief;
+        if (chainPrep) {
+          const folder = chainFolder(userId, generationId);
+          const { plan } = chainPrep;
+          const briefs = pieceBriefsFor(castingFor(character), plan);
+          // Every piece's request composed whole now — this lane knows its
+          // engine and its words, the runner does not (it fills in only each
+          // piece's clip, where the placeholder stands).
+          const requests = briefs.map((pieceBrief, k) =>
+            chainRequestOf(
+              spec.endpoint,
+              spec.label,
+              recastRequestBody(engine, {
+                clipUrl: CHAIN_CLIP_PLACEHOLDER,
+                ...(photos.first ? { characterImageUrl: photos.first } : {}),
+                morePhotoUrls: photos.more,
+                ...(spec.takesDirection ? { brief: pieceBrief } : {}),
+                clip: { seconds: plan.lengths[k] / CHAIN_FPS },
+              }),
+            ),
+          );
+          if (requests.some((r) => r === null)) throw new Error("Couldn't compose the long take's parts.");
+          sendUrl = await storeFirstPiece(admin, RECAST_BUCKET, folder, chainPrep.firstPiece);
+          sendSeconds = plan.lengths[0] / CHAIN_FPS;
+          sendBrief = briefs[0];
+          chain = {
+            v: 2,
+            bucket: RECAST_BUCKET,
+            window: chainPrep.windowPath,
+            folder,
+            total: chainPrep.window.frames,
+            switches: plan.switches,
+            lengths: plan.lengths,
+            stillness: plan.stillness,
+            requests: requests as ChainRequest[],
+            index: 0,
+            starts: [0],
+            renders: [],
+            frames: [],
+          };
+        }
         pendingJob = await submitRecastJob(engine, {
-          clipUrl,
+          clipUrl: sendUrl,
           ...(photos.first ? { characterImageUrl: photos.first } : {}),
           morePhotoUrls: photos.more,
-          ...(spec.takesDirection ? { brief } : {}),
-          clip: { seconds: windowSeconds },
+          ...(spec.takesDirection ? { brief: sendBrief } : {}),
+          clip: { seconds: sendSeconds },
         });
         await saveVideoJob({
           generationId,
@@ -614,17 +720,21 @@ export async function startRecastTakes(input: {
           strictLane: true,
           // The promise on the door: judged at the start, the middle and the
           // end, and a miss is not charged for. Only where a face is cast.
+          // A long take is judged whole, once it is joined.
           identityLock: character && lockOn ? { threshold: RECAST_LOCK_THRESHOLD, refund: true } : undefined,
+          chain,
           attempts: [
             {
               attempt: 1,
               passed: true,
               issues: [],
-              compiledPrompt: brief,
+              compiledPrompt: sendBrief,
               steps: [
                 {
                   step: "generate" as const,
-                  detail: `Submitted a ${seconds}s clip to ${spec.label}. The sender confirmed the clip is theirs to use.`,
+                  detail: chain
+                    ? `Submitted part 1 of ${chain.lengths.length} of a ${seconds}s clip to ${spec.label}. The sender confirmed the clip is theirs to use.`
+                    : `Submitted a ${seconds}s clip to ${spec.label}. The sender confirmed the clip is theirs to use.`,
                 },
               ],
             },
@@ -633,6 +743,7 @@ export async function startRecastTakes(input: {
         started.push(generationId);
       } catch (err) {
         if (pendingJob) await cancelQueuedJob(pendingJob);
+        if (chainPrep) await cleanupChain(admin, { bucket: RECAST_BUCKET, folder: chainFolder(userId, generationId) });
         const message = err instanceof Error ? err.message : "Couldn't start the take.";
         await admin
           .from("generations")

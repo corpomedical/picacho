@@ -57,6 +57,16 @@ const nextConfig: NextConfig = {
     // (lib/recast/trim-run.ts, 2026-09-18). Server actions run inside their
     // page's function, so the binary is traced into that page.
     "/app/mystique": ["./node_modules/ffmpeg-static/ffmpeg"],
+    // A LONG take (lib/recast/chain-run.ts, 2026-09-19) needs the encoder
+    // between its pieces and to join them, and that step runs wherever the
+    // finished piece is noticed: fal's webhook first, then any page that
+    // polls a render in progress (the Mystique door above, History's list
+    // and a take's own page), then the reconcile cron. A route without it
+    // leaves the piece for one that has it (recastEncoderAvailable).
+    "/api/webhooks/fal": ["./node_modules/ffmpeg-static/ffmpeg"],
+    "/api/cron/reconcile": ["./node_modules/ffmpeg-static/ffmpeg"],
+    "/app/history": ["./node_modules/ffmpeg-static/ffmpeg"],
+    "/app/history/*": ["./node_modules/ffmpeg-static/ffmpeg"],
   },
 
   // Canonical host: www.picacho.ai permanently redirects to picacho.ai.

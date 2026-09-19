@@ -34,6 +34,7 @@ import {
 } from "@/lib/recast/recast";
 import { composeRecastBrief, recastCharacterToken } from "@/lib/recast/recast-brief";
 import { clampRecastWindow, defaultRecastWindow, isWholeClip, recastWindowCredits, type RecastWindow } from "@/lib/recast/trim";
+import { chainMinutes, chainPieceCount } from "@/lib/generations/chain";
 import { sampleClip } from "@/lib/recast/recast-client";
 import type { RecastRead, RecastWarning } from "@/lib/recast/recast-read";
 import { TakeViewer } from "@/components/mystique/take-viewer";
@@ -611,6 +612,15 @@ export function MystiqueDoor({
                 </div>
                 {seen.seconds > RECAST_JOB_MAX_SECONDS[job] + 0.05 && (
                   <p className="mt-2 text-xs text-[#9aa0ad]">{formatMsg(m.trimWhy, { n: RECAST_JOB_MAX_SECONDS[job] })}</p>
+                )}
+                {/* A long take (chain.ts): said before it is paid for, with how long it waits. */}
+                {RECAST_ENGINES[engine].chains && chainPieceCount(clipWindow.end - clipWindow.start) > 1 && (
+                  <p className="mt-2 text-xs text-[#f0cda6]">
+                    {formatMsg(m.longTake, {
+                      parts: chainPieceCount(clipWindow.end - clipWindow.start),
+                      minutes: chainMinutes(clipWindow.end - clipWindow.start),
+                    })}
+                  </p>
                 )}
               </div>
             )}

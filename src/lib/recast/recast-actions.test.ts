@@ -84,8 +84,30 @@ describe("startRecastTakes", () => {
     expect(start.slice(cut, at("await judgeRender({"))).toContain("clipUrl = signedCut.signedUrl");
     // A refused cut goes with the refusal.
     expect(start.slice(at("await judgeRender({"), at("const total = perTake"))).toContain("if (cutPath) await removeSource(admin, cutPath)");
-    // And the original is named in the recipe, so the take can be recut.
-    expect(start).toContain("fromClipId: preparing ? fromClipId : null");
+    // And the original is named in the recipe, so the take can be recut —
+    // a long take's too, whose window is a cut like any other.
+    expect(start).toContain("fromClipId: preparing || chaining ? fromClipId : null");
+  });
+
+  it("plans a long take before anything is spent, and judges the window it will send", () => {
+    // lib/generations/chain.ts: past the engine's own 15 s the take is
+    // rendered in chained parts. The plan — the window at 24 fps, its
+    // stillness, the switches — is made after the words and before the
+    // picture check, so a clip with no clean split costs nothing.
+    const prep = at("await prepareChain(admin, {");
+    expect(at("await gatePrompt({")).toBeLessThan(prep);
+    expect(prep).toBeLessThan(at("await judgeRender({"));
+    expect(prep).toBeLessThan(at("checkGenerationAllowance("));
+    expect(start.slice(prep, at("await judgeRender({"))).toContain("clipUrl = signedWindow.signedUrl");
+    expect(start).toContain('prep.error === "no-plan" ? RECAST_CHAIN_NO_PLAN : RECAST_TRIM_FAILED');
+    // Every piece's request is composed whole here, the clip left as the
+    // placeholder the runner fills — the runner never learns the engine.
+    expect(start).toContain("clipUrl: CHAIN_CLIP_PLACEHOLDER");
+    expect(start).toContain("chainRequestOf(");
+    // Each take stores its own first piece, and a take that fails to start
+    // leaves no working files behind.
+    expect(start).toContain("await storeFirstPiece(admin, RECAST_BUCKET, folder, chainPrep.firstPiece)");
+    expect(start).toContain("if (chainPrep) await cleanupChain(admin, { bucket: RECAST_BUCKET, folder: chainFolder(userId, generationId) })");
   });
 
   it("brings a clip inside the engine's limits before sending it, windowed or not", () => {

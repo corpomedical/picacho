@@ -116,6 +116,30 @@ describe("a brief for an engine that reads names", () => {
   });
 });
 
+describe("a later piece of a long take", () => {
+  // lib/generations/chain.ts: every piece after the first opens on the last
+  // second of the one before, already rendered. These words are the ones
+  // every passing seam test on the operator's clip was sent with.
+  const casting = { tag: "A", characterName: "Eva", token: recastCharacterToken(4) };
+
+  it("is told its first second is finished and must be carried on from", () => {
+    const later = composeRecastBrief({ ...base, job: "scene", casting, continuing: true });
+    expect(later).toContain("CONTINUITY");
+    expect(later).toContain("The first second of @Video1 is already finished: it shows @Element1 exactly as they must look");
+    expect(later).toContain("the same faces and hair on everyone beside them");
+    expect(later.indexOf("CONTINUITY")).toBeLessThan(later.indexOf("KEEP EXACTLY"));
+    // The first piece has nothing before it to carry on from.
+    expect(composeRecastBrief({ ...base, job: "scene", casting })).not.toContain("CONTINUITY");
+  });
+
+  it("never loses the person's own words to the extra paragraph", () => {
+    const direction = `She looks up at the very end. ${"Keep her calm and unhurried. ".repeat(19)}`.slice(0, 600);
+    const later = composeRecastBrief({ ...base, job: "scene", casting, continuing: true, direction });
+    expect(later.endsWith(direction.trim())).toBe(true);
+    expect(later.length).toBeLessThanOrEqual(RECAST_BRIEF_MAX_CHARS);
+  });
+});
+
 describe("a motion take's brief — the only one an engine actually reads", () => {
   const brief = composeRecastBrief({ ...base, job: "motion" });
 

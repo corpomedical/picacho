@@ -93,6 +93,8 @@
 // rounded up (video-models.ts) — restated here as a number because that
 // module pulls the whole catalogue in; the test pins the two equal.
 
+import { CHAIN_MAX_SECONDS, chainBilledSeconds } from "../generations/chain";
+
 export const RECAST_COST_BASIS_USD_PER_CREDIT = 0.28;
 
 /** How tightly the world job holds the source. See recastRequestBody. */
@@ -144,6 +146,12 @@ export type RecastEngineSpec = {
    * 24–60 fps. The operator's own source was 61 fps and 324 px tall.
    */
   accepts?: { minSide: number; maxSide: number; minFps: number; maxFps: number };
+  /**
+   * Past its own 15 s the engine renders the take in chained pieces
+   * (chain.ts) — the only engine measured to carry a character across a
+   * piece's opening second, 2026-09-19.
+   */
+  chains?: true;
 };
 
 export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
@@ -161,6 +169,7 @@ export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
     takesMorePhotos: true,
     keepsSound: true,
     accepts: { minSide: 720, maxSide: 3840, minFps: 24, maxFps: 60 },
+    chains: true,
   },
   "wan-scene-720": {
     job: "scene",
@@ -305,7 +314,13 @@ export const RECAST_BUCKET = "recast-sources";
 // Measured 559 s for 10 s (2026-09-19), so 15 s lands near 14 minutes, well
 // inside the runner's 45-minute write-off. (Until 2026-09-19 it was 10 s, set
 // by Wan's speed.)
-export const RECAST_JOB_MAX_SECONDS: Record<RecastJob, number> = { scene: 15, motion: 30, world: 10 };
+//
+// …AND PAST 15 s THE TAKE IS CHAINED (chain.ts, the same day): rendered in up
+// to three pieces, each opening on the last second of the one before and
+// switching to the footage at its stillest moment, then joined. The runner's
+// write-off clock restarts with every piece, so the 45 minutes apply to one
+// piece at a time. 30 s is the chain's ceiling, and Genjutsu's.
+export const RECAST_JOB_MAX_SECONDS: Record<RecastJob, number> = { scene: CHAIN_MAX_SECONDS, motion: 30, world: 10 };
 
 export type RecastClip = { seconds: number; frames: number | null; width: number; height: number; bytes: number };
 
@@ -339,6 +354,10 @@ export function recastLumaDuration(clip: Pick<RecastClip, "seconds">): "5s" | "1
 /** What the provider will bill this clip as, in its own unit of seconds. */
 export function recastBilledSeconds(engine: RecastEngine, clip: Pick<RecastClip, "seconds" | "frames">): number {
   const spec = RECAST_ENGINES[engine];
+  // A chained take is billed piece by piece, overlap and rounding included —
+  // priced at the most that can come to (chain.ts), which up to 15 s is the
+  // plain ceiling below.
+  if (spec.chains) return chainBilledSeconds(clip.seconds);
   if (spec.billedBy === "seconds") return Math.ceil(clip.seconds - SLACK);
   if (spec.billedBy === "bucket") return recastLumaDuration(clip) === "10s" ? 10 : 5;
   const frames = clip.frames ?? Math.ceil(clip.seconds * UNKNOWN_FPS_CEILING);

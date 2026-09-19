@@ -199,9 +199,12 @@ describe("the clip's limits", () => {
   });
 
   it("gives each job its own ceiling", () => {
-    // Kling O3 Edit's own limit, 3–15.05 s.
+    // Kling O3 Edit's own limit is 3–15.05 s; past it the take is rendered in
+    // chained parts (lib/generations/chain.ts) up to the chain's 30 s.
     expect(recastEngineFits("kling-edit", { seconds: 15.02 })).toBe(true);
-    expect(recastEngineFits("kling-edit", { seconds: 16 })).toBe(false);
+    expect(recastEngineFits("kling-edit", { seconds: 16 })).toBe(true);
+    expect(recastEngineFits("kling-edit", { seconds: 30.04 })).toBe(true);
+    expect(recastEngineFits("kling-edit", { seconds: 31 })).toBe(false);
     expect(recastEngineFits("luma-720", { seconds: 12 })).toBe(false);
     expect(recastEngineFits("kling-pro", { seconds: 30 })).toBe(true);
     expect(recastEngineFits("kling-std", { seconds: 30 })).toBe(true);

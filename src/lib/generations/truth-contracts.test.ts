@@ -296,6 +296,8 @@ describe("localized server strings still match what the server says", () => {
     "../sets/messages.ts",
     // Recast (the Mystique door): every sentence its actions return.
     "../recast/messages.ts",
+    // A long take's progress while its parts are joined (2026-09-19).
+    "./chain-run.ts",
     // The expression set: every sentence its actions return (2026-09-19).
     "../characters/expression-messages.ts",
     // Settings: the inline line under a settings form (2026-09-18).

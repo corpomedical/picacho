@@ -18,6 +18,7 @@ import {
   extractVideoFrame,
   fetchQueuedAudioUrl,
   fetchQueuedVideoUrl,
+  submitChainPiece,
   submitLipSyncJob,
   submitSpeechJob,
   type QueuedJob,
@@ -47,6 +48,16 @@ import { notifyUser, type PushMessage } from "@/lib/push/send";
 import { maybeNotifyLowCredits } from "@/lib/push/low-credits";
 import type { IdentityLock } from "@/lib/generations/face-lock";
 import { removeOpeningFrames } from "@/lib/generations/opening-frame-run";
+import { CHAIN_FPS, CHAIN_PREFIX_FRAMES, type ChainState } from "@/lib/generations/chain";
+import {
+  CHAIN_JOINING,
+  ChainRetry,
+  chainEncoderAvailable,
+  chainProgress,
+  cleanupChain,
+  joinChain,
+  prepareNextPiece,
+} from "@/lib/generations/chain-run";
 
 // Fire-and-poll orchestrator.
 //
@@ -143,6 +154,12 @@ type JobRow = {
     // The send painted opening frames (opening-frame.ts); finish() removes
     // them once the clip lands or fails.
     openingFrames?: boolean;
+    // A LONG TAKE rendered in pieces (lib/generations/chain.ts, 2026-09-19). The
+    // stage stays "video" for every piece, so Stop, the reaper's clocks and
+    // the webhook work as they always have; each finished piece either
+    // starts the next (its input made from this one's last second) or, on
+    // the last, the pieces are joined and the take finishes as ONE video.
+    chain?: ChainState;
   };
   resume: ResumeState;
   started_at: string;
@@ -161,6 +178,11 @@ const STAGE_PROGRESS: Record<JobStage, string> = {
   upscale: "Upscaling the video",
   layers: "Splitting into layers",
 };
+
+/** What the person is shown for a job: its stage's words, or which piece of a long take is rendering. */
+function progressOf(row: Pick<JobRow, "stage" | "payload">): string {
+  return row.stage === "video" && row.payload?.chain ? chainProgress(row.payload.chain) : STAGE_PROGRESS[row.stage];
+}
 
 // Which stages the provider bills ONLY on delivery. A job in one of these
 // that ends without delivering — refused, lost, stopped, or delivered but
@@ -217,6 +239,13 @@ const ORPHANED_GENERATION_TIMEOUT_MS = 60 * 60_000;
 // seconds) and far shorter than a render, so a genuinely crashed advance is
 // retried promptly while two live callers can never overlap.
 const ADVANCE_LEASE_SECONDS = 90;
+
+// A long take's step between pieces re-encodes up to 15 s of 1080p, and its
+// last step joins up to 30 s — work measured in tens of seconds, not the few
+// a status check takes. Held for longer so no second caller starts the same
+// paid next piece while the first is still encoding; still inside the 300 s
+// every route that can advance a take is allowed.
+const CHAIN_LEASE_SECONDS = 270;
 
 // A database write the pipeline's correctness depends on failed. Distinct
 // class so callers can tell "our DB blinked" apart from "the provider failed"
@@ -352,11 +381,12 @@ async function claimAdvance(
   admin: SupabaseClient,
   generationId: string,
   providerRequestId: string | null,
+  leaseSeconds: number = ADVANCE_LEASE_SECONDS,
 ): Promise<boolean> {
   const { data } = await admin.rpc("claim_job_advance", {
     p_generation_id: generationId,
     p_provider_request_id: providerRequestId,
-    p_lease_seconds: ADVANCE_LEASE_SECONDS,
+    p_lease_seconds: leaseSeconds,
   });
   return data === true;
 }
@@ -864,6 +894,8 @@ export async function saveVideoJob(params: {
   identityLock?: IdentityLock;
   /** Opening frames to remove at finish — see JobRow.payload.openingFrames. */
   openingFrames?: boolean;
+  /** A long take rendered in pieces — see JobRow.payload.chain. */
+  chain?: ChainState;
 }): Promise<void> {
   const admin = createAdminClient();
   const { error: upsertError } = await admin.from("generation_jobs").upsert({
@@ -887,6 +919,7 @@ export async function saveVideoJob(params: {
       strictLane: params.strictLane === true,
       ...(params.identityLock ? { identityLock: params.identityLock } : {}),
       ...(params.openingFrames ? { openingFrames: true } : {}),
+      ...(params.chain ? { chain: params.chain } : {}),
     },
     resume: {
       dialogueText: params.dialogueText,
@@ -910,7 +943,7 @@ export async function saveVideoJob(params: {
   // Fire-and-forget on purpose — progress_stage is cosmetic UI copy.
   await admin
     .from("generations")
-    .update({ progress_stage: STAGE_PROGRESS.video })
+    .update({ progress_stage: params.chain ? chainProgress(params.chain) : STAGE_PROGRESS.video })
     .eq("id", params.generationId);
 }
 
@@ -1082,6 +1115,15 @@ async function finish(
       generationId,
       error: deleteError.message,
     });
+  }
+
+  // A long take's working files (the inputs it sent, the renders it kept)
+  // are nobody's once the take is terminal, whichever way it ended — the
+  // joined result lives in generated-videos and the window it was cut from
+  // is the recipe's recorded source, neither in this folder. Only after the
+  // job row is gone: a retried finish must still find what it needs.
+  if (!deleteError && jobRow?.payload?.chain) {
+    await cleanupChain(admin, jobRow.payload.chain);
   }
 
   // Already terminal (discarded/cancelled by the user, or finished by a
@@ -1525,7 +1567,7 @@ export async function advanceGeneration(
       // job and finishes the row). Claim first so a poll and the webhook can't
       // both cancel-and-finish the same job.
       if (!(await claimAdvance(admin, generationId, row.provider_request_id))) {
-        return { state: "pending", stage: row.stage, progress: STAGE_PROGRESS[row.stage] };
+        return { state: "pending", stage: row.stage, progress: progressOf(row) };
       }
       // True only when the provider confirmed no runner had picked the job up
       // — the one state fal and BytePlus both price at nothing. See
@@ -1578,7 +1620,10 @@ export async function advanceGeneration(
       //
       // Forced past the automatic_refunds switch in both cases, because both
       // are the provably-zero-cost class that flag's force exists for.
-      if ((stoppedBeforeStart || REFUND_ON_FAILURE[row.stage]) && didCancelTransition) {
+      // A long take stopped on a LATER piece is not free even when that piece
+      // never started: every piece before it rendered and was billed.
+      const earlierPiecesBilled = (row.payload.chain?.index ?? 0) > 0;
+      if (((stoppedBeforeStart && !earlierPiecesBilled) || REFUND_ON_FAILURE[row.stage]) && didCancelTransition) {
         try {
           await refundGenerationCosts(generationId, { force: true });
         } catch (refundErr) {
@@ -1598,17 +1643,17 @@ export async function advanceGeneration(
     // Transport hiccup reaching fal — not a job failure. Leave everything as
     // it is and let the next poll try again; last_polled_at was already
     // refreshed above so the reaper won't mistake this for an abandoned job.
-    return { state: "pending", stage: row.stage, progress: STAGE_PROGRESS[row.stage] };
+    return { state: "pending", stage: row.stage, progress: progressOf(row) };
   }
 
   if (status.state === "pending") {
-    return { state: "pending", stage: row.stage, progress: STAGE_PROGRESS[row.stage] };
+    return { state: "pending", stage: row.stage, progress: progressOf(row) };
   }
 
   if (status.state === "failed") {
     // Finishing is terminal and may refund — claim so only one caller does it.
     if (!(await claimAdvance(admin, generationId, row.provider_request_id))) {
-      return { state: "pending", stage: row.stage, progress: STAGE_PROGRESS[row.stage] };
+      return { state: "pending", stage: row.stage, progress: progressOf(row) };
     }
     // Dialogue is an enhancement on an already-rendered video, never a reason
     // to throw that video away — same rule the inline pipeline followed. If
@@ -1676,8 +1721,16 @@ export async function advanceGeneration(
   // next stage clears it, and finish() deletes the row — so the next stage
   // starts unclaimed and a stale caller keyed to this stage's request id can't
   // reacquire it.
-  if (!(await claimAdvance(admin, generationId, row.provider_request_id))) {
-    return { state: "pending", stage: row.stage, progress: STAGE_PROGRESS[row.stage] };
+  const chainStep = row.stage === "video" && row.payload.chain ? row.payload.chain : null;
+  // A long take's step needs the encoder, and only the routes next.config.ts
+  // traces it into carry one. Anywhere else, the piece is left for one that
+  // does — fal's webhook, the door, History, the reconcile cron — rather than
+  // claimed and failed.
+  if (chainStep && !chainEncoderAvailable()) {
+    return { state: "pending", stage: row.stage, progress: progressOf(row) };
+  }
+  if (!(await claimAdvance(admin, generationId, row.provider_request_id, chainStep ? CHAIN_LEASE_SECONDS : ADVANCE_LEASE_SECONDS))) {
+    return { state: "pending", stage: row.stage, progress: progressOf(row) };
   }
   // Which side of the money line this advance was on when an error escaped.
   // Every branch below is "fetch the finished stage's result, then maybe
@@ -1810,6 +1863,109 @@ export async function advanceGeneration(
         ),
       });
       return { state: "succeeded", resultUrl: upscaledUrl };
+    }
+
+    if (chainStep) {
+      // A LONG TAKE's piece has finished (lib/generations/chain.ts). Either
+      // the next piece starts — its input made from this one's last second
+      // and the footage up to the next switch — or, on the last piece, the
+      // pieces are joined and the take finishes as one video, through the
+      // same finish() as every other.
+      const chain = chainStep;
+      const k = chain.index;
+      const pieces = chain.lengths.length;
+      const { url: renderUrl } = await fetchVideoResult(jobHandle(row));
+
+      let prepared: Awaited<ReturnType<typeof prepareNextPiece>>;
+      try {
+        if (k === pieces - 1) {
+          // Fire-and-forget on purpose — progress_stage is cosmetic UI copy.
+          await admin.from("generations").update({ progress_stage: CHAIN_JOINING }).eq("id", generationId);
+          const { resultUrl, offsets } = await joinChain(admin, userId, generationId, chain, renderUrl);
+          await finish(generationId, userId, {
+            status: "succeeded",
+            resultUrl,
+            attempts: appendStep(
+              row.resume.attempts ?? [],
+              `Rendered in ${pieces} parts, each opening on the last second of the one before; the switches to the footage fell at its stillest moments (${chain.stillness.join(", ")} of its usual motion), and each join dissolves around the frame the two renders agreed on best (${offsets.map((o) => `${o + 1} of ${CHAIN_FPS}`).join(", ")}).`,
+              "generate",
+            ),
+          });
+          return { state: "succeeded", resultUrl };
+        }
+        prepared = await prepareNextPiece(admin, chain, renderUrl);
+      } catch (err) {
+        // Our side of a step between paid pieces — a download, the encoder,
+        // storage. Kept for another pass (fal's webhook retries, the door
+        // polls, the reaper comes back), never booked as the provider's
+        // failure: every piece so far rendered and was paid for.
+        if (err instanceof ChainRetry) {
+          await releaseAdvanceClaim(admin, generationId, row.provider_request_id);
+          throw new CriticalWriteError(`Long take, after part ${k + 1} of ${pieces}: ${err.message}`);
+        }
+        throw err;
+      }
+
+      phase = "submit";
+      // The next piece's request was composed whole when the take started
+      // (the lane knows its engine and its words; this runner does not) —
+      // only its clip is new.
+      const request = chain.requests[k + 1];
+      if (!request) throw new Error(`Long take: no request for part ${k + 2} of ${pieces}`);
+      const next = await submitChainPiece(request.endpoint, { ...request.body, [request.clipField]: prepared.inputUrl }, request.label);
+      // What this piece really came back with — its frames, and where the
+      // switch really fell — is what everything after it is measured from.
+      const nextChain: ChainState = {
+        ...chain,
+        index: k + 1,
+        renders: [...chain.renders, prepared.renderPath],
+        frames: [...chain.frames, prepared.renderFrames],
+        switches: chain.switches.map((s, i) => (i === k ? prepared.switchAt : s)),
+        starts: [...chain.starts, prepared.switchAt - CHAIN_PREFIX_FRAMES],
+      };
+      // The same fence as the dialogue transitions: only the caller that
+      // collected THIS piece may record the next, so a late caller past its
+      // lease cannot drag the chain back a piece or orphan a paid one.
+      let pieceWrite = admin
+        .from("generation_jobs")
+        .update({
+          provider_request_id: next.requestId,
+          status_url: next.statusUrl,
+          response_url: next.responseUrl,
+          cancel_url: next.cancelUrl,
+          payload: { ...row.payload, chain: nextChain, label: next.label, provider: "fal" },
+          // "Rendered the video" is refund-rules' billed marker: from here a
+          // refused later piece must not refund as if nothing was spent.
+          resume: {
+            ...row.resume,
+            attempts: appendStep(
+              row.resume.attempts ?? [],
+              `Rendered the video's part ${k + 1} of ${pieces} — part ${k + 2} opens on its last second.`,
+              "generate",
+            ),
+          },
+          updated_at: new Date().toISOString(),
+          advance_lock: null,
+          advance_locked_at: null,
+        })
+        .eq("generation_id", generationId)
+        .eq("stage", "video" satisfies JobStage);
+      pieceWrite = row.provider_request_id
+        ? pieceWrite.eq("provider_request_id", row.provider_request_id)
+        : pieceWrite.is("provider_request_id", null);
+      const pieceResult = await pieceWrite.select("generation_id");
+      mustUpdate(pieceResult, `Couldn't record part ${k + 2} of the long take ${generationId}`);
+      if (!pieceResult.data?.length) {
+        try {
+          await cancelVideoJob({ ...next, provider: "fal" });
+        } catch {
+          // Best-effort only.
+        }
+        return { state: "pending", stage: "video", progress: chainProgress(nextChain) };
+      }
+      // Fire-and-forget on purpose — progress_stage is cosmetic UI copy.
+      await admin.from("generations").update({ progress_stage: chainProgress(nextChain) }).eq("id", generationId);
+      return { state: "pending", stage: "video", progress: chainProgress(nextChain) };
     }
 
     if (row.stage === "video") {
@@ -2181,7 +2337,7 @@ export async function advanceGeneration(
     // worst, never a double-pay.
     if (phase === "result-fetch" && isTransportError(err)) {
       await releaseAdvanceClaim(admin, generationId, row.provider_request_id);
-      return { state: "pending", stage: row.stage, progress: STAGE_PROGRESS[row.stage] };
+      return { state: "pending", stage: row.stage, progress: progressOf(row) };
     }
 
     const message = err instanceof Error ? err.message : "Generation failed.";

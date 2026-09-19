@@ -27,8 +27,10 @@ import {
 describe("the window a job opens with", () => {
   it("is the whole clip when it fits, and the job's own ceiling when it does not", () => {
     expect(defaultRecastWindow(8, "scene")).toEqual({ start: 0, end: 8 });
-    // The operator's clip: 28.4 s into "Into the clip", which takes 15.
-    expect(defaultRecastWindow(28.4, "scene")).toEqual({ start: 0, end: 15 });
+    // The operator's clip: 28.4 s. Into the clip took 15 until the long take
+    // (lib/generations/chain.ts, 2026-09-19); now it takes the whole of it.
+    expect(defaultRecastWindow(28.4, "scene")).toEqual({ start: 0, end: 28.4 });
+    expect(defaultRecastWindow(40, "scene")).toEqual({ start: 0, end: 30 });
     expect(defaultRecastWindow(28.4, "motion")).toEqual({ start: 0, end: 28.4 });
     expect(defaultRecastWindow(28.4, "world")).toEqual({ start: 0, end: 10 });
   });
@@ -36,18 +38,19 @@ describe("the window a job opens with", () => {
 
 describe("clamping", () => {
   it("keeps the start where it was put and moves the end", () => {
-    expect(clampRecastWindow({ start: 12, end: 28.4 }, 28.4, "scene")).toEqual({ start: 12, end: 27 });
+    expect(clampRecastWindow({ start: 12, end: 28.4 }, 28.4, "world")).toEqual({ start: 12, end: 22 });
+    expect(clampRecastWindow({ start: 5, end: 40 }, 40, "scene")).toEqual({ start: 5, end: 35 });
   });
 
   it("never lets a window leave the clip or fall under the shortest take", () => {
     expect(clampRecastWindow({ start: -4, end: 2 }, 28.4, "scene")).toEqual({ start: 0, end: 3 });
     expect(clampRecastWindow({ start: 27, end: 40 }, 28.4, "scene")).toEqual({ start: 25.4, end: 28.4 });
-    expect(clampRecastWindow({ start: NaN, end: NaN }, 28.4, "scene")).toEqual({ start: 0, end: 15 });
+    expect(clampRecastWindow({ start: NaN, end: NaN }, 28.4, "scene")).toEqual({ start: 0, end: 28.4 });
   });
 
   it("gives way to a job that takes less when the job is changed", () => {
-    // Chosen on Photo to life (30 s), then switched to Into the clip (15 s).
-    expect(clampRecastWindow({ start: 4, end: 28.4 }, 28.4, "scene")).toEqual({ start: 4, end: 19 });
+    // Chosen on Photo to life (30 s) and switched to Into the clip (30 s, in parts): kept.
+    expect(clampRecastWindow({ start: 4, end: 28.4 }, 28.4, "scene")).toEqual({ start: 4, end: 28.4 });
     // And on to Restyle (10 s).
     expect(clampRecastWindow({ start: 4, end: 28.4 }, 28.4, "world")).toEqual({ start: 4, end: 14 });
   });
@@ -56,8 +59,9 @@ describe("clamping", () => {
 describe("a window from the wire", () => {
   it("is checked against the file, never trusted", () => {
     expect(recastWindowProblem({ start: 0, end: 15 }, 28.4, "scene")).toBeNull();
-    expect(recastWindowProblem({ start: 0, end: 15.04 }, 28.4, "scene")).toBeNull();
-    expect(recastWindowProblem({ start: 0, end: 16 }, 28.4, "scene")).toBe("too-long");
+    expect(recastWindowProblem({ start: 0, end: 28.4 }, 28.4, "scene")).toBeNull();
+    expect(recastWindowProblem({ start: 0, end: 30.04 }, 40, "scene")).toBeNull();
+    expect(recastWindowProblem({ start: 0, end: 31 }, 40, "scene")).toBe("too-long");
     expect(recastWindowProblem({ start: 0, end: 12 }, 28.4, "world")).toBe("too-long");
     expect(recastWindowProblem({ start: 5, end: 6 }, 28.4, "scene")).toBe("too-short");
     expect(recastWindowProblem({ start: 20, end: 31 }, 28.4, "motion")).toBe("outside");

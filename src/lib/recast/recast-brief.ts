@@ -44,7 +44,11 @@ function cleanBrief(value: string, max: number): string {
 }
 
 /** Kling takes 2500 characters and Luma 6000; one cap serves both. */
-export const RECAST_BRIEF_MAX_CHARS = 2000;
+// Kling's own prompt limit (both its bodies cut at 2500, recast.ts). It was
+// 2000 until the long take (2026-09-19): a later piece's continuity words run
+// ~420 characters, and a brief is cut from its END — where the person's own
+// direction stands.
+export const RECAST_BRIEF_MAX_CHARS = 2500;
 export const RECAST_DIRECTION_MAX_CHARS = 600;
 
 export type RecastCasting = {
@@ -95,6 +99,8 @@ export function composeRecastBrief(input: {
   /** The keeps still ticked on the door — a subset of the read's. */
   keeps: RecastKeep[];
   direction: string;
+  /** A later piece of a long take (chain.ts): its first second is already finished and must be carried on from. */
+  continuing?: boolean;
 }): string {
   const direction = cleanText(input.direction, RECAST_DIRECTION_MAX_CHARS);
   const parts: string[] = [];
@@ -174,6 +180,18 @@ export function composeRecastBrief(input: {
     "THE SOURCE",
     ...sourceLines(input.read, input.seconds),
     "",
+    // A LATER PIECE OF A LONG TAKE (chain.ts, 2026-09-19). Its input opens on
+    // the last second of the piece before, already rendered. These are the
+    // words every passing seam test was sent with: said this way, Kling
+    // re-drew that second almost pixel for pixel and carried her clothes,
+    // her hair and the boy beside her across.
+    ...(input.continuing
+      ? [
+          "CONTINUITY",
+          `The first second of ${video} is already finished: it shows ${character} exactly as they must look — their clothes, their hair, their pose — and the people around them exactly as they must look. Carry on from that second without any break: the same clothes, the same hair, the same faces and hair on everyone beside them, frame to frame, as if it were one continuous take.`,
+          "",
+        ]
+      : []),
     "KEEP EXACTLY",
     bullet("The performance: every gesture, every step, every expression, on the same frames."),
     bullet("The framing, the camera move, the cuts and the timing."),

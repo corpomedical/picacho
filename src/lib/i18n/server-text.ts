@@ -202,6 +202,11 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "That clip couldn't be checked just now — nothing was charged. Try again.": "recastClipUnchecked",
   "Couldn't start this take — nothing was charged. Try again.": "recastCouldntStart",
   "That take was already started.": "recastAlreadyStarted",
+  // The long take (lib/generations/chain.ts, 2026-09-19): Mystique's refusal
+  // (recast/messages.ts), and the progress line while the parts are joined
+  // (chain-run.ts).
+  "This stretch can't be split into parts cleanly — choose 15 seconds of it. Nothing was charged.": "recastChainNoPlan",
+  "Joining the parts": "stageRecastJoin",
   "This set couldn't be built from that photo, and the build is back in your allowance. A photo that shows more of the place may work better.":
     "setPhotoBuildFailed",
   // Match this shot (lib/sets/messages.ts, 2026-09-11) — the set page's line
@@ -349,6 +354,12 @@ const PATTERNS: {
     re: /^You've asked Astra for (\d+) changes this billing month — the limit on your plan\./,
     key: "setEditMonthlyCap",
     params: (m) => ({ used: m[1] }),
+  },
+  // A long take's progress while its parts render in turn (chain-run.ts).
+  {
+    re: /^Rendering part (\d+) of (\d+)$/,
+    key: "stageRecastPart",
+    params: (m) => ({ part: m[1], of: m[2] }),
   },
 ];
 

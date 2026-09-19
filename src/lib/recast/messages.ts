@@ -27,6 +27,9 @@ export const RECAST_CHARACTER_NEEDS_PHOTO = "That character has no photo yet —
 export const RECAST_CLIP_UNCHECKED = "That clip couldn't be checked just now — nothing was charged. Try again.";
 export const RECAST_COULDNT_START = "Couldn't start this take — nothing was charged. Try again.";
 export const RECAST_ALREADY_STARTED = "That take was already started.";
+// The long take (chain.ts): no placement of its parts lets them meet at a
+// still enough moment inside the engine's limits.
+export const RECAST_CHAIN_NO_PLAN = "This stretch can't be split into parts cleanly — choose 15 seconds of it. Nothing was charged.";
 
 export function recastClipProblemMessage(problem: RecastClipProblem): string {
   switch (problem) {
