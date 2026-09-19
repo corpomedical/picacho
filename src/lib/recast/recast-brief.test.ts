@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composeRecastBrief, RECAST_BRIEF_MAX_CHARS, recastCharacterToken, recastImageTokens } from "./recast-brief";
+import { composeRecastBrief, RECAST_BRIEF_MAX_CHARS, recastCastTokens, recastCharacterToken, recastImageTokens } from "./recast-brief";
 import type { RecastRead } from "./recast-read";
 
 // The brief is what a video model is actually told. Genjutsu's works because
@@ -275,6 +275,47 @@ describe("images beside a character", () => {
     const brief = composeRecastBrief({ ...base, job: "scene", casting, keeps, continuing: true, images: recastImageTokens(casting.token, 3), direction });
     expect(brief.length).toBeLessThanOrEqual(RECAST_BRIEF_MAX_CHARS);
     expect(brief.endsWith(direction)).toBe(true);
+  });
+});
+
+describe("several characters in one take", () => {
+  // 2026-09-19: "Selecting two characters still makes two videos separately".
+  const tokens = recastCastTokens([4, 1]);
+  const ensemble = [
+    { tag: "A", characterName: "Eva", token: tokens[0] },
+    { tag: "B", characterName: "Anubis", token: tokens[1] },
+  ];
+
+  it("names each character the way the request binds them — elements first come, one-photo ones as images", () => {
+    expect(recastCastTokens([4, 1])).toEqual(["@Element1", "@Image1"]);
+    expect(recastCastTokens([1, 3, 1, 2])).toEqual(["@Image1", "@Element1", "@Image2", "@Element2"]);
+    // A lone character is named exactly as before.
+    expect(recastCastTokens([3])).toEqual([recastCharacterToken(3)]);
+    expect(recastCastTokens([1])).toEqual([recastCharacterToken(1)]);
+    // Added images follow every one-photo character's own @Image.
+    expect(recastImageTokens(recastCastTokens([1, 1, 2]), 1)).toEqual(["@Image3"]);
+  });
+
+  it("gives each the person they play, all in the one video", () => {
+    const brief = composeRecastBrief({ ...base, job: "scene", casting: ensemble });
+    expect(brief).toContain("Replace Person A in @Video1 with @Element1, and Person B with @Image1.");
+    expect(brief).toContain("They all appear together in this one video.");
+    expect(brief).toContain("THE CHARACTERS");
+    expect(brief).toContain("- Eva — @Element1. Their face, hair and build come from those photos, and so do their clothes");
+    expect(brief).toContain("- Anubis — @Image1. Their face, hair and build come from that image, and so do their clothes");
+    expect(brief).toContain("never each other's");
+  });
+
+  it("leaves a character with no person to play to the words", () => {
+    const brief = composeRecastBrief({ ...base, job: "scene", casting: [ensemble[0], { ...ensemble[1], tag: null }], direction: "Anubis replaces every student." });
+    expect(brief).toContain("Replace Person A in @Video1 with @Element1.");
+    expect(brief).toContain("Put @Image1 into @Video1 as the direction below says.");
+    expect(brief.endsWith("Anubis replaces every student.")).toBe(true);
+  });
+
+  it("carries both across a long take's joins", () => {
+    const later = composeRecastBrief({ ...base, job: "scene", casting: ensemble, continuing: true });
+    expect(later).toContain("it shows @Element1 and @Image1 exactly as they must look");
   });
 });
 

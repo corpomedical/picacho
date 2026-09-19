@@ -27,7 +27,7 @@ import {
   RECAST_JOB_MAX_SECONDS,
   RECAST_JOB_ORDER,
   RECAST_MAX_BYTES,
-  RECAST_MAX_IMAGES,
+  recastImageRoom,
   recastContainerOf,
   recastEngineFor,
   recastEnginesOf,
@@ -36,7 +36,7 @@ import {
   type RecastEngine,
   type RecastJob,
 } from "@/lib/recast/recast";
-import { composeRecastBrief, recastCharacterToken, recastImageTokens } from "@/lib/recast/recast-brief";
+import { composeRecastBrief, recastCastTokens, recastImageTokens } from "@/lib/recast/recast-brief";
 import { clampRecastWindow, defaultRecastWindow, isWholeClip, recastWindowCredits, type RecastWindow } from "@/lib/recast/trim";
 import { chainMinutes, chainPieceCount } from "@/lib/generations/chain";
 import { sampleClip } from "@/lib/recast/recast-client";
@@ -56,7 +56,8 @@ import { TakeViewer } from "@/components/mystique/take-viewer";
 //   the read          what is in the clip, as chips: who, how many cuts,
 //                     what must survive, whether it will disappoint.
 //   three jobs        into the clip · photo to life · restyle the world.
-//   the cast          several at once; one press, one take each.
+//   the cast          several at once — together in one video, each playing
+//                     their own person in the clip, or one take each.
 //   the brief         composed from all of it and SHOWN. Theirs is hidden.
 //   the lock          the face judged end to end, and a miss not charged.
 //
@@ -83,15 +84,23 @@ const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 const clock = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
 
-const chip = "inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/60 px-3 py-[5px] text-xs font-medium text-white/90";
+// The labels laid over the clip and the photo. LITERAL colours on purpose:
+// the app's Screening Room theme redefines Tailwind's `white` as a near-black
+// (globals.css, html.screening.dark --color-white), which put these labels
+// in dark grey on black — "The font color is unreadable" (2026-09-19). One
+// text colour per label, too: two colour utilities on one element resolve by
+// stylesheet order, not by the order they are written.
+const chipBase = "inline-flex items-center gap-1.5 rounded-full bg-black/75 px-3 py-[5px] text-xs font-medium backdrop-blur-sm";
+const chip = `${chipBase} text-[rgba(255,255,255,0.94)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)]`;
+const chipTake = `${chipBase} text-[#f0cda6] shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)]`;
 const label = "text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[#6b6f7a]";
-const soft = "rounded-2xl bg-white/[0.03] p-3.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]";
+const soft = "rounded-2xl bg-[rgba(255,255,255,0.03)] p-3.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]";
 const ghost =
-  "cursor-pointer rounded-xl px-3.5 py-2 text-sm font-medium text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)] transition-colors hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40";
+  "cursor-pointer rounded-xl px-3.5 py-2 text-sm font-medium text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)] transition-colors hover:bg-[rgba(255,255,255,0.05)] disabled:cursor-not-allowed disabled:opacity-40";
 const pill = (on: boolean) =>
   `cursor-pointer rounded-full px-3.5 py-1.5 text-sm font-medium transition-shadow disabled:cursor-not-allowed disabled:opacity-45 ${
     on
-      ? "bg-white/[0.06] text-[#ecedf1] shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)]"
+      ? "bg-[rgba(255,255,255,0.06)] text-[#ecedf1] shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)]"
       : "text-[#c6c9d1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.24)]"
   }`;
 
@@ -133,6 +142,12 @@ export function MystiqueDoor({
   const [dragOver, setDragOver] = useState(false);
   const [viewing, setViewing] = useState<Viewing | null>(null);
   const [images, setImages] = useState<DoorImage[]>([]);
+  // Several characters in ONE video (Into the clip), or one take each —
+  // and, together, which person in the clip each plays (character id →
+  // the read's tag, or null for "as your words say"). Unset ids follow the
+  // read's order, the lead first.
+  const [together, setTogether] = useState(true);
+  const [roles, setRoles] = useState<Record<string, string | null>>({});
   const fileRef = useRef<HTMLInputElement | null>(null);
   const imageFileRef = useRef<HTMLInputElement | null>(null);
   // Every blob URL a preview was given, so none outlives the door.
@@ -188,14 +203,26 @@ export function MystiqueDoor({
   const cast = takesCast
     ? castIds.map((id) => castable.find((c) => c.id === id)).filter((c): c is RecastCharacter => Boolean(c))
     : [];
+  // TOGETHER (2026-09-19, "Selecting two characters still makes two videos
+  // separately"): in Into the clip, everyone cast shares one video by
+  // default; "One take each" keeps the variants. Photo to life builds the
+  // frame from one picture, so there it is always one take each.
+  const ensemble = job === "scene" && together && cast.length > 1;
+  const peopleInClip = read ? [...read.people].sort((a, b) => Number(b.lead) - Number(a.lead)) : [];
+  const castTags = cast.map((c, i) => (c.id in roles ? roles[c.id] : (peopleInClip[i]?.tag ?? null)));
   // What is actually sent — the server's rule (actions.ts): Photo to life
-  // brings ONE picture to life, the character's when someone is cast.
-  const usedImages = !takesCast ? [] : job === "motion" ? (cast.length > 0 ? [] : images.slice(0, 1)) : images;
-  const imageCap = job === "motion" ? 1 : RECAST_MAX_IMAGES;
+  // brings ONE picture to life, the character's when someone is cast; a take
+  // holds four references, characters included.
+  const imageCap = job === "motion" ? 1 : recastImageRoom(ensemble ? cast.length : Math.min(1, cast.length));
+  const usedImages = !takesCast ? [] : job === "motion" ? (cast.length > 0 ? [] : images.slice(0, 1)) : images.slice(0, imageCap);
   const imagesUploading = images.some((i) => i.path === null);
   const hasWords = direction.trim().length > 0;
-  const missing = recastMissing(job, { characters: cast.length, images: usedImages.length, words: hasWords });
-  const takeCount = takesCast ? Math.max(1, cast.length) : 1;
+  const rolesUnsaid = ensemble && castTags.some((tag) => tag === null) && !hasWords;
+  const missing = recastMissing(job, { characters: cast.length, images: usedImages.length, words: hasWords }) ?? (rolesUnsaid ? "words" : null);
+  const takeCount = ensemble ? 1 : takesCast ? Math.max(1, cast.length) : 1;
+  // The face lock scores ONE character's face; it promises nothing to a take
+  // with several of them, or with nobody.
+  const lockApplies = cast.length > 0 && !ensemble;
   const totalCredits = quote ? quote.credits * takeCount : null;
   const keeps = job === "scene" ? (read?.keeps ?? []).filter((k) => !dropped.has(k.what)) : [];
   const photo = cast[0]?.photos.find((p) => p.path === photoPath) ?? cast[0]?.photos[0] ?? null;
@@ -213,23 +240,23 @@ export function MystiqueDoor({
   // The same function the server composes with, so what is shown is what is
   // sent. Not memoised: it is string work over a handful of short fields,
   // and every input is rebuilt each render anyway.
-  // The same names the server gives the engine (actions.ts castingFor, imageTokensFor).
-  const castToken = cast[0] && engine === "kling-edit" ? recastCharacterToken(cast[0].photos.length) : undefined;
+  // The same names the server gives the engine (actions.ts castingsFor, imageTokensFor).
+  const briefCast = ensemble ? cast : cast.slice(0, 1);
+  const castTokens = engine === "kling-edit" ? recastCastTokens(briefCast.map((c) => c.photos.length)) : [];
+  const castings = briefCast.map((c, i) => ({
+    tag: ensemble ? castTags[i] : (read?.people.find((p) => p.lead)?.tag ?? null),
+    characterName: c.name,
+    ...(castTokens[i] ? { token: castTokens[i] } : {}),
+  }));
   const brief = seen
     ? composeRecastBrief({
         job,
         read,
         seconds: seen.seconds,
-        casting: cast[0]
-          ? {
-              tag: read?.people.find((p) => p.lead)?.tag ?? null,
-              characterName: cast[0].name,
-              ...(castToken ? { token: castToken } : {}),
-            }
-          : null,
+        casting: castings.length === 0 ? null : castings.length === 1 ? castings[0] : castings,
         keeps,
         direction,
-        images: job === "scene" && engine === "kling-edit" ? recastImageTokens(castToken, usedImages.length) : [],
+        images: job === "scene" && engine === "kling-edit" ? recastImageTokens(castTokens, usedImages.length) : [],
       })
     : "";
 
@@ -260,6 +287,7 @@ export function MystiqueDoor({
     setError("");
     setRights(false);
     setDropped(new Set());
+    setRoles({});
     const mine = ++pickRef.current;
     if (source?.kind === "upload" && source.path) void discardRecastUpload(source.path).catch(() => {});
     if (!recastContainerOf(file.type)) {
@@ -310,6 +338,7 @@ export function MystiqueDoor({
     setError("");
     setRights(false);
     setDropped(new Set());
+    setRoles({});
     const mine = ++pickRef.current;
     if (source?.kind === "upload" && source.path) void discardRecastUpload(source.path).catch(() => {});
     setClip({ kind: "take", phase: "inspecting", url: motion.videoUrl, takeId: motion.takeId, name: motion.title });
@@ -410,6 +439,22 @@ export function MystiqueDoor({
     }
   }
 
+  /**
+   * Together: who plays whom. A person in the clip is played once — whoever
+   * had them gives them up to "as your words say".
+   */
+  function setRole(id: string, tag: string | null) {
+    setRoles((prev) => {
+      const next: Record<string, string | null> = { ...prev };
+      cast.forEach((c, i) => {
+        if (!(c.id in next)) next[c.id] = castTags[i];
+      });
+      if (tag) for (const other of Object.keys(next)) if (next[other] === tag) next[other] = null;
+      next[id] = tag;
+      return next;
+    });
+  }
+
   /** Clears the row without touching storage — a take now stands on these files. */
   function forgetImages() {
     for (const i of images) {
@@ -438,6 +483,7 @@ export function MystiqueDoor({
         characterIds: cast.map((c) => c.id),
         photoPath: photo?.path,
         imagePaths: usedImages.map((i) => i.path).filter((p): p is string => p !== null),
+        ...(ensemble ? { together: true, castTags } : {}),
         engine,
         keeps: keeps.map((k) => k.what),
         direction,
@@ -463,7 +509,7 @@ export function MystiqueDoor({
       ...res.ids.map((id, i) => ({
         id,
         status: "generating" as const,
-        characterName: cast[i]?.name ?? null,
+        characterName: ensemble ? cast.map((c) => c.name).join(" & ") : (cast[i]?.name ?? null),
         engine,
         seconds: Math.round(seen.seconds),
         credits: quote?.credits ?? null,
@@ -583,7 +629,7 @@ export function MystiqueDoor({
                 onClose={() => setViewing(null)}
               />
             ) : (
-              <div className="flex min-h-[340px] items-center justify-center rounded-2xl bg-[#101116] text-sm text-[#6b6f7a] ring-1 ring-white/10">
+              <div className="flex min-h-[340px] items-center justify-center rounded-2xl bg-[#101116] text-sm text-[#6b6f7a] ring-1 ring-[rgba(255,255,255,0.1)]">
                 {m.loadingTake}
               </div>
             )}
@@ -591,7 +637,7 @@ export function MystiqueDoor({
         ) : (
           <>
             {/* The screen: the performance left, who gives it right. */}
-            <div className="relative mt-5 overflow-hidden rounded-2xl ring-1 ring-white/10">
+            <div className="relative mt-5 overflow-hidden rounded-2xl ring-1 ring-[rgba(255,255,255,0.1)]">
               <div className="grid md:grid-cols-2">
                 <div
                   role="button"
@@ -674,8 +720,14 @@ export function MystiqueDoor({
                       <p className="max-w-xs text-sm text-[#9aa0ad]">{m.jobWorldLine}</p>
                     </div>
                   )}
-                  <span className={`absolute right-3.5 top-3 ${chip} border-transparent text-[#f0cda6] shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)]`}>
-                    {cast.length > 1 ? formatMsg(m.variantsNote, { n: cast.length }) : cast[0] ? `${m.theTake} · ${cast[0].name}` : m.theTake}
+                  <span className={`absolute right-3.5 top-3 ${chipTake}`}>
+                    {ensemble
+                      ? `${m.theTake} · ${cast.map((c) => c.name).join(" & ")}`
+                      : cast.length > 1
+                        ? formatMsg(m.variantsNote, { n: cast.length })
+                        : cast[0]
+                          ? `${m.theTake} · ${cast[0].name}`
+                          : m.theTake}
                   </span>
                 </div>
               </div>
@@ -702,7 +754,7 @@ export function MystiqueDoor({
                     })}
                   </p>
                 </div>
-                <div aria-hidden className="relative mt-2.5 h-2 overflow-hidden rounded-full bg-white/[0.06]">
+                <div aria-hidden className="relative mt-2.5 h-2 overflow-hidden rounded-full bg-[rgba(255,255,255,0.06)]">
                   <div
                     className="absolute inset-y-0 rounded-full bg-[#f0cda6]/75"
                     style={{
@@ -790,8 +842,8 @@ export function MystiqueDoor({
                           <span aria-hidden className="absolute inset-0 bg-[#14151a]" />
                         )}
                         <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2 pb-1.5 pt-4 text-left">
-                          <span className="block truncate text-[11px] font-medium text-white/90">{mo.title}</span>
-                          <span className="block text-[10px] tabular-nums text-white/55">{mo.seconds} s</span>
+                          <span className="block truncate text-[11px] font-medium text-[rgba(255,255,255,0.92)]">{mo.title}</span>
+                          <span className="block text-[10px] tabular-nums text-[rgba(255,255,255,0.6)]">{mo.seconds} s</span>
                         </span>
                       </button>
                     );
@@ -881,8 +933,8 @@ export function MystiqueDoor({
                         onClick={() => chooseJob(j)}
                         className={`cursor-pointer rounded-2xl p-3.5 text-left transition-shadow disabled:cursor-not-allowed disabled:opacity-45 ${
                           on
-                            ? "bg-white/[0.06] shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)]"
-                            : "bg-white/[0.03] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.22)]"
+                            ? "bg-[rgba(255,255,255,0.06)] shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)]"
+                            : "bg-[rgba(255,255,255,0.03)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.22)]"
                         }`}
                       >
                         <span className="flex items-center justify-between gap-2">
@@ -929,7 +981,7 @@ export function MystiqueDoor({
                   <>
                     <div className="flex flex-wrap items-baseline justify-between gap-x-4">
                       <p className={label}>{m.castLabel}</p>
-                      <p className="text-xs text-[#6b6f7a]">{m.castMore}</p>
+                      <p className="text-xs text-[#6b6f7a]">{job === "scene" && together ? m.castTogether : m.castMore}</p>
                     </div>
                     <p className="mt-1 text-xs text-[#9aa0ad]">{job === "motion" ? m.castHintMotion : m.castHint}</p>
                     {castable.length === 0 ? (
@@ -958,7 +1010,7 @@ export function MystiqueDoor({
                               }
                               className={`flex cursor-pointer items-center gap-2 rounded-full py-1 pl-1 pr-3.5 text-sm font-medium transition-shadow ${
                                 on
-                                  ? "bg-white/[0.06] text-[#ecedf1] shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)]"
+                                  ? "bg-[rgba(255,255,255,0.06)] text-[#ecedf1] shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)]"
                                   : "text-[#c6c9d1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.24)]"
                               }`}
                             >
@@ -968,6 +1020,48 @@ export function MystiqueDoor({
                             </button>
                           );
                         })}
+                      </div>
+                    )}
+                    {/* Together in one video, or one take each (Into the clip). */}
+                    {job === "scene" && cast.length > 1 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button type="button" aria-pressed={together} disabled={starting} onClick={() => setTogether(true)} className={pill(together)}>
+                          {m.togetherOn}
+                        </button>
+                        <button type="button" aria-pressed={!together} disabled={starting} onClick={() => setTogether(false)} className={pill(!together)}>
+                          {m.togetherOff}
+                        </button>
+                      </div>
+                    )}
+                    {/* Together: who each one plays, from the people the read found. */}
+                    {ensemble && (
+                      <div className="mt-3 space-y-2">
+                        {cast.map((c, i) => (
+                          <label key={c.id} className="flex items-center gap-2.5 text-sm">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={c.photos[0].url} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" />
+                            <span className="w-24 shrink-0 truncate font-medium text-[#ecedf1]">{c.name}</span>
+                            <span className="shrink-0 text-xs text-[#6b6f7a]">{m.rolePlays}</span>
+                            <select
+                              value={castTags[i] ?? ""}
+                              disabled={starting}
+                              onChange={(e) => setRole(c.id, e.target.value || null)}
+                              className="min-w-0 flex-1 cursor-pointer truncate rounded-lg bg-[#16171c] px-2.5 py-1.5 text-sm text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)] outline-none [color-scheme:dark] disabled:opacity-50"
+                            >
+                              {peopleInClip.map((p) => (
+                                <option key={p.tag} value={p.tag}>
+                                  {formatMsg(m.rolePerson, { tag: p.tag, where: p.where.slice(0, 48) })}
+                                </option>
+                              ))}
+                              <option value="">{m.roleWords}</option>
+                            </select>
+                          </label>
+                        ))}
+                        {!seen ? (
+                          <p className="text-xs text-[#9aa0ad]">{m.rolesPickClip}</p>
+                        ) : !read ? (
+                          <p className="text-xs text-[#9aa0ad]">{m.rolesNoRead}</p>
+                        ) : null}
                       </div>
                     )}
                     {cast[0] && cast[0].photos.length > 1 && (
@@ -1004,7 +1098,7 @@ export function MystiqueDoor({
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {images.map((img, i) => {
-                        const unused = job === "motion" && (cast.length > 0 || i > 0);
+                        const unused = job === "motion" ? cast.length > 0 || i > 0 : i >= imageCap;
                         return (
                           <div
                             key={img.key}
@@ -1013,7 +1107,7 @@ export function MystiqueDoor({
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={img.url} alt={formatMsg(m.imageName, { n: i + 1 })} className="h-full w-full object-cover" />
                             <span
-                              className={`absolute inset-x-0 bottom-0 bg-black/70 px-1 py-0.5 text-center text-[10px] font-medium text-white/90 ${
+                              className={`absolute inset-x-0 bottom-0 bg-black/70 px-1 py-0.5 text-center text-[10px] font-medium text-[rgba(255,255,255,0.92)] ${
                                 img.path ? "" : "motion-safe:animate-pulse"
                               }`}
                             >
@@ -1025,7 +1119,7 @@ export function MystiqueDoor({
                               title={m.removeImage}
                               disabled={starting || img.path === null}
                               onClick={() => removeImage(img.key)}
-                              className="absolute right-1 top-1 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-black/70 text-xs leading-none text-white hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-40"
+                              className="absolute right-1 top-1 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-black/70 text-xs leading-none text-[#fff] hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               ×
                             </button>
@@ -1037,7 +1131,7 @@ export function MystiqueDoor({
                           type="button"
                           onClick={() => imageFileRef.current?.click()}
                           disabled={starting}
-                          className="flex h-16 w-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-medium text-[#c6c9d1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16)] transition-colors hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40"
+                          className="flex h-16 w-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-medium text-[#c6c9d1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16)] transition-colors hover:bg-[rgba(255,255,255,0.05)] disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           <span aria-hidden className="text-lg leading-none">
                             +
@@ -1049,10 +1143,19 @@ export function MystiqueDoor({
                     {job === "motion" && (cast.length > 0 ? images.length > 0 : images.length > 1) && (
                       <p className="mt-2 text-xs text-[#9aa0ad]">{m.imagesMotionNote}</p>
                     )}
+                    {job === "scene" && images.length > imageCap && (
+                      <p className="mt-2 text-xs text-[#9aa0ad]">{formatMsg(m.imagesRoomNote, { n: imageCap })}</p>
+                    )}
                   </>
                 )}
                 <p className={`${takesCast ? "mt-4" : ""} ${label}`}>
-                  {!takesCast ? m.directionLabel : job === "scene" && cast.length === 0 ? m.changeLabel : m.directionOptional}
+                  {!takesCast
+                    ? m.directionLabel
+                    : job === "scene" && cast.length === 0
+                      ? m.changeLabel
+                      : ensemble && castTags.some((tag) => tag === null)
+                        ? m.directionLabel
+                        : m.directionOptional}
                 </p>
                 <textarea
                   value={direction}
@@ -1060,7 +1163,7 @@ export function MystiqueDoor({
                   placeholder={!takesCast ? m.worldPlaceholder : job === "scene" && cast.length === 0 ? m.changePlaceholder : m.directionPlaceholder}
                   rows={!takesCast || (job === "scene" && cast.length === 0) ? 3 : 2}
                   disabled={starting}
-                  className="mt-2 w-full resize-y rounded-xl bg-white/[0.04] px-3.5 py-2.5 text-sm text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] outline-none transition-shadow placeholder:text-[#6b6f7a] focus:shadow-[inset_0_0_0_1px_rgba(240,205,166,0.6)] disabled:opacity-50"
+                  className="mt-2 w-full resize-y rounded-xl bg-[rgba(255,255,255,0.04)] px-3.5 py-2.5 text-sm text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] outline-none transition-shadow placeholder:text-[#6b6f7a] focus:shadow-[inset_0_0_0_1px_rgba(240,205,166,0.6)] disabled:opacity-50"
                 />
                 {ready && (
                   <button type="button" onClick={() => setShowBrief((s) => !s)} className="mt-2 cursor-pointer text-xs font-medium text-[#9aa0ad] underline-offset-2 hover:underline">
@@ -1078,7 +1181,7 @@ export function MystiqueDoor({
               </div>
             )}
 
-            {lockOn && <p className="mt-4 text-xs text-[#9aa0ad]">{m.lockPromise}</p>}
+            {lockOn && lockApplies && <p className="mt-4 text-xs text-[#9aa0ad]">{m.lockPromise}</p>}
 
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <input

@@ -137,7 +137,10 @@ export function RecceDoor({ initialReads, finisherOn }: { initialReads: RecceRea
     router.refresh();
   }
 
-  const chip = "inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/60 px-3 py-[5px] text-xs font-medium text-white/90";
+  // Literal colours: the app theme redefines Tailwind white as a near-black,
+  // which made the Mystique door’s identical labels dark on black (2026-09-19).
+  const chip =
+    "inline-flex items-center gap-1.5 rounded-full bg-black/75 px-3 py-[5px] text-xs font-medium text-[rgba(255,255,255,0.94)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)] backdrop-blur-sm";
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -155,7 +158,7 @@ export function RecceDoor({ initialReads, finisherOn }: { initialReads: RecceRea
         </div>
 
         {/* The screen: footage left, the place right, the scan line between. */}
-        <div className="relative mt-5 overflow-hidden rounded-2xl ring-1 ring-white/10">
+        <div className="relative mt-5 overflow-hidden rounded-2xl ring-1 ring-[rgba(255,255,255,0.1)]">
           <div className="grid md:grid-cols-[57%_43%]">
             <div
               role="button"
@@ -256,7 +259,7 @@ export function RecceDoor({ initialReads, finisherOn }: { initialReads: RecceRea
               onChange={(e) => setNotes(e.target.value.slice(0, SET_PHOTO_NOTES_MAX_CHARS))}
               placeholder={r.notesLabel}
               disabled={starting}
-              className="w-full rounded-xl bg-white/[0.04] px-3.5 py-2.5 text-sm text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] outline-none transition-shadow placeholder:text-[#6b6f7a] focus:shadow-[inset_0_0_0_1px_rgba(240,205,166,0.6)] disabled:opacity-50"
+              className="w-full rounded-xl bg-[rgba(255,255,255,0.04)] px-3.5 py-2.5 text-sm text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] outline-none transition-shadow placeholder:text-[#6b6f7a] focus:shadow-[inset_0_0_0_1px_rgba(240,205,166,0.6)] disabled:opacity-50"
             />
           </label>
           {clip && (
@@ -264,7 +267,7 @@ export function RecceDoor({ initialReads, finisherOn }: { initialReads: RecceRea
               type="button"
               onClick={() => fileRef.current?.click()}
               disabled={preparing || starting}
-              className="cursor-pointer rounded-xl px-3.5 py-2.5 text-sm font-medium text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)] transition-colors hover:bg-white/[0.05] disabled:opacity-40"
+              className="cursor-pointer rounded-xl px-3.5 py-2.5 text-sm font-medium text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)] transition-colors hover:bg-[rgba(255,255,255,0.05)] disabled:opacity-40"
             >
               {t.sets.clipChange}
             </button>

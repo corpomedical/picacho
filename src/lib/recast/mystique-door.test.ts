@@ -81,8 +81,22 @@ describe("the Mystique door", () => {
     expect(viewer).toContain("clipPath");
   });
 
+  it("paints its dark surfaces in literal colours — the app theme turns Tailwind's white near-black", () => {
+    // "Fix the Tag overlaying the clip … The font color is unreadable"
+    // (2026-09-19): globals.css html.screening.dark redefines --color-white,
+    // so text-white/90 on black read as dark grey on black.
+    for (const [name, text] of [
+      ["door", door],
+      ["viewer", viewer],
+    ] as const) {
+      expect(text, name).not.toMatch(/\b(?:text|bg|border|ring|from|via|to)-white\b/);
+    }
+  });
+
   it("promises the lock only when the lock is actually on", () => {
-    expect(door).toContain("{lockOn && <p");
+    expect(door).toContain("{lockOn && lockApplies && <p");
+    // A take with several faces, or none, promises nothing.
+    expect(door).toContain("const lockApplies = cast.length > 0 && !ensemble");
     expect(page).toContain("isRecastLockOn");
   });
 

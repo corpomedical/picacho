@@ -73,9 +73,22 @@ export function recastCharacterToken(photoCount: number): string {
  * or from @Image2 when a one-photo character already goes as @Image1
  * (recastRequestBody puts them in that order).
  */
-export function recastImageTokens(characterToken: string | undefined, count: number): string[] {
-  const first = characterToken === "@Image1" ? 2 : 1;
-  return Array.from({ length: count }, (_, i) => `@Image${first + i}`);
+export function recastImageTokens(characterTokens: string | string[] | undefined, count: number): string[] {
+  const taken = (Array.isArray(characterTokens) ? characterTokens : characterTokens ? [characterTokens] : []).filter((t) =>
+    t.startsWith("@Image"),
+  ).length;
+  return Array.from({ length: count }, (_, i) => `@Image${taken + 1 + i}`);
+}
+
+/**
+ * The engine's names for several characters in ONE take, in cast order:
+ * @Element1, @Element2 for those with more than one photo, @Image1… for
+ * those with one — the order recastRequestBody binds them in.
+ */
+export function recastCastTokens(photoCounts: number[]): string[] {
+  let elements = 0;
+  let images = 0;
+  return photoCounts.map((n) => (n > 1 ? `@Element${++elements}` : `@Image${++images}`));
 }
 
 const bullet = (s: string) => `- ${s}`;
@@ -114,7 +127,8 @@ type BriefInput = {
   job: RecastJob;
   read: RecastRead | null;
   seconds: number;
-  casting: RecastCasting | null;
+  /** Who is cast: one character, several in one take (Into the clip only), or nobody. */
+  casting: RecastCasting | RecastCasting[] | null;
   /** The keeps still ticked on the door — a subset of the read's. */
   keeps: RecastKeep[];
   direction: string;
@@ -174,12 +188,14 @@ function composeUncut(input: BriefInput): string {
     return cleanBrief(parts.join("\n"), Number.POSITIVE_INFINITY);
   }
 
-  const name = input.casting?.characterName ?? "The character";
+  const castings = input.casting === null ? [] : Array.isArray(input.casting) ? input.casting : [input.casting];
+  const casting = castings[0] ?? null;
+  const name = casting?.characterName ?? "The character";
 
   if (input.job === "motion") {
     // No character: the person's own image is the picture, and it need not
     // show a person at all.
-    const who = input.casting
+    const who = casting
       ? `${name} — the person in the reference image. Their face, hair and build must stay the same in every frame.`
       : "Whoever or whatever the reference image shows. They must stay the same in every frame.";
     // THE ONE THE ENGINE ACTUALLY READS, and the one that was wrong until
@@ -214,7 +230,7 @@ function composeUncut(input: BriefInput): string {
   // NO CHARACTER (2026-09-19, "Do not lock it just on characters"): the
   // person's own words say what changes — with their images, or without —
   // and everything they do not change is kept, the performance first.
-  if (!input.casting) {
+  if (!casting) {
     // Only ever sent to the one scene engine still offered, which reads names
     // (the retired ones take no prompt at all).
     const video = "@Video1";
@@ -243,10 +259,61 @@ function composeUncut(input: BriefInput): string {
     return cleanBrief(parts.join("\n"), Number.POSITIVE_INFINITY);
   }
 
-  const who = input.casting.tag ? `Person ${input.casting.tag}` : "The performer";
+  // SEVERAL CHARACTERS IN ONE TAKE (2026-09-19, "Selecting two characters
+  // still makes two videos separately"): each named by the engine's own name
+  // for their photos, each given the person in the clip they play — or left
+  // to the direction — and the same promises the single cast is given.
+  if (castings.length > 1) {
+    const video = "@Video1";
+    const named = castings.map((c, i) => ({ ...c, token: c.token ?? `the character in reference ${i + 1}` }));
+    const swaps = named.filter((c) => c.tag);
+    const placed = named.filter((c) => !c.tag);
+    const task: string[] = [];
+    if (swaps.length > 0) {
+      task.push(
+        `Replace ${swaps.map((c, i) => `${i === 0 ? "" : "and "}Person ${c.tag}${i === 0 ? ` in ${video}` : ""} with ${c.token}`).join(", ")}.`,
+      );
+    }
+    if (placed.length > 0) task.push(`Put ${placed.map((c) => c.token).join(" and ")} into ${video} as the direction below says.`);
+    task.push("They all appear together in this one video. Keep the performance exactly as it is.");
+    parts.push(
+      "TASK",
+      task.join(" "),
+      "",
+      "THE CHARACTERS",
+      ...named.map((c) =>
+        bullet(
+          `${c.characterName} — ${c.token}. Their face, hair and build come from ${c.token.startsWith("@Element") ? "those photos" : "that image"}, and so do their clothes, from the first frame to the last, unless the direction below says otherwise.`,
+        ),
+      ),
+      `Each of them stays the same person from every side, including from behind: when they turn away or walk off, it is still their own hair and build we see, never the original performer's — and never each other's.`,
+      "",
+      ...imageLines(images),
+      "THE SOURCE",
+      ...sourceLines(input.read, input.seconds),
+      "",
+      ...(input.continuing
+        ? [
+            "CONTINUITY",
+            `The first second of ${video} is already finished: it shows ${named.map((c) => c.token).join(" and ")} exactly as they must look — their clothes, their hair, their pose — and the people around them exactly as they must look. Carry on from that second without any break: the same clothes, the same hair, the same faces and hair on everyone, frame to frame, as if it were one continuous take.`,
+            "",
+          ]
+        : []),
+      "KEEP EXACTLY",
+      bullet("The performance: every gesture, every step, every expression, on the same frames."),
+      bullet("The framing, the camera move, the cuts and the timing."),
+      bullet("The lighting, the setting and everyone else in the shot."),
+      ...keepLines(input.keeps).map(bullet),
+      bullet(`Everything else stays exactly as it is in ${video}.`),
+    );
+    if (direction) parts.push("", "DIRECTION", direction);
+    return cleanBrief(parts.join("\n"), Number.POSITIVE_INFINITY);
+  }
+
+  const who = casting.tag ? `Person ${casting.tag}` : "The performer";
   // With names the engine reads (Kling O3 Edit: @Video1 for the clip, @Element1
   // or @Image1 for the character), the brief uses them; without, plain words.
-  const token = input.casting.token;
+  const token = casting.token;
   const video = token ? "@Video1" : "the source video";
   const character = token ?? "the character in the reference image";
   const photos = token === "@Element1" ? "those photos" : "the image";

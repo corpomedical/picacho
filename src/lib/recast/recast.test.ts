@@ -19,6 +19,7 @@ import {
   recastEngineOfModel,
   recastEnginesOf,
   recastLumaDuration,
+  recastImageRoom,
   recastImageSendsAsIs,
   recastImageUsable,
   recastMissing,
@@ -403,6 +404,30 @@ describe("the request, with images and without anyone", () => {
     const body = recastRequestBody("kling-pro", { clipUrl, characterImageUrl: added[0] });
     expect(body.image_url).toBe(added[0]);
     expect(body).not.toHaveProperty("image_urls");
+  });
+
+  it("binds several characters in ONE take, each to their own photos, in cast order", () => {
+    // 2026-09-19: "Selecting two characters still makes two videos separately".
+    const eva = { front: "https://x/eva.jpg", more: ["https://x/eva2.jpg", "https://x/eva3.jpg"] };
+    const anubis = { front: "https://x/anubis.jpg", more: [] };
+    const kai = { front: "https://x/kai.jpg", more: ["https://x/kai2.jpg"] };
+    const body = recastRequestBody("kling-edit", { clipUrl, ensemble: [eva, anubis, kai], imageUrls: added, brief: "x" });
+    // @Element1 Eva, @Element2 Kai — the ones with more angles, in order.
+    expect(body.elements).toEqual([
+      { frontal_image_url: eva.front, reference_image_urls: eva.more },
+      { frontal_image_url: kai.front, reference_image_urls: kai.more },
+    ]);
+    // @Image1 Anubis (one photo), then the added images in the room that is left.
+    expect(body.image_urls).toEqual([anubis.front, added[0]]);
+    expect((body.elements as unknown[]).length + (body.image_urls as string[]).length).toBe(4);
+  });
+
+  it("leaves images the room the characters in a take do not take", () => {
+    expect(recastImageRoom(0)).toBe(3);
+    expect(recastImageRoom(1)).toBe(3);
+    expect(recastImageRoom(2)).toBe(2);
+    expect(recastImageRoom(3)).toBe(1);
+    expect(recastImageRoom(4)).toBe(0);
   });
 
   it("gives Restyle no images, whatever is passed", () => {

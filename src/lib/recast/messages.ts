@@ -35,6 +35,9 @@ export const RECAST_NEEDS_WORDS = "Say what should change, or choose a character
 export const RECAST_NEEDS_PICTURE = "Choose a character or add an image to bring to life.";
 export const RECAST_IMAGE_UNUSABLE = "That image can't be used — it needs to be at least 340 pixels on each side, and no more than 2.5 times as long one way as the other.";
 export const RECAST_IMAGE_UNCHECKED = "That image couldn't be checked just now — nothing was charged. Try again.";
+// Several characters in one take (2026-09-19): one without a person in the
+// clip to play, and no words to give them a part.
+export const RECAST_NEEDS_ROLES = "Say in your words who each character plays.";
 
 export function recastClipProblemMessage(problem: RecastClipProblem): string {
   switch (problem) {

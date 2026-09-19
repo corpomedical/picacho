@@ -18,7 +18,13 @@ import type { RecastJob } from "@/lib/recast/recast";
 // A take whose clip is no longer stored plays alone, and says so.
 
 const DRIFT_S = 0.2;
-const chip = "rounded-full border border-white/10 bg-black/60 px-3 py-[5px] text-xs font-medium text-white/90";
+// Literal colours: the app's theme redefines Tailwind's `white` as a
+// near-black, which made these labels dark on black (mystique-door.tsx, 2026-09-19).
+// One text colour per label: two colour utilities resolve by stylesheet
+// order, not by the order they are written.
+const chipBase = "rounded-full bg-black/75 px-3 py-[5px] text-xs font-medium backdrop-blur-sm";
+const chip = `${chipBase} text-[rgba(255,255,255,0.94)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)]`;
+const chipTake = `${chipBase} text-[#f0cda6] shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)]`;
 
 export function TakeViewer({
   job,
@@ -140,7 +146,7 @@ export function TakeViewer({
   ) : null;
 
   const button =
-    "cursor-pointer rounded-xl px-3.5 py-2 text-sm font-medium text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)] transition-colors hover:bg-white/[0.05]";
+    "cursor-pointer rounded-xl px-3.5 py-2 text-sm font-medium text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)] transition-colors hover:bg-[rgba(255,255,255,0.05)]";
 
   return (
     <div>
@@ -155,7 +161,7 @@ export function TakeViewer({
           onPointerMove={(e) => {
             if (e.currentTarget.hasPointerCapture(e.pointerId)) moveTo(e.clientX);
           }}
-          className="relative mx-auto max-h-[70vh] w-full cursor-ew-resize touch-none select-none overflow-hidden rounded-2xl bg-black ring-1 ring-white/10"
+          className="relative mx-auto max-h-[70vh] w-full cursor-ew-resize touch-none select-none overflow-hidden rounded-2xl bg-black ring-1 ring-[rgba(255,255,255,0.1)]"
           style={{ aspectRatio: aspect ?? 16 / 9, maxWidth: aspect ? `calc(70vh * ${aspect})` : undefined }}
         >
           {takeVideo}
@@ -164,7 +170,7 @@ export function TakeViewer({
             {clipVideo}
           </div>
           <span className={`pointer-events-none absolute left-3 top-3 ${chip}`}>{m.yourClip}</span>
-          <span className={`pointer-events-none absolute right-3 top-3 ${chip} border-transparent text-[#f0cda6] shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)]`}>
+          <span className={`pointer-events-none absolute right-3 top-3 ${chipTake}`}>
             {title}
           </span>
           <div
@@ -192,14 +198,14 @@ export function TakeViewer({
       ) : (
         <div className={`grid items-center gap-3 ${clipVideo ? "sm:grid-cols-2" : ""}`}>
           {clipVideo && (
-            <div className="relative overflow-hidden rounded-2xl bg-black ring-1 ring-white/10">
+            <div className="relative overflow-hidden rounded-2xl bg-black ring-1 ring-[rgba(255,255,255,0.1)]">
               {clipVideo}
               <span className={`pointer-events-none absolute left-3 top-3 ${chip}`}>{m.yourClip}</span>
             </div>
           )}
-          <div className="relative overflow-hidden rounded-2xl bg-black ring-1 ring-white/10">
+          <div className="relative overflow-hidden rounded-2xl bg-black ring-1 ring-[rgba(255,255,255,0.1)]">
             {takeVideo}
-            <span className={`pointer-events-none absolute right-3 top-3 ${chip} border-transparent text-[#f0cda6] shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)]`}>
+            <span className={`pointer-events-none absolute right-3 top-3 ${chipTake}`}>
               {title}
             </span>
           </div>

@@ -27,6 +27,7 @@ import {
   RECAST_NEEDS_DATABASE,
   RECAST_NEEDS_PICTURE,
   RECAST_NEEDS_RIGHTS,
+  RECAST_NEEDS_ROLES,
   RECAST_NEEDS_WORDS,
   RECAST_NOT_A_VIDEO,
   RECAST_NOT_OPEN,
@@ -53,6 +54,7 @@ import {
   recastContainerOf,
   recastCreditCost,
   recastEngineFits,
+  recastImageRoom,
   recastImageSendsAsIs,
   recastImageUsable,
   recastMissing,
@@ -66,7 +68,7 @@ import {
 import {
   composeRecastBrief,
   RECAST_DIRECTION_MAX_CHARS,
-  recastCharacterToken,
+  recastCastTokens,
   recastImageTokens,
   type RecastCasting,
 } from "@/lib/recast/recast-brief";
@@ -218,6 +220,9 @@ async function readOwnTake(
  * engines' limits. Nothing is written yet: that waits for the gates.
  */
 type AddedImage = { path: string; bytes: Buffer; format: string; width: number; height: number; orientation: number };
+
+/** A cast character, as read from the caller's own profiles. */
+type Character = { id: string; name: string; reference_image_urls: string[] | null };
 
 async function readAddedImage(admin: Admin, userId: string, path: string): Promise<AddedImage | { error: string }> {
   if (!path.startsWith(`${userId}/`) || path.includes("..")) return { error: RECAST_IMAGE_UNUSABLE };
@@ -407,6 +412,10 @@ export async function startRecastTakes(input: {
   keeps?: string[];
   direction?: string;
   castTag?: string;
+  /** Several characters in ONE take instead of one take each (Into the clip only). */
+  together?: boolean;
+  /** Together: the person in the read each character plays, aligned with characterIds (null = as the words say). */
+  castTags?: (string | null)[];
   /** The read the door was shown — bounded again here, and never trusted for money. */
   read?: unknown;
   /** Which stretch of the clip to perform, in seconds of the file. */
@@ -449,19 +458,44 @@ export async function startRecastTakes(input: {
           .eq("user_id", userId)
           .in("id", ids)
       : { data: [] };
-  const characters = (characterRows ?? []) as { id: string; name: string; reference_image_urls: string[] | null }[];
+  const characters = (characterRows ?? []) as Character[];
   if (characters.length !== ids.length) return { error: "Couldn't find that character." };
   for (const c of characters) {
     if (!c.reference_image_urls?.length) return { error: RECAST_CHARACTER_NEEDS_PHOTO };
   }
   // Order follows what was asked for, so the first cast is the first take.
-  // With nobody cast there is still one take: the words', or the image's.
-  const cast = ids.length > 0 ? ids.map((id) => characters.find((c) => c.id === id)!) : [null];
+  const ordered = ids.map((id) => characters.find((c) => c.id === id)!);
+
+  // TOGETHER (2026-09-19, "Selecting two characters still makes two videos
+  // separately"): in Into the clip, several characters share ONE take, each
+  // playing the person in the clip the door matched them to (castTags,
+  // aligned with characterIds; a person is played once) — or, untagged, the
+  // part the words give them. Otherwise each character is a take of their
+  // own (variants), and with nobody cast there is still one take: the
+  // words', or the image's. Photo to life builds the frame from ONE picture,
+  // so it only ever takes one character at a time.
+  const together = spec.job === "scene" && input?.together === true && ordered.length > 1;
+  const tagsIn: unknown[] = Array.isArray(input?.castTags) ? input.castTags : [];
+  const playedBy = new Set<string>();
+  const castTags = ids.map((_, i) => {
+    const tag = tagsIn[i];
+    if (typeof tag !== "string" || !/^[A-Z]$/.test(tag) || playedBy.has(tag)) return null;
+    playedBy.add(tag);
+    return tag;
+  });
+  if (together && castTags.some((tag) => tag === null) && !direction.trim()) return { error: RECAST_NEEDS_ROLES };
+  const takes: Character[][] = together ? [ordered] : ordered.length > 0 ? ordered.map((c) => [c]) : [[]];
 
   // Photo to life brings ONE picture to life — the character's photo when
-  // someone is cast, otherwise the first image. Into the clip carries them all.
+  // someone is cast, otherwise the first image. Into the clip carries them
+  // all, in the room the take's characters leave (four references in all).
   const admin = createAdminClient();
-  const imagePaths = spec.job === "motion" ? (ids.length > 0 ? [] : askedImages.slice(0, 1)) : askedImages;
+  const imagePaths =
+    spec.job === "motion"
+      ? ids.length > 0
+        ? []
+        : askedImages.slice(0, 1)
+      : askedImages.slice(0, recastImageRoom(together ? ordered.length : Math.min(1, ordered.length)));
   const added: AddedImage[] = [];
   for (const path of imagePaths) {
     const image = await readAddedImage(admin, userId, path);
@@ -539,27 +573,45 @@ export async function startRecastTakes(input: {
   // its own length, and only the cuts that fall inside it, on its own clock.
   const wholeRead = reboundRecastRead(input?.read, clip.seconds);
   const read = wholeRead ? { ...wholeRead, cuts: cutsInWindow(wholeRead.cuts, window) } : null;
-  // The engine that reads names in its prompt is told which photos are the
-  // character's by name; how many photos ride decides which name.
-  const castingFor = (c: { name: string; reference_image_urls: string[] | null } | null): RecastCasting | null =>
-    c
-      ? {
-          tag: castTag,
-          characterName: c.name,
-          ...(engine === "kling-edit" ? { token: recastCharacterToken(c.reference_image_urls?.length ?? 1) } : {}),
-        }
-      : null;
-  // The added images' names follow the character's own (@Image2 after a
+  // The engine that reads names in its prompt is told which photos are whose
+  // by name; how many photos each character has decides which name
+  // (recastCastTokens — a lone character is @Element1 or @Image1, as ever).
+  // Alone, a character plays the person the door named; together, each
+  // plays their own.
+  const castingsFor = (chars: Character[]): RecastCasting[] => {
+    const tokens = engine === "kling-edit" ? recastCastTokens(chars.map((c) => c.reference_image_urls?.length ?? 1)) : [];
+    return chars.map((c, i) => ({
+      tag: chars.length > 1 ? castTags[ids.indexOf(c.id)] : castTag,
+      characterName: c.name,
+      ...(tokens[i] ? { token: tokens[i] } : {}),
+    }));
+  };
+  const castingOf = (castings: RecastCasting[]): RecastCasting | RecastCasting[] | null =>
+    castings.length === 0 ? null : castings.length === 1 ? castings[0] : castings;
+  // The added images' names follow the characters' own (@Image2 after a
   // one-photo character's @Image1) — only where the engine reads names.
-  const imageTokensFor = (casting: RecastCasting | null): string[] =>
-    spec.job === "scene" && engine === "kling-edit" ? recastImageTokens(casting?.token, imagePaths.length) : [];
-  const briefFor = (casting: RecastCasting | null) =>
-    composeRecastBrief({ job: spec.job, read, seconds: windowSeconds, casting, keeps, direction, images: imageTokensFor(casting) });
+  const imageTokensFor = (castings: RecastCasting[]): string[] =>
+    spec.job === "scene" && engine === "kling-edit"
+      ? recastImageTokens(
+          castings.map((c) => c.token ?? ""),
+          imagePaths.length,
+        )
+      : [];
+  const briefFor = (castings: RecastCasting[]) =>
+    composeRecastBrief({
+      job: spec.job,
+      read,
+      seconds: windowSeconds,
+      casting: castingOf(castings),
+      keeps,
+      direction,
+      images: imageTokensFor(castings),
+    });
   // A long take's pieces each carry their own brief: their own length, only
   // the cuts inside them, and from the second piece on the continuity words
   // every passing seam test was sent with (recast-brief.ts). Frames count
   // from the window's start, the prepared window's own clock.
-  const pieceBriefsFor = (casting: RecastCasting | null, plan: PreparedChain["plan"]): string[] =>
+  const pieceBriefsFor = (castings: RecastCasting[], plan: PreparedChain["plan"]): string[] =>
     plan.lengths.map((frames, k) => {
       const from = k === 0 ? 0 : plan.switches[k - 1] - CHAIN_PREFIX_FRAMES;
       const pieceRead = wholeRead
@@ -575,11 +627,11 @@ export async function startRecastTakes(input: {
         job: spec.job,
         read: pieceRead,
         seconds: frames / CHAIN_FPS,
-        casting,
+        casting: castingOf(castings),
         keeps,
         direction,
         continuing: k > 0,
-        images: imageTokensFor(casting),
+        images: imageTokensFor(castings),
       });
     });
 
@@ -588,7 +640,7 @@ export async function startRecastTakes(input: {
   // because it is stored and shown either way.
   let scores: Scores | undefined;
   let priorHits = 0;
-  const judged = spec.takesDirection ? briefFor(castingFor(cast[0])) : direction;
+  const judged = spec.takesDirection ? briefFor(castingsFor(takes[0])) : direction;
   if (judged.trim()) {
     try {
       ({ scores, priorHits } = await gatePrompt({ prompt: judged, userId, hasRealPersonReference: true }));
@@ -693,9 +745,11 @@ export async function startRecastTakes(input: {
     sentImages.push({ path: sent.path, url: sent.url });
   }
 
-  const total = perTake * cast.length;
+  // One take per character — or one for all of them together — and one when
+  // nobody is cast. Characters together share ONE take's price.
+  const total = perTake * takes.length;
   const seconds = Math.max(1, Math.round(windowSeconds));
-  const groupId = cast.length > 1 ? crypto.randomUUID() : null;
+  const groupId = takes.length > 1 ? crypto.randomUUID() : null;
 
   // The free daily slot never covers a recast — plan or purchased credits
   // only, the upscaler's rule. Asked for the WHOLE press: a variant set
@@ -706,15 +760,16 @@ export async function startRecastTakes(input: {
   const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, total - consumePurchased);
 
   const lockOn = await isRecastLockOn(supabase);
-  const rows = cast.map((character, i) => {
-    const casting = castingFor(character);
+  const rows = takes.map((chars, i) => {
+    const castings = castingsFor(chars);
     return {
       id: crypto.randomUUID(),
-      character_profile_id: character?.id ?? null,
-      character_profile_ids: character ? [character.id] : [],
+      character_profile_id: chars[0]?.id ?? null,
+      character_profile_ids: chars.map((c) => c.id),
       // What History shows as the take's words: who was cast, or what was asked.
-      prompt_input: character
-        ? `Recast: ${character.name}`
+      prompt_input:
+        chars.length > 0
+        ? `Recast: ${chars.map((c) => c.name).join(" & ")}`
         : spec.job === "world"
           ? "Restyle"
           : direction.trim()
@@ -732,7 +787,7 @@ export async function startRecastTakes(input: {
       credits_used: perTake,
       // Spread across the rows the way a fan-out does, so no row is charged
       // purchased credits the press did not consume.
-      purchased_credits_used: Math.floor(consumePurchased / cast.length) + (i < consumePurchased % cast.length ? 1 : 0),
+      purchased_credits_used: Math.floor(consumePurchased / takes.length) + (i < consumePurchased % takes.length ? 1 : 0),
       free_generation_used: false,
       // Dropped silently by jsonb_populate_record until recast.sql runs, so
       // a take before the migration still works — it simply cannot be
@@ -743,9 +798,9 @@ export async function startRecastTakes(input: {
         engine,
         keeps,
         direction,
-        castTag,
+        castTag: chars.length === 1 ? castTag : null,
         // A long take records its first piece's brief — the one the door showed.
-        brief: chainPrep ? pieceBriefsFor(casting, chainPrep.plan)[0] : briefFor(casting),
+        brief: chainPrep ? pieceBriefsFor(castings, chainPrep.plan)[0] : briefFor(castings),
         lock: lockOn,
         groupId,
         window: cutting ? { start: window.start, end: window.end } : null,
@@ -802,17 +857,20 @@ export async function startRecastTakes(input: {
   const started: string[] = [];
   await Promise.all(
     takeIds.map(async (generationId, i) => {
-      const character = cast[i] ?? null;
+      const chars = takes[i] ?? [];
       const brief = (rows[i].recast as { brief?: string } | null)?.brief ?? "";
       let pendingJob: QueuedJob | null = null;
       try {
-        const photos = await signPhotos(character);
-        if (character && !photos.first) throw new Error("Couldn't prepare the character's photo.");
+        const signed = await Promise.all(chars.map((c) => signPhotos(c)));
+        if (signed.some((p) => !p.first)) throw new Error("Couldn't prepare the character's photo.");
+        const photos = signed[0] ?? { first: null, more: [] as string[] };
         // The picture: the character's photo, or — for Photo to life with
         // nobody cast — the person's own image. Into the clip carries the
-        // added images beside it, named in the brief.
+        // added images beside it, named in the brief; characters together
+        // go as an ensemble, each bound to their own photos.
         const picture = photos.first ?? (spec.job === "motion" ? (sentImages[0]?.url ?? null) : null);
         const imageUrls = spec.job === "scene" ? sentImages.map((image) => image.url) : [];
+        const ensemble = chars.length > 1 ? signed.map((p) => ({ front: p.first!, more: p.more })) : undefined;
         // A long take sends its FIRST piece now; the runner sends the rest,
         // each as the one before it finishes (job-runner.ts, chain-run.ts).
         let chain: ChainState | undefined;
@@ -822,7 +880,7 @@ export async function startRecastTakes(input: {
         if (chainPrep) {
           const folder = chainFolder(userId, generationId);
           const { plan } = chainPrep;
-          const briefs = pieceBriefsFor(castingFor(character), plan);
+          const briefs = pieceBriefsFor(castingsFor(chars), plan);
           // Every piece's request composed whole now — this lane knows its
           // engine and its words, the runner does not (it fills in only each
           // piece's clip, where the placeholder stands).
@@ -835,6 +893,7 @@ export async function startRecastTakes(input: {
                 ...(picture ? { characterImageUrl: picture } : {}),
                 morePhotoUrls: photos.more,
                 imageUrls,
+                ...(ensemble ? { ensemble } : {}),
                 ...(spec.takesDirection ? { brief: pieceBrief } : {}),
                 clip: { seconds: plan.lengths[k] / CHAIN_FPS },
               }),
@@ -865,6 +924,7 @@ export async function startRecastTakes(input: {
           ...(picture ? { characterImageUrl: picture } : {}),
           morePhotoUrls: photos.more,
           imageUrls,
+          ...(ensemble ? { ensemble } : {}),
           ...(spec.takesDirection ? { brief: sendBrief } : {}),
           clip: { seconds: sendSeconds },
         });
@@ -874,9 +934,11 @@ export async function startRecastTakes(input: {
           job: { ...pendingJob, provider: "fal" },
           strictLane: true,
           // The promise on the door: judged at the start, the middle and the
-          // end, and a miss is not charged for. Only where a face is cast.
+          // end, and a miss is not charged for. Only where ONE face is cast:
+          // the lock scores the take against one character, and with several
+          // in the frame it could not say whose face it read.
           // A long take is judged whole, once it is joined.
-          identityLock: character && lockOn ? { threshold: RECAST_LOCK_THRESHOLD, refund: true } : undefined,
+          identityLock: chars.length === 1 && lockOn ? { threshold: RECAST_LOCK_THRESHOLD, refund: true } : undefined,
           chain,
           attempts: [
             {

@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.63.0",
+    build: 102,
+    date: "2026-09-19",
+    title: "Mystique: several characters in one video, and readable labels",
+    items: [
+      "Picking two or more characters in Into the clip now makes ONE video with all of them in it, instead of one video each. Each character is matched to someone in the clip (Eva plays the person in the centre, Anubis the crowd around them), and you can change who plays whom, or leave it to your own words. It costs one take, not one per character.",
+      "\"One take each\" is still there if you want a separate video per character. Photo to life always makes one take each, because it builds the video from a single picture.",
+      "A take holds four pictures in all, characters and your images together, so with two characters you can add up to two images.",
+      "The face-hold promise (a take whose face drifts is not charged) applies to takes with one character. It is no longer shown for a take with several faces, or none.",
+      "Fixed: the labels over the clip and the character (\"your clip · 30 s · 1916×1080\", \"the take · Eva\") were dark grey on black and could not be read. The same fix went into the before-and-after viewer, the Recce door and Helios's small ▶ badge.",
+    ],
+  },
+  {
     version: "1.62.0",
     build: 101,
     date: "2026-09-19",

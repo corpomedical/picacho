@@ -297,7 +297,17 @@ export function recastMissing(job: RecastJob, given: { characters: number; image
 // (elements + reference images) when using video", its schema), and a cast
 // character takes one of them. Photo to life takes one picture.
 export const RECAST_MAX_IMAGES = 3;
+/** Every reference one Into the clip take can carry: characters and added images together (O3 Edit's schema). */
+export const RECAST_MAX_REFERENCES = 4;
 export const RECAST_IMAGE_BUCKET = "chat-attachments";
+
+/**
+ * How many images a take can still carry beside the characters in it — one
+ * reference each. Several characters share one take only in Into the clip.
+ */
+export function recastImageRoom(charactersInTake: number): number {
+  return Math.max(0, Math.min(RECAST_MAX_IMAGES, RECAST_MAX_REFERENCES - charactersInTake));
+}
 // The tighter of the two engines' own limits, read from fal's schemas the same
 // day: O3 Edit's references ≥ 300 px a side and ≤ 10 MB, V3 Motion Control's
 // picture 340–3850 px; both between 0.4 and 2.5 wide for their height.
@@ -495,6 +505,12 @@ export function recastRequestBody(
     morePhotoUrls?: string[];
     /** Images the person added, in order — @Image1… after a one-photo character's own. Into the clip only. */
     imageUrls?: string[];
+    /**
+     * Several characters in ONE take (Into the clip only), in cast order:
+     * each one's front photo and its other angles. Takes the place of
+     * characterImageUrl / morePhotoUrls.
+     */
+    ensemble?: { front: string; more: string[] }[];
     brief?: string;
     clip?: Pick<RecastClip, "seconds">;
   },
@@ -526,17 +542,27 @@ export function recastRequestBody(
     // in all. With no character and no image the body is the clip and the
     // words alone — a plain edit, which the schema allows (only prompt and
     // video_url are required).
-    const angles = (input.morePhotoUrls ?? []).slice(0, 3);
-    const element = input.characterImageUrl && angles.length > 0;
+    //
+    // SEVERAL CHARACTERS IN ONE TAKE (2026-09-19, "Selecting two characters
+    // still makes two videos separately"): each is bound the same way, in
+    // cast order — @Element1, @Element2 for those with more angles, @Image1…
+    // for those with one photo — the order recastCastTokens names them in.
+    const people =
+      input.ensemble ??
+      (input.characterImageUrl ? [{ front: input.characterImageUrl, more: input.morePhotoUrls ?? [] }] : []);
+    const elements = people
+      .filter((p) => p.more.length > 0)
+      .map((p) => ({ frontal_image_url: p.front, reference_image_urls: p.more.slice(0, 3) }))
+      .slice(0, RECAST_MAX_REFERENCES);
     const images = [
-      ...(input.characterImageUrl && !element ? [input.characterImageUrl] : []),
+      ...people.filter((p) => p.more.length === 0).map((p) => p.front),
       ...(input.imageUrls ?? []).slice(0, RECAST_MAX_IMAGES),
-    ].slice(0, element ? 3 : 4);
+    ].slice(0, RECAST_MAX_REFERENCES - elements.length);
     return {
       video_url: input.clipUrl,
       prompt: (input.brief ?? "").slice(0, 2500),
       keep_audio: true,
-      ...(element ? { elements: [{ frontal_image_url: input.characterImageUrl, reference_image_urls: angles }] } : {}),
+      ...(elements.length > 0 ? { elements } : {}),
       ...(images.length > 0 ? { image_urls: images } : {}),
     };
   }

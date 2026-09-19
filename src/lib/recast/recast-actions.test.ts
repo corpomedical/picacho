@@ -138,7 +138,7 @@ describe("startRecastTakes", () => {
   });
 
   it("asks for the whole press at once, then reserves it in one transaction", () => {
-    expect(start).toContain("const total = perTake * cast.length");
+    expect(start).toContain("const total = perTake * takes.length");
     expect(at("checkGenerationAllowance(supabase, userId, total)")).toBeLessThan(at('admin.rpc("reserve_generations"'));
     expect(at('admin.rpc("reserve_generations"')).toBeLessThan(at("consumePurchasedCredits("));
     expect(at("consumePurchasedCredits(")).toBeLessThan(at("submitRecastJob("));
@@ -171,7 +171,7 @@ describe("startRecastTakes", () => {
   });
 
   it("asks for the lock through the payload, and only where a face is cast", () => {
-    expect(start).toContain("identityLock: character && lockOn ? { threshold: RECAST_LOCK_THRESHOLD, refund: true } : undefined");
+    expect(start).toContain("identityLock: chars.length === 1 && lockOn ? { threshold: RECAST_LOCK_THRESHOLD, refund: true } : undefined");
     const runner = readFileSync(join(__dirname, "..", "generations", "job-runner.ts"), "utf8");
     // The runner grew the capability, not the lane.
     expect(runner).not.toMatch(/recast/i);
@@ -215,7 +215,8 @@ describe("a take with images of the person's own, or with words alone", () => {
   });
 
   it("brings one picture to life in Photo to life, and carries every image into the clip", () => {
-    expect(start).toContain('const imagePaths = spec.job === "motion" ? (ids.length > 0 ? [] : askedImages.slice(0, 1)) : askedImages');
+    expect(start).toContain("askedImages.slice(0, recastImageRoom(together ? ordered.length : Math.min(1, ordered.length)))");
+    expect(start).toContain(": askedImages.slice(0, 1)");
     expect(start).toContain('const picture = photos.first ?? (spec.job === "motion" ? (sentImages[0]?.url ?? null) : null)');
     expect(start).toContain('const imageUrls = spec.job === "scene" ? sentImages.map((image) => image.url) : []');
     // Every part of a long take carries them too.
@@ -224,7 +225,35 @@ describe("a take with images of the person's own, or with words alone", () => {
 
   it("records the images it sent, and asks for the lock only where a face is cast", () => {
     expect(start).toContain("images: sentImages.map((image) => image.path)");
-    expect(start).toContain("identityLock: character && lockOn ?");
+    expect(start).toContain("identityLock: chars.length === 1 && lockOn ?");
+  });
+});
+
+// TOGETHER (2026-09-19, "Selecting two characters still makes two videos
+// separately").
+describe("several characters in one take", () => {
+  it("puts them together only in Into the clip, and only when asked", () => {
+    expect(start).toContain('const together = spec.job === "scene" && input?.together === true && ordered.length > 1');
+    expect(start).toContain("const takes: Character[][] = together ? [ordered] : ordered.length > 0 ? ordered.map((c) => [c]) : [[]]");
+  });
+
+  it("lets each person in the clip be played once, and wants words for anyone without one", () => {
+    expect(start).toContain("playedBy.has(tag)) return null");
+    expect(start).toContain("if (together && castTags.some((tag) => tag === null) && !direction.trim()) return { error: RECAST_NEEDS_ROLES }");
+    // Before a byte of the clip is read.
+    expect(at("return { error: RECAST_NEEDS_ROLES }")).toBeLessThan(at("readUpload(admin, uploadPath)"));
+  });
+
+  it("charges ONE take for everyone in it, and binds each to their own photos", () => {
+    expect(start).toContain("const total = perTake * takes.length");
+    expect(start).toContain("const ensemble = chars.length > 1 ? signed.map((p) => ({ front: p.first!, more: p.more })) : undefined");
+    expect(start).toContain("character_profile_ids: chars.map((c) => c.id)");
+    // Every part of a long take carries them all.
+    expect(start.slice(at("clipUrl: CHAIN_CLIP_PLACEHOLDER"), at("clipUrl: CHAIN_CLIP_PLACEHOLDER") + 260)).toContain("...(ensemble ? { ensemble } : {})");
+  });
+
+  it("promises the face lock only where ONE face is cast", () => {
+    expect(start).toContain("identityLock: chars.length === 1 && lockOn ?");
   });
 });
 

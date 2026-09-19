@@ -210,6 +210,7 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "Choose a character or add an image to bring to life.": "recastNeedsPicture",
   "That image can't be used — it needs to be at least 340 pixels on each side, and no more than 2.5 times as long one way as the other.": "recastImageUnusable",
   "That image couldn't be checked just now — nothing was charged. Try again.": "recastImageUnchecked",
+  "Say in your words who each character plays.": "recastNeedsRoles",
   // Face verification, "Verify it's you" (lib/faces/messages.ts, 2026-09-19).
   "Face verification is in private testing.": "faceNotOpen",
   "Face verification isn't available right now.": "faceUnavailable",

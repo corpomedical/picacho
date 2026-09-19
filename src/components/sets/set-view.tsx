@@ -6272,7 +6272,7 @@ export function SetView({
                           ) : (
                             <span className="absolute inset-0 flex items-center justify-center text-[11px] text-[#9aa0ad]">{clip ? "…" : "—"}</span>
                           )}
-                          {done && <span className="absolute bottom-1 left-1 rounded-[3px] bg-black/60 px-1 text-[10px] text-white">▶</span>}
+                          {done && <span className="absolute bottom-1 left-1 rounded-[3px] bg-black/60 px-1 text-[10px] text-[#fff]">▶</span>}
                         </div>
                         <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#c6c9d1]">
                           <span className="truncate">{formatMsg(s.studio.cutClip, { n: i + 1, s: SET_TAKE_ENGINES[film.engine].seconds })}</span>
