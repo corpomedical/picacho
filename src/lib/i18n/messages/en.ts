@@ -252,6 +252,10 @@ const en = {
       heliosCta: "See how Helios works →",
       appCardTitle: "In your pocket, on Google Play",
       appCardCopy: "The full studio in the Android app — render on the train, and finished takes land in your library even if you close it mid-render.",
+      // Shown instead while the Play listing is down (play-listing.ts): the
+      // same card, promising only what the browser install really does.
+      appCardTitleWeb: "In your pocket, on your home screen",
+      appCardCopyWeb: "The full studio on your phone — add it from the browser, full-screen, no app store needed. Finished takes land in your library even if you close it mid-render.",
       langCardTitle: "Four languages, one studio",
       langCardCopy: "English, Español, Italiano, Português — the whole product and every warning, not just the landing page.",
       closingKicker: "Lights down. Face locked.",

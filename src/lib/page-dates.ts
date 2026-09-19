@@ -24,8 +24,8 @@
 // whenever someone shares — no single date is true, so it gets no lastmod
 // and Google judges it by itself.
 export const PAGE_UPDATED = {
-  "/": "2026-09-05",
-  "/pricing": "2026-09-06",
+  "/": "2026-09-20",
+  "/pricing": "2026-09-19",
   "/privacy": "2026-09-19",
   "/terms": "2026-08-30",
   "/content-policy": "2026-08-05",

@@ -6,6 +6,7 @@ import { PricingCard } from "@/components/marketing/pricing-card";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { getServerMessages } from "@/lib/i18n/server";
 import { SETS_OPEN_TO_PLANS } from "@/lib/sets/set-config";
+import { PLAY_LISTING_LIVE } from "@/lib/play-listing";
 import { formatMsg } from "@/lib/i18n/format";
 import { isNativeApp } from "@/lib/native/server";
 import { cn } from "@/lib/cn";
@@ -528,10 +529,16 @@ export default async function Home({
 
       {/* ── THE APP + THE LANGUAGES — the board's paired cards: the studio
              on Google Play (reader-mode binary — install, sign in, render;
-             purchases live on the web) and the four full localizations. ── */}
+             purchases live on the web) and the four full localizations.
+             While the listing is down (play-listing.ts) the first card says
+             what is true instead: the browser install. ── */}
       <section className="mx-auto grid max-w-6xl gap-4 px-4 pt-20 sm:grid-cols-2 sm:px-8 sm:pt-[88px]">
         {[
-          { icon: PhoneIcon, title: m.appCardTitle, copy: m.appCardCopy },
+          {
+            icon: PhoneIcon,
+            title: PLAY_LISTING_LIVE ? m.appCardTitle : m.appCardTitleWeb,
+            copy: PLAY_LISTING_LIVE ? m.appCardCopy : m.appCardCopyWeb,
+          },
           { icon: GlobeIcon, title: m.langCardTitle, copy: m.langCardCopy },
         ].map((card) => (
           <div

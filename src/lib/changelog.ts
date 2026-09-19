@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.66.0",
+    build: 105,
+    date: "2026-09-20",
+    title: "The homepage stops pointing at a Google Play listing that is down",
+    items: [
+      "A card on the homepage read \"In your pocket, on Google Play\" in all four languages, though the listing has been down since 9 September. The badge and the email footer were hidden on the 18th; the card's own words were missed. While the listing is down it now says what is true: add Picacho to your home screen from the browser, full-screen, no app store. The day the listing is back, the one line in play-listing.ts that brings the badge back brings the Google Play wording back with it.",
+      "The dates that tell Google when the home page and the pricing page last changed still read 5 and 6 September, though both changed on 19 September with the Helios launch. Both now say so.",
+    ],
+  },
+  {
     version: "1.65.0",
     build: 104,
     date: "2026-09-20",

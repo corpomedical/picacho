@@ -230,6 +230,8 @@ const es = {
       heliosCta: "Mira cómo funciona Helios →",
       appCardTitle: "En tu bolsillo, en Google Play",
       appCardCopy: "El estudio completo en la app de Android — renderiza en el tren, y las tomas terminadas llegan a tu biblioteca aunque la cierres a mitad de render.",
+      appCardTitleWeb: "En tu bolsillo, en tu pantalla de inicio",
+      appCardCopyWeb: "El estudio completo en tu móvil — añádelo desde el navegador, a pantalla completa y sin tienda de aplicaciones. Las tomas terminadas llegan a tu biblioteca aunque lo cierres a mitad de render.",
       langCardTitle: "Cuatro idiomas, un estudio",
       langCardCopy: "English, Español, Italiano, Português — todo el producto y cada aviso, no solo la portada.",
       closingKicker: "Luces abajo. Cara asegurada.",
