@@ -90,6 +90,7 @@ import { cutsInWindow, isWholeClip, recastFitFor, recastWindowCredits, recastWin
 import { cutRecastWindow } from "@/lib/recast/trim-run";
 import {
   CHAIN_CLIP_PLACEHOLDER,
+  CHAIN_LOOK_PLACEHOLDER,
   CHAIN_FPS,
   CHAIN_PREFIX_FRAMES,
   chainFolder,
@@ -558,6 +559,9 @@ export async function startRecastTakes(input: {
   // THE LONG TAKE (chain.ts): past the engine's own 15 s, the take is
   // rendered in chained pieces and joined.
   const chaining = spec.chains === true && chainPieceCount(windowSeconds) > 1;
+  // What a take has room to carry: four references in all, the characters in
+  // it and — for a long take — the still at each switch taking one each.
+  const sendImages = added.slice(0, recastImageRoom(together ? ordered.length : Math.min(1, ordered.length), chaining));
 
   // The read again, from what the door was shown — the brief is composed
   // server-side from the same fields, so what was on the door is what is
@@ -580,11 +584,17 @@ export async function startRecastTakes(input: {
   // plays their own.
   const castingsFor = (chars: Character[]): RecastCasting[] => {
     const tokens = engine === "kling-edit" ? recastCastTokens(chars.map((c) => c.reference_image_urls?.length ?? 1)) : [];
-    return chars.map((c, i) => ({
-      tag: chars.length > 1 ? castTags[ids.indexOf(c.id)] : castTag,
-      characterName: c.name,
-      ...(tokens[i] ? { token: tokens[i] } : {}),
-    }));
+    return chars.map((c, i) => {
+      const tag = chars.length > 1 ? castTags[ids.indexOf(c.id)] : castTag;
+      // A tag the read marked as MANY people is said as many in the brief.
+      const many = tag ? read?.people.find((p) => p.tag === tag)?.many === true : false;
+      return {
+        tag,
+        ...(many ? { many: true } : {}),
+        characterName: c.name,
+        ...(tokens[i] ? { token: tokens[i] } : {}),
+      };
+    });
   };
   const castingOf = (castings: RecastCasting[]): RecastCasting | RecastCasting[] | null =>
     castings.length === 0 ? null : castings.length === 1 ? castings[0] : castings;
@@ -594,7 +604,7 @@ export async function startRecastTakes(input: {
     spec.job === "scene" && engine === "kling-edit"
       ? recastImageTokens(
           castings.map((c) => c.token ?? ""),
-          imagePaths.length,
+          sendImages.length,
         )
       : [];
   const briefFor = (castings: RecastCasting[]) =>
@@ -623,6 +633,10 @@ export async function startRecastTakes(input: {
             }),
           }
         : null;
+      // A later piece also carries the STILL at its switch — the last
+      // finished frame, named after the added images (chain.ts's look).
+      const images = imageTokensFor(castings);
+      const look = k > 0 && spec.job === "scene" && engine === "kling-edit" ? recastImageTokens([...castings.map((c) => c.token ?? ""), ...images], 1)[0] : undefined;
       return composeRecastBrief({
         job: spec.job,
         read: pieceRead,
@@ -631,7 +645,8 @@ export async function startRecastTakes(input: {
         keeps,
         direction,
         continuing: k > 0,
-        images: imageTokensFor(castings),
+        images,
+        ...(look ? { look } : {}),
       });
     });
 
@@ -727,7 +742,7 @@ export async function startRecastTakes(input: {
     if (cutPath) await removeSource(admin, cutPath);
     if (madeImages.length > 0) await admin.storage.from(RECAST_IMAGE_BUCKET).remove(madeImages);
   };
-  for (const image of added) {
+  for (const image of sendImages) {
     const sent = await sendAddedImage(admin, userId, image);
     if ("error" in sent) {
       await dropPrepared();
@@ -892,7 +907,10 @@ export async function startRecastTakes(input: {
                 clipUrl: CHAIN_CLIP_PLACEHOLDER,
                 ...(picture ? { characterImageUrl: picture } : {}),
                 morePhotoUrls: photos.more,
-                imageUrls,
+                // From the second part on, a place for the still at its
+                // switch; the runner fills it with the last finished frame
+                // (chain.ts CHAIN_LOOK_PLACEHOLDER).
+                imageUrls: k > 0 && spec.job === "scene" ? [...imageUrls, CHAIN_LOOK_PLACEHOLDER] : imageUrls,
                 ...(ensemble ? { ensemble } : {}),
                 ...(spec.takesDirection ? { brief: pieceBrief } : {}),
                 clip: { seconds: plan.lengths[k] / CHAIN_FPS },
@@ -914,6 +932,9 @@ export async function startRecastTakes(input: {
             stillness: plan.stillness,
             requests: requests as ChainRequest[],
             index: 0,
+            // Where each part's last look is kept for the next one: the
+            // composer's image bucket, since the clip bucket takes video only.
+            look: { bucket: RECAST_IMAGE_BUCKET, prefix: `${userId}/recast-look-${generationId}` },
             starts: [0],
             renders: [],
             frames: [],

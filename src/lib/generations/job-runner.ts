@@ -48,7 +48,7 @@ import { notifyUser, type PushMessage } from "@/lib/push/send";
 import { maybeNotifyLowCredits } from "@/lib/push/low-credits";
 import type { IdentityLock } from "@/lib/generations/face-lock";
 import { removeOpeningFrames } from "@/lib/generations/opening-frame-run";
-import { CHAIN_FPS, CHAIN_PREFIX_FRAMES, type ChainState } from "@/lib/generations/chain";
+import { CHAIN_FPS, CHAIN_PREFIX_FRAMES, chainPieceBody, type ChainState } from "@/lib/generations/chain";
 import {
   CHAIN_JOINING,
   ChainRetry,
@@ -1927,7 +1927,14 @@ export async function advanceGeneration(
       // only its clip is new.
       const request = chain.requests[k + 1];
       if (!request) throw new Error(`Long take: no request for part ${k + 2} of ${pieces}`);
-      const next = await submitChainPiece(request.endpoint, { ...request.body, [request.clipField]: prepared.inputUrl }, request.label);
+      // Its clip, and the still at the switch where the lane left a place for
+      // it — what keeps a later piece on the take's look instead of the
+      // footage's (chain.ts, ChainState.look).
+      const next = await submitChainPiece(
+        request.endpoint,
+        chainPieceBody(request, prepared.inputUrl, prepared.lookUrl),
+        request.label,
+      );
       // What this piece really came back with — its frames, and where the
       // switch really fell — is what everything after it is measured from.
       const nextChain: ChainState = {

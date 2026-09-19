@@ -243,11 +243,21 @@ export function MystiqueDoor({
   // The same names the server gives the engine (actions.ts castingsFor, imageTokensFor).
   const briefCast = ensemble ? cast : cast.slice(0, 1);
   const castTokens = engine === "kling-edit" ? recastCastTokens(briefCast.map((c) => c.photos.length)) : [];
-  const castings = briefCast.map((c, i) => ({
-    tag: ensemble ? castTags[i] : (read?.people.find((p) => p.lead)?.tag ?? null),
-    characterName: c.name,
-    ...(castTokens[i] ? { token: castTokens[i] } : {}),
-  }));
+  const castings = briefCast.map((c, i) => {
+    const tag = ensemble ? castTags[i] : (read?.people.find((p) => p.lead)?.tag ?? null);
+    const many = tag ? read?.people.find((p) => p.tag === tag)?.many === true : false;
+    return {
+      tag,
+      ...(many ? { many: true } : {}),
+      characterName: c.name,
+      ...(castTokens[i] ? { token: castTokens[i] } : {}),
+    };
+  });
+  // Casting someone over a GROUP changes every person in it — the biggest
+  // change a take can ask for, and the one a long take's later parts are
+  // least likely to hold (2026-09-20).
+  const castOverGroup = castings.some((c) => c.many === true);
+  const parts = clipWindow ? chainPieceCount(clipWindow.end - clipWindow.start) : 1;
   const brief = seen
     ? composeRecastBrief({
         job,
@@ -1050,7 +1060,7 @@ export function MystiqueDoor({
                             >
                               {peopleInClip.map((p) => (
                                 <option key={p.tag} value={p.tag}>
-                                  {formatMsg(m.rolePerson, { tag: p.tag, where: p.where.slice(0, 48) })}
+                                  {formatMsg(p.many ? m.roleGroup : m.rolePerson, { tag: p.tag, where: p.where.slice(0, 48) })}
                                 </option>
                               ))}
                               <option value="">{m.roleWords}</option>
@@ -1062,6 +1072,24 @@ export function MystiqueDoor({
                         ) : !read ? (
                           <p className="text-xs text-[#9aa0ad]">{m.rolesNoRead}</p>
                         ) : null}
+                      </div>
+                    )}
+                    {/* A character over a whole group, in a take made in parts:
+                        the change every later part is least likely to hold. */}
+                    {castOverGroup && parts > 1 && (
+                      <div className="mt-3 rounded-2xl bg-[#d8b483]/[0.08] p-3.5 shadow-[inset_0_0_0_1px_rgba(216,180,131,0.4)]">
+                        <p className="text-sm leading-relaxed text-[#ecedf1]">{m.crowdWarn}</p>
+                        <button
+                          type="button"
+                          disabled={starting || !seen || !clipWindow}
+                          onClick={() => {
+                            if (!seen || !clipWindow) return;
+                            setClipWindow(clampRecastWindow({ start: clipWindow.start, end: clipWindow.start + 15 }, seen.seconds, job));
+                          }}
+                          className={`mt-2.5 ${ghost}`}
+                        >
+                          {m.crowdWarnTrim}
+                        </button>
                       </div>
                     )}
                     {cast[0] && cast[0].photos.length > 1 && (

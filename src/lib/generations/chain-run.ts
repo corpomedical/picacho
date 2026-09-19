@@ -25,6 +25,7 @@ import {
   chainJoinSpans,
   chainMotion,
   chainNextPieceArgs,
+  chainStillArgs,
   chainWindowArgs,
   chainWindowSize,
   planChain,
@@ -146,9 +147,9 @@ async function fetchTo(url: string, to: string): Promise<Buffer> {
   return bytes;
 }
 
-async function store(admin: Admin, bucket: string, storagePath: string, bytes: Buffer): Promise<void> {
+async function store(admin: Admin, bucket: string, storagePath: string, bytes: Buffer, contentType = "video/mp4"): Promise<void> {
   // upsert: a retried pass writes the same file to the same place.
-  const { error } = await admin.storage.from(bucket).upload(storagePath, bytes, { contentType: "video/mp4", upsert: true });
+  const { error } = await admin.storage.from(bucket).upload(storagePath, bytes, { contentType, upsert: true });
   if (error) throw new ChainRetry(`couldn't store ${storagePath}: ${error.message}`);
 }
 
@@ -245,7 +246,7 @@ export async function prepareNextPiece(
   admin: Admin,
   chain: ChainState,
   finishedRenderUrl: string,
-): Promise<{ inputUrl: string; renderPath: string; renderFrames: number; switchAt: number }> {
+): Promise<{ inputUrl: string; renderPath: string; renderFrames: number; switchAt: number; lookUrl: string | null }> {
   const k = chain.index;
   return withScratch(async (dir) => {
     const render = path.join(dir, "render.mp4");
@@ -280,7 +281,21 @@ export async function prepareNextPiece(
     );
     const inputPath = `${chain.folder}/in-${k + 2}.mp4`;
     await store(admin, chain.bucket, inputPath, await readFile(next));
-    return { inputUrl: await sign(admin, chain.bucket, inputPath), renderPath, renderFrames: probe.frames, switchAt };
+
+    // THE LOOK (2026-09-20). One second of this render opens the next piece;
+    // everything after it is the footage again, and on a take that changed
+    // the whole picture that second is not enough — the piece falls back to
+    // what the clip shows. So the frame the next piece opens on is kept as a
+    // still and bound to it as a reference (chain.ts, ChainState.look).
+    let lookUrl: string | null = null;
+    if (chain.look) {
+      const still = path.join(dir, "look.jpg");
+      await run(chainStillArgs(render, switchAt - 1 - start, still), `reading part ${k + 1}'s last look`);
+      const lookPath = `${chain.look.prefix}-${k + 2}.jpg`;
+      await store(admin, chain.look.bucket, lookPath, await readFile(still), "image/jpeg");
+      lookUrl = await sign(admin, chain.look.bucket, lookPath);
+    }
+    return { inputUrl: await sign(admin, chain.bucket, inputPath), renderPath, renderFrames: probe.frames, switchAt, lookUrl };
   });
 }
 
@@ -358,13 +373,26 @@ export async function joinChain(
 }
 
 /** A take's working files, gone — once it has finished either way. Best-effort. */
-export async function cleanupChain(admin: Admin, chain: Pick<ChainState, "bucket" | "folder">): Promise<void> {
+export async function cleanupChain(admin: Admin, chain: Pick<ChainState, "bucket" | "folder" | "look">): Promise<void> {
   try {
     const { data } = await admin.storage.from(chain.bucket).list(chain.folder, { limit: 100 });
     const names = (data ?? []).map((o) => `${chain.folder}/${o.name}`);
     if (names.length) await admin.storage.from(chain.bucket).remove(names);
   } catch (err) {
     console.warn("[chain] cleanup failed; the files stay.", err);
+  }
+  // The stills live in the image bucket, beside the person's own uploads, so
+  // they are cleared by name rather than by folder.
+  if (!chain.look) return;
+  try {
+    const at = chain.look.prefix.lastIndexOf("/");
+    const folder = at > 0 ? chain.look.prefix.slice(0, at) : "";
+    const name = chain.look.prefix.slice(at + 1);
+    const { data } = await admin.storage.from(chain.look.bucket).list(folder, { limit: 200, search: name });
+    const names = (data ?? []).map((o) => (folder ? `${folder}/${o.name}` : o.name));
+    if (names.length) await admin.storage.from(chain.look.bucket).remove(names);
+  } catch (err) {
+    console.warn("[chain] the stills stay.", err);
   }
 }
 

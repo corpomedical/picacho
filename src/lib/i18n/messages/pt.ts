@@ -1966,6 +1966,9 @@ const pt = {
     rolesPickClip: "Escolha um clipe e cada um poderá ser ligado a alguém dele.",
     rolesNoRead: "O clipe não foi lido, então diga com as suas palavras qual papel cada um faz.",
     imagesRoomNote: "Um take leva quatro imagens no total, personagens incluídos, então este leva as suas primeiras {n}.",
+    roleGroup: "Pessoa {tag} · {where} — todo esse grupo",
+    crowdWarn: "Um personagem sobre um grupo inteiro muda cada pessoa dele: a maior mudança que se pode pedir, e acima de 15 segundos o take é feito em partes, onde as últimas tendem a voltar ao seu próprio vídeo. Em uma só parte se segura melhor.",
+    crowdWarnTrim: "Deixar em 15 segundos",
   },
   recce: {
     headline: "Entra filmagem. Sai um lugar.",

@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.64.0",
+    build: 103,
+    date: "2026-09-20",
+    title: "Long takes hold their look, and casting over a crowd says what it means",
+    items: [
+      "A take longer than 15 seconds is made in parts, and each part only saw one second of the part before it — so a take that changed the whole picture drifted back to your own footage partway through. Every part after the first is now also given the last finished frame as a picture, and told the place, the light and the clothes look exactly like that.",
+      "Casting one character over a whole group (the students, a row, a crowd) now says so in the instructions: every one of them becomes that character. Before, it asked to replace \"Person B\" while also promising to keep everyone else in the shot — a contradiction the engine settled by reinventing the whole scene.",
+      "The clip read now marks which people are a group, so the picker says \"everyone in that group\" instead of naming them like one person.",
+      "Casting over a group in a take longer than 15 seconds now warns that this is the biggest change a take can ask for and that it holds best in one part, with a button to trim the take to 15 seconds.",
+      "Instructions no longer promise to keep \"everyone else in the shot\" — they now say everyone not named stays as they are, which is what was meant.",
+    ],
+  },
+  {
     version: "1.63.0",
     build: 102,
     date: "2026-09-19",

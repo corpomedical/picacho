@@ -12,6 +12,10 @@ import {
   AGREE_H,
   AGREE_W,
   CHAIN_CLIP_PLACEHOLDER,
+  CHAIN_LOOK_PLACEHOLDER,
+  CHAIN_STILL_MAX_PX,
+  chainPieceBody,
+  chainStillArgs,
   CHAIN_DISSOLVE_FRAMES,
   CHAIN_FPS,
   CHAIN_MIN_NEW_FRAMES,
@@ -294,7 +298,7 @@ describe("the runner's side of a long take", () => {
   });
 
   it("fills in only the clip of a request the lane composed", () => {
-    expect(runner).toContain("{ ...request.body, [request.clipField]: prepared.inputUrl }");
+    expect(runner).toContain("chainPieceBody(request, prepared.inputUrl, prepared.lookUrl)");
   });
 
   it("marks a finished piece as billed, so a refused later piece is not refunded as free", () => {
@@ -319,6 +323,48 @@ describe("the runner's side of a long take", () => {
   it("clears a take's working files once it has ended, either way", () => {
     expect(runner).toContain("if (!deleteError && jobRow?.payload?.chain) {");
     expect(runner).toContain("await cleanupChain(admin, jobRow.payload.chain);");
+  });
+});
+
+// THE STILL AT THE SWITCH (2026-09-20): a later part is sent one second of
+// the part before it and then the footage again, so a take that changed the
+// whole picture fell back to the footage — the operator's Anubis take built
+// an Egyptian field for two parts and came back as the school for the third.
+describe("the look a later part carries", () => {
+  const request = {
+    endpoint: "fal-ai/x",
+    label: "X",
+    clipField: "video_url",
+    body: { video_url: CHAIN_CLIP_PLACEHOLDER, prompt: "…", image_urls: ["https://x/eva.jpg", CHAIN_LOOK_PLACEHOLDER] },
+  };
+
+  it("puts the clip in the field the lane named and the still where it left a place", () => {
+    const body = chainPieceBody(request, "https://x/piece-2.mp4", "https://x/look-2.jpg");
+    expect(body.video_url).toBe("https://x/piece-2.mp4");
+    expect(body.image_urls).toEqual(["https://x/eva.jpg", "https://x/look-2.jpg"]);
+  });
+
+  it("drops the place rather than sending the placeholder as an image", () => {
+    // The first part has no finished frame behind it, and neither has a take
+    // started before stills existed.
+    const body = chainPieceBody(request, "https://x/piece-1.mp4", null);
+    expect(body.image_urls).toEqual(["https://x/eva.jpg"]);
+    const alone = chainPieceBody(
+      { ...request, body: { video_url: CHAIN_CLIP_PLACEHOLDER, image_urls: [CHAIN_LOOK_PLACEHOLDER] } },
+      "https://x/piece-1.mp4",
+      null,
+    );
+    expect(alone).not.toHaveProperty("image_urls");
+    expect(JSON.stringify(alone)).not.toContain(CHAIN_LOOK_PLACEHOLDER);
+  });
+
+  it("takes the frame the next part opens on, at a size every engine accepts", () => {
+    const args = chainStillArgs("/tmp/render.mp4", 317, "/tmp/look.jpg");
+    expect(args.join(" ")).toContain("select='eq(n\\,317)'");
+    expect(args.join(" ")).toContain(`scale='min(${CHAIN_STILL_MAX_PX},iw)':-2`);
+    expect(args.join(" ")).toContain("-frames:v 1");
+    // Never a negative frame, whatever the arithmetic upstream.
+    expect(chainStillArgs("/tmp/render.mp4", -4, "/tmp/look.jpg").join(" ")).toContain("select='eq(n\\,0)'");
   });
 });
 

@@ -19,8 +19,8 @@ const full = {
   motion: "She turns from the window and crosses her arms.",
   world: "A white studio, flat daylight.",
   people: [
-    { tag: "Z", where: "centre, facing camera", does: "turns and crosses her arms", lead: false },
-    { tag: "Z", where: "behind, walks in at 0:04", does: "walks past and exits right", lead: true },
+    { tag: "Z", where: "centre, facing camera", does: "turns and crosses her arms", lead: false, many: false },
+    { tag: "Z", where: "behind, walks in at 0:04", does: "walks past and exits right", lead: true, many: false },
   ],
   keeps: [
     { what: "a wristwatch on the left wrist", kind: "accessory" },
@@ -66,7 +66,7 @@ describe("parsing the answer", () => {
   });
 
   it("gives the lead to the first person when nobody claims it", () => {
-    const read = parseRecastRead(JSON.stringify({ ...full, people: [{ where: "left", does: "waves", lead: false }] }), 10)!;
+    const read = parseRecastRead(JSON.stringify({ ...full, people: [{ where: "left", does: "waves", lead: false, many: false }] }), 10)!;
     expect(read.people[0].lead).toBe(true);
   });
 
@@ -106,7 +106,7 @@ describe("the warnings", () => {
     title: "t",
     motion: "m",
     world: "w",
-    people: [{ tag: "A", where: "centre", does: "turns", lead: true }],
+    people: [{ tag: "A", where: "centre", does: "turns", lead: true, many: false }],
     keeps: [],
     cuts: [],
     framing: "medium",
@@ -125,8 +125,8 @@ describe("the warnings", () => {
       recastWarnings(
         read({
           people: [
-            { tag: "A", where: "left", does: "a", lead: true },
-            { tag: "B", where: "right", does: "b", lead: false },
+            { tag: "A", where: "left", does: "a", lead: true, many: false },
+            { tag: "B", where: "right", does: "b", lead: false, many: false },
           ],
         }),
       ),

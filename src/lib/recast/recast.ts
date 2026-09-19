@@ -305,8 +305,11 @@ export const RECAST_IMAGE_BUCKET = "chat-attachments";
  * How many images a take can still carry beside the characters in it — one
  * reference each. Several characters share one take only in Into the clip.
  */
-export function recastImageRoom(charactersInTake: number): number {
-  return Math.max(0, Math.min(RECAST_MAX_IMAGES, RECAST_MAX_REFERENCES - charactersInTake));
+export function recastImageRoom(charactersInTake: number, chained = false): number {
+  // A long take spends one of the four on the still at each switch — the
+  // last finished frame, which is what keeps a later part on the take's own
+  // look (chain.ts ChainState.look, 2026-09-20).
+  return Math.max(0, Math.min(RECAST_MAX_IMAGES, RECAST_MAX_REFERENCES - charactersInTake - (chained ? 1 : 0)));
 }
 // The tighter of the two engines' own limits, read from fal's schemas the same
 // day: O3 Edit's references ≥ 300 px a side and ≤ 10 MB, V3 Motion Control's

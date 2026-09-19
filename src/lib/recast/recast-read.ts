@@ -46,6 +46,14 @@ export type RecastPerson = {
   does: string;
   /** True when this one carries the clip — the door casts them first. */
   lead: boolean;
+  /**
+   * True when this line is MANY people, not one — a crowd, a row, a class.
+   * The reader judges it; nothing here looks for words like "crowd". It
+   * changes what casting them means: replacing a group is every one of them,
+   * which is a far bigger change than replacing a person (2026-09-20, the
+   * take where one character was cast over forty students).
+   */
+  many: boolean;
 };
 
 export type RecastKeep = {
@@ -89,7 +97,8 @@ Return ONLY a JSON object:
    { "tag": "A",         // "A", "B", "C"... in order of importance
      "where": string,    // WHERE they are: "left of frame", "centre, facing camera", "behind, walks in at 0:04"
      "does": string,     // WHAT they do: "turns and crosses her arms", "walks past and exits right"
-     "lead": boolean }   // true for the one the clip is about; exactly one true
+     "lead": boolean,    // true for the one the clip is about; exactly one true
+     "many": boolean }   // true when this line is SEVERAL people (a crowd, a row, a class), not one
  ],
  "keeps": [              // things that must survive a replacement, [] if none
    { "what": string,     // "a wristwatch on the left wrist", "the caption 'BEFORE' bottom centre"
@@ -133,7 +142,7 @@ export function parseRecastRead(answer: string, seconds: number): RecastRead | n
     if (!does && !where) continue;
     // The tag is ours, not the reader's: the chips, the brief and the cast
     // all key on it, so it must be A, B, C in order whatever came back.
-    people.push({ tag: TAGS[people.length], where, does, lead: o.lead === true });
+    people.push({ tag: TAGS[people.length], where, does, lead: o.lead === true, many: o.many === true });
   }
   // Exactly one lead — the first one claimed, or the first person there.
   const leadAt = Math.max(0, people.findIndex((p) => p.lead));
@@ -194,6 +203,7 @@ export function reboundRecastRead(value: unknown, seconds: number): RecastRead |
       where: cleanText(typeof o.where === "string" ? o.where : "", 90),
       does: cleanText(typeof o.does === "string" ? o.does : "", 160),
       lead: o.lead === true,
+      many: o.many === true,
     });
   }
   const keeps: RecastKeep[] = [];

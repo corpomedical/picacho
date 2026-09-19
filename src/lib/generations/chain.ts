@@ -459,10 +459,63 @@ export type ChainRequest = {
 /** The placeholder a lane puts where the clip goes, so the field can be found without knowing the engine. */
 export const CHAIN_CLIP_PLACEHOLDER = "chain:clip";
 
+/**
+ * The placeholder a lane puts where the STILL at the switch goes — the last
+ * finished frame, bound to a later piece so it carries the take's look rather
+ * than the footage's (see ChainState.look). It sits wherever the engine takes
+ * its reference images, so it is found by value, not by field.
+ */
+export const CHAIN_LOOK_PLACEHOLDER = "chain:look";
+
 /** The request a lane composed, with the placeholder's field named. Null when the body has no placeholder. */
 export function chainRequestOf(endpoint: string, label: string, body: Record<string, unknown>): ChainRequest | null {
   const clipField = Object.keys(body).find((k) => body[k] === CHAIN_CLIP_PLACEHOLDER);
   return clipField ? { endpoint, label, body, clipField } : null;
+}
+
+/**
+ * One piece's body, ready to send: its clip in the field the lane named, and
+ * the still in place of every look placeholder. Without a still (the first
+ * piece, or a take made before stills) the placeholder is dropped rather than
+ * sent as a word — an engine given "chain:look" as an image url would fail
+ * the whole piece.
+ */
+export function chainPieceBody(request: ChainRequest, clipUrl: string, lookUrl: string | null): Record<string, unknown> {
+  const body: Record<string, unknown> = { ...request.body, [request.clipField]: clipUrl };
+  for (const [key, value] of Object.entries(body)) {
+    if (value === CHAIN_LOOK_PLACEHOLDER) {
+      if (lookUrl) body[key] = lookUrl;
+      else delete body[key];
+    } else if (Array.isArray(value) && value.includes(CHAIN_LOOK_PLACEHOLDER)) {
+      const filled = value.map((v) => (v === CHAIN_LOOK_PLACEHOLDER ? lookUrl : v)).filter((v): v is string => typeof v === "string");
+      if (filled.length > 0) body[key] = filled;
+      else delete body[key];
+    }
+  }
+  return body;
+}
+
+/** The longest side a still is stored at — inside every engine's reference limits, small enough to send. */
+export const CHAIN_STILL_MAX_PX = 1280;
+
+/** One frame of a finished piece, as a still: the look the next piece must carry on. */
+export function chainStillArgs(file: string, frame: number, output: string): string[] {
+  return [
+    "-y",
+    "-v",
+    "error",
+    "-i",
+    file,
+    "-vf",
+    `select='eq(n\\,${Math.max(0, Math.round(frame))})',scale='min(${CHAIN_STILL_MAX_PX},iw)':-2`,
+    "-frames:v",
+    "1",
+    "-fps_mode",
+    "passthrough",
+    "-q:v",
+    "3",
+    output,
+  ];
 }
 
 /**
@@ -495,4 +548,15 @@ export type ChainState = {
   /** Each finished piece's render: where it is kept, and how many frames it really holds. */
   renders: string[];
   frames: number[];
+  /**
+   * WHERE THE LOOK IS KEPT (2026-09-20). Every piece after the first is sent
+   * the source footage with only one second of the piece before it in front —
+   * so the further a take moves from what the clip shows, the more likely a
+   * later piece falls back to the footage. (The operator's Anubis take: parts
+   * 1–2 built an Egyptian field, part 3 came back as the school.) The still at
+   * the switch is stored here and bound to the piece as a reference, which is
+   * what the engines take a look from. Images need their own bucket: the clip
+   * bucket takes video only. Absent on takes from before this.
+   */
+  look?: { bucket: string; prefix: string };
 };

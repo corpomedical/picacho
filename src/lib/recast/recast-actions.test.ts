@@ -220,7 +220,7 @@ describe("a take with images of the person's own, or with words alone", () => {
     expect(start).toContain('const picture = photos.first ?? (spec.job === "motion" ? (sentImages[0]?.url ?? null) : null)');
     expect(start).toContain('const imageUrls = spec.job === "scene" ? sentImages.map((image) => image.url) : []');
     // Every part of a long take carries them too.
-    expect(start.slice(at("clipUrl: CHAIN_CLIP_PLACEHOLDER"), at("clipUrl: CHAIN_CLIP_PLACEHOLDER") + 200)).toContain("imageUrls,");
+    expect(start.slice(at("clipUrl: CHAIN_CLIP_PLACEHOLDER"), at("clipUrl: CHAIN_CLIP_PLACEHOLDER") + 460)).toContain("...imageUrls, CHAIN_LOOK_PLACEHOLDER");
   });
 
   it("records the images it sent, and asks for the lock only where a face is cast", () => {
@@ -249,11 +249,37 @@ describe("several characters in one take", () => {
     expect(start).toContain("const ensemble = chars.length > 1 ? signed.map((p) => ({ front: p.first!, more: p.more })) : undefined");
     expect(start).toContain("character_profile_ids: chars.map((c) => c.id)");
     // Every part of a long take carries them all.
-    expect(start.slice(at("clipUrl: CHAIN_CLIP_PLACEHOLDER"), at("clipUrl: CHAIN_CLIP_PLACEHOLDER") + 260)).toContain("...(ensemble ? { ensemble } : {})");
+    expect(start.slice(at("clipUrl: CHAIN_CLIP_PLACEHOLDER"), at("clipUrl: CHAIN_CLIP_PLACEHOLDER") + 560)).toContain("...(ensemble ? { ensemble } : {})");
   });
 
   it("promises the face lock only where ONE face is cast", () => {
     expect(start).toContain("identityLock: chars.length === 1 && lockOn ?");
+  });
+});
+
+// THE ANUBIS TAKE (2026-09-20): parts 1–2 built an Egyptian field, part 3
+// came back as the school. A later part sees one second of the part before
+// it and then the footage, so the take's own look has to ride as a picture.
+describe("what keeps a later part on the take's look", () => {
+  it("keeps every part's still where images are allowed to live", () => {
+    expect(start).toContain("look: { bucket: RECAST_IMAGE_BUCKET, prefix: `${userId}/recast-look-${generationId}` }");
+  });
+
+  it("leaves the still a place in every part after the first", () => {
+    expect(start).toContain('imageUrls: k > 0 && spec.job === "scene" ? [...imageUrls, CHAIN_LOOK_PLACEHOLDER] : imageUrls');
+    // And names it in that part's brief, after the added images.
+    expect(start).toContain("...(look ? { look } : {})");
+  });
+
+  it("leaves the still room among the four references a take carries", () => {
+    expect(start).toContain("recastImageRoom(together ? ordered.length : Math.min(1, ordered.length), chaining)");
+  });
+
+  it("says a group is a group, from the read's own judgement", () => {
+    expect(start).toContain('read?.people.find((p) => p.tag === tag)?.many === true');
+    const reader = readFileSync(join(__dirname, "recast-read.ts"), "utf8");
+    expect(reader).toContain('"many": boolean }   // true when this line is SEVERAL people (a crowd, a row, a class), not one');
+    expect(reader).toContain("many: o.many === true");
   });
 });
 

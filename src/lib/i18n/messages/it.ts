@@ -1965,6 +1965,9 @@ const it = {
     rolesPickClip: "Scegli una clip e ognuno potrà essere abbinato a qualcuno al suo interno.",
     rolesNoRead: "La clip non è stata letta, quindi di' con parole tue che ruolo ha ognuno.",
     imagesRoomNote: "Una ripresa porta quattro immagini in tutto, personaggi compresi, quindi questa porta le tue prime {n}.",
+    roleGroup: "Persona {tag} · {where} — tutto quel gruppo",
+    crowdWarn: "Un personaggio su un intero gruppo cambia ognuna delle persone che lo compongono: il cambiamento più grande che si possa chiedere, e oltre i 15 secondi la ripresa si fa a parti, dove le ultime tendono a tornare al tuo video. In una sola parte tiene meglio.",
+    crowdWarnTrim: "Portalo a 15 secondi",
   },
   recce: {
     headline: "Entra il girato. Esce un luogo.",

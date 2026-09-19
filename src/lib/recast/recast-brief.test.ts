@@ -11,8 +11,8 @@ const read: RecastRead = {
   motion: "She turns from the window and crosses her arms.",
   world: "A white studio under flat daylight.",
   people: [
-    { tag: "A", where: "centre, facing camera", does: "turns and crosses her arms", lead: true },
-    { tag: "B", where: "behind, walks in at 0:04", does: "walks past and exits right", lead: false },
+    { tag: "A", where: "centre, facing camera", does: "turns and crosses her arms", lead: true, many: false },
+    { tag: "B", where: "behind, walks in at 0:04", does: "walks past and exits right", lead: false, many: false },
   ],
   keeps: [{ what: "a wristwatch on the left wrist", kind: "accessory" }],
   cuts: [4.3],
@@ -316,6 +316,70 @@ describe("several characters in one take", () => {
   it("carries both across a long take's joins", () => {
     const later = composeRecastBrief({ ...base, job: "scene", casting: ensemble, continuing: true });
     expect(later).toContain("it shows @Element1 and @Image1 exactly as they must look");
+  });
+});
+
+// THE ANUBIS TAKE (2026-09-20, "The last generation came out bad. Worst one
+// yet."): one character was cast over Person B — forty students — while the
+// brief also promised to keep everyone else in the shot, and the engine
+// settled the argument by redrawing the whole picture as an Egyptian field.
+describe("a character cast over a whole group", () => {
+  it("says every one of them becomes the character, not that one person does", () => {
+    const one = composeRecastBrief({
+      ...base,
+      job: "scene",
+      casting: { tag: "B", many: true, characterName: "Anubis", token: recastCharacterToken(1) },
+    });
+    expect(one).toContain("Replace every single person in Person B’s group in @Video1 with @Image1.");
+    const several = composeRecastBrief({
+      ...base,
+      job: "scene",
+      casting: [
+        { tag: "A", characterName: "Eva", token: "@Element1" },
+        { tag: "B", many: true, characterName: "Anubis", token: "@Image1" },
+      ],
+    });
+    expect(several).toContain("and every single person in Person B’s group with @Image1");
+  });
+
+  it("no longer promises to keep everyone else in the shot — the line that contradicted the task", () => {
+    for (const casting of [
+      { tag: "A", characterName: "Eva", token: "@Element1" },
+      [
+        { tag: "A", characterName: "Eva", token: "@Element1" },
+        { tag: "B", many: true, characterName: "Anubis", token: "@Image1" },
+      ],
+    ]) {
+      const brief = composeRecastBrief({ ...base, job: "scene", casting });
+      expect(brief).not.toContain("The lighting, the setting and everyone else in the shot.");
+      expect(brief).toContain("The lighting and the setting.");
+      expect(brief).toContain("Everyone in @Video1 who is not named above stays exactly as they are.");
+    }
+  });
+});
+
+describe("a later part's own look", () => {
+  it("is pointed at the still the runner binds to it", () => {
+    const casting = { tag: "A", characterName: "Eva", token: recastCharacterToken(4) };
+    const later = composeRecastBrief({ ...base, job: "scene", casting, continuing: true, look: "@Image1" });
+    expect(later).toContain("@Image1 IS that finished frame.");
+    expect(later).toContain("even where the footage underneath still looks like it did before");
+    expect(later.indexOf("@Image1 IS that finished frame.")).toBeLessThan(later.indexOf("KEEP EXACTLY"));
+    // The first part has no finished frame to carry.
+    expect(composeRecastBrief({ ...base, job: "scene", casting, look: "@Image1" })).not.toContain("IS that finished frame");
+    // Every shape of take says it: nobody cast, and several cast.
+    expect(composeRecastBrief({ ...base, job: "scene", casting: null, direction: "Make it snow.", continuing: true, look: "@Image2" })).toContain(
+      "@Image2 IS that finished frame.",
+    );
+    expect(
+      composeRecastBrief({
+        ...base,
+        job: "scene",
+        casting: [casting, { tag: "B", characterName: "Anubis", token: "@Image1" }],
+        continuing: true,
+        look: "@Image2",
+      }),
+    ).toContain("@Image2 IS that finished frame.");
   });
 });
 

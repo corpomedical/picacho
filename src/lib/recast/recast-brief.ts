@@ -54,6 +54,14 @@ export const RECAST_DIRECTION_MAX_CHARS = 600;
 export type RecastCasting = {
   /** The read's tag for the person being replaced ("A"), or null when there was no read. */
   tag: string | null;
+  /**
+   * That tag is MANY people, not one (the read's `many`) — a crowd, a row, a
+   * class. Casting over them means every one of them becomes the character,
+   * which the brief has to say outright: asking to "replace Person B" while
+   * promising to keep everyone else in the shot is a contradiction, and the
+   * engine resolved it by redrawing the whole picture (2026-09-20).
+   */
+  many?: boolean;
   characterName: string;
   /**
    * How the engine names the character's photos in its prompt — Kling O3
@@ -92,6 +100,22 @@ export function recastCastTokens(photoCounts: number[]): string[] {
 }
 
 const bullet = (s: string) => `- ${s}`;
+
+/**
+ * THE STILL AT THE SWITCH (2026-09-20). A later piece is sent one second of
+ * the piece before it and then the footage again, so a take that changed the
+ * whole picture can fall back to what the clip shows — the operator's Anubis
+ * take built an Egyptian field for two parts and came back as the school for
+ * the third. The last finished frame rides as a reference, and these words
+ * are what point the engine at it.
+ */
+function lookLines(look: string | undefined): string[] {
+  return look
+    ? [
+        `${look} IS that finished frame. The place, the light, the clothes and every person in the picture look exactly like that for the whole of this piece — even where the footage underneath still looks like it did before.`,
+      ]
+    : [];
+}
 
 /**
  * What each added image is called in the person's words ("image 1", as the
@@ -136,6 +160,12 @@ type BriefInput = {
   continuing?: boolean;
   /** The engine's names for the images the person added (recastImageTokens) — Into the clip only. */
   images?: string[];
+  /**
+   * A later piece of a long take: the engine's name for the STILL at the
+   * switch — the last finished frame, bound as a reference so the piece
+   * carries the take's look and not the footage's (chain.ts ChainState.look).
+   */
+  look?: string;
 };
 
 /**
@@ -246,6 +276,7 @@ function composeUncut(input: BriefInput): string {
         ? [
             "CONTINUITY",
             `The first second of ${video} is already finished: it shows exactly how everything must look — every person, their clothes and hair, and every change the direction asks for. Carry on from that second without any break, frame to frame, as if it were one continuous take.`,
+            ...lookLines(input.look),
             "",
           ]
         : []),
@@ -270,8 +301,16 @@ function composeUncut(input: BriefInput): string {
     const placed = named.filter((c) => !c.tag);
     const task: string[] = [];
     if (swaps.length > 0) {
+      // A tag that covers MANY people is said as many: every one of them
+      // becomes that character, which is what casting over a crowd means
+      // (2026-09-20).
       task.push(
-        `Replace ${swaps.map((c, i) => `${i === 0 ? "" : "and "}Person ${c.tag}${i === 0 ? ` in ${video}` : ""} with ${c.token}`).join(", ")}.`,
+        `Replace ${swaps
+          .map(
+            (c, i) =>
+              `${i === 0 ? "" : "and "}${c.many ? `every single person in Person ${c.tag}’s group` : `Person ${c.tag}`}${i === 0 ? ` in ${video}` : ""} with ${c.token}`,
+          )
+          .join(", ")}.`,
       );
     }
     if (placed.length > 0) task.push(`Put ${placed.map((c) => c.token).join(" and ")} into ${video} as the direction below says.`);
@@ -296,13 +335,18 @@ function composeUncut(input: BriefInput): string {
         ? [
             "CONTINUITY",
             `The first second of ${video} is already finished: it shows ${named.map((c) => c.token).join(" and ")} exactly as they must look — their clothes, their hair, their pose — and the people around them exactly as they must look. Carry on from that second without any break: the same clothes, the same hair, the same faces and hair on everyone, frame to frame, as if it were one continuous take.`,
+            ...lookLines(input.look),
             "",
           ]
         : []),
       "KEEP EXACTLY",
       bullet("The performance: every gesture, every step, every expression, on the same frames."),
       bullet("The framing, the camera move, the cuts and the timing."),
-      bullet("The lighting, the setting and everyone else in the shot."),
+      bullet("The lighting and the setting."),
+      // NOT "everyone else in the shot": when a cast character plays a GROUP,
+      // that promise contradicts the task, and the engine settled the argument
+      // by redrawing the whole picture (2026-09-20).
+      bullet(`Everyone in ${video} who is not named above stays exactly as they are.`),
       ...keepLines(input.keeps).map(bullet),
       bullet(`Everything else stays exactly as it is in ${video}.`),
     );
@@ -310,7 +354,11 @@ function composeUncut(input: BriefInput): string {
     return cleanBrief(parts.join("\n"), Number.POSITIVE_INFINITY);
   }
 
-  const who = casting.tag ? `Person ${casting.tag}` : "The performer";
+  const who = casting.tag
+    ? casting.many
+      ? `every single person in Person ${casting.tag}’s group`
+      : `Person ${casting.tag}`
+    : "The performer";
   // With names the engine reads (Kling O3 Edit: @Video1 for the clip, @Element1
   // or @Image1 for the character), the brief uses them; without, plain words.
   const token = casting.token;
@@ -350,13 +398,15 @@ function composeUncut(input: BriefInput): string {
       ? [
           "CONTINUITY",
           `The first second of ${video} is already finished: it shows ${character} exactly as they must look — their clothes, their hair, their pose — and the people around them exactly as they must look. Carry on from that second without any break: the same clothes, the same hair, the same faces and hair on everyone beside them, frame to frame, as if it were one continuous take.`,
+          ...lookLines(input.look),
           "",
         ]
       : []),
     "KEEP EXACTLY",
     bullet("The performance: every gesture, every step, every expression, on the same frames."),
     bullet("The framing, the camera move, the cuts and the timing."),
-    bullet("The lighting, the setting and everyone else in the shot."),
+    bullet("The lighting and the setting."),
+    bullet(`Everyone in ${video} who is not named above stays exactly as they are.`),
     ...keepLines(input.keeps).map(bullet),
     bullet(`Everything else stays exactly as it is in ${video}.`),
   );

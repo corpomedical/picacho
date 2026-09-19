@@ -2084,6 +2084,9 @@ const en = {
     rolesPickClip: "Choose a clip and each one can be matched to someone in it.",
     rolesNoRead: "The clip wasn't read, so say in your words who each one plays.",
     imagesRoomNote: "A take holds four pictures in all, characters included, so this one carries your first {n}.",
+    roleGroup: "Person {tag} · {where} — everyone in that group",
+    crowdWarn: "One character over a whole group changes every person in it — the biggest change a take can ask for, and over 15 seconds it is made in parts, where the later ones tend to drift back to your own footage. One part holds it best.",
+    crowdWarnTrim: "Make it 15 seconds",
   },
   // The Recce door (board K, "Build A as Recce", 2026-09-17): the theatre
   // page at /app/recce. No machinery on the wall: the copy never says set,
