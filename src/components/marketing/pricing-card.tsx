@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { formatMsg } from "@/lib/i18n/format";
+import { heliosPlanFeatures } from "@/lib/sets/helios-pricing";
 import { TicketSubmit } from "@/components/marketing/ticket-submit";
 import { SerifNumerals } from "@/components/marketing/serif-numerals";
 import { Card } from "@/components/ui/card";
@@ -32,6 +33,8 @@ export async function PricingCard({
 }) {
   const { t } = await getServerMessages();
   const localized = t.pricingTiers[tier.id];
+  // Helios's bullets (helios-pricing.ts): empty until SETS_OPEN_TO_PLANS flips.
+  const features = [...localized.features, ...heliosPlanFeatures(tier.id, t.pricingTiers.helios)];
   const annual = interval === "annual";
   const savePct = Math.round((1 - tier.annualPrice / tier.price) * 100);
 
@@ -67,7 +70,7 @@ export async function PricingCard({
     // it at the ≈ into the ochre serif credits line and the muted exchange
     // detail. Every locale's line carries the ≈ (pinned by the i18n shape);
     // if one ever drops it, the whole line just renders muted — never wrong.
-    const [creditsFeature, ...restFeatures] = localized.features;
+    const [creditsFeature, ...restFeatures] = features;
     const eqIndex = creditsFeature.indexOf("≈");
     const creditsLead = eqIndex > 0 ? creditsFeature.slice(0, eqIndex).trim() : null;
     // The ochre lead already ends "/ month", so the detail sheds its own
@@ -271,7 +274,7 @@ export async function PricingCard({
       )}
 
       <ul className="mt-6 flex-1 space-y-2.5">
-        {localized.features.map((feature) => (
+        {features.map((feature) => (
           <li key={feature} className="flex items-start gap-2 text-sm text-neutral-600">
             <span className="mt-1 h-1 w-1 flex-shrink-0 rounded-full bg-neutral-400" />
             {feature}

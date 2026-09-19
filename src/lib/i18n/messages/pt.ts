@@ -1589,6 +1589,12 @@ const pt = {
       "Sua assinatura é cobrada pelo Google Play e não podemos cancelá-la daqui. Cancele primeiro na Play Store (Play Store → Pagamentos e assinaturas) e depois exclua sua conta.",
   },
   pricingTiers: {
+    // Helios's launch bullets (helios-pricing.ts): on the cards only once SETS_OPEN_TO_PLANS flips.
+    helios: {
+      heliosSetsOne: "Helios — construa 1 set 3D cinematográfico por mês, com fotos incluídas",
+      heliosSets: "Helios — construa {n} sets 3D cinematográficos por mês, com fotos incluídas",
+      heliosTakes: "Takes e filmes do Helios — planos em movimento renderizados a partir dos seus sets",
+    },
     basic: {
       name: "Basic",
       badge: "",

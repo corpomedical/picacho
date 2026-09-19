@@ -1688,6 +1688,12 @@ const en = {
   // these numbers equal to PLAN_LIMITS in plans.ts; "standard" means a
   // 1-credit clip (Kling 1.6 at 5s) or image, "premium" a 2-credit one.
   pricingTiers: {
+    // Helios's launch bullets (helios-pricing.ts): on the cards only once SETS_OPEN_TO_PLANS flips.
+    helios: {
+      heliosSetsOne: "Helios — build 1 cinematic 3D set a month, stills included",
+      heliosSets: "Helios — build {n} cinematic 3D sets a month, stills included",
+      heliosTakes: "Helios takes & films — moving shots rendered from your sets",
+    },
     basic: {
       name: "Basic",
       badge: "",
