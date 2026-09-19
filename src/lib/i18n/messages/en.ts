@@ -3018,7 +3018,7 @@ const en = {
     // getting past it, the refusal rules everywhere else; "the build is back"
     // is true because a failed build never counts against the monthly cap.
     setsUnavailable: "Helios isn't available right now.",
-    setsNotOpen: "Helios is in private testing and isn't part of any plan yet.",
+    setsNotOpen: "Helios is part of the paid plans. Upgrade in Settings → Usage & plan.",
     setNotFound: "That set isn't available.",
     setNotReady: "This set is still being built.",
     setBriefTooShort: "Describe the place in a few more words.",

@@ -2820,7 +2820,7 @@ const es = {
     feedRefused: "Esta toma no se puede publicar en el feed de la Comunidad. Se queda en tu Historial.",
     unshareFailed: "No se pudo quitar de la comunidad — inténtalo de nuevo.",
     setsUnavailable: "Helios no está disponible ahora mismo.",
-    setsNotOpen: "Helios está en pruebas privadas y aún no forma parte de ningún plan.",
+    setsNotOpen: "Helios forma parte de los planes de pago. Mejora tu plan en Ajustes → Uso y plan.",
     setNotFound: "Ese set no está disponible.",
     setNotReady: "Este set todavía se está construyendo.",
     setBriefTooShort: "Describe el lugar con algunas palabras más.",

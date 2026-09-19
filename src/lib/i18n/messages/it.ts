@@ -2819,7 +2819,7 @@ const it = {
     feedRefused: "Questa ripresa non può essere pubblicata nel feed della Community. Resta nella tua Cronologia.",
     unshareFailed: "Impossibile rimuoverla dalla community — riprova.",
     setsUnavailable: "Helios non è disponibile in questo momento.",
-    setsNotOpen: "Helios è in test privato e non fa ancora parte di nessun piano.",
+    setsNotOpen: "Helios fa parte dei piani a pagamento. Passa a un piano in Impostazioni → Utilizzo e piano.",
     setNotFound: "Quel set non è disponibile.",
     setNotReady: "Questo set è ancora in costruzione.",
     setBriefTooShort: "Descrivi il luogo con qualche parola in più.",

@@ -2820,7 +2820,7 @@ const pt = {
     feedRefused: "Este take não pode ser publicado no feed da Comunidade. Ele continua no seu Histórico.",
     unshareFailed: "Não foi possível remover da comunidade — tente de novo.",
     setsUnavailable: "O Helios não está disponível agora.",
-    setsNotOpen: "O Helios está em testes privados e ainda não faz parte de nenhum plano.",
+    setsNotOpen: "O Helios faz parte dos planos pagos. Faça upgrade em Configurações → Uso e plano.",
     setNotFound: "Esse set não está disponível.",
     setNotReady: "Este set ainda está sendo construído.",
     setBriefTooShort: "Descreva o lugar com mais algumas palavras.",

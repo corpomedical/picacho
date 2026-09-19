@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.52.0",
+    build: 91,
+    date: "2026-09-19",
+    title: "Helios is open: build a set, direct the shot",
+    items: [
+      "Helios is now part of every paid plan. Describe a location in a sentence and Astra builds it as a real 3D set — walls, floor, furniture, marks to stand on — yours to keep and reshoot. Find it as Sets in the sidebar.",
+      "The set page is a studio. Shoot places your character and camera exactly, with real formats from square to anamorphic Scope, real lenses and stops with true depth of field, light plots, palettes and film stocks; the frame lines are the picture, and a still costs one credit like any render. Build edits the geometry. Film lays beats on a timeline and previews the whole move for free. Cut plays the clips in order and downloads the finished film as one MP4.",
+      "Takes and films are on every paid plan too: a take turns a still into a clip between a start and an end frame, quoted before you spend. Your character rides every shot with the usual identity scoring, and refused requests never use your credits.",
+      "Set builds are capped per month by plan — Basic 1, Starter 2, Growth 5, Studio 10, Elite 25 — and the pricing page says so. There is a guide: picacho.ai/guides/helios.",
+    ],
+  },
+  {
     version: "1.51.0",
     build: 90,
     date: "2026-09-19",

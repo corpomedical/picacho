@@ -29,17 +29,18 @@
 
 import type { PlanId } from "../plans";
 
-// PHASE 1: ADMINS ONLY. The flag (astra_sets) turns the feature on; this
-// decides who sees it once on. It opens to paid plans only after the
-// operator's eval parts A–D pass (docs/ASTRA_SETS.md, section 4) —
-// a code change on purpose, so widening is a reviewed commit and not a
-// toggle flipped on a hunch. Opened, every paid plan builds sets, shoots
-// stills, takes clips and renders films — the operator opened takes and
-// films to every paid plan on 2026-09-19 ("Open to all plans"), so the one
-// gate below (setTakesEligible) is the sets gate itself. The composer's own
-// storyboard lane stays Studio-and-up (plans.ts advancedVideoPlan): a set
-// take passes its frames check as a server-built request, never by plan.
-export const SETS_OPEN_TO_PLANS = false;
+// OPEN TO EVERY PAID PLAN since 2026-09-19: the operator launched ("Lets
+// get helios ready for launch" → "Do it") ahead of the §4 eval
+// (docs/ASTRA_SETS.md), which remains owed as a post-launch check — parts
+// A–E are built and priced but were never run, for want of provider
+// balance. The flag (astra_sets) is still the kill switch above this, and
+// ASTRA_DISABLED=1 above that (enabled.ts). Every paid plan builds sets,
+// shoots stills, takes clips and renders films — takes and films opened
+// with the same word ("Open to all plans", setTakesEligible below). The
+// composer's own storyboard lane stays Studio-and-up (plans.ts
+// advancedVideoPlan): a set take passes its frames check as a
+// server-built request, never by plan. Closing again is this one line.
+export const SETS_OPEN_TO_PLANS = true;
 
 export const SET_BUILDS_MONTHLY_LIMITS = {
   none: 0,

@@ -130,7 +130,7 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   // Sets (lib/sets/messages.ts) — the Sets pages' error lines, and a failed
   // build's card.
   "Helios isn't available right now.": "setsUnavailable",
-  "Helios is in private testing and isn't part of any plan yet.": "setsNotOpen",
+  "Helios is part of the paid plans. Upgrade in Settings → Usage & plan.": "setsNotOpen",
   "That set isn't available.": "setNotFound",
   "This set is still being built.": "setNotReady",
   "Describe the place in a few more words.": "setBriefTooShort",

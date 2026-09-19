@@ -93,12 +93,17 @@ describe("checkFilmCredits", () => {
   });
 
   it("holds a film to the takes rule (set-config.ts setTakesEligible) before asking the balance, and lets admins through", async () => {
-    // While SETS_OPEN_TO_PLANS is false the rule is admins-only, so every
-    // plan refuses here; at the flip it becomes every paid plan, and the
-    // access rule upstream has already turned away anyone without one.
+    // Since the launch every paid plan passes; only an account with no paid
+    // plan at all meets the refusal, and the access rule upstream already
+    // turned it away from the set page.
     for (const plan of ["basic", "starter", "growth", "studio", "elite"]) {
       access = { ...studio, plan, isAdmin: false } as Access;
-      expect(await checkFilmCredits(SET, "omni", { clips: 1, stills: 1 })).toEqual({ error: SET_TAKE_NEEDS_PLAN });
+      expect(await checkFilmCredits(SET, "omni", { clips: 1, stills: 1 }), plan).toEqual({ error: null });
+    }
+    asked.length = 0;
+    for (const plan of ["none", null]) {
+      access = { ...studio, plan, isAdmin: false } as Access;
+      expect(await checkFilmCredits(SET, "omni", { clips: 1, stills: 1 }), String(plan)).toEqual({ error: SET_TAKE_NEEDS_PLAN });
     }
     expect(asked).toEqual([]);
     access = { ...studio, plan: "growth", isAdmin: true } as Access;

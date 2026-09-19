@@ -15,11 +15,12 @@ import itMsgs from "../i18n/messages/it";
 describe("the pricing page's Helios bullets", () => {
   const words = en.pricingTiers.helios;
 
-  it("say nothing anywhere while Helios is closed — today's state", () => {
-    expect(SETS_OPEN_TO_PLANS).toBe(false);
-    for (const plan of ["basic", "starter", "growth", "studio", "elite", "none"]) {
-      expect(heliosPlanFeatures(plan, words)).toEqual([]);
+  it("are live on every paid card — the launch state — and absent for no plan at all", () => {
+    expect(SETS_OPEN_TO_PLANS).toBe(true);
+    for (const plan of ["basic", "starter", "growth", "studio", "elite"]) {
+      expect(heliosPlanFeatures(plan, words), plan).toHaveLength(1);
     }
+    expect(heliosPlanFeatures("none", words)).toEqual([]);
   });
 
   it("once open, say each plan's own build cap from the enforced table — stills, takes and films on every card", () => {

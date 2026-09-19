@@ -247,9 +247,12 @@ describe("the same rules as the page, without a session", () => {
     });
     const out = await runSetsFinisher(f.deps);
     expect(out.status).toBe(200);
-    expect(out.body).toMatchObject({ checked: 6, advanced: 2, skipped: 4, deferred: 0, errors: 0 });
+    // Since the launch a paying plan is eligible (set-config.ts): PAYING's
+    // build ticks; only the suspended and the profileless are skipped.
+    expect(out.body).toMatchObject({ checked: 6, advanced: 3, skipped: 3, deferred: 0, errors: 0 });
     expect(f.advanced.map((a) => [a.setId, a.userId])).toEqual([
       [set(1), ADMIN],
+      [set(3), PAYING],
       [set(5), ADMIN_2],
     ]);
     for (const a of f.advanced) expect(a.admin).toBe(f.admin);
@@ -264,7 +267,6 @@ describe("the same rules as the page, without a session", () => {
     const skips = info.mock.calls.filter((c: unknown[]) => String(c[0]).includes("may not use Sets"));
     expect(skips.map((c: unknown[]) => c[1])).toEqual([
       { setId: set(2), userId: SUSPENDED, reason: "suspended" },
-      { setId: set(3), userId: PAYING, reason: "not eligible" },
       { setId: set(4), userId: NO_PROFILE, reason: "not eligible" },
       { setId: set(6), userId: SUSPENDED, reason: "suspended" },
     ]);
@@ -564,13 +566,14 @@ describe("what a run says", () => {
       advance: async () => ({ result: { error: null, state: "ready" }, settledHere: "ready" }),
     });
     const out = await runSetsFinisher(f.deps);
+    // Since the launch PAYING is eligible too: both builds tick.
     expect(out).toEqual({
       status: 200,
-      body: { checked: 2, advanced: 1, ready: 1, failed: 0, skipped: 1, deferred: 0, errors: 0 },
+      body: { checked: 2, advanced: 2, ready: 2, failed: 0, skipped: 0, deferred: 0, errors: 0 },
     });
     const lines = info.mock.calls.filter((c: unknown[]) => String(c[0]).startsWith("[sets] finisher: checked"));
     expect(lines).toEqual([
-      ["[sets] finisher: checked 2, advanced 1, ready 1, failed 0, skipped 1, deferred 0, errors 0"],
+      ["[sets] finisher: checked 2, advanced 2, ready 2, failed 0, skipped 0, deferred 0, errors 0"],
     ]);
   });
 });

@@ -11,7 +11,7 @@ import type { SetKind } from "./types";
 
 export const SETS_SESSION_EXPIRED = "Your session expired — please log in again.";
 export const SETS_UNAVAILABLE = "Helios isn't available right now.";
-export const SETS_NOT_OPEN = "Helios is in private testing and isn't part of any plan yet.";
+export const SETS_NOT_OPEN = "Helios is part of the paid plans. Upgrade in Settings → Usage & plan.";
 export const SETS_SUSPENDED = "This account is suspended.";
 export const SET_NOT_FOUND = "That set isn't available.";
 export const SET_NOT_READY = "This set is still being built.";

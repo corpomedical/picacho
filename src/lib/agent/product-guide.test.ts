@@ -34,12 +34,15 @@ describe("renderProductGuide", () => {
     expect(guide).toContain("1 credit per 3 seconds");
   });
 
-  it("says Sets is not available while it is admin-only, and never how to reach it", () => {
-    // SETS_OPEN_TO_PLANS (lib/sets/set-config.ts) is false in Phase 1: the
-    // assistant must not walk a customer toward a page that 404s for them.
-    expect(SETS_OPEN_TO_PLANS, "Sets opened to plans: rewrite the SETS line in product-guide.ts to describe the real UI").toBe(false);
-    expect(guide).toContain("SETS: in private testing");
-    expect(guide).not.toContain("/app/sets");
+  it("describes Helios as launched — every paid plan, the four modes, the caps — and keeps photo builds unoffered", () => {
+    // SETS_OPEN_TO_PLANS flipped 2026-09-19 (the launch commit): the
+    // assistant now walks a paying customer to the real page.
+    expect(SETS_OPEN_TO_PLANS, "Sets closed again: put the private-testing SETS line back in product-guide.ts").toBe(true);
+    expect(guide).toContain("SETS (Helios)");
+    expect(guide).toContain("/app/sets");
+    expect(guide).toContain("on every paid plan");
+    expect(guide).toContain("a photo-based build is not offered to customers");
+    expect(guide).not.toContain("in private testing");
   });
 
   it("never leaks a drafted (unproven) preset", () => {
