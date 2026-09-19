@@ -217,6 +217,16 @@ describe("seedance 2.5 photoreal lane (103-credit incident)", () => {
     }
   });
 
+  it("a VERIFIED face passes clean on both — the one real face Seedance takes (lib/faces/)", () => {
+    for (const modelId of ["seedance", "seedance-2"]) {
+      const plan = resolveSendPlan({ ...base, modelId, character: { ...base.character!, photoreal: true, faceVerified: true } });
+      expect(issue(plan, "SEEDANCE25_PHOTOREAL"), modelId).toBeUndefined();
+    }
+    // Not verified: the warning stands, exactly as before.
+    const plain = resolveSendPlan({ ...base, modelId: "seedance", character: { ...base.character!, photoreal: true, faceVerified: false } });
+    expect(issue(plain, "SEEDANCE25_PHOTOREAL")?.severity).toBe("warn");
+  });
+
   it("a photoreal character on 2.0 now warns too — the lane it used to escape to", () => {
     const plan = resolveSendPlan({ ...base, modelId: "seedance-2" });
     expect(issue(plan, "SEEDANCE25_PHOTOREAL")?.severity).toBe("warn");

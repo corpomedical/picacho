@@ -64,7 +64,7 @@ export default async function PrivacyPage() {
 
         <div className="mt-8 space-y-8">
           {doc.sections.map((section) => (
-            <div key={section.heading}>
+            <div key={section.heading} id={section.id} className="scroll-mt-24">
               <h2 className="text-sm font-semibold text-neutral-900">{section.heading}</h2>
               <div className="mt-2 space-y-2.5">
                 {section.paragraphs.map((p, idx) => (

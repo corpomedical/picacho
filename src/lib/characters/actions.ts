@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { mediaUrl } from "@/lib/media/url";
 import { revalidatePath } from "next/cache";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { forgetCharacterFaceAssets } from "@/lib/faces/run";
 import { generateImageWithOpenAI } from "@/lib/generations/providers/openai-images";
 import { describeOutfitImage, classifyRenderStyle } from "@/lib/generations/providers/describe-image";
 import { generateImageWithFlux } from "@/lib/generations/providers/fal-image";
@@ -712,6 +713,11 @@ export async function removeCharacterProfile(formData: FormData): Promise<{ erro
   // exactly as before.
   const setPaths = Object.values(await readExpressionSet(supabase, id, data.user.id)).map((entry) => entry!.path);
 
+  // Its photos at BytePlus (face verification, lib/faces/) go first, while
+  // the rows naming them exist; the person's verified face itself stays —
+  // it is the account's, withdrawn on the character page or with the account.
+  if (existing) await forgetCharacterFaceAssets(createAdminClient(), data.user.id, id);
+
   const { error } = await supabase
     .from("character_profiles")
     .delete()
@@ -758,6 +764,11 @@ export async function deleteCharacterProfile(formData: FormData) {
   // (expression-set-store.ts), so a database without the column deletes
   // exactly as before.
   const setPaths = Object.values(await readExpressionSet(supabase, id, data.user.id)).map((entry) => entry!.path);
+
+  // Its photos at BytePlus (face verification, lib/faces/) go first, while
+  // the rows naming them exist; the person's verified face itself stays —
+  // it is the account's, withdrawn on the character page or with the account.
+  if (existing) await forgetCharacterFaceAssets(createAdminClient(), data.user.id, id);
 
   const { error } = await supabase
     .from("character_profiles")

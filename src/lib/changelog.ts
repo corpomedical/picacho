@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.54.0",
+    build: 93,
+    date: "2026-09-19",
+    title: "Verify it's you: your own face in Seedance",
+    items: [
+      "Seedance refuses photos of real people. There is now one way through that ByteDance itself allows: if a character is you, a one-minute live face check on BytePlus's own page proves it, and Seedance can then use that character's photos — in your own videos, and nobody else's.",
+      "Nothing about your face is processed until you have read what happens and ticked the box, and you can say no without losing anything else. We keep a record of when you agreed and to which wording.",
+      "Up to three of the character's photos are compared with your verified face; only the ones that match are used. You can see each photo's status on the character page.",
+      "Remove your face at any time on the character page: Seedance stops using it at once, and it is deleted at BytePlus. Deleting your account does the same.",
+      "The Privacy Policy has a new section, Facial information, saying exactly what is collected, where it is kept, for how long, and how to have it deleted.",
+      "In private testing first, for admins only.",
+    ],
+  },
+  {
     version: "1.53.0",
     build: 92,
     date: "2026-09-19",

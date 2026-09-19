@@ -578,6 +578,11 @@ export type RealPipelineOptions = {
   // plan: it's the same "look like the saved character" behavior image
   // generation already gets automatically, not an Elite-exclusive extra.
   videoCharacterAnchorUrl?: string | null;
+  // FACE VERIFICATION (lib/faces/, 2026-09-19): a verified person's own
+  // character as BytePlus asset URIs (asset://<id>). Set by the caller only
+  // for that person's own sends; the Seedance lane cites them in place of
+  // the photographs Seedance refuses (video-queue.ts).
+  videoFaceAssetUris?: string[];
   // THE OPENING FRAME (2026-09-18, opening-frame.ts). Set by the caller only
   // when the send qualifies (a first-frame lane, one character, nothing the
   // person picked as frame one) and the flag is on. Given the reviewed
@@ -1427,6 +1432,7 @@ export async function runRealPipeline(
             startImageUrl: options.videoStartImageUrl,
             endImageUrl: options.videoEndImageUrl,
             characterAnchorImageUrl: openingFrameUrl ?? options.videoCharacterAnchorUrl,
+            faceAssetUris: options.videoFaceAssetUris,
             openingFrame: openingFrameUrl !== null,
             continueFromVideoUrl: options.videoContinueFromUrl,
             outfitImageUrl: options.outfitImageUrl,

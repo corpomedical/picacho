@@ -18,6 +18,7 @@ import { VoicePreviewButton } from "@/components/voice-preview-button";
 import { LocalDate } from "@/components/local-date";
 import { QuietVideo } from "@/components/quiet-video";
 import { ExpressionSetPanel, type ExpressionSlotView } from "@/components/expression-set-panel";
+import { FaceVerificationPanel } from "@/components/face-verification-panel";
 import type { ExpressionSlot } from "@/lib/characters/expression-set";
 
 // `url` is the real file (lightbox, and the anchor a generation uses);
@@ -116,6 +117,7 @@ export function CharacterForm({
   recentRenders,
   stats,
   expressionSet,
+  faceNotice,
 }: {
   userId: string;
   initial?: Initial & { voice_id?: string | null; outfit_description?: string | null };
@@ -142,6 +144,8 @@ export function CharacterForm({
   stats?: { renders: number; meanIdentity: number | null; lastWorkedAt: string | null };
   /** The expression set's close-ups, by slot (expression-set-panel.tsx). */
   expressionSet?: Partial<Record<ExpressionSlot, ExpressionSlotView>>;
+  /** How the face check just ended, from the callback's ?face= (face-verification-panel.tsx). */
+  faceNotice?: string;
 }) {
   const { t } = useLocale();
   const c = t.character;
@@ -818,6 +822,10 @@ export function CharacterForm({
           initial={expressionSet ?? {}}
         />
       )}
+
+      {/* "Verify it's you" (lib/faces/, 2026-09-19): hidden unless face
+          verification is on for this account — the panel asks. */}
+      {initial?.id && <FaceVerificationPanel characterId={initial.id} notice={faceNotice} />}
 
       {/* The photos never fold while creating: giving the character a face is
           the one thing that cannot be put off, and on a fresh page it is the

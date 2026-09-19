@@ -1487,6 +1487,8 @@ type CharacterOption = {
   hasOutfit?: boolean;
   // true = photoreal, false = illustrated, null/undefined = unknown.
   photoreal?: boolean | null;
+  // The person's own face, verified on BytePlus (lib/faces/): Seedance takes it.
+  faceVerified?: boolean;
 };
 
 export type VideoModelOption = {
@@ -4485,6 +4487,7 @@ function GenerateFormInner({
             hasOutfit: Boolean(currentCharacter.hasOutfit),
             outfitOn: useOutfit,
             photoreal: currentCharacter.photoreal ?? null,
+            faceVerified: currentCharacter.faceVerified ?? false,
           }
         : null,
       companionsCount: companionCharacterIds.length,

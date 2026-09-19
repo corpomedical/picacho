@@ -11,10 +11,10 @@ export default async function EditCharacterPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; face?: string }>;
 }) {
   const { id } = await params;
-  const { error } = await searchParams;
+  const { error, face } = await searchParams;
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) redirect("/login");
@@ -143,6 +143,7 @@ export default async function EditCharacterPage({
     <div>
       <CharacterForm
         expressionSet={expressionSet}
+        faceNotice={face === "verified" || face === "failed" || face === "expired" ? face : undefined}
         userId={userData.user.id}
         initial={profile}
         recentRenders={recentRenders}

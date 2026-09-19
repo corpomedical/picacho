@@ -87,7 +87,14 @@ export async function submitVideoJob(
   // one silently leaves the other on the old lane. Only asked for models the
   // choice could possibly apply to, so nothing else pays for the read.
   const chosen = isByteplusCapable(modelId) ? await seedanceLaneChoice() : null;
-  const provider = videoProviderFor(modelId, chosen);
+  // A VERIFIED FACE (lib/faces/, 2026-09-19) can only ride the BytePlus lane
+  // — its asset ids mean nothing to fal — so a send carrying them goes there
+  // whenever the key exists, whatever the lane switch says. The switch keeps
+  // ordinary customers' renders from changing provider unannounced; a send
+  // with asset ids comes only from someone who passed the face check, behind
+  // its own `face_verification` switch, and on fal it would be refused.
+  const withFace = (options.faceAssetUris?.length ?? 0) > 0 && isByteplusCapable(modelId) && Boolean(process.env.BYTEPLUS_ARK_API_KEY);
+  const provider = withFace ? "byteplus" : videoProviderFor(modelId, chosen);
   if (provider === "fal") {
     return { ...(await submitFalVideoJob(prompt, modelId, options)), provider };
   }
@@ -102,12 +109,17 @@ export async function submitVideoJob(
   // outfit image while its citation line still said "@Image5 shows only an
   // outfit" — pointing the model at a photo of someone's face, or nothing.
   // byteplus.ts states the cap is the caller's job; Seedance budgets 4.
+  // A verified face's asset URIs stand where the photographs would — the same
+  // image_url parts, the same "@Image1" citation (BytePlus's own example
+  // passes asset://<id> in content[].image_url.url).
   const references = (
-    options.referenceImageUrls?.length
-      ? options.referenceImageUrls
-      : options.characterAnchorImageUrl
-        ? [options.characterAnchorImageUrl]
-        : []
+    withFace
+      ? options.faceAssetUris!
+      : options.referenceImageUrls?.length
+        ? options.referenceImageUrls
+        : options.characterAnchorImageUrl
+          ? [options.characterAnchorImageUrl]
+          : []
   ).slice(0, 4);
   const outfit = references.length < 4 ? options.outfitImageUrl : undefined;
   const prop = references.length + (outfit ? 1 : 0) < 4 ? options.propImageUrl : undefined;

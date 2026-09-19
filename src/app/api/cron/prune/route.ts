@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { pruneRateHits } from "@/lib/rate-hits";
+import { retryFaceGroupDeletions } from "@/lib/faces/run";
 
 // The daily prune (2026-09-16): the limiter's rows older than it ever
 // counts (lib/rate-hits.ts), for everyone. The limiter prunes only the
 // bucket it is asked about, so without this a feature a person never used
 // again kept their rows for good.
+//
+// And (2026-09-19) the face deletions BytePlus could not take when someone
+// withdrew their face or deleted their account — retried every day until
+// done (lib/faces/run.ts). Owed deletions of a person's face are not left to
+// chance.
 //
 // Same auth as the other crons: Vercel Cron sends Authorization: Bearer
 // CRON_SECRET. Fails closed when the secret is unset.
@@ -20,8 +26,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const rateHits = await pruneRateHits(createAdminClient());
+  const admin = createAdminClient();
+  const rateHits = await pruneRateHits(admin);
   if (rateHits.error) console.error("prune: rate hits stopped:", rateHits.error, { removed: rateHits.removed });
   else console.info("prune: rate hits", { removed: rateHits.removed, done: rateHits.done });
-  return NextResponse.json({ rateHits }, { status: rateHits.error ? 500 : 200 });
+  const faces = await retryFaceGroupDeletions(admin);
+  if (faces.deleted || faces.left) console.info("prune: owed face deletions", faces);
+  return NextResponse.json({ rateHits, faces }, { status: rateHits.error ? 500 : 200 });
 }

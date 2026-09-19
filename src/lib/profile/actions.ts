@@ -15,6 +15,7 @@ import { rateLimited } from "@/lib/rate-limit";
 // recursed into the Layers subfolder) — one implementation now serves both.
 import { removeAllUserStorage } from "@/lib/profile/storage-buckets";
 import { removeUserRateHits } from "@/lib/rate-hits";
+import { deleteUserFaces } from "@/lib/faces/run";
 
 type ActionResult = { error: string | null };
 
@@ -481,6 +482,13 @@ export async function deleteAccount(formData: FormData) {
   // pointing at deleted photos, a History of dead links, no retry path. The
   // flipped order's worst case is the account gone with its files briefly
   // orphaned — which the sweep's own best-effort contract already accepts.
+  // A verified face lives at BytePlus, not in our database, so the cascade
+  // below never reaches it. Withdrawn first, while the rows that name it still
+  // exist: deleted there, or queued in the one table that outlives the account
+  // for the daily prune to finish (lib/faces/run.ts). Best-effort by design —
+  // it never blocks the account's own deletion.
+  await deleteUserFaces(admin, userId);
+
   const { error } = await admin.auth.admin.deleteUser(userId);
 
   if (error) {

@@ -35,6 +35,11 @@ export type VideoGenerationOptions = {
   // must then send it as it is — fal's reframe repaints edges, has refused
   // photoreal faces (2026-08-19), and would undo the face check it passed.
   openingFrame?: boolean;
+  // A verified person's own character as BytePlus asset URIs (lib/faces/,
+  // 2026-09-19). Only the BytePlus lane can use them — fal's schema has no
+  // field for an asset id — so a send carrying them goes there
+  // (video-queue.ts), and fal never reads this.
+  faceAssetUris?: string[];
   // Clip continuation (2026-08-21, verified live before wiring): a prior
   // finished clip passed as a VIDEO reference — Seedance's @Video citation
   // makes the new shot pick up that clip's world (setting, light, wardrobe)

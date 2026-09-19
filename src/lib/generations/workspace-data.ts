@@ -27,6 +27,10 @@ export type CharacterOption = {
   // Render style for the Seedance lane rule (Send Receipt P3):
   // true = photoreal, false = illustrated, null = unknown (heuristic rules).
   photoreal: boolean | null;
+  // This person's own face, verified on BytePlus, with photos BytePlus has
+  // accepted (lib/faces/, 2026-09-19): Seedance takes this character, so the
+  // real-face warning has nothing to warn about.
+  faceVerified: boolean;
 };
 
 export type VideoModelOption = {
@@ -150,6 +154,16 @@ export async function getGenerateWorkspaceData(
   // review). Both fail open inside.
   const defaultsRead = readGenerationDefaults(supabase, userId ?? "");
   const notifyRead = readRenderNotifyPrefs(supabase, userId ?? "");
+  // Characters whose face BytePlus has verified and accepted photos for
+  // (lib/faces/). Fails open to "none" — a missing table (face-verification.sql
+  // not yet run) or a blink costs a warning that would have shown anyway.
+  const verifiedFacesRead: Promise<Set<string>> = userId
+    ? Promise.resolve(
+        supabase.from("face_assets").select("character_id").eq("user_id", userId).eq("status", "active"),
+      )
+        .then(({ data, error }) => new Set(error ? [] : ((data ?? []) as { character_id: string }[]).map((r) => r.character_id)))
+        .catch(() => new Set<string>())
+    : Promise.resolve(new Set<string>());
   const [characters, videoModelSetting, profile] = await Promise.all([
     // No user, no characters — and no query. With userId undefined this
     // used to fire `.eq("user_id", undefined)`, which Postgres rejects as
@@ -181,6 +195,7 @@ export async function getGenerateWorkspaceData(
   ]);
 
   const hasCharacter = Boolean(characters && characters.length > 0);
+  const verifiedFaces = await verifiedFacesRead;
 
   // Reference photos, signed up front so the storyboard/multi-reference
   // pickers in the composer (Kling advanced options) have something to show
@@ -202,6 +217,7 @@ export async function getGenerateWorkspaceData(
     hasOutfit: (((c.outfit_image_urls as string[] | null) ?? []).length > 0),
     photoreal:
       c.render_style === "photoreal" ? true : c.render_style === "illustrated" ? false : null,
+    faceVerified: verifiedFaces.has(c.id as string),
   }));
 
   const globalDefaultVideoModelId = videoModelSetting?.value ?? "kling";

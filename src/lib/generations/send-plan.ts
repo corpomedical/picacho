@@ -437,6 +437,12 @@ export type ResolveInput = {
     outfitOn: boolean;
     /** character_profiles.render style once P3 lands; null/undefined = unknown */
     photoreal?: boolean | null;
+    /**
+     * The person's own face, verified on BytePlus with accepted photos
+     * (lib/faces/, 2026-09-19). Seedance takes it — the send rides as asset
+     * ids on the BytePlus lane — so the real-face warning does not apply.
+     */
+    faceVerified?: boolean | null;
   };
   companionsCount: number;
   attachments: {
@@ -957,10 +963,15 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
   // photoreal flag is KNOWN, key on it; when unknown (null/undefined), fall
   // back to today's referencePhotos-length heuristic — the rule must never
   // have a coverage gap (adversarial-review requirement).
+  // A verified face (lib/faces/) is the one photoreal character these models
+  // take — unless a face ATTACHMENT rides instead of the character's own
+  // photos, which no verification covers.
+  const verifiedFaceRides = character?.faceVerified === true && !referenceAsIdentity;
   if (
     input.contentType === "video" &&
     caps?.photorealPolicy === "rejects" &&
-    !isMulti
+    !isMulti &&
+    !verifiedFaceRides
   ) {
     const photorealKnown = character?.photoreal === true;
     // Same "never leave a coverage gap" rule, extended to the lane opened

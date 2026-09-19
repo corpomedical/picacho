@@ -124,7 +124,8 @@ import {
   VIDEO_MODELS,
   VIDEO_MODELS_BY_PRICE,
 } from "@/lib/generations/providers/video-models";
-import { videoProviderFor } from "@/lib/generations/providers/video-provider";
+import { isByteplusCapable, videoProviderFor } from "@/lib/generations/providers/video-provider";
+import { faceAssetUrisFor, isFaceVerificationEnabled } from "@/lib/faces/run";
 import { seedanceLaneChoice } from "@/lib/generations/providers/lane-setting";
 import { resolveVideoResolution } from "@/lib/generations/providers/video-resolution";
 // The one function that turns this request's validated facts into its price —
@@ -2067,6 +2068,22 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         }
       }
 
+      // FACE VERIFICATION (lib/faces/, 2026-09-19). A person who passed the
+      // live face check on BytePlus sends their OWN character to Seedance as
+      // asset ids, which Seedance takes where it refuses the photographs.
+      // Only the verifying account's own renders ever carry them (BytePlus
+      // Usage Rules 5.2); empty for everyone else, and one flag read for
+      // sends that are not a single character on Seedance.
+      let videoFaceAssetUris: string[] | undefined;
+      // Not when an attached photo is the identity: the verification covers
+      // this character's own photos, never an upload (send-plan.ts says so too).
+      if (contentType === "video" && characterId && !wantsMultiCharacter && !attachmentReferenceUrl && isByteplusCapable(videoModelId)) {
+        if (await isFaceVerificationEnabled(supabase)) {
+          const uris = await faceAssetUrisFor(createAdminClient(), userData.user.id, characterId);
+          if (uris.length > 0) videoFaceAssetUris = uris;
+        }
+      }
+
       const result = await runRealPipeline(
         promptForPipeline,
         characterForPipeline,
@@ -2074,6 +2091,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           contentType,
           videoModelId,
           imageModelId,
+          videoFaceAssetUris,
           makeOpeningFrame: makeOpeningFrameForSend,
           referenceImageUrl,
           referenceImageUrls,

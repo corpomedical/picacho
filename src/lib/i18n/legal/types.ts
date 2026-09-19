@@ -1,4 +1,6 @@
 export type LegalSection = {
+  /** An anchor other pages link to (the face check's consent links #facial-information). */
+  id?: string;
   heading: string;
   paragraphs: string[];
   // Visual emphasis for especially critical rules (e.g. the Content

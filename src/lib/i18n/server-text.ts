@@ -206,6 +206,16 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   // (recast/messages.ts), and the progress line while the parts are joined
   // (chain-run.ts).
   "This stretch can't be split into parts cleanly — choose 15 seconds of it. Nothing was charged.": "recastChainNoPlan",
+  // Face verification, "Verify it's you" (lib/faces/messages.ts, 2026-09-19).
+  "Face verification is in private testing.": "faceNotOpen",
+  "Face verification isn't available right now.": "faceUnavailable",
+  "Face verification needs its BytePlus access keys first.": "faceNotConfigured",
+  "Tick the box to agree before the face check.": "faceNeedsConsent",
+  "Add a photo of yourself to this character first.": "faceNeedsPhoto",
+  "Your face is already verified. Remove it first to verify again.": "faceAlreadyVerified",
+  "Verify your face first.": "faceNotVerified",
+  "You're starting face checks quickly — give it a minute.": "faceTooFast",
+  "Couldn't start the face check — try again.": "faceCouldntStart",
   "Joining the parts": "stageRecastJoin",
   "This set couldn't be built from that photo, and the build is back in your allowance. A photo that shows more of the place may work better.":
     "setPhotoBuildFailed",

@@ -135,12 +135,18 @@ const COLUMNS = {
   // from, so a failed one can be rendered again after a reload
   // (applied/2026-09-16/helios-take-frames.sql).
   location_set_shots: ["set_id", "generation_id", "user_id", "created_at", "camera", "words", "rig", "rig_check", "take"],
+  // Face verification, "Verify it's you" (pending/face-verification.sql,
+  // 2026-09-19): the consent records, the photos sent, and the deletions
+  // still owed at BytePlus. Every reader fails open to "not verified".
+  face_verifications: ["user_id", "character_id", "status", "consented_at", "consent_notice_version", "consent_method", "state", "byted_token", "group_id"],
+  face_assets: ["user_id", "verification_id", "character_id", "photo_path", "asset_id", "status"],
+  face_group_deletions: ["group_id", "attempts", "last_error"],
 };
 
 // Feature-flag rows the code reads by key. A missing row reads as OFF
 // everywhere (every reader defaults closed), which is why nobody would
 // notice — the switch simply never appears in Admin > Feature flags.
-const FLAGS = ["astra_sets", "astra_photo_sets", "astra_previz", "experimental_models", "chat_agent", "voice_mode", "astra_recce", "recast", "recast_lock"];
+const FLAGS = ["astra_sets", "astra_photo_sets", "astra_previz", "experimental_models", "chat_agent", "voice_mode", "astra_recce", "recast", "recast_lock", "face_verification"];
 
 // RPCs the app calls (schema.sql + pending files).
 const RPCS = [
