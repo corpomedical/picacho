@@ -1912,7 +1912,7 @@ export async function advanceGeneration(
             ...row.payload,
             chainError: {
               at: new Date().toISOString(),
-              message: err.message.slice(0, 1000),
+              message: err.message.slice(0, 1500),
               count: (row.payload.chainError?.count ?? 0) + 1,
             },
           });

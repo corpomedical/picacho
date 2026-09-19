@@ -34,5 +34,7 @@ export function encoderFailure(what: string, err: unknown): ChainRetry {
       : typeof e.signal === "string"
         ? `killed (${e.signal})`
         : `exit ${typeof e.code === "number" ? e.code : "?"}`;
-  return new ChainRetry(`${what}: ffmpeg ${how}${said ? `: ${said.slice(-600)}` : ""}`);
+  // 1,200 from the end: ffmpeg 7 follows the line that says why with six
+  // more about threads stopping, and 600 cut the reason off (2026-09-19).
+  return new ChainRetry(`${what}: ffmpeg ${how}${said ? `: ${said.slice(-1200)}` : ""}`);
 }

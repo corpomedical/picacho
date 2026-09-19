@@ -369,7 +369,13 @@ export function chainJoinArgs(input: {
   const chains = input.spans
     .map((s, i) => {
       const hold = i === lastIndex && input.hold > 0 ? `,tpad=stop=${input.hold}:stop_mode=clone` : "";
-      return `[${s.piece}:v]fps=${CHAIN_FPS},trim=start_frame=${s.from}:end_frame=${s.to},setpts=PTS-STARTPTS,scale=${width}:${height},setsar=1,format=yuv420p${hold}[v${i}]`;
+      // The rate is said AGAIN after setpts: from ffmpeg 7 setpts marks its
+      // output's rate unknown (1/0), and xfade refuses to start on anything
+      // but a constant rate. The 6.0 build on a Mac keeps the rate, so the
+      // join ran there and failed on Vercel's newer build (2026-09-19, the
+      // first two real 30 s takes: "Failed to configure output pad on
+      // Parsed_xfade", Invalid argument).
+      return `[${s.piece}:v]fps=${CHAIN_FPS},trim=start_frame=${s.from}:end_frame=${s.to},setpts=PTS-STARTPTS,fps=${CHAIN_FPS},scale=${width}:${height},setsar=1,format=yuv420p${hold}[v${i}]`;
     })
     .join(";");
   // Each dissolve starts where the take so far ends, less the overlap.

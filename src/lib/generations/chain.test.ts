@@ -337,7 +337,42 @@ describe("why the encoder failed", () => {
     const stderr = Buffer.from(`${"frame noise ".repeat(200)}Cannot allocate memory`);
     const failure = encoderFailure("reading join 1", Object.assign(new Error(command), { code: 1, stderr }));
     expect(failure.message.endsWith("Cannot allocate memory")).toBe(true);
-    expect(failure.message.length).toBeLessThan(700);
+    expect(failure.message.length).toBeLessThan(1300);
+  });
+
+  it("keeps the line that says why, even with ffmpeg 7's thread-stopping lines after it", () => {
+    // What Vercel's build printed for the first two real 30 s takes.
+    const stderr = [
+      "[Parsed_xfade_19 @ 0x2a8a0e80] The inputs needs to be a constant frame rate; current rate of 1/0 is invalid",
+      "[Parsed_xfade_19 @ 0x2a8a0e80] Failed to configure output pad on Parsed_xfade_19",
+      "[fc#0 @ 0x2a8011c0] Error reinitializing filters!",
+      "[fc#0 @ 0x2a8011c0] Task finished with error code: -22 (Invalid argument)",
+      "[fc#0 @ 0x2a8011c0] Terminating thread with return code -22 (Invalid argument)",
+      "[vost#0:0/libx264 @ 0x2ae338c0] Could not open encoder before EOF",
+      "[vost#0:0/libx264 @ 0x2ae338c0] Task finished with error code: -22 (Invalid argument)",
+      "[vost#0:0/libx264 @ 0x2ae338c0] Terminating thread with return code -22 (Invalid argument)",
+      "[out#0/mp4 @ 0x2a914840] Nothing was written into output file, because at least one of its streams received no packets.",
+    ].join("\n");
+    const failure = encoderFailure("joining the pieces", Object.assign(new Error(command), { code: 234, stderr }));
+    expect(failure.message).toContain("The inputs needs to be a constant frame rate");
+  });
+
+  it("says the rate again after every timestamp reset before a dissolve — ffmpeg 7's xfade needs it", () => {
+    // ffmpeg 7's setpts marks its output rate unknown; the 6.0 encoder in
+    // these tests does not, so only the arguments can show this.
+    const args = chainJoinArgs({
+      pieces: ["a.mp4", "b.mp4", "c.mp4"],
+      spans: [{ piece: 0, from: 0, to: 316 }, { piece: 1, from: 16, to: 108 }, { piece: 2, from: 6, to: 329 }],
+      hold: 1,
+      window: "w.mp4",
+      totalFrames: 720,
+      size: { width: 1916, height: 1080 },
+      output: "out.mp4",
+    });
+    const graph = args[args.indexOf("-filter_complex") + 1];
+    const chains = graph.split(";").filter((c) => c.includes("setpts"));
+    expect(chains).toHaveLength(3);
+    for (const c of chains) expect(c).toContain(`setpts=PTS-STARTPTS,fps=${CHAIN_FPS},`);
   });
 
   it("names a timeout, a kill and a failed start apart", () => {
