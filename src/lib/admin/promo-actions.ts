@@ -1,5 +1,6 @@
 "use server";
 
+import Stripe from "stripe";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { stripe } from "@/lib/stripe/client";
@@ -12,6 +13,12 @@ import { requireAdmin } from "@/lib/admin/require-admin";
 // code can't be redeemed through any path.
 
 const CODE_RE = /^[A-Z0-9]{3,24}$/;
+
+// Stripe's "no such object". Deleting twice must be a no-op, as it is for a
+// deleted account's billing (lib/stripe/cancel-customer.ts).
+function isMissing(err: unknown): boolean {
+  return err instanceof Stripe.errors.StripeError && err.code === "resource_missing";
+}
 
 export async function createPromoCode(formData: FormData) {
   const { supabase } = await requireAdmin();
@@ -56,6 +63,11 @@ export async function createPromoCode(formData: FormData) {
     .single();
 
   if (insertError || !row) {
+    // A duplicate is the admin's to fix, and the banner says so. Anything
+    // else is logged here, where the banner's generic line sends them.
+    if (insertError?.code !== "23505") {
+      console.error("createPromoCode: saving the code failed", insertError);
+    }
     fail(
       insertError?.code === "23505"
         ? `The code ${code} already exists.`
@@ -118,6 +130,7 @@ export async function createPromoCode(formData: FormData) {
       .update({ stripe_coupon_id: coupon.id, stripe_promotion_code_id: promotionCode.id })
       .eq("id", row.id);
     if (patchError) {
+      console.error("createPromoCode: recording the Stripe ids failed — rolling Stripe back", patchError);
       // The write-back failed, so nothing here knows the Stripe ids — undo
       // Stripe (deactivate the code, delete the coupon) so no discount can
       // exist that this page can't see or turn off. Cleanup failures are
@@ -135,6 +148,7 @@ export async function createPromoCode(formData: FormData) {
       failMessage = `Couldn't record the Stripe ids (${patchError.message.slice(0, 160)}) — the Stripe side was rolled back, nothing was saved. Try again.`;
     }
   } catch (err) {
+    console.error("createPromoCode: Stripe couldn't create the code — removing the row", err);
     const message = err instanceof Error ? err.message : "Stripe rejected the code.";
     failMessage = `Stripe couldn't create the code: ${message.slice(0, 200)}`;
   }
@@ -167,6 +181,7 @@ export async function setPromoCodeActive(formData: FormData) {
     try {
       await stripe.promotionCodes.update(promo!.stripe_promotion_code_id, { active });
     } catch (err) {
+      console.error("setPromoCodeActive: Stripe update failed — nothing changed", err);
       const message = err instanceof Error ? err.message : "Stripe update failed.";
       redirect(`/admin/promo?error=${encodeURIComponent(message.slice(0, 200))}`);
     }
@@ -215,7 +230,10 @@ export async function updatePromoCode(formData: FormData) {
     .from("promo_codes")
     .update({ rep_name: repName, commission_percent: commissionPercent, notes })
     .eq("id", id);
-  if (error) fail(error.message);
+  if (error) {
+    console.error("updatePromoCode: update failed — nothing changed", error);
+    fail(error.message);
+  }
 
   // Keep Stripe's own labelling in step, so the dashboard doesn't show a name
   // that stopped being true here. Best-effort: the rename is cosmetic, and
@@ -267,15 +285,26 @@ export async function deletePromoCode(formData: FormData) {
   if (!promo) redirect(`/admin/promo?error=${encodeURIComponent("Code not found.")}`);
 
   // Stripe first — if it fails, our row stays and the page keeps telling the
-  // truth about a code that is still redeemable.
+  // truth about a code that is still redeemable. Each step looks before it
+  // acts, so deleting again after the row delete below failed gets through:
+  // a promotion code that is already off is left alone, and a coupon that is
+  // already gone counts as deleted.
   try {
     if (promo!.stripe_promotion_code_id) {
-      await stripe.promotionCodes.update(promo!.stripe_promotion_code_id, { active: false });
+      const current = await stripe.promotionCodes.retrieve(promo!.stripe_promotion_code_id);
+      if (current.active) {
+        await stripe.promotionCodes.update(promo!.stripe_promotion_code_id, { active: false });
+      }
     }
     if (promo!.stripe_coupon_id) {
-      await stripe.coupons.del(promo!.stripe_coupon_id);
+      try {
+        await stripe.coupons.del(promo!.stripe_coupon_id);
+      } catch (err) {
+        if (!isMissing(err)) throw err;
+      }
     }
   } catch (err) {
+    console.error("deletePromoCode: Stripe removal failed — nothing deleted", err);
     const message = err instanceof Error ? err.message : "Stripe delete failed.";
     redirect(
       `/admin/promo?error=${encodeURIComponent(
@@ -285,7 +314,17 @@ export async function deletePromoCode(formData: FormData) {
   }
 
   const { error } = await supabase.from("promo_codes").delete().eq("id", id);
-  if (error) redirect(`/admin/promo?error=${encodeURIComponent(error.message)}`);
+  if (error) {
+    // Stripe has already let go of the code. The banner says so rather than
+    // the generic "try again" (admin-error-banner.tsx), and deleting again
+    // finishes the job.
+    console.error("deletePromoCode: row delete failed after Stripe let go of the code", error);
+    redirect(
+      `/admin/promo?error=${encodeURIComponent(
+        `Couldn't remove the code from this list (${error.message}). It WAS already switched off in Stripe and its coupon deleted, so it can't be redeemed — delete it again to clear it from the list.`,
+      )}`,
+    );
+  }
 
   revalidatePath("/admin/promo");
   redirect("/admin/promo");

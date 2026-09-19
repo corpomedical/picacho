@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.60.0",
+    build: 99,
+    date: "2026-09-19",
+    title: "When something fails in Admin, the page says what happened and the server log has why",
+    items: [
+      "When a change in Admin failed (suspending an account, its role, plan, bonus credits or API access, a flag, a setting, an AI model, a voice, a report, feedback, the gallery, a community post, a promo code, an email template or a blast), the page said \"Something went wrong — try again. Details are in the server log.\" Nothing had been written to the log. Every one of those failures is now logged before the page says so.",
+      "Deleting a promo code could fail at the very last step, after Stripe had already switched the code off and deleted its coupon. The page said only \"try again\", and trying again then failed at Stripe every time, so the code stayed on the list for good. The page now says the code can no longer be redeemed, and deleting it again clears it.",
+      "Thirteen of Admin's own messages never reached the page and showed as \"Something went wrong\" instead. Among them: an account billed through Google Play can't be deleted or given a plan from Admin; its bonus credits changed while the page was open; only admin-owned work can go in the public gallery; an email blast is already on its way; and the range the identity threshold accepts. They now show as written, and a test fails if a new message is left off.",
+    ],
+  },
+  {
     version: "1.59.0",
     build: 98,
     date: "2026-09-19",

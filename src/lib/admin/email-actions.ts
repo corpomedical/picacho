@@ -88,7 +88,10 @@ export async function saveEmailTemplate(formData: FormData) {
     },
     { onConflict: "key" },
   );
-  if (error) fail(`Couldn't save the template: ${error.message.slice(0, 160)}`);
+  if (error) {
+    console.error("saveEmailTemplate: upsert failed", error);
+    fail(`Couldn't save the template: ${error.message.slice(0, 160)}`);
+  }
 
   revalidatePath("/admin/emails");
   succeed("Template saved.");
@@ -104,7 +107,10 @@ export async function deleteEmailTemplate(formData: FormData) {
   // email.sql), so deleting a template never erases the record of what was
   // already sent with it.
   const { error } = await admin.from("email_templates").delete().eq("id", id);
-  if (error) fail(`Couldn't delete the template: ${error.message.slice(0, 160)}`);
+  if (error) {
+    console.error("deleteEmailTemplate: delete failed", error);
+    fail(`Couldn't delete the template: ${error.message.slice(0, 160)}`);
+  }
 
   revalidatePath("/admin/emails");
   succeed("Template deleted.");
@@ -149,6 +155,7 @@ export async function sendTestEmail(formData: FormData) {
     html: rendered.html,
     unsubscribeUrl: await unsubscribeUrl(userId),
   });
+  // sendEmail has already logged why (lib/email/send.ts).
   if (error) fail(`Couldn't send the test email: ${error.slice(0, 200)}`);
 
   succeed("Test email sent — check your inbox.");
@@ -235,6 +242,7 @@ export async function sendEmailBlast(formData: FormData) {
   if (planFilter !== null) countQuery = countQuery.eq("plan", planFilter);
   const { count, error: countError } = await countQuery;
   if (countError) {
+    console.error("sendEmailBlast: audience count failed — nothing sent", countError);
     fail(`Couldn't count the audience: ${countError.message.slice(0, 160)}`);
   }
   if (!count) {
@@ -265,7 +273,10 @@ export async function sendEmailBlast(formData: FormData) {
       .order("created_at", { ascending: true })
       .order("id", { ascending: true })
       .range(offset, offset + PAGE - 1);
-    if (error) fail(`Couldn't load the audience: ${error.message.slice(0, 160)}`);
+    if (error) {
+      console.error("sendEmailBlast: audience page read failed — nothing sent", error);
+      fail(`Couldn't load the audience: ${error.message.slice(0, 160)}`);
+    }
     if (!data || data.length === 0) break;
     recipients.push(...(data as Recipient[]));
     // Belt and braces against the count racing signups.
@@ -288,6 +299,7 @@ export async function sendEmailBlast(formData: FormData) {
     p_user_ids: recipients.map((r) => r.id),
   });
   if (confirmError) {
+    console.error("sendEmailBlast: confirmed-address lookup failed — nothing sent", confirmError);
     fail(
       `Couldn't resolve confirmed addresses (apply supabase/applied/2026-09-05/email-truth.sql first): ${confirmError.message.slice(0, 120)}`,
     );
@@ -354,6 +366,7 @@ export async function sendEmailBlast(formData: FormData) {
     .select("id")
     .single();
   if (auditStartError || !auditRow) {
+    console.error("sendEmailBlast: audit row insert failed — nothing sent", auditStartError);
     fail(`Couldn't record the blast before sending — nothing was sent. ${(auditStartError?.message ?? "").slice(0, 120)}`);
   }
 

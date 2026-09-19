@@ -18,7 +18,11 @@
 // that can never be scripted into saying something we didn't write.
 //
 // Kept dependency-light on purpose: two lookup tables in this one file.
-// When an action gains a new fixed message, add it to KNOWN_ERRORS.
+// When an action gains a new fixed message, add it to KNOWN_ERRORS —
+// admin-error-banner.test.ts reads the admin actions and fails until it is.
+// And the generic line promises the details are in the server log, so an
+// action that puts a caught error's text in ?error logs it first (the same
+// test holds every one of them to that).
 
 const KNOWN_ERRORS = new Set<string>([
   // admin/actions.ts
@@ -26,10 +30,18 @@ const KNOWN_ERRORS = new Set<string>([
   "You can't suspend your own account.",
   "You can't delete your own account.",
   "Couldn't erase their email from the promo sales — the account was NOT deleted, and nothing was changed. Try again; details are in the server log.",
+  "This account's subscription is billed through Google Play and can't be cancelled from here — the account was NOT deleted. Have them cancel in the Play Store (or revoke it in the Play Console), then delete.",
   "Invalid role.",
   "You can't remove your own admin role.",
   "Invalid plan.",
+  "This account is billed through Google Play — comping over it would hide a live Google subscription. Have them cancel in the Play Store first, then set the plan.",
   "Bonus credits must be 0 or more.",
+  "That's more than 10,000 bonus credits — if you really mean it, do it in two steps.",
+  "Their bonus credits changed while this page was open (a referral may have landed) — the value was NOT saved. Check the new number and try again.",
+  "Missing generation id.",
+  "Generation not found.",
+  "Only succeeded generations can be featured.",
+  "Only admin-owned generations can be featured — customer content needs a consent mechanism the gallery doesn't have yet.",
   "Value can't be empty.",
   "Label and ElevenLabs voice ID are both required.",
   "Missing model",
@@ -45,6 +57,7 @@ const KNOWN_ERRORS = new Set<string>([
   "Duration must be 0-36 months (0 = forever).",
   "Commission must be 0-100%.",
   "Code not found.",
+  "Couldn't save the code.",
   // admin/email-actions.ts
   "Key must be 2-40 characters: lowercase letters, numbers and hyphens.",
   "Subject is required (200 characters max).",
@@ -56,6 +69,7 @@ const KNOWN_ERRORS = new Set<string>([
   "Confirmation text doesn't match — a service notice must be confirmed as service:<audience>. Nothing was sent.",
   "No recipients match that audience (opted-out and suspended accounts are excluded).",
   "No recipients match that audience (suspended accounts are excluded; service notices include opted-out accounts).",
+  "A blast from this account is already in flight (or just ran) — check Recent sends before retrying. Nothing was sent.",
   "The blast could not be sent — nothing went out. Check RESEND_API_KEY and the server log.",
 ]);
 
@@ -84,6 +98,10 @@ const PREFIX_SUMMARIES: [string, string][] = [
     "Couldn't remove the code from Stripe",
     "Couldn't remove the code from Stripe, so nothing was deleted — try again.",
   ],
+  [
+    "Couldn't remove the code from this list",
+    "Couldn't remove the code from this list — but it WAS already switched off in Stripe and its coupon deleted, so it can't be redeemed any more, even if it still shows as active here. Delete it again to clear it. Details are in the server log.",
+  ],
   ["The code ", "That code already exists."],
   [
     "Couldn't record the Stripe ids",
@@ -96,6 +114,12 @@ const PREFIX_SUMMARIES: [string, string][] = [
   [
     "Unknown image model",
     "Unknown image model — pick one of the ids from the AI providers page.",
+  ],
+  // The range is MIN/MAX_IDENTITY_THRESHOLD (lib/generations/identity-gate.ts);
+  // admin-error-banner.test.ts fails if they move and this doesn't.
+  [
+    "identity_gate_threshold must be",
+    "identity_gate_threshold must be a whole number from 0 to 95 (0 turns the gate off).",
   ],
   // admin/email-actions.ts
   [
@@ -117,6 +141,14 @@ const PREFIX_SUMMARIES: [string, string][] = [
   [
     "Couldn't load the audience",
     "Couldn't load the audience — check that supabase/applied/2026-08-19/email.sql has been applied. Details are in the server log.",
+  ],
+  [
+    "Couldn't resolve confirmed addresses",
+    "Couldn't resolve the audience's confirmed addresses — nothing was sent. Check that supabase/applied/2026-09-05/email-truth.sql has been applied. Details are in the server log.",
+  ],
+  [
+    "Couldn't record the blast before sending",
+    "Couldn't record the blast before sending — nothing was sent. Details are in the server log.",
   ],
   [
     "That audience has ",

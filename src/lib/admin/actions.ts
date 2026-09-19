@@ -77,6 +77,7 @@ export async function setUserStatus(formData: FormData) {
   });
   if (banError) {
     // Nothing was changed yet — plain failure, both layers untouched.
+    console.error("setUserStatus: login ban update failed — nothing changed", banError);
     redirect(`${redirectTo}?error=${encodeURIComponent(banError.message)}`);
   }
 
@@ -87,6 +88,10 @@ export async function setUserStatus(formData: FormData) {
     // than reporting only half the truth.
     const { error: rollbackError } = await admin.auth.admin.updateUserById(userId, {
       ban_duration: status === "suspended" ? "none" : "876000h",
+    });
+    console.error("setUserStatus: profile status update failed after the login ban changed", {
+      error,
+      rollbackError,
     });
     redirect(
       `${redirectTo}?error=${encodeURIComponent(
@@ -242,6 +247,7 @@ export async function toggleFeatureFlag(formData: FormData) {
     .eq("key", key);
 
   if (error) {
+    console.error("toggleFeatureFlag: flag update failed", error);
     redirect(`/admin/flags?error=${encodeURIComponent(error.message)}`);
   }
 
@@ -325,6 +331,7 @@ export async function updateAppSetting(formData: FormData) {
     .eq("key", key);
 
   if (error) {
+    console.error("updateAppSetting: setting update failed", error);
     redirect(`/admin/settings?error=${encodeURIComponent(error.message)}`);
   }
 
@@ -350,6 +357,7 @@ export async function setUserRole(formData: FormData) {
 
   const { error } = await admin.from("profiles").update({ role }).eq("id", userId);
   if (error) {
+    console.error("setUserRole: role update failed", error);
     redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
   }
 
@@ -367,6 +375,7 @@ export async function setVideoModel(formData: FormData) {
     .eq("key", "video_model");
 
   if (error) {
+    console.error("setVideoModel: video model update failed", error);
     redirect(`/admin/providers?error=${encodeURIComponent(error.message)}`);
   }
 
@@ -398,6 +407,7 @@ export async function setSeedanceProvider(formData: FormData) {
   );
 
   if (error) {
+    console.error("setSeedanceProvider: provider upsert failed", error);
     redirect(`/admin/providers?error=${encodeURIComponent(error.message)}`);
   }
 
@@ -415,6 +425,7 @@ export async function setImageModel(formData: FormData) {
     .eq("key", "image_model");
 
   if (error) {
+    console.error("setImageModel: image model update failed", error);
     redirect(`/admin/providers?error=${encodeURIComponent(error.message)}`);
   }
 
@@ -445,6 +456,7 @@ export async function addVoicePreset(formData: FormData) {
   });
 
   if (error) {
+    console.error("addVoicePreset: insert failed", error);
     redirect(`/admin/voices?error=${encodeURIComponent(error.message)}`);
   }
 
@@ -457,6 +469,7 @@ export async function deleteVoicePreset(formData: FormData) {
 
   const { error } = await supabase.from("voice_presets").delete().eq("id", id);
   if (error) {
+    console.error("deleteVoicePreset: delete failed", error);
     redirect(`/admin/voices?error=${encodeURIComponent(error.message)}`);
   }
 
@@ -484,6 +497,7 @@ export async function setGenerationReportStatus(formData: FormData) {
     .eq("id", reportId);
 
   if (error) {
+    console.error("setGenerationReportStatus: status update failed", error);
     redirect(`/admin/reports?error=${encodeURIComponent(error.message)}`);
   }
 
@@ -507,6 +521,7 @@ export async function setFeedbackStatus(formData: FormData) {
     .eq("id", feedbackId);
 
   if (error) {
+    console.error("setFeedbackStatus: status update failed", error);
     redirect(`/admin/feedback?error=${encodeURIComponent(error.message)}`);
   }
 
@@ -545,10 +560,12 @@ export async function setGenerationFeatured(formData: FormData) {
     .select("id, user_id, status")
     .eq("id", generationId)
     .maybeSingle();
-  if (rowError || !row) {
-    redirect(
-      `${redirectTo}?error=${encodeURIComponent(rowError?.message ?? "Generation not found.")}`,
-    );
+  if (rowError) {
+    console.error("setGenerationFeatured: generation lookup failed", rowError);
+    redirect(`${redirectTo}?error=${encodeURIComponent(rowError.message)}`);
+  }
+  if (!row) {
+    redirect(`${redirectTo}?error=${encodeURIComponent("Generation not found.")}`);
   }
 
   if (featured) {
@@ -578,6 +595,7 @@ export async function setGenerationFeatured(formData: FormData) {
     .update({ featured_at: featured ? new Date().toISOString() : null })
     .eq("id", generationId);
   if (error) {
+    console.error("setGenerationFeatured: featured_at update failed", error);
     redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
   }
 
@@ -630,6 +648,7 @@ export async function setUserPlan(formData: FormData) {
     .update({ plan, plan_status: null, plan_source: null })
     .eq("id", userId);
   if (error) {
+    console.error("setUserPlan: plan update failed", error);
     redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
   }
 
@@ -673,6 +692,7 @@ export async function setBonusCredits(formData: FormData) {
   }
   const { data: updated, error } = await write.select("id");
   if (error) {
+    console.error("setBonusCredits: bonus credits update failed", error);
     redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
   }
   if (!updated?.length) {
@@ -710,6 +730,7 @@ export async function setApiAccess(formData: FormData) {
     .update({ api_access: enabled })
     .eq("id", userId);
   if (error) {
+    console.error("setApiAccess: api_access update failed", error);
     redirect(`/admin/users/${userId}?error=${encodeURIComponent(error.message)}`);
   }
 
@@ -814,6 +835,7 @@ export async function setCommunityPostModeration(formData: FormData) {
     .eq("id", postId);
 
   if (error) {
+    console.error("setCommunityPostModeration: hidden_at update failed", error);
     redirect(`/admin/moderation?error=${encodeURIComponent(error.message)}`);
   }
 
