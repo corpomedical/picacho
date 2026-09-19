@@ -33,10 +33,12 @@ import type { PlanId } from "../plans";
 // decides who sees it once on. It opens to paid plans only after the
 // operator's eval parts A–D pass (docs/ASTRA_SETS.md, section 4) —
 // a code change on purpose, so widening is a reviewed commit and not a
-// toggle flipped on a hunch. Opened, every paid plan builds sets and shoots
-// stills, but takes and films — start-and-end-frame clips — stay Studio and
-// Elite's (plans.ts advancedVideoPlan, 2026-09-16) unless that rule changes
-// too; the set page says so, and the pricing copy must before this flips.
+// toggle flipped on a hunch. Opened, every paid plan builds sets, shoots
+// stills, takes clips and renders films — the operator opened takes and
+// films to every paid plan on 2026-09-19 ("Open to all plans"), so the one
+// gate below (setTakesEligible) is the sets gate itself. The composer's own
+// storyboard lane stays Studio-and-up (plans.ts advancedVideoPlan): a set
+// take passes its frames check as a server-built request, never by plan.
 export const SETS_OPEN_TO_PLANS = false;
 
 export const SET_BUILDS_MONTHLY_LIMITS = {
@@ -53,6 +55,15 @@ export function setsEligible(plan: string | null | undefined, isAdmin: boolean):
   if (!SETS_OPEN_TO_PLANS) return false;
   const limit = SET_BUILDS_MONTHLY_LIMITS[(plan ?? "none") as PlanId] ?? 0;
   return limit > 0;
+}
+
+/**
+ * Takes and films: every plan that can enter Helios (the operator's
+ * 2026-09-19 "Open to all plans"). Its own name, not an alias in callers,
+ * so tightening it again is one line here.
+ */
+export function setTakesEligible(plan: string | null | undefined, isAdmin: boolean): boolean {
+  return setsEligible(plan, isAdmin);
 }
 
 /** -1 = unlimited (admin). Infinity would arrive at the client as null. */

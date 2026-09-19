@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
 import { thumbUrl, toMediaUrl } from "@/lib/media/url";
 import { checkGenerationAllowance } from "@/lib/generations/core";
-import { advancedVideoPlan } from "@/lib/plans";
+import { setTakesEligible } from "@/lib/sets/set-config";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { FILM_MAX_BEATS, normaliseSetFilm } from "@/lib/sets/film";
 import { isSetTakeEngine, SET_TAKE_DEFAULT_ENGINE, takesCredits } from "@/lib/sets/take";
@@ -62,8 +62,8 @@ export async function checkFilmCredits(
   const access = await setsAccess();
   if (access.error !== null) return { error: access.error };
   if (typeof setId !== "string" || !UUID_RE.test(setId)) return { error: SET_NOT_FOUND };
-  // Every beat is a start-and-end-frame clip (plans.ts advancedVideoPlan).
-  if (!advancedVideoPlan(access.plan, access.isAdmin)) return { error: SET_TAKE_NEEDS_PLAN };
+  // Every beat is a take: every paid plan's (set-config.ts setTakesEligible, 2026-09-19).
+  if (!setTakesEligible(access.plan, access.isAdmin)) return { error: SET_TAKE_NEEDS_PLAN };
   const whole = (v: unknown, max: number) => (typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= max ? v : null);
   const clips = whole(count?.clips, FILM_MAX_BEATS);
   const stills = clips === null ? null : whole(count?.stills, clips);

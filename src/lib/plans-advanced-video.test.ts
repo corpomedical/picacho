@@ -26,25 +26,31 @@ describe("everything gated on it asks it", () => {
   const read = (p: string) => readFileSync(join(__dirname, p), "utf8");
 
   it("the server's gate, the composer's lock and the Angle Stage", () => {
-    expect(read("generations/actions.ts")).toContain("if (wantsAdvancedVideoOptions && !advancedVideoPlan(userPlan, isAdmin)) {");
+    // Since 2026-09-19 the gate carries one exception: frames the server
+    // built and plan-gated itself (a Helios take, server-built.ts) — held in
+    // server memory, never a form field, and never for multi-image reference.
+    expect(read("generations/actions.ts")).toContain("if (wantsAdvancedVideoOptions && !advancedVideoPlan(userPlan, isAdmin) && !framesAreServerBuilt) {");
     expect(read("generations/workspace-data.ts")).toContain("const advancedPlanActive = advancedVideoPlan(");
     expect(read("generations/angle-stage-config.ts")).toContain("return advancedVideoPlan(plan, isAdmin);");
   });
 
   it("Helios: a take and a film are refused before anything is shot, and the page is told", () => {
+    // Helios left this rule on 2026-09-19 ("Open to all plans"): its gate is
+    // setTakesEligible — every plan that can enter Helios — still asked
+    // before anything is shot or paid for.
     const actions = read("sets/actions.ts");
     const take = actions.slice(actions.indexOf("export async function takeInSet("), actions.indexOf("// Delete\n"));
-    const gate = take.indexOf("if (!advancedVideoPlan(access.plan, access.isAdmin)) return { error: SET_TAKE_NEEDS_PLAN };");
+    const gate = take.indexOf("if (!setTakesEligible(access.plan, access.isAdmin)) return { error: SET_TAKE_NEEDS_PLAN };");
     expect(gate).toBeGreaterThan(-1);
-    for (const later of ["finishedStillUrl(", "checkGenerationAllowance(", 'rateLimited(userId, "set-take"', "await shootInSet(", "runGeneration(fd)"]) {
+    for (const later of ["finishedStillUrl(", "checkGenerationAllowance(", 'rateLimited(userId, "set-take"', "await shootInSet(", "withServerBuiltFrames(() => runGeneration(fd))"]) {
       expect(take.indexOf(later), later).toBeGreaterThan(gate);
     }
     const film = read("sets/film-actions.ts");
     const check = film.slice(film.indexOf("export async function checkFilmCredits("), film.indexOf("export type TakeStatusRow"));
-    expect(check.indexOf("if (!advancedVideoPlan(access.plan, access.isAdmin)) return { error: SET_TAKE_NEEDS_PLAN };")).toBeLessThan(
+    expect(check.indexOf("if (!setTakesEligible(access.plan, access.isAdmin)) return { error: SET_TAKE_NEEDS_PLAN };")).toBeLessThan(
       check.indexOf("checkGenerationAllowance("),
     );
-    expect(read("sets/data.ts")).toContain("takesOn: advancedVideoPlan(access.plan, access.isAdmin),");
+    expect(read("sets/data.ts")).toContain("takesOn: setTakesEligible(access.plan, access.isAdmin),");
     expect(read("../app/app/sets/[id]/page.tsx")).toContain("takesOn={data.takesOn}");
   });
 

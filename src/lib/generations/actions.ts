@@ -113,6 +113,7 @@ const SHARED_SCENE_INSTRUCTION =
   "Write the scene as already in motion at the very first moment — the action is underway, " +
   "not about to begin, and the character is never standing still in a posed portrait.";
 import { advancedVideoPlan, FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
+import { serverBuiltFrames } from "@/lib/generations/server-built";
 import {
   getVideoModel,
   getDefaultDurationSeconds,
@@ -1310,7 +1311,13 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // server-side, so this can't be bypassed by a direct call even though the
   // UI already hides the toggle for lower plans. (Moved down from Elite-only
   // on 2026-08-12 — keep in sync with workspace-data.ts and lib/pricing.ts.)
-  if (wantsAdvancedVideoOptions && !advancedVideoPlan(userPlan, isAdmin)) {
+  // One exception, and only for the frames: a Helios take's start and end
+  // frames are the server's own, built and plan-gated by takeInSet
+  // (set-config.ts setTakesEligible, every paid plan since 2026-09-19), and
+  // marked in server memory — never by a form field (server-built.ts).
+  // Multi-image reference is nobody's exception.
+  const framesAreServerBuilt = serverBuiltFrames() && referencePhotoPaths.length === 0;
+  if (wantsAdvancedVideoOptions && !advancedVideoPlan(userPlan, isAdmin) && !framesAreServerBuilt) {
     return {
       error:
         "Multi-image reference and storyboard are available on the Studio and Elite plans. Upgrade to use them, or turn these options off.",

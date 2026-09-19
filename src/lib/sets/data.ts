@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { mediaUrl, thumbUrl, toMediaUrl } from "@/lib/media/url";
 import { monthlyWindowStart } from "@/lib/generations/core";
 import { DEFAULT_IDENTITY_THRESHOLD, resolveIdentityThresholdSetting } from "@/lib/generations/identity-gate";
-import { advancedVideoPlan } from "@/lib/plans";
+
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { isPhotoSetsEnabled } from "@/lib/sets/enabled";
 import { readPhotoSources } from "@/lib/sets/photo";
@@ -12,8 +12,7 @@ import {
   setEditsMonthlyLimit,
   SETS_LIST_LIMIT,
   SET_EDITS_MONTH_SCOPE,
-  SET_RESERVED_BRIEF,
-} from "@/lib/sets/set-config";
+  SET_RESERVED_BRIEF, setTakesEligible } from "@/lib/sets/set-config";
 import { readShotCameras } from "@/lib/sets/shot-camera";
 import { readShotWords } from "@/lib/sets/shot-words-store";
 import { seesLookObjects } from "@/lib/sets/look-cutout";
@@ -397,10 +396,10 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     // Match this shot rides the photo switch (docs 3.2), admins only; the
     // page hides the chip otherwise, and matchSetShot checks both again.
     matchOn: access.isAdmin && (await isPhotoSetsEnabled(access.supabase)),
-    // Takes and films are start-and-end-frame clips, Studio and Elite's
-    // (plans.ts); the page says so before a take is framed, and takeInSet
-    // checks again.
-    takesOn: advancedVideoPlan(access.plan, access.isAdmin),
+    // Takes and films: every paid plan since 2026-09-19 ("Open to all
+    // plans", set-config.ts); the page says so before a take is framed, and
+    // takeInSet checks again.
+    takesOn: setTakesEligible(access.plan, access.isAdmin),
     // The month's Astra changes left (set-config.ts SET_EDITS_MONTHLY_LIMITS),
     // shown in the editor's prompt bar; the action holds the cap.
     astraEditsLeft: spec ? await astraEditsLeft(access) : null,

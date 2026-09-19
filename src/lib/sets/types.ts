@@ -122,7 +122,7 @@ export type SetPageData =
       identityBar: number;
       /** Whether this person may match a shot here (admins, flag astra_photo_sets); the action checks again. */
       matchOn: boolean;
-      /** Whether this person's plan takes clips and renders films (plans.ts advancedVideoPlan); takeInSet checks again. */
+      /** Whether this person's plan takes clips and renders films: every paid plan's (set-config.ts setTakesEligible, 2026-09-19); takeInSet checks again. */
       takesOn: boolean;
       /** Astra changes left this billing month (set-config.ts SET_EDITS_MONTHLY_LIMITS); null when uncapped or unread. */
       astraEditsLeft: number | null;

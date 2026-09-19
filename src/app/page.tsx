@@ -1,9 +1,11 @@
+import Image from "next/image";
 import Link from "next/link";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
 import { PricingCard } from "@/components/marketing/pricing-card";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { getServerMessages } from "@/lib/i18n/server";
+import { SETS_OPEN_TO_PLANS } from "@/lib/sets/set-config";
 import { formatMsg } from "@/lib/i18n/format";
 import { isNativeApp } from "@/lib/native/server";
 import { cn } from "@/lib/cn";
@@ -546,6 +548,43 @@ export default async function Home({
           </div>
         ))}
       </section>
+
+      {/* ── HELIOS — the set workspace, shown only once the plans can buy it
+             (set-config.ts SETS_OPEN_TO_PLANS; helios-pricing.ts is the same
+             switch on the pricing cards). ─────────────────────────────── */}
+      {SETS_OPEN_TO_PLANS && (
+        <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pt-20 sm:px-8 sm:pt-[88px] lg:grid-cols-2 lg:gap-14">
+          <div>
+            <h2 className={MICRO}>{m.heliosEyebrow}</h2>
+            <h3 className="mt-3 max-w-md font-display text-2xl font-bold tracking-[-0.02em] text-[#f7f6f4]">
+              {m.heliosTitle}
+            </h3>
+            <p className="mt-4 max-w-md text-sm leading-relaxed text-[#f7f6f4]/60">{m.heliosCopy}</p>
+            <ul className="mt-5 space-y-2.5">
+              {[m.heliosB1, m.heliosB2, m.heliosB3].map((b) => (
+                <li key={b} className="flex items-start gap-2.5 text-sm leading-relaxed text-[#f7f6f4]/70">
+                  <span className="mt-[8px] h-1 w-1 flex-shrink-0 rounded-full bg-[#e0a468]" />
+                  {b}
+                </li>
+              ))}
+            </ul>
+            <Link
+              href="/guides/helios"
+              className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-[#e0a468] transition-opacity hover:opacity-80"
+            >
+              {m.heliosCta}
+            </Link>
+          </div>
+          <Image
+            src="/guides/helios/workspace.jpg"
+            alt={m.heliosTitle}
+            width={1600}
+            height={1000}
+            className="rounded-[16px] border border-[#f7f6f4]/[0.08]"
+            sizes="(min-width: 1024px) 560px, 100vw"
+          />
+        </section>
+      )}
 
       {/* ── SHOWCASE — the two real players (the first carries AUDIO: the
              dialogue + lip-sync proof the muted hero can't give). ─────── */}

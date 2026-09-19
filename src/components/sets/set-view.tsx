@@ -453,7 +453,7 @@ export function SetView({
   matchOn: boolean;
   /**
    * Whether this plan takes clips and renders films — start-and-end-frame
-   * clips, Studio and Elite's (plans.ts advancedVideoPlan). Otherwise the
+   * clips, every paid plan's (set-config.ts setTakesEligible). Otherwise the
    * page says so before a take is framed; takeInSet checks again.
    */
   takesOn: boolean;

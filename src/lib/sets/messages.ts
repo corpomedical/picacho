@@ -115,11 +115,11 @@ export const SET_EDIT_MONTHLY_CAP_ONE =
 export const SET_TAKE_BAD_START = "That still can't start a take — pick another.";
 export const SET_TAKE_FAILED = "The end frame is in, but the take couldn't start — try the take again in a moment.";
 /**
- * Takes and films are start-and-end-frame clips, which the video lane gives
- * Studio and Elite (plans.ts advancedVideoPlan): said before anything is
- * shot, never after a still has been paid for.
+ * Takes and films are every paid plan's (set-config.ts setTakesEligible,
+ * 2026-09-19 "Open to all plans"): said before anything is shot, never
+ * after a still has been paid for. Reachable only with no paid plan at all.
  */
-export const SET_TAKE_NEEDS_PLAN = "Takes and films are part of the Studio and Elite plans. Upgrade in Settings → Usage & plan.";
+export const SET_TAKE_NEEDS_PLAN = "Takes and films are part of the paid plans. Upgrade in Settings → Usage & plan.";
 /** A film beat's clip rendered again on its own end still, and that still is gone (film.ts filmJobs). */
 export const SET_TAKE_BAD_END = "That beat's end frame is gone — render again to shoot a new one.";
 

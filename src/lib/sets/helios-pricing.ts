@@ -8,23 +8,21 @@
 //
 // The numbers come from the same table the server enforces
 // (SET_BUILDS_MONTHLY_LIMITS), so the copy can never drift from the cap.
-// Takes and films stay Studio-and-up (plans.ts advancedVideoPlan): the line
-// rides Studio's card, and Elite inherits it through "Everything in Studio".
+// Takes and films are every paid plan's (setTakesEligible, the operator's
+// 2026-09-19 "Open to all plans"), so the one bullet says the whole of it.
 
 import { formatMsg } from "../i18n/format";
 import { SETS_OPEN_TO_PLANS, SET_BUILDS_MONTHLY_LIMITS } from "./set-config";
 import type { PlanId } from "../plans";
 
-type Words = { heliosSetsOne: string; heliosSets: string; heliosTakes: string };
+type Words = { heliosSetsOne: string; heliosSets: string };
 
 /** The pure rule, testable in both states of the switch. */
 export function heliosPlanFeaturesWhen(open: boolean, plan: string, words: Words): string[] {
   if (!open) return [];
   const n = SET_BUILDS_MONTHLY_LIMITS[plan as PlanId] ?? 0;
   if (n <= 0) return [];
-  const out = [n === 1 ? words.heliosSetsOne : formatMsg(words.heliosSets, { n })];
-  if (plan === "studio") out.push(words.heliosTakes);
-  return out;
+  return [n === 1 ? words.heliosSetsOne : formatMsg(words.heliosSets, { n })];
 }
 
 /** What a plan's pricing card appends for Helios: nothing until the launch commit flips the switch. */

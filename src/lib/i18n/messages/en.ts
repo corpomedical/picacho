@@ -242,6 +242,14 @@ const en = {
       receiptSecTitle: "You see the price before the button.",
       receiptSecBody: "Every send is itemized before it spends: whose face rides, what the dialogue adds, what the total is. And every render is scored against your character's face — the match is a number on the take, not a feeling. We put that in writing.",
       receiptPromptSample: "Eva sits courtside in the front row as the arena lights sweep past…",
+      // Helios on the home page (launch prep cut 2): shown only once SETS_OPEN_TO_PLANS flips.
+      heliosEyebrow: "Helios",
+      heliosTitle: "Direct the shot inside a real 3D set",
+      heliosCopy: "Describe a location and get a walkable 3D set. Place your character and your camera exactly — real lenses, stops and light — and shoot stills, takes and films that keep the same place and the same face.",
+      heliosB1: "The frame lines are the picture: what you framed out never comes back",
+      heliosB2: "Real optics — six formats, true depth of field, light plots and film stocks",
+      heliosB3: "Takes and films on every paid plan, quoted before you spend",
+      heliosCta: "See how Helios works →",
       appCardTitle: "In your pocket, on Google Play",
       appCardCopy: "The full studio in the Android app — render on the train, and finished takes land in your library even if you close it mid-render.",
       langCardTitle: "Four languages, one studio",
@@ -1690,9 +1698,8 @@ const en = {
   pricingTiers: {
     // Helios's launch bullets (helios-pricing.ts): on the cards only once SETS_OPEN_TO_PLANS flips.
     helios: {
-      heliosSetsOne: "Helios — build 1 cinematic 3D set a month, stills included",
-      heliosSets: "Helios — build {n} cinematic 3D sets a month, stills included",
-      heliosTakes: "Helios takes & films — moving shots rendered from your sets",
+      heliosSetsOne: "Helios — build 1 cinematic 3D set a month, with stills, takes and films",
+      heliosSets: "Helios — build {n} cinematic 3D sets a month, with stills, takes and films",
     },
     basic: {
       name: "Basic",
@@ -3130,7 +3137,7 @@ const en = {
     setTakeBadStart: "That still can't start a take — pick another.",
     setTakeFailed: "The end frame is in, but the take couldn't start — try the take again in a moment.",
     setTakeBadEnd: "That beat's end frame is gone — render again to shoot a new one.",
-    setTakeNeedsPlan: "Takes and films are part of the Studio and Elite plans. Upgrade in Settings → Usage & plan.",
+    setTakeNeedsPlan: "Takes and films are part of the paid plans. Upgrade in Settings → Usage & plan.",
   },
   apiKeys: {
     title: "API keys",

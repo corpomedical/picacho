@@ -220,6 +220,14 @@ const pt = {
       receiptSecTitle: "Você vê o preço antes do botão.",
       receiptSecBody: "Cada envio é detalhado antes de gastar: qual rosto viaja, o que o diálogo adiciona, qual é o total. E cada render é pontuado contra o rosto do seu personagem — a semelhança é um número no take, não uma impressão. Colocamos isso por escrito.",
       receiptPromptSample: "Eva sits courtside in the front row as the arena lights sweep past…",
+      // Helios on the home page (launch prep cut 2): shown only once SETS_OPEN_TO_PLANS flips.
+      heliosEyebrow: "Helios",
+      heliosTitle: "Dirija o plano dentro de um set 3D real",
+      heliosCopy: "Descreva uma locação e receba um set 3D por onde se mover. Posicione o seu personagem e a sua câmera com exatidão — lentes, diafragmas e luz reais — e faça fotos, takes e filmes que mantêm o mesmo lugar e o mesmo rosto.",
+      heliosB1: "As linhas de enquadramento são a imagem: o que você deixou fora não volta",
+      heliosB2: "Óptica real — seis formatos, profundidade de campo verdadeira, esquemas de luz e películas",
+      heliosB3: "Takes e filmes em todos os planos pagos, com o preço antes de gastar",
+      heliosCta: "Veja como o Helios funciona →",
       appCardTitle: "No seu bolso, no Google Play",
       appCardCopy: "O estúdio completo no app Android — renderize no trem, e os takes prontos chegam à sua biblioteca mesmo se você fechar no meio do render.",
       langCardTitle: "Quatro idiomas, um estúdio",
@@ -1591,9 +1599,8 @@ const pt = {
   pricingTiers: {
     // Helios's launch bullets (helios-pricing.ts): on the cards only once SETS_OPEN_TO_PLANS flips.
     helios: {
-      heliosSetsOne: "Helios — construa 1 set 3D cinematográfico por mês, com fotos incluídas",
-      heliosSets: "Helios — construa {n} sets 3D cinematográficos por mês, com fotos incluídas",
-      heliosTakes: "Takes e filmes do Helios — planos em movimento renderizados a partir dos seus sets",
+      heliosSetsOne: "Helios — construa 1 set 3D cinematográfico por mês, com fotos, takes e filmes",
+      heliosSets: "Helios — construa {n} sets 3D cinematográficos por mês, com fotos, takes e filmes",
     },
     basic: {
       name: "Basic",
@@ -2914,7 +2921,7 @@ const pt = {
     setTakeBadStart: "Essa foto não pode começar um take — escolha outra.",
     setTakeFailed: "O quadro final chegou, mas o take não pôde começar — tente o take de novo daqui a pouco.",
     setTakeBadEnd: "O quadro final desse trecho não existe mais — renderize de novo para gravar um novo.",
-    setTakeNeedsPlan: "Takes e filmes fazem parte dos planos Studio e Elite. Faça upgrade em Configurações → Uso e plano.",
+    setTakeNeedsPlan: "Takes e filmes fazem parte dos planos pagos. Faça upgrade em Configurações → Uso e plano.",
   },
   apiKeys: {
     title: "Chaves de API",

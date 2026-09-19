@@ -294,9 +294,11 @@ export function onDailyFreeTier(
 // Start & end frames and multi-image reference are Studio-and-up — moved
 // down from Elite-only on 2026-08-12 so Studio has a capability difference,
 // not just a bigger quota — and admins pass. One rule for the server's gate
-// (generations/actions.ts), the composer's lock (workspace-data.ts), the
-// pricing copy (lib/pricing.ts says it in words) and Helios, whose takes
-// and films are start-and-end-frame clips (sets/actions.ts, sets/data.ts).
+// (generations/actions.ts), the composer's lock (workspace-data.ts) and the
+// pricing copy (lib/pricing.ts says it in words). Helios's takes and films
+// left this rule on 2026-09-19 — every paid plan (set-config.ts
+// setTakesEligible); a set take passes the frames gate as a server-built
+// request (server-built.ts), never by plan.
 export function advancedVideoPlan(plan: string | null | undefined, isAdmin: boolean): boolean {
   return isAdmin || plan === "studio" || plan === "elite";
 }

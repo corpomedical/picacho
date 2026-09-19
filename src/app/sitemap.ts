@@ -1,3 +1,4 @@
+import { SETS_OPEN_TO_PLANS } from "@/lib/sets/set-config";
 import type { MetadataRoute } from "next";
 import { CANONICAL_ORIGIN } from "@/lib/domains";
 import { LOCALES } from "@/lib/i18n/locales";
@@ -36,6 +37,7 @@ const PUBLIC_ROUTES = [
   // so no locale alternates (see LOCALIZED_PATHS).
   "/tools/identity-check",
   "/guides",
+  ...(SETS_OPEN_TO_PLANS ? ["/guides/helios"] : []),
   "/guides/ai-character-consistency",
   "/guides/ai-camera-movements",
   "/guides/seedance-2",

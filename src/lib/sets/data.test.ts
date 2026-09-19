@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import raceTrack from "./fixtures-race-track.json";
-import { SET_EDITS_MONTH_SCOPE, setEditsMonthlyLimit } from "./set-config";
+import { SET_EDITS_MONTH_SCOPE, setEditsMonthlyLimit, setTakesEligible } from "./set-config";
 import { mediaUrl, thumbUrl } from "../media/url";
 
 // The set page's loader, for what a take was rendered from (2026-09-16). A
@@ -239,17 +239,20 @@ describe("the month's Astra changes, for the editor", () => {
 });
 
 describe("whether the page offers takes", () => {
-  it("offers them to Studio, Elite and admins — the plans the clip's frames are sold with", async () => {
-    for (const [plan, isAdmin, on] of [
-      ["studio", false, true],
-      ["elite", false, true],
-      ["growth", true, true],
-      ["growth", false, false],
-      ["starter", false, false],
-      ["basic", false, false],
+  it("offers them by the takes rule — every plan that can enter Helios (set-config.ts setTakesEligible, 2026-09-19)", async () => {
+    // While SETS_OPEN_TO_PLANS is false that is admins only; at the flip it
+    // becomes every paid plan. The expectation follows the rule, not a list,
+    // so this test holds on both sides of the launch commit.
+    for (const [plan, isAdmin] of [
+      ["studio", false],
+      ["elite", false],
+      ["growth", true],
+      ["growth", false],
+      ["starter", false],
+      ["basic", false],
     ] as const) {
       who = { plan, isAdmin };
-      expect((await page(world([still(1)]))).takesOn, `${plan}${isAdmin ? " (admin)" : ""}`).toBe(on);
+      expect((await page(world([still(1)]))).takesOn, `${plan}${isAdmin ? " (admin)" : ""}`).toBe(setTakesEligible(plan, isAdmin));
     }
   });
 });

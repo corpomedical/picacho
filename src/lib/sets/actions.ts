@@ -9,8 +9,9 @@ import { assertOutputAllowed, OutputPolicyRefusal } from "@/lib/generations/outp
 import { gatePrompt, recentRefusalCount, recordPolicyRefusal } from "@/lib/generations/policy-log";
 import { runGeneration } from "@/lib/generations/actions";
 import { checkGenerationAllowance } from "@/lib/generations/core";
-import { advancedVideoPlan } from "@/lib/plans";
+
 import { withModelWrittenPrompt } from "@/lib/generations/refusal-attribution";
+import { withServerBuiltFrames } from "@/lib/generations/server-built";
 import { cancelAstraJob, submitAstraJob } from "@/lib/generations/providers/astra";
 import { openAiSafetyId } from "@/lib/openai/safety-id";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
@@ -27,8 +28,7 @@ import {
   SET_RESERVED_BRIEF,
   setFramePath,
   setPhotoPath,
-  setThumbPath,
-} from "@/lib/sets/set-config";
+  setThumbPath, setTakesEligible } from "@/lib/sets/set-config";
 import { cleanText, normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
 import { setBuildInput } from "@/lib/sets/set-builder-prompt";
 import { photoBuildRequest, setAstraRequest } from "@/lib/sets/astra-request";
@@ -998,10 +998,10 @@ export async function takeInSet(
   const access = await setsAccess();
   if (access.error !== null) return { error: access.error };
   const { userId } = access;
-  // A take is a start-and-end-frame clip, which the video lane gives Studio
-  // and Elite: said here, before its end still is shot and paid for, not by
-  // the clip's own send afterwards in the composer's words.
-  if (!advancedVideoPlan(access.plan, access.isAdmin)) return { error: SET_TAKE_NEEDS_PLAN };
+  // A take is every paid plan's since 2026-09-19 ("Open to all plans",
+  // set-config.ts setTakesEligible): said here, before its end still is
+  // shot and paid for, not by the clip's own send afterwards.
+  if (!setTakesEligible(access.plan, access.isAdmin)) return { error: SET_TAKE_NEEDS_PLAN };
 
   // The start: a finished still of THIS set, the person's own, not deleted.
   const startId = typeof input?.startGenerationId === "string" ? input.startGenerationId : "";
@@ -1105,7 +1105,9 @@ export async function takeInSet(
   if (still.format === "vertical") fd.set("video_aspect_ratio", "9:16");
   fd.set("storyboard_start_path", startUrl);
   fd.set("storyboard_end_path", endUrl);
-  const clip = await runGeneration(fd);
+  // The clip's frames are ours, and the plan was checked above: the frames
+  // gate reads the mark from server memory (server-built.ts).
+  const clip = await withServerBuiltFrames(() => runGeneration(fd));
   if (clip.error !== null) {
     console.warn("takeInSet video leg refused:", clip.error);
     return { error: null, still, reusedEnd, takeGenerationId: null, takeError: clip.error };

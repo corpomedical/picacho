@@ -3,6 +3,7 @@ import Link from "next/link";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
 import { marketingSocial } from "@/lib/i18n/metadata";
+import { SETS_OPEN_TO_PLANS } from "@/lib/sets/set-config";
 
 // The guides hub — one card per published guide, newest first. Same
 // English-only-body convention as the guides themselves; grows a card per
@@ -21,6 +22,19 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 const GUIDES = [
+  // Helios rides the launch switch (set-config.ts): its guide appears the
+  // day the plans can buy it, and not a day before.
+  ...(SETS_OPEN_TO_PLANS
+    ? [
+        {
+          href: "/guides/helios",
+          date: "September 2026",
+          title: "Helios: direct AI shots inside a real 3D set",
+          blurb:
+            "Describe a location and get a walkable 3D set — exact camera, real lenses and light, your character on a mark. Stills, takes and films that keep the same place and the same face.",
+        },
+      ]
+    : []),
   {
     href: "/guides/getting-started",
     date: "September 2026",

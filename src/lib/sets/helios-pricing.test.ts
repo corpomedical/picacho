@@ -22,15 +22,11 @@ describe("the pricing page's Helios bullets", () => {
     }
   });
 
-  it("once open, say each plan's own build cap from the enforced table, and takes on Studio", () => {
-    expect(heliosPlanFeaturesWhen(true, "basic", words)).toEqual(["Helios — build 1 cinematic 3D set a month, stills included"]);
-    expect(heliosPlanFeaturesWhen(true, "growth", words)).toEqual([`Helios — build ${SET_BUILDS_MONTHLY_LIMITS.growth} cinematic 3D sets a month, stills included`]);
-    expect(heliosPlanFeaturesWhen(true, "studio", words)).toEqual([
-      `Helios — build ${SET_BUILDS_MONTHLY_LIMITS.studio} cinematic 3D sets a month, stills included`,
-      "Helios takes & films — moving shots rendered from your sets",
-    ]);
-    // Elite inherits the takes line through "Everything in Studio"; its own bullet is the bigger cap.
-    expect(heliosPlanFeaturesWhen(true, "elite", words)).toHaveLength(1);
+  it("once open, say each plan's own build cap from the enforced table — stills, takes and films on every card", () => {
+    expect(heliosPlanFeaturesWhen(true, "basic", words)).toEqual(["Helios — build 1 cinematic 3D set a month, with stills, takes and films"]);
+    expect(heliosPlanFeaturesWhen(true, "growth", words)).toEqual([`Helios — build ${SET_BUILDS_MONTHLY_LIMITS.growth} cinematic 3D sets a month, with stills, takes and films`]);
+    // Takes and films are every paid plan's (2026-09-19 "Open to all plans"): one bullet per card, no Studio extra.
+    for (const plan of ["starter", "studio", "elite"]) expect(heliosPlanFeaturesWhen(true, plan, words)).toHaveLength(1);
     expect(heliosPlanFeaturesWhen(true, "none", words)).toEqual([]);
   });
 
@@ -38,7 +34,7 @@ describe("the pricing page's Helios bullets", () => {
     for (const m of [en, es, pt, itMsgs]) {
       const w = m.pricingTiers.helios;
       expect(w.heliosSets).toContain("{n}");
-      for (const line of [w.heliosSetsOne, w.heliosSets, w.heliosTakes]) expect(line).toContain("Helios");
+      for (const line of [w.heliosSetsOne, w.heliosSets]) expect(line).toContain("Helios");
       expect(heliosPlanFeaturesWhen(true, "starter", w)[0]).not.toContain("{n}");
     }
   });

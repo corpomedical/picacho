@@ -18,7 +18,9 @@ import { mediaUrl, thumbUrl } from "../media/url";
 const SET = "22222222-2222-4222-8222-222222222222";
 const asked: { credits: number; options: unknown }[] = [];
 type Access = { error: string } | { error: null; supabase: unknown; userId: string; plan: string; isAdmin: boolean };
-const studio: Access = { error: null, supabase: {}, userId: "u1", plan: "studio", isAdmin: false };
+// While SETS_OPEN_TO_PLANS is false, the takes rule passes admins only
+// (set-config.ts setTakesEligible), so the suite's base caller is one.
+const studio: Access = { error: null, supabase: {}, userId: "u1", plan: "studio", isAdmin: true };
 let access: Access = studio;
 let balance: string | null = null;
 
@@ -30,6 +32,7 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/rate-limit", () => ({ rateLimited: async () => false }));
 vi.stubEnv("MEDIA_SIGNING_SECRET", "test-only");
 vi.mock("@/lib/media/url", async () => await import("../media/url"));
+vi.mock("@/lib/sets/set-config", async () => await import("./set-config"));
 vi.mock("@/lib/generations/core", () => ({
   checkGenerationAllowance: async (_db: unknown, _user: string, credits: number, options: unknown) => {
     asked.push({ credits, options });
@@ -89,9 +92,12 @@ describe("checkFilmCredits", () => {
     expect(asked).toEqual([]);
   });
 
-  it("says a film is Studio and Elite's before asking the balance, and lets admins through", async () => {
-    for (const plan of ["basic", "starter", "growth"]) {
-      access = { ...studio, plan } as Access;
+  it("holds a film to the takes rule (set-config.ts setTakesEligible) before asking the balance, and lets admins through", async () => {
+    // While SETS_OPEN_TO_PLANS is false the rule is admins-only, so every
+    // plan refuses here; at the flip it becomes every paid plan, and the
+    // access rule upstream has already turned away anyone without one.
+    for (const plan of ["basic", "starter", "growth", "studio", "elite"]) {
+      access = { ...studio, plan, isAdmin: false } as Access;
       expect(await checkFilmCredits(SET, "omni", { clips: 1, stills: 1 })).toEqual({ error: SET_TAKE_NEEDS_PLAN });
     }
     expect(asked).toEqual([]);
