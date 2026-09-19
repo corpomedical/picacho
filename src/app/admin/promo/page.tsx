@@ -32,7 +32,7 @@ export default async function AdminPromoPage({
     supabase
       .from("promo_redemptions")
       .select(
-        "promo_code_id, code, rep_name, user_email, amount_subtotal, discount_amount, commission_percent, currency, created_at",
+        "promo_code_id, code, rep_name, user_id, user_email, amount_subtotal, discount_amount, commission_percent, currency, created_at",
       )
       .order("created_at", { ascending: false }),
   ]);
@@ -146,7 +146,12 @@ export default async function AdminPromoPage({
             {redemptions.slice(0, 20).map((r, i) => (
               <div key={i} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-sm">
                 <div className="min-w-0">
-                  <p className="truncate font-medium text-neutral-900">{r.user_email ?? "Unknown"}</p>
+                  {/* Checkout always records the account (checkout-core.ts), so a
+                      sale with none is one whose account was deleted, and its
+                      email was erased with it (lib/profile/promo-redemptions.ts). */}
+                  <p className="truncate font-medium text-neutral-900">
+                    {r.user_email ?? (r.user_id ? "Unknown" : "Deleted account")}
+                  </p>
                   <p className="text-xs text-neutral-500">
                     <span className="font-mono">{r.code}</span> · {r.rep_name} ·{" "}
                     <LocalDate date={r.created_at} mode="datetime" />

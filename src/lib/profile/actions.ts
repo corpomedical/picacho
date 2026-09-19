@@ -14,6 +14,7 @@ import { rateLimited } from "@/lib/rate-limit";
 // admin/actions.ts' copy already differed in what they could see (neither
 // recursed into the Layers subfolder) — one implementation now serves both.
 import { removeAllUserStorage } from "@/lib/profile/storage-buckets";
+import { erasePromoRedemptionEmail } from "@/lib/profile/promo-redemptions";
 import { removeUserRateHits } from "@/lib/rate-hits";
 import { deleteUserFaces } from "@/lib/faces/run";
 
@@ -383,7 +384,8 @@ export async function updatePasswordFromRecovery(formData: FormData): Promise<Ac
 // Deletes the auth.users row via the service-role client, which every other
 // table's user_id foreign key cascades from (character_profiles, projects,
 // generations, notes) or sets to null for (page_views, to keep anonymized
-// traffic history intact).
+// traffic history intact; promo_redemptions, a rep's commission record,
+// whose buyer email is erased first).
 export async function deleteAccount(formData: FormData) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
@@ -455,6 +457,16 @@ export async function deleteAccount(formData: FormData) {
         "Your subscription is billed through Google Play, and we can't cancel it from here. Cancel it in the Play Store first (Play Store → Payments & subscriptions), then delete your account.",
       )}`,
     );
+  }
+
+  // The email on their promo sales, erased while those rows still carry
+  // this id: the auth delete below nulls it (lib/profile/promo-redemptions.ts).
+  // Ahead of Stripe, so a failure here stops the deletion with nothing
+  // changed yet.
+  const promoEmailError = await erasePromoRedemptionEmail(admin, userId);
+  if (promoEmailError) {
+    console.error("deleteAccount: promo sale email not erased — aborting deletion", promoEmailError);
+    redirect(`/app/settings?error=${encodeURIComponent(`Couldn't delete your account: ${promoEmailError}`)}`);
   }
 
   let stripeCancelError = false;

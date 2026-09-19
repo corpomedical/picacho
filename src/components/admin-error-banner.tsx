@@ -25,6 +25,7 @@ const KNOWN_ERRORS = new Set<string>([
   "Invalid status.",
   "You can't suspend your own account.",
   "You can't delete your own account.",
+  "Couldn't erase their email from the promo sales — the account was NOT deleted, and nothing was changed. Try again; details are in the server log.",
   "Invalid role.",
   "You can't remove your own admin role.",
   "Invalid plan.",

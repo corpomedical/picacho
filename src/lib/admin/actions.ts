@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { removeAllUserStorage } from "@/lib/profile/storage-buckets";
+import { erasePromoRedemptionEmail } from "@/lib/profile/promo-redemptions";
 import { removeUserRateHits } from "@/lib/rate-hits";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -106,7 +107,9 @@ export async function setUserStatus(formData: FormData) {
 // plus brand_rules / notes / credit_purchases / generation_jobs / push_tokens /
 // reference_image_generations — is ON DELETE CASCADE, so the whole account is
 // cleaned up in one call. page_views keeps its rows with user_id nulled, so
-// traffic analytics aren't retroactively dented by a deletion.
+// traffic analytics aren't retroactively dented by a deletion; so does
+// promo_redemptions, a rep's commission record, once the buyer's email on
+// it has been erased.
 //
 // Irreversible, so it's guarded: admins can't delete themselves, and the UI
 // (DeleteUserButton) requires a confirm before this ever runs.
@@ -147,6 +150,20 @@ export async function deleteUser(formData: FormData) {
     redirect(
       `/admin/users/${userId}?error=${encodeURIComponent(
         "This account's subscription is billed through Google Play and can't be cancelled from here — the account was NOT deleted. Have them cancel in the Play Store (or revoke it in the Play Console), then delete.",
+      )}`,
+    );
+  }
+
+  // The email on their promo sales, erased while those rows still carry
+  // this id: the auth delete below nulls it (lib/profile/promo-redemptions.ts).
+  // Ahead of Stripe, so a failure here stops the deletion with nothing
+  // changed yet.
+  const promoEmailError = await erasePromoRedemptionEmail(admin, userId);
+  if (promoEmailError) {
+    console.error("deleteUser: promo sale email not erased — aborting deletion", promoEmailError);
+    redirect(
+      `/admin/users/${userId}?error=${encodeURIComponent(
+        "Couldn't erase their email from the promo sales — the account was NOT deleted, and nothing was changed. Try again; details are in the server log.",
       )}`,
     );
   }

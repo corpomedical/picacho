@@ -77,6 +77,10 @@ const COLUMNS = {
   generation_reports: ["reason", "details", "source", "created_at"],
   generation_layers: ["generation_id", "z_index"],
   credit_purchases: ["stripe_session_id", "refunded_at"],
+  // Both deletion paths erase the buyer's email here by account id and STOP
+  // the deletion if they can't (lib/profile/promo-redemptions.ts), so a
+  // missing column would block every account deletion.
+  promo_redemptions: ["user_id", "user_email", "stripe_session_id"],
   api_keys: ["key_hash"],
   api_rate_hits: ["scope"],
   admin_push_subscriptions: ["endpoint"],

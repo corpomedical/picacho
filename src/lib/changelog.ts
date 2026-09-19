@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.55.0",
+    build: 94,
+    date: "2026-09-19",
+    title: "Deleting an account now erases the email on promo-code sales",
+    items: [
+      "Someone who subscribed with a salesperson's promo code and later deleted their account left their email behind on the promo sales list (Admin → Promo codes), though the public deletion page names no such record among what is kept. Deleting an account, from Settings or from Admin, now erases that email first.",
+      "The sale itself stays: the code, the salesperson, the amount, the commission and Stripe's reference for the payment, so reps are still paid correctly and a disputed sale can still be found in Stripe. On the sales list it now reads Deleted account.",
+      "If the email can't be erased, the deletion stops before anything else is touched, and can simply be tried again.",
+      "The emails that earlier deletions left behind are cleared by a one-off SQL paste.",
+    ],
+  },
+  {
     version: "1.54.0",
     build: 93,
     date: "2026-09-19",
