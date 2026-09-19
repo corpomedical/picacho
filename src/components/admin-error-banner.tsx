@@ -107,6 +107,28 @@ const PREFIX_SUMMARIES: [string, string][] = [
     "Couldn't record the Stripe ids",
     "Stripe accepted the code but saving its ids here failed — the code was rolled back on both sides. Try again.",
   ],
+  // createPromoCode when its own clean-up fails: what is left, and where.
+  [
+    "Couldn't undo the code in Stripe after",
+    "Stripe accepted the code but saving its ids here failed, and so did undoing it in Stripe — it may still be live there, with nothing on this list. Deactivate it and delete its coupon by hand in the Stripe dashboard; the ids are in the server log.",
+  ],
+  [
+    "Couldn't undo the code in Stripe or clear it from this list",
+    "Stripe accepted the code but saving its ids here failed, and so did undoing it in Stripe and clearing it from this list. It may still be live in Stripe: deactivate it and delete its coupon by hand in the Stripe dashboard (the ids are in the server log). Then delete it from this list, which won't touch Stripe.",
+  ],
+  [
+    "Couldn't clear the unsaved code from this list",
+    "The code wasn't saved, and clearing it from this list failed too — it shows here as active, but it isn't live in Stripe, so it can't be redeemed. Delete it from this list, which won't touch Stripe, then add it again. Details are in the server log.",
+  ],
+  // setPromoCodeActive after Stripe took the change: what Stripe now has.
+  [
+    "Couldn't mark the code active on this list",
+    "Couldn't mark the code active on this list — but it IS on in Stripe, so it can be redeemed, even though it still shows as off here. Press Turn on again to bring the two in step. Details are in the server log.",
+  ],
+  [
+    "Couldn't mark the code off on this list",
+    "Couldn't mark the code off on this list — but it IS off in Stripe, so it can't be redeemed, even though it still shows as active here. Press Turn off again to bring the two in step. Details are in the server log.",
+  ],
   [
     "Unknown video model",
     "Unknown video model — pick one of the ids from the AI providers page.",

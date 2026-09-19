@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.61.0",
+    build: 100,
+    date: "2026-09-19",
+    title: "Promo codes and model controls in Admin now say when a change only half-saved",
+    items: [
+      "Turning a promo code on or off changes Stripe first, then this list. If the list's step failed, nothing said so: a code could be on in Stripe, and redeemable at checkout, while the list showed it as off. The page now says which state Stripe has, and pressing the same button again brings the list in step.",
+      "Adding a promo code: if saving it here failed after Stripe had created it, and switching it back off in Stripe failed too, the page still said it had been rolled back. It now says the code may still be live in Stripe and has to be deactivated there by hand; its ids are in the server log.",
+      "Also when adding a code: if a failed attempt couldn't be cleared from the list, the page said nothing was saved while the code sat on the list as active. It now says so, and deleting it from the list clears it without touching Stripe.",
+      "Restore now and Suspend (Admin → AI providers) could fail to save and still go back to the page as if they had worked, so a model you had just suspended kept taking renders. The page now says something went wrong, and the server log has why.",
+    ],
+  },
+  {
     version: "1.60.0",
     build: 99,
     date: "2026-09-19",

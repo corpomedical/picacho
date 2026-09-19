@@ -85,10 +85,16 @@ export async function createPromoCode(formData: FormData) {
   //     write-back at the end used to go unchecked, so a failed patch left a
   //     code that redeems real money at checkout while this page shows it as
   //     broken/unmanageable — live-in-Stripe, dead-in-DB).
+  // Compensation can fail too (Stripe's undo, the row's delete). Then one of
+  // those states IS left, and the notice names it and how to clear it.
   // Compensation is collected into `failMessage` and the redirect happens
   // OUTSIDE the try/catch — fail() throws NEXT_REDIRECT, and throwing it
   // inside the try would run the catch's cleanup a second time.
   let failMessage: string | null = null;
+  // Set when undoing Stripe fails too. The promotion code may then still be
+  // live there, and only the server log has its ids, so the notice can't say
+  // "rolled back" (admin-error-banner.tsx gives this case its own line).
+  let stripeUndoFailed = false;
   try {
     const coupon = await stripe.coupons.create({
       percent_off: discountPercent,
@@ -139,13 +145,15 @@ export async function createPromoCode(formData: FormData) {
       try {
         await stripe.promotionCodes.update(promotionCode.id, { active: false });
         await stripe.coupons.del(coupon.id);
+        failMessage = `Couldn't record the Stripe ids (${patchError.message.slice(0, 160)}) — the Stripe side was rolled back, nothing was saved. Try again.`;
       } catch (cleanupErr) {
         console.error(
           "createPromoCode: Stripe rollback after failed id write-back ALSO failed — deactivate promotion code and delete coupon by hand",
           { promotionCodeId: promotionCode.id, couponId: coupon.id, cleanupErr },
         );
+        stripeUndoFailed = true;
+        failMessage = `Couldn't undo the code in Stripe after saving its ids failed (${patchError.message.slice(0, 160)}) — it may still be live there, with nothing on this list. Deactivate it and delete its coupon by hand in the Stripe dashboard; the ids are in the server log.`;
       }
-      failMessage = `Couldn't record the Stripe ids (${patchError.message.slice(0, 160)}) — the Stripe side was rolled back, nothing was saved. Try again.`;
     }
   } catch (err) {
     console.error("createPromoCode: Stripe couldn't create the code — removing the row", err);
@@ -154,7 +162,21 @@ export async function createPromoCode(formData: FormData) {
   }
 
   if (failMessage) {
-    await supabase.from("promo_codes").delete().eq("id", row.id);
+    const { error: cleanupError } = await supabase.from("promo_codes").delete().eq("id", row.id);
+    if (cleanupError) {
+      // The row stays, with no Stripe ids, and lists as active — so the
+      // notice can't say nothing was saved. Deleting it from the list clears
+      // it: deletePromoCode skips Stripe for a row without ids.
+      console.error("createPromoCode: removing the unfinished row failed — it stays on the list without Stripe ids", {
+        id: row.id,
+        cleanupError,
+      });
+      fail(
+        stripeUndoFailed
+          ? `Couldn't undo the code in Stripe or clear it from this list (${cleanupError.message.slice(0, 160)}) — it may still be live in Stripe. Deactivate it and delete its coupon by hand in the Stripe dashboard (the ids are in the server log), then delete it from this list.`
+          : `Couldn't clear the unsaved code from this list (${cleanupError.message.slice(0, 160)}). It isn't live in Stripe, so it can't be redeemed, but it shows here as active — delete it from this list, which won't touch Stripe, then add it again.`,
+      );
+    }
     fail(failMessage);
   }
 
@@ -187,7 +209,28 @@ export async function setPromoCodeActive(formData: FormData) {
     }
   }
 
-  await supabase.from("promo_codes").update({ active }).eq("id", id);
+  const { error } = await supabase.from("promo_codes").update({ active }).eq("id", id);
+  if (error && !promo!.stripe_promotion_code_id) {
+    console.error("setPromoCodeActive: row update failed — nothing changed", error);
+    redirect(`/admin/promo?error=${encodeURIComponent(error.message)}`);
+  }
+  if (error) {
+    // Stripe already has the new state and this list still shows the old
+    // one, so the banner says which state Stripe has. Pressing the same
+    // button again repeats both writes (Stripe's is safe to repeat), which
+    // brings the two back in step.
+    console.error(`setPromoCodeActive: row update failed after Stripe switched the code ${active ? "on" : "off"}`, {
+      id,
+      error,
+    });
+    redirect(
+      `/admin/promo?error=${encodeURIComponent(
+        active
+          ? `Couldn't mark the code active on this list (${error.message}). It IS on in Stripe, so it can be redeemed — press Turn on again to bring the list in step.`
+          : `Couldn't mark the code off on this list (${error.message}). It IS off in Stripe, so it can't be redeemed — press Turn off again to bring the list in step.`,
+      )}`,
+    );
+  }
   revalidatePath("/admin/promo");
 }
 

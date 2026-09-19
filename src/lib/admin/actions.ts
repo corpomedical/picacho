@@ -764,7 +764,7 @@ export async function restoreModel(formData: FormData): Promise<void> {
   if (!known) redirect("/admin/providers?error=Unknown+model");
 
   const admin = createAdminClient();
-  await admin
+  const { error } = await admin
     .from("model_health")
     .update({
       tripped_at: null,
@@ -777,6 +777,10 @@ export async function restoreModel(formData: FormData): Promise<void> {
       updated_at: new Date().toISOString(),
     })
     .eq("model_id", modelId);
+  if (error) {
+    console.error("restoreModel: model_health update failed — nothing changed", error);
+    redirect(`/admin/providers?error=${encodeURIComponent(error.message)}`);
+  }
 
   revalidatePath("/admin/providers");
   redirect("/admin/providers");
@@ -803,7 +807,7 @@ export async function suspendModel(formData: FormData): Promise<void> {
   }
 
   const admin = createAdminClient();
-  await admin.from("model_health").upsert({
+  const { error } = await admin.from("model_health").upsert({
     model_id: modelId,
     kind,
     tripped_at: new Date().toISOString(),
@@ -814,6 +818,10 @@ export async function suspendModel(formData: FormData): Promise<void> {
     last_error: "Suspended manually from the admin area.",
     updated_at: new Date().toISOString(),
   });
+  if (error) {
+    console.error("suspendModel: model_health upsert failed — nothing changed", error);
+    redirect(`/admin/providers?error=${encodeURIComponent(error.message)}`);
+  }
 
   revalidatePath("/admin/providers");
   redirect("/admin/providers");
