@@ -24,6 +24,7 @@ import {
   RECAST_IMAGE_UNCHECKED,
   RECAST_IMAGE_UNUSABLE,
   RECAST_JOB_TOO_LONG,
+  RECAST_GROUP_ONE_PART,
   RECAST_NEEDS_DATABASE,
   RECAST_NEEDS_PICTURE,
   RECAST_NEEDS_RIGHTS,
@@ -577,6 +578,15 @@ export async function startRecastTakes(input: {
   // its own length, and only the cuts that fall inside it, on its own clock.
   const wholeRead = reboundRecastRead(input?.read, clip.seconds);
   const read = wholeRead ? { ...wholeRead, cuts: cutsInWindow(wholeRead.cuts, window) } : null;
+
+  // A WHOLE GROUP, IN ONE PART ONLY (2026-09-20). Every part after the first
+  // is handed the footage again, and on a take that turns a crowd into one
+  // character the part follows the footage: two takes of the operator's own
+  // crowd came back as his students at the second join. The still at the
+  // switch did not hold it, so the take is kept to one part instead.
+  const groupTags = new Set((read?.people ?? []).filter((p) => p.many).map((p) => p.tag));
+  const castOverGroup = (ids.length > 1 ? castTags : [castTag]).some((tag) => tag !== null && groupTags.has(tag));
+  if (castOverGroup && chaining) return { error: RECAST_GROUP_ONE_PART };
   // The engine that reads names in its prompt is told which photos are whose
   // by name; how many photos each character has decides which name
   // (recastCastTokens — a lone character is @Element1 or @Image1, as ever).

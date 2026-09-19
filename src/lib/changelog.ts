@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.68.0",
+    build: 107,
+    date: "2026-09-20",
+    title: "Turning a whole crowd into a character is one take, and the place is named",
+    items: [
+      "Casting one character over a whole group is now limited to a single part — 15 seconds or less. Past that a take is made in parts, and every part after the first is handed your own footage again, so the crowd came back partway through. Two takes of the same clip proved it, with and without the extra help added earlier. Mystique now says so before you press, with a button to trim the take.",
+      "The instructions now name the place your clip is actually in, in the clip's own words, instead of asking to keep \"the setting\". Twice the engine decided that turning a crowd into a character meant the scene must be somewhere else, and rebuilt a school courtyard as an open field — in the very first part, before any join.",
+    ],
+  },
+  {
     version: "1.67.0",
     build: 106,
     date: "2026-09-20",

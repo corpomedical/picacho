@@ -38,6 +38,11 @@ export const RECAST_IMAGE_UNCHECKED = "That image couldn't be checked just now �
 // Several characters in one take (2026-09-19): one without a person in the
 // clip to play, and no words to give them a part.
 export const RECAST_NEEDS_ROLES = "Say in your words who each character plays.";
+// A whole group changed at once (2026-09-20). Past 15 seconds a take is made
+// in parts, and a later part is given the footage again — which is where two
+// takes of the operator's own crowd came back as the footage. One part, or
+// the crowd comes back.
+export const RECAST_GROUP_ONE_PART = "A whole group can only be changed in one part — keep the take to 15 seconds, or cast someone in it instead of all of them.";
 
 export function recastClipProblemMessage(problem: RecastClipProblem): string {
   switch (problem) {

@@ -283,6 +283,7 @@ function composeUncut(input: BriefInput): string {
       "KEEP EXACTLY",
       bullet("The performance: every gesture, every step, every expression, on the same frames."),
       bullet("The framing, the camera move, the cuts and the timing."),
+      ...(input.read?.world ? [bullet(`The place it happens in, unless the direction changes it: ${input.read.world}`)] : []),
       ...keepLines(input.keeps).map(bullet),
       bullet(`Everything the direction does not change stays exactly as it is in ${video}.`),
     );
@@ -342,7 +343,14 @@ function composeUncut(input: BriefInput): string {
       "KEEP EXACTLY",
       bullet("The performance: every gesture, every step, every expression, on the same frames."),
       bullet("The framing, the camera move, the cuts and the timing."),
-      bullet("The lighting and the setting."),
+      // THE PLACE, BY NAME (2026-09-20). "The setting" in the abstract was
+      // not enough: asked to turn a whole crowd into one character, the
+      // engine decided the scene must be somewhere else and built an
+      // Egyptian field where a school courtyard had been — in the FIRST
+      // part, before any join. Naming what the read saw gives it something
+      // concrete to keep.
+      bullet(input.read?.world ? `The place it happens in, unchanged: ${input.read.world}` : "The lighting and the setting."),
+      bullet("The lighting."),
       // NOT "everyone else in the shot": when a cast character plays a GROUP,
       // that promise contradicts the task, and the engine settled the argument
       // by redrawing the whole picture (2026-09-20).
@@ -405,7 +413,8 @@ function composeUncut(input: BriefInput): string {
     "KEEP EXACTLY",
     bullet("The performance: every gesture, every step, every expression, on the same frames."),
     bullet("The framing, the camera move, the cuts and the timing."),
-    bullet("The lighting and the setting."),
+    bullet(input.read?.world ? `The place it happens in, unchanged: ${input.read.world}` : "The lighting and the setting."),
+    bullet("The lighting."),
     bullet(`Everyone in ${video} who is not named above stays exactly as they are.`),
     ...keepLines(input.keeps).map(bullet),
     bullet(`Everything else stays exactly as it is in ${video}.`),

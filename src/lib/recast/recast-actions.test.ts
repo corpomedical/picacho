@@ -252,6 +252,24 @@ describe("several characters in one take", () => {
     expect(start.slice(at("clipUrl: CHAIN_CLIP_PLACEHOLDER"), at("clipUrl: CHAIN_CLIP_PLACEHOLDER") + 560)).toContain("...(ensemble ? { ensemble } : {})");
   });
 
+  it("keeps a whole group to ONE part — a later part is handed the footage and follows it", () => {
+    // 2026-09-20: two takes of the same crowd came back as the operator's own
+    // students at the second join, still or no still.
+    expect(start).toContain("const groupTags = new Set((read?.people ?? []).filter((p) => p.many).map((p) => p.tag))");
+    expect(start).toContain("if (castOverGroup && chaining) return { error: RECAST_GROUP_ONE_PART }");
+    // Before a credit moves, and before the window is cut.
+    expect(at("if (castOverGroup && chaining) return { error: RECAST_GROUP_ONE_PART }")).toBeLessThan(at("await prepareChain(admin, {"));
+    expect(at("if (castOverGroup && chaining) return { error: RECAST_GROUP_ONE_PART }")).toBeLessThan(at("checkGenerationAllowance("));
+    const door = readFileSync(join(__dirname, "..", "..", "components", "mystique", "mystique-door.tsx"), "utf8");
+    expect(door).toContain("const groupNeedsOnePart = castOverGroup && parts > 1;");
+    expect(door).toContain("!groupNeedsOnePart &&");
+  });
+
+  it("names the place the take must keep, from the read's own words", () => {
+    const brief = readFileSync(join(__dirname, "recast-brief.ts"), "utf8");
+    expect(brief).toContain("The place it happens in, unchanged: ${input.read.world}");
+  });
+
   it("promises the face lock only where ONE face is cast", () => {
     expect(start).toContain("identityLock: chars.length === 1 && lockOn ?");
   });

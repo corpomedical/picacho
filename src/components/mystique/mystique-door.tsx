@@ -215,6 +215,15 @@ export function MystiqueDoor({
   const ensemble = job === "scene" && together && cast.length > 1;
   const peopleInClip = read ? [...read.people].sort((a, b) => Number(b.lead) - Number(a.lead)) : [];
   const castTags = cast.map((c, i) => (c.id in roles ? roles[c.id] : (peopleInClip[i]?.tag ?? null)));
+  // A ROLE THAT IS A WHOLE GROUP (the read’s own judgement) can only be
+  // changed in ONE part: every part after the first is handed the footage
+  // again and follows it, which is how two takes of the same crowd came
+  // back as the footage (2026-09-20). The server refuses it; the door says
+  // so before the press, and offers the trim.
+  const groupTags = new Set(peopleInClip.filter((p) => p.many).map((p) => p.tag));
+  const castOverGroup = (ensemble ? castTags : [read?.people.find((p) => p.lead)?.tag ?? null]).some((tag) => tag !== null && groupTags.has(tag));
+  const parts = clipWindow ? chainPieceCount(clipWindow.end - clipWindow.start) : 1;
+  const groupNeedsOnePart = castOverGroup && parts > 1;
   // What is actually sent — the server's rule (actions.ts): Photo to life
   // brings ONE picture to life, the character's when someone is cast; a take
   // holds four references, characters included.
@@ -239,6 +248,7 @@ export function MystiqueDoor({
     quote !== null &&
     clipWindow !== null &&
     !imagesUploading &&
+    !groupNeedsOnePart &&
     missing === null &&
     (job !== "world" || hasWords);
 
@@ -258,11 +268,6 @@ export function MystiqueDoor({
       ...(castTokens[i] ? { token: castTokens[i] } : {}),
     };
   });
-  // Casting someone over a GROUP changes every person in it — the biggest
-  // change a take can ask for, and the one a long take's later parts are
-  // least likely to hold (2026-09-20).
-  const castOverGroup = castings.some((c) => c.many === true);
-  const parts = clipWindow ? chainPieceCount(clipWindow.end - clipWindow.start) : 1;
   const brief = seen
     ? composeRecastBrief({
         job,
@@ -1110,7 +1115,7 @@ export function MystiqueDoor({
                     )}
                     {/* A character over a whole group, in a take made in parts:
                         the change every later part is least likely to hold. */}
-                    {castOverGroup && parts > 1 && (
+                    {groupNeedsOnePart && (
                       <div className="mt-3 rounded-2xl bg-[#d8b483]/[0.08] p-3.5 shadow-[inset_0_0_0_1px_rgba(216,180,131,0.4)]">
                         <p className="text-sm leading-relaxed text-[#ecedf1]">{m.crowdWarn}</p>
                         <button

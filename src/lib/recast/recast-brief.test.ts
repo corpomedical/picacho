@@ -352,7 +352,9 @@ describe("a character cast over a whole group", () => {
     ]) {
       const brief = composeRecastBrief({ ...base, job: "scene", casting });
       expect(brief).not.toContain("The lighting, the setting and everyone else in the shot.");
-      expect(brief).toContain("The lighting and the setting.");
+      // The place by name, from the read — not "the setting" in the abstract.
+      expect(brief).toContain("The place it happens in, unchanged: A white studio under flat daylight.");
+      expect(brief).toContain("The lighting.");
       expect(brief).toContain("Everyone in @Video1 who is not named above stays exactly as they are.");
     }
   });
