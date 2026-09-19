@@ -409,9 +409,12 @@ export function chainFrameDistance(a: Uint8Array, b: Uint8Array): number {
 // what the person watches. CAPPED at 10 Mbit/s, because recast-sources refuses
 // a file over 50 MB at the bucket (recast.sql) and generated-videos sits under
 // the project's own limit: 30 s at the cap is about 38 MB, a 15 s piece about
-// 19. faststart so playback starts before the download ends.
+// 19. faststart so playback starts before the download ends. Two encoder
+// threads: x264 sizes its threads to the cores it sees, a function's share is
+// one vCPU, and every extra thread holds 1080p frames in memory (measured on
+// the stuck join, 2026-09-19: 303 MB at 2 threads, 607 at 8, 791 at 32).
 const ENCODE = [
-  "-c:v", "libx264", "-preset", "veryfast", "-crf", "17", "-maxrate", "10M", "-bufsize", "20M",
+  "-c:v", "libx264", "-preset", "veryfast", "-crf", "17", "-maxrate", "10M", "-bufsize", "20M", "-threads", "2",
   "-pix_fmt", "yuv420p", "-r", String(CHAIN_FPS),
   "-c:a", "aac", "-b:a", "192k",
   "-movflags", "+faststart",

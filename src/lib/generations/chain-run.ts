@@ -8,6 +8,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { probeMp4 } from "@/lib/media/mp4-probe";
 import { mediaUrl } from "@/lib/media/url";
+import { ChainRetry, ENCODE_TIMEOUT_MS, encoderFailure } from "@/lib/generations/chain-failure";
 import {
   AGREE_H,
   AGREE_W,
@@ -59,8 +60,6 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-/** A 30 s window at 720p, or a 30 s join at 1080p, encodes in well under this. */
-const ENCODE_TIMEOUT_MS = 180_000;
 /** How long a render may take to come down from the provider. */
 const DOWNLOAD_TIMEOUT_MS = 60_000;
 const MOTION_W = 160;
@@ -71,18 +70,7 @@ export const CHAIN_JOINING = "Joining the parts";
 
 type Admin = SupabaseClient;
 
-/**
- * Our side failed in a way another pass can mend — a storage blink, a
- * download that timed out, an encode that died. The runner turns it into its
- * own retry (the job row stays; the webhook, the poll and the reaper come
- * back), never into a failed take: the pieces before it were paid for.
- */
-export class ChainRetry extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ChainRetry";
-  }
-}
+export { ChainRetry };
 
 /**
  * The encoder, FOUND at run time rather than imported. The runner reaches
@@ -112,7 +100,7 @@ async function run(args: string[], what: string): Promise<void> {
   try {
     await execFileAsync(ffmpegPath, args, { timeout: ENCODE_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024 });
   } catch (err) {
-    throw new ChainRetry(`${what}: ${err instanceof Error ? err.message.slice(0, 300) : String(err)}`);
+    throw encoderFailure(what, err);
   }
 }
 
@@ -126,7 +114,7 @@ async function runForBytes(args: string[], what: string): Promise<Buffer> {
     });
     return stdout as Buffer;
   } catch (err) {
-    throw new ChainRetry(`${what}: ${err instanceof Error ? err.message.slice(0, 300) : String(err)}`);
+    throw encoderFailure(what, err);
   }
 }
 

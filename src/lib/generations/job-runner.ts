@@ -160,6 +160,11 @@ type JobRow = {
     // starts the next (its input made from this one's last second) or, on
     // the last, the pieces are joined and the take finishes as ONE video.
     chain?: ChainState;
+    // The last time our side of a long take's step failed and was kept for
+    // another pass: when, what the encoder or storage said, how many times
+    // in a row. On the row so a stuck take can be read without the server
+    // logs (2026-09-19); cleared when the next piece starts.
+    chainError?: { at: string; message: string; count: number };
   };
   resume: ResumeState;
   started_at: string;
@@ -346,10 +351,13 @@ async function releaseAdvanceClaim(
   admin: SupabaseClient,
   generationId: string,
   providerRequestId: string | null,
+  // Written with the release, while the claim still fences the row — only
+  // the long take's retry path passes it, to record why its step failed.
+  payload?: JobRow["payload"],
 ): Promise<void> {
   let query = admin
     .from("generation_jobs")
-    .update({ advance_lock: null, advance_locked_at: null })
+    .update({ advance_lock: null, advance_locked_at: null, ...(payload ? { payload } : {}) })
     .eq("generation_id", generationId);
   // Only release the claim for the SAME provider job we claimed — if a
   // concurrent winner already advanced the stage (new request id), its fresh
@@ -1900,7 +1908,14 @@ export async function advanceGeneration(
         // polls, the reaper comes back), never booked as the provider's
         // failure: every piece so far rendered and was paid for.
         if (err instanceof ChainRetry) {
-          await releaseAdvanceClaim(admin, generationId, row.provider_request_id);
+          await releaseAdvanceClaim(admin, generationId, row.provider_request_id, {
+            ...row.payload,
+            chainError: {
+              at: new Date().toISOString(),
+              message: err.message.slice(0, 1000),
+              count: (row.payload.chainError?.count ?? 0) + 1,
+            },
+          });
           throw new CriticalWriteError(`Long take, after part ${k + 1} of ${pieces}: ${err.message}`);
         }
         throw err;
@@ -1933,7 +1948,7 @@ export async function advanceGeneration(
           status_url: next.statusUrl,
           response_url: next.responseUrl,
           cancel_url: next.cancelUrl,
-          payload: { ...row.payload, chain: nextChain, label: next.label, provider: "fal" },
+          payload: { ...row.payload, chain: nextChain, chainError: undefined, label: next.label, provider: "fal" },
           // "Rendered the video" is refund-rules' billed marker: from here a
           // refused later piece must not refund as if nothing was spent.
           resume: {

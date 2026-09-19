@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { probeMp4 } from "../media/mp4-probe";
 import { recastCreditCost } from "../recast/recast";
 import { forceRefundEligible } from "./refund-rules";
+import { ChainRetry, encoderFailure } from "./chain-failure";
 import {
   AGREE_H,
   AGREE_W,
@@ -267,10 +268,18 @@ describe("the runner's side of a long take", () => {
 
   it("keeps the take for another pass when our side fails between paid pieces", () => {
     const branch = runner.slice(runner.indexOf("if (err instanceof ChainRetry)"));
-    expect(branch.slice(0, 400)).toContain("await releaseAdvanceClaim(admin, generationId, row.provider_request_id);");
-    expect(branch.slice(0, 400)).toContain("throw new CriticalWriteError(");
+    expect(branch.slice(0, 600)).toContain("await releaseAdvanceClaim(admin, generationId, row.provider_request_id, {");
+    expect(branch.slice(0, 600)).toContain("throw new CriticalWriteError(");
   });
 
+  it("writes why the step failed onto the row, counting, and clears it when the next piece starts", () => {
+    const branch = runner.slice(runner.indexOf("if (err instanceof ChainRetry)"));
+    expect(branch.slice(0, 600)).toContain("chainError: {");
+    expect(branch.slice(0, 600)).toContain("count: (row.payload.chainError?.count ?? 0) + 1,");
+    expect(runner).toContain("payload: { ...row.payload, chain: nextChain, chainError: undefined,");
+    // The release writes the payload only when it is given one.
+    expect(runner).toContain(".update({ advance_lock: null, advance_locked_at: null, ...(payload ? { payload } : {}) })");
+  });
   it("records the next piece only where it collected this one — the dialogue stages' fence", () => {
     const write = runner.slice(runner.indexOf("let pieceWrite = admin"));
     expect(write).toContain('.eq("stage", "video" satisfies JobStage)');
@@ -310,6 +319,50 @@ describe("the runner's side of a long take", () => {
   it("clears a take's working files once it has ended, either way", () => {
     expect(runner).toContain("if (!deleteError && jobRow?.payload?.chain) {");
     expect(runner).toContain("await cleanupChain(admin, jobRow.payload.chain);");
+  });
+});
+
+describe("why the encoder failed", () => {
+  const command = `Command failed: /var/task/node_modules/ffmpeg-static/ffmpeg -y -v error ${"-i /tmp/chain-x/piece.mp4 ".repeat(40)}`;
+
+  it("keeps ffmpeg's own words, not the command line that used to fill the log", () => {
+    const err = Object.assign(new Error(command), { code: 1, signal: null, killed: false, stderr: "[AVFilterGraph @ 0x1] No such filter: 'xfade'\n" });
+    const failure = encoderFailure("joining the pieces", err);
+    expect(failure).toBeInstanceOf(ChainRetry);
+    expect(failure.message).toBe("joining the pieces: ffmpeg exit 1: [AVFilterGraph @ 0x1] No such filter: 'xfade'");
+    expect(failure.message).not.toContain("Command failed");
+  });
+
+  it("reads a buffer's stderr and keeps its END, where ffmpeg says why", () => {
+    const stderr = Buffer.from(`${"frame noise ".repeat(200)}Cannot allocate memory`);
+    const failure = encoderFailure("reading join 1", Object.assign(new Error(command), { code: 1, stderr }));
+    expect(failure.message.endsWith("Cannot allocate memory")).toBe(true);
+    expect(failure.message.length).toBeLessThan(700);
+  });
+
+  it("names a timeout, a kill and a failed start apart", () => {
+    expect(encoderFailure("joining", Object.assign(new Error(command), { killed: true, signal: "SIGTERM", stderr: "" })).message).toBe(
+      "joining: ffmpeg stopped after 180 s",
+    );
+    expect(encoderFailure("joining", Object.assign(new Error(command), { killed: false, signal: "SIGKILL", stderr: "" })).message).toBe(
+      "joining: ffmpeg killed (SIGKILL)",
+    );
+    expect(encoderFailure("joining", Object.assign(new Error("spawn EACCES"), { code: "EACCES" })).message).toBe(
+      "joining: the encoder couldn't start (EACCES)",
+    );
+  });
+
+  it("caps the encoder's threads, which is what sizes its memory", () => {
+    const args = chainJoinArgs({
+      pieces: ["a.mp4", "b.mp4"],
+      spans: [{ piece: 0, from: 0, to: 100 }, { piece: 1, from: 10, to: 100 }],
+      hold: 0,
+      window: "w.mp4",
+      totalFrames: 184,
+      size: { width: 1920, height: 1080 },
+      output: "out.mp4",
+    });
+    expect(args.join(" ")).toContain("-threads 2");
   });
 });
 
