@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.59.0",
+    build: 98,
+    date: "2026-09-19",
+    title: "A deletion from Admin that fails at the last step now says what it had already done",
+    items: [
+      "If deleting an account from Admin → Users failed at the very last step, the page said only \"Something went wrong… details are in the server log\" — and nothing had been written to the log. By then the account's Stripe billing was already cancelled and a verified face already withdrawn, and the page said neither.",
+      "It now says so: the account was NOT deleted, its Stripe billing WAS already cancelled, and a verified face, if it had one, was withdrawn (they'd have to verify again). Retry the deletion, or restore their plan by hand if they should stay. The cause is in the server log.",
+    ],
+  },
+  {
     version: "1.58.0",
     build: 97,
     date: "2026-09-19",

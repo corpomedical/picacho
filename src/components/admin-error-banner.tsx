@@ -69,6 +69,10 @@ const PREFIX_SUMMARIES: [string, string][] = [
     "Couldn't cancel their Stripe billing — the account was NOT deleted. Sort it out in the Stripe dashboard, then try again.",
   ],
   [
+    "Couldn't delete the account",
+    "Couldn't delete the account — it was NOT deleted, but their Stripe billing WAS already cancelled, and a verified face, if they had one, was withdrawn (they'd have to verify again). Retry the deletion, or restore their plan manually if they should stay. Details are in the server log.",
+  ],
+  [
     "Couldn't update the profile status",
     "Couldn't update the profile status — check whether the login ban matches the listed status, and retry to reconcile. Details are in the server log.",
   ],

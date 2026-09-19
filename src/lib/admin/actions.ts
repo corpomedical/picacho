@@ -207,9 +207,14 @@ export async function deleteUser(formData: FormData) {
   // sweep's own best-effort contract already accepts.
   const { error } = await admin.auth.admin.deleteUser(userId);
   if (error) {
+    // Everything above has already happened. The banner collapses this to a
+    // fixed line saying so (admin-error-banner.tsx); the cause is logged here
+    // — e.g. a newer table referencing the account without ON DELETE CASCADE
+    // ("Database error deleting user").
+    console.error("deleteUser: auth delete failed after Stripe was cancelled", error);
     redirect(
       `/admin/users/${userId}?error=${encodeURIComponent(
-        `Couldn't delete the account (${error.message}). Their Stripe billing WAS already cancelled — retry the deletion, or restore their plan manually if they should stay.`,
+        `Couldn't delete the account (${error.message}). Their Stripe billing WAS already cancelled, and a verified face, if they had one, was withdrawn — retry the deletion, or restore their plan manually if they should stay.`,
       )}`,
     );
   }
