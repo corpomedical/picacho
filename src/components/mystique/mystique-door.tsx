@@ -161,6 +161,9 @@ export function MystiqueDoor({
     setTakes(initialTakes);
   }
 
+  // How many of this person's takes are still rendering — said beside the
+  // button, so a second press is a choice rather than a guess.
+  const rendering = takes.filter((x) => x.status === "generating").length;
   const renderingKey = takes
     .filter((x) => x.status === "generating")
     .map((x) => x.id)
@@ -929,7 +932,7 @@ export function MystiqueDoor({
             )}
 
             <div className="mt-4 grid gap-5 lg:grid-cols-[1.1fr_1fr]">
-              <div>
+              <div className="min-w-0">
                 <p className={label}>{m.modeLabel}</p>
                 <div className="mt-2 grid gap-2">
                   {RECAST_JOB_ORDER.map((j) => {
@@ -986,7 +989,7 @@ export function MystiqueDoor({
                 </div>
               </div>
 
-              <div>
+              <div className="min-w-0">
                 {takesCast && (
                   <>
                     <div className="flex flex-wrap items-baseline justify-between gap-x-4">
@@ -1047,20 +1050,25 @@ export function MystiqueDoor({
                     {ensemble && (
                       <div className="mt-3 space-y-2">
                         {cast.map((c, i) => (
-                          <label key={c.id} className="flex items-center gap-2.5 text-sm">
+                          <label key={c.id} className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-sm">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={c.photos[0].url} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" />
-                            <span className="w-24 shrink-0 truncate font-medium text-[#ecedf1]">{c.name}</span>
+                            <span className="max-w-[9rem] shrink truncate font-medium text-[#ecedf1]">{c.name}</span>
                             <span className="shrink-0 text-xs text-[#6b6f7a]">{m.rolePlays}</span>
+                            {/* A pill like every other control on this door, and
+                                one that cannot stretch the column: a native
+                                select is as wide as its longest option unless
+                                it is allowed to shrink (2026-09-20 — it pushed
+                                the left column down to 138 px). */}
                             <select
                               value={castTags[i] ?? ""}
                               disabled={starting}
                               onChange={(e) => setRole(c.id, e.target.value || null)}
-                              className="min-w-0 flex-1 cursor-pointer truncate rounded-lg bg-[#16171c] px-2.5 py-1.5 text-sm text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)] outline-none [color-scheme:dark] disabled:opacity-50"
+                              className="w-full min-w-0 max-w-[20rem] flex-1 cursor-pointer truncate rounded-full bg-[rgba(255,255,255,0.06)] py-1.5 pl-3.5 pr-2 text-sm text-[#ecedf1] shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)] outline-none [color-scheme:dark] disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               {peopleInClip.map((p) => (
                                 <option key={p.tag} value={p.tag}>
-                                  {formatMsg(p.many ? m.roleGroup : m.rolePerson, { tag: p.tag, where: p.where.slice(0, 48) })}
+                                  {formatMsg(p.many ? m.roleGroup : m.rolePerson, { tag: p.tag, where: p.where.slice(0, 28) })}
                                 </option>
                               ))}
                               <option value="">{m.roleWords}</option>
@@ -1257,6 +1265,16 @@ export function MystiqueDoor({
               >
                 {buttonLabel}
               </button>
+              {/* WHAT THE WAIT IS (2026-09-20). A long take is cut into its
+                  parts before anything is sent, which is up to a minute of
+                  silence on a button that only said "Checking the clip…" —
+                  and a second press is a second take, and a second charge
+                  ("It is not generating. Its stuck at checking video." →
+                  "now it generated two videos"). */}
+              {starting && <p className="basis-full text-xs text-[#f0cda6]">{parts > 1 ? m.preparingLong : m.preparingNote}</p>}
+              {!starting && rendering > 0 && (
+                <p className="basis-full text-xs text-[#9aa0ad]">{formatMsg(rendering === 1 ? m.oneRendering : m.someRendering, { n: rendering })}</p>
+              )}
             </div>
           </>
         )}

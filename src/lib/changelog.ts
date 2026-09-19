@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.65.0",
+    build: 104,
+    date: "2026-09-20",
+    title: "Mystique: the \"plays\" picker is a pill again, and the wait before a take says what it is",
+    items: [
+      "The \"plays\" dropdown was as wide as its longest line, which pushed the whole left column of the page down to a sliver. It is now a pill like every other control there, it can't stretch the layout, and a group reads simply as \"everyone in that group\".",
+      "Pressing Take on a long clip was silent for up to a minute while the clip is cut into its parts, so it looked stuck. It now says what it is doing, and warns that pressing again starts — and charges for — a second take.",
+      "Beside the button, Mystique now says how many of your takes are still rendering.",
+    ],
+  },
+  {
     version: "1.64.0",
     build: 103,
     date: "2026-09-20",
