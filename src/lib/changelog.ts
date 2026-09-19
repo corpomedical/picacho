@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.56.0",
+    build: 95,
+    date: "2026-09-19",
+    title: "Deleting an account from Admin now removes a verified face at BytePlus too",
+    items: [
+      "Deleting your own account from Settings already deleted your verified face at BytePlus. Deleting an account from Admin → Users did not. The face stayed at BytePlus, and once the account was gone nothing on our side could find it again. Both ways now do the same thing.",
+      "It happens after the Stripe cancellation and before the account itself is deleted. If BytePlus can't be reached, the face goes on the list the daily clean-up retries, and the deletion carries on.",
+      "Face verification is admin-only and still switched off, so this closes the gap before it is switched on.",
+    ],
+  },
+  {
     version: "1.55.0",
     build: 94,
     date: "2026-09-19",

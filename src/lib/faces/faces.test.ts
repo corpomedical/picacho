@@ -145,10 +145,20 @@ describe("withdrawal and deletion (Usage Rules 4.2, 5.3)", () => {
     expect(withdraw).toContain('.from("face_group_deletions")');
   });
 
-  it("deletes a person's face at BytePlus before their account's rows cascade away", () => {
-    const profile = readFileSync(join(__dirname, "..", "profile", "actions.ts"), "utf8");
-    expect(profile.indexOf("await deleteUserFaces(admin, userId);")).toBeGreaterThan(0);
-    expect(profile.indexOf("await deleteUserFaces(admin, userId);")).toBeLessThan(profile.indexOf("await admin.auth.admin.deleteUser(userId)"));
+  it("deletes a person's face at BytePlus before their account's rows cascade away, on both deletion paths", () => {
+    // The admin path once had no withdrawal at all (2026-09-19): its face
+    // stayed at BytePlus with nothing left here to find it by.
+    for (const file of ["profile/actions.ts", "admin/actions.ts"]) {
+      const source = readFileSync(join(__dirname, "..", file), "utf8");
+      const stripe = source.indexOf("await cancelStripeCustomerBilling(");
+      const faces = source.indexOf("await deleteUserFaces(admin, userId);");
+      const authDelete = source.indexOf("const { error } = await admin.auth.admin.deleteUser(userId);");
+      expect(stripe, file).toBeGreaterThan(-1);
+      expect(faces, file).toBeGreaterThan(stripe);
+      // Past the Stripe stop: a deletion that stops there keeps the face.
+      expect(source.slice(stripe, faces), file).toMatch(/if \(stripeCancelError\) \{[\s\S]*?redirect\(/);
+      expect(authDelete, file).toBeGreaterThan(faces);
+    }
     // The ledger outlives the account on purpose: no foreign key.
     const ledger = sql.slice(sql.indexOf("create table if not exists public.face_group_deletions"), sql.indexOf("alter table public.face_verifications enable"));
     expect(ledger).not.toContain("references");

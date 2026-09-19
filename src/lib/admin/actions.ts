@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { removeAllUserStorage } from "@/lib/profile/storage-buckets";
 import { erasePromoRedemptionEmail } from "@/lib/profile/promo-redemptions";
 import { removeUserRateHits } from "@/lib/rate-hits";
+import { deleteUserFaces } from "@/lib/faces/run";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/server";
 import { cancelStripeCustomerBilling } from "@/lib/stripe/cancel-customer";
@@ -185,6 +186,16 @@ export async function deleteUser(formData: FormData) {
       )}`,
     );
   }
+
+  // A verified face lives at BytePlus, not in our database, so the cascade
+  // below never reaches it — and until 2026-09-19 only the self-serve path
+  // withdrew it, so an account deleted from here left its face behind with
+  // no row left to find it by. The same call, in the same place: after the
+  // Stripe stop (a deletion that stops there keeps the face), before the auth
+  // delete, while the rows that name it still exist. Deleted there, or queued
+  // in the one table that outlives the account for the daily prune to finish
+  // (lib/faces/run.ts). Best-effort by design — it never blocks the deletion.
+  await deleteUserFaces(admin, userId);
 
   // Auth delete BEFORE the storage purge — the same fail-loudly-first
   // ordering the self-serve path earned (round-two audit): the purge is
