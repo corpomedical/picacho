@@ -1,10 +1,9 @@
-import type { SVGProps } from "react";
-import Link from "next/link";
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getMonthlyUsage } from "@/lib/generations/actions";
-import { nextMonthlyReset } from "@/lib/generations/core";
-import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
+import { monthlyWindowStart, nextMonthlyReset } from "@/lib/generations/core";
+import { PLAN_LIMITS, PLAN_LABELS, freeSlotOpen, onDailyFreeTier, type PlanId } from "@/lib/plans";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { getBrandRules } from "@/lib/brand-rules/actions";
 import { SettingsSection } from "@/components/settings/settings-section";
@@ -14,7 +13,6 @@ import { NativeStore } from "@/components/native-store";
 import { isNativeApp } from "@/lib/native/server";
 import { allowExternalPurchaseLink, EXTERNAL_PURCHASE_URL } from "@/lib/native/external-purchase";
 import { ExternalCheckoutButton } from "@/components/external-checkout-button";
-import { FeedbackForm } from "@/components/settings/feedback-form";
 import { ProfileForm } from "@/components/profile-form";
 import { InviteCard } from "@/components/invite-card";
 import { UsernameForm } from "@/components/settings/username-form";
@@ -41,15 +39,45 @@ import {
 import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
 import { ApiKeysCard } from "@/components/settings/api-keys-card";
 import { LanguageSwitcher } from "@/components/language-switcher";
-import { logout } from "@/lib/auth/actions";
-import { createCheckoutSession, createPortalSession } from "@/lib/stripe/actions";
+import { createCheckoutSession } from "@/lib/stripe/actions";
 import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
+import { LOCALES } from "@/lib/i18n/locales";
 import { isEUVisitor } from "@/lib/geo";
-import { cn } from "@/lib/cn";
 import { SUPPORT_EMAIL_FALLBACK } from "@/lib/domains";
 import { isSetsEnabled } from "@/lib/sets/enabled";
 import { setsEligible } from "@/lib/sets/set-config";
+import { resolveSettingsTab, settingsHref, type SettingsTab } from "@/lib/settings/tabs";
+import { loadAllowances, loadCreditSpend } from "@/lib/settings/account-data";
+import type { CreditsModel, NeedModel } from "@/components/settings/hub/overview";
+import type { ReceiptRow } from "@/components/settings/hub/billing";
+import { BillingTab, OverviewTab, SettingsShell } from "@/components/settings/hub/tabs-view";
+import {
+  CustomerCards,
+  InvoicesCard,
+  LatestInvoiceCard,
+  PlanFacts,
+  PlanLineSkeleton,
+  PlanStripeLine,
+  StripeCardSkeleton,
+} from "@/components/settings/hub/stripe-parts";
+import { PortalButton } from "@/components/settings/hub/portal-button";
+import { BUTTON_PRIMARY } from "@/components/settings/hub/parts";
+import { HelpPanel } from "@/components/settings/hub/help-panel";
+
+// Settings, direction A "Front desk" (operator's pick on the Settings &
+// Invoices canvas, 2026-09-19): it opens on an Overview — who is signed in,
+// the plan, what is left of every allowance, anything that needs them, the
+// latest invoice — and the forms live in eight rooms:
+//
+//   Overview · Plan & billing · Profile · Generation · Preferences ·
+//   Security · Privacy & data · Help
+//
+// Plan & billing (was Usage & plan) gained the invoices, the card, the
+// billing details and where the month's credits went. Brand rules moved into
+// Generation (they shape every take), Appearance and Notifications into
+// Preferences, the danger zone into Privacy & data, Support became Help.
+// Every old tab name still works — see lib/settings/tabs.ts.
 
 // The upsell ladder for the "next tier" card below — each plan nudges toward
 // the one after it. Basic slots in as the first paid step (2026-08-19): a
@@ -59,103 +87,23 @@ import { setsEligible } from "@/lib/sets/set-config";
 // accounts aren't nudged toward Elite, and Elite has nowhere to go.
 const TIER_ORDER: PlanId[] = ["none", "basic", "starter", "growth", "studio"];
 
-function AccountIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <rect x="2.5" y="5" width="19" height="14" rx="2" />
-      <circle cx="8.5" cy="11.5" r="2" />
-      <path d="M5.5 16.5c.5-1.5 1.8-2.3 3-2.3s2.5.8 3 2.3M14 9h5M14 12.5h5" />
-    </svg>
-  );
-}
-
-function AppearanceIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <rect x="3" y="4" width="18" height="12" rx="2" />
-      <path d="M8 20h8M12 16v4" />
-    </svg>
-  );
-}
-
-function SecurityIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <rect x="4.5" y="10.5" width="15" height="10" rx="2" />
-      <path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" />
-    </svg>
-  );
-}
-
-// Shield — brand and compliance rules.
-function BrandIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3Z" />
-      <path d="m9 12 2 2 4-4" />
-    </svg>
-  );
-}
-
-function NotificationsIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-    </svg>
-  );
-}
-
-function PrivacyIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6l7-3z" />
-      <path d="M9.5 12l2 2 3.5-4" />
-    </svg>
-  );
-}
-
-function GenerationIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <rect x="3" y="6" width="13" height="12" rx="2" />
-      <path d="M16 10l5-3v10l-5-3" />
-    </svg>
-  );
-}
-
-function UsageIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M4.5 19a8.5 8.5 0 1 1 15 0" />
-      <path d="M12 13 15 9" />
-      <circle cx="12" cy="13" r="1" />
-    </svg>
-  );
-}
-
-function SupportIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1 .8-1 1.7" />
-      <path d="M12 17h.01" />
-    </svg>
-  );
-}
-
-type TabId = "account" | "generation" | "appearance" | "security" | "notifications" | "privacy" | "usage" | "brand" | "support";
-const VALID_TABS: TabId[] = ["account", "generation", "appearance", "security", "notifications", "privacy", "usage", "brand", "support"];
+// Credit packs got a Stripe invoice from this day (commit ade8cf7). Older
+// packs came with a receipt only, and are listed as such.
+const PACK_INVOICES_SINCE = Date.parse("2026-08-23T00:00:00Z");
 
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; error?: string; tab?: string }>;
+  searchParams: Promise<{ saved?: string; error?: string; tab?: string; credits?: string }>;
 }) {
   const { t, locale } = await getServerMessages();
   const s = t.settings;
-  const { saved, error, tab } = await searchParams;
-  const activeTab: TabId = VALID_TABS.includes(tab as TabId) ? (tab as TabId) : "account";
+  const h = t.settingsHub;
+  const params = await searchParams;
+  const resolution = resolveSettingsTab(params.tab, params);
+  if (resolution.redirect) redirect(resolution.redirect);
+  const activeTab: SettingsTab = resolution.tab;
+  const { saved, error } = params;
 
   // ?error= is attacker-reachable: anyone can send a link like
   // /app/settings?error=Your+account+is+locked,+call+this+number — and this
@@ -197,7 +145,7 @@ export default async function SettingsPage({
       s.errorPlayBilledDeletion,
   };
   const errorMessage = error ? (KNOWN_ERRORS[error] ?? s.errorGeneric) : null;
-  const brandRules = await getBrandRules();
+
   // Drives the reader-app gating below — see lib/native/platform.ts.
   const nativeApp = await isNativeApp();
   // US-only external checkout link (per-request geo; false everywhere else
@@ -207,14 +155,7 @@ export default async function SettingsPage({
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
   if (!data.user) redirect("/login");
-
-  // Brand-rule enforcement kill switch — the panel shows a notice when off.
-  const { data: brandFlag } = await supabase
-    .from("feature_flags")
-    .select("enabled")
-    .eq("key", "brand_rules_enforcement")
-    .single();
-  const brandRulesPaused = !brandFlag?.enabled;
+  const userId = data.user.id;
 
   const [{ data: profile }, { data: supportEmailSetting }] = await Promise.all([
     // marketing_opt_out reads fine with the session client: the 2026-08-18
@@ -224,46 +165,160 @@ export default async function SettingsPage({
     supabase
       .from("profiles")
       .select(
-        "username, full_name, company, gender, plan, plan_status, plan_source, stripe_customer_id, skip_ai_refinement, marketing_opt_out, bonus_credits, purchased_credits, role, api_access, current_period_start, current_period_end",
+        "username, full_name, company, gender, plan, plan_status, plan_source, stripe_customer_id, stripe_subscription_id, skip_ai_refinement, marketing_opt_out, bonus_credits, purchased_credits, role, api_access, current_period_start, current_period_end, created_at, free_generation_last_at, free_reference_generations_used",
       )
-      .eq("id", data.user.id)
+      .eq("id", userId)
       .single(),
     supabase.from("app_settings").select("value").eq("key", "support_email").single(),
   ]);
-  // The notification switches, read on their own so that a database without
-  // the columns (supabase/applied/2026-09-11/notifications.sql) degrades to
-  // "everything on" instead of failing the main profile select above.
-  const { data: notifyRow } =
-    activeTab === "notifications"
-      ? await supabase
-          .from("profiles")
-          .select("notify_render_ready, notify_render_failed, notify_low_credits")
-          .eq("id", data.user.id)
-          .maybeSingle()
-      : { data: null };
-  const notifyPrefs = {
-    notify_render_ready: (notifyRow as { notify_render_ready?: boolean } | null)?.notify_render_ready !== false,
-    notify_render_failed: (notifyRow as { notify_render_failed?: boolean } | null)?.notify_render_failed !== false,
-    notify_low_credits: (notifyRow as { notify_low_credits?: boolean } | null)?.notify_low_credits !== false,
-  };
-  // Whether the render switches' help also names sets: only for someone
-  // Sets are open to (Sets' own rules, access.ts), and only read on this tab.
+
+  // No username is NO USERNAME — never the email prefix dressed up as one.
+  // The old fallback asked people to confirm deletion with a string that was
+  // not their username, pre-filled the username form with a value the server
+  // would reject, and minted /r/<email-prefix> referral links that resolve
+  // for nobody. Where a username is genuinely absent (legacy rows), the
+  // delete confirmation asks for the email address and the invite card
+  // simply waits until one is chosen.
+  const username = (profile?.username as string | null) ?? null;
+  const plan = (profile?.plan ?? "none") as PlanId;
+  const planStatus = (profile?.plan_status ?? null) as string | null;
+  const planSource = (profile?.plan_source ?? null) as "stripe" | "play" | null;
+  const isAdmin = profile?.role === "admin";
+  const supportEmail = supportEmailSetting?.value ?? SUPPORT_EMAIL_FALLBACK;
+  const customerId = (profile?.stripe_customer_id as string | null) ?? null;
+  const subscriptionId = (profile?.stripe_subscription_id as string | null) ?? null;
+  const periodStart = (profile?.current_period_start as string | null) ?? null;
+  const bonus = (profile?.bonus_credits ?? 0) as number;
+  const purchasedCredits = (profile?.purchased_credits ?? 0) as number;
+
+  // Display-only mirror of the actual enforcement in checkGenerationAllowance
+  // (generations/core.ts): the plan's monthly allowance only counts while
+  // plan_status is NULL (comped / pre-Stripe grants) or "active" — a
+  // past_due or canceled subscription has its plan credits paused. Bonus
+  // credits (admin-granted) stack on top and are never paused — same rule as
+  // the enforcement.
+  const planAllowanceActive = planStatus == null || planStatus === "active";
+  const limit = (planAllowanceActive ? PLAN_LIMITS[plan] : 0) + bonus;
+  // A "live" Stripe subscription (active or behind on payment) means all
+  // plan changes go through the Customer Portal, which handles proration.
+  // Stripe-owned plans only: a Play-billed subscriber has no Stripe
+  // subscription, and manages billing in the Play Store.
+  const hasLiveSubscription =
+    (planStatus === "active" || planStatus === "past_due") && planSource !== "play" && subscriptionId != null;
+
+  const needsCredits = activeTab === "overview" || activeTab === "billing";
+  // AFTER the profile, not alongside it: the meter must count the BILLING
+  // month (current_period_start — what checkGenerationAllowance enforces),
+  // not the calendar month.
+  const usedThisMonth = needsCredits ? await getMonthlyUsage(userId, periodStart) : 0;
+  // Enforcement compares everything spent in the window with the limit and
+  // takes the overflow from extra credits (core.ts). So the plan's part of
+  // the spend is capped at the limit — the old meter printed the raw sum and
+  // could read "160 of 140".
+  const credits: CreditsModel = onDailyFreeTier(plan, bonus)
+    ? { mode: "free", slotOpen: freeSlotOpen(profile?.free_generation_last_at as string | null | undefined), extra: purchasedCredits }
+    : {
+        mode: "plan",
+        limit,
+        left: Math.max(0, limit - Math.min(usedThisMonth, limit)),
+        paused: !planAllowanceActive && plan !== "none",
+        resetsOn: limit > 0 ? nextMonthlyReset(periodStart).toISOString() : null,
+        bonus,
+        extra: purchasedCredits,
+      };
+  const buyHref = nativeApp ? null : `${settingsHref("billing")}#buy`;
+
+  const planLabel = plan === "none" ? h.noPlan : PLAN_LABELS[plan];
+  const planTone: "good" | "warn" | "off" =
+    planStatus === "past_due" ? "warn" : planStatus === "canceled" || planStatus === "inactive" ? "off" : "good";
+  const planStatusText =
+    plan === "none"
+      ? null
+      : planStatus === "past_due"
+        ? h.statusPastDue
+        : planStatus === "canceled" || planStatus === "inactive"
+          ? h.statusEnded
+          : h.statusActive;
+  const planLine =
+    plan === "none" ? null : hasLiveSubscription && subscriptionId ? (
+      <Suspense fallback={<PlanLineSkeleton />}>
+        <PlanStripeLine subscriptionId={subscriptionId} locale={locale} h={h} />
+      </Suspense>
+    ) : planSource === "play" ? (
+      h.planViaPlay
+    ) : planStatus == null ? (
+      h.planGranted
+    ) : null;
+
   const setsOn =
-    activeTab === "notifications" &&
-    setsEligible(profile?.plan ?? null, profile?.role === "admin") &&
+    (activeTab === "overview" || activeTab === "preferences") &&
+    setsEligible(profile?.plan ?? null, isAdmin) &&
     (await isSetsEnabled(supabase));
 
-  // Referral outcome for the invite card (Account tab). Profiles are
-  // readable only by their owner, so the count of who joined through this
-  // link is taken with the service role — scoped to rows naming THIS account
-  // as referrer, returning nothing but two numbers.
+  // ── Overview ──────────────────────────────────────────────────────────
+  let overview: {
+    twoStepOn: boolean;
+    allowances: Awaited<ReturnType<typeof loadAllowances>>;
+  } | null = null;
+  if (activeTab === "overview") {
+    const [factors, allowances] = await Promise.all([
+      supabase.auth.mfa.listFactors(),
+      loadAllowances(supabase, {
+        userId,
+        plan,
+        planStatus,
+        isAdmin,
+        periodStart,
+        setsOn,
+        freeReferenceUsed: (profile?.free_reference_generations_used ?? 0) as number,
+      }),
+    ]);
+    overview = { twoStepOn: (factors.data?.totp ?? []).length > 0, allowances };
+  }
+
+  // ── Plan & billing ────────────────────────────────────────────────────
+  let spend: Awaited<ReturnType<typeof loadCreditSpend>> = null;
+  let receipts: ReceiptRow[] = [];
+  if (activeTab === "billing") {
+    const [spendResult, { data: rows }] = await Promise.all([
+      loadCreditSpend(supabase, userId, periodStart),
+      supabase
+        .from("credit_purchases")
+        .select("id, credits, amount_cents, currency, created_at, refunded_at, stripe_session_id")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(50),
+    ]);
+    spend = spendResult;
+    receipts = (rows ?? [])
+      .map((r) => {
+        const play = typeof r.stripe_session_id === "string" && r.stripe_session_id.startsWith("play:");
+        return {
+          id: r.id as string,
+          createdAt: r.created_at as string,
+          credits: r.credits as number,
+          amountCents: r.amount_cents as number,
+          currency: ((r.currency as string | null) || "usd").toLowerCase(),
+          refunded: r.refunded_at != null,
+          source: play ? ("play" as const) : ("stripe" as const),
+        };
+      })
+      // Packs bought on the website since invoices began have their own
+      // invoice in the list; only the older ones need their receipt row.
+      .filter((r) => r.source === "play" || Date.parse(r.createdAt) < PACK_INVOICES_SINCE);
+  }
+
+  // ── Profile: referral outcome for the invite card ─────────────────────
+  // Profiles are readable only by their owner, so the count of who joined
+  // through this link is taken with the service role — scoped to rows naming
+  // THIS account as referrer, returning nothing but two numbers.
   let referralStats: { joined: number; rewarded: number } | null = null;
-  if (activeTab === "account" && profile?.username) {
+  if (activeTab === "profile" && username) {
     try {
       const { data: referred } = await createAdminClient()
         .from("profiles")
         .select("referral_rewarded_at")
-        .eq("referred_by", data.user.id)
+        .eq("referred_by", userId)
         .limit(1000);
       referralStats = {
         joined: (referred ?? []).length,
@@ -274,33 +329,69 @@ export default async function SettingsPage({
     }
   }
 
-  // Usage tab: purchases, newest first (own rows, by RLS).
-  let purchases: { id: string; credits: number; amount_cents: number; currency: string; created_at: string; refunded_at: string | null }[] = [];
-  if (activeTab === "usage") {
-    const { data: rows } = await supabase
-      .from("credit_purchases")
-      .select("id, credits, amount_cents, currency, created_at, refunded_at")
-      .eq("user_id", data.user.id)
-      .order("created_at", { ascending: false })
-      .limit(12);
-    purchases = (rows ?? []) as typeof purchases;
-  }
-
-  // Generation tab data — only when the tab is open.
+  // ── Generation ────────────────────────────────────────────────────────
   let generationModels: ReturnType<typeof buildVideoModelOptions> = [];
   let generationGlobalModel = "kling";
-  const generationDefaults = await (activeTab === "generation"
-    ? readGenerationDefaults(supabase, data.user.id)
-    : Promise.resolve(null));
+  const generationDefaults = activeTab === "generation" ? await readGenerationDefaults(supabase, userId) : null;
+  let brandRules: Awaited<ReturnType<typeof getBrandRules>> = [];
+  let brandRulesPaused = false;
   if (activeTab === "generation") {
-    generationModels = buildVideoModelOptions(await readExperimentalModelsFlag(supabase));
-    const { data: gm } = await supabase.from("app_settings").select("value").eq("key", "video_model").maybeSingle();
+    const [flagOn, { data: gm }, rules, { data: brandFlag }] = await Promise.all([
+      readExperimentalModelsFlag(supabase),
+      supabase.from("app_settings").select("value").eq("key", "video_model").maybeSingle(),
+      getBrandRules(),
+      // Brand-rule enforcement kill switch — the panel shows a notice when off.
+      supabase.from("feature_flags").select("enabled").eq("key", "brand_rules_enforcement").single(),
+    ]);
+    generationModels = buildVideoModelOptions(flagOn);
     generationGlobalModel = (gm?.value as string | undefined) ?? "kling";
+    brandRules = rules;
+    brandRulesPaused = !brandFlag?.enabled;
   }
 
-  // Privacy tab data — only when the tab is open: a list of every shared post
-  // is not worth two queries on every other settings visit. Both fail open
-  // (the blocks table arrives with supabase/pending/community-blocks.sql).
+  // ── Preferences: the notification switches ───────────────────────────
+  // Read on their own so that a database without the columns degrades to
+  // "everything on" instead of failing the main profile select above.
+  const { data: notifyRow } =
+    activeTab === "preferences"
+      ? await supabase
+          .from("profiles")
+          .select("notify_render_ready, notify_render_failed, notify_low_credits")
+          .eq("id", userId)
+          .maybeSingle()
+      : { data: null };
+  const notifyPrefs = {
+    notify_render_ready: (notifyRow as { notify_render_ready?: boolean } | null)?.notify_render_ready !== false,
+    notify_render_failed: (notifyRow as { notify_render_failed?: boolean } | null)?.notify_render_failed !== false,
+    notify_low_credits: (notifyRow as { notify_low_credits?: boolean } | null)?.notify_low_credits !== false,
+  };
+
+  // ── Security ──────────────────────────────────────────────────────────
+  // Whether an email+password identity exists — a Google-only account gets
+  // the set-a-password variant of the form.
+  const hasPassword = (data.user.identities ?? []).some((i) => i.provider === "email");
+  // API access: Elite includes it, an admin grant covers the exceptions.
+  const apiEnabled = profile?.plan === "elite" || profile?.api_access === true || isAdmin;
+  const { data: apiKeyRows } =
+    activeTab === "security" && apiEnabled
+      ? await supabase
+          .from("api_keys")
+          .select("id, name, prefix, created_at, last_used_at")
+          .eq("user_id", userId)
+          .is("revoked_at", null)
+          .order("created_at", { ascending: false })
+      : { data: [] };
+  const apiKeys = (apiKeyRows ?? []) as {
+    id: string;
+    name: string;
+    prefix: string;
+    created_at: string;
+    last_used_at: string | null;
+  }[];
+
+  // ── Privacy & data ────────────────────────────────────────────────────
+  // Only when the tab is open: a list of every shared post is not worth two
+  // queries on every other settings visit. Both fail open.
   let sharedPosts: SharedPostRow[] = [];
   let blocked: BlockedRow[] = [];
   if (activeTab === "privacy") {
@@ -308,7 +399,7 @@ export default async function SettingsPage({
       supabase
         .from("community_posts")
         .select("id, generation_id, media_url, content_type, caption, prompt, hearts_count, created_at")
-        .eq("user_id", data.user.id)
+        .eq("user_id", userId)
         // What anyone else can see: a post moderation hid is visible to no
         // one but its owner, and RLS would not let the owner remove it.
         .is("hidden_at", null)
@@ -317,7 +408,7 @@ export default async function SettingsPage({
       supabase
         .from("community_blocks")
         .select("blocked_id, blocked_username")
-        .eq("blocker_id", data.user.id)
+        .eq("blocker_id", userId)
         .order("created_at", { ascending: false }),
     ]);
     sharedPosts = (postRows ?? [])
@@ -341,468 +432,291 @@ export default async function SettingsPage({
     }));
   }
 
-  // AFTER the profile, not alongside it: the meter must count the BILLING
-  // month (current_period_start — what checkGenerationAllowance enforces),
-  // not the calendar month. Measured 2026-09-11: a mid-month renewal showed
-  // "exhausted" here while the composer allowed, and vice versa.
-  const usedThisMonth = await getMonthlyUsage(
-    data.user.id,
-    (profile?.current_period_start as string | null) ?? null,
-  );
-
-  // No username is NO USERNAME — never the email prefix dressed up as one.
-  // The old fallback asked people to confirm deletion with a string that was
-  // not their username, pre-filled the username form with a value the server
-  // would reject, and minted /r/<email-prefix> referral links that resolve
-  // for nobody. Where a username is genuinely absent (legacy rows), the
-  // delete confirmation asks for the email address and the invite card
-  // simply waits until one is chosen.
-  const username = (profile?.username as string | null) ?? null;
-  // Whether an email+password identity exists — a Google-only account gets
-  // the set-a-password variant of the form (the server already skips the
-  // current-password re-check for it).
-  const hasPassword = (data.user.identities ?? []).some((i) => i.provider === "email");
-  const plan = (profile?.plan ?? "none") as PlanId;
-
-  // API access: Elite includes it, an admin grant covers the exceptions.
-  const apiEnabled =
-    profile?.plan === "elite" || profile?.api_access === true || profile?.role === "admin";
-  const { data: apiKeyRows } = apiEnabled
-    ? await supabase
-        .from("api_keys")
-        .select("id, name, prefix, created_at, last_used_at")
-        .eq("user_id", data.user.id)
-        .is("revoked_at", null)
-        .order("created_at", { ascending: false })
-    : { data: [] };
-  const apiKeys = (apiKeyRows ?? []) as {
-    id: string;
-    name: string;
-    prefix: string;
-    created_at: string;
-    last_used_at: string | null;
-  }[];
-  // Display-only mirror of the actual enforcement in checkGenerationAllowance
-  // (generations/core.ts): the plan's monthly allowance only counts while
-  // plan_status is NULL (comped / pre-Stripe grants) or "active" — a
-  // past_due or canceled subscription has its plan credits paused, and this
-  // page used to keep showing the full plan limit anyway, so someone whose
-  // card failed saw "12 of 100 this month" while the composer refused them.
-  // Bonus credits (admin-granted) stack on top and are never paused — same
-  // rule as the enforcement.
-  const planAllowanceActive =
-    profile?.plan_status == null || profile.plan_status === "active";
-  const limit = (planAllowanceActive ? PLAN_LIMITS[plan] : 0) + (profile?.bonus_credits ?? 0);
-  const pct = limit > 0 ? Math.min(100, Math.round((usedThisMonth / limit) * 100)) : 0;
   const nextPlanId = TIER_ORDER[TIER_ORDER.indexOf(plan) + 1];
-  const nextTier = nextPlanId ? PRICING_TIERS.find((t) => t.id === nextPlanId) : undefined;
+  const nextTier = nextPlanId ? PRICING_TIERS.find((tier) => tier.id === nextPlanId) : undefined;
   // Same-number swap (€19 not a $->€ conversion) — matches the price this
   // person would actually be charged at checkout, see stripe/actions.ts.
   const currencySymbol = (await isEUVisitor()) ? "€" : "$";
-  const purchasedCredits = (profile?.purchased_credits ?? 0) as number;
-  const supportEmail = supportEmailSetting?.value ?? SUPPORT_EMAIL_FALLBACK;
-  // A "live" Stripe subscription (active or behind on payment) means all
-  // plan changes should go through the Customer Portal, which handles
-  // proration correctly. No subscription yet (or fully canceled) means the
-  // next click starts a brand-new Checkout session instead.
-  // Stripe-owned plans only (round-two audit): a Play-billed subscriber has
-  // no Stripe customer, so the portal button dead-ended in "No billing
-  // account yet — start with a plan below" — telling a PAYING customer they
-  // have no billing. Play subscribers manage billing in the Play Store; the
-  // NativeStore branch and checkout-core's guard already say so.
-  const hasLiveSubscription =
-    (profile?.plan_status === "active" || profile?.plan_status === "past_due") &&
-    profile?.plan_source !== "play";
 
-  const NAV: { id: TabId; label: string; icon: (props: SVGProps<SVGSVGElement>) => React.JSX.Element }[] = [
-    { id: "account", label: s.account, icon: AccountIcon },
-    { id: "generation", label: s.generationTab, icon: GenerationIcon },
-    { id: "appearance", label: s.appearance, icon: AppearanceIcon },
-    { id: "security", label: s.security, icon: SecurityIcon },
-    { id: "notifications", label: s.notificationsTab, icon: NotificationsIcon },
-    { id: "privacy", label: s.privacyTab, icon: PrivacyIcon },
-    { id: "usage", label: s.usageAndPlan, icon: UsageIcon },
-    { id: "brand", label: t.brandRules.tab, icon: BrandIcon },
-    { id: "support", label: s.support, icon: SupportIcon },
-  ];
+  // Everything below that could take a payment is omitted inside the
+  // iOS/Android app. Apple's reader rules let an app sign existing
+  // subscribers in and let them use what they've paid for, but it must sell
+  // nothing and must not point anywhere that does — no upgrade button, no
+  // checkout, no "manage your plan on our website", not even a link to a
+  // page that eventually reaches pricing. Stripe's billing portal counts: it
+  // can change plans and take payment. Rendered on the server rather than
+  // hidden with CSS, so the purchase UI never exists in the app's DOM at all.
+  const upgradeCard =
+    !nativeApp && !hasLiveSubscription && !(planSource === "play" && plan !== "none") && nextTier ? (
+      <div className="flex items-center justify-between gap-4 rounded-control bg-atelier-ink p-4 text-atelier-paper">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold">
+            {plan === "none"
+              ? formatMsg(s.getStartedWith, { tier: t.pricingTiers[nextTier.id].name })
+              : formatMsg(s.upgradeTo, { tier: t.pricingTiers[nextTier.id].name })}
+          </p>
+          <p className="mt-0.5 font-numeral text-xs tabular-nums text-atelier-paper/70">
+            {formatMsg(s.priceLine, { price: `${currencySymbol}${nextTier.price}`, credits: nextTier.credits })}
+          </p>
+        </div>
+        <form action={createCheckoutSession}>
+          <input type="hidden" name="plan" value={nextTier.id} />
+          <button
+            type="submit"
+            className="flex-shrink-0 rounded-control bg-atelier-paper px-4 py-2 text-sm font-medium text-atelier-ink transition-opacity hover:opacity-90"
+          >
+            {plan === "none" ? s.getStarted : s.upgrade}
+          </button>
+        </form>
+      </div>
+    ) : null;
+
+  const needs: NeedModel[] = [];
+  if (planStatus === "past_due" && planSource !== "play" && !nativeApp && customerId) needs.push({ key: "payment", portal: true });
+  if (overview && !overview.twoStepOn) needs.push({ key: "twoStep", href: settingsHref("security") });
+  if (!username) needs.push({ key: "username", href: settingsHref("profile") });
+
+  const languageName = LOCALES.find((l) => l.code === locale)?.label ?? null;
+
+  const planHeader = { label: planLabel, tone: planTone, statusText: planStatusText };
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
-        {s.eyebrow}
-      </p>
-      <h1 className="mt-1 marquee text-[26px] leading-[1.05] text-atelier-ink sm:text-[28px]">
-        {s.title}
-      </h1>
-      <p className="mt-1 text-sm text-atelier-muted">{s.subtitle}</p>
-
-      {saved && (
-        <p className="mt-4 rounded-control border border-emerald-600/25 bg-emerald-500/10 px-3.5 py-2 text-sm text-emerald-700 dark:text-emerald-400">
-          {s.savedNotice}
-        </p>
+    <SettingsShell activeTab={activeTab} t={t} saved={Boolean(saved)} errorMessage={errorMessage}>
+      {activeTab === "overview" && overview && (
+        <OverviewTab
+          t={t}
+          locale={locale}
+          identity={{
+            name: (profile?.full_name as string | null) ?? null,
+            username,
+            email: data.user.email ?? "",
+            company: (profile?.company as string | null) ?? null,
+            memberSince: (profile?.created_at as string | null) ?? data.user.created_at,
+          }}
+          plan={planHeader}
+          planLine={planLine}
+          credits={credits}
+          allowances={overview.allowances}
+          needs={needs}
+          latestInvoice={
+            customerId ? (
+              <Suspense fallback={null}>
+                <LatestInvoiceCard customerId={customerId} locale={locale} h={h} />
+              </Suspense>
+            ) : null
+          }
+          sections={[
+            { tab: "billing", hint: planLabel, warn: planStatus === "past_due" },
+            { tab: "profile", hint: username ? `@${username}` : null },
+            { tab: "generation", hint: null },
+            { tab: "preferences", hint: languageName },
+            { tab: "security", hint: overview.twoStepOn ? h.hintTwoStepOn : h.hintTwoStepOff, warn: !overview.twoStepOn },
+            { tab: "privacy", hint: null },
+            { tab: "help", hint: h.hintHelp },
+          ]}
+          buyHref={buyHref}
+        />
       )}
-      {errorMessage && (
-        <p className="mt-4 rounded-control border border-red-600/25 bg-red-500/10 px-3.5 py-2 text-sm text-red-600 dark:text-red-400">
-          {errorMessage}
-        </p>
-      )}
 
-      <div className="mt-6 flex flex-col gap-6 sm:flex-row">
-        <nav className="flex flex-shrink-0 gap-1 overflow-x-auto sm:w-52 sm:flex-col sm:gap-0.5 sm:overflow-visible">
-          {NAV.map((item) => (
-            <Link
-              key={item.id}
-              href={item.id === "account" ? "/app/settings" : `/app/settings?tab=${item.id}`}
-              className={cn(
-                "flex flex-shrink-0 items-center gap-2.5 whitespace-nowrap rounded-control px-3 py-2 text-sm transition-colors",
-                activeTab === item.id
-                  ? "bg-atelier-surface font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
-                  : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-              )}
-            >
-              <item.icon className="h-4 w-4 flex-shrink-0" />
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-
-        <div className="min-w-0 flex-1">
-          {activeTab === "account" && (
-            <div className="space-y-4">
-              <SettingsSection title={s.account} description={s.accountDesc}>
-                <div className="space-y-5">
-                  <UsernameForm initialUsername={username ?? ""} />
-                  <div className="border-t border-atelier-rule/60 pt-5">
-                    <ProfileForm
-                      initialFullName={(profile?.full_name as string | null) ?? ""}
-                      initialCompany={profile?.company ?? ""}
-                      initialGender={profile?.gender ?? ""}
-                    />
-                  </div>
-                </div>
-              </SettingsSection>
-
-              {/* Only with a real username: a link built from anything else
-                  resolves for nobody (the /r route matches profiles.username
-                  exactly). */}
-              {username && <InviteCard username={username} stats={referralStats} />}
-
-
-              {/* Not a card: a 32px sheet around one underlined link was the
-                  clearest case of the density the survey flagged. */}
-              <form action={logout} className="px-1">
-                <button
-                  type="submit"
-                  className="text-sm font-medium text-atelier-muted underline underline-offset-2 transition-colors hover:text-atelier-ink"
-                >
-                  {s.logOut}
-                </button>
-              </form>
-
-              {/* tone="danger" rather than a hardcoded red-600/red-400 pair:
-                  that was the only raw Tailwind colour on the page, and it had
-                  to name its own dark variant because it sat outside the token
-                  system. atelier-accent already has both. */}
-              <SettingsSection
-                tone="danger"
-                title={s.dangerZone}
-                description={s.dangerDesc}
-              >
-                <DeleteAccountForm confirmWith={username ?? (data.user.email ?? "").toLowerCase()} />
-              </SettingsSection>
-            </div>
-          )}
-
-          {activeTab === "appearance" && (
-            <SettingsSection title={s.appearance} description={s.appearanceDesc}>
-              <div>
-                <ThemePicker />
-                <p className="mt-2 text-xs text-atelier-muted">{s.appearanceSubtitle}</p>
+      {activeTab === "billing" && (
+        <BillingTab
+          t={t}
+          locale={locale}
+          plan={planHeader}
+          planAction={
+            !nativeApp && hasLiveSubscription ? (
+              <div className="flex flex-col items-end gap-1.5">
+                <PortalButton className={BUTTON_PRIMARY}>{h.changeOrCancel}</PortalButton>
+                <span className="text-[11.5px] text-atelier-muted">{h.opensStripe}</span>
               </div>
-              <div className="flex items-center justify-between border-t border-atelier-rule/60 pt-5">
-                <div>
-                  <p className="text-sm font-medium text-atelier-ink">{s.language}</p>
-                  <p className="mt-0.5 text-xs text-atelier-muted">{s.languageSubtitle}</p>
-                </div>
-                <LanguageSwitcher />
-              </div>
-            </SettingsSection>
-          )}
-
-          {activeTab === "security" && (
-            <div className="space-y-4">
-              <SettingsSection title={s.security} description={s.securitySubtitle}>
-                <div className="space-y-5">
-                  <PasswordForm hasPassword={hasPassword} />
-                  {/* The email change is a password-gated credential change —
-                      it lived on the Account tab between a referral card and
-                      a marketing toggle (2026-09-11 IA pass). */}
-                  <div className="border-t border-atelier-rule/60 pt-5">
-                    <EmailForm initialEmail={data.user.email ?? ""} />
-                  </div>
-                  <div className="border-t border-atelier-rule/60 pt-5">
-                    <MfaCard />
-                  </div>
-                  <div className="border-t border-atelier-rule/60 pt-5">
-                    <ConnectedAccountsCard />
-                  </div>
-                  <div className="border-t border-atelier-rule/60 pt-5">
-                    <SessionsCard />
-                  </div>
-                </div>
-              </SettingsSection>
-              {/* Live credentials belong with the rest of them, not between
-                  a referral card and a logout link. */}
-              {apiEnabled && <ApiKeysCard keys={apiKeys} enabled />}
-            </div>
-          )}
-
-          {activeTab === "generation" && generationDefaults && (
-            <div className="space-y-4">
-              <SettingsSection title={s.generationDefaultsTitle} description={s.generationDefaultsDesc}>
-                <GenerationDefaultsForm
-                  models={generationModels}
-                  globalDefaultModelId={generationGlobalModel}
-                  initial={generationDefaults}
-                />
-              </SettingsSection>
-              <SettingsSection title={s.aiGeneration} description={s.aiGenerationDesc}>
-                <SkipRefinementToggle initialEnabled={profile?.skip_ai_refinement === true} />
-              </SettingsSection>
-            </div>
-          )}
-
-          {activeTab === "notifications" && (
-            <div className="space-y-4">
-              <SettingsSection title={s.notificationsTitle} description={s.notificationsDesc}>
-                <NotificationsPanel
-                  initial={notifyPrefs}
-                  vapidPublicKey={process.env.VAPID_PUBLIC_KEY ?? null}
-                  nativeApp={nativeApp}
-                  // Sets are on the web only (the Android app shows webOnly): the app never names them.
-                  setsOn={setsOn && !nativeApp}
-                />
-              </SettingsSection>
-
-              {/* Email lives beside push (2026-09-11 IA pass): both answer
-                  "what is Picacho allowed to send me" — it sat on the Account
-                  tab between a referral card and an API-keys card. enabled =
-                  NOT opted out; a missing profile row degrades to the
-                  column's default (false → emails on), matching what the
-                  blast query would actually do. */}
-              <SettingsSection title={s.emailPreferences} description={s.emailPreferencesDesc}>
-                <MarketingEmailsToggle initialEnabled={profile?.marketing_opt_out !== true} />
-              </SettingsSection>
-            </div>
-          )}
-
-          {activeTab === "privacy" && (
-            <div className="space-y-4">
-              <SettingsSection title={s.sharedPostsTitle} description={s.sharedPostsDesc}>
-                <SharedPostsList initial={sharedPosts} />
-              </SettingsSection>
-              <SettingsSection title={s.blockedTitle} description={s.blockedDesc}>
-                <BlockedAccountsList initial={blocked} />
-              </SettingsSection>
-              <SettingsSection title={s.cookieTitle} description={s.cookieDesc}>
-                <CookieChoiceControl />
-              </SettingsSection>
-            </div>
-          )}
-
-          {activeTab === "usage" && (
-            <SettingsSection title={s.usageAndPlan} description={s.usageDesc}>
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-atelier-muted">
-                  {plan === "none" ? s.noActivePlan : formatMsg(s.planSuffix, { plan: PLAN_LABELS[plan] })}
-                </p>
-                <p className="font-numeral text-sm tabular-nums text-atelier-ink">{limit > 0 ? formatMsg(s.percentUsed, { pct }) : ""}</p>
-              </div>
-              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-atelier-ink/10">
-                <div
-                  className="h-full rounded-full bg-atelier-accent transition-[width]"
-                  style={{ width: `${limit > 0 ? Math.max(pct, usedThisMonth > 0 ? 3 : 0) : 0}%` }}
-                />
-              </div>
-              <p className="mt-2 font-numeral text-xs tabular-nums text-atelier-muted">
-                {usedThisMonth === 1 ? s.generationCountOne : formatMsg(s.generationCountOther, { n: usedThisMonth })}
-                {limit > 0 && ` ${formatMsg(s.ofLimitThisMonth, { limit })}`}
-              </p>
-              {/* When "this month" ends (2026-09-11): the meter said "N of X
-                  this month" and never said when the month turned over. */}
-              {/* The end of the MONTHLY window the meter counts — not the
-                  billing period, which on an annual plan is a year away
-                  (2026-09-11 review). Pinned to UTC, the zone the window is
-                  computed in, so the day cannot slip. */}
-              {planAllowanceActive && plan !== "none" && (
-                <p className="mt-1 text-xs text-atelier-muted">
-                  {formatMsg(s.renewsOn, {
-                    date: nextMonthlyReset((profile?.current_period_start as string | null) ?? null).toLocaleDateString(locale, {
-                      day: "numeric",
-                      month: "long",
-                      timeZone: "UTC",
-                    }),
-                  })}
-                </p>
-              )}
-              {(profile?.bonus_credits ?? 0) > 0 && (
-                <p className="mt-1 text-xs text-atelier-muted">
-                  {profile?.bonus_credits === 1
-                    ? s.bonusIncludedOne
-                    : formatMsg(s.bonusIncluded, { n: profile?.bonus_credits ?? 0 })}
-                </p>
-              )}
-
-              {/* Everything below is omitted inside the iOS/Android app.
-
-                  Apple's reader rules let an app sign existing subscribers in
-                  and let them use what they've paid for, but it must sell
-                  nothing and must not point anywhere that does — no upgrade
-                  button, no checkout, no "manage your plan on our website",
-                  not even a link to a page that eventually reaches pricing.
-                  Breaking that means either a rejection or handing 15-30% of
-                  every subscription to the store. Stripe's billing portal
-                  counts: it can change plans and take payment.
-
-                  Rendered on the server rather than hidden with CSS, so the
-                  purchase UI never exists in the app's DOM at all. */}
-              {nativeApp ? (
-                <div className="mt-4 rounded-control border border-atelier-rule bg-atelier-paper p-4">
-                  <p className="text-sm font-semibold text-atelier-ink">
-                    {profile?.plan_status === "past_due"
-                      ? s.paymentFailed
-                      : plan === "none"
-                        ? PLAN_LABELS.none
-                        : formatMsg(s.planSuffix, { plan: PLAN_LABELS[plan] })}
-                  </p>
-                  {/* US requests only (see lib/native/external-purchase):
-                      the court-permitted external link to website checkout.
-                      Everywhere else this block simply doesn't exist. */}
-                  {externalPurchase && (
-                    <ExternalCheckoutButton
-                      url={EXTERNAL_PURCHASE_URL}
-                      label={t.common.webPurchaseCta}
-                      note={t.common.webPurchaseNote}
-                    />
+            ) : null
+          }
+          planBody={
+            <>
+              {hasLiveSubscription && subscriptionId ? (
+                <Suspense fallback={<PlanLineSkeleton />}>
+                  <PlanFacts subscriptionId={subscriptionId} locale={locale} h={h} nativeApp={nativeApp} />
+                </Suspense>
+              ) : planSource === "play" && plan !== "none" ? (
+                <p className="text-sm text-atelier-ink">{formatMsg(s.playStoreManagedElsewhere, { plan: PLAN_LABELS[plan] })}</p>
+              ) : plan !== "none" && planStatus == null ? (
+                <p className="text-sm text-atelier-muted">{h.planGranted}</p>
+              ) : null}
+              {planStatus === "past_due" && (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm text-atelier-ink">{s.paymentFailedDesc}</p>
+                  {!nativeApp && customerId && planSource !== "play" && (
+                    <PortalButton flow="payment_method" className={BUTTON_PRIMARY}>
+                      {h.updateCard}
+                    </PortalButton>
                   )}
                 </div>
-              ) : hasLiveSubscription ? (
-                <div className="mt-4 flex items-center justify-between gap-4 rounded-control bg-atelier-ink p-4 text-atelier-paper">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold">
-                      {profile?.plan_status === "past_due" ? s.paymentFailed : formatMsg(s.planSuffix, { plan: PLAN_LABELS[plan] })}
-                    </p>
-                    <p className="mt-0.5 text-xs text-atelier-paper/70">
-                      {profile?.plan_status === "past_due" ? s.paymentFailedDesc : s.managePlanDesc}
-                    </p>
-                  </div>
-                  <form action={createPortalSession}>
-                    <button
-                      type="submit"
-                      className="flex-shrink-0 rounded-control bg-atelier-paper px-4 py-2 text-sm font-medium text-atelier-ink transition-opacity hover:opacity-90"
-                    >
-                      {s.manageBilling}
-                    </button>
-                  </form>
-                </div>
-              ) : profile?.plan_source === "play" && plan !== "none" ? (
-                <div className="mt-4 rounded-control border border-atelier-rule bg-atelier-paper p-4">
-                  <p className="text-sm text-atelier-ink">
-                    {formatMsg(s.playStoreManagedElsewhere, { plan: PLAN_LABELS[plan] })}
-                  </p>
-                </div>
-              ) : (
-                nextTier && (
-                  <div className="mt-4 flex items-center justify-between gap-4 rounded-control bg-atelier-ink p-4 text-atelier-paper">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold">
-                        {plan === "none"
-                          ? formatMsg(s.getStartedWith, { tier: t.pricingTiers[nextTier.id].name })
-                          : formatMsg(s.upgradeTo, { tier: t.pricingTiers[nextTier.id].name })}
-                      </p>
-                      <p className="mt-0.5 font-numeral text-xs tabular-nums text-atelier-paper/70">
-                        {formatMsg(s.priceLine, {
-                          price: `${currencySymbol}${nextTier.price}`,
-                          credits: nextTier.credits,
-                        })}
-                      </p>
-                    </div>
-                    <form action={createCheckoutSession}>
-                      <input type="hidden" name="plan" value={nextTier.id} />
-                      <button
-                        type="submit"
-                        className="flex-shrink-0 rounded-control bg-atelier-paper px-4 py-2 text-sm font-medium text-atelier-ink transition-opacity hover:opacity-90"
-                      >
-                        {plan === "none" ? s.getStarted : s.upgrade}
-                      </button>
-                    </form>
-                  </div>
-                )
               )}
-            </SettingsSection>
-          )}
-
-          {/* Buying credits is a purchase, so it can't exist in the app at
-              all — same reader-app reasoning as the plan card above. */}
-          {activeTab === "usage" && !nativeApp && (
-            <BuyCreditsPanel purchasedCredits={purchasedCredits} currencySymbol={currencySymbol} />
-          )}
-
-          {activeTab === "usage" && !nativeApp && (
-            <SettingsSection title={s.purchaseHistoryTitle}>
-              {purchases.length === 0 ? (
-                <p className="text-sm text-atelier-muted">{s.purchaseHistoryEmpty}</p>
-              ) : (
-                <ul className="divide-y divide-atelier-rule/60">
-                  {purchases.map((p) => (
-                    <li key={p.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0 text-sm">
-                      <span className="text-atelier-ink">{formatMsg(s.purchaseCredits, { n: p.credits })}</span>
-                      <span className="font-numeral tabular-nums text-atelier-muted">
-                        {new Intl.NumberFormat(locale, { style: "currency", currency: (p.currency || "usd").toUpperCase() }).format(p.amount_cents / 100)}
-                        {" · "}
-                        {new Date(p.created_at).toLocaleDateString(locale)}
-                        {p.refunded_at && ` · ${s.purchaseRefunded}`}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+              {upgradeCard}
+              {nativeApp && externalPurchase && (
+                // US requests only (see lib/native/external-purchase): the
+                // court-permitted external link to website checkout.
+                <ExternalCheckoutButton url={EXTERNAL_PURCHASE_URL} label={t.common.webPurchaseCta} note={t.common.webPurchaseNote} />
               )}
-            </SettingsSection>
-          )}
+            </>
+          }
+          credits={credits}
+          spend={spend}
+          spendSince={formatMsg(h.sinceDate, {
+            date: monthlyWindowStart(periodStart).toLocaleDateString(locale, {
+              day: "numeric",
+              month: "long",
+              timeZone: "UTC",
+            }),
+          })}
+          store={
+            // Buying credits is a purchase, so it can't exist in the app
+            // at all. The Play store component shows nothing unless the
+            // installed binary can bill (lib/native/purchases.ts).
+            nativeApp ? <NativeStore userId={userId} currentPlan={plan} /> : <BuyCreditsPanel currencySymbol={currencySymbol} />
+          }
+          invoices={
+            <Suspense fallback={<StripeCardSkeleton title={h.invoicesTitle} rows={3} />}>
+              <InvoicesCard customerId={customerId} receipts={receipts} locale={locale} h={h} supportEmail={supportEmail} />
+            </Suspense>
+          }
+          customer={
+            customerId ? (
+              <Suspense
+                fallback={
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <StripeCardSkeleton title={h.paymentMethodTitle} />
+                    <StripeCardSkeleton title={h.billingDetailsTitle} />
+                  </div>
+                }
+              >
+                <CustomerCards customerId={customerId} t={t} locale={locale} editable={!nativeApp} />
+              </Suspense>
+            ) : null
+          }
+        />
+      )}
 
-          {/* Play Billing store (2026-09-02): rendered for the native shell,
-              but the component itself shows NOTHING unless the installed
-              binary carries the Purchases plugin (versionCode 10+) and the
-              RevenueCat key is live — the approved reader-mode builds keep
-              their zero purchase surfaces. See lib/native/purchases.ts. */}
-          {activeTab === "usage" && nativeApp && data.user && (
-            <NativeStore userId={data.user.id} currentPlan={plan} />
-          )}
-
-          {activeTab === "brand" && <BrandRulesPanel rules={brandRules} enforcementPaused={brandRulesPaused} />}
-
-          {activeTab === "support" && (
-            <SettingsSection title={s.support} description={s.supportDesc}>
-              {/* Feedback is a form, not a mailto — it lands in the
-                  /admin/feedback queue instead of an inbox, and doesn't
-                  depend on the person having a mail client set up. Help
-                  stays an email: that's a conversation needing a reply,
-                  which a write-only form can't give them. */}
-              <div className="mt-4">
-                <FeedbackForm />
+      {activeTab === "profile" && (
+        <div className="space-y-4">
+          <SettingsSection title={s.account} description={s.accountDesc}>
+            <div className="space-y-5">
+              <UsernameForm initialUsername={username ?? ""} />
+              <div className="border-t border-atelier-rule/60 pt-5">
+                <ProfileForm
+                  initialFullName={(profile?.full_name as string | null) ?? ""}
+                  initialCompany={profile?.company ?? ""}
+                  initialGender={profile?.gender ?? ""}
+                />
               </div>
-              <div className="mt-4 border-t border-atelier-rule/60 pt-4 text-sm">
-                <a
-                  href={`mailto:${supportEmail}?subject=${encodeURIComponent("Picacho help")}`}
-                  className="text-atelier-muted underline underline-offset-2 hover:text-atelier-ink"
-                >
-                  {s.getHelp}
-                </a>
-              </div>
-            </SettingsSection>
-          )}
+            </div>
+          </SettingsSection>
+          {/* Only with a real username: a link built from anything else
+              resolves for nobody (the /r route matches profiles.username
+              exactly). */}
+          {username && <InviteCard username={username} stats={referralStats} />}
         </div>
-      </div>
-    </div>
+      )}
+
+      {activeTab === "generation" && generationDefaults && (
+        <div className="space-y-4">
+          <SettingsSection title={s.generationDefaultsTitle} description={s.generationDefaultsDesc}>
+            <GenerationDefaultsForm
+              models={generationModels}
+              globalDefaultModelId={generationGlobalModel}
+              initial={generationDefaults}
+            />
+          </SettingsSection>
+          <SettingsSection title={s.aiGeneration} description={s.aiGenerationDesc}>
+            <SkipRefinementToggle initialEnabled={profile?.skip_ai_refinement === true} />
+          </SettingsSection>
+          {/* Brand rules are part of how every take is made, so they live
+              here now (they were a tab of their own until 2026-09-19). */}
+          <div id="brand-rules" className="scroll-mt-24">
+            <BrandRulesPanel rules={brandRules} enforcementPaused={brandRulesPaused} />
+          </div>
+        </div>
+      )}
+
+      {activeTab === "preferences" && (
+        <div className="space-y-4">
+          <SettingsSection title={s.appearance} description={s.appearanceDesc}>
+            <div>
+              <ThemePicker />
+              <p className="mt-2 text-xs text-atelier-muted">{s.appearanceSubtitle}</p>
+            </div>
+            <div className="flex items-center justify-between border-t border-atelier-rule/60 pt-5">
+              <div>
+                <p className="text-sm font-medium text-atelier-ink">{s.language}</p>
+                <p className="mt-0.5 text-xs text-atelier-muted">{s.languageSubtitle}</p>
+              </div>
+              <LanguageSwitcher />
+            </div>
+          </SettingsSection>
+          <div id="notifications" className="scroll-mt-24 space-y-4">
+            <SettingsSection title={s.notificationsTitle} description={s.notificationsDesc}>
+              <NotificationsPanel
+                initial={notifyPrefs}
+                vapidPublicKey={process.env.VAPID_PUBLIC_KEY ?? null}
+                nativeApp={nativeApp}
+                // Sets are on the web only (the Android app shows webOnly): the app never names them.
+                setsOn={setsOn && !nativeApp}
+              />
+            </SettingsSection>
+            {/* Email beside push: both answer "what is Picacho allowed to
+                send me". enabled = NOT opted out. */}
+            <SettingsSection title={s.emailPreferences} description={s.emailPreferencesDesc}>
+              <MarketingEmailsToggle initialEnabled={profile?.marketing_opt_out !== true} />
+            </SettingsSection>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "security" && (
+        <div className="space-y-4">
+          <SettingsSection title={s.security} description={s.securitySubtitle}>
+            <div className="space-y-5">
+              <PasswordForm hasPassword={hasPassword} />
+              <div className="border-t border-atelier-rule/60 pt-5">
+                <EmailForm initialEmail={data.user.email ?? ""} />
+              </div>
+              <div className="border-t border-atelier-rule/60 pt-5">
+                <MfaCard />
+              </div>
+              <div className="border-t border-atelier-rule/60 pt-5">
+                <ConnectedAccountsCard />
+              </div>
+              <div className="border-t border-atelier-rule/60 pt-5">
+                <SessionsCard />
+              </div>
+            </div>
+          </SettingsSection>
+          {apiEnabled && <ApiKeysCard keys={apiKeys} enabled />}
+        </div>
+      )}
+
+      {activeTab === "privacy" && (
+        <div className="space-y-4">
+          <SettingsSection title={s.sharedPostsTitle} description={s.sharedPostsDesc}>
+            <SharedPostsList initial={sharedPosts} />
+          </SettingsSection>
+          <SettingsSection title={s.blockedTitle} description={s.blockedDesc}>
+            <BlockedAccountsList initial={blocked} />
+          </SettingsSection>
+          <SettingsSection title={s.cookieTitle} description={s.cookieDesc}>
+            <CookieChoiceControl />
+          </SettingsSection>
+          {/* tone="danger" rather than a hardcoded red pair: atelier-accent
+              already has both themes. */}
+          <SettingsSection tone="danger" title={s.dangerZone} description={s.dangerDesc}>
+            <DeleteAccountForm confirmWith={username ?? (data.user.email ?? "").toLowerCase()} />
+          </SettingsSection>
+        </div>
+      )}
+
+      {activeTab === "help" && (
+        <HelpPanel t={t} locale={locale} supportEmail={supportEmail} showApiDocs={apiEnabled} />
+      )}
+    </SettingsShell>
   );
 }

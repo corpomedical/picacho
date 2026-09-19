@@ -630,7 +630,7 @@ export async function startRecastTakes(input: {
       .update({ status: "failed", credits_used: 0, purchased_credits_used: 0, progress_stage: null })
       .in("id", takeIds);
     if (releaseError) console.error("recast guarded-spend abort couldn't release the placeholders:", releaseError.message);
-    return { error: "You're out of credits — top up under Settings → Usage (credit packs need no plan)." };
+    return { error: "You're out of credits — top up under Settings → Plan & billing (credit packs need no plan)." };
   }
 
   // Signed photos for the engines: the identity photo the product already

@@ -76,8 +76,8 @@ export default function ApiDocsPage() {
         </p>
         <p className="mt-4 rounded-[12px] border border-ochre/25 bg-ochre-soft/40 dark:border-[#e0a468]/25 dark:bg-[#e0a468]/[0.08] p-4 text-sm leading-relaxed text-neutral-700">
           Included with <strong>Elite</strong>. Create a key in{" "}
-          <Link href="/app/settings" className="font-medium text-ochre dark:text-[#e0a468] underline underline-offset-2">
-            Settings → API keys
+          <Link href="/app/settings?tab=security" className="font-medium text-ochre dark:text-[#e0a468] underline underline-offset-2">
+            Settings → Security
           </Link>
           . If you&apos;re on another plan and need it, get in touch — we enable it per account.
         </p>

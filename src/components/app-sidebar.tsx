@@ -1183,21 +1183,23 @@ export function AppSidebar({
             </div>
 
             <div className="border-t border-atelier-rule/60 py-1">
+              {/* The Settings tabs by their 2026-09-19 names: Settings itself
+                  now opens on the Overview, so this row goes to Profile. */}
               <Link
-                href="/app/settings"
+                href="/app/settings?tab=profile"
                 onClick={() => setSettingsOpen(false)}
                 className="flex items-center gap-2.5 rounded-control px-2.5 py-2 text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
               >
                 <IdCardIcon className="h-4 w-4 flex-shrink-0" />
-                {s.account}
+                {t.settingsHub.tabProfile}
               </Link>
               <Link
-                href="/app/settings?tab=usage"
+                href="/app/settings?tab=billing"
                 onClick={() => setSettingsOpen(false)}
                 className="flex items-center gap-2.5 rounded-control px-2.5 py-2 text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
               >
                 <GaugeIcon className="h-4 w-4 flex-shrink-0" />
-                {s.usageAndPlan}
+                {t.settingsHub.tabBilling}
               </Link>
             </div>
 
@@ -1223,7 +1225,7 @@ export function AppSidebar({
                 {s.tutorial}
               </Link>
               <Link
-                href="/app/settings?tab=support"
+                href="/app/settings?tab=help"
                 onClick={() => setSettingsOpen(false)}
                 className="flex items-center gap-2.5 rounded-control px-2.5 py-2 text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
               >

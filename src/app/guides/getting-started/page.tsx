@@ -522,11 +522,11 @@ const CHAPTERS: Chapter[] = [
     steps: [
       {
         shot: { src: "ch8-01-usage-plan" },
-        title: "Usage & plan",
+        title: "Plan & billing",
         body: (
           <>
-            The gear at the bottom of the sidebar opens Settings; <strong>Usage &amp; plan</strong>{" "}
-            is where your balance, your plan and your spending live. Credits are also shown in the
+            The gear at the bottom of the sidebar opens Settings; <strong>Plan &amp; billing</strong>{" "}
+            is where your balance, your plan, your spending and your invoices live. Credits are also shown in the
             top right of the composer, so you always know before you send.
           </>
         ),

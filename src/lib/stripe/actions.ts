@@ -49,7 +49,11 @@ export async function createCreditCheckoutSession(formData: FormData) {
 // Opens Stripe's hosted Customer Portal for an existing subscriber — lets
 // them change plans, update their payment method, view invoices, or cancel,
 // all without us building any of that UI ourselves.
-export async function createPortalSession() {
+//
+// `flow=payment_method` (2026-09-19, Settings → Plan & billing's "Update
+// card") opens the portal straight on the card form instead of its home.
+export async function createPortalSession(formData?: FormData) {
+  const flow = formData?.get("flow") === "payment_method" ? "payment_method_update" : null;
   await blockInNativeApp();
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
@@ -63,7 +67,7 @@ export async function createPortalSession() {
 
   if (!profile?.stripe_customer_id) {
     redirect(
-      `/app/settings?tab=usage&error=${encodeURIComponent("No billing account yet — start with a plan below.")}`,
+      `/app/settings?tab=billing&error=${encodeURIComponent("No billing account yet — start with a plan below.")}`,
     );
   }
 
@@ -74,7 +78,8 @@ export async function createPortalSession() {
   try {
     const session = await stripe.billingPortal.sessions.create({
       customer: profile.stripe_customer_id,
-      return_url: `${origin}/app/settings?tab=usage`,
+      return_url: `${origin}/app/settings?tab=billing`,
+      ...(flow ? { flow_data: { type: flow } } : {}),
     });
     portalUrl = session.url;
   } catch (err) {
@@ -95,7 +100,7 @@ export async function createPortalSession() {
       failure === "config"
         ? "Billing is unavailable right now — we've been alerted. Email support and we'll sort it out."
         : "Couldn't open billing — try again.";
-    redirect(`/app/settings?tab=usage&error=${encodeURIComponent(code)}`);
+    redirect(`/app/settings?tab=billing&error=${encodeURIComponent(code)}`);
   }
 
   redirect(portalUrl);

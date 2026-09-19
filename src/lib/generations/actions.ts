@@ -4591,7 +4591,7 @@ async function startUpscaleCore(params: {
         error: releaseError.message,
       });
     }
-    return { error: "You're out of credits — top up under Settings → Usage (credit packs need no plan)." };
+    return { error: "You're out of credits — top up under Settings → Plan & billing (credit packs need no plan)." };
   }
 
   // Submit, then record; on bookkeeping failure cancel the fal job and
@@ -4898,7 +4898,7 @@ async function startLayersCore(params: {
     if (releaseError) {
       console.error("Layers guarded-spend abort couldn't release the placeholder:", { generationId, error: releaseError.message });
     }
-    return { error: "You're out of credits — top up under Settings → Usage (credit packs need no plan)." };
+    return { error: "You're out of credits — top up under Settings → Plan & billing (credit packs need no plan)." };
   }
 
   let pendingJob: QueuedJob | null = null;
@@ -5224,7 +5224,7 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
   const purchasedOk = await consumePurchasedCredits(supabase, userId, consumePurchased);
   if (!purchasedOk) {
     await admin.from("generations").update({ status: "failed", credits_used: 0, purchased_credits_used: 0 }).eq("id", editGenerationId);
-    return { error: "You're out of credits — top up under Settings → Usage (credit packs need no plan)." };
+    return { error: "You're out of credits — top up under Settings → Plan & billing (credit packs need no plan)." };
   }
 
   // The instruction the engine sees. The layer arrives with its own alpha,

@@ -11,7 +11,7 @@ import type { SetKind } from "./types";
 
 export const SETS_SESSION_EXPIRED = "Your session expired — please log in again.";
 export const SETS_UNAVAILABLE = "Helios isn't available right now.";
-export const SETS_NOT_OPEN = "Helios is part of the paid plans. Upgrade in Settings → Usage & plan.";
+export const SETS_NOT_OPEN = "Helios is part of the paid plans. Upgrade in Settings → Plan & billing.";
 export const SETS_SUSPENDED = "This account is suspended.";
 export const SET_NOT_FOUND = "That set isn't available.";
 export const SET_NOT_READY = "This set is still being built.";
@@ -119,7 +119,7 @@ export const SET_TAKE_FAILED = "The end frame is in, but the take couldn't start
  * 2026-09-19 "Open to all plans"): said before anything is shot, never
  * after a still has been paid for. Reachable only with no paid plan at all.
  */
-export const SET_TAKE_NEEDS_PLAN = "Takes and films are part of the paid plans. Upgrade in Settings → Usage & plan.";
+export const SET_TAKE_NEEDS_PLAN = "Takes and films are part of the paid plans. Upgrade in Settings → Plan & billing.";
 /** A film beat's clip rendered again on its own end still, and that still is gone (film.ts filmJobs). */
 export const SET_TAKE_BAD_END = "That beat's end frame is gone — render again to shoot a new one.";
 

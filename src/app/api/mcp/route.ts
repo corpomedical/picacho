@@ -175,7 +175,7 @@ export async function POST(request: Request) {
     // the user as a failed call with no explanation, and the fix — set an API
     // key — is something a person has to do.
     return jsonRpc(
-      rpcResult(id, toolError(`${authError.message} Create one in Picacho under Settings > API.`)),
+      rpcResult(id, toolError(`${authError.message} Create one in Picacho under Settings → Security → API keys.`)),
     );
   }
 

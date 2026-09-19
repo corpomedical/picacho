@@ -47,7 +47,8 @@ export default async function DeleteAccountPage() {
   // Portuguese page named a section the Portuguese UI calls something else).
   const labels = {
     settings: t.settings.title,
-    account: t.settings.account,
+    // The danger zone lives on Privacy & data since the 2026-09-19 redesign.
+    account: t.settingsHub.tabPrivacy,
     dangerZone: t.settings.dangerZone,
     deleteAccount: t.settings.deleteMyAccount,
   };
@@ -72,7 +73,7 @@ export default async function DeleteAccountPage() {
               ))}
             </ol>
             <Link
-              href="/app/settings?tab=account"
+              href="/app/settings?tab=privacy"
               className="mt-4 inline-block rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
             >
               {d.fromAppCta}

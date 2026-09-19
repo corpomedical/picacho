@@ -130,7 +130,7 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   // Sets (lib/sets/messages.ts) — the Sets pages' error lines, and a failed
   // build's card.
   "Helios isn't available right now.": "setsUnavailable",
-  "Helios is part of the paid plans. Upgrade in Settings → Usage & plan.": "setsNotOpen",
+  "Helios is part of the paid plans. Upgrade in Settings → Plan & billing.": "setsNotOpen",
   "That set isn't available.": "setNotFound",
   "This set is still being built.": "setNotReady",
   "Describe the place in a few more words.": "setBriefTooShort",
@@ -238,7 +238,7 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "That still can't start a take — pick another.": "setTakeBadStart",
   "The end frame is in, but the take couldn't start — try the take again in a moment.": "setTakeFailed",
   "That beat's end frame is gone — render again to shoot a new one.": "setTakeBadEnd",
-  "Takes and films are part of the paid plans. Upgrade in Settings → Usage & plan.": "setTakeNeedsPlan",
+  "Takes and films are part of the paid plans. Upgrade in Settings → Plan & billing.": "setTakeNeedsPlan",
   // The rig check (lib/sets/messages.ts, 2026-09-15, Helios Cinema).
   "The rig check couldn't read this still — the still is kept as it is.": "setRigCheckFailed",
   "You're checking stills quickly — give it a moment.": "setRigCheckTooFast",

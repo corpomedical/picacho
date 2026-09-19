@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.57.0",
+    build: 96,
+    date: "2026-09-19",
+    title: "Settings opens on an overview, and every payment has its invoice",
+    items: [
+      "Settings now opens on an overview: who is signed in, the plan and when it renews (or ends, once cancelled), the plan credits left and the extra credits, and anything that needs you: a failed payment, two-step verification switched off, a missing username. On a phone the overview is also the menu, every section in one list, instead of a sideways strip of nine tabs with most of them off the edge.",
+      "Four monthly allowances nobody could see are now shown beside the credits: Helios sets, AI character photos, prompt assists and the assistant. Each is counted the way its limit is enforced, over the same billing month.",
+      "The credits meter was wrong in one case: it counted credits paid from extra packs against the monthly allowance, so it could read \"160 of 140\". Plan credits and extra credits are now shown apart, and Plan & billing breaks the month's spending down into videos, images, Helios, upscales, layers and Mystique.",
+      "Invoices: every payment made on the website is listed under Plan & billing, newest first, each with a PDF in Picacho's own design, in the account's language (English, Spanish, Portuguese or Italian). The figures are Stripe's own: its invoice number, and every tax amount exactly as Stripe Tax computed it. Picacho only writes the words. Packs bought before 22 August 2026 show as receipts, and purchases made in the Android app say that Google Play sends their receipts.",
+      "Plan & billing also shows the card on file and who the invoices are made out to. Changing either opens Stripe's secure page, and \"Update card\" goes straight to the card form. A monthly plan also sees what yearly billing would cost.",
+      "Eight tabs instead of nine: Overview, Plan & billing, Profile, Generation (now with Brand rules), Preferences (appearance and notifications), Security, Privacy & data (now with account deletion) and Help (now with the guides, the legal pages, who runs Picacho and the app version). Every old link still works, including Stripe's return address, the low-credit notifications already on phones, and the public deletion page. The gear menu, the texts that name a section and the in-app assistant use the new names.",
+    ],
+  },
+  {
     version: "1.56.0",
     build: 95,
     date: "2026-09-19",

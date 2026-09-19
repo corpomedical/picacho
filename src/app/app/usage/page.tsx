@@ -4,5 +4,5 @@ import { redirect } from "next/navigation";
 // case anything still links here. Deep-links straight to the Usage & plan
 // tab rather than dropping onto the default Account tab.
 export default function UsagePage() {
-  redirect("/app/settings?tab=usage");
+  redirect("/app/settings?tab=billing");
 }

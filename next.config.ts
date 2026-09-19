@@ -67,6 +67,10 @@ const nextConfig: NextConfig = {
     "/api/cron/reconcile": ["./node_modules/ffmpeg-static/ffmpeg"],
     "/app/history": ["./node_modules/ffmpeg-static/ffmpeg"],
     "/app/history/*": ["./node_modules/ffmpeg-static/ffmpeg"],
+    // The invoice PDF (2026-09-19) reads its fonts and the logo from disk
+    // (lib/billing/invoice-pdf.ts): a path built at runtime, which tracing
+    // cannot follow, so the files are named here for that one route.
+    "/app/settings/invoices/[id]": ["./src/lib/billing/fonts/*.ttf", "./public/logo.png"],
   },
 
   // Canonical host: www.picacho.ai permanently redirects to picacho.ai.
