@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.67.0",
+    build: 106,
+    date: "2026-09-20",
+    title: "A Mystique take can be stopped",
+    items: [
+      "A take that is still rendering now has a Stop on its card. Until now the only Stop in the app was on the composer, which never holds a Mystique take — so a take started by mistake ran to the end and was charged in full.",
+      "Stopping says what it costs before it happens: parts that have already rendered are charged either way, the parts not yet sent never start, and a take the engine has not begun gives its credits back.",
+    ],
+  },
+  {
     version: "1.66.0",
     build: 105,
     date: "2026-09-20",

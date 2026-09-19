@@ -2095,6 +2095,9 @@ const en = {
     preparingLong: "Cutting your clip into its parts before anything is sent — up to a minute. Pressing again starts a second take, and charges for it.",
     oneRendering: "One take is still rendering.",
     someRendering: "{n} takes are still rendering.",
+    stopTake: "Stop",
+    stopping: "Stopping…",
+    stopAsk: "Stop this take? Parts that have already rendered are charged either way; the parts not yet sent never start. If it has not started rendering at all, the credits come back.",
   },
   // The Recce door (board K, "Build A as Recce", 2026-09-17): the theatre
   // page at /app/recce. No machinery on the wall: the copy never says set,

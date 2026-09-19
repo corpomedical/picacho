@@ -1975,6 +1975,9 @@ const es = {
     preparingLong: "Cortando tu clip en sus partes antes de enviar nada: hasta un minuto. Si vuelves a pulsar, se inicia una segunda toma y se cobra.",
     oneRendering: "Una toma sigue generándose.",
     someRendering: "{n} tomas siguen generándose.",
+    stopTake: "Parar",
+    stopping: "Parando…",
+    stopAsk: "¿Parar esta toma? Las partes ya generadas se cobran igualmente; las que aún no se han enviado no llegan a empezar. Si no ha empezado a generarse, los créditos se devuelven.",
   },
   recce: {
     headline: "Entra metraje. Sale un lugar.",

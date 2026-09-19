@@ -1975,6 +1975,9 @@ const pt = {
     preparingLong: "Cortando o seu clipe nas partes antes de enviar qualquer coisa: até um minuto. Se apertar de novo, começa um segundo take e ele é cobrado.",
     oneRendering: "Um take ainda está sendo gerado.",
     someRendering: "{n} takes ainda estão sendo gerados.",
+    stopTake: "Parar",
+    stopping: "Parando…",
+    stopAsk: "Parar este take? As partes já geradas são cobradas de qualquer forma; as que ainda não foram enviadas não chegam a começar. Se ainda não começou a gerar, os créditos voltam.",
   },
   recce: {
     headline: "Entra filmagem. Sai um lugar.",

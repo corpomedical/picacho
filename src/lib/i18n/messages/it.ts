@@ -1974,6 +1974,9 @@ const it = {
     preparingLong: "Sto tagliando la clip nelle sue parti prima di inviare qualsiasi cosa: fino a un minuto. Se premi di nuovo, parte una seconda ripresa e viene addebitata.",
     oneRendering: "Una ripresa è ancora in lavorazione.",
     someRendering: "{n} riprese sono ancora in lavorazione.",
+    stopTake: "Ferma",
+    stopping: "Sto fermando…",
+    stopAsk: "Fermare questa ripresa? Le parti già renderizzate si pagano comunque; quelle non ancora inviate non partiranno. Se non è partita affatto, i crediti tornano indietro.",
   },
   recce: {
     headline: "Entra il girato. Esce un luogo.",

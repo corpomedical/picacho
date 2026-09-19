@@ -18,6 +18,7 @@ import {
   type RecastInspection,
 } from "@/lib/recast/actions";
 import { deleteChatAttachment, reserveChatAttachmentPath } from "@/lib/attachments/actions";
+import { requestGenerationCancel } from "@/lib/generations/actions";
 import type { RecastCharacter, RecastMotion, RecastTake } from "@/lib/recast/data";
 import { RECAST_CLIP_TOO_BIG, RECAST_IMAGE_UNUSABLE, RECAST_NOT_A_VIDEO, RECAST_UPLOAD_UNREADABLE } from "@/lib/recast/messages";
 import {
@@ -141,6 +142,7 @@ export function MystiqueDoor({
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [viewing, setViewing] = useState<Viewing | null>(null);
+  const [stopping, setStopping] = useState<string | null>(null);
   const [images, setImages] = useState<DoorImage[]>([]);
   // Several characters in ONE video (Into the clip), or one take each —
   // and, together, which person in the clip each plays (character id →
@@ -540,6 +542,30 @@ export function MystiqueDoor({
     setDirection("");
     forgetImages();
     router.refresh();
+  }
+
+  /**
+   * Stop a take that is still rendering. What it costs is said before it
+   * happens, because it is not free: a long take's finished parts were
+   * rendered and billed, and only the parts not yet sent are saved.
+   */
+  async function stop(id: string) {
+    if (stopping) return;
+    if (!window.confirm(m.stopAsk)) return;
+    setError("");
+    setStopping(id);
+    try {
+      const res = await requestGenerationCancel(id);
+      if (res.error) setError(res.error);
+      else setTakes((prev) => prev.map((x) => (x.id === id ? { ...x, status: "failed" as const } : x)));
+      router.refresh();
+    } catch (err) {
+      const stale = isStaleDeployError(err);
+      setError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
+      if (stale) reloadForNewDeploy({ delayMs: 1800 });
+    } finally {
+      setStopping(null);
+    }
   }
 
   async function watch(x: RecastTake) {
@@ -1336,8 +1362,20 @@ export function MystiqueDoor({
                     {card}
                   </Link>
                 ) : (
-                  <div key={x.id} className="group">
+                  // STOP (2026-09-20). Until now a take could only be stopped
+                  // from the composer, which never holds one of these — so a
+                  // take started by mistake ran to the end and was charged in
+                  // full ("Canceled the first one, check if i got refunded").
+                  <div key={x.id} className="group relative">
                     {card}
+                    <button
+                      type="button"
+                      disabled={stopping === x.id}
+                      onClick={() => void stop(x.id)}
+                      className={`absolute right-2 top-2 ${chip} cursor-pointer hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-50`}
+                    >
+                      {stopping === x.id ? m.stopping : m.stopTake}
+                    </button>
                   </div>
                 );
               })}
