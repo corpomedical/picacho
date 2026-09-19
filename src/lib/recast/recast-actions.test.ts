@@ -181,6 +181,53 @@ describe("startRecastTakes", () => {
   });
 });
 
+// NOT LOCKED TO CHARACTERS (2026-09-19, the operator: "make it that the user
+// can upload an image and that they can only use prompt to change whatever
+// they want. Do not lock it just on characters").
+describe("a take with images of the person's own, or with words alone", () => {
+  const images = source.slice(source.indexOf("async function readAddedImage"), source.indexOf("/** Step 1: a place for the clip"));
+
+  it("asks what the take is short of before it reads anything", () => {
+    expect(start).toContain("recastMissing(spec.job, { characters: ids.length, images: askedImages.length, words: direction.trim().length > 0 })");
+    expect(at('if (missing === "words") return { error: RECAST_NEEDS_WORDS }')).toBeLessThan(at('.from("character_profiles")'));
+    expect(at('if (missing === "picture") return { error: RECAST_NEEDS_PICTURE }')).toBeLessThan(at("readUpload(admin, uploadPath)"));
+    // The old rule — a character or nothing — is gone.
+    expect(source).not.toContain("RECAST_NEEDS_CAST");
+  });
+
+  it("only ever uses images in the caller's own folder, read for what they really are", () => {
+    expect(images).toContain("if (!path.startsWith(`${userId}/`) || path.includes(\"..\")) return { error: RECAST_IMAGE_UNUSABLE }");
+    expect(images).toContain("sharp(bytes).metadata()");
+    expect(images).toContain("recastImageUsable({ width, height })");
+    // The rights tick comes first, as for the clip.
+    expect(at("input?.rights !== true")).toBeLessThan(at("await readAddedImage(admin, userId, path)"));
+  });
+
+  it("judges each image as it will be sent, in the strict lane, before any credit moves", () => {
+    const judged = at('await judgeRender({ url: sent.url, kind: "image", strictLane: true');
+    expect(at("await sendAddedImage(admin, userId, image)")).toBeLessThan(judged);
+    expect(judged).toBeLessThan(at("checkGenerationAllowance("));
+    expect(judged).toBeLessThan(at('admin.rpc("reserve_generations"'));
+    expect(judged).toBeLessThan(at("submitRecastJob("));
+    // A refused image leaves nothing of the press behind.
+    expect(start.slice(judged, at("const total = perTake"))).toContain("await dropPrepared()");
+    expect(start).toContain('provider: "recast-image"');
+  });
+
+  it("brings one picture to life in Photo to life, and carries every image into the clip", () => {
+    expect(start).toContain('const imagePaths = spec.job === "motion" ? (ids.length > 0 ? [] : askedImages.slice(0, 1)) : askedImages');
+    expect(start).toContain('const picture = photos.first ?? (spec.job === "motion" ? (sentImages[0]?.url ?? null) : null)');
+    expect(start).toContain('const imageUrls = spec.job === "scene" ? sentImages.map((image) => image.url) : []');
+    // Every part of a long take carries them too.
+    expect(start.slice(at("clipUrl: CHAIN_CLIP_PLACEHOLDER"), at("clipUrl: CHAIN_CLIP_PLACEHOLDER") + 200)).toContain("imageUrls,");
+  });
+
+  it("records the images it sent, and asks for the lock only where a face is cast", () => {
+    expect(start).toContain("images: sentImages.map((image) => image.path)");
+    expect(start).toContain("identityLock: character && lockOn ?");
+  });
+});
+
 describe("inspectRecastClip", () => {
   it("reads the file for the numbers and the frames for the meaning", () => {
     expect(inspect).toContain("readUpload(admin, input.path!)");

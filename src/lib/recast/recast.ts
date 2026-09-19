@@ -261,9 +261,76 @@ export const RECAST_JOB_ORDER: RecastJob[] = ["scene", "motion", "world"];
  */
 export const RECAST_MODEL_IDS: string[] = (Object.keys(RECAST_ENGINES) as RecastEngine[]).map((e) => RECAST_ENGINES[e].modelId);
 
-/** The one job that recasts nobody — it rewrites the world around the performance. */
-export function recastNeedsCharacter(job: RecastJob): boolean {
+/**
+ * Whether a job puts someone or something INTO the take — a character, or an
+ * image the person adds. Restyle takes neither: its new look is said, never
+ * shown.
+ */
+export function recastTakesCast(job: RecastJob): boolean {
   return job !== "world";
+}
+
+/**
+ * What a take still needs before it can start. NOT LOCKED TO CHARACTERS
+ * (2026-09-19, the operator: "make it that the user can upload an image and
+ * that they can only use prompt to change whatever they want. Do not lock it
+ * just on characters"):
+ *
+ *   scene   a character, OR words saying what should change — images the
+ *           person adds ride along with either, and are named in the words
+ *   motion  a picture to bring to life: a character's photo, or an image of
+ *           the person's own (the engine builds the whole frame from it)
+ *   world   nothing more — its look is words, and it has a default
+ */
+export function recastMissing(job: RecastJob, given: { characters: number; images: number; words: boolean }): "words" | "picture" | null {
+  if (job === "scene") return given.characters > 0 || given.words ? null : "words";
+  if (job === "motion") return given.characters > 0 || given.images > 0 ? null : "picture";
+  return null;
+}
+
+// IMAGES THE PERSON ADDS (2026-09-19). Anything — a person, an outfit, a
+// product, a place — uploaded the way every composer photo is (the
+// chat-attachments bucket, the owner's own folder) and named in their words
+// as "image 1", "image 2".
+//
+// How many: Kling O3 Edit takes FOUR references in all ("Maximum 4 total
+// (elements + reference images) when using video", its schema), and a cast
+// character takes one of them. Photo to life takes one picture.
+export const RECAST_MAX_IMAGES = 3;
+export const RECAST_IMAGE_BUCKET = "chat-attachments";
+// The tighter of the two engines' own limits, read from fal's schemas the same
+// day: O3 Edit's references ≥ 300 px a side and ≤ 10 MB, V3 Motion Control's
+// picture 340–3850 px; both between 0.4 and 2.5 wide for their height.
+export const RECAST_IMAGE_MIN_SIDE_PX = 340;
+export const RECAST_IMAGE_MAX_SIDE_PX = 3850;
+export const RECAST_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+export const RECAST_IMAGE_MIN_RATIO = 0.4;
+export const RECAST_IMAGE_MAX_RATIO = 2.5;
+/** What an image that has to be redrawn is redrawn to fit inside. */
+export const RECAST_IMAGE_SEND_MAX_PX = 2048;
+
+/** Whether an image, at the size it DISPLAYS (EXIF turned), can be sent at all. Nothing redrawing it could fix. */
+export function recastImageUsable(size: { width: number; height: number }): boolean {
+  const { width, height } = size;
+  if (!(width > 0 && height > 0)) return false;
+  if (Math.min(width, height) < RECAST_IMAGE_MIN_SIDE_PX) return false;
+  const ratio = width / height;
+  return ratio >= RECAST_IMAGE_MIN_RATIO && ratio <= RECAST_IMAGE_MAX_RATIO;
+}
+
+/**
+ * Whether the file can go to the engine exactly as it was uploaded: a JPEG or
+ * PNG, upright as stored (an engine may ignore EXIF and see a phone portrait
+ * sideways), inside the size and weight limits. Anything else is redrawn to a
+ * plain JPEG first — which is also how a WebP or an AVIF gets in.
+ */
+export function recastImageSendsAsIs(image: { format: string; bytes: number; width: number; height: number; orientation: number }): boolean {
+  return (
+    (image.format === "jpeg" || image.format === "png") &&
+    image.orientation <= 1 &&
+    image.bytes <= RECAST_IMAGE_MAX_BYTES &&
+    Math.max(image.width, image.height) <= RECAST_IMAGE_MAX_SIDE_PX
+  );
 }
 
 export function recastEnginesOf(job: RecastJob): RecastEngine[] {
@@ -426,6 +493,8 @@ export function recastRequestBody(
     characterImageUrl?: string;
     /** More angles of the same character, for the engines that bind identity. */
     morePhotoUrls?: string[];
+    /** Images the person added, in order — @Image1… after a one-photo character's own. Into the clip only. */
+    imageUrls?: string[];
     brief?: string;
     clip?: Pick<RecastClip, "seconds">;
   },
@@ -451,16 +520,24 @@ export function recastRequestBody(
     // angles), named @Element1 in the brief; a character with only one photo
     // is given it as @Image1 instead, because an element needs at least one
     // more angle than its front. The brief names the clip @Video1.
+    //
+    // Images the person added follow as @Image1… (after the one-photo
+    // character's own @Image1), inside the four references the engine takes
+    // in all. With no character and no image the body is the clip and the
+    // words alone — a plain edit, which the schema allows (only prompt and
+    // video_url are required).
     const angles = (input.morePhotoUrls ?? []).slice(0, 3);
+    const element = input.characterImageUrl && angles.length > 0;
+    const images = [
+      ...(input.characterImageUrl && !element ? [input.characterImageUrl] : []),
+      ...(input.imageUrls ?? []).slice(0, RECAST_MAX_IMAGES),
+    ].slice(0, element ? 3 : 4);
     return {
       video_url: input.clipUrl,
       prompt: (input.brief ?? "").slice(0, 2500),
       keep_audio: true,
-      ...(input.characterImageUrl && angles.length > 0
-        ? { elements: [{ frontal_image_url: input.characterImageUrl, reference_image_urls: angles }] }
-        : input.characterImageUrl
-          ? { image_urls: [input.characterImageUrl] }
-          : {}),
+      ...(element ? { elements: [{ frontal_image_url: input.characterImageUrl, reference_image_urls: angles }] } : {}),
+      ...(images.length > 0 ? { image_urls: images } : {}),
     };
   }
   const more = (input.morePhotoUrls ?? []).slice(0, 3);

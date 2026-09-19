@@ -19,11 +19,15 @@ import {
   recastEngineOfModel,
   recastEnginesOf,
   recastLumaDuration,
-  recastNeedsCharacter,
+  recastImageSendsAsIs,
+  recastImageUsable,
+  recastMissing,
+  RECAST_MAX_IMAGES,
   recastProviderCostUsd,
   recastRequestBody,
   RECAST_WORLD_EDIT_STRENGTH,
   recastSourcePath,
+  recastTakesCast,
   type RecastClip,
 } from "./recast";
 
@@ -71,10 +75,10 @@ describe("the engines", () => {
       // A job with one engine answers "lite" with that engine, never another job's.
       expect(RECAST_ENGINES[recastEngineFor(job, "lite")].job).toBe(job);
     }
-    // Only the world job recasts nobody.
-    expect(recastNeedsCharacter("scene")).toBe(true);
-    expect(recastNeedsCharacter("motion")).toBe(true);
-    expect(recastNeedsCharacter("world")).toBe(false);
+    // Only Restyle takes neither characters nor images: its look is words.
+    expect(recastTakesCast("scene")).toBe(true);
+    expect(recastTakesCast("motion")).toBe(true);
+    expect(recastTakesCast("world")).toBe(false);
   });
 
   it("record model ids that never carry the door's name", () => {
@@ -309,5 +313,99 @@ describe("the request each engine receives", () => {
     // And it must ADHERE: at flex_2 the same request rewrote the performer
     // as well as the street, which is the one thing this job may not do.
     expect(RECAST_WORLD_EDIT_STRENGTH.startsWith("adhere")).toBe(true);
+  });
+});
+
+// NOT LOCKED TO CHARACTERS (2026-09-19, the operator: "make it that the user
+// can upload an image and that they can only use prompt to change whatever
+// they want. Do not lock it just on characters").
+describe("what a take must be given", () => {
+  const none = { characters: 0, images: 0, words: false };
+
+  it("takes Into the clip on a character OR on words alone — images ride with either", () => {
+    expect(recastMissing("scene", { ...none, characters: 1 })).toBeNull();
+    expect(recastMissing("scene", { ...none, words: true })).toBeNull();
+    expect(recastMissing("scene", { ...none, images: 2, words: true })).toBeNull();
+    // An image says nothing about what to do with it; words or a character must.
+    expect(recastMissing("scene", { ...none, images: 1 })).toBe("words");
+    expect(recastMissing("scene", none)).toBe("words");
+  });
+
+  it("brings a picture to life: a character's photo or one of the person's own images", () => {
+    expect(recastMissing("motion", { ...none, characters: 1 })).toBeNull();
+    expect(recastMissing("motion", { ...none, images: 1 })).toBeNull();
+    // Words cannot become a picture.
+    expect(recastMissing("motion", { ...none, words: true })).toBe("picture");
+  });
+
+  it("leaves Restyle as it was: its look is words, with a default of its own", () => {
+    expect(recastMissing("world", none)).toBeNull();
+  });
+});
+
+describe("the images a person adds", () => {
+  it("fits inside the four references Kling O3 Edit takes with a character cast", () => {
+    // Its schema: "Maximum 4 total (elements + reference images) when using video".
+    expect(RECAST_MAX_IMAGES + 1).toBeLessThanOrEqual(4);
+  });
+
+  it("takes any shape both engines take, and nothing redrawing could not fix", () => {
+    expect(recastImageUsable({ width: 1080, height: 1350 })).toBe(true);
+    expect(recastImageUsable({ width: 340, height: 340 })).toBe(true);
+    // Under 340 px on a side (V3 Motion Control's floor; O3 Edit's is 300).
+    expect(recastImageUsable({ width: 339, height: 800 })).toBe(false);
+    // 0.4–2.5 wide for its height, both engines' own bounds.
+    expect(recastImageUsable({ width: 2500, height: 1000 })).toBe(true);
+    expect(recastImageUsable({ width: 2600, height: 1000 })).toBe(false);
+    expect(recastImageUsable({ width: 400, height: 1001 })).toBe(false);
+    expect(recastImageUsable({ width: 0, height: 0 })).toBe(false);
+  });
+
+  it("sends an upright JPEG or PNG as it is, and redraws everything else", () => {
+    const photo = { format: "jpeg", bytes: 2_000_000, width: 1200, height: 1600, orientation: 1 };
+    expect(recastImageSendsAsIs(photo)).toBe(true);
+    expect(recastImageSendsAsIs({ ...photo, format: "png" })).toBe(true);
+    // A WebP, a phone photo stored sideways, a file over 10 MB, a side over 3850 px.
+    expect(recastImageSendsAsIs({ ...photo, format: "webp" })).toBe(false);
+    expect(recastImageSendsAsIs({ ...photo, orientation: 6 })).toBe(false);
+    expect(recastImageSendsAsIs({ ...photo, bytes: 11 * 1024 * 1024 })).toBe(false);
+    expect(recastImageSendsAsIs({ ...photo, width: 4000, height: 3000 })).toBe(false);
+  });
+});
+
+describe("the request, with images and without anyone", () => {
+  const clipUrl = "https://x/clip.mp4";
+  const face = "https://x/face.jpg";
+  const more = ["https://x/a.jpg", "https://x/b.jpg", "https://x/c.jpg"];
+  const added = ["https://x/one.jpg", "https://x/two.jpg", "https://x/three.jpg"];
+
+  it("is the clip and the words alone when nobody and nothing is cast — a plain edit", () => {
+    const body = recastRequestBody("kling-edit", { clipUrl, brief: "Change @Video1 exactly as the direction below says." });
+    expect(body).toEqual({ video_url: clipUrl, prompt: "Change @Video1 exactly as the direction below says.", keep_audio: true });
+  });
+
+  it("carries the person's images as @Image1… when no character is cast", () => {
+    expect(recastRequestBody("kling-edit", { clipUrl, imageUrls: added, brief: "x" }).image_urls).toEqual(added);
+  });
+
+  it("puts the images after a one-photo character's own, and after an element, inside four in all", () => {
+    const onePhoto = recastRequestBody("kling-edit", { clipUrl, characterImageUrl: face, imageUrls: added, brief: "x" });
+    expect(onePhoto.image_urls).toEqual([face, ...added]);
+    expect(onePhoto).not.toHaveProperty("elements");
+    const bound = recastRequestBody("kling-edit", { clipUrl, characterImageUrl: face, morePhotoUrls: more, imageUrls: added, brief: "x" });
+    expect(bound.elements).toEqual([{ frontal_image_url: face, reference_image_urls: more }]);
+    expect(bound.image_urls).toEqual(added);
+    // Never more than four references: one element plus three images at most.
+    expect((bound.image_urls as string[]).length + (bound.elements as unknown[]).length).toBeLessThanOrEqual(4);
+  });
+
+  it("brings the person's own image to life in Photo to life", () => {
+    const body = recastRequestBody("kling-pro", { clipUrl, characterImageUrl: added[0] });
+    expect(body.image_url).toBe(added[0]);
+    expect(body).not.toHaveProperty("image_urls");
+  });
+
+  it("gives Restyle no images, whatever is passed", () => {
+    expect(recastRequestBody("luma-720", { clipUrl, imageUrls: added, brief: "Rain" })).not.toHaveProperty("image_urls");
   });
 });

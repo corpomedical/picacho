@@ -194,7 +194,6 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "That clip is under 340 pixels on its short side.": "recastClipTooSmall",
   "That clip is past 3850 pixels on a side.": "recastClipTooLarge",
   "That clip is longer than this job takes — trim it, or choose another job.": "recastSceneTooLong",
-  "Choose who performs it first.": "recastNeedsCast",
   "This clip can't be recast. Nothing was charged.": "recastRefusedBrief",
   "That stretch of the clip can't be used — choose it again.": "recastWindowInvalid",
   "Couldn't cut that stretch of the clip — nothing was charged. Try again.": "recastTrimFailed",
@@ -206,6 +205,11 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   // (recast/messages.ts), and the progress line while the parts are joined
   // (chain-run.ts).
   "This stretch can't be split into parts cleanly — choose 15 seconds of it. Nothing was charged.": "recastChainNoPlan",
+  // Mystique past characters: words, your own images (2026-09-19).
+  "Say what should change, or choose a character.": "recastNeedsWords",
+  "Choose a character or add an image to bring to life.": "recastNeedsPicture",
+  "That image can't be used — it needs to be at least 340 pixels on each side, and no more than 2.5 times as long one way as the other.": "recastImageUnusable",
+  "That image couldn't be checked just now — nothing was charged. Try again.": "recastImageUnchecked",
   // Face verification, "Verify it's you" (lib/faces/messages.ts, 2026-09-19).
   "Face verification is in private testing.": "faceNotOpen",
   "Face verification isn't available right now.": "faceUnavailable",

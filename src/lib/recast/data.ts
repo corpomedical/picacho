@@ -1,7 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/server";
 import { isRenderableUrl, mediaUrl, thumbUrl, toMediaUrl } from "@/lib/media/url";
-import { RECAST_BUCKET, RECAST_MAX_SECONDS, RECAST_MIN_SECONDS, RECAST_MODEL_IDS, recastEngineOfModel, type RecastEngine } from "@/lib/recast/recast";
+import {
+  RECAST_BUCKET,
+  RECAST_IMAGE_BUCKET,
+  RECAST_MAX_SECONDS,
+  RECAST_MIN_SECONDS,
+  RECAST_MODEL_IDS,
+  recastEngineOfModel,
+  type RecastEngine,
+} from "@/lib/recast/recast";
 import { readRecastRecipe, readRecastRecipes, type RecastRecipe } from "@/lib/recast/store";
 
 // What the door needs: who can be cast, what can be performed, and what has
@@ -45,6 +53,8 @@ export type RecastTake = {
   /** How it was made: the source clip, the brief, the keeps — and the group,
    *  when several characters were cast from one press. */
   recipe: RecastRecipe | null;
+  /** The images the person added to it, as tiles — so Recreate can put them back. */
+  images: { path: string; url: string }[];
 };
 
 // `recast` is NOT here on purpose: it arrives with a migration the operator
@@ -119,6 +129,10 @@ export async function getRecastHome(
       posterUrl: thumbUrl(toMediaUrl(g.poster_url as string | null), 640),
       createdAt: g.created_at as string,
       recipe: recipes.get(g.id as string) ?? null,
+      images: (recipes.get(g.id as string)?.images ?? []).map((path) => ({
+        path,
+        url: thumbUrl(mediaUrl(RECAST_IMAGE_BUCKET, path), 320) ?? "",
+      })),
     }));
 
   // Anything finished, playable and the right length can be performed again

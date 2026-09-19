@@ -63,7 +63,15 @@ export type RecastRecipe = {
    */
   window: { start: number; end: number } | null;
   fromClipId: string | null;
+  /**
+   * The images the person added, as sent (2026-09-19): paths under their own
+   * folder in the composer's upload bucket, in the order the words call them
+   * "image 1", "image 2". Absent on takes from before images.
+   */
+  images?: string[];
 };
+
+const IMAGE_PATH_RE = /^[0-9a-f-]{36}\/[^/]+$/;
 
 /** The column's value for one take. Bounded: nothing hand-written lands here. */
 export function recastRow(input: Omit<RecastRecipe, "v">): RecastRecipe {
@@ -80,6 +88,7 @@ export function recastRow(input: Omit<RecastRecipe, "v">): RecastRecipe {
     groupId: input.groupId,
     window: input.window,
     fromClipId: input.fromClipId,
+    ...(input.images?.length ? { images: input.images.filter((p) => IMAGE_PATH_RE.test(p)).slice(0, 3) } : {}),
   };
 }
 
@@ -109,6 +118,9 @@ export function readRecastRecipe(value: unknown): RecastRecipe | null {
         ? { start: r.window.start, end: r.window.end }
         : null,
     fromClipId: typeof r.fromClipId === "string" ? r.fromClipId : null,
+    ...(Array.isArray(r.images)
+      ? { images: r.images.filter((p): p is string => typeof p === "string" && IMAGE_PATH_RE.test(p)).slice(0, 3) }
+      : {}),
   };
 }
 

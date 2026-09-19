@@ -20,6 +20,21 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.62.0",
+    build: 101,
+    date: "2026-09-19",
+    title: "Mystique takes any image, or just your words",
+    items: [
+      "Into the clip no longer needs a character. Pick one, add images of your own, or just write what should change (\"make it snow\", \"everyone in red jackets\") and the rest of the clip stays as it is, the performance first.",
+      "Add up to three images of anything: a person, an outfit, a product, a place. They show as Image 1, Image 2, Image 3, and your words can use those names (\"she wears the coat in image 1\"). They work with a character or without one.",
+      "Photo to life can bring your own image to life instead of a character's photo. It uses one picture: the character's when one is chosen, otherwise your first image.",
+      "Each image is checked before anything is charged, the same way the clip is. Images that aren't a plain JPEG or PNG (WebP, sideways phone photos, very large files) are converted automatically. Images under 340 pixels a side, or more than 2.5 times longer one way than the other, are refused with a message.",
+      "Fixed: a character's clothes could change halfway through a long take. The first 30-second take put the performer's white shirt on Eva for the first part and her own black dress from the second. Every part is now told the character wears what they wear in their photos, from the first frame to the last, unless your words say otherwise.",
+      "Fixed: with very long instructions, a long take could cut the end of your own words to fit the engine's limit. It now shortens its own description of the clip first, so your words always go through whole.",
+      "\"Use these settings\" on a finished take brings its images back too.",
+    ],
+  },
+  {
     version: "1.61.0",
     build: 100,
     date: "2026-09-19",

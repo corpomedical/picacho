@@ -21,10 +21,13 @@ import {
   RECAST_CLIP_TOO_BIG,
   RECAST_CLIP_UNCHECKED,
   RECAST_COULDNT_START,
+  RECAST_IMAGE_UNCHECKED,
+  RECAST_IMAGE_UNUSABLE,
   RECAST_JOB_TOO_LONG,
-  RECAST_NEEDS_CAST,
   RECAST_NEEDS_DATABASE,
+  RECAST_NEEDS_PICTURE,
   RECAST_NEEDS_RIGHTS,
+  RECAST_NEEDS_WORDS,
   RECAST_NOT_A_VIDEO,
   RECAST_NOT_OPEN,
   RECAST_REFUSED_BRIEF,
@@ -41,20 +44,32 @@ import {
   RECAST_BUCKET,
   RECAST_ENGINE_ORDER,
   RECAST_ENGINES,
+  RECAST_IMAGE_BUCKET,
+  RECAST_IMAGE_SEND_MAX_PX,
   RECAST_MAX_BYTES,
+  RECAST_MAX_IMAGES,
   RECAST_MODEL_IDS,
   recastClipProblem,
   recastContainerOf,
   recastCreditCost,
   recastEngineFits,
-  recastNeedsCharacter,
+  recastImageSendsAsIs,
+  recastImageUsable,
+  recastMissing,
   recastRequestBody,
   recastSourcePath,
+  recastTakesCast,
   type RecastClip,
   type RecastContainer,
   type RecastEngine,
 } from "@/lib/recast/recast";
-import { composeRecastBrief, RECAST_DIRECTION_MAX_CHARS, recastCharacterToken, type RecastCasting } from "@/lib/recast/recast-brief";
+import {
+  composeRecastBrief,
+  RECAST_DIRECTION_MAX_CHARS,
+  recastCharacterToken,
+  recastImageTokens,
+  type RecastCasting,
+} from "@/lib/recast/recast-brief";
 import {
   askRecastRead,
   parseRecastRead,
@@ -195,6 +210,66 @@ async function readOwnTake(
   }
 }
 
+/**
+ * An image the person added (2026-09-19): uploaded the composer's own way, to
+ * the composer's own bucket, so its path is only ever trusted when it is in
+ * the caller's folder. Read here for what it really is — never for what the
+ * browser said — and refused if no redrawing could bring it inside the
+ * engines' limits. Nothing is written yet: that waits for the gates.
+ */
+type AddedImage = { path: string; bytes: Buffer; format: string; width: number; height: number; orientation: number };
+
+async function readAddedImage(admin: Admin, userId: string, path: string): Promise<AddedImage | { error: string }> {
+  if (!path.startsWith(`${userId}/`) || path.includes("..")) return { error: RECAST_IMAGE_UNUSABLE };
+  const { data: blob, error } = await admin.storage.from(RECAST_IMAGE_BUCKET).download(path);
+  if (error || !blob) return { error: RECAST_UPLOAD_UNREADABLE };
+  const bytes = Buffer.from(await blob.arrayBuffer());
+  try {
+    const sharp = (await import("sharp")).default;
+    const meta = await sharp(bytes).metadata();
+    const orientation = meta.orientation ?? 1;
+    // The size it DISPLAYS: EXIF 5–8 are turned a quarter.
+    const turned = orientation >= 5;
+    const width = (turned ? meta.height : meta.width) ?? 0;
+    const height = (turned ? meta.width : meta.height) ?? 0;
+    if (!meta.format || !recastImageUsable({ width, height })) return { error: RECAST_IMAGE_UNUSABLE };
+    return { path, bytes, format: meta.format, width, height, orientation };
+  } catch {
+    return { error: RECAST_IMAGE_UNUSABLE };
+  }
+}
+
+/**
+ * The address the engine fetches the image from: the upload itself when it is
+ * already a plain upright JPEG or PNG inside the limits, otherwise a JPEG
+ * redrawn from it (turned upright, inside 2048 px) beside it in the same
+ * folder — which is how a WebP, a sideways phone photo or a 12 MB PNG gets in.
+ */
+async function sendAddedImage(admin: Admin, userId: string, image: AddedImage): Promise<{ path: string; url: string; made: boolean } | { error: string }> {
+  let path = image.path;
+  let made = false;
+  if (!recastImageSendsAsIs({ ...image, bytes: image.bytes.length })) {
+    try {
+      const sharp = (await import("sharp")).default;
+      const jpeg = await sharp(image.bytes)
+        .rotate()
+        .resize(RECAST_IMAGE_SEND_MAX_PX, RECAST_IMAGE_SEND_MAX_PX, { fit: "inside", withoutEnlargement: true })
+        .flatten({ background: "#ffffff" })
+        .jpeg({ quality: 90 })
+        .toBuffer();
+      path = `${userId}/recast-${crypto.randomUUID()}.jpg`;
+      const { error } = await admin.storage.from(RECAST_IMAGE_BUCKET).upload(path, jpeg, { contentType: "image/jpeg" });
+      if (error) return { error: RECAST_COULDNT_START };
+      made = true;
+    } catch {
+      return { error: RECAST_IMAGE_UNUSABLE };
+    }
+  }
+  const { data: signed } = await admin.storage.from(RECAST_IMAGE_BUCKET).createSignedUrl(path, 60 * 60 * 24);
+  if (!signed?.signedUrl) return { error: RECAST_COULDNT_START };
+  return { path, url: signed.signedUrl, made };
+}
+
 /** Step 1: a place for the clip, and the id it will be known by. */
 export async function reserveRecastUpload(input: {
   size: number;
@@ -326,6 +401,8 @@ export async function startRecastTakes(input: {
   takeId?: string;
   characterIds: string[];
   photoPath?: string;
+  /** Images the person added, as paths in their own folder of the composer's upload bucket. */
+  imagePaths?: string[];
   engine: string;
   keeps?: string[];
   direction?: string;
@@ -347,28 +424,52 @@ export async function startRecastTakes(input: {
 
   if (await rateLimited(userId, "recast-start", 60 * 60, access.isAdmin ? 30 : 8)) return { error: RECAST_TOO_FAST };
 
-  // The cast. The restyle job recasts nobody, so it takes none.
-  const wantsCast = recastNeedsCharacter(spec.job);
-  const ids = Array.isArray(input?.characterIds) ? [...new Set(input.characterIds.filter((c) => typeof c === "string"))].slice(0, 4) : [];
-  if (wantsCast && ids.length === 0) return { error: RECAST_NEEDS_CAST };
+  // WHO OR WHAT GOES IN — not locked to characters (2026-09-19, the
+  // operator: "Do not lock it just on characters"). Characters are the
+  // variants, one take each; images the person added ride in every take;
+  // their words say what to do. Any of them can be enough (recastMissing).
+  // Restyle takes neither characters nor images: its look is words.
+  const takesCast = recastTakesCast(spec.job);
+  const ids =
+    takesCast && Array.isArray(input?.characterIds) ? [...new Set(input.characterIds.filter((c) => typeof c === "string"))].slice(0, 4) : [];
+  const askedImages =
+    takesCast && Array.isArray(input?.imagePaths)
+      ? [...new Set(input.imagePaths.filter((p): p is string => typeof p === "string"))].slice(0, RECAST_MAX_IMAGES)
+      : [];
+  const direction = typeof input?.direction === "string" ? input.direction.slice(0, RECAST_DIRECTION_MAX_CHARS) : "";
+  const missing = recastMissing(spec.job, { characters: ids.length, images: askedImages.length, words: direction.trim().length > 0 });
+  if (missing === "words") return { error: RECAST_NEEDS_WORDS };
+  if (missing === "picture") return { error: RECAST_NEEDS_PICTURE };
 
-  const { data: characterRows } = wantsCast
-    ? await supabase
-        .from("character_profiles")
-        .select("id, name, reference_image_urls")
-        .eq("user_id", userId)
-        .in("id", ids)
-    : { data: [] };
+  const { data: characterRows } =
+    ids.length > 0
+      ? await supabase
+          .from("character_profiles")
+          .select("id, name, reference_image_urls")
+          .eq("user_id", userId)
+          .in("id", ids)
+      : { data: [] };
   const characters = (characterRows ?? []) as { id: string; name: string; reference_image_urls: string[] | null }[];
-  if (wantsCast && characters.length !== ids.length) return { error: "Couldn't find that character." };
+  if (characters.length !== ids.length) return { error: "Couldn't find that character." };
   for (const c of characters) {
     if (!c.reference_image_urls?.length) return { error: RECAST_CHARACTER_NEEDS_PHOTO };
   }
   // Order follows what was asked for, so the first cast is the first take.
-  const cast = wantsCast ? ids.map((id) => characters.find((c) => c.id === id)!) : [null];
+  // With nobody cast there is still one take: the words', or the image's.
+  const cast = ids.length > 0 ? ids.map((id) => characters.find((c) => c.id === id)!) : [null];
+
+  // Photo to life brings ONE picture to life — the character's photo when
+  // someone is cast, otherwise the first image. Into the clip carries them all.
+  const admin = createAdminClient();
+  const imagePaths = spec.job === "motion" ? (ids.length > 0 ? [] : askedImages.slice(0, 1)) : askedImages;
+  const added: AddedImage[] = [];
+  for (const path of imagePaths) {
+    const image = await readAddedImage(admin, userId, path);
+    if ("error" in image) return { error: image.error };
+    added.push(image);
+  }
 
   // THE MONEY PATH READS THE FILE. Length and frame count price the take.
-  const admin = createAdminClient();
   let clip: RecastClip;
   let source: RecastSource;
   let clipUrl: string;
@@ -432,7 +533,6 @@ export async function startRecastTakes(input: {
     .filter((k): k is string => typeof k === "string" && k.length > 0)
     .slice(0, 6)
     .map((what) => ({ what: what.slice(0, 120), kind: "object" as const }));
-  const direction = typeof input?.direction === "string" ? input.direction.slice(0, RECAST_DIRECTION_MAX_CHARS) : "";
   const castTag = typeof input?.castTag === "string" && /^[A-D]$/.test(input.castTag) ? input.castTag : null;
 
   // The read described the whole clip; the brief describes the window —
@@ -449,8 +549,12 @@ export async function startRecastTakes(input: {
           ...(engine === "kling-edit" ? { token: recastCharacterToken(c.reference_image_urls?.length ?? 1) } : {}),
         }
       : null;
+  // The added images' names follow the character's own (@Image2 after a
+  // one-photo character's @Image1) — only where the engine reads names.
+  const imageTokensFor = (casting: RecastCasting | null): string[] =>
+    spec.job === "scene" && engine === "kling-edit" ? recastImageTokens(casting?.token, imagePaths.length) : [];
   const briefFor = (casting: RecastCasting | null) =>
-    composeRecastBrief({ job: spec.job, read, seconds: windowSeconds, casting, keeps, direction });
+    composeRecastBrief({ job: spec.job, read, seconds: windowSeconds, casting, keeps, direction, images: imageTokensFor(casting) });
   // A long take's pieces each carry their own brief: their own length, only
   // the cuts inside them, and from the second piece on the continuity words
   // every passing seam test was sent with (recast-brief.ts). Frames count
@@ -467,7 +571,16 @@ export async function startRecastTakes(input: {
             }),
           }
         : null;
-      return composeRecastBrief({ job: spec.job, read: pieceRead, seconds: frames / CHAIN_FPS, casting, keeps, direction, continuing: k > 0 });
+      return composeRecastBrief({
+        job: spec.job,
+        read: pieceRead,
+        seconds: frames / CHAIN_FPS,
+        casting,
+        keeps,
+        direction,
+        continuing: k > 0,
+        images: imageTokensFor(casting),
+      });
     });
 
   // The words, judged before anything is spent. The brief is judged when it
@@ -553,6 +666,33 @@ export async function startRecastTakes(input: {
     }
   }
 
+  // THE IMAGES ARE JUDGED the same way, and also before anything is spent:
+  // an image added to real footage rides the strict lane like the clip does.
+  // What is judged is what is sent — the redrawn copy, when one was made.
+  const sentImages: { path: string; url: string }[] = [];
+  const madeImages: string[] = [];
+  const dropPrepared = async () => {
+    if (cutPath) await removeSource(admin, cutPath);
+    if (madeImages.length > 0) await admin.storage.from(RECAST_IMAGE_BUCKET).remove(madeImages);
+  };
+  for (const image of added) {
+    const sent = await sendAddedImage(admin, userId, image);
+    if ("error" in sent) {
+      await dropPrepared();
+      return { error: sent.error };
+    }
+    if (sent.made) madeImages.push(sent.path);
+    try {
+      await judgeRender({ url: sent.url, kind: "image", strictLane: true, promptScores: scores ?? null, sessionPriorHits: priorHits });
+    } catch (err) {
+      if (!(err instanceof OutputPolicyRefusal)) throw err;
+      await recordPolicyRefusal({ userId, gate: "output", reason: err.reason, strictLane: true, bands: err.readings, provider: "recast-image" });
+      await dropPrepared();
+      return { error: err.reason === "unavailable" ? RECAST_IMAGE_UNCHECKED : err.userMessage };
+    }
+    sentImages.push({ path: sent.path, url: sent.url });
+  }
+
   const total = perTake * cast.length;
   const seconds = Math.max(1, Math.round(windowSeconds));
   const groupId = cast.length > 1 ? crypto.randomUUID() : null;
@@ -572,7 +712,14 @@ export async function startRecastTakes(input: {
       id: crypto.randomUUID(),
       character_profile_id: character?.id ?? null,
       character_profile_ids: character ? [character.id] : [],
-      prompt_input: character ? `Recast: ${character.name}` : "Restyle",
+      // What History shows as the take's words: who was cast, or what was asked.
+      prompt_input: character
+        ? `Recast: ${character.name}`
+        : spec.job === "world"
+          ? "Restyle"
+          : direction.trim()
+            ? direction.trim().slice(0, 200)
+            : "Your image",
       content_type: "video",
       status: "generating",
       attempts: 0,
@@ -603,6 +750,7 @@ export async function startRecastTakes(input: {
         groupId,
         window: cutting ? { start: window.start, end: window.end } : null,
         fromClipId: preparing || chaining ? fromClipId : null,
+        images: sentImages.map((image) => image.path),
       }),
     };
   });
@@ -660,6 +808,11 @@ export async function startRecastTakes(input: {
       try {
         const photos = await signPhotos(character);
         if (character && !photos.first) throw new Error("Couldn't prepare the character's photo.");
+        // The picture: the character's photo, or — for Photo to life with
+        // nobody cast — the person's own image. Into the clip carries the
+        // added images beside it, named in the brief.
+        const picture = photos.first ?? (spec.job === "motion" ? (sentImages[0]?.url ?? null) : null);
+        const imageUrls = spec.job === "scene" ? sentImages.map((image) => image.url) : [];
         // A long take sends its FIRST piece now; the runner sends the rest,
         // each as the one before it finishes (job-runner.ts, chain-run.ts).
         let chain: ChainState | undefined;
@@ -679,8 +832,9 @@ export async function startRecastTakes(input: {
               spec.label,
               recastRequestBody(engine, {
                 clipUrl: CHAIN_CLIP_PLACEHOLDER,
-                ...(photos.first ? { characterImageUrl: photos.first } : {}),
+                ...(picture ? { characterImageUrl: picture } : {}),
                 morePhotoUrls: photos.more,
+                imageUrls,
                 ...(spec.takesDirection ? { brief: pieceBrief } : {}),
                 clip: { seconds: plan.lengths[k] / CHAIN_FPS },
               }),
@@ -708,8 +862,9 @@ export async function startRecastTakes(input: {
         }
         pendingJob = await submitRecastJob(engine, {
           clipUrl: sendUrl,
-          ...(photos.first ? { characterImageUrl: photos.first } : {}),
+          ...(picture ? { characterImageUrl: picture } : {}),
           morePhotoUrls: photos.more,
+          imageUrls,
           ...(spec.takesDirection ? { brief: sendBrief } : {}),
           clip: { seconds: sendSeconds },
         });

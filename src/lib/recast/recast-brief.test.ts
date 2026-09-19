@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composeRecastBrief, RECAST_BRIEF_MAX_CHARS, recastCharacterToken } from "./recast-brief";
+import { composeRecastBrief, RECAST_BRIEF_MAX_CHARS, recastCharacterToken, recastImageTokens } from "./recast-brief";
 import type { RecastRead } from "./recast-read";
 
 // The brief is what a video model is actually told. Genjutsu's works because
@@ -195,6 +195,94 @@ describe("a restyle's brief", () => {
 
   it("tells it where the clip is set, so the change is a change FROM something", () => {
     expect(brief).toContain("A white studio under flat daylight.");
+  });
+});
+
+describe("the clothes", () => {
+  // The operator's first 30 s take (2026-09-19): face, hair and build were
+  // pinned to the photos, clothes were not, and "everything else stays
+  // exactly as it is" in the clip — so part 1 wore the performer's white
+  // shirt and part 2 her own black dress.
+  const casting = { tag: "A", characterName: "Eva", token: recastCharacterToken(4) };
+
+  it("dresses the character from their photos, first frame to last, in every part", () => {
+    for (const continuing of [false, true]) {
+      const brief = composeRecastBrief({ ...base, job: "scene", casting, continuing });
+      expect(brief).toContain("So do their clothes: they wear what they wear in those photos, from the first frame to the last");
+    }
+    expect(composeRecastBrief({ ...base, job: "scene", casting: { ...casting, token: recastCharacterToken(1) } })).toContain(
+      "they wear what they wear in the image",
+    );
+  });
+
+  it("still lets the person's own words dress them otherwise", () => {
+    expect(composeRecastBrief({ ...base, job: "scene", casting })).toContain("unless the direction below says otherwise");
+  });
+});
+
+describe("a take with nobody cast — words, and images of their own", () => {
+  // 2026-09-19: "make it that the user can upload an image and that they can
+  // only use prompt to change whatever they want. Do not lock it just on
+  // characters".
+  const words = { ...base, job: "scene" as const, casting: null, direction: "Make it snow, and dress everyone in red." };
+
+  it("changes what the words say, keeps the performance, and replaces nobody", () => {
+    const brief = composeRecastBrief(words);
+    expect(brief).toContain("Change @Video1 exactly as the direction below says, and nothing more. Keep the performance exactly as it is.");
+    expect(brief).toContain("Everything the direction does not change stays exactly as it is in @Video1.");
+    expect(brief).not.toContain("Replace");
+    expect(brief).not.toContain("THE CHARACTER");
+    // No blanket "keep the setting" to argue with a direction that changes it.
+    expect(brief).not.toContain("The lighting, the setting and everyone else in the shot.");
+    expect(brief.endsWith("Make it snow, and dress everyone in red.")).toBe(true);
+  });
+
+  it("names each image by the engine's name and by the person's — image 1, image 2", () => {
+    const brief = composeRecastBrief({ ...words, images: recastImageTokens(undefined, 2) });
+    expect(brief).toContain("IMAGES");
+    expect(brief).toContain('- @Image1 — "image 1" in the direction.');
+    expect(brief).toContain('- @Image2 — "image 2" in the direction.');
+    expect(brief.indexOf("IMAGES")).toBeLessThan(brief.indexOf("THE SOURCE"));
+  });
+
+  it("carries a long take's first second on whatever the words changed", () => {
+    const later = composeRecastBrief({ ...words, continuing: true });
+    expect(later).toContain("CONTINUITY");
+    expect(later).toContain("every change the direction asks for");
+  });
+});
+
+describe("images beside a character", () => {
+  it("numbers them after a one-photo character's own @Image1, and from @Image1 beside an element", () => {
+    expect(recastImageTokens("@Image1", 2)).toEqual(["@Image2", "@Image3"]);
+    expect(recastImageTokens("@Element1", 2)).toEqual(["@Image1", "@Image2"]);
+    expect(recastImageTokens(undefined, 1)).toEqual(["@Image1"]);
+  });
+
+  it("puts them in the brief with the character still cast", () => {
+    const casting = { tag: "A", characterName: "Eva", token: recastCharacterToken(1) };
+    const brief = composeRecastBrief({ ...base, job: "scene", casting, images: recastImageTokens(casting.token, 1), direction: "She wears the coat in image 1." });
+    expect(brief).toContain("Replace Person A in @Video1 with @Image1.");
+    expect(brief).toContain('- @Image2 — "image 1" in the direction.');
+  });
+
+  it("never loses the person's own words, with every paragraph there is", () => {
+    // The longest a brief gets: a later piece, three images, six keeps, the
+    // full 600 characters of direction.
+    const direction = `She wears the coat in image 1. ${"Keep her calm and unhurried. ".repeat(20)}`.slice(0, 600).trim();
+    const casting = { tag: "A", characterName: "Eva", token: recastCharacterToken(4) };
+    const keeps = Array.from({ length: 6 }, (_, i) => ({ what: `a long described thing to keep in the shot, number ${i + 1}`, kind: "object" as const }));
+    const brief = composeRecastBrief({ ...base, job: "scene", casting, keeps, continuing: true, images: recastImageTokens(casting.token, 3), direction });
+    expect(brief.length).toBeLessThanOrEqual(RECAST_BRIEF_MAX_CHARS);
+    expect(brief.endsWith(direction)).toBe(true);
+  });
+});
+
+describe("Photo to life from the person's own image", () => {
+  it("does not assume the image shows a person", () => {
+    const brief = composeRecastBrief({ ...base, job: "motion", casting: null });
+    expect(brief).toContain("Whoever or whatever the reference image shows.");
+    expect(brief).not.toContain("The character —");
   });
 });
 

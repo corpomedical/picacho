@@ -68,7 +68,31 @@ export function recastCharacterToken(photoCount: number): string {
   return photoCount > 1 ? "@Element1" : "@Image1";
 }
 
+/**
+ * The engine's names for the images the person added, in order: @Image1… —
+ * or from @Image2 when a one-photo character already goes as @Image1
+ * (recastRequestBody puts them in that order).
+ */
+export function recastImageTokens(characterToken: string | undefined, count: number): string[] {
+  const first = characterToken === "@Image1" ? 2 : 1;
+  return Array.from({ length: count }, (_, i) => `@Image${first + i}`);
+}
+
 const bullet = (s: string) => `- ${s}`;
+
+/**
+ * What each added image is called in the person's words ("image 1", as the
+ * door labels it) against the engine's own name for it.
+ */
+function imageLines(tokens: string[]): string[] {
+  if (tokens.length === 0) return [];
+  return [
+    "IMAGES",
+    "Added by the person, to be used exactly as the direction below says:",
+    ...tokens.map((token, i) => bullet(`${token} — "image ${i + 1}" in the direction.`)),
+    "",
+  ];
+}
 
 function sourceLines(read: RecastRead | null, seconds: number): string[] {
   if (!read) return [`One continuous clip of ${Math.round(seconds)} seconds.`];
@@ -86,12 +110,7 @@ function keepLines(keeps: RecastKeep[]): string[] {
   return keeps.map((k) => k.what);
 }
 
-/**
- * The brief a take is sent with. `direction` is the person's own words and
- * always lands last, so it reads as the note on top of the order rather than
- * an argument with it.
- */
-export function composeRecastBrief(input: {
+type BriefInput = {
   job: RecastJob;
   read: RecastRead | null;
   seconds: number;
@@ -101,7 +120,33 @@ export function composeRecastBrief(input: {
   direction: string;
   /** A later piece of a long take (chain.ts): its first second is already finished and must be carried on from. */
   continuing?: boolean;
-}): string {
+  /** The engine's names for the images the person added (recastImageTokens) — Into the clip only. */
+  images?: string[];
+};
+
+/**
+ * The brief a take is sent with. `direction` is the person's own words and
+ * always lands last, so it reads as the note on top of the order rather than
+ * an argument with it.
+ *
+ * INSIDE THE ENGINE'S 2500 WITHOUT LOSING THEIR WORDS (2026-09-19). A brief
+ * is cut from its END, where the direction stands — and a later piece of a
+ * long take with the clothes line, three images, six keeps and a full
+ * direction measured ~60 characters over. So when it is too long, the read's
+ * account of the clip gives way first — the people after the lead, then the
+ * account itself (the video shows all of it anyway) — and only then is
+ * anything cut.
+ */
+export function composeRecastBrief(input: BriefInput): string {
+  let read = input.read;
+  for (;;) {
+    const text = composeUncut({ ...input, read });
+    if (Array.from(text).length <= RECAST_BRIEF_MAX_CHARS || read === null) return cleanBrief(text, RECAST_BRIEF_MAX_CHARS);
+    read = read.people.length > 1 ? { ...read, people: read.people.slice(0, -1) } : null;
+  }
+}
+
+function composeUncut(input: BriefInput): string {
   const direction = cleanText(input.direction, RECAST_DIRECTION_MAX_CHARS);
   const parts: string[] = [];
 
@@ -126,12 +171,17 @@ export function composeRecastBrief(input: {
       bullet("How many people are in the shot, and where each of them stands."),
       ...keepLines(input.keeps).map(bullet),
     );
-    return cleanBrief(parts.join("\n"), RECAST_BRIEF_MAX_CHARS);
+    return cleanBrief(parts.join("\n"), Number.POSITIVE_INFINITY);
   }
 
   const name = input.casting?.characterName ?? "The character";
 
   if (input.job === "motion") {
+    // No character: the person's own image is the picture, and it need not
+    // show a person at all.
+    const who = input.casting
+      ? `${name} — the person in the reference image. Their face, hair and build must stay the same in every frame.`
+      : "Whoever or whatever the reference image shows. They must stay the same in every frame.";
     // THE ONE THE ENGINE ACTUALLY READS, and the one that was wrong until
     // 2026-09-18. Motion control builds the video OUT OF the reference
     // image — its person, its clothes, its background, its light — and takes
@@ -146,7 +196,7 @@ export function composeRecastBrief(input: {
       "The person in the reference image performs the movements in the source video. The reference image is the world: the character, what they wear, the place around them and its light all come from it. Only the movement comes from the video.",
       "",
       "THE CHARACTER",
-      `${name} — the person in the reference image. Their face, hair and build must stay the same in every frame.`,
+      who,
       "",
       "TAKE FROM THE VIDEO, AND NOTHING ELSE",
       bullet("The performance: every gesture, every step, every expression, on the same frames."),
@@ -156,27 +206,71 @@ export function composeRecastBrief(input: {
       ...sourceLines(input.read, input.seconds),
     );
     if (direction) parts.push("", "DIRECTION", direction);
-    return cleanBrief(parts.join("\n"), RECAST_BRIEF_MAX_CHARS);
+    return cleanBrief(parts.join("\n"), Number.POSITIVE_INFINITY);
   }
 
-  const who = input.casting?.tag ? `Person ${input.casting.tag}` : "The performer";
+  const images = input.images ?? [];
+
+  // NO CHARACTER (2026-09-19, "Do not lock it just on characters"): the
+  // person's own words say what changes — with their images, or without —
+  // and everything they do not change is kept, the performance first.
+  if (!input.casting) {
+    // Only ever sent to the one scene engine still offered, which reads names
+    // (the retired ones take no prompt at all).
+    const video = "@Video1";
+    parts.push(
+      "TASK",
+      `Change ${video} exactly as the direction below says, and nothing more. Keep the performance exactly as it is.`,
+      "",
+      ...imageLines(images),
+      "THE SOURCE",
+      ...sourceLines(input.read, input.seconds),
+      "",
+      ...(input.continuing
+        ? [
+            "CONTINUITY",
+            `The first second of ${video} is already finished: it shows exactly how everything must look — every person, their clothes and hair, and every change the direction asks for. Carry on from that second without any break, frame to frame, as if it were one continuous take.`,
+            "",
+          ]
+        : []),
+      "KEEP EXACTLY",
+      bullet("The performance: every gesture, every step, every expression, on the same frames."),
+      bullet("The framing, the camera move, the cuts and the timing."),
+      ...keepLines(input.keeps).map(bullet),
+      bullet(`Everything the direction does not change stays exactly as it is in ${video}.`),
+    );
+    if (direction) parts.push("", "DIRECTION", direction);
+    return cleanBrief(parts.join("\n"), Number.POSITIVE_INFINITY);
+  }
+
+  const who = input.casting.tag ? `Person ${input.casting.tag}` : "The performer";
   // With names the engine reads (Kling O3 Edit: @Video1 for the clip, @Element1
   // or @Image1 for the character), the brief uses them; without, plain words.
-  const token = input.casting?.token;
+  const token = input.casting.token;
   const video = token ? "@Video1" : "the source video";
   const character = token ?? "the character in the reference image";
+  const photos = token === "@Element1" ? "those photos" : "the image";
   parts.push(
     "TASK",
     `Replace ${who} in ${video} with ${character}. Keep the performance exactly as it is.`,
     "",
     "THE CHARACTER",
-    `${name} — ${token ? `${token}, ` : ""}the person in the reference ${token === "@Element1" ? "images" : "image"}. Their face, hair and build come from ${token === "@Element1" ? "those photos" : "the image"} and must stay the same in every frame.`,
+    `${name} — ${token ? `${token}, ` : ""}the person in the reference ${token === "@Element1" ? "images" : "image"}. Their face, hair and build come from ${photos} and must stay the same in every frame.`,
+    // THE CLOTHES (2026-09-19). The operator's first 30 s take: the brief
+    // pinned face, hair and build to the photos but said nothing of clothes,
+    // and ended "everything else stays exactly as it is" in the clip — so
+    // part 1 dressed Eva in the performer's white shirt and part 2 in her own
+    // black dress, and the outfit flipped at the join. Said once, for every
+    // part; the direction can still dress them otherwise (an added image of
+    // a coat, say).
+    `So do their clothes: they wear what they wear in ${photos}, from the first frame to the last, unless the direction below says otherwise.`,
     // THE LINE THAT MATTERS MOST (2026-09-19). The operator's take on Wan
     // lost his character the moment the performer turned his back: nothing
     // said what the back of the character's head looks like. Kling O3 Edit
     // held Eva through the same turn with this said in so many words.
     `They stay the same person from every side, including from behind: when they turn away or walk off, it is still their hair and their build we see, never the original performer's.`,
     "",
+    ...imageLines(images),
     "THE SOURCE",
     ...sourceLines(input.read, input.seconds),
     "",
@@ -200,5 +294,5 @@ export function composeRecastBrief(input: {
     bullet(`Everything else stays exactly as it is in ${video}.`),
   );
   if (direction) parts.push("", "DIRECTION", direction);
-  return cleanBrief(parts.join("\n"), RECAST_BRIEF_MAX_CHARS);
+  return cleanBrief(parts.join("\n"), Number.POSITIVE_INFINITY);
 }

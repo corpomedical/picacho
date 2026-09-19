@@ -21,7 +21,6 @@ export const RECAST_CLIP_TOO_LARGE = "That clip is past 3850 pixels on a side.";
 export const RECAST_JOB_TOO_LONG = "That clip is longer than this job takes — trim it, or choose another job.";
 export const RECAST_WINDOW_INVALID = "That stretch of the clip can't be used — choose it again.";
 export const RECAST_TRIM_FAILED = "Couldn't cut that stretch of the clip — nothing was charged. Try again.";
-export const RECAST_NEEDS_CAST = "Choose who performs it first.";
 export const RECAST_REFUSED_BRIEF = "This clip can't be recast. Nothing was charged.";
 export const RECAST_CHARACTER_NEEDS_PHOTO = "That character has no photo yet — add one first.";
 export const RECAST_CLIP_UNCHECKED = "That clip couldn't be checked just now — nothing was charged. Try again.";
@@ -30,6 +29,12 @@ export const RECAST_ALREADY_STARTED = "That take was already started.";
 // The long take (chain.ts): no placement of its parts lets them meet at a
 // still enough moment inside the engine's limits.
 export const RECAST_CHAIN_NO_PLAN = "This stretch can't be split into parts cleanly — choose 15 seconds of it. Nothing was charged.";
+// Not locked to characters (2026-09-19): what a take is short of, and the
+// images the person adds.
+export const RECAST_NEEDS_WORDS = "Say what should change, or choose a character.";
+export const RECAST_NEEDS_PICTURE = "Choose a character or add an image to bring to life.";
+export const RECAST_IMAGE_UNUSABLE = "That image can't be used — it needs to be at least 340 pixels on each side, and no more than 2.5 times as long one way as the other.";
+export const RECAST_IMAGE_UNCHECKED = "That image couldn't be checked just now — nothing was charged. Try again.";
 
 export function recastClipProblemMessage(problem: RecastClipProblem): string {
   switch (problem) {

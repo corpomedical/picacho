@@ -17,22 +17,26 @@ import {
   startRecastTakes,
   type RecastInspection,
 } from "@/lib/recast/actions";
+import { deleteChatAttachment, reserveChatAttachmentPath } from "@/lib/attachments/actions";
 import type { RecastCharacter, RecastMotion, RecastTake } from "@/lib/recast/data";
-import { RECAST_CLIP_TOO_BIG, RECAST_NOT_A_VIDEO, RECAST_UPLOAD_UNREADABLE } from "@/lib/recast/messages";
+import { RECAST_CLIP_TOO_BIG, RECAST_IMAGE_UNUSABLE, RECAST_NOT_A_VIDEO, RECAST_UPLOAD_UNREADABLE } from "@/lib/recast/messages";
 import {
   RECAST_BUCKET,
   RECAST_ENGINES,
+  RECAST_IMAGE_BUCKET,
   RECAST_JOB_MAX_SECONDS,
   RECAST_JOB_ORDER,
   RECAST_MAX_BYTES,
+  RECAST_MAX_IMAGES,
   recastContainerOf,
   recastEngineFor,
   recastEnginesOf,
-  recastNeedsCharacter,
+  recastMissing,
+  recastTakesCast,
   type RecastEngine,
   type RecastJob,
 } from "@/lib/recast/recast";
-import { composeRecastBrief, recastCharacterToken } from "@/lib/recast/recast-brief";
+import { composeRecastBrief, recastCharacterToken, recastImageTokens } from "@/lib/recast/recast-brief";
 import { clampRecastWindow, defaultRecastWindow, isWholeClip, recastWindowCredits, type RecastWindow } from "@/lib/recast/trim";
 import { chainMinutes, chainPieceCount } from "@/lib/generations/chain";
 import { sampleClip } from "@/lib/recast/recast-client";
@@ -66,6 +70,16 @@ type Source =
   | { kind: "take"; phase: "inspecting" | "ready"; url: string; takeId: string; name: string };
 
 type Viewing = { take: RecastTake; media: { resultUrl: string; sourceUrl: string | null } | null };
+
+/**
+ * An image the person added (2026-09-19). `path` is null while it uploads;
+ * `local` marks one uploaded here, whose preview is a blob URL and whose file
+ * nothing stands on yet — so removing it removes the file too.
+ */
+type DoorImage = { key: string; path: string | null; url: string; local: boolean };
+
+/** The image types the door takes — what the server can read and redraw. */
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 const clock = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
 
@@ -118,7 +132,11 @@ export function MystiqueDoor({
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [viewing, setViewing] = useState<Viewing | null>(null);
+  const [images, setImages] = useState<DoorImage[]>([]);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const imageFileRef = useRef<HTMLInputElement | null>(null);
+  // Every blob URL a preview was given, so none outlives the door.
+  const imageBlobsRef = useRef<Set<string>>(new Set());
   // The newest pick wins: an upload or a read that lands late is dropped.
   const pickRef = useRef(0);
   const urlRef = useRef<string | null>(null);
@@ -147,34 +165,56 @@ export function MystiqueDoor({
     };
   }, [renderingKey, router]);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const blobs = imageBlobsRef.current;
+    return () => {
       if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-    },
-    [],
-  );
+      for (const url of blobs) URL.revokeObjectURL(url);
+    };
+  }, []);
 
   const read: RecastRead | null = seen?.read ?? null;
   const ready = source?.phase === "ready" && seen !== null;
-  const needsCast = recastNeedsCharacter(job);
+  // Characters and images go into every job but Restyle — and neither is
+  // required: words alone can make an Into the clip take (recast.ts
+  // recastMissing, 2026-09-19 "Do not lock it just on characters").
+  const takesCast = recastTakesCast(job);
   const engine: RecastEngine = recastEngineFor(job, tier);
   // Priced from the file's own numbers scaled to the window — the same call
   // the server charges with (trim.ts), so the button's number is the charge.
   const quoteOf = (e: RecastEngine) =>
     seen && clipWindow ? { engine: e, credits: recastWindowCredits(e, { seconds: seen.seconds, frames: seen.frames }, clipWindow) } : null;
   const quote = quoteOf(engine);
-  const cast = castIds.map((id) => castable.find((c) => c.id === id)).filter((c): c is RecastCharacter => Boolean(c));
-  const takeCount = needsCast ? Math.max(1, cast.length) : 1;
+  const cast = takesCast
+    ? castIds.map((id) => castable.find((c) => c.id === id)).filter((c): c is RecastCharacter => Boolean(c))
+    : [];
+  // What is actually sent — the server's rule (actions.ts): Photo to life
+  // brings ONE picture to life, the character's when someone is cast.
+  const usedImages = !takesCast ? [] : job === "motion" ? (cast.length > 0 ? [] : images.slice(0, 1)) : images;
+  const imageCap = job === "motion" ? 1 : RECAST_MAX_IMAGES;
+  const imagesUploading = images.some((i) => i.path === null);
+  const hasWords = direction.trim().length > 0;
+  const missing = recastMissing(job, { characters: cast.length, images: usedImages.length, words: hasWords });
+  const takeCount = takesCast ? Math.max(1, cast.length) : 1;
   const totalCredits = quote ? quote.credits * takeCount : null;
   const keeps = job === "scene" ? (read?.keeps ?? []).filter((k) => !dropped.has(k.what)) : [];
   const photo = cast[0]?.photos.find((p) => p.path === photoPath) ?? cast[0]?.photos[0] ?? null;
   const busy = starting || (source !== null && source.phase !== "ready");
   const canTake =
-    ready && rights && !starting && quote !== null && clipWindow !== null && (needsCast ? cast.length > 0 : direction.trim().length > 0);
+    ready &&
+    rights &&
+    !starting &&
+    quote !== null &&
+    clipWindow !== null &&
+    !imagesUploading &&
+    missing === null &&
+    (job !== "world" || hasWords);
 
   // The same function the server composes with, so what is shown is what is
   // sent. Not memoised: it is string work over a handful of short fields,
   // and every input is rebuilt each render anyway.
+  // The same names the server gives the engine (actions.ts castingFor, imageTokensFor).
+  const castToken = cast[0] && engine === "kling-edit" ? recastCharacterToken(cast[0].photos.length) : undefined;
   const brief = seen
     ? composeRecastBrief({
         job,
@@ -184,12 +224,12 @@ export function MystiqueDoor({
           ? {
               tag: read?.people.find((p) => p.lead)?.tag ?? null,
               characterName: cast[0].name,
-              // The same name the server gives the engine (actions.ts castingFor).
-              ...(engine === "kling-edit" ? { token: recastCharacterToken(cast[0].photos.length) } : {}),
+              ...(castToken ? { token: castToken } : {}),
             }
           : null,
         keeps,
         direction,
+        images: job === "scene" && engine === "kling-edit" ? recastImageTokens(castToken, usedImages.length) : [],
       })
     : "";
 
@@ -302,6 +342,84 @@ export function MystiqueDoor({
     if (seen && clipWindow) setClipWindow(clampRecastWindow(clipWindow, seen.seconds, next));
   }
 
+  /**
+   * An image of the person's own: uploaded the composer's way — a path in
+   * their own folder, then straight from the browser to storage — and
+   * shown at once from the file itself. The server reads it again before it
+   * is used, and judges it before anything is spent.
+   */
+  async function addImage(file: File | undefined) {
+    if (!file || starting || images.length >= imageCap) return;
+    setError("");
+    if (!IMAGE_TYPES.includes(file.type)) {
+      setError(RECAST_IMAGE_UNUSABLE);
+      return;
+    }
+    const key = crypto.randomUUID();
+    const url = URL.createObjectURL(file);
+    imageBlobsRef.current.add(url);
+    setImages((prev) => [...prev, { key, path: null, url, local: true }]);
+    const drop = (message: string) => {
+      setImages((prev) => prev.filter((i) => i.key !== key));
+      URL.revokeObjectURL(url);
+      imageBlobsRef.current.delete(url);
+      setError(message);
+    };
+    try {
+      const reserve = new FormData();
+      reserve.set("name", file.name);
+      reserve.set("size", String(file.size));
+      const reserved = await reserveChatAttachmentPath(reserve);
+      if (reserved.error !== null || !reserved.path) {
+        return drop(
+          reserved.errorCode === "SESSION_EXPIRED"
+            ? t.generate.uploadErrSession
+            : reserved.errorCode === "TOO_LARGE"
+              ? formatMsg(t.generate.uploadErrTooLarge, { name: file.name })
+              : reserved.errorCode === "RATE_LIMITED"
+                ? t.generate.uploadErrRate
+                : t.generate.uploadPhotoFailed,
+        );
+      }
+      const { error: uploadError } = await createClient()
+        .storage.from(RECAST_IMAGE_BUCKET)
+        .upload(reserved.path, file, { contentType: file.type, upsert: false });
+      if (uploadError) return drop(t.generate.uploadPhotoFailed);
+      const path = reserved.path;
+      setImages((prev) => prev.map((i) => (i.key === key ? { ...i, path } : i)));
+    } catch (err) {
+      const stale = isStaleDeployError(err);
+      drop(stale ? t.generate.refreshNeeded : t.generate.uploadPhotoFailed);
+      if (stale) reloadForNewDeploy({ delayMs: 1800 });
+    }
+  }
+
+  /** Off the take — and out of storage when it was uploaded here and nothing stands on it yet. */
+  function removeImage(key: string) {
+    const image = images.find((i) => i.key === key);
+    if (!image) return;
+    setImages((prev) => prev.filter((i) => i.key !== key));
+    if (image.local) {
+      URL.revokeObjectURL(image.url);
+      imageBlobsRef.current.delete(image.url);
+      if (image.path) {
+        const gone = new FormData();
+        gone.set("path", image.path);
+        void deleteChatAttachment(gone).catch(() => {});
+      }
+    }
+  }
+
+  /** Clears the row without touching storage — a take now stands on these files. */
+  function forgetImages() {
+    for (const i of images) {
+      if (!i.local) continue;
+      URL.revokeObjectURL(i.url);
+      imageBlobsRef.current.delete(i.url);
+    }
+    setImages([]);
+  }
+
   /** The preview plays the chosen stretch and nothing else. */
   function holdPreviewInWindow() {
     const v = previewRef.current;
@@ -317,8 +435,9 @@ export function MystiqueDoor({
     try {
       res = await startRecastTakes({
         ...(source.kind === "upload" ? { path: source.path ?? undefined } : { takeId: source.takeId }),
-        characterIds: needsCast ? cast.map((c) => c.id) : [],
+        characterIds: cast.map((c) => c.id),
         photoPath: photo?.path,
+        imagePaths: usedImages.map((i) => i.path).filter((p): p is string => p !== null),
         engine,
         keeps: keeps.map((k) => k.what),
         direction,
@@ -344,7 +463,7 @@ export function MystiqueDoor({
       ...res.ids.map((id, i) => ({
         id,
         status: "generating" as const,
-        characterName: needsCast ? (cast[i]?.name ?? null) : null,
+        characterName: cast[i]?.name ?? null,
         engine,
         seconds: Math.round(seen.seconds),
         credits: quote?.credits ?? null,
@@ -352,6 +471,7 @@ export function MystiqueDoor({
         posterUrl: null,
         createdAt: now,
         recipe: null,
+        images: [],
       })),
       ...prev,
     ]);
@@ -359,6 +479,7 @@ export function MystiqueDoor({
     setClip(null);
     setRights(false);
     setDirection("");
+    forgetImages();
     router.refresh();
   }
 
@@ -385,6 +506,10 @@ export function MystiqueDoor({
     setJob(x.recipe.job);
     setTier(RECAST_ENGINES[x.recipe.engine].tier);
     setDirection(x.recipe.direction);
+    // Its images come back as they were sent; they are the take's files, so
+    // taking one off the door never deletes it.
+    forgetImages();
+    setImages(x.images.map((i) => ({ key: i.path, path: i.path, url: i.url, local: false })));
     setViewing(null);
     if (x.recipe.source.kind === "take") {
       const motion = motions.find((mo) => mo.takeId === (x.recipe!.source as { takeId: string }).takeId);
@@ -396,8 +521,14 @@ export function MystiqueDoor({
   // job that keeps the clip's people (one of them is replaced) — for Photo to
   // life it is a far bigger one, said in its own box below; for Restyle it is
   // no problem at all, everyone is redrawn.
+  // A face to hold, and one person replaced among many, are warnings about
+  // CASTING — a take of words alone replaces nobody.
+  const castsSomeone = cast.length > 0 || (job === "motion" && usedImages.length > 0);
   const shownWarnings = (seen?.warnings ?? []).filter(
-    (w) => w === "cuts" || (w === "no-head" && job !== "world") || ((w === "crowd" || w === "wide") && job === "scene"),
+    (w) =>
+      w === "cuts" ||
+      (w === "no-head" && job !== "world" && castsSomeone) ||
+      ((w === "crowd" || w === "wide") && job === "scene" && cast.length > 0),
   );
   // Photo to life builds the whole picture from the character's photo. A
   // clip that shows a room or other people has all of that INVENTED — the
@@ -521,15 +652,22 @@ export function MystiqueDoor({
                   )}
                 </div>
                 <div className="relative min-h-[240px] bg-[#0e0f14] md:min-h-[360px]">
-                  {needsCast && photo ? (
+                  {photo ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={photo.url} alt={cast[0]?.name ?? ""} className="absolute inset-0 h-full w-full object-contain" />
-                  ) : needsCast ? (
+                  ) : usedImages[0] ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={usedImages[0].url} alt={formatMsg(m.imageName, { n: 1 })} className="absolute inset-0 h-full w-full object-contain" />
+                  ) : job === "scene" ? (
+                    <div className="absolute inset-0 flex items-center justify-center p-8 text-center">
+                      <p className="max-w-xs text-sm text-[#9aa0ad]">{m.justWords}</p>
+                    </div>
+                  ) : job === "motion" ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center">
-                      <p className="max-w-xs text-sm text-[#9aa0ad]">{m.noCharacters}</p>
-                      <Link href="/app/character/new" className="rounded-xl bg-[#ecedf1] px-4 py-2 text-sm font-semibold text-[#16171c]">
-                        {m.createCharacter}
-                      </Link>
+                      <p className="max-w-xs text-sm text-[#9aa0ad]">{m.noPicture}</p>
+                      <button type="button" onClick={() => imageFileRef.current?.click()} disabled={starting} className={ghost}>
+                        {m.addImage}
+                      </button>
                     </div>
                   ) : (
                     <div className="absolute inset-0 flex items-center justify-center p-8 text-center">
@@ -537,11 +675,7 @@ export function MystiqueDoor({
                     </div>
                   )}
                   <span className={`absolute right-3.5 top-3 ${chip} border-transparent text-[#f0cda6] shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)]`}>
-                    {needsCast && cast.length > 1
-                      ? formatMsg(m.variantsNote, { n: cast.length })
-                      : needsCast && cast[0]
-                        ? `${m.theTake} · ${cast[0].name}`
-                        : m.theTake}
+                    {cast.length > 1 ? formatMsg(m.variantsNote, { n: cast.length }) : cast[0] ? `${m.theTake} · ${cast[0].name}` : m.theTake}
                   </span>
                 </div>
               </div>
@@ -791,14 +925,20 @@ export function MystiqueDoor({
               </div>
 
               <div>
-                {needsCast && (
+                {takesCast && (
                   <>
                     <div className="flex flex-wrap items-baseline justify-between gap-x-4">
                       <p className={label}>{m.castLabel}</p>
                       <p className="text-xs text-[#6b6f7a]">{m.castMore}</p>
                     </div>
+                    <p className="mt-1 text-xs text-[#9aa0ad]">{job === "motion" ? m.castHintMotion : m.castHint}</p>
                     {castable.length === 0 ? (
-                      <p className="mt-2 text-sm text-[#9aa0ad]">{m.noCharacters}</p>
+                      <p className="mt-2 text-sm text-[#9aa0ad]">
+                        {m.noCharacters}{" "}
+                        <Link href="/app/character/new" className="font-medium text-[#f0cda6] underline-offset-2 hover:underline">
+                          {m.createCharacter}
+                        </Link>
+                      </p>
                     ) : (
                       <div className="mt-2 flex flex-wrap gap-2">
                         {castable.map((c) => {
@@ -856,14 +996,69 @@ export function MystiqueDoor({
                         </div>
                       </>
                     )}
+                    {/* Images of their own — anything at all — named in their
+                        words as image 1, image 2 (recast-brief.ts). */}
+                    <div className="mt-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                      <p className={label}>{m.imagesLabel}</p>
+                      <p className="text-xs text-[#6b6f7a]">{m.imagesHint}</p>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {images.map((img, i) => {
+                        const unused = job === "motion" && (cast.length > 0 || i > 0);
+                        return (
+                          <div
+                            key={img.key}
+                            className={`relative h-16 w-16 overflow-hidden rounded-xl bg-[#14151a] shadow-[0_0_0_1px_rgba(255,255,255,0.12)] ${unused ? "opacity-40" : ""}`}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={img.url} alt={formatMsg(m.imageName, { n: i + 1 })} className="h-full w-full object-cover" />
+                            <span
+                              className={`absolute inset-x-0 bottom-0 bg-black/70 px-1 py-0.5 text-center text-[10px] font-medium text-white/90 ${
+                                img.path ? "" : "motion-safe:animate-pulse"
+                              }`}
+                            >
+                              {img.path ? formatMsg(m.imageName, { n: i + 1 }) : m.uploading}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label={m.removeImage}
+                              title={m.removeImage}
+                              disabled={starting || img.path === null}
+                              onClick={() => removeImage(img.key)}
+                              className="absolute right-1 top-1 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-black/70 text-xs leading-none text-white hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {images.length < imageCap && (
+                        <button
+                          type="button"
+                          onClick={() => imageFileRef.current?.click()}
+                          disabled={starting}
+                          className="flex h-16 w-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-medium text-[#c6c9d1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16)] transition-colors hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <span aria-hidden className="text-lg leading-none">
+                            +
+                          </span>
+                          {m.addImage}
+                        </button>
+                      )}
+                    </div>
+                    {job === "motion" && (cast.length > 0 ? images.length > 0 : images.length > 1) && (
+                      <p className="mt-2 text-xs text-[#9aa0ad]">{m.imagesMotionNote}</p>
+                    )}
                   </>
                 )}
-                <p className={`${needsCast ? "mt-4" : ""} ${label}`}>{needsCast ? m.directionOptional : m.directionLabel}</p>
+                <p className={`${takesCast ? "mt-4" : ""} ${label}`}>
+                  {!takesCast ? m.directionLabel : job === "scene" && cast.length === 0 ? m.changeLabel : m.directionOptional}
+                </p>
                 <textarea
                   value={direction}
                   onChange={(e) => setDirection(e.target.value.slice(0, 600))}
-                  placeholder={needsCast ? m.directionPlaceholder : m.worldPlaceholder}
-                  rows={needsCast ? 2 : 3}
+                  placeholder={!takesCast ? m.worldPlaceholder : job === "scene" && cast.length === 0 ? m.changePlaceholder : m.directionPlaceholder}
+                  rows={!takesCast || (job === "scene" && cast.length === 0) ? 3 : 2}
                   disabled={starting}
                   className="mt-2 w-full resize-y rounded-xl bg-white/[0.04] px-3.5 py-2.5 text-sm text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] outline-none transition-shadow placeholder:text-[#6b6f7a] focus:shadow-[inset_0_0_0_1px_rgba(240,205,166,0.6)] disabled:opacity-50"
                 />
@@ -895,6 +1090,17 @@ export function MystiqueDoor({
                   const file = e.target.files?.[0];
                   e.target.value = "";
                   void pickFile(file);
+                }}
+              />
+              <input
+                ref={imageFileRef}
+                type="file"
+                accept={IMAGE_TYPES.join(",")}
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  void addImage(file);
                 }}
               />
               <label className="flex min-w-0 flex-1 basis-72 cursor-pointer items-start gap-2.5 text-sm text-[#c6c9d1]">
