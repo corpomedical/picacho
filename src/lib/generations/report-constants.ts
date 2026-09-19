@@ -65,6 +65,14 @@ export function summarizeFailureDetail(attempts: AttemptLog[]): string | null {
     }
   }
 
+  // A brand-rule block records its evidence and fix in the validate step
+  // ("Blocked by brand rules: <label> (triggered by: "…" — try: …)"), but
+  // its issues are the rule LABELS — so this summary used to fall through
+  // to "The result was missing: <labels>." and hide the evidence (the
+  // launch-day failed renders, 2026-09-19). Say the step's own sentence.
+  const brandStep = [...last.steps].reverse().find((s) => s.step === "validate" && s.detail.startsWith("Blocked by brand rules"));
+  if (brandStep) return brandStep.detail.slice(0, 500);
+
   const traitIssues = last.issues.filter((i) => i !== "provider_error" && i !== "unexpected_error");
   if (traitIssues.length > 0) return `The result was missing: ${traitIssues.join(", ")}.`;
 

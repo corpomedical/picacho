@@ -32,6 +32,7 @@
 import { SET_SHAPES, cleanText, type SetLayout } from "./set-spec";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 import { RIG_FIXED_SENTENCES, RIG_NUMBERED_SENTENCE } from "./rig";
+import { RIG_BLADES, bladesWords } from "./furniture";
 import { TIME_OF_DAY_SENTENCE } from "./time-of-day";
 
 const DEG = Math.PI / 180;
@@ -176,7 +177,16 @@ export const SET_SHOT_FIXED_SENTENCES: readonly string[] = [
  * its pushed strength, the frame's cut, and the two that hand the light to
  * the rig. A shot carries only the few its rig asks for.
  */
-export const SET_SHOT_RIG_SENTENCES: readonly string[] = [LIFTED_RIG_SENTENCE, LIGHT_WINS_SENTENCE, ...RIG_FIXED_SENTENCES];
+// The blades' four sentences ride the focus words with the number baked in
+// (rig.ts :854, furniture.ts bladesWords) — found leaking through the strip
+// on every shot with a stop and blades set (2026-09-19, the launch-day
+// failed-render hunt): a fixed sentence the list did not know.
+export const SET_SHOT_RIG_SENTENCES: readonly string[] = [
+  LIFTED_RIG_SENTENCE,
+  LIGHT_WINS_SENTENCE,
+  ...RIG_FIXED_SENTENCES,
+  ...RIG_BLADES.map((n) => bladesWords(n)),
+];
 
 // The two sentences Picacho writes ABOUT THE PERSON, anchored to every form
 // they can take: the facings describeFacing can name, and the eye-lines

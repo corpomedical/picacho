@@ -6,6 +6,27 @@ import { failureReasonFromLog, isProviderBalanceFailure, summarizeFailureDetail 
 // negative cases are the ordinary failures and in-product copy that must
 // NEVER page the operator as a balance lock.
 
+describe("a brand-rule block says its evidence", () => {
+  it("returns the validate step's own sentence, never the bare rule labels", () => {
+    const attempts = [
+      {
+        attempt: 1,
+        passed: false,
+        compiledPrompt: "p",
+        issues: ["No copyrighted characters", "No third-party trademarks"],
+        steps: [
+          { step: "draft", detail: "d" },
+          { step: "validate", detail: 'Blocked by brand rules: No third-party trademarks (triggered by: "sponsor logos line the barriers" — try: say the barriers are unmarked).' },
+        ],
+      },
+    ];
+    const out = summarizeFailureDetail(attempts as never);
+    expect(out).toContain("Blocked by brand rules");
+    expect(out).toContain("sponsor logos line the barriers");
+    expect(out).not.toContain("The result was missing");
+  });
+});
+
 describe("isProviderBalanceFailure", () => {
   it("matches the 2026-08-25 fal.ai lock verbatim", () => {
     expect(
