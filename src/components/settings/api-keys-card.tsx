@@ -5,13 +5,14 @@ import Link from "next/link";
 import { createApiKey, revokeApiKey } from "@/lib/api/actions";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { LocalDate } from "@/components/local-date";
+import { SettingsSection } from "@/components/settings/settings-section";
 import { useLocale } from "@/lib/i18n/provider";
 import { localizeServerText } from "@/lib/i18n/server-text";
 
-// Atelier paper sheet + form idiom (settings-popover, extended): raised warm
-// surface with hairline rules, caps label over an ink-hairline input at the
-// control radius; accent only marks focus and the one-time key callout.
-const SHEET = "rounded-control border border-atelier-rule bg-atelier-surface p-8";
+// Settings → Security's last section (2026-09-19: the same card, header
+// rule and hairline rows as its neighbours, the docs link opposite the
+// title) + form idiom: caps label over an ink-hairline input at the control
+// radius; accent only marks focus and the one-time key callout.
 const LABEL = "mb-1.5 block text-[11px] font-medium uppercase tracking-widest text-atelier-muted";
 const FIELD =
   "w-full rounded-control border border-atelier-rule bg-transparent px-3.5 py-2.5 text-sm text-atelier-ink placeholder:text-atelier-muted/80 outline-none transition-colors focus:border-atelier-accent";
@@ -54,28 +55,24 @@ export function ApiKeysCard({ keys, enabled }: { keys: ApiKeyRow[]; enabled: boo
   }
 
   return (
-    <div className={SHEET}>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{k.title}</h2>
+    <SettingsSection
+      title={k.title}
+      description={k.blurb}
+      action={
         <Link
           href="/docs/api"
           className="text-xs font-medium text-atelier-muted underline underline-offset-2 hover:text-atelier-ink"
         >
           {k.docsLink}
         </Link>
-      </div>
-      <p className="mt-1 text-xs leading-relaxed text-atelier-muted">
-        {k.blurb}
-      </p>
-
+      }
+    >
       {!enabled ? (
-        <p className="mt-4 rounded-control border border-atelier-rule bg-atelier-paper p-3 text-xs leading-relaxed text-atelier-muted">
-          {k.notEnabled}
-        </p>
+        <p className="text-xs leading-relaxed text-atelier-muted">{k.notEnabled}</p>
       ) : (
         <>
           {freshKey && (
-            <div className="mt-4 rounded-control border border-atelier-accent/30 bg-atelier-accent/10 p-3.5">
+            <div className="rounded-control border border-atelier-accent/30 bg-atelier-accent/10 p-3.5">
               <p className="text-xs font-semibold text-atelier-accent">
                 {k.freshTitle}
               </p>
@@ -107,56 +104,57 @@ export function ApiKeysCard({ keys, enabled }: { keys: ApiKeyRow[]; enabled: boo
             </div>
           )}
 
-          {keys.length > 0 && (
-            <ul className="mt-4 space-y-2">
-              {keys.map((row) => (
-                <li
-                  key={row.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-atelier-rule/60 bg-atelier-paper p-3"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-xs font-semibold text-atelier-ink">{row.name}</p>
-                    <p className="mt-0.5 text-[11px] text-atelier-muted">
-                      <span className="font-mono">{row.prefix}…</span> · {k.created}{" "}
-                      <LocalDate date={row.created_at} />
-                      {row.last_used_at ? (
-                        <>
-                          {` · ${k.lastUsed} `}
-                          <LocalDate date={row.last_used_at} mode="datetime" />
-                        </>
-                      ) : (
-                        `· ${k.neverUsed}`
-                      )}
-                    </p>
-                  </div>
-                  <form action={handleRevoke}>
-                    <input type="hidden" name="id" value={row.id} />
-                    <SubmitButton variant="destructive" size="sm" pendingLabel={k.revoking}>
-                      {k.revoke}
-                    </SubmitButton>
-                  </form>
-                </li>
-              ))}
-            </ul>
-          )}
+          <div>
+            {/* One key per row, hairlines between, the new-key form under
+                the last one. */}
+            {keys.length > 0 && (
+              <ul className="-mt-3 mb-4 divide-y divide-atelier-rule/60 border-b border-atelier-rule/60">
+                {keys.map((row) => (
+                  <li key={row.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3">
+                    <div className="min-w-0">
+                      <p className="break-words text-sm text-atelier-ink">{row.name}</p>
+                      <p className="mt-0.5 text-xs text-atelier-muted">
+                        <span className="font-mono">{row.prefix}…</span> · {k.created}{" "}
+                        <LocalDate date={row.created_at} />
+                        {row.last_used_at ? (
+                          <>
+                            {` · ${k.lastUsed} `}
+                            <LocalDate date={row.last_used_at} mode="datetime" />
+                          </>
+                        ) : (
+                          `· ${k.neverUsed}`
+                        )}
+                      </p>
+                    </div>
+                    <form action={handleRevoke}>
+                      <input type="hidden" name="id" value={row.id} />
+                      <SubmitButton variant="destructive" size="sm" pendingLabel={k.revoking}>
+                        {k.revoke}
+                      </SubmitButton>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+            )}
 
-          <form action={handleCreate} className="mt-4 flex flex-wrap items-end gap-3">
-            <div className="min-w-[180px] flex-1">
-              <label htmlFor="api-key-name" className={LABEL}>{k.nameLabel}</label>
-              <input id="api-key-name" className={FIELD} name="name" placeholder={k.namePlaceholder} />
-            </div>
-            <SubmitButton
-              size="sm"
-              className="rounded-control! bg-atelier-ink! text-atelier-paper! shadow-none! hover:bg-atelier-ink/90!"
-              pendingLabel={k.creating}
-            >
-              {k.createKey}
-            </SubmitButton>
-          </form>
+            <form action={handleCreate} className="flex flex-wrap items-end gap-3">
+              <div className="min-w-[180px] flex-1">
+                <label htmlFor="api-key-name" className={LABEL}>{k.nameLabel}</label>
+                <input id="api-key-name" className={FIELD} name="name" placeholder={k.namePlaceholder} />
+              </div>
+              <SubmitButton
+                size="sm"
+                className="rounded-control! bg-atelier-ink! text-atelier-paper! shadow-none! hover:bg-atelier-ink/90!"
+                pendingLabel={k.creating}
+              >
+                {k.createKey}
+              </SubmitButton>
+            </form>
+          </div>
         </>
       )}
 
-      {error && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{localizeServerText(error, t)}</p>}
-    </div>
+      {error && <p className="text-xs text-red-600 dark:text-red-400">{localizeServerText(error, t)}</p>}
+    </SettingsSection>
   );
 }

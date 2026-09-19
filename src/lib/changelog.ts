@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.58.0",
+    build: 97,
+    date: "2026-09-19",
+    title: "The rest of Settings in the new design",
+    items: [
+      "Profile, Generation, Preferences, Security and Privacy & data now read like the Overview: each setting shows what it is set to, with \"Change\" beside it, and the form opens in place under that row. Before, every form on a tab was open at once.",
+      "Profile now separates what other people see from what they never see. Your username is public (community posts show it, and your invite link is built from it). Your name, company and gender are not: they are for your account and anonymous totals only. The note under that form spoke of \"both fields\" when there were three.",
+      "Security shows every way into the account in one card: email, password, Google and email sign-in, each with its state and only the action that applies (no greyed-out \"Disconnect\" on the only way in). Two-step verification says whether it is on or off beside its button, and API keys use the same card as the rest, with the docs link at the top.",
+      "Brand rules (under Generation) list the rules in force first, and \"Add rule\" opens the form under them. The industry presets have a section of their own below.",
+      "Privacy & data has a new \"Your data\" section: what Picacho keeps, how to ask for a copy (one email to support) and the privacy policy.",
+      "Fixed: saving your name or company, and any error while deleting the account, sent you back to the Overview instead of the tab you were on. Confirming a new email address now returns to Security, and the Settings link in the unsubscribe page opens Preferences.",
+    ],
+  },
+  {
     version: "1.57.0",
     build: 96,
     date: "2026-09-19",

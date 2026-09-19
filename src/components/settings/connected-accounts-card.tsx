@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { ValueRow } from "@/components/settings/hub/setting-rows";
 import { useLocale } from "@/lib/i18n/provider";
 import { localizeServerText } from "@/lib/i18n/server-text";
 
@@ -14,10 +15,14 @@ import { localizeServerText } from "@/lib/i18n/server-text";
 // Supabase auth settings — when it isn't, the link call fails and the
 // error line below says to try again later (the operator step is in the
 // deploy notes, not user-facing copy).
+//
+// Rows since 2026-09-19: they sit in Settings → Security's Sign-in card
+// under the email and password rows, one way in per row, and only offer
+// what can be done (no greyed "Disconnect" on the only way in).
 
 type Identity = { identity_id?: string; id: string; provider: string };
 
-export function ConnectedAccountsCard() {
+export function ConnectedAccountRows() {
   const { t } = useLocale();
   const s = t.settings;
   const [identities, setIdentities] = useState<Identity[] | null>(null);
@@ -70,39 +75,38 @@ export function ConnectedAccountsCard() {
   const google = identities.find((i) => i.provider === "google");
   const email = identities.find((i) => i.provider === "email");
 
+  const canRemove = identities.length > 1;
   const row = (label: string, connected: Identity | undefined, onConnect?: () => void) => (
-    <div className="flex items-center justify-between gap-4">
-      <div>
-        <p className="text-sm text-atelier-ink">{label}</p>
-        {connected && <p className="mt-0.5 text-xs text-atelier-muted">{s.connectedOn}</p>}
-      </div>
-      {connected ? (
-        <Button type="button" variant="secondary" onClick={() => unlink(connected)} disabled={busy || identities.length < 2}>
-          {s.disconnect}
-        </Button>
-      ) : onConnect ? (
-        <Button type="button" variant="secondary" onClick={onConnect} pending={busy} pendingLabel={t.common.saving}>
-          {s.connect}
-        </Button>
-      ) : null}
-    </div>
+    <ValueRow
+      label={label}
+      value={connected ? s.connectedOn : <span className="text-atelier-muted">{s.connectedOff}</span>}
+      action={
+        connected ? (
+          canRemove ? (
+            <Button type="button" variant="secondary" size="sm" className="min-h-8" onClick={() => unlink(connected)} disabled={busy}>
+              {s.disconnect}
+            </Button>
+          ) : null
+        ) : onConnect ? (
+          <Button type="button" variant="secondary" size="sm" className="min-h-8" onClick={onConnect} pending={busy} pendingLabel={t.common.saving}>
+            {s.connect}
+          </Button>
+        ) : null
+      }
+    />
   );
 
   return (
-    <div className="space-y-3">
-      <div>
-        <p className="text-sm font-medium text-atelier-ink">{s.connectedTitle}</p>
-        <p className="mt-0.5 text-xs text-atelier-muted">{s.connectedDesc}</p>
-      </div>
+    <>
       {row(s.connectedGoogle, google, linkGoogle)}
-      {/* The email row's "connect" is the password form right above this
-          card — pointing there beats a second flow that sets a password. */}
+      {/* The email row's "connect" is the password row right above it —
+          pointing there beats a second flow that sets a password. */}
       {row(s.connectedEmail, email)}
       {error && (
-        <p role="alert" className="text-sm text-atelier-accent">
+        <p role="alert" className="py-3 text-sm text-atelier-accent">
           {localizeServerText(error, t)}
         </p>
       )}
-    </div>
+    </>
   );
 }

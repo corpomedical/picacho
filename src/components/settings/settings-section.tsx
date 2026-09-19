@@ -24,17 +24,30 @@ import { cn } from "@/lib/cn";
 export function SettingsSection({
   title,
   description,
+  action,
   children,
   className,
   tone = "default",
 }: {
   title: string;
   description?: string;
+  /** A small link opposite the title ("Read the API docs"). */
+  action?: ReactNode;
   children: ReactNode;
   className?: string;
   /** "danger" tints the header rule and title for destructive sections. */
   tone?: "default" | "danger";
 }) {
+  const heading = (
+    <h2
+      className={cn(
+        "font-numeral text-[15px] font-semibold leading-tight tracking-tight",
+        tone === "danger" ? "text-atelier-accent" : "text-atelier-ink",
+      )}
+    >
+      {title}
+    </h2>
+  );
   return (
     <section
       className={cn(
@@ -44,14 +57,14 @@ export function SettingsSection({
       )}
     >
       <header className="px-5 pb-4 pt-5 sm:px-6">
-        <h2
-          className={cn(
-            "font-numeral text-[15px] font-semibold leading-tight tracking-tight",
-            tone === "danger" ? "text-atelier-accent" : "text-atelier-ink",
-          )}
-        >
-          {title}
-        </h2>
+        {action ? (
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            {heading}
+            {action}
+          </div>
+        ) : (
+          heading
+        )}
         {description && (
           <p className="mt-1 max-w-prose text-xs leading-relaxed text-atelier-muted">
             {description}

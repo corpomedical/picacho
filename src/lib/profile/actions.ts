@@ -246,12 +246,14 @@ export async function updateProfileDetails(formData: FormData) {
     .update({ company, gender, full_name: fullName })
     .eq("id", data.user.id);
 
+  // Back to the Profile tab it was saved from: since the 2026-09-19 redesign
+  // /app/settings opens on the Overview.
   if (error) {
-    redirect(`/app/settings?error=${encodeURIComponent(error.message)}`);
+    redirect(`/app/settings?tab=profile&error=${encodeURIComponent(error.message)}`);
   }
 
   revalidatePath("/app/settings");
-  redirect("/app/settings?saved=1");
+  redirect("/app/settings?tab=profile&saved=1");
 }
 
 // Client-invoked (shows an inline success/error message without navigating
@@ -285,7 +287,7 @@ export async function updateEmail(formData: FormData): Promise<ActionResult> {
   const origin = await getOrigin();
   const { error } = await supabase.auth.updateUser(
     { email },
-    { emailRedirectTo: `${origin}/auth/confirm?next=/app/settings` },
+    { emailRedirectTo: `${origin}/auth/confirm?next=${encodeURIComponent("/app/settings?tab=security")}` },
   );
   if (error) return { error: error.message };
 
@@ -419,7 +421,7 @@ export async function deleteAccount(formData: FormData) {
     .toLowerCase();
   const typed = ((formData.get("confirm_delete") as string) ?? "").trim().toLowerCase();
   if (!expected || typed !== expected) {
-    redirect("/app/settings?error=delete_confirm");
+    redirect("/app/settings?tab=privacy&error=delete_confirm");
   }
 
   const userId = data.user.id;
@@ -453,7 +455,7 @@ export async function deleteAccount(formData: FormData) {
     (billingProfile.plan_status === "active" || billingProfile.plan_status === "past_due")
   ) {
     redirect(
-      `/app/settings?error=${encodeURIComponent(
+      `/app/settings?tab=privacy&error=${encodeURIComponent(
         "Your subscription is billed through Google Play, and we can't cancel it from here. Cancel it in the Play Store first (Play Store → Payments & subscriptions), then delete your account.",
       )}`,
     );
@@ -466,7 +468,7 @@ export async function deleteAccount(formData: FormData) {
   const promoEmailError = await erasePromoRedemptionEmail(admin, userId);
   if (promoEmailError) {
     console.error("deleteAccount: promo sale email not erased — aborting deletion", promoEmailError);
-    redirect(`/app/settings?error=${encodeURIComponent(`Couldn't delete your account: ${promoEmailError}`)}`);
+    redirect(`/app/settings?tab=privacy&error=${encodeURIComponent(`Couldn't delete your account: ${promoEmailError}`)}`);
   }
 
   let stripeCancelError = false;
@@ -481,7 +483,7 @@ export async function deleteAccount(formData: FormData) {
   }
   if (stripeCancelError) {
     redirect(
-      `/app/settings?error=${encodeURIComponent(
+      `/app/settings?tab=privacy&error=${encodeURIComponent(
         "We couldn't cancel your subscription just now, so your account was NOT deleted — try again in a minute, or contact support and we'll sort it out.",
       )}`,
     );
@@ -504,7 +506,7 @@ export async function deleteAccount(formData: FormData) {
   const { error } = await admin.auth.admin.deleteUser(userId);
 
   if (error) {
-    redirect(`/app/settings?error=${encodeURIComponent(`Couldn't delete your account: ${error.message}`)}`);
+    redirect(`/app/settings?tab=privacy&error=${encodeURIComponent(`Couldn't delete your account: ${error.message}`)}`);
   }
 
   await removeAllUserStorage(admin, userId);

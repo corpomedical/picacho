@@ -6,39 +6,15 @@ import { monthlyWindowStart, nextMonthlyReset } from "@/lib/generations/core";
 import { PLAN_LIMITS, PLAN_LABELS, freeSlotOpen, onDailyFreeTier, type PlanId } from "@/lib/plans";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { getBrandRules } from "@/lib/brand-rules/actions";
-import { SettingsSection } from "@/components/settings/settings-section";
-import { BrandRulesPanel } from "@/components/brand-rules-panel";
 import { BuyCreditsPanel } from "@/components/buy-credits-panel";
 import { NativeStore } from "@/components/native-store";
 import { isNativeApp } from "@/lib/native/server";
 import { allowExternalPurchaseLink, EXTERNAL_PURCHASE_URL } from "@/lib/native/external-purchase";
 import { ExternalCheckoutButton } from "@/components/external-checkout-button";
-import { ProfileForm } from "@/components/profile-form";
-import { InviteCard } from "@/components/invite-card";
-import { UsernameForm } from "@/components/settings/username-form";
-import { EmailForm } from "@/components/settings/email-form";
-import { PasswordForm } from "@/components/settings/password-form";
-import { MfaCard } from "@/components/settings/mfa-card";
-import { ConnectedAccountsCard } from "@/components/settings/connected-accounts-card";
-import { SessionsCard } from "@/components/settings/sessions-card";
-import { ThemePicker } from "@/components/settings/theme-picker";
-import { DeleteAccountForm } from "@/components/settings/delete-account-form";
-import { SkipRefinementToggle } from "@/components/settings/skip-refinement-toggle";
-import { MarketingEmailsToggle } from "@/components/settings/marketing-emails-toggle";
-import { NotificationsPanel } from "@/components/settings/notifications-panel";
-import { GenerationDefaultsForm } from "@/components/settings/generation-defaults-form";
 import { buildVideoModelOptions, readExperimentalModelsFlag } from "@/lib/generations/workspace-data";
 import { readGenerationDefaults } from "@/lib/generations/generation-defaults-server";
-import {
-  BlockedAccountsList,
-  CookieChoiceControl,
-  SharedPostsList,
-  type BlockedRow,
-  type SharedPostRow,
-} from "@/components/settings/privacy-panel";
+import type { BlockedRow, SharedPostRow } from "@/components/settings/privacy-panel";
 import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
-import { ApiKeysCard } from "@/components/settings/api-keys-card";
-import { LanguageSwitcher } from "@/components/language-switcher";
 import { createCheckoutSession } from "@/lib/stripe/actions";
 import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
@@ -64,6 +40,7 @@ import {
 import { PortalButton } from "@/components/settings/hub/portal-button";
 import { BUTTON_PRIMARY } from "@/components/settings/hub/parts";
 import { HelpPanel } from "@/components/settings/hub/help-panel";
+import { GenerationTab, PreferencesTab, PrivacyTab, ProfileTab, SecurityTab } from "@/components/settings/hub/rooms";
 
 // Settings, direction A "Front desk" (operator's pick on the Settings &
 // Invoices canvas, 2026-09-19): it opens on an Overview — who is signed in,
@@ -598,120 +575,59 @@ export default async function SettingsPage({
       )}
 
       {activeTab === "profile" && (
-        <div className="space-y-4">
-          <SettingsSection title={s.account} description={s.accountDesc}>
-            <div className="space-y-5">
-              <UsernameForm initialUsername={username ?? ""} />
-              <div className="border-t border-atelier-rule/60 pt-5">
-                <ProfileForm
-                  initialFullName={(profile?.full_name as string | null) ?? ""}
-                  initialCompany={profile?.company ?? ""}
-                  initialGender={profile?.gender ?? ""}
-                />
-              </div>
-            </div>
-          </SettingsSection>
-          {/* Only with a real username: a link built from anything else
-              resolves for nobody (the /r route matches profiles.username
-              exactly). */}
-          {username && <InviteCard username={username} stats={referralStats} />}
-        </div>
+        <ProfileTab
+          t={t}
+          locale={locale}
+          identity={{
+            name: (profile?.full_name as string | null) ?? null,
+            username,
+            email: data.user.email ?? "",
+            company: (profile?.company as string | null) ?? null,
+            memberSince: (profile?.created_at as string | null) ?? data.user.created_at,
+          }}
+          gender={(profile?.gender as string | null) ?? ""}
+          referralStats={referralStats}
+        />
       )}
 
       {activeTab === "generation" && generationDefaults && (
-        <div className="space-y-4">
-          <SettingsSection title={s.generationDefaultsTitle} description={s.generationDefaultsDesc}>
-            <GenerationDefaultsForm
-              models={generationModels}
-              globalDefaultModelId={generationGlobalModel}
-              initial={generationDefaults}
-            />
-          </SettingsSection>
-          <SettingsSection title={s.aiGeneration} description={s.aiGenerationDesc}>
-            <SkipRefinementToggle initialEnabled={profile?.skip_ai_refinement === true} />
-          </SettingsSection>
-          {/* Brand rules are part of how every take is made, so they live
-              here now (they were a tab of their own until 2026-09-19). */}
-          <div id="brand-rules" className="scroll-mt-24">
-            <BrandRulesPanel rules={brandRules} enforcementPaused={brandRulesPaused} />
-          </div>
-        </div>
+        <GenerationTab
+          t={t}
+          models={generationModels}
+          globalModelId={generationGlobalModel}
+          defaults={generationDefaults}
+          skipRefinement={profile?.skip_ai_refinement === true}
+          brandRules={brandRules}
+          brandRulesPaused={brandRulesPaused}
+        />
       )}
 
       {activeTab === "preferences" && (
-        <div className="space-y-4">
-          <SettingsSection title={s.appearance} description={s.appearanceDesc}>
-            <div>
-              <ThemePicker />
-              <p className="mt-2 text-xs text-atelier-muted">{s.appearanceSubtitle}</p>
-            </div>
-            <div className="flex items-center justify-between border-t border-atelier-rule/60 pt-5">
-              <div>
-                <p className="text-sm font-medium text-atelier-ink">{s.language}</p>
-                <p className="mt-0.5 text-xs text-atelier-muted">{s.languageSubtitle}</p>
-              </div>
-              <LanguageSwitcher />
-            </div>
-          </SettingsSection>
-          <div id="notifications" className="scroll-mt-24 space-y-4">
-            <SettingsSection title={s.notificationsTitle} description={s.notificationsDesc}>
-              <NotificationsPanel
-                initial={notifyPrefs}
-                vapidPublicKey={process.env.VAPID_PUBLIC_KEY ?? null}
-                nativeApp={nativeApp}
-                // Sets are on the web only (the Android app shows webOnly): the app never names them.
-                setsOn={setsOn && !nativeApp}
-              />
-            </SettingsSection>
-            {/* Email beside push: both answer "what is Picacho allowed to
-                send me". enabled = NOT opted out. */}
-            <SettingsSection title={s.emailPreferences} description={s.emailPreferencesDesc}>
-              <MarketingEmailsToggle initialEnabled={profile?.marketing_opt_out !== true} />
-            </SettingsSection>
-          </div>
-        </div>
+        <PreferencesTab
+          t={t}
+          notifyPrefs={notifyPrefs}
+          vapidPublicKey={process.env.VAPID_PUBLIC_KEY ?? null}
+          nativeApp={nativeApp}
+          setsOn={setsOn}
+          // enabled = NOT opted out; a missing row degrades to the column's
+          // default (false → emails on), matching what the blast query does.
+          marketingEnabled={profile?.marketing_opt_out !== true}
+        />
       )}
 
       {activeTab === "security" && (
-        <div className="space-y-4">
-          <SettingsSection title={s.security} description={s.securitySubtitle}>
-            <div className="space-y-5">
-              <PasswordForm hasPassword={hasPassword} />
-              <div className="border-t border-atelier-rule/60 pt-5">
-                <EmailForm initialEmail={data.user.email ?? ""} />
-              </div>
-              <div className="border-t border-atelier-rule/60 pt-5">
-                <MfaCard />
-              </div>
-              <div className="border-t border-atelier-rule/60 pt-5">
-                <ConnectedAccountsCard />
-              </div>
-              <div className="border-t border-atelier-rule/60 pt-5">
-                <SessionsCard />
-              </div>
-            </div>
-          </SettingsSection>
-          {apiEnabled && <ApiKeysCard keys={apiKeys} enabled />}
-        </div>
+        <SecurityTab t={t} email={data.user.email ?? ""} hasPassword={hasPassword} apiEnabled={apiEnabled} apiKeys={apiKeys} />
       )}
 
       {activeTab === "privacy" && (
-        <div className="space-y-4">
-          <SettingsSection title={s.sharedPostsTitle} description={s.sharedPostsDesc}>
-            <SharedPostsList initial={sharedPosts} />
-          </SettingsSection>
-          <SettingsSection title={s.blockedTitle} description={s.blockedDesc}>
-            <BlockedAccountsList initial={blocked} />
-          </SettingsSection>
-          <SettingsSection title={s.cookieTitle} description={s.cookieDesc}>
-            <CookieChoiceControl />
-          </SettingsSection>
-          {/* tone="danger" rather than a hardcoded red pair: atelier-accent
-              already has both themes. */}
-          <SettingsSection tone="danger" title={s.dangerZone} description={s.dangerDesc}>
-            <DeleteAccountForm confirmWith={username ?? (data.user.email ?? "").toLowerCase()} />
-          </SettingsSection>
-        </div>
+        <PrivacyTab
+          t={t}
+          locale={locale}
+          sharedPosts={sharedPosts}
+          blocked={blocked}
+          supportEmail={supportEmail}
+          deleteConfirmWith={username ?? (data.user.email ?? "").toLowerCase()}
+        />
       )}
 
       {activeTab === "help" && (

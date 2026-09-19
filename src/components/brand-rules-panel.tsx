@@ -4,10 +4,11 @@ import { useState } from "react";
 import { addBrandRule, applyBrandRulePack, deleteBrandRule, toggleBrandRule } from "@/lib/brand-rules/actions";
 import { BRAND_RULE_PACKS } from "@/lib/brand-rules/packs";
 import type { BrandRule } from "@/lib/brand-rules/types";
-import { Card } from "@/components/ui/card";
 import { Label, Input } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { SettingsSection } from "@/components/settings/settings-section";
+import { BUTTON_SECONDARY } from "@/components/settings/hub/parts";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
 import { useRouter } from "next/navigation";
@@ -17,6 +18,10 @@ import { cn } from "@/lib/cn";
 // choice explicit rather than burying it: a "require" rule is repaired
 // automatically if the finished prompt lost it, while a "forbid" rule stops
 // the generation outright. See BRAND_RULEBOOK_DESIGN.md.
+//
+// Settings → Generation (2026-09-19): the rules in force come first, one per
+// row; the form opens under them on "Add rule" and closes once the rule is
+// in; the industry presets are a section of their own below. Same actions.
 export function BrandRulesPanel({
   rules,
   enforcementPaused,
@@ -27,6 +32,7 @@ export function BrandRulesPanel({
   const { t } = useLocale();
   const b = t.brandRules;
   const router = useRouter();
+  const [adding, setAdding] = useState(false);
   const [kind, setKind] = useState<"require" | "forbid">("forbid");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +47,7 @@ export function BrandRulesPanel({
       setError(result.error);
       return;
     }
+    setAdding(false);
     router.refresh();
   }
 
@@ -87,147 +94,26 @@ export function BrandRulesPanel({
     router.refresh();
   }
 
+  const selectClass =
+    "mt-1 rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors focus:border-atelier-accent";
+
   return (
     <div className="space-y-4">
-      {/* Honesty banner: rules stay editable while enforcement is globally
-          switched off, and nobody should discover that the hard way. */}
-      {enforcementPaused && (
-        <p className="rounded-control bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
-          {b.pausedNotice}
-        </p>
-      )}
-      <Card>
-        <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{b.packsTitle}</h2>
-        <p className="mt-1 text-xs text-atelier-muted">{b.packsSubtitle}</p>
+      <SettingsSection title={b.title} description={b.subtitle}>
+        {/* Honesty banner: rules stay editable while enforcement is globally
+            switched off, and nobody should discover that the hard way. */}
+        {enforcementPaused && (
+          <p className="rounded-control bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
+            {b.pausedNotice}
+          </p>
+        )}
 
-        <div className="mt-4 space-y-2">
-          {BRAND_RULE_PACKS.map((pack) => (
-            <div
-              key={pack.id}
-              className="flex flex-col gap-3 rounded-control border border-atelier-rule p-3.5 sm:flex-row sm:items-center"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-atelier-ink">{pack.name}</p>
-                <p className="mt-0.5 text-xs text-atelier-muted">{pack.description}</p>
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={pending}
-                onClick={() => handleApplyPack(pack.id)}
-                className="flex-shrink-0"
-              >
-                {formatMsg(b.addPackRules, { n: pack.rules.length })}
-              </Button>
-            </div>
-          ))}
-        </div>
-
-        {/* Deliberately prominent rather than a footnote. These rules touch
-            advertising law, and someone in a regulated trade should not
-            infer from a tidy UI that they've been legally cleared. */}
-        <p className="mt-4 rounded-control bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
-          {b.packsDisclaimer}
-        </p>
-      </Card>
-
-      <Card>
-        <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{b.title}</h2>
-        <p className="mt-1 text-xs text-atelier-muted">{b.subtitle}</p>
-
-        <form action={handleAdd} className="mt-4 space-y-4">
-          <div className="flex gap-2">
-            {(["forbid", "require"] as const).map((k) => (
-              <button
-                key={k}
-                type="button"
-                onClick={() => setKind(k)}
-                aria-pressed={kind === k}
-                className={cn(
-                  // Accent border marks the ACTIVE choice — same idiom as the
-                  // sidebar theme picker (accent = active state, not chrome).
-                  "flex-1 rounded-control border px-3 py-2.5 text-left transition-colors",
-                  kind === k
-                    ? "border-atelier-accent bg-atelier-accent/5"
-                    : "border-atelier-rule hover:border-atelier-muted",
-                )}
-              >
-                <span className="block text-sm font-medium text-atelier-ink">
-                  {k === "forbid" ? b.kindForbid : b.kindRequire}
-                </span>
-                <span className="mt-0.5 block text-xs text-atelier-muted">
-                  {k === "forbid" ? b.kindForbidHint : b.kindRequireHint}
-                </span>
-              </button>
-            ))}
-          </div>
-
-          <div>
-            <Label htmlFor="label">{b.labelField}</Label>
-            <Input id="label" name="label" required placeholder={b.labelPlaceholder} maxLength={60} />
-          </div>
-
-          <div>
-            <Label htmlFor="value">{b.valueField}</Label>
-            <Input id="value" name="value" required placeholder={b.valuePlaceholder} maxLength={300} />
-          </div>
-
-          <div className="flex flex-wrap gap-4">
-            <div>
-              <Label htmlFor="applies_to">{b.appliesTo}</Label>
-              <select
-                id="applies_to"
-                name="applies_to"
-                defaultValue="all"
-                className="mt-1 rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors focus:border-atelier-accent"
-              >
-                <option value="all">{b.appliesAll}</option>
-                <option value="image">{b.appliesImage}</option>
-                <option value="video">{b.appliesVideo}</option>
-              </select>
-            </div>
-
-            {kind === "forbid" && (
-              <div>
-                <Label htmlFor="severity">{b.severity}</Label>
-                <select
-                  id="severity"
-                  name="severity"
-                  defaultValue="block"
-                  className="mt-1 rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors focus:border-atelier-accent"
-                >
-                  <option value="block">{b.severityBlock}</option>
-                  <option value="warn">{b.severityWarn}</option>
-                </select>
-              </div>
-            )}
-          </div>
-
-          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-
-          <div className="flex justify-end">
-            <Button type="submit" pending={pending} pendingLabel={b.adding}>
-              {b.addRule}
-            </Button>
-          </div>
-        </form>
-      </Card>
-
-      <Card>
-        <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{b.yourRules}</h2>
         {rules.length === 0 ? (
-          <p className="mt-3 text-sm text-atelier-muted">{b.noRules}</p>
+          <p className="text-sm text-atelier-muted">{b.noRules}</p>
         ) : (
-          <ul className="mt-3 space-y-2">
+          <ul className="-mt-3 mb-2 divide-y divide-atelier-rule/60">
             {rules.map((rule) => (
-              <li
-                key={rule.id}
-                className={cn(
-                  "flex items-start gap-3 rounded-control border border-atelier-rule px-3.5 py-3",
-                  !rule.active && "opacity-50",
-                )}
-              >
+              <li key={rule.id} className={cn("flex items-start gap-4 py-3", !rule.active && "opacity-50")}>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium text-atelier-ink">{rule.label}</span>
@@ -243,9 +129,9 @@ export function BrandRulesPanel({
                       </Badge>
                     )}
                   </div>
-                  <p className="mt-1 break-words text-sm text-atelier-muted">{rule.value}</p>
+                  <p className="mt-1 break-words text-[13px] leading-relaxed text-atelier-muted">{rule.value}</p>
                 </div>
-                <div className="flex flex-shrink-0 items-center gap-3">
+                <div className="flex flex-shrink-0 items-center gap-3 pt-0.5">
                   <button
                     type="button"
                     onClick={() => handleToggle(rule)}
@@ -265,8 +151,125 @@ export function BrandRulesPanel({
             ))}
           </ul>
         )}
-        <p className="mt-4 border-t border-atelier-rule/60 pt-3 text-xs text-atelier-muted">{b.promptLevelNote}</p>
-      </Card>
+
+        {adding ? (
+          <form action={handleAdd} className="space-y-4 rounded-control border border-atelier-rule p-4">
+            <div className="flex gap-2">
+              {(["forbid", "require"] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setKind(k)}
+                  aria-pressed={kind === k}
+                  className={cn(
+                    // Accent border marks the ACTIVE choice — same idiom as the
+                    // sidebar theme picker (accent = active state, not chrome).
+                    "flex-1 rounded-control border px-3 py-2.5 text-left transition-colors",
+                    kind === k
+                      ? "border-atelier-accent bg-atelier-accent/5"
+                      : "border-atelier-rule hover:border-atelier-muted",
+                  )}
+                >
+                  <span className="block text-sm font-medium text-atelier-ink">
+                    {k === "forbid" ? b.kindForbid : b.kindRequire}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-atelier-muted">
+                    {k === "forbid" ? b.kindForbidHint : b.kindRequireHint}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <div>
+              <Label htmlFor="label">{b.labelField}</Label>
+              <Input id="label" name="label" required placeholder={b.labelPlaceholder} maxLength={60} />
+            </div>
+
+            <div>
+              <Label htmlFor="value">{b.valueField}</Label>
+              <Input id="value" name="value" required placeholder={b.valuePlaceholder} maxLength={300} />
+            </div>
+
+            <div className="flex flex-wrap gap-4">
+              <div>
+                <Label htmlFor="applies_to">{b.appliesTo}</Label>
+                <select id="applies_to" name="applies_to" defaultValue="all" className={selectClass}>
+                  <option value="all">{b.appliesAll}</option>
+                  <option value="image">{b.appliesImage}</option>
+                  <option value="video">{b.appliesVideo}</option>
+                </select>
+              </div>
+
+              {kind === "forbid" && (
+                <div>
+                  <Label htmlFor="severity">{b.severity}</Label>
+                  <select id="severity" name="severity" defaultValue="block" className={selectClass}>
+                    <option value="block">{b.severityBlock}</option>
+                    <option value="warn">{b.severityWarn}</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setAdding(false);
+                  setError(null);
+                }}
+                disabled={pending}
+              >
+                {t.settingsHub.close}
+              </Button>
+              <Button type="submit" pending={pending} pendingLabel={b.adding}>
+                {b.addRule}
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <button type="button" onClick={() => setAdding(true)} className={BUTTON_SECONDARY}>
+            {b.addRule}
+          </button>
+        )}
+
+        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+
+        <p className="border-t border-atelier-rule/60 pt-4 text-xs leading-relaxed text-atelier-muted">
+          {b.promptLevelNote}
+        </p>
+      </SettingsSection>
+
+      <SettingsSection title={b.packsTitle} description={b.packsSubtitle}>
+        <ul className="-mt-3 mb-2 divide-y divide-atelier-rule/60">
+          {BRAND_RULE_PACKS.map((pack) => (
+            <li key={pack.id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:gap-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-atelier-ink">{pack.name}</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-atelier-muted">{pack.description}</p>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={pending}
+                onClick={() => handleApplyPack(pack.id)}
+                className="min-h-8 flex-shrink-0 self-start sm:self-auto"
+              >
+                {formatMsg(b.addPackRules, { n: pack.rules.length })}
+              </Button>
+            </li>
+          ))}
+        </ul>
+
+        {/* Deliberately prominent rather than a footnote. These rules touch
+            advertising law, and someone in a regulated trade should not
+            infer from a tidy UI that they've been legally cleared. */}
+        <p className="rounded-control bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
+          {b.packsDisclaimer}
+        </p>
+      </SettingsSection>
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { SettingsStatus } from "@/components/settings/settings-status";
 // with device names for a client, so this is deliberately one honest button
 // rather than a made-up device list: every session except this one is
 // revoked, and any device the person still uses signs back in.
+// The section around it (Settings → Security, "Devices") carries the title.
 export function SessionsCard() {
   const { t } = useLocale();
   const s = t.settings;
@@ -31,15 +32,11 @@ export function SessionsCard() {
 
   return (
     <div className="space-y-3">
-      <div>
-        <p className="text-sm font-medium text-atelier-ink">{s.sessionsTitle}</p>
-        <p className="mt-0.5 text-xs text-atelier-muted">{s.sessionsDesc}</p>
-      </div>
       <SettingsStatus
         state={error ? "error" : status === "saved" ? "saved" : "idle"}
         message={error ? localizeServerText(error, t) : status === "saved" ? s.signedOutOthers : null}
       />
-      <Button type="button" variant="secondary" onClick={run} pending={status === "saving"} pendingLabel={t.common.saving}>
+      <Button type="button" variant="secondary" size="sm" className="min-h-8" onClick={run} pending={status === "saving"} pendingLabel={t.common.saving}>
         {s.signOutOthers}
       </Button>
     </div>

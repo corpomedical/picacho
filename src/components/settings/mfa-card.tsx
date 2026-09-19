@@ -23,6 +23,8 @@ type Factor = { id: string; status: string };
 const FIELD =
   "w-full rounded-control border border-atelier-rule bg-transparent px-3.5 py-2.5 text-sm text-atelier-ink placeholder:text-atelier-muted/80 outline-none transition-colors focus:border-atelier-accent";
 
+// The body of Settings → Security's "Two-step verification" section, which
+// carries the title (2026-09-19): the state in words, the one action beside it.
 export function MfaCard() {
   const { t } = useLocale();
   const s = t.settings;
@@ -112,11 +114,6 @@ export function MfaCard() {
 
   return (
     <div className="space-y-3">
-      <div>
-        <p className="text-sm font-medium text-atelier-ink">{s.mfaTitle}</p>
-        <p className="mt-0.5 text-xs text-atelier-muted">{s.mfaDesc}</p>
-      </div>
-
       {factors === null ? null : enrolling ? (
         <div className="space-y-3">
           <p className="text-sm text-atelier-ink">{s.mfaScanNote}</p>
@@ -150,14 +147,17 @@ export function MfaCard() {
       ) : active.length > 0 ? (
         <div className="flex items-center justify-between gap-4">
           <p className="text-sm text-atelier-ink">{s.mfaOn}</p>
-          <Button type="button" variant="secondary" onClick={() => disable(active[0].id)} pending={busy} pendingLabel={t.common.saving}>
+          <Button type="button" variant="secondary" size="sm" className="min-h-8" onClick={() => disable(active[0].id)} pending={busy} pendingLabel={t.common.saving}>
             {s.mfaDisable}
           </Button>
         </div>
       ) : (
-        <Button type="button" variant="secondary" onClick={startEnroll} pending={busy} pendingLabel={t.common.saving}>
-          {s.mfaEnable}
-        </Button>
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-sm text-atelier-muted">{s.mfaOff}</p>
+          <Button type="button" variant="secondary" size="sm" className="min-h-8" onClick={startEnroll} pending={busy} pendingLabel={t.common.saving}>
+            {s.mfaEnable}
+          </Button>
+        </div>
       )}
       {error && (
         <p role="alert" className="text-sm text-atelier-accent">

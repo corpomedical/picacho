@@ -72,10 +72,6 @@ export function ProfileForm({
         )}
       </div>
 
-      <p className="text-xs text-atelier-muted">
-        {s.profileNote}
-      </p>
-
       <SubmitButton>{t.common.save}</SubmitButton>
     </form>
   );

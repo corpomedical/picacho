@@ -112,6 +112,6 @@ export async function POST(request: Request) {
   const origin = await getOrigin();
   return page(
     `<p style="margin:0;font-size:15px;color:#404040;">You&#39;re unsubscribed &mdash; no more announcement emails. <a href="${origin}" style="color:#a84e24;">Back to Picacho</a></p>
-    <p style="margin:10px 0 0;font-size:13px;color:#737373;">You can turn these back on any time in <a href="${origin}/app/settings" style="color:#a84e24;">Settings</a>.</p>`,
+    <p style="margin:10px 0 0;font-size:13px;color:#737373;">You can turn these back on any time in <a href="${origin}/app/settings?tab=preferences" style="color:#a84e24;">Settings</a>.</p>`,
   );
 }

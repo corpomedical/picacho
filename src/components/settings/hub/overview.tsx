@@ -42,6 +42,7 @@ export function IdentityCard({
   memberSince,
   locale,
   h,
+  showEdit = true,
 }: {
   name: string | null;
   username: string | null;
@@ -50,6 +51,8 @@ export function IdentityCard({
   memberSince: string;
   locale: string;
   h: Messages["settingsHub"];
+  /** Off on the Profile tab itself, where the editing is right below. */
+  showEdit?: boolean;
 }) {
   const display = name?.trim() || username || email;
   const initial = display.trim().charAt(0).toUpperCase() || "·";
@@ -75,12 +78,14 @@ export function IdentityCard({
         </p>
       </div>
       {/* Desktop only: on a phone the Profile row sits in the list below. */}
-      <Link
-        href={settingsHref("profile")}
-        className="hidden min-h-8 flex-shrink-0 items-center justify-center rounded-control border border-atelier-rule px-3 py-1.5 text-[13px] text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink sm:inline-flex"
-      >
-        {h.editProfile}
-      </Link>
+      {showEdit && (
+        <Link
+          href={settingsHref("profile")}
+          className="hidden min-h-8 flex-shrink-0 items-center justify-center rounded-control border border-atelier-rule px-3 py-1.5 text-[13px] text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink sm:inline-flex"
+        >
+          {h.editProfile}
+        </Link>
+      )}
     </section>
   );
 }

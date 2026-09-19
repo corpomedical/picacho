@@ -8,6 +8,7 @@ import { localizeServerText } from "@/lib/i18n/server-text";
 import { unblockUser, unshareFromCommunity } from "@/lib/community/actions";
 import { COOKIE_CONSENT_KEY, getCookieConsent, type CookieConsent } from "@/lib/cookie-consent";
 import { SettingsStatus } from "@/components/settings/settings-status";
+import { BUTTON_SECONDARY } from "@/components/settings/hub/parts";
 
 // Settings → Privacy (2026-09-11): what of yours is public, who you have
 // blocked, and your cookie choice — three answers that used to live nowhere.
@@ -169,11 +170,7 @@ export function CookieChoiceControl() {
       <p className="text-sm text-atelier-muted">
         {choice === "accepted" ? s.cookieAccepted : choice === "declined" ? s.cookieDeclined : choice === null ? s.cookieNone : " "}
       </p>
-      <button
-        type="button"
-        onClick={change}
-        className="flex-shrink-0 rounded-control border border-atelier-rule px-3 py-1.5 text-sm font-medium text-atelier-ink transition-colors hover:bg-atelier-ink/5"
-      >
+      <button type="button" onClick={change} className={BUTTON_SECONDARY}>
         {s.cookieChange}
       </button>
     </div>
