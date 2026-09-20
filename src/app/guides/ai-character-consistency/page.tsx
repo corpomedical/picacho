@@ -161,7 +161,7 @@ export default async function CharacterConsistencyGuide() {
           <ul className="mt-4 space-y-2.5">
             <li className={LI}><span className={DOT} />Reference set: front + three-quarter + full body + expressions.</li>
             <li className={LI}><span className={DOT} />Identity-reference endpoints for acting; first-frame only when you want the photo animated.</li>
-            <li className={LI}><span className={DOT} />Photoreal person? Mind the Seedance 2.5 policy fence — use 2.0-class models.</li>
+            <li className={LI}><span className={DOT} />Photoreal person? Seedance refuses real-looking faces — use Kling O3 Pro.</li>
             <li className={LI}><span className={DOT} />One immutable trait block in every prompt.</li>
             <li className={LI}><span className={DOT} />Score every output against the identity photo; regenerate below your threshold.</li>
             <li className={LI}><span className={DOT} />For sequences: continuation references or storyboards, not isolated prompts.</li>

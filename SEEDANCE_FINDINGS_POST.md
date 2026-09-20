@@ -1,5 +1,7 @@
 > ## ⚠ SUPERSEDED — DO NOT POST AS WRITTEN (2026-09-03)
 >
+> **Rewritten 2026-09-20 as the dated findings post in `docs/LAUNCH_KIT.md` (section 7 and the X thread). Use that one.**
+>
 > This post's thesis is "Seedance 2.5 rejects photoreal faces, 2.0 doesn't."
 > The second half stopped being true. On 3 September 2026 Seedance 2.0 refused
 > reference photos it had accepted eleven days earlier, and ByteDance now

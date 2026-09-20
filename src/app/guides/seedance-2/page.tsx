@@ -16,7 +16,7 @@ import { PAGE_UPDATED } from "@/lib/page-dates";
 // verified claims only; one CTA band.
 const TITLE = "Seedance 2.0: The Practical Guide (2026)";
 const DESCRIPTION =
-  "How Seedance 2.0 actually behaves in production: identity references vs first frames, the 2.5 photoreal policy trap, exact outfit matching with a clothing photo, durations and real per-second pricing, and prompt patterns that hold a face.";
+  "How Seedance 2.0 actually behaves in production: identity references vs first frames, the photoreal fence (it now covers 2.0 as well), exact outfit matching with a clothing photo, durations and real per-second pricing, and prompt patterns that hold a face.";
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -41,7 +41,7 @@ export default async function SeedanceGuide() {
       <section className="isolate relative overflow-hidden bg-paper">
         <div className="mx-auto max-w-3xl px-8 pb-14 pt-20 text-center">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">
-            Guide · updated August 2026
+            Guide · updated September 2026
           </p>
           <h1 className="mt-4 font-display text-4xl font-bold leading-[1.08] tracking-[-0.035em] text-neutral-900 sm:text-5xl">
             Seedance 2.0: the practical guide
@@ -134,9 +134,10 @@ export default async function SeedanceGuide() {
             prompt as what the character wears. The render then matches the garment{" "}
             <em>pixel-for-pixel</em>: cut, color, print. On models that can&apos;t take a clothing
             image, the outfit travels as a written description instead — colors and logos land,
-            exact stitching doesn&apos;t. We live-tested this split before shipping wardrobe
-            support: for a specific real garment, Seedance 2.0 with the photo riding along is the
-            only reliable route.
+            exact stitching doesn&apos;t. We live-tested this split in August, before the photoreal
+            fence reached 2.0: for a specific real garment, Seedance 2.0 with the photo riding
+            along was the only reliable route. With a photoreal character that route is closed
+            now — the identity photo is refused whatever else rides along.
           </p>
 
           <h2 className={H2}>Durations and honest economics</h2>
@@ -146,9 +147,7 @@ export default async function SeedanceGuide() {
             $1.51 for a 5-second clip. Seedance 2.5 runs $0.4730 per second and reaches 30
             seconds. Two budgeting consequences: a failed take costs the same as a good one, so
             everything that reduces retries (reference sets, validated camera phrasing, policy
-            routing) is directly money; and 15 seconds of 2.0 costs less than 10 seconds of 2.5 —
-            when the character is photoreal the cheaper model is also the only correct one, a rare
-            free lunch.
+            routing) is directly money; and 15 seconds of 2.0 costs less than 10 seconds of 2.5.
           </p>
 
           <h2 className={H2}>Prompt patterns that hold</h2>
@@ -210,7 +209,7 @@ export default async function SeedanceGuide() {
               Seedance 2.0, with the sharp edges fenced
             </h2>
             <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-neutral-400">
-              Picacho routes photoreal characters away from the 2.5 rejection, rides outfit photos
+              Picacho routes photoreal characters away from the Seedance rejection, rides outfit photos
               on the models that take them, and scores every render against the identity photo. A
               free generation every day, no credit card.
             </p>

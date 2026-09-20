@@ -1,3 +1,9 @@
+> ## SUPERSEDED 2026-09-20: do not paste from this file
+>
+> Replaced by `docs/LAUNCH_KIT.md`. This kit waited for a Google Play approval, and it still says
+> "failed generations never cost credits" (retracted 2026-08-30) and that "a second [model] reviews"
+> the prompt (that step was deleted). Both are false today.
+
 # Product Hunt launch kit — Picacho
 
 Everything pre-written; you paste. Best fired the week the Play approval

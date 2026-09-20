@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.69.0",
+    build: 108,
+    date: "2026-09-20",
+    title: "The two Seedance guides stop contradicting themselves",
+    items: [
+      "The Seedance guide still called Seedance 2.0 \"the only correct one\" for photoreal faces, dated itself August, and its outfit section promised a route that no longer works for a photoreal character. The consistency guide's checklist still said to use \"2.0-class models\" for a photoreal person. Seedance 2.0 has refused real-looking faces since 3 September, and the guides' own fence sections say so. Both guides now agree with those sections, and their last-changed dates say 20 September.",
+      "A rewritten launch kit (docs/LAUNCH_KIT.md) replaces the two stale ones: Product Hunt, Hacker News, Reddit, X, LinkedIn, directories, the launch-day email and Spanish, Portuguese and Italian posts, each field written to its platform's limits. A test holds every paste block to its length limit and the pricing table's prices, and keeps retracted claims out.",
+    ],
+  },
+  {
     version: "1.68.0",
     build: 107,
     date: "2026-09-20",

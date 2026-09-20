@@ -38,9 +38,9 @@ export const PAGE_UPDATED = {
   "/tools/identity-check": "2026-08-30",
   "/guides": "2026-09-09",
   "/guides/helios": "2026-09-19",
-  "/guides/ai-character-consistency": "2026-09-03",
+  "/guides/ai-character-consistency": "2026-09-20",
   "/guides/ai-camera-movements": "2026-08-28",
-  "/guides/seedance-2": "2026-09-03",
+  "/guides/seedance-2": "2026-09-20",
   "/guides/getting-started": "2026-09-09",
   "/docs/api": "2026-09-01",
 } as const satisfies Record<string, string>;
