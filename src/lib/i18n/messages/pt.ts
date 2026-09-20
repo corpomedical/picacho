@@ -1978,6 +1978,10 @@ const pt = {
     stopTake: "Parar",
     stopping: "Parando…",
     stopAsk: "Parar este take? As partes já geradas são cobradas de qualquer forma; as que ainda não foram enviadas não chegam a começar. Se ainda não começou a gerar, os créditos voltam.",
+    modeRestage: "Refazer a cena",
+    modeRestageLine: "Seu clipe vira a referência, não o material: mesmo lugar e mesmo elenco, mas o movimento de câmera, a pose e o estilo são você quem pede. A atuação original não é mantida.",
+    restageLimit: "5–15 s",
+    restagePlaceholder: "Comece perto dela e afaste a câmera · todos em volta viram estátuas · ela fica de braços cruzados",
   },
   recce: {
     headline: "Entra filmagem. Sai um lugar.",

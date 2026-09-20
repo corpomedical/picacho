@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.70.0",
+    build: 109,
+    date: "2026-09-20",
+    title: "Mystique can restage a clip, not only edit it",
+    items: [
+      "\"Restage it\" is a new job beside \"Into the clip\". Into the clip edits the frames it is handed, so whatever the camera did in your clip is what it keeps doing — no zoom you did not shoot, no pose the person never struck. Restage hands the clip over as a reference instead: the same place and the same cast, with the camera move, the posing and the styling asked for in words. Up to nine photos can go with it, and a take is one piece of 5 to 15 seconds, never joined.",
+      "The card says what Restage does not do: it does not keep the clip's own performance. Into the clip stays the job that promises that, and it is still the one the door opens on.",
+      "Restage is priced from the engine's own two rates, and its reference pictures are billed beside its seconds, so the quote counts them: a full 15-second take with three photos is 12 credits, the lighter render 6. The quote on the button is the number that is charged.",
+    ],
+  },
+  {
     version: "1.69.0",
     build: 108,
     date: "2026-09-20",

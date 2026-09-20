@@ -93,6 +93,23 @@ export function recastImageTokens(characterTokens: string | string[] | undefined
  * @Element1, @Element2 for those with more than one photo, @Image1… for
  * those with one — the order recastRequestBody binds them in.
  */
+/**
+ * Restage names its references by modality and order — "Video 1", "Image 1",
+ * "Images 1–3" — rather than by @Element/@Image, and a character holds as many
+ * places as it has photos riding. Returns each character's name for the brief
+ * and how many places they took, so the added images can follow.
+ */
+export function recastRestageTokens(photoCounts: number[]): { tokens: string[]; used: number } {
+  let at = 1;
+  const tokens = photoCounts.map((count) => {
+    const n = Math.max(1, count);
+    const token = n === 1 ? `Image ${at}` : `Images ${at}–${at + n - 1}`;
+    at += n;
+    return token;
+  });
+  return { tokens, used: at - 1 };
+}
+
 export function recastCastTokens(photoCounts: number[]): string[] {
   let elements = 0;
   let images = 0;
@@ -221,6 +238,40 @@ function composeUncut(input: BriefInput): string {
   const castings = input.casting === null ? [] : Array.isArray(input.casting) ? input.casting : [input.casting];
   const casting = castings[0] ?? null;
   const name = casting?.characterName ?? "The character";
+
+  // RESTAGE (2026-09-20). A different engine and a different promise: the clip
+  // is a REFERENCE, so the camera and the staging are the person's to direct
+  // and the clip's own performance is not kept. It names its references by
+  // modality and order — "Video 1", "Image 1" — and the wording below is the
+  // one that came back right first try on the operator's own clip: the place
+  // and the cast said plainly, then his words last.
+  if (input.job === "restage") {
+    parts.push(
+      "Video 1 is the scene to build on.",
+      ...(input.read ? [input.read.motion, ...(input.read.world ? [`It is set in: ${input.read.world}`] : [])] : []),
+      "",
+      ...(castings.length > 0
+        ? [
+            "THE CAST",
+            ...castings.map((c) =>
+              bullet(
+                `${c.characterName} is the person in ${c.token ?? "the reference images"} — their face, hair and build come from those pictures${
+                  c.tag ? (c.many ? `, and they take the place of every person in Person ${c.tag}'s group` : `, and they take the place of Person ${c.tag}`) : ""
+                }.`,
+              ),
+            ),
+            "",
+          ]
+        : []),
+      ...imageLines(input.images ?? []),
+      "KEEP",
+      bullet(`The place and the light of Video 1${input.read?.world ? `: ${input.read.world}` : ""}`),
+      bullet("Everyone who is not named above, as they are in Video 1."),
+      ...keepLines(input.keeps).map(bullet),
+    );
+    if (direction) parts.push("", "DIRECTION", direction);
+    return cleanBrief(parts.join("\n"), RECAST_BRIEF_MAX_CHARS);
+  }
 
   if (input.job === "motion") {
     // No character: the person's own image is the picture, and it need not

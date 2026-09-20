@@ -20,6 +20,9 @@ import {
   recastEnginesOf,
   recastLumaDuration,
   recastImageRoom,
+  recastReferenceCostUsd,
+  recastRestageSeconds,
+  RECAST_JOB_MAX_SECONDS,
   recastImageSendsAsIs,
   recastImageUsable,
   recastMissing,
@@ -62,8 +65,9 @@ describe("the engines", () => {
     expect(RECAST_ENGINES["luma-540"].usdPerBilledSecond * 10).toBeCloseTo(1.44, 6);
   });
 
-  it("are three jobs, each offering only engines that were proven on it", () => {
-    expect(RECAST_JOB_ORDER).toEqual(["scene", "motion", "world"]);
+  it("are four jobs, each offering only engines that were proven on it", () => {
+    expect(RECAST_JOB_ORDER).toEqual(["scene", "restage", "motion", "world"]);
+    expect(recastEnginesOf("restage").map((e) => RECAST_ENGINES[e].tier)).toEqual(["full", "lite"]);
     // Into the clip is Kling O3 Edit alone since 2026-09-19: it held the
     // character through the operator's turn-away clip where Wan dissolved
     // them, and Happy Horse — the other engine that held — bills double its
@@ -341,6 +345,78 @@ describe("what a take must be given", () => {
 
   it("leaves Restyle as it was: its look is words, with a default of its own", () => {
     expect(recastMissing("world", none)).toBeNull();
+  });
+});
+
+// RESTAGE (2026-09-20, "the engine we are using is 100% not fit for the job"
+// → "Build restage into mystique"). The clip is a reference, not a canvas:
+// the camera and the staging are directed, the performance is not kept.
+describe("restage", () => {
+  const clipUrl = "https://x/clip.mp4";
+
+  it("is priced at its own seconds AND its references — fal's own table", () => {
+    // "$0.08 per second at 768p"; references: 4,096 tokens free, then $0.02
+    // per 1,000; a 16:9 reference video is 102,816 tokens at 15 s / 768p and
+    // an image at its dearest shape 1,824.
+    expect(RECAST_ENGINES["h3-768"].usdPerBilledSecond).toBe(0.08);
+    expect(RECAST_ENGINES["h3-480"].usdPerBilledSecond).toBe(0.05);
+    // Nothing to pay while the references fit in the allowance.
+    expect(recastReferenceCostUsd({ seconds: 0, resolution: "720p", images: 2 })).toBe(0);
+    // Five seconds at 768p with four photos: over the published $0.56 for the
+    // clip alone, and never under it.
+    const five = recastReferenceCostUsd({ seconds: 5, resolution: "720p", images: 4 });
+    expect(five).toBeGreaterThan(0.56);
+    expect(five).toBeLessThan(0.8);
+    // The whole take, quoted: 5 s at 768p with four photos ≈ $0.40 + $0.70.
+    expect(recastProviderCostUsd("h3-768", { seconds: 5, frames: 120 }, 4)).toBeCloseTo(0.4 + five, 6);
+    expect(recastCreditCost("h3-768", { seconds: 5, frames: 120 }, 4)).toBe(5);
+    // The 2026-09-20 probe on the operator's own window billed about $1.07 for
+    // exactly this shape; the quote takes the worst per-second reference rate
+    // in the table, so it sits just above what was billed and never under it.
+    const quoted = recastProviderCostUsd("h3-768", { seconds: 5, frames: 120 }, 4);
+    expect(quoted).toBeGreaterThan(1.07);
+    expect(quoted).toBeLessThan(1.25);
+  });
+
+  it("renders its own 5–15 whole seconds, whatever the window is", () => {
+    expect(recastRestageSeconds(3)).toBe(5);
+    expect(recastRestageSeconds(7.4)).toBe(7);
+    expect(recastRestageSeconds(30)).toBe(15);
+    expect(RECAST_JOB_MAX_SECONDS.restage).toBe(15);
+  });
+
+  it("sends the clip as Video 1 and every photo as an Image, and keeps no sound", () => {
+    const body = recastRequestBody("h3-768", {
+      clipUrl,
+      characterImageUrl: "https://x/eva1.jpg",
+      morePhotoUrls: ["https://x/eva2.jpg", "https://x/eva3.jpg"],
+      imageUrls: ["https://x/coat.jpg"],
+      brief: "Video 1 is the scene to build on.",
+      clip: { seconds: 12.2 },
+    });
+    expect(body).toEqual({
+      prompt: "Video 1 is the scene to build on.",
+      prompt_expansion_mode: "balanced",
+      reference_video_urls: [clipUrl],
+      reference_image_urls: ["https://x/eva1.jpg", "https://x/eva2.jpg", "https://x/eva3.jpg", "https://x/coat.jpg"],
+      duration: 12,
+      resolution: "768P",
+      aspect_ratio: "adaptive",
+    });
+    expect(RECAST_ENGINES["h3-768"].keepsSound).toBe(false);
+    expect(recastRequestBody("h3-480", { clipUrl, brief: "x", clip: { seconds: 5 } }).resolution).toBe("480P");
+  });
+
+  it("never sends more references than the engine takes", () => {
+    const many = Array.from({ length: 12 }, (_, i) => `https://x/${i}.jpg`);
+    const body = recastRequestBody("h3-768", { clipUrl, imageUrls: many, brief: "x", clip: { seconds: 5 } });
+    expect((body.reference_image_urls as string[]).length).toBeLessThanOrEqual(9);
+  });
+
+  it("asks for the same as Into the clip: someone in it, or words", () => {
+    expect(recastMissing("restage", { characters: 1, images: 0, words: false })).toBeNull();
+    expect(recastMissing("restage", { characters: 0, images: 0, words: true })).toBeNull();
+    expect(recastMissing("restage", { characters: 0, images: 0, words: false })).toBe("words");
   });
 });
 

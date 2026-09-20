@@ -202,8 +202,19 @@ export function MystiqueDoor({
   const engine: RecastEngine = recastEngineFor(job, tier);
   // Priced from the file's own numbers scaled to the window — the same call
   // the server charges with (trim.ts), so the button's number is the charge.
+  // Restage bills its reference pictures beside its seconds (recast.ts), so
+  // the button’s number counts them: every cast photo that rides, and every
+  // added image.
+  const referenceCount = (e: RecastEngine) => {
+    if (!RECAST_ENGINES[e].restages) return 0;
+    const cast = castIds.map((id) => castable.find((c) => c.id === id)).filter((c): c is RecastCharacter => Boolean(c));
+    const chosen = job === "restage" && together ? cast : cast.slice(0, 1);
+    return chosen.reduce((n, c) => n + Math.min(4, Math.max(1, c.photos.length)), 0) + images.length;
+  };
   const quoteOf = (e: RecastEngine) =>
-    seen && clipWindow ? { engine: e, credits: recastWindowCredits(e, { seconds: seen.seconds, frames: seen.frames }, clipWindow) } : null;
+    seen && clipWindow
+      ? { engine: e, credits: recastWindowCredits(e, { seconds: seen.seconds, frames: seen.frames }, clipWindow, referenceCount(e)) }
+      : null;
   const quote = quoteOf(engine);
   const cast = takesCast
     ? castIds.map((id) => castable.find((c) => c.id === id)).filter((c): c is RecastCharacter => Boolean(c))
@@ -631,9 +642,9 @@ export function MystiqueDoor({
     crowd: m.warnCrowd,
     wide: m.warnWide,
   };
-  const jobName = (j: RecastJob) => (j === "scene" ? m.modeScene : j === "motion" ? m.modeMotion : m.jobWorld);
-  const jobLine = (j: RecastJob) => (j === "scene" ? m.modeSceneLine : j === "motion" ? m.modeMotionLine : m.jobWorldLine);
-  const jobLimit = (j: RecastJob) => (j === "scene" ? m.sceneLimit : j === "motion" ? m.motionLimit : m.worldLimit);
+  const jobName = (j: RecastJob) => (j === "scene" ? m.modeScene : j === "restage" ? m.modeRestage : j === "motion" ? m.modeMotion : m.jobWorld);
+  const jobLine = (j: RecastJob) => (j === "scene" ? m.modeSceneLine : j === "restage" ? m.modeRestageLine : j === "motion" ? m.modeMotionLine : m.jobWorldLine);
+  const jobLimit = (j: RecastJob) => (j === "scene" ? m.sceneLimit : j === "restage" ? m.restageLimit : j === "motion" ? m.motionLimit : m.worldLimit);
 
   const buttonLabel = starting
     ? m.starting
@@ -1227,7 +1238,15 @@ export function MystiqueDoor({
                 <textarea
                   value={direction}
                   onChange={(e) => setDirection(e.target.value.slice(0, 600))}
-                  placeholder={!takesCast ? m.worldPlaceholder : job === "scene" && cast.length === 0 ? m.changePlaceholder : m.directionPlaceholder}
+                  placeholder={
+                    !takesCast
+                      ? m.worldPlaceholder
+                      : job === "restage"
+                        ? m.restagePlaceholder
+                        : job === "scene" && cast.length === 0
+                          ? m.changePlaceholder
+                          : m.directionPlaceholder
+                  }
                   rows={!takesCast || (job === "scene" && cast.length === 0) ? 3 : 2}
                   disabled={starting}
                   className="mt-2 w-full resize-y rounded-xl bg-[rgba(255,255,255,0.04)] px-3.5 py-2.5 text-sm text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] outline-none transition-shadow placeholder:text-[#6b6f7a] focus:shadow-[inset_0_0_0_1px_rgba(240,205,166,0.6)] disabled:opacity-50"

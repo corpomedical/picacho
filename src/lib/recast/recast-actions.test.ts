@@ -47,7 +47,7 @@ describe("startRecastTakes", () => {
   });
 
   it("prices from the file and the window, never from the form and never from the read", () => {
-    expect(start).toContain("const perTake = recastWindowCredits(engine, clip, window)");
+    expect(start).toContain("const perTake = recastWindowCredits(engine, clip, window, referenceCount)");
     expect(start).not.toMatch(/input\??\.(seconds|frames|credits|price|quotes)/);
     expect(at("readUpload(admin, uploadPath)")).toBeLessThan(at("const perTake = recastWindowCredits"));
     // The window is checked against the FILE's length before it prices anything.
@@ -61,8 +61,8 @@ describe("startRecastTakes", () => {
 
   it("charges what the door quoted: both call the same price", () => {
     const door = readFileSync(join(__dirname, "..", "..", "components", "mystique", "mystique-door.tsx"), "utf8");
-    expect(door).toContain("recastWindowCredits(e, { seconds: seen.seconds, frames: seen.frames }, clipWindow)");
-    expect(start).toContain("recastWindowCredits(engine, clip, window)");
+    expect(door).toContain("recastWindowCredits(e, { seconds: seen.seconds, frames: seen.frames }, clipWindow, referenceCount(e))");
+    expect(start).toContain("recastWindowCredits(engine, clip, window, referenceCount)");
     // And the frame count the door uses is the file's, handed back by inspect.
     expect(inspect).toContain("frames: clip.frames");
   });

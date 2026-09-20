@@ -100,8 +100,10 @@ export const RECAST_COST_BASIS_USD_PER_CREDIT = 0.28;
 /** How tightly the world job holds the source. See recastRequestBody. */
 export const RECAST_WORLD_EDIT_STRENGTH = "adhere_2";
 
-export type RecastJob = "scene" | "motion" | "world";
+export type RecastJob = "scene" | "motion" | "world" | "restage";
 export type RecastEngine =
+  | "h3-768"
+  | "h3-480"
   | "kling-edit"
   | "wan-scene-720"
   | "wan-scene-480"
@@ -152,9 +154,58 @@ export type RecastEngineSpec = {
    * piece's opening second, 2026-09-19.
    */
   chains?: true;
+  /**
+   * The clip is a REFERENCE, not a canvas: this engine rebuilds the scene
+   * from it, so the camera and the staging can be directed — and the clip's
+   * own performance is NOT kept (2026-09-20). Its references are billed in
+   * tokens beside the output seconds (recastReferenceCostUsd).
+   */
+  restages?: true;
 };
 
 export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
+  // RESTAGE (2026-09-20). The operator asked his clip to be re-staged — "start
+  // focused on Eva and the camera zooms out", "Eva has her arms crossed" — and
+  // an EDIT engine cannot do either: it keeps the performance and the camera
+  // by design, so it silently ignored both ("the engine we are using is 100%
+  // not fit for the job"). This one is the other family: the clip is a
+  // REFERENCE, the characters are references, and the words direct the camera
+  // and the staging. Probed the same day on his own 15 s window: the zoom-out,
+  // the crossed arms, the Cleopatra styling and a courtyard of Anubis, first
+  // try, 31 seconds, ~$1.07 for 5 s at 768p.
+  //
+  // WHAT IT DOES NOT DO, and is never sold as doing: keep the clip's own
+  // performance. Into the clip is still the only job that promises that.
+  "h3-768": {
+    job: "restage",
+    tier: "full",
+    modelId: "recast-h3-768",
+    label: "MiniMax H3 Max Reference to Video",
+    endpoint: "minimax/h3-max/reference-to-video",
+    // Read at source 2026-09-20: "$0.08 per second at 768p". References are
+    // billed on top, in tokens — recastReferenceCostUsd.
+    usdPerBilledSecond: 0.08,
+    billedBy: "seconds",
+    resolution: "720p",
+    takesDirection: true,
+    takesMorePhotos: true,
+    keepsSound: false,
+    restages: true,
+  },
+  "h3-480": {
+    job: "restage",
+    tier: "lite",
+    modelId: "recast-h3-480",
+    label: "MiniMax H3 Max Reference to Video 480p",
+    endpoint: "minimax/h3-max/reference-to-video",
+    usdPerBilledSecond: 0.05,
+    billedBy: "seconds",
+    resolution: "480p",
+    takesDirection: true,
+    takesMorePhotos: true,
+    keepsSound: false,
+    restages: true,
+  },
   "kling-edit": {
     job: "scene",
     tier: "full",
@@ -252,8 +303,8 @@ export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
 };
 
 /** What the door OFFERS, in order. Retired engines are not in it. */
-export const RECAST_ENGINE_ORDER: RecastEngine[] = ["kling-edit", "kling-pro", "kling-std", "luma-720", "luma-540"];
-export const RECAST_JOB_ORDER: RecastJob[] = ["scene", "motion", "world"];
+export const RECAST_ENGINE_ORDER: RecastEngine[] = ["kling-edit", "h3-768", "h3-480", "kling-pro", "kling-std", "luma-720", "luma-540"];
+export const RECAST_JOB_ORDER: RecastJob[] = ["scene", "restage", "motion", "world"];
 /**
  * Every model id this lane has EVER recorded — retired ones included, so a
  * take made on Wan before 2026-09-19 still lists on the door and still names
@@ -283,7 +334,9 @@ export function recastTakesCast(job: RecastJob): boolean {
  *   world   nothing more — its look is words, and it has a default
  */
 export function recastMissing(job: RecastJob, given: { characters: number; images: number; words: boolean }): "words" | "picture" | null {
-  if (job === "scene") return given.characters > 0 || given.words ? null : "words";
+  // Restage asks the same as Into the clip: someone to put in it, or words
+  // saying what to build.
+  if (job === "scene" || job === "restage") return given.characters > 0 || given.words ? null : "words";
   if (job === "motion") return given.characters > 0 || given.images > 0 ? null : "picture";
   return null;
 }
@@ -297,6 +350,8 @@ export function recastMissing(job: RecastJob, given: { characters: number; image
 // (elements + reference images) when using video", its schema), and a cast
 // character takes one of them. Photo to life takes one picture.
 export const RECAST_MAX_IMAGES = 3;
+/** Restage takes nine reference images in all (its schema), characters and added images together. */
+export const RECAST_RESTAGE_MAX_IMAGES = 9;
 /** Every reference one Into the clip take can carry: characters and added images together (O3 Edit's schema). */
 export const RECAST_MAX_REFERENCES = 4;
 export const RECAST_IMAGE_BUCKET = "chat-attachments";
@@ -400,7 +455,30 @@ export const RECAST_BUCKET = "recast-sources";
 // switching to the footage at its stillest moment, then joined. The runner's
 // write-off clock restarts with every piece, so the 45 minutes apply to one
 // piece at a time. 30 s is the chain's ceiling, and Genjutsu's.
-export const RECAST_JOB_MAX_SECONDS: Record<RecastJob, number> = { scene: CHAIN_MAX_SECONDS, motion: 30, world: 10 };
+export const RECAST_JOB_MAX_SECONDS: Record<RecastJob, number> = { scene: CHAIN_MAX_SECONDS, motion: 30, world: 10, restage: 15 };
+
+// RESTAGE, priced whole (2026-09-20). Its references are billed beside the
+// output: every request carries 4,096 tokens free, then $0.02 per 1,000.
+// From fal’s own table that day — a 16:9 reference video is 12,096 tokens at
+// 2 s, 32,256 at 5 s, 67,536 at 10 s and 102,816 at 15 s for 768p/1080p, and
+// 4,680 / 12,480 / 26,130 / 39,780 at 480p — the worst per-second rate is
+// taken, so a quote is never under the bill. A reference image is counted at
+// its dearest shape, 16:9 at 1,824 tokens.
+export const RECAST_REFERENCE_FREE_TOKENS = 4096;
+export const RECAST_REFERENCE_USD_PER_1K = 0.02;
+export const RECAST_REFERENCE_IMAGE_TOKENS = 1824;
+const REFERENCE_VIDEO_TOKENS_PER_SECOND: Record<"480p" | "720p", number> = { "480p": 2652, "720p": 6854 };
+
+/** What the references on a restage cost on top of its seconds. */
+export function recastReferenceCostUsd(input: { seconds: number; resolution: "480p" | "720p"; images: number }): number {
+  const tokens = Math.ceil(input.seconds) * REFERENCE_VIDEO_TOKENS_PER_SECOND[input.resolution] + input.images * RECAST_REFERENCE_IMAGE_TOKENS;
+  return (Math.max(0, tokens - RECAST_REFERENCE_FREE_TOKENS) * RECAST_REFERENCE_USD_PER_1K) / 1000;
+}
+
+/** The output this engine renders for a window: its own 5–15 s, whole seconds. */
+export function recastRestageSeconds(windowSeconds: number): number {
+  return Math.min(15, Math.max(5, Math.round(windowSeconds)));
+}
 
 export type RecastClip = { seconds: number; frames: number | null; width: number; height: number; bytes: number };
 
@@ -437,6 +515,7 @@ export function recastBilledSeconds(engine: RecastEngine, clip: Pick<RecastClip,
   // A chained take is billed piece by piece, overlap and rounding included —
   // priced at the most that can come to (chain.ts), which up to 15 s is the
   // plain ceiling below.
+  if (spec.restages) return recastRestageSeconds(clip.seconds);
   if (spec.chains) return chainBilledSeconds(clip.seconds);
   if (spec.billedBy === "seconds") return Math.ceil(clip.seconds - SLACK);
   if (spec.billedBy === "bucket") return recastLumaDuration(clip) === "10s" ? 10 : 5;
@@ -444,14 +523,25 @@ export function recastBilledSeconds(engine: RecastEngine, clip: Pick<RecastClip,
   return frames / 16;
 }
 
-export function recastProviderCostUsd(engine: RecastEngine, clip: Pick<RecastClip, "seconds" | "frames">): number {
-  return RECAST_ENGINES[engine].usdPerBilledSecond * recastBilledSeconds(engine, clip);
+export function recastProviderCostUsd(engine: RecastEngine, clip: Pick<RecastClip, "seconds" | "frames">, references = 0): number {
+  const spec = RECAST_ENGINES[engine];
+  const output = spec.usdPerBilledSecond * recastBilledSeconds(engine, clip);
+  if (!spec.restages) return output;
+  // The clip itself is one reference, and every photo another.
+  return (
+    output +
+    recastReferenceCostUsd({
+      seconds: recastRestageSeconds(clip.seconds),
+      resolution: spec.resolution === "480p" ? "480p" : "720p",
+      images: references,
+    })
+  );
 }
 
 /** The take's price in credits: provider cost over the house basis, rounded up, never under one. */
-export function recastCreditCost(engine: RecastEngine, clip: Pick<RecastClip, "seconds" | "frames">): number {
+export function recastCreditCost(engine: RecastEngine, clip: Pick<RecastClip, "seconds" | "frames">, references = 0): number {
   // The epsilon keeps a cost of exactly one basis at one credit in floating point.
-  return Math.max(1, Math.ceil(recastProviderCostUsd(engine, clip) / RECAST_COST_BASIS_USD_PER_CREDIT - 1e-9));
+  return Math.max(1, Math.ceil(recastProviderCostUsd(engine, clip, references) / RECAST_COST_BASIS_USD_PER_CREDIT - 1e-9));
 }
 
 // The source clip's home: one object per take, named by the take — so the
@@ -519,6 +609,24 @@ export function recastRequestBody(
   },
 ): Record<string, unknown> {
   const spec = RECAST_ENGINES[engine];
+  if (spec.restages) {
+    // The clip is Video 1 and every photo an Image, in the order the brief
+    // names them; the words carry the camera and the staging. Its own output
+    // length, 5–15 whole seconds (its schema), and no sound of the clip's.
+    const images = [
+      ...(input.ensemble ? input.ensemble.flatMap((p) => [p.front, ...p.more]) : input.characterImageUrl ? [input.characterImageUrl, ...(input.morePhotoUrls ?? [])] : []),
+      ...(input.imageUrls ?? []),
+    ].slice(0, RECAST_RESTAGE_MAX_IMAGES);
+    return {
+      prompt: (input.brief ?? "").slice(0, 50_000),
+      prompt_expansion_mode: "balanced",
+      reference_video_urls: [input.clipUrl],
+      ...(images.length > 0 ? { reference_image_urls: images } : {}),
+      duration: recastRestageSeconds(input.clip?.seconds ?? 5),
+      resolution: spec.resolution === "480p" ? "480P" : "768P",
+      aspect_ratio: "adaptive",
+    };
+  }
   if (spec.job === "world") {
     return {
       video_url: input.clipUrl,

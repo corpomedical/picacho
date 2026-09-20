@@ -85,8 +85,14 @@ export function windowedClip(clip: Pick<RecastClip, "seconds" | "frames">, windo
 }
 
 /** What a take on this window costs, in credits. The door and the action both call this. */
-export function recastWindowCredits(engine: RecastEngine, clip: Pick<RecastClip, "seconds" | "frames">, window: RecastWindow): number {
-  return recastCreditCost(engine, windowedClip(clip, window));
+export function recastWindowCredits(
+  engine: RecastEngine,
+  clip: Pick<RecastClip, "seconds" | "frames">,
+  window: RecastWindow,
+  /** Reference pictures riding with it — Restage bills them beside its seconds. */
+  references = 0,
+): number {
+  return recastCreditCost(engine, windowedClip(clip, window), references);
 }
 
 /** Cut times from the whole clip, moved into the window's own clock; cuts outside it are gone. */

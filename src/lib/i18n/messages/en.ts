@@ -2098,6 +2098,10 @@ const en = {
     stopTake: "Stop",
     stopping: "Stopping…",
     stopAsk: "Stop this take? Parts that have already rendered are charged either way; the parts not yet sent never start. If it has not started rendering at all, the credits come back.",
+    modeRestage: "Restage it",
+    modeRestageLine: "Your clip becomes the reference, not the footage: same place, same cast, but the camera move, the posing and the styling are yours to ask for. The clip's own performance is not kept.",
+    restageLimit: "5–15 s",
+    restagePlaceholder: "Start close on her and zoom out · everyone around her becomes a statue · she stands with her arms crossed",
   },
   // The Recce door (board K, "Build A as Recce", 2026-09-17): the theatre
   // page at /app/recce. No machinery on the wall: the copy never says set,

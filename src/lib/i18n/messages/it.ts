@@ -1977,6 +1977,10 @@ const it = {
     stopTake: "Ferma",
     stopping: "Sto fermando…",
     stopAsk: "Fermare questa ripresa? Le parti già renderizzate si pagano comunque; quelle non ancora inviate non partiranno. Se non è partita affatto, i crediti tornano indietro.",
+    modeRestage: "Rimetti in scena",
+    modeRestageLine: "La tua clip diventa il riferimento, non il materiale: stesso luogo e stesso cast, ma il movimento di camera, la posa e lo stile li chiedi tu. La recitazione originale non viene mantenuta.",
+    restageLimit: "5–15 s",
+    restagePlaceholder: "Parti vicino a lei e allarga · chi le sta intorno diventa una statua · lei sta a braccia conserte",
   },
   recce: {
     headline: "Entra il girato. Esce un luogo.",
