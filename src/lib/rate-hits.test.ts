@@ -21,14 +21,25 @@ const DAY = 24 * 60 * 60 * 1000;
 const NOW = new Date("2026-09-16T12:00:00.000Z");
 const ago = (days: number) => new Date(NOW.getTime() - days * DAY).toISOString();
 
-/** api_rate_hits as PostgREST answers it, for the calls these sweeps make. */
+/**
+ * api_rate_hits as PostgREST answers it, for the calls these sweeps make.
+ *
+ * Rows are held in id order, as the table's key keeps them, and a statement
+ * walks them from the lowest id: the select stops at its first match, the
+ * delete where its id bound ends. Every filter is still applied to every row
+ * walked; the walk only skips rows the id bound already refuses. A full scan
+ * per statement made the batch test (210,000 rows, 85 statements) take ~2 s
+ * in a full run and time out at 5 s when the machine was busy (2026-09-22).
+ */
 function fakeTable(rows: Row[], fail: { select?: string; delete?: string; throws?: boolean } = {}) {
+  expect(rows.every((r, i) => i === 0 || r.id > rows[i - 1].id), "rows in id order").toBe(true);
   const statements: string[] = [];
   const client = {
     from(table: string) {
       expect(table).toBe("api_rate_hits");
       if (fail.throws) throw new Error("network down");
       const filters: ((r: Row) => boolean)[] = [];
+      let idBelow = Infinity;
       let limit = Infinity;
       let mode: "select" | "delete" = "select";
       let counted = false;
@@ -39,17 +50,17 @@ function fakeTable(rows: Row[], fail: { select?: string; delete?: string; throws
           if (fail.select) return { data: null, error: { message: fail.select } };
           // The sweep asks for the one oldest id.
           expect(limit).toBe(1);
-          let oldest: Row | null = null;
-          for (const r of rows) if (matches(r) && (!oldest || r.id < oldest.id)) oldest = r;
+          const oldest = rows.find(matches);
           return { data: oldest ? [{ id: oldest.id }] : [], error: null };
         }
         statements.push("delete");
         if (fail.delete) return { error: { message: fail.delete }, count: null };
-        // Removed in place, in one pass: the batch test holds a few hundred thousand rows.
+        // Removed in place, order kept.
         let kept = 0;
-        for (const r of rows) if (!matches(r)) rows[kept++] = r;
-        const removed = rows.length - kept;
-        rows.length = kept;
+        let walked = 0;
+        for (; walked < rows.length && rows[walked].id < idBelow; walked++) if (!matches(rows[walked])) rows[kept++] = rows[walked];
+        const removed = walked - kept;
+        rows.splice(kept, removed);
         return { error: null, count: counted ? removed : null };
       };
       const builder = {
@@ -68,6 +79,7 @@ function fakeTable(rows: Row[], fail: { select?: string; delete?: string; throws
         },
         lt: (column: keyof Row, value: string | number) => {
           filters.push((r) => r[column] < value);
+          if (column === "id") idBelow = Math.min(idBelow, Number(value));
           return builder;
         },
         order: (column: string, opts: { ascending: boolean }) => {
@@ -131,7 +143,8 @@ describe("pruneRateHits", () => {
 
   it("works a batch of ids at a time, and leaves the rest to the next run", async () => {
     const total = RATE_HITS_PRUNE_BATCH * (RATE_HITS_PRUNE_MAX_BATCHES + 2);
-    const rows: Row[] = Array.from({ length: total }, (_, i) => ({ id: i + 1, user_id: "a", created_at: ago(100) }));
+    const old = ago(100);
+    const rows: Row[] = Array.from({ length: total }, (_, i) => ({ id: i + 1, user_id: "a", created_at: old }));
     const { client, statements } = fakeTable(rows);
     const first = await pruneRateHits(client, NOW);
     expect(first).toEqual({ removed: RATE_HITS_PRUNE_BATCH * RATE_HITS_PRUNE_MAX_BATCHES, done: false, error: null });
