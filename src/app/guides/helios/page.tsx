@@ -7,7 +7,7 @@ import { MarketingFooter } from "@/components/marketing/footer";
 import { marketingSocial } from "@/lib/i18n/metadata";
 import { SETS_OPEN_TO_PLANS, SET_BUILDS_MONTHLY_LIMITS } from "@/lib/sets/set-config";
 
-// The Helios guide (launch prep cut 2, 2026-09-19) — published with the
+// The Helios 3D guide (launch prep cut 2, 2026-09-19) — published with the
 // launch: while SETS_OPEN_TO_PLANS is false this page is 404, off the
 // guides index and out of the sitemap, so nothing public describes a
 // feature nobody can buy. The flip commit turns the one constant and this
@@ -18,7 +18,7 @@ import { SETS_OPEN_TO_PLANS, SET_BUILDS_MONTHLY_LIMITS } from "@/lib/sets/set-co
 //  2. Every claim below shipped and was verified on the live stage — the
 //     screenshots are the real workspace on a real set.
 //  3. One CTA band at the end.
-const TITLE = "Helios: Direct AI Shots Inside a Real 3D Set";
+const TITLE = "Helios 3D: Direct AI Shots Inside a Real Set";
 const DESCRIPTION =
   "Describe a location and get a walkable 3D set. Place your character and camera exactly — real lenses, stops and light — then shoot stills, takes and films that keep the same place and the same face, shot after shot.";
 
@@ -75,11 +75,11 @@ export default function HeliosGuidePage() {
           <div className="mx-auto max-w-2xl px-8 pb-12 pt-16">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Guides · September 2026</p>
             <h1 className="mt-4 font-display text-4xl font-bold leading-[1.1] tracking-[-0.035em] text-neutral-900">
-              Helios: direct AI shots inside a real 3D set
+              Helios 3D: direct AI shots inside a real set
             </h1>
             <p className={P}>
               Prompt-only AI video has a camera problem: you can ask for “low angle, 35&nbsp;mm, she walks to the car”, and the
-              model places all of it roughly, differently every time. Helios turns that around. You direct a real 3D location —
+              model places all of it roughly, differently every time. Helios 3D turns that around. You direct a real 3D location —
               the camera, the lens, the light and the person all have exact positions — and the words are left to do what only
               words can do: performance and mood.
             </p>
@@ -89,7 +89,7 @@ export default function HeliosGuidePage() {
         <div className="mx-auto mt-10 max-w-4xl px-8">
           <Image
             src="/guides/helios/workspace.jpg"
-            alt="The Helios workspace: a 3D racing-circuit set with anamorphic frame lines, a figure on its mark beside a red car, the rig readout and the director's chat"
+            alt="The Helios 3D workspace: a 3D racing-circuit set with anamorphic frame lines, a figure on its mark beside a red car, the rig readout and the director's chat"
             width={1600}
             height={1000}
             className="rounded-[18px] border border-neutral-200 shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
@@ -104,7 +104,7 @@ export default function HeliosGuidePage() {
           <h2 className={H2}>Why geometry beats prompts for the camera</h2>
           <p className={P}>
             An image model reads words with a light touch: “from behind, 50&nbsp;mm” might land anywhere behind, at any distance.
-            Helios never asks. The set renders a layout sketch from your exact camera — position, lens, framing, horizon, light
+            Helios 3D never asks. The set renders a layout sketch from your exact camera — position, lens, framing, horizon, light
             direction — and the model is told to match it. The place stays the same place across every shot, because it
             literally is the same place.
           </p>
@@ -146,7 +146,7 @@ export default function HeliosGuidePage() {
         <section className={SECTION}>
           <h2 className={H2}>What each plan gets</h2>
           <p className={P}>
-            Helios is part of every paid plan. Set builds are capped per month — stills, takes and films inside your sets are
+            Helios 3D is part of every paid plan. Set builds are capped per month — stills, takes and films inside your sets are
             ordinary renders, priced in credits like everything else on Picacho and quoted before you spend.
           </p>
           <ul className="mt-4 space-y-2">
@@ -174,7 +174,7 @@ export default function HeliosGuidePage() {
               href="/signup"
               className="mt-6 inline-flex items-center justify-center rounded-[10px] bg-ochre px-6 py-3 text-sm font-semibold text-ink transition-opacity hover:opacity-90"
             >
-              Start with Helios
+              Start with Helios 3D
             </Link>
           </div>
         </div>

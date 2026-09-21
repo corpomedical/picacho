@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.72.0",
+    build: 111,
+    date: "2026-09-21",
+    title: "Helios 3D: films render again, and cars face the right way",
+    items: [
+      "Helios is now Helios 3D — in the sidebar, on its pages, on the pricing cards and in the guide, in all four languages. The Sets home no longer shows paying customers the \"private testing\" note from before the launch.",
+      "Films render again. Render the film could stop before its first beat without a word; it now runs, and when it cannot start it says why — the start still, who is in the film, a keyframe to add, clips still rendering — instead of sitting disabled. A new film starts on your newest finished still by itself.",
+      "When a still, a take or a film's beat does not pass, it says why where you shot it: a brand rule names the words it caught and how to reword them. A take whose end frame failed used to say the end frame was in; it now says it did not pass.",
+      "A camera move picked while the last one is still flying now takes over at once, instead of being ignored for a second and a half.",
+      "Cars face the right way. Every shot now tells the image model which end of each vehicle in the frame is its front — read from the set's own headlights, tail lights and wing — in the camera's terms. Where the sketch alone left it unclear, a car could come out back to front; the words now settle it. Astra is also told which way its rotations turn, so the windscreens and bonnets of new sets lean the right way.",
+    ],
+  },
+  {
     version: "1.71.0",
     build: 110,
     date: "2026-09-21",

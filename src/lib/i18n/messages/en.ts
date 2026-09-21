@@ -41,7 +41,7 @@ const en = {
     generate: "Generate",
     upscale: "Upscale video",
     layers: "Layers",
-    sets: "Helios",
+    sets: "Helios 3D",
     recce: "Recce",
     mystique: "Mystique",
     tools: "Tools",
@@ -243,13 +243,13 @@ const en = {
       receiptSecBody: "Every send is itemized before it spends: whose face rides, what the dialogue adds, what the total is. And every render is scored against your character's face — the match is a number on the take, not a feeling. We put that in writing.",
       receiptPromptSample: "Eva sits courtside in the front row as the arena lights sweep past…",
       // Helios on the home page (launch prep cut 2): shown only once SETS_OPEN_TO_PLANS flips.
-      heliosEyebrow: "Helios",
+      heliosEyebrow: "Helios 3D",
       heliosTitle: "Direct the shot inside a real 3D set",
       heliosCopy: "Describe a location and get a walkable 3D set. Place your character and your camera exactly — real lenses, stops and light — and shoot stills, takes and films that keep the same place and the same face.",
       heliosB1: "The frame lines are the picture: what you framed out never comes back",
       heliosB2: "Real optics — six formats, true depth of field, light plots and film stocks",
       heliosB3: "Takes and films on every paid plan, quoted before you spend",
-      heliosCta: "See how Helios works →",
+      heliosCta: "See how Helios 3D works →",
       appCardTitle: "In your pocket, on Google Play",
       appCardCopy: "The full studio in the Android app — render on the train, and finished takes land in your library even if you close it mid-render.",
       // Shown instead while the Play listing is down (play-listing.ts): the
@@ -1683,8 +1683,8 @@ const en = {
   pricingTiers: {
     // Helios's launch bullets (helios-pricing.ts): on the cards only once SETS_OPEN_TO_PLANS flips.
     helios: {
-      heliosSetsOne: "Helios — build 1 cinematic 3D set a month, with stills, takes and films",
-      heliosSets: "Helios — build {n} cinematic 3D sets a month, with stills, takes and films",
+      heliosSetsOne: "Helios 3D — build 1 cinematic set a month, with stills, takes and films",
+      heliosSets: "Helios 3D — build {n} cinematic sets a month, with stills, takes and films",
     },
     basic: {
       name: "Basic",
@@ -2132,12 +2132,12 @@ const en = {
     empty: "Your reads will gather here.",
   },
   sets: {
-    eyebrow: "Helios · built by GPT-6 Astra",
-    title: "Helios",
+    eyebrow: "Helios 3D · built by GPT-6 Astra",
+    title: "Helios 3D",
     subtitle:
       "Build a location once, then shoot your characters in it from any angle. Astra builds the place and never sees your character; each still takes the face from your character's own photos and is scored like every take.",
-    previewNote: "In private testing — only admins can see Helios.",
-    webOnly: "Helios is on the web for now. Open Picacho on a computer to build a set and shoot in it.",
+    previewNote: "In private testing — only admins can see Helios 3D.",
+    webOnly: "Helios 3D is on the web for now. Open Picacho on a computer to build a set and shoot in it.",
     newTitle: "New set",
     briefLabel: "Describe the place",
     briefPlaceholder:
@@ -2147,7 +2147,7 @@ const en = {
     starting: "Starting…",
     buildMeta: "Built by GPT-6 Astra · about 1–5 minutes",
     monthlyUsage: "Set builds this billing month: {used} of {limit}",
-    unlimitedUsage: "No build limit while Helios is in testing",
+    unlimitedUsage: "No build limit on your account",
     modeDescribe: "Describe it",
     fromPhoto: "From a photo",
     photoPick: "Choose a photo",
@@ -2395,7 +2395,7 @@ const en = {
     rowCost: "Cost",
     costLine: "{credits} · about a minute",
     astraLabel: "Astra",
-    panelMeta: "Helios · GPT Image 2.5",
+    panelMeta: "Helios 3D · GPT Image 2.5",
     frameProse: "Here's the frame — shoot it, or tell me what to change.",
     shotInSeconds: "Shot in {s} seconds.",
     newestFirst: "the newest first",
@@ -3078,8 +3078,8 @@ const en = {
     // entry above. setBuildRefused names no category and gives no advice on
     // getting past it, the refusal rules everywhere else; "the build is back"
     // is true because a failed build never counts against the monthly cap.
-    setsUnavailable: "Helios isn't available right now.",
-    setsNotOpen: "Helios is part of the paid plans. Upgrade in Settings → Plan & billing.",
+    setsUnavailable: "Helios 3D isn't available right now.",
+    setsNotOpen: "Helios 3D is part of the paid plans. Upgrade in Settings → Plan & billing.",
     setNotFound: "That set isn't available.",
     setNotReady: "This set is still being built.",
     setBriefTooShort: "Describe the place in a few more words.",
@@ -3280,7 +3280,7 @@ const en = {
     freeToTry: "Free to try",
     separateFromCredits: "Separate from credits",
     lifetimeNote: "For the life of a free account",
-    allowHelios: "Helios sets",
+    allowHelios: "Helios 3D sets",
     allowPhotos: "Character photos",
     allowAssists: "Prompt assists",
     allowAssistant: "Assistant",
@@ -3320,7 +3320,7 @@ const en = {
     nothingSpent: "Nothing spent yet this month.",
     kindVideos: "Videos",
     kindImages: "Images",
-    kindHelios: "Helios",
+    kindHelios: "Helios 3D",
     kindUpscales: "Upscales",
     kindLayers: "Layers",
     kindMystique: "Mystique",

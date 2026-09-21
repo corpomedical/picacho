@@ -38,7 +38,7 @@ describe("renderProductGuide", () => {
     // SETS_OPEN_TO_PLANS flipped 2026-09-19 (the launch commit): the
     // assistant now walks a paying customer to the real page.
     expect(SETS_OPEN_TO_PLANS, "Sets closed again: put the private-testing SETS line back in product-guide.ts").toBe(true);
-    expect(guide).toContain("SETS (Helios)");
+    expect(guide).toContain("SETS (Helios 3D)");
     expect(guide).toContain("/app/sets");
     expect(guide).toContain("on every paid plan");
     expect(guide).toContain("a photo-based build is not offered to customers");

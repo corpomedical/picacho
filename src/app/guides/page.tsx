@@ -29,7 +29,7 @@ const GUIDES = [
         {
           href: "/guides/helios",
           date: "September 2026",
-          title: "Helios: direct AI shots inside a real 3D set",
+          title: "Helios 3D: direct AI shots inside a real set",
           blurb:
             "Describe a location and get a walkable 3D set — exact camera, real lenses and light, your character on a mark. Stills, takes and films that keep the same place and the same face.",
         },

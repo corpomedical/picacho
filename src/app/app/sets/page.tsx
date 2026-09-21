@@ -1,3 +1,4 @@
+import { SETS_OPEN_TO_PLANS } from "@/lib/sets/set-config";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { readRenderNotifyPrefs } from "@/lib/generations/generation-defaults-server";
@@ -48,9 +49,13 @@ export default async function SetsPage() {
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex flex-wrap items-center gap-3">
         <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">{s.eyebrow}</p>
-        <p className="inline-block rounded-full border border-atelier-accent/40 bg-atelier-accent/10 px-2.5 py-0.5 text-[11px] font-medium text-atelier-ink">
-          {s.previewNote}
-        </p>
+        {/* Only while Helios 3D is closed to the plans: after the launch every
+            paying customer saw "only admins can see Helios" (found 2026-09-21). */}
+        {!SETS_OPEN_TO_PLANS && (
+          <p className="inline-block rounded-full border border-atelier-accent/40 bg-atelier-accent/10 px-2.5 py-0.5 text-[11px] font-medium text-atelier-ink">
+            {s.previewNote}
+          </p>
+        )}
       </div>
       {native ? (
         <div>
