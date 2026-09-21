@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { isRenderableUrl, mediaUrl, thumbUrl, toMediaUrl } from "@/lib/media/url";
 import { createClient } from "@/lib/supabase/server";
 import { CharacterForm } from "@/components/character-form";
+import { safeReturnTo } from "@/lib/characters/return-to";
 import { EXPRESSION_SLOTS, isUsable, type ExpressionSlot } from "@/lib/characters/expression-set";
 import { expressionSetOfRow } from "@/lib/characters/expression-set-store";
 import type { ExpressionSlotView } from "@/components/expression-set-panel";
@@ -11,10 +12,10 @@ export default async function EditCharacterPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; face?: string }>;
+  searchParams: Promise<{ error?: string; face?: string; returnTo?: string }>;
 }) {
   const { id } = await params;
-  const { error, face } = await searchParams;
+  const { error, face, returnTo } = await searchParams;
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) redirect("/login");
@@ -153,6 +154,7 @@ export default async function EditCharacterPage({
         errorMessage={error}
         projects={projects ?? []}
         voices={voices ?? []}
+        returnTo={safeReturnTo(returnTo)}
       />
     </div>
   );

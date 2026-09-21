@@ -55,7 +55,7 @@ function parseStringArray(raw: FormDataEntryValue | null): string[] | null {
   }
 }
 
-type SaveResult = { error: string } | { error: null };
+type SaveResult = { error: string } | { error: null; id: string };
 
 // NOTE: this is called directly from a Client Component (not via a plain
 // <form action={...}>) because the form needs to upload images to Storage
@@ -219,6 +219,7 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
     }
   }
 
+  let savedId = id ?? "";
   const row = {
     user_id: data.user.id,
     name,
@@ -302,16 +303,18 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
       }
     }
   } else {
-    const { error } = await supabase.from("character_profiles").insert(row);
+    const { data: inserted, error } = await supabase.from("character_profiles").insert(row).select("id").single();
 
-    if (error) {
-      console.error("saveCharacterProfile insert failed:", error.message);
+    if (error || !inserted) {
+      console.error("saveCharacterProfile insert failed:", error?.message ?? "no row");
       return { error: "Couldn't save this character — try again." };
     }
+    savedId = inserted.id as string;
   }
 
   revalidatePath("/app/character");
-  return { error: null };
+  // Its id, so a form opened from a set can hand the new character back to it (R1).
+  return { error: null, id: savedId };
 }
 
 type GenerateReferenceResult =

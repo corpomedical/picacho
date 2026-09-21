@@ -1,13 +1,14 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CharacterForm } from "@/components/character-form";
+import { safeReturnTo } from "@/lib/characters/return-to";
 
 export default async function NewCharacterPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; returnTo?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, returnTo } = await searchParams;
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
   if (!data.user) redirect("/login");
@@ -30,6 +31,7 @@ export default async function NewCharacterPage({
         errorMessage={error}
         projects={projects ?? []}
         voices={voices ?? []}
+        returnTo={safeReturnTo(returnTo)}
       />
     </div>
   );

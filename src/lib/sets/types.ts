@@ -139,4 +139,6 @@ export type SetPageData =
       set: SetDetail;
       shots: SetShot[];
       characters: SetCharacter[];
+      /** The person's characters with no photo yet (R1): named when a set is asked to cast one. */
+      unshootable: { id: string; name: string }[];
     };

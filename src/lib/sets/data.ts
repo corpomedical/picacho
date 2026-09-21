@@ -44,19 +44,26 @@ const asStatus = (s: unknown): SetStatus => (s === "ready" || s === "failed" ? s
  * never supplies one. The home's composer and a set's page both read them.
  */
 async function shootableCharacters(db: SupabaseClient, userId: string): Promise<SetCharacter[]> {
+  return (await charactersOf(db, userId)).shootable;
+}
+
+/** The person's characters, split: those with a photo can be shot; the others are named, so a set asked to cast one can say why it can't (R1). */
+async function charactersOf(db: SupabaseClient, userId: string): Promise<{ shootable: SetCharacter[]; unshootable: { id: string; name: string }[] }> {
   const { data: chars } = await db
     .from("character_profiles")
     .select("id, name, reference_image_urls")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(50);
-  return (chars ?? [])
-    .filter((c) => Array.isArray(c.reference_image_urls) && c.reference_image_urls.length > 0)
-    .map((c) => ({
+  const has = (c: { reference_image_urls?: unknown }) => Array.isArray(c.reference_image_urls) && c.reference_image_urls.length > 0;
+  return {
+    shootable: (chars ?? []).filter(has).map((c) => ({
       id: c.id as string,
       name: (c.name as string) ?? "",
       thumbUrl: thumbUrl(mediaUrl("character-references", (c.reference_image_urls as string[])[0]), 320),
-    }));
+    })),
+    unshootable: (chars ?? []).filter((c) => !has(c)).map((c) => ({ id: c.id as string, name: (c.name as string) ?? "" })),
+  };
 }
 
 /**
@@ -278,7 +285,7 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
   const fromPhoto = photo !== null;
   const brief = (row.brief as string) ?? "";
 
-  const characters = await shootableCharacters(db, access.userId);
+  const { shootable: characters, unshootable } = await charactersOf(db, access.userId);
 
   // The newest shots, and the film's own however old (set-shots.ts).
   const ids = await readSetShotIds(db, setId, access.userId, film);
@@ -433,5 +440,6 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     },
     shots,
     characters,
+    unshootable,
   };
 }

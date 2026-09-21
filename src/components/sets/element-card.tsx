@@ -8,7 +8,7 @@
 // computer, a sheet over the stage on a phone. Literal colours only: the
 // Screening theme turns Tailwind's `white` near-black (42b64bc).
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { formatMsg } from "@/lib/i18n/format";
 import type { Messages } from "@/lib/i18n/messages/en";
 import type { ElementPhoto } from "@/lib/sets/elements";
@@ -35,6 +35,7 @@ export function ElementCard({
   onClose,
   onShowIt,
   move,
+  casting,
   c,
   variant,
 }: {
@@ -58,6 +59,23 @@ export function ElementCard({
   onShowIt: (() => void) | null;
   /** Its place in the strip's order, for a finger that can't drag the strip: null ends are the list's ends. */
   move: { earlier: (() => void) | null; later: (() => void) | null } | null;
+  /**
+   * The figure's card (R1, "Who plays this person?"): the person's
+   * characters to cast, the one cast now, a new one (saved arrangement
+   * first, then the character form, which comes back here), and a line for
+   * a film, which stays the opening still's person.
+   */
+  casting?: {
+    options: { id: string; name: string; thumbUrl: string | null; note?: string | null }[];
+    current: string;
+    onPick: (id: string) => void;
+    onNew: () => void;
+    newHref: string;
+    editHref: string | null;
+    filmNote: string | null;
+    /** Below the list: anything the chosen character still needs (the likeness answer, R1.12). */
+    extra?: ReactNode;
+  } | null;
   c: Cast;
   variant: "dock" | "sheet";
 }) {
@@ -140,6 +158,58 @@ export function ElementCard({
           <p className="text-[12px] leading-snug text-[#c6c9d1]" data-el-status>
             {person ? formatMsg(c.personLine, { name: person.name }) : c.personNone}
           </p>
+        </div>
+      )}
+
+      {element.kind === "figure" && casting && (
+        <div className="flex flex-col gap-1.5" data-el-cast>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#9aa0ad]">{c.whoPlays}</p>
+          <div role="radiogroup" aria-label={c.whoPlays} className="flex flex-col gap-0.5">
+            {casting.options.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                role="radio"
+                aria-checked={o.id === casting.current}
+                onClick={() => casting.onPick(o.id)}
+                data-el-cast-option={o.id}
+                className={`flex h-10 cursor-pointer items-center gap-2.5 rounded-[8px] px-2 text-left text-[12.5px] ${
+                  o.id === casting.current ? "bg-[rgba(255,255,255,0.08)] text-[#ecedf1]" : "text-[#c6c9d1] hover:bg-[rgba(255,255,255,0.05)]"
+                }`}
+              >
+                {o.thumbUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- a private media thumbnail, like the filmstrip's
+                  <img src={o.thumbUrl} alt="" className="h-7 w-7 flex-none rounded-full object-cover" />
+                ) : (
+                  <span className="h-7 w-7 flex-none rounded-full bg-[#2a2c33]" aria-hidden />
+                )}
+                <span className="min-w-0 flex-1 truncate">{o.name}</span>
+                {o.note && <span className="whitespace-nowrap text-[10.5px] text-[#e0a468]">{o.note}</span>}
+                {o.id === casting.current && <span aria-hidden>✓</span>}
+              </button>
+            ))}
+          </div>
+          {casting.extra}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5">
+            <a
+              href={casting.newHref}
+              onClick={(e) => {
+                e.preventDefault();
+                casting.onNew();
+              }}
+              data-el-new-character
+              className="text-[12px] font-medium text-[#e0a468] hover:text-[#f0cda6]"
+            >
+              {c.newCharacter}
+            </a>
+            {casting.editHref && person && (
+              <a href={casting.editHref} className="text-[12px] text-[#c6c9d1] underline underline-offset-2 hover:text-[#ecedf1]">
+                {formatMsg(c.editCharacter, { name: person.name })}
+              </a>
+            )}
+          </div>
+          <p className="text-[11px] leading-snug text-[#9aa0ad]">{c.personPhotos}</p>
+          {casting.filmNote && <p className="text-[11px] leading-snug text-[#e0a468]">{casting.filmNote}</p>}
         </div>
       )}
 

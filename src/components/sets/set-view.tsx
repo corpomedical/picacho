@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { LocalDate } from "@/components/local-date";
 import { useLocale } from "@/lib/i18n/provider";
 import { localizeServerText } from "@/lib/i18n/server-text";
@@ -489,6 +490,7 @@ export function SetView({
   savedRig = null,
   initialElementPhotos = { photos: [], sheets: [] },
   stillModel = "gpt-image",
+  unshootable = [],
 }: {
   setId: string;
   /** The set's name, said in the workspace's own bar. */
@@ -513,6 +515,8 @@ export function SetView({
   initialElementPhotos?: { photos: ElementPhoto[]; sheets: string[] };
   /** The picture model stills are drawn with: the things' sheets ride GPT Image only (elements.ts planShotSheets). */
   stillModel?: string;
+  /** The person's characters with no photo yet (R1): named when this page is asked to cast one. */
+  unshootable?: { id: string; name: string }[];
   /** A message the person sent from the Sets home, asked the moment the stage is ready. */
   initialAsk?: string | null;
   /** The character picked on the Sets home. */
@@ -529,6 +533,7 @@ export function SetView({
   savedRig?: SetRig | null;
 }) {
   const { t, locale } = useLocale();
+  const router = useRouter();
   const s = t.sets;
 
   // The set as drawn NOW: the working copy the page opened with, replaced
@@ -563,15 +568,25 @@ export function SetView({
   // to date whenever a move settles (scheduleSave), since a ref is not read
   // during render.
   const [poseNow, setPoseNow] = useState<Pose>(startPose);
+  // Who plays the figure (R1): the character asked for (?character=, the
+  // character form coming back), else the one this set last cast, else the
+  // first.
   const [characterId, setCharacterId] = useState(
-    () => characters.find((c) => c.id === initialCharacterId)?.id ?? characters[0]?.id ?? "",
+    () =>
+      characters.find((c) => c.id === initialCharacterId)?.id ??
+      characters.find((c) => c.id === initialLayout?.castId)?.id ??
+      characters[0]?.id ??
+      "",
   );
   // What happens in the frame: the shot prompt's direction, read out of the
   // person's last message (shot-words.ts) or, when the reader could not
   // read it, the message itself.
   const [direction, setDirection] = useState("");
   const [shooting, setShooting] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(() => {
+    const asked = initialCharacterId && !characters.some((c) => c.id === initialCharacterId) ? unshootable.find((u) => u.id === initialCharacterId) : undefined;
+    return asked ? formatMsg(t.sets.cast.notCastable, { name: asked.name }) : "";
+  });
   // ---- a deploy that leaves this tab behind ----
   // Once a deploy lands while the page is open, every call from it throws
   // (stale-deploy.ts), and only a reload cures that. The page says so and
@@ -946,7 +961,15 @@ export function SetView({
     gaze: initialLayout?.gaze ?? null,
     // The person's order for the things' sheets (R1, the cast strip): saved with the arrangement.
     elementOrder: initialLayout?.elementOrder ?? ([] as string[]),
+    // Who plays the figure (R1): saved with the arrangement, the next visit's cast.
+    castId: characterId || undefined,
   });
+  // A new cast is kept for the next visit, saved a moment after, like any arrangement.
+  useEffect(() => {
+    if (!characterId || layoutRef.current.castId === characterId) return;
+    layoutRef.current = { ...layoutRef.current, castId: characterId };
+    settledRef.current?.();
+  }, [characterId]);
   // Every beat's move laid from where that beat starts NOW (moves.ts
   // relayMoves): another opening still, a beat's end set by hand, a beat
   // removed or the figure moved changes where the beats after it start, and
@@ -3391,6 +3414,19 @@ export function SetView({
     return [...missed];
   }
 
+  /** The character form for a new person, which comes back here with them cast (return-to.ts). */
+  const newCharacterHref = `/app/character/new?returnTo=${encodeURIComponent(`/app/sets/${setId}`)}`;
+  /** The arrangement saved first, so the set is as it was left when the form comes back. */
+  async function castNewCharacter() {
+    const api = apiRef.current;
+    try {
+      if (api) await saveSetLayout(setId, { ...layoutRef.current, camera: api.pose() });
+    } catch {
+      // The form still opens: the arrangement saved a moment ago stands.
+    }
+    router.push(newCharacterHref);
+  }
+
   /** Frame a thing that is out of the frame, from the side the camera is on; Undo takes it back. */
   function showElement(key: string) {
     const api = apiRef.current;
@@ -3503,6 +3539,20 @@ export function SetView({
         onRemove={(refId) => void removePhoto(refId)}
         onClose={closeElementCard}
         onShowIt={thingKey && (st?.status === "out" || st?.status === "behind") ? () => showElement(thingKey) : null}
+        casting={
+          el.kind === "figure"
+            ? {
+                options: characters.map((ch) => ({ id: ch.id, name: ch.name, thumbUrl: ch.thumbUrl })),
+                current: characterId,
+                onPick: (id) => setCharacterId(id),
+                onNew: () => void castNewCharacter(),
+                newHref: newCharacterHref,
+                editHref: characterId ? `/app/character/${characterId}?returnTo=${encodeURIComponent(`/app/sets/${setId}`)}` : null,
+                // A film stays the opening still's person (filmCharacterId).
+                filmNote: filmOpen && filmStartPerson !== null && !filmPersonGone ? formatMsg(cast.filmPerson, { name: characters.find((ch) => ch.id === filmStartPerson)?.name ?? "" }) : null,
+              }
+            : null
+        }
         move={
           thingKey && orderIndex >= 0
             ? {
@@ -5676,7 +5726,7 @@ export function SetView({
                   {characters.length === 0 ? (
                     <p className="text-sm leading-relaxed text-[#d6d9e0]">
                       {s.noCharacters}{" "}
-                      <Link href="/app/character/new" className="font-medium text-[#e0a468] underline underline-offset-2">
+                      <Link href={newCharacterHref} className="font-medium text-[#e0a468] underline underline-offset-2">
                         {s.createCharacter}
                       </Link>
                     </p>

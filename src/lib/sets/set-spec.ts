@@ -578,6 +578,8 @@ export type SetLayout = {
    * planSheets). Absent when never set, so older layouts stay as they were.
    */
   elementOrder?: string[];
+  /** Who plays the figure (R1, "Who plays this person?"): a character's id, kept for the next visit. Absent when never set. */
+  castId?: string;
 };
 
 /**
@@ -585,6 +587,8 @@ export type SetLayout = {
  * the elements (which import it); element-order.test.ts holds them equal.
  */
 export const LAYOUT_ELEMENT_KEY_RE = /^([cvo])_([0-9a-f]{8})_(-?\d{1,4})_(-?\d{1,4})$/;
+/** A character's id, as the layout keeps it (castId). */
+const CAST_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** How many keys an order keeps: as many as a set holds photos on (set-config.ts ELEMENT_SET_PHOTOS_MAX). */
 export const LAYOUT_ELEMENT_ORDER_MAX = 24;
 
@@ -640,5 +644,6 @@ export function normaliseSetLayout(input: unknown, spec: SetSpec): SetLayout | n
   const pose = pick(root.pose, STAND_POSES, "stand");
   const gaze = normaliseGaze(root.gaze, spec.objects.length);
   const elementOrder = normaliseElementOrder(root.elementOrder);
-  return { markId, mark, camera, pose, gaze, ...(elementOrder && elementOrder.length > 0 ? { elementOrder } : {}) };
+  const castId = typeof root.castId === "string" && CAST_ID_RE.test(root.castId) ? root.castId : null;
+  return { markId, mark, camera, pose, gaze, ...(elementOrder && elementOrder.length > 0 ? { elementOrder } : {}), ...(castId ? { castId } : {}) };
 }

@@ -118,6 +118,7 @@ export function CharacterForm({
   stats,
   expressionSet,
   faceNotice,
+  returnTo = null,
 }: {
   userId: string;
   initial?: Initial & { voice_id?: string | null; outfit_description?: string | null };
@@ -146,6 +147,12 @@ export function CharacterForm({
   expressionSet?: Partial<Record<ExpressionSlot, ExpressionSlotView>>;
   /** How the face check just ended, from the callback's ?face= (face-verification-panel.tsx). */
   faceNotice?: string;
+  /**
+   * The Helios set this form was opened from (R1, "Who plays this person?",
+   * return-to.ts safeReturnTo): Save goes back there with this character
+   * cast, and a link goes back without saving.
+   */
+  returnTo?: string | null;
 }) {
   const { t } = useLocale();
   const c = t.character;
@@ -567,7 +574,8 @@ export function CharacterForm({
       // thing they actually want to do, and Generate defaults its character
       // picker to the most recently created one, so the character they just
       // made is already selected.
-      window.location.assign(initial?.id ? "/app/character" : "/app/generate");
+      // Opened from a set (R1): back to it, with this character cast.
+      window.location.assign(returnTo && result.error === null ? `${returnTo}?character=${result.id}` : initial?.id ? "/app/character" : "/app/generate");
     } catch (err) {
       console.error("Failed to save character:", err);
       cleanupUploads();
@@ -612,6 +620,11 @@ export function CharacterForm({
 
   return (
     <div className={initial?.id ? "space-y-6" : "mx-auto max-w-3xl space-y-6"}>
+    {returnTo && (
+      <Link href={returnTo} className="inline-block text-xs font-medium text-atelier-muted hover:text-atelier-ink" data-back-to-set>
+        {c.backToSet}
+      </Link>
+    )}
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* MASTHEAD (direction A, 2026-09-04): the same Ledger head the
            project shelf and the project page carry — eyebrow, the name set
