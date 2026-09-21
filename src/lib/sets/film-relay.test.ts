@@ -65,7 +65,8 @@ describe("the timeline strip", () => {
 
   it("marks a jumping beat's take and says why under the lanes, after an error or why Render cannot start", () => {
     expect(view).toContain("jumps={filmJumps}");
-    expect(view).toContain("jumpNote={filmLookNone ? s.filmLookNone : filmJumps.indexOf(true) >= 0 ? formatMsg(s.filmBeatJumps, { n: filmJumps.indexOf(true) + 1 }) : null}");
+    // After whose film it is and whether its look can lend anything (film-person.test.ts, film-look.test.ts).
+    expect(view).toMatch(/: filmJumps\.indexOf\(true\) >= 0\s*\? formatMsg\(s\.filmBeatJumps, \{ n: filmJumps\.indexOf\(true\) \+ 1 \}\)\s*: null/);
     expect(seq).toContain('data-jump={p.jumps?.[sp.index] ? "" : undefined}');
     const line = seq.slice(seq.indexOf("{(p.note || p.error || p.hint || p.jumpNote) && ("));
     expect(line.indexOf("p.error ?")).toBeLessThan(line.indexOf("p.note ?"));

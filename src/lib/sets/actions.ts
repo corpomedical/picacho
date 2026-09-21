@@ -106,6 +106,7 @@ import {
   SET_TAKE_FAILED,
   SET_TAKE_LOOK_DROPPED,
   SET_TAKE_OFF_FACE,
+  SET_TAKE_OTHER_PERSON,
   SET_TAKE_PHOTO_DROPPED,
   setMonthlyCapMessage,
 } from "@/lib/sets/messages";
@@ -1108,6 +1109,21 @@ export async function takeInSet(
   const owned = await readyOwnedSpec(setId, userId);
   if (owned.error !== null) return { error: owned.error };
   if (!startUrl) return { error: SET_TAKE_BAD_START };
+  // A film's beat is shot with the person its start still shows
+  // (2026-09-21): the first film opened on a still of one character with
+  // another picked, and beat 1 morphed one into the other. The page sends
+  // that person; a page left open from before is told, before anything is
+  // shot or charged.
+  if (input.film === true) {
+    const { data: startGen } = await access.supabase
+      .from("generations")
+      .select("character_profile_id")
+      .eq("id", startId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    const startPerson = typeof startGen?.character_profile_id === "string" ? startGen.character_profile_id : null;
+    if (startPerson !== null && startPerson !== input.characterId) return { error: SET_TAKE_OTHER_PERSON };
+  }
   // An end frame the set already has: the same checks, before a take is counted.
   const reuseId = typeof input?.endGenerationId === "string" && input.endGenerationId.length > 0 ? input.endGenerationId : null;
   const reusedUrl = reuseId ? await finishedStillUrl(access.supabase, setId, userId, reuseId) : null;

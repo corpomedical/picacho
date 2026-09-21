@@ -130,6 +130,8 @@ export const SET_TAKE_LOOK_DROPPED = "This beat stopped before its end frame was
 export const SET_TAKE_PHOTO_DROPPED = "This beat stopped before its end frame was shot: your reference photo couldn't be drawn this time. Nothing was charged — press Render to try again.";
 /** A film's end frame under the identity bar: its clip is not made (2026-09-21). */
 export const SET_TAKE_OFF_FACE = "This beat's end frame scored under your identity bar, so its clip wasn't made and only the frame was charged. Press Render to shoot it again.";
+/** A film's beat asked for with another person than its start still shows (2026-09-21). Nothing shot or charged. */
+export const SET_TAKE_OTHER_PERSON = "This film opens on a still of someone else, so this beat wasn't shot and nothing was charged. Reload the page: the film is shot with the person in its opening still.";
 /**
  * Takes and films are every paid plan's (set-config.ts setTakesEligible,
  * 2026-09-19 "Open to all plans"): said before anything is shot, never

@@ -2855,6 +2855,19 @@ export function SetView({
   // with the way out.
   const filmStartShot0 = film.startId ? (shots.find((sh) => sh.generationId === film.startId) ?? null) : null;
   const filmLookNone = filmLook.key === undefined && filmStartShot0 !== null && !canBeLook(filmStartShot0);
+  /**
+   * Who the film is of (2026-09-21): the person in its opening still, since
+   * beat 1 opens on that very picture. The first film opened on a still of
+   * one character with another picked above, and beat 1 morphed one into
+   * the other. A still whose person is not known (shot before the page kept
+   * it) leaves the character picked above. `filmPersonOther` names the
+   * opening still's person when that is not the one picked above, and
+   * `filmPersonGone` says they are no longer one of the characters.
+   */
+  const filmStartPerson = filmStartShot0?.characterId ?? null;
+  const filmPersonGone = filmStartPerson !== null && !characters.some((c) => c.id === filmStartPerson);
+  const filmCharacterId = filmStartPerson !== null && !filmPersonGone ? filmStartPerson : characterId;
+  const filmPersonOther = filmStartPerson !== null && !filmPersonGone && filmStartPerson !== characterId ? (characters.find((c) => c.id === filmStartPerson)?.name ?? null) : null;
 
   /** Upload a reference photo: prepared here, checked and stored on the server, then made the look. */
   async function uploadLookPhoto(file: File | undefined) {
@@ -3035,6 +3048,7 @@ export function SetView({
       rigCheck: null,
       pose,
       takeFrom: null,
+      characterId,
     };
     setShots((prev) => [shot, ...prev]);
     setShotFacts((prev) => ({ ...prev, [shot.generationId]: { seconds: Math.round((new Date().getTime() - startedAt) / 1000), frame: frameLabel } }));
@@ -3164,6 +3178,7 @@ export function SetView({
       rigCheck: null,
       pose,
       takeFrom: null,
+      characterId,
     };
     const frames: TakeFrames = { start: takeStart.id, end: result.still.generationId, characterId, direction: said, engine: takeEngine, words: asked };
     const rows: SetShot[] = result.takeGenerationId
@@ -3492,7 +3507,7 @@ export function SetView({
    * mark or set renders from its start: its clips are of another film.
    */
   function filmPlanNow() {
-    const context = filmContextKey({ characterId, rig, mark, setKey, pose, look: filmLook.key });
+    const context = filmContextKey({ characterId: filmCharacterId, rig, mark, setKey, pose, look: filmLook.key });
     const plan = filmRenderPlan(film, context, (id) => shots.find((sh) => sh.generationId === id)?.status ?? null);
     return { ...plan, context };
   }
@@ -3610,7 +3625,8 @@ export function SetView({
             lookRefId: filmLook.ref,
             lookPicked: filmLook.key !== undefined,
             frameDataUri: frame,
-            characterId,
+            // The person in the opening still (filmCharacterId), not the one picked above.
+            characterId: filmCharacterId,
             direction: beat.words,
             layout: { ...layoutRef.current, camera: beat.end, mark: staged.figure, pose: staged.pose, gaze: staged.gaze },
             engine: film.engine,
@@ -3693,6 +3709,7 @@ export function SetView({
             rigCheck: null,
             pose: beat.end,
             takeFrom: null,
+            characterId: filmCharacterId,
           };
           setShots((prev) => [...(takeRow ? [takeRow] : []), endStill, ...prev]);
           // Kept on the film, so the reel is still there after the page closes
@@ -4356,8 +4373,10 @@ export function SetView({
     ? localizeServerText(SET_TAKE_NEEDS_PLAN, t)
     : !ready
       ? s.filmWhyLoading
-      : !characterId
+      : !filmCharacterId
         ? s.filmWhyWho
+        : filmPersonGone
+          ? s.filmWhyPersonGone
         : !film.startId
           ? filmStartOptions.length > 0
             ? s.filmWhyStart
@@ -6402,7 +6421,15 @@ export function SetView({
             s={s}
             film={film}
             jumps={filmJumps}
-            jumpNote={filmLookNone ? s.filmLookNone : filmJumps.indexOf(true) >= 0 ? formatMsg(s.filmBeatJumps, { n: filmJumps.indexOf(true) + 1 }) : null}
+            jumpNote={
+              filmPersonOther
+                ? formatMsg(s.filmPersonOther, { name: filmPersonOther })
+                : filmLookNone
+                  ? s.filmLookNone
+                  : filmJumps.indexOf(true) >= 0
+                    ? formatMsg(s.filmBeatJumps, { n: filmJumps.indexOf(true) + 1 })
+                    : null
+            }
             selected={filmSel}
             playhead={playhead}
             playing={previz || reel !== null}
@@ -6806,6 +6833,11 @@ export function SetView({
                 ) : (
                   <div className="flex flex-col gap-2">
                     <p className="text-[11.5px] leading-snug text-[#c6c9d1]">{film.beats.length === 0 ? s.sequencer.noBeats : s.rig.movePick}</p>
+                    {filmPersonOther && (
+                      <p data-film-person className="text-[11px] leading-snug text-[#e0a468]">
+                        {formatMsg(s.filmPersonOther, { name: filmPersonOther })}
+                      </p>
+                    )}
                     {filmLookNone && film.beats.length > 0 && (
                       <p data-film-look-none className="text-[11px] leading-snug text-[#e0a468]">
                         {s.filmLookNone}

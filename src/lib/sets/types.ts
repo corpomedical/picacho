@@ -68,6 +68,11 @@ export type SetShot = {
    * nothing.
    */
   takeFrom: TakeSource | null;
+  /**
+   * The character it was shot with (the generation's character_profile_id),
+   * when known: a film is of the person in its opening still (2026-09-21).
+   */
+  characterId?: string | null;
 };
 
 export type SetCharacter = {

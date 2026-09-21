@@ -27,14 +27,15 @@ describe("Render renders, or says why it cannot", () => {
 
   it("has one reason for every way it cannot start, in the order a person would fix them", () => {
     const why = view.slice(view.indexOf("const filmRenderWhy: string | null ="), view.indexOf(": null;", view.indexOf("const filmRenderWhy")));
-    const order = ["!takesOn", "!ready", "!characterId", "!film.startId", "film.beats.length === 0", "filmPlan.again && filmPlan.rendering", "shooting || matching"];
+    // The film's own person (2026-09-21): the opening still's, and gone when they are no longer a character.
+    const order = ["!takesOn", "!ready", "!filmCharacterId", "filmPersonGone", "!film.startId", "film.beats.length === 0", "filmPlan.again && filmPlan.rendering", "shooting || matching"];
     let at = -1;
     for (const cond of order) {
       const i = why.indexOf(cond);
       expect(i, cond).toBeGreaterThan(at);
       at = i;
     }
-    for (const word of ["s.filmWhyLoading", "s.filmWhyWho", "s.filmWhyStart", "s.filmPickStill", "s.filmWhyBeats", "s.filmClipsRendering", "s.filmWhyShooting"]) {
+    for (const word of ["s.filmWhyLoading", "s.filmWhyWho", "s.filmWhyPersonGone", "s.filmWhyStart", "s.filmPickStill", "s.filmWhyBeats", "s.filmClipsRendering", "s.filmWhyShooting"]) {
       expect(why, word).toContain(word);
     }
   });

@@ -248,6 +248,7 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "This beat stopped before its end frame was shot: the film's look couldn't be made this time. Nothing was charged — press Render to try again.": "setTakeLookDropped",
   "This beat stopped before its end frame was shot: your reference photo couldn't be drawn this time. Nothing was charged — press Render to try again.": "setTakePhotoDropped",
   "This beat's end frame scored under your identity bar, so its clip wasn't made and only the frame was charged. Press Render to shoot it again.": "setTakeOffFace",
+  "This film opens on a still of someone else, so this beat wasn't shot and nothing was charged. Reload the page: the film is shot with the person in its opening still.": "setTakeOtherPerson",
   "This photo can't be used as a reference.": "setRefRefused",
   "We couldn't check this photo — try again in a moment.": "setRefUnchecked",
   "A set holds six reference photos — remove one to add another.": "setRefTooMany",

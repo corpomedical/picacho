@@ -376,6 +376,7 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
             return c ? { position: c.position, target: c.target, fovDeg: c.fovDeg } : null;
           })(),
           takeFrom: isTake ? takeSourceOf(takes.get(g.id as string), g.character_profile_id, canShoot, finished) : null,
+          characterId: typeof g.character_profile_id === "string" ? g.character_profile_id : null,
         };
       });
   }
