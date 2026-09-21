@@ -2421,6 +2421,7 @@ const it = {
     filmRemoveBeat: "Rimuovi il tratto {n}",
     filmLeaveConfirm: "Il film si sta ancora renderizzando da questa pagina: se esci ora, si ferma dopo il tratto in corso. Uscire comunque?",
     filmSetEnd: "Imposta la fine del tratto {n} su questa vista",
+    filmBeatJumps: "Il tratto {n} salta attraverso il set senza movimento, quindi la sua clip farà una dissolvenza invece di muoversi. Scegli un movimento per questo tratto o avvicina la sua fine al punto in cui inizia.",
     filmBeatDone: "pronto",
     filmBeatFailed: "Quel tratto non si è potuto renderizzare — tutto ciò che viene prima resta.",
     filmClipFailed: "La clip di quel tratto non è partita — ricarica la pagina e premi di nuovo play.",

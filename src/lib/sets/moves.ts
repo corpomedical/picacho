@@ -226,3 +226,103 @@ export function poseAlong(move: FilmMove | null, a: FilmPose, b: FilmPose, e: nu
 export function groundDistance(pose: FilmPose, mark: { x: number; z: number }): number {
   return Math.hypot(pose.position[0] - mark.x, pose.position[2] - mark.z);
 }
+
+/**
+ * Two poses the same to within what the stage itself moves by: 2 cm on
+ * either point and a twentieth of a degree of lens. A view set by hand on
+ * the end a move already laid is that end, not a new one.
+ */
+export function samePose(a: FilmPose, b: FilmPose): boolean {
+  const near = (x: number, y: number, eps: number) => Math.abs(x - y) <= eps;
+  return (
+    [0, 1, 2].every((i) => near(a.position[i], b.position[i], 0.02) && near(a.target[i], b.target[i], 0.02)) &&
+    near(a.fovDeg, b.fovDeg, 0.05)
+  );
+}
+
+/**
+ * A beat's end for `move`, laid from where the beat starts (layMove), kept
+ * clear of what the set built by the stage's own check (`room`: the camera
+ * stops 0.3 m short of anything built), and a dolly zoom stopped short
+ * re-solving its lens, so she keeps her size (distance × tan(fov / 2)).
+ */
+export function layBeatMove(
+  move: FilmMove,
+  from: FilmPose,
+  mark: { x: number; z: number },
+  bounds: { x: number; z: number; height: number },
+  room: (pose: FilmPose) => FilmPose = (pose) => pose,
+): FilmPose {
+  let end = room(layMove(move, from, mark, bounds));
+  if (move === "dolly-zoom") {
+    const size = Math.hypot(from.position[0] - mark.x, from.position[2] - mark.z) * Math.tan((from.fovDeg * DEG) / 2);
+    const d = Math.hypot(end.position[0] - mark.x, end.position[2] - mark.z);
+    if (d > 0.1) end = { ...end, fovDeg: clampFov((2 * Math.atan(size / d)) / DEG) };
+  }
+  return end;
+}
+
+/**
+ * The beats with every move laid again from where each beat now starts:
+ * the film's opening still's own camera for the first, the beat before for
+ * the rest, in order. A move is a path FROM where its beat starts, so once
+ * the opening still or an earlier beat changes, the end it was laid to asks
+ * the take to join two cameras the move does not: the first real film's
+ * "Arc left" had been laid from still 1 (50 mm, 5.5 m) and rendered from
+ * still 6 (135 mm, 8.3 m), and the clip cross-faded between them
+ * (2026-09-21). A beat framed by hand keeps its end; with no known start
+ * (the opening still's camera never recorded) the first beat keeps its end
+ * too. The same array back when nothing moved.
+ */
+export function relayMoves<B extends { end: FilmPose; move: FilmMove | null }>(
+  beats: readonly B[],
+  start: FilmPose | null,
+  mark: { x: number; z: number },
+  bounds: { x: number; z: number; height: number },
+  room?: (pose: FilmPose) => FilmPose,
+): readonly B[] {
+  let changed = false;
+  const out: B[] = [];
+  let from = start;
+  for (const beat of beats) {
+    let next = beat;
+    if (beat.move && from) {
+      const end = layBeatMove(beat.move, from, mark, bounds, room);
+      if (!samePose(end, beat.end)) {
+        next = { ...beat, end };
+        changed = true;
+      }
+    }
+    out.push(next);
+    from = next.end;
+  }
+  return changed ? out : beats;
+}
+
+/** Past this turn round the figure, a beat framed by hand asks its take for a jump no path is said for. */
+export const BEAT_JUMP_TURN_DEG = 20;
+/** …or past this factor of the figure's size on screen, growing or shrinking. */
+export const BEAT_JUMP_SIZE = 2;
+
+/**
+ * Whether a beat with NO move asks its take to cross more of the set than
+ * the video engine joins by moving. Two frames it can connect by a camera
+ * path it moves between; two views far round the figure, with no path
+ * said, it cross-fades between instead. The first real film (2026-09-21):
+ * beat 2 went 35° round her and 1.8× closer with no move, and dissolved;
+ * beat 3's two ends stood at one bearing with her size held (a dolly
+ * zoom's), and came out smooth. The size is distance × tan(fov / 2), as a
+ * dolly zoom holds it; a camera almost on the mark has no bearing to turn.
+ */
+export function beatJumps(from: FilmPose, to: FilmPose, mark: { x: number; z: number }): boolean {
+  const d0 = groundDistance(from, mark);
+  const d1 = groundDistance(to, mark);
+  const size = (p: FilmPose, d: number) => Math.max(0.05, d) * Math.tan((p.fovDeg * DEG) / 2);
+  const grow = size(to, d1) / size(from, d0);
+  if (grow > BEAT_JUMP_SIZE || grow < 1 / BEAT_JUMP_SIZE) return true;
+  if (d0 < 0.3 || d1 < 0.3) return false;
+  const b0 = Math.atan2(from.position[0] - mark.x, from.position[2] - mark.z);
+  const b1 = Math.atan2(to.position[0] - mark.x, to.position[2] - mark.z);
+  const turn = Math.abs(((((b1 - b0 + Math.PI) % TAU) + TAU) % TAU) - Math.PI) / DEG;
+  return turn > BEAT_JUMP_TURN_DEG;
+}

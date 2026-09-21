@@ -2422,6 +2422,7 @@ const es = {
     filmRemoveBeat: "Quitar el tramo {n}",
     filmLeaveConfirm: "La película aún se está renderizando desde esta página: si sales ahora, se detiene tras el tramo en curso. ¿Salir de todos modos?",
     filmSetEnd: "Llevar el final del tramo {n} a esta vista",
+    filmBeatJumps: "El tramo {n} salta por el set sin movimiento, así que su clip hará un fundido en lugar de moverse. Elige un movimiento para él o pon su final más cerca de donde empieza.",
     filmBeatDone: "listo",
     filmBeatFailed: "Ese tramo no se pudo renderizar — todo lo anterior se conserva.",
     filmClipFailed: "El clip de ese tramo no se pudo reproducir — recarga la página y vuelve a darle a reproducir.",

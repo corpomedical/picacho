@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FILM_MOVE_WORDS, FILM_MOVES, FILM_TEXTURE_WORDS, FILM_TEXTURES, groundDistance, isFilmMove, layMove, poseAlong } from "./moves";
+import { FILM_MOVE_WORDS, FILM_MOVES, FILM_TEXTURE_WORDS, FILM_TEXTURES, groundDistance, isFilmMove, beatJumps, BEAT_JUMP_SIZE, BEAT_JUMP_TURN_DEG, layBeatMove, layMove, poseAlong, relayMoves, samePose } from "./moves";
 import { SET_LIMITS } from "./set-spec";
 import type { FilmPose } from "./film";
 
@@ -148,5 +148,116 @@ describe("poseAlong", () => {
     const end: FilmPose = { position: [3, 1.6, 0], target: [0, 1.25, 0], fovDeg: 40 };
     const mid = poseAlong("orbit-90", onTop, end, 0.5);
     expect(mid.position[0]).toBeCloseTo(1.5, 9);
+  });
+});
+
+describe("layBeatMove", () => {
+  it("keeps the camera where the stage says it has room, and a dolly zoom stopped short keeps her size", () => {
+    // Something built 6 m out: the stage stops the camera there.
+    const room = (p: FilmPose): FilmPose => {
+      const d = groundDistance(p, mark);
+      return d <= 6 ? p : { ...p, position: [(p.position[0] * 6) / d, p.position[1], (p.position[2] * 6) / d] };
+    };
+    const end = layBeatMove("dolly-zoom", from, mark, bounds, room);
+    expect(groundDistance(end, mark)).toBeCloseTo(6, 2);
+    const size = (p: FilmPose) => groundDistance(p, mark) * Math.tan((p.fovDeg * Math.PI) / 360);
+    expect(size(end)).toBeCloseTo(size(from), 2);
+    // With room to spare it is layMove's own end.
+    expect(layBeatMove("arc-left", from, mark, bounds)).toEqual(layMove("arc-left", from, mark, bounds));
+  });
+});
+
+describe("samePose", () => {
+  it("is the same view to within 2 cm and a twentieth of a degree", () => {
+    expect(samePose(from, { ...from, position: [0.015, 1.6, 4.01] })).toBe(true);
+    expect(samePose(from, { ...from, fovDeg: from.fovDeg + 0.04 })).toBe(true);
+    expect(samePose(from, { ...from, position: [0.05, 1.6, 4] })).toBe(false);
+    expect(samePose(from, { ...from, target: [0, 1.3, 0] })).toBe(false);
+    expect(samePose(from, { ...from, fovDeg: from.fovDeg + 0.2 })).toBe(false);
+  });
+});
+
+// The first real film (2026-09-21): beat 1's "Arc left" had been laid from
+// still 1 (50 mm, 5.5 m) and the film was then opened on still 6 (135 mm,
+// 8.3 m). The arc was never laid again, so the clip had to join two cameras
+// no arc joins, and it cross-faded. These are that film's own numbers.
+describe("relayMoves: a move laid again from where its beat now starts", () => {
+  const setBounds = { x: 64, z: 70, height: 18 };
+  const figure = { x: 1.54, z: 0.85 };
+  const still6: FilmPose = { position: [9.734, 1.756, -0.308], target: [1.54, 1.25, 0.85], fovDeg: 10 };
+  const still1: FilmPose = { position: [6.971, 1.756, 0.083], target: [-1.073, 0.328, 0.119], fovDeg: 26.99 };
+  const byHand: FilmPose = { position: [4.527, 1.756, 0.428], target: [1.54, 1.25, 0.85], fovDeg: 26.99 };
+
+  it("lays beat 1's arc from the opening still, at that still's lens and distance", () => {
+    const stale = [{ move: "arc-left" as const, end: layBeatMove("arc-left", still1, figure, setBounds) }];
+    // As saved, the arc ended 5.4 m out on a 50 mm: not an arc from still 6.
+    expect(stale[0].end.fovDeg).toBe(26.99);
+    const beats = relayMoves(stale, still6, figure, setBounds);
+    expect(beats).not.toBe(stale);
+    expect(beats[0].end).toEqual(layBeatMove("arc-left", still6, figure, setBounds));
+    expect(beats[0].end.fovDeg).toBe(10);
+    expect(groundDistance(beats[0].end, figure)).toBeCloseTo(groundDistance(still6, figure), 2);
+    expect(beats[0].move).toBe("arc-left");
+  });
+
+  it("keeps a beat framed by hand, and lays the moved beat after it from that end", () => {
+    const beats = relayMoves(
+      [
+        { move: null, end: byHand },
+        { move: "dolly-zoom" as const, end: still6 },
+      ],
+      still1,
+      figure,
+      setBounds,
+    );
+    expect(beats[0].end).toBe(byHand);
+    expect(beats[1].end).toEqual(layBeatMove("dolly-zoom", byHand, figure, setBounds));
+  });
+
+  it("gives the same beats back when every move already starts where its beat does", () => {
+    const beats = [{ move: "arc-left" as const, end: layBeatMove("arc-left", still6, figure, setBounds) }];
+    expect(relayMoves(beats, still6, figure, setBounds)).toBe(beats);
+  });
+
+  it("leaves the first beat alone when the opening still's camera was never recorded", () => {
+    const beats = [{ move: "arc-left" as const, end: byHand }];
+    expect(relayMoves(beats, null, figure, setBounds)).toBe(beats);
+  });
+});
+
+// The first real film's own cameras (2026-09-21): beat 2, framed by hand
+// with no move, turned 35° round her and came 1.8× closer, and its clip
+// cross-faded; beat 3's two ends stood at one bearing with her size held,
+// and came out smooth.
+describe("beatJumps", () => {
+  const figure = { x: 1.54, z: 0.85 };
+  const aim: [number, number, number] = [1.54, 1.25, 0.85];
+  const beat1End: FilmPose = { position: [6.38, 1.756, 3.312], target: aim, fovDeg: 26.99 };
+  const beat2End: FilmPose = { position: [4.527, 1.756, 0.428], target: aim, fovDeg: 26.99 };
+  const beat3End: FilmPose = { position: [7.394, 1.756, 0.023], target: aim, fovDeg: 13.96 };
+
+  it("says the beat that dissolved jumps, and the one that came out smooth does not", () => {
+    expect(beatJumps(beat1End, beat2End, figure)).toBe(true);
+    expect(beatJumps(beat2End, beat3End, figure)).toBe(false);
+  });
+
+  it("turns past its limit, or grows or shrinks her past its factor", () => {
+    expect(BEAT_JUMP_TURN_DEG).toBe(20);
+    expect(BEAT_JUMP_SIZE).toBe(2);
+    const at = (deg: number, d: number, fovDeg = from.fovDeg): FilmPose => ({
+      position: [Math.sin((deg * Math.PI) / 180) * d, 1.6, Math.cos((deg * Math.PI) / 180) * d],
+      target: [0, 1.25, 0],
+      fovDeg,
+    });
+    expect(beatJumps(at(0, 4), at(15, 4), mark)).toBe(false);
+    expect(beatJumps(at(0, 4), at(25, 4), mark)).toBe(true);
+    // The short way round: 350° to 10° is a turn of 20°.
+    expect(beatJumps(at(350, 4), at(9, 4), mark)).toBe(false);
+    expect(beatJumps(at(0, 4), at(0, 2.2), mark)).toBe(false);
+    expect(beatJumps(at(0, 4), at(0, 1.8), mark)).toBe(true);
+    expect(beatJumps(at(0, 4), at(0, 9), mark)).toBe(true);
+    // A dolly zoom's two ends keep her size: no jump, however far back.
+    const dz = layMove("dolly-zoom", at(0, 4), mark, bounds);
+    expect(beatJumps(at(0, 4), dz, mark)).toBe(false);
   });
 });

@@ -56,7 +56,7 @@ import { stagedSpec, timeLabel, sunAt } from "@/lib/sets/time-of-day";
 import { shootCommands } from "@/lib/sets/commands";
 import { CommandPalette } from "./command-palette";
 import { labPreviewCodes } from "@/lib/sets/lab-preview";
-import { layMove, poseAlong, type FilmMove, type FilmTexture } from "@/lib/sets/moves";
+import { beatJumps, layBeatMove, poseAlong, relayMoves, samePose, type FilmMove, type FilmTexture } from "@/lib/sets/moves";
 import { planFilmOverlay, type FilmOverlayPlan } from "@/lib/sets/film-overlay";
 import { joinMp4 } from "@/lib/media/mp4-join";
 import type { RigCheck } from "@/lib/sets/rig-check";
@@ -879,6 +879,30 @@ export function SetView({
   const [figureMoved, setFigureMoved] = useState(false);
   const figureMovedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const layoutRef = useRef({ markId: startMarkId, mark: startMark, pose: initialLayout?.pose ?? "stand", gaze: initialLayout?.gaze ?? null });
+  // Every beat's move laid from where that beat starts NOW (moves.ts
+  // relayMoves): another opening still, a beat's end set by hand, a beat
+  // removed or the figure moved changes where the beats after it start, and
+  // a move laid from the old start asks the take to join two cameras the
+  // move does not. The first real film's "Arc left" had been laid from
+  // still 1 and rendered from still 6, and cross-faded ("the camera moved
+  // differently from what was selected", 2026-09-21). The clips from the
+  // first beat that moves on go with it (filmAfterEdit), as for any edit;
+  // never while the film renders, and only once the stage can say where a
+  // camera has room.
+  const filmStartPose = shots.find((sh) => sh.generationId === film.startId)?.pose ?? null;
+  // A beat framed by hand that crosses the set with no move: its take
+  // cross-fades instead of moving (moves.ts beatJumps), and the Film tab
+  // says so before Render, beside the beat.
+  const filmJumps = film.beats.map((b, i) => {
+    const from = i === 0 ? filmStartPose : film.beats[i - 1].end;
+    return b.move === null && from !== null && beatJumps(from, b.end, mark);
+  });
+  useEffect(() => {
+    const api = apiRef.current;
+    if (!ready || !api || filmBusyRef.current) return;
+    const beats = relayMoves(film.beats, filmStartPose, mark, spec.bounds, (p) => api.roomFor(p));
+    if (beats !== film.beats) editFilm((f) => (f.beats === film.beats ? { ...f, beats: [...beats] } : f));
+  }, [ready, film.beats, filmStartPose, mark, spec.bounds, editFilm]);
   // The open menu, for the Esc handler (a ref is not read during render).
   const menuRef = useRef<MenuId | null>(null);
   // The set as it stood before the last Astra edit, for the changed line's
@@ -3175,13 +3199,20 @@ export function SetView({
    * The view on the stage becomes this beat's end — a keyframe adjusted by
    * hand, the way Build's camera takes "Set to this view". The beat's move
    * is dropped: its words said a path to an end that is no longer there.
-   * The clips from this beat on go with it (filmAfterEdit).
+   * The clips from this beat on go with it (filmAfterEdit). The view the
+   * beat already ends on changes nothing and keeps the move: pressed on a
+   * beat whose move had just landed, this used to wipe the move and send
+   * the take without its words (2026-09-21: the first real film's dolly
+   * zoom went as no move at all).
    */
   function filmSetBeatEnd(i: number) {
     stopMovePreview();
     const pose = apiRef.current?.pose();
     if (!pose || previz) return;
-    editFilm((f) => ({ ...f, beats: f.beats.map((b, j) => (j === i ? { ...b, end: pose, move: null } : b)) }));
+    editFilm((f) => ({
+      ...f,
+      beats: f.beats.map((b, j) => (j === i && !samePose(pose, b.end) ? { ...b, end: pose, move: null } : b)),
+    }));
     setFilmSel(i);
   }
 
@@ -3199,18 +3230,10 @@ export function SetView({
     // when it was recorded — never wherever the stage happens to be.
     const startPose = shots.find((sh) => sh.generationId === film.startId)?.pose ?? null;
     const from = at > 0 ? film.beats[at - 1].end : (startPose ?? here);
-    const m = layoutRef.current.mark;
-    let end = api.roomFor(layMove(move, from, m, spec.bounds));
-    // A dolly zoom stopped short by a wall re-solves its lens, so she still
-    // keeps her size (moves.ts: distance × tan(fov / 2) is held).
-    if (move === "dolly-zoom") {
-      const size = Math.hypot(from.position[0] - m.x, from.position[2] - m.z) * Math.tan((from.fovDeg * Math.PI) / 360);
-      const d = Math.hypot(end.position[0] - m.x, end.position[2] - m.z);
-      if (d > 0.1) {
-        const fov = (2 * Math.atan(size / d) * 180) / Math.PI;
-        end = { ...end, fovDeg: Math.round(Math.min(SET_LIMITS.maxFovDeg, Math.max(SET_LIMITS.minMatchFovDeg, fov)) * 100) / 100 };
-      }
-    }
+    // Clear of what the set built, and a dolly zoom stopped short by a wall
+    // re-solving its lens so she keeps her size (moves.ts layBeatMove): the
+    // same laying relayMoves does when the beat's start changes.
+    const end = layBeatMove(move, from, layoutRef.current.mark, spec.bounds, (p) => api.roomFor(p));
     return { at, from, end };
   }
 
@@ -6231,6 +6254,11 @@ export function SetView({
                         ×
                       </button>
                     </div>
+                    {filmJumps[i] && (
+                      <p data-film-jump className="text-[10.5px] leading-snug text-[#e0a468]">
+                        {formatMsg(s.filmBeatJumps, { n: i + 1 })}
+                      </p>
+                    )}
                     <input
                       value={b.words}
                       onChange={(e) =>
@@ -6341,6 +6369,8 @@ export function SetView({
           <Sequencer
             s={s}
             film={film}
+            jumps={filmJumps}
+            jumpNote={filmJumps.indexOf(true) >= 0 ? formatMsg(s.filmBeatJumps, { n: filmJumps.indexOf(true) + 1 }) : null}
             selected={filmSel}
             playhead={playhead}
             playing={previz || reel !== null}
@@ -6616,6 +6646,11 @@ export function SetView({
                         ×
                       </button>
                     </div>
+                    {filmJumps[filmSel] && (
+                      <p data-film-jump className="text-[11px] leading-snug text-[#e0a468]">
+                        {formatMsg(s.filmBeatJumps, { n: filmSel + 1 })}
+                      </p>
+                    )}
                     <input
                       value={film.beats[filmSel].words}
                       onChange={(e) => {
@@ -6737,7 +6772,16 @@ export function SetView({
                     )}
                   </div>
                 ) : (
-                  <p className="text-[11.5px] leading-snug text-[#c6c9d1]">{film.beats.length === 0 ? s.sequencer.noBeats : s.rig.movePick}</p>
+                  <div className="flex flex-col gap-2">
+                    <p className="text-[11.5px] leading-snug text-[#c6c9d1]">{film.beats.length === 0 ? s.sequencer.noBeats : s.rig.movePick}</p>
+                    {filmJumps.map((jumps, i) =>
+                      jumps ? (
+                        <p key={i} data-film-jump className="text-[11px] leading-snug text-[#e0a468]">
+                          {formatMsg(s.filmBeatJumps, { n: i + 1 })}
+                        </p>
+                      ) : null,
+                    )}
+                  </div>
                 )}
               </div>
             )}

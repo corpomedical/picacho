@@ -78,6 +78,10 @@ export type SequencerProps = {
   hint: string;
   note: string | null;
   error: string | null;
+  /** Each beat framed by hand that crosses the set with no move (moves.ts beatJumps): its take cross-fades instead of moving. */
+  jumps?: readonly boolean[];
+  /** That said in words, for the first such beat, under the lanes. */
+  jumpNote?: string | null;
 };
 
 export function Sequencer(p: SequencerProps) {
@@ -373,9 +377,12 @@ export function Sequencer(p: SequencerProps) {
                     if (state === "done") p.onPlayTake(sp.index);
                     else p.onSelect(sp.index);
                   }}
+                  data-jump={p.jumps?.[sp.index] ? "" : undefined}
+                  title={p.jumps?.[sp.index] && p.jumpNote ? p.jumpNote : undefined}
                   className="absolute top-[3px] flex h-[18px] cursor-pointer items-center overflow-hidden whitespace-nowrap rounded-[4px] px-1.5 text-[10px]"
                   style={{ left: pct(sp.start), width: pct(sp.end - sp.start), ...style }}
                 >
+                  {p.jumps?.[sp.index] && <span aria-hidden className="mr-1 text-[#e0a468]">⚠</span>}
                   {label}
                 </button>
               );
@@ -391,9 +398,17 @@ export function Sequencer(p: SequencerProps) {
         </div>
       </div>
 
-      {(p.note || p.error || p.hint) && (
+      {(p.note || p.error || p.hint || p.jumpNote) && (
         <div className="flex min-h-6 flex-none items-center gap-3 border-t border-[rgba(255,255,255,0.07)] px-2.5 py-0.5 text-[10.5px] text-[#9aa0ad]">
-          {p.error ? <span className="line-clamp-2 min-w-0 text-red-400" title={p.error} role="alert">{p.error}</span> : p.note ? <span className="min-w-0 truncate">{p.note}</span> : <span className="min-w-0 truncate">{p.hint}</span>}
+          {p.error ? (
+            <span className="line-clamp-2 min-w-0 text-red-400" title={p.error} role="alert">{p.error}</span>
+          ) : p.note ? (
+            <span className="min-w-0 truncate">{p.note}</span>
+          ) : p.jumpNote ? (
+            <span data-jump-note className="line-clamp-2 min-w-0 text-[#e0a468]" title={p.jumpNote}>{p.jumpNote}</span>
+          ) : (
+            <span className="min-w-0 truncate">{p.hint}</span>
+          )}
         </div>
       )}
     </div>
