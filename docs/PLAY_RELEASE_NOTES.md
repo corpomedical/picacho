@@ -73,39 +73,44 @@ The notes claim only what the app can show. "Not charged" rests on
 <en-US>
 Picacho is back on Google Play.
 
-• Every request is now checked against our content policy before anything is generated, and every finished picture and video is checked again before you see it. If the check stops something, you are not charged for it.
-• Report any result or Community post, or block an account, without leaving the app.
-• Delete your account in Settings, or at picacho.ai/delete-account.
-• Signing in with Google or Facebook opens inside the app.
+• A new bar: Home, Cast, Media, Feed, History and More, with Generate in the middle.
+• Every request is checked against our content policy before anything is made, and every finished picture and video is checked again before you see it. If the check stops something, you aren't charged.
+• Report any result or Feed post, or block an account, without leaving the app.
+• Delete your account in More › Settings, or at picacho.ai/delete-account.
 </en-US>
 <es-419>
 Picacho vuelve a Google Play.
 
-• Cada solicitud se revisa ahora según nuestra política de contenido antes de generar nada, y cada imagen y video terminados se revisan otra vez antes de que los veas. Si la revisión detiene algo, no se te cobra.
-• Informa de cualquier resultado o publicación de Comunidad, o bloquea una cuenta, sin salir de la app.
-• Elimina tu cuenta en Ajustes o en picacho.ai/delete-account.
-• Iniciar sesión con Google o Facebook se abre dentro de la app.
+• Una barra nueva: Inicio, Reparto, Media, Feed, Historial y Más, con Generar en el centro.
+• Cada solicitud se revisa según nuestra política de contenido antes de crear nada, y cada imagen y vídeo se revisan otra vez antes de que los veas. Si la revisión detiene algo, no se te cobra.
+• Informa de cualquier resultado o publicación del Feed, o bloquea una cuenta, sin salir de la app.
+• Elimina tu cuenta en Más › Ajustes o en picacho.ai/delete-account.
 </es-419>
 <pt-BR>
 O Picacho está de volta ao Google Play.
 
-• Cada pedido agora é verificado pela nossa política de conteúdo antes de qualquer coisa ser gerada, e cada imagem e vídeo prontos são verificados de novo antes de você ver. Se a verificação barrar algo, você não é cobrado.
-• Reporte qualquer resultado ou publicação da Comunidade, ou bloqueie uma conta, sem sair do app.
-• Exclua sua conta em Configurações ou em picacho.ai/delete-account.
-• O login com Google ou Facebook abre dentro do app.
+• Uma barra nova: Início, Elenco, Mídia, Feed, Histórico e Mais, com Gerar no centro.
+• Cada pedido é verificado pela nossa política de conteúdo antes de criar qualquer coisa, e cada imagem e vídeo é verificado de novo antes de você ver. Se a verificação barrar algo, você não é cobrado.
+• Reporte qualquer resultado ou post do Feed, ou bloqueie uma conta, sem sair do app.
+• Exclua sua conta em Mais › Configurações ou em picacho.ai/delete-account.
 </pt-BR>
 <it-IT>
 Picacho è di nuovo su Google Play.
 
-• Ogni richiesta ora passa dalla nostra policy sui contenuti prima che si generi qualsiasi cosa, e ogni immagine e video finiti vengono ricontrollati prima che tu li veda. Se il controllo blocca qualcosa, non paghi nulla.
-• Segnala qualsiasi risultato o post della Community, oppure blocca un account, senza uscire dall'app.
-• Elimina il tuo account in Impostazioni o su picacho.ai/delete-account.
-• L'accesso con Google o Facebook si apre dentro l'app.
+• Una nuova barra: Home, Cast, Media, Feed, Storico e Altro, con Genera al centro.
+• Ogni richiesta passa dalla nostra policy sui contenuti prima di creare qualsiasi cosa, e ogni immagine e video viene ricontrollato prima che tu lo veda. Se il controllo blocca qualcosa, non paghi nulla.
+• Segnala qualsiasi risultato o post del Feed, oppure blocca un account, senza uscire dall'app.
+• Elimina l'account in Altro › Impostazioni o su picacho.ai/delete-account.
 </it-IT>
 ```
 
-Measured lengths per section, all under Play's 500: en-US 463, es-419 475,
-pt-BR 484, it-IT 489.
+Measured lengths per section, all under Play's 500: en-US 474, es-419 485,
+pt-BR 490, it-IT 495.
+
+Rewritten the same afternoon, after the app's bar changed (7fb23b5): the
+notes now name the new bar in each language's own labels, point account
+deletion at More › Settings, and call Community by its bar name, Feed. The
+Google/Facebook sign-in line was dropped to stay under 500.
 
 ---
 
