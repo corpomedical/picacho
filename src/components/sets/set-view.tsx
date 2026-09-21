@@ -3608,6 +3608,7 @@ export function SetView({
             // The film's one look, the same for every beat (filmLook).
             lookGenerationId: filmLook.still,
             lookRefId: filmLook.ref,
+            lookPicked: filmLook.key !== undefined,
             frameDataUri: frame,
             characterId,
             direction: beat.words,
@@ -3668,7 +3669,11 @@ export function SetView({
           if (takeRow) setShots((prev) => [takeRow, ...prev]);
           const clips = upTo(kept.clips, Math.max(kept.clips.length, i + 1));
           clips[i] = result.takeGenerationId;
-          keep({ ...kept, clips });
+          // An end frame under the identity bar is not the beat's end any
+          // more: the next render shoots the beat whole (2026-09-21).
+          const ends = [...kept.ends];
+          if (result.stopped) ends[i] = null;
+          keep({ ...kept, clips, ends });
         } else {
           const endStill: SetShot = {
             generationId: result.still.generationId,
@@ -3695,7 +3700,8 @@ export function SetView({
           keep({
             ...kept,
             clips: [...upTo(kept.clips, i), result.takeGenerationId],
-            ends: [...upTo(kept.ends, i), result.still.succeeded ? result.still.generationId : null],
+            // A frame the film stopped on (under the identity bar) is never kept as the beat's end.
+            ends: [...upTo(kept.ends, i), result.still.succeeded && !result.stopped ? result.still.generationId : null],
           });
         }
         if (!result.still.succeeded) {

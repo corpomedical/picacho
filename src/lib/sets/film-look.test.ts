@@ -35,7 +35,7 @@ describe("the film's one look", () => {
   it("is what the take's end still carries; a single take keeps its start still as its look", () => {
     const take = actions.slice(actions.indexOf("export async function takeInSet("), actions.indexOf("// Delete\n"));
     expect(take).toContain("...(input.lookGenerationId !== undefined || input.lookRefId !== undefined");
-    expect(take).toContain("? { lookGenerationId: input.lookGenerationId ?? null, lookRefId: input.lookRefId ?? null }");
+    expect(take).toContain("lookGenerationId: input.lookGenerationId ?? null,\n            lookRefId: input.lookRefId ?? null,");
     expect(take).toContain(": { lookGenerationId: startId }),");
   });
 

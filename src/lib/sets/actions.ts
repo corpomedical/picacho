@@ -9,6 +9,7 @@ import { assertOutputAllowed, OutputPolicyRefusal } from "@/lib/generations/outp
 import { gatePrompt, recentRefusalCount, recordPolicyRefusal } from "@/lib/generations/policy-log";
 import { runGeneration } from "@/lib/generations/actions";
 import { checkGenerationAllowance } from "@/lib/generations/core";
+import { readIdentityThreshold } from "@/lib/generations/face-lock";
 
 import { withModelWrittenPrompt } from "@/lib/generations/refusal-attribution";
 import { withServerBuiltFrames } from "@/lib/generations/server-built";
@@ -103,6 +104,9 @@ import {
   SET_TAKE_NEEDS_PLAN,
   SET_TAKE_END_FAILED,
   SET_TAKE_FAILED,
+  SET_TAKE_LOOK_DROPPED,
+  SET_TAKE_OFF_FACE,
+  SET_TAKE_PHOTO_DROPPED,
   setMonthlyCapMessage,
 } from "@/lib/sets/messages";
 import { summarizeFailureDetail } from "@/lib/generations/report-constants";
@@ -160,6 +164,11 @@ import { gazeWords, normaliseGaze } from "@/lib/sets/people";
 // sets work exactly as before and a photo build stops at its first write.
 
 const JPEG_DATA_URI = /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/;
+// Why a look could not be made that trying again will not change: the
+// still has nothing to cut clear of its person, no recorded camera, is not
+// a finished still of the set or cannot be read, its cutout held a person,
+// or the model refused its sheet (look-cutout-store.ts, look-sheet.ts).
+const LASTING_LOOK_DROPS = new Set(["nothing to cut", "no camera", "not a finished still of this set", "still unreadable", "person in cutout", "sheet refused"]);
 // What a reserved row holds until its brief has passed the gate: a refused
 // brief is never written, not even for the seconds the gate takes. A photo
 // build keeps it when the photographer adds no notes (the column's CHECK
@@ -655,6 +664,13 @@ export async function shootInSet(
      * (2026-09-17).
      */
     beat?: boolean;
+    /**
+     * A film's beat must carry its look (takeInSet, 2026-09-21): "picked"
+     * (a look the person chose) stops the shot on any failure to make it,
+     * "default" (the film's opening still) only on one that may pass next
+     * time. Stopped before anything is shot or charged.
+     */
+    lookRequired?: "picked" | "default";
   },
 ): Promise<ShootResult> {
   const access = await setsAccess();
@@ -734,6 +750,7 @@ export async function shootInSet(
   // are paid for.
   let look: { url: string } | null = null;
   let lookDropped = false;
+  let lookDropReason = "";
   if (lookAsked) {
     const cut: LookCutoutResult = lookPath
       ? await lookCutout({
@@ -748,6 +765,7 @@ export async function shootInSet(
       : { ok: false, reason: "not a finished still of this set" };
     if (!cut.ok) {
       lookDropped = true;
+      lookDropReason = cut.reason;
       console.warn(`[sets] shot without its look: ${cut.reason}`);
     } else {
       const sheet = await lookSheet({ admin, userId, setId, lookGenerationId: lookId, cutoutPath: cut.path });
@@ -755,6 +773,7 @@ export async function shootInSet(
         look = { url: mediaUrl("generated-images", sheet.path) };
       } else {
         lookDropped = true;
+        lookDropReason = sheet.reason;
         console.warn(`[sets] shot without its look: ${sheet.reason}`);
       }
     }
@@ -773,11 +792,22 @@ export async function shootInSet(
       look = { url: mediaUrl("generated-images", sheet.path) };
     } else {
       lookDropped = true;
+      lookDropReason = sheet.reason;
       console.warn(`[sets] shot without its reference photo: ${sheet.reason}`);
     }
   }
 
   const framePath = setFramePath(userId, crypto.randomUUID());
+  // A film's beat that could not have its look stops here, before anything
+  // is uploaded, shot or charged (2026-09-21): an end frame drawn without the
+  // design its clip opens on is the mismatch the video engine cross-fades
+  // across. A look the person picked stops on any failure; the film's own
+  // opening still only on one that may pass next time. A still with nothing
+  // to cut clear of its person never will, and the Film tab says so before
+  // Render (set-view.tsx filmLookNone).
+  if (lookDropped && (input.lookRequired === "picked" || (input.lookRequired === "default" && !LASTING_LOOK_DROPS.has(lookDropReason)))) {
+    return { error: refAsked ? SET_TAKE_PHOTO_DROPPED : SET_TAKE_LOOK_DROPPED };
+  }
   const { error: uploadError } = await admin.storage
     .from("chat-attachments")
     .upload(framePath, bytes, { contentType: "image/jpeg", upsert: false });
@@ -972,6 +1002,8 @@ export type TakeResult =
       takeGenerationId: string | null;
       /** Said when takeGenerationId is null: the end still is in, the clip is not. */
       takeError: string | null;
+      /** A film's beat stopped before its clip (2026-09-21): its end frame scored under the identity bar, and the film must not keep it as the beat's end. */
+      stopped?: "face";
     };
 
 /**
@@ -1038,6 +1070,8 @@ export async function takeInSet(
      */
     lookGenerationId?: string | null;
     lookRefId?: string | null;
+    /** That look was picked by the person (a reference photo, or a still other than the opening one), not the film's default. */
+    lookPicked?: boolean;
     frameDataUri: string;
     characterId: string;
     direction: string;
@@ -1114,6 +1148,23 @@ export async function takeInSet(
       checks: [],
     };
     endUrl = reusedUrl;
+    // An end frame kept from an earlier render is held to the same bar before
+    // its clip is paid for (2026-09-21): ends shot before a film stopped on
+    // the bar were never checked. Nothing is charged; the film shoots the
+    // beat whole on the next Render.
+    if (input.film === true) {
+      const { data: endRow } = await access.supabase
+        .from("generations")
+        .select("match_score")
+        .eq("id", reuseId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      const score = typeof endRow?.match_score === "number" ? endRow.match_score : null;
+      const bar = score !== null ? await readIdentityThreshold(access.supabase) : 0;
+      if (score !== null && bar > 0 && score < bar) {
+        return { error: null, still: { ...still, score }, reusedEnd: true, takeGenerationId: null, takeError: SET_TAKE_OFF_FACE, stopped: "face" };
+      }
+    }
   } else {
     // The end frame: an ordinary still, every check inside running again,
     // with the start riding as its look so the two frames share one world.
@@ -1126,8 +1177,14 @@ export async function takeInSet(
       canvasAspect: input.canvasAspect,
       words: input.words,
       // The look the caller named (a film's one look), else the start.
+      // A named look is required: the beat stops, free, rather than shoot
+      // an end frame without it (shootInSet lookRequired).
       ...(input.lookGenerationId !== undefined || input.lookRefId !== undefined
-        ? { lookGenerationId: input.lookGenerationId ?? null, lookRefId: input.lookRefId ?? null }
+        ? {
+            lookGenerationId: input.lookGenerationId ?? null,
+            lookRefId: input.lookRefId ?? null,
+            lookRequired: input.lookPicked === true ? ("picked" as const) : ("default" as const),
+          }
         : { lookGenerationId: startId }),
       rig: input.rig,
       beat: input.film === true,
@@ -1137,6 +1194,15 @@ export async function takeInSet(
     // Said as what it is: the end frame did not pass, so no clip was asked
     // for (2026-09-21 — this used to say "the end frame is in").
     if (!still.succeeded) return { error: null, still, reusedEnd: false, takeGenerationId: null, takeError: SET_TAKE_END_FAILED };
+    // A film's end frame under the identity bar makes no clip (2026-09-21):
+    // the video engine morphs between two different faces. Only the frame
+    // is charged, and the film shoots the beat again on the next Render.
+    if (input.film === true && still.score !== null) {
+      const bar = await readIdentityThreshold(access.supabase);
+      if (bar > 0 && still.score < bar) {
+        return { error: null, still, reusedEnd: false, takeGenerationId: null, takeError: SET_TAKE_OFF_FACE, stopped: "face" };
+      }
+    }
 
     // The two frames' RAW stored urls — resolveMaybeSignedUrl in the video
     // lane takes our own /api/media paths, never a thumbnail transform.

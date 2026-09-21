@@ -124,6 +124,12 @@ export const SET_TAKE_BAD_START = "That still can't start a take — pick anothe
 /** A take's end frame did not pass its checks, so no clip was asked for (2026-09-21); the still's own reason rides beside it. */
 export const SET_TAKE_END_FAILED = "The end frame didn't pass, so the take didn't start.";
 export const SET_TAKE_FAILED = "The end frame is in, but the take couldn't start — try the take again in a moment.";
+/** A film's beat stopped before its end frame was shot, free: the film's look could not be made (2026-09-21). */
+export const SET_TAKE_LOOK_DROPPED = "This beat stopped before its end frame was shot: the film's look couldn't be made this time. Nothing was charged — press Render to try again.";
+/** The same, for a reference photo picked as the film's look. */
+export const SET_TAKE_PHOTO_DROPPED = "This beat stopped before its end frame was shot: your reference photo couldn't be drawn this time. Nothing was charged — press Render to try again.";
+/** A film's end frame under the identity bar: its clip is not made (2026-09-21). */
+export const SET_TAKE_OFF_FACE = "This beat's end frame scored under your identity bar, so its clip wasn't made and only the frame was charged. Press Render to shoot it again.";
 /**
  * Takes and films are every paid plan's (set-config.ts setTakesEligible,
  * 2026-09-19 "Open to all plans"): said before anything is shot, never
