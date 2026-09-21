@@ -245,6 +245,10 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "The end frame is in, but the take couldn't start — try the take again in a moment.": "setTakeFailed",
   "That beat's end frame is gone — render again to shoot a new one.": "setTakeBadEnd",
   "The end frame didn't pass, so the take didn't start.": "setTakeEndFailed",
+  "This photo can't be used as a reference.": "setRefRefused",
+  "We couldn't check this photo — try again in a moment.": "setRefUnchecked",
+  "A set holds six reference photos — remove one to add another.": "setRefTooMany",
+  "That's a lot of photos at once — try again in a few minutes.": "setRefTooFast",
   "Takes and films are part of the paid plans. Upgrade in Settings → Plan & billing.": "setTakeNeedsPlan",
   // The rig check (lib/sets/messages.ts, 2026-09-15, Helios Cinema).
   "The rig check couldn't read this still — the still is kept as it is.": "setRigCheckFailed",

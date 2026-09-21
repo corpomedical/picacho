@@ -40,7 +40,7 @@ import { lookCuts, type LookSet, type ShotCamera } from "./look-cutout";
 import { composeLookCutout } from "./look-cutout-image";
 import { negativePathFor } from "./lab";
 import { findPeople } from "./look-people";
-import { setLookCutoutPath, setLookCutoutPrefix, setLookSheetPath, setLookSheetPrefix } from "./set-config";
+import { setLookCutoutPath, setLookCutoutPrefix, setLookSheetPath, setLookSheetPrefix, setRefPrefix, setRefSheetPrefix } from "./set-config";
 
 const BUCKET = "generated-images";
 /** A still is at most a few MB; a download past this is not a still. */
@@ -151,28 +151,39 @@ export async function lookCutout(
   return { ok: true, path, made: true };
 }
 
-/** Every file in the owner's `sets/` folder whose name starts with `prefix`. */
-async function listCutouts(admin: SupabaseClient, userId: string, prefix: string): Promise<string[]> {
+/** Every file in the owner's `sets/` folder whose name starts with `prefix`, with when it was made. */
+export async function listSetFiles(admin: SupabaseClient, userId: string, prefix: string): Promise<{ path: string; name: string; createdAt: string }[]> {
   const PAGE = 1000;
   const folder = `${userId}/sets`;
-  const paths: string[] = [];
+  const files: { path: string; name: string; createdAt: string }[] = [];
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await admin.storage.from(BUCKET).list(folder, { limit: PAGE, offset, search: prefix });
     if (error || !data) break;
-    for (const entry of data as { name: string }[]) {
-      if (typeof entry.name === "string" && entry.name.startsWith(prefix)) paths.push(`${folder}/${entry.name}`);
+    for (const entry of data as { name: string; created_at?: string | null }[]) {
+      if (typeof entry.name === "string" && entry.name.startsWith(prefix)) {
+        files.push({ path: `${folder}/${entry.name}`, name: entry.name, createdAt: typeof entry.created_at === "string" ? entry.created_at : "" });
+      }
     }
     if (data.length < PAGE) break;
   }
-  return paths;
+  return files;
+}
+async function listCutouts(admin: SupabaseClient, userId: string, prefix: string): Promise<string[]> {
+  return (await listSetFiles(admin, userId, prefix)).map((f) => f.path);
 }
 
-/** Best-effort, never throws: remove every cutout, and every object sheet drawn from one, a set's looks were given. */
+/**
+ * Best-effort, never throws: remove every cutout, and every object sheet
+ * drawn from one, a set's looks were given — and every reference photo the
+ * person uploaded to it with the sheet drawn from each (2026-09-21).
+ */
 export async function removeSetLookCutouts(admin: SupabaseClient, userId: string, setId: string): Promise<void> {
   try {
     const paths = [
       ...(await listCutouts(admin, userId, setLookCutoutPrefix(setId))),
       ...(await listCutouts(admin, userId, setLookSheetPrefix(setId))),
+      ...(await listCutouts(admin, userId, setRefPrefix(setId))),
+      ...(await listCutouts(admin, userId, setRefSheetPrefix(setId))),
     ];
     for (let i = 0; i < paths.length; i += 1000) {
       await admin.storage.from(BUCKET).remove(paths.slice(i, i + 1000));

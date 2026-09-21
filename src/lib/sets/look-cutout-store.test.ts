@@ -352,6 +352,10 @@ describe("removing cutouts", () => {
             { name: setThumbPath(USER, SET).split("/").pop()! },
             { name: setPhotoPath(USER, SET).split("/").pop()! },
             { name: `${other}.look-${LOOK}.jpg` },
+            // A reference photo and its sheet (2026-09-21): the set's too.
+            { name: `${SET}.ref-${LOOK}.jpg` },
+            { name: `${SET}.refsheet-${LOOK}.jpg` },
+            { name: `${other}.ref-${LOOK}.jpg` },
           ],
           error: null,
         }
@@ -359,12 +363,23 @@ describe("removing cutouts", () => {
       remove: async (paths) => (removed.push(paths), { error: null }),
     });
     await removeSetLookCutouts(f.admin, USER, SET);
-    // The cutouts, then the object sheets drawn from them (2026-09-14).
+    // The cutouts, then the object sheets drawn from them (2026-09-14), then
+    // the reference photos and theirs (2026-09-21).
     expect(lists).toEqual([
       { folder: `${USER}/sets`, limit: 1000, offset: 0, search: `${SET}.look-` },
       { folder: `${USER}/sets`, limit: 1000, offset: 0, search: `${SET}.sheet-` },
+      { folder: `${USER}/sets`, limit: 1000, offset: 0, search: `${SET}.ref-` },
+      { folder: `${USER}/sets`, limit: 1000, offset: 0, search: `${SET}.refsheet-` },
     ]);
-    expect(removed).toEqual([[`${USER}/sets/${SET}.look-${LOOK}.jpg`, `${USER}/sets/${SET}.look-55555555-5555-4555-8555-555555555555.jpg`]]);
+    // The fake answers every search with the whole folder; each prefix keeps its own.
+    expect(removed).toEqual([
+      [
+        `${USER}/sets/${SET}.look-${LOOK}.jpg`,
+        `${USER}/sets/${SET}.look-55555555-5555-4555-8555-555555555555.jpg`,
+        `${USER}/sets/${SET}.ref-${LOOK}.jpg`,
+        `${USER}/sets/${SET}.refsheet-${LOOK}.jpg`,
+      ],
+    ]);
   });
 
   it("never throws, and removes nothing when the folder cannot be listed", async () => {

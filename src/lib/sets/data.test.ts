@@ -68,6 +68,7 @@ vi.mock("@/lib/media/url", async () => await import("../media/url"));
 vi.mock("@/lib/plans", async () => await import("../plans"));
 vi.mock("@/lib/generations/identity-gate", async () => await import("../generations/identity-gate"));
 vi.mock("@/lib/sets/photo", async () => await import("./photo"));
+vi.mock("@/lib/sets/references", () => ({ listSetReferences: async () => [] }));
 vi.mock("@/lib/sets/set-config", async () => await import("./set-config"));
 vi.mock("@/lib/sets/shot-camera", async () => await import("./shot-camera"));
 vi.mock("@/lib/sets/shot-words-store", async () => await import("./shot-words-store"));

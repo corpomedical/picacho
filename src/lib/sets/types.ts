@@ -126,6 +126,8 @@ export type SetPageData =
       takesOn: boolean;
       /** Astra changes left this billing month (set-config.ts SET_EDITS_MONTHLY_LIMITS); null when uncapped or unread. */
       astraEditsLeft: number | null;
+      /** The set's reference photos (references.ts, 2026-09-21), oldest first: each can be a shot's look. */
+      references: { id: string; url: string }[];
       set: SetDetail;
       shots: SetShot[];
       characters: SetCharacter[];

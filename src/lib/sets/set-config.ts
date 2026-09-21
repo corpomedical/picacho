@@ -345,3 +345,28 @@ export function setLookSheetPath(userId: string, setId: string, lookGenerationId
 export function setLookSheetPrefix(setId: string): string {
   return `${setId}${LOOK_SHEET_INFIX}`;
 }
+// A reference photo (2026-09-21, "we need to add an option to upload
+// reference images"): a photo of something the set should hold — a car, a
+// sofa, a storefront — that the person uploads, and the object sheet drawn
+// from it (look-sheet.ts sheetFromPhoto), which rides a shot as its look the
+// way an earlier still's sheet does. Beside the set's other files, under the
+// same rules: fixed per set and reference, removed with the set by listing
+// its folder for these prefixes, swept by account deletion, never rewritten.
+// ".refsheet-" never starts with ".ref-", so the two prefixes never overlap.
+export const SET_REFS_MAX = 6;
+const REF_INFIX = ".ref-";
+const REF_SHEET_INFIX = ".refsheet-";
+export function setRefPhotoPath(userId: string, setId: string, refId: string): string {
+  return `${userId}/sets/${setId}${REF_INFIX}${refId}.jpg`;
+}
+export function setRefSheetPath(userId: string, setId: string, refId: string): string {
+  return `${userId}/sets/${setId}${REF_SHEET_INFIX}${refId}.jpg`;
+}
+/** What the name of every reference photo of one set starts with, inside `<user>/sets/`. */
+export function setRefPrefix(setId: string): string {
+  return `${setId}${REF_INFIX}`;
+}
+/** What the name of every sheet drawn from one set's reference photos starts with. */
+export function setRefSheetPrefix(setId: string): string {
+  return `${setId}${REF_SHEET_INFIX}`;
+}

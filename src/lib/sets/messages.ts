@@ -57,6 +57,14 @@ export const SET_PHOTO_UNCHECKED = "We couldn't check this photo, so no set was 
 /** Admins only (photo sets are admins-only): the columns the build writes are not there yet. */
 export const SET_PHOTO_NEEDS_DATABASE = "Photo sets need a database update first (astra-photo-sets.sql).";
 export const SET_PHOTO_SAVE_FAILED = "Couldn't save the photo — try again.";
+/** A reference photo (reference-actions.ts, 2026-09-21): the picture gate said no. */
+export const SET_REF_REFUSED = "This photo can't be used as a reference.";
+/** The picture gate could not be asked: nothing was stored. */
+export const SET_REF_UNCHECKED = "We couldn't check this photo — try again in a moment.";
+/** A set holds SET_REFS_MAX reference photos (set-config.ts). */
+export const SET_REF_TOO_MANY = "A set holds six reference photos — remove one to add another.";
+/** The burst brake on uploads. */
+export const SET_REF_TOO_FAST = "That's a lot of photos at once — try again in a few minutes.";
 export const SET_PHOTO_BUILD_FAILED =
   "This set couldn't be built from that photo, and the build is back in your allowance. A photo that shows more of the place may work better.";
 

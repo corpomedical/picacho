@@ -28,7 +28,7 @@ import {
   SET_RESERVED_BRIEF,
   setFramePath,
   setPhotoPath,
-  setThumbPath, setTakesEligible } from "@/lib/sets/set-config";
+  setThumbPath, setTakesEligible, setRefPhotoPath, setRefSheetPath } from "@/lib/sets/set-config";
 import { cleanText, normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
 import { setBuildInput } from "@/lib/sets/set-builder-prompt";
 import { photoBuildRequest, setAstraRequest } from "@/lib/sets/astra-request";
@@ -62,7 +62,7 @@ import { isFilmMove, isFilmTexture } from "@/lib/sets/moves";
 
 /** Where the rig's focus is measured to: the figure's eyes (build-scene's stand-in). */
 import { lookCutout, removeSetLookCutouts, type LookCutoutResult } from "@/lib/sets/look-cutout-store";
-import { lookSheet } from "@/lib/sets/look-sheet";
+import { lookSheet, sheetFromPhoto } from "@/lib/sets/look-sheet";
 import { seesLookObjects } from "@/lib/sets/look-cutout";
 import { readShotCameras, recordShotCamera, shotCameraOf } from "@/lib/sets/shot-camera";
 import { recordShotWords, SHOT_WORDS_STORED_MAX_CHARS } from "@/lib/sets/shot-words-store";
@@ -634,6 +634,12 @@ export async function shootInSet(
     lifted?: boolean;
     /** An earlier still from this set whose objects this one keeps (look.ts). */
     lookGenerationId?: string | null;
+    /**
+     * A reference photo the person uploaded to this set (references.ts,
+     * 2026-09-21), whose object sheet rides as the look instead — only when
+     * no earlier still is asked for.
+     */
+    lookRefId?: string | null;
     /** Width ÷ height of the stage canvas the frame's square was cut from (set-view.tsx canvasAspect). */
     canvasAspect?: number;
     /** What the person asked for, as they wrote it: kept with the still for the set's conversation (shot-words-store.ts). */
@@ -683,6 +689,10 @@ export async function shootInSet(
   // reason to refuse the shot.
   const lookId = typeof input.lookGenerationId === "string" ? input.lookGenerationId : "";
   const lookAsked = UUID_RE.test(lookId);
+  // A reference photo instead (2026-09-21): its own path per set and id, so
+  // the id is all it takes; a photo removed meanwhile just goes without.
+  const refId = typeof input.lookRefId === "string" ? input.lookRefId : "";
+  const refAsked = !lookAsked && UUID_RE.test(refId);
   let lookPath: string | null = null;
   if (lookAsked) {
     const { data: lookShot } = await access.supabase
@@ -747,6 +757,23 @@ export async function shootInSet(
         lookDropped = true;
         console.warn(`[sets] shot without its look: ${sheet.reason}`);
       }
+    }
+  } else if (refAsked) {
+    // The person's own reference photo: the sheet is drawn from the photo
+    // itself (no cut: nothing of the set is in it to cut clear of), the
+    // first time it is a look, and reused after. The same slot and the same
+    // sentence as a still's sheet: the design is the photo's, the place,
+    // size and facing the sketch's.
+    const sheet = await sheetFromPhoto({
+      admin,
+      sourcePath: setRefPhotoPath(userId, setId, refId),
+      sheetPath: setRefSheetPath(userId, setId, refId),
+    });
+    if (sheet.ok) {
+      look = { url: mediaUrl("generated-images", sheet.path) };
+    } else {
+      lookDropped = true;
+      console.warn(`[sets] shot without its reference photo: ${sheet.reason}`);
     }
   }
 
@@ -1245,8 +1272,9 @@ export async function deleteSet(setId: string): Promise<{ error: string | null }
     // astra-photo-sets.sql has run.
     await removeSetPhoto(admin, userId, setId);
     await admin.from("location_sets").update(CLEAR_PHOTO_SOURCE).eq("id", setId);
-    // The looks' cutouts: the set's objects cut out of its stills, kept
-    // beside its card at fixed names (set-config.ts setLookCutoutPath), so
+    // The looks' cutouts (the set's objects cut out of its stills) and the
+    // person's reference photos with their sheets, kept beside its card at
+    // fixed names (set-config.ts setLookCutoutPath, setRefPhotoPath), so
     // listing the folder finds them all. Best-effort, like the photo.
     await removeSetLookCutouts(admin, userId, setId);
     // What later work kept on the row, cleared like the words and the spec

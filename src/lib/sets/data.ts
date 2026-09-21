@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/server";
+import { listSetReferences } from "@/lib/sets/references";
 import { mediaUrl, thumbUrl, toMediaUrl } from "@/lib/media/url";
 import { monthlyWindowStart } from "@/lib/generations/core";
 import { DEFAULT_IDENTITY_THRESHOLD, resolveIdentityThresholdSetting } from "@/lib/generations/identity-gate";
@@ -403,6 +404,9 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     // The month's Astra changes left (set-config.ts SET_EDITS_MONTHLY_LIMITS),
     // shown in the editor's prompt bar; the action holds the cap.
     astraEditsLeft: spec ? await astraEditsLeft(access) : null,
+    // The person's reference photos (2026-09-21): the folder is the list, read
+    // with the service client inside the person's own folder only.
+    references: status === "ready" ? await listSetReferences(createAdminClient(), access.userId, row.id as string) : [],
     set: {
       id: row.id as string,
       title: (row.title as string) ?? "",

@@ -85,18 +85,32 @@ export async function lookSheet(
   deps: { render?: typeof generateImageWithOpenAI } = {},
 ): Promise<LookSheetResult> {
   const { admin, userId, setId, lookGenerationId } = input;
-  const path = setLookSheetPath(userId, setId, lookGenerationId);
+  return sheetFromPhoto({ admin, sourcePath: input.cutoutPath, sheetPath: setLookSheetPath(userId, setId, lookGenerationId) }, deps);
+}
+
+/**
+ * An object sheet drawn from any stored picture of the person's own — an
+ * earlier still's cutout (lookSheet), or a reference photo they uploaded
+ * (2026-09-21, set-config.ts setRefPhotoPath) — laid down at `sheetPath`
+ * once and reused ever after. The same words, model and rules either way:
+ * LOOK_SHEET_PROMPT asks for the objects four ways round on grey and for
+ * no people, so a person in a reference photo never reaches a shot.
+ */
+export async function sheetFromPhoto(
+  input: { admin: SupabaseClient; sourcePath: string; sheetPath: string },
+  deps: { render?: typeof generateImageWithOpenAI } = {},
+): Promise<LookSheetResult> {
+  const { admin, sheetPath: path } = input;
   if (await exists(admin, path)) return { ok: true, path, made: false };
 
   let cutoutUrl: string;
   try {
-    const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(input.cutoutPath, LOOK_SHEET_SIGNED_URL_SECONDS);
+    const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(input.sourcePath, LOOK_SHEET_SIGNED_URL_SECONDS);
     if (error || !data?.signedUrl) return { ok: false, reason: "storage" };
     cutoutUrl = data.signedUrl;
   } catch {
     return { ok: false, reason: "storage" };
   }
-
   let png: Buffer;
   try {
     png = Buffer.from(await (deps.render ?? generateImageWithOpenAI)(LOOK_SHEET_PROMPT, [cutoutUrl]), "base64");

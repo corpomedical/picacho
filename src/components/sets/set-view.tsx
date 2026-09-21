@@ -9,6 +9,8 @@ import { formatMsg } from "@/lib/i18n/format";
 import { quoteSend } from "@/lib/generations/quote";
 import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { saveSetLayout, saveSetThumbnail, shootInSet, takeInSet } from "@/lib/sets/actions";
+import { addSetReference, removeSetReference } from "@/lib/sets/reference-actions";
+import { thumbUrl } from "@/lib/media/url";
 import { editSetWithAstra, saveSetEdit } from "@/lib/sets/editor-actions";
 import { matchSetShot } from "@/lib/sets/match-actions";
 import { readShotWords } from "@/lib/sets/words-actions";
@@ -69,6 +71,7 @@ import {
   SET_COMPARE_PX,
   SET_MAX_TILT_DOWN_DEG,
   SET_MAX_TILT_UP_DEG,
+  SET_REFS_MAX,
   SET_THUMB_PX,
 } from "@/lib/sets/set-config";
 import { SET_LIMITS, STAND_POSES, specInstanceCount, type SetLayout, type SetSpec, type StandPose, type Vec3 } from "@/lib/sets/set-spec";
@@ -311,7 +314,7 @@ const sourceOf = (f: TakeFrames): TakeSource => ({ start: f.start, end: f.end, c
 /** A take's frames as the retry sends them: what it was rendered from (SetShot.takeFrom) and the words kept with it. */
 const framesOf = (source: TakeSource, shot: SetShot): TakeFrames => ({ ...source, words: shot.words ?? undefined });
 
-type MenuId = "camera" | "figure" | "pose" | "gaze" | "history" | "mode" | "who" | "filmStart";
+type MenuId = "camera" | "figure" | "pose" | "gaze" | "look" | "history" | "mode" | "who" | "filmStart";
 
 const ACCENT = "#c8923a";
 const TURN_STEP = 30;
@@ -437,6 +440,7 @@ export function SetView({
   initialFilmOpen = false,
   initialCutOpen = false,
   savedRig = null,
+  initialReferences = [],
 }: {
   setId: string;
   /** The set's name, said in the workspace's own bar. */
@@ -457,6 +461,8 @@ export function SetView({
    * page says so before a take is framed; takeInSet checks again.
    */
   takesOn: boolean;
+  /** The set's reference photos (references.ts, 2026-09-21): each can be the next shot's look. */
+  initialReferences?: { id: string; url: string }[];
   /** A message the person sent from the Sets home, asked the moment the stage is ready. */
   initialAsk?: string | null;
   /** The character picked on the Sets home. */
@@ -799,9 +805,20 @@ export function SetView({
   // read the person's latest choice, not the one from the render it began in
   // (review, 2026-09-11 — turning the look off mid-render was undone).
   const lookPinnedRef = useRef(false);
+  // Reference photos (2026-09-21, "we need to add an option to upload
+  // reference images"): the person's own photos of things the set should
+  // hold — the exact car — any of which can be the look instead of an
+  // earlier still. The server draws the thing four ways round from the photo
+  // and the shot keeps its design (references.ts, look-sheet.ts).
+  const [references, setReferences] = useState(initialReferences);
+  const [lookRefId, setLookRefId] = useState<string | null>(null);
+  const [refBusy, setRefBusy] = useState(false);
+  const refFileRef = useRef<HTMLInputElement>(null);
   // The last shot asked for a look that could not be cut out, and went
-  // without it: said once, under the shot, until the next one.
+  // without it: said once, under the shot, until the next one. A reference
+  // photo is drawn, not cut, so its miss is said in its own words.
   const [lookDropped, setLookDropped] = useState(false);
+  const [lookDroppedPhoto, setLookDroppedPhoto] = useState(false);
   // A photo set: the photo's shape (from the picture once it loads), and
   // camera 1's view drawn at that shape to lay beside it. Nothing is saved.
   const [photoAspect, setPhotoAspect] = useState<number | null>(null);
@@ -2780,7 +2797,71 @@ export function SetView({
 
   function pickLook(generationId: string | null) {
     setLookId(generationId);
+    setLookRefId(null);
     lookPinnedRef.current = true;
+  }
+  /** A reference photo as the look (2026-09-21): it replaces any still, until another look is picked. */
+  function pickRefLook(refId: string) {
+    setLookId(null);
+    setLookRefId(refId);
+    lookPinnedRef.current = true;
+  }
+  const lookRef = lookShot ? null : (references.find((r) => r.id === lookRefId) ?? null);
+  const lookRefIndex = lookRef ? references.indexOf(lookRef) : -1;
+
+  /** Upload a reference photo: prepared here, checked and stored on the server, then made the look. */
+  async function uploadLookPhoto(file: File | undefined) {
+    if (!file || refBusy) return;
+    setError("");
+    setRefBusy(true);
+    try {
+      let prepared: Awaited<ReturnType<typeof preparePhoto>>;
+      try {
+        prepared = await preparePhoto(file);
+      } catch {
+        setError(SET_PHOTO_UNREADABLE);
+        return;
+      }
+      if (!prepared.ok) {
+        setError(prepared.error);
+        return;
+      }
+      let res: Awaited<ReturnType<typeof addSetReference>>;
+      try {
+        res = await addSetReference(setId, { photoDataUri: prepared.dataUri });
+      } catch (err) {
+        setError(staleHere(err) ? t.generate.refreshNeeded : t.generate.submitFailed);
+        return;
+      }
+      if (res.error !== null) {
+        setError(res.error);
+        return;
+      }
+      const added = res.reference;
+      setReferences((prev) => (prev.some((r) => r.id === added.id) ? prev : [...prev, added]));
+      pickRefLook(added.id);
+    } finally {
+      setRefBusy(false);
+    }
+  }
+
+  /** Remove a reference photo from the set; the look lets go of it if it was the look. */
+  async function removeRefPhoto(refId: string) {
+    const before = references;
+    setReferences((prev) => prev.filter((r) => r.id !== refId));
+    if (lookRefId === refId) setLookRefId(null);
+    let res: Awaited<ReturnType<typeof removeSetReference>>;
+    try {
+      res = await removeSetReference(setId, refId);
+    } catch (err) {
+      setReferences(before);
+      setError(staleHere(err) ? t.generate.refreshNeeded : t.generate.submitFailed);
+      return;
+    }
+    if (res.error !== null) {
+      setReferences(before);
+      setError(res.error);
+    }
   }
 
   // ---- revisions: every frame set this visit, to step back to ----
@@ -2868,6 +2949,8 @@ export function SetView({
         layout: { ...layoutRef.current, camera: pose },
         lifted: apiRef.current?.lifted === true,
         lookGenerationId: lookShot?.generationId ?? null,
+        // A reference photo is the look only when no still is (pickRefLook).
+        lookRefId: lookShot ? null : (lookRef?.id ?? null),
         canvasAspect,
         words: asked,
         rig: rigRef.current,
@@ -2913,6 +2996,7 @@ export function SetView({
     setPendingAsks([]);
     setNote(null);
     setLookDropped(result.lookDropped);
+    setLookDroppedPhoto(!lookShot && lookRef !== null);
     if (!result.succeeded) {
       setLastMiss(result.generationId);
       // The render's own reason, where the person is looking (2026-09-21):
@@ -4964,7 +5048,7 @@ export function SetView({
                         )}
                         {lookDropped && (
                           <p className="text-xs text-[#c6c9d1]" aria-live="polite">
-                            {s.lookDropped}
+                            {lookDroppedPhoto ? s.lookRefDropped : s.lookDropped}
                           </p>
                         )}
                       </div>
@@ -5367,16 +5451,109 @@ export function SetView({
                   </div>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={() => pickLook(lookShot ? null : latestStill)}
-                aria-pressed={Boolean(lookShot)}
-                disabled={!lookShot && !latestStill}
-                title={lookShot ? s.lookOn : latestStill ? s.lookUseLatest : s.lookFirst}
-                className={lookShot ? DCHIP_ON : DCHIP}
-              >
-                {s.lookLabel} · {lookShot ? <LocalDate date={lookShot.createdAt} /> : s.lookOff}
-              </button>
+              {/* The look (2026-09-11): an earlier still's objects, or — since
+                  2026-09-21 — a reference photo the person uploads, the thing
+                  in it drawn four ways round so every shot keeps its design. */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => toggleMenu("look")}
+                  aria-haspopup="listbox"
+                  aria-expanded={menu === "look"}
+                  title={lookShot ? s.lookOn : lookRef ? s.lookOnPhoto : latestStill ? s.lookUseLatest : s.lookFirst}
+                  className={lookShot || lookRef ? DCHIP_ON : DCHIP}
+                  data-look-chip
+                >
+                  {s.lookLabel} ·{" "}
+                  {lookShot ? <LocalDate date={lookShot.createdAt} /> : lookRef ? formatMsg(s.lookPhotoN, { n: lookRefIndex + 1 }) : s.lookOff}
+                  <Chevron />
+                </button>
+                {menu === "look" && (
+                  <div role="listbox" aria-label={s.lookLabel} className={`${DMENU} w-[300px]`} data-look-menu>
+                    <Option
+                      active={!lookShot && !lookRef}
+                      onPick={() => {
+                        pickLook(null);
+                        setMenu(null);
+                      }}
+                    >
+                      {s.lookOff}
+                    </Option>
+                    {latestStill && (
+                      <Option
+                        active={lookShot?.generationId === latestStill}
+                        onPick={() => {
+                          pickLook(latestStill);
+                          setMenu(null);
+                        }}
+                      >
+                        {s.lookUseLatest}
+                      </Option>
+                    )}
+                    {lookShot && lookShot.generationId !== latestStill && (
+                      <Option active onPick={() => setMenu(null)}>
+                        <LocalDate date={lookShot.createdAt} />
+                      </Option>
+                    )}
+                    <p className="px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.07em] text-[#6b6f7a]">{s.lookPhotos}</p>
+                    {references.map((r, i) => (
+                      <div key={r.id} className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={lookRef?.id === r.id}
+                          onClick={() => {
+                            pickRefLook(r.id);
+                            setMenu(null);
+                          }}
+                          className={`flex h-11 min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-[7px] px-2 text-left text-[13px] transition-colors ${
+                            lookRef?.id === r.id ? "bg-[rgba(255,255,255,0.08)] font-medium text-[#ecedf1]" : "text-[#c6c9d1] hover:bg-[rgba(255,255,255,0.05)] hover:text-[#ecedf1]"
+                          }`}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element -- a private media thumbnail, like the filmstrip's */}
+                          <img src={thumbUrl(r.url, 320) ?? r.url} alt="" className="h-8 w-8 flex-none rounded-[5px] object-cover" />
+                          <span className="min-w-0 flex-1 truncate">{formatMsg(s.lookPhotoN, { n: i + 1 })}</span>
+                          {lookRef?.id === r.id && <span aria-hidden>✓</span>}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void removeRefPhoto(r.id)}
+                          aria-label={formatMsg(s.lookPhotoRemove, { n: i + 1 })}
+                          title={formatMsg(s.lookPhotoRemove, { n: i + 1 })}
+                          className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-[7px] text-[15px] text-[#9aa0ad] hover:bg-[rgba(255,255,255,0.05)] hover:text-[#ecedf1]"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    {references.length < SET_REFS_MAX && (
+                      <button
+                        type="button"
+                        onClick={() => refFileRef.current?.click()}
+                        disabled={refBusy}
+                        className="flex h-9 w-full cursor-pointer items-center rounded-[7px] px-2.5 text-left text-[13px] text-[#e0a468] transition-colors hover:bg-[rgba(255,255,255,0.05)] disabled:cursor-default disabled:text-[#9aa0ad]"
+                        data-look-upload
+                      >
+                        {refBusy ? s.lookPhotoUploading : `+ ${s.lookPhotoUpload}`}
+                      </button>
+                    )}
+                    <p className="px-2.5 pb-2 pt-1 text-[11px] leading-snug text-[#9aa0ad]">{s.lookPhotoHint}</p>
+                  </div>
+                )}
+                <input
+                  ref={refFileRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    // Cleared, so choosing the same picture again still counts as a choice.
+                    e.target.value = "";
+                    setMenu(null);
+                    void uploadLookPhoto(file);
+                  }}
+                />
+              </div>
               <div className="relative">
                 <button type="button" onClick={() => toggleMenu("camera")} aria-haspopup="listbox" aria-expanded={menu === "camera"} disabled={!ready} className={DCHIP}>
                   {cameraLabel}
