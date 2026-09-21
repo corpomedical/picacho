@@ -25,6 +25,8 @@ import { Sequencer } from "./sequencer";
 import { beatAtTime, beatSpans, timeOf } from "@/lib/sets/sequencer";
 import { StatusList, StudioBar, StudioDock, StudioRail, StudioStatus, useWide } from "./studio-frame";
 import { clearMarks } from "@/lib/sets/marks";
+import { BADGE_HIT_SLOP_PX, FIGURE_TAP_WAIT_MS, TAP_SLOP_PX, badgeAt, elementForHits, isTap, type ElementHit, type StageHit, type TapStart } from "@/lib/sets/stage-pick";
+import { FIGURE_KEY, type SetElement } from "@/lib/sets/elements";
 import {
   retryableTakes,
   SET_TAKE_DEFAULT_ENGINE,
@@ -257,7 +259,20 @@ type StageApi = {
   setFilmOverlay(plan: FilmOverlayPlan | null, names: string[]): void;
   /** The overlay steps aside while the camera flies (the previz, a hover's flight): the view is then the path's own camera. */
   holdFilmOverlay(reason: "previz" | "hover", on: boolean): void;
+  /** The set's things (elements.ts, R1): which blocks make each, what a tap and a thumbnail read. Replaced whole. */
+  setElements(els: readonly StageElement[]): void;
+  /** What a tap at this point of the page touched: a thumbnail first, then the nearest block or the figure (stage-pick.ts). */
+  elementAt(clientX: number, clientY: number): ElementHit;
+  /** The things' thumbnails over the stage, at each thing's anchor (the figure's over its head). Empty clears them. */
+  setElementBadges(badges: readonly ElementBadge[]): void;
+  /** The thing whose card is open, boxed on the stage; null for none. */
+  setElementPicked(key: string | null): void;
 };
+
+/** What the stage needs of a thing (elements.ts SetElement): its blocks, its box and where its thumbnail floats. */
+type StageElement = Pick<SetElement, "key" | "members" | "anchor" | "min" | "max">;
+/** A thing's thumbnail (R1): its first photo, ringed in the accent when its sheet rides the next still, with how many photos it has. */
+type ElementBadge = { key: string; url: string; count: number; state: "rides" | "idle"; round?: boolean };
 
 /** The overlay's inks (canvas pages H and I): the path and a lens in light, the selected lens in the accent. */
 const OVERLAY_INK = "#ecedf1";
@@ -278,6 +293,34 @@ function overlayKeyLabel(name: string, selected: boolean): HTMLDivElement {
     selected ? 600 : 500
   };color:${selected ? "#f0cda6" : "#d6d9e0"}`;
   el.append(diamond, text);
+  return el;
+}
+
+/**
+ * A thing's thumbnail on the stage (R1): the photo in a ring — the accent
+ * when its sheet rides, a faint dash when it does not — and "+n" for the
+ * photos behind it. Built from DOM nodes only. It never takes the pointer:
+ * a drag that starts on it still orbits, and a tap finds it by its box
+ * (stage-pick.ts badgeAt).
+ */
+function elementBadge(b: ElementBadge, coarse: boolean): HTMLDivElement {
+  const size = coarse ? 32 : 28;
+  const el = document.createElement("div");
+  el.dataset.elementBadge = b.key;
+  el.style.cssText = `position:relative;width:${size}px;height:${size}px;pointer-events:none;transition:opacity 150ms`;
+  const img = document.createElement("img");
+  img.src = b.url;
+  img.alt = "";
+  img.draggable = false;
+  const ring = b.state === "rides" ? `2px solid ${OVERLAY_ACCENT}` : "1.5px dashed rgba(214,217,224,0.6)";
+  img.style.cssText = `display:block;width:100%;height:100%;object-fit:cover;box-sizing:border-box;border-radius:${b.round ? "50%" : "7px"};border:${ring};box-shadow:0 1px 4px rgba(0,0,0,0.55);background:#1a1b1f`;
+  el.append(img);
+  if (b.count > 1) {
+    const more = document.createElement("span");
+    more.textContent = `+${b.count - 1}`;
+    more.style.cssText = "position:absolute;right:-6px;bottom:-5px;border-radius:999px;background:rgba(0,0,0,0.75);padding:0 5px;font-size:10px;line-height:14px;font-weight:600;color:#ecedf1";
+    el.append(more);
+  }
   return el;
 }
 
@@ -924,6 +967,9 @@ export function SetView({
   const stageRedoRef = useRef<StageState[]>([]);
   const stageTouchedAtRef = useRef(0);
   const stageTouchRef = useRef<(() => void) | null>(null);
+  // A tap on a thing on the stage (R1, stage-pick.ts): what the page does
+  // with it. Null leaves the stage as it was — a press is an orbit or a drag.
+  const elementTapRef = useRef<((hit: ElementHit) => void) | null>(null);
   const stageStepRef = useRef<{ undo: () => void; redo: () => void } | null>(null);
   const [stageUndoCount, setStageUndoCount] = useState(0);
   // The arrangement last saved (or loaded). Compared, not counted: effects
@@ -1018,8 +1064,16 @@ export function SetView({
         overlayHostRef.current?.appendChild(labelLayer.domElement);
         const overlayHolds = new Set<string>();
         let overlayOn = false;
+        // The things' thumbnails and the picked thing's box (R1): in the
+        // overlay's own scene beside the film's, so no frame or snapshot
+        // draws them either, and they step aside with it.
+        const badgeRoot = new THREE.Group();
+        const pickRoot = new THREE.Group();
+        overlayScene.add(badgeRoot, pickRoot);
         const showOverlay = () => {
           overlayRoot.visible = overlayOn && overlayHolds.size === 0;
+          badgeRoot.visible = badgeRoot.children.length > 0 && overlayHolds.size === 0;
+          pickRoot.visible = overlayHolds.size === 0;
         };
         const clearOverlay = () => {
           overlayRoot.traverse((o) => {
@@ -1029,6 +1083,35 @@ export function SetView({
             if (o instanceof CSS2DObject) o.element.remove();
           });
           overlayRoot.clear();
+        };
+        let stageEls: readonly StageElement[] = [];
+        let keyOfCopy = new Map<string, string>();
+        let pickedKey: string | null = null;
+        const clearBadges = () => {
+          for (const o of badgeRoot.children) if (o instanceof CSS2DObject) o.element.remove();
+          badgeRoot.clear();
+        };
+        const clearPick = () => {
+          pickRoot.traverse((o) => {
+            const drawn = o as { geometry?: { dispose(): void }; material?: { dispose(): void } };
+            drawn.geometry?.dispose();
+            drawn.material?.dispose();
+          });
+          pickRoot.clear();
+        };
+        const drawPick = () => {
+          clearPick();
+          const e = pickedKey ? stageEls.find((x) => x.key === pickedKey) : undefined;
+          if (!e) return;
+          const box = new THREE.Box3(new THREE.Vector3(...e.min), new THREE.Vector3(...e.max)).expandByScalar(0.06);
+          const helper = new THREE.Box3Helper(box, new THREE.Color(OVERLAY_ACCENT));
+          const m = helper.material as import("three").LineBasicMaterial;
+          m.depthTest = false;
+          m.depthWrite = false;
+          m.transparent = true;
+          m.opacity = 0.9;
+          m.toneMapped = false;
+          pickRoot.add(helper);
         };
 
         const camera = new THREE.PerspectiveCamera(startPose.fovDeg, 1, 0.05, built.farPlane);
@@ -1129,8 +1212,26 @@ export function SetView({
         const hit = new THREE.Vector3();
         const ndc = new THREE.Vector2();
         let dragging = false;
+        // A press on the figure with the Select tool moves it only once it
+        // has travelled past the tap's slop (R1): a still press is a tap,
+        // and neither jumps the figure nor saves its mark again. Move and
+        // Turn place it on the press, as they always did.
+        let dragLive = false;
+        let dragFrom: { x: number; y: number; type: string } | null = null;
+        // The point of the figure the Select press took hold of: the drag
+        // slides it on a level plane at that height, so the grabbed point
+        // stays under the pointer. The ground under a pointer on the torso
+        // lies metres behind the figure, and it jumped there.
+        const grabPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        let grabOffset: { x: number; z: number } | null = null;
         let measuring = false;
         let controlsRef: InstanceType<typeof OrbitControls> | null = null;
+        // A tap (stage-pick.ts): a press that neither travelled nor lasted,
+        // with no second finger down. Watched only while the page listens.
+        const pointersDown = new Set<number>();
+        let tapStart: TapStart | null = null;
+        let tapSpoiled = false;
+        let figureTapTimer: ReturnType<typeof setTimeout> | null = null;
 
         const toNdc = (e: PointerEvent) => {
           const r = canvas.getBoundingClientRect();
@@ -1156,10 +1257,63 @@ export function SetView({
           turnedDeg = Math.round((((Math.atan2(dx, dz) * 180) / Math.PI) % 360) + 360) % 360;
           standIn.group.rotation.set(0, (turnedDeg * Math.PI) / 180, 0);
         };
+        // What a point of the page touches (stage-pick.ts): a thumbnail by
+        // its box first, then the nearest of the figure and the set's blocks.
+        const pickAt = (clientX: number, clientY: number): ElementHit => {
+          if (badgeRoot.visible) {
+            const rects: { key: string; left: number; top: number; right: number; bottom: number }[] = [];
+            for (const o of badgeRoot.children) {
+              if (!(o instanceof CSS2DObject) || o.element.style.display === "none") continue;
+              const r = o.element.getBoundingClientRect();
+              if (r.width > 0) rects.push({ key: String(o.userData.key), left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+            }
+            const key = badgeAt(rects, clientX, clientY, coarse ? BADGE_HIT_SLOP_PX.coarse : BADGE_HIT_SLOP_PX.fine);
+            if (key) return { kind: "element", key };
+          }
+          const r = canvas.getBoundingClientRect();
+          ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+          raycaster.setFromCamera(ndc, camera);
+          const hits: StageHit[] = [
+            ...raycaster.intersectObject(standIn.figure, true).map((h) => ({ oi: null, copy: null, figure: true, ground: false, sky: false, distance: h.distance })),
+            ...raycaster.intersectObject(built.root, true).map((h): StageHit => {
+              const ud = h.object.userData;
+              const block = typeof ud.oi === "number" && typeof ud.copy === "number";
+              const onGround = h.object.name === "ground";
+              // Anything else drawn — the sky, a dome — lets the tap through.
+              return { oi: block ? ud.oi : null, copy: block ? ud.copy : null, figure: false, ground: onGround, sky: !block && !onGround, distance: h.distance };
+            }),
+          ];
+          return elementForHits(hits, (oi, copy) => keyOfCopy.get(`${oi}:${copy}`) ?? null, FIGURE_KEY);
+        };
+        // A tap goes to the page; one on the figure waits a moment, so a
+        // double-click (frame the figure) wins over it.
+        const tapAt = (clientX: number, clientY: number) => {
+          if (!elementTapRef.current) return;
+          const hit = pickAt(clientX, clientY);
+          if (figureTapTimer) clearTimeout(figureTapTimer);
+          figureTapTimer = null;
+          if (hit?.kind === "element" && hit.key === FIGURE_KEY) {
+            figureTapTimer = setTimeout(() => {
+              figureTapTimer = null;
+              elementTapRef.current?.(hit);
+            }, FIGURE_TAP_WAIT_MS);
+          } else elementTapRef.current(hit);
+        };
+        const slopOf = (type: string) => (type === "touch" ? TAP_SLOP_PX.touch : type === "pen" ? TAP_SLOP_PX.pen : TAP_SLOP_PX.mouse);
         // Registered BEFORE the orbit controls, so a press on the figure
         // turns orbiting off before the controls see the same event.
         const onDown = (e: PointerEvent) => {
           const tool = stageToolRef.current;
+          // A second finger is a pinch, never a tap. A new gesture's first
+          // pointer starts the count again, so a lost pointer-up can't spoil
+          // every tap after it.
+          if (e.isPrimary) pointersDown.clear();
+          pointersDown.add(e.pointerId);
+          if (pointersDown.size > 1) tapSpoiled = true;
+          else if (elementTapRef.current && tool === "select" && !layingRef.current && e.button === 0) {
+            tapStart = { id: e.pointerId, type: e.pointerType, x: e.clientX, y: e.clientY, t: performance.now() };
+            tapSpoiled = false;
+          }
           // Laying (cut D): the press on the ground is the gaze's point, or the next point of the beat's path.
           const laying = layingRef.current;
           if (laying) {
@@ -1190,8 +1344,16 @@ export function SetView({
             if (!raycaster.ray.intersectPlane(ground, hit)) return;
             if (tool === "turn") turnTo(hit);
             else moveTo(hit);
+            stageTouchRef.current?.();
+            dragLive = true;
+          } else {
+            // Select: nothing moves, and nothing is kept for Undo, until the press travels.
+            dragLive = false;
+            dragFrom = { x: e.clientX, y: e.clientY, type: e.pointerType };
+            const held = raycaster.intersectObject(standIn.figure, true)[0];
+            grabOffset = held ? { x: standIn.group.position.x - held.point.x, z: standIn.group.position.z - held.point.z } : null;
+            if (held) grabPlane.constant = -held.point.y;
           }
-          stageTouchRef.current?.();
           dragging = true;
           if (controlsRef) controlsRef.enabled = false;
           canvas.setPointerCapture(e.pointerId);
@@ -1203,23 +1365,48 @@ export function SetView({
             if (e.pointerType === "mouse") canvas.style.cursor = overFigure(e) ? "grab" : "";
             return;
           }
+          if (!dragLive) {
+            if (dragFrom && Math.hypot(e.clientX - dragFrom.x, e.clientY - dragFrom.y) <= slopOf(dragFrom.type)) return;
+            dragLive = true;
+            stageTouchRef.current?.();
+          }
           toNdc(e);
+          if (stageToolRef.current === "select" && grabOffset) {
+            if (!raycaster.ray.intersectPlane(grabPlane, hit)) return;
+            moveTo({ x: hit.x + grabOffset.x, z: hit.z + grabOffset.z });
+            return;
+          }
           if (!raycaster.ray.intersectPlane(ground, hit)) return;
           if (stageToolRef.current === "turn") turnTo(hit);
           else moveTo(hit);
         };
         const onUp = (e: PointerEvent) => {
+          const tapped =
+            tapStart !== null && !tapSpoiled && e.type === "pointerup" && isTap(tapStart, { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() }, false);
+          if (tapStart?.id === e.pointerId) tapStart = null;
+          pointersDown.delete(e.pointerId);
           if (measuring) {
             measuring = false;
             if (controlsRef) controlsRef.enabled = true;
             if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
             return;
           }
-          if (!dragging) return;
+          if (!dragging) {
+            if (tapped) tapAt(e.clientX, e.clientY);
+            return;
+          }
           dragging = false;
+          grabOffset = null;
           if (controlsRef) controlsRef.enabled = true;
           if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
           canvas.style.cursor = "";
+          // A still press on the figure (Select): it never moved, so its
+          // mark stands as saved. A tap on it, if the page listens.
+          if (!dragLive) {
+            dragFrom = null;
+            if (tapped) tapAt(e.clientX, e.clientY);
+            return;
+          }
           if (stageToolRef.current === "turn") {
             if (turnedDeg !== null) setMark({ ...layoutRef.current.mark, facingDeg: turnedDeg });
             turnedDeg = null;
@@ -1249,6 +1436,9 @@ export function SetView({
         canvas.addEventListener("pointercancel", onUp);
         // Double-click the figure to frame it (the "Frame the figure" button).
         const onDoubleClick = (e: MouseEvent) => {
+          // The double-click wins over the tap its first click made.
+          if (figureTapTimer) clearTimeout(figureTapTimer);
+          figureTapTimer = null;
           if (!overFigure(e as PointerEvent)) return;
           stageTouchRef.current?.();
           apiRef.current?.frameFigure();
@@ -1267,12 +1457,21 @@ export function SetView({
         controls.target.set(...startPose.target);
         controls.update();
         // A person grabbing the view makes it their own camera — kept first,
-        // for Undo, as it stood before the grab.
+        // for Undo, as it stood before the grab. Only once it MOVES (R1): a
+        // still press — a tap on a thing — keeps the camera it names. The
+        // flag goes at the end, so a later move from code never drops it.
+        let orbitArmed = false;
         controls.addEventListener("start", () => {
           stageTouchRef.current?.();
+          orbitArmed = true;
+        });
+        controls.addEventListener("change", () => {
+          if (!orbitArmed) return;
+          orbitArmed = false;
           setCameraId(null);
         });
         controls.addEventListener("end", () => {
+          orbitArmed = false;
           stageTouchedAtRef.current = performance.now();
           settledRef.current?.();
         });
@@ -1413,18 +1612,48 @@ export function SetView({
             renderer.render(scene, camera);
           }
           scene.overrideMaterial = null;
-          if (overlayRoot.visible) {
+          if (overlayRoot.visible || (pickRoot.visible && pickRoot.children.length > 0)) {
             renderer.autoClear = false;
             renderer.render(overlayScene, camera);
             renderer.autoClear = true;
           }
           labelLayer.render(overlayScene, camera);
         };
+        // A thumbnail whose thing stands behind something built dims, so the
+        // one in front reads first: a ray from the camera to it, which its
+        // own thing's blocks and the sky never block.
+        const badgeWorld = new THREE.Vector3();
+        const badgeDir = new THREE.Vector3();
+        const dimCoveredBadges = () => {
+          for (const o of badgeRoot.children) {
+            if (!(o instanceof CSS2DObject)) continue;
+            o.getWorldPosition(badgeWorld);
+            const d = camera.position.distanceTo(badgeWorld);
+            raycaster.set(camera.position, badgeDir.copy(badgeWorld).sub(camera.position).normalize());
+            raycaster.far = Math.max(0, d - 0.2);
+            const own = o.userData.key;
+            const covered = raycaster.intersectObject(built.root, true).some((h) => {
+              const ud = h.object.userData;
+              if (typeof ud.oi !== "number") return h.object.name === "ground";
+              return keyOfCopy.get(`${ud.oi}:${ud.copy}`) !== own;
+            });
+            raycaster.far = Infinity;
+            const want = covered ? "0.35" : "1";
+            if (o.element.style.opacity !== want) o.element.style.opacity = want;
+          }
+        };
         const loop = () => {
           raf = requestAnimationFrame(loop);
           fit();
           controls.update();
           if (camera.position.y < 0.1) camera.position.y = 0.1;
+          if (badgeRoot.visible) {
+            // The figure's thumbnail rides over its head wherever it is dragged.
+            for (const o of badgeRoot.children) {
+              if (o.userData.key === FIGURE_KEY) o.position.set(standIn.group.position.x, eyeY() + 0.3, standIn.group.position.z);
+            }
+            if (frameCount % 8 === 0) dimCoveredBadges();
+          }
           renderLive();
           frameCount += 1;
           // The frame rate, for the status bar, once a second.
@@ -2135,6 +2364,32 @@ export function SetView({
             else overlayHolds.delete(reason);
             showOverlay();
           },
+          setElements(els) {
+            stageEls = els;
+            keyOfCopy = new Map(els.flatMap((e) => e.members.map(([oi, copy]) => [`${oi}:${copy}`, e.key] as const)));
+            drawPick();
+          },
+          elementAt(clientX, clientY) {
+            return pickAt(clientX, clientY);
+          },
+          setElementBadges(badges) {
+            clearBadges();
+            for (const b of badges) {
+              const el = b.key === FIGURE_KEY ? null : stageEls.find((x) => x.key === b.key);
+              if (b.key !== FIGURE_KEY && !el) continue;
+              const label = new CSS2DObject(elementBadge(b, coarse));
+              // Its bottom edge on the anchor: the photo floats just above the thing.
+              label.center.set(0.5, 1);
+              label.userData.key = b.key;
+              if (el) label.position.set(...el.anchor);
+              badgeRoot.add(label);
+            }
+            showOverlay();
+          },
+          setElementPicked(key) {
+            pickedKey = key;
+            drawPick();
+          },
         };
 
         setReady(true);
@@ -2154,8 +2409,11 @@ export function SetView({
 
         cleanup = () => {
           cancelAnimationFrame(raf);
+          if (figureTapTimer) clearTimeout(figureTapTimer);
           clearOverlay();
           labelLayer.domElement.remove();
+          clearBadges();
+          clearPick();
           canvas.removeEventListener("pointerdown", onDown);
           canvas.removeEventListener("pointermove", onMove);
           canvas.removeEventListener("pointerup", onUp);

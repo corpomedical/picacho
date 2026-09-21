@@ -140,7 +140,10 @@ describe("the stage's overlay", () => {
     expect(view.match(/renderer\.render\(overlayScene, camera\)/g)).toHaveLength(1);
     const live = between("const renderLive = () => {", "\n        };\n");
     expect(live.indexOf("renderer.render(overlayScene, camera);")).toBeGreaterThan(live.indexOf("composer.render();"));
-    expect(live).toMatch(/if \(overlayRoot\.visible\) \{\s*renderer\.autoClear = false;\s*renderer\.render\(overlayScene, camera\);\s*renderer\.autoClear = true;\s*\}/);
+    // Or the picked thing's box alone (R1, 2026-09-21), in the same scene.
+    expect(live).toMatch(
+      /if \(overlayRoot\.visible \|\| \(pickRoot\.visible && pickRoot\.children\.length > 0\)\) \{\s*renderer\.autoClear = false;\s*renderer\.render\(overlayScene, camera\);\s*renderer\.autoClear = true;\s*\}/,
+    );
     for (const name of ["frame(opts) {", "snapshot(px, opts) {"]) {
       const body = between(name, "\n          },\n");
       expect(body, name).not.toMatch(/overlay/i);
