@@ -9,6 +9,8 @@ import { mediaUrl, toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url
 import { InviteCard } from "@/components/invite-card";
 import { ReelBand } from "@/components/reel-band";
 import { MomentumSurface } from "@/components/momentum-surface";
+import { DashboardPromptBar } from "@/components/dashboard-prompt-bar";
+import { promptBarCharacter } from "@/lib/dashboard/prompt-bar";
 import { EmptyState } from "@/components/ui/empty-state";
 
 export const maxDuration = 300;
@@ -183,6 +185,11 @@ export default async function AppHome() {
     ),
   }));
   const reelCharacterName = (reelCharacter?.name as string | undefined) ?? null;
+  // The prompt bar's one character: its face, words and link all come from
+  // here (lib/dashboard/prompt-bar.ts says who and why).
+  const barCharacter = promptBarCharacter(characters ?? [], reel?.character_profile_id as string | null);
+  const barPhoto = ((barCharacter?.reference_image_urls as string[] | null) ?? [])[0];
+  const barAvatarUrl = barPhoto ? thumbUrl(mediaUrl("character-references", barPhoto), 320) : null;
 
   // The working surface's three figures and its "pick up" card.
   const takesCount = (takesRead as { count: number | null }).count ?? 0;
@@ -411,43 +418,15 @@ export default async function AppHome() {
 
       <InstallAppHint />
 
-      {/* The prompt bar, as the mockup has it: at the foot of the screen, not
-          a button inside the band.
-          STICKY, not fixed. Fixed broke the sidebar's settings button: the
-          sidebar is `md:static md:z-auto`, so it forms no stacking context,
-          and a fixed z-20 bar painted straight over it — while `inset-x-0`
-          spread an invisible full-width container across the bottom of the
-          viewport, including the sidebar's own footer where that button
-          lives. No pl- offset could have fixed it either, since the rail is
-          w-64 expanded and w-14 collapsed. Sticky keeps the bar inside the
-          content column, where it belongs and where it covers nothing. */}
-      <div className="sticky bottom-[calc(1rem+var(--native-tab-bar,0px))] z-20">
-        <Link
-          href={
-            reel?.character_profile_id
-              ? `/app/generate?character=${reel.character_profile_id}`
-              : "/app/generate"
-          }
-          className="flex items-center gap-2.5 rounded-full border border-atelier-rule bg-atelier-surface/90 py-2 pl-3 pr-2 shadow-[0_3px_8px_rgba(33,29,22,.10),0_18px_34px_-20px_rgba(33,29,22,.40)] backdrop-blur-xl"
-        >
-          {reelCast[0]?.avatarUrl && (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              src={reelCast[0].avatarUrl}
-              alt=""
-              className="h-7 w-7 flex-none rounded-full object-cover"
-            />
-          )}
-          <span className="flex-1 truncate text-[13px] text-atelier-muted">
-            {reelCharacterName
-              ? formatMsg(d.reelPrompt, { name: reelCharacterName })
-              : d.composerPlaceholder}
-          </span>
-          <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-atelier-ink text-sm text-atelier-paper">
-            ↑
-          </span>
-        </Link>
-      </div>
+      <DashboardPromptBar
+        href={barCharacter ? `/app/generate?character=${barCharacter.id}` : "/app/generate"}
+        avatarUrl={barAvatarUrl}
+        label={
+          reelCharacterName
+            ? formatMsg(d.reelPrompt, { name: reelCharacterName })
+            : d.composerPlaceholder
+        }
+      />
     </div>
   );
 }

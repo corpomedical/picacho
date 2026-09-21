@@ -134,7 +134,9 @@ export function ReelBand({
   }
 
   return (
-    <section className="relative overflow-hidden rounded-card bg-[#0e0d0c]">
+    // data-reel-band: the dashboard's prompt bar stays hidden until this has
+    // scrolled out of view (dashboard-prompt-bar.tsx).
+    <section data-reel-band className="relative overflow-hidden rounded-card bg-[#0e0d0c]">
       <div className="relative aspect-video w-full">
         {videoWelcome ? (
           <video

@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.74.0",
+    build: 113,
+    date: "2026-09-21",
+    title: "The dashboard's \"Put Eva somewhere…\" bar shows the right face, and slides in as you scroll",
+    items: [
+      "The bar at the foot of the dashboard showed one character's face and another's name (\"It says eva and Anubis is selected as a character\"). Its face was simply the first of your characters, the newest one, while its words and its link followed the character your reel is about. All three now come from that one character: the one the reel names and rings. With no reel yet, the bar keeps its usual \"Describe what you want to generate…\" and opens the composer on your newest character, the same one the composer picks on its own.",
+      "The bar now slides up once you scroll down past the reel (\"make it appear when you scroll down\"), and slides away again when you're back at the top. It used to float over the Create an image, Create a video and How it works buttons from the first moment. On a page too short to scroll past the reel, it simply sits at the end of the page, where it covers nothing. In the phone app it still docks above the bottom bar, and its frosted glass stays frosted while it moves.",
+      "The getting-started course said the dashboard's first screen has a box at the bottom to type in. It now says the box rises from the bottom once you scroll past the reel.",
+    ],
+  },
+  {
     version: "1.73.0",
     build: 112,
     date: "2026-09-21",

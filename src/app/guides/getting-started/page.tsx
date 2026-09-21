@@ -122,8 +122,9 @@ const CHAPTERS: Chapter[] = [
           <>
             You land on your dashboard. It&apos;s nearly empty on purpose: a reel playing at the
             top, three cards — <strong>Create an image</strong>, <strong>Create a video</strong>,{" "}
-            <strong>How it works</strong> — and a box at the bottom to type in. The counters read
-            zero because you haven&apos;t made anything yet.
+            <strong>How it works</strong> — and, once you scroll down past the reel, a box that
+            rises at the bottom to type in. The counters read zero because you haven&apos;t made
+            anything yet.
           </>
         ),
         callout: {
