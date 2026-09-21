@@ -33,7 +33,7 @@ describe("who a film is of", () => {
 
   it("is who every beat is shot with, and part of what the film was rendered with", () => {
     expect(view).toContain("characterId: filmCharacterId,\n");
-    expect(view).toContain("filmContextKey({ characterId: filmCharacterId, rig, mark, setKey, pose, look: filmLook.key })");
+    expect(view).toContain("filmContextKey({ characterId: filmCharacterId, rig, mark, setKey, pose, look: filmLook.key, elements: elementsKey || undefined })");
     const render = view.slice(view.indexOf("async function renderFilm() {"), view.indexOf("async function retryClip("));
     expect(render).not.toMatch(/\n\s*characterId,\n/);
   });

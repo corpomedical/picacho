@@ -26,7 +26,7 @@ describe("the film's one look", () => {
 
   it("rides every beat of a render, and changing it renders the film again", () => {
     expect(view).toContain("lookGenerationId: filmLook.still,\n            lookPicked: filmLook.key !== undefined,");
-    expect(view).toContain("filmContextKey({ characterId: filmCharacterId, rig, mark, setKey, pose, look: filmLook.key })");
+    expect(view).toContain("filmContextKey({ characterId: filmCharacterId, rig, mark, setKey, pose, look: filmLook.key, elements: elementsKey || undefined })");
     // Never the beat before's end still.
     const render = view.slice(view.indexOf("async function renderFilm() {"), view.indexOf("async function retryClip("));
     expect(render).not.toMatch(/lookGenerationId: (startId|kept\.ends)/);

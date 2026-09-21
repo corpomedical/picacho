@@ -294,11 +294,18 @@ export function filmContextKey(input: {
   /** The figure's pose (cut 5); standing leaves the key as it was, so films made before the poses keep their clips. */
   pose?: StandPose;
   /**
-   * The film's one look when it is not its opening still (2026-09-21): a
-   * reference photo ("ref:<id>") or another still ("still:<id>") picked in
-   * the Look menu. The opening still, the default, leaves the key as it was.
+   * The film's one look when it is not its opening still (2026-09-21):
+   * another still ("still:<id>") picked in the Look menu. The opening still,
+   * the default, leaves the key as it was.
    */
   look?: string;
+  /**
+   * The photos on the set's things (R1, 2026-09-21): each thing with photos
+   * as "key=sheetHash", sorted and joined. New photos are a new design in
+   * every painted frame, so the film renders again. None leaves the key as
+   * it was.
+   */
+  elements?: string;
 }): string {
   const { rig, mark } = input;
   const light = rig.light ? [rig.light.scheme, rig.light.azimuthDeg, rig.light.elevationDeg] : null;
@@ -317,6 +324,7 @@ export function filmContextKey(input: {
       input.setKey,
       ...(input.pose && input.pose !== "stand" ? [input.pose] : []),
       ...(input.look ? [`look ${input.look}`] : []),
+      ...(input.elements ? [`els ${input.elements}`] : []),
     ]),
   );
 }

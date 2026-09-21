@@ -26,7 +26,7 @@ import { beatAtTime, beatSpans, timeOf } from "@/lib/sets/sequencer";
 import { StatusList, StudioBar, StudioDock, StudioRail, StudioStatus, useWide } from "./studio-frame";
 import { clearMarks } from "@/lib/sets/marks";
 import { BADGE_HIT_SLOP_PX, FIGURE_TAP_WAIT_MS, TAP_SLOP_PX, badgeAt, elementForHits, isTap, type ElementHit, type StageHit, type TapStart } from "@/lib/sets/stage-pick";
-import { ELEMENT_SHEETS_PER_STILL, FIGURE_KEY, planShotSheets, resolvePhotos, setElements as elementsOf, type ElementPhoto, type SetElement, type ShotElementStatus } from "@/lib/sets/elements";
+import { ELEMENT_SHEETS_PER_STILL, FIGURE_KEY, elementPlaces, planShotSheets, resolvePhotos, setElements as elementsOf, type ElementPhoto, type SetElement, type ShotElementStatus } from "@/lib/sets/elements";
 import { afterShotWhy, beforeShoot, pageState, ridesState, statusWords as elementStatusWords, type ElementState } from "@/lib/sets/element-status";
 import { findVehicles } from "@/lib/sets/vehicles";
 import { shotCameraOf } from "@/lib/sets/shot-camera";
@@ -3156,23 +3156,63 @@ export function SetView({
    * camera, the same band, as if every sheet were drawn — the page draws
    * them before it shoots.
    */
-  const planFor = useCallback(
+  const cameraFor = useCallback(
     (pose: Pose | null, m: Mark) => {
       const fr = formatFrame(rig.format, rig.squeeze);
-      const cam = pose ? shotCameraOf({ camera: pose, mark: m }, 1, fr.cut ? { render: fr.renderAspect, band: fr.bandAspect, squeeze: fr.squeeze } : null) : null;
-      return planShotSheets({
+      return pose ? shotCameraOf({ camera: pose, mark: m }, 1, fr.cut ? { render: fr.renderAspect, band: fr.bandAspect, squeeze: fr.squeeze } : null) : null;
+    },
+    [rig.format, rig.squeeze],
+  );
+  const planFor = useCallback(
+    (pose: Pose | null, m: Mark, order?: readonly string[]) =>
+      planShotSheets({
         els,
         held: resolved.held,
         sheets: resolved.held.map((h) => h.sheetHash),
+        order,
         vehicles,
-        shotCamera: cam,
+        shotCamera: cameraFor(pose, m),
         poseCamera: pose,
         budget: stillModel === "gpt-image" ? ELEMENT_SHEETS_PER_STILL : 0,
         spec,
-      });
-    },
-    [els, resolved, vehicles, rig.format, rig.squeeze, stillModel, spec],
+      }),
+    [els, resolved, vehicles, cameraFor, stillModel, spec],
   );
+  /** Each thing with photos as "key=sheetHash", sorted: the film's context (film.ts filmContextKey), so new photos render it again. */
+  const elementsKey = useMemo(
+    () =>
+      resolved.held
+        .filter((h) => h.photos.length > 0)
+        .map((h) => `${h.key}=${h.sheetHash}`)
+        .sort()
+        .join(","),
+    [resolved],
+  );
+  /** Where the film's figure stands in each beat (film.ts filmStages): the end frames' marks. */
+  const filmStagesNow = useMemo(() => filmStages(film.beats, { mark, pose, time: rig.time }), [film.beats, mark, pose, rig.time]);
+  /**
+   * The film's one order for the things' sheets (R1): each thing by the
+   * most of the frame it fills in any beat, then by key — the same in every
+   * beat, so a thing that rides one beat's end frame is not dropped for
+   * another in the next, and its design holds from beat to beat.
+   */
+  const filmOrder = useMemo(() => {
+    const most = new Map<string, number>();
+    film.beats.forEach((b, i) => {
+      const cam = cameraFor(b.end, filmStagesNow[i]?.figure ?? mark);
+      if (!cam) return;
+      for (const p of elementPlaces(spec, els, cam)) if (p.seen && heldOf.has(p.key)) most.set(p.key, Math.max(most.get(p.key) ?? 0, p.share));
+    });
+    return [...most.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([k]) => k);
+  }, [film.beats, filmStagesNow, cameraFor, spec, els, heldOf, mark]);
+  /** Which things' sheets ride each beat's end frame, in that order. */
+  const filmBeatRides = useMemo(
+    () => film.beats.map((b, i) => planFor(b.end, filmStagesNow[i]?.figure ?? mark, filmOrder).riding),
+    [film.beats, filmStagesNow, planFor, filmOrder, mark],
+  );
+  // The opening still has nothing to lend, and no thing's own sheet rides
+  // the film either: only then may the car change from beat to beat.
+  const filmLookNoneShown = filmLookNone && !filmBeatRides.some((r) => r.length > 0);
   /** The plan for the frame as it stands (the pose last settled). */
   const livePlan = useMemo(() => planFor(poseNow, mark), [planFor, poseNow, mark]);
   /** Each thing with photos: its state, its chip's word and its card's sentence. */
@@ -3286,10 +3326,11 @@ export function SetView({
    * a still, and its chip says so; false only when the shot must not go on
    * (the allowance, a dropped connection).
    */
-  async function drawSheetsFor(riding: readonly { key: string; hash: string }[]): Promise<boolean> {
+  async function drawSheetsFor(riding: readonly { key: string; hash: string }[], onError: (message: string) => void = setError): Promise<string[] | null> {
     let need = beforeShoot(riding, sheetHashes);
-    if (need.length === 0) return true;
+    if (need.length === 0) return [];
     const hashOf = new Map(riding.map((r) => [r.key, r.hash]));
+    const missed = new Set<string>();
     setSheetPrep(need);
     try {
       for (let round = 0; round < 3 && need.length > 0; round++) {
@@ -3297,25 +3338,29 @@ export function SetView({
         try {
           res = await prepareElementSheets(setId, need);
         } catch (err) {
-          setError(staleHere(err) ? t.generate.refreshNeeded : t.generate.submitFailed);
-          return false;
+          onError(staleHere(err) ? t.generate.refreshNeeded : t.generate.submitFailed);
+          return null;
         }
         if (res.error !== null) {
-          setError(res.error);
-          return false;
+          onError(res.error);
+          return null;
         }
         const drawnNow = res.sheets.flatMap((x) => (x.status === "ready" || x.status === "drawn" ? [hashOf.get(x.key) ?? ""] : [])).filter(Boolean);
         if (drawnNow.length > 0) setSheetHashes((prev) => [...new Set([...prev, ...drawnNow])]);
-        const missed = res.sheets.filter((x) => x.status === "refused" || x.status === "failed" || x.status === "storage" || x.status === "too-fast");
-        if (missed.length > 0) {
-          setSheetLast((prev) => ({ ...prev, ...Object.fromEntries(missed.map((x) => [hashOf.get(x.key) ?? "", x.status === "refused" ? "refused" : "failed"])) }));
+        const failed = res.sheets.filter((x) => x.status !== "ready" && x.status !== "drawn" && x.status !== "queued");
+        for (const x of failed) missed.add(x.key);
+        const why = failed.filter((x) => x.status === "refused" || x.status === "failed" || x.status === "storage" || x.status === "too-fast");
+        if (why.length > 0) {
+          setSheetLast((prev) => ({ ...prev, ...Object.fromEntries(why.map((x) => [hashOf.get(x.key) ?? "", x.status === "refused" ? "refused" : "failed"])) }));
         }
         need = res.sheets.filter((x) => x.status === "queued").map((x) => x.key);
       }
+      // Still queued after three asks: not drawn this time either.
+      for (const k of need) missed.add(k);
     } finally {
       setSheetPrep([]);
     }
-    return true;
+    return [...missed];
   }
 
   /** Frame a thing that is out of the frame, from the side the camera is on; Undo takes it back. */
@@ -3434,6 +3479,38 @@ export function SetView({
   }
   /** The strip shows once the set has things to put photos on, or photos on nothing to put back. */
   const castShown = !cutOpen && !compareOpen && (els.length > 0 || resolved.loose.length > 0);
+  function castStrip(className: string) {
+    return (
+      <CastStrip
+        className={className}
+        chips={castChips}
+        loose={resolved.loose.map((l) => l.photo)}
+        targets={els.map((e) => ({ key: e.key, name: elementName(e.key) }))}
+        hint={resolved.held.length === 0}
+        onOpen={(key) => openElementCard(key)}
+        onPutOn={(refId, key) => void putPhotoOn(refId, key)}
+        onRemoveLoose={(refId) => void removePhoto(refId)}
+        c={cast}
+      />
+    );
+  }
+  /**
+   * A thing in a still's frame whose photos came after the still (R1): a
+   * clip from that still to an end frame carrying the photos would change
+   * its design mid-clip. Its key, or null.
+   */
+  function newerPhotosIn(shot: SetShot | null | undefined): string | null {
+    if (!shot?.pose) return null;
+    const cam = cameraFor(shot.pose, mark);
+    const shotAt = Date.parse(shot.createdAt);
+    if (!cam || !Number.isFinite(shotAt)) return null;
+    for (const place of elementPlaces(spec, els, cam)) {
+      if (place.seen && heldOf.get(place.key)?.photos.some((ph) => ph.at > shotAt)) return place.key;
+    }
+    return null;
+  }
+  const filmOpeningOldKey = newerPhotosIn(filmStartShot0);
+  const takeStartOldKey = takeStart ? newerPhotosIn(shots.find((sh) => sh.generationId === takeStart.id)) : null;
   /** The strip's chips: the person, the things whose sheets ride in sheet order, then the others. */
   const castChips: CastChip[] = [
     ...(character ? [{ key: FIGURE_KEY, name: character.name, thumb: character.thumbUrl, word: "", title: formatMsg(cast.personLine, { name: character.name }), state: "person" as const, round: true }] : []),
@@ -3527,7 +3604,7 @@ export function SetView({
     let result: Awaited<ReturnType<typeof shootInSet>>;
     try {
       // The things' sheets this frame carries are drawn first, once each (R1).
-      if (!(await drawSheetsFor(planFor(pose, layoutRef.current.mark).riding))) return;
+      if ((await drawSheetsFor(planFor(pose, layoutRef.current.mark).riding)) === null) return;
       result = await shootInSet(setId, {
         frameDataUri: frame,
         characterId,
@@ -3662,7 +3739,7 @@ export function SetView({
     let result: Awaited<ReturnType<typeof takeInSet>>;
     try {
       // The end still carries the things' sheets like any still (R1).
-      if (!(await drawSheetsFor(planFor(pose, layoutRef.current.mark).riding))) return;
+      if ((await drawSheetsFor(planFor(pose, layoutRef.current.mark).riding)) === null) return;
       result = await takeInSet(setId, {
         startGenerationId: takeStart.id,
         frameDataUri: frame,
@@ -4035,7 +4112,7 @@ export function SetView({
    * mark or set renders from its start: its clips are of another film.
    */
   function filmPlanNow() {
-    const context = filmContextKey({ characterId: filmCharacterId, rig, mark, setKey, pose, look: filmLook.key });
+    const context = filmContextKey({ characterId: filmCharacterId, rig, mark, setKey, pose, look: filmLook.key, elements: elementsKey || undefined });
     const plan = filmRenderPlan(film, context, (id) => shots.find((sh) => sh.generationId === id)?.status ?? null);
     return { ...plan, context };
   }
@@ -4079,6 +4156,18 @@ export function SetView({
       filmBusyRef.current = false;
       setFilmBusy(null);
       setFilmError(refused);
+      return;
+    }
+    // The things' sheets every end frame shot will carry (R1), drawn once
+    // each, after the credits are known to be there and before any of the
+    // film is touched: a sheet that can't be drawn stops the render here,
+    // free, rather than a beat changing a thing's design mid-film.
+    const sheetsNeeded = plan.jobs.filter((j) => j.end === null).flatMap((j) => filmBeatRides[j.beat] ?? []);
+    const unsheeted = await drawSheetsFor(sheetsNeeded, setFilmError);
+    if (unsheeted === null || unsheeted.length > 0) {
+      filmBusyRef.current = false;
+      setFilmBusy(null);
+      if (unsheeted) setFilmError(formatMsg(cast.filmSheetBlocked, { name: elementName(unsheeted[0]) }));
       return;
     }
     // The film as this render writes it, saved the moment each beat lands
@@ -4151,6 +4240,8 @@ export function SetView({
             // The film's one look, the same for every beat (filmLook).
             lookGenerationId: filmLook.still,
             lookPicked: filmLook.key !== undefined,
+            // The film's one order for the things' sheets, the same every beat (filmOrder).
+            elementOrder: filmOrder,
             frameDataUri: frame,
             // The person in the opening still (filmCharacterId), not the one picked above.
             characterId: filmCharacterId,
@@ -4909,6 +5000,8 @@ export function SetView({
           ? filmStartOptions.length > 0
             ? s.filmWhyStart
             : s.filmPickStill
+          : filmOpeningOldKey
+            ? formatMsg(cast.filmOpeningOld, { name: elementName(filmOpeningOldKey) })
           : film.beats.length === 0
             ? s.filmWhyBeats
             : filmPlan.again && filmPlan.rendering
@@ -6307,6 +6400,11 @@ export function SetView({
           {takeStart && !viewingShot && (
             <div className="absolute left-3.5 top-16 z-20 flex flex-wrap items-center gap-2">
               <span className="rounded-full bg-[#e0a468] px-3 py-1.5 text-xs font-semibold text-black">{formatMsg(s.takeBanner, { n: takeStart.n })}</span>
+              {takeStartOldKey && (
+                <span className="rounded-full bg-black/70 px-3 py-1.5 text-xs text-[#f0cda6]" data-take-start-old>
+                  {formatMsg(cast.takeStartOld, { name: elementName(takeStartOldKey) })}
+                </span>
+              )}
               <button type="button" onClick={() => setTakeStart(null)} className={glassBtn}>
                 {t.common.cancel}
               </button>
@@ -6319,19 +6417,7 @@ export function SetView({
               the gizmo on the right. */}
           {!viewingShot && !loadFailed && !filmOpen && (
             <div className="pointer-events-none absolute bottom-[104px] left-3.5 right-3.5 z-20 flex flex-col items-start gap-2 md:right-[190px]" data-stage-foot>
-              {castShown && (
-                <CastStrip
-                  className="pointer-events-auto relative max-w-full"
-                  chips={castChips}
-                  loose={resolved.loose.map((l) => l.photo)}
-                  targets={els.map((e) => ({ key: e.key, name: elementName(e.key) }))}
-                  hint={resolved.held.length === 0}
-                  onOpen={(key) => openElementCard(key)}
-                  onPutOn={(refId, key) => void putPhotoOn(refId, key)}
-                  onRemoveLoose={(refId) => void removePhoto(refId)}
-                  c={cast}
-                />
-              )}
+              {castShown && castStrip("pointer-events-auto relative max-w-full")}
               {/* The hint is a mouse's (shift-drag, scroll, double-click): on a phone it steps aside for the strip. */}
               <span
                 aria-live="polite"
@@ -6648,6 +6734,10 @@ export function SetView({
           {/* The film dock (canvas page H): the move where the filmstrip was —
               transport and price above, then the start still and a cell per
               beat. The stage stays the stage: orbit, then K keeps the view. */}
+          {/* The cast strip in Film (R1): at the stage's foot on a computer, clear of the
+              gizmo. A phone's Film is full already (its dock under the setup chips): a
+              tap on a thing opens its card there, with what rides. */}
+          {wide && filmOpen && !viewingShot && !loadFailed && castShown && castStrip("absolute bottom-3.5 left-3.5 right-[190px] z-20")}
           {!wide && filmOpen && (
             <div
               className={`absolute bottom-3.5 left-3.5 right-3.5 z-10 flex flex-col gap-2 rounded-[14px] border border-[rgba(255,255,255,0.08)] bg-black/40 p-2 backdrop-blur ${viewingShot ? "hidden md:flex" : ""}`}
@@ -6930,7 +7020,7 @@ export function SetView({
             jumpNote={
               filmPersonOther
                 ? formatMsg(s.filmPersonOther, { name: filmPersonOther })
-                : filmLookNone
+                : filmLookNoneShown
                   ? s.filmLookNone
                   : filmJumps.indexOf(true) >= 0
                     ? formatMsg(s.filmBeatJumps, { n: filmJumps.indexOf(true) + 1 })
@@ -7347,10 +7437,23 @@ export function SetView({
                         {formatMsg(s.filmPersonOther, { name: filmPersonOther })}
                       </p>
                     )}
-                    {filmLookNone && film.beats.length > 0 && (
+                    {filmLookNoneShown && film.beats.length > 0 && (
                       <p data-film-look-none className="text-[11px] leading-snug text-[#e0a468]">
                         {s.filmLookNone}
                       </p>
+                    )}
+                    {/* What each beat's end frame carries of the things' photos (R1). */}
+                    {elementsKey && film.beats.length > 0 && (
+                      <div data-film-elements className="flex flex-col gap-0.5">
+                        <p className="text-[11px] leading-snug text-[#9aa0ad]">{cast.filmNote}</p>
+                        {filmBeatRides.map((rides, i) =>
+                          rides.length > 0 ? (
+                            <p key={i} className="text-[11px] leading-snug text-[#c6c9d1]">
+                              {formatMsg(cast.filmBeat, { n: i + 1, list: rides.map((r) => elementName(r.key)).join(", ") })}
+                            </p>
+                          ) : null,
+                        )}
+                      </div>
                     )}
                     {filmJumps.map((jumps, i) =>
                       jumps ? (

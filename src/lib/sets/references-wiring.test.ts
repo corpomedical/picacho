@@ -70,7 +70,7 @@ describe("a still", () => {
 
   it("plans the sheets as the shot does: the same planner, the still model's budget", () => {
     expect(view).toContain('budget: stillModel === "gpt-image" ? ELEMENT_SHEETS_PER_STILL : 0,');
-    expect(view).toContain("return planShotSheets({");
+    expect(view).toMatch(/\(pose: Pose \| null, m: Mark, order\?: readonly string\[\]\) =>\s*planShotSheets\(\{/);
   });
 
   it("carries no reference photo as its look any more", () => {
@@ -105,7 +105,7 @@ describe("the card and the strip", () => {
   it("the strip names who rides, the loose photos have a way home, and it clears the gizmo", () => {
     for (const hook of ["data-cast-strip", "data-cast-chip", "data-el-state", "data-cast-empty", "data-cast-loose"]) expect(strip).toContain(hook);
     const foot = fnOf(view, "data-stage-foot", "{figureMoved ? s.figureMovedOut : s.dragHint}");
-    expect(foot).toContain("<CastStrip");
+    expect(foot).toContain('{castShown && castStrip("pointer-events-auto relative max-w-full")}');
     expect(view).toContain('className="pointer-events-none absolute bottom-[104px] left-3.5 right-3.5 z-20 flex flex-col items-start gap-2 md:right-[190px]" data-stage-foot');
   });
 
