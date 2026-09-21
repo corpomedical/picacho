@@ -144,6 +144,8 @@ const COLUMNS = {
   // still owed at BytePlus. Every reader fails open to "not verified".
   face_verifications: ["user_id", "character_id", "status", "consented_at", "consent_notice_version", "consent_method", "state", "byted_token", "group_id"],
   face_assets: ["user_id", "verification_id", "character_id", "photo_path", "asset_id", "status"],
+  // Who is in a character's photos (pending/character-likeness-consent.sql, Helios R1).
+  character_likeness_consents: ["user_id", "character_id", "answer", "photos_hash", "notice_version", "locale", "method", "place", "consented_at"],
   face_group_deletions: ["group_id", "attempts", "last_error"],
 };
 

@@ -302,6 +302,8 @@ describe("localized server strings still match what the server says", () => {
     "../faces/messages.ts",
     // The expression set: every sentence its actions return (2026-09-19).
     "../characters/expression-messages.ts",
+    // Who is in a character's photos (Helios R1, 2026-09-21).
+    "../characters/likeness-messages.ts",
     // Settings: the inline line under a settings form (2026-09-18).
     "../profile/actions.ts",
   ]

@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/server";
 import { forPage, listElementPhotos } from "@/lib/sets/references";
+import { needsLikenessAnswer } from "@/lib/characters/likeness";
+import { readLikeness } from "@/lib/characters/likeness-store";
 import { mediaUrl, thumbUrl, toMediaUrl } from "@/lib/media/url";
 import { monthlyWindowStart } from "@/lib/generations/core";
 import { DEFAULT_IDENTITY_THRESHOLD, resolveIdentityThresholdSetting } from "@/lib/generations/identity-gate";
@@ -56,11 +58,16 @@ async function charactersOf(db: SupabaseClient, userId: string): Promise<{ shoot
     .order("created_at", { ascending: false })
     .limit(50);
   const has = (c: { reference_image_urls?: unknown }) => Array.isArray(c.reference_image_urls) && c.reference_image_urls.length > 0;
+  const withPhotos = (chars ?? []).filter(has);
+  // Who is in each one's photos (R1, likeness.ts), in one read. A missing
+  // table (the SQL not run yet) asks nobody, as the shot's own check does.
+  const likeness = await readLikeness(db, userId, withPhotos.map((c) => c.id as string));
   return {
-    shootable: (chars ?? []).filter(has).map((c) => ({
+    shootable: withPhotos.map((c) => ({
       id: c.id as string,
       name: (c.name as string) ?? "",
       thumbUrl: thumbUrl(mediaUrl("character-references", (c.reference_image_urls as string[])[0]), 320),
+      likenessNeeded: !likeness.missing && needsLikenessAnswer({ paths: c.reference_image_urls as string[], record: likeness.records.get(c.id as string) ?? null }),
     })),
     unshootable: (chars ?? []).filter((c) => !has(c)).map((c) => ({ id: c.id as string, name: (c.name as string) ?? "" })),
   };

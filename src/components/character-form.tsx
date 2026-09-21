@@ -4,6 +4,8 @@ import { PERSPECTIVE_SHOTS } from "@/lib/characters/perspectives";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { LIKENESS_ANSWERS, type LikenessAnswer } from "@/lib/characters/likeness";
+import { LIKENESS_NEEDS_ANSWER } from "@/lib/characters/likeness-messages";
 import { createClient } from "@/lib/supabase/client";
 import {
   saveCharacterProfile,
@@ -119,6 +121,7 @@ export function CharacterForm({
   expressionSet,
   faceNotice,
   returnTo = null,
+  likeness = null,
 }: {
   userId: string;
   initial?: Initial & { voice_id?: string | null; outfit_description?: string | null };
@@ -153,6 +156,12 @@ export function CharacterForm({
    * cast, and a link goes back without saving.
    */
   returnTo?: string | null;
+  /**
+   * Who is in this character's photos (Helios R1, likeness.ts): whether the
+   * photos on the row still need an answer, and the one kept if any. Absent
+   * for a new character, which always answers once it has photos.
+   */
+  likeness?: { needed: boolean; answer: LikenessAnswer | null; at: string | null } | null;
 }) {
   const { t } = useLocale();
   const c = t.character;
@@ -199,6 +208,17 @@ export function CharacterForm({
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(errorMessage ?? "");
+  // Who is in the photos (R1): picked from nothing, never pre-ticked. The
+  // server can ask too (photos appended from elsewhere), and then it shows.
+  const [likenessAnswer, setLikenessAnswer] = useState<LikenessAnswer | null>(null);
+  const [likenessAsked, setLikenessAsked] = useState(false);
+  // Shown when the character has photos and they need an answer: a new
+  // character, photos never answered for, photos added or taken away here,
+  // or the server asking.
+  const photosChanged =
+    newFiles.length > 0 || keptImages.length !== existingImages.length || keptImages.some((k, i) => k.path !== existingImages[i]?.path);
+  const likenessShown = keptImages.length + newFiles.length > 0 && (!initial?.id || !likeness || likeness.needed || photosChanged || likenessAsked);
+  const likenessLabel = (a: LikenessAnswer) => (a === "me" ? c.likenessMe : a === "permission" ? c.likenessPermission : c.likenessNone);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const outfitFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -544,6 +564,8 @@ export function CharacterForm({
       // auto-persisted AI shot), and a Save from a form that never saw it
       // used to destroy it permanently.
       formData.set("reference_baseline_paths", JSON.stringify(persistedPaths));
+      // The answer only: the notice version, the method and the place are the server's.
+      if (likenessShown && likenessAnswer) formData.set("likeness_answer", likenessAnswer);
       formData.set(
         "outfit_baseline_paths",
         JSON.stringify(existingOutfitImages.map((i) => i.path)),
@@ -554,6 +576,7 @@ export function CharacterForm({
       if (result.error) {
         cleanupUploads();
         setError(result.error);
+        if (result.error === LIKENESS_NEEDS_ANSWER) setLikenessAsked(true);
         setSubmitting(false);
         return;
       }
@@ -1286,6 +1309,49 @@ export function CharacterForm({
         </Fold>
       )}
 
+      {/* Who is in these photos (Helios R1, likeness.ts): asked once for these
+          photos, again when they change. Nothing is picked until the person
+          picks it, and Save waits for it. */}
+      {likenessShown ? (
+        <fieldset data-likeness className="space-y-2 rounded-control border border-atelier-rule p-4">
+          <legend className="px-1 text-sm font-medium text-atelier-ink">{c.likenessTitle}</legend>
+          {LIKENESS_ANSWERS.map((a) => (
+            <label key={a} className="flex cursor-pointer items-center gap-2.5 text-sm text-atelier-ink">
+              <input
+                type="radio"
+                name="likeness_answer"
+                value={a}
+                checked={likenessAnswer === a}
+                onChange={() => setLikenessAnswer(a)}
+                data-likeness-answer={a}
+              />
+              {likenessLabel(a)}
+            </label>
+          ))}
+          <p className="text-xs text-atelier-muted">
+            {(() => {
+              const [before, after] = c.likenessPolicyLine.split("{policy}");
+              return (
+                <>
+                  {before}
+                  <Link href="/content-policy" className="underline underline-offset-2 hover:text-atelier-ink">
+                    {c.likenessPolicy}
+                  </Link>
+                  {after}
+                </>
+              );
+            })()}
+          </p>
+          {!likenessAnswer && <p className="text-xs text-atelier-muted">{c.likenessNeeded}</p>}
+        </fieldset>
+      ) : (
+        likeness?.answer && (
+          <p className="text-xs text-atelier-muted" data-likeness-kept>
+            {formatMsg(c.likenessAnswered, { answer: likenessLabel(likeness.answer), date: likeness.at ? new Date(likeness.at).toLocaleDateString() : "" })}
+          </p>
+        )
+      )}
+
       {error && <p className="text-sm text-red-600 dark:text-red-400">{localizeServerText(error, t)}</p>}
 
       <div className="flex items-center justify-between">
@@ -1295,6 +1361,7 @@ export function CharacterForm({
         <Button
           type="submit"
           pending={submitting}
+          disabled={likenessShown && !likenessAnswer}
           pendingLabel={c.saving}
           className="px-6 rounded-control! bg-atelier-ink! text-atelier-paper! shadow-none! hover:bg-atelier-ink/90!"
         >

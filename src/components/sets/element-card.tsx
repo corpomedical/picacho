@@ -231,7 +231,7 @@ export function ElementCard({
                   aria-label={formatMsg(c.photoRemove, { n: i + 1 })}
                   title={formatMsg(c.photoRemove, { n: i + 1 })}
                   data-el-photo-remove
-                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-[rgba(255,255,255,0.15)] bg-[#1d1e24] text-[12px] leading-none text-[#d6d9e0] hover:text-[#ecedf1] disabled:cursor-default disabled:opacity-60"
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-[rgba(255,255,255,0.15)] bg-[#1d1e24] text-[12px] leading-none text-[#d6d9e0] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#6b6f7a]"
                 >
                   ×
                 </button>
@@ -260,7 +260,7 @@ export function ElementCard({
                 onClick={() => fileRef.current?.click()}
                 disabled={busy}
                 data-el-add
-                className="flex h-16 w-16 flex-none cursor-pointer items-center justify-center rounded-[8px] border border-dashed border-[rgba(214,217,224,0.35)] px-1 text-center text-[11px] leading-tight text-[#d6d9e0] hover:bg-[rgba(255,255,255,0.05)] disabled:cursor-default disabled:opacity-70"
+                className="flex h-16 w-16 flex-none cursor-pointer items-center justify-center rounded-[8px] border border-dashed border-[rgba(214,217,224,0.35)] px-1 text-center text-[11px] leading-tight text-[#d6d9e0] hover:bg-[rgba(255,255,255,0.05)] disabled:cursor-default disabled:text-[#9aa0ad]"
               >
                 {phase === "preparing" ? c.preparing : phase === "checking" ? c.checking : c.addPhoto}
               </button>
@@ -291,7 +291,7 @@ export function ElementCard({
                 type="button"
                 onClick={move.earlier ?? undefined}
                 disabled={!move.earlier}
-                className="h-7 cursor-pointer rounded-full border border-[rgba(255,255,255,0.12)] px-2.5 text-[11px] text-[#d6d9e0] hover:bg-[rgba(255,255,255,0.06)] disabled:cursor-default disabled:opacity-40"
+                className="h-7 cursor-pointer rounded-full border border-[rgba(255,255,255,0.12)] px-2.5 text-[11px] text-[#d6d9e0] hover:bg-[rgba(255,255,255,0.06)] disabled:cursor-default disabled:border-[rgba(255,255,255,0.06)] disabled:text-[#6b6f7a]"
               >
                 ↑ {formatMsg(c.moveEarlier, { name: element.name })}
               </button>
@@ -299,7 +299,7 @@ export function ElementCard({
                 type="button"
                 onClick={move.later ?? undefined}
                 disabled={!move.later}
-                className="h-7 cursor-pointer rounded-full border border-[rgba(255,255,255,0.12)] px-2.5 text-[11px] text-[#d6d9e0] hover:bg-[rgba(255,255,255,0.06)] disabled:cursor-default disabled:opacity-40"
+                className="h-7 cursor-pointer rounded-full border border-[rgba(255,255,255,0.12)] px-2.5 text-[11px] text-[#d6d9e0] hover:bg-[rgba(255,255,255,0.06)] disabled:cursor-default disabled:border-[rgba(255,255,255,0.06)] disabled:text-[#6b6f7a]"
               >
                 ↓ {formatMsg(c.moveLater, { name: element.name })}
               </button>

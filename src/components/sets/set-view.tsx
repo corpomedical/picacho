@@ -32,6 +32,8 @@ import { afterShotWhy, beforeShoot, pageState, ridesState, statusWords as elemen
 import { findVehicles } from "@/lib/sets/vehicles";
 import { shotCameraOf } from "@/lib/sets/shot-camera";
 import { ElementCard, type CardElement } from "./element-card";
+import { answerLikeness } from "@/lib/characters/likeness-actions";
+import { LIKENESS_ANSWERS, type LikenessAnswer } from "@/lib/characters/likeness";
 import { CastStrip, type CastChip } from "./cast-strip";
 import {
   retryableTakes,
@@ -72,7 +74,7 @@ import { RigPanel } from "@/components/sets/rig-panel";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
 import { canBeLook, newestLook } from "@/lib/sets/look";
 import { matchSummary, placeMatchedCamera, solveMatchPose, type CameraMove, type MatchClamp } from "@/lib/sets/match-shot";
-import { SET_PHOTO_UNREADABLE, SET_SAVE_FAILED, SET_TAKE_BAD_END, SET_TAKE_NEEDS_PLAN } from "@/lib/sets/messages";
+import { SET_LIKENESS_NEEDED, SET_PHOTO_UNREADABLE, SET_SAVE_FAILED, SET_TAKE_BAD_END, SET_TAKE_NEEDS_PLAN } from "@/lib/sets/messages";
 import { preparePhoto } from "@/lib/sets/photo-client";
 import { facingFor, hasCameraWords, wordsToMatch, type ShotWords } from "@/lib/sets/shot-words";
 import {
@@ -890,6 +892,12 @@ export function SetView({
   const [sheetPrep, setSheetPrep] = useState<string[]>([]);
   const [sheetLast, setSheetLast] = useState<Record<string, "refused" | "failed">>({});
   const [followedKeys, setFollowedKeys] = useState<string[]>([]);
+  // Who is in a character's photos (R1.12, likeness.ts): answered here this
+  // visit, the answer being picked, and the save in flight.
+  const [answeredIds, setAnsweredIds] = useState<string[]>([]);
+  const [likenessPick, setLikenessPick] = useState<LikenessAnswer | null>(null);
+  const [likenessBusy, setLikenessBusy] = useState(false);
+  const [likenessNote, setLikenessNote] = useState("");
   // The order the person gave the things (the strip's drag, the card's Move): the first ride when a still is full.
   const [elementOrder, setElementOrder] = useState<string[]>(initialLayout?.elementOrder ?? []);
   // The last shot asked for a look that could not be cut out, and went
@@ -3182,6 +3190,31 @@ export function SetView({
     if (e.kind === "vehicle") return many ? formatMsg(cast.vehicleN, { n: e.ordinal }) : cast.vehicle;
     return many ? formatMsg(cast.objectN, { n: e.ordinal }) : cast.object;
   }
+  /** A character whose photos still need the likeness answer (data.ts), and not answered here since. */
+  function likenessNeeded(id: string): boolean {
+    return characters.find((ch) => ch.id === id)?.likenessNeeded === true && !answeredIds.includes(id);
+  }
+  /** Keep the answer for the cast character (likeness-actions.ts), from the figure's card. */
+  async function saveLikeness() {
+    if (!likenessPick || likenessBusy || !characterId) return;
+    setLikenessBusy(true);
+    setLikenessNote("");
+    try {
+      const res = await answerLikeness(characterId, likenessPick);
+      if (res.error !== null) {
+        setLikenessNote(localizeServerText(res.error, t));
+        return;
+      }
+      setAnsweredIds((prev) => [...prev, characterId]);
+      setLikenessPick(null);
+      setError("");
+      setLikenessNote(formatMsg(cast.answerSaved, { name: character?.name ?? "" }));
+    } catch (err) {
+      setLikenessNote(staleHere(err) ? t.generate.refreshNeeded : t.generate.submitFailed);
+    } finally {
+      setLikenessBusy(false);
+    }
+  }
   /**
    * Which sheets a still from this pose would carry, as the shot will plan
    * them (actions.ts shootInSet → elements.ts planShotSheets): the same
@@ -3542,7 +3575,44 @@ export function SetView({
         casting={
           el.kind === "figure"
             ? {
-                options: characters.map((ch) => ({ id: ch.id, name: ch.name, thumbUrl: ch.thumbUrl })),
+                options: characters.map((ch) => ({ id: ch.id, name: ch.name, thumbUrl: ch.thumbUrl, note: likenessNeeded(ch.id) ? cast.needsAnswer : null })),
+                extra:
+                  characterId && likenessNeeded(characterId) ? (
+                    <div className="flex flex-col gap-1.5 rounded-[10px] bg-[rgba(224,164,104,0.08)] p-2.5" data-el-likeness>
+                      <p className="text-[12px] font-medium text-[#f0cda6]">{formatMsg(cast.answerTitle, { name: character?.name ?? "" })}</p>
+                      {LIKENESS_ANSWERS.map((a) => (
+                        <label key={a} className="flex cursor-pointer items-center gap-2 text-[12px] text-[#d6d9e0]">
+                          <input type="radio" name="el-likeness" value={a} checked={likenessPick === a} onChange={() => setLikenessPick(a)} data-el-likeness-answer={a} />
+                          {a === "me" ? t.character.likenessMe : a === "permission" ? t.character.likenessPermission : t.character.likenessNone}
+                        </label>
+                      ))}
+                      <p className="text-[11px] leading-snug text-[#9aa0ad]">
+                        {(() => {
+                          const [before, after] = t.character.likenessPolicyLine.split("{policy}");
+                          return (
+                            <>
+                              {before}
+                              <Link href="/content-policy" className="underline underline-offset-2 hover:text-[#ecedf1]">
+                                {t.character.likenessPolicy}
+                              </Link>
+                              {after}
+                            </>
+                          );
+                        })()}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void saveLikeness()}
+                        disabled={!likenessPick || likenessBusy}
+                        className="h-7 self-start cursor-pointer rounded-full bg-[#e0a468] px-3 text-[12px] font-semibold text-[#1b1c20] disabled:cursor-default disabled:bg-[#3a3b42] disabled:text-[#9aa0ad]"
+                      >
+                        {cast.answerSave}
+                      </button>
+                      {likenessNote && <p className="text-[11px] leading-snug text-[#c6c9d1]">{likenessNote}</p>}
+                    </div>
+                  ) : likenessNote ? (
+                    <p className="text-[11px] leading-snug text-[#c6c9d1]">{likenessNote}</p>
+                  ) : null,
                 current: characterId,
                 onPick: (id) => setCharacterId(id),
                 onNew: () => void castNewCharacter(),
@@ -3603,7 +3673,19 @@ export function SetView({
   const takeStartOldKey = takeStart ? newerPhotosIn(shots.find((sh) => sh.generationId === takeStart.id)) : null;
   /** The strip's chips: the person, the things whose sheets ride in sheet order, then the others. */
   const castChips: CastChip[] = [
-    ...(character ? [{ key: FIGURE_KEY, name: character.name, thumb: character.thumbUrl, word: "", title: formatMsg(cast.personLine, { name: character.name }), state: "person" as const, round: true }] : []),
+    ...(character
+      ? [
+          {
+            key: FIGURE_KEY,
+            name: character.name,
+            thumb: character.thumbUrl,
+            word: likenessNeeded(character.id) ? cast.needsAnswer : "",
+            title: likenessNeeded(character.id) ? formatMsg(cast.answerTitle, { name: character.name }) : formatMsg(cast.personLine, { name: character.name }),
+            state: "person" as const,
+            round: true,
+          },
+        ]
+      : []),
     // Riding ones by sheet; the rest in the person's order, then as planned —
     // so a thing moved up the list is shown where it was moved.
     ...livePlan.statuses
@@ -3669,6 +3751,12 @@ export function SetView({
     // on top of one already in flight.
     const busy = busyRef.current;
     if (busy.shooting || busy.taking || busy.editing || busy.matching || !characterId || !ready) return;
+    // Who is in the photos is asked on the figure's card before any shot (R1.12).
+    if (likenessNeeded(characterId)) {
+      setError(SET_LIKENESS_NEEDED);
+      openElementCard(FIGURE_KEY);
+      return;
+    }
     setError("");
     setTakeRetry(null);
     setLastMiss(null);
@@ -3808,6 +3896,11 @@ export function SetView({
     if (!takeStart || busy.shooting || busy.taking || busy.editing || busy.matching || !characterId || !ready) return;
     if (!takesOn) {
       setError(SET_TAKE_NEEDS_PLAN);
+      return;
+    }
+    if (likenessNeeded(characterId)) {
+      setError(SET_LIKENESS_NEEDED);
+      openElementCard(FIGURE_KEY);
       return;
     }
     setError("");

@@ -108,12 +108,15 @@ import {
   SET_TAKE_OFF_FACE,
   SET_TAKE_OTHER_PERSON,
   SET_TAKE_ELEMENT_DROPPED,
+  SET_LIKENESS_NEEDED,
   setMonthlyCapMessage,
 } from "@/lib/sets/messages";
 import { summarizeFailureDetail } from "@/lib/generations/report-constants";
 import { findVehicles, vehicleWords } from "@/lib/sets/vehicles";
 import { ELEMENT_SHEETS_PER_STILL, planShotSheets, resolvePhotos, setElements, type ShotElementStatus } from "@/lib/sets/elements";
 import { listElementPhotos } from "@/lib/sets/references";
+import { needsLikenessAnswer } from "@/lib/characters/likeness";
+import { readLikeness } from "@/lib/characters/likeness-store";
 import type { AttemptLog } from "@/lib/generations/pipeline";
 import { normaliseRack, rackWords } from "@/lib/sets/furniture";
 import { STAND_IN_EYE_M } from "@/lib/sets/build-scene";
@@ -623,6 +626,12 @@ type ShootResult =
       elements: ShotElementStatus[];
     };
 
+/** A character's photos with no likeness answer for them (likeness.ts); a missing table blocks nothing. */
+async function likenessBlocks(db: Awaited<ReturnType<typeof createClient>>, userId: string, characterId: string, paths: readonly string[]): Promise<boolean> {
+  const kept = await readLikeness(db, userId, [characterId]);
+  return !kept.missing && needsLikenessAnswer({ paths, record: kept.records.get(characterId) ?? null });
+}
+
 /**
  * The reason a still did not pass, in the words History uses
  * (report-constants.ts summarizeFailureDetail): a brand rule's block with
@@ -708,6 +717,11 @@ export async function shootInSet(
   if (!character || !Array.isArray(character.reference_image_urls) || character.reference_image_urls.length === 0) {
     return { error: SET_PICK_CHARACTER };
   }
+  // Who is in the character's photos (R1.12, likeness.ts): answered for
+  // exactly these photos, or no shot — the figure's card asks. A missing
+  // table (the SQL not run yet) lets the shot go on, and says so in the
+  // logs; the character form still asks before it saves.
+  if (await likenessBlocks(access.supabase, userId, characterId, character.reference_image_urls as string[])) return { error: SET_LIKENESS_NEEDED };
 
   // The look: an earlier still the browser names by id. It must be a shot of
   // THIS set, the person's own, finished and not deleted, and its picture
@@ -1162,6 +1176,15 @@ export async function takeInSet(
       .maybeSingle();
     const startPerson = typeof startGen?.character_profile_id === "string" ? startGen.character_profile_id : null;
     if (startPerson !== null && startPerson !== input.characterId) return { error: SET_TAKE_OTHER_PERSON };
+  }
+  // Who is in the character's photos (R1.12): the end still's shot asks
+  // too, but a take on a kept end frame never shoots one.
+  {
+    const { data: who } = UUID_RE.test(typeof input?.characterId === "string" ? input.characterId : "")
+      ? await access.supabase.from("character_profiles").select("reference_image_urls").eq("id", input.characterId).eq("user_id", userId).maybeSingle()
+      : { data: null };
+    const paths = Array.isArray(who?.reference_image_urls) ? (who.reference_image_urls as string[]) : [];
+    if (await likenessBlocks(access.supabase, userId, input.characterId, paths)) return { error: SET_LIKENESS_NEEDED };
   }
   // An end frame the set already has: the same checks, before a take is counted.
   const reuseId = typeof input?.endGenerationId === "string" && input.endGenerationId.length > 0 ? input.endGenerationId : null;

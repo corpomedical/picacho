@@ -3,6 +3,8 @@ import { isRenderableUrl, mediaUrl, thumbUrl, toMediaUrl } from "@/lib/media/url
 import { createClient } from "@/lib/supabase/server";
 import { CharacterForm } from "@/components/character-form";
 import { safeReturnTo } from "@/lib/characters/return-to";
+import { needsLikenessAnswer } from "@/lib/characters/likeness";
+import { readLikeness } from "@/lib/characters/likeness-store";
 import { EXPRESSION_SLOTS, isUsable, type ExpressionSlot } from "@/lib/characters/expression-set";
 import { expressionSetOfRow } from "@/lib/characters/expression-set-store";
 import type { ExpressionSlotView } from "@/components/expression-set-panel";
@@ -36,6 +38,16 @@ export default async function EditCharacterPage({
   // looking at re-renders this route before the redirect lands, so a 404
   // would be the last thing you saw. Send people back to the list instead.
   if (!profile) redirect("/app/character");
+
+  // Who is in these photos (Helios R1, likeness.ts): the answer kept for the
+  // photos on the row, if any, and whether they still need one.
+  const likenessRead = await readLikeness(supabase, userData.user.id, [profile.id as string]);
+  const likenessRecord = likenessRead.records.get(profile.id as string) ?? null;
+  const likeness = {
+    needed: needsLikenessAnswer({ paths: (profile.reference_image_urls as string[] | null) ?? [], record: likenessRecord }),
+    answer: likenessRecord?.answer ?? null,
+    at: likenessRecord?.consentedAt ?? null,
+  };
 
   // Never sign a path outside the owner's folder, whatever the row says. The
   // DB trigger enforces this for reference_image_urls; outfit_image_urls was
@@ -155,6 +167,7 @@ export default async function EditCharacterPage({
         projects={projects ?? []}
         voices={voices ?? []}
         returnTo={safeReturnTo(returnTo)}
+        likeness={likeness}
       />
     </div>
   );

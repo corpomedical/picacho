@@ -80,6 +80,8 @@ export type SetCharacter = {
   id: string;
   name: string;
   thumbUrl: string | null;
+  /** Who is in its photos has not been answered for these photos (likeness.ts): the figure's card asks before a shot. */
+  likenessNeeded?: boolean;
 };
 
 export type SetDetail = {

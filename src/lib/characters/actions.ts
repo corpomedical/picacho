@@ -16,6 +16,10 @@ import { ContentPolicyRefusal } from "@/lib/generations/content-policy";
 import { gatePrompt, recordPolicyRefusal } from "@/lib/generations/policy-log";
 import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
 import { readExpressionSet } from "@/lib/characters/expression-set-store";
+import { needsLikenessAnswer, parseLikeness, photosHash } from "@/lib/characters/likeness";
+import { readLikeness, recordLikeness } from "@/lib/characters/likeness-store";
+import { LIKENESS_COULDNT_RECORD, LIKENESS_NEEDS_ANSWER } from "@/lib/characters/likeness-messages";
+import { getLocale } from "@/lib/i18n/server";
 
 // Real incident, 2026-08-09: a plan=none account generated an AI reference
 // photo for free — this function had no plan/credit check at all, unlike
@@ -163,6 +167,20 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
     if (!voice) return { error: "Couldn't find that voice." };
   }
 
+  // Who is in these photos (Helios R1, 2026-09-21, likeness.ts): asked once
+  // for exactly these photos, and again when they change — before anything
+  // below is paid for (the vision calls). A new character with photos always
+  // answers; an edit answers when no answer was kept for these photos. A
+  // missing table (the SQL not run yet) lets an edit through, and says so
+  // in the logs.
+  const likenessAnswer = parseLikeness(formData.get("likeness_answer"));
+  if (referenceImagePaths.length > 0 && !likenessAnswer) {
+    if (!id) return { error: LIKENESS_NEEDS_ANSWER };
+    const kept = await readLikeness(supabase, uid, [id]);
+    if (!kept.missing && needsLikenessAnswer({ paths: referenceImagePaths, record: kept.records.get(id) ?? null })) return { error: LIKENESS_NEEDS_ANSWER };
+  }
+  const likenessLocale = likenessAnswer ? await getLocale() : "en";
+
   // The outfit description is written ONCE, here at save time, and reused by
   // every generation after — models whose endpoints can't take a clothing
   // photo (the Kling family) get this text injected into drafting instead.
@@ -268,6 +286,20 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
     row.reference_image_urls = [...referenceImagePaths, ...appendedRefs];
     row.outfit_image_urls = [...outfitImagePaths, ...appendedOutfits];
 
+    // The answer is kept first, for the photos this save leaves on the row:
+    // a failure saves nothing.
+    if (likenessAnswer && row.reference_image_urls.length > 0) {
+      const kept = await recordLikeness(createAdminClient(), {
+        userId: uid,
+        characterId: id,
+        answer: likenessAnswer,
+        photosHash: photosHash(row.reference_image_urls),
+        locale: likenessLocale,
+        place: "character_form",
+      });
+      if (kept === "failed") return { error: LIKENESS_COULDNT_RECORD };
+    }
+
     const { data: updatedRows, error } = await supabase
       .from("character_profiles")
       .update(row)
@@ -310,6 +342,22 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
       return { error: "Couldn't save this character — try again." };
     }
     savedId = inserted.id as string;
+    // The answer is kept for the new character's photos; if it can't be,
+    // the character goes too, so "nothing was saved" stays true.
+    if (likenessAnswer && row.reference_image_urls.length > 0) {
+      const kept = await recordLikeness(createAdminClient(), {
+        userId: uid,
+        characterId: savedId,
+        answer: likenessAnswer,
+        photosHash: photosHash(row.reference_image_urls),
+        locale: likenessLocale,
+        place: "character_form",
+      });
+      if (kept === "failed") {
+        await supabase.from("character_profiles").delete().eq("id", savedId).eq("user_id", uid);
+        return { error: LIKENESS_COULDNT_RECORD };
+      }
+    }
   }
 
   revalidatePath("/app/character");

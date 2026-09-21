@@ -69,6 +69,8 @@ vi.mock("@/lib/plans", async () => await import("../plans"));
 vi.mock("@/lib/generations/identity-gate", async () => await import("../generations/identity-gate"));
 vi.mock("@/lib/sets/photo", async () => await import("./photo"));
 vi.mock("@/lib/sets/references", () => ({ listElementPhotos: async () => ({ photos: [], sheets: [] }), forPage: (l: unknown) => l }));
+vi.mock("@/lib/characters/likeness", async () => await import("../characters/likeness"));
+vi.mock("@/lib/characters/likeness-store", () => ({ readLikeness: async () => ({ records: new Map(), missing: false }) }));
 vi.mock("@/lib/sets/set-config", async () => await import("./set-config"));
 vi.mock("@/lib/sets/shot-camera", async () => await import("./shot-camera"));
 vi.mock("@/lib/sets/shot-words-store", async () => await import("./shot-words-store"));

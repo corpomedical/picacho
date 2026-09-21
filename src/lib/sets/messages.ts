@@ -133,6 +133,8 @@ export const SET_TAKE_LOOK_DROPPED = "This beat stopped before its end frame was
 /** The same, for a reference photo picked as the film's look. */
 /** A film's beat whose thing's photo sheet was not drawn (R1, 2026-09-21): stopped before anything is shot. */
 export const SET_TAKE_ELEMENT_DROPPED = "This beat stopped before its end frame was shot: a photo on one of its things couldn't be drawn this time. Nothing was charged — press Render to try again.";
+/** A shot of a character whose photos have no likeness answer (R1.12, likeness.ts): the figure's card asks it. */
+export const SET_LIKENESS_NEEDED = "Tell us who is in this character's photos before shooting: open the person's card on the stage.";
 /** A film's end frame under the identity bar: its clip is not made (2026-09-21). */
 export const SET_TAKE_OFF_FACE = "This beat's end frame scored under your identity bar, so its clip wasn't made and only the frame was charged. Press Render to shoot it again.";
 /** A film's beat asked for with another person than its start still shows (2026-09-21). Nothing shot or charged. */
