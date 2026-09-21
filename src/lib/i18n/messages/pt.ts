@@ -578,7 +578,7 @@ const pt = {
     intro: "Você pode excluir sua conta e tudo o que ela contém a qualquer momento. Veja como, e exatamente o que acontece.",
     fromAppTitle: "Pelo app ou pelo site",
     fromAppStep1: "Entre no Picacho.",
-    fromAppStep2: "Abra {settings} e depois a aba {account}.",
+    fromAppStep2: "Abra {settings} (no app fica em {more}) e depois a aba {account}.",
     fromAppStep3: "Em {dangerZone}, escolha {deleteAccount} e digite seu nome de usuário (ou seu e-mail) para confirmar.",
     fromAppCta: "Ir para as configurações da conta",
     cantSignInTitle: "Não consegue entrar?",
@@ -590,6 +590,13 @@ const pt = {
     subscriptionBody: "Excluir sua conta cancela uma assinatura comprada no nosso site. Uma assinatura comprada pelo Google Play precisa ser cancelada na Play Store (Play Store → Pagamentos e assinaturas) — o Picacho não consegue cancelá-la por você. Quando essa assinatura terminar, a conta poderá ser excluída.",
     keptTitle: "O que é mantido",
     keptBody: "Os registros de pagamento ficam com o provedor de pagamento — Stripe ou Google Play —, como a lei exige. Registros de tráfego anonimizados, que não podem ser ligados a você, podem ser mantidos para análise.",
+    // Deleting only some of your data (2026-09-21): the Play Data safety form's
+    // "data deletion without deleting the account" link lands on #some-data.
+    someDataTitle: "Excluir apenas parte dos seus dados",
+    someDataIntro: "Você não precisa excluir sua conta para apagar algo. Entre e:",
+    someDataItems: "Uma imagem ou um vídeo: abra em {history} ou {media} e escolha {delete}.|Um personagem: abra e escolha {deleteCharacter}. As fotos de referência são excluídas; os takes que você fez com ele ficam em {history} até você excluí-los.|Uma foto de um personagem: abra o personagem, toque no ✕ da foto e depois em {saveCharacter}.|Uma publicação que você compartilhou na comunidade: {settings} → {privacy} → {shared} e depois {remove}.|Uma nota ou um projeto: abra e escolha {deleteNote} ou {deleteProject}.|Uma conta Google conectada: {settings} → {security} e depois {disconnect}.",
+    someDataKept: "Quando você exclui uma imagem ou um vídeo, o arquivo é apagado na hora. Um registro do pedido (o prompt e as configurações) fica na sua conta para que o seu uso mensal continue correto, e é apagado quando você exclui a conta.",
+    someDataOther: "Para o que você não consegue excluir por conta própria — por exemplo, um vídeo que enviou para melhorar —, escreva para {email} e nós excluímos.",
   },
   legal: {
     lastUpdatedLabel: "Última atualização",
@@ -1242,7 +1249,7 @@ const pt = {
     saving: "Salvando…",
     saveCharacter: "Salvar personagem",
     deleteCharacter: "Excluir este personagem",
-    deleteConfirm: "Excluir \"{name}\"? Isso não pode ser desfeito — as fotos de referência e o histórico vão junto.",
+    deleteConfirm: "Excluir \"{name}\"? Isso não pode ser desfeito — as fotos de referência vão junto. Os takes que você fez com ele ficam no Histórico.",
     describeFirst: "Descreva primeiro a aparência dele(a).",
     perspectiveButton: "Perspectiva",
     heroGenerateWith: "Gerar com {name}",

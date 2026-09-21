@@ -29,7 +29,7 @@ export const PAGE_UPDATED = {
   "/privacy": "2026-09-19",
   "/terms": "2026-08-30",
   "/content-policy": "2026-08-05",
-  "/delete-account": "2026-09-10",
+  "/delete-account": "2026-09-21",
   "/compare/heygen": "2026-09-06",
   "/compare/hedra": "2026-09-06",
   "/compare/renoise": "2026-09-14",

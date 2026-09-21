@@ -633,7 +633,7 @@ const en = {
     intro: "You can delete your account and everything in it at any time. Here is how, and exactly what happens.",
     fromAppTitle: "From the app or the website",
     fromAppStep1: "Sign in to Picacho.",
-    fromAppStep2: "Open {settings}, then the {account} tab.",
+    fromAppStep2: "Open {settings} (in the app it is under {more}), then the {account} tab.",
     fromAppStep3: "Under {dangerZone}, choose {deleteAccount} and type your username (or your email address) to confirm.",
     fromAppCta: "Go to account settings",
     cantSignInTitle: "Can't sign in?",
@@ -645,6 +645,13 @@ const en = {
     subscriptionBody: "Deleting your account cancels a subscription bought on our website. A subscription bought through Google Play must be cancelled in the Play Store (Play Store → Payments & subscriptions) — Picacho can't cancel it for you. Once that subscription has ended, the account can be deleted.",
     keptTitle: "What is kept",
     keptBody: "Records of payments stay with the payment provider — Stripe or Google Play — as the law requires. Anonymized traffic records that can't be linked back to you may be kept for analytics.",
+    // Deleting only some of your data (2026-09-21): the Play Data safety form's
+    // "data deletion without deleting the account" link lands on #some-data.
+    someDataTitle: "Delete only some of your data",
+    someDataIntro: "You don't have to delete your account to remove something. Sign in, then:",
+    someDataItems: "A picture or video: open it in {history} or {media} and choose {delete}.|A character: open it and choose {deleteCharacter}. Its reference photos are deleted; the takes you made with it stay in {history} until you delete them.|One photo of a character: open the character, tap the ✕ on the photo, then {saveCharacter}.|A post you shared to the community: {settings} → {privacy} → {shared}, then {remove}.|A note or a project: open it and choose {deleteNote} or {deleteProject}.|A connected Google account: {settings} → {security}, then {disconnect}.",
+    someDataKept: "When you delete a picture or video, the file is deleted at once. A record of the request (its prompt and settings) stays with your account so your monthly usage stays correct, and is erased when you delete the account.",
+    someDataOther: "Anything you can't delete yourself — a video you uploaded to upscale, for example — email {email} and we'll delete it.",
   },
   legal: {
     lastUpdatedLabel: "Last updated",
@@ -1322,7 +1329,7 @@ const en = {
     saving: "Saving…",
     saveCharacter: "Save character",
     deleteCharacter: "Delete this character",
-    deleteConfirm: "Delete \"{name}\"? This can't be undone — its reference photos and history go with it.",
+    deleteConfirm: "Delete \"{name}\"? This can't be undone — its reference photos go with it. The takes you made with it stay in History.",
     describeFirst: "Describe what they look like first.",
     perspectiveButton: "Perspective",
     heroGenerateWith: "Generate with {name}",

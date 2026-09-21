@@ -51,10 +51,33 @@ export default async function DeleteAccountPage() {
     account: t.settingsHub.tabPrivacy,
     dangerZone: t.settings.dangerZone,
     deleteAccount: t.settings.deleteMyAccount,
+    // In the app, Settings lives under the bar's More tab (2026-09-21).
+    more: t.nav.more,
   };
   const steps = [d.fromAppStep1, formatMsg(d.fromAppStep2, labels), formatMsg(d.fromAppStep3, labels)];
   const deleted = d.deletedItems.split("|");
   const [before, after] = d.cantSignInBody.split("{email}");
+  // Deleting only some of your data (2026-09-21): Google Play's Data safety
+  // form links its "delete some or all of your data without deleting your
+  // account" answer to #some-data. Every step quotes the app's own labels,
+  // like the steps above, and each path was traced to its delete action.
+  const itemLabels = {
+    history: t.nav.history,
+    media: t.nav.media,
+    delete: t.history.deleteGeneration,
+    deleteCharacter: t.character.deleteCharacter,
+    saveCharacter: t.character.saveCharacter,
+    settings: t.settings.title,
+    privacy: t.settingsHub.tabPrivacy,
+    shared: t.settings.sharedPostsTitle,
+    remove: t.settings.sharedPostsRemove,
+    deleteNote: t.notes.deleteNote,
+    deleteProject: t.projects.deleteProject,
+    security: t.settingsHub.tabSecurity,
+    disconnect: t.settings.disconnect,
+  };
+  const someItems = d.someDataItems.split("|").map((item) => formatMsg(item, itemLabels));
+  const [otherBefore, otherAfter] = d.someDataOther.split("{email}");
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -101,6 +124,24 @@ export default async function DeleteAccountPage() {
                 <li key={item}>{item}</li>
               ))}
             </ul>
+          </div>
+
+          <div id="some-data" className="scroll-mt-24">
+            <h2 className="text-base font-semibold text-neutral-900">{d.someDataTitle}</h2>
+            <p className="mt-3 text-sm text-neutral-600">{d.someDataIntro}</p>
+            <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-neutral-600">
+              {someItems.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+            <p className="mt-3 text-sm text-neutral-600">{d.someDataKept}</p>
+            <p className="mt-3 text-sm text-neutral-600">
+              {otherBefore}
+              <a href={`mailto:${supportEmail}`} className="font-medium text-neutral-900 underline underline-offset-2">
+                {supportEmail}
+              </a>
+              {otherAfter}
+            </p>
           </div>
 
           <div>

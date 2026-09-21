@@ -578,7 +578,7 @@ const es = {
     intro: "Puedes eliminar tu cuenta y todo lo que contiene en cualquier momento. Así se hace, y esto es exactamente lo que ocurre.",
     fromAppTitle: "Desde la app o la web",
     fromAppStep1: "Inicia sesión en Picacho.",
-    fromAppStep2: "Abre {settings} y luego la pestaña {account}.",
+    fromAppStep2: "Abre {settings} (en la app está en {more}) y luego la pestaña {account}.",
     fromAppStep3: "En {dangerZone}, elige {deleteAccount} y escribe tu nombre de usuario (o tu correo electrónico) para confirmar.",
     fromAppCta: "Ir a los ajustes de la cuenta",
     cantSignInTitle: "¿No puedes iniciar sesión?",
@@ -590,6 +590,13 @@ const es = {
     subscriptionBody: "Eliminar tu cuenta cancela una suscripción comprada en nuestra web. Una suscripción comprada en Google Play debe cancelarse en Play Store (Play Store → Pagos y suscripciones): Picacho no puede cancelarla por ti. Cuando esa suscripción haya terminado, podrás eliminar la cuenta.",
     keptTitle: "Qué se conserva",
     keptBody: "Los registros de pagos permanecen en el proveedor de pagos —Stripe o Google Play—, como exige la ley. Pueden conservarse registros de tráfico anonimizados, que no pueden vincularse contigo, con fines de análisis.",
+    // Deleting only some of your data (2026-09-21): the Play Data safety form's
+    // "data deletion without deleting the account" link lands on #some-data.
+    someDataTitle: "Eliminar solo una parte de tus datos",
+    someDataIntro: "No hace falta eliminar tu cuenta para borrar algo. Inicia sesión y:",
+    someDataItems: "Una imagen o un vídeo: ábrelo en {history} o {media} y elige {delete}.|Un personaje: ábrelo y elige {deleteCharacter}. Sus fotos de referencia se eliminan; las tomas que hiciste con él se quedan en {history} hasta que las elimines.|Una foto de un personaje: abre el personaje, toca la ✕ de la foto y luego {saveCharacter}.|Una publicación que compartiste en la comunidad: {settings} → {privacy} → {shared} y luego {remove}.|Una nota o un proyecto: ábrelo y elige {deleteNote} o {deleteProject}.|Una cuenta de Google conectada: {settings} → {security} y luego {disconnect}.",
+    someDataKept: "Al eliminar una imagen o un vídeo, el archivo se borra en el acto. Un registro de la solicitud (su prompt y sus ajustes) se queda en tu cuenta para que tu uso mensual siga siendo correcto, y se borra cuando eliminas la cuenta.",
+    someDataOther: "Para lo que no puedas eliminar tú — por ejemplo, un vídeo que subiste para mejorarlo —, escribe a {email} y lo eliminaremos.",
   },
   legal: {
     lastUpdatedLabel: "Última actualización",
@@ -1242,7 +1249,7 @@ const es = {
     saving: "Guardando…",
     saveCharacter: "Guardar personaje",
     deleteCharacter: "Eliminar este personaje",
-    deleteConfirm: "¿Eliminar a \"{name}\"? Esto no se puede deshacer — sus fotos de referencia e historial se eliminarán también.",
+    deleteConfirm: "¿Eliminar a \"{name}\"? Esto no se puede deshacer — sus fotos de referencia se eliminarán también. Las tomas que hiciste con él se quedan en el Historial.",
     describeFirst: "Describe primero cómo se ve.",
     perspectiveButton: "Perspectiva",
     heroGenerateWith: "Generar con {name}",
