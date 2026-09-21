@@ -6699,10 +6699,13 @@ function GenerateFormInner({
                 }
                 variant="ghost"
               />
-              {stageTakeIsVideo && (
+              {/* No expand in the phone app: its WebView has no fullscreen,
+                  so the button did nothing and threw "Fullscreen is not
+                  supported" (auto-filed from a Galaxy A23, 2026-09-18). */}
+              {stageTakeIsVideo && !nativeClient && (
                 <button
                   type="button"
-                  onClick={() => stageVideoRef.current?.requestFullscreen?.()}
+                  onClick={() => void stageVideoRef.current?.requestFullscreen?.()?.catch(() => {})}
                   title={g.expandStage}
                   aria-label={g.expandStage}
                   className="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] bg-onmedia/10 text-onmedia/85 transition-colors hover:bg-onmedia/20"
