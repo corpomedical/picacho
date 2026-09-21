@@ -2423,6 +2423,7 @@ const pt = {
     filmLeaveConfirm: "O filme ainda está sendo renderizado a partir desta página — se sair agora, ele para depois do trecho atual. Sair mesmo assim?",
     filmSetEnd: "Definir o fim do trecho {n} para esta vista",
     filmBeatJumps: "O trecho {n} salta pelo set sem movimento, então o clipe vai fazer uma fusão em vez de se mover. Escolha um movimento para ele ou defina o fim mais perto de onde ele começa.",
+    filmLookNone: "Nada na foto de abertura pode emprestar seu design aos trechos, então o carro pode mudar de um trecho para outro. Escolha uma foto de referência ou outra foto no menu Visual para manter um só design.",
     filmBeatDone: "pronto",
     filmBeatFailed: "Esse trecho não pôde ser renderizado — tudo antes dele fica guardado.",
     filmClipFailed: "O clipe desse trecho não reproduziu — recarregue a página e toque em reproduzir de novo.",

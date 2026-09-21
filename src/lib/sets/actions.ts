@@ -1030,6 +1030,14 @@ export async function takeInSet(
      * (film.ts filmJobs). Checked like the start; the frame is then unused.
      */
     endGenerationId?: string | null;
+    /**
+     * The film's one look (renderFilm, 2026-09-21): a still of this set or a
+     * reference photo, the same for every beat, never the beat before's end
+     * still. Both absent, the take's start still is its look, as a single
+     * take's is. Checked in shootInSet like any look.
+     */
+    lookGenerationId?: string | null;
+    lookRefId?: string | null;
     frameDataUri: string;
     characterId: string;
     direction: string;
@@ -1117,7 +1125,10 @@ export async function takeInSet(
       lifted: input.lifted,
       canvasAspect: input.canvasAspect,
       words: input.words,
-      lookGenerationId: startId,
+      // The look the caller named (a film's one look), else the start.
+      ...(input.lookGenerationId !== undefined || input.lookRefId !== undefined
+        ? { lookGenerationId: input.lookGenerationId ?? null, lookRefId: input.lookRefId ?? null }
+        : { lookGenerationId: startId }),
       rig: input.rig,
       beat: input.film === true,
     });

@@ -287,6 +287,13 @@ describe("filmContextKey", () => {
   const key = (over: Partial<Parameters<typeof filmContextKey>[0]> = {}) =>
     filmContextKey({ characterId: A, rig: rig(), mark, setKey: "s1", ...over });
 
+  it("changes with a look picked for the film, and not for the opening still, the default (2026-09-21)", () => {
+    const base = key();
+    expect(key({ look: undefined })).toBe(base);
+    expect(key({ look: "ref:00000000-0000-4000-8000-0000000000a1" })).not.toBe(base);
+    expect(key({ look: "still:00000000-0000-4000-8000-0000000000a2" })).not.toBe(key({ look: "ref:00000000-0000-4000-8000-0000000000a1" }));
+  });
+
   it("is the same for the same film, however the rig object was put together", () => {
     const r = rig();
     const reordered = Object.fromEntries(Object.entries(r).reverse()) as SetRig;

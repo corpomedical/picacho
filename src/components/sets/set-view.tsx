@@ -805,6 +805,9 @@ export function SetView({
   // read the person's latest choice, not the one from the render it began in
   // (review, 2026-09-11 — turning the look off mid-render was undone).
   const lookPinnedRef = useRef(false);
+  // The same pin as state, for what is worked out while drawing (the film's
+  // look and its price): a ref is not read during render.
+  const [lookPinned, setLookPinned] = useState(false);
   // Reference photos (2026-09-21, "we need to add an option to upload
   // reference images"): the person's own photos of things the set should
   // hold — the exact car — any of which can be the look instead of an
@@ -2823,15 +2826,35 @@ export function SetView({
     setLookId(generationId);
     setLookRefId(null);
     lookPinnedRef.current = true;
+    setLookPinned(true);
   }
   /** A reference photo as the look (2026-09-21): it replaces any still, until another look is picked. */
   function pickRefLook(refId: string) {
     setLookId(null);
     setLookRefId(refId);
     lookPinnedRef.current = true;
+    setLookPinned(true);
   }
   const lookRef = lookShot ? null : (references.find((r) => r.id === lookRefId) ?? null);
   const lookRefIndex = lookRef ? references.indexOf(lookRef) : -1;
+  /**
+   * The look every beat of the film carries (2026-09-21): ONE design for the
+   * whole film. Each beat used to borrow from the end still before it, so the
+   * car was drawn afresh every beat and drifted. A reference photo picked in
+   * the Look menu, else a still picked there, else the film's opening still,
+   * whose car is the one the film opens on. `key` names a pick for the film's
+   * context (film.ts filmContextKey), so changing it renders the film again.
+   */
+  const filmLook: { still: string | null; ref: string | null; key: string | undefined } = lookRef
+    ? { still: null, ref: lookRef.id, key: `ref:${lookRef.id}` }
+    : lookPinned && lookShot && lookShot.generationId !== film.startId
+      ? { still: lookShot.generationId, ref: null, key: `still:${lookShot.generationId}` }
+      : { still: film.startId, ref: null, key: undefined };
+  // The opening still as the film's look, and it has nothing to lend (its
+  // person covers every object): said in the Film tab and on the timeline,
+  // with the way out.
+  const filmStartShot0 = film.startId ? (shots.find((sh) => sh.generationId === film.startId) ?? null) : null;
+  const filmLookNone = filmLook.key === undefined && filmStartShot0 !== null && !canBeLook(filmStartShot0);
 
   /** Upload a reference photo: prepared here, checked and stored on the server, then made the look. */
   async function uploadLookPhoto(file: File | undefined) {
@@ -3469,7 +3492,7 @@ export function SetView({
    * mark or set renders from its start: its clips are of another film.
    */
   function filmPlanNow() {
-    const context = filmContextKey({ characterId, rig, mark, setKey, pose });
+    const context = filmContextKey({ characterId, rig, mark, setKey, pose, look: filmLook.key });
     const plan = filmRenderPlan(film, context, (id) => shots.find((sh) => sh.generationId === id)?.status ?? null);
     return { ...plan, context };
   }
@@ -3582,6 +3605,9 @@ export function SetView({
           result = await takeInSet(setId, {
             startGenerationId: startId,
             endGenerationId: job.end,
+            // The film's one look, the same for every beat (filmLook).
+            lookGenerationId: filmLook.still,
+            lookRefId: filmLook.ref,
             frameDataUri: frame,
             characterId,
             direction: beat.words,
@@ -6370,7 +6396,7 @@ export function SetView({
             s={s}
             film={film}
             jumps={filmJumps}
-            jumpNote={filmJumps.indexOf(true) >= 0 ? formatMsg(s.filmBeatJumps, { n: filmJumps.indexOf(true) + 1 }) : null}
+            jumpNote={filmLookNone ? s.filmLookNone : filmJumps.indexOf(true) >= 0 ? formatMsg(s.filmBeatJumps, { n: filmJumps.indexOf(true) + 1 }) : null}
             selected={filmSel}
             playhead={playhead}
             playing={previz || reel !== null}
@@ -6774,6 +6800,11 @@ export function SetView({
                 ) : (
                   <div className="flex flex-col gap-2">
                     <p className="text-[11.5px] leading-snug text-[#c6c9d1]">{film.beats.length === 0 ? s.sequencer.noBeats : s.rig.movePick}</p>
+                    {filmLookNone && film.beats.length > 0 && (
+                      <p data-film-look-none className="text-[11px] leading-snug text-[#e0a468]">
+                        {s.filmLookNone}
+                      </p>
+                    )}
                     {filmJumps.map((jumps, i) =>
                       jumps ? (
                         <p key={i} data-film-jump className="text-[11px] leading-snug text-[#e0a468]">

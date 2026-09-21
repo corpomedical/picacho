@@ -293,6 +293,12 @@ export function filmContextKey(input: {
   setKey: string;
   /** The figure's pose (cut 5); standing leaves the key as it was, so films made before the poses keep their clips. */
   pose?: StandPose;
+  /**
+   * The film's one look when it is not its opening still (2026-09-21): a
+   * reference photo ("ref:<id>") or another still ("still:<id>") picked in
+   * the Look menu. The opening still, the default, leaves the key as it was.
+   */
+  look?: string;
 }): string {
   const { rig, mark } = input;
   const light = rig.light ? [rig.light.scheme, rig.light.azimuthDeg, rig.light.elevationDeg] : null;
@@ -310,6 +316,7 @@ export function filmContextKey(input: {
       [mark.x, mark.z, mark.facingDeg],
       input.setKey,
       ...(input.pose && input.pose !== "stand" ? [input.pose] : []),
+      ...(input.look ? [`look ${input.look}`] : []),
     ]),
   );
 }

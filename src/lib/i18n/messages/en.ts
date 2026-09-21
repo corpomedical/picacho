@@ -2577,6 +2577,7 @@ const en = {
     filmLeaveConfirm: "The film is still rendering from this page — leave now and it stops after the beat it's on. Leave anyway?",
     filmSetEnd: "Set beat {n}'s end to this view",
     filmBeatJumps: "Beat {n} jumps across the set with no move, so its clip will cross-fade instead of moving. Pick a move for it, or set its end closer to where it starts.",
+    filmLookNone: "Nothing in the opening still can lend its design to the beats, so the car may change from beat to beat. Pick a reference photo or another still in the Look menu to keep one design.",
     filmBeatDone: "in",
     filmBeatFailed: "That beat couldn't render — everything before it is kept.",
     filmClipFailed: "That beat's clip couldn't play — reload the page and press play again.",

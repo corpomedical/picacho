@@ -2422,6 +2422,7 @@ const it = {
     filmLeaveConfirm: "Il film si sta ancora renderizzando da questa pagina: se esci ora, si ferma dopo il tratto in corso. Uscire comunque?",
     filmSetEnd: "Imposta la fine del tratto {n} su questa vista",
     filmBeatJumps: "Il tratto {n} salta attraverso il set senza movimento, quindi la sua clip farà una dissolvenza invece di muoversi. Scegli un movimento per questo tratto o avvicina la sua fine al punto in cui inizia.",
+    filmLookNone: "Niente nella foto d'apertura può prestare il suo design ai tratti, quindi l'auto può cambiare da un tratto all'altro. Scegli una foto di riferimento o un'altra foto nel menu Aspetto per mantenere un solo design.",
     filmBeatDone: "pronto",
     filmBeatFailed: "Quel tratto non si è potuto renderizzare — tutto ciò che viene prima resta.",
     filmClipFailed: "La clip di quel tratto non è partita — ricarica la pagina e premi di nuovo play.",
