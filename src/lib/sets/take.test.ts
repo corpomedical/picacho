@@ -254,8 +254,10 @@ describe("the page prices and asks as the server does (set-view.tsx)", () => {
     expect(refusal).toContain("setFilmBusy(null);");
     // The button shows the render begun while the question is out.
     expect(render.indexOf("if (first) setFilmBusy({ beat: first.beat, clipOnly: first.end !== null });")).toBeLessThan(ask);
-    // A second press while the question is out is ignored.
-    expect(render).toContain("if (!api || filmBusy || filmBusyRef.current || shooting || !ready) return;");
+    // A second press while the question is out is ignored; anything else
+    // that stops it is said (filmRenderWhy, 2026-09-21).
+    expect(render).toContain("if (filmBusy || filmBusyRef.current) return;");
+    expect(render).toContain("setFilmError(filmRenderWhy ?? s.filmWhyLoading);");
   });
 });
 
@@ -271,18 +273,22 @@ describe("a plan without takes is told first (set-view.tsx)", () => {
     const take = between("async function take(", "setError(\"\");");
     expect(take).toContain("if (!takesOn) {\n      setError(SET_TAKE_NEEDS_PLAN);\n      return;\n    }");
     const render = between("async function renderFilm(", "const plan = filmPlanNow();");
-    expect(render).toContain("if (!takesOn) {\n      setFilmError(SET_TAKE_NEEDS_PLAN);\n      return;\n    }");
+    // The plan is the first reason Render gives (filmRenderWhy), said on a press.
+    expect(render).toContain("if (filmRenderWhy !== null || !api) {");
+    expect(view).toContain("const filmRenderWhy: string | null = !takesOn\n    ? localizeServerText(SET_TAKE_NEEDS_PLAN, t)");
     // The retry's own guard: nothing else in flight (the busy ref, 2026-09-17) and the plan.
     expect(view).toContain("if (busy.shooting || busy.taking || busy.editing || busy.matching || !ready || !takesOn) return;");
     expect(view).toContain("const retryable = takesOn ? retryableTakes(shots) : new Set<string>();");
   });
 
-  it("answers Take it somewhere with the plan, and keeps Render shut with the reason beside it", () => {
+  it("answers Take it somewhere with the plan, and answers Render with the reason beside it", () => {
     const button = between("if (!takesOn) {\n                          setError(SET_TAKE_NEEDS_PLAN);", "{s.takeItSomewhere}");
     expect(button.indexOf("return;")).toBeLessThan(button.indexOf("setTakeStart({"));
     expect(button).toContain("title={takesOn ? undefined : localizeServerText(SET_TAKE_NEEDS_PLAN, t)}");
+    // Render is pressable and says why (2026-09-21); shut only while it renders.
     const render = between("onClick={() => void renderFilm()}", "{filmRenderLabel}");
-    expect(render).toContain("!takesOn ||");
+    expect(render).toContain("disabled={Boolean(filmBusy)}");
+    expect(render).toContain("title={filmRenderWhy ?? undefined}");
     expect(view).toContain("{!takesOn && <p className=\"px-1 text-xs text-[#c6c9d1]\">{localizeServerText(SET_TAKE_NEEDS_PLAN, t)}</p>}");
   });
 });

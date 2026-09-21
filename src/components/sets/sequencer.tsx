@@ -73,6 +73,8 @@ export type SequencerProps = {
   renderLabel: string;
   onRender(): void;
   renderDisabled: boolean;
+  /** Why Render cannot start now, in words (the page's filmRenderWhy); a press says it too. */
+  renderWhy?: string | null;
   hint: string;
   note: string | null;
   error: string | null;
@@ -184,6 +186,7 @@ export function Sequencer(p: SequencerProps) {
           type="button"
           onClick={p.onRender}
           disabled={p.renderDisabled}
+          title={p.renderWhy ?? undefined}
           className="flex h-7 cursor-pointer items-center whitespace-nowrap rounded-[6px] bg-[#e0a468] px-3 text-[11.5px] font-semibold text-[#1b1c20] hover:opacity-90 disabled:cursor-default disabled:bg-[#2a2b33] disabled:text-[#c6c9d1]"
         >
           {p.renderLabel}
@@ -389,8 +392,8 @@ export function Sequencer(p: SequencerProps) {
       </div>
 
       {(p.note || p.error || p.hint) && (
-        <div className="flex h-6 flex-none items-center gap-3 border-t border-[rgba(255,255,255,0.07)] px-2.5 text-[10.5px] text-[#9aa0ad]">
-          {p.error ? <span className="min-w-0 truncate text-red-400">{p.error}</span> : p.note ? <span className="min-w-0 truncate">{p.note}</span> : <span className="min-w-0 truncate">{p.hint}</span>}
+        <div className="flex min-h-6 flex-none items-center gap-3 border-t border-[rgba(255,255,255,0.07)] px-2.5 py-0.5 text-[10.5px] text-[#9aa0ad]">
+          {p.error ? <span className="line-clamp-2 min-w-0 text-red-400" title={p.error} role="alert">{p.error}</span> : p.note ? <span className="min-w-0 truncate">{p.note}</span> : <span className="min-w-0 truncate">{p.hint}</span>}
         </div>
       )}
     </div>

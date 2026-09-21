@@ -50,7 +50,7 @@ describe("hovering a move", () => {
   it("lands before a pick, a play, a keyframe, a beat's end or a jump to a beat, and when the moves close", () => {
     const pick = between(view, "function filmMove(move: FilmMove) {", "\n  }\n");
     expect(pick.indexOf("stopMovePreview();")).toBeGreaterThan(-1);
-    expect(pick.indexOf("stopMovePreview();")).toBeLessThan(pick.indexOf("layFilmMove(api, move, api.pose())"));
+    expect(pick.indexOf("stopMovePreview();")).toBeLessThan(pick.indexOf("layFilmMove(api, move, flyingFrom ?? api.pose())"));
     expect(pick.indexOf("layFilmMove(")).toBeLessThan(pick.indexOf("keepStage();"));
     for (const [from, to] of [
       ["async function playMove() {", "keepStage();"],

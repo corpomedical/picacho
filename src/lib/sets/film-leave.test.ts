@@ -16,7 +16,11 @@ const render = view.slice(view.indexOf("  async function renderFilm("), view.ind
 describe("leaving mid-film", () => {
   it("the page knows when it has gone", () => {
     expect(view).toContain("const aliveRef = useRef(true);");
-    expect(view).toMatch(/useEffect\(\s*\(\) => \(\) => \{\s*aliveRef\.current = false;\s*\},\s*\[\],\s*\);/);
+    // Set on every mount as well as cleared on every unmount (2026-09-21):
+    // cleared only, the flag read "gone" after React ran the effect again,
+    // and every film render stopped before its first beat.
+    expect(view).toMatch(/useEffect\(\(\) => \{[\s\S]*?aliveRef\.current = true;\s*return \(\) => \{\s*aliveRef\.current = false;\s*\};\s*\}, \[\]\);/);
+    expect(view).not.toMatch(/useEffect\(\s*\(\) => \(\) => \{\s*aliveRef\.current = false;/);
   });
 
   it("stops the chain before the next beat, never in the middle of one", () => {

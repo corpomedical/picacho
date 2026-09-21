@@ -101,9 +101,12 @@ import {
   SET_TAKE_BAD_END,
   SET_TAKE_BAD_START,
   SET_TAKE_NEEDS_PLAN,
+  SET_TAKE_END_FAILED,
   SET_TAKE_FAILED,
   setMonthlyCapMessage,
 } from "@/lib/sets/messages";
+import { summarizeFailureDetail } from "@/lib/generations/report-constants";
+import type { AttemptLog } from "@/lib/generations/pipeline";
 import { normaliseRack, rackWords } from "@/lib/sets/furniture";
 import { STAND_IN_EYE_M } from "@/lib/sets/build-scene";
 import { gazeWords, normaliseGaze } from "@/lib/sets/people";
@@ -593,7 +596,27 @@ type ShootResult =
       squeeze: number;
       /** The looks the look check will read it against (rig.ts rigCheckItems); none when the rig asked for none. */
       checks: RigCheckItem[];
+      /**
+       * Why a still that did not pass did not (2026-09-21): the render's own
+       * reason — a brand rule with its quoted words and a fix, a refusal, a
+       * miss — the sentence History shows. Null when it passed.
+       */
+      failure: string | null;
     };
+
+/**
+ * The reason a still did not pass, in the words History uses
+ * (report-constants.ts summarizeFailureDetail): a brand rule's block with
+ * the words it quoted and its fix, a refusal, a miss. Null for a stop.
+ */
+function stillFailure(result: { attempts: AttemptLog[]; rulesBlock?: { label: string; evidence: string; fix: string }[] }): string | null {
+  if (result.rulesBlock && result.rulesBlock.length > 0) {
+    return `Blocked by your brand rules: ${result.rulesBlock
+      .map((r) => `${r.label} (triggered by: "${r.evidence}"${r.fix ? ` — try: ${r.fix}` : ""})`)
+      .join("; ")}.`;
+  }
+  return summarizeFailureDetail(result.attempts);
+}
 
 /**
  * One still in a Set: the square snapshot the person framed, their
@@ -893,6 +916,7 @@ export async function shootInSet(
     error: null,
     generationId: result.id,
     succeeded: result.succeeded,
+    failure: result.succeeded ? null : stillFailure(result),
     resultUrl: result.resultUrl,
     score: typeof result.matchScore === "number" ? result.matchScore : null,
     hasLookObjects,
@@ -1046,6 +1070,7 @@ export async function takeInSet(
       lookDropped: false,
       format: rigs.get(reuseId)?.rig?.format ?? "square",
       squeeze: rigs.get(reuseId)?.rig?.squeeze ?? 1,
+      failure: null,
       checks: [],
     };
     endUrl = reusedUrl;
@@ -1066,7 +1091,9 @@ export async function takeInSet(
     });
     if (shot.error !== null) return { error: shot.error };
     still = shot;
-    if (!still.succeeded) return { error: null, still, reusedEnd: false, takeGenerationId: null, takeError: SET_TAKE_FAILED };
+    // Said as what it is: the end frame did not pass, so no clip was asked
+    // for (2026-09-21 — this used to say "the end frame is in").
+    if (!still.succeeded) return { error: null, still, reusedEnd: false, takeGenerationId: null, takeError: SET_TAKE_END_FAILED };
 
     // The two frames' RAW stored urls — resolveMaybeSignedUrl in the video
     // lane takes our own /api/media paths, never a thumbnail transform.

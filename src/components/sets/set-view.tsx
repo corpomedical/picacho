@@ -618,12 +618,17 @@ export function SetView({
    * new beat is started.
    */
   const aliveRef = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // Set on every mount, not only at creation: React runs a page's effects
+    // again when it shows it again (development runs them twice on purpose),
+    // and a flag cleared by the first cleanup and never set back read
+    // "left the page" for good — every film render then stopped before its
+    // first beat, saying nothing (2026-09-21, "the buttons do not work").
+    aliveRef.current = true;
+    return () => {
       aliveRef.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
   /**
    * Save the film, never throwing. A film that does not save is kept for
    * this tab (unsaved.ts) and said in the dock; once a deploy has left the
@@ -659,6 +664,15 @@ export function SetView({
     if (filmBusyRef.current) return;
     setFilm((f) => filmAfterEdit(f, fn(f)));
   }, []);
+  // A film with no start picks the newest finished still for itself, the
+  // moment Film or Cut opens (2026-09-21): a new film used to wait on the
+  // start tile's menu, and until then Render stayed disabled with nothing
+  // saying why. The tile shows which still it is; the menu still changes it.
+  const newestFinishedStill = shots.find((sh) => sh.kind === "still" && sh.status === "succeeded")?.generationId ?? null;
+  useEffect(() => {
+    if (!(filmOpen || cutOpen) || film.startId || !newestFinishedStill) return;
+    editFilm((f) => (f.startId ? f : { ...f, startId: newestFinishedStill }));
+  }, [filmOpen, cutOpen, film.startId, newestFinishedStill, editFilm]);
   /** The reel: which clip is playing on the stage; null when closed. */
   const [reel, setReel] = useState<number | null>(null);
   /**
@@ -678,6 +692,8 @@ export function SetView({
   // film, and which previz run is the live one — Stop retires it.
   const [playhead, setPlayhead] = useState(0);
   const previzRunRef = useRef(0);
+  /** The move pick in the air, if any: its run and the pose it flew from (filmMove). */
+  const pickFlightRef = useRef<{ run: number; from: Pose } | null>(null);
 
   // ---- the rig (Helios Cinema, drawn as canvas page I) ----
   // The camera department, docked left of the stage: the frame's shape, the
@@ -2897,7 +2913,12 @@ export function SetView({
     setPendingAsks([]);
     setNote(null);
     setLookDropped(result.lookDropped);
-    if (!result.succeeded) setLastMiss(result.generationId);
+    if (!result.succeeded) {
+      setLastMiss(result.generationId);
+      // The render's own reason, where the person is looking (2026-09-21):
+      // a brand rule names its words and a fix, instead of only History knowing.
+      if (result.failure) setError(`${s.stillFailedWhy} ${result.failure}`);
+    }
     else if (canBeLook(shot) && !lookPinnedRef.current) setLookId(result.generationId);
     // The still takes the stage's place until the person goes back to the frame.
     if (result.succeeded) setViewing(result.generationId);
@@ -3048,7 +3069,8 @@ export function SetView({
     setNote(null);
     setTakeStart(null);
     if (!result.takeGenerationId && result.still.succeeded) setTakeRetry(frames);
-    if (result.takeError) setError(result.takeError);
+    if (!result.still.succeeded) setError(`${s.takeEndFailed}${result.still.failure ? ` ${result.still.failure}` : ""}`);
+    else if (result.takeError) setError(result.takeError);
     if (result.still.succeeded) setViewing(result.takeGenerationId ?? result.still.generationId);
     if (result.still.succeeded && result.still.checks.length > 0) void runRigCheck(result.still.generationId);
   }
@@ -3115,12 +3137,18 @@ export function SetView({
    */
   function filmMove(move: FilmMove) {
     const api = apiRef.current;
-    // Not mid-flight: a pick then lays from where the last one is still
-    // flying. Not while the film renders either: the move could not be kept.
-    if (!api || previz || filmBusyRef.current) return;
+    // Not while the film renders: the move could not be kept.
+    if (!api || filmBusyRef.current) return;
+    // A flight still in the air — the last pick, or Play — stops where it
+    // is and this pick takes over (2026-09-21, "the buttons do not work":
+    // a pick inside the last one's 1.4 s flight used to be ignored, saying
+    // nothing). A pick's flight hands over the pose it flew from, so the
+    // new move is laid from there and never from mid-air.
+    const flyingFrom = pickFlightRef.current?.run === previzRunRef.current ? pickFlightRef.current.from : null;
+    if (previz) stopPlayback();
     // A hover's flight lands first, the stage back where it stood.
     stopMovePreview();
-    const laid = layFilmMove(api, move, api.pose());
+    const laid = layFilmMove(api, move, flyingFrom ?? api.pose());
     if (!laid) return;
     const { at, from, end } = laid;
     keepStage();
@@ -3131,7 +3159,13 @@ export function SetView({
     });
     setFilmSel(at);
     setPreviz(true);
-    void tweenPose(api, from, end, MOVE_FLIGHT_MS, move).then(() => {
+    const run = ++previzRunRef.current;
+    pickFlightRef.current = { run, from };
+    const alive = () => previzRunRef.current === run;
+    void tweenPose(api, from, end, MOVE_FLIGHT_MS, move, alive).then(() => {
+      // Taken over by a later pick or a Stop: that one owns the stage now.
+      if (!alive()) return;
+      pickFlightRef.current = null;
       setPreviz(false);
       // The lens and the frame's words follow the stage to the beat's end.
       setFovDeg(end.fovDeg);
@@ -3344,19 +3378,15 @@ export function SetView({
    */
   async function renderFilm() {
     const api = apiRef.current;
-    if (!api || filmBusy || filmBusyRef.current || shooting || !ready) return;
-    if (!characterId || !film.startId) {
-      setFilmError(s.filmNeedsStart);
-      return;
-    }
-    if (film.beats.length === 0) return;
-    if (!takesOn) {
-      setFilmError(SET_TAKE_NEEDS_PLAN);
+    // Already rendering: the button says so itself.
+    if (filmBusy || filmBusyRef.current) return;
+    // Anything else that stops it is said, never swallowed (filmRenderWhy).
+    if (filmRenderWhy !== null || !api) {
+      setFilmError(filmRenderWhy ?? s.filmWhyLoading);
       return;
     }
     setFilmError("");
     const plan = filmPlanNow();
-    if (plan.again && plan.rendering) return;
     filmBusyRef.current = true;
     // The whole render is paid for, or none of it is started: asked of the
     // person's balance at the Render button's price before the first beat
@@ -3535,7 +3565,14 @@ export function SetView({
             ends: [...upTo(kept.ends, i), result.still.succeeded ? result.still.generationId : null],
           });
         }
-        if (!result.still.succeeded || result.takeGenerationId === null) {
+        if (!result.still.succeeded) {
+          // The end frame itself failed — a brand rule, a refusal, a miss —
+          // and the render's own reason says which (2026-09-21: this used to
+          // read "the end frame is in", which it was not).
+          setFilmError(`${formatMsg(s.filmEndFailed, { n: i + 1 })}${result.still.failure ? ` ${result.still.failure}` : ""}`);
+          break;
+        }
+        if (result.takeGenerationId === null) {
           setFilmError(result.takeError ?? s.filmBeatFailed);
           break;
         }
@@ -4170,6 +4207,29 @@ export function SetView({
   // an end frame and a clip — priced by the same quotes the server charges.
   const filmPlan = filmPlanNow();
   const filmCredits = takesCredits(film.engine, filmJobCount(filmPlan.jobs));
+  const filmStartOptions = shots.filter((sh) => sh.kind === "still" && sh.status === "succeeded");
+  // Why Render cannot start right now, in words, or null when it can
+  // (2026-09-21, "the buttons do not work"): the button used to be disabled
+  // for any of these with its price still showing and no reason anywhere.
+  // Now it stays pressable, a press says the reason, and the line under
+  // the timeline says it before anyone presses.
+  const filmRenderWhy: string | null = !takesOn
+    ? localizeServerText(SET_TAKE_NEEDS_PLAN, t)
+    : !ready
+      ? s.filmWhyLoading
+      : !characterId
+        ? s.filmWhyWho
+        : !film.startId
+          ? filmStartOptions.length > 0
+            ? s.filmWhyStart
+            : s.filmPickStill
+          : film.beats.length === 0
+            ? s.filmWhyBeats
+            : filmPlan.again && filmPlan.rendering
+              ? s.filmClipsRendering
+              : shooting || matching
+                ? s.filmWhyShooting
+                : null;
   const filmWholeFrom = filmPlan.jobs.every((job) => job.end === null) ? (filmPlan.jobs[0]?.beat ?? 0) : null;
   const filmRenderLabel = filmBusy
     ? formatMsg(filmBusy.clipOnly ? s.filmRenderingClip : s.filmRendering, { i: filmBusy.beat + 1, n: film.beats.length })
@@ -4189,7 +4249,6 @@ export function SetView({
   const reelReady = filmRendered(film) && filmClipShots.every((sh) => sh !== null && sh.status === "succeeded" && Boolean(sh.resultUrl));
   const reelShots = reelReady ? (filmClipShots as SetShot[]) : [];
   const filmStartShot = film.startId ? (shots.find((sh) => sh.generationId === film.startId) ?? null) : null;
-  const filmStartOptions = shots.filter((sh) => sh.kind === "still" && sh.status === "succeeded");
   const scaleWarn = Boolean(sourcePhotoUrl) && !scaleDismissed && ready && oversizedSeating(spec);
   const shootLabel = shooting
     ? s.shooting
@@ -5890,17 +5949,8 @@ export function SetView({
                 <button
                   type="button"
                   onClick={() => void renderFilm()}
-                  disabled={
-                    !ready ||
-                    !takesOn ||
-                    Boolean(filmBusy) ||
-                    shooting ||
-                    matching ||
-                    film.beats.length === 0 ||
-                    !film.startId ||
-                    !characterId ||
-                    (filmPlan.again && filmPlan.rendering)
-                  }
+                  disabled={Boolean(filmBusy)}
+                  title={filmRenderWhy ?? undefined}
                   className="inline-flex h-8 cursor-pointer items-center justify-center rounded-[8px] bg-[#e0a468] px-3.5 text-xs font-semibold text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-[#2a2b33] disabled:text-[#c6c9d1] disabled:opacity-100"
                 >
                   {filmRenderLabel}
@@ -6180,19 +6230,10 @@ export function SetView({
             downloading={filmFileBusy}
             renderLabel={filmRenderLabel}
             onRender={() => void renderFilm()}
-            renderDisabled={
-              !ready ||
-              !takesOn ||
-              Boolean(filmBusy) ||
-              shooting ||
-              matching ||
-              film.beats.length === 0 ||
-              !film.startId ||
-              !characterId ||
-              (filmPlan.again && filmPlan.rendering)
-            }
+            renderDisabled={Boolean(filmBusy)}
+            renderWhy={filmRenderWhy}
             hint={s.filmHint}
-            note={!takesOn ? localizeServerText(SET_TAKE_NEEDS_PLAN, t) : null}
+            note={filmRenderWhy}
             error={filmError ? localizeServerText(filmError, t) : null}
           />
         )}
@@ -6226,7 +6267,8 @@ export function SetView({
                 <button
                   type="button"
                   onClick={() => void renderFilm()}
-                  disabled={!ready || !takesOn || Boolean(filmBusy) || shooting || matching || !film.startId || !characterId || (filmPlan.again && filmPlan.rendering)}
+                  disabled={Boolean(filmBusy)}
+                  title={filmRenderWhy ?? undefined}
                   className="inline-flex h-7 cursor-pointer items-center justify-center rounded-[6px] bg-[#e0a468] px-3 text-[11.5px] font-semibold text-[#1b1c20] hover:opacity-90 disabled:cursor-default disabled:bg-[#2a2b33] disabled:text-[#c6c9d1] disabled:opacity-100"
                 >
                   {filmRenderLabel}

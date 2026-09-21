@@ -113,6 +113,8 @@ export const SET_EDIT_MONTHLY_CAP_ONE =
 
 // Takes (2026-09-15): a clip from one still to a newly shot end frame.
 export const SET_TAKE_BAD_START = "That still can't start a take — pick another.";
+/** A take's end frame did not pass its checks, so no clip was asked for (2026-09-21); the still's own reason rides beside it. */
+export const SET_TAKE_END_FAILED = "The end frame didn't pass, so the take didn't start.";
 export const SET_TAKE_FAILED = "The end frame is in, but the take couldn't start — try the take again in a moment.";
 /**
  * Takes and films are every paid plan's (set-config.ts setTakesEligible,
