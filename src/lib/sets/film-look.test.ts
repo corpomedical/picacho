@@ -15,17 +15,17 @@ const view = readFileSync(join(__dirname, "../../components/sets/set-view.tsx"),
 const actions = readFileSync(join(__dirname, "actions.ts"), "utf8");
 
 describe("the film's one look", () => {
-  it("is a reference photo picked, else a still picked, else the opening still", () => {
+  it("is a still picked, else the opening still — a thing's own photos ride as its sheet instead (R1)", () => {
     const look = view.slice(view.indexOf("const filmLook: {"), view.indexOf("const filmStartShot0 ="));
-    expect(look).toContain("? { still: null, ref: lookRef.id, key: `ref:${lookRef.id}` }");
-    expect(look).toContain(": lookPinned && lookShot && lookShot.generationId !== film.startId");
-    expect(look).toContain(": { still: film.startId, ref: null, key: undefined };");
+    expect(look).not.toContain("ref");
+    expect(look).toContain("lookPinned && lookShot && lookShot.generationId !== film.startId");
+    expect(look).toContain(": { still: film.startId, key: undefined };");
     // The pin as state, set wherever the ref is, so nothing reads a ref while drawing.
-    expect(view.match(/lookPinnedRef\.current = true;\n\s*setLookPinned\(true\);/g)).toHaveLength(2);
+    expect(view.match(/lookPinnedRef\.current = true;\n\s*setLookPinned\(true\);/g)).toHaveLength(1);
   });
 
   it("rides every beat of a render, and changing it renders the film again", () => {
-    expect(view).toContain("lookGenerationId: filmLook.still,\n            lookRefId: filmLook.ref,");
+    expect(view).toContain("lookGenerationId: filmLook.still,\n            lookPicked: filmLook.key !== undefined,");
     expect(view).toContain("filmContextKey({ characterId: filmCharacterId, rig, mark, setKey, pose, look: filmLook.key })");
     // Never the beat before's end still.
     const render = view.slice(view.indexOf("async function renderFilm() {"), view.indexOf("async function retryClip("));
@@ -34,8 +34,8 @@ describe("the film's one look", () => {
 
   it("is what the take's end still carries; a single take keeps its start still as its look", () => {
     const take = actions.slice(actions.indexOf("export async function takeInSet("), actions.indexOf("// Delete\n"));
-    expect(take).toContain("...(input.lookGenerationId !== undefined || input.lookRefId !== undefined");
-    expect(take).toContain("lookGenerationId: input.lookGenerationId ?? null,\n            lookRefId: input.lookRefId ?? null,");
+    expect(take).toContain("...(input.lookGenerationId !== undefined");
+    expect(take).not.toContain("lookRefId");
     expect(take).toContain(": { lookGenerationId: startId }),");
   });
 

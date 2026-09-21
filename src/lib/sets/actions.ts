@@ -29,7 +29,7 @@ import {
   SET_RESERVED_BRIEF,
   setFramePath,
   setPhotoPath,
-  setThumbPath, setTakesEligible, setRefPhotoPath, setRefSheetPath, setElementSheetPath } from "@/lib/sets/set-config";
+  setThumbPath, setTakesEligible, setElementSheetPath } from "@/lib/sets/set-config";
 import { cleanText, normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
 import { setBuildInput } from "@/lib/sets/set-builder-prompt";
 import { photoBuildRequest, setAstraRequest } from "@/lib/sets/astra-request";
@@ -63,7 +63,7 @@ import { isFilmMove, isFilmTexture } from "@/lib/sets/moves";
 
 /** Where the rig's focus is measured to: the figure's eyes (build-scene's stand-in). */
 import { lookCutout, removeSetLookCutouts, type LookCutoutResult } from "@/lib/sets/look-cutout-store";
-import { lookSheet, sheetFromPhoto } from "@/lib/sets/look-sheet";
+import { lookSheet } from "@/lib/sets/look-sheet";
 import { seesLookObjects } from "@/lib/sets/look-cutout";
 import { readShotCameras, recordShotCamera, shotCameraOf } from "@/lib/sets/shot-camera";
 import { recordShotWords, SHOT_WORDS_STORED_MAX_CHARS } from "@/lib/sets/shot-words-store";
@@ -107,7 +107,6 @@ import {
   SET_TAKE_LOOK_DROPPED,
   SET_TAKE_OFF_FACE,
   SET_TAKE_OTHER_PERSON,
-  SET_TAKE_PHOTO_DROPPED,
   SET_TAKE_ELEMENT_DROPPED,
   setMonthlyCapMessage,
 } from "@/lib/sets/messages";
@@ -653,12 +652,6 @@ export async function shootInSet(
     lifted?: boolean;
     /** An earlier still from this set whose objects this one keeps (look.ts). */
     lookGenerationId?: string | null;
-    /**
-     * A reference photo the person uploaded to this set (references.ts,
-     * 2026-09-21), whose object sheet rides as the look instead — only when
-     * no earlier still is asked for.
-     */
-    lookRefId?: string | null;
     /** Width ÷ height of the stage canvas the frame's square was cut from (set-view.tsx canvasAspect). */
     canvasAspect?: number;
     /** What the person asked for, as they wrote it: kept with the still for the set's conversation (shot-words-store.ts). */
@@ -723,10 +716,6 @@ export async function shootInSet(
   // reason to refuse the shot.
   const lookId = typeof input.lookGenerationId === "string" ? input.lookGenerationId : "";
   const lookAsked = UUID_RE.test(lookId);
-  // A reference photo instead (2026-09-21): its own path per set and id, so
-  // the id is all it takes; a photo removed meanwhile just goes without.
-  const refId = typeof input.lookRefId === "string" ? input.lookRefId : "";
-  const refAsked = !lookAsked && UUID_RE.test(refId);
   let lookPath: string | null = null;
   if (lookAsked) {
     const { data: lookShot } = await access.supabase
@@ -854,24 +843,6 @@ export async function shootInSet(
         console.warn(`[sets] shot without its look: ${sheet.reason}`);
       }
     }
-  } else if (refAsked) {
-    // The person's own reference photo: the sheet is drawn from the photo
-    // itself (no cut: nothing of the set is in it to cut clear of), the
-    // first time it is a look, and reused after. The same slot and the same
-    // sentence as a still's sheet: the design is the photo's, the place,
-    // size and facing the sketch's.
-    const sheet = await sheetFromPhoto({
-      admin,
-      sourcePath: setRefPhotoPath(userId, setId, refId),
-      sheetPath: setRefSheetPath(userId, setId, refId),
-    });
-    if (sheet.ok) {
-      look = { url: mediaUrl("generated-images", sheet.path) };
-    } else {
-      lookDropped = true;
-      lookDropReason = sheet.reason;
-      console.warn(`[sets] shot without its reference photo: ${sheet.reason}`);
-    }
   }
 
   const framePath = setFramePath(userId, crypto.randomUUID());
@@ -883,7 +854,7 @@ export async function shootInSet(
   // to cut clear of its person never will, and the Film tab says so before
   // Render (set-view.tsx filmLookNone).
   if (lookDropped && (input.lookRequired === "picked" || (input.lookRequired === "default" && !LASTING_LOOK_DROPS.has(lookDropReason)))) {
-    return { error: refAsked ? SET_TAKE_PHOTO_DROPPED : SET_TAKE_LOOK_DROPPED };
+    return { error: SET_TAKE_LOOK_DROPPED };
   }
   const { error: uploadError } = await admin.storage
     .from("chat-attachments")
@@ -1130,14 +1101,14 @@ export async function takeInSet(
      */
     endGenerationId?: string | null;
     /**
-     * The film's one look (renderFilm, 2026-09-21): a still of this set or a
-     * reference photo, the same for every beat, never the beat before's end
-     * still. Both absent, the take's start still is its look, as a single
-     * take's is. Checked in shootInSet like any look.
+     * The film's one look (renderFilm, 2026-09-21): a still of this set, the
+     * same for every beat, never the beat before's end still. Absent, the
+     * take's start still is its look, as a single take's is. Checked in
+     * shootInSet like any look. A thing's own photos ride as its sheet
+     * instead (R1), never as the look.
      */
     lookGenerationId?: string | null;
-    lookRefId?: string | null;
-    /** That look was picked by the person (a reference photo, or a still other than the opening one), not the film's default. */
+    /** That look was picked by the person (a still other than the opening one), not the film's default. */
     lookPicked?: boolean;
     frameDataUri: string;
     characterId: string;
@@ -1265,10 +1236,9 @@ export async function takeInSet(
       // The look the caller named (a film's one look), else the start.
       // A named look is required: the beat stops, free, rather than shoot
       // an end frame without it (shootInSet lookRequired).
-      ...(input.lookGenerationId !== undefined || input.lookRefId !== undefined
+      ...(input.lookGenerationId !== undefined
         ? {
             lookGenerationId: input.lookGenerationId ?? null,
-            lookRefId: input.lookRefId ?? null,
             lookRequired: input.lookPicked === true ? ("picked" as const) : ("default" as const),
           }
         : { lookGenerationId: startId }),

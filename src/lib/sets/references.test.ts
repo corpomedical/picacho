@@ -1,15 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { SET_REFS_MAX, setRefPhotoPath, setRefPrefix, setRefSheetPath, setRefSheetPrefix } from "./set-config";
+import { setElementPhotoPath, setElementSheetPath, setRefPhotoPath, setRefPrefix, setRefSheetPath, setRefSheetPrefix } from "./set-config";
 import { sheetFromPhoto, LOOK_SHEET_PROMPT } from "./look-sheet";
 
 // Reference photos (2026-09-21, "we need to add an option to upload
-// reference images"): where they live, how the set lists them, and the
-// sheet drawn from one. Storage and the render are fakes.
+// reference images"): where they live, how the set lists them (since R1,
+// on its things, with photos from before R1 on nothing), and the sheet
+// drawn from one. Storage and the render are fakes.
 
 vi.stubEnv("MEDIA_SIGNING_SECRET", "test-only");
 vi.spyOn(console, "warn").mockImplementation(() => {});
-const { listSetReferences } = await import("./references");
+const { listElementPhotos } = await import("./references");
 
 const USER = "11111111-1111-4111-8111-111111111111";
 const SET = "22222222-2222-4222-8222-222222222222";
@@ -22,7 +23,6 @@ describe("where a set's reference photos live", () => {
     expect(setRefSheetPath(USER, SET, ref(5))).toBe(`${USER}/sets/${SET}.refsheet-${ref(5)}.jpg`);
     expect(`${SET}.refsheet-x`.startsWith(setRefPrefix(SET))).toBe(false);
     expect(setRefSheetPrefix(SET)).toBe(`${SET}.refsheet-`);
-    expect(SET_REFS_MAX).toBe(6);
   });
 });
 
@@ -39,25 +39,31 @@ describe("listing a set's reference photos", () => {
     return { admin, searches };
   };
 
-  it("reads the set's own photos only, oldest first, each with its media link", async () => {
+  it("reads the set's own photos only — on things and from before R1 — oldest first, each with its media link, and the sheets drawn", async () => {
+    const CAR = "c_89e319be_0_-1";
     const { admin, searches } = listing([
       { name: `${SET}.ref-${ref(7)}.jpg`, created_at: "2026-09-21T10:02:00Z" },
       { name: `${SET}.ref-${ref(6)}.jpg`, created_at: "2026-09-21T10:01:00Z" },
+      { name: setElementPhotoPath(USER, SET, CAR, 1, Date.parse("2026-09-21T10:05:00Z") / 1000, ref(9)).split("/").pop()!, created_at: "2026-09-21T10:05:00Z" },
       { name: `${SET}.refsheet-${ref(6)}.jpg`, created_at: "2026-09-21T10:03:00Z" },
+      { name: setElementSheetPath(USER, SET, "abc123").split("/").pop()!, created_at: "2026-09-21T10:06:00Z" },
       { name: `${OTHER}.ref-${ref(8)}.jpg`, created_at: "2026-09-21T09:00:00Z" },
       { name: `${SET}.ref-not-a-uuid.jpg`, created_at: "2026-09-21T09:30:00Z" },
     ]);
-    const refs = await listSetReferences(admin, USER, SET);
-    expect(searches).toEqual([`${SET}.ref-`]);
-    expect(refs.map((r) => r.id)).toEqual([ref(6), ref(7)]);
-    expect(refs[0].url).toMatch(new RegExp(`^/api/media/generated-images/${USER}/sets/${SET}\\.ref-${ref(6)}\\.jpg`));
+    const { photos, sheets } = await listElementPhotos(admin, USER, SET);
+    expect(searches).toContain(`${SET}.ref-`);
+    expect(photos.map((p) => [p.refId, p.anchor])).toEqual([
+      [ref(6), null],
+      [ref(7), null],
+      [ref(9), CAR],
+    ]);
+    expect(photos[0].url).toMatch(new RegExp(`^/api/media/generated-images/${USER}/sets/${SET}\\.ref-${ref(6)}\\.jpg`));
+    expect(sheets).toEqual(["abc123"]);
   });
 
-  it("holds at most six, and an unreadable folder is an empty list, never a throw", async () => {
-    const many = Array.from({ length: 9 }, (_, i) => ({ name: `${SET}.ref-${ref(i + 1)}.jpg`, created_at: `2026-09-21T10:0${i}:00Z` }));
-    expect(await listSetReferences(listing(many).admin, USER, SET)).toHaveLength(SET_REFS_MAX);
+  it("an unreadable folder is an empty list, never a throw", async () => {
     const broken = { storage: { from: () => ({ list: async () => ({ data: null, error: { message: "down" } }) }) } } as unknown as SupabaseClient;
-    expect(await listSetReferences(broken, USER, SET)).toEqual([]);
+    expect(await listElementPhotos(broken, USER, SET)).toEqual({ photos: [], sheets: [] });
   });
 });
 

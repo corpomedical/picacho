@@ -62,7 +62,6 @@ export const SET_REF_REFUSED = "This photo can't be used as a reference.";
 /** The picture gate could not be asked: nothing was stored. */
 export const SET_REF_UNCHECKED = "We couldn't check this photo — try again in a moment.";
 /** A set holds SET_REFS_MAX reference photos (set-config.ts). */
-export const SET_REF_TOO_MANY = "A set holds six reference photos — remove one to add another.";
 /** The burst brake on uploads. */
 export const SET_REF_TOO_FAST = "That's a lot of photos at once — try again in a few minutes.";
 /** Photos on the set's things (R1, 2026-09-21, element-actions.ts). */
@@ -132,7 +131,6 @@ export const SET_TAKE_FAILED = "The end frame is in, but the take couldn't start
 /** A film's beat stopped before its end frame was shot, free: the film's look could not be made (2026-09-21). */
 export const SET_TAKE_LOOK_DROPPED = "This beat stopped before its end frame was shot: the film's look couldn't be made this time. Nothing was charged — press Render to try again.";
 /** The same, for a reference photo picked as the film's look. */
-export const SET_TAKE_PHOTO_DROPPED = "This beat stopped before its end frame was shot: your reference photo couldn't be drawn this time. Nothing was charged — press Render to try again.";
 /** A film's beat whose thing's photo sheet was not drawn (R1, 2026-09-21): stopped before anything is shot. */
 export const SET_TAKE_ELEMENT_DROPPED = "This beat stopped before its end frame was shot: a photo on one of its things couldn't be drawn this time. Nothing was charged — press Render to try again.";
 /** A film's end frame under the identity bar: its clip is not made (2026-09-21). */

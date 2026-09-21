@@ -6,73 +6,126 @@ import es from "../i18n/messages/es";
 import pt from "../i18n/messages/pt";
 import itMsgs from "../i18n/messages/it";
 
-// Reference photos on the set page and in a shot (2026-09-21), read as
-// source like the page's other tests: the Look chip's menu uploads, picks
-// and removes them; a shot sends the picked one; the server draws its sheet
-// and rides it in the look's own slot.
+// Reference photos on the set page (R1, 2026-09-21): they go on the things
+// themselves — a tap on a car opens its card, the card uploads, the strip
+// says what rides — and a still draws each thing's sheet before it is
+// shot. The Look menu keeps stills only, and says where the photos went.
+// Read as source like the page's other tests.
 
 const read = (p: string) => readFileSync(join(__dirname, p), "utf8");
 const view = read("../../components/sets/set-view.tsx");
+const card = read("../../components/sets/element-card.tsx");
+const strip = read("../../components/sets/cast-strip.tsx");
 const actions = read("actions.ts");
 
-describe("in a shot", () => {
-  it("rides a reference photo's sheet as the look, only when no earlier still is the look", () => {
-    expect(actions).toContain("const refAsked = !lookAsked && UUID_RE.test(refId);");
-    const branch = actions.slice(actions.indexOf("} else if (refAsked) {"), actions.indexOf("const framePath = setFramePath("));
-    expect(branch).toContain("sourcePath: setRefPhotoPath(userId, setId, refId),");
-    expect(branch).toContain("sheetPath: setRefSheetPath(userId, setId, refId),");
-    expect(branch).toContain('look = { url: mediaUrl("generated-images", sheet.path) };');
-    expect(branch).toContain("lookDropped = true;");
+const fnOf = (source: string, head: string, next: string) => {
+  const a = source.indexOf(head);
+  expect(a, head).toBeGreaterThan(-1);
+  const b = source.indexOf(next, a + head.length);
+  expect(b, next).toBeGreaterThan(a);
+  return source.slice(a, b);
+};
+
+describe("the page's photos", () => {
+  it("are listed with the set's page and passed to the page, with the still model", () => {
+    expect(read("data.ts")).toContain('elementPhotos: status === "ready" ? forPage(await listElementPhotos(createAdminClient(), access.userId, row.id as string)) : { photos: [], sheets: [] },');
+    const page = read("../../app/app/sets/[id]/page.tsx");
+    expect(page).toContain("initialElementPhotos={data.elementPhotos}");
+    expect(page).toContain("stillModel={data.stillModel}");
   });
 
-  it("is listed with the set's page, and passed to the page", () => {
-    expect(read("data.ts")).toContain('references: status === "ready" ? await listSetReferences(createAdminClient(), access.userId, row.id as string) : [],');
-    expect(read("../../app/app/sets/[id]/page.tsx")).toContain("initialReferences={data.references}");
+  it("upload through the photo preparer and the checked action, onto the thing whose card is open", () => {
+    const up = fnOf(view, "async function uploadElementPhoto(", "async function removePhoto(");
+    expect(up.indexOf("prepared = await preparePhoto(file);")).toBeLessThan(up.indexOf("addElementPhoto("));
+    expect(up).toContain("res = await addElementPhoto(setId, { photoDataUri: prepared.dataUri, element: key });");
+    expect(up).toContain('setPhotoPhase("preparing");');
+    expect(up).toContain('setPhotoPhase("checking");');
+  });
+
+  it("come off at once and go back if the server says no", () => {
+    const rm = fnOf(view, "async function removePhoto(", "async function putPhotoOn(");
+    expect(rm).toContain("setElementPhotos(before);");
+    expect(rm).toContain("res = await removeElementPhoto(setId, refId);");
   });
 });
 
-describe("on the set page", () => {
-  it("makes the Look chip a menu: off, the latest still, the photos, and an upload", () => {
-    expect(view).toContain('onClick={() => toggleMenu("look")}');
-    const menu = view.slice(view.indexOf("data-look-menu"), view.indexOf("data-look-upload"));
+describe("a still", () => {
+  it("draws the sheets it will carry before it is shot, from the pose the frame was taken at", () => {
+    const shoot = fnOf(view, "async function shoot(", "async function runRigCheck(");
+    const prep = shoot.indexOf("await drawSheetsFor(planFor(pose, layoutRef.current.mark).riding)");
+    expect(prep).toBeGreaterThan(shoot.indexOf("const frame = apiRef.current?.frame();"));
+    expect(prep).toBeLessThan(shoot.indexOf("shootInSet(setId,"));
+    expect(shoot).toContain("setShotElements(result.elements);");
+    const take = fnOf(view, "async function take(", "function filmPlanNow(");
+    expect(take.indexOf("await drawSheetsFor(")).toBeLessThan(take.indexOf("takeInSet(setId,"));
+    expect(take).toContain("setShotElements(result.still.elements);");
+  });
+
+  it("asks the server to draw only the riding sheets not drawn yet, and asks again for any queued", () => {
+    const draw = fnOf(view, "async function drawSheetsFor(", "function showElement(");
+    expect(draw).toContain("let need = beforeShoot(riding, sheetHashes);");
+    expect(draw).toContain("res = await prepareElementSheets(setId, need);");
+    expect(draw).toContain('need = res.sheets.filter((x) => x.status === "queued").map((x) => x.key);');
+  });
+
+  it("plans the sheets as the shot does: the same planner, the still model's budget", () => {
+    expect(view).toContain('budget: stillModel === "gpt-image" ? ELEMENT_SHEETS_PER_STILL : 0,');
+    expect(view).toContain("return planShotSheets({");
+  });
+
+  it("carries no reference photo as its look any more", () => {
+    expect(view).not.toMatch(/lookRefId|pickRefLook|addSetReference|removeSetReference|SET_REFS_MAX/);
+    expect(actions).not.toMatch(/lookRefId|refAsked|SET_TAKE_PHOTO_DROPPED/);
+  });
+});
+
+describe("the Look menu", () => {
+  it("keeps Off, the latest still and a picked still, and says where the photos went", () => {
+    const menu = fnOf(view, "data-look-menu", "data-look-refs-moved");
     expect(menu).toContain("pickLook(null);");
     expect(menu).toContain("pickLook(latestStill);");
-    expect(menu).toContain("pickRefLook(r.id);");
-    expect(menu).toContain("void removeRefPhoto(r.id)");
-    expect(view).toContain("references.length < SET_REFS_MAX");
-    expect(view).toContain("void uploadLookPhoto(file);");
+    expect(menu).not.toContain("data-look-upload");
+    expect(view).toContain("{cast.lookMoved}");
+  });
+});
+
+describe("the card and the strip", () => {
+  it("open from a tap on the stage, and a tap on the ground closes the card", () => {
+    expect(view).toMatch(/if \(!hit \|\| \(hit\.kind === "structure" && elementCard\)\) closeElementCard\(\);\s*else openElementCard\(hit\.kind === "structure" \? null : hit\.key\);/);
+    expect(view).toContain('{elementCardView("dock")}');
+    expect(view).toContain('{!wide && elementCardView("sheet")}');
   });
 
-  it("uploads through the photo preparer and the checked action, then makes the photo the look", () => {
-    const up = view.slice(view.indexOf("async function uploadLookPhoto("), view.indexOf("async function removeRefPhoto("));
-    expect(up).toContain("prepared = await preparePhoto(file);");
-    expect(up).toContain("res = await addSetReference(setId, { photoDataUri: prepared.dataUri });");
-    expect(up).toContain("pickRefLook(added.id);");
+  it("the card's photos, its add tile and its status line are there to find", () => {
+    for (const hook of ["data-element-card", "data-element-kind", "data-el-photo", "data-el-photo-remove", "data-el-add", "data-el-status"]) expect(card).toContain(hook);
+    // A thing with no photos says how, never an empty line.
+    expect(card).toContain("{status ?? c.photoHint}");
   });
 
-  it("sends the picked photo with the shot, and a still as the look lets go of it", () => {
-    expect(view).toContain("lookRefId: lookShot ? null : (lookRef?.id ?? null),");
-    const pick = view.slice(view.indexOf("function pickLook("), view.indexOf("function pickRefLook("));
-    expect(pick).toContain("setLookRefId(null);");
+  it("the strip names who rides, the loose photos have a way home, and it clears the gizmo", () => {
+    for (const hook of ["data-cast-strip", "data-cast-chip", "data-el-state", "data-cast-empty", "data-cast-loose"]) expect(strip).toContain(hook);
+    const foot = fnOf(view, "data-stage-foot", "{figureMoved ? s.figureMovedOut : s.dragHint}");
+    expect(foot).toContain("<CastStrip");
+    expect(view).toContain('className="pointer-events-none absolute bottom-[104px] left-3.5 right-3.5 z-20 flex flex-col items-start gap-2 md:right-[190px]" data-stage-foot');
   });
 
-  it("says a photo that could not be drawn in its own words, not a still's", () => {
-    expect(view).toContain("setLookDroppedPhoto(!lookShot && lookRef !== null);");
-    expect(view).toContain("{lookDroppedPhoto ? s.lookRefDropped : s.lookDropped}");
-    expect(en.sets.lookRefDropped).not.toContain("cut out");
+  it("Escape closes the card before anything else", () => {
+    expect(view).toMatch(/if \(closeCardRef\.current\) closeCardRef\.current\(\);\s*else if \(menuRef\.current\) setMenu\(null\);/);
   });
 });
 
 describe("the words", () => {
-  it("exist in every language, and say a reference is never a person", () => {
+  it("exist in every language with their placeholders, and say a photo is never a person", () => {
+    const keys = Object.keys(en.sets.cast) as (keyof typeof en.sets.cast)[];
     for (const m of [en, es, pt, itMsgs]) {
-      for (const key of ["lookOnPhoto", "lookPhotos", "lookPhotoN", "lookPhotoUpload", "lookPhotoUploading", "lookPhotoRemove", "lookPhotoHint", "lookRefDropped"] as const) {
-        expect(m.sets[key], key).toBeTruthy();
+      for (const key of keys) {
+        expect(m.sets.cast[key], key).toBeTruthy();
+        for (const ph of en.sets.cast[key].match(/\{\w+\}/g) ?? []) expect(m.sets.cast[key], `${key} ${ph}`).toContain(ph);
       }
-      expect(m.sets.lookPhotoN).toContain("{n}");
-      expect(m.sets.lookPhotoRemove).toContain("{n}");
-      for (const key of ["setRefRefused", "setRefUnchecked", "setRefTooMany", "setRefTooFast"] as const) expect(m.serverText[key], key).toBeTruthy();
+      for (const key of ["setRefRefused", "setRefUnchecked", "setRefTooFast", "setElementFull", "setElementGone", "setElementNotAThing", "setElementsTooMany", "setTakeElementDropped"] as const) {
+        expect(m.serverText[key], key).toBeTruthy();
+      }
     }
-    expect(en.sets.lookPhotoHint).toContain("Not a person");
+    expect(en.sets.cast.photoHint).toContain("Not a person");
   });
 });

@@ -3,7 +3,7 @@ import raceTrack from "./fixtures-race-track.json";
 import showroomOpen from "./fixtures-showroom-open.json";
 import { setElementPhotoPath, setElementSheetPath, setRefPhotoPath, setRefSheetPath } from "./set-config";
 import { SET_ELEMENTS_TOO_MANY, SET_ELEMENT_FULL, SET_ELEMENT_GONE, SET_ELEMENT_NOT_A_THING } from "./messages";
-import { listSetReferences } from "./references";
+import { listElementPhotos } from "./references";
 import { sheetHashOf } from "./elements";
 
 // Photos on the set's things (element-actions.ts, R1, 2026-09-21): each is
@@ -223,13 +223,18 @@ describe("settleElementPhotos", () => {
   });
 });
 
-describe("deploying in either order", () => {
-  it("leaves the new names out of the old listing", async () => {
+describe("a photo from before R1", () => {
+  it("is listed as a photo on nothing beside the things' own, until it is put on one", async () => {
     seed(setElementPhotoPath(USER, SET, CAR, 1, 100, refId(5)));
     seed(setRefPhotoPath(USER, SET, refId(6)));
     const { createAdminClient } = await import("@/lib/supabase/server");
-    const listed = await listSetReferences(createAdminClient() as never, USER, SET);
-    expect(listed.map((r) => r.id)).toEqual([refId(6)]);
+    const listed = await listElementPhotos(createAdminClient() as never, USER, SET);
+    expect(listed.photos.map((p) => [p.refId, p.anchor])).toEqual(
+      expect.arrayContaining([
+        [refId(5), CAR],
+        [refId(6), null],
+      ]),
+    );
   });
 });
 

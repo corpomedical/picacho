@@ -83,11 +83,10 @@ describe("which stills the page offers as the look", () => {
     // What the server said about the camera and the look, as it said it.
     expect(view).toContain("hasLookObjects: result.hasLookObjects,");
     expect(view).toContain("setLookDropped(result.lookDropped);");
-    expect(view).toContain("setLookDroppedPhoto(!lookShot && lookRef !== null);");
-    expect(view).toContain("{lookDroppedPhoto ? s.lookRefDropped : s.lookDropped}");
+    expect(view).toContain("{s.lookDropped}");
     // The frame's canvas shape rides with the shot, read when the frame is taken.
     expect(view).toContain("const canvasAspect = apiRef.current?.canvasAspect();");
-    // And beside it, a reference photo when one is the look instead (2026-09-21).
-    expect(view).toMatch(/lookGenerationId: lookShot\?\.generationId \?\? null,\s*\/\/[^\n]*\n\s*lookRefId: lookShot \? null : \(lookRef\?\.id \?\? null\),\s*canvasAspect,/);
+    // The look is a still only: a thing's own photos ride as its sheet (R1, 2026-09-21).
+    expect(view).toMatch(/lookGenerationId: lookShot\?\.generationId \?\? null,\s*canvasAspect,/);
   });
 });

@@ -347,13 +347,13 @@ export function setLookSheetPrefix(setId: string): string {
 }
 // A reference photo (2026-09-21, "we need to add an option to upload
 // reference images"): a photo of something the set should hold — a car, a
-// sofa, a storefront — that the person uploads, and the object sheet drawn
-// from it (look-sheet.ts sheetFromPhoto), which rides a shot as its look the
-// way an earlier still's sheet does. Beside the set's other files, under the
-// same rules: fixed per set and reference, removed with the set by listing
-// its folder for these prefixes, swept by account deletion, never rewritten.
+// sofa, a storefront. The first ones (the Look menu's, before R1) were
+// named by id alone, with a sheet of their own; since R1 a photo goes on a
+// thing and names it (setElementPhotoPath below), and an old one reads as a
+// photo on nothing until it is put on one (element-actions.ts). Beside the
+// set's other files, under the same rules: removed with the set by listing
+// its folder for these prefixes, swept by account deletion.
 // ".refsheet-" never starts with ".ref-", so the two prefixes never overlap.
-export const SET_REFS_MAX = 6;
 const REF_INFIX = ".ref-";
 const REF_SHEET_INFIX = ".refsheet-";
 export function setRefPhotoPath(userId: string, setId: string, refId: string): string {

@@ -9,7 +9,7 @@ import { formatMsg } from "@/lib/i18n/format";
 import { quoteSend } from "@/lib/generations/quote";
 import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { saveSetLayout, saveSetThumbnail, shootInSet, takeInSet } from "@/lib/sets/actions";
-import { addSetReference, removeSetReference } from "@/lib/sets/reference-actions";
+import { addElementPhoto, assignElementPhoto, prepareElementSheets, removeElementPhoto, settleElementPhotos } from "@/lib/sets/element-actions";
 import { thumbUrl } from "@/lib/media/url";
 import { editSetWithAstra, saveSetEdit } from "@/lib/sets/editor-actions";
 import { matchSetShot } from "@/lib/sets/match-actions";
@@ -26,7 +26,12 @@ import { beatAtTime, beatSpans, timeOf } from "@/lib/sets/sequencer";
 import { StatusList, StudioBar, StudioDock, StudioRail, StudioStatus, useWide } from "./studio-frame";
 import { clearMarks } from "@/lib/sets/marks";
 import { BADGE_HIT_SLOP_PX, FIGURE_TAP_WAIT_MS, TAP_SLOP_PX, badgeAt, elementForHits, isTap, type ElementHit, type StageHit, type TapStart } from "@/lib/sets/stage-pick";
-import { FIGURE_KEY, type SetElement } from "@/lib/sets/elements";
+import { ELEMENT_SHEETS_PER_STILL, FIGURE_KEY, planShotSheets, resolvePhotos, setElements as elementsOf, type ElementPhoto, type SetElement, type ShotElementStatus } from "@/lib/sets/elements";
+import { afterShotWhy, beforeShoot, pageState, ridesState, statusWords as elementStatusWords, type ElementState } from "@/lib/sets/element-status";
+import { findVehicles } from "@/lib/sets/vehicles";
+import { shotCameraOf } from "@/lib/sets/shot-camera";
+import { ElementCard, type CardElement } from "./element-card";
+import { CastStrip, type CastChip } from "./cast-strip";
 import {
   retryableTakes,
   SET_TAKE_DEFAULT_ENGINE,
@@ -73,7 +78,6 @@ import {
   SET_COMPARE_PX,
   SET_MAX_TILT_DOWN_DEG,
   SET_MAX_TILT_UP_DEG,
-  SET_REFS_MAX,
   SET_THUMB_PX,
 } from "@/lib/sets/set-config";
 import { SET_LIMITS, STAND_POSES, specInstanceCount, type SetLayout, type SetSpec, type StandPose, type Vec3 } from "@/lib/sets/set-spec";
@@ -483,7 +487,8 @@ export function SetView({
   initialFilmOpen = false,
   initialCutOpen = false,
   savedRig = null,
-  initialReferences = [],
+  initialElementPhotos = { photos: [], sheets: [] },
+  stillModel = "gpt-image",
 }: {
   setId: string;
   /** The set's name, said in the workspace's own bar. */
@@ -504,8 +509,10 @@ export function SetView({
    * page says so before a take is framed; takeInSet checks again.
    */
   takesOn: boolean;
-  /** The set's reference photos (references.ts, 2026-09-21): each can be the next shot's look. */
-  initialReferences?: { id: string; url: string }[];
+  /** The photos on the set's things and the sheets already drawn (R1, references.ts listElementPhotos). */
+  initialElementPhotos?: { photos: ElementPhoto[]; sheets: string[] };
+  /** The picture model stills are drawn with: the things' sheets ride GPT Image only (elements.ts planShotSheets). */
+  stillModel?: string;
   /** A message the person sent from the Sets home, asked the moment the stage is ready. */
   initialAsk?: string | null;
   /** The character picked on the Sets home. */
@@ -851,20 +858,26 @@ export function SetView({
   // The same pin as state, for what is worked out while drawing (the film's
   // look and its price): a ref is not read during render.
   const [lookPinned, setLookPinned] = useState(false);
-  // Reference photos (2026-09-21, "we need to add an option to upload
-  // reference images"): the person's own photos of things the set should
-  // hold — the exact car — any of which can be the look instead of an
-  // earlier still. The server draws the thing four ways round from the photo
-  // and the shot keeps its design (references.ts, look-sheet.ts).
-  const [references, setReferences] = useState(initialReferences);
-  const [lookRefId, setLookRefId] = useState<string | null>(null);
-  const [refBusy, setRefBusy] = useState(false);
-  const refFileRef = useRef<HTMLInputElement>(null);
+  // The set's things and their reference photos (R1, 2026-09-21, "add an
+  // option for the user to upload references — person, vehicle, objects"):
+  // a tap on a car or an object opens its card, its photos become one
+  // sheet, and the sheet rides every still that sees it (elements.ts).
+  // The photos as the server lists them, the sheets already drawn (by
+  // hash), the open card (null key: a part of the set itself) with the dock
+  // tab it opened from, an upload's phase, the last shot's answer about each
+  // thing, the sheets drawing now, and a sheet's last failed try, by hash.
+  const [elementPhotos, setElementPhotos] = useState<ElementPhoto[]>(initialElementPhotos.photos);
+  const [sheetHashes, setSheetHashes] = useState<string[]>(initialElementPhotos.sheets);
+  const [elementCard, setElementCard] = useState<{ key: string | null; prevTab: DockTab | null } | null>(null);
+  const [photoPhase, setPhotoPhase] = useState<"idle" | "preparing" | "checking">("idle");
+  const [photoError, setPhotoError] = useState("");
+  const [shotElements, setShotElements] = useState<ShotElementStatus[] | null>(null);
+  const [sheetPrep, setSheetPrep] = useState<string[]>([]);
+  const [sheetLast, setSheetLast] = useState<Record<string, "refused" | "failed">>({});
+  const [followedKeys, setFollowedKeys] = useState<string[]>([]);
   // The last shot asked for a look that could not be cut out, and went
-  // without it: said once, under the shot, until the next one. A reference
-  // photo is drawn, not cut, so its miss is said in its own words.
+  // without it: said once, under the shot, until the next one.
   const [lookDropped, setLookDropped] = useState(false);
-  const [lookDroppedPhoto, setLookDroppedPhoto] = useState(false);
   // A photo set: the photo's shape (from the picture once it loads), and
   // camera 1's view drawn at that shape to lay beside it. Nothing is saved.
   const [photoAspect, setPhotoAspect] = useState<number | null>(null);
@@ -1650,7 +1663,7 @@ export function SetView({
           if (badgeRoot.visible) {
             // The figure's thumbnail rides over its head wherever it is dragged.
             for (const o of badgeRoot.children) {
-              if (o.userData.key === FIGURE_KEY) o.position.set(standIn.group.position.x, eyeY() + 0.3, standIn.group.position.z);
+              if (o.userData.key === FIGURE_KEY) o.position.set(standIn.group.position.x, eyeY(), standIn.group.position.z);
             }
             if (frameCount % 8 === 0) dimCoveredBadges();
           }
@@ -2382,6 +2395,8 @@ export function SetView({
               label.center.set(0.5, 1);
               label.userData.key = b.key;
               if (el) label.position.set(...el.anchor);
+              // The figure's rides at its eyes, lifted clear of the focus readout drawn there.
+              else label.element.style.marginTop = "-36px";
               badgeRoot.add(label);
             }
             showOverlay();
@@ -3082,32 +3097,22 @@ export function SetView({
 
   function pickLook(generationId: string | null) {
     setLookId(generationId);
-    setLookRefId(null);
     lookPinnedRef.current = true;
     setLookPinned(true);
   }
-  /** A reference photo as the look (2026-09-21): it replaces any still, until another look is picked. */
-  function pickRefLook(refId: string) {
-    setLookId(null);
-    setLookRefId(refId);
-    lookPinnedRef.current = true;
-    setLookPinned(true);
-  }
-  const lookRef = lookShot ? null : (references.find((r) => r.id === lookRefId) ?? null);
-  const lookRefIndex = lookRef ? references.indexOf(lookRef) : -1;
   /**
    * The look every beat of the film carries (2026-09-21): ONE design for the
    * whole film. Each beat used to borrow from the end still before it, so the
-   * car was drawn afresh every beat and drifted. A reference photo picked in
-   * the Look menu, else a still picked there, else the film's opening still,
-   * whose car is the one the film opens on. `key` names a pick for the film's
-   * context (film.ts filmContextKey), so changing it renders the film again.
+   * car was drawn afresh every beat and drifted. A still picked in the Look
+   * menu, else the film's opening still, whose car is the one the film opens
+   * on. `key` names a pick for the film's context (film.ts filmContextKey),
+   * so changing it renders the film again. A thing's own photos ride as its
+   * sheet instead (R1, elements.ts), never as the look.
    */
-  const filmLook: { still: string | null; ref: string | null; key: string | undefined } = lookRef
-    ? { still: null, ref: lookRef.id, key: `ref:${lookRef.id}` }
-    : lookPinned && lookShot && lookShot.generationId !== film.startId
-      ? { still: lookShot.generationId, ref: null, key: `still:${lookShot.generationId}` }
-      : { still: film.startId, ref: null, key: undefined };
+  const filmLook: { still: string | null; key: string | undefined } =
+    lookPinned && lookShot && lookShot.generationId !== film.startId
+      ? { still: lookShot.generationId, key: `still:${lookShot.generationId}` }
+      : { still: film.startId, key: undefined };
   // The opening still as the film's look, and it has nothing to lend (its
   // person covers every object): said in the Film tab and on the timeline,
   // with the way out.
@@ -3127,60 +3132,320 @@ export function SetView({
   const filmCharacterId = filmStartPerson !== null && !filmPersonGone ? filmStartPerson : characterId;
   const filmPersonOther = filmStartPerson !== null && !filmPersonGone && filmStartPerson !== characterId ? (characters.find((c) => c.id === filmStartPerson)?.name ?? null) : null;
 
-  /** Upload a reference photo: prepared here, checked and stored on the server, then made the look. */
-  async function uploadLookPhoto(file: File | undefined) {
-    if (!file || refBusy) return;
-    setError("");
-    setRefBusy(true);
+  // ---- the set's things and their photos (R1, elements.ts) ----
+
+  const cast = s.cast;
+  /** The set's things, from the set as drawn now; what the stage taps and the shot plans read. */
+  const els = useMemo(() => elementsOf(spec), [spec]);
+  const vehicles = useMemo(() => findVehicles(spec), [spec]);
+  /** Which photos are on which thing now, after any change to the set (moved, changed, gone). */
+  const resolved = useMemo(() => resolvePhotos(els, elementPhotos), [els, elementPhotos]);
+  const heldOf = useMemo(() => new Map(resolved.held.map((h) => [h.key, h])), [resolved]);
+  function elementName(key: string): string {
+    if (key === FIGURE_KEY) return character?.name ?? cast.person;
+    const e = els.find((x) => x.key === key);
+    if (!e) return "";
+    const many = els.filter((x) => x.kind === e.kind).length > 1;
+    if (e.kind === "car") return many ? formatMsg(cast.carN, { n: e.ordinal }) : cast.car;
+    if (e.kind === "vehicle") return many ? formatMsg(cast.vehicleN, { n: e.ordinal }) : cast.vehicle;
+    return many ? formatMsg(cast.objectN, { n: e.ordinal }) : cast.object;
+  }
+  /**
+   * Which sheets a still from this pose would carry, as the shot will plan
+   * them (actions.ts shootInSet → elements.ts planShotSheets): the same
+   * camera, the same band, as if every sheet were drawn — the page draws
+   * them before it shoots.
+   */
+  const planFor = useCallback(
+    (pose: Pose | null, m: Mark) => {
+      const fr = formatFrame(rig.format, rig.squeeze);
+      const cam = pose ? shotCameraOf({ camera: pose, mark: m }, 1, fr.cut ? { render: fr.renderAspect, band: fr.bandAspect, squeeze: fr.squeeze } : null) : null;
+      return planShotSheets({
+        els,
+        held: resolved.held,
+        sheets: resolved.held.map((h) => h.sheetHash),
+        vehicles,
+        shotCamera: cam,
+        poseCamera: pose,
+        budget: stillModel === "gpt-image" ? ELEMENT_SHEETS_PER_STILL : 0,
+        spec,
+      });
+    },
+    [els, resolved, vehicles, rig.format, rig.squeeze, stillModel, spec],
+  );
+  /** The plan for the frame as it stands (the pose last settled). */
+  const livePlan = useMemo(() => planFor(poseNow, mark), [planFor, poseNow, mark]);
+  /** Each thing with photos: its state, its chip's word and its card's sentence. */
+  const elementView = useMemo(() => {
+    const out = new Map<string, { state: ElementState; word: string; line: string }>();
+    const riding = livePlan.riding.length;
+    for (const st of livePlan.statuses) {
+      const h = heldOf.get(st.key);
+      if (!h) continue;
+      const state = pageState(st.status, { drawn: sheetHashes.includes(h.sheetHash), drawing: sheetPrep.includes(st.key), last: sheetLast[h.sheetHash] ?? null });
+      const w = elementStatusWords(state, { sheet: st.sheet, count: riding, max: ELEMENT_SHEETS_PER_STILL, like: st.like });
+      out.set(st.key, { state, word: cast[w.short], line: formatMsg(cast[w.long], w.params) });
+    }
+    return out;
+  }, [livePlan, heldOf, sheetHashes, sheetPrep, sheetLast, cast]);
+
+  /** The server's listing, as it came back from an action. */
+  function applyListing(listing: { photos: ElementPhoto[]; sheets: string[] }) {
+    setElementPhotos(listing.photos);
+    setSheetHashes(listing.sheets);
+  }
+
+  function openElementCard(key: string | null) {
+    setPhotoError("");
+    setElementCard((prev) => ({ key, prevTab: prev ? prev.prevTab : dockTab }));
+    // A card is the dock's Scene tab on a computer; on a phone a sheet, which the rig's own sheet makes room for.
+    if (wide) setDockTab("scene");
+    else setRigOpen(false);
+  }
+  function closeElementCard() {
+    if (elementCard && wide && elementCard.prevTab && dockTab === "scene") setDockTab(elementCard.prevTab);
+    setElementCard(null);
+    setPhotoError("");
+  }
+
+  /** A photo on a thing: prepared here, checked and stored on the server (element-actions.ts addElementPhoto). */
+  async function uploadElementPhoto(key: string, file: File) {
+    if (photoPhase !== "idle") return;
+    setPhotoError("");
+    setPhotoPhase("preparing");
     try {
       let prepared: Awaited<ReturnType<typeof preparePhoto>>;
       try {
         prepared = await preparePhoto(file);
       } catch {
-        setError(SET_PHOTO_UNREADABLE);
+        setPhotoError(SET_PHOTO_UNREADABLE);
         return;
       }
       if (!prepared.ok) {
-        setError(prepared.error);
+        setPhotoError(prepared.error);
         return;
       }
-      let res: Awaited<ReturnType<typeof addSetReference>>;
+      setPhotoPhase("checking");
+      let res: Awaited<ReturnType<typeof addElementPhoto>>;
       try {
-        res = await addSetReference(setId, { photoDataUri: prepared.dataUri });
+        res = await addElementPhoto(setId, { photoDataUri: prepared.dataUri, element: key });
       } catch (err) {
-        setError(staleHere(err) ? t.generate.refreshNeeded : t.generate.submitFailed);
+        setPhotoError(staleHere(err) ? t.generate.refreshNeeded : t.generate.submitFailed);
         return;
       }
       if (res.error !== null) {
-        setError(res.error);
+        setPhotoError(res.error);
         return;
       }
-      const added = res.reference;
-      setReferences((prev) => (prev.some((r) => r.id === added.id) ? prev : [...prev, added]));
-      pickRefLook(added.id);
+      applyListing(res.listing);
     } finally {
-      setRefBusy(false);
+      setPhotoPhase("idle");
     }
   }
 
-  /** Remove a reference photo from the set; the look lets go of it if it was the look. */
-  async function removeRefPhoto(refId: string) {
-    const before = references;
-    setReferences((prev) => prev.filter((r) => r.id !== refId));
-    if (lookRefId === refId) setLookRefId(null);
-    let res: Awaited<ReturnType<typeof removeSetReference>>;
+  /** Take a photo off its thing, at once on the page; put back if the server says no. */
+  async function removePhoto(refId: string) {
+    const before = elementPhotos;
+    setElementPhotos((prev) => prev.filter((p) => p.refId !== refId));
+    let res: Awaited<ReturnType<typeof removeElementPhoto>>;
     try {
-      res = await removeSetReference(setId, refId);
+      res = await removeElementPhoto(setId, refId);
     } catch (err) {
-      setReferences(before);
+      setElementPhotos(before);
       setError(staleHere(err) ? t.generate.refreshNeeded : t.generate.submitFailed);
       return;
     }
     if (res.error !== null) {
-      setReferences(before);
+      setElementPhotos(before);
       setError(res.error);
+      return;
     }
+    applyListing(res.listing);
   }
+
+  /** A photo on nothing put on a thing (element-actions.ts assignElementPhoto). */
+  async function putPhotoOn(refId: string, key: string) {
+    let res: Awaited<ReturnType<typeof assignElementPhoto>>;
+    try {
+      res = await assignElementPhoto(setId, refId, key);
+    } catch (err) {
+      setError(staleHere(err) ? t.generate.refreshNeeded : t.generate.submitFailed);
+      return;
+    }
+    if (res.error !== null) {
+      setError(res.error);
+      return;
+    }
+    applyListing(res.listing);
+  }
+
+  /**
+   * Draw the sheets a still will carry, once each, before it is shot
+   * (element-actions.ts prepareElementSheets): about a minute a sheet, then
+   * kept until the photos change. One that can't be drawn just doesn't ride
+   * a still, and its chip says so; false only when the shot must not go on
+   * (the allowance, a dropped connection).
+   */
+  async function drawSheetsFor(riding: readonly { key: string; hash: string }[]): Promise<boolean> {
+    let need = beforeShoot(riding, sheetHashes);
+    if (need.length === 0) return true;
+    const hashOf = new Map(riding.map((r) => [r.key, r.hash]));
+    setSheetPrep(need);
+    try {
+      for (let round = 0; round < 3 && need.length > 0; round++) {
+        let res: Awaited<ReturnType<typeof prepareElementSheets>>;
+        try {
+          res = await prepareElementSheets(setId, need);
+        } catch (err) {
+          setError(staleHere(err) ? t.generate.refreshNeeded : t.generate.submitFailed);
+          return false;
+        }
+        if (res.error !== null) {
+          setError(res.error);
+          return false;
+        }
+        const drawnNow = res.sheets.flatMap((x) => (x.status === "ready" || x.status === "drawn" ? [hashOf.get(x.key) ?? ""] : [])).filter(Boolean);
+        if (drawnNow.length > 0) setSheetHashes((prev) => [...new Set([...prev, ...drawnNow])]);
+        const missed = res.sheets.filter((x) => x.status === "refused" || x.status === "failed" || x.status === "storage" || x.status === "too-fast");
+        if (missed.length > 0) {
+          setSheetLast((prev) => ({ ...prev, ...Object.fromEntries(missed.map((x) => [hashOf.get(x.key) ?? "", x.status === "refused" ? "refused" : "failed"])) }));
+        }
+        need = res.sheets.filter((x) => x.status === "queued").map((x) => x.key);
+      }
+    } finally {
+      setSheetPrep([]);
+    }
+    return true;
+  }
+
+  /** Frame a thing that is out of the frame, from the side the camera is on; Undo takes it back. */
+  function showElement(key: string) {
+    const api = apiRef.current;
+    const e = els.find((x) => x.key === key);
+    if (!api || !e) return;
+    keepStage();
+    const pose = api.pose();
+    const size = Math.max(e.max[0] - e.min[0], e.max[1] - e.min[1], e.max[2] - e.min[2]);
+    let dx = pose.position[0] - e.centre[0];
+    let dz = pose.position[2] - e.centre[2];
+    const len = Math.hypot(dx, dz) || 1;
+    dx /= len;
+    dz /= len;
+    const dist = Math.max(2.5, (size / (2 * Math.tan((pose.fovDeg * Math.PI) / 360))) * 1.6);
+    api.goTo({ position: [e.centre[0] + dx * dist, Math.max(1.2, e.centre[1] + size * 0.4), e.centre[2] + dz * dist], target: e.centre, fovDeg: pose.fovDeg });
+    setCameraId(null);
+    scheduleSave();
+  }
+
+  // The stage knows the things, floats their thumbnails and boxes the one
+  // whose card is open (StageApi, R1). No thumbnails over a still being
+  // viewed or the cut's clips.
+  useEffect(() => {
+    if (ready) apiRef.current?.setElements(els);
+  }, [els, ready]);
+  const badges = useMemo(() => {
+    const out: ElementBadge[] = [];
+    for (const h of resolved.held) {
+      if (h.photos.length === 0) continue;
+      const v = elementView.get(h.key);
+      out.push({ key: h.key, url: thumbUrl(h.photos[0].url, 320) ?? h.photos[0].url, count: h.photos.length + h.extra.length, state: v && ridesState(v.state) ? "rides" : "idle" });
+    }
+    // Who plays the figure, over its head.
+    if (character?.thumbUrl) out.push({ key: FIGURE_KEY, url: character.thumbUrl, count: 1, state: "rides", round: true });
+    return out;
+  }, [resolved, elementView, character]);
+  useEffect(() => {
+    if (ready) apiRef.current?.setElementBadges(viewing !== null || cutOpen ? [] : badges);
+  }, [badges, ready, viewing, cutOpen]);
+  const pickedKey = elementCard && elementCard.key !== null && elementCard.key !== FIGURE_KEY && (!wide || dockTab === "scene") ? elementCard.key : null;
+  useEffect(() => {
+    if (ready) apiRef.current?.setElementPicked(pickedKey);
+  }, [pickedKey, ready]);
+  // A tap on the stage opens a thing's card; one on the ground closes it,
+  // and so does one on the set itself while a card is open — the floor of a
+  // set is often the set (a track, a stage), and a tap away is a dismissal.
+  // With no card open, a tap on the set says why it takes no photos.
+  // Kept current each render: the handlers read the page's state.
+  const closeCardRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    elementTapRef.current =
+      cutOpen || viewing !== null
+        ? null
+        : (hit) => {
+            if (!hit || (hit.kind === "structure" && elementCard)) closeElementCard();
+            else openElementCard(hit.kind === "structure" ? null : hit.key);
+          };
+    closeCardRef.current = elementCard ? closeElementCard : null;
+  });
+  // Photos that followed their thing through a change to the set are saved
+  // on it (settleElementPhotos), once per set drawn; their card says so.
+  const settledSetRef = useRef("");
+  useEffect(() => {
+    if (!ready || settledSetRef.current === setKey) return;
+    const moving = resolved.held.filter((h) => h.how !== "exact").map((h) => h.key);
+    if (moving.length === 0) return;
+    settledSetRef.current = setKey;
+    void (async () => {
+      try {
+        const res = await settleElementPhotos(setId);
+        if (res.error !== null) return;
+        setFollowedKeys((prev) => [...new Set([...prev, ...moving])]);
+        setElementPhotos(res.listing.photos);
+        setSheetHashes(res.listing.sheets);
+      } catch {
+        // The photos stay on their things in the page's memory; the next visit settles them.
+      }
+    })();
+  }, [ready, setKey, resolved, setId]);
+
+  /** The card for a key: a thing, the figure, or (null) a part of the set itself. */
+  function cardElementOf(key: string | null): CardElement {
+    if (key === FIGURE_KEY) return { kind: "figure", key, name: elementName(key) };
+    const e = key === null ? undefined : els.find((x) => x.key === key);
+    return e ? { kind: e.kind, key: e.key, name: elementName(e.key), tyres: e.tyres } : { kind: "structure", key: null, name: cast.structureTitle };
+  }
+  function elementCardView(variant: "dock" | "sheet") {
+    if (!elementCard) return null;
+    const el = cardElementOf(elementCard.key);
+    const thingKey = el.kind === "car" || el.kind === "vehicle" || el.kind === "object" ? el.key : null;
+    const h = thingKey ? heldOf.get(thingKey) : undefined;
+    const st = thingKey ? livePlan.statuses.find((x) => x.key === thingKey) : undefined;
+    const kindWord = el.kind === "car" ? cast.car : el.kind === "vehicle" ? cast.vehicle : cast.object;
+    return (
+      <ElementCard
+        element={el}
+        photos={h?.photos ?? []}
+        extra={h?.extra ?? []}
+        status={thingKey ? (elementView.get(thingKey)?.line ?? null) : null}
+        followed={thingKey && followedKeys.includes(thingKey) ? formatMsg(cast.followed, { name: kindWord.toLowerCase() }) : null}
+        person={el.kind === "figure" && character ? { name: character.name, thumbUrl: character.thumbUrl } : null}
+        phase={photoPhase}
+        error={photoError ? localizeServerText(photoError, t) : null}
+        onAdd={(file) => {
+          if (thingKey) void uploadElementPhoto(thingKey, file);
+        }}
+        onRemove={(refId) => void removePhoto(refId)}
+        onClose={closeElementCard}
+        onShowIt={thingKey && (st?.status === "out" || st?.status === "behind") ? () => showElement(thingKey) : null}
+        c={cast}
+        variant={variant}
+      />
+    );
+  }
+  /** The strip shows once the set has things to put photos on, or photos on nothing to put back. */
+  const castShown = !cutOpen && !compareOpen && (els.length > 0 || resolved.loose.length > 0);
+  /** The strip's chips: the person, the things whose sheets ride in sheet order, then the others. */
+  const castChips: CastChip[] = [
+    ...(character ? [{ key: FIGURE_KEY, name: character.name, thumb: character.thumbUrl, word: "", title: formatMsg(cast.personLine, { name: character.name }), state: "person" as const, round: true }] : []),
+    ...[...livePlan.statuses]
+      .sort((a, b) => (a.status === "rode" ? (a.sheet ?? 0) : 99) - (b.status === "rode" ? (b.sheet ?? 0) : 99))
+      .flatMap((st): CastChip[] => {
+        const h = heldOf.get(st.key);
+        const v = elementView.get(st.key);
+        if (!h || !v || h.photos.length === 0) return [];
+        return [{ key: st.key, name: elementName(st.key), thumb: thumbUrl(h.photos[0].url, 320) ?? h.photos[0].url, word: v.word, title: v.line, state: ridesState(v.state) ? "rides" : "idle" }];
+      }),
+  ];
 
   // ---- revisions: every frame set this visit, to step back to ----
 
@@ -3237,6 +3502,7 @@ export function SetView({
     setTakeRetry(null);
     setLastMiss(null);
     setLookDropped(false);
+    setShotElements(null);
     setViewing(null);
     setMenu(null);
     const frame = apiRef.current?.frame();
@@ -3260,6 +3526,8 @@ export function SetView({
     keepRevision(said, cameraId);
     let result: Awaited<ReturnType<typeof shootInSet>>;
     try {
+      // The things' sheets this frame carries are drawn first, once each (R1).
+      if (!(await drawSheetsFor(planFor(pose, layoutRef.current.mark).riding))) return;
       result = await shootInSet(setId, {
         frameDataUri: frame,
         characterId,
@@ -3267,8 +3535,6 @@ export function SetView({
         layout: { ...layoutRef.current, camera: pose },
         lifted: apiRef.current?.lifted === true,
         lookGenerationId: lookShot?.generationId ?? null,
-        // A reference photo is the look only when no still is (pickRefLook).
-        lookRefId: lookShot ? null : (lookRef?.id ?? null),
         canvasAspect,
         words: asked,
         rig: rigRef.current,
@@ -3315,7 +3581,7 @@ export function SetView({
     setPendingAsks([]);
     setNote(null);
     setLookDropped(result.lookDropped);
-    setLookDroppedPhoto(!lookShot && lookRef !== null);
+    setShotElements(result.elements);
     if (!result.succeeded) {
       setLastMiss(result.generationId);
       // The render's own reason, where the person is looking (2026-09-21):
@@ -3376,6 +3642,7 @@ export function SetView({
     setError("");
     setTakeRetry(null);
     setLastMiss(null);
+    setShotElements(null);
     setViewing(null);
     setMenu(null);
     const frame = apiRef.current?.frame();
@@ -3394,6 +3661,8 @@ export function SetView({
     keepRevision(said, cameraId);
     let result: Awaited<ReturnType<typeof takeInSet>>;
     try {
+      // The end still carries the things' sheets like any still (R1).
+      if (!(await drawSheetsFor(planFor(pose, layoutRef.current.mark).riding))) return;
       result = await takeInSet(setId, {
         startGenerationId: takeStart.id,
         frameDataUri: frame,
@@ -3472,6 +3741,7 @@ export function SetView({
     setPendingAsks([]);
     setNote(null);
     setTakeStart(null);
+    setShotElements(result.still.elements);
     if (!result.takeGenerationId && result.still.succeeded) setTakeRetry(frames);
     if (!result.still.succeeded) setError(`${s.takeEndFailed}${result.still.failure ? ` ${result.still.failure}` : ""}`);
     else if (result.takeError) setError(result.takeError);
@@ -3880,7 +4150,6 @@ export function SetView({
             endGenerationId: job.end,
             // The film's one look, the same for every beat (filmLook).
             lookGenerationId: filmLook.still,
-            lookRefId: filmLook.ref,
             lookPicked: filmLook.key !== undefined,
             frameDataUri: frame,
             // The person in the opening still (filmCharacterId), not the one picked above.
@@ -4338,7 +4607,8 @@ export function SetView({
       if (e.key !== "Escape") return;
       const el = document.activeElement as HTMLElement | null;
       if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) return;
-      if (menuRef.current) setMenu(null);
+      if (closeCardRef.current) closeCardRef.current();
+      else if (menuRef.current) setMenu(null);
       else setViewing(null);
     };
     window.addEventListener("keydown", onKey);
@@ -5380,9 +5650,20 @@ export function SetView({
                         )}
                         {lookDropped && (
                           <p className="text-xs text-[#c6c9d1]" aria-live="polite">
-                            {lookDroppedPhoto ? s.lookRefDropped : s.lookDropped}
+                            {s.lookDropped}
                           </p>
                         )}
+                        {/* A thing's photos that didn't ride the last still, and why (R1). */}
+                        {shotElements?.map((e) => {
+                          const why = afterShotWhy(e.status);
+                          if (!why) return null;
+                          const words = formatMsg(cast[why], { max: ELEMENT_SHEETS_PER_STILL, n: e.like ?? 1 });
+                          return (
+                            <p key={e.key} className="text-xs text-[#c6c9d1]" data-el-after>
+                              {formatMsg(cast.afterNotSent, { name: elementName(e.key), why: words })}
+                            </p>
+                          );
+                        })}
                       </div>
                     </>
                   )}
@@ -5792,18 +6073,18 @@ export function SetView({
                   onClick={() => toggleMenu("look")}
                   aria-haspopup="listbox"
                   aria-expanded={menu === "look"}
-                  title={lookShot ? s.lookOn : lookRef ? s.lookOnPhoto : latestStill ? s.lookUseLatest : s.lookFirst}
-                  className={lookShot || lookRef ? DCHIP_ON : DCHIP}
+                  title={lookShot ? s.lookOn : latestStill ? s.lookUseLatest : s.lookFirst}
+                  className={lookShot ? DCHIP_ON : DCHIP}
                   data-look-chip
                 >
                   {s.lookLabel} ·{" "}
-                  {lookShot ? <LocalDate date={lookShot.createdAt} /> : lookRef ? formatMsg(s.lookPhotoN, { n: lookRefIndex + 1 }) : s.lookOff}
+                  {lookShot ? <LocalDate date={lookShot.createdAt} /> : s.lookOff}
                   <Chevron />
                 </button>
                 {menu === "look" && (
                   <div role="listbox" aria-label={s.lookLabel} className={`${DMENU} w-[300px]`} data-look-menu>
                     <Option
-                      active={!lookShot && !lookRef}
+                      active={!lookShot}
                       onPick={() => {
                         pickLook(null);
                         setMenu(null);
@@ -5827,64 +6108,12 @@ export function SetView({
                         <LocalDate date={lookShot.createdAt} />
                       </Option>
                     )}
-                    <p className="px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.07em] text-[#6b6f7a]">{s.lookPhotos}</p>
-                    {references.map((r, i) => (
-                      <div key={r.id} className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          role="option"
-                          aria-selected={lookRef?.id === r.id}
-                          onClick={() => {
-                            pickRefLook(r.id);
-                            setMenu(null);
-                          }}
-                          className={`flex h-11 min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-[7px] px-2 text-left text-[13px] transition-colors ${
-                            lookRef?.id === r.id ? "bg-[rgba(255,255,255,0.08)] font-medium text-[#ecedf1]" : "text-[#c6c9d1] hover:bg-[rgba(255,255,255,0.05)] hover:text-[#ecedf1]"
-                          }`}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element -- a private media thumbnail, like the filmstrip's */}
-                          <img src={thumbUrl(r.url, 320) ?? r.url} alt="" className="h-8 w-8 flex-none rounded-[5px] object-cover" />
-                          <span className="min-w-0 flex-1 truncate">{formatMsg(s.lookPhotoN, { n: i + 1 })}</span>
-                          {lookRef?.id === r.id && <span aria-hidden>✓</span>}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void removeRefPhoto(r.id)}
-                          aria-label={formatMsg(s.lookPhotoRemove, { n: i + 1 })}
-                          title={formatMsg(s.lookPhotoRemove, { n: i + 1 })}
-                          className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-[7px] text-[15px] text-[#9aa0ad] hover:bg-[rgba(255,255,255,0.05)] hover:text-[#ecedf1]"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                    {references.length < SET_REFS_MAX && (
-                      <button
-                        type="button"
-                        onClick={() => refFileRef.current?.click()}
-                        disabled={refBusy}
-                        className="flex h-9 w-full cursor-pointer items-center rounded-[7px] px-2.5 text-left text-[13px] text-[#e0a468] transition-colors hover:bg-[rgba(255,255,255,0.05)] disabled:cursor-default disabled:text-[#9aa0ad]"
-                        data-look-upload
-                      >
-                        {refBusy ? s.lookPhotoUploading : `+ ${s.lookPhotoUpload}`}
-                      </button>
-                    )}
-                    <p className="px-2.5 pb-2 pt-1 text-[11px] leading-snug text-[#9aa0ad]">{s.lookPhotoHint}</p>
+                    {/* A thing's own photos go on the thing now (R1): tap it on the stage. */}
+                    <p className="px-2.5 pb-2 pt-2 text-[11px] leading-snug text-[#9aa0ad]" data-look-refs-moved>
+                      {cast.lookMoved}
+                    </p>
                   </div>
                 )}
-                <input
-                  ref={refFileRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    // Cleared, so choosing the same picture again still counts as a choice.
-                    e.target.value = "";
-                    setMenu(null);
-                    void uploadLookPhoto(file);
-                  }}
-                />
               </div>
               <div className="relative">
                 <button type="button" onClick={() => toggleMenu("camera")} aria-haspopup="listbox" aria-expanded={menu === "camera"} disabled={!ready} className={DCHIP}>
@@ -6084,14 +6313,33 @@ export function SetView({
             </div>
           )}
 
-          {/* the drag hint, above the filmstrip (Film has its dock instead) */}
+          {/* the drag hint, above the filmstrip (Film has its dock instead), and
+              over it the cast strip (R1): who and what the next still carries.
+              One column, so a hint that wraps never meets the strip, clear of
+              the gizmo on the right. */}
           {!viewingShot && !loadFailed && !filmOpen && (
-            <span
-              aria-live="polite"
-              className={`pointer-events-none absolute bottom-[104px] left-3.5 z-10 max-w-[60%] rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80 `}
-            >
-              {figureMoved ? s.figureMovedOut : s.dragHint}
-            </span>
+            <div className="pointer-events-none absolute bottom-[104px] left-3.5 right-3.5 z-20 flex flex-col items-start gap-2 md:right-[190px]" data-stage-foot>
+              {castShown && (
+                <CastStrip
+                  className="pointer-events-auto relative max-w-full"
+                  chips={castChips}
+                  loose={resolved.loose.map((l) => l.photo)}
+                  targets={els.map((e) => ({ key: e.key, name: elementName(e.key) }))}
+                  hint={resolved.held.length === 0}
+                  onOpen={(key) => openElementCard(key)}
+                  onPutOn={(refId, key) => void putPhotoOn(refId, key)}
+                  onRemoveLoose={(refId) => void removePhoto(refId)}
+                  c={cast}
+                />
+              )}
+              {/* The hint is a mouse's (shift-drag, scroll, double-click): on a phone it steps aside for the strip. */}
+              <span
+                aria-live="polite"
+                className={`max-w-[80%] rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80 md:max-w-full ${castShown && !figureMoved ? "max-md:hidden" : ""}`}
+              >
+                {figureMoved ? s.figureMovedOut : s.dragHint}
+              </span>
+            </div>
           )}
 
           {/* Match this shot: the read in progress, what it matched, or what went wrong */}
@@ -6867,6 +7115,8 @@ export function SetView({
 
         {/* On a phone the rig is its own panel over the stage (canvas page I); on the frame it is the dock's departments. */}
         {!wide && rigOpen && rigPanel(null)}
+        {/* A thing's card on a phone: a sheet over the stage (R1). */}
+        {!wide && elementCardView("sheet")}
 
         {/* On a phone the conversation sits under the stage; on the frame it is the dock's Astra tab, with the composer at the dock's foot. */}
         {!wide &&
@@ -6902,6 +7152,7 @@ export function SetView({
           >
             {dockTab === "scene" && (
               <div className="flex flex-col">
+                {elementCardView("dock")}
                 <div className="flex items-center gap-2 border-b border-[rgba(255,255,255,0.07)] px-3 py-2">
                   <input
                     value={sceneQuery}

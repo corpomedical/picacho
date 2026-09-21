@@ -1,42 +1,22 @@
 // Reference photos of a set (2026-09-21, "we need to add an option to upload
-// reference images, this is what we missed"). The person uploads a photo of
-// something the set should hold — the exact car, a sofa, a storefront — and
-// it can be the next shot's LOOK: an object sheet is drawn from it
-// (look-sheet.ts sheetFromPhoto: the thing four ways round on grey, no
-// people) and rides the shot in the look's own slot, under the look's own
-// tested sentence. A block car keeps its place, size and facing from the
-// set; its design comes from the photo, from every side.
+// reference images, this is what we missed"). Since R1 a photo goes on a
+// thing — a car, an object — and names it in its file name
+// (set-config.ts setElementPhotoPath); the thing's photos become one sheet
+// (look-sheet.ts sheetFromPhotos) that rides every still that sees it
+// (elements.ts). A photo from before R1 (the Look menu's, named by id alone)
+// reads as a photo on nothing until it is put on one.
 //
-// Stored like the set's other files (set-config.ts setRefPhotoPath): no
-// table, no column — the folder is the list, read here. Server-only.
+// Stored like the set's other files: no table, no column — the folder is the
+// list, read here. Server-only.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { listSetFiles } from "./look-cutout-store";
-import { ELEMENT_PHOTO_NAME, SET_REFS_MAX, setElementSheetPrefix, setRefPrefix } from "./set-config";
+import { ELEMENT_PHOTO_NAME, setElementSheetPrefix, setRefPrefix } from "./set-config";
 import { mediaUrl } from "../media/url";
 import type { ElementPhoto } from "./elements";
 
-export type SetReference = { id: string; url: string };
-
 /** access.ts's own pattern, kept here so this module never loads a database client. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** A set's reference photos, oldest first, at most SET_REFS_MAX — what the page lists and the look menu offers. */
-export async function listSetReferences(admin: SupabaseClient, userId: string, setId: string): Promise<SetReference[]> {
-  const prefix = setRefPrefix(setId);
-  let files: Awaited<ReturnType<typeof listSetFiles>>;
-  try {
-    files = await listSetFiles(admin, userId, prefix);
-  } catch {
-    return [];
-  }
-  return files
-    .map((f) => ({ id: f.name.slice(prefix.length).replace(/\.jpg$/, ""), path: f.path, createdAt: f.createdAt }))
-    .filter((r) => UUID_RE.test(r.id))
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
-    .slice(0, SET_REFS_MAX)
-    .map((r) => ({ id: r.id, url: mediaUrl("generated-images", r.path) }));
-}
 
 /** A photo on a thing as stored: what the page gets, and its storage path, which only the server uses. */
 export type StoredElementPhoto = ElementPhoto & { path: string };

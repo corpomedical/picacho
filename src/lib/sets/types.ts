@@ -1,3 +1,4 @@
+import type { ElementPhoto } from "./elements";
 import type { SetLayout, SetSpec, Vec3 } from "./set-spec";
 import type { SetFilm } from "./film";
 import type { RigCheckItem, RigFormat, SetRig } from "./rig";
@@ -131,8 +132,10 @@ export type SetPageData =
       takesOn: boolean;
       /** Astra changes left this billing month (set-config.ts SET_EDITS_MONTHLY_LIMITS); null when uncapped or unread. */
       astraEditsLeft: number | null;
-      /** The set's reference photos (references.ts, 2026-09-21), oldest first: each can be a shot's look. */
-      references: { id: string; url: string }[];
+      /** The photos on the set's things (references.ts listElementPhotos, R1), oldest first, and the hashes of the sheets already drawn. */
+      elementPhotos: { photos: ElementPhoto[]; sheets: string[] };
+      /** The picture model stills are drawn with (app_settings image_model): the things' sheets ride "gpt-image" only. */
+      stillModel: string;
       set: SetDetail;
       shots: SetShot[];
       characters: SetCharacter[];

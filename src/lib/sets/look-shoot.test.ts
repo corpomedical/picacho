@@ -46,9 +46,9 @@ describe("shootInSet: the look", () => {
     // set's source photograph — which rides under the SCENE role, never the
     // look's, so the look lane still carries the sheet alone. Since
     // 2026-09-21 the sheet can be drawn from a reference photo instead
-    // (references.ts): a sheet all the same, in the same slot. And since R1
-    // (2026-09-21) the set's things' own sheets, under the ELEMENT role.
-    expect(lookUrls).toEqual(["sheet.path", "sheet.path", "photoSource.path", "setElementSheetPath(userId, setId, r.hash"]);
+    // (references.ts) — until R1 (2026-09-21), when the photos went on the
+    // things themselves: their own sheets ride under the ELEMENT role.
+    expect(lookUrls).toEqual(["sheet.path", "photoSource.path", "setElementSheetPath(userId, setId, r.hash"]);
     expect(shoot).toContain('...elementPlan.riding.map((r) => ({ url: mediaUrl("generated-images", setElementSheetPath(userId, setId, r.hash)), role: "element" as const })),');
     expect(shoot).toContain('...(sourcePhotoUrl ? [{ url: sourcePhotoUrl, role: "scene" as const }] : []),');
     expect(shoot).not.toMatch(/mediaUrl\([^)]*lookPath/);
@@ -56,8 +56,8 @@ describe("shootInSet: the look", () => {
     // The sheet is drawn from this shot's own cutout, and look is set in one
     // place, to the sheet, and rides as the "look" role.
     expect(shoot).toContain("const sheet = await lookSheet({ admin, userId, setId, lookGenerationId: lookId, cutoutPath: cut.path });");
-    // Set in two places, both to a sheet: a still's, or a reference photo's.
-    expect(shoot.match(/\blook = /g)).toHaveLength(2);
+    // Set in one place, to the sheet.
+    expect(shoot.match(/\blook = /g)).toHaveLength(1);
     expect(shoot).toContain('look = { url: mediaUrl("generated-images", sheet.path) };');
     expect(shoot).toContain('let look: { url: string } | null = null;');
     expect(shoot).toContain('...(look ? [{ url: look.url, role: "look" }] : []),');
@@ -76,9 +76,8 @@ describe("shootInSet: the look", () => {
     expect(branch).toContain("lookDropped = true;");
     expect(branch).toContain("console.warn(`[sets] shot without its look: ${cut.reason}`);");
     expect(branch).toContain("console.warn(`[sets] shot without its look: ${sheet.reason}`);");
-    // The cut, the sheet, and a reference photo's sheet (2026-09-21).
-    expect(branch.match(/lookDropped = true;/g)).toHaveLength(3);
-    expect(branch).toContain("console.warn(`[sets] shot without its reference photo: ${sheet.reason}`);");
+    // The cut and the sheet.
+    expect(branch.match(/lookDropped = true;/g)).toHaveLength(2);
     // Dropping is only ever that: the shot goes on without it.
     expect(branch).not.toMatch(/return \{ error/);
     expect(shoot).toMatch(/hasLookObjects,\s*lookDropped,\s*format: rig\.format,[\s\S]*?squeeze: rig\.squeeze,\s*checks: rigCheckItems\(rig\),\s*elements: elementPlan\.statuses\.map\(/);

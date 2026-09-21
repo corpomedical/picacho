@@ -106,7 +106,8 @@ export default async function SetPage({
         identityBar={data.identityBar}
         matchOn={data.matchOn}
         takesOn={data.takesOn}
-        initialReferences={data.references}
+        initialElementPhotos={data.elementPhotos}
+        stillModel={data.stillModel}
         initialAsk={ask}
         initialCharacterId={character}
         initialAskFirst={askFirst}

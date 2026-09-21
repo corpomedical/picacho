@@ -6,7 +6,7 @@ import es from "../i18n/messages/es";
 import pt from "../i18n/messages/pt";
 import itMsgs from "../i18n/messages/it";
 import { localizeServerText, MAPPED_SERVER_STRINGS } from "../i18n/server-text";
-import { SET_TAKE_LOOK_DROPPED, SET_TAKE_OFF_FACE, SET_TAKE_PHOTO_DROPPED } from "./messages";
+import { SET_TAKE_ELEMENT_DROPPED, SET_TAKE_LOOK_DROPPED, SET_TAKE_OFF_FACE } from "./messages";
 
 // The first real film (2026-09-21) paid for every clip between two frames
 // that did not match. A film's beat now stops before it pays for such a
@@ -23,11 +23,12 @@ describe("a beat whose look could not be made", () => {
     expect(stop).toBeGreaterThan(shoot.indexOf("const framePath = setFramePath(userId, crypto.randomUUID());"));
     expect(stop).toBeLessThan(shoot.indexOf(".upload(framePath"));
     expect(stop).toBeLessThan(shoot.indexOf("runGeneration("));
-    expect(shoot).toContain("return { error: refAsked ? SET_TAKE_PHOTO_DROPPED : SET_TAKE_LOOK_DROPPED };");
+    expect(shoot).toContain("return { error: SET_TAKE_LOOK_DROPPED };");
   });
 
   it("keeps every reason it dropped, and the lasting ones let the film's own opening still render without it", () => {
-    expect(shoot.match(/lookDropped = true;\n\s*lookDropReason = (cut|sheet)\.reason;/g)).toHaveLength(3);
+    // The cut and the sheet (a Look-menu photo's own branch went with R1, 2026-09-21).
+    expect(shoot.match(/lookDropped = true;\n\s*lookDropReason = (cut|sheet)\.reason;/g)).toHaveLength(2);
     for (const reason of ["nothing to cut", "no camera", "person in cutout", "sheet refused"]) expect(actions).toContain(`"${reason}"`);
     expect(actions).toMatch(/const LASTING_LOOK_DROPS = new Set\(\[[^\]]*"nothing to cut"[^\]]*\]\);/);
   });
@@ -59,7 +60,7 @@ describe("the words", () => {
   it("are server sentences the page translates, in every language", () => {
     for (const [msg, key] of [
       [SET_TAKE_LOOK_DROPPED, "setTakeLookDropped"],
-      [SET_TAKE_PHOTO_DROPPED, "setTakePhotoDropped"],
+      [SET_TAKE_ELEMENT_DROPPED, "setTakeElementDropped"],
       [SET_TAKE_OFF_FACE, "setTakeOffFace"],
     ] as const) {
       expect(MAPPED_SERVER_STRINGS).toContain(msg);
