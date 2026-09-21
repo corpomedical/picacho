@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ImageSafetyRejection } from "../generations/providers/openai-images";
-import { LOOK_SHEET_MEASURED_USD, LOOK_SHEET_PROMPT, LOOK_SHEET_SIGNED_URL_SECONDS, lookSheet } from "./look-sheet";
+import { ELEMENT_SHEET_PROMPT, LOOK_SHEET_MEASURED_USD, LOOK_SHEET_PROMPT, LOOK_SHEET_SIGNED_URL_SECONDS, lookSheet, sheetFromPhotos } from "./look-sheet";
 import { setLookCutoutPath, setLookSheetPath } from "./set-config";
 
 // A look's object sheet (2026-09-14): drawn once from the cutout by the image
@@ -108,5 +108,44 @@ describe("lookSheet", () => {
       expect(await lookSheet(input(f.admin), { render }), reason).toEqual({ ok: false, reason });
       if (reason !== "storage" || !storage.upload) expect(f.ops(), reason).not.toContain("upload");
     }
+  });
+});
+
+// A thing's sheet from its photos (R1, 2026-09-21): one photo is the tested
+// path word for word; two to four go in together, front first, under their
+// own words.
+describe("sheetFromPhotos", () => {
+  const SHEET_OF_THING = `${USER}/sets/${SET}.elsheet-169cd97f035286.jpg`;
+  const photos = [1, 2, 3].map((n) => `${USER}/sets/${SET}.ref-c_89e319be_0_-1.${n}.t0k2mo.${n}${n}${n}${n}${n}${n}${n}${n}-0000-4000-8000-000000000000.jpg`);
+
+  it("draws one photo with the look's own words, and several with the thing's, in slot order", async () => {
+    const seen: [string, string[]][] = [];
+    const render = async (prompt: string, urls?: string | string[] | null) => (seen.push([prompt, [urls ?? []].flat()]), sheetPng());
+    const signed = (p: string) => ({ data: { signedUrl: `https://signed/${p.split("/").pop()}` }, error: null });
+    const one = fakeAdmin({ createSignedUrl: async (p) => signed(p) });
+    expect(await sheetFromPhotos({ admin: one.admin, sourcePaths: photos.slice(0, 1), sheetPath: SHEET_OF_THING }, { render })).toEqual({ ok: true, path: SHEET_OF_THING, made: true });
+    const three = fakeAdmin({ createSignedUrl: async (p) => signed(p) });
+    await sheetFromPhotos({ admin: three.admin, sourcePaths: photos, sheetPath: SHEET_OF_THING }, { render });
+    expect(seen[0]).toEqual([LOOK_SHEET_PROMPT, [`https://signed/${photos[0].split("/").pop()}`]]);
+    expect(seen[1][0]).toBe(ELEMENT_SHEET_PROMPT);
+    expect(seen[1][1]).toEqual(photos.map((p) => `https://signed/${p.split("/").pop()}`));
+  });
+
+  it("reuses a kept sheet, and has nothing to draw from no photos", async () => {
+    const render = vi.fn();
+    const kept = fakeAdmin({ exists: async () => ({ data: true, error: null }) });
+    expect(await sheetFromPhotos({ admin: kept.admin, sourcePaths: photos, sheetPath: SHEET_OF_THING }, { render })).toEqual({ ok: true, path: SHEET_OF_THING, made: false });
+    expect(await sheetFromPhotos({ admin: kept.admin, sourcePaths: [], sheetPath: SHEET_OF_THING }, { render })).toEqual({ ok: false, reason: "sheet failed" });
+    expect(render).not.toHaveBeenCalled();
+  });
+
+  it("says the photos could not be signed, and a refusal as a refusal", async () => {
+    const unsigned = fakeAdmin({ createSignedUrl: async () => ({ data: null, error: { message: "no" } }) });
+    expect(await sheetFromPhotos({ admin: unsigned.admin, sourcePaths: photos, sheetPath: SHEET_OF_THING }, { render: vi.fn() })).toEqual({ ok: false, reason: "storage" });
+    const refused = fakeAdmin({});
+    const render = async () => {
+      throw new ImageSafetyRejection("moderation_blocked", true);
+    };
+    expect(await sheetFromPhotos({ admin: refused.admin, sourcePaths: photos, sheetPath: SHEET_OF_THING }, { render })).toEqual({ ok: false, reason: "sheet refused" });
   });
 });

@@ -17,6 +17,11 @@
 // render.
 
 import { createAdminClient } from "@/lib/supabase/server";
+import { rateLimited } from "@/lib/rate-limit";
+import { checkGenerationAllowance } from "@/lib/generations/core";
+import { quoteSend } from "@/lib/generations/quote";
+import { stillQuoteInput } from "@/lib/sets/take";
+import { sheetFromPhotos } from "@/lib/sets/look-sheet";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
 import { ELEMENT_KEY_RE, ELEMENT_PHOTOS_MAX, FIGURE_KEY, resolvePhotos, setElements, sheetHashOf, type ElementPhoto } from "@/lib/sets/elements";
@@ -228,4 +233,64 @@ export async function settleElementPhotos(setId: string): Promise<{ error: strin
   }
   const listing = moved > 0 ? await listElementPhotos(admin, userId, setId) : before;
   return { error: null, listing: forPage(listing), moved };
+}
+
+/** Sheets drawn an hour per person: each is one render, absorbed (the operator's call, 2026-09-21). */
+const ELEMENT_SHEETS_PER_HOUR = 24;
+/** Sheets one call draws at once; the page asks again for the rest. */
+const SHEETS_AT_ONCE = 4;
+
+export type SheetStatus = "ready" | "drawn" | "refused" | "failed" | "storage" | "gone" | "no-photos" | "too-fast" | "queued";
+
+/**
+ * Draw the sheets these things need before a shot (R1): one render per
+ * thing whose photos have no sheet yet — about a minute each — kept and
+ * reused until its photos change. Run by the page before Shoot and
+ * Render, never inside the shot, which has its own minutes to keep. The
+ * render is absorbed, so it is held to people who could shoot a still
+ * now (the allowance) and to ELEMENT_SHEETS_PER_HOUR; four at once, the
+ * rest come back "queued" for the page to ask again.
+ */
+export async function prepareElementSheets(setId: string, keys: unknown): Promise<{ error: string } | { error: null; sheets: { key: string; status: SheetStatus }[] }> {
+  const access = await setsAccess();
+  if (access.error !== null) return { error: access.error };
+  const { userId } = access;
+  const owned = await readyOwnedSpec(setId, userId);
+  if (owned.error !== null) return { error: owned.error };
+  const wanted = [...new Set(Array.isArray(keys) ? keys.filter((k): k is string => typeof k === "string" && ELEMENT_KEY_RE.test(k)) : [])].slice(0, ELEMENT_SET_PHOTOS_MAX);
+  if (wanted.length === 0) return { error: null, sheets: [] };
+  const allowance = await checkGenerationAllowance(access.supabase, userId, quoteSend(stillQuoteInput()).totalCredits, { skipCooldown: true });
+  if (allowance.error) return { error: allowance.error };
+
+  const admin = createAdminClient();
+  const listing = await listElementPhotos(admin, userId, setId);
+  const pathOf = new Map(listing.photos.map((p) => [p.refId, p.path]));
+  const els = setElements(owned.spec);
+  const held = resolvePhotos(els, listing.photos).held;
+  const out: { key: string; status: SheetStatus }[] = [];
+  const toDraw: { key: string; hash: string; paths: string[] }[] = [];
+  for (const key of wanted) {
+    const h = held.find((x) => x.key === key);
+    if (!h) {
+      out.push({ key, status: els.some((e) => e.key === key) ? "no-photos" : "gone" });
+      continue;
+    }
+    if (listing.sheets.includes(h.sheetHash)) {
+      out.push({ key, status: "ready" });
+      continue;
+    }
+    toDraw.push({ key, hash: h.sheetHash, paths: h.photos.map((p) => pathOf.get(p.refId)).filter((p): p is string => Boolean(p)) });
+  }
+  const now = toDraw.slice(0, SHEETS_AT_ONCE);
+  for (const q of toDraw.slice(SHEETS_AT_ONCE)) out.push({ key: q.key, status: "queued" });
+  const drawn = await Promise.all(
+    now.map(async (d): Promise<{ key: string; status: SheetStatus }> => {
+      if (await rateLimited(userId, "set-sheet", 60 * 60, ELEMENT_SHEETS_PER_HOUR)) return { key: d.key, status: "too-fast" };
+      const r = await sheetFromPhotos({ admin, sourcePaths: d.paths, sheetPath: setElementSheetPath(userId, setId, d.hash) });
+      if (r.ok) return { key: d.key, status: r.made ? "drawn" : "ready" };
+      return { key: d.key, status: r.reason === "sheet refused" ? "refused" : r.reason === "storage" ? "storage" : "failed" };
+    }),
+  );
+  const order = new Map(wanted.map((k, i) => [k, i]));
+  return { error: null, sheets: [...out, ...drawn].sort((a, b) => (order.get(a.key) ?? 0) - (order.get(b.key) ?? 0)) };
 }

@@ -61,6 +61,20 @@ export const LOOK_SHEET_PROMPT =
   "Draw it exactly as it looks in the photo — its shape, proportions, design, colour, materials and details — and invent the sides the photo does not show " +
   "so that they belong to this exact object. No people, no text, no labels, no shadows on the ground beyond a soft contact shadow, no other objects.";
 
+/**
+ * The words a thing's sheet is drawn from when it has two to four photos
+ * (R1, 2026-09-21): the same sheet as LOOK_SHEET_PROMPT's, told that every
+ * photo shows the one object, each side as the photo that shows it. One
+ * photo keeps LOOK_SHEET_PROMPT, word for word. Unproven until the paid
+ * proof draws one.
+ */
+export const ELEMENT_SHEET_PROMPT =
+  "A design reference sheet of the one object that all the attached photos show — the same object, photographed from different sides — on a plain, even, neutral grey background and nothing else. " +
+  "Show that same object four times, in a two-by-two grid, each the same size and lit the same soft studio light: " +
+  "top left its front three-quarter view, top right its side profile, bottom left its rear three-quarter view, bottom right its rear view. " +
+  "Draw it exactly as it looks in the photos — its shape, proportions, design, colour, materials and details, each side as the photo that shows it — and invent only the sides no photo shows, " +
+  "so that they belong to this exact object. No people, no text, no labels, no shadows on the ground beyond a soft contact shadow, no other objects.";
+
 /** Why a shot went without its look at this step. Logged as it is: none of these carries anything of the person's. */
 export type LookSheetDrop = "storage" | "sheet refused" | "sheet failed";
 
@@ -100,20 +114,39 @@ export async function sheetFromPhoto(
   input: { admin: SupabaseClient; sourcePath: string; sheetPath: string },
   deps: { render?: typeof generateImageWithOpenAI } = {},
 ): Promise<LookSheetResult> {
+  return sheetFromPhotos({ admin: input.admin, sourcePaths: [input.sourcePath], sheetPath: input.sheetPath }, deps);
+}
+
+/**
+ * A thing's sheet drawn from its photos (R1, 2026-09-21), front first: one
+ * photo is sheetFromPhoto's path exactly (LOOK_SHEET_PROMPT); two to four
+ * go in together under ELEMENT_SHEET_PROMPT. Kept at `sheetPath`, which is
+ * named by the photos, and reused ever after.
+ */
+export async function sheetFromPhotos(
+  input: { admin: SupabaseClient; sourcePaths: readonly string[]; sheetPath: string },
+  deps: { render?: typeof generateImageWithOpenAI } = {},
+): Promise<LookSheetResult> {
   const { admin, sheetPath: path } = input;
+  const sources = input.sourcePaths.slice(0, 4);
+  if (sources.length === 0) return { ok: false, reason: "sheet failed" };
   if (await exists(admin, path)) return { ok: true, path, made: false };
 
-  let cutoutUrl: string;
+  let urls: string[];
   try {
-    const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(input.sourcePath, LOOK_SHEET_SIGNED_URL_SECONDS);
-    if (error || !data?.signedUrl) return { ok: false, reason: "storage" };
-    cutoutUrl = data.signedUrl;
+    urls = await Promise.all(
+      sources.map(async (source) => {
+        const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(source, LOOK_SHEET_SIGNED_URL_SECONDS);
+        if (error || !data?.signedUrl) throw new Error("unsigned");
+        return data.signedUrl;
+      }),
+    );
   } catch {
     return { ok: false, reason: "storage" };
   }
   let png: Buffer;
   try {
-    png = Buffer.from(await (deps.render ?? generateImageWithOpenAI)(LOOK_SHEET_PROMPT, [cutoutUrl]), "base64");
+    png = Buffer.from(await (deps.render ?? generateImageWithOpenAI)(urls.length === 1 ? LOOK_SHEET_PROMPT : ELEMENT_SHEET_PROMPT, urls), "base64");
   } catch (err) {
     if (err instanceof ImageSafetyRejection) {
       console.warn("[sets] look sheet refused by the image model's safety layer");

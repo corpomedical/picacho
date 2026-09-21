@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import raceTrack from "./fixtures-race-track.json";
+import showroomOpen from "./fixtures-showroom-open.json";
 import { setElementPhotoPath, setElementSheetPath, setRefPhotoPath, setRefSheetPath } from "./set-config";
 import { SET_ELEMENTS_TOO_MANY, SET_ELEMENT_FULL, SET_ELEMENT_GONE, SET_ELEMENT_NOT_A_THING } from "./messages";
 import { listSetReferences } from "./references";
@@ -20,6 +21,9 @@ const CAR = "c_89e319be_0_-1";
 const refId = (n: number) => `${String(n).padStart(8, "0")}-0000-4000-8000-000000000000`;
 
 let limited = false;
+let spec: unknown = raceTrack;
+let allowanceError: string | null = null;
+const renders: string[][] = [];
 const files = new Map<string, { createdAt: string }>();
 const refuseOnce = new Set<string>();
 const removed: string[][] = [];
@@ -37,7 +41,7 @@ vi.mock("@/lib/supabase/server", () => ({
         select: (c: string) => ((cols = c), q),
         eq: () => q,
         is: () => q,
-        maybeSingle: async () => ({ data: cols.includes("edited_spec") ? { edited_spec: null } : { status: "ready", spec: raceTrack }, error: null }),
+        maybeSingle: async () => ({ data: cols.includes("edited_spec") ? { edited_spec: null } : { status: "ready", spec }, error: null }),
       };
       return q;
     },
@@ -57,6 +61,8 @@ vi.mock("@/lib/supabase/server", () => ({
           for (const p of paths) files.delete(p);
           return { error: null };
         },
+        exists: async (path: string) => ({ data: files.has(path), error: null }),
+        createSignedUrl: async (path: string) => ({ data: { signedUrl: `https://signed/${path}` }, error: null }),
         move: async (from: string, to: string) => {
           if (!files.has(from)) return { error: { message: "Object not found" } };
           moves.push([from, to]);
@@ -69,6 +75,18 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 vi.mock("@/lib/rate-limit", () => ({ rateLimited: async () => limited }));
+vi.mock("@/lib/generations/core", () => ({ checkGenerationAllowance: async () => ({ error: allowanceError }) }));
+vi.mock("@/lib/generations/quote", async () => await import("../generations/quote"));
+vi.mock("@/lib/sets/take", async () => await import("./take"));
+vi.mock("@/lib/sets/look-sheet", async () => await import("./look-sheet"));
+vi.mock("../generations/providers/openai-images", () => ({
+  ImageSafetyRejection: class extends Error {},
+  generateImageWithOpenAI: async (_prompt: string, urls: string[]) => {
+    renders.push(urls);
+    const sharpMod = (await import("sharp")).default;
+    return (await sharpMod({ create: { width: 32, height: 32, channels: 3, background: { r: 128, g: 128, b: 128 } } }).png().toBuffer()).toString("base64");
+  },
+}));
 vi.mock("@/lib/generations/output-policy", () => ({ OutputPolicyRefusal: class extends Error {}, assertOutputAllowed: async () => {} }));
 vi.mock("@/lib/generations/policy-log", () => ({ recentRefusalCount: async () => 0, recordPolicyRefusal: async () => {} }));
 vi.mock("@/lib/sets/access", () => ({
@@ -83,7 +101,7 @@ vi.mock("@/lib/sets/references", async () => await import("./references"));
 vi.mock("@/lib/sets/messages", async () => await import("./messages"));
 vi.mock("@/lib/sets/reference-upload", async () => await import("./reference-upload"));
 
-const { addElementPhoto, removeElementPhoto, assignElementPhoto, settleElementPhotos } = await import("./element-actions");
+const { addElementPhoto, removeElementPhoto, assignElementPhoto, settleElementPhotos, prepareElementSheets } = await import("./element-actions");
 
 let sharp: (typeof import("sharp"))["default"] | null = null;
 try {
@@ -97,6 +115,9 @@ const seed = (path: string) => files.set(path, { createdAt: new Date(Date.now() 
 
 beforeEach(() => {
   limited = false;
+  spec = raceTrack;
+  allowanceError = null;
+  renders.length = 0;
   files.clear();
   refuseOnce.clear();
   removed.length = 0;
@@ -220,5 +241,44 @@ describe("the storage audit", () => {
     expect(isReferenced(live, setRefSheetPath(USER, SET, refId(1)))).toBe(true);
     expect(isReferenced(live, setElementSheetPath(USER, SET, "169cd97f035286"))).toBe(true);
     expect(isReferenced(live, setRefPhotoPath(USER, "33333333-3333-4333-8333-333333333333", refId(1)))).toBe(false);
+  });
+});
+
+describe("prepareElementSheets", () => {
+  it("draws a thing's sheet once from its photos, front first, and then finds it ready", async () => {
+    const photos = [1, 2].map((slot) => setElementPhotoPath(USER, SET, CAR, slot, 100 + slot, refId(slot)));
+    for (const p of photos) seed(p);
+    const first = await prepareElementSheets(SET, [CAR]);
+    expect(first).toEqual({ error: null, sheets: [{ key: CAR, status: "drawn" }] });
+    expect(renders).toEqual([photos.map((p) => `https://signed/${p}`)]);
+    const again = await prepareElementSheets(SET, [CAR]);
+    expect(again).toEqual({ error: null, sheets: [{ key: CAR, status: "ready" }] });
+    expect(renders).toHaveLength(1);
+  });
+
+  it("asks the allowance before any render, and says what it could not draw", async () => {
+    seed(setElementPhotoPath(USER, SET, CAR, 1, 100, refId(1)));
+    allowanceError = "Not enough credits.";
+    expect(await prepareElementSheets(SET, [CAR])).toEqual({ error: "Not enough credits." });
+    expect(renders).toHaveLength(0);
+    allowanceError = null;
+    limited = true;
+    expect(await prepareElementSheets(SET, [CAR])).toEqual({ error: null, sheets: [{ key: CAR, status: "too-fast" }] });
+    expect(await prepareElementSheets(SET, ["c_00000000_900_900", "not a key"])).toEqual({ error: null, sheets: [{ key: "c_00000000_900_900", status: "gone" }] });
+  });
+
+  it("draws four at once and leaves the rest queued for the page to ask again", async () => {
+    spec = showroomOpen;
+    const { setElements } = await import("./elements");
+    const { normaliseSetSpec } = await import("./set-spec");
+    const n = normaliseSetSpec(showroomOpen);
+    if (!n.ok) throw new Error("fixture");
+    const keys = setElements(n.spec).map((e) => e.key);
+    keys.forEach((k, i) => seed(setElementPhotoPath(USER, SET, k, 1, 100 + i, refId(10 + i))));
+    const r = await prepareElementSheets(SET, keys);
+    if (r.error !== null) throw new Error(r.error);
+    expect(r.sheets.map((x) => x.key)).toEqual(keys);
+    expect(r.sheets.filter((x) => x.status === "drawn")).toHaveLength(4);
+    expect(r.sheets.filter((x) => x.status === "queued")).toHaveLength(keys.length - 4);
   });
 });
