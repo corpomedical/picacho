@@ -3268,6 +3268,10 @@ const en = {
     setRefUnchecked: "We couldn't check this photo — try again in a moment.",
     setRefTooMany: "A set holds six reference photos — remove one to add another.",
     setRefTooFast: "That's a lot of photos at once — try again in a few minutes.",
+    setElementFull: "This thing has 4 photos — remove one to add another.",
+    setElementGone: "That thing changed on the set — tap it again.",
+    setElementNotAThing: "Photos go on cars and objects — a person comes from their character.",
+    setElementsTooMany: "A set holds 24 photos on its things — remove one to add another.",
   },
   apiKeys: {
     title: "API keys",

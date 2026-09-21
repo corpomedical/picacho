@@ -65,6 +65,11 @@ export const SET_REF_UNCHECKED = "We couldn't check this photo — try again in 
 export const SET_REF_TOO_MANY = "A set holds six reference photos — remove one to add another.";
 /** The burst brake on uploads. */
 export const SET_REF_TOO_FAST = "That's a lot of photos at once — try again in a few minutes.";
+/** Photos on the set's things (R1, 2026-09-21, element-actions.ts). */
+export const SET_ELEMENT_FULL = "This thing has 4 photos — remove one to add another.";
+export const SET_ELEMENT_GONE = "That thing changed on the set — tap it again.";
+export const SET_ELEMENT_NOT_A_THING = "Photos go on cars and objects — a person comes from their character.";
+export const SET_ELEMENTS_TOO_MANY = "A set holds 24 photos on its things — remove one to add another.";
 export const SET_PHOTO_BUILD_FAILED =
   "This set couldn't be built from that photo, and the build is back in your allowance. A photo that shows more of the place may work better.";
 

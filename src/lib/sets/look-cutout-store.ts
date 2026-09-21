@@ -40,7 +40,7 @@ import { lookCuts, type LookSet, type ShotCamera } from "./look-cutout";
 import { composeLookCutout } from "./look-cutout-image";
 import { negativePathFor } from "./lab";
 import { findPeople } from "./look-people";
-import { setLookCutoutPath, setLookCutoutPrefix, setLookSheetPath, setLookSheetPrefix, setRefPrefix, setRefSheetPrefix } from "./set-config";
+import { setLookCutoutPath, setLookCutoutPrefix, setLookSheetPath, setLookSheetPrefix, setRefPrefix, setRefSheetPrefix, setElementSheetPrefix } from "./set-config";
 
 const BUCKET = "generated-images";
 /** A still is at most a few MB; a download past this is not a still. */
@@ -193,6 +193,9 @@ export async function removeSetLookCutouts(admin: SupabaseClient, userId: string
       ...(await listCutouts(admin, userId, setLookSheetPrefix(setId))),
       ...(await listCutouts(admin, userId, setRefPrefix(setId))),
       ...(await listCutouts(admin, userId, setRefSheetPrefix(setId))),
+      // The sheets drawn from its things' photos (R1, 2026-09-21); the photos
+      // themselves share the `.ref-` prefix above.
+      ...(await listCutouts(admin, userId, setElementSheetPrefix(setId))),
     ];
     for (let i = 0; i < paths.length; i += 1000) {
       await admin.storage.from(BUCKET).remove(paths.slice(i, i + 1000));

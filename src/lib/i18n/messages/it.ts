@@ -3049,6 +3049,10 @@ const it = {
     setRefUnchecked: "Non siamo riusciti a controllare questa foto: riprova tra un momento.",
     setRefTooMany: "Un set accetta sei foto di riferimento: togline una per aggiungerne un'altra.",
     setRefTooFast: "Sono tante foto tutte insieme: riprova tra qualche minuto.",
+    setElementFull: "Questo oggetto ha già 4 foto: togline una per aggiungerne un'altra.",
+    setElementGone: "Quell'oggetto è cambiato nel set: toccalo di nuovo.",
+    setElementNotAThing: "Le foto vanno su auto e oggetti: una persona viene dal suo personaggio.",
+    setElementsTooMany: "Un set tiene 24 foto sui suoi oggetti: togline una per aggiungerne un'altra.",
   },
   apiKeys: {
     title: "Chiavi API",

@@ -393,6 +393,10 @@ describe("removing cutouts", () => {
             { name: `${SET}.ref-${LOOK}.jpg` },
             { name: `${SET}.refsheet-${LOOK}.jpg` },
             { name: `${other}.ref-${LOOK}.jpg` },
+            // A photo on one of its things and that thing's sheet (R1): the set's too.
+            { name: `${SET}.ref-c_89e319be_0_-1.1.t0k2mo.${LOOK}.jpg` },
+            { name: `${SET}.elsheet-169cd97f035286.jpg` },
+            { name: `${other}.elsheet-169cd97f035286.jpg` },
           ],
           error: null,
         }
@@ -407,6 +411,7 @@ describe("removing cutouts", () => {
       { folder: `${USER}/sets`, limit: 1000, offset: 0, search: `${SET}.sheet-` },
       { folder: `${USER}/sets`, limit: 1000, offset: 0, search: `${SET}.ref-` },
       { folder: `${USER}/sets`, limit: 1000, offset: 0, search: `${SET}.refsheet-` },
+      { folder: `${USER}/sets`, limit: 1000, offset: 0, search: `${SET}.elsheet-` },
     ]);
     // The fake answers every search with the whole folder; each prefix keeps its own.
     expect(removed).toEqual([
@@ -414,7 +419,9 @@ describe("removing cutouts", () => {
         `${USER}/sets/${SET}.look-${LOOK}.jpg`,
         `${USER}/sets/${SET}.look-55555555-5555-4555-8555-555555555555.jpg`,
         `${USER}/sets/${SET}.ref-${LOOK}.jpg`,
+        `${USER}/sets/${SET}.ref-c_89e319be_0_-1.1.t0k2mo.${LOOK}.jpg`,
         `${USER}/sets/${SET}.refsheet-${LOOK}.jpg`,
+        `${USER}/sets/${SET}.elsheet-169cd97f035286.jpg`,
       ],
     ]);
   });

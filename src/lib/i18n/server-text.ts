@@ -253,6 +253,10 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "We couldn't check this photo — try again in a moment.": "setRefUnchecked",
   "A set holds six reference photos — remove one to add another.": "setRefTooMany",
   "That's a lot of photos at once — try again in a few minutes.": "setRefTooFast",
+  "This thing has 4 photos — remove one to add another.": "setElementFull",
+  "That thing changed on the set — tap it again.": "setElementGone",
+  "Photos go on cars and objects — a person comes from their character.": "setElementNotAThing",
+  "A set holds 24 photos on its things — remove one to add another.": "setElementsTooMany",
   "Takes and films are part of the paid plans. Upgrade in Settings → Plan & billing.": "setTakeNeedsPlan",
   // The rig check (lib/sets/messages.ts, 2026-09-15, Helios Cinema).
   "The rig check couldn't read this still — the still is kept as it is.": "setRigCheckFailed",

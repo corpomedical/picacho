@@ -370,3 +370,26 @@ export function setRefPrefix(setId: string): string {
 export function setRefSheetPrefix(setId: string): string {
   return `${setId}${REF_SHEET_INFIX}`;
 }
+
+/**
+ * Photos on the set's things (R1, 2026-09-21, elements.ts): each keeps the
+ * key of the thing it was put on, its slot (1 the front, then up to 3 more
+ * sides), when it came (seconds, base 36: order never rests on storage's
+ * own dates) and its id, in its name — no table. They share the
+ * references' `.ref-` prefix, so a set's deletion already sweeps them;
+ * today's bare `.ref-<id>.jpg` photos read as photos on nothing.
+ */
+export const ELEMENT_SET_PHOTOS_MAX = 24;
+export function setElementPhotoPath(userId: string, setId: string, anchor: string, slot: number, atSeconds: number, refId: string): string {
+  return `${userId}/sets/${setId}${REF_INFIX}${anchor}.${slot}.${Math.max(0, Math.floor(atSeconds)).toString(36)}.${refId}.jpg`;
+}
+/** The name after a set's `.ref-` prefix, without `.jpg`: anchor, slot, time (base 36), id. */
+export const ELEMENT_PHOTO_NAME = /^([cvo]_[0-9a-f]{8}_-?\d{1,4}_-?\d{1,4})\.([1-4])\.([0-9a-z]{1,8})\.([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+const ELEMENT_SHEET_INFIX = ".elsheet-";
+/** A thing's sheet, named by the photos it was drawn from (elements.ts sheetHashOf): a rename never makes it stale. */
+export function setElementSheetPath(userId: string, setId: string, hash: string): string {
+  return `${userId}/sets/${setId}${ELEMENT_SHEET_INFIX}${hash}.jpg`;
+}
+export function setElementSheetPrefix(setId: string): string {
+  return `${setId}${ELEMENT_SHEET_INFIX}`;
+}

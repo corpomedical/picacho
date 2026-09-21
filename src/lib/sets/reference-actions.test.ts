@@ -85,6 +85,7 @@ vi.mock("@/lib/sets/photo", async () => await import("./photo"));
 vi.mock("@/lib/sets/set-config", async () => await import("./set-config"));
 vi.mock("@/lib/sets/references", async () => await import("./references"));
 vi.mock("@/lib/sets/messages", async () => await import("./messages"));
+vi.mock("@/lib/sets/reference-upload", async () => await import("./reference-upload"));
 
 const { addSetReference, removeSetReference } = await import("./reference-actions");
 

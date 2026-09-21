@@ -11,18 +11,13 @@
 // is a look (actions.ts shootInSet), never here: an upload costs no render.
 
 import { createAdminClient } from "@/lib/supabase/server";
-import { rateLimited } from "@/lib/rate-limit";
-import { assertOutputAllowed, OutputPolicyRefusal } from "@/lib/generations/output-policy";
-import { recentRefusalCount, recordPolicyRefusal } from "@/lib/generations/policy-log";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
-import { normaliseSetPhoto, parseSetPhotoDataUri, photoDataUrl } from "@/lib/sets/photo";
 import { SET_REFS_MAX, setRefPhotoPath, setRefSheetPath } from "@/lib/sets/set-config";
 import { listSetReferences, type SetReference } from "@/lib/sets/references";
-import { SET_NOT_FOUND, SET_PHOTO_SAVE_FAILED, SET_REF_REFUSED, SET_REF_TOO_FAST, SET_REF_TOO_MANY, SET_REF_UNCHECKED } from "@/lib/sets/messages";
+import { checkReferencePhoto, parseReferencePhoto } from "@/lib/sets/reference-upload";
+import { SET_NOT_FOUND, SET_PHOTO_SAVE_FAILED, SET_REF_TOO_MANY } from "@/lib/sets/messages";
 
 const BUCKET = "generated-images";
-/** Uploads an hour: each one is a picture check. */
-const SET_REFS_PER_HOUR = 20;
 
 /** The set is the person's own and not deleted — all a reference needs. */
 async function ownsSet(setId: string, userId: string): Promise<boolean> {
@@ -47,41 +42,14 @@ export async function addSetReference(
   const { userId } = access;
   if (!(await ownsSet(setId, userId))) return { error: SET_NOT_FOUND };
 
-  const parsed = parseSetPhotoDataUri(input?.photoDataUri);
+  const parsed = parseReferencePhoto(input?.photoDataUri);
   if (!parsed.ok) return { error: parsed.error };
 
   const admin = createAdminClient();
   if ((await listSetReferences(admin, userId, setId)).length >= SET_REFS_MAX) return { error: SET_REF_TOO_MANY };
-  if (await rateLimited(userId, "set-ref", 60 * 60, SET_REFS_PER_HOUR)) return { error: SET_REF_TOO_FAST };
-
-  // Never the browser's bytes: re-encoded here, whatever arrived.
-  const photo = await normaliseSetPhoto(parsed.bytes);
-  if (!photo.ok) return { error: photo.error };
-
-  // Judged from its bytes before it is stored or sent anywhere: the strict
-  // lane, because a photo can hold real people. A refusal is logged as a
-  // picture refusal, which never makes the person's next hour stricter.
-  try {
-    await assertOutputAllowed({
-      imageUrl: photoDataUrl(photo.jpeg),
-      strictLane: true,
-      promptScores: null,
-      sessionPriorHits: await recentRefusalCount(userId),
-    });
-  } catch (err) {
-    if (err instanceof OutputPolicyRefusal) {
-      await recordPolicyRefusal({
-        userId,
-        gate: "output",
-        reason: err.reason,
-        strictLane: true,
-        bands: err.readings,
-        provider: "set-reference",
-      });
-      return { error: err.reason === "unavailable" ? SET_REF_UNCHECKED : SET_REF_REFUSED };
-    }
-    throw err;
-  }
+  // The hourly limit, the re-encode and the picture gate (reference-upload.ts).
+  const photo = await checkReferencePhoto(userId, parsed.bytes);
+  if (photo.error !== null) return { error: photo.error };
 
   const id = crypto.randomUUID();
   const path = setRefPhotoPath(userId, setId, id);

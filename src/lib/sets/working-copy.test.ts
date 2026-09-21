@@ -42,6 +42,13 @@ describe("the set a shot is held against", () => {
     expect(body).toContain("if (edited.ok) return { error: null, spec: edited.spec };");
   });
 
+  it("the photos on a set's things are resolved against it too (R1)", () => {
+    const body = bodyOf(read("element-actions.ts"), "async function readyOwnedSpec(");
+    expect(body).toContain('.select("edited_spec")');
+    expect(body).toContain("if (edited.ok) return { error: null, spec: edited.spec };");
+    expect(body.match(/\.eq\("user_id", userId\)/g)).toHaveLength(2);
+  });
+
   it("the page holds the layout, the shots and the look offer against the set it draws", () => {
     const data = read("data.ts");
     expect(data).toContain("const drawn = editedSpec ?? spec;");

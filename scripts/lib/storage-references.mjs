@@ -132,11 +132,21 @@ export async function referencedKeys(rest) {
   // order, and names only columns every version of it has.
   const shots = await allRows(rest, "location_set_shots", "set_id,generation_id,user_id", "set_id.asc,generation_id.asc");
   for (const key of lookCutoutKeys(sets, shots)) referenced.add(key);
+  // A live set's reference photos and the sheets drawn from them
+  // (2026-09-21): `<user>/sets/<set>.ref-…`, `.refsheet-…` and `.elsheet-…`,
+  // named by the set, not by any row — so the live sets are remembered and
+  // isReferenced matches the prefix. A deleted set's are removed with it.
+  for (const s of sets) if (!s.deleted_at) referenced.add(liveSetMarker(s.id));
   return referenced;
 }
 
+const liveSetMarker = (id) => `live-set:${id}`;
+const SET_REFERENCE_FILE = /^[^/]+\/sets\/([0-9a-f-]{36})\.(?:ref|refsheet|elsheet)-[^/]+\.jpg$/;
+
 export function isReferenced(referenced, path) {
   if (referenced.has(path)) return true;
+  const ref = path.match(SET_REFERENCE_FILE);
+  if (ref) return referenced.has(liveSetMarker(ref[1]));
   const wm = path.match(/^(.+)\/wm\/(.+)$/);
   if (wm) return referenced.has(`${wm[1]}/${wm[2]}`);
   // A Helios still's negative (src/lib/sets/lab.ts, 2026-09-15): the frame
