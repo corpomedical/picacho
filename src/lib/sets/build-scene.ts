@@ -354,7 +354,7 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: BuildSetOptions
   };
 
   let meshCount = 0;
-  for (const o of spec.objects) {
+  for (const [oi, o] of spec.objects.entries()) {
     const geo = geometryFor(o);
     const mat = materialFor(o);
     const count = o.repeat?.count ?? 1;
@@ -368,6 +368,11 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: BuildSetOptions
       mesh.scale.copy(unitScale(o));
       mesh.castShadow = shadows && o.castShadow;
       mesh.receiveShadow = shadows;
+      // Which object and which of its copies this is, so a tap on the stage
+      // can say which thing it touched (stage-pick.ts, elements.ts; the
+      // per-thing reference photos, 2026-09-21).
+      mesh.userData.oi = oi;
+      mesh.userData.copy = i;
       if (full) {
         const fitted = fitRepeat(mesh, o.shape === "plane");
         if (fitted) mesh.material = adopt(fitted);
@@ -694,6 +699,8 @@ export function buildStandIn(THREE: Three, accent: string, heightM = STAND_IN_HE
   const k = heightM / STAND_IN_HEIGHT_M;
   const group = new THREE.Group();
   group.name = "stand-in";
+  // The person's own element on the stage (elements.ts FIGURE_KEY): a tap on it opens who plays them.
+  group.userData.element = "figure";
   const figure = new THREE.Group();
   const grey = new THREE.MeshStandardMaterial({ color: new THREE.Color("#b3aea4"), roughness: 0.85 });
   const geos: ThreeNS.BufferGeometry[] = [];

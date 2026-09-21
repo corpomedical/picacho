@@ -145,6 +145,39 @@ describe("the sun's shadows", () => {
   });
 });
 
+describe("every drawn block knows which object it is (the per-thing reference photos, 2026-09-21)", () => {
+  const tagsOf = (root: THREE.Object3D) => {
+    const out: [number, number][] = [];
+    for (const child of root.children) {
+      if ((child as THREE.Mesh).isMesh && typeof child.userData.oi === "number") out.push([child.userData.oi, child.userData.copy]);
+    }
+    return out;
+  };
+  const expected = (sp: SetSpec) => sp.objects.flatMap((o, oi) => Array.from({ length: o.repeat?.count ?? 1 }, (_, copy): [number, number] => [oi, copy]));
+
+  it("carries each mesh's object index and copy, in the order the spec lists them, on either stage", () => {
+    for (const quality of ["basic", "full"] as const) {
+      const built = buildSetScene(THREE, spec, { quality });
+      expect(tagsOf(built.root)).toEqual(expected(spec));
+      built.dispose();
+    }
+  });
+
+  it("keeps them when a fresh build moves into the live root", () => {
+    const live = buildSetScene(THREE, spec);
+    const fresh = buildSetScene(THREE, spec);
+    const free = moveBuildInto(live.root, fresh);
+    expect(tagsOf(live.root)).toEqual(expected(spec));
+    free();
+    live.dispose();
+  });
+
+  it("names the stand-in as the person's own element", () => {
+    const standIn = buildStandIn(THREE, "#e0a468");
+    expect(standIn.group.userData.element).toBe("figure");
+  });
+});
+
 describe("rebuilding a live set in place (moveBuildInto)", () => {
   const lightsIn = (root: THREE.Object3D) => {
     let n = 0;
