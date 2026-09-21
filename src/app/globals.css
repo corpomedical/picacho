@@ -754,3 +754,518 @@ a,
     color: var(--color-atelier-accent);
   }
 }
+
+/* ── The app bar — the projector ─────────────────────────────────────────
+ * The native app's bottom bar (components/native-tab-bar.tsx, 2026-09-21,
+ * operator: "put generate in the middle on a 3d glowing circle … two
+ * options appear with a cool effect", then "Projector"). The Generate lamp
+ * is a graphite lens set into the bar with a tungsten bolt behind its glass.
+ * Opening it dims the page, throws a soft cone of light upward and projects
+ * both choices onto one small screen: keystoned for a beat, a film-leader
+ * flicker, then square and sharp.
+ *
+ * Every moving part is transform or opacity, and nothing animates at rest,
+ * because a tab bar is on screen all day. The lamp and the projected screen
+ * are objects, so they keep their own dark finish in both themes; the bar
+ * itself follows the theme. Positions are fixed to the viewport because the
+ * bar sits outside the app's scroller; every bottom offset adds the
+ * safe-area inset, as the bar's own padding does. */
+.pj {
+  --pj-lamp: 255, 214, 164; /* warm tungsten, an rgb triplet */
+  --pj-bar-h: 64px;
+  --pj-gap: 42px; /* bar top to the bottom of the projected screen */
+  --pj-half: min(calc(50vw - 16px), 220px); /* half the screen's width */
+  --pj-bar-bg: rgba(255, 255, 255, 0.82);
+  --pj-seat: rgba(255, 255, 255, 0.92);
+  --pj-edge: rgba(35, 37, 45, 0.1);
+  --pj-mid-ink: #4a4d56;
+}
+.dark .pj {
+  --pj-bar-bg: rgba(22, 19, 16, 0.9);
+  --pj-seat: rgba(22, 19, 16, 0.92);
+  --pj-edge: rgba(243, 237, 228, 0.08);
+  --pj-mid-ink: #cdbfae;
+}
+
+/* House lights: the page behind goes down, no blur. */
+.pj-house {
+  position: fixed;
+  inset: 0;
+  z-index: 38;
+  pointer-events: none;
+  background:
+    linear-gradient(0deg, rgba(8, 7, 6, 0.84) 0, rgba(8, 7, 6, 0.8) 300px, rgba(8, 7, 6, 0.5) 370px, rgba(8, 7, 6, 0) 500px),
+    rgba(8, 7, 6, 0.46);
+  opacity: 0;
+  transition: opacity 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.pj-open .pj-house {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.pj-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  height: calc(var(--pj-bar-h) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  background:
+    radial-gradient(90px 40px at 50% 0, rgba(var(--pj-lamp), 0.075), transparent 100%),
+    var(--pj-bar-bg);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+  border-top: 1px solid var(--pj-edge);
+}
+/* A thread of lamp light caught on the bar's top edge. */
+.pj-bar::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -1px;
+  width: 150px;
+  height: 1px;
+  margin-left: -75px;
+  background: linear-gradient(90deg, transparent, rgba(var(--pj-lamp), 0.28), transparent);
+  pointer-events: none;
+}
+.pj-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  padding: 0 2px 10px;
+  font-size: 10px;
+  line-height: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--color-atelier-muted);
+  white-space: nowrap;
+  transition: opacity 300ms ease, color 150ms ease;
+}
+.pj-tab span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pj-tab-icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+.pj-tab-lit {
+  color: var(--color-atelier-accent);
+}
+.pj-open .pj-tab {
+  opacity: 0.5;
+}
+
+.pj-mid {
+  flex: 1 1 0;
+  min-width: 0;
+  position: relative;
+}
+/* The lamp: a round graphite lens body set into the bar. */
+.pj-lamp {
+  box-sizing: border-box;
+  cursor: pointer;
+  appearance: none;
+  border: 0;
+  padding: 0;
+  position: absolute;
+  left: 50%;
+  top: -18px;
+  width: 54px;
+  height: 54px;
+  margin-left: -27px;
+  z-index: 2;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 22%, rgba(255, 244, 230, 0.09), rgba(255, 244, 230, 0) 55%),
+    linear-gradient(180deg, #25211e 0%, #171412 58%, #100e0c 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 240, 222, 0.13),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 0 4px var(--pj-seat),
+    0 0 0 5px var(--pj-edge),
+    0 8px 18px -6px rgba(0, 0, 0, 0.8),
+    0 -6px 22px -8px rgba(var(--pj-lamp), 0.28);
+  transition: box-shadow 300ms ease, transform 160ms ease;
+}
+.pj-lamp:active {
+  transform: translateY(1px);
+}
+.pj-lamp:focus-visible {
+  outline: 1.5px solid rgba(var(--pj-lamp), 0.7);
+  outline-offset: 7px;
+}
+.pj-lens {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 36px;
+  height: 36px;
+  margin: -18px 0 0 -18px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #0b0a09 62%, #2d2723 66%, #0c0b0a 76%);
+  box-shadow: 0 0 0 1px rgba(255, 240, 222, 0.09), inset 0 1px 1px rgba(0, 0, 0, 0.8);
+}
+.pj-glass {
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(var(--pj-lamp), 0.62) 0 18%,
+    rgba(196, 130, 72, 0.4) 46%,
+    rgba(52, 32, 18, 0.92) 80%,
+    #120d0a 100%
+  );
+  box-shadow: 0 0 10px 1px rgba(var(--pj-lamp), 0.3);
+  filter: brightness(0.86);
+  transition: box-shadow 260ms ease, filter 260ms ease;
+}
+.pj-glass svg {
+  position: relative;
+  z-index: 1;
+  width: 13px;
+  height: 13px;
+  fill: #fff6ea;
+  stroke: none;
+  filter: drop-shadow(0 0 2px rgba(var(--pj-lamp), 0.9));
+}
+/* A small reflection on the glass, upper left. */
+.pj-glass::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 3px;
+  width: 7px;
+  height: 3px;
+  border-radius: 50%;
+  z-index: 2;
+  background: rgba(255, 255, 255, 0.3);
+  transform: rotate(-35deg);
+}
+.pj-open .pj-glass {
+  filter: brightness(1.08);
+  box-shadow: 0 0 14px 3px rgba(var(--pj-lamp), 0.55), 0 0 30px 6px rgba(var(--pj-lamp), 0.18);
+}
+.pj-open .pj-lamp {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 240, 222, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 0 4px var(--pj-seat),
+    0 0 0 5px rgba(var(--pj-lamp), 0.16),
+    0 8px 18px -6px rgba(0, 0, 0, 0.8),
+    0 -8px 28px -8px rgba(var(--pj-lamp), 0.5);
+}
+.pj-mid-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 10px;
+  text-align: center;
+  pointer-events: none;
+  font-size: 10px;
+  line-height: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--pj-mid-ink);
+  white-space: nowrap;
+  transition: color 300ms ease;
+}
+.pj-mid-label-lit {
+  color: var(--color-atelier-accent);
+}
+
+/* While open, and while the cut plays, the projector sits above the app's
+ * own fixed layers (the md+ docked composer and the quick pill at z-40,
+ * the rating prompt at z-50) and stays under the tour (z-100) and the
+ * download toasts (z-120). At rest the bar keeps its old z-40. */
+.pj-open .pj-house,
+.pj-closing .pj-house {
+  z-index: 60;
+}
+.pj-open .pj-throw,
+.pj-closing .pj-throw {
+  z-index: 61;
+}
+.pj-open .pj-bar,
+.pj-closing .pj-bar {
+  z-index: 62;
+}
+.pj-open .pj-screen,
+.pj-closing .pj-screen {
+  z-index: 63;
+}
+
+/* The throw: light from the lamp to the screen. */
+.pj-throw {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--pj-bar-h) + env(safe-area-inset-bottom) - 2px);
+  height: calc(var(--pj-gap) + 20px);
+  z-index: 39;
+  pointer-events: none;
+  transform-origin: 50% 100%;
+  transform: scaleY(0.05);
+  opacity: 0;
+  filter: blur(5px);
+  transition: transform 320ms cubic-bezier(0.3, 0.7, 0.2, 1) 30ms, opacity 200ms ease 30ms;
+}
+.pj-open .pj-throw {
+  transform: none;
+  opacity: 1;
+}
+.pj-cone {
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(
+    calc(50% - 14px) 100%,
+    calc(50% + 14px) 100%,
+    calc(50% + var(--pj-half) - 24px) 0,
+    calc(50% - var(--pj-half) + 24px) 0
+  );
+  background:
+    radial-gradient(34% 140% at 50% 100%, rgba(var(--pj-lamp), 0.26), rgba(var(--pj-lamp), 0) 85%),
+    linear-gradient(0deg, rgba(var(--pj-lamp), 0.14), rgba(var(--pj-lamp), 0.07));
+}
+
+/* The projected screen: one lit frame, two exposures. */
+.pj-screen {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--pj-bar-h) + env(safe-area-inset-bottom) + var(--pj-gap));
+  z-index: 41;
+  width: calc(2 * var(--pj-half));
+  transform: translateX(-50%);
+  perspective: 640px;
+  perspective-origin: 50% 180%;
+  pointer-events: none;
+}
+.pj:not(.pj-open):not(.pj-closing) .pj-screen {
+  visibility: hidden;
+}
+.pj-open .pj-screen {
+  pointer-events: auto;
+}
+.pj-sheet {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  padding: 4px;
+  background:
+    radial-gradient(90% 120% at 50% 100%, rgba(var(--pj-lamp), 0.11), rgba(var(--pj-lamp), 0.035) 60%, rgba(var(--pj-lamp), 0.015) 100%),
+    #15120f;
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--pj-lamp), 0.16),
+    inset 0 -1px 0 rgba(var(--pj-lamp), 0.3),
+    0 24px 48px -18px rgba(0, 0, 0, 0.9),
+    0 6px 40px -10px rgba(var(--pj-lamp), 0.14);
+  transform-origin: 50% 100%;
+  opacity: 0;
+}
+/* Soft corner falloff, like a real projected image. */
+.pj-sheet::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: radial-gradient(140% 160% at 50% 55%, transparent 55%, rgba(0, 0, 0, 0.28) 100%);
+}
+/* The leader's flash: a warm wash over the frame that pulses with the flicker. */
+.pj-sheet::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(0deg, rgba(var(--pj-lamp), 0.34), rgba(var(--pj-lamp), 0.16));
+  opacity: 0;
+}
+.pj-opt {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  align-items: center;
+  column-gap: 13px;
+  width: 100%;
+  min-height: 66px;
+  padding: 11px 14px 11px 11px;
+  border-radius: 7px;
+  transition: background-color 160ms ease;
+}
+.pj-opt:active {
+  background-color: rgba(var(--pj-lamp), 0.06);
+}
+.pj-opt:focus-visible {
+  outline: 1.5px solid rgba(var(--pj-lamp), 0.6);
+  outline-offset: -2px;
+}
+/* The frame line between the two exposures. */
+.pj-opt + .pj-opt::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(var(--pj-lamp), 0.16) 20%, rgba(var(--pj-lamp), 0.16) 80%, transparent);
+}
+.pj-ic {
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  color: #f6dcb8;
+  background: rgba(var(--pj-lamp), 0.07);
+  box-shadow: inset 0 0 0 1px rgba(var(--pj-lamp), 0.15);
+}
+.pj-ic svg {
+  width: 21px;
+  height: 21px;
+}
+.pj-txt {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.pj-txt b {
+  font-size: 15px;
+  line-height: 19px;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  color: #f3ede4;
+}
+.pj-txt span {
+  font-size: 12px;
+  line-height: 16px;
+  color: #a89f92;
+}
+/* Open: the screen lands keystoned (wider at the top), flickers like a film
+ * leader for a beat, then squares up. */
+.pj-open .pj-sheet {
+  animation: pj-throw 560ms cubic-bezier(0.3, 0.6, 0.25, 1) 40ms both;
+}
+@keyframes pj-throw {
+  0% {
+    opacity: 1;
+    transform: rotateX(-26deg) scale(0.94, 0.86);
+  }
+  22% {
+    transform: rotateX(-24deg) scale(0.96, 0.9);
+  }
+  36% {
+    transform: rotateX(-20deg) scale(0.97, 0.93);
+  }
+  62% {
+    transform: rotateX(-4deg) scale(0.995, 0.99);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.pj-open .pj-sheet::before {
+  animation: pj-flash 560ms linear 40ms both;
+}
+@keyframes pj-flash {
+  0% {
+    opacity: 1;
+  }
+  10% {
+    opacity: 0.9;
+  }
+  16% {
+    opacity: 0.2;
+  }
+  24% {
+    opacity: 0.65;
+  }
+  34% {
+    opacity: 0.12;
+  }
+  46% {
+    opacity: 0.35;
+  }
+  66%,
+  100% {
+    opacity: 0;
+  }
+}
+.pj-closing .pj-sheet {
+  animation: pj-cut 170ms ease-in both;
+}
+@keyframes pj-cut {
+  0% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: rotateX(-10deg) scale(0.97);
+  }
+}
+/* Picked: the chosen exposure is held bright, then the lamp goes out. */
+.pj-opt.pj-picked {
+  animation: pj-picked 300ms ease-out both;
+}
+@keyframes pj-picked {
+  0% {
+    background-color: rgba(var(--pj-lamp), 0);
+  }
+  35% {
+    background-color: rgba(var(--pj-lamp), 0.16);
+  }
+  100% {
+    background-color: rgba(var(--pj-lamp), 0.08);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pj-house,
+  .pj-throw,
+  .pj-tab,
+  .pj-glass,
+  .pj-lamp {
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+  }
+  .pj-open .pj-sheet {
+    animation: none !important;
+    opacity: 1;
+  }
+  .pj-open .pj-sheet::before {
+    animation: none !important;
+    opacity: 0;
+  }
+  .pj-closing .pj-sheet {
+    animation: none !important;
+    opacity: 0;
+  }
+  .pj-opt.pj-picked {
+    animation: none;
+    background-color: rgba(var(--pj-lamp), 0.1);
+  }
+}

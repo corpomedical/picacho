@@ -152,7 +152,9 @@ export default async function AppLayout({
         <RouteProgress />
       </Suspense>
       <ScrollReset />
-      <NativeTabBar />
+      {/* The Generate lamp offers Recast to the accounts that can open it:
+          the same gate as the sidebar's entry. */}
+      <NativeTabBar recastOn={mystiqueVisible} />
       <NativeQuickPill
         shareUrl={profile?.username ? `https://picacho.ai/r/${profile.username}` : undefined}
       />

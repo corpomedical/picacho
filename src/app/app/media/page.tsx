@@ -142,6 +142,13 @@ export default async function MediaPage({
         <FilterPill href="/app/media?type=video" active={type === "video"}>
           {t.gallery.videosTitle}
         </FilterPill>
+        {/* History lives inside Media since the app bar went to five places
+            (2026-09-21): every take, failed ones included, one tap away and
+            behind the hairline because it is a different list, not a filter. */}
+        <span aria-hidden="true" className="mx-1 h-4 w-px bg-atelier-rule" />
+        <FilterPill href="/app/history" active={false}>
+          {t.nav.history}
+        </FilterPill>
       </nav>
 
       <MediaGallery

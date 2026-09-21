@@ -421,7 +421,7 @@ export default async function AppHome() {
           lives. No pl- offset could have fixed it either, since the rail is
           w-64 expanded and w-14 collapsed. Sticky keeps the bar inside the
           content column, where it belongs and where it covers nothing. */}
-      <div className="sticky bottom-4 z-20">
+      <div className="sticky bottom-[calc(1rem+var(--native-tab-bar,0px))] z-20">
         <Link
           href={
             reel?.character_profile_id

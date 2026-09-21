@@ -83,6 +83,7 @@ import { setHasCompletedOnboarding } from "@/lib/profile/actions";
 import { DownloadButton } from "@/components/download-button";
 import { ZoomableImage } from "@/components/zoomable-image";
 import { NEW_CHAT_EVENT } from "@/components/native-quick-pill";
+import { CONTENT_TYPE_EVENT } from "@/lib/native/tab-routes";
 import { FeedbackLink } from "@/components/feedback-link";
 import { ResultActions } from "@/components/result-actions";
 import { OnboardingTour, findTourAnchor, type TourStep } from "@/components/onboarding-tour";
@@ -3277,6 +3278,17 @@ function GenerateFormInner({
     };
     window.addEventListener(NEW_CHAT_EVENT, onNewChat);
     return () => window.removeEventListener(NEW_CHAT_EVENT, onNewChat);
+  }, []);
+  // The app bar's Generate lamp → "Generate Video" (2026-09-21): ?type= is
+  // read only on mount, so with the composer already on screen the lamp
+  // says it directly — same window-event pattern NEW_CHAT_EVENT uses.
+  useEffect(() => {
+    const onType = (e: Event) => {
+      const type = (e as CustomEvent<unknown>).detail;
+      if (type === "video" || type === "image") setContentType(type);
+    };
+    window.addEventListener(CONTENT_TYPE_EVENT, onType);
+    return () => window.removeEventListener(CONTENT_TYPE_EVENT, onType);
   }, []);
 
   function toggleAngle(id: AngleId) {

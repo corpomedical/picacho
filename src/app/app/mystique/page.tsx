@@ -1,7 +1,5 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getServerMessages } from "@/lib/i18n/server";
-import { isNativeApp } from "@/lib/native/server";
 import { getRecastHome, sweepRecastOrphans } from "@/lib/recast/data";
 import { isRecastEnabled, isRecastLockOn } from "@/lib/recast/enabled";
 import { MystiqueDoor } from "@/components/mystique/mystique-door";
@@ -30,16 +28,10 @@ export default async function MystiquePage() {
   if (profile?.role !== "admin") notFound();
   if (!(await isRecastEnabled(supabase))) notFound();
 
-  const { t } = await getServerMessages();
-  if (await isNativeApp()) {
-    // Web-only while it is proved, said the way the other doors say it.
-    return (
-      <div className="mx-auto max-w-5xl">
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-atelier-ink">{t.nav.mystique}</h1>
-        <p className="mt-2 text-sm text-atelier-muted">{t.mystique.webOnly}</p>
-      </div>
-    );
-  }
+  // Opens inside the app too (2026-09-21): Recast is one of the app bar's two
+  // Generate choices ("Generate Video | All Models, Recast"), and the page
+  // was a dead end there. Still admins only, behind the recast flag, so the
+  // audience is unchanged; the door carries no purchase path (reader mode).
 
   // Clips that never became a take are cleared on the way in (best-effort).
   const [home, lockOn] = await Promise.all([

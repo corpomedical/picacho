@@ -1,11 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState, type SVGProps } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useCallback, useEffect, useId, useRef, useState, type SVGProps } from "react";
 import { isNativeAppClient } from "@/lib/native/platform";
+import { useBackCloser } from "@/lib/native/back-stack";
 import { useLocale } from "@/lib/i18n/provider";
 import { cn } from "@/lib/cn";
+import {
+  CONTENT_TYPE_EVENT,
+  GENERATE_HREF,
+  GENERATE_VIDEO_HREF,
+  NATIVE_TAB_HREF,
+  RECAST_HREF,
+  nativeTabFor,
+  type NativeTab,
+} from "@/lib/native/tab-routes";
 
 // Bottom tab bar, shown only inside the iOS/Android apps.
 //
@@ -15,23 +25,26 @@ import { cn } from "@/lib/cn";
 // Tabs fixed to the bottom edge, thumb-reachable, with the current section
 // lit — that's what every app the person already uses looks like.
 //
-// Four tabs, deliberately. The sidebar carries a dozen destinations, which is
-// right on a wide screen and wrong on a narrow one: five is the practical
-// ceiling before targets get too small to hit. Everything else stays reachable
-// from inside those sections.
+// THE PROJECTOR (2026-09-21, operator: "put generate in the middle on a 3d
+// glowing circle. When clicking the generate button two options appear with a
+// cool effect", then "Projector" from eight judged directions). Five places:
+// Characters · Media · the Generate lamp · Community · More. Six tabs had run
+// labels into each other in Portuguese and Italian at 360 px; History now
+// lives inside Media and Settings inside More (lib/native/tab-routes.ts says
+// which tab owns which page).
+//
+// The lamp is a small graphite lens set into the bar with a tungsten bolt
+// behind its glass. For accounts that can open Recast it opens two choices:
+// the page behind dims, a soft beam rises from the lamp, and both choices are
+// projected onto one small screen that lands slightly keystoned, flickers
+// like a film leader for a beat and squares up. Transform and opacity only,
+// nothing animates at rest, and the text is rasterised once. Everyone else
+// has one choice, so the lamp goes straight to Generate. Recast stays behind
+// the same admin gate as its sidebar entry until the operator opens it.
 //
 // Rendered from the web app rather than built natively, so it stays in step
-// with the rest of the UI automatically. It is genuinely local chrome in the
-// sense that matters — it paints with the shell, doesn't scroll away, and
-// doesn't depend on any page's own layout.
-
-function BoltIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z" />
-    </svg>
-  );
-}
+// with the rest of the UI automatically. The look lives in globals.css under
+// "The app bar — the projector".
 
 function UserIcon(props: SVGProps<SVGSVGElement>) {
   return (
@@ -63,27 +76,68 @@ function CommunityIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-function ClockIcon(props: SVGProps<SVGSVGElement>) {
+function MoreIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3 3" />
+      <rect x="3.5" y="3.5" width="7" height="7" rx="1.75" />
+      <rect x="13.5" y="3.5" width="7" height="7" rx="1.75" />
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1.75" />
+      <rect x="13.5" y="13.5" width="7" height="7" rx="1.75" />
     </svg>
   );
 }
 
-function GearIcon(props: SVGProps<SVGSVGElement>) {
+function FilmIcon(props: SVGProps<SVGSVGElement>) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3" y="5" width="18" height="14" rx="2.5" />
+      <path d="M3 9h2.5M3 15h2.5M18.5 9H21M18.5 15H21" />
+      <path d="m10.2 9.4 4.4 2.6-4.4 2.6Z" />
     </svg>
   );
 }
 
-export function NativeTabBar() {
+// The sidebar's Recast glyph: a person, and their recast double in dashes.
+function RecastIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="8.5" cy="8" r="3.2" />
+      <path d="M2.5 19.5c.6-3.4 3-5.5 6-5.5 1.2 0 2.3.3 3.2.9" />
+      <circle cx="16.5" cy="10" r="2.7" strokeDasharray="2.2 2.2" />
+      <path d="M11.5 20c.5-2.9 2.5-4.7 5-4.7s4.5 1.8 5 4.7" strokeDasharray="2.2 2.2" />
+    </svg>
+  );
+}
+
+// The lamp's filament: the Generate bolt, filled, behind the glass.
+function Lamp() {
+  return (
+    <span className="pj-lens" aria-hidden="true">
+      <span className="pj-glass">
+        <svg viewBox="0 0 24 24">
+          <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z" />
+        </svg>
+      </span>
+    </span>
+  );
+}
+
+// How far the lamp rises above the bar's top edge. It is published as part of
+// the bar's height, so the docked composer keeps its usual 1rem of air above
+// the lamp instead of sitting on it.
+const LAMP_RISE = 18;
+// The screen's cut when it closes (globals.css pj-cut is 170 ms).
+const CLOSE_MS = 200;
+// How long a picked choice is held lit before the lamp goes out.
+const PICK_MS = 300;
+
+type Choice = "video" | "recast";
+
+export function NativeTabBar({ recastOn = false }: { recastOn?: boolean }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { t } = useLocale();
+  const menuId = useId();
   // Rendered only after mount, because the check depends on the Capacitor
   // runtime. Server-rendering it would put a tab bar on the website for a
   // frame before hydration removed it.
@@ -95,26 +149,97 @@ export function NativeTabBar() {
   // when the route finishes loading. Cleared as soon as the pathname really
   // changes — until then the highlight itself is the "order taken" signal,
   // alongside the top progress bar.
-  const [pendingHref, setPendingHref] = useState<string | null>(null);
-  useEffect(() => setPendingHref(null), [pathname]);
+  const [pendingTab, setPendingTab] = useState<NativeTab | null>(null);
+  useEffect(() => setPendingTab(null), [pathname]);
 
-  // Publish the bar's REAL height (font scale and safe-area inset included)
-  // so sticky elements can stay above it. The docked composer is `sticky
-  // bottom-*` inside the app scroller, and this bar is `fixed z-40` OVER the
-  // same scroller — without the offset the bar covered the composer's whole
-  // bottom control row (the send button included) whenever the composer was
-  // pinned, and taps landed on the tab Links instead. Measured, not
-  // hardcoded: 59px was only ever true at default font scale.
+  // The lamp's two choices: open, closing (the screen's cut is playing), and
+  // the choice being held lit after a tap.
+  const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [picked, setPicked] = useState<Choice | null>(null);
+  // `open` mirrored in a ref, so close() can decide whether there is anything
+  // to close without a state updater that has side effects.
+  const openRef = useRef(false);
+  // Focus follows the menu: into its first choice when it opens, back to the
+  // lamp when it closes with focus inside (keyboard and TalkBack users).
+  const lampRef = useRef<HTMLButtonElement>(null);
+  const screenRef = useRef<HTMLDivElement>(null);
+  const timers = useRef<number[]>([]);
+  const clearTimers = useCallback(() => {
+    timers.current.forEach((id) => window.clearTimeout(id));
+    timers.current = [];
+  }, []);
+  const later = useCallback((fn: () => void, ms: number) => {
+    timers.current.push(window.setTimeout(fn, ms));
+  }, []);
+
+  const close = useCallback(() => {
+    // Nothing open: leave a running close alone. Clearing timers here used to
+    // cancel the cut's own reset when close() ran twice (Escape twice, or a
+    // pick's close followed by the route change), leaving `closing` stuck.
+    if (!openRef.current) return;
+    clearTimers();
+    setPicked(null);
+    if (screenRef.current?.contains(document.activeElement)) lampRef.current?.focus();
+    openRef.current = false;
+    setOpen(false);
+    setClosing(true);
+    later(() => setClosing(false), CLOSE_MS);
+  }, [clearTimers, later]);
+
+  const openChoices = useCallback(() => {
+    clearTimers();
+    openRef.current = true;
+    setClosing(false);
+    setOpen(true);
+  }, [clearTimers]);
+
+  // A new page closes the choices: the tap that navigated has been answered.
+  useEffect(() => {
+    close();
+  }, [pathname, close]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, close]);
+
+  // Android's back button closes the choices before it navigates anywhere
+  // (native-chrome.tsx pops this before history).
+  useBackCloser(open, close);
+
+  // Runs after the commit that lifts `inert`, so the focus call lands.
+  useEffect(() => {
+    if (!open) return;
+    screenRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus({ preventScroll: true });
+  }, [open]);
+
+  useEffect(() => clearTimers, [clearTimers]);
+
+  // Publish the bar's REAL height (the safe-area inset included), plus the
+  // lamp's rise, so sticky elements can stay above it. The docked composer
+  // is `sticky bottom-*` inside the app scroller, and this bar is `fixed`
+  // OVER the same scroller — without the offset the bar covered the
+  // composer's whole bottom control row (the send button included) whenever
+  // the composer was pinned, and taps landed on the tab Links instead.
+  // Measured, not hardcoded: the bar is 64px plus the inset, and the inset
+  // changes with the phone's navigation mode. The BORDER box is observed
+  // because the height and its padding move together, so the content box
+  // never changes.
   const barRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!isNative) return;
     const el = barRef.current;
     if (!el) return;
     const publish = () =>
-      document.documentElement.style.setProperty("--native-tab-bar", `${el.offsetHeight}px`);
+      document.documentElement.style.setProperty("--native-tab-bar", `${el.offsetHeight + LAMP_RISE}px`);
     publish();
     const observer = new ResizeObserver(publish);
-    observer.observe(el);
+    observer.observe(el, { box: "border-box" });
     return () => {
       observer.disconnect();
       document.documentElement.style.removeProperty("--native-tab-bar");
@@ -123,70 +248,130 @@ export function NativeTabBar() {
 
   if (!isNative) return null;
 
-  // Six tabs — one over the stated five-tab comfort ceiling, accepted with
-  // eyes open (operator, 2026-08-27: "add the community icon on the menu
-  // below"): Community is the growth surface and deserves a thumb slot.
-  // Media earned its slot the hard way earlier (with the sidebar hidden
-  // there was NO route to it at all); extraMatch keeps that tab lit on the
-  // standalone Images/Videos pages too.
-  const tabs = [
-    { href: "/app/generate", label: t.nav.generate, icon: BoltIcon },
-    { href: "/app/character", label: t.nav.characters, icon: UserIcon },
-    { href: "/app/media", label: t.nav.media, icon: PhotosIcon, extraMatch: ["/app/images", "/app/videos"] },
-    { href: "/app/community", label: t.nav.community, icon: CommunityIcon },
-    { href: "/app/history", label: t.nav.history, icon: ClockIcon },
-    { href: "/app/settings", label: t.nav.settings, icon: GearIcon },
-  ] as { href: string; label: string; icon: typeof BoltIcon; extraMatch?: string[] }[];
+  const active = pendingTab ?? nativeTabFor(pathname);
+  const lampLit = open || active === "generate";
+
+  function choose(choice: Choice) {
+    if (!open) return;
+    clearTimers();
+    setPicked(choice);
+    // The navigation starts at once, so nothing that closes the choices can
+    // cancel a pick; the chosen exposure stays lit while the page loads.
+    if (choice === "video" && nativeTabFor(pathname) === "generate" && pathname.startsWith(GENERATE_HREF)) {
+      window.dispatchEvent(new CustomEvent(CONTENT_TYPE_EVENT, { detail: "video" }));
+    } else {
+      setPendingTab("generate");
+      router.push(choice === "video" ? GENERATE_VIDEO_HREF : RECAST_HREF);
+    }
+    later(() => close(), PICK_MS);
+  }
+
+  const tabs: { tab: Exclude<NativeTab, "generate">; label: string; Icon: typeof UserIcon; tour?: string }[] = [
+    { tab: "characters", label: t.nav.characters, Icon: UserIcon, tour: "tour-characters" },
+    { tab: "media", label: t.nav.media, Icon: PhotosIcon },
+    { tab: "community", label: t.nav.community, Icon: CommunityIcon, tour: "tour-community" },
+    { tab: "more", label: t.nav.more, Icon: MoreIcon },
+  ];
+
+  const tabLink = ({ tab, label, Icon, tour }: (typeof tabs)[number]) => {
+    const lit = active === tab;
+    return (
+      <Link
+        key={tab}
+        href={NATIVE_TAB_HREF[tab]}
+        aria-current={nativeTabFor(pathname) === tab ? "page" : undefined}
+        onClick={() => setPendingTab(tab)}
+        // The "where things are" stops of the onboarding tour. The same ids
+        // as the sidebar's links: whichever of the two is laid out on this
+        // device is the one the tour points at (findTourAnchor).
+        data-tour-id={tour}
+        className={cn("pj-tab", lit && "pj-tab-lit")}
+      >
+        <Icon className="pj-tab-icon" />
+        <span>{label}</span>
+      </Link>
+    );
+  };
 
   return (
-    <nav
-      ref={barRef}
-      // pb keeps the row clear of the home indicator on gesture-navigation
-      // phones; without it the last few pixels of the tabs are unreachable.
-      className="fixed inset-x-0 bottom-0 z-40 flex border-t border-atelier-rule bg-atelier-surface/80 backdrop-blur-xl"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-    >
-      {tabs.map((tab) => {
-        // startsWith, not equality: /app/character/new should still light the
-        // Characters tab. /app/generate is matched exactly as well as by
-        // prefix so the composer counts from either entry point.
-        const routeActive =
-          pathname === tab.href ||
-          pathname.startsWith(`${tab.href}/`) ||
-          (tab.extraMatch ?? []).some(
-            (m) => pathname === m || pathname.startsWith(`${m}/`),
-          );
-        // While a tap is in flight, the tapped tab owns the highlight.
-        const active = pendingHref ? pendingHref === tab.href : routeActive;
-        const Icon = tab.icon;
-        return (
-          <Link
-            key={tab.href}
-            href={tab.href}
-            aria-current={routeActive ? "page" : undefined}
-            onClick={() => setPendingHref(tab.href)}
-            // The "where things are" stops of the onboarding tour. The same
-            // ids as the sidebar's links: whichever of the two is laid out on
-            // this device is the one the tour points at (findTourAnchor).
-            data-tour-id={
-              tab.href === "/app/character"
-                ? "tour-characters"
-                : tab.href === "/app/community"
-                  ? "tour-community"
-                  : undefined
-            }
-            className={cn(
-              "flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] font-medium transition-colors",
-              active
-                ? "text-atelier-accent"
-                : "text-atelier-muted",
-            )}
-          >
-            <Icon className="h-5 w-5" />
-            {tab.label}
-          </Link>
-        );
-      })}
-    </nav>
+    <div className={cn("pj", open && "pj-open", closing && "pj-closing")}>
+      {recastOn && (
+        <>
+          {/* House lights: the page behind goes down. A tap anywhere closes. */}
+          <div className="pj-house" onClick={close} aria-hidden="true" />
+          {/* The throw: a soft cone of light from the lamp up to the screen. */}
+          <div className="pj-throw" aria-hidden="true">
+            <div className="pj-cone" />
+          </div>
+          {/* The projected screen: one lit frame, two exposures. */}
+          <div ref={screenRef} className="pj-screen" id={menuId} role="menu" aria-label={t.nav.generate} inert={!open}>
+            <div className="pj-sheet">
+              <button
+                type="button"
+                role="menuitem"
+                className={cn("pj-opt", picked === "video" && "pj-picked")}
+                onClick={() => choose("video")}
+              >
+                <span className="pj-ic">
+                  <FilmIcon />
+                </span>
+                <span className="pj-txt">
+                  <b>{t.nav.generateVideo}</b>
+                  <span>{t.nav.generateVideoSub}</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className={cn("pj-opt", picked === "recast" && "pj-picked")}
+                onClick={() => choose("recast")}
+              >
+                <span className="pj-ic">
+                  <RecastIcon />
+                </span>
+                <span className="pj-txt">
+                  <b>{t.nav.mystique}</b>
+                  <span>{t.nav.recastSub}</span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      <nav ref={barRef} className="pj-bar">
+        {tabs.slice(0, 2).map(tabLink)}
+        <div className="pj-mid">
+          {recastOn ? (
+            <button
+              ref={lampRef}
+              type="button"
+              className="pj-lamp"
+              aria-label={t.nav.generate}
+              aria-haspopup="menu"
+              aria-expanded={open}
+              aria-controls={menuId}
+              onClick={() => (open ? close() : openChoices())}
+            >
+              <Lamp />
+            </button>
+          ) : (
+            <Link
+              href={GENERATE_HREF}
+              className="pj-lamp"
+              aria-label={t.nav.generate}
+              aria-current={nativeTabFor(pathname) === "generate" ? "page" : undefined}
+              onClick={() => setPendingTab("generate")}
+            >
+              <Lamp />
+            </Link>
+          )}
+          <span className={cn("pj-mid-label", lampLit && "pj-mid-label-lit")} aria-hidden="true">
+            {t.nav.generate}
+          </span>
+        </div>
+        {tabs.slice(2).map(tabLink)}
+      </nav>
+    </div>
   );
 }
