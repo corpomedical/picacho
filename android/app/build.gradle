@@ -18,7 +18,16 @@ android {
         applicationId "ai.picacho.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 16
+        versionCode 17
+        // 17 = the reinstatement build (2026-09-21). Google Play accepted the
+        // appeal against the 2026-09-09 suspension (Sexual Content and
+        // AI-Generated Content policies, routing ID ZLFS) and asked for a
+        // compliant update on the same track, with a higher version number
+        // and a 100% rollout. Everything the appeal rested on lives on the
+        // website this shell loads (the prompt gate, the picture gate, Report
+        // and Block), so the code is 16's: no native file, plugin, lockfile
+        // entry or baked config changed after 4c126a9. Only the number moves,
+        // so this upload carries no new native risk.
         // 16 = the sign-in hop moves into a CHROME CUSTOM TAB (2026-09-08,
         // operator, on 15: "When clicking the account, it does not take you
         // back to the app, it continues on the browser"). 15's App Link was
@@ -165,7 +174,7 @@ android {
         // committed to the dark tile in BOTH system themes (operator's call,
         // 2026-08-21: the ink tile reads better and never shifts size with
         // the theme), matching 512 store icon regenerated.
-        versionName "1.16.0"
+        versionName "1.17.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

@@ -30,6 +30,85 @@ short translation.
 
 ---
 
+## versionCode 17 · versionName 1.17.0
+
+**Context.** The reinstatement upload. On 2026-09-21 Google Play accepted the
+appeal against the 2026-09-09 suspension (Sexual Content and AI-Generated
+Content policies, routing ID ZLFS) and asked for a compliant update: a new
+release on the same track(s) as the noncompliant bundle, a higher version
+number, a 100% rollout, and then **Send for review** on the Publishing
+overview page. Changes are not sent for review automatically.
+
+The code is the same as 16. Nothing native changed after 4c126a9: no native
+file, plugin, lockfile entry or baked config. Running `npx cap sync android`
+from the root changed no tracked file. Everything the appeal rested on lives
+on the website the shell loads:
+
+- the prompt gate;
+- the picture gate: every queued result passes `finish()`, joined long takes
+  included;
+- Report on every result and Community post, with Block beside it;
+- account deletion in Settings and at /delete-account.
+
+**Checked on the built artifacts (2026-09-21):**
+
+- The AAB manifest reads versionCode 17, versionName 1.17.0 and
+  targetSdkVersion 36.
+- The AAB is signed by the upload certificate (SHA-256 23:5D:EC…FB:AB, the
+  third fingerprint in `assetlinks.json`).
+- The only native library, androidx DataStore's
+  `libdatastore_shared_counter.so` in four ABIs, has 16 KB LOAD alignment.
+- The release APK from the same build installed on the Pixel_7 AVD. It opened
+  on picacho.ai's login page with the Google and Facebook buttons showing,
+  so the site recognised `PicachoAuth/3`.
+
+The notes claim only what the app can show. "Not charged" rests on
+`refund-rules.ts`: a result the picture gate blocks is force-refunded
+(`output_blocked`), and so is a request the prompt gate refuses
+(`content_policy`).
+
+### The paste
+
+```
+<en-US>
+Picacho is back on Google Play.
+
+• Every request is now checked against our content policy before anything is generated, and every finished picture and video is checked again before you see it. If the check stops something, you are not charged for it.
+• Report any result or Community post, or block an account, without leaving the app.
+• Delete your account in Settings, or at picacho.ai/delete-account.
+• Signing in with Google or Facebook opens inside the app.
+</en-US>
+<es-419>
+Picacho vuelve a Google Play.
+
+• Cada solicitud se revisa ahora según nuestra política de contenido antes de generar nada, y cada imagen y video terminados se revisan otra vez antes de que los veas. Si la revisión detiene algo, no se te cobra.
+• Informa de cualquier resultado o publicación de Comunidad, o bloquea una cuenta, sin salir de la app.
+• Elimina tu cuenta en Ajustes o en picacho.ai/delete-account.
+• Iniciar sesión con Google o Facebook se abre dentro de la app.
+</es-419>
+<pt-BR>
+O Picacho está de volta ao Google Play.
+
+• Cada pedido agora é verificado pela nossa política de conteúdo antes de qualquer coisa ser gerada, e cada imagem e vídeo prontos são verificados de novo antes de você ver. Se a verificação barrar algo, você não é cobrado.
+• Reporte qualquer resultado ou publicação da Comunidade, ou bloqueie uma conta, sem sair do app.
+• Exclua sua conta em Configurações ou em picacho.ai/delete-account.
+• O login com Google ou Facebook abre dentro do app.
+</pt-BR>
+<it-IT>
+Picacho è di nuovo su Google Play.
+
+• Ogni richiesta ora passa dalla nostra policy sui contenuti prima che si generi qualsiasi cosa, e ogni immagine e video finiti vengono ricontrollati prima che tu li veda. Se il controllo blocca qualcosa, non paghi nulla.
+• Segnala qualsiasi risultato o post della Community, oppure blocca un account, senza uscire dall'app.
+• Elimina il tuo account in Impostazioni o su picacho.ai/delete-account.
+• L'accesso con Google o Facebook si apre dentro l'app.
+</it-IT>
+```
+
+Measured lengths per section, all under Play's 500: en-US 463, es-419 475,
+pt-BR 484, it-IT 489.
+
+---
+
 ## versionCode 16 · versionName 1.16.0
 
 **Context the notes do not say out loud.** This is the THIRD attempt at
