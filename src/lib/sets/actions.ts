@@ -1159,6 +1159,12 @@ export async function takeInSet(
       gaze: gazeWords(normaliseGaze(input.gaze, owned.spec.objects.length), owned.spec, endMark, "take"),
     }),
   );
+  // The words are already what the video model should read: the drafter
+  // would expand them into "2 to 4 vivid sentences" and add the character's
+  // saved traits and way of moving, rewriting the move the person picked,
+  // as it would a still's composition (shootInSet). Still gated, brand
+  // rules included, inside runGeneration (2026-09-21, the first real film).
+  fd.set("prompt_is_final", "1");
   // A tall frame renders a tall clip; every other rig format renders 16:9
   // and the page plays it inside its frame lines (shot-rig.ts keeps the format).
   if (still.format === "vertical") fd.set("video_aspect_ratio", "9:16");

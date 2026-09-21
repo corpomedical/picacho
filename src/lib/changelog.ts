@@ -44,6 +44,7 @@ export const RELEASES: Release[] = [
       "A camera move picked while the last one is still flying now takes over at once, instead of being ignored for a second and a half.",
       "Cars face the right way. Every shot now tells the image model which end of each vehicle in the frame is its front — read from the set's own headlights, tail lights and wing — in the camera's terms. Where the sketch alone left it unclear, a car could come out back to front; the words now settle it. Astra is also told which way its rotations turn, so the windscreens and bonnets of new sets lean the right way.",
       "A set can now keep up to six reference photos of your own: the exact car, a sofa, a building. Upload one from the Look menu above the stage and pick it. The first shot that uses it draws the thing four ways round, and every shot after keeps its design, placed and turned the way the set has it — as a look taken from an earlier still already did. Each photo is checked before it is kept, the × beside it removes it, and deleting the set deletes them. A reference is for things, not people: your character still comes from their own photos.",
+      "A film beat's words now reach the video engine as written. They used to be rewritten first into a few vivid sentences of their own, with your character's saved traits and way of moving added, and the camera move you picked could get lost on the way. Your words for a beat also end with a full stop now, so they no longer run into the next sentence.",
     ],
   },
   {

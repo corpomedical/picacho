@@ -40,8 +40,9 @@ export const SET_TAKES_PER_10_MIN = 4;
 /**
  * The take's prompt: the move between the frames, and the person's own
  * direction. The frames carry the composition; the words carry the motion.
- * This goes through the video lane's ordinary drafting and gates, like any
- * other clip.
+ * It reaches the video model as written (takeInSet sets prompt_is_final,
+ * 2026-09-21): the drafter rewrote it into vivid sentences of its own and
+ * lost the move. The gates still run, brand rules included.
  */
 export function buildSetTakePrompt(
   direction: string,
@@ -59,7 +60,10 @@ export function buildSetTakePrompt(
     motion.rack ?? "",
     // The eye-line at the end (cut D, people.ts gazeWords): where the person looks by the last frame.
     motion.gaze ?? "",
-    said.length > 0 ? said : "The person carries the moment naturally.",
+    // Closed with a full stop when it has none, as a still's words are
+    // (set-shot-prompt.ts): the first real film's words would otherwise run
+    // into the next sentence, "…to the car Keep the person…" (2026-09-21).
+    said.length > 0 ? (/[.!?…"”')\]]$/.test(said) ? said : `${said}.`) : "The person carries the moment naturally.",
     "Keep the person, the clothes and the place exactly as the frames show them.",
   ]
     .filter(Boolean)

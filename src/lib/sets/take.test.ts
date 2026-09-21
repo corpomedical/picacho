@@ -80,6 +80,28 @@ describe("the take's request", () => {
     const dirty = buildSetTakePrompt("a b   c");
     expect(dirty).toContain("a b c");
   });
+
+  it("closes the person's words with a full stop, so they never run into the next sentence", () => {
+    expect(buildSetTakePrompt("she walks to the car")).toContain("she walks to the car. Keep the person");
+    expect(buildSetTakePrompt("she walks to the car!")).toContain("she walks to the car! Keep the person");
+    expect(buildSetTakePrompt("she walks to the car.")).not.toContain("car..");
+  });
+});
+
+// The first real film (2026-09-21): the take's words went through the
+// drafter, which rewrote them into vivid sentences of its own and dropped
+// the move. They are final now, as a still's are; the gates still run.
+describe("the take's words reach the video model as written (actions.ts)", () => {
+  const src = readFileSync(join(__dirname, "actions.ts"), "utf8");
+  const take = src.slice(src.indexOf("export async function takeInSet("), src.indexOf("// Delete\n"));
+
+  it("sends the take's prompt as final, next to the prompt itself", () => {
+    const prompt = take.indexOf('"prompt",\n    buildSetTakePrompt(');
+    const final = take.indexOf('fd.set("prompt_is_final", "1");');
+    expect(prompt).toBeGreaterThan(-1);
+    expect(final).toBeGreaterThan(prompt);
+    expect(final).toBeLessThan(take.indexOf("withServerBuiltFrames(() => runGeneration(fd))"));
+  });
 });
 
 describe("the take's words for a film beat's move (Helios Cinema)", () => {
