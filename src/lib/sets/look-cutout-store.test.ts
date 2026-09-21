@@ -277,6 +277,43 @@ describe("lookCutout", () => {
       expect(blind.ops()).not.toContain("upload");
     });
 
+    // The second pass (look-cutout.ts, 2026-09-21): framed head to feet, the
+    // car is cut clear of only the figure's own box and the person the reader
+    // found, so the cutout is read for people once more before it is kept.
+    it("a still framed head to feet lends its car once its cutout reads clear of people, and never with anyone in it", async () => {
+      const still = await stillPng();
+      const FULL: ShotCamera = { position: [1.39, 1.1, 5.37], target: [1.39, 0.9, 2.37], fovDeg: 44.7, canvasAspect: 16 / 9, figure: { x: 1.39, z: 2.37 } };
+      const reader = [{ u0: 0.3, v0: 0.05, u1: 0.7, v1: 0.99 }];
+      const { cuts, pass } = lookCuts(spec, FULL, { width: 256, height: 256 }, reader);
+      expect(pass).toBe(2);
+      expect(cuts.length).toBeGreaterThan(0);
+      // SAM 2 keeps what lies inside each box it was given.
+      const inCut = (x: number, y: number) => cuts.some((c) => x >= c.box.x_min && x < c.box.x_max && y >= c.box.y_min && y < c.box.y_max);
+      const segment = async () => samAnswer(inCut);
+      const download = async () => ({ data: blob(still), error: null });
+
+      // The reader finds the person in the still, and nobody in the cutout: kept.
+      const clean = vi.fn(async (bytes: Buffer, mime: string) => (bytes.equals(still) ? reader : (void mime, [])));
+      const uploads: Buffer[] = [];
+      const f = fakeAdmin({ download, upload: async (_path, body) => (uploads.push(body), { error: null }) });
+      expect(await lookCutout(input(f.admin, { camera: FULL }), { segment, people: clean })).toEqual({ ok: true, path: CUTOUT, made: true });
+      expect(clean).toHaveBeenCalledTimes(2);
+      const second = clean.mock.calls[1] as unknown as [Buffer, string];
+      expect(second[1]).toBe("image/jpeg");
+      expect(second[0].equals(uploads[0])).toBe(true);
+
+      // Someone in the cutout, or no answer on the second reading: no look, nothing kept.
+      for (const [label, answer] of [
+        ["someone in it", [{ u0: 0.1, v0: 0.1, u1: 0.3, v1: 0.9 }]],
+        ["no answer", null],
+      ] as const) {
+        const g = fakeAdmin({ download });
+        const reading = async (bytes: Buffer) => (bytes.equals(still) ? reader : answer ? [...answer] : null);
+        expect(await lookCutout(input(g.admin, { camera: FULL }), { segment, people: reading }), label).toEqual({ ok: false, reason: "person in cutout" });
+        expect(g.ops(), label).not.toContain("upload");
+      }
+    });
+
     it("no look when the mask held only the person", async () => {
       const still = await stillPng();
       const f = fakeAdmin({ download: async () => ({ data: blob(still), error: null }) });

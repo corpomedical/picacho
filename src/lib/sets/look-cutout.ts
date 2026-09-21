@@ -108,6 +108,27 @@
 // in its frame, reached behind the lens, or stood hidden behind structure
 // offers no look at all: nobody can say where its person is.
 //
+// THE SECOND PASS (2026-09-21). Framed head to feet, the grown region is the
+// whole frame: every object is cut back to nothing, and the still lends no
+// look. The operator's first real film was shot on such a set — all 13 of
+// its stills lent nothing, every beat's end still drew its car afresh from
+// words, and the clips cross-faded between two different cars. So when the
+// first pass leaves nothing to cut AND the vision reader found someone where
+// the figure says one is (never on an answer of no people, never past
+// LOOK_PEOPLE_MAX of them), the regions become the figure's own box on
+// screen (grown by LOOK_GROW_FRAME) and every box the reader found, grown by
+// LOOK_FOUND_GROW of its own height on every side: the margins that guessed
+// where GPT Image drew the person give way to where the picture says they
+// are, and the figure's own place is still cleared, so whichever of the two
+// is wrong, the other stands. Everything else is the first pass's: boxes cut
+// back clear of every region, an object mostly covered dropped, the point
+// inside the box as cut back, rectangles cleared out of what SAM 2 kept. A
+// cutout from this pass is read for people once more before it is kept
+// (look-cutout-store.ts), and one with anyone in it is not a look. The page
+// predicts it (seesLookObjects) with the figure's own box standing in for
+// the person the reader will find; the reader may find them larger or
+// elsewhere, and then the shot goes without its look and says so.
+//
 // THE MONEY. SAM 2 on fal (fal-ai/sam2/image) costs $0.0008 per compute
 // second (unit_price 0.0008, unit "compute seconds": fal's pricing API,
 // GET api.fal.ai/v1/models/pricing?endpoint_id=fal-ai/sam2/image, read
@@ -187,6 +208,10 @@ export const LOOK_FIGURE_HALF_M = 0.37;
 export const LOOK_FIGURE_GROW = 0.4;
 /** …and above, where the head is, by this share: the operator's third still drew the person's head 59% of the figure's height above it. */
 export const LOOK_FIGURE_GROW_UP = 0.7;
+/** The second pass (the header): each person the reader found grows by this share of their own height on every side — hands, hair, a held helmet. Unmeasured; a margin. */
+export const LOOK_FOUND_GROW = 0.1;
+/** The reader keeps at most this many people (look-people.ts LOOK_PEOPLE_MAX); a still with this many may hold more, and stays on the first pass. */
+const LOOK_FOUND_CROWD = 8;
 /** A box cut back clear of the person's region must keep at least this share of itself, or it is dropped. */
 export const LOOK_FIGURE_MIN_LEFT = 0.25;
 /** The stage camera's near plane (set-view.tsx): a shape reaching behind it is at the lens, not in the picture. */
@@ -432,15 +457,16 @@ function entersOnTheWay(from: Vec3, to: Vec3, p: Placed): boolean {
  * Where the person may be in a still drawn from `camera`: the grey figure's
  * box on screen — its footprint LOOK_FIGURE_HALF_M each way, ground to head —
  * grown by LOOK_FIGURE_GROW of its height there plus LOOK_GROW_FRAME on every
- * side, inside the frame. Null when the sketch did not show the figure: none
- * of it in frame, part of it behind the lens, or neither its middle nor its
- * head to be seen past structure.
+ * side, inside the frame (`grown`), and the figure's own box grown only by
+ * LOOK_GROW_FRAME (`tight`, the second pass's). Null when the sketch did not
+ * show the figure: none of it in frame, part of it behind the lens, or
+ * neither its middle nor its head to be seen past structure.
  */
 function personRegion(
   camera: ShotCamera,
   project: ReturnType<typeof sketchProjector>,
   structure: readonly Placed[],
-): FrameBox | null {
+): { grown: FrameBox; tight: FrameBox } | null {
   const { x, z } = camera.figure;
   const seen: { u: number; v: number }[] = [];
   for (const dx of [-LOOK_FIGURE_HALF_M, LOOK_FIGURE_HALF_M]) {
@@ -463,7 +489,10 @@ function personRegion(
   const height = figure.v1 - figure.v0;
   const grow = LOOK_FIGURE_GROW * height + LOOK_GROW_FRAME;
   const up = LOOK_FIGURE_GROW_UP * height + LOOK_GROW_FRAME;
-  return clip({ u0: figure.u0 - grow, v0: figure.v0 - up, u1: figure.u1 + grow, v1: figure.v1 + grow });
+  const grown = clip({ u0: figure.u0 - grow, v0: figure.v0 - up, u1: figure.u1 + grow, v1: figure.v1 + grow });
+  // The figure's own box, for the second pass (the header).
+  const tight = clip({ u0: figure.u0 - LOOK_GROW_FRAME, v0: figure.v0 - LOOK_GROW_FRAME, u1: figure.u1 + LOOK_GROW_FRAME, v1: figure.v1 + LOOK_GROW_FRAME });
+  return grown && tight ? { grown, tight } : null;
 }
 
 /**
@@ -550,8 +579,35 @@ export function lookCuts(
   // Where the still's people were found in it (look-people.ts), on top of
   // where the sketch's figure stood: every one is cleared.
   found: readonly FrameBox[] = [],
-): { cuts: LookCut[]; objects: LookObject[]; people: FrameBox[] } {
-  const none = { cuts: [], objects: [], people: [] };
+): { cuts: LookCut[]; objects: LookObject[]; people: FrameBox[]; pass: 1 | 2 } {
+  return cutsFor(spec, camera, still, found, false);
+}
+
+/** A person the reader found, grown by LOOK_FOUND_GROW of their own height on every side (the second pass). */
+function grownFound(b: FrameBox): FrameBox | null {
+  const g = LOOK_FOUND_GROW * (b.v1 - b.v0);
+  return clip({ u0: b.u0 - g, v0: b.v0 - g, u1: b.u1 + g, v1: b.v1 + g });
+}
+
+const meets = (a: FrameBox, b: FrameBox) => a.u0 < b.u1 && b.u0 < a.u1 && a.v0 < b.v1 && b.v0 < a.v1;
+
+/**
+ * lookCuts, and the page's prediction of it (seesLookObjects: `predict`,
+ * with the figure's own box standing in for the person the reader will
+ * find). The first pass clears the figure's grown region and every person
+ * found; only when it leaves nothing, and the reader found someone where the
+ * figure says one is, the second pass clears the figure's own box and every
+ * person found, grown (the header). `people` is always the regions the cuts
+ * were made clear of, which look-cutout-image.ts then clears.
+ */
+function cutsFor(
+  spec: LookSet,
+  camera: ShotCamera,
+  still: { width: number; height: number },
+  found: readonly FrameBox[],
+  predict: boolean,
+): { cuts: LookCut[]; objects: LookObject[]; people: FrameBox[]; pass: 1 | 2 } {
+  const none = { cuts: [], objects: [], people: [], pass: 1 as const };
   if (!finite(still.width) || !finite(still.height) || still.width < 1 || still.height < 1) return none;
   const cam = normaliseShotCamera(camera);
   if (!cam) return none;
@@ -560,7 +616,26 @@ export function lookCuts(
   const structure = copies.filter((p) => !p.prop);
   const figure = personRegion(cam, project, structure);
   if (!figure) return none;
-  const people = [figure, ...found.map((b) => clip(b)).filter((b): b is FrameBox => b !== null)];
+  const seen = predict ? [figure.tight] : found.map((b) => clip(b)).filter((b): b is FrameBox => b !== null);
+  const first = { ...cutsClearOf(cam, project, copies, structure, still, [figure.grown, ...seen]), pass: 1 as const };
+  if (first.cuts.length > 0 || seen.length === 0 || seen.length >= LOOK_FOUND_CROWD || !seen.some((b) => meets(b, figure.grown))) return first;
+  const second = cutsClearOf(cam, project, copies, structure, still, [
+    figure.tight,
+    ...seen.map(grownFound).filter((b): b is FrameBox => b !== null),
+  ]);
+  // Only a second pass that finds something replaces the first.
+  return second.cuts.length > 0 ? { ...second, pass: 2 as const } : first;
+}
+
+/** The cuts clear of every one of `people`, the regions of one pass. */
+function cutsClearOf(
+  cam: ShotCamera,
+  project: ReturnType<typeof sketchProjector>,
+  copies: readonly Placed[],
+  structure: readonly Placed[],
+  still: { width: number; height: number },
+  people: FrameBox[],
+): { cuts: LookCut[]; objects: LookObject[]; people: FrameBox[] } {
   // Clear of every region in turn: what is left of a box after the first is
   // what the second cuts back, and so on.
   const clearOfAll = (b: FrameBox): FrameBox | null => people.reduce<FrameBox | null>((left, region) => (left ? clearOf(left, region) : null), b);
@@ -643,8 +718,11 @@ export function lookCuts(
  * and at least one object would be cut. The set page offers only such
  * stills, and a new still is one only when this holds (look.ts canBeLook).
  * The cuts are chosen in the sketch's square and only then scaled to the
- * still, so any still size gives the same answer.
+ * still, so any still size gives the same answer. Framed head to feet, it
+ * answers for the second pass too (the header), with the figure's own box
+ * standing in for the person the reader will find: a prediction, which the
+ * cut itself can still refuse.
  */
 export function seesLookObjects(spec: LookSet, camera: ShotCamera): boolean {
-  return lookCuts(spec, camera, ANY_STILL).cuts.length > 0;
+  return cutsFor(spec, camera, ANY_STILL, [], true).cuts.length > 0;
 }

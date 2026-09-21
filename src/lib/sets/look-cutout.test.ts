@@ -6,6 +6,7 @@ import {
   LOOK_CUT_WORST_USD,
   LOOK_FIGURE_GROW,
   LOOK_FIGURE_GROW_UP,
+  LOOK_FOUND_GROW,
   LOOK_GROUP_MAX_M,
   LOOK_MAX_GROUPS,
   LOOK_MEASURED_USD,
@@ -712,3 +713,54 @@ describe("a rig frame's band (Helios Cinema)", () => {
   });
 });
 
+// The first real film (2026-09-21): framed head to feet, the figure's grown
+// region was the whole frame, so none of that set's 13 stills lent a look and
+// every beat drew its car afresh. The second pass (look-cutout.ts, the header).
+describe("the second pass: a still framed head to feet", () => {
+  // Three metres back, the figure filling the frame's height.
+  const FULL: ShotCamera = { position: [1.39, 1.1, 5.37], target: [1.39, 0.9, 2.37], fovDeg: 44.7, canvasAspect: 16 / 9, figure: { x: 1.39, z: 2.37 } };
+  // Where the reader found the person: round the figure.
+  const reader: FrameBox = { u0: 0.3, v0: 0.05, u1: 0.7, v1: 0.99 };
+
+  it("lends nothing on the first pass: the grown region is the whole frame", () => {
+    const got = lookCuts(spec, FULL, SQUARE);
+    expect(got.people).toEqual([{ u0: 0, v0: 0, u1: 1, v1: 1 }]);
+    expect(got.cuts).toEqual([]);
+    expect(got.pass).toBe(1);
+  });
+
+  it("cuts the objects clear of the figure's own box and of the person the reader found, grown", () => {
+    const got = lookCuts(spec, FULL, SQUARE, [reader]);
+    expect(got.pass).toBe(2);
+    expect(got.cuts.length).toBeGreaterThan(0);
+    expectClearOfPerson(got, "second pass");
+    expect(got.people).toHaveLength(2);
+    const g = LOOK_FOUND_GROW * (reader.v1 - reader.v0);
+    expect(got.people[1].u0).toBeCloseTo(reader.u0 - g, 9);
+    expect(got.people[1].u1).toBeCloseTo(reader.u1 + g, 9);
+    // The figure's own box is still one of the regions, and not the whole frame.
+    expect(got.people[0].u1 - got.people[0].u0).toBeLessThan(1);
+  });
+
+  it("an answer of no people never unlocks it, nor a crowd the reader may have cut short", () => {
+    expect(lookCuts(spec, FULL, SQUARE, []).cuts).toEqual([]);
+    const crowd = Array.from({ length: 8 }, (_, i) => ({ u0: i / 8, v0: 0.1, u1: (i + 0.5) / 8, v1: 0.9 }));
+    const got = lookCuts(spec, FULL, SQUARE, crowd);
+    expect(got.pass).toBe(1);
+    expect(got.cuts).toEqual([]);
+  });
+
+  it("nor a person found away from where the figure says one is", () => {
+    // The figure square in front of a one-part object: nothing to cut on the
+    // first pass, and the reader's person off in the corner.
+    const big = box({ position: [0, 0.5, 0], size: [2, 1, 1] });
+    const cam: ShotCamera = { position: [0.5, 1.6, 8], target: [0.5, 0.5, 0], fovDeg: 50, canvasAspect: 16 / 9, figure: { x: -0.2, z: 1.2 } };
+    const got = lookCuts({ objects: [big], bounds: { height: 12 } }, cam, SQUARE, [{ u0: 0.96, v0: 0, u1: 1, v1: 0.04 }]);
+    expect(got.pass).toBe(1);
+    expect(got.cuts).toEqual([]);
+  });
+
+  it("the page predicts it: such a still can lend its look", () => {
+    expect(seesLookObjects(spec, FULL)).toBe(true);
+  });
+});

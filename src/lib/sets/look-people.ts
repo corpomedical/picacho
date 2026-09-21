@@ -21,6 +21,10 @@
 // boxes are approximate and a hand a few pixels outside one is still a hand.
 // The regions cleared are the figure's (from the sketch, as before) AND every
 // box read here: whichever of them is wrong, the other stands.
+// Framed head to feet, the figure's grown region is the whole frame; there
+// the second pass (look-cutout.ts, 2026-09-21) clears the figure's own box
+// and every box read here, grown, and the cutout it makes is read here once
+// more before it is kept: anyone in it, or no answer, and it is no look.
 //
 // FAIL CLOSED. No key, a refusal, a timeout, an unreadable answer: null, and
 // the shot goes without its look (look-cutout-store.ts "people unknown"). A

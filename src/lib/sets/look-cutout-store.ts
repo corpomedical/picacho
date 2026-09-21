@@ -56,6 +56,7 @@ export type LookDrop =
   | "cut failed"
   | "empty mask"
   | "mask took the whole frame"
+  | "person in cutout"
   | "storage";
 
 export type LookCutoutResult = { ok: true; path: string; made: boolean } | { ok: false; reason: LookDrop };
@@ -127,7 +128,7 @@ export async function lookCutout(
   // is no look — the one thing a look must never carry is a person.
   const found = await (deps.people ?? findPeople)(still, stillMime(still) ?? "image/png");
   if (!found) return { ok: false, reason: "people unknown" };
-  const { cuts, people } = lookCuts(input.spec, input.camera, size, found);
+  const { cuts, people, pass } = lookCuts(input.spec, input.camera, size, found);
   if (cuts.length === 0) return { ok: false, reason: "nothing to cut" };
   // One request an object, together; every object or none (the header).
   const segment = deps.segment ?? segmentObject;
@@ -137,6 +138,14 @@ export async function lookCutout(
   const laid = await composeLookCutout(answers as Buffer[], people);
   if (!laid.ok) {
     return { ok: false, reason: laid.reason === "empty" ? "empty mask" : laid.reason === "whole" ? "mask took the whole frame" : "cut failed" };
+  }
+  // A cutout from the second pass (look-cutout.ts, the header) was cut with
+  // only the figure's own box and the boxes the reader found cleared, so it
+  // is read for people once more before it is kept: anyone in it, or no
+  // answer, and it is not a look (2026-09-21).
+  if (pass === 2) {
+    const inCut = await (deps.people ?? findPeople)(laid.jpeg, "image/jpeg");
+    if (!inCut || inCut.length > 0) return { ok: false, reason: "person in cutout" };
   }
 
   try {
