@@ -14,9 +14,11 @@
 export const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=ai.picacho.app";
 
 /**
- * Whether the listing can be reached. FALSE while the app is suspended
- * (2026-09-09, appeal pending): nothing may link to it, since every visitor
- * who follows it lands on a 404 with our badge above it. Flip to true on
- * reinstatement — nothing else needs changing.
+ * Whether the listing can be reached. It was FALSE while the app was
+ * suspended (2026-09-09 to 2026-09-21): nothing could link to it, since every
+ * visitor who followed it landed on a 404 with our badge above it. TRUE since
+ * version 17 went live on 2026-09-21 (the listing answers again, "Updated on
+ * Sep 21, 2026"). Set it back to false if the listing ever goes down again;
+ * nothing else needs changing.
  */
-export const PLAY_LISTING_LIVE = false;
+export const PLAY_LISTING_LIVE = true;

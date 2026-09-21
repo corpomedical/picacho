@@ -31,6 +31,8 @@ export const RELEASES: Release[] = [
       "Mystique is now called Recast everywhere a person reads it, in all four languages.",
       "The delete-account page (picacho.ai/delete-account) now also explains how to delete one thing without deleting your account: a picture or video, a character, one of its photos, a community post, a note or project, or a connected Google account, each with the button names you see in the app. It says plainly that a deleted take's record stays until the account goes, and gives an email for anything you can't delete yourself. The Google Play form links straight to that section. Found while checking that form: deleting a character used to warn that its history would go with it, but the takes you made with it stay in History, and the warning now says so, in all four languages.",
       "The Android app's version 17 is built and signed for the resubmission Google asked for when it accepted the appeal. Its code is the same as version 16's, because everything Google's review checks runs on the website.",
+      "Picacho is back on Google Play. Google published version 17 on 2026-09-21, and the listing opens again, with the new bar in its What's new. The site brings the store back the same hour: the Get it on Google Play badge on the home page, the header's Get the app button taking Android phones to the listing, the home page's app card saying the app is on Google Play again, and the Google Play link in the footer of every email.",
+      "In the Android app, a finished video no longer shows an expand button. The phone's web view can't go full screen, so tapping it did nothing and filed an error each time (one came from a Galaxy A23 on 2026-09-18). The button stays on the web.",
     ],
   },
   {
