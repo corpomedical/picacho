@@ -34,6 +34,7 @@ export function ElementCard({
   onRemove,
   onClose,
   onShowIt,
+  move,
   c,
   variant,
 }: {
@@ -55,6 +56,8 @@ export function ElementCard({
   onClose: () => void;
   /** Frames the thing when it is out of the frame; null when it is in it. */
   onShowIt: (() => void) | null;
+  /** Its place in the strip's order, for a finger that can't drag the strip: null ends are the list's ends. */
+  move: { earlier: (() => void) | null; later: (() => void) | null } | null;
   c: Cast;
   variant: "dock" | "sheet";
 }) {
@@ -212,6 +215,26 @@ export function ElementCard({
             {status ?? c.photoHint}
           </p>
           {element.tyres > 6 && <p className="text-[11px] leading-snug text-[#9aa0ad]">{c.merged}</p>}
+          {move && (move.earlier || move.later) && (
+            <div className="flex items-center gap-1.5" data-el-move>
+              <button
+                type="button"
+                onClick={move.earlier ?? undefined}
+                disabled={!move.earlier}
+                className="h-7 cursor-pointer rounded-full border border-[rgba(255,255,255,0.12)] px-2.5 text-[11px] text-[#d6d9e0] hover:bg-[rgba(255,255,255,0.06)] disabled:cursor-default disabled:opacity-40"
+              >
+                ↑ {formatMsg(c.moveEarlier, { name: element.name })}
+              </button>
+              <button
+                type="button"
+                onClick={move.later ?? undefined}
+                disabled={!move.later}
+                className="h-7 cursor-pointer rounded-full border border-[rgba(255,255,255,0.12)] px-2.5 text-[11px] text-[#d6d9e0] hover:bg-[rgba(255,255,255,0.06)] disabled:cursor-default disabled:opacity-40"
+              >
+                ↓ {formatMsg(c.moveLater, { name: element.name })}
+              </button>
+            </div>
+          )}
         </>
       )}
     </section>

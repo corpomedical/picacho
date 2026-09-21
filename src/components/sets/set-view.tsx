@@ -875,6 +875,8 @@ export function SetView({
   const [sheetPrep, setSheetPrep] = useState<string[]>([]);
   const [sheetLast, setSheetLast] = useState<Record<string, "refused" | "failed">>({});
   const [followedKeys, setFollowedKeys] = useState<string[]>([]);
+  // The order the person gave the things (the strip's drag, the card's Move): the first ride when a still is full.
+  const [elementOrder, setElementOrder] = useState<string[]>(initialLayout?.elementOrder ?? []);
   // The last shot asked for a look that could not be cut out, and went
   // without it: said once, under the shot, until the next one.
   const [lookDropped, setLookDropped] = useState(false);
@@ -937,7 +939,14 @@ export function SetView({
   // says so for a few seconds, in place of the drag hint.
   const [figureMoved, setFigureMoved] = useState(false);
   const figureMovedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const layoutRef = useRef({ markId: startMarkId, mark: startMark, pose: initialLayout?.pose ?? "stand", gaze: initialLayout?.gaze ?? null });
+  const layoutRef = useRef({
+    markId: startMarkId,
+    mark: startMark,
+    pose: initialLayout?.pose ?? "stand",
+    gaze: initialLayout?.gaze ?? null,
+    // The person's order for the things' sheets (R1, the cast strip): saved with the arrangement.
+    elementOrder: initialLayout?.elementOrder ?? ([] as string[]),
+  });
   // Every beat's move laid from where that beat starts NOW (moves.ts
   // relayMoves): another opening still, a beat's end set by hand, a beat
   // removed or the figure moved changes where the beats after it start, and
@@ -2646,7 +2655,7 @@ export function SetView({
   });
 
   useEffect(() => {
-    layoutRef.current = { markId, mark, pose: layoutRef.current.pose, gaze: layoutRef.current.gaze };
+    layoutRef.current = { ...layoutRef.current, markId, mark };
     apiRef.current?.placeMark(mark);
     const key = JSON.stringify({ markId, mark });
     if (key === savedMarkRef.current) return;
@@ -3164,7 +3173,7 @@ export function SetView({
     [rig.format, rig.squeeze],
   );
   const planFor = useCallback(
-    (pose: Pose | null, m: Mark, order?: readonly string[]) =>
+    (pose: Pose | null, m: Mark, order: readonly string[] = elementOrder) =>
       planShotSheets({
         els,
         held: resolved.held,
@@ -3176,7 +3185,7 @@ export function SetView({
         budget: stillModel === "gpt-image" ? ELEMENT_SHEETS_PER_STILL : 0,
         spec,
       }),
-    [els, resolved, vehicles, cameraFor, stillModel, spec],
+    [els, resolved, vehicles, cameraFor, stillModel, spec, elementOrder],
   );
   /** Each thing with photos as "key=sheetHash", sorted: the film's context (film.ts filmContextKey), so new photos render it again. */
   const elementsKey = useMemo(
@@ -3191,10 +3200,11 @@ export function SetView({
   /** Where the film's figure stands in each beat (film.ts filmStages): the end frames' marks. */
   const filmStagesNow = useMemo(() => filmStages(film.beats, { mark, pose, time: rig.time }), [film.beats, mark, pose, rig.time]);
   /**
-   * The film's one order for the things' sheets (R1): each thing by the
-   * most of the frame it fills in any beat, then by key — the same in every
-   * beat, so a thing that rides one beat's end frame is not dropped for
-   * another in the next, and its design holds from beat to beat.
+   * The film's one order for the things' sheets (R1): the person's own
+   * order first, then each thing by the most of the frame it fills in any
+   * beat, then by key — the same in every beat, so a thing that rides one
+   * beat's end frame is not dropped for another in the next, and its design
+   * holds from beat to beat.
    */
   const filmOrder = useMemo(() => {
     const most = new Map<string, number>();
@@ -3203,8 +3213,9 @@ export function SetView({
       if (!cam) return;
       for (const p of elementPlaces(spec, els, cam)) if (p.seen && heldOf.has(p.key)) most.set(p.key, Math.max(most.get(p.key) ?? 0, p.share));
     });
-    return [...most.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([k]) => k);
-  }, [film.beats, filmStagesNow, cameraFor, spec, els, heldOf, mark]);
+    const rank = (k: string) => (elementOrder.includes(k) ? elementOrder.indexOf(k) : Number.POSITIVE_INFINITY);
+    return [...most.entries()].sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1] || a[0].localeCompare(b[0])).map(([k]) => k);
+  }, [film.beats, filmStagesNow, cameraFor, spec, els, heldOf, mark, elementOrder]);
   /** Which things' sheets ride each beat's end frame, in that order. */
   const filmBeatRides = useMemo(
     () => film.beats.map((b, i) => planFor(b.end, filmStagesNow[i]?.figure ?? mark, filmOrder).riding),
@@ -3233,6 +3244,23 @@ export function SetView({
   function applyListing(listing: { photos: ElementPhoto[]; sheets: string[] }) {
     setElementPhotos(listing.photos);
     setSheetHashes(listing.sheets);
+  }
+
+  /**
+   * Put a thing at a place in the strip's order (the drag, Alt+arrows, the
+   * card's Move): the order the chips show, the moved one at `to`, saved
+   * with the arrangement a moment later (scheduleSave → saveSetLayout).
+   */
+  function reorderElement(key: string, to: number) {
+    const shown = castChips.filter((c) => c.key !== FIGURE_KEY).map((c) => c.key);
+    const from = shown.indexOf(key);
+    if (from === -1) return;
+    const next = shown.filter((k) => k !== key);
+    next.splice(Math.max(0, Math.min(next.length, to)), 0, key);
+    if (next.join(",") === shown.join(",")) return;
+    layoutRef.current = { ...layoutRef.current, elementOrder: next };
+    setElementOrder(next);
+    scheduleSave();
   }
 
   function openElementCard(key: string | null) {
@@ -3456,6 +3484,9 @@ export function SetView({
     const h = thingKey ? heldOf.get(thingKey) : undefined;
     const st = thingKey ? livePlan.statuses.find((x) => x.key === thingKey) : undefined;
     const kindWord = el.kind === "car" ? cast.car : el.kind === "vehicle" ? cast.vehicle : cast.object;
+    const ordered = castChips.filter((c) => c.key !== FIGURE_KEY).map((c) => c.key);
+    const orderIndex = thingKey ? ordered.indexOf(thingKey) : -1;
+    const orderCount = ordered.length;
     return (
       <ElementCard
         element={el}
@@ -3472,6 +3503,14 @@ export function SetView({
         onRemove={(refId) => void removePhoto(refId)}
         onClose={closeElementCard}
         onShowIt={thingKey && (st?.status === "out" || st?.status === "behind") ? () => showElement(thingKey) : null}
+        move={
+          thingKey && orderIndex >= 0
+            ? {
+                earlier: orderIndex > 0 ? () => reorderElement(thingKey, orderIndex - 1) : null,
+                later: orderIndex < orderCount - 1 ? () => reorderElement(thingKey, orderIndex + 1) : null,
+              }
+            : null
+        }
         c={cast}
         variant={variant}
       />
@@ -3483,6 +3522,7 @@ export function SetView({
     return (
       <CastStrip
         className={className}
+        onReorder={reorderElement}
         chips={castChips}
         loose={resolved.loose.map((l) => l.photo)}
         targets={els.map((e) => ({ key: e.key, name: elementName(e.key) }))}
@@ -3514,8 +3554,12 @@ export function SetView({
   /** The strip's chips: the person, the things whose sheets ride in sheet order, then the others. */
   const castChips: CastChip[] = [
     ...(character ? [{ key: FIGURE_KEY, name: character.name, thumb: character.thumbUrl, word: "", title: formatMsg(cast.personLine, { name: character.name }), state: "person" as const, round: true }] : []),
-    ...[...livePlan.statuses]
-      .sort((a, b) => (a.status === "rode" ? (a.sheet ?? 0) : 99) - (b.status === "rode" ? (b.sheet ?? 0) : 99))
+    // Riding ones by sheet; the rest in the person's order, then as planned —
+    // so a thing moved up the list is shown where it was moved.
+    ...livePlan.statuses
+      .map((st, i) => ({ st, i, rank: elementOrder.includes(st.key) ? elementOrder.indexOf(st.key) : 1e6 }))
+      .sort((a, b) => (a.st.status === "rode" ? (a.st.sheet ?? 0) : 99) - (b.st.status === "rode" ? (b.st.sheet ?? 0) : 99) || a.rank - b.rank || a.i - b.i)
+      .map(({ st }) => st)
       .flatMap((st): CastChip[] => {
         const h = heldOf.get(st.key);
         const v = elementView.get(st.key);
@@ -4518,7 +4562,7 @@ export function SetView({
     if (words.direction) setDirection(words.direction);
     // The frame Astra set, kept to step back to: the mark as it will be
     // after the render, the camera as it stands now.
-    layoutRef.current = { markId: mId, mark: m, pose: layoutRef.current.pose, gaze: layoutRef.current.gaze };
+    layoutRef.current = { ...layoutRef.current, markId: mId, mark: m };
     keepRevision(directionNow, cameraNow);
     return moved;
   }

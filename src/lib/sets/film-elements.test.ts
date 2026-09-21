@@ -59,7 +59,8 @@ describe("a render", () => {
     expect(render).toContain("elementOrder: filmOrder,");
     const order = between("const filmOrder = useMemo(", "const filmBeatRides = useMemo(");
     expect(order).toContain("most.set(p.key, Math.max(most.get(p.key) ?? 0, p.share))");
-    expect(order).toContain(".sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))");
+    // The person's order first (the strip), then the most of the frame, then the key.
+    expect(order).toContain(".sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1] || a[0].localeCompare(b[0]))");
     expect(view).toContain("planFor(b.end, filmStagesNow[i]?.figure ?? mark, filmOrder).riding");
   });
 });

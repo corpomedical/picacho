@@ -30,7 +30,7 @@ import {
   setFramePath,
   setPhotoPath,
   setThumbPath, setTakesEligible, setElementSheetPath } from "@/lib/sets/set-config";
-import { cleanText, normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
+import { cleanText, normaliseElementOrder, normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
 import { setBuildInput } from "@/lib/sets/set-builder-prompt";
 import { photoBuildRequest, setAstraRequest } from "@/lib/sets/astra-request";
 import { buildSetShotPrompt } from "@/lib/sets/set-shot-prompt";
@@ -112,7 +112,7 @@ import {
 } from "@/lib/sets/messages";
 import { summarizeFailureDetail } from "@/lib/generations/report-constants";
 import { findVehicles, vehicleWords } from "@/lib/sets/vehicles";
-import { ELEMENT_KEY_RE, ELEMENT_SHEETS_PER_STILL, planShotSheets, resolvePhotos, setElements, type ShotElementStatus } from "@/lib/sets/elements";
+import { ELEMENT_SHEETS_PER_STILL, planShotSheets, resolvePhotos, setElements, type ShotElementStatus } from "@/lib/sets/elements";
 import { listElementPhotos } from "@/lib/sets/references";
 import type { AttemptLog } from "@/lib/generations/pipeline";
 import { normaliseRack, rackWords } from "@/lib/sets/furniture";
@@ -787,9 +787,9 @@ export async function shootInSet(
       els,
       held: resolvePhotos(els, listing.photos).held,
       sheets: listing.sheets,
-      order: Array.isArray(input.elementOrder)
-        ? input.elementOrder.filter((k): k is string => typeof k === "string" && ELEMENT_KEY_RE.test(k)).slice(0, 64)
-        : undefined,
+      // A film's own order when one is sent (takeInSet), else the person's
+      // saved one, which rides in the layout (the cast strip).
+      order: normaliseElementOrder(input.elementOrder) ?? layout?.elementOrder,
       vehicles: findVehicles(owned.spec),
       shotCamera: frameCamera,
       // Which way a car is turned, in the same camera the vehicle words use.

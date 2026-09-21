@@ -572,7 +572,32 @@ export type SetLayout = {
   pose: StandPose;
   /** The eye-line (cut D, people.ts): where the figure looks; null says nothing. */
   gaze: Gaze | null;
+  /**
+   * The person's order for the things' sheets (R1, 2026-09-21, the cast
+   * strip): keys, first rides first when a still is full (elements.ts
+   * planSheets). Absent when never set, so older layouts stay as they were.
+   */
+  elementOrder?: string[];
 };
+
+/**
+ * elements.ts ELEMENT_KEY_RE, repeated so this module imports nothing of
+ * the elements (which import it); element-order.test.ts holds them equal.
+ */
+export const LAYOUT_ELEMENT_KEY_RE = /^([cvo])_([0-9a-f]{8})_(-?\d{1,4})_(-?\d{1,4})$/;
+/** How many keys an order keeps: as many as a set holds photos on (set-config.ts ELEMENT_SET_PHOTOS_MAX). */
+export const LAYOUT_ELEMENT_ORDER_MAX = 24;
+
+/** An order of things' keys as sent: element keys only, each once, at most LAYOUT_ELEMENT_ORDER_MAX; null when none was sent. */
+export function normaliseElementOrder(input: unknown): string[] | null {
+  if (!Array.isArray(input)) return null;
+  const out: string[] = [];
+  for (const k of input) {
+    if (typeof k === "string" && LAYOUT_ELEMENT_KEY_RE.test(k) && !out.includes(k)) out.push(k);
+    if (out.length >= LAYOUT_ELEMENT_ORDER_MAX) break;
+  }
+  return out;
+}
 
 export function normaliseSetLayout(input: unknown, spec: SetSpec): SetLayout | null {
   const root = obj(input);
@@ -614,5 +639,6 @@ export function normaliseSetLayout(input: unknown, spec: SetSpec): SetLayout | n
   }
   const pose = pick(root.pose, STAND_POSES, "stand");
   const gaze = normaliseGaze(root.gaze, spec.objects.length);
-  return { markId, mark, camera, pose, gaze };
+  const elementOrder = normaliseElementOrder(root.elementOrder);
+  return { markId, mark, camera, pose, gaze, ...(elementOrder && elementOrder.length > 0 ? { elementOrder } : {}) };
 }
