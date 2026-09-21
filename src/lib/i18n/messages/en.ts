@@ -2088,6 +2088,7 @@ const en = {
     rolesPickClip: "Choose a clip and each one can be matched to someone in it.",
     rolesNoRead: "The clip wasn't read, so say in your words who each one plays.",
     imagesRoomNote: "A take holds four pictures in all, characters included, so this one carries your first {n}.",
+    imagesRoomNoteRestage: "A Restage take holds nine pictures in all, every character photo included, so this one carries your first {n}.",
     roleGroup: "Person {tag} · everyone in that group",
     crowdWarn: "A whole group can only be changed in one part. Over 15 seconds a take is made in parts, and every part after the first is given your own footage again — so the group comes back. Trim it to 15 seconds, or cast someone in the group instead of all of them.",
     crowdWarnTrim: "Make it 15 seconds",

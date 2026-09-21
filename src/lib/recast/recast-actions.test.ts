@@ -218,7 +218,9 @@ describe("a take with images of the person's own, or with words alone", () => {
     expect(start).toContain("askedImages.slice(0, recastImageRoom(together ? ordered.length : Math.min(1, ordered.length)))");
     expect(start).toContain(": askedImages.slice(0, 1)");
     expect(start).toContain('const picture = photos.first ?? (spec.job === "motion" ? (sentImages[0]?.url ?? null) : null)');
-    expect(start).toContain('const imageUrls = spec.job === "scene" ? sentImages.map((image) => image.url) : []');
+    // Restage too: its brief names them "Image n" after the cast's photos, so
+    // a take that named them without sending them (2026-09-21) cannot recur.
+    expect(start).toContain('const imageUrls = spec.job === "scene" || spec.restages ? sentImages.map((image) => image.url) : []');
     // Every part of a long take carries them too.
     expect(start.slice(at("clipUrl: CHAIN_CLIP_PLACEHOLDER"), at("clipUrl: CHAIN_CLIP_PLACEHOLDER") + 460)).toContain("...imageUrls, CHAIN_LOOK_PLACEHOLDER");
   });
@@ -232,8 +234,9 @@ describe("a take with images of the person's own, or with words alone", () => {
 // TOGETHER (2026-09-19, "Selecting two characters still makes two videos
 // separately").
 describe("several characters in one take", () => {
-  it("puts them together only in Into the clip, and only when asked", () => {
-    expect(start).toContain('const together = spec.job === "scene" && input?.together === true && ordered.length > 1');
+  it("puts them together in Into the clip and Restage, and only when asked", () => {
+    // Restage since 2026-09-21: "Still when selecting two characters in Restage it gives me 2 takes".
+    expect(start).toContain("const together = recastCastsTogether(spec.job) && input?.together === true && ordered.length > 1");
     expect(start).toContain("const takes: Character[][] = together ? [ordered] : ordered.length > 0 ? ordered.map((c) => [c]) : [[]]");
   });
 
@@ -272,6 +275,28 @@ describe("several characters in one take", () => {
 
   it("promises the face lock only where ONE face is cast", () => {
     expect(start).toContain("identityLock: chars.length === 1 && lockOn ?");
+  });
+
+  it("prices a Restage take at the photos it actually carries, and the images that actually ride", () => {
+    // Together, everyone's; apart, the dearest single character's — every take
+    // of the press is charged the same.
+    expect(start).toContain(
+      "const photosPerTake = together ? ordered.map(photosOfRow) : ordered.length > 0 ? [Math.max(...ordered.map(photosOfRow))] : []",
+    );
+    expect(start).toContain("askedImages.slice(0, recastRestageImageRoom(photosPerTake))");
+    expect(start).toContain("const referenceCount = spec.restages ? photosPerTake.reduce((n, count) => n + count, 0) + added.length : 0");
+    // The door counts the same.
+    const door = readFileSync(join(__dirname, "..", "..", "components", "mystique", "mystique-door.tsx"), "utf8");
+    expect(door).toContain("const photosPerTake = ensemble ? cast.map(photosOf) : cast.length > 0 ? [Math.max(...cast.map(photosOf))] : []");
+    expect(door).toContain("RECAST_ENGINES[e].restages ? photosPerTake.reduce((n, count) => n + count, 0) + usedImages.length : 0");
+    expect(door).toContain("? recastRestageImageRoom(photosPerTake)");
+  });
+
+  it("offers the choice on the door wherever the server honours it", () => {
+    const door = readFileSync(join(__dirname, "..", "..", "components", "mystique", "mystique-door.tsx"), "utf8");
+    expect(door).toContain("const ensemble = recastCastsTogether(job) && together && cast.length > 1");
+    expect(door).toContain("{recastCastsTogether(job) && cast.length > 1 && (");
+    expect(door).toContain("...(ensemble ? { together: true, castTags } : {})");
   });
 });
 

@@ -54,12 +54,14 @@ import {
   recastClipProblem,
   recastContainerOf,
   recastCreditCost,
+  recastCastsTogether,
   recastEngineFits,
   recastImageRoom,
   recastImageSendsAsIs,
   recastImageUsable,
   recastMissing,
   recastRequestBody,
+  recastRestageImageRoom,
   recastSourcePath,
   recastTakesCast,
   type RecastClip,
@@ -415,7 +417,7 @@ export async function startRecastTakes(input: {
   keeps?: string[];
   direction?: string;
   castTag?: string;
-  /** Several characters in ONE take instead of one take each (Into the clip only). */
+  /** Several characters in ONE take instead of one take each (Into the clip and Restage — recastCastsTogether). */
   together?: boolean;
   /** Together: the person in the read each character plays, aligned with characterIds (null = as the words say). */
   castTags?: (string | null)[];
@@ -479,7 +481,7 @@ export async function startRecastTakes(input: {
   // own (variants), and with nobody cast there is still one take: the
   // words', or the image's. Photo to life builds the frame from ONE picture,
   // so it only ever takes one character at a time.
-  const together = spec.job === "scene" && input?.together === true && ordered.length > 1;
+  const together = recastCastsTogether(spec.job) && input?.together === true && ordered.length > 1;
   const tagsIn: unknown[] = Array.isArray(input?.castTags) ? input.castTags : [];
   const playedBy = new Set<string>();
   const castTags = ids.map((_, i) => {
@@ -491,16 +493,24 @@ export async function startRecastTakes(input: {
   if (together && castTags.some((tag) => tag === null) && !direction.trim()) return { error: RECAST_NEEDS_ROLES };
   const takes: Character[][] = together ? [ordered] : ordered.length > 0 ? ordered.map((c) => [c]) : [[]];
 
+  // The photos ONE take carries, per character in it: everyone's when they
+  // share the take; apart, the most any one character brings — every take of
+  // the press is charged the same, so it is priced at its dearest.
+  const photosPerTake = together ? ordered.map(photosOfRow) : ordered.length > 0 ? [Math.max(...ordered.map(photosOfRow))] : [];
+
   // Photo to life brings ONE picture to life — the character's photo when
   // someone is cast, otherwise the first image. Into the clip carries them
-  // all, in the room the take's characters leave (four references in all).
+  // all, in the room the take's characters leave (four references in all);
+  // Restage in the room their photos leave (nine pictures in all).
   const admin = createAdminClient();
   const imagePaths =
     spec.job === "motion"
       ? ids.length > 0
         ? []
         : askedImages.slice(0, 1)
-      : askedImages.slice(0, recastImageRoom(together ? ordered.length : Math.min(1, ordered.length)));
+      : spec.restages
+        ? askedImages.slice(0, recastRestageImageRoom(photosPerTake))
+        : askedImages.slice(0, recastImageRoom(together ? ordered.length : Math.min(1, ordered.length)));
   const added: AddedImage[] = [];
   for (const path of imagePaths) {
     const image = await readAddedImage(admin, userId, path);
@@ -564,9 +574,7 @@ export async function startRecastTakes(input: {
   // a long take that is the most its pieces can bill — chain.ts.)
   // Restage bills its reference pictures beside its seconds, so the quote
   // counts what will ride: each cast character’s photos, and the added images.
-  const referenceCount = spec.restages
-    ? (together ? ordered : ordered.slice(0, 1)).reduce((n, c) => n + photosOfRow(c), 0) + askedImages.length
-    : 0;
+  const referenceCount = spec.restages ? photosPerTake.reduce((n, count) => n + count, 0) + added.length : 0;
   const perTake = recastWindowCredits(engine, clip, window, referenceCount);
   const windowSeconds = window.end - window.start;
   // THE LONG TAKE (chain.ts): past the engine's own 15 s, the take is
@@ -574,7 +582,7 @@ export async function startRecastTakes(input: {
   const chaining = spec.chains === true && chainPieceCount(windowSeconds) > 1;
   // What a take has room to carry: four references in all, the characters in
   // it and — for a long take — the still at each switch taking one each.
-  const sendImages = added.slice(0, recastImageRoom(together ? ordered.length : Math.min(1, ordered.length), chaining));
+  const sendImages = spec.restages ? added : added.slice(0, recastImageRoom(together ? ordered.length : Math.min(1, ordered.length), chaining));
 
   // The read again, from what the door was shown — the brief is composed
   // server-side from the same fields, so what was on the door is what is
@@ -927,7 +935,8 @@ export async function startRecastTakes(input: {
         // added images beside it, named in the brief; characters together
         // go as an ensemble, each bound to their own photos.
         const picture = photos.first ?? (spec.job === "motion" ? (sentImages[0]?.url ?? null) : null);
-        const imageUrls = spec.job === "scene" ? sentImages.map((image) => image.url) : [];
+        // Restage names them "Image n" after the cast's photos, so they ride too.
+        const imageUrls = spec.job === "scene" || spec.restages ? sentImages.map((image) => image.url) : [];
         const ensemble = chars.length > 1 ? signed.map((p) => ({ front: p.first!, more: p.more })) : undefined;
         // A long take sends its FIRST piece now; the runner sends the rest,
         // each as the one before it finishes (job-runner.ts, chain-run.ts).

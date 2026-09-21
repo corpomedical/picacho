@@ -168,14 +168,14 @@ type BriefInput = {
   job: RecastJob;
   read: RecastRead | null;
   seconds: number;
-  /** Who is cast: one character, several in one take (Into the clip only), or nobody. */
+  /** Who is cast: one character, several in one take (Into the clip and Restage), or nobody. */
   casting: RecastCasting | RecastCasting[] | null;
   /** The keeps still ticked on the door — a subset of the read's. */
   keeps: RecastKeep[];
   direction: string;
   /** A later piece of a long take (chain.ts): its first second is already finished and must be carried on from. */
   continuing?: boolean;
-  /** The engine's names for the images the person added (recastImageTokens) — Into the clip only. */
+  /** The engine's names for the images the person added (recastImageTokens, or Restage's "Image n"). */
   images?: string[];
   /**
    * A later piece of a long take: the engine's name for the STILL at the
@@ -260,6 +260,11 @@ function composeUncut(input: BriefInput): string {
                 }.`,
               ),
             ),
+            // Several at once (2026-09-21): one video, and nobody borrows
+            // another's face — the line Into the clip's shared takes carry.
+            ...(castings.length > 1
+              ? ["They all appear together in this one video, each exactly as their own pictures show — never with each other's face."]
+              : []),
             "",
           ]
         : []),
@@ -270,7 +275,7 @@ function composeUncut(input: BriefInput): string {
       ...keepLines(input.keeps).map(bullet),
     );
     if (direction) parts.push("", "DIRECTION", direction);
-    return cleanBrief(parts.join("\n"), RECAST_BRIEF_MAX_CHARS);
+    return cleanBrief(parts.join("\n"), Number.POSITIVE_INFINITY);
   }
 
   if (input.job === "motion") {

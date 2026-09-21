@@ -28,16 +28,18 @@ import {
   RECAST_JOB_MAX_SECONDS,
   RECAST_JOB_ORDER,
   RECAST_MAX_BYTES,
+  recastCastsTogether,
   recastImageRoom,
   recastContainerOf,
   recastEngineFor,
   recastEnginesOf,
   recastMissing,
+  recastRestageImageRoom,
   recastTakesCast,
   type RecastEngine,
   type RecastJob,
 } from "@/lib/recast/recast";
-import { composeRecastBrief, recastCastTokens, recastImageTokens } from "@/lib/recast/recast-brief";
+import { composeRecastBrief, recastCastTokens, recastImageTokens, recastRestageTokens } from "@/lib/recast/recast-brief";
 import { clampRecastWindow, defaultRecastWindow, isWholeClip, recastWindowCredits, type RecastWindow } from "@/lib/recast/trim";
 import { chainMinutes, chainPieceCount } from "@/lib/generations/chain";
 import { sampleClip } from "@/lib/recast/recast-client";
@@ -200,30 +202,19 @@ export function MystiqueDoor({
   // recastMissing, 2026-09-19 "Do not lock it just on characters").
   const takesCast = recastTakesCast(job);
   const engine: RecastEngine = recastEngineFor(job, tier);
-  // Priced from the file's own numbers scaled to the window — the same call
-  // the server charges with (trim.ts), so the button's number is the charge.
-  // Restage bills its reference pictures beside its seconds (recast.ts), so
-  // the button’s number counts them: every cast photo that rides, and every
-  // added image.
-  const referenceCount = (e: RecastEngine) => {
-    if (!RECAST_ENGINES[e].restages) return 0;
-    const cast = castIds.map((id) => castable.find((c) => c.id === id)).filter((c): c is RecastCharacter => Boolean(c));
-    const chosen = job === "restage" && together ? cast : cast.slice(0, 1);
-    return chosen.reduce((n, c) => n + Math.min(4, Math.max(1, c.photos.length)), 0) + images.length;
-  };
-  const quoteOf = (e: RecastEngine) =>
-    seen && clipWindow
-      ? { engine: e, credits: recastWindowCredits(e, { seconds: seen.seconds, frames: seen.frames }, clipWindow, referenceCount(e)) }
-      : null;
-  const quote = quoteOf(engine);
   const cast = takesCast
     ? castIds.map((id) => castable.find((c) => c.id === id)).filter((c): c is RecastCharacter => Boolean(c))
     : [];
   // TOGETHER (2026-09-19, "Selecting two characters still makes two videos
-  // separately"): in Into the clip, everyone cast shares one video by
-  // default; "One take each" keeps the variants. Photo to life builds the
-  // frame from one picture, so there it is always one take each.
-  const ensemble = job === "scene" && together && cast.length > 1;
+  // separately"; Restage too since 2026-09-21): everyone cast shares one
+  // video by default; "One take each" keeps the variants. Photo to life
+  // builds the frame from one picture, so there it is always one take each.
+  const ensemble = recastCastsTogether(job) && together && cast.length > 1;
+  // The photos ONE Restage take carries, the server's rule (actions.ts
+  // photosPerTake): the identity photo and up to three more per character;
+  // apart, every take is priced at the character who brings the most.
+  const photosOf = (c: RecastCharacter) => Math.min(4, Math.max(1, c.photos.length));
+  const photosPerTake = ensemble ? cast.map(photosOf) : cast.length > 0 ? [Math.max(...cast.map(photosOf))] : [];
   const peopleInClip = read ? [...read.people].sort((a, b) => Number(b.lead) - Number(a.lead)) : [];
   const castTags = cast.map((c, i) => (c.id in roles ? roles[c.id] : (peopleInClip[i]?.tag ?? null)));
   // A ROLE THAT IS A WHOLE GROUP (the read’s own judgement) can only be
@@ -236,10 +227,28 @@ export function MystiqueDoor({
   const parts = clipWindow ? chainPieceCount(clipWindow.end - clipWindow.start) : 1;
   const groupNeedsOnePart = castOverGroup && parts > 1;
   // What is actually sent — the server's rule (actions.ts): Photo to life
-  // brings ONE picture to life, the character's when someone is cast; a take
-  // holds four references, characters included.
-  const imageCap = job === "motion" ? 1 : recastImageRoom(ensemble ? cast.length : Math.min(1, cast.length));
+  // brings ONE picture to life, the character's when someone is cast; Into
+  // the clip holds four references, characters included; Restage nine
+  // pictures, every cast photo included.
+  const imageCap =
+    job === "motion"
+      ? 1
+      : job === "restage"
+        ? recastRestageImageRoom(photosPerTake)
+        : recastImageRoom(ensemble ? cast.length : Math.min(1, cast.length));
   const usedImages = !takesCast ? [] : job === "motion" ? (cast.length > 0 ? [] : images.slice(0, 1)) : images.slice(0, imageCap);
+  // Priced from the file's own numbers scaled to the window — the same call
+  // the server charges with (trim.ts), so the button's number is the charge.
+  // Restage bills its reference pictures beside its seconds (recast.ts), so
+  // the button’s number counts them: every cast photo that rides, and every
+  // added image that rides.
+  const referenceCount = (e: RecastEngine) =>
+    RECAST_ENGINES[e].restages ? photosPerTake.reduce((n, count) => n + count, 0) + usedImages.length : 0;
+  const quoteOf = (e: RecastEngine) =>
+    seen && clipWindow
+      ? { engine: e, credits: recastWindowCredits(e, { seconds: seen.seconds, frames: seen.frames }, clipWindow, referenceCount(e)) }
+      : null;
+  const quote = quoteOf(engine);
   const imagesUploading = images.some((i) => i.path === null);
   const hasWords = direction.trim().length > 0;
   const rolesUnsaid = ensemble && castTags.some((tag) => tag === null) && !hasWords;
@@ -268,7 +277,12 @@ export function MystiqueDoor({
   // and every input is rebuilt each render anyway.
   // The same names the server gives the engine (actions.ts castingsFor, imageTokensFor).
   const briefCast = ensemble ? cast : cast.slice(0, 1);
-  const castTokens = engine === "kling-edit" ? recastCastTokens(briefCast.map((c) => c.photos.length)) : [];
+  const restageNames = job === "restage" ? recastRestageTokens(briefCast.map(photosOf)) : null;
+  const castTokens = restageNames
+    ? restageNames.tokens
+    : engine === "kling-edit"
+      ? recastCastTokens(briefCast.map((c) => c.photos.length))
+      : [];
   const castings = briefCast.map((c, i) => {
     const tag = ensemble ? castTags[i] : (read?.people.find((p) => p.lead)?.tag ?? null);
     const many = tag ? read?.people.find((p) => p.tag === tag)?.many === true : false;
@@ -287,7 +301,11 @@ export function MystiqueDoor({
         casting: castings.length === 0 ? null : castings.length === 1 ? castings[0] : castings,
         keeps,
         direction,
-        images: job === "scene" && engine === "kling-edit" ? recastImageTokens(castTokens, usedImages.length) : [],
+        images: restageNames
+          ? usedImages.map((_, i) => `Image ${restageNames.used + 1 + i}`)
+          : job === "scene" && engine === "kling-edit"
+            ? recastImageTokens(castTokens, usedImages.length)
+            : [],
       })
     : "";
 
@@ -1036,7 +1054,7 @@ export function MystiqueDoor({
                   <>
                     <div className="flex flex-wrap items-baseline justify-between gap-x-4">
                       <p className={label}>{m.castLabel}</p>
-                      <p className="text-xs text-[#6b6f7a]">{job === "scene" && together ? m.castTogether : m.castMore}</p>
+                      <p className="text-xs text-[#6b6f7a]">{recastCastsTogether(job) && together ? m.castTogether : m.castMore}</p>
                     </div>
                     <p className="mt-1 text-xs text-[#9aa0ad]">{job === "motion" ? m.castHintMotion : m.castHint}</p>
                     {castable.length === 0 ? (
@@ -1077,8 +1095,8 @@ export function MystiqueDoor({
                         })}
                       </div>
                     )}
-                    {/* Together in one video, or one take each (Into the clip). */}
-                    {job === "scene" && cast.length > 1 && (
+                    {/* Together in one video, or one take each (Into the clip, Restage). */}
+                    {recastCastsTogether(job) && cast.length > 1 && (
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button type="button" aria-pressed={together} disabled={starting} onClick={() => setTogether(true)} className={pill(together)}>
                           {m.togetherOn}
@@ -1221,8 +1239,10 @@ export function MystiqueDoor({
                     {job === "motion" && (cast.length > 0 ? images.length > 0 : images.length > 1) && (
                       <p className="mt-2 text-xs text-[#9aa0ad]">{m.imagesMotionNote}</p>
                     )}
-                    {job === "scene" && images.length > imageCap && (
-                      <p className="mt-2 text-xs text-[#9aa0ad]">{formatMsg(m.imagesRoomNote, { n: imageCap })}</p>
+                    {(job === "scene" || job === "restage") && images.length > imageCap && (
+                      <p className="mt-2 text-xs text-[#9aa0ad]">
+                        {formatMsg(job === "restage" ? m.imagesRoomNoteRestage : m.imagesRoomNote, { n: imageCap })}
+                      </p>
                     )}
                   </>
                 )}

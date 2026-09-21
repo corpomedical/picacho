@@ -32,6 +32,8 @@ import {
   RECAST_WORLD_EDIT_STRENGTH,
   recastSourcePath,
   recastTakesCast,
+  recastCastsTogether,
+  recastRestageImageRoom,
   type RecastClip,
 } from "./recast";
 
@@ -411,6 +413,48 @@ describe("restage", () => {
     const many = Array.from({ length: 12 }, (_, i) => `https://x/${i}.jpg`);
     const body = recastRequestBody("h3-768", { clipUrl, imageUrls: many, brief: "x", clip: { seconds: 5 } });
     expect((body.reference_image_urls as string[]).length).toBeLessThanOrEqual(9);
+  });
+
+  it("puts several characters in ONE take, like Into the clip", () => {
+    // 2026-09-21: "Still when selecting two characters in Restage it gives me 2 takes".
+    expect(recastCastsTogether("restage")).toBe(true);
+    expect(recastCastsTogether("scene")).toBe(true);
+    // Photo to life builds the frame from one picture; Restyle casts nobody.
+    expect(recastCastsTogether("motion")).toBe(false);
+    expect(recastCastsTogether("world")).toBe(false);
+  });
+
+  it("leaves added images the room the cast's photos leave, out of nine", () => {
+    expect(recastRestageImageRoom([])).toBe(3);
+    expect(recastRestageImageRoom([4])).toBe(3);
+    // Two characters with four photos each: eight of the nine are theirs.
+    expect(recastRestageImageRoom([4, 4])).toBe(1);
+    expect(recastRestageImageRoom([4, 4, 1])).toBe(0);
+    expect(recastRestageImageRoom([4, 4, 4])).toBe(0);
+    // A character is never counted as less than their one identity photo.
+    expect(recastRestageImageRoom([0, 0])).toBe(3);
+  });
+
+  it("sends everyone in a shared take, each one's photos together, then the added images", () => {
+    const body = recastRequestBody("h3-768", {
+      clipUrl,
+      ensemble: [
+        { front: "https://x/eva1.jpg", more: ["https://x/eva2.jpg", "https://x/eva3.jpg", "https://x/eva4.jpg"] },
+        { front: "https://x/anubis1.jpg", more: [] },
+      ],
+      imageUrls: ["https://x/gown.jpg"],
+      brief: "Video 1 is the scene to build on.",
+      clip: { seconds: 14.9 },
+    });
+    expect(body.reference_image_urls).toEqual([
+      "https://x/eva1.jpg",
+      "https://x/eva2.jpg",
+      "https://x/eva3.jpg",
+      "https://x/eva4.jpg",
+      "https://x/anubis1.jpg",
+      "https://x/gown.jpg",
+    ]);
+    expect(body.duration).toBe(15);
   });
 
   it("asks for the same as Into the clip: someone in it, or words", () => {

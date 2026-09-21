@@ -1967,6 +1967,7 @@ const it = {
     rolesPickClip: "Scegli una clip e ognuno potrà essere abbinato a qualcuno al suo interno.",
     rolesNoRead: "La clip non è stata letta, quindi di' con parole tue che ruolo ha ognuno.",
     imagesRoomNote: "Una ripresa porta quattro immagini in tutto, personaggi compresi, quindi questa porta le tue prime {n}.",
+    imagesRoomNoteRestage: "Una ripresa di Rimetti in scena contiene nove immagini in tutto, contando ogni foto dei personaggi, quindi questa porta le tue prime {n}.",
     roleGroup: "Persona {tag} · tutto quel gruppo",
     crowdWarn: "Un intero gruppo si può cambiare solo in una parte. Oltre i 15 secondi la ripresa si fa a parti, e ogni parte dopo la prima riceve di nuovo il tuo video: così il gruppo torna com’era. Portala a 15 secondi, oppure scegli qualcuno del gruppo invece di tutti.",
     crowdWarnTrim: "Portalo a 15 secondi",

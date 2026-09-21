@@ -23,8 +23,10 @@ export const RELEASES: Release[] = [
     version: "1.71.0",
     build: 110,
     date: "2026-09-21",
-    title: "A 15-second Restage is no longer refused as too long",
+    title: "Restage puts two characters in one video, and a 15-second Restage is no longer refused",
     items: [
+      "Casting two characters in Restage made one take each — \"One video, everyone in it\" only ever existed for Into the clip. Restage now offers the same choice and starts on it: everyone cast shares one video, each playing the person in the clip you pick for them, and the take is priced once, with every photo that rides in it.",
+      "Images added to a Restage take were named in its instructions (\"Image 5\") but never sent with it. They are sent now. A Restage take holds nine pictures in all, so the door says how many of yours fit beside the characters' photos, and the price counts exactly the ones that go.",
       "The first Restage take, 0 to 15 seconds of a longer clip, was refused by the engine as \"over 15.0 seconds\" and failed before it started. Nothing was charged. The cut's sound ran a few hundredths of a second past its picture, and the engine measures the whole file. A Restage clip is now cut a tenth of a second under the limit, without the sound it never uses, and its length is checked before anything is sent. The quote does not change: 15 seconds is still billed as 15.",
     ],
   },

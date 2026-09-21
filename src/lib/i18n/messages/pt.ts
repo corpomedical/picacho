@@ -1968,6 +1968,7 @@ const pt = {
     rolesPickClip: "Escolha um clipe e cada um poderá ser ligado a alguém dele.",
     rolesNoRead: "O clipe não foi lido, então diga com as suas palavras qual papel cada um faz.",
     imagesRoomNote: "Um take leva quatro imagens no total, personagens incluídos, então este leva as suas primeiras {n}.",
+    imagesRoomNoteRestage: "Um take de Refazer a cena leva nove imagens no total, contando cada foto dos personagens, então este leva as suas primeiras {n}.",
     roleGroup: "Pessoa {tag} · todo esse grupo",
     crowdWarn: "Um grupo inteiro só pode ser mudado em uma parte. Acima de 15 segundos o take é feito em partes, e cada parte depois da primeira recebe o seu vídeo de novo, então o grupo volta. Deixe em 15 segundos, ou escolha alguém do grupo em vez de todos.",
     crowdWarnTrim: "Deixar em 15 segundos",

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { composeRecastBrief, RECAST_BRIEF_MAX_CHARS, recastCastTokens, recastCharacterToken, recastImageTokens } from "./recast-brief";
+import {
+  composeRecastBrief,
+  RECAST_BRIEF_MAX_CHARS,
+  recastCastTokens,
+  recastCharacterToken,
+  recastImageTokens,
+  recastRestageTokens,
+} from "./recast-brief";
 import type { RecastRead } from "./recast-read";
 
 // The brief is what a video model is actually told. Genjutsu's works because
@@ -316,6 +323,42 @@ describe("several characters in one take", () => {
   it("carries both across a long take's joins", () => {
     const later = composeRecastBrief({ ...base, job: "scene", casting: ensemble, continuing: true });
     expect(later).toContain("it shows @Element1 and @Image1 exactly as they must look");
+  });
+});
+
+describe("several characters in one Restage take", () => {
+  // 2026-09-21: "Still when selecting two characters in Restage it gives me 2 takes".
+  const names = recastRestageTokens([4, 1]);
+  const ensemble = [
+    { tag: "A", characterName: "Eva", token: names.tokens[0] },
+    { tag: "B", characterName: "Anubis", token: names.tokens[1], many: true },
+  ];
+
+  it("names each by the pictures the request carries, in the order it carries them", () => {
+    expect(names).toEqual({ tokens: ["Images 1–4", "Image 5"], used: 5 });
+  });
+
+  it("gives each their own part, in one video, and the added image the next number", () => {
+    const brief = composeRecastBrief({ ...base, job: "restage", casting: ensemble, images: [`Image ${names.used + 1}`] });
+    expect(brief).toContain("- Eva is the person in Images 1–4 — their face, hair and build come from those pictures, and they take the place of Person A.");
+    expect(brief).toContain("- Anubis is the person in Image 5 — their face, hair and build come from those pictures, and they take the place of every person in Person B's group.");
+    expect(brief).toContain("They all appear together in this one video");
+    expect(brief).toContain('- Image 6 — "image 1" in the direction.');
+  });
+
+  it("says nothing about 'together' when one character is cast", () => {
+    const brief = composeRecastBrief({ ...base, job: "restage", casting: ensemble[0] });
+    expect(brief).not.toContain("together");
+  });
+
+  it("lets the read give way before the person's words, never the other way round", () => {
+    const direction = "Eva stands with her arms crossed as the camera starts close on her and slowly pulls back. ".repeat(6).trim();
+    // The most the action lets through: six keeps of 120 characters.
+    const keeps = Array.from({ length: 6 }, (_, i) => ({ what: `${"a detail of the courtyard that must survive ".repeat(3)}${i}`.slice(0, 120), kind: "object" as const }));
+    const longRead = { ...read, motion: "Rows of students bow and sway in unison around one central figure. ".repeat(20).trim() };
+    const brief = composeRecastBrief({ ...base, read: longRead, job: "restage", casting: ensemble, keeps, direction });
+    expect(Array.from(brief).length).toBeLessThanOrEqual(RECAST_BRIEF_MAX_CHARS);
+    expect(brief.endsWith(direction)).toBe(true);
   });
 });
 

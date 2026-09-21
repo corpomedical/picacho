@@ -332,6 +332,17 @@ export function recastTakesCast(job: RecastJob): boolean {
 }
 
 /**
+ * Whether several characters can share ONE take — "One video, everyone in
+ * it" — rather than one take each. Into the clip since 2026-09-19; Restage
+ * since 2026-09-21 ("Still when selecting two characters in Restage it gives
+ * me 2 takes"), whose engine names every reference picture on its own.
+ * Photo to life builds the frame from one picture; Restyle casts nobody.
+ */
+export function recastCastsTogether(job: RecastJob): boolean {
+  return job === "scene" || job === "restage";
+}
+
+/**
  * What a take still needs before it can start. NOT LOCKED TO CHARACTERS
  * (2026-09-19, the operator: "make it that the user can upload an image and
  * that they can only use prompt to change whatever they want. Do not lock it
@@ -362,6 +373,16 @@ export function recastMissing(job: RecastJob, given: { characters: number; image
 export const RECAST_MAX_IMAGES = 3;
 /** Restage takes nine reference images in all (its schema), characters and added images together. */
 export const RECAST_RESTAGE_MAX_IMAGES = 9;
+
+/**
+ * How many added images a Restage take can still carry: nine pictures in
+ * all, and every photo of every character in the take is one of them —
+ * never more than the three a person can add.
+ */
+export function recastRestageImageRoom(photosPerCharacter: number[]): number {
+  const photos = photosPerCharacter.reduce((sum, n) => sum + Math.max(1, n), 0);
+  return Math.max(0, Math.min(RECAST_MAX_IMAGES, RECAST_RESTAGE_MAX_IMAGES - photos));
+}
 /** Every reference one Into the clip take can carry: characters and added images together (O3 Edit's schema). */
 export const RECAST_MAX_REFERENCES = 4;
 export const RECAST_IMAGE_BUCKET = "chat-attachments";
