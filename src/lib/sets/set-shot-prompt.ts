@@ -33,6 +33,7 @@ import { SET_SHAPES, cleanText, type SetLayout } from "./set-spec";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 import { RIG_FIXED_SENTENCES, RIG_NUMBERED_SENTENCE } from "./rig";
 import { RIG_BLADES, bladesWords } from "./furniture";
+import { VEHICLE_SENTENCE } from "./vehicles";
 import { TIME_OF_DAY_SENTENCE } from "./time-of-day";
 
 const DEG = Math.PI / 180;
@@ -229,6 +230,8 @@ export function stripSetShotScaffold(prompt: string): string {
   out = out.replace(TIME_OF_DAY_SENTENCE, " ");
   out = out.replace(FIGURE_FACING_SENTENCE, " ");
   out = out.replace(SET_SHOT_GAZE_SENTENCE, " ");
+  // Which way each vehicle faces (vehicles.ts vehicleWords, 2026-09-21), anchored.
+  out = out.replace(VEHICLE_SENTENCE, " ");
   return out.replace(/\s+/g, " ").trim();
 }
 
@@ -255,6 +258,8 @@ export function buildSetShotPrompt(input: {
   gaze?: string;
   /** The band's strips on the sketch (rig.ts bandSide): across the top and bottom, down the sides, or none. */
   band?: "rows" | "columns" | null;
+  /** Which way each vehicle in the frame faces (vehicles.ts vehicleWords), in the camera's terms. */
+  vehicles?: readonly string[];
 }): string {
   const description = cleanText(input.description, 300);
   const direction = cleanText(input.direction, SET_DIRECTION_MAX_CHARS);
@@ -262,6 +267,9 @@ export function buildSetShotPrompt(input: {
   return [
     ...SKETCH_SENTENCES,
     input.band === "rows" ? BAND_ROWS_SENTENCE : input.band === "columns" ? BAND_COLUMNS_SENTENCE : "",
+    // Right after the blocks are called stand-ins: which way each car's
+    // front is, before anything else is said about the place (2026-09-21).
+    ...(input.vehicles ?? []),
     // A staged hour reads like a light plot here: the sketch's own light is
     // the hour's, so the description's hour is not what to believe.
     input.lifted ? (input.rigLight || input.hour ? LIFTED_RIG_SENTENCE : LIFTED_SENTENCE) : "",

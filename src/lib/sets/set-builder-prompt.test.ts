@@ -94,13 +94,26 @@ describe("the cached prefix both kinds of build share", () => {
   // canvas page J, cut 1). 8,239 → 9,147 characters; one fresh cache write
   // per kind of build. And once more the same day, for the light
   // department (cut 3): a light may be an area — a soft rectangle with a
-  // size. 9,147 → 9,547 characters.
+  // size. 9,147 → 9,547 characters. And on 2026-09-21 ("the vehicle still
+  // does not know which is the front and the back"): what a positive
+  // rotation does on each axis — the race track's windscreen and bonnet and
+  // both showroom cars' glass were flat plates tilted the wrong way round —
+  // and that every vehicle carries white headlights at its front and red
+  // tail lights at its back (vehicles.ts reads its front from them).
+  // 9,547 → 10,120 characters; about 140 tokens, a tenth of a cent a build.
   it("is byte for byte what it was decided to be", () => {
     const prefix = SET_BUILDER_INSTRUCTIONS + JSON.stringify(SET_SPEC_JSON_SCHEMA);
-    expect(prefix.length).toBe(9547);
+    expect(prefix.length).toBe(10120);
     expect(createHash("sha256").update(prefix).digest("hex")).toBe(
-      "6aa74e84bf01e74affd8a57e67f904a7ea7179a673b057f8d6eb2a0c82691c17",
+      "b080f30086f0dc2523cdfa0153a6c5ec5b268921110b65380d1a9a57d201ed17",
     );
+  });
+
+  it("says what a positive rotation does on each axis, and that a vehicle shows its front", () => {
+    expect(SET_BUILDER_INSTRUCTIONS).toContain("A positive X rotation turns +Y toward +Z: an upright's top leans toward +Z, and a flat panel's +Z edge dips.");
+    expect(SET_BUILDER_INSTRUCTIONS).toContain("A positive Y rotation turns +Z toward +X, as facingDeg does.");
+    expect(SET_BUILDER_INSTRUCTIONS).toContain("A positive Z rotation turns +X toward +Y.");
+    expect(SET_BUILDER_INSTRUCTIONS).toContain("glowing white headlights (emissive) at its front, red tail lights (emissive) at its back");
   });
 });
 

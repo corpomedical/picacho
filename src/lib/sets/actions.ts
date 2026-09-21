@@ -106,6 +106,7 @@ import {
   setMonthlyCapMessage,
 } from "@/lib/sets/messages";
 import { summarizeFailureDetail } from "@/lib/generations/report-constants";
+import { vehicleWords } from "@/lib/sets/vehicles";
 import type { AttemptLog } from "@/lib/generations/pipeline";
 import { normaliseRack, rackWords } from "@/lib/sets/furniture";
 import { STAND_IN_EYE_M } from "@/lib/sets/build-scene";
@@ -815,6 +816,10 @@ export async function shootInSet(
     hour: hourWords(timeApplies(rig) ? rig.time : null),
     // The band's strips on the sketch (rig.ts letterbox): the picture is what lies between them.
     band: bandSide(rigFrame),
+    // Which way each vehicle in the frame faces, read from the set's own
+    // lamps and wing (vehicles.ts), in this camera's terms: the blocks do
+    // not say which end of a car is its nose (2026-09-21).
+    vehicles: vehicleWords(owned.spec, layout?.camera),
   };
   fd.set("prompt", buildSetShotPrompt({ ...shot, direction }));
   fd.set("set_format", rig.format);
