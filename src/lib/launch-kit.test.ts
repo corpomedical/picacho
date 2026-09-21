@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { PRICING_TIERS } from "./pricing";
+import { PLAY_LISTING_LIVE, PLAY_STORE_URL } from "./play-listing";
 
 // docs/LAUNCH_KIT.md is what gets pasted into Product Hunt, Reddit, X and the
 // directories. The kit before it (PRODUCT_HUNT_KIT.md) went stale in three
@@ -77,7 +78,6 @@ describe("launch kit", () => {
     const banned: [RegExp, string][] = [
       [/failed generations? (never|don'?t|do not)/i, "retracted 2026-08-30: say that refused requests never use credits"],
       [/second (model|ai)\b[^.]*\breview|two-model/i, "the two-model review was deleted"],
-      [/google play|play store|play\.google\.com/i, "the listing is down: no Play link or badge"],
       [/solo founder|one-person|one person shop/i, "the operator objected to this framing"],
       [/up-?vote/i, "never ask for votes: Product Hunt and Hacker News penalize it"],
       [/identity[- ]verified|verified identity|guaranteed (match|identity|face|consistency)/i, "the score is scored, not guaranteed or verified"],
@@ -89,6 +89,24 @@ describe("launch kit", () => {
     for (const b of all) {
       for (const [re, why] of banned) {
         expect(re.test(b.text), `"${b.heading}" (line ${b.line}) matches ${re}: ${why}`).toBe(false);
+      }
+    }
+  });
+
+  // The Play listing was down 2026-09-09 to 09-21 and the kit could not
+  // mention it; it came back with version 17. The kit now follows the same
+  // switch the site does, so if the listing goes down again this fails until
+  // the kit stops pointing at it.
+  it("points at Google Play only while the listing is live, and only at our listing", () => {
+    for (const b of all) {
+      if (!PLAY_LISTING_LIVE) {
+        expect(/google play|play store|play\.google\.com/i.test(b.text), `"${b.heading}" (line ${b.line}) mentions Play while the listing is down`).toBe(false);
+      }
+      for (const m of b.text.matchAll(/https:\/\/play\.google\.com\/[^\s"<)]*/g)) {
+        const link = new URL(m[0]);
+        const ours = new URL(PLAY_STORE_URL);
+        const same = link.origin + link.pathname === ours.origin + ours.pathname && link.searchParams.get("id") === ours.searchParams.get("id");
+        expect(same, `"${b.heading}" (line ${b.line}) links ${m[0]}, not ${PLAY_STORE_URL}`).toBe(true);
       }
     }
   });

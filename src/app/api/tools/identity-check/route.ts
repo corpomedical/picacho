@@ -34,6 +34,25 @@ const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const WINDOW_SECONDS = 60 * 60;
 const MAX_PER_WINDOW = 10;
 
+// And a ceiling for everyone together (2026-09-22, before the launch posts
+// link here). The per-IP limit stops one person; nothing stopped a thousand.
+// This call spends from the same OpenAI balance both content gates read
+// from, and those gates fail closed, so a checker flood would not just cost
+// money: it would refuse every generation on the site once the balance ran
+// dry (it ran dry on 15 and 19 Sept without any help).
+//
+// THE MONEY, at OpenAI's gpt-5.4-mini prices read 2026-09-22 ($0.75 per 1M
+// input tokens, $4.50 per 1M output): two images at about 1,100 tokens each
+// (look-people.ts measured a 1024-px picture) plus ~400 of instructions is
+// ~2,600 input = $0.00195; the answer's ceiling is 2,000 tokens = $0.009.
+// So one check costs at most about $0.011, and 2,000 checks a day at most
+// about $22. The typical check writes far fewer than 2,000 tokens; that
+// number is unmeasured. Rolling 24 hours, not a calendar day.
+const GLOBAL_WINDOW_SECONDS = 24 * 60 * 60;
+const GLOBAL_MAX_PER_DAY = 2000;
+// One shared bucket: a fixed key in the limiter's uuid-typed column.
+const GLOBAL_KEY = "00000000-0000-4000-8000-1dc4ec000001";
+
 /**
  * A stable UUID for an IP, so the existing per-user limiter can key on it
  * without a new table or a new SQL function.
@@ -89,6 +108,12 @@ export async function POST(request: NextRequest) {
   if (await rateLimited(ipKey(request), "identity-check", WINDOW_SECONDS, MAX_PER_WINDOW)) {
     return NextResponse.json(
       { error: "That's a lot of checks. Try again in an hour." },
+      { status: 429 },
+    );
+  }
+  if (await rateLimited(GLOBAL_KEY, "identity-check-global", GLOBAL_WINDOW_SECONDS, GLOBAL_MAX_PER_DAY)) {
+    return NextResponse.json(
+      { error: "The checker is busy today. Try again tomorrow." },
       { status: 429 },
     );
   }

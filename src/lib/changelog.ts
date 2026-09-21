@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.75.0",
+    build: 114,
+    date: "2026-09-22",
+    title: "Ready to reach people: the free checker has a daily ceiling, Bing can be told about every page, and the launch kit knows Play is back",
+    items: [
+      "The free identity checker now stops at 2,000 checks a day for everyone together (rolling 24 hours), on top of 10 an hour per person. It spends from the same OpenAI balance the content gates read, and they refuse everything when it runs dry, so a popular post could have switched off generation for the whole site. At OpenAI's gpt-5.4-mini prices read today, a check costs at most about $0.011, so the ceiling holds the worst day to about $22. Past it, visitors read \"The checker is busy today. Try again tomorrow.\"",
+      "IndexNow: a key file at the site's root and scripts/indexnow.mjs, which sends every page in the sitemap (or the paths you name) to Bing, Yandex, Seznam, Naver and Yep in one request. Bing's index is the one ChatGPT search, Copilot, DuckDuckGo and Yahoo answer from, and until now it had to find picacho.ai on its own. The script checks the key file is live before sending, so it refuses until this deploy is out.",
+      "The launch kit (docs/LAUNCH_KIT.md) no longer forbids Google Play: the Q&A, the directories' platform line and the rehearsal step point at the listing, the \"never say\" list now only keeps the suspension's history out of public posts, and there is a tagged Play link whose installs Play Console can count. New: a \"Picacho is on Google Play again\" email for your users in English, Spanish, Portuguese and Italian, to send from Admin this week. Its test follows PLAY_LISTING_LIVE, and fails on any Play link that isn't our listing.",
+    ],
+  },
+  {
     version: "1.74.0",
     build: 113,
     date: "2026-09-21",

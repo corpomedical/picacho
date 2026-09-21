@@ -1,6 +1,6 @@
 # Picacho launch kit (web-first)
 
-Written 2026-09-20. Every product claim was read from source on 2026-09-20 (section 2 says where). It replaces `PRODUCT_HUNT_KIT.md` and `SEEDANCE_FINDINGS_POST.md`: the first waited for a Google Play approval and still said two things the site has since retracted, the second was marked superseded.
+Written 2026-09-20. Every product claim was read from source on 2026-09-20 (section 2 says where). Updated 2026-09-22: the Android app is back on Google Play (version 17, live since 21 Sept), so the kit may point at it again. It replaces `PRODUCT_HUNT_KIT.md` and `SEEDANCE_FINDINGS_POST.md`: the first waited for a Google Play approval and still said two things the site has since retracted, the second was marked superseded.
 
 **How to use it.** Each fenced block is the exact text for ONE field: copy it as it is. Alternatives, counts and notes stay in the text around the blocks, never inside them. A heading that ends in `(max N)` is a length limit, and `src/lib/launch-kit.test.ts` fails the build if a block goes over it, quotes a price the pricing table doesn't have, or brings back a claim the site retracted. Nothing here has been posted or submitted.
 
@@ -24,7 +24,7 @@ Written 2026-09-20. Every product claim was read from source on 2026-09-20 (sect
 2. Photoreal real people are refused: our Content Policy forbids them without consent, and Seedance refuses them at the model.
 3. Video takes minutes, not seconds.
 
-**What is deliberately not in the kit** (it isn't live, or isn't proven): verifying your own face for Seedance (built, admin-only, BytePlus's business check is parked), Mystique and Recce (no public page, still being fixed), any Google Play link, and any "solo founder" line (you objected to it on 5 Sept).
+**What is deliberately not in the kit** (it isn't live, or isn't proven): verifying your own face for Seedance (built, admin-only, BytePlus's business check is parked), Mystique and Recce (no public page, still being fixed), and any "solo founder" line (you objected to it on 5 Sept).
 
 ---
 
@@ -47,13 +47,14 @@ Written 2026-09-20. Every product claim was read from source on 2026-09-20 (sect
 | Seedance: 21 Aug 2.5 refused a photoreal face and 2.0 took it; 3 Sep 2.0 refused what it took 11 days earlier; ByteDance now documents that 2.0 doesn't take direct uploads of real-person faces | `/guides/seedance-2` (dates inline); `providers/video-models.ts` comments |
 | 4 Sep: a photograph of a real person sent straight to BytePlus's own API got HTTP 400 `InputImageSensitiveContentDetected.PrivacyInformation` | `providers/byteplus.ts` header |
 | Photoreal people go to Kling O3 Pro (clips up to 15 s); illustrated and mascot characters to Seedance 2.5 (up to 30 s) | `/guides/seedance-2`; `video-models.ts` |
-| Installs from the browser to the home screen on Android and iPhone | `components/install-badges.tsx`, `app/manifest.ts` (not yet tested on a real Android phone) |
+| An Android app on Google Play | `lib/play-listing.ts` (`PLAY_LISTING_LIVE`, true since version 17 went live on 2026-09-21; the listing answers 200) |
+| Installs from the browser to the home screen on iPhone (and on Android without the store) | `components/install-badges.tsx`, `app/manifest.ts` |
 
 **Never say** (each one is false or unproven today):
 
 - "Failed generations never cost credits." Retracted 2026-08-30. Say: "Refused requests never use your credits."
 - "A second model reviews your prompt." The two-model review was deleted. The steps are draft, validate, generate, score.
-- Anything that points at Google Play. The listing is down; the site and the emails already hide it.
+- Anything about the Play suspension ("we're back", "reinstated") in public posts. Say the Android app is on Google Play and leave its history out. Your own users are different: section 11 can tell them.
 - "Guaranteed" or "verified" identity. The score is scored, not refunded, and gates nothing.
 - "Every video is scored." The site promises images.
 - "Verify your own face for Seedance." Built, not open.
@@ -68,7 +69,7 @@ Written 2026-09-20. Every product claim was read from source on 2026-09-20 (sect
 2. **Top up the three balances and set an alert on each.** OpenAI scores every image and reads both content gates, Anthropic is the gates' second reader, fal renders the video. Balances ran dry during tests on 11 Sept (Anthropic) and 15 and 19 Sept (OpenAI), according to my notes of those sessions. A launch that fails on day one for lack of credit is worse than no launch.
 3. **Know the free-tier bill.** A free account gets one clip a day on Wan 2.2 Turbo, which fal prices at $0.10 a video (read from `video-models.ts`, fal's page of 2026-09-01). 300 signups all using their clip on launch day is 300 x $0.10 = $30. 1,000 is $100. An account that comes back every day costs at most 30 x $0.10 = $3.00 a month.
 4. **Decide a global cap for the free checker.** It stops one person at 10 checks an hour, but nothing stops many people. One check is one gpt-5.4-mini call with two images and a 2,000-token ceiling on the answer, and the code doesn't price it, so I can't put a number on it. Look at platform.openai.com/usage after the first 50 checks and multiply. I can add a daily ceiling (say 3,000 checks, then "busy, come back tomorrow") in about ten minutes once you name the number.
-5. **Walk it as a stranger, on your phone.** Private window, homepage, Try the proof, Sign up, first free clip, result. Time it and write down the number you'll tell people. Then open picacho.ai in Chrome on an Android phone and tap **Get the app**.
+5. **Walk it as a stranger, on your phone.** Private window, homepage, Try the proof, Sign up, first free clip, result. Time it and write down the number you'll tell people. Then install the Android app from Google Play on a phone and sign in with the same account.
 6. **Measurement.** If the cookieless counter isn't in by Mon 28 Sept, the spike goes unmeasured. Use the tagged links in section 12 either way.
 7. **Your Product Hunt account.** Product Hunt takes personal accounts only (your name and photo), and the account must be more than a week old on launch day (Product Hunt help, article 771527). If you don't have one, create it by Tue 22 Sept. A product can launch once per six months per domain (help article 484934), so if the ground isn't ready on the 29th, move the launch a week rather than spend it half-ready.
 8. **Your Hacker News account.** Since March 2026 Show HN has been restricted for accounts with little history (`news.ycombinator.com/showlim`); whether that still applies in September isn't confirmed. Read that page. If the account is new, spend a week commenting usefully on other people's posts first. If Show HN is still limited on the 30th, hold it and put the checker on X and Reddit instead.
@@ -355,7 +356,7 @@ A research agent read each site's own pages on 2026-09-20 and submitted nothing.
 
 **Skip.** There's An AI For That ($49 to list), Futurepedia ($247+), Toolify ($99 express route) and BetaList charge to be listed. Dang.ai's free tier makes you link to them from your site. TopAI.tools blocked the research. A few "best AI video generator" list sites (`aivideogenerationtools.best`, VideAITools) look like link farms. Product Hunt is section 5. The Ahrefs and Similarweb connectors would let me measure the authority of each of these, but they need you to authorize them in your claude.ai connector settings.
 
-Category to pick where asked: AI video generator (first) and AI image generator (second). Pricing: freemium. Platform: web (it installs to the home screen on Android and iPhone). Logo: `public/logo.png` and `public/brand-icon.png`; the 1200 x 630 card is `public/og-image.png`.
+Category to pick where asked: AI video generator (first) and AI image generator (second). Pricing: freemium. Platforms: web, Android (Google Play: `https://play.google.com/store/apps/details?id=ai.picacho.app`), and iPhone through the browser (it installs to the home screen). Logo: `public/logo.png` and `public/brand-icon.png`; the 1200 x 630 card is `public/og-image.png`.
 
 #### Directory: short description (max 160)
 
@@ -590,6 +591,92 @@ Grazie per esserci fin dall'inizio.
 
 ---
 
+### Now, not launch day: the Android app is back
+
+Send this one this week, from Admin, Emails, audience **all** (NOT a service notice: it is news, so people who unsubscribed stay out). One language per send if Admin lets you split the list; otherwise the English one. It tells people who signed up on Android before 9 September that the app works again, and everyone else that Helios exists. The Play link carries a tag, so Play Console's acquisition report can show installs from this email.
+
+#### Email now, English: subject (max 80)
+
+```
+Picacho is on Google Play again
+```
+
+#### Email now, English: body
+
+```
+Hi {{username}},
+
+The Picacho Android app is on Google Play again: <a href="https://play.google.com/store/apps/details?id=ai.picacho.app&referrer=utm_source%3Demail%26utm_medium%3Dannouncement%26utm_campaign%3Dplay-return-2026-09">Picacho on Google Play</a>. Sign in with this same account; your characters and your videos are all there.
+
+New this month: Helios. Describe a place and you get a real 3D set, where you place your character and a camera, and every still and every take keeps the same place. It's on every paid plan.
+
+Your free generation is still there every day, no card.
+
+Thank you for sticking with us.
+```
+
+#### Email now, español: asunto (max 80)
+
+```
+Picacho vuelve a estar en Google Play
+```
+
+#### Email now, español: cuerpo
+
+```
+Hola, {{username}}:
+
+La app de Picacho para Android vuelve a estar en Google Play: <a href="https://play.google.com/store/apps/details?id=ai.picacho.app&referrer=utm_source%3Demail%26utm_medium%3Dannouncement%26utm_campaign%3Dplay-return-2026-09">Picacho en Google Play</a>. Entra con esta misma cuenta; tus personajes y tus vídeos están ahí.
+
+Novedad de este mes: Helios. Describe un lugar y obtienes un set 3D real, donde colocas a tu personaje y una cámara, y cada imagen y cada toma conservan el mismo lugar. Está en todos los planes de pago.
+
+Tu generación gratuita sigue ahí cada día, sin tarjeta.
+
+Gracias por seguir con nosotros.
+```
+
+#### Email now, português: assunto (max 80)
+
+```
+O Picacho está de volta ao Google Play
+```
+
+#### Email now, português: corpo
+
+```
+Olá, {{username}},
+
+O app do Picacho para Android está de volta ao Google Play: <a href="https://play.google.com/store/apps/details?id=ai.picacho.app&referrer=utm_source%3Demail%26utm_medium%3Dannouncement%26utm_campaign%3Dplay-return-2026-09">Picacho no Google Play</a>. Entre com esta mesma conta; seus personagens e seus vídeos estão lá.
+
+Novidade deste mês: Helios. Descreva um lugar e você recebe um set 3D de verdade, onde posiciona seu personagem e uma câmera, e cada imagem e cada tomada mantêm o mesmo lugar. Está em todos os planos pagos.
+
+Sua geração gratuita continua lá todos os dias, sem cartão.
+
+Agradecemos por continuar com a gente.
+```
+
+#### Email now, italiano: oggetto (max 80)
+
+```
+Picacho è di nuovo su Google Play
+```
+
+#### Email now, italiano: testo
+
+```
+Ciao {{username}},
+
+L'app Android di Picacho è di nuovo su Google Play: <a href="https://play.google.com/store/apps/details?id=ai.picacho.app&referrer=utm_source%3Demail%26utm_medium%3Dannouncement%26utm_campaign%3Dplay-return-2026-09">Picacho su Google Play</a>. Accedi con questo stesso account: i tuoi personaggi e i tuoi video sono tutti lì.
+
+Novità di questo mese: Helios. Descrivi un luogo e ottieni un vero set 3D, dove posizioni il tuo personaggio e una macchina da presa, e ogni immagine e ogni ripresa mantengono lo stesso luogo. È in tutti i piani a pagamento.
+
+La tua generazione gratuita è ancora lì ogni giorno, senza carta.
+
+Grazie per essere ancora con noi.
+```
+
+---
+
 ## 12. Tagged links
 
 Where a platform strips the referrer (bios, email, apps), put a tag on the link so the visit says where it came from once the counter is in. Reddit, Hacker News and Product Hunt send their own referrer, so post those links clean.
@@ -616,6 +703,14 @@ https://picacho.ai/?utm_source=youtube&utm_medium=description&utm_campaign=launc
 
 ```
 https://picacho.ai/?utm_source=x&utm_medium=post&utm_campaign=launch-2026-09
+```
+
+#### Google Play, for Instagram and TikTok posts that should install the app
+
+Play Console shows installs per tag (Statistics, acquisition). Change `instagram` to `tiktok` or `youtube` for the other platforms.
+
+```
+https://play.google.com/store/apps/details?id=ai.picacho.app&referrer=utm_source%3Dinstagram%26utm_medium%3Dpost%26utm_campaign%3Dlaunch-2026-09
 ```
 
 #### The free checker, for any post that links it
@@ -652,7 +747,7 @@ These are talking points, not paste-ready text: answer in your own words, from t
 - **Refunds?** A full refund within 7 days if it's your first subscription and you've used fewer than 5 generations. Cancel any time; you keep access to the end of the paid period.
 - **Can I use a celebrity's face, or my friend's?** No. The Content Policy forbids any real, identifiable person without their explicit consent. If the character is you, you confirm that when you save it.
 - **Do you train on my photos?** Say only what is written: your generations are stored in cloud storage that only your account and our administrators (for support and safety) can reach; your prompts and reference photos are sent to the AI providers that render them, under their API terms; we don't sell personal data. There is no sentence in the Privacy Policy that says "we don't train on your content". If you want to say it, get it into the policy first: it will be a top question.
-- **Is there an app?** It installs from the browser to the home screen on Android and iPhone (Get the app in the header). Don't mention Google Play.
+- **Is there an app?** On Android, yes: Picacho is on Google Play. On iPhone it installs from the browser to the home screen (Get the app in the header). There is no App Store app.
 - **API?** Elite includes an API and an MCP server for Claude, Cursor or any MCP client; both return the same `match_score`, so an assistant can retry on its own. Other plans can ask for access. Video isn't in the API yet.
 - **What is Helios?** You describe a place and get a walkable 3D set; you place your character and a camera with a real lens; stills, takes and films keep the same place. It's on every paid plan, with a monthly cap on set builds. It is new, so answer questions about it honestly rather than promising a result.
 - **Why not use Kling or Seedance directly?** You can, and if you only need one clip you should. Picacho adds a saved character, brand rules checked before generation, the score under every image, the price before every send, and one subscription across engines.
