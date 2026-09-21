@@ -55,6 +55,20 @@ export function clampRecastWindow(window: RecastWindow, seconds: number, job: ke
   return { start: tenth(start), end: tenth(end) };
 }
 
+/** What is kept under an engine's ceiling on the clip it is sent. */
+export const RECAST_SEND_MARGIN_SECONDS = 0.1;
+
+/**
+ * The stretch actually cut and sent: the window, ended a tenth under the
+ * engine's own ceiling when it has one (recast.ts maxSendSeconds). The
+ * person's window is still what is priced and recorded — a 15 s restage is
+ * billed as 15 s either way.
+ */
+export function recastSendWindow(window: RecastWindow, maxSendSeconds: number | undefined): RecastWindow {
+  if (maxSendSeconds === undefined) return window;
+  return { start: window.start, end: Math.min(window.end, tenth(window.start + maxSendSeconds - RECAST_SEND_MARGIN_SECONDS)) };
+}
+
 /** Why a window from the wire cannot be used, or null. Never trusted, only checked. */
 export function recastWindowProblem(
   window: unknown,
@@ -147,7 +161,14 @@ export function recastFitFor(
  * keep sound keep this sound). faststart so the provider can begin reading
  * before the download ends.
  */
-export function recastTrimArgs(inputPath: string, outputPath: string, window: RecastWindow, fit: RecastFit | null = null): string[] {
+export function recastTrimArgs(
+  inputPath: string,
+  outputPath: string,
+  window: RecastWindow,
+  fit: RecastFit | null = null,
+  /** False for an engine that drops the sound anyway: no audio track, so the file is as long as its picture. */
+  keepSound = true,
+): string[] {
   const filters = [
     ...(fit ? [`scale=${fit.width}:${fit.height}:flags=lanczos`] : []),
     ...(fit?.fps ? [`fps=${fit.fps}`] : []),
@@ -165,8 +186,7 @@ export function recastTrimArgs(inputPath: string, outputPath: string, window: Re
     ...(filters.length > 0 ? ["-vf", filters.join(",")] : []),
     "-map",
     "0:v:0",
-    "-map",
-    "0:a:0?",
+    ...(keepSound ? ["-map", "0:a:0?"] : ["-an"]),
     "-c:v",
     "libx264",
     "-preset",
@@ -175,10 +195,7 @@ export function recastTrimArgs(inputPath: string, outputPath: string, window: Re
     "16",
     "-pix_fmt",
     "yuv420p",
-    "-c:a",
-    "aac",
-    "-b:a",
-    "192k",
+    ...(keepSound ? ["-c:a", "aac", "-b:a", "192k"] : []),
     "-movflags",
     "+faststart",
     outputPath,

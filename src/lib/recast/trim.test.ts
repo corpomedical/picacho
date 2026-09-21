@@ -12,6 +12,7 @@ import {
   defaultRecastWindow,
   isWholeClip,
   recastFitFor,
+  recastSendWindow,
   recastTrimArgs,
   recastWindowCredits,
   recastWindowProblem,
@@ -33,6 +34,19 @@ describe("the window a job opens with", () => {
     expect(defaultRecastWindow(40, "scene")).toEqual({ start: 0, end: 30 });
     expect(defaultRecastWindow(28.4, "motion")).toEqual({ start: 0, end: 28.4 });
     expect(defaultRecastWindow(28.4, "world")).toEqual({ start: 0, end: 10 });
+  });
+});
+
+describe("what is sent to an engine with a ceiling", () => {
+  // H3 refused the operator's 0–15 s restage as "over 15.0 seconds" (2026-09-20).
+  it("ends a tenth under the ceiling, and leaves every other engine's window alone", () => {
+    expect(recastSendWindow({ start: 0, end: 15 }, 15)).toEqual({ start: 0, end: 14.9 });
+    expect(recastSendWindow({ start: 7.3, end: 22.3 }, 15)).toEqual({ start: 7.3, end: 22.2 });
+    expect(recastSendWindow({ start: 0, end: 8 }, 15)).toEqual({ start: 0, end: 8 });
+    expect(recastSendWindow({ start: 0, end: 30 }, undefined)).toEqual({ start: 0, end: 30 });
+  });
+  it("makes the whole of a 15 s clip a cut, so it is never sent as it is", () => {
+    expect(isWholeClip(recastSendWindow({ start: 0, end: 15.02 }, 15), 15.02)).toBe(false);
   });
 });
 
@@ -153,6 +167,26 @@ describe("the cut itself, on the real binary", () => {
       // And the frames land where the price said they would, within one.
       const priced = windowedClip({ seconds: before.seconds, frames: before.frames }, { start: 2.5, end: 6 }).frames!;
       expect(Math.abs((after.frames ?? 0) - priced)).toBeLessThanOrEqual(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!ffmpeg)("a restage cut of a clip with sound is under the 15.0 s the engine measures", () => {
+    const dir = mkdtempSync(join(tmpdir(), "recast-trim-test-"));
+    try {
+      const src = join(dir, "src.mp4");
+      execFileSync(ffmpeg!, [
+        "-v", "error", "-y",
+        "-f", "lavfi", "-i", "testsrc=size=320x180:rate=30",
+        "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100",
+        "-t", "20", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", src,
+      ]);
+      const out = join(dir, "out.mp4");
+      execFileSync(ffmpeg!, recastTrimArgs(src, out, recastSendWindow({ start: 0, end: 15 }, 15), null, false));
+      const after = probeMp4(readFileSync(out))!;
+      expect(after.seconds).toBeLessThanOrEqual(15);
+      expect(after.seconds).toBeGreaterThan(14.8);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

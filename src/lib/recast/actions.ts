@@ -88,7 +88,7 @@ import {
   type RecastWarning,
 } from "@/lib/recast/recast-read";
 import { RECAST_LOCK_THRESHOLD, readRecastRecipes, recastRow, type RecastSource } from "@/lib/recast/store";
-import { cutsInWindow, isWholeClip, recastFitFor, recastWindowCredits, recastWindowProblem, type RecastWindow } from "@/lib/recast/trim";
+import { cutsInWindow, isWholeClip, recastFitFor, recastSendWindow, recastWindowCredits, recastWindowProblem, type RecastWindow } from "@/lib/recast/trim";
 import { cutRecastWindow } from "@/lib/recast/trim-run";
 import {
   CHAIN_CLIP_PLACEHOLDER,
@@ -548,7 +548,11 @@ export async function startRecastTakes(input: {
   const windowProblem = recastWindowProblem(window, clip.seconds, spec.job);
   if (windowProblem === "too-long") return { error: RECAST_JOB_TOO_LONG };
   if (windowProblem) return { error: RECAST_WINDOW_INVALID };
-  const cutting = !isWholeClip(window, clip.seconds);
+  // What is cut and sent: the window, a tenth under the engine's own
+  // ceiling when it has one — H3 refused the operator's 0–15 s window as
+  // "over 15.0 seconds" (2026-09-20), the take failed before a credit moved.
+  const sendWindow = recastSendWindow(window, spec.maxSendSeconds);
+  const cutting = !isWholeClip(sendWindow, clip.seconds);
   // Outside the engine's size or frame-rate limits (Kling O3 Edit: 720–3840
   // px, 24–60 fps) the clip is re-encoded to fit, cut or not — the
   // operator's own source was 324 px tall at 61 fps and would have been
@@ -728,8 +732,22 @@ export async function startRecastTakes(input: {
     source = { kind: "upload", clipId: windowClipId, container: "mp4" };
   } else if (preparing) {
     if (!sourceBytes) return { error: RECAST_TRIM_FAILED };
-    const cut = await cutRecastWindow(admin, userId, sourceBytes, window, fit);
+    const cut = await cutRecastWindow(
+      admin,
+      userId,
+      sourceBytes,
+      sendWindow,
+      fit,
+      // Only where a ceiling is measured does the sound go: it is the track that ran past it.
+      spec.keepsSound || spec.maxSendSeconds === undefined,
+    );
     if ("error" in cut) return { error: RECAST_TRIM_FAILED };
+    // Measured on the file, like the provider will: over the ceiling is refused here, before anything is spent.
+    if (spec.maxSendSeconds !== undefined && cut.clip.seconds > spec.maxSendSeconds) {
+      console.error(`[recast] cut came back ${cut.clip.seconds}s, over ${spec.maxSendSeconds}s`);
+      await removeSource(admin, cut.path);
+      return { error: RECAST_TRIM_FAILED };
+    }
     cutPath = cut.path;
     const { data: signedCut } = await admin.storage.from(RECAST_BUCKET).createSignedUrl(cut.path, 60 * 60 * 24);
     if (!signedCut?.signedUrl) {

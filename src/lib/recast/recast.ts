@@ -161,6 +161,14 @@ export type RecastEngineSpec = {
    * tokens beside the output seconds (recastReferenceCostUsd).
    */
   restages?: true;
+  /**
+   * The engine's hard ceiling on the clip it is SENT, in seconds, measured
+   * on the file. H3 refused a 0–15 s window (2026-09-20: "Video duration
+   * exceeds the maximum allowed. Maximum is 15.0 seconds.") — a cut's last
+   * audio packet ends a few hundredths past its video, and fal measures the
+   * container. So the clip sent is cut a tenth under it (trim.ts).
+   */
+  maxSendSeconds?: number;
 };
 
 export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
@@ -191,6 +199,7 @@ export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
     takesMorePhotos: true,
     keepsSound: false,
     restages: true,
+    maxSendSeconds: 15,
   },
   "h3-480": {
     job: "restage",
@@ -205,6 +214,7 @@ export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
     takesMorePhotos: true,
     keepsSound: false,
     restages: true,
+    maxSendSeconds: 15,
   },
   "kling-edit": {
     job: "scene",

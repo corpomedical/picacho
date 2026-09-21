@@ -77,7 +77,7 @@ describe("startRecastTakes", () => {
   });
 
   it("cuts after the words and before the picture check, and judges what it sends", () => {
-    const cut = at("await cutRecastWindow(admin, userId, sourceBytes, window, fit)");
+    const cut = at("await cutRecastWindow(");
     expect(at("await gatePrompt({")).toBeLessThan(cut);
     expect(cut).toBeLessThan(at("await judgeRender({"));
     // The URL judged is the URL sent — the cut's, when there is one.

@@ -33,6 +33,8 @@ export async function cutRecastWindow(
   window: RecastWindow,
   /** The size and frame rate the engine needs, when the clip is outside them (trim.ts recastFitFor). */
   fit: RecastFit | null = null,
+  /** False when the engine drops the sound (trim.ts recastTrimArgs). */
+  keepSound = true,
 ): Promise<TrimmedClip | { error: "no-encoder" | "cut-failed" | "unreadable" | "store-failed" }> {
   if (!ffmpegPath) {
     console.error("[recast] trim skipped: ffmpeg-static resolved no binary path");
@@ -44,7 +46,7 @@ export async function cutRecastWindow(
   try {
     await writeFile(input, source);
     try {
-      await execFileAsync(ffmpegPath, recastTrimArgs(input, output, window, fit), { timeout: TRIM_TIMEOUT_MS, maxBuffer: 1024 * 1024 });
+      await execFileAsync(ffmpegPath, recastTrimArgs(input, output, window, fit, keepSound), { timeout: TRIM_TIMEOUT_MS, maxBuffer: 1024 * 1024 });
     } catch (err) {
       console.error("[recast] trim failed:", err instanceof Error ? err.message.slice(0, 300) : err);
       return { error: "cut-failed" };

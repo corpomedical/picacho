@@ -20,6 +20,15 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.71.0",
+    build: 110,
+    date: "2026-09-21",
+    title: "A 15-second Restage is no longer refused as too long",
+    items: [
+      "The first Restage take, 0 to 15 seconds of a longer clip, was refused by the engine as \"over 15.0 seconds\" and failed before it started. Nothing was charged. The cut's sound ran a few hundredths of a second past its picture, and the engine measures the whole file. A Restage clip is now cut a tenth of a second under the limit, without the sound it never uses, and its length is checked before anything is sent. The quote does not change: 15 seconds is still billed as 15.",
+    ],
+  },
+  {
     version: "1.70.0",
     build: 109,
     date: "2026-09-20",
