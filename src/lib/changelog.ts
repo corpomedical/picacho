@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.76.0",
+    build: 115,
+    date: "2026-09-22",
+    title: "Helios 3D: photos on the cars and objects themselves, who plays the person, and who is in a character's photos",
+    items: [
+      "Reference photos now go on the things themselves (\"add an option for the user to upload references: person, vehicle, objects\"). Tap a car or an object on the Helios 3D stage and its card opens in the Scene tab (a sheet on a phone): up to four photos of it, the first its front, added from a file, a drop or a paste. Each photo is checked before it is kept. A thing's photos become one design sheet, the thing four ways round, drawn once at the next Shoot or Render (about a minute, on us) and kept until the photos change. Every still that sees the thing then carries it and keeps its design, in the place, size and direction the set gives it. A wall or the track says it is the set itself; a person comes from their character.",
+      "A strip above the stage says who and what the next still carries: the person, the things whose sheets go, and for the others why not (out of the frame, no room, too alike to another, a picture model that doesn't take them). A still carries two sheets for now. Drag a chip along the strip (or use Alt+arrows, or Move in the card on a phone) to decide which go first. The photos' thumbnails float over their things on the stage, and dim when something stands in front. Photos uploaded from the old Look menu show as photos on nothing, ready to put on a thing; the Look menu now keeps stills only.",
+      "A film carries the photos in every beat's painted end frame, in one order for the whole film, so a thing's design holds from beat to beat. The sheets are drawn once before beat 1; if one can't be drawn, the render stops before anything is charged. If the film's opening still was shot before a thing in it had its photos, Render says so first: beat 1 would change that thing mid-clip.",
+      "Who plays this person? Tap the figure on the stage: its card lists your characters, and the one you pick is the one this set shoots next time too. + New character saves the set as you left it, opens the character form and comes back with the new character cast. A character that has no photo yet is named instead of being swapped for another without a word.",
+      "Who is in a character's photos is now asked once, with three answers: This is me, I have this person's permission, or No real person (drawn, 3D or made by AI). The answer is kept with exactly those photos, and asked again when they change. The character form asks before it saves; Helios asks on the figure's card before the first shot. Picacho's Content Policy forbids making a real person without their consent, and this is the record of it.",
+      "The stage is easier to work: a click on the figure no longer moves it or saves its place again; a click anywhere keeps the named camera instead of dropping it to your own; and dragging the figure keeps the point you grabbed under the pointer, where a 60-pixel drag used to throw it metres across the set.",
+    ],
+  },
+  {
     version: "1.75.0",
     build: 114,
     date: "2026-09-22",
