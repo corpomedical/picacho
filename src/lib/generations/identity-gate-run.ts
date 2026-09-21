@@ -88,6 +88,8 @@ export type GateDeps = {
     /** A set's earlier still, when the first render carried one (Astra Sets). */
     lookImageUrl?: string | null;
     placeImageUrl?: string | null;
+    /** A set's things' design sheets (R1), when the first render carried them. */
+    elementImageUrls?: readonly string[] | null;
     /** A Helios rig format (sets/rig.ts): the same render size as the first render. */
     imageSize?: OpenAiImageSize | null;
     /**
@@ -255,6 +257,8 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
       deps.rerender.placeImageUrl,
       undefined,
       deps.rerender.imageSize ?? null,
+      undefined,
+      deps.rerender.elementImageUrls ?? null,
     );
   } catch (err) {
     // The re-render failed. The first attempt is still good and still paid

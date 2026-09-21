@@ -619,6 +619,8 @@ export type RealPipelineOptions = {
   lookImageUrl?: string | null;
   /** The photograph a photo set was built from (2026-09-15): rides a set shot as pixels, fenced like the look. */
   placeImageUrl?: string | null;
+  /** Design sheets of a set's things (R1, 2026-09-21, sets/elements.ts): ride a set shot last, fenced like the look. */
+  elementImageUrls?: readonly string[] | null;
   /** A Helios rig format's render size (sets/rig.ts): GPT Image only; the set shot cuts it to its frame after. */
   imageSize?: OpenAiImageSize | null;
   /**
@@ -1589,6 +1591,10 @@ export async function runRealPipeline(
           // person, so it rides only beside a photo of THE person and under
           // the same identity fence (the place note covers both).
           const placeActive = Boolean(options.placeImageUrl && !usingMultiCharacterImages && options.referenceImageUrl);
+          // The things' sheets (R1): the same rule and the same fence as the
+          // look — without the look's note they would fall under "every
+          // other reference photo is the person" (reference-notes.ts).
+          const elementsActive = Boolean(options.elementImageUrls?.length && !usingMultiCharacterImages && options.referenceImageUrl);
           // What each extra photo is — reference-notes.ts, where the words
           // live and are tested. On the attached-photo sentence: "match its
           // contents faithfully" used to end it — and on the GPT edit path
@@ -1618,7 +1624,7 @@ export async function runRealPipeline(
             referenceNotes({
               outfit: outfitActive,
               attached: propActive,
-              look: lookActive || placeActive,
+              look: lookActive || placeActive || elementsActive,
               identity: Boolean(options.referenceImageUrl),
               expressionSet: setUrls.length > 0,
             });
@@ -1644,6 +1650,7 @@ export async function runRealPipeline(
             },
             options.imageSize ?? null,
             setUrls.length > 0 ? setUrls : null,
+            elementsActive ? options.elementImageUrls : null,
           );
           if (fallbackNote) steps.push({ step: "generate", detail: fallbackNote });
           // Which close-ups rode, and why — on the same line, so the log reads

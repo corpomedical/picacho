@@ -30,6 +30,12 @@ export type ImageReferenceInput = {
    * only face the model sees.
    */
   expressionSet?: readonly string[] | null;
+  /**
+   * Design sheets of the set's things (R1, 2026-09-21, sets/elements.ts):
+   * one per thing with reference photos, last of all and in the order the
+   * set shot's prompt numbers them ("sheet 1 first").
+   */
+  elements?: readonly string[] | null;
 };
 
 export function buildImageReferences({
@@ -39,6 +45,7 @@ export function buildImageReferences({
   look,
   place,
   expressionSet,
+  elements,
 }: ImageReferenceInput): string | string[] | null | undefined {
   const closeUps = typeof identity === "string" && identity ? (expressionSet ?? []).filter(Boolean) : [];
   const extras = [
@@ -51,6 +58,8 @@ export function buildImageReferences({
     // identity photos arrive first and the prompt names each extra by what
     // it shows.
     ...(place ? [place] : []),
+    // The things' sheets (R1): last, in the prompt's sheet order.
+    ...(elements ?? []).filter(Boolean),
   ];
   if (extras.length === 0 && closeUps.length === 0) return identity;
   // A multi-character array's ORDER is its meaning (one photo per person) —

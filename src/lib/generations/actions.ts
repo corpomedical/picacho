@@ -157,6 +157,7 @@ import {
   getMonthlyUsageWith,
   persistGeneratedImage, fitLayerToOriginal, persistImageBytes } from "@/lib/generations/core";
 import { formatFrame, isRigFormat, isRigSqueeze, type RigFormat } from "@/lib/sets/rig";
+import { ELEMENT_SHEETS_PER_STILL } from "@/lib/sets/elements";
 import { cutToBand } from "@/lib/sets/frame-cut";
 import { develop, labLine, negativePathFor, normaliseLabLooks } from "@/lib/sets/lab";
 import { usableSlots, type ExpressionSlot } from "@/lib/characters/expression-set";
@@ -230,6 +231,9 @@ type RunResult =
       // prompt: rule label + the exact trigger words + a suggested fix —
       // drives the actionable failure UI and the Generate-anyway override.
       rulesBlock?: { label: string; evidence: string; fix: string }[];
+      // How many of a set shot's thing sheets rode the render (R1): fewer
+      // than it sent means the model or the guards left some out.
+      elementSheets?: number;
     };
 
 // The SERVER-SIDE BACKSTOP, sized to the largest legitimate payload rather
@@ -513,7 +517,9 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // field — anything not our own media URL is discarded.
   // "look" is not a composer role: only a Set's shot sends it (2026-09-11) —
   // an earlier still from the same set, so its objects stay the same.
-  type AttachmentRoleEntry = { url: string; role: "reference" | "identity" | "outfit" | "scene" | "prop" | "look" | "unused" };
+  // "element" likewise (R1, 2026-09-21): a design sheet of one of the set's
+  // things, drawn from the person's photos of it (sets/element-actions.ts).
+  type AttachmentRoleEntry = { url: string; role: "reference" | "identity" | "outfit" | "scene" | "prop" | "look" | "element" | "unused" };
   const attachmentRoles: AttachmentRoleEntry[] | null = (() => {
     const raw = formData.get("attachment_roles");
     if (!raw) return null;
@@ -526,7 +532,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           typeof (x as AttachmentRoleEntry).url === "string" &&
           (x as AttachmentRoleEntry).url.startsWith("/api/media/") &&
           !(x as AttachmentRoleEntry).url.includes("..") &&
-          ["reference", "identity", "outfit", "scene", "prop", "look", "unused"].includes((x as AttachmentRoleEntry).role),
+          ["reference", "identity", "outfit", "scene", "prop", "look", "element", "unused"].includes((x as AttachmentRoleEntry).role),
       );
     } catch {
       return null;
@@ -562,6 +568,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   const referenceAttachmentUrl = attachmentRoles?.find((a) => a.role === "reference")?.url ?? "";
   // A Set's earlier still (see AttachmentRoleEntry). Never the identity.
   const lookAttachmentUrl = attachmentRoles?.find((a) => a.role === "look")?.url ?? "";
+  // The set's things' sheets (R1), in the order the set shot's prompt numbers them.
+  const elementAttachmentUrls = attachmentRoles?.filter((a) => a.role === "element").map((a) => a.url) ?? [];
+  // How many rode the render, for the set shot to say which things did (sets/actions.ts shootInSet).
+  let elementSheetsSent = 0;
   // A Set's shot (sets/actions.ts shootInSet): read once, up here, because
   // it changes what the scene role MEANS — pixels riding a final prompt,
   // not an image described into text (see placeImageUrl below).
@@ -1867,6 +1877,23 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       // describe-into-text lane below, which would append text to a prompt
       // that is already final. The same guards as the look, for the same
       // reasons.
+      // The set's things' sheets (R1, 2026-09-21): on a set shot only, beside
+      // a photo of the person, on GPT Image only — naming sheets by number is
+      // unproven elsewhere, and FLUX's ten pictures leave room for two. The
+      // shot plans how many (sets/elements.ts ELEMENT_SHEETS_PER_STILL); the
+      // cap here is the same, whatever a request says.
+      const elementImageUrls =
+        isSetShot &&
+        elementAttachmentUrls.length > 0 &&
+        referenceImageUrl &&
+        contentType === "image" &&
+        !wantsMultiCharacter &&
+        !storyboardShots &&
+        imageModelId === "gpt-image"
+          ? await Promise.all(elementAttachmentUrls.slice(0, ELEMENT_SHEETS_PER_STILL).map(async (u) => absolutizeMediaUrl(u, await getOrigin())))
+          : null;
+      elementSheetsSent = elementImageUrls?.length ?? 0;
+
       const placeImageUrl =
         isSetShot &&
         sceneAttachmentUrl &&
@@ -1941,7 +1968,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           // is not a composer attachment and has no slot there.
           attachments: attachmentRoles
             ? attachmentRoles
-                .filter((a): a is AttachmentRoleEntry & { role: Exclude<AttachmentRoleEntry["role"], "look"> } => a.role !== "look")
+                .filter((a): a is AttachmentRoleEntry & { role: Exclude<AttachmentRoleEntry["role"], "look" | "element"> } => a.role !== "look" && a.role !== "element")
                 .map((a, i) => ({ id: String(i), isImage: true, role: a.role }))
             : attachmentReferenceUrl
               ? [{ id: "attachment", isImage: true }]
@@ -2108,6 +2135,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           propImageUrl,
           lookImageUrl,
           placeImageUrl,
+          elementImageUrls,
           // ONLY when the photo ITSELF rides to the model (propImageUrl).
           // Deliberately not set for the described-attachment lanes (models
           // that can't take an extra image, and the scene role): there the
@@ -2305,6 +2333,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
                 propImageUrl,
                 lookImageUrl,
                 placeImageUrl,
+                elementImageUrls,
                 imageSize: setFrame.cut && imageModelId === "gpt-image" ? setFrame.size : null,
                 // The same cut and the same lab as the first render (storeSetImage).
                 persist: (base64: string) => storeSetImage(supabase, userData.user!.id, base64),
@@ -2629,6 +2658,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     resultUrl: gateOutcome?.unusable ? null : resultUrl,
     matchScore: gateOutcome?.matchScore ?? null,
     ...(rulesBlock && rulesBlock.length > 0 ? { rulesBlock } : {}),
+    ...(elementSheetsSent > 0 ? { elementSheets: elementSheetsSent } : {}),
   };
 }
 

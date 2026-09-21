@@ -63,5 +63,13 @@ describe("buildImageReferences", () => {
     expect(buildImageReferences({ identity: null, expressionSet: ["smile"], prop: "attached" })).toEqual(["attached"]);
     expect(buildImageReferences({ identity: null, expressionSet: ["smile"] })).toBeNull();
   });
-});
 
+  it("a set's things' sheets ride last of all, in the prompt's sheet order (R1, 2026-09-21)", () => {
+    expect(
+      buildImageReferences({ identity: "id", expressionSet: ["smile"], outfit: "outfit", prop: "sketch", look: "look", place: "place", elements: ["sheet1", "sheet2"] }),
+    ).toEqual(["id", "smile", "outfit", "sketch", "look", "place", "sheet1", "sheet2"]);
+    expect(buildImageReferences({ identity: ["a", "b"], elements: ["sheet1"] })).toEqual(["a", "b"]);
+    expect(buildImageReferences({ identity: null, prop: "sketch", elements: ["sheet1"] })).toEqual(["sketch", "sheet1"]);
+    expect(buildImageReferences({ identity: "id", elements: [] })).toBe("id");
+  });
+});

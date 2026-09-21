@@ -92,6 +92,9 @@ export async function generateImage(
   // (lib/characters/expression-set.ts pickSetForShot, 2026-09-19): they ride
   // right after the identity photo, beside a single one only.
   expressionSetUrls?: readonly string[] | null,
+  // Design sheets of a set's things (R1, 2026-09-21): last of all, in the
+  // order the set shot's prompt numbers them.
+  elementImageUrls?: readonly string[] | null,
 ): Promise<string> {
   const model = getImageModel(modelId);
 
@@ -126,6 +129,7 @@ export async function generateImage(
     prop: propImageUrl,
     look: lookImageUrl,
     place: placeImageUrl,
+    elements: elementImageUrls,
   });
 
   if (model.provider === "fal") {
