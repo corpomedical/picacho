@@ -19,9 +19,11 @@ import {
   copyToElement,
   elementPlaces,
   planSheets,
+  planShotSheets,
   resolvePhotos,
   setElements,
   type ElementPhoto,
+  type HeldPhotos,
 } from "./elements";
 
 // The set's things (the per-thing reference photos, R1, 2026-09-21): which
@@ -244,5 +246,68 @@ describe("planSheets", () => {
         }
       }
     }
+  });
+});
+
+describe("planShotSheets: only a drawn sheet rides", () => {
+  const els = setElements(open);
+  const heldOf = (keys: readonly string[]): HeldPhotos[] =>
+    keys.map((key, n) => ({ key, photos: [photo(key, { refId: `1111111${n}-1111-4111-8111-111111111111` })], extra: [], how: "exact", sheetHash: `h${n}` }));
+  const all = heldOf(els.map((e) => e.key));
+  const hashOf = (key: string) => all.find((h) => h.key === key)!.sheetHash;
+  const shot = (over: Partial<Parameters<typeof planShotSheets>[0]> = {}) =>
+    planShotSheets({
+      els,
+      held: all,
+      sheets: all.map((h) => h.sheetHash),
+      vehicles: findVehicles(open),
+      shotCamera: cameraOf(open, "c2"),
+      poseCamera: null,
+      budget: 2,
+      spec: open,
+      ...over,
+    });
+
+  it("sends the planned sheets, by hash, in sheet order", () => {
+    const r = shot();
+    expect(r.riding).toEqual([
+      { key: "c_7318aa94_0_0", hash: hashOf("c_7318aa94_0_0") },
+      { key: "o_cf22a19a_30_16", hash: hashOf("o_cf22a19a_30_16") },
+    ]);
+    expect(r.statuses.filter((x) => x.status === "rode")).toEqual([
+      { key: "c_7318aa94_0_0", status: "rode", sheet: 1 },
+      { key: "o_cf22a19a_30_16", status: "rode", sheet: 2 },
+    ]);
+    expect(r.sentences).toHaveLength(2);
+    expect(r.statuses.find((x) => x.key === "o_deaec83d_64_-65")).toEqual({ key: "o_deaec83d_64_-65", status: "out" });
+  });
+
+  it("gives a thing whose sheet is not drawn no place, and the next thing takes it, numbered again", () => {
+    const r = shot({ sheets: all.filter((h) => h.key !== "c_7318aa94_0_0").map((h) => h.sheetHash) });
+    expect(r.riding.map((x) => x.key)).toEqual(["o_cf22a19a_30_16", "o_e7e730d5_-53_-65"]);
+    expect(r.statuses).toContainEqual({ key: "c_7318aa94_0_0", status: "no-sheet" });
+    // The car still stands in the middle third, so the chair is still third from the camera.
+    expect(r.sentences).toEqual([
+      "Sheet 1 is the object at the right of the frame, 1.3 m tall.",
+      "Sheet 2 is the object in the middle of the frame, third from the camera, 1.1 m tall.",
+    ]);
+  });
+
+  it("says a thing out of the frame is out, drawn or not", () => {
+    const r = shot({ sheets: [] });
+    expect(r.statuses.find((x) => x.key === "o_deaec83d_64_-65")).toEqual({ key: "o_deaec83d_64_-65", status: "out" });
+    expect(r.riding).toEqual([]);
+  });
+
+  it("sends none to a picture model that takes no sheets, and says so", () => {
+    const r = shot({ budget: 0 });
+    expect(r.riding).toEqual([]);
+    expect(r.sentences).toEqual([]);
+    expect(r.statuses.find((x) => x.key === "c_7318aa94_0_0")).toEqual({ key: "c_7318aa94_0_0", status: "model" });
+  });
+
+  it("with no camera sees nothing, and with no photos says nothing", () => {
+    expect(shot({ shotCamera: null }).statuses.every((x) => x.status === "out")).toBe(true);
+    expect(shot({ held: [] })).toEqual({ riding: [], sentences: [], statuses: [] });
   });
 });

@@ -3043,6 +3043,7 @@ const it = {
     setTakeEndFailed: "Il fotogramma finale non è passato, quindi la ripresa non è partita.",
     setTakeLookDropped: "Questo tratto si è fermato prima di girare il fotogramma finale: questa volta non è stato possibile creare l'aspetto del film. Non è stato addebitato nulla; premi Renderizza per riprovare.",
     setTakePhotoDropped: "Questo tratto si è fermato prima di girare il fotogramma finale: questa volta non è stato possibile disegnare la tua foto di riferimento. Non è stato addebitato nulla; premi Renderizza per riprovare.",
+    setTakeElementDropped: "Questo tratto si è fermato prima di girare il fotogramma finale: questa volta non è stato possibile disegnare una foto di uno dei suoi oggetti. Non è stato addebitato nulla; premi Renderizza per riprovare.",
     setTakeOffFace: "Il fotogramma finale di questo tratto è sotto la tua soglia di identità, quindi la sua clip non è stata fatta ed è stato addebitato solo il fotogramma. Premi Renderizza per girarlo di nuovo.",
     setTakeOtherPerson: "Questo film si apre con una foto di un'altra persona, quindi questo tratto non è stato girato e non è stato addebitato nulla. Ricarica la pagina: il film si gira con la persona della sua foto d'apertura.",
     setRefRefused: "Questa foto non può essere usata come riferimento.",

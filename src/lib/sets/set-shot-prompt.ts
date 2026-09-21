@@ -34,6 +34,7 @@ import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 import { RIG_FIXED_SENTENCES, RIG_NUMBERED_SENTENCE } from "./rig";
 import { RIG_BLADES, bladesWords } from "./furniture";
 import { VEHICLE_SENTENCE } from "./vehicles";
+import { ELEMENT_NAMING_SENTENCE } from "./elements";
 import { TIME_OF_DAY_SENTENCE } from "./time-of-day";
 
 const DEG = Math.PI / 180;
@@ -157,6 +158,31 @@ const GAZE_SENTENCE = "Wherever they are looking, make it unmistakable: turn the
 const FACE_SENTENCE = "The grey figure has no face, hair or clothing to copy: take the person's face, hair and features only from the character photos.";
 const NO_TEXT_SENTENCE = "No text, logos or brand names anywhere in the picture.";
 
+/**
+ * The set's things' own design sheets (R1, 2026-09-21, elements.ts): the
+ * sentence that says how many ride and how they are numbered, one for one
+ * sheet and one for two to four. They ride LAST (image-references.ts), so
+ * "the last reference photos" is exactly them. Each sheet is then named by
+ * where its thing stands (elements.ts planSheets, ELEMENT_NAMING_SENTENCE).
+ * Unproven until the paid proof: whether the model matches "sheet n" to the
+ * n-th of them.
+ */
+export const ELEMENT_SHEETS_SENTENCES: readonly string[] = [
+  "The last reference photo is a design sheet of one thing in this place: that thing four times on a plain grey ground, in a two-by-two grid — top left its front three-quarter, top right its side, bottom left its rear three-quarter, bottom right its rear. " +
+    "Draw that thing exactly as the sheet shows it — its shape, design, colour, materials and details — in the place, at the size and turned the way the layout sketch shows it, seen from the sketch's camera. " +
+    "Read whichever of the four shows the side the layout sketch sees, and never another. Take nothing else from that sheet: not its layout, angle, crop, framing or light.",
+  ...["two", "three", "four"].map(
+    (w) =>
+      `The last ${w} reference photos are design sheets, one thing in this place to each sheet, numbered in the order they come: sheet 1 first. ` +
+      "Each shows its thing four times on a plain grey ground, in a two-by-two grid — top left its front three-quarter, top right its side, bottom left its rear three-quarter, bottom right its rear. " +
+      "Draw each thing exactly as its own sheet shows it — its shape, design, colour, materials and details — in the place, at the size and turned the way the layout sketch shows it, seen from the sketch's camera, and never mix two sheets into one thing. " +
+      "Read whichever of the four shows the side the layout sketch sees, and never another. Take nothing else from those sheets: not their layout, angle, crop, framing or light.",
+  ),
+];
+/** When the look rides too: its sheet shows the same things from an earlier still; a thing's own photos win. */
+export const ELEMENT_WINS_SENTENCE =
+  "Where a thing appears both in the design sheet of objects from this place and on a sheet of its own, draw it from its own sheet.";
+
 /** Every fixed sentence a Set shot's prompt is built from: Picacho's words, never the person's or Astra's. */
 export const SET_SHOT_FIXED_SENTENCES: readonly string[] = [
   ...SKETCH_SENTENCES,
@@ -167,6 +193,8 @@ export const SET_SHOT_FIXED_SENTENCES: readonly string[] = [
   `${RENDER_PREFIX}.`,
   HOUR_WINS_SENTENCE,
   LOOK_SENTENCE,
+  ...ELEMENT_SHEETS_SENTENCES,
+  ELEMENT_WINS_SENTENCE,
   SOURCE_PHOTO_SENTENCE,
   GAZE_SENTENCE,
   FACE_SENTENCE,
@@ -232,6 +260,21 @@ export function stripSetShotScaffold(prompt: string): string {
   out = out.replace(SET_SHOT_GAZE_SENTENCE, " ");
   // Which way each vehicle faces (vehicles.ts vehicleWords, 2026-09-21), anchored.
   out = out.replace(VEHICLE_SENTENCE, " ");
+  // Which sheet is which thing (elements.ts, R1), anchored.
+  out = out.replace(ELEMENT_NAMING_SENTENCE, " ");
+  return out.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * A set shot's prompt with every sentence about the things' own sheets
+ * taken out: what the render lane sends when the sheets could not ride
+ * after all (generations/actions.ts promptForPipeline), so the words never
+ * promise the model pictures it was not given.
+ */
+export function withoutElementSentences(prompt: string): string {
+  let out = prompt;
+  for (const fixed of [...ELEMENT_SHEETS_SENTENCES, ELEMENT_WINS_SENTENCE]) out = out.split(fixed).join(" ");
+  out = out.replace(ELEMENT_NAMING_SENTENCE, " ");
   return out.replace(/\s+/g, " ").trim();
 }
 
@@ -260,6 +303,8 @@ export function buildSetShotPrompt(input: {
   band?: "rows" | "columns" | null;
   /** Which way each vehicle in the frame faces (vehicles.ts vehicleWords), in the camera's terms. */
   vehicles?: readonly string[];
+  /** The naming sentences of the things whose own sheets ride, in sheet order (elements.ts planSheets, R1). */
+  elements?: readonly string[];
 }): string {
   const description = cleanText(input.description, 300);
   const direction = cleanText(input.direction, SET_DIRECTION_MAX_CHARS);
@@ -279,6 +324,11 @@ export function buildSetShotPrompt(input: {
     input.rigLight && !input.lifted ? LIGHT_WINS_SENTENCE : "",
     ...(input.rig ?? []),
     input.look ? LOOK_SENTENCE : "",
+    // The things' own sheets (R1): how many, then which is which, then — when
+    // the look rides too — whose design wins.
+    ...(input.elements && input.elements.length > 0
+      ? [ELEMENT_SHEETS_SENTENCES[Math.min(input.elements.length, ELEMENT_SHEETS_SENTENCES.length) - 1], ...input.elements, input.look ? ELEMENT_WINS_SENTENCE : ""]
+      : []),
     input.sourcePhoto ? SOURCE_PHOTO_SENTENCE : "",
     facing
       ? `The person stands where the grey figure stands, at its scale; their body ${facing}.`

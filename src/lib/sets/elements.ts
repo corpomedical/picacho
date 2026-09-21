@@ -363,6 +363,76 @@ export function planSheets(i: {
   return { plan, sentences };
 }
 
+/**
+ * What became of each thing with photos in one still (R1, 2026-09-21):
+ * its sheet rode (as sheet n), or it did not and why — no room left,
+ * too alike to sheet n, behind the camera, out of the frame, hidden behind
+ * the set, its sheet not drawn, a picture model that takes no sheets, or
+ * planned but not sent by the render lane.
+ */
+export type ShotElementStatus = {
+  key: string;
+  status: "rode" | "no-room" | "alike" | "behind" | "out" | "hidden" | "no-sheet" | "model" | "not-sent";
+  sheet?: number;
+  like?: number;
+};
+
+/**
+ * planSheets for a real shot: only a thing whose sheet is already drawn
+ * can ride. A riding thing whose sheet is missing becomes "no-sheet" and
+ * the plan is made again without it, so the next thing takes its place and
+ * the numbering and the depth words stay true. With no camera nothing is
+ * in the frame; with a budget of 0 (a picture model that takes no sheets)
+ * every thing in the frame says "model".
+ */
+export function planShotSheets(i: {
+  els: readonly SetElement[];
+  held: readonly HeldPhotos[];
+  sheets: readonly string[];
+  order?: readonly string[];
+  vehicles: readonly Vehicle[];
+  shotCamera: ShotCamera | null;
+  poseCamera: { position: Vec3; target: Vec3; fovDeg: number } | null;
+  budget: number;
+  spec: LookSet;
+}): { riding: { key: string; hash: string }[]; sentences: string[]; statuses: ShotElementStatus[] } {
+  const hashOf = new Map(i.held.filter((h) => h.photos.length > 0).map((h) => [h.key, h.sheetHash]));
+  if (hashOf.size === 0) return { riding: [], sentences: [], statuses: [] };
+  if (!i.shotCamera) return { riding: [], sentences: [], statuses: [...hashOf.keys()].map((key) => ({ key, status: "out" })) };
+  const places = elementPlaces(i.spec, i.els, i.shotCamera);
+  const camera = i.poseCamera ?? i.shotCamera;
+  const drawn = new Set(i.sheets);
+  const missing: string[] = [];
+  for (;;) {
+    const planned = planSheets({
+      els: i.els,
+      places,
+      withPhotos: [...hashOf.keys()].filter((k) => !missing.includes(k)),
+      order: i.order,
+      vehicles: i.vehicles,
+      camera,
+      budget: i.budget,
+    });
+    const gone = planned.plan.filter((p) => p.status === "rides" && !drawn.has(hashOf.get(p.key)!)).map((p) => p.key);
+    if (gone.length > 0) {
+      missing.push(...gone);
+      continue;
+    }
+    const statuses: ShotElementStatus[] = planned.plan.map((p) =>
+      p.status === "rides"
+        ? { key: p.key, status: "rode", sheet: p.sheet }
+        : p.status === "alike"
+          ? { key: p.key, status: "alike", like: p.like }
+          : p.status === "no-room"
+            ? { key: p.key, status: i.budget > 0 ? "no-room" : "model" }
+            : { key: p.key, status: p.why },
+    );
+    for (const key of missing) statuses.push({ key, status: "no-sheet" });
+    const riding = planned.plan.flatMap((p) => (p.status === "rides" ? [{ key: p.key, hash: hashOf.get(p.key)! }] : []));
+    return { riding, sentences: planned.sentences, statuses };
+  }
+}
+
 /** Every sentence planSheets can write, anchored to its whole form (set-shot-prompt.ts strips it for the brand-rule check). */
 export const ELEMENT_NAMING_SENTENCE = new RegExp(
   "(?:That sheet|Sheet [1-9]) is the (?:car|vehicle|object) (?:at the left|in the middle|at the right) of the frame" +

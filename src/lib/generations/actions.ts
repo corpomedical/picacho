@@ -158,6 +158,7 @@ import {
   persistGeneratedImage, fitLayerToOriginal, persistImageBytes } from "@/lib/generations/core";
 import { formatFrame, isRigFormat, isRigSqueeze, type RigFormat } from "@/lib/sets/rig";
 import { ELEMENT_SHEETS_PER_STILL } from "@/lib/sets/elements";
+import { withoutElementSentences } from "@/lib/sets/set-shot-prompt";
 import { cutToBand } from "@/lib/sets/frame-cut";
 import { develop, labLine, negativePathFor, normaliseLabLooks } from "@/lib/sets/lab";
 import { usableSlots, type ExpressionSlot } from "@/lib/characters/expression-set";
@@ -1925,7 +1926,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         }
       }
 
-      let promptForPipeline = userInput;
+      // A set shot whose things' sheets could not ride after all (the guard
+      // above said no) loses the words about them too: the model is never
+      // told of pictures it was not given (set-shot-prompt.ts, R1).
+      let promptForPipeline = isSetShot && elementAttachmentUrls.length > 0 && !elementImageUrls ? withoutElementSentences(userInput) : userInput;
       if (propDescription) {
         promptForPipeline = `${promptForPipeline}\n\nThe user attached an image; its contents (use as the prompt above describes): ${propDescription}`;
       }

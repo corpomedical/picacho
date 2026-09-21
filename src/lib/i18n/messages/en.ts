@@ -3262,6 +3262,7 @@ const en = {
     setTakeEndFailed: "The end frame didn't pass, so the take didn't start.",
     setTakeLookDropped: "This beat stopped before its end frame was shot: the film's look couldn't be made this time. Nothing was charged — press Render to try again.",
     setTakePhotoDropped: "This beat stopped before its end frame was shot: your reference photo couldn't be drawn this time. Nothing was charged — press Render to try again.",
+    setTakeElementDropped: "This beat stopped before its end frame was shot: a photo on one of its things couldn't be drawn this time. Nothing was charged — press Render to try again.",
     setTakeOffFace: "This beat's end frame scored under your identity bar, so its clip wasn't made and only the frame was charged. Press Render to shoot it again.",
     setTakeOtherPerson: "This film opens on a still of someone else, so this beat wasn't shot and nothing was charged. Reload the page: the film is shot with the person in its opening still.",
     setRefRefused: "This photo can't be used as a reference.",

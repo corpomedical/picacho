@@ -29,7 +29,7 @@ import {
   SET_RESERVED_BRIEF,
   setFramePath,
   setPhotoPath,
-  setThumbPath, setTakesEligible, setRefPhotoPath, setRefSheetPath } from "@/lib/sets/set-config";
+  setThumbPath, setTakesEligible, setRefPhotoPath, setRefSheetPath, setElementSheetPath } from "@/lib/sets/set-config";
 import { cleanText, normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
 import { setBuildInput } from "@/lib/sets/set-builder-prompt";
 import { photoBuildRequest, setAstraRequest } from "@/lib/sets/astra-request";
@@ -108,10 +108,13 @@ import {
   SET_TAKE_OFF_FACE,
   SET_TAKE_OTHER_PERSON,
   SET_TAKE_PHOTO_DROPPED,
+  SET_TAKE_ELEMENT_DROPPED,
   setMonthlyCapMessage,
 } from "@/lib/sets/messages";
 import { summarizeFailureDetail } from "@/lib/generations/report-constants";
-import { vehicleWords } from "@/lib/sets/vehicles";
+import { findVehicles, vehicleWords } from "@/lib/sets/vehicles";
+import { ELEMENT_KEY_RE, ELEMENT_SHEETS_PER_STILL, planShotSheets, resolvePhotos, setElements, type ShotElementStatus } from "@/lib/sets/elements";
+import { listElementPhotos } from "@/lib/sets/references";
 import type { AttemptLog } from "@/lib/generations/pipeline";
 import { normaliseRack, rackWords } from "@/lib/sets/furniture";
 import { STAND_IN_EYE_M } from "@/lib/sets/build-scene";
@@ -613,6 +616,12 @@ type ShootResult =
        * miss — the sentence History shows. Null when it passed.
        */
       failure: string | null;
+      /**
+       * What became of each thing with photos in this frame (R1, 2026-09-21,
+       * elements.ts ShotElementStatus): whose sheet rode, as which sheet, and
+       * why the others did not. Empty when no thing has photos.
+       */
+      elements: ShotElementStatus[];
     };
 
 /**
@@ -672,6 +681,14 @@ export async function shootInSet(
      * time. Stopped before anything is shot or charged.
      */
     lookRequired?: "picked" | "default";
+    /** The person's order for the things' sheets (R1, set-view's strip): keys, first rides first; anything else dropped. */
+    elementOrder?: unknown;
+    /**
+     * A film's beat must carry its things' sheets (takeInSet, R1): one that
+     * should ride and is not drawn stops the shot before anything is shot
+     * or charged. A single still goes without it and says so.
+     */
+    elementsRequired?: boolean;
   },
 ): Promise<ShootResult> {
   const access = await setsAccess();
@@ -736,6 +753,65 @@ export async function shootInSet(
   if (await rateLimited(userId, "set-shot", 60 * 10, 12)) return { error: SET_SHOOT_TOO_FAST };
 
   const admin = createAdminClient();
+
+  // The arrangement the frame was taken from, normalised against the set: it
+  // is saved below, and the prompt reads it to say which way the figure faces
+  // as the camera sees it. A crafted layout changes that one clause, still
+  // gated.
+  const layout = normaliseSetLayout(input.layout, owned.spec);
+  // The rig (rig.ts, Helios Cinema): its words are worked out here from the
+  // frame's own camera and mark — the focus distances, where the light
+  // stands as this camera sees it — and the format names the cut the image
+  // lane makes after the render (generations/actions.ts set_format).
+  const rig = normaliseSetRig(input.rig);
+  const rigFrame = formatFrame(rig.format, rig.squeeze);
+  // The frame's camera exactly as the page sent it, cut to the rig's band
+  // (shot-camera.ts): what the things' places in the frame are measured on,
+  // and what is recorded with the still below.
+  const frameCamera = shotCameraOf(
+    input.layout,
+    input.canvasAspect,
+    // The squeeze rides too: the band is already widened by it, but the
+    // stored lens is the pose's own, so the boxes are only measured on
+    // the shape the still really has if the squeeze is there to widen it
+    // (look-cutout.ts sketchProjector).
+    rigFrame.cut ? { render: rigFrame.renderAspect, band: rigFrame.bandAspect, squeeze: rigFrame.squeeze } : null,
+  );
+
+  // The set's things' own photos (R1, 2026-09-21, elements.ts): which
+  // things in this frame have photos, and whose sheets ride — at most
+  // ELEMENT_SHEETS_PER_STILL, in the person's order, each named by where it
+  // stands. On GPT Image only, the model the render lane sends them to
+  // (generations/actions.ts elementImageUrls). Free: the sheets are drawn
+  // before the shot (element-actions.ts prepareElementSheets), and one that
+  // is not just doesn't ride, and says so. Worked out before anything is
+  // shot, so a film's beat that needs one stops here, free.
+  const els = setElements(owned.spec);
+  let elementPlan: ReturnType<typeof planShotSheets> = { riding: [], sentences: [], statuses: [] };
+  if (els.length > 0) {
+    const [{ data: imageModelSetting }, listing] = await Promise.all([
+      access.supabase.from("app_settings").select("value").eq("key", "image_model").maybeSingle(),
+      listElementPhotos(admin, userId, setId),
+    ]);
+    const stillModel = imageModelSetting?.value ?? "gpt-image";
+    elementPlan = planShotSheets({
+      els,
+      held: resolvePhotos(els, listing.photos).held,
+      sheets: listing.sheets,
+      order: Array.isArray(input.elementOrder)
+        ? input.elementOrder.filter((k): k is string => typeof k === "string" && ELEMENT_KEY_RE.test(k)).slice(0, 64)
+        : undefined,
+      vehicles: findVehicles(owned.spec),
+      shotCamera: frameCamera,
+      // Which way a car is turned, in the same camera the vehicle words use.
+      poseCamera: layout?.camera ?? null,
+      budget: stillModel === "gpt-image" ? ELEMENT_SHEETS_PER_STILL : 0,
+      spec: owned.spec,
+    });
+  }
+  if (input.elementsRequired === true && elementPlan.statuses.some((e) => e.status === "no-sheet")) {
+    return { error: SET_TAKE_ELEMENT_DROPPED };
+  }
 
   // What rides as the look is NEVER that still (2026-09-12): handed a
   // finished photograph of the same place, GPT Image copies its camera and
@@ -828,16 +904,6 @@ export async function shootInSet(
   const sourcePhotoUrl = photoSource ? mediaUrl("generated-images", photoSource.path) : null;
 
   const direction = cleanText(input.direction, SET_DIRECTION_MAX_CHARS);
-  // The arrangement the frame was taken from, normalised against the set: it
-  // is saved below, and the prompt reads it to say which way the figure faces
-  // as the camera sees it. A crafted layout changes that one clause, still
-  // gated.
-  const layout = normaliseSetLayout(input.layout, owned.spec);
-  // The rig (rig.ts, Helios Cinema): its words are worked out here from the
-  // frame's own camera and mark — the focus distances, where the light
-  // stands as this camera sees it — and the format names the cut the image
-  // lane makes after the render (generations/actions.ts set_format).
-  const rig = normaliseSetRig(input.rig);
   const push = Array.isArray(input.push) ? input.push.filter(isRigCheckItem) : [];
   const rigCtx = layout?.camera
     ? {
@@ -852,7 +918,6 @@ export async function shootInSet(
       }
     : { distanceM: 0, fovDeg: 40, cameraBearingDeg: 0, push };
   const rigWords = rigWordsByItem(rig, rigCtx);
-  const rigFrame = formatFrame(rig.format, rig.squeeze);
   const fd = new FormData();
   // `lifted` only chooses whether the prompt explains a brightened sketch;
   // a false value from a crafted request changes one sentence, still gated.
@@ -878,6 +943,8 @@ export async function shootInSet(
     // lamps and wing (vehicles.ts), in this camera's terms: the blocks do
     // not say which end of a car is its nose (2026-09-21).
     vehicles: vehicleWords(owned.spec, layout?.camera),
+    // Which sheet is which thing, in sheet order (elements.ts planSheets).
+    elements: elementPlan.sentences,
   };
   fd.set("prompt", buildSetShotPrompt({ ...shot, direction }));
   fd.set("set_format", rig.format);
@@ -918,6 +985,10 @@ export async function shootInSet(
       // Stored in generated-images with the set, so deleting this take
       // never deletes it.
       ...(sourcePhotoUrl ? [{ url: sourcePhotoUrl, role: "scene" as const }] : []),
+      // The things' own sheets, in sheet order: the render lane sends them
+      // last, so "the last reference photos" in the words are exactly them
+      // (image-references.ts). Stored with the set, never a take's.
+      ...elementPlan.riding.map((r) => ({ url: mediaUrl("generated-images", setElementSheetPath(userId, setId, r.hash)), role: "element" as const })),
     ]),
   );
 
@@ -947,17 +1018,7 @@ export async function shootInSet(
   // (shot-camera.ts). In an update of its own after the row is in, whose
   // failure is ignored — until set-shot-camera.sql runs the column is
   // missing, and naming it in the insert above would fail every shot.
-  const camera = shotError
-    ? null
-    : shotCameraOf(
-        input.layout,
-        input.canvasAspect,
-        // The squeeze rides too: the band is already widened by it, but the
-        // stored lens is the pose's own, so the boxes are only measured on
-        // the shape the still really has if the squeeze is there to widen it
-        // (look-cutout.ts sketchProjector).
-        rigFrame.cut ? { render: rigFrame.renderAspect, band: rigFrame.bandAspect, squeeze: rigFrame.squeeze } : null,
-      );
+  const camera = shotError ? null : frameCamera;
   // The rig it was shot with: the format and each checked look's words as
   // sent, for the line under it and the look check (shot-rig.ts). Its own
   // update, failure ignored, like the camera's.
@@ -988,6 +1049,11 @@ export async function shootInSet(
     /** The squeeze it was cut at: a take shot from it plays in the band that widened. */
     squeeze: rig.squeeze,
     checks: rigCheckItems(rig),
+    // A sheet planned but not sent (the render lane's own guard said no:
+    // generations/actions.ts elementImageUrls) says so.
+    elements: elementPlan.statuses.map((e) =>
+      e.status === "rode" && (e.sheet ?? 0) > (result.elementSheets ?? 0) ? { key: e.key, status: "not-sent" as const } : e,
+    ),
   };
 }
 
@@ -1092,6 +1158,8 @@ export async function takeInSet(
     gaze?: unknown;
     /** A film's beat (renderFilm): kept as the film's, which renders it again itself (shot-take.ts). */
     film?: boolean;
+    /** The person's order for the things' sheets (R1): passed to the end still's shot. */
+    elementOrder?: unknown;
   },
 ): Promise<TakeResult> {
   const access = await setsAccess();
@@ -1162,6 +1230,8 @@ export async function takeInSet(
       squeeze: rigs.get(reuseId)?.rig?.squeeze ?? 1,
       failure: null,
       checks: [],
+      // Nothing was shot, so nothing rode.
+      elements: [],
     };
     endUrl = reusedUrl;
     // An end frame kept from an earlier render is held to the same bar before
@@ -1204,6 +1274,11 @@ export async function takeInSet(
         : { lookGenerationId: startId }),
       rig: input.rig,
       beat: input.film === true,
+      // The things' sheets ride the end frame as they ride any still; a
+      // film's beat stops, free, rather than shoot its end frame without
+      // one (R1, 2026-09-21).
+      elementOrder: input.elementOrder,
+      elementsRequired: input.film === true,
     });
     if (shot.error !== null) return { error: shot.error };
     still = shot;

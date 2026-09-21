@@ -3044,6 +3044,7 @@ const es = {
     setTakeEndFailed: "El fotograma final no pasó, así que la toma no empezó.",
     setTakeLookDropped: "Este tramo se detuvo antes de rodar su fotograma final: esta vez no se pudo crear el aspecto de la película. No se cobró nada; pulsa Renderizar para intentarlo de nuevo.",
     setTakePhotoDropped: "Este tramo se detuvo antes de rodar su fotograma final: esta vez no se pudo dibujar tu foto de referencia. No se cobró nada; pulsa Renderizar para intentarlo de nuevo.",
+    setTakeElementDropped: "Este tramo se detuvo antes de rodar su fotograma final: esta vez no se pudo dibujar una foto de uno de sus objetos. No se cobró nada; pulsa Renderizar para intentarlo de nuevo.",
     setTakeOffFace: "El fotograma final de este tramo quedó por debajo de tu umbral de identidad, así que no se hizo su clip y solo se cobró el fotograma. Pulsa Renderizar para rodarlo de nuevo.",
     setTakeOtherPerson: "Esta película empieza con una foto de otra persona, así que este tramo no se rodó y no se cobró nada. Recarga la página: la película se rueda con la persona de su foto inicial.",
     setRefRefused: "Esta foto no se puede usar como referencia.",

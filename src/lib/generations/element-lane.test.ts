@@ -27,6 +27,10 @@ describe("the render lane's element sheets", () => {
       expect(guard, cond).toContain(cond);
     }
     expect(guard).toContain(".slice(0, ELEMENT_SHEETS_PER_STILL)");
+    // Sheets that could not ride take their words with them, before anything is added to the prompt.
+    const words = actions.indexOf("let promptForPipeline = isSetShot && elementAttachmentUrls.length > 0 && !elementImageUrls ? withoutElementSentences(userInput) : userInput;");
+    expect(words).toBeGreaterThan(actions.indexOf("elementSheetsSent = elementImageUrls?.length ?? 0;"));
+    expect(words).toBeLessThan(actions.indexOf("promptForPipeline,"));
     expect(actions).toContain("...(elementSheetsSent > 0 ? { elementSheets: elementSheetsSent } : {}),");
   });
 

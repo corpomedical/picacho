@@ -3,7 +3,17 @@ import { hourWords } from "./time-of-day";
 import { gazeWords, type Gaze } from "./people";
 import { SET_SHAPES, type SetSpec } from "./set-spec";
 import { describe, expect, it } from "vitest";
-import { LOOK_SENTENCE, SET_SHOT_FIXED_SENTENCES, SOURCE_PHOTO_SENTENCE, buildSetShotPrompt, describeFacing, stripSetShotScaffold } from "./set-shot-prompt";
+import {
+  ELEMENT_SHEETS_SENTENCES,
+  ELEMENT_WINS_SENTENCE,
+  LOOK_SENTENCE,
+  SET_SHOT_FIXED_SENTENCES,
+  SOURCE_PHOTO_SENTENCE,
+  buildSetShotPrompt,
+  describeFacing,
+  stripSetShotScaffold,
+  withoutElementSentences,
+} from "./set-shot-prompt";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 
 // The server-built prompt for a still in a Set. What it must always say is
@@ -247,6 +257,8 @@ describe("stripSetShotScaffold", () => {
       buildSetShotPrompt({ ...shot, band: "rows" }),
       buildSetShotPrompt({ ...shot, band: "columns" }),
       buildSetShotPrompt({ ...shot, hour: "" }),
+      // The things' sheets (R1): one of four counts, each by how many ride.
+      ...[1, 2, 3, 4].map((n) => buildSetShotPrompt({ ...shot, elements: Array.from({ length: n }, (_, i) => `Sheet ${i + 1} is the car on the left.`) })),
     ].join(" ");
     for (const fixed of SET_SHOT_FIXED_SENTENCES) {
       if (fixed.endsWith("looks:") || fixed.endsWith("looks.")) continue;
@@ -337,5 +349,46 @@ describe("the hour the stage drew", () => {
     const dark = buildSetShotPrompt({ description: "d", direction: "", hour: hourWords(21) });
     expect(dark).toContain("night: no sun, a low moon");
     expect(stripSetShotScaffold(dark)).toBe("d");
+  });
+});
+
+describe("the things' own sheets (R1, 2026-09-21)", () => {
+  // What elements.ts planSheets writes (elements.test.ts pins the same two).
+  const naming = [
+    "Sheet 1 is the car in the middle of the frame, nearest the camera, which is turned three-quarters toward the camera, its front toward frame left.",
+    "Sheet 2 is the object at the right of the frame, 1.3 m tall.",
+  ];
+
+  it("leaves a shot with no sheets word for word as it was", () => {
+    const base = { description: "d", direction: "x", lifted: true, look: {}, sourcePhoto: true, hour: hourWords(12) } as const;
+    expect(buildSetShotPrompt({ ...base, elements: [] })).toBe(buildSetShotPrompt(base));
+  });
+
+  it("counts the sheets, names each in sheet order, right after the look's sentence", () => {
+    const p = buildSetShotPrompt({ description: "d", direction: "x", look: {}, elements: naming });
+    expect(p).toContain(ELEMENT_SHEETS_SENTENCES[1]);
+    expect(p).not.toContain(ELEMENT_SHEETS_SENTENCES[0]);
+    const at = [LOOK_SENTENCE, ELEMENT_SHEETS_SENTENCES[1], naming[0], naming[1], ELEMENT_WINS_SENTENCE].map((x) => p.indexOf(x));
+    expect(at.every((i) => i >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+  });
+
+  it("says one sheet in the singular, and never more than four", () => {
+    expect(buildSetShotPrompt({ description: "d", direction: "", elements: naming.slice(0, 1) })).toContain(ELEMENT_SHEETS_SENTENCES[0]);
+    expect(ELEMENT_SHEETS_SENTENCES).toHaveLength(4);
+    expect(ELEMENT_SHEETS_SENTENCES[0]).toContain("The last reference photo is");
+    expect(ELEMENT_SHEETS_SENTENCES[3]).toContain("The last four reference photos");
+  });
+
+  it("says whose design wins only when the look rides too", () => {
+    expect(buildSetShotPrompt({ description: "d", direction: "", elements: naming })).not.toContain(ELEMENT_WINS_SENTENCE);
+    expect(buildSetShotPrompt({ description: "d", direction: "", look: {}, elements: naming })).toContain(ELEMENT_WINS_SENTENCE);
+  });
+
+  it("the strip gives back the person's words, and the sheet words can come out alone", () => {
+    const p = buildSetShotPrompt({ description: "a red car at dusk", direction: "", look: {}, elements: naming });
+    expect(stripSetShotScaffold(p)).toBe("a red car at dusk");
+    const without = withoutElementSentences(p);
+    expect(without).toBe(buildSetShotPrompt({ description: "a red car at dusk", direction: "", look: {} }));
   });
 });

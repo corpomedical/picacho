@@ -3044,6 +3044,7 @@ const pt = {
     setTakeEndFailed: "O quadro final não passou, então o take não começou.",
     setTakeLookDropped: "Este trecho parou antes de gravar o quadro final: desta vez não deu para criar o visual do filme. Nada foi cobrado; toque em Renderizar para tentar de novo.",
     setTakePhotoDropped: "Este trecho parou antes de gravar o quadro final: desta vez não deu para desenhar sua foto de referência. Nada foi cobrado; toque em Renderizar para tentar de novo.",
+    setTakeElementDropped: "Este trecho parou antes de gravar o quadro final: desta vez não deu para desenhar uma foto de um dos seus objetos. Nada foi cobrado; toque em Renderizar para tentar de novo.",
     setTakeOffFace: "O quadro final deste trecho ficou abaixo da sua linha de identidade, então o clipe não foi feito e só o quadro foi cobrado. Toque em Renderizar para gravá-lo de novo.",
     setTakeOtherPerson: "Este filme abre com uma foto de outra pessoa, então este trecho não foi gravado e nada foi cobrado. Recarregue a página: o filme é gravado com a pessoa da foto de abertura.",
     setRefRefused: "Esta foto não pode ser usada como referência.",

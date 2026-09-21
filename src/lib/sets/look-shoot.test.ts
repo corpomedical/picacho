@@ -46,8 +46,10 @@ describe("shootInSet: the look", () => {
     // set's source photograph — which rides under the SCENE role, never the
     // look's, so the look lane still carries the sheet alone. Since
     // 2026-09-21 the sheet can be drawn from a reference photo instead
-    // (references.ts): a sheet all the same, in the same slot.
-    expect(lookUrls).toEqual(["sheet.path", "sheet.path", "photoSource.path"]);
+    // (references.ts): a sheet all the same, in the same slot. And since R1
+    // (2026-09-21) the set's things' own sheets, under the ELEMENT role.
+    expect(lookUrls).toEqual(["sheet.path", "sheet.path", "photoSource.path", "setElementSheetPath(userId, setId, r.hash"]);
+    expect(shoot).toContain('...elementPlan.riding.map((r) => ({ url: mediaUrl("generated-images", setElementSheetPath(userId, setId, r.hash)), role: "element" as const })),');
     expect(shoot).toContain('...(sourcePhotoUrl ? [{ url: sourcePhotoUrl, role: "scene" as const }] : []),');
     expect(shoot).not.toMatch(/mediaUrl\([^)]*lookPath/);
     expect(shoot).not.toMatch(/mediaUrl\([^)]*cut\.path/);
@@ -79,7 +81,7 @@ describe("shootInSet: the look", () => {
     expect(branch).toContain("console.warn(`[sets] shot without its reference photo: ${sheet.reason}`);");
     // Dropping is only ever that: the shot goes on without it.
     expect(branch).not.toMatch(/return \{ error/);
-    expect(shoot).toMatch(/hasLookObjects,\s*lookDropped,\s*format: rig\.format,[\s\S]*?squeeze: rig\.squeeze,\s*checks: rigCheckItems\(rig\),\s*};/);
+    expect(shoot).toMatch(/hasLookObjects,\s*lookDropped,\s*format: rig\.format,[\s\S]*?squeeze: rig\.squeeze,\s*checks: rigCheckItems\(rig\),\s*elements: elementPlan\.statuses\.map\(/);
   });
 
   it("leaves the rest of the shot as it was: the prompt, its refusal attribution, the frame", () => {
@@ -101,10 +103,13 @@ describe("shootInSet: the camera", () => {
     expect(record).toBeGreaterThan(insert);
     // Built from the layout exactly as the page sent it — the stage's pose
     // and the figure's mark — never from the normalised layout, whose camera
-    // is held to the set's reach; and only when the row went in.
+    // is held to the set's reach; and only when the row went in. Worked out
+    // before the shot since R1 (2026-09-21): the things' places in the frame
+    // are measured on the same camera.
     expect(shoot).toMatch(
-      /const camera = shotError\s*\?\s*null\s*:\s*shotCameraOf\([\s\S]*?rigFrame\.cut \? \{ render: rigFrame\.renderAspect, band: rigFrame\.bandAspect, squeeze: rigFrame\.squeeze \} : null,?\s*\);/,
+      /const frameCamera = shotCameraOf\(\s*input\.layout,\s*input\.canvasAspect,[\s\S]*?rigFrame\.cut \? \{ render: rigFrame\.renderAspect, band: rigFrame\.bandAspect, squeeze: rigFrame\.squeeze \} : null,?\s*\);/,
     );
+    expect(shoot).toContain("const camera = shotError ? null : frameCamera;");
     expect(shoot).not.toMatch(/shotCameraOf\(layout/);
     // Nothing about it can fail the shot: its answer is only reported.
     expect(shoot).toContain("const recorded = camera ? await recordShotCamera(");
