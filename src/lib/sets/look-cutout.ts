@@ -371,12 +371,12 @@ export function sketchProjector(camera: ShotCamera): (point: Vec3) => { u: numbe
  * turned and the world box round them; and whether it is a prop or structure
  * (the header), decided for the object as a whole, every copy alike.
  */
-type Placed = { object: number; copy: number; centre: Vec3; r: number[][]; half: Vec3; corners: Vec3[]; min: Vec3; max: Vec3; prop: boolean };
+export type Placed = { object: number; copy: number; centre: Vec3; r: number[][]; half: Vec3; corners: Vec3[]; min: Vec3; max: Vec3; prop: boolean };
 
 /** A prop's copy where the sketch showed it: its box in the sketch's square. */
 type Shown = { object: number; copy: number; box: FrameBox };
 
-function placedCopies(objects: readonly SetObject[], bounds: { height: number }): Placed[] {
+export function placedCopies(objects: readonly SetObject[], bounds: { height: number }): Placed[] {
   const out: Placed[] = [];
   objects.forEach((o, object) => {
     // A ring is built flat at its real sizes, across × tube × across; a
@@ -431,7 +431,7 @@ function placedCopies(objects: readonly SetObject[], bounds: { height: number })
  * the stage draws it: only a box's outside faces are drawn (a camera
  * standing inside a box sees out of it), a plane from both sides.
  */
-function entersOnTheWay(from: Vec3, to: Vec3, p: Placed): boolean {
+export function entersOnTheWay(from: Vec3, to: Vec3, p: Placed): boolean {
   // Into the copy's own axes: R's transpose undoes its turn.
   const o = sub(from, p.centre);
   const d = sub(to, from);
@@ -543,7 +543,7 @@ const touch = (a: Placed, b: Placed) =>
   [0, 1, 2].every((i) => a.min[i] - LOOK_TOUCH_M <= b.max[i] && b.min[i] - LOOK_TOUCH_M <= a.max[i]);
 
 /** Props that touch, directly or through each other, as one object each. */
-function objectsOf(props: Placed[]): Placed[][] {
+export function objectsOf(props: Placed[]): Placed[][] {
   const parent = props.map((_, i) => i);
   const root = (i: number): number => {
     while (parent[i] !== i) i = parent[i] = parent[parent[i]];

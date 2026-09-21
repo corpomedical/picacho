@@ -59,7 +59,7 @@ function rgb(hex: string | null): [number, number, number] | null {
 }
 
 /** A tyre: a dark cylinder of a wheel's size, lying on its side. The thin bright discs over it (hubcaps) are not tyres. */
-function isTyre(o: SetObject): boolean {
+export function isTyre(o: SetObject): boolean {
   if (o.shape !== "cylinder") return false;
   const diameter = Math.max(o.size[0], o.size[2]);
   const thickness = o.size[1];
@@ -266,9 +266,11 @@ const esc = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  * brand-rule check reads a shot without these, and never without anything
  * the person or Astra wrote.
  */
+/** Every pose describeVehicle can write, as a pattern: the element sheets' naming sentences carry it too (elements.ts). */
+export const VEHICLE_POSE_PATTERN = `(?:${esc(POSE.headOn)}|${esc(POSE.away)}|(?:${esc(POSE.towardQuarter)}|${esc(POSE.sideOn)}|${esc(POSE.awayQuarter)})(?:left|right))`;
 export const VEHICLE_SENTENCE = new RegExp(
   "The (?:car|vehicle) in the sketch " +
-    `(?:${esc(POSE.headOn)}|${esc(POSE.away)}|(?:${esc(POSE.towardQuarter)}|${esc(POSE.sideOn)}|${esc(POSE.awayQuarter)})(?:left|right)); ` +
+    `${VEHICLE_POSE_PATTERN}; ` +
     `(?:${esc(WITH_HEADLIGHTS)}(?:${esc(BACK_JOIN)}(?:${esc(BACK.wing)}|${esc(BACK.tailLights)}))?|${esc(FRONT_OPPOSITE)}(?:${esc(BACK.wing)}|${esc(BACK.tailLights)}))` +
     `\\. ${esc(VEHICLE_SENTENCE_END)}`,
   "g",
