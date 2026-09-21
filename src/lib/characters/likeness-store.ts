@@ -1,5 +1,5 @@
 // The likeness answers (likeness.ts), read and written. The only file that
-// names the table (pending/character-likeness-consent.sql). Written with the
+// names the table (applied/2026-09-22/character-likeness-consent.sql). Written with the
 // service client only: people read their own answers, never write them.
 // A missing table (the SQL not run yet) reads as "no answer" and says so,
 // once, in the logs; the callers decide what that means for them.
@@ -18,7 +18,7 @@ let warned = false;
 function warnMissing() {
   if (warned) return;
   warned = true;
-  console.error(`[likeness] ${TABLE} is missing — run supabase/pending/character-likeness-consent.sql`);
+  console.error(`[likeness] ${TABLE} is missing — run supabase/applied/2026-09-22/character-likeness-consent.sql`);
 }
 
 /** The latest answer for each of these characters, the person's own; `missing` when the table isn't there. */

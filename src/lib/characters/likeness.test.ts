@@ -82,7 +82,7 @@ describe("Helios", () => {
 });
 
 describe("the table", () => {
-  const sql = read("../../../supabase/pending/character-likeness-consent.sql");
+  const sql = read("../../../supabase/applied/2026-09-22/character-likeness-consent.sql");
   it("takes the three answers, keeps the photos' key, and is written by the server only", () => {
     expect(sql).toContain("check (answer in ('me', 'permission', 'not_a_person'))");
     expect(sql).toContain("photos_hash     text not null");

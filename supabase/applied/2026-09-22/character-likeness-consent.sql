@@ -8,8 +8,8 @@
 -- operator's decision, 2026-09-21). Picacho's Content Policy forbids making
 -- a real person without their consent; this is the record of it.
 --
--- Run once in the SQL editor BEFORE the push that carries R1.12. Idempotent
--- — safe to run twice. Written only by the server (service role); a person
+-- Run in production on 2026-09-22, before the push that carried R1.12.
+-- Idempotent — safe to run twice. Written only by the server (service role); a person
 -- reads their own answers.
 
 create table if not exists public.character_likeness_consents (
