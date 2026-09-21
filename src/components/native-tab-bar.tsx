@@ -27,11 +27,12 @@ import {
 //
 // THE PROJECTOR (2026-09-21, operator: "put generate in the middle on a 3d
 // glowing circle. When clicking the generate button two options appear with a
-// cool effect", then "Projector" from eight judged directions). Five places:
-// Characters · Media · the Generate lamp · Community · More. Six tabs had run
-// labels into each other in Portuguese and Italian at 360 px; History now
-// lives inside Media and Settings inside More (lib/native/tab-routes.ts says
-// which tab owns which page).
+// cool effect", then "Projector" from eight judged directions). Seven places,
+// three either side of the lamp: Home · Characters · Media · the Generate
+// lamp · Community · History · More (Home and History added the same day:
+// "Add another button on the left as home that will take you to dashboard.
+// Add history beside community"). Settings and the tools live inside More;
+// lib/native/tab-routes.ts says which tab owns which page.
 //
 // The lamp is a small graphite lens set into the bar with a tungsten bolt
 // behind its glass. For accounts that can open Recast it opens two choices:
@@ -45,6 +46,15 @@ import {
 // Rendered from the web app rather than built natively, so it stays in step
 // with the rest of the UI automatically. The look lives in globals.css under
 // "The app bar — the projector".
+
+function HomeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M3 10.5 12 3l9 7.5" />
+      <path d="M5 9.5V21h14V9.5" />
+    </svg>
+  );
+}
 
 function UserIcon(props: SVGProps<SVGSVGElement>) {
   return (
@@ -72,6 +82,15 @@ function CommunityIcon(props: SVGProps<SVGSVGElement>) {
       <path d="M3 20a6 6 0 0 1 12 0" />
       <path d="M16 6.5a3 3 0 0 1 0 6" />
       <path d="M21 20a5.5 5.5 0 0 0-4-5.3" />
+    </svg>
+  );
+}
+
+function ClockIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 3" />
     </svg>
   );
 }
@@ -266,10 +285,14 @@ export function NativeTabBar({ recastOn = false }: { recastOn?: boolean }) {
     later(() => close(), PICK_MS);
   }
 
+  // Three either side of the lamp. Characters, Community and History wear the
+  // bar's shorter names (nav.bar*): seven full names do not fit a phone.
   const tabs: { tab: Exclude<NativeTab, "generate">; label: string; Icon: typeof UserIcon; tour?: string }[] = [
-    { tab: "characters", label: t.nav.characters, Icon: UserIcon, tour: "tour-characters" },
+    { tab: "home", label: t.nav.home, Icon: HomeIcon },
+    { tab: "characters", label: t.nav.barCharacters, Icon: UserIcon, tour: "tour-characters" },
     { tab: "media", label: t.nav.media, Icon: PhotosIcon },
-    { tab: "community", label: t.nav.community, Icon: CommunityIcon, tour: "tour-community" },
+    { tab: "community", label: t.nav.barCommunity, Icon: CommunityIcon, tour: "tour-community" },
+    { tab: "history", label: t.nav.barHistory, Icon: ClockIcon },
     { tab: "more", label: t.nav.more, Icon: MoreIcon },
   ];
 
@@ -340,7 +363,7 @@ export function NativeTabBar({ recastOn = false }: { recastOn?: boolean }) {
       )}
 
       <nav ref={barRef} className="pj-bar">
-        {tabs.slice(0, 2).map(tabLink)}
+        {tabs.slice(0, 3).map(tabLink)}
         <div className="pj-mid">
           {recastOn ? (
             <button
@@ -370,7 +393,7 @@ export function NativeTabBar({ recastOn = false }: { recastOn?: boolean }) {
             {t.nav.generate}
           </span>
         </div>
-        {tabs.slice(2).map(tabLink)}
+        {tabs.slice(3).map(tabLink)}
       </nav>
     </div>
   );

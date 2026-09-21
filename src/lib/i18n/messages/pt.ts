@@ -50,8 +50,15 @@ const pt = {
     settings: "Configurações",
     search: "Buscar",
     community: "Comunidade",
-    // The app's bottom bar (native only): the fifth tab, and the two things the
-    // Generate lamp in the middle of the bar opens.
+    // The app's bottom bar (native only): the first and last tabs, and the two
+    // things the Generate lamp in the middle of the bar opens.
+    home: "Início",
+    // Shorter names for the bar alone: seven places leave ~52 px per label on a
+    // 360 px phone, and the full names were cut ("Commun…"). The pages keep
+    // their full names (operator's pick, 2026-09-21).
+    barCharacters: "Elenco",
+    barCommunity: "Feed",
+    barHistory: "Histórico",
     more: "Mais",
     generateVideo: "Gerar vídeo",
     generateVideoSub: "Todos os modelos",

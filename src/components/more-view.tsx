@@ -5,8 +5,9 @@ import { cn } from "@/lib/cn";
 import { MoreShareRow } from "@/components/more-share-row";
 
 // The More page (/app/more): the app bar's fifth tab (2026-09-21). Everything
-// the five-place bar has no room for, in one list: the tools, your work, the
-// help and share rows the ⋯ menu used to hide, and Settings at the bottom.
+// the bar has no room for, in one list: the tools, your work, the help and
+// share rows the ⋯ menu used to hide, and Settings at the bottom. (The
+// dashboard left this list when Home got its own tab.)
 // Helios 3D is listed only for plans that include it, and inside the app it
 // says it opens on a computer (the reader-mode rule) instead of leading to a
 // page that says so.
@@ -31,7 +32,6 @@ const LayersIcon = svg(<><path d="M12 3.5 3.5 8 12 12.5 20.5 8z" /><path d="M3.5
 const FolderIcon = svg(<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />);
 const NotesIcon = svg(<><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 3v18M4 8h4M4 13h4M4 18h4" /></>);
 const SetsIcon = svg(<><path d="M3 17.5 12 21l9-3.5M3 17.5V6.5L12 3l9 3.5v11" /><circle cx="12" cy="10.5" r="1.6" /><path d="M12 12.5v4" /></>);
-const HomeIcon = svg(<><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V21h14V9.5" /></>);
 const BookIcon = svg(<><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5v14Z" /><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5" /></>);
 const GearIcon = svg(<><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" /></>);
 const ChevronIcon = svg(<path d="m9 6 6 6-6 6" />);
@@ -150,7 +150,6 @@ export function MoreView({
         ))}
 
       <Group>
-        <LinkRow href="/app" label={t.nativePill.home} Icon={HomeIcon} />
         <LinkRow href="/app/tutorial" label={t.nativePill.help} Icon={BookIcon} />
         {native && <MoreShareRow label={t.nativePill.share} url={shareUrl} />}
         <LinkRow href="/app/settings" label={n.settings} Icon={GearIcon} />

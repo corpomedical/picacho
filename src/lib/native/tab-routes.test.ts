@@ -11,13 +11,20 @@ describe("the app bar's lit tab", () => {
     expect(nativeTabFor("/app/generate")).toBe("generate");
   });
 
-  it("keeps Media lit on History, which lives inside it now", () => {
-    expect(nativeTabFor("/app/history")).toBe("media");
-    expect(nativeTabFor("/app/history/3f0c")).toBe("media");
+  it("lights Home on the dashboard alone", () => {
+    expect(nativeTabFor("/app")).toBe("home");
+    expect(nativeTabFor("/app/")).toBe("home");
+  });
+
+  it("keeps Media lit on the image and video pages", () => {
     expect(nativeTabFor("/app/images")).toBe("media");
     expect(nativeTabFor("/app/videos")).toBe("media");
-    // The Angle Stage is opened from a History take.
-    expect(nativeTabFor("/app/stage/abc")).toBe("media");
+  });
+
+  it("keeps History lit on a take, and on the Angle Stage opened from one", () => {
+    expect(nativeTabFor("/app/history")).toBe("history");
+    expect(nativeTabFor("/app/history/3f0c")).toBe("history");
+    expect(nativeTabFor("/app/stage/abc")).toBe("history");
   });
 
   it("keeps the lamp lit on Recast, one of its two choices", () => {
@@ -25,8 +32,8 @@ describe("the app bar's lit tab", () => {
     expect(nativeTabFor(GENERATE_VIDEO_HREF)).toBe("generate");
   });
 
-  it("keeps More lit on everything the bar has no room for, and on the dashboard", () => {
-    for (const p of ["/app", "/app/settings", "/app/templates", "/app/upscale", "/app/layers", "/app/projects/9", "/app/notes", "/app/tutorial", "/app/sets/abc"]) {
+  it("keeps More lit on everything the bar has no room for", () => {
+    for (const p of ["/app/settings", "/app/templates", "/app/upscale", "/app/layers", "/app/projects/9", "/app/notes", "/app/tutorial", "/app/sets/abc"]) {
       expect(nativeTabFor(p)).toBe("more");
     }
   });

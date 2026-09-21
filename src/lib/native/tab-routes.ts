@@ -1,21 +1,27 @@
 // Which tab of the app's bottom bar a page belongs to (2026-09-21).
 //
-// The bar has five places: Characters · Media · the Generate lamp · Community
-// · More. Every page the app can reach lives under exactly one of them, so
-// the tab you came through stays lit while you work inside it: History sits
-// inside Media, Recast is one of the lamp's two choices, and every tool the
-// bar has no room for lives on the More page.
+// The bar has seven places: Home · Characters · Media · the Generate lamp ·
+// Community · History · More (Home and History added the same day, operator:
+// "Add another button on the left as home that will take you to dashboard.
+// Add history beside community"). Every page the app can reach lives under
+// exactly one of them, so the tab you came through stays lit while you work
+// inside it: Recast is one of the lamp's two choices, and every tool the bar
+// has no room for lives on the More page.
 //
 // Pure and import-free on purpose: the bar reads it on the client and the
 // tests read it directly.
 
-export type NativeTab = "characters" | "media" | "generate" | "community" | "more";
+export type NativeTab = "home" | "characters" | "media" | "generate" | "community" | "history" | "more";
 
-const ROUTES: Record<NativeTab, readonly string[]> = {
+// Home is the dashboard, /app itself, matched exactly (every app page sits
+// below /app, so it cannot be a prefix).
+const ROUTES: Record<Exclude<NativeTab, "home">, readonly string[]> = {
   characters: ["/app/character"],
-  media: ["/app/media", "/app/images", "/app/videos", "/app/history", "/app/stage"],
+  media: ["/app/media", "/app/images", "/app/videos"],
   generate: ["/app/generate", "/app/mystique"],
   community: ["/app/community"],
+  // The Angle Stage is opened from a History take.
+  history: ["/app/history", "/app/stage"],
   more: [
     "/app/more",
     "/app/settings",
@@ -37,24 +43,25 @@ function under(pathname: string, route: string): boolean {
   return pathname === route || pathname.startsWith(`${route}/`);
 }
 
-/** The tab that owns this page, or null when none does. The dashboard (/app)
- *  belongs to More, where it is listed. */
+/** The tab that owns this page, or null when none does. */
 export function nativeTabFor(pathname: string | null | undefined): NativeTab | null {
   if (!pathname) return null;
   const path = pathname.split(/[?#]/)[0].replace(/\/+$/, "") || "/";
-  if (path === "/app") return "more";
-  for (const tab of Object.keys(ROUTES) as NativeTab[]) {
+  if (path === "/app") return "home";
+  for (const tab of Object.keys(ROUTES) as Exclude<NativeTab, "home">[]) {
     if (ROUTES[tab].some((route) => under(path, route))) return tab;
   }
   return null;
 }
 
-/** Where each of the four plain tabs goes. The lamp has no href: it opens its
+/** Where each of the six plain tabs goes. The lamp has no href: it opens its
  *  two choices, or goes straight to Generate for accounts without Recast. */
 export const NATIVE_TAB_HREF: Record<Exclude<NativeTab, "generate">, string> = {
+  home: "/app",
   characters: "/app/character",
   media: "/app/media",
   community: "/app/community",
+  history: "/app/history",
   more: "/app/more",
 };
 

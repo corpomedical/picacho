@@ -58,8 +58,15 @@ const en = {
     settings: "Settings",
     search: "Search",
     community: "Community",
-    // The app's bottom bar (native only): the fifth tab, and the two things the
-    // Generate lamp in the middle of the bar opens.
+    // The app's bottom bar (native only): the first and last tabs, and the two
+    // things the Generate lamp in the middle of the bar opens.
+    home: "Home",
+    // Shorter names for the bar alone: seven places leave ~52 px per label on a
+    // 360 px phone, and the full names were cut ("Commun…"). The pages keep
+    // their full names (operator's pick, 2026-09-21).
+    barCharacters: "Cast",
+    barCommunity: "Feed",
+    barHistory: "History",
     more: "More",
     generateVideo: "Generate Video",
     generateVideoSub: "All models",
