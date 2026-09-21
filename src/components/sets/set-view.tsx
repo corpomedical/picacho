@@ -5459,6 +5459,14 @@ export function SetView({
   const studioMode: StudioMode = cutOpen ? "cut" : filmOpen ? "film" : "shoot";
   /** Whether the rig is showing: the dock's own tabs on a wide screen, the phone's panel below it. */
   const rigShown = wide ? dockTab === "camera" || dockTab === "light" || dockTab === "look" : rigOpen;
+  // A phone's Film: the setup chips are one row that swipes, so the film dock
+  // below never grows up under them. Wrapped, they took five rows and hid the
+  // dock's play, length and engine chips (2026-09-22). In that row a menu
+  // hangs from the row, not from its chip: a chip's own box sits inside the
+  // scroller, which would cut the menu off. A flex box, so a chip with a face
+  // in it stands 32 px like the rest, not 34 on a line's descender.
+  const chipsInRow = !wide && filmOpen;
+  const chipAnchor = chipsInRow ? "flex" : "relative";
   // The modes the bar switches between, and the palette's own route to
   // each (2026-09-17: the palette knew nothing of Cut, so from Cut its
   // "Film" command set a flag Cut kept overriding and nothing happened).
@@ -6307,250 +6315,252 @@ export function SetView({
 
           {/* The setup, as chips on the picture itself. */}
           {!viewingShot && (
-            <div ref={chipsRef} data-setup-chips className="absolute left-3.5 right-3.5 top-3.5 z-20 flex flex-wrap items-center gap-2">
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => toggleMenu("who")}
-                  aria-haspopup="listbox"
-                  aria-expanded={menu === "who"}
-                  disabled={characters.length === 0}
-                  title={s.mentionHint}
-                  className={`${DCHIP} pl-1.5`}
-                >
-                  {character?.thumbUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={character.thumbUrl} alt="" className="h-6 w-6 rounded-full object-cover ring-1 ring-[rgba(255,255,255,0.25)]" />
-                  ) : (
-                    <span className="h-6 w-6 rounded-full bg-[rgba(255,255,255,0.15)]" />
-                  )}
-                  {character?.name || s.characterLabel}
-                  <Chevron />
-                </button>
-                {menu === "who" && (
-                  <div role="listbox" aria-label={s.mentionTitle} className={DMENU}>
-                    {characters.map((c) => (
-                      <Option
-                        key={c.id}
-                        active={characterId === c.id}
-                        onPick={() => {
-                          setCharacterId(c.id);
-                          setMenu(null);
-                        }}
-                      >
-                        {c.name}
-                      </Option>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {/* The look (2026-09-11): an earlier still's objects, or — since
-                  2026-09-21 — a reference photo the person uploads, the thing
-                  in it drawn four ways round so every shot keeps its design. */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => toggleMenu("look")}
-                  aria-haspopup="listbox"
-                  aria-expanded={menu === "look"}
-                  title={lookShot ? s.lookOn : latestStill ? s.lookUseLatest : s.lookFirst}
-                  className={lookShot ? DCHIP_ON : DCHIP}
-                  data-look-chip
-                >
-                  {s.lookLabel} ·{" "}
-                  {lookShot ? <LocalDate date={lookShot.createdAt} /> : s.lookOff}
-                  <Chevron />
-                </button>
-                {menu === "look" && (
-                  <div role="listbox" aria-label={s.lookLabel} className={`${DMENU} w-[300px]`} data-look-menu>
-                    <Option
-                      active={!lookShot}
-                      onPick={() => {
-                        pickLook(null);
-                        setMenu(null);
-                      }}
-                    >
-                      {s.lookOff}
-                    </Option>
-                    {latestStill && (
-                      <Option
-                        active={lookShot?.generationId === latestStill}
-                        onPick={() => {
-                          pickLook(latestStill);
-                          setMenu(null);
-                        }}
-                      >
-                        {s.lookUseLatest}
-                      </Option>
+            <div ref={chipsRef} data-setup-chips className={`absolute left-3.5 right-3.5 top-3.5 z-20 ${chipsInRow ? "" : "flex flex-wrap items-center gap-2"}`}>
+              <div data-setup-row className={chipsInRow ? "flex items-center gap-2 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" : "contents"}>
+                <div className={chipAnchor}>
+                  <button
+                    type="button"
+                    onClick={() => toggleMenu("who")}
+                    aria-haspopup="listbox"
+                    aria-expanded={menu === "who"}
+                    disabled={characters.length === 0}
+                    title={s.mentionHint}
+                    className={`${DCHIP} pl-1.5`}
+                  >
+                    {character?.thumbUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={character.thumbUrl} alt="" className="h-6 w-6 rounded-full object-cover ring-1 ring-[rgba(255,255,255,0.25)]" />
+                    ) : (
+                      <span className="h-6 w-6 rounded-full bg-[rgba(255,255,255,0.15)]" />
                     )}
-                    {lookShot && lookShot.generationId !== latestStill && (
-                      <Option active onPick={() => setMenu(null)}>
-                        <LocalDate date={lookShot.createdAt} />
-                      </Option>
-                    )}
-                    {/* A thing's own photos go on the thing now (R1): tap it on the stage. */}
-                    <p className="px-2.5 pb-2 pt-2 text-[11px] leading-snug text-[#9aa0ad]" data-look-refs-moved>
-                      {cast.lookMoved}
-                    </p>
-                  </div>
-                )}
-              </div>
-              <div className="relative">
-                <button type="button" onClick={() => toggleMenu("camera")} aria-haspopup="listbox" aria-expanded={menu === "camera"} disabled={!ready} className={DCHIP}>
-                  {cameraLabel}
-                  <Chevron />
-                </button>
-                {menu === "camera" && (
-                  <div role="listbox" aria-label={s.toolbarCamera} className={DMENU}>
-                    {cameraOptions}
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => (wide ? setDockTab((d) => (d === "camera" ? "astra" : "camera")) : setRigOpen((v) => !v))}
-                aria-pressed={rigShown}
-                aria-expanded={rigShown}
-                disabled={!ready}
-                className={rigShown ? DCHIP_ON : DCHIP}
-              >
-                {rigChipLabel}
-                <Chevron />
-              </button>
-              {spec.marks.length > 1 && (
-                <div className="relative">
-                  <button type="button" onClick={() => toggleMenu("figure")} aria-haspopup="listbox" aria-expanded={menu === "figure"} disabled={!ready} className={DCHIP}>
-                    {markLabel}
+                    {character?.name || s.characterLabel}
                     <Chevron />
                   </button>
-                  {menu === "figure" && (
-                    <div role="listbox" aria-label={s.toolbarFigure} className={DMENU}>
-                      {figureOptions}
+                  {menu === "who" && (
+                    <div role="listbox" aria-label={s.mentionTitle} className={DMENU}>
+                      {characters.map((c) => (
+                        <Option
+                          key={c.id}
+                          active={characterId === c.id}
+                          onPick={() => {
+                            setCharacterId(c.id);
+                            setMenu(null);
+                          }}
+                        >
+                          {c.name}
+                        </Option>
+                      ))}
                     </div>
                   )}
                 </div>
-              )}
-              <div className="relative">
-                <button type="button" onClick={() => toggleMenu("pose")} aria-haspopup="listbox" aria-expanded={menu === "pose"} disabled={!ready} className={DCHIP}>
-                  {s.poses[pose]}
-                  <Chevron />
-                </button>
-                {menu === "pose" && (
-                  <div role="listbox" aria-label={s.pose} className={DMENU}>
-                    {STAND_POSES.map((p) => (
+                {/* The look (2026-09-11): an earlier still's objects, or — since
+                    2026-09-21 — a reference photo the person uploads, the thing
+                    in it drawn four ways round so every shot keeps its design. */}
+                <div className={chipAnchor}>
+                  <button
+                    type="button"
+                    onClick={() => toggleMenu("look")}
+                    aria-haspopup="listbox"
+                    aria-expanded={menu === "look"}
+                    title={lookShot ? s.lookOn : latestStill ? s.lookUseLatest : s.lookFirst}
+                    className={lookShot ? DCHIP_ON : DCHIP}
+                    data-look-chip
+                  >
+                    {s.lookLabel} ·{" "}
+                    {lookShot ? <LocalDate date={lookShot.createdAt} /> : s.lookOff}
+                    <Chevron />
+                  </button>
+                  {menu === "look" && (
+                    <div role="listbox" aria-label={s.lookLabel} className={`${DMENU} w-[300px]`} data-look-menu>
                       <Option
-                        key={p}
-                        active={pose === p}
+                        active={!lookShot}
                         onPick={() => {
-                          setPose(p);
+                          pickLook(null);
                           setMenu(null);
                         }}
                       >
-                        {s.poses[p]}
+                        {s.lookOff}
                       </Option>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="relative">
-                <button type="button" onClick={() => toggleMenu("gaze")} aria-haspopup="listbox" aria-expanded={menu === "gaze"} disabled={!ready} className={gaze ? DCHIP_ON : DCHIP} data-gaze-chip>
-                  {gaze === null
-                    ? s.studio.gazeNone
-                    : gaze.at === "camera"
-                      ? `${s.studio.gaze} · ${s.studio.gazeCamera}`
-                      : gaze.at === "object"
-                        ? `${s.studio.gaze} · ${formatMsg(s.studio.gazeThing, { thing: spec.objects[gaze.index] ? names.objectName(spec.objects[gaze.index]) : "" })}`
-                        : `${s.studio.gaze} · ${formatMsg(s.studio.gazePointSet, { x: gaze.x.toFixed(1), z: gaze.z.toFixed(1) })}`}
-                  <Chevron />
-                </button>
-                {menu === "gaze" && (
-                  <div role="listbox" aria-label={s.studio.gaze} className={`${DMENU} max-h-[320px] overflow-y-auto`}>
-                    <Option
-                      active={gaze === null}
-                      onPick={() => {
-                        setGaze(null);
-                        setMenu(null);
-                      }}
-                    >
-                      {s.studio.gazeNone}
-                    </Option>
-                    <Option
-                      active={gaze?.at === "camera"}
-                      onPick={() => {
-                        setGaze({ at: "camera" });
-                        setMenu(null);
-                      }}
-                    >
-                      {s.studio.gazeCamera}
-                    </Option>
-                    <Option
-                      active={gaze?.at === "point"}
-                      onPick={() => {
-                        setLaying("gaze");
-                        setMenu(null);
-                      }}
-                    >
-                      {s.studio.gazePoint}
-                    </Option>
-                    {spec.objects.map((o, oi) => (
-                      <Option
-                        key={oi}
-                        active={gaze?.at === "object" && gaze.index === oi}
-                        onPick={() => {
-                          setGaze({ at: "object", index: oi });
-                          setMenu(null);
-                        }}
-                      >
-                        {formatMsg(s.studio.gazeThing, { thing: names.objectName(o) })}
-                      </Option>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <button type="button" onClick={() => turn(-TURN_STEP)} disabled={!ready} aria-label={s.turnLeft} title={s.turnLeft} className={`${DCHIP} w-8 justify-center px-0`}>
-                ↺
-              </button>
-              <button type="button" onClick={() => turn(TURN_STEP)} disabled={!ready} aria-label={s.turnRight} title={s.turnRight} className={`${DCHIP} w-8 justify-center px-0`}>
-                ↻
-              </button>
-              <button type="button" onClick={frameFigure} disabled={!ready} className={DCHIP}>
-                {s.frameFigure}
-              </button>
-              {stageUndoCount > 0 && (
+                      {latestStill && (
+                        <Option
+                          active={lookShot?.generationId === latestStill}
+                          onPick={() => {
+                            pickLook(latestStill);
+                            setMenu(null);
+                          }}
+                        >
+                          {s.lookUseLatest}
+                        </Option>
+                      )}
+                      {lookShot && lookShot.generationId !== latestStill && (
+                        <Option active onPick={() => setMenu(null)}>
+                          <LocalDate date={lookShot.createdAt} />
+                        </Option>
+                      )}
+                      {/* A thing's own photos go on the thing now (R1): tap it on the stage. */}
+                      <p className="px-2.5 pb-2 pt-2 text-[11px] leading-snug text-[#9aa0ad]" data-look-refs-moved>
+                        {cast.lookMoved}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <div className={chipAnchor}>
+                  <button type="button" onClick={() => toggleMenu("camera")} aria-haspopup="listbox" aria-expanded={menu === "camera"} disabled={!ready} className={DCHIP}>
+                    {cameraLabel}
+                    <Chevron />
+                  </button>
+                  {menu === "camera" && (
+                    <div role="listbox" aria-label={s.toolbarCamera} className={DMENU}>
+                      {cameraOptions}
+                    </div>
+                  )}
+                </div>
                 <button
                   type="button"
-                  onClick={() => stageStepRef.current?.undo()}
-                  disabled={!ready || shooting || previz}
-                  title={s.stageUndoHint}
-                  className={DCHIP}
+                  onClick={() => (wide ? setDockTab((d) => (d === "camera" ? "astra" : "camera")) : setRigOpen((v) => !v))}
+                  aria-pressed={rigShown}
+                  aria-expanded={rigShown}
+                  disabled={!ready}
+                  className={rigShown ? DCHIP_ON : DCHIP}
                 >
-                  {s.stageUndo}
+                  {rigChipLabel}
+                  <Chevron />
                 </button>
-              )}
-              {matchOn && (
-                <>
-                  <input
-                    ref={matchFileRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      // Cleared, so choosing the same picture again still counts as a choice.
-                      e.target.value = "";
-                      void pickReference(file);
-                    }}
-                  />
-                  <button type="button" onClick={() => matchFileRef.current?.click()} disabled={!ready || matching || shooting} className={DCHIP}>
-                    {s.matchShot}
+                {spec.marks.length > 1 && (
+                  <div className={chipAnchor}>
+                    <button type="button" onClick={() => toggleMenu("figure")} aria-haspopup="listbox" aria-expanded={menu === "figure"} disabled={!ready} className={DCHIP}>
+                      {markLabel}
+                      <Chevron />
+                    </button>
+                    {menu === "figure" && (
+                      <div role="listbox" aria-label={s.toolbarFigure} className={DMENU}>
+                        {figureOptions}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className={chipAnchor}>
+                  <button type="button" onClick={() => toggleMenu("pose")} aria-haspopup="listbox" aria-expanded={menu === "pose"} disabled={!ready} className={DCHIP}>
+                    {s.poses[pose]}
+                    <Chevron />
                   </button>
-                </>
-              )}
-              {sourcePhotoUrl && (
-                <button type="button" onClick={() => setCompareOpen((v) => !v)} aria-pressed={compareOpen} className={compareOpen ? DCHIP_ON : DCHIP}>
-                  {s.compareTitle}
+                  {menu === "pose" && (
+                    <div role="listbox" aria-label={s.pose} className={DMENU}>
+                      {STAND_POSES.map((p) => (
+                        <Option
+                          key={p}
+                          active={pose === p}
+                          onPick={() => {
+                            setPose(p);
+                            setMenu(null);
+                          }}
+                        >
+                          {s.poses[p]}
+                        </Option>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className={chipAnchor}>
+                  <button type="button" onClick={() => toggleMenu("gaze")} aria-haspopup="listbox" aria-expanded={menu === "gaze"} disabled={!ready} className={gaze ? DCHIP_ON : DCHIP} data-gaze-chip>
+                    {gaze === null
+                      ? s.studio.gazeNone
+                      : gaze.at === "camera"
+                        ? `${s.studio.gaze} · ${s.studio.gazeCamera}`
+                        : gaze.at === "object"
+                          ? `${s.studio.gaze} · ${formatMsg(s.studio.gazeThing, { thing: spec.objects[gaze.index] ? names.objectName(spec.objects[gaze.index]) : "" })}`
+                          : `${s.studio.gaze} · ${formatMsg(s.studio.gazePointSet, { x: gaze.x.toFixed(1), z: gaze.z.toFixed(1) })}`}
+                    <Chevron />
+                  </button>
+                  {menu === "gaze" && (
+                    <div role="listbox" aria-label={s.studio.gaze} className={`${DMENU} max-h-[320px] overflow-y-auto`}>
+                      <Option
+                        active={gaze === null}
+                        onPick={() => {
+                          setGaze(null);
+                          setMenu(null);
+                        }}
+                      >
+                        {s.studio.gazeNone}
+                      </Option>
+                      <Option
+                        active={gaze?.at === "camera"}
+                        onPick={() => {
+                          setGaze({ at: "camera" });
+                          setMenu(null);
+                        }}
+                      >
+                        {s.studio.gazeCamera}
+                      </Option>
+                      <Option
+                        active={gaze?.at === "point"}
+                        onPick={() => {
+                          setLaying("gaze");
+                          setMenu(null);
+                        }}
+                      >
+                        {s.studio.gazePoint}
+                      </Option>
+                      {spec.objects.map((o, oi) => (
+                        <Option
+                          key={oi}
+                          active={gaze?.at === "object" && gaze.index === oi}
+                          onPick={() => {
+                            setGaze({ at: "object", index: oi });
+                            setMenu(null);
+                          }}
+                        >
+                          {formatMsg(s.studio.gazeThing, { thing: names.objectName(o) })}
+                        </Option>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button type="button" onClick={() => turn(-TURN_STEP)} disabled={!ready} aria-label={s.turnLeft} title={s.turnLeft} className={`${DCHIP} w-8 justify-center px-0`}>
+                  ↺
                 </button>
-              )}
+                <button type="button" onClick={() => turn(TURN_STEP)} disabled={!ready} aria-label={s.turnRight} title={s.turnRight} className={`${DCHIP} w-8 justify-center px-0`}>
+                  ↻
+                </button>
+                <button type="button" onClick={frameFigure} disabled={!ready} className={DCHIP}>
+                  {s.frameFigure}
+                </button>
+                {stageUndoCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => stageStepRef.current?.undo()}
+                    disabled={!ready || shooting || previz}
+                    title={s.stageUndoHint}
+                    className={DCHIP}
+                  >
+                    {s.stageUndo}
+                  </button>
+                )}
+                {matchOn && (
+                  <>
+                    <input
+                      ref={matchFileRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        // Cleared, so choosing the same picture again still counts as a choice.
+                        e.target.value = "";
+                        void pickReference(file);
+                      }}
+                    />
+                    <button type="button" onClick={() => matchFileRef.current?.click()} disabled={!ready || matching || shooting} className={DCHIP}>
+                      {s.matchShot}
+                    </button>
+                  </>
+                )}
+                {sourcePhotoUrl && (
+                  <button type="button" onClick={() => setCompareOpen((v) => !v)} aria-pressed={compareOpen} className={compareOpen ? DCHIP_ON : DCHIP}>
+                    {s.compareTitle}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -6925,9 +6935,15 @@ export function SetView({
               gizmo. A phone's Film is full already (its dock under the setup chips): a
               tap on a thing opens its card there, with what rides. */}
           {wide && filmOpen && !viewingShot && !loadFailed && castShown && castStrip("absolute bottom-3.5 left-3.5 right-[190px] z-20")}
+          {/* Never taller than the stage below the chips' one row (14 px + 32 + 8,
+              and its own 14 at the foot): when it must give, the beats' row
+              shrinks and scrolls, and the rows above it stay whole. Over the
+              page's click-away layer (z-20) while its own menu is open, or a
+              tap on a still only shut the menu. */}
           {!wide && filmOpen && (
             <div
-              className={`absolute bottom-3.5 left-3.5 right-3.5 z-10 flex flex-col gap-2 rounded-[14px] border border-[rgba(255,255,255,0.08)] bg-black/40 p-2 backdrop-blur ${viewingShot ? "hidden md:flex" : ""}`}
+              data-film-dock
+              className={`absolute bottom-3.5 left-3.5 right-3.5 ${menu === "filmStart" ? "z-30" : "z-10"} flex max-h-[calc(100%-68px)] flex-col gap-2 rounded-[14px] border border-[rgba(255,255,255,0.08)] bg-black/40 p-2 backdrop-blur ${viewingShot ? "hidden md:flex" : ""}`}
             >
               {/* the stage's keys, above the dock (canvas pages H and I); a touch has neither hover nor keys */}
               <span className="pointer-events-none absolute bottom-full left-0 mb-2 hidden max-w-full rounded-[12px] border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] leading-4 text-onmedia/80 md:pointer-fine:block">
@@ -6991,7 +7007,9 @@ export function SetView({
                 </button>
               </div>
               <div className="flex items-stretch gap-2 overflow-x-auto">
-                <div className="relative flex-shrink-0">
+                {/* Not a box of its own: the menu hangs from the dock, since this
+                    row scrolls and cut it off above the tile, unseen (2026-09-22). */}
+                <div className="flex-shrink-0">
                   <button
                     type="button"
                     onClick={() => toggleMenu("filmStart")}
@@ -7012,7 +7030,8 @@ export function SetView({
                     <div
                       role="listbox"
                       aria-label={s.filmStarts}
-                      className={DMENU_UP}
+                      className={`${DMENU_BASE} left-2 top-2`}
+                      style={{ maxHeight: "calc(100% - 16px)" }}
                     >
                       {filmStartMenuItems}
                     </div>
@@ -7021,7 +7040,7 @@ export function SetView({
                 {film.beats.map((b, i) => (
                   <div
                     key={i}
-                    className={`flex min-w-[210px] max-w-[280px] flex-1 flex-col gap-1.5 rounded-[10px] bg-[rgba(255,255,255,0.04)] p-2 ring-1 ${
+                    className={`flex min-h-fit min-w-[210px] max-w-[280px] flex-1 flex-col gap-1.5 rounded-[10px] bg-[rgba(255,255,255,0.04)] p-2 ring-1 ${
                       filmSel === i ? "ring-[#e0a468]" : "ring-[rgba(255,255,255,0.08)]"
                     }`}
                   >

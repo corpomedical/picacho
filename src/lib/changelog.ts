@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.77.0",
+    build: 116,
+    date: "2026-09-22",
+    title: "Helios 3D on a phone: the film panel no longer slides under the setup chips",
+    items: [
+      "On a phone, in Film, the setup chips on the stage (who, look, camera, rig, mark, pose, where they look, turn, frame the figure, match a shot) wrapped into five rows, and the film panel below grew up underneath them. Play the move, the film's length and the engine choice were covered and could not be tapped. On a phone in Film the chips are now one row you swipe sideways, and each chip's menu opens just under that row. The film panel always stops below the row. On a short phone the panel's row of beats scrolls instead of growing. Shoot and Cut on a phone, and everything on a computer, look exactly as before.",
+      "The Starts tile in the phone's film panel opened its list of stills where it could not be seen, so choosing the still the film starts from did nothing you could see. The list now opens inside the panel, and a tap picks the still.",
+    ],
+  },
+  {
     version: "1.76.0",
     build: 115,
     date: "2026-09-22",

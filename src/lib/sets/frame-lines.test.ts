@@ -18,7 +18,8 @@ describe("the frame lines", () => {
     expect(view).toContain("const ro = new ResizeObserver(measure);");
     expect(view).toContain("if (chipsRef.current) ro.observe(chipsRef.current);");
     expect(view).toContain("if (stripRef.current) ro.observe(stripRef.current);");
-    expect(view).toContain('<div ref={chipsRef} data-setup-chips className="absolute left-3.5 right-3.5 top-3.5 z-20 flex flex-wrap items-center gap-2">');
+    // One swiping row in a phone's Film, wrapped everywhere else (film-phone-layout.test.ts).
+    expect(view).toContain('<div ref={chipsRef} data-setup-chips className={`absolute left-3.5 right-3.5 top-3.5 z-20 ${chipsInRow ? "" : "flex flex-wrap items-center gap-2"}`}>');
     expect(view).toContain("ref={stripRef}");
   });
 
