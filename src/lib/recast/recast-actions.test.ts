@@ -159,6 +159,21 @@ describe("startRecastTakes", () => {
     expect(start.slice(early, at("await gatePrompt({"))).not.toMatch(/consumePurchasedCredits|reserve_generations|refund/);
   });
 
+  it("a crash outside a take's own catch still ends and refunds every unstarted row", () => {
+    // 2026-09-22, the operator's 04:20 take: the function died between the
+    // reserve and the job row's write, the row sat at "generating" with its
+    // credits held, and the person got a raw crash. The per-take catch
+    // cannot see such a death; this net can (a hard kill still falls to the
+    // reaper's hour-old orphan sweep, job-runner.ts ORPHANED_GENERATION_TIMEOUT_MS).
+    const net = at("await submitting;");
+    const netSlice = start.slice(net, net + 1600);
+    expect(netSlice).toContain("for (const generationId of takeIds) {");
+    expect(netSlice).toContain("if (started.includes(generationId)) continue;");
+    expect(netSlice).toContain('.eq("status", "generating");');
+    expect(netSlice).toContain("await refundGenerationCosts(generationId, { force: true });");
+    expect(netSlice).toContain("return { error: RECAST_COULDNT_START };");
+  });
+
   it("decides the purchased/monthly split fresh, just before it is spent", () => {
     // The early answer ages through the words gate, the cut and the picture
     // checks; a take landing in another tab meanwhile would leave a stale

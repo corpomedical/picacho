@@ -956,7 +956,7 @@ export async function startRecastTakes(input: {
   // Submit each; a failure refunds only its own row, so one bad variant
   // never takes the others down.
   const started: string[] = [];
-  await Promise.all(
+  const submitting = Promise.all(
     takeIds.map(async (generationId, i) => {
       const chars = takes[i] ?? [];
       // The words composed above, whole — never the recipe's kept copy.
@@ -1105,6 +1105,31 @@ export async function startRecastTakes(input: {
       }
     }),
   );
+  try {
+    await submitting;
+  } catch (err) {
+    // The per-take catch above handles each take's own failure; reaching
+    // here means something outside those bounds died (2026-09-22, a take was
+    // left "generating" with no job row and its credits held). Every row not
+    // started is ended and refunded, and the person gets a sentence instead
+    // of a raw crash. A kill this catch cannot see is the reaper's orphan
+    // sweep (job-runner.ts ORPHANED_START_AFTER_MS).
+    console.error("recast submit crashed outside a take's own catch:", err);
+    for (const generationId of takeIds) {
+      if (started.includes(generationId)) continue;
+      await admin
+        .from("generations")
+        .update({ status: "failed", progress_stage: null, pipeline_log: [{ attempt: 1, passed: false, issues: [], compiledPrompt: "", steps: [{ step: "generate" as const, detail: "Couldn't start the take." }] }] })
+        .eq("id", generationId)
+        .eq("status", "generating");
+      try {
+        await refundGenerationCosts(generationId, { force: true });
+      } catch (refundErr) {
+        console.error(`recast crash refund failed for ${generationId}:`, refundErr);
+      }
+    }
+    return { error: RECAST_COULDNT_START };
+  }
   if (started.length === 0) return { error: RECAST_COULDNT_START };
 
   revalidatePath("/app/mystique");

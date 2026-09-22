@@ -40,7 +40,7 @@ import { mediaUrl } from "@/lib/media/url";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { FetchTimeoutError } from "@/lib/generations/providers/fetch-with-timeout";
 import { isRawProviderError } from "@/lib/generations/user-facing-error";
-import type { AttemptLog, PipelineStepLog } from "@/lib/generations/pipeline";
+import type { AttemptLog } from "@/lib/generations/pipeline";
 import { getDialogueCreditWeight } from "@/lib/generations/providers/video-models";
 
 import { recordModelFailure, recordModelSuccess } from "@/lib/generations/model-health";
