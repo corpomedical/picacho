@@ -7,6 +7,7 @@ import { ContentPolicyRefusal, type Scores } from "@/lib/generations/content-pol
 import { checkGenerationAllowance, consumePurchasedCredits } from "@/lib/generations/core";
 import { recastTakeLock } from "@/lib/generations/face-lock";
 import { refundGenerationCosts, saveVideoJob } from "@/lib/generations/job-runner";
+import { followRepeatSend, isRepeatReservation, REPEAT_FOLLOW_DEADLINE_MS } from "@/lib/generations/repeat-send";
 import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
 import { gatePrompt, recentRefusalCount, recordPolicyRefusal } from "@/lib/generations/policy-log";
 import { cancelQueuedJob, submitRecastJob, type QueuedJob } from "@/lib/generations/providers/fal";
@@ -91,6 +92,7 @@ import {
   type RecastRead,
   type RecastWarning,
 } from "@/lib/recast/recast-read";
+import { parseRecastSendId, RECAST_MAX_TAKES, recastRepeatAnswer, recastTakeIds } from "@/lib/recast/repeat";
 import { RECAST_LOCK_THRESHOLD, readRecastRecipes, recastRow, type RecastSource } from "@/lib/recast/store";
 import { isWholeClip, recastFitFor, recastSendWindow, recastWindowCredits, recastWindowProblem, type RecastWindow } from "@/lib/recast/trim";
 import { cutRecastWindow } from "@/lib/recast/trim-run";
@@ -410,6 +412,8 @@ export async function discardRecastUpload(path: string): Promise<void> {
  * a submit that fails refunds its own row.
  */
 export async function startRecastTakes(input: {
+  /** This press's own id, made by the door (repeat.ts): the first take's row id, and what every other take's is made from. */
+  sendId?: string;
   path?: string;
   takeId?: string;
   characterIds: string[];
@@ -430,9 +434,40 @@ export async function startRecastTakes(input: {
   window?: unknown;
   rights: boolean;
 }): Promise<{ error: string } | { error: null; ids: string[] }> {
+  // The follower's clock starts on the first line: the page stops this
+  // request at 300 s, and everything below counts against it.
+  const sendStartedAt = Date.now();
   const access = await recastAccess();
   if (access.error !== null) return { error: access.error };
   const { supabase, userId } = access;
+
+  // THE SAME PRESS, DELIVERED TWICE (repeat.ts). The rows this press
+  // reserves take their ids from the door's id for it, so a second delivery
+  // cannot reserve, charge or render takes of its own: it follows the takes
+  // the first started and answers with them. Asked FIRST, before the rate
+  // limit and the credit checks, which the first delivery's own rows would
+  // trip. Asked again wherever a later refusal could still be those rows'
+  // doing, and at the reservation, where the primary key makes it certain.
+  // A door without an id (a page from before this) is served as before.
+  const sendId = parseRecastSendId(input?.sendId);
+  const pressIds = sendId ? recastTakeIds(sendId, RECAST_MAX_TAKES) : [];
+  const followRepeat = async (): Promise<{ error: null; ids: string[] } | null> => {
+    if (!sendId) return null;
+    const answer = recastRepeatAnswer(
+      await followRepeatSend(createAdminClient(), userId, { ids: pressIds }, {
+        deadlineAt: sendStartedAt + REPEAT_FOLLOW_DEADLINE_MS,
+      }),
+      pressIds,
+    );
+    // The first delivery's refresh rode the answer nobody read.
+    if (answer) {
+      revalidatePath("/app/mystique");
+      revalidatePath("/app/history");
+    }
+    return answer;
+  };
+  const repeatOfRunning = await followRepeat();
+  if (repeatOfRunning) return repeatOfRunning;
 
   if (input?.rights !== true) return { error: RECAST_NEEDS_RIGHTS };
   const engine = parseRecastEngine(input?.engine);
@@ -450,7 +485,7 @@ export async function startRecastTakes(input: {
   // Restyle takes neither characters nor images: its look is words.
   const takesCast = recastTakesCast(spec.job);
   const ids =
-    takesCast && Array.isArray(input?.characterIds) ? [...new Set(input.characterIds.filter((c) => typeof c === "string"))].slice(0, 4) : [];
+    takesCast && Array.isArray(input?.characterIds) ? [...new Set(input.characterIds.filter((c) => typeof c === "string"))].slice(0, RECAST_MAX_TAKES) : [];
   const askedImages =
     takesCast && Array.isArray(input?.imagePaths)
       ? [...new Set(input.imagePaths.filter((p): p is string => typeof p === "string"))].slice(0, RECAST_MAX_IMAGES)
@@ -641,7 +676,8 @@ export async function startRecastTakes(input: {
   // is guarded — so it is asked here, where the answer takes seconds.
   const total = perTake * takes.length;
   const early = await checkGenerationAllowance(supabase, userId, total);
-  if (early.error) return { error: early.error };
+  // The other delivery's charge may be what emptied the balance.
+  if (early.error) return (await followRepeat()) ?? { error: early.error };
   // The engine that reads names in its prompt is told which photos are whose
   // by name; how many photos each character has decides which name (a lone
   // character is @Element1 or @Image1, as ever). Every name — the cast's,
@@ -837,7 +873,10 @@ export async function startRecastTakes(input: {
   }
 
   const seconds = Math.max(1, Math.round(windowSeconds));
-  const groupId = takes.length > 1 ? crypto.randomUUID() : null;
+  const groupId = takes.length > 1 ? (sendId ?? crypto.randomUUID()) : null;
+  // Each take's row id: the press's own (repeat.ts), so that a second
+  // delivery of this press meets the first one's rows at the reservation.
+  const rowIds = sendId ? pressIds.slice(0, takes.length) : takes.map(() => crypto.randomUUID());
 
   // THE SPLIT IS DECIDED FRESH, just before it is spent (review, 2026-09-22).
   // The early check answers in seconds; by here it has aged through the
@@ -849,7 +888,7 @@ export async function startRecastTakes(input: {
   const allowance = await checkGenerationAllowance(supabase, userId, total);
   if (allowance.error) {
     await dropPrepared();
-    return { error: allowance.error };
+    return (await followRepeat()) ?? { error: allowance.error };
   }
   const consumePurchased = allowance.consumePurchased ?? 0;
   const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, total - consumePurchased);
@@ -863,7 +902,7 @@ export async function startRecastTakes(input: {
   const takeBriefs = takes.map((chars) => (chainPrep ? pieceBriefsFor(chainPrep.plan, chars) : [briefFor(chars)]));
   const rows = takes.map((chars, i) => {
     return {
-      id: crypto.randomUUID(),
+      id: rowIds[i],
       character_profile_id: chars[0]?.id ?? null,
       character_profile_ids: chars.map((c) => c.id),
       // What History shows as the take's words: who was cast, or what was asked.
@@ -919,12 +958,26 @@ export async function startRecastTakes(input: {
     p_rows: rows,
   });
   if (reserveError) {
-    const duplicate = reserveError.code === "23505" || /duplicate key/i.test(reserveError.message);
-    if (!duplicate) console.error("reserve_generations failed for recast:", reserveError);
-    return { error: duplicate ? RECAST_ALREADY_STARTED : RECAST_COULDNT_START };
+    // A duplicate key: the other delivery of this press reserved these ids
+    // first. The reservation is one transaction, so nothing of this
+    // delivery's was written. Its own cut and redrawn images stand under no
+    // take and go, and it follows the takes the other one started. Any other
+    // failure may have written this delivery's own rows, and following those
+    // would only wait out the clock.
+    if (isRepeatReservation(reserveError) || /duplicate key/i.test(reserveError.message)) {
+      await dropPrepared();
+      return (await followRepeat()) ?? { error: RECAST_ALREADY_STARTED };
+    }
+    console.error("reserve_generations failed for recast:", reserveError);
+    return { error: RECAST_COULDNT_START };
   }
   const takeIds = (reservedIds as string[] | null) ?? [];
-  if (takeIds.length === 0) return { error: "You've used all the credits included in your plan this month." };
+  if (takeIds.length === 0) {
+    // Nothing was reserved: the month is full, perhaps with the other
+    // delivery's own charge.
+    await dropPrepared();
+    return (await followRepeat()) ?? { error: "You've used all the credits included in your plan this month." };
+  }
 
   // Guarded purchased-credit spend — nothing paid has run yet, so losing the
   // race releases every placeholder.

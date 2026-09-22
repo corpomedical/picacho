@@ -236,7 +236,7 @@ describe("a second delivery of the same send", () => {
     const { db, client } = fakeDb();
     db.generations.push(row({ status: "generating" }));
     const outcome = await followRepeatSend(client, USER, { id: SEND }, { deadlineAt: 10_000, ...clock() });
-    expect(outcome).toEqual({ kind: "running" });
+    expect(outcome).toEqual({ kind: "running", ids: [SEND] });
     const answer = repeatRunResult(outcome);
     expect(answer).toEqual({ error: REPEAT_STILL_RUNNING });
     expect(REPEAT_STILL_RUNNING).not.toMatch(/couldn't start|try again/i);
@@ -296,7 +296,7 @@ describe("a second delivery of the same multi-angle batch", () => {
 
   it("not a repeat, and still going at the deadline, map as the single send's do", () => {
     const none: FollowOutcome = { kind: "none" };
-    const running: FollowOutcome = { kind: "running" };
+    const running: FollowOutcome = { kind: "running", ids: [GROUP] };
     expect(repeatMultiResult(none, GROUP)).toBeNull();
     expect(repeatMultiResult(running, GROUP)).toEqual({ error: REPEAT_STILL_RUNNING });
   });

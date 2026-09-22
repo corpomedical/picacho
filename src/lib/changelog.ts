@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.81.0",
+    build: 120,
+    date: "2026-09-22",
+    title: "Recast: one press of Take can never start or charge two takes",
+    items: [
+      "One press of Take in Recast could have started and charged a second, identical take. When a phone's connection drops while a press is waiting, the browser quietly sends the same request again. That was the cause of this morning's false \"Couldn't start\" on Generate. A Recast press waits through the whole start, from reading and cutting the clip to sending the take off, which can take minutes. Its takes were numbered on our side, so the second copy looked like a new press. It would have reserved, charged and rendered a take of its own, and the page would only have shown that one. Now each press carries its own number from the page, and its takes are recorded under it. The second copy finds the takes the first one started and shows them. It never starts or charges another. This was found by checking Recast after this morning's fix, not from a report.",
+      "A failed or stopped Recast take's card now says when it ended. A take that was refused when it was sent says so, instead of a generic \"try again in a moment\" that read as the take beside it failing. This was fixed this morning but never reached the live site. It goes out now, in all four languages.",
+    ],
+  },
+  {
     version: "1.80.0",
     build: 119,
     date: "2026-09-22",

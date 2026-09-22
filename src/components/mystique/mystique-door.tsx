@@ -844,9 +844,15 @@ export function MystiqueDoor({
     if (!canTake || !seen || !source) return;
     setError("");
     setStarting(true);
+    // This press's own id, fresh per press (lib/recast/repeat.ts): a browser
+    // that resends the request after a dropped connection delivers it twice,
+    // and the second delivery then follows the takes the first started
+    // instead of starting and charging its own.
+    const sendId = crypto.randomUUID();
     let res: Awaited<ReturnType<typeof startRecastTakes>>;
     try {
       res = await startRecastTakes({
+        sendId,
         ...(source.kind === "upload" ? { path: source.path ?? undefined } : { takeId: source.takeId }),
         characterIds: cast.map((c) => c.id),
         photoPath: photo?.path,

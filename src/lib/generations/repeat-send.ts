@@ -29,13 +29,15 @@ import { toMediaUrl } from "../media/url";
 // the first delivery owns and answers with that take's own outcome. That is
 // the answer the person would have got had the first reply arrived.
 //
-// Keyed by the send's own id (runGeneration) or by the batch's group id
-// (runMultiAngleGeneration). Both are made by the client for ONE send, so
-// finding this user's row under either means this send has already started.
-// Neither can be charged twice: the id is the row's primary key, and a batch
-// meets generations_angle_group_unique (user, group, angle). Before this, a
-// second delivery of a batch was told "That request was already started" or
-// "Couldn't start these generations" while the batch rendered.
+// Keyed by the send's own id (runGeneration), by the batch's group id
+// (runMultiAngleGeneration), or by the row ids of a Recast press, which are
+// all made from the one id the door sends (recast/repeat.ts). Each is made
+// by the client for ONE send, so finding this user's row under any of them
+// means this send has already started. None can be charged twice: the id is
+// the row's primary key, and a batch meets generations_angle_group_unique
+// (user, group, angle). Before this, a second delivery of a batch was told
+// "That request was already started" or "Couldn't start these generations"
+// while the batch rendered.
 
 // How often a follower re-reads the row. An image render takes about a
 // minute, so this adds at most a couple of seconds to the answer.
@@ -83,8 +85,10 @@ export type FollowOutcome =
   // Every take has finished or is queued at the provider, where polling
   // picks it up.
   | { kind: "settled"; takes: FollowedTake[] }
-  // Still rendering inside the first delivery when the clock ran out.
-  | { kind: "running" };
+  // Still rendering inside the first delivery when the clock ran out. The
+  // rows the last read found: they exist and are charged, whatever else is
+  // still to happen to them.
+  | { kind: "running"; ids: string[] };
 
 type Row = {
   id: string;
@@ -100,7 +104,7 @@ const TERMINAL = new Set(["succeeded", "failed"]);
 export async function followRepeatSend(
   admin: SupabaseClient,
   userId: string,
-  key: { id: string } | { groupId: string },
+  key: { id: string } | { ids: string[] } | { groupId: string },
   opts: {
     deadlineAt: number;
     intervalMs?: number;
@@ -114,19 +118,26 @@ export async function followRepeatSend(
   // retried, not taken as "no row": that answer would send the caller back
   // to the false start error.
   let seen = false;
+  let seenIds: string[] = [];
 
   for (;;) {
     let query = admin
       .from("generations")
       .select("id, status, result_url, pipeline_log, match_score, angle")
       .eq("user_id", userId);
-    query = "id" in key ? query.eq("id", key.id) : query.eq("angle_group_id", key.groupId);
+    query =
+      "id" in key
+        ? query.eq("id", key.id)
+        : "ids" in key
+          ? query.in("id", key.ids)
+          : query.eq("angle_group_id", key.groupId);
     const { data, error } = await query;
     const rows = (data ?? []) as Row[];
 
     if (!error) {
       if (rows.length === 0) return { kind: "none" };
       seen = true;
+      seenIds = rows.map((r) => r.id);
 
       const open = rows.filter((r) => !TERMINAL.has(r.status));
       let queued = new Set<string>();
@@ -168,7 +179,7 @@ export async function followRepeatSend(
       return { kind: "none" };
     }
 
-    if (now() >= opts.deadlineAt) return { kind: "running" };
+    if (now() >= opts.deadlineAt) return { kind: "running", ids: seenIds };
     await sleep(opts.intervalMs ?? REPEAT_POLL_MS);
   }
 }
