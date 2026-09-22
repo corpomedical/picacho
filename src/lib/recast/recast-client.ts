@@ -55,6 +55,130 @@ function once<K extends keyof HTMLVideoElementEventMap>(video: HTMLVideoElement,
   });
 }
 
+// ---------------------------------------------------------------------------
+// THE LENGTH, BEFORE ANY UPLOAD (2026-09-22)
+//
+// A 181 s clip used to upload in full — tens of megabytes on a phone — only
+// for the server to say it is over 30 seconds. The browser knows a file's
+// length from its first few kilobytes, so the door asks it first.
+//
+// It only ever SPEEDS UP a refusal; it never makes one on its own say-so.
+// A browser that cannot decode the file (an HEVC .mov in Chrome on Windows,
+// most often) may fire an error, never answer, or answer with no picture —
+// and that file may still be perfectly usable, since the server reads it
+// with ffprobe, not a decoder. So anything short of a clean answer is
+// { ok: false }, and the door carries on to the upload and the server's own
+// probe exactly as before (the completeness critic's point).
+
+export type LocalProbe = { ok: true; seconds: number; width: number; height: number } | { ok: false };
+
+/** How long the door waits for the browser to say a file's length before leaving it to the server. */
+export const RECAST_PROBE_TIMEOUT_MS = 5_000;
+
+export async function probeLocal(file: File, timeoutMs = RECAST_PROBE_TIMEOUT_MS): Promise<LocalProbe> {
+  let objectUrl: string | null = null;
+  let video: HTMLVideoElement | null = null;
+  try {
+    objectUrl = URL.createObjectURL(file);
+    video = document.createElement("video");
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+    const loaded = once(video, "loadedmetadata", timeoutMs);
+    video.src = objectUrl;
+    if (!(await loaded)) return { ok: false };
+    const seconds = Math.round(video.duration * 10) / 10;
+    if (!Number.isFinite(seconds) || seconds <= 0 || !(video.videoWidth > 0) || !(video.videoHeight > 0)) return { ok: false };
+    return { ok: true, seconds, width: video.videoWidth, height: video.videoHeight };
+  } catch {
+    return { ok: false };
+  } finally {
+    if (video) {
+      video.removeAttribute("src");
+      try {
+        video.load();
+      } catch {
+        // Nothing left to release.
+      }
+    }
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// THE UPLOAD, WITH ITS PROGRESS (2026-09-22)
+//
+// supabase-js uploads with fetch, and fetch cannot report how much of a
+// request has gone — so a 40 MB clip was "Uploading…" and a pulse for as
+// long as the connection took, with no way to stop it but to choose another
+// file. This sends the SAME request the library sends from a browser
+// (storage-js 2.112 uploadOrUpdate, read at source today): a POST to
+// {project}/storage/v1/object/{bucket}/{path}, the anon key as `apikey`, the
+// signed-in session's token as the bearer, `x-upsert: false`, and a
+// multipart body of `cacheControl` = 3600 and the file under an empty name —
+// through XMLHttpRequest, whose upload reports its progress and can be
+// aborted. The same storage policy judges it: nothing is granted that the
+// library's upload did not already have.
+//
+// Anything but a 2xx is { ok: false } and the door falls back to the
+// library's own upload (no progress), so the worst this can do is what the
+// door did yesterday.
+
+export type RecastUploadResult = { ok: true } | { ok: false; aborted: boolean };
+
+/** Where the library's upload() sends an object (supabase-js: new URL("storage/v1", base); storage-js: object/{bucket}/{path}). */
+export function recastStorageObjectUrl(projectUrl: string, bucket: string, path: string): string {
+  return `${projectUrl.replace(/\/+$/, "")}/storage/v1/object/${bucket}/${path.replace(/^\/+/, "")}`;
+}
+
+export function uploadRecastClip(input: {
+  url: string;
+  anonKey: string;
+  token: string;
+  file: File;
+  signal: AbortSignal;
+  /** How much has gone, 0 to 1. */
+  onProgress: (share: number) => void;
+}): Promise<RecastUploadResult> {
+  return new Promise((resolve) => {
+    if (input.signal.aborted) return resolve({ ok: false, aborted: true });
+    let xhr: XMLHttpRequest;
+    try {
+      xhr = new XMLHttpRequest();
+    } catch {
+      return resolve({ ok: false, aborted: false });
+    }
+    let settled = false;
+    const onAbort = () => xhr.abort();
+    const done = (result: RecastUploadResult) => {
+      if (settled) return;
+      settled = true;
+      input.signal.removeEventListener("abort", onAbort);
+      resolve(result);
+    };
+    input.signal.addEventListener("abort", onAbort, { once: true });
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) input.onProgress(Math.min(1, Math.max(0, e.loaded / e.total)));
+    };
+    xhr.onload = () => done(xhr.status >= 200 && xhr.status < 300 ? { ok: true } : { ok: false, aborted: false });
+    xhr.onerror = () => done({ ok: false, aborted: false });
+    xhr.ontimeout = () => done({ ok: false, aborted: false });
+    xhr.onabort = () => done({ ok: false, aborted: true });
+    try {
+      const body = new FormData();
+      body.append("cacheControl", "3600");
+      body.append("", input.file);
+      xhr.open("POST", input.url);
+      xhr.setRequestHeader("apikey", input.anonKey);
+      xhr.setRequestHeader("authorization", `Bearer ${input.token}`);
+      xhr.setRequestHeader("x-upsert", "false");
+      xhr.send(body);
+    } catch {
+      done({ ok: false, aborted: false });
+    }
+  });
+}
+
 export type SampledClip = { frames: string[]; seconds: number; width: number; height: number };
 
 /**

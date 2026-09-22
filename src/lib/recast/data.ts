@@ -11,6 +11,16 @@ import {
   type RecastEngine,
 } from "@/lib/recast/recast";
 import { readRecastRecipe, readRecastRecipes, type RecastRecipe } from "@/lib/recast/store";
+import { readRenderNotifyPrefs } from "@/lib/generations/generation-defaults-server";
+import { getMonthlyUsageWith } from "@/lib/generations/core";
+import {
+  recastCreditsLeft,
+  recastTakeOutcome,
+  recastTakeReport,
+  type RecastBalance,
+  type RecastTakeOutcome,
+  type RecastTakeReport,
+} from "@/lib/recast/door-truth";
 
 // What the door needs: who can be cast, what can be performed, and what has
 // been taken so far.
@@ -42,7 +52,8 @@ export type RecastMotion = {
 
 export type RecastTake = {
   id: string;
-  status: "generating" | "succeeded" | "failed";
+  /** "stopped" is a take the person stopped — the runner files it as failed; the door does not say it as one. */
+  status: "generating" | "succeeded" | "failed" | "stopped";
   characterName: string | null;
   engine: RecastEngine | null;
   seconds: number | null;
@@ -55,6 +66,16 @@ export type RecastTake = {
   recipe: RecastRecipe | null;
   /** The images the person added to it, as tiles — so Recreate can put them back. */
   images: { path: string; url: string }[];
+  /**
+   * Where a rendering take is, in the runner's own words (progress_stage:
+   * "Rendering part 2 of 3", "Joining the parts") — English on the wire,
+   * translated where it is shown. Null once it has settled.
+   */
+  progress: string | null;
+  /** How a take that did not deliver ended — stopped or failed, why, and whether it cost anything (door-truth.ts). */
+  outcome: RecastTakeOutcome | null;
+  /** The runner's face report on a finished take, when it wrote one (door-truth.ts). */
+  report: RecastTakeReport | null;
 };
 
 // `recast` is NOT here on purpose: it arrives with a migration the operator
@@ -63,14 +84,84 @@ export type RecastTake = {
 // door — the upload worked, the take was started and charged, and the page
 // showed nothing (2026-09-18). The recipes come from store.ts, in a query of
 // its own whose failure means no recipe.
+//
+// progress_stage rides here (2026-09-22): the runner's own line for a
+// rendering take — which part of a long take is rendering, or that the parts
+// are being joined — so a reload says where a take is before the first poll
+// answers. The pipeline log does NOT ride here: it is the biggest field on a
+// row and this read lists 120 rows, so it is asked for on its own, for the
+// few settled takes the door shows (readTakeLogs).
 const TAKE_COLUMNS =
-  "id, status, result_url, poster_url, created_at, character_profile_id, model_id, video_duration_seconds, credits_used, match_score, prompt_input";
+  "id, status, result_url, poster_url, created_at, character_profile_id, model_id, video_duration_seconds, credits_used, match_score, prompt_input, progress_stage";
+
+/**
+ * The logs of the settled takes on the door, for their story: why one
+ * failed, that one was stopped, the face report on one that finished.
+ * Best-effort: a failed read means no story, never an empty door.
+ */
+/**
+ * What the person has left to spend (2026-09-22): shown beside the price, and
+ * the door's last reason for a grey Take. Read with the numbers and the usage
+ * sum checkGenerationAllowance reads (core.ts), and worked out the way it
+ * works them (door-truth.ts recastCreditsLeft). Display only — the server's
+ * check at the press still decides. Null when it cannot be read, and then
+ * the door says nothing about it rather than guess.
+ */
+async function readRecastBalance(supabase: SupabaseClient, userId: string): Promise<RecastBalance | null> {
+  try {
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .select("plan, plan_status, role, bonus_credits, purchased_credits, current_period_start")
+      .eq("id", userId)
+      .maybeSingle();
+    if (error || !profile) return null;
+    const p = profile as {
+      plan: string | null;
+      plan_status: string | null;
+      role: string | null;
+      bonus_credits: number | null;
+      purchased_credits: number | null;
+      current_period_start: string | null;
+    };
+    const isAdmin = p.role === "admin";
+    const used = isAdmin ? 0 : await getMonthlyUsageWith(supabase, userId, p.current_period_start);
+    return recastCreditsLeft({
+      isAdmin,
+      plan: p.plan,
+      planStatus: p.plan_status ?? null,
+      bonus: p.bonus_credits ?? 0,
+      purchased: p.purchased_credits ?? 0,
+      used,
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function readTakeLogs(supabase: SupabaseClient, ids: string[]): Promise<Map<string, unknown>> {
+  if (ids.length === 0) return new Map();
+  try {
+    const { data, error } = await supabase.from("generations").select("id, pipeline_log").in("id", ids);
+    if (error || !data) return new Map();
+    return new Map((data as { id: string; pipeline_log: unknown }[]).map((r) => [r.id, r.pipeline_log]));
+  } catch {
+    return new Map();
+  }
+}
 
 export async function getRecastHome(
   supabase: SupabaseClient,
   userId: string,
-): Promise<{ characters: RecastCharacter[]; motions: RecastMotion[]; takes: RecastTake[] }> {
-  const [{ data: characterRows }, { data: videoRows }] = await Promise.all([
+): Promise<{
+  characters: RecastCharacter[];
+  motions: RecastMotion[];
+  takes: RecastTake[];
+  /** Their own "tell me when it's done / when something went wrong" settings, which the door's in-page notice follows too. */
+  notify: { ready: boolean; failed: boolean };
+  /** What they have left to spend; null when it could not be read. */
+  balance: RecastBalance | null;
+}> {
+  const [{ data: characterRows }, { data: videoRows }, notify, balance] = await Promise.all([
     supabase
       .from("character_profiles")
       .select("id, name, reference_image_urls")
@@ -91,6 +182,8 @@ export async function getRecastHome(
       // its own, below.
       .order("created_at", { ascending: false })
       .limit(120),
+    readRenderNotifyPrefs(supabase, userId),
+    readRecastBalance(supabase, userId),
   ]);
 
   const characters: RecastCharacter[] = (characterRows ?? []).map((c) => ({
@@ -115,12 +208,27 @@ export async function getRecastHome(
     .filter((g) => RECAST_MODEL_IDS.includes((g.model_id as string | null) ?? ""))
     .filter((g) => g.status !== "succeeded" || playable(g) !== null)
     .slice(0, 24);
-  const recipes = await readRecastRecipes(supabase, takeRows.map((g) => g.id as string));
+  const [recipes, logs] = await Promise.all([
+    readRecastRecipes(supabase, takeRows.map((g) => g.id as string)),
+    readTakeLogs(
+      supabase,
+      takeRows.filter((g) => g.status === "succeeded" || g.status === "failed").map((g) => g.id as string),
+    ),
+  ]);
 
-  const takes: RecastTake[] = takeRows
-    .map((g) => ({
+  const takes: RecastTake[] = takeRows.map((g) => {
+    // A take that did not deliver says how it ended: a stop is not a failure
+    // (it used to read "Didn't finish", the same as one), and a failure says
+    // why and whether its credits came back (door-truth.ts).
+    const outcome =
+      g.status === "failed"
+        ? recastTakeOutcome({ credits_used: (g.credits_used as number | null) ?? null, pipeline_log: logs.get(g.id as string) })
+        : null;
+    const status: RecastTake["status"] =
+      g.status === "succeeded" ? "succeeded" : g.status === "failed" ? (outcome?.stopped ? "stopped" : "failed") : "generating";
+    return {
       id: g.id as string,
-      status: (g.status === "succeeded" ? "succeeded" : g.status === "failed" ? "failed" : "generating") as RecastTake["status"],
+      status,
       characterName: nameOf.get(g.character_profile_id as string) ?? null,
       engine: recastEngineOfModel(g.model_id as string | null),
       seconds: (g.video_duration_seconds as number | null) ?? null,
@@ -133,7 +241,11 @@ export async function getRecastHome(
         path,
         url: thumbUrl(mediaUrl(RECAST_IMAGE_BUCKET, path), 320) ?? "",
       })),
-    }));
+      progress: status === "generating" ? ((g.progress_stage as string | null) ?? null) : null,
+      outcome,
+      report: status === "succeeded" ? recastTakeReport(logs.get(g.id as string)) : null,
+    };
+  });
 
   // Anything finished, playable and the right length can be performed again
   // — including this door's own takes, so a recast can be recast.
@@ -156,7 +268,7 @@ export async function getRecastHome(
     .filter((m): m is RecastMotion => m !== null)
     .slice(0, 18);
 
-  return { characters, motions, takes };
+  return { characters, motions, takes, notify, balance };
 }
 
 const ORPHAN_AFTER_MS = 60 * 60_000;
