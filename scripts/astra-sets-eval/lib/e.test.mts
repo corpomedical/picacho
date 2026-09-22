@@ -58,15 +58,23 @@ afterEach(() => {
 
 const picture = (w: number, h: number, shade: number) => (sharp as SharpFn)({ create: { width: w, height: h, channels: 3, background: { r: shade, g: 110, b: 90 } } });
 
+/**
+ * The pictures' bytes, drawn once for the file: sharp makes the same bytes
+ * every time, and every test writes them into a corpus of its own.
+ */
+let pictures: Promise<Record<string, Buffer>> | null = null;
+const corpusPictures = () =>
+  (pictures ??= (async (): Promise<Record<string, Buffer>> => ({
+    "mt-1": await picture(1536, 1024, 40).withExif({ IFD2: { FocalLengthIn35mmFilm: "26", FocalLength: "57/10" } }).jpeg().toBuffer(),
+    "mt-2": await picture(1600, 1200, 80).withMetadata({ orientation: 6 }).withExif({ IFD2: { FocalLengthIn35mmFilm: "50" } }).jpeg().toBuffer(),
+    "mt-3": await picture(1200, 800, 120).png().toBuffer(),
+  }))());
+
 /** Three reference pictures: the lens in the file's EXIF; a phone portrait (orientation 6) whose match.json disagrees on the orientation; and one with no lens at all. */
 async function corpus(): Promise<{ dir: string; files: Record<string, Buffer> }> {
   const dir = join(root, "corpus");
   mkdirSync(join(dir, "match-photos"), { recursive: true });
-  const files: Record<string, Buffer> = {
-    "mt-1": await picture(1536, 1024, 40).withExif({ IFD2: { FocalLengthIn35mmFilm: "26", FocalLength: "57/10" } }).jpeg().toBuffer(),
-    "mt-2": await picture(1600, 1200, 80).withMetadata({ orientation: 6 }).withExif({ IFD2: { FocalLengthIn35mmFilm: "50" } }).jpeg().toBuffer(),
-    "mt-3": await picture(1200, 800, 120).png().toBuffer(),
-  };
+  const files = await corpusPictures();
   const rows = [
     { id: "mt-1", file: "match-photos/mt-1.jpg", licence: "generated for this test", containsPeople: false },
     { id: "mt-2", file: "match-photos/mt-2.jpg", licence: "generated for this test", containsPeople: true, exif: { focal35mm: 50, orientation: 1 }, consent: { kind: "ai-generated", covers: ["OpenAI", "Anthropic", "raters"], confirmedBy: "test" } },
@@ -193,7 +201,13 @@ describe("E never goes near Batch", () => {
   });
 });
 
-describe.skipIf(!sharp)("E, run", () => {
+// Every run here has libvips read, turn, scale and write real pictures (the
+// photos prepared, their sheet copies outlined and read back): 0.1–0.5 s a
+// test alone, but up to 5.7 s when three full suites run at once, as other
+// sessions' do on this machine (measured 2026-09-22). That time is the
+// machine's, not the part's, so the block has room for it rather than
+// vitest's 5 s, as photos.test.mts's has.
+describe.skipIf(!sharp)("E, run", { timeout: 60_000 }, () => {
   it("a dry run: the truth from each file, the product's preparation, fake reads, every read's stage view, a blind sheet — and nothing sent", async () => {
     const { dir } = await corpus();
     const seen: RenderJob[] = [];

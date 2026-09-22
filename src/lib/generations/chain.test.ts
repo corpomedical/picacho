@@ -457,13 +457,25 @@ describe("a long take on the real encoder", () => {
     }
   })();
 
+  // Thirteen runs of the real binary, the first test to start in every
+  // suite: about 10 s alone, 63–101 s with three full suites running at once
+  // on this 8 GB machine, swapping, with an emulator up (2026-09-22). At
+  // 1080p, with a decode for every frame looked at, it took 175–227 s there
+  // and failed this same 180 s in 9 of 15 suites.
   it.skipIf(!ffmpeg)("cuts, chains and joins to exactly the source's frames and sound, with renders that come back short", () => {
     const dir = mkdtempSync(join(tmpdir(), "chain-test-"));
     const run = (args: string[]) => execFileSync(ffmpeg!, args, { maxBuffer: 256 * 1024 * 1024 });
     const framesOf = (file: string) => probeMp4(readFileSync(file))!.frames!;
     // Kling's habits, faked: the render comes back larger and SHORT by `drop`.
+    // Larger than the 1280 × 720 window, so the next piece and the join are
+    // scaled to the render's own size as they are for a real take; not 1080p,
+    // whose frames made the join and the second piece most of this test's
+    // encoding (the size is not what it proves). On two threads, as the
+    // product's own encodes (chain.ts ENCODE): left to itself x264 starts a
+    // dozen beside every other suite on the machine.
+    const RENDER = { width: 1440, height: 810 };
     const fakeRender = (input: string, output: string, drop: number) => {
-      run(["-y", "-v", "error", "-i", input, "-vf", `scale=1920:1080,trim=end_frame=${framesOf(input) - drop}`, "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "copy", output]);
+      run(["-y", "-v", "error", "-i", input, "-vf", `scale=${RENDER.width}:${RENDER.height},trim=end_frame=${framesOf(input) - drop}`, "-c:v", "libx264", "-preset", "ultrafast", "-threads", "2", "-c:a", "copy", output]);
       return framesOf(output);
     };
     try {
@@ -500,7 +512,7 @@ describe("a long take on the real encoder", () => {
         window: windowFile,
         from: switchAt,
         to: 480,
-        size: { width: 1920, height: 1080 },
+        size: RENDER,
         output: second,
       }));
       expect(framesOf(second)).toBe(plan.lengths[1]);
@@ -526,7 +538,7 @@ describe("a long take on the real encoder", () => {
       );
       expect(hold).toBe(3);
       const take = join(dir, "take.mp4");
-      run(chainJoinArgs({ pieces: [render1, render2], spans, hold, window: windowFile, totalFrames: 480, size: { width: 1920, height: 1080 }, output: take }));
+      run(chainJoinArgs({ pieces: [render1, render2], spans, hold, window: windowFile, totalFrames: 480, size: RENDER, output: take }));
       const joined = probeMp4(readFileSync(take))!;
       expect(joined.frames).toBe(480);
       expect(joined.seconds).toBeGreaterThan(19.9);
@@ -544,11 +556,25 @@ describe("a long take on the real encoder", () => {
       // In step with the source to the last frame: testsrc2 draws a moving
       // pattern, so the take's frame f must look like the window's frame f —
       // at the start, across the join and at the very end (the held frame
-      // aside).
-      const look = (file: string, f: number) => run(["-v", "error", "-i", file, "-vf", `fps=24,trim=start_frame=${f}:end_frame=${f + 1},setpts=PTS-STARTPTS,scale=96:54,format=gray`, "-fps_mode", "passthrough", "-f", "rawvideo", "-"]);
-      for (const f of [10, switchAt - 12, switchAt + 12, 470]) {
-        const same = chainFrameDistance(look(take, f), look(windowFile, f));
-        const off = chainFrameDistance(look(take, f), look(windowFile, f + 3));
+      // aside). Each file's frames, as fps=24 numbers them, small and grey,
+      // come from one decode of it: a decode per frame read each file from
+      // its start every time, and the take twice a frame (16 runs where 2
+      // do: 18 of the test's 57 CPU-seconds, 2026-09-22). Byte for byte the
+      // same frames.
+      const looks = (file: string, frames: number[]) => {
+        const wanted = [...new Set(frames)].sort((a, b) => a - b);
+        const picked = wanted.map((f) => `eq(n\\,${f})`).join("+");
+        const raw = run(["-v", "error", "-i", file, "-vf", `fps=24,select='${picked}',scale=96:54,format=gray`, "-fps_mode", "passthrough", "-f", "rawvideo", "-"]);
+        const size = 96 * 54;
+        expect(raw.length, `${file}: frames ${wanted}`).toBe(wanted.length * size);
+        return new Map(wanted.map((f, k) => [f, raw.subarray(k * size, (k + 1) * size)]));
+      };
+      const checked = [10, switchAt - 12, switchAt + 12, 470];
+      const inTake = looks(take, checked);
+      const inWindow = looks(windowFile, checked.flatMap((f) => [f, f + 3]));
+      for (const f of checked) {
+        const same = chainFrameDistance(inTake.get(f)!, inWindow.get(f)!);
+        const off = chainFrameDistance(inTake.get(f)!, inWindow.get(f + 3)!);
         expect(same, `frame ${f}`).toBeLessThan(off);
       }
     } finally {

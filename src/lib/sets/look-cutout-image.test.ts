@@ -82,16 +82,21 @@ describe.skipIf(!sharp)("composeLookCutout (sharp)", () => {
     // The margin is grey, never the red the transparent pixels carried:
     // nowhere reddish, and the ground itself wherever JPEG's 16-pixel blocks
     // (and the decoder's smoothing across their borders) do not also reach
-    // the edge of the object — beside it, JPEG rings.
+    // the edge of the object — beside it, JPEG rings. Every margin pixel is
+    // compared plainly and a failing one is written down: an expect call for
+    // each, message and all, took 0.3–1.2 s alone and up to 7.1 s with three
+    // full suites running at once (2026-09-22); now 20–40 ms alone.
     const clear = (x: number, y: number) => x < 12 || y < 12 || x >= 212 || y >= 148;
+    const wrong: string[] = [];
     for (let y = 0; y < info.height; y++) {
       for (let x = 0; x < info.width; x++) {
         if (x >= margin && x < info.width - margin && y >= margin && y < info.height - margin) continue;
         const [r, g, b] = px(x, y);
-        expect(r - Math.min(g, b), `(${x}, ${y}) = ${[r, g, b]}`).toBeLessThan(40);
-        if (clear(x, y)) for (const c of [r, g, b]) expect(Math.abs(c - 128), `(${x}, ${y}) = ${[r, g, b]}`).toBeLessThanOrEqual(3);
+        if (!(r - Math.min(g, b) < 40)) wrong.push(`(${x}, ${y}) = ${[r, g, b]}: reddish`);
+        if (clear(x, y) && [r, g, b].some((c) => !(Math.abs(c - 128) <= 3))) wrong.push(`(${x}, ${y}) = ${[r, g, b]}: not the ground`);
       }
     }
+    expect(wrong.slice(0, 5), `${wrong.length} pixels`).toEqual([]);
     // The object is still itself.
     const [r, g, b] = px(Math.floor(info.width / 2), Math.floor(info.height / 2));
     expect(b).toBeGreaterThan(220);

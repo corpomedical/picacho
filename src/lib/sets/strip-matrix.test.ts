@@ -28,28 +28,42 @@ describe("the strip, across every prompt the page can build", () => {
     ];
     let runs = 0;
     const leaks: string[] = [];
+    // Of the outer loops, the builder is handed only the band, the rig's
+    // sentences and whether the rig lights and the sketch is lifted. Half of
+    // their 48 settings hand it exactly what another already did (with the
+    // rig off, both squeezes and the four banded formats say the same), so
+    // they would build and strip the same 128 prompts again: each setting
+    // the builder can tell apart is swept once: the same 3,072 prompts. All
+    // 6,144 combinations, half of them repeats, took 0.2–1.0 s alone and up
+    // to 8.5 s with three full suites running at once (2026-09-22); the
+    // sweep now takes 60 ms warm.
+    const swept = new Set<string>();
+    const ctx = { distanceM: 5.2, fovDeg: 40, cameraBearingDeg: 0, push: [] };
     for (const format of RIG_FORMAT_ORDER)
       for (const squeeze of [1, 2])
         for (const lifted of [false, true])
-          for (const rigOn of [false, true])
+          for (const rigOn of [false, true]) {
+            const rig = normaliseSetRig({
+              ...DEFAULT_SET_RIG,
+              format,
+              squeeze,
+              lens: "anamorphic",
+              stop: rigOn ? 2 : null,
+              blades: rigOn ? 11 : null,
+              light: rigOn ? { scheme: "golden-hour", bearingDeg: 40, heightDeg: 20 } : null,
+              palette: rigOn ? "amber-hour" : null,
+              stock: rigOn ? "film35" : null,
+            });
+            const sentences = rigOn ? rigSentences(rig, ctx) : [];
+            const band = format === "square" ? null : format === "vertical" ? ("columns" as const) : ("rows" as const);
+            const handed = JSON.stringify([band, sentences, rigOn, lifted]);
+            if (swept.has(handed)) continue;
+            swept.add(handed);
             for (const look of [null, {}])
               for (const sourcePhoto of [false, true])
                 for (const gaze of gazes)
                   for (const layout of layouts)
                     for (const direction of ["", "she leans on the car"]) {
-                      const rig = normaliseSetRig({
-                        ...DEFAULT_SET_RIG,
-                        format,
-                        squeeze,
-                        lens: "anamorphic",
-                        stop: rigOn ? 2 : null,
-                        blades: rigOn ? 11 : null,
-                        light: rigOn ? { scheme: "golden-hour", bearingDeg: 40, heightDeg: 20 } : null,
-                        palette: rigOn ? "amber-hour" : null,
-                        stock: rigOn ? "film35" : null,
-                      });
-                      const ctx = { distanceM: 5.2, fovDeg: 40, cameraBearingDeg: 0, push: [] };
-                      const band = format === "square" ? null : format === "vertical" ? ("columns" as const) : ("rows" as const);
                       const prompt = buildSetShotPrompt({
                         description: DESC,
                         direction,
@@ -57,7 +71,7 @@ describe("the strip, across every prompt the page can build", () => {
                         layout,
                         look,
                         sourcePhoto,
-                        rig: rigOn ? rigSentences(rig, ctx) : [],
+                        rig: sentences,
                         rigLight: rigOn,
                         band,
                         gaze,
@@ -67,7 +81,9 @@ describe("the strip, across every prompt the page can build", () => {
                       runs++;
                       if (left !== expected && leaks.length < 3) leaks.push(left.slice(0, 200));
                     }
-    expect(runs).toBeGreaterThan(4000);
+          }
+    // 3,072 prompts, every one of them different.
+    expect(runs).toBeGreaterThan(3000);
     expect(leaks, leaks.join("\n---\n")).toEqual([]);
   });
 

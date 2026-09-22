@@ -8,6 +8,10 @@ import {
   VIDEO_MODELS,
 } from "./providers/video-models";
 import { resolutionCreditWeight, videoResolutionOffers } from "./providers/video-resolution";
+import en from "../i18n/messages/en";
+import es from "../i18n/messages/es";
+import pt from "../i18n/messages/pt";
+import it_ from "../i18n/messages/it";
 
 // The composer's model picker (2026-09-01: four featured lanes, was three).
 //
@@ -21,6 +25,12 @@ import { resolutionCreditWeight, videoResolutionOffers } from "./providers/video
 // Nothing else in the codebase ties those two lists together, which is
 // exactly why this file does.
 
+// Imported with the file, as the other tests that read every catalogue do:
+// imported inside the tests, the four 200 KB catalogues' loading counted
+// against a test's 5 s, 0.2–1 s alone and up to 5.5 s with three full
+// suites running at once (2026-09-22), while the check itself takes a
+// millisecond.
+const CATALOGUES = { en, es, pt, it: it_ } as { [locale: string]: { generate: Record<string, unknown> } };
 const LOCALES = ["en", "es", "pt", "it"] as const;
 
 describe("featured video models", () => {
@@ -41,14 +51,12 @@ describe("featured video models", () => {
     }
   });
 
-  it("has one job line per featured lane, in every language", async () => {
+  it("has one job line per featured lane, in every language", () => {
     // Counted rather than mapped: the id -> key mapping lives in
     // generate-form.tsx, which a no-config vitest run cannot import. The
     // count and the key SET are the parts that actually break.
     for (const loc of LOCALES) {
-      const messages = (await import(`../i18n/messages/${loc}`)).default as {
-        generate: Record<string, unknown>;
-      };
+      const messages = CATALOGUES[loc];
       const jobKeys = Object.keys(messages.generate)
         .filter((k) => k.startsWith("modelJob"))
         .sort();
@@ -63,19 +71,14 @@ describe("featured video models", () => {
     }
   });
 
-  it("uses the same job keys in every language", async () => {
+  it("uses the same job keys in every language", () => {
     // A key present in en but missing in pt is the real-world shape of this
     // bug — the English reviewer never sees it.
-    const perLocale = await Promise.all(
-      LOCALES.map(async (loc) => {
-        const messages = (await import(`../i18n/messages/${loc}`)).default as {
-          generate: Record<string, unknown>;
-        };
-        return Object.keys(messages.generate)
-          .filter((k) => k.startsWith("modelJob"))
-          .sort()
-          .join(",");
-      }),
+    const perLocale = LOCALES.map((loc) =>
+      Object.keys(CATALOGUES[loc].generate)
+        .filter((k) => k.startsWith("modelJob"))
+        .sort()
+        .join(","),
     );
     expect(new Set(perLocale).size, `job keys differ between locales: ${perLocale}`).toBe(1);
   });

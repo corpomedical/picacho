@@ -379,6 +379,14 @@ describe("solveMatchPose — the mark lands where the subject sat, at the tilt r
   it("holds for 2,000 random sets, marks, cameras and answers, inside every limit a saved layout keeps", () => {
     let seed = 20260911;
     const rand = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    // Every check is the comparison its matcher makes (toBeCloseTo's too,
+    // copied from vitest), and a case that fails one is written down: about
+    // 30,000 expect calls were 85% of this test's time, 0.3–1.4 s alone and
+    // up to 6.3 s with three full suites running at once (2026-09-22); the
+    // cases themselves take 20–25 ms.
+    const misses: string[] = [];
+    const closeTo = (a: number, b: number, digits: number) =>
+      (a === Infinity && b === Infinity) || (a === -Infinity && b === -Infinity) || Math.abs(b - a) < 10 ** -digits / 2;
     for (let i = 0; i < 2000; i++) {
       const bounds = { x: 2 + rand() * 198, z: 2 + rand() * 198, height: 2 + rand() * 98 };
       const mark = { x: (rand() - 0.5) * bounds.x, z: (rand() - 0.5) * bounds.z, facingDeg: rand() * 360 };
@@ -396,30 +404,34 @@ describe("solveMatchPose — the mark lands where the subject sat, at the tilt r
         subjectX: rand(),
       });
       const canvas = 0.45 + rand() * 2;
-      const label = `case ${i}`;
+      const miss = (what: string) => void (misses.length < 10 && misses.push(`case ${i}: ${what}`));
       const { pose, notes } = solveMatchPose(m, { mark, current, referenceAspect: aspect, bounds, canvasAspect: canvas });
-      expect(finiteDeep(pose), label).toBe(true);
+      if (finiteDeep(pose) !== true) miss(`a pose that is not finite, ${JSON.stringify(pose)}`);
       const [px, py, pz] = pose.position;
-      expect(Math.abs(px), label).toBeLessThanOrEqual(bounds.x / 2 + 10 + 1e-9);
-      expect(Math.abs(pz), label).toBeLessThanOrEqual(bounds.z / 2 + 10 + 1e-9);
-      expect(py, label).toBeGreaterThanOrEqual(0.2);
-      expect(py, label).toBeLessThanOrEqual(bounds.height * 2);
-      expect(Math.hypot(px - mark.x, pz - mark.z), label).toBeGreaterThanOrEqual(0.6 - 1e-9);
-      for (const v of pose.target) expect(Math.abs(v), label).toBeLessThanOrEqual(200 + 1e-9);
-      expect(Math.hypot(pose.target[0] - px, pose.target[1] - py, pose.target[2] - pz), label).toBeGreaterThanOrEqual(0.5 - 1e-9);
+      if (!(Math.abs(px) <= bounds.x / 2 + 10 + 1e-9)) miss(`x ${px}, past ${bounds.x / 2 + 10}`);
+      if (!(Math.abs(pz) <= bounds.z / 2 + 10 + 1e-9)) miss(`z ${pz}, past ${bounds.z / 2 + 10}`);
+      if (!(py >= 0.2)) miss(`height ${py}, under 0.2`);
+      if (!(py <= bounds.height * 2)) miss(`height ${py}, over ${bounds.height * 2}`);
+      if (!(Math.hypot(px - mark.x, pz - mark.z) >= 0.6 - 1e-9)) miss(`${Math.hypot(px - mark.x, pz - mark.z)} m from the mark, under 0.6`);
+      for (const v of pose.target) if (!(Math.abs(v) <= 200 + 1e-9)) miss(`target ${pose.target}, past 200`);
+      const reach = Math.hypot(pose.target[0] - px, pose.target[1] - py, pose.target[2] - pz);
+      if (!(reach >= 0.5 - 1e-9)) miss(`target ${reach} m out, under 0.5`);
       const got = measure(pose, mark, canvas);
-      expect(Math.abs(got.x - expectedX(m.subjectX ?? 0.5, aspect)), label).toBeLessThanOrEqual(0.01);
-      expect(Math.abs(got.pitchDeg - Math.min(20, Math.max(-80, m.pitchDeg))), label).toBeLessThanOrEqual(0.1);
+      const offX = Math.abs(got.x - expectedX(m.subjectX ?? 0.5, aspect));
+      if (!(offX <= 0.01)) miss(`the mark ${offX} off where the subject sat`);
+      const offPitch = Math.abs(got.pitchDeg - Math.min(20, Math.max(-80, m.pitchDeg)));
+      if (!(offPitch <= 0.1)) miss(`the tilt ${offPitch}° off the read`);
       // Every limit that moved the camera off the read is noted: unless one
       // is, it stands at the read height and distance (the long lens's move
       // in included).
       const distance = Math.hypot(px - mark.x, pz - mark.z);
       const wanted = m.subjectDistanceM! * (notes.distanceScaled ?? 1);
-      if (!notes.distanceClampedNear && !notes.distanceClampedFar) expect(distance, label).toBeCloseTo(wanted, 9);
-      if (notes.distanceClampedNear) expect(distance, label).toBeGreaterThan(wanted);
-      if (notes.distanceClampedFar) expect(distance, label).toBeLessThan(wanted);
-      if (!notes.heightClampedLow && !notes.heightClampedHigh) expect(py, label).toBeCloseTo(m.cameraHeightM, 9);
+      if (!notes.distanceClampedNear && !notes.distanceClampedFar && !closeTo(distance, wanted, 9)) miss(`${distance} m out, not the ${wanted} read`);
+      if (notes.distanceClampedNear && !(distance > wanted)) miss(`clamped near, yet ${distance} m out, not past ${wanted}`);
+      if (notes.distanceClampedFar && !(distance < wanted)) miss(`clamped far, yet ${distance} m out, not short of ${wanted}`);
+      if (!notes.heightClampedLow && !notes.heightClampedHigh && !closeTo(py, m.cameraHeightM, 9)) miss(`height ${py}, not the ${m.cameraHeightM} read`);
     }
+    expect(misses).toEqual([]);
   });
 
   it("holds the tilt to what the stage camera can do: 20° up, 80° down", () => {

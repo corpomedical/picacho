@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { describe, expect, it } from "vitest";
 import {
   SET_MATCH_DEADLINE_MS,
@@ -89,6 +90,11 @@ describe("photoFit", () => {
     expect(photoFit(2048, 853)).toEqual({ ok: true, width: 2048, height: 853 });
     expect(photoFit(4800, 2000)).toEqual({ ok: true, width: 2048, height: 853 });
     expect(photoFit(3840, 1600)).toEqual({ ok: true, width: 2048, height: 853 });
+    // Compared plainly, and handed to expect only when a size fails:
+    // isDeepStrictEqual is stricter than toEqual, so nothing passes here that
+    // toEqual would refuse. 33,610 expect calls took 0.2–0.3 s alone and up
+    // to 5.5 s with three full suites running at once (2026-09-22); compared
+    // plainly, the same sizes take 15–30 ms.
     let checked = 0;
     for (let short = SET_PHOTO_MIN_SIDE_PX; short <= 4000; short++) {
       const edge = Math.floor(SET_PHOTO_MAX_ASPECT * short);
@@ -100,7 +106,8 @@ describe("photoFit", () => {
           const fit = photoFit(w, h);
           if (!fit.ok) continue;
           checked++;
-          expect(photoFit(fit.width, fit.height), `${w}×${h} → ${fit.width}×${fit.height}`).toEqual(fit);
+          const again = photoFit(fit.width, fit.height);
+          if (!isDeepStrictEqual(again, fit)) expect(again, `${w}×${h} → ${fit.width}×${fit.height}`).toEqual(fit);
         }
       }
     }
