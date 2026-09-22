@@ -5,12 +5,36 @@
 // a default 1-credit clip at ~$1.90, far above the competitive band; the new
 // ones land it at ~$0.50–0.75. Two rules shaped the exact figures:
 //
-//   1. The per-credit rate must IMPROVE monotonically up-tier:
-//      basic $0.75 → starter ~$0.63 → growth ~$0.56 → studio ~$0.54 →
-//      elite ~$0.50. The previous table quietly inverted at the top
-//      (Studio $1.99/credit was WORSE than Growth's $1.98, Elite barely
-//      better) — upgrading for volume made the unit price worse, which is
-//      backwards.
+//   1. The per-credit rate was meant to IMPROVE monotonically up-tier. The
+//      previous table quietly inverted at the top (Studio $1.99/credit was
+//      WORSE than Growth's $1.98, Elite barely better) — upgrading for
+//      volume made the unit price worse, which is backwards.
+//
+//      THE TABLE NO LONGER SATISFIES THIS RULE, and has not since
+//      2026-08-31. Elite's allowance went 1000 → 600 → 750 at an unchanged
+//      $499 to fix its margin (the full arithmetic is on PLAN_LIMITS.elite
+//      below), and that re-broke the ladder the restructure existed to
+//      build. Monthly price / credits as the table actually stands:
+//
+//        basic    $9 / 12  = $0.750
+//        starter $19 / 30  = $0.633
+//        growth  $79 / 140 = $0.564
+//        studio $299 / 550 = $0.544  <- the CHEAPEST credit on offer
+//        elite  $499 / 750 = $0.665  <- 22% WORSE per credit than Studio
+//
+//      So ELITE IS NO LONGER THE CHEAPEST CREDIT. It is the second-worst
+//      rate in the table: dearer per credit than Studio, Growth and even
+//      Starter, with only Basic above it. Annual has the same shape —
+//      Studio $254/550 = $0.462 against Elite $399/750 = $0.532, 15% worse,
+//      and Elite annual only just edges Starter's $0.533.
+//
+//      This is a PRICED trade, not an oversight: closing it means either
+//      more Elite credits (950 was costed and REJECTED — it prices annual
+//      Elite at a 0.3% margin) or a lower Elite price, and both are
+//      operator calls. Elite's reason to exist is the volume ceiling and
+//      API access, not the unit price. Until that call is made, nothing —
+//      code comment, pricing page or marketing copy — may claim Elite is
+//      the best value per credit: it is one division away from any reader.
 //   2. Basic deliberately has the WORST rate in the table. It exists to make
 //      the first paid click cheap, not to be good value — the honest upsell
 //      into Starter is "same credits cost less per credit".

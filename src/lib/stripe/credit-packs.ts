@@ -8,11 +8,23 @@
 // sit on a small plan and top up forever, which converts predictable
 // recurring revenue into lumpy one-off revenue and makes UPGRADING
 // pointless — the one thing packs must never do. Rates below are
-// $0.75/$0.70/$0.66 per credit against plan rates of basic $0.75 →
-// starter ~$0.63 → elite ~$0.50: above every plan rate except Basic's,
-// which is deliberate — Basic is priced as the worst rate in the whole
-// system on purpose (see PLAN_LIMITS in plans.ts), so a pack tying it
-// still leaves every upgrade a strictly better deal.
+// $0.750/$0.700/$0.660 per credit, against the real monthly plan rates of
+// basic $0.750 → starter $0.633 → growth $0.564 → studio $0.544 →
+// elite $0.665 (see PLAN_LIMITS in plans.ts). Packs sit above Starter,
+// Growth and Studio as intended, and TIE Basic, which is deliberate —
+// Basic is priced as the worst rate in the whole system on purpose, so a
+// pack tying it still leaves every upgrade a strictly better deal.
+//
+// ONE EXCEPTION, and it is this rule genuinely broken: the 150-credit pack
+// at $0.660 is 0.8% CHEAPER than Elite's $0.665, so an Elite subscriber
+// tops up slightly below their own plan rate. The cause is not this table
+// but Elite's allowance fix (1000 → 600 → 750 at an unchanged $499 on
+// 2026-08-31, see PLAN_LIMITS.elite): the ceiling here was benchmarked
+// against an Elite rate of ~$0.50 that no longer exists, and Elite stopped
+// being the cheapest plan per credit. The gap is small and the exposure is
+// nil today — there are no Elite subscribers — but it is a real inversion,
+// and closing it needs a price move on one side or the other, which is an
+// operator call rather than a comment edit.
 //
 // The pack data itself lives in credit-packs.json (plain JSON, not TS) so
 // setup-credit-packs.js can require() the very same file this module

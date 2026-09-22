@@ -9,11 +9,19 @@
 //
 // Credits restructure (2026-08-19, operator-approved): monthly prices are
 // unchanged but every tier's credits multiplied (see PLAN_LIMITS in plans.ts
-// for the full rationale — per-credit rate now improves monotonically
-// up-tier, and a default clip costs ~$0.50–0.75 instead of ~$1.90), and a $9
-// Basic tier was added underneath Starter. `credits` here MUST stay equal to
-// PLAN_LIMITS — this table is what the marketing pages print, PLAN_LIMITS is
-// what the server enforces, and the two disagreeing is false advertising.
+// for the full rationale — a default clip costs ~$0.50–0.75 instead of
+// ~$1.90), and a $9 Basic tier was added underneath Starter.
+//
+// The per-credit rate improves up the ladder as far as Studio ($299/550 =
+// $0.544, the cheapest credit here) and then BREAKS at Elite ($499/750 =
+// $0.665, 22% worse than Studio) — a consequence of the 2026-08-31 fix to
+// Elite's margin, priced and accepted. ELITE IS NOT THE BEST VALUE PER
+// CREDIT, and no copy fed by this table may say it is. Full arithmetic on
+// PLAN_LIMITS in plans.ts.
+//
+// `credits` here MUST stay equal to PLAN_LIMITS — this table is what the
+// marketing pages print, PLAN_LIMITS is what the server enforces, and the
+// two disagreeing is false advertising.
 
 // annualPrice is the per-month equivalent when billed yearly (total charged
 // = annualPrice * 12). Trimmed 2026-08-19 from ~25% off ("3 months free") to
