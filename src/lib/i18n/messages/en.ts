@@ -3095,6 +3095,7 @@ const en = {
     stageLayers: "Splitting into layers",
     stageRecastPart: "Rendering part {part} of {of}",
     stageRecastJoin: "Joining the parts",
+    chainGaveUp: "This take couldn't be finished: a step on our side kept failing, so we stopped trying.",
     sessionExpired: "Your session expired — please log in again.",
     suspended: "Your account is suspended. Contact support if you think this is a mistake.",
     suspendedShort: "This account is suspended.",

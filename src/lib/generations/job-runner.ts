@@ -58,6 +58,15 @@ import {
   joinChain,
   prepareNextPiece,
 } from "@/lib/generations/chain-run";
+import {
+  CHAIN_GAVE_UP,
+  CHAIN_GAVE_UP_ISSUE,
+  chainGivesUp,
+  chainRetryDue,
+  nextChainError,
+  reaperMayWriteOff,
+  type ChainError,
+} from "@/lib/generations/chain-failure";
 
 // Fire-and-poll orchestrator.
 //
@@ -163,8 +172,11 @@ type JobRow = {
     // The last time our side of a long take's step failed and was kept for
     // another pass: when, what the encoder or storage said, how many times
     // in a row. On the row so a stuck take can be read without the server
-    // logs (2026-09-19); cleared when the next piece starts.
-    chainError?: { at: string; message: string; count: number };
+    // logs (2026-09-19); cleared when the next piece starts. Since
+    // 2026-09-22 it also keeps WHEN THE FIRST failure was (firstAt), and it
+    // is read: six tries or two hours from then and the take gives up
+    // (chain-failure.ts).
+    chainError?: ChainError;
   };
   resume: ResumeState;
   started_at: string;
@@ -1184,8 +1196,14 @@ async function finish(
     outcome.fault !== "abandoned"
   ) {
     try {
-      const lastAttempt = outcome.attempts[outcome.attempts.length - 1];
+      const lastAttempt = outcome.attempts[outcome.attempts.length - 1] as AttemptWithChainError | undefined;
+      // A long take that gave up carries the encoder's or storage's own
+      // words beside its plain sentence (2026-09-22) — the report is the one
+      // place a person at Picacho reads why, so it gets those.
       const failureDetail =
+        (lastAttempt?.chainError
+          ? `Long take gave up after ${lastAttempt.chainError.count} tries: ${lastAttempt.chainError.message}`
+          : null) ??
         [...(lastAttempt?.steps ?? [])].reverse().find((s) => isRawProviderError(s.detail))
           ?.detail ??
         lastAttempt?.steps[lastAttempt.steps.length - 1]?.detail ??
@@ -1490,6 +1508,38 @@ async function finish(
   return true;
 }
 
+/** A pipeline attempt that may carry a long take's last failure beside its steps (2026-09-22). */
+type AttemptWithChainError = AttemptLog & { chainError?: ChainError };
+
+/**
+ * A long take whose step on our side has failed for good (chain-failure.ts:
+ * six tries, or two hours from the first) ENDS here instead of being kept
+ * for another pass (2026-09-22: no dead ends).
+ *
+ * It is settled EXACTLY as any failed take is today, through finish() with
+ * fault our_error. No new refund rule, nothing forced past the cap:
+ * REFUNDS.our_error returns the credit through refundGenerationCosts, which
+ * needs the automatic_refunds switch on and the account under its daily
+ * refund ceiling (forceRefundEligible is false here — a later part's
+ * "Rendered the video's part…" marks it billed, and no provider refused
+ * anything). The push notification says which of the two happened.
+ *
+ * The reason survives the job row, which finish() deletes: the plain
+ * sentence is the attempt's last step (translated for the door and History,
+ * lib/i18n/server-text.ts), CHAIN_GAVE_UP_ISSUE marks the attempt for the
+ * door to read without matching words, and the encoder's or storage's own
+ * words ride beside the steps as `chainError` — where History never shows
+ * them and the auto-filed report does.
+ */
+async function giveUpOnChain(generationId: string, userId: string, row: JobRow, error: ChainError): Promise<AdvanceResult> {
+  const attempts = markIssue(appendStep(row.resume.attempts ?? [], CHAIN_GAVE_UP, "generate"), CHAIN_GAVE_UP_ISSUE);
+  const last = attempts.length - 1;
+  const withReason: AttemptWithChainError = { ...attempts[last], chainError: error };
+  attempts[last] = withReason;
+  await finish(generationId, userId, { status: "failed", attempts, fault: "our_error" });
+  return { state: "failed", message: CHAIN_GAVE_UP };
+}
+
 /** Tag the last attempt with an issue marker (idempotent). */
 function markIssue(attempts: AttemptLog[], issue: string): AttemptLog[] {
   const last = attempts[attempts.length - 1];
@@ -1733,9 +1783,23 @@ export async function advanceGeneration(
   // A long take's step needs the encoder, and only the routes next.config.ts
   // traces it into carry one. Anywhere else, the piece is left for one that
   // does — fal's webhook, the door, History, the reconcile cron — rather than
-  // claimed and failed.
+  // claimed and failed. Only a route that can run the step may decide it has
+  // failed for good (below), so the give-up waits for one too.
   if (chainStep && !chainEncoderAvailable()) {
     return { state: "pending", stage: row.stage, progress: progressOf(row) };
+  }
+  // THE WAIT BETWEEN TRIES (2026-09-22). A step that failed is tried again
+  // only once its wait is up (a minute, doubling, at most half an hour —
+  // chain-failure.ts chainRetrySpacingMs). Every page showing the take polls
+  // every few seconds, and each poll used to run the whole failing download
+  // and encode again; with six tries to a take, polls would spend them all
+  // in half a minute. A take already past its give-up is not waited on:
+  // the claim below and the chain branch end it.
+  if (chainStep && row.payload.chainError) {
+    const now = Date.now();
+    if (!chainGivesUp(row.payload.chainError, now) && !chainRetryDue(row.payload.chainError, now)) {
+      return { state: "pending", stage: row.stage, progress: progressOf(row) };
+    }
   }
   if (!(await claimAdvance(admin, generationId, row.provider_request_id, chainStep ? CHAIN_LEASE_SECONDS : ADVANCE_LEASE_SECONDS))) {
     return { state: "pending", stage: row.stage, progress: progressOf(row) };
@@ -1882,6 +1946,13 @@ export async function advanceGeneration(
       const chain = chainStep;
       const k = chain.index;
       const pieces = chain.lengths.length;
+      // Past its give-up already — two hours since the step first failed, or
+      // a row from before 2026-09-22 that had counted six and more — so no
+      // further try: the take ends here (chain-failure.ts).
+      const standing = row.payload.chainError;
+      if (standing && chainGivesUp(standing, Date.now())) {
+        return await giveUpOnChain(generationId, userId, row, standing);
+      }
       const { url: renderUrl } = await fetchVideoResult(jobHandle(row));
 
       let prepared: Awaited<ReturnType<typeof prepareNextPiece>>;
@@ -1907,14 +1978,21 @@ export async function advanceGeneration(
         // storage. Kept for another pass (fal's webhook retries, the door
         // polls, the reaper comes back), never booked as the provider's
         // failure: every piece so far rendered and was paid for.
+        //
+        // COUNTED, AND CAPPED (2026-09-22): the failure is recorded on the
+        // row with when the first one was, and the sixth failure — or any
+        // failure two hours after the first — is the last. The take then
+        // gives up instead of being kept for a pass that will fail the same
+        // way (chain-failure.ts says why six and why two hours).
         if (err instanceof ChainRetry) {
+          const now = Date.now();
+          const chainError = nextChainError(row.payload.chainError, err.message, now);
+          if (chainGivesUp(chainError, now)) {
+            return await giveUpOnChain(generationId, userId, row, chainError);
+          }
           await releaseAdvanceClaim(admin, generationId, row.provider_request_id, {
             ...row.payload,
-            chainError: {
-              at: new Date().toISOString(),
-              message: err.message.slice(0, 1500),
-              count: (row.payload.chainError?.count ?? 0) + 1,
-            },
+            chainError,
           });
           throw new CriticalWriteError(`Long take, after part ${k + 1} of ${pieces}: ${err.message}`);
         }
@@ -2469,10 +2547,25 @@ export async function reapStaleJobs(userId: string): Promise<void> {
     let result: AdvanceResult | null = null;
     try {
       result = await advanceGeneration(row.generation_id, row.user_id);
-    } catch {
+    } catch (err) {
       // advanceGeneration handles fal transport errors internally (returning
-      // "pending"), so reaching here is genuinely unexpected. Leave the row for
-      // the next reap rather than deleting work we couldn't classify.
+      // "pending"), so reaching here means our own side failed: a database
+      // write, or a long take's step. Leave the row for the next reap rather
+      // than deleting work we couldn't classify.
+      //
+      // No longer in silence (2026-09-22). This catch was empty, and it is
+      // where a long take stuck at "Joining the parts" went to hide: the
+      // step's error was swallowed, the write-off below never saw a result,
+      // and nothing anywhere said why. The failure is COUNTED on the take's
+      // row by the advance itself before it throws (payload.chainError), and
+      // that count is what ends the take — its sixth failure, or any after
+      // two hours, gives up inside the advance (chain-failure.ts). So a
+      // stuck take no longer waits on this backstop at all; the reap is one
+      // more pass that tries it, and this line is the trace it leaves.
+      console.warn("[reaper] a stale job couldn't be advanced; left for the next pass", {
+        generationId: row.generation_id,
+        error: err instanceof Error ? err.message.slice(0, 500) : String(err),
+      });
     }
 
     // Absolute deadline. If a real advance still left the job "pending" and its
@@ -2489,6 +2582,28 @@ export async function reapStaleJobs(userId: string): Promise<void> {
         .maybeSingle<JobRow>();
       if (!current) continue; // already finished or collected in the meantime
       if (Date.now() - Date.parse(current.updated_at) <= ABSOLUTE_JOB_TIMEOUT_MS) continue; // advanced — fresh
+      // WHO MAY WRITE A LONG TAKE OFF (2026-09-22, chain-failure.ts
+      // reaperMayWriteOff). Its step runs the encoder, which only some
+      // routes carry (next.config.ts). This used to be decided by which page
+      // the person opened: /app/generate, without the encoder, got a pending
+      // answer from the advance and wrote the take off as "didn't finish in
+      // time", deleting its paid parts, while History would have finished
+      // it. Now only a route that can run the step may write one off — and
+      // even there, only when the provider has NOT finished the piece (it
+      // lost it). A finished piece is waiting on our step, whose tries and
+      // give-up own it. Asking the provider costs a status read; a read that
+      // fails counts as finished, so a guess never writes a take off.
+      const needsEncoder = current.stage === "video" && Boolean(current.payload?.chain);
+      const encoderAvailable = chainEncoderAvailable();
+      let pieceCompleted = false;
+      if (needsEncoder && encoderAvailable) {
+        try {
+          pieceCompleted = (await checkVideoJob(jobHandle(current))).state === "completed";
+        } catch {
+          pieceCompleted = true;
+        }
+      }
+      if (!reaperMayWriteOff({ needsEncoder, encoderAvailable, pieceCompleted })) continue;
       // Claim so a late poll or webhook can't be mid-advance on this same job.
       if (!(await claimAdvance(admin, current.generation_id, current.provider_request_id))) continue;
       // Stop paying fal for a render whose output will never be collected.

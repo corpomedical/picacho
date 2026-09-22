@@ -2930,6 +2930,7 @@ const it = {
     stageLayers: "Separazione in livelli",
     stageRecastPart: "Rendering della parte {part} di {of}",
     stageRecastJoin: "Unione delle parti",
+    chainGaveUp: "Non è stato possibile completare questa ripresa: un passaggio da parte nostra continuava a non riuscire, quindi abbiamo smesso di riprovare.",
     sessionExpired: "La tua sessione è scaduta — accedi di nuovo.",
     suspended: "Il tuo account è sospeso. Contatta l'assistenza se pensi sia un errore.",
     suspendedShort: "Questo account è sospeso.",

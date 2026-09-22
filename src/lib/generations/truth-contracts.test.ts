@@ -298,6 +298,8 @@ describe("localized server strings still match what the server says", () => {
     "../recast/messages.ts",
     // A long take's progress while its parts are joined (2026-09-19).
     "./chain-run.ts",
+    // A long take that gave up (2026-09-22).
+    "./chain-failure.ts",
     // Face verification's sentences (2026-09-19).
     "../faces/messages.ts",
     // The expression set: every sentence its actions return (2026-09-19).

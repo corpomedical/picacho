@@ -223,6 +223,10 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "You're starting face checks quickly — give it a minute.": "faceTooFast",
   "Couldn't start the face check — try again.": "faceCouldntStart",
   "Joining the parts": "stageRecastJoin",
+  // A long take that gave up (lib/generations/chain-failure.ts CHAIN_GAVE_UP,
+  // 2026-09-22): six tries or two hours of a step on our side failing, then
+  // the take ends — the last step of its log, which the door and History show.
+  "This take couldn't be finished: a step on our side kept failing, so we stopped trying.": "chainGaveUp",
   "This set couldn't be built from that photo, and the build is back in your allowance. A photo that shows more of the place may work better.":
     "setPhotoBuildFailed",
   // Match this shot (lib/sets/messages.ts, 2026-09-11) — the set page's line

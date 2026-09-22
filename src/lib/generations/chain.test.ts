@@ -272,14 +272,16 @@ describe("the runner's side of a long take", () => {
 
   it("keeps the take for another pass when our side fails between paid pieces", () => {
     const branch = runner.slice(runner.indexOf("if (err instanceof ChainRetry)"));
-    expect(branch.slice(0, 600)).toContain("await releaseAdvanceClaim(admin, generationId, row.provider_request_id, {");
-    expect(branch.slice(0, 600)).toContain("throw new CriticalWriteError(");
+    expect(branch.slice(0, 800)).toContain("await releaseAdvanceClaim(admin, generationId, row.provider_request_id, {");
+    expect(branch.slice(0, 800)).toContain("throw new CriticalWriteError(");
   });
 
   it("writes why the step failed onto the row, counting, and clears it when the next piece starts", () => {
+    // The counting itself is nextChainError's (chain-failure.test.ts); since
+    // 2026-09-22 it also keeps when the first failure was, and is read.
     const branch = runner.slice(runner.indexOf("if (err instanceof ChainRetry)"));
-    expect(branch.slice(0, 600)).toContain("chainError: {");
-    expect(branch.slice(0, 600)).toContain("count: (row.payload.chainError?.count ?? 0) + 1,");
+    expect(branch.slice(0, 800)).toContain("const chainError = nextChainError(row.payload.chainError, err.message, now);");
+    expect(branch.slice(0, 800)).toContain("...row.payload,\n            chainError,\n");
     expect(runner).toContain("payload: { ...row.payload, chain: nextChain, chainError: undefined,");
     // The release writes the payload only when it is given one.
     expect(runner).toContain(".update({ advance_lock: null, advance_locked_at: null, ...(payload ? { payload } : {}) })");
