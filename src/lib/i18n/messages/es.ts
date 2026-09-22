@@ -2981,6 +2981,8 @@ const es = {
     stageLayers: "Separando en capas",
     stageRecastPart: "Renderizando la parte {part} de {of}",
     stageRecastJoin: "Uniendo las partes",
+    chainGaveUp: "No se pudo terminar esta toma: un paso de nuestro lado seguía fallando, así que dejamos de intentarlo.",
+    takeReportChecked: "Cada cara se comprobó al principio, a la mitad y al final de la toma.",
     sessionExpired: "Tu sesión caducó — vuelve a iniciar sesión.",
     suspended: "Tu cuenta está suspendida. Contacta con soporte si crees que es un error.",
     suspendedShort: "Esta cuenta está suspendida.",
