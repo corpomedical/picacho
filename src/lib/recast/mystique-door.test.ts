@@ -1,6 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { pollUntilSettled } from "../generations/poll-client";
+import { pollGeneration } from "@/lib/generations/actions";
+import { localizeServerText } from "../i18n/server-text";
+import en from "../i18n/messages/en";
+import es from "../i18n/messages/es";
+
+// The poll loop's server action, faked: the door's progress line is the
+// runner's answer to each poll, so the test plays those answers in order.
+vi.mock("@/lib/generations/actions", () => ({ pollGeneration: vi.fn() }));
+vi.mock("@/lib/generations/user-facing-error", () => ({ SESSION_EXPIRED_MESSAGE: "Your session expired — please log in again." }));
 
 // The door's decisions, pinned as source: its own page and nav word (the
 // operator's siting call, 2026-09-17), admins only behind the switch, no
@@ -115,6 +125,14 @@ describe("the Mystique door", () => {
     }
   });
 
+  it("keeps its own words in one block after the headline, clear of the words lane's end of the section", () => {
+    for (const lang of ["en", "es", "it", "pt"]) {
+      const s = section(lang);
+      expect(s.indexOf("// ── door (2026-09-22) ──"), lang).toBeGreaterThan(s.indexOf("headline:"));
+      expect(s.indexOf("// ── door (2026-09-22) ──"), lang).toBeLessThan(s.indexOf("sub:"));
+    }
+  });
+
   it("the working title lives in the route and the dictionary — never in the lane", () => {
     const laneDir = join(root, "lib", "recast");
     for (const file of readdirSync(laneDir)) {
@@ -125,5 +143,92 @@ describe("the Mystique door", () => {
       expect(code.replace(/revalidatePath\("\/app\/mystique"\)/g, ""), file).not.toMatch(/mystique/i);
     }
     expect(existsSync(join(root, "app", "app", "mystique", "page.tsx"))).toBe(true);
+  });
+});
+
+// WATCH IT HAPPEN (2026-09-22). A 35-minute take was a pulsing grid under
+// "Rendering · 3–20 min", a finished one swapped its card in silence at the
+// foot of the page, a stopped one read "Didn't finish", and a failed one was
+// a grey word and a link.
+describe("the door while a take renders, and after", () => {
+  const data = readFileSync(join(root, "lib", "recast", "data.ts"), "utf8");
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.mocked(pollGeneration).mockReset();
+  });
+
+  it("follows the runner's own progress line, poll by poll, in the reader's language", async () => {
+    vi.useFakeTimers();
+    const answers = [
+      { error: null, state: "pending", stage: "video", progress: "Rendering part 2 of 3" },
+      { error: null, state: "pending", stage: "video", progress: "Joining the parts" },
+      { error: null, state: "succeeded", resultUrl: "https://x/y.mp4" },
+    ];
+    vi.mocked(pollGeneration).mockImplementation(async () => answers.shift() as Awaited<ReturnType<typeof pollGeneration>>);
+    const heard: string[] = [];
+    const done = pollUntilSettled("take-1", { onPending: (line) => heard.push(line) });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(await done).toEqual({ state: "settled" });
+    expect(heard).toEqual(["Rendering part 2 of 3", "Joining the parts"]);
+    expect(heard.map((line) => localizeServerText(line, en))).toEqual(["Rendering part 2 of 3", "Joining the parts"]);
+    const spanish = heard.map((line) => localizeServerText(line, es));
+    expect(spanish[0]).toBe(es.serverText.stageRecastPart.replace("{part}", "2").replace("{of}", "3"));
+    expect(spanish[1]).toBe(es.serverText.stageRecastJoin);
+    expect(spanish).not.toEqual(heard);
+  });
+
+  it("asks the poll for that line, and shows it through the translator", () => {
+    expect(door).toMatch(/pollUntilSettled\(id, \{\s*signal: ctrl\.signal,[\s\S]{0,400}onPending: \(line\) =>/);
+    expect(door).toContain("const stage = progress[x.id] ?? x.progress;");
+    expect(door).toContain("localizeServerText(stage, t)");
+    // The one estimate, everywhere — the flat range is gone from every language.
+    expect(door).toContain("recastWait(x, now)");
+    expect(door).toContain("recastMinutes(engine, clipWindow.end - clipWindow.start)");
+    for (const lang of ["en", "es", "it", "pt"]) expect(section(lang), lang).not.toMatch(/3–20/);
+  });
+
+  it("reads where a take is, how it ended and what it cost from the row, not from the press", () => {
+    const columns = data.slice(data.indexOf("const TAKE_COLUMNS ="), data.indexOf(";", data.indexOf("const TAKE_COLUMNS =")));
+    expect(columns).toContain("progress_stage");
+    // The log is the biggest field on a row: asked for on its own, for the settled takes alone.
+    expect(columns).not.toContain("pipeline_log");
+    expect(data).toContain('takeRows.filter((g) => g.status === "succeeded" || g.status === "failed")');
+    expect(data).toContain("recastTakeOutcome({ credits_used:");
+    expect(data).toContain('(outcome?.stopped ? "stopped" : "failed")');
+    expect(data).toContain('report: status === "succeeded" ? recastTakeReport(');
+  });
+
+  it("never calls a take failed before the server has settled it", () => {
+    const stop = door.slice(door.indexOf("async function stop("), door.indexOf("async function watch("));
+    expect(stop).not.toContain('"failed"');
+    expect(stop).toContain("requestGenerationCancel(id)");
+    expect(door).toContain("{stopping.has(x.id) ? m.stopping : m.stopTake}");
+  });
+
+  it("says progress, and a stop in progress, where a screen reader hears it", () => {
+    expect(door).toMatch(/<div role="status" aria-live="polite">\s*\{stopping\.has\(x\.id\) \?/);
+  });
+
+  it("offers to set a failed take up again — never to retry it", () => {
+    expect(door).toContain("onClick={() => reuse(x)}");
+    expect(door).toContain("{m.setUpAgain}");
+    expect(section("en")).toMatch(/\n    setUpAgain: "Set up again",/);
+    expect(section("en")).not.toMatch(/"Try again"/);
+  });
+
+  it("goes to a take that settles, lights it, and tells a hidden tab once — never asking for permission", () => {
+    expect(door).toContain('before.get(x.id) === "generating" && x.status !== "generating"');
+    expect(door).toContain("announcedRef.current.has(x.id)");
+    expect(door).toContain('Notification.permission !== "granted"');
+    expect(door).toContain('document.visibilityState !== "hidden"');
+    expect(door).toContain("tag: `recast-take-${x.id}`");
+    expect(door).not.toContain("requestPermission");
+    // Their own settings decide, as the runner's push is decided.
+    expect(door).toContain("if (ready ? !notify.ready : !notify.failed) continue;");
+    expect(page).toContain("notify={home.notify}");
+    // A person who asked for less motion is not scrolled or flashed at.
+    expect(door).toContain('window.matchMedia("(prefers-reduced-motion: reduce)")');
+    expect(door).toMatch(/if \(reducedMotion\(\)\) return;\s*document\.getElementById\(`take-\$\{id\}`\)\?\.scrollIntoView/);
   });
 });

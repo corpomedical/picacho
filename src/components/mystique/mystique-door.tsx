@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -41,8 +41,9 @@ import {
 } from "@/lib/recast/recast";
 import { composeRecastBrief, recastCastTokens, recastImageTokens, recastRestageTokens } from "@/lib/recast/recast-brief";
 import { clampRecastWindow, defaultRecastWindow, isWholeClip, recastWindowCredits, type RecastWindow } from "@/lib/recast/trim";
-import { chainMinutes, chainPieceCount } from "@/lib/generations/chain";
+import { chainPieceCount } from "@/lib/generations/chain";
 import { sampleClip } from "@/lib/recast/recast-client";
+import { recastMinutes, recastWait } from "@/lib/recast/door-truth";
 import type { RecastRead, RecastWarning } from "@/lib/recast/recast-read";
 import { TakeViewer } from "@/components/mystique/take-viewer";
 
@@ -100,6 +101,70 @@ const label = "text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[#6b
 const soft = "rounded-2xl bg-[rgba(255,255,255,0.03)] p-3.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]";
 const ghost =
   "cursor-pointer rounded-xl px-3.5 py-2 text-sm font-medium text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)] transition-colors hover:bg-[rgba(255,255,255,0.05)] disabled:cursor-not-allowed disabled:opacity-40";
+/** A person who asked their system for less motion gets no smooth scroll and no glow (2026-09-22). */
+function reducedMotion(): boolean {
+  try {
+    return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+}
+
+// A take that settled while this tab was hidden (2026-09-22): the in-page
+// notice, the Sets page's way (sets-home.tsx announceIfHidden). Only when the
+// tab is hidden, since a visible card already says it; only with permission
+// already granted, since this never asks; and only as the person's own
+// "tell me when it's done / went wrong" settings allow.
+//
+// ONE NOTICE PER TAKE. The runner pushes to every browser subscription the
+// person has when a take finishes (job-runner.ts finish → notifyUser, with no
+// tag) — so a browser that has a subscription has already been told, and this
+// page says nothing. A browser without one hears it from here, tagged with the
+// take's id so a second tab, or a second settle of the same take, replaces
+// rather than repeats it. The service worker first, as the composer does,
+// because Android Chrome forbids the page's own Notification constructor.
+// Best-effort, and never throws.
+function announceIfHidden(notice: { title: string; body: string; tag: string }) {
+  try {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+    if (document.visibilityState !== "hidden") return;
+    const inPage = () => {
+      const n = new Notification(notice.title, { body: notice.body, tag: notice.tag });
+      n.onclick = () => window.focus();
+    };
+    const sw = navigator.serviceWorker;
+    if (!sw?.getRegistration) {
+      inPage();
+      return;
+    }
+    void sw
+      .getRegistration()
+      .then(async (registration) => {
+        if (!registration) return inPage();
+        const subscribed = await registration.pushManager?.getSubscription().catch(() => null);
+        if (subscribed) return;
+        const shown =
+          typeof registration.getNotifications === "function"
+            ? await registration.getNotifications({ tag: notice.tag }).catch(() => [])
+            : [];
+        if (shown.length > 0) return;
+        await registration.showNotification(notice.title, {
+          body: notice.body,
+          tag: notice.tag,
+          data: { path: "/app/mystique" },
+          icon: "/icon-192-maskable.png",
+          badge: "/icon-192-maskable.png",
+        });
+      })
+      .catch(() => {
+        // No way left to notify: the card says it.
+      });
+  } catch {
+    // The card already shows the result; a notice must never break the page.
+  }
+}
+
 const pill = (on: boolean) =>
   `cursor-pointer rounded-full px-3.5 py-1.5 text-sm font-medium transition-shadow disabled:cursor-not-allowed disabled:opacity-45 ${
     on
@@ -112,11 +177,14 @@ export function MystiqueDoor({
   motions,
   initialTakes,
   lockOn,
+  notify,
 }: {
   characters: RecastCharacter[];
   motions: RecastMotion[];
   initialTakes: RecastTake[];
   lockOn: boolean;
+  /** Their own notification settings (Settings → Notifications), which the in-page notice follows. */
+  notify: { ready: boolean; failed: boolean };
 }) {
   const { t } = useLocale();
   const m = t.mystique;
@@ -144,7 +212,20 @@ export function MystiqueDoor({
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [viewing, setViewing] = useState<Viewing | null>(null);
-  const [stopping, setStopping] = useState<string | null>(null);
+  // Takes a Stop was asked for. The card says "Stopping…" until the SERVER
+  // settles it — it used to be marked failed the moment the request
+  // returned, before the runner had decided whether it stopped, finished
+  // first, or gave the credits back (2026-09-22).
+  const [stopping, setStopping] = useState<Set<string>>(new Set());
+  // WHERE EACH RENDERING TAKE IS (2026-09-22): the runner's own line
+  // ("Rendering part 2 of 3", "Joining the parts"), as each poll hears it.
+  // Until the first answer the card uses what the page was served with.
+  const [progress, setProgress] = useState<Record<string, string>>({});
+  // The clock the "14 min in" lines are read against. Null until the page is
+  // in the browser, so the server's render and the first client render agree.
+  const [now, setNow] = useState<number | null>(null);
+  // The take that just settled, lit for a moment where it landed.
+  const [lit, setLit] = useState<string | null>(null);
   const [images, setImages] = useState<DoorImage[]>([]);
   // Several characters in ONE video (Into the clip), or one take each —
   // and, together, which person in the clip each plays (character id →
@@ -154,6 +235,7 @@ export function MystiqueDoor({
   const [roles, setRoles] = useState<Record<string, string | null>>({});
   const fileRef = useRef<HTMLInputElement | null>(null);
   const imageFileRef = useRef<HTMLInputElement | null>(null);
+  const doorRef = useRef<HTMLDivElement | null>(null);
   // Every blob URL a preview was given, so none outlives the door.
   const imageBlobsRef = useRef<Set<string>>(new Set());
   // The newest pick wins: an upload or a read that lands late is dropped.
@@ -176,16 +258,73 @@ export function MystiqueDoor({
     if (!renderingKey) return;
     const ctrl = new AbortController();
     for (const id of renderingKey.split(",")) {
-      void pollUntilSettled(id, { signal: ctrl.signal }).then(() => {
+      void pollUntilSettled(id, {
+        signal: ctrl.signal,
+        // The progress line the runner answers every poll with (poll-client.ts).
+        // It was always there; the door never asked for it, so a 35-minute take
+        // was a pulsing grid and "3–20 min" the whole way (2026-09-22).
+        onPending: (line) => {
+          if (ctrl.signal.aborted) return;
+          setProgress((prev) => (prev[id] === line ? prev : { ...prev, [id]: line }));
+        },
+      }).then(() => {
         if (!ctrl.signal.aborted) router.refresh();
       });
     }
     const slow = setInterval(() => router.refresh(), 30_000);
+    // The minute clock for "14 min in · about 20 min left".
+    const tick = () => setNow(Date.now());
+    const first = setTimeout(tick, 0);
+    const clock = setInterval(tick, 20_000);
     return () => {
       ctrl.abort();
       clearInterval(slow);
+      clearTimeout(first);
+      clearInterval(clock);
     };
   }, [renderingKey, router]);
+
+  // A TAKE THAT SETTLES while the page is open (2026-09-22): it used to
+  // swap its card silently at the bottom of a long page. Now the page goes
+  // to it and lights it, and a hidden tab gets one notice. Seen by comparing
+  // each take's status with the one before — whether this tab's poll or the
+  // 30-second refresh saw it first — so it fires once per take, and never
+  // for a take that was already settled when the page opened. A take the
+  // person stopped themselves is neither lit nor announced: they were there.
+  const statusesRef = useRef<Map<string, RecastTake["status"]> | null>(null);
+  const announcedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const before = statusesRef.current;
+    statusesRef.current = new Map(takes.map((x) => [x.id, x.status]));
+    if (!before) return;
+    const settled = takes.filter((x) => before.get(x.id) === "generating" && x.status !== "generating" && x.status !== "stopped");
+    if (settled.length === 0) return;
+    for (const x of settled) {
+      if (announcedRef.current.has(x.id)) continue;
+      announcedRef.current.add(x.id);
+      const ready = x.status === "succeeded";
+      if (ready ? !notify.ready : !notify.failed) continue;
+      announceIfHidden({
+        title: ready ? t.push.videoReadyTitle : t.push.videoFailedTitle,
+        body: ready ? t.push.videoReadyBody : t.push.videoFailedBody,
+        tag: `recast-take-${x.id}`,
+      });
+    }
+    const id = settled[0].id;
+    const show = setTimeout(() => {
+      if (reducedMotion()) return;
+      document.getElementById(`take-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setLit(id);
+    }, 60);
+    return () => clearTimeout(show);
+  }, [takes, notify.ready, notify.failed, t.push]);
+
+  // The lit take goes back to normal after a few seconds.
+  useEffect(() => {
+    if (!lit) return;
+    const off = setTimeout(() => setLit(null), 4_000);
+    return () => clearTimeout(off);
+  }, [lit]);
 
   useEffect(() => {
     const blobs = imageBlobsRef.current;
@@ -249,6 +388,10 @@ export function MystiqueDoor({
       ? { engine: e, credits: recastWindowCredits(e, { seconds: seen.seconds, frames: seen.frames }, clipWindow, referenceCount(e)) }
       : null;
   const quote = quoteOf(engine);
+  // About how long this take will wait — the one estimate the whole page
+  // uses (door-truth.ts recastMinutes), in place of a flat "3–20 min" that a
+  // 30 s take overran by a quarter of an hour.
+  const takeMinutes = seen && clipWindow ? recastMinutes(engine, clipWindow.end - clipWindow.start) : null;
   const imagesUploading = images.some((i) => i.path === null);
   const hasWords = direction.trim().length > 0;
   const rolesUnsaid = ensemble && castTags.some((tag) => tag === null) && !hasWords;
@@ -553,20 +696,25 @@ export function MystiqueDoor({
       setError(res.error);
       return;
     }
-    const now = new Date().toISOString();
+    const pressedAt = new Date().toISOString();
     setTakes((prev) => [
       ...res.ids.map((id, i) => ({
         id,
         status: "generating" as const,
         characterName: ensemble ? cast.map((c) => c.name).join(" & ") : (cast[i]?.name ?? null),
         engine,
-        seconds: Math.round(seen.seconds),
+        // The length the take is made at — the window, as the server records
+        // it — so its card's wait is counted for the stretch actually sent.
+        seconds: Math.max(1, Math.round(clipWindow ? clipWindow.end - clipWindow.start : seen.seconds)),
         credits: quote?.credits ?? null,
         score: null,
         posterUrl: null,
-        createdAt: now,
+        createdAt: pressedAt,
         recipe: null,
         images: [],
+        progress: null,
+        outcome: null,
+        report: null,
       })),
       ...prev,
     ]);
@@ -576,29 +724,44 @@ export function MystiqueDoor({
     setDirection("");
     forgetImages();
     router.refresh();
+    // The setup empties and the new card is at the foot of the page: go to it.
+    const first = res.ids[0];
+    if (first && !reducedMotion()) {
+      setTimeout(() => document.getElementById(`take-${first}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+    }
   }
 
   /**
    * Stop a take that is still rendering. What it costs is said before it
-   * happens, because it is not free: a long take's finished parts were
-   * rendered and billed, and only the parts not yet sent are saved.
+   * happens, in today's rule (m.stopAsk, job-runner.ts's cancel path): the
+   * credits come back only when the render had not started and no earlier
+   * part was billed. The card then says "Stopping…" until the server has
+   * settled the take — it may still finish first and be delivered — and
+   * the row, not this page, says how it ended.
    */
   async function stop(id: string) {
-    if (stopping) return;
+    if (stopping.has(id)) return;
     if (!window.confirm(m.stopAsk)) return;
     setError("");
-    setStopping(id);
+    setStopping((prev) => new Set(prev).add(id));
+    const release = () =>
+      setStopping((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     try {
       const res = await requestGenerationCancel(id);
-      if (res.error) setError(res.error);
-      else setTakes((prev) => prev.map((x) => (x.id === id ? { ...x, status: "failed" as const } : x)));
+      if (res.error) {
+        release();
+        setError(res.error);
+      }
       router.refresh();
     } catch (err) {
+      release();
       const stale = isStaleDeployError(err);
       setError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
       if (stale) reloadForNewDeploy({ delayMs: 1800 });
-    } finally {
-      setStopping(null);
     }
   }
 
@@ -630,6 +793,8 @@ export function MystiqueDoor({
     forgetImages();
     setImages(x.images.map((i) => ({ key: i.path, path: i.path, url: i.url, local: false })));
     setViewing(null);
+    // From a card at the foot of the page, the setup it fills is at the top.
+    doorRef.current?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" });
     if (x.recipe.source.kind === "take") {
       const motion = motions.find((mo) => mo.takeId === (x.recipe!.source as { takeId: string }).takeId);
       if (motion) void pickMotion(motion);
@@ -675,7 +840,7 @@ export function MystiqueDoor({
           : formatMsg(m.takeButtonPriced, { n: totalCredits });
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div ref={doorRef} className="mx-auto max-w-6xl scroll-mt-4">
       <div className="rounded-[28px] bg-[#0b0c10] px-6 pb-6 pt-7 text-[#c6c9d1] shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_32px_72px_-28px_rgba(0,0,0,0.7)] sm:px-8">
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
           <div>
@@ -684,7 +849,7 @@ export function MystiqueDoor({
           </div>
           <div className="space-y-0.5 text-xs text-[#6b6f7a] lg:text-right">
             <p>{m.priceLine}</p>
-            <p>{m.meta}</p>
+            <p>{takeMinutes !== null ? formatMsg(m.metaAbout, { minutes: takeMinutes }) : m.meta}</p>
           </div>
         </div>
 
@@ -877,7 +1042,7 @@ export function MystiqueDoor({
                   <p className="mt-2 text-xs text-[#f0cda6]">
                     {formatMsg(m.longTake, {
                       parts: chainPieceCount(clipWindow.end - clipWindow.start),
-                      minutes: chainMinutes(clipWindow.end - clipWindow.start),
+                      minutes: recastMinutes(engine, clipWindow.end - clipWindow.start),
                     })}
                   </p>
                 )}
@@ -1359,22 +1524,92 @@ export function MystiqueDoor({
             <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {takes.map((x) => {
                 const missed = x.recipe?.lock === true && x.score !== null && x.score < 60;
-                const meta =
-                  x.status === "generating"
-                    ? m.rendering
-                    : x.status === "failed"
-                      ? m.failed
-                      : missed
-                        ? m.lockMissed
-                        : [
-                            x.seconds !== null && x.credits !== null ? formatMsg(m.takeMeta, { seconds: x.seconds, credits: x.credits }) : null,
-                            x.score !== null ? formatMsg(m.lockScore, { n: Math.round(x.score) }) : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ");
                 const jobWord = x.engine ? jobName(RECAST_ENGINES[x.engine].job) : "";
+                const small = "mt-0.5 text-[11px] leading-snug tabular-nums";
+                let lines: ReactNode;
+                if (x.status === "generating") {
+                  // WHERE IT IS (2026-09-22): the runner's own line, then the
+                  // minutes against the one estimate — "taking longer than
+                  // usual" past it, never a negative count.
+                  const stage = progress[x.id] ?? x.progress;
+                  const wait = now !== null ? recastWait(x, now) : null;
+                  const waitLine =
+                    wait === null
+                      ? null
+                      : wait.late
+                        ? formatMsg(m.progressLate, { elapsed: wait.elapsed })
+                        : wait.left === null
+                          ? null
+                          : wait.elapsed === 0
+                            ? formatMsg(m.progressStarted, { left: wait.left })
+                            : formatMsg(m.progressTime, { elapsed: wait.elapsed, left: wait.left });
+                  lines = (
+                    <div role="status" aria-live="polite">
+                      {stopping.has(x.id) ? (
+                        <p className={`${small} text-[#f0cda6]`}>{m.stopping}</p>
+                      ) : (
+                        <>
+                          <p className={`${small} truncate text-[#9aa0ad]`}>{stage ? localizeServerText(stage, t) : m.rendering}</p>
+                          {waitLine && <p className={`${small} ${wait?.late ? "text-[#d8b483]" : "text-[#6b6f7a]"}`}>{waitLine}</p>}
+                        </>
+                      )}
+                    </div>
+                  );
+                } else if (x.status === "failed" || x.status === "stopped") {
+                  // A take that did not deliver says how it ended, why, and
+                  // whether it cost anything — it used to be one grey word
+                  // and a link (2026-09-22).
+                  lines = (
+                    <>
+                      <p className={`${small} text-[#c6c9d1]`}>{x.status === "stopped" ? m.stopped : m.failed}</p>
+                      {x.status === "failed" && (
+                        <p className={`${small} text-[#9aa0ad]`}>
+                          {x.outcome?.reason ? localizeServerText(x.outcome.reason, t) : t.generate.stepFailedGeneric}
+                        </p>
+                      )}
+                      {x.outcome && (x.outcome.charged ? x.credits !== null : true) && (
+                        <p className={`${small} ${x.outcome.charged ? "text-[#6b6f7a]" : "text-[#9fc9a4]"}`}>
+                          {x.outcome.charged ? formatMsg(m.chargedLine, { n: x.credits ?? 0 }) : m.notCharged}
+                        </p>
+                      )}
+                    </>
+                  );
+                } else {
+                  const meta = missed
+                    ? m.lockMissed
+                    : [
+                        x.seconds !== null && x.credits !== null ? formatMsg(m.takeMeta, { seconds: x.seconds, credits: x.credits }) : null,
+                        // The face report, when the runner wrote one, speaks
+                        // for every face below; the single score is the
+                        // fallback for takes made before it.
+                        !x.report && x.score !== null ? formatMsg(m.lockScore, { n: Math.round(x.score) }) : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ");
+                  lines = (
+                    <>
+                      <p className={`${small} truncate ${missed ? "text-[#d8b483]" : "text-[#6b6f7a]"}`}>{meta}</p>
+                      {!missed &&
+                        x.report?.faces.map((f) => (
+                          <p key={f.characterId} className={`${small} truncate text-[#9aa0ad]`}>
+                            {formatMsg(f.scores.length > 1 ? m.reportFace : m.reportFaceOne, {
+                              name: f.name,
+                              n: f.scores.length,
+                              score: Math.round(f.lowest),
+                            })}
+                          </p>
+                        ))}
+                    </>
+                  );
+                }
                 const card = (
-                  <div className="overflow-hidden rounded-2xl bg-[#14151a] text-left shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] transition-shadow group-hover:shadow-[inset_0_0_0_1px_rgba(240,205,166,0.5)]">
+                  <div
+                    className={`overflow-hidden rounded-2xl bg-[#14151a] text-left transition-shadow group-hover:shadow-[inset_0_0_0_1px_rgba(240,205,166,0.5)] ${
+                      lit === x.id
+                        ? "shadow-[0_0_0_2px_rgba(240,196,142,0.85),0_0_28px_2px_rgba(240,196,142,0.35)]"
+                        : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
+                    }`}
+                  >
                     <div className="relative aspect-[16/9] bg-[#101116]">
                       {x.posterUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -1390,35 +1625,59 @@ export function MystiqueDoor({
                     </div>
                     <div className="px-3 py-2.5">
                       <p className="truncate text-[13px] font-semibold text-[#ecedf1]">{[x.characterName, jobWord].filter(Boolean).join(" · ") || m.theTake}</p>
-                      <p className={`mt-0.5 truncate text-[11px] tabular-nums ${missed ? "text-[#d8b483]" : "text-[#6b6f7a]"}`}>{meta}</p>
+                      {lines}
                     </div>
                   </div>
                 );
                 if (x.status === "succeeded") {
                   return (
-                    <button key={x.id} type="button" aria-label={m.watch} onClick={() => void watch(x)} className="group cursor-pointer">
+                    <button key={x.id} id={`take-${x.id}`} type="button" aria-label={m.watch} onClick={() => void watch(x)} className="group cursor-pointer">
                       {card}
                     </button>
                   );
                 }
-                return x.status === "failed" ? (
-                  <Link key={x.id} href={`/app/history/${x.id}`} className="group">
-                    {card}
-                  </Link>
-                ) : (
+                if (x.status === "failed" || x.status === "stopped") {
+                  // "Set up again", not "Try again": it puts back what the
+                  // take remembers — the job, the quality, the words, the
+                  // images, and a clip from the library — and an uploaded
+                  // clip, the cast and the trim have to be chosen again
+                  // (2026-09-22, the completeness critic). A retry would be a
+                  // promise it cannot keep.
+                  return (
+                    <div key={x.id} id={`take-${x.id}`} className="group">
+                      {card}
+                      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 px-1">
+                        {x.recipe && (
+                          <button
+                            type="button"
+                            disabled={starting}
+                            onClick={() => reuse(x)}
+                            className="cursor-pointer text-xs font-medium text-[#f0cda6] underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-45"
+                          >
+                            {m.setUpAgain}
+                          </button>
+                        )}
+                        <Link href={`/app/history/${x.id}`} className="text-xs font-medium text-[#9aa0ad] underline-offset-2 hover:underline">
+                          {m.history}
+                        </Link>
+                      </div>
+                    </div>
+                  );
+                }
+                return (
                   // STOP (2026-09-20). Until now a take could only be stopped
                   // from the composer, which never holds one of these — so a
                   // take started by mistake ran to the end and was charged in
                   // full ("Canceled the first one, check if i got refunded").
-                  <div key={x.id} className="group relative">
+                  <div key={x.id} id={`take-${x.id}`} className="group relative">
                     {card}
                     <button
                       type="button"
-                      disabled={stopping === x.id}
+                      disabled={stopping.has(x.id)}
                       onClick={() => void stop(x.id)}
                       className={`absolute right-2 top-2 ${chip} cursor-pointer hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-50`}
                     >
-                      {stopping === x.id ? m.stopping : m.stopTake}
+                      {stopping.has(x.id) ? m.stopping : m.stopTake}
                     </button>
                   </div>
                 );

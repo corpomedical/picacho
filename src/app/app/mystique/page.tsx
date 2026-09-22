@@ -40,5 +40,7 @@ export default async function MystiquePage() {
     sweepRecastOrphans(supabase, userData.user.id),
   ]);
 
-  return <MystiqueDoor characters={home.characters} motions={home.motions} initialTakes={home.takes} lockOn={lockOn} />;
+  return (
+    <MystiqueDoor characters={home.characters} motions={home.motions} initialTakes={home.takes} lockOn={lockOn} notify={home.notify} />
+  );
 }
