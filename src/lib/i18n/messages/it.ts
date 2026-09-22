@@ -1700,7 +1700,7 @@ const it = {
     courseCardBody: "Ogni passo fotografato nell'app reale: il volto del tuo personaggio in ogni fotogramma e il tuo primo video senza sprecare crediti.",
     courseCardCta: "Inizia il corso",
     quickTutorial: "Come funziona",
-    creditsTitle: "Crediti usati questo mese",
+    creditsTitle: "Crediti rimasti questo mese",
     creditsPurchased: "+{n} crediti acquistati",
     continueCreating: "Continua a creare",
     emptyRecent: "Le tue riprese appariranno qui — crea la prima.",

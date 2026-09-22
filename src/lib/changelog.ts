@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.79.0",
+    build: 118,
+    date: "2026-09-22",
+    title: "Comping a plan works again, and Home counts the credits you have left",
+    items: [
+      "Giving an account a plan from Admin works again. Every comp had been failing with only \"Something went wrong\", because the database refused the empty billing status a given plan carries. It is fixed on the database side, the way the rest of the app already expected; a comped plan still never counts as a paying subscriber in the admin totals.",
+      "Home's credits tile says what it shows. It has always shown the credits you have LEFT this month, under a label that said \"used\", so an account with 45 left read as having used 45. It now says \"Credits left this month\", in all four languages.",
+    ],
+  },
+  {
     version: "1.78.0",
     build: 117,
     date: "2026-09-22",

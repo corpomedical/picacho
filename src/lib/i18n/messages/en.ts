@@ -1802,7 +1802,7 @@ const en = {
     courseCardBody: "Every step photographed on the real app: your character's face in every frame, your first video without wasted credits.",
     courseCardCta: "Start the course",
     quickTutorial: "How it works",
-    creditsTitle: "Credits used this month",
+    creditsTitle: "Credits left this month",
     creditsPurchased: "+{n} purchased credits",
     continueCreating: "Continue creating",
     emptyRecent: "Your takes will appear here — make your first one.",
