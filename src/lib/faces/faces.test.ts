@@ -24,7 +24,7 @@ const src = (p: string) => readFileSync(join(__dirname, p), "utf8");
 const actions = src("actions.ts");
 const run = src("run.ts");
 const callback = src("../../app/api/face-verification/callback/route.ts");
-const sql = readFileSync(join(__dirname, "..", "..", "..", "supabase", "pending", "face-verification.sql"), "utf8");
+const sql = readFileSync(join(__dirname, "..", "..", "..", "supabase", "applied", "2026-09-22", "face-verification.sql"), "utf8");
 
 describe("the face check's own rules", () => {
   it("opens BytePlus's page in English — the one of its three languages we speak", () => {

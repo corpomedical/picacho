@@ -139,8 +139,9 @@ const COLUMNS = {
   // from, so a failed one can be rendered again after a reload
   // (applied/2026-09-16/helios-take-frames.sql).
   location_set_shots: ["set_id", "generation_id", "user_id", "created_at", "camera", "words", "rig", "rig_check", "take"],
-  // Face verification, "Verify it's you" (pending/face-verification.sql,
-  // 2026-09-19): the consent records, the photos sent, and the deletions
+  // Face verification, "Verify it's you" (applied/2026-09-22/
+  // face-verification.sql, written 2026-09-19, run in production
+  // 2026-09-22): the consent records, the photos sent, and the deletions
   // still owed at BytePlus. Every reader fails open to "not verified".
   face_verifications: ["user_id", "character_id", "status", "consented_at", "consent_notice_version", "consent_method", "state", "byted_token", "group_id"],
   face_assets: ["user_id", "verification_id", "character_id", "photo_path", "asset_id", "status"],

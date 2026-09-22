@@ -31,7 +31,7 @@ import { isFirstFrameLane } from "./face-lock";
 // This file is the policy — pure, alias-free, tested. opening-frame-run.ts is
 // the plumbing that acts on it.
 
-/** The feature_flags row. Inserted OFF (supabase/pending/face-lock.sql). */
+/** The feature_flags row. Inserted OFF (supabase/applied/2026-09-22/face-lock.sql, run 2026-09-22). */
 export const OPENING_FRAME_FLAG = "opening_frame";
 
 export type OpeningFrameInput = {
