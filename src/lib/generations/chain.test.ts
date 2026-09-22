@@ -317,6 +317,42 @@ describe("the runner's side of a long take", () => {
     ).toBe(false);
   });
 
+  // STOP BEFORE THE NEXT PART (2026-09-22). A Stop that landed after a piece
+  // finished and before the next was submitted used to prepare and SUBMIT
+  // the next paid part — requestGenerationCancel's own advance included.
+  it("stops between parts before the encoder is asked for, instead of buying the next part", () => {
+    const stop = runner.indexOf("if (chainStep && chainStep.index < chainStep.lengths.length - 1 && gen?.cancel_requested) {");
+    expect(stop).toBeGreaterThan(-1);
+    expect(stop).toBeLessThan(runner.indexOf("if (chainStep && !chainEncoderAvailable())"));
+    expect(stop).toBeLessThan(runner.indexOf("chainStep ? CHAIN_LEASE_SECONDS : ADVANCE_LEASE_SECONDS"));
+    expect(runner.slice(stop, stop + 400)).toContain("return stopBeforeNextPart(generationId, userId, row);");
+  });
+
+  it("reads the stop again, fresh, immediately before the paid submit", () => {
+    const branch = runner.slice(runner.indexOf("if (chainStep) {\n      // A LONG TAKE's piece has finished"));
+    const read = branch.indexOf('.select("cancel_requested")');
+    const submit = branch.indexOf("await submitChainPiece(");
+    expect(read).toBeGreaterThan(branch.indexOf("prepared = await prepareNextPiece(admin, chain, renderUrl);"));
+    expect(read).toBeLessThan(submit);
+    expect(branch.slice(read, submit)).toContain("if (stopNow?.cancel_requested) {\n        return await stopBeforeNextPart(generationId, userId, row);");
+    // A read that fails is never taken as "no stop".
+    expect(branch.slice(read, submit)).toContain("if (stopReadError) {");
+  });
+
+  it("settles a stop between parts as every stop is: user_cancelled, no refund", () => {
+    const stop = runner.slice(runner.indexOf("async function stopBeforeNextPart("));
+    const body = stop.slice(0, stop.indexOf("\n}\n"));
+    expect(body).toContain('attempts: appendStep(row.resume.attempts ?? [], "Stopped.", "generate"),');
+    expect(body).toContain('fault: "user_cancelled",');
+    expect(body).not.toContain("refundGenerationCosts");
+  });
+
+  it("the Stop button's own advance goes through the same check", () => {
+    const actions = readFileSync(join(__dirname, "actions.ts"), "utf8");
+    const cancel = actions.slice(actions.indexOf("export async function requestGenerationCancel("));
+    expect(cancel.slice(0, 2500)).toContain("await advanceGeneration(generationId, userData.user.id);");
+  });
+
   it("refunds a stop only when no earlier piece was paid for", () => {
     expect(runner).toContain("const earlierPiecesBilled = (row.payload.chain?.index ?? 0) > 0;");
     expect(runner).toContain("((stoppedBeforeStart && !earlierPiecesBilled) || REFUND_ON_FAILURE[row.stage])");

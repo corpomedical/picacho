@@ -1540,6 +1540,23 @@ async function giveUpOnChain(generationId: string, userId: string, row: JobRow, 
   return { state: "failed", message: CHAIN_GAVE_UP };
 }
 
+/**
+ * Stop pressed while a long take is between parts: the take ends, and the
+ * next paid part is never bought (2026-09-22). Settled as every stop is —
+ * fault user_cancelled, which REFUNDS does not return, and no provider
+ * cancel to price at nothing, because the finished piece was billed.
+ * "Stopped." is the same last step the stop branch writes, so every surface
+ * that reads a stop reads this one the same way.
+ */
+async function stopBeforeNextPart(generationId: string, userId: string, row: JobRow): Promise<AdvanceResult> {
+  await finish(generationId, userId, {
+    status: "failed",
+    attempts: appendStep(row.resume.attempts ?? [], "Stopped.", "generate"),
+    fault: "user_cancelled",
+  });
+  return { state: "cancelled" };
+}
+
 /** Tag the last attempt with an issue marker (idempotent). */
 function markIssue(attempts: AttemptLog[], issue: string): AttemptLog[] {
   const last = attempts[attempts.length - 1];
@@ -1780,6 +1797,25 @@ export async function advanceGeneration(
   // starts unclaimed and a stale caller keyed to this stage's request id can't
   // reacquire it.
   const chainStep = row.stage === "video" && row.payload.chain ? row.payload.chain : null;
+  // STOP BEFORE THE NEXT PART (2026-09-22). A long take's piece has finished
+  // and another is still to come, and Stop has been pressed. The stop branch
+  // above only acts on a piece still RUNNING — this one is done, so it fell
+  // through to here, and this is where the runner used to cut the next
+  // piece's input and SUBMIT IT: a Stop that landed between parts bought one
+  // more paid part (requestGenerationCancel's own advance did it too, since
+  // it drives this same function). Now it stops, before the encoder is even
+  // asked for — stopping needs none, so no route leaves a stop waiting for
+  // one that has it.
+  //
+  // What the stop costs is unchanged: nothing is cancelled at the provider
+  // (the finished piece was billed), so no refund, exactly as the stop
+  // branch above decides for a take stopped after its first piece.
+  if (chainStep && chainStep.index < chainStep.lengths.length - 1 && gen?.cancel_requested) {
+    if (!(await claimAdvance(admin, generationId, row.provider_request_id))) {
+      return { state: "pending", stage: row.stage, progress: progressOf(row) };
+    }
+    return stopBeforeNextPart(generationId, userId, row);
+  }
   // A long take's step needs the encoder, and only the routes next.config.ts
   // traces it into carry one. Anywhere else, the piece is left for one that
   // does — fal's webhook, the door, History, the reconcile cron — rather than
@@ -1997,6 +2033,26 @@ export async function advanceGeneration(
           throw new CriticalWriteError(`Long take, after part ${k + 1} of ${pieces}: ${err.message}`);
         }
         throw err;
+      }
+
+      // STOP BEFORE THE NEXT PART, read again (2026-09-22). The check at
+      // the top of this advance read the stop BEFORE the piece above was
+      // cut — tens of seconds of download and encode — and a Stop pressed
+      // in that time must not be answered with a paid part. So it is read
+      // fresh from the row, here, immediately before the only paid call on
+      // this path. A read that fails is not taken as "no stop": the claim
+      // goes back and the next pass decides.
+      const { data: stopNow, error: stopReadError } = await admin
+        .from("generations")
+        .select("cancel_requested")
+        .eq("id", generationId)
+        .maybeSingle<{ cancel_requested: boolean }>();
+      if (stopReadError) {
+        await releaseAdvanceClaim(admin, generationId, row.provider_request_id);
+        throw new CriticalWriteError(`Couldn't read the stop before part ${k + 2} of ${generationId}: ${stopReadError.message}`);
+      }
+      if (stopNow?.cancel_requested) {
+        return await stopBeforeNextPart(generationId, userId, row);
       }
 
       phase = "submit";
