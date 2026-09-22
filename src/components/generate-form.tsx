@@ -69,7 +69,12 @@ import {
   takeSourceHeight,
   UPSCALE_MAX_SECONDS,
 } from "@/lib/generations/upscale";
-import { ReceiptStrip, issueMessage } from "@/components/receipt-strip";
+import {
+  PlanIssueRows,
+  issueMessage,
+  planHasAttachmentRiding,
+  planReceiptParts,
+} from "@/components/receipt-strip";
 import {
   compilePrompt,
   deleteSavedPrompt,
@@ -5559,11 +5564,11 @@ function GenerateFormInner({
 
   const characterPicker =
     characters.length > 0 ? (
-      <div ref={characterMenuRef} data-tour-id="tour-character-select" className="min-w-0">
+      <div ref={characterMenuRef} data-tour-id="tour-character-select" className="flex min-w-0">
         <button
           type="button"
           onClick={() => {
-            // With several saved photos on a one-photo lane, the pill's first
+            // With several saved photos on a one-photo lane, the cell's first
             // job is WHICH photo (direction B); switching character is one
             // row inside that menu. Otherwise it opens the cast as before.
             if (anchorPickerShown) {
@@ -5587,19 +5592,16 @@ function GenerateFormInner({
               : undefined
           }
           className={cn(
-            // Casting Bar segment (2026-08-28, operator-approved direction
-            // 1 round 3): the pill became one segment of the shared bar —
-            // content-width, transparent until open/hover, the bar behind
-            // it carries the shape.
-            "flex min-w-0 items-center gap-2 rounded-full py-1 pl-1 pr-2.5 text-left transition-colors disabled:opacity-50",
-            // Direction B's board: an ochre hairline says this chip holds a
-            // choice (the photo), not just a name.
-            anchorPickerShown && "shadow-[inset_0_0_0_1px_rgba(224,164,104,0.38)]",
+            // The CAST cell (slate composer, operator-approved pick
+            // 2026-09-22): photo-first, the mono microlabel names the cell,
+            // the chevron says it opens. Transparent until open/hover — the
+            // slate's hairlines carry the shape.
+            "flex min-w-0 items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-left transition-colors disabled:opacity-50 max-sm:gap-1.5 max-sm:px-1",
             characterMenuOpen || photoMenuOpen
-              ? "bg-atelier-ink/[0.08]"
+              ? "bg-atelier-ink/[0.07]"
               : !characterId && warnOnEmptyCharacter
                 ? // Nothing picked yet AND this model cannot render without
-                  // one: warm the chip so the empty selector can't be
+                  // one: warm the cell so the empty selector can't be
                   // overlooked (the 2026-08-21 incident: a new user created a
                   // character, never selected it, and sent a character-less
                   // render without realising). Still never auto-picks — that
@@ -5615,7 +5617,7 @@ function GenerateFormInner({
                   // An alarm that fires when nothing is wrong is an alarm
                   // people learn to ignore on the models where it matters.
                   "bg-atelier-accent/[0.09] hover:bg-atelier-accent/[0.14]"
-                : "bg-atelier-ink/[0.045] hover:bg-atelier-ink/[0.07]",
+                : "hover:bg-atelier-ink/[0.05]",
           )}
         >
           {isMultiCharacter ? (
@@ -5625,11 +5627,11 @@ function GenerateFormInner({
                 const t = ph?.startsWith("/api/media/") ? `${ph}${ph.includes("?") ? "&" : "?"}w=320` : ph;
                 return t ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img key={c!.id} src={t} alt="" style={{ zIndex: 3 - i }} className="h-7 w-7 rounded-full border-2 border-atelier-paper bg-atelier-ink/10 object-cover" />
+                  <img key={c!.id} src={t} alt="" style={{ zIndex: 3 - i }} className="h-8 w-8 rounded-full border-2 border-atelier-paper bg-atelier-ink/10 object-cover" />
                 ) : (
                   <span
                     key={c!.id}
-                    className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-atelier-paper bg-atelier-ink/10 text-xs font-medium text-atelier-muted"
+                    className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-atelier-paper bg-atelier-ink/10 text-xs font-medium text-atelier-muted"
                     style={{ zIndex: 3 - i }}
                   >
                     {c!.name?.[0]?.toUpperCase() ?? "?"}
@@ -5638,66 +5640,85 @@ function GenerateFormInner({
               })}
             </span>
           ) : currentCharacter?.referencePhotos[0]?.url ? (
-            // The pill wears the character's real face, not an initial —
-            // same photo the casting sheet leads with. When the take matches
-            // one of several photos, it wears THAT photo, ringed (direction B).
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={thumbOf(
-                (anchorPickerShown ? referencePhotos[anchorIndex]?.url : undefined) ??
-                  currentCharacter.referencePhotos[0].url,
-              )}
-              alt=""
-              className={cn(
-                "h-7 w-7 flex-shrink-0 rounded-full bg-atelier-ink/10 object-cover",
-                anchorPickerShown && "shadow-[0_0_0_1.5px_var(--color-atelier-accent)]",
-              )}
-            />
+            // The cell wears the character's real face, not an initial —
+            // same photo the casting sheet leads with, wearing the lock's
+            // corner marks (the identity story, in miniature). When the take
+            // matches one of several photos, it wears THAT photo.
+            <span className="relative h-9 w-9 flex-shrink-0 sm:h-11 sm:w-11">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={thumbOf(
+                  (anchorPickerShown ? referencePhotos[anchorIndex]?.url : undefined) ??
+                    currentCharacter.referencePhotos[0].url,
+                )}
+                alt=""
+                className="h-full w-full rounded-[9px] bg-atelier-ink/10 object-cover"
+              />
+              <span
+                aria-hidden
+                className="lock-frame absolute inset-[3px]"
+                style={
+                  {
+                    "--lock-arm": "10px",
+                    "--lock-stroke": "1.5px",
+                    "--lock-color": "rgba(224,164,104,0.85)",
+                  } as React.CSSProperties
+                }
+              />
+            </span>
           ) : (
-            <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink/10 text-xs font-medium text-atelier-muted">
+            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[9px] bg-atelier-ink/10 text-xs font-medium text-atelier-muted sm:h-11 sm:w-11">
               {currentCharacter?.name?.[0]?.toUpperCase() ?? "?"}
             </span>
           )}
-          <span
-            className={cn(
-              "min-w-0 max-w-[5.5rem] truncate text-sm sm:max-w-[10rem]",
-              currentCharacter ? "text-atelier-ink" : "text-atelier-muted",
-            )}
-          >
-            {isMultiCharacter
-              ? formatMsg(g.multiCharacterSummary, { name: currentCharacter?.name ?? "", n: companionCharacterIds.length })
-              : (currentCharacter?.name ?? g.selectCharacter)}
+          <span className="flex min-w-0 flex-col gap-1">
+            <span className="flex items-center gap-1 text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted">
+              {g.slateCast}
+              <ChevronDownIcon
+                className={cn(
+                  "h-3 w-3 flex-shrink-0 transition-transform",
+                  (characterMenuOpen || photoMenuOpen) && "rotate-180",
+                )}
+              />
+            </span>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span
+                className={cn(
+                  "min-w-0 max-w-[5.5rem] truncate text-[14px] font-medium leading-tight sm:max-w-[9rem]",
+                  currentCharacter ? "text-atelier-ink" : "text-atelier-muted",
+                )}
+              >
+                {isMultiCharacter
+                  ? formatMsg(g.multiCharacterSummary, { name: currentCharacter?.name ?? "", n: companionCharacterIds.length })
+                  : (currentCharacter?.name ?? g.selectCharacter)}
+              </span>
+              {/* The face-lock meter from the approved board — the casting
+                  sheet's 5-bar meter in miniature, right on the cell: one
+                  ochre bar per saved reference photo (capped at five).
+                  Single-cast only; the stacked avatars already carry the
+                  multi-cast story. */}
+              {currentCharacter && !isMultiCharacter && currentCharacter.referencePhotos.length > 0 && (
+                <span className="flex flex-shrink-0 items-center gap-[2.5px]" aria-hidden>
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <span
+                      key={i}
+                      className={cn(
+                        "h-[9px] w-[3px] rounded-[2px]",
+                        i < Math.min(5, currentCharacter.referencePhotos.length)
+                          ? "bg-atelier-accent"
+                          : "bg-atelier-accent/25",
+                      )}
+                    />
+                  ))}
+                </span>
+              )}
+              {anchorPickerShown && (
+                <span className="flex-shrink-0 text-[10px] font-medium uppercase tabular-nums tracking-[0.12em] text-atelier-muted">
+                  {anchorIndex + 1}/{referencePhotos.length}
+                </span>
+              )}
+            </span>
           </span>
-          {/* The face-lock meter from the approved board — the casting
-              sheet's 5-bar meter in miniature, right on the chip: one ochre
-              bar per saved reference photo (capped at five). Single-cast
-              only; the stacked avatars already carry the multi-cast story. */}
-          {currentCharacter && !isMultiCharacter && currentCharacter.referencePhotos.length > 0 && (
-            <span className="hidden flex-shrink-0 items-center gap-[2.5px] sm:flex" aria-hidden>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <span
-                  key={i}
-                  className={cn(
-                    "h-[9px] w-[3px] rounded-[2px]",
-                    i < Math.min(5, currentCharacter.referencePhotos.length)
-                      ? "bg-atelier-accent"
-                      : "bg-atelier-accent/25",
-                  )}
-                />
-              ))}
-            </span>
-          )}
-          {anchorPickerShown && (
-            <span className="flex-shrink-0 text-[10px] font-medium uppercase tabular-nums tracking-[0.12em] text-atelier-muted">
-              {anchorIndex + 1}/{referencePhotos.length}
-            </span>
-          )}
-          <ChevronDownIcon
-            className={cn(
-              "h-3.5 w-3.5 flex-shrink-0 text-atelier-muted transition-transform",
-              (characterMenuOpen || photoMenuOpen) && "rotate-180",
-            )}
-          />
         </button>
 
         {characterMenuOpen && (
@@ -5897,7 +5918,8 @@ function GenerateFormInner({
     : 1;
   const videoModelPicker =
     contentType === "video" && videoModels.length > 1 ? (
-      <div ref={videoModelMenuRef} data-tour-id="tour-video-model" className="flex min-w-0 items-center gap-2">
+      <div ref={videoModelMenuRef} data-tour-id="tour-video-model" className="flex min-w-0 items-stretch">
+        <span aria-hidden className="my-2 w-px flex-shrink-0 self-stretch bg-atelier-rule/70" />
         <button
           type="button"
           onClick={() => {
@@ -5909,35 +5931,34 @@ function GenerateFormInner({
           aria-haspopup="listbox"
           aria-expanded={videoModelMenuOpen}
           className={cn(
-            // Borderless soft chip — matches the character select above.
-            "flex min-w-0 items-center gap-1.5 rounded-full py-1 pl-2 pr-2 text-left transition-colors disabled:opacity-50 sm:gap-2 sm:pl-2.5 sm:pr-2.5",
-            videoModelMenuOpen
-              ? "bg-atelier-ink/[0.08]"
-              : "bg-atelier-ink/[0.045] hover:bg-atelier-ink/[0.07]",
+            // The ENGINE cell: mono microlabel over the engine's name. No
+            // stock still — a photo that informs nothing goes (operator cut
+            // model thumbnails once as "irrelevant"). The price lives in the
+            // menu rows, the duration menu and on the Render key.
+            "flex min-w-0 flex-col justify-center gap-1 rounded-[10px] px-2.5 py-1.5 text-left transition-colors disabled:opacity-50 max-sm:px-1.5 sm:px-3",
+            videoModelMenuOpen ? "bg-atelier-ink/[0.07]" : "hover:bg-atelier-ink/[0.05]",
           )}
         >
-          <span className="min-w-[52px] flex-1 truncate text-sm font-medium text-atelier-ink">{currentVideoModel?.name}</span>
-          {currentDurationCredits > 1 && (
-            // Hidden on phone widths: the bar can't fit name + price +
-            // durations there, and the price still lives in the menu rows,
-            // the duration tooltips, and the credit strip before send.
-            <span className="hidden flex-shrink-0 font-numeral text-[11.5px] font-semibold tabular-nums text-atelier-accent sm:inline">
-              {formatMsg(g.creditsShortN, { n: currentDurationCredits })}
-            </span>
-          )}
-          <ChevronDownIcon
-            className={cn(
-              "h-3.5 w-3.5 flex-shrink-0 text-atelier-muted transition-transform",
-              videoModelMenuOpen && "rotate-180",
-            )}
-          />
+          <span className="flex items-center gap-1 text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted">
+            {g.slateEngine}
+            <ChevronDownIcon
+              className={cn(
+                "h-3 w-3 flex-shrink-0 transition-transform",
+                videoModelMenuOpen && "rotate-180",
+              )}
+            />
+          </span>
+          <span className="min-w-0 truncate text-[13.5px] font-medium leading-tight text-atelier-ink">
+            {currentVideoModel?.name}
+          </span>
         </button>
 
-        {/* The duration chip and its OWN dropdown (operator, 2026-09-02):
+        {/* The LENGTH cell and its OWN dropdown (operator, 2026-09-02):
             a small upward menu of the engine's lengths, each priced —
             separate from the engine sheet. */}
         {!storyboardActive && currentVideoModel && currentVideoModel.durations.length > 1 && (
-          <div ref={durationMenuRef} className="relative flex-shrink-0">
+          <div ref={durationMenuRef} className="relative flex flex-shrink-0 items-stretch">
+            <span aria-hidden className="my-2 w-px flex-shrink-0 self-stretch bg-atelier-rule/70" />
             <button
               type="button"
               disabled={locked}
@@ -5949,19 +5970,22 @@ function GenerateFormInner({
               aria-expanded={durationMenuOpen}
               title={currentDurationCredits === 1 ? g.durationCreditsOne : formatMsg(g.durationCredits, { n: currentDurationCredits })}
               className={cn(
-                "flex flex-shrink-0 items-center gap-1 rounded-full px-3 py-[7px] text-xs font-medium text-atelier-ink transition-colors disabled:opacity-50",
-                durationMenuOpen
-                  ? "bg-atelier-ink/[0.08]"
-                  : "bg-atelier-ink/[0.045] hover:bg-atelier-ink/[0.07]",
+                "flex flex-shrink-0 flex-col justify-center gap-1 rounded-[10px] px-2.5 py-1.5 text-left transition-colors disabled:opacity-50 max-sm:px-1.5 sm:px-3",
+                durationMenuOpen ? "bg-atelier-ink/[0.07]" : "hover:bg-atelier-ink/[0.05]",
               )}
             >
-              {formatMsg(g.durationSecondsShort, { n: videoDurationSeconds })}
-              <ChevronDownIcon
-                className={cn(
-                  "h-3 w-3 flex-shrink-0 text-atelier-muted transition-transform",
-                  durationMenuOpen && "rotate-180",
-                )}
-              />
+              <span className="flex items-center gap-1 text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted">
+                {g.slateLength}
+                <ChevronDownIcon
+                  className={cn(
+                    "h-3 w-3 flex-shrink-0 transition-transform",
+                    durationMenuOpen && "rotate-180",
+                  )}
+                />
+              </span>
+              <span className="font-numeral text-[16px] font-semibold leading-tight tabular-nums text-atelier-ink">
+                {formatMsg(g.durationSecondsShort, { n: videoDurationSeconds })}
+              </span>
             </button>
             {durationMenuOpen && (
               <div
@@ -6083,10 +6107,54 @@ function GenerateFormInner({
     ) : null;
 
 
-  // One resolve per render, shared by the receipt strip below the model
-  // selector (2026-08-26 declutter: the strip moved from its own floating
-  // row into the picker header; see the mount for the visibility rules).
+  // One resolve per render, shared by the slate's receipt cells and the
+  // issue rows (2026-08-26 declutter; slate geometry 2026-09-22 — same
+  // resolver, same strings, drawn as cells instead of a band).
   const sendPlanNow = resolveSendPlan(buildSendPlanInput());
+  const receiptParts = planReceiptParts(sendPlanNow, g, {
+    dialogueNote:
+      contentType === "video" && dialogueText.trim().length > 0
+        ? formatMsg(g.dialogueCreditNote, {
+            n: getDialogueCreditWeight(videoDurationSeconds),
+          })
+        : null,
+    facePhotoText: anchorPickerShown
+      ? formatMsg(g.receiptFacePhoto, {
+          n: anchorIndex + 1,
+          total: referencePhotos.length,
+        })
+      : null,
+  });
+  // FACE and OUTFIT get cells of their own on the slate; everything rarer
+  // (cast, frames, storyboard, continuation, scene, prop, reference, rules
+  // off, dropped-attachment notes — and the dialogue surcharge, which only
+  // exists once a line is typed) renders as mono statements in a wrap line
+  // under the row.
+  const facePart = receiptParts.find((p) => p.slot === "identity") ?? null;
+  const outfitPart = receiptParts.find((p) => p.slot === "outfit") ?? null;
+  const extraParts = receiptParts.filter((p) => p !== facePart && p !== outfitPart);
+  // The Outfit toggle chip's own conditions, unchanged from the chip row it
+  // replaces (2026-08-24) — the cell stays pressable with the same state.
+  const outfitChipAvailable = Boolean(
+    currentCharacter?.hasOutfit && companionCharacterIds.length === 0 && !storyboardActive,
+  );
+  const outfitNativeHere =
+    contentType === "image" ||
+    (videoAdvancedMode === "none" && (videoModelId === "seedance" || videoModelId === "seedance-2"));
+  const outfitCellShown = contentType === "video" && (outfitChipAvailable || outfitPart !== null);
+  // The asterisk footnote appears only when the engine can't take outfit
+  // photos — the honest per-model caption, same strings as the chip's note.
+  const outfitFootnote =
+    contentType === "video" && outfitChipAvailable && useOutfit && !outfitNativeHere
+      ? g.outfitDescribeNote
+      : null;
+  const outfitCellValue = outfitPart
+    ? outfitPart.value
+    : useOutfit && outfitChipAvailable
+      ? outfitNativeHere
+        ? g.receiptAttached
+        : g.receiptDescribed
+      : g.receiptUnused;
 
   // Is the next send going to be ANSWERED rather than rendered? Resolved
   // once per render and shared, rather than re-classifying at each call site.
@@ -6274,6 +6342,52 @@ function GenerateFormInner({
             ? g.video
             : g.image;
 
+  // ── The premiere (operator-approved B opening, 2026-09-22) ──────────────
+  // The empty screen becomes an opening title: the character's saved photo
+  // fanned between two tilted cards over "WHAT ARE WE SHOOTING?". It stands
+  // whenever the session has no takes yet and the CURRENT character has a
+  // saved photo — video and image mode alike (a fallback to another character
+  // once starred someone not on set, and the subtitle then promised scoring
+  // that would not run). With no such character the plain
+  // hint keeps the stage, and the no-character page state upstream stays as
+  // it is. The centre card wears the anchor photo (the one this take would
+  // match); the side cards are the character's other saved photos, topped up
+  // with set dressing when there are none.
+  const premiereCharacter =
+    currentCharacter?.referencePhotos[0]?.url ? currentCharacter : null;
+  const premiereThumb = (url: string) =>
+    url.startsWith("/api/media/") ? `${url}${url.includes("?") ? "&" : "?"}w=640` : url;
+  const premiereCenterUrl = premiereCharacter
+    ? ((premiereCharacter === currentCharacter && anchorPickerShown
+        ? referencePhotos[anchorIndex]?.url
+        : undefined) ?? premiereCharacter.referencePhotos[0]?.url ?? null)
+    : null;
+  // Spare reference photos first; the posters only top up what is missing,
+  // and a lone empty slot always gets the BRIGHT poster (the dark one reads
+  // near-black inside a dimmed 220×124 side card).
+  const premiereSpares = premiereCharacter
+    ? premiereCharacter.referencePhotos
+        .map((p) => p.url)
+        .filter((u) => u !== premiereCenterUrl)
+        .map(premiereThumb)
+    : [];
+  const premiereSideUrls = premiereCharacter
+    ? [
+        ...premiereSpares,
+        ...(premiereSpares.length ? [] : ["/hero-band-3-poster.jpg"]),
+        "/hero-band-2-poster.jpg",
+      ].slice(0, 2)
+    : [];
+  const premiereShown =
+    !isHero &&
+    stageTakes.length === 0 &&
+    stageInFlightPrompt === null &&
+    premiereCharacter !== null &&
+    premiereCenterUrl !== null;
+  // The name gets its own italic serif; the sentence around it comes from
+  // the catalog whole, split at the placeholder.
+  const [premiereSubBefore, premiereSubAfter = ""] = g.premiereSub.split("{name}");
+
   // ── Direction B (operator-picked, 2026-09-18): where the Takes strip goes.
   // Until today it always stood in a band over the screen's bottom, and a
   // VIDEO frame gave up 124 px of height under itself so the strip never sat
@@ -6325,6 +6439,23 @@ function GenerateFormInner({
   })();
   const stageFrameNarrow = stageFrame.w > 0 && stageFrame.w < 460;
   const stageFrameShort = stageFrame.h > 0 && stageFrame.h < 240;
+  // Whether the spec caption (right of the composer, under the frame's
+  // bottom-right corner) has room. A grown dock — the dialogue surcharge
+  // line, an armed note — used to push the caption up into the lock
+  // bracket's lower arms; and measured live (2026-09-22) those states have
+  // NO free band at all between the bracket and the composer card, so no
+  // anchor can save it — it steps back instead, like the frame's other
+  // overlays (stageFrameShort). The slate's ENGINE/LENGTH/FRAME cells say
+  // the same words, so nothing is lost while it is hidden. The caption sits
+  // at bottom dock+22, its 16px line box topping out at dock+38; the
+  // bracket's lower arm sits 7px under the frame's bottom edge, which is
+  // dock + reserve + the centering slack up — so it clears while that
+  // distance stays >= 45px.
+  const stageCaptionClear = (() => {
+    if (stageFrame.h === 0 || stageScore === null) return true;
+    const boxH = stagePane.h - STAGE_TOP_PX - dockHeight - COLUMN_RESERVE_PX;
+    return COLUMN_RESERVE_PX + Math.max(0, (boxH - stageFrame.h) / 2) >= 45;
+  })();
 
   // The take numbers on the tiles and the slate line: 01, 02 … counting up
   // from the session's first send (the strip itself runs newest first).
@@ -6751,6 +6882,54 @@ function GenerateFormInner({
               {g.sessionTranscript}
             </button>
           </div>
+        ) : premiereShown && premiereCharacter && premiereCenterUrl ? (
+          /* The opening title (approved B, 2026-09-22): the fan of three
+             cards — the saved photo locked in the centre, two tilted takes
+             of set dressing behind — over the marquee headline. Fixed warm
+             literals: the screen is dark in both themes. */
+          <div className="flex -translate-y-1.5 flex-col items-center px-6 text-center">
+            <div
+              aria-hidden
+              className="relative mb-[18px] h-[132px] w-[340px] max-w-full sm:mb-[26px] sm:h-[196px] sm:w-[560px]"
+            >
+              <span className="absolute -bottom-[26px] left-1/2 h-[60px] w-[260px] -translate-x-1/2 rounded-full bg-[radial-gradient(50%_50%_at_50%_50%,rgba(224,164,104,0.28),rgba(224,164,104,0)_70%)] blur-[6px] sm:w-[420px]" />
+              <span className="absolute left-1/2 top-1/2 block h-[79px] w-[140px] overflow-hidden rounded-[12px] bg-[#16130f] brightness-[.7] saturate-[.8] shadow-[0_0_0_1px_rgba(255,240,220,0.16),inset_0_1px_0_rgba(255,240,220,0.25),0_24px_40px_-12px_rgba(0,0,0,0.85)] [transform:translate(-118%,-42%)_rotate(-7deg)] sm:h-[124px] sm:w-[220px]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={premiereSideUrls[0]} alt="" className="h-full w-full object-cover object-[50%_32%]" />
+              </span>
+              <span className="absolute left-1/2 top-1/2 block h-[79px] w-[140px] overflow-hidden rounded-[12px] bg-[#16130f] brightness-[.7] saturate-[.8] shadow-[0_0_0_1px_rgba(255,240,220,0.16),inset_0_1px_0_rgba(255,240,220,0.25),0_24px_40px_-12px_rgba(0,0,0,0.85)] [transform:translate(18%,-42%)_rotate(7deg)] sm:h-[124px] sm:w-[220px]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={premiereSideUrls[1]} alt="" className="h-full w-full object-cover object-[50%_32%]" />
+              </span>
+              <span className="absolute left-1/2 top-1/2 z-[2] block h-[110px] w-[196px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[12px] bg-[#16130f] shadow-[0_0_0_1px_rgba(255,240,220,0.26),inset_0_1px_0_rgba(255,240,220,0.3),0_30px_60px_-14px_rgba(0,0,0,0.9)] sm:h-[169px] sm:w-[300px]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={premiereThumb(premiereCenterUrl)}
+                  alt=""
+                  className="h-full w-full object-cover object-[50%_32%]"
+                />
+                <span
+                  className="lock-frame absolute inset-1.5"
+                  style={
+                    { "--lock-arm": "16px", "--lock-stroke": "2px" } as React.CSSProperties
+                  }
+                />
+                <span className="absolute bottom-1.5 left-1.5 rounded-full bg-[#0e0c0a]/55 px-2 py-[3px] text-[8.5px] uppercase tracking-[0.12em] text-[#f3ede4] backdrop-blur-[6px] sm:bottom-2 sm:left-2.5 sm:text-[10px]">
+                  {premiereCharacter.name} · {g.receiptSrcSaved}
+                </span>
+              </span>
+            </div>
+            <h2 className="marquee max-w-[320px] bg-[linear-gradient(180deg,#fdf8f0_22%,#a89c8b_100%)] bg-clip-text text-[24px] leading-[1.05] text-transparent [text-wrap:balance] sm:max-w-none sm:text-[38px] sm:leading-none">
+              {g.premiereTitle}
+            </h2>
+            <p className="mt-2.5 max-w-md text-[13px] leading-snug text-[#a89f92] [text-wrap:balance] sm:mt-3 sm:text-sm">
+              {premiereSubBefore}
+              <em className="font-numeral text-[16px] italic text-[#e0a468] sm:text-[17px]">
+                {premiereCharacter.name}
+              </em>
+              {premiereSubAfter}
+            </p>
+          </div>
         ) : (
           <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-media bg-onmedia/10 text-[#e7e0d5]">
@@ -6785,7 +6964,7 @@ function GenerateFormInner({
           {/* Not while the transcript drawer is open: the drawer pulls the
               line in to the frame's own bottom-right corner, where it sat on
               the lock's bracket — and the drawer already names the take. */}
-          {!(transcriptOpen && stagePane.lg) && (
+          {!(transcriptOpen && stagePane.lg) && stageCaptionClear && (
             <p className="absolute right-8 z-20 hidden max-w-[320px] truncate text-right text-[10.5px] font-medium uppercase tracking-[0.14em] text-[#cfc6b8] md:block md:bottom-[calc(var(--dock-h)+22px)] md:transition-[bottom,right] md:duration-300 md:ease-out">
               {stageSpec}
             </p>
@@ -6794,8 +6973,10 @@ function GenerateFormInner({
       )}
       {/* The filmstrip band, over the screen's bottom from md up — the phone
           keeps its strip in the page's flow, under the screen. Not mounted
-          while the strip stands beside the frame, so no tile loads twice. */}
-      {!stripBeside && (
+          while the strip stands beside the frame, so no tile loads twice —
+          nor under the premiere, whose subtitle already says what the
+          Takes-0 note said. */}
+      {!stripBeside && !premiereShown && (
       <div
         className={cn(
           "absolute inset-x-8 z-20 hidden items-end gap-5 md:flex md:bottom-[calc(var(--dock-h)+22px)] md:transition-[bottom,right] md:duration-300 md:ease-out",
@@ -6855,7 +7036,7 @@ function GenerateFormInner({
       style={{ "--dock-h": `${Math.round(dockHeight)}px` } as React.CSSProperties}
     >
     {stagePanel}
-    {!isHero && <div className="mb-4 md:hidden">{filmstrip("page")}</div>}
+    {!isHero && !premiereShown && <div className="mb-4 md:hidden">{filmstrip("page")}</div>}
     <div
       className={cn(
         "relative flex flex-col transition-all duration-300 ease-out md:static",
@@ -7191,7 +7372,11 @@ function GenerateFormInner({
           // Stage redesign the docked composer is a standalone floating
           // card too, not the bottom slab of a chat card — fully rounded
           // unless a banner strip is fused above it.
-          "relative z-10 isolate transform-gpu p-4 backdrop-blur-xl",
+          "relative z-10 isolate transform-gpu backdrop-blur-xl",
+          // Docked, the slate sits tighter to the card's edge — the target
+          // height (~230px at 1440×900) is most of what the operator picked
+          // the capsule for.
+          isHero ? "p-4" : "px-4 pb-3 pt-2.5",
           isHero
             ? cn(
                 "bg-atelier-surface/80",
@@ -7238,222 +7423,213 @@ function GenerateFormInner({
             of the screen — the same rule the + menu already follows. */}
         {!isHero && (
           <>
-            {/* Send Receipt — the fused band from the approved A×B board
-                (fidelity pass, 2026-09-02): a tinted strip fused into the
-                composer's top edge, headed SEND RECEIPT with the total on
-                the right, wrapping the same ReceiptStrip machinery
-                (inventory rows, one-tap remedies) unchanged.
+            {/* THE SLATE (operator-approved pick, 2026-09-22): the Send
+                Receipt band and the loadout chips fused into one ruled row
+                of cells — controls first (CAST · ENGINE · LENGTH · FRAME),
+                then the receipt half (FACE · OUTFIT), split by hairlines.
+                No TOTAL cell: the price lives on the Render key alone,
+                quoted by the same sendCreditCost. Rarer receipt entries
+                render as mono statements in a wrap line under the row, and
+                the resolver's warn/block rows keep their full-width rows
+                with their one-tap remedies — same module, new geometry.
 
-                Two rows on a phone, one on anything wider (2026-09-03,
-                operator's screenshot from a real device): the band's three
-                columns — labels, strip, total — are two fixed widths and a
-                flex-1, which at 360px CSS left the strip about 120px. An
-                issue message wrapped one word per line and its action pill
-                overflowed across the text. Below `sm` the strip now takes
-                its own full-width row under the labels, the total keeps the
-                right edge of the first row, and the divider goes; from `sm`
-                up the DOM order and widths are exactly what the board
-                approved. `grow basis-*` rather than `flex-1` so the basis
-                switch is explicit instead of racing the shorthand. */}
-            {(contentType === "video" || showImageReceipt) && (
-              <div
-                className={cn(
-                  "-mx-4 -mt-4 mb-3 flex flex-wrap items-start gap-x-[18px] gap-y-2 border-b border-atelier-rule/60 bg-atelier-accent/[0.06] px-4 pb-2.5 pt-2.5",
-                  !composerBannerVisible && "rounded-t-[22px]",
-                )}
-              >
-                <div className="order-1 flex flex-shrink-0 flex-col gap-0.5">
-                  <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
-                    {g.receiptTitle}
-                  </span>
-                  <span className="text-[10.5px] leading-tight text-atelier-muted/80">
-                    {g.receiptQuoted}
-                  </span>
-                </div>
-                <span aria-hidden className="order-2 mt-0.5 hidden h-7 w-px flex-shrink-0 bg-atelier-rule/80 sm:block" />
-                <div className="order-4 min-w-0 grow basis-full sm:order-3 sm:basis-0">
-                  <ReceiptStrip
-                    plan={sendPlanNow}
-                    headline={null}
-                    g={g}
-                    modelName={sendPlanModelName()}
-                    onAction={handlePlanAction}
-                    showIssues={receiptEngaged}
-                    facePhoto={
-                      anchorPickerShown
-                        ? {
-                            text: formatMsg(g.receiptFacePhoto, {
-                              n: anchorIndex + 1,
-                              total: referencePhotos.length,
-                            }),
-                            onOpen: () => {
-                              setComposerFolded(false);
-                              setCharacterMenuOpen(false);
-                              setPhotoMenuOpen(true);
-                            },
-                          }
-                        : null
-                    }
-                    dialogueNote={
-                      contentType === "video" && dialogueText.trim().length > 0
-                        ? formatMsg(g.dialogueCreditNote, {
-                            n: getDialogueCreditWeight(videoDurationSeconds),
-                          })
-                        : null
-                    }
-                  />
-                </div>
-                {!willAsk && sendCreditCost > 0 && !freeTierClient && (
-                  <div className="order-3 ml-auto flex flex-shrink-0 flex-col items-end gap-0.5 sm:order-4 sm:ml-0">
-                    <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
-                      {g.totalLabel}
-                    </span>
-                    <span className="font-numeral text-[13px] font-semibold tabular-nums text-atelier-ink">
-                      {sendCreditCost === 1 ? g.durationCreditsOne : formatMsg(g.durationCredits, { n: sendCreditCost })}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-          <div className="mb-2.5 space-y-2.5">
+                On a phone the row wraps into two runs: the controls, then
+                the receipt half on its own ruled line. The .relative wrapper
+                stays the anchor, so the casting sheet, the photo menu and
+                the engine sheet still open bar-wide above the row. */}
+          <div className="mb-1">
             <div className="relative">
-              {/* Separated loadout chips (approved board), not one shared
-                  pill: character · engine+price · durations, each its own
-                  chip. The .relative wrapper stays the anchor, so both
-                  sheets still open bar-wide above the row. */}
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex min-w-0 flex-wrap items-stretch">
+                {/* max-sm:basis-full on BOTH runs: with flex-1's zero basis
+                    alone, the receipt's 100% basis still fit on one line and
+                    crushed the controls to nothing (measured at 390). */}
+                <div className="flex min-w-0 flex-1 items-stretch max-lg:flex-wrap max-lg:basis-full">
                 {characterPicker}
                 {videoModelPicker}
-                {/* Aspect as loadout chips (approved board): "16:9 · 9:16"
-                    text chips beside the durations, not icon toggles buried
-                    in the control row. Active click clears back to
-                    prompt-decides, exactly as before. */}
+                {/* FRAME — the real two-way aspect toggle, drawn to ratio;
+                    neither lit = the prompt decides, and the cell SAYS so
+                    now ("Automatic" / the pressed ratio word) like every
+                    other cell's value. Below lg the cell takes its own ruled
+                    run, which is what lets the ratio words and the 44px hit
+                    areas fit at 390 (addendum §1). */}
                 {contentType === "video" && (
-                  <div className="flex flex-shrink-0 items-center gap-0.5 rounded-full bg-atelier-ink/[0.045] p-0.5">
-                    {(["16:9", "9:16"] as const).map((ar) => (
-                      <button
-                        key={ar}
-                        type="button"
-                        disabled={submitting}
-                        onClick={() => setVideoAspectRatio((prev) => (prev === ar ? null : ar))}
-                        title={ar === "16:9" ? g.aspectWideTitle : g.aspectTallTitle}
-                        aria-label={ar === "16:9" ? g.aspectWideTitle : g.aspectTallTitle}
-                        aria-pressed={videoAspectRatio === ar}
-                        className={cn(
-                          "flex h-7 w-8 items-center justify-center rounded-full transition-colors disabled:opacity-50",
-                          videoAspectRatio === ar
-                            ? "bg-atelier-ink text-atelier-paper"
-                            : "text-atelier-muted/80 hover:text-atelier-ink",
-                        )}
-                      >
-                        {ar === "16:9" ? (
-                          <LandscapeIcon className="h-4 w-4" />
-                        ) : (
-                          <PortraitIcon className="h-4 w-4" />
-                        )}
-                      </button>
-                    ))}
+                  <div className="flex flex-shrink-0 items-stretch max-lg:mt-0.5 max-lg:basis-full max-lg:border-t max-lg:border-atelier-rule/60 max-lg:pt-0.5">
+                    <span aria-hidden className="my-2 w-px flex-shrink-0 self-stretch bg-atelier-rule/70 max-lg:hidden" />
+                    <div className="flex flex-col justify-center gap-1 px-2.5 py-1.5 max-sm:px-1.5 sm:px-3">
+                      <span className="text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted">
+                        {g.slateFrame}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        {(["16:9", "9:16"] as const).map((ar) => (
+                          <button
+                            key={ar}
+                            type="button"
+                            disabled={submitting}
+                            onClick={() => setVideoAspectRatio((prev) => (prev === ar ? null : ar))}
+                            title={ar === "16:9" ? g.aspectWideTitle : g.aspectTallTitle}
+                            aria-label={ar === "16:9" ? g.aspectWideTitle : g.aspectTallTitle}
+                            aria-pressed={videoAspectRatio === ar}
+                            className={cn(
+                              "relative flex h-[22px] items-center gap-1 rounded-[6px] px-1.5 transition-colors disabled:opacity-50 before:absolute before:-inset-y-[11px] before:inset-x-0 before:content-[''] lg:before:content-none",
+                              videoAspectRatio === ar
+                                ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(224,164,104,0.45)]"
+                                : "text-atelier-muted/80 shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:text-atelier-ink",
+                            )}
+                          >
+                            {ar === "16:9" ? (
+                              <LandscapeIcon className="h-3.5 w-3.5" />
+                            ) : (
+                              <PortraitIcon className="h-3.5 w-3.5" />
+                            )}
+                            <span className="text-[10.5px] font-medium tabular-nums">{ar}</span>
+                          </button>
+                        ))}
+                        <span className="ml-1 text-[12.5px] leading-tight text-atelier-ink/75">
+                          {videoAspectRatio ?? t.settings.aspectAuto}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 )}
-                {/* Camera & Lighting — the proven cinema presets, living
-                    beside the aspect chips (operator, 2026-09-02: "there is
-                    enough room beside aspect ratio"; the approved board's
-                    armed Orbit chip sat here too). Warm when armed, wearing
-                    the armed preset's name; tap opens the proof-render
-                    strip straight on that tab. Seedance lanes only — the
-                    presets don't exist elsewhere. */}
-                {cinemaPresetsAvailable && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (presetRowOpen && presetTab === "move") {
-                          setPresetRowOpen(false);
-                        } else {
-                          setPresetTab("move");
-                          setPresetRowOpen(true);
-                        }
-                      }}
-                      disabled={submitting}
-                      aria-expanded={presetRowOpen && presetTab === "move"}
-                      aria-pressed={Boolean(cinemaPresetIds.move)}
-                      className={cn(
-                        "flex flex-shrink-0 items-center gap-1.5 rounded-full px-3 py-[7px] text-xs font-medium transition-colors disabled:opacity-50",
-                        cinemaPresetIds.move
-                          ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
-                          : "bg-atelier-ink/[0.045] text-atelier-muted hover:bg-atelier-ink/[0.07] hover:text-atelier-ink",
-                      )}
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 flex-shrink-0">
-                        <path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" />
-                        <path d="m4 8-1.5-3.5 15.5-2L19.5 6z" />
-                        <path d="m8 7.2 2.5-3.7M13 6.5l2.5-3.7" />
-                      </svg>
-                      {g.presetTabCamera}
-                      {cinemaPresetIds.move
-                        ? ` · ${(g.cinemaPresetLabels as Record<string, string>)[cinemaPresetIds.move] ?? cinemaPresetIds.move}`
-                        : ""}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (presetRowOpen && presetTab === "look") {
-                          setPresetRowOpen(false);
-                        } else {
-                          setPresetTab("look");
-                          setPresetRowOpen(true);
-                        }
-                      }}
-                      disabled={submitting}
-                      aria-expanded={presetRowOpen && presetTab === "look"}
-                      aria-pressed={Boolean(cinemaPresetIds.look)}
-                      className={cn(
-                        "flex flex-shrink-0 items-center gap-1.5 rounded-full px-3 py-[7px] text-xs font-medium transition-colors disabled:opacity-50",
-                        cinemaPresetIds.look
-                          ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
-                          : "bg-atelier-ink/[0.045] text-atelier-muted hover:bg-atelier-ink/[0.07] hover:text-atelier-ink",
-                      )}
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 flex-shrink-0">
-                        <circle cx="12" cy="12" r="4" />
-                        <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" />
-                      </svg>
-                      {g.presetTabLight}
-                      {cinemaPresetIds.look
-                        ? ` · ${(g.cinemaPresetLabels as Record<string, string>)[cinemaPresetIds.look] ?? cinemaPresetIds.look}`
-                        : ""}
-                    </button>
-                  </>
-                )}
-                {/* New chat lives at the loadout's right edge, where the
-                    board put it. */}
-                {hasAnyMessages && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // Instead of being dead for the whole render, New chat
-                      // now sends a queued render to the background and
-                      // starts fresh — the render keeps its own visible
-                      // turn and Stop (see detachLiveRender).
-                      if (canDetach) detachLiveRender();
-                      resetChat();
-                    }}
-                    disabled={locked && !canDetach}
-                    className="ml-auto flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-medium text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink disabled:opacity-50"
-                  >
-                    {g.newChat}
-                  </button>
+                </div>
+                {/* The receipt half of the slate: FACE is a read-only cell
+                    (muted ink, no chevron, no hover — the photo choice
+                    itself opens from the CAST cell); OUTFIT is the toggle
+                    chip become a cell, pressable with the same aria-pressed
+                    state. On a phone this half takes its own ruled run. */}
+                {contentType === "video" && (facePart !== null || outfitCellShown) && (
+                  <div className="flex min-w-0 items-stretch max-lg:mt-0.5 max-lg:basis-full max-lg:border-t max-lg:border-atelier-rule/60 max-lg:pt-0.5">
+                    <span aria-hidden className="my-2 hidden w-px flex-shrink-0 self-stretch bg-atelier-rule/70 lg:block" />
+                    {facePart && (
+                      <div className="flex min-w-0 flex-col justify-center gap-1 px-2.5 py-1.5 max-sm:px-1 sm:px-3">
+                        <span className="text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted/80">
+                          {facePart.label ?? g.receiptFace}
+                        </span>
+                        <span className="flex min-w-0 items-center gap-1 text-[12.5px] leading-tight text-atelier-ink/75">
+                          <span className="truncate">{facePart.value}</span>
+                          {facePart.ok && (
+                            <CheckIcon className="h-3 w-3 flex-shrink-0 text-atelier-accent" />
+                          )}
+                        </span>
+                      </div>
+                    )}
+                    {outfitCellShown && (
+                      <div className="flex min-w-0 items-stretch">
+                        {facePart && (
+                          <span aria-hidden className="my-2 w-px flex-shrink-0 self-stretch bg-atelier-rule/70" />
+                        )}
+                        {outfitChipAvailable ? (
+                          <button
+                            type="button"
+                            onClick={() => setUseOutfit((v) => !v)}
+                            aria-pressed={useOutfit}
+                            className="flex min-w-0 flex-col justify-center gap-1 rounded-[10px] px-2.5 py-1.5 text-left transition-colors hover:bg-atelier-ink/[0.05] max-sm:px-1.5 sm:px-3"
+                          >
+                            <span className="flex items-center gap-1.5 text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted">
+                              {g.receiptOutfit}
+                              <span
+                                aria-hidden
+                                className={cn(
+                                  "relative h-[9px] w-4 flex-shrink-0 rounded-full transition-colors",
+                                  useOutfit ? "bg-atelier-accent/35" : "bg-atelier-ink/15",
+                                )}
+                              >
+                                <span
+                                  className={cn(
+                                    "absolute left-[1.5px] top-[1.5px] h-1.5 w-1.5 rounded-full transition-transform",
+                                    useOutfit ? "translate-x-[7px] bg-atelier-accent" : "bg-atelier-muted",
+                                  )}
+                                />
+                              </span>
+                            </span>
+                            <span className="flex min-w-0 items-center gap-1 text-[12.5px] leading-tight text-atelier-ink/75">
+                              <span className="truncate">{outfitCellValue}</span>
+                              {outfitPart?.ok && (
+                                <CheckIcon className="h-3 w-3 flex-shrink-0 text-atelier-accent" />
+                              )}
+                              {outfitFootnote && (
+                                <sup className="text-[10px] leading-none text-atelier-accent">*</sup>
+                              )}
+                            </span>
+                          </button>
+                        ) : (
+                          <div className="flex min-w-0 flex-col justify-center gap-1 px-2.5 py-1.5 sm:px-3">
+                            <span className="text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted/80">
+                              {g.receiptOutfit}
+                            </span>
+                            <span className="flex min-w-0 items-center gap-1 text-[12.5px] leading-tight text-atelier-ink/75">
+                              <span className="truncate">{outfitCellValue}</span>
+                              {outfitPart?.ok && (
+                                <CheckIcon className="h-3 w-3 flex-shrink-0 text-atelier-accent" />
+                              )}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
+            {/* The footnote row: the outfit reason, whole, never behind a
+                hover (phones have none). */}
+            {outfitFootnote && (
+              <p className="mt-1 border-t border-atelier-rule/50 px-1 pb-0.5 pt-1.5 text-[10.5px] leading-snug text-atelier-muted/85">
+                <sup className="mr-1 text-atelier-accent">*</sup>
+                {outfitFootnote}
+              </p>
+            )}
+            {/* Rare receipt entries — cast, frames, storyboard,
+                continuation, scene, prop, reference, rules-off, dropped
+                attachments, and the dialogue surcharge — as small mono
+                statements. In image mode this line is the whole receipt,
+                gated exactly as the old band was (attachments riding or an
+                engaged issue). */}
+            {(contentType === "video" ? extraParts : showImageReceipt ? receiptParts : []).length > 0 && (
+              <div className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-atelier-rule/50 px-1 pb-0.5 pt-1.5">
+                {(contentType === "video" ? extraParts : receiptParts).map((p, i) => (
+                  <span key={i} className="flex min-w-0 items-baseline gap-1.5 text-[11px] leading-snug">
+                    {p.label && (
+                      <span className="text-[9px] font-medium uppercase tracking-widest text-atelier-muted/80">
+                        {p.label}
+                      </span>
+                    )}
+                    <span
+                      className={
+                        p.accent
+                          ? "font-numeral tabular-nums text-atelier-accent"
+                          : "text-atelier-ink/80"
+                      }
+                    >
+                      {p.value}
+                    </span>
+                    {p.ok && <CheckIcon className="h-3 w-3 flex-shrink-0 self-center text-atelier-accent" />}
+                  </span>
+                ))}
+              </div>
+            )}
+            {/* The resolver's verdicts: persistent warn/block rows with
+                their one-tap remedies, unchanged (see receipt-strip.tsx).
+                The submit-time soft-block behaviour is untouched. */}
+            {receiptEngaged && sendPlanNow.issues.length > 0 && (
+              <div className="mt-2">
+                <PlanIssueRows
+                  issues={sendPlanNow.issues}
+                  g={g}
+                  modelName={sendPlanModelName()}
+                  onAction={handlePlanAction}
+                  hasAttachmentRiding={planHasAttachmentRiding(sendPlanNow)}
+                />
+              </div>
+            )}
             {/* The REFERENCE PHOTO row lived here until direction B
                 (2026-09-18): opening the composer grew it by about 85 px,
                 and the screen above paid for every pixel — on a 632 px
                 window the take shrank to 55 px. The same choice now opens
-                from the character's pill and the receipt's FACE column
+                from the character's cell and the FACE cell's photo count
                 (the photo menu, in characterPicker). */}
             {isMultiCharacter && castMemberMissingPhoto && (
-              <p className="text-xs text-red-500">
+              <p className="mt-1.5 text-xs text-red-500">
                 {formatMsg(g.multiCharacterNeedsPhoto, { name: castMemberMissingPhoto.name })}
               </p>
             )}
@@ -7487,8 +7663,11 @@ function GenerateFormInner({
             tap toggles it off for one-off scenes. The caption is honest per
             model: Seedance and image generations get the actual photo as a
             cited reference; the Kling family's endpoints only take person
-            references, so there the stored description rides the prompt. */}
-        {currentCharacter?.hasOutfit && companionCharacterIds.length === 0 && !storyboardActive && (
+            references, so there the stored description rides the prompt.
+            Image mode only since the slate (2026-09-22): in video mode the
+            chip became the slate's OUTFIT cell and its caption the footnote
+            row — same strings, same toggle. */}
+        {contentType === "image" && outfitChipAvailable && currentCharacter && (
           <div className="mb-2.5 flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -7663,8 +7842,11 @@ function GenerateFormInner({
           className={cn(
             "rounded-[14px] transition-colors",
             // The board runs the prompt bare on the card; hero keeps the
-            // soft chip fill it always had.
-            isHero && "bg-atelier-ink/[0.045] focus-within:bg-atelier-ink/[0.07]",
+            // soft chip fill it always had. Docked, the slate's script
+            // lines (ACTION, DIALOGUE) hang from a rule under the cells.
+            isHero
+              ? "bg-atelier-ink/[0.045] focus-within:bg-atelier-ink/[0.07]"
+              : "rounded-none border-t border-atelier-rule/60",
           )}
         >
           {/* Hidden while the render is in flight: the staged plan is kept
@@ -7977,52 +8159,91 @@ function GenerateFormInner({
                 </div>
               ) : (
               <>
-              {/* rows={2} is the resting height (one line was too cramped to
-                  read a prompt back before sending); the auto-grow effect on
+              {/* Docked, the prompt is a script line under its mono margin
+                  label (ACTION, md+ only — the phone keeps the full width);
+                  hero keeps rows={2} (one line was too cramped to read a
+                  prompt back before sending). The auto-grow effect on
                   `prompt` takes over from there, up to the max-h-36 cap
                   (six lines) with internal scrolling beyond. Enter still
                   sends and Shift+Enter still breaks the line — unchanged. */}
-              <textarea
-                ref={promptTextareaRef}
-                id="prompt"
-                rows={2}
-                value={prompt}
-                onChange={(e) => {
-                  setPrompt(e.target.value);
-                  // Editing the refused prompt retires its refusal strip; any
-                  // other message is the toast's and keeps its own clock.
-                  setError((cur) => (isPolicyRefusal(cur) ? "" : cur));
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    e.currentTarget.form?.requestSubmit();
+              <div className={cn(!isHero && "flex items-start")}>
+                {!isHero && (
+                  <span
+                    aria-hidden
+                    className="hidden w-[84px] flex-shrink-0 select-none pl-1 pt-[15px] text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted md:block"
+                  >
+                    {g.slateAction}
+                  </span>
+                )}
+                <textarea
+                  ref={promptTextareaRef}
+                  id="prompt"
+                  rows={isHero ? 2 : 1}
+                  value={prompt}
+                  onChange={(e) => {
+                    setPrompt(e.target.value);
+                    // Editing the refused prompt retires its refusal strip; any
+                    // other message is the toast's and keeps its own clock.
+                    setError((cur) => (isPolicyRefusal(cur) ? "" : cur));
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      e.currentTarget.form?.requestSubmit();
+                    }
+                  }}
+                  placeholder={
+                    chatAgentEnabled && assistantOn
+                      ? g.askPlaceholder
+                      : contentType === "video"
+                        ? g.videoPlaceholder
+                        : g.imagePlaceholder
                   }
-                }}
-                placeholder={
-                  chatAgentEnabled && assistantOn
-                    ? g.askPlaceholder
-                    : contentType === "video"
-                      ? g.videoPlaceholder
-                      : g.imagePlaceholder
-                }
-                disabled={submitting || asking}
-                maxLength={COMPOSER_MAX_CHARS}
-                className="max-h-36 w-full resize-none border-none bg-transparent px-3.5 py-3 text-[15px] text-atelier-ink outline-none placeholder:text-atelier-muted/80 disabled:opacity-60"
-              />
+                  disabled={submitting || asking}
+                  maxLength={COMPOSER_MAX_CHARS}
+                  className={cn(
+                    "max-h-36 w-full min-w-0 flex-1 resize-none border-none bg-transparent px-3.5 py-3 text-[15px] text-atelier-ink outline-none placeholder:text-atelier-muted/80 disabled:opacity-60",
+                    !isHero && "md:pl-0",
+                  )}
+                />
+              </div>
               </>
               )}
 
               {/* Dialogue is a first-class line now (A×B) — it used to hide
-                  behind the advanced reveal, which no longer exists. */}
+                  behind the advanced reveal, which no longer exists. ALWAYS
+                  visible for voiced characters in video mode (settled).
+                  Docked, it is the slate's second script line, under its
+                  own mono margin label from md up. */}
               {contentType === "video" && currentCharacter?.voiceId && (
                 <div
                   className={cn(
-                    "flex items-center gap-2 px-3.5 py-2",
-                    isHero && "border-t border-atelier-rule/70",
+                    "flex items-center gap-2 px-3.5",
+                    isHero
+                      ? "border-t border-atelier-rule/70 py-2"
+                      : "border-t border-dashed border-atelier-rule/50 py-1.5",
                   )}
                 >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-[13px] w-[13px] flex-shrink-0 text-atelier-muted">
+                  {!isHero && (
+                    <span
+                      aria-hidden
+                      className="hidden w-[84px] flex-shrink-0 select-none pl-1 text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted md:block"
+                    >
+                      {g.receiptDialogue}
+                    </span>
+                  )}
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={cn(
+                      "h-[13px] w-[13px] flex-shrink-0 text-atelier-muted",
+                      !isHero && "md:hidden",
+                    )}
+                  >
                     <path d="M4 5.5h16v11H10l-5.5 4z" />
                   </svg>
                   <input
@@ -8034,15 +8255,16 @@ function GenerateFormInner({
                     // field had NO accessible name at all (2026-09-05 audit).
                     aria-label={formatMsg(g.dialoguePlaceholder, { name: currentCharacter.name })}
                     placeholder={formatMsg(g.dialoguePlaceholder, { name: currentCharacter.name })}
-                    className="min-w-0 flex-1 border-none bg-transparent text-[13px] text-atelier-ink/90 outline-none placeholder:text-atelier-muted/80 disabled:opacity-60"
+                    className="min-w-0 flex-1 border-none bg-transparent py-1 text-[13px] text-atelier-ink/90 outline-none placeholder:text-atelier-muted/80 disabled:opacity-60"
                   />
                   {/* Only once there's actually dialogue to charge for —
                       showing a surcharge against an empty field would read
                       as a warning about something they haven't done. The
                       real function, not a re-typed divisor — the hardcoded
                       /5 here kept quoting the old price the day the rate
-                      changed (2026-08-31). */}
-                  {dialogueText.trim().length > 0 && (
+                      changed (2026-08-31). Docked, the same sentence is the
+                      slate's DIALOGUE statement above; hero keeps it here. */}
+                  {isHero && dialogueText.trim().length > 0 && (
                     <span className="flex-shrink-0 whitespace-nowrap text-[11.5px] text-atelier-muted">
                       {formatMsg(g.dialogueCreditNote, {
                         n: getDialogueCreditWeight(videoDurationSeconds),
@@ -8397,7 +8619,18 @@ function GenerateFormInner({
                 </div>
               )}
 
-              <div className="flex min-w-0 items-center justify-between gap-2 px-2.5 pb-3">
+              <div
+                className={cn(
+                  "flex min-w-0 items-center justify-between gap-2",
+                  // Docked: the keys row sits on its own rule, closing the
+                  // slate — attach + modes at the left, the session pair and
+                  // the Render key at the right. On a phone the key wraps to
+                  // its own run, so the "+" tops out level with the icons.
+                  isHero
+                    ? "px-2.5 pb-3"
+                    : "border-t border-atelier-rule/60 px-0.5 pb-0.5 pt-2.5 max-lg:items-start",
+                )}
+              >
                 <div ref={plusMenuRef} className="relative flex flex-shrink-0 items-center gap-2">
                   <button
                     type="button"
@@ -8407,7 +8640,7 @@ function GenerateFormInner({
                     aria-label={plusMenuOpen ? g.cancel : g.attachTitle}
                     aria-haspopup="menu"
                     aria-expanded={plusMenuOpen}
-                    className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-atelier-rule text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink disabled:opacity-50"
+                    className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-atelier-rule text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink disabled:opacity-50 after:absolute after:-inset-1.5 after:content-[''] lg:after:content-none"
                   >
                     {plusMenuOpen ? <XIcon className="h-4 w-4" /> : <PlusIcon className="h-4 w-4" />}
                   </button>
@@ -8520,18 +8753,37 @@ function GenerateFormInner({
                   )}
                 </div>
 
-                <div className="flex min-w-0 items-center gap-1.5">
+                <div
+                  className={cn(
+                    "flex min-w-0 items-center gap-1.5",
+                    // Docked: the row WRAPS instead of clipping — on a phone
+                    // the key takes its own full-width run (basis-full
+                    // below); at desktop an armed key + Assistant pair (or
+                    // the Seedance Camera/Light pills, or Italian) used to
+                    // push whole word pills into the strip's invisible
+                    // internal scroll, against "Frames stays visible".
+                    // flex-wrap only takes effect when a line genuinely
+                    // overflows, so the everyday one-run state is untouched.
+                    !isHero && "flex-wrap justify-end gap-y-2",
+                  )}
+                >
                   {/* Real incident, 2026-08-09: this whole icon strip (up to
                       7 buttons once video + advancedOpen reveal the extra
                       pair) had no way to shrink or wrap, so on a phone-width
                       screen it simply overflowed the composer card — the
                       rightmost button (Send) got pushed out past the visible
                       edge instead of staying reachable. Everything except
-                      Send/Stop now lives in its own min-w-0 + overflow-x-auto
-                      strip, same pattern as the admin nav's mobile fix, so it
-                      scrolls internally instead of pushing Send off-screen —
-                      Send/Stop stays outside it, always visible. */}
-                  <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto overscroll-x-contain">
+                      Send/Stop lives in its own min-w-0 strip that WRAPS
+                      below lg, so it grows a run instead of pushing Send
+                      off-screen — every control stays visible and tappable
+                      (its old internal overflow-x-auto scroll hid controls
+                      with no affordance, and its scroll box clipped the
+                      buttons' 44px after: hit extensions). At lg+ the strip
+                      refuses to shrink instead (min-w-fit) so the row above
+                      wraps the key to its own run — an invisible horizontal
+                      scroll at desktop hid Frames and cut "Cinema Studio"
+                      mid-word (audit, 2026-09-22). */}
+                  <div className="flex min-w-0 items-center gap-1.5 max-lg:flex-wrap max-lg:gap-y-2 lg:min-w-fit">
                   {/* Prompt Studio. Only appears once there's something to
                       enhance — an empty composer has nothing to improve, and
                       a control that can't do anything yet is just noise. */}
@@ -8546,7 +8798,7 @@ function GenerateFormInner({
                       disabled={enhancing || submitting}
                       title={prompt.trim().length > 0 ? g.enhance : g.describeImage}
                       aria-label={prompt.trim().length > 0 ? g.enhance : g.describeImage}
-                      className="flex flex-shrink-0 items-center gap-1.5 rounded-full border border-atelier-accent/40 px-3 py-1.5 text-xs font-semibold text-atelier-accent transition-colors hover:bg-atelier-accent/10 disabled:opacity-50"
+                      className="relative flex flex-shrink-0 items-center gap-1.5 rounded-full border border-atelier-accent/40 px-3 py-1.5 text-xs font-semibold text-atelier-accent transition-colors hover:bg-atelier-accent/10 disabled:opacity-50 after:absolute after:-inset-y-[7px] after:inset-x-0 after:content-[''] lg:after:content-none"
                     >
                       <SparkIcon className={cn("h-3.5 w-3.5", enhancing && "animate-pulse")} />
                       {/* Icon-only below sm: on a phone the full label ate
@@ -8600,12 +8852,12 @@ function GenerateFormInner({
                         aria-pressed={multiAngleMode}
                         aria-disabled={multiAngleLocked || undefined}
                         className={cn(
-                          "flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:opacity-50",
+                          "relative flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors disabled:opacity-50 after:absolute after:-inset-1 after:content-[''] lg:after:content-none",
                           multiAngleLocked
-                            ? "text-atelier-muted/40 shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
+                            ? "text-atelier-muted/40 hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
                             : multiAngleMode
                               ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
-                              : "text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                              : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                         )}
                       >
                         <AnglesIcon className="h-4 w-4" />
@@ -8644,12 +8896,12 @@ function GenerateFormInner({
                           aria-label={storyboardActive ? g.storyboardOnTitle : g.storyboardOffTitle}
                           aria-pressed={storyboardActive}
                           className={cn(
-                            "flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:opacity-50",
+                            "relative flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors disabled:opacity-50 after:absolute after:-inset-1 after:content-[''] lg:after:content-none",
                             advancedVideoLockedReason === "plan"
-                              ? "text-atelier-muted/40 shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
+                              ? "text-atelier-muted/40 hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
                               : storyboardActive
                                 ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
-                                : "text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                                : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                           )}
                         >
                           <FilmIcon className="h-4 w-4" />
@@ -8682,12 +8934,12 @@ function GenerateFormInner({
                         aria-pressed={sceneMode}
                         aria-disabled={multiAngleLocked || undefined}
                         className={cn(
-                          "flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:opacity-50",
+                          "relative flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors disabled:opacity-50 after:absolute after:-inset-1 after:content-[''] lg:after:content-none",
                           multiAngleLocked
-                            ? "text-atelier-muted/40 shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
+                            ? "text-atelier-muted/40 hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
                             : sceneMode
                               ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
-                              : "text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                              : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                         )}
                       >
                         <ClapperIcon className="h-4 w-4" />
@@ -8733,18 +8985,89 @@ function GenerateFormInner({
                         aria-pressed={videoAdvancedMode !== "none"}
                         aria-disabled={advancedVideoLockedReason !== null || undefined}
                         className={cn(
-                          "flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:opacity-50",
+                          "relative flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors disabled:opacity-50 after:absolute after:-inset-1 after:content-[''] lg:after:content-none",
                           advancedVideoLockedReason !== null
-                            ? "text-atelier-muted/40 shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
+                            ? "text-atelier-muted/40 hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
                             : videoAdvancedMode !== "none"
                               ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
-                              : "text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                              : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                         )}
                       >
                         <StackIcon className="h-4 w-4" />
                         <span className="hidden md:inline">{g.framesPillLabel}</span>
                       </button>
                     </div>
+                  )}
+
+                  {/* Camera & Lighting — the proven cinema presets (they
+                      lived in the loadout row until the slate, 2026-09-22;
+                      the slate's cells are pickers, and these are modes, so
+                      they sit with the mode words now). Warm when armed,
+                      wearing the armed preset's name; tap opens the
+                      proof-render strip straight on that tab. Seedance
+                      lanes only — the presets don't exist elsewhere. */}
+                  {!isHero && cinemaPresetsAvailable && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (presetRowOpen && presetTab === "move") {
+                            setPresetRowOpen(false);
+                          } else {
+                            setPresetTab("move");
+                            setPresetRowOpen(true);
+                          }
+                        }}
+                        disabled={submitting}
+                        aria-expanded={presetRowOpen && presetTab === "move"}
+                        aria-pressed={Boolean(cinemaPresetIds.move)}
+                        className={cn(
+                          "relative flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors disabled:opacity-50 after:absolute after:-inset-1 after:content-[''] lg:after:content-none",
+                          cinemaPresetIds.move
+                            ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
+                            : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                        )}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 flex-shrink-0">
+                          <path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" />
+                          <path d="m4 8-1.5-3.5 15.5-2L19.5 6z" />
+                          <path d="m8 7.2 2.5-3.7M13 6.5l2.5-3.7" />
+                        </svg>
+                        <span className="hidden md:inline">{g.presetTabCamera}</span>
+                        {cinemaPresetIds.move
+                          ? ` · ${(g.cinemaPresetLabels as Record<string, string>)[cinemaPresetIds.move] ?? cinemaPresetIds.move}`
+                          : ""}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (presetRowOpen && presetTab === "look") {
+                            setPresetRowOpen(false);
+                          } else {
+                            setPresetTab("look");
+                            setPresetRowOpen(true);
+                          }
+                        }}
+                        disabled={submitting}
+                        aria-expanded={presetRowOpen && presetTab === "look"}
+                        aria-pressed={Boolean(cinemaPresetIds.look)}
+                        className={cn(
+                          "relative flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors disabled:opacity-50 after:absolute after:-inset-1 after:content-[''] lg:after:content-none",
+                          cinemaPresetIds.look
+                            ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
+                            : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                        )}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 flex-shrink-0">
+                          <circle cx="12" cy="12" r="4" />
+                          <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" />
+                        </svg>
+                        <span className="hidden md:inline">{g.presetTabLight}</span>
+                        {cinemaPresetIds.look
+                          ? ` · ${(g.cinemaPresetLabels as Record<string, string>)[cinemaPresetIds.look] ?? cinemaPresetIds.look}`
+                          : ""}
+                      </button>
+                    </>
                   )}
 
                   {/* Aspect moved to the loadout row as text chips (approved
@@ -8820,11 +9143,167 @@ function GenerateFormInner({
                       sidebar's voice search is untouched. */}
                   </div>
 
-                  {/* No price beside the button (operator, 2026-09-02: the
-                      receipt band's Total at the composer's top right
-                      already quotes the same number, through the same
-                      sendCreditCost). The button's own label carries the
-                      ask verdict; the band's Total carries the money. */}
+                  {/* The session pair (docked): the Assistant switch and New
+                      chat, quiet at the row's right, beside the key. The
+                      switch is the same control that lived under the input
+                      chip — same handlers, same Faster/Smarter pair while
+                      it is on. */}
+                  {!isHero && chatAgentEnabled && (
+                    <div className="flex min-w-0 flex-shrink-0 items-center gap-x-2">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={assistantOn}
+                        onClick={toggleAssistant}
+                        disabled={submitting || asking}
+                        title={assistantOn ? g.assistantOnHint : g.assistantOffHint}
+                        className="relative flex h-6 flex-shrink-0 items-center gap-1.5 rounded-full disabled:opacity-50 after:absolute after:-inset-y-[10px] after:-inset-x-1 after:content-[''] lg:after:content-none"
+                      >
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "relative h-3.5 w-[26px] flex-shrink-0 rounded-full transition-colors duration-200",
+                            assistantOn ? "bg-atelier-accent" : "bg-atelier-ink/15",
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "absolute left-0.5 top-0.5 h-2.5 w-2.5 rounded-full bg-atelier-paper shadow-[0_1px_2px_rgba(33,29,22,0.25)] transition-transform duration-200 motion-reduce:transition-none",
+                              assistantOn && "translate-x-3",
+                            )}
+                          />
+                        </span>
+                        <span
+                          className={cn(
+                            "text-[11px] font-medium transition-colors",
+                            assistantOn ? "text-atelier-ink" : "text-atelier-muted",
+                          )}
+                        >
+                          {g.assistant}
+                        </span>
+                      </button>
+                      {assistantOn && (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setAgentEffort("faster")}
+                            disabled={asking}
+                            aria-pressed={agentEffort === "faster"}
+                            title={g.effortFasterHint}
+                            className={cn(
+                              "relative -my-1.5 rounded-full px-1 py-1.5 text-[11px] font-medium transition-colors disabled:opacity-50 after:absolute after:-inset-y-2 after:content-[''] lg:after:content-none",
+                              agentEffort === "faster"
+                                ? "text-atelier-ink"
+                                : "text-atelier-muted/70 hover:text-atelier-ink",
+                            )}
+                          >
+                            {g.effortFaster}
+                          </button>
+                          <span aria-hidden className="text-[10px] text-atelier-muted/40">·</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // Not disabled, deliberately. A disabled button
+                              // dispatches no events, so its `title` is
+                              // unreachable on a touch screen — in the phone
+                              // shell a free account got a dead control and no
+                              // way to find out why. Tapping now says so.
+                              if (!chatSmarterAvailable) {
+                                setError(g.effortSmarterPaid);
+                                return;
+                              }
+                              setAgentEffort((v) => {
+                                if (v !== "smarter") setSparkBurstKey((k) => k + 1);
+                                return "smarter";
+                              });
+                            }}
+                            disabled={asking}
+                            aria-disabled={!chatSmarterAvailable}
+                            aria-pressed={agentEffort === "smarter"}
+                            title={chatSmarterAvailable ? g.effortSmarterHint : g.effortSmarterPaid}
+                            className={cn(
+                              "relative -my-1.5 flex items-center rounded-full px-1 py-1.5 text-[11px] font-medium transition-colors disabled:opacity-50 after:absolute after:-inset-y-2 after:content-[''] lg:after:content-none",
+                              agentEffort === "smarter"
+                                ? "px-1.5 text-atelier-accent"
+                                : "text-atelier-muted/70 hover:text-atelier-ink",
+                            )}
+                          >
+                            <span
+                              key={sparkBurstKey}
+                              className={cn(
+                                "flex origin-left items-center gap-1",
+                                sparkBurstKey > 0 &&
+                                  agentEffort === "smarter" &&
+                                  "motion-safe:[animation:smarter-pop_0.5s_cubic-bezier(0.34,1.56,0.64,1)_1]",
+                              )}
+                            >
+                              {agentEffort === "smarter" && (
+                                <SparkIcon className="h-3 w-3 flex-shrink-0" />
+                              )}
+                              <span
+                                className={
+                                  agentEffort === "smarter" && asking ? "smarter-shimmer" : undefined
+                                }
+                              >
+                                {g.effortSmarter}
+                              </span>
+                            </span>
+                            {sparkBurstKey > 0 && agentEffort === "smarter" && (
+                              <span
+                                key={`burst-${sparkBurstKey}`}
+                                aria-hidden
+                                className="pointer-events-none absolute inset-0 hidden motion-safe:block"
+                              >
+                                <span className="absolute inset-0 rounded-full border border-atelier-accent/50 [animation:spark-ring_0.5s_ease-out_forwards]" />
+                                {SPARK_PARTICLES.map((d, i) => (
+                                  <span
+                                    key={i}
+                                    className={cn(
+                                      "absolute left-1/2 top-1/2 bg-atelier-accent [animation:spark-burst_0.6s_ease-out_forwards]",
+                                      d.size,
+                                      d.star ? "spark-star" : "rounded-full",
+                                    )}
+                                    style={{
+                                      "--spark-x": d.x,
+                                      "--spark-y": d.y,
+                                      "--spark-scale": d.scale,
+                                      animationDelay: `${d.delay}ms`,
+                                      opacity: 0,
+                                      animationFillMode: "both",
+                                    } as React.CSSProperties}
+                                  />
+                                ))}
+                              </span>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {/* New chat — a quiet session action at the right, where
+                      the pick put it. Same detach-then-reset behaviour. */}
+                  {!isHero && hasAnyMessages && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Instead of being dead for the whole render, New chat
+                        // now sends a queued render to the background and
+                        // starts fresh — the render keeps its own visible
+                        // turn and Stop (see detachLiveRender).
+                        if (canDetach) detachLiveRender();
+                        resetChat();
+                      }}
+                      disabled={locked && !canDetach}
+                      className="relative flex-shrink-0 rounded-full px-2 py-1.5 text-xs font-medium text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink disabled:opacity-50 after:absolute after:-inset-y-2 after:content-[''] lg:after:content-none"
+                    >
+                      {g.newChat}
+                    </button>
+                  )}
+
+                  {/* The price lives ON the key (operator's pick,
+                      2026-09-22): the same sendCreditCost the old Total cell
+                      quoted, as a chip on the Render key — quoted before the
+                      button, still. The label carries the ask verdict. */}
                   {asking ? (
                     // Stop for a streaming answer. Separate from the render
                     // Stop below because it cancels a fetch, not a queued
@@ -8879,27 +9358,32 @@ function GenerateFormInner({
                       title={willAsk ? g.askSend : g.send}
                       aria-label={willAsk ? g.askSend : g.send}
                       className={cn(
-                        // The approved board's labeled button (fidelity
-                        // pass, 2026-09-02): "Render" in ink, "Ask" in
-                        // ochre — the classifier's verdict spelled out, not
-                        // just tinted. Icon-only below sm so the control
-                        // row's 320px overflow contract holds.
-                        "flex h-9 flex-shrink-0 items-center justify-center gap-2 rounded-[10px] text-[13.5px] font-medium text-atelier-paper shadow-[0_8px_18px_-8px_rgba(35,37,45,0.5)] transition-colors disabled:opacity-30 max-sm:w-9 sm:px-[18px]",
-                        // The send button is the classifier made visible:
-                        // ink arrow = this renders, ochre spark = this asks.
-                        // The verdict shows in the one place the eye already
-                        // goes before committing, so no separate indicator
-                        // is needed anywhere else.
-                        // Screening Room (2026-09-17): Render is the ochre
-                        // button of the board, so Ask becomes its outline —
-                        // the verdict stays spelled out by fill, label and
-                        // icon rather than by hue alone.
-                        willAsk
-                          ? "bg-atelier-accent hover:bg-atelier-accent/90 screening:bg-transparent screening:text-atelier-accent screening:shadow-[inset_0_0_0_1px_var(--color-atelier-accent)] screening:hover:bg-atelier-accent/10"
-                          : "bg-atelier-ink hover:bg-atelier-ink/90 screening:bg-[#a84e24] screening:text-white screening:shadow-[0_0_30px_-4px_rgba(224,164,104,0.45)] screening:hover:bg-[#8a3d18]",
+                        // The RENDER key (operator's pick, 2026-09-22): the
+                        // one luminous ochre key, marquee-lettered, wearing
+                        // its price — always lit; disabled only dims a
+                        // little and stays readable. The classifier's
+                        // verdict stays spelled out: with the Assistant on
+                        // and a question in the box, the key becomes the
+                        // outline Ask twin (spark, accent, free).
+                        // The hero (dashboard) composer keeps its own quiet
+                        // pair untouched.
+                        isHero
+                          ? cn(
+                              "flex h-9 flex-shrink-0 items-center justify-center gap-2 rounded-[10px] text-[13.5px] font-medium text-atelier-paper shadow-[0_8px_18px_-8px_rgba(35,37,45,0.5)] transition-colors disabled:opacity-30 max-sm:w-9 sm:px-[18px]",
+                              willAsk
+                                ? "bg-atelier-accent hover:bg-atelier-accent/90 screening:bg-transparent screening:text-atelier-accent screening:shadow-[inset_0_0_0_1px_var(--color-atelier-accent)] screening:hover:bg-atelier-accent/10"
+                                : "bg-atelier-ink hover:bg-atelier-ink/90 screening:bg-[#a84e24] screening:text-white screening:shadow-[0_0_30px_-4px_rgba(224,164,104,0.45)] screening:hover:bg-[#8a3d18]",
+                            )
+                          : cn(
+                              "flex h-11 flex-shrink-0 items-center justify-center gap-2 rounded-[12px] px-3.5 text-[12.5px] font-extrabold uppercase tracking-[0.06em] transition-[filter,opacity] max-lg:basis-full sm:px-4",
+                              "[font-family:var(--font-marquee)] [font-stretch:112%] [font-variation-settings:'wdth'_112]",
+                              willAsk
+                                ? "bg-transparent text-atelier-accent shadow-[inset_0_0_0_1.5px_var(--color-atelier-accent)] hover:bg-atelier-accent/10 disabled:opacity-60"
+                                : "bg-[linear-gradient(180deg,#f0bb84_0%,#dc9c5e_100%)] text-[#1c1209] shadow-[inset_0_-3px_0_#97602f,inset_0_1px_0_rgba(255,245,230,0.6),0_6px_4px_rgba(0,0,0,0.25),0_24px_28px_-6px_rgba(224,164,104,0.28)] hover:brightness-105 disabled:opacity-80 disabled:saturate-[.6]",
+                            ),
                       )}
                     >
-                      <span className="hidden sm:inline">
+                      <span className={cn(isHero && "hidden sm:inline")}>
                         {willAsk
                           ? g.askSend
                           : multiAngleMode && selectedAngles.length > 1
@@ -8909,7 +9393,18 @@ function GenerateFormInner({
                       {willAsk ? (
                         <SparkIcon className="h-4 w-4" />
                       ) : (
-                        <SendIcon className="h-4 w-4" />
+                        <SendIcon className={isHero ? "h-4 w-4" : "h-3.5 w-3.5"} />
+                      )}
+                      {/* The price, on the key alone (no TOTAL cell): the
+                          same sendCreditCost the receipt band's Total used
+                          to quote, through the same strings — including the
+                          fan-out label above ("Render 4 angles"). */}
+                      {!isHero && !willAsk && sendCreditCost > 0 && !freeTierClient && (
+                        <span className="ml-0.5 rounded-[6px] bg-[#1c1209]/[0.14] px-1.5 py-[3px] text-[10.5px] font-medium normal-case tracking-[0.03em] tabular-nums [font-family:var(--font-slate)]">
+                          {sendCreditCost === 1
+                            ? g.durationCreditsOne
+                            : formatMsg(g.durationCredits, { n: sendCreditCost })}
+                        </span>
                       )}
                     </button>
                   )}
@@ -9044,8 +9539,10 @@ function GenerateFormInner({
               {/* The assistant strip, back in its original home (operator,
                   2026-09-02: "move assist to the same place it was") — the
                   quiet 26x14 switch under the input chip, with the
-                  Faster/Smarter words beside it while it is on. */}
-              {chatAgentEnabled && (
+                  Faster/Smarter words beside it while it is on. HERO ONLY
+                  since the slate (2026-09-22): docked, the switch sits in
+                  the keys row beside Render — see the session pair above. */}
+              {isHero && chatAgentEnabled && (
                 <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3.5">
                   <button
                     type="button"
@@ -9251,7 +9748,10 @@ function GenerateFormInner({
               tint hugs the sentence: it stays visibly OFF the card, which is
               where the operator asked for it, without chat text sliding
               underneath. */}
-          <span className="inline-block rounded-full bg-atelier-paper/85 px-3 py-1 text-[11px] text-atelier-muted/70 backdrop-blur-sm">
+          {/* Screening dark wears it as a whisper — no pill, no blur, just
+              quiet ink on the ground (the Console frame's rule); Frost and
+              the hero keep the pill so chat text can't slide underneath. */}
+          <span className="inline-block rounded-full bg-atelier-paper/85 px-3 py-1 text-[11px] text-atelier-muted/70 backdrop-blur-sm screening-dark:bg-transparent screening-dark:text-atelier-muted/75 screening-dark:backdrop-blur-none">
           {t.common.aiDisclaimer}{" "}
           <FeedbackLink
             label={t.common.aiDisclaimerFeedbackCta}

@@ -919,6 +919,16 @@ const en = {
     totalLabel: "Total",
     sendRender: "Render",
     renderAnglesN: "Render {n} angles",
+    // The slate composer + the premiere opening (operator-approved pick,
+    // 2026-09-22): one ruled row of cells over the script lines, and the
+    // opening title on the empty stage.
+    premiereTitle: "What are we shooting?",
+    premiereSub: "{name} is on set — every take is scored against the saved photo.",
+    slateCast: "Cast",
+    slateEngine: "Engine",
+    slateLength: "Length",
+    slateFrame: "Frame",
+    slateAction: "Action",
     multiAngleArmedNote: "Multi-angle is armed — {n} angles render in parallel. Storyboard stands down while it\u2019s on.",
     stageTakeNumber: "Take {n}",
     stageScoredNote: "Every take is scored against your character's photo — the number is right on it.",

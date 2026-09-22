@@ -38,12 +38,16 @@ describe("the receipt's FACE names the photo", () => {
     expect(strip).toContain('(e.source === "character-default" || e.source === "gallery-pick")');
   });
 
-  it("as a real button, never a clickable span", () => {
-    expect(strip).toContain('<button type="button" onClick={opens} aria-haspopup="dialog"');
+  it("read-only on the slate — the tap target is the CAST cell's real button", () => {
+    // The slate (2026-09-22): FACE carries the count as plain text; the
+    // photo menu opens from the CAST cell, a real <button> with the dialog
+    // popup announced.
+    expect(strip).toContain("facePhotoText");
+    expect(form).toContain('aria-haspopup={anchorPickerShown ? "dialog" : "listbox"}');
   });
 
   it("is handed the photo count by the composer", () => {
-    expect(form).toContain("facePhoto={\n                      anchorPickerShown");
+    expect(form).toContain("facePhotoText: anchorPickerShown");
   });
 });
 
@@ -57,7 +61,7 @@ describe("the Takes strip goes where the take comes out bigger", () => {
   });
 
   it("mounts the band only when it is used, so no tile loads twice", () => {
-    expect(form).toContain("{!stripBeside && (\n      <div");
+    expect(form).toContain("{!stripBeside && !premiereShown && (\n      <div");
   });
 });
 

@@ -165,72 +165,41 @@ function actionLabel(issue: PlanIssue, g: Messages["generate"]): string | null {
   }
 }
 
-// A column's value: a button when tapping it opens something (the FACE
-// column's photo menu), plain text otherwise — never a div with a click.
-function ValueTag({
-  opens,
-  className,
-  children,
-}: {
-  opens: (() => void) | null;
-  className: string;
-  children: React.ReactNode;
-}) {
-  if (!opens) return <span className={className}>{children}</span>;
-  return (
-    <button type="button" onClick={opens} aria-haspopup="dialog" className={className}>
-      {children}
-    </button>
-  );
-}
+/** One receipt entry, ready to draw: microlabel + value + the ochre check
+    when the input genuinely rides the send. */
+export type ReceiptPart = {
+  slot: PlanEntry["slot"];
+  label: string | null;
+  value: string;
+  ok: boolean;
+  accent: boolean;
+};
 
-export function ReceiptStrip({
-  plan,
-  headline,
-  g,
-  modelName,
-  onAction,
-  dialogueNote,
-  showIssues,
-  facePhoto,
-}: {
-  plan: SendPlan;
-  // Optional since 2026-08-26: the strip now sits directly below the model
-  // selector, which already names the model and duration — repeating them
-  // here was the clutter the operator flagged. Absent headline = entries
-  // render alone, first one without a leading separator.
-  headline?: string | null;
-  g: Messages["generate"];
-  modelName: string;
-  onAction: (issue: PlanIssue) => void;
-  /** When a spoken line is typed, the dialogue entry's column shows this
-      note (the "+N cr / 3s" surcharge) as its value, in proof ochre —
-      the board's DIALOGUE column. */
-  dialogueNote?: string | null;
-  // Issue rows wait for engagement (operator, 2026-08-25: a red block about
-  // the empty default state greeted people the moment they opened Generate).
-  // The caller flips this once anything is typed, attached, or picked; the
-  // submit-time soft-block protects regardless, so hiding rows pre-
-  // engagement costs no safety.
-  showIssues: boolean;
-  /** Direction B (2026-09-18): when the character has several saved photos
-      and this lane opens on one of them, the FACE column names WHICH one
-      ("photo 1 of 6") and opens the same photo menu as the character's pill.
-      Only ever applied to the character's own saved photos — an attachment
-      or multi-reference keeps its own words. */
-  facePhoto?: { text: string; onOpen: () => void } | null;
-}) {
-  // The approved A×B board draws the receipt as a SPEC SHEET, not a
-  // sentence: labeled columns (microlabel over value, an ochre check when
-  // the input genuinely rides the send) — so each entry's text splits at
-  // its first ": " into label + value; entries without that shape render
-  // as a value-only block. Same strings, same resolver, new geometry.
-  const parts = plan.entries
-    .map((e) => {
+// The receipt's inventory as labeled parts (the slate composer draws them as
+// cells and mono statements; the same strings, same resolver, new geometry —
+// each entry's text splits at its first ": " into label + value; entries
+// without that shape render as a value-only part).
+export function planReceiptParts(
+  plan: SendPlan,
+  g: Messages["generate"],
+  opts?: {
+    /** When a spoken line is typed, the dialogue entry carries this note
+        (the "+N cr" surcharge) as its value, in proof ochre. */
+    dialogueNote?: string | null;
+    /** Direction B (2026-09-18): when the character has several saved photos
+        and this lane opens on one of them, FACE names WHICH one
+        ("photo 1 of 6"). Only ever applied to the character's own saved
+        photos — an attachment or multi-reference keeps its own words. The
+        photo menu itself opens from the CAST cell. */
+    facePhotoText?: string | null;
+  },
+): ReceiptPart[] {
+  return plan.entries
+    .map((e): ReceiptPart | null => {
       const text = entryText(e, g);
       if (!text) return null;
-      if (e.slot === "dialogue" && dialogueNote) {
-        return { label: g.receiptDialogue, value: dialogueNote, ok: false, accent: true, opens: null };
+      if (e.slot === "dialogue" && opts?.dialogueNote) {
+        return { slot: e.slot, label: g.receiptDialogue, value: opts.dialogueNote, ok: false, accent: true };
       }
       const ci = text.indexOf(": ");
       // The character's own saved photo — the default one, or the one picked
@@ -240,75 +209,44 @@ export function ReceiptStrip({
         e.consumption !== "dropped" &&
         (e.source === "character-default" || e.source === "gallery-pick");
       return {
+        slot: e.slot,
         label: ci > 0 ? text.slice(0, ci) : null,
-        value: savedFace && facePhoto ? facePhoto.text : ci > 0 ? text.slice(ci + 2) : text,
+        value:
+          savedFace && opts?.facePhotoText ? opts.facePhotoText : ci > 0 ? text.slice(ci + 2) : text,
         ok: e.consumption === "native",
         accent: false,
-        opens: savedFace && facePhoto ? facePhoto.onOpen : null,
       };
     })
-    .filter(
-      (
-        p,
-      ): p is {
-        label: string | null;
-        value: string;
-        ok: boolean;
-        accent: boolean;
-        opens: (() => void) | null;
-      } => p !== null,
-    );
-  const visibleIssues = showIssues ? plan.issues : [];
-  const hasAttachmentRiding = plan.entries.some(
-    (e) => e.slot === "reference" || e.slot === "prop" || e.slot === "scene",
-  );
-  if (parts.length === 0 && visibleIssues.length === 0 && !headline) return null;
+    .filter((p): p is ReceiptPart => p !== null);
+}
+
+/** Does the plan carry an attachment in a non-face slot? Feeds the
+    characterless fence's wording (issueMessage above). */
+export function planHasAttachmentRiding(plan: SendPlan): boolean {
+  return plan.entries.some((e) => e.slot === "reference" || e.slot === "prop" || e.slot === "scene");
+}
+
+// The resolver's verdicts as persistent full-width rows with one-tap
+// remedies — unchanged from the receipt band they came from (see the header
+// comment). The slate composer renders them under the slate row; the
+// submit-time soft-block keeps quoting the same issueMessage.
+export function PlanIssueRows({
+  issues,
+  g,
+  modelName,
+  onAction,
+  hasAttachmentRiding,
+}: {
+  issues: PlanIssue[];
+  g: Messages["generate"];
+  modelName: string;
+  onAction: (issue: PlanIssue) => void;
+  hasAttachmentRiding: boolean;
+}) {
+  if (issues.length === 0) return null;
   return (
     <div className="space-y-1.5">
-      <div className="flex flex-wrap items-start gap-x-6 gap-y-1.5">
-        {headline && (
-          <span className="self-end text-[12px] font-medium leading-snug text-atelier-ink/80">
-            {headline}
-          </span>
-        )}
-        {parts.map((p, i) => (
-          <span key={i} className="flex min-w-0 flex-col gap-0.5">
-            {p.label && (
-              <span className="text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted/80">
-                {p.label}
-              </span>
-            )}
-            <ValueTag
-              opens={p.opens}
-              className={cn(
-                "flex items-center gap-1 text-[12px] leading-snug",
-                p.accent
-                  ? "font-numeral tabular-nums text-atelier-accent"
-                  : "text-atelier-ink/90",
-                p.opens &&
-                  "-mx-1 rounded-md px-1 text-left underline decoration-atelier-accent/40 decoration-dotted underline-offset-[3px] transition-colors hover:bg-atelier-ink/[0.06] hover:decoration-atelier-accent",
-              )}
-            >
-              {p.value}
-              {p.ok && (
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="h-3 w-3 flex-shrink-0 text-atelier-accent"
-                  aria-hidden
-                >
-                  <path d="M5 12.5l4.5 4.5L19 7.5" />
-                </svg>
-              )}
-            </ValueTag>
-          </span>
-        ))}
-      </div>
-      {visibleIssues.map((issue) => (
+      {issues.map((issue) => (
         <div
           key={issue.code}
           className={cn(

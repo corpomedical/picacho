@@ -288,6 +288,87 @@ html.screening.dark {
   }
 }
 
+/* ── The Console frame (operator-approved A material, 2026-09-22) ────────
+   From md up, the dark Screening Room becomes two floating sheets — the
+   sidebar and the scroll pane — on a deeper ground, with a 6px gutter and a
+   hairline edge each. Dark only: an explicit Light keeps Frost exactly as it
+   is (every rule here is scoped html.screening.dark), and the phone stays
+   full-bleed (min-width: 768px). Unlayered on purpose, so these outrank the
+   Tailwind utilities on the same elements. */
+@media (min-width: 768px) {
+  html.screening.dark {
+    --frost-gradient: #070605;
+    --frost-top: #070605;
+    background: #070605;
+  }
+  html.screening.dark body {
+    background: #070605;
+  }
+  html.screening.dark [data-app-sidebar] {
+    margin: 6px 0 6px 6px;
+    height: calc(100vh - 12px);
+    border-radius: 18px;
+    border: 1px solid rgba(243, 237, 228, 0.06);
+    background: linear-gradient(180deg, #16130f 0%, #100e0b 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 240, 220, 0.05);
+    overflow-y: auto;
+  }
+  html.screening.dark [data-app-scroll] {
+    margin: 6px;
+    border-radius: 18px;
+    border: 1px solid rgba(243, 237, 228, 0.06);
+    background: radial-gradient(120% 80% at 50% 0%, #15120e 0%, #0c0a08 60%);
+    box-shadow: inset 0 1px 0 rgba(255, 240, 220, 0.04);
+  }
+  /* Sidebar rows: rounder, and the active row is a soft lit key instead of
+     the 2px inset accent bar (the drawn look; the light theme keeps the
+     accent bar untouched). The Media group's toggle is a <button>, not an
+     <a>, so both rules name it too — one active style per rail. */
+  html.screening.dark [data-app-sidebar] a,
+  html.screening.dark [data-app-sidebar] nav button[aria-expanded] {
+    border-radius: 10px;
+  }
+  html.screening.dark [data-app-sidebar] a[class*="shadow-[inset_2px"],
+  html.screening.dark [data-app-sidebar] button[class*="shadow-[inset_2px"] {
+    background: linear-gradient(180deg, rgba(243, 237, 228, 0.085), rgba(243, 237, 228, 0.045));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 240, 220, 0.07),
+      0 0 0 1px rgba(243, 237, 228, 0.05);
+  }
+  /* The stage stops painting its own slab so the sheet's radial ground shows
+     through; the take itself sits in a lit well. */
+  html.screening.dark [data-screening-stage] {
+    background: transparent;
+  }
+}
+/* Marquee titles in metallic ink — fixed app words only (h1 page titles). */
+html.screening.dark h1.marquee {
+  background: linear-gradient(180deg, #fbf6ee 18%, #b9ad9c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+/* The stage's main frame: rounded, deep-shadowed; the lock marks glow warm. */
+html.screening.dark [data-screening-stage] video[controls],
+html.screening.dark [data-screening-stage] img[class*="object-contain"] {
+  border-radius: 10px;
+  box-shadow:
+    0 40px 80px -30px rgba(0, 0, 0, 0.8),
+    0 0 0 1px rgba(243, 237, 228, 0.06);
+}
+html.screening.dark [data-screening-stage] .lock-frame {
+  --lock-color: #e8b27c;
+  filter: drop-shadow(0 0 6px rgba(232, 178, 124, 0.45));
+}
+/* The slate composer's card, in the Console's material (dark only; Frost
+   keeps the plain surface): a warm gradient slab with an inset top light.
+   Scoped to the Generate screen's own marker, so the hero composer on the
+   dashboard keeps its card. */
+html.screening.dark [data-screening-generate] form.isolate {
+  background: linear-gradient(180deg, rgba(33, 28, 23, 0.94) 0%, rgba(20, 17, 14, 0.96) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 240, 220, 0.07);
+}
+
 html,
 body {
   background: var(--color-paper);
