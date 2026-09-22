@@ -73,7 +73,9 @@ describe("startRecastTakes", () => {
     const door = readFileSync(join(__dirname, "..", "..", "components", "mystique", "mystique-door.tsx"), "utf8");
     expect(door).not.toContain("settleJob");
     expect(door).not.toMatch(/setJob\(\(current\)/);
-    expect(door).toContain("clampRecastWindow(clipWindow, seen.seconds, next)");
+    // The job stays; the window is fitted to it (door-truth.ts recastFitWindow:
+    // trim.ts's clamp, and never under the job's shortest take — 2026-09-22).
+    expect(door).toContain("recastFitWindow(clipWindow, seen.seconds, next)");
   });
 
   it("cuts after the words and before the picture check, and judges what it sends", () => {
@@ -265,7 +267,8 @@ describe("several characters in one take", () => {
     expect(at("if (castOverGroup && chaining) return { error: RECAST_GROUP_ONE_PART }")).toBeLessThan(at("checkGenerationAllowance("));
     const door = readFileSync(join(__dirname, "..", "..", "components", "mystique", "mystique-door.tsx"), "utf8");
     expect(door).toContain("const groupNeedsOnePart = castOverGroup && parts > 1;");
-    expect(door).toContain("!groupNeedsOnePart &&");
+    // Take stays grey on it, and says why (door-truth.ts recastBlocker, 2026-09-22).
+    expect(door).toMatch(/recastBlocker\(\{[\s\S]*?\n    groupNeedsOnePart,\n[\s\S]*?\}\);\n  const canTake = blocker === null;/);
   });
 
   it("names the place the take must keep, from the read's own words", () => {

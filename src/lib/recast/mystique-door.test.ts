@@ -217,6 +217,50 @@ describe("the door while a take renders, and after", () => {
     expect(section("en")).not.toMatch(/"Try again"/);
   });
 
+  it("says what each job keeps and changes, from the engines' own flags", () => {
+    expect(door).toContain("const promise = recastJobPromise(j);");
+    expect(door).toContain("{promise.silent && <span");
+    expect(door).toContain("{m.promiseSilent}");
+  });
+
+  it("enables Take exactly when nothing is missing, and names the first thing that is", () => {
+    expect(door).toContain("const canTake = blocker === null;");
+    expect(door).toContain("disabled={!canTake}");
+    // The line under the button goes to the control that fixes it.
+    expect(door).toContain("onClick={() => goTo(blockerGo)}");
+    for (const ref of ["dropRef", "rightsRef", "wordsRef", "castRef", "groupTrimRef"]) expect(door).toContain(`ref={${ref}}`);
+    // …and is heard as it changes.
+    expect(door).toMatch(/<div role="status" aria-live="polite" className="basis-full[^"]*">[\s\S]{0,900}\{blockerLine &&/);
+  });
+
+  it("says why a clip cannot be used inside the drop area, not under the button", () => {
+    const pickFile = door.slice(door.indexOf("async function pickFile("), door.indexOf("async function pickMotion("));
+    expect(pickFile).toContain("setClipError(message)");
+    expect(pickFile).not.toMatch(/setError\((?!"")/);
+    expect(door).toContain('<p role="alert" className="mt-2 max-w-xs text-sm text-[#dc8290]">');
+  });
+
+  it("prices lengths honestly: Restage starts at 5 s, and Restyle's slot is offered at both ends", () => {
+    expect(door).toContain("min={recastLengthFloor(job, seen.seconds)}");
+    expect(door).not.toContain("min={Math.min(3, seen.seconds)}");
+    expect(door).toContain("formatMsg(m.restageShort, { n: restageComesBack })");
+    expect(door).toContain("setClipWindow(slotOffer.cut.window)");
+    expect(door).toContain("formatMsg(m.slotFull, { seconds: slotOffer.full.seconds, n: slotOffer.full.credits })");
+  });
+
+  it("shows the balance beside the price, and says when the face check stops applying", () => {
+    expect(door).toContain("balance.unlimited ? m.balanceUnlimited : formatMsg(m.balanceLeft, { n: balance.left })");
+    expect(page).toContain("balance={home.balance}");
+    expect(door).toContain("{lockOn && ensemble && <p");
+  });
+
+  it("describes today's stop rule: credits back only before rendering starts", () => {
+    const ask = section("en").match(/\n    stopAsk: "([^"]+)"/)?.[1] ?? "";
+    expect(ask).toMatch(/hasn't started rendering yet[^.]*credits come back/);
+    expect(ask).toMatch(/still costs all of its credits/);
+    expect(ask).toMatch(/finishes before the stop lands/);
+  });
+
   it("goes to a take that settles, lights it, and tells a hidden tab once — never asking for permission", () => {
     expect(door).toContain('before.get(x.id) === "generating" && x.status !== "generating"');
     expect(door).toContain("announcedRef.current.has(x.id)");

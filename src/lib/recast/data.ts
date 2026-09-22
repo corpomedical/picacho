@@ -12,7 +12,15 @@ import {
 } from "@/lib/recast/recast";
 import { readRecastRecipe, readRecastRecipes, type RecastRecipe } from "@/lib/recast/store";
 import { readRenderNotifyPrefs } from "@/lib/generations/generation-defaults-server";
-import { recastTakeOutcome, recastTakeReport, type RecastTakeOutcome, type RecastTakeReport } from "@/lib/recast/door-truth";
+import { getMonthlyUsageWith } from "@/lib/generations/core";
+import {
+  recastCreditsLeft,
+  recastTakeOutcome,
+  recastTakeReport,
+  type RecastBalance,
+  type RecastTakeOutcome,
+  type RecastTakeReport,
+} from "@/lib/recast/door-truth";
 
 // What the door needs: who can be cast, what can be performed, and what has
 // been taken so far.
@@ -91,6 +99,45 @@ const TAKE_COLUMNS =
  * failed, that one was stopped, the face report on one that finished.
  * Best-effort: a failed read means no story, never an empty door.
  */
+/**
+ * What the person has left to spend (2026-09-22): shown beside the price, and
+ * the door's last reason for a grey Take. Read with the numbers and the usage
+ * sum checkGenerationAllowance reads (core.ts), and worked out the way it
+ * works them (door-truth.ts recastCreditsLeft). Display only — the server's
+ * check at the press still decides. Null when it cannot be read, and then
+ * the door says nothing about it rather than guess.
+ */
+async function readRecastBalance(supabase: SupabaseClient, userId: string): Promise<RecastBalance | null> {
+  try {
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .select("plan, plan_status, role, bonus_credits, purchased_credits, current_period_start")
+      .eq("id", userId)
+      .maybeSingle();
+    if (error || !profile) return null;
+    const p = profile as {
+      plan: string | null;
+      plan_status: string | null;
+      role: string | null;
+      bonus_credits: number | null;
+      purchased_credits: number | null;
+      current_period_start: string | null;
+    };
+    const isAdmin = p.role === "admin";
+    const used = isAdmin ? 0 : await getMonthlyUsageWith(supabase, userId, p.current_period_start);
+    return recastCreditsLeft({
+      isAdmin,
+      plan: p.plan,
+      planStatus: p.plan_status ?? null,
+      bonus: p.bonus_credits ?? 0,
+      purchased: p.purchased_credits ?? 0,
+      used,
+    });
+  } catch {
+    return null;
+  }
+}
+
 async function readTakeLogs(supabase: SupabaseClient, ids: string[]): Promise<Map<string, unknown>> {
   if (ids.length === 0) return new Map();
   try {
@@ -111,8 +158,10 @@ export async function getRecastHome(
   takes: RecastTake[];
   /** Their own "tell me when it's done / when something went wrong" settings, which the door's in-page notice follows too. */
   notify: { ready: boolean; failed: boolean };
+  /** What they have left to spend; null when it could not be read. */
+  balance: RecastBalance | null;
 }> {
-  const [{ data: characterRows }, { data: videoRows }, notify] = await Promise.all([
+  const [{ data: characterRows }, { data: videoRows }, notify, balance] = await Promise.all([
     supabase
       .from("character_profiles")
       .select("id, name, reference_image_urls")
@@ -134,6 +183,7 @@ export async function getRecastHome(
       .order("created_at", { ascending: false })
       .limit(120),
     readRenderNotifyPrefs(supabase, userId),
+    readRecastBalance(supabase, userId),
   ]);
 
   const characters: RecastCharacter[] = (characterRows ?? []).map((c) => ({
@@ -218,7 +268,7 @@ export async function getRecastHome(
     .filter((m): m is RecastMotion => m !== null)
     .slice(0, 18);
 
-  return { characters, motions, takes, notify };
+  return { characters, motions, takes, notify, balance };
 }
 
 const ORPHAN_AFTER_MS = 60 * 60_000;

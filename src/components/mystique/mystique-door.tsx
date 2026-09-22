@@ -35,15 +35,27 @@ import {
   recastEnginesOf,
   recastMissing,
   recastRestageImageRoom,
+  recastRestageSeconds,
   recastTakesCast,
   type RecastEngine,
   type RecastJob,
 } from "@/lib/recast/recast";
 import { composeRecastBrief, recastCastTokens, recastImageTokens, recastRestageTokens } from "@/lib/recast/recast-brief";
-import { clampRecastWindow, defaultRecastWindow, isWholeClip, recastWindowCredits, type RecastWindow } from "@/lib/recast/trim";
+import { defaultRecastWindow, isWholeClip, recastWindowCredits, type RecastWindow } from "@/lib/recast/trim";
 import { chainPieceCount } from "@/lib/generations/chain";
 import { sampleClip } from "@/lib/recast/recast-client";
-import { recastMinutes, recastWait } from "@/lib/recast/door-truth";
+import {
+  recastBlocker,
+  recastFitWindow,
+  recastJobPromise,
+  recastLengthFloor,
+  recastMinutes,
+  recastSlotOffer,
+  recastWait,
+  type RecastAspect,
+  type RecastBalance,
+  type RecastBlocker,
+} from "@/lib/recast/door-truth";
 import type { RecastRead, RecastWarning } from "@/lib/recast/recast-read";
 import { TakeViewer } from "@/components/mystique/take-viewer";
 
@@ -75,6 +87,9 @@ type Source =
   | { kind: "take"; phase: "inspecting" | "ready"; url: string; takeId: string; name: string };
 
 type Viewing = { take: RecastTake; media: { resultUrl: string; sourceUrl: string | null } | null };
+
+/** The control a grey Take's reason sends the person to (recastBlocker). */
+type BlockerTarget = "drop" | "rights" | "words" | "cast" | "group";
 
 /**
  * An image the person added (2026-09-19). `path` is null while it uploads;
@@ -178,6 +193,7 @@ export function MystiqueDoor({
   initialTakes,
   lockOn,
   notify,
+  balance,
 }: {
   characters: RecastCharacter[];
   motions: RecastMotion[];
@@ -185,6 +201,8 @@ export function MystiqueDoor({
   lockOn: boolean;
   /** Their own notification settings (Settings → Notifications), which the in-page notice follows. */
   notify: { ready: boolean; failed: boolean };
+  /** What they have left to spend (data.ts), shown beside the price; null when it could not be read. */
+  balance: RecastBalance | null;
 }) {
   const { t } = useLocale();
   const m = t.mystique;
@@ -233,9 +251,17 @@ export function MystiqueDoor({
   // read's order, the lead first.
   const [together, setTogether] = useState(true);
   const [roles, setRoles] = useState<Record<string, string | null>>({});
+  // Why a clip could not be used — said inside the drop area it was dropped on.
+  const [clipError, setClipError] = useState("");
   const fileRef = useRef<HTMLInputElement | null>(null);
   const imageFileRef = useRef<HTMLInputElement | null>(null);
   const doorRef = useRef<HTMLDivElement | null>(null);
+  // Where the grey button's reason sends the person (focusBlocker).
+  const dropRef = useRef<HTMLDivElement | null>(null);
+  const rightsRef = useRef<HTMLInputElement | null>(null);
+  const wordsRef = useRef<HTMLTextAreaElement | null>(null);
+  const castRef = useRef<HTMLDivElement | null>(null);
+  const groupTrimRef = useRef<HTMLButtonElement | null>(null);
   // Every blob URL a preview was given, so none outlives the door.
   const imageBlobsRef = useRef<Set<string>>(new Set());
   // The newest pick wins: an upload or a read that lands late is dropped.
@@ -392,10 +418,8 @@ export function MystiqueDoor({
   // uses (door-truth.ts recastMinutes), in place of a flat "3–20 min" that a
   // 30 s take overran by a quarter of an hour.
   const takeMinutes = seen && clipWindow ? recastMinutes(engine, clipWindow.end - clipWindow.start) : null;
-  const imagesUploading = images.some((i) => i.path === null);
   const hasWords = direction.trim().length > 0;
   const rolesUnsaid = ensemble && castTags.some((tag) => tag === null) && !hasWords;
-  const missing = recastMissing(job, { characters: cast.length, images: usedImages.length, words: hasWords }) ?? (rolesUnsaid ? "words" : null);
   const takeCount = ensemble ? 1 : takesCast ? Math.max(1, cast.length) : 1;
   // The face lock scores ONE character's face; it promises nothing to a take
   // with several of them, or with nobody.
@@ -404,16 +428,24 @@ export function MystiqueDoor({
   const keeps = job === "scene" ? (read?.keeps ?? []).filter((k) => !dropped.has(k.what)) : [];
   const photo = cast[0]?.photos.find((p) => p.path === photoPath) ?? cast[0]?.photos[0] ?? null;
   const busy = starting || (source !== null && source.phase !== "ready");
-  const canTake =
-    ready &&
-    rights &&
-    !starting &&
-    quote !== null &&
-    clipWindow !== null &&
-    !imagesUploading &&
-    !groupNeedsOnePart &&
-    missing === null &&
-    (job !== "world" || hasWords);
+  // WHY TAKE IS GREY (2026-09-22). The button went grey on any of nine
+  // conditions and explained one of them. The first thing missing is now
+  // named under it, and tapping the line goes to what fixes it; Take is
+  // enabled exactly when there is nothing to name (door-truth.ts).
+  const blocker: RecastBlocker | null = recastBlocker({
+    starting,
+    clip: !source ? "none" : ready && quote !== null && clipWindow !== null ? "ready" : "busy",
+    rights,
+    job,
+    missing: recastMissing(job, { characters: cast.length, images: usedImages.length, words: hasWords }),
+    rolesUnsaid,
+    hasWords,
+    imageUploading: images.findIndex((i) => i.path === null) + 1,
+    groupNeedsOnePart,
+    credits: totalCredits,
+    balance,
+  });
+  const canTake = blocker === null;
 
   // The same function the server composes with, so what is shown is what is
   // sent. Not memoised: it is string work over a handful of short fields,
@@ -477,6 +509,7 @@ export function MystiqueDoor({
   async function pickFile(file: File | undefined) {
     if (!file || starting) return;
     setError("");
+    setClipError("");
     setRights(false);
     setDropped(new Set());
     setRoles({});
@@ -484,20 +517,23 @@ export function MystiqueDoor({
     if (source?.kind === "upload" && source.path) void discardRecastUpload(source.path).catch(() => {});
     if (!recastContainerOf(file.type)) {
       setClip(null);
-      setError(RECAST_NOT_A_VIDEO);
+      setClipError(RECAST_NOT_A_VIDEO);
       return;
     }
     if (file.size > RECAST_MAX_BYTES) {
       setClip(null);
-      setError(RECAST_CLIP_TOO_BIG);
+      setClipError(RECAST_CLIP_TOO_BIG);
       return;
     }
     const url = URL.createObjectURL(file);
     setClip({ kind: "upload", phase: "uploading", url, path: null, name: file.name });
+    // A clip that cannot be used says why where it was dropped (2026-09-22) —
+    // not under the Take button at the foot of the form, below a drop area
+    // that had just gone blank.
     const fail = (message: string) => {
       if (mine !== pickRef.current) return;
       setClip(null);
-      setError(message);
+      setClipError(message);
     };
     try {
       const reserved = await reserveRecastUpload({ size: file.size, type: file.type });
@@ -517,7 +553,7 @@ export function MystiqueDoor({
       if (res.error !== null) return fail(res.error);
       setSeen(res);
       setClip({ kind: "upload", phase: "ready", url, path: reserved.path, name: file.name });
-      setClipWindow(defaultRecastWindow(res.seconds, job));
+      setClipWindow(recastFitWindow(defaultRecastWindow(res.seconds, job), res.seconds, job));
     } catch (err) {
       const stale = isStaleDeployError(err);
       fail(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
@@ -528,6 +564,7 @@ export function MystiqueDoor({
   async function pickMotion(motion: RecastMotion) {
     if (starting) return;
     setError("");
+    setClipError("");
     setRights(false);
     setDropped(new Set());
     setRoles({});
@@ -539,15 +576,16 @@ export function MystiqueDoor({
       if (res === null) return;
       if (res.error !== null) {
         setClip(null);
-        setError(res.error);
+        setClipError(res.error);
         return;
       }
       setSeen(res);
       setClip({ kind: "take", phase: "ready", url: motion.videoUrl, takeId: motion.takeId, name: motion.title });
-      setClipWindow(defaultRecastWindow(res.seconds, job));
+      setClipWindow(recastFitWindow(defaultRecastWindow(res.seconds, job), res.seconds, job));
     } catch {
+      if (mine !== pickRef.current) return;
       setClip(null);
-      setError(t.generate.submitFailed);
+      setClipError(t.generate.submitFailed);
     }
   }
 
@@ -560,7 +598,7 @@ export function MystiqueDoor({
    */
   function chooseJob(next: RecastJob) {
     setJob(next);
-    if (seen && clipWindow) setClipWindow(clampRecastWindow(clipWindow, seen.seconds, next));
+    if (seen && clipWindow) setClipWindow(recastFitWindow(clipWindow, seen.seconds, next));
   }
 
   /**
@@ -828,6 +866,84 @@ export function MystiqueDoor({
   const jobName = (j: RecastJob) => (j === "scene" ? m.modeScene : j === "restage" ? m.modeRestage : j === "motion" ? m.modeMotion : m.jobWorld);
   const jobLine = (j: RecastJob) => (j === "scene" ? m.modeSceneLine : j === "restage" ? m.modeRestageLine : j === "motion" ? m.modeMotionLine : m.jobWorldLine);
   const jobLimit = (j: RecastJob) => (j === "scene" ? m.sceneLimit : j === "restage" ? m.restageLimit : j === "motion" ? m.motionLimit : m.worldLimit);
+  // What holds best is the job's own answer, not one line for all four — the
+  // single "one person, one continuous shot" steered every visitor to one
+  // kind of clip that Restyle and Restage do not need (2026-09-22).
+  const jobHolds = (j: RecastJob) => (j === "scene" ? m.holdsScene : j === "restage" ? m.holdsRestage : j === "motion" ? m.holdsMotion : m.holdsWorld);
+  const aspectWords: Record<RecastAspect, string> = {
+    moves: m.aspectMoves,
+    sound: m.aspectSound,
+    camera: m.aspectCamera,
+    place: m.aspectPlace,
+    picturePlace: m.aspectPicturePlace,
+    cast: m.aspectCast,
+    everyone: m.aspectEveryone,
+  };
+
+  // The grey button's reason, in words (door-truth.ts recastBlocker). The
+  // press itself says "Checking the clip…", so starting names nothing.
+  const blockerText = (b: RecastBlocker): string | null => {
+    switch (b.kind) {
+      case "starting":
+        return null;
+      case "clip":
+        return m.blockClip;
+      case "reading":
+        return source?.phase === "uploading" ? m.blockUploading : m.blockReading;
+      case "rights":
+        return m.blockRights;
+      case "words":
+        return b.why === "look" ? m.blockLook : b.why === "roles" ? m.blockRoles : m.blockWords;
+      case "picture":
+        return m.blockPicture;
+      case "image":
+        return formatMsg(m.blockImage, { n: b.n });
+      case "group":
+        return m.blockGroup;
+      case "credits":
+        return formatMsg(m.blockCredits, { need: b.need, left: b.left });
+    }
+  };
+  /** Where tapping the reason goes: the control that answers it, when there is one. */
+  const blockerTarget = (b: RecastBlocker): BlockerTarget | null =>
+    b.kind === "clip"
+      ? "drop"
+      : b.kind === "rights"
+        ? "rights"
+        : b.kind === "words"
+          ? "words"
+          : b.kind === "picture"
+            ? "cast"
+            : b.kind === "group"
+              ? "group"
+              : null;
+  function goTo(target: BlockerTarget) {
+    const el: HTMLElement | null =
+      target === "drop"
+        ? dropRef.current
+        : target === "rights"
+          ? rightsRef.current
+          : target === "words"
+            ? wordsRef.current
+            : target === "cast"
+              ? (castRef.current?.querySelector<HTMLElement>("button:not([disabled]), a[href]") ?? null)
+              : groupTrimRef.current;
+    if (!el) return;
+    el.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "center" });
+    el.focus({ preventScroll: true });
+  }
+  const blockerLine = blocker ? blockerText(blocker) : null;
+  const blockerGo = blocker ? blockerTarget(blocker) : null;
+  // Restyle's slots (door-truth.ts recastSlotOffer): past 5 s and short of the
+  // whole 10, both ends are offered at their prices instead of the big slot
+  // being charged in silence.
+  const slotOffer = seen && clipWindow ? recastSlotOffer(engine, { seconds: seen.seconds, frames: seen.frames }, clipWindow) : null;
+  // Restage never renders under its own shortest take; on a clip shorter than
+  // that, it says what comes back.
+  const restageComesBack =
+    job === "restage" && clipWindow && recastRestageSeconds(clipWindow.end - clipWindow.start) > clipWindow.end - clipWindow.start + 0.05
+      ? recastRestageSeconds(clipWindow.end - clipWindow.start)
+      : null;
 
   const buttonLabel = starting
     ? m.starting
@@ -878,6 +994,7 @@ export function MystiqueDoor({
             <div className="relative mt-5 overflow-hidden rounded-2xl ring-1 ring-[rgba(255,255,255,0.1)]">
               <div className="grid md:grid-cols-2">
                 <div
+                  ref={dropRef}
                   role="button"
                   tabIndex={0}
                   aria-label={m.dropTitle}
@@ -931,7 +1048,13 @@ export function MystiqueDoor({
                       <p className="text-sm font-semibold text-[#ecedf1]">{m.dropTitle}</p>
                       <p className="text-xs text-[#6b6f7a]">{m.dropOr}</p>
                       <span className="rounded-xl px-3.5 py-1.5 text-sm font-medium text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16)]">{m.pick}</span>
-                      <p className="mt-2 max-w-xs text-xs text-[#6b6f7a]">{m.restLine}</p>
+                      {clipError ? (
+                        <p role="alert" className="mt-2 max-w-xs text-sm text-[#dc8290]">
+                          {localizeServerText(clipError, t)}
+                        </p>
+                      ) : (
+                        <p className="mt-2 max-w-xs text-xs text-[#6b6f7a]">{jobHolds(job)}</p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1013,7 +1136,7 @@ export function MystiqueDoor({
                       disabled={starting || isWholeClip(clipWindow, seen.seconds)}
                       onChange={(e) => {
                         const start = Number(e.target.value);
-                        const next = clampRecastWindow({ start, end: start + (clipWindow.end - clipWindow.start) }, seen.seconds, job);
+                        const next = recastFitWindow({ start, end: start + (clipWindow.end - clipWindow.start) }, seen.seconds, job);
                         setClipWindow(next);
                         if (previewRef.current) previewRef.current.currentTime = next.start;
                       }}
@@ -1022,20 +1145,41 @@ export function MystiqueDoor({
                   </label>
                   <label className="block">
                     <span className="text-xs text-[#9aa0ad]">{m.trimLength}</span>
+                    {/* The shortest length is the job's own (door-truth.ts
+                        recastLengthFloor): Restage renders at least 5 s, so its
+                        slider no longer offers a 3 s that is billed and made as 5. */}
                     <input
                       type="range"
-                      min={Math.min(3, seen.seconds)}
+                      min={recastLengthFloor(job, seen.seconds)}
                       max={Math.min(RECAST_JOB_MAX_SECONDS[job], seen.seconds)}
                       step={0.1}
                       value={clipWindow.end - clipWindow.start}
                       disabled={starting}
-                      onChange={(e) => setClipWindow(clampRecastWindow({ start: clipWindow.start, end: clipWindow.start + Number(e.target.value) }, seen.seconds, job))}
+                      onChange={(e) => setClipWindow(recastFitWindow({ start: clipWindow.start, end: clipWindow.start + Number(e.target.value) }, seen.seconds, job))}
                       className="mt-1 w-full accent-[#f0cda6] disabled:opacity-40"
                     />
                   </label>
                 </div>
                 {seen.seconds > RECAST_JOB_MAX_SECONDS[job] + 0.05 && (
                   <p className="mt-2 text-xs text-[#9aa0ad]">{formatMsg(m.trimWhy, { n: RECAST_JOB_MAX_SECONDS[job] })}</p>
+                )}
+                {restageComesBack !== null && <p className="mt-2 text-xs text-[#9aa0ad]">{formatMsg(m.restageShort, { n: restageComesBack })}</p>}
+                {slotOffer && (
+                  <div className="mt-2.5">
+                    <p className="text-xs text-[#d8b483]">
+                      {formatMsg(m.slotNote, { length: (clipWindow.end - clipWindow.start).toFixed(1), n: slotOffer.credits })}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button type="button" disabled={starting} onClick={() => setClipWindow(slotOffer.cut.window)} className={pill(false)}>
+                        {formatMsg(m.slotCut, { n: slotOffer.cut.credits })}
+                      </button>
+                      {slotOffer.full && (
+                        <button type="button" disabled={starting} onClick={() => setClipWindow(slotOffer.full!.window)} className={pill(false)}>
+                          {formatMsg(m.slotFull, { seconds: slotOffer.full.seconds, n: slotOffer.full.credits })}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 )}
                 {/* A long take (chain.ts): said before it is paid for, with how long it waits. */}
                 {RECAST_ENGINES[engine].chains && chainPieceCount(clipWindow.end - clipWindow.start) > 1 && (
@@ -1162,6 +1306,10 @@ export function MystiqueDoor({
                 <div className="mt-2 grid gap-2">
                   {RECAST_JOB_ORDER.map((j) => {
                     const on = job === j;
+                    // What this job keeps and changes, from its engines' own
+                    // flags (door-truth.ts recastJobPromise) — so Restage and
+                    // Restyle say plainly that no sound comes back.
+                    const promise = recastJobPromise(j);
                     return (
                       <button
                         key={j}
@@ -1180,6 +1328,17 @@ export function MystiqueDoor({
                           <span className="text-[11px] tabular-nums text-[#6b6f7a]">{jobLimit(j)}</span>
                         </span>
                         <span className="mt-1 block text-xs leading-relaxed text-[#9aa0ad]">{jobLine(j)}</span>
+                        <span className="mt-2 block space-y-0.5 text-[11px] leading-snug">
+                          {promise.keeps.length > 0 && (
+                            <span className="block text-[#9aa0ad]">
+                              <span className="font-semibold text-[#c6c9d1]">{m.promiseKeeps}</span> {promise.keeps.map((a) => aspectWords[a]).join(" · ")}
+                            </span>
+                          )}
+                          <span className="block text-[#9aa0ad]">
+                            <span className="font-semibold text-[#f0cda6]">{m.promiseChanges}</span> {promise.changes.map((a) => aspectWords[a]).join(" · ")}
+                          </span>
+                          {promise.silent && <span className="block font-medium text-[#d8b483]">{m.promiseSilent}</span>}
+                        </span>
                       </button>
                     );
                   })}
@@ -1216,7 +1375,7 @@ export function MystiqueDoor({
 
               <div className="min-w-0">
                 {takesCast && (
-                  <>
+                  <div ref={castRef}>
                     <div className="flex flex-wrap items-baseline justify-between gap-x-4">
                       <p className={label}>{m.castLabel}</p>
                       <p className="text-xs text-[#6b6f7a]">{recastCastsTogether(job) && together ? m.castTogether : m.castMore}</p>
@@ -1313,11 +1472,12 @@ export function MystiqueDoor({
                       <div className="mt-3 rounded-2xl bg-[#d8b483]/[0.08] p-3.5 shadow-[inset_0_0_0_1px_rgba(216,180,131,0.4)]">
                         <p className="text-sm leading-relaxed text-[#ecedf1]">{m.crowdWarn}</p>
                         <button
+                          ref={groupTrimRef}
                           type="button"
                           disabled={starting || !seen || !clipWindow}
                           onClick={() => {
                             if (!seen || !clipWindow) return;
-                            setClipWindow(clampRecastWindow({ start: clipWindow.start, end: clipWindow.start + 15 }, seen.seconds, job));
+                            setClipWindow(recastFitWindow({ start: clipWindow.start, end: clipWindow.start + 15 }, seen.seconds, job));
                           }}
                           className={`mt-2.5 ${ghost}`}
                         >
@@ -1409,7 +1569,7 @@ export function MystiqueDoor({
                         {formatMsg(job === "restage" ? m.imagesRoomNoteRestage : m.imagesRoomNote, { n: imageCap })}
                       </p>
                     )}
-                  </>
+                  </div>
                 )}
                 <p className={`${takesCast ? "mt-4" : ""} ${label}`}>
                   {!takesCast
@@ -1421,6 +1581,7 @@ export function MystiqueDoor({
                         : m.directionOptional}
                 </p>
                 <textarea
+                  ref={wordsRef}
                   value={direction}
                   onChange={(e) => setDirection(e.target.value.slice(0, 600))}
                   placeholder={
@@ -1453,6 +1614,10 @@ export function MystiqueDoor({
             )}
 
             {lockOn && lockApplies && <p className="mt-4 text-xs text-[#9aa0ad]">{m.lockPromise}</p>}
+            {/* The face check scores one character's face. A second character
+                in the same video takes the promise away — said, rather than the
+                line quietly vanishing (2026-09-22). */}
+            {lockOn && ensemble && <p className="mt-4 text-xs text-[#9aa0ad]">{m.lockOff}</p>}
 
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <input
@@ -1479,6 +1644,7 @@ export function MystiqueDoor({
               />
               <label className="flex min-w-0 flex-1 basis-72 cursor-pointer items-start gap-2.5 text-sm text-[#c6c9d1]">
                 <input
+                  ref={rightsRef}
                   type="checkbox"
                   checked={rights}
                   disabled={starting}
@@ -1500,16 +1666,43 @@ export function MystiqueDoor({
               >
                 {buttonLabel}
               </button>
-              {/* WHAT THE WAIT IS (2026-09-20). A long take is cut into its
-                  parts before anything is sent, which is up to a minute of
-                  silence on a button that only said "Checking the clip…" —
-                  and a second press is a second take, and a second charge
-                  ("It is not generating. Its stuck at checking video." →
-                  "now it generated two videos"). */}
-              {starting && <p className="basis-full text-xs text-[#f0cda6]">{parts > 1 ? m.preparingLong : m.preparingNote}</p>}
-              {!starting && rendering > 0 && (
-                <p className="basis-full text-xs text-[#9aa0ad]">{formatMsg(rendering === 1 ? m.oneRendering : m.someRendering, { n: rendering })}</p>
+              {/* Beside the price: about how long it waits, and what they have
+                  left — so someone short of credits sees it before the press. */}
+              {(takeMinutes !== null || balance) && (
+                <p className="text-xs tabular-nums text-[#6b6f7a]">
+                  {[
+                    takeMinutes !== null ? formatMsg(m.aboutMinutes, { minutes: takeMinutes }) : null,
+                    balance ? (balance.unlimited ? m.balanceUnlimited : formatMsg(m.balanceLeft, { n: balance.left })) : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
               )}
+              <div role="status" aria-live="polite" className="basis-full space-y-1 empty:hidden">
+                {/* WHAT THE WAIT IS (2026-09-20). A long take is cut into its
+                    parts before anything is sent, which is up to a minute of
+                    silence on a button that only said "Checking the clip…" —
+                    and a second press is a second take, and a second charge
+                    ("It is not generating. Its stuck at checking video." →
+                    "now it generated two videos"). */}
+                {starting && <p className="text-xs text-[#f0cda6]">{parts > 1 ? m.preparingLong : m.preparingNote}</p>}
+                {/* Why Take is grey — and, where something fixes it, a way there. */}
+                {blockerLine &&
+                  (blockerGo ? (
+                    <button
+                      type="button"
+                      onClick={() => goTo(blockerGo)}
+                      className="cursor-pointer text-left text-xs font-medium text-[#f0cda6] underline-offset-2 hover:underline"
+                    >
+                      {blockerLine}
+                    </button>
+                  ) : (
+                    <p className="text-xs text-[#d8b483]">{blockerLine}</p>
+                  ))}
+                {!starting && rendering > 0 && (
+                  <p className="text-xs text-[#9aa0ad]">{formatMsg(rendering === 1 ? m.oneRendering : m.someRendering, { n: rendering })}</p>
+                )}
+              </div>
             </div>
           </>
         )}

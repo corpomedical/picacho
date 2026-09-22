@@ -41,6 +41,13 @@ export default async function MystiquePage() {
   ]);
 
   return (
-    <MystiqueDoor characters={home.characters} motions={home.motions} initialTakes={home.takes} lockOn={lockOn} notify={home.notify} />
+    <MystiqueDoor
+      characters={home.characters}
+      motions={home.motions}
+      initialTakes={home.takes}
+      lockOn={lockOn}
+      notify={home.notify}
+      balance={home.balance}
+    />
   );
 }

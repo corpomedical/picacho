@@ -13,7 +13,18 @@
 
 import { chainMinutes } from "../generations/chain";
 import { isRawProviderError } from "../generations/user-facing-error";
-import { RECAST_ENGINES, recastLumaDuration, recastRestageSeconds, type RecastEngine } from "./recast";
+import { PLAN_LIMITS, type PlanId } from "../plans";
+import {
+  RECAST_ENGINES,
+  RECAST_MIN_SECONDS,
+  recastEnginesOf,
+  recastLumaDuration,
+  recastRestageSeconds,
+  type RecastClip,
+  type RecastEngine,
+  type RecastJob,
+} from "./recast";
+import { clampRecastWindow, recastWindowCredits, type RecastWindow } from "./trim";
 
 // ---------------------------------------------------------------------------
 // HOW LONG A TAKE TAKES
@@ -156,4 +167,189 @@ export function recastTakeReport(pipelineLog: unknown): RecastTakeReport | null 
     faces.push({ characterId: face.characterId, name: face.name, lowest: face.lowest, scores });
   }
   return faces.length > 0 ? { faces } : null;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT EACH JOB KEEPS AND CHANGES
+//
+// The page promised "the acting, the timing and the sound stay" over every
+// job, while Restage and Restyle come back silent (recast.ts keepsSound:
+// false). Each job card now says what it keeps and what it changes, and the
+// row is DERIVED from the engines' own flags rather than written beside
+// them, so a flag that changes changes the promise with it:
+//
+//   the moves    kept, unless an engine of the job restages (the clip is then
+//                a reference and its performance is not kept)
+//   the sound    kept only when EVERY engine the job offers keeps it
+//   the camera   restaged → yours to direct; Photo to life → not promised
+//                (the frame is built from the picture); otherwise kept
+//   the place    Photo to life → from your picture; Restyle → redrawn
+//   who is in it Restyle redraws everyone; every other job puts in whoever
+//                you choose
+export type RecastAspect = "moves" | "sound" | "camera" | "place" | "picturePlace" | "cast" | "everyone";
+export type RecastPromise = { keeps: RecastAspect[]; changes: RecastAspect[]; silent: boolean };
+
+export function recastJobPromise(job: RecastJob): RecastPromise {
+  const engines = recastEnginesOf(job);
+  const restages = engines.some((e) => RECAST_ENGINES[e].restages === true);
+  const sound = engines.length > 0 && engines.every((e) => RECAST_ENGINES[e].keepsSound);
+  const keeps: RecastAspect[] = [];
+  const changes: RecastAspect[] = [];
+  (restages ? changes : keeps).push("moves");
+  if (sound) keeps.push("sound");
+  if (restages) changes.push("camera");
+  else if (job !== "motion") keeps.push("camera");
+  if (job === "motion") changes.push("picturePlace");
+  else if (job === "world") changes.push("place");
+  else keeps.push("place");
+  changes.push(job === "world" ? "everyone" : "cast");
+  return { keeps, changes, silent: !sound };
+}
+
+// ---------------------------------------------------------------------------
+// WHY TAKE IS GREY
+//
+// The button used to go grey on any of nine conditions and explain one of
+// them. recastBlocker names the FIRST thing missing, in the order a person
+// meets them on the page — a clip, the rights tick, someone or something to
+// put in it (or words), images still uploading, a group that needs one part,
+// credits — and Take is enabled exactly when there is nothing to name.
+
+export type RecastBalance = { left: number; unlimited: boolean };
+
+export type RecastDoorState = {
+  starting: boolean;
+  /** none: no clip chosen · busy: uploading or being read · ready: read and priced. */
+  clip: "none" | "busy" | "ready";
+  rights: boolean;
+  job: RecastJob;
+  /** recastMissing's answer for who or what is cast. */
+  missing: "words" | "picture" | null;
+  /** Together, someone plays nobody in the clip and no words say who. */
+  rolesUnsaid: boolean;
+  hasWords: boolean;
+  /** The number (from 1) of the first added image still uploading, or 0. */
+  imageUploading: number;
+  groupNeedsOnePart: boolean;
+  /** What the press costs in all, once the clip is priced. */
+  credits: number | null;
+  /** What the person has left, when it could be read. */
+  balance: RecastBalance | null;
+};
+
+export type RecastBlocker =
+  | { kind: "starting" }
+  | { kind: "clip" }
+  | { kind: "reading" }
+  | { kind: "rights" }
+  | { kind: "words"; why: "change" | "roles" | "look" }
+  | { kind: "picture" }
+  | { kind: "image"; n: number }
+  | { kind: "group" }
+  | { kind: "credits"; need: number; left: number };
+
+export function recastBlocker(s: RecastDoorState): RecastBlocker | null {
+  if (s.starting) return { kind: "starting" };
+  if (s.clip === "none") return { kind: "clip" };
+  if (s.clip === "busy") return { kind: "reading" };
+  if (!s.rights) return { kind: "rights" };
+  if (s.missing === "words") return { kind: "words", why: "change" };
+  if (s.missing === "picture") return { kind: "picture" };
+  if (s.rolesUnsaid) return { kind: "words", why: "roles" };
+  // Restyle's look is words, and the page asks for them — its placeholder
+  // reads like a filled-in default and is not one.
+  if (s.job === "world" && !s.hasWords) return { kind: "words", why: "look" };
+  if (s.imageUploading > 0) return { kind: "image", n: s.imageUploading };
+  if (s.groupNeedsOnePart) return { kind: "group" };
+  if (s.credits !== null && s.balance && !s.balance.unlimited && s.credits > s.balance.left) {
+    return { kind: "credits", need: s.credits, left: s.balance.left };
+  }
+  return null;
+}
+
+/**
+ * What an account can still spend on a take — checkGenerationAllowance's
+ * arithmetic (core.ts), read the same way: the plan's monthly allowance (only
+ * while the subscription is in good standing) plus bonus credits, less what
+ * this period used, plus purchased credits. The free daily slot never covers
+ * a recast (actions.ts), so it is not counted. Admins are never refused.
+ */
+export function recastCreditsLeft(p: {
+  isAdmin: boolean;
+  plan: string | null;
+  planStatus: string | null;
+  bonus: number;
+  purchased: number;
+  used: number;
+}): RecastBalance {
+  if (p.isAdmin) return { left: 0, unlimited: true };
+  const active = p.planStatus === null || p.planStatus === "active";
+  const limit = (active ? (PLAN_LIMITS[(p.plan ?? "none") as PlanId] ?? 0) : 0) + Math.max(0, p.bonus);
+  return { left: Math.max(0, limit - Math.max(0, p.used)) + Math.max(0, p.purchased), unlimited: false };
+}
+
+// ---------------------------------------------------------------------------
+// LENGTHS THAT COST WHAT THEY SAY
+
+/**
+ * The shortest window a job is offered. Restage renders at least its own
+ * shortest take whatever it is given (recastRestageSeconds), so a 3 s trim
+ * cost and came back as 5 s; its slider now starts there — or at the whole
+ * clip when the clip is shorter, which the door then says comes back as 5 s.
+ */
+export function recastLengthFloor(job: RecastJob, clipSeconds: number): number {
+  const floor = job === "restage" ? recastRestageSeconds(0) : RECAST_MIN_SECONDS;
+  return Math.min(floor, clipSeconds);
+}
+
+/** A window inside the job's rules (trim.ts), never under its floor, keeping the chosen start where it can. */
+export function recastFitWindow(window: RecastWindow, clipSeconds: number, job: RecastJob): RecastWindow {
+  const w = clampRecastWindow(window, clipSeconds, job);
+  const floor = recastLengthFloor(job, clipSeconds);
+  if (w.end - w.start >= floor - 0.05) return w;
+  const start = Math.max(0, Math.min(w.start, clipSeconds - floor));
+  return { start: Math.round(start * 10) / 10, end: Math.round((start + floor) * 10) / 10 };
+}
+
+/**
+ * RESTYLE IS BILLED IN SLOTS (Luma: a 5 s or a 10 s slot, recastLumaDuration).
+ * A 5.2 s window was charged the 10 s slot with nothing said. Anywhere past
+ * 5 s and short of the whole slot, the door offers both ends: cut to 5 s at
+ * the small slot's price, or use the whole 10 s (as much of it as the clip
+ * has) at the price already being charged. Every price is the door's own
+ * pricing call, recastWindowCredits — no second formula.
+ */
+export type RecastSlotOffer = {
+  /** What the window as it stands costs. */
+  credits: number;
+  cut: { window: RecastWindow; credits: number };
+  /** Null when the clip has no more to give. */
+  full: { window: RecastWindow; seconds: number; credits: number } | null;
+};
+
+const SMALL_SLOT = 5;
+const LARGE_SLOT = 10;
+
+export function recastSlotOffer(
+  engine: RecastEngine,
+  clip: Pick<RecastClip, "seconds" | "frames">,
+  window: RecastWindow,
+): RecastSlotOffer | null {
+  if (RECAST_ENGINES[engine].billedBy !== "bucket") return null;
+  const length = window.end - window.start;
+  if (recastLumaDuration({ seconds: length }) !== "10s" || length >= LARGE_SLOT - 0.05) return null;
+  const tenth = (v: number) => Math.round(v * 10) / 10;
+  const cutStart = tenth(Math.max(0, Math.min(window.start, clip.seconds - SMALL_SLOT)));
+  const cut = { start: cutStart, end: tenth(cutStart + SMALL_SLOT) };
+  const fullSeconds = tenth(Math.min(LARGE_SLOT, clip.seconds));
+  const fullStart = tenth(Math.max(0, Math.min(window.start, clip.seconds - fullSeconds)));
+  const fullWindow = { start: fullStart, end: tenth(fullStart + fullSeconds) };
+  return {
+    credits: recastWindowCredits(engine, clip, window),
+    cut: { window: cut, credits: recastWindowCredits(engine, clip, cut) },
+    full:
+      fullSeconds > length + 0.05
+        ? { window: fullWindow, seconds: fullSeconds, credits: recastWindowCredits(engine, clip, fullWindow) }
+        : null,
+  };
 }
