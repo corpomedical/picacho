@@ -20,7 +20,12 @@ try {
 const make = (width: number, height: number, channels: 3 | 4 = 3) =>
   (sharp as SharpFn)({ create: { width, height, channels, background: channels === 4 ? { r: 0, g: 0, b: 0, alpha: 0 } : { r: 90, g: 120, b: 150 } } });
 
-describe.skipIf(!sharp)("preparePhoto (sharp)", () => {
+// Every test here has libvips encode and decode real pictures, up to the
+// 54 MP camera frame below: up to 0.7 s a test alone, but 5–10 s when three
+// full suites run at once, as other sessions' do on this machine (measured
+// 2026-09-22). That time is the machine's, not the code's, so the block has
+// room for it rather than vitest's 5 s.
+describe.skipIf(!sharp)("preparePhoto (sharp)", { timeout: 60_000 }, () => {
   it("hands back what the server's own re-encode makes of the browser's JPEG: at most 2048 px, no metadata", async () => {
     const src = await make(3000, 2000).withMetadata({ exif: { IFD0: { Make: "EvalCam" } } }).jpeg().toBuffer();
     const r = await preparePhoto("ph-1", src);

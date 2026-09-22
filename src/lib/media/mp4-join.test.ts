@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -64,10 +65,34 @@ const rows = (out: string) =>
     .filter((line) => line && !line.startsWith("#"))
     .map((line) => line.split(",").map((x) => x.trim()));
 
+/**
+ * Every packet ffmpeg reads from the bytes, copied, never decoded, listed
+ * twice by one run: framemd5 for each packet's MD5, framecrc for its flags
+ * (framemd5 does not print them). Kept by the bytes' own SHA-256: the same
+ * bytes always read the same, and a changed copy has a key of its own. The
+ * tests ask about the same clips again and again: reading them afresh each
+ * time was 45 runs of ffmpeg where 27 do, and 5.2 s for this file alone
+ * instead of 3.2 s (2026-09-22).
+ */
+const readBacks = new Map<string, { md5: string; crc: string }>();
+function readBack(bytes: Uint8Array): { md5: string; crc: string } {
+  const key = createHash("sha256").update(bytes).digest("hex");
+  let got = readBacks.get(key);
+  if (!got) {
+    got = asFile(bytes, (file, dir) => {
+      const md5 = join(dir, "packets.framemd5");
+      const crc = join(dir, "packets.framecrc");
+      execFileSync(ffmpeg!, ["-hide_banner", "-loglevel", "error", "-i", file, "-map", "0", "-c", "copy", "-f", "framemd5", md5, "-map", "0", "-c", "copy", "-f", "framecrc", crc]);
+      return { md5: readFileSync(md5, "utf8"), crc: readFileSync(crc, "utf8") };
+    });
+    readBacks.set(key, got);
+  }
+  return got;
+}
+
 /** Every packet ffmpeg reads from the file, copied, never decoded. */
 function packets(bytes: Uint8Array): Packet[] {
-  const out = ffmpegOn(bytes, (file) => ["-hide_banner", "-loglevel", "error", "-i", file, "-map", "0", "-c", "copy", "-f", "framemd5", "-"]);
-  return rows(out).map(([stream, dts, pts, duration, size, hash]) => ({
+  return rows(readBack(bytes).md5).map(([stream, dts, pts, duration, size, hash]) => ({
     stream: Number(stream),
     dts: Number(dts),
     pts: Number(pts),
@@ -82,8 +107,7 @@ function packets(bytes: Uint8Array): Packet[] {
  * keyframe, "F=0x0" for any other, "F=0x5" for a keyframe the edit hides.
  */
 function flags(bytes: Uint8Array, stream: number): string[] {
-  const out = ffmpegOn(bytes, (file) => ["-hide_banner", "-loglevel", "error", "-i", file, "-map", "0", "-c", "copy", "-f", "framecrc", "-"]);
-  return rows(out)
+  return rows(readBack(bytes).crc)
     .filter((row) => Number(row[0]) === stream)
     .map((row) => row[6] ?? "key");
 }
@@ -297,7 +321,13 @@ function keyframeLists(bytes: Uint8Array): number[][] {
   return boxesInMoov(bytes, "stss").map((stss) => Array.from({ length: v.getUint32(stss + 12) }, (_, k) => v.getUint32(stss + 16 + k * 4)));
 }
 
-describe.skipIf(!ffmpeg)("joinMp4, read back by ffmpeg", () => {
+// Every test here runs the real ffmpeg, most of them decoding a whole joined
+// film (10–25 s of picture) to prove it plays: 0.2–0.5 s alone, but 6–16 s
+// when three full suites run at once, as other sessions' do on this machine
+// (measured 2026-09-22, the longest with the machine also swapping). That
+// time is the machine's, not the join's, so the block has room for it rather
+// than vitest's 5 s.
+describe.skipIf(!ffmpeg)("joinMp4, read back by ffmpeg", { timeout: 60_000 }, () => {
   it("joins two clips with the same setup: every packet theirs, in order, the time running on", () => {
     const joined = joinMp4([HERO, HERO2]);
     expect(joined.ok).toBe(true);

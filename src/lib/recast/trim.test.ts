@@ -139,7 +139,11 @@ describe("fitting a clip to the engine", () => {
   });
 });
 
-describe("the cut itself, on the real binary", () => {
+// The real ffmpeg, encoding: 0.2–0.5 s a test alone, but 5–10 s when three
+// full suites run at once, as other sessions' do on this machine (measured
+// 2026-09-22). That time is the machine's, not the cut's, so the block has
+// room for it rather than vitest's 5 s.
+describe("the cut itself, on the real binary", { timeout: 60_000 }, () => {
   const ffmpeg = (() => {
     try {
       const path = createRequire(__filename)("ffmpeg-static") as string | null;
@@ -175,12 +179,13 @@ describe("the cut itself, on the real binary", () => {
   it.skipIf(!ffmpeg)("a restage cut of a clip with sound is under the 15.0 s the engine measures", () => {
     const dir = mkdtempSync(join(tmpdir(), "recast-trim-test-"));
     try {
+      // Only its length matters: small, and sound running on past the 15 s.
       const src = join(dir, "src.mp4");
       execFileSync(ffmpeg!, [
         "-v", "error", "-y",
-        "-f", "lavfi", "-i", "testsrc=size=320x180:rate=30",
+        "-f", "lavfi", "-i", "testsrc=size=160x90:rate=30",
         "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100",
-        "-t", "20", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", src,
+        "-t", "16", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", src,
       ]);
       const out = join(dir, "out.mp4");
       execFileSync(ffmpeg!, recastTrimArgs(src, out, recastSendWindow({ start: 0, end: 15 }, 15), null, false));
