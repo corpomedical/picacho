@@ -56,7 +56,11 @@ describe("startRecastTakes", () => {
     // may only shape the BRIEF — never the money or the cast.
     expect(start).toContain("reboundRecastRead(input?.read, clip.seconds)");
     const readLine = at("const read = reboundRecastRead");
-    expect(start.slice(readLine, at("await gatePrompt({"))).not.toMatch(/credit|allowance|characterIds/);
+    // The price is set before the read is even bounded, and nothing the read
+    // shapes (the group check, the names, the brief) touches the money or the cast.
+    expect(at("const perTake = recastWindowCredits")).toBeLessThan(readLine);
+    expect(start.slice(readLine, at("return { error: RECAST_GROUP_ONE_PART }"))).not.toMatch(/credit|allowance|characterIds/);
+    expect(start.slice(at("const namesFor = "), at("await gatePrompt({"))).not.toMatch(/credit|allowance|characterIds/);
   });
 
   it("charges what the door quoted: both call the same price", () => {
@@ -83,7 +87,9 @@ describe("startRecastTakes", () => {
     // The URL judged is the URL sent — the cut's, when there is one.
     expect(start.slice(cut, at("await judgeRender({"))).toContain("clipUrl = signedCut.signedUrl");
     // A refused cut goes with the refusal.
-    expect(start.slice(at("await judgeRender({"), at("const total = perTake"))).toContain("if (cutPath) await removeSource(admin, cutPath)");
+    expect(start.slice(at("await judgeRender({"), at("const seconds = Math.max(1, Math.round(windowSeconds))"))).toContain(
+      "if (cutPath) await removeSource(admin, cutPath)",
+    );
     // And the original is named in the recipe, so the take can be recut —
     // a long take's too, whose window is a cut like any other.
     expect(start).toContain("fromClipId: preparing || chaining ? fromClipId : null");
@@ -97,7 +103,7 @@ describe("startRecastTakes", () => {
     const prep = at("await prepareChain(admin, {");
     expect(at("await gatePrompt({")).toBeLessThan(prep);
     expect(prep).toBeLessThan(at("await judgeRender({"));
-    expect(prep).toBeLessThan(at("checkGenerationAllowance("));
+    expect(prep).toBeLessThan(at('admin.rpc("reserve_generations"'));
     expect(start.slice(prep, at("await judgeRender({"))).toContain("clipUrl = signedWindow.signedUrl");
     expect(start).toContain('prep.error === "no-plan" ? RECAST_CHAIN_NO_PLAN : RECAST_TRIM_FAILED');
     // Every piece's request is composed whole here, the clip left as the
@@ -121,17 +127,40 @@ describe("startRecastTakes", () => {
   it("judges the words and the clip BEFORE any credit moves", () => {
     const words = at("await gatePrompt({");
     const picture = at("await judgeRender({");
-    expect(words).toBeLessThan(at("checkGenerationAllowance("));
-    expect(picture).toBeLessThan(at("checkGenerationAllowance("));
-    expect(picture).toBeLessThan(at('admin.rpc("reserve_generations"'));
-    expect(picture).toBeLessThan(at("submitRecastJob("));
+    for (const spend of ['admin.rpc("reserve_generations"', "consumePurchasedCredits(", "submitRecastJob("]) {
+      expect(words, spend).toBeLessThan(at(spend));
+      expect(picture, spend).toBeLessThan(at(spend));
+    }
     expect(start.slice(picture, picture + 220)).toContain("strictLane: true");
+  });
+
+  it("tells someone short of credits in seconds — before the words are judged and before any cut", () => {
+    // 2026-09-22 (moved from C5): the allowance was asked last, after a long
+    // take's window was prepared at 24 fps and every picture was checked.
+    const allowance = at("checkGenerationAllowance(supabase, userId, total)");
+    for (const slow of ["await gatePrompt({", "await prepareChain(admin, {", "await cutRecastWindow(", "await sendAddedImage(admin, userId, image)", "await judgeRender({"]) {
+      expect(allowance, slow).toBeLessThan(at(slow));
+    }
+    // After the price is set and the refusals that cost nothing have spoken.
+    expect(at("const perTake = recastWindowCredits(")).toBeLessThan(allowance);
+    expect(at("return { error: RECAST_CHAIN_TOO_MANY }")).toBeLessThan(allowance);
+    expect(at("return { error: RECAST_GROUP_ONE_PART }")).toBeLessThan(allowance);
+    // The very total the reserve spends: the rows are charged perTake each,
+    // one row per take, and the monthly portion comes from the same total.
+    expect(start.match(/const total = /g)).toHaveLength(1);
+    expect(start).toContain("const total = perTake * takes.length;\n  const allowance = await checkGenerationAllowance(supabase, userId, total)");
+    expect(start).toContain("credits_used: perTake,");
+    expect(start).toContain("const rows = takes.map((chars, i) => {");
+    expect(start).toContain("const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, total - consumePurchased)");
+    expect(start).toContain("p_monthly_portion: monthlyPortion");
+    // It moves nothing, so nothing has to be undone when a later gate refuses.
+    expect(start.slice(allowance, at("await gatePrompt({"))).not.toMatch(/consumePurchasedCredits|reserve_generations|refund/);
   });
 
   it("re-judges an upload but not one of our own finished takes", () => {
     // Our own render met the output gate on the way out; judging it again on
     // the way in would be paying twice to learn the same thing.
-    const guard = start.slice(at("if (uploadPath) {\n    try {"), at("const total = perTake"));
+    const guard = start.slice(at("if (uploadPath) {\n    try {"), at("const seconds = Math.max(1, Math.round(windowSeconds))"));
     expect(guard).toContain("judgeRender");
     expect(guard).toContain("recordPolicyRefusal");
     expect(guard.indexOf('err.reason === "unavailable"')).toBeLessThan(guard.indexOf("removeSource(admin, uploadPath)"));
@@ -206,11 +235,11 @@ describe("a take with images of the person's own, or with words alone", () => {
   it("judges each image as it will be sent, in the strict lane, before any credit moves", () => {
     const judged = at('await judgeRender({ url: sent.url, kind: "image", strictLane: true');
     expect(at("await sendAddedImage(admin, userId, image)")).toBeLessThan(judged);
-    expect(judged).toBeLessThan(at("checkGenerationAllowance("));
     expect(judged).toBeLessThan(at('admin.rpc("reserve_generations"'));
+    expect(judged).toBeLessThan(at("consumePurchasedCredits("));
     expect(judged).toBeLessThan(at("submitRecastJob("));
     // A refused image leaves nothing of the press behind.
-    expect(start.slice(judged, at("const total = perTake"))).toContain("await dropPrepared()");
+    expect(start.slice(judged, at("const seconds = Math.max(1, Math.round(windowSeconds))"))).toContain("await dropPrepared()");
     expect(start).toContain('provider: "recast-image"');
   });
 

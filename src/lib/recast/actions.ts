@@ -123,10 +123,11 @@ import { cleanupChain, prepareChain, storeFirstPiece, type PreparedChain } from 
 //   numbers, the frames are read for what is in the clip, every engine is
 //   quoted -> start: rights ticked -> the file read AGAIN (the money path
 //   reads the file, never the form and never the inspect's answer) -> the
-//   characters are the caller's own -> the brief gated as text -> THE CLIP
-//   JUDGED (its middle frame, the strict lane) before anything is spent ->
-//   allowance for ALL the variants at once -> reserve the rows -> guarded
-//   spend -> submit each -> record each.
+//   characters are the caller's own -> allowance for ALL the variants at
+//   once, before any encoding (2026-09-22) -> the brief gated as text -> the
+//   cut -> THE CLIP JUDGED (its middle frame, the strict lane) before
+//   anything is spent -> reserve the rows -> guarded spend -> submit each ->
+//   record each.
 //
 // FROM THE JOB ROW ON, A RECAST IS AN ORDINARY VIDEO RENDER: stage "video",
 // so the webhook, the poll, the reaper, Stop, the output gate, the poster,
@@ -623,6 +624,25 @@ export async function startRecastTakes(input: {
   const groupTags = new Set((read?.people ?? []).filter((p) => p.many).map((p) => p.tag));
   const castOverGroup = (together ? castTags : [castTag]).some((tag) => tag !== null && groupTags.has(tag));
   if (castOverGroup && chaining) return { error: RECAST_GROUP_ONE_PART };
+
+  // THE CREDITS, ASKED BEFORE THE CUT (2026-09-22). One take per character —
+  // or one for all of them together — and one when nobody is cast;
+  // characters together share ONE take's price. The free daily slot never
+  // covers a recast — plan or purchased credits only, the upscaler's rule.
+  // Asked for the WHOLE press, with the very total the rows are reserved
+  // at: a variant set that can only half-afford itself does not start.
+  //
+  // It used to be asked last, after the words were judged, the window cut
+  // (a long take's prepared at 24 fps, its stillness measured) and every
+  // picture checked: someone short of credits waited a minute to be told,
+  // and the cut was left behind. It moves nothing — the reserve below
+  // re-checks the same window under its own lock, and the purchased spend
+  // is guarded — so it is asked here, where the answer takes seconds.
+  const total = perTake * takes.length;
+  const allowance = await checkGenerationAllowance(supabase, userId, total);
+  if (allowance.error) return { error: allowance.error };
+  const consumePurchased = allowance.consumePurchased ?? 0;
+  const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, total - consumePurchased);
   // The engine that reads names in its prompt is told which photos are whose
   // by name; how many photos each character has decides which name (a lone
   // character is @Element1 or @Image1, as ever). Every name — the cast's,
@@ -817,19 +837,8 @@ export async function startRecastTakes(input: {
     sentImages.push({ path: sent.path, url: sent.url });
   }
 
-  // One take per character — or one for all of them together — and one when
-  // nobody is cast. Characters together share ONE take's price.
-  const total = perTake * takes.length;
   const seconds = Math.max(1, Math.round(windowSeconds));
   const groupId = takes.length > 1 ? crypto.randomUUID() : null;
-
-  // The free daily slot never covers a recast — plan or purchased credits
-  // only, the upscaler's rule. Asked for the WHOLE press: a variant set
-  // that can only half-afford itself does not start.
-  const allowance = await checkGenerationAllowance(supabase, userId, total);
-  if (allowance.error) return { error: allowance.error };
-  const consumePurchased = allowance.consumePurchased ?? 0;
-  const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, total - consumePurchased);
 
   const lockOn = await isRecastLockOn(supabase);
   // EVERY TAKE'S WORDS, composed once, here, and SENT from here (2026-09-22):
