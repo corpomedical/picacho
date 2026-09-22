@@ -17,6 +17,7 @@ import { isRecastEnabled, isRecastLockOn } from "@/lib/recast/enabled";
 import {
   RECAST_ALREADY_STARTED,
   RECAST_CHAIN_NO_PLAN,
+  RECAST_CHAIN_TOO_MANY,
   RECAST_CHARACTER_NEEDS_PHOTO,
   RECAST_CLIP_TOO_BIG,
   RECAST_CLIP_UNCHECKED,
@@ -55,6 +56,7 @@ import {
   recastContainerOf,
   recastCreditCost,
   recastCastsTogether,
+  recastChainFits,
   recastEngineFits,
   recastImageRoom,
   recastImageSendsAsIs,
@@ -579,9 +581,18 @@ export async function startRecastTakes(input: {
   // THE LONG TAKE (chain.ts): past the engine's own 15 s, the take is
   // rendered in chained pieces and joined.
   const chaining = spec.chains === true && chainPieceCount(windowSeconds) > 1;
+  /** How many characters ONE take carries: everyone together, or one each. */
+  const charactersInTake = together ? ordered.length : Math.min(1, ordered.length);
+  // A LONG TAKE'S CAST (2026-09-22). Every later part carries the finished
+  // frame it goes on from, one of the four pictures a part can carry — so a
+  // long take holds three characters, not four. Four used to go through, and
+  // the request silently dropped the still that part's own words point at.
+  // Refused here: before the words are judged, before the window is cut, and
+  // before any credit moves.
+  if (chaining && !recastChainFits(charactersInTake)) return { error: RECAST_CHAIN_TOO_MANY };
   // What a take has room to carry: four references in all, the characters in
   // it and — for a long take — the still at each switch taking one each.
-  const sendImages = spec.restages ? added : added.slice(0, recastImageRoom(together ? ordered.length : Math.min(1, ordered.length), chaining));
+  const sendImages = spec.restages ? added : added.slice(0, recastImageRoom(charactersInTake, chaining));
 
   // The read again, from what the door was shown — the brief is composed
   // server-side from the same fields, so what was on the door is what is
@@ -604,8 +615,13 @@ export async function startRecastTakes(input: {
   // character the part follows the footage: two takes of the operator's own
   // crowd came back as his students at the second join. The still at the
   // switch did not hold it, so the take is kept to one part instead.
+  //
+  // Asked of the tags each take actually casts (2026-09-22): everyone's own
+  // when they share one take, and the one person the door named when each
+  // character has a take of their own — the variants, which until today were
+  // asked about tags no take of theirs used, and so were never refused.
   const groupTags = new Set((read?.people ?? []).filter((p) => p.many).map((p) => p.tag));
-  const castOverGroup = (ids.length > 1 ? castTags : [castTag]).some((tag) => tag !== null && groupTags.has(tag));
+  const castOverGroup = (together ? castTags : [castTag]).some((tag) => tag !== null && groupTags.has(tag));
   if (castOverGroup && chaining) return { error: RECAST_GROUP_ONE_PART };
   // The engine that reads names in its prompt is told which photos are whose
   // by name; how many photos each character has decides which name (a lone

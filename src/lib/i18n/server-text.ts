@@ -212,6 +212,8 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "That image couldn't be checked just now — nothing was charged. Try again.": "recastImageUnchecked",
   "Say in your words who each character plays.": "recastNeedsRoles",
   "A whole group can only be changed in one part — keep the take to 15 seconds, or cast someone in it instead of all of them.": "recastGroupOnePart",
+  // A long take's cast (recast/messages.ts, 2026-09-22).
+  "Over 15 seconds a take carries up to three characters. Trim to 15 seconds for four.": "recastChainTooMany",
   // Face verification, "Verify it's you" (lib/faces/messages.ts, 2026-09-19).
   "Face verification is in private testing.": "faceNotOpen",
   "Face verification isn't available right now.": "faceUnavailable",

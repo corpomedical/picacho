@@ -317,7 +317,33 @@ describe("what keeps a later part on the take's look", () => {
   });
 
   it("leaves the still room among the four references a take carries", () => {
-    expect(start).toContain("recastImageRoom(together ? ordered.length : Math.min(1, ordered.length), chaining)");
+    expect(start).toContain("const charactersInTake = together ? ordered.length : Math.min(1, ordered.length)");
+    expect(start).toContain("recastImageRoom(charactersInTake, chaining)");
+  });
+
+  it("turns away a long take's cast that leaves the still no room, before a credit moves", () => {
+    // 2026-09-22: four characters past 15 s left the still no place, and the
+    // request silently dropped the picture that part's own words point at.
+    const refuse = at("if (chaining && !recastChainFits(charactersInTake)) return { error: RECAST_CHAIN_TOO_MANY }");
+    for (const later of ["await gatePrompt({", "await prepareChain(admin, {", "await cutRecastWindow(", "checkGenerationAllowance(", 'admin.rpc("reserve_generations"', "consumePurchasedCredits(", "submitRecastJob("]) {
+      expect(refuse, later).toBeLessThan(at(later));
+    }
+    // The line is the person's, in every language.
+    const messages = readFileSync(join(__dirname, "messages.ts"), "utf8");
+    expect(messages).toContain('export const RECAST_CHAIN_TOO_MANY = "Over 15 seconds a take carries up to three characters. Trim to 15 seconds for four."');
+    const serverText = readFileSync(join(__dirname, "..", "i18n", "server-text.ts"), "utf8");
+    expect(serverText).toContain('"Over 15 seconds a take carries up to three characters. Trim to 15 seconds for four.": "recastChainTooMany"');
+    for (const lang of ["en", "es", "it", "pt"]) {
+      expect(readFileSync(join(__dirname, "..", "i18n", "messages", `${lang}.ts`), "utf8"), lang).toMatch(/\n    recastChainTooMany: "[^"]+",/);
+    }
+  });
+
+  it("asks whether a whole group is cast of the tags each take really casts — variants included", () => {
+    // Variants (one take per character) each play the person the door named;
+    // until 2026-09-22 they were asked about tags no take of theirs used.
+    expect(start).toContain("const castOverGroup = (together ? castTags : [castTag]).some((tag) => tag !== null && groupTags.has(tag))");
+    // The same tags the brief casts each take with.
+    expect(start).toContain("const tag = chars.length > 1 ? castTags[ids.indexOf(c.id)] : castTag");
   });
 
   it("says a group is a group, from the read's own judgement", () => {

@@ -3072,6 +3072,7 @@ const es = {
     recastImageUnchecked: "No se pudo revisar esa imagen ahora mismo; no se cobró nada. Inténtalo de nuevo.",
     recastNeedsRoles: "Di con tus palabras qué papel hace cada personaje.",
     recastGroupOnePart: "Un grupo entero solo se puede cambiar en una sola parte: deja la toma en 15 segundos, o elige a alguien del grupo en vez de a todos.",
+    recastChainTooMany: "Por encima de 15 segundos, una toma lleva como mucho tres personajes. Recórtala a 15 segundos para que sean cuatro.",
     faceNotOpen: "La verificación facial está en pruebas privadas.",
     faceUnavailable: "La verificación facial no está disponible ahora mismo.",
     faceNotConfigured: "La verificación facial necesita primero sus claves de acceso de BytePlus.",

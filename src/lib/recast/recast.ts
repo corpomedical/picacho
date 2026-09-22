@@ -93,7 +93,7 @@
 // rounded up (video-models.ts) — restated here as a number because that
 // module pulls the whole catalogue in; the test pins the two equal.
 
-import { CHAIN_MAX_SECONDS, chainBilledSeconds } from "../generations/chain";
+import { CHAIN_LOOK_PLACEHOLDER, CHAIN_MAX_SECONDS, chainBilledSeconds } from "../generations/chain";
 
 export const RECAST_COST_BASIS_USD_PER_CREDIT = 0.28;
 
@@ -434,6 +434,20 @@ export function recastImageRoom(charactersInTake: number, chained = false): numb
   // look (chain.ts ChainState.look, 2026-09-20).
   return Math.max(0, Math.min(RECAST_MAX_IMAGES, RECAST_MAX_REFERENCES - charactersInTake - (chained ? 1 : 0)));
 }
+
+/**
+ * Whether a take of MORE THAN ONE PART can carry this cast (2026-09-22):
+ * every character in it is one of the four references (an element or a
+ * one-photo image, one place either way) and every later part needs one
+ * more for the still at its switch. Four characters left the still no
+ * place, and the request body silently sliced it off — a later part told,
+ * in its own words, to follow a finished frame it was never sent. Such a
+ * cast is refused before any credit moves; up to 15 s, in one piece, four
+ * still fit. Added images are already fitted by recastImageRoom(n, true).
+ */
+export function recastChainFits(charactersInTake: number): boolean {
+  return charactersInTake + 1 <= RECAST_MAX_REFERENCES;
+}
 // The tighter of the two engines' own limits, read from fal's schemas the same
 // day: O3 Edit's references ≥ 300 px a side and ≤ 10 MB, V3 Motion Control's
 // picture 340–3850 px; both between 0.4 and 2.5 wide for their height.
@@ -741,6 +755,17 @@ export function recastRequestBody(
       ...people.filter((p) => p.more.length === 0).map((p) => p.front),
       ...(input.imageUrls ?? []).slice(0, RECAST_MAX_IMAGES),
     ].slice(0, RECAST_MAX_REFERENCES - elements.length);
+    // THE STILL IS NEVER SLICED OFF (2026-09-22). A later part of a long
+    // take is told, in its own words, that its last image IS the finished
+    // frame it carries on from — the one thing that keeps it on the take's
+    // look and off the footage's. It rides last, so the room slices above
+    // are exactly where it would fall away without a word if a cast ever
+    // grew past what a long take can carry. recastChainFits refuses such a
+    // cast before any credit moves; here the body refuses too, rather than
+    // send a part told to follow a picture it was never given.
+    if ((input.imageUrls ?? []).includes(CHAIN_LOOK_PLACEHOLDER) && !images.includes(CHAIN_LOOK_PLACEHOLDER)) {
+      throw new Error("A long take's part has no room left for the finished frame it carries on from.");
+    }
     return {
       video_url: input.clipUrl,
       prompt: recastFitPrompt(input.brief ?? "", spec.promptMax),

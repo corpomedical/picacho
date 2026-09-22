@@ -9,10 +9,12 @@ import {
   recastRestageTokens,
   recastSentBriefs,
 } from "./recast-brief";
+import { CHAIN_CLIP_PLACEHOLDER, CHAIN_LOOK_PLACEHOLDER } from "../generations/chain";
 import {
   RECAST_ENGINE_ORDER,
   RECAST_ENGINES,
   RECAST_JOB_ORDER,
+  recastChainFits,
   recastImageRoom,
   recastRequestBody,
   recastRestageImageRoom,
@@ -838,6 +840,92 @@ describe("the names a take's words use", () => {
     expect(recastBriefNames({ job: "scene", engine: "kling-edit", photos: [4], images: 2 }).look).toBe("@Image3");
     expect(recastBriefNames({ job: "scene", engine: "kling-edit", photos: [1, 4], images: 1 }).look).toBe("@Image3");
   });
+});
+
+// A LONG TAKE'S LATER PARTS GET EVERY PICTURE THEY ARE TOLD ABOUT (2026-09-22).
+// Four characters past 15 s left the still no room, and the body dropped it
+// without a word — a part told to follow a finished frame it was never sent.
+describe("every picture a part's words name is in that part's body", () => {
+  const clipUrl = CHAIN_CLIP_PLACEHOLDER;
+  // Every cast of one to four, each character sent as an element (four
+  // photos) or as one photo, beside none to three added images, in a take
+  // made in parts and in one of one piece.
+  const casts: number[][] = [];
+  for (let n = 1; n <= 4; n++) {
+    for (let mask = 0; mask < 2 ** n; mask++) casts.push(Array.from({ length: n }, (_, i) => ((mask >> i) & 1 ? 4 : 1)));
+  }
+
+  for (const photos of casts) {
+    for (const asked of [0, 1, 2, 3]) {
+      for (const long of [true, false]) {
+        it(`${photos.map((p) => (p > 1 ? "element" : "photo")).join("+")} · ${asked} images · ${long ? "long take" : "one piece"}`, () => {
+          if (long && !recastChainFits(photos.length)) {
+            // Turned away before any credit moves (actions.ts), and the body
+            // refuses a part without its still rather than send it.
+            expect(photos.length).toBe(4);
+            expect(() =>
+              recastRequestBody("kling-edit", {
+                clipUrl,
+                ensemble: photos.map((p, i) => ({ front: `https://x/c${i}.jpg`, more: Array.from({ length: p - 1 }, (_, k) => `https://x/c${i}-${k}.jpg`) })),
+                imageUrls: [CHAIN_LOOK_PLACEHOLDER],
+                brief: "x",
+              }),
+            ).toThrow();
+            return;
+          }
+          const images = Math.min(asked, recastImageRoom(photos.length, long));
+          const names = recastBriefNames({ job: "scene", engine: "kling-edit", photos, images });
+          const people = photos.map((p, i) => ({ front: `https://x/c${i}.jpg`, more: Array.from({ length: p - 1 }, (_, k) => `https://x/c${i}-${k}.jpg`) }));
+          const added = Array.from({ length: images }, (_, i) => `https://x/added-${i}.jpg`);
+          const castings = photos.map((_, i) => ({ tag: ["A", "B", "C", "D"][i], characterName: `Cast ${i + 1}`, token: names.cast[i] }));
+          for (let k = 0; k < (long ? 3 : 1); k++) {
+            const look = k > 0 && names.look ? names.look : undefined;
+            const brief = composeRecastBrief({
+              job: "scene",
+              engine: "kling-edit",
+              read: busy,
+              window: long ? { start: k * 9, end: k * 9 + 11 } : { start: 0, end: 15 },
+              casting: castings.length === 1 ? castings[0] : castings,
+              keeps: [],
+              direction: "Everyone waves in image 1.",
+              images: names.images,
+              continuing: k > 0,
+              ...(look ? { look } : {}),
+              longTake: long,
+            });
+            // The action's own body for this part (actions.ts: the still's place from the second part on).
+            const body = recastRequestBody("kling-edit", {
+              clipUrl,
+              ...(people.length === 1 ? { characterImageUrl: people[0].front, morePhotoUrls: people[0].more } : { ensemble: people }),
+              imageUrls: k > 0 ? [...added, CHAIN_LOOK_PLACEHOLDER] : added,
+              brief,
+            });
+            const imageUrls = (body.image_urls as string[] | undefined) ?? [];
+            const elements = (body.elements as { frontal_image_url: string }[] | undefined) ?? [];
+            // Every name the words use is a picture the body carries…
+            for (const [, kind, index] of brief.matchAll(/@(Image|Element)(\d+)/g)) {
+              const list: unknown[] = kind === "Image" ? imageUrls : elements;
+              expect(list[Number(index) - 1], `part ${k + 1}: @${kind}${index}`).toBeDefined();
+            }
+            // …and the RIGHT picture: each character's own, each added image, the still.
+            names.cast.forEach((token, i) => {
+              const at = Number(token.replace(/\D/g, "")) - 1;
+              if (token.startsWith("@Element")) expect(elements[at].frontal_image_url).toBe(people[i].front);
+              else expect(imageUrls[at]).toBe(people[i].front);
+            });
+            names.images.forEach((token, i) => expect(imageUrls[Number(token.replace(/\D/g, "")) - 1]).toBe(added[i]));
+            if (look) {
+              expect(brief).toContain(`${look} IS that finished frame.`);
+              expect(imageUrls[Number(look.replace(/\D/g, "")) - 1]).toBe(CHAIN_LOOK_PLACEHOLDER);
+            } else {
+              expect(imageUrls).not.toContain(CHAIN_LOOK_PLACEHOLDER);
+            }
+            expect(imageUrls.length + elements.length).toBeLessThanOrEqual(4);
+          }
+        });
+      }
+    }
+  }
 });
 
 describe("the words a take was sent, read back from its log", () => {

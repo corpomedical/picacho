@@ -3071,6 +3071,7 @@ const it = {
     recastImageUnchecked: "Non è stato possibile controllare quell'immagine ora: non è stato addebitato nulla. Riprova.",
     recastNeedsRoles: "Di' con parole tue che ruolo ha ogni personaggio.",
     recastGroupOnePart: "Un intero gruppo si può cambiare solo in una parte sola: tieni la ripresa a 15 secondi, oppure scegli qualcuno del gruppo invece di tutti.",
+    recastChainTooMany: "Oltre i 15 secondi una ripresa porta al massimo tre personaggi. Accorciala a 15 secondi per averne quattro.",
     faceNotOpen: "La verifica del volto è in test privato.",
     faceUnavailable: "La verifica del volto non è disponibile in questo momento.",
     faceNotConfigured: "La verifica del volto ha prima bisogno delle sue chiavi di accesso BytePlus.",

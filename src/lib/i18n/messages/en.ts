@@ -3284,6 +3284,7 @@ const en = {
     recastImageUnchecked: "That image couldn't be checked just now — nothing was charged. Try again.",
     recastNeedsRoles: "Say in your words who each character plays.",
     recastGroupOnePart: "A whole group can only be changed in one part — keep the take to 15 seconds, or cast someone in it instead of all of them.",
+    recastChainTooMany: "Over 15 seconds a take carries up to three characters. Trim to 15 seconds for four.",
     faceNotOpen: "Face verification is in private testing.",
     faceUnavailable: "Face verification isn't available right now.",
     faceNotConfigured: "Face verification needs its BytePlus access keys first.",
