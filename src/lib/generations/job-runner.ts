@@ -40,13 +40,23 @@ import { mediaUrl } from "@/lib/media/url";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { FetchTimeoutError } from "@/lib/generations/providers/fetch-with-timeout";
 import { isRawProviderError } from "@/lib/generations/user-facing-error";
-import type { AttemptLog } from "@/lib/generations/pipeline";
+import type { AttemptLog, PipelineStepLog } from "@/lib/generations/pipeline";
 import { getDialogueCreditWeight } from "@/lib/generations/providers/video-models";
 
 import { recordModelFailure, recordModelSuccess } from "@/lib/generations/model-health";
 import { notifyUser, type PushMessage } from "@/lib/push/send";
 import { maybeNotifyLowCredits } from "@/lib/push/low-credits";
-import type { IdentityLock } from "@/lib/generations/face-lock";
+import {
+  castScores,
+  faceRecord,
+  identityPhotoFor,
+  recordOnlyLock,
+  scoringCast,
+  takeReportStep,
+  withinBudget,
+  type IdentityLock,
+  type ScoredMember,
+} from "@/lib/generations/face-lock";
 import { removeOpeningFrames } from "@/lib/generations/opening-frame-run";
 import { CHAIN_FPS, CHAIN_PREFIX_FRAMES, chainPieceBody, type ChainState } from "@/lib/generations/chain";
 import {
@@ -989,12 +999,16 @@ async function finish(
   // serves all three.
   const { data: gen } = await admin
     .from("generations")
-    .select("video_model_id, content_type, character_profile_id, attachments")
+    // character_profile_ids: every character a video carries, which a
+    // face reading without a lane's lock goes through one by one
+    // (2026-09-22). The column is in schema.sql, not null, default empty.
+    .select("video_model_id, content_type, character_profile_id, character_profile_ids, attachments")
     .eq("id", generationId)
     .maybeSingle<{
       video_model_id: string | null;
       content_type: string | null;
       character_profile_id: string | null;
+      character_profile_ids: string[] | null;
       attachments: string[] | null;
     }>();
 
@@ -1339,147 +1353,159 @@ async function finish(
         }
       }
 
-      const { data: character } = gen?.character_profile_id
-        ? await admin
-            .from("character_profiles")
-            .select("reference_image_urls, traits")
-            .eq("id", gen.character_profile_id)
-            .maybeSingle<{
-              reference_image_urls: string[] | null;
-              traits: { hair?: string; distinguishing_features?: string } | null;
-            }>()
-        : { data: null };
+      // WHOSE FACE, AGAINST WHICH PHOTO (2026-09-22).
+      //
+      // A lane may hand over the CAST with its lock: every character in the
+      // take, each with the photo that was actually sent for them (face-lock.ts
+      // IdentityLock.cast). Then each of them is read on their own, at the
+      // start, the middle and the end, against that photo — not the first
+      // character alone against photo #1, which is what a take with two
+      // characters, or one made from someone's third photo, used to be
+      // judged on — and the take gets a report of it (face-lock.ts, THE TAKE
+      // REPORT).
+      //
+      // A character video that arrives with NO lock is read whole anyway,
+      // under one that records and never refunds (recordOnlyLock), and for
+      // every character the row lists. Every lane that renders a character
+      // has handed one over since 2026-09-18, except where it chose not to —
+      // a lock switch left off, several characters in one take — and those
+      // were read on one middle frame of one character: the least-judged
+      // videos in the product were the ones whose claim is that the face
+      // holds from end to end.
+      //
+      // Every other video is read exactly as before: the row's own
+      // character, under its lane's lock, against photo #1 unless the lock
+      // names the photo sent.
+      const laneLock = jobRow?.payload?.identityLock ?? null;
+      const lock: IdentityLock | null = laneLock ?? (gen?.character_profile_id ? recordOnlyLock() : null);
+      const wholeCast = laneLock === null;
+      const cast = scoringCast({
+        lock,
+        characterProfileId: gen?.character_profile_id ?? null,
+        characterProfileIds: gen?.character_profile_ids ?? null,
+        wholeCast,
+      });
+      // The report is written for every video read character by character,
+      // even when nothing could be read — "face not checked" is itself the
+      // report.
+      const reportsTake = wholeCast || Boolean(laneLock?.cast?.length);
 
-      // Photo #1 is the identity anchor, matching the image lane exactly —
-      // scoring against a different photo than the one the product calls
-      // "the identity photo" would make the two numbers incomparable.
-      const identityPath = character?.reference_image_urls?.[0];
-      if (identityPath && frameUrl) {
-        const { data: signedIdentity } = await admin.storage
-          .from("character-references")
-          .createSignedUrl(identityPath, 600);
-        if (signedIdentity?.signedUrl) {
-          const traitSummary = [
-            character?.traits?.hair ? `hair: ${character.traits.hair}` : null,
-            character?.traits?.distinguishing_features
-              ? `distinguishing features: ${character.traits.distinguishing_features}`
-              : null,
-          ]
-            .filter(Boolean)
-            .join("; ");
+      if (cast.length > 0) {
+        // Bounded twice: every frame grab and every score carries its own
+        // timeout (25 s and 30 s, run side by side), and the whole reading
+        // has a ceiling on top — the row is already delivered, and a slow
+        // reading must never hold up the caller that delivered it. Past the
+        // ceiling, or on any error, the take is simply not checked.
+        const unread = (): ScoredRead[] =>
+          cast.map((m) => ({ characterId: m.characterId, name: "", verdicts: [null, null, null] }));
+        const reads =
+          (frameUrl
+            ? await withinBudget<ScoredRead[] | null>(
+                readFaces(admin, { cast, lock, outcome, middleFrameUrl: frameUrl }),
+                FACE_READ_BUDGET_MS,
+                null,
+              )
+            : null) ?? unread();
+        // Under a lock the row records the WORST frame, of the whole cast,
+        // because that is what the promise is about ("the face held all the
+        // way through" is about the worst frame, not the luckiest one);
+        // without one it records the middle frame exactly as it always has
+        // (faceRecord decides which, and whether a miss is refunded).
+        const lockScores = castScores(reads);
+        const worstScore = lockScores.length > 0 ? Math.min(...lockScores) : null;
+        const record = faceRecord({ lock, reads, worstScore });
+        const primary = reads[0] ?? null;
+        const middle = primary?.verdicts[1] ?? null;
 
-          // THE LOCK (2026-09-18). Without it, one frame speaks for the
-          // clip — fine for a render from a prompt, useless for a clip
-          // whose whole claim is that the face holds from end to end. When
-          // a lane asks for it, the start and the end are pulled and scored
-          // too, in parallel so the webhook waits no longer than it already
-          // does for one, and the LOWEST of the three is the row's score.
-          const lock = jobRow?.payload?.identityLock ?? null;
-          const [firstFrameUrl, lastFrameUrl] = lock
-            ? await Promise.all([
-                lock.skipFirst
-                  ? Promise.resolve(null)
-                  : extractVideoFrame(providerDownloadUrl(outcome.resultUrl), "first"),
-                extractVideoFrame(providerDownloadUrl(outcome.resultUrl), "last"),
-              ])
-            : [null, null];
-          const [verdict, firstVerdict, lastVerdict] = await Promise.all([
-            scoreIdentityMatch(frameUrl, signedIdentity.signedUrl, traitSummary),
-            firstFrameUrl ? scoreIdentityMatch(firstFrameUrl, signedIdentity.signedUrl, traitSummary) : Promise.resolve(null),
-            lastFrameUrl ? scoreIdentityMatch(lastFrameUrl, signedIdentity.signedUrl, traitSummary) : Promise.resolve(null),
-          ]);
-          // An unusable frame says nothing about the face: a clip may open
-          // or close on black by design, so it is dropped rather than
-          // counted as a miss. The same goes for a frame in which no face
-          // is visible at all (scorer p2, 2026-09-18) — the character
-          // walking away from the camera is a shot, not a wrong person.
-          const judges = (v: typeof verdict): v is NonNullable<typeof verdict> =>
-            v !== null && !v.unusable && v.faceVisible !== false;
-          const lockScores = [firstVerdict, verdict, lastVerdict].filter(judges).map((v) => v.score);
-          const worstScore = lockScores.length > 0 ? Math.min(...lockScores) : null;
-          if (verdict) {
-            // Provenance goes where the image lane's goes — pipeline_log — so
-            // there is ONE place to look for "which scorer produced this",
-            // rather than a column for video and a log entry for stills.
-            //
-            // Read-modify-write is safe here specifically: the row went
-            // terminal a few lines above and nothing else writes pipeline_log
-            // after that. It rides in the same UPDATE as the score, so it
-            // costs one read and no extra write.
-            let stampedLog: AttemptLog[] | null = null;
-            try {
-              const { data: logRow } = await admin
-                .from("generations")
-                .select("pipeline_log")
-                .eq("id", generationId)
-                .maybeSingle();
-              const log = (logRow?.pipeline_log ?? []) as AttemptLog[];
-              if (Array.isArray(log) && log.length > 0) {
-                stampedLog = log.slice();
-                stampedLog[stampedLog.length - 1] = {
-                  ...stampedLog[stampedLog.length - 1],
-                  scorerVersion: verdict.scorerVersion,
-                  // Every frame that was read, in the clip's own order — the
-                  // labelled data the lock produces for free.
-                  // A frame with no face in it keeps no number: it was
-                  // not a judgement of anyone.
-                  identityAttempts: [firstVerdict, verdict, lastVerdict]
-                    .filter((v): v is NonNullable<typeof v> => v !== null)
-                    .map((v) => ({
-                      score: v.faceVisible === false ? null : v.score,
-                      notes: (v.faceVisible === false ? "No face visible in this frame." : v.notes) || null,
-                      delivered: true,
-                    })),
-                };
-              }
-            } catch {
-              stampedLog = null;
-            }
-            // `unusable` is deliberately NOT acted on here, unlike the image
-            // lane which auto-fails and refunds a blank frame. On video it
-            // would be reading one still and condemning a whole clip on it —
-            // a mid-clip cut to black is a real thing a prompt can ask for.
-            // Recorded in the notes so it is visible without being acted on.
-            // Under a lock the row records the WORST frame, because that is
-            // what the promise is about; without one it records the middle
-            // frame exactly as it always has.
-            //
-            // With no frame showing a face, nothing was judged: the row
-            // records no score rather than a number about the back of a
-            // head, and nothing can miss.
-            const recorded = lock
-              ? worstScore
-              : verdict.faceVisible === false
-                ? null
-                : verdict.score;
-            const missed = lock !== null && worstScore !== null && worstScore < lock.threshold;
-            const { error: scoreError } = await admin
+        // Provenance goes where the image lane's goes — pipeline_log — so
+        // there is ONE place to look for "which scorer produced this",
+        // rather than a column for video and a log entry for stills. The
+        // take report rides the same log, as a step of its own.
+        //
+        // Read-modify-write is safe here specifically: the row went
+        // terminal a few lines above and nothing else writes pipeline_log
+        // after that. It rides in the same UPDATE as the score, so it
+        // costs one read and no extra write.
+        let stampedLog: AttemptLog[] | null = null;
+        if (middle || reportsTake) {
+          try {
+            const { data: logRow } = await admin
               .from("generations")
-              .update({
-                match_score: recorded,
-                match_notes: verdict.unusable && !lock
-                  ? `${verdict.notes || "Scored from the middle frame."} (Frame read as blank or unusable.)`.slice(0, 500)
-                  : recorded === null
-                    ? "No frame showed the character's face, so it could not be judged."
-                    : lock
-                      ? `Lowest of ${lockScores.length} frames with a face. ${verdict.notes || ""}`.trim().slice(0, 500)
-                      : verdict.notes || null,
-                ...(stampedLog ? { pipeline_log: stampedLog } : {}),
-              })
-              .eq("id", generationId);
-            if (scoreError) {
-              console.warn("Couldn't save video identity score:", scoreError.message);
+              .select("pipeline_log")
+              .eq("id", generationId)
+              .maybeSingle();
+            const log = (logRow?.pipeline_log ?? []) as AttemptLog[];
+            if (Array.isArray(log) && log.length > 0) {
+              stampedLog = log.slice();
+              const last = stampedLog[stampedLog.length - 1];
+              stampedLog[stampedLog.length - 1] = {
+                ...last,
+                ...(middle
+                  ? {
+                      scorerVersion: middle.scorerVersion,
+                      // Every frame of the row's own character that was
+                      // read, in the clip's own order — the labelled data
+                      // the lock produces for free. A frame with no face in
+                      // it keeps no number: it was not a judgement of anyone.
+                      identityAttempts: (primary?.verdicts ?? [])
+                        .filter((v): v is ScorerVerdict => v !== null)
+                        .map((v) => ({
+                          score: v.faceVisible === false ? null : v.score,
+                          notes: (v.faceVisible === false ? "No face visible in this frame." : v.notes) || null,
+                          delivered: true,
+                        })),
+                    }
+                  : {}),
+                // Not one of the pipeline's own step keys: the report rides
+                // the step list because that is the take's story, where the
+                // lane's page reads it (face-lock.ts says what it holds).
+                ...(reportsTake
+                  ? { steps: [...(last.steps ?? []), takeReportStep(reads) as unknown as PipelineStepLog] }
+                  : {}),
+              };
             }
+          } catch {
+            stampedLog = null;
+          }
+        }
 
-            // The miss. The clip is DELIVERED either way — it may still be
-            // wanted, and withholding something already paid for to the
-            // provider helps nobody — but when the lane asked for it, it is
-            // not charged for. Forced past the automatic_refunds switch,
-            // because this refund is a promise the lane printed on the door
-            // rather than a fault we are absorbing.
-            if (missed && lock.refund) {
+        const update = {
+          ...(record.write ? { match_score: record.matchScore, match_notes: record.matchNotes } : {}),
+          // A lock refund is a SETTLEMENT (2026-09-22): stamped here, in
+          // the same write as the score, so refundGenerationCosts counts it
+          // against the account's daily ceiling.
+          ...(record.refund ? { identity_gated_at: new Date().toISOString() } : {}),
+          ...(stampedLog ? { pipeline_log: stampedLog } : {}),
+        };
+        if (Object.keys(update).length > 0) {
+          const { error: scoreError } = await admin.from("generations").update(update).eq("id", generationId);
+          if (scoreError) {
+            console.warn("Couldn't save video identity score:", scoreError.message);
+          }
+
+          // The miss. The clip is DELIVERED either way — it may still be
+          // wanted, and withholding something already paid for to the
+          // provider helps nobody — but when the lane asked for it, it is
+          // not charged for. Forced past the automatic_refunds switch,
+          // because this refund is a promise the lane printed on the door
+          // rather than a fault we are absorbing.
+          //
+          // But BOUNDED (2026-09-22). It used to be force alone, which
+          // refundWithheld exempts from the daily ceiling — the loophole the
+          // settlement flag exists to close: this refund delivered the
+          // render and spent the scorer's calls, so it is the opposite of
+          // free, and unbounded it made a deliberate miss a free render for
+          // as long as anyone cared to repeat it. It now passes as a
+          // settlement, counted on identity_gated_at against the same
+          // per-plan ceiling as the image gate's (refund-rules.ts), admins
+          // exempt. Only once the stamp has landed: a settlement the ceiling
+          // cannot count is exactly the unbounded kind.
+          if (record.refund) {
+            if (scoreError) {
+              console.error(`identity-lock refund withheld for ${generationId}: its settlement couldn't be recorded.`);
+            } else {
               try {
-                await refundGenerationCosts(generationId, { force: true });
+                await refundGenerationCosts(generationId, { force: true, settlement: true });
               } catch (refundErr) {
                 console.error(`identity-lock refund failed for ${generationId}:`, refundErr);
               }
@@ -1506,6 +1532,106 @@ async function finish(
   // precisely when most queued failures land — the actions.ts pre-render
   // crash paths still use it, since a session always exists there.
   return true;
+}
+
+/** What the scorer returns for one frame (providers/openai.ts). */
+type ScorerVerdict = NonNullable<Awaited<ReturnType<typeof scoreIdentityMatch>>>;
+
+/** One character's reading of a finished video: [start, middle, end], null where a frame was not read. */
+type ScoredRead = { characterId: string; name: string; verdicts: (ScorerVerdict | null)[] };
+
+/**
+ * How long the face reading may hold up the caller that delivered the take
+ * (2026-09-22). A frame grab gives up at 25 s and a score at 30 s, and the
+ * frames and the characters are read side by side, so a reading that runs
+ * to the end of both still lands inside this; past it, the take is recorded
+ * as not checked rather than waited on.
+ */
+const FACE_READ_BUDGET_MS = 75_000;
+
+/**
+ * Reads each cast character's face in a finished video: the middle frame
+ * always, the start and the end under a lock — each against the photo that
+ * was sent for them (identityPhotoFor: the recorded one while it is still
+ * theirs, photo #1 otherwise). A character whose reading fails comes back
+ * unread rather than failing the others. Never throws.
+ */
+async function readFaces(
+  admin: SupabaseClient,
+  input: { cast: ScoredMember[]; lock: IdentityLock | null; outcome: { resultUrl: string }; middleFrameUrl: string },
+): Promise<ScoredRead[]> {
+  const unread = (m: ScoredMember, name: string): ScoredRead => ({ characterId: m.characterId, name, verdicts: [null, null, null] });
+  let characters: {
+    id: string;
+    name: string | null;
+    reference_image_urls: string[] | null;
+    traits: { hair?: string; distinguishing_features?: string } | null;
+  }[] = [];
+  try {
+    const { data } = await admin
+      .from("character_profiles")
+      .select("id, name, reference_image_urls, traits")
+      .in(
+        "id",
+        input.cast.map((m) => m.characterId),
+      );
+    characters = (data ?? []) as typeof characters;
+  } catch {
+    return input.cast.map((m) => unread(m, ""));
+  }
+  const byId = new Map(characters.map((c) => [c.id, c]));
+  const photos = input.cast.map((m) => identityPhotoFor(byId.get(m.characterId)?.reference_image_urls, m.photoPath));
+  if (photos.every((p) => p === null)) return input.cast.map((m) => unread(m, byId.get(m.characterId)?.name ?? ""));
+
+  // THE LOCK (2026-09-18). Without it, one frame speaks for the clip — fine
+  // for a render from a prompt, useless for a clip whose whole claim is that
+  // the face holds from end to end. Under one, the start and the end are
+  // pulled too, ONCE for the whole cast, in parallel so the webhook waits no
+  // longer than it already does for one.
+  const { lock, outcome } = input;
+  const [firstFrameUrl, lastFrameUrl] = lock
+    ? await Promise.all([
+        lock.skipFirst
+          ? Promise.resolve(null)
+          : extractVideoFrame(providerDownloadUrl(outcome.resultUrl), "first"),
+        extractVideoFrame(providerDownloadUrl(outcome.resultUrl), "last"),
+      ])
+    : [null, null];
+
+  // With several characters in one take, each is read against a frame that
+  // holds the others too. The scorer is asked about ONE person, so it is
+  // told the frame may hold more and to judge the one who looks most like
+  // this person — otherwise a second face reads as a miss against the first
+  // character's photo. (A proper option on scoreIdentityMatch is the
+  // follow-up; this rides the traits it already takes.)
+  const several = input.cast.length > 1;
+  return Promise.all(
+    input.cast.map(async (member, i): Promise<ScoredRead> => {
+      const character = byId.get(member.characterId);
+      const name = character?.name ?? "";
+      const photo = photos[i];
+      if (!character || !photo) return unread(member, name);
+      try {
+        const { data: signed } = await admin.storage.from("character-references").createSignedUrl(photo, 600);
+        if (!signed?.signedUrl) return unread(member, name);
+        const traitSummary = [
+          character.traits?.hair ? `hair: ${character.traits.hair}` : null,
+          character.traits?.distinguishing_features
+            ? `distinguishing features: ${character.traits.distinguishing_features}`
+            : null,
+          several ? "other people may share the frame; judge the one who looks most like this person" : null,
+        ]
+          .filter(Boolean)
+          .join("; ");
+        const score = (frame: string | null) =>
+          frame ? scoreIdentityMatch(frame, signed.signedUrl, traitSummary) : Promise.resolve(null);
+        const verdicts = await Promise.all([score(firstFrameUrl), score(input.middleFrameUrl), score(lastFrameUrl)]);
+        return { characterId: member.characterId, name, verdicts };
+      } catch {
+        return unread(member, name);
+      }
+    }),
+  );
 }
 
 /** A pipeline attempt that may carry a long take's last failure beside its steps (2026-09-22). */
