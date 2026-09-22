@@ -46,7 +46,7 @@ export type VideoModelId =
   | "seedance-2-mini"
   | "veo"
   | "wan-turbo";
-export type ImageModelId = "gpt-image" | "flux";
+export type ImageModelId = "gpt-image" | "flux" | "gemini";
 
 export type ModelCapabilities = {
   kind: "video" | "image";
@@ -358,6 +358,33 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
     aspectControl: "none",
     photorealPolicy: "accepts",
   },
+  // Nano Banana Pro (Google's Gemini 3 Pro Image) since 2026-09-23 — the
+  // second lane a person can pick. Deliberately identical to the other image
+  // lanes on every axis, including identity.max: 1.
+  //
+  // Google's docs say 3 Pro takes up to 5 character-consistency images beside
+  // 6 object images, which would make max: 5 and hand this lane the whole
+  // gallery through baselineIdentityReferences. That is exactly the thing
+  // worth probing and exactly the thing not to claim untested: the reference
+  // ORDER and the prompt's per-photo instruction suffixes were written
+  // against a flat list, and a lane that quietly receives five faces where
+  // the receipt says one is how "0% match" happened on the old Flux fallback.
+  // Raise it when a probe on a real face says the slots help.
+  gemini: {
+    kind: "image",
+    identity: { max: 1, mechanism: "edit-source", required: false },
+    outfitImage: true,
+    continuation: false,
+    startEndFrames: false,
+    storyboard: false,
+    multiPerson: true,
+    // fal's endpoint takes an aspect_ratio enum, unlike the GPT edits
+    // endpoint (which inherits the input's shape) — but nothing sends one
+    // yet, so this stays "none" until a caller does. A slot claimed here
+    // that no request fills is a receipt that lies.
+    aspectControl: "none",
+    photorealPolicy: "accepts",
+  },
 };
 
 // Baseline multi-reference (2026-08-30).
@@ -380,7 +407,8 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
 //                                                 to go and would silently
 //                                                 replace the composition.
 //   veo                   "none"        max 0  -> NO. Receives no image.
-//   gpt-image, flux       "edit-source" max 1  -> NO. One source image.
+//   gpt-image, flux,    "edit-source" max 1  -> NO. One source image.
+//     gemini
 //
 // The preferred photo always leads, so the model's primary identity signal
 // is byte-identical to what it was before this existed and the extra photos

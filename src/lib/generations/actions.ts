@@ -80,7 +80,11 @@ import { submitUpscaleJob, cancelQueuedJob, type QueuedJob,
 // Multi-angle bypasses the pipeline and submits directly, so it takes the
 // dispatching submit too — see the note in video-queue.ts.
 import { submitVideoJob } from "@/lib/generations/providers/video-queue";
-import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
+import {
+  IMAGE_MODELS,
+  SELECTABLE_IMAGE_MODEL_IDS,
+  IMAGE_LANES_THAT_COMPOSITE,
+} from "@/lib/generations/providers/image-models";
 import { resolveModel } from "@/lib/generations/model-health";
 import {
   characterVideoLock,
@@ -1012,28 +1016,6 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // that has not been added yet.
   const videoSound = (await readGenerationDefaults(supabase, userData.user.id)).sound;
 
-  // Multi-character images need OpenAI's real multi-image edit endpoint —
-  // Flux's fal.ai endpoint only ever accepts one reference image, with no
-  // way to composite several distinct characters into one picture. Caught
-  // here against whatever the admin has the account's image model set to,
-  // rather than silently generating with only one of the selected characters
-  // actually represented.
-  // Both image lanes composite multiple characters now — GPT's multi-image
-  // edit always did, and FLUX.2 Pro's /edit joined it 2026-08-26. The guard
-  // remains for any future lane that can't.
-  if (
-    wantsMultiCharacter &&
-    contentType === "image" &&
-    imageModelId !== "gpt-image" &&
-    imageModelId !== "flux"
-  ) {
-    return {
-      error:
-        "Combining multiple characters in one image needs GPT Image 2.5 or Flux 2 Pro as the image model — " +
-        "ask an admin to switch it in Admin > AI Providers, or remove the extra characters.",
-    };
-  }
-
   // The composer lets the user pick a video model per generation (see
   // generate-form.tsx); that choice arrives here as video_model_id and
   // overrides the admin's global default (Admin > AI Providers) for this
@@ -1071,6 +1053,58 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       ? requestedVideoModelId
       : adminDefaultVideoModelId;
   const activeVideoModel = getVideoModel(videoModelId);
+
+  // The composer lets the user pick a PICTURE model per generation too
+  // (2026-09-23, the operator: "Make it an option for the user to select.
+  // Not for free tier."), arriving as image_model_id. Same contract as the
+  // video pick above: it overrides the admin's global default (Admin > AI
+  // Providers) for this one request, and anything unrecognised falls back to
+  // that default rather than erroring.
+  //
+  // Only the lanes the composer actually offers are accepted
+  // (SELECTABLE_IMAGE_MODEL_IDS), not the whole catalogue — Flux 2 Pro stays
+  // an admin choice, so a hand-written form must not be able to select it
+  // and route around that decision.
+  //
+  // FREE ACCOUNTS ARE PINNED to the admin default, whatever was sent. The
+  // free day is counted in generations — one a day — which only equals a
+  // budget if every free generation costs roughly the same, exactly the
+  // reasoning that pins the free video lane above. Nano Banana Pro costs
+  // about 1.96x a GPT Image render (image-models.ts, THE MONEY), so an
+  // unpinned free tier would nearly double the cost of the day this product
+  // gives away. Silently pinning rather than erroring, for the same reason
+  // the video lane does: a trial user who has not seen one result yet learns
+  // nothing from "that engine needs a plan".
+  const requestedImageModelId = (formData.get("image_model_id") as string) || "";
+  if (
+    contentType === "image" &&
+    !isFreeTierAccount &&
+    SELECTABLE_IMAGE_MODEL_IDS.includes(requestedImageModelId as (typeof SELECTABLE_IMAGE_MODEL_IDS)[number])
+  ) {
+    imageModelId = requestedImageModelId;
+  }
+
+  // Multi-character images need OpenAI's real multi-image edit endpoint —
+  // Flux's fal.ai endpoint only ever accepts one reference image, with no
+  // way to composite several distinct characters into one picture. Caught
+  // here against whatever the admin has the account's image model set to,
+  // rather than silently generating with only one of the selected characters
+  // actually represented.
+  // Both image lanes composite multiple characters now — GPT's multi-image
+  // edit always did, and FLUX.2 Pro's /edit joined it 2026-08-26. The guard
+  // remains for any future lane that can't.
+  if (
+    wantsMultiCharacter &&
+    contentType === "image" &&
+    !IMAGE_LANES_THAT_COMPOSITE.includes(imageModelId as (typeof IMAGE_LANES_THAT_COMPOSITE)[number])
+  ) {
+    return {
+      error:
+        "Combining multiple characters in one image needs a model that can composite them — " +
+        "pick a different engine, or remove the extra characters.",
+    };
+  }
+
 
   // The free trial is pinned to the cheapest model at its default duration
   // (FREE_TIER_GENERATION_CREDITS worth) — no long durations and no dialogue

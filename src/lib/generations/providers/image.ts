@@ -1,5 +1,5 @@
 import { generateImageWithOpenAI, type OpenAiImageSize, type OpenAiImageUsage } from "@/lib/generations/providers/openai-images";
-import { generateImageWithFlux } from "@/lib/generations/providers/fal-image";
+import { generateImageWithFlux, generateImageWithGemini } from "@/lib/generations/providers/fal-image";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { buildImageReferences } from "@/lib/generations/providers/image-references";
@@ -131,6 +131,17 @@ export async function generateImage(
     place: placeImageUrl,
     elements: elementImageUrls,
   });
+
+  // Two fal lanes now (2026-09-23), so route on the id, never on the
+  // provider alone: generateImageWithFlux resolves getImageModel("flux") for
+  // its own endpoints, so a `provider === "fal"` entry that isn't Flux would
+  // have rendered on Flux while every log said otherwise — the "the log
+  // claimed GPT made the image" defect from 2026-08-10, in the other
+  // direction.
+  if (model.id === "gemini") {
+    chargeBudget(budget);
+    return persistRemoteImage(await generateImageWithGemini(prompt, combinedRefs));
+  }
 
   if (model.provider === "fal") {
     chargeBudget(budget);

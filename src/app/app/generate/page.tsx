@@ -84,6 +84,7 @@ export default async function GeneratePage() {
     charactersForForm,
     videoModels,
     defaultVideoModelId,
+    defaultImageModelId,
     defaultAspectRatio,
     defaultVideoDurationSeconds,
     notifyRenderReady,
@@ -256,6 +257,7 @@ export default async function GeneratePage() {
         characters={charactersForForm}
         videoModels={videoModels}
         defaultVideoModelId={defaultVideoModelId}
+        defaultImageModelId={defaultImageModelId}
         defaultAspectRatio={defaultAspectRatio}
         defaultVideoDurationSeconds={defaultVideoDurationSeconds}
         notifyRenderReady={notifyRenderReady}

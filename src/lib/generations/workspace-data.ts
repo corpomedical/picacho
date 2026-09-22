@@ -75,6 +75,11 @@ export type GenerateWorkspaceData = {
   charactersForForm: CharacterOption[];
   videoModels: VideoModelOption[];
   defaultVideoModelId: string;
+  // The admin's global picture lane (Admin > AI Providers), so the ENGINE
+  // cell opens on the model a render would actually use when the person
+  // picks nothing. Sending "gpt-image" from the client instead would show
+  // the wrong name for the hours after an admin switches the default.
+  defaultImageModelId: string;
   // The account's own starting point (Settings → Generation), already
   // resolved against what is offered — null means the composer's default.
   defaultAspectRatio: AspectRatioPref | null;
@@ -164,7 +169,7 @@ export async function getGenerateWorkspaceData(
         .then(({ data, error }) => new Set(error ? [] : ((data ?? []) as { character_id: string }[]).map((r) => r.character_id)))
         .catch(() => new Set<string>())
     : Promise.resolve(new Set<string>());
-  const [characters, videoModelSetting, profile] = await Promise.all([
+  const [characters, videoModelSetting, imageModelSetting, profile] = await Promise.all([
     // No user, no characters — and no query. With userId undefined this
     // used to fire `.eq("user_id", undefined)`, which Postgres rejects as
     // "invalid input syntax for type uuid" — swallowed silently before the
@@ -180,6 +185,9 @@ export async function getGenerateWorkspaceData(
       : Promise.resolve(null),
     guardedRead("video-model setting", () =>
       supabase.from("app_settings").select("value").eq("key", "video_model").single(),
+    ),
+    guardedRead("image-model setting", () =>
+      supabase.from("app_settings").select("value").eq("key", "image_model").single(),
     ),
     userId
       ? guardedRead("profile", () =>
@@ -221,6 +229,8 @@ export async function getGenerateWorkspaceData(
   }));
 
   const globalDefaultVideoModelId = videoModelSetting?.value ?? "kling";
+  // Same fallback as actions.ts: the recommended lane when nothing is set.
+  const defaultImageModelId = imageModelSetting?.value ?? "gpt-image";
   // Dormant models stay out of the composer until the experimental_models
   // flag is on (2026-09-06). Read here rather than passed down because this
   // is the one place the picker's list is built — and it is only half the
@@ -294,6 +304,7 @@ export async function getGenerateWorkspaceData(
     charactersForForm,
     videoModels,
     defaultVideoModelId,
+    defaultImageModelId,
     defaultAspectRatio: resolvedDefaults.aspectRatio,
     defaultVideoDurationSeconds: resolvedDefaults.durationSeconds,
     notifyRenderReady: notifyPrefs.ready,

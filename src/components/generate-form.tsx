@@ -103,6 +103,7 @@ import { type ScenePlan } from "@/lib/generations/scene-plan";
 import { FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
 import type { VideoDurationOption } from "@/lib/generations/providers/video-models";
 import { FEATURED_VIDEO_MODEL_IDS, getVideoModel } from "@/lib/generations/providers/video-models";
+import { getImageModel, selectableImageModels } from "@/lib/generations/providers/image-models";
 import {
   resolutionCreditWeight,
   videoResolutionOffers,
@@ -1514,6 +1515,10 @@ export function GenerateForm(props: {
   characters: CharacterOption[];
   videoModels: VideoModelOption[];
   defaultVideoModelId: string;
+  // The admin's global picture lane (Admin > AI Providers), which the
+  // ENGINE cell opens on for an image. Optional so other call sites keep
+  // working; the server pins the real default either way.
+  defaultImageModelId?: string;
   // The account's own starting point (Settings → Generation, 2026-09-11),
   // already resolved server-side. Optional: every other call site keeps the
   // composer's own defaults.
@@ -2000,6 +2005,7 @@ function GenerateFormInner({
   characters,
   videoModels,
   defaultVideoModelId,
+  defaultImageModelId = "gpt-image",
   defaultAspectRatio = null,
   defaultVideoDurationSeconds = null,
   notifyRenderReady = true,
@@ -2026,6 +2032,7 @@ function GenerateFormInner({
   characters: CharacterOption[];
   videoModels: VideoModelOption[];
   defaultVideoModelId: string;
+  defaultImageModelId?: string;
   defaultAspectRatio?: "16:9" | "9:16" | null;
   defaultVideoDurationSeconds?: number | null;
   notifyRenderReady?: boolean;
@@ -2517,6 +2524,12 @@ function GenerateFormInner({
   // allowance (see creditWeight, shown in the picker) — checked server-side
   // in runGeneration, not just hidden/disabled here.
   const [videoModelId, setVideoModelId] = useState(defaultVideoModelId);
+  // The picture lane for THIS send (2026-09-23). Opens on the admin's global
+  // default so the cell never names a model the render would not use, and is
+  // only ever sent for an image — actions.ts ignores it otherwise and pins
+  // free accounts to the default whatever this holds.
+  const [imageModelId, setImageModelId] = useState(defaultImageModelId);
+  const [imageModelMenuOpen, setImageModelMenuOpen] = useState(false);
   // Clip continuation, arriving via ?continue=<generationId> from a video's
   // History page. The chip above the composer shows it; the id rides the
   // submit as continue_from_generation_id and the server re-validates
@@ -2642,6 +2655,7 @@ function GenerateFormInner({
   // "More models" expander inside the picker (composer cleanup case 1).
   const [modelMenuShowAll, setModelMenuShowAll] = useState(false);
   const videoModelMenuRef = useRef<HTMLDivElement>(null);
+  const imageModelMenuRef = useRef<HTMLDivElement>(null);
 
   // Clip length — each model has its own real set of valid durations (see
   // video-models.ts), so this always has to be one of the CURRENT model's
@@ -2947,6 +2961,18 @@ function GenerateFormInner({
     return () => document.removeEventListener("mousedown", onClick);
   }, [videoModelMenuOpen]);
 
+  // Same again for the picture model switcher.
+  useEffect(() => {
+    if (!imageModelMenuOpen) return;
+    function onClick(e: MouseEvent) {
+      if (imageModelMenuRef.current && !imageModelMenuRef.current.contains(e.target as Node)) {
+        setImageModelMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [imageModelMenuOpen]);
+
   // And for the duration dropdown.
   useEffect(() => {
     if (!durationMenuOpen) return;
@@ -2967,18 +2993,20 @@ function GenerateFormInner({
   // the trigger is usually still the focused element, which is exactly
   // where Escape should leave them.
   useEffect(() => {
-    if (!characterMenuOpen && !photoMenuOpen && !plusMenuOpen && !videoModelMenuOpen && !durationMenuOpen) return;
+    if (!characterMenuOpen && !photoMenuOpen && !plusMenuOpen && !videoModelMenuOpen && !imageModelMenuOpen && !durationMenuOpen)
+      return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
       setCharacterMenuOpen(false);
       setPhotoMenuOpen(false);
       setPlusMenuOpen(false);
       setVideoModelMenuOpen(false);
+      setImageModelMenuOpen(false);
       setDurationMenuOpen(false);
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [characterMenuOpen, photoMenuOpen, plusMenuOpen, videoModelMenuOpen, durationMenuOpen]);
+  }, [characterMenuOpen, photoMenuOpen, plusMenuOpen, videoModelMenuOpen, imageModelMenuOpen, durationMenuOpen]);
 
   // Composer + menu — "Create image"/"Create video" set the content type
   // directly (Picacho has no separate style-template gallery like Gemini's,
@@ -4618,7 +4646,7 @@ function GenerateFormInner({
   function buildSendPlanInput() {
     return {
       contentType,
-      modelId: contentType === "video" ? videoModelId : "gpt-image",
+      modelId: contentType === "video" ? videoModelId : imageModelId,
       character: currentCharacter
         ? {
             name: currentCharacter.name,
@@ -4862,6 +4890,12 @@ function GenerateFormInner({
       formData.set("companion_character_ids", JSON.stringify(companionCharacterIds));
     }
     formData.set("content_type", effectiveContentType);
+    if (effectiveContentType === "image") {
+      // The picked picture lane (2026-09-23). Sent only for an image, and
+      // only ever advisory: actions.ts accepts it solely for the lanes the
+      // composer offers and pins free accounts to the admin default.
+      formData.set("image_model_id", imageModelId);
+    }
     if (effectiveContentType === "video") {
       formData.set("video_model_id", videoModelId);
       formData.set("video_duration_seconds", String(videoDurationSeconds));
@@ -6030,6 +6064,13 @@ function GenerateFormInner({
     return resolutionCreditWeight(model.id, videoResolutionWanted, seconds) ?? base;
   }
 
+  // Mirrors the server's isFreeTierAccount (actions.ts): these accounts are
+  // silently pinned to the free lane, so a credit-shortfall warning is a
+  // false alarm for them (the send costs no credits) and the picture ENGINE
+  // cell is not offered at all. Defined here rather than beside its other
+  // readers below because the pickers, further up the render, need it.
+  const freeTierClient = dailyFreeAvailable && purchasedCredits === 0;
+
   // Video model switcher — only worth showing once there's an actual
   // choice to make. Mirrors the character picker's dropdown pattern. Shows
   // each model's credit cost inline so the tradeoff is visible before
@@ -6228,6 +6269,100 @@ function GenerateFormInner({
       </div>
     ) : null;
 
+  // The same ENGINE cell, for a picture (2026-09-23, the operator: "Make it
+  // an option for the user to select. Not for free tier.").
+  //
+  // One cell, two catalogues — rather than a second control beside it. The
+  // slate has one place that answers "what renders this", and a person
+  // switching between Video and Image should find the engine in the same
+  // spot both times.
+  //
+  // FREE ACCOUNTS DO NOT GET IT. Their sends are pinned to the admin default
+  // server-side (actions.ts), so a picker would be a control that changes
+  // nothing — and the free notice under the composer already names the lane.
+  // The upsell version of this (a locked row that says "needs a plan") is a
+  // deliberate later call, not an accident: it needs its own copy in four
+  // languages to be worth showing.
+  const imageLanes = selectableImageModels();
+  const currentImageModel = imageLanes.find((m) => m.id === imageModelId);
+  const imageModelPicker =
+    contentType === "image" && !freeTierClient && imageLanes.length > 1 ? (
+      <div ref={imageModelMenuRef} className="flex min-w-0 items-stretch">
+        <span aria-hidden className="my-2 w-px flex-shrink-0 self-stretch bg-atelier-rule/70" />
+        <button
+          type="button"
+          onClick={() => setImageModelMenuOpen((v) => !v)}
+          disabled={locked}
+          aria-haspopup="listbox"
+          aria-expanded={imageModelMenuOpen}
+          className={cn(
+            "flex min-w-0 flex-col justify-center gap-1 rounded-[10px] px-2.5 py-1.5 text-left transition-colors disabled:opacity-50 max-sm:px-1.5 sm:px-3",
+            imageModelMenuOpen ? "bg-atelier-ink/[0.07]" : "hover:bg-atelier-ink/[0.05]",
+          )}
+        >
+          <span className="flex items-center gap-1 text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted" data-cell-label>
+            {g.slateEngine}
+            <ChevronDownIcon
+              className={cn("h-3 w-3 flex-shrink-0 transition-transform", imageModelMenuOpen && "rotate-180")}
+            />
+          </span>
+          <span className="min-w-0 truncate text-[13.5px] font-medium leading-tight text-atelier-ink">
+            {/* An admin default outside the offered lanes (Flux) still has to
+                read truthfully, so fall back to the catalogue's own name
+                rather than to the first row. */}
+            {currentImageModel?.name ?? getImageModel(imageModelId).name}
+          </span>
+        </button>
+
+        {imageModelMenuOpen && (
+          <div
+            role="listbox"
+            className="absolute bottom-full left-0 right-0 z-30 mb-2 max-h-[min(420px,55vh)] overflow-y-auto rounded-[14px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
+          >
+            {imageLanes.map((m) => {
+              // One key per id in SELECTABLE_IMAGE_MODEL_IDS, all four
+              // locales — image-lane.test.ts fails the build on a missing
+              // one, because an absent key renders an empty subtitle in that
+              // language only and survives every English-language check.
+              const jobs: Record<string, string> = {
+                "gpt-image": g.imageModelJobGptImage,
+                gemini: g.imageModelJobNanoBananaPro,
+              };
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  role="option"
+                  aria-selected={m.id === imageModelId}
+                  onClick={() => {
+                    setImageModelId(m.id);
+                    setImageModelMenuOpen(false);
+                  }}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 rounded-[12px] px-2 py-1.5 text-left transition-colors",
+                    m.id === imageModelId
+                      ? "bg-atelier-accent/[0.08] text-atelier-ink shadow-[inset_0_0_0_1.5px_var(--color-atelier-accent)]"
+                      : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                  )}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2 text-sm font-medium">
+                      <span className="min-w-0 flex-1 truncate">{m.name}</span>
+                      {/* No price chip: an image is one credit on every lane
+                          (quote.ts), so a chip here would invent a
+                          difference the bill does not have. */}
+                      {m.id === imageModelId && <CheckIcon className="h-3.5 w-3.5 flex-shrink-0 text-atelier-accent" />}
+                    </span>
+                    <span className="block truncate text-xs text-atelier-muted">{jobs[m.id] ?? m.description}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    ) : null;
+
 
   // One resolve per render, shared by the slate's receipt cells and the
   // issue rows (2026-08-26 declutter; slate geometry 2026-09-22 — same
@@ -6356,7 +6491,6 @@ function GenerateFormInner({
   // alarm for them — the send costs no credits. blockingFenceVisible feeds
   // the one-voice rule: while a red fence is on screen, the credit banners
   // stay quiet ("you can't run this" already owns the moment).
-  const freeTierClient = dailyFreeAvailable && purchasedCredits === 0;
   const blockingFenceVisible =
     receiptEngaged && sendPlanNow.issues.some((i) => i.severity === "block");
   // Mirrors the banner-slot ternary in the sticky wrapper below: when a
@@ -7888,6 +8022,7 @@ function GenerateFormInner({
                 <div className="flex min-w-0 flex-1 items-stretch max-lg:flex-wrap max-lg:basis-full" data-slate-controls>
                 {characterPicker}
                 {videoModelPicker}
+                {imageModelPicker}
                 {/* Image mode on a phone, at rest: the Outfit toggle rides
                     the values line beside the cast (the same toggle as the
                     chip below, which the raised sheet shows with its whole

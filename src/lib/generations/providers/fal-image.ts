@@ -22,6 +22,16 @@ export class FluxSafetyRejection extends Error {
   }
 }
 
+// Thrown when Nano Banana Pro answers 200 with no picture — Google's models
+// decline in prose rather than with an error status. Same contract as
+// FluxSafetyRejection: final, refunded through the ordinary path, honest log.
+export class GeminiImageRefusal extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GeminiImageRefusal";
+  }
+}
+
 // Image generation via Flux on fal.ai — the faster/cheaper alternative.
 // Unlike OpenAI, fal.ai returns a hosted URL directly, so no re-upload is
 // needed (same as the video provider).
@@ -99,6 +109,101 @@ export async function generateImageWithFlux(
     data?.images?.[0]?.url ?? data?.image?.url ?? data?.output?.image?.url ?? data?.url;
 
   if (!url) throw new Error("fal.ai (Flux) response didn't include an image URL.");
+  return url;
+}
+
+/**
+ * Image generation via Nano Banana Pro (Google's Gemini 3 Pro Image) on
+ * fal.ai — the second lane a person can pick for a picture (2026-09-23).
+ * Returns a hosted fal URL, like the Flux lane; image.ts persists it.
+ *
+ * Its own function rather than a branch inside generateImageWithFlux,
+ * because almost nothing about the request is shared: this endpoint takes
+ * `resolution` ("1K" | "2K" | "4K") where Flux takes `image_size`, answers
+ * with a `description` beside the images, and carries no
+ * has_nsfw_concepts — so Flux's black-frame check would read as "clean" on
+ * an endpoint that never sets that field. Sharing the code would mean a
+ * refusal on this lane sailing through as a success, which is exactly the
+ * 2026-08-14 incident FluxSafetyRejection exists to prevent.
+ *
+ * RESOLUTION IS PINNED to the catalogue's falResolution (1K): fal prices
+ * this endpoint at one flat rate per image with 4K marked higher, so an
+ * unpinned resolution is an unpinned price — the same rule that pins GPT
+ * Image's quality (openai-images.ts, THE MONEY).
+ *
+ * safety_tolerance is NOT sent. fal exposes it (1-6, default 4) and raising
+ * it would loosen Google's own filter; our content policy is the gate that
+ * decides what may be sent (content-policy.ts, which cannot be turned off),
+ * and turning a provider's filter down to get more prompts through is the
+ * ladder that was removed on 2026-09-09. The default stands.
+ */
+export async function generateImageWithGemini(
+  prompt: string,
+  referenceImageUrl?: string | string[] | null,
+): Promise<string> {
+  const apiKey = process.env.FAL_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "FAL_KEY is not set. Add it to .env.local, or turn off the " +
+        "'real_ai_providers' flag in Admin > Feature flags to use the mock pipeline.",
+    );
+  }
+
+  const referenceUrls = (
+    Array.isArray(referenceImageUrl)
+      ? referenceImageUrl
+      : referenceImageUrl
+        ? [referenceImageUrl]
+        : []
+  ).filter(Boolean);
+
+  const model = getImageModel("gemini");
+  if (model.provider !== "fal" || !("falResolution" in model)) {
+    throw new Error("Nano Banana Pro model config is misconfigured.");
+  }
+
+  const endpoint = referenceUrls.length ? model.falImageToImage : model.falTextToImage;
+  const body: Record<string, unknown> = {
+    prompt,
+    num_images: 1,
+    resolution: model.falResolution,
+    output_format: "png",
+  };
+  if (referenceUrls.length) body.image_urls = referenceUrls;
+
+  const res = await fetchWithTimeout(
+    `https://fal.run/${endpoint}`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Key ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    },
+    120_000,
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`fal.ai (Nano Banana Pro) error (${res.status}): ${text.slice(0, 300)}`);
+  }
+
+  const data = await res.json();
+  const url: string | undefined = data?.images?.[0]?.url ?? data?.image?.url;
+
+  // No picture, HTTP 200. Google's image models answer a request they will
+  // not draw with prose in `description` and an empty images list, so this
+  // is the refusal shape — and it must fail loudly rather than return an
+  // undefined URL up the stack. Treated exactly like Flux's black frame:
+  // non-retryable (the message carries "safety", which pipeline.ts's
+  // SAFETY_REJECTION reads) and refunded through the ordinary path, never
+  // force-refunded — whether fal bills a refused request here is unmeasured,
+  // and refund-rules.ts only force-refunds what a provider's own ledger has
+  // been read to show is free (OpenAI's, 2026-09-10).
+  if (!url) {
+    throw new GeminiImageRefusal(IMAGE_RESULT_REFUSED);
+  }
   return url;
 }
 
