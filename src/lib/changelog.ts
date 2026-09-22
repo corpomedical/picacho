@@ -20,6 +20,15 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.82.0",
+    build: 121,
+    date: "2026-09-22",
+    title: "The identity score under a take stays clear of its corner mark on a phone",
+    items: [
+      "On a phone, the line under a finished take (\"Identity match 93%\") now always stays on one line. When the words were too long for the take's width, they broke onto a second line. The plate then grew upward, and the big 93% landed on the orange corner mark of the frame. That happened with Portuguese on most phones, as in the Play listing's own screenshot, with Spanish and Italian on small phones, and in every language on a portrait take or on a take that passed on a later attempt. Now, when the words don't fit, their letter-spacing tightens first, then they get slightly smaller, and if they still don't fit, only the number shows, as it already did on a short frame. Wherever the words already fit, nothing changed: English everywhere, and Spanish and Italian on a 405 px phone, look exactly as before.",
+    ],
+  },
+  {
     version: "1.81.0",
     build: 120,
     date: "2026-09-22",

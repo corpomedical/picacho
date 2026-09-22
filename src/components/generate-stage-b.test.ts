@@ -68,7 +68,26 @@ describe("the Takes strip goes where the take comes out bigger", () => {
 describe("a small take's overlays step back", () => {
   it("hides the take label on a narrow frame and shrinks the identity plate on a short one", () => {
     expect(form).toContain('stageFrameNarrow && "md:hidden"');
-    expect(form).toContain("stageFrameShort && \"sr-only\"");
+    expect(form).toContain('(stageFrameShort || stagePlateLabelFit === "none") && "sr-only"');
+  });
+});
+
+// The identity plate under a phone's frame hangs by its bottom edge, so a
+// label that wrapped pushed the 93% up onto the lock bracket (Portuguese on a
+// 405px phone, the Play listing's stage shot, 2026-09-22).
+describe("the identity plate keeps to one line", () => {
+  it("never wraps, and is held to the frame's width", () => {
+    expect(form).toContain("flex max-w-full items-baseline gap-2 whitespace-nowrap md:right-3 md:max-w-[calc(100%-24px)]");
+  });
+
+  it("eases the label's tracking, then its size, then shows the number alone", () => {
+    expect(form).toContain("{ spacing: (room - bare) / chars, size: 10 }");
+    expect(form).toContain("bare * 0.8 <= room");
+    expect(form).toContain(': "none";');
+  });
+
+  it("measures only when the label is shown — a short frame already hides it", () => {
+    expect(form).toContain("const stagePlateLabelFit = stageFrameShort ? null : stagePlateFit;");
   });
 });
 

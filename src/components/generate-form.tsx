@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
@@ -6456,6 +6456,87 @@ function GenerateFormInner({
     const boxH = stagePane.h - STAGE_TOP_PX - dockHeight - COLUMN_RESERVE_PX;
     return COLUMN_RESERVE_PX + Math.max(0, (boxH - stageFrame.h) / 2) >= 45;
   })();
+  // The identity plate keeps to ONE line. Under a phone's frame it hangs by
+  // its own bottom edge, 34px below the frame's, so a label that wrapped grew
+  // the plate upward and put the 26px number on the lock bracket's lower arm
+  // — Portuguese "CORRESPONDÊNCIA DE IDENTIDADE" on a 405px phone, in the Play
+  // listing's own stage shot (2026-09-22). So where the label will not fit
+  // beside the number as designed, it gives way only as far as it has to:
+  // first its tracking eases toward zero, then its size toward 8px, and
+  // where even that is too wide (a portrait take, a retried take's note on a
+  // phone) the plate shrinks to its number, exactly as it does on a short
+  // frame. Measured: the room depends on the take's shape, the words on the
+  // locale, the widths on the loaded faces.
+  const stagePlateRef = useRef<HTMLDivElement | null>(null);
+  const stagePlateLabelRef = useRef<HTMLSpanElement | null>(null);
+  // null: the designed label. Otherwise the eased tracking and size, in px;
+  // "none": no room for the label — the number stands alone.
+  const [stagePlateFit, setStagePlateFit] = useState<{ spacing: number; size: number } | "none" | null>(null);
+  const stagePlateLabelFit = stageFrameShort ? null : stagePlateFit;
+  const stageAttemptCount = stageTake?.kind === "single" ? stageTake.attempts.length : 0;
+  useLayoutEffect(() => {
+    const plate = stagePlateRef.current;
+    const label = stagePlateLabelRef.current;
+    const frame = plate?.parentElement;
+    if (!plate || !label || !frame || stageFrameShort) return;
+    const fit = () => {
+      const plateStyle = getComputedStyle(plate);
+      const labelStyle = getComputedStyle(label);
+      const gap = parseFloat(plateStyle.columnGap) || 0;
+      // The frame's width, less the plate's inset on both sides (none under
+      // the frame, right-3 inside it from md up — its max-width classes say
+      // the same), its padding, and whatever else rides beside the label.
+      let room =
+        frame.getBoundingClientRect().width -
+        2 * (parseFloat(plateStyle.right) || 0) -
+        (parseFloat(plateStyle.paddingLeft) || 0) -
+        (parseFloat(plateStyle.paddingRight) || 0) -
+        1;
+      for (const child of Array.from(plate.children)) {
+        if (child !== label) room -= child.getBoundingClientRect().width + gap;
+      }
+      const chars = Array.from(label.textContent ?? "").length;
+      if (!chars) return;
+      const range = document.createRange();
+      range.selectNodeContents(label);
+      const size = parseFloat(labelStyle.fontSize);
+      const spacing = parseFloat(labelStyle.letterSpacing) || 0;
+      // The words' own width at the designed 10px with no tracking (the
+      // label's text-[10px] tracking-widest, i.e. 1px a letter); glyphs
+      // scale with the size.
+      const bare = ((range.getBoundingClientRect().width - chars * spacing) * 10) / size;
+      const next =
+        bare + chars <= room
+          ? null
+          : bare <= room
+            ? { spacing: (room - bare) / chars, size: 10 }
+            : bare * 0.8 <= room
+              ? { spacing: 0, size: (10 * room) / bare }
+              : "none";
+      setStagePlateFit((prev) =>
+        typeof prev === "object" &&
+        prev !== null &&
+        typeof next === "object" &&
+        next !== null &&
+        Math.abs(prev.spacing - next.spacing) < 0.05 &&
+        Math.abs(prev.size - next.size) < 0.05
+          ? prev
+          : next,
+      );
+    };
+    fit();
+    if (typeof ResizeObserver === "undefined") return;
+    // The frame for the room; the plate's pieces for a face that loads late
+    // or a score that grows a digit.
+    const ro = new ResizeObserver(fit);
+    ro.observe(frame);
+    for (const child of Array.from(plate.children)) ro.observe(child);
+    document.fonts?.addEventListener("loadingdone", fit);
+    return () => {
+      ro.disconnect();
+      document.fonts?.removeEventListener("loadingdone", fit);
+    };
+  }, [stageScore, stageTakeUrl, stageFrameShort, stageAttemptCount, g.identityMatchLabel]);
 
   // The take numbers on the tiles and the slate line: 01, 02 … counting up
   // from the session's first send (the strip itself runs newest first).
@@ -6779,8 +6860,9 @@ function GenerateFormInner({
             )}
             {stageScore !== null && (
               <div
+                ref={stagePlateRef}
                 className={cn(
-                  "pointer-events-none absolute -bottom-[34px] right-0 flex items-baseline gap-2 md:right-3 md:rounded-[8px] md:bg-[#0e0c0a]/55 md:px-2.5 md:py-1.5 md:backdrop-blur-[6px]",
+                  "pointer-events-none absolute -bottom-[34px] right-0 flex max-w-full items-baseline gap-2 whitespace-nowrap md:right-3 md:max-w-[calc(100%-24px)] md:rounded-[8px] md:bg-[#0e0c0a]/55 md:px-2.5 md:py-1.5 md:backdrop-blur-[6px]",
                   // A video's own control bar owns the bottom of the frame —
                   // the plate lifts clear of it, exactly as it did on the old
                   // stage.
@@ -6796,18 +6878,25 @@ function GenerateFormInner({
                   </span>
                 )}
                 {/* Kept for screen readers on a short frame, where only the
-                    number shows. */}
+                    number shows — and wherever the label has no room at all
+                    (stagePlateFit). */}
                 <span
+                  ref={stagePlateLabelRef}
+                  style={
+                    typeof stagePlateLabelFit === "object" && stagePlateLabelFit !== null
+                      ? { letterSpacing: `${stagePlateLabelFit.spacing}px`, fontSize: `${stagePlateLabelFit.size}px` }
+                      : undefined
+                  }
                   className={cn(
-                    "text-[10px] font-medium uppercase tracking-widest text-[#cfc6b8]",
-                    stageFrameShort && "sr-only",
+                    "min-w-0 text-[10px] font-medium uppercase tracking-widest text-[#cfc6b8]",
+                    (stageFrameShort || stagePlateLabelFit === "none") && "sr-only",
                   )}
                 >
                   {g.identityMatchLabel}
                 </span>
                 <span
                   className={cn(
-                    "font-numeral font-semibold leading-none tabular-nums text-[#e0a468]",
+                    "shrink-0 font-numeral font-semibold leading-none tabular-nums text-[#e0a468]",
                     stageFrameShort ? "text-[26px] md:text-[17px]" : "text-[26px]",
                   )}
                 >
