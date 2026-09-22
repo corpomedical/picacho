@@ -128,6 +128,13 @@ export type RecastTakeOutcome = {
    * generic line instead.
    */
   reason: string | null;
+  /**
+   * The engine itself answered with a refusal (a raw provider reply was its
+   * last word) — so the card can say the engine turned it down, instead of a
+   * generic "try again in a moment" that sent the operator looking for a
+   * failure that was two days old (2026-09-22).
+   */
+  refused: boolean;
   /** Whether the take's credits were kept. A refund zeroes credits_used (refundGenerationCosts). */
   charged: boolean;
 };
@@ -142,6 +149,7 @@ export function recastTakeOutcome(row: { credits_used: number | null; pipeline_l
   return {
     stopped,
     reason: stopped || last === null || isRawProviderError(last) ? null : last,
+    refused: !stopped && last !== null && isRawProviderError(last),
     // NULL counts as charged, the way the monthly sum counts it (core.ts).
     charged: row.credits_used !== 0,
   };

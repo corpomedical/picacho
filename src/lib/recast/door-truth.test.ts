@@ -82,9 +82,32 @@ describe("how a take that did not deliver ended", () => {
   const log = (...details: string[]) => [{ attempt: 1, steps: details.map((detail) => ({ step: "generate", detail })), passed: false, issues: [], compiledPrompt: "" }];
 
   it("reads a stop as a stop, not a failure", () => {
-    expect(recastTakeOutcome({ credits_used: 9, pipeline_log: log("Submitted.", RECAST_STOPPED_STEP) })).toEqual({ stopped: true, reason: null, charged: true });
+    expect(recastTakeOutcome({ credits_used: 9, pipeline_log: log("Submitted.", RECAST_STOPPED_STEP) })).toEqual({ stopped: true, reason: null, refused: false, charged: true });
     // The runner's own words for it (job-runner.ts, the cancel path).
     expect(RECAST_STOPPED_STEP).toBe("Stopped.");
+  });
+
+  // 2026-09-22: the operator's failed Restage take from 20 Sept — the engine's
+  // raw 422 — was drawn as "Something went wrong generating that. Please try
+  // again in a moment." beside a take still rendering, and read as that
+  // take's failure. A refusal from the engine now says so, in the door's words.
+  it("knows the engine turned a take down, without ever showing its raw reply", () => {
+    const raw = 'fal.ai (MiniMax H3 Max Reference to Video 480p) error (422): {"detail":[{"msg":"Video duration exceeds the maximum allowed."}]}';
+    const refused = recastTakeOutcome({ credits_used: 0, pipeline_log: log("Submitted a 15s clip.", raw) });
+    expect(refused.refused).toBe(true);
+    expect(refused.reason).toBeNull();
+    // A take that ended on our own words is not the engine's refusal.
+    expect(recastTakeOutcome({ credits_used: 0, pipeline_log: log("Couldn't start this take — nothing was charged. Try again.") }).refused).toBe(false);
+    // Nor a take with nothing logged at all.
+    expect(recastTakeOutcome({ credits_used: 9, pipeline_log: [] }).refused).toBe(false);
+  });
+
+  it("dates every failed card, and never tells an old failure to try again in a moment", () => {
+    const door = readFileSync(join(__dirname, "..", "..", "components", "mystique", "mystique-door.tsx"), "utf8");
+    expect(door).toContain("new Intl.DateTimeFormat(locale, { day: \"numeric\", month: \"short\", hour: \"2-digit\", minute: \"2-digit\" }).format(new Date(x.createdAt))");
+    expect(door).toContain("? m.failedRefused");
+    expect(door).toContain(": m.failedUnknown");
+    expect(door).not.toContain("t.generate.stepFailedGeneric");
   });
 
   it("says whether the credits came back: a refund zeroes credits_used", () => {

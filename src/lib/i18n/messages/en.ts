@@ -2114,6 +2114,8 @@ const en = {
     empty: "Your takes will gather here.",
     rendering: "Rendering",
     failed: "Didn't finish",
+    failedRefused: "This take was refused when it was sent to be made.",
+    failedUnknown: "This take didn't finish.",
     takeMeta: "{seconds} s · {credits} cr",
     watch: "Watch the take",
     close: "Close",

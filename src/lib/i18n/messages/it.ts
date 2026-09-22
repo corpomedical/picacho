@@ -1990,6 +1990,8 @@ const it = {
     empty: "Le tue riprese si raccoglieranno qui.",
     rendering: "Rendering",
     failed: "Non è terminata",
+    failedRefused: "Questo take è stato rifiutato quando è stato inviato per essere creato.",
+    failedUnknown: "Questo take non è finito.",
     takeMeta: "{seconds} s · {credits} cr",
     watch: "Guarda la ripresa",
     close: "Chiudi",

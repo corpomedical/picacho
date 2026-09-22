@@ -1991,6 +1991,8 @@ const es = {
     empty: "Tus tomas se reunirán aquí.",
     rendering: "Renderizando",
     failed: "No terminó",
+    failedRefused: "Este take fue rechazado al enviarlo a crear.",
+    failedUnknown: "Este take no terminó.",
     takeMeta: "{seconds} s · {credits} cr",
     watch: "Ver la toma",
     close: "Cerrar",

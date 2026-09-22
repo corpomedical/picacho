@@ -214,7 +214,7 @@ export function MystiqueDoor({
   /** What they have left to spend (data.ts), shown beside the price; null when it could not be read. */
   balance: RecastBalance | null;
 }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const m = t.mystique;
   const router = useRouter();
 
@@ -2043,10 +2043,23 @@ export function MystiqueDoor({
                   // and a link (2026-09-22).
                   lines = (
                     <>
-                      <p className={`${small} text-[#c6c9d1]`}>{x.status === "stopped" ? m.stopped : m.failed}</p>
+                      <p className={`${small} text-[#c6c9d1]`}>
+                        {x.status === "stopped" ? m.stopped : m.failed}
+                        {/* WHEN (2026-09-22): a failed card from two days
+                            ago sat beside a take still rendering and read as
+                            that take's failure. The date says which one it
+                            is. After mount only — the server cannot know the
+                            person's time zone, and a date the first paint
+                            disagreed on would be a hydration mismatch. */}
+                        {now !== null && ` · ${new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(x.createdAt))}`}
+                      </p>
                       {x.status === "failed" && (
                         <p className={`${small} text-[#9aa0ad]`}>
-                          {x.outcome?.reason ? localizeServerText(x.outcome.reason, t) : t.generate.stepFailedGeneric}
+                          {x.outcome?.reason
+                            ? localizeServerText(x.outcome.reason, t)
+                            : x.outcome?.refused
+                              ? m.failedRefused
+                              : m.failedUnknown}
                         </p>
                       )}
                       {x.outcome && (x.outcome.charged ? x.credits !== null : true) && (

@@ -1991,6 +1991,8 @@ const pt = {
     empty: "Seus takes vão se reunir aqui.",
     rendering: "Renderizando",
     failed: "Não terminou",
+    failedRefused: "Este take foi recusado quando foi enviado para ser feito.",
+    failedUnknown: "Este take não terminou.",
     takeMeta: "{seconds} s · {credits} cr",
     watch: "Ver o take",
     close: "Fechar",
