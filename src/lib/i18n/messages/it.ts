@@ -848,6 +848,7 @@ const it = {
     slateEngine: "Motore",
     slateLength: "Durata",
     slateFrame: "Formato",
+    composerMore: "Tutte le impostazioni",
     slateAction: "Azione",
     multiAngleArmedNote: "Multi-angolo è attivo — {n} angolazioni vengono renderizzate in parallelo. Lo storyboard resta disattivato finché è acceso.",
     stageTakeNumber: "Ripresa {n}",
@@ -879,6 +880,9 @@ const it = {
     pageTitle: "Genera",
     firstTrySuccess: "riuscita al primo tentativo",
     avgAttempts: "tentativi in media",
+    // The phone takes caption's short forms (the full ones ride the title).
+    firstTryShort: "al 1° colpo",
+    avgAttemptsShort: "tentativi",
     download: "Scarica",
     copyPrompt: "Copia il prompt",
     copied: "Copiato",

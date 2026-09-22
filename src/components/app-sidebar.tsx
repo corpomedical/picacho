@@ -650,10 +650,12 @@ export function AppSidebar({
         <span className="h-9 w-9" aria-hidden="true" />
       </div>
 
-      {/* Backdrop behind the mobile drawer — tapping it closes the menu. */}
+      {/* Backdrop behind the mobile drawer — tapping it closes the menu.
+          z-38: above the Generate page's phone dock (z-37, fixed), so the
+          RENDER key never stays live beside an open drawer. */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-30 bg-black/30 md:hidden"
+          className="fixed inset-0 z-[38] bg-black/30 md:hidden"
           onClick={() => setMobileOpen(false)}
           aria-hidden="true"
         />

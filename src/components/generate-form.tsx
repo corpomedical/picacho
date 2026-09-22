@@ -115,6 +115,7 @@ import type { Messages } from "@/lib/i18n/messages";
 import { cn } from "@/lib/cn";
 import { EXTERNAL_PURCHASE_URL } from "@/lib/domains";
 import { useIsNativeApp } from "@/lib/native/use-native";
+import { useBackCloser } from "@/lib/native/back-stack";
 
 type VisibleItem =
   | { kind: "step"; attempt: number; step: PipelineStepLog }
@@ -1563,6 +1564,9 @@ export function GenerateForm(props: {
   /** The page's own header (title, transcript toggle, stats, upgrade), drawn
       over the screen from md up — see the Screening Room block below. */
   screenHeader?: React.ReactNode;
+  /** The reliability pair for the phone's takes caption (below md the
+      header is one line, so the stats ride the TAKES line instead). */
+  phoneStats?: PhoneStats;
 }) {
   return (
     <Suspense fallback={null}>
@@ -1570,6 +1574,9 @@ export function GenerateForm(props: {
     </Suspense>
   );
 }
+
+/** The page's first-try rate and average attempts (null until measured). */
+export type PhoneStats = { firstTryRate: number | null; avgAttempts: number | null; total: number };
 
 type ChatTurn = HistoryTurn & {
   attachments: ChatAttachment[];
@@ -2014,6 +2021,7 @@ function GenerateFormInner({
   dailyFreeAvailable = false,
   hasGeneratedBefore = true,
   screenHeader,
+  phoneStats,
 }: {
   characters: CharacterOption[];
   videoModels: VideoModelOption[];
@@ -2044,6 +2052,7 @@ function GenerateFormInner({
   dailyFreeAvailable?: boolean;
   hasGeneratedBefore?: boolean;
   screenHeader?: React.ReactNode;
+  phoneStats?: PhoneStats;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -3226,15 +3235,116 @@ function GenerateFormInner({
     return () => ro.disconnect();
   }, [isHero]);
   const dockRef = useRef<HTMLDivElement | null>(null);
+  // THE SHEET (phones, below md — operator, 2026-09-22: "Its your call, the
+  // point of this is to have less clutter and keep it neat and clean"). At
+  // rest the composer is a dock above the tab bar: the values line (each
+  // value its own one-tap key), the receipt line, the prompt, then + ·
+  // DIALOGUE · RENDER. The pull key raises the whole slate as a bottom
+  // sheet — the modes, Assistant and the outfit footnote live there.
+  // Transient UI state: never persisted, closed by a send, the scrim, the
+  // pull key/grabber and Android back. md and up never read it.
+  const [sheetOpen, setSheetOpen] = useState(false);
+  // The FRAME value's own small sheet (the two real toggles, in words).
+  const [frameSheetOpen, setFrameSheetOpen] = useState(false);
+  // A folded composer (after a send) is only its pull-up bar — no sheet.
+  const sheetShown = sheetOpen && !composerFolded;
+  // The lowering slide (180 ms): the sheet keeps its raised layout while it
+  // sinks, then settles into the resting dock — so closing moves as
+  // visibly as opening instead of snapping (craft audit, 2026-09-22).
+  const [sheetClosing, setSheetClosing] = useState(false);
+  const sheetCloseTimer = useRef<number | null>(null);
+  // The resting dock's height when the sheet rose: the slide covers the
+  // whole distance between the two tops, not a token 28 px.
+  const sheetRestH = useRef(0);
+  const dockForm = () => dockRef.current?.querySelector<HTMLElement>(":scope > form") ?? null;
+  const setSheetRise = () => {
+    const el = dockRef.current;
+    const f = dockForm();
+    if (!el || !f) return;
+    el.style.setProperty("--sheet-rise", `${Math.max(0, Math.round(f.getBoundingClientRect().height - sheetRestH.current))}px`);
+  };
+  const openSheet = () => {
+    if (sheetCloseTimer.current !== null) window.clearTimeout(sheetCloseTimer.current);
+    sheetCloseTimer.current = null;
+    if (!sheetClosing) sheetRestH.current = dockForm()?.getBoundingClientRect().height ?? 0;
+    setSheetClosing(false);
+    setSheetOpen(true);
+  };
+  const closeSheet = () => {
+    if (!sheetOpen) return;
+    setFrameSheetOpen(false);
+    setSheetOpen(false);
+    const still =
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      window.matchMedia("(min-width: 768px)").matches;
+    if (still || composerFolded) return;
+    setSheetRise();
+    setSheetClosing(true);
+    if (sheetCloseTimer.current !== null) window.clearTimeout(sheetCloseTimer.current);
+    sheetCloseTimer.current = window.setTimeout(() => {
+      sheetCloseTimer.current = null;
+      setSheetClosing(false);
+    }, 180);
+  };
+  const toggleSheet = () => (sheetOpen ? closeSheet() : openSheet());
+  // The raised layout is on screen while open AND while it sinks.
+  const sheetRaised = (sheetShown || sheetClosing) && !composerFolded;
+  useLayoutEffect(() => {
+    if (sheetShown) setSheetRise();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheetShown]);
+  // The grabber answers a swipe as well as a tap: up raises, down lowers.
+  const grabStartY = useRef<number | null>(null);
+  const grabSwiped = useRef(false);
+  useBackCloser(sheetShown, closeSheet);
+  useBackCloser(frameSheetOpen, () => setFrameSheetOpen(false));
+  // The FRAME sheet closes on any tap outside it, like the other menus.
+  useEffect(() => {
+    if (!frameSheetOpen) return;
+    const onDown = (e: PointerEvent) => {
+      if (!(e.target as Element | null)?.closest?.("[data-dock-frame]")) setFrameSheetOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [frameSheetOpen]);
+  // Read by the size observer: the page's bottom room is the RESTING dock's
+  // height — a raised sheet covers the stage behind a scrim instead of
+  // pushing the page around under it.
+  const sheetOpenRef = useRef(false);
+  useEffect(() => {
+    sheetOpenRef.current = sheetOpen || sheetClosing;
+  });
   useEffect(() => {
     const el = dockRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => {
+      if (sheetOpenRef.current && !window.matchMedia("(min-width: 768px)").matches) return;
       const h = el.getBoundingClientRect().height;
       if (h > 0) setDockHeight((prev) => (Math.abs(prev - h) < 1 ? prev : h));
     });
     ro.observe(el);
     return () => ro.disconnect();
+  }, []);
+  // The keyboard (phones): the app's WebView resizes under the keyboard, so
+  // the fixed dock rides it for free. A phone BROWSER overlays it instead
+  // (Chrome's default resizes-visual), which would bury the prompt; there
+  // the visual viewport says how much of the bottom is covered, and the
+  // dock lifts by exactly that (--kb-inset, 0 whenever nothing covers).
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const el = dockRef.current;
+    if (!vv || !el) return;
+    const read = () => {
+      const covered = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+      el.style.setProperty("--kb-inset", `${covered > 60 ? covered : 0}px`);
+    };
+    read();
+    vv.addEventListener("resize", read);
+    vv.addEventListener("scroll", read);
+    return () => {
+      vv.removeEventListener("resize", read);
+      vv.removeEventListener("scroll", read);
+    };
   }, []);
   // The transcript's own scroller (a drawer over the screen from md up).
   const transcriptScrollRef = useRef<HTMLDivElement | null>(null);
@@ -4190,9 +4300,17 @@ function GenerateFormInner({
   useEffect(() => {
     const scroller = document.querySelector<HTMLElement>("[data-app-scroll]");
     if (!scroller) return;
+    // Phones (the sheet, 2026-09-22): the page opens on the stage, and the
+    // takes revealing on arrival are not "new content" to chase — the
+    // follow starts disengaged there and a send (or a real scroll to the
+    // end) engages it. md and up keep the old default.
+    if (!window.matchMedia("(min-width: 768px)").matches) stickToBottomRef.current = false;
     const onScroll = () => {
-      const gap = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
-      stickToBottomRef.current = gap < 90;
+      const room = scroller.scrollHeight - scroller.clientHeight;
+      const gap = room - scroller.scrollTop;
+      // Re-based on the page's own scroll room: on a short page a flat
+      // 90 px counted almost any position as "at the bottom".
+      stickToBottomRef.current = gap < Math.min(90, Math.max(24, room / 3));
     };
     scroller.addEventListener("scroll", onScroll, { passive: true });
     return () => scroller.removeEventListener("scroll", onScroll);
@@ -4654,8 +4772,11 @@ function GenerateFormInner({
     setStopping(false);
     // Their own send always re-engages the follow, wherever they'd scrolled.
     stickToBottomRef.current = true;
-    // The focused flow: sending folds the composer down to its pull-up bar.
+    // The focused flow: sending folds the composer down to its pull-up bar
+    // (and lowers a raised phone sheet with it).
     setComposerFolded(true);
+    setSheetOpen(false);
+    setFrameSheetOpen(false);
     setLivePrompt(submittedPrompt);
     setLiveAttachments(submittedAttachments);
     setLiveContentType(effectiveContentType);
@@ -5644,7 +5765,7 @@ function GenerateFormInner({
             // same photo the casting sheet leads with, wearing the lock's
             // corner marks (the identity story, in miniature). When the take
             // matches one of several photos, it wears THAT photo.
-            <span className="relative h-9 w-9 flex-shrink-0 sm:h-11 sm:w-11">
+            <span className="relative h-9 w-9 flex-shrink-0 sm:h-11 sm:w-11" data-cast-photo>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={thumbOf(
@@ -5672,7 +5793,7 @@ function GenerateFormInner({
             </span>
           )}
           <span className="flex min-w-0 flex-col gap-1">
-            <span className="flex items-center gap-1 text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted">
+            <span className="flex items-center gap-1 text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted" data-cell-label>
               {g.slateCast}
               <ChevronDownIcon
                 className={cn(
@@ -5687,6 +5808,7 @@ function GenerateFormInner({
                   "min-w-0 max-w-[5.5rem] truncate text-[14px] font-medium leading-tight sm:max-w-[9rem]",
                   currentCharacter ? "text-atelier-ink" : "text-atelier-muted",
                 )}
+                data-cast-name
               >
                 {isMultiCharacter
                   ? formatMsg(g.multiCharacterSummary, { name: currentCharacter?.name ?? "", n: companionCharacterIds.length })
@@ -5698,7 +5820,7 @@ function GenerateFormInner({
                   Single-cast only; the stacked avatars already carry the
                   multi-cast story. */}
               {currentCharacter && !isMultiCharacter && currentCharacter.referencePhotos.length > 0 && (
-                <span className="flex flex-shrink-0 items-center gap-[2.5px]" aria-hidden>
+                <span className="flex flex-shrink-0 items-center gap-[2.5px]" aria-hidden data-cast-meter>
                   {Array.from({ length: 5 }).map((_, i) => (
                     <span
                       key={i}
@@ -5939,7 +6061,7 @@ function GenerateFormInner({
             videoModelMenuOpen ? "bg-atelier-ink/[0.07]" : "hover:bg-atelier-ink/[0.05]",
           )}
         >
-          <span className="flex items-center gap-1 text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted">
+          <span className="flex items-center gap-1 text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted" data-cell-label>
             {g.slateEngine}
             <ChevronDownIcon
               className={cn(
@@ -5974,7 +6096,7 @@ function GenerateFormInner({
                 durationMenuOpen ? "bg-atelier-ink/[0.07]" : "hover:bg-atelier-ink/[0.05]",
               )}
             >
-              <span className="flex items-center gap-1 text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted">
+              <span className="flex items-center gap-1 text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted" data-cell-label>
                 {g.slateLength}
                 <ChevronDownIcon
                   className={cn(
@@ -6159,6 +6281,44 @@ function GenerateFormInner({
   // Is the next send going to be ANSWERED rather than rendered? Resolved
   // once per render and shared, rather than re-classifying at each call site.
   const willAsk = sendIntent() === "ask";
+  // The phone dock's lit chips — every armed state the raised sheet holds,
+  // worded with the same labels its controls wear.
+  const presetName = (id: string) => (g.cinemaPresetLabels as Record<string, string>)[id] ?? id;
+  const litChips: { id: string; label: string }[] = [
+    ...(contentType === "video"
+      ? [
+          multiAngleMode && {
+            id: "angles",
+            label: selectedAngles.length > 1 ? `${g.multiAngleLabel} · ${selectedAngles.length}` : g.multiAngleLabel,
+          },
+          storyboardActive && { id: "storyboard", label: g.storyboardPillLabel },
+          sceneMode && { id: "cinema", label: g.cinemaLabel },
+          videoAdvancedMode !== "none" && { id: "frames", label: g.framesPillLabel },
+          cinemaPresetsAvailable &&
+            cinemaPresetIds.move && { id: "move", label: `${g.presetTabCamera} · ${presetName(cinemaPresetIds.move)}` },
+          cinemaPresetsAvailable &&
+            cinemaPresetIds.look && { id: "look", label: `${g.presetTabLight} · ${presetName(cinemaPresetIds.look)}` },
+          // A picked resolution changes the price on the key, so it never
+          // hides in the lowered sheet (verifier, 2026-09-22: "RENDER 18
+          // credits" with no 4K in sight). Same extra as the sheet's toggle.
+          videoResolution !== null && {
+            id: "res",
+            label: (() => {
+              const total = resolutionCreditWeight(videoModelId, videoResolution, videoDurationSeconds);
+              const extra = total === null ? 0 : Math.max(0, total - baseDurationCredits);
+              return extra > 0
+                ? `${videoResolution.toUpperCase()} · +${extra}`
+                : videoResolution.toUpperCase();
+            })(),
+          },
+        ]
+      : []),
+    chatAgentEnabled &&
+      assistantOn && {
+        id: "assistant",
+        label: agentEffort === "smarter" ? `${g.assistant} · ${g.effortSmarter}` : g.assistant,
+      },
+  ].filter((c): c is { id: string; label: string } => Boolean(c));
 
   // THE ONE-VOICE RULE, EXTENDED (operator-reported, 2026-08-31: with the
   // assistant on, typing a question at Kling popped "pick a character").
@@ -6550,7 +6710,8 @@ function GenerateFormInner({
   function filmstrip(where: "page" | "screen" | "column") {
     const onScreen = where !== "page";
     const column = where === "column";
-    return (
+    const page = where === "page";
+    const body = (
       <div
         className={cn(
           "flex min-w-0 gap-3",
@@ -6558,7 +6719,7 @@ function GenerateFormInner({
           column ? null : onScreen ? "min-w-0 flex-1" : "w-full",
         )}
       >
-        <div className="flex flex-shrink-0 flex-col">
+        <div className={cn("flex flex-shrink-0 flex-col", page && "hidden")}>
           <span
             className={cn(
               "text-[10px] font-medium uppercase tracking-widest",
@@ -6691,6 +6852,54 @@ function GenerateFormInner({
             );
           })}
         </div>
+      </div>
+    );
+    if (!page) return body;
+    // The phone's takes caption (the sheet, 2026-09-22): TAKES and its
+    // count on one baseline, the page's reliability pair at the right —
+    // they left the header when it became one line — then the strip at
+    // full width.
+    const statsShown = phoneStats !== undefined && phoneStats.total > 0;
+    return (
+      <div className="flex min-w-0 flex-col gap-1.5">
+        {/* One line in every language: the stats wear their short labels
+            here (the full wording rides the title), and a label truncates
+            before the row can wrap raggedly or scroll the page sideways. */}
+        <div className="flex min-w-0 flex-nowrap items-baseline gap-x-4">
+          <span className="flex flex-shrink-0 items-baseline gap-[7px]">
+            <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
+              {g.takesShort}
+            </span>
+            <span className="font-numeral text-[15px] font-semibold leading-none tabular-nums text-atelier-ink">
+              {stageTakes.length}
+            </span>
+          </span>
+          {statsShown && (
+            <span className="ml-auto flex min-w-0 items-baseline gap-x-3">
+              {phoneStats.firstTryRate !== null && (
+                <span className="flex min-w-0 items-baseline gap-[5px]" title={g.firstTrySuccess}>
+                  <span className="font-numeral text-[15px] font-semibold leading-none tabular-nums text-atelier-ink">
+                    {phoneStats.firstTryRate}%
+                  </span>
+                  <span className="min-w-0 truncate whitespace-nowrap text-[10px] font-medium uppercase tracking-[0.08em] text-atelier-muted">
+                    {g.firstTryShort}
+                  </span>
+                </span>
+              )}
+              {phoneStats.avgAttempts !== null && (
+                <span className="flex min-w-0 items-baseline gap-[5px]" title={g.avgAttempts}>
+                  <span className="font-numeral text-[15px] font-semibold leading-none tabular-nums text-atelier-ink">
+                    {phoneStats.avgAttempts}
+                  </span>
+                  <span className="min-w-0 truncate whitespace-nowrap text-[10px] font-medium uppercase tracking-[0.08em] text-atelier-muted">
+                    {g.avgAttemptsShort}
+                  </span>
+                </span>
+              )}
+            </span>
+          )}
+        </div>
+        {body}
       </div>
     );
   }
@@ -7121,14 +7330,81 @@ function GenerateFormInner({
         becomes the positioning context and publishes the composer's measured
         height for the screen's own layout. */}
     <div
-      className="md:relative md:h-full"
+      className={cn(
+        "md:relative md:h-full",
+        !isHero && "max-md:pb-[var(--dock-h)]",
+        // Phones: the page is always a little taller than the screen, and
+        // the disclaimer sits at its very end (mt-auto) — so at rest it is
+        // behind the dock, never a ghost line in the dock's fade, and one
+        // flick shows it whole (craft audit, 2026-09-22).
+        !isHero && !premiereShown && "max-md:flex max-md:min-h-[calc(100dvh+2rem)] max-md:flex-col",
+      )}
       style={{ "--dock-h": `${Math.round(dockHeight)}px` } as React.CSSProperties}
     >
+    {/* The phone's header, ONE line (the sheet, 2026-09-22): the title,
+        the credit balance, then Session transcript and New chat as icon
+        keys — the reliability pair moved to the takes caption. md and up
+        keep the page's screenHeader over the room. */}
+    {!isHero && (
+      <div className="-mt-1 mb-2 flex h-11 items-center gap-3 md:hidden">
+        {/* The title never gives way; the credits label wraps onto two
+            short lines first (the ochre number stays whole), and the icon
+            keys' glyphs end on the same 16 px gutter as the dock. */}
+        <h1 className="marquee flex-shrink-0 whitespace-nowrap text-[17px] leading-none text-atelier-ink">{g.pageTitle}</h1>
+        <div className="ml-auto flex min-w-0 items-center gap-[7px]">
+          <span className="font-numeral text-[17px] font-semibold leading-none tabular-nums text-atelier-accent">
+            {creditsAvailable}
+          </span>
+          <span className="min-w-0 text-[10px] font-medium uppercase leading-[1.2] tracking-widest text-atelier-muted max-[419px]:max-w-[5.25rem]">
+            {g.creditsLabel}
+          </span>
+        </div>
+        <div className="-mr-[15px] flex flex-shrink-0 items-center">
+          <button
+            type="button"
+            onClick={() => setTranscriptOpen((v) => !v)}
+            aria-label={g.sessionTranscript}
+            aria-pressed={transcriptOpen}
+            title={g.sessionTranscript}
+            className={cn(
+              "flex h-11 w-11 items-center justify-center rounded-full transition-colors",
+              transcriptOpen ? "text-atelier-accent" : "text-atelier-muted hover:text-atelier-ink",
+            )}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]" aria-hidden>
+              <path d="M4 6h16M4 12h10M4 18h7" />
+            </svg>
+          </button>
+          {hasAnyMessages && (
+            <button
+              type="button"
+              onClick={() => {
+                // The same detach-then-reset as the slate's New chat.
+                if (canDetach) detachLiveRender();
+                resetChat();
+              }}
+              disabled={locked && !canDetach}
+              aria-label={g.newChat}
+              title={g.newChat}
+              className="flex h-11 w-11 items-center justify-center rounded-full text-atelier-muted transition-colors hover:text-atelier-ink disabled:opacity-40"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]" aria-hidden>
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </button>
+          )}
+        </div>
+      </div>
+    )}
     {stagePanel}
     {!isHero && !premiereShown && <div className="mb-4 md:hidden">{filmstrip("page")}</div>}
     <div
       className={cn(
         "relative flex flex-col transition-all duration-300 ease-out md:static",
+        // Phones: this column (the transcript, the fixed dock, then the
+        // disclaimer) sits at the END of the page's minimum height.
+        !isHero && "max-md:mt-auto",
         // Docked is a plain column now — the glass card belongs to the
         // transcript and the composer individually, not to one shell
         // around everything.
@@ -7358,8 +7634,26 @@ function GenerateFormInner({
           672px to 1024px the moment it docked — the hero wrapper fell away and
           the layout's width took over. Submitting a prompt is the worst moment
           for the thing you just typed into to change size. */}
+      {/* The raised sheet's scrim (phones): the stage dims behind it, and a
+          tap on it lowers the sheet. */}
+      {/* A pointer affordance only (aria-hidden): the pull key is the
+          sheet's one accessible toggle, so a screen reader never meets a
+          second "All settings" that closes instead. */}
+      {!isHero && sheetRaised && (
+        <button
+          type="button"
+          aria-hidden
+          tabIndex={-1}
+          onClick={closeSheet}
+          data-closing={sheetClosing ? "" : undefined}
+          className="dock-scrim fixed inset-0 z-[36] bg-[#070605]/60 md:hidden"
+        />
+      )}
       <div
         ref={dockRef}
+        data-dock={isHero ? undefined : ""}
+        data-sheet={sheetRaised ? "open" : "rest"}
+        data-sheet-closing={sheetClosing && !sheetShown ? "" : undefined}
         className={cn(
           "relative z-10",
           // From md up the composer floats over the screen at its bottom
@@ -7493,6 +7787,7 @@ function GenerateFormInner({
             to render outside its bounds when open. */}
         <div
           aria-hidden
+          data-dock-ring
           className={cn(
             "pointer-events-none absolute inset-0 -z-10 shadow-[0_0_0_1px_var(--frost-ring),0_2px_6px_rgba(0,0,0,0.04),0_24px_56px_-20px_rgba(0,0,0,0.22)] [-webkit-mask-image:-webkit-radial-gradient(white,black)]",
             isHero
@@ -7526,15 +7821,100 @@ function GenerateFormInner({
                 the receipt half on its own ruled line. The .relative wrapper
                 stays the anchor, so the casting sheet, the photo menu and
                 the engine sheet still open bar-wide above the row. */}
-          <div className="mb-1">
-            <div className="relative">
-              <div className="flex min-w-0 flex-wrap items-stretch">
+          <div className="mb-1" data-slate>
+            {/* The sheet's handle (phones only): the grabber band across
+                the dock's top edge and the pull key at the values line's
+                end — both raise and lower the sheet. The pull key doubles
+                as the modes' tour anchor while they rest inside it. */}
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-hidden
+              onPointerDown={(e) => {
+                grabStartY.current = e.clientY;
+                grabSwiped.current = false;
+                e.currentTarget.setPointerCapture?.(e.pointerId);
+              }}
+              onPointerUp={(e) => {
+                const start = grabStartY.current;
+                grabStartY.current = null;
+                if (start === null) return;
+                const dy = e.clientY - start;
+                if (dy < -24) {
+                  grabSwiped.current = true;
+                  if (!sheetOpen) openSheet();
+                } else if (dy > 24) {
+                  grabSwiped.current = true;
+                  if (sheetOpen) closeSheet();
+                }
+              }}
+              onPointerCancel={() => {
+                grabStartY.current = null;
+              }}
+              onClick={() => {
+                if (grabSwiped.current) {
+                  grabSwiped.current = false;
+                  return;
+                }
+                toggleSheet();
+              }}
+              className="dock-grabber absolute inset-x-0 z-[1] touch-none md:hidden"
+            />
+            <div className="relative" data-slate-box>
+              <button
+                type="button"
+                data-dock-pull
+                data-tour-id={contentType === "video" ? "tour-advanced-toggle" : undefined}
+                onClick={() => {
+                  setFrameSheetOpen(false);
+                  toggleSheet();
+                }}
+                aria-label={g.composerMore}
+                aria-expanded={sheetShown}
+                title={g.composerMore}
+                className="absolute right-0 top-0 z-[2] flex h-11 w-11 items-center justify-center rounded-full text-atelier-ink shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] transition-colors hover:bg-atelier-ink/[0.05] md:hidden"
+              >
+                <ChevronDownIcon
+                  className={cn(
+                    "h-4 w-4 transition-transform duration-200 motion-reduce:transition-none",
+                    !sheetShown && "rotate-180",
+                  )}
+                />
+              </button>
+              <div className="flex min-w-0 flex-wrap items-stretch" data-slate-row>
                 {/* max-sm:basis-full on BOTH runs: with flex-1's zero basis
                     alone, the receipt's 100% basis still fit on one line and
                     crushed the controls to nothing (measured at 390). */}
-                <div className="flex min-w-0 flex-1 items-stretch max-lg:flex-wrap max-lg:basis-full">
+                <div className="flex min-w-0 flex-1 items-stretch max-lg:flex-wrap max-lg:basis-full" data-slate-controls>
                 {characterPicker}
                 {videoModelPicker}
+                {/* Image mode on a phone, at rest: the Outfit toggle rides
+                    the values line beside the cast (the same toggle as the
+                    chip below, which the raised sheet shows with its whole
+                    sentence). */}
+                {contentType === "image" && outfitChipAvailable && currentCharacter && (
+                  <div className="hidden flex-shrink-0 items-center gap-2" data-dock-outfit>
+                    <span aria-hidden className="h-3.5 w-px flex-shrink-0 bg-atelier-rule/70" />
+                    <button
+                      type="button"
+                      onClick={() => setUseOutfit((v) => !v)}
+                      aria-pressed={useOutfit}
+                      className={cn(
+                        // A value key like its neighbours (no fill — filled
+                        // pills are the lit chips, which raise the sheet):
+                        // accent + check when the outfit rides along.
+                        "flex h-11 items-center gap-1.5 rounded-[10px] px-2 transition-colors hover:bg-atelier-ink/[0.05]",
+                        useOutfit ? "text-atelier-accent" : "text-atelier-muted",
+                      )}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 flex-shrink-0" aria-hidden>
+                        <path d="M20.4 6 16 4l-4 2.5L8 4 3.6 6l1.9 4.6 2-.7V20h9v-10l2 .6z" />
+                      </svg>
+                      {g.outfitChip}
+                      {useOutfit && <CheckIcon className="h-3 w-3 flex-shrink-0" />}
+                    </button>
+                  </div>
+                )}
                 {/* FRAME — the real two-way aspect toggle, drawn to ratio;
                     neither lit = the prompt decides, and the cell SAYS so
                     now ("Automatic" / the pressed ratio word) like every
@@ -7542,7 +7922,7 @@ function GenerateFormInner({
                     run, which is what lets the ratio words and the 44px hit
                     areas fit at 390 (addendum §1). */}
                 {contentType === "video" && (
-                  <div className="flex flex-shrink-0 items-stretch max-lg:mt-0.5 max-lg:basis-full max-lg:border-t max-lg:border-atelier-rule/60 max-lg:pt-0.5">
+                  <div className="flex flex-shrink-0 items-stretch max-lg:mt-0.5 max-lg:basis-full max-lg:border-t max-lg:border-atelier-rule/60 max-lg:pt-0.5" data-slate-frame>
                     <span aria-hidden className="my-2 w-px flex-shrink-0 self-stretch bg-atelier-rule/70 max-lg:hidden" />
                     <div className="flex flex-col justify-center gap-1 px-2.5 py-1.5 max-sm:px-1.5 sm:px-3">
                       <span className="text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted">
@@ -7580,6 +7960,100 @@ function GenerateFormInner({
                     </div>
                   </div>
                 )}
+                {/* FRAME at rest on a phone: one value key — the frame glyph,
+                    then the real state in words ("Automatic" or the pressed
+                    ratio) — opening a small sheet with the same two toggles,
+                    worded. The slate's FRAME cell above is the raised
+                    sheet's; both drive videoAspectRatio. */}
+                {contentType === "video" && (
+                  <div className="hidden flex-shrink-0 items-stretch" data-dock-frame>
+                    <span aria-hidden className="w-px flex-shrink-0 bg-atelier-rule/70" data-dock-tick />
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => {
+                        setCharacterMenuOpen(false);
+                        setPhotoMenuOpen(false);
+                        setVideoModelMenuOpen(false);
+                        setDurationMenuOpen(false);
+                        setFrameSheetOpen((v) => !v);
+                      }}
+                      aria-haspopup="dialog"
+                      aria-expanded={frameSheetOpen}
+                      aria-label={`${g.slateFrame}: ${videoAspectRatio ?? t.settings.aspectAuto}`}
+                      className={cn(
+                        "flex h-11 min-w-0 items-center gap-1.5 rounded-[10px] px-2 text-[13px] leading-none text-atelier-ink/85 transition-colors disabled:opacity-50",
+                        frameSheetOpen ? "bg-atelier-ink/[0.07]" : "hover:bg-atelier-ink/[0.05]",
+                      )}
+                    >
+                      {videoAspectRatio === "9:16" ? (
+                        <PortraitIcon className="h-3.5 w-3.5 flex-shrink-0 text-atelier-muted" />
+                      ) : videoAspectRatio === "16:9" ? (
+                        <LandscapeIcon className="h-3.5 w-3.5 flex-shrink-0 text-atelier-muted" />
+                      ) : (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 flex-shrink-0 text-atelier-muted" aria-hidden>
+                          <path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16" />
+                        </svg>
+                      )}
+                      <span className="truncate">{videoAspectRatio ?? t.settings.aspectAuto}</span>
+                    </button>
+                    {frameSheetOpen && (
+                      <div
+                        role="dialog"
+                        aria-label={g.slateFrame}
+                        className="absolute bottom-full right-0 z-30 mb-2 w-[min(300px,calc(100vw-32px))] rounded-[16px] bg-atelier-paper p-2 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.35)] backdrop-blur-xl"
+                      >
+                        <p className="px-2 pb-1.5 pt-1 text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted">
+                          {g.slateFrame}
+                        </p>
+                        {/* Automatic is a row of its own (checked while
+                            neither ratio is pressed), so the footnote only
+                            explains it instead of repeating its name. */}
+                        {([null, "16:9", "9:16"] as const).map((ar) => (
+                          <button
+                            key={ar ?? "auto"}
+                            type="button"
+                            disabled={submitting}
+                            onClick={() => {
+                              setVideoAspectRatio((prev) => (ar === null || prev === ar ? null : ar));
+                              setFrameSheetOpen(false);
+                            }}
+                            title={ar === null ? t.settings.aspectAuto : ar === "16:9" ? g.aspectWideTitle : g.aspectTallTitle}
+                            aria-label={ar === null ? t.settings.aspectAuto : ar === "16:9" ? g.aspectWideTitle : g.aspectTallTitle}
+                            aria-pressed={videoAspectRatio === ar}
+                            className={cn(
+                              "flex h-11 w-full items-center gap-2.5 rounded-[10px] px-2.5 text-left text-[14px] transition-colors disabled:opacity-50",
+                              videoAspectRatio === ar
+                                ? "bg-atelier-accent/10 text-atelier-accent"
+                                : "text-atelier-ink hover:bg-atelier-ink/[0.05]",
+                            )}
+                          >
+                            {ar === null ? (
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 flex-shrink-0" aria-hidden>
+                                <path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16" />
+                              </svg>
+                            ) : ar === "16:9" ? (
+                              <LandscapeIcon className="h-4 w-4 flex-shrink-0" />
+                            ) : (
+                              <PortraitIcon className="h-4 w-4 flex-shrink-0" />
+                            )}
+                            <span className="flex-1">
+                              {ar === null
+                                ? t.settings.aspectAuto
+                                : ar === "16:9"
+                                  ? t.settings.aspectLandscape
+                                  : t.settings.aspectPortrait}
+                            </span>
+                            {videoAspectRatio === ar && <CheckIcon className="h-3.5 w-3.5 flex-shrink-0" />}
+                          </button>
+                        ))}
+                        <p className="px-2.5 pb-1 pt-2 text-[11.5px] leading-snug text-atelier-muted">
+                          {t.settings.aspectHelp}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
                 </div>
                 {/* The receipt half of the slate: FACE is a read-only cell
                     (muted ink, no chevron, no hover — the photo choice
@@ -7587,7 +8061,7 @@ function GenerateFormInner({
                     chip become a cell, pressable with the same aria-pressed
                     state. On a phone this half takes its own ruled run. */}
                 {contentType === "video" && (facePart !== null || outfitCellShown) && (
-                  <div className="flex min-w-0 items-stretch max-lg:mt-0.5 max-lg:basis-full max-lg:border-t max-lg:border-atelier-rule/60 max-lg:pt-0.5">
+                  <div className="flex min-w-0 items-stretch max-lg:mt-0.5 max-lg:basis-full max-lg:border-t max-lg:border-atelier-rule/60 max-lg:pt-0.5" data-slate-receipt>
                     <span aria-hidden className="my-2 hidden w-px flex-shrink-0 self-stretch bg-atelier-rule/70 lg:block" />
                     {facePart && (
                       <div className="flex min-w-0 flex-col justify-center gap-1 px-2.5 py-1.5 max-sm:px-1 sm:px-3">
@@ -7637,7 +8111,7 @@ function GenerateFormInner({
                                 <CheckIcon className="h-3 w-3 flex-shrink-0 text-atelier-accent" />
                               )}
                               {outfitFootnote && (
-                                <sup className="text-[10px] leading-none text-atelier-accent">*</sup>
+                                <sup className="text-[10px] leading-none text-atelier-accent" data-foot-mark>*</sup>
                               )}
                             </span>
                           </button>
@@ -7660,10 +8134,28 @@ function GenerateFormInner({
                 )}
               </div>
             </div>
+            {/* Lit chips (phones, at rest): whatever is switched on in the
+                sheet stays in sight while the sheet is down — a state is
+                never hidden while it is active. Each chip raises the sheet
+                where its real control lives. */}
+            {litChips.length > 0 && (
+              <div className="mt-2 hidden flex-wrap gap-1.5 pr-12" data-dock-lit>
+                {litChips.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={openSheet}
+                    className="relative flex h-9 max-w-full items-center gap-1 rounded-full bg-atelier-accent/10 px-3 text-[12px] font-medium text-atelier-accent shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--color-atelier-accent)_45%,transparent)] after:absolute after:inset-x-0 after:top-0 after:-bottom-2 after:content-['']"
+                  >
+                    <span className="truncate">{c.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             {/* The footnote row: the outfit reason, whole, never behind a
                 hover (phones have none). */}
             {outfitFootnote && (
-              <p className="mt-1 border-t border-atelier-rule/50 px-1 pb-0.5 pt-1.5 text-[10.5px] leading-snug text-atelier-muted/85">
+              <p className="mt-1 border-t border-atelier-rule/50 px-1 pb-0.5 pt-1.5 text-[10.5px] leading-snug text-atelier-muted/85" data-slate-foot>
                 <sup className="mr-1 text-atelier-accent">*</sup>
                 {outfitFootnote}
               </p>
@@ -7686,7 +8178,13 @@ function GenerateFormInner({
                     <span
                       className={
                         p.accent
-                          ? "font-numeral tabular-nums text-atelier-accent"
+                          ? cn(
+                              "font-numeral tabular-nums text-atelier-accent",
+                              // A whole sentence (the dialogue surcharge) is
+                              // not a figure: on a phone it reads in the sans
+                              // face like the lines around it. md+ unchanged.
+                              !/^[+\d]/.test(p.value.trim()) && "max-md:font-sans",
+                            )
                           : "text-atelier-ink/80"
                       }
                     >
@@ -7701,7 +8199,7 @@ function GenerateFormInner({
                 their one-tap remedies, unchanged (see receipt-strip.tsx).
                 The submit-time soft-block behaviour is untouched. */}
             {receiptEngaged && sendPlanNow.issues.length > 0 && (
-              <div className="mt-2">
+              <div className="mt-2" data-plan-issues>
                 <PlanIssueRows
                   issues={sendPlanNow.issues}
                   g={g}
@@ -7757,7 +8255,7 @@ function GenerateFormInner({
             chip became the slate's OUTFIT cell and its caption the footnote
             row — same strings, same toggle. */}
         {contentType === "image" && outfitChipAvailable && currentCharacter && (
-          <div className="mb-2.5 flex flex-wrap items-center gap-2">
+          <div className="mb-2.5 flex flex-wrap items-center gap-2" data-image-outfit>
             <button
               type="button"
               onClick={() => setUseOutfit((v) => !v)}
@@ -7796,7 +8294,7 @@ function GenerateFormInner({
             controls row below open it straight onto their tab, and wear the
             armed preset's name. This block is now just the tabs + chips. */}
         {cinemaPresetsAvailable && presetRowOpen && (
-          <div className="mb-2.5">
+          <div className="mb-2.5" data-preset-row>
             {(() => {
               const provenPresets = CINEMA_PRESETS.filter(isProvenPreset);
               const tabs = (["move", "look", "fx"] as const).filter((cat) =>
@@ -8255,7 +8753,7 @@ function GenerateFormInner({
                   `prompt` takes over from there, up to the max-h-36 cap
                   (six lines) with internal scrolling beyond. Enter still
                   sends and Shift+Enter still breaks the line — unchanged. */}
-              <div className={cn(!isHero && "flex items-start")}>
+              <div className={cn(!isHero && "flex items-start")} data-prompt-row>
                 {!isHero && (
                   <span
                     aria-hidden
@@ -8312,6 +8810,7 @@ function GenerateFormInner({
                       ? "border-t border-atelier-rule/70 py-2"
                       : "border-t border-dashed border-atelier-rule/50 py-1.5",
                   )}
+                  data-dialogue-row
                 >
                   {!isHero && (
                     <span
@@ -8364,7 +8863,7 @@ function GenerateFormInner({
               )}
 
               {advancedPanelOpen && advancedVideoEligible && (
-                <div className="space-y-3 border-t border-atelier-rule/70 px-3 py-3">
+                <div className="space-y-3 border-t border-atelier-rule/70 px-3 py-3" data-advanced-panel>
                   <div className="flex gap-1 rounded-control bg-atelier-ink/5 p-1">
                     {(["storyboard", "multiref"] as const).map((mode) => (
                       <button
@@ -8719,8 +9218,9 @@ function GenerateFormInner({
                     ? "px-2.5 pb-3"
                     : "border-t border-atelier-rule/60 px-0.5 pb-0.5 pt-2.5 max-lg:items-start",
                 )}
+                data-keys
               >
-                <div ref={plusMenuRef} className="relative flex flex-shrink-0 items-center gap-2">
+                <div ref={plusMenuRef} className="relative flex flex-shrink-0 items-center gap-2" data-keys-attach>
                   <button
                     type="button"
                     onClick={() => setPlusMenuOpen((v) => !v)}
@@ -8855,6 +9355,7 @@ function GenerateFormInner({
                     // overflows, so the everyday one-run state is untouched.
                     !isHero && "flex-wrap justify-end gap-y-2",
                   )}
+                  data-keys-right
                 >
                   {/* Real incident, 2026-08-09: this whole icon strip (up to
                       7 buttons once video + advancedOpen reveal the extra
@@ -8872,7 +9373,7 @@ function GenerateFormInner({
                       wraps the key to its own run — an invisible horizontal
                       scroll at desktop hid Frames and cut "Cinema Studio"
                       mid-word (audit, 2026-09-22). */}
-                  <div className="flex min-w-0 items-center gap-1.5 max-lg:flex-wrap max-lg:gap-y-2 lg:min-w-fit">
+                  <div className="flex min-w-0 items-center gap-1.5 max-lg:flex-wrap max-lg:gap-y-2 lg:min-w-fit" data-keys-modes>
                   {/* Prompt Studio. Only appears once there's something to
                       enhance — an empty composer has nothing to improve, and
                       a control that can't do anything yet is just noise. */}
@@ -8888,6 +9389,7 @@ function GenerateFormInner({
                       title={prompt.trim().length > 0 ? g.enhance : g.describeImage}
                       aria-label={prompt.trim().length > 0 ? g.enhance : g.describeImage}
                       className="relative flex flex-shrink-0 items-center gap-1.5 rounded-full border border-atelier-accent/40 px-3 py-1.5 text-xs font-semibold text-atelier-accent transition-colors hover:bg-atelier-accent/10 disabled:opacity-50 after:absolute after:-inset-y-[7px] after:inset-x-0 after:content-[''] lg:after:content-none"
+                      data-keys-enhance
                     >
                       <SparkIcon className={cn("h-3.5 w-3.5", enhancing && "animate-pulse")} />
                       {/* Icon-only below sm: on a phone the full label ate
@@ -8950,7 +9452,7 @@ function GenerateFormInner({
                         )}
                       >
                         <AnglesIcon className="h-4 w-4" />
-                        <span className="hidden md:inline">{g.multiAngleLabel}</span>
+                        <span className="hidden md:inline" data-mode-word>{g.multiAngleLabel}</span>
                         {multiAngleMode && (
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3" aria-hidden>
                             <path d="M5 12.5l4.5 4.5L19 7.5" />
@@ -8994,7 +9496,7 @@ function GenerateFormInner({
                           )}
                         >
                           <FilmIcon className="h-4 w-4" />
-                          <span className="hidden md:inline">{g.storyboardPillLabel}</span>
+                          <span className="hidden md:inline" data-mode-word>{g.storyboardPillLabel}</span>
                         </button>
                       )}
                       {/* Cinema Studio. Shares multi-angle's plan gate: both
@@ -9032,7 +9534,7 @@ function GenerateFormInner({
                         )}
                       >
                         <ClapperIcon className="h-4 w-4" />
-                        <span className="hidden md:inline">{g.cinemaLabel}</span>
+                        <span className="hidden md:inline" data-mode-word>{g.cinemaLabel}</span>
                       </button>
 
                       <button
@@ -9083,7 +9585,7 @@ function GenerateFormInner({
                         )}
                       >
                         <StackIcon className="h-4 w-4" />
-                        <span className="hidden md:inline">{g.framesPillLabel}</span>
+                        <span className="hidden md:inline" data-mode-word>{g.framesPillLabel}</span>
                       </button>
                     </div>
                   )}
@@ -9122,7 +9624,7 @@ function GenerateFormInner({
                           <path d="m4 8-1.5-3.5 15.5-2L19.5 6z" />
                           <path d="m8 7.2 2.5-3.7M13 6.5l2.5-3.7" />
                         </svg>
-                        <span className="hidden md:inline">{g.presetTabCamera}</span>
+                        <span className="hidden md:inline" data-mode-word>{g.presetTabCamera}</span>
                         {cinemaPresetIds.move
                           ? ` · ${(g.cinemaPresetLabels as Record<string, string>)[cinemaPresetIds.move] ?? cinemaPresetIds.move}`
                           : ""}
@@ -9151,7 +9653,7 @@ function GenerateFormInner({
                           <circle cx="12" cy="12" r="4" />
                           <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" />
                         </svg>
-                        <span className="hidden md:inline">{g.presetTabLight}</span>
+                        <span className="hidden md:inline" data-mode-word>{g.presetTabLight}</span>
                         {cinemaPresetIds.look
                           ? ` · ${(g.cinemaPresetLabels as Record<string, string>)[cinemaPresetIds.look] ?? cinemaPresetIds.look}`
                           : ""}
@@ -9238,7 +9740,7 @@ function GenerateFormInner({
                       chip — same handlers, same Faster/Smarter pair while
                       it is on. */}
                   {!isHero && chatAgentEnabled && (
-                    <div className="flex min-w-0 flex-shrink-0 items-center gap-x-2">
+                    <div className="flex min-w-0 flex-shrink-0 items-center gap-x-2" data-keys-session>
                       <button
                         type="button"
                         role="switch"
@@ -9383,7 +9885,7 @@ function GenerateFormInner({
                         resetChat();
                       }}
                       disabled={locked && !canDetach}
-                      className="relative flex-shrink-0 rounded-full px-2 py-1.5 text-xs font-medium text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink disabled:opacity-50 after:absolute after:-inset-y-2 after:content-[''] lg:after:content-none"
+                      className="relative flex-shrink-0 rounded-full px-2 py-1.5 text-xs font-medium text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink disabled:opacity-50 after:absolute after:-inset-y-2 after:content-[''] max-md:hidden lg:after:content-none"
                     >
                       {g.newChat}
                     </button>
@@ -9472,13 +9974,22 @@ function GenerateFormInner({
                             ),
                       )}
                     >
-                      <span className={cn(isHero && "hidden sm:inline")}>
+                      <span className={cn(isHero && "hidden sm:inline")} data-send-label>
                         {willAsk
                           ? g.askSend
                           : multiAngleMode && selectedAngles.length > 1
                             ? formatMsg(g.renderAnglesN, { n: selectedAngles.length })
                             : g.sendRender}
                       </span>
+                      {/* The phone dock's short form of a fanned-out label:
+                          RENDER alone, with the fan-out riding the price
+                          chip (×3) — "RENDERIZZA 3 ANGOLAZIONI" on one line
+                          took the dialogue line's room (audit, 2026-09-22). */}
+                      {!isHero && !willAsk && multiAngleMode && selectedAngles.length > 1 && (
+                        <span className="hidden" data-send-short>
+                          {g.sendRender}
+                        </span>
+                      )}
                       {willAsk ? (
                         <SparkIcon className="h-4 w-4" />
                       ) : (
@@ -9490,6 +10001,11 @@ function GenerateFormInner({
                           fan-out label above ("Render 4 angles"). */}
                       {!isHero && !willAsk && sendCreditCost > 0 && !freeTierClient && (
                         <span className="ml-0.5 rounded-[6px] bg-[#1c1209]/[0.14] px-1.5 py-[3px] text-[10.5px] font-medium normal-case tracking-[0.03em] tabular-nums [font-family:var(--font-slate)]">
+                          {multiAngleMode && selectedAngles.length > 1 && (
+                            <span className="hidden" data-send-fan>
+                              ×{selectedAngles.length} ·{" "}
+                            </span>
+                          )}
                           {sendCreditCost === 1
                             ? g.durationCreditsOne
                             : formatMsg(g.durationCredits, { n: sendCreditCost })}
@@ -9792,7 +10308,7 @@ function GenerateFormInner({
         {/* The armed-mode sentence, written out (board's second state):
             never silent arming, never a mystery about what Storyboard did. */}
         {multiAngleMode && contentType === "video" && !submitting && (
-          <p className="mt-2 px-1 text-[11.5px] text-atelier-muted">
+          <p className="mt-2 px-1 text-[11.5px] text-atelier-muted" data-armed-note>
             {formatMsg(g.multiAngleArmedNote, { n: selectedAngles.length })}
           </p>
         )}
@@ -9830,7 +10346,7 @@ function GenerateFormInner({
           error. Rendered only alongside the form: a folded composer keeps
           its pull-up tab clean. */}
       {!composerFolded && (
-        <div className="mt-2.5 text-center">
+        <div className={cn("mt-2.5 text-center", !isHero && "max-md:hidden")}>
           {/* Its own ground. Sitting in the sticky wrapper with a transparent
               background meant the scrolling thread passed straight behind
               these words. Paper rather than surface, and inline-block so the
@@ -9854,6 +10370,22 @@ function GenerateFormInner({
         </div>
       )}
       </div>
+      {/* On a phone the dock is fixed over the tab bar, so the disclaimer
+          leaves it and closes the page's own scroll instead — one flick
+          past the takes shows it just above the dock. */}
+      {!isHero && !premiereShown && (
+        <div className="px-2 pb-3 pt-6 text-center text-[11px] leading-relaxed text-atelier-muted/80 md:hidden">
+          {t.common.aiDisclaimer}{" "}
+          <FeedbackLink
+            label={t.common.aiDisclaimerFeedbackCta}
+            title={t.common.feedbackTitle}
+            placeholder={t.common.feedbackPlaceholder}
+            submitLabel={t.common.feedbackSubmit}
+            sendingLabel={t.common.feedbackSending}
+            sentLabel={t.common.feedbackSent}
+          />
+        </div>
+      )}
     </div>
     </div>
     </>

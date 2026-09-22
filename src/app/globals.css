@@ -1350,3 +1350,544 @@ a,
     background-color: rgba(var(--pj-lamp), 0.1);
   }
 }
+
+/* --------------------------------------------------------------------------
+ * THE SHEET — the Generate composer on phones (below md, the Android app
+ * AND phone browsers; operator, 2026-09-22: "Its your call, the point of
+ * this is to have less clutter and keep it neat and clean").
+ *
+ * At rest the composer is a full-bleed dock above the tab bar (the stage and
+ * takes scroll behind it; the page's bottom room is --dock-h): the values
+ * line — CAST · ENGINE · LENGTH · FRAME, each its own one-tap key — then the
+ * receipt line (FACE · OUTFIT), lit chips for anything armed, the prompt,
+ * and + · DIALOGUE · RENDER. The pull key raises it into a sheet with the
+ * whole slate, the outfit footnote, the modes in words and Assistant
+ * (data-sheet="open"). Hooks are data attributes on the real nodes in
+ * generate-form.tsx; md and up never match any of this.
+ *
+ * Unlayered on purpose: these rules outrank the Tailwind utilities (which
+ * live in @layer utilities) without !important.
+ * ----------------------------------------------------------------------- */
+/* The rise and the sink cover the whole distance between the resting top
+   and the raised top (--sheet-rise, measured when the sheet moves), so the
+   sheet slides out from behind the tab bar instead of popping 200 px and
+   nudging the last 28. */
+@keyframes dock-rise {
+  from {
+    transform: translateY(var(--sheet-rise, 28px));
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes dock-sink {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(var(--sheet-rise, 28px));
+  }
+}
+@keyframes dock-scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes dock-scrim-out {
+  to {
+    opacity: 0;
+  }
+}
+@media (max-width: 767.98px) {
+  [data-dock] {
+    position: fixed;
+    left: 0;
+    right: 0;
+    /* In the app the Generate lamp rises 18 px above the tab bar; the dock
+       sits on the bar itself and lets the lamp rise into its bottom pad.
+       In a phone browser --native-tab-bar is unset and this is 0. The
+       keyboard inset (set from visualViewport) wins when larger. */
+    --dock-bottom: max(calc(var(--native-tab-bar, 18px) - 18px), var(--kb-inset, 0px));
+    bottom: var(--dock-bottom);
+    z-index: 37;
+    width: auto;
+    max-width: none;
+    margin: 0;
+  }
+  .dock-scrim {
+    z-index: 36;
+    animation: dock-scrim-in 220ms ease-out;
+  }
+  .dock-scrim[data-closing] {
+    animation: dock-scrim-out 180ms ease-in forwards;
+  }
+  /* The page fades into the dock's edge instead of being cut by it. */
+  [data-dock]::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 100%;
+    height: 28px;
+    background: linear-gradient(to top, var(--color-atelier-paper), transparent);
+    pointer-events: none;
+  }
+  [data-dock][data-sheet="open"]::before {
+    display: none;
+  }
+  [data-dock] > form,
+  [data-dock] > button {
+    border-radius: 20px 20px 0 0;
+    background: rgba(250, 250, 248, 0.94);
+    box-shadow:
+      0 -1px 0 var(--color-atelier-rule),
+      0 -24px 44px -22px rgba(0, 0, 0, 0.35);
+  }
+  html.dark [data-dock] > form,
+  html.dark [data-dock] > button {
+    background: linear-gradient(180deg, rgba(33, 28, 23, 0.97) 0%, rgba(22, 19, 16, 0.985) 72%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 240, 220, 0.08),
+      0 -1px 0 rgba(0, 0, 0, 0.5),
+      0 -28px 48px -20px rgba(0, 0, 0, 0.85);
+  }
+  [data-dock] > form {
+    padding: 12px 16px calc(10px + env(safe-area-inset-bottom));
+    /* Never taller than the screen above the bar (or the keyboard), in
+       either state: a grown prompt, a block row, lit chips or the Frames
+       panel scroll inside the dock instead of pushing its top — the values
+       line, the pull key, the grabber — off the screen where nothing could
+       scroll it back. 56 px stay above it: the header's line, and a scrim
+       to tap when the sheet is up. */
+    max-height: calc(100dvh - var(--dock-bottom) - 56px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* At rest the value menus, the FRAME panel and the attach menu open
+     ABOVE the dock; while one is open the box stops clipping. */
+  [data-dock][data-sheet="rest"] > form:has([role="listbox"], [role="dialog"], [role="menu"]) {
+    overflow: visible;
+  }
+  html.native-app [data-dock] > form {
+    /* The lamp's 18 px rise, plus 8 px clear of its ring. */
+    padding-bottom: 30px;
+  }
+  /* The page's bottom room is the dock's own height (--dock-h, on the
+     composer's wrapper) plus the tab bar under it — not the column's
+     generic tab-bar padding on top of both. */
+  [data-app-content]:has([data-dock]) {
+    padding-bottom: 12px;
+  }
+  html.native-app [data-app-content]:has([data-dock]) {
+    padding-bottom: calc(var(--native-tab-bar, 18px) - 18px + 12px);
+  }
+  html.native-app [data-dock] > button {
+    padding-bottom: 24px;
+  }
+  [data-dock] [data-dock-ring] {
+    display: none;
+  }
+  [data-dock][data-sheet="open"] > form {
+    animation: dock-rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  [data-dock][data-sheet="open"][data-sheet-closing] > form {
+    animation: dock-sink 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  }
+
+  /* The raised sheet's value menus drop DOWN from their keys, inside the
+     sheet's own scroll — opening upward from the sheet's top edge put them
+     outside it (clipped, or off the screen). */
+  [data-dock][data-sheet="open"] [data-slate-box] [role="listbox"] {
+    top: 100%;
+    bottom: auto;
+    margin-top: 6px;
+    margin-bottom: 0;
+  }
+  /* Menus inside the dock stand on a solid ground: the dock's own blur
+     makes it a backdrop root, so their glass could not blur the page and
+     the takes read through them. At rest they clear the dock's rim. */
+  [data-dock] [role="listbox"],
+  [data-dock] [role="menu"] {
+    background-color: var(--color-atelier-paper);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  [data-dock][data-sheet="rest"] [data-slate-box] [role="listbox"],
+  [data-dock][data-sheet="rest"] [data-dock-frame] [role="dialog"] {
+    margin-bottom: 20px;
+  }
+
+  /* The grabber: a 36 px bar drawn on the band across the dock's top —
+     the band is exactly the form's top pad, so it never lies over the
+     values line. */
+  [data-dock] .dock-grabber {
+    top: 0;
+    height: 12px;
+    /* Its own drag: a swipe up raises the sheet, a swipe down lowers it
+       (the global button rule's "manipulation" would let the page pan). */
+    touch-action: none;
+  }
+  .dock-grabber::before {
+    content: "";
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    margin-left: -18px;
+    border-radius: 2px;
+    background: var(--color-atelier-ink);
+    opacity: 0.2;
+  }
+
+  /* ── The values line (at rest): the slate's controls, labels off, each
+        value a 44 px key; the FRAME cell yields to its one-key form. ── */
+  [data-dock][data-sheet="rest"] [data-slate-row] {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+  }
+  [data-dock][data-sheet="rest"] [data-slate-controls] {
+    flex: none;
+    flex-wrap: nowrap;
+    align-items: center;
+    min-height: 44px;
+    padding-right: 48px;
+  }
+  /* Only the ENGINE gives way when the line is tight: the cast's name,
+     the length and the frame's word stay whole (the engine's name
+     truncates last, after the meter has stepped out below 400 px). */
+  [data-dock][data-sheet="rest"] [data-slate-controls] > div {
+    flex: 0 0 auto;
+    align-items: center;
+  }
+  [data-dock][data-sheet="rest"] [data-slate-controls] > [data-tour-id="tour-video-model"] {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  [data-dock][data-sheet="rest"] [data-cast-name] {
+    max-width: 7.5rem;
+  }
+  [data-dock][data-sheet="rest"] [data-slate-controls] button {
+    min-height: 44px;
+    min-width: 44px;
+    justify-content: center;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  /* One type spec across the four values: they read as one row of keys. */
+  [data-dock][data-sheet="rest"] [data-slate-controls] :is(
+      [data-cast-name],
+      [data-tour-id="tour-video-model"] > button > span:last-child,
+      .font-numeral,
+      [data-dock-frame] > button > span:last-child
+    ) {
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-atelier-ink);
+  }
+  @media (max-width: 399.98px) {
+    [data-dock][data-sheet="rest"] [data-cast-meter] {
+      display: none;
+    }
+    [data-dock][data-sheet="rest"] [data-slate-controls] button {
+      padding-left: 6px;
+      padding-right: 6px;
+    }
+    /* Where OUTFIT may wrap under FACE, a gap parts them instead of a
+       hairline that would start the second line. */
+    [data-dock][data-sheet="rest"] [data-slate-receipt] {
+      column-gap: 14px;
+    }
+    [data-dock][data-sheet="rest"] [data-slate-receipt] span[aria-hidden].w-px {
+      display: none;
+    }
+  }
+  [data-dock][data-sheet="rest"] [data-slate-controls] [data-tour-id="tour-character-select"] > button {
+    padding-left: 0;
+  }
+  [data-dock][data-sheet="rest"] [data-cell-label] {
+    display: none;
+  }
+  [data-dock][data-sheet="rest"] [data-cast-photo] {
+    width: 30px;
+    height: 30px;
+  }
+  [data-dock][data-sheet="rest"] [data-slate-frame] {
+    display: none;
+  }
+  [data-dock][data-sheet="rest"] [data-dock-frame],
+  [data-dock][data-sheet="rest"] [data-dock-outfit] {
+    display: flex;
+  }
+  [data-dock][data-sheet="rest"] [data-image-outfit] {
+    display: none;
+  }
+  /* The slate's hairlines become short ticks between the values. */
+  [data-dock][data-sheet="rest"] [data-slate-controls] span[aria-hidden].w-px,
+  [data-dock][data-sheet="rest"] [data-dock-tick] {
+    align-self: center;
+    height: 14px;
+    margin: 0;
+  }
+
+  /* ── The receipt line (at rest): FACE · OUTFIT on one quiet line. The
+        outfit toggle keeps working here; its footnote waits in the sheet. ── */
+  [data-dock][data-sheet="rest"] [data-slate-receipt] {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+    align-items: center;
+    min-height: 36px;
+    /* A narrow phone wraps OUTFIT under FACE rather than cutting either
+       value short. */
+    flex-wrap: wrap;
+  }
+  [data-dock][data-sheet="rest"] [data-slate-receipt] > * {
+    flex-shrink: 0;
+    max-width: 100%;
+  }
+  [data-dock][data-sheet="rest"] [data-slate-receipt] .truncate {
+    overflow: visible;
+    text-overflow: clip;
+  }
+  [data-dock][data-sheet="rest"] [data-slate-receipt] > div,
+  [data-dock][data-sheet="rest"] [data-slate-receipt] button {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  [data-dock][data-sheet="rest"] [data-slate-receipt] > div:first-of-type {
+    padding-left: 0;
+  }
+  [data-dock][data-sheet="rest"] [data-slate-receipt] button {
+    position: relative;
+    min-height: 36px;
+  }
+  /* The toggle's touch extends DOWN only (to 44 px): reaching up, it took
+     the bottom of the LENGTH and FRAME keys above it. */
+  [data-dock][data-sheet="rest"] [data-slate-receipt] button::after {
+    content: "";
+    position: absolute;
+    inset: 0 0 -8px 0;
+  }
+  [data-dock][data-sheet="rest"] [data-slate-receipt] span[aria-hidden].w-px {
+    align-self: center;
+    height: 14px;
+    margin: 0;
+  }
+  [data-dock][data-sheet="rest"] [data-slate-foot],
+  [data-dock][data-sheet="rest"] [data-foot-mark] {
+    display: none;
+  }
+  [data-dock][data-sheet="rest"] [data-dock-lit] {
+    display: flex;
+  }
+  [data-dock][data-sheet="rest"] [data-preset-row],
+  [data-dock][data-sheet="rest"] [data-advanced-panel],
+  [data-dock][data-sheet="rest"] [data-armed-note] {
+    display: none;
+  }
+
+  /* The raised sheet: the pull key keeps the corner of the first run;
+     the FRAME run below it still spans the whole width. */
+  [data-dock][data-sheet="open"] [data-slate-controls] {
+    padding-right: 48px;
+  }
+  [data-dock][data-sheet="open"] [data-slate-frame] {
+    flex-basis: calc(100% + 48px);
+    margin-right: -48px;
+  }
+  /* One left gutter through the raised sheet: the slate's cell paddings
+     step back to the dock's 16 px, like the pills and switch below. */
+  [data-dock][data-sheet="open"] [data-slate-frame] > div,
+  [data-dock][data-sheet="open"] [data-slate-receipt] > div:first-of-type,
+  [data-dock][data-sheet="open"] [data-slate-foot],
+  [data-dock][data-sheet="open"] [data-slate-controls] > [data-tour-id="tour-character-select"] > button {
+    padding-left: 0;
+  }
+
+  /* ── The create bar: the prompt on its own line, then
+        + · DIALOGUE · RENDER. The keys row dissolves into the prompt box
+        so its parts can sit on that one run; the modes and Assistant wait
+        in the sheet, where they lead the box in words. ── */
+  [data-dock] [data-tour-id="tour-prompt"] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 8px;
+  }
+  [data-dock] [data-tour-id="tour-prompt"] > * {
+    order: 1;
+    flex: 0 0 100%;
+    min-width: 0;
+  }
+  [data-dock] [data-keys],
+  [data-dock] [data-keys-right] {
+    display: contents;
+  }
+  [data-dock] [data-prompt-row] {
+    border-bottom: 1px dashed var(--color-atelier-rule);
+  }
+  [data-dock] [data-prompt-row] textarea {
+    min-height: 52px;
+    max-height: 126px;
+    padding: 4px 0;
+    font-size: 15px;
+    line-height: 22px;
+  }
+  [data-dock] [data-keys-attach] {
+    order: 3;
+    flex: none;
+    margin-top: 4px;
+  }
+  [data-dock] [data-keys-attach] > button:first-child {
+    width: 44px;
+    height: 44px;
+  }
+  [data-dock] [data-dialogue-row] {
+    order: 4;
+    flex: 1 1 0;
+    min-width: 0;
+    height: 44px;
+    margin-top: 4px;
+    padding: 0 0 0 4px;
+    border-top: 0;
+  }
+  /* The whole row is the field's touch: the input fills its 44 px. */
+  [data-dock] [data-dialogue-row] input {
+    height: 44px;
+    text-overflow: ellipsis;
+  }
+  /* The placeholder names the line; the glyph's room goes to the words. */
+  [data-dock] [data-dialogue-row] > svg {
+    display: none;
+  }
+  [data-dock] [data-keys-right] > button {
+    order: 5;
+    flex: none;
+    margin-top: 4px;
+    margin-left: auto;
+  }
+  [data-dock][data-sheet="rest"] [data-keys-modes],
+  [data-dock][data-sheet="rest"] [data-keys-session] {
+    display: none;
+  }
+  [data-dock][data-sheet="open"] [data-keys-modes],
+  [data-dock][data-sheet="open"] [data-keys-session] {
+    order: 0;
+    flex: 0 0 100%;
+    padding: 6px 0;
+  }
+  [data-dock][data-sheet="open"] [data-keys-modes] {
+    flex-wrap: wrap;
+    gap: 8px;
+    border-top: 1px solid var(--color-atelier-rule);
+    padding: 10px 0 4px;
+  }
+  /* The modes flow as one wrap with Enhance after them — their group
+     box kept its max-content width and never wrapped (Frames ran off the
+     edge at 360), and Enhance sat alone on a row above. */
+  [data-dock][data-sheet="open"] [data-keys-modes] > [data-tour-id="tour-advanced-toggle"] {
+    display: contents;
+  }
+  [data-dock][data-sheet="open"] [data-keys-modes] > div {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  [data-dock][data-sheet="open"] [data-keys-enhance] {
+    order: 99;
+  }
+  [data-dock][data-sheet="open"] [data-keys-modes] button {
+    height: 44px;
+    padding: 0 12px;
+    font-size: 13px;
+    box-shadow: inset 0 0 0 1px var(--color-atelier-rule);
+  }
+  [data-dock][data-sheet="open"] [data-keys-modes] button[aria-pressed="true"] {
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-atelier-accent) 45%, transparent);
+  }
+  [data-dock][data-sheet="open"] [data-mode-word],
+  [data-dock][data-sheet="open"] [data-keys-enhance] > span {
+    display: inline;
+  }
+  [data-dock][data-sheet="open"] [data-keys-enhance] {
+    box-shadow: none;
+  }
+
+  /* The resolver's warn/block rows stay at rest, full width: the sentence
+     takes the row, its one-tap remedy sits under it at thumb size. */
+  [data-dock] [data-plan-issues] > div > div > span:first-child {
+    flex-basis: 100%;
+  }
+  [data-dock] [data-plan-issues] button {
+    position: relative;
+    min-height: 32px;
+    padding: 0 14px;
+    font-size: 12px;
+  }
+  [data-dock] [data-plan-issues] button::after {
+    content: "";
+    position: absolute;
+    inset: -6px 0;
+  }
+  [data-dock][data-sheet="open"] [data-keys-session] {
+    padding: 0;
+    min-height: 44px;
+    border-bottom: 1px solid var(--color-atelier-rule);
+    margin-bottom: 2px;
+  }
+  [data-dock][data-sheet="open"] [data-keys-session] > button[role="switch"] {
+    height: 44px;
+  }
+  [data-dock][data-sheet="open"] [data-keys-session] > button[role="switch"] > span:last-child {
+    font-size: 13px;
+  }
+  [data-dock][data-sheet="open"] [data-keys-session] button:not([role="switch"]) {
+    min-height: 44px;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding: 0 10px;
+    font-size: 13px;
+  }
+
+  /* The RENDER key: RENDER stacked over its price chip, in the thumb
+     corner; the ochre key already says "send", so the arrow steps out. */
+  [data-dock] [data-tour-id="tour-send"] {
+    display: grid;
+    grid-auto-flow: row;
+    justify-items: center;
+    align-content: center;
+    row-gap: 4px;
+    height: 46px;
+    min-width: 96px;
+    padding: 0 12px;
+    border-radius: 14px;
+    line-height: 1;
+  }
+  [data-dock] [data-tour-id="tour-send"] > svg {
+    display: none;
+  }
+  [data-dock] [data-tour-id="tour-send"] > span:last-child:not(:first-child) {
+    margin-left: 0;
+  }
+  /* Fanned out, the key keeps its size: RENDER over "×3 · 3 credits". */
+  [data-dock] [data-tour-id="tour-send"]:has([data-send-short]) > [data-send-label] {
+    display: none;
+  }
+  [data-dock] [data-send-short],
+  [data-dock] [data-send-fan] {
+    display: inline;
+  }
+}
+@media (max-width: 767.98px) and (prefers-reduced-motion: reduce) {
+  [data-dock][data-sheet="open"] > form,
+  .dock-scrim {
+    animation: none;
+  }
+}
