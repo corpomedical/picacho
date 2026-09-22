@@ -1946,6 +1946,8 @@ const it = {
     tierSofter: "immagine più morbida",
     lengthOne: "{seconds} s · {n} crediti · circa {minutes} min · in un pezzo solo",
     lengthAll: "Tutti i {seconds} s · {n} crediti · circa {minutes} min · {parts} parti",
+    uploadingShare: "Caricamento · {n}%",
+    cancelClip: "Annulla",
     // ── end door ──
     sub: "Trascina una clip di qualcuno che si esibisce — un ballo, una battuta in camera, una camminata. Mettici il tuo personaggio, porta qualsiasi immagine, o di' semplicemente cosa deve cambiare. Ogni lavoro dice cosa mantiene.",
     dropTitle: "Trascina una clip di un'interpretazione",

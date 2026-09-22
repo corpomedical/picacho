@@ -6,6 +6,7 @@ import { pollGeneration } from "@/lib/generations/actions";
 import { localizeServerText } from "../i18n/server-text";
 import en from "../i18n/messages/en";
 import es from "../i18n/messages/es";
+import { probeLocal, recastStorageObjectUrl, uploadRecastClip } from "./recast-client";
 
 // The poll loop's server action, faked: the door's progress line is the
 // runner's answer to each poll, so the test plays those answers in order.
@@ -304,5 +305,168 @@ describe("the door while a take renders, and after", () => {
     // A person who asked for less motion is not scrolled or flashed at.
     expect(door).toContain('window.matchMedia("(prefers-reduced-motion: reduce)")');
     expect(door).toMatch(/if \(reducedMotion\(\)\) return;\s*document\.getElementById\(`take-\$\{id\}`\)\?\.scrollIntoView/);
+  });
+});
+
+// YOUR CLIP IS READY SOONER (2026-09-22): its length asked of the browser
+// before any upload, the frames for the read sampled while it uploads, and
+// the upload saying how far it has got — with a Cancel.
+describe("the clip, before and while it uploads", () => {
+  const pickFile = door.slice(door.indexOf("async function pickFile("), door.indexOf("async function sendClip("));
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("asks the browser for the length before reserving an upload, and refuses only what it measured", () => {
+    const probe = pickFile.indexOf("const probe = await probeLocal(file);");
+    const refuse = pickFile.indexOf("if (plainly) return fail(recastClipProblemMessage(plainly));");
+    const reserve = pickFile.indexOf("reserveRecastUpload(");
+    expect(probe).toBeGreaterThan(-1);
+    expect(refuse).toBeGreaterThan(probe);
+    expect(reserve).toBeGreaterThan(refuse);
+    // A file the browser cannot read (an HEVC .mov) is never refused here.
+    expect(pickFile).toMatch(/if \(probe\.ok\) \{\s*const plainly = recastLocalLengthProblem\(probe\.seconds\);/);
+  });
+
+  it("samples the frames for the read while the file uploads, not after", () => {
+    const sampling = pickFile.indexOf("const sampling = sampleClip(file)");
+    expect(sampling).toBeGreaterThan(-1);
+    expect(sampling).toBeLessThan(pickFile.indexOf("reserveRecastUpload("));
+    expect(pickFile).toContain("await inspect(mine, { path: reserved.path }, sampling)");
+    // A stopped or failed upload's file is removed, as a replaced one always was.
+    expect(pickFile).toMatch(/if \(sent === "aborted"\) \{\s*void discardRecastUpload\(reserved\.path\)/);
+  });
+
+  it("shows how far the upload has got, and offers Cancel", () => {
+    expect(door).toContain("formatMsg(m.uploadingShare, { n: Math.floor(uploaded * 100) })");
+    expect(door).toContain('role="progressbar"');
+    expect(door).toMatch(/e\.stopPropagation\(\);\s*cancelClip\(\);/);
+    const cancel = door.slice(door.indexOf("function cancelClip("), door.indexOf("async function pickMotion("));
+    expect(cancel).toContain("uploadRef.current?.abort();");
+    expect(cancel).toContain("pickRef.current++;");
+    // The library's own upload stays as the fallback — never worse than before.
+    const send = door.slice(door.indexOf("async function sendClip("), door.indexOf("function cancelClip("));
+    expect(send).toContain("uploadRecastClip({");
+    expect(send).toContain(".storage.from(RECAST_BUCKET).upload(path, file, { contentType })");
+  });
+
+  // A stand-in for the browser's XMLHttpRequest: records the request, and
+  // lets the test play its progress, its answer, or an abort.
+  class FakeXhr {
+    static last: FakeXhr | null = null;
+    method = "";
+    url = "";
+    headers: Record<string, string> = {};
+    body: unknown = null;
+    status = 0;
+    upload: { onprogress: ((e: { lengthComputable: boolean; loaded: number; total: number }) => void) | null } = { onprogress: null };
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    ontimeout: (() => void) | null = null;
+    onabort: (() => void) | null = null;
+    constructor() {
+      FakeXhr.last = this;
+    }
+    open(method: string, url: string) {
+      this.method = method;
+      this.url = url;
+    }
+    setRequestHeader(name: string, value: string) {
+      this.headers[name.toLowerCase()] = value;
+    }
+    send(body: unknown) {
+      this.body = body;
+    }
+    abort() {
+      this.onabort?.();
+    }
+  }
+
+  const file = () => new File([new Uint8Array(1000)], "dance.mp4", { type: "video/mp4" });
+
+  it("sends the library's own request, reporting how much has gone", async () => {
+    vi.stubGlobal("XMLHttpRequest", FakeXhr);
+    const shares: number[] = [];
+    const url = recastStorageObjectUrl("https://proj.supabase.co/", "recast-sources", "u1/recast-abc.mp4");
+    expect(url).toBe("https://proj.supabase.co/storage/v1/object/recast-sources/u1/recast-abc.mp4");
+    const sent = uploadRecastClip({ url, anonKey: "anon", token: "tok", file: file(), signal: new AbortController().signal, onProgress: (s) => shares.push(s) });
+    const xhr = FakeXhr.last!;
+    expect(xhr.method).toBe("POST");
+    expect(xhr.url).toBe(url);
+    expect(xhr.headers).toEqual({ apikey: "anon", authorization: "Bearer tok", "x-upsert": "false" });
+    const body = xhr.body as FormData;
+    expect(body.get("cacheControl")).toBe("3600");
+    expect((body.get("") as File).size).toBe(1000);
+    xhr.upload.onprogress?.({ lengthComputable: true, loaded: 250, total: 1000 });
+    xhr.upload.onprogress?.({ lengthComputable: false, loaded: 0, total: 0 });
+    xhr.upload.onprogress?.({ lengthComputable: true, loaded: 1000, total: 1000 });
+    xhr.status = 200;
+    xhr.onload?.();
+    expect(await sent).toEqual({ ok: true });
+    expect(shares).toEqual([0.25, 1]);
+  });
+
+  it("stops on Cancel, and calls any other answer a failure the door falls back from", async () => {
+    vi.stubGlobal("XMLHttpRequest", FakeXhr);
+    const ctrl = new AbortController();
+    const stopped = uploadRecastClip({ url: "https://x", anonKey: "a", token: "t", file: file(), signal: ctrl.signal, onProgress: () => {} });
+    ctrl.abort();
+    expect(await stopped).toEqual({ ok: false, aborted: true });
+
+    const refused = uploadRecastClip({ url: "https://x", anonKey: "a", token: "t", file: file(), signal: new AbortController().signal, onProgress: () => {} });
+    FakeXhr.last!.status = 400;
+    FakeXhr.last!.onload?.();
+    expect(await refused).toEqual({ ok: false, aborted: false });
+
+    const dropped = uploadRecastClip({ url: "https://x", anonKey: "a", token: "t", file: file(), signal: new AbortController().signal, onProgress: () => {} });
+    FakeXhr.last!.onerror?.();
+    expect(await dropped).toEqual({ ok: false, aborted: false });
+  });
+
+  // A stand-in for the <video> element probeLocal reads the length from.
+  function fakeVideo(answer: "metadata" | "error" | "nothing", size = { duration: 181.04, width: 1080, height: 1920 }) {
+    const video = new EventTarget() as EventTarget & Record<string, unknown>;
+    Object.assign(video, {
+      preload: "",
+      muted: false,
+      playsInline: false,
+      duration: Number.NaN,
+      videoWidth: 0,
+      videoHeight: 0,
+      removeAttribute: () => {},
+      load: () => {},
+    });
+    Object.defineProperty(video, "src", {
+      set() {
+        setTimeout(() => {
+          if (answer === "metadata") {
+            Object.assign(video, { duration: size.duration, videoWidth: size.width, videoHeight: size.height });
+            video.dispatchEvent(new Event("loadedmetadata"));
+          } else if (answer === "error") video.dispatchEvent(new Event("error"));
+        }, 5);
+      },
+    });
+    vi.stubGlobal("document", { createElement: () => video });
+  }
+
+  it("reads the length of a file the browser can open", async () => {
+    fakeVideo("metadata");
+    expect(await probeLocal(file())).toEqual({ ok: true, seconds: 181, width: 1080, height: 1920 });
+  });
+
+  it("says nothing — and so refuses nothing — about a file it cannot open, or opens without a picture", async () => {
+    fakeVideo("error");
+    expect(await probeLocal(file())).toEqual({ ok: false });
+    // An HEVC .mov in a browser that can parse it and not decode it: a length and no picture.
+    fakeVideo("metadata", { duration: 12, width: 0, height: 0 });
+    expect(await probeLocal(file())).toEqual({ ok: false });
+    // No answer at all: the door does not wait past the timeout.
+    vi.useFakeTimers();
+    fakeVideo("nothing");
+    const silent = probeLocal(file(), 1_000);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(await silent).toEqual({ ok: false });
   });
 });

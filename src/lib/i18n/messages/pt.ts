@@ -1947,6 +1947,8 @@ const pt = {
     tierSofter: "imagem mais suave",
     lengthOne: "{seconds} s · {n} créditos · cerca de {minutes} min · numa peça só",
     lengthAll: "Todos os {seconds} s · {n} créditos · cerca de {minutes} min · {parts} partes",
+    uploadingShare: "Enviando · {n}%",
+    cancelClip: "Cancelar",
     // ── end door ──
     sub: "Solte um clipe de alguém atuando — uma dança, uma fala para a câmera, uma caminhada. Coloque o seu personagem, traga qualquer imagem ou apenas diga o que deve mudar. Cada trabalho diz o que mantém.",
     dropTitle: "Solte um clipe de uma atuação",

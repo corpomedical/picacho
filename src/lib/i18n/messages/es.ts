@@ -1947,6 +1947,8 @@ const es = {
     tierSofter: "imagen más suave",
     lengthOne: "{seconds} s · {n} créditos · unos {minutes} min · de una pieza",
     lengthAll: "Los {seconds} s · {n} créditos · unos {minutes} min · {parts} partes",
+    uploadingShare: "Subiendo · {n} %",
+    cancelClip: "Cancelar",
     // ── end door ──
     sub: "Suelta un clip de alguien actuando — un baile, una frase a cámara, un paseo. Mete a tu personaje, trae cualquier imagen o simplemente di qué debe cambiar. Cada trabajo dice qué conserva.",
     dropTitle: "Suelta un clip de una actuación",

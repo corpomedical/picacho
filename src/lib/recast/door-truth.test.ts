@@ -13,6 +13,7 @@ import {
   recastJobPromise,
   recastLengthChoices,
   recastLengthFloor,
+  recastLocalLengthProblem,
   recastMinutes,
   recastSlotOffer,
   recastSuggestJob,
@@ -405,5 +406,24 @@ describe("one piece, or all of it", () => {
     expect(recastLengthChoices("kling-edit", clip, { start: 20, end: 28 })?.one.window).toEqual({ start: 13, end: 28 });
     expect(recastLengthChoices("kling-edit", { seconds: 15, frames: 360 }, { start: 0, end: 15 })).toBeNull();
     expect(recastLengthChoices("kling-pro", clip, { start: 0, end: 28 })).toBeNull();
+  });
+});
+
+describe("a length the server will refuse, said before the upload", () => {
+  it("refuses a clip plainly past the server's own limits, in the server's own terms", () => {
+    // recastClipProblem, the rule inspectRecastClip refuses with: 3–30 s.
+    expect(recastLocalLengthProblem(181)).toBe("too-long");
+    expect(recastLocalLengthProblem(31)).toBe("too-long");
+    expect(recastLocalLengthProblem(1.2)).toBe("too-short");
+    expect(recastLocalLengthProblem(2.4)).toBe("too-short");
+  });
+
+  it("leaves anything within half a second of a limit to the server, which measures the file itself", () => {
+    // The browser's length and ffprobe's can differ by a fraction of a second.
+    for (const s of [2.6, 2.97, 3, 10, 29.9, 30, 30.3, 30.5]) expect(recastLocalLengthProblem(s), String(s)).toBeNull();
+  });
+
+  it("refuses nothing it could not measure", () => {
+    for (const s of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) expect(recastLocalLengthProblem(s)).toBeNull();
   });
 });

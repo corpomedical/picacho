@@ -2067,6 +2067,8 @@ const en = {
     tierSofter: "softer picture",
     lengthOne: "{seconds} s · {n} credits · about {minutes} min · one piece",
     lengthAll: "All {seconds} s · {n} credits · about {minutes} min · {parts} parts",
+    uploadingShare: "Uploading · {n}%",
+    cancelClip: "Cancel",
     // ── end door ──
     sub: "Drop a clip of someone performing — a dance, a line to camera, a walk. Put your character in it, bring in any image, or just say what should change. Each job says what it keeps.",
     dropTitle: "Drop a clip of a performance",

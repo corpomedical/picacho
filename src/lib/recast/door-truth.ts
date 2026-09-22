@@ -19,6 +19,8 @@ import {
   RECAST_ENGINES,
   RECAST_JOB_MAX_SECONDS,
   RECAST_MIN_SECONDS,
+  RECAST_MIN_SIDE_PX,
+  recastClipProblem,
   recastEnginesOf,
   recastLumaDuration,
   recastRestageSeconds,
@@ -354,6 +356,29 @@ export function recastSlotOffer(
         ? { window: fullWindow, seconds: fullSeconds, credits: recastWindowCredits(engine, clip, fullWindow) }
         : null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// A LENGTH THE SERVER WILL REFUSE, SAID BEFORE THE UPLOAD
+//
+// The browser reads a file's length before a byte is uploaded
+// (recast-client.ts probeLocal). A clip plainly outside the server's own
+// limits — recastClipProblem, the very rule inspectRecastClip refuses with —
+// is refused there and then, with the server's own sentence, instead of
+// after a full upload. "Plainly": the browser's length and ffprobe's can
+// differ by a fraction of a second (an audio track that runs on, a rounded
+// container), so only a clip past the limit by more than half a second is
+// refused here. Anything closer, and anything the browser could not read,
+// goes to the server exactly as before; it stays the judge.
+
+const LOCAL_LENGTH_MARGIN = 0.5;
+
+export function recastLocalLengthProblem(seconds: number): "too-short" | "too-long" | null {
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  const at = (s: number) => recastClipProblem({ seconds: s, frames: null, width: RECAST_MIN_SIDE_PX, height: RECAST_MIN_SIDE_PX, bytes: 1 });
+  if (at(seconds - LOCAL_LENGTH_MARGIN) === "too-long") return "too-long";
+  if (at(seconds + LOCAL_LENGTH_MARGIN) === "too-short") return "too-short";
+  return null;
 }
 
 // ---------------------------------------------------------------------------

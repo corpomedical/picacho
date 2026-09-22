@@ -20,7 +20,13 @@ import {
 import { deleteChatAttachment, reserveChatAttachmentPath } from "@/lib/attachments/actions";
 import { requestGenerationCancel } from "@/lib/generations/actions";
 import type { RecastCharacter, RecastMotion, RecastTake } from "@/lib/recast/data";
-import { RECAST_CLIP_TOO_BIG, RECAST_IMAGE_UNUSABLE, RECAST_NOT_A_VIDEO, RECAST_UPLOAD_UNREADABLE } from "@/lib/recast/messages";
+import {
+  RECAST_CLIP_TOO_BIG,
+  RECAST_IMAGE_UNUSABLE,
+  RECAST_NOT_A_VIDEO,
+  RECAST_UPLOAD_UNREADABLE,
+  recastClipProblemMessage,
+} from "@/lib/recast/messages";
 import {
   RECAST_BUCKET,
   RECAST_ENGINES,
@@ -43,13 +49,14 @@ import {
 import { composeRecastBrief, recastCastTokens, recastImageTokens, recastRestageTokens } from "@/lib/recast/recast-brief";
 import { defaultRecastWindow, isWholeClip, recastWindowCredits, type RecastWindow } from "@/lib/recast/trim";
 import { chainPieceCount } from "@/lib/generations/chain";
-import { sampleClip } from "@/lib/recast/recast-client";
+import { probeLocal, recastStorageObjectUrl, sampleClip, uploadRecastClip } from "@/lib/recast/recast-client";
 import {
   recastBlocker,
   recastFitWindow,
   recastJobPromise,
   recastLengthChoices,
   recastLengthFloor,
+  recastLocalLengthProblem,
   recastMinutes,
   recastSlotOffer,
   recastSuggestJob,
@@ -261,6 +268,10 @@ export function MystiqueDoor({
   const [soloPick, setSoloPick] = useState<{ tag: string | null } | null>(null);
   // Why a clip could not be used — said inside the drop area it was dropped on.
   const [clipError, setClipError] = useState("");
+  // How much of the clip has reached storage, 0 to 1 — null until the upload
+  // says (2026-09-22). The upload in flight, so Cancel can stop it.
+  const [uploaded, setUploaded] = useState<number | null>(null);
+  const uploadRef = useRef<AbortController | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const imageFileRef = useRef<HTMLInputElement | null>(null);
   const doorRef = useRef<HTMLDivElement | null>(null);
@@ -362,7 +373,9 @@ export function MystiqueDoor({
 
   useEffect(() => {
     const blobs = imageBlobsRef.current;
+    const upload = uploadRef;
     return () => {
+      upload.current?.abort();
       if (urlRef.current) URL.revokeObjectURL(urlRef.current);
       for (const url of blobs) URL.revokeObjectURL(url);
     };
@@ -507,9 +520,14 @@ export function MystiqueDoor({
     }
   }
 
-  /** The read runs on frames sampled here, while the upload is still going. */
-  async function inspect(mine: number, args: { path?: string; takeId?: string }, sampleFrom: File | string) {
-    const sampled = await sampleClip(sampleFrom);
+  /**
+   * The read runs on frames sampled here. For a file they are sampled WHILE
+   * it uploads (pickFile starts both at once, 2026-09-22) — they used to be
+   * sampled only after the last byte had gone, so the wait was the upload,
+   * then the sampling, then the read.
+   */
+  async function inspect(mine: number, args: { path?: string; takeId?: string }, sampling: ReturnType<typeof sampleClip>) {
+    const sampled = await sampling;
     if (mine !== pickRef.current) return null;
     const res = await inspectRecastClip({
       ...args,
@@ -528,6 +546,7 @@ export function MystiqueDoor({
     setRoles({});
     setSoloPick(null);
     const mine = ++pickRef.current;
+    uploadRef.current?.abort();
     if (source?.kind === "upload" && source.path) void discardRecastUpload(source.path).catch(() => {});
     if (!recastContainerOf(file.type)) {
       setClip(null);
@@ -540,6 +559,7 @@ export function MystiqueDoor({
       return;
     }
     const url = URL.createObjectURL(file);
+    setUploaded(null);
     setClip({ kind: "upload", phase: "uploading", url, path: null, name: file.name });
     // A clip that cannot be used says why where it was dropped (2026-09-22) —
     // not under the Take button at the foot of the form, below a drop area
@@ -549,20 +569,37 @@ export function MystiqueDoor({
       setClip(null);
       setClipError(message);
     };
+    // ITS LENGTH FIRST, from the file in hand (recast-client.ts probeLocal):
+    // a clip the server will plainly refuse is refused before a byte is
+    // uploaded, in the server's own words. When the browser cannot say — an
+    // HEVC .mov it cannot decode — nothing is refused here: the upload and the
+    // server's probe decide, as they always did.
+    const probe = await probeLocal(file);
+    if (mine !== pickRef.current) return;
+    if (probe.ok) {
+      const plainly = recastLocalLengthProblem(probe.seconds);
+      if (plainly) return fail(recastClipProblemMessage(plainly));
+    }
+    // The frames for the read are sampled while the file uploads, not after.
+    const sampling = sampleClip(file).catch(() => ({ ok: false as const, error: RECAST_UPLOAD_UNREADABLE }));
     try {
       const reserved = await reserveRecastUpload({ size: file.size, type: file.type });
       if (mine !== pickRef.current) return;
       if (reserved.error !== null) return fail(reserved.error);
-      const { error: uploadError } = await createClient()
-        .storage.from(RECAST_BUCKET)
-        .upload(reserved.path, file, { contentType: reserved.contentType });
+      const sent = await sendClip(reserved.path, reserved.contentType, file, (share) => {
+        if (mine === pickRef.current) setUploaded(share);
+      });
       if (mine !== pickRef.current) {
         void discardRecastUpload(reserved.path).catch(() => {});
         return;
       }
-      if (uploadError) return fail(RECAST_UPLOAD_UNREADABLE);
+      if (sent === "aborted") {
+        void discardRecastUpload(reserved.path).catch(() => {});
+        return;
+      }
+      if (sent === "failed") return fail(RECAST_UPLOAD_UNREADABLE);
       setClip({ kind: "upload", phase: "inspecting", url, path: reserved.path, name: file.name });
-      const res = await inspect(mine, { path: reserved.path }, file);
+      const res = await inspect(mine, { path: reserved.path }, sampling);
       if (res === null) return;
       if (res.error !== null) return fail(res.error);
       setSeen(res);
@@ -575,6 +612,66 @@ export function MystiqueDoor({
     }
   }
 
+  /**
+   * The clip to storage, saying how much has gone (recast-client.ts
+   * uploadRecastClip — the library's own request, over XMLHttpRequest so it
+   * reports progress and can be stopped). When that one cannot be made —
+   * no session token to hand, or it failed for any reason but a Cancel —
+   * the library's own upload runs instead, without a percentage: the worst
+   * case is the door as it was.
+   */
+  async function sendClip(
+    path: string,
+    contentType: string,
+    file: File,
+    /** How much has gone, 0 to 1; null when the upload in hand cannot say. */
+    onProgress: (share: number | null) => void,
+  ): Promise<"sent" | "aborted" | "failed"> {
+    const ctrl = new AbortController();
+    uploadRef.current = ctrl;
+    try {
+      const supabase = createClient();
+      const projectUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      const token = projectUrl && anonKey ? (await supabase.auth.getSession()).data.session?.access_token : undefined;
+      if (ctrl.signal.aborted) return "aborted";
+      if (projectUrl && anonKey && token) {
+        const sent = await uploadRecastClip({
+          url: recastStorageObjectUrl(projectUrl, RECAST_BUCKET, path),
+          anonKey,
+          token,
+          file,
+          signal: ctrl.signal,
+          onProgress,
+        });
+        if (sent.ok) return "sent";
+        if (sent.aborted || ctrl.signal.aborted) return "aborted";
+      }
+      // The fallback cannot say how far it has got, so no stale percentage is left showing.
+      onProgress(null);
+      const { error } = await supabase.storage.from(RECAST_BUCKET).upload(path, file, { contentType });
+      if (ctrl.signal.aborted) return "aborted";
+      return error ? "failed" : "sent";
+    } finally {
+      if (uploadRef.current === ctrl) uploadRef.current = null;
+    }
+  }
+
+  /**
+   * Cancel (2026-09-22): the clip in hand is let go — its upload stopped
+   * where it is, its read ignored when it lands, and the file removed from
+   * storage (discardRecastUpload never removes one a take stands on).
+   */
+  function cancelClip() {
+    pickRef.current++;
+    uploadRef.current?.abort();
+    uploadRef.current = null;
+    if (source?.kind === "upload" && source.path) void discardRecastUpload(source.path).catch(() => {});
+    setClip(null);
+    setClipError("");
+    setUploaded(null);
+  }
+
   async function pickMotion(motion: RecastMotion) {
     if (starting) return;
     setError("");
@@ -584,10 +681,11 @@ export function MystiqueDoor({
     setRoles({});
     setSoloPick(null);
     const mine = ++pickRef.current;
+    uploadRef.current?.abort();
     if (source?.kind === "upload" && source.path) void discardRecastUpload(source.path).catch(() => {});
     setClip({ kind: "take", phase: "inspecting", url: motion.videoUrl, takeId: motion.takeId, name: motion.title });
     try {
-      const res = await inspect(mine, { takeId: motion.takeId }, motion.videoUrl);
+      const res = await inspect(mine, { takeId: motion.takeId }, sampleClip(motion.videoUrl));
       if (res === null) return;
       if (res.error !== null) {
         setClip(null);
@@ -1056,10 +1154,46 @@ export function MystiqueDoor({
                         {source.kind === "take" ? m.fromTake : m.yourClip}
                         {seen ? ` · ${formatMsg(m.clipMeta, { seconds: seen.seconds, width: seen.width, height: seen.height })}` : ""}
                       </span>
+                      {/* How far the upload has got, and a way to stop it
+                          (2026-09-22) — it was a pulse and "Uploading…" for
+                          as long as the connection took. */}
                       {source.phase !== "ready" && (
-                        <span className={`absolute bottom-3 left-3.5 ${chip} motion-safe:animate-pulse`}>
-                          {source.phase === "uploading" ? m.uploading : m.reading}
-                        </span>
+                        <>
+                          <span
+                            className={`absolute bottom-3 left-3.5 ${chip} tabular-nums ${
+                              source.phase === "uploading" && uploaded !== null ? "" : "motion-safe:animate-pulse"
+                            }`}
+                          >
+                            {source.phase !== "uploading"
+                              ? m.reading
+                              : uploaded === null
+                                ? m.uploading
+                                : formatMsg(m.uploadingShare, { n: Math.floor(uploaded * 100) })}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              cancelClip();
+                            }}
+                            onKeyDown={(e) => e.stopPropagation()}
+                            className={`absolute bottom-3 right-3.5 ${chip} cursor-pointer hover:bg-black/90`}
+                          >
+                            {m.cancelClip}
+                          </button>
+                          {source.phase === "uploading" && uploaded !== null && (
+                            <div
+                              role="progressbar"
+                              aria-label={m.uploading}
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-valuenow={Math.floor(uploaded * 100)}
+                              className="absolute inset-x-0 bottom-0 h-[3px] bg-[rgba(255,255,255,0.08)]"
+                            >
+                              <div className="h-full bg-[#f0cda6] transition-[width] duration-300" style={{ width: `${uploaded * 100}%` }} />
+                            </div>
+                          )}
+                        </>
                       )}
                     </>
                   ) : (
