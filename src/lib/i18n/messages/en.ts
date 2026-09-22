@@ -3147,6 +3147,8 @@ const en = {
     stageRecastJoin: "Joining the parts",
     chainGaveUp: "This take couldn't be finished: a step on our side kept failing, so we stopped trying.",
     takeReportChecked: "Each face was checked at the start, the middle and the end of the take.",
+    takeReportPartial: "Not every face on this take could be checked.",
+    takeReportUnread: "The faces on this take couldn't be checked.",
     sessionExpired: "Your session expired — please log in again.",
     suspended: "Your account is suspended. Contact support if you think this is a mistake.",
     suspendedShort: "This account is suspended.",

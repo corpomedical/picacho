@@ -202,7 +202,11 @@ describe("startRecastTakes", () => {
   });
 
   it("asks for the lock through the payload, and only where a face is cast", () => {
-    expect(start).toContain("identityLock: chars.length === 1 && lockOn ? { threshold: RECAST_LOCK_THRESHOLD, refund: true } : undefined");
+    // Every take with a character is read whole, against the photos actually
+    // sent; the switch decides only the refund (face-lock.ts recastTakeLock).
+    expect(start).toContain("identityLock: recastTakeLock({");
+    expect(start).toContain("threshold: RECAST_LOCK_THRESHOLD,");
+    expect(start).toContain("lockOn,");
     const runner = readFileSync(join(__dirname, "..", "generations", "job-runner.ts"), "utf8");
     // The runner grew the capability, not the lane.
     expect(runner).not.toMatch(/recast/i);
@@ -258,7 +262,7 @@ describe("a take with images of the person's own, or with words alone", () => {
 
   it("records the images it sent, and asks for the lock only where a face is cast", () => {
     expect(start).toContain("images: sentImages.map((image) => image.path)");
-    expect(start).toContain("identityLock: chars.length === 1 && lockOn ?");
+    expect(start).toContain("identityLock: recastTakeLock({");
   });
 });
 
@@ -308,7 +312,7 @@ describe("several characters in one take", () => {
   });
 
   it("promises the face lock only where ONE face is cast", () => {
-    expect(start).toContain("identityLock: chars.length === 1 && lockOn ?");
+    expect(start).toContain("identityLock: recastTakeLock({");
   });
 
   it("prices a Restage take at the photos it actually carries, and the images that actually ride", () => {

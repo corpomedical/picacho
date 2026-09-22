@@ -751,15 +751,23 @@ export function recastRequestBody(
       .filter((p) => p.more.length > 0)
       .map((p) => ({ frontal_image_url: p.front, reference_image_urls: p.more.slice(0, 3) }))
       .slice(0, RECAST_MAX_REFERENCES);
+    // The person's own images are capped on their own, and the still at the
+    // switch rides AFTER them: capping them together dropped the still on a
+    // long take with nobody cast and three images — the one shape whose
+    // added images fill RECAST_MAX_IMAGES exactly — and the guard below then
+    // failed the take after its credits were spent (review, 2026-09-22).
+    const added = (input.imageUrls ?? []).filter((u) => u !== CHAIN_LOOK_PLACEHOLDER).slice(0, RECAST_MAX_IMAGES);
+    const look = (input.imageUrls ?? []).includes(CHAIN_LOOK_PLACEHOLDER) ? [CHAIN_LOOK_PLACEHOLDER] : [];
     const images = [
       ...people.filter((p) => p.more.length === 0).map((p) => p.front),
-      ...(input.imageUrls ?? []).slice(0, RECAST_MAX_IMAGES),
+      ...added,
+      ...look,
     ].slice(0, RECAST_MAX_REFERENCES - elements.length);
     // THE STILL IS NEVER SLICED OFF (2026-09-22). A later part of a long
     // take is told, in its own words, that its last image IS the finished
     // frame it carries on from — the one thing that keeps it on the take's
-    // look and off the footage's. It rides last, so the room slices above
-    // are exactly where it would fall away without a word if a cast ever
+    // look and off the footage's. It rides last, so the room slice above
+    // is exactly where it would fall away without a word if a cast ever
     // grew past what a long take can carry. recastChainFits refuses such a
     // cast before any credit moves; here the body refuses too, rather than
     // send a part told to follow a picture it was never given.

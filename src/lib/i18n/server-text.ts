@@ -232,6 +232,8 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   // The take report's step (lib/generations/face-lock.ts TAKE_REPORT_DETAIL,
   // 2026-09-22) — History lists every step of a take's log with its sentence.
   "Each face was checked at the start, the middle and the end of the take.": "takeReportChecked",
+  "Not every face on this take could be checked.": "takeReportPartial",
+  "The faces on this take couldn't be checked.": "takeReportUnread",
   "This set couldn't be built from that photo, and the build is back in your allowance. A photo that shows more of the place may work better.":
     "setPhotoBuildFailed",
   // Match this shot (lib/sets/messages.ts, 2026-09-11) — the set page's line

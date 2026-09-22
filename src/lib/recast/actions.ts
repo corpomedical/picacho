@@ -5,6 +5,7 @@ import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
 import { ContentPolicyRefusal, type Scores } from "@/lib/generations/content-policy";
 import { checkGenerationAllowance, consumePurchasedCredits } from "@/lib/generations/core";
+import { recastTakeLock } from "@/lib/generations/face-lock";
 import { refundGenerationCosts, saveVideoJob } from "@/lib/generations/job-runner";
 import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
 import { gatePrompt, recentRefusalCount, recordPolicyRefusal } from "@/lib/generations/policy-log";
@@ -1030,12 +1031,24 @@ export async function startRecastTakes(input: {
           userId,
           job: { ...pendingJob, provider: "fal" },
           strictLane: true,
-          // The promise on the door: judged at the start, the middle and the
-          // end, and a miss is not charged for. Only where ONE face is cast:
-          // the lock scores the take against one character, and with several
-          // in the frame it could not say whose face it read.
+          // EVERY take with a character in it is read whole — each face at
+          // the start, the middle and the end, against the photo actually
+          // sent for them (face-lock.ts recastTakeLock, 2026-09-22). The
+          // recast_lock switch decides only the refund, and only where ONE
+          // face is cast: with several in the frame a miss could not be
+          // pinned on the take rather than the reading.
           // A long take is judged whole, once it is joined.
-          identityLock: chars.length === 1 && lockOn ? { threshold: RECAST_LOCK_THRESHOLD, refund: true } : undefined,
+          identityLock: recastTakeLock({
+            cast: chars.map((c) => ({
+              characterId: c.id,
+              photoPath:
+                typeof input?.photoPath === "string" && (c.reference_image_urls ?? []).includes(input.photoPath)
+                  ? input.photoPath
+                  : (c.reference_image_urls?.[0] ?? ""),
+            })),
+            threshold: RECAST_LOCK_THRESHOLD,
+            lockOn,
+          }),
           chain,
           attempts: [
             {

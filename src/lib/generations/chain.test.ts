@@ -325,7 +325,22 @@ describe("the runner's side of a long take", () => {
     expect(stop).toBeGreaterThan(-1);
     expect(stop).toBeLessThan(runner.indexOf("if (chainStep && !chainEncoderAvailable())"));
     expect(stop).toBeLessThan(runner.indexOf("chainStep ? CHAIN_LEASE_SECONDS : ADVANCE_LEASE_SECONDS"));
-    expect(runner.slice(stop, stop + 400)).toContain("return stopBeforeNextPart(generationId, userId, row);");
+    expect(runner.slice(stop, stop + 1200)).toContain("return stopBeforeNextPart(generationId, userId, row);");
+  });
+
+  // OUR FAILURE IS NOT THEIR STOP (review, 2026-09-22). A Stop pressed while
+  // a chainError stands — our own step between parts was failing — used to
+  // settle as user_cancelled and keep the whole price, where the same take
+  // left alone gave up as our error and was settled like a failure. Both stop
+  // sites now end a failing take the way its failure would have.
+  it("a stop over a failing step ends as our failure, at both stop sites", () => {
+    const top = runner.indexOf("if (chainStep && chainStep.index < chainStep.lengths.length - 1 && gen?.cancel_requested) {");
+    expect(runner.slice(top, top + 1200)).toContain("if (row.payload.chainError) {");
+    const topSlice = runner.slice(top, top + 1200);
+    expect(topSlice.indexOf("giveUpOnChain(generationId, userId, row, row.payload.chainError)")).toBeGreaterThan(-1);
+    expect(topSlice.indexOf("giveUpOnChain(generationId, userId, row, row.payload.chainError)")).toBeLessThan(
+      topSlice.indexOf("return stopBeforeNextPart(generationId, userId, row);"),
+    );
   });
 
   it("reads the stop again, fresh, immediately before the paid submit", () => {
@@ -334,9 +349,33 @@ describe("the runner's side of a long take", () => {
     const submit = branch.indexOf("await submitChainPiece(");
     expect(read).toBeGreaterThan(branch.indexOf("prepared = await prepareNextPiece(admin, chain, renderUrl);"));
     expect(read).toBeLessThan(submit);
-    expect(branch.slice(read, submit)).toContain("if (stopNow?.cancel_requested) {\n        return await stopBeforeNextPart(generationId, userId, row);");
+    const fresh = branch.slice(read, submit);
+    expect(fresh).toContain("if (stopNow?.cancel_requested) {");
+    // A stop during a failing step is our failure's ending here too…
+    expect(fresh).toContain("await giveUpOnChain(generationId, userId, row, row.payload.chainError);");
+    // …and a healthy step's stop is still a stop.
+    expect(fresh).toContain("return await stopBeforeNextPart(generationId, userId, row);");
     // A read that fails is never taken as "no stop".
-    expect(branch.slice(read, submit)).toContain("if (stopReadError) {");
+    expect(fresh).toContain("if (stopReadError) {");
+  });
+
+  // A TRY COUNTS WHEN IT STARTS (review, 2026-09-22): a step killed without
+  // throwing — the route's 300 s kill, an OOM, a download that hangs — never
+  // wrote a chainError, so the six tries and the two-hour clock never began
+  // and the take was a dead end the give-up could not reach.
+  it("counts a try before the step runs, and does not run one it could not count", () => {
+    const branch = runner.slice(runner.indexOf("if (chainStep) {\n      // A LONG TAKE's piece has finished"));
+    const marker = branch.indexOf('nextChainError(row.payload.chainError, "the step started and did not come back"');
+    expect(marker).toBeGreaterThan(-1);
+    // Written before the result is fetched, the join runs or the next piece is prepared.
+    expect(marker).toBeLessThan(branch.indexOf("await fetchVideoResult(jobHandle(row))"));
+    expect(marker).toBeLessThan(branch.indexOf("await joinChain("));
+    expect(marker).toBeLessThan(branch.indexOf("await prepareNextPiece(admin, chain, renderUrl)"));
+    // A marker that could not be written releases the claim and leaves the row pending.
+    const markerSlice = branch.slice(marker, branch.indexOf("await fetchVideoResult(jobHandle(row))"));
+    expect(markerSlice).toContain("await releaseAdvanceClaim(admin, generationId, row.provider_request_id);");
+    // A pass that ends well still clears the count with its submit.
+    expect(runner).toContain("chainError: undefined");
   });
 
   it("settles a stop between parts as every stop is: user_cancelled, no refund", () => {

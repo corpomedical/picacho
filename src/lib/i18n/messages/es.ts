@@ -2983,6 +2983,8 @@ const es = {
     stageRecastJoin: "Uniendo las partes",
     chainGaveUp: "No se pudo terminar esta toma: un paso de nuestro lado seguía fallando, así que dejamos de intentarlo.",
     takeReportChecked: "Cada cara se comprobó al principio, a la mitad y al final de la toma.",
+    takeReportPartial: "No se pudo comprobar cada rostro de este take.",
+    takeReportUnread: "Los rostros de este take no se pudieron comprobar.",
     sessionExpired: "Tu sesión caducó — vuelve a iniciar sesión.",
     suspended: "Tu cuenta está suspendida. Contacta con soporte si crees que es un error.",
     suspendedShort: "Esta cuenta está suspendida.",

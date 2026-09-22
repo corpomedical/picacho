@@ -1940,6 +1940,17 @@ export async function advanceGeneration(
     if (!(await claimAdvance(admin, generationId, row.provider_request_id))) {
       return { state: "pending", stage: row.stage, progress: progressOf(row) };
     }
+    // OUR FAILURE IS NOT THEIR STOP (review, 2026-09-22). A standing
+    // chainError means our own step between parts was already failing when
+    // Stop was pressed — the person watched a take that could not move and
+    // gave up on it. Booked as their stop it keeps the whole price
+    // (REFUNDS.user_cancelled); left alone the same take gives up as our
+    // error and is settled like any failure. Whoever presses first must not
+    // decide who pays for our failure, so a stop over a failing step ends
+    // the take the way the failure would have.
+    if (row.payload.chainError) {
+      return giveUpOnChain(generationId, userId, row, row.payload.chainError);
+    }
     return stopBeforeNextPart(generationId, userId, row);
   }
   // A long take's step needs the encoder, and only the routes next.config.ts
@@ -2115,6 +2126,31 @@ export async function advanceGeneration(
       if (standing && chainGivesUp(standing, Date.now())) {
         return await giveUpOnChain(generationId, userId, row, standing);
       }
+      // A TRY COUNTS WHEN IT STARTS (review, 2026-09-22), not only when it
+      // throws. A step that dies without throwing — the route's own 300 s
+      // kill, an out-of-memory, a download that hangs past the lease —
+      // recorded nothing, so neither the six tries nor the two-hour clock
+      // ever started and the take was a dead end again. So the count is
+      // written down BEFORE the step runs, with the claim still fencing the
+      // row. A pass that ends well clears it (the next part's submit below,
+      // or finish on the join); a pass that throws overwrites it with the
+      // real reason at the same count. If this write itself fails, the try
+      // does not run: an uncounted try is the exact hole this closes.
+      const startedTry = nextChainError(row.payload.chainError, "the step started and did not come back", Date.now());
+      {
+        let marker = admin
+          .from("generation_jobs")
+          .update({ payload: { ...row.payload, chainError: startedTry } })
+          .eq("generation_id", generationId);
+        marker = row.provider_request_id
+          ? marker.eq("provider_request_id", row.provider_request_id)
+          : marker.is("provider_request_id", null);
+        const { error: markerError } = await marker;
+        if (markerError) {
+          await releaseAdvanceClaim(admin, generationId, row.provider_request_id);
+          return { state: "pending", stage: row.stage, progress: progressOf(row) };
+        }
+      }
       const { url: renderUrl } = await fetchVideoResult(jobHandle(row));
 
       let prepared: Awaited<ReturnType<typeof prepareNextPiece>>;
@@ -2178,6 +2214,12 @@ export async function advanceGeneration(
         throw new CriticalWriteError(`Couldn't read the stop before part ${k + 2} of ${generationId}: ${stopReadError.message}`);
       }
       if (stopNow?.cancel_requested) {
+        // A stop pressed while this step was failing (a chainError still
+        // stands from an earlier pass) is our failure's ending, not theirs —
+        // the same rule as the check at the top of this advance.
+        if (row.payload.chainError) {
+          return await giveUpOnChain(generationId, userId, row, row.payload.chainError);
+        }
         return await stopBeforeNextPart(generationId, userId, row);
       }
 

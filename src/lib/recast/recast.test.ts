@@ -585,6 +585,13 @@ describe("a long take's cast", () => {
     // Three characters and the still fit, and the still rides last.
     const body = recastRequestBody("kling-edit", { clipUrl, ensemble: [person(1, 3), person(2, 0), person(3, 3)], imageUrls: [CHAIN_LOOK_PLACEHOLDER], brief: "x" });
     expect(body.image_urls).toEqual(["https://x/2.jpg", CHAIN_LOOK_PLACEHOLDER]);
+    // NOBODY CAST, three added images and the still — the room the action
+    // gives such a take (recastImageRoom(0, true) = 3, so 3 + 1 = the four
+    // references exactly). Capping the images and the still TOGETHER at
+    // RECAST_MAX_IMAGES dropped the still here and failed the take after its
+    // credits were spent (review, 2026-09-22).
+    const nobody = recastRequestBody("kling-edit", { clipUrl, imageUrls: ["a", "b", "c", CHAIN_LOOK_PLACEHOLDER], brief: "x" });
+    expect(nobody.image_urls).toEqual(["a", "b", "c", CHAIN_LOOK_PLACEHOLDER]);
     // A body without a still is sliced to its room exactly as before.
     expect(() => recastRequestBody("kling-edit", { clipUrl, ensemble: [person(1, 0), person(2, 0), person(3, 0), person(4, 0)], imageUrls: ["a"], brief: "x" })).not.toThrow();
   });

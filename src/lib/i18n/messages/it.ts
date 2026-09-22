@@ -2982,6 +2982,8 @@ const it = {
     stageRecastJoin: "Unione delle parti",
     chainGaveUp: "Non è stato possibile completare questa ripresa: un passaggio da parte nostra continuava a non riuscire, quindi abbiamo smesso di riprovare.",
     takeReportChecked: "Ogni volto è stato controllato all'inizio, a metà e alla fine della ripresa.",
+    takeReportPartial: "Non è stato possibile controllare ogni volto di questo take.",
+    takeReportUnread: "I volti di questo take non si sono potuti controllare.",
     sessionExpired: "La tua sessione è scaduta — accedi di nuovo.",
     suspended: "Il tuo account è sospeso. Contatta l'assistenza se pensi sia un errore.",
     suspendedShort: "Questo account è sospeso.",

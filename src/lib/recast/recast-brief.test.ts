@@ -84,10 +84,13 @@ describe("a recast's brief", () => {
     expect(withDirection.trimEnd().endsWith("Keep it cold and blue.")).toBe(true);
   });
 
-  it("still reads as an order when there was no read at all", () => {
+  it("still reads as an order when there was no read at all, and claims nothing it cannot know", () => {
     const blind = composeRecastBrief({ ...base, job: "motion", read: null });
     expect(blind).toContain("TASK");
-    expect(blind).toContain("One continuous clip of 8 seconds.");
+    // With no read, nothing says the clip is continuous — only how long it is
+    // (review, 2026-09-22).
+    expect(blind).toContain("A clip of 8 seconds.");
+    expect(blind).not.toContain("continuous");
   });
 
   it("keeps its headings on their own lines — the layout is the point", () => {
@@ -593,31 +596,35 @@ describe("what gives way when a brief is too long — ours, never theirs", () =>
     }
   });
 
-  it("lets the other people go first, the read's account next, then the keeps — in that order, at every length", () => {
+  it("lets the other people go, then our own wording, then the account, then the keeps — and never who is who, the cuts or the place", () => {
     const stages = new Set<string>();
     for (const keeps of [0, 3, 6]) {
       for (let length = 0; length <= 600; length += 10) {
         const brief = compose(length, keeps);
         const spare = ["A", "C", "D"].filter((tag) => brief.includes(`Person ${tag}:`)).length;
-        const castLine = brief.includes("Person B:");
         const account = brief.includes(busy.motion);
-        const place = brief.includes(busy.world);
         const ticked = (brief.match(/wristwatch/g) ?? []).length;
         const shortKeeps = brief.includes("Everyone not named above, and everything else in @Video1, as it is.");
-        // The person played goes only after everyone else has.
-        if (!castLine) expect(spare).toBe(0);
-        // The account goes only after the other people have.
-        if (!account) expect(spare).toBe(0);
-        // Where the place is gone, the whole read is.
-        if (!place) expect(castLine || account).toBe(false);
-        // Our own keep wording shortens only once the read is gone; theirs goes last.
-        if (shortKeeps) expect(place).toBe(false);
-        if (ticked < keeps) expect(shortKeeps).toBe(true);
-        stages.add(spare === 3 ? "whole" : spare > 0 ? "others going" : account ? "account left" : place ? "who is who left" : !shortKeeps ? "read gone" : ticked === keeps ? "ours short" : "ticks going");
+        // WHAT NEVER GOES (review, 2026-09-22): who the cast replaces, the
+        // window's length and cuts, and the place by name. "Replace Person B"
+        // must say who Person B is, and a window with a cut in it is never
+        // called one continuous shot.
+        expect(brief).toContain("Person B:");
+        expect(brief).toContain("cutting at");
+        expect(brief).toContain(busy.world);
+        // Our own wording shortens only after the other people have gone.
+        if (shortKeeps) expect(spare).toBe(0);
+        // The account goes only after our own wording has shortened.
+        if (!account) expect(shortKeeps).toBe(true);
+        // The person's ticked keeps go last of all.
+        if (ticked < keeps) expect(account).toBe(false);
+        stages.add(
+          spare === 3 ? "whole" : spare > 0 ? "others going" : !shortKeeps ? "others gone" : account ? "ours short" : ticked === keeps ? "account gone" : "ticks going",
+        );
       }
     }
     // Every step was reached somewhere on the way.
-    expect([...stages].sort()).toEqual(["account left", "others going", "ours short", "read gone", "ticks going", "who is who left", "whole"].sort());
+    expect([...stages].sort()).toEqual(["account gone", "ours short", "others going", "others gone", "ticks going", "whole"].sort());
   });
 
   it("fits every shape of take the door can send without ever dropping a line of the keep list", () => {

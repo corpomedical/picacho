@@ -209,7 +209,9 @@ function imageLines(tokens: string[]): string[] {
 }
 
 function sourceLines(read: RecastRead | null, seconds: number): string[] {
-  if (!read) return [`One continuous clip of ${Math.round(seconds)} seconds.`];
+  // With no read there is no ground to call the clip continuous — its length
+  // is all that is known (review, 2026-09-22).
+  if (!read) return [`A clip of ${Math.round(seconds)} seconds.`];
   // The account of what happens gives way before who is who (composeRecastBrief).
   const out = read.motion ? [read.motion] : [];
   out.push(
@@ -299,10 +301,15 @@ function castingsIn(casting: BriefCommon["casting"]): RecastCasting[] {
  *
  *   1. the read's account of the other people — anyone not cast, the lead
  *      last of them (the video shows them anyway);
- *   2. the read's account itself — what happens first, then the rest;
- *   3. the keeps: our own KEEP wording first, said again in its short form
- *      (the same promises in a third of the words), then the things the
- *      person left ticked, the last ticked first.
+ *   2. our own KEEP wording, said again in its short form (the same
+ *      promises in a third of the words);
+ *   3. the read's account of what happens (the video shows it);
+ *   4. the keeps the person ticked, the last ticked first.
+ *
+ * The read is never dropped whole (review, 2026-09-22): who the cast
+ * replaces, the clip's length and cuts, and the place by name stay — a
+ * brief that says "Replace Person A" must say who Person A is, and a
+ * window with a cut in it is never called one continuous shot.
  *
  * Two things never give way. The person's direction (at most 600
  * characters) is never cut. And a later part's CONTINUITY wording is never
@@ -323,25 +330,43 @@ export function composeRecastBrief(input: BriefInput): string {
   for (;;) {
     const text = composeUncut({ ...input, seconds, read, keeps, short });
     if (Array.from(text).length <= max) return text;
-    if (read) {
-      // 1. The people nobody is cast as: those after the lead first, then the lead.
-      const spare = read.people.map((p, i) => ({ p, i })).filter(({ p }) => !cast.has(p.tag));
-      const next = spare.filter(({ p }) => !p.lead).pop() ?? spare.pop();
-      if (next) {
-        read = { ...read, people: read.people.filter((_, i) => i !== next.i) };
-        continue;
-      }
-      // 2. The account itself: what happens (the video shows it), then who is who and where.
-      read = read.motion ? { ...read, motion: "" } : null;
+    // 1. The people nobody is cast as: those after the lead first, then the lead.
+    const spare = (read?.people ?? []).map((p, i) => ({ p, i })).filter(({ p }) => !cast.has(p.tag));
+    const next = spare.filter(({ p }) => !p.lead).pop() ?? spare.pop();
+    if (read && next) {
+      read = { ...read, people: read.people.filter((_, i) => i !== next.i) };
       continue;
     }
-    // 3. Our own keep wording, short; then the keeps the person ticked, the last first.
+    // 2. Our own keep wording, short.
     if (!short) {
       short = true;
       continue;
     }
+    // 3. The account of what happens (the video shows it). The rest of the
+    // read stays whatever happens: the cast people's lines, the length and
+    // its cuts, and the place by name — dropping the read whole left
+    // "Replace Person A" with nobody saying who Person A is, and called a
+    // window with a cut in it one continuous shot (review, 2026-09-22).
+    if (read?.motion) {
+      read = { ...read, motion: "" };
+      continue;
+    }
+    // 4. The keeps the person ticked, the last first.
     if (keeps.length > 0) {
       keeps = keeps.slice(0, -1);
+      continue;
+    }
+    // 5. Only a take the door cannot send gets here (a four-character long
+    // take is refused before composing): the cast people's own lines, the
+    // lead last, then the read's remnants — everything before a word of the
+    // person's direction.
+    if (read && read.people.length > 0) {
+      const last = read.people.map((p, i) => ({ p, i })).filter(({ p }) => !p.lead).pop() ?? { i: read.people.length - 1 };
+      read = { ...read, people: read.people.filter((_, i) => i !== last.i) };
+      continue;
+    }
+    if (read) {
+      read = null;
       continue;
     }
     return dropKeepLines(text, max);

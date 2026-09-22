@@ -92,7 +92,10 @@ export function recastTakeLock(input: { cast: CastPhoto[]; threshold: number; lo
   if (cast.length === 0) return undefined;
   return {
     threshold: input.threshold,
-    refund: input.lockOn && cast.length === 1 && input.threshold > 0,
+    // The refund needs the whole cast to be one REAL entry: an invalid
+    // second entry validCast dropped must not turn a two-character take
+    // into a refund-eligible "single" (review, 2026-09-22).
+    refund: input.lockOn && cast.length === 1 && input.cast.length === 1 && input.threshold > 0,
     photoPath: cast[0].photoPath,
     cast,
   };
@@ -276,8 +279,10 @@ export function castScores(reads: FaceRead[]): number[] {
 /** The step's name in pipeline_log. */
 export const TAKE_REPORT_STEP = "take-report";
 
-/** The step's sentence, as History shows it — mapped for translation in lib/i18n/server-text.ts. */
+/** The step's sentences, as History shows them — mapped for translation in lib/i18n/server-text.ts. */
 export const TAKE_REPORT_DETAIL = "Each face was checked at the start, the middle and the end of the take.";
+export const TAKE_REPORT_PARTIAL = "Not every face on this take could be checked.";
+export const TAKE_REPORT_UNREAD = "The faces on this take couldn't be checked.";
 
 export type TakeReportStep = {
   step: typeof TAKE_REPORT_STEP;
@@ -285,9 +290,15 @@ export type TakeReportStep = {
   report: { faces: TakeReportFace[] };
 };
 
-/** The report step for a take's readings. */
+/** The report step for a take's readings — its sentence says what actually happened (review, 2026-09-22). */
 export function takeReportStep(reads: FaceRead[]): TakeReportStep {
-  return { step: TAKE_REPORT_STEP, detail: TAKE_REPORT_DETAIL, report: { faces: reads.map(faceMoments) } };
+  const faces = reads.map(faceMoments);
+  const judged = faces.filter((f) => f.lowest !== null).length;
+  // "Each face was checked" only when each one WAS; a reading that ran out
+  // of time or found no frame says so, instead of claiming a check that
+  // never happened — the report's own lowest: null already means unread.
+  const detail = judged === faces.length && faces.length > 0 ? TAKE_REPORT_DETAIL : judged > 0 ? TAKE_REPORT_PARTIAL : TAKE_REPORT_UNREAD;
+  return { step: TAKE_REPORT_STEP, detail, report: { faces } };
 }
 
 /**
