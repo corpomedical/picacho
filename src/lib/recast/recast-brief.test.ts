@@ -247,7 +247,13 @@ describe("a take with nobody cast — words, and images of their own", () => {
 
   it("changes what the words say, keeps the performance, and replaces nobody", () => {
     const brief = composeRecastBrief(words);
-    expect(brief).toContain("Change @Video1 exactly as the direction below says, and nothing more. Keep the performance exactly as it is.");
+    // Held until the words change it (2026-09-22) — on a take of one piece.
+    expect(brief).toContain(
+      "Change @Video1 exactly as the direction below says, and nothing more. Keep the performance exactly as it is, unless the direction below changes it.",
+    );
+    expect(composeRecastBrief({ ...words, longTake: true })).toContain(
+      "Change @Video1 exactly as the direction below says, and nothing more. Keep the performance exactly as it is.",
+    );
     expect(brief).toContain("Everything the direction does not change stays exactly as it is in @Video1.");
     expect(brief).not.toContain("Replace");
     expect(brief).not.toContain("THE CHARACTER");
@@ -634,7 +640,9 @@ describe("what gives way when a brief is too long — ours, never theirs", () =>
           ...(continuing && names.look ? { look: names.look } : {}),
         });
         expect(brief.endsWith(direction), `${n} cast, continuing ${continuing}`).toBe(true);
-        expect(brief, `${n} cast, continuing ${continuing}`).toMatch(/- (Everything else stays exactly as it is in @Video1\.|Everyone not named above, and everything else in @Video1, as it is\.)\n\nDIRECTION\n/);
+        expect(brief, `${n} cast, continuing ${continuing}`).toMatch(
+          /- (Everything else stays exactly as it is in @Video1\.|Everyone not named above, and everything else in @Video1, as it is\.|Everything the direction does not change stays exactly as it is in @Video1\.)\n\nDIRECTION\n/,
+        );
       }
     }
   });
@@ -704,6 +712,106 @@ describe("every job, every cast, every length: the whole direction is in the bod
       }
     }
   }
+});
+
+// YOUR WORDS WIN OVER OUR OWN KEEP LIST (2026-09-22): "start close on her
+// face and pull out", "arms crossed", "dress her as Cleopatra" were sent
+// beside KEEP EXACTLY the camera, the performance and everything else.
+describe("your words win over our own keep list — on a take of one piece", () => {
+  const UNLESS = "unless the direction below changes it";
+  const direction = "Start close on her face and slowly pull out; she stands with her arms crossed.";
+  const keepBlock = (brief: string) => {
+    const lines = brief.split("\n");
+    const at = lines.findIndex((l) => l === "KEEP" || l === "KEEP EXACTLY");
+    const end = lines.indexOf("", at);
+    return { heading: lines[at], bullets: lines.slice(at + 1, end === -1 ? undefined : end) };
+  };
+  const shapes = {
+    element: { tag: "A", characterName: "Eva", token: "@Element1" },
+    image: { tag: "A", characterName: "Eva", token: "@Image1" },
+    group: { tag: "B", many: true, characterName: "Anubis", token: "@Image1" },
+    together: [
+      { tag: "A", characterName: "Eva", token: "@Element1" },
+      { tag: "B", many: true, characterName: "Anubis", token: "@Image1" },
+    ],
+    nobody: null,
+  };
+  const released = (casting: (typeof shapes)[keyof typeof shapes], more: Partial<{ keeps: number; direction: string; longTake: boolean; continuing: boolean }> = {}) =>
+    composeRecastBrief({
+      job: "scene",
+      engine: "kling-edit",
+      read: busy,
+      window: { start: 0, end: 12 },
+      casting,
+      keeps: keepsOf(more.keeps ?? 2),
+      direction: more.direction ?? direction,
+      images: ["@Image2"],
+      ...(more.longTake ? { longTake: true } : {}),
+      ...(more.continuing ? { continuing: true, look: "@Image3" } : {}),
+    });
+
+  it("holds every keep line only until the direction changes it — none stays unconditional", () => {
+    for (const [name, casting] of Object.entries(shapes)) {
+      // A light take, and one long enough that our own keep wording goes short.
+      for (const brief of [released(casting), released(casting, { keeps: 6, direction: directionOf(600) })]) {
+        const { heading, bullets } = keepBlock(brief);
+        expect(heading, name).toBe("KEEP");
+        expect(bullets.length, name).toBeGreaterThan(2);
+        for (const line of bullets) {
+          if (line === "- Everything the direction does not change stays exactly as it is in @Video1.") continue;
+          expect(line, `${name}: ${line}`).toContain(UNLESS);
+        }
+        // The task's own promise about the performance, too.
+        expect(brief, name).toContain(`Keep the performance exactly as it is, ${UNLESS}.`);
+        expect(brief, name).not.toContain("KEEP EXACTLY");
+        expect(brief, name).not.toContain("unchanged:");
+      }
+    }
+  });
+
+  it("still keeps whatever the words do not change: the place by name, the ticked keeps, and the rest", () => {
+    const brief = released(shapes.element);
+    expect(brief).toContain(`- The place it happens in — ${UNLESS}: ${busy.world}`);
+    expect(brief).toContain(`- a silver wristwatch on the left wrist of the lead performer, item 1 that must survive — ${UNLESS}.`);
+    expect(brief).toContain("- Everything the direction does not change stays exactly as it is in @Video1.");
+    // The character is still the character: face, hair and build are not keep lines.
+    expect(brief).toContain("Their face, hair and build come from those photos and must stay the same in every frame.");
+    expect(brief.endsWith(direction)).toBe(true);
+  });
+
+  it("is word for word today's brief when there is no direction", () => {
+    for (const [name, casting] of Object.entries(shapes)) {
+      if (casting === null) continue; // Words alone always have a direction.
+      const plain = released(casting, { direction: "" });
+      expect(plain, name).toBe(released(casting, { direction: "", longTake: true }));
+      expect(keepBlock(plain).heading, name).toBe("KEEP EXACTLY");
+      expect(plain, name).not.toContain(UNLESS);
+    }
+  });
+
+  it("never reaches a long take's parts — the first or the later ones", () => {
+    // Released there, "start close and pull out" could restart at the top of
+    // every part, and a later part follows the footage it is handed again
+    // (21175109, 825c6f53). Every part keeps today's lines exactly.
+    for (const [name, casting] of Object.entries(shapes)) {
+      for (const continuing of [false, true]) {
+        const part = released(casting, { longTake: true, continuing });
+        expect(keepBlock(part).heading, `${name} ${continuing}`).toBe("KEEP EXACTLY");
+        for (const line of keepBlock(part).bullets) expect(line, `${name} ${continuing}`).not.toContain(UNLESS);
+        expect(part, `${name} ${continuing}`).toContain("Keep the performance exactly as it is.");
+        expect(part, `${name} ${continuing}`).not.toContain(`exactly as it is, ${UNLESS}`);
+      }
+      // A later part is never released, even if nobody said it was a long take.
+      expect(released(casting, { continuing: true }), name).not.toContain(`exactly as it is, ${UNLESS}`);
+    }
+  });
+
+  it("belongs to Into the clip alone — the other jobs' briefs are as they were", () => {
+    for (const job of ["restage", "motion", "world"] as const) {
+      const brief = composeRecastBrief({ job, read: busy, window: { start: 0, end: 10 }, casting: job === "world" ? null : shapes.element, keeps: keepsOf(2), direction });
+      expect(brief, job).not.toContain(UNLESS);
+    }
+  });
 });
 
 describe("the names a take's words use", () => {

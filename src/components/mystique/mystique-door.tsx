@@ -319,6 +319,9 @@ export function MystiqueDoor({
           : job === "scene" && engine === "kling-edit"
             ? recastImageTokens(castTokens, briefImages)
             : [],
+        // A take of one piece lets the direction change what the keep list
+        // keeps; a long take's parts never do (recast-brief.ts, YOUR WORDS WIN).
+        longTake: briefInParts,
       })
     : "";
 

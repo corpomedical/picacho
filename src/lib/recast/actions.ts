@@ -634,7 +634,9 @@ export async function startRecastTakes(input: {
     castings.length === 0 ? null : castings.length === 1 ? castings[0] : castings;
   // A take's brief: composed for the WINDOW with the whole read — the door's
   // own call (mystique-door.tsx), so what it shows is what is sent — and
-  // fitted inside this engine's own prompt (recast.ts promptMax).
+  // fitted inside this engine's own prompt (recast.ts promptMax). A take of
+  // one piece lets the person's direction change what the keep list keeps;
+  // a long take's parts never do (recast-brief.ts, YOUR WORDS WIN).
   const briefFor = (chars: Character[]) =>
     composeRecastBrief({
       job: spec.job,
@@ -645,6 +647,7 @@ export async function startRecastTakes(input: {
       keeps,
       direction,
       images: namesFor(chars).images,
+      longTake: chaining,
     });
   // A long take's pieces each carry their own brief: their own stretch of the
   // window (its length, only the cuts inside it), and from the second piece
@@ -669,6 +672,8 @@ export async function startRecastTakes(input: {
         continuing: k > 0,
         images: names.images,
         ...(look ? { look } : {}),
+        // Every part, the first included: the keep lines hold as they always did.
+        longTake: true,
       });
     });
 

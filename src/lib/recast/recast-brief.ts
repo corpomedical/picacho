@@ -240,6 +240,13 @@ type BriefCommon = {
   direction: string;
   /** A later piece of a long take (chain.ts): its first second is already finished and must be carried on from. */
   continuing?: boolean;
+  /**
+   * One part of a take rendered in parts — ANY part, the first included
+   * (chain.ts). Such a take keeps its keep lines as they always were: see
+   * "YOUR WORDS WIN" in composeUncut for why only a take of one piece lets
+   * the person's direction change what the list keeps.
+   */
+  longTake?: boolean;
   /** The engine's names for the images the person added (recastImageTokens, or Restage's "Image n"). */
   images?: string[];
   /**
@@ -365,6 +372,28 @@ function composeUncut(input: BriefCommon & { seconds: number; short?: boolean })
   const direction = cleanText(input.direction, RECAST_DIRECTION_MAX_CHARS);
   const parts: string[] = [];
 
+  // YOUR WORDS WIN OVER OUR OWN KEEP LIST (2026-09-22). The operator wrote
+  // "start close on her face and pull out", "arms crossed", "dress her as
+  // Cleopatra" — and the same brief told the engine to KEEP EXACTLY the
+  // clip's camera, its performance and everything else, so our own list
+  // overruled his words. On Into the clip, when the person wrote a
+  // direction, every keep line now holds "unless the direction below
+  // changes it", and the list closes on "everything the direction does not
+  // change stays exactly as it is": what their words leave alone is still
+  // kept. No reading of their words is needed or made — the condition is the
+  // same whatever they wrote, and the engine judges what they mean.
+  //
+  // ONLY A TAKE OF ONE PIECE (up to 15 s). A long take's later parts are
+  // handed the footage again and follow it wherever the keep lines stop
+  // holding them: that is how two takes of the operator's crowd came back
+  // as his students at the join (21175109, 825c6f53). Released there, a
+  // "start close and pull out" could restart at the top of every part. So
+  // every part of a long take — the first included — keeps today's lines
+  // exactly, until a chained take is proven to hold a released one.
+  const released = input.job === "scene" && direction !== "" && input.longTake !== true && input.continuing !== true;
+  /** The TASK's own promise to keep the performance, held the same way. */
+  const keepPerformance = released ? `Keep the performance exactly as it is, ${UNLESS}.` : "Keep the performance exactly as it is.";
+
   if (input.job === "world") {
     parts.push(
       "TASK",
@@ -476,7 +505,7 @@ function composeUncut(input: BriefCommon & { seconds: number; short?: boolean })
     const video = "@Video1";
     parts.push(
       "TASK",
-      `Change ${video} exactly as the direction below says, and nothing more. Keep the performance exactly as it is.`,
+      `Change ${video} exactly as the direction below says, and nothing more. ${keepPerformance}`,
       "",
       ...imageLines(images),
       "THE SOURCE",
@@ -490,7 +519,7 @@ function composeUncut(input: BriefCommon & { seconds: number; short?: boolean })
             "",
           ]
         : []),
-      ...wordsKeepLines({ video, world: input.read?.world, keeps: input.keeps, short: input.short }),
+      ...wordsKeepLines({ video, world: input.read?.world, keeps: input.keeps, short: input.short, released }),
     );
     if (direction) parts.push("", "DIRECTION", direction);
     return cleanBrief(parts.join("\n"), Number.POSITIVE_INFINITY);
@@ -520,7 +549,7 @@ function composeUncut(input: BriefCommon & { seconds: number; short?: boolean })
       );
     }
     if (placed.length > 0) task.push(`Put ${placed.map((c) => c.token).join(" and ")} into ${video} as the direction below says.`);
-    task.push("They all appear together in this one video. Keep the performance exactly as it is.");
+    task.push(`They all appear together in this one video. ${keepPerformance}`);
     parts.push(
       "TASK",
       task.join(" "),
@@ -545,7 +574,7 @@ function composeUncut(input: BriefCommon & { seconds: number; short?: boolean })
             "",
           ]
         : []),
-      ...castKeepLines({ video, world: input.read?.world, keeps: input.keeps, short: input.short }),
+      ...castKeepLines({ video, world: input.read?.world, keeps: input.keeps, short: input.short, released }),
     );
     if (direction) parts.push("", "DIRECTION", direction);
     return cleanBrief(parts.join("\n"), Number.POSITIVE_INFINITY);
@@ -564,7 +593,7 @@ function composeUncut(input: BriefCommon & { seconds: number; short?: boolean })
   const photos = token === "@Element1" ? "those photos" : "the image";
   parts.push(
     "TASK",
-    `Replace ${who} in ${video} with ${character}. Keep the performance exactly as it is.`,
+    `Replace ${who} in ${video} with ${character}. ${keepPerformance}`,
     "",
     "THE CHARACTER",
     `${name} — ${token ? `${token}, ` : ""}the person in the reference ${token === "@Element1" ? "images" : "image"}. Their face, hair and build come from ${photos} and must stay the same in every frame.`,
@@ -599,11 +628,27 @@ function composeUncut(input: BriefCommon & { seconds: number; short?: boolean })
           "",
         ]
       : []),
-    ...castKeepLines({ video, world: input.read?.world, keeps: input.keeps, short: input.short }),
+    ...castKeepLines({ video, world: input.read?.world, keeps: input.keeps, short: input.short, released }),
   );
   if (direction) parts.push("", "DIRECTION", direction);
   return cleanBrief(parts.join("\n"), Number.POSITIVE_INFINITY);
 }
+
+/** The condition a released keep line holds under (YOUR WORDS WIN, composeUncut). */
+const UNLESS = "unless the direction below changes it";
+
+/** One of the person's ticked keeps, held only until their own words change it. */
+const heldUnless = (what: string) => `${what.replace(/[.\s]+$/, "")} — ${UNLESS}.`;
+
+type KeepInput = {
+  video: string;
+  world: string | undefined;
+  keeps: RecastKeep[];
+  /** Half the words for the same promises (composeRecastBrief's third step). */
+  short?: boolean;
+  /** Every line held only until the direction changes it (YOUR WORDS WIN, composeUncut). */
+  released?: boolean;
+};
 
 /**
  * What a take with someone cast in it keeps — one character or several.
@@ -611,9 +656,31 @@ function composeUncut(input: BriefCommon & { seconds: number; short?: boolean })
  * `short` is the same promises in half the words, said only when the brief
  * would not otherwise fit its engine (composeRecastBrief's third step): the
  * full wording is the one the passing takes were sent with.
+ *
+ * `released`: every line holds only until the person's direction changes it,
+ * and the list closes on what their words leave alone (composeUncut).
  */
-function castKeepLines(input: { video: string; world: string | undefined; keeps: RecastKeep[]; short?: boolean }): string[] {
+function castKeepLines(input: KeepInput): string[] {
   const { video, world } = input;
+  if (input.released) {
+    return [
+      "KEEP",
+      ...(input.short
+        ? [
+            bullet(`The performance, the camera, the cuts, the timing, the lighting${world ? "" : " and the setting"} — each ${UNLESS}.`),
+            ...(world ? [bullet(`The place it happens in — ${UNLESS}: ${world}`)] : []),
+          ]
+        : [
+            bullet(`The performance: every gesture, every step, every expression, on the same frames — ${UNLESS}.`),
+            bullet(`The framing, the camera move, the cuts and the timing — ${UNLESS}.`),
+            bullet(world ? `The place it happens in — ${UNLESS}: ${world}` : `The setting — ${UNLESS}.`),
+            bullet(`The lighting — ${UNLESS}.`),
+          ]),
+      bullet(`Everyone in ${video} who is not named above, as they are — ${UNLESS}.`),
+      ...input.keeps.map((k) => bullet(heldUnless(k.what))),
+      bullet(`Everything the direction does not change stays exactly as it is in ${video}.`),
+    ];
+  }
   if (input.short) {
     return [
       "KEEP EXACTLY",
@@ -644,9 +711,23 @@ function castKeepLines(input: { video: string; world: string | undefined; keeps:
   ];
 }
 
-/** What a take with nobody cast keeps: everything its words do not change. `short` as castKeepLines. */
-function wordsKeepLines(input: { video: string; world: string | undefined; keeps: RecastKeep[]; short?: boolean }): string[] {
+/** What a take with nobody cast keeps: everything its words do not change. `short` and `released` as castKeepLines. */
+function wordsKeepLines(input: KeepInput): string[] {
   const { video, world } = input;
+  if (input.released) {
+    return [
+      "KEEP",
+      ...(input.short
+        ? [bullet(`The performance, the camera, the cuts and the timing — each ${UNLESS}.`)]
+        : [
+            bullet(`The performance: every gesture, every step, every expression, on the same frames — ${UNLESS}.`),
+            bullet(`The framing, the camera move, the cuts and the timing — ${UNLESS}.`),
+          ]),
+      ...(world ? [bullet(`The place it happens in — ${UNLESS}: ${world}`)] : []),
+      ...input.keeps.map((k) => bullet(heldUnless(k.what))),
+      bullet(`Everything the direction does not change stays exactly as it is in ${video}.`),
+    ];
+  }
   return [
     "KEEP EXACTLY",
     ...(input.short

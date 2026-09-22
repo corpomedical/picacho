@@ -356,7 +356,7 @@ describe("the words a take is sent", () => {
   it("composes for the window with the whole read, the door's own way, inside the engine's own limit", () => {
     const server = keysOfCall(start, "const briefFor = (chars: Character[]) =>");
     const shown = keysOfCall(door, "const brief = briefWindow");
-    expect(server).toEqual(["job", "engine", "read", "window", "casting", "keeps", "direction", "images"]);
+    expect(server).toEqual(["job", "engine", "read", "window", "casting", "keeps", "direction", "images", "longTake"]);
     expect(shown).toEqual(server);
     // The read handed to both is the WHOLE clip's; the window cuts it.
     expect(start).toContain("const read = reboundRecastRead(input?.read, clip.seconds)");
@@ -367,6 +367,20 @@ describe("the words a take is sent", () => {
     const parts = keysOfCall(start, "const pieceBriefsFor = (plan");
     expect(parts.slice(0, 4)).toEqual(["job", "engine", "read", "window"]);
     expect(start).toContain("window: { start: window.start + from / CHAIN_FPS, end: window.start + (from + frames) / CHAIN_FPS }");
+  });
+
+  it("lets the direction change the keep list on a take of one piece, and never on a long take's parts", () => {
+    // recast-brief.ts YOUR WORDS WIN (2026-09-22): a long take's later parts
+    // are handed the footage again, so every part keeps today's lines.
+    const one = start.slice(at("const briefFor = (chars: Character[]) =>"), at("const pieceBriefsFor = (plan"));
+    expect(one).toContain("longTake: chaining,");
+    const parts = start.slice(at("const pieceBriefsFor = (plan"), at("await gatePrompt({"));
+    expect(parts).toContain("longTake: true,");
+    expect(parts).not.toContain("longTake: chaining");
+    // Every part of a long take is composed by pieceBriefsFor, never by briefFor.
+    expect(start).toContain("chainPrep ? pieceBriefsFor(chainPrep.plan, chars) : [briefFor(chars)]");
+    // The door shows the same.
+    expect(door).toContain("longTake: briefInParts,");
   });
 
   it("names everything the one way the request binds it", () => {
