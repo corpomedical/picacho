@@ -69,7 +69,10 @@ export type CharacterForPipeline = {
 };
 
 export type PipelineStepLog = {
-  step: "draft" | "review" | "generate" | "validate" | "speech" | "lipsync";
+  // "take-report" carries a Recast take's face report (lib/generations/
+  // face-lock.ts): the surfaces that list steps have no heading for it and
+  // show only its sentence.
+  step: "draft" | "review" | "generate" | "validate" | "speech" | "lipsync" | "take-report";
   detail: string;
 };
 

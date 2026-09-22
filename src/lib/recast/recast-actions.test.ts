@@ -139,24 +139,38 @@ describe("startRecastTakes", () => {
   it("tells someone short of credits in seconds — before the words are judged and before any cut", () => {
     // 2026-09-22 (moved from C5): the allowance was asked last, after a long
     // take's window was prepared at 24 fps and every picture was checked.
-    const allowance = at("checkGenerationAllowance(supabase, userId, total)");
+    const early = at("const early = await checkGenerationAllowance(supabase, userId, total)");
     for (const slow of ["await gatePrompt({", "await prepareChain(admin, {", "await cutRecastWindow(", "await sendAddedImage(admin, userId, image)", "await judgeRender({"]) {
-      expect(allowance, slow).toBeLessThan(at(slow));
+      expect(early, slow).toBeLessThan(at(slow));
     }
     // After the price is set and the refusals that cost nothing have spoken.
-    expect(at("const perTake = recastWindowCredits(")).toBeLessThan(allowance);
-    expect(at("return { error: RECAST_CHAIN_TOO_MANY }")).toBeLessThan(allowance);
-    expect(at("return { error: RECAST_GROUP_ONE_PART }")).toBeLessThan(allowance);
+    expect(at("const perTake = recastWindowCredits(")).toBeLessThan(early);
+    expect(at("return { error: RECAST_CHAIN_TOO_MANY }")).toBeLessThan(early);
+    expect(at("return { error: RECAST_GROUP_ONE_PART }")).toBeLessThan(early);
     // The very total the reserve spends: the rows are charged perTake each,
     // one row per take, and the monthly portion comes from the same total.
     expect(start.match(/const total = /g)).toHaveLength(1);
-    expect(start).toContain("const total = perTake * takes.length;\n  const allowance = await checkGenerationAllowance(supabase, userId, total)");
+    expect(start).toContain("const total = perTake * takes.length;\n  const early = await checkGenerationAllowance(supabase, userId, total)");
     expect(start).toContain("credits_used: perTake,");
     expect(start).toContain("const rows = takes.map((chars, i) => {");
     expect(start).toContain("const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, total - consumePurchased)");
     expect(start).toContain("p_monthly_portion: monthlyPortion");
     // It moves nothing, so nothing has to be undone when a later gate refuses.
-    expect(start.slice(allowance, at("await gatePrompt({"))).not.toMatch(/consumePurchasedCredits|reserve_generations|refund/);
+    expect(start.slice(early, at("await gatePrompt({"))).not.toMatch(/consumePurchasedCredits|reserve_generations|refund/);
+  });
+
+  it("decides the purchased/monthly split fresh, just before it is spent", () => {
+    // The early answer ages through the words gate, the cut and the picture
+    // checks; a take landing in another tab meanwhile would leave a stale
+    // split over- or under-spending purchased credits (review, 2026-09-22).
+    const late = at("const allowance = await checkGenerationAllowance(supabase, userId, total)");
+    expect(at("const groupId = takes.length > 1")).toBeLessThan(late);
+    expect(late).toBeLessThan(at('admin.rpc("reserve_generations"'));
+    expect(late).toBeGreaterThan(at("await judgeRender({"));
+    // A refusal here still cleans up the cut and the redrawn images.
+    expect(start.slice(late, late + 400)).toContain("await dropPrepared();");
+    // The split the reserve and the guarded spend use comes from the fresh call.
+    expect(start.slice(late)).toContain("const consumePurchased = allowance.consumePurchased ?? 0;");
   });
 
   it("re-judges an upload but not one of our own finished takes", () => {

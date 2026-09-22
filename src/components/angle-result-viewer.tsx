@@ -29,7 +29,7 @@ export type AngleRow = {
 export function AngleResultViewer({ rows }: { rows: AngleRow[] }) {
   const { t } = useLocale();
   const h = t.history;
-  const stepLabels: Record<PipelineStepLog["step"], string> = {
+  const stepLabels: Partial<Record<PipelineStepLog["step"], string>> = {
     draft: h.stepDrafted,
     review: h.stepReviewed,
     generate: h.stepGenerating,
@@ -87,7 +87,7 @@ export function AngleResultViewer({ rows }: { rows: AngleRow[] }) {
               <ul className="mt-2 space-y-2 border-l border-atelier-rule pl-4">
                 {attempt.steps.map((step, idx) => (
                   <li key={idx}>
-                    <p className="text-xs font-medium uppercase tracking-wider text-atelier-ink">{stepLabels[step.step]}</p>
+                    {stepLabels[step.step] && <p className="text-xs font-medium uppercase tracking-wider text-atelier-ink">{stepLabels[step.step]}</p>}
                     <p className="text-xs text-atelier-muted">{step.detail}</p>
                   </li>
                 ))}

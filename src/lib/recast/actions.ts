@@ -640,10 +640,8 @@ export async function startRecastTakes(input: {
   // re-checks the same window under its own lock, and the purchased spend
   // is guarded — so it is asked here, where the answer takes seconds.
   const total = perTake * takes.length;
-  const allowance = await checkGenerationAllowance(supabase, userId, total);
-  if (allowance.error) return { error: allowance.error };
-  const consumePurchased = allowance.consumePurchased ?? 0;
-  const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, total - consumePurchased);
+  const early = await checkGenerationAllowance(supabase, userId, total);
+  if (early.error) return { error: early.error };
   // The engine that reads names in its prompt is told which photos are whose
   // by name; how many photos each character has decides which name (a lone
   // character is @Element1 or @Image1, as ever). Every name — the cast's,
@@ -840,6 +838,21 @@ export async function startRecastTakes(input: {
 
   const seconds = Math.max(1, Math.round(windowSeconds));
   const groupId = takes.length > 1 ? crypto.randomUUID() : null;
+
+  // THE SPLIT IS DECIDED FRESH, just before it is spent (review, 2026-09-22).
+  // The early check answers in seconds; by here it has aged through the
+  // words gate, the cut and the picture checks, and a take landing in
+  // another tab meanwhile could leave its purchased/monthly split spending
+  // purchased credits the plan now covers — or the reverse. The reserve
+  // re-checks the monthly side under its own lock either way; this keeps the
+  // split it is handed as young as the reserve itself.
+  const allowance = await checkGenerationAllowance(supabase, userId, total);
+  if (allowance.error) {
+    await dropPrepared();
+    return { error: allowance.error };
+  }
+  const consumePurchased = allowance.consumePurchased ?? 0;
+  const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, total - consumePurchased);
 
   const lockOn = await isRecastLockOn(supabase);
   // EVERY TAKE'S WORDS, composed once, here, and SENT from here (2026-09-22):

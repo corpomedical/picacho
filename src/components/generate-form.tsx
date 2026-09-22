@@ -462,6 +462,10 @@ function stepLabel(step: PipelineStepLog["step"], isLive: boolean, g: Messages["
       return g.stepSpeech;
     case "lipsync":
       return g.stepLipsync;
+    // A Recast take's face report (face-lock.ts) — its sentence carries the
+    // whole of it, so the trace shows no heading of its own.
+    case "take-report":
+      return "";
   }
 }
 

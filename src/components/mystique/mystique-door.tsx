@@ -266,6 +266,9 @@ export function MystiqueDoor({
   // your words say". Before this, one character always replaced the lead,
   // and the only way to say otherwise was to argue with the brief in words.
   const [soloPick, setSoloPick] = useState<{ tag: string | null } | null>(null);
+  // The clip preview autoplays muted; this is the person's way to stop it —
+  // and under reduced motion it starts stopped (review, 2026-09-22).
+  const [previewPaused, setPreviewPaused] = useState(false);
   // Why a clip could not be used — said inside the drop area it was dropped on.
   const [clipError, setClipError] = useState("");
   // How much of the clip has reached storage, 0 to 1 — null until the upload
@@ -494,7 +497,12 @@ export function MystiqueDoor({
       ? recastCastTokens(briefCast.map((c) => c.photos.length))
       : [];
   const castings = briefCast.map((c, i) => {
-    const tag = ensemble ? castTags[i] : (read?.people.find((p) => p.lead)?.tag ?? null);
+    // Alone, the person the character plays is the door's own "plays" choice
+    // (soloTag: the pick, the read's lead unpicked, null for "as your words
+    // say") — exactly what take() sends as castTag. Composing on the lead
+    // here showed a brief that was not the one sent whenever the choice was
+    // used (review, 2026-09-22).
+    const tag = ensemble ? castTags[i] : soloTag;
     const many = tag ? read?.people.find((p) => p.tag === tag)?.many === true : false;
     return {
       tag,
@@ -528,6 +536,7 @@ export function MystiqueDoor({
 
   function setClip(next: Source | null) {
     if (urlRef.current && urlRef.current !== next?.url) URL.revokeObjectURL(urlRef.current);
+    setPreviewPaused(false);
     urlRef.current = next?.kind === "upload" ? next.url : null;
     setSource(next);
     if (next === null) {
@@ -1163,13 +1172,44 @@ export function MystiqueDoor({
                         autoPlay
                         playsInline
                         onTimeUpdate={holdPreviewInWindow}
-                        onLoadedMetadata={holdPreviewInWindow}
+                        // A new clip starts still for someone who asked for
+                        // less motion; everyone else keeps the muted autoplay.
+                        onLoadedMetadata={(e) => {
+                          holdPreviewInWindow();
+                          if (reducedMotion() && !e.currentTarget.paused) {
+                            e.currentTarget.pause();
+                            setPreviewPaused(true);
+                          }
+                        }}
                         className="absolute inset-0 h-full w-full object-contain"
                       />
                       <span className={`absolute left-3.5 top-3 ${chip} tabular-nums`}>
                         {source.kind === "take" ? m.fromTake : m.yourClip}
                         {seen ? ` · ${formatMsg(m.clipMeta, { seconds: seen.seconds, width: seen.width, height: seen.height })}` : ""}
                       </span>
+                      {/* A real way to stop the moving preview (review,
+                          2026-09-22) — it autoplayed with no control, even
+                          for someone who asked for less motion. */}
+                      <button
+                        type="button"
+                        aria-pressed={previewPaused}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const v = previewRef.current;
+                          if (!v) return;
+                          if (v.paused) {
+                            void v.play().catch(() => {});
+                            setPreviewPaused(false);
+                          } else {
+                            v.pause();
+                            setPreviewPaused(true);
+                          }
+                        }}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        className={`absolute right-3.5 top-3 ${chip} cursor-pointer hover:bg-black/90`}
+                      >
+                        {previewPaused ? m.previewPlay : m.previewPause}
+                      </button>
                       {/* How far the upload has got, and a way to stop it
                           (2026-09-22) — it was a pulse and "Uploading…" for
                           as long as the connection took. */}
@@ -1858,7 +1898,7 @@ export function MystiqueDoor({
             {ready && showBrief && (
               <div className={`mt-3 ${soft}`}>
                 <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11.5px] leading-relaxed text-[#c6c9d1]">{brief}</pre>
-                <p className="mt-2 text-xs text-[#6b6f7a]">{m.briefNote}</p>
+                <p className="mt-2 text-xs text-[#6b6f7a]">{briefInParts ? m.briefNoteParts : m.briefNote}</p>
               </div>
             )}
 
@@ -2018,7 +2058,9 @@ export function MystiqueDoor({
                   );
                 } else {
                   const meta = missed
-                    ? m.lockMissed
+                    ? x.credits === 0
+                      ? m.lockMissed
+                      : m.lockDrifted
                     : [
                         x.seconds !== null && x.credits !== null ? formatMsg(m.takeMeta, { seconds: x.seconds, credits: x.credits }) : null,
                         // The face report, when the runner wrote one, speaks

@@ -351,7 +351,9 @@ describe("the runner, 2026-09-22", () => {
   it("writes the take report into the log whether or not a face could be read", () => {
     expect(runner).toContain("const reportsTake = wholeCast || Boolean(laneLock?.cast?.length);");
     expect(runner).toContain("if (middle || reportsTake) {");
-    expect(runner).toContain("steps: [...(last.steps ?? []), takeReportStep(reads) as unknown as PipelineStepLog]");
+    // The step's shape is in the union now — no cast hiding it from the compiler.
+    expect(runner).toContain("steps: [...(last.steps ?? []), takeReportStep(reads)]");
+    expect(runner).not.toContain("as unknown as PipelineStepLog");
   });
 
   it("fails open and is bounded: a slow or broken reading records 'not checked', never holds up delivery", () => {

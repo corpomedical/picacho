@@ -1460,7 +1460,7 @@ async function finish(
                 // the step list because that is the take's story, where the
                 // lane's page reads it (face-lock.ts says what it holds).
                 ...(reportsTake
-                  ? { steps: [...(last.steps ?? []), takeReportStep(reads) as unknown as PipelineStepLog] }
+                  ? { steps: [...(last.steps ?? []), takeReportStep(reads)] }
                   : {}),
               };
             }
