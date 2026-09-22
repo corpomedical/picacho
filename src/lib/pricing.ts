@@ -3,9 +3,19 @@
 //
 // Tier structure (changed 2026-08-12): storyboard + multi-image reference
 // moved down from Elite to Studio so the $299 tier has a capability reason
-// to exist, not just a bigger quota. Elite is now volume + priority + early
-// access. The server-side gating in generations/actions.ts and
-// workspace-data.ts mirrors this — change both together.
+// to exist, not just a bigger quota. The server-side gating in
+// generations/actions.ts and workspace-data.ts mirrors this — change both
+// together.
+//
+// What Elite actually is, as of 2026-08-30: volume + API access. "Priority
+// rendering queue" and "Early access to new models and features" were
+// struck from its bullets that day because neither was ever built — the
+// note on the Elite features below has the detail, and calls a paid bullet
+// with no mechanism behind it the one claim on this page carrying legal
+// exposure. This line went on describing Elite by both of them anyway.
+// Its one further genuine delta is unlimited prompt assists
+// (PLAN_PROMPT_ASSIST_LIMITS.elite === Infinity), deliberately unadvertised
+// until that endpoint has a rate limiter.
 //
 // Credits restructure (2026-08-19, operator-approved): monthly prices are
 // unchanged but every tier's credits multiplied (see PLAN_LIMITS in plans.ts
