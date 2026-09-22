@@ -433,7 +433,7 @@ create table public.profiles (
   "stripe_customer_id" text,
   "stripe_subscription_id" text,
   "stripe_price_id" text,
-  "plan_status" text default 'inactive'::text not null,
+  "plan_status" text default 'inactive'::text,
   "skip_ai_refinement" boolean default false not null,
   "has_completed_onboarding" boolean default false not null,
   "bonus_credits" integer default 0 not null,

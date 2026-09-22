@@ -1,0 +1,22 @@
+-- A comped plan has no plan_status (2026-09-22).
+--
+-- Admin → Users → Plan (setUserPlan in src/lib/admin/actions.ts) writes
+-- plan_status = NULL alongside the plan, and every reader treats NULL as
+-- "comped / pre-Stripe grant, credits honoured": checkGenerationAllowance,
+-- the settings page, the usage API, the agent chat gate, low-credit pushes,
+-- prompt assists. But the live column is NOT NULL DEFAULT 'inactive' (the
+-- 2026-09-05 snapshot, supabase/schema.sql), so the comp update fails with a
+-- not-null violation and the admin page shows only "Something went wrong".
+-- Found comping the Play reviewer account onto Starter for the store
+-- screenshots.
+--
+-- Dropping NOT NULL makes the column match what the code already assumes.
+-- The default stays 'inactive', so a new signup still starts inactive, and
+-- the Stripe and RevenueCat webhooks keep writing their own statuses. The
+-- admin stats count plan_status = 'active' only, so a comp (NULL) is never
+-- counted as a paying subscriber.
+--
+-- Idempotent: dropping NOT NULL on a column that is already nullable is a
+-- no-op.
+
+alter table public.profiles alter column plan_status drop not null;
