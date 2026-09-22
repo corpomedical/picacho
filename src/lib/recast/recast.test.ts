@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { CHAIN_LOOK_PLACEHOLDER } from "../generations/chain";
 import {
+  recastChainFits,
   parseRecastEngine,
   parseRecastSourcePath,
   RECAST_COST_BASIS_USD_PER_CREDIT,
@@ -34,6 +36,8 @@ import {
   recastTakesCast,
   recastCastsTogether,
   recastRestageImageRoom,
+  recastFitPrompt,
+  RECAST_PROMPT_MAX_CHARS,
   type RecastClip,
 } from "./recast";
 
@@ -552,5 +556,70 @@ describe("the request, with images and without anyone", () => {
 
   it("gives Restyle no images, whatever is passed", () => {
     expect(recastRequestBody("luma-720", { clipUrl, imageUrls: added, brief: "Rain" })).not.toHaveProperty("image_urls");
+  });
+});
+
+// A LONG TAKE'S LATER PARTS GET EVERY PICTURE THEY ARE TOLD ABOUT (2026-09-22).
+describe("a long take's cast", () => {
+  it("carries up to three characters, so every later part has room for its still", () => {
+    expect(recastChainFits(0)).toBe(true);
+    expect(recastChainFits(1)).toBe(true);
+    expect(recastChainFits(2)).toBe(true);
+    expect(recastChainFits(3)).toBe(true);
+    expect(recastChainFits(4)).toBe(false);
+  });
+
+  it("refuses to send a part without the still its words point at, rather than drop it without a word", () => {
+    const clipUrl = "chain:clip";
+    const person = (i: number, more: number) => ({ front: `https://x/${i}.jpg`, more: Array.from({ length: more }, (_, k) => `https://x/${i}-${k}.jpg`) });
+    // Four characters: no room left for the still, whatever their photos.
+    for (const more of [0, 3]) {
+      expect(() =>
+        recastRequestBody("kling-edit", { clipUrl, ensemble: [person(1, more), person(2, more), person(3, more), person(4, more)], imageUrls: [CHAIN_LOOK_PLACEHOLDER], brief: "x" }),
+      ).toThrow(/no room left for the finished frame/);
+    }
+    // Three images beside a character and the still: the still would be the fourth image.
+    expect(() =>
+      recastRequestBody("kling-edit", { clipUrl, characterImageUrl: "https://x/f.jpg", imageUrls: ["a", "b", "c", CHAIN_LOOK_PLACEHOLDER], brief: "x" }),
+    ).toThrow(/no room left for the finished frame/);
+    // Three characters and the still fit, and the still rides last.
+    const body = recastRequestBody("kling-edit", { clipUrl, ensemble: [person(1, 3), person(2, 0), person(3, 3)], imageUrls: [CHAIN_LOOK_PLACEHOLDER], brief: "x" });
+    expect(body.image_urls).toEqual(["https://x/2.jpg", CHAIN_LOOK_PLACEHOLDER]);
+    // A body without a still is sliced to its room exactly as before.
+    expect(() => recastRequestBody("kling-edit", { clipUrl, ensemble: [person(1, 0), person(2, 0), person(3, 0), person(4, 0)], imageUrls: ["a"], brief: "x" })).not.toThrow();
+  });
+});
+
+// EVERY WORD REACHES THE TAKE (2026-09-22): each engine's own prompt limit,
+// read from fal's schemas that day, and a body that never cuts the words the
+// brief was composed to fit.
+describe("how long a brief each engine is sent", () => {
+  it("is each engine's own limit — Kling's 2,500, Luma's 6,000, and 6,000 of H3's 50,000", () => {
+    expect(RECAST_ENGINES["kling-edit"].promptMax).toBe(2500);
+    expect(RECAST_ENGINES["kling-pro"].promptMax).toBe(2500);
+    expect(RECAST_ENGINES["kling-std"].promptMax).toBe(2500);
+    expect(RECAST_ENGINES["luma-720"].promptMax).toBe(6000);
+    expect(RECAST_ENGINES["luma-540"].promptMax).toBe(6000);
+    expect(RECAST_ENGINES["h3-768"].promptMax).toBe(6000);
+    expect(RECAST_ENGINES["h3-480"].promptMax).toBe(6000);
+    expect(RECAST_PROMPT_MAX_CHARS).toBe(6000);
+  });
+
+  it("counts characters the way the engines do, so a brief that fits is never cut in the body", () => {
+    // 2,500 characters of which the last are emoji: 2,510 UTF-16 halves.
+    const brief = `${"x".repeat(2490)}${"🙂".repeat(10)}`;
+    expect(Array.from(brief).length).toBe(2500);
+    const clipUrl = "https://x/clip.mp4";
+    expect(recastRequestBody("kling-edit", { clipUrl, brief }).prompt).toBe(brief);
+    expect(recastRequestBody("kling-pro", { clipUrl, characterImageUrl: "https://x/f.jpg", brief }).prompt).toBe(brief);
+    // Past its limit, only the engine's own number is kept — never more.
+    expect(Array.from(String(recastRequestBody("luma-720", { clipUrl, brief: "y".repeat(7000) }).prompt)).length).toBe(6000);
+    expect(Array.from(String(recastRequestBody("h3-768", { clipUrl, brief: "y".repeat(7000), clip: { seconds: 5 } }).prompt)).length).toBe(6000);
+    expect(recastFitPrompt("abc", 2)).toBe("ab");
+    expect(recastFitPrompt("🙂🙂🙂", 2)).toBe("🙂🙂");
+  });
+
+  it("keeps Restage's own rewrite of the words switched on, as the take that came back right was sent", () => {
+    expect(recastRequestBody("h3-768", { clipUrl: "https://x/c.mp4", brief: "x", clip: { seconds: 5 } }).prompt_expansion_mode).toBe("balanced");
   });
 });

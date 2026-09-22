@@ -43,6 +43,11 @@ export const RECAST_NEEDS_ROLES = "Say in your words who each character plays.";
 // takes of the operator's own crowd came back as the footage. One part, or
 // the crowd comes back.
 export const RECAST_GROUP_ONE_PART = "A whole group can only be changed in one part — keep the take to 15 seconds, or cast someone in it instead of all of them.";
+// A long take's cast (2026-09-22): every later part carries the finished
+// frame it goes on from, one of the four pictures a part can carry — so past
+// 15 seconds there is room for three characters, not four (recast.ts
+// recastChainFits).
+export const RECAST_CHAIN_TOO_MANY = "Over 15 seconds a take carries up to three characters. Trim to 15 seconds for four.";
 
 export function recastClipProblemMessage(problem: RecastClipProblem): string {
   switch (problem) {

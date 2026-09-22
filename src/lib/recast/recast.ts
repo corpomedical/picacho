@@ -93,7 +93,7 @@
 // rounded up (video-models.ts) — restated here as a number because that
 // module pulls the whole catalogue in; the test pins the two equal.
 
-import { CHAIN_MAX_SECONDS, chainBilledSeconds } from "../generations/chain";
+import { CHAIN_LOOK_PLACEHOLDER, CHAIN_MAX_SECONDS, chainBilledSeconds } from "../generations/chain";
 
 export const RECAST_COST_BASIS_USD_PER_CREDIT = 0.28;
 
@@ -133,6 +133,17 @@ export type RecastEngineSpec = {
   /** Takes a written brief. Kling and Luma do; Wan and DreamActor have no prompt field. */
   takesDirection: boolean;
   /**
+   * The longest brief this engine is sent, in characters (2026-09-22, read
+   * from fal's own schemas that day): Kling O3 Edit's and V3 Motion
+   * Control's prompt stop at 2,500, Luma Ray 3.2's at 6,000. H3 takes
+   * 50,000 and is given at most 6,000 — no brief of ours comes near it, and
+   * a cap nobody will ever meet is not a cap. The brief is composed to fit
+   * (recast-brief.ts), so the request body never has to cut it: a cut from
+   * the end is a cut into the person's own direction, which stands last.
+   * Wan takes no prompt; its number bounds the copy that is stored.
+   */
+  promptMax: number;
+  /**
    * Takes extra photos of the character for identity (Kling's `elements`:
    * one frontal image plus 1–3 more angles). The rest see one photo.
    */
@@ -171,6 +182,9 @@ export type RecastEngineSpec = {
   maxSendSeconds?: number;
 };
 
+/** H3's own prompt takes 50,000 characters (its schema); ours stop at the same 6,000 Luma's do. */
+const RECAST_H3_PROMPT_MAX = 6000;
+
 export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
   // RESTAGE (2026-09-20). The operator asked his clip to be re-staged — "start
   // focused on Eva and the camera zooms out", "Eva has her arms crossed" — and
@@ -196,6 +210,7 @@ export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
     billedBy: "seconds",
     resolution: "720p",
     takesDirection: true,
+    promptMax: RECAST_H3_PROMPT_MAX,
     takesMorePhotos: true,
     keepsSound: false,
     restages: true,
@@ -211,6 +226,7 @@ export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
     billedBy: "seconds",
     resolution: "480p",
     takesDirection: true,
+    promptMax: RECAST_H3_PROMPT_MAX,
     takesMorePhotos: true,
     keepsSound: false,
     restages: true,
@@ -227,6 +243,7 @@ export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
     usdPerBilledSecond: 0.168,
     billedBy: "seconds",
     takesDirection: true,
+    promptMax: 2500,
     takesMorePhotos: true,
     keepsSound: true,
     accepts: { minSide: 720, maxSide: 3840, minFps: 24, maxFps: 60 },
@@ -242,6 +259,7 @@ export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
     billedBy: "frames16",
     resolution: "720p",
     takesDirection: false,
+    promptMax: 2500,
     takesMorePhotos: false,
     keepsSound: true,
     retired: true,
@@ -256,6 +274,7 @@ export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
     billedBy: "frames16",
     resolution: "480p",
     takesDirection: false,
+    promptMax: 2500,
     takesMorePhotos: false,
     keepsSound: true,
     retired: true,
@@ -269,6 +288,7 @@ export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
     usdPerBilledSecond: 0.168,
     billedBy: "seconds",
     takesDirection: true,
+    promptMax: 2500,
     takesMorePhotos: true,
     keepsSound: true,
   },
@@ -281,6 +301,7 @@ export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
     usdPerBilledSecond: 0.126,
     billedBy: "seconds",
     takesDirection: true,
+    promptMax: 2500,
     takesMorePhotos: true,
     keepsSound: true,
   },
@@ -294,6 +315,7 @@ export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
     billedBy: "bucket",
     resolution: "720p",
     takesDirection: true,
+    promptMax: 6000,
     takesMorePhotos: false,
     keepsSound: false,
   },
@@ -307,10 +329,25 @@ export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
     billedBy: "bucket",
     resolution: "540p",
     takesDirection: true,
+    promptMax: 6000,
     takesMorePhotos: false,
     keepsSound: false,
   },
 };
+
+/** The longest brief any engine is sent — what a take's stored copy of its brief is bounded at. */
+export const RECAST_PROMPT_MAX_CHARS = Math.max(...Object.values(RECAST_ENGINES).map((spec) => spec.promptMax));
+
+/**
+ * A brief brought inside an engine's prompt, counted the way the engines
+ * count — in characters, not in UTF-16 halves. A plain `.slice` counts an
+ * emoji as two, and a brief composed to fit by characters could lose its
+ * last words (the person's direction) to the difference.
+ */
+export function recastFitPrompt(brief: string, max: number): string {
+  const points = Array.from(brief);
+  return points.length > max ? points.slice(0, max).join("") : brief;
+}
 
 /** What the door OFFERS, in order. Retired engines are not in it. */
 export const RECAST_ENGINE_ORDER: RecastEngine[] = ["kling-edit", "h3-768", "h3-480", "kling-pro", "kling-std", "luma-720", "luma-540"];
@@ -396,6 +433,20 @@ export function recastImageRoom(charactersInTake: number, chained = false): numb
   // last finished frame, which is what keeps a later part on the take's own
   // look (chain.ts ChainState.look, 2026-09-20).
   return Math.max(0, Math.min(RECAST_MAX_IMAGES, RECAST_MAX_REFERENCES - charactersInTake - (chained ? 1 : 0)));
+}
+
+/**
+ * Whether a take of MORE THAN ONE PART can carry this cast (2026-09-22):
+ * every character in it is one of the four references (an element or a
+ * one-photo image, one place either way) and every later part needs one
+ * more for the still at its switch. Four characters left the still no
+ * place, and the request body silently sliced it off — a later part told,
+ * in its own words, to follow a finished frame it was never sent. Such a
+ * cast is refused before any credit moves; up to 15 s, in one piece, four
+ * still fit. Added images are already fitted by recastImageRoom(n, true).
+ */
+export function recastChainFits(charactersInTake: number): boolean {
+  return charactersInTake + 1 <= RECAST_MAX_REFERENCES;
 }
 // The tighter of the two engines' own limits, read from fal's schemas the same
 // day: O3 Edit's references ≥ 300 px a side and ≤ 10 MB, V3 Motion Control's
@@ -649,7 +700,11 @@ export function recastRequestBody(
       ...(input.imageUrls ?? []),
     ].slice(0, RECAST_RESTAGE_MAX_IMAGES);
     return {
-      prompt: (input.brief ?? "").slice(0, 50_000),
+      prompt: recastFitPrompt(input.brief ?? "", spec.promptMax),
+      // H3 rewrites the prompt before it renders ("balanced", its default).
+      // Kept on (2026-09-22): switching it off is untested, and the one
+      // Restage that came back right first try was sent this way. What it
+      // rewrote the brief into comes back as the result's `expanded_prompt`.
       prompt_expansion_mode: "balanced",
       reference_video_urls: [input.clipUrl],
       ...(images.length > 0 ? { reference_image_urls: images } : {}),
@@ -661,7 +716,7 @@ export function recastRequestBody(
   if (spec.job === "world") {
     return {
       video_url: input.clipUrl,
-      prompt: input.brief ?? "",
+      prompt: recastFitPrompt(input.brief ?? "", spec.promptMax),
       resolution: spec.resolution,
       duration: input.clip ? recastLumaDuration(input.clip) : "5s",
       edit_strength: RECAST_WORLD_EDIT_STRENGTH,
@@ -700,9 +755,20 @@ export function recastRequestBody(
       ...people.filter((p) => p.more.length === 0).map((p) => p.front),
       ...(input.imageUrls ?? []).slice(0, RECAST_MAX_IMAGES),
     ].slice(0, RECAST_MAX_REFERENCES - elements.length);
+    // THE STILL IS NEVER SLICED OFF (2026-09-22). A later part of a long
+    // take is told, in its own words, that its last image IS the finished
+    // frame it carries on from — the one thing that keeps it on the take's
+    // look and off the footage's. It rides last, so the room slices above
+    // are exactly where it would fall away without a word if a cast ever
+    // grew past what a long take can carry. recastChainFits refuses such a
+    // cast before any credit moves; here the body refuses too, rather than
+    // send a part told to follow a picture it was never given.
+    if ((input.imageUrls ?? []).includes(CHAIN_LOOK_PLACEHOLDER) && !images.includes(CHAIN_LOOK_PLACEHOLDER)) {
+      throw new Error("A long take's part has no room left for the finished frame it carries on from.");
+    }
     return {
       video_url: input.clipUrl,
-      prompt: (input.brief ?? "").slice(0, 2500),
+      prompt: recastFitPrompt(input.brief ?? "", spec.promptMax),
       keep_audio: true,
       ...(elements.length > 0 ? { elements } : {}),
       ...(images.length > 0 ? { image_urls: images } : {}),
@@ -714,7 +780,7 @@ export function recastRequestBody(
     video_url: input.clipUrl,
     character_orientation: "video",
     keep_original_sound: true,
-    ...(input.brief ? { prompt: input.brief.slice(0, 2500) } : {}),
+    ...(input.brief ? { prompt: recastFitPrompt(input.brief, spec.promptMax) } : {}),
     // Only when there are more angles to bind: with one photo the element
     // would say nothing the image_url does not already say. Kling allows one
     // element, and only in video orientation.

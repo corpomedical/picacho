@@ -17,6 +17,7 @@ import { isRecastEnabled, isRecastLockOn } from "@/lib/recast/enabled";
 import {
   RECAST_ALREADY_STARTED,
   RECAST_CHAIN_NO_PLAN,
+  RECAST_CHAIN_TOO_MANY,
   RECAST_CHARACTER_NEEDS_PHOTO,
   RECAST_CLIP_TOO_BIG,
   RECAST_CLIP_UNCHECKED,
@@ -55,6 +56,7 @@ import {
   recastContainerOf,
   recastCreditCost,
   recastCastsTogether,
+  recastChainFits,
   recastEngineFits,
   recastImageRoom,
   recastImageSendsAsIs,
@@ -71,9 +73,8 @@ import {
 import {
   composeRecastBrief,
   RECAST_DIRECTION_MAX_CHARS,
-  recastCastTokens,
-  recastRestageTokens,
-  recastImageTokens,
+  recastBriefNames,
+  recastSentBriefs,
   type RecastCasting,
 } from "@/lib/recast/recast-brief";
 import {
@@ -90,7 +91,7 @@ import {
   type RecastWarning,
 } from "@/lib/recast/recast-read";
 import { RECAST_LOCK_THRESHOLD, readRecastRecipes, recastRow, type RecastSource } from "@/lib/recast/store";
-import { cutsInWindow, isWholeClip, recastFitFor, recastSendWindow, recastWindowCredits, recastWindowProblem, type RecastWindow } from "@/lib/recast/trim";
+import { isWholeClip, recastFitFor, recastSendWindow, recastWindowCredits, recastWindowProblem, type RecastWindow } from "@/lib/recast/trim";
 import { cutRecastWindow } from "@/lib/recast/trim-run";
 import {
   CHAIN_CLIP_PLACEHOLDER,
@@ -122,10 +123,11 @@ import { cleanupChain, prepareChain, storeFirstPiece, type PreparedChain } from 
 //   numbers, the frames are read for what is in the clip, every engine is
 //   quoted -> start: rights ticked -> the file read AGAIN (the money path
 //   reads the file, never the form and never the inspect's answer) -> the
-//   characters are the caller's own -> the brief gated as text -> THE CLIP
-//   JUDGED (its middle frame, the strict lane) before anything is spent ->
-//   allowance for ALL the variants at once -> reserve the rows -> guarded
-//   spend -> submit each -> record each.
+//   characters are the caller's own -> allowance for ALL the variants at
+//   once, before any encoding (2026-09-22) -> the brief gated as text -> the
+//   cut -> THE CLIP JUDGED (its middle frame, the strict lane) before
+//   anything is spent -> reserve the rows -> guarded spend -> submit each ->
+//   record each.
 //
 // FROM THE JOB ROW ON, A RECAST IS AN ORDINARY VIDEO RENDER: stage "video",
 // so the webhook, the poll, the reaper, Stop, the output gate, the poster,
@@ -580,9 +582,18 @@ export async function startRecastTakes(input: {
   // THE LONG TAKE (chain.ts): past the engine's own 15 s, the take is
   // rendered in chained pieces and joined.
   const chaining = spec.chains === true && chainPieceCount(windowSeconds) > 1;
+  /** How many characters ONE take carries: everyone together, or one each. */
+  const charactersInTake = together ? ordered.length : Math.min(1, ordered.length);
+  // A LONG TAKE'S CAST (2026-09-22). Every later part carries the finished
+  // frame it goes on from, one of the four pictures a part can carry — so a
+  // long take holds three characters, not four. Four used to go through, and
+  // the request silently dropped the still that part's own words point at.
+  // Refused here: before the words are judged, before the window is cut, and
+  // before any credit moves.
+  if (chaining && !recastChainFits(charactersInTake)) return { error: RECAST_CHAIN_TOO_MANY };
   // What a take has room to carry: four references in all, the characters in
   // it and — for a long take — the still at each switch taking one each.
-  const sendImages = spec.restages ? added : added.slice(0, recastImageRoom(together ? ordered.length : Math.min(1, ordered.length), chaining));
+  const sendImages = spec.restages ? added : added.slice(0, recastImageRoom(charactersInTake, chaining));
 
   // The read again, from what the door was shown — the brief is composed
   // server-side from the same fields, so what was on the door is what is
@@ -594,31 +605,55 @@ export async function startRecastTakes(input: {
     .map((what) => ({ what: what.slice(0, 120), kind: "object" as const }));
   const castTag = typeof input?.castTag === "string" && /^[A-D]$/.test(input.castTag) ? input.castTag : null;
 
-  // The read described the whole clip; the brief describes the window —
-  // its own length, and only the cuts that fall inside it, on its own clock.
-  const wholeRead = reboundRecastRead(input?.read, clip.seconds);
-  const read = wholeRead ? { ...wholeRead, cuts: cutsInWindow(wholeRead.cuts, window) } : null;
+  // The read described the whole clip; each brief describes its own stretch
+  // of it — its length, and only the cuts inside it, on its own clock —
+  // because composeRecastBrief is given the WHOLE read and the window, the
+  // same way the door composes what it shows (2026-09-22).
+  const read = reboundRecastRead(input?.read, clip.seconds);
 
   // A WHOLE GROUP, IN ONE PART ONLY (2026-09-20). Every part after the first
   // is handed the footage again, and on a take that turns a crowd into one
   // character the part follows the footage: two takes of the operator's own
   // crowd came back as his students at the second join. The still at the
   // switch did not hold it, so the take is kept to one part instead.
+  //
+  // Asked of the tags each take actually casts (2026-09-22): everyone's own
+  // when they share one take, and the one person the door named when each
+  // character has a take of their own — the variants, which until today were
+  // asked about tags no take of theirs used, and so were never refused.
   const groupTags = new Set((read?.people ?? []).filter((p) => p.many).map((p) => p.tag));
-  const castOverGroup = (ids.length > 1 ? castTags : [castTag]).some((tag) => tag !== null && groupTags.has(tag));
+  const castOverGroup = (together ? castTags : [castTag]).some((tag) => tag !== null && groupTags.has(tag));
   if (castOverGroup && chaining) return { error: RECAST_GROUP_ONE_PART };
+
+  // THE CREDITS, ASKED BEFORE THE CUT (2026-09-22). One take per character —
+  // or one for all of them together — and one when nobody is cast;
+  // characters together share ONE take's price. The free daily slot never
+  // covers a recast — plan or purchased credits only, the upscaler's rule.
+  // Asked for the WHOLE press, with the very total the rows are reserved
+  // at: a variant set that can only half-afford itself does not start.
+  //
+  // It used to be asked last, after the words were judged, the window cut
+  // (a long take's prepared at 24 fps, its stillness measured) and every
+  // picture checked: someone short of credits waited a minute to be told,
+  // and the cut was left behind. It moves nothing — the reserve below
+  // re-checks the same window under its own lock, and the purchased spend
+  // is guarded — so it is asked here, where the answer takes seconds.
+  const total = perTake * takes.length;
+  const allowance = await checkGenerationAllowance(supabase, userId, total);
+  if (allowance.error) return { error: allowance.error };
+  const consumePurchased = allowance.consumePurchased ?? 0;
+  const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, total - consumePurchased);
   // The engine that reads names in its prompt is told which photos are whose
-  // by name; how many photos each character has decides which name
-  // (recastCastTokens — a lone character is @Element1 or @Image1, as ever).
+  // by name; how many photos each character has decides which name (a lone
+  // character is @Element1 or @Image1, as ever). Every name — the cast's,
+  // the added images', a later part's still — comes from recastBriefNames,
+  // the one place that knows how recastRequestBody binds them (2026-09-22).
   // Alone, a character plays the person the door named; together, each
   // plays their own.
-  const photosOf = photosOfRow;
+  const namesFor = (chars: Character[]) =>
+    recastBriefNames({ job: spec.job, engine, photos: chars.map(photosOfRow), images: sendImages.length });
   const castingsFor = (chars: Character[]): RecastCasting[] => {
-    const tokens = spec.restages
-      ? recastRestageTokens(chars.map(photosOf)).tokens
-      : engine === "kling-edit"
-        ? recastCastTokens(chars.map((c) => c.reference_image_urls?.length ?? 1))
-        : [];
+    const tokens = namesFor(chars).cast;
     return chars.map((c, i) => {
       const tag = chars.length > 1 ? castTags[ids.indexOf(c.id)] : castTag;
       // A tag the read marked as MANY people is said as many in the brief.
@@ -633,57 +668,48 @@ export async function startRecastTakes(input: {
   };
   const castingOf = (castings: RecastCasting[]): RecastCasting | RecastCasting[] | null =>
     castings.length === 0 ? null : castings.length === 1 ? castings[0] : castings;
-  // The added images' names follow the characters' own (@Image2 after a
-  // one-photo character's @Image1) — only where the engine reads names.
-  const imageTokensFor = (castings: RecastCasting[], chars: Character[] = []): string[] =>
-    spec.restages
-      ? Array.from({ length: sendImages.length }, (_, i) => `Image ${recastRestageTokens(chars.map(photosOf)).used + 1 + i}`)
-      : spec.job === "scene" && engine === "kling-edit"
-      ? recastImageTokens(
-          castings.map((c) => c.token ?? ""),
-          sendImages.length,
-        )
-      : [];
-  const briefFor = (castings: RecastCasting[], chars: Character[] = []) =>
+  // A take's brief: composed for the WINDOW with the whole read — the door's
+  // own call (mystique-door.tsx), so what it shows is what is sent — and
+  // fitted inside this engine's own prompt (recast.ts promptMax). A take of
+  // one piece lets the person's direction change what the keep list keeps;
+  // a long take's parts never do (recast-brief.ts, YOUR WORDS WIN).
+  const briefFor = (chars: Character[]) =>
     composeRecastBrief({
       job: spec.job,
+      engine,
       read,
-      seconds: windowSeconds,
-      casting: castingOf(castings),
+      window,
+      casting: castingOf(castingsFor(chars)),
       keeps,
       direction,
-      images: imageTokensFor(castings, chars),
+      images: namesFor(chars).images,
+      longTake: chaining,
     });
-  // A long take's pieces each carry their own brief: their own length, only
-  // the cuts inside them, and from the second piece on the continuity words
-  // every passing seam test was sent with (recast-brief.ts). Frames count
-  // from the window's start, the prepared window's own clock.
-  const pieceBriefsFor = (castings: RecastCasting[], plan: PreparedChain["plan"], chars: Character[] = []): string[] =>
+  // A long take's pieces each carry their own brief: their own stretch of the
+  // window (its length, only the cuts inside it), and from the second piece
+  // on the continuity words every passing seam test was sent with
+  // (recast-brief.ts). Frames count from the window's start, the prepared
+  // window's own clock.
+  const pieceBriefsFor = (plan: PreparedChain["plan"], chars: Character[]): string[] =>
     plan.lengths.map((frames, k) => {
       const from = k === 0 ? 0 : plan.switches[k - 1] - CHAIN_PREFIX_FRAMES;
-      const pieceRead = wholeRead
-        ? {
-            ...wholeRead,
-            cuts: cutsInWindow(wholeRead.cuts, {
-              start: window.start + from / CHAIN_FPS,
-              end: window.start + (from + frames) / CHAIN_FPS,
-            }),
-          }
-        : null;
+      const names = namesFor(chars);
       // A later piece also carries the STILL at its switch — the last
       // finished frame, named after the added images (chain.ts's look).
-      const images = imageTokensFor(castings, chars);
-      const look = k > 0 && spec.job === "scene" && engine === "kling-edit" ? recastImageTokens([...castings.map((c) => c.token ?? ""), ...images], 1)[0] : undefined;
+      const look = k > 0 && names.look ? names.look : undefined;
       return composeRecastBrief({
         job: spec.job,
-        read: pieceRead,
-        seconds: frames / CHAIN_FPS,
-        casting: castingOf(castings),
+        engine,
+        read,
+        window: { start: window.start + from / CHAIN_FPS, end: window.start + (from + frames) / CHAIN_FPS },
+        casting: castingOf(castingsFor(chars)),
         keeps,
         direction,
         continuing: k > 0,
-        images,
+        images: names.images,
         ...(look ? { look } : {}),
+        // Every part, the first included: the keep lines hold as they always did.
+        longTake: true,
       });
     });
 
@@ -692,7 +718,7 @@ export async function startRecastTakes(input: {
   // because it is stored and shown either way.
   let scores: Scores | undefined;
   let priorHits = 0;
-  const judged = spec.takesDirection ? briefFor(castingsFor(takes[0]), takes[0]) : direction;
+  const judged = spec.takesDirection ? briefFor(takes[0]) : direction;
   if (judged.trim()) {
     try {
       ({ scores, priorHits } = await gatePrompt({ prompt: judged, userId, hasRealPersonReference: true }));
@@ -811,23 +837,17 @@ export async function startRecastTakes(input: {
     sentImages.push({ path: sent.path, url: sent.url });
   }
 
-  // One take per character — or one for all of them together — and one when
-  // nobody is cast. Characters together share ONE take's price.
-  const total = perTake * takes.length;
   const seconds = Math.max(1, Math.round(windowSeconds));
   const groupId = takes.length > 1 ? crypto.randomUUID() : null;
 
-  // The free daily slot never covers a recast — plan or purchased credits
-  // only, the upscaler's rule. Asked for the WHOLE press: a variant set
-  // that can only half-afford itself does not start.
-  const allowance = await checkGenerationAllowance(supabase, userId, total);
-  if (allowance.error) return { error: allowance.error };
-  const consumePurchased = allowance.consumePurchased ?? 0;
-  const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, total - consumePurchased);
-
   const lockOn = await isRecastLockOn(supabase);
+  // EVERY TAKE'S WORDS, composed once, here, and SENT from here (2026-09-22):
+  // one brief, or one per part of a long take. The submit used to read its
+  // brief back out of the recipe below, which store.ts bounds for keeping —
+  // cut at 2,000 characters from the END, where the person's direction
+  // stands. The recipe keeps a copy; this is what the engine is given.
+  const takeBriefs = takes.map((chars) => (chainPrep ? pieceBriefsFor(chainPrep.plan, chars) : [briefFor(chars)]));
   const rows = takes.map((chars, i) => {
-    const castings = castingsFor(chars);
     return {
       id: crypto.randomUUID(),
       character_profile_id: chars[0]?.id ?? null,
@@ -865,8 +885,9 @@ export async function startRecastTakes(input: {
         keeps,
         direction,
         castTag: chars.length === 1 ? castTag : null,
-        // A long take records its first piece's brief — the one the door showed.
-        brief: chainPrep ? pieceBriefsFor(castings, chainPrep.plan, chars)[0] : briefFor(castings, chars),
+        // A long take records its first piece's brief; every part's rides the
+        // pipeline log (partBriefs, below).
+        brief: takeBriefs[i][0],
         lock: lockOn,
         groupId,
         window: cutting ? { start: window.start, end: window.end } : null,
@@ -924,7 +945,13 @@ export async function startRecastTakes(input: {
   await Promise.all(
     takeIds.map(async (generationId, i) => {
       const chars = takes[i] ?? [];
-      const brief = (rows[i].recast as { brief?: string } | null)?.brief ?? "";
+      // The words composed above, whole — never the recipe's kept copy.
+      const briefs = takeBriefs[i] ?? [];
+      const brief = briefs[0] ?? "";
+      // Every part's words, kept where they outlive the job row (which is
+      // deleted when the take finishes, chain requests and all): the first
+      // attempt of the pipeline log, read back by getRecastTakeBriefs.
+      const partBriefs = chainPrep ? { partBriefs: briefs } : {};
       let pendingJob: QueuedJob | null = null;
       try {
         const signed = await Promise.all(chars.map((c) => signPhotos(c)));
@@ -943,11 +970,9 @@ export async function startRecastTakes(input: {
         let chain: ChainState | undefined;
         let sendUrl = clipUrl;
         let sendSeconds = windowSeconds;
-        let sendBrief = brief;
         if (chainPrep) {
           const folder = chainFolder(userId, generationId);
           const { plan } = chainPrep;
-          const briefs = pieceBriefsFor(castingsFor(chars), plan, chars);
           // Every piece's request composed whole now — this lane knows its
           // engine and its words, the runner does not (it fills in only each
           // piece's clip, where the placeholder stands).
@@ -972,7 +997,6 @@ export async function startRecastTakes(input: {
           if (requests.some((r) => r === null)) throw new Error("Couldn't compose the long take's parts.");
           sendUrl = await storeFirstPiece(admin, RECAST_BUCKET, folder, chainPrep.firstPiece);
           sendSeconds = plan.lengths[0] / CHAIN_FPS;
-          sendBrief = briefs[0];
           chain = {
             v: 2,
             bucket: RECAST_BUCKET,
@@ -998,7 +1022,7 @@ export async function startRecastTakes(input: {
           morePhotoUrls: photos.more,
           imageUrls,
           ...(ensemble ? { ensemble } : {}),
-          ...(spec.takesDirection ? { brief: sendBrief } : {}),
+          ...(spec.takesDirection ? { brief } : {}),
           clip: { seconds: sendSeconds },
         });
         await saveVideoJob({
@@ -1018,7 +1042,8 @@ export async function startRecastTakes(input: {
               attempt: 1,
               passed: true,
               issues: [],
-              compiledPrompt: sendBrief,
+              compiledPrompt: brief,
+              ...partBriefs,
               steps: [
                 {
                   step: "generate" as const,
@@ -1040,7 +1065,9 @@ export async function startRecastTakes(input: {
           .update({
             status: "failed",
             progress_stage: null,
-            pipeline_log: [{ attempt: 1, passed: false, issues: [], compiledPrompt: brief, steps: [{ step: "generate" as const, detail: message }] }],
+            pipeline_log: [
+              { attempt: 1, passed: false, issues: [], compiledPrompt: brief, ...partBriefs, steps: [{ step: "generate" as const, detail: message }] },
+            ],
           })
           .eq("id", generationId);
         try {
@@ -1097,4 +1124,28 @@ export async function getRecastTakeMedia(
     sourceUrl = toMediaUrl(origin?.result_url ?? null);
   }
   return { error: null, resultUrl: toMediaUrl(take.result_url), sourceUrl };
+}
+
+/**
+ * The words each part of a take was given (2026-09-22) — for the finished
+ * take's card, fetched when it is opened rather than with the list: a long
+ * take carries up to three briefs of 2,500 characters each. One brief for a
+ * take of one piece; `expanded` is Restage's own rewrite of it, where one
+ * was recorded (recast-brief.ts recastSentBriefs).
+ */
+export async function getRecastTakeBriefs(
+  takeId: string,
+): Promise<{ error: string } | { error: null; parts: string[]; expanded: string | null }> {
+  const access = await recastAccess();
+  if (access.error !== null) return { error: access.error };
+  const { data: take } = await access.supabase
+    .from("generations")
+    .select("id, pipeline_log")
+    .eq("id", typeof takeId === "string" ? takeId : "")
+    .eq("user_id", access.userId)
+    .is("deleted_at", null)
+    .in("model_id", RECAST_MODEL_IDS)
+    .maybeSingle<{ id: string; pipeline_log: unknown }>();
+  if (!take) return { error: RECAST_UPLOAD_UNREADABLE };
+  return { error: null, ...recastSentBriefs(take.pipeline_log) };
 }
