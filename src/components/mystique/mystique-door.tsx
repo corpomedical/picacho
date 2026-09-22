@@ -48,9 +48,12 @@ import {
   recastBlocker,
   recastFitWindow,
   recastJobPromise,
+  recastLengthChoices,
   recastLengthFloor,
   recastMinutes,
   recastSlotOffer,
+  recastSuggestJob,
+  recastTierIsSofter,
   recastWait,
   type RecastAspect,
   type RecastBalance,
@@ -251,6 +254,11 @@ export function MystiqueDoor({
   // read's order, the lead first.
   const [together, setTogether] = useState(true);
   const [roles, setRoles] = useState<Record<string, string | null>>({});
+  // ONE character: which person in the clip they play (2026-09-22). Unset
+  // follows the read's lead, as the door always did; { tag: null } is "as
+  // your words say". Before this, one character always replaced the lead,
+  // and the only way to say otherwise was to argue with the brief in words.
+  const [soloPick, setSoloPick] = useState<{ tag: string | null } | null>(null);
   // Why a clip could not be used — said inside the drop area it was dropped on.
   const [clipError, setClipError] = useState("");
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -388,7 +396,12 @@ export function MystiqueDoor({
   // back as the footage (2026-09-20). The server refuses it; the door says
   // so before the press, and offers the trim.
   const groupTags = new Set(peopleInClip.filter((p) => p.many).map((p) => p.tag));
-  const castOverGroup = (ensemble ? castTags : [read?.people.find((p) => p.lead)?.tag ?? null]).some((tag) => tag !== null && groupTags.has(tag));
+  // Who a take that is not "together" replaces: the one character's chosen
+  // person, or the read's lead — which is also what one take each sends. The
+  // server takes it as castTag (A–D) and writes it into the brief.
+  const leadTag = read?.people.find((p) => p.lead)?.tag ?? null;
+  const soloTag: string | null = cast.length === 1 && soloPick && (soloPick.tag === null || read?.people.some((p) => p.tag === soloPick.tag)) ? soloPick.tag : leadTag;
+  const castOverGroup = (ensemble ? castTags : [soloTag]).some((tag) => tag !== null && groupTags.has(tag));
   const parts = clipWindow ? chainPieceCount(clipWindow.end - clipWindow.start) : 1;
   const groupNeedsOnePart = castOverGroup && parts > 1;
   // What is actually sent — the server's rule (actions.ts): Photo to life
@@ -513,6 +526,7 @@ export function MystiqueDoor({
     setRights(false);
     setDropped(new Set());
     setRoles({});
+    setSoloPick(null);
     const mine = ++pickRef.current;
     if (source?.kind === "upload" && source.path) void discardRecastUpload(source.path).catch(() => {});
     if (!recastContainerOf(file.type)) {
@@ -568,6 +582,7 @@ export function MystiqueDoor({
     setRights(false);
     setDropped(new Set());
     setRoles({});
+    setSoloPick(null);
     const mine = ++pickRef.current;
     if (source?.kind === "upload" && source.path) void discardRecastUpload(source.path).catch(() => {});
     setClip({ kind: "take", phase: "inspecting", url: motion.videoUrl, takeId: motion.takeId, name: motion.title });
@@ -717,7 +732,7 @@ export function MystiqueDoor({
         engine,
         keeps: keeps.map((k) => k.what),
         direction,
-        castTag: read?.people.find((p) => p.lead)?.tag,
+        castTag: soloTag ?? undefined,
         read,
         window: clipWindow ?? undefined,
         rights,
@@ -938,6 +953,14 @@ export function MystiqueDoor({
   // whole 10, both ends are offered at their prices instead of the big slot
   // being charged in silence.
   const slotOffer = seen && clipWindow ? recastSlotOffer(engine, { seconds: seen.seconds, frames: seen.frames }, clipWindow) : null;
+  // Which job suits this clip (door-truth.ts recastSuggestJob): a quiet mark
+  // on its card, never a switch — the job is only ever the person's choice.
+  const suggested = seen ? recastSuggestJob(read, seen.seconds) : null;
+  // Past 15 s, Into the clip's two lengths side by side with their prices
+  // and waits (recastLengthChoices). The page still opens on the whole clip.
+  const lengthChoices =
+    seen && clipWindow ? recastLengthChoices(engine, { seconds: seen.seconds, frames: seen.frames }, clipWindow, referenceCount(engine)) : null;
+  const isWindow = (w: RecastWindow) => clipWindow !== null && Math.abs(clipWindow.start - w.start) < 0.05 && Math.abs(clipWindow.end - w.end) < 0.05;
   // Restage never renders under its own shortest take; on a clip shorter than
   // that, it says what comes back.
   const restageComesBack =
@@ -1164,6 +1187,39 @@ export function MystiqueDoor({
                   <p className="mt-2 text-xs text-[#9aa0ad]">{formatMsg(m.trimWhy, { n: RECAST_JOB_MAX_SECONDS[job] })}</p>
                 )}
                 {restageComesBack !== null && <p className="mt-2 text-xs text-[#9aa0ad]">{formatMsg(m.restageShort, { n: restageComesBack })}</p>}
+                {/* One piece, or all of it — each with what it costs the press
+                    and about how long it waits (2026-09-22). */}
+                {lengthChoices && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      aria-pressed={isWindow(lengthChoices.one.window)}
+                      disabled={starting}
+                      onClick={() => setClipWindow(lengthChoices.one.window)}
+                      className={`${pill(isWindow(lengthChoices.one.window))} tabular-nums`}
+                    >
+                      {formatMsg(m.lengthOne, {
+                        seconds: lengthChoices.one.seconds,
+                        n: lengthChoices.one.credits * takeCount,
+                        minutes: lengthChoices.one.minutes,
+                      })}
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={isWindow(lengthChoices.all.window)}
+                      disabled={starting}
+                      onClick={() => setClipWindow(lengthChoices.all.window)}
+                      className={`${pill(isWindow(lengthChoices.all.window))} tabular-nums`}
+                    >
+                      {formatMsg(m.lengthAll, {
+                        seconds: lengthChoices.all.seconds,
+                        n: lengthChoices.all.credits * takeCount,
+                        minutes: lengthChoices.all.minutes,
+                        parts: lengthChoices.all.parts,
+                      })}
+                    </button>
+                  </div>
+                )}
                 {slotOffer && (
                   <div className="mt-2.5">
                     <p className="text-xs text-[#d8b483]">
@@ -1324,8 +1380,15 @@ export function MystiqueDoor({
                         }`}
                       >
                         <span className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-semibold text-[#ecedf1]">{jobName(j)}</span>
-                          <span className="text-[11px] tabular-nums text-[#6b6f7a]">{jobLimit(j)}</span>
+                          <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                            <span className="text-sm font-semibold text-[#ecedf1]">{jobName(j)}</span>
+                            {suggested === j && (
+                              <span className="rounded-full px-2 py-px text-[10.5px] font-medium text-[#f0cda6] shadow-[inset_0_0_0_1px_rgba(240,196,142,0.45)]">
+                                {m.suitsClip}
+                              </span>
+                            )}
+                          </span>
+                          <span className="shrink-0 text-[11px] tabular-nums text-[#6b6f7a]">{jobLimit(j)}</span>
                         </span>
                         <span className="mt-1 block text-xs leading-relaxed text-[#9aa0ad]">{jobLine(j)}</span>
                         <span className="mt-2 block space-y-0.5 text-[11px] leading-snug">
@@ -1351,26 +1414,34 @@ export function MystiqueDoor({
                     </button>
                   </div>
                 )}
-                <p className={`mt-4 ${label}`}>{m.qualityLabel}</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {recastEnginesOf(job).map((e) => {
-                    const spec = RECAST_ENGINES[e];
-                    const q = quoteOf(e);
-                    return (
-                      <button
-                        key={e}
-                        type="button"
-                        aria-pressed={e === engine}
-                        disabled={starting}
-                        onClick={() => setTier(spec.tier)}
-                        className={pill(e === engine)}
-                      >
-                        {spec.tier === "full" ? m.tierFull : m.tierLite}
-                        {q && <span className="ml-1.5 tabular-nums text-[#9aa0ad]">· {formatMsg(m.credits, { n: q.credits })}</span>}
-                      </button>
-                    );
-                  })}
-                </div>
+                {/* Quality: only where there is a choice (a single "Full" pill
+                    chose nothing), and each choice says what it trades — a
+                    softer picture only where its resolution is lower (2026-09-22). */}
+                {recastEnginesOf(job).length > 1 && (
+                  <>
+                    <p className={`mt-4 ${label}`}>{m.qualityLabel}</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {recastEnginesOf(job).map((e) => {
+                        const spec = RECAST_ENGINES[e];
+                        const q = quoteOf(e);
+                        return (
+                          <button
+                            key={e}
+                            type="button"
+                            aria-pressed={e === engine}
+                            disabled={starting}
+                            onClick={() => setTier(spec.tier)}
+                            className={pill(e === engine)}
+                          >
+                            {spec.tier === "full" ? m.tierFull : m.tierLite}
+                            {recastTierIsSofter(e) && <span className="ml-1.5 text-[#9aa0ad]">· {m.tierSofter}</span>}
+                            {q && <span className="ml-1.5 tabular-nums text-[#9aa0ad]">· {formatMsg(m.credits, { n: q.credits })}</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="min-w-0">
@@ -1465,6 +1536,34 @@ export function MystiqueDoor({
                           <p className="text-xs text-[#9aa0ad]">{m.rolesNoRead}</p>
                         ) : null}
                       </div>
+                    )}
+                    {/* ONE character, several people in the clip: who they play,
+                        starting on the read's lead (2026-09-22). With no read
+                        there is nobody to choose from, and nothing is shown.
+                        Only where the take puts them among the clip's own
+                        people (Into the clip, Restage): Photo to life builds
+                        the frame from the photo and its brief names nobody in
+                        the clip, so a choice there would choose nothing. */}
+                    {recastCastsTogether(job) && !ensemble && cast.length === 1 && read !== null && read.people.length > 1 && (
+                      <label className="mt-3 flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-sm">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={cast[0].photos[0].url} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" />
+                        <span className="max-w-[9rem] shrink truncate font-medium text-[#ecedf1]">{cast[0].name}</span>
+                        <span className="shrink-0 text-xs text-[#6b6f7a]">{m.rolePlays}</span>
+                        <select
+                          value={soloTag ?? ""}
+                          disabled={starting}
+                          onChange={(e) => setSoloPick({ tag: e.target.value || null })}
+                          className="w-full min-w-0 max-w-[20rem] flex-1 cursor-pointer truncate rounded-full bg-[rgba(255,255,255,0.06)] py-1.5 pl-3.5 pr-2 text-sm text-[#ecedf1] shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)] outline-none [color-scheme:dark] disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          {peopleInClip.map((p) => (
+                            <option key={p.tag} value={p.tag}>
+                              {formatMsg(p.many ? m.roleGroup : m.rolePerson, { tag: p.tag, where: p.where.slice(0, 28) })}
+                            </option>
+                          ))}
+                          <option value="">{m.roleWords}</option>
+                        </select>
+                      </label>
                     )}
                     {/* A character over a whole group, in a take made in parts:
                         the change every later part is least likely to hold. */}

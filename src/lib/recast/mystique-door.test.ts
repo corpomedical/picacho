@@ -261,6 +261,36 @@ describe("the door while a take renders, and after", () => {
     expect(ask).toMatch(/finishes before the stop lands/);
   });
 
+  it("lets one character play whoever the person chooses, starting on the lead, and sends that choice", () => {
+    expect(door).toContain("const leadTag = read?.people.find((p) => p.lead)?.tag ?? null;");
+    expect(door).toMatch(/const soloTag: string \| null = cast\.length === 1 && soloPick [^;]*\? soloPick\.tag : leadTag;/);
+    const take = door.slice(door.indexOf("async function take("), door.indexOf("async function stop("));
+    expect(take).toContain("castTag: soloTag ?? undefined,");
+    expect(take).not.toContain("p.lead");
+    // Shown only with a read to choose from; a failed read shows no choice.
+    expect(door).toContain("{recastCastsTogether(job) && !ensemble && cast.length === 1 && read !== null && read.people.length > 1 && (");
+    expect(door).toContain("onChange={(e) => setSoloPick({ tag: e.target.value || null })}");
+    // A new clip starts on its own lead again.
+    expect(door.match(/setSoloPick\(null\);/g)?.length).toBe(2);
+    // The group rule follows who is actually played.
+    expect(door).toContain("(ensemble ? castTags : [soloTag]).some(");
+  });
+
+  it("marks the job that suits the clip, and never switches to it", () => {
+    expect(door).toContain("const suggested = seen ? recastSuggestJob(read, seen.seconds) : null;");
+    expect(door).toContain("{suggested === j && (");
+    expect(door).not.toMatch(/(setJob|chooseJob)\(suggested/);
+  });
+
+  it("offers quality only where there is a choice, and lengths past 15 s with their prices — keeping today's default", () => {
+    expect(door).toContain("{recastEnginesOf(job).length > 1 && (");
+    expect(door).toContain("recastTierIsSofter(e) && <span");
+    expect(door).toContain("onClick={() => setClipWindow(lengthChoices.one.window)}");
+    expect(door).toContain("onClick={() => setClipWindow(lengthChoices.all.window)}");
+    // The page still opens on the whole clip up to the job's ceiling (the operator's call).
+    expect(door.match(/recastFitWindow\(defaultRecastWindow\(res\.seconds, job\), res\.seconds, job\)/g)?.length).toBe(2);
+  });
+
   it("goes to a take that settles, lights it, and tells a hidden tab once — never asking for permission", () => {
     expect(door).toContain('before.get(x.id) === "generating" && x.status !== "generating"');
     expect(door).toContain("announcedRef.current.has(x.id)");

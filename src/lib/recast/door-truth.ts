@@ -11,11 +11,13 @@
 // once, from the same rules the server runs on, so two places on the page
 // cannot disagree.
 
-import { chainMinutes } from "../generations/chain";
+import { CHAIN_FPS, CHAIN_PIECE_MAX_FRAMES, chainMinutes, chainPieceCount } from "../generations/chain";
 import { isRawProviderError } from "../generations/user-facing-error";
 import { PLAN_LIMITS, type PlanId } from "../plans";
+import type { RecastRead } from "./recast-read";
 import {
   RECAST_ENGINES,
+  RECAST_JOB_MAX_SECONDS,
   RECAST_MIN_SECONDS,
   recastEnginesOf,
   recastLumaDuration,
@@ -352,4 +354,107 @@ export function recastSlotOffer(
         ? { window: fullWindow, seconds: fullSeconds, credits: recastWindowCredits(engine, clip, fullWindow) }
         : null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// WHICH JOB SUITS THIS CLIP (advisory)
+//
+// A quiet mark on one job card — never a switch: the job is only ever the
+// person's choice (2026-09-18, after a 28 s crowd scene was moved to Photo to
+// life and came back as a room of cloned children). The table reads only the
+// clip read's own fields — how many people, the framing, the cuts, the sound,
+// whether a head is in view, how long — and counts, for each job, the limits
+// this clip would run into, the ones the door already warns about:
+//
+//   Into the clip   several people (one is replaced among them), a wide shot
+//                   (few pixels for a face), cuts (the joins wander), no head
+//                   in view, and a take long enough to be made in parts
+//   Photo to life   ruled out when the clip holds nobody to perform, or more
+//                   than one person, or a full or wide view — everything that
+//                   is not the performer gets invented (the door's own
+//                   motionWillInvent rule); otherwise cuts and no head count,
+//                   and it takes 30 s in one piece
+//   Restyle         someone speaking (it comes back silent), and a clip longer
+//                   than its 10 s
+//
+// The fewest wins; a tie goes to the job that keeps the most of the clip.
+// Restage is never suggested: it rebuilds the clip rather than keeping it,
+// and has not yet been proved on a real take. An unsure read suggests nothing.
+
+export function recastSuggestJob(read: RecastRead | null, clipSeconds: number): RecastJob | null {
+  if (!read || read.confidence === "low") return null;
+  const people = read.people.length;
+  const several = people > 1 || read.people.some((p) => p.many);
+  const cuts = read.cuts.length > 0 ? 1 : 0;
+  const noHead = people > 0 && !read.headVisible ? 1 : 0;
+  const inParts = chainPieceCount(Math.min(clipSeconds, RECAST_JOB_MAX_SECONDS.scene)) > 1 ? 1 : 0;
+  const misses: Record<"scene" | "motion" | "world", number> = {
+    scene: (several ? 1 : 0) + (read.framing === "wide" ? 1 : 0) + cuts + noHead + inParts,
+    motion: people === 0 || several || read.framing === "full" || read.framing === "wide" ? Infinity : cuts + noHead,
+    world: (read.sound === "speech" ? 1 : 0) + (clipSeconds > RECAST_JOB_MAX_SECONDS.world + 0.05 ? 1 : 0),
+  };
+  let best: "scene" | "motion" | "world" = "scene";
+  for (const job of ["scene", "motion", "world"] as const) if (misses[job] < misses[best]) best = job;
+  return best;
+}
+
+// ---------------------------------------------------------------------------
+// QUALITY THAT SAYS WHAT IT TRADES
+
+const RESOLUTION_LINES: Record<NonNullable<(typeof RECAST_ENGINES)[RecastEngine]["resolution"]>, number> = {
+  "480p": 480,
+  "540p": 540,
+  "720p": 720,
+};
+
+/**
+ * Whether this engine's picture is smaller than its job's Full one — read
+ * from the two engines' own resolutions, so "Lighter" says it is softer only
+ * where it is. Photo to life's two engines carry no resolution, so nothing
+ * is claimed for them beyond the price.
+ */
+export function recastTierIsSofter(engine: RecastEngine): boolean {
+  const spec = RECAST_ENGINES[engine];
+  if (spec.tier !== "lite" || !spec.resolution) return false;
+  const full = recastEnginesOf(spec.job).find((e) => RECAST_ENGINES[e].tier === "full");
+  const fullResolution = full ? RECAST_ENGINES[full].resolution : undefined;
+  return fullResolution !== undefined && RESOLUTION_LINES[spec.resolution] < RESOLUTION_LINES[fullResolution];
+}
+
+// ---------------------------------------------------------------------------
+// ONE PIECE, OR ALL OF IT
+//
+// Past 15 s Into the clip is made in parts (chain.ts), which costs more, waits
+// longer and joins. On such a clip the door puts both lengths side by side
+// with their prices and waits — "15 s · 9 credits · about 15 min · one piece"
+// and "All 28 s · 19 credits · about 30 min · 2 parts". It never chooses for
+// the person: the page still opens on the whole clip up to 30 s, the
+// operator's call. Prices are recastWindowCredits; times are recastMinutes.
+
+export type RecastLengthChoice = { window: RecastWindow; seconds: number; credits: number; minutes: number; parts: number };
+
+export function recastLengthChoices(
+  engine: RecastEngine,
+  clip: Pick<RecastClip, "seconds" | "frames">,
+  window: RecastWindow,
+  references = 0,
+): { one: RecastLengthChoice; all: RecastLengthChoice } | null {
+  const spec = RECAST_ENGINES[engine];
+  if (!spec.chains) return null;
+  const tenth = (v: number) => Math.round(v * 10) / 10;
+  const allSeconds = tenth(Math.min(clip.seconds, RECAST_JOB_MAX_SECONDS[spec.job]));
+  if (chainPieceCount(allSeconds) <= 1) return null;
+  const pieceSeconds = Math.floor(CHAIN_PIECE_MAX_FRAMES / CHAIN_FPS);
+  const choice = (seconds: number): RecastLengthChoice => {
+    const start = tenth(Math.max(0, Math.min(window.start, clip.seconds - seconds)));
+    const w = { start, end: tenth(start + seconds) };
+    return {
+      window: w,
+      seconds,
+      credits: recastWindowCredits(engine, clip, w, references),
+      minutes: recastMinutes(engine, seconds),
+      parts: chainPieceCount(seconds),
+    };
+  };
+  return { one: choice(pieceSeconds), all: choice(allSeconds) };
 }

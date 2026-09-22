@@ -4,17 +4,21 @@ import { join } from "node:path";
 import { chainMinutes } from "../generations/chain";
 import { RECAST_ENGINES, RECAST_JOB_ORDER, recastEnginesOf, recastMissing, type RecastJob } from "./recast";
 import { recastWindowCredits } from "./trim";
+import type { RecastPerson, RecastRead } from "./recast-read";
 import {
   RECAST_STOPPED_STEP,
   recastBlocker,
   recastCreditsLeft,
   recastFitWindow,
   recastJobPromise,
+  recastLengthChoices,
   recastLengthFloor,
   recastMinutes,
   recastSlotOffer,
+  recastSuggestJob,
   recastTakeOutcome,
   recastTakeReport,
+  recastTierIsSofter,
   recastWait,
   type RecastDoorState,
 } from "./door-truth";
@@ -311,5 +315,95 @@ describe("the door's first line", () => {
     expect(sub.length).toBeGreaterThan(40);
     const everyJobKeepsSound = RECAST_JOB_ORDER.every((j) => recastJobPromise(j).keeps.includes("sound"));
     if (!everyJobKeepsSound) expect(sub).not.toMatch(/sound/i);
+  });
+});
+
+describe("which job suits a clip", () => {
+  const person = (tag: string, lead = false, many = false): RecastPerson => ({ tag, where: "centre", does: "moves", lead, many });
+  const read = (patch: Partial<RecastRead>): RecastRead => ({
+    title: "a clip",
+    motion: "someone moves",
+    world: "a room",
+    people: [person("A", true)],
+    keeps: [],
+    cuts: [],
+    framing: "medium",
+    sound: "ambient",
+    headVisible: true,
+    confidence: "high",
+    ...patch,
+  });
+  // Any style of footage, not one test clip: each is described only by the
+  // read's own fields.
+  const clips: [string, RecastRead, number][] = [
+    ["an animated character singing", read({ sound: "music" }), 12],
+    ["a product turning on a table, no people", read({ people: [], sound: "music", framing: "close_up" }), 8],
+    ["two people talking", read({ people: [person("A", true), person("B")], sound: "speech" }), 14],
+    ["a wide dance", read({ framing: "wide", sound: "music" }), 9],
+    ["a dance troupe, wide, long", read({ people: [person("A", true, true)], framing: "wide", sound: "music" }), 26],
+    ["a screen recording with cuts and a narrator", read({ people: [], cuts: [2.1, 5.4], sound: "speech" }), 20],
+    ["one person to camera, long", read({ framing: "close_up", sound: "speech" }), 25],
+    ["one person to camera, short", read({ framing: "close_up", sound: "speech" }), 10],
+    ["a full-body walk", read({ framing: "full" }), 7],
+  ];
+
+  it("reads each clip by its own fields", () => {
+    const got = Object.fromEntries(clips.map(([name, r, s]) => [name, recastSuggestJob(r, s)]));
+    expect(got).toEqual({
+      "an animated character singing": "scene",
+      "a product turning on a table, no people": "scene",
+      "two people talking": "scene",
+      "a wide dance": "world",
+      "a dance troupe, wide, long": "world",
+      "a screen recording with cuts and a narrator": "scene",
+      // Into the clip would make it in parts; Photo to life does 30 s in one.
+      "one person to camera, long": "motion",
+      "one person to camera, short": "scene",
+      "a full-body walk": "scene",
+    });
+  });
+
+  it("never suggests Photo to life for a wide, full or several-person read, and never Restage", () => {
+    for (const [name, r, s] of clips) {
+      const job = recastSuggestJob(r, s);
+      if (r.framing === "wide" || r.framing === "full" || r.people.length !== 1 || r.people.some((p) => p.many)) expect(job, name).not.toBe("motion");
+      expect(job, name).not.toBe("restage");
+    }
+  });
+
+  it("suggests nothing from an unsure read, or none", () => {
+    expect(recastSuggestJob(read({ confidence: "low" }), 10)).toBeNull();
+    expect(recastSuggestJob(null, 10)).toBeNull();
+  });
+});
+
+describe("quality that says what it trades", () => {
+  it("calls Lighter a softer picture only where its resolution is lower", () => {
+    expect(recastTierIsSofter("h3-480")).toBe(true);
+    expect(recastTierIsSofter("luma-540")).toBe(true);
+    // Photo to life's two carry no resolution: nothing is claimed.
+    expect(recastTierIsSofter("kling-std")).toBe(false);
+    for (const full of ["h3-768", "luma-720", "kling-pro", "kling-edit"] as const) expect(recastTierIsSofter(full)).toBe(false);
+  });
+});
+
+describe("one piece, or all of it", () => {
+  const clip = { seconds: 28, frames: 672 };
+
+  it("prices a 28 s clip at 15 s for 9 credits in one piece, and all 28 s for 19 in two parts", () => {
+    // 15 × $0.168 = $2.52 → 9 credits; 31 billed s × $0.168 = $5.21 → 19 (chain.ts).
+    const choices = recastLengthChoices("kling-edit", clip, { start: 0, end: 28 });
+    expect(choices).toEqual({
+      one: { window: { start: 0, end: 15 }, seconds: 15, credits: 9, minutes: 15, parts: 1 },
+      all: { window: { start: 0, end: 28 }, seconds: 28, credits: 19, minutes: 30, parts: 2 },
+    });
+    expect(choices!.all.credits).toBe(recastWindowCredits("kling-edit", clip, { start: 0, end: 28 }));
+  });
+
+  it("keeps the chosen start where it can, and offers nothing where there is no choice", () => {
+    expect(recastLengthChoices("kling-edit", clip, { start: 6, end: 21 })?.one.window).toEqual({ start: 6, end: 21 });
+    expect(recastLengthChoices("kling-edit", clip, { start: 20, end: 28 })?.one.window).toEqual({ start: 13, end: 28 });
+    expect(recastLengthChoices("kling-edit", { seconds: 15, frames: 360 }, { start: 0, end: 15 })).toBeNull();
+    expect(recastLengthChoices("kling-pro", clip, { start: 0, end: 28 })).toBeNull();
   });
 });
