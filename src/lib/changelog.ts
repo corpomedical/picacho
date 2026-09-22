@@ -20,6 +20,22 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.78.0",
+    build: 117,
+    date: "2026-09-22",
+    title: "Recast: every word reaches the take, the page tells the truth, and no take is a dead end",
+    items: [
+      "Every word you write now reaches the take. A take used to be sent a stored copy of its instructions cut at 2,000 characters from the end — which is where your direction sits, so on a busy clip your words were quietly shortened. Each engine now gets as much as it takes, and when something must give way it is our own wording, never yours: who the cast replaces, the clip's length and cuts, and the place by name stay too.",
+      "Your words win over our keep list. On takes up to 15 seconds, writing \"start close and pull out\" or \"dress her as Cleopatra\" no longer argues with our own instruction to keep the camera and the clothes: every keep line now holds unless your direction changes it, and whatever your words don't change still stays. Takes rendered in parts keep today's stricter wording, which is what holds them together at the joins.",
+      "\"See the brief\" shows exactly what is sent — composed for the stretch you trimmed, with the person you picked to be replaced, and on a take in parts it says plainly that later parts add their own matching lines.",
+      "A rendering take now says where it is — \"Part 2 of 3\", \"Joining the parts\" — with real minutes instead of a flat \"3–20 min\", lights up when it lands, and a stopped or failed take says how it ended, why, and whether it cost anything. The clip preview gained a Pause, and starts still for anyone whose system asks for less motion.",
+      "Each job's card says what it keeps and what it changes — Restage and Restyle say plainly that no sound comes back — and a grey Take button names the first thing missing and takes you to it. On a clip over 15 seconds the two lengths are offered side by side with their real prices and waits.",
+      "No take is a dead end any more. A long take whose joining step kept failing used to retry forever, holding the credits; it now stops after six tries or two hours and is settled like any failed take. A Stop pressed while our own step was failing no longer counts as your cancellation — it ends as our failure. And a Stop between parts can no longer quietly buy one more part.",
+      "Every take with a character is now checked whole: each face at the start, the middle and the end, each character against the photos actually sent, and the card reports what held — saying \"couldn't be checked\" when it couldn't, instead of claiming a check that never ran. \"Not charged\" appears only when the credits really came back.",
+      "Someone short of credits is told in seconds, before the clip is cut. A clip the browser can't read locally is no longer refused — it goes up and the server reads it. Casting four characters on a take over 15 seconds is refused up front, because a later part could not carry all their photos.",
+    ],
+  },
+  {
     version: "1.77.0",
     build: 116,
     date: "2026-09-22",
