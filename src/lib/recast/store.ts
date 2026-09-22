@@ -16,7 +16,7 @@
 // — which is why it is one bounded jsonb column rather than four.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { RecastEngine, RecastJob } from "./recast";
+import { RECAST_PROMPT_MAX_CHARS, recastFitPrompt, type RecastEngine, type RecastJob } from "./recast";
 import type { RecastKeep } from "./recast-read";
 
 /** The bar a recast's face must clear at the start, the middle AND the end.
@@ -83,7 +83,11 @@ export function recastRow(input: Omit<RecastRecipe, "v">): RecastRecipe {
     keeps: input.keeps.slice(0, 6),
     direction: input.direction.slice(0, 600),
     castTag: input.castTag,
-    brief: input.brief.slice(0, 2000),
+    // The whole brief, up to the longest any engine is sent (2026-09-22).
+    // It was cut at 2,000 from the END — where the person's direction
+    // stands — and the take was SENT this copy. It is a kept copy now; the
+    // action sends the words it composed.
+    brief: recastFitPrompt(input.brief, RECAST_PROMPT_MAX_CHARS),
     lock: input.lock,
     groupId: input.groupId,
     window: input.window,

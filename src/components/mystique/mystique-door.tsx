@@ -275,7 +275,16 @@ export function MystiqueDoor({
   // The same function the server composes with, so what is shown is what is
   // sent. Not memoised: it is string work over a handful of short fields,
   // and every input is rebuilt each render anyway.
-  // The same names the server gives the engine (actions.ts castingsFor, imageTokensFor).
+  // FOR THE STRETCH THAT IS SENT, NOT THE CLIP (2026-09-22): composed from
+  // the whole read and the window — its own length, only the cuts inside it
+  // — and fitted inside the engine's own prompt, exactly as actions.ts
+  // briefFor does. It used to be composed for the whole clip. A long take is
+  // shown its first part's words for the whole window: where its parts meet
+  // is measured on the server, at the footage's stillest moments.
+  const briefWindow = seen ? (clipWindow ?? { start: 0, end: seen.seconds }) : null;
+  const briefInParts =
+    RECAST_ENGINES[engine].chains === true && briefWindow !== null && chainPieceCount(briefWindow.end - briefWindow.start) > 1;
+  // The same names the server gives the engine (actions.ts castingsFor, recast-brief.ts recastBriefNames).
   const briefCast = ensemble ? cast : cast.slice(0, 1);
   const restageNames = job === "restage" ? recastRestageTokens(briefCast.map(photosOf)) : null;
   const castTokens = restageNames
@@ -293,18 +302,22 @@ export function MystiqueDoor({
       ...(castTokens[i] ? { token: castTokens[i] } : {}),
     };
   });
-  const brief = seen
+  // Only the images the take can carry: a long take keeps one of its four
+  // places for the still at each switch (actions.ts, recastImageRoom).
+  const briefImages = job === "scene" ? Math.min(usedImages.length, recastImageRoom(briefCast.length, briefInParts)) : usedImages.length;
+  const brief = briefWindow
     ? composeRecastBrief({
         job,
+        engine,
         read,
-        seconds: seen.seconds,
+        window: briefWindow,
         casting: castings.length === 0 ? null : castings.length === 1 ? castings[0] : castings,
         keeps,
         direction,
         images: restageNames
           ? usedImages.map((_, i) => `Image ${restageNames.used + 1 + i}`)
           : job === "scene" && engine === "kling-edit"
-            ? recastImageTokens(castTokens, usedImages.length)
+            ? recastImageTokens(castTokens, briefImages)
             : [],
       })
     : "";

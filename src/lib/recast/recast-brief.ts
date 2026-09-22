@@ -22,8 +22,9 @@
 // so what is shown is what is charged for.
 
 import { cleanText } from "../sets/set-spec";
-import type { RecastJob } from "./recast";
+import { RECAST_ENGINES, type RecastEngine, type RecastJob } from "./recast";
 import type { RecastKeep, RecastRead } from "./recast-read";
+import { cutsInWindow, type RecastWindow } from "./trim";
 
 // cleanText collapses EVERY run of whitespace, newlines included — right for
 // a one-line field, fatal here: it flattens the headings and the bullets into
@@ -43,11 +44,14 @@ function cleanBrief(value: string, max: number): string {
   return points.length > max ? points.slice(0, max).join("").trim() : flat;
 }
 
-/** Kling takes 2500 characters and Luma 6000; one cap serves both. */
-// Kling's own prompt limit (both its bodies cut at 2500, recast.ts). It was
-// 2000 until the long take (2026-09-19): a later piece's continuity words run
-// ~420 characters, and a brief is cut from its END — where the person's own
-// direction stands.
+/**
+ * The tightest prompt any engine takes — Kling's 2,500 — and the cap on a
+ * brief composed without naming its engine. Each engine's own number is
+ * recast.ts's promptMax (2026-09-22): Luma and Restage are given up to 6,000.
+ */
+// It was 2000 until the long take (2026-09-19): a later piece's continuity
+// words run ~420 characters, and a brief was cut from its END — where the
+// person's own direction stands. Nothing is cut from the end any more.
 export const RECAST_BRIEF_MAX_CHARS = 2500;
 export const RECAST_DIRECTION_MAX_CHARS = 600;
 
@@ -116,6 +120,62 @@ export function recastCastTokens(photoCounts: number[]): string[] {
   return photoCounts.map((n) => (n > 1 ? `@Element${++elements}` : `@Image${++images}`));
 }
 
+/**
+ * EVERY NAME A TAKE'S WORDS USE, in one place (2026-09-22): the cast's, the
+ * added images', and — for a later part of a long take — the still at its
+ * switch, each exactly as recastRequestBody binds them. The action names
+ * every part with this, and the tests read each part's words against its
+ * body with it, so a brief can never point at a picture the part was not
+ * sent ("A long take's later parts get every picture they are told about").
+ *
+ * photos  how many photos of each cast character ride, in cast order
+ * images  how many added images ride
+ */
+export function recastBriefNames(input: { job: RecastJob; engine: RecastEngine; photos: number[]; images: number }): {
+  cast: string[];
+  images: string[];
+  /** The still at a later part's switch, named after everything else; null where nothing chains. */
+  look: string | null;
+} {
+  if (RECAST_ENGINES[input.engine].restages) {
+    const { tokens, used } = recastRestageTokens(input.photos);
+    return { cast: tokens, images: Array.from({ length: input.images }, (_, i) => `Image ${used + 1 + i}`), look: null };
+  }
+  if (input.job === "scene" && input.engine === "kling-edit") {
+    const cast = recastCastTokens(input.photos);
+    const images = recastImageTokens(cast, input.images);
+    return { cast, images, look: recastImageTokens([...cast, ...images], 1)[0] };
+  }
+  // The engines that read no names are given none.
+  return { cast: [], images: [], look: null };
+}
+
+/**
+ * THE WORDS A TAKE WAS ACTUALLY SENT, read back from its pipeline log
+ * (2026-09-22). A long take's parts each get their own brief, composed whole
+ * when it starts — and the job row that carried them is deleted when the
+ * take finishes. So the action keeps every part's words on the log's first
+ * attempt (`partBriefs`), and a take of one piece has its one brief as the
+ * attempt's compiledPrompt. `expanded` is what Restage's engine rewrote the
+ * words into, where the runner recorded one (the last attempt's
+ * `expandedPrompt`, H3's own `expanded_prompt`).
+ *
+ * Pure and tolerant: the log is data from a row, so anything that is not
+ * exactly a list of strings reads as nothing.
+ */
+export function recastSentBriefs(log: unknown): { parts: string[]; expanded: string | null } {
+  const attempts = Array.isArray(log) ? log.filter((a): a is Record<string, unknown> => typeof a === "object" && a !== null) : [];
+  const first = attempts[0];
+  const last = attempts[attempts.length - 1];
+  const parts = Array.isArray(first?.partBriefs)
+    ? first.partBriefs.filter((b): b is string => typeof b === "string" && b.length > 0)
+    : typeof first?.compiledPrompt === "string" && first.compiledPrompt
+      ? [first.compiledPrompt]
+      : [];
+  const expanded = typeof last?.expandedPrompt === "string" && last.expandedPrompt ? last.expandedPrompt : null;
+  return { parts, expanded };
+}
+
 const bullet = (s: string) => `- ${s}`;
 
 /**
@@ -150,7 +210,8 @@ function imageLines(tokens: string[]): string[] {
 
 function sourceLines(read: RecastRead | null, seconds: number): string[] {
   if (!read) return [`One continuous clip of ${Math.round(seconds)} seconds.`];
-  const out = [read.motion];
+  // The account of what happens gives way before who is who (composeRecastBrief).
+  const out = read.motion ? [read.motion] : [];
   out.push(
     read.cuts.length === 0
       ? `${Math.round(seconds)} seconds, one continuous shot.`
@@ -164,10 +225,14 @@ function keepLines(keeps: RecastKeep[]): string[] {
   return keeps.map((k) => k.what);
 }
 
-type BriefInput = {
+type BriefCommon = {
   job: RecastJob;
+  /**
+   * The engine the brief is sent to, whose own prompt limit it is composed
+   * to fit (recast.ts promptMax). Absent: the tightest there is, 2,500.
+   */
+  engine?: RecastEngine;
   read: RecastRead | null;
-  seconds: number;
   /** Who is cast: one character, several in one take (Into the clip and Restage), or nobody. */
   casting: RecastCasting | RecastCasting[] | null;
   /** The keeps still ticked on the door — a subset of the read's. */
@@ -185,29 +250,118 @@ type BriefInput = {
   look?: string;
 };
 
+type BriefInput = BriefCommon &
+  (
+    | {
+        /**
+         * THE STRETCH THIS BRIEF IS FOR, in seconds of the file — and `read`
+         * is then the read of the WHOLE clip. The brief says the window's own
+         * length and only the cuts inside it, on its own clock (trim.ts
+         * cutsInWindow). The door and the action both compose this way, so
+         * what "See the brief" shows is what is sent (2026-09-22: the door
+         * had been composing from the whole clip's length and every cut in
+         * it, while the take was sent the trimmed stretch's).
+         */
+        window: RecastWindow;
+        seconds?: undefined;
+      }
+    | {
+        /** Without a window: the length of what is sent, and `read` already describes just that. */
+        seconds: number;
+        window?: undefined;
+      }
+  );
+
+/** The characters a brief casts, whichever shape they were given in. */
+function castingsIn(casting: BriefCommon["casting"]): RecastCasting[] {
+  return casting === null ? [] : Array.isArray(casting) ? casting : [casting];
+}
+
 /**
  * The brief a take is sent with. `direction` is the person's own words and
  * always lands last, so it reads as the note on top of the order rather than
  * an argument with it.
  *
- * INSIDE THE ENGINE'S 2500 WITHOUT LOSING THEIR WORDS (2026-09-19). A brief
- * is cut from its END, where the direction stands — and a later piece of a
- * long take with the clothes line, three images, six keeps and a full
- * direction measured ~60 characters over. So when it is too long, the read's
- * account of the clip gives way first — the people after the lead, then the
- * account itself (the video shows all of it anyway) — and only then is
- * anything cut.
+ * EVERY WORD THEY WROTE REACHES THE TAKE (2026-09-22). Until today a brief
+ * too long for its engine was cut from its END — where the direction stands
+ * — and the copy actually sent was the recipe's, cut at 2,000 from the end
+ * again: a 400-character direction beside three keeps, two images and a
+ * four-person read lost 336 of its characters, on every single-piece take.
+ * Now the brief is composed to fit its own engine (recast.ts promptMax), and
+ * when it is too long OUR words give way, in this order:
+ *
+ *   1. the read's account of the other people — anyone not cast, the lead
+ *      last of them (the video shows them anyway);
+ *   2. the read's account itself — what happens first, then the rest;
+ *   3. the keeps: our own KEEP wording first, said again in its short form
+ *      (the same promises in a third of the words), then the things the
+ *      person left ticked, the last ticked first.
+ *
+ * Two things never give way. The person's direction (at most 600
+ * characters) is never cut. And a later part's CONTINUITY wording is never
+ * shortened: it is the wording every passing seam test was sent with, and a
+ * shorter one is an untested change to something measured good. Should all
+ * of that still leave it too long — no take the door can ask for gets there
+ * (recast-brief.test.ts runs every shape) — whole lines of the keep list go
+ * from its end, and never a line of the direction or the continuity.
  */
 export function composeRecastBrief(input: BriefInput): string {
-  let read = input.read;
+  const max = input.engine ? RECAST_ENGINES[input.engine].promptMax : RECAST_BRIEF_MAX_CHARS;
+  const seconds = input.window ? input.window.end - input.window.start : input.seconds;
+  let read =
+    input.window && input.read ? { ...input.read, cuts: cutsInWindow(input.read.cuts, input.window) } : input.read;
+  let keeps = input.keeps;
+  let short = false;
+  const cast = new Set(castingsIn(input.casting).map((c) => c.tag));
   for (;;) {
-    const text = composeUncut({ ...input, read });
-    if (Array.from(text).length <= RECAST_BRIEF_MAX_CHARS || read === null) return cleanBrief(text, RECAST_BRIEF_MAX_CHARS);
-    read = read.people.length > 1 ? { ...read, people: read.people.slice(0, -1) } : null;
+    const text = composeUncut({ ...input, seconds, read, keeps, short });
+    if (Array.from(text).length <= max) return text;
+    if (read) {
+      // 1. The people nobody is cast as: those after the lead first, then the lead.
+      const spare = read.people.map((p, i) => ({ p, i })).filter(({ p }) => !cast.has(p.tag));
+      const next = spare.filter(({ p }) => !p.lead).pop() ?? spare.pop();
+      if (next) {
+        read = { ...read, people: read.people.filter((_, i) => i !== next.i) };
+        continue;
+      }
+      // 2. The account itself: what happens (the video shows it), then who is who and where.
+      read = read.motion ? { ...read, motion: "" } : null;
+      continue;
+    }
+    // 3. Our own keep wording, short; then the keeps the person ticked, the last first.
+    if (!short) {
+      short = true;
+      continue;
+    }
+    if (keeps.length > 0) {
+      keeps = keeps.slice(0, -1);
+      continue;
+    }
+    return dropKeepLines(text, max);
   }
 }
 
-function composeUncut(input: BriefInput): string {
+/**
+ * The last resort, and never reached by a take the door can send: whole
+ * lines of the KEEP block go, from its end, until the brief fits — never a
+ * line of the direction, and never one of the continuity, which stands
+ * above the keeps. A brief with nothing left to drop is cut from its end.
+ */
+function dropKeepLines(text: string, max: number): string {
+  const lines = text.split("\n");
+  const keepAt = lines.findIndex((l) => l.startsWith("KEEP"));
+  const directionAt = lines.lastIndexOf("DIRECTION");
+  const end = directionAt > keepAt ? directionAt - 1 : lines.length;
+  for (let drop = end - 1; keepAt >= 0 && drop > keepAt; drop--) {
+    if (lines[drop] === "") continue;
+    lines.splice(drop, 1);
+    const fitted = lines.join("\n");
+    if (Array.from(fitted).length <= max) return fitted;
+  }
+  return cleanBrief(lines.join("\n"), max);
+}
+
+function composeUncut(input: BriefCommon & { seconds: number; short?: boolean }): string {
   const direction = cleanText(input.direction, RECAST_DIRECTION_MAX_CHARS);
   const parts: string[] = [];
 
@@ -248,7 +402,7 @@ function composeUncut(input: BriefInput): string {
   if (input.job === "restage") {
     parts.push(
       "Video 1 is the scene to build on.",
-      ...(input.read ? [input.read.motion, ...(input.read.world ? [`It is set in: ${input.read.world}`] : [])] : []),
+      ...(input.read ? [...(input.read.motion ? [input.read.motion] : []), ...(input.read.world ? [`It is set in: ${input.read.world}`] : [])] : []),
       "",
       ...(castings.length > 0
         ? [
@@ -336,12 +490,7 @@ function composeUncut(input: BriefInput): string {
             "",
           ]
         : []),
-      "KEEP EXACTLY",
-      bullet("The performance: every gesture, every step, every expression, on the same frames."),
-      bullet("The framing, the camera move, the cuts and the timing."),
-      ...(input.read?.world ? [bullet(`The place it happens in, unless the direction changes it: ${input.read.world}`)] : []),
-      ...keepLines(input.keeps).map(bullet),
-      bullet(`Everything the direction does not change stays exactly as it is in ${video}.`),
+      ...wordsKeepLines({ video, world: input.read?.world, keeps: input.keeps, short: input.short }),
     );
     if (direction) parts.push("", "DIRECTION", direction);
     return cleanBrief(parts.join("\n"), Number.POSITIVE_INFINITY);
@@ -396,23 +545,7 @@ function composeUncut(input: BriefInput): string {
             "",
           ]
         : []),
-      "KEEP EXACTLY",
-      bullet("The performance: every gesture, every step, every expression, on the same frames."),
-      bullet("The framing, the camera move, the cuts and the timing."),
-      // THE PLACE, BY NAME (2026-09-20). "The setting" in the abstract was
-      // not enough: asked to turn a whole crowd into one character, the
-      // engine decided the scene must be somewhere else and built an
-      // Egyptian field where a school courtyard had been — in the FIRST
-      // part, before any join. Naming what the read saw gives it something
-      // concrete to keep.
-      bullet(input.read?.world ? `The place it happens in, unchanged: ${input.read.world}` : "The lighting and the setting."),
-      bullet("The lighting."),
-      // NOT "everyone else in the shot": when a cast character plays a GROUP,
-      // that promise contradicts the task, and the engine settled the argument
-      // by redrawing the whole picture (2026-09-20).
-      bullet(`Everyone in ${video} who is not named above stays exactly as they are.`),
-      ...keepLines(input.keeps).map(bullet),
-      bullet(`Everything else stays exactly as it is in ${video}.`),
+      ...castKeepLines({ video, world: input.read?.world, keeps: input.keeps, short: input.short }),
     );
     if (direction) parts.push("", "DIRECTION", direction);
     return cleanBrief(parts.join("\n"), Number.POSITIVE_INFINITY);
@@ -466,15 +599,64 @@ function composeUncut(input: BriefInput): string {
           "",
         ]
       : []),
-    "KEEP EXACTLY",
-    bullet("The performance: every gesture, every step, every expression, on the same frames."),
-    bullet("The framing, the camera move, the cuts and the timing."),
-    bullet(input.read?.world ? `The place it happens in, unchanged: ${input.read.world}` : "The lighting and the setting."),
-    bullet("The lighting."),
-    bullet(`Everyone in ${video} who is not named above stays exactly as they are.`),
-    ...keepLines(input.keeps).map(bullet),
-    bullet(`Everything else stays exactly as it is in ${video}.`),
+    ...castKeepLines({ video, world: input.read?.world, keeps: input.keeps, short: input.short }),
   );
   if (direction) parts.push("", "DIRECTION", direction);
   return cleanBrief(parts.join("\n"), Number.POSITIVE_INFINITY);
+}
+
+/**
+ * What a take with someone cast in it keeps — one character or several.
+ *
+ * `short` is the same promises in half the words, said only when the brief
+ * would not otherwise fit its engine (composeRecastBrief's third step): the
+ * full wording is the one the passing takes were sent with.
+ */
+function castKeepLines(input: { video: string; world: string | undefined; keeps: RecastKeep[]; short?: boolean }): string[] {
+  const { video, world } = input;
+  if (input.short) {
+    return [
+      "KEEP EXACTLY",
+      bullet(world ? "The performance, the camera, the cuts, the timing and the lighting." : "The performance, the camera, the cuts, the timing, the lighting and the setting."),
+      ...(world ? [bullet(`The place it happens in, unchanged: ${world}`)] : []),
+      ...keepLines(input.keeps).map(bullet),
+      bullet(`Everyone not named above, and everything else in ${video}, as it is.`),
+    ];
+  }
+  return [
+    "KEEP EXACTLY",
+    bullet("The performance: every gesture, every step, every expression, on the same frames."),
+    bullet("The framing, the camera move, the cuts and the timing."),
+    // THE PLACE, BY NAME (2026-09-20). "The setting" in the abstract was
+    // not enough: asked to turn a whole crowd into one character, the
+    // engine decided the scene must be somewhere else and built an
+    // Egyptian field where a school courtyard had been — in the FIRST
+    // part, before any join. Naming what the read saw gives it something
+    // concrete to keep.
+    bullet(world ? `The place it happens in, unchanged: ${world}` : "The lighting and the setting."),
+    bullet("The lighting."),
+    // NOT "everyone else in the shot": when a cast character plays a GROUP,
+    // that promise contradicts the task, and the engine settled the argument
+    // by redrawing the whole picture (2026-09-20).
+    bullet(`Everyone in ${video} who is not named above stays exactly as they are.`),
+    ...keepLines(input.keeps).map(bullet),
+    bullet(`Everything else stays exactly as it is in ${video}.`),
+  ];
+}
+
+/** What a take with nobody cast keeps: everything its words do not change. `short` as castKeepLines. */
+function wordsKeepLines(input: { video: string; world: string | undefined; keeps: RecastKeep[]; short?: boolean }): string[] {
+  const { video, world } = input;
+  return [
+    "KEEP EXACTLY",
+    ...(input.short
+      ? [bullet("The performance, the camera, the cuts and the timing.")]
+      : [
+          bullet("The performance: every gesture, every step, every expression, on the same frames."),
+          bullet("The framing, the camera move, the cuts and the timing."),
+        ]),
+    ...(world ? [bullet(`The place it happens in, unless the direction changes it: ${world}`)] : []),
+    ...keepLines(input.keeps).map(bullet),
+    bullet(`Everything the direction does not change stays exactly as it is in ${video}.`),
+  ];
 }

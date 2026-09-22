@@ -21,7 +21,7 @@ describe("every action", () => {
     expect(access).toContain('profile?.role === "admin"');
     expect(access).toContain("if (!isAdmin) return { error: RECAST_NOT_OPEN }");
     expect(access).toContain("isRecastEnabled");
-    for (const fn of ["reserveRecastUpload", "inspectRecastClip", "discardRecastUpload", "startRecastTakes", "getRecastTakeMedia"]) {
+    for (const fn of ["reserveRecastUpload", "inspectRecastClip", "discardRecastUpload", "startRecastTakes", "getRecastTakeMedia", "getRecastTakeBriefs"]) {
       const body = source.slice(source.indexOf(`export async function ${fn}`));
       expect(body.indexOf("await recastAccess()"), fn).toBeGreaterThan(-1);
       expect(body.indexOf("await recastAccess()"), fn).toBe(body.indexOf("await "));
@@ -55,7 +55,7 @@ describe("startRecastTakes", () => {
     // The read makes a round trip through a browser, so it is re-bounded and
     // may only shape the BRIEF — never the money or the cast.
     expect(start).toContain("reboundRecastRead(input?.read, clip.seconds)");
-    const readLine = at("const wholeRead = reboundRecastRead");
+    const readLine = at("const read = reboundRecastRead");
     expect(start.slice(readLine, at("await gatePrompt({"))).not.toMatch(/credit|allowance|characterIds/);
   });
 
@@ -270,7 +270,9 @@ describe("several characters in one take", () => {
 
   it("names the place the take must keep, from the read's own words", () => {
     const brief = readFileSync(join(__dirname, "recast-brief.ts"), "utf8");
-    expect(brief).toContain("The place it happens in, unchanged: ${input.read.world}");
+    // Said in full and in the short form a brief too long for its engine takes (2026-09-22).
+    expect(brief).toContain("The place it happens in, unchanged: ${world}");
+    expect(brief).toContain("castKeepLines({ video, world: input.read?.world,");
   });
 
   it("promises the face lock only where ONE face is cast", () => {
@@ -323,6 +325,75 @@ describe("what keeps a later part on the take's look", () => {
     const reader = readFileSync(join(__dirname, "recast-read.ts"), "utf8");
     expect(reader).toContain('"many": boolean }   // true when this line is SEVERAL people (a crowd, a row, a class), not one');
     expect(reader).toContain("many: o.many === true");
+  });
+});
+
+// EVERY WORD YOU WRITE REACHES THE TAKE (2026-09-22). The submit read its
+// brief back out of the recipe, which store.ts cut at 2,000 characters from
+// the end — where the direction stands — and the door composed what it
+// showed from the whole clip, not the stretch that is sent.
+describe("the words a take is sent", () => {
+  const door = readFileSync(join(__dirname, "..", "..", "components", "mystique", "mystique-door.tsx"), "utf8");
+  /** The keys of the first composeRecastBrief({ … }) call after `from`, in order. */
+  const keysOfCall = (text: string, from: string) => {
+    const open = text.indexOf("composeRecastBrief({", text.indexOf(from));
+    const body = text.slice(open, text.indexOf("})", open));
+    return [...body.matchAll(/\n\s+(\w+)(?=[,:])/g)].map((m) => m[1]);
+  };
+
+  it("sends the words it composed, never the recipe's kept copy", () => {
+    expect(start).not.toMatch(/rows\[i\]\.recast/);
+    expect(start).toContain("const takeBriefs = takes.map((chars) => (chainPrep ? pieceBriefsFor(chainPrep.plan, chars) : [briefFor(chars)]))");
+    expect(start).toContain("brief: takeBriefs[i][0]");
+    expect(start).toContain("const briefs = takeBriefs[i] ?? []");
+    // Composed once, before the rows are reserved; sent from the same list.
+    expect(at("const takeBriefs = takes.map(")).toBeLessThan(at('admin.rpc("reserve_generations"'));
+    const store = readFileSync(join(__dirname, "store.ts"), "utf8");
+    expect(store).toContain("brief: recastFitPrompt(input.brief, RECAST_PROMPT_MAX_CHARS)");
+    expect(store).not.toContain("input.brief.slice(0, 2000)");
+  });
+
+  it("composes for the window with the whole read, the door's own way, inside the engine's own limit", () => {
+    const server = keysOfCall(start, "const briefFor = (chars: Character[]) =>");
+    const shown = keysOfCall(door, "const brief = briefWindow");
+    expect(server).toEqual(["job", "engine", "read", "window", "casting", "keeps", "direction", "images"]);
+    expect(shown).toEqual(server);
+    // The read handed to both is the WHOLE clip's; the window cuts it.
+    expect(start).toContain("const read = reboundRecastRead(input?.read, clip.seconds)");
+    expect(start).not.toContain("cutsInWindow(");
+    expect(door).toContain("window: briefWindow,");
+    expect(door).toContain("const briefWindow = seen ? (clipWindow ?? { start: 0, end: seen.seconds }) : null");
+    // Every part of a long take, on its own stretch of the window.
+    const parts = keysOfCall(start, "const pieceBriefsFor = (plan");
+    expect(parts.slice(0, 4)).toEqual(["job", "engine", "read", "window"]);
+    expect(start).toContain("window: { start: window.start + from / CHAIN_FPS, end: window.start + (from + frames) / CHAIN_FPS }");
+  });
+
+  it("names everything the one way the request binds it", () => {
+    expect(start).toContain("recastBriefNames({ job: spec.job, engine, photos: chars.map(photosOfRow), images: sendImages.length })");
+    expect(start).toContain("const look = k > 0 && names.look ? names.look : undefined");
+    // And the door names only the images the take will carry: a long take
+    // keeps one of its four places for the still.
+    expect(door).toContain("recastImageRoom(briefCast.length, briefInParts)");
+    expect(door).toContain(
+      "RECAST_ENGINES[engine].chains === true && briefWindow !== null && chainPieceCount(briefWindow.end - briefWindow.start) > 1",
+    );
+  });
+
+  it("keeps every part's words on the take's log, where they outlive the job row", () => {
+    expect(start).toContain("const partBriefs = chainPrep ? { partBriefs: briefs } : {}");
+    const save = start.slice(at("saveVideoJob({"), at("started.push(generationId)"));
+    expect(save).toContain("compiledPrompt: brief,\n              ...partBriefs,");
+    // A take that fails to start keeps them too.
+    const rescue = start.slice(at("} catch (err) {\n        if (pendingJob)"));
+    expect(rescue).toContain("compiledPrompt: brief, ...partBriefs,");
+    // And they are read back for the take's own card, the caller's own takes only.
+    const reader = source.slice(source.indexOf("export async function getRecastTakeBriefs"));
+    expect(reader).toContain('.select("id, pipeline_log")');
+    expect(reader).toContain('.eq("user_id", access.userId)');
+    expect(reader).toContain('.is("deleted_at", null)');
+    expect(reader).toContain(".in(\"model_id\", RECAST_MODEL_IDS)");
+    expect(reader).toContain("recastSentBriefs(take.pipeline_log)");
   });
 });
 
