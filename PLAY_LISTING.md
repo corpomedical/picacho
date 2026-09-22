@@ -12,6 +12,14 @@ Counts in the headings below are Unicode character counts, measured programmatic
 
 Per Play metadata policy, no competitor names appear anywhere in the listing copy.
 
+**What Play Console actually carries (checked 2026-09-22).** Until 2026-09-22 the listing had
+NO translations — "Select languages" showed 0 — so only the English text below was ever live,
+and every es/pt/it release note fell back to English. On 2026-09-22 five listings were sent for
+review together: en-US (default), es-ES and es-419 (both the Spanish text below), pt-BR and
+it-IT, each with its own screenshots and feature graphic. The live English full description
+still carried the retracted "failed generations never use your credits" line; it was replaced
+with the text below in the same submission.
+
 ---
 
 ## English (en-US)
@@ -253,6 +261,28 @@ own translation, so the es/it/pt listings map to the same keys in their own file
 ---
 
 ## Screenshot shot-list (phone, portrait)
+
+**The set live since 2026-09-22** (sent for review that day; files in
+`~/Desktop/picacho-play-assets-2026-09-22/<en|es|pt|it>/`). Six captioned shots per language:
+a headline and a mono kicker above the real app screen on the Screening Room ground
+(#0e0c0a, Archivo 800 wide, DM Mono, accent #e0a468). Every headline and kicker is the app's own
+catalog string (`marketing.home.*`, `nav.media`, `character.eyebrowOne`,
+`character.referenceImages`, `generate.receiptTitle`), so each language's copy is the site's own.
+Shot from the Play reviewer account (reviewer@picacho.ai, display name John, comped Starter)
+with the AI-made character John; the two edits made at capture are video tiles painted with their
+own poster frame (CDP cannot composite video) and nothing else.
+
+1. Generate stage, snowy village take, Identity match 93% — "The same face, in every single frame."
+2. Media grid — "One character. Every world."
+3. Take detail, beach, IDENTITY 94 — "Every image is scored. You see the number."
+4. Character page, 10 takes, mean identity 90 — "One character, every format"
+5. Five reference photos, lock "Strongest" — "Set up your character once. Reuse it forever."
+6. Composer, Kling O3 Pro 5 s, receipt 3 credits — "You see the price before the button."
+
+Feature graphic: `android/play-store-feature-graphic.png` (English; one per language on Play) —
+wordmark, `heroTitle`, `closingSubtitle`, and three of John's renders with their real scores.
+
+The August brief below is kept for its constraints and hazards; its shots are superseded.
 
 **Play constraints (all screenshots):** JPEG or 24-bit PNG, no alpha; each side 320–3840 px;
 the longer side must be no more than 2× the shorter side — so a raw modern phone capture
