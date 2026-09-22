@@ -3187,6 +3187,7 @@ const en = {
     couldntStartMulti: "Couldn't start these generations — try again.",
     fanoutInFlight: "Your last multi-shot render is still running — stop it or let it finish before starting another.",
     alreadyStarted: "That request was already started — try again.",
+    repeatStillGoing: "This take is still going — it'll appear in History when it lands.",
     freeUsedToday: "You've used today's free generation — it comes back tomorrow. Pick a plan or top up credits to keep going — your characters and history stay exactly as they are.",
     insufficientDetail: "That would use {need} credits (some models cost more than 1 per video), but you only have {have} left. Top up or pick a plan to keep going.",
     trialCeiling: "That would use {need} credits (some models cost more than 1 per video) — the free trial only covers generations of up to {cap} credit(s). Top up credits or pick a plan to use this one.",

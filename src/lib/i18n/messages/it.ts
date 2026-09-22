@@ -3019,6 +3019,7 @@ const it = {
     couldntStartMulti: "Impossibile avviare queste generazioni — riprova.",
     fanoutInFlight: "Il tuo ultimo render multi-inquadratura è ancora in corso — fermalo o lascialo finire prima di avviarne un altro.",
     alreadyStarted: "Quella richiesta era già partita — riprova.",
+    repeatStillGoing: "Questa ripresa è ancora in corso — apparirà nella Cronologia quando sarà pronta.",
     freeUsedToday: "Hai usato la generazione gratuita di oggi — torna domani. Scegli un piano o ricarica crediti per continuare — i tuoi personaggi e la cronologia restano esattamente come sono.",
     insufficientDetail: "Servirebbero {need} crediti (alcuni modelli costano più di 1 per video), ma te ne restano solo {have}. Ricarica o scegli un piano per continuare.",
     trialCeiling: "Servirebbero {need} crediti (alcuni modelli costano più di 1 per video) — la prova gratuita copre solo generazioni fino a {cap} credito/i. Ricarica crediti o scegli un piano per usare questo.",

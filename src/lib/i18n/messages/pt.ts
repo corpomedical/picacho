@@ -3020,6 +3020,7 @@ const pt = {
     couldntStartMulti: "Não foi possível iniciar estas gerações — tente de novo.",
     fanoutInFlight: "Seu último render multi-tomada ainda está rodando — pare-o ou deixe terminar antes de iniciar outro.",
     alreadyStarted: "Esse pedido já tinha sido iniciado — tente de novo.",
+    repeatStillGoing: "Este take continua — vai aparecer no Histórico quando ficar pronto.",
     freeUsedToday: "Você já usou a geração grátis de hoje — ela volta amanhã. Escolha um plano ou recarregue créditos para continuar — seus personagens e histórico ficam exatamente como estão.",
     insufficientDetail: "Isso usaria {need} créditos (alguns modelos custam mais de 1 por vídeo), mas você só tem {have}. Recarregue ou escolha um plano para continuar.",
     trialCeiling: "Isso usaria {need} créditos (alguns modelos custam mais de 1 por vídeo) — o teste grátis só cobre gerações de até {cap} crédito(s). Recarregue créditos ou escolha um plano para usar este.",

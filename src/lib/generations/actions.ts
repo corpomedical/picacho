@@ -67,6 +67,13 @@ import {
 import { probeMp4 } from "@/lib/media/mp4-probe";
 import { rateLimited } from "@/lib/rate-limit";
 import { getAnglePreset, angleSortIndex, sceneShotKey } from "@/lib/generations/angles";
+import {
+  followRepeatSend,
+  isRepeatReservation,
+  repeatMultiResult,
+  repeatRunResult,
+  REPEAT_FOLLOW_DEADLINE_MS,
+} from "@/lib/generations/repeat-send";
 import { submitUpscaleJob, cancelQueuedJob, type QueuedJob,
   submitLayerizeJob,
 } from "@/lib/generations/providers/fal";
@@ -479,6 +486,35 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // mean the id (and the id alone) only exists after the whole thing is
   // already done, too late to be useful.
   const clientGenerationId = (formData.get("generation_id") as string) || undefined;
+
+  // The same send, delivered twice (2026-09-22: a take rendered and charged
+  // while the composer said it "Couldn't start"). A browser resends a POST
+  // whose connection drops before the answer, and the first delivery's answer
+  // is then lost. A row under this send's own id means this send has already
+  // started: follow that take and answer with its outcome. Never render it
+  // again, and never report it as failed. Asked FIRST, before the cooldown
+  // and the credit checks, which the first delivery's own row would trip
+  // ("generating a bit fast", or out of credits after its charge), and asked
+  // again wherever a later refusal could still be that row's doing. See
+  // repeat-send.ts.
+  const repeatUserId = userData.user.id;
+  const followRepeat = async (): Promise<RunResult | null> => {
+    if (!clientGenerationId) return null;
+    const answer = repeatRunResult(
+      await followRepeatSend(createAdminClient(), repeatUserId, { id: clientGenerationId }, {
+        deadlineAt: sendStartedAt + REPEAT_FOLLOW_DEADLINE_MS,
+      }),
+    );
+    // The first delivery's refresh rode the answer nobody read — the credits
+    // tile would keep the charge hidden. The same paths it revalidates.
+    if (answer && answer.error === null) {
+      revalidatePath("/app/history");
+      if (!("pending" in answer && answer.pending)) revalidatePath("/app/generate");
+    }
+    return answer;
+  };
+  const repeatOfRunning = await followRepeat();
+  if (repeatOfRunning) return repeatOfRunning;
 
   // Advanced Kling-only video options — multi-image reference (2-4 of the
   // character's reference photos) and storyboard (a start and/or end frame).
@@ -1309,7 +1345,9 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   const creditWeight = sendQuote.totalCredits;
 
   let allowance = await checkGenerationAllowance(supabase, userData.user.id, creditWeight);
-  if (allowance.error) return { error: allowance.error };
+  // A first delivery that reserved after the check at the top trips the
+  // cooldown, or spent the last credit, just the same.
+  if (allowance.error) return (await followRepeat()) ?? { error: allowance.error };
   const userPlan = allowance.plan;
   const isAdmin = allowance.isAdmin;
   // Reassignable: the atomic reservation below may lose the monthly race and
@@ -1456,7 +1494,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   for (let attempt = 0; attempt < 5 && !placeholderId; attempt++) {
     if (attempt > 0) {
       const reAllowance = await checkGenerationAllowance(supabase, userData.user.id, creditWeight);
-      if (reAllowance.error) return { error: reAllowance.error };
+      if (reAllowance.error) return (await followRepeat()) ?? { error: reAllowance.error };
       allowance = reAllowance;
       consumePurchased = reAllowance.consumePurchased;
       consumeFree = reAllowance.consumeFree;
@@ -1520,6 +1558,14 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       p_row: reservationRow,
     });
     if (reserveError) {
+      // The row's primary key is this send's own id, so a duplicate key
+      // means the other delivery reserved it first: follow that take. Only
+      // then — any other failure may have committed THIS request's row, and
+      // following our own unrendered row would just wait out the clock.
+      if (isRepeatReservation(reserveError)) {
+        const repeat = await followRepeat();
+        if (repeat) return repeat;
+      }
       console.error("reserve_generation failed:", reserveError);
       return { error: "Couldn't start this generation — try again." };
     }
@@ -1528,7 +1574,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   }
 
   if (!placeholderId) {
-    return { error: "You've used all the credits included in your plan this month." };
+    // The other delivery's charge may be what filled the month.
+    return (
+      (await followRepeat()) ?? { error: "You've used all the credits included in your plan this month." }
+    );
   }
 
   // Downstream code refers to placeholder.id; keep that shape.
@@ -2935,6 +2984,9 @@ export type MultiAngleResult =
 // front (status "generating") so a crash never loses track of an angle, all
 // tagged with a shared angle_group_id so the UI can group them back together.
 export async function runMultiAngleGeneration(formData: FormData): Promise<MultiAngleResult> {
+  // A repeated batch's clock (repeat-send.ts), from the first line like the
+  // single send's.
+  const repeatDeadlineAt = Date.now() + REPEAT_FOLLOW_DEADLINE_MS;
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return { error: "Your session expired — please log in again." };
@@ -2957,6 +3009,21 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   // the client so the Stop button has something to cancel against before
   // this action has returned anything.
   const clientGroupId = (formData.get("angle_group_id") as string) || undefined;
+  // The same batch, delivered twice: follow the batch the first delivery
+  // started, exactly as runGeneration follows a single send, and at the same
+  // points — first, then wherever a refusal could be that batch's doing.
+  const repeatUserId = userData.user.id;
+  const followRepeatBatch = async (): Promise<MultiAngleResult | null> =>
+    clientGroupId
+      ? repeatMultiResult(
+          await followRepeatSend(createAdminClient(), repeatUserId, { groupId: clientGroupId }, {
+            deadlineAt: repeatDeadlineAt,
+          }),
+          clientGroupId,
+        )
+      : null;
+  const repeatOfRunning = await followRepeatBatch();
+  if (repeatOfRunning) return repeatOfRunning;
   // Same attachment/anchor-photo priority as runGeneration — see the
   // comments there. Same SSRF guard too: only our own /api/media URLs are
   // accepted; anything else is discarded before it can reach a provider.
@@ -3264,7 +3331,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     userData.user.id,
     totalRequestedCredits,
   );
-  if (multiAllowance.error) return { error: multiAllowance.error };
+  if (multiAllowance.error) return (await followRepeatBatch()) ?? { error: multiAllowance.error };
   const multiIsAdmin = multiAllowance.isAdmin;
   // Reassignable — the atomic group reservation below may lose the monthly race
   // and re-decide, exactly like the single-generation path.
@@ -3351,7 +3418,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
       .eq("user_id", userData.user.id)
       .limit(1);
     if (existingGroup?.length) {
-      return { error: "That request was already started — try again." };
+      return (await followRepeatBatch()) ?? { error: "That request was already started — try again." };
     }
   }
 
@@ -3373,7 +3440,11 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     .gte("created_at", new Date(Date.now() - 2 * 60 * 1000).toISOString())
     .limit(1);
   if (inflightGroup?.length) {
-    return { error: "Your last multi-shot render is still running — stop it or let it finish before starting another." };
+    return (
+      (await followRepeatBatch()) ?? {
+        error: "Your last multi-shot render is still running — stop it or let it finish before starting another.",
+      }
+    );
   }
 
   // Atomic group reservation — the whole angle group's MONTHLY portion is
@@ -3387,7 +3458,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   for (let attempt = 0; attempt < 5 && !placeholders; attempt++) {
     if (attempt > 0) {
       const reAllowance = await checkGenerationAllowance(supabase, userData.user.id, totalRequestedCredits);
-      if (reAllowance.error) return { error: reAllowance.error };
+      if (reAllowance.error) return (await followRepeatBatch()) ?? { error: reAllowance.error };
       multiAllowance = reAllowance;
       consumePurchased = reAllowance.consumePurchased;
     }
@@ -3430,6 +3501,12 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
       p_rows: rows,
     });
     if (reserveError) {
+      // generations_angle_group_unique: the other delivery reserved this
+      // batch first.
+      if (isRepeatReservation(reserveError)) {
+        const repeat = await followRepeatBatch();
+        if (repeat) return repeat;
+      }
       console.error("reserve_generations failed:", reserveError);
       return { error: "Couldn't start these generations — try again." };
     }
@@ -3440,7 +3517,9 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   }
 
   if (!placeholders) {
-    return { error: "You've used all the credits included in your plan this month." };
+    return (
+      (await followRepeatBatch()) ?? { error: "You've used all the credits included in your plan this month." }
+    );
   }
 
   // The ids this reservation just created — every group-level write below is

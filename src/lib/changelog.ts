@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.80.0",
+    build: 119,
+    date: "2026-09-22",
+    title: "A take that is running is never reported as \"Couldn't start\"",
+    items: [
+      "A send could say \"Couldn't start this generation — try again.\" while the take was in fact rendering and had taken its credit. It turned up in History a minute later (seen twice on the Play review account this morning). The cause: when a phone's connection drops while a send is waiting, the browser quietly sends the same request again. The first copy started the take, and its answer was lost with the connection. The second copy found the take already started, and its answer was that error. A repeated send now waits for the take the first copy started and shows its real result: the picture and its score, or the video still rendering. It is never started or charged twice.",
+      "The same for multi-angle and Cinema Studio batches, which said \"That request was already started\" in the same situation. If the take is somehow still rendering after nearly five minutes, the message says it is still going and will appear in History, in all four languages.",
+    ],
+  },
+  {
     version: "1.79.0",
     build: 118,
     date: "2026-09-22",

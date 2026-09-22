@@ -62,6 +62,9 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "Your last multi-shot render is still running — stop it or let it finish before starting another.":
     "fanoutInFlight",
   "That request was already started — try again.": "alreadyStarted",
+  // A send delivered twice follows the first delivery's take
+  // (generations/repeat-send.ts, 2026-09-22).
+  "This take is still going — it'll appear in History when it lands.": "repeatStillGoing",
   "You've used today's free generation — it comes back tomorrow. Pick a plan or top up credits to keep going — your characters and history stay exactly as they are.":
     "freeUsedToday",
   // Angle Stage (lib/generations/angle-stage.ts).

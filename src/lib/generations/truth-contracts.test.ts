@@ -309,6 +309,9 @@ describe("localized server strings still match what the server says", () => {
     "../characters/likeness-messages.ts",
     // Settings: the inline line under a settings form (2026-09-18).
     "../profile/actions.ts",
+    // A send delivered twice, answered from the first delivery's take
+    // (2026-09-22).
+    "./repeat-send.ts",
   ]
     .map((p) => src(p))
     .join("\n")
