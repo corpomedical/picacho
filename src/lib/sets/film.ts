@@ -17,6 +17,7 @@ import { isFilmMove, isFilmTexture, type FilmMove, type FilmTexture } from "./mo
 import type { SetRig } from "./rig";
 import { normaliseRack, type FilmRack } from "./furniture";
 import { normaliseGaze, normalisePath, type Gaze, type Path } from "./people";
+import { moverStages, normaliseMovers, sameMovers, type Mover, type Placement } from "./movers";
 
 /** The stage's own camera pose shape (set-view's Pose, held as data). */
 export type FilmPose = { position: Vec3; target: Vec3; fovDeg: number };
@@ -40,6 +41,8 @@ export type FilmBeat = {
   gaze: Gaze | null;
   /** The path (cut D): the points the figure walks through from where the beat opens to its figure; empty walks straight. */
   path: Path;
+  /** The things that move in this beat (movers.ts, 2026-09-23): where each has got to when it ends. Empty leaves the set standing still. */
+  movers: Mover[];
 };
 
 export type FilmFigure = { x: number; z: number; facingDeg: number; pose: StandPose };
@@ -52,6 +55,8 @@ export type BeatStage = {
   time: number | null;
   /** The eye-line for the beat's end frame and its clip. */
   gaze: Gaze | null;
+  /** Where every thing that has moved stands when this beat ends (movers.ts); empty on a set standing still. */
+  movers: Placement[];
 };
 
 /**
@@ -65,23 +70,26 @@ export type BeatStage = {
  *
  * The tracks fall back as the beats say they do: a beat with no figure
  * keeps the figure where the film left it (the beat before it, else the
- * arrangement), and a beat with no hour takes the rig's, which is what the
+ * arrangement), a thing that moved stays where it was driven to (movers.ts,
+ * 2026-09-23), and a beat with no hour takes the rig's, which is what the
  * sun track draws. The eye-line is the beat's own: the arrangement's
  * belongs to Shoot and is not in the film's context, so it would change a
  * beat's frame without the film knowing.
  */
 export function filmStages(
-  beats: readonly Pick<FilmBeat, "figure" | "time" | "gaze">[],
+  beats: readonly Pick<FilmBeat, "figure" | "time" | "gaze" | "movers">[],
   arrangement: { mark: { x: number; z: number; facingDeg: number }; pose: StandPose; time: number | null },
 ): BeatStage[] {
   let figure = { x: arrangement.mark.x, z: arrangement.mark.z, facingDeg: arrangement.mark.facingDeg };
   let pose = arrangement.pose;
-  return beats.map((beat) => {
+  // A thing that moved stays where the film left it, the same as the figure.
+  const moved = moverStages(beats);
+  return beats.map((beat, i) => {
     if (beat.figure) {
       figure = { x: beat.figure.x, z: beat.figure.z, facingDeg: beat.figure.facingDeg };
       pose = beat.figure.pose;
     }
-    return { figure, pose, time: beat.time ?? arrangement.time, gaze: beat.gaze };
+    return { figure, pose, time: beat.time ?? arrangement.time, gaze: beat.gaze, movers: moved[i] };
   });
 }
 
@@ -177,6 +185,7 @@ export function normaliseSetFilm(v: unknown): SetFilm {
         rack: normaliseRack(raw.rack, Number.MAX_SAFE_INTEGER),
         gaze: normaliseGaze(raw.gaze, Number.MAX_SAFE_INTEGER),
         path: normalisePath(raw.path),
+        movers: normaliseMovers(raw.movers),
       });
     }
   }
@@ -219,7 +228,11 @@ function sameBeat(a: FilmBeat, b: FilmBeat): boolean {
     JSON.stringify(a.rack) === JSON.stringify(b.rack) &&
     JSON.stringify(a.gaze) === JSON.stringify(b.gaze) &&
     (a.figure === null) === (b.figure === null) &&
-    (a.figure === null || (a.figure.x === b.figure!.x && a.figure.z === b.figure!.z && a.figure.facingDeg === b.figure!.facingDeg && a.figure.pose === b.figure!.pose))
+    (a.figure === null || (a.figure.x === b.figure!.x && a.figure.z === b.figure!.z && a.figure.facingDeg === b.figure!.facingDeg && a.figure.pose === b.figure!.pose)) &&
+    // A thing that moves somewhere else is another beat: its end frame is
+    // painted with the thing where it got to, so a kept clip would end on a
+    // frame the film no longer asks for.
+    sameMovers(a.movers, b.movers)
   );
 }
 

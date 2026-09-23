@@ -155,7 +155,7 @@ describe("filmAfterEdit", () => {
 
   it("keeps the clips of the beats before a new one, and the film is no longer rendered", () => {
     const f = two();
-    const added = { ...f, beats: [...f.beats, { words: "three", end: pose(1), move: null, textures: [], figure: null, time: null, rack: null, gaze: null, path: [] }] };
+    const added = { ...f, beats: [...f.beats, { words: "three", end: pose(1), move: null, textures: [], figure: null, time: null, rack: null, gaze: null, path: [], movers: [] }] };
     const next = filmAfterEdit(f, added);
     expect(next.clips).toEqual([A, B]);
     expect(filmRendered(next)).toBe(false);
@@ -405,7 +405,7 @@ describe("the people and sun tracks (cut 5)", () => {
 
 describe("filmStages (the stage each beat is shot on)", () => {
   const arrangement = { mark: { x: 1, z: 2, facingDeg: 90 }, pose: "stand" as const, time: 12 };
-  const beat = (over: Partial<Parameters<typeof filmStages>[0][number]> = {}) => ({ figure: null, time: null, gaze: null, ...over });
+  const beat = (over: Partial<Parameters<typeof filmStages>[0][number]> = {}) => ({ figure: null, time: null, gaze: null, movers: [], ...over });
 
   it("keeps the figure where the film left it, and takes the rig's hour where a beat sets none", () => {
     const stages = filmStages(
@@ -417,10 +417,10 @@ describe("filmStages (the stage each beat is shot on)", () => {
       arrangement,
     );
     // Beat 1 walks the figure and sets its own hour.
-    expect(stages[0]).toEqual({ figure: { x: 4, z: 3, facingDeg: 180 }, pose: "sit", time: 18, gaze: null });
+    expect(stages[0]).toEqual({ figure: { x: 4, z: 3, facingDeg: 180 }, pose: "sit", time: 18, gaze: null, movers: [] });
     // Beat 2 says nothing: the figure stays where beat 1 left it (the beat's
     // own words), and the hour goes back to the rig's (the sun track's).
-    expect(stages[1]).toEqual({ figure: { x: 4, z: 3, facingDeg: 180 }, pose: "sit", time: 12, gaze: null });
+    expect(stages[1]).toEqual({ figure: { x: 4, z: 3, facingDeg: 180 }, pose: "sit", time: 12, gaze: null, movers: [] });
     expect(stages[2].time).toBe(7);
   });
 
@@ -438,7 +438,16 @@ describe("filmStages (the stage each beat is shot on)", () => {
     expect(stages[1].gaze).toBeNull();
   });
 
+  it("keeps a thing where the beat that moved it left it, and takes a later beat's own move", () => {
+    const van = { key: "c_1234abcd_10_20", x: 6, z: 1, turnDeg: 90, path: [] };
+    const stages = filmStages([beat({ movers: [van] }), beat(), beat({ movers: [{ ...van, x: 12, turnDeg: 180 }] })], arrangement);
+    expect(stages[0].movers).toEqual([{ key: van.key, x: 6, z: 1, turnDeg: 90 }]);
+    // Beat 2 says nothing about it: it stays where beat 1 drove it.
+    expect(stages[1].movers).toEqual([{ key: van.key, x: 6, z: 1, turnDeg: 90 }]);
+    expect(stages[2].movers).toEqual([{ key: van.key, x: 12, z: 1, turnDeg: 180 }]);
+  });
+
   it("stands the first beat where the arrangement does", () => {
-    expect(filmStages([beat()], arrangement)[0]).toEqual({ figure: { x: 1, z: 2, facingDeg: 90 }, pose: "stand", time: 12, gaze: null });
+    expect(filmStages([beat()], arrangement)[0]).toEqual({ figure: { x: 1, z: 2, facingDeg: 90 }, pose: "stand", time: 12, gaze: null, movers: [] });
   });
 });

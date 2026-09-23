@@ -4169,7 +4169,7 @@ export function SetView({
     const pose = apiRef.current?.pose();
     if (!pose) return;
     editFilm((f) =>
-      f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [], figure: null, time: null, rack: null, gaze: null, path: [] }] },
+      f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [], figure: null, time: null, rack: null, gaze: null, path: [], movers: [] }] },
     );
     setFilmSel((n) => n ?? null);
   }
@@ -4240,7 +4240,7 @@ export function SetView({
     keepStage();
     editFilm((f) => {
       const beats = [...f.beats];
-      beats[at] = beats[at] ? { ...beats[at], end, move } : { words: "", end, move, textures: [], figure: null, time: null, rack: null, gaze: null, path: [] };
+      beats[at] = beats[at] ? { ...beats[at], end, move } : { words: "", end, move, textures: [], figure: null, time: null, rack: null, gaze: null, path: [], movers: [] };
       return { ...f, beats };
     });
     setFilmSel(at);
@@ -5167,7 +5167,7 @@ export function SetView({
       const pose = apiRef.current?.pose();
       if (!pose) return;
       editFilm((f) =>
-        f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [], figure: null, time: null, rack: null, gaze: null, path: [] }] },
+        f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [], figure: null, time: null, rack: null, gaze: null, path: [], movers: [] }] },
       );
     };
     window.addEventListener("keydown", onKey);
