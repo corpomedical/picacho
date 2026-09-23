@@ -35,7 +35,6 @@ import {
   RECAST_JOB_ORDER,
   RECAST_MAX_BYTES,
   recastCastsTogether,
-  recastCrowdSharesTake,
   recastImageRoom,
   recastContainerOf,
   recastEngineFor,
@@ -53,6 +52,8 @@ import { chainPieceCount } from "@/lib/generations/chain";
 import { probeLocal, recastStorageObjectUrl, sampleClip, uploadRecastClip } from "@/lib/recast/recast-client";
 import {
   recastBlocker,
+  recastCastKeeping,
+  recastCrowdWarning,
   recastFitWindow,
   recastJobPromise,
   recastLengthChoices,
@@ -420,16 +421,23 @@ export function MystiqueDoor({
   const leadTag = read?.people.find((p) => p.lead)?.tag ?? null;
   const soloTag: string | null = cast.length === 1 && soloPick && (soloPick.tag === null || read?.people.some((p) => p.tag === soloPick.tag)) ? soloPick.tag : leadTag;
   const takeTags = ensemble ? castTags : [soloTag];
-  const castOverGroup = takeTags.some((tag) => tag !== null && groupTags.has(tag));
-  const parts = clipWindow ? chainPieceCount(clipWindow.end - clipWindow.start) : 1;
-  const groupNeedsOnePart = castOverGroup && parts > 1;
+  // IN PARTS ONLY WHERE THE ENGINE CHAINS (actions.ts: `spec.chains === true &&
+  // chainPieceCount(...) > 1`). Only Into the clip's own engine renders a long
+  // window in pieces; the others take their whole window in one request, and
+  // counting parts for them greyed Take out on a 30 s take the server would
+  // have started (2026-09-23).
+  const parts = clipWindow && RECAST_ENGINES[engine].chains === true ? chainPieceCount(clipWindow.end - clipWindow.start) : 1;
   // ONE REPLACEMENT PER TAKE (2026-09-23, paid for on the courtyard clip): a
   // group changed beside somebody else came back with the character twice
   // over, and the group itself back as it was before the end. The server
   // refuses it (recast.ts recastCrowdSharesTake); the door says what would
   // happen and offers both ways out, either of which is the person's own
-  // press — nothing here changes the cast on its own.
-  const crowdSharesTake = recastCrowdSharesTake(takeTags, groupTags);
+  // press — nothing here changes the cast on its own. Which of the two group
+  // warnings is said, and in which order, is door-truth.ts's answer, so the
+  // page cannot name them in a different order from the server.
+  const crowdWarning = recastCrowdWarning({ job, takeTags, groupTags, parts });
+  const crowdSharesTake = crowdWarning === "own-take";
+  const groupNeedsOnePart = crowdWarning === "one-part";
   /** The first character cast over a whole group — who the two ways out are named after. */
   const crowdCast = ensemble
     ? (cast.find((_, i) => {
@@ -437,6 +445,22 @@ export function MystiqueDoor({
         return tag !== null && groupTags.has(tag);
       }) ?? null)
     : null;
+  /**
+   * A way out of the warning, pressed: the cast becomes exactly these people,
+   * and everyone still in it keeps the person they were already shown as
+   * playing (door-truth.ts recastCastKeeping). Nothing else about the take
+   * moves — that is the whole point of the press.
+   */
+  function keepCast(staying: readonly string[]) {
+    const next = recastCastKeeping(
+      cast.map((c, i) => ({ id: c.id, tag: castTags[i] })),
+      new Set(staying),
+    );
+    setRoles((prev) => ({ ...prev, ...next.roles }));
+    setSoloPick(next.solo);
+    if (next.ids[0] !== castIds[0]) setPhotoPath(castable.find((c) => c.id === next.ids[0])?.photos[0]?.path ?? null);
+    setCastIds(next.ids);
+  }
   // What is actually sent — the server's rule (actions.ts): Photo to life
   // brings ONE picture to life, the character's when someone is cast; Into
   // the clip holds four references, characters included; Restage nine
@@ -1458,10 +1482,10 @@ export function MystiqueDoor({
                   </div>
                 )}
                 {/* A long take (chain.ts): said before it is paid for, with how long it waits. */}
-                {RECAST_ENGINES[engine].chains && chainPieceCount(clipWindow.end - clipWindow.start) > 1 && (
+                {parts > 1 && (
                   <p className="mt-2 text-xs text-[#f0cda6]">
                     {formatMsg(m.longTake, {
-                      parts: chainPieceCount(clipWindow.end - clipWindow.start),
+                      parts,
                       minutes: recastMinutes(engine, clipWindow.end - clipWindow.start),
                     })}
                   </p>
@@ -1787,9 +1811,9 @@ export function MystiqueDoor({
                     )}
                     {/* A whole group cast beside somebody else: the one thing a
                         take will not carry, whatever its length. Both ways out
-                        are presses of the person's own — the cast is never
-                        rearranged for them, and one press is never turned into
-                        two. */}
+                        are presses of the person's own — each one shortens the
+                        cast and carries every remaining part through unchanged
+                        (keepCast), and one press is never turned into two. */}
                     {crowdSharesTake && crowdCast && (
                       <div className="mt-3 rounded-2xl bg-[#d8b483]/[0.08] p-3.5 shadow-[inset_0_0_0_1px_rgba(216,180,131,0.4)]">
                         <p className="text-sm leading-relaxed text-[#ecedf1]">{m.crowdAlone}</p>
@@ -1798,13 +1822,7 @@ export function MystiqueDoor({
                             ref={crowdAloneRef}
                             type="button"
                             disabled={starting}
-                            onClick={() =>
-                              setCastIds((prev) => {
-                                const next = [crowdCast.id];
-                                if (next[0] !== prev[0]) setPhotoPath(crowdCast.photos[0]?.path ?? null);
-                                return next;
-                              })
-                            }
+                            onClick={() => keepCast([crowdCast.id])}
                             className={ghost}
                           >
                             {formatMsg(m.crowdAloneOnly, { name: crowdCast.name })}
@@ -1812,13 +1830,7 @@ export function MystiqueDoor({
                           <button
                             type="button"
                             disabled={starting}
-                            onClick={() =>
-                              setCastIds((prev) => {
-                                const next = prev.filter((id) => id !== crowdCast.id);
-                                if (next[0] !== prev[0]) setPhotoPath(castable.find((x) => x.id === next[0])?.photos[0]?.path ?? null);
-                                return next;
-                              })
-                            }
+                            onClick={() => keepCast(cast.filter((c) => c.id !== crowdCast.id).map((c) => c.id))}
                             className={ghost}
                           >
                             {formatMsg(m.crowdAloneDrop, { name: crowdCast.name })}
@@ -1827,10 +1839,11 @@ export function MystiqueDoor({
                       </div>
                     )}
                     {/* A character over a whole group, in a take made in parts:
-                        the change every later part is least likely to hold. Not
-                        said under the box above: the trim it offers would not
-                        save a take that asks for two changes at once. */}
-                    {groupNeedsOnePart && !crowdSharesTake && (
+                        the change every later part is least likely to hold. Never
+                        said under the box above — door-truth.ts names one warning
+                        at a time, and the trim this one offers would not save a
+                        take that asks for two changes at once. */}
+                    {groupNeedsOnePart && (
                       <div className="mt-3 rounded-2xl bg-[#d8b483]/[0.08] p-3.5 shadow-[inset_0_0_0_1px_rgba(216,180,131,0.4)]">
                         <p className="text-sm leading-relaxed text-[#ecedf1]">{m.crowdWarn}</p>
                         <button

@@ -115,8 +115,13 @@ describe("the Mystique door", () => {
     // lib/generations/chain.ts (2026-09-19): past 15 s, Into the clip is
     // rendered in chained parts. The door says so under the trim, from the
     // same count the server plans with.
-    expect(door).toContain("chainPieceCount(clipWindow.end - clipWindow.start) > 1");
-    expect(door).toContain("RECAST_ENGINES[engine].chains");
+    // Counted ONCE, and only where the engine chains (2026-09-23): the count
+    // the note shows is the same `parts` the group rules are asked about, so
+    // the page cannot call a take long in one place and short in another.
+    expect(door).toContain(
+      "const parts = clipWindow && RECAST_ENGINES[engine].chains === true ? chainPieceCount(clipWindow.end - clipWindow.start) : 1;",
+    );
+    expect(door).toContain("{parts > 1 && (");
     expect(door).toContain("formatMsg(m.longTake, {");
     for (const lang of ["en", "es", "it", "pt"]) {
       const words = section(lang).match(/\n    longTake: "([^"]+)"/)?.[1] ?? "";
@@ -274,9 +279,11 @@ describe("the door while a take renders, and after", () => {
     // A new clip starts on its own lead again.
     expect(door.match(/setSoloPick\(null\);/g)?.length).toBe(2);
     // Both group rules follow who is actually played (2026-09-23: the tags a
-    // take really casts are now named once and asked twice).
+    // take really casts are named once, and door-truth.ts answers both rules
+    // from them — so the page cannot name them in a different order from the
+    // server, nor say both at once).
     expect(door).toContain("const takeTags = ensemble ? castTags : [soloTag];");
-    expect(door).toContain("const castOverGroup = takeTags.some(");
+    expect(door).toContain("const crowdWarning = recastCrowdWarning({ job, takeTags, groupTags, parts });");
   });
 
   it("marks the job that suits the clip, and never switches to it", () => {

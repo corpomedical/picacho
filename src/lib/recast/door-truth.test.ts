@@ -1,14 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { chainMinutes } from "../generations/chain";
-import { RECAST_ENGINES, RECAST_JOB_ORDER, recastEnginesOf, recastMissing, type RecastJob } from "./recast";
+import { chainMinutes, chainPieceCount } from "../generations/chain";
+import {
+  RECAST_ENGINES,
+  RECAST_JOB_ORDER,
+  recastCrowdSharesTake,
+  recastEnginesOf,
+  recastMissing,
+  type RecastEngine,
+  type RecastJob,
+} from "./recast";
+import { RECAST_CROWD_OWN_TAKE, RECAST_GROUP_ONE_PART } from "./messages";
 import { recastWindowCredits } from "./trim";
 import type { RecastPerson, RecastRead } from "./recast-read";
 import {
   RECAST_STOPPED_STEP,
   recastBlocker,
+  recastCastKeeping,
   recastCreditsLeft,
+  recastCrowdWarning,
   recastFitWindow,
   recastJobPromise,
   recastLengthChoices,
@@ -271,6 +282,170 @@ describe("why Take is grey", () => {
     expect(recastBlocker({ ...base, job: "world", hasWords: false })).toEqual({ kind: "words", why: "look" });
     expect(recastBlocker({ ...base, rolesUnsaid: true })).toEqual({ kind: "words", why: "roles" });
     expect(recastBlocker({ ...base, starting: true, clip: "none" })).toEqual({ kind: "starting" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A WHOLE GROUP, DRIVEN THROUGH THE DOOR (2026-09-23)
+//
+// The courtyard clip the two group rules were paid for: Person A is the man in
+// front, Person B the class of about forty boys behind him, Person C a woman
+// off to one side. Every case below is driven the way the door drives it — who
+// is cast, the person each of them is shown playing, one take or a take each,
+// and the window — and then asked the same question the server asks, so what
+// the page shows and what the press would come back with are read side by side
+// in one place. The door's own lines are pinned word for word in
+// recast-actions.test.ts and mystique-door.test.ts; here they are run.
+
+describe("a whole group, on the door and at the server", () => {
+  const groupTags = new Set(["B"]);
+  type Door = { job: RecastJob; engine: RecastEngine; castTags: (string | null)[]; together: boolean; soloTag: string | null; seconds: number };
+  /** mystique-door.tsx: who this take casts over — everyone's own person together, the door's one choice apart. */
+  const takeTagsOf = (d: Door) => (d.together ? d.castTags : [d.soloTag]);
+  /** mystique-door.tsx: the pieces the window is rendered in, and only where the engine chains. */
+  const partsOf = (d: Door) => (RECAST_ENGINES[d.engine].chains === true ? chainPieceCount(d.seconds) : 1);
+  /** The box the door puts under the cast, if any. */
+  const shows = (d: Door) => recastCrowdWarning({ job: d.job, takeTags: takeTagsOf(d), groupTags, parts: partsOf(d) });
+  const ready: RecastDoorState = {
+    starting: false,
+    clip: "ready",
+    rights: true,
+    job: "scene",
+    missing: null,
+    rolesUnsaid: false,
+    hasWords: true,
+    imageUploading: 0,
+    crowdSharesTake: false,
+    groupNeedsOnePart: false,
+    credits: 9,
+    balance: { left: 140, unlimited: false },
+  };
+  /** Why Take is grey, from the box the door is showing. */
+  const grey = (d: Door) => {
+    const warning = shows(d);
+    return recastBlocker({ ...ready, job: d.job, crowdSharesTake: warning === "own-take", groupNeedsOnePart: warning === "one-part" });
+  };
+  /** actions.ts, its two group rules in the order it asks them. */
+  const server = (d: Door) => {
+    const takeTags = takeTagsOf(d);
+    const chaining = RECAST_ENGINES[d.engine].chains === true && chainPieceCount(d.seconds) > 1;
+    if (recastCrowdSharesTake(d.job, takeTags, groupTags)) return RECAST_CROWD_OWN_TAKE;
+    if (takeTags.some((tag) => tag !== null && groupTags.has(tag)) && chaining) return RECAST_GROUP_ONE_PART;
+    return null;
+  };
+  const scene: Door = { job: "scene", engine: "kling-edit", castTags: ["B"], together: false, soloTag: "B", seconds: 15 };
+
+  it("offers a lone crowd cast — the take that was proved — and the server starts it", () => {
+    expect(shows(scene)).toBe(null);
+    expect(grey(scene)).toBe(null);
+    expect(server(scene)).toBe(null);
+  });
+
+  it("says so, greys Take and refuses a crowd cast beside somebody else", () => {
+    const both: Door = { ...scene, castTags: ["A", "B"], together: true, soloTag: "A" };
+    expect(shows(both)).toBe("own-take");
+    expect(grey(both)).toEqual({ kind: "crowd" });
+    expect(server(both)).toBe(RECAST_CROWD_OWN_TAKE);
+  });
+
+  it("leaves two ordinary characters in one take alone", () => {
+    const two: Door = { ...scene, castTags: ["A", "C"], together: true, soloTag: "A" };
+    expect(shows(two)).toBe(null);
+    expect(grey(two)).toBe(null);
+    expect(server(two)).toBe(null);
+  });
+
+  it("refuses the same two characters together and allows them a take each", () => {
+    const together: Door = { ...scene, castTags: ["A", "B"], together: true, soloTag: "A" };
+    expect(shows(together)).toBe("own-take");
+    // One take each: every take casts the one person the door named, so neither
+    // of them is sharing with anybody — the door's own way through, and the
+    // shape the proven take was sent in.
+    for (const soloTag of ["A", "B"]) {
+      const apart: Door = { ...together, together: false, soloTag };
+      expect(shows(apart), soloTag).toBe(null);
+      expect(grey(apart), soloTag).toBe(null);
+      expect(server(apart), soloTag).toBe(null);
+    }
+  });
+
+  it("asks a 30 s crowd take for one part, and names the crowd rule FIRST when both would fire", () => {
+    const long: Door = { ...scene, seconds: 30 };
+    expect(partsOf(long)).toBeGreaterThan(1);
+    expect(shows(long)).toBe("one-part");
+    expect(grey(long)).toEqual({ kind: "group" });
+    expect(server(long)).toBe(RECAST_GROUP_ONE_PART);
+    // Both rules fire on this one. The trim the second offers would not save a
+    // take that asks for two changes at once, so the door and the server both
+    // say the first — until 2026-09-23 the server said the other, and the
+    // trimmed second press was refused again in different words.
+    const longBoth: Door = { ...long, castTags: ["A", "B"], together: true, soloTag: "A" };
+    expect(shows(longBoth)).toBe("own-take");
+    expect(grey(longBoth)).toEqual({ kind: "crowd" });
+    expect(server(longBoth)).toBe(RECAST_CROWD_OWN_TAKE);
+  });
+
+  it("counts parts only where the engine chains, as the server does", () => {
+    // Into the clip's lighter engine takes its whole window in one request. The
+    // door used to count parts on every engine and grey Take out on this take.
+    const lite: Door = { ...scene, engine: "wan-scene-480", seconds: 30 };
+    expect(shows(lite)).toBe(null);
+    expect(grey(lite)).toBe(null);
+    expect(server(lite)).toBe(null);
+  });
+
+  it("says nothing about a character the words merely put in, or about a Restage take", () => {
+    const placed: Door = { ...scene, castTags: ["B", null], together: true, soloTag: "B" };
+    expect(shows(placed)).toBe(null);
+    expect(server(placed)).toBe(null);
+    const restage: Door = { job: "restage", engine: "h3-768", castTags: ["A", "B"], together: true, soloTag: "A", seconds: 15 };
+    expect(shows(restage)).toBe(null);
+    expect(grey(restage)).toBe(null);
+    expect(server(restage)).toBe(null);
+  });
+
+  // THE WAY OUT MAY NOT CHANGE WHAT WAS ASKED FOR. Eva is cast over Person C
+  // and Anubis over the class; the door offers "Cast only Anubis" and "Take
+  // Anubis out". Before this, either press sent the survivor to the read's LEAD
+  // — Anubis replacing the man in the white shirt, or Eva replacing him — and
+  // Take went green on it.
+  describe("the two ways out of the warning", () => {
+    const cast = [
+      { id: "eva", tag: "C" },
+      { id: "anubis", tag: "B" },
+    ];
+
+    it("gives the group its own take with the group still cast", () => {
+      const next = recastCastKeeping(cast, new Set(["anubis"]));
+      expect(next.ids).toEqual(["anubis"]);
+      expect(next.roles).toEqual({ anubis: "B" });
+      expect(next.solo).toEqual({ tag: "B" });
+      // What the door then shows and the server then answers: the proved shape.
+      const after: Door = { ...scene, castTags: ["B"], together: false, soloTag: next.solo?.tag ?? null };
+      expect(shows(after)).toBe(null);
+      expect(grey(after)).toBe(null);
+      expect(server(after)).toBe(null);
+    });
+
+    it("takes the group out with the other character still playing their own person", () => {
+      const next = recastCastKeeping(cast, new Set(["eva"]));
+      expect(next.ids).toEqual(["eva"]);
+      expect(next.solo).toEqual({ tag: "C" });
+      // Not the lead, which is what a press that only shortened the cast gave.
+      expect(next.solo?.tag).not.toBe("A");
+      const after: Door = { ...scene, castTags: ["C"], together: false, soloTag: next.solo?.tag ?? null };
+      expect(shows(after)).toBe(null);
+      expect(server(after)).toBe(null);
+    });
+
+    it("keeps everyone's own person when more than one is left", () => {
+      const three = [...cast, { id: "bo", tag: null }];
+      const next = recastCastKeeping(three, new Set(["eva", "bo"]));
+      expect(next.ids).toEqual(["eva", "bo"]);
+      expect(next.roles).toEqual({ eva: "C", bo: null });
+      // Nobody is alone, so the take sends the roles above and not a solo pick.
+      expect(next.solo).toBe(null);
+    });
   });
 });
 

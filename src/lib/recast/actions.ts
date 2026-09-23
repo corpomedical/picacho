@@ -653,20 +653,14 @@ export async function startRecastTakes(input: {
   // same way the door composes what it shows (2026-09-22).
   const read = reboundRecastRead(input?.read, clip.seconds);
 
-  // A WHOLE GROUP, IN ONE PART ONLY (2026-09-20). Every part after the first
-  // is handed the footage again, and on a take that turns a crowd into one
-  // character the part follows the footage: two takes of the operator's own
-  // crowd came back as his students at the second join. The still at the
-  // switch did not hold it, so the take is kept to one part instead.
-  //
-  // Asked of the tags each take actually casts (2026-09-22): everyone's own
-  // when they share one take, and the one person the door named when each
-  // character has a take of their own — the variants, which until today were
-  // asked about tags no take of theirs used, and so were never refused.
+  // TWO RULES ABOUT CASTING OVER A WHOLE GROUP, both asked of the tags each
+  // take actually casts (2026-09-22): everyone's own when they share one take,
+  // and the one person the door named when each character has a take of their
+  // own — the variants, which until that day were asked about tags no take of
+  // theirs used, and so were never refused.
   const groupTags = new Set((read?.people ?? []).filter((p) => p.many).map((p) => p.tag));
   const takeTags = together ? castTags : [castTag];
   const castOverGroup = takeTags.some((tag) => tag !== null && groupTags.has(tag));
-  if (castOverGroup && chaining) return { error: RECAST_GROUP_ONE_PART };
 
   // ONE REPLACEMENT PER TAKE (2026-09-23). The same footage, paid for twice:
   // replacing the man in front of the class held all the way through when it
@@ -674,11 +668,25 @@ export async function startRecastTakes(input: {
   // in the crowd as well as in his place — the crowd itself back as it was
   // before the end — the moment a second change rode along. A take carries
   // one replacement, so a group shares its take with nobody
-  // (recast.ts recastCrowdSharesTake). Refused here, beside the rule above
-  // and before a credit is even counted: the person casts the group on a take
-  // of its own, or leaves it out of this one. Nothing is reassigned for them,
-  // and no press is quietly turned into two.
-  if (recastCrowdSharesTake(takeTags, groupTags)) return { error: RECAST_CROWD_OWN_TAKE };
+  // (recast.ts recastCrowdSharesTake). Refused before the money is even
+  // counted: the person casts the group on a take of its own, or leaves it out
+  // of this one. Nothing is reassigned for them, and no press is quietly
+  // turned into two.
+  //
+  // FIRST OF THE TWO GROUP RULES, as on the door (door-truth.ts
+  // recastCrowdWarning): a group beside somebody else is wrong at any length,
+  // so a person on a long take of one hears that rather than "keep the take to
+  // 15 seconds" — advice their trimmed second press would only be refused
+  // again for, in different words.
+  if (recastCrowdSharesTake(spec.job, takeTags, groupTags)) return { error: RECAST_CROWD_OWN_TAKE };
+
+  // A WHOLE GROUP, IN ONE PART ONLY (2026-09-20). Every part after the first
+  // is handed the footage again, and on a take that turns a crowd into one
+  // character the part follows the footage: two takes of the operator's own
+  // crowd came back as his students at the second join. The still at the
+  // switch did not hold it, so the take is kept to one part instead — which a
+  // trim answers, which is why it is asked second.
+  if (castOverGroup && chaining) return { error: RECAST_GROUP_ONE_PART };
 
   // THE CREDITS, ASKED BEFORE THE CUT (2026-09-22). One take per character —
   // or one for all of them together — and one when nobody is cast;

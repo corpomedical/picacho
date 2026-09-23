@@ -396,14 +396,31 @@ export function recastCastsTogether(job: RecastJob): boolean {
  *
  * So it is not the words: the words that failed here are the words that
  * worked alone. It is how much ONE take will carry. A group is a take's only
- * casting; anyone else goes in a take of their own, which is the person's own
- * press to make — nothing here reassigns a role or splits a take behind them.
+ * replacement; anyone else goes in a take of their own, which is the person's
+ * own press to make — nothing here reassigns a role or splits a take behind
+ * them.
  *
- * Given the tags the take really casts (null where the words give someone
- * their part), and the tags the read marked as many.
+ * TWO REPLACEMENTS, AND ONLY WHERE THAT WAS MEASURED. What the money bought
+ * is two people being replaced at once, on Into the clip, whose engine edits
+ * the person's own footage. So this asks about replacements only:
+ *
+ *   a character the words merely PUT INTO the clip carries no tag, takes
+ *   nobody's place, and is not counted — the sentence the person is shown,
+ *   "your character turns up twice, once in their place and once in the
+ *   crowd", says nothing that is true of them;
+ *
+ *   Restage is left alone. It casts from reference pictures instead of
+ *   editing the footage, two characters in ONE Restage take were built on
+ *   purpose (2026-09-21), and nothing was measured on that engine — a
+ *   refusal we cannot show a render for is a feature taken away on a hunch.
+ *
+ * Given the job, the tags the take really casts (null where the words give
+ * someone their part), and the tags the read marked as many.
  */
-export function recastCrowdSharesTake(castTags: readonly (string | null)[], groupTags: ReadonlySet<string>): boolean {
-  return castTags.length > 1 && castTags.some((tag) => tag !== null && groupTags.has(tag));
+export function recastCrowdSharesTake(job: RecastJob, castTags: readonly (string | null)[], groupTags: ReadonlySet<string>): boolean {
+  if (job !== "scene") return false;
+  const replaced = castTags.filter((tag): tag is string => tag !== null);
+  return replaced.length > 1 && replaced.some((tag) => groupTags.has(tag));
 }
 
 /**

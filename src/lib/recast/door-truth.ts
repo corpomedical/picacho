@@ -21,6 +21,7 @@ import {
   RECAST_MIN_SECONDS,
   RECAST_MIN_SIDE_PX,
   recastClipProblem,
+  recastCrowdSharesTake,
   recastEnginesOf,
   recastLumaDuration,
   recastRestageSeconds,
@@ -216,6 +217,72 @@ export function recastJobPromise(job: RecastJob): RecastPromise {
   else keeps.push("place");
   changes.push(job === "world" ? "everyone" : "cast");
   return { keeps, changes, silent: !sound };
+}
+
+// ---------------------------------------------------------------------------
+// A GROUP, AND WHAT THE DOOR SAYS ABOUT IT
+//
+// Two rules about casting a character over a whole group, and the door may
+// only ever say one of them at a time:
+//
+//   own take   a group cast beside somebody else the take also replaces. Wrong
+//              at ANY length (recast.ts recastCrowdSharesTake, measured), so it
+//              is said first and the other steps aside — the trim the other
+//              offers would not save a take that asks for two changes at once.
+//   one part   a group on a take long enough to be rendered in pieces: every
+//              piece after the first is handed the footage again and follows
+//              it (2026-09-20). A trim answers it.
+//
+// Said here rather than in the page so the two boxes cannot both appear, and
+// so the order matches the order the server refuses them in (actions.ts).
+
+export type RecastCrowdState = {
+  job: RecastJob;
+  /** The person each character in THIS take is shown playing; null where the words give them their part. */
+  takeTags: readonly (string | null)[];
+  /** The tags the read marked as several people. */
+  groupTags: ReadonlySet<string>;
+  /** The pieces this window is rendered in — 1 unless the engine chains (chain.ts). */
+  parts: number;
+};
+
+export function recastCrowdWarning(s: RecastCrowdState): "own-take" | "one-part" | null {
+  if (recastCrowdSharesTake(s.job, s.takeTags, s.groupTags)) return "own-take";
+  const castOverGroup = s.takeTags.some((tag) => tag !== null && s.groupTags.has(tag));
+  return castOverGroup && s.parts > 1 ? "one-part" : null;
+}
+
+// ---------------------------------------------------------------------------
+// A WAY OUT THAT CHANGES NOTHING ELSE
+//
+// The warning above offers two presses — the group on a take of its own, or
+// the group out of this take — and neither may quietly change what the person
+// asked for. That is not free. The door falls back on the read's own order for
+// a character with no role of its own, and on the read's LEAD for a lone
+// character, so a press that only shortens the cast hands the survivor
+// somebody else's part: pressing "Cast only Eva" over a class took Eva off the
+// forty boys and put her on the man in front of them, and Take went green on a
+// take nobody had asked for (2026-09-23).
+//
+// So a press says in full what the cast becomes — who is in it, the person
+// each of them keeps playing, and, when one is left, that one's person, which
+// the door holds in a field of its own.
+
+export type RecastCastMember = { id: string; tag: string | null };
+export type RecastCastChange = {
+  /** Who is cast afterwards, in the order they were shown in. */
+  ids: string[];
+  /** The person each of them keeps playing, to merge into the door's roles. */
+  roles: Record<string, string | null>;
+  /** The lone character's person, or null where more than one is left and the roles above are what the take sends. */
+  solo: { tag: string | null } | null;
+};
+
+export function recastCastKeeping(cast: readonly RecastCastMember[], staying: ReadonlySet<string>): RecastCastChange {
+  const kept = cast.filter((c) => staying.has(c.id));
+  const roles: Record<string, string | null> = {};
+  for (const c of kept) roles[c.id] = c.tag;
+  return { ids: kept.map((c) => c.id), roles, solo: kept.length === 1 ? { tag: kept[0].tag } : null };
 }
 
 // ---------------------------------------------------------------------------

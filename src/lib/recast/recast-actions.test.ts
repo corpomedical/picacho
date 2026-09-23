@@ -335,7 +335,13 @@ describe("several characters in one take", () => {
     expect(at("if (castOverGroup && chaining) return { error: RECAST_GROUP_ONE_PART }")).toBeLessThan(at("await prepareChain(admin, {"));
     expect(at("if (castOverGroup && chaining) return { error: RECAST_GROUP_ONE_PART }")).toBeLessThan(at("checkGenerationAllowance("));
     const door = readFileSync(join(__dirname, "..", "..", "components", "mystique", "mystique-door.tsx"), "utf8");
-    expect(door).toContain("const groupNeedsOnePart = castOverGroup && parts > 1;");
+    expect(door).toContain('const groupNeedsOnePart = crowdWarning === "one-part";');
+    // Only where the engine renders in pieces, as the server counts it
+    // (2026-09-23): the door used to count parts on every engine, and greyed
+    // Take out on a 30 s take that would have gone in one request.
+    expect(door).toContain(
+      "const parts = clipWindow && RECAST_ENGINES[engine].chains === true ? chainPieceCount(clipWindow.end - clipWindow.start) : 1;",
+    );
     // Take stays grey on it, and says why (door-truth.ts recastBlocker, 2026-09-22).
     expect(door).toMatch(/recastBlocker\(\{[\s\S]*?\n    groupNeedsOnePart,\n[\s\S]*?\}\);\n  const canTake = blocker === null;/);
   });
@@ -344,11 +350,16 @@ describe("several characters in one take", () => {
     // 2026-09-23, paid for on one 15 s stretch of the courtyard clip: the lead
     // swap alone held through the hard bow at the end; the lead swap AND the
     // forty boys in the same take came back with the character twice over,
-    // and the boys back as themselves at that same bow. The chained rule above
+    // and the boys back as themselves at that same bow. The chained rule below
     // is the same reasoning over parts; this one is the single piece.
-    expect(start).toContain("if (recastCrowdSharesTake(takeTags, groupTags)) return { error: RECAST_CROWD_OWN_TAKE }");
+    expect(start).toContain("if (recastCrowdSharesTake(spec.job, takeTags, groupTags)) return { error: RECAST_CROWD_OWN_TAKE }");
+    // FIRST OF THE TWO, in the order the door names them (door-truth.ts
+    // recastCrowdWarning, 2026-09-23). It used to be asked second, so a long
+    // take of a crowd beside somebody else was told to trim to 15 seconds —
+    // and the trimmed second press was refused again, in different words.
+    const refuse = at("if (recastCrowdSharesTake(spec.job, takeTags, groupTags)) return { error: RECAST_CROWD_OWN_TAKE }");
+    expect(refuse).toBeLessThan(at("if (castOverGroup && chaining) return { error: RECAST_GROUP_ONE_PART }"));
     // Before a credit is counted, reserved or spent, and before the cut.
-    const refuse = at("if (recastCrowdSharesTake(takeTags, groupTags)) return { error: RECAST_CROWD_OWN_TAKE }");
     for (const later of ["await gatePrompt({", "await prepareChain(admin, {", "await cutRecastWindow(", "checkGenerationAllowance(", 'admin.rpc("reserve_generations"', "consumePurchasedCredits(", "submitRecastJob("]) {
       expect(refuse, later).toBeLessThan(at(later));
     }
@@ -368,9 +379,12 @@ describe("several characters in one take", () => {
 
   it("says on the door what will happen, and offers both ways out", () => {
     const door = readFileSync(join(__dirname, "..", "..", "components", "mystique", "mystique-door.tsx"), "utf8");
-    // The door asks the same question of the same tags the server does.
+    // The door asks the same question of the same tags the server does, through
+    // the one function that answers both group rules and names them in the
+    // server's own order (door-truth.ts recastCrowdWarning).
     expect(door).toContain("const takeTags = ensemble ? castTags : [soloTag];");
-    expect(door).toContain("const crowdSharesTake = recastCrowdSharesTake(takeTags, groupTags);");
+    expect(door).toContain("const crowdWarning = recastCrowdWarning({ job, takeTags, groupTags, parts });");
+    expect(door).toContain('const crowdSharesTake = crowdWarning === "own-take";');
     // The warning, and the two presses: the group by itself, or out of this take.
     expect(door).toContain("{crowdSharesTake && crowdCast && (");
     expect(door).toContain("{m.crowdAlone}");
@@ -378,8 +392,19 @@ describe("several characters in one take", () => {
     expect(door).toContain("formatMsg(m.crowdAloneDrop, { name: crowdCast.name })");
     // Take stays grey on it, and says why (door-truth.ts recastBlocker).
     expect(door).toMatch(/recastBlocker\(\{[\s\S]*?\n    crowdSharesTake,\n[\s\S]*?\}\);\n  const canTake = blocker === null;/);
-    // Only the trim's box steps aside; the person's cast is never touched here.
-    expect(door).toContain("{groupNeedsOnePart && !crowdSharesTake && (");
+    // The trim's box steps aside while this one stands — one warning at a time,
+    // which recastCrowdWarning now decides rather than the page.
+    expect(door).toContain("{groupNeedsOnePart && (");
+    // NEITHER PRESS MAY CHANGE WHAT WAS ASKED FOR (2026-09-23). Both go through
+    // keepCast, which carries every remaining character's own person with it;
+    // setting castIds alone moved the crowd's character onto the LEAD, and Take
+    // went green on a take nobody had asked for.
+    expect(door).toContain("onClick={() => keepCast([crowdCast.id])}");
+    expect(door).toContain("onClick={() => keepCast(cast.filter((c) => c.id !== crowdCast.id).map((c) => c.id))}");
+    const keep = door.slice(door.indexOf("function keepCast("), door.indexOf("function keepCast(") + 520);
+    expect(keep).toContain("recastCastKeeping(");
+    expect(keep).toContain("setSoloPick(next.solo);");
+    expect(keep).toContain("setRoles((prev) => ({ ...prev, ...next.roles }));");
   });
 
   it("names the place the take must keep, from the read's own words", () => {

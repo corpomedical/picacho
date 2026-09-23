@@ -336,27 +336,45 @@ describe("the request each engine receives", () => {
 describe("a whole group and somebody else in one take", () => {
   const crowd = new Set(["B"]);
 
-  it("is refused where a group is cast beside any other casting", () => {
-    expect(recastCrowdSharesTake(["A", "B"], crowd)).toBe(true);
-    expect(recastCrowdSharesTake(["B", "A"], crowd)).toBe(true);
-    // The other casting need not play anyone in the clip: the words give them
-    // their part, and they are still a second change in the same take.
-    expect(recastCrowdSharesTake(["B", null], crowd)).toBe(true);
-    expect(recastCrowdSharesTake(["A", "B", "C"], crowd)).toBe(true);
+  it("is refused where a group is replaced beside somebody else", () => {
+    expect(recastCrowdSharesTake("scene", ["A", "B"], crowd)).toBe(true);
+    expect(recastCrowdSharesTake("scene", ["B", "A"], crowd)).toBe(true);
+    expect(recastCrowdSharesTake("scene", ["A", "B", "C"], crowd)).toBe(true);
   });
 
   it("leaves a group cast on its own alone — the take that was proved", () => {
-    expect(recastCrowdSharesTake(["B"], crowd)).toBe(false);
+    expect(recastCrowdSharesTake("scene", ["B"], crowd)).toBe(false);
     // One take each: every take casts the one person the door named, so the
     // group is never sharing with anybody.
-    expect(recastCrowdSharesTake([null], crowd)).toBe(false);
+    expect(recastCrowdSharesTake("scene", [null], crowd)).toBe(false);
+  });
+
+  // 2026-09-23, changed from the first cut of this rule, which refused this
+  // too. A character with no tag is PUT INTO the clip by the words; they take
+  // nobody's place, so the take still makes one replacement — and the sentence
+  // the person is shown for this refusal ("your character turns up twice, once
+  // in their place and once in the crowd") describes nobody in such a take.
+  // The money was spent on two replacements; this is not one of them.
+  it("says nothing about a character the words merely put in beside the group", () => {
+    expect(recastCrowdSharesTake("scene", ["B", null], crowd)).toBe(false);
+    expect(recastCrowdSharesTake("scene", [null, "B"], crowd)).toBe(false);
+  });
+
+  // Every measured render behind this rule is Into the clip's own engine,
+  // editing the person's own footage. Restage casts from reference pictures
+  // instead, and two characters in ONE Restage take were built on purpose
+  // (2026-09-21) — so it is not refused on evidence from another engine.
+  it("is asked of a scene take only", () => {
+    expect(recastCrowdSharesTake("restage", ["A", "B"], crowd)).toBe(false);
+    expect(recastCrowdSharesTake("motion", ["A", "B"], crowd)).toBe(false);
+    expect(recastCrowdSharesTake("world", ["A", "B"], crowd)).toBe(false);
   });
 
   it("says nothing about two ordinary characters, or about a clip with no group in it", () => {
-    expect(recastCrowdSharesTake(["A", "C"], crowd)).toBe(false);
-    expect(recastCrowdSharesTake(["A", null], crowd)).toBe(false);
-    expect(recastCrowdSharesTake(["A", "B", "C"], new Set<string>())).toBe(false);
-    expect(recastCrowdSharesTake([], crowd)).toBe(false);
+    expect(recastCrowdSharesTake("scene", ["A", "C"], crowd)).toBe(false);
+    expect(recastCrowdSharesTake("scene", ["A", null], crowd)).toBe(false);
+    expect(recastCrowdSharesTake("scene", ["A", "B", "C"], new Set<string>())).toBe(false);
+    expect(recastCrowdSharesTake("scene", [], crowd)).toBe(false);
   });
 });
 
