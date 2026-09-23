@@ -144,8 +144,15 @@ describe("the stage's overlay", () => {
     expect(live).toMatch(
       /if \(overlayRoot\.visible \|\| \(pickRoot\.visible && pickRoot\.children\.length > 0\)\) \{\s*renderer\.autoClear = false;\s*renderer\.render\(overlayScene, camera\);\s*renderer\.autoClear = true;\s*\}/,
     );
-    for (const name of ["frame(opts) {", "snapshot(px, opts) {"]) {
-      const body = between(name, "\n          },\n");
+    // A still is drawn through drawSketch, and so is every frame the
+    // rehearsal records (rehearsal.ts, 2026-09-23): one drawing, with
+    // nothing of the overlay anywhere in it.
+    expect(between("frame(opts) {", "\n          },\n")).toContain("const drawn = drawSketch(opts);");
+    for (const [name, end] of [
+      ["const drawSketch = (", "\n        };\n"],
+      ["snapshot(px, opts) {", "\n          },\n"],
+    ] as const) {
+      const body = between(name, end);
       expect(body, name).not.toMatch(/overlay/i);
       expect(body, name).toContain("renderer.render(scene, ");
     }

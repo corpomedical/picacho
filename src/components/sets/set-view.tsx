@@ -84,6 +84,7 @@ import {
   SET_THUMB_PX,
 } from "@/lib/sets/set-config";
 import { SET_LIMITS, STAND_POSES, specInstanceCount, type SetLayout, type SetSpec, type StandPose, type Vec3 } from "@/lib/sets/set-spec";
+import { REHEARSAL_BITRATE, REHEARSAL_FPS, REHEARSAL_MAX_SECONDS, REHEARSAL_MIMES, clipSize, flightSteps, recordSize, rehearsalFits, rehearsalSeconds } from "@/lib/sets/rehearsal";
 import type { SetCharacter, SetShot } from "@/lib/sets/types";
 import { dropUnsaved, keepUnsaved, savedFilmKey, savedRigKey, takeUnsaved } from "@/lib/sets/unsaved";
 
@@ -274,6 +275,17 @@ type StageApi = {
   setElementBadges(badges: readonly ElementBadge[]): void;
   /** The thing whose card is open, boxed on the stage; null for none. */
   setElementPicked(key: string | null): void;
+  /**
+   * The rehearsal (rehearsal.ts, 2026-09-23): the film's flight recorded off
+   * the stage as a clip, frame by frame, in the sketch the image model is
+   * sent — the grey mock in motion, which a re-shoot engine is given as the
+   * shot's movement. `recordStart` opens the recorder (null when the browser
+   * can't make a file an engine takes), `recordFrame` draws one frame from a
+   * pose, `recordStop` closes it and hands back the clip.
+   */
+  recordStart(): { width: number; height: number; mime: string } | null;
+  recordFrame(pose: Pose): void;
+  recordStop(): Promise<{ blob: Blob; mime: string; frames: number } | null>;
 };
 
 /** What the stage needs of a thing (elements.ts SetElement): its blocks, its box and where its thumbnail floats. */
@@ -761,6 +773,21 @@ export function SetView({
   /** The film's one file is being made (downloadFilm). */
   const [filmFileBusy, setFilmFileBusy] = useState(false);
   const [previz, setPreviz] = useState(false);
+  // The rehearsal (rehearsal.ts, 2026-09-23): the film's flight recorded off
+  // the stage as a clip — what a re-shoot engine is given as the shot's
+  // motion. Held in the page only until it is sent or the page is left.
+  const [recording, setRecording] = useState(false);
+  const [rehearsal, setRehearsal] = useState<{ url: string; mime: string; seconds: number; frames: number; bytes: number } | null>(null);
+  const rehearsalBlobRef = useRef<Blob | null>(null);
+  // The clip is held by the browser until the page is left: its object URL
+  // is the only thing keeping those bytes, so it is let go on the way out.
+  const rehearsalUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    rehearsalUrlRef.current = rehearsal?.url ?? null;
+  }, [rehearsal]);
+  useEffect(() => () => {
+    if (rehearsalUrlRef.current) URL.revokeObjectURL(rehearsalUrlRef.current);
+  }, []);
   // The sequencer (cut B): where the playhead stands, seconds into the
   // film, and which previz run is the live one — Stop retires it.
   const [playhead, setPlayhead] = useState(0);
@@ -2066,6 +2093,105 @@ export function SetView({
           return out.toDataURL("image/jpeg", 0.9);
         };
 
+        /**
+         * The sketch, drawn into a canvas: the recipe a still has always
+         * been taken with (frame()), now shared with the rehearsal recorder
+         * so a recorded frame IS the picture the image model is sent. The
+         * helpers are hidden, the stage wears its flat sketch materials at
+         * the sketch's own lift, it is rendered at the rig's render size,
+         * and everything is put back before the browser shows a frame.
+         * `target` reuses a canvas (the recorder's, whose size must not
+         * change mid-clip); without one a canvas is made to fit.
+         */
+        const drawSketch = (
+          opts?: { from?: Pose; hideFigure?: boolean; cut?: boolean },
+          target?: HTMLCanvasElement,
+        ): { out: HTMLCanvasElement; fr: ReturnType<typeof formatFrame> } | null => {
+          const fr = formatFrame(rigRef.current.format, rigRef.current.squeeze);
+          const pose = opts?.from ?? {
+            position: [camera.position.x, camera.position.y, camera.position.z] as Vec3,
+            target: [controls.target.x, controls.target.y, controls.target.z] as Vec3,
+            fovDeg: poseFov,
+          };
+          // The negative the picture is cut from: the squeeze widens what
+          // the lens sees, and fr's band widens by the same, so the picture
+          // keeps the lens's height and gains the width — undistorted.
+          const from = { ...pose, fovDeg: widenFovDeg(pose.fovDeg, rigRef.current.squeeze) };
+          // The ring and arrow are for arranging; the image model must
+          // never see them and draw a ring on the floor.
+          standIn.helpers.visible = false;
+          if (opts?.hideFigure) standIn.figure.visible = false;
+          const cam = new THREE.PerspectiveCamera(from.fovDeg, fr.renderW / fr.renderH, camera.near, camera.far);
+          cam.position.set(...from.position);
+          cam.lookAt(new THREE.Vector3(...from.target));
+          cam.updateProjectionMatrix();
+          // Drawn at the render's own size, then the canvas goes back as it
+          // was before the browser shows a frame.
+          const ratio = renderer.getPixelRatio();
+          renderer.setPixelRatio(1);
+          renderer.setSize(fr.renderW, fr.renderH, false);
+          // The sketch (build-scene.ts sketchStage, 2026-09-17): the full
+          // stage is for the person's eyes; the image model reads the flat
+          // sketch the shot prompt describes, at the sketch's own lift and
+          // this rig's exposure. The stage is back before the browser
+          // shows a frame.
+          sketchStage(scene, built.root, true);
+          if (sketchFill) sketchFill.intensity = sketchFillOn;
+          // Only a full build has two lifts: on a basic one (a phone, a
+          // coarse pointer) this light IS the sketch's own lift, and
+          // turning it off would hand the model a dark sketch while the
+          // prompt says it was brightened.
+          if (full && stageFill) stageFill.intensity = 0;
+          renderer.toneMappingExposure = sketchLift.exposure * exposureGainNow;
+          try {
+            renderer.render(scene, cam);
+          } finally {
+            renderer.toneMappingExposure = lift.exposure * exposureGainNow;
+            if (stageFill) stageFill.intensity = stageFillOn;
+            if (sketchFill) sketchFill.intensity = 0;
+            sketchStage(scene, built.root, false);
+          }
+          // The band the frame lines draw, centred, when the picture is
+          // asked for rather than the frame it is shot in.
+          const band = Boolean(opts?.cut && fr.cut);
+          const out = target ?? document.createElement("canvas");
+          if (!target) {
+            out.width = band ? fr.bandW : fr.renderW;
+            out.height = band ? fr.bandH : fr.renderH;
+          }
+          const ctx = out.getContext("2d");
+          let drew = false;
+          if (ctx) {
+            // What of the render the picture is: the whole frame, or the
+            // band's middle when the picture is asked for as it is cut.
+            const srcW = band ? fr.bandW : fr.renderW;
+            const srcH = band ? fr.bandH : fr.renderH;
+            const sx = Math.floor((fr.renderW - srcW) / 2);
+            const sy = Math.floor((fr.renderH - srcH) / 2);
+            // A canvas of its own (a still) takes the render at its own
+            // size; a canvas we were handed (the recorder's, smaller than
+            // the stage — rehearsal.ts recordSize) takes it scaled to fit,
+            // never cropped.
+            const k = out.width / srcW;
+            ctx.drawImage(renderer.domElement, sx, sy, srcW, srcH, 0, 0, out.width, out.height);
+            // The strips outside the band, painted dark on the frame the
+            // model reads (rig.ts letterbox): the picture is the band, and
+            // the prompt says so. The band picture has none to paint.
+            if (!band) {
+              ctx.fillStyle = "#0a0a0a";
+              for (const r of letterbox(fr)) ctx.fillRect((r.x - sx) * k, (r.y - sy) * k, r.w * k, r.h * k);
+            }
+            drew = true;
+          }
+          renderer.setPixelRatio(ratio);
+          renderer.setSize(lastW, lastH, false);
+          standIn.helpers.visible = true;
+          standIn.figure.visible = true;
+          return drew ? { out, fr } : null;
+        };
+        /** The rehearsal being recorded now (rehearsal.ts), or null. */
+        let recording: { out: HTMLCanvasElement; track: CanvasCaptureMediaStreamTrack; rec: MediaRecorder; chunks: Blob[]; mime: string; frames: number } | null = null;
+
         apiRef.current = {
           // The sketch's lift: it is the sketch the prompt's sentence is about.
           lifted: sketchLift.fill > 1 || sketchLift.exposure > BASE_EXPOSURE,
@@ -2100,75 +2226,59 @@ export function SetView({
             viewOverride = viewModeMaterial(THREE, mode);
           },
           frame(opts) {
-            const fr = formatFrame(rigRef.current.format, rigRef.current.squeeze);
-            const pose = opts?.from ?? {
-              position: [camera.position.x, camera.position.y, camera.position.z] as Vec3,
-              target: [controls.target.x, controls.target.y, controls.target.z] as Vec3,
-              fovDeg: poseFov,
-            };
-            // The negative the picture is cut from: the squeeze widens what
-            // the lens sees, and fr's band widens by the same, so the picture
-            // keeps the lens's height and gains the width — undistorted.
-            const from = { ...pose, fovDeg: widenFovDeg(pose.fovDeg, rigRef.current.squeeze) };
-            // The ring and arrow are for arranging; the image model must
-            // never see them and draw a ring on the floor.
-            standIn.helpers.visible = false;
-            if (opts?.hideFigure) standIn.figure.visible = false;
-            const cam = new THREE.PerspectiveCamera(from.fovDeg, fr.renderW / fr.renderH, camera.near, camera.far);
-            cam.position.set(...from.position);
-            cam.lookAt(new THREE.Vector3(...from.target));
-            cam.updateProjectionMatrix();
-            // Drawn at the render's own size, then the canvas goes back as it
-            // was before the browser shows a frame.
-            const ratio = renderer.getPixelRatio();
-            renderer.setPixelRatio(1);
-            renderer.setSize(fr.renderW, fr.renderH, false);
-            // The sketch (build-scene.ts sketchStage, 2026-09-17): the full
-            // stage is for the person's eyes; the image model reads the flat
-            // sketch the shot prompt describes, at the sketch's own lift and
-            // this rig's exposure. The stage is back before the browser
-            // shows a frame.
-            sketchStage(scene, built.root, true);
-            if (sketchFill) sketchFill.intensity = sketchFillOn;
-            // Only a full build has two lifts: on a basic one (a phone, a
-            // coarse pointer) this light IS the sketch's own lift, and
-            // turning it off would hand the model a dark sketch while the
-            // prompt says it was brightened.
-            if (full && stageFill) stageFill.intensity = 0;
-            renderer.toneMappingExposure = sketchLift.exposure * exposureGainNow;
-            try {
-              renderer.render(scene, cam);
-            } finally {
-              renderer.toneMappingExposure = lift.exposure * exposureGainNow;
-              if (stageFill) stageFill.intensity = stageFillOn;
-              if (sketchFill) sketchFill.intensity = 0;
-              sketchStage(scene, built.root, false);
-            }
-            // The band the frame lines draw, centred, when the picture is
-            // asked for rather than the frame it is shot in.
-            const band = opts?.cut && fr.cut;
-            const out = document.createElement("canvas");
-            out.width = band ? fr.bandW : fr.renderW;
-            out.height = band ? fr.bandH : fr.renderH;
-            const ctx = out.getContext("2d");
-            let url: string | null = null;
-            if (ctx) {
-              ctx.drawImage(renderer.domElement, band ? -Math.floor((fr.renderW - fr.bandW) / 2) : 0, band ? -Math.floor((fr.renderH - fr.bandH) / 2) : 0);
-              // The strips outside the band, painted dark on the frame the
-              // model reads (rig.ts letterbox): the picture is the band, and
-              // the prompt says so. The band picture has none to paint.
-              if (!band) {
-                ctx.fillStyle = "#0a0a0a";
-                for (const r of letterbox(fr)) ctx.fillRect(r.x, r.y, r.w, r.h);
-              }
-              url = out.toDataURL("image/jpeg", 0.9);
-            }
-            renderer.setPixelRatio(ratio);
-            renderer.setSize(lastW, lastH, false);
-            standIn.helpers.visible = true;
-            standIn.figure.visible = true;
+            const drawn = drawSketch(opts);
+            if (!drawn) return null;
+            const url = drawn.out.toDataURL("image/jpeg", 0.9);
             renderLive();
             return url;
+          },
+          recordStart() {
+            if (recording) return { width: recording.out.width, height: recording.out.height, mime: recording.mime };
+            const fr = formatFrame(rigRef.current.format, rigRef.current.squeeze);
+            const band = fr.cut;
+            // The film's own shape, small enough that every frame can be
+            // drawn and encoded in its moment (rehearsal.ts recordSize).
+            const size = recordSize(band ? fr.bandW : fr.renderW, band ? fr.bandH : fr.renderH);
+            const out = document.createElement("canvas");
+            out.width = size.width;
+            out.height = size.height;
+            const mime = REHEARSAL_MIMES.find((m: string) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m));
+            if (!mime) return null;
+            // Frames only when the recorder is handed one (captureStream(0)),
+            // so a hidden tab's throttled animation frames cannot thin the
+            // clip out: every frame below is drawn and then requested.
+            const stream = out.captureStream(0);
+            const track = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack | undefined;
+            if (!track) return null;
+            const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: REHEARSAL_BITRATE });
+            const chunks: Blob[] = [];
+            rec.ondataavailable = (e) => {
+              if (e.data.size > 0) chunks.push(e.data);
+            };
+            rec.start(250);
+            recording = { out, track, rec, chunks, mime, frames: 0 };
+            return { width: out.width, height: out.height, mime };
+          },
+          recordFrame(pose) {
+            const live = recording;
+            if (!live || live.rec.state !== "recording") return;
+            drawSketch({ from: pose, cut: true }, live.out);
+            live.track.requestFrame();
+            live.frames += 1;
+          },
+          async recordStop() {
+            const live = recording;
+            recording = null;
+            if (!live) return null;
+            const done = new Promise<void>((resolve) => {
+              live.rec.onstop = () => resolve();
+            });
+            if (live.rec.state !== "inactive") live.rec.stop();
+            await done;
+            live.track.stop();
+            renderLive();
+            if (live.frames === 0) return null;
+            return { blob: new Blob(live.chunks, { type: live.mime }), mime: live.mime, frames: live.frames };
           },
           relayout() {
             lastKey = "";
@@ -3636,6 +3746,45 @@ export function SetView({
       />
     );
   }
+  /**
+   * Record the rehearsal, and the clip once it is made (rehearsal.ts). The
+   * player comes with it on a computer; a phone's film dock is full, so
+   * there it is the row alone and the clip is saved from the Save link.
+   */
+  function rehearsalControls(className: string, withPlayer = true) {
+    const ext = rehearsal?.mime.startsWith("video/mp4") ? "mp4" : "webm";
+    return (
+      <div className={className} data-rehearsal>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void recordRehearsal()}
+            disabled={!ready || previz || recording || Boolean(filmBusy) || film.beats.length === 0}
+            className={chip(false)}
+            data-rehearsal-record
+          >
+            ● {recording ? s.filmRecording : s.filmRecord}
+          </button>
+          {rehearsal && (
+            <>
+              <span className="whitespace-nowrap text-[11px] tabular-nums text-[#c6c9d1]">
+                {formatMsg(s.filmRehearsalReady, { s: rehearsal.seconds, size: clipSize(rehearsal.bytes) })}
+              </span>
+              <a href={rehearsal.url} download={`${title || "rehearsal"}.${ext}`} className={chip(false)} data-rehearsal-save>
+                {s.filmRehearsalSave}
+              </a>
+            </>
+          )}
+        </div>
+        {rehearsal && withPlayer && (
+          <>
+            <video src={rehearsal.url} controls playsInline className="mt-2 w-full rounded-[10px] border border-[rgba(255,255,255,0.08)] bg-black" />
+            <p className="mt-1 text-[11px] leading-snug text-[#9aa0ad]">{s.filmRehearsalNote}</p>
+          </>
+        )}
+      </div>
+    );
+  }
   /** The strip shows once the set has things to put photos on, or photos on nothing to put back. */
   const castShown = !cutOpen && !compareOpen && (els.length > 0 || resolved.loose.length > 0);
   function castStrip(className: string) {
@@ -4235,6 +4384,117 @@ export function SetView({
     api.placeMark(layoutRef.current.mark);
     api.setPose(layoutRef.current.pose);
     if (alive()) setPreviz(false);
+  }
+
+  /**
+   * Record the rehearsal (rehearsal.ts): the same flight Play flies, stepped
+   * by the clock rather than by the browser's animation frames, every frame
+   * drawn as the sketch a still is taken from (drawSketch) and handed to the
+   * recorder. Each beat gets the seconds its clip will be, so the clip runs
+   * the film's own length. Free: nothing is sent and nothing is charged.
+   */
+  async function recordRehearsal() {
+    const api = apiRef.current;
+    if (!api || recording || previz || filmBusyRef.current || !ready) return;
+    if (film.beats.length === 0) {
+      setFilmError(s.filmWhyBeats);
+      return;
+    }
+    const perBeat = SET_TAKE_ENGINES[film.engine].seconds;
+    const seconds = rehearsalSeconds(film.beats.length, perBeat);
+    if (!rehearsalFits(seconds)) {
+      setFilmError(formatMsg(s.filmRecordTooLong, { s: seconds, max: REHEARSAL_MAX_SECONDS }));
+      return;
+    }
+    const opened = api.recordStart();
+    if (!opened) {
+      setFilmError(s.filmRecordUnsupported);
+      return;
+    }
+    setFilmError("");
+    setRecording(true);
+    // The overlay, the thumbnails and the picked box step aside, as they do
+    // for the previz: the engine must be given the set, not our furniture.
+    api.holdFilmOverlay("previz", true);
+    const stages = filmStages(film.beats, { mark: layoutRef.current.mark, pose: layoutRef.current.pose, time: rigRef.current.time });
+    const startPose = shots.find((sh) => sh.generationId === film.startId)?.pose ?? api.pose();
+    const steps = flightSteps(film.beats.length, perBeat, REHEARSAL_FPS);
+    let drawnTime = rigRef.current.time;
+    let figureFrom: Mark = { ...layoutRef.current.mark };
+    // Every frame gives the browser the thread back before the next one is
+    // drawn: the recorder's own work — opening, and handing over a slice of
+    // the clip every quarter second — runs here too, and a loop that never
+    // lets go records nothing at all (2026-09-23: 142 frames, no bytes, the
+    // recorder still opening as it was told to stop). A hidden tab clamps a
+    // timer to a second, so a short wait is a message, which nothing
+    // throttles.
+    const tick = () =>
+      new Promise<void>((r) => {
+        const ch = new MessageChannel();
+        ch.port1.onmessage = () => r();
+        ch.port2.postMessage(0);
+      });
+    const waitUntil = async (due: number) => {
+      for (;;) {
+        const left = due - performance.now();
+        if (left <= 0) return;
+        if (left > 8 && !document.hidden) await new Promise((r) => setTimeout(r, left - 4));
+        else await tick();
+      }
+    };
+    const t0 = performance.now();
+    try {
+      for (const step of steps) {
+        const beat = film.beats[step.beat];
+        if (!beat) break;
+        // The clip keeps its length on any machine: a frame whose moment has
+        // passed is dropped rather than drawn late, and the last frame of a
+        // beat is always drawn so the beat lands where it is meant to.
+        const due = t0 + step.t * 1000;
+        const now = performance.now();
+        if (now > due + 1000 / REHEARSAL_FPS && !step.closes) {
+          await tick();
+          continue;
+        }
+        await waitUntil(due);
+        const staged = stages[step.beat];
+        if (step.opens) {
+          const fig = { x: figureFrom.x, z: figureFrom.z };
+          if (staged && staged.time !== drawnTime) {
+            api.rebuild(stagedSpec(spec, { light: rigRef.current.light, time: staged.time }, fig));
+            drawnTime = staged.time;
+            api.placeMark(figureFrom);
+          }
+        }
+        const from = step.beat === 0 ? startPose : film.beats[step.beat - 1].end;
+        const pose = poseAlong(beat.move, from, beat.end, step.e);
+        const to = beat.figure;
+        if (to) {
+          const at = alongPath(figureFrom, beat.path, to, step.e);
+          api.placeMark({ x: at.x, z: at.z, facingDeg: step.e >= 0.97 || at.facingDeg === null ? to.facingDeg : at.facingDeg });
+        }
+        api.recordFrame(pose);
+        if (step.closes && to) {
+          figureFrom = { x: to.x, z: to.z, facingDeg: to.facingDeg };
+          api.setPose(to.pose);
+        }
+      }
+    } finally {
+      const made = await api.recordStop();
+      api.holdFilmOverlay("previz", false);
+      // The stage goes back to the arrangement, as the previz leaves it.
+      if (drawnTime !== rigRef.current.time) api.rebuild(stagedSpec(spec, rigRef.current, layoutRef.current.mark));
+      api.placeMark(layoutRef.current.mark);
+      api.setPose(layoutRef.current.pose);
+      setRecording(false);
+      if (made) {
+        if (rehearsal) URL.revokeObjectURL(rehearsal.url);
+        rehearsalBlobRef.current = made.blob;
+        setRehearsal({ url: URL.createObjectURL(made.blob), mime: made.mime, seconds, frames: made.frames, bytes: made.blob.size });
+      } else {
+        setFilmError(s.filmRecordFailed);
+      }
+    }
   }
 
   /** The sequencer's Stop (cut B): the previz lands where it is, the reel goes quiet. */
@@ -6958,6 +7218,7 @@ export function SetView({
                 >
                   ▶ {s.filmPlayMove}
                 </button>
+                {rehearsalControls("contents", false)}
                 <span className="whitespace-nowrap text-[11px] text-[#c6c9d1] tabular-nums">
                   {formatMsg(s.filmLength, { s: filmSeconds(film), n: film.beats.length })}
                 </span>
@@ -7648,6 +7909,7 @@ export function SetView({
                         {s.filmLookNone}
                       </p>
                     )}
+                    {rehearsalControls("")}
                     {/* What each beat's end frame carries of the things' photos (R1). */}
                     {elementsKey && film.beats.length > 0 && (
                       <div data-film-elements className="flex flex-col gap-0.5">

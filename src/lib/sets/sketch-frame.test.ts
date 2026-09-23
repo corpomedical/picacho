@@ -4,12 +4,15 @@ import { describe, expect, it } from "vitest";
 
 // The frame the image model reads is the flat sketch, not the full stage
 // (2026-09-17): the set page swaps the live stage to the sketch around the
-// one render that api.frame() takes, at the sketch's own lift, and swaps it
-// back before the browser shows a frame. Read from the source, as the take
+// one render it takes, at the sketch's own lift, and swaps it back before
+// the browser shows a frame. That drawing is drawSketch, which api.frame()
+// takes a still from and the rehearsal records every frame through
+// (rehearsal.ts, 2026-09-23) — one recipe, so a recorded frame and a shot
+// one are the same set, lens and lift. Read from the source, as the take
 // tests read actions.ts: the page needs a browser to run.
 describe("the frame the image model reads (set-view.tsx frame)", () => {
   const view = readFileSync(join(__dirname, "../../components/sets/set-view.tsx"), "utf8");
-  const frame = view.slice(view.indexOf("          frame(opts) {"), view.indexOf("          relayout() {"));
+  const frame = view.slice(view.indexOf("        const drawSketch = ("), view.indexOf("        let recording:"));
 
   it("renders the sketch, at the sketch's lift and the rig's exposure, and puts the stage back", () => {
     expect(frame.length).toBeGreaterThan(0);
@@ -34,7 +37,9 @@ describe("the frame the image model reads (set-view.tsx frame)", () => {
   });
 
   it("paints the band's strips dark on the frame the model reads, and not on the band picture", () => {
-    expect(frame).toContain("for (const r of letterbox(fr)) ctx.fillRect(r.x, r.y, r.w, r.h);");
+    // The strips land where they land in the canvas being drawn into: a
+    // still's is the render's own size (k is 1), the recorder's is smaller.
+    expect(frame).toContain("for (const r of letterbox(fr)) ctx.fillRect((r.x - sx) * k, (r.y - sy) * k, r.w * k, r.h * k);");
     expect(frame.slice(frame.indexOf("if (!band) {"), frame.indexOf("for (const r of letterbox(fr))"))).toContain('ctx.fillStyle = "#0a0a0a";');
     // And the shot's words say what they are (actions.ts → set-shot-prompt.ts).
     const actions = readFileSync(join(__dirname, "actions.ts"), "utf8");
@@ -76,7 +81,7 @@ describe("the frame the image model reads (set-view.tsx frame)", () => {
 
 describe("the squeeze, and the lift that follows the set", () => {
   const view = readFileSync(join(__dirname, "../../components/sets/set-view.tsx"), "utf8");
-  const frame = view.slice(view.indexOf("          frame(opts) {"), view.indexOf("          relayout() {"));
+  const frame = view.slice(view.indexOf("        const drawSketch = ("), view.indexOf("        let recording:"));
 
   it("draws the negative the squeeze widened, at the band it widened", () => {
     // It used to scale the projection's x, so the model was sent the
