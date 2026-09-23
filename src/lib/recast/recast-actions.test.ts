@@ -421,7 +421,9 @@ describe("what keeps a later part on the take's look", () => {
   it("says a group is a group, from the read's own judgement", () => {
     expect(start).toContain('read?.people.find((p) => p.tag === tag)?.many === true');
     const reader = readFileSync(join(__dirname, "recast-read.ts"), "utf8");
-    expect(reader).toContain('"many": boolean }   // true when this line is SEVERAL people (a crowd, a row, a class), not one');
+    // The same sentence, less its closing brace: "mark" joined the schema
+    // under it on 2026-09-23 and now closes the person object.
+    expect(reader).toContain('"many": boolean,    // true when this line is SEVERAL people (a crowd, a row, a class), not one');
     expect(reader).toContain("many: o.many === true");
   });
 });

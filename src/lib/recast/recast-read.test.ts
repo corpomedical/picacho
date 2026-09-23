@@ -2,13 +2,17 @@ import { describe, expect, it, vi } from "vitest";
 import {
   askRecastRead,
   parseRecastRead,
+  RECAST_MARK_MAX_CHARS,
+  RECAST_MARK_MAX_WORDS,
   RECAST_READ_MODEL,
   reboundRecastRead,
+  recastMark,
   recastReadInstructions,
   recastSampleTimes,
   recastWarnings,
   type RecastRead,
 } from "./recast-read";
+import { readRecastRecipe, recastRow } from "./store";
 
 // The read's bounds. What comes back from a model is fields or nothing, and
 // what comes back through a BROWSER is bounded again — the door is shown the
@@ -19,7 +23,7 @@ const full = {
   motion: "She turns from the window and crosses her arms.",
   world: "A white studio, flat daylight.",
   people: [
-    { tag: "Z", where: "centre, facing camera", does: "turns and crosses her arms", lead: false, many: false },
+    { tag: "Z", where: "centre, facing camera", does: "turns and crosses her arms", lead: false, many: false, mark: "white shirt, centre of the row" },
     { tag: "Z", where: "behind, walks in at 0:04", does: "walks past and exits right", lead: true, many: false },
   ],
   keeps: [
@@ -39,9 +43,30 @@ describe("the instructions", () => {
     expect(text).toContain('"people"');
     expect(text).toContain('"keeps"');
     expect(text).toContain('"cuts"');
-    expect(text).toMatch(/Never describe anyone's face, body, hair, age, skin, or clothing/);
+    // The ban as it stands since the mark was allowed (2026-09-23): clothing
+    // left this list, and every other word of it stayed. Each is named, so
+    // that a later rewording of the rule cannot quietly drop one of them.
+    for (const banned of ["face", "body", "build", "age", "skin", "ethnicity", "hair"]) {
+      expect(text).toMatch(new RegExp(`Never describe anyone's[^.]*\\b${banned}\\b`));
+    }
+    expect(text).toMatch(/never give anyone a name/);
     // Position and action are what it may say.
     expect(text).toContain("where they are in the frame and what they do");
+  });
+
+  it("allow the mark, narrowly, and say what it may not be", () => {
+    const text = recastReadInstructions(recastSampleTimes(8, 4), 8);
+    expect(text).toContain('"mark"');
+    // What it is for, and the only two things it may say.
+    expect(text).toContain("WEARING");
+    expect(text).toContain("WHERE they stand");
+    expect(text).toContain(`At most ${RECAST_MARK_MAX_WORDS} words`);
+    // Shown right and wrong, because a rule with no example is a rule the
+    // reader interprets: the wrong ones are a body read and a name.
+    expect(text).toContain('"white shirt, front of the row" is right');
+    expect(text).toContain('"tall older man, short hair" is wrong');
+    // And it may be left out, which is the honest answer for a uniform crowd.
+    expect(text).toMatch(/Leave "mark" out entirely/);
   });
 
   it("samples the middle of each slice, in order", () => {
@@ -60,6 +85,9 @@ describe("parsing the answer", () => {
     expect(read.people.filter((p) => p.lead)).toHaveLength(1);
     expect(read.people[1].lead).toBe(true);
     expect(read.keeps).toHaveLength(2);
+    // The mark rides the person it belongs to, and only where there was one.
+    expect(read.people[0].mark).toBe("white shirt, centre of the row");
+    expect(read.people[1].mark).toBeUndefined();
     // Cuts outside the clip are dropped and the rest sorted.
     expect(read.cuts).toEqual([4.3]);
     expect(read.sound).toBe("speech");
@@ -98,6 +126,75 @@ describe("parsing the answer", () => {
     expect(forged.cuts.length).toBeLessThanOrEqual(8);
     expect(reboundRecastRead(null, 10)).toBeNull();
     expect(reboundRecastRead({ motion: "" }, 10)).toBeNull();
+  });
+
+  it("cuts a mark to six words on the way in AND on the way back", () => {
+    const long = "a tall older man in a dark blue blazer standing at the far left of the back row";
+    const person = { where: "left", does: "waves", lead: true, many: false, mark: long };
+    const parsed = parseRecastRead(JSON.stringify({ ...full, people: [person] }), 10)!;
+    // Six words, and nothing the model wrote past them.
+    expect(parsed.people[0].mark!.split(" ")).toHaveLength(RECAST_MARK_MAX_WORDS);
+    expect(parsed.people[0].mark).toBe("a tall older man in a");
+    // The door can edit the read, so the bound is met again on the way back
+    // — a forged one is cut exactly as the model's own was.
+    const forged = reboundRecastRead({ ...full, people: [{ ...person, mark: long }] }, 10)!;
+    expect(forged.people[0].mark).toBe("a tall older man in a");
+  });
+});
+
+describe("the mark's bound", () => {
+  it("keeps six words, and sixty characters however few words they are", () => {
+    expect(recastMark("white shirt, front of the row")).toBe("white shirt, front of the row");
+    expect(recastMark("  white   shirt,\n front row  ")).toBe("white shirt, front row");
+    // A phrase that lost its tail does not keep the comma that pointed at it.
+    expect(recastMark("white shirt, centre of the row, second in")).toBe("white shirt, centre of the row");
+    // Six words that are all enormous still meet the character bound, and
+    // are cut by whole words rather than left with half of one.
+    const huge = recastMark(Array.from({ length: 6 }, () => "x".repeat(20)).join(" "));
+    expect(Array.from(huge).length).toBeLessThanOrEqual(RECAST_MARK_MAX_CHARS);
+    expect(huge.split(" ").every((w) => w === "x".repeat(20))).toBe(true);
+    // One word longer than the whole bound is cut where it must be.
+    expect(recastMark("y".repeat(200))).toBe("y".repeat(RECAST_MARK_MAX_CHARS));
+    // Nothing usable is nothing at all, so the key is simply left off.
+    expect(recastMark("")).toBe("");
+    expect(recastMark(null)).toBe("");
+    expect(recastMark(42)).toBe("");
+  });
+});
+
+describe("the mark goes no further than the take", () => {
+  // It is written so a brief can point at one person WHILE the take is made
+  // (recast-read.ts's header). A recipe is what this product keeps about a
+  // take afterwards, and it holds no account of anyone in the footage: a
+  // tag, never a line about them. Pinned here because the leak would be
+  // silent — a `people` key copied into the row would simply work.
+  const row = (over: Partial<Parameters<typeof recastRow>[0]> = {}) =>
+    recastRow({
+      source: { kind: "upload", clipId: "c1", container: "mp4" },
+      job: "scene",
+      engine: "kling-edit",
+      keeps: [{ what: "the caption 'BEFORE' bottom centre", kind: "text" }],
+      direction: "dress her as Cleopatra",
+      castTag: "A",
+      brief: "TASK\nReplace Person A in @Video1 with @Element1.",
+      lock: true,
+      groupId: null,
+      window: null,
+      fromClipId: null,
+      ...over,
+    });
+
+  it("never lands in a stored recipe, however it is offered", () => {
+    const read = parseRecastRead(JSON.stringify(full), 10)!;
+    const stored = row();
+    expect(Object.keys(stored)).not.toContain("people");
+    expect(JSON.stringify(stored)).not.toContain(read.people[0].mark!);
+    // And a row that somehow arrived carrying people is read back without
+    // them: the recipe is rebuilt field by field, never spread.
+    const back = readRecastRecipe({ ...stored, people: read.people })!;
+    expect(back).not.toBeNull();
+    expect(Object.keys(back)).not.toContain("people");
+    expect(JSON.stringify(back)).not.toContain("white shirt");
   });
 });
 
@@ -155,6 +252,46 @@ describe("the reader call", () => {
     expect(seen[0].body.response_format).toEqual({ type: "json_object" });
     const content = (seen[0].body.messages as { role: string; content: unknown }[])[1].content as { type: string }[];
     expect(content.filter((c) => c.type === "image_url")).toHaveLength(2);
+  });
+
+  it("brings a mark back from the model, bounded, ready for the brief to point with", async () => {
+    // The school courtyard that started this (2026-09-23): the man to be
+    // replaced has his back turned among forty boys in the same blazer, and
+    // "centre of frame" fits all of them. What the reader says about his
+    // shirt is the whole of what tells him apart.
+    const answer = JSON.stringify({
+      title: "a slow bow",
+      motion: "A man at the centre of a courtyard bows, and the boys around him follow.",
+      world: "A school courtyard in flat noon light.",
+      people: [
+        { tag: "A", where: "centre, back to camera", does: "bows at the end", lead: true, many: false, mark: "white shirt among the dark blazers" },
+        { tag: "B", where: "all around him", does: "stand and follow the bow", lead: false, many: true, mark: "dark blazers and striped ties" },
+      ],
+      keeps: [{ what: "the school crest on the blazers", kind: "logo" }],
+      cuts: [],
+      framing: "wide",
+      sound: "ambient",
+      head_visible: false,
+      confidence: "medium",
+    });
+    const fetchFn = vi.fn(
+      async () => new Response(JSON.stringify({ choices: [{ message: { content: answer } }] }), { status: 200 }),
+    ) as unknown as typeof fetch;
+    const key = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "test";
+    let back: string | null;
+    try {
+      back = await askRecastRead(recastReadInstructions([1, 8, 14], 15), ["data:image/jpeg;base64,AA"], [1, 8, 14], { fetchFn });
+    } finally {
+      if (key === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = key;
+    }
+    const read = parseRecastRead(back!, 15)!;
+    expect(read.people[0].mark).toBe("white shirt among the dark blazers");
+    expect(read.people[1].mark).toBe("dark blazers and striped ties");
+    // Everything else the read says about him is unchanged by the mark.
+    expect(read.people[0].where).toBe("centre, back to camera");
+    expect(read.people[1].many).toBe(true);
   });
 
   it("fails open with no key, so nothing is spent and the take can still be taken", async () => {

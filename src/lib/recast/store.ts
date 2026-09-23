@@ -41,7 +41,17 @@ export type RecastRecipe = {
   engine: RecastEngine;
   keeps: RecastKeep[];
   direction: string;
-  /** Which person in the read was replaced ("A"), when the read found more than one. */
+  /**
+   * Which person in the read was replaced ("A"), when the read found more
+   * than one. A TAG, and never the read's line about them: a recipe keeps
+   * no account of anyone in the person's own footage, and since 2026-09-23
+   * that includes the read's `mark` — the six words that tell one person in
+   * a crowd apart by what they wear (recast-read.ts). The mark is written
+   * so a brief can point at someone while the take is being made; it is not
+   * something this product keeps about a stranger afterwards, so nothing
+   * here has a field it could land in and recastRow copies only what is
+   * named below.
+   */
   castTag: string | null;
   brief: string;
   /** True when this take was taken under the lock's promise. */

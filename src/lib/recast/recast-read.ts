@@ -12,12 +12,35 @@
 //   does anyone speak       → whether re-voicing it is worth offering
 //   which jobs suit it      → the door greys out what will disappoint
 //
-// THE PEOPLE ARE NEVER DESCRIBED. A recast replaces the performer, so the
-// reader is told to address them by POSITION and ACTION only — "the person
-// on the left, who turns and walks out" — and never by face, body, hair,
-// age, skin or clothing. That is the Recce's rule (recce-read.ts) kept for
+// THE PEOPLE ARE ADDRESSED BY POSITION AND ACTION, AND BY ONE MARK.
+//
+// Until 2026-09-23 there was no mark. Everyone in the clip was named by
+// where they stood and what they did and by nothing else at all — "the
+// person on the left, who turns and walks out" — never by face, body, hair,
+// age, skin or clothing. That is the Recce's rule (recce-read.ts), kept for
 // the same reason: nothing about a real person in someone's footage travels
 // onward, and what does travel is gated as model text before it is sent.
+//
+// It cost paid takes. A school courtyard, about forty boys in the same
+// blazer, and the one man to be replaced standing among them with his back
+// to the camera: all the rule let the brief say was "Person A, centre of
+// frame". Forty people answered to that. The engine put the character in
+// BESIDE him instead of over him, and in a second run a copy of her turned
+// up where a front-row student had stood. The wording was never the whole
+// story — the same day proved a load limit (one replacement per render
+// holds, a lead swap plus a whole-crowd swap does not) and proved that a
+// direction buried at the end of a long brief is ignored. But a brief that
+// cannot point at anyone is guessing, and neither of those fixes that.
+//
+// So one MARK per person is now allowed, and nothing else moved. It is at
+// most six words, it may say WHAT THEY WEAR (a garment and its colour) and
+// WHERE THEY STAND, and it is hard-capped here rather than trusted to the
+// model (recastMark). Face, body, build, age, skin, ethnicity, hair and any
+// name stay banned, said in the instructions in as many words. The reader
+// writes a mark for every person line; the brief may say it only for
+// someone a character has actually been cast over (recast-brief.ts), which
+// is the one place it buys anything. And it goes no further than the take:
+// a stored recipe never carries it (store.ts).
 //
 // Relative imports only, and client-safe (the browser samples the frames).
 // Tested with a fake fetch.
@@ -37,6 +60,15 @@ export const RECAST_SOUNDS = ["speech", "music", "ambient", "none"] as const;
 export const RECAST_KEEP_KINDS = ["text", "logo", "accessory", "object"] as const;
 export const RECAST_CONFIDENCE = ["low", "medium", "high"] as const;
 
+/**
+ * The mark's bound (RecastPerson.mark). Six words is the whole point: long
+ * enough for a garment, its colour and a place in the frame, too short to
+ * become a description of a person. The character bound catches the answer
+ * that spends all six words on one of them.
+ */
+export const RECAST_MARK_MAX_WORDS = 6;
+export const RECAST_MARK_MAX_CHARS = 60;
+
 export type RecastPerson = {
   /** "A", "B", "C" — what the door's chips and the brief call them. */
   tag: string;
@@ -44,6 +76,17 @@ export type RecastPerson = {
   where: string;
   /** What they do, in one sentence. Action only. */
   does: string;
+  /**
+   * The one thing that tells this person apart from the others at a glance
+   * — a garment and its colour, and where they stand: "white shirt, front
+   * of the row". Six words at most, and never a face, a body, a build, an
+   * age, skin, ethnicity, hair or a name (the header says why it exists and
+   * why it stops there).
+   *
+   * Absent when the reader offered nothing usable, which is the honest
+   * answer for a clip where everyone is dressed the same.
+   */
+  mark?: string;
   /** True when this one carries the clip — the door casts them first. */
   lead: boolean;
   /**
@@ -98,7 +141,8 @@ Return ONLY a JSON object:
      "where": string,    // WHERE they are: "left of frame", "centre, facing camera", "behind, walks in at 0:04"
      "does": string,     // WHAT they do: "turns and crosses her arms", "walks past and exits right"
      "lead": boolean,    // true for the one the clip is about; exactly one true
-     "many": boolean }   // true when this line is SEVERAL people (a crowd, a row, a class), not one
+     "many": boolean,    // true when this line is SEVERAL people (a crowd, a row, a class), not one
+     "mark": string }    // OPTIONAL, at most ${RECAST_MARK_MAX_WORDS} words: what tells this one apart at a glance — see below
  ],
  "keeps": [              // things that must survive a replacement, [] if none
    { "what": string,     // "a wristwatch on the left wrist", "the caption 'BEFORE' bottom centre"
@@ -111,7 +155,11 @@ Return ONLY a JSON object:
  "confidence": "low"|"medium"|"high"
 }
 
-RULES ABOUT PEOPLE. Never describe anyone's face, body, hair, age, skin, or clothing. Refer to them only by where they are in the frame and what they do. "The person on the left who raises a hand" is right; anything about how they look is wrong. Clothing may appear in "keeps" ONLY as a named object that must survive, like a watch or a badge, never as a description of the person.
+RULES ABOUT PEOPLE. Never describe anyone's face, body, build, age, skin, ethnicity, or hair, and never give anyone a name, not even one written on screen or spoken. In "where" and "does", refer to people only by where they are in the frame and what they do: "the person on the left who raises a hand" is right, and anything about how they look is wrong.
+
+"mark" is the one exception, and it is narrow. It exists so that ONE person can be pointed at when several are in shot, and it may say only two things: what they are WEARING — a garment and its colour — and WHERE they stand. At most ${RECAST_MARK_MAX_WORDS} words. "white shirt, front of the row" is right. "dark blazer, far left" is right. "tall older man, short hair" is wrong, and so is "Mr Ahmed". Leave "mark" out entirely when nothing they wear or where they stand tells them apart from the others — an answer of "one of forty in the same blazer" helps nobody.
+
+Clothing may appear in "keeps" ONLY as a named object that must survive, like a watch or a badge, never as a description of the person.
 
 Judge motion from the differences between frames. A cut is where two adjacent frames cannot be one continuous camera path: the composition, the distance and the subject's side all change at once. Expect no cuts in phone footage and several in edited footage.`;
 }
@@ -121,6 +169,32 @@ const pick =<T extends string>(v: unknown, list: readonly T[], fallback: T): T =
   typeof v === "string" && (list as readonly string[]).includes(v) ? (v as T) : fallback;
 
 const TAGS = ["A", "B", "C", "D"];
+
+/**
+ * A mark, cut to its bound — six words, then sixty characters — or "" when
+ * there is nothing there. The words go first so the cut never leaves half a
+ * word standing, and the trailing comma of a phrase that lost its tail goes
+ * too, because "white shirt," reads as a sentence that was interrupted.
+ *
+ * The cap is enforced HERE and not asked of the model, for the reason every
+ * other bound in this file is: the read makes a round trip through a
+ * browser, so the answer that reaches the brief is whatever came back, not
+ * whatever was requested (reboundRecastRead).
+ */
+export function recastMark(value: unknown): string {
+  const words = cleanText(value, RECAST_MARK_MAX_CHARS * 4)
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, RECAST_MARK_MAX_WORDS);
+  while (words.length > 1 && Array.from(words.join(" ")).length > RECAST_MARK_MAX_CHARS) words.pop();
+  return cleanText(words.join(" "), RECAST_MARK_MAX_CHARS).replace(/[,;:.—-]+$/, "").trim();
+}
+
+/** The mark as a person line carries it: the key is simply absent when empty. */
+const markOf = (value: unknown): { mark?: string } => {
+  const mark = recastMark(value);
+  return mark ? { mark } : {};
+};
 
 /** The answer bounded into fields, or null: a shape the door never guesses at. */
 export function parseRecastRead(answer: string, seconds: number): RecastRead | null {
@@ -142,7 +216,7 @@ export function parseRecastRead(answer: string, seconds: number): RecastRead | n
     if (!does && !where) continue;
     // The tag is ours, not the reader's: the chips, the brief and the cast
     // all key on it, so it must be A, B, C in order whatever came back.
-    people.push({ tag: TAGS[people.length], where, does, lead: o.lead === true, many: o.many === true });
+    people.push({ tag: TAGS[people.length], where, does, lead: o.lead === true, many: o.many === true, ...markOf(o.mark) });
   }
   // Exactly one lead — the first one claimed, or the first person there.
   const leadAt = Math.max(0, people.findIndex((p) => p.lead));
@@ -204,6 +278,7 @@ export function reboundRecastRead(value: unknown, seconds: number): RecastRead |
       does: cleanText(typeof o.does === "string" ? o.does : "", 160),
       lead: o.lead === true,
       many: o.many === true,
+      ...markOf(o.mark),
     });
   }
   const keeps: RecastKeep[] = [];
