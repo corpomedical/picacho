@@ -420,6 +420,9 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     // plans", set-config.ts); the page says so before a take is framed, and
     // takeInSet checks again.
     takesOn: setTakesEligible(access.plan, access.isAdmin),
+    // A model file on a thing (thing-model.ts, 2026-09-24): admins only while
+    // our own model builder is proved; the file never leaves the page.
+    modelsOn: access.isAdmin,
     // The month's Astra changes left (set-config.ts SET_EDITS_MONTHLY_LIMITS),
     // shown in the editor's prompt bar; the action holds the cap.
     astraEditsLeft: spec ? await astraEditsLeft(access) : null,

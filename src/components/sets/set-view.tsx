@@ -21,6 +21,7 @@ import { VIEW_MODES, viewModeMaterial, type ViewMode } from "@/lib/sets/view-mod
 import { azimuthOf, hourFromAzimuth, measureMetres, scaleBar, sunDirection, type MeasurePoint } from "@/lib/sets/furniture";
 import { PATH_MAX_POINTS, alongPath, pathLength, type Gaze } from "@/lib/sets/people";
 import { MOVERS_PER_BEAT, canMove, moverAlong, movedSpec, placementBefore, turnAbout, type Mover, type Placement } from "@/lib/sets/movers";
+import { SKETCH_MODEL_MATERIAL, fitThingModel, modelUrlAllowed, type ThingModel } from "@/lib/sets/thing-model";
 import type { RigTab } from "@/lib/sets/rig-dock";
 import { SceneTree, sceneNames, type SceneTarget } from "./scene-tree";
 import { Sequencer } from "./sequencer";
@@ -296,6 +297,13 @@ type StageApi = {
    * the words about it agree.
    */
   placeThings(placements: readonly Placement[]): void;
+  /**
+   * Real models (thing-model.ts, 2026-09-24): each thing given a model file
+   * is drawn as that model instead of its blocks, fitted to where the blocks
+   * stand; a thing left out goes back to its blocks. Answers, per model,
+   * whether it loaded — a file that is not a model says so on its card.
+   */
+  setThingModels(models: readonly ThingModel[]): Promise<{ key: string; ok: boolean }[]>;
 };
 
 /** What a tap on the ground lays (set-view's laying): null lays nothing. */
@@ -507,6 +515,7 @@ export function SetView({
   initialShots,
   identityBar,
   matchOn,
+  modelsOn = false,
   takesOn,
   initialAsk = null,
   initialCharacterId = null,
@@ -532,6 +541,8 @@ export function SetView({
   identityBar: number;
   /** Whether "Match a shot" is offered (admins, the photo switch on); the action checks again. */
   matchOn: boolean;
+  /** Whether a model file can be put on a thing (thing-model.ts): admins, while our own model builder is proved. */
+  modelsOn?: boolean;
   /**
    * Whether this plan takes clips and renders films — start-and-end-frame
    * clips, every paid plan's (set-config.ts setTakesEligible). Otherwise the
@@ -790,6 +801,20 @@ export function SetView({
   // the stage as a clip — what a re-shoot engine is given as the shot's
   // motion. Held in the page only until it is sent or the page is left.
   const [recording, setRecording] = useState(false);
+  /**
+   * Model files put on things (thing-model.ts, 2026-09-24): this page's
+   * own, never uploaded — an admin trying a model our builder made. The
+   * stage draws each in place of its thing's blocks.
+   */
+  const [thingModels, setThingModels] = useState<(ThingModel & { name: string })[]>([]);
+  const [thingModelState, setThingModelState] = useState<Record<string, "loading" | "ready" | "failed">>({});
+  const thingModelsRef = useRef(thingModels);
+  useEffect(() => {
+    thingModelsRef.current = thingModels;
+  }, [thingModels]);
+  useEffect(() => () => {
+    for (const m of thingModelsRef.current) URL.revokeObjectURL(m.url);
+  }, []);
   const [rehearsal, setRehearsal] = useState<{ url: string; mime: string; seconds: number; frames: number; bytes: number } | null>(null);
   const rehearsalBlobRef = useRef<Blob | null>(null);
   // The clip is held by the browser until the page is left: its object URL
@@ -1195,6 +1220,60 @@ export function SetView({
         let meshOfCopy = indexBlocks();
         /** Where each thing that has been driven stands now (placeThings), for the box a tap draws round it. */
         let placedNow = new Map<string, Placement>();
+        // Real models (thing-model.ts): a group of their own beside the
+        // set's, so a rebuild — which empties the set's group — never takes
+        // them with it. Each stands where its thing's blocks stand, and its
+        // blocks are hidden while it does.
+        const skinRoot = new THREE.Group();
+        skinRoot.name = "thing-models";
+        scene.add(skinRoot);
+        const skins = new Map<string, { url: string; flip: boolean; group: import("three").Group; at: [number, number, number] }>();
+        const blocksOf = (key: string) => {
+          const el = stageEls.find((x) => x.key === key);
+          return el ? el.members.map(([oi, copy]) => meshOfCopy.get(`${oi}:${copy}`)).filter((m): m is import("three").Mesh => Boolean(m)) : [];
+        };
+        const hideBlocks = () => {
+          for (const mesh of meshOfCopy.values()) mesh.visible = true;
+          for (const key of skins.keys()) for (const mesh of blocksOf(key)) mesh.visible = false;
+        };
+        /** A model stands where its thing has been driven, or where it was built (placeThings). */
+        const placeSkin = (key: string) => {
+          const skin = skins.get(key);
+          if (!skin) return;
+          const p = placedNow.get(key);
+          skin.group.position.set(p ? p.x : skin.at[0], skin.at[1], p ? p.z : skin.at[2]);
+          skin.group.rotation.y = p ? p.turnDeg * (Math.PI / 180) : 0;
+        };
+        const dropSkin = (key: string) => {
+          const skin = skins.get(key);
+          if (!skin) return;
+          skin.group.traverse((o) => {
+            const mesh = o as import("three").Mesh;
+            if (!mesh.isMesh) return;
+            mesh.geometry?.dispose();
+            const mats = [mesh.material, mesh.userData.sketchMaterial].flat().filter(Boolean) as import("three").Material[];
+            for (const m of mats) {
+              for (const v of Object.values(m)) if (v && typeof v === "object" && (v as import("three").Texture).isTexture) (v as import("three").Texture).dispose();
+              m.dispose();
+            }
+          });
+          skinRoot.remove(skin.group);
+          skins.delete(key);
+        };
+        /** The models flat for the sketch, as sketchStage does the blocks: their own paint, nothing metal. */
+        const skinSketch = (on: boolean) => {
+          skinRoot.traverse((o) => {
+            const mesh = o as import("three").Mesh;
+            if (!mesh.isMesh || !mesh.userData.sketchMaterial) return;
+            if (on) {
+              mesh.userData.stageMaterial = mesh.material;
+              mesh.material = mesh.userData.sketchMaterial as import("three").Material;
+            } else if (mesh.userData.stageMaterial) {
+              mesh.material = mesh.userData.stageMaterial as import("three").Material;
+              delete mesh.userData.stageMaterial;
+            }
+          });
+        };
         /** Where a block stood when the set was drawn, and which blocks are away from it (placeThings). */
         const homes = new WeakMap<import("three").Mesh, { x: number; y: number; z: number; rotY: number }>();
         const moved = new Set<import("three").Mesh>();
@@ -1404,6 +1483,11 @@ export function SetView({
           raycaster.setFromCamera(ndc, camera);
           const hits: StageHit[] = [
             ...raycaster.intersectObject(standIn.figure, true).map((h) => ({ oi: null, copy: null, figure: true, ground: false, sky: false, distance: h.distance })),
+            ...raycaster.intersectObject(skinRoot, true).flatMap((h): StageHit[] => {
+              const el = stageEls.find((x) => x.key === h.object.userData.skinOf);
+              const first = el?.members[0];
+              return first ? [{ oi: first[0], copy: first[1], figure: false, ground: false, sky: false, distance: h.distance }] : [];
+            }),
             ...raycaster.intersectObject(built.root, true).map((h): StageHit => {
               const ud = h.object.userData;
               const block = typeof ud.oi === "number" && typeof ud.copy === "number";
@@ -2185,6 +2269,7 @@ export function SetView({
           // this rig's exposure. The stage is back before the browser
           // shows a frame.
           sketchStage(scene, built.root, true);
+          skinSketch(true);
           if (sketchFill) sketchFill.intensity = sketchFillOn;
           // Only a full build has two lifts: on a basic one (a phone, a
           // coarse pointer) this light IS the sketch's own lift, and
@@ -2199,6 +2284,7 @@ export function SetView({
             if (stageFill) stageFill.intensity = stageFillOn;
             if (sketchFill) sketchFill.intensity = 0;
             sketchStage(scene, built.root, false);
+            skinSketch(false);
           }
           // The band the frame lines draw, centred, when the picture is
           // asked for rather than the frame it is shot in.
@@ -2529,6 +2615,7 @@ export function SetView({
             // built any more, and the movers index the set as it now is.
             moved.clear();
             meshOfCopy = indexBlocks();
+            hideBlocks();
             // The lift belongs to the set that is drawn: an hour, a light
             // plot or an Astra change is another set to measure.
             measureLift(next, fresh.farPlane);
@@ -2583,6 +2670,8 @@ export function SetView({
           setElements(els) {
             stageEls = els;
             keyOfCopy = new Map(els.flatMap((e) => e.members.map(([oi, copy]) => [`${oi}:${copy}`, e.key] as const)));
+            for (const key of [...skins.keys()]) if (!els.some((e) => e.key === key)) dropSkin(key);
+            hideBlocks();
             drawPick();
           },
           elementAt(clientX, clientY) {
@@ -2608,6 +2697,65 @@ export function SetView({
             pickedKey = key;
             drawPick();
           },
+          async setThingModels(models) {
+            const wanted = new Map(models.filter((m) => modelUrlAllowed(m.url)).map((m) => [m.key, m]));
+            for (const [key, skin] of [...skins]) {
+              const w = wanted.get(key);
+              if (!w || w.url !== skin.url || w.flip !== skin.flip) dropSkin(key);
+            }
+            const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
+            const results: { key: string; ok: boolean }[] = [];
+            for (const [key, m] of wanted) {
+              if (skins.has(key)) {
+                results.push({ key, ok: true });
+                continue;
+              }
+              const el = stageEls.find((x) => x.key === key);
+              if (!el) {
+                results.push({ key, ok: false });
+                continue;
+              }
+              try {
+                const gltf = await new GLTFLoader().loadAsync(m.url);
+                const model = gltf.scene;
+                const box = new THREE.Box3().setFromObject(model);
+                if (box.isEmpty()) throw new Error("empty model");
+                const fit = fitThingModel(
+                  { min: [box.min.x, box.min.y, box.min.z], max: [box.max.x, box.max.y, box.max.z] },
+                  { min: el.min, max: el.max },
+                  m.flip,
+                );
+                model.rotation.y = fit.turnDeg * (Math.PI / 180);
+                model.scale.setScalar(fit.scale);
+                model.position.set(...fit.offset);
+                model.traverse((o) => {
+                  const mesh = o as import("three").Mesh;
+                  if (!mesh.isMesh) return;
+                  mesh.castShadow = !coarse;
+                  mesh.receiveShadow = !coarse;
+                  mesh.userData.skinOf = key;
+                  const own = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as import("three").MeshStandardMaterial;
+                  mesh.userData.sketchMaterial = new THREE.MeshStandardMaterial({
+                    map: own?.map ?? null,
+                    color: own?.color ?? new THREE.Color(0xbbbbbb),
+                    ...SKETCH_MODEL_MATERIAL,
+                  });
+                });
+                const group = new THREE.Group();
+                group.add(model);
+                skinRoot.add(group);
+                skins.set(key, { url: m.url, flip: m.flip, group, at: fit.at });
+                placeSkin(key);
+                results.push({ key, ok: true });
+              } catch (err) {
+                console.warn("A thing's model would not load:", err);
+                results.push({ key, ok: false });
+              }
+            }
+            hideBlocks();
+            renderLive();
+            return results;
+          },
           placeThings(placements) {
             placedNow = new Map(placements.map((p) => [p.key, p]));
             // Where each block stood when the set was drawn, kept the first
@@ -2628,6 +2776,7 @@ export function SetView({
               mesh.rotation.y = was.rotY;
             }
             moved.clear();
+            for (const key of skins.keys()) placeSkin(key);
             drawPick();
             if (placements.length === 0) return;
             for (const p of placements) {
@@ -3739,6 +3888,20 @@ export function SetView({
     if (!(filmOpen || cutOpen) || filmSel === null) return;
     apiRef.current?.placeThings(filmStagesNow[filmSel]?.movers ?? []);
   }, [ready, previz, recording, filmBusy, filmOpen, cutOpen, filmSel, filmStagesNow]);
+  // The stage draws the things' models (thing-model.ts); each card hears
+  // whether its file loaded.
+  useEffect(() => {
+    const api = apiRef.current;
+    if (!ready || !api) return;
+    let live = true;
+    void api.setThingModels(thingModels.map(({ key, url, flip }) => ({ key, url, flip }))).then((res) => {
+      if (!live) return;
+      setThingModelState(Object.fromEntries(res.map((r) => [r.key, r.ok ? "ready" : "failed"])));
+    });
+    return () => {
+      live = false;
+    };
+  }, [ready, thingModels]);
   // The set stands as it is arranged whenever the film is put away
   // (movers.ts, 2026-09-23): a beat's movers belong to the film, never to
   // the set, so Shoot is never handed a van parked where a beat left it.
@@ -3916,6 +4079,31 @@ export function SetView({
             ? {
                 earlier: orderIndex > 0 ? () => reorderElement(thingKey, orderIndex - 1) : null,
                 later: orderIndex < orderCount - 1 ? () => reorderElement(thingKey, orderIndex + 1) : null,
+              }
+            : null
+        }
+        model={
+          modelsOn && thingKey
+            ? {
+                name: thingModels.find((m) => m.key === thingKey)?.name ?? null,
+                state: thingModelState[thingKey] ?? null,
+                flipped: thingModels.find((m) => m.key === thingKey)?.flip ?? false,
+                onFile: (file) => {
+                  const was = thingModelsRef.current.find((m) => m.key === thingKey);
+                  if (was) URL.revokeObjectURL(was.url);
+                  const url = URL.createObjectURL(file);
+                  setThingModelState((prev) => ({ ...prev, [thingKey]: "loading" }));
+                  setThingModels((prev) => [...prev.filter((m) => m.key !== thingKey), { key: thingKey, url, flip: false, name: file.name }]);
+                },
+                onFlip: () => {
+                  setThingModelState((prev) => ({ ...prev, [thingKey]: "loading" }));
+                  setThingModels((prev) => prev.map((m) => (m.key === thingKey ? { ...m, flip: !m.flip } : m)));
+                },
+                onRemove: () => {
+                  const was = thingModelsRef.current.find((m) => m.key === thingKey);
+                  if (was) URL.revokeObjectURL(was.url);
+                  setThingModels((prev) => prev.filter((m) => m.key !== thingKey));
+                },
               }
             : null
         }

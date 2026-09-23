@@ -42,6 +42,7 @@ export function ElementCard({
   onShowIt,
   move,
   drive,
+  model = null,
   casting,
   c,
   variant,
@@ -84,6 +85,19 @@ export function ElementCard({
     onClear: () => void;
   } | null;
   /**
+   * A model file on this thing (thing-model.ts, 2026-09-24): the stage draws
+   * it in place of the blocks. Null where it is not offered (admins only,
+   * while our own model builder is proved).
+   */
+  model?: {
+    name: string | null;
+    state: "loading" | "ready" | "failed" | null;
+    flipped: boolean;
+    onFile: (file: File) => void;
+    onFlip: () => void;
+    onRemove: () => void;
+  } | null;
+  /**
    * The figure's card (R1, "Who plays this person?"): the person's
    * characters to cast, the one cast now, a new one (saved arrangement
    * first, then the character form, which comes back here), and a line for
@@ -104,6 +118,7 @@ export function ElementCard({
   variant: "dock" | "sheet";
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const modelFileRef = useRef<HTMLInputElement>(null);
   const thing = element.kind === "car" || element.kind === "vehicle" || element.kind === "object";
   const full = photos.length >= ELEMENT_PHOTOS_MAX;
   const busy = phase !== "idle";
@@ -309,6 +324,48 @@ export function ElementCard({
             {status ?? c.photoHint}
           </p>
           {element.tyres > 6 && <p className="text-[11px] leading-snug text-[#9aa0ad]">{c.merged}</p>}
+          {model && (
+            <div className="flex flex-wrap items-center gap-1.5 border-t border-[rgba(255,255,255,0.07)] pt-2" data-el-model>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#9aa0ad]">{c.modelTitle}</span>
+              <span
+                className={`text-[11px] ${model.state === "failed" ? "text-[#f08c8c]" : model.state === "ready" ? "text-[#8fcf9a]" : "text-[#c6c9d1]"}`}
+                data-el-model-state={model.state ?? "none"}
+              >
+                {model.state === "loading"
+                  ? c.modelLoading
+                  : model.state === "failed"
+                    ? c.modelFailed
+                    : model.state === "ready" && model.name
+                      ? formatMsg(c.modelReady, { name: model.name })
+                      : c.modelHint}
+              </span>
+              <input
+                ref={modelFileRef}
+                type="file"
+                accept=".glb,model/gltf-binary"
+                className="hidden"
+                data-el-model-input
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) model.onFile(file);
+                }}
+              />
+              <button type="button" onClick={() => modelFileRef.current?.click()} disabled={model.state === "loading"} data-el-model-file className={DRIVE_CHIP(false)}>
+                {c.modelLoad}
+              </button>
+              {model.state === "ready" && (
+                <>
+                  <button type="button" onClick={model.onFlip} data-el-model-flip className={DRIVE_CHIP(model.flipped)}>
+                    {c.modelFlip}
+                  </button>
+                  <button type="button" onClick={model.onRemove} data-el-model-remove className={DRIVE_CHIP(false)}>
+                    {c.modelRemove}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           {drive && (
             <div className="flex flex-wrap items-center gap-1.5 border-t border-[rgba(255,255,255,0.07)] pt-2" data-el-drive>
               <span className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#9aa0ad]">{formatMsg(c.driveTitle, { n: drive.beat })}</span>
