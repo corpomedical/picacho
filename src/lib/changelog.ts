@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.84.0",
+    build: 123,
+    date: "2026-09-23",
+    title: "The app stays upright; an opened picture or video may turn sideways",
+    items: [
+      "The Android app no longer turns sideways when you turn the phone. Menus, the composer and every page stay upright, the way an app does rather than a website.",
+      "An opened picture or video is the exception. With the full-screen viewer open — in Media, the Community feed, a zoomed image or the gallery — turning the phone turns the picture, and closing the viewer puts the app back upright. It follows your phone's own auto-rotate setting.",
+      "This arrives with app version 1.18.0 from Google Play. Until it is installed the app behaves as before.",
+    ],
+  },
+  {
     version: "1.83.0",
     build: 122,
     date: "2026-09-23",
