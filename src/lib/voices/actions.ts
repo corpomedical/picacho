@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { generateSpeech } from "@/lib/generations/providers/fal";
+import { speechSeedFor } from "@/lib/generations/voice-lock";
 import { rateLimited } from "@/lib/rate-limit";
 
 // A voice preview is a real, paid TTS call (see providers/fal.ts). The
@@ -80,7 +81,17 @@ export async function previewVoice(
   }
 
   try {
-    const url = await generateSpeech(PREVIEW_TEXT, preset.elevenlabs_voice_id);
+    // Seeded on the PRESET, so auditioning a voice twice gives the same
+    // reading of the sample line — the picker was previously a fresh roll
+    // every click, which is a poor way to choose between voices. A delivered
+    // take is seeded on the CHARACTER instead (voice-lock.ts speechSeedFor),
+    // so this is a consistent audition of the voice, not a preview of one
+    // character's exact performance.
+    const url = await generateSpeech(
+      PREVIEW_TEXT,
+      preset.elevenlabs_voice_id,
+      speechSeedFor(voicePresetId),
+    );
     return { url };
   } catch (err) {
     console.error("Voice preview generation failed:", err);

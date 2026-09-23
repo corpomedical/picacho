@@ -57,7 +57,7 @@ import {
   type IdentityLock,
   type ScoredMember,
 } from "@/lib/generations/face-lock";
-import { voiceRecord, voiceSourceFor } from "@/lib/generations/voice-lock";
+import { speechSeedFor, speechSettings, voiceRecord, voiceSourceFor } from "@/lib/generations/voice-lock";
 import { removeOpeningFrames } from "@/lib/generations/opening-frame-run";
 import { CHAIN_FPS, CHAIN_PREFIX_FRAMES, chainPieceBody, type ChainState } from "@/lib/generations/chain";
 import {
@@ -125,6 +125,14 @@ export type AdvanceResult =
 type ResumeState = {
   dialogueText?: string;
   dialogueVoiceId?: string;
+  /**
+   * This character's stable speech seed (voice-lock.ts speechSeedFor), so
+   * their delivery is a property of them rather than of the moment they were
+   * rendered. Absent on rows queued before 2026-09-23; the submit falls back
+   * to a seed derived from the voice id, which is stable too, just shared by
+   * every character on that voice.
+   */
+  dialogueSeed?: number;
   // The pipeline's attempt log so far. Carried through so the finished
   // generation ends up with the same complete pipeline_log it would have had
   // when this all ran inline, rather than losing the drafting and validation
@@ -986,6 +994,8 @@ export async function saveVideoJob(params: {
   job: QueuedVideoJob;
   dialogueText?: string;
   dialogueVoiceId?: string | null;
+  /** This character's stable speech seed — see ResumeState.dialogueSeed. */
+  dialogueSeed?: number;
   attempts: AttemptLog[];
   /** The prompt gate's lane for this render — see JobRow.payload.strictLane. */
   strictLane?: boolean;
@@ -1031,6 +1041,7 @@ export async function saveVideoJob(params: {
     resume: {
       dialogueText: params.dialogueText,
       dialogueVoiceId: params.dialogueVoiceId ?? undefined,
+      dialogueSeed: params.dialogueSeed,
       attempts: params.attempts,
     } satisfies ResumeState,
     started_at: new Date().toISOString(),
@@ -1227,9 +1238,16 @@ async function finish(
           // resume carries the provider's own permanent id; the payload's
           // copy is the fallback for a row whose resume was consumed.
           externalId: jobRow?.resume?.dialogueVoiceId ?? jobRow?.payload?.voice?.externalId ?? null,
-          // Filled once the speech call pins its settings — until then an
-          // honest null rather than an invented record of what we sent.
-          settings: null,
+          // Exactly what the speech call pinned, so a take can be
+          // reproduced from its own row rather than from a guess about what
+          // the code did that day. Null when nothing spoke — voiceRecord
+          // drops it anyway, but saying so here keeps the two in step.
+          settings: outcome.voiceSpoke
+            ? speechSettings(
+                jobRow?.resume?.dialogueSeed ??
+                  speechSeedFor(jobRow?.resume?.dialogueVoiceId ?? generationId),
+              )
+            : null,
         })
       : null;
 
@@ -2505,6 +2523,7 @@ export async function advanceGeneration(
       const speech = await submitSpeechJob(
         spokenLine.length > 0 ? spokenLine : row.resume.dialogueText!.trim(),
         row.resume.dialogueVoiceId!,
+        row.resume.dialogueSeed ?? speechSeedFor(row.resume.dialogueVoiceId!),
       );
       // mustUpdate, not fire-and-forget: the paid TTS job above is already
       // submitted, and if this transition silently failed the row would keep

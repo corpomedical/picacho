@@ -43,6 +43,7 @@ import type { OpeningFrameResult } from "@/lib/generations/opening-frame-run";
 import { recentRefusalCount, recordPolicyRefusal, refusedOnItsOwn } from "@/lib/generations/policy-log";
 import { refusalProviderFor } from "@/lib/generations/refusal-attribution";
 import { OUTPUT_BLOCKED_ISSUE, REFUSED_BEFORE_RENDER_ISSUE } from "@/lib/generations/refund-rules";
+import { speechSeedFor } from "@/lib/generations/voice-lock";
 
 export type ContentType = "video" | "image";
 
@@ -659,6 +660,11 @@ export type RealPipelineOptions = {
   // restriction (unlike the Kling-only options above).
   dialogueText?: string;
   dialogueVoiceId?: string | null;
+  /**
+   * This character's stable speech seed, so their delivery is a property of
+   * them rather than of the moment (voice-lock.ts speechSeedFor).
+   */
+  dialogueSeed?: number;
   // Requested clip length in seconds — the caller (actions.ts) is
   // responsible for validating this against the selected model's real
   // duration options (see video-models.ts) before it gets here.
@@ -1836,7 +1842,11 @@ export async function runRealPipeline(
         resultUrl
       ) {
         try {
-          const audioUrl = await generateSpeech(options.dialogueText.trim(), options.dialogueVoiceId);
+          const audioUrl = await generateSpeech(
+            options.dialogueText.trim(),
+            options.dialogueVoiceId,
+            options.dialogueSeed ?? speechSeedFor(options.dialogueVoiceId),
+          );
           steps.push({ step: "speech", detail: "Generated dialogue audio via ElevenLabs." });
 
           const syncedUrl = await lipSyncVideo(resultUrl, audioUrl);

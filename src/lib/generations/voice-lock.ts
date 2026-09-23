@@ -157,13 +157,83 @@ export function voiceSourceFor(input: {
   return engineAudioReaches(input.modelId, input.nativeAudioRequested) ? "engine" : "silent";
 }
 
-/** The settings we pin on every speech call. See speechSettings() below. */
+// THE PINNED SPEECH CALL (2026-09-23), measured before it was written.
+//
+// Until today both call sites posted `{ text, voice }` and nothing else to
+// fal-ai/elevenlabs/tts/eleven-v3, an endpoint whose whole input schema is
+// text, voice, stability, timestamps, language_code, apply_text_normalization
+// — no seed of any kind. Every line therefore ran at ElevenLabs' default
+// stability of 0.5, on the model their own docs call their most variable:
+// "voices in the voice library may produce more variable results compared to
+// the v2 and v2.5 models".
+//
+// THE PROBE, six sends of one line, $0.061 (2026-09-23):
+//   today's endpoint, today's body  -> 85,308 / 92,831 / 86,562 bytes.
+//     Three different-length performances of the same words, ~9% spread.
+//   text-to-dialogue, seeded        -> 90,324 / 90,324 / 90,324 bytes.
+//
+// And the confirmation, three more sends at $0.031, decoded to PCM and
+// compared as a loudness envelope rather than as bytes (a few ms of mp3
+// padding makes identical audio look wholly different sample-by-sample):
+//   same seed      -> 5.642s vs 5.642s, envelope correlation 0.9863
+//   different seed -> 5.642s vs 5.721s, envelope correlation 0.5519
+//
+// So the seed pins the PERFORMANCE — the length to the millisecond, the
+// pacing, where the emphasis and the breaths fall. It does not pin the
+// waveform, and nothing here should ever claim it does: ElevenLabs says in
+// writing that a seed is a "best effort to sample deterministically" and
+// that "Determinism is not guaranteed". Same performance, not same file.
+//
+// The sibling endpoint costs exactly what we already pay — "$0.1 per 1000
+// character" on both — so this is a free move, and its response is the shape
+// extractAudioUrl() already reads ({ audio: { url } }, plus the seed echoed
+// back).
+export const SPEECH_ENDPOINT = "fal-ai/elevenlabs/text-to-dialogue/eleven-v3";
+
+/**
+ * ElevenLabs v3 quantises stability to 0.0 / 0.5 / 1.0 — Creative, Natural,
+ * Robust. 1.0 is Robust: "Highly stable, but less responsive to directional
+ * prompts".
+ *
+ * That is a real trade and it is taken deliberately. Robust costs expressive
+ * range — the docs are explicit that it "reduces responsiveness to
+ * directional prompts" — and buys the thing the product actually sells,
+ * which is one recognisable person who sounds the same every time. It is a
+ * constant rather than a setting because a per-user knob here would mean the
+ * lock is only as good as the least careful person's slider.
+ */
+export const SPEECH_STABILITY = 1.0;
+
+/**
+ * A stable seed for one character, so their delivery is a property of THEM
+ * rather than of the moment they were rendered. Same character, same line,
+ * same performance — today and in six months.
+ *
+ * Derived from the character's id with the same hash the voice assignment
+ * uses, kept inside fal's positive-integer range.
+ */
+export function speechSeedFor(characterId: string): number {
+  return hash32(characterId || "picacho") % 2147483647;
+}
+
+/** The settings we pin on every speech call, and record on the row. */
 export type VoiceSettings = {
   endpoint: string;
   seed: number;
   stability: number;
   speakerBoost: boolean;
 };
+
+export function speechSettings(seed: number): VoiceSettings {
+  return {
+    endpoint: SPEECH_ENDPOINT,
+    seed,
+    stability: SPEECH_STABILITY,
+    // "Boosts similarity to original speaker" — the one remaining knob this
+    // endpoint offers that points at the character sounding like themselves.
+    speakerBoost: true,
+  };
+}
 
 /**
  * What finish() writes onto the generation row, beside match_score.

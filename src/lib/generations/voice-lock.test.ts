@@ -6,6 +6,9 @@ import {
   assignedVoiceFor,
   engineAudioReaches,
   isVoiceSource,
+  SPEECH_ENDPOINT,
+  speechSeedFor,
+  speechSettings,
   voiceRecord,
   voiceSourceFor,
   VOICE_SOURCES,
@@ -236,6 +239,68 @@ describe("the microphone rule and the record agree", () => {
     // The lane stopped reading the sound preference when the rule landed;
     // a reintroduced read would mean the setting silently does nothing.
     expect(actions).not.toContain("generateNativeAudio: videoSound");
+  });
+});
+
+describe("the pinned speech call", () => {
+  it("points at the endpoint that actually has a seed", () => {
+    // tts/eleven-v3, which we ran until 2026-09-23, has no seed in its
+    // schema at all — the swap is the whole point.
+    expect(SPEECH_ENDPOINT).toBe("fal-ai/elevenlabs/text-to-dialogue/eleven-v3");
+  });
+
+  it("gives one character the same seed every time", () => {
+    const id = "c0ffee00-0000-4000-8000-000000000001";
+    const first = speechSeedFor(id);
+    for (let i = 0; i < 20; i += 1) expect(speechSeedFor(id)).toBe(first);
+  });
+
+  it("gives different characters different seeds", () => {
+    const seeds = new Set(
+      Array.from({ length: 50 }, (_, i) => speechSeedFor(`00000000-0000-4000-8000-${String(i).padStart(12, "0")}`)),
+    );
+    // Collisions are possible but 50 ids landing on fewer than 45 seeds
+    // would mean the hash is not spreading.
+    expect(seeds.size).toBeGreaterThan(45);
+  });
+
+  it("stays inside a positive integer seed range", () => {
+    for (const id of ["", "a", "c0ffee00-0000-4000-8000-000000000001", "x".repeat(400)]) {
+      const seed = speechSeedFor(id);
+      expect(Number.isInteger(seed)).toBe(true);
+      expect(seed).toBeGreaterThanOrEqual(0);
+      expect(seed).toBeLessThan(2147483647);
+    }
+  });
+
+  it("pins stability at Robust and asks for speaker boost", () => {
+    const s = speechSettings(42);
+    expect(s).toEqual({
+      endpoint: "fal-ai/elevenlabs/text-to-dialogue/eleven-v3",
+      seed: 42,
+      stability: 1,
+      speakerBoost: true,
+    });
+  });
+});
+
+describe("the provider actually sends what we pinned", () => {
+  const fal = readFileSync(join(__dirname, "providers/fal.ts"), "utf8");
+
+  it("builds one body for every spoken line in the product", () => {
+    expect(fal).toContain("function speechRequestBody(text: string, elevenLabsVoiceId: string, seed: number)");
+    expect(fal).toContain("inputs: [{ text, voice: elevenLabsVoiceId }]");
+    expect(fal).toContain("use_speaker_boost: settings.speakerBoost");
+  });
+
+  it("no longer posts the bare two-field body that pinned nothing", () => {
+    expect(fal).not.toContain("{ text, voice: elevenLabsVoiceId },");
+    expect(fal).not.toContain("JSON.stringify({ text, voice: elevenLabsVoiceId })");
+  });
+
+  it("makes both call sites take a seed, so neither can be fixed alone", () => {
+    expect(fal).toMatch(/submitSpeechJob\(\s*text: string,\s*elevenLabsVoiceId: string,\s*seed: number,\s*\)/);
+    expect(fal).toMatch(/generateSpeech\(\s*text: string,\s*elevenLabsVoiceId: string,\s*seed: number,\s*\)/);
   });
 });
 

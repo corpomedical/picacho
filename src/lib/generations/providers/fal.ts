@@ -1,6 +1,7 @@
 import { getVideoModel } from "@/lib/generations/providers/video-models";
 import { LAYERIZE_ENDPOINT, LAYERIZE_LABEL } from "@/lib/generations/layers";
 import { RECAST_ENGINES, recastRequestBody, type RecastEngine } from "@/lib/recast/recast";
+import { SPEECH_ENDPOINT, speechSettings } from "@/lib/generations/voice-lock";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { canExtractFrameFrom, IDENTITY_FRAME_TYPE } from "@/lib/generations/providers/frame-url";
 import type { VideoResolution } from "@/lib/generations/providers/video-resolution";
@@ -1192,11 +1193,15 @@ export async function submitVideoJob(
   return submitToQueue(endpoint, body, label, apiKey);
 }
 
-export async function submitSpeechJob(text: string, elevenLabsVoiceId: string): Promise<QueuedJob> {
+export async function submitSpeechJob(
+  text: string,
+  elevenLabsVoiceId: string,
+  seed: number,
+): Promise<QueuedJob> {
   return submitToQueue(
-    ELEVENLABS_TTS_ENDPOINT,
-    { text, voice: elevenLabsVoiceId },
-    "ElevenLabs TTS",
+    SPEECH_ENDPOINT,
+    speechRequestBody(text, elevenLabsVoiceId, seed),
+    "ElevenLabs speech",
     requireApiKey(),
   );
 }
@@ -1477,12 +1482,29 @@ export async function generateVideo(
 // too), so this needed no new vendor account or secret.
 //
 // Confirmed directly against fal.ai's published schemas, not guessed:
-// - TTS: https://fal.ai/models/fal-ai/elevenlabs/tts/eleven-v3/api
-//   (text, voice — voice is an ElevenLabs voice_id string; returns { audio: { url } })
+// - Speech: https://fal.ai/models/fal-ai/elevenlabs/text-to-dialogue/eleven-v3/api
+//   (inputs[{text, voice}], seed, stability, use_speaker_boost;
+//    returns { audio: { url }, seed }) — and probed for real on 2026-09-23,
+//    see voice-lock.ts for what the nine sends measured. We ran
+//    tts/eleven-v3 until then, whose schema has NO seed at all.
 // - Lipsync: https://fal.ai/models/fal-ai/sync-lipsync/v2/pro/api
 //   (video_url, audio_url; returns { video: { url } })
-const ELEVENLABS_TTS_ENDPOINT = "fal-ai/elevenlabs/tts/eleven-v3";
 const SYNC_LIPSYNC_ENDPOINT = "fal-ai/sync-lipsync/v2/pro";
+
+// ONE body for every spoken line in the product — the queued lane, the
+// inline lane and the voice audition alike. Built in one place on purpose:
+// the two call sites had drifted to identical two-field bodies that pinned
+// nothing, and a fix applied to only one of them would have left the other
+// re-rolling the performance.
+function speechRequestBody(text: string, elevenLabsVoiceId: string, seed: number) {
+  const settings = speechSettings(seed);
+  return {
+    inputs: [{ text, voice: elevenLabsVoiceId }],
+    seed: settings.seed,
+    stability: settings.stability,
+    use_speaker_boost: settings.speakerBoost,
+  };
+}
 
 function extractAudioUrl(data: unknown): string | undefined {
   const d = data as Record<string, unknown> | undefined;
@@ -1493,7 +1515,11 @@ function extractAudioUrl(data: unknown): string | undefined {
 // Generates spoken audio for a character's dialogue line using a specific,
 // admin-picked ElevenLabs voice_id (see voice_presets table — never a named
 // "default" voice, those are being retired by ElevenLabs at the end of 2026).
-export async function generateSpeech(text: string, elevenLabsVoiceId: string): Promise<string> {
+export async function generateSpeech(
+  text: string,
+  elevenLabsVoiceId: string,
+  seed: number,
+): Promise<string> {
   const apiKey = process.env.FAL_KEY;
   if (!apiKey) {
     throw new Error(
@@ -1503,26 +1529,26 @@ export async function generateSpeech(text: string, elevenLabsVoiceId: string): P
   }
 
   const res = await fetchWithTimeout(
-    `https://fal.run/${ELEVENLABS_TTS_ENDPOINT}`,
+    `https://fal.run/${SPEECH_ENDPOINT}`,
     {
       method: "POST",
       headers: {
         "content-type": "application/json",
         authorization: `Key ${apiKey}`,
       },
-      body: JSON.stringify({ text, voice: elevenLabsVoiceId }),
+      body: JSON.stringify(speechRequestBody(text, elevenLabsVoiceId, seed)),
     },
     60_000,
   );
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`fal.ai (ElevenLabs TTS) error (${res.status}): ${errText.slice(0, 800)}`);
+    throw new Error(`fal.ai (ElevenLabs speech) error (${res.status}): ${errText.slice(0, 800)}`);
   }
 
   const data = await res.json();
   const url = extractAudioUrl(data);
-  if (!url) throw new Error("fal.ai (ElevenLabs TTS) response didn't include an audio URL.");
+  if (!url) throw new Error("fal.ai (ElevenLabs speech) response didn't include an audio URL.");
   return url;
 }
 

@@ -93,6 +93,7 @@ import {
   readIdentityThreshold,
   VIDEO_FACE_REFUND_FLAG,
 } from "@/lib/generations/face-lock";
+import { speechSeedFor } from "@/lib/generations/voice-lock";
 import { OPENING_FRAME_FLAG, openingFrameApplies, openingFramePath } from "@/lib/generations/opening-frame";
 import {
   makeOpeningFrame,
@@ -2247,6 +2248,9 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           companions: wantsMultiCharacter ? companionsForPipeline : undefined,
           dialogueText: wantsDialogue ? dialogueText : undefined,
           dialogueVoiceId: wantsDialogue ? dialogueVoiceId : undefined,
+          // Seeded on the CHARACTER, so this person's delivery is the same
+          // performance today and in six months (voice-lock.ts).
+          dialogueSeed: wantsDialogue && character ? speechSeedFor(character.id) : undefined,
           videoDurationSeconds: contentType === "video" ? videoDurationSeconds : undefined,
           videoAspectRatio: contentType === "video" ? videoAspectRatio : undefined,
           videoResolution,
@@ -2309,6 +2313,9 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           job: result.pendingVideoJob,
           dialogueText: wantsDialogue ? dialogueText : undefined,
           dialogueVoiceId: wantsDialogue ? dialogueVoiceId : undefined,
+          // Seeded on the CHARACTER, so this person's delivery is the same
+          // performance today and in six months (voice-lock.ts).
+          dialogueSeed: wantsDialogue && character ? speechSeedFor(character.id) : undefined,
           attempts: result.attempts,
           strictLane: editingAnUpload || continuationFromUpload,
           // Every character clip is judged whole — start, middle and end,
