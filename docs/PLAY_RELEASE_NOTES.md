@@ -30,6 +30,32 @@ short translation.
 
 ---
 
+## versionCode 18 · versionName 1.18.0
+
+**Context.** The portrait lock (2026-09-23, dce6504): the app is locked
+upright, and only a picture or video opened full screen may turn sideways.
+First native code of our own in the shell (OrientationPlugin, registered in
+MainActivity). AAB at ~/Desktop/Picacho-18.aab.
+
+```
+<en-US>
+The app now stays upright when you turn your phone, so menus, the composer and every page keep their place. Open a picture or video full screen and it turns with your phone to fill the screen; close it and the app is upright again. It follows your phone's auto-rotate setting.
+</en-US>
+<es-419>
+La app ahora se mantiene en vertical al girar el teléfono, así que los menús, el editor y cada página se quedan en su sitio. Abre una imagen o un video a pantalla completa y girará con tu teléfono para llenar la pantalla; al cerrarlo, la app vuelve a la vertical. Respeta la rotación automática de tu teléfono.
+</es-419>
+<pt-BR>
+O app agora fica na vertical quando você gira o celular, então os menus, o editor e cada página ficam no lugar. Abra uma imagem ou um vídeo em tela cheia e ele gira com o celular para preencher a tela; ao fechar, o app volta à vertical. Segue a rotação automática do seu celular.
+</pt-BR>
+<it-IT>
+L'app ora resta in verticale quando giri il telefono, così i menu, l'editor e ogni pagina restano al loro posto. Apri un'immagine o un video a schermo intero e ruota con il telefono per riempire lo schermo; chiudendolo l'app torna in verticale. Segue la rotazione automatica del telefono.
+</it-IT>
+```
+
+Counts: en-US 276, es-419 310, pt-BR 279, it-IT 288 (limit 500 each).
+
+---
+
 ## versionCode 17 · versionName 1.17.0
 
 **Context.** The reinstatement upload. On 2026-09-21 Google Play accepted the
