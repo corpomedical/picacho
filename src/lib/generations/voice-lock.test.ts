@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  ALWAYS_SPEAKS,
   assignedVoiceFor,
+  engineAudioReaches,
   isVoiceSource,
   voiceRecord,
+  voiceSourceFor,
   VOICE_SOURCES,
   type VoicePreset,
   type VoiceSettings,
 } from "./voice-lock";
+import { VIDEO_MODELS } from "./providers/video-models";
 
 const CATALOGUE: VoicePreset[] = [
   { id: "p1", elevenlabs_voice_id: "EL1" },
@@ -119,10 +123,93 @@ describe("voiceRecord", () => {
   });
 });
 
+describe("the engines that cannot be silenced", () => {
+  it("names only models that actually exist in the catalogue", () => {
+    const ids = VIDEO_MODELS.map((m) => m.id as string);
+    for (const id of ALWAYS_SPEAKS) expect(ids, id).toContain(id);
+  });
+
+  it("lets the engine's audio through when we asked for it", () => {
+    expect(engineAudioReaches("veo", true)).toBe(true);
+    expect(engineAudioReaches("kling-o3", true)).toBe(true);
+  });
+
+  it("keeps a switchable engine quiet when we didn't ask", () => {
+    expect(engineAudioReaches("veo", false)).toBe(false);
+    expect(engineAudioReaches("kling-o3", false)).toBe(false);
+    expect(engineAudioReaches("seedance-2-5", false)).toBe(false);
+  });
+
+  it("knows H3 and Omni speak even when we asked for silence", () => {
+    expect(engineAudioReaches("minimax-h3", false)).toBe(true);
+    expect(engineAudioReaches("gemini-omni", false)).toBe(true);
+  });
+});
+
+describe("voiceSourceFor", () => {
+  it("is the character's when our track was lip-synced on", () => {
+    expect(voiceSourceFor({ spoke: true, modelId: "veo", nativeAudioRequested: false })).toBe("character");
+  });
+
+  it("is silent when nothing spoke and the engine was switched off", () => {
+    expect(voiceSourceFor({ spoke: false, modelId: "veo", nativeAudioRequested: false })).toBe("silent");
+  });
+
+  it("is the engine's when we left its microphone on", () => {
+    expect(voiceSourceFor({ spoke: false, modelId: "veo", nativeAudioRequested: true })).toBe("engine");
+  });
+
+  it("does NOT call an H3 or Omni take silent just because we asked for silence", () => {
+    // The whole point of the column: what we requested and what shipped are
+    // different things on these two, and the old code called both "silent".
+    for (const modelId of ALWAYS_SPEAKS) {
+      expect(voiceSourceFor({ spoke: false, modelId, nativeAudioRequested: false })).toBe("engine");
+    }
+  });
+
+  it("calls a recast take what it is: a real person's recorded voice", () => {
+    expect(
+      voiceSourceFor({ spoke: false, modelId: "kling-o3", nativeAudioRequested: false, keepsSourceAudio: true }),
+    ).toBe("source");
+  });
+
+  it("ranks the uploaded clip's own voice above the engine's, since that is what is audible", () => {
+    expect(
+      voiceSourceFor({ spoke: false, modelId: "veo", nativeAudioRequested: true, keepsSourceAudio: true }),
+    ).toBe("source");
+    // Even on an engine that cannot be silenced.
+    expect(
+      voiceSourceFor({ spoke: false, modelId: "minimax-h3", nativeAudioRequested: false, keepsSourceAudio: true }),
+    ).toBe("source");
+  });
+
+  it("still reports our own voice when we dubbed over a kept source track", () => {
+    expect(
+      voiceSourceFor({ spoke: true, modelId: "kling-o3", nativeAudioRequested: true, keepsSourceAudio: true }),
+    ).toBe("character");
+  });
+
+  it("never reports anything outside the four the column allows", () => {
+    for (const spoke of [true, false]) {
+      for (const nativeAudioRequested of [true, false]) {
+        for (const keepsSourceAudio of [true, false]) {
+          for (const modelId of ["veo", "minimax-h3", "unknown-model", ""]) {
+            expect(
+              isVoiceSource(voiceSourceFor({ spoke, modelId, nativeAudioRequested, keepsSourceAudio })),
+            ).toBe(true);
+          }
+        }
+      }
+    }
+  });
+});
+
 describe("isVoiceSource", () => {
-  it("accepts exactly the three the column allows", () => {
+  it("accepts exactly the four the column allows", () => {
     for (const source of VOICE_SOURCES) expect(isVoiceSource(source)).toBe(true);
-    expect(VOICE_SOURCES).toHaveLength(3);
+    // Guards the CHECK constraint in supabase: adding a value here without
+    // widening the column would fail every write that used it.
+    expect([...VOICE_SOURCES].sort()).toEqual(["character", "engine", "silent", "source"]);
   });
 
   it("rejects anything else, including near-misses and non-strings", () => {

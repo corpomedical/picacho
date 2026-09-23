@@ -1147,6 +1147,23 @@ export async function startRecastTakes(input: {
             threshold: RECAST_LOCK_THRESHOLD,
             lockOn,
           }),
+          // This lane hands back the uploaded clip's OWN audio on purpose
+          // (recast.ts keep_audio / keep_original_sound), so what a viewer
+          // hears is a real performer's recorded voice under the
+          // character's face. Recorded as `source` rather than `engine`,
+          // because it is a different kind of wrong and a worse one
+          // (voice-lock.ts). The preset rides only when one character is
+          // cast; with several there is no single voice it should have been.
+          voice: {
+            // Null on purpose: this lane never loads the cast's voice_id at
+            // all — one of the audit's own findings — so the row would be
+            // inventing a claim it cannot make. The `source` value is the
+            // finding that matters here.
+            presetId: null,
+            externalId: null,
+            nativeAudio: false,
+            keepsSourceAudio: true,
+          },
           chain,
           attempts: [
             {

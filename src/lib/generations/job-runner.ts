@@ -57,6 +57,7 @@ import {
   type IdentityLock,
   type ScoredMember,
 } from "@/lib/generations/face-lock";
+import { voiceRecord, voiceSourceFor } from "@/lib/generations/voice-lock";
 import { removeOpeningFrames } from "@/lib/generations/opening-frame-run";
 import { CHAIN_FPS, CHAIN_PREFIX_FRAMES, chainPieceBody, type ChainState } from "@/lib/generations/chain";
 import {
@@ -187,6 +188,17 @@ type JobRow = {
     // is read: six tries or two hours from then and the take gives up
     // (chain-failure.ts).
     chainError?: ChainError;
+    // WHOSE VOICE THIS RENDER WAS MEANT TO CARRY (2026-09-23), recorded at
+    // submit time because finish() cannot work it out afterwards: whether
+    // the engine was asked for its own soundtrack is a property of the
+    // send, and on MiniMax H3 and Gemini Omni asking for silence and
+    // getting it are different things (voice-lock.ts).
+    voice?: {
+      presetId?: string | null;
+      externalId?: string | null;
+      nativeAudio: boolean;
+      keepsSourceAudio?: boolean;
+    };
   };
   resume: ResumeState;
   started_at: string;
@@ -983,6 +995,13 @@ export async function saveVideoJob(params: {
   openingFrames?: boolean;
   /** A long take rendered in pieces — see JobRow.payload.chain. */
   chain?: ChainState;
+  /** Whose voice this render carries — see JobRow.payload.voice. */
+  voice?: {
+    presetId?: string | null;
+    externalId?: string | null;
+    nativeAudio: boolean;
+    keepsSourceAudio?: boolean;
+  };
 }): Promise<void> {
   const admin = createAdminClient();
   const { error: upsertError } = await admin.from("generation_jobs").upsert({
@@ -1007,6 +1026,7 @@ export async function saveVideoJob(params: {
       ...(params.identityLock ? { identityLock: params.identityLock } : {}),
       ...(params.openingFrames ? { openingFrames: true } : {}),
       ...(params.chain ? { chain: params.chain } : {}),
+      ...(params.voice ? { voice: params.voice } : {}),
     },
     resume: {
       dialogueText: params.dialogueText,
@@ -1046,7 +1066,19 @@ async function finish(
   generationId: string,
   userId: string,
   outcome:
-    | { status: "succeeded"; resultUrl: string; attempts: AttemptLog[]; notify?: LaneNotice }
+    | {
+        status: "succeeded";
+        resultUrl: string;
+        attempts: AttemptLog[];
+        notify?: LaneNotice;
+        /**
+         * Our own TTS track was lip-synced onto this picture. Passed
+         * explicitly by the one caller that did it rather than sniffed out
+         * of the step log, so a reworded log line can never turn a spoken
+         * take into an unspoken one. See voice-lock.ts.
+         */
+        voiceSpoke?: boolean;
+      }
     | { status: "failed"; attempts: AttemptLog[]; fault?: FailureFault; notify?: LaneNotice },
 ): Promise<boolean> {
   const admin = createAdminClient();
@@ -1080,13 +1112,24 @@ async function finish(
   // only record of when this render began. Best-effort: a failed read
   // costs an unrecorded duration and the attachments fallback, never a
   // blocked finish.
-  let jobRow: { started_at: string | null; payload: JobRow["payload"] | null } | null = null;
+  // `resume` joins the read since 2026-09-23: it carries the provider's own
+  // permanent voice id for a take that spoke, which the voice record writes
+  // onto the generation row.
+  let jobRow: {
+    started_at: string | null;
+    payload: JobRow["payload"] | null;
+    resume: ResumeState | null;
+  } | null = null;
   try {
     const { data } = await admin
       .from("generation_jobs")
-      .select("started_at, payload")
+      .select("started_at, payload, resume")
       .eq("generation_id", generationId)
-      .maybeSingle<{ started_at: string | null; payload: JobRow["payload"] | null }>();
+      .maybeSingle<{
+        started_at: string | null;
+        payload: JobRow["payload"] | null;
+        resume: ResumeState | null;
+      }>();
     jobRow = data ?? null;
   } catch {
     jobRow = null;
@@ -1157,10 +1200,44 @@ async function finish(
     }
   }
 
+  // WHOSE VOICE WAS IN IT (2026-09-23), written in the same terminal write
+  // as the status, at the one choke point every finished render converges
+  // on — so "no voice that isn't this character's ever shipped" becomes a
+  // count(*) over voice_source instead of a hope. Nothing recorded this
+  // before: the resolved voice rode the job payload and was erased with it,
+  // and not one row in the database could say what a delivered clip sounded
+  // like.
+  //
+  // nativeAudio defaults to TRUE when the payload does not say — rows queued
+  // before this field existed, and any lane that forgets to pass it. That is
+  // the fail-safe direction on purpose: recording an unknown as `silent`
+  // would quietly inflate the very number the lock is judged by, which is
+  // the lie-by-omission this column exists to prevent. Over-reporting
+  // `engine` only ever understates how well we are doing.
+  const voice =
+    outcome.status === "succeeded" && kind === "video"
+      ? voiceRecord({
+          source: voiceSourceFor({
+            spoke: outcome.voiceSpoke === true,
+            modelId,
+            nativeAudioRequested: jobRow?.payload?.voice?.nativeAudio !== false,
+            keepsSourceAudio: jobRow?.payload?.voice?.keepsSourceAudio === true,
+          }),
+          presetId: jobRow?.payload?.voice?.presetId ?? null,
+          // resume carries the provider's own permanent id; the payload's
+          // copy is the fallback for a row whose resume was consumed.
+          externalId: jobRow?.resume?.dialogueVoiceId ?? jobRow?.payload?.voice?.externalId ?? null,
+          // Filled once the speech call pins its settings — until then an
+          // honest null rather than an invented record of what we sent.
+          settings: null,
+        })
+      : null;
+
   const { data: transitioned, error: transitionError } = await admin
     .from("generations")
     .update({
       status: outcome.status,
+      ...(voice ?? {}),
       attempts: outcome.attempts.length,
       result_url: outcome.status === "succeeded" ? outcome.resultUrl : null,
       pipeline_log: withQueueSeconds(outcome.attempts, queueSeconds),
@@ -2666,6 +2743,10 @@ export async function advanceGeneration(
         "Synced the character's mouth to the dialogue via Sync Labs.",
         "lipsync",
       ),
+      // The one place in the product where our own voice reaches a
+      // delivered file. Everything else finishes without this flag and is
+      // recorded as silent or engine-voiced accordingly (voice-lock.ts).
+      voiceSpoke: true,
     });
     // The run's intermediates are unreferenced from this moment: the silent
     // pre-lipsync video (payload.videoUrl, persisted before TTS) and the

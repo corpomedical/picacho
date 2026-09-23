@@ -2315,6 +2315,16 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
             threshold: identityThreshold,
             refundOn: await flagOn(supabase, VIDEO_FACE_REFUND_FLAG),
           }),
+          // Whose voice this take was meant to carry, so finish() can record
+          // what actually shipped (voice-lock.ts). nativeAudio mirrors the
+          // rule the pipeline applies to the submit itself: the engine is
+          // asked for its own soundtrack only when our dialogue lane is not
+          // going to replace it.
+          voice: {
+            presetId: character?.voice_id ?? null,
+            externalId: wantsDialogue ? dialogueVoiceId : null,
+            nativeAudio: !wantsDialogue && videoSound !== false,
+          },
           // So finish() knows there are opening frames to remove once the
           // clip lands (opening-frame.ts, openingFramePath).
           openingFrames: openingFramesPainted > 0,
@@ -3921,6 +3931,15 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
               // judge every angle in the ordinary lane.
               strictLane: Boolean(attachmentReferenceUrl) || Boolean(neutralAttachmentUrl),
               identityLock: angleFaceLock,
+              // This lane cannot carry a dialogue line at all, so the only
+              // voice on an angle is whatever the engine invents — recorded
+              // as such rather than left blank (voice-lock.ts). The preset
+              // rides so the row still says whose voice it SHOULD have been.
+              voice: {
+                presetId: (character.voice_id as string | null) ?? null,
+                externalId: null,
+                nativeAudio: videoSound !== false,
+              },
             });
           } catch (err) {
             // The render is already in fal's queue but we couldn't record its

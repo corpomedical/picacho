@@ -31,15 +31,23 @@
  * `character` — a track we synthesised from this character's own voice.
  * `silent`    — no voice track: the engine was switched off, or its audio
  *               was dropped locally because it has no switch.
- * `engine`    — the engine's own invented voice reached the file. This is
- *               the failure the whole lock exists to drive to zero, and it
- *               is recorded rather than assumed absent: a delivery path that
- *               skips the voice stage must say so, or the count is a lie by
- *               omission.
+ * `engine`    — the engine's own invented voice reached the file.
+ * `source`    — audio carried over from a clip the person uploaded: a REAL
+ *               performer's recorded voice, under our character's face.
+ *               Kept apart from `engine` because it is a different kind of
+ *               wrong and a worse one — not a machine inventing a voice but
+ *               a specific human being speaking as somebody else's
+ *               character (recast.ts keep_audio / keep_original_sound, and
+ *               the long take, which re-encodes that track across every
+ *               join).
+ *
+ * The last three are all failures of the promise, and all three are RECORDED
+ * rather than assumed absent: a delivery path that skips the voice stage has
+ * to say so, or the count is a lie by omission.
  */
-export type VoiceSource = "character" | "silent" | "engine";
+export type VoiceSource = "character" | "silent" | "engine" | "source";
 
-export const VOICE_SOURCES: readonly VoiceSource[] = ["character", "silent", "engine"];
+export const VOICE_SOURCES: readonly VoiceSource[] = ["character", "silent", "engine", "source"];
 
 export function isVoiceSource(value: unknown): value is VoiceSource {
   return typeof value === "string" && (VOICE_SOURCES as readonly string[]).includes(value);
@@ -97,6 +105,56 @@ export function assignedVoiceFor(
 ): string | null {
   if (!characterId || presets.length === 0) return null;
   return presets[hash32(characterId) % presets.length].id;
+}
+
+/**
+ * Engines that make audio whatever we ask, because their fal endpoint has no
+ * generate_audio parameter at all to switch off.
+ *
+ * MiniMax H3: "Audio is not a parameter on this endpoint: H3 generates
+ * native stereo sound in the same pass as the picture, always."
+ * (providers/video-models.ts). Gemini Omni Flash: "THERE IS NO AUDIO
+ * PARAMETER. Native synchronised audio is always generated, so
+ * generateNativeAudio has nothing to switch off." (providers/fal.ts).
+ *
+ * This is why a delivered clip's voice cannot be inferred from what we
+ * REQUESTED. On these two, asking for silence and getting it are different
+ * things, and the row has to say which happened.
+ */
+export const ALWAYS_SPEAKS: readonly string[] = ["minimax-h3", "gemini-omni"];
+
+/** Whether the engine's own audio can reach the file on this render. */
+export function engineAudioReaches(modelId: string, nativeAudioRequested: boolean): boolean {
+  return nativeAudioRequested || ALWAYS_SPEAKS.includes(modelId);
+}
+
+/**
+ * What to record on the row, from what the render actually did.
+ *
+ * `spoke` means our own TTS track was lip-synced onto the picture. The
+ * lip-sync pass is taken to REPLACE the video's audio rather than mix into
+ * it — which is what the endpoint is for, and what this codebase has always
+ * assumed — but note that it is assumed and not measured: nobody has yet
+ * ffprobe'd a delivered H3 or Omni dialogue clip to confirm the engine's own
+ * track is gone rather than sitting underneath. Until someone does, a
+ * `character` row on one of those two engines is our best knowledge and not
+ * a proof. One clip settles it; see the audit note of 2026-09-23.
+ */
+export function voiceSourceFor(input: {
+  spoke: boolean;
+  modelId: string;
+  nativeAudioRequested: boolean;
+  /**
+   * The send deliberately carried the uploaded clip's own audio through —
+   * the recast family's keep_audio / keep_original_sound. Ranked above the
+   * engine because when both are true it is the human's recorded voice that
+   * is audible, and that is the one worth counting.
+   */
+  keepsSourceAudio?: boolean;
+}): VoiceSource {
+  if (input.spoke) return "character";
+  if (input.keepsSourceAudio) return "source";
+  return engineAudioReaches(input.modelId, input.nativeAudioRequested) ? "engine" : "silent";
 }
 
 /** The settings we pin on every speech call. See speechSettings() below. */
