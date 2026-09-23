@@ -167,6 +167,16 @@ export async function generateImageWithGemini(
     prompt,
     num_images: 1,
     resolution: model.falResolution,
+    // The square, pinned — exactly as the GPT lane pins size (openai-images.ts,
+    // "Never 'auto'"). This endpoint's aspect_ratio defaults to "auto", which
+    // on an edit follows the FIRST input picture, so the same shot came back
+    // square from one lane and in the shape of whatever photo anchors the
+    // character from the other. That is not a fair comparison for a person
+    // switching engines, and it is not one for the identity score either: the
+    // scorer reads the face in the frame it is given, and a face that lands
+    // smaller in a taller frame reads worse for a reason that has nothing to
+    // do with the model. One lane, one shape.
+    aspect_ratio: "1:1",
     output_format: "png",
   };
   if (referenceUrls.length) body.image_urls = referenceUrls;

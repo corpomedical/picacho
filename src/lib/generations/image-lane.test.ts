@@ -84,6 +84,12 @@ describe("what a picked lane costs", () => {
     const gemini = IMAGE_MODELS.find((m) => m.id === "gemini")!;
     expect((gemini as { falResolution?: string }).falResolution).toBe("1K");
     expect(falImage).toContain("resolution: model.falResolution");
+    // And the SHAPE, for the same reason the GPT lane never sends "auto":
+    // this endpoint's aspect_ratio defaults to following the first input
+    // picture, so an unpinned lane answers a square shot in the shape of
+    // whatever photo anchors the character — and the identity score reads a
+    // face that lands smaller in a taller frame as a worse match.
+    expect(falImage).toContain('aspect_ratio: "1:1"');
     // Never SENT (the module explains why in prose, hence the two exact
     // forms rather than the bare word): turning a provider's own filter down
     // is the ladder removed on 2026-09-09.
