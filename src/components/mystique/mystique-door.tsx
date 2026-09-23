@@ -1713,13 +1713,22 @@ export function MystiqueDoor({
                               type="button"
                               aria-pressed={on}
                               disabled={starting}
-                              onClick={() =>
+                              onClick={() => {
+                                // Taking someone out goes through keepCast, so whoever is
+                                // left keeps the person they were shown as playing. Before
+                                // that (2026-09-23) the survivor of a two-character cast
+                                // silently fell back to the lead — the cast said Person C,
+                                // the take rendered Person A.
+                                if (castIds.includes(c.id)) {
+                                  keepCast(castIds.filter((x) => x !== c.id));
+                                  return;
+                                }
                                 setCastIds((prev) => {
-                                  const next = prev.includes(c.id) ? prev.filter((x) => x !== c.id) : [...prev, c.id];
+                                  const next = [...prev, c.id];
                                   if (next[0] !== prev[0]) setPhotoPath(castable.find((x) => x.id === next[0])?.photos[0]?.path ?? null);
                                   return next;
-                                })
-                              }
+                                });
+                              }}
                               className={`flex cursor-pointer items-center gap-2 rounded-full py-1 pl-1 pr-3.5 text-sm font-medium transition-shadow ${
                                 on
                                   ? "bg-[rgba(255,255,255,0.06)] text-[#ecedf1] shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)]"

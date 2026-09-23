@@ -43,14 +43,16 @@ export type RecastRecipe = {
   direction: string;
   /**
    * Which person in the read was replaced ("A"), when the read found more
-   * than one. A TAG, and never the read's line about them: a recipe keeps
-   * no account of anyone in the person's own footage, and since 2026-09-23
-   * that includes the read's `mark` — the six words that tell one person in
-   * a crowd apart by what they wear (recast-read.ts). The mark is written
-   * so a brief can point at someone while the take is being made; it is not
-   * something this product keeps about a stranger afterwards, so nothing
-   * here has a field it could land in and recastRow copies only what is
-   * named below.
+   * than one. A TAG, and never the read's line about them: the read has no
+   * field of its own here, and recastRow copies only what is named below.
+   * That is not the same as forgetting, and the comment used to say it was:
+   * the read's `mark` (recast-read.ts — at most eight words saying what the
+   * replaced person wears and where they stand, so the brief can point at
+   * them) is composed INTO the brief, and `brief` below is stored on the
+   * row and logged with the take. So those words outlive the take, on that
+   * row, for as long as the row does. Said plainly here because the same
+   * truth is written in recast-read.ts's header, and two files disagreeing
+   * about what we keep is how a promise quietly becomes false.
    */
   castTag: string | null;
   brief: string;

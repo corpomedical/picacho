@@ -502,9 +502,11 @@ function castingsIn(casting: BriefCommon["casting"]): RecastCasting[] {
  * characters) is never cut. And a later part's CONTINUITY wording is never
  * shortened: it is the wording every passing seam test was sent with, and a
  * shorter one is an untested change to something measured good. Should all
- * of that still leave it too long — no take the door can ask for gets there
- * (recast-brief.test.ts runs every shape) — whole lines of the keep list go
- * from its end, and never a line of the direction or the continuity.
+ * of that still leave it too long, whole lines of the keep list go from its
+ * end, and never a line of the direction or the continuity. That last
+ * resort is NOT unreachable, whatever this comment claimed before
+ * 2026-09-23: a three-cast later part carrying a 600-character direction
+ * runs it, and dropKeepLines below records what each shape has left.
  */
 export function composeRecastBrief(input: BriefInput): string {
   const max = input.engine ? RECAST_ENGINES[input.engine].promptMax : RECAST_BRIEF_MAX_CHARS;
