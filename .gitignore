@@ -46,3 +46,4 @@ picacho-admin.zip
 
 # Local video assets — far over GitHub's 100MB limit; they live on disk only
 *.mov
+/reburn-out/

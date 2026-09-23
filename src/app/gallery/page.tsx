@@ -81,13 +81,21 @@ async function getFeaturedItems(): Promise<ShowcaseItem[]> {
     // falls back to the original when it doesn't (legacy features, or the
     // burn not run yet). One storage list per owner folder — featured rows
     // are admin-owned, so this is typically a single call.
+    //
+    // wm2, not wm (2026-09-23): the first burn squashed the wordmark (letters
+    // 3.0x as wide as tall, the real mark is 5.07x) and /api/media is cached
+    // immutable for a year, so a fixed file can't replace a bad one at the
+    // same address. scripts/reburn-public-mark.mjs writes the corrected
+    // copies here; until it has run, videos fall back to the original with
+    // the player's overlay — one correct mark either way.
+    const WM_DIR = "wm2";
     const wmByUser = new Map<string, Set<string>>();
     async function wmSet(user: string): Promise<Set<string>> {
       const cached = wmByUser.get(user);
       if (cached) return cached;
       const { data: files } = await admin.storage
         .from("generated-videos")
-        .list(`${user}/wm`, { limit: 200 });
+        .list(`${user}/${WM_DIR}`, { limit: 200 });
       const set = new Set((files ?? []).map((f) => f.name));
       wmByUser.set(user, set);
       return set;
@@ -101,12 +109,14 @@ async function getFeaturedItems(): Promise<ShowcaseItem[]> {
       // broken tile.
       let url = toMediaUrl(row.result_url);
       if (!url || !isRenderableUrl(url)) continue;
+      let branded = false;
       if (row.content_type === "video") {
         const m = url.match(/^\/api\/media\/generated-videos\/([^/]+)\/([^/?]+)/);
         if (m) {
           const [, user, file] = m;
           if ((await wmSet(user)).has(decodeURIComponent(file))) {
-            url = mediaUrl("generated-videos", `${user}/wm/${decodeURIComponent(file)}`);
+            url = mediaUrl("generated-videos", `${user}/${WM_DIR}/${decodeURIComponent(file)}`);
+            branded = true;
           }
         }
       }
@@ -117,6 +127,7 @@ async function getFeaturedItems(): Promise<ShowcaseItem[]> {
         url,
         posterUrl: toMediaUrl(row.poster_url),
         contentType: row.content_type === "video" ? "video" : "image",
+        branded,
         score:
           typeof rawScore === "number" && Number.isFinite(rawScore) ? Math.round(rawScore) : null,
       });

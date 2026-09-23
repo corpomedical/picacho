@@ -31,6 +31,9 @@ export type ShowcaseItem = {
   url: string;
   posterUrl: string | null;
   contentType: "image" | "video";
+  // The file itself carries the burned-in mark (the <user>/wm/ copy), so the
+  // player must not lay a second one over it.
+  branded?: boolean;
   score: number | null;
 };
 
@@ -169,8 +172,11 @@ export function GalleryShowcase({ items }: { items: ShowcaseItem[] }) {
                     className="max-h-[78vh] w-full bg-neutral-950 object-contain"
                   />
                   {/* Above the video, below nothing — the player's own
-                      controls stay clickable through it. */}
-                  <PicachoMark />
+                      controls stay clickable through it. Skipped when the
+                      file already wears the mark: the overlay sat right on
+                      top of the burned one and every branded video showed
+                      two logos (operator, 2026-09-23). */}
+                  {!open.branded && <PicachoMark />}
                 </>
               )}
             </div>

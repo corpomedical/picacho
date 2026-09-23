@@ -695,6 +695,7 @@ export function AppSidebar({
         <Link
           href="/app/generate"
           title="Picacho"
+          data-app-logo
           // overflow-hidden + a nowrap, fixed-width wordmark below turn the
           // collapse/expand into a clean slide-reveal — without them the
           // 200px wordmark reflowed inside the still-animating 56px rail
