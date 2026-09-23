@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.83.0",
+    build: 122,
+    date: "2026-09-23",
+    title: "Recast points at the person it is replacing, and a crowd gets a take of its own",
+    items: [
+      "A take now says which person it is replacing. Until today the words sent with your clip could only say \"Person A, centre of frame\", which is no help when the person is facing away in a crowd of forty in the same uniform — so takes came back with your character standing BESIDE the original instead of in their place. The clip read may now add a short phrase for the people you cast a character over: what they are wearing and where they stand, at most eight words, never their face, body, age, skin, hair or name.",
+      "The words you type now reach the take. Your direction used to be added at the very end of a long instruction, after every line about what to keep — so a direction like \"dress her as Cleopatra\" was read last and often ignored. It now sits with the instruction itself, where it is read first.",
+      "The take is told the person you replaced is gone. It used to be told only who to put in, and the closing line — \"everything the direction does not change stays exactly as it is\" — could be read as an order to keep the original standing there. Now it says the replaced person appears in no frame of the video being made, and the closing line covers only everyone the instruction does not name.",
+      "A whole group is cast on a take of its own. Casting a character over a crowd AND another character in the same take makes a video that falls apart: measured on a real clip, the crowd turned back into the original people partway through and the character turned up twice. Recast now says so on the page before you press, offers to keep just one of them, and refuses that combination before any credits are reserved. Casting a crowd on its own, or two ordinary characters together, is unchanged.",
+      "Taking a character out of the cast keeps the part the others were playing. Removing one of two characters used to quietly move the survivor onto the lead role, so a take you set up for one person rendered another. The same was true of the two ways out of the new crowd warning. All three now keep what you chose.",
+    ],
+  },
+  {
     version: "1.82.0",
     build: 121,
     date: "2026-09-22",
