@@ -373,6 +373,42 @@ html.screening.dark [data-screening-generate] form.isolate {
   box-shadow: inset 0 1px 0 rgba(255, 240, 220, 0.07);
 }
 
+/* ── The home in the Console's material (2026-09-23, "make the home
+   dashboard look more premium") ─────────────────────────────────────────
+   Dark only, like the frame above: an explicit Light keeps the plain Frost
+   surfaces the markup already names. Hooked on data attributes in
+   dashboard-home.tsx / momentum-surface.tsx, so the shared invite card and
+   install hint take the slab without either component knowing. */
+html.screening.dark :is([data-dash-slab], [data-dash-foot] > div) {
+  background: linear-gradient(180deg, rgba(33, 28, 23, 0.94) 0%, rgba(20, 17, 14, 0.96) 100%);
+  border-color: rgba(243, 237, 228, 0.07);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 240, 220, 0.07),
+    0 24px 48px -30px rgba(0, 0, 0, 0.85);
+}
+/* The page's one primary key — the same lit ochre as Render on Generate. */
+html.screening.dark [data-dash-key] {
+  background: linear-gradient(180deg, #f0bb84 0%, #dc9c5e 100%);
+  color: #1c1209;
+  box-shadow:
+    inset 0 -2px 0 #97602f,
+    inset 0 1px 0 rgba(255, 245, 230, 0.6),
+    0 4px 3px rgba(0, 0, 0, 0.25),
+    0 14px 20px -8px rgba(224, 164, 104, 0.3);
+}
+/* The reel and the sheet riding over it are one object, set in the frame
+   like the stage's take: deep shadow, one hairline round both. */
+html.screening.dark [data-dash-hero] {
+  box-shadow:
+    0 40px 80px -36px rgba(0, 0, 0, 0.85),
+    0 0 0 1px rgba(243, 237, 228, 0.06);
+}
+html.screening.dark [data-dash] [data-dash-media] {
+  box-shadow:
+    0 18px 36px -24px rgba(0, 0, 0, 0.9),
+    0 0 0 1px rgba(243, 237, 228, 0.07);
+}
+
 html,
 body {
   background: var(--color-paper);

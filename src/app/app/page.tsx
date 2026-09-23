@@ -1,17 +1,13 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { FirstRunTour } from "@/components/first-run-tour";
-import { InstallAppHint } from "@/components/install-app-hint";
 import { getGenerateWorkspaceData } from "@/lib/generations/workspace-data";
 import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
 import { mediaUrl, toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
-import { InviteCard } from "@/components/invite-card";
 import { ReelBand } from "@/components/reel-band";
-import { MomentumSurface } from "@/components/momentum-surface";
-import { DashboardPromptBar } from "@/components/dashboard-prompt-bar";
+import { DashboardHome } from "@/components/dashboard-home";
 import { promptBarCharacter } from "@/lib/dashboard/prompt-bar";
-import { EmptyState } from "@/components/ui/empty-state";
 
 export const maxDuration = 300;
 
@@ -212,78 +208,73 @@ export default async function AppHome() {
     // Small tiles — the full render is one tap away on the history page. A
     // video shows its poster frame rather than nothing, and says so.
     .map((g) => ({
-      ...g,
+      id: g.id as string,
+      alt: (g.prompt_input as string | null) ?? "",
       isVideo: g.content_type === "video",
+      score: (g.match_score as number | null) ?? null,
       displayUrl: thumbUrl(
         toMediaUrl((g.content_type === "video" ? g.poster_url : g.result_url) as string | null),
         320,
       ),
     }))
-    .filter((g) => isRenderableUrl(g.displayUrl))
+    .filter((g): g is typeof g & { displayUrl: string } => isRenderableUrl(g.displayUrl))
     .slice(0, 6);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
-      {/* Cinema first, working surface under it — direction F. The band is not
-          a card on a dashboard; it is the top of the page, and the sheet below
-          rides up over its bottom edge. */}
-      <div>
-      {reelVideoUrl ? (
-        <ReelBand
-          videoUrl={reelVideoUrl}
-          posterUrl={reelPosterUrl}
-          eyebrow={d.reelTitle}
-          builtAt={(reel?.built_at as string | null) ?? null}
-          locale={locale}
-          headline={reelCharacterName ?? d.reelExampleHeadline}
-          line={
-            reel?.takes
-              ? reel.mean_identity
-                ? formatMsg(d.reelLine, { takes: reel.takes, mean: reel.mean_identity })
-                : formatMsg(d.reelLinePlain, { takes: reel.takes })
-              : null
-          }
-          cuts={reelCuts}
-          meanIdentity={(reel?.mean_identity as number | null) ?? null}
-          cast={reelCast}
-          selectedCharacterId={(reel?.character_profile_id as string | null) ?? null}
-          addCharacterHref="/app/character/new"
-        />
-      ) : (
-        // No reel yet — a character with no video takes, or takes the cron has
-        // not reached. Rather than a hole where the band goes, show real
-        // Picacho footage, labelled as ours rather than theirs: the eyebrow
-        // says "Made with Picacho", never "Your reel".
-        <ReelBand
-          videoUrl="/reel-default.mp4"
-          posterUrl="/reel-default.jpg"
-          eyebrow={d.reelExampleTitle}
-          headline={d.reelExampleHeadline}
-          line={d.reelExampleBody}
-          cast={reelCast}
-          addCharacterHref="/app/character/new"
-        />
-      )}
-
-      <MomentumSurface
-        locale={locale}
-        take={
-          lastTake
-            ? {
-                href: `/app/history/${lastTake.id}`,
-                title: (lastTake.prompt_input as string | null) ?? null,
-                thumbUrl: lastTakeThumb,
-                isVideo: lastTakeIsVideo,
-                createdAt: (lastTake.created_at as string | null) ?? null,
-                seconds: (lastTake.video_duration_seconds as number | null) ?? null,
-                score: (lastTake.match_score as number | null) ?? null,
-              }
-            : null
-        }
-        creditsLeft={Math.max(0, creditsLimit - creditsUsed) + bonusCredits + purchasedCredits}
-        meanIdentity={accountMean}
-        takes={takesCount}
-        labels={{
+    <DashboardHome
+      d={d}
+      generateOneLabel={t.gallery.generateOne}
+      reel={
+        reelVideoUrl
+          ? {
+              videoUrl: reelVideoUrl,
+              posterUrl: reelPosterUrl,
+              eyebrow: d.reelTitle,
+              builtAt: (reel?.built_at as string | null) ?? null,
+              locale,
+              headline: reelCharacterName ?? d.reelExampleHeadline,
+              line: reel?.takes
+                ? reel.mean_identity
+                  ? formatMsg(d.reelLine, { takes: reel.takes, mean: reel.mean_identity })
+                  : formatMsg(d.reelLinePlain, { takes: reel.takes })
+                : null,
+              cuts: reelCuts,
+              meanIdentity: (reel?.mean_identity as number | null) ?? null,
+              cast: reelCast,
+              selectedCharacterId: (reel?.character_profile_id as string | null) ?? null,
+              addCharacterHref: "/app/character/new",
+            }
+          : // No reel yet — a character with no video takes, or takes the cron
+            // has not reached. Rather than a hole where the band goes, show
+            // real Picacho footage, labelled as ours rather than theirs: the
+            // eyebrow says "Made with Picacho", never "Your reel".
+            {
+              videoUrl: "/reel-default.mp4",
+              posterUrl: "/reel-default.jpg",
+              eyebrow: d.reelExampleTitle,
+              headline: d.reelExampleHeadline,
+              line: d.reelExampleBody,
+              cast: reelCast,
+              addCharacterHref: "/app/character/new",
+            }
+      }
+      momentum={{
+        locale,
+        take: lastTake
+          ? {
+              href: `/app/history/${lastTake.id}`,
+              title: (lastTake.prompt_input as string | null) ?? null,
+              thumbUrl: lastTakeThumb,
+              isVideo: lastTakeIsVideo,
+              createdAt: (lastTake.created_at as string | null) ?? null,
+              seconds: (lastTake.video_duration_seconds as number | null) ?? null,
+              score: (lastTake.match_score as number | null) ?? null,
+            }
+          : null,
+        creditsLeft: Math.max(0, creditsLimit - creditsUsed) + bonusCredits + purchasedCredits,
+        meanIdentity: accountMean,
+        takes: takesCount,
+        labels: {
           pickUp: d.pickUp,
           continue: d.continueCreating,
           newScene: d.newScene,
@@ -292,176 +283,29 @@ export default async function AppHome() {
           credits: d.creditsTitle,
           meanIdentity: d.meanIdentity,
           takes: d.takesLabel,
-        }}
-      />
-      </div>
-
-      {/* Quick actions. */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { href: "/app/generate?type=image", label: d.quickImage, icon: ImageIcon },
-          { href: "/app/generate?type=video", label: d.quickVideo, icon: FilmIcon },
-          { href: "/app/tutorial", label: d.quickTutorial, icon: BookIcon },
-        ].map(({ href, label, icon: Icon }) => (
-          <Link
-            key={href}
-            href={href}
-            className="group flex flex-col items-start gap-2.5 rounded-control border border-atelier-rule bg-atelier-surface p-4 transition-colors hover:border-atelier-muted/70"
-          >
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-atelier-ink/5 text-atelier-ink">
-              <Icon className="h-4 w-4" />
-            </span>
-            <span className="text-xs font-medium leading-snug text-atelier-ink">{label}</span>
-          </Link>
-        ))}
-      </div>
-
-      {/* The course card (2026-08-25) — shown while someone is still new
-          (fewer than 3 successful images on the wall). It sells the course
-          on its two honest hooks: real screenshots, and not wasting credits.
-          Disappears on its own once they're clearly up and running. */}
-      {(recent ?? []).length < 3 && (
-        <Link
-          href="/guides/getting-started"
-          className="flex items-center gap-4 rounded-control border border-atelier-accent/25 bg-atelier-accent/[0.06] p-4 transition-colors hover:border-atelier-accent/50"
-        >
-          <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-atelier-accent/15 text-atelier-accent">
-            <BookIcon className="h-5 w-5" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold text-atelier-ink">{d.courseCardTitle}</span>
-            <span className="mt-0.5 block text-xs leading-snug text-atelier-muted">{d.courseCardBody}</span>
-          </span>
-          <span className="flex-shrink-0 text-xs font-semibold text-atelier-accent">{d.courseCardCta} →</span>
-        </Link>
-      )}
-
-      {/* Characters strip. */}
-      <section className="border-t border-atelier-rule pt-6">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{d.yourCharacters}</h2>
-          <Link href="/app/character" className="text-xs text-atelier-muted hover:text-atelier-ink">
-            {d.seeAll}
-          </Link>
-        </div>
-        <div className="flex gap-3 overflow-x-auto pb-1">
-          {(characters ?? []).map((c) => {
-            const thumb = c.reference_image_urls?.[0]
-              ? thumbUrl(mediaUrl("character-references", c.reference_image_urls[0]), 320)
-              : null;
-            return (
-              <Link
-                key={c.id}
-                href={`/app/generate?character=${c.id}`}
-                className="group w-16 flex-shrink-0 text-center"
-              >
-                <div className="h-16 w-16 overflow-hidden rounded-full border border-atelier-rule bg-atelier-ink/5 transition-transform group-hover:scale-105">
-                  {thumb && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={thumb} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
-                  )}
-                </div>
-                <p className="mt-1.5 truncate text-[11px] text-atelier-muted">{c.name}</p>
-              </Link>
-            );
-          })}
-          <Link href="/app/character/new" className="w-16 flex-shrink-0 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-atelier-rule text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink">
-              <PlusIcon className="h-5 w-5" />
-            </div>
-            <p className="mt-1.5 truncate text-[11px] text-atelier-muted">{d.newCharacter}</p>
-          </Link>
-        </div>
-      </section>
-
-      {/* Recent creations. */}
-      <section className="border-t border-atelier-rule pt-6">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{d.recentCreations}</h2>
-          <Link href="/app/images" className="text-xs text-atelier-muted hover:text-atelier-ink">
-            {d.seeAll}
-          </Link>
-        </div>
-        {recentTiles.length === 0 ? (
-          <EmptyState
-            message={d.emptyRecent}
-            action={{ href: "/app/generate", label: t.gallery.generateOne }}
-          />
-        ) : (
-          <div className="grid grid-cols-3 gap-3">
-            {recentTiles.map((g) => (
-              <Link
-                key={g.id}
-                href={`/app/history/${g.id}`}
-                className="group relative aspect-square overflow-hidden rounded-media border border-atelier-rule bg-atelier-ink/5"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={g.displayUrl!}
-                  alt={g.prompt_input ?? ""}
-                  loading="lazy"
-                  decoding="async"
-                  className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
-                />
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Referral tile (2026-08-22): the dashboard is the highest-traffic
-          surface in the product — a referral card only in Settings referred
-          nobody. Same component the settings sheet uses. */}
-      {profile?.username && (
-        <InviteCard username={profile.username} />
-      )}
-
-      <InstallAppHint />
-
-      <DashboardPromptBar
-        href={barCharacter ? `/app/generate?character=${barCharacter.id}` : "/app/generate"}
-        avatarUrl={barAvatarUrl}
-        label={
-          reelCharacterName
-            ? formatMsg(d.reelPrompt, { name: reelCharacterName })
-            : d.composerPlaceholder
-        }
-      />
-    </div>
-  );
-}
-
-function ImageIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <rect x="3" y="3" width="18" height="18" rx="3" />
-      <circle cx="9" cy="9" r="2" />
-      <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-    </svg>
-  );
-}
-
-function FilmIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <rect x="3" y="5" width="18" height="14" rx="3" />
-      <path d="m10 9 5 3-5 3Z" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
-function BookIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
-    </svg>
-  );
-}
-
-function PlusIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" {...props}>
-      <path d="M12 5v14M5 12h14" />
-    </svg>
+        },
+      }}
+      characters={(characters ?? []).map((c) => ({
+        id: c.id as string,
+        name: (c.name as string) ?? "",
+        thumbUrl: c.reference_image_urls?.[0]
+          ? thumbUrl(mediaUrl("character-references", c.reference_image_urls[0]), 320)
+          : null,
+      }))}
+      recent={recentTiles}
+      stills={{
+        image: recentTiles.find((g) => !g.isVideo)?.displayUrl ?? null,
+        video: recentTiles.find((g) => g.isVideo)?.displayUrl ?? null,
+      }}
+      showCourseCard={(recent ?? []).length < 3}
+      inviteUsername={profile?.username ?? null}
+      promptBar={{
+        href: barCharacter ? `/app/generate?character=${barCharacter.id}` : "/app/generate",
+        avatarUrl: barAvatarUrl,
+        label: reelCharacterName
+          ? formatMsg(d.reelPrompt, { name: reelCharacterName })
+          : d.composerPlaceholder,
+      }}
+    />
   );
 }
