@@ -46,6 +46,9 @@ The app now stays upright when you turn your phone, so menus, the composer and e
 <es-419>
 La app ahora se mantiene en vertical al girar el teléfono, así que los menús, el editor y cada página se quedan en su sitio. Abre una imagen o un video a pantalla completa y girará con tu teléfono para llenar la pantalla; al cerrarlo, la app vuelve a la vertical. Respeta la rotación automática de tu teléfono.
 </es-419>
+<es-ES>
+La app ahora se mantiene en vertical al girar el móvil, así que los menús, el editor y cada página se quedan en su sitio. Abre una imagen o un vídeo a pantalla completa y girará con tu móvil para llenar la pantalla; al cerrarlo, la app vuelve a la vertical. Respeta la rotación automática de tu móvil.
+</es-ES>
 <pt-BR>
 O app agora fica na vertical quando você gira o celular, então os menus, o editor e cada página ficam no lugar. Abra uma imagem ou um vídeo em tela cheia e ele gira com o celular para preencher a tela; ao fechar, o app volta à vertical. Segue a rotação automática do seu celular.
 </pt-BR>
@@ -54,7 +57,7 @@ L'app ora resta in verticale quando giri il telefono, così i menu, l'editor e o
 </it-IT>
 ```
 
-Counts: en-US 276, es-419 310, pt-BR 279, it-IT 288 (limit 500 each).
+Counts: en-US 276, es-419 310, es-ES 301, pt-BR 279, it-IT 288 (limit 500 each). es-ES added: the listing gained it on 2026-09-22 and Play asks for 5 languages.
 
 ---
 
