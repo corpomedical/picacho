@@ -304,6 +304,63 @@ describe("the provider actually sends what we pinned", () => {
   });
 });
 
+// Until 2026-09-23 the four voice columns were read by NOTHING in src/app or
+// src/components — the lock was a count in a database and had no surface at
+// all, while the face had a visible match percentage. These pin the path that
+// fixed that, end to end, because every link in it is a separate file and a
+// silent break anywhere just means the line stops appearing.
+describe("the voice reaches the take card", () => {
+  const actions = readFileSync(join(__dirname, "actions.ts"), "utf8");
+  const form = readFileSync(join(__dirname, "../../components/generate-form.tsx"), "utf8");
+
+  it("asks the database for it, in the one column list both selects share", () => {
+    expect(actions).toContain("match_score, attachments, voice_source, dialogue_voice_id");
+  });
+
+  it("declares it on the type the client inherits", () => {
+    expect(actions).toContain("voiceSource?: VoiceSource | null;");
+    expect(actions).toContain("voiceName?: string | null;");
+  });
+
+  it("names the voice from the id the ROW recorded, not the character's voice today", () => {
+    // The point of storing it: a character's voice can be changed afterwards
+    // and a delivered clip must keep saying what was actually in it.
+    expect(actions).toContain('.eq("id", row.dialogue_voice_id as string)');
+    expect(actions).toMatch(/voiceSource === "character" && row\.dialogue_voice_id/);
+  });
+
+  it("puts both on the item the card reads", () => {
+    expect(actions).toMatch(/matchScore: \(row\.match_score \?\? null\) as number \| null,\s*voiceSource,\s*voiceName,/);
+  });
+
+  it("renders every source, and only accents the one we made", () => {
+    expect(form).toContain('turn.voiceSource === "character" ?');
+    expect(form).toContain("formatMsg(g.voiceLocked, { name: turn.voiceName })");
+    expect(form).toContain("g.voiceLockedUnnamed");
+    expect(form).toContain("g.voiceSilent");
+    expect(form).toContain("g.voiceFromSource");
+    expect(form).toContain("g.voiceEngine");
+  });
+
+  it("covers every value the column allows, so no source can render blank", () => {
+    // If VOICE_SOURCES grows, this fails until the card handles the new one.
+    const handled = ["character", "silent", "source"]; // the fourth falls through to voiceEngine
+    for (const source of VOICE_SOURCES) {
+      expect(handled.includes(source) || source === "engine").toBe(true);
+    }
+  });
+});
+
+describe("the voice copy exists in every language", () => {
+  const KEYS = ["voiceLocked", "voiceLockedUnnamed", "voiceSilent", "voiceEngine", "voiceFromSource"];
+  for (const lang of ["en", "es", "pt", "it"]) {
+    it(`has all five keys in ${lang}`, () => {
+      const messages = readFileSync(join(__dirname, `../i18n/messages/${lang}.ts`), "utf8");
+      for (const key of KEYS) expect(messages, `${lang}.${key}`).toContain(`${key}: "`);
+    });
+  }
+});
+
 describe("isVoiceSource", () => {
   it("accepts exactly the four the column allows", () => {
     for (const source of VOICE_SOURCES) expect(isVoiceSource(source)).toBe(true);

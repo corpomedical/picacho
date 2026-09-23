@@ -101,7 +101,7 @@ import {
   readIdentityThreshold,
   VIDEO_FACE_REFUND_FLAG,
 } from "@/lib/generations/face-lock";
-import { speechSeedFor } from "@/lib/generations/voice-lock";
+import { isVoiceSource, speechSeedFor, type VoiceSource } from "@/lib/generations/voice-lock";
 import { OPENING_FRAME_FLAG, openingFrameApplies, openingFramePath } from "@/lib/generations/opening-frame";
 import {
   makeOpeningFrame,
@@ -4516,6 +4516,15 @@ export type HistoryTurn = {
   // 0-100 identity-match score from the post-generation vision check
   // (characters v2); null/absent when the generation wasn't scored.
   matchScore?: number | null;
+  /**
+   * WHOSE VOICE WAS AUDIBLE IN THIS TAKE (2026-09-23), the voice's answer to
+   * matchScore above. Absent on every row finished before the columns
+   * existed, which is why the card renders nothing rather than guessing.
+   * `voiceName` is the catalogue label for voice_source "character"; the
+   * other three sources have no name to show, by definition.
+   */
+  voiceSource?: VoiceSource | null;
+  voiceName?: string | null;
   /** chat-attachments storage paths this send carried (recorded 2026-08-31). */
   attachmentPaths?: string[];
   /**
@@ -4574,7 +4583,7 @@ export async function getGenerationThread(generationId: string): Promise<ChatHis
   if (!userData.user || !generationId) return null;
 
   const columns =
-    "id, prompt_input, content_type, status, result_url, pipeline_log, created_at, angle_group_id, angle, match_score, attachments";
+    "id, prompt_input, content_type, status, result_url, pipeline_log, created_at, angle_group_id, angle, match_score, attachments, voice_source, dialogue_voice_id";
 
   const { data: row } = await supabase
     .from("generations")
@@ -4624,6 +4633,26 @@ export async function getGenerationThread(generationId: string): Promise<ChatHis
   const threadAttachments = ((row.attachments as string[] | null) ?? []).filter(
     (p): p is string => typeof p === "string",
   );
+
+  // The voice's name for the take, looked up from the id the row RECORDED
+  // rather than from the character's voice today — the whole point of
+  // storing it is that a character's voice can be changed afterwards, and a
+  // delivered clip should keep saying what was actually in it. One tiny read,
+  // and only when something we made actually spoke.
+  const voiceSource = isVoiceSource(row.voice_source) ? row.voice_source : null;
+  let voiceName: string | null = null;
+  if (voiceSource === "character" && row.dialogue_voice_id) {
+    const { data: preset } = await supabase
+      .from("voice_presets")
+      .select("label")
+      .eq("id", row.dialogue_voice_id as string)
+      .maybeSingle<{ label: string }>();
+    // A retired preset leaves the take with its source but no name, which
+    // the card handles: it falls back to the sourceless wording rather than
+    // printing an empty quote.
+    voiceName = preset?.label ?? null;
+  }
+
   return {
     kind: "single",
     id: row.id as string,
@@ -4635,6 +4664,8 @@ export async function getGenerationThread(generationId: string): Promise<ChatHis
     resultUrl: toMediaUrl(row.result_url as string | null),
     createdAt: row.created_at as string,
     matchScore: (row.match_score ?? null) as number | null,
+    voiceSource,
+    voiceName,
     // Reloaded threads used to come back with the attachment chips missing —
     // the paths were never stored anywhere to reload (2026-08-31).
     attachmentPaths: threadAttachments,

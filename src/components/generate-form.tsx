@@ -1785,6 +1785,27 @@ function SingleTurnBubble({
                 {typeof turn.matchScore === "number" && (
                   <p className="font-numeral text-xs tabular-nums text-atelier-accent">{formatMsg(g.identityMatch, { n: turn.matchScore })}</p>
                 )}
+                {/* WHOSE VOICE WAS IN IT (2026-09-23) — the voice's answer to
+                    the identity line above it, and the first place in the
+                    product that says anything at all about a delivered clip's
+                    voice. Only our own voice earns the accent: the other three
+                    are honest reports of a voice we did not make, so they sit
+                    in muted text beside the win rather than dressed as one.
+                    Nothing renders for a take finished before the column
+                    existed, or for an image — voiceSource is null on both. */}
+                {turn.voiceSource === "character" ? (
+                  <p className="text-xs text-atelier-accent">
+                    {turn.voiceName ? formatMsg(g.voiceLocked, { name: turn.voiceName }) : g.voiceLockedUnnamed}
+                  </p>
+                ) : turn.voiceSource ? (
+                  <p className="text-xs text-atelier-muted">
+                    {turn.voiceSource === "silent"
+                      ? g.voiceSilent
+                      : turn.voiceSource === "source"
+                        ? g.voiceFromSource
+                        : g.voiceEngine}
+                  </p>
+                ) : null}
               </div>
               <ResultActions generationId={turn.id} copyText={turn.finalPrompt || turn.prompt} promotable={turn.contentType === "image"} />
             </>
