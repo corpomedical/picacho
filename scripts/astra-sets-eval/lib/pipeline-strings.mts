@@ -69,8 +69,8 @@ export const MIRRORED: readonly Mirrored[] = [
   },
   {
     file: "src/lib/generations/actions.ts",
-    label: "runGeneration: a look rides on a still, one character, GPT Image or FLUX, beside an identity photo",
-    text: 'const lookImageUrl = lookAttachmentUrl && referenceImageUrl && contentType === "image" && !wantsMultiCharacter && !storyboardShots && (imageModelId === "gpt-image" || imageModelId === "flux") ? absolutizeMediaUrl(lookAttachmentUrl, await getOrigin()) : null;',
+    label: "runGeneration: a look rides on a still, one character, a lane that takes extra photos, beside an identity photo",
+    text: 'const lookImageUrl = lookAttachmentUrl && referenceImageUrl && contentType === "image" && !wantsMultiCharacter && !storyboardShots && imageLaneTakesExtraPhotos(imageModelId) ? absolutizeMediaUrl(lookAttachmentUrl, await getOrigin()) : null;',
   },
   { file: "src/lib/generations/actions.ts", label: "runGeneration: the strict lane when an attachment rides", text: "strictContentLane: editingAnUpload || continuationFromUpload," },
   { file: "src/lib/generations/actions.ts", label: "runGeneration: the drafter is told a photo rides", text: "hasAttachedReference: Boolean(propImageUrl)," },

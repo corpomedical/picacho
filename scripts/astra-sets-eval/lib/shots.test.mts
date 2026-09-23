@@ -237,7 +237,7 @@ describe("what the stills copy from the product", () => {
     expect(missingMirrors((f) => files.get(f) ?? null)).toEqual([]);
     const look = MIRRORED.find((m) => m.label.startsWith("runGeneration: a look rides")) as (typeof MIRRORED)[number];
     const changed = new Map(files);
-    changed.set(look.file, (changed.get(look.file) as string).replace('"flux")', '"flux-3")'));
+    changed.set(look.file, (changed.get(look.file) as string).replace("imageLaneTakesExtraPhotos(imageModelId)", 'imageModelId === "gpt-image"'));
     expect(missingMirrors((f) => changed.get(f) ?? null)).toEqual([look.label]);
     expect(missingMirrors(() => null)).toHaveLength(MIRRORED.length);
   });

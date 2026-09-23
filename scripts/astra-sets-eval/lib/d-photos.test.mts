@@ -209,7 +209,10 @@ describe("D's brief leg, run", () => {
     const meta = { corpusVersion: 1, writtenBy: "test", writtenOn: "2026-09-11", blindAttestation: "Generated for a unit test; nothing here was read.", files: { adversarial: "adversarial.json" } };
     writeFileSync(join(dir, "corpus.json"), JSON.stringify(meta));
     writeFileSync(join(dir, "adversarial.json"), JSON.stringify([1, 2, 3].map((i) => ({ id: `adv-${i}`, category: "other", harmful: false, brief: `An ordinary place number ${i}, a quiet street corner.` }))));
-    const { ctx, stopWith, rows } = dContext(dir, { dry: false, words: true, argv: ["--runs", "1"] });
+    // --accept-drift: the run reads the real product files for its mirror
+    // check, and this test is about Ctrl-C, not the mirrors (shots.test.mts
+    // checks those on synthetic sources) — a product commit must not fail it.
+    const { ctx, stopWith, rows } = dContext(dir, { dry: false, words: true, argv: ["--runs", "1", "--accept-drift"] });
     let sent = 0;
     ctx.gates = {
       words: async () => "allowed",

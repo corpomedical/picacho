@@ -106,6 +106,7 @@ import { join } from "node:path";
 import type { CharacterForPipeline, RealPipelineOptions } from "../../../src/lib/generations/pipeline.ts";
 import { DEFAULT_IDENTITY_THRESHOLD, identityGateDecision } from "../../../src/lib/generations/identity-gate.ts";
 import { OUTPUT_BLOCKED_ISSUE, REFUSED_BEFORE_RENDER_ISSUE } from "../../../src/lib/generations/refund-rules.ts";
+import { imageLaneTakesExtraPhotos } from "../../../src/lib/generations/providers/image-models.ts";
 import { IMAGE_REQUEST_REFUSED, IMAGE_RESULT_REFUSED } from "../../../src/lib/generations/providers/refusal-messages.ts";
 import { fetchWithTimeout } from "../../../src/lib/generations/providers/fetch-with-timeout.ts";
 import { decideRefusalProvider } from "../../../src/lib/generations/refusal-attribution-core.ts";
@@ -255,13 +256,14 @@ export function traitSummary(t: Pick<ShotTraits, "hair" | "distinguishing_featur
 
 /**
  * Whether a look rides a still, as the product decides it: runGeneration
- * sends the look only for a still, one character, no storyboard, on GPT
- * Image or FLUX, and beside an identity photo; the pipeline adds it only
- * beside one identity photo (lookActive). The same conditions, checked
- * against both files at run start (pipeline-strings.mts).
+ * sends the look only for a still, one character, no storyboard, on a lane
+ * that takes extra photos (imageLaneTakesExtraPhotos, imported: GPT Image and
+ * FLUX of the eval's engines), and beside an identity photo; the pipeline
+ * adds it only beside one identity photo (lookActive). The same conditions,
+ * checked against both files at run start (pipeline-strings.mts).
  */
 export function lookRides(o: { engine: Engine; identityPhoto: boolean; characters: number; contentType?: "image" | "video"; storyboard?: boolean }): boolean {
-  return o.identityPhoto && (o.contentType ?? "image") === "image" && o.characters === 1 && !o.storyboard && (o.engine === "gpt-image" || o.engine === "flux");
+  return o.identityPhoto && (o.contentType ?? "image") === "image" && o.characters === 1 && !o.storyboard && imageLaneTakesExtraPhotos(o.engine);
 }
 
 /** A still's own prompt: shootInSet's for a set or look shot; for a control, the direction and the description, as a person might type them. */
