@@ -1237,7 +1237,6 @@ async function finish(
     .from("generations")
     .update({
       status: outcome.status,
-      ...(voice ?? {}),
       attempts: outcome.attempts.length,
       result_url: outcome.status === "succeeded" ? outcome.resultUrl : null,
       pipeline_log: withQueueSeconds(outcome.attempts, queueSeconds),
@@ -1268,6 +1267,30 @@ async function finish(
     throw new CriticalWriteError(
       `Couldn't finish generation ${generationId}: ${transitionError.message}`,
     );
+  }
+
+  // THE VOICE RECORD, written AFTER the transition and never as part of it.
+  //
+  // It rode inside the terminal update for one commit, and that was a real
+  // hazard: the update throws CriticalWriteError on any error, which keeps
+  // the job row so the next poll retries the whole finish — so one missing
+  // column would have put every finished render into a permanent retry loop
+  // instead of costing a row of bookkeeping. A record of what shipped is not
+  // worth a paid render, ever.
+  //
+  // So it is best-effort and separate, exactly like the identity score
+  // further down: a failure logs and the clip still lands. The cost of that
+  // choice is honest and belongs here — a failed write leaves voice_source
+  // null, which reads as "no answer" rather than as a good take, and the
+  // count the lock is judged by must be taken over rows that HAVE an answer.
+  if (voice && transitioned?.length) {
+    const { error: voiceError } = await admin.from("generations").update(voice).eq("id", generationId);
+    if (voiceError) {
+      console.warn("Couldn't record which voice was in this take:", {
+        generationId,
+        error: voiceError.message,
+      });
+    }
   }
 
   // Only after a CONFIRMED transition (or a confirmed "already terminal" read
