@@ -49,7 +49,7 @@ describe("the page and the form", () => {
     expect(view).toContain("layoutRef.current = { ...layoutRef.current, castId: characterId };");
   });
   it("hands the new character's id back", () => {
-    expect(actions).toContain('.insert(row).select("id").single();');
+    expect(actions).toMatch(/\.insert\(\{ \.\.\.row, id: characterId \}\)\s*\.select\("id"\)\s*\.single\(\)/);
     expect(form).toContain("window.location.assign(returnTo && result.error === null ? `${returnTo}?character=${result.id}` :");
     expect(form).toContain("data-back-to-set");
   });

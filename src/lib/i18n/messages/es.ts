@@ -1261,9 +1261,9 @@ const es = {
     motionStylePlaceholder: "ej. movimientos lentos y deliberados; cámara en mano",
     dialogueVoice: "Voz de diálogo",
     dialogueVoiceSubtitle:
-      "Asigna una voz para que este personaje pueda decir líneas de diálogo sincronizadas con los labios en Generar.",
+      "Cada personaje recibe una voz, para que pueda decir líneas de diálogo sincronizadas con los labios en Generar. Elige otra aquí cuando quieras.",
     noVoicesYet: "Aún no hay voces configuradas — un administrador debe añadir una primero.",
-    noVoice: "Sin voz — solo vídeo",
+    noVoice: "Asignada automáticamente",
     previewVoice: "Escuchar muestra de voz",
     voiceToneTags: "Etiquetas de voz y tono",
     tagPlaceholder: "escribe una etiqueta, pulsa Enter",

@@ -1250,7 +1250,15 @@ export function CharacterForm({
               onChange={(e) => setVoiceId(e.target.value)}
               className={`w-full ${FIELD}`}
             >
-              <option value="">{c.noVoice}</option>
+              {/* Not a choice — a placeholder for a character whose voice
+                  hasn't been decided yet. Disabled, because "no voice" is no
+                  longer a state a character can be in: saving without a pick
+                  assigns one (assignedVoiceFor, lib/generations/voice-lock.ts).
+                  Offering it as selectable would let the form promise a clear
+                  that the save immediately undoes. */}
+              <option value="" disabled>
+                {c.noVoice}
+              </option>
               {voices.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.label}

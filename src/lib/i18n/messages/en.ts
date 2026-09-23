@@ -1346,9 +1346,9 @@ const en = {
     motionStylePlaceholder: "e.g. slow, deliberate movements; handheld camera feel",
     dialogueVoice: "Dialogue voice",
     dialogueVoiceSubtitle:
-      "Assign a voice so this character can speak lip-synced dialogue lines in Generate.",
+      "Every character gets a voice, so they can speak lip-synced dialogue lines in Generate. Pick a different one here any time.",
     noVoicesYet: "No voices set up yet — an admin needs to add one first.",
-    noVoice: "No voice — video only",
+    noVoice: "Assigned automatically",
     previewVoice: "Preview voice",
     voiceToneTags: "Voice & tone tags",
     tagPlaceholder: "type a tag, press Enter",

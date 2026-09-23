@@ -1260,9 +1260,9 @@ const it = {
     motionStylePlaceholder: "es. movimenti lenti e deliberati; effetto camera a mano",
     dialogueVoice: "Voce per i dialoghi",
     dialogueVoiceSubtitle:
-      "Assegna una voce così questo personaggio può pronunciare battute di dialogo con sincronizzazione labiale in Genera.",
+      "Ogni personaggio riceve una voce, così può pronunciare battute di dialogo con sincronizzazione labiale in Genera. Scegline un'altra qui quando vuoi.",
     noVoicesYet: "Nessuna voce configurata ancora — un amministratore deve aggiungerne una prima.",
-    noVoice: "Nessuna voce — solo video",
+    noVoice: "Assegnata automaticamente",
     previewVoice: "Ascolta anteprima voce",
     voiceToneTags: "Tag di voce e tono",
     tagPlaceholder: "scrivi un tag, premi Invio",

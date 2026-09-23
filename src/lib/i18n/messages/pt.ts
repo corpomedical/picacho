@@ -1261,9 +1261,9 @@ const pt = {
     motionStylePlaceholder: "ex. movimentos lentos e deliberados; câmera na mão",
     dialogueVoice: "Voz do diálogo",
     dialogueVoiceSubtitle:
-      "Atribua uma voz para que este personagem possa falar falas de diálogo com sincronia labial em Gerar.",
+      "Cada personagem recebe uma voz, para que possa falar falas de diálogo com sincronia labial em Gerar. Escolha outra aqui quando quiser.",
     noVoicesYet: "Ainda não há vozes configuradas — um administrador precisa adicionar uma primeiro.",
-    noVoice: "Sem voz — apenas vídeo",
+    noVoice: "Atribuída automaticamente",
     previewVoice: "Ouvir amostra da voz",
     voiceToneTags: "Tags de voz e tom",
     tagPlaceholder: "digite uma tag, pressione Enter",

@@ -40,12 +40,14 @@ describe("saving a character", () => {
   it("refuses without an answer before anything is paid for or written", () => {
     const refuse = save.indexOf("return { error: LIKENESS_NEEDS_ANSWER };");
     expect(refuse).toBeGreaterThan(-1);
-    for (const later of ["describeOutfitImage(", "classifyRenderStyle(", ".insert(row)", ".update(row)"]) expect(refuse, later).toBeLessThan(save.indexOf(later));
+    for (const later of ["describeOutfitImage(", "classifyRenderStyle(", ".insert({ ...row, id: characterId })", ".update(row)"]) expect(refuse, later).toBeLessThan(save.indexOf(later));
   });
   it("keeps the answer with the service client, before an edit is written and right after a new character is", () => {
     expect(save.match(/await recordLikeness\(createAdminClient\(\), \{/g)).toHaveLength(2);
     expect(save.indexOf("await recordLikeness(createAdminClient()")).toBeLessThan(save.indexOf(".update(row)"));
-    expect(save).toContain('.insert(row).select("id").single();');
+    // Matched loosely across lines: the insert carries the id the voice was
+    // assigned for (voice-lock.ts), so this call no longer fits on one.
+    expect(save).toMatch(/\.insert\(\{ \.\.\.row, id: characterId \}\)\s*\.select\("id"\)\s*\.single\(\)/);
     // A new character whose answer couldn't be kept goes too.
     expect(save).toMatch(/if \(kept === "failed"\) \{\s*await supabase\.from\("character_profiles"\)\.delete\(\)\.eq\("id", savedId\)\.eq\("user_id", uid\);\s*return \{ error: LIKENESS_COULDNT_RECORD \};/);
     // The page never sends the notice version: only the answer.

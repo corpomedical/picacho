@@ -15,6 +15,7 @@ import { latestMonthlyAnniversary } from "@/lib/generations/core";
 import { ContentPolicyRefusal } from "@/lib/generations/content-policy";
 import { gatePrompt, recordPolicyRefusal } from "@/lib/generations/policy-log";
 import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
+import { assignedVoiceFor } from "@/lib/generations/voice-lock";
 import { readExpressionSet } from "@/lib/characters/expression-set-store";
 import { needsLikenessAnswer, parseLikeness, photosHash } from "@/lib/characters/likeness";
 import { readLikeness, recordLikeness } from "@/lib/characters/likeness-store";
@@ -60,6 +61,42 @@ function parseStringArray(raw: FormDataEntryValue | null): string[] | null {
 }
 
 type SaveResult = { error: string } | { error: null; id: string };
+
+// EVERY CHARACTER GETS A VOICE (2026-09-23).
+//
+// `voice_id` was nullable with no default and the form's picker was
+// optional, so a character could be saved with no voice at all — forever,
+// silently. That is the root of the voice problem rather than a detail of
+// it: "this character always sounds like this" has no `this` until a voice
+// exists, and a render for a voiceless character hands the microphone to
+// whatever the video engine feels like inventing.
+//
+// A save that names no voice now gets one from the curated catalogue,
+// deterministically on the character's own id (voice-lock.ts) so the same
+// character always lands on the same voice and the form can still change it.
+async function assignVoice(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  characterId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("voice_presets")
+    .select("id, elevenlabs_voice_id")
+    // A fixed order, so the pick cannot move with row-return order. See the
+    // note in assignedVoiceFor: this decides a voice ONCE and the answer is
+    // persisted — it is not a lookup and must not be re-run to read one.
+    .order("sort_order", { ascending: true })
+    .order("id", { ascending: true });
+  if (error) {
+    // Not worth failing the save over — a voiceless character is the state
+    // we are leaving behind, not a new hazard, and the backfill in
+    // supabase/pending will catch any row saved in this window. Loud,
+    // because an unreadable catalogue means every character saved right now
+    // is voiceless.
+    console.error("saveCharacterProfile couldn't read the voice catalogue:", error.message);
+    return null;
+  }
+  return assignedVoiceFor(characterId, data ?? []);
+}
 
 // NOTE: this is called directly from a Client Component (not via a plain
 // <form action={...}>) because the form needs to upload images to Storage
@@ -237,6 +274,13 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
     }
   }
 
+  // Decided before the row is built, because the assignment hashes on the
+  // character's own id and a new character does not have one yet. Explicit
+  // rather than letting Postgres default it, so the id the voice was chosen
+  // for is the id the row is actually written under.
+  const characterId = id ?? crypto.randomUUID();
+  const resolvedVoiceId = voiceId ?? (await assignVoice(supabase, characterId));
+
   let savedId = id ?? "";
   const row = {
     user_id: data.user.id,
@@ -249,7 +293,7 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
     motion_style: motionStyle,
     voice_tone_tags: tags,
     project_id: projectId,
-    voice_id: voiceId,
+    voice_id: resolvedVoiceId,
     updated_at: new Date().toISOString(),
   };
 
@@ -335,7 +379,11 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
       }
     }
   } else {
-    const { data: inserted, error } = await supabase.from("character_profiles").insert(row).select("id").single();
+    const { data: inserted, error } = await supabase
+      .from("character_profiles")
+      .insert({ ...row, id: characterId })
+      .select("id")
+      .single();
 
     if (error || !inserted) {
       console.error("saveCharacterProfile insert failed:", error?.message ?? "no row");

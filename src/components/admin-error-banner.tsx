@@ -44,6 +44,8 @@ const KNOWN_ERRORS = new Set<string>([
   "Only admin-owned generations can be featured — customer content needs a consent mechanism the gallery doesn't have yet.",
   "Value can't be empty.",
   "Label and ElevenLabs voice ID are both required.",
+  "Characters are still using this voice — reassign them to another voice first.",
+  "Couldn't check whether characters are using this voice — nothing was deleted. Details are in the server log.",
   "Missing model",
   "Unknown model",
   "max_retry_attempts must be a whole number from 1 to 10.",

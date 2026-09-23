@@ -467,6 +467,37 @@ export async function deleteVoicePreset(formData: FormData) {
   const { supabase } = await requireAdmin();
   const id = formData.get("id") as string;
 
+  // A preset with characters on it is not deletable (2026-09-23). The
+  // constraint used to be ON DELETE SET NULL, so one click here silently
+  // un-voiced every character using this voice — and a character with no
+  // voice renders with the engine's own invented one. The database now
+  // refuses (character_profiles_voice_id_fkey, ON DELETE RESTRICT); this
+  // check exists so the refusal arrives as a sentence with a number in it
+  // rather than as a raw Postgres constraint message.
+  const { count, error: inUseError } = await supabase
+    .from("character_profiles")
+    .select("id", { count: "exact", head: true })
+    .eq("voice_id", id);
+  // Fixed strings, not a sentence with the count in it: the banner treats
+  // ?error as a CODE and only renders messages it recognises verbatim
+  // (admin-error-banner.tsx), so a dynamic tail would collapse to the
+  // generic line and tell the admin nothing.
+  if (inUseError) {
+    console.error("deleteVoicePreset: couldn't check who uses this voice", inUseError);
+    redirect(
+      `/admin/voices?error=${encodeURIComponent(
+        "Couldn't check whether characters are using this voice — nothing was deleted. Details are in the server log.",
+      )}`,
+    );
+  }
+  if ((count ?? 0) > 0) {
+    redirect(
+      `/admin/voices?error=${encodeURIComponent(
+        "Characters are still using this voice — reassign them to another voice first.",
+      )}`,
+    );
+  }
+
   const { error } = await supabase.from("voice_presets").delete().eq("id", id);
   if (error) {
     console.error("deleteVoicePreset: delete failed", error);
