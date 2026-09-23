@@ -132,6 +132,17 @@ describe("routing", () => {
     expect(image).toContain("generateImageWithGemini(prompt, combinedRefs)");
   });
 
+  it("reads a 422 as the refusal it is, not as a provider error", () => {
+    // Measured against the live endpoint 2026-09-23: fal answers a prompt it
+    // will not draw with 422 and a prose `detail`, NOT with the 200-and-no-
+    // picture this lane was first written for. As an Error it would carry a
+    // status code into the retry ladder and a raw provider dump into the log.
+    const start = falImage.indexOf("export async function generateImageWithGemini");
+    const guard = falImage.slice(start, falImage.indexOf("const data = await res.json()", start));
+    expect(guard).toContain("res.status === 422");
+    expect(guard).toContain("throw new GeminiImageRefusal(IMAGE_RESULT_REFUSED)");
+  });
+
   it("fails loudly when the answer carries no picture", () => {
     // Google's models decline in prose with a 200, so an undefined URL must
     // not travel up the stack as a success — Flux's 2026-08-14 black-frame

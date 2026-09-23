@@ -196,6 +196,22 @@ export async function generateImageWithGemini(
 
   if (!res.ok) {
     const text = await res.text();
+    // 422 is this endpoint's REFUSAL, measured 2026-09-23 against the live
+    // endpoint: "The model did not generate the expected output for this
+    // prompt. This may occur for several reasons, including unsafe content,
+    // a prompt that is incompatible with the selected media type,
+    // references to missing attachments, or other cases where the input
+    // cannot be processed as the requested output type."
+    //
+    // It must not travel as a provider ERROR, for two reasons. The raw body
+    // is a provider dump, and History shows nobody those (operator, 2026-08-19).
+    // And every one of those causes is FINAL — retrying buys the same answer
+    // at $0.15 a go — while an error message carrying a status code is what
+    // the retry ladder reads. Same contract as the no-picture answer below.
+    if (res.status === 422) {
+      console.warn(`[gemini] 422 from ${endpoint}: ${text.slice(0, 300)}`);
+      throw new GeminiImageRefusal(IMAGE_RESULT_REFUSED);
+    }
     throw new Error(`fal.ai (Nano Banana Pro) error (${res.status}): ${text.slice(0, 300)}`);
   }
 
