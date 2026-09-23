@@ -6,6 +6,7 @@ import {
   IMAGE_MODELS,
   SELECTABLE_IMAGE_MODEL_IDS,
   getImageModel,
+  imageLaneTakesExtraPhotos,
   isImageModelPaidOnly,
   selectableImageModels,
 } from "./providers/image-models";
@@ -139,6 +140,31 @@ describe("routing", () => {
     // The message carries "safety", which pipeline.ts's SAFETY_REJECTION
     // reads — non-retryable, so no credit buys a second refusal.
     expect(/safety/i.test("This image was refused by the image model's safety system, so it can't be shown.")).toBe(true);
+  });
+});
+
+describe("the extra photos beside the person", () => {
+  // The defect this catches, found on the first real Nano Banana Pro render
+  // (2026-09-23): the four gates in actions.ts spelled out the two lanes that
+  // existed when they were written, so the new lane silently lost the outfit
+  // photo and the set's look and place photos, and had the person's own
+  // attachment vision-described into text instead of riding as pixels —
+  // while the capability matrix said outfitImage: true and the send receipt
+  // promised the photo rode. A lane list spelled at the call site is the
+  // whole defect, so the test is that no call site spells one.
+  it("is decided from the catalogue, never by naming lanes in actions.ts", () => {
+    expect(actions).not.toContain('imageModelId === "gpt-image" || imageModelId === "flux"');
+    expect(actions.match(/imageLaneTakesExtraPhotos\(imageModelId\)/g)).toHaveLength(4);
+  });
+
+  it("reaches every image lane, and matches what the receipt promises", () => {
+    for (const m of IMAGE_MODELS) {
+      expect(imageLaneTakesExtraPhotos(m.id), m.id).toBe(true);
+      // MODEL_CAPABILITIES is what resolveSendPlan draws the receipt from:
+      // a lane promising the outfit photo must actually be sent it.
+      expect(MODEL_CAPABILITIES[m.id].outfitImage, m.id).toBe(true);
+    }
+    expect(imageLaneTakesExtraPhotos("kling")).toBe(false);
   });
 });
 

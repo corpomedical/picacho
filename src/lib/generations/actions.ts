@@ -84,6 +84,7 @@ import {
   IMAGE_MODELS,
   SELECTABLE_IMAGE_MODEL_IDS,
   IMAGE_LANES_THAT_COMPOSITE,
+  imageLaneTakesExtraPhotos,
 } from "@/lib/generations/providers/image-models";
 import { resolveModel } from "@/lib/generations/model-health";
 import {
@@ -1874,7 +1875,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           contentType === "image" ? referenceImageUrl : videoCharacterAnchorUrl;
         const modelTakesOutfitPhoto =
           contentType === "image"
-            ? imageModelId === "gpt-image" || imageModelId === "flux"
+            ? imageLaneTakesExtraPhotos(imageModelId)
             : videoModelId === "seedance" || videoModelId === "seedance-2";
         // Plain path only (no storyboard, no multi-image reference) — it
         // matches what the composer's caption promises, and keeps Seedance's
@@ -1930,7 +1931,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       if (neutralUrl && !wantsMultiCharacter && !storyboardShots) {
         const propTakesPhoto =
           contentType === "image"
-            ? imageModelId === "gpt-image" || imageModelId === "flux"
+            ? imageLaneTakesExtraPhotos(imageModelId)
             : videoModelId === "seedance" || videoModelId === "seedance-2";
         const absoluteProp = absolutizeMediaUrl(neutralUrl, await getOrigin());
         if (propTakesPhoto) {
@@ -1960,7 +1961,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         contentType === "image" &&
         !wantsMultiCharacter &&
         !storyboardShots &&
-        (imageModelId === "gpt-image" || imageModelId === "flux")
+        imageLaneTakesExtraPhotos(imageModelId)
           ? absolutizeMediaUrl(lookAttachmentUrl, await getOrigin())
           : null;
 
@@ -1995,7 +1996,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         contentType === "image" &&
         !wantsMultiCharacter &&
         !storyboardShots &&
-        (imageModelId === "gpt-image" || imageModelId === "flux")
+        imageLaneTakesExtraPhotos(imageModelId)
           ? absolutizeMediaUrl(sceneAttachmentUrl, await getOrigin())
           : null;
 

@@ -129,3 +129,25 @@ export function selectableImageModels() {
  * a group scene from one person's photo and call it a success.
  */
 export const IMAGE_LANES_THAT_COMPOSITE = ["gpt-image", "flux", "gemini"] as const;
+
+/**
+ * The lanes that take an EXTRA photo beside the person — the outfit laid
+ * out, an attached prop or background, a set's earlier still, the
+ * photograph a photo set was built from. All three take a reference array,
+ * so all three are here.
+ *
+ * Read it from here, never by naming ids at the call site. The four gates in
+ * actions.ts spelled out `"gpt-image" || "flux"` when Nano Banana Pro
+ * arrived (2026-09-23) and nobody updated them, so that lane silently lost
+ * the outfit photo, lost a set's look and place photos, and had the person's
+ * attachment turned into a sentence of vision-written text instead of
+ * pixels — while MODEL_CAPABILITIES.gemini.outfitImage said true and the
+ * send receipt promised the photo rode. Found the same day, on the first
+ * real render, from a low identity score.
+ */
+export const IMAGE_LANES_THAT_TAKE_EXTRA_PHOTOS = ["gpt-image", "flux", "gemini"] as const;
+
+/** Whether this picture lane receives the extra photos as pixels (see above). */
+export function imageLaneTakesExtraPhotos(id: string): boolean {
+  return (IMAGE_LANES_THAT_TAKE_EXTRA_PHOTOS as readonly string[]).includes(id);
+}
