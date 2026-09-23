@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   composeRecastBrief,
   RECAST_BRIEF_MAX_CHARS,
-  RECAST_MARK_MAX_CHARS,
   recastBriefNames,
   recastCastTokens,
   recastCharacterToken,
@@ -21,7 +20,10 @@ import {
   recastRestageImageRoom,
   type RecastEngine,
 } from "./recast";
-import { reboundRecastRead, type RecastRead } from "./recast-read";
+// The mark's bound is the read's, and there is only the one: a second number
+// here could never bind, since nothing above 60 characters survives the read
+// on the way in or the door on the way back (recast-read.ts's recastMark).
+import { RECAST_MARK_MAX_CHARS, reboundRecastRead, recastMark, type RecastRead } from "./recast-read";
 import { recastRow } from "./store";
 
 // The brief is what a video model is actually told. Genjutsu's works because
@@ -374,8 +376,14 @@ describe("several characters in one take", () => {
     expect(brief).toContain("\n\nDIRECTION\nAnubis replaces every student.\n");
     // The negative is for the person actually going out; the character who is
     // only PUT into the clip takes nobody's place.
-    expect(brief).toContain("The person @Element1 replaces appears in no frame of @Video1");
+    expect(brief).toContain("The person @Element1 replaces appears in no frame of the video you make");
     expect(brief).not.toContain("@Element1 and @Image1 replace");
+    // AND THE HEAD COUNT IS NOT PROMISED HERE (2026-09-23, round 2). This
+    // take puts a second character in, so the count goes up by one: the
+    // sentence that says it never changes would contradict the order two
+    // lines above it, which is the fault the whole cut is about.
+    expect(brief).not.toContain("how many people are in the shot, and where each of them stands, never changes");
+    expect(brief).toContain("nobody the TASK does not name is added or taken away, and everyone else stands exactly where they stood");
   });
 
   it("carries both across a long take's joins", () => {
@@ -407,6 +415,25 @@ describe("several characters in one Restage take", () => {
   it("says nothing about 'together' when one character is cast", () => {
     const brief = composeRecastBrief({ ...base, job: "restage", casting: ensemble[0] });
     expect(brief).not.toContain("together");
+  });
+
+  it("points at the person too, where the read gave a mark", () => {
+    // A Restage brief has no THE SOURCE block — the clip is a reference here,
+    // not footage being edited — so "they take the place of Person A" had
+    // nothing anywhere in the brief to say who Person A is (2026-09-23).
+    const marked = {
+      ...read,
+      people: [
+        { tag: "A", where: "centre", does: "turns", lead: true, many: false, mark: recastMark("in the white shirt at the front") },
+        { tag: "B", where: "behind", does: "watch", lead: false, many: true, mark: recastMark("in the navy blazers in the back rows") },
+      ],
+    };
+    const brief = composeRecastBrief({ ...base, job: "restage", read: marked, casting: ensemble, images: [] });
+    expect(brief).toContain("and they take the place of the person in the white shirt at the front (Person A).");
+    expect(brief).toContain("and they take the place of every person in the navy blazers in the back rows (Person B's group).");
+    // And the words with no mark to put in are the ones the operator's own
+    // clip came back right on, first try: unchanged, to the byte.
+    expect(composeRecastBrief({ ...base, job: "restage", casting: ensemble, images: [] })).toContain("and they take the place of every person in Person B's group.");
   });
 
   it("lets the read give way before the person's words, never the other way round", () => {
@@ -502,8 +529,15 @@ describe("Photo to life from the person's own image", () => {
 
 describe("what a brief may never say", () => {
   it("never describes anyone in the footage", () => {
-    // The read is forbidden to produce such words (recast-read.ts's rules),
-    // and the brief only ever repeats the read's `where` and `does`.
+    // WHAT THE GUARANTEE ACTUALLY IS, since 2026-09-23. It used to be that
+    // the read could not produce such words at all; the mark repealed that —
+    // a mark is a garment used to tell one person apart, and the reader is
+    // now asked for one. What holds instead is composition: THE SOURCE's own
+    // "Person X:" lines are `where` and `does` and nothing else (sourceLines),
+    // and the mark reaches one place only, the TASK's line for somebody being
+    // replaced (markFor). The word list below is not the gate and never was —
+    // it would not catch "in the white shirt at the front" — it is a tripwire
+    // on the lines it reads.
     const brief = composeRecastBrief({ ...base, job: "scene" });
     for (const line of brief.split("\n").filter((l) => l.startsWith("Person "))) {
       expect(line).not.toMatch(/\b(blonde|brunette|young|old|tall|short|skin|wearing|dressed)\b/i);
@@ -692,9 +726,21 @@ describe("what gives way when a brief is too long — ours, never theirs", () =>
     expect([...stages].sort()).toEqual(["account gone", "ours short", "others going", "others gone", "ticks going", "who gone", "whole"].sort());
   });
 
-  it("fits every shape of take the door can send without ever dropping a line of the keep list", () => {
-    // The last resort (whole keep lines from the end) is for shapes the door
-    // cannot make; every real one ends its keep list on its closing line.
+  it("fits every shape of take the door can send, and says what its keep list has left", () => {
+    // THE LAST RESORT IS REACHED (measured 2026-09-23, round 2). It was
+    // documented as being for shapes the door cannot make, and the assertion
+    // here could not have seen otherwise: dropKeepLines splices only BELOW
+    // the last line, so the closing line stays last however many bullets go.
+    // On the heaviest later parts it runs, and our own keep wording is what
+    // it eats — by then every ticked keep has gone to step 4 and the read
+    // with it. The counts below are today's, byte for byte; they are pinned
+    // so that a wording that costs another line has to say so here.
+    //
+    // Nothing of the person's is touched, which is the promise that matters:
+    // the whole direction is in every one of them, the TASK still says to
+    // keep the performance, and the closing line still covers everyone the
+    // TASK does not name.
+    const leftInKeep: Record<string, number> = { "1-false": 6, "1-true": 3, "2-false": 4, "2-true": 2, "3-false": 3, "3-true": 1 };
     const direction = directionOf(600);
     for (const n of [1, 2, 3]) {
       for (const continuing of [false, true]) {
@@ -713,12 +759,19 @@ describe("what gives way when a brief is too long — ours, never theirs", () =>
           continuing,
           ...(continuing && names.look ? { look: names.look } : {}),
         });
-        expect(brief, `${n} cast, continuing ${continuing}`).toContain(direction);
+        const label = `${n} cast, continuing ${continuing}`;
+        expect(brief, label).toContain(direction);
+        expect(brief, label).toMatch(/Keep the performance exactly as it is[.,]/);
         // The keep list is the end of a scene brief now, and its closing line
-        // is still the last line there is: the last resort never ran.
-        expect(brief.split("\n").at(-1), `${n} cast, continuing ${continuing}`).toMatch(
-          /^- Everyone and everything the TASK does not name(,| stays exactly as it is in @Video1)/,
-        );
+        // is still the last line there is.
+        expect(brief.split("\n").at(-1), label).toMatch(/^- Everyone and everything the TASK does not name(,| stays exactly as it is in @Video1)/);
+        const lines = brief.split("\n");
+        const bullets = lines.slice(lines.findIndex((l) => l === "KEEP" || l === "KEEP EXACTLY") + 1).filter((l) => l.startsWith("- "));
+        expect(bullets.length, label).toBe(leftInKeep[`${n}-${continuing}`]);
+        // The ticked keeps that survived are the first of them, in order: a
+        // hole in the middle would be a line dropped from somewhere else.
+        const ticks = bullets.filter((l) => l.includes("that must survive"));
+        expect(ticks.map((_, i) => `item ${i + 1} that must survive`).every((what, i) => ticks[i].includes(what)), label).toBe(true);
       }
     }
   });
@@ -880,13 +933,14 @@ describe("your words win over our own keep list — on a take of one piece", () 
         const part = released(casting, { longTake: true, continuing });
         expect(keepBlock(part).heading, `${name} ${continuing}`).toBe("KEEP EXACTLY");
         for (const line of keepBlock(part).bullets) {
-          // A take with NOBODY cast has always held its one place line only
-          // until the words move it (2026-09-19: their words are the whole
-          // task there, and the place is the first thing they change). It
-          // reads as a released line now only because UNLESS lost the word
-          // "below" when the direction moved up — the line itself is the one
-          // every part was always sent.
-          if (casting === null && line.startsWith("- The place it happens in,")) continue;
+          // NO LINE IS SKIPPED ANY MORE (2026-09-23, round 2). A take with
+          // NOBODY cast has always held its one place line only until the
+          // words move it (2026-09-19: their words are the whole task there,
+          // and the place is the first thing they change) — and when UNLESS
+          // lost the word "below" that line became word-for-word identical to
+          // a released one, so this guard had to skip it and stopped checking
+          // it at all. It says "unless the direction says otherwise" now, the
+          // clothes line's own wording, and every bullet is read again.
           expect(line, `${name} ${continuing}`).not.toContain(UNLESS);
         }
         expect(part, `${name} ${continuing}`).toContain("Keep the performance exactly as it is.");
@@ -929,9 +983,15 @@ describe("the TASK says the person is gone", () => {
 
   it("says all three things the paid re-run said, beside the order to replace", () => {
     const brief = scene(eva);
-    expect(brief).toContain("The person @Element1 replaces appears in no frame of @Video1");
+    expect(brief).toContain("The person @Element1 replaces appears in no frame of the video you make");
     expect(brief).toContain("how many people are in the shot, and where each of them stands, never changes");
     expect(brief).toContain("@Element1 stands in their exact position, doing exactly what they did.");
+    // NOT "in no frame of @Video1" (2026-09-23, round 2). @Video1 is the
+    // SOURCE, which the same brief promises to keep: the man being replaced
+    // is in it, plainly, and that is how the engine finds him. The sentence
+    // is about the video that comes back, and now says so.
+    expect(brief).not.toContain("in no frame of @Video1");
+    expect(brief).toContain("Everyone and everything the TASK does not name stays exactly as it is in @Video1.");
     // In the TASK, where the order is — not somewhere after the keep list.
     expect(brief.indexOf("appears in no frame")).toBeLessThan(brief.indexOf("THE CHARACTER"));
     expect(brief.split("\n")[1].startsWith("Replace Person A in @Video1 with @Element1.")).toBe(true);
@@ -947,10 +1007,10 @@ describe("the TASK says the person is gone", () => {
 
   it("counts both sides: a group is places, several characters are people", () => {
     const group = scene({ tag: "B", many: true, characterName: "Anubis", token: "@Image1" });
-    expect(group).toContain("The people @Image1 replaces appear in no frame of @Video1");
+    expect(group).toContain("The people @Image1 replaces appear in no frame of the video you make");
     expect(group).toContain("@Image1 stands in their exact positions, doing exactly what they did.");
     const both = scene([eva, { tag: "B", characterName: "Anubis", token: "@Image1" }]);
-    expect(both).toContain("The people @Element1 and @Image1 replace appear in no frame of @Video1");
+    expect(both).toContain("The people @Element1 and @Image1 replace appear in no frame of the video you make");
     expect(both).toContain("@Element1 and @Image1 stand in their exact positions, doing exactly what they did.");
   });
 
@@ -965,13 +1025,47 @@ describe("the TASK says the person is gone", () => {
     }
   });
 
+  it("stops claiming the head count when the same take also puts a character in", () => {
+    // ONE ORDER, NOT TWO CONTRADICTING ONES (2026-09-23, round 2). "Put
+    // @Image1 into @Video1" and "how many people are in the shot never
+    // changes" are adjacent sentences in the same TASK, and one of them has
+    // to be wrong. The replacement is still said outright — that is the
+    // measured half; what narrows is the promise about everyone else.
+    const placed = scene([eva, { tag: null, characterName: "Anubis", token: "@Image1" }], { direction: "Anubis walks in from the left and stands beside her." });
+    expect(placed).toContain("Put @Image1 into @Video1 as the direction below says.");
+    expect(placed).toContain("The person @Element1 replaces appears in no frame of the video you make");
+    expect(placed).not.toContain("how many people are in the shot, and where each of them stands, never changes");
+    expect(placed).toContain("nobody the TASK does not name is added or taken away, and everyone else stands exactly where they stood");
+    // Two characters, both replacing somebody: nothing is added, so the
+    // head-count sentence is true and is said.
+    const swapsOnly = scene([eva, { tag: "B", characterName: "Anubis", token: "@Image1" }], { direction: "Anubis walks in from the left." });
+    expect(swapsOnly).toContain("how many people are in the shot, and where each of them stands, never changes");
+  });
+
+  it("holds the head count only until the person's own words change it, like every other promise of ours", () => {
+    // YOUR WORDS WIN (2026-09-22) reaches this line too: on a released take
+    // every keep bullet and the TASK's own "Keep the performance exactly as
+    // it is" carry the condition, and a direction that walks somebody out of
+    // frame is a head-count change they asked for. Only this clause is
+    // released — being replaced is the order itself, not a promise.
+    const released = scene(eva, { direction: "The man on the right walks out of frame." });
+    expect(released).toContain("how many people are in the shot, and where each of them stands, never changes, unless the direction changes it;");
+    expect(released).toContain("The person @Element1 replaces appears in no frame of the video you make");
+    // Not on a take with no words of theirs, and not in a long take's parts,
+    // where nothing is released (composeUncut).
+    expect(scene(eva)).toContain("never changes; and @Element1 stands");
+    expect(scene(eva, { direction: "The man on the right walks out of frame.", continuing: true })).toContain("never changes; and @Element1 stands");
+  });
+
   it("gives up its last clause before the brief gives up anything of the person's own", () => {
     // Under pressure our own wording goes short (composeRecastBrief's second
-    // step) and the negative goes with it: the clause that drops is the one
-    // "where each of them stands never changes" already says.
+    // step) and the negative goes with it: where the character stands is
+    // already said by the clause above, and what they are doing is said twice
+    // more — by the TASK's own "Keep the performance exactly as it is" and by
+    // the first line of the KEEP block.
     const tight = scene(eva, { direction: directionOf(600), keeps: 6, continuing: true });
     expect(Array.from(tight).length).toBeLessThanOrEqual(RECAST_ENGINES["kling-edit"].promptMax);
-    expect(tight).toContain("The person @Element1 replaces appears in no frame of @Video1");
+    expect(tight).toContain("The person @Element1 replaces appears in no frame of the video you make");
     expect(tight).toContain("how many people are in the shot, and where each of them stands, never changes.");
     expect(tight).not.toContain("stands in their exact position, doing exactly what they did");
     expect(tight).toContain(directionOf(600));
@@ -1008,18 +1102,37 @@ describe("the keep list's last line", () => {
 // A tag is ours, not the picture's: "Person A" means nothing to a model
 // looking at a courtyard with forty schoolboys in it. The read lane gives the
 // people a take REPLACES a plain-words mark, and the TASK leads with it.
+//
+// THE MARK IS A PHRASE AND THE NOUN IS OURS (2026-09-23, round 2). Every mark
+// below goes through recastMark first, which is what the server and the door
+// both compose with: a fixture the reader could never produce proves nothing,
+// and the first round's fixtures — "the man in the white shirt" — were exactly
+// that. The composed sentence is read here in full, because the fault being
+// fixed was a sentence that parsed as an order to replace a garment.
 describe("the mark for the person being replaced", () => {
   const marked = (tag: string, mark: string): RecastRead => ({
     ...busy,
-    people: busy.people.map((p) => (p.tag === tag ? { ...p, mark } : p)),
+    people: busy.people.map((p) => (p.tag === tag ? { ...p, mark: recastMark(mark) } : p)),
   });
   const scene = (read: RecastRead, casting: Parameters<typeof composeRecastBrief>[0]["casting"]) =>
     composeRecastBrief({ job: "scene", engine: "kling-edit", read, window: { start: 0, end: 15 }, casting, keeps: [], direction: "Dress her as Cleopatra.", images: [] });
 
   it("leads the TASK, with the tag beside it so THE SOURCE still ties to the same person", () => {
-    const brief = scene(marked("A", "the man in the white shirt"), { tag: "A", characterName: "Eva", token: "@Element1" });
-    expect(brief).toContain("Replace the man in the white shirt (Person A) in @Video1 with @Element1.");
+    const brief = scene(marked("A", "in the white shirt at the front"), { tag: "A", characterName: "Eva", token: "@Element1" });
+    expect(brief).toContain("Replace the person in the white shirt at the front (Person A) in @Video1 with @Element1.");
     expect(brief).toContain("Person A: centre, facing camera");
+  });
+
+  it("names a PERSON however the phrase reads — the head noun is never the read's to lose", () => {
+    // The first round composed "Replace white shirt, centre front (Person A)"
+    // — an order, to an engine that edits garments for a living, to replace a
+    // garment. A mark that ignores the shape asked for now makes a clumsy
+    // sentence and nothing worse: it still says who is going out.
+    for (const mark of ["in the white shirt at the front", "at the far left", "white shirt front row"]) {
+      const brief = scene(marked("A", mark), { tag: "A", characterName: "Eva", token: "@Element1" });
+      expect(brief, mark).toContain(`Replace the person ${recastMark(mark)} (Person A) in @Video1`);
+      expect(brief, mark).not.toMatch(/^Replace (white|navy|dark|in|at) /m);
+    }
   });
 
   it("says the tag alone when the read gave no mark, or gave no read at all", () => {
@@ -1030,42 +1143,52 @@ describe("the mark for the person being replaced", () => {
   });
 
   it("marks a group as a group, every one of them", () => {
-    const brief = scene(marked("B", "the schoolboys in the rows behind him"), { tag: "B", many: true, characterName: "Anubis", token: "@Image1" });
-    expect(brief).toContain("Replace every single one of the schoolboys in the rows behind him (Person B’s group) in @Video1 with @Image1.");
+    // The same phrase has to finish "every single person …" too, which is why
+    // the read is asked for it in both sentences: "every single one of navy
+    // blazers, back rows" was the first round's group form.
+    const brief = scene(marked("B", "in the navy blazers in the back rows"), { tag: "B", many: true, characterName: "Anubis", token: "@Image1" });
+    expect(brief).toContain("Replace every single person in the navy blazers in the back rows (Person B’s group) in @Video1 with @Image1.");
   });
 
   it("gives every replaced character their own, in a take of several", () => {
     const read: RecastRead = {
       ...busy,
-      people: busy.people.map((p) => (p.tag === "A" ? { ...p, mark: "the man in the white shirt" } : p.tag === "B" ? { ...p, mark: "the students in the rows" } : p)),
+      people: busy.people.map((p) =>
+        p.tag === "A" ? { ...p, mark: recastMark("in the white shirt at the front") } : p.tag === "B" ? { ...p, mark: recastMark("in the rows behind him") } : p,
+      ),
     };
     const brief = scene(read, [
       { tag: "A", characterName: "Eva", token: "@Element1" },
       { tag: "B", many: true, characterName: "Anubis", token: "@Image1" },
     ]);
     expect(brief).toContain(
-      "Replace the man in the white shirt (Person A) in @Video1 with @Element1, and every single one of the students in the rows (Person B’s group) with @Image1.",
+      "Replace the person in the white shirt at the front (Person A) in @Video1 with @Element1, and every single person in the rows behind him (Person B’s group) with @Image1.",
     );
+    // The list's own separator is a comma, so a mark never carries one
+    // (recastMark): two swaps compose two items, not four.
+    expect(brief.split("\n")[1].split(", and ")).toHaveLength(2);
   });
 
   it("is used for nobody else — not for a character only put into the clip, and not for the people who stay", () => {
     // Person C stays in the shot. Nothing about how they look travels onward:
-    // that is the read's rule (recast-read.ts) and this is where it would leak.
-    const brief = scene(marked("C", "the girl with the red bag"), { tag: "A", characterName: "Eva", token: "@Element1" });
-    expect(brief).not.toContain("the girl with the red bag");
+    // that is this file's own narrowing (markFor asks only about the tags
+    // being replaced), and this is where it would leak.
+    const brief = scene(marked("C", "with the red bag at the edge"), { tag: "A", characterName: "Eva", token: "@Element1" });
+    expect(brief).not.toContain("with the red bag");
     expect(brief).toContain("Person C: right edge");
-    const placed = scene(marked("A", "the man in the white shirt"), [
+    const placed = scene(marked("A", "in the white shirt at the front"), [
       { tag: "A", characterName: "Eva", token: "@Element1" },
       { tag: null, characterName: "Anubis", token: "@Image1" },
     ]);
     expect(placed).toContain("Put @Image1 into @Video1 as the direction below says.");
-    expect(placed.match(/the man in the white shirt/g)).toHaveLength(1);
+    expect(placed.match(/in the white shirt at the front/g)).toHaveLength(1);
   });
 
   it("is bounded like the read's own fields, so the door and the server compose the same words", () => {
-    // The read makes a round trip through a browser between the two calls.
+    // The read makes a round trip through a browser between the two calls,
+    // and both ends cut to the read's own bound — there is only one.
     const brief = scene(marked("A", "y".repeat(RECAST_MARK_MAX_CHARS + 40)), { tag: "A", characterName: "Eva", token: "@Element1" });
-    expect(brief).toContain(`Replace ${"y".repeat(RECAST_MARK_MAX_CHARS)} (Person A) in @Video1`);
+    expect(brief).toContain(`Replace the person ${"y".repeat(RECAST_MARK_MAX_CHARS)} (Person A) in @Video1`);
   });
 });
 

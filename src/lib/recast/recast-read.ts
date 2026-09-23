@@ -32,15 +32,42 @@
 // direction buried at the end of a long brief is ignored. But a brief that
 // cannot point at anyone is guessing, and neither of those fixes that.
 //
-// So one MARK per person is now allowed, and nothing else moved. It is at
-// most six words, it may say WHAT THEY WEAR (a garment and its colour) and
-// WHERE THEY STAND, and it is hard-capped here rather than trusted to the
-// model (recastMark). Face, body, build, age, skin, ethnicity, hair and any
-// name stay banned, said in the instructions in as many words. The reader
-// writes a mark for every person line; the brief may say it only for
-// someone a character has actually been cast over (recast-brief.ts), which
-// is the one place it buys anything. And it goes no further than the take:
-// a stored recipe never carries it (store.ts).
+// So one MARK per person is now allowed, and nothing else moved. It may say
+// WHAT THEY WEAR (a garment and its colour) and WHERE THEY STAND, and it is
+// hard-capped here rather than trusted to the model (recastMark). Face,
+// body, build, age, skin, ethnicity, hair and any name stay banned, said in
+// the instructions in as many words.
+//
+// IT IS A PHRASE THAT COMPLETES "the person …" (round 2, the same day). The
+// first shape was a bare handle — "white shirt, front of the row" — and the
+// brief built "Replace white shirt, front of the row (Person A)" out of it,
+// which orders a garment replaced by an engine that edits garments for a
+// living. The group form was worse. So the reader is asked for the phrase
+// and the brief supplies the noun: "Replace the person in the white shirt at
+// the front (Person A)", "Replace every single person in the navy blazers in
+// the back rows (Person B’s group)". Eight words, not six: the phrase pays
+// for its own preposition and articles, and six cut the very examples above.
+//
+// The reader writes a mark only where something really does tell someone
+// apart, and leaves it out otherwise — forty boys in one blazer have none to
+// give. The brief says it only for someone a character has actually been
+// cast over (recast-brief.ts's markFor), which is the one place it buys
+// anything.
+//
+// WHAT IS ENFORCED, AND WHAT IS ONLY ASKED. The length and the commas are
+// enforced here, on the way in and again on the way back through the door.
+// What the mark SAYS is asked of the model and never checked: eight words
+// about a face would arrive intact, so everything downstream treats a mark
+// as untrusted text, exactly as it treats `where` and `does`.
+//
+// WHERE IT ENDS UP. In the brief for whoever is replaced — and the composed
+// brief is stored on the take's row (store.ts's `brief`) and logged with the
+// take, so those words sit on that row for as long as the row does. What the
+// recipe has no field for is an account of the PEOPLE: no mark arrives as a
+// field of its own, and none is kept for anyone nobody was cast over. Two
+// things are owed: the door shows `where` and not the mark, so it is the one
+// read field a person cannot correct or delete before it is sent, and
+// nothing on the door tells them it is there.
 //
 // Relative imports only, and client-safe (the browser samples the frames).
 // Tested with a fake fetch.
@@ -61,12 +88,15 @@ export const RECAST_KEEP_KINDS = ["text", "logo", "accessory", "object"] as cons
 export const RECAST_CONFIDENCE = ["low", "medium", "high"] as const;
 
 /**
- * The mark's bound (RecastPerson.mark). Six words is the whole point: long
- * enough for a garment, its colour and a place in the frame, too short to
- * become a description of a person. The character bound catches the answer
- * that spends all six words on one of them.
+ * The mark's bound (RecastPerson.mark). The shortness is the whole point:
+ * long enough for a garment, its colour and a place in the frame, too short
+ * to become a description of a person. Eight words rather than the six it
+ * was written with, because the mark now completes "the person …" and pays
+ * for a preposition and two articles out of its own budget: "in the white
+ * shirt at the front" is seven. The character bound catches the answer that
+ * spends every word on something enormous.
  */
-export const RECAST_MARK_MAX_WORDS = 6;
+export const RECAST_MARK_MAX_WORDS = 8;
 export const RECAST_MARK_MAX_CHARS = 60;
 
 export type RecastPerson = {
@@ -78,10 +108,11 @@ export type RecastPerson = {
   does: string;
   /**
    * The one thing that tells this person apart from the others at a glance
-   * — a garment and its colour, and where they stand: "white shirt, front
-   * of the row". Six words at most, and never a face, a body, a build, an
-   * age, skin, ethnicity, hair or a name (the header says why it exists and
-   * why it stops there).
+   * — a garment and its colour, and where they stand — written as a phrase
+   * that completes "the person …": "in the white shirt at the front". Eight
+   * words at most, and never a face, a body, a build, an age, skin,
+   * ethnicity, hair or a name (the header says why it exists, why it stops
+   * there, and that the door does not yet show it).
    *
    * Absent when the reader offered nothing usable, which is the honest
    * answer for a clip where everyone is dressed the same.
@@ -142,7 +173,7 @@ Return ONLY a JSON object:
      "does": string,     // WHAT they do: "turns and crosses her arms", "walks past and exits right"
      "lead": boolean,    // true for the one the clip is about; exactly one true
      "many": boolean,    // true when this line is SEVERAL people (a crowd, a row, a class), not one
-     "mark": string }    // OPTIONAL, at most ${RECAST_MARK_MAX_WORDS} words: what tells this one apart at a glance — see below
+     "mark": string }    // OPTIONAL, at most ${RECAST_MARK_MAX_WORDS} words, finishing "the person ...": what tells this one apart at a glance — see below
  ],
  "keeps": [              // things that must survive a replacement, [] if none
    { "what": string,     // "a wristwatch on the left wrist", "the caption 'BEFORE' bottom centre"
@@ -155,11 +186,9 @@ Return ONLY a JSON object:
  "confidence": "low"|"medium"|"high"
 }
 
-RULES ABOUT PEOPLE. Never describe anyone's face, body, build, age, skin, ethnicity, or hair, and never give anyone a name, not even one written on screen or spoken. In "where" and "does", refer to people only by where they are in the frame and what they do: "the person on the left who raises a hand" is right, and anything about how they look is wrong.
+RULES ABOUT PEOPLE. Never describe anyone's face, body, build, age, skin, ethnicity, or hair. In "where" and "does", and in "mark", never give anyone a name either, not even one written on screen or spoken, and refer to people only by where they are in the frame and what they do: "the person on the left who raises a hand" is right, and anything about how they look is wrong. Outside "mark", clothing may appear only in "keeps", as a named object that must survive — a watch, a badge — and never as a description of the person.
 
-"mark" is the one exception, and it is narrow. It exists so that ONE person can be pointed at when several are in shot, and it may say only two things: what they are WEARING — a garment and its colour — and WHERE they stand. At most ${RECAST_MARK_MAX_WORDS} words. "white shirt, front of the row" is right. "dark blazer, far left" is right. "tall older man, short hair" is wrong, and so is "Mr Ahmed". Leave "mark" out entirely when nothing they wear or where they stand tells them apart from the others — an answer of "one of forty in the same blazer" helps nobody.
-
-Clothing may appear in "keeps" ONLY as a named object that must survive, like a watch or a badge, never as a description of the person.
+"mark" is the one exception, and it is narrow. It exists so that ONE person can be pointed at when several are in shot, and it may say only two things: what they are WEARING — a garment and its colour — and WHERE they stand. Write it as a phrase that finishes the sentence "Replace the person ...", and, for a line that is several people, "Replace every single person ..." as well. "in the white shirt at the front" is right. "at the far left" is right. "in the navy blazers in the back rows" is right for a group. At most ${RECAST_MARK_MAX_WORDS} words, and no commas. "tall older man, short hair" is wrong, and so is "Mr Ahmed". Leave "mark" out entirely when nothing they wear or where they stand tells them apart from the others — an answer of "one of forty in the same blazer" helps nobody.
 
 Judge motion from the differences between frames. A cut is where two adjacent frames cannot be one continuous camera path: the composition, the distance and the subject's side all change at once. Expect no cuts in phone footage and several in edited footage.`;
 }
@@ -171,18 +200,29 @@ const pick =<T extends string>(v: unknown, list: readonly T[], fallback: T): T =
 const TAGS = ["A", "B", "C", "D"];
 
 /**
- * A mark, cut to its bound — six words, then sixty characters — or "" when
- * there is nothing there. The words go first so the cut never leaves half a
- * word standing, and the trailing comma of a phrase that lost its tail goes
- * too, because "white shirt," reads as a sentence that was interrupted.
+ * A mark, cut to its bound — eight words, then sixty characters — or "" when
+ * there is nothing there. The words are cut first, so the bound normally
+ * lands between words rather than inside one; a SINGLE word longer than the
+ * whole bound has nowhere to break and is cut where it must be.
  *
- * The cap is enforced HERE and not asked of the model, for the reason every
- * other bound in this file is: the read makes a round trip through a
- * browser, so the answer that reaches the brief is whatever came back, not
- * whatever was requested (reboundRecastRead).
+ * Commas go. The mark lands in the TASK's own list of swaps ("Replace the
+ * person in the white shirt (Person A) in @Video1 with @Element1, and the
+ * person at the far left (Person C) with @Element2"), where a comma inside
+ * one mark reads as one more thing to replace. The phrase the instructions
+ * ask for needs none, so any that come back are simply dropped rather than
+ * argued with.
+ *
+ * The bound is enforced HERE and not asked of the model, for the reason
+ * every other bound in this file is: the read makes a round trip through a
+ * browser, so what reaches the brief is whatever came back, not whatever was
+ * requested (reboundRecastRead). Only the SHAPE is enforced that way — how
+ * long it is, and what punctuation it carries. What it SAYS is asked in the
+ * instructions and nothing here checks it, so a mark is untrusted text all
+ * the way to the engine, like `where` and `does` before it.
  */
 export function recastMark(value: unknown): string {
   const words = cleanText(value, RECAST_MARK_MAX_CHARS * 4)
+    .replace(/[,;]+/g, " ")
     .split(" ")
     .filter(Boolean)
     .slice(0, RECAST_MARK_MAX_WORDS);

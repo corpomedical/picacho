@@ -23,7 +23,7 @@ const full = {
   motion: "She turns from the window and crosses her arms.",
   world: "A white studio, flat daylight.",
   people: [
-    { tag: "Z", where: "centre, facing camera", does: "turns and crosses her arms", lead: false, many: false, mark: "white shirt, centre of the row" },
+    { tag: "Z", where: "centre, facing camera", does: "turns and crosses her arms", lead: false, many: false, mark: "in the white shirt at the centre" },
     { tag: "Z", where: "behind, walks in at 0:04", does: "walks past and exits right", lead: true, many: false },
   ],
   keeps: [
@@ -52,6 +52,15 @@ describe("the instructions", () => {
     expect(text).toMatch(/never give anyone a name/);
     // Position and action are what it may say.
     expect(text).toContain("where they are in the frame and what they do");
+    // THE BAN IS SCOPED, AND THE MARK IS ITS ONE EXCEPTION (2026-09-23,
+    // round 2). The absolute sentence — "clothing may appear in keeps ONLY …
+    // never as a description of the person" — stood AFTER the paragraph that
+    // asks for a mark, and a mark is clothing used to tell a person apart:
+    // the model read the exception and then read it cancelled. It says
+    // "outside mark" now, and it comes first, so the exception is the last
+    // word on it.
+    expect(text).toContain('Outside "mark", clothing may appear only in "keeps"');
+    expect(text.indexOf('Outside "mark"')).toBeLessThan(text.indexOf('"mark" is the one exception'));
   });
 
   it("allow the mark, narrowly, and say what it may not be", () => {
@@ -61,10 +70,21 @@ describe("the instructions", () => {
     expect(text).toContain("WEARING");
     expect(text).toContain("WHERE they stand");
     expect(text).toContain(`At most ${RECAST_MARK_MAX_WORDS} words`);
+    // THE SHAPE, not just the content (round 2): a phrase that finishes the
+    // brief's own sentence, for one person and for a group. Asked for as the
+    // sentence it lands in, because "white shirt, front of the row" answers
+    // the old question perfectly and composes an order to replace a shirt.
+    expect(text).toContain('a phrase that finishes the sentence "Replace the person ..."');
+    expect(text).toContain('"Replace every single person ..."');
     // Shown right and wrong, because a rule with no example is a rule the
-    // reader interprets: the wrong ones are a body read and a name.
-    expect(text).toContain('"white shirt, front of the row" is right');
+    // reader interprets: the right ones complete the sentence, one of them
+    // for a group; the wrong ones are a body read and a name.
+    expect(text).toContain('"in the white shirt at the front" is right');
+    expect(text).toContain('"in the navy blazers in the back rows" is right for a group');
     expect(text).toContain('"tall older man, short hair" is wrong');
+    // The comma is asked for as well as enforced (recastMark), because the
+    // TASK's list of swaps is comma-separated.
+    expect(text).toContain("and no commas");
     // And it may be left out, which is the honest answer for a uniform crowd.
     expect(text).toMatch(/Leave "mark" out entirely/);
   });
@@ -86,7 +106,7 @@ describe("parsing the answer", () => {
     expect(read.people[1].lead).toBe(true);
     expect(read.keeps).toHaveLength(2);
     // The mark rides the person it belongs to, and only where there was one.
-    expect(read.people[0].mark).toBe("white shirt, centre of the row");
+    expect(read.people[0].mark).toBe("in the white shirt at the centre");
     expect(read.people[1].mark).toBeUndefined();
     // Cuts outside the clip are dropped and the rest sorted.
     expect(read.cuts).toEqual([4.3]);
@@ -128,29 +148,36 @@ describe("parsing the answer", () => {
     expect(reboundRecastRead({ motion: "" }, 10)).toBeNull();
   });
 
-  it("cuts a mark to six words on the way in AND on the way back", () => {
+  it("cuts a mark to eight words on the way in AND on the way back", () => {
     const long = "a tall older man in a dark blue blazer standing at the far left of the back row";
     const person = { where: "left", does: "waves", lead: true, many: false, mark: long };
     const parsed = parseRecastRead(JSON.stringify({ ...full, people: [person] }), 10)!;
-    // Six words, and nothing the model wrote past them.
+    // Eight words, and nothing the model wrote past them. (Eight, not six,
+    // since the mark started completing "the person …" and had to pay for
+    // its own preposition and articles — recast-read.ts's bound.)
     expect(parsed.people[0].mark!.split(" ")).toHaveLength(RECAST_MARK_MAX_WORDS);
-    expect(parsed.people[0].mark).toBe("a tall older man in a");
+    expect(parsed.people[0].mark).toBe("a tall older man in a dark blue");
     // The door can edit the read, so the bound is met again on the way back
     // — a forged one is cut exactly as the model's own was.
     const forged = reboundRecastRead({ ...full, people: [{ ...person, mark: long }] }, 10)!;
-    expect(forged.people[0].mark).toBe("a tall older man in a");
+    expect(forged.people[0].mark).toBe("a tall older man in a dark blue");
   });
 });
 
 describe("the mark's bound", () => {
-  it("keeps six words, and sixty characters however few words they are", () => {
-    expect(recastMark("white shirt, front of the row")).toBe("white shirt, front of the row");
-    expect(recastMark("  white   shirt,\n front row  ")).toBe("white shirt, front row");
-    // A phrase that lost its tail does not keep the comma that pointed at it.
-    expect(recastMark("white shirt, centre of the row, second in")).toBe("white shirt, centre of the row");
-    // Six words that are all enormous still meet the character bound, and
+  it("keeps eight words, and sixty characters however few words they are", () => {
+    expect(recastMark("in the white shirt at the front")).toBe("in the white shirt at the front");
+    expect(recastMark("  in the   white shirt,\n front row  ")).toBe("in the white shirt front row");
+    // THE COMMAS GO (2026-09-23, round 2). The mark lands in the TASK's own
+    // comma-separated list of swaps, where a comma inside one mark reads as
+    // one more thing to replace; the phrase asked for needs none.
+    expect(recastMark("white shirt, front of the row")).toBe("white shirt front of the row");
+    expect(recastMark("in the white shirt; at the front")).toBe("in the white shirt at the front");
+    // Words past the bound go, and the cut lands between words.
+    expect(recastMark("in the white shirt at the front of the row")).toBe("in the white shirt at the front of");
+    // Eight words that are all enormous still meet the character bound, and
     // are cut by whole words rather than left with half of one.
-    const huge = recastMark(Array.from({ length: 6 }, () => "x".repeat(20)).join(" "));
+    const huge = recastMark(Array.from({ length: RECAST_MARK_MAX_WORDS }, () => "x".repeat(20)).join(" "));
     expect(Array.from(huge).length).toBeLessThanOrEqual(RECAST_MARK_MAX_CHARS);
     expect(huge.split(" ").every((w) => w === "x".repeat(20))).toBe(true);
     // One word longer than the whole bound is cut where it must be.
@@ -162,12 +189,19 @@ describe("the mark's bound", () => {
   });
 });
 
-describe("the mark goes no further than the take", () => {
-  // It is written so a brief can point at one person WHILE the take is made
-  // (recast-read.ts's header). A recipe is what this product keeps about a
-  // take afterwards, and it holds no account of anyone in the footage: a
-  // tag, never a line about them. Pinned here because the leak would be
-  // silent — a `people` key copied into the row would simply work.
+describe("the mark has no field of its own in a recipe", () => {
+  // A recipe keeps no ACCOUNT OF THE PEOPLE in someone's footage: a tag for
+  // who was replaced, never a line about anybody. So no mark arrives as a
+  // field, and none is kept for anyone nobody was cast over. Pinned here
+  // because that leak would be silent — a `people` key copied into the row
+  // would simply work.
+  //
+  // What a recipe DOES keep is the composed brief, and the brief names the
+  // person the take replaces in the words the read gave (recast-brief.ts's
+  // markFor). Those six or eight words sit on the row for as long as the row
+  // does, and in the pipeline log with it. That is stated in recast-read.ts's
+  // header and pinned below, so that nobody reads the first paragraph as a
+  // promise the product does not make.
   const row = (over: Partial<Parameters<typeof recastRow>[0]> = {}) =>
     recastRow({
       source: { kind: "upload", clipId: "c1", container: "mp4" },
@@ -184,7 +218,7 @@ describe("the mark goes no further than the take", () => {
       ...over,
     });
 
-  it("never lands in a stored recipe, however it is offered", () => {
+  it("never lands in a stored recipe as a field, however it is offered", () => {
     const read = parseRecastRead(JSON.stringify(full), 10)!;
     const stored = row();
     expect(Object.keys(stored)).not.toContain("people");
@@ -195,6 +229,14 @@ describe("the mark goes no further than the take", () => {
     expect(back).not.toBeNull();
     expect(Object.keys(back)).not.toContain("people");
     expect(JSON.stringify(back)).not.toContain("white shirt");
+  });
+
+  it("but the brief that carries it is kept whole, which is where it does persist", () => {
+    // The honest half. If this is ever scrubbed before the row is written,
+    // this is the assertion that says so out loud.
+    const stored = row({ brief: "TASK\nReplace the person in the white shirt at the front (Person A) in @Video1 with @Element1." });
+    expect(stored.brief).toContain("the person in the white shirt at the front");
+    expect(readRecastRecipe(stored)!.brief).toContain("the person in the white shirt at the front");
   });
 });
 
@@ -264,8 +306,8 @@ describe("the reader call", () => {
       motion: "A man at the centre of a courtyard bows, and the boys around him follow.",
       world: "A school courtyard in flat noon light.",
       people: [
-        { tag: "A", where: "centre, back to camera", does: "bows at the end", lead: true, many: false, mark: "white shirt among the dark blazers" },
-        { tag: "B", where: "all around him", does: "stand and follow the bow", lead: false, many: true, mark: "dark blazers and striped ties" },
+        { tag: "A", where: "centre, back to camera", does: "bows at the end", lead: true, many: false, mark: "in the white shirt, among the dark blazers" },
+        { tag: "B", where: "all around him", does: "stand and follow the bow", lead: false, many: true, mark: "in the dark blazers and striped ties" },
       ],
       keeps: [{ what: "the school crest on the blazers", kind: "logo" }],
       cuts: [],
@@ -287,8 +329,11 @@ describe("the reader call", () => {
       else process.env.OPENAI_API_KEY = key;
     }
     const read = parseRecastRead(back!, 15)!;
-    expect(read.people[0].mark).toBe("white shirt among the dark blazers");
-    expect(read.people[1].mark).toBe("dark blazers and striped ties");
+    // The comma the model wrote anyway is gone, and what is left finishes
+    // the brief's own sentence: "Replace the person in the white shirt among
+    // the dark blazers (Person A) …".
+    expect(read.people[0].mark).toBe("in the white shirt among the dark blazers");
+    expect(read.people[1].mark).toBe("in the dark blazers and striped ties");
     // Everything else the read says about him is unchanged by the mark.
     expect(read.people[0].where).toBe("centre, back to camera");
     expect(read.people[1].many).toBe(true);
