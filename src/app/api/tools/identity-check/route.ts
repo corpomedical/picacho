@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { rateLimited } from "@/lib/rate-limit";
+import { LOCALES, DEFAULT_LOCALE, isLocale } from "@/lib/i18n/locales";
 
 // The free public identity checker (2026-08-30).
 //
@@ -85,8 +86,14 @@ export async function POST(request: NextRequest) {
   const candidate = form?.get("candidate");
 
   if (!(reference instanceof File) || !(candidate instanceof File)) {
-    return NextResponse.json({ error: "Upload two images." }, { status: 400 });
+    return NextResponse.json({ error: "Upload two images.", code: "two-images" }, { status: 400 });
   }
+
+  // The page is translated (2026-09-23), so every answer carries a `code` the
+  // page turns into a sentence in the reader's language. The English text
+  // stays exactly as it was for anything calling this route directly.
+  const asked = form?.get("locale");
+  const locale = typeof asked === "string" && isLocale(asked) ? asked : DEFAULT_LOCALE;
 
   const [referenceUrl, candidateUrl] = await Promise.all([
     toDataUrl(reference),
@@ -98,7 +105,10 @@ export async function POST(request: NextRequest) {
       // request bodies over ~4.5MB before this route runs, so "under 4MB
       // each" was a promise the pair could not keep. The web tool downscales
       // client-side; this copy is for direct API callers.
-      { error: "Both files must be a JPEG, PNG or WebP — under 4MB each and about 4MB combined." },
+      {
+        error: "Both files must be a JPEG, PNG or WebP — under 4MB each and about 4MB combined.",
+        code: "file-type",
+      },
       { status: 400 },
     );
   }
@@ -107,13 +117,13 @@ export async function POST(request: NextRequest) {
   // allowance, and BEFORE the paid vision call so a script cannot.
   if (await rateLimited(ipKey(request), "identity-check", WINDOW_SECONDS, MAX_PER_WINDOW)) {
     return NextResponse.json(
-      { error: "That's a lot of checks. Try again in an hour." },
+      { error: "That's a lot of checks. Try again in an hour.", code: "too-many" },
       { status: 429 },
     );
   }
   if (await rateLimited(GLOBAL_KEY, "identity-check-global", GLOBAL_WINDOW_SECONDS, GLOBAL_MAX_PER_DAY)) {
     return NextResponse.json(
-      { error: "The checker is busy today. Try again tomorrow." },
+      { error: "The checker is busy today. Try again tomorrow.", code: "busy" },
       { status: 429 },
     );
   }
@@ -121,10 +131,17 @@ export async function POST(request: NextRequest) {
   // The same scorer the product runs on every image it generates — not a
   // demo version of it. Whatever number this returns is the number a paying
   // customer would see.
-  const verdict = await scoreIdentityMatch(candidateUrl, referenceUrl, "");
+  // The score is a number in any language; the one sentence beside it is not,
+  // and an English note under a Spanish heading is exactly the seam that makes
+  // a translated page feel machine-made. The product's own scoring is
+  // untouched: without this argument the prompt is the same as it has always
+  // been, so stored scores keep their meaning.
+  const noteLanguage =
+    locale === DEFAULT_LOCALE ? undefined : LOCALES.find((l) => l.code === locale)?.label;
+  const verdict = await scoreIdentityMatch(candidateUrl, referenceUrl, "", noteLanguage);
   if (!verdict) {
     return NextResponse.json(
-      { error: "Couldn't read one of those images. Try a clearer photo." },
+      { error: "Couldn't read one of those images. Try a clearer photo.", code: "unreadable" },
       { status: 502 },
     );
   }

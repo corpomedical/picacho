@@ -40,6 +40,10 @@ export const LOCALIZED_PATHS = [
   "/compare/renoise",
   "/compare/imagineart",
   "/compare/higgsfield",
+  // The free checker joined on 2026-09-23: page, tool and error messages are
+  // all in the catalogs now, and the scorer is asked for its one sentence in
+  // the reader's language, so a Spanish URL is a Spanish page end to end.
+  "/tools/identity-check",
 ] as const;
 
 // How middleware tells the Server Component which language this URL is.

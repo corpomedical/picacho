@@ -597,6 +597,53 @@ const it = {
     someDataKept: "Quando elimini un'immagine o un video, il file viene cancellato subito. Una traccia della richiesta (il prompt e le impostazioni) resta nel tuo account perché l'uso mensile resti corretto, e viene cancellata quando elimini l'account.",
     someDataOther: "Per ciò che non puoi eliminare tu — ad esempio un video caricato per migliorarlo — scrivi a {email} e lo elimineremo.",
   },
+  identityCheckPage: {
+    metaTitle: "Verifica della coerenza dei personaggi AI",
+    metaDescription:
+      "Strumento gratuito: carica una foto di riferimento e qualsiasi immagine generata dall'IA e ottieni un punteggio di identità da 0 a 100. Funziona con i risultati di qualsiasi generatore: Kling, Midjourney, Sora, Veo o Picacho. Senza account.",
+    eyebrow: "Strumento gratuito",
+    title: "Ha davvero mantenuto il volto?",
+    intro:
+      "Ogni strumento video con IA promette personaggi coerenti. Nessuno ti dice se ci è riuscito. Carica il volto reale e qualsiasi immagine generata — da qualsiasi generatore — e un modello di visione assegnerà un punteggio a quanto è convincente che siano la stessa persona.",
+    noAccount: "Senza account, senza carta, non conserviamo nulla.",
+    howTitle: "Come leggere il numero",
+    strongTitle: "85 o più: forte somiglianza",
+    strongBody:
+      "Volto, capelli e tratti distintivi si sono mantenuti. Abiti, posa e luce cambiano per definizione e non abbassano il punteggio.",
+    driftTitle: "Da 70 a 84: sta scivolando",
+    driftBody:
+      "Ancora riconoscibile, ma qualcosa si è spostato. È la fascia in cui una serie di inquadrature smette di sembrare una persona e inizia a sembrare due fratelli.",
+    differentTitle: "Sotto 70: un'altra persona",
+    differentBody:
+      "Il generatore ha inventato un volto. Quasi nessuno strumento te lo dice, ed è esattamente per questo che esiste questa pagina.",
+    whyTitle: "Perché l'abbiamo fatto",
+    whyBody:
+      "Picacho è uno studio di personaggi: salvi un personaggio una volta e ogni immagine e video mantiene lo stesso volto. Quello che nessun altro fa è verificarlo: un modello di visione assegna un punteggio a ogni immagine rispetto alla foto d'identità, e il numero è stampato sotto il risultato. Questa pagina è quella verifica, aperta e puntata su ciò che vuoi mettere alla prova, compresi i risultati della concorrenza e i nostri.",
+    ctaSignup: "Crea un personaggio che tiene",
+    ctaGuide: "Come funziona la coerenza del personaggio (in inglese)",
+    realFaceLabel: "Il volto reale",
+    realFaceHint: "Una foto nitida della persona su cui si basa il tuo personaggio",
+    generatedLabel: "Quello generato",
+    generatedHint: "Qualsiasi immagine IA, di Picacho o di chiunque altro",
+    scoreButton: "Assegna il punteggio",
+    scoring: "Calcolo…",
+    identityMatch: "Somiglianza d'identità",
+    bandStrong: "Forte somiglianza",
+    bandDrifting: "Sta scivolando",
+    bandDifferent: "Un'altra persona",
+    footnote:
+      "Valutato dalla stessa verifica di visione che Picacho esegue su ogni immagine che genera. I tuoi file vengono inviati al valutatore e non conservati.",
+    errTwoImages: "Carica due immagini.",
+    errFileType:
+      "Entrambi i file devono essere JPEG, PNG o WebP, sotto i 4 MB ciascuno e circa 4 MB in totale.",
+    errTooMany: "Sono molte verifiche. Riprova tra un'ora.",
+    errBusy: "Oggi lo strumento è molto richiesto. Riprova domani.",
+    errUnreadable: "Non è stato possibile leggere una di quelle immagini. Prova con una foto più nitida.",
+    errTooLarge:
+      "Quelle foto restano troppo grandi anche dopo la compressione. Prova con file più piccoli.",
+    errGeneric: "Qualcosa è andato storto. Riprova.",
+    errNetwork: "Non è stato possibile raggiungere il valutatore. Controlla la connessione e riprova.",
+  },
   legal: {
     lastUpdatedLabel: "Ultimo aggiornamento",
     legalOperatorProvider: "Titolare del servizio",

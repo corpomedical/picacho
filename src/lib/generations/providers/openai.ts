@@ -18,6 +18,11 @@ export async function scoreIdentityMatch(
   resultImageUrl: string,
   identityImageUrl: string,
   traitSummary: string,
+  // The language for the one sentence in `notes`, e.g. "Español" (2026-09-23,
+  // for the translated free checker). Left out everywhere else: the product's
+  // own scoring prompt is unchanged, so a stored score still means what the
+  // scorer version beside it says it means.
+  notesLanguage?: string,
 ): Promise<{ score: number; notes: string; unusable: boolean; faceVisible: boolean; scorerVersion: string } | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
@@ -56,7 +61,8 @@ export async function scoreIdentityMatch(
                     "from the reference, never because less of the face can be seen. " +
                     'Reply with ONLY minified JSON: {"score": <integer 0-100>, "notes": "<one ' +
                     'short sentence about what differs, or an empty string>", "unusable": ' +
-                    '<true|false>, "faceVisible": <true|false>}',
+                    '<true|false>, "faceVisible": <true|false>}' +
+                    (notesLanguage ? ` Write the "notes" sentence in ${notesLanguage}.` : ""),
                 },
                 { type: "image_url", image_url: { url: identityImageUrl } },
                 { type: "image_url", image_url: { url: resultImageUrl } },

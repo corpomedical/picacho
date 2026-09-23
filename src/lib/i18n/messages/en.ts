@@ -653,6 +653,52 @@ const en = {
     someDataKept: "When you delete a picture or video, the file is deleted at once. A record of the request (its prompt and settings) stays with your account so your monthly usage stays correct, and is erased when you delete the account.",
     someDataOther: "Anything you can't delete yourself — a video you uploaded to upscale, for example — email {email} and we'll delete it.",
   },
+  identityCheckPage: {
+    metaTitle: "AI character consistency checker",
+    metaDescription:
+      "Free tool: upload a reference photo and any AI-generated image, and get a 0-100 identity match score. Works on output from any generator — Kling, Midjourney, Sora, Veo or Picacho. No account needed.",
+    eyebrow: "Free tool",
+    title: "Did it actually keep the face?",
+    intro:
+      "Every AI video tool promises character consistency. None of them tell you whether it worked. Upload the real face and any generated image — from any generator — and a vision model will score how convincingly they are the same person.",
+    noAccount: "No account, no credit card, nothing stored.",
+    howTitle: "How to read the number",
+    strongTitle: "85 and above — strong match",
+    strongBody:
+      "Face, hair and distinguishing features carried over. Clothing, pose and lighting are expected to differ and are not counted against it.",
+    driftTitle: "70 to 84 — drifting",
+    driftBody:
+      "Recognisable, but something has moved. This is the range where a series of shots stops looking like one person and starts looking like siblings.",
+    differentTitle: "Below 70 — a different person",
+    differentBody:
+      "The generator invented a face. Most tools will hand you this without comment, which is the entire reason this page exists.",
+    whyTitle: "Why we built this",
+    whyBody:
+      "Picacho is a character studio: you save a character once, and every image and video keeps that same face. The part nobody else does is checking — a vision model scores every image against the identity photo, and the number is printed under the result. This page is that check, unlocked and pointed at whatever you want to test, including our competitors' output and ours.",
+    ctaSignup: "Make a character that holds up",
+    ctaGuide: "How character consistency works",
+    realFaceLabel: "The real face",
+    realFaceHint: "A clear photo of the person your character is based on",
+    generatedLabel: "The generated one",
+    generatedHint: "Any AI render — from Picacho or anywhere else",
+    scoreButton: "Score the match",
+    scoring: "Scoring…",
+    identityMatch: "Identity match",
+    bandStrong: "Strong match",
+    bandDrifting: "Drifting",
+    bandDifferent: "Different person",
+    footnote:
+      "Scored by the same vision check Picacho runs on every image it generates. Your files are sent to the scorer and not stored.",
+    errTwoImages: "Upload two images.",
+    errFileType:
+      "Both files must be a JPEG, PNG or WebP — under 4MB each and about 4MB combined.",
+    errTooMany: "That's a lot of checks. Try again in an hour.",
+    errBusy: "The checker is busy today. Try again tomorrow.",
+    errUnreadable: "Couldn't read one of those images. Try a clearer photo.",
+    errTooLarge: "Those photos are too large even after compression — try smaller files.",
+    errGeneric: "Something went wrong — try again.",
+    errNetwork: "Couldn't reach the scorer. Check your connection and try again.",
+  },
   legal: {
     lastUpdatedLabel: "Last updated",
     legalOperatorProvider: "Service provider",

@@ -598,6 +598,53 @@ const pt = {
     someDataKept: "Quando você exclui uma imagem ou um vídeo, o arquivo é apagado na hora. Um registro do pedido (o prompt e as configurações) fica na sua conta para que o seu uso mensal continue correto, e é apagado quando você exclui a conta.",
     someDataOther: "Para o que você não consegue excluir por conta própria — por exemplo, um vídeo que enviou para melhorar —, escreva para {email} e nós excluímos.",
   },
+  identityCheckPage: {
+    metaTitle: "Verificador de consistência de personagens com IA",
+    metaDescription:
+      "Ferramenta gratuita: envie uma foto de referência e qualquer imagem gerada por IA e receba uma pontuação de identidade de 0 a 100. Funciona com resultados de qualquer gerador: Kling, Midjourney, Sora, Veo ou Picacho. Sem conta.",
+    eyebrow: "Ferramenta gratuita",
+    title: "O rosto realmente se manteve?",
+    intro:
+      "Toda ferramenta de vídeo com IA promete personagens consistentes. Nenhuma diz se conseguiu. Envie o rosto real e qualquer imagem gerada — de qualquer gerador — e um modelo de visão vai pontuar o quanto é convincente que sejam a mesma pessoa.",
+    noAccount: "Sem conta, sem cartão, nada é guardado.",
+    howTitle: "Como ler o número",
+    strongTitle: "85 ou mais: correspondência forte",
+    strongBody:
+      "Rosto, cabelo e traços distintivos se mantiveram. Roupa, pose e luz devem mudar, e isso não reduz a pontuação.",
+    driftTitle: "De 70 a 84: começando a mudar",
+    driftBody:
+      "Ainda é reconhecível, mas algo se deslocou. É a faixa em que uma sequência de planos deixa de parecer uma pessoa e passa a parecer irmãos.",
+    differentTitle: "Abaixo de 70: outra pessoa",
+    differentBody:
+      "O gerador inventou um rosto. Quase nenhuma ferramenta avisa, e é exatamente por isso que esta página existe.",
+    whyTitle: "Por que criamos isto",
+    whyBody:
+      "O Picacho é um estúdio de personagens: você salva um personagem uma vez e todas as imagens e vídeos mantêm o mesmo rosto. O que ninguém mais faz é conferir: um modelo de visão pontua cada imagem em relação à foto de identidade, e o número aparece embaixo do resultado. Esta página é essa conferência, liberada e apontada para o que você quiser testar, incluindo os resultados da concorrência e os nossos.",
+    ctaSignup: "Crie um personagem que se sustenta",
+    ctaGuide: "Como funciona a consistência do personagem (em inglês)",
+    realFaceLabel: "O rosto real",
+    realFaceHint: "Uma foto nítida da pessoa em que seu personagem se baseia",
+    generatedLabel: "O gerado",
+    generatedHint: "Qualquer imagem de IA, do Picacho ou de qualquer lugar",
+    scoreButton: "Pontuar a correspondência",
+    scoring: "Pontuando…",
+    identityMatch: "Correspondência de identidade",
+    bandStrong: "Correspondência forte",
+    bandDrifting: "Começando a mudar",
+    bandDifferent: "Outra pessoa",
+    footnote:
+      "Pontuado pela mesma conferência de visão que o Picacho roda em cada imagem que gera. Seus arquivos são enviados ao pontuador e não são guardados.",
+    errTwoImages: "Envie duas imagens.",
+    errFileType:
+      "Os dois arquivos precisam ser JPEG, PNG ou WebP, com menos de 4 MB cada e cerca de 4 MB no total.",
+    errTooMany: "São muitas verificações. Tente de novo em uma hora.",
+    errBusy: "Hoje o verificador está sobrecarregado. Tente amanhã.",
+    errUnreadable: "Não foi possível ler uma dessas imagens. Tente uma foto mais nítida.",
+    errTooLarge:
+      "Essas fotos continuam grandes demais mesmo depois da compressão. Tente arquivos menores.",
+    errGeneric: "Algo deu errado. Tente de novo.",
+    errNetwork: "Não foi possível falar com o pontuador. Verifique sua conexão e tente de novo.",
+  },
   legal: {
     lastUpdatedLabel: "Última atualização",
     legalOperatorProvider: "Prestador do serviço",

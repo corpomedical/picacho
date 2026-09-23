@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { cn } from "@/lib/cn";
+import { useLocale } from "@/lib/i18n/provider";
 
 // The free identity checker's interactive half (2026-08-30).
 //
@@ -99,6 +100,8 @@ export function IdentityCheckTool() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { locale, t } = useLocale();
+  const c = t.identityCheckPage;
 
   async function run() {
     if (!reference || !candidate || busy) return;
@@ -109,24 +112,39 @@ export function IdentityCheckTool() {
       const body = new FormData();
       body.set("reference", await shrinkForUpload(reference));
       body.set("candidate", await shrinkForUpload(candidate));
+      // So the scorer writes its one sentence in the reader's language; the
+      // route ignores anything that isn't one of our locales.
+      body.set("locale", locale);
       const res = await fetch("/api/tools/identity-check", { method: "POST", body });
       // A platform-level 413 (or any proxy error) has no JSON body — parsing
       // it used to throw into the catch and blame the user's connection.
       if (res.status === 413) {
-        setError("Those photos are too large even after compression — try smaller files.");
+        setError(c.errTooLarge);
         return;
       }
-      let json: { error?: string } & Result;
+      let json: { error?: string; code?: string } & Result;
       try {
         json = await res.json();
       } catch {
-        setError("Something went wrong — try again.");
+        setError(c.errGeneric);
         return;
       }
-      if (!res.ok) setError(json.error ?? "Something went wrong.");
-      else setResult(json as Result);
+      // The route names the reason with a code, so the sentence the visitor
+      // reads comes from the catalog in their language rather than from the
+      // English the API answers direct callers with. An unknown code (an
+      // older deploy answering a newer page) falls back to that English.
+      if (!res.ok) {
+        const byCode: Record<string, string> = {
+          "two-images": c.errTwoImages,
+          "file-type": c.errFileType,
+          "too-many": c.errTooMany,
+          busy: c.errBusy,
+          unreadable: c.errUnreadable,
+        };
+        setError((json.code && byCode[json.code]) || json.error || c.errGeneric);
+      } else setResult(json as Result);
     } catch {
-      setError("Couldn't reach the scorer. Check your connection and try again.");
+      setError(c.errNetwork);
     } finally {
       setBusy(false);
     }
@@ -139,23 +157,23 @@ export function IdentityCheckTool() {
     result === null
       ? null
       : result.score >= 85
-        ? { label: "Strong match", tone: "text-emerald-600", bar: "bg-emerald-500" }
+        ? { label: c.bandStrong, tone: "text-emerald-600", bar: "bg-emerald-500" }
         : result.score >= 70
-          ? { label: "Drifting", tone: "text-amber-600", bar: "bg-amber-500" }
-          : { label: "Different person", tone: "text-red-600", bar: "bg-red-500" };
+          ? { label: c.bandDrifting, tone: "text-amber-600", bar: "bg-amber-500" }
+          : { label: c.bandDifferent, tone: "text-red-600", bar: "bg-red-500" };
 
   return (
     <div className="rounded-[18px] border border-neutral-200 bg-white p-6 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
       <div className="grid gap-5 sm:grid-cols-2">
         <Drop
-          label="The real face"
-          hint="A clear photo of the person your character is based on"
+          label={c.realFaceLabel}
+          hint={c.realFaceHint}
           file={reference}
           onPick={setReference}
         />
         <Drop
-          label="The generated one"
-          hint="Any AI render — from Picacho or anywhere else"
+          label={c.generatedLabel}
+          hint={c.generatedHint}
           file={candidate}
           onPick={setCandidate}
         />
@@ -167,7 +185,7 @@ export function IdentityCheckTool() {
         disabled={!reference || !candidate || busy}
         className="mt-5 w-full rounded-full bg-neutral-900 px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40 dark:bg-white dark:text-neutral-900"
       >
-        {busy ? "Scoring…" : "Score the match"}
+        {busy ? c.scoring : c.scoreButton}
       </button>
 
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
@@ -176,7 +194,7 @@ export function IdentityCheckTool() {
         <div className="mt-6 border-t border-neutral-200 pt-5 dark:border-neutral-800">
           <div className="flex items-baseline justify-between gap-4">
             <span className="text-xs font-semibold uppercase tracking-widest text-neutral-500">
-              Identity match
+              {c.identityMatch}
             </span>
             <span className={cn("text-3xl font-bold tabular-nums", band.tone)}>{result.score}%</span>
           </div>
@@ -192,10 +210,7 @@ export function IdentityCheckTool() {
               {result.notes}
             </p>
           )}
-          <p className="mt-4 text-xs leading-relaxed text-neutral-400">
-            Scored by the same vision check Picacho runs on every image it generates. Your files are
-            sent to the scorer and not stored.
-          </p>
+          <p className="mt-4 text-xs leading-relaxed text-neutral-400">{c.footnote}</p>
         </div>
       )}
     </div>
