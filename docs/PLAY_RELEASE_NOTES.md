@@ -30,12 +30,14 @@ short translation.
 
 ---
 
-## versionCode 18 · versionName 1.18.0
+## versionCode 19 · versionName 1.19.0
 
 **Context.** The portrait lock (2026-09-23, dce6504): the app is locked
 upright, and only a picture or video opened full screen may turn sideways.
 First native code of our own in the shell (OrientationPlugin, registered in
-MainActivity). AAB at ~/Desktop/Picacho-18.aab.
+MainActivity). 18 was uploaded to a draft and removed: the lock made Play
+require a portrait screen; 19 declares it optional. AAB at
+~/Desktop/Picacho-19.aab.
 
 ```
 <en-US>

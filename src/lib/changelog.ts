@@ -27,7 +27,7 @@ export const RELEASES: Release[] = [
     items: [
       "The Android app no longer turns sideways when you turn the phone. Menus, the composer and every page stay upright, the way an app does rather than a website.",
       "An opened picture or video is the exception. With the full-screen viewer open — in Media, the Community feed, a zoomed image or the gallery — turning the phone turns the picture, and closing the viewer puts the app back upright. It follows your phone's own auto-rotate setting.",
-      "This arrives with app version 1.18.0 from Google Play. Until it is installed the app behaves as before.",
+      "This arrives with app version 1.19.0 from Google Play. Until it is installed the app behaves as before.",
     ],
   },
   {

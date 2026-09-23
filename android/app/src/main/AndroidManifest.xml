@@ -151,6 +151,13 @@
         </intent>
     </queries>
 
+    <!-- The portrait lock above makes Play IMPLY android.hardware.screen.portrait
+         as a REQUIRED feature, which hides the app from every device that
+         does not report one (many Chromebooks among them). Measured on the
+         versionCode 18 upload: required features went from 1 to 2. Portrait
+         is how the app prefers to run, not something it needs. -->
+    <uses-feature android:name="android.hardware.screen.portrait" android:required="false" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Android 13+ (API 33) shows no notifications unless the app BOTH
          declares this permission and is granted it at runtime. The runtime
