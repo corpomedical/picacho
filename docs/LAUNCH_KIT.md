@@ -84,7 +84,7 @@ Written 2026-09-20. Every product claim was read from source on 2026-09-20 (sect
 |---|---|---|
 | Sun 20 - Mon 21 Sept | You send the numbers I asked for; feature 15 takes; Bing Webmaster import. I build the cookieless counter (on your yes) and the checker cap (on your number). | sections 3, 12 |
 | Tue 22 Sept | **Last day to create the Product Hunt account** (it must be over a week old on the 29th). Start the daily short clip. | section 3 |
-| Wed 23 - Fri 25 | A short clip a day on Instagram, TikTok and Shorts, from the two vertical files you already have (I'll write that week's captions and shot list separately if you want them). Wed 23: the Seedance findings post on r/aifilmmaking. Any day: the free-checker post on X. | sections 7, 8 |
+| Thu 24 - Wed 30 | A clip a day on Instagram, TikTok and Shorts: **section 14** has the seven days, each with what to record and the caption. The Seedance findings post on r/aifilmmaking. Any day: the free-checker post on X. | sections 7, 8, 14 |
 | Sat 26 - Mon 28 | Rehearse as a stranger. Upload the video to YouTube. Create the Product Hunt draft and schedule it for Tue 29 (it allows scheduling up to a month ahead). Draft the email. | sections 3, 5, 11 |
 | **Tue 29 Sept, 00:01 Pacific** | **Product Hunt.** Post the maker comment at once, then the X post and the LinkedIn post, then the email to your users in the morning. Answer everything. | sections 5, 8, 11 |
 | Wed 30 Sept | Show HN, in your own words, if your account allows it (see the note in section 6). | section 6 |
@@ -754,3 +754,188 @@ These are talking points, not paste-ready text: answer in your own words, from t
 - **Watermarks?** Your own downloads carry none on any plan, free included. Takes you choose to share publicly carry a small Picacho mark.
 - **Where does the company operate?** From Spain, so GDPR applies (the Privacy Policy says so).
 
+
+---
+
+## 14. A week of clips (Thu 24 - Wed 30 Sept)
+
+Seven days, one clip a day, each one thing the product does that nobody has to take on trust. Nothing here needs a camera crew: six of the seven are a screen recording of the live site or the studio, and every number said out loud is one the screen is showing at that moment.
+
+**How to record them.** On a Mac, open Chrome, switch on the device toolbar (iPhone 16 Pro) so the window is already vertical, and record that window with QuickTime (File, New Screen Recording, drag the window's area). On a phone, use the phone's own screen recorder. Aim for 1080 x 1920, 7 to 15 seconds, and cut the first frame where nothing is happening yet.
+
+**Rules that decide whether a clip travels.**
+
+- The hook happens in the first two seconds: the number, the price, the refusal. No logo intro, no "hey guys".
+- Upload the file to each platform separately. A clip with another platform's watermark is pushed down by all of them.
+- The first line of the caption is the only line most people read. Put the claim there, not the link.
+- Put the tagged link in the bio, not the caption: Instagram and TikTok strip the referrer, and the bio link in section 12 carries the tag.
+- Say it is AI where the clip is about a character. Never a "bet you can't tell" reveal.
+- Answer every comment for the first hour. That hour is what the platforms measure.
+- Never say guaranteed, verified, or a number the screen isn't showing. Never ask for votes.
+- One clip a day. Pick a time and keep it; the same hour every day teaches the feed when you post.
+
+### Day 1, Thu 24 Sept: the number nobody else shows
+
+**Record.** picacho.ai/tools/identity-check, on the phone-width window. Drop the real face in the first box, a generated image in the second, tap **Score the match**, and hold on the result until the note under the number has been readable for two seconds. Cut the waiting.
+
+**On screen, as text:** "No account. Any generator." Then, over the result: "0-100, printed."
+
+#### Day 1: Instagram and TikTok caption (max 300)
+
+```
+Your AI character looks about right. Here's the number.
+
+Upload the real face and any generated image — from any generator — and a vision model scores how convincingly they are the same person. Free, no account, nothing stored. Link in bio.
+```
+
+#### Day 1: YouTube Shorts title (max 100)
+
+```
+Does your AI character still look like the same person?
+```
+
+### Day 2, Fri 25 Sept: the price before the button
+
+**Record.** The studio with a character cast and a line written, so the send receipt is showing: whose face rides, what the dialogue adds, the total. Scroll nothing; just let the receipt sit there, then press Render and cut as the row appears.
+
+**On screen:** "Every send, itemised. Before it spends."
+
+#### Day 2: Instagram and TikTok caption (max 300)
+
+```
+Most AI tools spend your credits and tell you afterwards.
+
+Picacho itemises every send before it spends: whose face rides, what the dialogue adds, what the total is. You see the price before you press the button. Link in bio.
+```
+
+#### Day 2: YouTube Shorts title (max 100)
+
+```
+The price before the button, not the bill after it
+```
+
+### Day 3, Sat 26 Sept: one photo, four scenes, four scores
+
+**Record.** Your own history: one character, four finished images in different scenes, each with its match score under it. Swipe through them slowly enough to read a score, then end on the reference photo they all came from.
+
+**On screen:** "One photo." Then each score as it passes.
+
+#### Day 3: Instagram and TikTok caption (max 300)
+
+```
+One photo, four scenes, four scores.
+
+Every image Picacho generates with a character is compared with that character's photo by a vision model, and the match is printed under the result — so you see it before your audience does. Link in bio.
+```
+
+#### Day 3: YouTube Shorts title (max 100)
+
+```
+One photo, four scenes, and the score under each one
+```
+
+### Day 4, Sun 27 Sept: a real 3D set
+
+**Record.** Helios 3D: describe a place, let the set build, drop the character in, place the camera, and take the still. If the build is slow, cut from the words to the finished set and say so on screen ("built from that sentence"). Do not narrate a result you haven't got on screen.
+
+**On screen:** "Type the place. Walk into it."
+
+#### Day 4: Instagram and TikTok caption (max 300)
+
+```
+Describe a place, get a walkable 3D set.
+
+Then put your character and a real lens inside it — six formats, true depth of field — and shoot stills, takes and films that keep the same place and the same face. On every paid plan. Link in bio.
+```
+
+#### Day 4: YouTube Shorts title (max 100)
+
+```
+Direct your AI character inside a real 3D set
+```
+
+### Day 5, Mon 28 Sept: the free one, every day
+
+**Record.** A signed-out phone: the homepage, Get started, the character saved from one photo, one line typed, and the clip coming back. Speed the waiting up, never fake it.
+
+**On screen:** "Free, every day. No card."
+
+#### Day 5: Instagram and TikTok caption (max 300)
+
+```
+A free generation every day, no card.
+
+One photo saves the character. The studio drafts the prompt, checks it, renders it, and prints the match under every image it makes with that face. Come back tomorrow and it's the same person. Link in bio.
+```
+
+#### Day 5: YouTube Shorts title (max 100)
+
+```
+A free AI generation every day, no card
+```
+
+### Day 6, Tue 29 Sept: launch day
+
+**Record.** Nothing new: the Day 1 checker clip re-cut with the launch card on screen at the end, or your face saying the one sentence. Post it after the Product Hunt page is live, and put the launch link in the bio for the day.
+
+**On screen:** "Live today."
+
+#### Day 6: Instagram and TikTok caption (max 300)
+
+```
+Picacho is live on Product Hunt today.
+
+An honest comment there is worth more to us than anything else — especially about where the score disagrees with your eye. The link is in the bio for today.
+```
+
+#### Day 6: YouTube Shorts title (max 100)
+
+```
+Picacho is live on Product Hunt today
+```
+
+### Day 7, Wed 30 Sept: what Seedance refuses, and what works
+
+**Record.** The guide on screen, scrolling to the dated notes, then the two lines that matter: photoreal people to Kling O3 Pro, illustrated characters to Seedance 2.5. This one is worth your voice over it, because it is the clip other makers save.
+
+**On screen:** the dates, as they appear: "21 Aug. 3 Sept. 4 Sept."
+
+#### Day 7: Instagram and TikTok caption (max 300)
+
+```
+Seedance refuses photoreal reference faces — on 2.0 as well, since 3 September.
+
+Dated notes from production, and what we use instead: photoreal people on Kling O3 Pro, illustrated characters and mascots on Seedance 2.5. The write-up is in the bio.
+```
+
+#### Day 7: YouTube Shorts title (max 100)
+
+```
+Why Seedance refuses your reference photo, and what works
+```
+
+### Spare, for any day one of the above isn't ready
+
+**Record.** The Android app: the Play page, install, open, sign in, a render running with the app closed and the finished take waiting in the library.
+
+#### Spare: Instagram and TikTok caption (max 300)
+
+```
+The whole studio, on Android.
+
+Start a render, close the app, and the finished take is in your library when you come back. On Google Play; on iPhone it installs from the browser to the home screen. Link in bio.
+```
+
+#### Spare: YouTube Shorts title (max 100)
+
+```
+The full AI character studio, on Android
+```
+
+### Hashtags
+
+Five to eight, the same set every day, on Instagram and TikTok both. Nothing about trends the clip isn't part of.
+
+```
+#aivideo #aifilmmaking #characterconsistency #aicreator #seedance #kling #aitools
+```

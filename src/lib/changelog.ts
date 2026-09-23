@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.85.0",
+    build: 124,
+    date: "2026-09-23",
+    title: "A week of clips to post, and the five Product Hunt pictures, shot from the live site",
+    items: [
+      "The launch kit gains section 14: seven days of short clips for Instagram, TikTok and Shorts, Thursday to Wednesday, each with what to record and the caption to paste — the free checker, the price before the button, one photo across four scenes, a real 3D set, the free generation every day, launch day, and what Seedance refuses. A spare clip about the Android app, one set of hashtags, and the rules that decide whether a clip travels (hook in two seconds, upload natively to each platform, link in the bio because Instagram and TikTok strip the referrer). The week's row in the calendar now points at it.",
+      "The five Product Hunt gallery pictures are shot and waiting in \"Picacho PH gallery\" on the Desktop, each at 2540x1520 and 1270x760, plus the 240x240 thumbnail: the homepage with the identity-match chip, the free checker showing a real 92% on our own demo character, the send receipt before the Render button, the Helios 3D workspace with its frame lines, and a prompt becoming a scored result. The checker one was a genuine run of the live tool, which also proved the new daily ceiling did not break it.",
+    ],
+  },
+  {
     version: "1.84.0",
     build: 123,
     date: "2026-09-23",
