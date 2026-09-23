@@ -167,24 +167,33 @@ describe("database functions: every SECURITY DEFINER function is accounted for",
       "reward_referral_on_success", // trigger
       "sync_profile_email", // trigger
     ]);
-    // schema.sql is a SNAPSHOT of what is live, so it lags every file still
-    // in pending/ (see supabase/README.md: SQL-first — pending SQL is applied
-    // BEFORE the code that calls it is pushed, and the file only moves to
-    // applied/ in that same commit). A function being introduced right now
-    // therefore exists in pending/ and not yet in the snapshot, and probing
-    // it from verify-db.mjs is correct rather than a typo. Both sources
-    // count; pending files are written lowercase, so match either case.
-    const pendingDir = new URL("../../../supabase/pending/", import.meta.url);
-    let pendingSql = "";
-    try {
-      for (const f of readdirSync(pendingDir)) {
-        if (f.endsWith(".sql")) pendingSql += readFileSync(new URL(f, pendingDir), "utf8");
+    // schema.sql is a SNAPSHOT and it LAGS (supabase/README.md says so: it is
+    // "stale by however many applied files postdate it" — as of writing it
+    // does not know the 2026-09-22 tables). So the snapshot alone is not the
+    // roster of what exists: a function added since the last dump lives in
+    // applied/<date>/, and one being added right now lives in pending/, which
+    // under the SQL-first rule is already in the live database by the time
+    // the code calling it is pushed. Read all three, or this contract fails
+    // every time someone adds an RPC and passes again only after a re-dump.
+    // Hand-written files are lowercase, so every match here is case-insensitive.
+    const sqlDir = new URL("../../../supabase/", import.meta.url);
+    let extraSql = "";
+    const readSqlIn = (dir: URL) => {
+      let out = "";
+      try {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          if (entry.isDirectory()) out += readSqlIn(new URL(`${entry.name}/`, dir));
+          else if (entry.name.endsWith(".sql")) out += readFileSync(new URL(entry.name, dir), "utf8");
+        }
+      } catch {
+        // A missing pending/ directory is the normal steady state.
       }
-    } catch {
-      // No pending directory is the normal steady state.
-    }
+      return out;
+    };
+    extraSql += readSqlIn(new URL("applied/", sqlDir));
+    extraSql += readSqlIn(new URL("pending/", sqlDir));
     const definers: string[] = [];
-    for (const source of [schema, pendingSql]) {
+    for (const source of [schema, extraSql]) {
       for (const chunk of source.split(/(?=create or replace function public\.)/i).slice(1)) {
         const name = chunk.match(/^create or replace function public\.(\w+)\(/i)?.[1];
         const end = chunk.indexOf("$function$;");
