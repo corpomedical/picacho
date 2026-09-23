@@ -1260,6 +1260,31 @@ export function SetView({
           skinRoot.remove(skin.group);
           skins.delete(key);
         };
+        // A stage with no sky light of its own (the basic one, on a phone)
+        // leaves a model's metal paint nothing to reflect, and it draws
+        // black (2026-09-24, the first concept car on this stage). Such a
+        // model gets a neutral room to reflect, as any model viewer gives
+        // it; made once, the first time one is needed.
+        let roomLight: import("three").Texture | null = null;
+        const lightModel = async (model: import("three").Object3D) => {
+          if (scene.environment) return;
+          if (!roomLight) {
+            const { RoomEnvironment } = await import("three/examples/jsm/environments/RoomEnvironment.js");
+            const gen = new THREE.PMREMGenerator(renderer);
+            roomLight = gen.fromScene(new RoomEnvironment(), 0.04).texture;
+            gen.dispose();
+          }
+          model.traverse((o) => {
+            const mesh = o as import("three").Mesh;
+            if (!mesh.isMesh) return;
+            for (const m of [mesh.material].flat() as import("three").MeshStandardMaterial[]) {
+              if (m && "envMap" in m) {
+                m.envMap = roomLight;
+                m.needsUpdate = true;
+              }
+            }
+          });
+        };
         /** The models flat for the sketch, as sketchStage does the blocks: their own paint, nothing metal. */
         const skinSketch = (on: boolean) => {
           skinRoot.traverse((o) => {
@@ -2741,6 +2766,7 @@ export function SetView({
                     ...SKETCH_MODEL_MATERIAL,
                   });
                 });
+                await lightModel(model);
                 const group = new THREE.Group();
                 group.add(model);
                 skinRoot.add(group);

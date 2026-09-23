@@ -50,6 +50,14 @@ describe("a model on the stage", () => {
     expect(view).toContain("...SKETCH_MODEL_MATERIAL,");
   });
 
+  it("is lit on a stage with no sky light of its own, or its metal paint draws black", () => {
+    const light = fnOf(view, "        const lightModel = async (model", "        /** The models flat for the sketch");
+    expect(light).toContain("if (scene.environment) return;");
+    expect(light).toContain("roomLight = gen.fromScene(new RoomEnvironment(), 0.04).texture;");
+    const load = fnOf(view, "          async setThingModels(models) {", "          placeThings(placements) {");
+    expect(load.indexOf("await lightModel(model);")).toBeLessThan(load.indexOf("skinRoot.add(group);"));
+  });
+
   it("moves with its thing, and a tap on it opens its thing", () => {
     const place = fnOf(view, "          placeThings(placements) {", "\n          },\n");
     expect(place).toContain("for (const key of skins.keys()) placeSkin(key);");
