@@ -167,12 +167,30 @@ describe("database functions: every SECURITY DEFINER function is accounted for",
       "reward_referral_on_success", // trigger
       "sync_profile_email", // trigger
     ]);
+    // schema.sql is a SNAPSHOT of what is live, so it lags every file still
+    // in pending/ (see supabase/README.md: SQL-first — pending SQL is applied
+    // BEFORE the code that calls it is pushed, and the file only moves to
+    // applied/ in that same commit). A function being introduced right now
+    // therefore exists in pending/ and not yet in the snapshot, and probing
+    // it from verify-db.mjs is correct rather than a typo. Both sources
+    // count; pending files are written lowercase, so match either case.
+    const pendingDir = new URL("../../../supabase/pending/", import.meta.url);
+    let pendingSql = "";
+    try {
+      for (const f of readdirSync(pendingDir)) {
+        if (f.endsWith(".sql")) pendingSql += readFileSync(new URL(f, pendingDir), "utf8");
+      }
+    } catch {
+      // No pending directory is the normal steady state.
+    }
     const definers: string[] = [];
-    for (const chunk of schema.split(/(?=CREATE OR REPLACE FUNCTION public\.)/).slice(1)) {
-      const name = chunk.match(/^CREATE OR REPLACE FUNCTION public\.(\w+)\(/)?.[1];
-      const end = chunk.indexOf("$function$;");
-      const body = chunk.slice(0, end > 0 ? end : 4000);
-      if (name && body.includes("SECURITY DEFINER")) definers.push(name);
+    for (const source of [schema, pendingSql]) {
+      for (const chunk of source.split(/(?=create or replace function public\.)/i).slice(1)) {
+        const name = chunk.match(/^create or replace function public\.(\w+)\(/i)?.[1];
+        const end = chunk.indexOf("$function$;");
+        const body = chunk.slice(0, end > 0 ? end : 4000);
+        if (name && /security definer/i.test(body)) definers.push(name);
+      }
     }
     expect(definers.length).toBeGreaterThan(20);
     const unaccounted = [...new Set(definers)].filter((f) => !privateList.has(f) && !callableByDesign.has(f));

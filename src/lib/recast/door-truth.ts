@@ -282,8 +282,8 @@ export function recastBlocker(s: RecastDoorState): RecastBlocker | null {
 /**
  * What an account can still spend on a take — checkGenerationAllowance's
  * arithmetic (core.ts), read the same way: the plan's monthly allowance (only
- * while the subscription is in good standing) plus bonus credits, less what
- * this period used, plus purchased credits. The free daily slot never covers
+ * while the subscription is in good standing), less what this period used,
+ * plus the two depleting balances — bonus and purchased. The free daily slot never covers
  * a recast (actions.ts), so it is not counted. Admins are never refused.
  */
 export function recastCreditsLeft(p: {
@@ -296,8 +296,12 @@ export function recastCreditsLeft(p: {
 }): RecastBalance {
   if (p.isAdmin) return { left: 0, unlimited: true };
   const active = p.planStatus === null || p.planStatus === "active";
-  const limit = (active ? (PLAN_LIMITS[(p.plan ?? "none") as PlanId] ?? 0) : 0) + Math.max(0, p.bonus);
-  return { left: Math.max(0, limit - Math.max(0, p.used)) + Math.max(0, p.purchased), unlimited: false };
+  const limit = active ? (PLAN_LIMITS[(p.plan ?? "none") as PlanId] ?? 0) : 0;
+  return {
+    left:
+      Math.max(0, limit - Math.max(0, p.used)) + Math.max(0, p.bonus) + Math.max(0, p.purchased),
+    unlimited: false,
+  };
 }
 
 // ---------------------------------------------------------------------------

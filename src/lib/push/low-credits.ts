@@ -35,11 +35,15 @@ export async function maybeNotifyLowCredits(userId: string): Promise<void> {
     const plan = (profile.plan ?? "none") as PlanId;
     const planStatus = (profile.plan_status ?? null) as string | null;
     const planAllowanceActive = planStatus === null || planStatus === "active";
-    const limit = (planAllowanceActive ? (PLAN_LIMITS[plan] ?? 0) : 0) + (profile.bonus_credits ?? 0);
-    if (limit <= 0 && (profile.purchased_credits ?? 0) <= 0) return;
+    // Plan allowance only — bonus is a depleting balance (2026-09-23) and is
+    // added to `remaining` below alongside purchased credits.
+    const limit = planAllowanceActive ? (PLAN_LIMITS[plan] ?? 0) : 0;
+    const bonus = (profile.bonus_credits ?? 0) as number;
+    if (limit <= 0 && bonus <= 0 && (profile.purchased_credits ?? 0) <= 0) return;
 
     const used = await getMonthlyUsageWith(admin, userId, profile.current_period_start as string | null);
-    const remaining = Math.max(0, limit - used) + ((profile.purchased_credits ?? 0) as number);
+    const remaining =
+      Math.max(0, limit - used) + bonus + ((profile.purchased_credits ?? 0) as number);
     if (remaining > THRESHOLD) return;
 
     // Once per MONTHLY WINDOW — the same window the usage sum counts from.

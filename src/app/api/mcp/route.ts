@@ -244,9 +244,11 @@ async function callTool(
     // raw current_period_start, which is wrong twice over: getMonthlyUsageWith
     // exists because that column is a BILLING period anchor — on an annual
     // plan it is a year ago, so the window covered twelve months of usage —
-    // and the included allowance has to add bonus_credits, which a comped
-    // account lives on entirely. An agent asking "how many credits do I have"
-    // must get the same answer the API and the app give.
+    // and the answer has to count bonus_credits, which a comped account lives
+    // on entirely. Since 2026-09-23 bonus is a depleting BALANCE rather than a
+    // wider ceiling, so it is reported beside purchased credits instead of
+    // inside `included`. An agent asking "how many credits do I have" must get
+    // the same answer the API and the app give.
     const { PLAN_LIMITS, PLAN_LABELS } = await import("@/lib/plans");
     const { getMonthlyUsageWith } = await import("@/lib/generations/core");
     const { data: profile } = await ctx.supabase
@@ -260,13 +262,15 @@ async function callTool(
       ctx.userId,
       profile?.current_period_start as string | null | undefined,
     );
-    const included = (PLAN_LIMITS[plan] ?? 0) + ((profile?.bonus_credits ?? 0) as number);
+    const included = PLAN_LIMITS[plan] ?? 0;
+    const mcpBonus = (profile?.bonus_credits ?? 0) as number;
     return toolResult({
       plan: ctx.plan,
       plan_label: PLAN_LABELS[plan] ?? ctx.plan,
       included_this_period: included,
       used_this_period: used,
-      remaining_this_period: Math.max(0, included - used),
+      remaining_this_period: Math.max(0, included - used) + mcpBonus,
+      bonus_credits: mcpBonus,
       purchased_credits: (profile?.purchased_credits ?? 0) as number,
       period_started_at: (profile?.current_period_start as string | null) ?? null,
     });

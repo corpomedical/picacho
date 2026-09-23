@@ -129,7 +129,7 @@ describe("startRecastTakes", () => {
   it("judges the words and the clip BEFORE any credit moves", () => {
     const words = at("await gatePrompt({");
     const picture = at("await judgeRender({");
-    for (const spend of ['admin.rpc("reserve_generations"', "consumePurchasedCredits(", "submitRecastJob("]) {
+    for (const spend of ['admin.rpc("reserve_generations"', "consumePurchasedCredits(", "consumeBonusCredits(", "submitRecastJob("]) {
       expect(words, spend).toBeLessThan(at(spend));
       expect(picture, spend).toBeLessThan(at(spend));
     }
@@ -153,10 +153,14 @@ describe("startRecastTakes", () => {
     expect(start).toContain("const total = perTake * takes.length;\n  const early = await checkGenerationAllowance(supabase, userId, total)");
     expect(start).toContain("credits_used: perTake,");
     expect(start).toContain("const rows = takes.map((chars, i) => {");
-    expect(start).toContain("const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, total - consumePurchased)");
+    expect(start).toContain(
+      "const monthlyPortion = allowance.isAdmin\n    ? 0\n    : Math.max(0, total - consumePurchased - consumeBonus);",
+    );
     expect(start).toContain("p_monthly_portion: monthlyPortion");
     // It moves nothing, so nothing has to be undone when a later gate refuses.
-    expect(start.slice(early, at("await gatePrompt({"))).not.toMatch(/consumePurchasedCredits|reserve_generations|refund/);
+    expect(start.slice(early, at("await gatePrompt({"))).not.toMatch(
+      /consumePurchasedCredits|consumeBonusCredits|reserve_generations|refund/,
+    );
   });
 
   it("a crash outside a take's own catch still ends and refunds every unstarted row", () => {
@@ -186,6 +190,9 @@ describe("startRecastTakes", () => {
     expect(start.slice(late, late + 400)).toContain("await dropPrepared();");
     // The split the reserve and the guarded spend use comes from the fresh call.
     expect(start.slice(late)).toContain("const consumePurchased = allowance.consumePurchased ?? 0;");
+    // Bonus rides the same fresh split — a stale one would over- or
+    // under-spend the depleting balance exactly as it would purchased.
+    expect(start.slice(late)).toContain("const consumeBonus = allowance.consumeBonus ?? 0;");
   });
 
   it("re-judges an upload but not one of our own finished takes", () => {

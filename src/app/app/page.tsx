@@ -118,7 +118,7 @@ export default async function AppHome() {
   ] = dashboardReads;
 
   const name = profile?.username ?? (data.user?.email ?? "").split("@")[0];
-  const { hasCharacter, creditsUsed, creditsLimit, purchasedCredits } = workspace;
+  const { hasCharacter, creditsUsed, creditsLimit, purchasedCredits, bonusCredits } = workspace;
 
   if (!hasCharacter) {
     return (
@@ -280,7 +280,7 @@ export default async function AppHome() {
               }
             : null
         }
-        creditsLeft={creditsLimit > 0 ? Math.max(0, creditsLimit - creditsUsed) : purchasedCredits}
+        creditsLeft={Math.max(0, creditsLimit - creditsUsed) + bonusCredits + purchasedCredits}
         meanIdentity={accountMean}
         takes={takesCount}
         labels={{

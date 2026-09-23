@@ -146,7 +146,9 @@ export default async function AdminUserDetailPage({
     (user.plan_status as string | null) ?? null,
   );
   const bonusCredits = user.bonus_credits ?? 0;
-  const monthlyLimit = PLAN_LIMITS[plan] + bonusCredits;
+  // Plan allowance only: bonus is a depleting balance (2026-09-23), shown as
+  // its own figure rather than inflating the monthly ceiling.
+  const monthlyLimit = PLAN_LIMITS[plan];
   const successRate =
     (succeededCount ?? 0) + (failedCount ?? 0) > 0
       ? Math.round(((succeededCount ?? 0) / ((succeededCount ?? 0) + (failedCount ?? 0))) * 100)

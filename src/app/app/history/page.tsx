@@ -172,9 +172,10 @@ export default async function HistoryPage({
   const nameById = new Map((characters ?? []).map((c) => [c.id, c.name]));
 
   const plan = (profile?.plan ?? "none") as PlanId;
-  // Bonus credits (admin-granted) stack on top of the plan limit — same rule
-  // as the actual enforcement in checkGenerationAllowance.
-  const limit = PLAN_LIMITS[plan] + (profile?.bonus_credits ?? 0);
+  // The PLAN's monthly allowance. Bonus credits became a depleting balance on
+  // 2026-09-23, so — exactly like purchased credits already did — they are not
+  // part of this ceiling and spending them can carry `used` past it.
+  const limit = PLAN_LIMITS[plan];
 
   // Multi-angle requests insert one row per angle sharing angle_group_id —
   // collapse those into a single history card (linking to the front angle,

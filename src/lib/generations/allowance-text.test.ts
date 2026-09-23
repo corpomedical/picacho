@@ -104,12 +104,37 @@ describe("the allowance check's refusals, translated", () => {
   });
 
   it("credits given without a plan: too few left, or none", async () => {
-    const short = await refusal({ plan: "none", bonus_credits: 10 }, 8, 3);
+    // Bonus credits DEPLETE as they are spent (2026-09-23), so the fixtures
+    // carry the balance that is actually left rather than the whole grant:
+    // an account given 10 that has spent 8 reads bonus_credits 2, and one
+    // that has spent all ten reads 0. Both sentences are unchanged — with no
+    // plan, "all N you've been given" is what was spent plus what is left.
+    const short = await refusal({ plan: "none", bonus_credits: 2 }, 8, 3);
     expect(short).toBe("That would use 3 credits (some models cost more than 1 per video), but you only have 2 left this month.");
     expectTranslated(short, ["3", "2"]);
-    const none = await refusal({ plan: "none", bonus_credits: 10 }, 10, 1);
-    expect(none).toBe("You've used all 10 credits you've been given this month.");
-    expectTranslated(none, ["10"]);
+    const none = await refusal({ plan: "none", bonus_credits: 1 }, 9, 2);
+    expect(none).toBe("That would use 2 credits (some models cost more than 1 per video), but you only have 1 left this month.");
+    expectTranslated(none, ["2", "1"]);
+  });
+
+  it("a grant spent to nothing falls back to the daily free tier", async () => {
+    // Worth pinning, because it is the one behaviour the depletion fix
+    // changed that nobody asked for. A granted no-plan account used to sit
+    // outside the free tier forever (onDailyFreeTier skips anyone holding
+    // bonus credits) and was handed the grant again every billing period.
+    // Now the balance runs out, the account reads exactly like any other
+    // account with no plan, and it gets the ordinary one-render-a-day trial
+    // rather than a refusal — the grant does not come back, but the free
+    // tier they were always entitled to does.
+    usedCredits = 10;
+    const out = await checkGenerationAllowance(
+      asPerson({ plan: "none", bonus_credits: 0 }),
+      "u1",
+      1,
+    );
+    expect(out.error).toBeNull();
+    expect(out.consumeFree).toBe(true);
+    expect(out.consumeBonus ?? 0).toBe(0);
   });
 
   it("a plan whose payment failed, or that has ended", async () => {

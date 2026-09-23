@@ -45,9 +45,10 @@ export async function GET(request: Request) {
     | string
     | null;
   const planAllowanceActive = planStatus === null || planStatus === "active";
-  const included =
-    (planAllowanceActive ? (PLAN_LIMITS[caller.plan] ?? 0) : 0) +
-    ((profile?.bonus_credits ?? 0) as number);
+  // The PLAN's allowance alone. Bonus credits became a depleting balance on
+  // 2026-09-23 and are reported beside purchased credits below, because that
+  // is what they now are — a balance that does not come back next period.
+  const included = planAllowanceActive ? (PLAN_LIMITS[caller.plan] ?? 0) : 0;
 
   return NextResponse.json({
     plan: caller.plan,
@@ -55,7 +56,9 @@ export async function GET(request: Request) {
     included_this_period: included,
     used_this_period: used,
     remaining_this_period: Math.max(0, included - used),
-    // One-off credits, which cover anything the monthly allowance can't.
+    // Balances, which cover anything the monthly allowance can't. Both
+    // deplete and neither renews with the billing period.
+    bonus_credits: (profile?.bonus_credits ?? 0) as number,
     purchased_credits: (profile?.purchased_credits ?? 0) as number,
     period_started_at: profile?.current_period_start ?? null,
   });

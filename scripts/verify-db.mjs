@@ -53,7 +53,7 @@ const COLUMNS = {
   generations: [
     "angle_group_id", "angle", "attachments", "cancel_requested", "deleted_at",
     "featured_at", "match_score", "video_model_id", "model_id",
-    "video_duration_seconds", "purchased_credits_used", "free_generation_used",
+    "video_duration_seconds", "purchased_credits_used", "bonus_credits_used", "free_generation_used",
     "pipeline_log", "progress_stage", "poster_url",
     // Recast, the Mystique door (applied/2026-09-18/recast.sql): how a take was made.
     // Written through jsonb_populate_record, which drops it silently until
@@ -163,6 +163,8 @@ const RPCS = [
   "spend_daily_free_generation",
   "spend_purchased_credits",
   "add_purchased_credits",
+  "spend_bonus_credits",
+  "add_bonus_credits",
   "monthly_credits_used",
   "share_to_community",
   "record_community_view",
@@ -184,6 +186,7 @@ const RPCS = [
 // arguments that match nothing (random uuids): a private function answers
 // 42501 before running; a mis-granted one would run against no row.
 const PRIVATE_RPCS = [
+  "add_bonus_credits",
   "add_purchased_credits",
   "admin_user_auth_activity",
   "api_rate_check",
@@ -209,6 +212,7 @@ const PRIVATE_RPCS = [
   "reserve_reference_image_generation",
   "spend_daily_free_generation",
   "spend_free_generation",
+  "spend_bonus_credits",
   "spend_free_reference_generation",
   "spend_purchased_credits",
 ];

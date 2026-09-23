@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { runRealPipeline } from "@/lib/generations/pipeline";
 import {
   checkGenerationAllowance,
+  consumeBonusCredits,
   consumeFreeGeneration,
   consumePurchasedCredits,
   persistGeneratedImage,
@@ -145,7 +146,9 @@ export async function runApiImageGeneration(params: {
       allowance = re;
     }
     const monthlyPortion =
-      allowance.isAdmin || allowance.consumeFree ? 0 : Math.max(0, 1 - (allowance.consumePurchased ?? 0));
+      allowance.isAdmin || allowance.consumeFree
+        ? 0
+        : Math.max(0, 1 - (allowance.consumePurchased ?? 0) - (allowance.consumeBonus ?? 0));
     const { data: reservedId, error: reserveError } = await supabase.rpc("reserve_generation", {
       p_user_id: userId,
       p_monthly_portion: monthlyPortion,
@@ -160,6 +163,7 @@ export async function runApiImageGeneration(params: {
         attempts: 0,
         credits_used: 1,
         purchased_credits_used: allowance.consumePurchased ?? 0,
+        bonus_credits_used: allowance.consumeBonus ?? 0,
         free_generation_used: Boolean(allowance.consumeFree),
       },
     });
@@ -176,6 +180,9 @@ export async function runApiImageGeneration(params: {
 
   // The insert IS the charge — getMonthlyUsage sums credits_used — so the
   // balance moves immediately, and a failure below refunds it.
+  const bonusOk = allowance.consumeBonus
+    ? await consumeBonusCredits(supabase, userId, allowance.consumeBonus)
+    : true;
   const purchasedOk = allowance.consumePurchased
     ? await consumePurchasedCredits(supabase, userId, allowance.consumePurchased)
     : true;
@@ -185,7 +192,7 @@ export async function runApiImageGeneration(params: {
     // generation — abort before any paid work and release this row's charge.
     await supabase
       .from("generations")
-      .update({ status: "failed", credits_used: 0, purchased_credits_used: 0, free_generation_used: false })
+      .update({ status: "failed", credits_used: 0, purchased_credits_used: 0, bonus_credits_used: 0, free_generation_used: false })
       .eq("id", generationId);
     return {
       error: allowance.consumeFree

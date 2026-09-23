@@ -4,7 +4,11 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
 import { ContentPolicyRefusal, type Scores } from "@/lib/generations/content-policy";
-import { checkGenerationAllowance, consumePurchasedCredits } from "@/lib/generations/core";
+import {
+  checkGenerationAllowance,
+  consumeBonusCredits,
+  consumePurchasedCredits,
+} from "@/lib/generations/core";
 import { recastTakeLock } from "@/lib/generations/face-lock";
 import { refundGenerationCosts, saveVideoJob } from "@/lib/generations/job-runner";
 import { followRepeatSend, isRepeatReservation, REPEAT_FOLLOW_DEADLINE_MS } from "@/lib/generations/repeat-send";
@@ -891,7 +895,10 @@ export async function startRecastTakes(input: {
     return (await followRepeat()) ?? { error: allowance.error };
   }
   const consumePurchased = allowance.consumePurchased ?? 0;
-  const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, total - consumePurchased);
+  const consumeBonus = allowance.consumeBonus ?? 0;
+  const monthlyPortion = allowance.isAdmin
+    ? 0
+    : Math.max(0, total - consumePurchased - consumeBonus);
 
   const lockOn = await isRecastLockOn(supabase);
   // EVERY TAKE'S WORDS, composed once, here, and SENT from here (2026-09-22):
@@ -927,6 +934,7 @@ export async function startRecastTakes(input: {
       // Spread across the rows the way a fan-out does, so no row is charged
       // purchased credits the press did not consume.
       purchased_credits_used: Math.floor(consumePurchased / takes.length) + (i < consumePurchased % takes.length ? 1 : 0),
+      bonus_credits_used: Math.floor(consumeBonus / takes.length) + (i < consumeBonus % takes.length ? 1 : 0),
       free_generation_used: false,
       // Dropped silently by jsonb_populate_record until recast.sql runs, so
       // a take before the migration still works — it simply cannot be
@@ -981,10 +989,11 @@ export async function startRecastTakes(input: {
 
   // Guarded purchased-credit spend — nothing paid has run yet, so losing the
   // race releases every placeholder.
-  if (!(await consumePurchasedCredits(supabase, userId, consumePurchased))) {
+  const recastBonusOk = await consumeBonusCredits(supabase, userId, consumeBonus);
+  if (!(await consumePurchasedCredits(supabase, userId, consumePurchased)) || !recastBonusOk) {
     const { error: releaseError } = await admin
       .from("generations")
-      .update({ status: "failed", credits_used: 0, purchased_credits_used: 0, progress_stage: null })
+      .update({ status: "failed", credits_used: 0, purchased_credits_used: 0, bonus_credits_used: 0, progress_stage: null })
       .in("id", takeIds);
     if (releaseError) console.error("recast guarded-spend abort couldn't release the placeholders:", releaseError.message);
     return { error: "You're out of credits — top up under Settings → Plan & billing (credit packs need no plan)." };

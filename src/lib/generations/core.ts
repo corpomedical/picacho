@@ -135,10 +135,16 @@ export async function checkGenerationAllowance(
   plan: PlanId;
   isAdmin: boolean;
   consumePurchased?: number;
+  /**
+   * Drawn from the admin-granted bonus balance, which DEPLETES (2026-09-23).
+   * Spent before consumePurchased: the gift goes before the money.
+   */
+  consumeBonus?: number;
   consumeFree?: boolean;
-  // For the caller's atomic reservation (reserve_generation): the plan+bonus
+  // For the caller's atomic reservation (reserve_generation): the PLAN's
   // monthly limit and the ISO start of the usage window this decision was made
   // against, so the RPC re-checks the exact same window under its lock.
+  // Bonus and purchased credits are balances, not part of this ceiling.
   monthlyLimit?: number;
   periodStartIso?: string;
 }> {
@@ -272,14 +278,20 @@ export async function checkGenerationAllowance(
   const planStatus = (profile?.plan_status ?? null) as string | null;
   const planAllowanceActive = planStatus === null || planStatus === "active";
 
-  // Bonus credits (admin-granted, see setBonusCredits) stack on top of the
-  // plan's normal allowance rather than replacing it.
-  const limit = (planAllowanceActive ? (PLAN_LIMITS[plan] ?? 0) : 0) + (profile?.bonus_credits ?? 0);
+  // Bonus credits are a DEPLETING BALANCE, not a wider monthly allowance
+  // (fixed 2026-09-23). They used to be added to `limit` here, which made a
+  // one-time grant renew itself forever: the usage window below resets every
+  // billing period, the column did not, so N granted credits were N credits
+  // a month for the life of the account. They now spend like purchased
+  // credits — drawn down by a guarded RPC, restored by refunds, and gone
+  // until an admin grants more. Only the plan's own allowance renews.
+  const limit = planAllowanceActive ? (PLAN_LIMITS[plan] ?? 0) : 0;
   const used = await getMonthlyUsageWith(
     supabase,
     userId,
     profile?.current_period_start as string | null | undefined,
   );
+  const bonus = (profile?.bonus_credits ?? 0) as number;
   const purchased = (profile?.purchased_credits ?? 0) as number;
 
   // How much of THIS request the monthly allowance can't cover. Written as
@@ -291,10 +303,21 @@ export async function checkGenerationAllowance(
   const wouldBeOver = Math.max(0, used + requestedCredits - limit);
   const overflow = wouldBeOver - alreadyOver;
 
-  // Purchased credits (see credit_purchases) cover anything the monthly
-  // allowance can't. They deplete, unlike bonus_credits.
-  if (overflow > 0 && purchased >= overflow) {
-    return { error: null, plan, isAdmin, consumePurchased: overflow, monthlyLimit: limit, periodStartIso };
+  // The two balances cover anything the plan allowance can't. BONUS FIRST,
+  // then purchased: a grant is a gift and the pack was paid for, so spending
+  // the gift first is the order that leaves the customer holding what they
+  // bought. Both deplete.
+  if (overflow > 0 && bonus + purchased >= overflow) {
+    const consumeBonus = Math.min(bonus, overflow);
+    return {
+      error: null,
+      plan,
+      isAdmin,
+      consumeBonus,
+      consumePurchased: overflow - consumeBonus,
+      monthlyLimit: limit,
+      periodStartIso,
+    };
   }
 
   if (used + requestedCredits > limit) {
@@ -311,12 +334,17 @@ export async function checkGenerationAllowance(
         isAdmin,
       };
     }
-    // Only the true zero-allowance case (no plan, and no bonus credits
-    // covering them either) gets the "no plan yet" message — a "none" plan
-    // user who's been granted bonus credits and used all of those should see
-    // the normal "used them all" message instead, not be told they have no
-    // plan when they clearly did have some allowance a moment ago.
-    if (plan === "none" && limit === 0) {
+    // Only the true zero-allowance case gets the "no plan yet" message — a
+    // "none" plan user who was granted credits and used all of them should
+    // see the normal "used them all" message instead, not be told they have
+    // no plan when they clearly did have some allowance a moment ago.
+    //
+    // `used === 0` is what still tells those two apart since bonus became a
+    // depleting balance (2026-09-23). Before, a spent-out grant still read
+    // bonus_credits = 10 and the balance check alone distinguished them; now
+    // it reads 0, identically to an account that was never given anything,
+    // and only the fact that they have generated says which is which.
+    if (plan === "none" && limit === 0 && bonus === 0 && purchased === 0 && used === 0) {
       return {
         error:
           "Your account doesn't have an active plan yet, so generations aren't available yet. Reach out and we'll get you set up.",
@@ -324,13 +352,23 @@ export async function checkGenerationAllowance(
         isAdmin,
       };
     }
-    const remaining = Math.max(limit - used, 0);
+    // What is actually spendable: the plan's remainder plus both balances.
+    // Quoting `limit - used` alone would understate it by whatever bonus and
+    // purchased credits are still sitting on the account.
+    const remaining = Math.max(limit - used, 0) + bonus + purchased;
+    // What this month actually gave them, for the "you've used all N" line.
+    // On a plan that is the plan's allowance. With no plan every credit came
+    // from a balance, and the balances deplete, so the granted total is no
+    // longer readable from the columns — but it is exactly what they have
+    // spent plus what is left, which is the same number the old
+    // plan-plus-bonus ceiling used to report.
+    const hadThisMonth = plan === "none" ? used + remaining : limit;
     const planOrBonusLabel = plan === "none" ? "bonus" : PLAN_LABELS[plan];
     return {
       error:
         requestedCredits > 1
           ? `That would use ${requestedCredits} credits (some models cost more than 1 per video), but you only have ${remaining} left${plan === "none" ? "" : ` on your ${planOrBonusLabel} plan`} this month.`
-          : `You've used all ${limit} credits${plan === "none" ? " you've been given" : ` included in your ${planOrBonusLabel} plan`} this month.`,
+          : `You've used all ${hadThisMonth} credits${plan === "none" ? " you've been given" : ` included in your ${planOrBonusLabel} plan`} this month.`,
       plan,
       isAdmin,
     };
@@ -361,6 +399,27 @@ export async function consumePurchasedCredits(
   // `authenticated` cannot call this RPC.
   const admin = createAdminClient();
   const { data } = await admin.rpc("spend_purchased_credits", { p_user_id: userId, p_amount: amount });
+  return data === true;
+}
+
+// The bonus twin of consumePurchasedCredits (2026-09-23). Bonus credits are
+// admin-granted and, since the depletion fix, spend exactly like purchased
+// ones: drawn down here right after the placeholder row is written, restored
+// by refundGenerationCosts, and never replenished by the billing period
+// rolling over.
+//
+// Fails CLOSED before the RPC exists (supabase/pending/
+// bonus-credits-deplete.sql not yet applied): a missing function returns no
+// data, `data === true` is false, and the caller aborts before any paid work
+// rather than rendering unmetered.
+export async function consumeBonusCredits(
+  _supabase: SupabaseClient,
+  userId: string,
+  amount: number,
+): Promise<boolean> {
+  if (!amount || amount <= 0) return true;
+  const admin = createAdminClient();
+  const { data } = await admin.rpc("spend_bonus_credits", { p_user_id: userId, p_amount: amount });
   return data === true;
 }
 

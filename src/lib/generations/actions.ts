@@ -163,6 +163,7 @@ import type { BrandRule } from "@/lib/brand-rules/types";
 // is "use server", so anything exported from it becomes a public endpoint.
 import {
   checkGenerationAllowance,
+  consumeBonusCredits,
   consumeFreeGeneration,
   consumePurchasedCredits,
   getMonthlyUsageWith,
@@ -1389,6 +1390,9 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // need purchased credits), so the values the guarded spends use come from the
   // iteration that actually won the reservation.
   let consumePurchased = allowance.consumePurchased;
+  // Bonus credits deplete too since 2026-09-23, so they ride alongside the
+  // purchased overflow through the same re-decide-and-retry loop.
+  let consumeBonus = allowance.consumeBonus;
   let consumeFree = allowance.consumeFree;
 
   // Multi-image reference and storyboard are Studio-and-up. Checked here,
@@ -1531,11 +1535,14 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       if (reAllowance.error) return (await followRepeat()) ?? { error: reAllowance.error };
       allowance = reAllowance;
       consumePurchased = reAllowance.consumePurchased;
+      consumeBonus = reAllowance.consumeBonus;
       consumeFree = reAllowance.consumeFree;
     }
 
     const monthlyPortion =
-      isAdmin || consumeFree ? 0 : Math.max(0, creditWeight - (consumePurchased ?? 0));
+      isAdmin || consumeFree
+        ? 0
+        : Math.max(0, creditWeight - (consumePurchased ?? 0) - (consumeBonus ?? 0));
 
     const reservationRow = {
       id: clientGenerationId || crypto.randomUUID(),
@@ -1575,6 +1582,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       // Recorded so a failure can refund exactly what this row consumed
       // from the two profile-side credit sources (see refundGenerationCosts).
       purchased_credits_used: consumePurchased ?? 0,
+      bonus_credits_used: consumeBonus ?? 0,
       free_generation_used: !!consumeFree,
       // The chat-attachment storage paths that rode this send (2026-08-31).
       // Until now the row recorded nothing about them, so deleting a
@@ -1621,14 +1629,16 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // generation, these return false and we abort BEFORE any paid provider call.
   // Nothing has run, so this placeholder's charge is released (credits_used 0).
   const purchasedOk = await consumePurchasedCredits(supabase, userData.user.id, consumePurchased ?? 0);
+  const bonusOk = await consumeBonusCredits(supabase, userData.user.id, consumeBonus ?? 0);
   const freeOk = consumeFree ? await consumeFreeGeneration(supabase, userData.user.id) : true;
-  if (!purchasedOk || !freeOk) {
+  if (!purchasedOk || !bonusOk || !freeOk) {
     const { error: releaseError } = await createAdminClient()
       .from("generations")
       .update({
         status: "failed",
         credits_used: 0,
         purchased_credits_used: 0,
+        bonus_credits_used: 0,
         free_generation_used: false,
         progress_stage: null,
       })
@@ -3370,6 +3380,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   // Reassignable — the atomic group reservation below may lose the monthly race
   // and re-decide, exactly like the single-generation path.
   let consumePurchased = multiAllowance.consumePurchased;
+  let consumeBonus = multiAllowance.consumeBonus;
 
   if (useRealProviders) {
     // videoModelId is resolved above (line ~2555); the breaker's substitution
@@ -3495,10 +3506,12 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
       if (reAllowance.error) return (await followRepeatBatch()) ?? { error: reAllowance.error };
       multiAllowance = reAllowance;
       consumePurchased = reAllowance.consumePurchased;
+      consumeBonus = reAllowance.consumeBonus;
     }
 
     const cp = consumePurchased ?? 0;
-    const monthlyPortion = multiIsAdmin ? 0 : Math.max(0, totalRequestedCredits - cp);
+    const cb = consumeBonus ?? 0;
+    const monthlyPortion = multiIsAdmin ? 0 : Math.max(0, totalRequestedCredits - cp - cb);
 
     const rows = angleIds.map((angleId, angleIndex) => ({
       id: crypto.randomUUID(),
@@ -3524,6 +3537,10 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
       // a partial failure refunds a fair slice (see refundGenerationCosts).
       purchased_credits_used:
         Math.floor(cp / angleIds.length) + (angleIndex < cp % angleIds.length ? 1 : 0),
+      // Same fair-slice spread for the bonus overflow, so a partial failure
+      // refunds each row exactly what it drew from the balance.
+      bonus_credits_used:
+        Math.floor(cb / angleIds.length) + (angleIndex < cb % angleIds.length ? 1 : 0),
       free_generation_used: false,
     }));
 
@@ -3566,13 +3583,14 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   const placeholderIds = placeholders.map((p) => p.id);
 
   const purchasedOk = await consumePurchasedCredits(supabase, userData.user.id, consumePurchased ?? 0);
-  if (!purchasedOk) {
+  const bonusOk = await consumeBonusCredits(supabase, userData.user.id, consumeBonus ?? 0);
+  if (!purchasedOk || !bonusOk) {
     // Lost the race for the last purchased credits — nothing has run yet, so
     // release every angle's charge and stop before any paid provider call.
     // Scoped strictly to the rows reserved above (see placeholderIds).
     const { error: releaseError } = await createAdminClient()
       .from("generations")
-      .update({ status: "failed", credits_used: 0, purchased_credits_used: 0, progress_stage: null })
+      .update({ status: "failed", credits_used: 0, purchased_credits_used: 0, bonus_credits_used: 0, progress_stage: null })
       .in("id", placeholderIds)
       .eq("status", "generating")
       .eq("user_id", userData.user.id);
@@ -4670,7 +4688,10 @@ async function startUpscaleCore(params: {
   const allowance = await checkGenerationAllowance(supabase, params.userId, creditWeight);
   if (allowance.error) return { error: allowance.error };
   const consumePurchased = allowance.consumePurchased ?? 0;
-  const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, creditWeight - consumePurchased);
+  const consumeBonus = allowance.consumeBonus ?? 0;
+  const monthlyPortion = allowance.isAdmin
+    ? 0
+    : Math.max(0, creditWeight - consumePurchased - consumeBonus);
 
   const admin = createAdminClient();
   const reservationRow = {
@@ -4689,6 +4710,7 @@ async function startUpscaleCore(params: {
     video_aspect_ratio: null,
     credits_used: creditWeight,
     purchased_credits_used: consumePurchased,
+    bonus_credits_used: consumeBonus,
     free_generation_used: false,
     // Dropped silently by jsonb_populate_record until
     // applied/2026-09-02/upscale.sql runs — the insert still succeeds, only
@@ -4722,13 +4744,15 @@ async function startUpscaleCore(params: {
   // Guarded purchased-credit spend, same abort contract as the render path:
   // nothing paid has run yet, so losing the race releases the placeholder.
   const purchasedOk = await consumePurchasedCredits(supabase, params.userId, consumePurchased);
-  if (!purchasedOk) {
+  const bonusOk = await consumeBonusCredits(supabase, params.userId, consumeBonus);
+  if (!purchasedOk || !bonusOk) {
     const { error: releaseError } = await admin
       .from("generations")
       .update({
         status: "failed",
         credits_used: 0,
         purchased_credits_used: 0,
+        bonus_credits_used: 0,
         progress_stage: null,
       })
       .eq("id", generationId);
@@ -4998,7 +5022,10 @@ async function startLayersCore(params: {
   const allowance = await checkGenerationAllowance(supabase, params.userId, creditWeight);
   if (allowance.error) return { error: allowance.error };
   const consumePurchased = allowance.consumePurchased ?? 0;
-  const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, creditWeight - consumePurchased);
+  const consumeBonus = allowance.consumeBonus ?? 0;
+  const monthlyPortion = allowance.isAdmin
+    ? 0
+    : Math.max(0, creditWeight - consumePurchased - consumeBonus);
 
   const reservationRow = {
     id: crypto.randomUUID(),
@@ -5016,6 +5043,7 @@ async function startLayersCore(params: {
     video_aspect_ratio: null,
     credits_used: creditWeight,
     purchased_credits_used: consumePurchased,
+    bonus_credits_used: consumeBonus,
     free_generation_used: false,
     source_generation_id: params.sourceGenerationId,
   };
@@ -5037,10 +5065,11 @@ async function startLayersCore(params: {
   const generationId = reservedId as string;
 
   const purchasedOk = await consumePurchasedCredits(supabase, params.userId, consumePurchased);
-  if (!purchasedOk) {
+  const bonusOk = await consumeBonusCredits(supabase, params.userId, consumeBonus);
+  if (!purchasedOk || !bonusOk) {
     const { error: releaseError } = await admin
       .from("generations")
-      .update({ status: "failed", credits_used: 0, purchased_credits_used: 0, progress_stage: null })
+      .update({ status: "failed", credits_used: 0, purchased_credits_used: 0, bonus_credits_used: 0, progress_stage: null })
       .eq("id", generationId);
     if (releaseError) {
       console.error("Layers guarded-spend abort couldn't release the placeholder:", { generationId, error: releaseError.message });
@@ -5298,7 +5327,10 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
   const allowance = await checkGenerationAllowance(supabase, userId, creditWeight);
   if (allowance.error) return { error: allowance.error };
   const consumePurchased = allowance.consumePurchased ?? 0;
-  const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, creditWeight - consumePurchased);
+  const consumeBonus = allowance.consumeBonus ?? 0;
+  const monthlyPortion = allowance.isAdmin
+    ? 0
+    : Math.max(0, creditWeight - consumePurchased - consumeBonus);
 
   const admin = createAdminClient();
   const origin = await getOrigin();
@@ -5360,6 +5392,7 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
       model_id: LAYER_EDIT_MODEL_ID,
       credits_used: creditWeight,
       purchased_credits_used: consumePurchased,
+      bonus_credits_used: consumeBonus,
       free_generation_used: false,
       source_generation_id: layer.generation_id,
     },
@@ -5369,8 +5402,9 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
   }
   const editGenerationId = reservedId as string;
   const purchasedOk = await consumePurchasedCredits(supabase, userId, consumePurchased);
-  if (!purchasedOk) {
-    await admin.from("generations").update({ status: "failed", credits_used: 0, purchased_credits_used: 0 }).eq("id", editGenerationId);
+  const bonusOk = await consumeBonusCredits(supabase, userId, consumeBonus);
+  if (!purchasedOk || !bonusOk) {
+    await admin.from("generations").update({ status: "failed", credits_used: 0, purchased_credits_used: 0, bonus_credits_used: 0 }).eq("id", editGenerationId);
     return { error: "You're out of credits — top up under Settings → Plan & billing (credit packs need no plan)." };
   }
 

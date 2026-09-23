@@ -274,7 +274,9 @@ export async function getGenerateWorkspaceData(
   // shows in the 80%-99% band; at 100% the hard block in runGeneration
   // already takes over with its own message. Bonus credits (admin-granted)
   // widen the limit here too, same as the actual enforcement check, so this
-  // nudge doesn't fire early for someone who still has bonus credits left.
+  // nudge measures the PLAN's allowance only: bonus credits became a
+  // depleting balance on 2026-09-23 and are counted with purchased credits by
+  // the affordability math downstream, not folded into the ceiling here.
   const isAdminUser = profile?.role === "admin";
   // Mirrors checkGenerationAllowance: the plan portion is zero while
   // plan_status says the subscription lapsed (NULL passes — comped plans
@@ -284,9 +286,7 @@ export async function getGenerateWorkspaceData(
     | string
     | null;
   const planAllowanceActive = wsPlanStatus === null || wsPlanStatus === "active";
-  const planLimit =
-    (planAllowanceActive ? PLAN_LIMITS[(profile?.plan ?? "none") as PlanId] : 0) +
-    (profile?.bonus_credits ?? 0);
+  const planLimit = planAllowanceActive ? PLAN_LIMITS[(profile?.plan ?? "none") as PlanId] : 0;
   // The remaining dependent read (needs current_period_start) rides with the
   // two flag lookups, one trip instead of two.
   const [usedThisMonth, voiceModeEnabled, chatAgentEnabled] = await Promise.all([

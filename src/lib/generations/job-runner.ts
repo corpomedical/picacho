@@ -511,9 +511,14 @@ export async function refundGenerationCosts(
 
   const { data: row } = await admin
     .from("generations")
-    .select("user_id, purchased_credits_used, free_generation_used")
+    .select("user_id, purchased_credits_used, bonus_credits_used, free_generation_used")
     .eq("id", generationId)
-    .maybeSingle<{ user_id: string; purchased_credits_used: number; free_generation_used: boolean }>();
+    .maybeSingle<{
+      user_id: string;
+      purchased_credits_used: number;
+      bonus_credits_used: number | null;
+      free_generation_used: boolean;
+    }>();
   if (!row) return false;
 
   // The daily ceiling is enforced HERE rather than at each of the eleven
@@ -660,6 +665,44 @@ export async function refundGenerationCosts(
     }
   }
 
+  // Bonus credits come back the same way purchased ones do (2026-09-23,
+  // when bonus became a depleting balance). Same CAS-then-add shape and the
+  // same failure handling: the claim is what makes this idempotent across
+  // retries, and if the atomic add then fails we put the record back so the
+  // next attempt can still find what was owed. Rows written before the
+  // column existed read 0 and skip this entirely.
+  if ((row.bonus_credits_used ?? 0) > 0) {
+    const owed = row.bonus_credits_used as number;
+    const { data: claimedBonus } = await admin
+      .from("generations")
+      .update({ bonus_credits_used: 0 })
+      .eq("id", generationId)
+      .eq("bonus_credits_used", owed)
+      .select("id");
+    if (claimedBonus?.length) {
+      const { error: addError } = await admin.rpc("add_bonus_credits", {
+        p_user_id: row.user_id,
+        p_amount: owed,
+      });
+      if (addError) {
+        const { error: restoreError } = await admin
+          .from("generations")
+          .update({ bonus_credits_used: owed })
+          .eq("id", generationId)
+          .eq("bonus_credits_used", 0);
+        console.error("Bonus-credit refund failed", {
+          generationId,
+          userId: row.user_id,
+          amount: owed,
+          addError: addError.message,
+          restored: !restoreError,
+          restoreError: restoreError?.message,
+        });
+        return false;
+      }
+    }
+  }
+
   // The daily free slot IS re-opened for refundable faults (2026-08-19, with
   // the one-a-day trial). Under the old lifetime five this was deliberately
   // withheld — refunding every failure quietly turned "5 free generations"
@@ -712,13 +755,14 @@ async function refundDialogueSurcharge(generationId: string): Promise<void> {
   const admin = createAdminClient();
   const { data: row } = await admin
     .from("generations")
-    .select("user_id, video_duration_seconds, credits_used, purchased_credits_used")
+    .select("user_id, video_duration_seconds, credits_used, purchased_credits_used, bonus_credits_used")
     .eq("id", generationId)
     .maybeSingle<{
       user_id: string;
       video_duration_seconds: number | null;
       credits_used: number | null;
       purchased_credits_used: number | null;
+      bonus_credits_used: number | null;
     }>();
   if (!row) return;
 
@@ -729,23 +773,36 @@ async function refundDialogueSurcharge(generationId: string): Promise<void> {
 
   const creditsUsed = Number(row.credits_used) || 0;
   const purchasedUsed = Number(row.purchased_credits_used) || 0;
-  // The surcharge is the top of the charge, so the part that overflowed onto
-  // purchased credits is refunded there; the rest comes off the monthly usage.
+  const bonusUsed = Number(row.bonus_credits_used) || 0;
+  // The surcharge is the top of the charge, so it unwinds in the reverse of
+  // the order it was paid in. checkGenerationAllowance fills monthly first,
+  // then bonus, then purchased — so purchased is the top slice, bonus the
+  // next, and only what is left comes off the monthly usage.
   const purchasedRefund = Math.min(surcharge, purchasedUsed);
+  const bonusRefund = Math.min(surcharge - purchasedRefund, bonusUsed);
   const newCreditsUsed = Math.max(0, creditsUsed - surcharge);
   const newPurchasedUsed = purchasedUsed - purchasedRefund;
+  const newBonusUsed = bonusUsed - bonusRefund;
 
   const { data: claimed } = await admin
     .from("generations")
-    .update({ credits_used: newCreditsUsed, purchased_credits_used: newPurchasedUsed })
+    .update({
+      credits_used: newCreditsUsed,
+      purchased_credits_used: newPurchasedUsed,
+      bonus_credits_used: newBonusUsed,
+    })
     .eq("id", generationId)
     .eq("credits_used", creditsUsed)
     .eq("purchased_credits_used", purchasedUsed)
+    .eq("bonus_credits_used", bonusUsed)
     .select("id");
 
   if (claimed?.length && purchasedRefund > 0) {
     // Atomic add — a read-then-write would race a concurrent spend.
     await admin.rpc("add_purchased_credits", { p_user_id: row.user_id, p_amount: purchasedRefund });
+  }
+  if (claimed?.length && bonusRefund > 0) {
+    await admin.rpc("add_bonus_credits", { p_user_id: row.user_id, p_amount: bonusRefund });
   }
 }
 

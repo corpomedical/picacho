@@ -180,7 +180,9 @@ export default async function GeneratePage() {
     );
   }
 
-  const creditsNow = Math.max(0, creditsLimit - creditsUsed) + purchasedCredits;
+  // Plan remainder + both depleting balances — the same sum the spend gate
+  // makes (checkGenerationAllowance), so the quote and the server agree.
+  const creditsNow = Math.max(0, creditsLimit - creditsUsed) + bonusCredits + purchasedCredits;
   // Reader mode: no purchase entry points in the iOS/Android shell (Apple
   // 3.1.1 / Play payments policy — see lib/native/platform.ts). This CTA was
   // added with the repricing work, after the original native-gating pass,
