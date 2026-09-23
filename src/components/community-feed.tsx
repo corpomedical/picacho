@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useBackCloser } from "@/lib/native/back-stack";
 import { useModalFocus } from "@/lib/use-modal-focus";
+import { useLandscapeWhileOpen } from "@/lib/native/orientation";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
@@ -227,6 +228,7 @@ export function CommunityFeed({
   // aria-modal's focus contract — see lib/use-modal-focus.ts.
   const pagerRef = useRef<HTMLDivElement>(null);
   useModalFocus(feedOpen, pagerRef);
+  useLandscapeWhileOpen(feedOpen);
 
   // Deep link: open once, on mount, if the post is in the loaded set.
   useEffect(() => {

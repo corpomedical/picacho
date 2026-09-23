@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useBackCloser } from "@/lib/native/back-stack";
+import { useLandscapeWhileOpen } from "@/lib/native/orientation";
 import { useLocale } from "@/lib/i18n/provider";
 import { DownloadButton } from "@/components/download-button";
 
@@ -39,6 +40,8 @@ export function ImageLightbox({
   // Mounted means open — the Android hardware back closes the lightbox
   // instead of navigating underneath it.
   useBackCloser(true, onClose);
+  // The one place, with the other viewers, where the app may turn sideways.
+  useLandscapeWhileOpen(true);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {

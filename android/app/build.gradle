@@ -18,7 +18,12 @@ android {
         applicationId "ai.picacho.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 17
+        versionCode 18
+        // 18 = portrait lock (2026-09-23): the app no longer turns sideways;
+        // only an opened picture or video may (OrientationPlugin, lifted by
+        // the website's viewers through src/lib/native/orientation.ts). First
+        // native code of our own in the shell — a local plugin registered in
+        // MainActivity, no new npm package.
         // 17 = the reinstatement build (2026-09-21). Google Play accepted the
         // appeal against the 2026-09-09 suspension (Sexual Content and
         // AI-Generated Content policies, routing ID ZLFS) and asked for a
@@ -174,7 +179,7 @@ android {
         // committed to the dark tile in BOTH system themes (operator's call,
         // 2026-08-21: the ink tile reads better and never shifts size with
         // the theme), matching 512 store icon regenerated.
-        versionName "1.17.0"
+        versionName "1.18.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

@@ -10,6 +10,7 @@ import { MediaActionBar } from "@/components/media-action-bar";
 import { formatMsg } from "@/lib/i18n/format";
 import { useLocale } from "@/lib/i18n/provider";
 import { useModalFocus } from "@/lib/use-modal-focus";
+import { useLandscapeWhileOpen } from "@/lib/native/orientation";
 import { thumbUrl } from "@/lib/media/url";
 
 export type GalleryItem = {
@@ -76,6 +77,7 @@ export function MediaGallery({
   // close. See lib/use-modal-focus.ts.
   const viewerRef = useRef<HTMLDivElement>(null);
   useModalFocus(viewer !== null, viewerRef);
+  useLandscapeWhileOpen(viewer !== null);
   // Rows deleted from inside the viewer, hidden without a server round-trip —
   // the next server render won't include them anyway (deleted_at filter).
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());

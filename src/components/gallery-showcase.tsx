@@ -5,6 +5,7 @@ import type { SVGProps } from "react";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
 import { useModalFocus } from "@/lib/use-modal-focus";
+import { useLandscapeWhileOpen } from "@/lib/native/orientation";
 import { thumbUrl } from "@/lib/media/url";
 import { QuietVideo } from "@/components/quiet-video";
 import { PicachoMark } from "@/components/picacho-mark";
@@ -38,6 +39,7 @@ export function GalleryShowcase({ items }: { items: ShowcaseItem[] }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
   useModalFocus(openIndex !== null, viewerRef);
+  useLandscapeWhileOpen(openIndex !== null);
 
   useEffect(() => {
     if (openIndex === null) return;

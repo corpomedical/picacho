@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useBackCloser } from "@/lib/native/back-stack";
+import { useLandscapeWhileOpen } from "@/lib/native/orientation";
 import { useLocale } from "@/lib/i18n/provider";
 import { MediaActionBar } from "@/components/media-action-bar";
 
@@ -40,6 +41,7 @@ export function ZoomableImage({
   const [open, setOpen] = useState(false);
   // Android hardware back closes the zoom instead of navigating under it.
   useBackCloser(open, () => setOpen(false));
+  useLandscapeWhileOpen(open);
 
   useEffect(() => {
     if (!open) return;

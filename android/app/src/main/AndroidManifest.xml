@@ -14,7 +14,12 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
+        <!-- screenOrientation="portrait": the app never turns sideways on
+             its own. The one exception — a picture or video opened full
+             screen — is granted at runtime by OrientationPlugin while the
+             viewer is open, and taken back when it closes. -->
         <activity
+            android:screenOrientation="portrait"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:name=".MainActivity"
             android:label="@string/title_activity_main"
