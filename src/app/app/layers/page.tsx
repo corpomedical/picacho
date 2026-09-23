@@ -95,7 +95,7 @@ export default async function LayersPage() {
               {L.pageAllImages}
             </Link>
           </div>
-          <div className="mt-4 grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {sources.map((src) => (
               <Card key={src.id} pad="sm" className="flex flex-col">
                 <div className="relative aspect-square overflow-hidden rounded-[10px] bg-atelier-stage">
@@ -128,7 +128,7 @@ export default async function LayersPage() {
             <p className="whitespace-nowrap text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{L.stackTitle}</p>
             <div className="h-px flex-1 bg-atelier-rule" />
           </div>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {(splits ?? []).map((g) => {
               const url = toMediaUrl(g.result_url as string | null);
               return (

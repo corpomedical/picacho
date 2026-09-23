@@ -77,7 +77,7 @@ export default async function UpscalePage() {
             <div className="h-px flex-1 bg-atelier-rule" />
           </div>
 
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {takes.map((take) => (
               <Card key={take.id} pad="sm" className="flex flex-col">
                 <div className="relative aspect-video overflow-hidden rounded-[10px] bg-atelier-stage">

@@ -20,6 +20,15 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.86.0",
+    build: 125,
+    date: "2026-09-24",
+    title: "Upscale Video fits the phone screen",
+    items: [
+      "The recent takes on the Upscale Video page no longer run off the right edge of the phone. Each card stretched to the full length of its one-line caption, so the length badge, the end of the caption and the card's right side were cut off, and a longer prompt pushed it further. The cards now sit inside the screen and a long caption ends in \"…\" as it was meant to. The Layers page had the same flaw in both of its grids and is fixed the same way.",
+    ],
+  },
+  {
     version: "1.85.0",
     build: 124,
     date: "2026-09-23",
