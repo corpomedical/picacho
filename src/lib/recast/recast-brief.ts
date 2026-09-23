@@ -14,6 +14,24 @@
 //   scene/motion  replace the performer, keep everything else
 //   world         keep what everyone DOES, redraw how it all looks
 //
+// THE BRIEF SAYS REPLACE (cut 3, 2026-09-23). A paid pair of takes on one
+// 15 s window of a school courtyard measured three faults in the words, and
+// all three are answered here:
+//   the direction arrived last, 1,700 characters after the order to replace,
+//     and the engine ADDED the character beside the man instead of replacing
+//     him — so on a scene take the person's words now sit with the TASK;
+//   nothing said the man was GONE, so a take could keep him and gain a
+//     person — so the TASK says outright that he is in no frame, that the
+//     head count never changes, and that the character stands where he stood;
+//   the keep list closed on "everything the direction does not change stays
+//     exactly as it is", which reads as an order to keep him too — so that
+//     line is now scoped to whoever and whatever the TASK does not name.
+// A controlled re-run with the direction inside the instruction replaced him
+// in place, dressed him as the direction said, and kept the real crowd
+// (92/82/85 on the face check). What that re-run did NOT fix is the load
+// limit: a lead swap and a whole-crowd swap in one render still duplicate
+// and collapse. That is the engine's, not the wording's.
+//
 // The engines that take no prompt (Wan's two) are given none; the brief is
 // still composed and stored, because it is what the door shows and what a
 // recipe carries.
@@ -23,7 +41,7 @@
 
 import { cleanText } from "../sets/set-spec";
 import { RECAST_ENGINES, type RecastEngine, type RecastJob } from "./recast";
-import type { RecastKeep, RecastRead } from "./recast-read";
+import type { RecastKeep, RecastPerson, RecastRead } from "./recast-read";
 import { cutsInWindow, type RecastWindow } from "./trim";
 
 // cleanText collapses EVERY run of whitespace, newlines included — right for
@@ -51,9 +69,18 @@ function cleanBrief(value: string, max: number): string {
  */
 // It was 2000 until the long take (2026-09-19): a later piece's continuity
 // words run ~420 characters, and a brief was cut from its END — where the
-// person's own direction stands. Nothing is cut from the end any more.
+// person's own direction stood. Nothing is cut from the end any more, and on
+// a scene take the direction is not at the end at all (cut 3): it sits with
+// the TASK, so the end a cut would reach holds nothing of theirs.
 export const RECAST_BRIEF_MAX_CHARS = 2500;
 export const RECAST_DIRECTION_MAX_CHARS = 600;
+/**
+ * A mark is the read's plain-words handle for someone a take REPLACES, and
+ * the TASK leads with it. Bounded like the read's own `where`, because the
+ * read makes a round trip through a browser before the server composes with
+ * it and the two copies must come out byte for byte the same.
+ */
+export const RECAST_MARK_MAX_CHARS = 90;
 
 export type RecastCasting = {
   /** The read's tag for the person being replaced ("A"), or null when there was no read. */
@@ -202,7 +229,10 @@ function imageLines(tokens: string[]): string[] {
   if (tokens.length === 0) return [];
   return [
     "IMAGES",
-    "Added by the person, to be used exactly as the direction below says:",
+    // "as the direction says", not "below": on a scene take the direction now
+    // stands above this block (taskBlock), and this same line goes to Restage,
+    // where it still stands below. The heading DIRECTION is what points at it.
+    "Added by the person, to be used exactly as the direction says:",
     ...tokens.map((token, i) => bullet(`${token} — "image ${i + 1}" in the direction.`)),
     "",
   ];
@@ -225,6 +255,105 @@ function sourceLines(read: RecastRead | null, seconds: number): string[] {
 
 function keepLines(keeps: RecastKeep[]): string[] {
   return keeps.map((k) => k.what);
+}
+
+/**
+ * THE PERSON THE ENGINE HAS TO FIND (2026-09-23). A tag is ours, not the
+ * picture's: "Person A" means nothing to a model looking at a courtyard with
+ * forty schoolboys in it, and the take that failed was told to replace one.
+ * The read gives a plain-words MARK for the people a take replaces — "the man
+ * in the white shirt" — and the TASK leads with it.
+ *
+ * Read off the person structurally, so this file composes the same brief
+ * whether or not the read lane's field has landed; and used ONLY for someone
+ * being replaced. Everyone else in the clip is still only ever where they are
+ * and what they do, which is the whole of recast-read.ts's rule about real
+ * people in somebody's footage.
+ */
+function markFor(read: RecastRead | null, tag: string | null): string {
+  if (!read || !tag) return "";
+  const person: (RecastPerson & { mark?: unknown }) | undefined = read.people.find((p) => p.tag === tag);
+  return typeof person?.mark === "string" ? cleanText(person.mark, RECAST_MARK_MAX_CHARS) : "";
+}
+
+/**
+ * How the TASK names someone it replaces: their mark when the read gave one,
+ * with their tag beside it so THE SOURCE's own "Person A: …" line still ties
+ * to the same person, and the tag alone when it did not.
+ */
+function replacedAs(casting: RecastCasting, mark: string): string {
+  if (!casting.tag) return "The performer";
+  const tagged = casting.many ? `Person ${casting.tag}’s group` : `Person ${casting.tag}`;
+  if (!mark) return casting.many ? `every single person in ${tagged}` : tagged;
+  return casting.many ? `every single one of ${mark} (${tagged})` : `${mark} (${tagged})`;
+}
+
+/**
+ * NOTHING SAID THE PERSON WAS GONE (2026-09-23). Asked to replace the man in
+ * the white shirt, the engine put the character BESIDE him and left him in
+ * the shot; asked to do a lead swap and a crowd swap at once, it grew a
+ * second copy of the character where a student had stood. Neither is refused
+ * anywhere in a brief that only ever says what to keep — so the TASK now says
+ * the negative in as many words, on the same line as the order to replace.
+ *
+ * The head-count sentence is the world job's own, word for word: that job has
+ * held "How many people are in the shot, and where each of them stands" since
+ * it was written, and a wording that already works is worth more here than a
+ * new one.
+ */
+function goneLine(input: { character: string; video: string; characters: number; places: number; short?: boolean }): string {
+  // The two sides are counted separately, because they can differ either way:
+  // ONE character cast over a whole group is one name and many places, and
+  // several characters replacing one person each are many of both.
+  const many = input.places > 1;
+  const who = many ? "people" : "person";
+  const replaces = input.characters > 1 ? "replace" : "replaces";
+  const appears = many ? "appear" : "appears";
+  const stands = input.characters > 1 ? "stand" : "stands";
+  const where = many ? "their exact positions" : "their exact position";
+  // Said without repeating who they are — the order to replace is the line
+  // above, and these characters are dear at Kling's 2,500.
+  const gone = `The ${who} ${input.character} ${replaces} ${appears} in no frame of ${input.video}; how many people are in the shot, and where each of them stands, never changes`;
+  // Short (composeRecastBrief's second step, on a brief that will not
+  // otherwise fit): the last clause goes, because "where each of them stands
+  // never changes" is already the whole of it — the character can only be
+  // standing where the person they replace stood. Everything the re-run
+  // measured is still said; it is said once instead of twice.
+  if (input.short) return `${gone}.`;
+  return `${gone}; and ${input.character} ${stands} in ${where}, doing exactly what they did.`;
+}
+
+/**
+ * THE DIRECTION ARRIVES WITH THE ORDER (2026-09-23). On the take that failed,
+ * the person's words were 29 characters at position 1,933 of a 1,963-character
+ * brief: the engine read the order to replace, the cast lines, the keep list
+ * and nine "unless the direction changes it" clauses before it ever reached
+ * what the person actually asked for — and it did neither the replacement nor
+ * the wardrobe. Re-run with the direction stated inside the instruction, on
+ * the same clip and the same window, it did both. So a scene brief opens with
+ * the TASK and the person's own words together, and the rest of the brief —
+ * who the character is, what the clip shows, what must not change — reads as
+ * the conditions on an order the engine has already been given whole.
+ *
+ * SAID ONCE, NOT TWICE. Leaving a copy at the end as well was the obvious
+ * safe move, and it does not fit: Kling O3 Edit takes 2,500 characters, the
+ * heaviest take the door can send already gives way to fit ONE 600-character
+ * direction (its ticked keeps go, then the read's account), and a second copy
+ * would be paid for out of the read's own lines — who the cast replaces, the
+ * window's cuts, the place by name — which a review pinned as never giving
+ * way. What is shown is still what is sent: the door composes with this same
+ * function, so "See the brief" shows the direction exactly where the engine
+ * reads it. And with the direction no longer at the end, nothing that gives
+ * way from the end can reach it by construction rather than by care.
+ *
+ * The keep lines that used to say "unless the direction below changes it" say
+ * "unless the direction changes it" now: one word out, because "below" became
+ * untrue the moment the block moved, and the block is headed DIRECTION either
+ * way. Only the scene job moves — Restage, Photo to life and the restyle keep
+ * the person's words last, where their own measured takes were sent with them.
+ */
+function taskBlock(task: string[], direction: string): string[] {
+  return ["TASK", ...task, ...(direction ? ["", "DIRECTION", direction] : []), ""];
 }
 
 type BriefCommon = {
@@ -287,9 +416,10 @@ function castingsIn(casting: BriefCommon["casting"]): RecastCasting[] {
 }
 
 /**
- * The brief a take is sent with. `direction` is the person's own words and
- * always lands last, so it reads as the note on top of the order rather than
- * an argument with it.
+ * The brief a take is sent with. `direction` is the person's own words: on a
+ * scene take they sit with the TASK, where the engine reads them beside the
+ * order they qualify (taskBlock, 2026-09-23); on every other job they land
+ * last, as the note on top of an order already given.
  *
  * EVERY WORD THEY WROTE REACHES THE TAKE (2026-09-22). Until today a brief
  * too long for its engine was cut from its END — where the direction stands
@@ -309,7 +439,9 @@ function castingsIn(casting: BriefCommon["casting"]): RecastCasting[] {
  * The read is never dropped whole (review, 2026-09-22): who the cast
  * replaces, the clip's length and cuts, and the place by name stay — a
  * brief that says "Replace Person A" must say who Person A is, and a
- * window with a cut in it is never called one continuous shot.
+ * window with a cut in it is never called one continuous shot. Where the
+ * read gave that person a mark, the TASK says who they are in plain words
+ * too, and the source line is the tag's second home rather than its only one.
  *
  * Two things never give way. The person's direction (at most 600
  * characters) is never cut. And a later part's CONTINUITY wording is never
@@ -378,12 +510,24 @@ export function composeRecastBrief(input: BriefInput): string {
  * lines of the KEEP block go, from its end, until the brief fits — never a
  * line of the direction, and never one of the continuity, which stands
  * above the keeps. A brief with nothing left to drop is cut from its end.
+ *
+ * Either layout is safe. Where the direction stands below the keeps (Restage,
+ * Photo to life, the restyle) the block ends where DIRECTION begins; where it
+ * stands with the TASK (a scene take, taskBlock) the keep block runs to the
+ * end of the brief and the search starts there, which is the same thing.
+ *
+ * The CLOSING line is not one of the lines that go (2026-09-23). It is the
+ * last line of the block, so dropping from the end used to reach it first —
+ * and it is the one line that says what the whole list covers and, since
+ * today, what it does NOT: the person the TASK replaces. Every other line
+ * promises something the TASK or THE CHARACTER promises again in its own
+ * words; that one does not.
  */
 function dropKeepLines(text: string, max: number): string {
   const lines = text.split("\n");
   const keepAt = lines.findIndex((l) => l.startsWith("KEEP"));
   const directionAt = lines.lastIndexOf("DIRECTION");
-  const end = directionAt > keepAt ? directionAt - 1 : lines.length;
+  const end = (directionAt > keepAt ? directionAt - 1 : lines.length) - 1;
   for (let drop = end - 1; keepAt >= 0 && drop > keepAt; drop--) {
     if (lines[drop] === "") continue;
     lines.splice(drop, 1);
@@ -529,9 +673,7 @@ function composeUncut(input: BriefCommon & { seconds: number; short?: boolean })
     // (the retired ones take no prompt at all).
     const video = "@Video1";
     parts.push(
-      "TASK",
-      `Change ${video} exactly as the direction below says, and nothing more. ${keepPerformance}`,
-      "",
+      ...taskBlock([`Change ${video} exactly as the direction below says, and nothing more. ${keepPerformance}`], direction),
       ...imageLines(images),
       "THE SOURCE",
       ...sourceLines(input.read, input.seconds),
@@ -546,7 +688,6 @@ function composeUncut(input: BriefCommon & { seconds: number; short?: boolean })
         : []),
       ...wordsKeepLines({ video, world: input.read?.world, keeps: input.keeps, short: input.short, released }),
     );
-    if (direction) parts.push("", "DIRECTION", direction);
     return cleanBrief(parts.join("\n"), Number.POSITIVE_INFINITY);
   }
 
@@ -560,29 +701,46 @@ function composeUncut(input: BriefCommon & { seconds: number; short?: boolean })
     const swaps = named.filter((c) => c.tag);
     const placed = named.filter((c) => !c.tag);
     const task: string[] = [];
+    // Only the people actually being replaced are named by their mark, and
+    // only here in the TASK (markFor): a character who is merely PUT into the
+    // clip takes nobody's place, and nobody else in the footage is described
+    // at all.
+    const taken = swaps.map((c) => replacedAs(c, markFor(input.read, c.tag)));
     if (swaps.length > 0) {
       // A tag that covers MANY people is said as many: every one of them
       // becomes that character, which is what casting over a crowd means
       // (2026-09-20).
       task.push(
-        `Replace ${swaps
-          .map(
-            (c, i) =>
-              `${i === 0 ? "" : "and "}${c.many ? `every single person in Person ${c.tag}’s group` : `Person ${c.tag}`}${i === 0 ? ` in ${video}` : ""} with ${c.token}`,
-          )
-          .join(", ")}.`,
+        `Replace ${swaps.map((c, i) => `${i === 0 ? "" : "and "}${taken[i]}${i === 0 ? ` in ${video}` : ""} with ${c.token}`).join(", ")}.`,
       );
     }
     if (placed.length > 0) task.push(`Put ${placed.map((c) => c.token).join(" and ")} into ${video} as the direction below says.`);
     task.push(`They all appear together in this one video. ${keepPerformance}`);
     parts.push(
-      "TASK",
-      task.join(" "),
-      "",
+      ...taskBlock(
+        [
+          task.join(" "),
+          // Each swap is one person out and one in — said plainly, because
+          // the take that grew a second character said nothing of the sort.
+          ...(swaps.length > 0
+            ? [
+                goneLine({
+                  character: swaps.map((c) => c.token).join(" and "),
+                  video,
+                  characters: swaps.length,
+                  // A group counts as many places on its own, whoever else is cast.
+                  places: swaps.some((c) => c.many) ? 2 : swaps.length,
+                  short: input.short,
+                }),
+              ]
+            : []),
+        ],
+        direction,
+      ),
       "THE CHARACTERS",
       ...named.map((c) =>
         bullet(
-          `${c.characterName} — ${c.token}. Their face, hair and build come from ${c.token.startsWith("@Element") ? "those photos" : "that image"}, and so do their clothes, from the first frame to the last, unless the direction below says otherwise.`,
+          `${c.characterName} — ${c.token}. Their face, hair and build come from ${c.token.startsWith("@Element") ? "those photos" : "that image"}, and so do their clothes, from the first frame to the last, unless the direction says otherwise.`,
         ),
       ),
       `Each of them stays the same person from every side, including from behind: when they turn away or walk off, it is still their own hair and build we see, never the original performer's — and never each other's.`,
@@ -601,15 +759,13 @@ function composeUncut(input: BriefCommon & { seconds: number; short?: boolean })
         : []),
       ...castKeepLines({ video, world: input.read?.world, keeps: input.keeps, short: input.short, released }),
     );
-    if (direction) parts.push("", "DIRECTION", direction);
     return cleanBrief(parts.join("\n"), Number.POSITIVE_INFINITY);
   }
 
-  const who = casting.tag
-    ? casting.many
-      ? `every single person in Person ${casting.tag}’s group`
-      : `Person ${casting.tag}`
-    : "The performer";
+  // The read's mark for the one person this take replaces, where it has one:
+  // "the man in the white shirt" tells the engine which of forty people to
+  // take out, and "Person A" does not.
+  const who = replacedAs(casting, markFor(input.read, casting.tag));
   // With names the engine reads (Kling O3 Edit: @Video1 for the clip, @Element1
   // or @Image1 for the character), the brief uses them; without, plain words.
   const token = casting.token;
@@ -617,9 +773,15 @@ function composeUncut(input: BriefCommon & { seconds: number; short?: boolean })
   const character = token ?? "the character in the reference image";
   const photos = token === "@Element1" ? "those photos" : "the image";
   parts.push(
-    "TASK",
-    `Replace ${who} in ${video} with ${character}. ${keepPerformance}`,
-    "",
+    ...taskBlock(
+      [
+        `Replace ${who} in ${video} with ${character}. ${keepPerformance}`,
+        // Said only where someone is actually replaced: with no tag there is
+        // no person to take out, and nothing to promise about the head count.
+        ...(casting.tag ? [goneLine({ character, video, characters: 1, places: casting.many === true ? 2 : 1, short: input.short })] : []),
+      ],
+      direction,
+    ),
     "THE CHARACTER",
     `${name} — ${token ? `${token}, ` : ""}the person in the reference ${token === "@Element1" ? "images" : "image"}. Their face, hair and build come from ${photos} and must stay the same in every frame.`,
     // THE CLOTHES (2026-09-19). The operator's first 30 s take: the brief
@@ -629,7 +791,7 @@ function composeUncut(input: BriefCommon & { seconds: number; short?: boolean })
     // black dress, and the outfit flipped at the join. Said once, for every
     // part; the direction can still dress them otherwise (an added image of
     // a coat, say).
-    `So do their clothes: they wear what they wear in ${photos}, from the first frame to the last, unless the direction below says otherwise.`,
+    `So do their clothes: they wear what they wear in ${photos}, from the first frame to the last, unless the direction says otherwise.`,
     // THE LINE THAT MATTERS MOST (2026-09-19). The operator's take on Wan
     // lost his character the moment the performer turned his back: nothing
     // said what the back of the character's head looks like. Kling O3 Edit
@@ -655,12 +817,16 @@ function composeUncut(input: BriefCommon & { seconds: number; short?: boolean })
       : []),
     ...castKeepLines({ video, world: input.read?.world, keeps: input.keeps, short: input.short, released }),
   );
-  if (direction) parts.push("", "DIRECTION", direction);
   return cleanBrief(parts.join("\n"), Number.POSITIVE_INFINITY);
 }
 
-/** The condition a released keep line holds under (YOUR WORDS WIN, composeUncut). */
-const UNLESS = "unless the direction below changes it";
+/**
+ * The condition a released keep line holds under (YOUR WORDS WIN,
+ * composeUncut). It said "the direction below" until the direction moved up
+ * to sit with the TASK (taskBlock): the block is headed DIRECTION wherever it
+ * stands, so the word that stopped being true simply goes.
+ */
+const UNLESS = "unless the direction changes it";
 
 /** One of the person's ticked keeps, held only until their own words change it. */
 const heldUnless = (what: string) => `${what.replace(/[.\s]+$/, "")} — ${UNLESS}.`;
@@ -674,6 +840,31 @@ type KeepInput = {
   /** Every line held only until the direction changes it (YOUR WORDS WIN, composeUncut). */
   released?: boolean;
 };
+
+/**
+ * THE LAST LINE THE ENGINE READS (2026-09-23). The list used to close on
+ * "Everything else stays exactly as it is in @Video1" — and the person being
+ * replaced is part of everything else. Read as the final word on a brief that
+ * had already asked for a replacement, it says to keep him, which is exactly
+ * what came back: the character beside the man rather than in his place. So
+ * the catch-all now excludes whoever and whatever the TASK names — the person
+ * going out and the character coming in — and covers the rest of the shot,
+ * which is all it was ever meant to promise.
+ *
+ * It also does the work of the line that used to stand above the ticked
+ * keeps, "Everyone in @Video1 who is not named above stays exactly as they
+ * are" (2026-09-20), so that line is gone. Both promised the bystanders; this
+ * one draws the boundary where the engine can see it. "Named above" covered
+ * everything written earlier in the brief, THE SOURCE's own account of Person
+ * C and Person D included — so the people most in need of the promise were
+ * the ones it quietly let out, while the TASK names exactly the one person
+ * who must NOT be kept. Saying it once also buys back the characters the
+ * negative above costs, which matters at Kling's 2,500.
+ */
+function closingKeep(video: string, opts: { short?: boolean; released?: boolean }): string {
+  if (opts.short) return bullet(`Everyone and everything the TASK does not name, as it is in ${video}.`);
+  return bullet(`Everyone and everything the TASK does not name stays exactly as it is in ${video}${opts.released ? ` — ${UNLESS}` : ""}.`);
+}
 
 /**
  * What a take with someone cast in it keeps — one character or several.
@@ -701,9 +892,8 @@ function castKeepLines(input: KeepInput): string[] {
             bullet(world ? `The place it happens in — ${UNLESS}: ${world}` : `The setting — ${UNLESS}.`),
             bullet(`The lighting — ${UNLESS}.`),
           ]),
-      bullet(`Everyone in ${video} who is not named above, as they are — ${UNLESS}.`),
       ...input.keeps.map((k) => bullet(heldUnless(k.what))),
-      bullet(`Everything the direction does not change stays exactly as it is in ${video}.`),
+      closingKeep(video, { released: true }),
     ];
   }
   if (input.short) {
@@ -712,7 +902,7 @@ function castKeepLines(input: KeepInput): string[] {
       bullet(world ? "The performance, the camera, the cuts, the timing and the lighting." : "The performance, the camera, the cuts, the timing, the lighting and the setting."),
       ...(world ? [bullet(`The place it happens in, unchanged: ${world}`)] : []),
       ...keepLines(input.keeps).map(bullet),
-      bullet(`Everyone not named above, and everything else in ${video}, as it is.`),
+      closingKeep(video, { short: true }),
     ];
   }
   return [
@@ -729,10 +919,11 @@ function castKeepLines(input: KeepInput): string[] {
     bullet("The lighting."),
     // NOT "everyone else in the shot": when a cast character plays a GROUP,
     // that promise contradicts the task, and the engine settled the argument
-    // by redrawing the whole picture (2026-09-20).
-    bullet(`Everyone in ${video} who is not named above stays exactly as they are.`),
+    // by redrawing the whole picture (2026-09-20). The bystanders are promised
+    // by the closing line now, which draws the same boundary where the engine
+    // can check it — the TASK's own names (closingKeep, 2026-09-23).
     ...keepLines(input.keeps).map(bullet),
-    bullet(`Everything else stays exactly as it is in ${video}.`),
+    closingKeep(video, {}),
   ];
 }
 

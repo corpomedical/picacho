@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   composeRecastBrief,
   RECAST_BRIEF_MAX_CHARS,
+  RECAST_MARK_MAX_CHARS,
   recastBriefNames,
   recastCastTokens,
   recastCharacterToken,
@@ -61,8 +62,10 @@ describe("a recast's brief", () => {
     expect(brief).toContain("KEEP EXACTLY");
     expect(brief).toContain("Eva");
     expect(brief).toContain("Replace Person A in the source video");
-    // The line Genjutsu's own recipes end on, and the reason they work.
-    expect(brief).toContain("Everything else stays exactly as it is in the source video.");
+    // The line Genjutsu's own recipes end on, and the reason they work —
+    // scoped, since 2026-09-23, to whoever and whatever the TASK does not
+    // name: read as a blanket promise it ordered the replaced man KEPT.
+    expect(brief).toContain("Everyone and everything the TASK does not name stays exactly as it is in the source video.");
   });
 
   it("carries the read's own account of the clip, cuts and all", () => {
@@ -77,11 +80,28 @@ describe("a recast's brief", () => {
     expect(composeRecastBrief({ ...base, job: "scene", keeps: [] })).not.toContain("wristwatch");
   });
 
-  it("puts the person's own direction last, as a note on top of the order", () => {
+  // THE DIRECTION ARRIVES WITH THE ORDER (2026-09-23). It used to land last,
+  // as a note on top of the order — and on the take that failed it was 29
+  // characters at position 1,933 of a 1,963-character brief, read after the
+  // cast lines, the keep list and nine "unless the direction changes it"
+  // clauses. The engine added the character beside the man and ignored the
+  // wardrobe twice; the same clip and window, re-run with the direction inside
+  // the instruction, replaced him in place and dressed him as asked.
+  it("puts the person's own direction with the TASK, where the order is given", () => {
     const withDirection = composeRecastBrief({ ...base, job: "scene", direction: "Keep it cold and blue." });
     expect(withDirection).toContain("DIRECTION");
-    expect(withDirection.indexOf("DIRECTION")).toBeGreaterThan(withDirection.indexOf("KEEP EXACTLY"));
-    expect(withDirection.trimEnd().endsWith("Keep it cold and blue.")).toBe(true);
+    expect(withDirection.indexOf("DIRECTION")).toBeLessThan(withDirection.indexOf("THE CHARACTER"));
+    expect(withDirection.indexOf("DIRECTION")).toBeLessThan(withDirection.indexOf("\nKEEP"));
+    // Said once, not twice: a second copy costs up to 600 of Kling's 2,500,
+    // which the heaviest take the door can send does not have to spare.
+    expect(withDirection.split("Keep it cold and blue.")).toHaveLength(2);
+    expect(withDirection.split("\n").indexOf("DIRECTION")).toBe(withDirection.split("\n").lastIndexOf("DIRECTION"));
+    // The other jobs keep the person's words last, where their own takes were
+    // measured with them there.
+    for (const job of ["restage", "motion"] as const) {
+      const other = composeRecastBrief({ ...base, job, direction: "Keep it cold and blue." });
+      expect(other.trimEnd().endsWith("Keep it cold and blue."), job).toBe(true);
+    }
   });
 
   it("still reads as an order when there was no read at all, and claims nothing it cannot know", () => {
@@ -119,7 +139,7 @@ describe("a brief for an engine that reads names", () => {
   it("calls the clip @Video1 and the character by the name their photos go under", () => {
     const many = composeRecastBrief({ ...base, job: "scene", casting: { tag: "A", characterName: "Eva", token: recastCharacterToken(4) } });
     expect(many).toContain("Replace Person A in @Video1 with @Element1.");
-    expect(many).toContain("Everything else stays exactly as it is in @Video1.");
+    expect(many).toContain("Everyone and everything the TASK does not name stays exactly as it is in @Video1.");
     const one = composeRecastBrief({ ...base, job: "scene", casting: { tag: "A", characterName: "Eva", token: recastCharacterToken(1) } });
     expect(one).toContain("with @Image1.");
   });
@@ -159,7 +179,7 @@ describe("a later piece of a long take", () => {
   it("never loses the person's own words to the extra paragraph", () => {
     const direction = `She looks up at the very end. ${"Keep her calm and unhurried. ".repeat(19)}`.slice(0, 600);
     const later = composeRecastBrief({ ...base, job: "scene", casting, continuing: true, direction });
-    expect(later.endsWith(direction.trim())).toBe(true);
+    expect(later).toContain(direction.trim());
     expect(later.length).toBeLessThanOrEqual(RECAST_BRIEF_MAX_CHARS);
   });
 });
@@ -176,7 +196,9 @@ describe("a motion take's brief — the only one an engine actually reads", () =
     expect(brief).toContain("The reference image is the world");
     expect(brief).toContain("Only the movement comes from the video.");
     expect(brief).not.toContain("The lighting and the setting.");
-    expect(brief).not.toContain("Everything else stays exactly as it is in the source video.");
+    // The scene list's closing line, whatever it says today (2026-09-23: it
+    // names what the TASK does not) — none of it belongs here.
+    expect(brief).not.toContain("stays exactly as it is in the source video.");
     expect(brief).not.toContain("Replace Person A");
   });
 
@@ -240,7 +262,10 @@ describe("the clothes", () => {
   });
 
   it("still lets the person's own words dress them otherwise", () => {
-    expect(composeRecastBrief({ ...base, job: "scene", casting })).toContain("unless the direction below says otherwise");
+    // "the direction", not "the direction below": their words stand above this
+    // line now (2026-09-23), and the block they are in is headed DIRECTION.
+    expect(composeRecastBrief({ ...base, job: "scene", casting })).toContain("unless the direction says otherwise");
+    expect(composeRecastBrief({ ...base, job: "scene", casting })).not.toContain("the direction below says otherwise");
   });
 });
 
@@ -254,17 +279,23 @@ describe("a take with nobody cast — words, and images of their own", () => {
     const brief = composeRecastBrief(words);
     // Held until the words change it (2026-09-22) — on a take of one piece.
     expect(brief).toContain(
-      "Change @Video1 exactly as the direction below says, and nothing more. Keep the performance exactly as it is, unless the direction below changes it.",
+      "Change @Video1 exactly as the direction below says, and nothing more. Keep the performance exactly as it is, unless the direction changes it.",
     );
     expect(composeRecastBrief({ ...words, longTake: true })).toContain(
       "Change @Video1 exactly as the direction below says, and nothing more. Keep the performance exactly as it is.",
     );
+    // Nobody is replaced here, so nothing is named in the TASK and the
+    // closing catch-all is the one it always was.
     expect(brief).toContain("Everything the direction does not change stays exactly as it is in @Video1.");
     expect(brief).not.toContain("Replace");
     expect(brief).not.toContain("THE CHARACTER");
     // No blanket "keep the setting" to argue with a direction that changes it.
     expect(brief).not.toContain("The lighting, the setting and everyone else in the shot.");
-    expect(brief.endsWith("Make it snow, and dress everyone in red.")).toBe(true);
+    // Their words sit directly under the TASK they qualify — and "the
+    // direction below" in that sentence is still true of the block below it.
+    expect(brief).toContain("TASK\nChange @Video1 exactly as the direction below says, and nothing more.");
+    expect(brief).toContain("\n\nDIRECTION\nMake it snow, and dress everyone in red.\n");
+    expect(brief.indexOf("DIRECTION")).toBeLessThan(brief.indexOf("THE SOURCE"));
   });
 
   it("names each image by the engine's name and by the person's — image 1, image 2", () => {
@@ -304,7 +335,7 @@ describe("images beside a character", () => {
     const keeps = Array.from({ length: 6 }, (_, i) => ({ what: `a long described thing to keep in the shot, number ${i + 1}`, kind: "object" as const }));
     const brief = composeRecastBrief({ ...base, job: "scene", casting, keeps, continuing: true, images: recastImageTokens(casting.token, 3), direction });
     expect(brief.length).toBeLessThanOrEqual(RECAST_BRIEF_MAX_CHARS);
-    expect(brief.endsWith(direction)).toBe(true);
+    expect(brief).toContain(direction);
   });
 });
 
@@ -340,7 +371,11 @@ describe("several characters in one take", () => {
     const brief = composeRecastBrief({ ...base, job: "scene", casting: [ensemble[0], { ...ensemble[1], tag: null }], direction: "Anubis replaces every student." });
     expect(brief).toContain("Replace Person A in @Video1 with @Element1.");
     expect(brief).toContain("Put @Image1 into @Video1 as the direction below says.");
-    expect(brief.endsWith("Anubis replaces every student.")).toBe(true);
+    expect(brief).toContain("\n\nDIRECTION\nAnubis replaces every student.\n");
+    // The negative is for the person actually going out; the character who is
+    // only PUT into the clip takes nobody's place.
+    expect(brief).toContain("The person @Element1 replaces appears in no frame of @Video1");
+    expect(brief).not.toContain("@Element1 and @Image1 replace");
   });
 
   it("carries both across a long take's joins", () => {
@@ -421,7 +456,13 @@ describe("a character cast over a whole group", () => {
       // The place by name, from the read — not "the setting" in the abstract.
       expect(brief).toContain("The place it happens in, unchanged: A white studio under flat daylight.");
       expect(brief).toContain("The lighting.");
-      expect(brief).toContain("Everyone in @Video1 who is not named above stays exactly as they are.");
+      // The bystanders are promised by the closing line now, which draws the
+      // boundary where the engine can check it — the TASK's own names
+      // (2026-09-23). "Everyone not named above" covered everything written
+      // earlier, THE SOURCE's account of Person C and Person D included, so
+      // the people who most needed the promise were the ones it let out.
+      expect(brief).not.toContain("Everyone in @Video1 who is not named above stays exactly as they are.");
+      expect(brief).toContain("Everyone and everything the TASK does not name stays exactly as it is in @Video1.");
     }
   });
 });
@@ -533,7 +574,7 @@ describe("the brief for the stretch that is sent", () => {
       direction,
       images: ["@Image1", "@Image2"],
     });
-    expect(brief.endsWith(direction)).toBe(true);
+    expect(brief).toContain(direction);
     expect(Array.from(brief).length).toBeLessThanOrEqual(RECAST_ENGINES["kling-edit"].promptMax);
     // Over the 2,000 the recipe used to cut at — and its kept copy is whole now.
     expect(Array.from(brief).length).toBeGreaterThan(2000);
@@ -591,12 +632,13 @@ describe("what gives way when a brief is too long — ours, never theirs", () =>
     for (let length = 0; length <= 600; length += 25) {
       const brief = compose(length);
       expect(Array.from(brief).length).toBeLessThanOrEqual(2500);
-      expect(brief.endsWith(directionOf(length))).toBe(true);
+      // Whole, wherever it stands: with the TASK on a scene take (2026-09-23).
+      expect(brief).toContain(directionOf(length));
       expect(continuityOf(brief)).toBe(whole);
     }
   });
 
-  it("lets the other people go, then our own wording, then the account, then the keeps — and never who is who, the cuts or the place", () => {
+  it("lets the other people go, then our own wording, then the account, then the ticked keeps, and the read last of all", () => {
     const stages = new Set<string>();
     for (const keeps of [0, 3, 6]) {
       for (let length = 0; length <= 600; length += 10) {
@@ -604,27 +646,50 @@ describe("what gives way when a brief is too long — ours, never theirs", () =>
         const spare = ["A", "C", "D"].filter((tag) => brief.includes(`Person ${tag}:`)).length;
         const account = brief.includes(busy.motion);
         const ticked = (brief.match(/wristwatch/g) ?? []).length;
-        const shortKeeps = brief.includes("Everyone not named above, and everything else in @Video1, as it is.");
-        // WHAT NEVER GOES (review, 2026-09-22): who the cast replaces, the
-        // window's length and cuts, and the place by name. "Replace Person B"
-        // must say who Person B is, and a window with a cut in it is never
-        // called one continuous shot.
-        expect(brief).toContain("Person B:");
+        const shortKeeps = brief.includes("Everyone and everything the TASK does not name, as it is in @Video1.");
+        const who = brief.includes("Person B:");
+        // STILL NEVER (review, 2026-09-22): the window's cuts and the place by
+        // name. A window with a cut in it is never called one continuous shot,
+        // and "the setting" in the abstract let the engine build an Egyptian
+        // field where a school courtyard had been.
         expect(brief).toContain("cutting at");
         expect(brief).toContain(busy.world);
         // Our own wording shortens only after the other people have gone.
         if (shortKeeps) expect(spare).toBe(0);
         // The account goes only after our own wording has shortened.
         if (!account) expect(shortKeeps).toBe(true);
-        // The person's ticked keeps go last of all.
+        // The person's ticked keeps go last of our own material.
         if (ticked < keeps) expect(account).toBe(false);
+        // WHO THE CAST REPLACES GOES LAST (review, 2026-09-22; re-pinned
+        // 2026-09-23). It used to go never — and the TASK's negative costs
+        // 160 characters on a brief that had none to spare at Kling's 2,500,
+        // so at the top of the range this heaviest fixture gives up the read's
+        // own line for Person B. It gives it up only when everything of ours
+        // has gone and every ticked keep with it, and the TASK still says who
+        // is replaced (by their mark, where the read gave one). This fixture —
+        // a cast over a group in a LATER PART — is not a take the door will
+        // send: it refuses that one outright (actions.ts, RECAST_GROUP_ONE_PART).
+        if (!who) expect(ticked).toBe(0);
+        if (!who) expect(account).toBe(false);
         stages.add(
-          spare === 3 ? "whole" : spare > 0 ? "others going" : !shortKeeps ? "others gone" : account ? "ours short" : ticked === keeps ? "account gone" : "ticks going",
+          spare === 3
+            ? "whole"
+            : spare > 0
+              ? "others going"
+              : !shortKeeps
+                ? "others gone"
+                : account
+                  ? "ours short"
+                  : !who
+                    ? "who gone"
+                    : ticked === keeps
+                      ? "account gone"
+                      : "ticks going",
         );
       }
     }
     // Every step was reached somewhere on the way.
-    expect([...stages].sort()).toEqual(["account gone", "ours short", "others going", "others gone", "ticks going", "whole"].sort());
+    expect([...stages].sort()).toEqual(["account gone", "ours short", "others going", "others gone", "ticks going", "who gone", "whole"].sort());
   });
 
   it("fits every shape of take the door can send without ever dropping a line of the keep list", () => {
@@ -648,9 +713,11 @@ describe("what gives way when a brief is too long — ours, never theirs", () =>
           continuing,
           ...(continuing && names.look ? { look: names.look } : {}),
         });
-        expect(brief.endsWith(direction), `${n} cast, continuing ${continuing}`).toBe(true);
-        expect(brief, `${n} cast, continuing ${continuing}`).toMatch(
-          /- (Everything else stays exactly as it is in @Video1\.|Everyone not named above, and everything else in @Video1, as it is\.|Everything the direction does not change stays exactly as it is in @Video1\.)\n\nDIRECTION\n/,
+        expect(brief, `${n} cast, continuing ${continuing}`).toContain(direction);
+        // The keep list is the end of a scene brief now, and its closing line
+        // is still the last line there is: the last resort never ran.
+        expect(brief.split("\n").at(-1), `${n} cast, continuing ${continuing}`).toMatch(
+          /^- Everyone and everything the TASK does not name(,| stays exactly as it is in @Video1)/,
         );
       }
     }
@@ -727,7 +794,10 @@ describe("every job, every cast, every length: the whole direction is in the bod
 // face and pull out", "arms crossed", "dress her as Cleopatra" were sent
 // beside KEEP EXACTLY the camera, the performance and everything else.
 describe("your words win over our own keep list — on a take of one piece", () => {
-  const UNLESS = "unless the direction below changes it";
+  // "the direction", not "the direction below", since their words moved up to
+  // sit with the TASK (2026-09-23): one word out, and the block they are in is
+  // headed DIRECTION wherever it stands.
+  const UNLESS = "unless the direction changes it";
   const direction = "Start close on her face and slowly pull out; she stands with her arms crossed.";
   const keepBlock = (brief: string) => {
     const lines = brief.split("\n");
@@ -782,10 +852,13 @@ describe("your words win over our own keep list — on a take of one piece", () 
     const brief = released(shapes.element);
     expect(brief).toContain(`- The place it happens in — ${UNLESS}: ${busy.world}`);
     expect(brief).toContain(`- a silver wristwatch on the left wrist of the lead performer, item 1 that must survive — ${UNLESS}.`);
-    expect(brief).toContain("- Everything the direction does not change stays exactly as it is in @Video1.");
+    expect(brief).toContain(`- Everyone and everything the TASK does not name stays exactly as it is in @Video1 — ${UNLESS}.`);
     // The character is still the character: face, hair and build are not keep lines.
     expect(brief).toContain("Their face, hair and build come from those photos and must stay the same in every frame.");
-    expect(brief.endsWith(direction)).toBe(true);
+    expect(brief).toContain(direction);
+    // Nobody cast, nobody named in the TASK: that shape's closing line is the
+    // one it always was.
+    expect(released(shapes.nobody)).toContain("- Everything the direction does not change stays exactly as it is in @Video1.");
   });
 
   it("is word for word today's brief when there is no direction", () => {
@@ -806,7 +879,16 @@ describe("your words win over our own keep list — on a take of one piece", () 
       for (const continuing of [false, true]) {
         const part = released(casting, { longTake: true, continuing });
         expect(keepBlock(part).heading, `${name} ${continuing}`).toBe("KEEP EXACTLY");
-        for (const line of keepBlock(part).bullets) expect(line, `${name} ${continuing}`).not.toContain(UNLESS);
+        for (const line of keepBlock(part).bullets) {
+          // A take with NOBODY cast has always held its one place line only
+          // until the words move it (2026-09-19: their words are the whole
+          // task there, and the place is the first thing they change). It
+          // reads as a released line now only because UNLESS lost the word
+          // "below" when the direction moved up — the line itself is the one
+          // every part was always sent.
+          if (casting === null && line.startsWith("- The place it happens in,")) continue;
+          expect(line, `${name} ${continuing}`).not.toContain(UNLESS);
+        }
         expect(part, `${name} ${continuing}`).toContain("Keep the performance exactly as it is.");
         expect(part, `${name} ${continuing}`).not.toContain(`exactly as it is, ${UNLESS}`);
       }
@@ -820,6 +902,170 @@ describe("your words win over our own keep list — on a take of one piece", () 
       const brief = composeRecastBrief({ job, read: busy, window: { start: 0, end: 10 }, casting: job === "world" ? null : shapes.element, keeps: keepsOf(2), direction });
       expect(brief, job).not.toContain(UNLESS);
     }
+  });
+});
+
+// THE BRIEF SAYS REPLACE (2026-09-23). One 15 s window of a school courtyard,
+// paid for twice: the brief that sent the person's direction last put the
+// character BESIDE the man and ignored the wardrobe twice; the same clip with
+// the direction inside the instruction replaced him in place, dressed him as
+// asked and kept the real crowd. What neither wording fixed is the load limit
+// — a lead swap and a whole-crowd swap in one render still duplicate — and no
+// line here pretends otherwise.
+describe("the TASK says the person is gone", () => {
+  const scene = (casting: Parameters<typeof composeRecastBrief>[0]["casting"], more: Partial<{ direction: string; keeps: number; continuing: boolean }> = {}) =>
+    composeRecastBrief({
+      job: "scene",
+      engine: "kling-edit",
+      read: busy,
+      window: { start: 0, end: 15 },
+      casting,
+      keeps: keepsOf(more.keeps ?? 0),
+      direction: more.direction ?? "",
+      images: [],
+      ...(more.continuing ? { continuing: true, look: "@Image1" } : {}),
+    });
+  const eva = { tag: "A", characterName: "Eva", token: "@Element1" };
+
+  it("says all three things the paid re-run said, beside the order to replace", () => {
+    const brief = scene(eva);
+    expect(brief).toContain("The person @Element1 replaces appears in no frame of @Video1");
+    expect(brief).toContain("how many people are in the shot, and where each of them stands, never changes");
+    expect(brief).toContain("@Element1 stands in their exact position, doing exactly what they did.");
+    // In the TASK, where the order is — not somewhere after the keep list.
+    expect(brief.indexOf("appears in no frame")).toBeLessThan(brief.indexOf("THE CHARACTER"));
+    expect(brief.split("\n")[1].startsWith("Replace Person A in @Video1 with @Element1.")).toBe(true);
+    expect(brief.split("\n")[2].startsWith("The person @Element1 replaces")).toBe(true);
+  });
+
+  it("borrows the head count from the restyle, which has said it that way all along", () => {
+    expect(composeRecastBrief({ ...base, job: "world", casting: null, direction: "Night and neon." })).toContain(
+      "How many people are in the shot, and where each of them stands.",
+    );
+    expect(scene(eva)).toContain("how many people are in the shot, and where each of them stands, never changes");
+  });
+
+  it("counts both sides: a group is places, several characters are people", () => {
+    const group = scene({ tag: "B", many: true, characterName: "Anubis", token: "@Image1" });
+    expect(group).toContain("The people @Image1 replaces appear in no frame of @Video1");
+    expect(group).toContain("@Image1 stands in their exact positions, doing exactly what they did.");
+    const both = scene([eva, { tag: "B", characterName: "Anubis", token: "@Image1" }]);
+    expect(both).toContain("The people @Element1 and @Image1 replace appear in no frame of @Video1");
+    expect(both).toContain("@Element1 and @Image1 stand in their exact positions, doing exactly what they did.");
+  });
+
+  it("is said only where someone is actually replaced", () => {
+    // Words alone, a character only PUT into the clip, and the other jobs:
+    // nobody goes out, so there is no head count to promise.
+    expect(scene(null, { direction: "Make it snow." })).not.toContain("in no frame of");
+    expect(scene({ tag: null, characterName: "Eva", token: "@Element1" }, { direction: "Put her at the back." })).not.toContain("in no frame of");
+    for (const job of ["restage", "motion", "world"] as const) {
+      const brief = composeRecastBrief({ ...base, job, casting: job === "world" ? null : eva, direction: "Night and neon." });
+      expect(brief, job).not.toContain("in no frame of");
+    }
+  });
+
+  it("gives up its last clause before the brief gives up anything of the person's own", () => {
+    // Under pressure our own wording goes short (composeRecastBrief's second
+    // step) and the negative goes with it: the clause that drops is the one
+    // "where each of them stands never changes" already says.
+    const tight = scene(eva, { direction: directionOf(600), keeps: 6, continuing: true });
+    expect(Array.from(tight).length).toBeLessThanOrEqual(RECAST_ENGINES["kling-edit"].promptMax);
+    expect(tight).toContain("The person @Element1 replaces appears in no frame of @Video1");
+    expect(tight).toContain("how many people are in the shot, and where each of them stands, never changes.");
+    expect(tight).not.toContain("stands in their exact position, doing exactly what they did");
+    expect(tight).toContain(directionOf(600));
+  });
+});
+
+describe("the keep list's last line", () => {
+  const casting = { tag: "A", characterName: "Eva", token: "@Element1" };
+  const closing = (brief: string) => brief.split("\n").filter((l) => l.startsWith("- ")).at(-1) ?? "";
+
+  it("no longer reads as an order to keep the person the TASK replaces", () => {
+    // The catch-all was the last line the engine saw, and "everything else"
+    // includes the man in the white shirt.
+    for (const brief of [
+      composeRecastBrief({ ...base, job: "scene", casting }),
+      composeRecastBrief({ ...base, job: "scene", casting, direction: "Dress her as Cleopatra." }),
+      composeRecastBrief({ job: "scene", engine: "kling-edit", read: busy, window: { start: 0, end: 15 }, casting, keeps: keepsOf(6), direction: directionOf(600), images: [], continuing: true, look: "@Image1" }),
+    ]) {
+      expect(brief).not.toContain("Everything else stays exactly as it is in @Video1.");
+      expect(brief).not.toContain("Everyone not named above, and everything else in @Video1, as it is.");
+      expect(closing(brief)).toMatch(/^- Everyone and everything the TASK does not name/);
+    }
+  });
+
+  it("still promises everyone the TASK does not name, which is the whole rest of the shot", () => {
+    const brief = composeRecastBrief({ job: "scene", engine: "kling-edit", read: busy, window: { start: 0, end: 15 }, casting, keeps: [], direction: "", images: [] });
+    // The crowd that collapsed back to real schoolboys at the hard bow is
+    // exactly who this line is for, and none of them is named in the TASK.
+    expect(brief).toContain("Everyone and everything the TASK does not name stays exactly as it is in @Video1.");
+    expect(brief).toContain("Person B: left background");
+  });
+});
+
+// A tag is ours, not the picture's: "Person A" means nothing to a model
+// looking at a courtyard with forty schoolboys in it. The read lane gives the
+// people a take REPLACES a plain-words mark, and the TASK leads with it.
+describe("the mark for the person being replaced", () => {
+  const marked = (tag: string, mark: string): RecastRead => ({
+    ...busy,
+    people: busy.people.map((p) => (p.tag === tag ? { ...p, mark } : p)),
+  });
+  const scene = (read: RecastRead, casting: Parameters<typeof composeRecastBrief>[0]["casting"]) =>
+    composeRecastBrief({ job: "scene", engine: "kling-edit", read, window: { start: 0, end: 15 }, casting, keeps: [], direction: "Dress her as Cleopatra.", images: [] });
+
+  it("leads the TASK, with the tag beside it so THE SOURCE still ties to the same person", () => {
+    const brief = scene(marked("A", "the man in the white shirt"), { tag: "A", characterName: "Eva", token: "@Element1" });
+    expect(brief).toContain("Replace the man in the white shirt (Person A) in @Video1 with @Element1.");
+    expect(brief).toContain("Person A: centre, facing camera");
+  });
+
+  it("says the tag alone when the read gave no mark, or gave no read at all", () => {
+    expect(scene(busy, { tag: "A", characterName: "Eva", token: "@Element1" })).toContain("Replace Person A in @Video1 with @Element1.");
+    expect(composeRecastBrief({ ...base, job: "scene", read: null, casting: { tag: "A", characterName: "Eva", token: "@Element1" } })).toContain(
+      "Replace Person A in @Video1 with @Element1.",
+    );
+  });
+
+  it("marks a group as a group, every one of them", () => {
+    const brief = scene(marked("B", "the schoolboys in the rows behind him"), { tag: "B", many: true, characterName: "Anubis", token: "@Image1" });
+    expect(brief).toContain("Replace every single one of the schoolboys in the rows behind him (Person B’s group) in @Video1 with @Image1.");
+  });
+
+  it("gives every replaced character their own, in a take of several", () => {
+    const read: RecastRead = {
+      ...busy,
+      people: busy.people.map((p) => (p.tag === "A" ? { ...p, mark: "the man in the white shirt" } : p.tag === "B" ? { ...p, mark: "the students in the rows" } : p)),
+    };
+    const brief = scene(read, [
+      { tag: "A", characterName: "Eva", token: "@Element1" },
+      { tag: "B", many: true, characterName: "Anubis", token: "@Image1" },
+    ]);
+    expect(brief).toContain(
+      "Replace the man in the white shirt (Person A) in @Video1 with @Element1, and every single one of the students in the rows (Person B’s group) with @Image1.",
+    );
+  });
+
+  it("is used for nobody else — not for a character only put into the clip, and not for the people who stay", () => {
+    // Person C stays in the shot. Nothing about how they look travels onward:
+    // that is the read's rule (recast-read.ts) and this is where it would leak.
+    const brief = scene(marked("C", "the girl with the red bag"), { tag: "A", characterName: "Eva", token: "@Element1" });
+    expect(brief).not.toContain("the girl with the red bag");
+    expect(brief).toContain("Person C: right edge");
+    const placed = scene(marked("A", "the man in the white shirt"), [
+      { tag: "A", characterName: "Eva", token: "@Element1" },
+      { tag: null, characterName: "Anubis", token: "@Image1" },
+    ]);
+    expect(placed).toContain("Put @Image1 into @Video1 as the direction below says.");
+    expect(placed.match(/the man in the white shirt/g)).toHaveLength(1);
+  });
+
+  it("is bounded like the read's own fields, so the door and the server compose the same words", () => {
+    // The read makes a round trip through a browser between the two calls.
+    const brief = scene(marked("A", "y".repeat(RECAST_MARK_MAX_CHARS + 40)), { tag: "A", characterName: "Eva", token: "@Element1" });
+    expect(brief).toContain(`Replace ${"y".repeat(RECAST_MARK_MAX_CHARS)} (Person A) in @Video1`);
   });
 });
 
