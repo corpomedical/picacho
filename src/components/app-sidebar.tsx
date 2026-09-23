@@ -493,17 +493,35 @@ export function AppSidebar({
       const el = settingsRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      setMenuPos({
+      const next = {
         bottom: window.innerHeight - rect.top + 8,
         left: iconOnly ? rect.right + 8 : rect.left,
-      });
+      };
+      // The menu tracks the trigger, so while nothing moves there is nothing
+      // to write — and a scroll that does not move this trigger (the capture
+      // phase hears EVERY scroller in the page) used to re-render anyway.
+      setMenuPos((prev) =>
+        prev && prev.bottom === next.bottom && prev.left === next.left ? prev : next,
+      );
     }
+    // Coalesced to one measurement per frame: a rect read per scroll event,
+    // from every scroller in the document, is the same picture measured
+    // several times over.
+    let frame: number | null = null;
+    const onScroll = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        updatePosition();
+      });
+    };
     updatePosition();
     window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener("scroll", onScroll, true);
     return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
       window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [settingsOpen, iconOnly]);
 

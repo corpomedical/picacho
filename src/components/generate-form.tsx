@@ -3362,9 +3362,18 @@ function GenerateFormInner({
     const vv = window.visualViewport;
     const el = dockRef.current;
     if (!vv || !el) return;
+    // The written value, so an unchanged one is not written again: the read
+    // side is a forced layout (window.innerHeight) and the write side
+    // invalidates style for the whole fixed dock — and in a browser this
+    // fires on every swipe that collapses the URL bar, for a value that is
+    // almost always the same 0px.
+    let written: string | null = null;
     const read = () => {
       const covered = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
-      el.style.setProperty("--kb-inset", `${covered > 60 ? covered : 0}px`);
+      const next = `${covered > 60 ? covered : 0}px`;
+      if (next === written) return;
+      written = next;
+      el.style.setProperty("--kb-inset", next);
     };
     read();
     vv.addEventListener("resize", read);
@@ -6876,6 +6885,7 @@ function GenerateFormInner({
             for the selected tile's ring, which overflow would otherwise
             clip. */}
         <div
+          data-takes-strip
           className={cn(
             "flex min-w-0 gap-2 p-[3px]",
             column

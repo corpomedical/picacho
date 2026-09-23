@@ -87,7 +87,7 @@ export function ReelBand({
   // Starts false so the server and the first client render agree on the
   // poster; only an effect can promote it to video.
   const [videoWelcome, setVideoWelcome] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
+  const [cutIndex, setCutIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [cutAgo, setCutAgo] = useState<string | null>(null);
@@ -123,15 +123,15 @@ export function ReelBand({
   // Which cut is on screen, so the slug can name it. Derived from playback
   // position against the cuts' own durations — the player needs to know
   // nothing about how the file was assembled.
-  let boundary = 0;
-  let current: ReelCut | null = cuts.length > 0 ? cuts[cuts.length - 1] : null;
-  for (const cut of cuts) {
-    boundary += cut.seconds;
-    if (elapsed < boundary) {
-      current = cut;
-      break;
-    }
-  }
+  //
+  // The slug is the ONLY thing playback position feeds, so the index is what
+  // is kept in state, not the position. timeupdate fires about four times a
+  // second for the life of the page; storing the raw currentTime re-rendered
+  // this band (and re-ran this scan) every one of them, including while a
+  // finger was dragging the dashboard past it. Now it re-renders when the cut
+  // actually changes — a handful of times a minute.
+  const current: ReelCut | null =
+    cuts.length > 0 ? (cuts[cutIndex] ?? cuts[cuts.length - 1]) : null;
 
   return (
     // data-reel-band: the dashboard's prompt bar stays hidden until this has
@@ -160,7 +160,19 @@ export function ReelBand({
             onPlay={() => setPaused(false)}
             onPause={() => setPaused(true)}
             className="h-full w-full object-cover"
-            onTimeUpdate={(e) => setElapsed(e.currentTarget.currentTime)}
+            onTimeUpdate={(e) => {
+              const at = e.currentTarget.currentTime;
+              let boundary = 0;
+              let next = cuts.length - 1;
+              for (let i = 0; i < cuts.length; i++) {
+                boundary += cuts[i].seconds;
+                if (at < boundary) {
+                  next = i;
+                  break;
+                }
+              }
+              setCutIndex((prev) => (prev === next ? prev : next));
+            }}
           />
         ) : posterUrl ? (
           // A plain <img>, deliberately: no loader, no srcset, no JS — one
