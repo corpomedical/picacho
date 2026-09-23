@@ -2251,6 +2251,11 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           videoAspectRatio: contentType === "video" ? videoAspectRatio : undefined,
           videoResolution,
           nativeAudio: videoSound,
+          // The microphone rule (pipeline.ts, options.hasCharacter): with a
+          // character in the shot the engine is not allowed to speak for
+          // them, so it is asked for no audio at all and the clip comes back
+          // silent unless our own voice lane fills it.
+          hasCharacter: Boolean(character),
           skipRefinement,
         skipBrandProhibitions: formData.get("skip_brand_rules") === "1",
         // A Set's shot (sets/actions.ts shootInSet): its prompt is built from
@@ -2323,7 +2328,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           voice: {
             presetId: character?.voice_id ?? null,
             externalId: wantsDialogue ? dialogueVoiceId : null,
-            nativeAudio: !wantsDialogue && videoSound !== false,
+            // Must stay in step with pipeline.ts's own expression, or the
+            // row would record `engine` for a clip the engine was never
+            // allowed to speak on.
+            nativeAudio: !wantsDialogue && !character && videoSound !== false,
           },
           // So finish() knows there are opening frames to remove once the
           // clip lands (opening-frame.ts, openingFramePath).
@@ -3217,7 +3225,11 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   const useRealProviders = flag?.enabled === true;
   // Same per-user preference as runGeneration (see the comment there).
   const skipRefinement = userProfile?.skip_ai_refinement === true;
-  const videoSound = (await readGenerationDefaults(supabase, userData.user.id)).sound;
+  // No sound preference is read here any more (2026-09-23). Every angle is a
+  // character clip and this lane cannot carry a dialogue line, so the
+  // engine's microphone is off unconditionally — see the submit below. The
+  // account's Settings → Generation choice cannot reopen it, because there
+  // is no way to ask an engine for ambience without speech.
 
   // Same per-generation model choice as runGeneration (see the comment
   // there) — one choice applies to every angle in this batch.
@@ -3910,9 +3922,14 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
             // default. Charging for a resolution and not sending it is the
             // exact drift the single path's videoOptions already prevents.
             resolution: videoResolution ?? undefined,
-            // The account's sound choice (Settings → Generation) rides every
-            // angle, like the resolution above.
-            generateNativeAudio: videoSound,
+            // THE MICROPHONE RULE (2026-09-23). Every angle is a character
+            // clip — this lane refuses to run without one — and this lane
+            // cannot carry a dialogue line at all, so leaving the engine's
+            // microphone on meant N angles each speaking in its own invented
+            // voice. It is off here, and the account's sound choice does not
+            // reopen it: there is no way to ask an engine for ambience
+            // without speech. Angles come back silent until the dub lands.
+            generateNativeAudio: false,
           }),
         };
         // Queued, not finished. Record the handle and leave this angle's row
@@ -3938,7 +3955,9 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
               voice: {
                 presetId: (character.voice_id as string | null) ?? null,
                 externalId: null,
-                nativeAudio: videoSound !== false,
+                // Matches the submit directly above: the engine was not
+                // asked for audio, so these rows record `silent`.
+                nativeAudio: false,
               },
             });
           } catch (err) {

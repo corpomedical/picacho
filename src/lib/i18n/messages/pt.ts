@@ -1572,7 +1572,7 @@ const pt = {
     aspectPortrait: "Retrato 9:16",
     aspectHelp: "Automático segue o seu prompt e, se não, paisagem. Um formato citado no prompt sempre vence.",
     soundLabel: "Som nos vídeos",
-    soundHelp: "Quando o modelo permite, os clipes saem sem som. Alguns modelos sempre incluem áudio. Diálogos que você adicionar não mudam.",
+    soundHelp: "Quando o modelo permite, os clipes saem sem som. Alguns modelos sempre incluem áudio. Um clipe com um personagem fica em silêncio independentemente disto — nenhum modelo pode inventar a voz dele — a não ser que você adicione diálogo, que é falado na voz dele.",
     saveDefaults: "Salvar padrões",
     defaultsSaveFailed: "Não foi possível salvar seus padrões. Tente de novo.",
     privacyTab: "Privacidade",

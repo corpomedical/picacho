@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   ALWAYS_SPEAKS,
   assignedVoiceFor,
@@ -201,6 +203,39 @@ describe("voiceSourceFor", () => {
         }
       }
     }
+  });
+});
+
+// The record is only worth having if it describes what the submit actually
+// did. These two expressions live in different files and must stay in step:
+// if the pipeline silences the engine but the payload still says nativeAudio
+// was on, every character take is filed as `engine` and the count the whole
+// lock is judged by is wrong in the pessimistic direction — and if they drift
+// the other way it is wrong in the flattering one, which is worse.
+describe("the microphone rule and the record agree", () => {
+  const read = (p: string) => readFileSync(join(__dirname, p), "utf8");
+  const pipeline = read("pipeline.ts");
+  const actions = read("actions.ts");
+
+  it("silences the engine whenever a character is in the shot", () => {
+    expect(pipeline).toContain(
+      "!usingSeparateDialoguePipeline && !options.hasCharacter && options.nativeAudio !== false",
+    );
+  });
+
+  it("tells the pipeline when there is a character", () => {
+    expect(actions).toContain("hasCharacter: Boolean(character),");
+  });
+
+  it("records exactly the condition the pipeline applied", () => {
+    expect(actions).toContain("nativeAudio: !wantsDialogue && !character && videoSound !== false,");
+  });
+
+  it("leaves multi-angle no way to turn the microphone back on", () => {
+    expect(actions).toContain("generateNativeAudio: false,");
+    // The lane stopped reading the sound preference when the rule landed;
+    // a reintroduced read would mean the setting silently does nothing.
+    expect(actions).not.toContain("generateNativeAudio: videoSound");
   });
 });
 

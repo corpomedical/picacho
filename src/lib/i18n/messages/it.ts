@@ -1571,7 +1571,7 @@ const it = {
     aspectPortrait: "Verticale 9:16",
     aspectHelp: "Automatico segue il tuo prompt, altrimenti orizzontale. Un formato indicato nel prompt vince sempre.",
     soundLabel: "Audio nei video",
-    soundHelp: "Quando il modello lo consente, le clip escono senza audio. Alcuni modelli includono sempre il sonoro. I dialoghi che aggiungi non cambiano.",
+    soundHelp: "Quando il modello lo consente, le clip escono senza audio. Alcuni modelli includono sempre il sonoro. Una clip con un personaggio resta in silenzio qualunque cosa dica qui — nessun modello può inventarne la voce — a meno che tu non aggiunga dialogo, che viene detto con la sua.",
     saveDefaults: "Salva impostazioni",
     defaultsSaveFailed: "Impossibile salvare le impostazioni. Riprova.",
     privacyTab: "Privacy",

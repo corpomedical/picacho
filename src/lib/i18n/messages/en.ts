@@ -1667,7 +1667,7 @@ const en = {
     aspectPortrait: "Portrait 9:16",
     aspectHelp: "Automatic follows your prompt, then landscape. A shape you name in the prompt always wins.",
     soundLabel: "Sound with videos",
-    soundHelp: "Where the model allows it, clips come back silent. A few models always include sound. Dialogue you add is unaffected.",
+    soundHelp: "Where the model allows it, clips come back silent. A few models always include sound. A clip with a character stays silent whatever this says — no model is allowed to invent their voice — unless you add dialogue, which is spoken in their own.",
     saveDefaults: "Save defaults",
     defaultsSaveFailed: "Couldn't save your defaults — try again.",
     privacyTab: "Privacy",

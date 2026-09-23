@@ -758,6 +758,23 @@ export type RealPipelineOptions = {
    */
   nativeAudio?: boolean;
   /**
+   * THE MICROPHONE RULE (2026-09-23). A character is in this render.
+   *
+   * Every engine that can make sound makes SPEECH too — Veo, Kling O3 and
+   * Seedance all invent a voice out of the prompt, fresh on every render —
+   * and none of the nine models in the catalogue exposes a voice parameter
+   * of any kind. So on a character render the engine's microphone is off,
+   * and the only speech that may exist is a track we made for that
+   * character. A clip with no dialogue line comes back silent rather than
+   * speaking in a voice nobody chose.
+   *
+   * This overrides the account's own sound choice, deliberately: there is
+   * no "ambience but no speech" setting to ask for, so keeping the room
+   * tone would mean keeping the invented voice with it (operator's call,
+   * 2026-09-23 — silent now, dubbed later).
+   */
+  hasCharacter?: boolean;
+  /**
    * Who is sending, and which row — for the two content gates. The prompt
    * gate judges with this account's recent refusals in front of it, and
    * both gates log a refusal against the row (policy-log.ts). Absent only
@@ -1443,7 +1460,11 @@ export async function runRealPipeline(
             outfitImageUrl: options.outfitImageUrl,
             propImageUrl: options.propImageUrl,
             storyboardShots: options.videoStoryboardShots,
-            generateNativeAudio: !usingSeparateDialoguePipeline && options.nativeAudio !== false,
+            // The microphone rule: our dialogue lane is going to replace the
+            // track, OR a character is in the shot and the engine may not
+            // speak for them. See options.hasCharacter.
+            generateNativeAudio:
+              !usingSeparateDialoguePipeline && !options.hasCharacter && options.nativeAudio !== false,
             durationSeconds: options.videoDurationSeconds,
             aspectRatio: options.videoAspectRatio,
             resolution: options.videoResolution ?? null,
