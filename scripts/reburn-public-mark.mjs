@@ -30,6 +30,7 @@
 //   node scripts/reburn-public-mark.mjs --apply  # burn + upload to wm2/
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import ffmpegPath from "ffmpeg-static";
@@ -71,13 +72,41 @@ function burn(src, dest) {
     ffmpegPath,
     ["-v", "error", "-y", "-i", src, "-i", LOGO, "-filter_complex", FILTER,
      "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p",
-     "-c:a", "copy", "-movflags", "+faststart", dest],
+     "-c:a", "copy", "-movflags", "+faststart", "-f", "mp4", dest],
     { stdio: "inherit" },
   );
 }
 
+// Decode every frame; any error line means a broken file, which is never
+// uploaded (2026-09-23: two overlapping runs wrote one output at once and
+// left it undecodable).
+function assertDecodes(file) {
+  const out = execFileSync(ffmpegPath, ["-v", "error", "-i", file, "-f", "null", "-"], {
+    stdio: ["ignore", "pipe", "pipe"],
+  }).toString();
+  if (out.trim()) throw new Error(`${file} does not decode cleanly — not uploading`);
+}
+
+// One run at a time: every run shares reburn-out/, and two at once delete
+// each other's downloads and interleave writes into the same output.
+const LOCK = path.join(OUT, ".lock");
+function takeLock() {
+  try {
+    fs.writeFileSync(LOCK, String(process.pid), { flag: "wx" });
+  } catch {
+    const pid = Number(fs.readFileSync(LOCK, "utf8"));
+    let alive = false;
+    try { process.kill(pid, 0); alive = true; } catch {}
+    if (alive) throw new Error(`Another run (pid ${pid}) is still going — wait for it to finish.`);
+    fs.writeFileSync(LOCK, String(process.pid));
+  }
+  process.on("exit", () => { try { fs.rmSync(LOCK); } catch {} });
+}
+
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
+  takeLock();
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "reburn-"));
 
   const rows = await fetch(
     `${BASE}/rest/v1/generations?select=id,result_url,profiles!inner(role)` +
@@ -98,11 +127,15 @@ async function main() {
     const file = decodeURIComponent(m[2]);
     const wmPath = `${user}/wm2/${file}`;
 
-    const src = path.join(OUT, `orig-${file}`);
+    const src = path.join(tmp, `orig-${file}`);
+    const part = path.join(tmp, file);
     const dest = path.join(OUT, file);
     await download(`${user}/${file}`, src);
-    burn(src, dest);
-    fs.rmSync(src);
+    burn(src, part);
+    fs.rmSync(src, { force: true });
+    assertDecodes(part);
+    fs.copyFileSync(part, dest);
+    fs.rmSync(part);
 
     if (APPLY) {
       const up = await fetch(objectUrl(wmPath), {
