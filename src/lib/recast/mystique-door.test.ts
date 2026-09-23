@@ -229,7 +229,7 @@ describe("the door while a take renders, and after", () => {
     expect(door).toContain("disabled={!canTake}");
     // The line under the button goes to the control that fixes it.
     expect(door).toContain("onClick={() => goTo(blockerGo)}");
-    for (const ref of ["dropRef", "rightsRef", "wordsRef", "castRef", "groupTrimRef"]) expect(door).toContain(`ref={${ref}}`);
+    for (const ref of ["dropRef", "rightsRef", "wordsRef", "castRef", "crowdAloneRef", "groupTrimRef"]) expect(door).toContain(`ref={${ref}}`);
     // …and is heard as it changes.
     expect(door).toMatch(/<div role="status" aria-live="polite" className="basis-full[^"]*">[\s\S]{0,900}\{blockerLine &&/);
   });
@@ -273,8 +273,10 @@ describe("the door while a take renders, and after", () => {
     expect(door).toContain("onChange={(e) => setSoloPick({ tag: e.target.value || null })}");
     // A new clip starts on its own lead again.
     expect(door.match(/setSoloPick\(null\);/g)?.length).toBe(2);
-    // The group rule follows who is actually played.
-    expect(door).toContain("(ensemble ? castTags : [soloTag]).some(");
+    // Both group rules follow who is actually played (2026-09-23: the tags a
+    // take really casts are now named once and asked twice).
+    expect(door).toContain("const takeTags = ensemble ? castTags : [soloTag];");
+    expect(door).toContain("const castOverGroup = takeTags.some(");
   });
 
   it("marks the job that suits the clip, and never switches to it", () => {

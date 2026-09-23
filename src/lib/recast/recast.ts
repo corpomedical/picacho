@@ -380,6 +380,33 @@ export function recastCastsTogether(job: RecastJob): boolean {
 }
 
 /**
+ * ONE REPLACEMENT PER TAKE (2026-09-23). Whether this take's cast puts a
+ * character over a WHOLE GROUP — a crowd, a row, a class, as the read itself
+ * judged it — and over somebody else in the same take.
+ *
+ * Paid for three times over on one 15 s stretch of a school courtyard, a man
+ * in a white shirt in front of about forty boys. Asked on its own, replacing
+ * the man held: he became the character where he stood, wore what the words
+ * asked for, and the boys behind him kept their own faces, their ties and
+ * their crest through the hard bow at the end. Asked to replace the man AND
+ * turn all forty boys into someone else in the same take, the same stretch
+ * came back with the character twice over — once where the man stood, once
+ * where a front-row boy stood — and the boys fell back to themselves at that
+ * bow, a second and a half before the end.
+ *
+ * So it is not the words: the words that failed here are the words that
+ * worked alone. It is how much ONE take will carry. A group is a take's only
+ * casting; anyone else goes in a take of their own, which is the person's own
+ * press to make — nothing here reassigns a role or splits a take behind them.
+ *
+ * Given the tags the take really casts (null where the words give someone
+ * their part), and the tags the read marked as many.
+ */
+export function recastCrowdSharesTake(castTags: readonly (string | null)[], groupTags: ReadonlySet<string>): boolean {
+  return castTags.length > 1 && castTags.some((tag) => tag !== null && groupTags.has(tag));
+}
+
+/**
  * What a take still needs before it can start. NOT LOCKED TO CHARACTERS
  * (2026-09-19, the operator: "make it that the user can upload an image and
  * that they can only use prompt to change whatever they want. Do not lock it

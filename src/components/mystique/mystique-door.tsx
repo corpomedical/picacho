@@ -35,6 +35,7 @@ import {
   RECAST_JOB_ORDER,
   RECAST_MAX_BYTES,
   recastCastsTogether,
+  recastCrowdSharesTake,
   recastImageRoom,
   recastContainerOf,
   recastEngineFor,
@@ -99,7 +100,7 @@ type Source =
 type Viewing = { take: RecastTake; media: { resultUrl: string; sourceUrl: string | null } | null };
 
 /** The control a grey Take's reason sends the person to (recastBlocker). */
-type BlockerTarget = "drop" | "rights" | "words" | "cast" | "group";
+type BlockerTarget = "drop" | "rights" | "words" | "cast" | "crowd" | "group";
 
 /**
  * An image the person added (2026-09-19). `path` is null while it uploads;
@@ -284,6 +285,7 @@ export function MystiqueDoor({
   const wordsRef = useRef<HTMLTextAreaElement | null>(null);
   const castRef = useRef<HTMLDivElement | null>(null);
   const groupTrimRef = useRef<HTMLButtonElement | null>(null);
+  const crowdAloneRef = useRef<HTMLButtonElement | null>(null);
   // Every blob URL a preview was given, so none outlives the door.
   const imageBlobsRef = useRef<Set<string>>(new Set());
   // The newest pick wins: an upload or a read that lands late is dropped.
@@ -417,9 +419,24 @@ export function MystiqueDoor({
   // server takes it as castTag (A–D) and writes it into the brief.
   const leadTag = read?.people.find((p) => p.lead)?.tag ?? null;
   const soloTag: string | null = cast.length === 1 && soloPick && (soloPick.tag === null || read?.people.some((p) => p.tag === soloPick.tag)) ? soloPick.tag : leadTag;
-  const castOverGroup = (ensemble ? castTags : [soloTag]).some((tag) => tag !== null && groupTags.has(tag));
+  const takeTags = ensemble ? castTags : [soloTag];
+  const castOverGroup = takeTags.some((tag) => tag !== null && groupTags.has(tag));
   const parts = clipWindow ? chainPieceCount(clipWindow.end - clipWindow.start) : 1;
   const groupNeedsOnePart = castOverGroup && parts > 1;
+  // ONE REPLACEMENT PER TAKE (2026-09-23, paid for on the courtyard clip): a
+  // group changed beside somebody else came back with the character twice
+  // over, and the group itself back as it was before the end. The server
+  // refuses it (recast.ts recastCrowdSharesTake); the door says what would
+  // happen and offers both ways out, either of which is the person's own
+  // press — nothing here changes the cast on its own.
+  const crowdSharesTake = recastCrowdSharesTake(takeTags, groupTags);
+  /** The first character cast over a whole group — who the two ways out are named after. */
+  const crowdCast = ensemble
+    ? (cast.find((_, i) => {
+        const tag = takeTags[i];
+        return tag !== null && groupTags.has(tag);
+      }) ?? null)
+    : null;
   // What is actually sent — the server's rule (actions.ts): Photo to life
   // brings ONE picture to life, the character's when someone is cast; Into
   // the clip holds four references, characters included; Restage nine
@@ -470,6 +487,7 @@ export function MystiqueDoor({
     rolesUnsaid,
     hasWords,
     imageUploading: images.findIndex((i) => i.path === null) + 1,
+    crowdSharesTake,
     groupNeedsOnePart,
     credits: totalCredits,
     balance,
@@ -1042,6 +1060,8 @@ export function MystiqueDoor({
         return m.blockPicture;
       case "image":
         return formatMsg(m.blockImage, { n: b.n });
+      case "crowd":
+        return m.blockCrowd;
       case "group":
         return m.blockGroup;
       case "credits":
@@ -1058,9 +1078,11 @@ export function MystiqueDoor({
           ? "words"
           : b.kind === "picture"
             ? "cast"
-            : b.kind === "group"
-              ? "group"
-              : null;
+            : b.kind === "crowd"
+              ? "crowd"
+              : b.kind === "group"
+                ? "group"
+                : null;
   function goTo(target: BlockerTarget) {
     const el: HTMLElement | null =
       target === "drop"
@@ -1071,7 +1093,9 @@ export function MystiqueDoor({
             ? wordsRef.current
             : target === "cast"
               ? (castRef.current?.querySelector<HTMLElement>("button:not([disabled]), a[href]") ?? null)
-              : groupTrimRef.current;
+              : target === "crowd"
+                ? crowdAloneRef.current
+                : groupTrimRef.current;
     if (!el) return;
     el.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "center" });
     el.focus({ preventScroll: true });
@@ -1761,9 +1785,52 @@ export function MystiqueDoor({
                         </select>
                       </label>
                     )}
+                    {/* A whole group cast beside somebody else: the one thing a
+                        take will not carry, whatever its length. Both ways out
+                        are presses of the person's own — the cast is never
+                        rearranged for them, and one press is never turned into
+                        two. */}
+                    {crowdSharesTake && crowdCast && (
+                      <div className="mt-3 rounded-2xl bg-[#d8b483]/[0.08] p-3.5 shadow-[inset_0_0_0_1px_rgba(216,180,131,0.4)]">
+                        <p className="text-sm leading-relaxed text-[#ecedf1]">{m.crowdAlone}</p>
+                        <div className="mt-2.5 flex flex-wrap gap-2">
+                          <button
+                            ref={crowdAloneRef}
+                            type="button"
+                            disabled={starting}
+                            onClick={() =>
+                              setCastIds((prev) => {
+                                const next = [crowdCast.id];
+                                if (next[0] !== prev[0]) setPhotoPath(crowdCast.photos[0]?.path ?? null);
+                                return next;
+                              })
+                            }
+                            className={ghost}
+                          >
+                            {formatMsg(m.crowdAloneOnly, { name: crowdCast.name })}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={starting}
+                            onClick={() =>
+                              setCastIds((prev) => {
+                                const next = prev.filter((id) => id !== crowdCast.id);
+                                if (next[0] !== prev[0]) setPhotoPath(castable.find((x) => x.id === next[0])?.photos[0]?.path ?? null);
+                                return next;
+                              })
+                            }
+                            className={ghost}
+                          >
+                            {formatMsg(m.crowdAloneDrop, { name: crowdCast.name })}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     {/* A character over a whole group, in a take made in parts:
-                        the change every later part is least likely to hold. */}
-                    {groupNeedsOnePart && (
+                        the change every later part is least likely to hold. Not
+                        said under the box above: the trim it offers would not
+                        save a take that asks for two changes at once. */}
+                    {groupNeedsOnePart && !crowdSharesTake && (
                       <div className="mt-3 rounded-2xl bg-[#d8b483]/[0.08] p-3.5 shadow-[inset_0_0_0_1px_rgba(216,180,131,0.4)]">
                         <p className="text-sm leading-relaxed text-[#ecedf1]">{m.crowdWarn}</p>
                         <button

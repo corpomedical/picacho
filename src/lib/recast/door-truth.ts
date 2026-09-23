@@ -224,8 +224,9 @@ export function recastJobPromise(job: RecastJob): RecastPromise {
 // The button used to go grey on any of nine conditions and explain one of
 // them. recastBlocker names the FIRST thing missing, in the order a person
 // meets them on the page — a clip, the rights tick, someone or something to
-// put in it (or words), images still uploading, a group that needs one part,
-// credits — and Take is enabled exactly when there is nothing to name.
+// put in it (or words), images still uploading, a group cast beside somebody
+// else, a group that needs one part, credits — and Take is enabled exactly
+// when there is nothing to name.
 
 export type RecastBalance = { left: number; unlimited: boolean };
 
@@ -242,6 +243,8 @@ export type RecastDoorState = {
   hasWords: boolean;
   /** The number (from 1) of the first added image still uploading, or 0. */
   imageUploading: number;
+  /** A whole group is cast, and somebody else in the same take (2026-09-23). */
+  crowdSharesTake: boolean;
   groupNeedsOnePart: boolean;
   /** What the press costs in all, once the clip is priced. */
   credits: number | null;
@@ -257,6 +260,7 @@ export type RecastBlocker =
   | { kind: "words"; why: "change" | "roles" | "look" }
   | { kind: "picture" }
   | { kind: "image"; n: number }
+  | { kind: "crowd" }
   | { kind: "group" }
   | { kind: "credits"; need: number; left: number };
 
@@ -272,6 +276,9 @@ export function recastBlocker(s: RecastDoorState): RecastBlocker | null {
   // reads like a filled-in default and is not one.
   if (s.job === "world" && !s.hasWords) return { kind: "words", why: "look" };
   if (s.imageUploading > 0) return { kind: "image", n: s.imageUploading };
+  // A group cast beside somebody else is wrong at ANY length, so it is named
+  // before the one below, which the trim can answer (2026-09-23).
+  if (s.crowdSharesTake) return { kind: "crowd" };
   if (s.groupNeedsOnePart) return { kind: "group" };
   if (s.credits !== null && s.balance && !s.balance.unlimited && s.credits > s.balance.left) {
     return { kind: "credits", need: s.credits, left: s.balance.left };

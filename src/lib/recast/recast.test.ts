@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { CHAIN_LOOK_PLACEHOLDER } from "../generations/chain";
 import {
   recastChainFits,
+  recastCrowdSharesTake,
   parseRecastEngine,
   parseRecastSourcePath,
   RECAST_COST_BASIS_USD_PER_CREDIT,
@@ -324,6 +325,38 @@ describe("the request each engine receives", () => {
     // And it must ADHERE: at flex_2 the same request rewrote the performer
     // as well as the street, which is the one thing this job may not do.
     expect(RECAST_WORLD_EDIT_STRENGTH.startsWith("adhere")).toBe(true);
+  });
+});
+
+// ONE REPLACEMENT PER TAKE (2026-09-23). Measured with real money on one 15 s
+// stretch of a school courtyard: replacing the man in front of the class held
+// end to end when it was the only thing asked for, and asking for the man AND
+// the forty boys behind him in the same take came back with the character
+// twice over and the boys back as themselves before the end.
+describe("a whole group and somebody else in one take", () => {
+  const crowd = new Set(["B"]);
+
+  it("is refused where a group is cast beside any other casting", () => {
+    expect(recastCrowdSharesTake(["A", "B"], crowd)).toBe(true);
+    expect(recastCrowdSharesTake(["B", "A"], crowd)).toBe(true);
+    // The other casting need not play anyone in the clip: the words give them
+    // their part, and they are still a second change in the same take.
+    expect(recastCrowdSharesTake(["B", null], crowd)).toBe(true);
+    expect(recastCrowdSharesTake(["A", "B", "C"], crowd)).toBe(true);
+  });
+
+  it("leaves a group cast on its own alone — the take that was proved", () => {
+    expect(recastCrowdSharesTake(["B"], crowd)).toBe(false);
+    // One take each: every take casts the one person the door named, so the
+    // group is never sharing with anybody.
+    expect(recastCrowdSharesTake([null], crowd)).toBe(false);
+  });
+
+  it("says nothing about two ordinary characters, or about a clip with no group in it", () => {
+    expect(recastCrowdSharesTake(["A", "C"], crowd)).toBe(false);
+    expect(recastCrowdSharesTake(["A", null], crowd)).toBe(false);
+    expect(recastCrowdSharesTake(["A", "B", "C"], new Set<string>())).toBe(false);
+    expect(recastCrowdSharesTake([], crowd)).toBe(false);
   });
 });
 

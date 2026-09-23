@@ -340,6 +340,48 @@ describe("several characters in one take", () => {
     expect(door).toMatch(/recastBlocker\(\{[\s\S]*?\n    groupNeedsOnePart,\n[\s\S]*?\}\);\n  const canTake = blocker === null;/);
   });
 
+  it("keeps a whole group to a take of its OWN — one replacement per take, whatever the length", () => {
+    // 2026-09-23, paid for on one 15 s stretch of the courtyard clip: the lead
+    // swap alone held through the hard bow at the end; the lead swap AND the
+    // forty boys in the same take came back with the character twice over,
+    // and the boys back as themselves at that same bow. The chained rule above
+    // is the same reasoning over parts; this one is the single piece.
+    expect(start).toContain("if (recastCrowdSharesTake(takeTags, groupTags)) return { error: RECAST_CROWD_OWN_TAKE }");
+    // Before a credit is counted, reserved or spent, and before the cut.
+    const refuse = at("if (recastCrowdSharesTake(takeTags, groupTags)) return { error: RECAST_CROWD_OWN_TAKE }");
+    for (const later of ["await gatePrompt({", "await prepareChain(admin, {", "await cutRecastWindow(", "checkGenerationAllowance(", 'admin.rpc("reserve_generations"', "consumePurchasedCredits(", "submitRecastJob("]) {
+      expect(refuse, later).toBeLessThan(at(later));
+    }
+    // The line is the person's, in every language.
+    const messages = readFileSync(join(__dirname, "messages.ts"), "utf8");
+    expect(messages).toContain(
+      'export const RECAST_CROWD_OWN_TAKE = "A whole group can only be changed on a take of its own \u2014 cast the group by itself, or take it out of this one."',
+    );
+    const serverText = readFileSync(join(__dirname, "..", "i18n", "server-text.ts"), "utf8");
+    expect(serverText).toContain(
+      '"A whole group can only be changed on a take of its own \u2014 cast the group by itself, or take it out of this one.": "recastCrowdOwnTake"',
+    );
+    for (const lang of ["en", "es", "it", "pt"]) {
+      expect(readFileSync(join(__dirname, "..", "i18n", "messages", `${lang}.ts`), "utf8"), lang).toMatch(/\n    recastCrowdOwnTake: "[^"]+",/);
+    }
+  });
+
+  it("says on the door what will happen, and offers both ways out", () => {
+    const door = readFileSync(join(__dirname, "..", "..", "components", "mystique", "mystique-door.tsx"), "utf8");
+    // The door asks the same question of the same tags the server does.
+    expect(door).toContain("const takeTags = ensemble ? castTags : [soloTag];");
+    expect(door).toContain("const crowdSharesTake = recastCrowdSharesTake(takeTags, groupTags);");
+    // The warning, and the two presses: the group by itself, or out of this take.
+    expect(door).toContain("{crowdSharesTake && crowdCast && (");
+    expect(door).toContain("{m.crowdAlone}");
+    expect(door).toContain("formatMsg(m.crowdAloneOnly, { name: crowdCast.name })");
+    expect(door).toContain("formatMsg(m.crowdAloneDrop, { name: crowdCast.name })");
+    // Take stays grey on it, and says why (door-truth.ts recastBlocker).
+    expect(door).toMatch(/recastBlocker\(\{[\s\S]*?\n    crowdSharesTake,\n[\s\S]*?\}\);\n  const canTake = blocker === null;/);
+    // Only the trim's box steps aside; the person's cast is never touched here.
+    expect(door).toContain("{groupNeedsOnePart && !crowdSharesTake && (");
+  });
+
   it("names the place the take must keep, from the read's own words", () => {
     const brief = readFileSync(join(__dirname, "recast-brief.ts"), "utf8");
     // Said in full and in the short form a brief too long for its engine takes (2026-09-22).
@@ -413,7 +455,8 @@ describe("what keeps a later part on the take's look", () => {
   it("asks whether a whole group is cast of the tags each take really casts — variants included", () => {
     // Variants (one take per character) each play the person the door named;
     // until 2026-09-22 they were asked about tags no take of theirs used.
-    expect(start).toContain("const castOverGroup = (together ? castTags : [castTag]).some((tag) => tag !== null && groupTags.has(tag))");
+    expect(start).toContain("const takeTags = together ? castTags : [castTag]");
+    expect(start).toContain("const castOverGroup = takeTags.some((tag) => tag !== null && groupTags.has(tag))");
     // The same tags the brief casts each take with.
     expect(start).toContain("const tag = chars.length > 1 ? castTags[ids.indexOf(c.id)] : castTag");
   });

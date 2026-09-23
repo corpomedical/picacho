@@ -209,18 +209,20 @@ describe("why Take is grey", () => {
     rolesUnsaid: false,
     hasWords: true,
     imageUploading: 0,
+    crowdSharesTake: false,
     groupNeedsOnePart: false,
     credits: 9,
     balance: { left: 140, unlimited: false },
   };
   // The door's old nine-condition canTake, restated from the page as it was
   // before 2026-09-22 — the blocker must agree with it on every state, and
-  // add only the credits.
+  // add only the credits and the one replacement per take (2026-09-23).
   const oldCanTake = (s: RecastDoorState) =>
     s.clip === "ready" &&
     s.rights &&
     !s.starting &&
     s.imageUploading === 0 &&
+    !s.crowdSharesTake &&
     !s.groupNeedsOnePart &&
     (s.missing ?? (s.rolesUnsaid ? "words" : null)) === null &&
     (s.job !== "world" || s.hasWords);
@@ -238,13 +240,14 @@ describe("why Take is grey", () => {
     ["Restyle with no words", { job: "world", hasWords: false }],
     ["image 2 uploading", { imageUploading: 2 }],
     ["a group over parts", { groupNeedsOnePart: true }],
+    ["a group cast beside somebody else", { crowdSharesTake: true }],
     ["short of credits", { credits: 21, balance: { left: 20, unlimited: false } }],
     ["no limit", { credits: 400, balance: { left: 0, unlimited: true } }],
     ["balance unread", { credits: 400, balance: null }],
   ];
 
   it("enables Take exactly when there is nothing to name", () => {
-    expect(table.length).toBeGreaterThanOrEqual(12);
+    expect(table.length).toBeGreaterThanOrEqual(13);
     for (const [name, patch] of table) {
       const s = { ...base, ...patch };
       expect(recastBlocker(s) === null, name).toBe(oldCanTake(s) && affordable(s));
@@ -252,14 +255,15 @@ describe("why Take is grey", () => {
   });
 
   it("names the FIRST thing missing, in the order the page is met", () => {
-    const all = { ...base, rights: false, missing: "words" as const, imageUploading: 1, groupNeedsOnePart: true, credits: 999 };
+    const all = { ...base, rights: false, missing: "words" as const, imageUploading: 1, crowdSharesTake: true, groupNeedsOnePart: true, credits: 999 };
     expect(recastBlocker({ ...all, clip: "none" })).toEqual({ kind: "clip" });
     expect(recastBlocker({ ...all, clip: "busy" })).toEqual({ kind: "reading" });
     expect(recastBlocker(all)).toEqual({ kind: "rights" });
     expect(recastBlocker({ ...all, rights: true })).toEqual({ kind: "words", why: "change" });
     expect(recastBlocker({ ...all, rights: true, missing: null })).toEqual({ kind: "image", n: 1 });
-    expect(recastBlocker({ ...all, rights: true, missing: null, imageUploading: 0 })).toEqual({ kind: "group" });
-    expect(recastBlocker({ ...all, rights: true, missing: null, imageUploading: 0, groupNeedsOnePart: false })).toEqual({
+    expect(recastBlocker({ ...all, rights: true, missing: null, imageUploading: 0 })).toEqual({ kind: "crowd" });
+    expect(recastBlocker({ ...all, rights: true, missing: null, imageUploading: 0, crowdSharesTake: false })).toEqual({ kind: "group" });
+    expect(recastBlocker({ ...all, rights: true, missing: null, imageUploading: 0, crowdSharesTake: false, groupNeedsOnePart: false })).toEqual({
       kind: "credits",
       need: 999,
       left: 140,

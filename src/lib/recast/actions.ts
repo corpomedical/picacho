@@ -28,6 +28,7 @@ import {
   RECAST_CLIP_TOO_BIG,
   RECAST_CLIP_UNCHECKED,
   RECAST_COULDNT_START,
+  RECAST_CROWD_OWN_TAKE,
   RECAST_IMAGE_UNCHECKED,
   RECAST_IMAGE_UNUSABLE,
   RECAST_JOB_TOO_LONG,
@@ -63,6 +64,7 @@ import {
   recastCreditCost,
   recastCastsTogether,
   recastChainFits,
+  recastCrowdSharesTake,
   recastEngineFits,
   recastImageRoom,
   recastImageSendsAsIs,
@@ -662,8 +664,21 @@ export async function startRecastTakes(input: {
   // character has a take of their own — the variants, which until today were
   // asked about tags no take of theirs used, and so were never refused.
   const groupTags = new Set((read?.people ?? []).filter((p) => p.many).map((p) => p.tag));
-  const castOverGroup = (together ? castTags : [castTag]).some((tag) => tag !== null && groupTags.has(tag));
+  const takeTags = together ? castTags : [castTag];
+  const castOverGroup = takeTags.some((tag) => tag !== null && groupTags.has(tag));
   if (castOverGroup && chaining) return { error: RECAST_GROUP_ONE_PART };
+
+  // ONE REPLACEMENT PER TAKE (2026-09-23). The same footage, paid for twice:
+  // replacing the man in front of the class held all the way through when it
+  // was the only thing asked for, and came back with the character standing
+  // in the crowd as well as in his place — the crowd itself back as it was
+  // before the end — the moment a second change rode along. A take carries
+  // one replacement, so a group shares its take with nobody
+  // (recast.ts recastCrowdSharesTake). Refused here, beside the rule above
+  // and before a credit is even counted: the person casts the group on a take
+  // of its own, or leaves it out of this one. Nothing is reassigned for them,
+  // and no press is quietly turned into two.
+  if (recastCrowdSharesTake(takeTags, groupTags)) return { error: RECAST_CROWD_OWN_TAKE };
 
   // THE CREDITS, ASKED BEFORE THE CUT (2026-09-22). One take per character —
   // or one for all of them together — and one when nobody is cast;
