@@ -508,6 +508,38 @@ html:has([data-app-scroll]) body {
   overflow: hidden;
 }
 
+/* ── The app's one scroller, made to end like an app (2026-09-23) ────────
+   Neither of these is a speed fix and neither is claimed as one: measured
+   against a control that changed nothing, every frame-cost number this rig
+   produces moves further on its own than either rule moves it. They are here
+   because they are what a list does in an app and not on a website.
+
+   overscroll-behavior-y: contain. The document is already pinned
+   (overscroll-behavior-y: none below), but [data-app-scroll] declared nothing
+   of its own, so its overscroll could still chain outward and any future
+   scrollable ancestor would bring back the bounce the 2026-08-29 fix removed.
+   `contain`, never `none`: Android's own stretch at the ends of a list is
+   what makes an end feel like an app rather than a wall. The inner scrollers
+   that matter already do this — the takes strip (overscroll-x-contain), the
+   dock's form, the transcript drawer. */
+html.native-app [data-app-scroll] {
+  overscroll-behavior-y: contain;
+}
+@media (max-width: 767.98px) {
+  /* The takes strip keeps its own scrollbar to itself, like every other
+     horizontal strip in the app (admin-command-bar, set-view, cast-strip).
+     On Android the overlay bar flashed under the tiles on every fling; the
+     tiles are visibly cut off at the edge, which is the cue that the strip
+     scrolls. Desktop keeps its real scrollbar. Nothing moves at rest: shot
+     before and after, the strip is identical to the pixel. */
+  html.native-app [data-takes-strip] {
+    scrollbar-width: none;
+  }
+  html.native-app [data-takes-strip]::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 html.native-app {
   /* No rubber-band overscroll on the document. Inner scrollers keep theirs,
      so lists still feel right — it's the PAGE bouncing and revealing a blank
@@ -1512,6 +1544,14 @@ a,
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
+  /* The dock's own backdrop-blur-xl stays, and this note is why (2026-09-23).
+     It looks like free speed — it costs a whole render surface and ~77 GPU
+     render passes per 4.2 s of scrolling, for a blur showing through a
+     94–98.5% opaque paint. It is not free. Shot before and after over the
+     real dock: without it the page's own footer text ("Picacho is AI and can
+     make mistakes", "Give us your feedback") reads THROUGH the dock as
+     legible ghost lines instead of being smeared into the surface. That is
+     what the 1.5–6% is doing. Do not re-derive the saving and ship it. */
   [data-dock][data-sheet="rest"] [data-slate-box] [role="listbox"],
   [data-dock][data-sheet="rest"] [data-dock-frame] [role="dialog"] {
     margin-bottom: 20px;
