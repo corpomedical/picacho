@@ -88,10 +88,14 @@ import {
 } from "@/lib/generations/providers/image-models";
 import {
   DEFAULT_IMAGE_ASPECT,
+  DEFAULT_IMAGE_QUALITY,
   defaultImageResolution,
+  imageQualityIsPaidOnly,
   offersImageAspect,
+  offersImageQuality,
   offersImageResolution,
   type ImageAspect,
+  type ImageQuality,
   type ImageResolution,
 } from "@/lib/generations/providers/image-resolution";
 import { resolveModel } from "@/lib/generations/model-health";
@@ -1117,6 +1121,21 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       ? requestedImageAspect
       : DEFAULT_IMAGE_ASPECT;
 
+  // How hard the model works (2026-09-24, the operator: "Give the user the
+  // option to chose from High to max. Only for paid subscribers"). Above
+  // `high` this is a paid tier — enforced HERE, not only hidden in the
+  // composer, because `max` can cost two credits and hiding a control is not
+  // a check. The gate is the same one the engine picker uses
+  // (isFreeTierAccount), so the two adjacent controls answer to one rule:
+  // an account with a plan, bonus credits or purchased credits may pick.
+  const requestedImageQuality = (formData.get("image_quality") as string) || "";
+  const imageQuality: ImageQuality =
+    contentType === "image" &&
+    offersImageQuality(imageModelId, requestedImageQuality) &&
+    (!isFreeTierAccount || !imageQualityIsPaidOnly(imageModelId, requestedImageQuality))
+      ? requestedImageQuality
+      : DEFAULT_IMAGE_QUALITY;
+
   // Multi-character images need OpenAI's real multi-image edit endpoint —
   // Flux's fal.ai endpoint only ever accepts one reference image, with no
   // way to composite several distinct characters into one picture. Caught
@@ -1401,6 +1420,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     contentType,
     imageModelId,
     imageResolution,
+    imageQuality,
     videoModelId,
     videoDurationSeconds,
     videoResolution,
@@ -2305,6 +2325,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           expressionSet: expressionSetLinks,
           imageResolution,
           imageAspect,
+          imageQuality,
           // Video renders get queued and polled instead of awaited — see
           // job-runner.ts. Images stay inline: a single bounded call that
           // finishes well inside one request and gains nothing from staging.

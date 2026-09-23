@@ -27,7 +27,7 @@ import {
   FREE_TIER_GENERATION_CREDITS,
 } from "./providers/video-models";
 import { resolutionCreditWeight, type VideoResolution } from "./providers/video-resolution";
-import { imageResolutionCreditWeight, type ImageResolution } from "./providers/image-resolution";
+import { imageRenderCreditWeight, type ImageQuality, type ImageResolution } from "./providers/image-resolution";
 import { fanoutCreditCost } from "./scene-plan";
 
 export type SendQuoteInput = {
@@ -45,6 +45,8 @@ export type SendQuoteInput = {
    */
   imageModelId?: string;
   imageResolution?: ImageResolution | null;
+  /** How hard the model works — GPT Image's `max` is two credits (2026-09-24). */
+  imageQuality?: ImageQuality | null;
   // The FINAL model — on the server, after the circuit breaker has had its
   // say, so a substituted request is priced at the model that renders it.
   videoModelId: string;
@@ -118,7 +120,7 @@ export function quoteSend(input: SendQuoteInput): SendQuote {
   // null when the resolution costs nothing extra or is not offered — in
   // which case the duration weight stands.
   const perRenderCredits = !video
-    ? imageResolutionCreditWeight(input.imageModelId ?? "gpt-image", input.imageResolution ?? null)
+    ? imageRenderCreditWeight(input.imageModelId ?? "gpt-image", input.imageResolution ?? null, input.imageQuality ?? null)
     : storyboard
       ? storyboardCreditCost(input.videoModelId, input.storyboardTotalSeconds!)
       : (resolutionCreditWeight(

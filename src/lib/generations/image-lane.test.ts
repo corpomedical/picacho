@@ -21,7 +21,13 @@ import {
   imagePricingAudit,
   imageResolutionCreditWeight,
   imageResolutionOffers,
+  imageQualityCreditWeight,
+  imageQualityIsPaidOnly,
+  imageQualityOffers,
+  imageRenderCreditWeight,
+  laneTiersBothDimensions,
   offersImageAspect,
+  offersImageQuality,
   offersImageResolution,
 } from "./providers/image-resolution";
 import en from "../i18n/messages/en";
@@ -88,7 +94,7 @@ describe("what a picked lane costs", () => {
   // sold a picture that dear would have lost money on every one.
   it("never sells a size below what it costs us", () => {
     for (const row of imagePricingAudit()) {
-      expect(row.ok, `${row.modelId} ${row.resolution}: $${row.costUsd} at ${row.weight} credit(s)`).toBe(true);
+      expect(row.ok, `${row.modelId} ${row.band}: $${row.costUsd} at ${row.weight} credit(s)`).toBe(true);
     }
   });
 
@@ -140,6 +146,96 @@ describe("what a picked lane costs", () => {
   });
 });
 
+describe("how hard the model works", () => {
+  it("offers the three top tiers on the lane that has the control, and none on the lanes that do not", () => {
+    expect(imageQualityOffers("gpt-image").map((o) => o.value)).toEqual(["high", "xhigh", "max"]);
+    // fal's Nano Banana Pro endpoint takes no quality parameter — a cell
+    // there would change nothing.
+    expect(imageQualityOffers("gemini")).toEqual([]);
+    expect(imageQualityOffers("flux")).toEqual([]);
+    expect(offersImageQuality("gpt-image", "max")).toBe(true);
+    expect(offersImageQuality("gpt-image", "low")).toBe(false);
+    expect(offersImageQuality("gemini", "max")).toBe(false);
+  });
+
+  it("charges for max, and never below what a tier can cost", () => {
+    expect(imageQualityCreditWeight("gpt-image", "high")).toBe(1);
+    expect(imageQualityCreditWeight("gpt-image", "xhigh")).toBe(1);
+    expect(imageQualityCreditWeight("gpt-image", "max")).toBe(2);
+    // A lane with no quality control contributes its floor, never a discount.
+    expect(imageQualityCreditWeight("gemini", "max")).toBe(1);
+    // Anything unrecognised is priced as the default tier, never free.
+    expect(imageQualityCreditWeight("gpt-image", null)).toBe(1);
+    expect(imageQualityCreditWeight("gpt-image", "low")).toBe(1);
+  });
+
+  // The two upper tiers are BOUNDS, not measurements: OpenAI publishes no
+  // token count per quality, and no request has been sent at either. This
+  // records that honestly so nobody later reads the table as measured.
+  it("says which figures are measured and which are bounds", () => {
+    const byTier = Object.fromEntries(imageQualityOffers("gpt-image").map((o) => [o.value, o]));
+    expect(byTier.high.measured).toBe(true);
+    expect(byTier.xhigh.measured).toBe(false);
+    expect(byTier.max.measured).toBe(false);
+  });
+
+  it("is paid-only above high, and the server pins a free account", () => {
+    expect(imageQualityIsPaidOnly("gpt-image", "high")).toBe(false);
+    expect(imageQualityIsPaidOnly("gpt-image", "xhigh")).toBe(true);
+    expect(imageQualityIsPaidOnly("gpt-image", "max")).toBe(true);
+    const pick = actions.slice(
+      actions.indexOf("const requestedImageQuality ="),
+      actions.indexOf("imageQuality;", actions.indexOf("const requestedImageQuality =")),
+    );
+    expect(pick).toContain("offersImageQuality(imageModelId, requestedImageQuality)");
+    expect(pick).toContain("!isFreeTierAccount || !imageQualityIsPaidOnly(imageModelId, requestedImageQuality)");
+  });
+
+  it("prices a max render at two credits through the same quote the receipt shows", () => {
+    const base = {
+      contentType: "image" as const,
+      videoModelId: "kling",
+      videoDurationSeconds: 5,
+      videoResolution: null,
+      storyboardTotalSeconds: null,
+      referencePhotoCount: 0,
+      framePicked: false,
+      continuationSourceSeconds: null,
+      dialoguePresent: false,
+      renderCount: 1,
+    };
+    expect(quoteSend({ ...base, imageModelId: "gpt-image", imageQuality: "max" }).totalCredits).toBe(2);
+    expect(quoteSend({ ...base, imageModelId: "gpt-image", imageQuality: "xhigh" }).totalCredits).toBe(1);
+    expect(quoteSend({ ...base, imageModelId: "gpt-image", imageQuality: "high" }).totalCredits).toBe(1);
+  });
+
+  // imageRenderCreditWeight takes the LARGER of the two dimensions, which is
+  // the price only while every lane tiers exactly one of them. The day a lane
+  // charges more for both a bigger size AND a harder render, that max would
+  // undercharge — so the invariant is asserted, not assumed.
+  it("has no lane tiering both size and quality, which is what makes the combined weight a max", () => {
+    for (const m of IMAGE_MODELS) {
+      expect(laneTiersBothDimensions(m.id), m.id).toBe(false);
+    }
+    expect(imageRenderCreditWeight("gpt-image", "1K", "max")).toBe(2);
+    expect(imageRenderCreditWeight("gemini", "4K", "high")).toBe(2);
+    expect(imageRenderCreditWeight("gemini", "2K", "high")).toBe(1);
+  });
+
+  it("has every quality label in all four locales", () => {
+    for (const tier of imageQualityOffers("gpt-image")) {
+      for (const [name, msgs] of [["en", en], ["es", es], ["pt", pt], ["it", it_]] as const) {
+        const line = (msgs.generate as Record<string, unknown>)[`imageQuality_${tier.value}`];
+        expect(typeof line, `${name}.imageQuality_${tier.value}`).toBe("string");
+        expect((line as string).trim().length, `${name}.${tier.value}`).toBeGreaterThan(0);
+      }
+    }
+    for (const [name, msgs] of [["en", en], ["es", es], ["pt", pt], ["it", it_]] as const) {
+      expect(typeof (msgs.generate as Record<string, unknown>).slateQuality, `${name}.slateQuality`).toBe("string");
+    }
+  });
+});
+
 describe("the size and shape a send asks for", () => {
   it("prices a 4K picture at two credits, through the same quote the receipt shows", () => {
     const base = {
@@ -174,7 +270,7 @@ describe("the size and shape a send asks for", () => {
     expect(actions).toContain("offersImageAspect(imageModelId, requestedImageAspect)");
     // The quote reads the band that was just validated, so the allowance
     // check, the saved credits_used and the receipt are one number.
-    expect(actions).toContain("    imageModelId,\n    imageResolution,\n    videoModelId,");
+    expect(actions).toContain("    imageModelId,\n    imageResolution,\n    imageQuality,\n    videoModelId,");
   });
 
   it("names the band on the take's log, so a two-credit charge can be traced", () => {

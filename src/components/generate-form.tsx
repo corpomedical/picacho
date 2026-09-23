@@ -106,11 +106,15 @@ import { FEATURED_VIDEO_MODEL_IDS, getVideoModel } from "@/lib/generations/provi
 import { getImageModel, selectableImageModels } from "@/lib/generations/providers/image-models";
 import {
   DEFAULT_IMAGE_ASPECT,
+  DEFAULT_IMAGE_QUALITY,
   defaultImageResolution,
   imageAspectOffers,
+  imageQualityOffers,
   imageResolutionOffers,
   offersImageAspect,
+  offersImageQuality,
   type ImageAspect,
+  type ImageQuality,
   type ImageResolution,
 } from "@/lib/generations/providers/image-resolution";
 import {
@@ -2567,6 +2571,8 @@ function GenerateFormInner({
   // be sending a band the new lane never sells.
   const [imageResolution, setImageResolution] = useState<ImageResolution>(() => defaultImageResolution(defaultImageModelId));
   const [imageAspect, setImageAspect] = useState<ImageAspect>(DEFAULT_IMAGE_ASPECT);
+  const [imageQuality, setImageQuality] = useState<ImageQuality>(DEFAULT_IMAGE_QUALITY);
+  const [imageQualityMenuOpen, setImageQualityMenuOpen] = useState(false);
   const [imageSizeMenuOpen, setImageSizeMenuOpen] = useState(false);
   const [imageFrameMenuOpen, setImageFrameMenuOpen] = useState(false);
   // Clip continuation, arriving via ?continue=<generationId> from a video's
@@ -2697,6 +2703,7 @@ function GenerateFormInner({
   const imageModelMenuRef = useRef<HTMLDivElement>(null);
   const imageSizeMenuRef = useRef<HTMLDivElement>(null);
   const imageFrameMenuRef = useRef<HTMLDivElement>(null);
+  const imageQualityMenuRef = useRef<HTMLDivElement>(null);
 
   // Clip length — each model has its own real set of valid durations (see
   // video-models.ts), so this always has to be one of the CURRENT model's
@@ -2852,6 +2859,7 @@ function GenerateFormInner({
     contentType,
     imageModelId,
     imageResolution,
+    imageQuality,
     videoModelId,
     videoDurationSeconds,
     videoResolution,
@@ -3019,6 +3027,9 @@ function GenerateFormInner({
     // square on every lane, so keeping a deliberate choice is never wrong,
     // and only a shape the new lane cannot do has to be given up.
     setImageAspect((prev) => (offersImageAspect(imageModelId, prev) ? prev : DEFAULT_IMAGE_ASPECT));
+    // QUALITY is GPT Image's own enum — a lane without one has nothing to
+    // carry, and a lane with one opens at the tier every take has used.
+    setImageQuality((prev) => (offersImageQuality(imageModelId, prev) ? prev : DEFAULT_IMAGE_QUALITY));
   }, [imageModelId]);
 
   // Same again for the picture model switcher.
@@ -3035,14 +3046,15 @@ function GenerateFormInner({
 
   // And for the picture's size and shape sheets.
   useEffect(() => {
-    if (!imageSizeMenuOpen && !imageFrameMenuOpen) return;
+    if (!imageSizeMenuOpen && !imageFrameMenuOpen && !imageQualityMenuOpen) return;
     function onClick(e: MouseEvent) {
       if (imageSizeMenuRef.current && !imageSizeMenuRef.current.contains(e.target as Node)) setImageSizeMenuOpen(false);
       if (imageFrameMenuRef.current && !imageFrameMenuRef.current.contains(e.target as Node)) setImageFrameMenuOpen(false);
+      if (imageQualityMenuRef.current && !imageQualityMenuRef.current.contains(e.target as Node)) setImageQualityMenuOpen(false);
     }
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
-  }, [imageSizeMenuOpen, imageFrameMenuOpen]);
+  }, [imageSizeMenuOpen, imageFrameMenuOpen, imageQualityMenuOpen]);
 
   // And for the duration dropdown.
   useEffect(() => {
@@ -3075,6 +3087,7 @@ function GenerateFormInner({
       setImageModelMenuOpen(false);
       setImageSizeMenuOpen(false);
       setImageFrameMenuOpen(false);
+      setImageQualityMenuOpen(false);
       setDurationMenuOpen(false);
     }
     document.addEventListener("keydown", onKeyDown);
@@ -4979,6 +4992,7 @@ function GenerateFormInner({
       formData.set("image_model_id", imageModelId);
       formData.set("image_resolution", imageResolution);
       formData.set("image_aspect", imageAspect);
+      formData.set("image_quality", imageQuality);
     }
     if (effectiveContentType === "video") {
       formData.set("video_model_id", videoModelId);
@@ -6502,6 +6516,37 @@ function GenerateFormInner({
         // No subtitle: a ratio reads the same in every language, and naming
         // ten of them would be forty strings that say what "16:9" already does.
         options={imageShapeOffers.map((a) => ({ id: a, name: a }))}
+      />
+    ) : null;
+
+  // QUALITY — how hard the model works (2026-09-24, the operator: "Give the
+  // user the option to chose from High to max. Only for paid subscribers").
+  //
+  // Only where the lane HAS the control: GPT Image 2.5's own enum. fal's
+  // Nano Banana Pro endpoint takes no quality parameter, so that lane shows
+  // no cell rather than one that changes nothing. Free accounts see none of
+  // it — the tiers above `high` are the paid ones, and the server pins them
+  // to `high` whatever the form sends.
+  const imageQualityTiers = imageQualityOffers(imageModelId);
+  const imageQualityPicker =
+    contentType === "image" && !freeTierClient && imageQualityTiers.length > 1 ? (
+      <SlateMenuCell
+        testId="image-quality"
+        label={g.slateQuality}
+        value={g[`imageQuality_${imageQuality}` as keyof typeof g] as string}
+        open={imageQualityMenuOpen}
+        onToggle={() => setImageQualityMenuOpen((v) => !v)}
+        onClose={() => setImageQualityMenuOpen(false)}
+        disabled={locked}
+        selected={imageQuality}
+        onPick={(id) => setImageQuality(id as ImageQuality)}
+        menuRef={imageQualityMenuRef}
+        options={imageQualityTiers.map((o) => ({
+          id: o.value,
+          name: g[`imageQuality_${o.value}` as keyof typeof g] as string,
+          credits: o.creditWeight,
+          creditsLabel: formatMsg(g.creditsEach, { n: o.creditWeight }),
+        }))}
       />
     ) : null;
 
@@ -8168,6 +8213,7 @@ function GenerateFormInner({
                 {imageModelPicker}
                 {imageSizePicker}
                 {imageFramePicker}
+                {imageQualityPicker}
                 {/* Image mode on a phone, at rest: the Outfit toggle rides
                     the values line beside the cast (the same toggle as the
                     chip below, which the raised sheet shows with its whole

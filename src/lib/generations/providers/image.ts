@@ -3,7 +3,7 @@ import { generateImageWithFlux, generateImageWithGemini } from "@/lib/generation
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { buildImageReferences } from "@/lib/generations/providers/image-references";
-import { type ImageAspect, type ImageResolution } from "@/lib/generations/providers/image-resolution";
+import { type ImageAspect, type ImageQuality, type ImageResolution } from "@/lib/generations/providers/image-resolution";
 
 /**
  * The GPT edits endpoint's three sizes, by the shape they are. Anything else
@@ -115,6 +115,12 @@ export async function generateImage(
    */
   imageResolution?: ImageResolution | null,
   imageAspect?: ImageAspect | null,
+  /**
+   * How hard the model works (2026-09-24). GPT Image's own enum; the fal
+   * lanes take no such parameter, so it is simply not passed there. Already
+   * validated against the lane's offers and PAID FOR at that tier's weight.
+   */
+  imageQuality?: ImageQuality | null,
 ): Promise<string> {
   const model = getImageModel(modelId);
 
@@ -213,6 +219,10 @@ export async function generateImage(
   // that is a Helios rig format asking for its own frame (sets/rig.ts), and
   // a rig knows its shape better than a composer chip does.
   const size = imageSize ?? openAiSizeForAspect(imageAspect) ?? undefined;
-  const base64 = await generateImageWithOpenAI(prompt, openAiRefs, { onUsage, size });
+  const base64 = await generateImageWithOpenAI(prompt, openAiRefs, {
+    onUsage,
+    size,
+    quality: imageQuality ?? undefined,
+  });
   return persistBase64(base64);
 }
