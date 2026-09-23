@@ -136,6 +136,6 @@ describe("saying it in the camera's terms", () => {
 
   it("is worked out on the server for every still, against the set and the shot's own camera", () => {
     const actions = readFileSync(join(__dirname, "actions.ts"), "utf8");
-    expect(actions).toContain("vehicles: vehicleWords(owned.spec, layout?.camera),");
+    expect(actions).toContain("vehicles: vehicleWords(shown, layout?.camera),");
   });
 });

@@ -37,7 +37,8 @@ describe("shootInSet: the look", () => {
     expect(cut).toBeGreaterThan(brake);
     expect(shoot).toContain("camera: (await readShotCameras(access.supabase, setId, userId, [lookId])).get(lookId) ?? null,");
     expect(shoot).toContain("stillPath: lookPath,");
-    expect(shoot).toContain("spec: owned.spec,");
+    // The set as this frame shows it: a beat's movers moved (movers.ts).
+    expect(shoot).toContain("spec: shown,");
   });
 
   it("sends only ever the object sheet drawn from the cutout: the one look URL is the sheet's, and the still's is never made", () => {
@@ -116,7 +117,7 @@ describe("shootInSet: the camera", () => {
   });
 
   it("offers the new still as a look only when there is something to cut out of it, by the rule the set page reads", () => {
-    expect(shoot).toContain("const hasLookObjects = recorded && camera !== null && seesLookObjects(owned.spec, camera);");
+    expect(shoot).toContain("const hasLookObjects = recorded && camera !== null && seesLookObjects(shown, camera);");
   });
 });
 

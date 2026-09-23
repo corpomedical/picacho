@@ -114,6 +114,7 @@ import {
 import { summarizeFailureDetail } from "@/lib/generations/report-constants";
 import { findVehicles, vehicleWords } from "@/lib/sets/vehicles";
 import { ELEMENT_SHEETS_PER_STILL, planShotSheets, resolvePhotos, setElements, type ShotElementStatus } from "@/lib/sets/elements";
+import { movedSpec, normalisePlacements } from "@/lib/sets/movers";
 import { listElementPhotos } from "@/lib/sets/references";
 import { needsLikenessAnswer } from "@/lib/characters/likeness";
 import { readLikeness } from "@/lib/characters/likeness-store";
@@ -691,6 +692,15 @@ export async function shootInSet(
      * or charged. A single still goes without it and says so.
      */
     elementsRequired?: boolean;
+    /**
+     * A film beat's movers (movers.ts, 2026-09-23): the things this frame is
+     * shot with, where the beat leaves them. The page drew its sketch with
+     * them there, so every word written here about where things stand —
+     * which are in the frame, which sheet is which, which way a car is
+     * turned, what an eye-line looks at — is written about the same set.
+     * Read against this set's own things here, never trusted.
+     */
+    movers?: unknown;
   },
 ): Promise<ShootResult> {
   const access = await setsAccess();
@@ -790,6 +800,10 @@ export async function shootInSet(
   // is not just doesn't ride, and says so. Worked out before anything is
   // shot, so a film's beat that needs one stops here, free.
   const els = setElements(owned.spec);
+  // The set as this frame shows it: a beat that drives a thing is shot with
+  // it driven (movers.ts). The THINGS are the arrangement's — a moved car
+  // keeps its key and its photos — and only where they stand changes.
+  const shown = movedSpec(owned.spec, els, normalisePlacements(input.movers));
   let elementPlan: ReturnType<typeof planShotSheets> = { riding: [], sentences: [], statuses: [] };
   if (els.length > 0) {
     const [{ data: imageModelSetting }, listing] = await Promise.all([
@@ -804,12 +818,12 @@ export async function shootInSet(
       // A film's own order when one is sent (takeInSet), else the person's
       // saved one, which rides in the layout (the cast strip).
       order: normaliseElementOrder(input.elementOrder) ?? layout?.elementOrder,
-      vehicles: findVehicles(owned.spec),
+      vehicles: findVehicles(shown),
       shotCamera: frameCamera,
       // Which way a car is turned, in the same camera the vehicle words use.
       poseCamera: layout?.camera ?? null,
       budget: stillModel === "gpt-image" ? ELEMENT_SHEETS_PER_STILL : 0,
-      spec: owned.spec,
+      spec: shown,
     });
   }
   if (input.elementsRequired === true && elementPlan.statuses.some((e) => e.status === "no-sheet")) {
@@ -839,7 +853,7 @@ export async function shootInSet(
           setId,
           lookGenerationId: lookId,
           stillPath: lookPath,
-          spec: owned.spec,
+          spec: shown,
           camera: (await readShotCameras(access.supabase, setId, userId, [lookId])).get(lookId) ?? null,
         })
       : { ok: false, reason: "not a finished still of this set" };
@@ -911,7 +925,7 @@ export async function shootInSet(
     lifted: input.lifted === true,
     layout,
     // The eye-line (cut D): the layout's gaze, read against the set, in Picacho's words.
-    gaze: layout ? gazeWords(layout.gaze, owned.spec, layout.mark) : "",
+    gaze: layout ? gazeWords(layout.gaze, shown, layout.mark) : "",
     look,
     sourcePhoto: sourcePhotoUrl !== null,
     rig: rigSentences(rig, rigCtx),
@@ -927,7 +941,7 @@ export async function shootInSet(
     // Which way each vehicle in the frame faces, read from the set's own
     // lamps and wing (vehicles.ts), in this camera's terms: the blocks do
     // not say which end of a car is its nose (2026-09-21).
-    vehicles: vehicleWords(owned.spec, layout?.camera),
+    vehicles: vehicleWords(shown, layout?.camera),
     // Which sheet is which thing, in sheet order (elements.ts planSheets).
     elements: elementPlan.sentences,
   };
@@ -1011,7 +1025,7 @@ export async function shootInSet(
   const recorded = camera ? await recordShotCamera(admin, { setId, generationId: result.id, userId }, camera) : false;
   // Offered as a look only when there is something to cut out of it clear
   // of the person — the same rule the set page reads (data.ts).
-  const hasLookObjects = recorded && camera !== null && seesLookObjects(owned.spec, camera);
+  const hasLookObjects = recorded && camera !== null && seesLookObjects(shown, camera);
   if (layout && input.beat !== true) {
     await admin
       .from("location_sets")
@@ -1145,6 +1159,8 @@ export async function takeInSet(
     film?: boolean;
     /** The person's order for the things' sheets (R1): passed to the end still's shot. */
     elementOrder?: unknown;
+    /** The beat's movers (movers.ts): where the things that move stand in its end frame, and in the words written about it. */
+    movers?: unknown;
   },
 ): Promise<TakeResult> {
   const access = await setsAccess();
@@ -1272,6 +1288,9 @@ export async function takeInSet(
       // one (R1, 2026-09-21).
       elementOrder: input.elementOrder,
       elementsRequired: input.film === true,
+      // Where this beat leaves the things that move (movers.ts): the frame
+      // was drawn with them there.
+      movers: input.movers,
     });
     if (shot.error !== null) return { error: shot.error };
     still = shot;
@@ -1310,14 +1329,19 @@ export async function takeInSet(
   const textures = Array.isArray(input.textures) ? [...new Set(input.textures.filter(isFilmTexture))] : [];
   // Where the figure ends (the take's own layout), for the eye-line's side words.
   const endLayout = normaliseSetLayout(input.layout, owned.spec);
+  // And where the things that move end (movers.ts), for the same words.
+  const endShown = movedSpec(owned.spec, setElements(owned.spec), normalisePlacements(input.movers));
   const endMark = endLayout?.mark ?? { x: owned.spec.marks[0].x, z: owned.spec.marks[0].z, facingDeg: owned.spec.marks[0].facingDeg };
   fd.set(
     "prompt",
     buildSetTakePrompt(typeof input.direction === "string" ? input.direction : "", {
       move: isFilmMove(input.move) ? input.move : null,
       textures,
-      rack: rackWords(normaliseRack(input.rack, owned.spec.objects.length), owned.spec),
-      gaze: gazeWords(normaliseGaze(input.gaze, owned.spec.objects.length), owned.spec, endMark, "take"),
+      // Against the set as the beat ENDS (movers.ts): a rack or an eye-line
+      // names a thing by where it stands, and a thing that drove away stands
+      // somewhere else by the last frame.
+      rack: rackWords(normaliseRack(input.rack, owned.spec.objects.length), endShown),
+      gaze: gazeWords(normaliseGaze(input.gaze, owned.spec.objects.length), endShown, endMark, "take"),
     }),
   );
   // The words are already what the video model should read: the drafter

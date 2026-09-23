@@ -25,8 +25,8 @@ describe("the eye-line", () => {
   });
 
   it("rides the still from the saved arrangement and the take from the beat, in Picacho's words, stripped before the brand check", () => {
-    expect(actions).toContain("gaze: layout ? gazeWords(layout.gaze, owned.spec, layout.mark) : \"\",");
-    expect(actions).toContain('gaze: gazeWords(normaliseGaze(input.gaze, owned.spec.objects.length), owned.spec, endMark, "take"),');
+    expect(actions).toContain("gaze: layout ? gazeWords(layout.gaze, shown, layout.mark) : \"\",");
+    expect(actions).toContain('gaze: gazeWords(normaliseGaze(input.gaze, owned.spec.objects.length), endShown, endMark, "take"),');
     expect(view).toContain("gaze: beat.gaze,");
     expect(prompt).toContain("input.gaze ?? \"\",");
     expect(prompt).toContain("(?:By the end of the shot they|They) look ");

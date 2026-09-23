@@ -29,8 +29,9 @@ describe("a film beat's stage", () => {
     expect(render).toContain("const staged = stages[i];");
     // Redrawn when the hour or the figure differ from what is drawn — the
     // plot and the sun both stand round the figure.
-    expect(render).toContain("if (staged.time !== drawn.time || figure.x !== drawn.figure.x || figure.z !== drawn.figure.z) {");
-    expect(render).toContain("drawn = { time: staged.time, figure };");
+    // And what this beat has moved (movers.ts): a beat that drives a thing is always redrawn.
+    expect(render).toContain("if (staged.time !== drawn.time || figure.x !== drawn.figure.x || figure.z !== drawn.figure.z || movedHere !== drawn.movers) {");
+    expect(render).toContain("drawn = { time: staged.time, figure, movers: movedHere };");
     expect(render).not.toContain("beat.time !== rigRef.current.time");
   });
 

@@ -50,7 +50,8 @@ describe("the page and the shot", () => {
   });
   it("a still plans with the saved order; a film's own order wins when it sends one", () => {
     expect(actions).toContain("order: normaliseElementOrder(input.elementOrder) ?? layout?.elementOrder,");
-    expect(view).toContain("(pose: Pose | null, m: Mark, order: readonly string[] = elementOrder) =>");
+    // The set the frame shows rides too: a beat's own, with its movers moved (movers.ts, 2026-09-23).
+    expect(view).toContain("(pose: Pose | null, m: Mark, order: readonly string[] = elementOrder, shown: typeof spec = spec) =>");
   });
   it("the strip drags with a mouse or a pen and moves with Alt+arrows; the card moves for a finger", () => {
     const strip = readFileSync(join(__dirname, "../../components/sets/cast-strip.tsx"), "utf8");

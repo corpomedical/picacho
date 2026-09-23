@@ -20,7 +20,7 @@ const between = (source: string, from: string, to: string) => {
 };
 
 describe("hovering a move", () => {
-  const preview = between(view, "function previewFilmMove(move: FilmMove | null) {", "\n  }\n\n  function filmTexture(");
+  const preview = between(view, "function previewFilmMove(move: FilmMove | null) {", "\n  }\n\n  /**\n   * Write one thing's mover");
 
   it("flies it from its beat's start, over and over, after a moment's rest, and keeps nothing", () => {
     expect(preview).toContain("if (!api || !ready || previz || filmBusyRef.current) return;");

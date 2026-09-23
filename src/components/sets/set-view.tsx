@@ -20,6 +20,7 @@ import { dockTabAfter, dockTabsFor, railToolForKey, studioChecked, studioHeld, s
 import { VIEW_MODES, viewModeMaterial, type ViewMode } from "@/lib/sets/view-modes";
 import { azimuthOf, hourFromAzimuth, measureMetres, scaleBar, sunDirection, type MeasurePoint } from "@/lib/sets/furniture";
 import { PATH_MAX_POINTS, alongPath, pathLength, type Gaze } from "@/lib/sets/people";
+import { MOVERS_PER_BEAT, canMove, moverAlong, movedSpec, placementBefore, turnAbout, type Mover, type Placement } from "@/lib/sets/movers";
 import type { RigTab } from "@/lib/sets/rig-dock";
 import { SceneTree, sceneNames, type SceneTarget } from "./scene-tree";
 import { Sequencer } from "./sequencer";
@@ -286,7 +287,19 @@ type StageApi = {
   recordStart(): { width: number; height: number; mime: string } | null;
   recordFrame(pose: Pose): void;
   recordStop(): Promise<{ blob: Blob; mime: string; frames: number } | null>;
+  /**
+   * The movers (movers.ts, 2026-09-23): the things that move in a beat,
+   * driven to where they have got to, without rebuilding the stage — the
+   * previz and the rehearsal draw one of these a frame. An empty list puts
+   * everything back where the set was built. The frame a beat is SHOT on is
+   * drawn from a set with them moved instead (movedSpec), so the sketch and
+   * the words about it agree.
+   */
+  placeThings(placements: readonly Placement[]): void;
 };
+
+/** What a tap on the ground lays (set-view's laying): null lays nothing. */
+type Laying = "path" | "gaze" | "mover" | "mover-way" | null;
 
 /** What the stage needs of a thing (elements.ts SetElement): its blocks, its box and where its thumbnail floats. */
 type StageElement = Pick<SetElement, "key" | "members" | "anchor" | "min" | "max">;
@@ -848,12 +861,15 @@ export function SetView({
   useEffect(() => {
     layoutRef.current = { ...layoutRef.current, gaze };
   }, [gaze]);
-  const [laying, setLaying] = useState<"path" | "gaze" | null>(null);
-  const layingRef = useRef<"path" | "gaze" | null>(null);
+  // What a tap on the ground lays: the figure's path, its eye-line, or
+  // where the open card's thing drives to in this beat and the way it goes
+  // (movers.ts, 2026-09-23).
+  const [laying, setLaying] = useState<Laying>(null);
+  const layingRef = useRef<Laying>(null);
   useEffect(() => {
     layingRef.current = laying;
   }, [laying]);
-  const layAddRef = useRef<(kind: "path" | "gaze", p: MeasurePoint) => void>(() => {});
+  const layAddRef = useRef<(kind: NonNullable<Laying>, p: MeasurePoint) => void>(() => {});
   const eyelineRef = useRef<SVGSVGElement>(null);
   const pathRef = useRef<SVGSVGElement>(null);
   const [rigError, setRigError] = useState("");
@@ -1110,6 +1126,15 @@ export function SetView({
         const pmrem = full ? new THREE.PMREMGenerator(renderer) : null;
         const stageOpts = { shadows: !coarse, quality, textures, sky: pmrem ? { Sky, pmrem } : null };
         const built = buildSetScene(THREE, spec, stageOpts);
+        /** Every block of the set by "object:copy" (build-scene.ts userData), for the movers and nothing else. */
+        const indexBlocks = () => {
+          const out = new Map<string, import("three").Mesh>();
+          for (const o of built.root.children) {
+            const mesh = o as import("three").Mesh;
+            if (typeof mesh.userData?.oi === "number") out.set(`${mesh.userData.oi}:${mesh.userData.copy}`, mesh);
+          }
+          return out;
+        };
         scene.add(built.root);
         if (built.background) scene.background = built.background;
         if (built.fog) scene.fog = built.fog;
@@ -1166,6 +1191,13 @@ export function SetView({
         };
         let stageEls: readonly StageElement[] = [];
         let keyOfCopy = new Map<string, string>();
+        /** Every block by which object and copy it is, for the movers: the picker's map the other way round. */
+        let meshOfCopy = indexBlocks();
+        /** Where each thing that has been driven stands now (placeThings), for the box a tap draws round it. */
+        let placedNow = new Map<string, Placement>();
+        /** Where a block stood when the set was drawn, and which blocks are away from it (placeThings). */
+        const homes = new WeakMap<import("three").Mesh, { x: number; y: number; z: number; rotY: number }>();
+        const moved = new Set<import("three").Mesh>();
         let pickedKey: string | null = null;
         const clearBadges = () => {
           for (const o of badgeRoot.children) if (o instanceof CSS2DObject) o.element.remove();
@@ -1184,6 +1216,23 @@ export function SetView({
           const e = pickedKey ? stageEls.find((x) => x.key === pickedKey) : undefined;
           if (!e) return;
           const box = new THREE.Box3(new THREE.Vector3(...e.min), new THREE.Vector3(...e.max)).expandByScalar(0.06);
+          // A thing a beat has driven is boxed where it stands now, not where
+          // it was built (movers.ts placeThings): its corners go round its own
+          // middle and along with it.
+          const away = placedNow.get(e.key);
+          if (away) {
+            const about = { x: (e.min[0] + e.max[0]) / 2, z: (e.min[2] + e.max[2]) / 2 };
+            const shift = { x: away.x - about.x, z: away.z - about.z };
+            const corners: import("three").Vector3[] = [];
+            for (const x of [box.min.x, box.max.x])
+              for (const y of [box.min.y, box.max.y])
+                for (const z of [box.min.z, box.max.z]) {
+                  const t = turnAbout({ x, z }, about, away.turnDeg);
+                  corners.push(new THREE.Vector3(t.x + shift.x, y, t.z + shift.z));
+                }
+            box.makeEmpty();
+            for (const c of corners) box.expandByPoint(c);
+          }
           const helper = new THREE.Box3Helper(box, new THREE.Color(OVERLAY_ACCENT));
           const m = helper.material as import("three").LineBasicMaterial;
           m.depthTest = false;
@@ -2476,6 +2525,10 @@ export function SetView({
             camera.far = fresh.farPlane;
             camera.updateProjectionMatrix();
             placeStandIn(standIn, layoutRef.current.mark);
+            // The blocks are new ones: nothing is away from where it was
+            // built any more, and the movers index the set as it now is.
+            moved.clear();
+            meshOfCopy = indexBlocks();
             // The lift belongs to the set that is drawn: an hour, a light
             // plot or an Astra change is another set to measure.
             measureLift(next, fresh.farPlane);
@@ -2553,6 +2606,45 @@ export function SetView({
           },
           setElementPicked(key) {
             pickedKey = key;
+            drawPick();
+          },
+          placeThings(placements) {
+            placedNow = new Map(placements.map((p) => [p.key, p]));
+            // Where each block stood when the set was drawn, kept the first
+            // time it is moved: a rebuild makes new blocks, and clears this.
+            const home = (mesh: import("three").Mesh) => {
+              const held = homes.get(mesh);
+              if (held) return held;
+              const fresh = { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z, rotY: mesh.rotation.y };
+              homes.set(mesh, fresh);
+              return fresh;
+            };
+            const wanted = new Map(placements.map((p) => [p.key, p]));
+            for (const mesh of moved) {
+              if (wanted.has(keyOfCopy.get(`${mesh.userData.oi}:${mesh.userData.copy}`) ?? "")) continue;
+              const was = homes.get(mesh);
+              if (!was) continue;
+              mesh.position.set(was.x, was.y, was.z);
+              mesh.rotation.y = was.rotY;
+            }
+            moved.clear();
+            drawPick();
+            if (placements.length === 0) return;
+            for (const p of placements) {
+              const el = stageEls.find((x) => x.key === p.key);
+              if (!el) continue;
+              const about = { x: (el.min[0] + el.max[0]) / 2, z: (el.min[2] + el.max[2]) / 2 };
+              const shift = { x: p.x - about.x, z: p.z - about.z };
+              for (const [oi, copy] of el.members) {
+                const mesh = meshOfCopy.get(`${oi}:${copy}`);
+                if (!mesh) continue;
+                const was = home(mesh);
+                const turned = turnAbout({ x: was.x, z: was.z }, about, p.turnDeg);
+                mesh.position.set(turned.x + shift.x, was.y, turned.z + shift.z);
+                mesh.rotation.y = was.rotY + p.turnDeg * (Math.PI / 180);
+                moved.add(mesh);
+              }
+            }
             drawPick();
           },
         };
@@ -2778,7 +2870,9 @@ export function SetView({
     return () => apiRef.current?.setFurniture(null);
   }, [ready, s, measurePts, gaze, spec, names, filmOpen, filmSel, film, mark, pose, rig.time]);
 
-  // What a laid point becomes (cut D): the gaze's point, or the next point of the beat's path.
+  // What a laid point becomes (cut D): the gaze's point, the next point of
+  // the beat's path, or — for the thing whose card is open — where it
+  // drives to in this beat and the way it goes (movers.ts).
   useEffect(() => {
     layAddRef.current = (kind, p) => {
       if (kind === "gaze") {
@@ -2788,6 +2882,17 @@ export function SetView({
       }
       const at = filmSel;
       if (at === null) return;
+      if (kind === "mover" || kind === "mover-way") {
+        const key = elementCard?.key;
+        if (!key || key === FIGURE_KEY) return;
+        if (kind === "mover") {
+          editMover(key, (was) => ({ key, x: p.x, z: p.z, turnDeg: was?.turnDeg ?? 0, path: was?.path ?? [] }));
+          setLaying(null);
+        } else {
+          editMover(key, (was) => (was && was.path.length < PATH_MAX_POINTS ? { ...was, path: [...was.path, p] } : was));
+        }
+        return;
+      }
       editFilm((f) => ({
         ...f,
         beats: f.beats.map((bb, j) => (j === at && bb.path.length < PATH_MAX_POINTS ? { ...bb, path: [...bb.path, p] } : bb)),
@@ -3339,17 +3444,21 @@ export function SetView({
     [rig.format, rig.squeeze],
   );
   const planFor = useCallback(
-    (pose: Pose | null, m: Mark, order: readonly string[] = elementOrder) =>
+    // `shown` is the set as the frame shows it: the arrangement, or a beat's
+    // own set with its movers driven where the beat leaves them (movers.ts).
+    // The THINGS are always the arrangement's, so a moved car keeps its key
+    // and its photos; only where they stand changes.
+    (pose: Pose | null, m: Mark, order: readonly string[] = elementOrder, shown: typeof spec = spec) =>
       planShotSheets({
         els,
         held: resolved.held,
         sheets: resolved.held.map((h) => h.sheetHash),
         order,
-        vehicles,
+        vehicles: shown === spec ? vehicles : findVehicles(shown),
         shotCamera: cameraFor(pose, m),
         poseCamera: pose,
         budget: stillModel === "gpt-image" ? ELEMENT_SHEETS_PER_STILL : 0,
-        spec,
+        spec: shown,
       }),
     [els, resolved, vehicles, cameraFor, stillModel, spec, elementOrder],
   );
@@ -3363,8 +3472,40 @@ export function SetView({
         .join(","),
     [resolved],
   );
-  /** Where the film's figure stands in each beat (film.ts filmStages): the end frames' marks. */
+  /** Where the film's figure stands in each beat (film.ts filmStages): the end frames' marks, and where every moved thing stands. */
   const filmStagesNow = useMemo(() => filmStages(film.beats, { mark, pose, time: rig.time }), [film.beats, mark, pose, rig.time]);
+  const elsByKey = useMemo(() => new Map(els.map((e) => [e.key, e])), [els]);
+  /**
+   * The set each beat's end frame is drawn from (movers.ts): the things that
+   * move, where that beat leaves them. Nothing moves in most films, and then
+   * every beat is the set itself.
+   */
+  const filmBeatSpecs = useMemo(
+    () => filmStagesNow.map((st) => movedSpec(spec, els, st.movers)),
+    [filmStagesNow, spec, els],
+  );
+  /**
+   * Where every moved thing stands a share `e` through beat `bi`: the ones
+   * this beat drives are on their way, the ones an earlier beat drove stay
+   * where it left them. The previz and the rehearsal hand the stage one of
+   * these a frame; at e = 1 it is where the beat's end frame is shot.
+   */
+  const moversAlong = useCallback(
+    (stages: readonly { movers: Placement[] }[], bi: number, e: number): Placement[] => {
+      const beat = film.beats[bi];
+      const at = stages[bi]?.movers ?? [];
+      if (!beat || at.length === 0) return at;
+      const driving = new Map(beat.movers.map((m) => [m.key, m]));
+      const places = stages.map((st) => st.movers);
+      return at.map((p) => {
+        const m = driving.get(p.key);
+        const el = elsByKey.get(p.key);
+        if (!m || !el) return p;
+        return moverAlong(placementBefore(places, bi, p.key, { x: el.centre[0], z: el.centre[2] }), m, e);
+      });
+    },
+    [film.beats, elsByKey],
+  );
   /**
    * The film's one order for the things' sheets (R1): the person's own
    * order first, then each thing by the most of the frame it fills in any
@@ -3377,15 +3518,15 @@ export function SetView({
     film.beats.forEach((b, i) => {
       const cam = cameraFor(b.end, filmStagesNow[i]?.figure ?? mark);
       if (!cam) return;
-      for (const p of elementPlaces(spec, els, cam)) if (p.seen && heldOf.has(p.key)) most.set(p.key, Math.max(most.get(p.key) ?? 0, p.share));
+      for (const p of elementPlaces(filmBeatSpecs[i] ?? spec, els, cam)) if (p.seen && heldOf.has(p.key)) most.set(p.key, Math.max(most.get(p.key) ?? 0, p.share));
     });
     const rank = (k: string) => (elementOrder.includes(k) ? elementOrder.indexOf(k) : Number.POSITIVE_INFINITY);
     return [...most.entries()].sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1] || a[0].localeCompare(b[0])).map(([k]) => k);
-  }, [film.beats, filmStagesNow, cameraFor, spec, els, heldOf, mark, elementOrder]);
+  }, [film.beats, filmStagesNow, filmBeatSpecs, cameraFor, spec, els, heldOf, mark, elementOrder]);
   /** Which things' sheets ride each beat's end frame, in that order. */
   const filmBeatRides = useMemo(
-    () => film.beats.map((b, i) => planFor(b.end, filmStagesNow[i]?.figure ?? mark, filmOrder).riding),
-    [film.beats, filmStagesNow, planFor, filmOrder, mark],
+    () => film.beats.map((b, i) => planFor(b.end, filmStagesNow[i]?.figure ?? mark, filmOrder, filmBeatSpecs[i]).riding),
+    [film.beats, filmStagesNow, filmBeatSpecs, planFor, filmOrder, mark],
   );
   // The opening still has nothing to lend, and no thing's own sheet rides
   // the film either: only then may the car change from beat to beat.
@@ -3589,6 +3730,21 @@ export function SetView({
     scheduleSave();
   }
 
+  // The beat being written is shown as its end frame will be shot
+  // (movers.ts): a thing is driven where this beat leaves it the moment its
+  // destination is laid, so the stage answers the tap. Not while something
+  // is playing or rendering — those drive the things themselves.
+  useEffect(() => {
+    if (!ready || previz || recording || filmBusy) return;
+    if (!(filmOpen || cutOpen) || filmSel === null) return;
+    apiRef.current?.placeThings(filmStagesNow[filmSel]?.movers ?? []);
+  }, [ready, previz, recording, filmBusy, filmOpen, cutOpen, filmSel, filmStagesNow]);
+  // The set stands as it is arranged whenever the film is put away
+  // (movers.ts, 2026-09-23): a beat's movers belong to the film, never to
+  // the set, so Shoot is never handed a van parked where a beat left it.
+  useEffect(() => {
+    if (ready && !filmOpen && !cutOpen) apiRef.current?.placeThings([]);
+  }, [ready, filmOpen, cutOpen]);
   // The stage knows the things, floats their thumbnails and boxes the one
   // whose card is open (StageApi, R1). No thumbnails over a still being
   // viewed or the cut's clips.
@@ -3663,6 +3819,28 @@ export function SetView({
     const h = thingKey ? heldOf.get(thingKey) : undefined;
     const st = thingKey ? livePlan.statuses.find((x) => x.key === thingKey) : undefined;
     const kindWord = el.kind === "car" ? cast.car : el.kind === "vehicle" ? cast.vehicle : cast.object;
+    // What this beat does with the thing (movers.ts): whether the set can
+    // move it at all, and its move in words.
+    const driveNow = (() => {
+      const own = thingKey ? elsByKey.get(thingKey) : undefined;
+      if (!own || filmSel === null) return { can: false, words: null as string | null };
+      if (!canMove(own, spec)) return { can: false, words: null };
+      const mover = film.beats[filmSel]?.movers.find((m) => m.key === thingKey) ?? null;
+      if (!mover) return { can: true, words: null };
+      const from = placementBefore(filmStagesNow.map((st) => st.movers), filmSel, mover.key, { x: own.centre[0], z: own.centre[2] });
+      const d = pathLength({ x: from.x, z: from.z }, mover.path, { x: mover.x, z: mover.z });
+      const turned = ((mover.turnDeg - from.turnDeg + 540) % 360) - 180;
+      return {
+        can: true,
+        words: [
+          formatMsg(cast.driveMoves, { d }),
+          turned ? formatMsg(cast.driveTurned, { deg: Math.abs(Math.round(turned)) }) : null,
+          mover.path.length ? formatMsg(cast.driveWayN, { n: mover.path.length }) : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      };
+    })();
     const ordered = castChips.filter((c) => c.key !== FIGURE_KEY).map((c) => c.key);
     const orderIndex = thingKey ? ordered.indexOf(thingKey) : -1;
     const orderCount = ordered.length;
@@ -3738,6 +3916,21 @@ export function SetView({
             ? {
                 earlier: orderIndex > 0 ? () => reorderElement(thingKey, orderIndex - 1) : null,
                 later: orderIndex < orderCount - 1 ? () => reorderElement(thingKey, orderIndex + 1) : null,
+              }
+            : null
+        }
+        drive={
+          thingKey && filmOpen && filmSel !== null && !filmBusy && !previz
+            ? {
+                beat: filmSel + 1,
+                can: driveNow.can,
+                words: driveNow.words,
+                laying: laying === "mover" ? "where" : laying === "mover-way" ? "way" : null,
+                onLay: () => setLaying((l) => (l === "mover" ? null : "mover")),
+                onWay: () => setLaying((l) => (l === "mover-way" ? null : "mover-way")),
+                // A quarter of a turn a tap, round and back to where it started.
+                onTurn: () => editMover(thingKey, (was) => (was ? { ...was, turnDeg: (was.turnDeg + 90) % 360 } : was)),
+                onClear: () => editMover(thingKey, () => null),
               }
             : null
         }
@@ -4299,6 +4492,28 @@ export function SetView({
     }, MOVE_PREVIEW_REST_MS);
   }
 
+  /**
+   * Write one thing's mover into the beat being written (movers.ts): `fn`
+   * is handed what the beat says about it now (null when it says nothing)
+   * and gives back what it should say, or null to leave it standing still.
+   * Past the beat's ceiling, a new thing is not taken.
+   */
+  function editMover(key: string, fn: (was: Mover | null) => Mover | null) {
+    const at = filmSel;
+    if (at === null) return;
+    editFilm((f) => ({
+      ...f,
+      beats: f.beats.map((bb, j) => {
+        if (j !== at) return bb;
+        const was = bb.movers.find((m) => m.key === key) ?? null;
+        const next = fn(was);
+        if (!next) return was ? { ...bb, movers: bb.movers.filter((m) => m.key !== key) } : bb;
+        if (!was && bb.movers.length >= MOVERS_PER_BEAT) return bb;
+        return { ...bb, movers: was ? bb.movers.map((m) => (m.key === key ? next : m)) : [...bb.movers, next] };
+      }),
+    }));
+  }
+
   function filmTexture(texture: FilmTexture) {
     if (filmSel === null) return;
     editFilm((f) => ({
@@ -4325,6 +4540,8 @@ export function SetView({
         api.rebuild(stagedSpec(spec, { light: rigRef.current.light, time: staged.time }, staged.figure));
         api.placeMark(staged.figure);
         api.setPose(staged.pose);
+        // And the things this beat has moved, where it leaves them (movers.ts).
+        api.placeThings(staged.movers);
       }
       setFovDeg(b.end.fovDeg);
       setPoseNow(b.end);
@@ -4352,6 +4569,8 @@ export function SetView({
     // stands to each beat's figure as the camera flies, and the hour steps
     // at each beat's end. The stage goes back to the arrangement after.
     const stages = filmStages(film.beats, { mark: layoutRef.current.mark, pose: layoutRef.current.pose, time: rigRef.current.time });
+    /** Anything moves in this film: the stage is only asked to drive things when something does. */
+    const movingFilm = film.beats.some((b) => b.movers.length > 0);
     let figureFrom: Mark = { ...layoutRef.current.mark };
     let hourNow: number | null = rigRef.current.time;
     for (const [bi, beat] of film.beats.entries()) {
@@ -4366,6 +4585,8 @@ export function SetView({
           const at = alongPath(walkFrom, beat.path, to, e);
           api.placeMark({ x: at.x, z: at.z, facingDeg: e >= 0.97 || at.facingDeg === null ? to.facingDeg : at.facingDeg });
         }
+        // The things that move, on their way (movers.ts).
+        if (movingFilm) api.placeThings(moversAlong(stages, bi, e));
       });
       if (to) {
         figureFrom = { x: to.x, z: to.z, facingDeg: to.facingDeg };
@@ -4378,11 +4599,15 @@ export function SetView({
         api.rebuild(stagedSpec(spec, { light: rigRef.current.light, time: staged.time }, figureFrom));
         api.placeMark(figureFrom);
       }
+      // The beat's end: every moved thing exactly where its end frame is shot.
+      if (movingFilm) api.placeThings(staged.movers);
       from = beat.end;
     }
     if (hourNow !== rigRef.current.time) api.rebuild(stagedSpec(spec, rigRef.current, layoutRef.current.mark));
     api.placeMark(layoutRef.current.mark);
     api.setPose(layoutRef.current.pose);
+    // The set back as it is arranged: a previz moves nothing for good.
+    if (movingFilm) api.placeThings([]);
     if (alive()) setPreviz(false);
   }
 
@@ -4417,6 +4642,8 @@ export function SetView({
     // for the previz: the engine must be given the set, not our furniture.
     api.holdFilmOverlay("previz", true);
     const stages = filmStages(film.beats, { mark: layoutRef.current.mark, pose: layoutRef.current.pose, time: rigRef.current.time });
+    /** Anything moves in this film (movers.ts): the clip is the set in motion, not only the camera. */
+    const movingFilm = film.beats.some((b) => b.movers.length > 0);
     const startPose = shots.find((sh) => sh.generationId === film.startId)?.pose ?? api.pose();
     const steps = flightSteps(film.beats.length, perBeat, REHEARSAL_FPS);
     let drawnTime = rigRef.current.time;
@@ -4473,6 +4700,9 @@ export function SetView({
           const at = alongPath(figureFrom, beat.path, to, step.e);
           api.placeMark({ x: at.x, z: at.z, facingDeg: step.e >= 0.97 || at.facingDeg === null ? to.facingDeg : at.facingDeg });
         }
+        // The things that move, on their way (movers.ts): this is the half
+        // of a blockout the camera cannot do.
+        if (movingFilm) api.placeThings(moversAlong(stages, step.beat, step.e));
         api.recordFrame(pose);
         if (step.closes && to) {
           figureFrom = { x: to.x, z: to.z, facingDeg: to.facingDeg };
@@ -4484,6 +4714,7 @@ export function SetView({
       api.holdFilmOverlay("previz", false);
       // The stage goes back to the arrangement, as the previz leaves it.
       if (drawnTime !== rigRef.current.time) api.rebuild(stagedSpec(spec, rigRef.current, layoutRef.current.mark));
+      if (movingFilm) api.placeThings([]);
       api.placeMark(layoutRef.current.mark);
       api.setPose(layoutRef.current.pose);
       setRecording(false);
@@ -4643,9 +4874,9 @@ export function SetView({
     // moves it. A beat is redrawn when its hour or its figure differ from
     // this, never from the rig (2026-09-17): the light plot and the sun
     // stand round the figure, so both move the light.
-    let drawn = { time: rigRef.current.time, figure: layoutRef.current.mark as { x: number; z: number; facingDeg: number } };
+    let drawn = { time: rigRef.current.time, figure: layoutRef.current.mark as { x: number; z: number; facingDeg: number }, movers: "[]" };
     const stages = filmStages(film.beats, { mark: layoutRef.current.mark, pose: layoutRef.current.pose, time: rigRef.current.time });
-    let stagedHour = false;
+    let stagedAway = false;
     // Whatever stops the chain — a refusal, a lost stage, anything thrown —
     // the film is let go, or it would stay locked as rendering, and a throw
     // is said in the dock rather than left to the console.
@@ -4665,10 +4896,16 @@ export function SetView({
         const staged = stages[i];
         if (!job.end) {
           const figure = staged.figure;
-          if (staged.time !== drawn.time || figure.x !== drawn.figure.x || figure.z !== drawn.figure.z) {
-            api.rebuild(stagedSpec(spec, { light: rigRef.current.light, time: staged.time }, figure));
-            drawn = { time: staged.time, figure };
-            stagedHour = true;
+          // The set this beat shows: its hour, and the things it has moved
+          // where it leaves them (movers.ts). A beat that moves something is
+          // always redrawn — what moved is in the blocks themselves, so the
+          // sketch, which things are in the frame and the words about them
+          // are the one moment.
+          const movedHere = JSON.stringify(staged.movers);
+          if (staged.time !== drawn.time || figure.x !== drawn.figure.x || figure.z !== drawn.figure.z || movedHere !== drawn.movers) {
+            api.rebuild(movedSpec(stagedSpec(spec, { light: rigRef.current.light, time: staged.time }, figure), els, staged.movers));
+            drawn = { time: staged.time, figure, movers: movedHere };
+            stagedAway = true;
           }
           api.placeMark(figure);
           api.setPose(staged.pose);
@@ -4689,6 +4926,10 @@ export function SetView({
             lookPicked: filmLook.key !== undefined,
             // The film's one order for the things' sheets, the same every beat (filmOrder).
             elementOrder: filmOrder,
+            // Where this beat leaves the things that move (movers.ts): the
+            // sketch above was drawn with them there, and the words the
+            // server writes about the frame are written about the same set.
+            movers: staged.movers,
             frameDataUri: frame,
             // The person in the opening still (filmCharacterId), not the one picked above.
             characterId: filmCharacterId,
@@ -4808,7 +5049,7 @@ export function SetView({
       // The stage as arranged, whatever the beats did to it — only while
       // there is a stage: a page that has gone has disposed it.
       if (aliveRef.current && apiRef.current) {
-        if (stagedHour) api.rebuild(stagedSpec(spec, rigRef.current, layoutRef.current.mark));
+        if (stagedAway) api.rebuild(stagedSpec(spec, rigRef.current, layoutRef.current.mark));
         api.placeMark(layoutRef.current.mark);
         api.setPose(layoutRef.current.pose);
       }
@@ -6545,7 +6786,13 @@ export function SetView({
           </svg>
           {laying && (
             <span className="pointer-events-none absolute left-3.5 top-[116px] z-20 rounded-full border border-onmedia/10 bg-black/70 px-3 py-1 text-[11px] text-[#f0cda6]" data-laying>
-              {laying === "path" ? s.studio.pathLaying : s.studio.gazePick}
+              {laying === "path"
+                ? s.studio.pathLaying
+                : laying === "mover"
+                  ? cast.driveLaying
+                  : laying === "mover-way"
+                    ? cast.driveWayLaying
+                    : s.studio.gazePick}
             </span>
           )}
           <div className={`pointer-events-none absolute right-3.5 z-10 hidden items-end gap-2.5 md:flex ${viewingShot ? "md:hidden" : ""} ${filmOpen || cutOpen ? "bottom-3.5" : "bottom-[104px]"}`}>
@@ -7726,6 +7973,9 @@ export function SetView({
             )}
             {dockTab === "film" && (
               <div className="border-b border-[rgba(255,255,255,0.07)] p-3">
+                {/* The rehearsal (rehearsal.ts): the film's own flight as a
+                    clip, whether or not a beat is being written. */}
+                <div className="mb-2 flex flex-col gap-2">{rehearsalControls("")}</div>
                 {filmSel !== null && film.beats[filmSel] ? (
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.07em] text-[#9aa0ad]">
@@ -7909,7 +8159,6 @@ export function SetView({
                         {s.filmLookNone}
                       </p>
                     )}
-                    {rehearsalControls("")}
                     {/* What each beat's end frame carries of the things' photos (R1). */}
                     {elementsKey && film.beats.length > 0 && (
                       <div data-film-elements className="flex flex-col gap-0.5">

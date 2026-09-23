@@ -16,6 +16,12 @@ import { ELEMENT_PHOTOS_MAX } from "@/lib/sets/elements";
 
 type Cast = Messages["sets"]["cast"];
 
+/** A chip on the card's drive row: lit while it is waiting for a tap on the ground. */
+const DRIVE_CHIP = (on: boolean) =>
+  `h-7 cursor-pointer rounded-full border px-2.5 text-[11px] ${
+    on ? "border-[rgba(240,196,142,0.75)] bg-[rgba(224,164,104,0.12)] text-[#f0cda6]" : "border-[rgba(255,255,255,0.12)] text-[#d6d9e0] hover:bg-[rgba(255,255,255,0.06)]"
+  }`;
+
 export type CardElement =
   | { kind: "car" | "vehicle" | "object"; key: string; name: string; tyres: number }
   | { kind: "figure"; key: string; name: string }
@@ -35,6 +41,7 @@ export function ElementCard({
   onClose,
   onShowIt,
   move,
+  drive,
   casting,
   c,
   variant,
@@ -59,6 +66,23 @@ export function ElementCard({
   onShowIt: (() => void) | null;
   /** Its place in the strip's order, for a finger that can't drag the strip: null ends are the list's ends. */
   move: { earlier: (() => void) | null; later: (() => void) | null } | null;
+  /**
+   * Where this thing goes in the beat being written (movers.ts,
+   * 2026-09-23): the film's own track for a thing that MOVES. Null outside
+   * a film, or with no beat picked. `can` false says the set cannot move
+   * this one on its own (a block drawn many times over).
+   */
+  drive: {
+    beat: number;
+    can: boolean;
+    /** Its move in words, or null when the beat leaves it where it is. */
+    words: string | null;
+    laying: "where" | "way" | null;
+    onLay: () => void;
+    onWay: () => void;
+    onTurn: () => void;
+    onClear: () => void;
+  } | null;
   /**
    * The figure's card (R1, "Who plays this person?"): the person's
    * characters to cast, the one cast now, a new one (saved arrangement
@@ -285,6 +309,36 @@ export function ElementCard({
             {status ?? c.photoHint}
           </p>
           {element.tyres > 6 && <p className="text-[11px] leading-snug text-[#9aa0ad]">{c.merged}</p>}
+          {drive && (
+            <div className="flex flex-wrap items-center gap-1.5 border-t border-[rgba(255,255,255,0.07)] pt-2" data-el-drive>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#9aa0ad]">{formatMsg(c.driveTitle, { n: drive.beat })}</span>
+              {!drive.can ? (
+                <p className="text-[11px] leading-snug text-[#9aa0ad]" data-el-drive-cannot>
+                  {c.driveCannot}
+                </p>
+              ) : (
+                <>
+                  {drive.words && <span className="text-[11px] text-[#f0cda6]">{drive.words}</span>}
+                  <button type="button" onClick={drive.onLay} data-el-drive-lay className={DRIVE_CHIP(drive.laying === "where")}>
+                    {drive.laying === "where" ? c.driveLaying : c.driveLay}
+                  </button>
+                  {drive.words && (
+                    <>
+                      <button type="button" onClick={drive.onTurn} data-el-drive-turn className={DRIVE_CHIP(false)}>
+                        {c.driveTurn}
+                      </button>
+                      <button type="button" onClick={drive.onWay} data-el-drive-way className={DRIVE_CHIP(drive.laying === "way")}>
+                        {drive.laying === "way" ? c.driveWayLaying : c.driveWay}
+                      </button>
+                      <button type="button" onClick={drive.onClear} data-el-drive-clear className={DRIVE_CHIP(false)}>
+                        {c.driveClear}
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          )}
           {move && (move.earlier || move.later) && (
             <div className="flex items-center gap-1.5" data-el-move>
               <button

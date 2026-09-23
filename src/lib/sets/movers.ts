@@ -71,6 +71,15 @@ export function normaliseMovers(v: unknown): Mover[] {
   return out;
 }
 
+/**
+ * Stored or sent placements — where things STAND, with no path and no way
+ * they got there: what a beat's end frame is shot with (actions.ts), and
+ * what the page hands the stage.
+ */
+export function normalisePlacements(v: unknown): Placement[] {
+  return normaliseMovers(v).map(({ key, x, z, turnDeg }) => ({ key, x, z, turnDeg }));
+}
+
 /** Two mover lists as the same list: a thing moving anywhere else is another beat. */
 export function sameMovers(a: readonly Mover[], b: readonly Mover[]): boolean {
   if (a.length !== b.length) return false;

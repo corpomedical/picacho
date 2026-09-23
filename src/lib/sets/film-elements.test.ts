@@ -61,7 +61,7 @@ describe("a render", () => {
     expect(order).toContain("most.set(p.key, Math.max(most.get(p.key) ?? 0, p.share))");
     // The person's order first (the strip), then the most of the frame, then the key.
     expect(order).toContain(".sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1] || a[0].localeCompare(b[0]))");
-    expect(view).toContain("planFor(b.end, filmStagesNow[i]?.figure ?? mark, filmOrder).riding");
+    expect(view).toContain("planFor(b.end, filmStagesNow[i]?.figure ?? mark, filmOrder, filmBeatSpecs[i]).riding");
   });
 });
 
