@@ -86,6 +86,14 @@ import {
   IMAGE_LANES_THAT_COMPOSITE,
   imageLaneTakesExtraPhotos,
 } from "@/lib/generations/providers/image-models";
+import {
+  DEFAULT_IMAGE_ASPECT,
+  defaultImageResolution,
+  offersImageAspect,
+  offersImageResolution,
+  type ImageAspect,
+  type ImageResolution,
+} from "@/lib/generations/providers/image-resolution";
 import { resolveModel } from "@/lib/generations/model-health";
 import {
   characterVideoLock,
@@ -1087,6 +1095,28 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     imageModelId = requestedImageModelId;
   }
 
+  // The picture's SIZE and SHAPE (2026-09-23, the operator: "Add 4k
+  // capabilities to gemini plus aspect ratio and any other features they can
+  // offer"). Both are per-send choices like the lane itself, and both are
+  // re-validated HERE against what the FINAL lane actually offers — never
+  // against what the form claims, and never against the lane the composer
+  // thought it was on. A 4K that reached the provider on a lane priced at
+  // one credit would be a render this product paid for and did not charge.
+  //
+  // Free accounts take the lane's default band and the square, for the same
+  // reason they take the default lane: the free day is counted in
+  // generations, and 4K is the first picture here that costs two credits.
+  const requestedImageResolution = (formData.get("image_resolution") as string) || "";
+  const requestedImageAspect = (formData.get("image_aspect") as string) || "";
+  const imageResolution: ImageResolution =
+    contentType === "image" && !isFreeTierAccount && offersImageResolution(imageModelId, requestedImageResolution)
+      ? requestedImageResolution
+      : defaultImageResolution(imageModelId);
+  const imageAspect: ImageAspect =
+    contentType === "image" && !isFreeTierAccount && offersImageAspect(imageModelId, requestedImageAspect)
+      ? requestedImageAspect
+      : DEFAULT_IMAGE_ASPECT;
+
   // Multi-character images need OpenAI's real multi-image edit endpoint —
   // Flux's fal.ai endpoint only ever accepts one reference image, with no
   // way to composite several distinct characters into one picture. Caught
@@ -1369,6 +1399,8 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // the row are the number the person was shown.
   const sendQuote = quoteSend({
     contentType,
+    imageModelId,
+    imageResolution,
     videoModelId,
     videoDurationSeconds,
     videoResolution,
@@ -2271,6 +2303,8 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           persistImage: (base64) => storeSetImage(supabase, userData.user!.id, base64),
           imageSize: setFrame.cut && imageModelId === "gpt-image" ? setFrame.size : null,
           expressionSet: expressionSetLinks,
+          imageResolution,
+          imageAspect,
           // Video renders get queued and polled instead of awaited — see
           // job-runner.ts. Images stay inline: a single bounded call that
           // finishes well inside one request and gains nothing from staging.

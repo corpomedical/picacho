@@ -29,6 +29,7 @@ import {
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { referenceNotes } from "@/lib/generations/providers/reference-notes";
 import { FACE_LINE_INSTRUCTION, pickSetForShot, takeFaceLine, type ExpressionSlot, type FaceRead } from "@/lib/characters/expression-set";
+import { type ImageAspect, type ImageResolution } from "@/lib/generations/providers/image-resolution";
 import { ImageSafetyRejection, describeImageUsage, type OpenAiImageSize, type OpenAiImageUsage } from "@/lib/generations/providers/openai-images";
 import { stripSetShotScaffold } from "@/lib/sets/set-shot-prompt";
 import type { VideoAspectRatio } from "@/lib/generations/aspect-ratio";
@@ -635,6 +636,13 @@ export type RealPipelineOptions = {
    * drafter's FACE read (pickSetForShot).
    */
   expressionSet?: Partial<Record<ExpressionSlot, string>> | null;
+  /**
+   * The size and shape this send asked for (2026-09-23). Resolved and
+   * PRICED in actions.ts against the lane's own offers — 4K is two credits
+   * — so by here they are simply what the person paid for.
+   */
+  imageResolution?: ImageResolution | null;
+  imageAspect?: ImageAspect | null;
   // Does this send carry a user-attached reference photo? (2026-08-29, from
   // the first outside bug report: "I sent an image with the background that
   // I wanted it to use. But it didn't use it. It only used the prompt.")
@@ -1681,10 +1689,20 @@ export async function runRealPipeline(
             options.imageSize ?? null,
             setUrls.length > 0 ? setUrls : null,
             elementsActive ? options.elementImageUrls : null,
+            options.imageResolution ?? null,
+            options.imageAspect ?? null,
           );
           if (fallbackNote) steps.push({ step: "generate", detail: fallbackNote });
           // Which close-ups rode, and why — on the same line, so the log reads
           // as one step.
+          // What size and shape it actually rendered at — on the log line,
+          // because 4K is the first picture in this product that costs two
+          // credits, and a charge nobody can trace to a band is the kind of
+          // money question the take's log exists to answer.
+          const bandNote =
+            options.imageResolution || options.imageAspect
+              ? ` ${[options.imageResolution, options.imageAspect].filter(Boolean).join(", ")}.`
+              : "";
           const setNote = setUrls.length
             ? ` Expression set: ${setPicks.join(", ")}${faceRead ? ` (the face read as ${faceRead.expression}, ${faceRead.angle})` : ""}.`
             : "";
@@ -1702,7 +1720,7 @@ export async function runRealPipeline(
                     : options.referenceImageUrl
                       ? " (anchored to reference photo)"
                       : ""
-                }${genTry > 1 ? " (recovered after a retry)" : ""}.${imageUsage ? ` ${describeImageUsage(imageUsage)}` : ""}${setNote}`,
+                }${genTry > 1 ? " (recovered after a retry)" : ""}.${bandNote}${imageUsage ? ` ${describeImageUsage(imageUsage)}` : ""}${setNote}`,
           });
         }
         // THE OUTPUT GATE. The prompt was judged; now the picture is — the

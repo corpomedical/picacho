@@ -3,6 +3,18 @@ import { generateImageWithFlux, generateImageWithGemini } from "@/lib/generation
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { buildImageReferences } from "@/lib/generations/providers/image-references";
+import { type ImageAspect, type ImageResolution } from "@/lib/generations/providers/image-resolution";
+
+/**
+ * The GPT edits endpoint's three sizes, by the shape they are. Anything else
+ * this lane does not offer (image-resolution.ts ASPECTS says so), and null
+ * means "send the endpoint the pinned square", which is what it always did.
+ */
+function openAiSizeForAspect(aspect: ImageAspect | null | undefined): OpenAiImageSize | null {
+  if (aspect === "3:2") return "1536x1024";
+  if (aspect === "2:3") return "1024x1536";
+  return null;
+}
 
 // A hard ceiling on PAID calls for one generation, counted across every
 // retry inside it (and, until the ladder was removed on 2026-09-09, every
@@ -95,6 +107,14 @@ export async function generateImage(
   // Design sheets of a set's things (R1, 2026-09-21): last of all, in the
   // order the set shot's prompt numbers them.
   elementImageUrls?: readonly string[] | null,
+  /**
+   * The size and shape this send asked for (2026-09-23). Both already
+   * validated against the lane's offers and PAID FOR at that band's weight
+   * (image-resolution.ts) — a 4K render is two credits, so a request that
+   * reaches here naming 4K has been charged for it.
+   */
+  imageResolution?: ImageResolution | null,
+  imageAspect?: ImageAspect | null,
 ): Promise<string> {
   const model = getImageModel(modelId);
 
@@ -140,7 +160,12 @@ export async function generateImage(
   // direction.
   if (model.id === "gemini") {
     chargeBudget(budget);
-    return persistRemoteImage(await generateImageWithGemini(prompt, combinedRefs));
+    return persistRemoteImage(
+      await generateImageWithGemini(prompt, combinedRefs, {
+        resolution: imageResolution,
+        aspect: imageAspect,
+      }),
+    );
   }
 
   if (model.provider === "fal") {
@@ -183,6 +208,11 @@ export async function generateImage(
   // daily cap, like Flux's. See refusal-messages.ts for which sentence says
   // what about money, and why.
   chargeBudget(budget);
-  const base64 = await generateImageWithOpenAI(prompt, openAiRefs, { onUsage, size: imageSize ?? undefined });
+  // The GPT lane has no resolution tiers — one size band, three shapes — so
+  // the picked shape becomes its pixel size. An explicit imageSize wins:
+  // that is a Helios rig format asking for its own frame (sets/rig.ts), and
+  // a rig knows its shape better than a composer chip does.
+  const size = imageSize ?? openAiSizeForAspect(imageAspect) ?? undefined;
+  const base64 = await generateImageWithOpenAI(prompt, openAiRefs, { onUsage, size });
   return persistBase64(base64);
 }

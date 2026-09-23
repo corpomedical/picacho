@@ -27,10 +27,24 @@ import {
   FREE_TIER_GENERATION_CREDITS,
 } from "./providers/video-models";
 import { resolutionCreditWeight, type VideoResolution } from "./providers/video-resolution";
+import { imageResolutionCreditWeight, type ImageResolution } from "./providers/image-resolution";
 import { fanoutCreditCost } from "./scene-plan";
 
 export type SendQuoteInput = {
   contentType: "image" | "video";
+  /**
+   * The picture lane and the size it renders at (2026-09-23). Optional and
+   * defaulting to the one-credit lane on purpose: every caller that quoted a
+   * picture before 4K existed keeps the price it had, and a caller that does
+   * not know the band cannot accidentally quote the dear one.
+   *
+   * "An image is always 1 credit" was true only while no lane sold a picture
+   * costing more than a credit's $0.28 basis. Nano Banana Pro at 4K costs
+   * $0.30 (fal: "4K outputs will be charged at double the standard rate"),
+   * so it is two — see image-resolution.ts for the arithmetic.
+   */
+  imageModelId?: string;
+  imageResolution?: ImageResolution | null;
   // The FINAL model — on the server, after the circuit breaker has had its
   // say, so a substituted request is priced at the model that renders it.
   videoModelId: string;
@@ -104,7 +118,7 @@ export function quoteSend(input: SendQuoteInput): SendQuote {
   // null when the resolution costs nothing extra or is not offered — in
   // which case the duration weight stands.
   const perRenderCredits = !video
-    ? 1
+    ? imageResolutionCreditWeight(input.imageModelId ?? "gpt-image", input.imageResolution ?? null)
     : storyboard
       ? storyboardCreditCost(input.videoModelId, input.storyboardTotalSeconds!)
       : (resolutionCreditWeight(

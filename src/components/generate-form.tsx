@@ -105,6 +105,15 @@ import type { VideoDurationOption } from "@/lib/generations/providers/video-mode
 import { FEATURED_VIDEO_MODEL_IDS, getVideoModel } from "@/lib/generations/providers/video-models";
 import { getImageModel, selectableImageModels } from "@/lib/generations/providers/image-models";
 import {
+  DEFAULT_IMAGE_ASPECT,
+  defaultImageResolution,
+  imageAspectOffers,
+  imageResolutionOffers,
+  offersImageAspect,
+  type ImageAspect,
+  type ImageResolution,
+} from "@/lib/generations/providers/image-resolution";
+import {
   resolutionCreditWeight,
   videoResolutionOffers,
   type VideoResolution,
@@ -2530,6 +2539,15 @@ function GenerateFormInner({
   // free accounts to the default whatever this holds.
   const [imageModelId, setImageModelId] = useState(defaultImageModelId);
   const [imageModelMenuOpen, setImageModelMenuOpen] = useState(false);
+  // The picture's size and shape for THIS send (2026-09-23). Both are
+  // per-lane: 4K exists only on Nano Banana Pro, and GPT Image renders three
+  // shapes where that lane renders ten — so both reset when the lane changes
+  // (the effect below), or a person who picked 4K and switched engines would
+  // be sending a band the new lane never sells.
+  const [imageResolution, setImageResolution] = useState<ImageResolution>(() => defaultImageResolution(defaultImageModelId));
+  const [imageAspect, setImageAspect] = useState<ImageAspect>(DEFAULT_IMAGE_ASPECT);
+  const [imageSizeMenuOpen, setImageSizeMenuOpen] = useState(false);
+  const [imageFrameMenuOpen, setImageFrameMenuOpen] = useState(false);
   // Clip continuation, arriving via ?continue=<generationId> from a video's
   // History page. The chip above the composer shows it; the id rides the
   // submit as continue_from_generation_id and the server re-validates
@@ -2656,6 +2674,8 @@ function GenerateFormInner({
   const [modelMenuShowAll, setModelMenuShowAll] = useState(false);
   const videoModelMenuRef = useRef<HTMLDivElement>(null);
   const imageModelMenuRef = useRef<HTMLDivElement>(null);
+  const imageSizeMenuRef = useRef<HTMLDivElement>(null);
+  const imageFrameMenuRef = useRef<HTMLDivElement>(null);
 
   // Clip length — each model has its own real set of valid durations (see
   // video-models.ts), so this always has to be one of the CURRENT model's
@@ -2809,6 +2829,8 @@ function GenerateFormInner({
   // — with multi-angle the smaller.
   const sendQuote = quoteSend({
     contentType,
+    imageModelId,
+    imageResolution,
     videoModelId,
     videoDurationSeconds,
     videoResolution,
@@ -2961,6 +2983,23 @@ function GenerateFormInner({
     return () => document.removeEventListener("mousedown", onClick);
   }, [videoModelMenuOpen]);
 
+  // A lane change resets the size and the shape to what THAT lane offers.
+  // Server-side the same thing happens regardless (actions.ts validates both
+  // against the final lane), so this is about the cell telling the truth —
+  // not about safety.
+  useEffect(() => {
+    // SIZE goes to the new lane's DEFAULT, not to whatever the old lane was
+    // on even when the new one offers it. Measured in the harness: switching
+    // from GPT Image to Nano Banana Pro left the cell on 1K, which that lane
+    // sells for exactly the same $0.15 as 2K — the same money for a quarter
+    // of the pixels, silently, because the value carried over.
+    setImageResolution(defaultImageResolution(imageModelId));
+    // SHAPE carries over when the new lane can render it: the default is the
+    // square on every lane, so keeping a deliberate choice is never wrong,
+    // and only a shape the new lane cannot do has to be given up.
+    setImageAspect((prev) => (offersImageAspect(imageModelId, prev) ? prev : DEFAULT_IMAGE_ASPECT));
+  }, [imageModelId]);
+
   // Same again for the picture model switcher.
   useEffect(() => {
     if (!imageModelMenuOpen) return;
@@ -2972,6 +3011,17 @@ function GenerateFormInner({
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, [imageModelMenuOpen]);
+
+  // And for the picture's size and shape sheets.
+  useEffect(() => {
+    if (!imageSizeMenuOpen && !imageFrameMenuOpen) return;
+    function onClick(e: MouseEvent) {
+      if (imageSizeMenuRef.current && !imageSizeMenuRef.current.contains(e.target as Node)) setImageSizeMenuOpen(false);
+      if (imageFrameMenuRef.current && !imageFrameMenuRef.current.contains(e.target as Node)) setImageFrameMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [imageSizeMenuOpen, imageFrameMenuOpen]);
 
   // And for the duration dropdown.
   useEffect(() => {
@@ -3002,6 +3052,8 @@ function GenerateFormInner({
       setPlusMenuOpen(false);
       setVideoModelMenuOpen(false);
       setImageModelMenuOpen(false);
+      setImageSizeMenuOpen(false);
+      setImageFrameMenuOpen(false);
       setDurationMenuOpen(false);
     }
     document.addEventListener("keydown", onKeyDown);
@@ -4904,6 +4956,8 @@ function GenerateFormInner({
       // only ever advisory: actions.ts accepts it solely for the lanes the
       // composer offers and pins free accounts to the admin default.
       formData.set("image_model_id", imageModelId);
+      formData.set("image_resolution", imageResolution);
+      formData.set("image_aspect", imageAspect);
     }
     if (effectiveContentType === "video") {
       formData.set("video_model_id", videoModelId);
@@ -6370,6 +6424,64 @@ function GenerateFormInner({
           </div>
         )}
       </div>
+    ) : null;
+
+  // SIZE and FRAME, beside the picture's ENGINE (2026-09-23, the operator:
+  // "Add 4k capabilities to gemini plus aspect ratio and any other features
+  // they can offer").
+  //
+  // Both are drawn from the LANE's own offers, never a fixed list: GPT Image
+  // sells one size band and three shapes, Nano Banana Pro sells three bands
+  // and ten shapes. A cell with one row to pick is not a choice, so each
+  // hides itself rather than offering a menu that cannot change anything —
+  // which is why GPT shows a FRAME cell and no SIZE cell.
+  //
+  // Free accounts get neither, for the same reason they get no ENGINE cell:
+  // they are pinned server-side to the default band and the square, and 4K
+  // is the first picture in this product that costs two credits.
+  const imageBandOffers = imageResolutionOffers(imageModelId);
+  const imageShapeOffers = imageAspectOffers(imageModelId);
+  const imageSizePicker =
+    contentType === "image" && !freeTierClient && imageBandOffers.length > 1 ? (
+      <SlateMenuCell
+        testId="image-size"
+        label={g.slateSize}
+        value={imageResolution}
+        open={imageSizeMenuOpen}
+        onToggle={() => setImageSizeMenuOpen((v) => !v)}
+        onClose={() => setImageSizeMenuOpen(false)}
+        disabled={locked}
+        selected={imageResolution}
+        onPick={(id) => setImageResolution(id as ImageResolution)}
+        menuRef={imageSizeMenuRef}
+        options={imageBandOffers.map((o) => ({
+          id: o.value,
+          name: o.value,
+          // Locale-neutral on purpose: the long edge in pixels needs no
+          // translation, and ten invented adjectives in four languages would.
+          sub: o.value === "1K" ? "1024 px" : o.value === "2K" ? "2048 px" : "4096 px",
+          credits: o.creditWeight,
+          creditsLabel: formatMsg(g.creditsEach, { n: o.creditWeight }),
+        }))}
+      />
+    ) : null;
+  const imageFramePicker =
+    contentType === "image" && !freeTierClient && imageShapeOffers.length > 1 ? (
+      <SlateMenuCell
+        testId="image-frame"
+        label={g.slateFrame}
+        value={imageAspect}
+        open={imageFrameMenuOpen}
+        onToggle={() => setImageFrameMenuOpen((v) => !v)}
+        onClose={() => setImageFrameMenuOpen(false)}
+        disabled={locked}
+        selected={imageAspect}
+        onPick={(id) => setImageAspect(id as ImageAspect)}
+        menuRef={imageFrameMenuRef}
+        // No subtitle: a ratio reads the same in every language, and naming
+        // ten of them would be forty strings that say what "16:9" already does.
+        options={imageShapeOffers.map((a) => ({ id: a, name: a }))}
+      />
     ) : null;
 
 
@@ -8033,6 +8145,8 @@ function GenerateFormInner({
                 {characterPicker}
                 {videoModelPicker}
                 {imageModelPicker}
+                {imageSizePicker}
+                {imageFramePicker}
                 {/* Image mode on a phone, at rest: the Outfit toggle rides
                     the values line beside the cast (the same toggle as the
                     chip below, which the raised sheet shows with its whole
@@ -10534,5 +10648,105 @@ function GenerateFormInner({
     </div>
     </div>
     </>
+  );
+}
+
+
+/**
+ * A slate cell whose value opens a small upward menu — the shape the ENGINE
+ * cell established, factored out when the picture lane gained a SIZE and a
+ * FRAME of its own (2026-09-23) rather than copied a third and fourth time.
+ *
+ * Rows carry an optional credit chip because one of them genuinely costs
+ * more: 4K on Nano Banana Pro is two credits (image-resolution.ts), and a
+ * picker whose rows hide that is the thing the video model picker's own
+ * comment warns about — the tradeoff must be visible before picking, not
+ * discovered later against the plan limit.
+ */
+function SlateMenuCell({
+  label,
+  value,
+  open,
+  onToggle,
+  onClose,
+  disabled,
+  options,
+  selected,
+  onPick,
+  menuRef,
+  testId,
+}: {
+  label: string;
+  value: string;
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  disabled?: boolean;
+  options: readonly { id: string; name: string; sub?: string; credits?: number; creditsLabel?: string }[];
+  selected: string;
+  onPick: (id: string) => void;
+  menuRef: React.RefObject<HTMLDivElement | null>;
+  testId?: string;
+}) {
+  return (
+    <div ref={menuRef} className="flex min-w-0 items-stretch" data-slate-cell={testId}>
+      <span aria-hidden className="my-2 w-px flex-shrink-0 self-stretch bg-atelier-rule/70" />
+      <button
+        type="button"
+        onClick={onToggle}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={cn(
+          "flex min-w-0 flex-col justify-center gap-1 rounded-[10px] px-2.5 py-1.5 text-left transition-colors disabled:opacity-50 max-sm:px-1.5 sm:px-3",
+          open ? "bg-atelier-ink/[0.07]" : "hover:bg-atelier-ink/[0.05]",
+        )}
+      >
+        <span className="flex items-center gap-1 text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted" data-cell-label>
+          {label}
+          <ChevronDownIcon className={cn("h-3 w-3 flex-shrink-0 transition-transform", open && "rotate-180")} />
+        </span>
+        <span className="min-w-0 truncate text-[13.5px] font-medium leading-tight text-atelier-ink">{value}</span>
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          className="absolute bottom-full left-0 right-0 z-30 mb-2 max-h-[min(420px,55vh)] overflow-y-auto rounded-[14px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
+        >
+          {options.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              role="option"
+              aria-selected={o.id === selected}
+              onClick={() => {
+                onPick(o.id);
+                onClose();
+              }}
+              className={cn(
+                "flex w-full items-center gap-2.5 rounded-[12px] px-2 py-1.5 text-left transition-colors",
+                o.id === selected
+                  ? "bg-atelier-accent/[0.08] text-atelier-ink shadow-[inset_0_0_0_1.5px_var(--color-atelier-accent)]"
+                  : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
+              )}
+            >
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <span className="min-w-0 flex-1 truncate">{o.name}</span>
+                  {typeof o.credits === "number" && o.credits > 1 && (
+                    <span className="flex-shrink-0 rounded-full bg-atelier-accent/10 px-2 py-0.5 font-numeral text-[11px] font-medium tabular-nums text-atelier-accent">
+                      {o.creditsLabel}
+                    </span>
+                  )}
+                  {o.id === selected && <CheckIcon className="h-3.5 w-3.5 flex-shrink-0 text-atelier-accent" />}
+                </span>
+                {o.sub && <span className="block truncate text-xs text-atelier-muted">{o.sub}</span>}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

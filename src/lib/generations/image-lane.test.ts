@@ -11,7 +11,19 @@ import {
   selectableImageModels,
 } from "./providers/image-models";
 import { MODEL_CAPABILITIES } from "./send-plan";
+import { quoteSend } from "./quote";
 import { COST_BASIS_USD_PER_CREDIT } from "./providers/video-models";
+import {
+  DEFAULT_IMAGE_ASPECT,
+  IMAGE_ASPECTS,
+  defaultImageResolution,
+  imageAspectOffers,
+  imagePricingAudit,
+  imageResolutionCreditWeight,
+  imageResolutionOffers,
+  offersImageAspect,
+  offersImageResolution,
+} from "./providers/image-resolution";
 import en from "../i18n/messages/en";
 import es from "../i18n/messages/es";
 import pt from "../i18n/messages/pt";
@@ -32,6 +44,7 @@ const read = (p: string) => readFileSync(join(__dirname, p), "utf8");
 const actions = read("actions.ts");
 const image = read("providers/image.ts");
 const falImage = read("providers/fal-image.ts");
+const pipeline = read("pipeline.ts");
 
 describe("the pickable picture lanes", () => {
   it("offers only lanes that exist in the catalogue", () => {
@@ -68,34 +81,113 @@ describe("the pickable picture lanes", () => {
 });
 
 describe("what a picked lane costs", () => {
-  // An image is one credit on every lane (quote.ts: "images are always 1"),
-  // so a lane whose picture costs more than a credit's cost basis would lose
-  // money on every render and nothing else in the suite would say so.
-  it("leaves margin on a credit at its pinned resolution", () => {
-    const gemini = IMAGE_MODELS.find((m) => m.id === "gemini")!;
-    expect("costPerImageUsd" in gemini).toBe(true);
-    const usd = (gemini as { costPerImageUsd: number }).costPerImageUsd;
-    expect(usd).toBeLessThan(COST_BASIS_USD_PER_CREDIT);
-    // Not merely "under" — 30% clear, so a price rise is noticed here rather
-    // than in the margin report (the free-tier lesson in free-tier-model.ts).
-    expect(COST_BASIS_USD_PER_CREDIT - usd).toBeGreaterThan(0.3 * COST_BASIS_USD_PER_CREDIT);
+  // Every weight covers its own provider price. The defect this prevents is
+  // the one 4K introduced: at fal's "4K outputs will be charged at double
+  // the standard rate" a 4K picture costs $0.30 against a credit worth
+  // $0.28, so the "an image is always 1 credit" rule that held while no lane
+  // sold a picture that dear would have lost money on every one.
+  it("never sells a size below what it costs us", () => {
+    for (const row of imagePricingAudit()) {
+      expect(row.ok, `${row.modelId} ${row.resolution}: $${row.costUsd} at ${row.weight} credit(s)`).toBe(true);
+    }
   });
 
-  it("pins the resolution, because fal prices 4K higher", () => {
-    const gemini = IMAGE_MODELS.find((m) => m.id === "gemini")!;
-    expect((gemini as { falResolution?: string }).falResolution).toBe("1K");
-    expect(falImage).toContain("resolution: model.falResolution");
-    // And the SHAPE, for the same reason the GPT lane never sends "auto":
-    // this endpoint's aspect_ratio defaults to following the first input
-    // picture, so an unpinned lane answers a square shot in the shape of
-    // whatever photo anchors the character — and the identity score reads a
-    // face that lands smaller in a taller frame as a worse match.
-    expect(falImage).toContain('aspect_ratio: "1:1"');
+  it("charges two credits for 4K and one for the rest, from fal's own arithmetic", () => {
+    expect(imageResolutionCreditWeight("gemini", "1K")).toBe(1);
+    expect(imageResolutionCreditWeight("gemini", "2K")).toBe(1);
+    expect(imageResolutionCreditWeight("gemini", "4K")).toBe(2);
+    // 2 x $0.28 = $0.56 against $0.30 — the same 46% shape the $0.15 tiers carry.
+    expect(2 * COST_BASIS_USD_PER_CREDIT).toBeGreaterThan(0.3);
+    // A size a lane does not sell is priced as that lane's default, never free.
+    expect(imageResolutionCreditWeight("gpt-image", "4K")).toBe(1);
+    expect(imageResolutionCreditWeight("gemini", null)).toBe(1);
+  });
+
+  it("opens on 2K, because fal charges the same for it as for 1K", () => {
+    expect(defaultImageResolution("gemini")).toBe("2K");
+    expect(defaultImageResolution("gpt-image")).toBe("1K");
+    const offers = imageResolutionOffers("gemini");
+    expect(offers.find((o) => o.value === "1K")!.costPerImageUsd).toBe(
+      offers.find((o) => o.value === "2K")!.costPerImageUsd,
+    );
+  });
+
+  it("sends a size and a shape, never the endpoint's own defaults", () => {
+    // resolution defaults to 1K and aspect_ratio to "auto" (which follows the
+    // first input picture — the 2026-09-23 shape defect). Both are always set.
+    expect(falImage).toContain('resolution: options?.resolution ?? defaultImageResolution("gemini")');
+    expect(falImage).toContain("aspect_ratio: options?.aspect ?? DEFAULT_IMAGE_ASPECT");
     // Never SENT (the module explains why in prose, hence the two exact
     // forms rather than the bare word): turning a provider's own filter down
     // is the ladder removed on 2026-09-09.
     expect(falImage).not.toContain("safety_tolerance:");
     expect(falImage).not.toContain("body.safety_tolerance");
+  });
+
+  it("offers only shapes the lane can actually render", () => {
+    // GPT's endpoint takes three pixel sizes and nothing else, so offering a
+    // 16:9 there would be a control that lies.
+    expect(imageAspectOffers("gpt-image")).toEqual(["3:2", "1:1", "2:3"]);
+    expect(imageAspectOffers("gemini")).toEqual(IMAGE_ASPECTS);
+    expect(offersImageAspect("gemini", "21:9")).toBe(true);
+    expect(offersImageAspect("gpt-image", "21:9")).toBe(false);
+    expect(offersImageResolution("gemini", "4K")).toBe(true);
+    expect(offersImageResolution("gpt-image", "4K")).toBe(false);
+    // Every lane can do the default, or a send with no shape picked breaks.
+    for (const m of IMAGE_MODELS) {
+      expect(offersImageAspect(m.id, DEFAULT_IMAGE_ASPECT), m.id).toBe(true);
+    }
+  });
+});
+
+describe("the size and shape a send asks for", () => {
+  it("prices a 4K picture at two credits, through the same quote the receipt shows", () => {
+    const base = {
+      contentType: "image" as const,
+      videoModelId: "kling",
+      videoDurationSeconds: 5,
+      videoResolution: null,
+      storyboardTotalSeconds: null,
+      referencePhotoCount: 0,
+      framePicked: false,
+      continuationSourceSeconds: null,
+      dialoguePresent: false,
+      renderCount: 1,
+    };
+    expect(quoteSend({ ...base, imageModelId: "gemini", imageResolution: "4K" }).totalCredits).toBe(2);
+    expect(quoteSend({ ...base, imageModelId: "gemini", imageResolution: "2K" }).totalCredits).toBe(1);
+    // Every caller that quoted a picture before 4K existed keeps its price.
+    expect(quoteSend(base).totalCredits).toBe(1);
+    // And a 4K send can never ride the free daily slot.
+    expect(quoteSend({ ...base, imageModelId: "gemini", imageResolution: "4K" }).freeSlotEligible).toBe(false);
+  });
+
+  it("re-validates both against the FINAL lane, and pins free accounts", () => {
+    const pick = actions.slice(
+      actions.indexOf("const requestedImageResolution ="),
+      actions.indexOf("const imageAspect:"),
+    );
+    // Against what the lane offers, not what the form claims — a 4K that
+    // reached the provider on a one-credit lane is a render nobody charged for.
+    expect(pick).toContain("offersImageResolution(imageModelId, requestedImageResolution)");
+    expect(pick).toContain("!isFreeTierAccount &&");
+    expect(actions).toContain("offersImageAspect(imageModelId, requestedImageAspect)");
+    // The quote reads the band that was just validated, so the allowance
+    // check, the saved credits_used and the receipt are one number.
+    expect(actions).toContain("    imageModelId,\n    imageResolution,\n    videoModelId,");
+  });
+
+  it("names the band on the take's log, so a two-credit charge can be traced", () => {
+    expect(pipeline).toContain("const bandNote =");
+    expect(pipeline).toContain("${bandNote}");
+  });
+
+  it("has the SIZE cell's label in all four locales", () => {
+    for (const [name, msgs] of [["en", en], ["es", es], ["pt", pt], ["it", it_]] as const) {
+      const line = (msgs.generate as Record<string, unknown>).slateSize;
+      expect(typeof line, `${name}.slateSize`).toBe("string");
+      expect((line as string).trim().length, `${name}.slateSize`).toBeGreaterThan(0);
+    }
   });
 });
 
@@ -129,7 +221,10 @@ describe("routing", () => {
     const byProvider = image.indexOf('if (model.provider === "fal")');
     expect(byId).toBeGreaterThan(-1);
     expect(byId).toBeLessThan(byProvider);
-    expect(image).toContain("generateImageWithGemini(prompt, combinedRefs)");
+    expect(image).toContain("generateImageWithGemini(prompt, combinedRefs, {");
+    // …and with the band this send paid for, not the endpoint's defaults.
+    expect(image).toContain("resolution: imageResolution,");
+    expect(image).toContain("aspect: imageAspect,");
   });
 
   it("reads a 422 as the refusal it is, not as a provider error", () => {

@@ -6,6 +6,12 @@ import {
 } from "@/lib/generations/layers";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { IMAGE_RESULT_REFUSED } from "@/lib/generations/providers/refusal-messages";
+import {
+  DEFAULT_IMAGE_ASPECT,
+  defaultImageResolution,
+  type ImageAspect,
+  type ImageResolution,
+} from "@/lib/generations/providers/image-resolution";
 
 // Thrown when Flux's own safety checker flags the result. fal.ai does NOT
 // error in that case — it returns HTTP 200 with the image replaced by a
@@ -140,6 +146,13 @@ export async function generateImageWithFlux(
 export async function generateImageWithGemini(
   prompt: string,
   referenceImageUrl?: string | string[] | null,
+  /**
+   * The size and shape this send asked for (2026-09-23). Both are validated
+   * against this lane's own offers upstream (image-resolution.ts) and
+   * against the credit the person was charged — a request naming 4K that
+   * paid for 2K would be this lane rendering money it never took.
+   */
+  options?: { resolution?: ImageResolution | null; aspect?: ImageAspect | null },
 ): Promise<string> {
   const apiKey = process.env.FAL_KEY;
   if (!apiKey) {
@@ -158,7 +171,7 @@ export async function generateImageWithGemini(
   ).filter(Boolean);
 
   const model = getImageModel("gemini");
-  if (model.provider !== "fal" || !("falResolution" in model)) {
+  if (model.provider !== "fal") {
     throw new Error("Nano Banana Pro model config is misconfigured.");
   }
 
@@ -166,17 +179,16 @@ export async function generateImageWithGemini(
   const body: Record<string, unknown> = {
     prompt,
     num_images: 1,
-    resolution: model.falResolution,
-    // The square, pinned — exactly as the GPT lane pins size (openai-images.ts,
-    // "Never 'auto'"). This endpoint's aspect_ratio defaults to "auto", which
-    // on an edit follows the FIRST input picture, so the same shot came back
-    // square from one lane and in the shape of whatever photo anchors the
-    // character from the other. That is not a fair comparison for a person
-    // switching engines, and it is not one for the identity score either: the
-    // scorer reads the face in the frame it is given, and a face that lands
-    // smaller in a taller frame reads worse for a reason that has nothing to
-    // do with the model. One lane, one shape.
-    aspect_ratio: "1:1",
+    // Never the endpoint's own defaults for either of these. resolution
+    // defaults to 1K, which is the band this lane shipped with before fal's
+    // page was read properly — 2K is the same price (image-resolution.ts,
+    // THE MONEY). aspect_ratio defaults to "auto", which on an edit follows
+    // the FIRST input picture, so a square shot came back in the shape of
+    // whatever photo anchored the character, and the identity score read a
+    // face that landed smaller in a taller frame as a worse match. What the
+    // send asked for, or this lane's own default — never the provider's.
+    resolution: options?.resolution ?? defaultImageResolution("gemini"),
+    aspect_ratio: options?.aspect ?? DEFAULT_IMAGE_ASPECT,
     output_format: "png",
   };
   if (referenceUrls.length) body.image_urls = referenceUrls;

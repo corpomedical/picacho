@@ -74,10 +74,12 @@ export const IMAGE_MODELS = [
     provider: "fal" as const,
     falTextToImage: "fal-ai/nano-banana-pro",
     falImageToImage: "fal-ai/nano-banana-pro/edit",
-    // Pinned (THE MONEY above). fal's enum is 1K | 2K | 4K.
-    falResolution: "1K" as const,
-    /** What one picture costs us on fal, for the margin test in image-lane.test.ts. */
-    costPerImageUsd: 0.15,
+    // Sizes, shapes and what each costs live in ONE place, and it is not
+    // here: image-resolution.ts (a lane's offers, their provider prices and
+    // their credit weights, alias-free so the money is unit-testable). This
+    // entry used to pin "1K" and a single costPerImageUsd, which was wrong
+    // the moment fal's page was read properly — 2K is the same $0.15 and 4K
+    // is double it.
     /** Paid plans only, per the operator. Enforced server-side in actions.ts, not only hidden in the composer. */
     paidOnly: true,
     recommended: false,

@@ -342,7 +342,11 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
     startEndFrames: false,
     storyboard: false,
     multiPerson: true,
-    aspectControl: "none",
+    // "param" since 2026-09-23: the edits endpoint's `size` IS an aspect
+    // control — three shapes, 1:1, 3:2 and 2:3 — and the composer's FRAME
+    // cell now sends one. It read "none" only while nothing but a Helios rig
+    // format ever asked for a shape other than the square.
+    aspectControl: "param",
     photorealPolicy: "accepts",
   },
   // FLUX.2 Pro since 2026-08-26 — /edit takes a reference ARRAY like the
@@ -378,11 +382,12 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
     startEndFrames: false,
     storyboard: false,
     multiPerson: true,
-    // fal's endpoint takes an aspect_ratio enum, unlike the GPT edits
-    // endpoint (which inherits the input's shape) — but nothing sends one
-    // yet, so this stays "none" until a caller does. A slot claimed here
-    // that no request fills is a receipt that lies.
-    aspectControl: "none",
+    // Ten shapes, the widest offer of any lane here (image-resolution.ts
+    // holds the list) — and, since 2026-09-23, the FRAME cell sends one on
+    // every picture. This said "none" while nothing filled the slot, which
+    // is the rule: a slot claimed here that no request fills is a receipt
+    // that lies.
+    aspectControl: "param",
     photorealPolicy: "accepts",
   },
 };
