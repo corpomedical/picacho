@@ -180,7 +180,7 @@ export async function buildStateNote(
       : null,
     focus ? `They pressed "Ask why" on render ${focus}: that is the one this message is about.` : null,
     a.spoken
-      ? "They are talking to you hands-free and hear your answer read aloud: answer in one to three short spoken sentences, no lists, no ids or symbols. Anything detailed goes in prepared cards, which still appear on their screen."
+      ? "They are talking to you out loud and hear your answer spoken (see WHEN YOU ARE TALKING OUT LOUD). Their words were transcribed from speech, so allow for a misheard word. Prepared cards still appear on their screen."
       : null,
   ].filter(Boolean);
 

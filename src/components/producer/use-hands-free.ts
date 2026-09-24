@@ -2,34 +2,44 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-// Hands-free talking to the Producer (2026-09-25, operator: "add voice for
-// the user to work hands free").
+// Talking to the Producer out loud, like a ChatGPT voice conversation
+// (2026-09-25, operator: "add voice for the user to work hands free", then
+// "must speak and interact like ChatGPT. Even if you close the conversation,
+// the mic and speaker does not turn off until the user manually turns it off
+// or tells it to turn off", and "the light bulb lights depending on the sound
+// that is spoken or spoken to").
 //
-// The loop: LISTEN (the mic is open, waiting for speech) → HEARING (speech
-// started) → the person stops talking for SILENCE_MS → the recording is
-// handed to the sheet, which sends it (SENDING) → the reply plays sentence
-// by sentence as it arrives (SPEAKING) → back to LISTEN. Tap the mic to stop;
-// tap it while the Producer speaks to cut in.
+// ONE SESSION, ONE OPEN MIC. start() opens the microphone and an AudioContext
+// and keeps both until stop() — closing the sheet, changing page inside the
+// app, a long silence: none of them end it. Only the person does (the mic on
+// the wheel, the End button, or asking the Producer, which answers with
+// voice_control → endAfterPlayback).
 //
-// The mic is CLOSED while the Producer speaks, so it never hears itself and
-// answers its own voice; the browser's echo cancellation isn't trusted with
-// that. Nothing is recorded until the person turns talking on, and a long
-// silence (IDLE_MS with no speech) pauses the loop rather than leaving an
-// open microphone in a forgotten tab.
+// WHAT BECOMES A MESSAGE. Audio is recorded in segments on the open mic. A
+// segment is only sent when it held real speech: at least MIN_VOICED_MS of
+// sound clearly above the room's floor (tracked continuously while it's quiet),
+// ended by SILENCE_MS of quiet. Coughs, a door, a short noise: dropped, and
+// the segment restarts. A quiet room costs nothing; nothing is sent.
 //
-// Speech is detected by loudness, relative to the room: the first moments
-// after the mic opens set the noise floor, and speech is anything clearly
-// above it. Good enough to know when a sentence ENDS; what was SAID is the
-// transcription's job, on the server.
+// TALKING OVER IT. While the Producer speaks, the mic keeps listening. Its own
+// voice comes back through the mic as echo, so interrupting takes more: sound
+// well above the echo level measured during this reply, held for BARGE_MS.
+// Then the reply stops at once, the rest of that answer is dropped, and what
+// the person is saying becomes the next message (onInterrupt lets the sheet
+// abandon the answer still streaming).
+//
+// THE LIGHT. `level` (0..1) is the loudness of whoever is talking right now —
+// the person while they speak, the Producer while it answers — for the bulb.
 
 export type VoicePhase = "off" | "listening" | "hearing" | "sending" | "speaking";
 export type SpokenAudio = { data: string; mime: string; seconds: number };
 
-const SILENCE_MS = 1300;
-const IDLE_MS = 12_000;
-const MAX_MS = 45_000;
-const CALIBRATE_MS = 350;
-const TICK_MS = 60;
+const TICK_MS = 50;
+const SILENCE_MS = 850;
+const MIN_VOICED_MS = 250;
+const BARGE_MS = 350;
+const MAX_SPEECH_MS = 45_000;
+const SEGMENT_RESET_MS = 20_000;
 
 function pickMime(): string {
   const options = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
@@ -46,156 +56,117 @@ function toBase64(blob: Blob): Promise<string> {
   });
 }
 
-export function useHandsFree(onUtterance: (audio: SpokenAudio) => void) {
+function rmsOf(analyser: AnalyserNode, buf: Float32Array<ArrayBuffer>): number {
+  analyser.getFloatTimeDomainData(buf);
+  let sum = 0;
+  for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+  return Math.sqrt(sum / buf.length);
+}
+
+type Session = {
+  stream: MediaStream;
+  ctx: AudioContext;
+  micAnalyser: AnalyserNode;
+  outAnalyser: AnalyserNode;
+  outBus: GainNode;
+  micBuf: Float32Array<ArrayBuffer>;
+  outBuf: Float32Array<ArrayBuffer>;
+  timer: number;
+  recorder: MediaRecorder | null;
+  chunks: Blob[];
+  segmentAt: number;
+};
+
+export function useHandsFree({
+  onUtterance,
+  onInterrupt,
+}: {
+  onUtterance: (audio: SpokenAudio) => void;
+  onInterrupt?: () => void;
+}) {
   const [phase, setPhase] = useState<VoicePhase>("off");
   const [level, setLevel] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
-  const activeRef = useRef(false);
   const phaseRef = useRef<VoicePhase>("off");
-  const onUtteranceRef = useRef(onUtterance);
+  const session = useRef<Session | null>(null);
+  const handlers = useRef({ onUtterance, onInterrupt });
   useEffect(() => {
-    onUtteranceRef.current = onUtterance;
-  }, [onUtterance]);
-
-  const mic = useRef<{
-    stream: MediaStream;
-    ctx: AudioContext;
-    recorder: MediaRecorder;
-    chunks: Blob[];
-    timer: number;
-    startedAt: number;
-  } | null>(null);
+    handlers.current = { onUtterance, onInterrupt };
+  }, [onUtterance, onInterrupt]);
 
   // Playback: pieces arrive by index and play strictly in order.
   const queue = useRef(new Map<number, string>());
   const nextIndex = useRef(0);
   const playing = useRef<HTMLAudioElement | null>(null);
   const turnDone = useRef(true);
-  // playNext calls itself when a piece ends; through a ref, so the callback
-  // never has to name itself before it exists.
+  const dropTurnAudio = useRef(false);
+  const endPending = useRef(false);
   const playNextRef = useRef<() => void>(() => {});
+  const stopRef = useRef<() => void>(() => {});
 
   const supported =
     typeof window !== "undefined" &&
     typeof navigator !== "undefined" &&
     !!navigator.mediaDevices?.getUserMedia &&
-    typeof MediaRecorder !== "undefined";
+    typeof MediaRecorder !== "undefined" &&
+    typeof AudioContext !== "undefined";
 
   const go = useCallback((p: VoicePhase) => {
     phaseRef.current = p;
     setPhase(p);
   }, []);
 
-  const closeMic = useCallback(() => {
-    const m = mic.current;
-    mic.current = null;
-    if (!m) return;
-    window.clearInterval(m.timer);
-    try {
-      if (m.recorder.state !== "inactive") m.recorder.stop();
-    } catch {}
-    m.stream.getTracks().forEach((t) => t.stop());
-    void m.ctx.close().catch(() => {});
-    setLevel(0);
-  }, []);
-
-  const listen = useCallback(async () => {
-    if (!activeRef.current || mic.current) return;
-    setNotice(null);
-    let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      });
-    } catch {
-      activeRef.current = false;
-      go("off");
-      setNotice("The microphone isn't allowed. Allow it for Picacho and tap the mic again.");
-      return;
+  /** A fresh recording segment on the open mic; the previous one is dropped. */
+  const newSegment = useCallback(() => {
+    const s = session.current;
+    if (!s) return;
+    if (s.recorder && s.recorder.state !== "inactive") {
+      s.recorder.ondataavailable = null;
+      s.recorder.onstop = null;
+      try {
+        s.recorder.stop();
+      } catch {}
     }
-    if (!activeRef.current) {
-      stream.getTracks().forEach((t) => t.stop());
-      return;
-    }
-    const ctx = new AudioContext();
-    const source = ctx.createMediaStreamSource(stream);
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 1024;
-    source.connect(analyser);
-    const buf = new Float32Array(analyser.fftSize);
     const mime = pickMime();
-    const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    const recorder = mime ? new MediaRecorder(s.stream, { mimeType: mime }) : new MediaRecorder(s.stream);
     const chunks: Blob[] = [];
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) chunks.push(e.data);
     };
-    const openedAt = performance.now();
-    let floor = 0;
-    let floorSamples = 0;
-    let speechAt = 0;
-    let lastVoice = 0;
-    let finished = false;
+    s.recorder = recorder;
+    s.chunks = chunks;
+    s.segmentAt = performance.now();
+    recorder.start(250);
+  }, []);
 
-    const finish = (heardSpeech: boolean) => {
-      if (finished) return;
-      finished = true;
-      const m = mic.current;
-      if (!m) return;
-      window.clearInterval(m.timer);
-      m.recorder.onstop = async () => {
-        const seconds = Math.max(1, Math.round((performance.now() - (speechAt || openedAt)) / 1000));
-        const blob = new Blob(chunks, { type: recorder.mimeType || mime || "audio/webm" });
-        closeMic();
-        if (!heardSpeech || blob.size === 0) {
-          // A long quiet: pause rather than keep an open mic.
-          activeRef.current = false;
-          go("off");
-          setNotice("Paused. Tap the mic to talk.");
-          return;
-        }
-        go("sending");
+  /** The segment held speech: send it, and keep listening on a new one. */
+  const sendSegment = useCallback(
+    (speechMs: number) => {
+      const s = session.current;
+      if (!s?.recorder) return;
+      const recorder = s.recorder;
+      const chunks = s.chunks;
+      recorder.onstop = async () => {
+        const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+        if (blob.size === 0) return;
         try {
-          onUtteranceRef.current({ data: await toBase64(blob), mime: blob.type || "audio/webm", seconds });
+          handlers.current.onUtterance({
+            data: await toBase64(blob),
+            mime: blob.type || "audio/webm",
+            seconds: Math.max(1, Math.round(speechMs / 1000)),
+          });
         } catch {
-          go("off");
+          // A recording that can't be read is dropped; the mic stays open.
         }
       };
       try {
-        m.recorder.stop();
-      } catch {
-        closeMic();
-      }
-    };
-
-    const timer = window.setInterval(() => {
-      analyser.getFloatTimeDomainData(buf);
-      let sum = 0;
-      for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-      const rms = Math.sqrt(sum / buf.length);
-      const now = performance.now();
-      setLevel(Math.min(1, rms * 12));
-      if (now - openedAt < CALIBRATE_MS) {
-        floor = (floor * floorSamples + rms) / (floorSamples + 1);
-        floorSamples++;
-        return;
-      }
-      const talking = rms > Math.max(0.018, floor * 3);
-      if (talking) {
-        lastVoice = now;
-        if (!speechAt) {
-          speechAt = now;
-          go("hearing");
-        }
-      }
-      if (speechAt && now - lastVoice > SILENCE_MS) finish(true);
-      else if (!speechAt && now - openedAt > IDLE_MS) finish(false);
-      else if (now - openedAt > MAX_MS) finish(Boolean(speechAt));
-    }, TICK_MS);
-
-    mic.current = { stream, ctx, recorder, chunks, timer, startedAt: openedAt };
-    recorder.start(250);
-    go("listening");
-  }, [closeMic, go]);
+        recorder.stop();
+      } catch {}
+      s.recorder = null;
+      newSegment();
+    },
+    [newSegment],
+  );
 
   const stopPlayback = useCallback(() => {
     queue.current.clear();
@@ -207,18 +178,25 @@ export function useHandsFree(onUtterance: (audio: SpokenAudio) => void) {
 
   const playNext = useCallback(() => {
     if (playing.current) return;
+    if (dropTurnAudio.current) queue.current.clear();
     const data = queue.current.get(nextIndex.current);
     if (data === undefined) {
-      // Nothing more to say: when the turn is over, listen again.
       if (turnDone.current && phaseRef.current === "speaking") {
-        if (activeRef.current) void listen();
-        else go("off");
+        if (endPending.current) stopRef.current();
+        else go(session.current ? "listening" : "off");
       }
       return;
     }
     queue.current.delete(nextIndex.current);
     nextIndex.current++;
     const el = new Audio(`data:audio/mpeg;base64,${data}`);
+    const s = session.current;
+    if (s) {
+      // Through the session's graph, so the bulb can follow the reply's voice.
+      try {
+        s.ctx.createMediaElementSource(el).connect(s.outBus);
+      } catch {}
+    }
     playing.current = el;
     go("speaking");
     const done = () => {
@@ -227,67 +205,205 @@ export function useHandsFree(onUtterance: (audio: SpokenAudio) => void) {
     };
     el.onended = done;
     el.onerror = done;
-    void el.play().catch(done);
-  }, [go, listen]);
+    void el.play().catch(() => {
+      setNotice("Tap anywhere to let the Producer's voice play.");
+      done();
+    });
+  }, [go]);
 
   useEffect(() => {
     playNextRef.current = playNext;
   }, [playNext]);
 
-  /** A new turn is being sent: reset the ordering of its spoken pieces. */
+  const stop = useCallback(() => {
+    const s = session.current;
+    session.current = null;
+    endPending.current = false;
+    stopPlayback();
+    if (s) {
+      window.clearInterval(s.timer);
+      if (s.recorder && s.recorder.state !== "inactive") {
+        s.recorder.onstop = null;
+        try {
+          s.recorder.stop();
+        } catch {}
+      }
+      s.stream.getTracks().forEach((t) => t.stop());
+      void s.ctx.close().catch(() => {});
+    }
+    setLevel(0);
+    go("off");
+  }, [go, stopPlayback]);
+
+  useEffect(() => {
+    stopRef.current = stop;
+  }, [stop]);
+
+  const start = useCallback(async () => {
+    if (session.current) return;
+    if (!supported) {
+      setNotice("This browser can't record. Try Chrome, Edge or Safari.");
+      return;
+    }
+    setNotice(null);
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+    } catch {
+      go("off");
+      setNotice("The microphone isn't allowed. Allow it for Picacho and tap the mic again.");
+      return;
+    }
+    const ctx = new AudioContext();
+    if (ctx.state === "suspended") {
+      await ctx.resume().catch(() => {});
+      if (ctx.state === "suspended") {
+        // Coming back after a reload: the browser wants one tap first.
+        setNotice("Tap anywhere to keep talking.");
+        const wake = () => {
+          void ctx.resume();
+          setNotice(null);
+        };
+        window.addEventListener("pointerdown", wake, { once: true });
+      }
+    }
+    const micAnalyser = ctx.createAnalyser();
+    micAnalyser.fftSize = 1024;
+    ctx.createMediaStreamSource(stream).connect(micAnalyser);
+    const outBus = ctx.createGain();
+    const outAnalyser = ctx.createAnalyser();
+    outAnalyser.fftSize = 1024;
+    outBus.connect(outAnalyser);
+    outAnalyser.connect(ctx.destination);
+
+    const s: Session = {
+      stream,
+      ctx,
+      micAnalyser,
+      outAnalyser,
+      outBus,
+      micBuf: new Float32Array(micAnalyser.fftSize),
+      outBuf: new Float32Array(outAnalyser.fftSize),
+      timer: 0,
+      recorder: null,
+      chunks: [],
+      segmentAt: performance.now(),
+    };
+    session.current = s;
+    newSegment();
+    go("listening");
+
+    let floor = 0.01; // the room when nobody speaks
+    let echoFloor = 0.02; // the Producer's own voice, as the mic hears it
+    let voicedMs = 0;
+    let speechAt = 0;
+    let lastVoice = 0;
+    let bargeMs = 0;
+    let shown = 0;
+
+    s.timer = window.setInterval(() => {
+      if (session.current !== s) return;
+      const now = performance.now();
+      const mic = rmsOf(micAnalyser, s.micBuf);
+      const out = rmsOf(outAnalyser, s.outBuf);
+      const speaking = phaseRef.current === "speaking";
+
+      // The light: whoever is talking.
+      const target = Math.min(1, (speaking ? out * 6 : mic * 12));
+      shown = shown * 0.55 + target * 0.45;
+      setLevel(Math.round(shown * 100) / 100);
+
+      if (speaking) {
+        echoFloor = echoFloor * 0.95 + mic * 0.05;
+        if (mic > Math.max(0.05, echoFloor * 2.4)) bargeMs += TICK_MS;
+        else bargeMs = Math.max(0, bargeMs - TICK_MS);
+        if (bargeMs >= BARGE_MS) {
+          // Cut in: silence the reply, drop the rest of it, listen.
+          bargeMs = 0;
+          dropTurnAudio.current = true;
+          stopPlayback();
+          handlers.current.onInterrupt?.();
+          newSegment();
+          voicedMs = BARGE_MS;
+          speechAt = now - BARGE_MS;
+          lastVoice = now;
+          go("hearing");
+        }
+        return;
+      }
+
+      const talking = mic > Math.max(0.018, floor * 3);
+      if (talking) {
+        voicedMs += TICK_MS;
+        lastVoice = now;
+        if (!speechAt) speechAt = now;
+        if (voicedMs >= MIN_VOICED_MS && phaseRef.current !== "hearing") go("hearing");
+      } else if (!speechAt) {
+        floor = floor * 0.97 + mic * 0.03;
+      }
+
+      if (speechAt && now - lastVoice > SILENCE_MS) {
+        const heard = voicedMs >= MIN_VOICED_MS;
+        const speechMs = lastVoice - speechAt;
+        voicedMs = 0;
+        speechAt = 0;
+        if (heard) {
+          go("sending");
+          sendSegment(speechMs);
+        } else {
+          // A short noise, not speech: start the segment over.
+          newSegment();
+          if (phaseRef.current === "hearing") go("listening");
+        }
+      } else if (speechAt && now - speechAt > MAX_SPEECH_MS) {
+        voicedMs = 0;
+        speechAt = 0;
+        go("sending");
+        sendSegment(MAX_SPEECH_MS);
+      } else if (!speechAt && now - s.segmentAt > SEGMENT_RESET_MS) {
+        // Quiet for a while: keep the recording short, not the mic closed.
+        newSegment();
+      }
+    }, TICK_MS);
+  }, [go, newSegment, sendSegment, stopPlayback, supported]);
+
+  /** A new answer is on its way: its spoken pieces start from 0. */
   const beginTurn = useCallback(() => {
     stopPlayback();
     nextIndex.current = 0;
     turnDone.current = false;
+    dropTurnAudio.current = false;
   }, [stopPlayback]);
 
   const enqueue = useCallback(
     (index: number, data: string) => {
+      if (dropTurnAudio.current) return;
       queue.current.set(index, data);
       playNext();
     },
     [playNext],
   );
 
-  /** The turn finished: once everything queued has played, listen again. */
+  /** The answer finished arriving: once it has all played, listen again. */
   const endTurn = useCallback(() => {
     turnDone.current = true;
     if (playing.current || queue.current.size > 0) return;
-    if (phaseRef.current === "speaking" || phaseRef.current === "sending") {
-      if (activeRef.current) void listen();
-      else go("off");
-    }
-  }, [go, listen]);
-
-  const start = useCallback(() => {
-    if (!supported) {
-      setNotice("This browser can't record. Try Chrome, Edge or Safari.");
+    if (endPending.current) {
+      stop();
       return;
     }
-    activeRef.current = true;
-    stopPlayback();
-    void listen();
-  }, [listen, stopPlayback, supported]);
+    if (phaseRef.current === "speaking" || phaseRef.current === "sending") go(session.current ? "listening" : "off");
+  }, [go, stop]);
 
-  const stop = useCallback(() => {
-    activeRef.current = false;
-    stopPlayback();
-    closeMic();
-    go("off");
-  }, [closeMic, go, stopPlayback]);
+  /** "End the conversation": finish saying goodbye, then close mic and speaker. */
+  const endAfterPlayback = useCallback(() => {
+    endPending.current = true;
+    if (!playing.current && queue.current.size === 0 && turnDone.current) stop();
+  }, [stop]);
 
-  /** Cut in while the Producer is speaking: silence it and listen. */
-  const interrupt = useCallback(() => {
-    stopPlayback();
-    activeRef.current = true;
-    void listen();
-  }, [listen, stopPlayback]);
-
-  useEffect(() => () => {
-    activeRef.current = false;
-    closeMic();
-    if (playing.current) playing.current.pause();
-  }, [closeMic]);
+  useEffect(() => () => stopRef.current(), []);
 
   return {
     phase,
@@ -297,9 +413,9 @@ export function useHandsFree(onUtterance: (audio: SpokenAudio) => void) {
     active: phase !== "off",
     start,
     stop,
-    interrupt,
     beginTurn,
     enqueue,
     endTurn,
+    endAfterPlayback,
   };
 }

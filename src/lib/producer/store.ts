@@ -29,8 +29,15 @@ export async function openThread(admin: SupabaseClient, userId: string): Promise
     .maybeSingle();
   if (existing.error) throw new Error(`producer: thread read failed — ${existing.error.message}`);
   if (existing.data) {
-    const setup = isProducerSetup(existing.data.setup) ? existing.data.setup : currentProducerSetup();
-    return { id: existing.data.id as string, setup };
+    if (isProducerSetup(existing.data.setup)) {
+      return { id: existing.data.id as string, setup: existing.data.setup };
+    }
+    // Opened on an older setup (or none): its prefix can't take the new
+    // rules or tools, so it is closed and a new one starts. Notes carry over.
+    await admin
+      .from("producer_threads")
+      .update({ closed_at: new Date().toISOString() })
+      .eq("id", existing.data.id);
   }
 
   const setup = currentProducerSetup();

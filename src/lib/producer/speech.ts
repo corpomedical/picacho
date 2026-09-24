@@ -14,9 +14,13 @@ import { MAX_SPOKEN_SECONDS, SPEECH_MODEL, TRANSCRIBE_MODEL } from "./prices";
 // request carry a podcast.
 export const MAX_AUDIO_BYTES = 2 * 1024 * 1024;
 const ALLOWED_MIME = /^audio\/(webm|mp4|mpeg|ogg|wav|x-m4a|m4a|aac)(;.*)?$/;
-// The voice the composer's read-aloud already uses, so Picacho sounds like
-// one product.
-export const PRODUCER_VOICE = "alloy";
+// The voice (2026-09-25, operator: "must speak and interact like ChatGPT"):
+// gpt-4o-mini-tts's "marin", one of the two OpenAI names as best quality,
+// steered by VOICE_STYLE — the natural, conversational delivery tts-1's flat
+// read could not give.
+export const PRODUCER_VOICE = "marin";
+export const VOICE_STYLE =
+  "Speak like a warm, quick-witted creative producer in a live conversation with a colleague: relaxed, natural pace, friendly and confident, light on emphasis, never robotic or announcer-like.";
 
 export function isVoiceConfigured(): boolean {
   return Boolean(process.env.OPENAI_API_KEY);
@@ -80,7 +84,13 @@ export async function speak(text: string): Promise<string> {
     {
       method: "POST",
       headers: { authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({ model: SPEECH_MODEL, voice: PRODUCER_VOICE, input: text, response_format: "mp3" }),
+      body: JSON.stringify({
+        model: SPEECH_MODEL,
+        voice: PRODUCER_VOICE,
+        instructions: VOICE_STYLE,
+        input: text,
+        response_format: "mp3",
+      }),
     },
     30_000,
   );

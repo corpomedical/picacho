@@ -14,7 +14,7 @@ import { sentenceChunker } from "./sentences";
 import { readSpokenInput, MAX_AUDIO_BYTES } from "./speech";
 import { spotForTool, spotSelector, isSpot } from "./spots";
 import { runNotesCommand, normalizeNotePath, MAX_NOTES, type Note, type NotesStore } from "./notes";
-import { PRODUCER_TOOLS, composerHref, readSearchFilters, searchText, validatePreparedSend } from "./tools";
+import { PRODUCER_TOOLS, composerHref, isVoiceAction, readSearchFilters, searchText, validatePreparedSend } from "./tools";
 import { closeTail, visibleText, INTERRUPTED_ANSWER } from "./history";
 import { parseProducerFrames } from "./sse";
 import { producerAllowed, PRODUCER_NEEDS_ELITE, PRODUCER_NOT_OPEN, PRODUCER_SUSPENDED } from "./enabled";
@@ -241,11 +241,23 @@ describe("stream parsing", () => {
 });
 
 describe("voice", () => {
-  it("prices speech from OpenAI's published rates", () => {
-    // gpt-4o-mini-transcribe $0.003/min; tts-1 $15 per 1M characters.
+  it("prices hearing at OpenAI's rate and speech at the stated ceiling", () => {
+    // gpt-4o-mini-transcribe $0.003/min.
     expect(transcribeCostUsd(10)).toBeCloseTo((10 / 60) * 0.003, 10);
     expect(transcribeCostUsd(600)).toBeCloseTo(0.003, 10); // capped at a minute
-    expect(speechCostUsd(300)).toBeCloseTo(0.0045, 10);
+    // gpt-4o-mini-tts: $0.05 per minute, the minute at 12 characters a second:
+    // 300 characters = 25 s = $0.05 × 25/60.
+    expect(speechCostUsd(300)).toBeCloseTo(0.05 * (25 / 60), 10);
+    expect(speechCostUsd(720)).toBeCloseTo(0.05, 10);
+  });
+
+  it("knows exactly three voice actions", () => {
+    expect(isVoiceAction("end_voice")).toBe(true);
+    expect(isVoiceAction("mute_replies")).toBe(true);
+    expect(isVoiceAction("unmute_replies")).toBe(true);
+    expect(isVoiceAction("stop")).toBe(false);
+    const tool = PRODUCER_TOOLS.find((t) => "name" in t && t.name === "voice_control");
+    expect(tool).toBeTruthy();
   });
 
   it("releases whole sentences as they stream, and the rest at the end", () => {

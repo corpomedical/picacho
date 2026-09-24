@@ -77,14 +77,20 @@ const W = {
   prepared: "Prepared, not sent",
   listening: "Listening",
   hearing: "Hearing you",
-  sendingVoice: "Got it",
+  sendingVoice: "Thinking",
   speaking: "Speaking",
-  tapToTalk: "Tap the mic to stop",
+  endVoice: "End",
+  endVoiceLabel: "End the voice conversation",
+  talkOver: "Talk over it anytime",
+  newCards: (n: number) => `${n} prepared`,
   heardPlaceholder: "…",
   limitReached: "You've used this period's assistant allowance.",
 };
 
 const READ_ALOUD_KEY = "picacho.producer.readAloud";
+// Voice survives a reload of the page (the tab's session only): it stays on
+// until the person turns it off or asks the Producer to.
+const VOICE_ON_KEY = "picacho.producer.voiceOn";
 
 function readStoredBool(key: string): boolean {
   try {
@@ -129,6 +135,10 @@ export function ProducerLamp({
   // send() is called from the voice loop's callback, which can't see fresh
   // state — this ref is the "a turn is running" guard it can see.
   const streamingRef = useRef(false);
+  const openRef = useRef(open);
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lampRef = useRef<HTMLButtonElement>(null);
@@ -152,7 +162,45 @@ export function ProducerLamp({
     window.setTimeout(() => setLit((prev) => prev.filter((l) => l.until > Date.now())), 2700);
   }, []);
 
-  const voice = useHandsFree((audio) => void send({ audio }));
+  // A message spoken while an answer is still arriving replaces that answer,
+  // as in a spoken conversation: the old one is abandoned, the new one sent.
+  const pendingAudioRef = useRef<SpokenAudio | null>(null);
+  const voice = useHandsFree({
+    onUtterance: (audio) => {
+      if (streamingRef.current) {
+        pendingAudioRef.current = audio;
+        abortRef.current?.abort();
+        return;
+      }
+      void send({ audio });
+    },
+    onInterrupt: () => abortRef.current?.abort(),
+  });
+  const [unseenCards, setUnseenCards] = useState(0);
+
+  // Voice stays on across a reload, and off only when the person says so.
+  useEffect(() => {
+    try {
+      if (window.sessionStorage.getItem(VOICE_ON_KEY) === "1") void voice.start();
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    try {
+      if (voice.active && voice.phase !== "speaking") window.sessionStorage.setItem(VOICE_ON_KEY, "1");
+      if (voice.phase === "off") window.sessionStorage.removeItem(VOICE_ON_KEY);
+    } catch {}
+  }, [voice.active, voice.phase]);
+  useEffect(() => {
+    if (open) setUnseenCards(0);
+  }, [open]);
+
+  const setAloud = useCallback((next: boolean) => {
+    setReadAloud(next);
+    try {
+      window.localStorage.setItem(READ_ALOUD_KEY, next ? "1" : "0");
+    } catch {}
+  }, []);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -237,11 +285,10 @@ export function ProducerLamp({
     };
   }, [open]);
 
-  // Closing the sheet ends hands-free: no open microphone behind a closed door.
-  useEffect(() => {
-    if (!open) voice.stop();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  // Closing the sheet does NOT end voice (operator, 2026-09-25: "Even if you
+  // close the conversation, the mic and speaker does not turn off until the
+  // user manually turns it off or tells it to turn off"). The lamp shows it's
+  // live, with an End button beside it.
 
   // Follow the conversation as it grows.
   useEffect(() => {
@@ -260,12 +307,7 @@ export function ProducerLamp({
 
   async function send({ text, audio, focus }: SendInput) {
     const message = (text ?? "").trim();
-    if ((!message && !audio) || streamingRef.current) {
-      // A recording that can't be sent now must not leave the voice loop
-      // waiting for an answer that never comes.
-      if (audio) voice.endTurn();
-      return;
-    }
+    if ((!message && !audio) || streamingRef.current) return;
     if (usage && usage.used >= usage.cap) {
       setError(W.limitReached);
       voice.stop();
@@ -275,7 +317,7 @@ export function ProducerLamp({
     if (!audio) setInput("");
     const userSeq = -Date.now();
     setLines((prev) => [...prev, { seq: userSeq, role: "user", text: audio ? W.heardPlaceholder : message }]);
-    const speak = voice.active || readAloud;
+    const speak = readAloud;
     if (speak) voice.beginTurn();
     const live: Streaming = { text: "", cards: [], status: W.thinking };
     streamingRef.current = true;
@@ -324,6 +366,11 @@ export function ProducerLamp({
             live.status = ev.data.text;
           } else if (ev.event === "card") {
             live.cards = [...live.cards, ev.data as unknown as PreparedSend];
+            if (!openRef.current) setUnseenCards((n) => n + 1);
+          } else if (ev.event === "voice" && typeof ev.data.action === "string") {
+            if (ev.data.action === "end_voice") voice.endAfterPlayback();
+            else if (ev.data.action === "mute_replies") setAloud(false);
+            else if (ev.data.action === "unmute_replies") setAloud(true);
           } else if (ev.event === "heard" && typeof ev.data.text === "string") {
             const heard = ev.data.text;
             setLines((prev) => prev.map((l) => (l.seq === userSeq ? { ...l, text: heard } : l)));
@@ -356,6 +403,11 @@ export function ProducerLamp({
       if (notesChanged) {
         const r = await loadProducer();
         if (r.error === null) setNotes(r.snapshot.notes);
+      }
+      const pending = pendingAudioRef.current;
+      if (pending) {
+        pendingAudioRef.current = null;
+        void send({ audio: pending });
       }
     }
   }
@@ -397,10 +449,23 @@ export function ProducerLamp({
         aria-label={W.open(name)}
         aria-expanded={open}
         title={name}
-        style={lift !== null && !open ? { bottom: lift } : undefined}
-        className={`${styles.lamp} ${open ? styles.lampOpen : ""} fixed z-[45] grid h-11 w-11 place-items-center rounded-full`}
+        style={
+          {
+            ...(lift !== null && !open ? { bottom: lift } : {}),
+            "--glow": voice.active ? voice.level : 0,
+          } as React.CSSProperties
+        }
+        className={`${styles.lamp} ${open ? styles.lampOpen : ""} ${voice.active ? styles.lampLive : ""} fixed z-[45] grid h-11 w-11 place-items-center rounded-full`}
       >
         <span className={styles.bulb} aria-hidden="true" />
+        {unseenCards > 0 && !open && (
+          <span
+            className="absolute -left-1 -top-1 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-atelier-accent px-1 text-[10px] font-semibold leading-none text-[#1a120a] tabular-nums"
+            aria-label={W.newCards(unseenCards)}
+          >
+            {unseenCards}
+          </span>
+        )}
         {dot > 0 && !open && (
           <span
             className="absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-[#e6c46e] px-1 text-[10px] font-semibold leading-none text-[#1a120a] tabular-nums"
@@ -410,6 +475,23 @@ export function ProducerLamp({
           </span>
         )}
       </button>
+
+      {/* Voice is live with the sheet closed: the lamp glows with the sound,
+          and this is the one-tap way to turn it off. */}
+      {voice.active && !open && (
+        <button
+          type="button"
+          onClick={voice.stop}
+          aria-label={W.endVoiceLabel}
+          title={W.endVoiceLabel}
+          className={styles.endChip}
+          style={lift !== null ? { bottom: lift + 7 } : undefined}
+        >
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+            <path d="M4 4l8 8M12 4l-8 8" />
+          </svg>
+        </button>
+      )}
 
       <Spotlight lit={lit} />
 
@@ -427,17 +509,14 @@ export function ProducerLamp({
           voiceAvailable={voiceAvailable && voice.supported}
           canFresh={!busy && lines.length > 0}
           onTalk={() => {
-            if (voice.phase === "speaking") voice.interrupt();
-            else if (voice.active) voice.stop();
-            else voice.start();
+            if (voice.active) voice.stop();
+            else {
+              // A voice conversation answers out loud, like ChatGPT's.
+              setAloud(true);
+              void voice.start();
+            }
           }}
-          onReadAloud={() => {
-            const next = !readAloud;
-            setReadAloud(next);
-            try {
-              window.localStorage.setItem(READ_ALOUD_KEY, next ? "1" : "0");
-            } catch {}
-          }}
+          onReadAloud={() => setAloud(!readAloud)}
           onNotes={() => setView((v) => (v === "notes" ? "chat" : "notes"))}
           onFresh={() => {
             setView("chat");
@@ -621,16 +700,30 @@ export function ProducerLamp({
                   className="border-t border-atelier-rule p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
                 >
                   {(voiceLine || voice.notice) && (
-                    <div className="mb-2 flex items-center gap-2 px-1 text-[13px] text-atelier-muted" aria-live="polite">
+                    <div className="mb-2 flex items-center gap-3 px-1" aria-live="polite">
                       {voiceLine && (
                         <span
-                          className={styles.statusDot}
-                          style={{ transform: `scale(${1 + voice.level * 1.4})` }}
+                          className={`${styles.bulb} ${styles.voiceOrb}`}
+                          style={{ "--glow": voice.level } as React.CSSProperties}
                           aria-hidden="true"
                         />
                       )}
-                      <span className="flex-1">{voiceLine ?? voice.notice}</span>
-                      {voiceLine && <span className="text-[12px] text-atelier-muted/80">{W.tapToTalk}</span>}
+                      <div className="min-w-0 flex-1 leading-tight">
+                        <div className="text-[14px] font-medium text-atelier-ink">{voiceLine ?? voice.notice}</div>
+                        {voiceLine && (
+                          <div className="text-[12px] text-atelier-muted">{voice.notice ?? W.talkOver}</div>
+                        )}
+                      </div>
+                      {voice.active && (
+                        <button
+                          type="button"
+                          onClick={voice.stop}
+                          aria-label={W.endVoiceLabel}
+                          className="rounded-full border border-atelier-rule px-3.5 py-1.5 text-[13px] font-semibold text-atelier-ink hover:bg-atelier-ink/5"
+                        >
+                          {W.endVoice}
+                        </button>
+                      )}
                     </div>
                   )}
                   <div className="flex items-end gap-2 rounded-[20px] border border-atelier-rule bg-atelier-ink/[0.03] py-1.5 pl-4 pr-1.5">

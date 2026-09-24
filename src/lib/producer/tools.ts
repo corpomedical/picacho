@@ -14,7 +14,7 @@ import {
 // request prefix — tools, then system, then every earlier message — and the
 // prompt cache is a prefix match too. A tool list that changed between turns
 // (a filter per plan, a sort, a new description) would quietly throw both
-// away. So: the same four tools, byte for byte, on every turn of every
+// away. So: the same tools, byte for byte, on every turn of every
 // conversation. Anything per-person goes in the conversation, never here.
 //
 // NONE OF THEM SPENDS. prepare_send fills in a send and hands it to the person
@@ -25,8 +25,20 @@ export const TOOL_NAMES = {
   search: "search_renders",
   look: "look_at_render",
   prepare: "prepare_send",
+  voice: "voice_control",
   memory: "memory",
 } as const;
+
+// What voice_control can do (2026-09-25, operator: the mic and speaker stay on
+// "until the user manually turns it off or tells it to turn off"). The model
+// decides from what the person MEANS — "that's all for now", "you can stop
+// listening", "quiet please" — never from a word list.
+export const VOICE_ACTIONS = ["end_voice", "mute_replies", "unmute_replies"] as const;
+export type VoiceAction = (typeof VOICE_ACTIONS)[number];
+
+export function isVoiceAction(v: unknown): v is VoiceAction {
+  return typeof v === "string" && (VOICE_ACTIONS as readonly string[]).includes(v);
+}
 
 const nullableString = { type: ["string", "null"] } as const;
 const nullableInt = { type: ["integer", "null"] } as const;
@@ -85,6 +97,20 @@ export const PRODUCER_TOOLS = [
         video_model_id: { ...nullableString, description: "For a video: the model id from the catalogue. Null for an image." },
         seconds: { ...nullableInt, description: "For a video: a length that model offers. Null for its default." },
         label: { type: "string", description: "A short name for the shot, e.g. 'Close-up at golden hour'." },
+      },
+    },
+  },
+  {
+    name: TOOL_NAMES.voice,
+    description:
+      "Turn the voice conversation off, or stop or restart reading your answers aloud. Use it only when the person asks for that, in whatever words they use: end_voice closes the microphone and the speaker (say a short goodbye first), mute_replies keeps listening but stops speaking your answers, unmute_replies starts speaking them again.",
+    strict: true,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["action"],
+      properties: {
+        action: { type: "string", enum: ["end_voice", "mute_replies", "unmute_replies"] },
       },
     },
   },

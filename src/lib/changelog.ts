@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.95.0",
+    build: 134,
+    date: "2026-09-25",
+    title: "The Producer talks like ChatGPT, and stays on until you turn it off",
+    items: [
+      "Voice is now a conversation. The microphone stays open while it answers, so you can talk over it: it stops mid-sentence and listens. It notices you've finished faster (0.85 s of quiet instead of 1.3 s), and it no longer pauses itself after a quiet spell.",
+      "Voice stays on until you turn it off. Closing the sheet, moving to another page or reloading doesn't end it. The lamp stays lit, and a small × beside it turns it off, as does End in the sheet, the mic on the wheel, or asking in your own words (\"that's all for now\", \"you can stop listening\"). You can also ask it to stop reading answers aloud, or to start again.",
+      "The bulb lights with the sound: it brightens and swells with your voice while you talk, and with its own while it answers.",
+      "A more natural voice: OpenAI's gpt-4o-mini-tts with the \"marin\" voice and a warm, conversational delivery, replacing the flatter tts-1. OpenAI doesn't publish its per-minute price, so it's billed at a ceiling of $0.05 per minute of speech (about 2 cents for a 300-character reply) until the real figure is read off OpenAI's usage page.",
+      "It talks like a person out loud: short turns, one question back when it helps, no lists or ids read aloud, and it stays quiet when what it heard clearly wasn't meant for it. It decides that from the meaning, not from keywords.",
+      "Your open Producer conversation starts fresh once, because the new abilities can't be added to a conversation already under way. Notes carry over.",
+    ],
+  },
+  {
     version: "1.94.0",
     build: 133,
     date: "2026-09-25",

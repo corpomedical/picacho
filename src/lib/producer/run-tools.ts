@@ -9,6 +9,8 @@ import {
   searchText,
   validatePreparedSend,
   type PreparedSend,
+  isVoiceAction,
+  type VoiceAction,
 } from "./tools";
 
 // Runs the Producer's tool calls (2026-09-24). Every one of them is scoped to
@@ -26,6 +28,8 @@ export type ToolOutcome = {
   };
   card?: PreparedSend;
   notesChanged?: boolean;
+  /** A voice_control call: what the device should do with the mic/speaker. */
+  voice?: VoiceAction;
 };
 
 export type ToolContext = {
@@ -140,8 +144,22 @@ async function memory(ctx: ToolContext, call: ToolCall): Promise<ToolOutcome> {
   }
 }
 
+function voiceControl(call: ToolCall): ToolOutcome {
+  const action = asRecord(call.input).action;
+  if (!isVoiceAction(action)) return errorResult(call.id, "action must be end_voice, mute_replies or unmute_replies.");
+  const said =
+    action === "end_voice"
+      ? "Voice is ending: the microphone and speaker switch off after your goodbye plays."
+      : action === "mute_replies"
+        ? "Your answers will no longer be read aloud; you are still listening."
+        : "Your answers will be read aloud again.";
+  return { result: { type: "tool_result", tool_use_id: call.id, content: said }, voice: action };
+}
+
 export async function runTool(ctx: ToolContext, call: ToolCall): Promise<ToolOutcome> {
   switch (call.name) {
+    case TOOL_NAMES.voice:
+      return voiceControl(call);
     case TOOL_NAMES.search:
       return searchRenders(ctx, call);
     case TOOL_NAMES.look:
@@ -166,6 +184,8 @@ export function toolStatus(name: string): string {
       return "Preparing a send";
     case TOOL_NAMES.memory:
       return "Checking my notes";
+    case TOOL_NAMES.voice:
+      return "Adjusting voice";
     default:
       return "Working";
   }

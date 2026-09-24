@@ -28,7 +28,7 @@ import { monthlyWindowStart } from "@/lib/generations/core";
 import { classifyTurnFailure, unitsForFailedTurn, type TurnFailure } from "@/lib/agent/failures";
 import { rateLimited } from "@/lib/rate-limit";
 
-// The Producer's turn (2026-09-24) — Claude Opus 5.5 with four tools, for
+// The Producer's turn (2026-09-24) — Claude Opus 5.5 with its tools, for
 // Elite (admins first). The chat route (api/agent/chat) is the model for the
 // billing and the failure handling; what is different here, and why:
 //
@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
   if ((spoken || body?.speak === true) && !isVoiceConfigured()) {
     return NextResponse.json({ error: "Voice isn't set up on this server yet." }, { status: 503 });
   }
-  const speakReplies = body?.speak === true;
+  let speakReplies = body?.speak === true;
   let message = typeof body?.message === "string" ? body.message.trim().slice(0, MAX_MESSAGE_CHARS) : "";
   if (!message && !spoken) return NextResponse.json({ error: "Nothing to answer." }, { status: 400 });
 
@@ -419,6 +419,13 @@ export async function POST(request: NextRequest) {
                 send("spot", { spot: "composer" });
               }
               if (o.notesChanged) notesChanged = true;
+              if (o.voice) {
+                // Muting stops the rest of this answer being spoken too; an
+                // ending still plays the goodbye, then the device closes.
+                if (o.voice === "mute_replies") speakReplies = false;
+                if (o.voice === "unmute_replies") speakReplies = true;
+                send("voice", { action: o.voice });
+              }
               outcomes.push(o.result);
             }
             const results = { role: "user" as const, content: outcomes };

@@ -78,16 +78,29 @@ export function unitsForCostUsd(costUsd: number): number {
 export const RESERVE_UNITS = 40;
 export const BRAKE_USD = 0.5;
 export const MAX_OUTPUT_TOKENS = 8000;
-// VOICE (2026-09-25, operator: "OpenAI in + out"). Read from OpenAI's
-// pricing page (developers.openai.com/api/docs/pricing) on 2026-09-25:
-// gpt-4o-mini-transcribe $0.003 per minute of audio; tts-1 $15 per 1M
-// characters. A spoken turn of 10 s in and a 300-character reply is
-// 10/60 × $0.003 + 300 × $15/1M = $0.0005 + $0.0045 ≈ $0.005, added to the
-// turn's own cost and settled with it — one charge per turn, not per call.
+// VOICE (2026-09-25, operator: "OpenAI in + out", then "must speak and
+// interact like ChatGPT"). Read from OpenAI's pricing page
+// (developers.openai.com/api/docs/pricing) on 2026-09-25:
+//
+//   HEARING  gpt-4o-mini-transcribe, $0.003 per minute of audio.
+//   SPEAKING gpt-4o-mini-tts (the natural voices; tts-1 was the robotic one),
+//            $12 per 1M audio tokens out + $0.60 per 1M text tokens in.
+//
+// OpenAI does NOT publish how many audio tokens a minute of speech is, so
+// speech is billed at a CEILING until the first real replies are read off
+// OpenAI's usage page: $0.05 per minute, with the minute counted at a slow
+// 12 characters per second so a reply is never timed short. That is
+// $0.05 / (60 × 12) per character = $69.44 per 1M characters. A 300-character
+// reply bills 300 × $69.44/1M = $0.021; the ceiling only undercharges if a
+// minute of speech is more than $0.05 / $12 per 1M = ~4,166 audio tokens.
+// A spoken turn of 10 s in and that reply is 10/60 × $0.003 + $0.021 ≈
+// $0.0215, added to the turn's own cost and settled with it.
 export const TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe";
 export const TRANSCRIBE_USD_PER_MINUTE = 0.003;
-export const SPEECH_MODEL = "tts-1";
-export const SPEECH_USD_PER_MCHAR = 15;
+export const SPEECH_MODEL = "gpt-4o-mini-tts";
+export const SPEECH_CEILING_USD_PER_MINUTE = 0.05;
+export const SPEECH_CHARS_PER_SECOND = 12;
+export const SPEECH_USD_PER_MCHAR = (SPEECH_CEILING_USD_PER_MINUTE / (60 * SPEECH_CHARS_PER_SECOND)) * 1_000_000;
 // A spoken message is capped at a minute: hands-free turns are sentences,
 // and the cap bounds what one recording can cost ($0.003).
 export const MAX_SPOKEN_SECONDS = 60;
