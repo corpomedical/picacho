@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.99.0",
+    build: 138,
+    date: "2026-09-25",
+    title: "Typing fast in the composer no longer loses letters",
+    items: [
+      "Fixed the error that popped up in Admin > Reports (\"Minified React error #185\" on /app/generate, your account, 24 September). Every letter typed in the prompt made the composer draw itself twice, because of a check for a leftover question that ran on every keystroke. When letters came in faster than it could redraw (automated typing, or a slow phone), React's safety limit tripped on about every 51st letter. That letter was dropped and the error was reported. It is also why typing into the composer in Chrome was losing letters earlier.",
+      "Now each letter draws once. Tested on the real composer: before the fix a fast 136-letter burst lost 2 letters and threw the error; after it, 136 of 136 and 488 of 488 arrived with no error. The \"this looks like a message for the assistant\" question still appears and still clears when you change the text.",
+      "It is the only #185 in the reports history, so it was rare. Once this is live you can press Mark resolved on it in Admin > Reports.",
+    ],
+  },
+  {
     version: "1.98.0",
     build: 137,
     date: "2026-09-25",

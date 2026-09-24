@@ -2372,9 +2372,20 @@ function GenerateFormInner({
   // block an explicit, correct send.
   // A pending question describes ONE piece of text; the moment that text
   // changes it is answering about something that no longer exists.
+  //
+  // Guarded OUTSIDE the setter, never inside an updater: this runs on every
+  // keystroke, and a setState call queues a render even when its updater
+  // hands back the same value (right after a commit React cannot bail out
+  // early). Each keystroke then left a second render waiting behind its own,
+  // and React 19 counts a commit that finishes with work still waiting
+  // toward its 50-deep update limit. Keys arriving faster than the composer
+  // re-renders (automated typing, a slow phone) crossed it: React #185 was
+  // thrown in the textarea's onChange and that character was lost, about
+  // one in every 51 (Admin report, 2026-09-24; reproduced on the composer,
+  // 2 of 136 lost). Now a keystroke with no question pending sets nothing.
   useEffect(() => {
-    setModeQuery((q) => (q !== null && q !== prompt ? null : q));
-  }, [prompt]);
+    if (modeQuery !== null && modeQuery !== prompt) setModeQuery(null);
+  }, [prompt, modeQuery]);
 
   function plainRenderIntended(): boolean {
     if (storyboardActive || multiAngleMode || sceneMode || pendingScene !== null) return true;
