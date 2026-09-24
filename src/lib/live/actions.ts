@@ -359,6 +359,14 @@ function recordingPath(userId: string, takeId: string): string {
   return `${userId}/live-${takeId}.mp4`;
 }
 
+// Where a recording is judged and served from: a name no upload token is ever
+// minted for. The page's token names recordingPath, upserts, and stays good
+// for two hours, so a file judged THERE could be swapped after it passed and
+// served unchecked under the same URL (2026-09-24 storage review).
+function keptRecordingPath(userId: string, takeId: string): string {
+  return `${userId}/live-${takeId}-kept.mp4`;
+}
+
 /** A place in storage for the page's recording of a settled take. MP4 only: WebM cannot be judged or sent on. */
 export async function reserveLiveRecording(
   takeId: string,
@@ -394,7 +402,16 @@ export async function keepLiveRecording(takeId: string, seconds: number): Promis
   if (!row || !meter || meter.settledAt === null || row.status !== "generating") return fail("ended", "This take has ended.");
 
   const admin = createAdminClient();
-  const path = recordingPath(user.id, row.id);
+  const upload = recordingPath(user.id, row.id);
+  const path = keptRecordingPath(user.id, row.id);
+  // Out of the token's reach BEFORE the check, so what is judged is what is
+  // served. A failed move with the kept file already there is a Save pressed
+  // again after an "unavailable" check: judge that one, never a newer upload.
+  const { error: moveError } = await admin.storage.from(RECORDING_BUCKET).move(upload, path);
+  if (moveError) {
+    const { data: there } = await admin.storage.from(RECORDING_BUCKET).exists(path);
+    if (!there) return fail("recordingMissing", "Couldn't save the recording — try again.");
+  }
   const { data: signed } = await admin.storage.from(RECORDING_BUCKET).createSignedUrl(path, 60 * 60);
   if (!signed?.signedUrl) return fail("recordingMissing", "Couldn't save the recording — try again.");
 
@@ -408,7 +425,7 @@ export async function keepLiveRecording(takeId: string, seconds: number): Promis
       return fail("recordingUnchecked", "We couldn't check the recording just now — try Save again in a moment.");
     }
     await recordPolicyRefusal({ userId: user.id, gate: "output", reason: err.reason, strictLane: meter.withImage, bands: err.readings, generationId: row.id, provider: "live" });
-    await admin.storage.from(RECORDING_BUCKET).remove([path]);
+    await admin.storage.from(RECORDING_BUCKET).remove([path, upload]);
     await admin
       .from("generations")
       .update({
@@ -438,6 +455,9 @@ export async function keepLiveRecording(takeId: string, seconds: number): Promis
     .eq("status", "generating")
     .select("id");
   if (!done?.length) return fail("ended", "This take has ended.");
+  // Anything the token put back at the upload name since the move is never
+  // served; clear it rather than leave it billed. Best-effort.
+  await admin.storage.from(RECORDING_BUCKET).remove([upload]).then(() => {}, () => {});
   revalidatePath("/app/media");
   revalidatePath("/app/history");
   return { error: null, url: toMediaUrl(url) ?? url };
