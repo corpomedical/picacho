@@ -77,7 +77,13 @@ function buildCsp(nonce: string): string {
     // saves results via fetch(url) → blob (a plain <a download> can't save
     // cross-origin), and video result_urls live on fal's CDN — without this
     // entry every video Download silently degrades to opening a tab.
-    `connect-src 'self'${supabaseOrigin ? ` ${supabaseOrigin} ${supabaseWs}` : ""} https://*.fal.media`,
+    // blob: (2026-09-24, "the 3d render is completely white"): three.js's
+    // GLTFLoader unpacks a model's embedded textures into blob: URLs and, in
+    // Chromium, FETCHES them (ImageBitmapLoader) — connect-src, not img-src.
+    // Without it every built model's paint was blocked and it drew plain
+    // white on the Helios stage; Safari loads them as <img> and was fine.
+    // A blob: URL is only ever one this page made itself.
+    `connect-src 'self' blob:${supabaseOrigin ? ` ${supabaseOrigin} ${supabaseWs}` : ""} https://*.fal.media`,
     `font-src 'self' data: https://fonts.gstatic.com`,
     `frame-src https://js.stripe.com https://hooks.stripe.com`,
     `object-src 'none'`,

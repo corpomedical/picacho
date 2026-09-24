@@ -20,6 +20,15 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.91.0",
+    build: 130,
+    date: "2026-09-24",
+    title: "Built 3D models show their paint",
+    items: [
+      "A car built with \"Build it from its photo\" no longer shows plain white on the Helios stage. TRELLIS.2 gives it real paint (yellow body, dark glass, wheels, lamps), but the site's security policy blocked Chrome from loading paint stored inside a model file, so it drew white. Safari was unaffected. The policy now allows it. I reproduced it on the real stage with your car before fixing: white under the old policy, painted under the new one.",
+    ],
+  },
+  {
     version: "1.90.0",
     build: 129,
     date: "2026-09-24",
