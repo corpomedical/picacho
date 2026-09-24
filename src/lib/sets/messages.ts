@@ -69,6 +69,12 @@ export const SET_ELEMENT_FULL = "This thing has 4 photos — remove one to add a
 export const SET_ELEMENT_GONE = "That thing changed on the set — tap it again.";
 export const SET_ELEMENT_NOT_A_THING = "Photos go on cars and objects — a person comes from their character.";
 export const SET_ELEMENTS_TOO_MANY = "A set holds 24 photos on its things — remove one to add another.";
+/** A model on a thing (thing-model.ts, model-actions.ts, 2026-09-24). */
+export const THING_MODEL_NOT_A_MODEL = "That file isn't a 3D model the stage can keep — pick a .glb file.";
+export const THING_MODEL_TOO_BIG = "That model is over 40 MB — export it smaller and try again.";
+export const THING_MODEL_ADMINS_ONLY = "Models on things are for admins while we prove them.";
+export const THING_MODEL_SAVE_FAILED = "The model couldn't be kept with the set — it's only on this page for now.";
+export const THING_MODEL_TOO_FAST = "That's a lot of models at once — try again in a few minutes.";
 export const SET_PHOTO_BUILD_FAILED =
   "This set couldn't be built from that photo, and the build is back in your allowance. A photo that shows more of the place may work better.";
 

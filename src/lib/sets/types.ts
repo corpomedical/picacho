@@ -132,6 +132,8 @@ export type SetPageData =
       matchOn: boolean;
       /** A model file on a thing (thing-model.ts): admins, while our own model builder is proved. */
       modelsOn: boolean;
+      /** The models kept with the set (thing-model-store.ts): each thing's newest, admins only. */
+      thingModels: { key: string; url: string; flip: boolean }[];
       /** Whether this person's plan takes clips and renders films: every paid plan's (set-config.ts setTakesEligible, 2026-09-19); takeInSet checks again. */
       takesOn: boolean;
       /** Astra changes left this billing month (set-config.ts SET_EDITS_MONTHLY_LIMITS); null when uncapped or unread. */

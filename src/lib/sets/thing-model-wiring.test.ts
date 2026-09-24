@@ -65,18 +65,52 @@ describe("a model on the stage", () => {
   });
 });
 
+describe("a model kept with the set", () => {
+  const actions = read("model-actions.ts");
+  const store = read("thing-model-store.ts");
+
+  it("never passes through our own server: the page sends the file to an address made for it", () => {
+    expect(actions).toContain(".createSignedUploadUrl(path);");
+    const load = fnOf(view, "  async function loadThingModel(", "  /** Turned round on the stage at once");
+    expect(load.indexOf("reserveThingModel(setId,")).toBeLessThan(load.indexOf(".uploadToSignedUrl(place.path, place.token, file"));
+    expect(load.indexOf(".uploadToSignedUrl(")).toBeLessThan(load.indexOf("keepThingModel(setId,"));
+    // Shown at once from the file itself; drawn from storage once kept.
+    expect(load.indexOf("URL.createObjectURL(file)")).toBeLessThan(load.indexOf("reserveThingModel("));
+    expect(load).toContain('patchModel(key, { url: kept.model.url, storedKey: kept.model.key, kept: "saved", note: null });');
+  });
+
+  it("is kept only when the stored file is a model, one per thing, and only by an admin on their own set", () => {
+    const keep = fnOf(actions, "export async function keepThingModel(", "/** Turned round, kept turned round");
+    expect(keep).toContain("glbHeaderOk(head, blob.size)");
+    expect(keep.indexOf("glbHeaderOk(")).toBeLessThan(keep.indexOf("removeOthers("));
+    expect(keep).toContain("await admin.storage.from(THING_MODEL_BUCKET).remove([path]);");
+    expect(actions).toContain("if (!access.isAdmin) return { error: THING_MODEL_ADMINS_ONLY };");
+    expect(actions).toContain('.eq("user_id", access.userId)');
+    // A path is only ever this person's, this set's, a model's.
+    expect(actions).toContain("if (typeof path !== \"string\" || !path.startsWith(`${userId}/sets/`)) return null;");
+    expect(fnOf(actions, "export async function reserveThingModel(", "/** Step 2")).toContain("if (size > THING_MODEL_MAX_BYTES) return { error: THING_MODEL_TOO_BIG };");
+  });
+
+  it("comes back with the set for admins, and goes with the set when it is deleted", () => {
+    expect(read("data.ts")).toContain('thingModels: status === "ready" && access.isAdmin ? await listThingModels(createAdminClient(), access.userId, row.id as string) : [],');
+    expect(read("actions.ts")).toContain("await removeSetThingModels(admin, userId, setId);");
+    expect(store).toContain("if (seen.has(f.key)) continue;");
+    expect(view).toContain("const key = modelHome(m.key, at);");
+  });
+});
+
 describe("who may put one on", () => {
   it("is an admin, and the file never leaves the page", () => {
     expect(read("data.ts")).toContain("modelsOn: access.isAdmin,");
     expect(view).toContain("modelsOn && thingKey");
-    expect(view).toContain("const url = URL.createObjectURL(file);");
+    expect(view).toContain("const local = URL.createObjectURL(file);");
     for (const hook of ["data-el-model", "data-el-model-state", "data-el-model-input", "data-el-model-file", "data-el-model-flip", "data-el-model-remove"]) {
       expect(card, hook).toContain(hook);
     }
   });
 
   it("is told in every language", () => {
-    const keys = ["modelTitle", "modelLoad", "modelLoading", "modelReady", "modelFailed", "modelFlip", "modelRemove", "modelHint"] as const;
+    const keys = ["modelTitle", "modelLoad", "modelLoading", "modelReady", "modelFailed", "modelFlip", "modelRemove", "modelHint", "modelSaving", "modelSaved", "modelUnsaved"] as const;
     for (const m of [en, es, pt, itMsgs]) {
       for (const key of keys) {
         expect(m.sets.cast[key], key).toBeTruthy();

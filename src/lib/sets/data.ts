@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/server";
 import { forPage, listElementPhotos } from "@/lib/sets/references";
+import { listThingModels } from "./thing-model-store";
 import { needsLikenessAnswer } from "@/lib/characters/likeness";
 import { readLikeness } from "@/lib/characters/likeness-store";
 import { mediaUrl, thumbUrl, toMediaUrl } from "@/lib/media/url";
@@ -420,9 +421,12 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     // plans", set-config.ts); the page says so before a take is framed, and
     // takeInSet checks again.
     takesOn: setTakesEligible(access.plan, access.isAdmin),
-    // A model file on a thing (thing-model.ts, 2026-09-24): admins only while
-    // our own model builder is proved; the file never leaves the page.
+    // A model on a thing (thing-model.ts, 2026-09-24): admins only while our
+    // own model builder is proved.
     modelsOn: access.isAdmin,
+    // The models kept with the set (thing-model-store.ts): admins only, like
+    // the row that puts them there; read in the owner's own folder only.
+    thingModels: status === "ready" && access.isAdmin ? await listThingModels(createAdminClient(), access.userId, row.id as string) : [],
     // The month's Astra changes left (set-config.ts SET_EDITS_MONTHLY_LIMITS),
     // shown in the editor's prompt bar; the action holds the cap.
     astraEditsLeft: spec ? await astraEditsLeft(access) : null,

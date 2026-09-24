@@ -63,6 +63,7 @@ import { isFilmMove, isFilmTexture } from "@/lib/sets/moves";
 
 /** Where the rig's focus is measured to: the figure's eyes (build-scene's stand-in). */
 import { lookCutout, removeSetLookCutouts, type LookCutoutResult } from "@/lib/sets/look-cutout-store";
+import { removeSetThingModels } from "@/lib/sets/thing-model-store";
 import { lookSheet } from "@/lib/sets/look-sheet";
 import { seesLookObjects } from "@/lib/sets/look-cutout";
 import { readShotCameras, recordShotCamera, shotCameraOf } from "@/lib/sets/shot-camera";
@@ -1468,6 +1469,8 @@ export async function deleteSet(setId: string): Promise<{ error: string | null }
     // fixed names (set-config.ts setLookCutoutPath, setRefPhotoPath), so
     // listing the folder finds them all. Best-effort, like the photo.
     await removeSetLookCutouts(admin, userId, setId);
+    // The models kept on its things (thing-model-store.ts), the same way.
+    await removeSetThingModels(admin, userId, setId);
     // What later work kept on the row, cleared like the words and the spec
     // above: the Build editor's working copy (the set itself), the film (the
     // person's words for each beat, and its camera moves) and the rig. A

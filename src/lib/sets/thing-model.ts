@@ -65,7 +65,65 @@ export function fitThingModel(model: Box, blocks: Box, flip = false): ModelFit {
  */
 export const SKETCH_MODEL_MATERIAL = { metalness: 0, roughness: 1 } as const;
 
-/** A model file the stage will load: our own media, or an object URL made on this page. */
+/** A model file the stage will load: our own media (with its signature), or an object URL made on this page. */
 export function modelUrlAllowed(url: string): boolean {
-  return /^blob:/.test(url) || /^\/api\/media\/[^?#]+\.glb$/i.test(url);
+  return /^blob:/.test(url) || /^\/api\/media\/[^?#]+\.glb(\?v=[A-Za-z0-9_-]+)?$/i.test(url);
+}
+
+// ---------------------------------------------------------------------------
+// Kept with the set (2026-09-24): a model is a file beside the set's other
+// files — no table, no column; the folder is the list, as the things' photos
+// are (references.ts). One model per thing: a new one replaces it.
+// ---------------------------------------------------------------------------
+
+/** Where models live: the bucket that already keeps our 3D files (angle-stage.ts proxies), with no type limit on it. */
+export const THING_MODEL_BUCKET = "generated-videos";
+/** The largest model file kept: the same ceiling as an Angle Stage proxy. */
+export const THING_MODEL_MAX_BYTES = 40 * 1024 * 1024;
+
+/** A kept model's name: the set, the thing's key, when, and whether it is turned round. */
+export const THING_MODEL_NAME = /^([cvo]_[0-9a-f]{8}_-?\d{1,4}_-?\d{1,4})\.([0-9a-z]{1,10})\.([fn])\.glb$/;
+
+/** Every kept model of a set starts with this, in the owner's own sets folder. */
+export function setModelPrefix(setId: string): string {
+  return `${setId}.model.`;
+}
+
+/** Where a thing's model is kept: its owner's folder, its set, its key, its time, its turn. */
+export function setModelPath(userId: string, setId: string, key: string, stamp: number, flip: boolean): string {
+  return `${userId}/sets/${setModelPrefix(setId)}${key}.${Math.max(0, Math.floor(stamp)).toString(36)}.${flip ? "f" : "n"}.glb`;
+}
+
+/** What a kept model's file name says, or null for anything else in the folder. */
+export function parseModelName(setId: string, name: string): { key: string; at: number; flip: boolean } | null {
+  const prefix = setModelPrefix(setId);
+  if (!name.startsWith(prefix)) return null;
+  const m = THING_MODEL_NAME.exec(name.slice(prefix.length));
+  if (!m) return null;
+  return { key: m[1], at: parseInt(m[2], 36), flip: m[3] === "f" };
+}
+
+/**
+ * Whether a file is a binary glTF model and says it is the size it is: the
+ * "glTF" mark, version 2, and a length that is the file's own. Anything else
+ * is not kept — a renamed picture would otherwise sit in the set as a model.
+ */
+export function glbHeaderOk(head: Uint8Array, size: number): boolean {
+  if (head.length < 12) return false;
+  const mark = head[0] === 0x67 && head[1] === 0x6c && head[2] === 0x54 && head[3] === 0x46;
+  const view = new DataView(head.buffer, head.byteOffset, 12);
+  return mark && view.getUint32(4, true) === 2 && view.getUint32(8, true) === size;
+}
+
+/**
+ * The thing a kept model belongs to on the set as it stands: its own key, or
+ * — when the set was edited and the same blocks moved — the one thing with
+ * the same blocks. Null when nothing matches for certain: the model waits,
+ * rather than landing on the wrong thing.
+ */
+export function modelHome(key: string, els: readonly { key: string }[]): string | null {
+  if (els.some((e) => e.key === key)) return key;
+  const same = key.split("_").slice(0, 2).join("_");
+  const moved = els.filter((e) => e.key.split("_").slice(0, 2).join("_") === same);
+  return moved.length === 1 ? moved[0].key : null;
 }

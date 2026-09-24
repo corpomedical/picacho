@@ -21,7 +21,9 @@ import { VIEW_MODES, viewModeMaterial, type ViewMode } from "@/lib/sets/view-mod
 import { azimuthOf, hourFromAzimuth, measureMetres, scaleBar, sunDirection, type MeasurePoint } from "@/lib/sets/furniture";
 import { PATH_MAX_POINTS, alongPath, pathLength, type Gaze } from "@/lib/sets/people";
 import { MOVERS_PER_BEAT, canMove, moverAlong, movedSpec, placementBefore, turnAbout, type Mover, type Placement } from "@/lib/sets/movers";
-import { SKETCH_MODEL_MATERIAL, fitThingModel, modelUrlAllowed, type ThingModel } from "@/lib/sets/thing-model";
+import { SKETCH_MODEL_MATERIAL, THING_MODEL_BUCKET, fitThingModel, modelHome, modelUrlAllowed, type ThingModel } from "@/lib/sets/thing-model";
+import { keepThingModel, removeThingModel, reserveThingModel, turnThingModel } from "@/lib/sets/model-actions";
+import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import type { RigTab } from "@/lib/sets/rig-dock";
 import { SceneTree, sceneNames, type SceneTarget } from "./scene-tree";
 import { Sequencer } from "./sequencer";
@@ -76,7 +78,7 @@ import { RigPanel } from "@/components/sets/rig-panel";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
 import { canBeLook, newestLook } from "@/lib/sets/look";
 import { matchSummary, placeMatchedCamera, solveMatchPose, type CameraMove, type MatchClamp } from "@/lib/sets/match-shot";
-import { SET_LIKENESS_NEEDED, SET_PHOTO_UNREADABLE, SET_SAVE_FAILED, SET_TAKE_BAD_END, SET_TAKE_NEEDS_PLAN } from "@/lib/sets/messages";
+import { SET_LIKENESS_NEEDED, SET_PHOTO_UNREADABLE, SET_SAVE_FAILED, SET_TAKE_BAD_END, SET_TAKE_NEEDS_PLAN, THING_MODEL_SAVE_FAILED } from "@/lib/sets/messages";
 import { preparePhoto } from "@/lib/sets/photo-client";
 import { facingFor, hasCameraWords, wordsToMatch, type ShotWords } from "@/lib/sets/shot-words";
 import {
@@ -306,6 +308,14 @@ type StageApi = {
   setThingModels(models: readonly ThingModel[]): Promise<{ key: string; ok: boolean }[]>;
 };
 
+/** A model on a thing, as the page holds it (thing-model.ts): where it loads from, and whether it is kept with the set. */
+type ThingOnStage = ThingModel & {
+  name: string;
+  storedKey: string | null;
+  kept: "saving" | "saved" | "unsaved" | null;
+  note: string | null;
+};
+
 /** What a tap on the ground lays (set-view's laying): null lays nothing. */
 type Laying = "path" | "gaze" | "mover" | "mover-way" | null;
 
@@ -516,6 +526,7 @@ export function SetView({
   identityBar,
   matchOn,
   modelsOn = false,
+  initialThingModels = [],
   takesOn,
   initialAsk = null,
   initialCharacterId = null,
@@ -543,6 +554,8 @@ export function SetView({
   matchOn: boolean;
   /** Whether a model file can be put on a thing (thing-model.ts): admins, while our own model builder is proved. */
   modelsOn?: boolean;
+  /** The models kept with the set (thing-model-store.ts): each thing's newest, by the key it was kept under. */
+  initialThingModels?: { key: string; url: string; flip: boolean }[];
   /**
    * Whether this plan takes clips and renders films — start-and-end-frame
    * clips, every paid plan's (set-config.ts setTakesEligible). Otherwise the
@@ -802,18 +815,26 @@ export function SetView({
   // motion. Held in the page only until it is sent or the page is left.
   const [recording, setRecording] = useState(false);
   /**
-   * Model files put on things (thing-model.ts, 2026-09-24): this page's
-   * own, never uploaded — an admin trying a model our builder made. The
-   * stage draws each in place of its thing's blocks.
+   * Models on things (thing-model.ts, 2026-09-24): the stage draws each in
+   * place of its thing's blocks. A model loaded here shows at once from the
+   * file itself, and is kept with the set behind it (model-actions.ts);
+   * `storedKey` is the key it is kept under, which after an edit to the
+   * set may not be the key its thing has now (modelHome).
    */
-  const [thingModels, setThingModels] = useState<(ThingModel & { name: string })[]>([]);
+  const [thingModels, setThingModels] = useState<ThingOnStage[]>(() => {
+    const at = elementsOf(initialSpec);
+    return initialThingModels.flatMap((m) => {
+      const key = modelHome(m.key, at);
+      return key ? [{ key, url: m.url, flip: m.flip, name: "", storedKey: m.key, kept: "saved" as const, note: null }] : [];
+    });
+  });
   const [thingModelState, setThingModelState] = useState<Record<string, "loading" | "ready" | "failed">>({});
   const thingModelsRef = useRef(thingModels);
   useEffect(() => {
     thingModelsRef.current = thingModels;
   }, [thingModels]);
   useEffect(() => () => {
-    for (const m of thingModelsRef.current) URL.revokeObjectURL(m.url);
+    for (const m of thingModelsRef.current) if (m.url.startsWith("blob:")) URL.revokeObjectURL(m.url);
   }, []);
   const [rehearsal, setRehearsal] = useState<{ url: string; mime: string; seconds: number; frames: number; bytes: number } | null>(null);
   const rehearsalBlobRef = useRef<Blob | null>(null);
@@ -4114,22 +4135,11 @@ export function SetView({
                 name: thingModels.find((m) => m.key === thingKey)?.name ?? null,
                 state: thingModelState[thingKey] ?? null,
                 flipped: thingModels.find((m) => m.key === thingKey)?.flip ?? false,
-                onFile: (file) => {
-                  const was = thingModelsRef.current.find((m) => m.key === thingKey);
-                  if (was) URL.revokeObjectURL(was.url);
-                  const url = URL.createObjectURL(file);
-                  setThingModelState((prev) => ({ ...prev, [thingKey]: "loading" }));
-                  setThingModels((prev) => [...prev.filter((m) => m.key !== thingKey), { key: thingKey, url, flip: false, name: file.name }]);
-                },
-                onFlip: () => {
-                  setThingModelState((prev) => ({ ...prev, [thingKey]: "loading" }));
-                  setThingModels((prev) => prev.map((m) => (m.key === thingKey ? { ...m, flip: !m.flip } : m)));
-                },
-                onRemove: () => {
-                  const was = thingModelsRef.current.find((m) => m.key === thingKey);
-                  if (was) URL.revokeObjectURL(was.url);
-                  setThingModels((prev) => prev.filter((m) => m.key !== thingKey));
-                },
+                kept: thingModels.find((m) => m.key === thingKey)?.kept ?? null,
+                note: thingModels.find((m) => m.key === thingKey)?.note ?? null,
+                onFile: (file) => void loadThingModel(thingKey, file),
+                onFlip: () => void turnModel(thingKey),
+                onRemove: () => void dropModel(thingKey),
               }
             : null
         }
@@ -4704,6 +4714,78 @@ export function SetView({
         }
       })();
     }, MOVE_PREVIEW_REST_MS);
+  }
+
+  /** Change one thing's model as the page holds it. */
+  function patchModel(key: string, patch: Partial<ThingOnStage>) {
+    setThingModels((prev) => prev.map((m) => (m.key === key ? { ...m, ...patch } : m)));
+  }
+
+  /**
+   * A model file put on a thing (thing-model.ts): on the stage at once from
+   * the file itself, then kept with the set (model-actions.ts) — the file
+   * goes straight to storage at an address made for it, never through our
+   * own server — and drawn from where it is kept. A file that cannot be
+   * kept stays on this page, and the card says so.
+   */
+  async function loadThingModel(key: string, file: File) {
+    const was = thingModelsRef.current.find((m) => m.key === key);
+    if (was?.url.startsWith("blob:")) URL.revokeObjectURL(was.url);
+    const local = URL.createObjectURL(file);
+    setThingModelState((prev) => ({ ...prev, [key]: "loading" }));
+    setThingModels((prev) => [
+      ...prev.filter((m) => m.key !== key),
+      { key, url: local, flip: false, name: file.name, storedKey: null, kept: "saving", note: null },
+    ]);
+    const unsaved = (note: string) => patchModel(key, { kept: "unsaved", note: localizeServerText(note, t) });
+    try {
+      const place = await reserveThingModel(setId, { key, size: file.size });
+      if (place.error !== null) return unsaved(place.error);
+      const { error: upError } = await createBrowserClient()
+        .storage.from(THING_MODEL_BUCKET)
+        .uploadToSignedUrl(place.path, place.token, file, { contentType: "model/gltf-binary" });
+      if (upError) return unsaved(THING_MODEL_SAVE_FAILED);
+      const kept = await keepThingModel(setId, { path: place.path });
+      if (kept.error !== null) return unsaved(kept.error);
+      // Still the file this card was given (a newer one may have replaced it).
+      if (thingModelsRef.current.find((m) => m.key === key)?.url !== local) return;
+      URL.revokeObjectURL(local);
+      patchModel(key, { url: kept.model.url, storedKey: kept.model.key, kept: "saved", note: null });
+    } catch (err) {
+      unsaved(staleHere(err) ? t.generate.refreshNeeded : THING_MODEL_SAVE_FAILED);
+    }
+  }
+
+  /** Turned round on the stage at once, and kept turned round with the set. */
+  async function turnModel(key: string) {
+    const m = thingModelsRef.current.find((x) => x.key === key);
+    if (!m) return;
+    const flip = !m.flip;
+    setThingModelState((prev) => ({ ...prev, [key]: "loading" }));
+    patchModel(key, { flip });
+    if (!m.storedKey || m.kept !== "saved") return;
+    try {
+      const res = await turnThingModel(setId, { key: m.storedKey, flip });
+      if (res.error !== null) patchModel(key, { note: localizeServerText(res.error, t) });
+      else patchModel(key, { url: res.model.url });
+    } catch {
+      patchModel(key, { note: localizeServerText(THING_MODEL_SAVE_FAILED, t) });
+    }
+  }
+
+  /** Back to blocks, here and in what the set keeps. */
+  async function dropModel(key: string) {
+    const m = thingModelsRef.current.find((x) => x.key === key);
+    if (!m) return;
+    if (m.url.startsWith("blob:")) URL.revokeObjectURL(m.url);
+    setThingModels((prev) => prev.filter((x) => x.key !== key));
+    if (m.storedKey) {
+      try {
+        await removeThingModel(setId, { key: m.storedKey });
+      } catch {
+        // Gone from the stage either way; a file left behind comes back on the next visit and can be removed again.
+      }
+    }
   }
 
   /**

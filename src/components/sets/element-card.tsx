@@ -93,6 +93,10 @@ export function ElementCard({
     name: string | null;
     state: "loading" | "ready" | "failed" | null;
     flipped: boolean;
+    /** Whether it is kept with the set: being saved, saved, or only on this page. */
+    kept?: "saving" | "saved" | "unsaved" | null;
+    /** Why it could not be kept, already in words. */
+    note?: string | null;
     onFile: (file: File) => void;
     onFlip: () => void;
     onRemove: () => void;
@@ -339,6 +343,16 @@ export function ElementCard({
                       ? formatMsg(c.modelReady, { name: model.name })
                       : c.modelHint}
               </span>
+              {model.kept && model.state !== "failed" && (
+                <span
+                  className={`text-[11px] ${model.kept === "unsaved" ? "text-[#e0a468]" : model.kept === "saved" ? "text-[#9aa0ad]" : "text-[#c6c9d1]"}`}
+                  data-el-model-kept={model.kept}
+                  title={model.note ?? undefined}
+                >
+                  · {model.kept === "saving" ? c.modelSaving : model.kept === "saved" ? c.modelSaved : c.modelUnsaved}
+                </span>
+              )}
+              {model.note && <p className="w-full text-[11px] leading-snug text-[#e0a468]">{model.note}</p>}
               <input
                 ref={modelFileRef}
                 type="file"
@@ -356,7 +370,7 @@ export function ElementCard({
               </button>
               {model.state === "ready" && (
                 <>
-                  <button type="button" onClick={model.onFlip} data-el-model-flip className={DRIVE_CHIP(model.flipped)}>
+                  <button type="button" onClick={model.onFlip} disabled={model.kept === "saving"} data-el-model-flip className={DRIVE_CHIP(model.flipped)}>
                     {c.modelFlip}
                   </button>
                   <button type="button" onClick={model.onRemove} data-el-model-remove className={DRIVE_CHIP(false)}>

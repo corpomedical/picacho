@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitThingModel, modelUrlAllowed, type Box } from "./thing-model";
+import { THING_MODEL_MAX_BYTES, fitThingModel, glbHeaderOk, modelHome, modelUrlAllowed, parseModelName, setModelPath, type Box } from "./thing-model";
 
 // A built model put where a thing's blocks stand (2026-09-24): same length,
 // same ground, same axis, same place, and turned round on request.
@@ -79,5 +79,55 @@ describe("which model files the stage loads", () => {
     expect(modelUrlAllowed("https://example.com/car.glb")).toBe(false);
     expect(modelUrlAllowed("/api/media/x.png")).toBe(false);
     expect(modelUrlAllowed("javascript:alert(1)")).toBe(false);
+    // Our media carries its signature (media/url.ts mediaUrl).
+    expect(modelUrlAllowed("/api/media/generated-videos/u/sets/s.model.c_89e319be_0_-1.abc.n.glb?v=Ab_3-x")).toBe(true);
+    expect(modelUrlAllowed("/api/media/x.glb?v=a&b=c")).toBe(false);
+  });
+});
+
+describe("a model kept with the set", () => {
+  const user = "11111111-1111-1111-1111-111111111111";
+  const set = "22222222-2222-2222-2222-222222222222";
+  const key = "c_89e319be_0_-1";
+
+  it("is named by its set, its thing, its time and its turn, and read back the same", () => {
+    const path = setModelPath(user, set, key, 1790205070123, true);
+    expect(path.startsWith(`${user}/sets/${set}.model.${key}.`)).toBe(true);
+    expect(path.endsWith(".f.glb")).toBe(true);
+    const name = path.slice(`${user}/sets/`.length);
+    expect(parseModelName(set, name)).toEqual({ key, at: 1790205070123, flip: true });
+    expect(parseModelName(set, name.replace(".f.glb", ".n.glb"))?.flip).toBe(false);
+    // Another set's model, a photo, a sheet: not a model of this set.
+    expect(parseModelName("33333333-3333-3333-3333-333333333333", name)).toBeNull();
+    expect(parseModelName(set, `${set}.ref.${key}.1.abc.jpg`)).toBeNull();
+    expect(parseModelName(set, `${set}.model.not-a-key.abc.n.glb`)).toBeNull();
+  });
+
+  it("is kept only when it is a binary glTF of the size it says", () => {
+    const glb = (size: number, version = 2) => {
+      const b = new Uint8Array(12);
+      b.set([0x67, 0x6c, 0x54, 0x46]);
+      new DataView(b.buffer).setUint32(4, version, true);
+      new DataView(b.buffer).setUint32(8, size, true);
+      return b;
+    };
+    expect(glbHeaderOk(glb(2836), 2836)).toBe(true);
+    expect(glbHeaderOk(glb(2836), 2900)).toBe(false);
+    expect(glbHeaderOk(glb(2836, 1), 2836)).toBe(false);
+    const jpeg = new Uint8Array(12);
+    jpeg.set([0xff, 0xd8, 0xff, 0xe0]);
+    expect(glbHeaderOk(jpeg, 2836)).toBe(false);
+    expect(glbHeaderOk(new Uint8Array(4), 4)).toBe(false);
+    expect(THING_MODEL_MAX_BYTES).toBe(40 * 1024 * 1024);
+  });
+
+  it("finds its thing after an edit moved the same blocks, and waits when it cannot be sure", () => {
+    expect(modelHome(key, [{ key }, { key: "o_11111111_5_5" }])).toBe(key);
+    // The same car, moved: the same blocks, another place.
+    expect(modelHome(key, [{ key: "c_89e319be_30_12" }, { key: "o_11111111_5_5" }])).toBe("c_89e319be_30_12");
+    // Two of the same car: which one is not certain, so neither.
+    expect(modelHome(key, [{ key: "c_89e319be_30_12" }, { key: "c_89e319be_-8_4" }])).toBeNull();
+    // Gone from the set.
+    expect(modelHome(key, [{ key: "o_11111111_5_5" }])).toBeNull();
   });
 });
