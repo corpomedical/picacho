@@ -60,6 +60,7 @@ import {
 import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import type { AgentMode } from "@/lib/agent/prices";
 import { parseSseFrames } from "@/lib/agent/sse";
+import { playableAudioUrl } from "@/lib/audio/playable-url";
 import { classifyMessage } from "@/lib/agent/intent";
 import { CHARACTERLESS_MODEL_IDS, MODEL_CAPABILITIES, resolveSendPlan, type PlanIssue, likenessRetryTarget } from "@/lib/generations/send-plan";
 import { CINEMA_PRESETS, isProvenPreset, type CinemaPresetCategory } from "@/lib/generations/cinema-presets";
@@ -3252,13 +3253,17 @@ function GenerateFormInner({
         setError(result.error);
         return;
       }
-      const audio = new Audio(`data:audio/mpeg;base64,${result.audioBase64}`);
+      // A blob: URL, not data: — the site's CSP refuses data: media, so the
+      // old form never played a sample (lib/audio/playable-url.ts).
+      const source = playableAudioUrl(result.audioBase64);
+      const audio = new Audio(source.url);
       currentAudioRef.current = audio;
       await new Promise<void>((resolve) => {
         let settled = false;
         const finish = () => {
           if (settled) return;
           settled = true;
+          source.release();
           resolve();
         };
         speakResolveRef.current = finish;

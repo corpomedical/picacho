@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.97.0",
+    build: 136,
+    date: "2026-09-25",
+    title: "You can hear the Producer",
+    items: [
+      "Fixed: the Producer's spoken replies were never heard. Each sentence was played as a data: URL, and the site's security policy only allows audio from our own site, blob: URLs, our storage and fal, so the browser silently refused every one. It had been that way since voice first shipped. Replies now play from blob: URLs, which the policy already allows, and the policy is unchanged. I proved it under the live site's exact policy with a test tone: data: was refused with a policy error, and blob: played its 0.5 s.",
+      "The bulb now only follows the reply's voice while the audio engine is running, so a paused engine (for example straight after a reload, before you tap) can never swallow the sound. You hear the reply, and the light joins in once it can.",
+      "The composer's older read-aloud (part of the switched-off voice mode) had the same fault and got the same fix.",
+    ],
+  },
+  {
     version: "1.96.0",
     build: 135,
     date: "2026-09-25",

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { playableAudioUrl } from "@/lib/audio/playable-url";
 
 // Talking to the Producer out loud, like a ChatGPT voice conversation
 // (2026-09-25, operator: "add voice for the user to work hands free", then
@@ -189,10 +190,15 @@ export function useHandsFree({
     }
     queue.current.delete(nextIndex.current);
     nextIndex.current++;
-    const el = new Audio(`data:audio/mpeg;base64,${data}`);
+    // A blob: URL, not data: — the site's CSP refuses data: media, which is
+    // why no reply was ever heard (lib/audio/playable-url.ts).
+    const source = playableAudioUrl(data);
+    const el = new Audio(source.url);
     const s = session.current;
-    if (s) {
+    if (s && s.ctx.state === "running") {
       // Through the session's graph, so the bulb can follow the reply's voice.
+      // Only while the graph is running: a suspended one would swallow the
+      // sound, and a reply heard without the light beats a light with none.
       try {
         s.ctx.createMediaElementSource(el).connect(s.outBus);
       } catch {}
@@ -200,6 +206,7 @@ export function useHandsFree({
     playing.current = el;
     go("speaking");
     const done = () => {
+      source.release();
       if (playing.current === el) playing.current = null;
       playNextRef.current();
     };
