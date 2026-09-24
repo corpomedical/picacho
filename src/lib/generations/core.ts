@@ -447,7 +447,7 @@ export async function consumeFreeGeneration(
 // Both image writers below store with the SERVICE ROLE, never a caller's
 // client (2026-09-24 storage review). The bucket's policy lets a signed-in
 // person read and delete their own folder but not write it
-// (supabase/pending/generated-images-read-only.sql): with the write verbs
+// (supabase/applied/2026-09-24/generated-images-read-only.sql): with the write verbs
 // open, anyone could PUT over <uid>/<uuid>.png with their own session and
 // have an unchecked picture served under a URL that had already passed the
 // output gate. Taking no client means no caller can hand the user's one back
