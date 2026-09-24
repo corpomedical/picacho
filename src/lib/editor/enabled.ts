@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // Whether the video editor is on — the recast/enabled.ts shape: an env kill
 // switch, the provider keys it cannot run without (Opus 5.5 cuts, Whisper
 // listens, HeyGen draws), and its own feature_flags row (`video_editor`,
-// supabase/pending/video-editor.sql).
+// supabase/applied/2026-09-25/video-editor.sql).
 //
 // WHO: admins only (operator, 2026-09-24: "Admins only"). There is
 // deliberately no "paid plans" switch yet: an edit is not charged in credits

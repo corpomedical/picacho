@@ -2,7 +2,8 @@
 -- by Claude Opus 5.5 and drawn by HeyGen's HyperFrames renderer. Code:
 -- src/lib/editor/.
 --
--- RUN THIS BEFORE PUSHING THE CODE. Idempotent: a second paste is harmless.
+-- APPLIED 2026-09-25 (the operator ran it: "SQL ran fine"). Idempotent: a second
+-- paste is harmless.
 --
 -- ONE SWITCH (operator, 2026-09-24: "Admins only"):
 --   video_editor  ON — the editor exists: admins can use it. Off hides it
