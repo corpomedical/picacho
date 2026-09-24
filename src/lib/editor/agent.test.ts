@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { collectDelivery, parseResult, readSession, sendChange, startSession } from "./agent";
+import { activityOf, collectDelivery, parseResult, readSession, sendChange, startSession } from "./agent";
 import { AGENT_SKILLS, AGENT_SYSTEM, changeMessage, jobMessage } from "./agent-prompt";
 
 /** Just the Managed Agents calls agent.ts makes, recorded. */
@@ -106,6 +106,7 @@ describe("agent.ts", () => {
       idleAt: Date.parse("2026-09-25T10:00:00Z"),
       costUsd: 2.12,
       latest: "Done — three shorts.",
+      activity: null,
     });
   });
 
@@ -146,6 +147,28 @@ describe("agent.ts", () => {
       outputs: [{ file: "a.mp4", title: "", summary: "", aspect: "16:9", seconds: 0 }],
       notes: "",
     });
+  });
+
+  it("reads what it is doing from its latest tool call (the first real session wrote no prose for minutes)", () => {
+    expect(activityOf({ name: "bash", input: { command: "cat /workspace/skills/hyperframes-core/SKILL.md" } })).toBe("skills");
+    expect(activityOf({ name: "bash", input: { command: "ffmpeg -i clip-0.mp4 -vf select='gt(scene,0.25)',showinfo -f null -" } })).toBe("footage");
+    expect(activityOf({ name: "read", input: { file_path: "/tmp/look/f0.jpg" } })).toBe("looking");
+    expect(activityOf({ name: "write", input: { file_path: "/workspace/p/index.html" } })).toBe("building");
+    expect(activityOf({ name: "bash", input: { command: "npx hyperframes check" } })).toBe("checking");
+    expect(activityOf({ name: "bash", input: { command: "npx hyperframes render --quality delivery -o /tmp/a.mp4" } })).toBe("rendering");
+    expect(activityOf({ name: "bash", input: { command: "cp /tmp/a.mp4 /mnt/session/outputs/a.mp4" } })).toBe("delivering");
+    expect(activityOf({ name: "bash", input: { command: "ls" } })).toBeNull();
+  });
+
+  it("prefers its words only while nothing has happened since", async () => {
+    const { client } = fakeClient({
+      events: [
+        { type: "agent.tool_use", name: "bash", input: { command: "npx hyperframes render -o /tmp/x.mp4" } },
+        { type: "agent.message", content: [{ type: "text", text: "Now building short one." }] },
+      ],
+    });
+    const view = await readSession("s", client);
+    expect(view).toMatchObject({ latest: null, activity: "rendering" });
   });
 
   it("sends a change into the same session, fenced", async () => {

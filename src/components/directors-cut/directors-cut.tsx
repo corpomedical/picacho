@@ -295,7 +295,7 @@ function BriefForm({ wide = false, onStarted, guard }: { wide?: boolean; onStart
               type="button"
               onClick={() => input.current?.click()}
               className={`flex items-center justify-center gap-2 rounded-[14px] border border-dashed border-[rgba(255,255,255,0.18)] text-sm text-[#9aa0ad] hover:border-[rgba(224,164,104,0.5)] hover:text-[#ecedf1] ${
-                wide ? "min-h-[120px] flex-col" : "min-h-11"
+                wide ? "min-h-[120px] flex-col px-4 text-center" : "min-h-11"
               }`}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" aria-hidden="true">
@@ -430,6 +430,28 @@ function Screen({ detail, loading }: { detail: EditDetail | null; loading: boole
               preload="metadata"
               className={shown.aspect === "9:16" ? "max-h-[520px] w-auto max-w-full rounded-[14px]" : "max-h-[520px] w-full rounded-[14px]"}
             />
+            {/* Inside the monitor, not on the page: the monitor is dark in both themes, the page isn't. */}
+            {outputs.length > 1 && (
+              <div role="tablist" aria-label={d.versions} className="flex flex-wrap justify-center gap-1.5">
+                {outputs.map((o, i) => (
+                  <button
+                    key={`${o.turn}:${i}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={i === Math.min(pick, outputs.length - 1)}
+                    onClick={() => setPick(i)}
+                    className={`min-h-9 rounded-full border px-3 text-xs ${
+                      i === Math.min(pick, outputs.length - 1)
+                        ? "border-[#e0a468] bg-[#e0a468] text-[#1a0f07]"
+                        : "border-[rgba(255,255,255,0.12)] text-[#c6c9d1] hover:border-[rgba(255,255,255,0.3)]"
+                    } ${o.turn < latestTurn ? "opacity-60" : ""}`}
+                  >
+                    {o.title || formatMsg(d.cut, { n: o.turn })}
+                    {older > 0 && ` · ${formatMsg(d.cut, { n: o.turn })}`}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ) : working ? (
           <Progress detail={detail} />
@@ -442,27 +464,6 @@ function Screen({ detail, loading }: { detail: EditDetail | null; loading: boole
           <p className="text-sm text-[#6b6f7a]">{d.empty}</p>
         )}
       </div>
-      {!working && outputs.length > 1 && (
-        <div role="tablist" aria-label={d.versions} className="flex flex-wrap gap-1.5">
-          {outputs.map((o, i) => (
-            <button
-              key={`${o.turn}:${i}`}
-              type="button"
-              role="tab"
-              aria-selected={i === Math.min(pick, outputs.length - 1)}
-              onClick={() => setPick(i)}
-              className={`min-h-9 rounded-full border px-3 text-xs ${
-                i === Math.min(pick, outputs.length - 1)
-                  ? "border-[#e0a468] bg-[#e0a468] text-[#1a0f07]"
-                  : "border-[rgba(255,255,255,0.12)] text-[#c6c9d1] hover:border-[rgba(255,255,255,0.3)]"
-              } ${o.turn < latestTurn ? "opacity-60" : ""}`}
-            >
-              {o.title || formatMsg(d.cut, { n: o.turn })}
-              {older > 0 && ` · ${formatMsg(d.cut, { n: o.turn })}`}
-            </button>
-          ))}
-        </div>
-      )}
       {shown?.url && <FrameStrip url={shown.url} seconds={shown.seconds} />}
     </>
   );
@@ -490,8 +491,10 @@ function Progress({ detail }: { detail: EditDetail }) {
         ))}
       </ol>
       {/* The editor's own latest words while it works — what it is actually doing. */}
-      {detail.phase === "cutting" && detail.activity && (
-        <p className="line-clamp-3 rounded-[12px] bg-[#101116] px-3 py-2.5 font-serif text-sm leading-relaxed text-[#9aa0ad]">{detail.activity}</p>
+      {detail.phase === "cutting" && (detail.activity?.text || detail.activity?.code) && (
+        <p className="line-clamp-3 rounded-[12px] bg-[#101116] px-3 py-2.5 font-serif text-sm leading-relaxed text-[#9aa0ad]">
+          {detail.activity.text || d.activity[detail.activity.code!]}
+        </p>
       )}
       <p className="font-mono text-[11px] text-[#6b6f7a]">{d.leave}</p>
     </div>

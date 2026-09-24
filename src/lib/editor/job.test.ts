@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { footageProblem, nextStep, phaseOf, planUploads, type ClipRecord, type SessionRecord } from "./job";
 import { parseProbe, probeArgs, speechArgs } from "./analyze";
-import { parseTranscript } from "./transcribe";
+import { agreeingWords, parseTranscript } from "./transcribe";
 import { whisperCostUsd } from "./prices";
 
 const rec = (probe: ClipRecord["probe"], analyzed = false): ClipRecord => ({
@@ -110,6 +110,24 @@ describe("the no-speech guard (the operator's first edit: music heard as 'Thanks
     expect(t.speech).toBe(true);
     expect(t.words.map((w) => w.text)).toEqual(["Welcome", "to", "the", "show"]);
     expect(t.droppedSegments).toBe(2);
+  });
+
+  it("keeps only what two hearings agree on (the test clip: nine words once, nothing the next time)", () => {
+    const w = (text: string, start: number) => ({ text, start, end: start + 0.3 });
+    const real = [w("She", 1), w("came", 1.3), w("for", 1.6), w("the", 1.8), w("ball.", 2.0)];
+    // Real speech: the same words, times a hair apart, punctuation different.
+    expect(agreeingWords(real, real.map((x) => ({ ...x, text: x.text.replace(".", ""), start: x.start + 0.05 }))).map((x) => x.text)).toEqual([
+      "She",
+      "came",
+      "for",
+      "the",
+      "ball.",
+    ]);
+    // A phantom: confident words the first time, different or none the second.
+    expect(agreeingWords([w("Bye", 8), w("bye", 8.4)], [])).toEqual([]);
+    expect(agreeingWords([w("Thanks", 8), w("for", 8.3), w("watching", 8.6)], [w("Subscribe", 8.1)])).toEqual([]);
+    // Same word at a different moment is not agreement.
+    expect(agreeingWords([w("go", 1)], [w("go", 5)])).toEqual([]);
   });
 
   it("vouches for nothing without segment scores, and survives nonsense", () => {

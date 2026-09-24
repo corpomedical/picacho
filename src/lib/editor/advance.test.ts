@@ -10,7 +10,7 @@ vi.mock("./work", () => ({
   extractSpeech: vi.fn(async () => new Uint8Array([1, 2])),
 }));
 vi.mock("./transcribe", () => ({
-  transcribeSpeech: vi.fn(async () => ({ language: "en", words: [], speech: false, droppedSegments: 1 })),
+  transcribeTwice: vi.fn(async () => ({ language: "en", words: [], speech: false, droppedSegments: 1 })),
 }));
 vi.mock("./agent", async (orig) => ({
   ...(await orig<typeof import("./agent")>()),
@@ -137,8 +137,8 @@ describe("advanceEdit v2", () => {
       ["no-speech", true],
       ["no-speech", true],
     ]);
-    // whisper: 30 s + 60 s at $0.006/min
-    expect(row.cost_usd).toBeCloseTo(0.009, 6);
+    // whisper, heard twice: 2 × (30 s + 60 s) at $0.006/min
+    expect(row.cost_usd).toBeCloseTo(0.018, 6);
     const job = vi.mocked(startSession).mock.calls[0][0];
     expect(job).toMatchObject({ aspectHint: "auto", lengthHint: null });
     expect(job.clips.map((c) => [c.hasVideo, c.speech])).toEqual([
@@ -152,7 +152,7 @@ describe("advanceEdit v2", () => {
   it("shows the editor's own latest words while it works", async () => {
     const { admin, tables } = fakeAdmin();
     tables.video_edits.push(edit({ stage: "directing", render: session() }) as never);
-    vi.mocked(readSession).mockResolvedValue({ status: "running", stopReason: null, idleAt: null, costUsd: 0.84, latest: "Rendering short 2 of 3." });
+    vi.mocked(readSession).mockResolvedValue({ status: "running", stopReason: null, activity: null, idleAt: null, costUsd: 0.84, latest: "Rendering short 2 of 3." });
     expect(await advanceEdit(edit().id, { admin, now: () => 60_000 })).toBe("advanced");
     const row = tables.video_edits[0] as unknown as EditRow;
     expect(row).toMatchObject({ stage: "directing", progress: "Rendering short 2 of 3." });
@@ -163,7 +163,7 @@ describe("advanceEdit v2", () => {
   it("delivers every video into History once, even when a tick dies after the inserts", async () => {
     const { admin, tables, files } = fakeAdmin();
     tables.video_edits.push(edit({ stage: "directing", render: session() }) as never);
-    vi.mocked(readSession).mockResolvedValue({ status: "idle", stopReason: "end_turn", idleAt: 90_000, costUsd: 1.9, latest: "Done." });
+    vi.mocked(readSession).mockResolvedValue({ status: "idle", stopReason: "end_turn", activity: null, idleAt: 90_000, costUsd: 1.9, latest: "Done." });
     vi.mocked(collectDelivery).mockResolvedValue({
       resultId: "file_r1",
       notes: "Two clips had no usable sound.",
@@ -193,7 +193,7 @@ describe("advanceEdit v2", () => {
   it("waits while an idle from BEFORE the change request is all the session shows", async () => {
     const { admin, tables } = fakeAdmin();
     tables.video_edits.push(edit({ stage: "directing", render: session({ turn: 2, turnStartedAt: 500_000, lastResultId: "file_r1" }) }) as never);
-    vi.mocked(readSession).mockResolvedValue({ status: "idle", stopReason: "end_turn", idleAt: 400_000, costUsd: 2, latest: "Done." });
+    vi.mocked(readSession).mockResolvedValue({ status: "idle", stopReason: "end_turn", activity: null, idleAt: 400_000, costUsd: 2, latest: "Done." });
     await advanceEdit(edit().id, { admin, now: () => 510_000 });
     expect((tables.video_edits[0] as Row).stage).toBe("directing");
     expect(collectDelivery).not.toHaveBeenCalled();
@@ -202,13 +202,13 @@ describe("advanceEdit v2", () => {
   it("fails honestly: budget reached, nothing new delivered, the editor refusing the job", async () => {
     const one = fakeAdmin();
     one.tables.video_edits.push(edit({ stage: "directing", render: session() }) as never);
-    vi.mocked(readSession).mockResolvedValue({ status: "idle", stopReason: "budget_reached", idleAt: 90_000, costUsd: 6.02, latest: null });
+    vi.mocked(readSession).mockResolvedValue({ status: "idle", stopReason: "budget_reached", activity: null, idleAt: 90_000, costUsd: 6.02, latest: null });
     expect(await advanceEdit(edit().id, { admin: one.admin, now: () => 100_000 })).toBe("failed");
     expect(one.tables.video_edits[0]).toMatchObject({ stage: "failed", error: expect.stringContaining("budget") });
 
     const two = fakeAdmin();
     two.tables.video_edits.push(edit({ stage: "directing", render: session() }) as never);
-    vi.mocked(readSession).mockResolvedValue({ status: "idle", stopReason: "end_turn", idleAt: 90_000, costUsd: 1, latest: "I could not render." });
+    vi.mocked(readSession).mockResolvedValue({ status: "idle", stopReason: "end_turn", activity: null, idleAt: 90_000, costUsd: 1, latest: "I could not render." });
     vi.mocked(collectDelivery).mockResolvedValue(null);
     expect(await advanceEdit(edit().id, { admin: two.admin, now: () => 100_000 })).toBe("failed");
     expect(two.tables.video_edits[0]).toMatchObject({ error: 'The editor stopped without delivering a video: "I could not render."' });

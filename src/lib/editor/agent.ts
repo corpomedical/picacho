@@ -29,6 +29,28 @@ export type JobClip = {
   words: Word[];
 };
 
+/**
+ * What the editor is doing right now, read from its latest tool call — it
+ * works through tools and rarely writes prose between them (seen on the first
+ * real v2 session, 2026-09-25), so its words alone left the progress line
+ * blank for minutes. A code, so the page can say it in the reader's language.
+ */
+export type Activity = "skills" | "footage" | "building" | "sound" | "checking" | "looking" | "rendering" | "delivering";
+
+export function activityOf(tool: { name?: string; input?: unknown }): Activity | null {
+  const input = (tool.input && typeof tool.input === "object" ? tool.input : {}) as Record<string, unknown>;
+  const text = [input.command, input.file_path, input.path, input.pattern].filter((v) => typeof v === "string").join(" ");
+  if (/\/mnt\/session\/outputs|result\.json/.test(text)) return "delivering";
+  if (/hyperframes\s+render|--quality\s+delivery/.test(text)) return "rendering";
+  if (/hyperframes\s+snapshot|contact|\.png\b/.test(text) || (tool.name === "read" && /\.(png|jpe?g|webp)$/i.test(text))) return "looking";
+  if (/hyperframes\s+(check|lint|validate)|ffprobe|loudnorm|ebur128/.test(text)) return "checking";
+  if (/SKILL\.md|\/skills\//.test(text)) return "skills";
+  if (/beatgrid|audio|duck|carve|sfx|\.mp3|\.wav|\.m4a/.test(text)) return "sound";
+  if (/footage|clip-\d|scene|showinfo|thumbnail/.test(text)) return "footage";
+  if (tool.name === "write" || tool.name === "edit" || /index\.html|compositions\/|hyperframes\s+(add|init)/.test(text)) return "building";
+  return null;
+}
+
 export type SessionView = {
   status: "rescheduling" | "running" | "idle" | "terminated";
   /** Why it went idle, when it is idle: end_turn = delivered (or gave up) and waiting. */
@@ -39,6 +61,8 @@ export type SessionView = {
   costUsd: number;
   /** The agent's latest words, for the progress line. */
   latest: string | null;
+  /** What it is doing right now, from its latest tool call. */
+  activity: Activity | null;
 };
 
 export type Delivered = {
@@ -104,18 +128,25 @@ export async function readSession(sessionId: string, client: Anthropic = new Ant
   let stopReason: string | null = null;
   let idleAt: number | null = null;
   let latest: string | null = null;
+  let activity: Activity | null = null;
   const events = await client.beta.sessions.events.list(sessionId, {
     order: "desc",
-    limit: 20,
-    types: ["session.status_idle", "agent.message"],
+    limit: 30,
+    types: ["session.status_idle", "agent.message", "agent.tool_use"],
   });
+  // Newest first: the agent's words count only while nothing has happened since them.
+  let acted = false;
   for (const e of events.data) {
+    if (e.type === "agent.tool_use") {
+      if (activity === null) activity = activityOf(e as { name?: string; input?: unknown });
+      acted = true;
+    }
     if (e.type === "session.status_idle" && stopReason === null && session.status === "idle") {
       stopReason = (e.stop_reason as { type?: string } | null)?.type ?? null;
       const at = Date.parse(e.processed_at);
       idleAt = Number.isFinite(at) ? at : null;
     }
-    if (e.type === "agent.message" && latest === null) {
+    if (e.type === "agent.message" && latest === null && !acted) {
       const text = e.content
         .filter((b): b is { type: "text"; text: string } => b.type === "text")
         .map((b) => b.text)
@@ -124,9 +155,8 @@ export async function readSession(sessionId: string, client: Anthropic = new Ant
         .trim();
       if (text) latest = text.slice(0, 200);
     }
-    if (stopReason !== null && latest !== null) break;
   }
-  return { status: session.status, stopReason, idleAt, costUsd: Number.isFinite(cents) ? cents / 100 : 0, latest };
+  return { status: session.status, stopReason, idleAt, costUsd: Number.isFinite(cents) ? cents / 100 : 0, latest, activity };
 }
 
 /**

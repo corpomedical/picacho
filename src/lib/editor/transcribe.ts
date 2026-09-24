@@ -103,6 +103,37 @@ export function parseTranscript(body: unknown): Transcript {
   };
 }
 
+/**
+ * THE SECOND OPINION (v2 real test, 2026-09-25): the same music-only clip came
+ * back "Bye bye" once, nine confident words the next time, and nothing the
+ * third — a recogniser inventing speech invents something different each
+ * time, while real speech comes back the same. So each clip is heard twice
+ * and only words both hearings agree on (same word, overlapping time) are
+ * kept. Costs a second $0.006/min; worth it, since a phantom line in a
+ * caption is the one mistake a viewer reads.
+ */
+export function agreeingWords(a: Word[], b: Word[]): Word[] {
+  const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  return a.filter((w) => {
+    const key = norm(w.text);
+    return key !== "" && b.some((x) => norm(x.text) === key && x.start < w.end + 0.3 && x.end > w.start - 0.3);
+  });
+}
+
+/** Hear a clip twice; keep what both hearings agree on. */
+export async function transcribeTwice(audio: Uint8Array, opts: Parameters<typeof transcribeSpeech>[1] = {}): Promise<Transcript> {
+  const [first, second] = await Promise.all([transcribeSpeech(audio, opts), transcribeSpeech(audio, opts)]);
+  const words = agreeingWords(first.words, second.words);
+  const spoken = words.reduce((sum, w) => sum + (w.end - w.start), 0);
+  const speech = first.speech && second.speech && words.length >= MIN_WORDS && spoken >= 1;
+  return {
+    language: first.language ?? second.language,
+    words: speech ? words : [],
+    speech,
+    droppedSegments: first.droppedSegments + second.droppedSegments,
+  };
+}
+
 function round3(n: number): number {
   return Math.round(n * 1000) / 1000;
 }

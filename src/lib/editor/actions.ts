@@ -18,7 +18,7 @@ import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
 import { SESSION_EXPIRED_MESSAGE } from "@/lib/generations/user-facing-error";
 import { advanceEdit } from "./advance";
-import { sendChange } from "./agent";
+import { sendChange, type Activity } from "./agent";
 import { EDITOR_NOT_OPEN, EDITOR_UNAVAILABLE, editorAllowed, isEditorEnabled } from "./enabled";
 import {
   ASPECT_HINTS,
@@ -233,8 +233,8 @@ export type EditDetail = {
   /** Every video delivered, newest turn first. */
   outputs: EditOutput[];
   notes: Note[];
-  /** The editor's latest words while it works. */
-  activity: string | null;
+  /** While it works: its own latest words, else what it is doing (a code the page translates). */
+  activity: { text: string | null; code: Activity | null } | null;
   error: string | null;
   /** 1 for the first delivery, then +1 per change. */
   cutNumber: number;
@@ -271,7 +271,10 @@ export async function getEdit(editId: string): Promise<{ error: string | null; e
         .sort((a, b) => b.turn - a.turn)
         .map((o) => ({ title: o.title, summary: o.summary, aspect: o.aspect, seconds: o.seconds, turn: o.turn, url: urls.get(o.generationId) ?? null })),
       notes: row.plan?.history ?? [],
-      activity: row.stage === "directing" ? row.render?.latest ?? row.progress : null,
+      activity:
+        row.stage === "directing" && row.render
+          ? { text: row.render.latest, code: (row.render.activity as Activity | null | undefined) ?? null }
+          : null,
       error: row.error,
       cutNumber: row.render?.turn ?? 1,
     },

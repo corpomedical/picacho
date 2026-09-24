@@ -93,7 +93,7 @@ const en = {
     briefPlaceholder: "A 30-second reel from my trip. Keep the laughs, cut the waiting, end on the sunset.",
     shape: "Shape",
     length: "Length",
-    itsCall: "Its call",
+    itsCall: "Opus decides",
     auto: "Auto",
     seconds: "{n} s",
     cutIt: "Cut it",
@@ -122,6 +122,17 @@ const en = {
       cutting: "Opus is editing",
       done: "Done",
       failed: "Didn't finish",
+    },
+    // What the editor is doing right now (lib/editor/agent.ts activityOf).
+    activity: {
+      skills: "Reading HyperFrames' editing workflows…",
+      footage: "Watching your footage…",
+      building: "Building the video…",
+      sound: "Working on the sound…",
+      checking: "Checking the video…",
+      looking: "Looking at the frames it made…",
+      rendering: "Rendering…",
+      delivering: "Delivering…",
     },
   },
   live: {

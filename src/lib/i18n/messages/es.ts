@@ -111,6 +111,16 @@ const es = {
       done: "Listo",
       failed: "No se terminó",
     },
+    activity: {
+      skills: "Leyendo los métodos de edición de HyperFrames…",
+      footage: "Viendo tu material…",
+      building: "Construyendo el vídeo…",
+      sound: "Trabajando el sonido…",
+      checking: "Revisando el vídeo…",
+      looking: "Mirando los fotogramas que hizo…",
+      rendering: "Renderizando…",
+      delivering: "Entregando…",
+    },
   },
   live: {
     headline: "En directo",

@@ -111,6 +111,16 @@ const pt = {
       done: "Pronto",
       failed: "Não terminou",
     },
+    activity: {
+      skills: "Lendo os métodos de edição do HyperFrames…",
+      footage: "Assistindo suas gravações…",
+      building: "Montando o vídeo…",
+      sound: "Trabalhando o som…",
+      checking: "Revisando o vídeo…",
+      looking: "Olhando os quadros que fez…",
+      rendering: "Renderizando…",
+      delivering: "Entregando…",
+    },
   },
   live: {
     headline: "Ao vivo",

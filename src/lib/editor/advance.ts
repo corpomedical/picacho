@@ -35,7 +35,7 @@ import {
   type Step,
 } from "./job";
 import { whisperCostUsd } from "./prices";
-import { transcribeSpeech } from "./transcribe";
+import { transcribeTwice } from "./transcribe";
 import { extractSpeech, probeClip } from "./work";
 import { mediaUrl } from "../media/url";
 
@@ -130,8 +130,8 @@ async function runStep(step: Step, row: EditRow, deps: AdvanceDeps, now: () => n
       if (!speechTrack || speechTrack.byteLength === 0) {
         done = { ...clip, speech: "silent", words: [], analyzed: true };
       } else {
-        const heard = await transcribeSpeech(speechTrack, { filename: `clip-${step.clip}.mp3` });
-        cost = whisperCostUsd(probe.duration);
+        const heard = await transcribeTwice(speechTrack, { filename: `clip-${step.clip}.mp3` });
+        cost = 2 * whisperCostUsd(probe.duration);
         done = { ...clip, speech: heard.speech ? "speech" : "no-speech", words: heard.words, analyzed: true };
       }
       return { clips: row.clips.map((c, i) => (i === step.clip ? done : c)), cost_usd: round4(row.cost_usd + cost) };
@@ -163,12 +163,12 @@ async function runStep(step: Step, row: EditRow, deps: AdvanceDeps, now: () => n
       const session = row.render!;
       const view = await readSession(session.sessionId, deps.anthropic);
       const cost = round4(session.preUsd + view.costUsd);
-      const latest = view.latest ?? session.latest;
+      const latest = view.latest ?? (view.activity ? null : session.latest);
       if (view.status === "running" || view.status === "rescheduling") {
         if (now() - session.turnStartedAt > SESSION_DEADLINE_MS) {
           return { stage: "failed", error: "The editor took too long on this one. Try a shorter brief or fewer clips.", cost_usd: cost };
         }
-        return { cost_usd: cost, render: { ...session, latest }, progress: latest ?? PROGRESS.watch };
+        return { cost_usd: cost, render: { ...session, latest, activity: view.activity }, progress: latest ?? PROGRESS.watch };
       }
       if (view.status === "terminated") {
         return { stage: "failed", error: "The editing session stopped before it finished. Try again.", cost_usd: cost };

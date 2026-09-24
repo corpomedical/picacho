@@ -59,8 +59,10 @@ export type SessionRecord = {
   preUsd: number;
   /** The result.json already turned into History rows. */
   lastResultId: string | null;
-  /** The agent's latest words, for the progress line. */
+  /** The agent's latest words, for the progress line — only while nothing has happened since. */
   latest: string | null;
+  /** What it is doing right now (agent.ts activityOf), when its words are older than its actions. */
+  activity?: string | null;
 };
 
 export type Note = { role: "editor" | "you"; text: string };

@@ -110,6 +110,16 @@ const it = {
       done: "Pronto",
       failed: "Non completato",
     },
+    activity: {
+      skills: "Legge i metodi di montaggio di HyperFrames…",
+      footage: "Guarda il tuo girato…",
+      building: "Costruisce il video…",
+      sound: "Lavora sul suono…",
+      checking: "Controlla il video…",
+      looking: "Guarda i fotogrammi che ha fatto…",
+      rendering: "Rendering…",
+      delivering: "Consegna…",
+    },
   },
   live: {
     headline: "Live",
