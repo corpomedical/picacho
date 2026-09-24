@@ -20,6 +20,21 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.100.0",
+    build: 139,
+    date: "2026-09-25",
+    title: "Director's Cut, rebuilt: Opus 5.5 makes the whole video",
+    items: [
+      "Rebuilt from scratch after the first version turned your six clips into \"nonsense\". Before, Opus wrote a list of cuts and our own code assembled the video. Now Opus 5.5 makes the video itself. It works in its own sandbox on Anthropic's servers with HeyGen's HyperFrames toolkit and 13 of its editing skills (music video, talking head, motion graphics, and others). It watches and listens to every clip, builds the video, checks it, looks at frames from its own draft, fixes what it sees, and renders it there. HeyGen's cloud renderer is no longer used.",
+      "It decides what the pile should become. The new \"Auto\" shape (the default) and \"Opus decides\" length let it choose. A pile of separate clips can come back as several videos, which appear as tabs under the player, each with its own download and its own line in the director's notes.",
+      "Sound comes first: it cuts on the beats and hits. For music it is told to use only a song you upload, plus the sound effects that come with HyperFrames. HeyGen's music library stays off until its licence terms are clear.",
+      "Speech is heard twice. The transcript keeps only words that two separate listens agree on, and drops stretches that Whisper itself marks as music or guesswork. On your pile, one music-only clip produced nine confident words on one listen and none on the next. The old version would have turned those into captions.",
+      "While it works, the page says what it is doing: reading its skills, watching the footage, building the video, working on the sound, checking, looking at frames, rendering, delivering. An edit takes about 20 minutes, and you can leave: it lands in History. \"Ask for a change\" edits the same project and comes back as the next cut.",
+      "First real run: your six clips with the brief \"Make shorts from this pile and make it that it hooks the viewer\". It returned three 9:16 shorts of about 15 s each: \"One face, six worlds\", \"She came for the ball\" and \"Watch her leave Earth\". It took 22 minutes and cost $2.78 ($2.77 for the sandbox and Opus, under a cent for the transcript). Weak spots: a 0.4 s black moment near the end of \"One face, six worlds\", and close-ups placed over a blurred fill show dark bands at the edges.",
+      "Still admins only and still free while it is tested. Each edit stops at $6. It stays hidden until two new Vercel settings are added (DIRECTORS_CUT_AGENT_ID and DIRECTORS_CUT_ENVIRONMENT_ID). The \"Auto\" shape needs supabase/pending/video-editor-auto-aspect.sql to run first.",
+    ],
+  },
+  {
     version: "1.99.0",
     build: 138,
     date: "2026-09-25",
