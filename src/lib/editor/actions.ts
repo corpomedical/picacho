@@ -24,11 +24,15 @@ import {
   EDIT_COLUMNS,
   MAX_BRIEF_CHARS,
   MAX_NOTE_CHARS,
+  notesFrom,
+  phaseOf,
   planUploads,
   type EditRow,
   type FileOffer,
+  type Note,
+  type Phase,
 } from "./job";
-import { ASPECTS, type Aspect } from "./plan";
+import { ASPECTS, type Aspect, type EditPlan } from "./plan";
 
 type Access = { error: string } | { error: null; userId: string };
 
@@ -198,6 +202,78 @@ export async function listEdits(): Promise<{ error: string | null; edits: EditSu
       summary: typeof r.plan?.summary === "string" ? r.plan.summary : null,
       resultUrl: r.generation_id ? results.get(r.generation_id) ?? null : null,
     })),
+  };
+}
+
+export type EditDetail = {
+  id: string;
+  stage: EditRow["stage"];
+  phase: Phase;
+  brief: string;
+  aspect: Aspect;
+  targetSeconds: number | null;
+  clips: { name: string; duration: number | null; hasVideo: boolean }[];
+  analyzed: number;
+  /** The cut as the page draws it — no source paths, no model internals. */
+  cut: {
+    summary: string;
+    look: EditPlan["look"];
+    captions: EditPlan["captions"];
+    shots: { clip: number; seconds: number; fit: "cover" | "contain" }[];
+    texts: { text: string; kind: string }[];
+    music: boolean;
+  } | null;
+  notes: Note[];
+  resultUrl: string | null;
+  error: string | null;
+  /** Which cut this is: 1, then 2 after a change, and so on. */
+  cutNumber: number;
+};
+
+/** One edit in full, for the bench. */
+export async function getEdit(editId: string): Promise<{ error: string | null; edit: EditDetail | null }> {
+  const access = await editorAccess();
+  if (access.error !== null) return { error: access.error, edit: null };
+  const row = await ownEdit(access.userId, editId);
+  if (!row) return { error: "That edit isn't yours or no longer exists.", edit: null };
+  let resultUrl: string | null = null;
+  if (row.generation_id) {
+    const { data } = await createAdminClient()
+      .from("generations")
+      .select("result_url")
+      .eq("id", row.generation_id)
+      .eq("user_id", access.userId)
+      .maybeSingle<{ result_url: string | null }>();
+    resultUrl = data?.result_url ?? null;
+  }
+  const notes = notesFrom(row.director);
+  const plan = row.plan;
+  return {
+    error: null,
+    edit: {
+      id: row.id,
+      stage: row.stage,
+      phase: phaseOf(row),
+      brief: row.brief,
+      aspect: row.aspect,
+      targetSeconds: row.target_seconds,
+      clips: row.clips.map((c) => ({ name: c.name, duration: c.probe?.duration ?? null, hasVideo: c.probe?.hasVideo ?? c.contentType.startsWith("video/") })),
+      analyzed: row.clips.filter((c) => c.analyzed).length,
+      cut: plan
+        ? {
+            summary: plan.summary,
+            look: plan.look,
+            captions: plan.captions,
+            shots: plan.shots.map((s) => ({ clip: s.clip, seconds: Math.round((s.to - s.from) * 100) / 100, fit: s.fit ?? "cover" })),
+            texts: plan.texts.map((t) => ({ text: t.text, kind: t.kind })),
+            music: plan.music !== null,
+          }
+        : null,
+      notes,
+      resultUrl,
+      error: row.error,
+      cutNumber: Math.max(1, notes.filter((n) => n.role === "you").length + 1),
+    },
   };
 }
 

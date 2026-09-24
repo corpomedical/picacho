@@ -288,6 +288,15 @@ html.screening.dark {
   }
 }
 
+/* Director's Cut's bench (2026-09-24): bin, monitor and notes side by side
+   need more than the 5xl content column. Keyed on the page's own marker, so
+   only that page widens, and only where the three columns sit in a row. */
+@media (min-width: 1024px) {
+  [data-app-content]:has(> [data-directors-cut]) {
+    max-width: 1440px;
+  }
+}
+
 /* ── The Console frame (operator-approved A material, 2026-09-22) ────────
    From md up, the dark Screening Room becomes two floating sheets — the
    sidebar and the scroll pane — on a deeper ground, with a 6px gutter and a

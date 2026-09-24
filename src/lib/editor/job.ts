@@ -179,6 +179,59 @@ export function progressLine(step: Step, row: Pick<EditRow, "clips" | "director"
   }
 }
 
+export type Note = { role: "editor" | "you"; text: string };
+
+/**
+ * The conversation as the page shows it, read back from the director's own
+ * turns: each cut's summary, and each change the customer asked for. The
+ * review turn repeats a summary, so within one cut only the last one counts.
+ */
+export function notesFrom(director: DirectorState | null): Note[] {
+  const notes: Note[] = [];
+  let pending: string | null = null;
+  for (const turn of director?.turns ?? []) {
+    if (turn.role === "user") {
+      const text = typeof turn.content === "string" ? turn.content : "";
+      const m = /<<<NOTE\n([\s\S]*?)\nNOTE>>>/.exec(text);
+      if (m) {
+        if (pending) notes.push({ role: "editor", text: pending });
+        pending = null;
+        notes.push({ role: "you", text: m[1] });
+      }
+      continue;
+    }
+    const blocks = Array.isArray(turn.content) ? turn.content : [];
+    for (const b of blocks) {
+      if (!b || typeof b !== "object" || (b as { type?: unknown }).type !== "text") continue;
+      try {
+        const summary = (JSON.parse(String((b as { text?: unknown }).text)) as { summary?: unknown }).summary;
+        if (typeof summary === "string" && summary.trim()) pending = summary.trim();
+      } catch {
+        // Not a plan — nothing to show.
+      }
+    }
+  }
+  if (pending) notes.push({ role: "editor", text: pending });
+  return notes;
+}
+
+/** Where a working edit is, as the page's step list reads it. */
+export type Phase = "reading" | "watching" | "cutting" | "checking" | "rendering" | "done" | "failed" | "uploading";
+
+export function phaseOf(row: Pick<EditRow, "stage" | "clips" | "director">): Phase {
+  switch (row.stage) {
+    case "analyzing":
+      return row.clips.some((c) => !c.probe) ? "reading" : "watching";
+    case "directing":
+      return row.director?.phase === "review" ? "checking" : "cutting";
+    case "bundling":
+    case "rendering":
+      return "rendering";
+    default:
+      return row.stage;
+  }
+}
+
 function shortName(name: unknown): string {
   const s = typeof name === "string" ? name.replace(/[\u0000-\u001f]/g, "").trim() : "";
   return (s || "clip").slice(0, 120);

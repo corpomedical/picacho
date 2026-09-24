@@ -1585,6 +1585,8 @@ export function GenerateForm(props: {
   /** The reliability pair for the phone's takes caption (below md the
       header is one line, so the stats ride the TAKES line instead). */
   phoneStats?: PhoneStats;
+  /** Director's Cut is open to this account (admins, video_editor on): the "+" menu offers it. */
+  directorsCutOn?: boolean;
 }) {
   return (
     <Suspense fallback={null}>
@@ -2062,6 +2064,7 @@ function GenerateFormInner({
   hasGeneratedBefore = true,
   screenHeader,
   phoneStats,
+  directorsCutOn = false,
 }: {
   characters: CharacterOption[];
   videoModels: VideoModelOption[];
@@ -2094,6 +2097,7 @@ function GenerateFormInner({
   hasGeneratedBefore?: boolean;
   screenHeader?: React.ReactNode;
   phoneStats?: PhoneStats;
+  directorsCutOn?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -9664,6 +9668,23 @@ function GenerateFormInner({
                         <VideoIcon className="h-4 w-4" />
                         {g.createVideo}
                       </button>
+                      {/* Director's Cut (2026-09-24): the third thing you can
+                          make — your own footage, edited. Opens its bench. */}
+                      {directorsCutOn && (
+                        <Link
+                          href="/app/edit"
+                          role="menuitem"
+                          onClick={() => setPlusMenuOpen(false)}
+                          className="flex w-full items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 py-2 text-left text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
+                        >
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <circle cx="6" cy="6" r="3" />
+                            <circle cx="6" cy="18" r="3" />
+                            <path d="M8.1 8.1 20 20M14.5 9.5 20 4M8.1 15.9l3.4-3.4" />
+                          </svg>
+                          {t.directorsCut.menuEntry}
+                        </Link>
+                      )}
                     </div>
                   )}
                 </div>

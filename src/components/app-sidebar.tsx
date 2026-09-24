@@ -221,6 +221,17 @@ function LiveIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function CutIcon(props: SVGProps<SVGSVGElement>) {
+  // Director's Cut: the editor's scissors.
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="6" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <path d="M8.1 8.1 20 20M14.5 9.5 20 4M8.1 15.9l3.4-3.4" />
+    </svg>
+  );
+}
+
 function MystiqueIcon(props: SVGProps<SVGSVGElement>) {
   // One performer becoming another: two heads sharing a line.
   return (
@@ -415,6 +426,7 @@ export function AppSidebar({
   recceVisible = false,
   mystiqueVisible = false,
   liveVisible = false,
+  cutVisible = false,
 }: {
   isAdmin: boolean;
   username: string;
@@ -433,6 +445,8 @@ export function AppSidebar({
   mystiqueVisible?: boolean;
   /** Live (H3 Max Director) — every paid plan, behind the live flag. */
   liveVisible?: boolean;
+  /** Director's Cut (the video editor) — admins only, behind the video_editor flag. */
+  cutVisible?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -922,6 +936,7 @@ export function AppSidebar({
           ...(recceVisible ? [{ href: "/app/recce", label: t.nav.recce, Icon: RecceIcon, badge: t.nav.newBadge }] : []),
           ...(mystiqueVisible ? [{ href: "/app/mystique", label: t.nav.mystique, Icon: MystiqueIcon, badge: t.nav.newBadge }] : []),
           ...(liveVisible ? [{ href: "/app/live", label: t.nav.live, Icon: LiveIcon, badge: t.nav.newBadge }] : []),
+          ...(cutVisible ? [{ href: "/app/edit", label: t.nav.directorsCut, Icon: CutIcon, badge: t.nav.newBadge }] : []),
           { href: "/app/upscale", label: t.nav.upscale, Icon: UpscaleIcon, badge: t.nav.newBadge },
           { href: "/app/layers", label: t.nav.layers, Icon: LayersIcon, badge: t.nav.newBadge },
         ].map((tool) => (

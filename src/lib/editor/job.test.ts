@@ -1,5 +1,41 @@
 import { describe, expect, it } from "vitest";
-import { footageProblem, nextStep, planUploads, type ClipRecord } from "./job";
+import { footageProblem, nextStep, notesFrom, phaseOf, planUploads, type ClipRecord } from "./job";
+import { newDirectorState, reviseDirector } from "./director";
+
+describe("the bench's read-back", () => {
+  const answer = (summary: string) => ({ role: "assistant" as const, content: [{ type: "text" as const, text: JSON.stringify({ summary }) }] });
+
+  it("shows each cut's last summary and each change asked for, in order", () => {
+    let state = newDirectorState();
+    state = {
+      ...state,
+      phase: "done",
+      turns: [answer("First try"), { role: "user", content: "Here is your cut as the viewer will hear it…" }, answer("Cut one, reviewed")],
+    };
+    state = reviseDirector(state, "Punchier start");
+    state = { ...state, turns: [...state.turns, answer("Cut two")] };
+    expect(notesFrom(state)).toEqual([
+      { role: "editor", text: "Cut one, reviewed" },
+      { role: "you", text: "Punchier start" },
+      { role: "editor", text: "Cut two" },
+    ]);
+    expect(notesFrom(null)).toEqual([]);
+  });
+
+  it("ends on the customer's note while the director is still working on it", () => {
+    const state = reviseDirector({ ...newDirectorState(), phase: "done", turns: [answer("Cut one")] }, "No captions");
+    expect(notesFrom(state).at(-1)).toEqual({ role: "you", text: "No captions" });
+  });
+
+  it("names the step the page shows", () => {
+    const clip = { probe: null } as ClipRecord;
+    expect(phaseOf({ stage: "analyzing", clips: [clip], director: null })).toBe("reading");
+    expect(phaseOf({ stage: "analyzing", clips: [{ ...clip, probe: { duration: 1, hasVideo: true, hasAudio: false, width: 1, height: 1, fps: 1 } }], director: null })).toBe("watching");
+    expect(phaseOf({ stage: "directing", clips: [], director: { ...newDirectorState(), phase: "review" } })).toBe("checking");
+    expect(phaseOf({ stage: "bundling", clips: [], director: null })).toBe("rendering");
+    expect(phaseOf({ stage: "done", clips: [], director: null })).toBe("done");
+  });
+});
 
 describe("job rules", () => {
   it("names upload paths the server chose, and refuses what it can't read", () => {

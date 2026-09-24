@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { getServerMessages } from "@/lib/i18n/server";
 import { isNativeApp } from "@/lib/native/server";
+import { isEditorEnabled } from "@/lib/editor/enabled";
 import { allowExternalPurchaseLink } from "@/lib/native/external-purchase";
 
 // No longer the constraint it used to be.
@@ -103,7 +104,10 @@ export default async function GeneratePage() {
     plan,
     bonusCredits,
     freeGenerationLastAt,
+    isAdmin,
   } = workspaceData;
+  // Director's Cut in the "+" menu: admins, behind its switch (the sidebar's rule).
+  const directorsCutOn = isAdmin && (await isEditorEnabled(supabase));
 
   // The composer walkthrough used to auto-start on /app, when the composer
   // lived there in hero mode. /app is a dashboard now, so the walkthrough's
@@ -255,6 +259,7 @@ export default async function GeneratePage() {
       <GenerateForm
         screenHeader={screenHeader}
         phoneStats={stats}
+        directorsCutOn={directorsCutOn}
         startOnboarding={onboardingProfile?.has_completed_onboarding !== true}
         characters={charactersForForm}
         videoModels={videoModels}

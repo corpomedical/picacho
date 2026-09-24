@@ -4,6 +4,7 @@ import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { isRecceEnabled, isSetsEnabled } from "@/lib/sets/enabled";
 import { isRecastEnabled } from "@/lib/recast/enabled";
 import { isLiveEnabled, isLiveOpenToPlans, liveAllowed } from "@/lib/live/enabled";
+import { isEditorEnabled } from "@/lib/editor/enabled";
 import { setsEligible } from "@/lib/sets/set-config";
 import { RatePrompt } from "@/components/rate-prompt";
 import { NativePush } from "@/components/native-push";
@@ -104,6 +105,9 @@ export default async function AppLayout({
     !liveAllowed(profile, true).error &&
     (isAdmin || (await isLiveOpenToPlans(supabase))) &&
     (await isLiveEnabled(supabase));
+  // Director's Cut (2026-09-24): admins only, behind the video_editor
+  // switch (lib/editor/enabled.ts). Admin first spares everyone the flag read.
+  const cutVisible = isAdmin && (await isEditorEnabled(supabase));
 
   // Ask for a rating only once someone has had enough successful results to
   // hold an opinion, and only once ever (rating_prompted_at is stamped by
@@ -149,6 +153,7 @@ export default async function AppLayout({
         recceVisible={recceVisible}
         mystiqueVisible={mystiqueVisible}
         liveVisible={liveVisible}
+        cutVisible={cutVisible}
       />
       {/* Registers this device for push, once there's a session to
           attach it to. No-ops entirely on the web. */}
@@ -163,7 +168,7 @@ export default async function AppLayout({
       <ScrollReset />
       {/* The Generate lamp offers Recast and Live to the accounts that can
           open them: the same gates as the sidebar's entries. */}
-      <NativeTabBar recastOn={mystiqueVisible} liveOn={liveVisible} />
+      <NativeTabBar recastOn={mystiqueVisible} liveOn={liveVisible} cutOn={cutVisible} />
       <NativeQuickPill
         shareUrl={profile?.username ? `https://picacho.ai/r/${profile.username}` : undefined}
       />

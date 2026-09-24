@@ -9,6 +9,7 @@ import { useLocale } from "@/lib/i18n/provider";
 import { cn } from "@/lib/cn";
 import {
   CONTENT_TYPE_EVENT,
+  DIRECTORS_CUT_HREF,
   GENERATE_HREF,
   GENERATE_VIDEO_HREF,
   LIVE_HREF,
@@ -142,6 +143,17 @@ function LiveIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+// Director's Cut's glyph: the editor's scissors.
+function CutIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="6" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <path d="M8.1 8.1 20 20M14.5 9.5 20 4M8.1 15.9l3.4-3.4" />
+    </svg>
+  );
+}
+
 // The lamp's filament: the Generate bolt, filled, behind the glass.
 function Lamp() {
   return (
@@ -164,12 +176,20 @@ const CLOSE_MS = 200;
 // How long a picked choice is held lit before the lamp goes out.
 const PICK_MS = 300;
 
-type Choice = "video" | "recast" | "live";
+type Choice = "video" | "recast" | "live" | "cut";
 
-const CHOICE_HREF: Record<Choice, string> = { video: GENERATE_VIDEO_HREF, recast: RECAST_HREF, live: LIVE_HREF };
+const CHOICE_HREF: Record<Choice, string> = { video: GENERATE_VIDEO_HREF, recast: RECAST_HREF, live: LIVE_HREF, cut: DIRECTORS_CUT_HREF };
 
-export function NativeTabBar({ recastOn = false, liveOn = false }: { recastOn?: boolean; liveOn?: boolean }) {
-  const hasChoices = recastOn || liveOn;
+export function NativeTabBar({
+  recastOn = false,
+  liveOn = false,
+  cutOn = false,
+}: {
+  recastOn?: boolean;
+  liveOn?: boolean;
+  cutOn?: boolean;
+}) {
+  const hasChoices = recastOn || liveOn || cutOn;
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useLocale();
@@ -389,6 +409,22 @@ export function NativeTabBar({ recastOn = false, liveOn = false }: { recastOn?: 
                   <span className="pj-txt">
                     <b>{t.nav.live}</b>
                     <span>{t.nav.liveSub}</span>
+                  </span>
+                </button>
+              )}
+              {cutOn && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={cn("pj-opt", picked === "cut" && "pj-picked")}
+                  onClick={() => choose("cut")}
+                >
+                  <span className="pj-ic">
+                    <CutIcon />
+                  </span>
+                  <span className="pj-txt">
+                    <b>{t.nav.directorsCut}</b>
+                    <span>{t.nav.directorsCutSub}</span>
                   </span>
                 </button>
               )}

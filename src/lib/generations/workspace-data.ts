@@ -124,6 +124,8 @@ export type GenerateWorkspaceData = {
   // profile, or an existing subscriber not yet backfilled with real Stripe
   // dates — the banner falls back to "resets on the 1st" in that case.
   currentPeriodEnd: string | null;
+  /** The account is an admin (doors still in testing, e.g. Director's Cut in the "+" menu). */
+  isAdmin: boolean;
 };
 
 // Shared by /app/page.tsx (the dashboard home, which now embeds the same
@@ -323,5 +325,6 @@ export async function getGenerateWorkspaceData(
     creditsLimit: planLimit,
     purchasedCredits: (profile?.purchased_credits ?? 0) as number,
     currentPeriodEnd: (profile?.current_period_end as string | null | undefined) ?? null,
+    isAdmin: isAdminUser,
   };
 }
