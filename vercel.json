@@ -17,6 +17,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/edits",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/prune",
       "schedule": "45 4 * * *"
     }
