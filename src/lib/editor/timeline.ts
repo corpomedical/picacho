@@ -100,6 +100,9 @@ export function readBack(plan: Pick<EditPlan, "shots">, transcripts: Transcripts
 
 export type CaptionLine = { start: number; end: number; words: PlacedWord[] };
 
+/** How many characters past maxChars a line may run to keep its last word. */
+const ORPHAN_ALLOWANCE = 10;
+
 /**
  * Group heard words into caption lines a viewer can read: a new line at a
  * shot change, at a pause, or when the line gets too long. Each line stays up
@@ -115,12 +118,20 @@ export function captionLines(words: PlacedWord[], opts: { maxChars: number; maxG
     lines.push({ start: current[0].start, end: current[current.length - 1].end, words: current });
     current = [];
   };
-  for (const w of words) {
+  // Would this word end its phrase (nothing after it in the same shot and breath)?
+  const endsPhrase = (i: number) => {
+    const next = words[i + 1];
+    return !next || next.shot !== words[i].shot || next.start - words[i].end > maxGap;
+  };
+  words.forEach((w, i) => {
     const prev = current[current.length - 1];
     const chars = current.reduce((n, x) => n + x.text.trim().length + 1, 0) + w.text.trim().length;
-    if (prev && (prev.shot !== w.shot || w.start - prev.end > maxGap || chars > opts.maxChars)) flush();
+    // A line may run a little long rather than leave one word alone on the
+    // next (first paid proof, 2026-09-24: "MAKE THE IMPOSSIBLE" / "REAL").
+    const tooLong = chars > opts.maxChars && !(endsPhrase(i) && chars <= opts.maxChars + ORPHAN_ALLOWANCE);
+    if (prev && (prev.shot !== w.shot || w.start - prev.end > maxGap || tooLong)) flush();
     current.push(w);
-  }
+  });
   flush();
   for (let i = 0; i < lines.length; i++) {
     const next = lines[i + 1];

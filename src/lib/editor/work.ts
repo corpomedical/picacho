@@ -21,6 +21,7 @@ import {
   parseSilences,
   probeArgs,
   segmentArgs,
+  fillArgs,
   type ProbeResult,
   type Silence,
 } from "./analyze";
@@ -28,6 +29,7 @@ import { compileComposition, type ShotMedia } from "./compile";
 import { canvasFor, planDuration, type EditPlan } from "./plan";
 import type { Transcripts } from "./timeline";
 import { buildZip, type ZipEntry } from "./zip";
+import { CompositionLintError, describeFindings, lintComposition } from "./lint";
 
 const execFileAsync = promisify(execFile);
 const ANALYZE_TIMEOUT_MS = 240_000;
@@ -135,7 +137,14 @@ export async function buildBundle(
       const seg = segmentArgs(clipFiles[shot.clip], out, { from: shot.from, to: shot.to, pad: SEGMENT_PAD, maxEdge, hasAudio });
       await ffmpeg(seg.args, SEGMENT_TIMEOUT_MS);
       shotMedia[i] = { src: name, mediaStart: seg.mediaStart, hasAudio };
-      entries[i] = { name, data: new Uint8Array(await readFile(out)) };
+      entries.push({ name, data: new Uint8Array(await readFile(out)) });
+      if (shot.fit === "contain") {
+        const fillName = `media/fill-${String(i).padStart(3, "0")}.mp4`;
+        const fillOut = path.join(dir, `fill-${i}.mp4`);
+        await ffmpeg(fillArgs(clipFiles[shot.clip], fillOut, { from: shot.from, to: shot.to, pad: SEGMENT_PAD }), SEGMENT_TIMEOUT_MS);
+        shotMedia[i].fillSrc = fillName;
+        entries.push({ name: fillName, data: new Uint8Array(await readFile(fillOut)) });
+      }
     });
     await runLimited(jobs, 2);
 
@@ -148,7 +157,14 @@ export async function buildBundle(
     }
 
     const html = compileComposition({ plan, transcripts, shotMedia, music });
-    const all: ZipEntry[] = [{ name: "index.html", data: new TextEncoder().encode(html) }, ...entries.filter(Boolean)];
+    const verdict = await lintComposition(html);
+    if (verdict.errors.length > 0) {
+      throw new CompositionLintError(`the composition failed HyperFrames' checks: ${describeFindings(verdict.errors)}`);
+    }
+    if (verdict.warnings.length > 0) console.warn(`[editor] composition warnings: ${describeFindings(verdict.warnings)}`);
+    // Sorted by name so the zip — and its checksum, HeyGen's idempotency key — is the same however the encodes finished.
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    const all: ZipEntry[] = [{ name: "index.html", data: new TextEncoder().encode(html) }, ...entries];
     return { zip: buildZip(all), html, files: all.map((e) => e.name) };
   });
 }

@@ -38,7 +38,16 @@ export type Shot = {
   transitionIn: Transition;
   /** Gain of the clip's own sound, 0..1. */
   volume: number;
+  /**
+   * "cover" fills the frame (cropping what does not fit); "contain" shows the
+   * whole source frame over a blurred fill of itself — for a shot whose
+   * burned-in text or wide composition a crop would cut (first paid proof,
+   * 2026-09-24: "SEEDANCE 2.0" cropped to "EDANCE 2" in a 9:16 cut).
+   */
+  fit: Fit;
 };
+
+export type Fit = "cover" | "contain";
 
 /** Words on screen. Times are OUTPUT seconds. */
 export type TextCard = {
@@ -82,6 +91,9 @@ export const CAPTION_STYLES: readonly CaptionStyle[] = ["off", "lines", "words"]
 export const TEXT_KINDS: readonly TextKind[] = ["title", "lower-third", "callout", "end-card"];
 
 export const MIN_SHOT_SECONDS = 0.4;
+/** Shortest time any words may stay on screen, and a title or end card. */
+export const MIN_TEXT_SECONDS = 0.8;
+export const MIN_CARD_SECONDS = 1.2;
 export const MAX_OUTPUT_SECONDS = 180;
 export const MAX_SHOTS = 200;
 export const MAX_TEXTS = 30;
@@ -120,7 +132,7 @@ export const EDIT_PLAN_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["clip", "from", "to", "zoom", "focusX", "focusY", "transitionIn", "volume"],
+        required: ["clip", "from", "to", "zoom", "focusX", "focusY", "transitionIn", "volume", "fit"],
         properties: {
           clip: { type: "integer" },
           from: { type: "number" },
@@ -130,6 +142,7 @@ export const EDIT_PLAN_SCHEMA = {
           focusY: { type: "number" },
           transitionIn: { type: "string", enum: ["cut", "fade"] },
           volume: { type: "number" },
+          fit: { type: "string", enum: ["cover", "contain"] },
         },
       },
     },
@@ -219,6 +232,7 @@ export function validatePlan(raw: unknown, clips: ClipInfo[]): PlanCheck {
       focusX: clamp(num(s.focusX, 0.5), 0, 1),
       focusY: clamp(num(s.focusY, 0.5), 0, 1),
       transitionIn: s.transitionIn === "fade" ? "fade" : "cut",
+      fit: s.fit === "contain" ? "contain" : "cover",
       volume: clamp(num(s.volume, 1), 0, 1),
     });
   });
@@ -246,11 +260,18 @@ export function validatePlan(raw: unknown, clips: ClipInfo[]): PlanCheck {
       return;
     }
     if (start + duration > total) duration = total - start;
-    if (duration < 0.5) {
-      errors.push(`Text card ${i + 1} ("${text}") is on screen for under half a second.`);
+    const kind = pick(t.kind, TEXT_KINDS, "callout");
+    // A title or end card has to be READ, not glimpsed (first paid proof,
+    // 2026-09-24: a 0.75 s "Picacho" end card that was gone before it landed).
+    const least = kind === "title" || kind === "end-card" ? MIN_CARD_SECONDS : MIN_TEXT_SECONDS;
+    if (duration < least) {
+      errors.push(
+        `Text card ${i + 1} ("${text}", ${kind}) is on screen for ${fmt(duration)} s; give it at least ${least} s — ` +
+          `start it earlier, or lengthen the shots under it.`,
+      );
       return;
     }
-    texts.push({ text, start: round3(start), duration: round3(duration), kind: pick(t.kind, TEXT_KINDS, "callout") });
+    texts.push({ text, start: round3(start), duration: round3(duration), kind });
   });
 
   let music: MusicBed | null = null;

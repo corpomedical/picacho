@@ -137,7 +137,7 @@ const plan = {
   aspect: "9:16" as const,
   look: "clean" as const,
   captions: "lines" as const,
-  shots: [{ clip: 0, from: 1, to: 5, zoom: 1, focusX: 0.5, focusY: 0.5, transitionIn: "cut" as const, volume: 1 }],
+  shots: [{ clip: 0, from: 1, to: 5, zoom: 1, focusX: 0.5, focusY: 0.5, transitionIn: "cut" as const, volume: 1, fit: "cover" as const }],
   texts: [],
   music: null,
 };

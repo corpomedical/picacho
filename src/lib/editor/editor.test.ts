@@ -27,7 +27,7 @@ const talk: ClipInfo = { duration: 30, hasVideo: true, hasAudio: true, width: 19
 const song: ClipInfo = { duration: 120, hasVideo: false, hasAudio: true, width: 0, height: 0 };
 
 function shot(over: Partial<Shot> = {}): Shot {
-  return { clip: 0, from: 0, to: 2, zoom: 1, focusX: 0.5, focusY: 0.5, transitionIn: "cut", volume: 1, ...over };
+  return { clip: 0, from: 0, to: 2, zoom: 1, focusX: 0.5, focusY: 0.5, transitionIn: "cut", volume: 1, fit: "cover", ...over };
 }
 
 function plan(over: Partial<EditPlan> = {}): EditPlan {
@@ -62,7 +62,7 @@ describe("validatePlan", () => {
   it("trims a text that overhangs the end, refuses one that starts after it", () => {
     const { plan: p, errors } = validatePlan(
       {
-        ...plan({ shots: [shot({ to: 4 })] }),
+        ...plan({ shots: [shot({ to: 5 })] }),
         texts: [
           { text: "Hello", start: 3, duration: 5, kind: "title" },
           { text: "Late", start: 9, duration: 1, kind: "callout" },
@@ -70,8 +70,28 @@ describe("validatePlan", () => {
       },
       [talk],
     );
-    expect(p.texts).toEqual([{ text: "Hello", start: 3, duration: 1, kind: "title" }]);
+    expect(p.texts).toEqual([{ text: "Hello", start: 3, duration: 2, kind: "title" }]);
     expect(errors.join(" ")).toContain("after the edit ends");
+  });
+
+  it("asks for a readable title or end card (the 0.75 s end card of the first paid proof)", () => {
+    const { errors } = validatePlan(
+      {
+        ...plan({ shots: [shot({ to: 19.2 })] }),
+        texts: [
+          { text: "Picacho", start: 18.45, duration: 0.75, kind: "end-card" },
+          { text: "Quick", start: 2, duration: 0.9, kind: "callout" },
+        ],
+      },
+      [talk],
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("give it at least 1.2 s");
+  });
+
+  it("keeps a shot's fit, cover unless it says contain", () => {
+    const { plan: p } = validatePlan({ ...plan(), shots: [shot({ fit: "contain" }), { ...shot(), fit: "stretch" }] }, [talk]);
+    expect(p.shots.map((s) => s.fit)).toEqual(["contain", "cover"]);
   });
 
   it("falls back to safe enums and needs a sounding clip for music", () => {
@@ -126,9 +146,24 @@ describe("timeline", () => {
 
   it("breaks caption lines at shot changes, pauses and length", () => {
     const placed = placeWords({ shots: [shot({ from: 0.9, to: 2.7 })] }, [words]);
-    const lines = captionLines(placed, { maxChars: 12 });
-    expect(lines.map((l) => l.words.map((w) => w.text).join(" "))).toEqual(["Hello there", "friends"]);
+    // "friends" ends the phrase: the line runs long rather than strand it.
+    expect(captionLines(placed, { maxChars: 12 }).map((l) => l.words.map((w) => w.text).join(" "))).toEqual(["Hello there friends"]);
+    // Mid-phrase it breaks at the limit; only the phrase's last word may run over.
+    const lines = captionLines(placed, { maxChars: 6 });
+    expect(lines.map((l) => l.words.map((w) => w.text).join(" "))).toEqual(["Hello", "there friends"]);
+    // Past the allowance even the last word goes to its own line.
+    expect(captionLines(placed, { maxChars: 2 }).map((l) => l.words.length)).toEqual([1, 1, 1]);
     expect(lines[0].end).toBeLessThanOrEqual(lines[1].start);
+    // A mid-phrase break is unchanged: "MAKE THE IMPOSSIBLE" / "REAL" becomes one line.
+    const make = placeWords({ shots: [shot({ from: 0, to: 3 })] }, [
+      [
+        { text: "Make", start: 0.1, end: 0.4 },
+        { text: "the", start: 0.45, end: 0.55 },
+        { text: "impossible", start: 0.6, end: 1.3 },
+        { text: "real", start: 1.35, end: 1.8 },
+      ],
+    ]);
+    expect(captionLines(make, { maxChars: 22 })).toHaveLength(1);
   });
 });
 
@@ -137,7 +172,7 @@ describe("compileComposition", () => {
     captions: "words",
     look: "bold",
     shots: [shot({ from: 0.9, to: 2.7, transitionIn: "fade" }), shot({ from: 10, to: 12, zoom: 1.2, focusX: 0.3 })],
-    texts: [{ text: `<script>alert("x")</script> & co`, start: 0, duration: 2, kind: "title" }],
+    texts: [{ text: `<script>alert("x")</script> & co`, start: 0, duration: 2, kind: "callout" }],
   });
   const media = [
     { src: "media/shot-000.mp4", mediaStart: 0.5, hasAudio: true },
@@ -172,16 +207,33 @@ describe("compileComposition", () => {
     expect(html).toContain(`tl.set("#c0w0", { color: "#ffe600" }, 0.1);`);
   });
 
-  it("marks silent shots silent instead of muted, and lays a music bed under the whole edit", () => {
+  it("mutes a silent shot, declares a sounding one, and lays a music bed under the whole edit", () => {
     const html = compileComposition({
       plan: { ...p, captions: "off", music: { clip: 1, from: 12, volume: 0.25 } },
       transcripts: [words],
       shotMedia: [media[0], { ...media[1], hasAudio: false }],
       music: { src: "media/music.m4a", mediaStart: 0 },
     });
-    expect(html).not.toContain(" muted");
-    expect(html).toMatch(/id="v1"[^>]*data-volume="0"/);
+    expect(html).toMatch(/id="v0"[^>]*data-has-audio="true" data-volume="1"/);
+    expect(html).toMatch(/id="v1"[^>]* muted/);
+    expect(html).not.toMatch(/id="v1"[^>]*data-has-audio/);
     expect(html).toContain(`<audio id="music" class="clip" src="media/music.m4a" data-start="0" data-duration="3.8" data-media-start="0" data-has-audio="true" data-volume="0.25"`);
+  });
+
+  it("draws a contain shot whole over a silent blurred fill of itself", () => {
+    const html = compileComposition({
+      plan: plan({ shots: [shot({ from: 0, to: 3, fit: "contain" })] }),
+      transcripts: [[]],
+      shotMedia: [{ ...media[0], fillSrc: "media/fill-000.mp4" }],
+      music: null,
+    });
+    const fill = html.indexOf(`id="b0" class="clip shot fill" src="media/fill-000.mp4"`);
+    const front = html.indexOf(`id="v0"`);
+    expect(fill).toBeGreaterThan(0);
+    expect(front).toBeGreaterThan(fill); // painted on top
+    expect(html).toMatch(/id="b0"[^>]* muted/);
+    expect(html).not.toMatch(/id="b0"[^>]*data-has-audio/);
+    expect(html).toMatch(/id="v0"[^>]*object-fit:contain/);
   });
 
   it("refuses mismatched media", () => {

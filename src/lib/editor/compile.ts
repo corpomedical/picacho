@@ -15,7 +15,8 @@
 import { canvasFor, planDuration, round3, type EditPlan, type Look, type TextKind } from "./plan";
 import { captionLines, placeWords, shotStarts, type Transcripts } from "./timeline";
 
-export type ShotMedia = { src: string; mediaStart: number; hasAudio: boolean };
+/** `fillSrc`: the baked blurred fill for a "contain" shot (analyze.ts fillArgs), same timing as `src`. */
+export type ShotMedia = { src: string; mediaStart: number; hasAudio: boolean; fillSrc?: string };
 export type MusicMedia = { src: string; mediaStart: number };
 
 export type CompileInput = {
@@ -111,13 +112,29 @@ export function compileComposition(input: CompileInput): string {
       `data-start="${starts[i]}"`,
       `data-duration="${len}"`,
       `data-media-start="${round3(media.mediaStart)}"`,
-      audible ? `data-has-audio="true"` : "",
-      `data-volume="${audible ? round3(shot.volume) : 0}"`,
+      // HyperFrames' rule: a clip either declares its sound or is muted.
+      audible ? `data-has-audio="true" data-volume="${round3(shot.volume)}"` : "muted",
       audible && shot.transitionIn === "fade" ? `data-fade-in="${AUDIO_FADE_SECONDS}"` : "",
       audible && next?.transitionIn === "fade" ? `data-fade-out="${AUDIO_FADE_SECONDS}"` : "",
-      `style="object-position:${pct(shot.focusX)} ${pct(shot.focusY)};transform:scale(${round3(shot.zoom)});transform-origin:${pct(shot.focusX)} ${pct(shot.focusY)}"`,
+      shot.fit === "contain"
+        ? `style="object-fit:contain;transform:scale(${round3(shot.zoom)});transform-origin:${pct(shot.focusX)} ${pct(shot.focusY)}"`
+        : `style="object-position:${pct(shot.focusX)} ${pct(shot.focusY)};transform:scale(${round3(shot.zoom)});transform-origin:${pct(shot.focusX)} ${pct(shot.focusY)}"`,
       "playsinline",
     ].filter(Boolean);
+    if (shot.fit === "contain" && media.fillSrc) {
+      // The fill: the same shot, silent, cropped to the frame and blurred
+      // (baked by work.ts), under the whole picture — the vertical-video
+      // answer to a wide shot.
+      body.push(
+        `      <video id="b${i}" class="clip shot fill" src="${attr(media.fillSrc)}" data-start="${starts[i]}" data-duration="${len}" data-media-start="${round3(media.mediaStart)}" muted playsinline></video>`,
+      );
+      if (shot.transitionIn === "fade") {
+        script.push(`tl.fromTo("#b${i}", { opacity: 0 }, { opacity: 1, duration: ${FADE_SECONDS}, ease: "none" }, ${starts[i]});`);
+      }
+      if (next?.transitionIn === "fade" && len > FADE_SECONDS * 2) {
+        script.push(`tl.to("#b${i}", { opacity: 0, duration: ${FADE_SECONDS}, ease: "none" }, ${round3(starts[i] + len - FADE_SECONDS)});`);
+      }
+    }
     body.push(`      <video ${attrs.join(" ")}></video>`);
     if (shot.transitionIn === "fade") {
       script.push(`tl.fromTo("#v${i}", { opacity: 0 }, { opacity: 1, duration: ${FADE_SECONDS}, ease: "none" }, ${starts[i]});`);
@@ -141,9 +158,15 @@ export function compileComposition(input: CompileInput): string {
   if (plan.captions !== "off") {
     const words = placeWords(plan, transcripts);
     const maxChars = portrait ? 22 : plan.look === "bold" ? 26 : 38;
-    captionLines(words, { maxChars }).forEach((line, li) => {
+    // Captions give way to a full-frame card: no line starts under a title or
+    // end card, and a line running into one ends when it appears (first paid
+    // proof, 2026-09-24: "NOW IMAGINE YOURS" showing through the end card).
+    const cards = plan.texts.filter((t) => t.kind === "title" || t.kind === "end-card");
+    const underCard = (t: number) => cards.some((c) => t >= c.start && t < c.start + c.duration);
+    captionLines(words.filter((w) => !underCard(w.start)), { maxChars }).forEach((line, li) => {
       const start = round3(line.start);
-      const end = Math.min(line.end, total);
+      const nextCard = cards.map((c) => c.start).filter((s) => s > start).sort((a, b) => a - b)[0];
+      const end = Math.min(line.end, total, nextCard ?? Infinity);
       if (end - start < 0.1) return;
       const spans = line.words
         .map((w, wi) => `<span id="c${li}w${wi}">${escapeHtml(look.upper ? w.text.trim().toUpperCase() : w.text.trim())}</span>`)
@@ -175,6 +198,7 @@ export function compileComposition(input: CompileInput): string {
       html, body { width: ${width}px; height: ${height}px; overflow: hidden; background: #000; }
       #root { position: relative; width: 100%; height: 100%; overflow: hidden; font-family: "${look.font}", ui-sans-serif, system-ui, sans-serif; }
       .shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .shot.fill { transform: scale(1.08); }
       .bar { position: absolute; left: 0; right: 0; height: 10%; background: #000; z-index: 5; }
       .bar.top { top: 0; } .bar.bottom { bottom: 0; }
       .cap { position: absolute; left: 6%; right: 6%; bottom: ${captionBottom}; z-index: 10; text-align: center; color: #fff; font-size: ${px(look.captionSize)}; font-weight: ${look.captionWeight}; line-height: 1.2; }

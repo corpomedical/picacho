@@ -181,6 +181,26 @@ export function segmentArgs(
   return { args, mediaStart: Math.round((opts.from - start) * 1000) / 1000 };
 }
 
+/**
+ * The blurred fill behind a "contain" shot, baked here rather than blurred by
+ * the renderer on every frame: the same stretch as segmentArgs (same handles,
+ * so the same mediaStart lines it up), small, dimmed, silent. A separate file
+ * also keeps HyperFrames from finding two identical media nodes (its linter's
+ * duplicate_media_discovery_risk, 2026-09-24).
+ */
+export function fillArgs(input: string, output: string, opts: { from: number; to: number; pad: number }): string[] {
+  const start = Math.max(0, opts.from - opts.pad);
+  const length = opts.to + opts.pad - start;
+  return [
+    "-hide_banner", "-nostats", "-y",
+    "-ss", start.toFixed(3), "-i", input, "-t", length.toFixed(3),
+    "-map", "0:v:0", "-an",
+    "-vf", "scale=-2:360,boxblur=luma_radius=18:luma_power=2,eq=brightness=-0.22,format=yuv420p",
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "30", "-g", "30",
+    "-movflags", "+faststart", output,
+  ];
+}
+
 /** The music bed, trimmed to what the edit uses (plus a tail for the fade). */
 export function musicArgs(input: string, output: string, opts: { from: number; length: number }): string[] {
   return [
