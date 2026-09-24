@@ -119,6 +119,12 @@ export function DirectorsCut({ initialEdits, initialDetail = null }: { initialEd
   // B: the bench.
   return (
     <div data-directors-cut className="scroll-mt-4 text-[#c6c9d1]">
+      {/* The bench's three columns need more than the app's 5xl content
+          column: from lg up, only this page's column widens (keyed on its own
+          marker, as Generate's is). Here rather than in globals.css so the
+          page carries its own rule; the CSP allows inline style, as the
+          app layout's font variables use. */}
+      <style>{`@media (min-width:1024px){[data-app-content]:has(> [data-directors-cut]){max-width:1440px}}`}</style>
       <div className="mb-5 px-1">{header(false)}</div>
       <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)_320px]">
         <section aria-label={d.bin} className="order-4 flex flex-col gap-4 rounded-[20px] bg-[#0b0c10] p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.08)] lg:order-1">
