@@ -315,6 +315,27 @@ export function onDailyFreeTier(
   return (plan ?? "none") === "none" && (bonusCredits ?? 0) === 0;
 }
 
+// THE spendable balance, in one place: what is left of the plan's monthly
+// allowance (floored at zero, since balance-funded sends carry `used` past
+// it), plus the two depleting balances, bonus and purchased. It is the
+// largest request checkGenerationAllowance (core.ts) accepts, and every
+// surface that says "N credits left" or decides whether a send is
+// affordable reads it from here. When bonus left the ceiling on 2026-09-23
+// (2f5165d), nine hand-written copies of this sum were updated and the
+// composer's was missed: live on 2026-09-25 a Starter account with 30
+// bonus credits was told "you have 5" under a header reading 35, and the
+// scene Render button locked, while the server accepted the send.
+// `monthlyLimit` is the plan's allowance alone, already zero while
+// plan_status says the subscription lapsed.
+export function spendableCredits(balance: {
+  monthlyLimit: number;
+  used: number;
+  bonus: number;
+  purchased: number;
+}): number {
+  return Math.max(0, balance.monthlyLimit - balance.used) + balance.bonus + balance.purchased;
+}
+
 // Start & end frames and multi-image reference are Studio-and-up — moved
 // down from Elite-only on 2026-08-12 so Studio has a capability difference,
 // not just a bigger quota — and admins pass. One rule for the server's gate

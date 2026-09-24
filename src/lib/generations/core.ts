@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/server";
 import { mediaUrl } from "@/lib/media/url";
 import { faststartRemux } from "@/lib/media/faststart";
-import { PLAN_LABELS, PLAN_LIMITS, onDailyFreeTier, freeSlotOpen, type PlanId } from "@/lib/plans";
+import { PLAN_LABELS, PLAN_LIMITS, onDailyFreeTier, freeSlotOpen, spendableCredits, type PlanId } from "@/lib/plans";
 import { FREE_TIER_GENERATION_CREDITS } from "@/lib/generations/providers/video-models";
 
 // Generation credits, and where a generated image is written.
@@ -355,7 +355,7 @@ export async function checkGenerationAllowance(
     // What is actually spendable: the plan's remainder plus both balances.
     // Quoting `limit - used` alone would understate it by whatever bonus and
     // purchased credits are still sitting on the account.
-    const remaining = Math.max(limit - used, 0) + bonus + purchased;
+    const remaining = spendableCredits({ monthlyLimit: limit, used, bonus, purchased });
     // What this month actually gave them, for the "you've used all N" line.
     // On a plan that is the plan's allowance. With no plan every credit came
     // from a balance, and the balances deplete, so the granted total is no

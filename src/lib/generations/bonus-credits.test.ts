@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { PLAN_LIMITS } from "../plans";
+import { PLAN_LIMITS, spendableCredits } from "../plans";
 
 // Bonus credits are a DEPLETING BALANCE (2026-09-23).
 //
@@ -136,4 +136,60 @@ describe("bonus credits are a balance, not a wider monthly allowance", () => {
     expect(out.error).toBeNull();
     expect(out.consumeBonus ?? 0).toBe(0);
   });
+});
+
+describe("the balance the composer shows is the balance the gate spends", () => {
+  // The composer's creditsAvailable (and the header, dashboard and low-credit
+  // push beside it) is spendableCredits; truth-contracts.test.ts pins that
+  // they call it. This pins spendableCredits against the GATE ITSELF: it must
+  // be exactly the largest request checkGenerationAllowance accepts. One
+  // credit more is refused, and the refusal quotes the same number.
+  const cases: { name: string; profile: Profile; used: number; expected: number }[] = [
+    {
+      // Live 2026-09-25: header 35, composer banner "you have 5 — Add 20
+      // credits" over an 11-credit Seedance send the server then accepted.
+      name: "REGRESSION: Starter with 5 plan credits left and a 30-credit grant",
+      profile: { plan: "starter", bonus_credits: 30 },
+      used: PLAN_LIMITS.starter - 5,
+      expected: 35,
+    },
+    {
+      name: "past the plan line: the remainder floors at zero, both balances still count",
+      profile: { plan: "starter", bonus_credits: 4, purchased_credits: 3 },
+      used: PLAN_LIMITS.starter + 10,
+      expected: 7,
+    },
+    {
+      name: "a lapsed subscription: no plan credits, the grant and the pack remain",
+      profile: { plan: "growth", plan_status: "past_due", bonus_credits: 5, purchased_credits: 2 },
+      used: 0,
+      expected: 7,
+    },
+    {
+      name: "a comped reviewer with no plan lives on the grant alone",
+      profile: { plan: "none", bonus_credits: 12 },
+      used: 3,
+      expected: 12,
+    },
+  ];
+
+  for (const c of cases) {
+    it(c.name, async () => {
+      const shown = spendableCredits({
+        monthlyLimit: c.profile.plan_status ? 0 : PLAN_LIMITS[c.profile.plan as keyof typeof PLAN_LIMITS],
+        used: c.used,
+        bonus: c.profile.bonus_credits ?? 0,
+        purchased: c.profile.purchased_credits ?? 0,
+      });
+      expect(shown).toBe(c.expected);
+
+      const all = await ask(c.profile, c.used, shown);
+      expect(all.error).toBeNull();
+
+      const oneMore = await ask(c.profile, c.used, shown + 1);
+      expect(oneMore.error).toBeTruthy();
+      // A lapsed plan's refusal names the payment instead of a number.
+      if (!c.profile.plan_status) expect(oneMore.error).toContain(`only have ${shown} left`);
+    });
+  }
 });

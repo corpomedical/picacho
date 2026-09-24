@@ -3,7 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getReliabilityStats, reapAbandonedGenerations } from "@/lib/generations/actions";
 import { getGenerateWorkspaceData } from "@/lib/generations/workspace-data";
-import { onDailyFreeTier, freeSlotOpen } from "@/lib/plans";
+import { onDailyFreeTier, freeSlotOpen, spendableCredits } from "@/lib/plans";
 import { GenerateForm } from "@/components/generate-form";
 import { TranscriptToggle } from "@/components/transcript-toggle";
 import { Card } from "@/components/ui/card";
@@ -184,9 +184,15 @@ export default async function GeneratePage() {
     );
   }
 
-  // Plan remainder + both depleting balances — the same sum the spend gate
-  // makes (checkGenerationAllowance), so the quote and the server agree.
-  const creditsNow = Math.max(0, creditsLimit - creditsUsed) + bonusCredits + purchasedCredits;
+  // Plan remainder + both depleting balances — the same call the spend gate
+  // makes (checkGenerationAllowance), and the composer's creditsAvailable,
+  // so the header, the quote and the server agree.
+  const creditsNow = spendableCredits({
+    monthlyLimit: creditsLimit,
+    used: creditsUsed,
+    bonus: bonusCredits,
+    purchased: purchasedCredits,
+  });
   // Reader mode: no purchase entry points in the iOS/Android shell (Apple
   // 3.1.1 / Play payments policy — see lib/native/platform.ts). This CTA was
   // added with the repricing work, after the original native-gating pass,
@@ -278,6 +284,7 @@ export default async function GeneratePage() {
         chatSmarterAvailable={chatSmarterAvailable}
         creditsUsed={creditsUsed}
         creditsLimit={creditsLimit}
+        bonusCredits={bonusCredits}
         purchasedCredits={purchasedCredits}
         currentPeriodEnd={currentPeriodEnd}
         allowExternalPurchase={allowExternalPurchase}

@@ -297,6 +297,33 @@ describe("the price quoted and the price charged come from the same function", (
     expect(client).not.toMatch(/storyboardTotalSeconds \* 0\.5/);
   });
 });
+describe("the balance shown and the balance spent come from the same function", () => {
+  // spendableCredits (plans.ts) is the largest request checkGenerationAllowance
+  // accepts; bonus-credits.test.ts pins that against the gate itself. When
+  // bonus left the ceiling on 2026-09-23, nine hand-written copies of the sum
+  // were updated and the composer's was missed — live on 2026-09-25 it told a
+  // 35-credit account "you have 5" and locked the scene Render button. Every
+  // surface that shows a balance or decides affordability now calls the one
+  // function, and these pins fail the commit that writes the sum by hand again.
+  const surfaces: [string, string][] = [
+    ["the composer", "../../components/generate-form.tsx"],
+    ["the generate page header", "../../app/app/generate/page.tsx"],
+    ["the low-credit push", "../push/low-credits.ts"],
+    ["the spend gate's refusal", "./core.ts"],
+  ];
+  for (const [name, path] of surfaces) {
+    it(`${name} reads the balance from spendableCredits`, () => {
+      expect(src(path)).toContain("spendableCredits({");
+    });
+  }
+
+  it("the composer counts the bonus balance, and the page hands it in", () => {
+    expect(src("../../components/generate-form.tsx")).toMatch(
+      /const creditsAvailable = spendableCredits\(\{[^}]*\bbonus: bonusCredits,/,
+    );
+    expect(src("../../app/app/generate/page.tsx")).toContain("bonusCredits={bonusCredits}");
+  });
+});
 describe("localized server strings still match what the server says", () => {
   // localizeServerText maps EXACT English wire strings to catalog entries.
   // If a server message is reworded without updating the map, the localized

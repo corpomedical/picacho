@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { getMonthlyUsageWith, monthlyWindowStart } from "@/lib/generations/core";
-import { PLAN_LIMITS, type PlanId } from "@/lib/plans";
+import { PLAN_LIMITS, spendableCredits, type PlanId } from "@/lib/plans";
 import { notifyUser } from "@/lib/push/send";
 
 // The low-balance alert (settings survey, 2026-09-11): running dry used to
@@ -42,8 +42,12 @@ export async function maybeNotifyLowCredits(userId: string): Promise<void> {
     if (limit <= 0 && bonus <= 0 && (profile.purchased_credits ?? 0) <= 0) return;
 
     const used = await getMonthlyUsageWith(admin, userId, profile.current_period_start as string | null);
-    const remaining =
-      Math.max(0, limit - used) + bonus + ((profile.purchased_credits ?? 0) as number);
+    const remaining = spendableCredits({
+      monthlyLimit: limit,
+      used,
+      bonus,
+      purchased: (profile.purchased_credits ?? 0) as number,
+    });
     if (remaining > THRESHOLD) return;
 
     // Once per MONTHLY WINDOW — the same window the usage sum counts from.

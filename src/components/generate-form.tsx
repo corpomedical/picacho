@@ -100,7 +100,7 @@ import {
 } from "@/lib/generations/pipeline";
 import { ANGLE_PRESETS, DEFAULT_ANGLE_IDS, getAnglePreset, type AngleId } from "@/lib/generations/angles";
 import { type ScenePlan } from "@/lib/generations/scene-plan";
-import { FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
+import { FREE_TIER_VIDEO_MODEL_ID, spendableCredits } from "@/lib/plans";
 import type { VideoDurationOption } from "@/lib/generations/providers/video-models";
 import { FEATURED_VIDEO_MODEL_IDS, getVideoModel } from "@/lib/generations/providers/video-models";
 import { getImageModel, selectableImageModels } from "@/lib/generations/providers/image-models";
@@ -1555,6 +1555,9 @@ export function GenerateForm(props: {
   // specifics ("12 of 15 used") instead of just a plain warning.
   creditsUsed: number;
   creditsLimit: number;
+  // The grant balance (admin/promo). Spent before purchased credits and
+  // part of what the account can afford — see spendableCredits (plans.ts).
+  bonusCredits: number;
   purchasedCredits: number;
   // ISO string, or null for a "none"-plan/bonus-only account, or an
   // existing subscriber whose profile hasn't been backfilled with real
@@ -2054,6 +2057,7 @@ function GenerateFormInner({
   chatSmarterAvailable = false,
   creditsUsed,
   creditsLimit,
+  bonusCredits,
   purchasedCredits,
   currentPeriodEnd,
   allowExternalPurchase = false,
@@ -2082,6 +2086,7 @@ function GenerateFormInner({
   chatSmarterAvailable?: boolean;
   creditsUsed: number;
   creditsLimit: number;
+  bonusCredits: number;
   purchasedCredits: number;
   currentPeriodEnd: string | null;
   allowExternalPurchase?: boolean;
@@ -2835,7 +2840,17 @@ function GenerateFormInner({
   // character's own saved photo with no extra form field needed.
   const [panelUploads, setPanelUploads] = useState<{ path: string; url: string }[]>([]);
 
-  const creditsAvailable = Math.max(0, creditsLimit - creditsUsed) + purchasedCredits;
+  // The server's own balance (spendableCredits, the same call
+  // checkGenerationAllowance refuses with). Bonus was missing here after it
+  // left the ceiling on 2026-09-23: a Starter account holding 30 bonus
+  // credits read "you have 5 — Add 20 credits" under a header saying 35,
+  // with the scene Render button locked, while the server took the send.
+  const creditsAvailable = spendableCredits({
+    monthlyLimit: creditsLimit,
+    used: creditsUsed,
+    bonus: bonusCredits,
+    purchased: purchasedCredits,
+  });
   // What THIS SEND actually costs now comes from quoteSend, just below the
   // dialogue state it reads — one pure function shared with the server's
   // charge paths, so the surcharge conditions the misquote incidents each
@@ -2870,7 +2885,7 @@ function GenerateFormInner({
   // options above); only shown once the selected character has a voice
   // assigned in Character settings.
   const [dialogueText, setDialogueText] = useState("");
-  // The quote (see the note above creditsAvailable). Inputs are what will
+  // The quote (see the note below creditsAvailable). Inputs are what will
   // actually be SENT, never lingering picker state: multiref picks ride only
   // in multiref mode, frames only in storyboard mode (the 2026-08-31
   // misquote), and a staged scene is the larger fan-out — up to six renders
@@ -8080,8 +8095,12 @@ function GenerateFormInner({
             kind={contentType === "image" ? "image" : "video"}
             // A free-plan account (no monthly allowance) whose daily slot is
             // spent: creditsLimit stays 0 only off-plan, and dailyFreeAvailable
-            // is the server's own answer about today's slot.
-            freeReturnsTomorrow={creditsLimit === 0 && !dailyFreeAvailable}
+            // is the server's own answer about today's slot. A bonus balance
+            // takes an account off the daily lane (onDailyFreeTier), and
+            // since 2026-09-23 creditsLimit no longer carries it, so it is
+            // asked for by name — else a plan-less grant holder short of a
+            // send is promised a free render that is not coming.
+            freeReturnsTomorrow={creditsLimit === 0 && bonusCredits === 0 && !dailyFreeAvailable}
           />
         ) : approachingLimit && !isHero ? (
           <UsageBanner used={creditsUsed} limit={creditsLimit} currentPeriodEnd={currentPeriodEnd} g={g} />

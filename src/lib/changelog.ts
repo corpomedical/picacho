@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.96.0",
+    build: 135,
+    date: "2026-09-25",
+    title: "The composer counts bonus credits again",
+    items: [
+      "Fixed a false \"not enough credits\" warning for accounts that hold bonus credits. On your Starter account with a 30-credit grant, the Generate header said 35 credits left, but the composer said \"Seedance 2.0 at 10s needs 11 credits, you have 5\" and offered to sell you 20. The server spent the bonus credits and made the render anyway, so only the warning was wrong. The composer had not counted bonus credits since they became a balance that runs down (2026-09-23), and every other screen already did.",
+      "What the fix changes for anyone with a grant (comped reviewers, promo grants): no false \"Add credits\" warning, the scene plan's Render button works again (it was locked), and the credit number in the phone header matches the desktop one. I checked it on the real composer with your numbers (Starter, 25 used, 30 bonus, Seedance 2.0 at 10s): 35 credits left and no warning. With the grant removed, the same composer still warns with the true 5.",
+      "A plan-less account that still has bonus credits is no longer told \"your free render comes back tomorrow\". Holding a grant takes an account off the daily free render, so that promise was wrong for them.",
+      "Every screen that shows credits left or decides whether you can afford a send now uses the same function as the server check: the composer, the Generate header, the low-credit alert and the server's refusal message. (The dashboard's number was already right and is being reworked in another change, so it was left as it is.) A new test checks that number against the real server check, one credit over and exactly on the line.",
+    ],
+  },
+  {
     version: "1.95.0",
     build: 134,
     date: "2026-09-25",
