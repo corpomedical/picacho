@@ -12,7 +12,8 @@ import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { saveSetLayout, saveSetThumbnail, shootInSet, takeInSet } from "@/lib/sets/actions";
 import { addElementPhoto, assignElementPhoto, prepareElementSheets, removeElementPhoto, settleElementPhotos } from "@/lib/sets/element-actions";
 import { thumbUrl } from "@/lib/media/url";
-import { editSetWithAstra, saveSetEdit } from "@/lib/sets/editor-actions";
+import { editSetWithAstra, rebuildThingFromPhotos, saveSetEdit } from "@/lib/sets/editor-actions";
+import { THING_REBUILD_OPEN_TO_ALL } from "@/lib/sets/thing-rebuild";
 import { matchSetShot } from "@/lib/sets/match-actions";
 import { readShotWords } from "@/lib/sets/words-actions";
 import { STAND_IN_EYE_M, fovForLens, nearestLens, type StageQuality } from "@/lib/sets/build-scene";
@@ -694,6 +695,9 @@ export function SetView({
   // An Astra edit of the set itself, asked from the conversation: in
   // flight, and what the last one touched (said once, until the next turn).
   const [editingSet, setEditingSet] = useState(false);
+  /** A thing Astra is rebuilding from its photos (thing-rebuild.ts), and what the last rebuild said, on its card. */
+  const [rebuilding, setRebuilding] = useState<string | null>(null);
+  const [rebuildNote, setRebuildNote] = useState<{ key: string; text: string; ok: boolean; from?: string } | null>(null);
   const [setChanged, setSetChanged] = useState<number | null>(null);
   // The conversation panel floats over the stage and can fold away.
   const [chatOpen, setChatOpen] = useState(true);
@@ -4168,6 +4172,21 @@ export function SetView({
               }
             : null
         }
+        rebuild={
+          thingKey && (THING_REBUILD_OPEN_TO_ALL || modelsOn) && !filmOpen && !cutOpen
+            ? {
+                photos: h?.photos.length ?? 0,
+                working: rebuilding === thingKey,
+                held: rebuilding !== null || editingSet || reading || shooting || !ready,
+                note: rebuildNote && rebuildNote.key === thingKey ? { text: rebuildNote.text, ok: rebuildNote.ok } : null,
+                onUndo:
+                  rebuildNote && rebuildNote.key === thingKey && rebuildNote.ok && rebuildNote.from && setChanged !== null
+                    ? () => void undoRebuild(thingKey, rebuildNote.from!)
+                    : null,
+                onRebuild: () => void rebuildThing(thingKey),
+              }
+            : null
+        }
         drive={
           thingKey && filmOpen && filmSel !== null && !filmBusy && !previz
             ? {
@@ -5577,6 +5596,65 @@ export function SetView({
     drawSet(res.spec);
     setSetChanged(res.changed);
     refreshThumbnail(res.spec);
+  }
+
+  /**
+   * A thing's blocks rebuilt by Astra from its photos (editor-actions.ts
+   * rebuildThingFromPhotos): the set comes back with the new blocks where
+   * the old ones stood, under a new key — the card, the list's order and a
+   * model on it follow — and the changed line's Undo brings the old ones
+   * back, as after any Astra edit.
+   */
+  async function rebuildThing(key: string) {
+    if (busyRef.current.editing || editingSet || reading || shooting) return;
+    busyRef.current.editing = true;
+    setEditingSet(true);
+    setRebuilding(key);
+    setRebuildNote(null);
+    const before = spec;
+    let res: Awaited<ReturnType<typeof rebuildThingFromPhotos>>;
+    try {
+      res = await rebuildThingFromPhotos(setId, key);
+    } catch (err) {
+      if (!leftBehind(err)) setRebuildNote({ key, text: t.generate.submitFailed, ok: false });
+      return;
+    } finally {
+      busyRef.current.editing = false;
+      setEditingSet(false);
+      setRebuilding(null);
+    }
+    if (res.error !== null) {
+      setRebuildNote({ key, text: localizeServerText(res.error, t), ok: false });
+      return;
+    }
+    const to = res.key;
+    specBeforeEditRef.current = before;
+    setSpec(res.spec);
+    drawSet(res.spec);
+    setSetChanged(res.changed);
+    refreshThumbnail(res.spec);
+    moveThingKey(key, to);
+    setRebuildNote({ key: to, text: formatMsg(cast.rebuildDone, { n: res.blocks }), ok: true, from: key });
+  }
+
+  /** The card, the list's order and a model on the thing follow it to the key its new blocks gave it. */
+  function moveThingKey(from: string, to: string) {
+    setElementCard((c) => (c && c.key === from ? { ...c, key: to } : c));
+    setThingModels((prev) => prev.map((m) => (m.key === from ? { ...m, key: to } : m)));
+    if (elementOrder.includes(from)) {
+      const order = elementOrder.map((k) => (k === from ? to : k));
+      layoutRef.current = { ...layoutRef.current, elementOrder: order };
+      setElementOrder(order);
+      scheduleSave();
+    }
+  }
+
+  /** The card's Undo of a rebuild: the changed line's Undo, and the card goes back to the thing's old key. */
+  async function undoRebuild(to: string, from: string) {
+    await undoSetEdit();
+    if (specBeforeEditRef.current !== null) return;
+    moveThingKey(to, from);
+    setRebuildNote(null);
   }
 
   /**

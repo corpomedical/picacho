@@ -37,6 +37,11 @@ let answer: { state: "done"; text: string; usage: null; costUsd: number } | { st
 const steps: string[] = [];
 const limits: { scope: string; windowSeconds: number; max: number }[] = [];
 const writes: unknown[] = [];
+/** The rebuild's side: the thing's photos, the model files, what storage was asked, what Astra was sent. */
+let photos: { refId: string; anchor: string | null; slot: 1 | 2 | 3 | 4 | null; at: number; url: string; path: string }[];
+let modelFiles: { path: string; key: string; at: number; flip: boolean }[];
+const storage: string[] = [];
+const sent: { input: unknown; instructions: string }[] = [];
 
 vi.mock("@/lib/supabase/server", () => ({
   createAdminClient: () => ({
@@ -57,6 +62,18 @@ vi.mock("@/lib/supabase/server", () => ({
         },
       };
       return builder;
+    },
+    storage: {
+      from: (bucket: string) => ({
+        download: async (path: string) => {
+          storage.push(`download ${bucket} ${path}`);
+          return { data: new Blob([new Uint8Array([0xff, 0xd8, 0xff])]), error: null };
+        },
+        move: async (from: string, to: string) => {
+          storage.push(`move ${bucket} ${from} → ${to}`);
+          return { error: null };
+        },
+      }),
     },
   }),
 }));
@@ -88,7 +105,8 @@ vi.mock("@/lib/generations/policy-log", () => ({
   recordPolicyRefusal: async () => {},
 }));
 vi.mock("@/lib/generations/providers/astra", () => ({
-  submitAstraJob: async () => {
+  submitAstraJob: async (req: { input: unknown; instructions: string }) => {
+    sent.push(req);
     steps.push("astra");
     return { ok: true, responseId: "resp_1" };
   },
@@ -111,8 +129,16 @@ vi.mock("@/lib/sets/messages", async () => await import("./messages"));
 vi.mock("@/lib/sets/set-edit-prompt", async () => await import("./set-edit-prompt"));
 vi.mock("@/lib/sets/set-config", async () => await import("./set-config"));
 vi.mock("@/lib/sets/set-spec", async () => await import("./set-spec"));
+vi.mock("@/lib/sets/elements", async () => await import("./elements"));
+vi.mock("@/lib/sets/thing-rebuild", async () => await import("./thing-rebuild"));
+vi.mock("@/lib/sets/thing-model", async () => await import("./thing-model"));
+vi.mock("@/lib/sets/references", () => ({ listElementPhotos: async () => ({ photos, sheets: [] }) }));
+vi.mock("@/lib/sets/thing-model-store", () => ({ listModelFiles: async () => modelFiles }));
 
-import { editSetWithAstra } from "./editor-actions";
+import { editSetWithAstra, rebuildThingFromPhotos } from "./editor-actions";
+import { setElements } from "./elements";
+import { thingLocalBlocks } from "./thing-rebuild";
+import { THING_REBUILD_ADMINS_ONLY, THING_REBUILD_DIDNT_FIT, THING_REBUILD_NO_PHOTOS } from "./messages";
 
 const recoloured = (): string => JSON.stringify({ ...SPEC, objects: SPEC.objects.map((o, i) => (i === 0 ? { ...o, color: "#aa3322" } : o)) });
 
@@ -125,6 +151,10 @@ beforeEach(() => {
   steps.length = 0;
   limits.length = 0;
   writes.length = 0;
+  photos = [];
+  modelFiles = [];
+  storage.length = 0;
+  sent.length = 0;
 });
 
 describe("an Astra change", () => {
@@ -186,6 +216,65 @@ describe("an Astra change", () => {
     used = null;
     const unread = await editSetWithAstra(SET, "make the first barrier brick red");
     expect(unread).toEqual({ error: SET_EDIT_FAILED, editsLeft: null });
+  });
+});
+
+// A thing rebuilt from its photos (thing-rebuild.ts, 2026-09-24): Astra sees
+// the thing's blocks and its photos, and answers with the thing's new blocks.
+describe("a thing rebuilt from its photos", () => {
+  const car = setElements(SPEC).find((e) => e.kind === "car")!;
+  const onCar = (slot: 1 | 2) => ({ refId: `3333333${slot}-3333-4333-8333-333333333333`, anchor: car.key, slot, at: slot, url: "", path: `${USER}/sets/${SET}.ref.${car.key}.${slot}.x.jpg` });
+  const blue = () => JSON.stringify({ objects: thingLocalBlocks(SPEC, car).map((o) => (o.material === "paint" ? { ...o, color: "#1d4fb8" } : o)) });
+
+  it("is an admin's while the first live rebuild is owed, and asks nothing of anyone else", async () => {
+    photos = [onCar(1)];
+    expect(await rebuildThingFromPhotos(SET, car.key)).toEqual({ error: THING_REBUILD_ADMINS_ONLY });
+    expect(steps).toEqual([]);
+  });
+
+  it("needs a photo on the thing before it spends a change", async () => {
+    access.isAdmin = true;
+    expect(await rebuildThingFromPhotos(SET, car.key)).toEqual({ error: THING_REBUILD_NO_PHOTOS });
+    expect(steps).toEqual([]);
+  });
+
+  it("sends the thing's blocks and every photo on it, and saves the new blocks where the old ones stood", async () => {
+    access.isAdmin = true;
+    photos = [onCar(1), onCar(2)];
+    answer = { state: "done", text: blue(), usage: null, costUsd: 0.2 };
+    const r = await rebuildThingFromPhotos(SET, car.key);
+    expect(r.error).toBeNull();
+    if (r.error !== null) return;
+    // The pace, then Astra: an admin's month has no cap.
+    expect(steps).toEqual(["pace", "astra"]);
+    expect(storage.filter((x) => x.startsWith("download generated-images"))).toHaveLength(2);
+    const parts = (sent[0].input as { content: { type: string }[] }[])[0].content;
+    expect(parts.filter((p) => p.type === "input_image")).toHaveLength(2);
+    expect(r.key).not.toBe(car.key);
+    expect(setElements(r.spec).find((e) => e.key === r.key)?.kind).toBe("car");
+    expect(writes).toHaveLength(1);
+    expect(r.changed).toBeGreaterThan(0);
+  });
+
+  it("leaves the set as it was when the new blocks would not be one thing where the old one stood", async () => {
+    access.isAdmin = true;
+    photos = [onCar(1)];
+    const apart = thingLocalBlocks(SPEC, car).map((o, i) => (i === 0 ? { ...o, position: [40, 0.5, 40] } : o));
+    answer = { state: "done", text: JSON.stringify({ objects: apart }), usage: null, costUsd: 0.2 };
+    expect(await rebuildThingFromPhotos(SET, car.key)).toMatchObject({ error: THING_REBUILD_DIDNT_FIT });
+    expect(writes).toHaveLength(0);
+  });
+
+  it("takes a model file kept on the thing along to its new key", async () => {
+    access.isAdmin = true;
+    photos = [onCar(1)];
+    modelFiles = [{ path: `${USER}/sets/${SET}.model.${car.key}.abc.f.glb`, key: car.key, at: 1790205070123, flip: true }];
+    answer = { state: "done", text: blue(), usage: null, costUsd: 0.2 };
+    const r = await rebuildThingFromPhotos(SET, car.key);
+    if (r.error !== null) throw new Error(r.error);
+    const moved = storage.find((x) => x.startsWith("move generated-videos"));
+    expect(moved).toContain(`.model.${r.key}.`);
+    expect(moved?.endsWith(".f.glb")).toBe(true);
   });
 });
 

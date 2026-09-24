@@ -43,6 +43,7 @@ export function ElementCard({
   move,
   drive,
   model = null,
+  rebuild = null,
   casting,
   c,
   variant,
@@ -100,6 +101,23 @@ export function ElementCard({
     onFile: (file: File) => void;
     onFlip: () => void;
     onRemove: () => void;
+  } | null;
+  /**
+   * Its blocks rebuilt from its photos by Astra (thing-rebuild.ts,
+   * 2026-09-24). Null where it is not offered (admins only until the first
+   * live rebuild is proved).
+   */
+  rebuild?: {
+    /** Photos on the thing now: none, and the row says to add one. */
+    photos: number;
+    working: boolean;
+    /** Anything else keeping Astra busy (an edit of the set, a shot being read). */
+    held: boolean;
+    /** What the last rebuild said, already in words: done, or why not. */
+    note: { text: string; ok: boolean } | null;
+    onRebuild: () => void;
+    /** Put the old blocks back: the Astra edit's own Undo, while it is still the last change. */
+    onUndo: (() => void) | null;
   } | null;
   /**
    * The figure's card (R1, "Who plays this person?"): the person's
@@ -328,6 +346,38 @@ export function ElementCard({
             {status ?? c.photoHint}
           </p>
           {element.tyres > 6 && <p className="text-[11px] leading-snug text-[#9aa0ad]">{c.merged}</p>}
+          {rebuild && (
+            <div className="flex flex-wrap items-center gap-1.5 border-t border-[rgba(255,255,255,0.07)] pt-2" data-el-rebuild>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#9aa0ad]">{c.rebuildTitle}</span>
+              <p className="w-full text-[11px] leading-snug text-[#c6c9d1]" data-el-rebuild-hint>
+                {rebuild.working ? c.rebuildWorking : rebuild.photos > 0 ? c.rebuildHint : c.rebuildNeedsPhoto}
+              </p>
+              {rebuild.note && !rebuild.working && (
+                <p className={`w-full text-[11px] leading-snug ${rebuild.note.ok ? "text-[#8fcf9a]" : "text-[#e0a468]"}`} data-el-rebuild-note={rebuild.note.ok ? "done" : "not"}>
+                  {rebuild.note.text}
+                  {rebuild.onUndo && (
+                    <>
+                      {" · "}
+                      <button type="button" onClick={rebuild.onUndo} data-el-rebuild-undo className="cursor-pointer font-medium text-[#e0a468] hover:text-[#f0cda6]">
+                        {c.rebuildUndo}
+                      </button>
+                    </>
+                  )}
+                </p>
+              )}
+              {rebuild.photos > 0 && (
+                <button
+                  type="button"
+                  onClick={rebuild.onRebuild}
+                  disabled={rebuild.working || rebuild.held || busy}
+                  data-el-rebuild-go
+                  className={`${DRIVE_CHIP(rebuild.working)} disabled:cursor-default disabled:opacity-60`}
+                >
+                  {c.rebuildButton}
+                </button>
+              )}
+            </div>
+          )}
           {model && (
             <div className="flex flex-wrap items-center gap-1.5 border-t border-[rgba(255,255,255,0.07)] pt-2" data-el-model>
               <span className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#9aa0ad]">{c.modelTitle}</span>

@@ -75,6 +75,11 @@ export const THING_MODEL_TOO_BIG = "That model is over 40 MB — export it small
 export const THING_MODEL_ADMINS_ONLY = "Models on things are for admins while we prove them.";
 export const THING_MODEL_SAVE_FAILED = "The model couldn't be kept with the set — it's only on this page for now.";
 export const THING_MODEL_TOO_FAST = "That's a lot of models at once — try again in a few minutes.";
+// A thing rebuilt from its photos (thing-rebuild.ts, 2026-09-24).
+export const THING_REBUILD_NO_PHOTOS = "Put a photo on this thing first — Astra rebuilds it from its photos.";
+export const THING_REBUILD_DIDNT_FIT = "Astra's new shape didn't fit where the old one stood, so the set is unchanged — try again.";
+export const THING_REBUILD_FAILED = "Astra couldn't rebuild this from its photos — try again in a moment.";
+export const THING_REBUILD_ADMINS_ONLY = "Rebuilding from photos is for admins while we prove it.";
 export const SET_PHOTO_BUILD_FAILED =
   "This set couldn't be built from that photo, and the build is back in your allowance. A photo that shows more of the place may work better.";
 
