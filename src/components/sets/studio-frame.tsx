@@ -91,6 +91,7 @@ export function StudioBar({
   rendering,
   children,
   primary,
+  steps,
 }: {
   back: { href: string; label: string };
   title: string;
@@ -108,6 +109,11 @@ export function StudioBar({
   children?: ReactNode;
   /** The primary action: Shoot, or Done in Build. */
   primary?: ReactNode;
+  /**
+   * The new layout's steps (2026-09-24): Set, Shoot, Film, numbered, in
+   * place of the modes. Absent, the modes are drawn as ever.
+   */
+  steps?: readonly { id: string; label: string; on: boolean; onClick: () => void }[] | null;
 }) {
   const modeButton = (id: StudioMode) => {
     const m = modes[id];
@@ -145,12 +151,28 @@ export function StudioBar({
       <span className="sr-only md:hidden">{title}</span>
       {meta && <span className="hidden whitespace-nowrap text-[11px] tabular-nums text-[#9aa0ad] xl:inline">{meta}</span>}
       <span className="flex-1" />
-      <span className={SEG}>
-        {modeButton("build")}
-        {modeButton("shoot")}
-        {modeButton("film")}
-        {modeButton("cut")}
-      </span>
+      {steps ? (
+        <nav aria-label="Steps" className={SEG} data-studio-steps>
+          {steps.map((st, i) =>
+            st.on ? (
+              <span key={st.id} aria-current="step" className={SEG_ON}>
+                {i + 1} · {st.label}
+              </span>
+            ) : (
+              <button key={st.id} type="button" onClick={st.onClick} className={SEG_OFF}>
+                {i + 1} · {st.label}
+              </button>
+            ),
+          )}
+        </nav>
+      ) : (
+        <span className={SEG}>
+          {modeButton("build")}
+          {modeButton("shoot")}
+          {modeButton("film")}
+          {modeButton("cut")}
+        </span>
+      )}
       {view && (
         <span role="radiogroup" aria-label={view.label} className={`${SEG} ml-1 hidden min-[1440px]:flex`}>
           {VIEW_MODES.map((m, i) => (

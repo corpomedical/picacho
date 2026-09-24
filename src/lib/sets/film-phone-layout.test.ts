@@ -14,7 +14,8 @@ const between = (from: string, to: string) => {
   expect(at, from).toBeGreaterThan(-1);
   return view.slice(at, view.indexOf(to, at));
 };
-const chipsBlock = between("<div ref={chipsRef} data-setup-chips", "{/* the human ruler's line");
+// The chips are one function since the new layout (2026-09-24): the stage and the Shoot panel both draw them.
+const chipsBlock = between("<div ref={inPanel ? undefined : chipsRef} data-setup-chips", "\n  const chatHeader = (");
 const dockBlock = between("{!wide && filmOpen && (\n            <div\n              data-film-dock", "{/* A photo set: the photo beside camera 1");
 // Tailwind's spacing scale: one step is 4 px.
 const px = (cls: string, prefix: string) => {
@@ -27,7 +28,7 @@ describe("the setup chips in a phone's Film", () => {
   it("are one row that swipes on a phone in Film, and wrap as before everywhere else", () => {
     expect(view).toContain("const chipsInRow = !wide && filmOpen;");
     expect(chipsBlock).toContain(
-      'data-setup-chips className={`absolute left-3.5 right-3.5 top-3.5 z-20 ${chipsInRow ? "" : "flex flex-wrap items-center gap-2"}`}>',
+      'data-setup-chips className={inPanel ? "flex flex-wrap items-center gap-2" : `absolute left-3.5 right-3.5 top-3.5 z-20 ${chipsInRow ? "" : "flex flex-wrap items-center gap-2"}`}>',
     );
     expect(chipsBlock).toContain(
       '<div data-setup-row className={chipsInRow ? "flex items-center gap-2 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" : "contents"}>',

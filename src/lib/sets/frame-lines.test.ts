@@ -19,7 +19,10 @@ describe("the frame lines", () => {
     expect(view).toContain("if (chipsRef.current) ro.observe(chipsRef.current);");
     expect(view).toContain("if (stripRef.current) ro.observe(stripRef.current);");
     // One swiping row in a phone's Film, wrapped everywhere else (film-phone-layout.test.ts).
-    expect(view).toContain('<div ref={chipsRef} data-setup-chips className={`absolute left-3.5 right-3.5 top-3.5 z-20 ${chipsInRow ? "" : "flex flex-wrap items-center gap-2"}`}>');
+    // On the stage they are measured; in the new layout's Shoot panel (2026-09-24) nothing measures them, and the lines sit at the top.
+    expect(view).toContain('<div ref={inPanel ? undefined : chipsRef} data-setup-chips className={inPanel ? "flex flex-wrap items-center gap-2" : `absolute left-3.5 right-3.5 top-3.5 z-20 ${chipsInRow ? "" : "flex flex-wrap items-center gap-2"}`}>');
+    expect(view).toContain("{!viewingShot && !simpleOn && setupChipsView(false)}");
+    expect(view).toContain("}, [rig.format, rigOpen, filmOpen, cutOpen, ready, viewing, simpleOn]);");
     expect(view).toContain("ref={stripRef}");
   });
 
@@ -29,7 +32,8 @@ describe("the frame lines", () => {
     expect(view).not.toContain("chatOpen ? 406 : 96");
     // Nor for the rig: it is the dock's, beside the viewport, so the lines
     // no longer jump 342 px aside when the Rig chip is pressed (2026-09-17).
-    expect(view).toContain("insetsRef.current = { left: 14, right: 14, top, bottom };");
+    // Only the new layout's floating tools (2026-09-24) move the left edge.
+    expect(view).toContain("insetsRef.current = { left: simpleOn ? 82 : 14, right: 14, top, bottom };");
     expect(view).not.toContain("wideNow && rigOpen ? 356");
   });
 });

@@ -29,6 +29,7 @@ import { SceneTree, sceneNames, type SceneTarget } from "./scene-tree";
 import { Sequencer } from "./sequencer";
 import { beatAtTime, beatSpans, timeOf } from "@/lib/sets/sequencer";
 import { StatusList, StudioBar, StudioDock, StudioRail, StudioStatus, useWide } from "./studio-frame";
+import { ThingsPanel, type PanelRow } from "./things-panel";
 import { clearMarks } from "@/lib/sets/marks";
 import { BADGE_HIT_SLOP_PX, FIGURE_TAP_WAIT_MS, TAP_SLOP_PX, badgeAt, elementForHits, isTap, type ElementHit, type StageHit, type TapStart } from "@/lib/sets/stage-pick";
 import { ELEMENT_SHEETS_PER_STILL, FIGURE_KEY, elementPlaces, planShotSheets, resolvePhotos, setElements as elementsOf, type ElementPhoto, type SetElement, type ShotElementStatus } from "@/lib/sets/elements";
@@ -814,6 +815,22 @@ export function SetView({
   // the stage as a clip — what a re-shoot engine is given as the shot's
   // motion. Held in the page only until it is sent or the page is left.
   const [recording, setRecording] = useState(false);
+  // The new layout (things-panel.tsx, 2026-09-24): a draft an admin switches
+  // on from the bar, remembered in this browser (or ?layout=simple). The
+  // stage, the shots and every action are the same; only where they are
+  // drawn changes. Set and Shoot are both today's shooting mode, told apart
+  // by what the right-hand panel holds; Film is Film.
+  const [simple, setSimple] = useState(false);
+  const [simpleStep, setSimpleStep] = useState<"set" | "shoot">("set");
+  useEffect(() => {
+    if (!modelsOn) return;
+    try {
+      const asked = new URLSearchParams(window.location.search).get("layout");
+      if (asked ? asked === "simple" : window.localStorage.getItem("helios.layout") === "simple") setSimple(true);
+    } catch {
+      // No storage (a private window): the classic layout.
+    }
+  }, [modelsOn]);
   /**
    * Models on things (thing-model.ts, 2026-09-24): the stage draws each in
    * place of its thing's blocks. A model loaded here shows at once from the
@@ -873,6 +890,8 @@ export function SetView({
   // for the status bar. Film opening takes the dock to its tab; closing on
   // it goes back to Camera (adjust-state-during-render, as the rig did).
   const wide = useWide();
+  /** The new layout is drawn: switched on, by an admin, on a screen wide enough for its three columns. */
+  const simpleOn = simple && wide && modelsOn;
   const [dockTab, setDockTab] = useState<DockTab>("astra");
   const [dockFilmWas, setDockFilmWas] = useState(filmOpen);
   if (dockFilmWas !== filmOpen) {
@@ -3148,7 +3167,9 @@ export function SetView({
       const bottom = strip && hostH ? hostH - strip.offsetTop + 10 : wideNow && (filmOpen || cutOpen) ? 76 : filmOpen ? 196 : 112;
       // Nothing stands over the stage from the left any more: the rig is the
       // dock's, beside the viewport (2026-09-17).
-      insetsRef.current = { left: 14, right: 14, top, bottom };
+      // The new layout's tools float at the stage's left edge (64 px and a
+      // gap): the frame and its readout start clear of them.
+      insetsRef.current = { left: simpleOn ? 82 : 14, right: 14, top, bottom };
       apiRef.current?.relayout();
     };
     measure();
@@ -3158,7 +3179,7 @@ export function SetView({
     if (stripRef.current) ro.observe(stripRef.current);
     return () => ro.disconnect();
     // `viewing`: the chips leave with a still in view and return with the stage.
-  }, [rig.format, rigOpen, filmOpen, cutOpen, ready, viewing]);
+  }, [rig.format, rigOpen, filmOpen, cutOpen, ready, viewing, simpleOn]);
 
   // The stop ring's depth of field, previewed on the live view only.
   useEffect(() => {
@@ -6391,6 +6412,40 @@ export function SetView({
     stageTouchRef.current?.();
     apiRef.current?.goTo({ position: p.position, target: at, fovDeg: p.fovDeg });
   };
+  const sw = s.simple;
+  const simpleShooting = !filmOpen && !cutOpen;
+  const simpleSteps = simpleOn
+    ? [
+        {
+          id: "set",
+          label: sw.stepSet,
+          on: simpleShooting && simpleStep === "set",
+          onClick: () => {
+            studioModes.shoot.onClick();
+            setSimpleStep("set");
+          },
+        },
+        {
+          id: "shoot",
+          label: sw.stepShoot,
+          on: simpleShooting && simpleStep === "shoot",
+          onClick: () => {
+            studioModes.shoot.onClick();
+            setSimpleStep("shoot");
+          },
+        },
+        { id: "film", label: sw.stepFilm, on: !simpleShooting, onClick: () => studioModes.film.onClick() },
+      ]
+    : null;
+  function toggleLayout() {
+    const next = !simple;
+    setSimple(next);
+    try {
+      window.localStorage.setItem("helios.layout", next ? "simple" : "classic");
+    } catch {
+      // Remembered for this visit only.
+    }
+  }
   const pickSceneTarget = (t: SceneTarget) => {
     if (t.kind === "camera") pickCamera(spec.cameras[t.index].id);
     else if (t.kind === "mark") pickMark(spec.marks[t.index].id);
@@ -6450,6 +6505,303 @@ export function SetView({
       docked={docked ? { tab: docked } : null}
     />
   );
+  /**
+   * The shot's setup as chips: who, the look, the camera, the rig, where the
+   * figure stands, how, where they look. Floating on the stage in the classic
+   * layout (measured, so the frame lines sit below them); a plain wrapping
+   * block in the new layout's Shoot panel, where nothing measures it.
+   */
+  /**
+   * The new layout's right-hand panel in Set and Shoot: the open card when a
+   * thing is picked; otherwise Set's words and Astra's thread (the place is
+   * changed by asking), or Shoot's setup — who, the look, the camera — with
+   * the camera department beneath it when the Rig chip opens it. Astra's
+   * composer stays at the foot, as the dock's does.
+   */
+  function stepPanelView() {
+    const rigTab = dockTab === "camera" || dockTab === "light" || dockTab === "look" ? dockTab : null;
+    return (
+      <aside aria-label={simpleStep === "shoot" ? sw.shotTitle : sw.setTitle} data-step-panel className="flex w-[340px] flex-none flex-col border-l border-[rgba(255,255,255,0.07)] bg-[#15161b]">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {elementCard ? (
+            elementCardView("dock")
+          ) : simpleStep === "shoot" ? (
+            <>
+              <div className="flex flex-col gap-3 border-b border-[rgba(255,255,255,0.07)] p-4" data-step-shoot>
+                <h2 className="text-[15px] font-semibold text-[#ecedf1]">{sw.shotTitle}</h2>
+                <p className="text-[12.5px] leading-snug text-[#c6c9d1]">{sw.shotHint}</p>
+                {!viewingShot && setupChipsView(true)}
+              </div>
+              {rigTab && rigPanel(rigTab)}
+            </>
+          ) : (
+            <>
+              <div className="flex flex-col gap-2 border-b border-[rgba(255,255,255,0.07)] p-4" data-step-set>
+                <h2 className="text-[15px] font-semibold text-[#ecedf1]">{sw.setTitle}</h2>
+                <p className="text-[12.5px] leading-snug text-[#c6c9d1]">{sw.setHint}</p>
+              </div>
+              {chatThread}
+            </>
+          )}
+        </div>
+        {(error || rigError) && <p className="border-t border-[rgba(255,255,255,0.07)] px-3.5 py-2 text-[12px] text-red-400">{localizeServerText(error || rigError, t)}</p>}
+        {chatComposer}
+      </aside>
+    );
+  }
+
+  function setupChipsView(inPanel: boolean) {
+    return (
+    <div ref={inPanel ? undefined : chipsRef} data-setup-chips className={inPanel ? "flex flex-wrap items-center gap-2" : `absolute left-3.5 right-3.5 top-3.5 z-20 ${chipsInRow ? "" : "flex flex-wrap items-center gap-2"}`}>
+      <div data-setup-row className={chipsInRow ? "flex items-center gap-2 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" : "contents"}>
+        <div className={chipAnchor}>
+          <button
+            type="button"
+            onClick={() => toggleMenu("who")}
+            aria-haspopup="listbox"
+            aria-expanded={menu === "who"}
+            disabled={characters.length === 0}
+            title={s.mentionHint}
+            className={`${DCHIP} pl-1.5`}
+          >
+            {character?.thumbUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={character.thumbUrl} alt="" className="h-6 w-6 rounded-full object-cover ring-1 ring-[rgba(255,255,255,0.25)]" />
+            ) : (
+              <span className="h-6 w-6 rounded-full bg-[rgba(255,255,255,0.15)]" />
+            )}
+            {character?.name || s.characterLabel}
+            <Chevron />
+          </button>
+          {menu === "who" && (
+            <div role="listbox" aria-label={s.mentionTitle} className={DMENU}>
+              {characters.map((c) => (
+                <Option
+                  key={c.id}
+                  active={characterId === c.id}
+                  onPick={() => {
+                    setCharacterId(c.id);
+                    setMenu(null);
+                  }}
+                >
+                  {c.name}
+                </Option>
+              ))}
+            </div>
+          )}
+        </div>
+        {/* The look (2026-09-11): an earlier still's objects, or — since
+            2026-09-21 — a reference photo the person uploads, the thing
+            in it drawn four ways round so every shot keeps its design. */}
+        <div className={chipAnchor}>
+          <button
+            type="button"
+            onClick={() => toggleMenu("look")}
+            aria-haspopup="listbox"
+            aria-expanded={menu === "look"}
+            title={lookShot ? s.lookOn : latestStill ? s.lookUseLatest : s.lookFirst}
+            className={lookShot ? DCHIP_ON : DCHIP}
+            data-look-chip
+          >
+            {s.lookLabel} ·{" "}
+            {lookShot ? <LocalDate date={lookShot.createdAt} /> : s.lookOff}
+            <Chevron />
+          </button>
+          {menu === "look" && (
+            <div role="listbox" aria-label={s.lookLabel} className={`${DMENU} w-[300px]`} data-look-menu>
+              <Option
+                active={!lookShot}
+                onPick={() => {
+                  pickLook(null);
+                  setMenu(null);
+                }}
+              >
+                {s.lookOff}
+              </Option>
+              {latestStill && (
+                <Option
+                  active={lookShot?.generationId === latestStill}
+                  onPick={() => {
+                    pickLook(latestStill);
+                    setMenu(null);
+                  }}
+                >
+                  {s.lookUseLatest}
+                </Option>
+              )}
+              {lookShot && lookShot.generationId !== latestStill && (
+                <Option active onPick={() => setMenu(null)}>
+                  <LocalDate date={lookShot.createdAt} />
+                </Option>
+              )}
+              {/* A thing's own photos go on the thing now (R1): tap it on the stage. */}
+              <p className="px-2.5 pb-2 pt-2 text-[11px] leading-snug text-[#9aa0ad]" data-look-refs-moved>
+                {cast.lookMoved}
+              </p>
+            </div>
+          )}
+        </div>
+        <div className={chipAnchor}>
+          <button type="button" onClick={() => toggleMenu("camera")} aria-haspopup="listbox" aria-expanded={menu === "camera"} disabled={!ready} className={DCHIP}>
+            {cameraLabel}
+            <Chevron />
+          </button>
+          {menu === "camera" && (
+            <div role="listbox" aria-label={s.toolbarCamera} className={DMENU}>
+              {cameraOptions}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => (wide ? setDockTab((d) => (d === "camera" ? "astra" : "camera")) : setRigOpen((v) => !v))}
+          aria-pressed={rigShown}
+          aria-expanded={rigShown}
+          disabled={!ready}
+          className={rigShown ? DCHIP_ON : DCHIP}
+        >
+          {rigChipLabel}
+          <Chevron />
+        </button>
+        {spec.marks.length > 1 && (
+          <div className={chipAnchor}>
+            <button type="button" onClick={() => toggleMenu("figure")} aria-haspopup="listbox" aria-expanded={menu === "figure"} disabled={!ready} className={DCHIP}>
+              {markLabel}
+              <Chevron />
+            </button>
+            {menu === "figure" && (
+              <div role="listbox" aria-label={s.toolbarFigure} className={DMENU}>
+                {figureOptions}
+              </div>
+            )}
+          </div>
+        )}
+        <div className={chipAnchor}>
+          <button type="button" onClick={() => toggleMenu("pose")} aria-haspopup="listbox" aria-expanded={menu === "pose"} disabled={!ready} className={DCHIP}>
+            {s.poses[pose]}
+            <Chevron />
+          </button>
+          {menu === "pose" && (
+            <div role="listbox" aria-label={s.pose} className={DMENU}>
+              {STAND_POSES.map((p) => (
+                <Option
+                  key={p}
+                  active={pose === p}
+                  onPick={() => {
+                    setPose(p);
+                    setMenu(null);
+                  }}
+                >
+                  {s.poses[p]}
+                </Option>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className={chipAnchor}>
+          <button type="button" onClick={() => toggleMenu("gaze")} aria-haspopup="listbox" aria-expanded={menu === "gaze"} disabled={!ready} className={gaze ? DCHIP_ON : DCHIP} data-gaze-chip>
+            {gaze === null
+              ? s.studio.gazeNone
+              : gaze.at === "camera"
+                ? `${s.studio.gaze} · ${s.studio.gazeCamera}`
+                : gaze.at === "object"
+                  ? `${s.studio.gaze} · ${formatMsg(s.studio.gazeThing, { thing: spec.objects[gaze.index] ? names.objectName(spec.objects[gaze.index]) : "" })}`
+                  : `${s.studio.gaze} · ${formatMsg(s.studio.gazePointSet, { x: gaze.x.toFixed(1), z: gaze.z.toFixed(1) })}`}
+            <Chevron />
+          </button>
+          {menu === "gaze" && (
+            <div role="listbox" aria-label={s.studio.gaze} className={`${DMENU} max-h-[320px] overflow-y-auto`}>
+              <Option
+                active={gaze === null}
+                onPick={() => {
+                  setGaze(null);
+                  setMenu(null);
+                }}
+              >
+                {s.studio.gazeNone}
+              </Option>
+              <Option
+                active={gaze?.at === "camera"}
+                onPick={() => {
+                  setGaze({ at: "camera" });
+                  setMenu(null);
+                }}
+              >
+                {s.studio.gazeCamera}
+              </Option>
+              <Option
+                active={gaze?.at === "point"}
+                onPick={() => {
+                  setLaying("gaze");
+                  setMenu(null);
+                }}
+              >
+                {s.studio.gazePoint}
+              </Option>
+              {spec.objects.map((o, oi) => (
+                <Option
+                  key={oi}
+                  active={gaze?.at === "object" && gaze.index === oi}
+                  onPick={() => {
+                    setGaze({ at: "object", index: oi });
+                    setMenu(null);
+                  }}
+                >
+                  {formatMsg(s.studio.gazeThing, { thing: names.objectName(o) })}
+                </Option>
+              ))}
+            </div>
+          )}
+        </div>
+        <button type="button" onClick={() => turn(-TURN_STEP)} disabled={!ready} aria-label={s.turnLeft} title={s.turnLeft} className={`${DCHIP} w-8 justify-center px-0`}>
+          ↺
+        </button>
+        <button type="button" onClick={() => turn(TURN_STEP)} disabled={!ready} aria-label={s.turnRight} title={s.turnRight} className={`${DCHIP} w-8 justify-center px-0`}>
+          ↻
+        </button>
+        <button type="button" onClick={frameFigure} disabled={!ready} className={DCHIP}>
+          {s.frameFigure}
+        </button>
+        {stageUndoCount > 0 && (
+          <button
+            type="button"
+            onClick={() => stageStepRef.current?.undo()}
+            disabled={!ready || shooting || previz}
+            title={s.stageUndoHint}
+            className={DCHIP}
+          >
+            {s.stageUndo}
+          </button>
+        )}
+        {matchOn && (
+          <>
+            <input
+              ref={matchFileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                // Cleared, so choosing the same picture again still counts as a choice.
+                e.target.value = "";
+                void pickReference(file);
+              }}
+            />
+            <button type="button" onClick={() => matchFileRef.current?.click()} disabled={!ready || matching || shooting} className={DCHIP}>
+              {s.matchShot}
+            </button>
+          </>
+        )}
+        {sourcePhotoUrl && (
+          <button type="button" onClick={() => setCompareOpen((v) => !v)} aria-pressed={compareOpen} className={compareOpen ? DCHIP_ON : DCHIP}>
+            {s.compareTitle}
+          </button>
+        )}
+      </div>
+    </div>
+    );
+  }
+
   const chatHeader = (
             <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.07)] px-4 py-3">
               <span className="text-[11px] font-medium uppercase tracking-widest text-[#c6c9d1]">{s.astraLabel}</span>
@@ -6897,10 +7249,21 @@ export function SetView({
         meta={shotCount}
         mode={studioMode}
         modes={studioModes}
+        steps={simpleSteps}
         view={{ mode: viewMode, onChange: setViewMode, label: s.studio.viewLabel, names: { lit: s.editorViewLit, clay: s.editorViewClay, wire: s.editorViewWire, depth: s.editorViewDepth } }}
         find={{ label: s.studio.find, kbd: s.palette.open, onOpen: () => setPaletteOpen(true) }}
         rendering={renderingCount > 0 ? { label: renderingCount === 1 ? s.studio.renderingOne : formatMsg(s.studio.rendering, { n: renderingCount }) } : null}
         primary={
+          simpleOn && simpleShooting && simpleStep === "set" && !takeStart ? (
+            <button
+              type="button"
+              onClick={() => setSimpleStep("shoot")}
+              className="flex h-7 flex-none cursor-pointer items-center whitespace-nowrap rounded-[6px] bg-[#e0a468] px-3.5 text-[12px] font-semibold text-[#1b1c20]"
+              data-next-shoot
+            >
+              {sw.nextShoot}
+            </button>
+          ) : (
           <button
             type="button"
             onClick={() => void (takeStart ? take() : shoot())}
@@ -6909,8 +7272,20 @@ export function SetView({
           >
             {takeStart ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel}
           </button>
+          )
         }
       >
+        {modelsOn && wide && (
+          <button
+            type="button"
+            onClick={toggleLayout}
+            aria-pressed={simple}
+            data-layout-toggle
+            className="flex h-8 flex-none cursor-pointer items-center whitespace-nowrap rounded-[6px] border border-[rgba(240,196,142,0.45)] px-2.5 text-xs font-semibold text-[#f0cda6] hover:bg-[rgba(224,164,104,0.1)]"
+          >
+            {simple ? sw.toggleClassic : sw.toggleNew}
+          </button>
+        )}
         <div className="relative">
           <button
             type="button"
@@ -6956,7 +7331,36 @@ export function SetView({
 
       {/* The frame's row: the rail, the viewport with everything floating on it, the dock. */}
       <div className="flex min-h-0 flex-1 items-stretch">
-        {wide && <StudioRail mode={studioMode} tool={stageTool} onTool={(id) => studioKeysRef.current.tool(id)} names={s.studio.tools} notes={s.studio.toolNotes} />}
+        {wide &&
+          (simpleOn ? (
+            <ThingsPanel
+              people={[
+                character
+                  ? { key: FIGURE_KEY, name: character.name, thumb: character.thumbUrl, round: true, state: "person" as const }
+                  : { key: FIGURE_KEY, name: cast.person, thumb: null, round: true, state: "nobody" as const },
+              ]}
+              things={els.map((e): PanelRow => {
+                const held = heldOf.get(e.key);
+                const count = held?.photos.length ?? 0;
+                const model = thingModels.find((m) => m.key === e.key);
+                const loaded = thingModelState[e.key];
+                const state = model && loaded !== "failed" ? (loaded === "ready" ? "model" : "loading") : count > 0 ? "photos" : "blocks";
+                const first = held?.photos[0];
+                return { key: e.key, name: elementName(e.key), thumb: first ? (thumbUrl(first.url, 320) ?? first.url) : null, state, photos: count };
+              })}
+              selected={elementCard?.key ?? null}
+              onOpen={(key) => openElementCard(key)}
+              onPlace={() => {
+                closeElementCard();
+                studioModes.shoot.onClick();
+                setSimpleStep("set");
+              }}
+              placeLine={sw.placeText}
+              w={sw}
+            />
+          ) : (
+            <StudioRail mode={studioMode} tool={stageTool} onTool={(id) => studioKeysRef.current.tool(id)} names={s.studio.tools} notes={s.studio.toolNotes} />
+          ))}
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="relative min-h-0 flex-1">
           <div ref={hostRef} className="absolute inset-0" style={gradeFilter ? { filter: gradeFilter } : undefined} />
@@ -7116,254 +7520,12 @@ export function SetView({
             <div className="absolute inset-0 flex items-center justify-center bg-[#101116]/90 p-6 text-center text-sm text-onmedia/80">{s.loadFailed}</div>
           )}
 
-          {/* The setup, as chips on the picture itself. */}
-          {!viewingShot && (
-            <div ref={chipsRef} data-setup-chips className={`absolute left-3.5 right-3.5 top-3.5 z-20 ${chipsInRow ? "" : "flex flex-wrap items-center gap-2"}`}>
-              <div data-setup-row className={chipsInRow ? "flex items-center gap-2 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" : "contents"}>
-                <div className={chipAnchor}>
-                  <button
-                    type="button"
-                    onClick={() => toggleMenu("who")}
-                    aria-haspopup="listbox"
-                    aria-expanded={menu === "who"}
-                    disabled={characters.length === 0}
-                    title={s.mentionHint}
-                    className={`${DCHIP} pl-1.5`}
-                  >
-                    {character?.thumbUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={character.thumbUrl} alt="" className="h-6 w-6 rounded-full object-cover ring-1 ring-[rgba(255,255,255,0.25)]" />
-                    ) : (
-                      <span className="h-6 w-6 rounded-full bg-[rgba(255,255,255,0.15)]" />
-                    )}
-                    {character?.name || s.characterLabel}
-                    <Chevron />
-                  </button>
-                  {menu === "who" && (
-                    <div role="listbox" aria-label={s.mentionTitle} className={DMENU}>
-                      {characters.map((c) => (
-                        <Option
-                          key={c.id}
-                          active={characterId === c.id}
-                          onPick={() => {
-                            setCharacterId(c.id);
-                            setMenu(null);
-                          }}
-                        >
-                          {c.name}
-                        </Option>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                {/* The look (2026-09-11): an earlier still's objects, or — since
-                    2026-09-21 — a reference photo the person uploads, the thing
-                    in it drawn four ways round so every shot keeps its design. */}
-                <div className={chipAnchor}>
-                  <button
-                    type="button"
-                    onClick={() => toggleMenu("look")}
-                    aria-haspopup="listbox"
-                    aria-expanded={menu === "look"}
-                    title={lookShot ? s.lookOn : latestStill ? s.lookUseLatest : s.lookFirst}
-                    className={lookShot ? DCHIP_ON : DCHIP}
-                    data-look-chip
-                  >
-                    {s.lookLabel} ·{" "}
-                    {lookShot ? <LocalDate date={lookShot.createdAt} /> : s.lookOff}
-                    <Chevron />
-                  </button>
-                  {menu === "look" && (
-                    <div role="listbox" aria-label={s.lookLabel} className={`${DMENU} w-[300px]`} data-look-menu>
-                      <Option
-                        active={!lookShot}
-                        onPick={() => {
-                          pickLook(null);
-                          setMenu(null);
-                        }}
-                      >
-                        {s.lookOff}
-                      </Option>
-                      {latestStill && (
-                        <Option
-                          active={lookShot?.generationId === latestStill}
-                          onPick={() => {
-                            pickLook(latestStill);
-                            setMenu(null);
-                          }}
-                        >
-                          {s.lookUseLatest}
-                        </Option>
-                      )}
-                      {lookShot && lookShot.generationId !== latestStill && (
-                        <Option active onPick={() => setMenu(null)}>
-                          <LocalDate date={lookShot.createdAt} />
-                        </Option>
-                      )}
-                      {/* A thing's own photos go on the thing now (R1): tap it on the stage. */}
-                      <p className="px-2.5 pb-2 pt-2 text-[11px] leading-snug text-[#9aa0ad]" data-look-refs-moved>
-                        {cast.lookMoved}
-                      </p>
-                    </div>
-                  )}
-                </div>
-                <div className={chipAnchor}>
-                  <button type="button" onClick={() => toggleMenu("camera")} aria-haspopup="listbox" aria-expanded={menu === "camera"} disabled={!ready} className={DCHIP}>
-                    {cameraLabel}
-                    <Chevron />
-                  </button>
-                  {menu === "camera" && (
-                    <div role="listbox" aria-label={s.toolbarCamera} className={DMENU}>
-                      {cameraOptions}
-                    </div>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => (wide ? setDockTab((d) => (d === "camera" ? "astra" : "camera")) : setRigOpen((v) => !v))}
-                  aria-pressed={rigShown}
-                  aria-expanded={rigShown}
-                  disabled={!ready}
-                  className={rigShown ? DCHIP_ON : DCHIP}
-                >
-                  {rigChipLabel}
-                  <Chevron />
-                </button>
-                {spec.marks.length > 1 && (
-                  <div className={chipAnchor}>
-                    <button type="button" onClick={() => toggleMenu("figure")} aria-haspopup="listbox" aria-expanded={menu === "figure"} disabled={!ready} className={DCHIP}>
-                      {markLabel}
-                      <Chevron />
-                    </button>
-                    {menu === "figure" && (
-                      <div role="listbox" aria-label={s.toolbarFigure} className={DMENU}>
-                        {figureOptions}
-                      </div>
-                    )}
-                  </div>
-                )}
-                <div className={chipAnchor}>
-                  <button type="button" onClick={() => toggleMenu("pose")} aria-haspopup="listbox" aria-expanded={menu === "pose"} disabled={!ready} className={DCHIP}>
-                    {s.poses[pose]}
-                    <Chevron />
-                  </button>
-                  {menu === "pose" && (
-                    <div role="listbox" aria-label={s.pose} className={DMENU}>
-                      {STAND_POSES.map((p) => (
-                        <Option
-                          key={p}
-                          active={pose === p}
-                          onPick={() => {
-                            setPose(p);
-                            setMenu(null);
-                          }}
-                        >
-                          {s.poses[p]}
-                        </Option>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className={chipAnchor}>
-                  <button type="button" onClick={() => toggleMenu("gaze")} aria-haspopup="listbox" aria-expanded={menu === "gaze"} disabled={!ready} className={gaze ? DCHIP_ON : DCHIP} data-gaze-chip>
-                    {gaze === null
-                      ? s.studio.gazeNone
-                      : gaze.at === "camera"
-                        ? `${s.studio.gaze} · ${s.studio.gazeCamera}`
-                        : gaze.at === "object"
-                          ? `${s.studio.gaze} · ${formatMsg(s.studio.gazeThing, { thing: spec.objects[gaze.index] ? names.objectName(spec.objects[gaze.index]) : "" })}`
-                          : `${s.studio.gaze} · ${formatMsg(s.studio.gazePointSet, { x: gaze.x.toFixed(1), z: gaze.z.toFixed(1) })}`}
-                    <Chevron />
-                  </button>
-                  {menu === "gaze" && (
-                    <div role="listbox" aria-label={s.studio.gaze} className={`${DMENU} max-h-[320px] overflow-y-auto`}>
-                      <Option
-                        active={gaze === null}
-                        onPick={() => {
-                          setGaze(null);
-                          setMenu(null);
-                        }}
-                      >
-                        {s.studio.gazeNone}
-                      </Option>
-                      <Option
-                        active={gaze?.at === "camera"}
-                        onPick={() => {
-                          setGaze({ at: "camera" });
-                          setMenu(null);
-                        }}
-                      >
-                        {s.studio.gazeCamera}
-                      </Option>
-                      <Option
-                        active={gaze?.at === "point"}
-                        onPick={() => {
-                          setLaying("gaze");
-                          setMenu(null);
-                        }}
-                      >
-                        {s.studio.gazePoint}
-                      </Option>
-                      {spec.objects.map((o, oi) => (
-                        <Option
-                          key={oi}
-                          active={gaze?.at === "object" && gaze.index === oi}
-                          onPick={() => {
-                            setGaze({ at: "object", index: oi });
-                            setMenu(null);
-                          }}
-                        >
-                          {formatMsg(s.studio.gazeThing, { thing: names.objectName(o) })}
-                        </Option>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <button type="button" onClick={() => turn(-TURN_STEP)} disabled={!ready} aria-label={s.turnLeft} title={s.turnLeft} className={`${DCHIP} w-8 justify-center px-0`}>
-                  ↺
-                </button>
-                <button type="button" onClick={() => turn(TURN_STEP)} disabled={!ready} aria-label={s.turnRight} title={s.turnRight} className={`${DCHIP} w-8 justify-center px-0`}>
-                  ↻
-                </button>
-                <button type="button" onClick={frameFigure} disabled={!ready} className={DCHIP}>
-                  {s.frameFigure}
-                </button>
-                {stageUndoCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => stageStepRef.current?.undo()}
-                    disabled={!ready || shooting || previz}
-                    title={s.stageUndoHint}
-                    className={DCHIP}
-                  >
-                    {s.stageUndo}
-                  </button>
-                )}
-                {matchOn && (
-                  <>
-                    <input
-                      ref={matchFileRef}
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        // Cleared, so choosing the same picture again still counts as a choice.
-                        e.target.value = "";
-                        void pickReference(file);
-                      }}
-                    />
-                    <button type="button" onClick={() => matchFileRef.current?.click()} disabled={!ready || matching || shooting} className={DCHIP}>
-                      {s.matchShot}
-                    </button>
-                  </>
-                )}
-                {sourcePhotoUrl && (
-                  <button type="button" onClick={() => setCompareOpen((v) => !v)} aria-pressed={compareOpen} className={compareOpen ? DCHIP_ON : DCHIP}>
-                    {s.compareTitle}
-                  </button>
-                )}
-              </div>
+          {/* The setup, as chips on the picture itself (or, in the new layout, in the Shoot panel). */}
+          {!viewingShot && !simpleOn && setupChipsView(false)}
+          {/* The new layout's tools: the rail's, floating at the stage's corner. */}
+          {simpleOn && !viewingShot && (
+            <div className="absolute left-3.5 top-3.5 z-20 overflow-hidden rounded-[12px] border border-[rgba(255,255,255,0.08)] shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6)]" data-floating-tools>
+              <StudioRail mode={studioMode} tool={stageTool} onTool={(id) => studioKeysRef.current.tool(id)} names={s.studio.tools} notes={s.studio.toolNotes} />
             </div>
           )}
 
@@ -7415,7 +7577,7 @@ export function SetView({
               over it the cast strip (R1): who and what the next still carries.
               One column, so a hint that wraps never meets the strip, clear of
               the gizmo on the right. */}
-          {!viewingShot && !loadFailed && !filmOpen && (
+          {!viewingShot && !loadFailed && !filmOpen && !simpleOn && (
             <div className="pointer-events-none absolute bottom-[104px] left-3.5 right-3.5 z-20 flex flex-col items-start gap-2 md:right-[190px]" data-stage-foot>
               {castShown && castStrip("pointer-events-auto relative max-w-full")}
               {/* The hint is a mouse's (shift-drag, scroll, double-click): on a phone it steps aside for the strip. */}
@@ -7737,7 +7899,7 @@ export function SetView({
           {/* The cast strip in Film (R1): at the stage's foot on a computer, clear of the
               gizmo. A phone's Film is full already (its dock under the setup chips): a
               tap on a thing opens its card there, with what rides. */}
-          {wide && filmOpen && !viewingShot && !loadFailed && castShown && castStrip("absolute bottom-3.5 left-3.5 right-[190px] z-20")}
+          {wide && filmOpen && !viewingShot && !loadFailed && castShown && !simpleOn && castStrip("absolute bottom-3.5 left-3.5 right-[190px] z-20")}
           {/* Never taller than the stage below the chips' one row (14 px + 32 + 8,
               and its own 14 at the foot): when it must give, the beats' row
               shrinks and scrolls, and the rows above it stay whole. Over the
@@ -8234,7 +8396,8 @@ export function SetView({
           ))}
       </div>
 
-        {wide && (
+        {wide && simpleOn && simpleShooting && stepPanelView()}
+        {wide && !(simpleOn && simpleShooting) && (
           <StudioDock
             label={s.studio.dockLabel}
             tabs={dockTabs}
