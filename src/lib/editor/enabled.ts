@@ -1,9 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 // Whether the video editor is on — the recast/enabled.ts shape: an env kill
-// switch, the provider keys it cannot run without (Opus 5.5 cuts, Whisper
-// listens, HeyGen draws), and its own feature_flags row (`video_editor`,
-// supabase/applied/2026-09-25/video-editor.sql).
+// switch, what it cannot run without (the Managed Agent that edits, created by
+// scripts/directors-cut-setup.mts, on our Anthropic key; Whisper listens on
+// our OpenAI key), and its own feature_flags row (`video_editor`,
+// supabase/applied/2026-09-25/video-editor.sql). HeyGen is no longer needed:
+// the agent renders in its own sandbox (v2, 2026-09-25).
 //
 // WHO: admins only (operator, 2026-09-24: "Admins only"). There is
 // deliberately no "paid plans" switch yet: an edit is not charged in credits
@@ -11,7 +13,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // pricing, not as a flag someone can flip without it.
 export async function isEditorEnabled(supabase: SupabaseClient): Promise<boolean> {
   if (process.env.VIDEO_EDITOR_DISABLED === "1") return false;
-  if (!process.env.ANTHROPIC_API_KEY || !process.env.OPENAI_API_KEY || !process.env.HEYGEN_API_KEY) return false;
+  if (!process.env.ANTHROPIC_API_KEY || !process.env.OPENAI_API_KEY) return false;
+  if (!process.env.DIRECTORS_CUT_AGENT_ID || !process.env.DIRECTORS_CUT_ENVIRONMENT_ID) return false;
   try {
     const { data, error } = await supabase
       .from("feature_flags")

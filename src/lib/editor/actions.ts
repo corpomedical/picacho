@@ -8,31 +8,32 @@
 //   startEdit   → a row in `uploading` and one signed upload token per file,
 //                 for a path the server chose.
 //   submitEdit  → the files are really there → `analyzing`, first tick now.
-//   reviseEdit  → a finished edit + the customer's note → the director
-//                 revises its own cut in the same conversation → re-render.
-//   listEdits   → the person's recent edits, for the page.
+//   reviseEdit  → a delivered edit + the customer's note → the note goes
+//                 into the SAME editing session (the agent changes the
+//                 project it built) → new versions land in History.
+//   getEdit / listEdits → the bench.
 
 import { after } from "next/server";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
 import { SESSION_EXPIRED_MESSAGE } from "@/lib/generations/user-facing-error";
 import { advanceEdit } from "./advance";
-import { reviseDirector } from "./director";
+import { sendChange } from "./agent";
 import { EDITOR_NOT_OPEN, EDITOR_UNAVAILABLE, editorAllowed, isEditorEnabled } from "./enabled";
 import {
+  ASPECT_HINTS,
   EDITOR_BUCKET,
   EDIT_COLUMNS,
   MAX_BRIEF_CHARS,
   MAX_NOTE_CHARS,
-  notesFrom,
   phaseOf,
   planUploads,
+  type AspectHint,
   type EditRow,
   type FileOffer,
   type Note,
   type Phase,
 } from "./job";
-import { ASPECTS, type Aspect, type EditPlan } from "./plan";
 
 type Access = { error: string } | { error: null; userId: string };
 
@@ -61,7 +62,7 @@ export async function startEdit(input: {
   }
   const brief = typeof input?.brief === "string" ? input.brief.trim() : "";
   if (brief.length > MAX_BRIEF_CHARS) return { error: `Keep the brief under ${MAX_BRIEF_CHARS} characters.` };
-  const aspect: Aspect = (ASPECTS as readonly string[]).includes(input?.aspect) ? (input.aspect as Aspect) : "16:9";
+  const aspect: AspectHint = (ASPECT_HINTS as readonly string[]).includes(input?.aspect) ? (input.aspect as AspectHint) : "auto";
   const rawTarget = Number(input?.targetSeconds);
   const targetSeconds = Number.isFinite(rawTarget) && rawTarget > 0 ? Math.min(180, Math.max(5, Math.round(rawTarget))) : null;
 
@@ -84,6 +85,7 @@ export async function startEdit(input: {
     target_seconds: targetSeconds,
     clips: planned.clips,
     stage: "uploading",
+    plan: { outputs: [], history: brief ? [{ role: "you", text: brief }] : [] },
   });
   if (error) {
     console.error("[editor] start failed:", error.message);
@@ -131,7 +133,7 @@ export async function submitEdit(editId: string): Promise<{ error: string | null
   return { error: null };
 }
 
-/** A finished edit, changed: the director revises its own cut, and it renders again. */
+/** A delivered edit, changed: the note goes into the same editing session. */
 export async function reviseEdit(editId: string, note: string): Promise<{ error: string | null }> {
   const access = await editorAccess();
   if (access.error !== null) return { error: access.error };
@@ -143,23 +145,35 @@ export async function reviseEdit(editId: string, note: string): Promise<{ error:
   }
   const row = await ownEdit(access.userId, editId);
   if (!row) return { error: "That edit isn't yours or no longer exists." };
-  if (row.stage !== "done" || !row.director || row.director.phase !== "done") {
-    return { error: "Wait for this edit to finish, then ask for changes." };
-  }
-  const { error } = await createAdminClient()
+  if (row.stage !== "done" || !row.render) return { error: "Wait for this edit to finish, then ask for changes." };
+
+  const now = Date.now();
+  // Claim the turn first, so two presses cannot send two notes.
+  const { data: claimed, error } = await createAdminClient()
     .from("video_edits")
     .update({
-      director: reviseDirector(row.director, text),
       stage: "directing",
-      progress: "Cutting the edit",
-      render: null,
+      progress: "Making your change",
+      render: { ...row.render, turn: row.render.turn + 1, turnStartedAt: now },
+      plan: { outputs: row.plan?.outputs ?? [], history: [...(row.plan?.history ?? []), { role: "you", text }] },
       error: null,
       attempts: 0,
-      updated_at: new Date().toISOString(),
+      updated_at: new Date(now).toISOString(),
     })
     .eq("id", row.id)
-    .eq("stage", "done");
-  if (error) return { error: "Couldn't send the change. Try again." };
+    .eq("stage", "done")
+    .select("id");
+  if (error || !claimed?.length) return { error: "Couldn't send the change. Try again." };
+  try {
+    await sendChange(row.render.sessionId, text);
+  } catch (err) {
+    console.error(`[editor] change for ${row.id} not sent:`, err instanceof Error ? err.message : err);
+    await createAdminClient()
+      .from("video_edits")
+      .update({ stage: "done", progress: null, render: row.render, plan: row.plan, updated_at: new Date().toISOString() })
+      .eq("id", row.id);
+    return { error: "The editor didn't take the change. Try again in a moment." };
+  }
   kick(row.id);
   return { error: null };
 }
@@ -199,34 +213,30 @@ export async function listEdits(): Promise<{ error: string | null; edits: EditSu
       created_at: r.created_at,
       updated_at: r.updated_at,
       clipNames: Array.isArray(r.clips) ? r.clips.map((c: { name?: unknown }) => String(c?.name ?? "clip")) : [],
-      summary: typeof r.plan?.summary === "string" ? r.plan.summary : null,
+      summary: Array.isArray(r.plan?.outputs) && r.plan.outputs[0] ? String(r.plan.outputs[0].summary ?? "") || null : null,
       resultUrl: r.generation_id ? results.get(r.generation_id) ?? null : null,
     })),
   };
 }
+
+export type EditOutput = { title: string; summary: string; aspect: string; seconds: number; turn: number; url: string | null };
 
 export type EditDetail = {
   id: string;
   stage: EditRow["stage"];
   phase: Phase;
   brief: string;
-  aspect: Aspect;
+  aspect: AspectHint;
   targetSeconds: number | null;
   clips: { name: string; duration: number | null; hasVideo: boolean }[];
   analyzed: number;
-  /** The cut as the page draws it — no source paths, no model internals. */
-  cut: {
-    summary: string;
-    look: EditPlan["look"];
-    captions: EditPlan["captions"];
-    shots: { clip: number; seconds: number; fit: "cover" | "contain" }[];
-    texts: { text: string; kind: string }[];
-    music: boolean;
-  } | null;
+  /** Every video delivered, newest turn first. */
+  outputs: EditOutput[];
   notes: Note[];
-  resultUrl: string | null;
+  /** The editor's latest words while it works. */
+  activity: string | null;
   error: string | null;
-  /** Which cut this is: 1, then 2 after a change, and so on. */
+  /** 1 for the first delivery, then +1 per change. */
   cutNumber: number;
 };
 
@@ -236,18 +246,16 @@ export async function getEdit(editId: string): Promise<{ error: string | null; e
   if (access.error !== null) return { error: access.error, edit: null };
   const row = await ownEdit(access.userId, editId);
   if (!row) return { error: "That edit isn't yours or no longer exists.", edit: null };
-  let resultUrl: string | null = null;
-  if (row.generation_id) {
+  const delivered = row.plan?.outputs ?? [];
+  const urls = new Map<string, string>();
+  if (delivered.length) {
     const { data } = await createAdminClient()
       .from("generations")
-      .select("result_url")
-      .eq("id", row.generation_id)
-      .eq("user_id", access.userId)
-      .maybeSingle<{ result_url: string | null }>();
-    resultUrl = data?.result_url ?? null;
+      .select("id, result_url")
+      .in("id", delivered.map((o) => o.generationId))
+      .eq("user_id", access.userId);
+    for (const g of data ?? []) if (typeof g.result_url === "string") urls.set(g.id, g.result_url);
   }
-  const notes = notesFrom(row.director);
-  const plan = row.plan;
   return {
     error: null,
     edit: {
@@ -259,20 +267,13 @@ export async function getEdit(editId: string): Promise<{ error: string | null; e
       targetSeconds: row.target_seconds,
       clips: row.clips.map((c) => ({ name: c.name, duration: c.probe?.duration ?? null, hasVideo: c.probe?.hasVideo ?? c.contentType.startsWith("video/") })),
       analyzed: row.clips.filter((c) => c.analyzed).length,
-      cut: plan
-        ? {
-            summary: plan.summary,
-            look: plan.look,
-            captions: plan.captions,
-            shots: plan.shots.map((s) => ({ clip: s.clip, seconds: Math.round((s.to - s.from) * 100) / 100, fit: s.fit ?? "cover" })),
-            texts: plan.texts.map((t) => ({ text: t.text, kind: t.kind })),
-            music: plan.music !== null,
-          }
-        : null,
-      notes,
-      resultUrl,
+      outputs: [...delivered]
+        .sort((a, b) => b.turn - a.turn)
+        .map((o) => ({ title: o.title, summary: o.summary, aspect: o.aspect, seconds: o.seconds, turn: o.turn, url: urls.get(o.generationId) ?? null })),
+      notes: row.plan?.history ?? [],
+      activity: row.stage === "directing" ? row.render?.latest ?? row.progress : null,
       error: row.error,
-      cutNumber: Math.max(1, notes.filter((n) => n.role === "you").length + 1),
+      cutNumber: row.render?.turn ?? 1,
     },
   };
 }

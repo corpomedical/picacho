@@ -1,11 +1,15 @@
 // An edit as a job: the row's shape and every decision about it that does not
 // need the network — the limits, what the next step is, what a failure
 // means. advance.ts does the steps; this file says which one.
+//
+// v2 (2026-09-25): our server reads and listens to the footage (probe, a
+// word-timed transcript with the no-speech guard), then one Managed Agent
+// session makes the whole video (agent.ts). The row's `render` column holds
+// that session; its `plan` column holds what was delivered and the
+// conversation the bench shows. (Column names are v1's; the table is unchanged.)
 
-import type { ProbeResult, Silence } from "./analyze";
-import type { DirectorState } from "./director";
-import type { Aspect, EditPlan } from "./plan";
-import type { Word } from "./timeline";
+import type { ProbeResult } from "./analyze";
+import type { Word } from "./transcribe";
 
 export const EDITOR_BUCKET = "edit-footage";
 export const MAX_CLIPS = 12;
@@ -16,44 +20,67 @@ export const MAX_BRIEF_CHARS = 4000;
 export const MAX_NOTE_CHARS = 2000;
 /** A step that fails this many times in a row fails the edit. */
 export const MAX_ATTEMPTS = 3;
-/** A render HeyGen has not finished in this long is given up on. */
-export const RENDER_DEADLINE_MS = 30 * 60 * 1000;
+/** A session still working after this long is given up on (its budget caps the spend long before). */
+export const SESSION_DEADLINE_MS = 75 * 60 * 1000;
 /** A lock older than this was left by a function that died; the next tick may take the edit. */
 export const LOCK_STALE_MS = 6 * 60 * 1000;
+/** Signed footage links the agent downloads from: long enough for any session. */
+export const FOOTAGE_URL_SECONDS = 12 * 60 * 60;
 
 export type Stage = "uploading" | "analyzing" | "directing" | "bundling" | "rendering" | "done" | "failed";
-export const WORKING_STAGES: readonly Stage[] = ["analyzing", "directing", "bundling", "rendering"];
+export const WORKING_STAGES: readonly Stage[] = ["analyzing", "directing"];
+
+/** "auto" = the editor decides the shape from the brief (the default). */
+export type AspectHint = "auto" | "16:9" | "9:16" | "1:1";
+export const ASPECT_HINTS: readonly AspectHint[] = ["auto", "9:16", "16:9", "1:1"];
 
 export type ClipRecord = {
   path: string;
-  /** The customer's file name — shown back to them and to the director as a hint. */
+  /** The customer's file name — shown back to them and to the editor as a hint. */
   name: string;
   bytes: number;
   contentType: string;
   probe: ProbeResult | null;
-  interval: number | null;
-  /** Storage paths of the contact sheets, in order. */
-  sheets: string[];
-  sceneChanges: number[];
-  silences: Silence[];
+  /** null until listened to. */
+  speech: "speech" | "no-speech" | "silent" | null;
   words: Word[];
   analyzed: boolean;
 };
 
-export type RenderRecord = { assetId: string; renderId: string; startedAt: number };
+/** The editing session (stored in the row's `render` column). */
+export type SessionRecord = {
+  sessionId: string;
+  startedAt: number;
+  /** 1 for the first delivery, +1 for each change asked for. */
+  turn: number;
+  /** When the current turn was asked for. */
+  turnStartedAt: number;
+  /** Our own spend before the session (transcription), US dollars. */
+  preUsd: number;
+  /** The result.json already turned into History rows. */
+  lastResultId: string | null;
+  /** The agent's latest words, for the progress line. */
+  latest: string | null;
+};
+
+export type Note = { role: "editor" | "you"; text: string };
+export type Output = { title: string; summary: string; aspect: string; seconds: number; generationId: string; turn: number };
+
+/** What was delivered, and the conversation (stored in the row's `plan` column). */
+export type DeliveryRecord = { outputs: Output[]; history: Note[] };
 
 export type EditRow = {
   id: string;
   user_id: string;
   brief: string;
-  aspect: Aspect;
+  aspect: AspectHint;
   target_seconds: number | null;
   clips: ClipRecord[];
   stage: Stage;
   progress: string | null;
-  director: DirectorState | null;
-  plan: EditPlan | null;
-  render: RenderRecord | null;
+  director: unknown;
+  plan: DeliveryRecord | null;
+  render: SessionRecord | null;
   generation_id: string | null;
   error: string | null;
   cost_usd: number;
@@ -99,10 +126,7 @@ export function planUploads(userId: string, editId: string, files: FileOffer[]):
       bytes: size,
       contentType: type,
       probe: null,
-      interval: null,
-      sheets: [],
-      sceneChanges: [],
-      silences: [],
+      speech: null,
       words: [],
       analyzed: false,
     });
@@ -124,111 +148,41 @@ export function footageProblem(clips: ClipRecord[]): string | null {
   return null;
 }
 
-/** Total seconds of picture — what the sheet budget is shared across. */
-export function totalVideoSeconds(clips: ClipRecord[]): number {
-  return clips.reduce((sum, c) => sum + (c.probe?.hasVideo ? c.probe.duration : 0), 0);
-}
-
-export type Step =
-  | { kind: "probe" }
-  | { kind: "analyze"; clip: number }
-  | { kind: "direct" }
-  | { kind: "bundle" }
-  | { kind: "poll" }
-  | { kind: "none" };
+export type Step = { kind: "probe" } | { kind: "listen"; clip: number } | { kind: "start" } | { kind: "watch" } | { kind: "none" };
 
 /** The one thing to do next for an edit in this state. */
-export function nextStep(row: Pick<EditRow, "stage" | "clips" | "director" | "plan" | "render">): Step {
-  switch (row.stage) {
-    case "analyzing": {
-      if (row.clips.some((c) => !c.probe)) return { kind: "probe" };
-      const clip = row.clips.findIndex((c) => !c.analyzed);
-      return clip >= 0 ? { kind: "analyze", clip } : { kind: "direct" };
-    }
-    case "directing":
-      return row.director?.phase === "done" && row.plan ? { kind: "bundle" } : { kind: "direct" };
-    case "bundling":
-      return { kind: "bundle" };
-    case "rendering":
-      return row.render ? { kind: "poll" } : { kind: "bundle" };
-    default:
-      return { kind: "none" };
+export function nextStep(row: Pick<EditRow, "stage" | "clips" | "render">): Step {
+  if (row.stage === "analyzing") {
+    if (row.clips.some((c) => !c.probe)) return { kind: "probe" };
+    const clip = row.clips.findIndex((c) => !c.analyzed);
+    return clip >= 0 ? { kind: "listen", clip } : { kind: "start" };
   }
+  if (row.stage === "directing") return row.render ? { kind: "watch" } : { kind: "start" };
+  return { kind: "none" };
 }
 
 /** Steps that can take minutes — only started early in a tick. */
 export function isHeavy(step: Step): boolean {
-  return step.kind === "analyze" || step.kind === "direct" || step.kind === "bundle";
-}
-
-/** The customer-facing line for where an edit is. */
-export function progressLine(step: Step, row: Pick<EditRow, "clips" | "director">): string {
-  switch (step.kind) {
-    case "probe":
-      return "Reading your footage";
-    case "analyze":
-      return `Watching and listening — clip ${step.clip + 1} of ${row.clips.length}`;
-    case "direct":
-      return row.director?.phase === "review" ? "Checking the cut" : row.director?.phase === "fix" ? "Tightening the cut" : "Cutting the edit";
-    case "bundle":
-      return "Preparing the render";
-    case "poll":
-      return "Rendering";
-    default:
-      return "";
-  }
-}
-
-export type Note = { role: "editor" | "you"; text: string };
-
-/**
- * The conversation as the page shows it, read back from the director's own
- * turns: each cut's summary, and each change the customer asked for. The
- * review turn repeats a summary, so within one cut only the last one counts.
- */
-export function notesFrom(director: DirectorState | null): Note[] {
-  const notes: Note[] = [];
-  let pending: string | null = null;
-  for (const turn of director?.turns ?? []) {
-    if (turn.role === "user") {
-      const text = typeof turn.content === "string" ? turn.content : "";
-      const m = /<<<NOTE\n([\s\S]*?)\nNOTE>>>/.exec(text);
-      if (m) {
-        if (pending) notes.push({ role: "editor", text: pending });
-        pending = null;
-        notes.push({ role: "you", text: m[1] });
-      }
-      continue;
-    }
-    const blocks = Array.isArray(turn.content) ? turn.content : [];
-    for (const b of blocks) {
-      if (!b || typeof b !== "object" || (b as { type?: unknown }).type !== "text") continue;
-      try {
-        const summary = (JSON.parse(String((b as { text?: unknown }).text)) as { summary?: unknown }).summary;
-        if (typeof summary === "string" && summary.trim()) pending = summary.trim();
-      } catch {
-        // Not a plan — nothing to show.
-      }
-    }
-  }
-  if (pending) notes.push({ role: "editor", text: pending });
-  return notes;
+  return step.kind === "listen" || step.kind === "start";
 }
 
 /** Where a working edit is, as the page's step list reads it. */
-export type Phase = "reading" | "watching" | "cutting" | "checking" | "rendering" | "done" | "failed" | "uploading";
+export type Phase = "reading" | "watching" | "cutting" | "done" | "failed" | "uploading";
 
-export function phaseOf(row: Pick<EditRow, "stage" | "clips" | "director">): Phase {
+export function phaseOf(row: Pick<EditRow, "stage" | "clips">): Phase {
   switch (row.stage) {
     case "analyzing":
       return row.clips.some((c) => !c.probe) ? "reading" : "watching";
     case "directing":
-      return row.director?.phase === "review" ? "checking" : "cutting";
     case "bundling":
     case "rendering":
-      return "rendering";
+      return "cutting";
+    case "done":
+      return "done";
+    case "failed":
+      return "failed";
     default:
-      return row.stage;
+      return "uploading";
   }
 }
 

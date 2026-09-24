@@ -1,44 +1,42 @@
 // One tick of an edit: take the lock, do the next step (or a few quick ones),
 // write down where it got to, let go. Called every minute by
 // /api/cron/edits for every edit still working, and once right after the
-// customer presses Edit so the first step starts at once.
+// customer presses Cut it (or asks for a change) so the first step starts at
+// once.
 //
-// Every step is resumable from the row alone. A function that dies mid-step
-// leaves the lock to go stale (LOCK_STALE_MS) and the step is redone; a step
-// that fails MAX_ATTEMPTS times in a row fails the edit with its reason. No
-// step is charged to the customer while the editor is admins-only; what each
-// step cost US is added to cost_usd from the providers' own numbers.
-//
-// HeyGen's render is polled here rather than waited for by a webhook: a
-// render takes minutes, a tick comes every minute, and polling leaves no
-// endpoint to forge.
+// v2 (2026-09-25): probe → listen to each clip (transcript + no-speech guard)
+// → start ONE Managed Agent session that makes the whole video → watch it →
+// deliver whatever it finished into History. Every step is resumable from the
+// row alone; a lock left by a dead function goes stale (LOCK_STALE_MS); a step
+// that fails MAX_ATTEMPTS times in a row fails the edit. Nothing is charged
+// to the customer while the editor is admins-only; cost_usd records what the
+// edit cost US (transcription + the session's own list cost).
 
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type Anthropic from "@anthropic-ai/sdk";
 
-import { sheetIntervalFor } from "./analyze";
-import { directStep, newDirectorState, DirectorError, type ClipBrief, type DirectorInput } from "./director";
-import { readRender, startRender, uploadBundle, HeygenError } from "./heygen";
+import { collectDelivery, readSession, startSession, AgentError, type JobClip } from "./agent";
 import {
   EDITOR_BUCKET,
   EDIT_COLUMNS,
+  FOOTAGE_URL_SECONDS,
   footageProblem,
   isHeavy,
   LOCK_STALE_MS,
   MAX_ATTEMPTS,
   nextStep,
-  progressLine,
-  RENDER_DEADLINE_MS,
-  totalVideoSeconds,
+  SESSION_DEADLINE_MS,
   type ClipRecord,
+  type DeliveryRecord,
   type EditRow,
+  type Output,
+  type SessionRecord,
   type Step,
 } from "./job";
-import { planDuration } from "./plan";
-import { opusCostUsd, renderCostUsd, whisperCostUsd } from "./prices";
+import { whisperCostUsd } from "./prices";
 import { transcribeSpeech } from "./transcribe";
-import { analyzeClip, buildBundle, probeClip } from "./work";
+import { extractSpeech, probeClip } from "./work";
 import { mediaUrl } from "../media/url";
 
 type Admin = SupabaseClient;
@@ -55,8 +53,13 @@ export type AdvanceDeps = {
 
 export type AdvanceOutcome = "locked" | "missing" | "idle" | "advanced" | "done" | "failed";
 
-const SIGNED_URL_SECONDS = 2 * 60 * 60;
-const DIRECTOR_TIMEOUT_MS = 230_000;
+const PROGRESS: Record<Step["kind"], string> = {
+  probe: "Reading your footage",
+  listen: "Listening to your footage",
+  start: "Handing the footage to the editor",
+  watch: "Editing",
+  none: "",
+};
 
 export async function advanceEdit(editId: string, deps: AdvanceDeps): Promise<AdvanceOutcome> {
   const now = deps.now ?? Date.now;
@@ -75,31 +78,30 @@ export async function advanceEdit(editId: string, deps: AdvanceDeps): Promise<Ad
       if (step.kind === "none") break;
       const elapsed = now() - started;
       if (elapsed > tickBudget || (isHeavy(step) && elapsed > heavyBudget)) break;
-      await save(admin, row.id, { progress: progressLine(step, row) });
       let next: Partial<EditRow> | "wait";
       try {
         next = await runStep(step, row, deps, now);
       } catch (err) {
-        const fatal = err instanceof DirectorError && (err.kind === "refused" || err.kind === "invalid");
-        const cost = err instanceof DirectorError ? err.costUsd : 0;
+        const fatal = err instanceof AgentError;
         const attempts = row.attempts + 1;
         const message = err instanceof Error ? err.message : String(err);
         console.error(`[editor] ${row.id} ${step.kind} failed (attempt ${attempts}):`, message);
         if (fatal || attempts >= MAX_ATTEMPTS) {
-          await save(admin, row.id, { stage: "failed", error: customerError(step, err), progress: null, attempts, cost_usd: round4(row.cost_usd + cost) });
+          await save(admin, row.id, { stage: "failed", error: customerError(step, err), progress: null, attempts });
           outcome = "failed";
         } else {
-          await save(admin, row.id, { attempts, cost_usd: round4(row.cost_usd + cost) });
+          await save(admin, row.id, { attempts });
         }
         break;
       }
       if (next === "wait") break;
       const stageChanged = next.stage !== undefined && next.stage !== row.stage;
-      const patch: Partial<EditRow> = { ...next, attempts: stageChanged ? 0 : next.attempts ?? 0 };
+      const patch: Partial<EditRow> = { progress: PROGRESS[step.kind], ...next, attempts: stageChanged ? 0 : next.attempts ?? 0 };
+      if (patch.stage === "done" || patch.stage === "failed") patch.progress = null;
       await save(admin, row.id, patch);
       row = { ...row, ...patch } as EditRow;
       outcome = row.stage === "done" ? "done" : row.stage === "failed" ? "failed" : "advanced";
-      if (row.stage === "done" || row.stage === "failed") break;
+      if (row.stage === "done" || row.stage === "failed" || step.kind === "watch") break;
     }
   } finally {
     await admin.from("video_edits").update({ locked_at: null }).eq("id", editId);
@@ -112,95 +114,100 @@ async function runStep(step: Step, row: EditRow, deps: AdvanceDeps, now: () => n
   switch (step.kind) {
     case "probe": {
       const clips = await Promise.all(
-        row.clips.map(async (c) => (c.probe ? c : { ...c, probe: await probeClip(await signedUrl(admin, c.path)) })),
+        row.clips.map(async (c) => (c.probe ? c : { ...c, probe: await probeClip(await signedUrl(admin, c.path, 600)) })),
       );
       const problem = footageProblem(clips);
-      if (problem) return { clips, stage: "failed", error: problem, progress: null };
-      const total = totalVideoSeconds(clips);
-      return { clips: clips.map((c) => ({ ...c, interval: c.probe!.hasVideo ? sheetIntervalFor(c.probe!.duration, total) : null })) };
+      if (problem) return { clips, stage: "failed", error: problem };
+      return { clips };
     }
 
-    case "analyze": {
+    case "listen": {
       const clip = row.clips[step.clip];
       const probe = clip.probe!;
-      const analyzed = await analyzeClip(await signedUrl(admin, clip.path), probe, clip.interval ?? 1);
-      const sheets: string[] = [];
-      for (const [k, bytes] of analyzed.sheets.entries()) {
-        const path = `${row.user_id}/${row.id}/sheets/c${step.clip}-${String(k).padStart(3, "0")}.jpg`;
-        const { error } = await admin.storage.from(EDITOR_BUCKET).upload(path, bytes, { contentType: "image/jpeg", upsert: true });
-        if (error) throw new Error(`couldn't keep contact sheet ${k}: ${error.message}`);
-        sheets.push(path);
-      }
-      let words = clip.words;
+      let done: ClipRecord;
       let cost = 0;
-      if (analyzed.speech && analyzed.speech.byteLength > 0) {
-        words = (await transcribeSpeech(analyzed.speech, { filename: `clip-${step.clip}.mp3` })).words;
+      const speechTrack = await extractSpeech(await signedUrl(admin, clip.path, 600), probe);
+      if (!speechTrack || speechTrack.byteLength === 0) {
+        done = { ...clip, speech: "silent", words: [], analyzed: true };
+      } else {
+        const heard = await transcribeSpeech(speechTrack, { filename: `clip-${step.clip}.mp3` });
         cost = whisperCostUsd(probe.duration);
+        done = { ...clip, speech: heard.speech ? "speech" : "no-speech", words: heard.words, analyzed: true };
       }
-      const done: ClipRecord = {
-        ...clip,
-        sheets,
-        sceneChanges: analyzed.sceneChanges,
-        silences: analyzed.silences,
-        words,
-        analyzed: true,
-      };
-      const clips = row.clips.map((c, i) => (i === step.clip ? done : c));
-      const allDone = clips.every((c) => c.analyzed);
-      return {
-        clips,
-        cost_usd: round4(row.cost_usd + cost),
-        ...(allDone ? { stage: "directing" as const, director: row.director ?? newDirectorState() } : {}),
-      };
+      return { clips: row.clips.map((c, i) => (i === step.clip ? done : c)), cost_usd: round4(row.cost_usd + cost) };
     }
 
-    case "direct": {
-      const state = row.director ?? newDirectorState();
-      const before = opusCostUsd(state.usage);
-      const input = await directorInput(admin, row);
-      const after = await directStep(input, state, deps.anthropic, { timeoutMs: DIRECTOR_TIMEOUT_MS });
-      const cost = opusCostUsd(after.usage) - before;
-      const patch: Partial<EditRow> = { director: after, cost_usd: round4(row.cost_usd + cost), stage: "directing" };
-      if (after.phase === "done" && after.plan) {
-        patch.plan = after.plan;
-        patch.stage = "bundling";
-      }
-      return patch;
-    }
-
-    case "bundle": {
-      const plan = row.plan!;
-      const urls = await Promise.all(row.clips.map((c) => signedUrl(admin, c.path)));
-      const bundle = await buildBundle(
-        plan,
-        row.clips.map((c) => c.words),
-        urls,
-        row.clips.map((c) => c.probe?.hasAudio === true),
+    case "start": {
+      const clips: JobClip[] = await Promise.all(
+        row.clips.map(async (c, index) => ({
+          index,
+          name: c.name,
+          seconds: c.probe?.duration ?? 0,
+          hasVideo: c.probe?.hasVideo === true,
+          hasAudio: c.probe?.hasAudio === true,
+          url: await signedUrl(admin, c.path, FOOTAGE_URL_SECONDS),
+          speech: c.speech ?? "silent",
+          words: c.words,
+        })),
       );
-      const tag = `${row.id}-${turnCount(row)}`;
-      const assetId = await uploadBundle(bundle.zip, { filename: `edit-${row.id}.zip`, idempotencyKey: `edit-asset-${tag}` });
-      const renderId = await startRender(assetId, {
-        aspect: plan.aspect,
-        title: `Picacho edit ${row.id}`,
-        callbackId: row.id,
-        idempotencyKey: `edit-render-${tag}`,
-      });
-      return { stage: "rendering", render: { assetId, renderId, startedAt: now() } };
+      const sessionId = await startSession(
+        { editId: row.id, brief: row.brief, aspectHint: row.aspect, lengthHint: row.target_seconds, clips },
+        deps.anthropic,
+      );
+      const at = now();
+      const session: SessionRecord = { sessionId, startedAt: at, turn: 1, turnStartedAt: at, preUsd: row.cost_usd, lastResultId: null, latest: null };
+      return { stage: "directing", render: session };
     }
 
-    case "poll": {
-      const render = row.render!;
-      const state = await readRender(render.renderId);
-      if (state.status === "failed") {
-        return { stage: "failed", error: "The render didn't finish. Nothing was charged; try again.", progress: null };
-      }
-      if (state.status !== "completed" || !state.videoUrl) {
-        if (now() - render.startedAt > RENDER_DEADLINE_MS) {
-          return { stage: "failed", error: "The render took too long. Nothing was charged; try again.", progress: null };
+    case "watch": {
+      const session = row.render!;
+      const view = await readSession(session.sessionId, deps.anthropic);
+      const cost = round4(session.preUsd + view.costUsd);
+      const latest = view.latest ?? session.latest;
+      if (view.status === "running" || view.status === "rescheduling") {
+        if (now() - session.turnStartedAt > SESSION_DEADLINE_MS) {
+          return { stage: "failed", error: "The editor took too long on this one. Try a shorter brief or fewer clips.", cost_usd: cost };
         }
-        return "wait";
+        return { cost_usd: cost, render: { ...session, latest }, progress: latest ?? PROGRESS.watch };
       }
-      return deliver(admin, row, state.videoUrl, state.duration);
+      if (view.status === "terminated") {
+        return { stage: "failed", error: "The editing session stopped before it finished. Try again.", cost_usd: cost };
+      }
+      // Idle from BEFORE this turn was asked for: the change has not been picked up yet.
+      if (view.idleAt !== null && view.idleAt < session.turnStartedAt) {
+        return { cost_usd: cost, progress: PROGRESS.watch };
+      }
+      // Idle: it finished its turn — delivered, or stopped for a reason.
+      if (view.stopReason === "budget_reached") {
+        return { stage: "failed", error: "The editor used up this edit's budget before finishing. Try a simpler brief or fewer clips.", cost_usd: cost };
+      }
+      if (view.stopReason === "retries_exhausted") {
+        return { stage: "failed", error: "The editor ran into repeated errors. Try again in a few minutes.", cost_usd: cost };
+      }
+      const delivery = await collectDelivery(session.sessionId, { alreadyDelivered: session.lastResultId }, deps.anthropic);
+      if (!delivery) {
+        return { stage: "failed", error: latest ? `The editor stopped without delivering a video: "${latest}"` : "The editor stopped without delivering a video.", cost_usd: cost };
+      }
+      const history = row.plan?.history ?? [];
+      const outputs: Output[] = [];
+      for (const [i, o] of delivery.outputs.entries()) {
+        const generationId = derivedUuid(`video-edit:${row.id}:${session.turn}:${i}`);
+        await deliverOne(admin, row, generationId, o);
+        outputs.push({ title: o.title, summary: o.summary, aspect: o.aspect, seconds: o.seconds, generationId, turn: session.turn });
+      }
+      const said = delivery.outputs.map((o) => (o.title ? `${o.title}: ${o.summary}` : o.summary)).filter(Boolean);
+      const plan: DeliveryRecord = {
+        outputs: [...(row.plan?.outputs ?? []), ...outputs],
+        history: [...history, ...said.map((text) => ({ role: "editor" as const, text })), ...(delivery.notes ? [{ role: "editor" as const, text: delivery.notes }] : [])],
+      };
+      return {
+        stage: "done",
+        plan,
+        generation_id: outputs[0]?.generationId ?? row.generation_id,
+        render: { ...session, lastResultId: delivery.resultId, latest },
+        error: null,
+        cost_usd: cost,
+      };
     }
 
     default:
@@ -208,88 +215,36 @@ async function runStep(step: Step, row: EditRow, deps: AdvanceDeps, now: () => n
   }
 }
 
-/** The finished file into our own storage, and one finished row in History. */
-async function deliver(admin: Admin, row: EditRow, videoUrl: string, duration: number | null): Promise<Partial<EditRow>> {
-  const res = await fetch(videoUrl, { signal: AbortSignal.timeout(120_000) });
-  if (!res.ok) throw new Error(`couldn't fetch the rendered video: ${res.status}`);
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  // Derived, not random: a tick that dies between this insert and saving
-  // "done" is redone by the next one, which must land on the SAME History
-  // row and file rather than add a second. A revise is a new turn, so a new
-  // take.
-  const generationId = derivedUuid(`video-edit:${row.id}:${turnCount(row)}`);
+/** One finished video into our storage and one finished row in History. Derived id: a redone tick lands on the same row. */
+async function deliverOne(
+  admin: Admin,
+  row: EditRow,
+  generationId: string,
+  o: { title: string; summary: string; aspect: string; seconds: number; bytes: Uint8Array },
+): Promise<void> {
   const path = `${row.user_id}/${generationId}.mp4`;
-  const { error: upErr } = await admin.storage.from("generated-videos").upload(path, bytes, { contentType: "video/mp4", upsert: true });
+  const { error: upErr } = await admin.storage.from("generated-videos").upload(path, o.bytes, { contentType: "video/mp4", upsert: true });
   if (upErr) throw new Error(`couldn't keep the rendered video: ${upErr.message}`);
-  const plan = row.plan!;
-  const seconds = duration ?? planDuration(plan);
   const { data: already } = await admin.from("generations").select("id").eq("id", generationId).maybeSingle();
-  if (already) {
-    return { stage: "done", progress: null, error: null, generation_id: generationId, cost_usd: round4(row.cost_usd + renderCostUsd(seconds)) };
-  }
-  const { data, error } = await admin
-    .from("generations")
-    .insert({
-      id: generationId,
-      user_id: row.user_id,
-      prompt_input: (row.brief.trim() || plan.summary || "Edited video").slice(0, 2000),
-      status: "succeeded",
-      content_type: "video",
-      model_id: "video-editor",
-      result_url: mediaUrl("generated-videos", path),
-      credits_used: 0,
-      video_duration_seconds: Math.round(seconds),
-      video_aspect_ratio: plan.aspect,
-      pipeline_log: [],
-    })
-    .select("id")
-    .single<{ id: string }>();
-  if (error || !data) {
+  if (already) return;
+  const prompt = [o.title, row.brief.trim()].filter(Boolean).join(" — ") || "Edited video";
+  const { error } = await admin.from("generations").insert({
+    id: generationId,
+    user_id: row.user_id,
+    prompt_input: prompt.slice(0, 2000),
+    status: "succeeded",
+    content_type: "video",
+    model_id: "video-editor",
+    result_url: mediaUrl("generated-videos", path),
+    credits_used: 0,
+    video_duration_seconds: Math.round(o.seconds) || null,
+    video_aspect_ratio: o.aspect,
+    pipeline_log: [],
+  });
+  if (error) {
     await admin.storage.from("generated-videos").remove([path]);
-    throw new Error(`couldn't add the edit to History: ${error?.message ?? "no row"}`);
+    throw new Error(`couldn't add the edit to History: ${error.message}`);
   }
-  return {
-    stage: "done",
-    progress: null,
-    error: null,
-    generation_id: data.id,
-    cost_usd: round4(row.cost_usd + renderCostUsd(seconds)),
-  };
-}
-
-/** The opening the director sees, rebuilt from the row (byte-identical each time, so it stays cached). */
-async function directorInput(admin: Admin, row: EditRow): Promise<DirectorInput> {
-  const clips: ClipBrief[] = await Promise.all(
-    row.clips.map(async (c) => {
-      const sheets = await Promise.all(
-        c.sheets.map(async (path) => {
-          const { data, error } = await admin.storage.from(EDITOR_BUCKET).download(path);
-          if (error || !data) throw new Error(`couldn't read contact sheet ${path}: ${error?.message ?? "no data"}`);
-          return new Uint8Array(await data.arrayBuffer());
-        }),
-      );
-      const p = c.probe!;
-      return {
-        name: c.name,
-        duration: p.duration,
-        hasVideo: p.hasVideo,
-        hasAudio: p.hasAudio,
-        width: p.width,
-        height: p.height,
-        interval: c.interval ?? 1,
-        sheets,
-        sceneChanges: c.sceneChanges,
-        silences: c.silences,
-      };
-    }),
-  );
-  return {
-    brief: row.brief,
-    clips,
-    transcripts: row.clips.map((c) => c.words),
-    aspect: row.aspect,
-    targetSeconds: row.target_seconds,
-  };
 }
 
 async function claim(admin: Admin, editId: string, nowMs: number): Promise<EditRow | null> {
@@ -298,7 +253,7 @@ async function claim(admin: Admin, editId: string, nowMs: number): Promise<EditR
     .from("video_edits")
     .update({ locked_at: new Date(nowMs).toISOString() })
     .eq("id", editId)
-    .in("stage", ["analyzing", "directing", "bundling", "rendering"])
+    .in("stage", ["analyzing", "directing"])
     .or(`locked_at.is.null,locked_at.lt.${stale}`)
     .select(EDIT_COLUMNS)
     .maybeSingle<EditRow>();
@@ -322,25 +277,16 @@ async function save(admin: Admin, editId: string, patch: Partial<EditRow>): Prom
   if (error) throw new Error(`couldn't save edit ${editId}: ${error.message}`);
 }
 
-async function signedUrl(admin: Admin, path: string): Promise<string> {
-  const { data, error } = await admin.storage.from(EDITOR_BUCKET).createSignedUrl(path, SIGNED_URL_SECONDS);
+async function signedUrl(admin: Admin, path: string, seconds: number): Promise<string> {
+  const { data, error } = await admin.storage.from(EDITOR_BUCKET).createSignedUrl(path, seconds);
   if (error || !data?.signedUrl) throw new Error(`couldn't open ${path}: ${error?.message ?? "no url"}`);
   return data.signedUrl;
 }
 
-/** How many director answers the conversation holds — a revise makes a new render, a retry does not. */
-function turnCount(row: EditRow): number {
-  return (row.director?.turns ?? []).filter((t) => t.role === "assistant").length;
-}
-
 function customerError(step: Step, err: unknown): string {
-  if (err instanceof DirectorError) {
-    if (err.kind === "refused") return "The editor can't work with this footage or brief.";
-    if (err.kind === "invalid") return "The editor couldn't make a cut that fits this footage. Try a simpler brief.";
-    return "The editor didn't answer. Try again in a few minutes.";
-  }
-  if (err instanceof HeygenError) return "The renderer didn't accept this edit. Try again.";
-  if (step.kind === "probe" || step.kind === "analyze") return "We couldn't read one of your files. Try exporting it as MP4.";
+  if (err instanceof AgentError) return "The editor couldn't take this edit on. Try again.";
+  if (step.kind === "probe" || step.kind === "listen") return "We couldn't read one of your files. Try exporting it as MP4.";
+  if (step.kind === "start") return "The editor couldn't be started. Try again in a few minutes.";
   return "Something went wrong making this edit. Try again.";
 }
 

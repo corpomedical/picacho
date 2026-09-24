@@ -26,13 +26,12 @@ import {
   type EditDetail,
   type EditSummary,
 } from "@/lib/editor/actions";
-import { EDITOR_BUCKET, MAX_CLIPS } from "@/lib/editor/job";
-import type { Aspect } from "@/lib/editor/plan";
+import { ASPECT_HINTS, EDITOR_BUCKET, MAX_CLIPS, type AspectHint } from "@/lib/editor/job";
 
 const WORKING = new Set(["analyzing", "directing", "bundling", "rendering"]);
 const POLL_MS = 4000;
 const LENGTHS: (number | null)[] = [null, 15, 30, 60];
-const ASPECTS: Aspect[] = ["16:9", "9:16", "1:1"];
+const ASPECTS = ASPECT_HINTS;
 
 type Picked = { file: File; url: string; seconds: number | null };
 
@@ -152,9 +151,7 @@ export function DirectorsCut({ initialEdits, initialDetail = null }: { initialEd
         </section>
 
         <section aria-label={d.theCut} className="order-1 flex min-w-0 flex-col gap-4 lg:order-2">
-          <Monitor detail={detail} loading={selectedId !== null && detail === null} />
-          {/* Only a finished cut: during a re-cut the saved plan is the old one. */}
-          {detail?.cut && detail.stage === "done" && <CutStrip detail={detail} />}
+          <Screen key={`${detail?.id ?? "none"}:${detail?.outputs.length ?? 0}`} detail={detail} loading={selectedId !== null && detail === null} />
         </section>
 
         <section aria-label={d.notes} className="order-3 lg:order-3">
@@ -175,7 +172,7 @@ function BriefForm({ wide = false, onStarted, guard }: { wide?: boolean; onStart
   const d = t.directorsCut;
   const [files, setFiles] = useState<Picked[]>([]);
   const [brief, setBrief] = useState("");
-  const [aspect, setAspect] = useState<Aspect>("9:16");
+  const [aspect, setAspect] = useState<AspectHint>("auto");
   const [length, setLength] = useState<number | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -341,7 +338,7 @@ function BriefForm({ wide = false, onStarted, guard }: { wide?: boolean; onStart
         <ChipGroup label={d.shape}>
           {ASPECTS.map((a) => (
             <Chip key={a} on={aspect === a} onClick={() => setAspect(a)}>
-              {a}
+              {a === "auto" ? d.auto : a}
             </Chip>
           ))}
         </ChipGroup>
@@ -394,59 +391,89 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
 
 // ------------------------------------------------------------- the monitor
 
-const STEPS = ["reading", "watching", "cutting", "checking", "rendering"] as const;
+const STEPS = ["reading", "watching", "cutting"] as const;
 
-function Monitor({ detail, loading }: { detail: EditDetail | null; loading: boolean }) {
+/**
+ * The middle column: the video(s) the editor delivered — tabs when it made
+ * several (shorts from one pile) — or the steps while it works.
+ */
+function Screen({ detail, loading }: { detail: EditDetail | null; loading: boolean }) {
   const { t } = useLocale();
   const d = t.directorsCut;
-  const portrait = detail?.aspect === "9:16";
+  const [pick, setPick] = useState(0);
+  const outputs = detail?.outputs ?? [];
+  const working = detail !== null && detail.stage !== "done" && detail.stage !== "failed";
+  const shown = !working && outputs.length > 0 ? outputs[Math.min(pick, outputs.length - 1)] : null;
+  const latestTurn = outputs[0]?.turn ?? 0;
+  const tabs = outputs.filter((o) => o.turn === latestTurn);
+  const older = outputs.length - tabs.length;
   return (
-    <div className="relative flex min-h-[420px] items-center justify-center rounded-[20px] bg-[#050608] p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.08)] lg:min-h-[560px]">
-      {detail?.resultUrl && detail.stage === "done" ? (
-        // Its own row above the picture: laid over it, the labels sat on the
-        // video's top edge at phone width (harness, 2026-09-24).
-        <div className="flex w-full flex-col items-center gap-3">
-          <div className="flex w-full items-baseline justify-between px-1">
-            <span className="font-mono text-xs text-[#9aa0ad]">
-              {formatMsg(d.cut, { n: detail.cutNumber })} · {detail.aspect}
-            </span>
-            <a href={detail.resultUrl} download className="text-[13px] text-[#e0a468] hover:text-[#f0bd86]">
-              {d.download}
-            </a>
+    <>
+      <div className="relative flex min-h-[420px] items-center justify-center rounded-[20px] bg-[#050608] p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.08)] lg:min-h-[560px]">
+        {shown?.url ? (
+          <div className="flex w-full flex-col items-center gap-3">
+            <div className="flex w-full flex-wrap items-baseline justify-between gap-2 px-1">
+              <span className="font-mono text-xs text-[#9aa0ad]">
+                {formatMsg(d.cut, { n: shown.turn })} · {shown.aspect}
+                {shown.title ? ` · ${shown.title}` : ""}
+              </span>
+              <a href={shown.url} download className="text-[13px] text-[#e0a468] hover:text-[#f0bd86]">
+                {d.download}
+              </a>
+            </div>
+            <video
+              key={shown.url}
+              // Half a second in: an edit that opens on a fade shows black at 0.
+              src={`${shown.url}#t=0.5`}
+              controls
+              playsInline
+              preload="metadata"
+              className={shown.aspect === "9:16" ? "max-h-[520px] w-auto max-w-full rounded-[14px]" : "max-h-[520px] w-full rounded-[14px]"}
+            />
           </div>
-          <video
-            key={detail.resultUrl}
-            // Half a second in: an edit that opens on a fade shows black at 0.
-            src={`${detail.resultUrl}#t=0.5`}
-            controls
-            playsInline
-            preload="metadata"
-            className={portrait ? "max-h-[520px] w-auto max-w-full rounded-[14px]" : "max-h-[520px] w-full rounded-[14px]"}
-          />
+        ) : working ? (
+          <Progress detail={detail} />
+        ) : detail?.stage === "failed" ? (
+          <div className="max-w-sm text-center">
+            <p className="font-semibold text-[#ecedf1]">{d.phase.failed}</p>
+            {detail.error && <p className="mt-2 text-sm text-[#9aa0ad]">{detail.error}</p>}
+          </div>
+        ) : loading ? null : (
+          <p className="text-sm text-[#6b6f7a]">{d.empty}</p>
+        )}
+      </div>
+      {!working && outputs.length > 1 && (
+        <div role="tablist" aria-label={d.versions} className="flex flex-wrap gap-1.5">
+          {outputs.map((o, i) => (
+            <button
+              key={`${o.turn}:${i}`}
+              type="button"
+              role="tab"
+              aria-selected={i === Math.min(pick, outputs.length - 1)}
+              onClick={() => setPick(i)}
+              className={`min-h-9 rounded-full border px-3 text-xs ${
+                i === Math.min(pick, outputs.length - 1)
+                  ? "border-[#e0a468] bg-[#e0a468] text-[#1a0f07]"
+                  : "border-[rgba(255,255,255,0.12)] text-[#c6c9d1] hover:border-[rgba(255,255,255,0.3)]"
+              } ${o.turn < latestTurn ? "opacity-60" : ""}`}
+            >
+              {o.title || formatMsg(d.cut, { n: o.turn })}
+              {older > 0 && ` · ${formatMsg(d.cut, { n: o.turn })}`}
+            </button>
+          ))}
         </div>
-      ) : detail && detail.stage !== "done" ? (
-        <Progress detail={detail} />
-      ) : (
-        loading ? null : <p className="text-sm text-[#6b6f7a]">{d.empty}</p>
       )}
-    </div>
+      {shown?.url && <FrameStrip url={shown.url} seconds={shown.seconds} />}
+    </>
   );
 }
 
 function Progress({ detail }: { detail: EditDetail }) {
   const { t } = useLocale();
   const d = t.directorsCut;
-  if (detail.stage === "failed") {
-    return (
-      <div className="max-w-sm text-center">
-        <p className="font-semibold text-[#ecedf1]">{d.phase.failed}</p>
-        {detail.error && <p className="mt-2 text-sm text-[#9aa0ad]">{detail.error}</p>}
-      </div>
-    );
-  }
   const at = STEPS.indexOf(detail.phase as (typeof STEPS)[number]);
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex max-w-md flex-col gap-4">
       <ol className="flex flex-col gap-2.5 text-sm">
         {STEPS.map((step, i) => (
           <li key={step} className={i < at ? "text-[#9aa0ad]" : i === at ? "text-[#ecedf1]" : "text-[#6b6f7a]"}>
@@ -462,60 +489,42 @@ function Progress({ detail }: { detail: EditDetail }) {
           </li>
         ))}
       </ol>
+      {/* The editor's own latest words while it works — what it is actually doing. */}
+      {detail.phase === "cutting" && detail.activity && (
+        <p className="line-clamp-3 rounded-[12px] bg-[#101116] px-3 py-2.5 font-serif text-sm leading-relaxed text-[#9aa0ad]">{detail.activity}</p>
+      )}
       <p className="font-mono text-[11px] text-[#6b6f7a]">{d.leave}</p>
     </div>
   );
 }
 
-// --------------------------------------------------------------- the cut
+// ------------------------------------------------------------- the frames
 
-function CutStrip({ detail }: { detail: EditDetail }) {
+/** Eight frames spread across the finished video, drawn in the browser from the file itself. */
+function FrameStrip({ url, seconds }: { url: string; seconds: number }) {
   const { t } = useLocale();
   const d = t.directorsCut;
-  const cut = detail.cut!;
-  const total = cut.shots.reduce((s, x) => s + x.seconds, 0);
-  // Each shot's middle, in the finished video's own time.
-  const mids = useMemo(
-    () => cut.shots.map((s, i) => cut.shots.slice(0, i).reduce((sum, x) => sum + x.seconds, 0) + s.seconds / 2),
-    [cut.shots],
+  const count = 8;
+  const times = useMemo(
+    () => Array.from({ length: count }, (_, i) => Math.max(0.1, ((i + 0.5) / count) * Math.max(1, seconds))),
+    [seconds],
   );
-  const frames = useFrames(detail.stage === "done" ? detail.resultUrl : null, mids);
-  const whole = cut.shots.map((s, i) => (s.fit === "contain" ? i + 1 : 0)).filter(Boolean);
-
+  const frames = useFrames(url, times);
   return (
     <div className="flex flex-col gap-3 rounded-[20px] bg-[#0b0c10] px-4 py-3.5 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
       <div className="flex justify-between font-mono text-[11px] text-[#6b6f7a]">
-        <span className="uppercase tracking-[0.08em]">
-          {d.theCut} · {formatMsg(d.shotCount, { n: cut.shots.length })}
-        </span>
-        <span>{clock(total)}</span>
+        <span className="uppercase tracking-[0.08em]">{d.theCut}</span>
+        <span>{clock(seconds)}</span>
       </div>
-      <div className="flex h-16 gap-1 overflow-hidden rounded-md">
-        {cut.shots.map((s, i) => (
-          <div
-            key={i}
-            title={`${detail.clips[s.clip]?.name ?? ""} · ${s.seconds.toFixed(1)} s`}
-            style={{ flexGrow: s.seconds, flexBasis: 0 }}
-            className="min-w-[10px] overflow-hidden rounded-[5px] bg-[#101116]"
-          >
-            {frames[i] ? (
+      <div className="grid h-16 grid-cols-8 gap-1 overflow-hidden rounded-md">
+        {times.map((_, i) => (
+          <div key={i} className="overflow-hidden rounded-[5px] bg-[#101116]">
+            {frames[i] && (
               // eslint-disable-next-line @next/next/no-img-element -- a frame drawn in the browser from the finished video, not a remote image
               <img src={frames[i]!} alt="" className="h-full w-full object-cover" />
-            ) : (
-              <span className="flex h-full items-end p-1 font-mono text-[10px] text-[#6b6f7a]">{s.clip + 1}</span>
             )}
           </div>
         ))}
-      </div>
-      <div className="flex flex-wrap gap-1.5 font-mono text-[11px]">
-        {cut.captions !== "off" && <span className="rounded-md bg-[rgba(224,164,104,0.14)] px-2 py-1 text-[#e0a468]">{d.chipCaptions}</span>}
-        {whole.length > 0 && (
-          <span className="rounded-md bg-[rgba(255,255,255,0.06)] px-2 py-1 text-[#9aa0ad]">{formatMsg(d.chipWhole, { list: whole.join(", ") })}</span>
-        )}
-        {cut.music && <span className="rounded-md bg-[rgba(255,255,255,0.06)] px-2 py-1 text-[#9aa0ad]">{d.chipMusic}</span>}
-        {cut.texts.length > 0 && (
-          <span className="rounded-md bg-[rgba(255,255,255,0.06)] px-2 py-1 text-[#9aa0ad]">{formatMsg(cut.texts.length === 1 ? d.chipTextOne : d.chipText, { n: cut.texts.length })}</span>
-        )}
       </div>
     </div>
   );
