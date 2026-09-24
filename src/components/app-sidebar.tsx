@@ -210,6 +210,17 @@ function RecceIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function LiveIcon(props: SVGProps<SVGSVGElement>) {
+  // A lens with its on-air light.
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M7.1 16.9a7 7 0 0 1 0-9.8M16.9 7.1a7 7 0 0 1 0 9.8" />
+      <path d="M4.2 19.8a11 11 0 0 1 0-15.6M19.8 4.2a11 11 0 0 1 0 15.6" />
+    </svg>
+  );
+}
+
 function MystiqueIcon(props: SVGProps<SVGSVGElement>) {
   // One performer becoming another: two heads sharing a line.
   return (
@@ -403,6 +414,7 @@ export function AppSidebar({
   setsVisible = false,
   recceVisible = false,
   mystiqueVisible = false,
+  liveVisible = false,
 }: {
   isAdmin: boolean;
   username: string;
@@ -419,6 +431,8 @@ export function AppSidebar({
   recceVisible?: boolean;
   /** The Mystique door (working title) — admins only, behind the recast flag. */
   mystiqueVisible?: boolean;
+  /** Live (H3 Max Director) — every paid plan, behind the live flag. */
+  liveVisible?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -907,6 +921,7 @@ export function AppSidebar({
           ...(setsVisible ? [{ href: "/app/sets", label: t.nav.sets, Icon: SetsIcon, badge: t.nav.newBadge }] : []),
           ...(recceVisible ? [{ href: "/app/recce", label: t.nav.recce, Icon: RecceIcon, badge: t.nav.newBadge }] : []),
           ...(mystiqueVisible ? [{ href: "/app/mystique", label: t.nav.mystique, Icon: MystiqueIcon, badge: t.nav.newBadge }] : []),
+          ...(liveVisible ? [{ href: "/app/live", label: t.nav.live, Icon: LiveIcon, badge: t.nav.newBadge }] : []),
           { href: "/app/upscale", label: t.nav.upscale, Icon: UpscaleIcon, badge: t.nav.newBadge },
           { href: "/app/layers", label: t.nav.layers, Icon: LayersIcon, badge: t.nav.newBadge },
         ].map((tool) => (

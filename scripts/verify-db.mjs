@@ -60,6 +60,10 @@ const COLUMNS = {
     // the migration runs — so a take starts either way and nothing says the
     // file is still waiting. This line is what says it.
     "recast",
+    // Live, H3 Max Director (pending/live.sql): a live take's meter. The
+    // start action refunds and refuses a take whose meter did not land, so
+    // Live simply cannot run until the file does; this line says why.
+    "live",
   ],
   push_tokens: ["token", "platform", "last_seen_at", "locale"],
   character_profiles: [
@@ -153,7 +157,7 @@ const COLUMNS = {
 // Feature-flag rows the code reads by key. A missing row reads as OFF
 // everywhere (every reader defaults closed), which is why nobody would
 // notice — the switch simply never appears in Admin > Feature flags.
-const FLAGS = ["astra_sets", "astra_photo_sets", "astra_previz", "experimental_models", "chat_agent", "voice_mode", "astra_recce", "recast", "recast_lock", "face_verification"];
+const FLAGS = ["astra_sets", "astra_photo_sets", "astra_previz", "experimental_models", "chat_agent", "voice_mode", "astra_recce", "recast", "recast_lock", "face_verification", "live", "live_paid_plans"];
 
 // RPCs the app calls (schema.sql + pending files).
 const RPCS = [

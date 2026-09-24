@@ -10,6 +10,7 @@ import { DEFAULT_IDENTITY_THRESHOLD, resolveIdentityThresholdSetting } from "@/l
 
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { isPhotoSetsEnabled } from "@/lib/sets/enabled";
+import { isLiveEnabled, isLiveOpenToPlans, liveAllowed } from "@/lib/live/enabled";
 import { readPhotoSources } from "@/lib/sets/photo";
 import {
   isCurrentSetThumb,
@@ -421,6 +422,12 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     // plans", set-config.ts); the page says so before a take is framed, and
     // takeInSet checks again.
     takesOn: setTakesEligible(access.plan, access.isAdmin),
+    // Direct a still live (Live, 2026-09-24): admins, and every paid plan
+    // once live_paid_plans is on; /app/live and its actions check again.
+    liveOn:
+      !liveAllowed({ plan: access.plan, role: access.isAdmin ? "admin" : null }, true).error &&
+      (access.isAdmin || (await isLiveOpenToPlans(access.supabase))) &&
+      (await isLiveEnabled(access.supabase)),
     // A model on a thing (thing-model.ts, 2026-09-24): admins only while our
     // own model builder is proved.
     modelsOn: access.isAdmin,

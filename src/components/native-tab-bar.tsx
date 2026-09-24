@@ -11,6 +11,7 @@ import {
   CONTENT_TYPE_EVENT,
   GENERATE_HREF,
   GENERATE_VIDEO_HREF,
+  LIVE_HREF,
   NATIVE_TAB_HREF,
   RECAST_HREF,
   nativeTabFor,
@@ -42,6 +43,8 @@ import {
 // nothing animates at rest, and the text is rasterised once. Everyone else
 // has one choice, so the lamp goes straight to Generate. Recast stays behind
 // the same admin gate as its sidebar entry until the operator opens it.
+// LIVE (2026-09-24) is the third exposure, for every paid plan: the screen
+// opens whenever either door beyond Generate Video is open to the account.
 //
 // Rendered from the web app rather than built natively, so it stays in step
 // with the rest of the UI automatically. The look lives in globals.css under
@@ -128,6 +131,17 @@ function RecastIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+// Live's glyph: a lens with its on-air light.
+function LiveIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M7.1 16.9a7 7 0 0 1 0-9.8M16.9 7.1a7 7 0 0 1 0 9.8" />
+      <path d="M4.2 19.8a11 11 0 0 1 0-15.6M19.8 4.2a11 11 0 0 1 0 15.6" />
+    </svg>
+  );
+}
+
 // The lamp's filament: the Generate bolt, filled, behind the glass.
 function Lamp() {
   return (
@@ -150,9 +164,12 @@ const CLOSE_MS = 200;
 // How long a picked choice is held lit before the lamp goes out.
 const PICK_MS = 300;
 
-type Choice = "video" | "recast";
+type Choice = "video" | "recast" | "live";
 
-export function NativeTabBar({ recastOn = false }: { recastOn?: boolean }) {
+const CHOICE_HREF: Record<Choice, string> = { video: GENERATE_VIDEO_HREF, recast: RECAST_HREF, live: LIVE_HREF };
+
+export function NativeTabBar({ recastOn = false, liveOn = false }: { recastOn?: boolean; liveOn?: boolean }) {
+  const hasChoices = recastOn || liveOn;
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useLocale();
@@ -280,7 +297,7 @@ export function NativeTabBar({ recastOn = false }: { recastOn?: boolean }) {
       window.dispatchEvent(new CustomEvent(CONTENT_TYPE_EVENT, { detail: "video" }));
     } else {
       setPendingTab("generate");
-      router.push(choice === "video" ? GENERATE_VIDEO_HREF : RECAST_HREF);
+      router.push(CHOICE_HREF[choice]);
     }
     later(() => close(), PICK_MS);
   }
@@ -318,7 +335,7 @@ export function NativeTabBar({ recastOn = false }: { recastOn?: boolean }) {
 
   return (
     <div className={cn("pj", open && "pj-open", closing && "pj-closing")}>
-      {recastOn && (
+      {hasChoices && (
         <>
           {/* House lights: the page behind goes down. A tap anywhere closes. */}
           <div className="pj-house" onClick={close} aria-hidden="true" />
@@ -343,20 +360,38 @@ export function NativeTabBar({ recastOn = false }: { recastOn?: boolean }) {
                   <span>{t.nav.generateVideoSub}</span>
                 </span>
               </button>
-              <button
-                type="button"
-                role="menuitem"
-                className={cn("pj-opt", picked === "recast" && "pj-picked")}
-                onClick={() => choose("recast")}
-              >
-                <span className="pj-ic">
-                  <RecastIcon />
-                </span>
-                <span className="pj-txt">
-                  <b>{t.nav.mystique}</b>
-                  <span>{t.nav.recastSub}</span>
-                </span>
-              </button>
+              {recastOn && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={cn("pj-opt", picked === "recast" && "pj-picked")}
+                  onClick={() => choose("recast")}
+                >
+                  <span className="pj-ic">
+                    <RecastIcon />
+                  </span>
+                  <span className="pj-txt">
+                    <b>{t.nav.mystique}</b>
+                    <span>{t.nav.recastSub}</span>
+                  </span>
+                </button>
+              )}
+              {liveOn && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={cn("pj-opt", picked === "live" && "pj-picked")}
+                  onClick={() => choose("live")}
+                >
+                  <span className="pj-ic">
+                    <LiveIcon />
+                  </span>
+                  <span className="pj-txt">
+                    <b>{t.nav.live}</b>
+                    <span>{t.nav.liveSub}</span>
+                  </span>
+                </button>
+              )}
             </div>
           </div>
         </>
@@ -365,7 +400,7 @@ export function NativeTabBar({ recastOn = false }: { recastOn?: boolean }) {
       <nav ref={barRef} className="pj-bar">
         {tabs.slice(0, 3).map(tabLink)}
         <div className="pj-mid">
-          {recastOn ? (
+          {hasChoices ? (
             <button
               ref={lampRef}
               type="button"

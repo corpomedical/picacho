@@ -3,6 +3,7 @@ import type { PlanId } from "@/lib/plans";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { isRecceEnabled, isSetsEnabled } from "@/lib/sets/enabled";
 import { isRecastEnabled } from "@/lib/recast/enabled";
+import { isLiveEnabled, isLiveOpenToPlans, liveAllowed } from "@/lib/live/enabled";
 import { setsEligible } from "@/lib/sets/set-config";
 import { RatePrompt } from "@/components/rate-prompt";
 import { NativePush } from "@/components/native-push";
@@ -96,6 +97,13 @@ export default async function AppLayout({
   // The Mystique door (working title): the same rule — admins only while
   // the recast lane is proved, behind its own flag.
   const mystiqueVisible = isAdmin && (await isRecastEnabled(supabase));
+  // Live (H3 Max Director, 2026-09-24): admins, and every paid plan once
+  // `live_paid_plans` is on (lib/live/enabled.ts), behind its own switch.
+  // The plan first (no read): free accounts skip both flags, admins the plans one.
+  const liveVisible =
+    !liveAllowed(profile, true).error &&
+    (isAdmin || (await isLiveOpenToPlans(supabase))) &&
+    (await isLiveEnabled(supabase));
 
   // Ask for a rating only once someone has had enough successful results to
   // hold an opinion, and only once ever (rating_prompted_at is stamped by
@@ -140,6 +148,7 @@ export default async function AppLayout({
         setsVisible={setsVisible}
         recceVisible={recceVisible}
         mystiqueVisible={mystiqueVisible}
+        liveVisible={liveVisible}
       />
       {/* Registers this device for push, once there's a session to
           attach it to. No-ops entirely on the web. */}
@@ -152,9 +161,9 @@ export default async function AppLayout({
         <RouteProgress />
       </Suspense>
       <ScrollReset />
-      {/* The Generate lamp offers Recast to the accounts that can open it:
-          the same gate as the sidebar's entry. */}
-      <NativeTabBar recastOn={mystiqueVisible} />
+      {/* The Generate lamp offers Recast and Live to the accounts that can
+          open them: the same gates as the sidebar's entries. */}
+      <NativeTabBar recastOn={mystiqueVisible} liveOn={liveVisible} />
       <NativeQuickPill
         shareUrl={profile?.username ? `https://picacho.ai/r/${profile.username}` : undefined}
       />

@@ -533,6 +533,7 @@ export function SetView({
   modelsOn = false,
   initialThingModels = [],
   takesOn,
+  liveOn = false,
   initialAsk = null,
   initialCharacterId = null,
   initialAskFirst = true,
@@ -567,6 +568,8 @@ export function SetView({
    * page says so before a take is framed; takeInSet checks again.
    */
   takesOn: boolean;
+  /** Whether a finished still offers "Direct it live" — /app/live opening on the still, the shot's words as the opening (Live, 2026-09-24). */
+  liveOn?: boolean;
   /** The photos on the set's things and the sheets already drawn (R1, references.ts listElementPhotos). */
   initialElementPhotos?: { photos: ElementPhoto[]; sheets: string[] };
   /** The picture model stills are drawn with: the things' sheets ride GPT Image only (elements.ts planShotSheets). */
@@ -8315,6 +8318,14 @@ export function SetView({
                     >
                       {s.takeItSomewhere}
                     </button>
+                  )}
+                  {liveOn && viewingShot.kind === "still" && viewingShot.status === "succeeded" && (
+                    <Link
+                      href={`/app/live?from=${encodeURIComponent(viewingShot.generationId)}&set=${encodeURIComponent(setId)}`}
+                      className={glassBtn}
+                    >
+                      {s.directLive}
+                    </Link>
                   )}
                   <Link href={`/app/history/${viewingShot.generationId}`} className={glassBtn}>
                     {s.openTake}

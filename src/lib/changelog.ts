@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.89.0",
+    build: 128,
+    date: "2026-09-24",
+    title: "Live: direct a take while it plays",
+    items: [
+      "New: Live, on MiniMax H3 Max Director. You set the opening (words, a character's photo, or a Helios still) and go live. The take streams while you type what happens next, and the scene follows each direction as it plays. It's the third choice under the app bar's lamp and sits in the desktop sidebar's Tools. On a finished Helios still it's \"Direct it live\", which opens on that still with the shot's own words.",
+      "You pick the length before starting: 30 s for 9 credits, 1 min for 18, 2 min for 35. That's fal's $0.08 a second on the house's $0.28-per-credit rate. You pay up front. Press Stop early and the seconds you didn't use come back as credits, measured by our server, never by the browser. A take that never starts gives everything back.",
+      "Every direction goes through the same words check as every other prompt before it's sent. The page records the take, and when it stops the recording goes into Media after passing the same content check as any render. fal keeps no file of a live take.",
+      "Admins first. Directions in Live go straight from the browser to fal, so someone who knows how could skip our words check, and fal's own filter would be the only guard. Once a paid test take shows that filter refusing what it should, the `live_paid_plans` switch in Admin opens Live to every paid plan. The `live` switch turns it off entirely.",
+      "Money safeguards, from a review before shipping. A take stopped while its stage is still opening is charged fal's $1.20 minimum (5 credits), because fal may already be opening a session, and that session is never passed to the browser. The meter ends exactly at the paid length, with no unpaid overrun. Leaving the page mid-start stops the take at once. A press delivered twice follows the first take instead of saying \"Couldn't start\".",
+    ],
+  },
+  {
     version: "1.88.0",
     build: 127,
     date: "2026-09-24",

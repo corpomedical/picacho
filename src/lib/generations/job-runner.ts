@@ -37,6 +37,8 @@ import { recordPolicyRefusal } from "@/lib/generations/policy-log";
 import { mp3DurationSeconds, padMp3WithSilence } from "@/lib/generations/providers/audio-duration";
 import { parseDialogueCue } from "@/lib/generations/dialogue-cue";
 import { mediaUrl } from "@/lib/media/url";
+import { LIVE_MODEL_ID } from "@/lib/live/live";
+import { sweepLiveTakes } from "@/lib/live/store";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { FetchTimeoutError } from "@/lib/generations/providers/fetch-with-timeout";
 import { isRawProviderError } from "@/lib/generations/user-facing-error";
@@ -3080,10 +3082,19 @@ export async function reapStaleJobs(userId: string): Promise<void> {
   // client as the job scan (generation_jobs is RLS-locked server-only, and
   // the generations filter here is explicit on user_id), same lazy page-load
   // cadence, same small bounded query.
+  // LIVE TAKES FIRST (2026-09-24). A live take has no job row by design —
+  // it streams peer to peer and its meter lives on the row — so to the
+  // orphan branch below it looks orphaned, and a write-off would refund it
+  // WHOLE, seconds it ran included. Settle it on its own terms first (the
+  // seconds it ran charged, the rest back), and keep the write-off off every
+  // live row — this select never names the `live` column, so it keeps
+  // working even before live.sql has run.
+  await sweepLiveTakes(admin, userId).catch((err) => console.error("[reaper] live sweep failed:", err));
+
   const orphanCutoff = new Date(Date.now() - ORPHANED_GENERATION_TIMEOUT_MS).toISOString();
   const { data: longRunning } = await admin
     .from("generations")
-    .select("id, pipeline_log")
+    .select("id, pipeline_log, model_id")
     .eq("user_id", userId)
     .eq("status", "generating")
     .lt("created_at", orphanCutoff)
@@ -3103,6 +3114,8 @@ export async function reapStaleJobs(userId: string): Promise<void> {
 
     for (const gen of longRunning) {
       if (withJob.has(gen.id as string)) continue;
+      // Live rows are sweepLiveTakes' alone (above), meter or not.
+      if (gen.model_id === LIVE_MODEL_ID) continue;
       try {
         // finish() gives the standard failure bookkeeping — the
         // status-guarded terminal write, the flag-gated refund, the push

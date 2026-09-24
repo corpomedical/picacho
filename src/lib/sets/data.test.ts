@@ -64,6 +64,11 @@ vi.mock("@/lib/sets/access", () => ({
   UUID_RE: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
 }));
 vi.mock("@/lib/sets/enabled", () => ({ isPhotoSetsEnabled: async () => false }));
+vi.mock("@/lib/live/enabled", () => ({
+  liveAllowed: () => ({ error: null, code: null, isAdmin: false }),
+  isLiveEnabled: async () => false,
+  isLiveOpenToPlans: async () => false,
+}));
 vi.mock("@/lib/media/url", async () => await import("../media/url"));
 vi.mock("@/lib/plans", async () => await import("../plans"));
 vi.mock("@/lib/generations/identity-gate", async () => await import("../generations/identity-gate"));

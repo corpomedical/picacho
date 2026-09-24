@@ -136,6 +136,8 @@ export type SetPageData =
       thingModels: { key: string; url: string; flip: boolean }[];
       /** Whether this person's plan takes clips and renders films: every paid plan's (set-config.ts setTakesEligible, 2026-09-19); takeInSet checks again. */
       takesOn: boolean;
+      /** Whether a finished still offers "Direct it live" (Live, lib/live/): every paid plan, behind the live switch; the take checks again. */
+      liveOn: boolean;
       /** Astra changes left this billing month (set-config.ts SET_EDITS_MONTHLY_LIMITS); null when uncapped or unread. */
       astraEditsLeft: number | null;
       /** The photos on the set's things (references.ts listElementPhotos, R1), oldest first, and the hashes of the sheets already drawn. */

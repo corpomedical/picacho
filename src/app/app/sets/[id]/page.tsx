@@ -108,6 +108,7 @@ export default async function SetPage({
         modelsOn={data.modelsOn}
         initialThingModels={data.thingModels}
         takesOn={data.takesOn}
+        liveOn={data.liveOn}
         initialElementPhotos={data.elementPhotos}
         stillModel={data.stillModel}
         unshootable={data.unshootable}
