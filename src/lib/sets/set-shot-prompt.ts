@@ -187,7 +187,7 @@ export const ELEMENT_SHEETS_SENTENCES: readonly string[] = [
  * With the car grey in the sketch, its only colour is its own sheet's.
  */
 export const ELEMENT_GREY_SENTENCE =
-  "In the layout sketch, each thing that has a sheet of its own is drawn plain grey: the sketch gives only where it stands, its size and which way it faces. Its colour, design and materials come from its own sheet, never from the grey.";
+  "In the layout sketch, each thing that has a sheet of its own is drawn plain grey: the sketch gives only where it stands, its size and which way it faces, and its grey blocks are a rough placeholder, not its body. Its body shape, silhouette and proportions, its colour, design and materials all come from its own sheet, never from the grey blocks.";
 /** When the look rides too: its sheet shows the same things from an earlier still; a thing's own photos win. */
 export const ELEMENT_WINS_SENTENCE =
   "Where a thing appears both in the design sheet of objects from this place and on a sheet of its own, draw it from its own sheet.";
