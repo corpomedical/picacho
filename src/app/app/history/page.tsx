@@ -342,7 +342,7 @@ export default async function HistoryPage({
         </nav>
       </div>
 
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <div data-producer-spot="renders" className="mt-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {error ? (
           <Card className="col-span-full text-center">
             <p className="text-sm text-red-600 dark:text-red-400">{h.couldntLoad}</p>
@@ -365,7 +365,7 @@ export default async function HistoryPage({
           )
         ) : (
           cards.map((g) => (
-            <Link key={g.id} href={`/app/history/${g.id}`} className="group block">
+            <Link key={g.id} href={`/app/history/${g.id}`} data-producer-render={g.id} className="group block">
               <div className="flex h-full flex-col rounded-[18px] border border-atelier-rule bg-atelier-surface p-2.5 shadow-[0_1px_2px_rgba(33,29,22,0.04)] transition-[border-color,box-shadow] hover:border-atelier-muted/60 hover:shadow-[0_8px_20px_-12px_rgba(33,29,22,0.25)]">
                 {/* The render on its Darkroom stage. 4:3 rather than square:
                     every engine renders landscape or portrait video, and a

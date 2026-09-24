@@ -216,6 +216,7 @@ export default async function GeneratePage() {
           </>
         )}
         <div
+          data-producer-spot="credits"
           className={`flex items-baseline gap-[7px] ${stats.total > 0 ? "border-l border-[#f3ede4]/15 pl-[22px]" : ""}`}
         >
           {/* Credits — the ochre-numeral proof idiom. Display only, same

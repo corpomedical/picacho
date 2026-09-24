@@ -30,6 +30,38 @@ short translation.
 
 ---
 
+## versionCode 20 · versionName 1.20.0
+
+**Context.** The microphone (2026-09-25): RECORD_AUDIO and
+MODIFY_AUDIO_SETTINGS declared, so the composer's mic button and the
+Producer's hands-free voice can record inside the app (Capacitor's own
+WebChromeClient asks for the permission when a page does). No plugin and no
+Java changed. The Data safety form must add Audio (voice or sound
+recordings) with this upload. AAB at ~/Desktop/Picacho-20.aab (sha256
+a63a2ae6…), signed with the upload key (SHA-256 …F0:FB:AB).
+
+```
+<en-US>
+You can now use your voice in the app: tap a mic button to speak instead of typing. The app asks for microphone access the first time you tap a mic, and it only listens while you're using it. What you say is turned into text, and the recording isn't kept.
+</en-US>
+<es-419>
+Ahora puedes usar tu voz en la app: toca un botón de micrófono para hablar en lugar de escribir. La app te pide acceso al micrófono la primera vez que tocas uno, y solo escucha mientras lo estás usando. Lo que dices se convierte en texto y la grabación no se guarda.
+</es-419>
+<es-ES>
+Ahora puedes usar tu voz en la app: toca un botón de micrófono para hablar en lugar de escribir. La app te pide acceso al micrófono la primera vez que tocas uno, y solo escucha mientras lo estás usando. Lo que dices se convierte en texto y la grabación no se guarda.
+</es-ES>
+<pt-BR>
+Agora você pode usar sua voz no app: toque em um botão de microfone para falar em vez de digitar. O app pede acesso ao microfone na primeira vez que você toca em um, e só escuta enquanto você o usa. O que você diz vira texto, e a gravação não é guardada.
+</pt-BR>
+<it-IT>
+Ora puoi usare la tua voce nell'app: tocca un pulsante del microfono per parlare invece di scrivere. L'app chiede l'accesso al microfono la prima volta che ne tocchi uno, e ascolta solo mentre lo stai usando. Quello che dici diventa testo e la registrazione non viene conservata.
+</it-IT>
+```
+
+Counts: en-US 255, es-419 266, es-ES 266, pt-BR 254, it-IT 279 (limit 500 each).
+
+---
+
 ## versionCode 19 · versionName 1.19.0
 
 **Context.** The portrait lock (2026-09-23, dce6504): the app is locked

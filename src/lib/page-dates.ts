@@ -26,7 +26,7 @@
 export const PAGE_UPDATED = {
   "/": "2026-09-21",
   "/pricing": "2026-09-19",
-  "/privacy": "2026-09-19",
+  "/privacy": "2026-09-25",
   "/terms": "2026-08-30",
   "/content-policy": "2026-08-05",
   "/delete-account": "2026-09-21",

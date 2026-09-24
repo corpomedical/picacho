@@ -18,11 +18,14 @@ import type { LegalDoc } from "./types";
 // September 19, 2026 is the day the facial-information section was added
 // for face verification (lib/faces/) — BytePlus's Real Person Verification
 // Usage Rules, section 3, list what it must say.
+// September 25, 2026 is the day voice was disclosed: the Android app gained
+// the microphone (versionCode 20) for the Producer's hands-free voice, and
+// recordings go to OpenAI for transcription — never stored by us.
 const UPDATED: Record<Locale, string> = {
-  en: "September 19, 2026",
-  es: "19 de septiembre de 2026",
-  it: "19 settembre 2026",
-  pt: "19 de setembro de 2026",
+  en: "September 25, 2026",
+  es: "25 de septiembre de 2026",
+  it: "25 settembre 2026",
+  pt: "25 de setembro de 2026",
 };
 
 const privacy: Record<Locale, LegalDoc> = {
@@ -64,6 +67,13 @@ const privacy: Record<Locale, LegalDoc> = {
         paragraphs: [
           "Prompts you submit are sent to third-party AI providers to draft, review, and generate your content. These providers process your prompt text — and, for image generation, a reference photo if you've added one — to produce a result. We don't control how these providers otherwise handle data beyond the terms of our agreements with them.",
           "Generated images and videos are stored in our cloud storage and are only accessible to your account, and to Picacho administrators for support and safety purposes.",
+        ],
+      },
+      {
+        heading: "Voice and the assistant",
+        paragraphs: [
+          "If you use a microphone feature (the mic in the composer, or talking to the Producer), your recording is sent to our AI provider, OpenAI, to be turned into text. Picacho does not store the recording; only the resulting text is kept, as part of your prompt or conversation. When the Producer answers out loud, its reply is sent to OpenAI to be turned into speech. The microphone is used only after you tap a mic button and allow access.",
+          "The Producer, the personal assistant on Elite accounts, keeps your conversation with it and the short notes it writes about how you work, so it can pick up where you left off. You can read, edit and delete every note, and clear the conversation, from the Producer itself. Both are deleted with your account.",
         ],
       },
       {
@@ -164,6 +174,13 @@ const privacy: Record<Locale, LegalDoc> = {
         paragraphs: [
           "Las instrucciones que envías se transmiten a proveedores externos de IA para redactar, revisar y generar tu contenido. Estos proveedores procesan el texto de tu instrucción —y, para generación de imágenes, una foto de referencia si la has añadido— para producir un resultado. No controlamos cómo estos proveedores manejan los datos más allá de los términos de nuestros acuerdos con ellos.",
           "Las imágenes y videos generados se almacenan en nuestro almacenamiento en la nube y solo son accesibles para tu cuenta y para los administradores de Picacho, con fines de soporte y seguridad.",
+        ],
+      },
+      {
+        heading: "La voz y el asistente",
+        paragraphs: [
+          "Si usas una función de micrófono (el micrófono del compositor, o hablar con el Producer), tu grabación se envía a nuestro proveedor de IA, OpenAI, para convertirla en texto. Picacho no guarda la grabación; solo se conserva el texto resultante, como parte de tu prompt o de tu conversación. Cuando el Producer responde en voz alta, su respuesta se envía a OpenAI para convertirla en voz. El micrófono solo se usa después de que toques un botón de micrófono y permitas el acceso.",
+          "El Producer, el asistente personal de las cuentas Elite, guarda tu conversación con él y las notas breves que escribe sobre tu forma de trabajar, para poder continuar donde lo dejaste. Puedes leer, editar y borrar cada nota, y vaciar la conversación, desde el propio Producer. Ambas se eliminan con tu cuenta.",
         ],
       },
       {
@@ -269,6 +286,13 @@ const privacy: Record<Locale, LegalDoc> = {
         ],
       },
       {
+        heading: "Voz e o assistente",
+        paragraphs: [
+          "Se você usar um recurso de microfone (o microfone do compositor, ou falar com o Producer), sua gravação é enviada ao nosso provedor de IA, a OpenAI, para ser convertida em texto. O Picacho não armazena a gravação; apenas o texto resultante é mantido, como parte do seu prompt ou da sua conversa. Quando o Producer responde em voz alta, a resposta é enviada à OpenAI para ser convertida em fala. O microfone só é usado depois que você toca em um botão de microfone e permite o acesso.",
+          "O Producer, o assistente pessoal das contas Elite, guarda a sua conversa com ele e as notas curtas que escreve sobre a sua forma de trabalhar, para continuar de onde você parou. Você pode ler, editar e apagar cada nota, e limpar a conversa, no próprio Producer. Ambas são excluídas junto com a sua conta.",
+        ],
+      },
+      {
         id: "facial-information",
         heading: "Informações faciais (verificação facial)",
         paragraphs: [
@@ -368,6 +392,13 @@ const privacy: Record<Locale, LegalDoc> = {
         paragraphs: [
           "I prompt che invii vengono trasmessi a fornitori terzi di IA per redigere, revisionare e generare i tuoi contenuti. Questi fornitori elaborano il testo del tuo prompt — e, per la generazione di immagini, una foto di riferimento se ne hai aggiunta una — per produrre un risultato. Non controlliamo come questi fornitori gestiscono altrimenti i dati oltre ai termini dei nostri accordi con loro.",
           "Le immagini e i video generati sono memorizzati nel nostro spazio di archiviazione cloud e sono accessibili solo al tuo account e agli amministratori di Picacho, per finalità di supporto e sicurezza.",
+        ],
+      },
+      {
+        heading: "La voce e l'assistente",
+        paragraphs: [
+          "Se usi una funzione del microfono (il microfono del compositore, o parlare con il Producer), la tua registrazione viene inviata al nostro fornitore di IA, OpenAI, per essere trasformata in testo. Picacho non conserva la registrazione; viene mantenuto solo il testo risultante, come parte del tuo prompt o della tua conversazione. Quando il Producer risponde a voce, la sua risposta viene inviata a OpenAI per essere trasformata in parlato. Il microfono viene usato solo dopo che tocchi un pulsante del microfono e ne consenti l'accesso.",
+          "Il Producer, l'assistente personale degli account Elite, conserva la tua conversazione con lui e le brevi note che scrive sul tuo modo di lavorare, per riprendere da dove avevi lasciato. Puoi leggere, modificare ed eliminare ogni nota, e cancellare la conversazione, dal Producer stesso. Entrambe vengono eliminate insieme al tuo account.",
         ],
       },
       {

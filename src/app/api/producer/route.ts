@@ -9,9 +9,14 @@ import {
   PRODUCER_MODEL,
   RESERVE_UNITS,
   costOfCallUsd,
+  speechCostUsd,
+  transcribeCostUsd,
   unitsForCostUsd,
   type CallUsage,
 } from "@/lib/producer/prices";
+import { isVoiceConfigured, readSpokenInput, speak, transcribe } from "@/lib/producer/speech";
+import { sentenceChunker } from "@/lib/producer/sentences";
+import { spotForTool } from "@/lib/producer/spots";
 import { appendMessages, loadMessages, loadPrefs, openThread } from "@/lib/producer/store";
 import { closeTail, visibleText, type StoredBlock, type StoredMessage } from "@/lib/producer/history";
 import { buildStateNote, type StateFingerprint } from "@/lib/producer/state";
@@ -42,6 +47,16 @@ import { rateLimited } from "@/lib/rate-limit";
 //
 // NEVER SPENDS. prepare_send hands the person a card; the composer's receipt
 // and their own Send are the only way a credit moves.
+//
+// VOICE (2026-09-25, operator: "OpenAI in + out"). A spoken message arrives
+// as `audio` and is transcribed here, inside the turn, so its cost settles
+// with the turn's. With `speak` on, the answer is read aloud sentence by
+// sentence as it streams (lib/producer/sentences.ts) — each piece goes to
+// text-to-speech the moment it is complete and plays in order on the device.
+//
+// WHERE IT IS WORKING. Each tool call also sends a `spot` event naming the
+// part of the page it concerns (composer, renders, one render, notes), so
+// the sheet can light that part's bottom edge (lib/producer/spots.ts).
 //
 // REFUSALS FALL BACK. `fallbacks: "default"` lets the API re-run a declined
 // request on a model its routing picks, inside the same call; the turn is then
@@ -93,9 +108,21 @@ export async function POST(request: NextRequest) {
   const access = producerAllowed(profile, isAdmin || (await isProducerOpenToElite(supabase)));
   if (access.error) return NextResponse.json({ error: access.error }, { status: 403 });
 
-  const body = (await request.json().catch(() => null)) as { message?: unknown; page?: unknown; focus?: unknown } | null;
-  const message = typeof body?.message === "string" ? body.message.trim().slice(0, MAX_MESSAGE_CHARS) : "";
-  if (!message) return NextResponse.json({ error: "Nothing to answer." }, { status: 400 });
+  const body = (await request.json().catch(() => null)) as {
+    message?: unknown;
+    page?: unknown;
+    focus?: unknown;
+    audio?: unknown;
+    speak?: unknown;
+  } | null;
+  const spoken = readSpokenInput(body?.audio);
+  if (spoken && "error" in spoken) return NextResponse.json({ error: spoken.error }, { status: 400 });
+  if ((spoken || body?.speak === true) && !isVoiceConfigured()) {
+    return NextResponse.json({ error: "Voice isn't set up on this server yet." }, { status: 503 });
+  }
+  const speakReplies = body?.speak === true;
+  let message = typeof body?.message === "string" ? body.message.trim().slice(0, MAX_MESSAGE_CHARS) : "";
+  if (!message && !spoken) return NextResponse.json({ error: "Nothing to answer." }, { status: 400 });
 
   if (await rateLimited(user.id, "producer", 60, 10)) {
     return NextResponse.json({ error: "Slow down a moment." }, { status: 429 });
@@ -164,6 +191,23 @@ export async function POST(request: NextRequest) {
     return units;
   }
 
+  // ---- A spoken message becomes words first ---------------------------------
+  if (spoken) {
+    try {
+      message = (await transcribe(spoken.input)).slice(0, MAX_MESSAGE_CHARS);
+      totals.cost += transcribeCostUsd(spoken.input.seconds);
+    } catch {
+      await settle("transient");
+      return NextResponse.json({ error: "Couldn't make out the recording. Try again." }, { status: 502 });
+    }
+    if (!message) {
+      // Nothing was said: the recording cost fractions of a cent and no model
+      // ran, so no units are charged (settle "ok" with no calls = 0).
+      await settle("ok");
+      return NextResponse.json({ heard: "" }, { status: 200 });
+    }
+  }
+
   // ---- The conversation, and this turn's opening messages -----------------
   let thread: Awaited<ReturnType<typeof openThread>>;
   let rows: Awaited<ReturnType<typeof loadMessages>>;
@@ -192,6 +236,7 @@ export async function POST(request: NextRequest) {
     watch,
     watchBar,
     focus: body?.focus,
+    spoken: Boolean(spoken) || speakReplies,
   });
 
   const opening = [
@@ -233,6 +278,33 @@ export async function POST(request: NextRequest) {
         }
       };
 
+      if (spoken) send("heard", { text: message });
+
+      // Read-aloud: sentences go to text-to-speech as they complete and are
+      // sent in order. One failure stops the voice for the rest of the turn —
+      // the words are still on screen.
+      const chunker = sentenceChunker();
+      let voiceChain: Promise<void> = Promise.resolve();
+      let voiceIndex = 0;
+      let voiceBroken = false;
+      const say = (pieces: string[]) => {
+        if (!speakReplies) return;
+        for (const piece of pieces) {
+          const index = voiceIndex++;
+          const job = speakReplies && !voiceBroken ? speak(piece).catch(() => null) : Promise.resolve(null);
+          voiceChain = voiceChain.then(async () => {
+            const audio = await job;
+            if (!audio || upstream.signal.aborted) {
+              voiceBroken = true;
+              return;
+            }
+            totals.cost += speechCostUsd(piece.length);
+            send("audio", { index, data: audio });
+          });
+        }
+      };
+      const speakText = (text: string) => say(chunker.push(text));
+
       const cards: PreparedSend[] = [];
       let notesChanged = false;
       let withFallbacks = true;
@@ -265,6 +337,8 @@ export async function POST(request: NextRequest) {
           for await (const event of s) {
             if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
               send("status", { text: toolStatus(event.content_block.name) });
+              const spot = spotForTool(event.content_block.name);
+              if (spot) send("spot", { spot });
             } else if (
               event.type === "content_block_delta" &&
               event.delta.type === "text_delta" &&
@@ -272,6 +346,7 @@ export async function POST(request: NextRequest) {
             ) {
               sentText = true;
               send("delta", { text: event.delta.text });
+              speakText(event.delta.text);
             }
           }
           return s.finalMessage();
@@ -309,6 +384,7 @@ export async function POST(request: NextRequest) {
             // Nothing of a refused answer is kept: it may be partial, and the
             // conversation should read as a clean decline.
             send("delta", { text: REFUSED_TEXT });
+            speakText(REFUSED_TEXT);
             await appendMessages(admin, {
               threadId: thread.id,
               userId: user.id,
@@ -332,10 +408,15 @@ export async function POST(request: NextRequest) {
           if (answer.stop_reason === "tool_use" && calls.length > 0) {
             const outcomes = [];
             for (const c of calls) {
+              if (c.name === "look_at_render") {
+                const id = (c.input as { render_id?: unknown } | null)?.render_id;
+                if (typeof id === "string") send("spot", { spot: "render", id });
+              }
               const o = await runTool({ supabase, admin, userId: user.id }, c);
               if (o.card) {
                 cards.push(o.card);
                 send("card", o.card);
+                send("spot", { spot: "composer" });
               }
               if (o.notesChanged) notesChanged = true;
               outcomes.push(o.result);
@@ -382,6 +463,14 @@ export async function POST(request: NextRequest) {
           });
         }
       } finally {
+        // The last words, then every queued piece of speech, before the turn
+        // is settled — their cost belongs to it.
+        say(chunker.flush());
+        try {
+          await voiceChain;
+        } catch {
+          // A voice failure never fails the turn.
+        }
         let units = 0;
         try {
           units = (await settle(outcome)) ?? 0;

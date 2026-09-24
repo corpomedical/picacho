@@ -7,7 +7,12 @@ import {
   costOfCallUsd,
   rateFor,
   unitsForCostUsd,
+  transcribeCostUsd,
+  speechCostUsd,
 } from "./prices";
+import { sentenceChunker } from "./sentences";
+import { readSpokenInput, MAX_AUDIO_BYTES } from "./speech";
+import { spotForTool, spotSelector, isSpot } from "./spots";
 import { runNotesCommand, normalizeNotePath, MAX_NOTES, type Note, type NotesStore } from "./notes";
 import { PRODUCER_TOOLS, composerHref, readSearchFilters, searchText, validatePreparedSend } from "./tools";
 import { closeTail, visibleText, INTERRUPTED_ANSWER } from "./history";
@@ -232,6 +237,66 @@ describe("stream parsing", () => {
       { event: "card", data: { id: "a" } },
     ]);
     expect(rest).toBe("event: del");
+  });
+});
+
+describe("voice", () => {
+  it("prices speech from OpenAI's published rates", () => {
+    // gpt-4o-mini-transcribe $0.003/min; tts-1 $15 per 1M characters.
+    expect(transcribeCostUsd(10)).toBeCloseTo((10 / 60) * 0.003, 10);
+    expect(transcribeCostUsd(600)).toBeCloseTo(0.003, 10); // capped at a minute
+    expect(speechCostUsd(300)).toBeCloseTo(0.0045, 10);
+  });
+
+  it("releases whole sentences as they stream, and the rest at the end", () => {
+    const c = sentenceChunker();
+    const out: string[] = [];
+    for (const piece of ["Sure. Here", "'s the plan for Friday, three shots in all. The ", "first is a close-up at golden hour", " and the second walks the market"]) {
+      out.push(...c.push(piece));
+    }
+    expect(out).toEqual(["Sure. Here's the plan for Friday, three shots in all."]);
+    expect(c.flush()).toEqual(["The first is a close-up at golden hour and the second walks the market"]);
+    expect(c.flush()).toEqual([]);
+  });
+
+  it("breaks a long run with no sentence end at a space", () => {
+    const c = sentenceChunker();
+    const long = "word ".repeat(200);
+    const out = c.push(long);
+    expect(out.length).toBeGreaterThan(0);
+    expect(out.every((p) => p.length <= 600)).toBe(true);
+  });
+
+  it("reads a recording only in an allowed format and size", () => {
+    expect(readSpokenInput(undefined)).toBeNull();
+    expect(readSpokenInput({ data: "AAAA", mime: "video/mp4", seconds: 3 })).toEqual({
+      error: "That recording's format isn't supported.",
+    });
+    const ok = readSpokenInput({ data: Buffer.from("hello").toString("base64"), mime: "audio/webm;codecs=opus", seconds: 999 });
+    expect(ok && "input" in ok && ok.input.seconds).toBe(60);
+    const big = Buffer.alloc(MAX_AUDIO_BYTES + 1).toString("base64");
+    expect(readSpokenInput({ data: big, mime: "audio/webm", seconds: 5 })).toEqual({
+      error: "That was too long. Keep it under a minute.",
+    });
+  });
+});
+
+describe("spots", () => {
+  it("maps what the Producer does to where it lights", () => {
+    expect(spotForTool("prepare_send")).toBe("composer");
+    expect(spotForTool("search_renders")).toBe("renders");
+    expect(spotForTool("look_at_render")).toBe("render");
+    expect(spotForTool("memory")).toBe("notes");
+    expect(spotForTool("anything else")).toBeNull();
+  });
+
+  it("finds one render by id, and never builds a selector from a bad id", () => {
+    const id = "00000000-0000-4000-8000-000000000002";
+    expect(spotSelector("render", id)).toBe(`[data-producer-render="${id}"]`);
+    expect(spotSelector("render", '"] body [x="')).toBe('[data-producer-spot="render"]');
+    expect(spotSelector("composer")).toBe('[data-producer-spot="composer"]');
+    expect(isSpot("composer")).toBe(true);
+    expect(isSpot("<script>")).toBe(false);
   });
 });
 

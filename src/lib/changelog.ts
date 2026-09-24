@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.94.0",
+    build: 133,
+    date: "2026-09-25",
+    title: "The Producer talks: hands-free voice, the wheel, and a light where it works",
+    items: [
+      "Hands-free voice. Tap the mic on the wheel and just talk: the Producer notices when you stop, answers out loud sentence by sentence, then listens again. Tap the mic to stop, or tap it while it's speaking to cut in. It pauses on its own after 12 seconds of quiet, and the mic is closed while it speaks, so it never answers itself. It uses OpenAI (gpt-4o-mini-transcribe to hear, tts-1 to speak), about half a cent per spoken turn, billed in the same assistant allowance.",
+      "The wheel. Opening the lamp grows a dial out from behind the bulb with five controls: talk, read answers aloud (for typed messages too), notes, start fresh, and name and settings. Its rim fills with this month's assistant usage, and a fully lit rim means the allowance is used up. On phones the dial sits in the corner (above the tab bar in the app) and tucks away while you type.",
+      "A light where it works. While the Producer works on something, a thin glowing line sits along that thing's bottom edge: the composer when it prepares a send, the take strip or the History grid when it searches, the render when it looks at one, the Notes control when it writes a note. Nothing on the page is restyled; the light sits on top.",
+      "Opening a prepared send while you're already on Generate now sets the model, length, character and image or video too, not just the words.",
+      "The Android app can use the microphone (version 20). Until now the composer's mic button couldn't record inside the app at all. The privacy policy has a new section, \"Voice and the assistant\", in all four languages: recordings go to OpenAI to become text and aren't kept by Picacho.",
+    ],
+  },
+  {
     version: "1.93.0",
     build: 132,
     date: "2026-09-24",

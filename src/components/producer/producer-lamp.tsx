@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   clearProducerNotes,
   deleteProducerNote,
@@ -16,7 +16,11 @@ import { parseProducerFrames } from "@/lib/producer/sse";
 import type { PreparedSend } from "@/lib/producer/tools";
 import type { Note } from "@/lib/producer/notes";
 import type { WatchItem } from "@/lib/producer/watch";
+import { isSpot, type Spot } from "@/lib/producer/spots";
 import styles from "./producer-lamp.module.css";
+import { Wheel, WHEEL_R } from "./wheel";
+import { Spotlight, type LitSpot } from "./spotlight";
+import { useHandsFree, type SpokenAudio } from "./use-hands-free";
 
 // The Producer's lamp and sheet (2026-09-24; operator: "A lamp on every
 // page", "Prepares, you send", "User picks" the name).
@@ -26,6 +30,13 @@ import styles from "./producer-lamp.module.css";
 // The sheet is a panel on the right from md up — non-modal, so the page stays
 // usable beside it (open a prepared send, look at History) — and a bottom
 // sheet on phones.
+//
+// Round 2 (2026-09-25, operator): opening the sheet grows a WHEEL out from
+// behind the bulb (wheel.tsx) — talk hands-free, read answers aloud, notes,
+// start fresh, name — whose rim is lit by how much of the month's assistant
+// allowance is used; hands-free voice (use-hands-free.ts); and a thin light
+// on the bottom edge of whatever part of the page the Producer is working on
+// (spotlight.tsx).
 //
 // English only for v1 (admins); the words are gathered here to translate in
 // one place when it opens to Elite.
@@ -64,15 +75,42 @@ const W = {
   loadFailed: "Couldn't load. Close and try again.",
   longConversation: "This conversation is getting long. Start fresh to keep it quick and cheap. Your notes carry over.",
   prepared: "Prepared, not sent",
+  listening: "Listening",
+  hearing: "Hearing you",
+  sendingVoice: "Got it",
+  speaking: "Speaking",
+  tapToTalk: "Tap the mic to stop",
+  heardPlaceholder: "…",
+  limitReached: "You've used this period's assistant allowance.",
 };
+
+const READ_ALOUD_KEY = "picacho.producer.readAloud";
+
+function readStoredBool(key: string): boolean {
+  try {
+    return window.localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
 
 // Past this many lines a fresh start is suggested (every turn re-reads the
 // whole conversation — cheaply, from cache, but not for free).
 const LONG_CONVERSATION = 120;
 
 type Streaming = { text: string; cards: PreparedSend[]; status: string | null };
+type SendInput = { text?: string; audio?: SpokenAudio; focus?: string };
 
-export function ProducerLamp({ name: initialName, watchCount }: { name: string; watchCount: number }) {
+export function ProducerLamp({
+  name: initialName,
+  watchCount,
+  voiceAvailable,
+}: {
+  name: string;
+  watchCount: number;
+  /** The server has a speech provider configured (OPENAI_API_KEY). */
+  voiceAvailable: boolean;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"chat" | "notes">("chat");
@@ -88,8 +126,33 @@ export function ProducerLamp({ name: initialName, watchCount }: { name: string; 
   const [error, setError] = useState<string | null>(null);
   const [confirmFresh, setConfirmFresh] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  // send() is called from the voice loop's callback, which can't see fresh
+  // state — this ref is the "a turn is running" guard it can see.
+  const streamingRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const lampRef = useRef<HTMLButtonElement>(null);
+  const [usage, setUsage] = useState<{ used: number; cap: number } | null>(null);
+  const [readAloud, setReadAloud] = useState(false);
+  const [lit, setLit] = useState<LitSpot[]>([]);
+  const [typing, setTyping] = useState(false);
+  const [center, setCenter] = useState<{ cx: number; cy: number; vh: number; phone: boolean } | null>(null);
+
+  useEffect(() => setReadAloud(readStoredBool(READ_ALOUD_KEY)), []);
+
+  // Light a spot for `ms` (the latest request for a spot wins).
+  const light = useCallback((spot: Spot, id: string | null, ms: number) => {
+    const until = Date.now() + ms;
+    setLit((prev) => [...prev.filter((l) => !(l.spot === spot && (l.id ?? null) === id) && l.until > Date.now()), { spot, id, until }]);
+  }, []);
+  // A finished turn lets every lit spot fade shortly after.
+  const settleLights = useCallback(() => {
+    const soon = Date.now() + 2500;
+    setLit((prev) => prev.map((l) => ({ ...l, until: Math.min(l.until, soon) })));
+    window.setTimeout(() => setLit((prev) => prev.filter((l) => l.until > Date.now())), 2700);
+  }, []);
+
+  const voice = useHandsFree((audio) => void send({ audio }));
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -99,6 +162,7 @@ export function ProducerLamp({ name: initialName, watchCount }: { name: string; 
       return;
     }
     setName(r.snapshot.name);
+    setUsage(r.snapshot.usage);
     setLines(r.snapshot.lines);
     setNotes(r.snapshot.notes);
     setWatch(r.snapshot.watch);
@@ -150,6 +214,35 @@ export function ProducerLamp({ name: initialName, watchCount }: { name: string; 
     };
   }, [pathname]);
 
+  // Where the wheel opens: centred on the bulb, measured after it moves to its
+  // open position (the corner on a phone), and again on resize.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      const r = lampRef.current?.getBoundingClientRect();
+      if (!r) return;
+      setCenter({
+        cx: r.left + r.width / 2,
+        cy: r.top + r.height / 2,
+        vh: window.innerHeight,
+        phone: window.matchMedia("(max-width: 767px)").matches,
+      });
+    };
+    measure();
+    const t = window.setTimeout(measure, 220);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("resize", measure);
+    };
+  }, [open]);
+
+  // Closing the sheet ends hands-free: no open microphone behind a closed door.
+  useEffect(() => {
+    if (!open) voice.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   // Follow the conversation as it grows.
   useEffect(() => {
     const el = scrollRef.current;
@@ -165,13 +258,27 @@ export function ProducerLamp({ name: initialName, watchCount }: { name: string; 
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  async function send(text: string, focus?: string) {
-    const message = text.trim();
-    if (!message || streaming) return;
+  async function send({ text, audio, focus }: SendInput) {
+    const message = (text ?? "").trim();
+    if ((!message && !audio) || streamingRef.current) {
+      // A recording that can't be sent now must not leave the voice loop
+      // waiting for an answer that never comes.
+      if (audio) voice.endTurn();
+      return;
+    }
+    if (usage && usage.used >= usage.cap) {
+      setError(W.limitReached);
+      voice.stop();
+      return;
+    }
     setError(null);
-    setInput("");
-    setLines((prev) => [...prev, { seq: -Date.now(), role: "user", text: message }]);
+    if (!audio) setInput("");
+    const userSeq = -Date.now();
+    setLines((prev) => [...prev, { seq: userSeq, role: "user", text: audio ? W.heardPlaceholder : message }]);
+    const speak = voice.active || readAloud;
+    if (speak) voice.beginTurn();
     const live: Streaming = { text: "", cards: [], status: W.thinking };
+    streamingRef.current = true;
     setStreaming(live);
     const controller = new AbortController();
     abortRef.current = controller;
@@ -181,12 +288,24 @@ export function ProducerLamp({ name: initialName, watchCount }: { name: string; 
       const res = await fetch("/api/producer", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message, page: pathname, focus: focus ?? null }),
+        body: JSON.stringify({
+          message: audio ? undefined : message,
+          audio: audio ?? undefined,
+          speak,
+          page: pathname,
+          focus: focus ?? null,
+        }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        if (res.status === 402 && usage) setUsage({ ...usage, used: usage.cap });
         throw new Error(body?.error ?? "That didn't go through. Try again.");
+      }
+      if ((res.headers.get("content-type") ?? "").includes("application/json")) {
+        // A recording with nothing said in it: drop the placeholder, listen on.
+        setLines((prev) => prev.filter((l) => l.seq !== userSeq));
+        return;
       }
       const reader = res.body.getReader();
       const dec = new TextDecoder();
@@ -205,10 +324,19 @@ export function ProducerLamp({ name: initialName, watchCount }: { name: string; 
             live.status = ev.data.text;
           } else if (ev.event === "card") {
             live.cards = [...live.cards, ev.data as unknown as PreparedSend];
+          } else if (ev.event === "heard" && typeof ev.data.text === "string") {
+            const heard = ev.data.text;
+            setLines((prev) => prev.map((l) => (l.seq === userSeq ? { ...l, text: heard } : l)));
+          } else if (ev.event === "audio" && typeof ev.data.data === "string") {
+            voice.enqueue(Number(ev.data.index) || 0, ev.data.data);
+          } else if (ev.event === "spot" && isSpot(ev.data.spot)) {
+            light(ev.data.spot, typeof ev.data.id === "string" ? ev.data.id : null, 8000);
           } else if (ev.event === "error" && typeof ev.data.error === "string") {
             failed = ev.data.error;
           } else if (ev.event === "done") {
             notesChanged = ev.data.notesChanged === true;
+            const units = Number(ev.data.units) || 0;
+            setUsage((u) => (u ? { ...u, used: u.used + units } : u));
           }
           setStreaming({ ...live });
         }
@@ -217,6 +345,9 @@ export function ProducerLamp({ name: initialName, watchCount }: { name: string; 
       if (!controller.signal.aborted) failed = err instanceof Error ? err.message : "That didn't go through. Try again.";
     } finally {
       abortRef.current = null;
+      streamingRef.current = false;
+      settleLights();
+      voice.endTurn();
       if (live.text || live.cards.length > 0) {
         setLines((prev) => [...prev, { seq: -Date.now() - 1, role: "assistant", text: live.text.trim(), cards: live.cards }]);
       }
@@ -241,18 +372,33 @@ export function ProducerLamp({ name: initialName, watchCount }: { name: string; 
   }
 
   const busy = streaming !== null;
+  const wheelShown = open && center !== null && !(center.phone && typing);
+  // The sheet ends just above the wheel; with the keyboard up on a phone the
+  // wheel tucks away and the sheet reaches the bottom.
+  const sheetBottom = wheelShown && center ? Math.round(center.vh - (center.cy - WHEEL_R) + 10) : undefined;
+  const voiceLine =
+    voice.phase === "listening"
+      ? W.listening
+      : voice.phase === "hearing"
+        ? W.hearing
+        : voice.phase === "sending"
+          ? W.sendingVoice
+          : voice.phase === "speaking"
+            ? W.speaking
+            : null;
 
   return (
     <>
       <button
         type="button"
+        ref={lampRef}
         data-producer-lamp
         onClick={() => setOpen((v) => !v)}
         aria-label={W.open(name)}
         aria-expanded={open}
         title={name}
-        style={lift !== null ? { bottom: lift } : undefined}
-        className={`${styles.lamp} fixed z-[45] grid h-11 w-11 place-items-center rounded-full`}
+        style={lift !== null && !open ? { bottom: lift } : undefined}
+        className={`${styles.lamp} ${open ? styles.lampOpen : ""} fixed z-[45] grid h-11 w-11 place-items-center rounded-full`}
       >
         <span className={styles.bulb} aria-hidden="true" />
         {dot > 0 && !open && (
@@ -265,19 +411,55 @@ export function ProducerLamp({ name: initialName, watchCount }: { name: string; 
         )}
       </button>
 
+      <Spotlight lit={lit} />
+
+      {wheelShown && center && (
+        <Wheel
+          cx={center.cx}
+          cy={center.cy}
+          used={usage?.used ?? 0}
+          cap={usage?.cap ?? 0}
+          phase={voice.phase}
+          level={voice.level}
+          readAloud={readAloud}
+          notesOpen={view === "notes"}
+          notesCount={notes.length}
+          voiceAvailable={voiceAvailable && voice.supported}
+          canFresh={!busy && lines.length > 0}
+          onTalk={() => {
+            if (voice.phase === "speaking") voice.interrupt();
+            else if (voice.active) voice.stop();
+            else voice.start();
+          }}
+          onReadAloud={() => {
+            const next = !readAloud;
+            setReadAloud(next);
+            try {
+              window.localStorage.setItem(READ_ALOUD_KEY, next ? "1" : "0");
+            } catch {}
+          }}
+          onNotes={() => setView((v) => (v === "notes" ? "chat" : "notes"))}
+          onFresh={() => {
+            setView("chat");
+            setConfirmFresh(true);
+          }}
+        />
+      )}
+
       {open && (
         <>
           <button
             type="button"
             aria-label={W.close}
             onClick={() => setOpen(false)}
-            className="fixed inset-0 z-[46] bg-black/40 md:hidden"
+            className="fixed inset-0 z-[46] bg-black/60 md:hidden"
           />
           <section
             data-producer-sheet
             role="dialog"
             aria-label={name}
-            className={`${styles.sheet} fixed z-[47] flex flex-col overflow-hidden border border-atelier-rule bg-atelier-surface text-atelier-ink shadow-[0_30px_80px_-30px_rgba(0,0,0,0.75)] backdrop-blur-xl inset-x-0 bottom-0 h-[88dvh] rounded-t-[22px] md:inset-x-auto md:bottom-4 md:right-4 md:top-4 md:h-auto md:w-[420px] md:rounded-[18px]`}
+            style={sheetBottom !== undefined ? { bottom: sheetBottom } : undefined}
+            className={`${styles.sheet} fixed z-[47] flex flex-col overflow-hidden border border-atelier-rule bg-atelier-surface text-atelier-ink shadow-[0_30px_80px_-30px_rgba(0,0,0,0.75)] backdrop-blur-xl inset-x-0 bottom-0 top-[6dvh] rounded-[22px] md:inset-x-auto md:bottom-4 md:right-4 md:top-4 md:w-[420px] md:rounded-[18px]`}
           >
             {/* Header */}
             <div className="flex items-center gap-3 border-b border-atelier-rule px-4 py-3">
@@ -287,26 +469,7 @@ export function ProducerLamp({ name: initialName, watchCount }: { name: string; 
                   {view === "notes" ? W.notes : name}
                 </div>
               </div>
-              {view === "chat" ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setView("notes")}
-                    className="rounded-control px-2.5 py-1.5 text-[13px] text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
-                  >
-                    {W.notes}
-                    {notes.length > 0 && <span className="ml-1 tabular-nums text-atelier-accent">{notes.length}</span>}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmFresh(true)}
-                    disabled={busy || lines.length === 0}
-                    className="rounded-control px-2.5 py-1.5 text-[13px] text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink disabled:opacity-40"
-                  >
-                    {W.startFresh}
-                  </button>
-                </>
-              ) : (
+              {view === "chat" ? null : (
                 <button
                   type="button"
                   onClick={() => setView("chat")}
@@ -371,15 +534,15 @@ export function ProducerLamp({ name: initialName, watchCount }: { name: string; 
                             type="button"
                             disabled={busy}
                             onClick={() =>
-                              send(
-                                `Why did my ${w.kind} from ${new Date(w.createdAt).toLocaleString(undefined, {
+                              send({
+                                text: `Why did my ${w.kind} from ${new Date(w.createdAt).toLocaleString(undefined, {
                                   month: "short",
                                   day: "numeric",
                                   hour: "2-digit",
                                   minute: "2-digit",
                                 })} score ${w.score}?`,
-                                w.id,
-                              )
+                                focus: w.id,
+                              })
                             }
                             className="flex-none rounded-full border border-atelier-rule px-3 py-1 text-[12.5px] font-semibold hover:bg-atelier-ink/5 disabled:opacity-40"
                           >
@@ -399,7 +562,7 @@ export function ProducerLamp({ name: initialName, watchCount }: { name: string; 
                           <button
                             key={s}
                             type="button"
-                            onClick={() => send(s)}
+                            onClick={() => send({ text: s })}
                             className="rounded-full border border-atelier-rule px-3 py-1.5 text-[13px] text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink"
                           >
                             {s}
@@ -417,7 +580,15 @@ export function ProducerLamp({ name: initialName, watchCount }: { name: string; 
                     ) : (
                       <div key={l.seq} className="max-w-[96%] space-y-3">
                         {l.text && <p className="whitespace-pre-wrap text-[14.5px] leading-relaxed">{l.text}</p>}
-                        {l.cards.length > 0 && <Cards cards={l.cards} onOpen={() => setOpen(window.matchMedia("(min-width: 768px)").matches)} />}
+                        {l.cards.length > 0 && (
+                          <Cards
+                            cards={l.cards}
+                            onOpen={() => {
+                              light("composer", null, 3500);
+                              setOpen(window.matchMedia("(min-width: 768px)").matches);
+                            }}
+                          />
+                        )}
                       </div>
                     ),
                   )}
@@ -425,7 +596,7 @@ export function ProducerLamp({ name: initialName, watchCount }: { name: string; 
                   {streaming && (
                     <div className="max-w-[96%] space-y-3">
                       {streaming.text && <p className="whitespace-pre-wrap text-[14.5px] leading-relaxed">{streaming.text}</p>}
-                      {streaming.cards.length > 0 && <Cards cards={streaming.cards} onOpen={() => {}} />}
+                      {streaming.cards.length > 0 && <Cards cards={streaming.cards} onOpen={() => light("composer", null, 3500)} />}
                       {streaming.status && (
                         <p className="flex items-center gap-2 text-[13px] text-atelier-muted">
                           <span className={styles.statusDot} aria-hidden="true" />
@@ -445,10 +616,23 @@ export function ProducerLamp({ name: initialName, watchCount }: { name: string; 
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
-                    void send(input);
+                    void send({ text: input });
                   }}
                   className="border-t border-atelier-rule p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
                 >
+                  {(voiceLine || voice.notice) && (
+                    <div className="mb-2 flex items-center gap-2 px-1 text-[13px] text-atelier-muted" aria-live="polite">
+                      {voiceLine && (
+                        <span
+                          className={styles.statusDot}
+                          style={{ transform: `scale(${1 + voice.level * 1.4})` }}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span className="flex-1">{voiceLine ?? voice.notice}</span>
+                      {voiceLine && <span className="text-[12px] text-atelier-muted/80">{W.tapToTalk}</span>}
+                    </div>
+                  )}
                   <div className="flex items-end gap-2 rounded-[20px] border border-atelier-rule bg-atelier-ink/[0.03] py-1.5 pl-4 pr-1.5">
                     <textarea
                       id="producer-input"
@@ -464,9 +648,11 @@ export function ProducerLamp({ name: initialName, watchCount }: { name: string; 
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                           e.preventDefault();
-                          void send(input);
+                          void send({ text: input });
                         }
                       }}
+                      onFocus={() => setTyping(true)}
+                      onBlur={() => setTyping(false)}
                       placeholder={W.placeholder(name)}
                       maxLength={5000}
                       disabled={!loaded}

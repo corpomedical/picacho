@@ -6,6 +6,8 @@ import { closeThread, loadMessages, loadPrefs, notesStore, openThread, savePrefs
 import { MAX_NOTE_CHARS, normalizeNotePath, type Note } from "./notes";
 import { loadWatchBar, loadWatchList, type WatchItem } from "./watch";
 import type { PreparedSend } from "./tools";
+import { PLAN_CHAT_UNIT_LIMITS, type PlanId } from "@/lib/plans";
+import { monthlyWindowStart } from "@/lib/generations/core";
 
 // The sheet's server actions (2026-09-24). Each one re-checks the same gate
 // as the route: a hidden lamp is not an access control.
@@ -20,6 +22,8 @@ export type ProducerSnapshot = {
   notes: Note[];
   watch: WatchItem[];
   watchBar: number;
+  /** Assistant units used this period and the plan's cap (the wheel's light). */
+  usage: { used: number; cap: number };
 };
 
 async function gate() {
@@ -31,13 +35,18 @@ async function gate() {
   const admin = createAdminClient();
   const { data: profile } = await admin
     .from("profiles")
-    .select("plan, plan_status, role, status")
+    .select("plan, plan_status, role, status, current_period_start")
     .eq("id", user.id)
     .single();
   const isAdmin = profile?.role === "admin";
   const access = producerAllowed(profile, isAdmin || (await isProducerOpenToElite(supabase)));
   if (access.error) return { ok: false as const, error: access.error };
-  return { ok: true as const, supabase, admin, userId: user.id };
+  // The same allowance and window the route meters against.
+  const cap = isAdmin
+    ? PLAN_CHAT_UNIT_LIMITS.elite
+    : PLAN_CHAT_UNIT_LIMITS[((profile?.plan as string | null) ?? "none") as PlanId] ?? 0;
+  const since = monthlyWindowStart(profile?.current_period_start as string | null).toISOString();
+  return { ok: true as const, supabase, admin, userId: user.id, cap, since };
 }
 
 export async function loadProducer(): Promise<{ error: string } | { error: null; snapshot: ProducerSnapshot }> {
@@ -50,10 +59,12 @@ export async function loadProducer(): Promise<{ error: string } | { error: null;
       notesStore(g.admin, g.userId).list(),
       loadWatchBar(g.supabase),
     ]);
-    const [rows, watch] = await Promise.all([
+    const [rows, watch, usageRows] = await Promise.all([
       loadMessages(g.admin, thread.id),
       loadWatchList(g.supabase, g.userId, prefs.watchSeenAt, watchBar),
+      g.admin.from("agent_usage").select("units").eq("user_id", g.userId).gte("created_at", g.since).limit(10000),
     ]);
+    const used = (usageRows.data ?? []).reduce((a, r) => a + (Number(r.units) || 0), 0);
     const lines: ProducerLine[] = [];
     for (const r of rows) {
       const d = r.display as { text?: unknown; cards?: unknown; kind?: unknown } | null;
@@ -64,7 +75,10 @@ export async function loadProducer(): Promise<{ error: string } | { error: null;
         lines.push({ seq: r.seq, role: "assistant", text, cards: Array.isArray(d.cards) ? (d.cards as PreparedSend[]) : [] });
       }
     }
-    return { error: null, snapshot: { name: prefs.name, lines, notes, watch, watchBar } };
+    return {
+      error: null,
+      snapshot: { name: prefs.name, lines, notes, watch, watchBar, usage: { used, cap: g.cap } },
+    };
   } catch (err) {
     console.error("producer: load failed —", err);
     return { error: "The Producer couldn't load just now." };

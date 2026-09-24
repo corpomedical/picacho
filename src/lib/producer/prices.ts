@@ -78,6 +78,29 @@ export function unitsForCostUsd(costUsd: number): number {
 export const RESERVE_UNITS = 40;
 export const BRAKE_USD = 0.5;
 export const MAX_OUTPUT_TOKENS = 8000;
+// VOICE (2026-09-25, operator: "OpenAI in + out"). Read from OpenAI's
+// pricing page (developers.openai.com/api/docs/pricing) on 2026-09-25:
+// gpt-4o-mini-transcribe $0.003 per minute of audio; tts-1 $15 per 1M
+// characters. A spoken turn of 10 s in and a 300-character reply is
+// 10/60 × $0.003 + 300 × $15/1M = $0.0005 + $0.0045 ≈ $0.005, added to the
+// turn's own cost and settled with it — one charge per turn, not per call.
+export const TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe";
+export const TRANSCRIBE_USD_PER_MINUTE = 0.003;
+export const SPEECH_MODEL = "tts-1";
+export const SPEECH_USD_PER_MCHAR = 15;
+// A spoken message is capped at a minute: hands-free turns are sentences,
+// and the cap bounds what one recording can cost ($0.003).
+export const MAX_SPOKEN_SECONDS = 60;
+
+export function transcribeCostUsd(seconds: number): number {
+  const s = Math.min(MAX_SPOKEN_SECONDS, Math.max(1, Number.isFinite(seconds) ? seconds : MAX_SPOKEN_SECONDS));
+  return (s / 60) * TRANSCRIBE_USD_PER_MINUTE;
+}
+
+export function speechCostUsd(chars: number): number {
+  return (Math.max(0, chars) * SPEECH_USD_PER_MCHAR) / 1_000_000;
+}
+
 // Tool rounds per turn. A plan for three shots is read → three prepares →
 // answer, which fits with room for one look at a frame.
 export const MAX_CALLS = 6;

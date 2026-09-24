@@ -171,4 +171,14 @@
          app precisely so no camera permission is needed (see
          BridgeWebChromeClient.isMediaCaptureSupported). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- The microphone (versionCode 20, 2026-09-25; operator: "App too, now"):
+         the Producer's hands-free voice and the composer's mic button both
+         record through the web getUserMedia API. Capacitor's
+         BridgeWebChromeClient.onPermissionRequest turns the WebView's
+         AUDIO_CAPTURE request into a runtime request for exactly these two,
+         so they only need declaring here; nothing records until the person
+         taps a mic and allows it. Until this build the app could not record
+         at all (Data safety listed Audio as not collected; it now is). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 </manifest>

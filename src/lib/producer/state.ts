@@ -51,6 +51,8 @@ export async function buildStateNote(
     watchBar: number;
     /** A render the person pointed at from the sheet ("Ask why"). */
     focus?: unknown;
+    /** They spoke this message and/or hear the answer read aloud. */
+    spoken?: boolean;
   },
 ): Promise<{ text: string; fingerprint: StateFingerprint }> {
   const [profileResult, castResult, rulesResult, rendersResult] = await Promise.all([
@@ -177,6 +179,9 @@ export async function buildStateNote(
           .join("\n")}`
       : null,
     focus ? `They pressed "Ask why" on render ${focus}: that is the one this message is about.` : null,
+    a.spoken
+      ? "They are talking to you hands-free and hear your answer read aloud: answer in one to three short spoken sentences, no lists, no ids or symbols. Anything detailed goes in prepared cards, which still appear on their screen."
+      : null,
   ].filter(Boolean);
 
   return { text: lines.join("\n\n"), fingerprint: next };

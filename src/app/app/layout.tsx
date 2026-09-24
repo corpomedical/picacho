@@ -9,6 +9,7 @@ import { isProducerEnabled, isProducerOpenToElite, producerAllowed } from "@/lib
 import { countWatch, loadWatchBar } from "@/lib/producer/watch";
 import { DEFAULT_PRODUCER_NAME } from "@/lib/producer/store";
 import { ProducerLamp } from "@/components/producer/producer-lamp";
+import { isVoiceConfigured } from "@/lib/producer/speech";
 import { setsEligible } from "@/lib/sets/set-config";
 import { RatePrompt } from "@/components/rate-prompt";
 import { NativePush } from "@/components/native-push";
@@ -199,7 +200,9 @@ export default async function AppLayout({
       />
       {showRatePrompt && <RatePrompt />}
       <DownloadToasts />
-      {producer && <ProducerLamp name={producer.name} watchCount={producer.watchCount} />}
+      {producer && (
+        <ProducerLamp name={producer.name} watchCount={producer.watchCount} voiceAvailable={isVoiceConfigured()} />
+      )}
       {/* data-app-scroll: the app's one real scroller — the native quick
           pill watches its scrollTop to decide when to slide in. */}
       <div data-app-scroll className="min-w-0 flex-1 overflow-y-auto">

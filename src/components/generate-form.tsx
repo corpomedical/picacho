@@ -4518,9 +4518,26 @@ function GenerateFormInner({
   // Typing on the dashboard's landing composer and hitting send arrives here
   // as ?prompt=<text> — unlike ?voice=, this only fills the textarea so the
   // person can review or edit before actually sending it.
+  //
+  // A Producer card can be opened while the composer is ALREADY on screen
+  // (2026-09-25): the lazy initial state that reads ?type/?character/?model/
+  // ?seconds only runs on the first mount, so the same link is applied here
+  // too — each value only when this account's composer offers it, exactly
+  // like the initialisers. The duration is set with its model, so the
+  // re-snap effect finds it valid and keeps it.
   useEffect(() => {
     const prefill = searchParams.get("prompt");
     if (!prefill) return;
+    const type = searchParams.get("type");
+    if (type === "image" || type === "video") setContentType(type);
+    const character = searchParams.get("character");
+    if (character && characters.some((c) => c.id === character)) setCharacterId(character);
+    const linked = videoModels.find((m) => m.id === searchParams.get("model"));
+    if (linked) {
+      const s = Number(searchParams.get("seconds"));
+      setVideoModelId(linked.id);
+      setVideoDurationSeconds(linked.durations.some((d) => d.seconds === s) ? s : linked.defaultDurationSeconds);
+    }
     router.replace("/app/generate", { scroll: false });
     setPrompt(prefill);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -7084,6 +7101,7 @@ function GenerateFormInner({
             clip. */}
         <div
           data-takes-strip
+          data-producer-spot="renders"
           className={cn(
             "flex min-w-0 gap-2 p-[3px]",
             column
@@ -7138,6 +7156,7 @@ function GenerateFormInner({
                 key={tid}
                 type="button"
                 title={it.prompt}
+                data-producer-render={it.kind === "single" ? it.id : undefined}
                 onClick={() => {
                   setStageTakeId(tid);
                   if (transcriptOpen) {
@@ -7250,6 +7269,7 @@ function GenerateFormInner({
     <div
       ref={stagePanelRef}
       data-screening-stage
+      data-producer-spot="render"
       style={{ "--frame-h": `calc((100vw - 32px) / ${stageRatio} + 84px)` } as React.CSSProperties}
       className={cn(
         "relative -mx-4 mb-3 h-[min(46svh,440px,max(292px,var(--frame-h)))] overflow-hidden bg-[#0e0c0a] sm:-mx-8",
@@ -7693,7 +7713,7 @@ function GenerateFormInner({
             short lines first (the ochre number stays whole), and the icon
             keys' glyphs end on the same 16 px gutter as the dock. */}
         <h1 className="marquee flex-shrink-0 whitespace-nowrap text-[17px] leading-none text-atelier-ink">{g.pageTitle}</h1>
-        <div className="ml-auto flex min-w-0 items-center gap-[7px]">
+        <div data-producer-spot="credits" className="ml-auto flex min-w-0 items-center gap-[7px]">
           <span className="font-numeral text-[17px] font-semibold leading-none tabular-nums text-atelier-accent">
             {creditsAvailable}
           </span>
@@ -8090,6 +8110,7 @@ function GenerateFormInner({
       ) : (
       <form
         ref={composerFormRef}
+        data-producer-spot="composer"
         onSubmit={handleSubmit}
         className={cn(
           // Borderless everywhere (operator, 2026-08-21 — GPT-style): the
