@@ -156,11 +156,13 @@ export function StudioBar({
           {steps.map((st, i) =>
             st.on ? (
               <span key={st.id} aria-current="step" className={SEG_ON}>
-                {i + 1} · {st.label}
+                <span className="hidden md:inline">{i + 1} · </span>
+                {st.label}
               </span>
             ) : (
               <button key={st.id} type="button" onClick={st.onClick} className={SEG_OFF}>
-                {i + 1} · {st.label}
+                <span className="hidden md:inline">{i + 1} · </span>
+                {st.label}
               </button>
             ),
           )}
@@ -233,6 +235,7 @@ export function StudioRail({
   names,
   notes,
   children,
+  compact = false,
 }: {
   mode: StudioMode;
   tool: RailTool | null;
@@ -240,8 +243,10 @@ export function StudioRail({
   names: Record<RailTool, string>;
   notes: Record<RailToolNote, string>;
   children?: ReactNode;
+  /** Only the tools that work here (the new layout's floating tools): nothing dimmed with a note. */
+  compact?: boolean;
 }) {
-  const tools = railToolsFor(mode);
+  const tools = railToolsFor(mode).filter((t) => !compact || t.use !== "off");
   return (
     <div className={`relative flex w-12 flex-none flex-col items-center gap-1 border-r ${STUDIO_HAIR} ${STUDIO_PANEL_BG} py-2.5`}>
       {tools.map((t, i) => {

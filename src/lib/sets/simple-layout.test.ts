@@ -39,7 +39,8 @@ describe("the new layout", () => {
   it("numbers its steps in the bar, and Set's button moves on to Shoot", () => {
     expect(view).toContain("steps={simpleSteps}");
     expect(frame).toContain("data-studio-steps");
-    expect(frame).toContain("{i + 1} · {st.label}");
+    // A phone's bar has room for the names only; the numbers come back from md up.
+    expect(frame).toContain('<span className="hidden md:inline">{i + 1} · </span>');
     expect(view).toContain('onClick={() => setSimpleStep("shoot")}');
     // Film's button is the render, the sequencer's own.
     expect(view).toMatch(/simpleOn && filmOpen && !cutOpen \? \([\s\S]{0,200}onClick=\{\(\) => void renderFilm\(\)\}/);
@@ -75,8 +76,33 @@ describe("the new layout", () => {
   });
 
   it("moves the setup chips off the stage, and the frame lines start clear of the floating tools", () => {
-    expect(view).toContain("{!viewingShot && !simpleOn && setupChipsView(false)}");
+    expect(view).toContain("{!viewingShot && !simpleOn && !simplePhoneSet && setupChipsView(false)}");
     expect(view).toContain("insetsRef.current = { left: simpleOn ? 82 : 14, right: 14, top, bottom };");
+  });
+});
+
+describe("the new layout on a phone", () => {
+  it("keeps the same steps; in Set the list is a strip over the stage's foot and the setup chips step aside", () => {
+    expect(view).toContain("const simplePhone = simple && !wide && modelsOn;");
+    expect(view).toContain('const simplePhoneSet = simplePhone && !filmOpen && !cutOpen && simpleStep === "set";');
+    expect(view).toContain("const simpleSteps = simpleOn || simplePhone");
+    expect(view).toContain("{!viewingShot && !simpleOn && !simplePhoneSet && setupChipsView(false)}");
+    expect(view).toMatch(/\{simplePhoneSet \? \([\s\S]{0,200}<ThingsStrip /);
+    expect(panel).toContain("data-things-strip");
+    // In Shoot the chips already name who is in the still: no cast strip under them.
+    expect(view).toContain('castShown && !simplePhone && castStrip("pointer-events-auto relative max-w-full")');
+  });
+
+  it("puts the switch at the stage's foot, where the bar has no room for it", () => {
+    expect(view).toContain("{modelsOn && !wide && (");
+    expect(view).toContain("data-layout-toggle-phone");
+  });
+});
+
+describe("the floating tools", () => {
+  it("are only the ones that work here: nothing dimmed with a note", () => {
+    expect(frame).toContain('const tools = railToolsFor(mode).filter((t) => !compact || t.use !== "off");');
+    expect(view).toMatch(/<StudioRail\s+compact/);
   });
 });
 

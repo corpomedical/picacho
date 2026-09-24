@@ -21,8 +21,8 @@ describe("the frame lines", () => {
     // One swiping row in a phone's Film, wrapped everywhere else (film-phone-layout.test.ts).
     // On the stage they are measured; in the new layout's Shoot panel (2026-09-24) nothing measures them, and the lines sit at the top.
     expect(view).toContain('<div ref={inPanel ? undefined : chipsRef} data-setup-chips className={inPanel ? "flex flex-wrap items-center gap-2" : `absolute left-3.5 right-3.5 top-3.5 z-20 ${chipsInRow ? "" : "flex flex-wrap items-center gap-2"}`}>');
-    expect(view).toContain("{!viewingShot && !simpleOn && setupChipsView(false)}");
-    expect(view).toContain("}, [rig.format, rigOpen, filmOpen, cutOpen, ready, viewing, simpleOn]);");
+    expect(view).toContain("{!viewingShot && !simpleOn && !simplePhoneSet && setupChipsView(false)}");
+    expect(view).toContain("}, [rig.format, rigOpen, filmOpen, cutOpen, ready, viewing, simpleOn, simplePhoneSet]);");
     expect(view).toContain("ref={stripRef}");
   });
 

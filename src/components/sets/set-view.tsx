@@ -29,7 +29,7 @@ import { SceneTree, sceneNames, type SceneTarget } from "./scene-tree";
 import { Sequencer } from "./sequencer";
 import { beatAtTime, beatSpans, timeOf } from "@/lib/sets/sequencer";
 import { StatusList, StudioBar, StudioDock, StudioRail, StudioStatus, useWide } from "./studio-frame";
-import { ThingsPanel, type PanelRow } from "./things-panel";
+import { ThingsPanel, ThingsStrip, type PanelRow } from "./things-panel";
 import { clearMarks } from "@/lib/sets/marks";
 import { BADGE_HIT_SLOP_PX, FIGURE_TAP_WAIT_MS, TAP_SLOP_PX, badgeAt, elementForHits, isTap, type ElementHit, type StageHit, type TapStart } from "@/lib/sets/stage-pick";
 import { ELEMENT_SHEETS_PER_STILL, FIGURE_KEY, elementPlaces, planShotSheets, resolvePhotos, setElements as elementsOf, type ElementPhoto, type SetElement, type ShotElementStatus } from "@/lib/sets/elements";
@@ -892,6 +892,10 @@ export function SetView({
   const wide = useWide();
   /** The new layout is drawn: switched on, by an admin, on a screen wide enough for its three columns. */
   const simpleOn = simple && wide && modelsOn;
+  /** The new layout on a phone: the same steps; in Set the list is a strip over the stage's foot, and nothing else moves. */
+  const simplePhone = simple && !wide && modelsOn;
+  /** A phone's Set step: the setup chips step aside (they are Shoot's), and the strip names who and what is in the set. */
+  const simplePhoneSet = simplePhone && !filmOpen && !cutOpen && simpleStep === "set";
   const [dockTab, setDockTab] = useState<DockTab>("astra");
   const [dockFilmWas, setDockFilmWas] = useState(filmOpen);
   if (dockFilmWas !== filmOpen) {
@@ -3179,7 +3183,7 @@ export function SetView({
     if (stripRef.current) ro.observe(stripRef.current);
     return () => ro.disconnect();
     // `viewing`: the chips leave with a still in view and return with the stage.
-  }, [rig.format, rigOpen, filmOpen, cutOpen, ready, viewing, simpleOn]);
+  }, [rig.format, rigOpen, filmOpen, cutOpen, ready, viewing, simpleOn, simplePhoneSet]);
 
   // The stop ring's depth of field, previewed on the live view only.
   useEffect(() => {
@@ -6414,7 +6418,7 @@ export function SetView({
   };
   const sw = s.simple;
   const simpleShooting = !filmOpen && !cutOpen;
-  const simpleSteps = simpleOn
+  const simpleSteps = simpleOn || simplePhone
     ? [
         {
           id: "set",
@@ -6437,6 +6441,21 @@ export function SetView({
         { id: "film", label: sw.stepFilm, on: !simpleShooting, onClick: () => studioModes.film.onClick() },
       ]
     : null;
+  /** The list's rows, for the column on a computer and the strip on a phone. */
+  const panelPeople: PanelRow[] = [
+    character
+      ? { key: FIGURE_KEY, name: character.name, thumb: character.thumbUrl, round: true, state: "person" }
+      : { key: FIGURE_KEY, name: cast.person, thumb: null, round: true, state: "nobody" },
+  ];
+  const panelThings: PanelRow[] = els.map((e): PanelRow => {
+    const held = heldOf.get(e.key);
+    const count = held?.photos.length ?? 0;
+    const model = thingModels.find((m) => m.key === e.key);
+    const loaded = thingModelState[e.key];
+    const state = model && loaded !== "failed" ? (loaded === "ready" ? "model" : "loading") : count > 0 ? "photos" : "blocks";
+    const first = held?.photos[0];
+    return { key: e.key, name: elementName(e.key), thumb: first ? (thumbUrl(first.url, 320) ?? first.url) : null, state, photos: count };
+  });
   function toggleLayout() {
     const next = !simple;
     setSimple(next);
@@ -7521,7 +7540,8 @@ export function SetView({
             onClick={toggleLayout}
             aria-pressed={simple}
             data-layout-toggle
-            className="flex h-8 flex-none cursor-pointer items-center whitespace-nowrap rounded-[6px] border border-[rgba(240,196,142,0.45)] px-2.5 text-xs font-semibold text-[#f0cda6] hover:bg-[rgba(224,164,104,0.1)]"
+            title={simple ? sw.toggleClassic : sw.toggleNew}
+            className="flex h-8 flex-none cursor-pointer items-center whitespace-nowrap rounded-[6px] border border-[rgba(240,196,142,0.45)] px-2 text-xs font-semibold text-[#f0cda6] hover:bg-[rgba(224,164,104,0.1)] md:px-2.5"
           >
             {simple ? sw.toggleClassic : sw.toggleNew}
           </button>
@@ -7574,20 +7594,8 @@ export function SetView({
         {wide &&
           (simpleOn ? (
             <ThingsPanel
-              people={[
-                character
-                  ? { key: FIGURE_KEY, name: character.name, thumb: character.thumbUrl, round: true, state: "person" as const }
-                  : { key: FIGURE_KEY, name: cast.person, thumb: null, round: true, state: "nobody" as const },
-              ]}
-              things={els.map((e): PanelRow => {
-                const held = heldOf.get(e.key);
-                const count = held?.photos.length ?? 0;
-                const model = thingModels.find((m) => m.key === e.key);
-                const loaded = thingModelState[e.key];
-                const state = model && loaded !== "failed" ? (loaded === "ready" ? "model" : "loading") : count > 0 ? "photos" : "blocks";
-                const first = held?.photos[0];
-                return { key: e.key, name: elementName(e.key), thumb: first ? (thumbUrl(first.url, 320) ?? first.url) : null, state, photos: count };
-              })}
+              people={panelPeople}
+              things={panelThings}
               selected={elementCard?.key ?? null}
               onOpen={(key) => openElementCard(key)}
               onPlace={() => {
@@ -7761,11 +7769,11 @@ export function SetView({
           )}
 
           {/* The setup, as chips on the picture itself (or, in the new layout, in the Shoot panel). */}
-          {!viewingShot && !simpleOn && setupChipsView(false)}
+          {!viewingShot && !simpleOn && !simplePhoneSet && setupChipsView(false)}
           {/* The new layout's tools: the rail's, floating at the stage's corner. */}
           {simpleOn && !viewingShot && (
             <div className="absolute left-3.5 top-3.5 z-20 overflow-hidden rounded-[12px] border border-[rgba(255,255,255,0.08)] shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6)]" data-floating-tools>
-              <StudioRail mode={studioMode} tool={stageTool} onTool={(id) => studioKeysRef.current.tool(id)} names={s.studio.tools} notes={s.studio.toolNotes} />
+              <StudioRail compact mode={studioMode} tool={stageTool} onTool={(id) => studioKeysRef.current.tool(id)} names={s.studio.tools} notes={s.studio.toolNotes} />
             </div>
           )}
 
@@ -7819,7 +7827,26 @@ export function SetView({
               the gizmo on the right. */}
           {!viewingShot && !loadFailed && !filmOpen && !simpleOn && (
             <div className="pointer-events-none absolute bottom-[104px] left-3.5 right-3.5 z-20 flex flex-col items-start gap-2 md:right-[190px]" data-stage-foot>
-              {castShown && castStrip("pointer-events-auto relative max-w-full")}
+              {simplePhoneSet ? (
+                <div className="pointer-events-auto relative max-w-full">
+                  <ThingsStrip rows={[...panelPeople, ...panelThings]} selected={elementCard?.key ?? null} onOpen={(key) => openElementCard(key)} w={sw} />
+                </div>
+              ) : (
+                // The new layout's Shoot on a phone: the chips already name who is in the still, so the strip stays in Set.
+                castShown && !simplePhone && castStrip("pointer-events-auto relative max-w-full")
+              )}
+              {/* A phone's bar has no room for the switch: it sits here, an admin's. */}
+              {modelsOn && !wide && (
+                <button
+                  type="button"
+                  onClick={toggleLayout}
+                  aria-pressed={simple}
+                  data-layout-toggle-phone
+                  className="pointer-events-auto flex h-8 flex-none cursor-pointer items-center whitespace-nowrap rounded-full border border-[rgba(240,196,142,0.45)] bg-[rgba(0,0,0,0.62)] px-3 text-[11.5px] font-semibold text-[#f0cda6] backdrop-blur"
+                >
+                  {simple ? sw.toggleClassic : sw.toggleNew}
+                </button>
+              )}
               {/* The hint is a mouse's (shift-drag, scroll, double-click): on a phone it steps aside for the strip. */}
               <span
                 aria-live="polite"

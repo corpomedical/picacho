@@ -27,6 +27,63 @@ export type PanelRow = {
 const ROW =
   "flex w-full cursor-pointer items-center gap-3 rounded-[12px] border px-2.5 py-2 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e0a468]";
 
+/** What a row says it is drawn as, and in which ink: the list's and the strip's one rule. */
+function rowLine(r: PanelRow, w: Words): { text: string; tone: string } {
+  return r.state === "model"
+    ? { text: w.rowModel, tone: "text-[#8fcf9a]" }
+    : r.state === "loading"
+      ? { text: w.rowLoading, tone: "text-[#e0a468]" }
+      : r.state === "photos"
+        ? { text: r.photos === 1 ? w.rowOnePhoto : formatMsg(w.rowPhotos, { n: r.photos ?? 0 }), tone: "text-[#c6c9d1]" }
+        : r.state === "person"
+          ? { text: w.rowPlays, tone: "text-[#c6c9d1]" }
+          : r.state === "nobody"
+            ? { text: w.rowNobody, tone: "text-[#9aa0ad]" }
+            : { text: w.rowBlocks, tone: "text-[#9aa0ad]" };
+}
+
+/**
+ * "In this set" on a phone: the same rows as one strip that swipes, over the
+ * foot of the stage in the Set step, where the three columns do not fit. A
+ * chip opens its thing's card, the sheet a phone already has.
+ */
+export function ThingsStrip({ rows, selected, onOpen, w }: { rows: readonly PanelRow[]; selected: string | null; onOpen: (key: string) => void; w: Words }) {
+  return (
+    <nav aria-label={w.inSet} data-things-strip className="flex max-w-full items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {rows.map((r) => {
+        const on = r.key === selected;
+        const l = rowLine(r, w);
+        return (
+          <button
+            key={r.key}
+            type="button"
+            onClick={() => onOpen(r.key)}
+            aria-pressed={on}
+            data-panel-row={r.key}
+            data-panel-state={r.state}
+            className={`flex h-11 flex-none cursor-pointer items-center gap-2 rounded-full border bg-[rgba(0,0,0,0.62)] pl-1 pr-3 backdrop-blur ${
+              on ? "border-[rgba(240,196,142,0.75)]" : "border-[rgba(255,255,255,0.1)]"
+            }`}
+          >
+            {r.thumb ? (
+              // eslint-disable-next-line @next/next/no-img-element -- a private media thumbnail, like the filmstrip's
+              <img src={r.thumb} alt="" className={`h-8 w-8 flex-none object-cover ${r.round ? "rounded-full" : "rounded-[8px]"}`} />
+            ) : (
+              <span aria-hidden className={`flex h-8 w-8 flex-none items-center justify-center bg-[#2a2c33] text-[12px] font-bold text-[#c6c9d1] ${r.round ? "rounded-full" : "rounded-[8px]"}`}>
+                {r.name.slice(0, 1).toUpperCase()}
+              </span>
+            )}
+            <span className="flex flex-col items-start leading-tight">
+              <span className="whitespace-nowrap text-[12.5px] font-semibold text-[#ecedf1]">{r.name}</span>
+              <span className={`whitespace-nowrap text-[11px] ${l.tone}`}>{l.text}</span>
+            </span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
 export function ThingsPanel({
   people,
   things,
@@ -46,18 +103,7 @@ export function ThingsPanel({
   placeLine: string;
   w: Words;
 }) {
-  const line = (r: PanelRow) =>
-    r.state === "model"
-      ? { text: w.rowModel, tone: "text-[#8fcf9a]" }
-      : r.state === "loading"
-        ? { text: w.rowLoading, tone: "text-[#e0a468]" }
-        : r.state === "photos"
-          ? { text: r.photos === 1 ? w.rowOnePhoto : formatMsg(w.rowPhotos, { n: r.photos ?? 0 }), tone: "text-[#c6c9d1]" }
-          : r.state === "person"
-            ? { text: w.rowPlays, tone: "text-[#c6c9d1]" }
-            : r.state === "nobody"
-              ? { text: w.rowNobody, tone: "text-[#9aa0ad]" }
-              : { text: w.rowBlocks, tone: "text-[#9aa0ad]" };
+  const line = (r: PanelRow) => rowLine(r, w);
   const row = (r: PanelRow) => {
     const on = r.key === selected;
     const l = line(r);

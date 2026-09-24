@@ -105,7 +105,8 @@ describe("the card and the strip", () => {
   it("the strip names who rides, the loose photos have a way home, and it clears the gizmo", () => {
     for (const hook of ["data-cast-strip", "data-cast-chip", "data-el-state", "data-cast-empty", "data-cast-loose"]) expect(strip).toContain(hook);
     const foot = fnOf(view, "data-stage-foot", "{figureMoved ? s.figureMovedOut : s.dragHint}");
-    expect(foot).toContain('{castShown && castStrip("pointer-events-auto relative max-w-full")}');
+    // (The new layout's phone steps swap it for the things strip in Set and leave it out of Shoot: simple-layout.test.ts.)
+    expect(foot).toContain('castShown && !simplePhone && castStrip("pointer-events-auto relative max-w-full")');
     expect(view).toContain('className="pointer-events-none absolute bottom-[104px] left-3.5 right-3.5 z-20 flex flex-col items-start gap-2 md:right-[190px]" data-stage-foot');
   });
 
