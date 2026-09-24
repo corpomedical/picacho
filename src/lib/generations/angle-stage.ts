@@ -370,8 +370,7 @@ export async function pollAngleFrame(
   if (!imgRes.ok) return { error: "That angle couldn't be fetched — try again." };
   const bytes = new Uint8Array(await imgRes.arrayBuffer());
 
-  const admin = createAdminClient();
   const path = `${stageFramesPrefix(userId, generationId)}/${crypto.randomUUID()}.jpg`;
-  const url = await persistImageBytes(admin, userId, path, bytes, imgRes.headers.get("content-type") ?? "image/jpeg");
+  const url = await persistImageBytes(userId, path, bytes, imgRes.headers.get("content-type") ?? "image/jpeg");
   return { error: null, state: "done", frame: { path, url } };
 }

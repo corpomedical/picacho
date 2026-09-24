@@ -190,7 +190,6 @@ export async function GET(request: Request) {
         const res = await fetch(frameUrl, { signal: AbortSignal.timeout(15_000) });
         if (!res.ok) continue;
         const posterUrl = await persistImageBytes(
-          admin,
           row.user_id as string,
           `${row.user_id}/posters/${row.id}.jpg`,
           new Uint8Array(await res.arrayBuffer()),

@@ -269,7 +269,7 @@ export async function runApiImageGeneration(params: {
         policyAudit: { userId, generationId },
         brandRules,
         referenceImageUrl,
-        persistImage: (base64: string) => persistGeneratedImage(supabase, userId, base64),
+        persistImage: (base64: string) => persistGeneratedImage(userId, base64),
       },
     );
 

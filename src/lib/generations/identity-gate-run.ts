@@ -1,4 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateImage } from "@/lib/generations/providers/image";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { persistGeneratedImage } from "@/lib/generations/core";
@@ -67,7 +66,6 @@ export type GateAttempt = {
 };
 
 export type GateDeps = {
-  supabase: SupabaseClient;
   userId: string;
   /** The finished first attempt. */
   resultUrl: string;
@@ -247,7 +245,7 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
       deps.rerender.modelId,
       deps.rerender.compiledPrompt,
       deps.rerender.referenceImageUrl,
-      deps.rerender.persist ?? ((base64) => persistGeneratedImage(deps.supabase, deps.userId, base64)),
+      deps.rerender.persist ?? ((base64) => persistGeneratedImage(deps.userId, base64)),
       undefined,
       // The shared budget — see the note on the field.
       deps.rerender.budget,

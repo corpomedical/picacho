@@ -1513,7 +1513,6 @@ async function finish(
           const frameRes = await fetch(frameUrl, { signal: AbortSignal.timeout(15_000) });
           if (frameRes.ok) {
             const posterUrl = await persistImageBytes(
-              admin,
               userId,
               `${userId}/posters/${generationId}.jpg`,
               new Uint8Array(await frameRes.arrayBuffer()),
@@ -2201,7 +2200,7 @@ export async function advanceGeneration(
         const path = layerStoragePath(userId, generationId, layer.zIndex);
         let url: string;
         try {
-          url = await persistImageBytes(admin, userId, path, bytes);
+          url = await persistImageBytes(userId, path, bytes);
         } catch (err) {
           throw new CriticalWriteError(`storing layer ${layer.zIndex}: ${err instanceof Error ? err.message : String(err)}`);
         }

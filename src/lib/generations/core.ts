@@ -444,16 +444,27 @@ export async function consumeFreeGeneration(
   return data === true;
 }
 
-export async function persistGeneratedImage(
-  supabase: SupabaseClient,
-  userId: string,
-  base64: string,
-): Promise<string> {
+// Both image writers below store with the SERVICE ROLE, never a caller's
+// client (2026-09-24 storage review). The bucket's policy lets a signed-in
+// person read and delete their own folder but not write it
+// (supabase/pending/generated-images-read-only.sql): with the write verbs
+// open, anyone could PUT over <uid>/<uuid>.png with their own session and
+// have an unchecked picture served under a URL that had already passed the
+// output gate. Taking no client means no caller can hand the user's one back
+// in; the owner fence the policy used to give is the path check instead.
+function assertOwnedPath(userId: string, path: string, who: string): void {
+  if (!userId || userId.includes("/") || !path.startsWith(`${userId}/`) || path.includes("..")) {
+    throw new Error(`${who}: path must sit under the owner's folder.`);
+  }
+}
+
+export async function persistGeneratedImage(userId: string, base64: string): Promise<string> {
   const bytes = Buffer.from(base64, "base64");
   const path = `${userId}/${crypto.randomUUID()}.png`;
+  assertOwnedPath(userId, path, "persistGeneratedImage");
 
-  const { error } = await supabase.storage
-    .from("generated-images")
+  const { error } = await createAdminClient()
+    .storage.from("generated-images")
     .upload(path, bytes, { contentType: "image/png" });
   if (error) throw new Error(`Couldn't save the generated image: ${error.message}`);
 
@@ -556,25 +567,22 @@ export async function persistGeneratedVideo(
  *
  * Two invariants persistGeneratedImage gets for free are enforced here
  * rather than trusted from callers. The path must sit under the owner's
- * folder — the bucket's RLS is keyed on it. And an existing object is never
- * rewritten: the media route serves everything immutable for a year, so a
+ * folder — every reader and sweeper is keyed on it. And an existing
+ * object is never rewritten: the media route serves everything immutable for a year, so a
  * rewrite with different bytes would ship stale pixels to anyone who had
  * already looked. A retry that finds its own earlier upload (a transport
  * blip mid-loop re-runs the pass) is a success, not a conflict; a step that
  * wants new pixels must choose a new path.
  */
 export async function persistImageBytes(
-  supabase: SupabaseClient,
   userId: string,
   path: string,
   bytes: Uint8Array,
   contentType = "image/png",
 ): Promise<string> {
-  if (!path.startsWith(`${userId}/`) || path.includes("..")) {
-    throw new Error("persistImageBytes: path must sit under the owner's folder.");
-  }
-  const { error } = await supabase.storage
-    .from("generated-images")
+  assertOwnedPath(userId, path, "persistImageBytes");
+  const { error } = await createAdminClient()
+    .storage.from("generated-images")
     .upload(path, bytes, { contentType, upsert: false });
   if (error) {
     const alreadyThere =

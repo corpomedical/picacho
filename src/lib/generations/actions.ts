@@ -665,22 +665,25 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // A set shot's picture, stored: cut to the frame lines, developed by the
   // lab when the rig asks for it, and the negative kept beside the print. A
   // lab that fails stores the frame as rendered — a still is never lost to it.
-  const storeSetImage = async (client: typeof supabase, userId: string, base64: string): Promise<string> => {
+  const storeSetImage = async (userId: string, base64: string): Promise<string> => {
     const cut = setCut ? await cutToBand(base64, setCut) : base64;
-    if (!setLab) return persistGeneratedImage(client, userId, cut);
+    if (!setLab) return persistGeneratedImage(userId, cut);
     let developed: Awaited<ReturnType<typeof develop>> | null = null;
     try {
       developed = await develop(cut, setLab);
     } catch (err) {
       console.warn("[lab] the still could not be developed; storing it as rendered:", err);
     }
-    if (!developed) return persistGeneratedImage(client, userId, cut);
-    const url = await persistGeneratedImage(client, userId, developed.print);
+    if (!developed) return persistGeneratedImage(userId, cut);
+    const url = await persistGeneratedImage(userId, developed.print);
     const stillPath = extractStoragePath(url, "generated-images");
     const negativePath = stillPath ? negativePathFor(stillPath) : null;
     if (negativePath) {
-      const { error } = await client.storage
-        .from("generated-images")
+      // Service role, as persistGeneratedImage stores the print (core.ts):
+      // the bucket gives the person no write of their own. The path is the
+      // print's, under the owner's folder by construction.
+      const { error } = await createAdminClient()
+        .storage.from("generated-images")
         .upload(negativePath, developed.negative, { contentType: "image/jpeg", upsert: false });
       if (error) console.warn("[lab] the negative was not kept:", error.message);
       else setNegatives.set(url, mediaUrl("generated-images", negativePath));
@@ -2208,7 +2211,6 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
             persist: (base64) => {
               openingFramesPainted += 1;
               return persistImageBytes(
-                supabase,
                 userId,
                 openingFramePath(userId, placeholder.id, openingFramesPainted),
                 Buffer.from(base64, "base64"),
@@ -2322,7 +2324,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         setShot: isSetShot,
           policyWarningAcknowledged,
           brandRules: await loadBrandRules(supabase, userData.user!.id),
-          persistImage: (base64) => storeSetImage(supabase, userData.user!.id, base64),
+          persistImage: (base64) => storeSetImage(userData.user!.id, base64),
           imageSize: setFrame.cut && imageModelId === "gpt-image" ? setFrame.size : null,
           expressionSet: expressionSetLinks,
           imageResolution,
@@ -2493,7 +2495,6 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
               .filter(Boolean)
               .join("; ");
             gateOutcome = await runImageIdentityGate({
-              supabase,
               userId: userData.user.id,
               resultUrl,
               absoluteResultUrl: absolutizeMediaUrl(resultUrl, origin),
@@ -2516,7 +2517,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
                 elementImageUrls,
                 imageSize: setFrame.cut && imageModelId === "gpt-image" ? setFrame.size : null,
                 // The same cut and the same lab as the first render (storeSetImage).
-                persist: (base64: string) => storeSetImage(supabase, userData.user!.id, base64),
+                persist: (base64: string) => storeSetImage(userData.user!.id, base64),
                 // ONE paid call, not another full allowance. runRealPipeline
                 // mints its own budget of MAX_PAID_IMAGE_CALLS internally, so
                 // re-entering the pipeline would have doubled the ceiling the
@@ -5685,7 +5686,7 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
     // its box is the one visible failure this lane has.
     if (layerWidth && layerHeight) bytes = await fitLayerToOriginal(bytes, layerWidth, layerHeight);
     const path = layerStoragePath(userId, layer.generation_id as string, layer.z_index as number, nextVersion);
-    storedUrl = await persistImageBytes(admin, userId, path, bytes);
+    storedUrl = await persistImageBytes(userId, path, bytes);
 
     const { data: inserted, error: insertError } = await admin
       .from("generation_layers")

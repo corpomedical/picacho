@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { SupabaseClient } from "@supabase/supabase-js";
 
 // The likeness gate's plumbing, for a Helios lab still (2026-09-16). The lab
 // grades a still after the cut — grain, a camcorder's smear, black and white
@@ -45,7 +44,6 @@ const ABS = (u: string) => `https://picacho.test${u}`;
 /** A gate run for a still at /print/first.png, with the character's bar at 70. */
 function deps(over: Partial<GateDeps> = {}): GateDeps {
   return {
-    supabase: {} as SupabaseClient,
     userId: "u1",
     resultUrl: "/print/first.png",
     absoluteResultUrl: ABS("/print/first.png"),
@@ -128,8 +126,8 @@ describe("the set shot's side of it (generations/actions.ts)", () => {
   const src = readFileSync(join(__dirname, "actions.ts"), "utf8");
 
   it("stores the first render and the re-render through the same cut and lab", () => {
-    expect(src).toContain("persistImage: (base64) => storeSetImage(supabase, userData.user!.id, base64),");
-    expect(src).toContain("persist: (base64: string) => storeSetImage(supabase, userData.user!.id, base64),");
+    expect(src).toContain("persistImage: (base64) => storeSetImage(userData.user!.id, base64),");
+    expect(src).toContain("persist: (base64: string) => storeSetImage(userData.user!.id, base64),");
   });
 
   it("gives the gate the negative of each still the lab developed, and nothing for the rest", () => {
