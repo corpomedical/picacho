@@ -67,11 +67,14 @@ export async function classifyProhibitions(
     `adjacent, do NOT flag it. A wrongly blocked generation costs the customer a paid ` +
     `attempt; uncertainty means "none".\n` +
     `- Cinematic structure — cuts, transitions, montage pacing, "slow burn then explosive ` +
-    `finale" — is film language, not a before/after comparison or a claim.\n\n` +
+    `finale" — is film language, not a before/after comparison or a claim.\n` +
+    `- Name the rule whose meaning the words actually break. Words that break one rule do ` +
+    `not also break its neighbour in the list.\n\n` +
     `Rules:\n${numbered}\n\n` +
     `Prompt:\n${prompt}\n\n` +
     `Reply with ONLY a JSON array, nothing else. One entry per ACTUAL violation:\n` +
-    `[{"rule": <number>, "evidence": "<the EXACT words copied verbatim from the prompt that ` +
+    `[{"rule": <number>, "label": "<that rule's name, copied exactly from the list>", ` +
+    `"evidence": "<the EXACT words copied verbatim from the prompt that ` +
     `violate the rule>", "fix": "<one short sentence: how to reword the prompt to comply>"}]\n` +
     `The evidence MUST be copied character-for-character from the prompt — if you cannot ` +
     `point to exact words, the rule is not violated. Reply with exactly [] if no rule is violated.`;
@@ -106,7 +109,8 @@ export async function classifyProhibitions(
     const n = Number((entry as { rule?: unknown }).rule);
     const evidence = String((entry as { evidence?: unknown }).evidence ?? "").trim();
     const fix = String((entry as { fix?: unknown }).fix ?? "").trim().slice(0, 300);
-    const rule = Number.isInteger(n) && n >= 1 && n <= rules.length ? rules[n - 1] : null;
+    const label = String((entry as { label?: unknown }).label ?? "");
+    const rule = resolveRule(rules, n, label);
     if (!rule) continue;
     // THE EVIDENCE GATE: the quoted trigger must genuinely appear in the
     // prompt (case-insensitive). A flag whose evidence can't be located is a
@@ -118,4 +122,30 @@ export async function classifyProhibitions(
   }
 
   return { violations, checked: true };
+}
+
+const labelKey = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+
+// Which rule an answer means. The number alone slipped: a Ferrari F40 on a
+// set, a clear "No third-party trademarks" case, came back as rule numbers
+// for "No real public figures", "No copyrighted characters" and "No
+// prescription brand names" — the neighbours in the list (Reports,
+// 2026-09-19/20). The block was right, the reason it named was not, and the
+// reason is what the person reads. So the answer also names the rule, and a
+// name that is one of the listed rules wins over a number pointing
+// elsewhere; among rules sharing that name (two packs can both carry "No
+// competitor brands") the one nearest the number is kept. A name that
+// matches nothing is a paraphrase, and the number stands as before.
+export function resolveRule(rules: BrandRule[], n: number, label: string): BrandRule | null {
+  const byNumber = Number.isInteger(n) && n >= 1 && n <= rules.length ? rules[n - 1] : null;
+  const key = labelKey(label);
+  if (!key) return byNumber;
+  if (byNumber && labelKey(byNumber.label) === key) return byNumber;
+  const named = rules
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => labelKey(r.label) === key);
+  if (named.length === 0) return byNumber;
+  const target = byNumber ? n - 1 : 0;
+  named.sort((a, b) => Math.abs(a.i - target) - Math.abs(b.i - target));
+  return named[0].r;
 }

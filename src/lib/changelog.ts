@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.87.0",
+    build: 126,
+    date: "2026-09-24",
+    title: "Two fixes from the Reports queue",
+    items: [
+      "A character's page no longer crashes in the phone app. The line that says who is in the photos (\"You told us: … · date\") printed its date one way on the server and another way on the phone, and the page failed to load while it was being set up. The date now shows the same way on both, then switches to the phone's own format.",
+      "When a brand rule stops a render, it names the rule that was actually broken. A Ferrari F40 on a set was correctly stopped under \"No third-party trademarks\", but the message said \"No real public figures\", \"No copyrighted characters\" or \"No prescription brand names\", which were the rules next to it in the list. The checker now names the rule as well as its number, and the name wins if the two disagree.",
+    ],
+  },
+  {
     version: "1.86.0",
     build: 125,
     date: "2026-09-24",

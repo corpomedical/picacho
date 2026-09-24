@@ -1355,7 +1355,20 @@ export function CharacterForm({
       ) : (
         likeness?.answer && (
           <p className="text-xs text-atelier-muted" data-likeness-kept>
-            {formatMsg(c.likenessAnswered, { answer: likenessLabel(likeness.answer), date: likeness.at ? new Date(likeness.at).toLocaleDateString() : "" })}
+            {(() => {
+              // The date goes through LocalDate: a toLocaleDateString() here
+              // printed the server's date on the server and the phone's on
+              // the phone, and the page died hydrating (React #418, five
+              // reports from the Android app, 2026-09-22).
+              const [before, after = ""] = formatMsg(c.likenessAnswered, { answer: likenessLabel(likeness.answer) }).split("{date}");
+              return (
+                <>
+                  {before}
+                  {likeness.at ? <LocalDate date={likeness.at} /> : null}
+                  {after}
+                </>
+              );
+            })()}
           </p>
         )
       )}
