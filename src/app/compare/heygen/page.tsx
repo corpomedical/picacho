@@ -1,25 +1,25 @@
 import type { Metadata } from "next";
 import { ComparePage } from "../compare-shell";
+import { getServerMessages } from "@/lib/i18n/server";
 import { localeAlternates, marketingSocial } from "@/lib/i18n/metadata";
 
-// English-only metadata, same convention as /pricing (the root layout's
-// title.template appends "| Picacho"). Dated in the description on purpose:
+// Title and description come from the catalogs (t.seo.compare, 2026-09-24)
+// so each locale URL is searched in its own language; the root layout's
+// title.template appends "| Picacho". Dated in the description on purpose:
 // the page's competitor claims are verified as of August 2026 and say so.
 // generateMetadata rather than a static object (2026-08-30): the canonical
 // depends on which locale URL is being served, and the hreflang set must be
 // emitted on all four. The static canonical this replaces would have pinned
 // every locale to the English page — the standard way to make Google discard
 // the translations as duplicates.
-const TITLE = "Picacho vs HeyGen (2026)";
-const DESCRIPTION =
-  "Picacho vs HeyGen, honestly compared: avatar presenters vs scene-based character video, per-output identity scoring, watermark policy, failed-render economics, and pricing — verified from HeyGen's public pricing page, August 2026.";
-
 export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getServerMessages();
+  const { title, description } = t.seo.compare.heygen;
   return {
-    title: TITLE,
-    description: DESCRIPTION,
+    title,
+    description,
     alternates: await localeAlternates("/compare/heygen"),
-    ...marketingSocial("/compare/heygen", TITLE, DESCRIPTION),
+    ...marketingSocial("/compare/heygen", title, description),
   };
 }
 

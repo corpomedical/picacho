@@ -11,15 +11,17 @@ import { localeAlternates, marketingSocial } from "@/lib/i18n/metadata";
 // emitted on all four. The static canonical this replaces would have pinned
 // every locale to the English page — the standard way to make Google discard
 // the translations as duplicates.
-const TITLE = "Content Policy";
-const DESCRIPTION = "What's allowed and not allowed to be generated on Picacho.";
-
+// The title is the document's own, already translated with it; the
+// description comes from the catalogs (t.seo.contentPolicyDescription, 2026-09-24).
 export async function generateMetadata(): Promise<Metadata> {
+  const { locale, t } = await getServerMessages();
+  const title = contentPolicyDoc[locale].title;
+  const description = t.seo.contentPolicyDescription;
   return {
-    title: TITLE,
-    description: DESCRIPTION,
+    title,
+    description,
     alternates: await localeAlternates("/content-policy"),
-    ...marketingSocial("/content-policy", TITLE, DESCRIPTION),
+    ...marketingSocial("/content-policy", title, description),
   };
 }
 

@@ -699,6 +699,60 @@ const en = {
     errGeneric: "Something went wrong — try again.",
     errNetwork: "Couldn't reach the scorer. Check your connection and try again.",
   },
+  // Search-result title + description for the translated marketing pages
+  // (2026-09-24). Until today these were English literals in each page, so
+  // /es, /pt and /it served an English <title> and meta description over a
+  // translated body — Search Console showed 33 of 39 translated URLs
+  // unindexed and one crawled-then-declined. The legal pages take their
+  // title from their own document (lib/i18n/legal) and only need a
+  // description here. English strings are byte-identical to what the pages
+  // shipped before.
+  seo: {
+    home: {
+      title: "Picacho — Consistent AI Character Content, On the First Try",
+      description: "The reliability layer for AI-generated character content.",
+    },
+    pricing: {
+      title: "Pricing",
+      description:
+        "Simple, transparent pricing for consistent AI character photos and videos. Compare plans and find the right fit, from casual creators to studios.",
+    },
+    gallery: {
+      title: "Gallery",
+      description:
+        "Real renders made with Picacho — AI character images and video, generated, validated, and identity-scored by the same pipeline every plan gets. Every score shown is a real measurement.",
+    },
+    privacyDescription: "How Picacho collects, uses, and protects your data.",
+    termsDescription: "The terms that govern your use of Picacho.",
+    contentPolicyDescription: "What's allowed and not allowed to be generated on Picacho.",
+    compare: {
+      hedra: {
+        title: "Picacho vs Hedra (2026)",
+        description:
+          "Picacho vs Hedra, honestly compared: talking-character clips vs persistent multi-scene identity, per-clip price, identity scoring, watermarks, and API access — verified from Hedra's public pricing page, August 2026.",
+      },
+      heygen: {
+        title: "Picacho vs HeyGen (2026)",
+        description:
+          "Picacho vs HeyGen, honestly compared: avatar presenters vs scene-based character video, per-output identity scoring, watermark policy, failed-render economics, and pricing — verified from HeyGen's public pricing page, August 2026.",
+      },
+      higgsfield: {
+        title: "Picacho vs Higgsfield (2026)",
+        description:
+          "Picacho vs Higgsfield, honestly compared: a multi-model creative suite vs a character-first pipeline, per-output identity scoring, failed-render economics, watermark policy, and pricing — verified from Higgsfield's public pricing page, August 2026.",
+      },
+      imagineart: {
+        title: "Picacho vs ImagineArt (2026)",
+        description:
+          "Picacho vs ImagineArt, honestly compared: a broad creative suite with reference-based consistency vs a saved character with per-output identity scoring, privacy defaults, failed-render economics, and pricing — verified from ImagineArt's public pricing page, August 2026.",
+      },
+      renoise: {
+        title: "Picacho vs Renoise (2026)",
+        description:
+          "Picacho vs Renoise, honestly compared: a multi-model canvas with a manual character-lock workflow vs a saved character with per-output identity scoring, watermark policy, failed-render economics, and pricing — verified from Renoise's public pricing page, August 2026.",
+      },
+    },
+  },
   legal: {
     lastUpdatedLabel: "Last updated",
     legalOperatorProvider: "Service provider",

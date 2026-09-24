@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { ComparePage } from "../compare-shell";
+import { getServerMessages } from "@/lib/i18n/server";
 import { localeAlternates, marketingSocial } from "@/lib/i18n/metadata";
 
-// English-only metadata, same convention as the sibling competitor pages.
+// Title and description from the catalogs (t.seo.compare), same as the
+// sibling competitor pages.
 // Dated in the description on purpose: the page's competitor claims are
 // verified as of August 2026 and say so.
 // generateMetadata rather than a static object (2026-08-30): the canonical
@@ -10,16 +12,14 @@ import { localeAlternates, marketingSocial } from "@/lib/i18n/metadata";
 // emitted on all four. The static canonical this replaces would have pinned
 // every locale to the English page — the standard way to make Google discard
 // the translations as duplicates.
-const TITLE = "Picacho vs Renoise (2026)";
-const DESCRIPTION =
-  "Picacho vs Renoise, honestly compared: a multi-model canvas with a manual character-lock workflow vs a saved character with per-output identity scoring, watermark policy, failed-render economics, and pricing — verified from Renoise's public pricing page, August 2026.";
-
 export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getServerMessages();
+  const { title, description } = t.seo.compare.renoise;
   return {
-    title: TITLE,
-    description: DESCRIPTION,
+    title,
+    description,
     alternates: await localeAlternates("/compare/renoise"),
-    ...marketingSocial("/compare/renoise", TITLE, DESCRIPTION),
+    ...marketingSocial("/compare/renoise", title, description),
   };
 }
 

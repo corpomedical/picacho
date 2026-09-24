@@ -44,9 +44,9 @@ export async function localeAlternates(basePath: string): Promise<Metadata["alte
  * siteName and image. So pages pass their own title/description/path here
  * and get the complete block, siteName and image restated.
  *
- * `basePath` is the ENGLISH path — marketing metadata is English-only (same
- * convention as each caller's title/description), so the share URL is the
- * English canonical, the same URL hreflang x-default names. The root
+ * `basePath` is the ENGLISH path, so the share URL is the English canonical,
+ * the same URL hreflang x-default names — even though callers now pass the
+ * title/description in the reader's language (t.seo, 2026-09-24). The root
  * layout's title.template ("%s | Picacho") applies only to the <title> tag,
  * never to og/twitter titles, so the suffix is appended here to match.
  */

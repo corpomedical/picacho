@@ -20,21 +20,18 @@ import { isNativeApp } from "@/lib/native/server";
 // every locale's canonical to the English page, which is the standard way to
 // make Google discard the translations as duplicates.
 //
-// Title and description stay English for now: the localized <html lang> and
-// body are what make the page indexable in its language, and inventing
-// translated SEO strings without them being reviewed would be worse than
-// leaving these until they are. Localize them by moving these two strings
-// into the message files.
-const TITLE = "Pricing";
-const DESCRIPTION =
-  "Simple, transparent pricing for consistent AI character photos and videos. Compare plans and find the right fit, from casual creators to studios.";
-
+// Title and description come from the catalogs (t.seo.pricing) since
+// 2026-09-24. They were English on every locale URL until then, and Search
+// Console left almost every translated page unindexed — one it crawled and
+// declined, its title identical to the English page's.
 export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getServerMessages();
+  const { title, description } = t.seo.pricing;
   return {
-    title: TITLE,
-    description: DESCRIPTION,
+    title,
+    description,
     alternates: await localeAlternates("/pricing"),
-    ...marketingSocial("/pricing", TITLE, DESCRIPTION),
+    ...marketingSocial("/pricing", title, description),
   };
 }
 

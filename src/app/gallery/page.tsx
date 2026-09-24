@@ -19,24 +19,22 @@ import { GalleryShowcase, type ShowcaseItem } from "@/components/gallery-showcas
 
 // Renders as "Gallery | Picacho" via the title.template in the root layout —
 // same reasoning as /pricing: without a page title, the tab and the search
-// result link are just "Picacho". Static English metadata, matching the
-// convention on the other marketing pages (the visible page copy is fully
-// localized via marketing.gallery).
+// result link are just "Picacho". Title and description from the catalogs
+// (t.seo.gallery, 2026-09-24); the visible page copy is localized via
+// marketing.gallery.
 // generateMetadata rather than a static object (2026-08-30): the canonical
 // depends on which locale URL is being served, and the hreflang set must be
 // emitted on all four. The static canonical this replaces would have pinned
 // every locale to the English page — the standard way to make Google discard
 // the translations as duplicates.
-const TITLE = "Gallery";
-const DESCRIPTION =
-  "Real renders made with Picacho — AI character images and video, generated, validated, and identity-scored by the same pipeline every plan gets. Every score shown is a real measurement.";
-
 export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getServerMessages();
+  const { title, description } = t.seo.gallery;
   return {
-    title: TITLE,
-    description: DESCRIPTION,
+    title,
+    description,
     alternates: await localeAlternates("/gallery"),
-    ...marketingSocial("/gallery", TITLE, DESCRIPTION),
+    ...marketingSocial("/gallery", title, description),
   };
 }
 

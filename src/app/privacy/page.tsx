@@ -12,15 +12,17 @@ import { OperatorCard } from "@/components/marketing/operator-card";
 // emitted on all four. The static canonical this replaces would have pinned
 // every locale to the English page — the standard way to make Google discard
 // the translations as duplicates.
-const TITLE = "Privacy Policy";
-const DESCRIPTION = "How Picacho collects, uses, and protects your data.";
-
+// The title is the document's own, already translated with it; the
+// description comes from the catalogs (t.seo.privacyDescription, 2026-09-24).
 export async function generateMetadata(): Promise<Metadata> {
+  const { locale, t } = await getServerMessages();
+  const title = privacyDoc[locale].title;
+  const description = t.seo.privacyDescription;
   return {
-    title: TITLE,
-    description: DESCRIPTION,
+    title,
+    description,
     alternates: await localeAlternates("/privacy"),
-    ...marketingSocial("/privacy", TITLE, DESCRIPTION),
+    ...marketingSocial("/privacy", title, description),
   };
 }
 

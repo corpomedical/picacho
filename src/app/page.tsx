@@ -28,12 +28,19 @@ import { localeAlternates } from "@/lib/i18n/metadata";
 // canonical, telling Google to drop all three. This is the one page where
 // the change is an addition rather than a conversion.
 //
-// Only `alternates` is set: title, description and openGraph keep inheriting
-// from the root layout exactly as before. Next does NOT deep-merge
-// openGraph, so setting any of it here would silently wipe the layout's
+// Title and description come from the catalogs (t.seo.home, 2026-09-24) so
+// /es, /pt and /it are searched in their own language; `absolute` because
+// the title already names Picacho and the layout's template would add it
+// twice. openGraph still inherits from the root layout: Next does NOT
+// deep-merge it, so setting any of it here would silently wipe the layout's
 // siteName and images.
 export async function generateMetadata(): Promise<Metadata> {
-  return { alternates: await localeAlternates("/") };
+  const { t } = await getServerMessages();
+  return {
+    title: { absolute: t.seo.home.title },
+    description: t.seo.home.description,
+    alternates: await localeAlternates("/"),
+  };
 }
 
 // SoftwareApplication structured data, homepage-only (unlike the Organization

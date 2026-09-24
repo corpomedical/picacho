@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.88.0",
+    build: 127,
+    date: "2026-09-24",
+    title: "Translated pages show their own language in Google",
+    items: [
+      "The Spanish, Portuguese and Italian versions of the home page, pricing, gallery, the five comparison pages, privacy, terms and content policy now give Google a title and description in their own language. Until now 33 of the 39 translated pages showed English in search results over a translated page, and Search Console had left almost all of them unindexed. English pages are unchanged.",
+      "The Portuguese Renoise and ImagineArt comparisons no longer say failed generations never use your credits — a claim already withdrawn everywhere else. They now say, like every other page, that a request a provider refuses outright costs nothing.",
+    ],
+  },
+  {
     version: "1.87.0",
     build: 126,
     date: "2026-09-24",

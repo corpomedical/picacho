@@ -645,6 +645,52 @@ const es = {
     errGeneric: "Algo ha ido mal. Prueba otra vez.",
     errNetwork: "No se ha podido contactar con el puntuador. Revisa tu conexión y prueba otra vez.",
   },
+  seo: {
+    home: {
+      title: "Picacho — Contenido de personajes de IA consistente, a la primera",
+      description: "La capa de fiabilidad para el contenido de personajes generado con IA.",
+    },
+    pricing: {
+      title: "Precios",
+      description:
+        "Precios sencillos y transparentes para fotos y vídeos de personajes de IA consistentes. Compara los planes y encuentra el tuyo, desde creadores ocasionales hasta estudios.",
+    },
+    gallery: {
+      title: "Galería",
+      description:
+        "Renders reales hechos con Picacho — imágenes y vídeos de personajes de IA, generados, validados y con puntuación de identidad por el mismo pipeline que incluyen todos los planes. Cada puntuación mostrada es una medición real.",
+    },
+    privacyDescription: "Cómo Picacho recopila, usa y protege tus datos.",
+    termsDescription: "Los términos que rigen tu uso de Picacho.",
+    contentPolicyDescription: "Qué se permite y qué no se permite generar en Picacho.",
+    compare: {
+      hedra: {
+        title: "Picacho vs Hedra (2026): comparativa",
+        description:
+          "Picacho vs Hedra, comparados con honestidad: clips de personajes que hablan frente a una identidad persistente en varias escenas, precio por clip, puntuación de identidad, marcas de agua y acceso API — verificado en la página pública de precios de Hedra, agosto de 2026.",
+      },
+      heygen: {
+        title: "Picacho vs HeyGen (2026): comparativa",
+        description:
+          "Picacho vs HeyGen, comparados con honestidad: presentadores avatar frente a vídeo de personajes basado en escenas, puntuación de identidad en cada resultado, política de marca de agua, el coste de los renders fallidos y precios — verificado en la página pública de precios de HeyGen, agosto de 2026.",
+      },
+      higgsfield: {
+        title: "Picacho vs Higgsfield (2026): comparativa",
+        description:
+          "Picacho vs Higgsfield, comparados con honestidad: una suite creativa multimodelo frente a un pipeline centrado en el personaje, puntuación de identidad en cada resultado, el coste de los renders fallidos, política de marca de agua y precios — verificado en la página pública de precios de Higgsfield, agosto de 2026.",
+      },
+      imagineart: {
+        title: "Picacho vs ImagineArt (2026): comparativa",
+        description:
+          "Picacho vs ImagineArt, comparados con honestidad: una amplia suite creativa con consistencia basada en referencias frente a un personaje guardado con puntuación de identidad en cada resultado, privacidad por defecto, el coste de los renders fallidos y precios — verificado en la página pública de precios de ImagineArt, agosto de 2026.",
+      },
+      renoise: {
+        title: "Picacho vs Renoise (2026): comparativa",
+        description:
+          "Picacho vs Renoise, comparados con honestidad: un lienzo multimodelo con un flujo manual para fijar el personaje frente a un personaje guardado con puntuación de identidad en cada resultado, política de marca de agua, el coste de los renders fallidos y precios — verificado en la página pública de precios de Renoise, agosto de 2026.",
+      },
+    },
+  },
   legal: {
     lastUpdatedLabel: "Última actualización",
     legalOperatorProvider: "Titular del servicio",

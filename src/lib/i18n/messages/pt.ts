@@ -407,7 +407,7 @@ const pt = {
         choosePicacho: [
           "Você prefere salvar o personagem uma vez — características, regras, referências — e vê-lo aplicado automaticamente, em vez de reanexar à mão em cada plano.",
           "Você quer a ancoragem medida, não presumida: um modelo de visão pontua cada imagem contra a foto de identidade e mostra o número.",
-          "Você prefere pagar pelo que fica — gerações que falharam nunca consomem seus créditos.",
+          "Você prefere não pagar por uma solicitação que um provedor recusou de plano.",
         ],
       },
       imagineart: {
@@ -425,7 +425,7 @@ const pt = {
         choosePicacho: [
           "Seu trabalho deve ser privado em todos os planos — o nível Basic do ImagineArt torna as imagens públicas; o Picacho nunca faz isso.",
           "Você quer a identidade verificada, não presumida: cada imagem pontuada contra a foto de referência, com o número à vista.",
-          "Você prefere pagar pelo que fica — gerações que falharam nunca consomem seus créditos.",
+          "Você prefere não pagar por uma solicitação que um provedor recusou de plano.",
         ],
       },
       higgsfield: {
@@ -644,6 +644,52 @@ const pt = {
       "Essas fotos continuam grandes demais mesmo depois da compressão. Tente arquivos menores.",
     errGeneric: "Algo deu errado. Tente de novo.",
     errNetwork: "Não foi possível falar com o pontuador. Verifique sua conexão e tente de novo.",
+  },
+  seo: {
+    home: {
+      title: "Picacho — Conteúdo de personagens de IA consistente, logo na primeira tentativa",
+      description: "A camada de confiabilidade para conteúdo de personagens gerado por IA.",
+    },
+    pricing: {
+      title: "Preços",
+      description:
+        "Preços simples e transparentes para fotos e vídeos de personagens de IA consistentes. Compare os planos e encontre o ideal para você, de criadores casuais a estúdios.",
+    },
+    gallery: {
+      title: "Galeria",
+      description:
+        "Renders reais feitos com o Picacho — imagens e vídeos de personagens de IA, gerados, validados e pontuados contra a foto de identidade pelo mesmo pipeline que todos os planos recebem. Cada pontuação exibida é uma medição real.",
+    },
+    privacyDescription: "Como o Picacho coleta, usa e protege seus dados.",
+    termsDescription: "Os termos que regem o seu uso do Picacho.",
+    contentPolicyDescription: "O que é e o que não é permitido gerar no Picacho.",
+    compare: {
+      hedra: {
+        title: "Picacho vs Hedra (2026): comparativo",
+        description:
+          "Picacho vs Hedra, comparados com honestidade: clipes de personagens falantes versus identidade persistente em várias cenas, preço por clipe, pontuação de identidade, marcas d'água e acesso via API — verificado na página pública de preços da Hedra, agosto de 2026.",
+      },
+      heygen: {
+        title: "Picacho vs HeyGen (2026): comparativo",
+        description:
+          "Picacho vs HeyGen, comparados com honestidade: apresentadores avatar versus vídeo de personagens baseado em cenas, pontuação de identidade em cada resultado, política de marca d'água, o custo dos renders que falham e preços — verificado na página pública de preços da HeyGen, agosto de 2026.",
+      },
+      higgsfield: {
+        title: "Picacho vs Higgsfield (2026): comparativo",
+        description:
+          "Picacho vs Higgsfield, comparados com honestidade: uma suíte criativa multimodelo versus um pipeline centrado no personagem, pontuação de identidade em cada resultado, o custo dos renders que falham, política de marca d'água e preços — verificado na página pública de preços da Higgsfield, agosto de 2026.",
+      },
+      imagineart: {
+        title: "Picacho vs ImagineArt (2026): comparativo",
+        description:
+          "Picacho vs ImagineArt, comparados com honestidade: uma ampla suíte criativa com consistência baseada em referências versus um personagem salvo com pontuação de identidade em cada resultado, privacidade por padrão, o custo dos renders que falham e preços — verificado na página pública de preços da ImagineArt, agosto de 2026.",
+      },
+      renoise: {
+        title: "Picacho vs Renoise (2026): comparativo",
+        description:
+          "Picacho vs Renoise, comparados com honestidade: uma tela multimodelo com um fluxo manual para travar o personagem versus um personagem salvo com pontuação de identidade em cada resultado, política de marca d'água, o custo dos renders que falham e preços — verificado na página pública de preços da Renoise, agosto de 2026.",
+      },
+    },
   },
   legal: {
     lastUpdatedLabel: "Última atualização",
