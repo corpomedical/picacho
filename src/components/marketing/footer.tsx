@@ -90,6 +90,16 @@ export async function MarketingFooter({ dark = false }: { dark?: boolean } = {})
             <Link href="/delete-account" className={link}>
               {t.marketing.footer.deleteAccount}
             </Link>
+            {/* The channel where the trailers live (operator, 2026-09-24).
+                Brand name, kept literal like the comparison labels below. */}
+            <a
+              href="https://www.youtube.com/@Picacho-ai"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={link}
+            >
+              YouTube
+            </a>
           </div>
           {/* Comparison pages — hidden in the native app like the Pricing
               link above, because they are wall-to-wall prices (Apple 3.1.1 /

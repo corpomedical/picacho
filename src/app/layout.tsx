@@ -127,7 +127,11 @@ const ORGANIZATION_JSON_LD = {
   alternateName: "Picacho AI",
   url: SITE_URL,
   logo: `${SITE_URL}/logo.png`,
-  sameAs: ["https://www.instagram.com/picachoai/", "https://www.tiktok.com/@picacho.ai"],
+  sameAs: [
+    "https://www.instagram.com/picachoai/",
+    "https://www.tiktok.com/@picacho.ai",
+    "https://www.youtube.com/@Picacho-ai",
+  ],
 };
 
 export default async function RootLayout({
