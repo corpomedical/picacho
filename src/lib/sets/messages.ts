@@ -80,6 +80,9 @@ export const THING_REBUILD_NO_PHOTOS = "Put a photo on this thing first — Astr
 export const THING_REBUILD_DIDNT_FIT = "Astra's new shape didn't fit where the old one stood, so the set is unchanged — try again.";
 export const THING_REBUILD_FAILED = "Astra couldn't rebuild this from its photos — try again in a moment.";
 export const THING_REBUILD_ADMINS_ONLY = "Rebuilding from photos is for admins while we prove it.";
+// A thing's 3D model built from its photo (thing-build.ts, 2026-09-24).
+export const THING_BUILD_NO_PHOTO = "Put a photo on this thing first — its model is built from its front photo.";
+export const THING_BUILD_FAILED = "The model couldn't be built from this photo — try a clearer photo of the whole thing.";
 export const SET_PHOTO_BUILD_FAILED =
   "This set couldn't be built from that photo, and the build is back in your allowance. A photo that shows more of the place may work better.";
 

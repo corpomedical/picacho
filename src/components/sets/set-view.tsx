@@ -24,7 +24,8 @@ import { azimuthOf, hourFromAzimuth, measureMetres, scaleBar, sunDirection, type
 import { PATH_MAX_POINTS, alongPath, pathLength, type Gaze } from "@/lib/sets/people";
 import { MOVERS_PER_BEAT, canMove, moverAlong, movedSpec, placementBefore, turnAbout, type Mover, type Placement } from "@/lib/sets/movers";
 import { SKETCH_MODEL_MATERIAL, THING_MODEL_BUCKET, fitThingModel, modelHome, modelUrlAllowed, type ThingModel } from "@/lib/sets/thing-model";
-import { keepThingModel, removeThingModel, reserveThingModel, turnThingModel } from "@/lib/sets/model-actions";
+import { keepThingModel, pollThingBuild, removeThingModel, reserveThingModel, startThingBuild, turnThingModel } from "@/lib/sets/model-actions";
+import { THING_BUILD_POLL_MS, THING_BUILD_WAIT_MS } from "@/lib/sets/thing-build";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import type { RigTab } from "@/lib/sets/rig-dock";
 import { SceneTree, sceneNames, type SceneTarget } from "./scene-tree";
@@ -81,7 +82,7 @@ import { RigPanel } from "@/components/sets/rig-panel";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
 import { canBeLook, newestLook } from "@/lib/sets/look";
 import { matchSummary, placeMatchedCamera, solveMatchPose, type CameraMove, type MatchClamp } from "@/lib/sets/match-shot";
-import { SET_LIKENESS_NEEDED, SET_PHOTO_UNREADABLE, SET_SAVE_FAILED, SET_TAKE_BAD_END, SET_TAKE_NEEDS_PLAN, THING_MODEL_SAVE_FAILED } from "@/lib/sets/messages";
+import { SET_LIKENESS_NEEDED, SET_PHOTO_UNREADABLE, SET_SAVE_FAILED, SET_TAKE_BAD_END, SET_TAKE_NEEDS_PLAN, THING_BUILD_FAILED, THING_MODEL_SAVE_FAILED } from "@/lib/sets/messages";
 import { preparePhoto } from "@/lib/sets/photo-client";
 import { facingFor, hasCameraWords, wordsToMatch, type ShotWords } from "@/lib/sets/shot-words";
 import {
@@ -699,6 +700,9 @@ export function SetView({
   const [editingSet, setEditingSet] = useState(false);
   /** A thing Astra is rebuilding from its photos (thing-rebuild.ts), and what the last rebuild said, on its card. */
   const [rebuilding, setRebuilding] = useState<string | null>(null);
+  /** A thing whose 3D model is being built from its photo (thing-build.ts), and why the last build didn't land, on its card. */
+  const [buildingModel, setBuildingModel] = useState<string | null>(null);
+  const [buildNote, setBuildNote] = useState<{ key: string; text: string } | null>(null);
   /**
    * The picture engine stills are drawn with (2026-09-24, "Cant change from
    * gpt to nano banana"): the composer's own two lanes, remembered in this
@@ -4224,10 +4228,15 @@ export function SetView({
                 state: thingModelState[thingKey] ?? null,
                 flipped: thingModels.find((m) => m.key === thingKey)?.flip ?? false,
                 kept: thingModels.find((m) => m.key === thingKey)?.kept ?? null,
-                note: thingModels.find((m) => m.key === thingKey)?.note ?? null,
+                note: thingModels.find((m) => m.key === thingKey)?.note ?? (buildNote && buildNote.key === thingKey ? buildNote.text : null),
                 onFile: (file) => void loadThingModel(thingKey, file),
                 onFlip: () => void turnModel(thingKey),
                 onRemove: () => void dropModel(thingKey),
+                build: {
+                  can: (h?.photos.length ?? 0) > 0,
+                  building: buildingModel === thingKey,
+                  onBuild: () => void buildModel(thingKey),
+                },
               }
             : null
         }
@@ -4866,6 +4875,45 @@ export function SetView({
       patchModel(key, { url: kept.model.url, storedKey: kept.model.key, kept: "saved", note: null });
     } catch (err) {
       unsaved(staleHere(err) ? t.generate.refreshNeeded : THING_MODEL_SAVE_FAILED);
+    }
+  }
+
+  /**
+   * A thing's 3D model built here from its front photo (model-actions.ts
+   * startThingBuild, 2026-09-24, "Everything should be done under one
+   * roof"): started, asked after every few seconds, and once built drawn on
+   * the stage and kept with the set, as a loaded file is.
+   */
+  async function buildModel(key: string) {
+    if (buildingModel) return;
+    setBuildingModel(key);
+    setBuildNote(null);
+    const fail = (text: string) => setBuildNote({ key, text: localizeServerText(text, t) });
+    try {
+      const started = await startThingBuild(setId, key);
+      if (started.error !== null) return fail(started.error);
+      const deadline = new Date().getTime() + THING_BUILD_WAIT_MS;
+      while (aliveRef.current && new Date().getTime() < deadline) {
+        await new Promise((r) => setTimeout(r, THING_BUILD_POLL_MS));
+        const res = await pollThingBuild(setId, { key: started.key, handle: started.handle });
+        if (res.error !== null) return fail(res.error);
+        if (res.state === "done") {
+          const at = res.model.key;
+          const was = thingModelsRef.current.find((m) => m.key === at);
+          if (was?.url.startsWith("blob:")) URL.revokeObjectURL(was.url);
+          setThingModelState((prev) => ({ ...prev, [at]: "loading" }));
+          setThingModels((prev) => [
+            ...prev.filter((m) => m.key !== at),
+            { key: at, url: res.model.url, flip: false, name: cast.modelBuilt, storedKey: at, kept: "saved", note: null },
+          ]);
+          return;
+        }
+      }
+      if (aliveRef.current) fail(THING_BUILD_FAILED);
+    } catch (err) {
+      if (!leftBehind(err)) fail(staleHere(err) ? t.generate.refreshNeeded : THING_BUILD_FAILED);
+    } finally {
+      setBuildingModel(null);
     }
   }
 

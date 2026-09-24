@@ -19,6 +19,20 @@ import { setsAccess, UUID_RE, type SetsAccess } from "@/lib/sets/access";
 import { ELEMENT_KEY_RE } from "@/lib/sets/elements";
 import { THING_MODEL_BUCKET, THING_MODEL_MAX_BYTES, glbHeaderOk, parseModelName, setModelPath } from "@/lib/sets/thing-model";
 import { listModelFiles, type KeptThingModel } from "@/lib/sets/thing-model-store";
+import { normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
+import { resolvePhotos, setElements, type ElementPhoto } from "@/lib/sets/elements";
+import { listElementPhotos } from "@/lib/sets/references";
+import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
+import {
+  THING_BUILDS_PER_HOUR,
+  THING_BUILD_ENDPOINT,
+  THING_BUILD_USD,
+  buildHandleAllowed,
+  builtModelUrl,
+  readBuildHandle,
+  thingBuildInput,
+  type ThingBuildHandle,
+} from "@/lib/sets/thing-build";
 import {
   SET_NOT_FOUND,
   THING_MODEL_ADMINS_ONLY,
@@ -26,6 +40,9 @@ import {
   THING_MODEL_SAVE_FAILED,
   THING_MODEL_TOO_BIG,
   THING_MODEL_TOO_FAST,
+  THING_BUILD_FAILED,
+  THING_BUILD_NO_PHOTO,
+  SET_ELEMENT_GONE,
 } from "@/lib/sets/messages";
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -118,4 +135,104 @@ export async function removeThingModel(setId: string, input: { key: string }): P
   if (typeof input?.key !== "string" || !ELEMENT_KEY_RE.test(input.key)) return { error: null };
   await removeOthers(createAdminClient(), own.userId, own.setId, input.key, null);
   return { error: null };
+}
+
+/** The set as the page draws it: the working copy when one is saved, read on its own, as element-actions.ts reads it. */
+async function workingSpec(admin: Admin, userId: string, setId: string): Promise<SetSpec | null> {
+  const { data: row } = await admin.from("location_sets").select("spec").eq("id", setId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+  const first = row ? normaliseSetSpec(row.spec) : null;
+  if (!first?.ok) return null;
+  const { data: editedRow, error } = await admin
+    .from("location_sets")
+    .select("edited_spec")
+    .eq("id", setId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!error && editedRow?.edited_spec) {
+    const e = normaliseSetSpec(editedRow.edited_spec);
+    if (e.ok) return e.spec;
+  }
+  return first.spec;
+}
+
+/**
+ * Build a thing's 3D model from its front photo (thing-build.ts, 2026-09-24,
+ * "Everything should be done under one roof"): the photo's bytes go to
+ * TRELLIS.2 on fal's queue and the page is handed the job to ask after
+ * (pollThingBuild). The key is resolved against the saved set, as a photo's
+ * is, and the model is kept under the thing it finds.
+ */
+export async function startThingBuild(setId: string, key: string): Promise<{ error: string } | { error: null; key: string; handle: ThingBuildHandle }> {
+  const own = await ownSet(await setsAccess(), setId);
+  if (own.error !== null) return { error: own.error };
+  if (typeof key !== "string" || !ELEMENT_KEY_RE.test(key)) return { error: SET_ELEMENT_GONE };
+  const admin = createAdminClient();
+  const spec = await workingSpec(admin, own.userId, own.setId);
+  if (!spec) return { error: SET_NOT_FOUND };
+  const els = setElements(spec);
+  const probe: ElementPhoto = { refId: "00000000-0000-4000-8000-000000000000", anchor: key, slot: 1, at: 0, url: "" };
+  const thingKey = resolvePhotos(els, [probe]).held[0]?.key ?? null;
+  if (!thingKey) return { error: SET_ELEMENT_GONE };
+  const listing = await listElementPhotos(admin, own.userId, own.setId);
+  const front = resolvePhotos(els, listing.photos).held.find((h) => h.key === thingKey)?.photos[0];
+  const path = front ? listing.photos.find((p) => p.refId === front.refId)?.path : undefined;
+  if (!path) return { error: THING_BUILD_NO_PHOTO };
+  if (await rateLimited(own.userId, "thing-build", 60 * 60, THING_BUILDS_PER_HOUR)) return { error: THING_MODEL_TOO_FAST };
+  const apiKey = process.env.FAL_KEY;
+  if (!apiKey) return { error: THING_BUILD_FAILED };
+  const { data: photo, error: readError } = await admin.storage.from("generated-images").download(path);
+  if (readError || !photo) return { error: THING_BUILD_FAILED };
+  const dataUri = `data:image/jpeg;base64,${Buffer.from(await photo.arrayBuffer()).toString("base64")}`;
+  const res = await fetchWithTimeout(
+    `https://queue.fal.run/${THING_BUILD_ENDPOINT}`,
+    { method: "POST", headers: { authorization: `Key ${apiKey}`, "content-type": "application/json" }, body: JSON.stringify(thingBuildInput(dataUri)) },
+    30_000,
+  );
+  if (!res.ok) {
+    console.warn("[sets] thing build submit failed:", res.status, (await res.text()).slice(0, 300));
+    return { error: THING_BUILD_FAILED };
+  }
+  const handle = readBuildHandle(await res.json());
+  if (!handle) return { error: THING_BUILD_FAILED };
+  console.info("[sets] thing build started", { setId: own.setId, key: thingKey, requestId: handle.requestId, usd: THING_BUILD_USD });
+  return { error: null, key: thingKey, handle };
+}
+
+/** Ask after a build: still working, or done — the model kept with the set, one per thing — or failed. */
+export async function pollThingBuild(
+  setId: string,
+  input: { key: string; handle: unknown },
+): Promise<{ error: string } | { error: null; state: "working" } | { error: null; state: "done"; model: KeptThingModel }> {
+  const own = await ownSet(await setsAccess(), setId);
+  if (own.error !== null) return { error: own.error };
+  const key = typeof input?.key === "string" && ELEMENT_KEY_RE.test(input.key) ? input.key : null;
+  if (!key || !buildHandleAllowed(input.handle)) return { error: THING_BUILD_FAILED };
+  const handle = input.handle;
+  const apiKey = process.env.FAL_KEY;
+  if (!apiKey) return { error: THING_BUILD_FAILED };
+  const auth = { authorization: `Key ${apiKey}` };
+  const statusRes = await fetchWithTimeout(handle.statusUrl, { headers: auth }, 15_000);
+  if (!statusRes.ok) return { error: null, state: "working" };
+  const status = ((await statusRes.json()) as { status?: string }).status;
+  if (status === "FAILED" || status === "CANCELLED") return { error: THING_BUILD_FAILED };
+  if (status !== "COMPLETED") return { error: null, state: "working" };
+  const resultRes = await fetchWithTimeout(handle.responseUrl, { headers: auth }, 20_000);
+  if (!resultRes.ok) return { error: THING_BUILD_FAILED };
+  const made = builtModelUrl(await resultRes.json());
+  if (!made || (made.size !== null && made.size > THING_MODEL_MAX_BYTES)) return { error: made ? THING_MODEL_TOO_BIG : THING_BUILD_FAILED };
+  const glbRes = await fetchWithTimeout(made.url, {}, 60_000);
+  if (!glbRes.ok) return { error: THING_BUILD_FAILED };
+  const bytes = new Uint8Array(await glbRes.arrayBuffer());
+  if (bytes.byteLength > THING_MODEL_MAX_BYTES) return { error: THING_MODEL_TOO_BIG };
+  if (!glbHeaderOk(bytes.subarray(0, 12), bytes.byteLength)) return { error: THING_BUILD_FAILED };
+  const admin = createAdminClient();
+  const path = setModelPath(own.userId, own.setId, key, Date.now(), false);
+  const { error: upError } = await admin.storage.from(THING_MODEL_BUCKET).upload(path, bytes, { contentType: "model/gltf-binary", upsert: false });
+  if (upError) {
+    console.warn("[sets] a built model was not kept:", upError.message);
+    return { error: THING_MODEL_SAVE_FAILED };
+  }
+  await removeOthers(admin, own.userId, own.setId, key, path);
+  return { error: null, state: "done", model: { key, url: mediaUrl(THING_MODEL_BUCKET, path), flip: false } };
 }

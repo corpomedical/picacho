@@ -101,6 +101,8 @@ export function ElementCard({
     onFile: (file: File) => void;
     onFlip: () => void;
     onRemove: () => void;
+    /** Built here from its front photo (thing-build.ts, 2026-09-24): offered when it has one. */
+    build?: { can: boolean; building: boolean; onBuild: () => void } | null;
   } | null;
   /**
    * Its blocks rebuilt from its photos by Astra (thing-rebuild.ts,
@@ -385,13 +387,17 @@ export function ElementCard({
                 className={`text-[11px] ${model.state === "failed" ? "text-[#f08c8c]" : model.state === "ready" ? "text-[#8fcf9a]" : "text-[#c6c9d1]"}`}
                 data-el-model-state={model.state ?? "none"}
               >
-                {model.state === "loading"
-                  ? c.modelLoading
-                  : model.state === "failed"
-                    ? c.modelFailed
-                    : model.state === "ready" && model.name
-                      ? formatMsg(c.modelReady, { name: model.name })
-                      : c.modelHint}
+                {model.build?.building
+                  ? c.modelBuilding
+                  : model.state === "loading"
+                    ? c.modelLoading
+                    : model.state === "failed"
+                      ? c.modelFailed
+                      : model.state === "ready" && model.name
+                        ? formatMsg(c.modelReady, { name: model.name })
+                        : model.build?.can
+                          ? c.modelBuildHint
+                          : c.modelHint}
               </span>
               {model.kept && model.state !== "failed" && (
                 <span
@@ -415,7 +421,18 @@ export function ElementCard({
                   if (file) model.onFile(file);
                 }}
               />
-              <button type="button" onClick={() => modelFileRef.current?.click()} disabled={model.state === "loading"} data-el-model-file className={DRIVE_CHIP(false)}>
+              {model.build?.can && (
+                <button
+                  type="button"
+                  onClick={model.build.onBuild}
+                  disabled={model.build.building || model.state === "loading"}
+                  data-el-model-build
+                  className={`${DRIVE_CHIP(model.build.building)} disabled:cursor-default disabled:opacity-60`}
+                >
+                  {c.modelBuild}
+                </button>
+              )}
+              <button type="button" onClick={() => modelFileRef.current?.click()} disabled={model.state === "loading" || model.build?.building} data-el-model-file className={DRIVE_CHIP(false)}>
                 {c.modelLoad}
               </button>
               {model.state === "ready" && (

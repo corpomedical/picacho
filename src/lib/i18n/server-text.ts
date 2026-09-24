@@ -281,6 +281,8 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "Astra's new shape didn't fit where the old one stood, so the set is unchanged — try again.": "thingRebuildDidntFit",
   "Astra couldn't rebuild this from its photos — try again in a moment.": "thingRebuildFailed",
   "Rebuilding from photos is for admins while we prove it.": "thingRebuildAdminsOnly",
+  "Put a photo on this thing first — its model is built from its front photo.": "thingBuildNoPhoto",
+  "The model couldn't be built from this photo — try a clearer photo of the whole thing.": "thingBuildFailed",
   "That thing changed on the set — tap it again.": "setElementGone",
   "Photos go on cars and objects — a person comes from their character.": "setElementNotAThing",
   "A set holds 24 photos on its things — remove one to add another.": "setElementsTooMany",
