@@ -18,7 +18,12 @@ android {
         applicationId "ai.picacho.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 20
+        versionCode 21
+        // 21 = 20 plus <uses-feature microphone required="false">. 20 was
+        // uploaded to a Production draft on 2026-09-25 and Play warned "This
+        // release no longer supports 20 devices": RECORD_AUDIO implies a
+        // REQUIRED microphone. 20 was never sent for review, but an uploaded
+        // version code is spent. Same shape as 18 → 19.
         // 20 = the microphone (2026-09-25): RECORD_AUDIO and
         // MODIFY_AUDIO_SETTINGS declared for the Producer's hands-free voice
         // and the composer's mic, which could not record inside the app
@@ -190,7 +195,7 @@ android {
         // committed to the dark tile in BOTH system themes (operator's call,
         // 2026-08-21: the ink tile reads better and never shifts size with
         // the theme), matching 512 store icon regenerated.
-        versionName "1.20.0"
+        versionName "1.21.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

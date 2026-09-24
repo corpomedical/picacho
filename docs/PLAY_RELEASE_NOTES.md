@@ -30,6 +30,23 @@ short translation.
 
 ---
 
+## versionCode 21 · versionName 1.21.0
+
+**Context.** 20 plus `<uses-feature android:name="android.hardware.microphone" android:required="false" />`.
+20 went into a Production draft on 2026-09-25 and the preview warned "This
+release no longer supports 20 devices that were supported in your previous
+release": RECORD_AUDIO makes Play imply a REQUIRED microphone (the portrait
+lock's trap at 18, again). 20 was removed from the draft before review, so
+20 is spent but never shipped. 21's preview shows only the debug-symbols
+warning every release has carried. Uploaded and staged at 100% by Claude in
+Chrome on 2026-09-25 (release name "21 (1.21.0)", same notes as 20 below);
+sending for review is the operator's call. AAB at ~/Desktop/Picacho-21.aab
+(sha256 7926db90…), upload key SHA-256 …F0:FB:AB.
+
+Notes: the same five-language block as 20, below.
+
+---
+
 ## versionCode 20 · versionName 1.20.0
 
 **Context.** The microphone (2026-09-25): RECORD_AUDIO and

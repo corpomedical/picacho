@@ -181,4 +181,9 @@
          at all (Data safety listed Audio as not collected; it now is). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- RECORD_AUDIO makes Play IMPLY android.hardware.microphone as a
+         REQUIRED feature — the versionCode 20 upload showed "no longer
+         supports 20 devices" for exactly that (the portrait lock's trap at 18,
+         again). The app works without a microphone; the page says so. -->
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 </manifest>
