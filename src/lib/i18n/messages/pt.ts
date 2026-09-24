@@ -101,10 +101,12 @@ const pt = {
     cut: "Edição {n}",
     empty: "Sua edição pronta aparece aqui.",
     clipsOf: "{n} clipes · {time}",
+    clipOne: "1 clipe · {time}",
     chipCaptions: "Legendas",
     chipWhole: "Quadro inteiro · plano {list}",
     chipMusic: "Música de fundo",
     chipText: "{n} textos na tela",
+    chipTextOne: "1 texto na tela",
     phase: {
       uploading: "Enviando",
       reading: "Lendo suas gravações",

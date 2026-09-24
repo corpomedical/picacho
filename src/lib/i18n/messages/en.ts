@@ -113,10 +113,12 @@ const en = {
     cut: "Cut {n}",
     empty: "Your finished edit plays here.",
     clipsOf: "{n} clips · {time}",
+    clipOne: "1 clip · {time}",
     chipCaptions: "Captions",
     chipWhole: "Whole frame · shot {list}",
     chipMusic: "Music bed",
     chipText: "{n} on-screen lines",
+    chipTextOne: "1 on-screen line",
     phase: {
       uploading: "Uploading",
       reading: "Reading your footage",

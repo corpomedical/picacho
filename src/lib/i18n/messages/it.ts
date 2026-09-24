@@ -100,10 +100,12 @@ const it = {
     cut: "Montaggio {n}",
     empty: "Qui vedrai il montaggio finito.",
     clipsOf: "{n} clip · {time}",
+    clipOne: "1 clip · {time}",
     chipCaptions: "Sottotitoli",
     chipWhole: "Quadro intero · inquadratura {list}",
     chipMusic: "Musica di sottofondo",
     chipText: "{n} testi a schermo",
+    chipTextOne: "1 testo a schermo",
     phase: {
       uploading: "Caricamento",
       reading: "Lettura del girato",

@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { editorAllowed, isEditorEnabled } from "@/lib/editor/enabled";
-import { listEdits } from "@/lib/editor/actions";
+import { getEdit, listEdits } from "@/lib/editor/actions";
 import { DirectorsCut } from "@/components/directors-cut/directors-cut";
 
 // Director's Cut (operator, 2026-09-24): raw footage in, a finished edit out —
@@ -25,5 +25,6 @@ export default async function DirectorsCutPage() {
   if (!(await isEditorEnabled(supabase))) notFound();
 
   const { edits } = await listEdits();
-  return <DirectorsCut initialEdits={edits} />;
+  const first = edits[0] ? (await getEdit(edits[0].id)).edit : null;
+  return <DirectorsCut initialEdits={edits} initialDetail={first} />;
 }

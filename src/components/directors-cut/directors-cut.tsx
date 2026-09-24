@@ -36,12 +36,13 @@ const ASPECTS: Aspect[] = ["16:9", "9:16", "1:1"];
 
 type Picked = { file: File; url: string; seconds: number | null };
 
-export function DirectorsCut({ initialEdits }: { initialEdits: EditSummary[] }) {
+export function DirectorsCut({ initialEdits, initialDetail = null }: { initialEdits: EditSummary[]; initialDetail?: EditDetail | null }) {
   const { t } = useLocale();
   const d = t.directorsCut;
   const [edits, setEdits] = useState(initialEdits);
-  const [selectedId, setSelectedId] = useState<string | null>(initialEdits[0]?.id ?? null);
-  const [detail, setDetail] = useState<EditDetail | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialDetail?.id ?? initialEdits[0]?.id ?? null);
+  // The newest edit arrives with the page, so the bench opens whole.
+  const [detail, setDetail] = useState<EditDetail | null>(initialDetail);
   const [error, setError] = useState<string | null>(null);
 
   const guard = useCallback(async <T,>(work: () => Promise<T>): Promise<T | null> => {
@@ -67,8 +68,10 @@ export function DirectorsCut({ initialEdits }: { initialEdits: EditSummary[] }) 
   );
 
   useEffect(() => {
-    setDetail(null);
-    if (selectedId) void refresh(selectedId);
+    if (!selectedId) return;
+    // Another edit picked: clear the old one rather than show it under the new name.
+    setDetail((cur) => (cur?.id === selectedId ? cur : null));
+    void refresh(selectedId);
   }, [selectedId, refresh]);
 
   // Poll while anything is still being made; stop when all is settled.
@@ -87,13 +90,16 @@ export function DirectorsCut({ initialEdits }: { initialEdits: EditSummary[] }) 
     [refresh],
   );
 
-  const header = (
+  // Inside the dark panel (the first visit) the header is literal light ink;
+  // on the page's own ground (the bench) it takes the theme's ink, so a Light
+  // choice does not leave it white on white (found in the harness, 2026-09-24).
+  const header = (onDark: boolean) => (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-[#ecedf1]">{d.title}</h1>
-        <p className="mt-1.5 max-w-xl text-sm text-[#9aa0ad]">{d.lede}</p>
+        <h1 className={`font-display text-3xl font-semibold tracking-tight ${onDark ? "text-[#ecedf1]" : "text-atelier-ink"}`}>{d.title}</h1>
+        <p className={`mt-1.5 max-w-xl text-sm ${onDark ? "text-[#9aa0ad]" : "text-atelier-muted"}`}>{d.lede}</p>
       </div>
-      <span className="font-mono text-xs text-[#6b6f7a]">{d.testing}</span>
+      <span className={`font-mono text-xs ${onDark ? "text-[#6b6f7a]" : "text-atelier-muted"}`}>{d.testing}</span>
     </div>
   );
 
@@ -102,7 +108,7 @@ export function DirectorsCut({ initialEdits }: { initialEdits: EditSummary[] }) 
     return (
       <div className="mx-auto max-w-5xl scroll-mt-4">
         <section className="flex flex-col gap-6 rounded-[28px] bg-[#0b0c10] px-6 pb-6 pt-7 text-[#c6c9d1] shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_32px_72px_-28px_rgba(0,0,0,0.7)] sm:px-8">
-          {header}
+          {header(true)}
           <BriefForm wide onStarted={onStarted} guard={guard} />
           {error && <p className="text-sm text-[#f0a3a3]">{error}</p>}
         </section>
@@ -113,7 +119,7 @@ export function DirectorsCut({ initialEdits }: { initialEdits: EditSummary[] }) 
   // B: the bench.
   return (
     <div data-directors-cut className="scroll-mt-4 text-[#c6c9d1]">
-      <div className="mb-5 px-1">{header}</div>
+      <div className="mb-5 px-1">{header(false)}</div>
       <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)_320px]">
         <section aria-label={d.bin} className="order-4 flex flex-col gap-4 rounded-[20px] bg-[#0b0c10] p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.08)] lg:order-1">
           <BriefForm onStarted={onStarted} guard={guard} />
@@ -140,8 +146,9 @@ export function DirectorsCut({ initialEdits }: { initialEdits: EditSummary[] }) 
         </section>
 
         <section aria-label={d.theCut} className="order-1 flex min-w-0 flex-col gap-4 lg:order-2">
-          <Monitor detail={detail} />
-          {detail?.cut && <CutStrip detail={detail} />}
+          <Monitor detail={detail} loading={selectedId !== null && detail === null} />
+          {/* Only a finished cut: during a re-cut the saved plan is the old one. */}
+          {detail?.cut && detail.stage === "done" && <CutStrip detail={detail} />}
         </section>
 
         <section aria-label={d.notes} className="order-3 lg:order-3">
@@ -240,7 +247,7 @@ function BriefForm({ wide = false, onStarted, guard }: { wide?: boolean; onStart
       <div className="flex flex-col gap-2.5">
         <span className="flex items-baseline justify-between font-mono text-[11px] uppercase tracking-[0.08em] text-[#6b6f7a]">
           {d.footage}
-          {files.length > 0 && <span className="normal-case tracking-normal">{formatMsg(d.clipsOf, { n: files.length, time: clock(total) })}</span>}
+          {files.length > 0 && <span className="normal-case tracking-normal">{formatMsg(files.length === 1 ? d.clipOne : d.clipsOf, { n: files.length, time: clock(total) })}</span>}
         </span>
         <div className={wide ? "grid grid-cols-2 gap-3 sm:grid-cols-4" : "flex flex-col gap-2"}>
           {files.map((f, i) => (
@@ -253,7 +260,8 @@ function BriefForm({ wide = false, onStarted, guard }: { wide?: boolean; onStart
               }
             >
               <video
-                src={f.url}
+                // Half a second in, so a clip that opens on black still shows what it is.
+                src={`${f.url}#t=0.5`}
                 muted
                 playsInline
                 preload="metadata"
@@ -382,33 +390,38 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
 
 const STEPS = ["reading", "watching", "cutting", "checking", "rendering"] as const;
 
-function Monitor({ detail }: { detail: EditDetail | null }) {
+function Monitor({ detail, loading }: { detail: EditDetail | null; loading: boolean }) {
   const { t } = useLocale();
   const d = t.directorsCut;
   const portrait = detail?.aspect === "9:16";
   return (
     <div className="relative flex min-h-[420px] items-center justify-center rounded-[20px] bg-[#050608] p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.08)] lg:min-h-[560px]">
       {detail?.resultUrl && detail.stage === "done" ? (
-        <>
+        // Its own row above the picture: laid over it, the labels sat on the
+        // video's top edge at phone width (harness, 2026-09-24).
+        <div className="flex w-full flex-col items-center gap-3">
+          <div className="flex w-full items-baseline justify-between px-1">
+            <span className="font-mono text-xs text-[#9aa0ad]">
+              {formatMsg(d.cut, { n: detail.cutNumber })} · {detail.aspect}
+            </span>
+            <a href={detail.resultUrl} download className="text-[13px] text-[#e0a468] hover:text-[#f0bd86]">
+              {d.download}
+            </a>
+          </div>
           <video
             key={detail.resultUrl}
-            src={detail.resultUrl}
+            // Half a second in: an edit that opens on a fade shows black at 0.
+            src={`${detail.resultUrl}#t=0.5`}
             controls
             playsInline
             preload="metadata"
-            className={portrait ? "max-h-[540px] w-auto rounded-[14px]" : "max-h-[540px] w-full rounded-[14px]"}
+            className={portrait ? "max-h-[520px] w-auto max-w-full rounded-[14px]" : "max-h-[520px] w-full rounded-[14px]"}
           />
-          <span className="absolute left-4 top-3 font-mono text-xs text-[#9aa0ad]">
-            {formatMsg(d.cut, { n: detail.cutNumber })} · {detail.aspect}
-          </span>
-          <a href={detail.resultUrl} download className="absolute right-4 top-3 text-[13px] text-[#e0a468] hover:text-[#f0bd86]">
-            {d.download}
-          </a>
-        </>
+        </div>
       ) : detail && detail.stage !== "done" ? (
         <Progress detail={detail} />
       ) : (
-        <p className="text-sm text-[#6b6f7a]">{d.empty}</p>
+        loading ? null : <p className="text-sm text-[#6b6f7a]">{d.empty}</p>
       )}
     </div>
   );
@@ -495,7 +508,7 @@ function CutStrip({ detail }: { detail: EditDetail }) {
         )}
         {cut.music && <span className="rounded-md bg-[rgba(255,255,255,0.06)] px-2 py-1 text-[#9aa0ad]">{d.chipMusic}</span>}
         {cut.texts.length > 0 && (
-          <span className="rounded-md bg-[rgba(255,255,255,0.06)] px-2 py-1 text-[#9aa0ad]">{formatMsg(d.chipText, { n: cut.texts.length })}</span>
+          <span className="rounded-md bg-[rgba(255,255,255,0.06)] px-2 py-1 text-[#9aa0ad]">{formatMsg(cut.texts.length === 1 ? d.chipTextOne : d.chipText, { n: cut.texts.length })}</span>
         )}
       </div>
     </div>
@@ -524,9 +537,11 @@ function useFrames(url: string | null, times: number[]): (string | null)[] {
         const done = () => {
           video.removeEventListener("seeked", done);
           try {
-            const h = 96;
-            canvas.height = h;
-            canvas.width = Math.max(1, Math.round((video.videoWidth / Math.max(1, video.videoHeight)) * h));
+            // 480 px wide: the strip crops each frame to a wide, short block,
+            // so a narrow (9:16) frame drawn small was stretched to a blur.
+            const w = 480;
+            canvas.width = w;
+            canvas.height = Math.max(1, Math.round((video.videoHeight / Math.max(1, video.videoWidth)) * w));
             canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
             resolve(canvas.toDataURL("image/jpeg", 0.7));
           } catch {

@@ -101,10 +101,12 @@ const es = {
     cut: "Montaje {n}",
     empty: "Aquí se verá tu montaje terminado.",
     clipsOf: "{n} clips · {time}",
+    clipOne: "1 clip · {time}",
     chipCaptions: "Subtítulos",
     chipWhole: "Encuadre completo · plano {list}",
     chipMusic: "Música de fondo",
     chipText: "{n} textos en pantalla",
+    chipTextOne: "1 texto en pantalla",
     phase: {
       uploading: "Subiendo",
       reading: "Leyendo tu material",
