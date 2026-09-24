@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   THING_BUILD_ENDPOINT,
+  THING_BUILD_MULTI_ENDPOINT,
   THING_BUILD_RESOLUTION,
   THING_BUILD_USD,
   THING_BUILD_VERTICES,
@@ -10,6 +11,7 @@ import {
   builtModelUrl,
   readBuildHandle,
   thingBuildInput,
+  thingBuildRequest,
 } from "./thing-build";
 
 // A thing's 3D model built inside Helios from its front photo (2026-09-24,
@@ -30,6 +32,30 @@ describe("what TRELLIS.2 is sent", () => {
     });
     expect(THING_BUILD_RESOLUTION).toBe(1024);
     expect(THING_BUILD_USD).toBe(0.3);
+  });
+});
+
+describe("several views of one thing", () => {
+  it("one image → the photo endpoint; several → the multi-view endpoint, same settings", () => {
+    expect(thingBuildRequest(["data:a"])).toEqual({ endpoint: "fal-ai/trellis-2", body: thingBuildInput("data:a") });
+    const multi = thingBuildRequest(["data:a", "data:b", "data:c"]);
+    expect(multi.endpoint).toBe(THING_BUILD_MULTI_ENDPOINT);
+    expect(multi.endpoint).toBe("fal-ai/trellis-2/multi");
+    expect(multi.body).toEqual({
+      image_urls: ["data:a", "data:b", "data:c"],
+      resolution: 1024,
+      decimation_target: THING_BUILD_VERTICES,
+      texture_size: 2048,
+      remesh: true,
+    });
+  });
+
+  it("a multi-view job's queue handle is accepted whether fal names it by the app or the sub-endpoint", () => {
+    const id = "764cabcf-b745-4b3e-ae38-1200304cf45b";
+    for (const base of ["https://queue.fal.run/fal-ai/trellis-2", "https://queue.fal.run/fal-ai/trellis-2/multi"]) {
+      const h = readBuildHandle({ request_id: id, status_url: `${base}/requests/${id}/status`, response_url: `${base}/requests/${id}` });
+      expect(buildHandleAllowed(h)).toBe(true);
+    }
   });
 });
 

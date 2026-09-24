@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.90.0",
+    build: 129,
+    date: "2026-09-24",
+    title: "Helios builds one car from a multi-view sheet",
+    items: [
+      "\"Build it from its photo\" no longer turns a car sheet into four small cars. The first build was given a four-view drawing (side, top, front and back on one page, plus a stock site's banner) as a single photo. TRELLIS.2 builds one object per photo, so it built exactly what it saw: four partial cars laid out like the page. Helios now finds the separate views on a photo and cuts each one out, dropping banners, captions and specks. Several views go to TRELLIS.2's multi-view mode, which builds one model from all of them. A single product shot goes cut out and centred. An ordinary photo with a real background goes as it is.",
+      "A build now uses every photo the thing holds (up to four views in all), not only the first.",
+      "The same $0.30 a build: fal meters both TRELLIS.2 modes at the same $0.05 a unit, 6 units at this size. The first multi-view build will confirm the units on fal's record.",
+    ],
+  },
+  {
     version: "1.89.0",
     build: 128,
     date: "2026-09-24",

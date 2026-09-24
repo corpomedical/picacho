@@ -23,14 +23,15 @@ import { normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
 import { resolvePhotos, setElements, type ElementPhoto } from "@/lib/sets/elements";
 import { listElementPhotos } from "@/lib/sets/references";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
+import { cutViews, findViews, VIEW_MAX } from "@/lib/sets/thing-views";
 import {
   THING_BUILDS_PER_HOUR,
-  THING_BUILD_ENDPOINT,
+  THING_BUILD_MULTI_ENDPOINT,
   THING_BUILD_USD,
   buildHandleAllowed,
   builtModelUrl,
   readBuildHandle,
-  thingBuildInput,
+  thingBuildRequest,
   type ThingBuildHandle,
 } from "@/lib/sets/thing-build";
 import {
@@ -46,6 +47,13 @@ import {
 } from "@/lib/sets/messages";
 
 type Admin = ReturnType<typeof createAdminClient>;
+
+/** A photo sent whole says what it is: PNG and WebP were labelled JPEG before. */
+function sniffImageType(bytes: Buffer): string {
+  if (bytes[0] === 0x89 && bytes[1] === 0x50) return "image/png";
+  if (bytes.subarray(0, 4).toString("latin1") === "RIFF" && bytes.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
+  return "image/jpeg";
+}
 
 /** The person asking (each action asks first, itself) is an admin and the set is theirs, not deleted. */
 async function ownSet(access: SetsAccess, setId: unknown): Promise<{ error: string } | { error: null; userId: string; setId: string }> {
@@ -175,18 +183,37 @@ export async function startThingBuild(setId: string, key: string): Promise<{ err
   const thingKey = resolvePhotos(els, [probe]).held[0]?.key ?? null;
   if (!thingKey) return { error: SET_ELEMENT_GONE };
   const listing = await listElementPhotos(admin, own.userId, own.setId);
-  const front = resolvePhotos(els, listing.photos).held.find((h) => h.key === thingKey)?.photos[0];
-  const path = front ? listing.photos.find((p) => p.refId === front.refId)?.path : undefined;
-  if (!path) return { error: THING_BUILD_NO_PHOTO };
+  // Every photo the thing holds, front first — each can add views of it.
+  const held = resolvePhotos(els, listing.photos).held.find((h) => h.key === thingKey)?.photos ?? [];
+  const paths = held.map((h) => listing.photos.find((p) => p.refId === h.refId)?.path).filter((p): p is string => typeof p === "string");
+  if (!paths.length) return { error: THING_BUILD_NO_PHOTO };
   if (await rateLimited(own.userId, "thing-build", 60 * 60, THING_BUILDS_PER_HOUR)) return { error: THING_MODEL_TOO_FAST };
   const apiKey = process.env.FAL_KEY;
   if (!apiKey) return { error: THING_BUILD_FAILED };
-  const { data: photo, error: readError } = await admin.storage.from("generated-images").download(path);
-  if (readError || !photo) return { error: THING_BUILD_FAILED };
-  const dataUri = `data:image/jpeg;base64,${Buffer.from(await photo.arrayBuffer()).toString("base64")}`;
+  // The views on each photo, cut apart (thing-views.ts): a four-view sheet
+  // sent whole built four small cars. Each photo gives its views — several on
+  // a sheet, one on a product shot, the photo itself when nothing clean can
+  // be cut — and every view of the thing, up to four, goes into ONE build.
+  const images: string[] = [];
+  for (const path of paths) {
+    if (images.length >= VIEW_MAX) break;
+    const { data: photo, error: readError } = await admin.storage.from("generated-images").download(path);
+    if (readError || !photo) continue;
+    const bytes = Buffer.from(await photo.arrayBuffer());
+    let views: string[] = [];
+    try {
+      views = await cutViews(bytes, await findViews(bytes));
+    } catch (err) {
+      console.warn("[sets] a thing photo's views could not be read; sent whole:", err instanceof Error ? err.message : err);
+    }
+    if (!views.length) views = [`data:${sniffImageType(bytes)};base64,${bytes.toString("base64")}`];
+    images.push(...views.slice(0, VIEW_MAX - images.length));
+  }
+  if (!images.length) return { error: THING_BUILD_FAILED };
+  const request = thingBuildRequest(images);
   const res = await fetchWithTimeout(
-    `https://queue.fal.run/${THING_BUILD_ENDPOINT}`,
-    { method: "POST", headers: { authorization: `Key ${apiKey}`, "content-type": "application/json" }, body: JSON.stringify(thingBuildInput(dataUri)) },
+    `https://queue.fal.run/${request.endpoint}`,
+    { method: "POST", headers: { authorization: `Key ${apiKey}`, "content-type": "application/json" }, body: JSON.stringify(request.body) },
     30_000,
   );
   if (!res.ok) {
@@ -195,7 +222,7 @@ export async function startThingBuild(setId: string, key: string): Promise<{ err
   }
   const handle = readBuildHandle(await res.json());
   if (!handle) return { error: THING_BUILD_FAILED };
-  console.info("[sets] thing build started", { setId: own.setId, key: thingKey, requestId: handle.requestId, usd: THING_BUILD_USD });
+  console.info("[sets] thing build started", { setId: own.setId, key: thingKey, requestId: handle.requestId, usd: THING_BUILD_USD, views: images.length, multi: request.endpoint === THING_BUILD_MULTI_ENDPOINT });
   return { error: null, key: thingKey, handle };
 }
 

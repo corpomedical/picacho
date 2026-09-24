@@ -50,12 +50,43 @@ export function thingBuildInput(photoDataUri: string): Record<string, unknown> {
   };
 }
 
+// SEVERAL VIEWS OF ONE THING (2026-09-24, "The 3d Model car came out messed
+// up."): the first build was handed a four-view car sheet as ONE image and
+// built four small cars (thing-views.ts). The views are now cut apart and
+// sent to TRELLIS.2's multi-view endpoint, which averages what every view
+// says into ONE model ("Multiple views of the same object; conditioning is
+// averaged across views" — its own API page, 2026-09-24).
+//
+// THE MONEY: fal's pricing API (GET /v1/models/pricing, read 2026-09-24)
+// meters both endpoints the same — unit_price 0.05 USD per "units" — and the
+// single endpoint's page puts 1024 at $0.30, i.e. 6 units. The multi page
+// names no unit, so $0.30 is the inference, confirmed only when fal's record
+// of the first multi build shows its units.
+export const THING_BUILD_MULTI_ENDPOINT = "fal-ai/trellis-2/multi";
+
+/** The endpoint and body for a build from these images: one → the photo endpoint, several → multi-view. */
+export function thingBuildRequest(images: string[]): { endpoint: string; body: Record<string, unknown> } {
+  if (images.length <= 1) return { endpoint: THING_BUILD_ENDPOINT, body: thingBuildInput(images[0] ?? "") };
+  return {
+    endpoint: THING_BUILD_MULTI_ENDPOINT,
+    body: {
+      image_urls: images,
+      resolution: THING_BUILD_RESOLUTION,
+      decimation_target: THING_BUILD_VERTICES,
+      texture_size: THING_BUILD_TEXTURE,
+      remesh: true,
+    },
+  };
+}
+
 /** A build's queue handle as the page holds it between polls. */
 export type ThingBuildHandle = { requestId: string; statusUrl: string; responseUrl: string };
 
 // fal's queue host, about one request of THIS endpoint — never an arbitrary
 // URL the page could send back (the angle stage's stance, angle-stage.ts).
-const QUEUE_URL_RE = /^https:\/\/queue\.fal\.run\/fal-ai\/trellis-2\/requests\/[a-z0-9-]+(\/status)?$/i;
+// fal names a sub-endpoint's queue by its app (…/trellis-2/requests/…); the
+// optional /multi keeps a build answered either way from failing AFTER it was paid.
+const QUEUE_URL_RE = /^https:\/\/queue\.fal\.run\/fal-ai\/trellis-2(\/multi)?\/requests\/[a-z0-9-]+(\/status)?$/i;
 
 /** The handle fal answered a submit with, or null. */
 export function readBuildHandle(job: unknown): ThingBuildHandle | null {
