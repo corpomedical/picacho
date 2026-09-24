@@ -310,7 +310,8 @@ type StageApi = {
    * stand; a thing left out goes back to its blocks. Answers, per model,
    * whether it loaded — a file that is not a model says so on its card.
    */
-  setThingModels(models: readonly ThingModel[]): Promise<{ key: string; ok: boolean }[]>;
+  /** `painted`: how many of the model's sides its drawings paint (blueprint-paint.ts); 0 when none fit. */
+  setThingModels(models: readonly ThingModel[]): Promise<{ key: string; ok: boolean; painted?: number }[]>;
 };
 
 /** A model on a thing, as the page holds it (thing-model.ts): where it loads from, and whether it is kept with the set. */
@@ -885,6 +886,8 @@ export function SetView({
     });
   });
   const [thingModelState, setThingModelState] = useState<Record<string, "loading" | "ready" | "failed">>({});
+  /** How many sides of each model its drawings paint (blueprint-paint.ts): 0 when none fit. */
+  const [thingPainted, setThingPainted] = useState<Record<string, number>>({});
   const thingModelsRef = useRef(thingModels);
   useEffect(() => {
     thingModelsRef.current = thingModels;
@@ -1312,7 +1315,7 @@ export function SetView({
         const sketchGrey = new THREE.MeshStandardMaterial({ color: 0x9c9c9c, roughness: 0.9, metalness: 0 });
         skinRoot.name = "thing-models";
         scene.add(skinRoot);
-        const skins = new Map<string, { url: string; flip: boolean; group: import("three").Group; at: [number, number, number] }>();
+        const skins = new Map<string, { url: string; flip: boolean; drawings: string; group: import("three").Group; at: [number, number, number]; painted: number; unpaint: () => void }>();
         const blocksOf = (key: string) => {
           const el = stageEls.find((x) => x.key === key);
           return el ? el.members.map(([oi, copy]) => meshOfCopy.get(`${oi}:${copy}`)).filter((m): m is import("three").Mesh => Boolean(m)) : [];
@@ -1332,6 +1335,7 @@ export function SetView({
         const dropSkin = (key: string) => {
           const skin = skins.get(key);
           if (!skin) return;
+          skin.unpaint();
           skin.group.traverse((o) => {
             const mesh = o as import("three").Mesh;
             if (!mesh.isMesh) return;
@@ -2837,15 +2841,17 @@ export function SetView({
           },
           async setThingModels(models) {
             const wanted = new Map(models.filter((m) => modelUrlAllowed(m.url)).map((m) => [m.key, m]));
+            const drawingsOf = (m: ThingModel) => (m.drawings ?? []).join("|");
             for (const [key, skin] of [...skins]) {
               const w = wanted.get(key);
-              if (!w || w.url !== skin.url || w.flip !== skin.flip) dropSkin(key);
+              if (!w || w.url !== skin.url || w.flip !== skin.flip || drawingsOf(w) !== skin.drawings) dropSkin(key);
             }
             const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
-            const results: { key: string; ok: boolean }[] = [];
+            const results: { key: string; ok: boolean; painted?: number }[] = [];
             for (const [key, m] of wanted) {
-              if (skins.has(key)) {
-                results.push({ key, ok: true });
+              const held = skins.get(key);
+              if (held) {
+                results.push({ key, ok: true, painted: held.painted });
                 continue;
               }
               const el = stageEls.find((x) => x.key === key);
@@ -2879,13 +2885,25 @@ export function SetView({
                     ...SKETCH_MODEL_MATERIAL,
                   });
                 });
+                // The thing's own drawings painted onto its sides, the stage's
+                // paint and the sketch's both (blueprint-paint.ts, 2026-09-24):
+                // TRELLIS keeps a thing's shape and invents its details.
+                let painted: Awaited<ReturnType<typeof import("./blueprint-stage").paintFromDrawings>> = { sides: [], dispose: () => {} };
+                if (m.drawings?.length) {
+                  try {
+                    const { paintFromDrawings } = await import("./blueprint-stage");
+                    painted = await paintFromDrawings(THREE, renderer, model, m.drawings);
+                  } catch (err) {
+                    console.warn("A thing's drawings could not be painted onto its model:", err);
+                  }
+                }
                 await lightModel(model);
                 const group = new THREE.Group();
                 group.add(model);
                 skinRoot.add(group);
-                skins.set(key, { url: m.url, flip: m.flip, group, at: fit.at });
+                skins.set(key, { url: m.url, flip: m.flip, drawings: drawingsOf(m), group, at: fit.at, painted: painted.sides.length, unpaint: painted.dispose });
                 placeSkin(key);
-                results.push({ key, ok: true });
+                results.push({ key, ok: true, painted: painted.sides.length });
               } catch (err) {
                 console.warn("A thing's model would not load:", err);
                 results.push({ key, ok: false });
@@ -3687,6 +3705,9 @@ export function SetView({
   /** Which photos are on which thing now, after any change to the set (moved, changed, gone). */
   const resolved = useMemo(() => resolvePhotos(els, elementPhotos), [els, elementPhotos]);
   const heldOf = useMemo(() => new Map(resolved.held.map((h) => [h.key, h])), [resolved]);
+  /** A thing's photos, for its model's paint (blueprint-paint.ts): its drawings are painted onto its sides. */
+  const drawingsFor = useCallback((key: string) => (heldOf.get(key)?.photos ?? []).map((p) => p.url), [heldOf]);
+  const drawingsKey = useMemo(() => thingModels.map((m) => `${m.key}=${drawingsFor(m.key).join("|")}`).join(","), [thingModels, drawingsFor]);
   function elementName(key: string): string {
     if (key === FIGURE_KEY) return character?.name ?? cast.person;
     const e = els.find((x) => x.key === key);
@@ -4036,14 +4057,17 @@ export function SetView({
     const api = apiRef.current;
     if (!ready || !api) return;
     let live = true;
-    void api.setThingModels(thingModels.map(({ key, url, flip }) => ({ key, url, flip }))).then((res) => {
+    void api.setThingModels(thingModels.map(({ key, url, flip }) => ({ key, url, flip, drawings: drawingsFor(key) }))).then((res) => {
       if (!live) return;
       setThingModelState(Object.fromEntries(res.map((r) => [r.key, r.ok ? "ready" : "failed"])));
+      setThingPainted(Object.fromEntries(res.map((r) => [r.key, r.painted ?? 0])));
     });
     return () => {
       live = false;
     };
-  }, [ready, thingModels]);
+    // drawingsKey stands for drawingsFor: the photos on the things with models.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, thingModels, drawingsKey]);
   // The set stands as it is arranged whenever the film is put away
   // (movers.ts, 2026-09-23): a beat's movers belong to the film, never to
   // the set, so Shoot is never handed a van parked where a beat left it.
@@ -4229,6 +4253,7 @@ export function SetView({
             ? {
                 name: thingModels.find((m) => m.key === thingKey)?.name ?? null,
                 state: thingModelState[thingKey] ?? null,
+                painted: thingPainted[thingKey] ?? 0,
                 flipped: thingModels.find((m) => m.key === thingKey)?.flip ?? false,
                 kept: thingModels.find((m) => m.key === thingKey)?.kept ?? null,
                 note: thingModels.find((m) => m.key === thingKey)?.note ?? (buildNote && buildNote.key === thingKey ? buildNote.text : null),

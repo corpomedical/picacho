@@ -2494,6 +2494,8 @@ const it = {
       modelBuilding: "Sto costruendo il modello 3D dalla foto: ci vuole circa un minuto…",
       modelBuilt: "Costruito dalla sua foto",
       modelBuildHint: "Picacho costruisce un modello 3D dalla sua foto frontale, disegnato al posto dei blocchi e alla loro misura.",
+      modelPainted: "I tuoi disegni sono dipinti sopra: {n} lati",
+      modelPaintedOne: "Il tuo disegno è dipinto sopra: 1 lato",
       rebuildTitle: "Forma",
       rebuildHint: "Astra l'ha disegnato a parole. Può ricostruirne i blocchi da queste foto.",
       rebuildNeedsPhoto: "Aggiungi una foto e Astra potrà ricostruirne la forma.",

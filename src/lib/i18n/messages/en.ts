@@ -2639,6 +2639,8 @@ const en = {
       modelBuilding: "Building its 3D model from the photo — about a minute…",
       modelBuilt: "Built from its photo",
       modelBuildHint: "Picacho builds a 3D model from its front photo, drawn in place of the blocks at their size.",
+      modelPainted: "Your drawings are painted on: {n} sides",
+      modelPaintedOne: "Your drawing is painted on: 1 side",
       rebuildTitle: "Shape",
       rebuildHint: "Astra drew it from words. It can rebuild its blocks from these photos.",
       rebuildNeedsPhoto: "Add a photo and Astra can rebuild its shape from it.",

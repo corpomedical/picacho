@@ -101,6 +101,8 @@ export function ElementCard({
     onFile: (file: File) => void;
     onFlip: () => void;
     onRemove: () => void;
+    /** Sides of the model its drawings paint (blueprint-paint.ts, 2026-09-24): 0 or missing when none fit. */
+    painted?: number;
     /** Built here from its front photo (thing-build.ts, 2026-09-24): offered when it has one. */
     build?: { can: boolean; building: boolean; onBuild: () => void } | null;
   } | null;
@@ -407,6 +409,11 @@ export function ElementCard({
                 >
                   · {model.kept === "saving" ? c.modelSaving : model.kept === "saved" ? c.modelSaved : c.modelUnsaved}
                 </span>
+              )}
+              {model.state === "ready" && (model.painted ?? 0) > 0 && (
+                <p className="w-full text-[11px] leading-snug text-[#8fcf9a]" data-el-model-painted={model.painted}>
+                  {model.painted === 1 ? c.modelPaintedOne : formatMsg(c.modelPainted, { n: model.painted ?? 0 })}
+                </p>
               )}
               {model.note && <p className="w-full text-[11px] leading-snug text-[#e0a468]">{model.note}</p>}
               <input

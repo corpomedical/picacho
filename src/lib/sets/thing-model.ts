@@ -14,7 +14,13 @@ import type { Vec3 } from "./set-spec";
 export type Box = { min: Vec3; max: Vec3 };
 
 /** A model on a thing: where its file is, and whether it is turned round. */
-export type ThingModel = { key: string; url: string; flip: boolean };
+export type ThingModel = {
+  key: string;
+  url: string;
+  flip: boolean;
+  /** The thing's photos: drawings in them are painted onto the model (blueprint-paint.ts, 2026-09-24). */
+  drawings?: readonly string[];
+};
 
 /**
  * How to put a model where a thing's blocks stand. The model is a child of a
