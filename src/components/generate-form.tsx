@@ -2561,7 +2561,14 @@ function GenerateFormInner({
   // just this generation. Pricier models cost more of the monthly plan
   // allowance (see creditWeight, shown in the picker) — checked server-side
   // in runGeneration, not just hidden/disabled here.
-  const [videoModelId, setVideoModelId] = useState(defaultVideoModelId);
+  //
+  // A link may name the model (?model=, the Producer's prepared sends,
+  // 2026-09-24) — honoured only when it is one this account's picker offers,
+  // so a link can never select a model the composer itself wouldn't.
+  const [videoModelId, setVideoModelId] = useState(() => {
+    const fromUrl = searchParams.get("model");
+    return fromUrl && videoModels.some((m) => m.id === fromUrl) ? fromUrl : defaultVideoModelId;
+  });
   // The picture lane for THIS send (2026-09-23). Opens on the admin's global
   // default so the cell never names a model the render would not use, and is
   // only ever sent for an image — actions.ts ignores it otherwise and pins
@@ -2715,14 +2722,23 @@ function GenerateFormInner({
   // duration; the effect below re-snaps it any time the model changes to one
   // where the current value isn't valid (e.g. switching from Kling O3's 15s
   // down to Kling 1.6, which tops out at 10s).
-  const [videoDurationSeconds, setVideoDurationSeconds] = useState(
-    () =>
+  const [videoDurationSeconds, setVideoDurationSeconds] = useState(() => {
+    // A linked model (?model=) opens at the linked length (?seconds=) when
+    // that model offers it, else at the model's own default — never at the
+    // account default, which was resolved against a different model.
+    const linked = videoModels.find((m) => m.id === searchParams.get("model"));
+    if (linked) {
+      const s = Number(searchParams.get("seconds"));
+      return linked.durations.some((d) => d.seconds === s) ? s : linked.defaultDurationSeconds;
+    }
+    return (
       // The account's own default length when it set one (resolved
       // server-side against this very model), else the model's.
       defaultVideoDurationSeconds ??
       videoModels.find((m) => m.id === defaultVideoModelId)?.defaultDurationSeconds ??
-      5,
-  );
+      5
+    );
+  });
 
   // Placed here, AFTER videoModelId and videoDurationSeconds exist.
   //

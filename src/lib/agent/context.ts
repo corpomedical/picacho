@@ -69,7 +69,7 @@ WHAT YOU CANNOT DO
 // Block 2: the catalogue. Deterministically rendered — sorted, no clock, no
 // per-request values — so it hashes identically on every request and the
 // prefix stays cached.
-function renderCatalogue(): string {
+export function renderCatalogue(): string {
   const lines = [...VIDEO_MODELS]
     .sort((a, b) => a.id.localeCompare(b.id))
     .map((m) => {

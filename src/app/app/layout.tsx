@@ -5,6 +5,10 @@ import { isRecceEnabled, isSetsEnabled } from "@/lib/sets/enabled";
 import { isRecastEnabled } from "@/lib/recast/enabled";
 import { isLiveEnabled, isLiveOpenToPlans, liveAllowed } from "@/lib/live/enabled";
 import { isEditorEnabled } from "@/lib/editor/enabled";
+import { isProducerEnabled, isProducerOpenToElite, producerAllowed } from "@/lib/producer/enabled";
+import { countWatch, loadWatchBar } from "@/lib/producer/watch";
+import { DEFAULT_PRODUCER_NAME } from "@/lib/producer/store";
+import { ProducerLamp } from "@/components/producer/producer-lamp";
 import { setsEligible } from "@/lib/sets/set-config";
 import { RatePrompt } from "@/components/rate-prompt";
 import { NativePush } from "@/components/native-push";
@@ -51,7 +55,7 @@ export default async function AppLayout({
     { data: projects },
     { data: supportEmailSetting },
   ] = await Promise.all([
-    supabase.from("profiles").select("role, username, plan, skip_ai_refinement, rating_prompted_at").eq("id", data.user.id).single(),
+    supabase.from("profiles").select("role, username, plan, plan_status, status, skip_ai_refinement, rating_prompted_at").eq("id", data.user.id).single(),
     // Explicit user_id filters below, not just RLS — an admin's SELECT
     // policy on these tables intentionally allows reading every user's rows
     // (that's what powers /admin), so without this an admin browsing their
@@ -108,6 +112,27 @@ export default async function AppLayout({
   // Director's Cut (2026-09-24): admins only, behind the video_editor
   // switch (lib/editor/enabled.ts). Admin first spares everyone the flag read.
   const cutVisible = isAdmin && (await isEditorEnabled(supabase));
+
+  // The Producer's lamp (2026-09-24): admins, and Elite once `producer_elite`
+  // is on — the route's own rule (lib/producer/enabled.ts). Eligibility
+  // first, so every other account skips the flag reads and the watch count.
+  const producerEligible =
+    isAdmin || (profile?.plan === "elite" && !producerAllowed(profile, true).error);
+  let producer: { name: string; watchCount: number } | null = null;
+  if (
+    producerEligible &&
+    (isAdmin || (await isProducerOpenToElite(supabase))) &&
+    (await isProducerEnabled(supabase))
+  ) {
+    const [{ data: prefs }, watchBar] = await Promise.all([
+      supabase.from("producer_prefs").select("display_name, watch_seen_at").eq("user_id", data.user.id).maybeSingle(),
+      loadWatchBar(supabase),
+    ]);
+    producer = {
+      name: (prefs?.display_name as string | null)?.trim() || DEFAULT_PRODUCER_NAME,
+      watchCount: await countWatch(supabase, data.user.id, prefs?.watch_seen_at as string | null, watchBar),
+    };
+  }
 
   // Ask for a rating only once someone has had enough successful results to
   // hold an opinion, and only once ever (rating_prompted_at is stamped by
@@ -174,6 +199,7 @@ export default async function AppLayout({
       />
       {showRatePrompt && <RatePrompt />}
       <DownloadToasts />
+      {producer && <ProducerLamp name={producer.name} watchCount={producer.watchCount} />}
       {/* data-app-scroll: the app's one real scroller — the native quick
           pill watches its scrollTop to decide when to slide in. */}
       <div data-app-scroll className="min-w-0 flex-1 overflow-y-auto">

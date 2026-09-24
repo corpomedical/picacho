@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ProducerNameForm } from "@/components/settings/producer-name-form";
 import type { Messages } from "@/lib/i18n/messages";
 import type { Locale } from "@/lib/i18n/locales";
 import { localizedHref } from "@/lib/i18n/routing";
@@ -134,6 +135,7 @@ export function PreferencesTab({
   nativeApp,
   setsOn,
   marketingEnabled,
+  producerName = null,
 }: {
   t: Messages;
   notifyPrefs: { notify_render_ready: boolean; notify_render_failed: boolean; notify_low_credits: boolean };
@@ -141,6 +143,8 @@ export function PreferencesTab({
   nativeApp: boolean;
   setsOn: boolean;
   marketingEnabled: boolean;
+  /** The Producer's name, or null when this account has no Producer. */
+  producerName?: string | null;
 }) {
   const s = t.settings;
   return (
@@ -158,6 +162,11 @@ export function PreferencesTab({
           <LanguageSwitcher />
         </div>
       </SettingsSection>
+      {producerName !== null && (
+        <SettingsSection title="Your assistant" description="What the lamp in the corner answers to. Pick one, or give it your own name.">
+          <ProducerNameForm initialName={producerName} />
+        </SettingsSection>
+      )}
       {/* ?tab=notifications lands on this anchor. */}
       <div id="notifications" className="scroll-mt-24 space-y-4">
         <SettingsSection title={s.notificationsTitle} description={s.notificationsDesc}>

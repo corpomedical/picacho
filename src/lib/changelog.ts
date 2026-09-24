@@ -20,6 +20,22 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.93.0",
+    build: 132,
+    date: "2026-09-24",
+    title: "The Producer: a personal assistant for Elite (admins first)",
+    items: [
+      "A small lamp now sits in the corner of every app page for admins. It opens the Producer, a personal assistant on Claude Opus 5.5 that knows your cast, your brand rules, your renders and its own notes. Elite gets it when you switch on producer_elite in Admin > Feature flags.",
+      "It plans shoots with real numbers: ask for \"three TikToks for Friday\" and it lays out each shot with model, length and credits, then prepares each one as a card. \"Open in composer\" fills in the composer (character, prompt, model and length), and you still check the receipt and press Send yourself. The Producer cannot spend a credit.",
+      "It remembers. When you tell it something worth keeping (your brand's look, what you liked, when you post), it writes a short note. You can read, edit or delete every note under Notes in the sheet. Notes carry across conversations; \"Start fresh\" clears only the conversation.",
+      "It watches. Renders that come back under the identity gate's bar (70 unless changed in Admin) put a dot on the lamp. \"Ask why\" has it look at the picture (or a video's poster frame) and say what drifted, and it offers a prepared re-shoot.",
+      "It finds things: \"the red dress one from last week\" searches your own renders by words, character, score and date.",
+      "Settings > Preferences has a new \"Your assistant\" row: call it Producer, Concierge or a name of your own.",
+      "Billing uses the assistant allowance your plan already has (Elite 2,500 units a month at 2 cents), charged at each turn's real cost. A turn reserves at most 40 units ($0.80), and a brake stops tool use once a turn has cost $0.50. Admins meter against Elite's allowance.",
+      "Its database (four tables, each readable only by its owner, plus the two switches: producer ON for admins, producer_elite OFF) was set up before this push: supabase/applied/2026-09-24/producer.sql.",
+    ],
+  },
+  {
     version: "1.92.0",
     build: 131,
     date: "2026-09-24",
