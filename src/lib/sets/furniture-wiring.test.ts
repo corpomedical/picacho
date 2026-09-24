@@ -78,7 +78,7 @@ describe("the blades and the rack", () => {
     expect(view).toContain("rack: beat.rack,");
     // Against the set as the beat ENDS: a thing that drove away stands somewhere else (movers.ts).
     expect(actions).toContain("rack: rackWords(normaliseRack(input.rack, owned.spec.objects.length), endShown),");
-    const film = view.slice(view.indexOf('{dockTab === "film" && ('), view.indexOf('{(dockTab === "camera" || dockTab === "light"'));
+    const film = view.slice(view.indexOf("  function filmBeatView() {"), view.indexOf("  /**\n   * The new layout's right-hand panel, one per step"));
     expect(film).toContain('<option value="figure">{s.studio.rackFigure}</option>');
     expect(film).toContain("{names.objectName(o)}");
   });

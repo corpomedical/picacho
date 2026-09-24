@@ -44,7 +44,7 @@ describe("the sequencer on the set page", () => {
 
   it("keeps every control the dock had: the start, the engine, play, download, render, keyframe, and the beat's words, end, figure and hour", () => {
     for (const prop of ["onStartMenu", "onEngine", "onPlayFilm", "onDownload", "onRender", "onAddKeyframe", "onSeek", "onPlayTake", "onShotList"]) expect(panel).toContain(`p.${prop}`);
-    const filmTab = view.slice(view.indexOf('{dockTab === "film" && ('), view.indexOf('{(dockTab === "camera" || dockTab === "light"'));
+    const filmTab = view.slice(view.indexOf("  function filmBeatView() {"), view.indexOf("  /**\n   * The new layout's right-hand panel, one per step"));
     for (const piece of ["filmSetBeatEnd(filmSel)", "s.filmRemoveBeat", "placeholder={s.filmBeatWords}", "s.filmFigureHere", "s.filmHourSet"]) expect(filmTab).toContain(piece);
     expect(view).toContain('onShotList={() => setDockTab("film")}');
   });

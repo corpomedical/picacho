@@ -6512,19 +6512,246 @@ export function SetView({
    * block in the new layout's Shoot panel, where nothing measures it.
    */
   /**
-   * The new layout's right-hand panel in Set and Shoot: the open card when a
+   * The film's own panel: the rehearsal, then the beat being written — its
+   * words, figure, hour, rack, eye-line, path — or, with none picked, how
+   * to start and what each beat carries. The dock's Film tab in the classic
+   * layout; the Film step's panel in the new one.
+   */
+  function filmBeatView() {
+    return (
+      <div className="border-b border-[rgba(255,255,255,0.07)] p-3">
+        {/* The rehearsal (rehearsal.ts): the film's own flight as a
+            clip, whether or not a beat is being written. */}
+        <div className="mb-2 flex flex-col gap-2">{rehearsalControls("")}</div>
+        {filmSel !== null && film.beats[filmSel] ? (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.07em] text-[#9aa0ad]">
+              <span className="whitespace-nowrap text-[#f0cda6]">{formatMsg(s.filmBeatLabel, { n: filmSel + 1 })}</span>
+              <span className="whitespace-nowrap normal-case tabular-nums">{formatMsg(s.takeSeconds, { s: SET_TAKE_ENGINES[film.engine].seconds })}</span>
+              {filmBusy?.beat === filmSel ? (
+                <span className="whitespace-nowrap normal-case text-[#e0a468]">{filmBusy.clipOnly ? s.filmBeatClip : s.filmBeatStill}</span>
+              ) : filmClipShots[filmSel] ? (
+                <span
+                  className={`whitespace-nowrap normal-case ${
+                    filmClipShots[filmSel]!.status === "succeeded" ? "text-[#5f9e6e]" : filmClipShots[filmSel]!.status === "failed" ? "text-red-400" : "text-[#e0a468]"
+                  }`}
+                >
+                  {filmClipShots[filmSel]!.status === "succeeded" ? s.filmBeatDone : filmClipShots[filmSel]!.status === "failed" ? s.filmBeatClipFailed : s.filmBeatClip}
+                </span>
+              ) : null}
+              <span className="flex-1" />
+              <button
+                type="button"
+                onClick={() => filmSetBeatEnd(filmSel)}
+                disabled={Boolean(filmBusy) || previz || !ready}
+                aria-label={formatMsg(s.filmSetEnd, { n: filmSel + 1 })}
+                title={formatMsg(s.filmSetEnd, { n: filmSel + 1 })}
+                className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad] disabled:opacity-100"
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="h-3.5 w-3.5" aria-hidden>
+                  <path d="M2 5V2h3M11 2h3v3M14 11v3h-3M5 14H2v-3" />
+                  <circle cx="8" cy="8" r="1.4" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const at = filmSel;
+                  editFilm((f) => ({ ...f, beats: f.beats.filter((_, j) => j !== at) }));
+                  setFilmSel(null);
+                }}
+                disabled={Boolean(filmBusy)}
+                aria-label={formatMsg(s.filmRemoveBeat, { n: filmSel + 1 })}
+                title={formatMsg(s.filmRemoveBeat, { n: filmSel + 1 })}
+                className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad] disabled:opacity-100"
+              >
+                ×
+              </button>
+            </div>
+            {filmJumps[filmSel] && (
+              <p data-film-jump className="text-[11px] leading-snug text-[#e0a468]">
+                {formatMsg(s.filmBeatJumps, { n: filmSel + 1 })}
+              </p>
+            )}
+            <input
+              value={film.beats[filmSel].words}
+              onChange={(e) => {
+                const at = filmSel;
+                editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, words: e.target.value } : bb)) }));
+              }}
+              disabled={Boolean(filmBusy)}
+              placeholder={s.filmBeatWords}
+              className="h-7 rounded-[6px] bg-black/40 px-2 text-xs text-[#ecedf1] ring-1 ring-[rgba(255,255,255,0.08)] placeholder:text-[#565a64] focus:outline-none focus:ring-[#e0a468]/60"
+            />
+            <div className="flex flex-wrap items-center gap-1">
+              <button
+                type="button"
+                disabled={Boolean(filmBusy)}
+                onClick={() => {
+                  const at = filmSel;
+                  editFilm((f) => ({
+                    ...f,
+                    beats: f.beats.map((bb, j) => (j === at ? { ...bb, figure: bb.figure ? null : { x: mark.x, z: mark.z, facingDeg: mark.facingDeg, pose } } : bb)),
+                  }));
+                }}
+                title={film.beats[filmSel].figure ? s.filmFigureClear : s.filmFigureHere}
+                className={chip(Boolean(film.beats[filmSel].figure))}
+              >
+                {film.beats[filmSel].figure
+                  ? formatMsg(s.filmFigureSet, { pose: s.poses[film.beats[filmSel].figure.pose], x: film.beats[filmSel].figure.x.toFixed(1), z: film.beats[filmSel].figure.z.toFixed(1) })
+                  : s.filmFigureHere}
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(filmBusy)}
+                onClick={() => {
+                  const at = filmSel;
+                  editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, time: bb.time !== null ? null : (rig.time ?? 12) } : bb)) }));
+                }}
+                title={film.beats[filmSel].time !== null ? s.filmHourClear : s.filmHourHere}
+                className={chip(film.beats[filmSel].time !== null)}
+              >
+                {formatMsg(s.filmHourSet, {
+                  h: film.beats[filmSel].time !== null ? timeLabel(film.beats[filmSel].time) : rig.time !== null ? timeLabel(rig.time) : s.filmHourAsBuilt,
+                })}
+              </button>
+              {/* The rack of focus (cut C, furniture.ts): where the focus travels during this beat's move. */}
+              <select
+                value={film.beats[filmSel].rack ? (film.beats[filmSel].rack.to === "figure" ? "figure" : `o${film.beats[filmSel].rack.index}`) : ""}
+                onChange={(e) => {
+                  const at = filmSel;
+                  const v = e.target.value;
+                  const rack = v === "" ? null : v === "figure" ? { to: "figure" as const } : { to: "object" as const, index: Number(v.slice(1)) };
+                  editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, rack } : bb)) }));
+                }}
+                disabled={Boolean(filmBusy)}
+                aria-label={s.studio.rack}
+                title={s.studio.rack}
+                className="h-7 max-w-[170px] cursor-pointer rounded-[6px] bg-black/40 px-2 text-[11px] text-[#d6d9e0] ring-1 ring-[rgba(255,255,255,0.08)] outline-none"
+              >
+                <option value="">{s.studio.rack} · {s.studio.rackNone}</option>
+                <option value="figure">{s.studio.rackFigure}</option>
+                {spec.objects.map((o, oi) => (
+                  <option key={oi} value={`o${oi}`}>
+                    {names.objectName(o)}
+                  </option>
+                ))}
+              </select>
+              {/* The eye-line at the beat's end (cut D, people.ts): where the figure looks in the end frame and by the end of the clip. */}
+              <select
+                value={film.beats[filmSel].gaze ? (film.beats[filmSel].gaze.at === "camera" ? "camera" : film.beats[filmSel].gaze.at === "object" ? `o${film.beats[filmSel].gaze.index}` : "point") : ""}
+                onChange={(e) => {
+                  const at = filmSel;
+                  const v = e.target.value;
+                  if (v === "point") return;
+                  const g: Gaze | null = v === "" ? null : v === "camera" ? { at: "camera" } : { at: "object", index: Number(v.slice(1)) };
+                  editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, gaze: g } : bb)) }));
+                }}
+                disabled={Boolean(filmBusy)}
+                aria-label={s.studio.eyeline}
+                title={s.studio.eyeline}
+                className="h-7 max-w-[170px] cursor-pointer rounded-[6px] bg-black/40 px-2 text-[11px] text-[#d6d9e0] ring-1 ring-[rgba(255,255,255,0.08)] outline-none"
+              >
+                <option value="">{s.studio.eyeline} · {s.studio.gazeNone}</option>
+                <option value="camera">{s.studio.gazeCamera}</option>
+                {film.beats[filmSel].gaze?.at === "point" && <option value="point">{s.studio.gazePoint}</option>}
+                {spec.objects.map((o, oi) => (
+                  <option key={oi} value={`o${oi}`}>
+                    {formatMsg(s.studio.gazeThing, { thing: names.objectName(o) })}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {/* The path (cut D): the points the figure walks through to this beat's figure, laid on the ground. */}
+            {film.beats[filmSel].figure && (
+              <div className="flex flex-wrap items-center gap-1" data-path-row>
+                <span className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#9aa0ad]">{s.studio.path}</span>
+                <span className="text-[11px] text-[#c6c9d1]">
+                  {film.beats[filmSel].path.length
+                    ? formatMsg(s.studio.pathWalks, {
+                        d: pathLength(filmSel > 0 && film.beats[filmSel - 1].figure ? film.beats[filmSel - 1].figure! : mark, film.beats[filmSel].path, film.beats[filmSel].figure!),
+                        n: film.beats[filmSel].path.length,
+                      })
+                    : s.studio.pathStraight}
+                </span>
+                <button type="button" onClick={() => setLaying((l) => (l === "path" ? null : "path"))} disabled={Boolean(filmBusy)} className={chip(laying === "path")}>
+                  {laying === "path" ? s.studio.pathLaying : s.studio.pathLay}
+                </button>
+                {film.beats[filmSel].path.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const at = filmSel;
+                      editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, path: [] } : bb)) }));
+                    }}
+                    disabled={Boolean(filmBusy)}
+                    className={chip(false)}
+                  >
+                    {s.studio.pathClear}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <p className="text-[11.5px] leading-snug text-[#c6c9d1]">{film.beats.length === 0 ? s.sequencer.noBeats : s.rig.movePick}</p>
+            {filmPersonOther && (
+              <p data-film-person className="text-[11px] leading-snug text-[#e0a468]">
+                {formatMsg(s.filmPersonOther, { name: filmPersonOther })}
+              </p>
+            )}
+            {filmLookNoneShown && film.beats.length > 0 && (
+              <p data-film-look-none className="text-[11px] leading-snug text-[#e0a468]">
+                {s.filmLookNone}
+              </p>
+            )}
+            {/* What each beat's end frame carries of the things' photos (R1). */}
+            {elementsKey && film.beats.length > 0 && (
+              <div data-film-elements className="flex flex-col gap-0.5">
+                <p className="text-[11px] leading-snug text-[#9aa0ad]">{cast.filmNote}</p>
+                {filmBeatRides.map((rides, i) =>
+                  rides.length > 0 ? (
+                    <p key={i} className="text-[11px] leading-snug text-[#c6c9d1]">
+                      {formatMsg(cast.filmBeat, { n: i + 1, list: rides.map((r) => elementName(r.key)).join(", ") })}
+                    </p>
+                  ) : null,
+                )}
+              </div>
+            )}
+            {filmJumps.map((jumps, i) =>
+              jumps ? (
+                <p key={i} data-film-jump className="text-[11px] leading-snug text-[#e0a468]">
+                  {formatMsg(s.filmBeatJumps, { n: i + 1 })}
+                </p>
+              ) : null,
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  /**
+   * The new layout's right-hand panel, one per step: the open card when a
    * thing is picked; otherwise Set's words and Astra's thread (the place is
-   * changed by asking), or Shoot's setup — who, the look, the camera — with
-   * the camera department beneath it when the Rig chip opens it. Astra's
+   * changed by asking), Shoot's setup — who, the look, the camera — with the
+   * camera department beneath it when the Rig chip opens it, or Film's own
+   * panel: the rehearsal, the beat being written and its move. Astra's
    * composer stays at the foot, as the dock's does.
    */
   function stepPanelView() {
     const rigTab = dockTab === "camera" || dockTab === "light" || dockTab === "look" ? dockTab : null;
     return (
-      <aside aria-label={simpleStep === "shoot" ? sw.shotTitle : sw.setTitle} data-step-panel className="flex w-[340px] flex-none flex-col border-l border-[rgba(255,255,255,0.07)] bg-[#15161b]">
+      <aside aria-label={!simpleShooting ? sw.stepFilm : simpleStep === "shoot" ? sw.shotTitle : sw.setTitle} data-step-panel className="flex w-[340px] flex-none flex-col border-l border-[rgba(255,255,255,0.07)] bg-[#15161b]">
         <div className="min-h-0 flex-1 overflow-y-auto">
           {elementCard ? (
             elementCardView("dock")
+          ) : !simpleShooting ? (
+            <div data-step-film>
+              {filmBeatView()}
+              {rigPanel("film")}
+            </div>
           ) : simpleStep === "shoot" ? (
             <>
               <div className="flex flex-col gap-3 border-b border-[rgba(255,255,255,0.07)] p-4" data-step-shoot>
@@ -7254,7 +7481,20 @@ export function SetView({
         find={{ label: s.studio.find, kbd: s.palette.open, onOpen: () => setPaletteOpen(true) }}
         rendering={renderingCount > 0 ? { label: renderingCount === 1 ? s.studio.renderingOne : formatMsg(s.studio.rendering, { n: renderingCount }) } : null}
         primary={
-          simpleOn && simpleShooting && simpleStep === "set" && !takeStart ? (
+          simpleOn && filmOpen && !cutOpen ? (
+            // The new layout's Film: its one action is the render, the same
+            // button the sequencer carries.
+            <button
+              type="button"
+              onClick={() => void renderFilm()}
+              disabled={Boolean(filmBusy)}
+              title={filmRenderWhy ?? undefined}
+              data-bar-render
+              className="flex h-7 flex-none cursor-pointer items-center whitespace-nowrap rounded-[6px] bg-[#e0a468] px-3.5 text-[12px] font-semibold text-[#1b1c20] disabled:cursor-default disabled:bg-[#2a2b33] disabled:text-[#c6c9d1]"
+            >
+              {filmRenderLabel}
+            </button>
+          ) : simpleOn && simpleShooting && simpleStep === "set" && !takeStart ? (
             <button
               type="button"
               onClick={() => setSimpleStep("shoot")}
@@ -8396,8 +8636,8 @@ export function SetView({
           ))}
       </div>
 
-        {wide && simpleOn && simpleShooting && stepPanelView()}
-        {wide && !(simpleOn && simpleShooting) && (
+        {wide && simpleOn && !cutOpen && stepPanelView()}
+        {wide && !(simpleOn && !cutOpen) && (
           <StudioDock
             label={s.studio.dockLabel}
             tabs={dockTabs}
@@ -8430,218 +8670,7 @@ export function SetView({
                 <SceneTree spec={spec} s={s} selected={null} query={sceneQuery} onPick={pickSceneTarget} />
               </div>
             )}
-            {dockTab === "film" && (
-              <div className="border-b border-[rgba(255,255,255,0.07)] p-3">
-                {/* The rehearsal (rehearsal.ts): the film's own flight as a
-                    clip, whether or not a beat is being written. */}
-                <div className="mb-2 flex flex-col gap-2">{rehearsalControls("")}</div>
-                {filmSel !== null && film.beats[filmSel] ? (
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.07em] text-[#9aa0ad]">
-                      <span className="whitespace-nowrap text-[#f0cda6]">{formatMsg(s.filmBeatLabel, { n: filmSel + 1 })}</span>
-                      <span className="whitespace-nowrap normal-case tabular-nums">{formatMsg(s.takeSeconds, { s: SET_TAKE_ENGINES[film.engine].seconds })}</span>
-                      {filmBusy?.beat === filmSel ? (
-                        <span className="whitespace-nowrap normal-case text-[#e0a468]">{filmBusy.clipOnly ? s.filmBeatClip : s.filmBeatStill}</span>
-                      ) : filmClipShots[filmSel] ? (
-                        <span
-                          className={`whitespace-nowrap normal-case ${
-                            filmClipShots[filmSel]!.status === "succeeded" ? "text-[#5f9e6e]" : filmClipShots[filmSel]!.status === "failed" ? "text-red-400" : "text-[#e0a468]"
-                          }`}
-                        >
-                          {filmClipShots[filmSel]!.status === "succeeded" ? s.filmBeatDone : filmClipShots[filmSel]!.status === "failed" ? s.filmBeatClipFailed : s.filmBeatClip}
-                        </span>
-                      ) : null}
-                      <span className="flex-1" />
-                      <button
-                        type="button"
-                        onClick={() => filmSetBeatEnd(filmSel)}
-                        disabled={Boolean(filmBusy) || previz || !ready}
-                        aria-label={formatMsg(s.filmSetEnd, { n: filmSel + 1 })}
-                        title={formatMsg(s.filmSetEnd, { n: filmSel + 1 })}
-                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad] disabled:opacity-100"
-                      >
-                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="h-3.5 w-3.5" aria-hidden>
-                          <path d="M2 5V2h3M11 2h3v3M14 11v3h-3M5 14H2v-3" />
-                          <circle cx="8" cy="8" r="1.4" />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const at = filmSel;
-                          editFilm((f) => ({ ...f, beats: f.beats.filter((_, j) => j !== at) }));
-                          setFilmSel(null);
-                        }}
-                        disabled={Boolean(filmBusy)}
-                        aria-label={formatMsg(s.filmRemoveBeat, { n: filmSel + 1 })}
-                        title={formatMsg(s.filmRemoveBeat, { n: filmSel + 1 })}
-                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad] disabled:opacity-100"
-                      >
-                        ×
-                      </button>
-                    </div>
-                    {filmJumps[filmSel] && (
-                      <p data-film-jump className="text-[11px] leading-snug text-[#e0a468]">
-                        {formatMsg(s.filmBeatJumps, { n: filmSel + 1 })}
-                      </p>
-                    )}
-                    <input
-                      value={film.beats[filmSel].words}
-                      onChange={(e) => {
-                        const at = filmSel;
-                        editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, words: e.target.value } : bb)) }));
-                      }}
-                      disabled={Boolean(filmBusy)}
-                      placeholder={s.filmBeatWords}
-                      className="h-7 rounded-[6px] bg-black/40 px-2 text-xs text-[#ecedf1] ring-1 ring-[rgba(255,255,255,0.08)] placeholder:text-[#565a64] focus:outline-none focus:ring-[#e0a468]/60"
-                    />
-                    <div className="flex flex-wrap items-center gap-1">
-                      <button
-                        type="button"
-                        disabled={Boolean(filmBusy)}
-                        onClick={() => {
-                          const at = filmSel;
-                          editFilm((f) => ({
-                            ...f,
-                            beats: f.beats.map((bb, j) => (j === at ? { ...bb, figure: bb.figure ? null : { x: mark.x, z: mark.z, facingDeg: mark.facingDeg, pose } } : bb)),
-                          }));
-                        }}
-                        title={film.beats[filmSel].figure ? s.filmFigureClear : s.filmFigureHere}
-                        className={chip(Boolean(film.beats[filmSel].figure))}
-                      >
-                        {film.beats[filmSel].figure
-                          ? formatMsg(s.filmFigureSet, { pose: s.poses[film.beats[filmSel].figure.pose], x: film.beats[filmSel].figure.x.toFixed(1), z: film.beats[filmSel].figure.z.toFixed(1) })
-                          : s.filmFigureHere}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={Boolean(filmBusy)}
-                        onClick={() => {
-                          const at = filmSel;
-                          editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, time: bb.time !== null ? null : (rig.time ?? 12) } : bb)) }));
-                        }}
-                        title={film.beats[filmSel].time !== null ? s.filmHourClear : s.filmHourHere}
-                        className={chip(film.beats[filmSel].time !== null)}
-                      >
-                        {formatMsg(s.filmHourSet, {
-                          h: film.beats[filmSel].time !== null ? timeLabel(film.beats[filmSel].time) : rig.time !== null ? timeLabel(rig.time) : s.filmHourAsBuilt,
-                        })}
-                      </button>
-                      {/* The rack of focus (cut C, furniture.ts): where the focus travels during this beat's move. */}
-                      <select
-                        value={film.beats[filmSel].rack ? (film.beats[filmSel].rack.to === "figure" ? "figure" : `o${film.beats[filmSel].rack.index}`) : ""}
-                        onChange={(e) => {
-                          const at = filmSel;
-                          const v = e.target.value;
-                          const rack = v === "" ? null : v === "figure" ? { to: "figure" as const } : { to: "object" as const, index: Number(v.slice(1)) };
-                          editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, rack } : bb)) }));
-                        }}
-                        disabled={Boolean(filmBusy)}
-                        aria-label={s.studio.rack}
-                        title={s.studio.rack}
-                        className="h-7 max-w-[170px] cursor-pointer rounded-[6px] bg-black/40 px-2 text-[11px] text-[#d6d9e0] ring-1 ring-[rgba(255,255,255,0.08)] outline-none"
-                      >
-                        <option value="">{s.studio.rack} · {s.studio.rackNone}</option>
-                        <option value="figure">{s.studio.rackFigure}</option>
-                        {spec.objects.map((o, oi) => (
-                          <option key={oi} value={`o${oi}`}>
-                            {names.objectName(o)}
-                          </option>
-                        ))}
-                      </select>
-                      {/* The eye-line at the beat's end (cut D, people.ts): where the figure looks in the end frame and by the end of the clip. */}
-                      <select
-                        value={film.beats[filmSel].gaze ? (film.beats[filmSel].gaze.at === "camera" ? "camera" : film.beats[filmSel].gaze.at === "object" ? `o${film.beats[filmSel].gaze.index}` : "point") : ""}
-                        onChange={(e) => {
-                          const at = filmSel;
-                          const v = e.target.value;
-                          if (v === "point") return;
-                          const g: Gaze | null = v === "" ? null : v === "camera" ? { at: "camera" } : { at: "object", index: Number(v.slice(1)) };
-                          editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, gaze: g } : bb)) }));
-                        }}
-                        disabled={Boolean(filmBusy)}
-                        aria-label={s.studio.eyeline}
-                        title={s.studio.eyeline}
-                        className="h-7 max-w-[170px] cursor-pointer rounded-[6px] bg-black/40 px-2 text-[11px] text-[#d6d9e0] ring-1 ring-[rgba(255,255,255,0.08)] outline-none"
-                      >
-                        <option value="">{s.studio.eyeline} · {s.studio.gazeNone}</option>
-                        <option value="camera">{s.studio.gazeCamera}</option>
-                        {film.beats[filmSel].gaze?.at === "point" && <option value="point">{s.studio.gazePoint}</option>}
-                        {spec.objects.map((o, oi) => (
-                          <option key={oi} value={`o${oi}`}>
-                            {formatMsg(s.studio.gazeThing, { thing: names.objectName(o) })}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    {/* The path (cut D): the points the figure walks through to this beat's figure, laid on the ground. */}
-                    {film.beats[filmSel].figure && (
-                      <div className="flex flex-wrap items-center gap-1" data-path-row>
-                        <span className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#9aa0ad]">{s.studio.path}</span>
-                        <span className="text-[11px] text-[#c6c9d1]">
-                          {film.beats[filmSel].path.length
-                            ? formatMsg(s.studio.pathWalks, {
-                                d: pathLength(filmSel > 0 && film.beats[filmSel - 1].figure ? film.beats[filmSel - 1].figure! : mark, film.beats[filmSel].path, film.beats[filmSel].figure!),
-                                n: film.beats[filmSel].path.length,
-                              })
-                            : s.studio.pathStraight}
-                        </span>
-                        <button type="button" onClick={() => setLaying((l) => (l === "path" ? null : "path"))} disabled={Boolean(filmBusy)} className={chip(laying === "path")}>
-                          {laying === "path" ? s.studio.pathLaying : s.studio.pathLay}
-                        </button>
-                        {film.beats[filmSel].path.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const at = filmSel;
-                              editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, path: [] } : bb)) }));
-                            }}
-                            disabled={Boolean(filmBusy)}
-                            className={chip(false)}
-                          >
-                            {s.studio.pathClear}
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    <p className="text-[11.5px] leading-snug text-[#c6c9d1]">{film.beats.length === 0 ? s.sequencer.noBeats : s.rig.movePick}</p>
-                    {filmPersonOther && (
-                      <p data-film-person className="text-[11px] leading-snug text-[#e0a468]">
-                        {formatMsg(s.filmPersonOther, { name: filmPersonOther })}
-                      </p>
-                    )}
-                    {filmLookNoneShown && film.beats.length > 0 && (
-                      <p data-film-look-none className="text-[11px] leading-snug text-[#e0a468]">
-                        {s.filmLookNone}
-                      </p>
-                    )}
-                    {/* What each beat's end frame carries of the things' photos (R1). */}
-                    {elementsKey && film.beats.length > 0 && (
-                      <div data-film-elements className="flex flex-col gap-0.5">
-                        <p className="text-[11px] leading-snug text-[#9aa0ad]">{cast.filmNote}</p>
-                        {filmBeatRides.map((rides, i) =>
-                          rides.length > 0 ? (
-                            <p key={i} className="text-[11px] leading-snug text-[#c6c9d1]">
-                              {formatMsg(cast.filmBeat, { n: i + 1, list: rides.map((r) => elementName(r.key)).join(", ") })}
-                            </p>
-                          ) : null,
-                        )}
-                      </div>
-                    )}
-                    {filmJumps.map((jumps, i) =>
-                      jumps ? (
-                        <p key={i} data-film-jump className="text-[11px] leading-snug text-[#e0a468]">
-                          {formatMsg(s.filmBeatJumps, { n: i + 1 })}
-                        </p>
-                      ) : null,
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+            {dockTab === "film" && filmBeatView()}
             {(dockTab === "camera" || dockTab === "light" || dockTab === "look" || dockTab === "film") && rigPanel(dockTab)}
             {dockTab === "history" && (
               <div className="p-2">

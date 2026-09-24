@@ -41,6 +41,8 @@ describe("the new layout", () => {
     expect(frame).toContain("data-studio-steps");
     expect(frame).toContain("{i + 1} · {st.label}");
     expect(view).toContain('onClick={() => setSimpleStep("shoot")}');
+    // Film's button is the render, the sequencer's own.
+    expect(view).toMatch(/simpleOn && filmOpen && !cutOpen \? \([\s\S]{0,200}onClick=\{\(\) => void renderFilm\(\)\}/);
     // Film is Film; Set and Shoot are both today's shooting mode.
     expect(view).toContain('{ id: "film", label: sw.stepFilm, on: !simpleShooting, onClick: () => studioModes.film.onClick() },');
   });
@@ -57,15 +59,19 @@ describe("the new layout", () => {
     expect(view).toContain("{!viewingShot && !loadFailed && !filmOpen && !simpleOn && (");
   });
 
-  it("keeps one panel on the right in Set and Shoot: the card, or Set's words and Astra, or the shot's setup", () => {
+  it("keeps one panel on the right in every step: the card, or Set's words and Astra, the shot's setup, or the film's beat and move", () => {
     const panelView = fnOf(view, "  function stepPanelView() {", "  function setupChipsView(");
     expect(panelView.indexOf("elementCardView(\"dock\")")).toBeLessThan(panelView.indexOf("setupChipsView(true)"));
     expect(panelView).toContain("{chatThread}");
     expect(panelView).toContain("{chatComposer}");
     expect(panelView).toContain("{rigTab && rigPanel(rigTab)}");
-    expect(view).toContain("{wide && simpleOn && simpleShooting && stepPanelView()}");
-    // Film keeps its dock for now.
-    expect(view).toContain("{wide && !(simpleOn && simpleShooting) && (");
+    expect(view).toContain("{wide && simpleOn && !cutOpen && stepPanelView()}");
+    // Film is one panel too (2026-09-24): the rehearsal, the beat, its move — the classic dock's Film tab, drawn by the same function.
+    expect(panelView).toContain("{filmBeatView()}");
+    expect(panelView).toContain('{rigPanel("film")}');
+    expect(view).toContain('{dockTab === "film" && filmBeatView()}');
+    // Only the Cut, reached by its own address, keeps the dock.
+    expect(view).toContain("{wide && !(simpleOn && !cutOpen) && (");
   });
 
   it("moves the setup chips off the stage, and the frame lines start clear of the floating tools", () => {
