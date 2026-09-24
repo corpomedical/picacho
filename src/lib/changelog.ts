@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.92.0",
+    build: 131,
+    date: "2026-09-24",
+    title: "Director's Cut: raw footage in, a finished edit out",
+    items: [
+      "New: Director's Cut, the video editor. Drop in raw footage (up to 12 files and 20 minutes of picture, plus a song if you like), say what you want, pick the shape and length, and press Cut it. Claude Opus 5.5 watches every clip through contact sheets, listens through a word-timed transcript, and cuts the edit: which moments play in what order, cut points kept off mid-word, each shot re-framed for vertical, captions, titles and an end card. It then reads its own cut back and fixes it before anything is rendered. HeyGen's HyperFrames renderer draws the finished video, which lands in History.",
+      "It is a bench: your footage and brief on the left, the finished video and a strip of its shots in the middle, and the director's notes on the right. Ask for a change in plain words (\"punchier start\", \"no captions\") and Opus revises its own cut, keeping everything it already knew. Each change is a new take in History.",
+      "Where it is: Tools in the sidebar, the fourth choice under the app bar's lamp, and \"Edit my footage\" in Generate's + menu. Admins only while it is tested, behind the `video_editor` switch, and nobody is charged: credit pricing comes before it opens to plans.",
+      "Checked before a render is paid for: every edit goes through HyperFrames' own checker. On the first run it found two mistakes the tests had missed, and both are fixed.",
+      "The first real edit, on your two trailer clips, cost $0.153: Opus $0.147 and the transcript $0.006. It kept the voiceover in order, cut on the shot changes, re-centred each shot for vertical and ended on \"Now imagine yours\". The weak spots it showed are fixed: burned-in text cropped by the vertical frame now shows whole over a blurred fill, a 0.75 s end card now needs 1.2 s, one-word caption lines no longer happen, and captions clear away when a full-screen card appears.",
+    ],
+  },
+  {
     version: "1.91.0",
     build: 130,
     date: "2026-09-24",
