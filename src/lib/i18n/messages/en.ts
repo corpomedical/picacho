@@ -2135,6 +2135,8 @@ const en = {
   voice: {
     noMic: "This browser can't access the microphone.",
     micBlocked: "Microphone access was blocked — allow it in your browser to use voice.",
+    micNeedsAppUpdate: "Voice needs the latest Picacho app. Update it from Google Play, then try again.",
+    micBlockedApp: "The microphone is off for Picacho. Turn it on in Settings → Apps → Picacho → Permissions, then try again.",
     stopRecording: "Stop recording",
     speak: "Speak",
     transcribing: "Transcribing…",

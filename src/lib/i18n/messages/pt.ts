@@ -2018,6 +2018,8 @@ const pt = {
   voice: {
     noMic: "Este navegador não consegue acessar o microfone.",
     micBlocked: "O acesso ao microfone foi bloqueado — permita-o no seu navegador para usar a voz.",
+    micNeedsAppUpdate: "A voz precisa da versão mais recente do app Picacho. Atualize pelo Google Play e tente de novo.",
+    micBlockedApp: "O microfone está desativado para o Picacho. Ative em Configurações → Apps → Picacho → Permissões e tente de novo.",
     stopRecording: "Parar gravação",
     speak: "Falar",
     transcribing: "Transcrevendo…",

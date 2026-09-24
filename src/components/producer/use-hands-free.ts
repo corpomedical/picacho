@@ -2,6 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { playableAudioUrl } from "@/lib/audio/playable-url";
+import { appCannotRecord, nativeAppBuild } from "@/lib/native/app-build";
+
+// What a refused microphone means, said for where the person actually is.
+const APP_TOO_OLD =
+  "Talking needs the latest Picacho app. Update it from Google Play, then tap the mic again. You can type to the Producer meanwhile.";
+const APP_MIC_DENIED =
+  "The microphone is off for Picacho. Turn it on in your phone's Settings → Apps → Picacho → Permissions → Microphone, then tap the mic again.";
+const WEB_MIC_DENIED =
+  "The microphone is blocked for this site. Allow it from the lock icon next to the address, then tap the mic again.";
 
 // Talking to the Producer out loud, like a ChatGPT voice conversation
 // (2026-09-25, operator: "add voice for the user to work hands free", then
@@ -253,6 +262,14 @@ export function useHandsFree({
       return;
     }
     setNotice(null);
+    // An Android app from before build 20 has no microphone to ask for:
+    // Android refuses without a dialog and there is no switch to turn on.
+    // Say what is true — update the app — instead of "allow it".
+    if (await appCannotRecord()) {
+      go("off");
+      setNotice(APP_TOO_OLD);
+      return;
+    }
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -260,7 +277,7 @@ export function useHandsFree({
       });
     } catch {
       go("off");
-      setNotice("The microphone isn't allowed. Allow it for Picacho and tap the mic again.");
+      setNotice((await nativeAppBuild()) !== null ? APP_MIC_DENIED : WEB_MIC_DENIED);
       return;
     }
     const ctx = new AudioContext();

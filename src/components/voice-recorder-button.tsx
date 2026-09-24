@@ -1,5 +1,6 @@
 "use client";
 
+import { appCannotRecord, nativeAppBuild } from "@/lib/native/app-build";
 import { useEffect, useRef, useState, type SVGProps } from "react";
 import { transcribeVoice } from "@/lib/voice/actions";
 import { cn } from "@/lib/cn";
@@ -54,6 +55,14 @@ export function VoiceRecorderButton({
       return;
     }
 
+    // An Android app from before build 20 cannot record at all (no
+    // microphone declared): say "update the app", not "allow it".
+    if (await appCannotRecord()) {
+      setStatus("error");
+      setError(v.micNeedsAppUpdate);
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -74,7 +83,7 @@ export function VoiceRecorderButton({
       timeoutRef.current = setTimeout(() => stopRecording(), MAX_RECORDING_MS);
     } catch {
       setStatus("error");
-      setError(v.micBlocked);
+      setError((await nativeAppBuild()) !== null ? v.micBlockedApp : v.micBlocked);
     }
   }
 

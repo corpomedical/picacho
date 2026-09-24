@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.98.0",
+    build: 137,
+    date: "2026-09-25",
+    title: "An old app says \"update\", not \"allow the microphone\"",
+    items: [
+      "In the Android app, tapping a mic told you to allow the microphone, but the app on your phone (from before version 20) has no microphone to allow: Android refuses without a dialog, and there's no switch in the app's settings. The page now asks the app which version it is, and an older app says \"Talking needs the latest Picacho app. Update it from Google Play\" instead of asking for a permission you can't give.",
+      "On version 20 and later, a refused microphone points to the actual switch: Settings → Apps → Picacho → Permissions → Microphone. On the website it points to the lock icon next to the address.",
+      "The composer's own mic button says the same, in all four languages.",
+    ],
+  },
+  {
     version: "1.97.0",
     build: 136,
     date: "2026-09-25",
