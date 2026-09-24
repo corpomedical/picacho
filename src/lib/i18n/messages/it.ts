@@ -2260,6 +2260,7 @@ const it = {
     lookUseLatest: "Abbina l'ultima foto",
     lookFirst: "La prossima foto in cui compaiono gli oggetti del set definisce l'aspetto: le successive li mantengono.",
     lookDropped: "Questa volta non è stato possibile ritagliare gli oggetti dell'aspetto, quindi questa foto è stata scattata senza.",
+    lookAside: "L'aspetto è rimasto fuori da questa foto: mostra qualcosa che ora viene disegnato dalle sue foto.",
     lookUse: "Usa il suo aspetto",
     lookBadge: "Aspetto",
     lookChange: "Cambia",
@@ -2527,6 +2528,7 @@ const it = {
     modeHint:
       "Chiedi prima di scattare: Astra inquadra lo scatto e aspetta la tua parola. Scatta senza chiedere: scatta non appena l'inquadratura è pronta.",
     engineChip: "GPT Image 2.5",
+    engineHint: "Il motore d'immagine con cui si disegnano le foto",
     creditsOne: "1 credito",
     creditsMany: "{n} crediti",
     backToFrame: "Torna all'inquadratura",

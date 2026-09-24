@@ -14,6 +14,7 @@ import { addElementPhoto, assignElementPhoto, prepareElementSheets, removeElemen
 import { thumbUrl } from "@/lib/media/url";
 import { editSetWithAstra, rebuildThingFromPhotos, saveSetEdit } from "@/lib/sets/editor-actions";
 import { THING_REBUILD_OPEN_TO_ALL } from "@/lib/sets/thing-rebuild";
+import { SELECTABLE_IMAGE_MODEL_IDS, getImageModel } from "@/lib/generations/providers/image-models";
 import { matchSetShot } from "@/lib/sets/match-actions";
 import { readShotWords } from "@/lib/sets/words-actions";
 import { STAND_IN_EYE_M, fovForLens, nearestLens, type StageQuality } from "@/lib/sets/build-scene";
@@ -33,7 +34,7 @@ import { StatusList, StudioBar, StudioDock, StudioRail, StudioStatus, useWide } 
 import { ThingsPanel, ThingsStrip, type PanelRow } from "./things-panel";
 import { clearMarks } from "@/lib/sets/marks";
 import { BADGE_HIT_SLOP_PX, FIGURE_TAP_WAIT_MS, TAP_SLOP_PX, badgeAt, elementForHits, isTap, type ElementHit, type StageHit, type TapStart } from "@/lib/sets/stage-pick";
-import { ELEMENT_SHEETS_PER_STILL, FIGURE_KEY, elementPlaces, planShotSheets, resolvePhotos, setElements as elementsOf, type ElementPhoto, type SetElement, type ShotElementStatus } from "@/lib/sets/elements";
+import { ELEMENT_SHEETS_PER_STILL, FIGURE_KEY, SHEET_LANES, elementPlaces, planShotSheets, resolvePhotos, setElements as elementsOf, type ElementPhoto, type SetElement, type ShotElementStatus } from "@/lib/sets/elements";
 import { afterShotWhy, beforeShoot, pageState, ridesState, statusWords as elementStatusWords, type ElementState } from "@/lib/sets/element-status";
 import { findVehicles } from "@/lib/sets/vehicles";
 import { shotCameraOf } from "@/lib/sets/shot-camera";
@@ -229,7 +230,8 @@ type StageApi = {
    * rendered whole at 3:2, with the cut asked for in words and made on the
    * server, which is what a set shot is priced and proved at.
    */
-  frame(opts?: { from?: Pose; hideFigure?: boolean; cut?: boolean }): string | null;
+  /** `grey`: things (element keys) drawn plain grey, their own sheets carrying their colour (2026-09-24). */
+  frame(opts?: { from?: Pose; hideFigure?: boolean; cut?: boolean; grey?: readonly string[] }): string | null;
   /** The frame lines follow the rig's format and the panels round the stage. */
   relayout(): void;
   /**
@@ -409,7 +411,7 @@ const sourceOf = (f: TakeFrames): TakeSource => ({ start: f.start, end: f.end, c
 /** A take's frames as the retry sends them: what it was rendered from (SetShot.takeFrom) and the words kept with it. */
 const framesOf = (source: TakeSource, shot: SetShot): TakeFrames => ({ ...source, words: shot.words ?? undefined });
 
-type MenuId = "camera" | "figure" | "pose" | "gaze" | "look" | "history" | "mode" | "who" | "filmStart";
+type MenuId = "camera" | "figure" | "pose" | "gaze" | "look" | "history" | "mode" | "who" | "filmStart" | "engine";
 
 const ACCENT = "#c8923a";
 const TURN_STEP = 30;
@@ -697,6 +699,32 @@ export function SetView({
   const [editingSet, setEditingSet] = useState(false);
   /** A thing Astra is rebuilding from its photos (thing-rebuild.ts), and what the last rebuild said, on its card. */
   const [rebuilding, setRebuilding] = useState<string | null>(null);
+  /**
+   * The picture engine stills are drawn with (2026-09-24, "Cant change from
+   * gpt to nano banana"): the composer's own two lanes, remembered in this
+   * browser, the admin default until one is picked. The server re-checks it.
+   */
+  const [stillEngine, setStillEngine] = useState<string>(stillModel);
+  useEffect(() => {
+    try {
+      const kept = window.localStorage.getItem("helios.stillEngine");
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- read once from the browser after hydration
+      if (kept && (SELECTABLE_IMAGE_MODEL_IDS as readonly string[]).includes(kept)) setStillEngine(kept);
+    } catch {
+      // No storage: the default stays.
+    }
+  }, []);
+  function pickStillEngine(id: string) {
+    setStillEngine(id);
+    setMenu(null);
+    try {
+      window.localStorage.setItem("helios.stillEngine", id);
+    } catch {
+      // Remembered for this visit only.
+    }
+  }
+  /** The look stayed out of the last still on purpose: it showed a thing now drawn from its own photos. */
+  const [lookAside, setLookAside] = useState(false);
   const [rebuildNote, setRebuildNote] = useState<{ key: string; text: string; ok: boolean; from?: string } | null>(null);
   const [setChanged, setSetChanged] = useState<number | null>(null);
   // The conversation panel floats over the stage and can fold away.
@@ -1273,6 +1301,8 @@ export function SetView({
         // them with it. Each stands where its thing's blocks stand, and its
         // blocks are hidden while it does.
         const skinRoot = new THREE.Group();
+        /** A thing drawn plain grey in a still's sketch (greySketch). */
+        const sketchGrey = new THREE.MeshStandardMaterial({ color: 0x9c9c9c, roughness: 0.9, metalness: 0 });
         skinRoot.name = "thing-models";
         scene.add(skinRoot);
         const skins = new Map<string, { url: string; flip: boolean; group: import("three").Group; at: [number, number, number] }>();
@@ -1332,6 +1362,32 @@ export function SetView({
               }
             }
           });
+        };
+        /**
+         * Things drawn plain grey in a still's sketch (2026-09-24, "Each
+         * rendered image is a different car"): a thing whose own sheet rides
+         * is only its place, size and heading here, so the blocks' colour
+         * (Astra's red, against the person's photo of a yellow car) cannot
+         * fight the sheet. What shows which way it faces stays: its lamps
+         * glow, and its tyres, glass and dark trim stay dark. A model on the
+         * thing is its own paint and stays as it is. Returns what to put back.
+         */
+        const greySketch = (keys: readonly string[]): [import("three").Mesh, import("three").Material | import("three").Material[]][] => {
+          const out: [import("three").Mesh, import("three").Material | import("three").Material[]][] = [];
+          if (keys.length === 0) return out;
+          built.root.traverse((o) => {
+            const mesh = o as import("three").Mesh;
+            if (!mesh.isMesh || !mesh.visible || typeof mesh.userData.oi !== "number") return;
+            const key = keyOfCopy.get(`${mesh.userData.oi}:${mesh.userData.copy}`);
+            if (!key || !keys.includes(key)) return;
+            const m = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as import("three").MeshStandardMaterial;
+            if (m.emissiveIntensity > 0 && m.emissive && m.emissive.getHex() !== 0) return;
+            const c = m.color;
+            if (c && 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b < 0.03) return;
+            out.push([mesh, mesh.material]);
+            mesh.material = sketchGrey;
+          });
+          return out;
         };
         /** The models flat for the sketch, as sketchStage does the blocks: their own paint, nothing metal. */
         const skinSketch = (on: boolean) => {
@@ -2310,7 +2366,7 @@ export function SetView({
          * change mid-clip); without one a canvas is made to fit.
          */
         const drawSketch = (
-          opts?: { from?: Pose; hideFigure?: boolean; cut?: boolean },
+          opts?: { from?: Pose; hideFigure?: boolean; cut?: boolean; grey?: readonly string[] },
           target?: HTMLCanvasElement,
         ): { out: HTMLCanvasElement; fr: ReturnType<typeof formatFrame> } | null => {
           const fr = formatFrame(rigRef.current.format, rigRef.current.squeeze);
@@ -2343,6 +2399,7 @@ export function SetView({
           // shows a frame.
           sketchStage(scene, built.root, true);
           skinSketch(true);
+          const greyed = greySketch(opts?.grey ?? []);
           if (sketchFill) sketchFill.intensity = sketchFillOn;
           // Only a full build has two lifts: on a basic one (a phone, a
           // coarse pointer) this light IS the sketch's own lift, and
@@ -2356,6 +2413,7 @@ export function SetView({
             renderer.toneMappingExposure = lift.exposure * exposureGainNow;
             if (stageFill) stageFill.intensity = stageFillOn;
             if (sketchFill) sketchFill.intensity = 0;
+            for (const [mesh, was] of greyed) mesh.material = was;
             sketchStage(scene, built.root, false);
             skinSketch(false);
           }
@@ -2907,6 +2965,7 @@ export function SetView({
           standIn.dispose();
           textures?.dispose();
           pmrem?.dispose();
+          sketchGrey.dispose();
           renderer.dispose();
           canvas.remove();
           apiRef.current = null;
@@ -3682,10 +3741,10 @@ export function SetView({
         vehicles: shown === spec ? vehicles : findVehicles(shown),
         shotCamera: cameraFor(pose, m),
         poseCamera: pose,
-        budget: stillModel === "gpt-image" ? ELEMENT_SHEETS_PER_STILL : 0,
+        budget: (SHEET_LANES as readonly string[]).includes(stillEngine) ? ELEMENT_SHEETS_PER_STILL : 0,
         spec: shown,
       }),
-    [els, resolved, vehicles, cameraFor, stillModel, spec, elementOrder],
+    [els, resolved, vehicles, cameraFor, stillEngine, spec, elementOrder],
   );
   /** Each thing with photos as "key=sheetHash", sorted: the film's context (film.ts filmContextKey), so new photos render it again. */
   const elementsKey = useMemo(
@@ -4371,10 +4430,13 @@ export function SetView({
     setTakeRetry(null);
     setLastMiss(null);
     setLookDropped(false);
+    setLookAside(false);
     setShotElements(null);
     setViewing(null);
     setMenu(null);
-    const frame = apiRef.current?.frame();
+    // The things whose own sheets ride are drawn grey: their sheets carry their colour.
+    const grey = livePlan.riding.map((r) => r.key);
+    const frame = apiRef.current?.frame({ grey });
     if (!frame) {
       setError(s.loadFailed);
       return;
@@ -4408,6 +4470,8 @@ export function SetView({
         words: asked,
         rig: rigRef.current,
         push,
+        stillEngine,
+        greyed: grey,
       });
     } catch (err) {
       // The take may still be running on the server (a dropped connection
@@ -4450,6 +4514,7 @@ export function SetView({
     setPendingAsks([]);
     setNote(null);
     setLookDropped(result.lookDropped);
+    setLookAside(result.lookAside);
     setShotElements(result.elements);
     if (!result.succeeded) {
       setLastMiss(result.generationId);
@@ -4519,7 +4584,8 @@ export function SetView({
     setShotElements(null);
     setViewing(null);
     setMenu(null);
-    const frame = apiRef.current?.frame();
+    const grey = livePlan.riding.map((r) => r.key);
+    const frame = apiRef.current?.frame({ grey });
     if (!frame) {
       setError(s.loadFailed);
       return;
@@ -4548,6 +4614,8 @@ export function SetView({
         canvasAspect,
         words: asked,
         rig: rigRef.current,
+        stillEngine,
+        greyed: grey,
       });
     } catch (err) {
       const stale = staleHere(err);
@@ -4616,6 +4684,7 @@ export function SetView({
     setNote(null);
     setTakeStart(null);
     setShotElements(result.still.elements);
+    setLookAside(result.still.lookAside);
     if (!result.takeGenerationId && result.still.succeeded) setTakeRetry(frames);
     if (!result.still.succeeded) setError(`${s.takeEndFailed}${result.still.failure ? ` ${result.still.failure}` : ""}`);
     else if (result.takeError) setError(result.takeError);
@@ -5251,7 +5320,9 @@ export function SetView({
           api.setPose(staged.pose);
         }
         // Only a beat rendered whole shoots a frame; a clip alone ends on its own.
-        const frame = job.end ? "" : api.frame({ from: beat.end });
+        // The things whose own sheets ride this end frame are drawn grey, as a still's are.
+        const grey = job.end ? [] : planFor(beat.end, staged.figure, filmOrder, movedSpec(spec, els, staged.movers)).riding.map((r) => r.key);
+        const frame = job.end ? "" : api.frame({ from: beat.end, grey });
         if (frame === null) {
           setFilmError(s.loadFailed);
           break;
@@ -5266,6 +5337,8 @@ export function SetView({
             lookPicked: filmLook.key !== undefined,
             // The film's one order for the things' sheets, the same every beat (filmOrder).
             elementOrder: filmOrder,
+            stillEngine,
+            greyed: grey,
             // Where this beat leaves the things that move (movers.ts): the
             // sketch above was drawn with them there, and the words the
             // server writes about the frame are written about the same set.
@@ -7414,6 +7487,11 @@ export function SetView({
                             {s.lookDropped}
                           </p>
                         )}
+                        {lookAside && (
+                          <p className="text-xs text-[#c6c9d1]" aria-live="polite" data-look-aside>
+                            {s.lookAside}
+                          </p>
+                        )}
                         {/* A thing's photos that didn't ride the last still, and why (R1). */}
                         {shotElements?.map((e) => {
                           const why = afterShotWhy(e.status);
@@ -7535,9 +7613,29 @@ export function SetView({
                   )}
                 </div>
                 {!justTalk && (
-                  <span className="flex h-8 items-center whitespace-nowrap rounded-full bg-[rgba(255,255,255,0.06)] px-3 text-xs text-[#c6c9d1] tabular-nums">
-                    {s.engineChip} · {credits}
-                  </span>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => toggleMenu("engine")}
+                      aria-haspopup="listbox"
+                      aria-expanded={menu === "engine"}
+                      title={s.engineHint}
+                      data-still-engine={stillEngine}
+                      className="flex h-8 cursor-pointer items-center gap-1 whitespace-nowrap rounded-full bg-[rgba(255,255,255,0.06)] px-3 text-xs text-[#c6c9d1] tabular-nums hover:bg-[rgba(255,255,255,0.1)]"
+                    >
+                      {getImageModel(stillEngine).name} · {credits}
+                      <Chevron />
+                    </button>
+                    {menu === "engine" && (
+                      <div role="listbox" aria-label={s.engineHint} className={DMENU_UP} data-still-engines>
+                        {SELECTABLE_IMAGE_MODEL_IDS.map((id) => (
+                          <Option key={id} active={stillEngine === id} onPick={() => pickStillEngine(id)}>
+                            {getImageModel(id).name}
+                          </Option>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
                 <span className="flex-1" />
                 <button

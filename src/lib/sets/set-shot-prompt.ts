@@ -179,6 +179,15 @@ export const ELEMENT_SHEETS_SENTENCES: readonly string[] = [
       "Read whichever of the four shows the side the layout sketch sees, and never another. Take nothing else from those sheets: not their layout, angle, crop, framing or light.",
   ),
 ];
+/**
+ * When the page drew the riding things plain grey in the sketch (2026-09-24,
+ * "Each rendered image is a different car"): the operator's photo was of a
+ * yellow car, Astra's blocks and the look's still were red, and the red won —
+ * two pictures of the wrong car against one of the right one and a sentence.
+ * With the car grey in the sketch, its only colour is its own sheet's.
+ */
+export const ELEMENT_GREY_SENTENCE =
+  "In the layout sketch, each thing that has a sheet of its own is drawn plain grey: the sketch gives only where it stands, its size and which way it faces. Its colour, design and materials come from its own sheet, never from the grey.";
 /** When the look rides too: its sheet shows the same things from an earlier still; a thing's own photos win. */
 export const ELEMENT_WINS_SENTENCE =
   "Where a thing appears both in the design sheet of objects from this place and on a sheet of its own, draw it from its own sheet.";
@@ -194,6 +203,7 @@ export const SET_SHOT_FIXED_SENTENCES: readonly string[] = [
   HOUR_WINS_SENTENCE,
   LOOK_SENTENCE,
   ...ELEMENT_SHEETS_SENTENCES,
+  ELEMENT_GREY_SENTENCE,
   ELEMENT_WINS_SENTENCE,
   SOURCE_PHOTO_SENTENCE,
   GAZE_SENTENCE,
@@ -273,7 +283,7 @@ export function stripSetShotScaffold(prompt: string): string {
  */
 export function withoutElementSentences(prompt: string): string {
   let out = prompt;
-  for (const fixed of [...ELEMENT_SHEETS_SENTENCES, ELEMENT_WINS_SENTENCE]) out = out.split(fixed).join(" ");
+  for (const fixed of [...ELEMENT_SHEETS_SENTENCES, ELEMENT_GREY_SENTENCE, ELEMENT_WINS_SENTENCE]) out = out.split(fixed).join(" ");
   out = out.replace(ELEMENT_NAMING_SENTENCE, " ");
   return out.replace(/\s+/g, " ").trim();
 }
@@ -305,6 +315,8 @@ export function buildSetShotPrompt(input: {
   vehicles?: readonly string[];
   /** The naming sentences of the things whose own sheets ride, in sheet order (elements.ts planSheets, R1). */
   elements?: readonly string[];
+  /** Every thing whose sheet rides was drawn plain grey in the sketch (2026-09-24). */
+  elementsGrey?: boolean;
 }): string {
   const description = cleanText(input.description, 300);
   const direction = cleanText(input.direction, SET_DIRECTION_MAX_CHARS);
@@ -327,7 +339,12 @@ export function buildSetShotPrompt(input: {
     // The things' own sheets (R1): how many, then which is which, then — when
     // the look rides too — whose design wins.
     ...(input.elements && input.elements.length > 0
-      ? [ELEMENT_SHEETS_SENTENCES[Math.min(input.elements.length, ELEMENT_SHEETS_SENTENCES.length) - 1], ...input.elements, input.look ? ELEMENT_WINS_SENTENCE : ""]
+      ? [
+          ELEMENT_SHEETS_SENTENCES[Math.min(input.elements.length, ELEMENT_SHEETS_SENTENCES.length) - 1],
+          ...input.elements,
+          input.elementsGrey ? ELEMENT_GREY_SENTENCE : "",
+          input.look ? ELEMENT_WINS_SENTENCE : "",
+        ]
       : []),
     input.sourcePhoto ? SOURCE_PHOTO_SENTENCE : "",
     facing

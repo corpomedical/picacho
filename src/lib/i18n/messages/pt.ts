@@ -2261,6 +2261,7 @@ const pt = {
     lookUseLatest: "Igualar a última foto",
     lookFirst: "A próxima foto em que apareçam os objetos do set define o visual: as seguintes mantêm esses objetos.",
     lookDropped: "Desta vez não deu para recortar os objetos do visual, então esta foto foi feita sem ele.",
+    lookAside: "O visual ficou de fora desta foto: ele mostra algo que agora é desenhado a partir das próprias fotos.",
     lookUse: "Usar este visual",
     lookBadge: "Visual",
     lookChange: "Mudar",
@@ -2528,6 +2529,7 @@ const pt = {
     modeHint:
       "Perguntar antes de fotografar: o Astra enquadra a foto e espera sua palavra. Fotografar sem perguntar: ele fotografa assim que o enquadramento estiver pronto.",
     engineChip: "GPT Image 2.5",
+    engineHint: "O motor de imagem com que as fotos são desenhadas",
     creditsOne: "1 crédito",
     creditsMany: "{n} créditos",
     backToFrame: "Voltar para o enquadramento",

@@ -259,6 +259,8 @@ describe("stripSetShotScaffold", () => {
       buildSetShotPrompt({ ...shot, hour: "" }),
       // The things' sheets (R1): one of four counts, each by how many ride.
       ...[1, 2, 3, 4].map((n) => buildSetShotPrompt({ ...shot, elements: Array.from({ length: n }, (_, i) => `Sheet ${i + 1} is the car on the left.`) })),
+      // The riding things drawn grey in the sketch (2026-09-24).
+      buildSetShotPrompt({ ...shot, elements: ["Sheet 1 is the car on the left."], elementsGrey: true }),
     ].join(" ");
     for (const fixed of SET_SHOT_FIXED_SENTENCES) {
       if (fixed.endsWith("looks:") || fixed.endsWith("looks.")) continue;

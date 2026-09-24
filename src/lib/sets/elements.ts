@@ -47,6 +47,13 @@ export const ELEMENT_PHOTOS_MAX = 4;
  * (expression-set.ts), and the identity check can render it twice.
  */
 export const ELEMENT_SHEETS_PER_STILL = 2;
+/**
+ * The picture lanes the things' sheets ride (generations/actions.ts
+ * elementImageUrls): GPT Image, and Nano Banana Pro since the operator asked
+ * for it in Helios (2026-09-24), which takes the same one list of pictures
+ * last-to-first as the words number them.
+ */
+export const SHEET_LANES = ["gpt-image", "gemini"] as const;
 export const ELEMENT_KEY_RE = /^([cvo])_([0-9a-f]{8})_(-?\d{1,4})_(-?\d{1,4})$/;
 
 export type ElementKind = "car" | "vehicle" | "object";

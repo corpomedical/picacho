@@ -29,7 +29,9 @@ describe("shootInSet: the things' sheets", () => {
     expect(plan).toBeGreaterThan(brake);
     expect(plan).toBeLessThan(shoot.indexOf("const framePath"));
     expect(shoot).toContain('access.supabase.from("app_settings").select("value").eq("key", "image_model").maybeSingle()');
-    expect(shoot).toContain('budget: stillModel === "gpt-image" ? ELEMENT_SHEETS_PER_STILL : 0,');
+    // GPT Image or Nano Banana Pro (elements.ts SHEET_LANES), the one the person picked or the admin default (2026-09-24).
+    expect(shoot).toContain("budget: (SHEET_LANES as readonly string[]).includes(stillModel) ? ELEMENT_SHEETS_PER_STILL : 0,");
+    expect(shoot).toContain('const stillModel = pickedEngine ?? imageModelSetting?.value ?? "gpt-image";');
   });
 
   it("stops a film's beat whose sheet is not drawn before the frame is uploaded or anything is charged", () => {

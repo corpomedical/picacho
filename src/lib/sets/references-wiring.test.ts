@@ -69,7 +69,7 @@ describe("a still", () => {
   });
 
   it("plans the sheets as the shot does: the same planner, the still model's budget", () => {
-    expect(view).toContain('budget: stillModel === "gpt-image" ? ELEMENT_SHEETS_PER_STILL : 0,');
+    expect(view).toContain("budget: (SHEET_LANES as readonly string[]).includes(stillEngine) ? ELEMENT_SHEETS_PER_STILL : 0,");
     expect(view).toMatch(/\(pose: Pose \| null, m: Mark, order: readonly string\[\] = elementOrder, shown: typeof spec = spec\) =>\s*planShotSheets\(\{/);
   });
 

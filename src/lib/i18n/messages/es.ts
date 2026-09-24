@@ -2261,6 +2261,7 @@ const es = {
     lookUseLatest: "Igualar la última foto",
     lookFirst: "La próxima foto en la que se vean los objetos del set define el aspecto: las siguientes los mantienen.",
     lookDropped: "Esta vez no se pudieron recortar los objetos del aspecto, así que esta foto se hizo sin él.",
+    lookAside: "El aspecto se quedó fuera de esta foto: muestra algo que ahora se dibuja a partir de sus propias fotos.",
     lookUse: "Usar su aspecto",
     lookBadge: "Aspecto",
     lookChange: "Cambiar",
@@ -2528,6 +2529,7 @@ const es = {
     modeHint:
       "Preguntar antes de fotografiar: Astra encuadra la foto y espera tu palabra. Fotografiar sin preguntar: fotografía en cuanto el encuadre esté listo.",
     engineChip: "GPT Image 2.5",
+    engineHint: "El motor de imagen con el que se dibujan las fotos",
     creditsOne: "1 crédito",
     creditsMany: "{n} créditos",
     backToFrame: "Volver al encuadre",

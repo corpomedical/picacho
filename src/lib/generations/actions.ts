@@ -183,7 +183,7 @@ import {
   getMonthlyUsageWith,
   persistGeneratedImage, fitLayerToOriginal, persistImageBytes } from "@/lib/generations/core";
 import { formatFrame, isRigFormat, isRigSqueeze, type RigFormat } from "@/lib/sets/rig";
-import { ELEMENT_SHEETS_PER_STILL } from "@/lib/sets/elements";
+import { ELEMENT_SHEETS_PER_STILL, SHEET_LANES } from "@/lib/sets/elements";
 import { withoutElementSentences } from "@/lib/sets/set-shot-prompt";
 import { cutToBand } from "@/lib/sets/frame-cut";
 import { develop, labLine, negativePathFor, normaliseLabLooks } from "@/lib/sets/lab";
@@ -2026,8 +2026,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       // that is already final. The same guards as the look, for the same
       // reasons.
       // The set's things' sheets (R1, 2026-09-21): on a set shot only, beside
-      // a photo of the person, on GPT Image only — naming sheets by number is
-      // unproven elsewhere, and FLUX's ten pictures leave room for two. The
+      // a photo of the person, on GPT Image or Nano Banana Pro (SHEET_LANES;
+      // Nano Banana joined 2026-09-24 when Helios got the engine choice) —
+      // naming sheets by number is unproven on FLUX, whose ten pictures leave
+      // room for two. The
       // shot plans how many (sets/elements.ts ELEMENT_SHEETS_PER_STILL); the
       // cap here is the same, whatever a request says.
       const elementImageUrls =
@@ -2037,7 +2039,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         contentType === "image" &&
         !wantsMultiCharacter &&
         !storyboardShots &&
-        imageModelId === "gpt-image"
+        (SHEET_LANES as readonly string[]).includes(imageModelId)
           ? await Promise.all(elementAttachmentUrls.slice(0, ELEMENT_SHEETS_PER_STILL).map(async (u) => absolutizeMediaUrl(u, await getOrigin())))
           : null;
       elementSheetsSent = elementImageUrls?.length ?? 0;

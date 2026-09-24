@@ -44,6 +44,7 @@ import {
 } from "@/lib/sets/take";
 import { lookStoragePath } from "@/lib/sets/look";
 import {
+  RIG_FORMATS,
   formatFrame,
   bandSide,
   isRigCheckItem,
@@ -114,7 +115,8 @@ import {
 } from "@/lib/sets/messages";
 import { summarizeFailureDetail } from "@/lib/generations/report-constants";
 import { findVehicles, vehicleWords } from "@/lib/sets/vehicles";
-import { ELEMENT_SHEETS_PER_STILL, planShotSheets, resolvePhotos, setElements, type ShotElementStatus } from "@/lib/sets/elements";
+import { ELEMENT_SHEETS_PER_STILL, SHEET_LANES, elementPlaces, planShotSheets, resolvePhotos, setElements, type ShotElementStatus } from "@/lib/sets/elements";
+import { SELECTABLE_IMAGE_MODEL_IDS } from "@/lib/generations/providers/image-models";
 import { movedSpec, normalisePlacements } from "@/lib/sets/movers";
 import { listElementPhotos } from "@/lib/sets/references";
 import { needsLikenessAnswer } from "@/lib/characters/likeness";
@@ -608,6 +610,8 @@ type ShootResult =
       hasLookObjects: boolean;
       /** A look was asked for and did not ride: the still was shot without it. */
       lookDropped: boolean;
+      /** A look was asked for and kept out on purpose: it shows a thing now drawn from its own photos (2026-09-24). */
+      lookAside: boolean;
       /** The rig format the still was cut to (rig.ts); "square" when none. */
       format: RigFormat;
       /** The anamorphic squeeze it was cut at: 1 unless the rig had one (2026-09-18). */
@@ -702,6 +706,20 @@ export async function shootInSet(
      * Read against this set's own things here, never trusted.
      */
     movers?: unknown;
+    /**
+     * The picture engine the person picked for stills (2026-09-24, "Cant
+     * change from gpt to nano banana"): one of the composer's own lanes,
+     * else the admin default. The render re-checks it (a free account is
+     * pinned to the default whatever this says).
+     */
+    stillEngine?: unknown;
+    /**
+     * The things the page drew plain grey in the sketch (2026-09-24): their
+     * own sheets give their colour and design, so the sketch's block colours
+     * cannot fight them. The words say so only when every thing whose sheet
+     * rides was drawn grey.
+     */
+    greyed?: unknown;
   },
 ): Promise<ShootResult> {
   const access = await setsAccess();
@@ -800,6 +818,7 @@ export async function shootInSet(
   // before the shot (element-actions.ts prepareElementSheets), and one that
   // is not just doesn't ride, and says so. Worked out before anything is
   // shot, so a film's beat that needs one stops here, free.
+  const pickedEngine = (SELECTABLE_IMAGE_MODEL_IDS as readonly unknown[]).includes(input.stillEngine) ? (input.stillEngine as string) : null;
   const els = setElements(owned.spec);
   // The set as this frame shows it: a beat that drives a thing is shot with
   // it driven (movers.ts). The THINGS are the arrangement's — a moved car
@@ -811,7 +830,7 @@ export async function shootInSet(
       access.supabase.from("app_settings").select("value").eq("key", "image_model").maybeSingle(),
       listElementPhotos(admin, userId, setId),
     ]);
-    const stillModel = imageModelSetting?.value ?? "gpt-image";
+    const stillModel = pickedEngine ?? imageModelSetting?.value ?? "gpt-image";
     elementPlan = planShotSheets({
       els,
       held: resolvePhotos(els, listing.photos).held,
@@ -823,10 +842,12 @@ export async function shootInSet(
       shotCamera: frameCamera,
       // Which way a car is turned, in the same camera the vehicle words use.
       poseCamera: layout?.camera ?? null,
-      budget: stillModel === "gpt-image" ? ELEMENT_SHEETS_PER_STILL : 0,
+      budget: (SHEET_LANES as readonly string[]).includes(stillModel) ? ELEMENT_SHEETS_PER_STILL : 0,
       spec: shown,
     });
   }
+  const greyed = new Set(Array.isArray(input.greyed) ? input.greyed.filter((k): k is string => typeof k === "string") : []);
+  const allGrey = elementPlan.riding.length > 0 && elementPlan.riding.every((r) => greyed.has(r.key));
   if (input.elementsRequired === true && elementPlan.statuses.some((e) => e.status === "no-sheet")) {
     return { error: SET_TAKE_ELEMENT_DROPPED };
   }
@@ -846,7 +867,19 @@ export async function shootInSet(
   let look: { url: string } | null = null;
   let lookDropped = false;
   let lookDropReason = "";
-  if (lookAsked) {
+  // A look that shows a thing now drawn from its own photos stays out
+  // (2026-09-24, "Each rendered image is a different car"): the look's copy
+  // of the car is an earlier still's car — the operator's red one, against
+  // his photo of a yellow one — and two pictures of the wrong car beat one
+  // picture and a sentence of the right one. The thing's own sheet carries
+  // it; a film keeps its car through the same sheet on every beat.
+  let lookAside = false;
+  if (lookAsked && elementPlan.riding.length > 0) {
+    const lookCamera = (await readShotCameras(access.supabase, setId, userId, [lookId])).get(lookId) ?? null;
+    const riding = new Set(elementPlan.riding.map((r) => r.key));
+    lookAside = lookCamera === null || elementPlaces(owned.spec, els, lookCamera).some((p) => p.seen && riding.has(p.key));
+  }
+  if (lookAsked && !lookAside) {
     const cut: LookCutoutResult = lookPath
       ? await lookCutout({
           admin,
@@ -945,9 +978,18 @@ export async function shootInSet(
     vehicles: vehicleWords(shown, layout?.camera),
     // Which sheet is which thing, in sheet order (elements.ts planSheets).
     elements: elementPlan.sentences,
+    elementsGrey: allGrey,
   };
   fd.set("prompt", buildSetShotPrompt({ ...shot, direction }));
   fd.set("set_format", rig.format);
+  // The engine the person picked, and on Nano Banana the render's own shape
+  // (rig.ts RIG_FORMATS): the cut to the frame lines is by proportion, so a
+  // 3:2 render cuts exactly as GPT Image's 1536 × 1024 does.
+  if (pickedEngine) fd.set("image_model_id", pickedEngine);
+  if (pickedEngine === "gemini") {
+    const [w, h] = RIG_FORMATS[rig.format].render;
+    fd.set("image_aspect", w === h ? "1:1" : w > h ? "3:2" : "2:3");
+  }
   // The anamorphic squeeze: the band it widens is worked out server-side
   // from these two names alone, as the format always was (2026-09-18).
   fd.set("set_squeeze", String(rig.squeeze));
@@ -1046,6 +1088,8 @@ export async function shootInSet(
     hasLookObjects,
     lookDropped,
     format: rig.format,
+    /** The look stayed out: it shows a thing now drawn from its own photos. */
+    lookAside,
     /** The squeeze it was cut at: a take shot from it plays in the band that widened. */
     squeeze: rig.squeeze,
     checks: rigCheckItems(rig),
@@ -1162,6 +1206,9 @@ export async function takeInSet(
     elementOrder?: unknown;
     /** The beat's movers (movers.ts): where the things that move stand in its end frame, and in the words written about it. */
     movers?: unknown;
+    /** The still engine and the things drawn grey in the sketch, as a still's (shootInSet). */
+    stillEngine?: unknown;
+    greyed?: unknown;
   },
 ): Promise<TakeResult> {
   const access = await setsAccess();
@@ -1237,6 +1284,7 @@ export async function takeInSet(
       score: null,
       hasLookObjects: false,
       lookDropped: false,
+      lookAside: false,
       format: rigs.get(reuseId)?.rig?.format ?? "square",
       squeeze: rigs.get(reuseId)?.rig?.squeeze ?? 1,
       failure: null,
@@ -1289,6 +1337,8 @@ export async function takeInSet(
       // one (R1, 2026-09-21).
       elementOrder: input.elementOrder,
       elementsRequired: input.film === true,
+      stillEngine: input.stillEngine,
+      greyed: input.greyed,
       // Where this beat leaves the things that move (movers.ts): the frame
       // was drawn with them there.
       movers: input.movers,

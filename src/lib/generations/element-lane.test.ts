@@ -23,7 +23,7 @@ describe("the render lane's element sheets", () => {
 
   it("sends them only on a set shot, beside the person, on GPT Image, capped at the shot's budget", () => {
     const guard = actions.slice(actions.indexOf("const elementImageUrls ="), actions.indexOf("elementSheetsSent = elementImageUrls?.length ?? 0;"));
-    for (const cond of ["isSetShot &&", "referenceImageUrl &&", 'contentType === "image" &&', "!wantsMultiCharacter &&", "!storyboardShots &&", 'imageModelId === "gpt-image"']) {
+    for (const cond of ["isSetShot &&", "referenceImageUrl &&", 'contentType === "image" &&', "!wantsMultiCharacter &&", "!storyboardShots &&", "(SHEET_LANES as readonly string[]).includes(imageModelId)"]) {
       expect(guard, cond).toContain(cond);
     }
     expect(guard).toContain(".slice(0, ELEMENT_SHEETS_PER_STILL)");
