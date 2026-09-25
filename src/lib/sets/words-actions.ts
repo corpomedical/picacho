@@ -20,6 +20,7 @@ import {
   SHOT_READER_MAX_COMPLETION,
   SHOT_READER_V2_OPEN_TO_ALL,
   type ReaderAliases,
+  type ReaderWhy,
   type ShotReading,
 } from "@/lib/sets/shot-reading";
 import {
@@ -156,8 +157,8 @@ export async function readSetRequest(input: { text: string }): Promise<{ error: 
   return { error: null, words };
 }
 
-/** Why a v2 reading came back as it did: read; nothing to read; too many readings; the reader failed; v2 not open to this account (the page then reads with v1). */
-export type ShotTurnWhy = "ok" | "empty" | "limited" | "down" | "off";
+/** Why a v2 reading came back as it did (shot-reading.ts ReaderWhy): "off" means the page reads with v1. */
+export type ShotTurnWhy = ReaderWhy;
 
 export type ShotTurnAnswer =
   | { error: string }

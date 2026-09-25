@@ -3198,6 +3198,8 @@ const es = {
       creditsN: "{n} créditos",
       noteUndoAstra: "El cambio del set se ha deshecho; sigue contando este mes.",
       noteUndoAstraText: "Las piezas del set han vuelto a como estaban, pero su descripción aún menciona el cambio; sigue contando este mes.",
+      noteTakeCancelledFormat: "He cancelado la {take}: empezaba en una foto {from} y el encuadre ahora es {to}.",
+      noteTakeFormat: "La {take} empieza en una foto {from}, pero el encuadre ahora es {to}: vuelve a poner el encuadre en {from}, o cancela la {take} y fotografía un nuevo inicio.",
     },
     rig: {
       chip: "Rig",

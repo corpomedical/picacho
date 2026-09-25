@@ -3380,6 +3380,9 @@ const en = {
       creditsN: "{n} credits",
       noteUndoAstra: "The set change is undone; it still counts this month.",
       noteUndoAstraText: "The set's pieces are back as they were, but its description still mentions the change; it still counts this month.",
+      // A take keeps one shape (check of the spec, item 7): the chat's own is cancelled when the frame changes shape, the person's is kept and asked about (turn-plan.ts).
+      noteTakeCancelledFormat: "I cancelled the {take}: it started on a {from} still, and the frame is now {to}.",
+      noteTakeFormat: "The {take} starts on a {from} still, but the frame is now {to}: set the frame back to {from}, or cancel the {take} and shoot a new start.",
     },
     rig: {
       chip: "Rig",

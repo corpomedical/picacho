@@ -3197,6 +3197,8 @@ const it = {
       creditsN: "{n} crediti",
       noteUndoAstra: "La modifica del set è annullata; conta comunque per questo mese.",
       noteUndoAstraText: "I pezzi del set sono tornati come prima, ma la descrizione cita ancora la modifica; conta comunque per questo mese.",
+      noteTakeCancelledFormat: "Ho annullato la {take}: partiva da una foto {from} e l'inquadratura ora è {to}.",
+      noteTakeFormat: "La {take} parte da una foto {from}, ma l'inquadratura ora è {to}: rimetti l'inquadratura su {from}, oppure annulla la {take} e scatta un nuovo inizio.",
     },
     rig: {
       chip: "Rig",

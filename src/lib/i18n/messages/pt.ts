@@ -3198,6 +3198,8 @@ const pt = {
       creditsN: "{n} créditos",
       noteUndoAstra: "A mudança do set foi desfeita; ela ainda conta neste mês.",
       noteUndoAstraText: "As peças do set voltaram ao que eram, mas a descrição ainda menciona a mudança; ela ainda conta neste mês.",
+      noteTakeCancelledFormat: "Cancelei o {take}: ele começava numa foto {from}, e o quadro agora é {to}.",
+      noteTakeFormat: "O {take} começa numa foto {from}, mas o quadro agora é {to}: volte o quadro para {from}, ou cancele o {take} e fotografe um novo início.",
     },
     rig: {
       chip: "Rig",

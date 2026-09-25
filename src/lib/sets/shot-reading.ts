@@ -115,6 +115,14 @@ export const READER_RIG_IDS: readonly string[] = rigCommandIds();
 /** An id of READER_RIG_IDS, "group:value" (time:golden, stock:film35). */
 export type ReaderRigId = string;
 
+/**
+ * How a reading came back (words-actions.ts readShotTurn): read; nothing to
+ * read; too many readings in ten minutes; the reader failed; v2 not open to
+ * this account yet. Only "ok" carries a reading, and only "ok" ever moves
+ * or shoots anything (turn-plan.ts, the owner's decision 2).
+ */
+export type ReaderWhy = "ok" | "empty" | "limited" | "down" | "off";
+
 /** Every cap the contract holds a reading to (spec §2.2, §2.4). */
 export const READER_MAX = {
   keep: 4,
