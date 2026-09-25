@@ -5,6 +5,7 @@ import { rateLimited } from "@/lib/rate-limit";
 import { monthlyWindowStart } from "@/lib/generations/core";
 import { assertPromptAllowed, ContentPolicyRefusal } from "@/lib/generations/content-policy";
 import { gatePrompt, recordPolicyRefusal } from "@/lib/generations/policy-log";
+import { withModelWrittenPrompt } from "@/lib/generations/refusal-attribution";
 import { cancelAstraJob, pollAstraJob, submitAstraJob, type AstraJobRequest } from "@/lib/generations/providers/astra";
 import { openAiSafetyId } from "@/lib/openai/safety-id";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
@@ -29,7 +30,7 @@ import {
   SET_ELEMENT_GONE,
   setEditMonthlyCapMessage,
 } from "@/lib/sets/messages";
-import { setEditRequest } from "@/lib/sets/set-edit-prompt";
+import { editFrameOf, editMeaningOf, setEditRequest } from "@/lib/sets/set-edit-prompt";
 import {
   SET_EDIT_DEADLINE_MS,
   SET_EDIT_MAX_CHARS,
@@ -273,11 +274,24 @@ async function askAstra(setId: string, request: AstraJobRequest, what: string, f
  * `undo` seals the words of the copy Astra was handed (edit-seal.ts), so
  * the changed line's Undo can bring them back too (undoAstraEdit); null
  * when nothing can be sealed.
+ *
+ * `more` (Helios Cut 2, step 10, 2026-09-25 — operator: "Run, keep going.")
+ * is what the set's chat adds when its Astra card is pressed: the reader's
+ * short English `meaning` of the person's words and the `frame` — where the
+ * person stands and the camera is — both checked here, never trusted
+ * (set-edit-prompt.ts). The instruction is still the person's own words
+ * only. The meaning is the reader's, so the gate judges the two together
+ * and, when they are refused, judges the meaning alone: refused on its own,
+ * the refusal is the reader's (provider "reader", which never counts
+ * against the person, policy-log.ts); passing alone, their words made the
+ * difference and it counts, as it always did (critic item 12). With no
+ * meaning, the gate is called exactly as before.
  */
 export async function editSetWithAstra(
   setId: string,
   instruction: string,
   pressId?: string,
+  more?: { meaning?: unknown; frame?: unknown },
 ): Promise<
   | { error: string; editsLeft?: number | null; pending?: true }
   | { error: null; spec: SetSpec; changed: number; editsLeft: number | null; undo: EditUndo | null }
@@ -293,6 +307,9 @@ export async function editSetWithAstra(
   // and paid for, and counted among the month's changes.
   const working = owned.edited ?? owned.spec;
   if (JSON.stringify(working).length > SET_EDIT_MAX_SPEC_CHARS) return { error: SET_EDIT_TOO_BIG };
+  const meaning = editMeaningOf(more?.meaning);
+  const frame = editFrameOf(more?.frame, working);
+  const extra = meaning || frame ? { ...(meaning ? { meaning } : {}), ...(frame ? { frame } : {}) } : undefined;
 
   // Everything above is free and gives a repeat the same answer. The press
   // is claimed before the gate, so a repeat delivery never logs a second
@@ -300,9 +317,16 @@ export async function editSetWithAstra(
   return oncePerPress(userId, pressId, async (kept) => {
     // The person's own words, judged before anything leaves Picacho — as a
     // brief is (actions.ts submitSetBuild). A refusal answers with the gate's
-    // own sentence.
+    // own sentence. The reader's meaning rides only inside the reader's
+    // attribution: a refusal it earns alone is never the person's.
     try {
-      await gatePrompt({ prompt: text, userId, hasRealPersonReference: false });
+      if (meaning) {
+        await withModelWrittenPrompt({ modelOnlyPrompt: meaning, provider: "reader" }, () =>
+          gatePrompt({ prompt: `${text}\n${meaning}`, userId, hasRealPersonReference: false }),
+        );
+      } else {
+        await gatePrompt({ prompt: text, userId, hasRealPersonReference: false });
+      }
     } catch (err) {
       if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
       throw err;
@@ -313,7 +337,7 @@ export async function editSetWithAstra(
     // From here every answer that does not save gives the change back; so
     // does a throw, which is then passed on.
     try {
-      const answer = await askAstra(setId, setEditRequest(working, text, openAiSafetyId(userId)), "edit", SET_EDIT_FAILED);
+      const answer = await askAstra(setId, setEditRequest(working, text, openAiSafetyId(userId), extra), "edit", SET_EDIT_FAILED);
       if (answer.error !== null) return { error: answer.error, editsLeft: await giveBackAstraChange(access, slot) };
 
       const parsed = parseSetSpecText(answer.text);

@@ -138,16 +138,27 @@ vi.mock("@/lib/generations/content-policy", () => ({
     }
   },
 }));
+/** What the gate read, and each refusal it logged with whose words it put it on (null: the person's, which counts). */
+const gated: string[] = [];
+const refusals: { prompt: string; provider: string | null }[] = [];
 vi.mock("@/lib/generations/policy-log", () => ({
+  // The real gate's attribution (policy-log.ts gatePrompt): on a refusal it
+  // asks refusal-attribution.ts whose words they were, judging the
+  // model-written part alone — here, refused when it holds "forbidden".
   gatePrompt: async ({ prompt }: { prompt: string }) => {
     steps.push("gate");
+    gated.push(prompt);
     if (prompt.includes("forbidden")) {
+      const { refusalProviderFor } = await import("../generations/refusal-attribution");
+      refusals.push({ prompt, provider: await refusalProviderFor(prompt, async (text) => text.includes("forbidden")) });
       const { ContentPolicyRefusal } = await import("@/lib/generations/content-policy");
       throw new ContentPolicyRefusal("test" as never, "Refused by the gate.");
     }
   },
   recordPolicyRefusal: async () => {},
 }));
+// The real attribution (AsyncLocalStorage), the same module the gate above reads.
+vi.mock("@/lib/generations/refusal-attribution", async () => await import("../generations/refusal-attribution"));
 vi.mock("@/lib/generations/providers/astra", () => ({
   submitAstraJob: async (req: { input: unknown; instructions: string }) => {
     sent.push(req);
@@ -227,6 +238,7 @@ vi.mock("@/lib/sets/references", () => ({ listElementPhotos: async () => ({ phot
 vi.mock("@/lib/sets/thing-model-store", () => ({ listModelFiles: async () => modelFiles }));
 
 import { editSetWithAstra, readAstraEdit, rebuildThingFromPhotos, undoAstraEdit } from "./editor-actions";
+import { SET_EDIT_MEANING_MAX_CHARS, setEditInput } from "./set-edit-prompt";
 import { editTextOf, openEditSeal } from "./edit-seal";
 import { buildSetShotPrompt } from "./set-shot-prompt";
 import { resolvePhotos, setElements, type ElementPhoto } from "./elements";
@@ -261,6 +273,8 @@ beforeEach(() => {
   modelFiles = [];
   storage.length = 0;
   sent.length = 0;
+  gated.length = 0;
+  refusals.length = 0;
 });
 
 describe("an Astra change", () => {
@@ -487,6 +501,94 @@ describe("one Astra job per press", () => {
 // Undo that gives back Astra's words too (Helios Cut 2, step 2, 2026-09-25 —
 // critic item 4): an undone change used to leave Astra's description on the
 // set, where every later still read it.
+// What the set's chat adds to a change it asks for (Helios Cut 2, step 10,
+// 2026-09-25 — operator: "Run, keep going."; critic item 12): the reader's
+// short gloss and where the person and the camera stand. Astra still reads
+// the person's own words as the request; the gloss is the reader's, and a
+// refusal it earns alone is never put on the person.
+describe("a change from the set's chat: meaning and frame", () => {
+  const SAID = "put a red Ferrari by the pit wall";
+  const FRAME = { mark: { x: 1.234, z: -2.5, facingDeg: 90 }, camera: { position: [4, 1.5, 6], target: [1.2, 1, -2.5] } };
+
+  it("with nothing more, gates and sends exactly as before", async () => {
+    expect((await editSetWithAstra(SET, SAID, PRESS)).error).toBeNull();
+    expect(gated).toEqual([SAID]);
+    expect(sent[0].input).toBe(setEditInput(SPEC, SAID));
+    // An empty or unusable `more` is nothing more.
+    gated.length = 0;
+    sent.length = 0;
+    expect((await editSetWithAstra(SET, SAID, LATER, { meaning: "  ", frame: { mark: { x: Number.NaN, z: 0, facingDeg: 0 } } })).error).toBeNull();
+    expect(gated).toEqual([SAID]);
+    expect(sent[0].input).toBe(setEditInput(SPEC, SAID));
+  });
+
+  it("sends the person's words as the request, then the reader's meaning, labelled, then the frame", async () => {
+    const out = await editSetWithAstra(SET, SAID, PRESS, { meaning: "a red sports car by the pit wall", frame: FRAME });
+    expect(out.error).toBeNull();
+    const input = String(sent[0].input);
+    expect(input).toContain(`The change request:\n${SAID}\n\n`);
+    expect(input).toContain("What they mean, as read by the page (not their words): a red sports car by the pit wall");
+    expect(input).toContain("Where the person stands now (never add a person): x 1.23, z -2.5, facing 90°. The camera now: (4, 1.5, 6) → (1.2, 1, -2.5).");
+    expect(input.indexOf(SAID)).toBeLessThan(input.indexOf("What they mean"));
+    // The gate read their words and the meaning together.
+    expect(gated).toEqual([`${SAID}\na red sports car by the pit wall`]);
+  });
+
+  it("puts a refusal the reader's meaning earns on its own under the reader, never on the person", async () => {
+    const out = await editSetWithAstra(SET, SAID, PRESS, { meaning: "something forbidden by the wall" });
+    expect(out.error).toBe("Refused by the gate.");
+    expect(refusals).toEqual([{ prompt: `${SAID}\nsomething forbidden by the wall`, provider: "reader" }]);
+    // Refused before the pace, the month and Astra: nothing is spent.
+    expect(steps).toEqual(["claim", "gate", "end unsaved"]);
+    expect(sent).toEqual([]);
+  });
+
+  it("puts a refusal of the person's own words on the person, as it always was", async () => {
+    const out = await editSetWithAstra(SET, "put something forbidden by the wall", PRESS, { meaning: "a thing by the wall" });
+    expect(out.error).toBe("Refused by the gate.");
+    expect(refusals).toEqual([{ prompt: "put something forbidden by the wall\na thing by the wall", provider: null }]);
+    // With no meaning there is no attribution: their words, counted.
+    refusals.length = 0;
+    await editSetWithAstra(SET, "put something forbidden by the wall", LATER);
+    expect(refusals).toEqual([{ prompt: "put something forbidden by the wall", provider: null }]);
+  });
+
+  it("holds the meaning to its cap and the frame to the set", async () => {
+    const long = "a row of small flags ".repeat(20);
+    await editSetWithAstra(SET, SAID, PRESS, {
+      meaning: long,
+      // The figure off the set: no frame at all.
+      frame: { mark: { x: SPEC.bounds.x, z: 0, facingDeg: 0 }, camera: FRAME.camera },
+    });
+    const input = String(sent[0].input);
+    const line = input.slice(input.indexOf("What they mean"));
+    expect(Array.from(line.slice(line.indexOf(": ") + 2)).length).toBeLessThanOrEqual(SET_EDIT_MEANING_MAX_CHARS);
+    expect(input).not.toContain("Where the person stands");
+    // A camera out of reach is left out; the figure still rides.
+    sent.length = 0;
+    await editSetWithAstra(SET, SAID, LATER, { frame: { mark: FRAME.mark, camera: { position: [0, SPEC.bounds.height * 3, 0], target: [0, 1, 0] } } });
+    const input2 = String(sent[0].input);
+    expect(input2).toContain("Where the person stands now (never add a person): x 1.23, z -2.5, facing 90°.");
+    expect(input2).not.toContain("The camera now");
+  });
+
+  it("lets the meaning reach the gate only inside the reader's attribution (read as source)", () => {
+    const src = readFileSync(join(__dirname, "editor-actions.ts"), "utf8");
+    const body = src.slice(src.indexOf("export async function editSetWithAstra("), src.indexOf("export async function rebuildThingFromPhotos("));
+    const gates = [...body.matchAll(/gatePrompt\(\{ prompt: [^\n]*?hasRealPersonReference: false \}\)/g)].map((m) => m[0]);
+    expect(gates).toHaveLength(2);
+    // The one that carries the meaning sits inside withModelWrittenPrompt, under "reader".
+    const withMeaning = gates.filter((g) => g.includes("meaning"));
+    expect(withMeaning).toHaveLength(1);
+    const at = body.indexOf(withMeaning[0]);
+    const opened = body.lastIndexOf("withModelWrittenPrompt(", at);
+    expect(opened).toBeGreaterThan(-1);
+    expect(body.slice(opened, at)).toContain('provider: "reader"');
+    // The other is exactly today's call.
+    expect(gates).toContain("gatePrompt({ prompt: text, userId, hasRealPersonReference: false })");
+  });
+});
+
 describe("undoing an Astra change", () => {
   /** Astra's answer: the first barrier red, and new words for the set. */
   const flagged = (): string =>
