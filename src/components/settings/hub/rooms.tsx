@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ProducerNameForm } from "@/components/settings/producer-name-form";
 import { ProducerVoiceForm } from "@/components/settings/producer-voice-form";
+import { ProducerLampForm } from "@/components/settings/producer-lamp-form";
 import type { ProducerVoiceChoice } from "@/lib/producer/actions";
 import type { Messages } from "@/lib/i18n/messages";
 import type { Locale } from "@/lib/i18n/locales";
@@ -170,6 +171,9 @@ export function PreferencesTab({
       {producerName !== null && (
         <SettingsSection title="Your assistant" description="What the lamp in the corner answers to. Pick one, or give it your own name.">
           <ProducerNameForm initialName={producerName} />
+          <div className="border-t border-atelier-rule/60 pt-5">
+            <ProducerLampForm />
+          </div>
           {producerVoices && (
             <div className="space-y-3 border-t border-atelier-rule/60 pt-5">
               <div>

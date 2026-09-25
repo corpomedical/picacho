@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.102.0",
+    build: 141,
+    date: "2026-09-25",
+    title: "Move the Producer's lamp anywhere, tuck it into an edge, or hide it",
+    items: [
+      "The Producer's lamp no longer has to sit on your buttons. Drag it anywhere on the screen, with the mouse or your finger. A tap still opens it.",
+      "Let go of it near any edge and it tucks itself in as a slim glowing tab: it springs to the edge, melts from a round bulb into a tube of light, and a wash of light runs along the edge. Pull the tab out and it swells back into a bulb under your finger.",
+      "To hide it, drag it onto the × that appears at the bottom, or press the new hide button in its window, and Undo is right there. Settings → Preferences → Your assistant → The lamp shows it again or puts it back in the corner. The choice is kept on each device.",
+      "When you open it, it flies to its corner so its wheel has room, and when you close it, it flies back to where you left it. While voice is on it can't be hidden, and its End button stays beside it.",
+    ],
+  },
+  {
     version: "1.101.0",
     build: 140,
     date: "2026-09-25",

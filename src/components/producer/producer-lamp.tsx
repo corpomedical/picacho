@@ -19,6 +19,8 @@ import type { WatchItem } from "@/lib/producer/watch";
 import { isSpot, type Spot } from "@/lib/producer/spots";
 import styles from "./producer-lamp.module.css";
 import { Wheel, WHEEL_R } from "./wheel";
+import { MovableLamp } from "./movable-lamp";
+import { writeLampHidden } from "./lamp-place";
 import { Spotlight, type LitSpot } from "./spotlight";
 import { useHandsFree, type SpokenAudio } from "./use-hands-free";
 
@@ -37,6 +39,11 @@ import { useHandsFree, type SpokenAudio } from "./use-hands-free";
 // allowance is used; hands-free voice (use-hands-free.ts); and a thin light
 // on the bottom edge of whatever part of the page the Producer is working on
 // (spotlight.tsx).
+//
+// Round 4 (2026-09-25, operator: "The light bulb is disturbing some of the
+// buttons" → "Lets make it movable and dismissible"): the lamp can be dragged
+// anywhere, lives as a glowing tab on any edge it is dropped at, and can be
+// hidden (movable-lamp.tsx, lamp-place.ts).
 //
 // English only for v1 (admins); the words are gathered here to translate in
 // one place when it opens to Elite.
@@ -85,6 +92,7 @@ const W = {
   newCards: (n: number) => `${n} prepared`,
   heardPlaceholder: "…",
   limitReached: "You've used this period's assistant allowance.",
+  hideLamp: "Hide the lamp",
 };
 
 const READ_ALOUD_KEY = "picacho.producer.readAloud";
@@ -262,12 +270,16 @@ export function ProducerLamp({
     };
   }, [pathname]);
 
-  // Where the wheel opens: centred on the bulb, measured after it moves to its
-  // open position (the corner on a phone), and again on resize.
+  // Where the wheel opens: centred on the lamp's corner (its open position —
+  // the corner on a phone), and again on resize. The corner is read from the
+  // lamp's invisible twin (movable-lamp.tsx), which is already there while a
+  // moved lamp is still flying home; the wheel then waits for it to land.
+  const [wheelReady, setWheelReady] = useState(false);
   useLayoutEffect(() => {
     if (!open) return;
+    const home = () => document.querySelector("[data-producer-lamp-home]")?.getBoundingClientRect();
     const measure = () => {
-      const r = lampRef.current?.getBoundingClientRect();
+      const r = home() ?? lampRef.current?.getBoundingClientRect();
       if (!r) return;
       setCenter({
         cx: r.left + r.width / 2,
@@ -277,11 +289,18 @@ export function ProducerLamp({
       });
     };
     measure();
+    const lamp = lampRef.current?.getBoundingClientRect();
+    const corner = home();
+    const away = lamp && corner ? Math.hypot(lamp.left - corner.left, lamp.top - corner.top) > 4 : false;
+    if (!away) setWheelReady(true);
+    const ready = away ? window.setTimeout(() => setWheelReady(true), 460) : undefined;
     const t = window.setTimeout(measure, 220);
     window.addEventListener("resize", measure);
     return () => {
       window.clearTimeout(t);
+      if (ready) window.clearTimeout(ready);
       window.removeEventListener("resize", measure);
+      setWheelReady(false);
     };
   }, [open]);
 
@@ -426,10 +445,13 @@ export function ProducerLamp({
   }
 
   const busy = streaming !== null;
-  const wheelShown = open && center !== null && !(center.phone && typing);
+  const wheelShown = open && wheelReady && center !== null && !(center.phone && typing);
   // The sheet ends just above the wheel; with the keyboard up on a phone the
   // wheel tucks away and the sheet reaches the bottom.
-  const sheetBottom = wheelShown && center ? Math.round(center.vh - (center.cy - WHEEL_R) + 10) : undefined;
+  // (Kept while a moved lamp is still flying home, so the sheet doesn't jump
+  // when the wheel appears.)
+  const sheetBottom =
+    open && center && !(center.phone && typing) ? Math.round(center.vh - (center.cy - WHEEL_R) + 10) : undefined;
   const voiceLine =
     voice.phase === "listening"
       ? W.listening
@@ -443,57 +465,24 @@ export function ProducerLamp({
 
   return (
     <>
-      <button
-        type="button"
-        ref={lampRef}
-        data-producer-lamp
-        onClick={() => setOpen((v) => !v)}
-        aria-label={W.open(name)}
-        aria-expanded={open}
-        title={name}
-        style={
-          {
-            ...(lift !== null && !open ? { bottom: lift } : {}),
-            "--glow": voice.active ? voice.level : 0,
-          } as React.CSSProperties
-        }
-        className={`${styles.lamp} ${open ? styles.lampOpen : ""} ${voice.active ? styles.lampLive : ""} fixed z-[45] grid h-11 w-11 place-items-center rounded-full`}
-      >
-        <span className={styles.bulb} aria-hidden="true" />
-        {unseenCards > 0 && !open && (
-          <span
-            className="absolute -left-1 -top-1 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-atelier-accent px-1 text-[10px] font-semibold leading-none text-[#1a120a] tabular-nums"
-            aria-label={W.newCards(unseenCards)}
-          >
-            {unseenCards}
-          </span>
-        )}
-        {dot > 0 && !open && (
-          <span
-            className="absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-[#e6c46e] px-1 text-[10px] font-semibold leading-none text-[#1a120a] tabular-nums"
-            aria-label={`${dot} to look at`}
-          >
-            {dot}
-          </span>
-        )}
-      </button>
-
-      {/* Voice is live with the sheet closed: the lamp glows with the sound,
-          and this is the one-tap way to turn it off. */}
-      {voice.active && !open && (
-        <button
-          type="button"
-          onClick={voice.stop}
-          aria-label={W.endVoiceLabel}
-          title={W.endVoiceLabel}
-          className={styles.endChip}
-          style={lift !== null ? { bottom: lift + 7 } : undefined}
-        >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-            <path d="M4 4l8 8M12 4l-8 8" />
-          </svg>
-        </button>
-      )}
+      {/* The lamp: movable, tucks into any edge as a tab, can be hidden
+          (movable-lamp.tsx). Voice live with the sheet closed: it glows with
+          the sound, and End beside it turns voice off in one tap. */}
+      <MovableLamp
+        name={name}
+        open={open}
+        onToggle={() => setOpen((v) => !v)}
+        live={voice.active}
+        level={voice.level}
+        lift={lift}
+        unseenCards={unseenCards}
+        dot={dot}
+        onEndVoice={voice.stop}
+        lampRef={lampRef}
+        openLabel={W.open(name)}
+        newCardsLabel={W.newCards(unseenCards)}
+        endVoiceLabel={W.endVoiceLabel}
+      />
 
       <Spotlight lit={lit} />
 
@@ -559,6 +548,24 @@ export function ProducerLamp({
                   {W.back}
                 </button>
               )}
+              {/* Hiding without dragging (keyboard, screen readers, or just
+                  easier): Undo follows, Settings brings it back. */}
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  writeLampHidden(true);
+                }}
+                aria-label={W.hideLamp}
+                title={W.hideLamp}
+                className="grid h-8 w-8 place-items-center rounded-full text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
+              >
+                <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8Z" />
+                  <circle cx="8" cy="8" r="1.8" />
+                  <path d="M2.5 13.5l11-11" />
+                </svg>
+              </button>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
