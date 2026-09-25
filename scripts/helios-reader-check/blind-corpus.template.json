@@ -1,0 +1,154 @@
+{
+  "WRITER": [
+    "Twenty things you'd say to a camera crew on a set like the one below. Nothing else to read first: please don't open the reader's instructions, the spec, or corpus.json.",
+    "Write them the way you'd really say them: short or long, one thing or several at once, corrections ('no, lower'), questions, things a set like this can't do. Any of English, Spanish, Portuguese or Italian.",
+    "Put your name in \"author\", fill each \"phrase\", and save this file as blind-corpus.json beside it. Leave \"expected\" empty."
+  ],
+  "EXPECTATIONS": [
+    "For someone else, after the twenty phrases are written: read each phrase alone and write what a good crew would do in \"expected\", in corpus.json's conventions. Put your name in \"expectationsBy\" (it must not be the author's).",
+    "With no expectations, a phrase is still held to every hard gate: nothing shot, no set change, no undo and no other person unless it asks, and no words it never said."
+  ],
+  "theSet": {
+    "name": "race",
+    "place": "A race track: a red race car on the starting grid, the pit wall, barriers, a grandstand.",
+    "cameras": [
+      "Circuit establishing",
+      "Front three quarter",
+      "Low rear wing"
+    ],
+    "marks": [
+      "Starting grid",
+      "Trackside apron"
+    ],
+    "characters": [
+      "Eva",
+      "Marco",
+      "Lena (no photo yet)"
+    ],
+    "now": "Marco stands on the starting grid facing the camera. The camera is at eye level, 50 mm, a couple of metres away from his front left. The frame is 16:9. Nothing else is set: no light, time or look, and nothing about what happens. Still 1 (Eva) and Still 2 (Marco) are already shot. Ask before shooting is on."
+  },
+  "author": "",
+  "expectationsBy": "",
+  "phrases": [
+    {
+      "id": "B1",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B2",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B3",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B4",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B5",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B6",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B7",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B8",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B9",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B10",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B11",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B12",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B13",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B14",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B15",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B16",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B17",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B18",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B19",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    },
+    {
+      "id": "B20",
+      "set": "race",
+      "phrase": "",
+      "expected": {}
+    }
+  ]
+}

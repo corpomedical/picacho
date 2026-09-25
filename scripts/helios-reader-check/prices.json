@@ -1,0 +1,9 @@
+{
+  "model": "gpt-5.4-mini",
+  "inputPer1M": 0.75,
+  "cachedInputPer1M": 0.075,
+  "outputPer1M": 4.5,
+  "read": "2026-09-25",
+  "source": "https://developers.openai.com/api/docs/models/gpt-5.4-mini",
+  "note": "Read for spec v2 §2.1 on 2026-09-25. The input and output rates match src/app/api/tools/identity-check/route.ts THE MONEY (read 2026-09-22); the cached rate is only on the model's page. A live run refuses a read date more than 7 days old: re-read the page and write the date before check A (spec §7.4 precondition 4)."
+}

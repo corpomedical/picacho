@@ -1,0 +1,8 @@
+{
+  "about": "Keys the dry run's perfect reader writes beside a phrase's own `expected` block, where the reply that phrase expects needs a key its expectations only allow. Read only by the dry run (lib/answers.mts perfectAnswer); the live check and the grader never read this file, and corpus.json stays spec v2's corpus.",
+  "extras": {
+    "X56": {
+      "set_change": { "said": "A race track with a row of flags on the pit wall" }
+    }
+  }
+}

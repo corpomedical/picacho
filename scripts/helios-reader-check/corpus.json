@@ -1,0 +1,2270 @@
+{
+ "version": 2,
+ "written": "2026-09-25",
+ "spec": "Helios Cut 2 spec v2, Appendix",
+ "defaultForbid": [
+  "shoot",
+  "set_change",
+  "undo",
+  "who"
+ ],
+ "conventions": {
+  "defaultForbid": "shoot, set_change, undo and who are forbidden in every entry unless its `expected` or `allow` names them. A `who` equal to the fixture's NOW who (after context) counts as absent: it is not a swap.",
+  "forbid": "extra keys that must be absent.",
+  "allow": "keys that may appear without being required; overrides defaultForbid for those keys.",
+  "expected": "a scalar must be equal; a string array must include all its items; {anyOf:[...]} must equal or include one of them; {includes:[...]} and {excludes:[...]} are case-insensitive substrings (excludes passes when the key is absent); {min,max} is a number range; {minItems:n} is an array length; {candidates:[...]} is a thing list with exactly those aliases in any order; a top-level anyOf is a list of alternative expectation objects.",
+  "direction": "the composed 'what happens' after the turn: composeHappens(reading.happens) against context.now.direction (or the fixture's).",
+  "set_change": "checks set_change.said, which must also be an exact substring of the phrase; set_change_gloss checks the gloss.",
+  "near.thing / gaze.thing / facing.thing": "an alias, or {candidates:[...]}.",
+  "expectShoot": "none (default) | still | take: shootDecision(plan, state) for the entry's mode, with source 'message'.",
+  "expectCards": "when present, exactly these Needs cards: astra | which | take | hour. Absent: not checked.",
+  "expectReplyMentions": "case-insensitive substrings of the reply composed in context.locale (default en).",
+  "context": "now overrides fixture NOW fields; turns is LAST TURNS; locale is the interface language; origin 'build' marks the Sets home's first message on a set it just built."
+ },
+ "fixtures": {
+  "race": {
+   "cameras": [
+    {
+     "id": "c1",
+     "label": "Circuit establishing"
+    },
+    {
+     "id": "c2",
+     "label": "Front three quarter"
+    },
+    {
+     "id": "c3",
+     "label": "Low rear wing"
+    }
+   ],
+   "marks": [
+    {
+     "id": "m1",
+     "label": "Starting grid"
+    },
+    {
+     "id": "m2",
+     "label": "Trackside apron"
+    }
+   ],
+   "characters": [
+    {
+     "alias": "p1",
+     "name": "Eva",
+     "hasPhoto": true,
+     "hasOutfit": false
+    },
+    {
+     "alias": "p2",
+     "name": "Marco",
+     "hasPhoto": true,
+     "hasOutfit": true
+    },
+    {
+     "alias": "p3",
+     "name": "Lena",
+     "hasPhoto": false,
+     "hasOutfit": false
+    }
+   ],
+   "things": [
+    {
+     "alias": "t1",
+     "label": "the car",
+     "kind": "car",
+     "colour": "red",
+     "size": "4.4 m long",
+     "where": "3 m to their left"
+    },
+    {
+     "alias": "t2",
+     "label": "an object",
+     "kind": "object",
+     "colour": "grey",
+     "size": "1.2 m tall",
+     "where": "6 m behind them"
+    }
+   ],
+   "structureNotThings": [
+    "grandstand",
+    "pit wall",
+    "barriers",
+    "flags"
+   ],
+   "now": {
+    "who": "p2",
+    "mark": "m1",
+    "facing": "camera",
+    "pose": "stand",
+    "gaze": null,
+    "camera": {
+     "id": "c2",
+     "mm": 50,
+     "heightM": 1.45,
+     "distanceM": 2.4,
+     "side": "front_left",
+     "tiltDeg": 0
+    },
+    "frameX": "centre",
+    "rig": {
+     "format": "wide"
+    },
+    "direction": "",
+    "mode": "ask",
+    "takeStart": null,
+    "filmOpen": false
+   },
+   "stills": [
+    {
+     "n": 1,
+     "who": "p1",
+     "format": "wide",
+     "status": "succeeded"
+    },
+    {
+     "n": 2,
+     "who": "p2",
+     "format": "wide",
+     "status": "succeeded"
+    }
+   ],
+   "edits": {
+    "left": 4,
+    "cap": 4
+   },
+   "note": "Built after Cut 1, so its saved rig is NEW_SET_RIG (16:9). Starter plan."
+  },
+  "showroom": {
+   "cameras": [
+    {
+     "id": "c1",
+     "label": "Showroom wide"
+    },
+    {
+     "id": "c2",
+     "label": "Hero car"
+    }
+   ],
+   "marks": [
+    {
+     "id": "m1",
+     "label": "Centre floor"
+    }
+   ],
+   "characters": [
+    {
+     "alias": "p1",
+     "name": "Eva",
+     "hasPhoto": true,
+     "hasOutfit": false
+    },
+    {
+     "alias": "p2",
+     "name": "Marco",
+     "hasPhoto": true,
+     "hasOutfit": true
+    }
+   ],
+   "things": [
+    {
+     "alias": "t1",
+     "label": "Car 1",
+     "kind": "car",
+     "colour": "red",
+     "size": "4.5 m long",
+     "where": "2 m to their left"
+    },
+    {
+     "alias": "t2",
+     "label": "Car 2",
+     "kind": "car",
+     "colour": "blue",
+     "size": "4.6 m long",
+     "where": "5 m behind them"
+    },
+    {
+     "alias": "t3",
+     "label": "an object",
+     "kind": "object",
+     "colour": "white",
+     "size": "0.9 m tall",
+     "where": "2 m to their right"
+    }
+   ],
+   "now": {
+    "who": "p1",
+    "mark": null,
+    "near": {
+     "thing": "t1",
+     "side": "beside"
+    },
+    "facing": "camera",
+    "pose": "lean",
+    "gaze": null,
+    "camera": {
+     "id": "c2",
+     "mm": 35,
+     "heightM": 1.2,
+     "distanceM": 3.0,
+     "side": "front",
+     "tiltDeg": 0
+    },
+    "frameX": "centre",
+    "rig": {
+     "format": "wide"
+    },
+    "direction": "She leans on the red car.",
+    "mode": "ask",
+    "takeStart": null,
+    "filmOpen": false
+   },
+   "stills": [
+    {
+     "n": 1,
+     "who": "p1",
+     "format": "wide",
+     "status": "succeeded"
+    }
+   ],
+   "edits": {
+    "left": 10,
+    "cap": 10
+   },
+   "note": "Growth plan."
+  },
+  "garage": {
+   "cameras": [
+    {
+     "id": "c1",
+     "label": "Garage wide"
+    },
+    {
+     "id": "c2",
+     "label": "Low front"
+    },
+    {
+     "id": "c3",
+     "label": "Over the bench"
+    }
+   ],
+   "marks": [
+    {
+     "id": "m1",
+     "label": "Workshop floor"
+    },
+    {
+     "id": "m2",
+     "label": "By the door"
+    }
+   ],
+   "characters": [
+    {
+     "alias": "p1",
+     "name": "Eva",
+     "hasPhoto": true,
+     "hasOutfit": false
+    },
+    {
+     "alias": "p2",
+     "name": "Marco",
+     "hasPhoto": true,
+     "hasOutfit": true
+    }
+   ],
+   "things": [
+    {
+     "alias": "t1",
+     "label": "Car 1",
+     "kind": "car",
+     "colour": "red",
+     "size": "4.3 m long",
+     "where": "3 m to their left"
+    },
+    {
+     "alias": "t2",
+     "label": "Car 2",
+     "kind": "car",
+     "colour": "red",
+     "size": "4.5 m long",
+     "where": "3 m to their right"
+    },
+    {
+     "alias": "t3",
+     "label": "an object",
+     "kind": "object",
+     "colour": "grey",
+     "size": "0.9 m tall",
+     "where": "4 m behind them"
+    }
+   ],
+   "now": {
+    "who": "p1",
+    "mark": "m1",
+    "facing": "camera",
+    "pose": "stand",
+    "gaze": null,
+    "camera": {
+     "id": "c1",
+     "mm": 24,
+     "heightM": 1.6,
+     "distanceM": 6.0,
+     "side": "front",
+     "tiltDeg": -4
+    },
+    "frameX": "centre",
+    "rig": {
+     "format": "wide"
+    },
+    "direction": "",
+    "mode": "ask",
+    "takeStart": null,
+    "filmOpen": false
+   },
+   "stills": [],
+   "edits": {
+    "left": null,
+    "cap": -1
+   },
+   "note": "An admin account (no monthly cap). Two cars of the same colour and nearly the same size: the which-one fixture."
+  }
+ },
+ "blind": {
+  "required": 20,
+  "file": "blind-corpus.json",
+  "status": "not written yet: a precondition of check A",
+  "rule": "written by someone who has not read the reader's instructions, this spec or this corpus; expectations added afterwards by someone else, from the phrase alone; reported separately"
+ },
+ "phrases": [
+  {
+   "id": "A1",
+   "set": "race",
+   "phrase": "Dolly in slowly on her face.",
+   "expected": {
+    "size": "close_up",
+    "move": "push-in"
+   },
+   "expectReplyMentions": [
+    "Close-up",
+    "Push in",
+    "Take from Still 2"
+   ],
+   "expectShoot": "none",
+   "expectCards": [
+    "take"
+   ],
+   "note": "Marco on the chip: arms Still 2 (his), never Still 1 (Eva's)."
+  },
+  {
+   "id": "A2",
+   "set": "race",
+   "phrase": "Give me an over-the-shoulder shot.",
+   "expected": {
+    "side": {
+     "anyOf": [
+      "back_left",
+      "back_right"
+     ]
+    }
+   },
+   "expectReplyMentions": [
+    "behind"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "cant"
+   ]
+  },
+  {
+   "id": "A3",
+   "set": "race",
+   "phrase": "Shoot it from inside the car, through the windscreen.",
+   "expected": {
+    "cant": [
+     "camera_inside"
+    ]
+   },
+   "expectReplyMentions": [
+    "inside"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "suggest"
+   ]
+  },
+  {
+   "id": "A4",
+   "set": "race",
+   "phrase": "Drone shot rising above the track.",
+   "expected": {
+    "height": "high",
+    "cant": [
+     "altitude"
+    ]
+   },
+   "expectReplyMentions": [
+    "2.6 m"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "move",
+    "size",
+    "suggest"
+   ]
+  },
+  {
+   "id": "A5",
+   "set": "race",
+   "phrase": "Dutch angle.",
+   "expected": {
+    "cant": [
+     "roll"
+    ]
+   },
+   "expectReplyMentions": [
+    "horizon"
+   ],
+   "expectShoot": "none",
+   "forbid": [
+    "tilt_deg"
+   ],
+   "allow": [
+    "suggest"
+   ]
+  },
+  {
+   "id": "A6",
+   "set": "race",
+   "phrase": "Match the framing of this reference photo.",
+   "expected": {
+    "cant": [
+     "photo"
+    ]
+   },
+   "expectReplyMentions": [
+    "photos"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "A7",
+   "set": "race",
+   "phrase": "Low angle, 24 mm, from behind her.",
+   "expected": {
+    "height": "low",
+    "lens_mm": 24,
+    "side": "back"
+   },
+   "expectReplyMentions": [
+    "24 mm",
+    "behind"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "A8",
+   "set": "race",
+   "phrase": "Switch to the wide camera.",
+   "expected": {
+    "camera_id": "c1"
+   },
+   "expectReplyMentions": [
+    "Circuit establishing"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "A9",
+   "set": "race",
+   "phrase": "Close-up on the car's front wheel.",
+   "expected": {
+    "cant": [
+     "aim_thing"
+    ]
+   },
+   "expectReplyMentions": [
+    "can't aim"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "size",
+    "suggest"
+   ]
+  },
+  {
+   "id": "A10",
+   "set": "race",
+   "phrase": "Put her on the left third, with the car filling the right.",
+   "expected": {
+    "frame_x": "left_third"
+   },
+   "expectReplyMentions": [
+    "left third"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "near",
+    "cant",
+    "side"
+   ]
+  },
+  {
+   "id": "A11",
+   "set": "race",
+   "phrase": "Wide establishing shot of the whole circuit.",
+   "expected": {
+    "camera_id": "c1"
+   },
+   "expectReplyMentions": [
+    "Circuit establishing"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "size"
+   ]
+  },
+  {
+   "id": "A12",
+   "set": "race",
+   "phrase": "She leans on the car.",
+   "expected": {
+    "pose": "lean",
+    "near": {
+     "thing": "t1"
+    },
+    "direction": {
+     "includes": [
+      "lean"
+     ]
+    }
+   },
+   "expectReplyMentions": [
+    "Leaning",
+    "car"
+   ],
+   "expectShoot": "none",
+   "note": "Pronoun rule: Marco stays on the chip."
+  },
+  {
+   "id": "A13",
+   "set": "race",
+   "phrase": "She sits on the bonnet.",
+   "expected": {
+    "pose": "sit",
+    "cant": [
+     "raise_figure"
+    ],
+    "direction": {
+     "excludes": [
+      "bonnet"
+     ]
+    }
+   },
+   "expectReplyMentions": [
+    "Sitting",
+    "on top of"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "near"
+   ]
+  },
+  {
+   "id": "A14",
+   "set": "race",
+   "phrase": "She walks toward the camera.",
+   "expected": {
+    "pose": "walk",
+    "facing": "camera"
+   },
+   "expectReplyMentions": [
+    "Walking"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "happens"
+   ]
+  },
+  {
+   "id": "A15",
+   "set": "race",
+   "phrase": "Eva and Marco talk face to face.",
+   "expected": {
+    "cant": [
+     "two_people"
+    ]
+   },
+   "expectReplyMentions": [
+    "One person per shot"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "who",
+    "happens"
+   ]
+  },
+  {
+   "id": "A16",
+   "set": "race",
+   "phrase": "She hands him the helmet.",
+   "expected": {
+    "cant": [
+     "two_people"
+    ]
+   },
+   "expectReplyMentions": [
+    "One person per shot"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "happens"
+   ]
+  },
+  {
+   "id": "A17",
+   "set": "race",
+   "phrase": "She looks at the car.",
+   "expected": {
+    "gaze": {
+     "thing": "t1"
+    }
+   },
+   "expectReplyMentions": [
+    "Eye-line",
+    "car"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "A18",
+   "set": "race",
+   "phrase": "Put her on the starting-grid mark.",
+   "expected": {
+    "mark": "m1"
+   },
+   "expectReplyMentions": [
+    "Starting grid"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "now": {
+     "mark": "m2"
+    }
+   }
+  },
+  {
+   "id": "A19",
+   "set": "race",
+   "phrase": "Turn her to face the grandstand.",
+   "expected": {
+    "cant": [
+     "thing_unknown"
+    ]
+   },
+   "expectReplyMentions": [
+    "by name"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "A20",
+   "set": "race",
+   "phrase": "Add rain.",
+   "expected": {
+    "cant": [
+     "weather"
+    ]
+   },
+   "expectReplyMentions": [
+    "weather"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "rig"
+   ]
+  },
+  {
+   "id": "A21",
+   "set": "race",
+   "phrase": "Make it night.",
+   "expected": {
+    "rig": [
+     "time:night"
+    ]
+   },
+   "expectReplyMentions": [
+    "Night",
+    "21:00"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "A22",
+   "set": "race",
+   "phrase": "Put a red Ferrari by the pit wall.",
+   "expected": {
+    "set_change": {
+     "includes": [
+      "red"
+     ]
+    },
+    "set_change_gloss": {
+     "excludes": [
+      "Ferrari"
+     ]
+    },
+    "cant": [
+     "brand"
+    ]
+   },
+   "expectReplyMentions": [
+    "look-alike",
+    "4 changes left"
+   ],
+   "expectShoot": "none",
+   "expectCards": [
+    "astra"
+   ]
+  },
+  {
+   "id": "A23",
+   "set": "race",
+   "phrase": "Remove the barriers.",
+   "expected": {
+    "set_change": {
+     "includes": [
+      "barrier"
+     ]
+    }
+   },
+   "expectReplyMentions": [
+    "4 changes left"
+   ],
+   "expectShoot": "none",
+   "expectCards": [
+    "astra"
+   ]
+  },
+  {
+   "id": "A24",
+   "set": "race",
+   "phrase": "Make the crowd in the stands bigger.",
+   "expected": {
+    "cant": [
+     "extras"
+    ]
+   },
+   "expectReplyMentions": [
+    "crowds"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "A25",
+   "set": "race",
+   "phrase": "Change the track to a city street.",
+   "expected": {
+    "cant": [
+     "rebuild"
+    ]
+   },
+   "expectReplyMentions": [
+    "new set"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "A26",
+   "set": "race",
+   "phrase": "Make the walls brick red.",
+   "expected": {
+    "set_change": {
+     "includes": [
+      "brick"
+     ]
+    }
+   },
+   "expectReplyMentions": [
+    "4 changes left"
+   ],
+   "expectShoot": "none",
+   "expectCards": [
+    "astra"
+   ]
+  },
+  {
+   "id": "A27",
+   "set": "race",
+   "phrase": "She wears the racing suit from my photo.",
+   "expected": {
+    "direction": {
+     "includes": [
+      "racing suit"
+     ]
+    },
+    "wardrobe": true,
+    "cant": [
+     "photo"
+    ]
+   },
+   "expectReplyMentions": [
+    "clothes",
+    "photos"
+   ],
+   "expectShoot": "none",
+   "note": "Marco has a saved outfit photo, so the outfit-off note shows."
+  },
+  {
+   "id": "A28",
+   "set": "race",
+   "phrase": "She's holding a coffee cup.",
+   "expected": {
+    "direction": {
+     "includes": [
+      "coffee"
+     ]
+    }
+   },
+   "expectReplyMentions": [
+    "What happens"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "A29",
+   "set": "race",
+   "phrase": "Put her helmet on the car's roof.",
+   "expected": {
+    "direction": {
+     "includes": [
+      "helmet"
+     ]
+    }
+   },
+   "expectReplyMentions": [
+    "What happens"
+   ],
+   "expectShoot": "none",
+   "note": "A small prop rides in what happens; a set change here is the paid mistake."
+  },
+  {
+   "id": "A30",
+   "set": "race",
+   "phrase": "Then she gets in and drives off.",
+   "expected": {
+    "cant": {
+     "anyOf": [
+      "film_beats",
+      "mover"
+     ]
+    }
+   },
+   "expectReplyMentions": [
+    "Film"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "A31",
+   "set": "race",
+   "phrase": "Cut to a close-up.",
+   "expected": {
+    "size": "close_up"
+   },
+   "expectReplyMentions": [
+    "Close-up"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "cant"
+   ]
+  },
+  {
+   "id": "A32",
+   "set": "race",
+   "phrase": "In slow motion.",
+   "expected": {
+    "textures": [
+     "slow-motion"
+    ]
+   },
+   "expectReplyMentions": [
+    "Slow motion",
+    "Take"
+   ],
+   "expectShoot": "none",
+   "expectCards": [
+    "take"
+   ]
+  },
+  {
+   "id": "A33",
+   "set": "race",
+   "phrase": "Make it a 10-second shot.",
+   "expected": {
+    "cant": [
+     "clip_length"
+    ]
+   },
+   "expectReplyMentions": [
+    "8 s"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "engine"
+   ]
+  },
+  {
+   "id": "A34",
+   "set": "race",
+   "phrase": "The car drives past behind her.",
+   "expected": {
+    "cant": [
+     "mover"
+    ]
+   },
+   "expectReplyMentions": [
+    "Drive it here"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "A35",
+   "set": "race",
+   "phrase": "Make it feel like a Michael Mann film.",
+   "expected": {
+    "suggest": {
+     "minItems": 1
+    },
+    "direction": {
+     "excludes": [
+      "Mann"
+     ]
+    }
+   },
+   "expectReplyMentions": [
+    "Do it"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "idea"
+   ]
+  },
+  {
+   "id": "A36",
+   "set": "race",
+   "phrase": "Anamorphic.",
+   "expected": {
+    "rig": [
+     "character:anamorphic"
+    ]
+   },
+   "expectReplyMentions": [
+    "Anamorphic"
+   ],
+   "expectShoot": "none",
+   "forbid": [
+    "lens_mm"
+   ]
+  },
+  {
+   "id": "A37",
+   "set": "race",
+   "phrase": "35mm film grain.",
+   "expected": {
+    "rig": [
+     "stock:film35"
+    ]
+   },
+   "expectReplyMentions": [
+    "35 mm film"
+   ],
+   "expectShoot": "none",
+   "forbid": [
+    "lens_mm"
+   ]
+  },
+  {
+   "id": "A38",
+   "set": "race",
+   "phrase": "Black and white.",
+   "expected": {
+    "rig": [
+     "palette:silver-print"
+    ]
+   },
+   "expectReplyMentions": [
+    "Silver Print"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "A39",
+   "set": "race",
+   "phrase": "A dog sitting at her feet.",
+   "expected": {
+    "direction": {
+     "includes": [
+      "dog"
+     ]
+    }
+   },
+   "expectReplyMentions": [
+    "What happens"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "cant"
+   ]
+  },
+  {
+   "id": "A40",
+   "set": "race",
+   "phrase": "Golden hour.",
+   "expected": {
+    "rig": [
+     "time:golden"
+    ]
+   },
+   "expectReplyMentions": [
+    "Golden hour",
+    "17:30"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "A41",
+   "set": "race",
+   "phrase": "Neon rim light from behind her.",
+   "expected": {
+    "rig": [
+     "light:contre-jour"
+    ]
+   },
+   "expectReplyMentions": [
+    "Contre-jour"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "cant"
+   ],
+   "note": "A paid lamp card for a rim light is the failure this cut exists to stop."
+  },
+  {
+   "id": "A42",
+   "set": "race",
+   "phrase": "Use this photo as the location.",
+   "expected": {
+    "cant": [
+     "photo"
+    ]
+   },
+   "expectReplyMentions": [
+    "photo"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "cant"
+   ]
+  },
+  {
+   "id": "A43",
+   "set": "race",
+   "phrase": "Make the car look like this photo.",
+   "expected": {
+    "cant": [
+     "photo"
+    ]
+   },
+   "expectReplyMentions": [
+    "card"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "A44",
+   "set": "showroom",
+   "phrase": "No, the other car.",
+   "expected": {
+    "near": {
+     "thing": "t2"
+    }
+   },
+   "expectReplyMentions": [
+    "Car 2"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "turns": [
+     {
+      "said": "she leans on the red car",
+      "did": "near t1 beside; pose lean; happens set"
+     }
+    ]
+   }
+  },
+  {
+   "id": "A45",
+   "set": "race",
+   "phrase": "Move her two metres to the left.",
+   "expected": {
+    "nudge": {
+     "right": -2
+    }
+   },
+   "expectReplyMentions": [
+    "camera moved with"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "A46",
+   "set": "race",
+   "phrase": "Undo that.",
+   "expected": {
+    "undo": true
+   },
+   "expectReplyMentions": [
+    "Undone"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "turns": [
+     {
+      "said": "make it night",
+      "did": "rig time:night"
+     }
+    ],
+    "now": {
+     "rig": {
+      "format": "wide",
+      "time": 21
+     }
+    }
+   }
+  },
+  {
+   "id": "A47",
+   "set": "race",
+   "phrase": "Make it night and shoot her from a low angle.",
+   "expected": {
+    "rig": [
+     "time:night"
+    ],
+    "height": "low"
+   },
+   "expectReplyMentions": [
+    "Night",
+    "Camera low"
+   ],
+   "expectShoot": "none",
+   "note": "'shoot her from' is a camera word: no shoot."
+  },
+  {
+   "id": "A48",
+   "set": "race",
+   "phrase": "Now she's smiling.",
+   "expected": {
+    "direction": {
+     "includes": [
+      "lean",
+      "smil"
+     ]
+    }
+   },
+   "expectReplyMentions": [
+    "What happens"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "now": {
+     "direction": "She leans on the car."
+    },
+    "turns": [
+     {
+      "said": "she leans on the car",
+      "did": "near t1 beside; pose lean; happens set"
+     }
+    ]
+   }
+  },
+  {
+   "id": "A49",
+   "set": "race",
+   "phrase": "Eva by the car, from behind.",
+   "expected": {
+    "who": "p1",
+    "near": {
+     "thing": "t1"
+    },
+    "side": "back"
+   },
+   "expectReplyMentions": [
+    "Eva",
+    "behind"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "A50",
+   "set": "race",
+   "phrase": "She stands beside the car after the race, exhausted but proud, her helmet tucked under one arm and her racing gloves half pulled off, hair stuck to her forehead, a streak of oil across one cheek, laughing at something one of the mechanics just shouted from the pit lane, while she shakes out her free hand and keeps half an eye on the scoreboard as if she still can't quite believe the result she just pulled off.",
+   "expected": {
+    "direction": {
+     "includes": [
+      "helmet",
+      "gloves"
+     ]
+    }
+   },
+   "expectReplyMentions": [
+    "300 characters"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "near",
+    "pose",
+    "wardrobe",
+    "cant"
+   ]
+  },
+  {
+   "id": "A51",
+   "set": "race",
+   "phrase": "What would look good here?",
+   "expected": {
+    "suggest": {
+     "minItems": 1
+    }
+   },
+   "expectReplyMentions": [
+    "Do it"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "idea"
+   ],
+   "context": {
+    "now": {
+     "mode": "talk"
+    }
+   }
+  },
+  {
+   "id": "A52",
+   "set": "race",
+   "phrase": "Wide camera, low angle, 85 mm.",
+   "expected": {
+    "camera_id": "c1",
+    "height": "low",
+    "lens_mm": 85
+   },
+   "expectReplyMentions": [
+    "85 mm",
+    "Camera low"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "A53",
+   "set": "race",
+   "phrase": "Remove the flags.",
+   "expected": {
+    "set_change": {
+     "includes": [
+      "flag"
+     ]
+    }
+   },
+   "expectReplyMentions": [
+    "4 changes left"
+   ],
+   "expectShoot": "none",
+   "expectCards": [
+    "astra"
+   ]
+  },
+  {
+   "id": "X54",
+   "set": "race",
+   "phrase": "A bit closer.",
+   "expected": {
+    "steps": [
+     "closer"
+    ]
+   },
+   "expectReplyMentions": [
+    "Closer"
+   ],
+   "expectShoot": "still",
+   "context": {
+    "now": {
+     "mode": "auto"
+    }
+   },
+   "note": "Shoot without asking: the frame changed and nothing blocks, so a still fires once, with one press id."
+  },
+  {
+   "id": "X55",
+   "set": "race",
+   "phrase": "No, lower.",
+   "expected": {
+    "steps": [
+     "lower"
+    ]
+   },
+   "expectReplyMentions": [
+    "0.3 m"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "now": {
+     "camera": {
+      "id": null,
+      "mm": 50,
+      "heightM": 0.7,
+      "distanceM": 2.4,
+      "side": "front_left",
+      "tiltDeg": 4
+     }
+    },
+    "turns": [
+     {
+      "said": "low angle",
+      "did": "camera low 0.7 m"
+     }
+    ]
+   }
+  },
+  {
+   "id": "X56",
+   "set": "race",
+   "phrase": "A race track with a row of flags on the pit wall, Eva by the car, golden hour.",
+   "expected": {
+    "who": "p1",
+    "near": {
+     "thing": "t1"
+    },
+    "rig": [
+     "time:golden"
+    ]
+   },
+   "expectReplyMentions": [
+    "built from these words"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "set_change",
+    "cant",
+    "happens"
+   ],
+   "context": {
+    "origin": "build"
+   },
+   "expectCards": [],
+   "note": "The Sets home's first message on the set it just built: no Astra card."
+  },
+  {
+   "id": "X57",
+   "set": "race",
+   "phrase": "Too dark, brighter please.",
+   "expected": {
+    "ev": {
+     "min": 1,
+     "max": 6
+    }
+   },
+   "expectReplyMentions": [
+    "Exposure"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "X58",
+   "set": "race",
+   "phrase": "Eva junto al coche, hora dorada, en blanco y negro.",
+   "expected": {
+    "who": "p1",
+    "near": {
+     "thing": "t1"
+    },
+    "rig": [
+     "time:golden",
+     "palette:silver-print"
+    ]
+   },
+   "expectReplyMentions": [
+    "Eva",
+    "Hora dorada",
+    "Copia de Plata"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "locale": "es"
+   }
+  },
+  {
+   "id": "X59",
+   "set": "race",
+   "phrase": "Que se parezca a Zendaya.",
+   "expected": {
+    "cant": [
+     "likeness"
+    ],
+    "direction": {
+     "excludes": [
+      "Zendaya"
+     ]
+    }
+   },
+   "expectReplyMentions": [
+    "alguien real"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "locale": "es"
+   }
+  },
+  {
+   "id": "X60",
+   "set": "race",
+   "phrase": "Actually, keep Marco.",
+   "expected": {
+    "who": "p2"
+   },
+   "expectReplyMentions": [
+    "Marco"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "now": {
+     "who": "p1"
+    },
+    "turns": [
+     {
+      "said": "Eva by the car",
+      "did": "who p1; near t1 beside"
+     }
+    ]
+   }
+  },
+  {
+   "id": "X61",
+   "set": "race",
+   "phrase": "Go back to the grid.",
+   "expected": {
+    "mark": "m1"
+   },
+   "expectReplyMentions": [
+    "Starting grid"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "now": {
+     "mark": "m2"
+    },
+    "turns": [
+     {
+      "said": "put him on the apron",
+      "did": "mark m2"
+     }
+    ]
+   },
+   "note": "'go' here is a place, not a shoot."
+  },
+  {
+   "id": "X62",
+   "set": "showroom",
+   "phrase": "What lens is this?",
+   "expected": {
+    "ask": [
+     "lens"
+    ]
+   },
+   "expectReplyMentions": [
+    "35 mm"
+   ],
+   "expectShoot": "none",
+   "forbid": [
+    "lens_mm",
+    "steps"
+   ]
+  },
+  {
+   "id": "X63",
+   "set": "garage",
+   "phrase": "How many Astra changes do I have left?",
+   "expected": {
+    "ask": [
+     "edits_left"
+    ]
+   },
+   "expectReplyMentions": [
+    "no monthly cap"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "X64",
+   "set": "garage",
+   "phrase": "What can you do?",
+   "expected": {
+    "ask": [
+     "help"
+    ]
+   },
+   "expectReplyMentions": [
+    "ask before"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "X65",
+   "set": "race",
+   "phrase": "How many credits do I have left?",
+   "expected": {
+    "ask": [
+     "elsewhere"
+    ]
+   },
+   "expectReplyMentions": [
+    "Settings"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "X66",
+   "set": "showroom",
+   "phrase": "Which cars are on this set?",
+   "expected": {
+    "ask": [
+     "things"
+    ]
+   },
+   "expectReplyMentions": [
+    "Car 1",
+    "Car 2"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "X67",
+   "set": "race",
+   "phrase": "¿Cuánto cuesta esta foto?",
+   "expected": {
+    "ask": [
+     "cost"
+    ]
+   },
+   "expectReplyMentions": [
+    "crédito"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "locale": "es"
+   }
+  },
+  {
+   "id": "X68",
+   "set": "race",
+   "phrase": "What lens would make the car look more heroic?",
+   "expected": {
+    "suggest": {
+     "minItems": 1
+    }
+   },
+   "expectReplyMentions": [
+    "Do it"
+   ],
+   "expectShoot": "none",
+   "forbid": [
+    "lens_mm"
+   ],
+   "allow": [
+    "idea"
+   ],
+   "context": {
+    "now": {
+     "mode": "talk"
+    }
+   }
+  },
+  {
+   "id": "X69",
+   "set": "race",
+   "phrase": "Make it night.",
+   "expected": {
+    "rig": [
+     "time:night"
+    ]
+   },
+   "expectReplyMentions": [
+    "Here's what I'd do"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "now": {
+     "mode": "talk"
+    }
+   },
+   "note": "Just talking: read, shown, nothing moves."
+  },
+  {
+   "id": "X70",
+   "set": "race",
+   "phrase": "¿Qué quedaría bien aquí?",
+   "expected": {
+    "suggest": {
+     "minItems": 1
+    }
+   },
+   "expectReplyMentions": [
+    "Hazlo"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "idea"
+   ],
+   "context": {
+    "locale": "es",
+    "now": {
+     "mode": "talk"
+    }
+   }
+  },
+  {
+   "id": "X71",
+   "set": "showroom",
+   "phrase": "Shoot her from a low angle.",
+   "expected": {
+    "height": "low"
+   },
+   "expectReplyMentions": [
+    "Camera low"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "X72",
+   "set": "race",
+   "phrase": "Take it now.",
+   "expected": {
+    "shoot": true
+   },
+   "expectReplyMentions": [
+    "Shooting"
+   ],
+   "expectShoot": "still"
+  },
+  {
+   "id": "X73",
+   "set": "garage",
+   "phrase": "Encuádrala desde abajo.",
+   "expected": {
+    "height": "low"
+   },
+   "expectReplyMentions": [
+    "Cámara baja"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "locale": "es"
+   }
+  },
+  {
+   "id": "X74",
+   "set": "race",
+   "phrase": "Haz la foto ya.",
+   "expected": {
+    "shoot": true
+   },
+   "expectReplyMentions": [
+    "Fotografiando"
+   ],
+   "expectShoot": "still",
+   "context": {
+    "locale": "es"
+   }
+  },
+  {
+   "id": "X75",
+   "set": "showroom",
+   "phrase": "Enquadra ela de baixo.",
+   "expected": {
+    "height": "low"
+   },
+   "expectReplyMentions": [
+    "Câmera baixa"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "locale": "pt"
+   }
+  },
+  {
+   "id": "X76",
+   "set": "race",
+   "phrase": "Pode tirar a foto agora.",
+   "expected": {
+    "shoot": true
+   },
+   "expectReplyMentions": [
+    "Fotografando"
+   ],
+   "expectShoot": "still",
+   "context": {
+    "locale": "pt"
+   }
+  },
+  {
+   "id": "X77",
+   "set": "garage",
+   "phrase": "Riprendila dal basso.",
+   "expected": {
+    "height": "low"
+   },
+   "expectReplyMentions": [
+    "Camera bassa"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "locale": "it"
+   }
+  },
+  {
+   "id": "X78",
+   "set": "race",
+   "phrase": "Scatta adesso.",
+   "expected": {
+    "shoot": true
+   },
+   "expectReplyMentions": [
+    "Scatto"
+   ],
+   "expectShoot": "still",
+   "context": {
+    "locale": "it"
+   }
+  },
+  {
+   "id": "X79",
+   "set": "race",
+   "phrase": "Darker sky.",
+   "expected": {
+    "anyOf": [
+     {
+      "rig": {
+       "anyOf": [
+        "time:night",
+        "time:dawn",
+        "light:moonlight",
+        "palette:harbour-4am",
+        "palette:ash-winter"
+       ]
+      }
+     },
+     {
+      "ev": {
+       "max": -1
+      }
+     },
+     {
+      "hour": {
+       "min": 19
+      }
+     },
+     {
+      "cant": [
+       "weather"
+      ]
+     }
+    ]
+   },
+   "expectReplyMentions": [],
+   "expectShoot": "none",
+   "allow": [
+    "cant",
+    "rig",
+    "ev",
+    "hour"
+   ],
+   "note": "Free: never a paid set change."
+  },
+  {
+   "id": "X80",
+   "set": "race",
+   "phrase": "Add a street lamp by the pit wall.",
+   "expected": {
+    "set_change": {
+     "includes": [
+      "lamp"
+     ]
+    }
+   },
+   "expectReplyMentions": [
+    "4 changes left"
+   ],
+   "expectShoot": "none",
+   "expectCards": [
+    "astra"
+   ]
+  },
+  {
+   "id": "X81",
+   "set": "race",
+   "phrase": "Pon el cielo más oscuro.",
+   "expected": {
+    "anyOf": [
+     {
+      "rig": {
+       "anyOf": [
+        "time:night",
+        "time:dawn",
+        "light:moonlight",
+        "palette:harbour-4am",
+        "palette:ash-winter"
+       ]
+      }
+     },
+     {
+      "ev": {
+       "max": -1
+      }
+     },
+     {
+      "hour": {
+       "min": 19
+      }
+     },
+     {
+      "cant": [
+       "weather"
+      ]
+     }
+    ]
+   },
+   "expectReplyMentions": [],
+   "expectShoot": "none",
+   "allow": [
+    "cant",
+    "rig",
+    "ev",
+    "hour"
+   ],
+   "context": {
+    "locale": "es"
+   }
+  },
+  {
+   "id": "X82",
+   "set": "race",
+   "phrase": "Añade una farola junto al muro de boxes.",
+   "expected": {
+    "set_change": {
+     "includes": [
+      "farola"
+     ]
+    }
+   },
+   "expectReplyMentions": [
+    "4 cambios"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "locale": "es"
+   },
+   "expectCards": [
+    "astra"
+   ]
+  },
+  {
+   "id": "X83",
+   "set": "showroom",
+   "phrase": "Deixa a luz mais quente.",
+   "expected": {
+    "anyOf": [
+     {
+      "rig": {
+       "anyOf": [
+        "palette:amber-hour",
+        "palette:golden-reel",
+        "palette:rust-cream",
+        "palette:peach-dusk",
+        "light:golden-hour",
+        "time:golden"
+       ]
+      }
+     },
+     {
+      "hour": {
+       "min": 16,
+       "max": 19
+      }
+     }
+    ]
+   },
+   "expectReplyMentions": [],
+   "expectShoot": "none",
+   "allow": [
+    "rig",
+    "hour"
+   ],
+   "context": {
+    "locale": "pt"
+   }
+  },
+  {
+   "id": "X84",
+   "set": "showroom",
+   "phrase": "Coloca uma luminária de pé ao lado do carro azul.",
+   "expected": {
+    "set_change": {
+     "includes": [
+      "luminária"
+     ]
+    }
+   },
+   "expectReplyMentions": [
+    "10 mudanças"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "locale": "pt"
+   },
+   "expectCards": [
+    "astra"
+   ]
+  },
+  {
+   "id": "X85",
+   "set": "garage",
+   "phrase": "Luce più calda.",
+   "expected": {
+    "anyOf": [
+     {
+      "rig": {
+       "anyOf": [
+        "palette:amber-hour",
+        "palette:golden-reel",
+        "palette:rust-cream",
+        "palette:peach-dusk",
+        "light:golden-hour",
+        "time:golden"
+       ]
+      }
+     },
+     {
+      "hour": {
+       "min": 16,
+       "max": 19
+      }
+     }
+    ]
+   },
+   "expectReplyMentions": [],
+   "expectShoot": "none",
+   "allow": [
+    "rig",
+    "hour"
+   ],
+   "context": {
+    "locale": "it"
+   }
+  },
+  {
+   "id": "X86",
+   "set": "garage",
+   "phrase": "Aggiungi un lampione accanto alla porta.",
+   "expected": {
+    "set_change": {
+     "includes": [
+      "lampione"
+     ]
+    }
+   },
+   "expectReplyMentions": [
+    "limite mensile"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "locale": "it"
+   },
+   "expectCards": [
+    "astra"
+   ]
+  },
+  {
+   "id": "X87",
+   "set": "garage",
+   "phrase": "Put her by the red car.",
+   "expected": {
+    "near": {
+     "thing": {
+      "candidates": [
+       "t1",
+       "t2"
+      ]
+     }
+    }
+   },
+   "expectReplyMentions": [
+    "Which one"
+   ],
+   "expectShoot": "none",
+   "expectCards": [
+    "which"
+   ]
+  },
+  {
+   "id": "X88",
+   "set": "garage",
+   "phrase": "Eva leans on the car to her left.",
+   "expected": {
+    "near": {
+     "thing": "t1"
+    },
+    "pose": "lean"
+   },
+   "expectReplyMentions": [
+    "Car 1"
+   ],
+   "expectShoot": "none",
+   "note": "Eva is already cast: who p1 is the same person, not a swap."
+  },
+  {
+   "id": "X89",
+   "set": "garage",
+   "phrase": "No, the other one.",
+   "expected": {
+    "near": {
+     "thing": "t2"
+    }
+   },
+   "expectReplyMentions": [
+    "Car 2"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "turns": [
+     {
+      "said": "put her by the car to her left",
+      "did": "near t1 beside"
+     }
+    ]
+   }
+  },
+  {
+   "id": "X90",
+   "set": "garage",
+   "phrase": "She looks at the red car.",
+   "expected": {
+    "gaze": {
+     "thing": {
+      "candidates": [
+       "t1",
+       "t2"
+      ]
+     }
+    }
+   },
+   "expectReplyMentions": [
+    "Which one"
+   ],
+   "expectShoot": "none",
+   "expectCards": [
+    "which"
+   ]
+  },
+  {
+   "id": "X91",
+   "set": "garage",
+   "phrase": "Ponla junto al coche rojo.",
+   "expected": {
+    "near": {
+     "thing": {
+      "candidates": [
+       "t1",
+       "t2"
+      ]
+     }
+    }
+   },
+   "expectReplyMentions": [
+    "¿Cuál"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "locale": "es"
+   },
+   "expectCards": [
+    "which"
+   ]
+  },
+  {
+   "id": "X92",
+   "set": "showroom",
+   "phrase": "Ela olha para o carro azul.",
+   "expected": {
+    "gaze": {
+     "thing": "t2"
+    }
+   },
+   "expectReplyMentions": [
+    "Carro 2"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "locale": "pt"
+   }
+  },
+  {
+   "id": "X93",
+   "set": "showroom",
+   "phrase": "Put her on the left third.",
+   "expected": {
+    "frame_x": "left_third"
+   },
+   "expectReplyMentions": [
+    "left third"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "X94",
+   "set": "garage",
+   "phrase": "Mettila sul terzo destro.",
+   "expected": {
+    "frame_x": "right_third"
+   },
+   "expectReplyMentions": [
+    "terzo destro"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "locale": "it"
+   }
+  },
+  {
+   "id": "X95",
+   "set": "race",
+   "phrase": "Put her in the bottom third of the frame.",
+   "expected": {
+    "cant": [
+     "thirds"
+    ]
+   },
+   "expectReplyMentions": [
+    "left third"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "frame_x"
+   ]
+  },
+  {
+   "id": "X96",
+   "set": "race",
+   "phrase": "Lei dice «andiamo» e parte la musica.",
+   "expected": {
+    "cant": [
+     "sound"
+    ]
+   },
+   "expectReplyMentions": [
+    "mute"
+   ],
+   "expectShoot": "none",
+   "allow": [
+    "happens"
+   ],
+   "context": {
+    "locale": "it",
+    "now": {
+     "who": "p1"
+    }
+   }
+  },
+  {
+   "id": "X97",
+   "set": "race",
+   "phrase": "Eva, dolly in slowly.",
+   "expected": {
+    "who": "p1",
+    "move": "push-in"
+   },
+   "expectReplyMentions": [
+    "Take from Still 1"
+   ],
+   "expectShoot": "none",
+   "expectCards": [
+    "take"
+   ],
+   "note": "Eva's own 16:9 still is Still 1; Still 2 (Marco) would be refused by Cut 1."
+  },
+  {
+   "id": "X98",
+   "set": "race",
+   "phrase": "Pon a Lena en el plano.",
+   "expected": {
+    "who": "p3"
+   },
+   "expectReplyMentions": [
+    "no tiene foto"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "locale": "es"
+   }
+  },
+  {
+   "id": "X99",
+   "set": "race",
+   "phrase": "A bit closer.",
+   "expected": {
+    "steps": [
+     "closer"
+    ]
+   },
+   "expectReplyMentions": [
+    "Take"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "now": {
+     "mode": "auto",
+     "takeStart": {
+      "still": 2,
+      "armedBy": "chat"
+     }
+    }
+   },
+   "expectCards": [
+    "take"
+   ],
+   "note": "Critic item 1: a chat-armed take never renders from a message, even in Shoot without asking."
+  },
+  {
+   "id": "X100",
+   "set": "race",
+   "phrase": "Deixa de noite e faz chover.",
+   "expected": {
+    "rig": [
+     "time:night"
+    ],
+    "cant": [
+     "weather"
+    ]
+   },
+   "expectReplyMentions": [
+    "clima"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "locale": "pt",
+    "now": {
+     "mode": "auto"
+    }
+   },
+   "note": "Shoot without asking, but a not-yet item blocks the automatic shot."
+  }
+ ]
+}
