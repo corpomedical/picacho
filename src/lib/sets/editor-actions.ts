@@ -459,7 +459,8 @@ export async function rebuildThingFromPhotos(
  * description every later still reads. Without a seal that opens (a change
  * read back after a dropped connection, a page from before this deploy, a
  * rebuild — which never changes the words), it is exactly saveSetEdit: the
- * words stay the server's, and the page says so. Never calls Astra and
+ * words stay the server's, and the page says so when they differ from the
+ * set's before (`textRestored`). Never calls Astra and
  * never touches the month's count: the change still counts, and the page
  * says that too. The saved copy comes back, so the page draws what the
  * server holds.
@@ -481,7 +482,11 @@ export async function undoAstraEdit(
   const held = holdEditedText(n.spec, sealed ? [heldTextOf(sealed), ...stored] : stored);
   const saved = await writeEdited(setId, access.userId, held);
   if (saved.error !== null) return { error: saved.error };
-  return { error: null, spec: held, textRestored: sealed !== null };
+  // Whether the set's words are the ones it had before, read off what was
+  // saved: through the seal, or because Astra never changed them (a plain
+  // recolour) — so the page never says the description still mentions a
+  // change it never had.
+  return { error: null, spec: held, textRestored: held.title === n.spec.title && held.description === n.spec.description };
 }
 
 /**

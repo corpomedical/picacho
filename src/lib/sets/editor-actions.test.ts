@@ -551,6 +551,15 @@ describe("undoing an Astra change", () => {
     expect(sent).toHaveLength(1);
   });
 
+  it("says the words are back when Astra never changed them, seal or not", async () => {
+    // The default answer recolours a barrier and keeps the set's words.
+    const out = await editSetWithAstra(SET, "make the first barrier brick red");
+    if (out.error !== null) throw new Error(out.error);
+    edited = out.spec;
+    expect(await undoAstraEdit(SET, SPEC, null)).toMatchObject({ error: null, textRestored: true });
+    expect(lastWrite().description).toBe(SPEC.description);
+  });
+
   it("keeps to the editor's pace, and to the person's own set", async () => {
     limited["set-edit"] = true;
     expect(await undoAstraEdit(SET, SPEC, null)).toEqual({ error: SET_SAVE_FAILED });
