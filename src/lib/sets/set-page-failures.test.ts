@@ -139,9 +139,13 @@ describe("the set page", () => {
   // spinner still up. "Try again" is said only when nothing reached the
   // server.
   it("reads back an Astra change that threw, instead of saying try again", () => {
-    const edit = between(view, "async function editSet(message: string) {", "\n  }\n");
+    // The person's own words, and what the chat read them to mean with where
+    // things stand only when there are any (Helios Cut 2, step 11a).
+    const edit = between(view, "async function editSet(\n", "\n  }\n");
     expect(edit).toContain("const pressId = newPressId();");
-    expect(edit).toMatch(/try \{\s*res = await editSetWithAstra\(setId, message, pressId\);\s*\} catch \(err\) \{[\s\S]*?if \(leftBehind\(err\)\) return;\s*\}/);
+    expect(edit).toMatch(
+      /try \{[\s\S]*?res = more \? await editSetWithAstra\(setId, change\.said, pressId, more\) : await editSetWithAstra\(setId, change\.said, pressId\);\s*\} catch \(err\) \{[\s\S]*?if \(leftBehind\(err\)\) return none;\s*\}/,
+    );
     const follow = edit.indexOf(
       "followed = await followAstraEdit(() => readAstraEdit(setId, pressId).catch((thrown: unknown) => ({ thrown })), { before, stop: leftBehind });",
     );
@@ -152,7 +156,7 @@ describe("the set page", () => {
     expect(edit).toMatch(/\} finally \{\s*(?:busyRef\.current\.editing = false;\s*)?setEditingSet\(false\);\s*\}/);
     expect(edit).toContain('followed.kind === "none") setError(t.generate.submitFailed)');
     expect(edit.match(/t\.generate\.submitFailed/g)).toHaveLength(1);
-    expect(edit).toContain('if (followed.kind === "saved") apply(followed.spec, followed.changed);');
+    expect(edit).toContain('if (followed.kind === "saved") return apply(followed.spec, followed.changed);');
     expect(edit).not.toContain("if (!leftBehind(err)) setError(t.generate.submitFailed);");
   });
 

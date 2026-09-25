@@ -63,13 +63,15 @@ describe("what the set page spends", () => {
     // While a take is out it says what it is doing, as Shoot does (review, 2026-09-25).
     expect(bar).toContain("{takeStart && !shooting ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel}");
     expect(bar).toContain("disabled={!canShootNow}");
-    // The palette takes the take too, rather than shooting a still over it.
-    expect(view).toContain("shoot: () => void (takeStart ? take() : shoot()),");
+    // The palette takes the person's take too, rather than shooting a still
+    // over it — and never the chat's (check of the Cut 2 spec, item 1): its
+    // label and its press are one answer (pressFor).
+    expect(view).toContain("shoot: () => void pressShoot(),");
   });
 
   it("a word with nothing to frame keeps the direction the card shows", () => {
     const send = bodyOf("  async function send(");
-    expect(send).toContain("take(words.direction || direction) : shoot(words.direction || direction)");
+    expect(send).toContain("await pressShoot(words.direction || direction);");
     expect(send).not.toContain("shoot(words.direction || message)");
     // The reader being down no longer makes the message the direction and
     // shoots it (Helios Cut 2, step 1, 2026-09-25 — the owner's decision 2:

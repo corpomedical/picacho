@@ -107,6 +107,9 @@ import {
 } from "@/lib/sets/messages";
 import { preparePhoto } from "@/lib/sets/photo-client";
 import { facingFor, hasCameraWords, wordsToMatch, type ShotWords } from "@/lib/sets/shot-words";
+import type { FrameX } from "@/lib/sets/shot-reading";
+import type { EditFrame } from "@/lib/sets/set-edit-prompt";
+import { frameXAfter, pressFor, type TakeMove, type TakeStart } from "@/lib/sets/turn-plan";
 import {
   SET_COMPARE_PX,
   SET_MAX_TILT_DOWN_DEG,
@@ -422,6 +425,15 @@ type FrameNote = {
   /** Just talking is on: the words were read, and nothing moved. */
   planned?: boolean;
 };
+
+/**
+ * A shot the chat decided, waiting for the render that holds its turn
+ * (Helios Cut 2, spec §3.3): its one press id, still or take, and the turn
+ * that asked for it.
+ */
+type ShootDue = { pressId: string; kind: "still" | "take"; turnId: number };
+/** How long a due shot waits after the render that holds its turn: longer than the light's 60 ms rebuild. */
+const SHOOT_DUE_MS = 150;
 
 /** A frame as Astra or the person set it, to step back to (this visit only). */
 type Revision = {
@@ -817,8 +829,29 @@ export function SetView({
   const [chatOpen, setChatOpen] = useState(true);
   // A photo set's photo beside camera 1, folded behind a chip.
   const [compareOpen, setCompareOpen] = useState(false);
-  // A take under way: the still it starts from, while the end is framed.
-  const [takeStart, setTakeStart] = useState<{ id: string; n: number } | null>(null);
+  // A take under way: the still it starts from, while the end is framed —
+  // and who set it up (Helios Cut 2, critic item 1, 2026-09-25). The person,
+  // by "Take it somewhere", or the chat, for a moving shot it was asked for:
+  // the chat's own take renders only from a press priced as a take, never
+  // from a message, a mode or a generic Shoot (turn-plan.ts pressFor).
+  const [takeStart, setTakeStart] = useState<TakeStart | null>(null);
+  // The move and textures a take rides with (moves.ts), kept for take():
+  // set by the chat for a moving shot; gone with the take.
+  const takeMoveRef = useRef<TakeMove | null>(null);
+  useEffect(() => {
+    if (!takeStart) takeMoveRef.current = null;
+  }, [takeStart]);
+  // Where she stands across the frame, the thirds (Helios Cut 2, the
+  // owner's decision 5): set by the chat's words, kept by its later word
+  // solves, and ended by any move made by hand (keepStage), so NOW never
+  // says "on the left third" after an orbit (check of the spec, item 6).
+  const frameXRef = useRef<FrameX>("centre");
+  // The saved outfit photo sits the next still or take out, when the chat's
+  // words said what they wear (Helios Cut 2, step 9's outfit: false).
+  const outfitOffRef = useRef(false);
+  // Every press id a Shoot or a Take has sent this visit: one press, one
+  // send, even when a decision's own id is handed in twice (spec §3.8 rule 8).
+  const sentPressIdsRef = useRef<Set<string>>(new Set());
   // Which engine renders the take (take.ts): Omni the take, Veo the premium
   // take. Reset to the default when a new take starts, so the price on the
   // button is never a leftover from an earlier, pricier choice.
@@ -3114,8 +3147,9 @@ export function SetView({
   }, [scheduleSave]);
 
   // Kept current each render: keepStage and stepStage read the page's state.
+  // The Turn tool turns the figure where it stands: the frame keeps its third.
   useEffect(() => {
-    stageTouchRef.current = () => keepStage(true);
+    stageTouchRef.current = () => keepStage(true, stageToolRef.current !== "turn");
     stageStepRef.current = {
       undo: () => stepStage(stageUndoRef, stageRedoRef),
       redo: () => stepStage(stageRedoRef, stageUndoRef),
@@ -3534,8 +3568,16 @@ export function SetView({
    * The stage as it stands, kept for Undo before a move. A gesture (a drag,
    * a scroll tick, a turn) close on another's heels is part of the same move
    * and is not kept again; nor is a state the same as the last one kept.
+   *
+   * Every move made by hand — an orbit, a drag, a camera or a mark picked,
+   * Frame the figure, a lens, a match — ends a third the chat set: she is
+   * no longer where its solve put her (check of the Cut 2 spec, item 6). A
+   * turn of the figure moves nothing in the frame and keeps it
+   * (`movesFrame` false), as does the chat's own turn, which sets the third
+   * itself once its camera has moved.
    */
-  function keepStage(gesture = false) {
+  function keepStage(gesture = false, movesFrame = true) {
+    if (movesFrame) frameXRef.current = frameXAfter(frameXRef.current, { kind: "hand" });
     const api = apiRef.current;
     if (!api) return;
     const now = performance.now();
@@ -3560,6 +3602,8 @@ export function SetView({
     // A press that moved nothing (a click on the figure) left a step that changes nothing: skip it.
     while (back && sameStage(back, here)) back = from.current.pop();
     if (back) {
+      // ⌘Z is a move by hand: a third the chat set ends with it (check of the Cut 2 spec, item 6).
+      frameXRef.current = frameXAfter(frameXRef.current, { kind: "hand" });
       to.current.push(here);
       api.goTo(back.pose);
       setFovDeg(back.pose.fovDeg);
@@ -3582,9 +3626,15 @@ export function SetView({
     scheduleSave();
   }
 
+  /**
+   * A lens on the rig's own body. Read from rigRef, never this render's rig
+   * (critic item 11, 2026-09-25): the chat changes the format and asks for a
+   * lens in one turn, before the page has drawn the new rig, and ⌘K's lens
+   * rows are built from a render that can be one change behind.
+   */
   function pickLens(mm: number) {
     keepStage();
-    const f = fovForLens(mm, sensorHeightMm(rig.sensor, rig.format));
+    const f = fovForLens(mm, sensorHeightMm(rigRef.current.sensor, rigRef.current.format));
     setFovDeg(f);
     apiRef.current?.setFov(f);
     scheduleSave();
@@ -3599,7 +3649,7 @@ export function SetView({
   }
 
   function turn(delta: number) {
-    keepStage(true);
+    keepStage(true, false);
     setMark((m) => ({ ...m, facingDeg: (((m.facingDeg + delta) % 360) + 360) % 360 }));
   }
 
@@ -4632,19 +4682,27 @@ export function SetView({
    * The still: shot from the frame as it is, with what happens
    * (`directionNow` when send() knows it before state does), and every
    * message since the last still kept with it, as one.
+   *
+   * Answers whether a press was sent (Helios Cut 2, 2026-09-25): a turn
+   * the chat decided to shoot says so when it could not start, and offers
+   * Shoot as it is. `opts.pressId` is the one id that decision minted
+   * (the shootDue effect); without it this press mints its own, as every
+   * button does. An id already sent is never sent again (spec §3.8 rule 8).
+   * `opts.outfit` false, or the chat's words saying what they wear, sets
+   * the character's saved outfit photo aside for this still (step 9).
    */
-  async function shoot(directionNow?: string, push: RigCheckItem[] = []) {
+  async function shoot(directionNow?: string, push: RigCheckItem[] = [], opts?: { pressId?: string; outfit?: false }): Promise<boolean> {
     // Not during a match (pickReference says why): the frame would be taken
     // now, from a camera the match is about to move. Read from the ref, not
     // from this render's state, so a shot that follows an await cannot land
     // on top of one already in flight.
     const busy = busyRef.current;
-    if (busy.shooting || busy.taking || busy.editing || busy.matching || !characterId || !ready) return;
+    if (busy.shooting || busy.taking || busy.editing || busy.matching || !characterId || !ready) return false;
     // Who is in the photos is asked on the figure's card before any shot (R1.12).
     if (likenessNeeded(characterId)) {
       setError(SET_LIKENESS_NEEDED);
       openElementCard(FIGURE_KEY);
-      return;
+      return false;
     }
     setError("");
     setTakeRetry(null);
@@ -4659,14 +4717,20 @@ export function SetView({
     const frame = apiRef.current?.frame({ grey });
     if (!frame) {
       setError(s.loadFailed);
-      return;
+      return false;
     }
+    // This press's own id (press-follow.ts): a browser's resend of it is
+    // followed on the server, never shot again. The chat's decision hands
+    // in the one it minted; every other Shoot mints a fresh one here.
+    const pressId = opts?.pressId ?? newPressId();
+    if (sentPressIdsRef.current.has(pressId)) return false;
+    sentPressIdsRef.current.add(pressId);
+    // The outfit sits out when the words said what they wear: this still only.
+    const outfit = opts?.outfit === false || outfitOffRef.current ? false : undefined;
+    outfitOffRef.current = false;
     busy.shooting = true;
     setPressEngine(stillEngine);
     setShooting(true);
-    // This press's own id, fresh for every Shoot (press-follow.ts): a
-    // browser's resend of it is followed on the server, never shot again.
-    const pressId = newPressId();
     const startedAt = new Date().getTime();
     // The rig it is shot with, for a still whose answer is lost (keepLeftRows).
     const shotRig = normaliseSetRig(rigRef.current);
@@ -4687,7 +4751,7 @@ export function SetView({
     let left: PressRows | null = null;
     try {
       // The things' sheets this frame carries are drawn first, once each (R1).
-      if ((await drawSheetsFor(planFor(pose, layoutRef.current.mark).riding)) === null) return;
+      if ((await drawSheetsFor(planFor(pose, layoutRef.current.mark).riding)) === null) return false;
       sentAt = new Date().getTime();
       result = await shootInSet(setId, {
         pressId,
@@ -4703,6 +4767,7 @@ export function SetView({
         push,
         stillEngine,
         greyed: grey,
+        ...(outfit === false ? { outfit } : {}),
       });
       // A resend of this press found the first delivery still rendering
       // (press.ts, repeat-send.ts): that one is followed, never pressed again.
@@ -4724,12 +4789,12 @@ export function SetView({
         const stale = staleHere(err);
         if (stale) {
           setError(t.generate.refreshNeeded);
-          return;
+          return sentAt !== null;
         }
       }
       if (sentAt === null) {
         setError(t.generate.submitFailed);
-        return;
+        return false;
       }
       setFollowing("checking");
       const followed = await followLost(sentAt, shotPressRead(pressId), () => setFollowing("rendering"));
@@ -4744,7 +4809,7 @@ export function SetView({
       setError(result.error);
       // What a lost answer left in History joins the strip (review, 2026-09-25).
       if (left) keepLeftRows(left, { format: shotRig.format, squeeze: shotRig.squeeze, pose, words: asked ?? null, characterId, engine: takeEngine, takeFrom: null });
-      return;
+      return true;
     }
     const shot: SetShot = {
       generationId: result.generationId,
@@ -4786,6 +4851,7 @@ export function SetView({
     if (result.succeeded) setViewing(result.generationId);
     // The rig check reads it back against what the rig asked for in words.
     if (result.succeeded && result.checks.length > 0) void runRigCheck(result.generationId);
+    return true;
   }
 
   /**
@@ -4824,18 +4890,23 @@ export function SetView({
    * shot first as an ordinary still with takeStart's still as its look, so
    * both frames show one world — then the clip renders between the two in
    * the background, and lands in the filmstrip as a take.
+   *
+   * As shoot() (Helios Cut 2, 2026-09-25): answers whether a press was
+   * sent; takes the one id a decision minted, or mints its own; never sends
+   * an id twice. The move and textures ride from `opts`, else from what the
+   * chat kept for this take (takeMoveRef), and go with it.
    */
-  async function take(directionNow?: string) {
+  async function take(directionNow?: string, opts?: { pressId?: string; move?: FilmMove | null; textures?: FilmTexture[]; outfit?: false }): Promise<boolean> {
     const busy = busyRef.current;
-    if (!takeStart || busy.shooting || busy.taking || busy.editing || busy.matching || !characterId || !ready) return;
+    if (!takeStart || busy.shooting || busy.taking || busy.editing || busy.matching || !characterId || !ready) return false;
     if (!takesOn) {
       setError(SET_TAKE_NEEDS_PLAN);
-      return;
+      return false;
     }
     if (likenessNeeded(characterId)) {
       setError(SET_LIKENESS_NEEDED);
       openElementCard(FIGURE_KEY);
-      return;
+      return false;
     }
     setError("");
     setTakeRetry(null);
@@ -4847,13 +4918,21 @@ export function SetView({
     const frame = apiRef.current?.frame({ grey });
     if (!frame) {
       setError(s.loadFailed);
-      return;
+      return false;
     }
+    // This press's own id (press-follow.ts): the decision's, or fresh for every Take.
+    const pressId = opts?.pressId ?? newPressId();
+    if (sentPressIdsRef.current.has(pressId)) return false;
+    sentPressIdsRef.current.add(pressId);
+    const outfit = opts?.outfit === false || outfitOffRef.current ? false : undefined;
+    outfitOffRef.current = false;
+    // The moving shot the chat set up for this take (moves.ts): its move and textures.
+    const chatMove = takeMoveRef.current;
+    const move = opts?.move !== undefined ? opts.move : (chatMove?.move ?? null);
+    const textures = opts?.textures ?? chatMove?.textures ?? [];
     busy.taking = true;
     setPressEngine(stillEngine);
     setShooting(true);
-    // This press's own id, fresh for every Take (press-follow.ts).
-    const pressId = newPressId();
     const startedAt = new Date().getTime();
     // The rig its end still is shot with, for a take whose answer is lost (keepLeftRows).
     const shotRig = normaliseSetRig(rigRef.current);
@@ -4870,7 +4949,7 @@ export function SetView({
     let left: PressRows | null = null;
     try {
       // The end still carries the things' sheets like any still (R1).
-      if ((await drawSheetsFor(planFor(pose, layoutRef.current.mark).riding)) === null) return;
+      if ((await drawSheetsFor(planFor(pose, layoutRef.current.mark).riding)) === null) return false;
       sentAt = new Date().getTime();
       result = await takeInSet(setId, {
         pressId,
@@ -4886,6 +4965,9 @@ export function SetView({
         rig: rigRef.current,
         stillEngine,
         greyed: grey,
+        ...(move ? { move } : {}),
+        ...(textures.length > 0 ? { textures } : {}),
+        ...(outfit === false ? { outfit } : {}),
       });
       // A resend found the first delivery still rendering: followed, never pressed again.
       if (stillGoingAnswer(result.error)) {
@@ -4902,12 +4984,12 @@ export function SetView({
         const stale = staleHere(err);
         if (stale) {
           setError(t.generate.refreshNeeded);
-          return;
+          return sentAt !== null;
         }
       }
       if (sentAt === null) {
         setError(t.generate.submitFailed);
-        return;
+        return false;
       }
       setFollowing("checking");
       const followed = await followLost(sentAt, takePressRead(pressId), () => setFollowing("rendering"));
@@ -4938,7 +5020,7 @@ export function SetView({
         });
         if (kept.still && !kept.take) setTakeRetry({ ...frames, end: kept.still });
       }
-      return;
+      return true;
     }
     const endStill: SetShot = {
       generationId: result.still.generationId,
@@ -5003,7 +5085,40 @@ export function SetView({
     else if (result.takeError) setError(result.takeError);
     if (result.still.succeeded) setViewing(result.takeGenerationId ?? result.still.generationId);
     if (result.still.succeeded && result.still.checks.length > 0) void runRigCheck(result.still.generationId);
+    return true;
   }
+
+  // ---- a shot the chat decided (Helios Cut 2, spec §3.3, 2026-09-25) ----
+  /**
+   * The one shot a turn of the chat decided — or a priced button that runs a
+   * turn first ("Do it and shoot", "Change it, then shoot") — with the one
+   * press id minted for it at the decision. Nothing shoots from inside a
+   * turn: a turn's changes are state, drawn on the NEXT render, so a shot
+   * taken inside the turn read the person, the words and the pose from
+   * before it. This fires from that next render instead, once per id: the
+   * id is recorded and the due shot cleared BEFORE the call, so a second
+   * run of the effect (React's double mount, a render inside the wait)
+   * fires nothing, and shoot() and take() refuse an id already sent.
+   */
+  const [shootDue, setShootDue] = useState<ShootDue | null>(null);
+  const firedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!shootDue) return;
+    const due = shootDue;
+    // A timeout, not a frame: a hidden tab stops frames. The wait covers the
+    // light's 60 ms rebuild, so the sketch sent is the frame the turn lit.
+    const timer = setTimeout(() => {
+      if (firedRef.current.has(due.pressId)) return;
+      firedRef.current.add(due.pressId);
+      setShootDue(null);
+      const opts = { pressId: due.pressId };
+      void (due.kind === "take" ? take(undefined, opts) : shoot(undefined, [], opts));
+    }, SHOOT_DUE_MS);
+    return () => clearTimeout(timer);
+    // Only the due shot starts it: its closure is the render that holds the
+    // turn's changes, whose shoot() and take() read the new frame.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shootDue]);
 
   // ---- the film's hands ----
 
@@ -6104,10 +6219,24 @@ export function SetView({
    * Called ONLY from the Astra card's button (Helios Cut 2, step 1,
    * 2026-09-25): one of the month's changes, and Picacho's cost, is spent
    * on a press that said so — never straight from a message, in any mode.
+   *
+   * `change.said` is the person's own words, the request Astra reads;
+   * `change.gloss` is what the chat read them to mean, sent labelled as the
+   * page's reading and judged as the reader's (step 10); `frame` is where
+   * the person and the camera stand, so Astra never builds over them. v1's
+   * card sends neither, and its request is exactly as before. `then` is
+   * "Change it, then shoot": the still's own id, minted at the click, and
+   * the still is taken only once the change is saved (spec §3.3). Answers
+   * whether the change landed, and the seal its Undo needs.
    */
-  async function editSet(message: string) {
+  async function editSet(
+    change: { said: string; gloss?: string | null },
+    frame: EditFrame | null,
+    then?: { pressId: string; turnId: number },
+  ): Promise<{ landed: boolean; before: SetSpec; undo: EditUndo | null }> {
     const busy = busyRef.current;
-    if (busy.editing || busy.shooting || busy.taking || busy.matching) return;
+    const none = { landed: false, before: spec, undo: null };
+    if (busy.editing || busy.shooting || busy.taking || busy.matching) return none;
     busyRef.current.editing = true;
     setEditingSet(true);
     const before = spec;
@@ -6121,13 +6250,15 @@ export function SetView({
     let followed: FollowedEdit | null = null;
     try {
       try {
-        res = await editSetWithAstra(setId, message, pressId);
+        // What the chat read, and where things stand, ride only when there are any.
+        const more = change.gloss || frame ? { ...(change.gloss ? { meaning: change.gloss } : {}), ...(frame ? { frame } : {}) } : undefined;
+        res = more ? await editSetWithAstra(setId, change.said, pressId, more) : await editSetWithAstra(setId, change.said, pressId);
       } catch (err) {
         // A stale deploy lets the conversation go and says so. A dropped
         // connection may still have saved (Astra usually finishes on the
         // server), so the set is read back below instead of saying "try
         // again" — which spent a second change for one that had landed.
-        if (leftBehind(err)) return;
+        if (leftBehind(err)) return none;
       }
       if (res === null || (res.error !== null && res.pending)) followed = await followAstraEdit(() => readAstraEdit(setId, pressId).catch((thrown: unknown) => ({ thrown })), { before, stop: leftBehind });
     } finally {
@@ -6143,24 +6274,27 @@ export function SetView({
       drawSet(next);
       setSetChanged(changed);
       refreshThumbnail(next);
+      // "Change it, then shoot": the still once the change is saved, with the id the click minted.
+      if (then) setShootDue({ pressId: then.pressId, kind: "still", turnId: then.turnId });
+      return { landed: true, before, undo };
     };
     if (followed) {
       // A press that has ended says how many are left; the others keep the last count.
       if (followed.kind === "saved" || followed.kind === "unsaved") keepEditsLeft(followed.editsLeft);
-      if (followed.kind === "saved") apply(followed.spec, followed.changed);
+      if (followed.kind === "saved") return apply(followed.spec, followed.changed);
       // Only when nothing reached the server is it worth trying again.
       else if (followed.kind === "none") setError(t.generate.submitFailed);
       else if (followed.kind !== "left") setError(followed.error);
-      return;
+      return { ...none, before };
     }
-    if (!res) return;
+    if (!res) return { ...none, before };
     // Every answer from the month's count on carries one, saved or not.
     keepEditsLeft(res.editsLeft);
     if (res.error !== null) {
       setError(res.error);
-      return;
+      return { ...none, before };
     }
-    apply(res.spec, res.changed, res.undo);
+    return apply(res.spec, res.changed, res.undo);
   }
 
   /**
@@ -6390,7 +6524,7 @@ export function SetView({
     // read any ("she leans on the counter"), otherwise the direction already
     // framed. The raw message would put "go" in the picture's words
     // (found reviewing Helios, 2026-09-17).
-    if (words.intent === "shoot" || !askFirst) await (takeStart ? take(words.direction || direction) : shoot(words.direction || direction));
+    if (words.intent === "shoot" || !askFirst) await pressShoot(words.direction || direction);
   }
 
   // The message from the Sets home, once the stage can act on it — then the
@@ -6741,6 +6875,9 @@ export function SetView({
   const credits = quote.totalCredits === 1 ? s.creditsOne : formatMsg(s.creditsMany, { n: quote.totalCredits });
   // A take's whole price: the end still plus the clip, as the server charges them.
   const takeCredits = takesCredits(takeEngine, { clips: 1, stills: 1 });
+  // Every price the chat's buttons can show (turn-plan.ts PageState credits):
+  // a still, and a take on each engine, from the quotes the server charges.
+  const pageCredits = { still: quote.totalCredits, take: { omni: takesCredits("omni", { clips: 1, stills: 1 }), veo: takesCredits("veo", { clips: 1, stills: 1 }) } };
   // What Render would render now, and its price: every beat is one take —
   // an end frame and a clip — priced by the same quotes the server charges.
   const filmPlan = filmPlanNow();
@@ -6810,11 +6947,19 @@ export function SetView({
       ? s.shootButtonOne
       : formatMsg(s.shootButton, { n: quote.totalCredits });
   const canShootNow = !(shooting || matching || reading || editingSet || !characterId || loadFailed || !ready);
-  // What the generic Shoot entry points (⌘K's Shoot row, the composer's send
-  // on an empty message) actually do: with a take set up they render the
-  // take, so they say the take's price, as the frame card's button already
-  // did (2026-09-25: they said "Shoot · 1 credit" while running a take).
-  const pressLabel = takeStart && !shooting ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel;
+  // What the generic Shoot entry points — ⌘K's Shoot row, the chat's "/"
+  // row, the composer's send on an empty message — actually do, and the
+  // price they say (check of the Cut 2 spec, item 1, 2026-09-25): the take
+  // the PERSON set up, at the take's price, or else a still. A take the
+  // chat set up is never rendered by them: it waits for a press priced as a
+  // take (the reply's Take, the frame card's Take), so a still's label can
+  // never run a take (turn-plan.ts pressFor, one answer for both).
+  const genericPress = pressFor("shoot", { takeStart, takeEngine, credits: pageCredits });
+  const pressLabel = genericPress.kind === "take" && !shooting ? formatMsg(s.takeButton, { n: genericPress.credits }) : shootLabel;
+  /** A generic Shoot, doing what its label says (pressFor "shoot"): the person's own take, else a still. */
+  function pressShoot(directionNow?: string): Promise<boolean> {
+    return pressFor("shoot", { takeStart, takeEngine, credits: pageCredits }).kind === "take" ? take(directionNow) : shoot(directionNow);
+  }
   const shotCount = (() => {
     const stills = shots.filter((sh) => sh.kind === "still").length;
     const takes = shots.length - stills;
@@ -7177,7 +7322,7 @@ export function SetView({
         undoStage: () => stepStage(stageUndoRef, stageRedoRef),
         downloadFrame,
         canShoot: canShootNow,
-        shoot: () => void (takeStart ? take() : shoot()),
+        shoot: () => void pressShoot(),
       })
     : [];
 
@@ -8029,7 +8174,7 @@ export function SetView({
                         // Exactly the words the card quoted: what Astra reads.
                         const { quoted } = astraCardWords(astraAsk.words);
                         setAstraAsk(null);
-                        void editSet(quoted);
+                        void editSet({ said: quoted }, null);
                       }}
                       onNotNow={() => setAstraAsk(null)}
                       copy={s.reply}
@@ -8211,7 +8356,7 @@ export function SetView({
                 // Just talking is the mode that spends nothing: with nothing
                 // written there is nothing to answer, and an empty send used
                 // to shoot anyway (found in the rundown, 2026-09-16).
-                else if (!justTalk) void (takeStart ? take() : shoot());
+                else if (!justTalk) void pressShoot();
               }}
               className="relative border-t border-[rgba(255,255,255,0.07)] px-3.5 pb-3.5 pt-3"
             >
@@ -8943,7 +9088,7 @@ export function SetView({
                           setError(SET_TAKE_NEEDS_PLAN);
                           return;
                         }
-                        setTakeStart({ id: viewingShot.generationId, n: stillNumber(viewingShot) });
+                        setTakeStart({ id: viewingShot.generationId, n: stillNumber(viewingShot), armedBy: "person" });
                         setTakeEngine(SET_TAKE_DEFAULT_ENGINE);
                         setViewing(null);
                       }}

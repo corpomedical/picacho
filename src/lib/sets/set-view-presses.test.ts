@@ -41,11 +41,18 @@ const HANDLERS = [
 ] as const;
 
 describe("every paid press sends its own id", () => {
-  it("mints one for Shoot, Take and Try the clip again, once held and just before the send", () => {
+  it("mints one for Shoot, Take and Try the clip again, just before the send", () => {
     for (const h of HANDLERS) {
       const body = bodyOf(h.signature);
-      const minted = body.indexOf("const pressId = newPressId();");
-      expect(minted, h.signature).toBeGreaterThan(body.indexOf(`busy.${h.flag} = true;`));
+      // Shoot and Take take the one id a chat's decision minted (Helios Cut
+      // 2, spec §3.3), and mint their own only without one; the id is
+      // checked and recorded as sent before the press is held
+      // (set-view-turn.test.ts holds the rest).
+      const own = h.signature === "  async function retryClip(" ? "const pressId = newPressId();" : "const pressId = opts?.pressId ?? newPressId();";
+      const minted = body.indexOf(own);
+      expect(minted, h.signature).toBeGreaterThan(-1);
+      if (h.signature === "  async function retryClip(") expect(minted, h.signature).toBeGreaterThan(body.indexOf(`busy.${h.flag} = true;`));
+      else expect(minted, h.signature).toBeLessThan(body.indexOf(`busy.${h.flag} = true;`));
       expect(minted, h.signature).toBeLessThan(body.indexOf(h.call));
       const sent = body.slice(body.indexOf(h.call), body.indexOf("});", body.indexOf(h.call)));
       expect(sent, h.signature).toMatch(/\(setId, \{\s*pressId,/);
@@ -107,7 +114,8 @@ describe("a lost answer is followed, never 'try again'", () => {
       const body = bodyOf(signature);
       const caught = between(body, "} catch (err) {", "} finally {");
       expect(caught.match(/t\.generate\.submitFailed/g), signature).toHaveLength(1);
-      expect(caught, signature).toMatch(/if \(sentAt === null\) \{\s*setError\(t\.generate\.submitFailed\);\s*return;\s*\}/);
+      // Nothing was sent: the press answers false (Helios Cut 2, 2026-09-25).
+      expect(caught, signature).toMatch(/if \(sentAt === null\) \{\s*setError\(t\.generate\.submitFailed\);\s*return false;\s*\}/);
       // Sent is from the line before the call.
       expect(body, signature).toMatch(/sentAt = new Date\(\)\.getTime\(\);\s*result = await (shootInSet|takeInSet)\(setId, \{/);
     }
@@ -340,16 +348,23 @@ describe("the words, in all four languages", () => {
 
 // ⌘K's Shoot row and the composer's send on an empty message render the take
 // when one is set up; they said "Shoot · 1 credit" while doing it
-// (found checking the Cut 2 design, 2026-09-25). They now say the take's price.
+// (found checking the Cut 2 design, 2026-09-25). They now say what they do,
+// and never render a take the chat set up (check of the Cut 2 spec, item 1):
+// that waits for a button priced as a take. set-view-turn.test.ts holds the
+// chat's own entry points.
 describe("the generic Shoot entry points", () => {
-  it("say the take's price whenever they would render a take", () => {
-    expect(view).toContain("const pressLabel = takeStart && !shooting ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel;");
+  it("do what their label says: the person's take at the take's price, else a still", () => {
+    expect(view).toContain('const genericPress = pressFor("shoot", { takeStart, takeEngine, credits: pageCredits });');
+    expect(view).toContain('const pressLabel = genericPress.kind === "take" && !shooting ? formatMsg(s.takeButton, { n: genericPress.credits }) : shootLabel;');
+    expect(view).toContain('return pressFor("shoot", { takeStart, takeEngine, credits: pageCredits }).kind === "take" ? take(directionNow) : shoot(directionNow);');
     expect(view).toContain("shootNow: pressLabel,");
+    expect(view).toContain("shoot: () => void pressShoot(),");
+    expect(view).toContain("else if (!justTalk) void pressShoot();");
     expect(view).toContain("title={draft.trim() || justTalk ? s.threadPlaceholder : pressLabel}");
     expect(view).toContain("aria-label={draft.trim() || justTalk ? s.threadPlaceholder : pressLabel}");
-    // Every entry point that picks take() over shoot() is one of these, or a button already priced as a take.
+    // Only the two buttons priced as a take pick take() over shoot() by themselves: the frame card's and the bar's.
     const takeOrShoot = view.split("takeStart ? take() : shoot()").length - 1;
-    expect(takeOrShoot).toBe(4);
+    expect(takeOrShoot).toBe(2);
     expect(view.split("{takeStart && !shooting ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel}").length - 1).toBe(2);
   });
 });

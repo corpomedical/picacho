@@ -328,7 +328,8 @@ describe("a plan without takes is told first (set-view.tsx)", () => {
 
   it("says so instead of starting a take, a film or a retry", () => {
     const take = between("async function take(", "setError(\"\");");
-    expect(take).toContain("if (!takesOn) {\n      setError(SET_TAKE_NEEDS_PLAN);\n      return;\n    }");
+    // take() answers whether a press was sent (Helios Cut 2, 2026-09-25): none was.
+    expect(take).toContain("if (!takesOn) {\n      setError(SET_TAKE_NEEDS_PLAN);\n      return false;\n    }");
     const render = between("async function renderFilm(", "const plan = filmPlanNow();");
     // The plan is the first reason Render gives (filmRenderWhy), said on a press.
     expect(render).toContain("if (filmRenderWhy !== null || !api) {");

@@ -124,7 +124,8 @@ describe("the page runs a match and a shot one at a time", () => {
   it("a match does not start during a shot, nor a shot during a match", () => {
     expect(view).toContain("if (!file || matching || shooting || !ready) return;");
     // A shot asks the busy ref, which a match holds too (2026-09-17).
-    expect(view).toContain("if (busy.shooting || busy.taking || busy.editing || busy.matching || !characterId || !ready) return;");
+    // It answers whether a press was sent (Helios Cut 2, 2026-09-25): false here, nothing sent.
+    expect(view).toContain("if (busy.shooting || busy.taking || busy.editing || busy.matching || !characterId || !ready) return false;");
     expect(view).toContain("busyRef.current.matching = true;");
     expect(view).toContain("disabled={!ready || matching || shooting}");
     // Every button that spends reads one answer, which counts a match in.

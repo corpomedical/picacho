@@ -46,14 +46,16 @@ describe("a change to the set itself waits for a press on the Astra card", () =>
   });
 
   it("calls editSet from the card's own button, and nowhere else", () => {
-    // The definition and one call.
-    expect(view.match(/\beditSet\(/g)).toHaveLength(2);
-    expect(view).toContain("  async function editSet(message: string) {");
+    // The definition and v1's card; the chat's own card calls it through
+    // goAstra (set-view-turn.test.ts), once step 11a is in.
+    expect(view.match(/\beditSet\(/g)!.length).toBeLessThanOrEqual(3);
+    expect(view).toContain("  async function editSet(\n    change: { said: string; gloss?: string | null },\n    frame: EditFrame | null,");
     const card = between(view, "<AstraChangeCard", "/>");
     const onGo = between(card, "onGo={() => {", "}}");
     expect(onGo).toContain("const { quoted } = astraCardWords(astraAsk.words);");
     expect(onGo).toContain("setAstraAsk(null);");
-    expect(onGo).toContain("void editSet(quoted);");
+    // v1 sends only the words it quoted: no reading, no frame — the request is exactly as before.
+    expect(onGo).toContain("void editSet({ said: quoted }, null);");
     // Not now spends nothing.
     expect(card).toContain("onNotNow={() => setAstraAsk(null)}");
   });
@@ -76,8 +78,8 @@ describe("a change to the set itself waits for a press on the Astra card", () =>
   });
 
   it("holds an Astra press while anything else is out, as a rebuild does", () => {
-    const edit = bodyOf(view, "  async function editSet(message: string) {");
-    const guard = edit.indexOf("if (busy.editing || busy.shooting || busy.taking || busy.matching) return;");
+    const edit = bodyOf(view, "  async function editSet(\n");
+    const guard = edit.indexOf("if (busy.editing || busy.shooting || busy.taking || busy.matching) return none;");
     expect(guard).toBeGreaterThan(-1);
     expect(guard).toBeLessThan(edit.indexOf("busyRef.current.editing = true;"));
   });
@@ -120,12 +122,12 @@ describe("the changed line's Undo", () => {
   const undo = bodyOf(view, "  async function undoSetEdit() {");
 
   it("keeps each change's seal and kind with the set it replaced", () => {
-    const edit = bodyOf(view, "  async function editSet(message: string) {");
+    const edit = bodyOf(view, "  async function editSet(\n");
     expect(edit).toContain("const apply = (next: SetSpec, changed: number, undo: EditUndo | null = null) => {");
     expect(edit).toContain('lastEditUndoRef.current = { before, kind: "edit", undo };');
-    expect(edit).toContain("apply(res.spec, res.changed, res.undo);");
+    expect(edit).toContain("return apply(res.spec, res.changed, res.undo);");
     // A read-back has no seal.
-    expect(edit).toContain('if (followed.kind === "saved") apply(followed.spec, followed.changed);');
+    expect(edit).toContain('if (followed.kind === "saved") return apply(followed.spec, followed.changed);');
     const rebuild = bodyOf(view, "  async function rebuildThing(key: string) {");
     expect(rebuild).toContain('lastEditUndoRef.current = { before, kind: "rebuild", undo: null };');
   });
@@ -141,7 +143,7 @@ describe("the changed line's Undo", () => {
 
   it("says it once: the next message, or the next change, clears it", () => {
     expect(send).toContain("setUndoNote(null);");
-    for (const signature of ["  async function editSet(message: string) {", "  async function rebuildThing(key: string) {"]) {
+    for (const signature of ["  async function editSet(\n", "  async function rebuildThing(key: string) {"]) {
       expect(bodyOf(view, signature), signature).toContain("setUndoNote(null);");
     }
   });
@@ -185,7 +187,7 @@ describe("the month's changes left follow every answer that carries a number", (
   });
 
   it("an edit's and a rebuild's answers, saved or not, and a followed press once it has ended", () => {
-    for (const signature of ["  async function editSet(message: string) {", "  async function rebuildThing(key: string) {"]) {
+    for (const signature of ["  async function editSet(\n", "  async function rebuildThing(key: string) {"]) {
       const body = bodyOf(view, signature);
       expect(body, signature).toContain('if (followed.kind === "saved" || followed.kind === "unsaved") keepEditsLeft(followed.editsLeft);');
       // Before the error branch: a refusal's count is kept too.
