@@ -27,6 +27,12 @@ import { SetsUpgrade } from "@/components/sets/sets-upgrade";
 // render switches (Settings → Notifications), which govern the notification
 // a tab in the background shows for a build it collected itself, as they
 // govern the finisher's push.
+//
+// A failed set's own page links back here with ?again=<id> (Helios Cut 3,
+// step 5): the home puts that build's words back in its box, and only when
+// that id is one of this person's failed builds from words that can be
+// tried again (lib/sets/try-again.ts). Nothing is spent until the build
+// button is pressed.
 
 // A set from a photo runs the picture check inside its server action
 // (submitSetPhotoBuild: two readers, a third on the line, 10–100 s), and a
@@ -34,12 +40,22 @@ import { SetsUpgrade } from "@/components/sets/sets-upgrade";
 // the community and generate pages declare for the same check (2026-09-11).
 export const maxDuration = 300;
 
-export default async function SetsPage() {
+const first = (v: string | string[] | undefined): string | null => (Array.isArray(v) ? (v[0] ?? null) : (v ?? null));
+
+export default async function SetsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) redirect("/login");
 
-  const [data, notify] = await Promise.all([getSetsHome(), readRenderNotifyPrefs(supabase, userData.user.id)]);
+  const [data, notify, query] = await Promise.all([
+    getSetsHome(),
+    readRenderNotifyPrefs(supabase, userData.user.id),
+    searchParams,
+  ]);
   if (data.error === SETS_SESSION_EXPIRED) redirect("/login");
   // Web-only until the Play listing is reinstated: the Android shell follows
   // the reader-mode rule (lib/native/platform.ts). Read before the 404 below,
@@ -81,6 +97,7 @@ export default async function SetsPage() {
           finisherOn={finisherCanRun()}
           notifyReady={notify.ready}
           notifyFailed={notify.failed}
+          againId={first(query.again)}
         />
       )}
     </div>

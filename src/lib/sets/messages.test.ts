@@ -401,6 +401,9 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     // The Sets home says what a delete does to the month's builds (Helios Cut 3, step 4).
     "deleteConfirmBuilding",
     "deleteConfirmFailed",
+    // A failed build from words, tried again (step 5).
+    "buildTryAgain",
+    "buildTryAgainHint",
   ] as const;
   const SERVER_KEYS = [
     "setPhotoUnreadable",

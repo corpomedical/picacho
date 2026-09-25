@@ -2679,6 +2679,10 @@ const en = {
     deleteConfirm: "Delete this set? Deleting doesn't give its build back. The stills you shot in it stay in History.",
     deleteConfirmBuilding: "Stop this build and delete it? It still counts as one of this month's builds.",
     deleteConfirmFailed: "Delete this failed build? It never counted toward your builds.",
+    // A failed build from words, tried again (Helios Cut 3, step 5): its words go back in the box.
+    buildTryAgain: "Try again",
+    buildTryAgainHint:
+      "Puts its words back in the box above. Building it again uses one of this month's builds — this failed one never counted.",
     deleting: "Deleting…",
     back: "All sets",
     loadFailed: "The set couldn't load — reload the page.",

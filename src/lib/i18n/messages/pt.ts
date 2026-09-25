@@ -2529,6 +2529,9 @@ const pt = {
     deleteConfirm: "Excluir este set? Excluir não devolve a construção. As fotos que você tirou nele continuam no Histórico.",
     deleteConfirmBuilding: "Parar esta construção e excluí-la? Ela ainda conta como uma das construções deste mês.",
     deleteConfirmFailed: "Excluir esta construção que falhou? Ela nunca contou entre as suas construções.",
+    buildTryAgain: "Tentar de novo",
+    buildTryAgainHint:
+      "Coloca as palavras de volta na caixa acima. Construir de novo usa uma construção deste mês — esta que falhou nunca contou.",
     deleting: "Excluindo…",
     back: "Todos os sets",
     loadFailed: "O set não carregou — recarregue a página.",

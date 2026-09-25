@@ -2528,6 +2528,9 @@ const it = {
     deleteConfirm: "Eliminare questo set? Eliminarlo non ti restituisce la costruzione. Le foto che hai scattato qui restano nella Cronologia.",
     deleteConfirmBuilding: "Interrompere questa costruzione ed eliminarla? Conta comunque come una delle costruzioni di questo mese.",
     deleteConfirmFailed: "Eliminare questa costruzione non riuscita? Non è mai stata contata tra le tue costruzioni.",
+    buildTryAgain: "Riprova",
+    buildTryAgainHint:
+      "Rimette le sue parole nella casella qui sopra. Ricostruirlo usa una costruzione di questo mese: questa non riuscita non è mai stata contata.",
     deleting: "Eliminazione…",
     back: "Tutti i set",
     loadFailed: "Il set non si è caricato — ricarica la pagina.",

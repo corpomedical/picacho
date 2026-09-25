@@ -10,6 +10,7 @@ import { buildingHintKey } from "@/lib/sets/leaving";
 import { SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_UNAVAILABLE, SET_NOT_FOUND } from "@/lib/sets/messages";
 import { SETS_OPEN_TO_PLANS } from "@/lib/sets/set-config";
 import { SHOT_WORDS_MAX_CHARS } from "@/lib/sets/shot-words";
+import { tryAgainWords } from "@/lib/sets/try-again";
 import { SetBuilding } from "@/components/sets/set-building";
 import { SetEditor } from "@/components/sets/set-editor";
 import { SetView } from "@/components/sets/set-view";
@@ -164,6 +165,16 @@ export default async function SetPage({
         <div className="space-y-2 text-sm text-atelier-muted">
           {ask && <p>{s.buildFailedLine}</p>}
           <p>{data.error === null && data.set.failure ? localizeServerText(data.set.failure, t) : s.loadFailed}</p>
+          {/* A failed build from words: its words go back in the Sets home's box (Helios Cut 3, step 5). Nothing is spent until the build button there. */}
+          {set && tryAgainWords(set) !== null && (
+            <Link
+              href={`/app/sets?again=${set.id}`}
+              title={s.buildTryAgainHint}
+              className="inline-flex items-center rounded-full bg-atelier-ink/[0.045] px-3 py-[7px] text-xs font-medium text-atelier-muted transition-colors hover:bg-atelier-ink/[0.07] hover:text-atelier-ink"
+            >
+              {s.buildTryAgain}
+            </Link>
+          )}
         </div>
       )}
     </div>

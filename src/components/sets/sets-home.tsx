@@ -13,6 +13,7 @@ import { buildingHintKey, pageSetNotice, photoMetaKey } from "@/lib/sets/leaving
 import { preparePhoto } from "@/lib/sets/photo-client";
 import { SET_BRIEF_MAX_CHARS, SET_PHOTO_NOTES_MAX_CHARS } from "@/lib/sets/set-config";
 import { SHOT_WORDS_MAX_CHARS } from "@/lib/sets/shot-words";
+import { tryAgainWords } from "@/lib/sets/try-again";
 import {
   SETS_NOT_OPEN,
   SETS_SESSION_EXPIRED,
@@ -157,6 +158,7 @@ export function SetsHome({
   finisherOn,
   notifyReady,
   notifyFailed,
+  againId = null,
 }: {
   initialSets: SetSummary[];
   usedThisMonth: number;
@@ -172,6 +174,8 @@ export function SetsHome({
   /** The render switches in Settings → Notifications, which the finisher's pushes answer to as well. */
   notifyReady: boolean;
   notifyFailed: boolean;
+  /** A failed build's "Try again" on its own page (/app/sets?again=<id>): its words start in the box. */
+  againId?: string | null;
 }) {
   const { t } = useLocale();
   const s = t.sets;
@@ -182,7 +186,14 @@ export function SetsHome({
 
   const [sets, setSets] = useState<SetSummary[]>(initialSets);
   const [seenInitial, setSeenInitial] = useState(initialSets);
-  const [brief, setBrief] = useState("");
+  // A failed build tried again from its own page: its words, once, in the
+  // box (Helios Cut 3, step 5). Read on the first render only; the address
+  // forgets it below.
+  const [againWords] = useState(() => {
+    const failed = againId ? initialSets.find((x) => x.id === againId) : undefined;
+    return failed ? tryAgainWords(failed) : null;
+  });
+  const [brief, setBrief] = useState(() => (againWords ?? "").slice(0, SHOT_WORDS_MAX_CHARS));
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -301,6 +312,19 @@ export function SetsHome({
     setFailedTitle,
     setFailedBody,
   ]);
+
+  // ?again= is read once: the address forgets it, so a reload does not put
+  // the words back over what the person has typed since.
+  useEffect(() => {
+    if (!againId) return;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("again");
+      window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}`);
+    } catch {
+      // The words are in the box either way.
+    }
+  }, [againId]);
 
   // Escape closes an open menu, as a click off it does (and as the set page's menus do).
   useEffect(() => {
@@ -489,6 +513,21 @@ export function SetsHome({
     // about to clear, and move the composer under it.
     if (submitting) return;
     setBrief(formatMsg(prompt, { name: characters.find((c) => c.id === characterId)?.name || s.exampleCharacter }));
+    setSetPick(null);
+    setMode("describe");
+    briefRef.current?.focus();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  /**
+   * "Try again" on a failed build from words (Helios Cut 3, step 5): its
+   * words back in the box, with "A new place". Nothing is spent here — the
+   * person presses the build button, which says what it uses.
+   */
+  function tryAgain(words: string) {
+    // Never over a send that is out, as Recreate.
+    if (submitting) return;
+    setBrief(words.slice(0, SHOT_WORDS_MAX_CHARS));
     setSetPick(null);
     setMode("describe");
     briefRef.current?.focus();
@@ -824,6 +863,7 @@ export function SetsHome({
               // A photo set has no brief: until Astra titles it, it goes by
               // the photographer's notes, or by where it came from.
               const name = setName(x);
+              const again = tryAgainWords(x);
               return (
                 <li key={x.id} className="overflow-hidden rounded-media bg-atelier-surface shadow-[0_0_0_1px_var(--frost-ring),0_1px_2px_rgba(33,29,22,0.04),0_16px_40px_-24px_rgba(33,29,22,0.12)]">
                   <div className="relative aspect-[4/3] bg-atelier-stage">
@@ -885,6 +925,10 @@ export function SetsHome({
                         <Link href={`/app/sets/${x.id}`} className={chip(false)}>
                           {s.shootHere}
                         </Link>
+                      ) : again !== null ? (
+                        <button type="button" onClick={() => tryAgain(again)} disabled={submitting} title={s.buildTryAgainHint} className={chip(false)}>
+                          {s.buildTryAgain}
+                        </button>
                       ) : (
                         <span />
                       )}
