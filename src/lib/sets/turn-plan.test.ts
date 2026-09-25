@@ -363,6 +363,12 @@ describe("a moving shot (exchange 6, critic item 1)", () => {
     expect(planTurn({ move: "push-in", engine: "veo" }, stateOf({ takeEngine: "veo" })).needs).toEqual([{ kind: "take", still: { id: "g-2", n: 2 }, engine: "veo", credits: CREDITS.take.veo }]);
     const riding = planTurn({ move: "crane-up" }, stateOf({ takeEngine: "veo", takeStart: { id: "g-2", n: 2, armedBy: "person" } }));
     expect(riding.steps).toEqual([{ kind: "motion", move: "crane-up", layEnd: false }]);
+    // The chat's own take set up again after a new person cancelled it is the same take: it keeps its engine.
+    const again = planTurn(
+      { characterId: EVA },
+      stateOf({ takeEngine: "veo", takeStart: { id: "g-2", n: 2, armedBy: "chat" }, takeMove: { move: "push-in", textures: [] } }),
+    );
+    expect(again.needs).toEqual([{ kind: "take", still: { id: "g-1", n: 1 }, engine: "veo", credits: CREDITS.take.veo }]);
   });
 
   it("an armed take keeps the move for its press; Film open makes it a beat, for later", () => {

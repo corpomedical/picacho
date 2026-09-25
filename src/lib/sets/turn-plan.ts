@@ -959,7 +959,8 @@ export function planTurn(reading: ShotReading | null, state: PageState): TurnPla
   // When this turn moves the camera (its own words, or a place it follows),
   // where it ends is not known here, so a plot is never "already so": the
   // page aims it again from the camera's final bearing (review of Cut 2, U2).
-  const cameraMoves = steps.some((st) => st.kind === "camera" || (st.kind === "place" && st.cameraFollows)) || (r.move !== undefined && !cameraKeys);
+  const laysEnd = r.move !== undefined && !cameraKeys && !state.filmOpen && take === null && pickTakeStart(state.shots, who, rig.format) !== null;
+  const cameraMoves = steps.some((st) => st.kind === "camera" || (st.kind === "place" && st.cameraFollows)) || laysEnd;
   if (lookIds.length > 0 || r.hour !== undefined || r.evThirds !== undefined || r.look !== undefined) {
     const changed = lookIds.filter((id) => {
       const patch = rigPatchFor(id, { cameraBearingDeg: state.cameraBearingDeg }) ?? {};
@@ -1018,7 +1019,8 @@ export function planTurn(reading: ShotReading | null, state: PageState): TurnPla
     engine = r.engine;
   }
   let armed = false;
-  const arm = (move: FilmMove | undefined, textures: FilmTexture[] | undefined, layEnd: boolean) => {
+  /** `again`: the chat's own take, set up again after a new person or shape cancelled it — the same take, so it keeps its engine. */
+  const arm = (move: FilmMove | undefined, textures: FilmTexture[] | undefined, layEnd: boolean, again = false) => {
     const start = pickTakeStart(state.shots, who, rig.format);
     if (!start) {
       notes.push({ kind: "needsStill", characterId: who, format: rig.format });
@@ -1028,7 +1030,7 @@ export function planTurn(reading: ShotReading | null, state: PageState): TurnPla
     notes.push({ kind: "takeArmed", still: start });
     take = { id: start.id, n: start.n, armedBy: "chat" };
     armed = true;
-    const armEngine = r.engine ?? SET_TAKE_DEFAULT_ENGINE;
+    const armEngine = r.engine ?? (again ? state.takeEngine : SET_TAKE_DEFAULT_ENGINE);
     if (armEngine !== state.takeEngine) motion.engine = armEngine;
     engine = armEngine;
     if (move !== undefined) motion.move = move;
@@ -1048,7 +1050,7 @@ export function planTurn(reading: ShotReading | null, state: PageState): TurnPla
   } else if (cancelled?.armedBy === "chat" && state.takeMove && !state.filmOpen) {
     // The chat's own take, cancelled by a new person or a new shape, is set
     // up again from a still that fits — or says what it needs.
-    arm(state.takeMove.move ?? undefined, state.takeMove.textures, false);
+    arm(state.takeMove.move ?? undefined, state.takeMove.textures, false, true);
   }
   if (motion.move !== undefined || motion.textures !== undefined || motion.engine !== undefined) steps.push(motion);
 
