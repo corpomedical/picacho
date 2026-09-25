@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.109.0",
+    build: 148,
+    date: "2026-09-25",
+    title: "The render failure rate tells the truth",
+    items: [
+      "Admin > System's \"Error rate 20%\" was misleading in three ways. It counted every render ever made, so no fix could move it. It counted pressing Stop as a failure. And it put a content refusal (Seedance turning away a real person's photo, a safety filter, your own brand rules) in the same bucket as a render that broke.",
+      "What the 20% was made of, read from every failure report: 19 were Seedance refusing real people's photos (the composer has headed that off before sending since 3 September, and none have happened since 6 September), 10 were your own brand rules, 4 were provider safety filters, and the rest were input bugs already fixed (Kling's photo shape, a missing front photo, an H3 clip over 15 seconds) plus the 25 August fal balance lock. The last failure of any kind was on 21 September.",
+      "System now shows Render failures for the last 7 days, the last 30 days and all time. Each card gives the failure count and splits it into \"broke\" (a provider error, a timeout or our own bug: the number to get to zero) and \"refused\" (a content rule said no, and the credit came back). Stops are left out and shown separately. The percentage still counts every failure, refusals included, and turns red only when something broke. Overview's \"Render success\" leaves stops out too and links to System.",
+      "Moderation's failed-render list now gives the provider's actual reason for renders that failed after they were queued, instead of \"Generation failed after 1 attempt.\", and marks each one broke or refused. The reason and the badge use the same rules as the System numbers.",
+    ],
+  },
+  {
     version: "1.108.0",
     build: 147,
     date: "2026-09-25",

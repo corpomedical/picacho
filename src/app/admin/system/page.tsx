@@ -1,5 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
+import { fetchAll } from "@/lib/admin/fetch-all";
+import { failureRates, type FinishedRender } from "@/lib/admin/failure-rate";
+import { FailureSection } from "./failure-section";
 import { videoProviderFor } from "@/lib/generations/providers/video-provider";
 import { seedanceLaneChoice } from "@/lib/generations/providers/lane-setting";
 import { cn } from "@/lib/cn";
@@ -10,17 +13,44 @@ export default async function AdminSystemPage() {
   // the same function the submit path uses, with the operator's own choice.
   const seedanceLane = videoProviderFor("seedance-2", await seedanceLaneChoice());
   const supabase = await createClient();
-  const { data: generations } = await supabase
-    .from("generations")
-    .select("status, attempts")
-    .in("status", ["succeeded", "failed"]);
-
-  const rows = generations ?? [];
-  const total = rows.length;
-  const failed = rows.filter((r) => r.status === "failed").length;
-  const errorRate = total > 0 ? Math.round((failed / total) * 100) : 0;
-  const avgAttempts =
-    total > 0 ? Math.round((rows.reduce((s, r) => s + (r.attempts ?? 0), 0) / total) * 10) / 10 : 0;
+  // Both reads page past PostgREST's silent 1,000-row cap (fetch-all.ts): the
+  // single read this replaced would have quietly stopped counting there. The
+  // logs are read only for failures that were not stops, to tell a render
+  // that broke from one a content rule refused (lib/admin/failure-rate.ts).
+  let rates: ReturnType<typeof failureRates> | null = null;
+  let total = 0;
+  let avgAttempts = 0;
+  try {
+    const [renders, failedLogs] = await Promise.all([
+      fetchAll<FinishedRender & { attempts: number | null }>((from, to) =>
+        supabase
+          .from("generations")
+          .select("id, status, created_at, cancel_requested, attempts")
+          .in("status", ["succeeded", "failed"])
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
+      fetchAll<{ id: string; pipeline_log: unknown }>(
+        (from, to) =>
+          supabase
+            .from("generations")
+            .select("id, pipeline_log")
+            .eq("status", "failed")
+            .not("cancel_requested", "is", true)
+            .order("created_at", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, to),
+        200,
+      ),
+    ]);
+    rates = failureRates(renders, new Map(failedLogs.map((r) => [r.id, r.pipeline_log])), new Date());
+    total = renders.length;
+    avgAttempts =
+      total > 0 ? Math.round((renders.reduce((s, r) => s + (r.attempts ?? 0), 0) / total) * 10) / 10 : 0;
+  } catch (err) {
+    console.error("[admin/system] reading renders failed:", err);
+  }
 
   return (
     <div>
@@ -29,15 +59,10 @@ export default async function AdminSystemPage() {
         <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">System health</h1>
       </div>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-6 grid gap-4 sm:grid-cols-3">
         <Card>
           <p className="text-sm text-neutral-500">Generations logged</p>
           <p className="mt-1 text-2xl font-semibold text-neutral-900">{total}</p>
-        </Card>
-        <Card>
-          <p className="text-sm text-neutral-500">Error rate</p>
-          <p className="mt-1 text-2xl font-semibold text-neutral-900">{errorRate}%</p>
-          <p className="mt-1 text-xs text-neutral-400">Failed after every retry</p>
         </Card>
         <Card>
           <p className="text-sm text-neutral-500">Avg. retries per generation</p>
@@ -68,6 +93,8 @@ export default async function AdminSystemPage() {
           </p>
         </Card>
       </div>
+
+      <FailureSection rates={rates} />
     </div>
   );
 }

@@ -256,7 +256,13 @@ export default async function AdminDashboard() {
       .from("generations")
       .select("id", { count: "exact", head: true })
       .eq("status", "succeeded"),
-    supabase.from("generations").select("id", { count: "exact", head: true }).eq("status", "failed"),
+    // A Stop saves its row as "failed" with cancel_requested set; stopping on
+    // purpose is not a failed render (the rule Moderation and System use).
+    supabase
+      .from("generations")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "failed")
+      .not("cancel_requested", "is", true),
     supabase
       .from("generations")
       .select("id", { count: "exact", head: true })
@@ -650,6 +656,7 @@ export default async function AdminDashboard() {
                 {
                   label: "Render success",
                   qual: "all-time",
+                  href: "/admin/system",
                   value: `${succeededAll} / ${succeededAll + failedAll}${successRate === null ? "" : ` · ${successRate.toFixed(0)}%`}`,
                 },
                 { label: "Video / image", qual: "all-time", value: `${videoCount} / ${imageCount}` },

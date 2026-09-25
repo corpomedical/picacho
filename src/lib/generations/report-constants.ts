@@ -1,4 +1,10 @@
 import type { AttemptLog } from "@/lib/generations/pipeline";
+// Relative on purpose: vitest runs here with no "@/" alias, and this module's
+// tests load it. All three are pure (no server or provider imports), so a
+// client component that reads this file stays light.
+import { SAFETY_REJECTION } from "./provider-fault";
+import { OUTPUT_BLOCKED_ISSUE, REFUSED_BEFORE_RENDER_ISSUE } from "./refund-rules";
+import { isRawProviderError } from "./user-facing-error";
 
 // Split out from reports.ts on purpose: that file is "use server", and
 // Next.js only allows a "use server" file to export async functions —
@@ -79,14 +85,12 @@ export function summarizeFailureDetail(attempts: AttemptLog[]): string | null {
   return `Generation failed after ${attempts.length} attempt${attempts.length === 1 ? "" : "s"}.`;
 }
 
-// The same reason read from a render's STORED log (generations.pipeline_log,
-// the admin's failed-render list), which is only as well formed as whatever
-// wrote it: an older row can lack `issues`, a crash can leave no log at all.
-// Null still means stopped on purpose; a log with nothing to read says so
-// instead of throwing on the page.
-export function failureReasonFromLog(log: unknown): string | null {
-  if (!Array.isArray(log)) return "No reason was recorded.";
-  const attempts: AttemptLog[] = log
+// A render's STORED log (generations.pipeline_log) read back as attempts. It
+// is only as well formed as whatever wrote it: an older row can lack
+// `issues`, a crash can leave no log at all (an empty list here).
+function attemptsFromLog(log: unknown): AttemptLog[] {
+  if (!Array.isArray(log)) return [];
+  return log
     .filter((a): a is Record<string, unknown> => typeof a === "object" && a !== null)
     .map((a, i) => ({
       attempt: typeof a.attempt === "number" ? a.attempt : i + 1,
@@ -100,6 +104,77 @@ export function failureReasonFromLog(log: unknown): string | null {
           )
         : [],
     }));
+}
+
+const GENERIC_FAILURE = /^Generation failed after \d+ attempts?\.$/;
+
+// The provider's own words, newest attempt first: "fal.ai (Seedance 2.0) error
+// (422): The images or videos provided may contain likenesses of real people…".
+// For the ADMIN's failed-render list only. A render that failed in the job
+// runner (a fal webhook, the reaper) logs the provider's reply as a step but
+// never marks the attempt "provider_error", so summarizeFailureDetail passed
+// over it and Moderation read "Generation failed after 1 attempt." for most
+// of its list, while Reports held the real reason (found 2026-09-25, reading
+// both for the failure rate). Kept out of summarizeFailureDetail on purpose:
+// that one also feeds the Sets screen, which customers read, and raw
+// provider text is never shown to them (user-facing-error.ts).
+export function providerWordsFromAttempts(attempts: AttemptLog[]): string | null {
+  for (let a = attempts.length - 1; a >= 0; a--) {
+    const step = [...attempts[a].steps].reverse().find((s) => isRawProviderError(s.detail));
+    if (!step) continue;
+    const head = step.detail.match(/^([\w.() -]+ error \(\d+\)):/)?.[1];
+    const said = step.detail.match(/"(?:msg|message)"\s*:\s*"([^"]+)"/)?.[1];
+    const words = head && said ? `${head}: ${said}` : step.detail.split("\n")[0];
+    return words.trim().slice(0, 500);
+  }
+  return null;
+}
+
+// Why a stored render failed, for the admin's failed-render list. Null still
+// means stopped on purpose; a log with nothing to read says so instead of
+// throwing on the page.
+export function failureReasonFromLog(log: unknown): string | null {
+  const attempts = attemptsFromLog(log);
   if (attempts.length === 0) return "No reason was recorded.";
-  return summarizeFailureDetail(attempts);
+  const summary = summarizeFailureDetail(attempts);
+  if (summary !== null && GENERIC_FAILURE.test(summary)) return providerWordsFromAttempts(attempts) ?? summary;
+  return summary;
+}
+
+// What KIND of failure a failed render was (2026-09-25, operator: "Fix the
+// render failure rate"). System's one number counted three different things
+// as the same failure, which is how 20% could stand while nothing was
+// breaking:
+//   - "stopped": the person pressed Stop. Not a failure at all; Moderation
+//     already leaves these out.
+//   - "refused": a content rule said no, and it said so on purpose: a
+//     provider's safety or likeness filter, our own prompt or output gate,
+//     or the account's own brand rules. Nothing broke; the credit comes back.
+//   - "broke": everything else. A provider down or rejecting what WE sent,
+//     a timeout, a spent attempt budget, our own bug. The number to drive
+//     to zero.
+// Refusal wording is read with the pipeline's own list (SAFETY_REJECTION,
+// provider-fault.ts), and only from the steps that carry a verdict — never
+// "draft" or "review", which hold the prompt: "a lifeguard in a safety vest"
+// is a scene, not a refusal.
+export type FailureKind = "stopped" | "refused" | "broke";
+
+const REFUSAL_ISSUES = new Set(["content_policy", OUTPUT_BLOCKED_ISSUE, REFUSED_BEFORE_RENDER_ISSUE]);
+
+export function failureKind(attempts: AttemptLog[]): FailureKind {
+  const last = attempts[attempts.length - 1];
+  if (last?.issues.includes("cancelled")) return "stopped";
+  for (const attempt of attempts) {
+    if (attempt.issues.some((i) => REFUSAL_ISSUES.has(i))) return "refused";
+    for (const s of attempt.steps) {
+      if (s.step !== "generate" && s.step !== "validate") continue;
+      if (s.detail.startsWith("Blocked by brand rules") || SAFETY_REJECTION.test(s.detail)) return "refused";
+    }
+  }
+  return "broke";
+}
+
+/** failureKind read from a stored pipeline_log. An unreadable log is "broke": nothing says it was refused. */
+export function failureKindFromLog(log: unknown): FailureKind {
+  return failureKind(attemptsFromLog(log));
 }

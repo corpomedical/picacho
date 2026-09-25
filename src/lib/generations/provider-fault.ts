@@ -49,3 +49,33 @@ export function isProviderFault(message: string): boolean {
   return true;
 }
 
+// Moved here from pipeline.ts (2026-09-25) so a module that must stay light —
+// report-constants.ts, read by client components and the admin's failure
+// split — can use the one list instead of a copy. pipeline.ts imports it.
+//
+// Phrases a provider uses when it has decided the CONTENT is the problem.
+// Retrying these is pure waste: the same prompt fails the same classifier
+// every time, and each rejection can still cost a render (Flux returns a
+// blacked-out image with HTTP 200 and bills for it). Deliberately distinct
+// from a bare 400, which really can be transient — see the comment on
+// NON_RETRYABLE_STATUS_CODES in pipeline.ts.
+// A PROVIDER'S CONTENT REFUSAL IS TERMINAL. Getting this list wrong is how
+// the removed soften-and-retry ladder survived one level up.
+//
+// Until 2026-09-09 this was written in English prose — /safety|nsfw|content
+// policy|moderation|blocked by the provider/ — and matched NONE of the four
+// refusal strings fal and BytePlus actually emit. fal answers
+// `content_policy_violation`; ModelArk answers
+// `InputTextSensitiveContentDetected` and its two siblings. Neither contains
+// "content policy" with a space, so a content refusal fell through to the
+// retry machinery and was re-drafted under an instruction whose stated
+// purpose was that "plain description passes content filters far more
+// reliably". That is the ladder, reassembled, in the file the removal
+// never opened. (The instruction itself was rewritten on 2026-09-10 to give
+// the drafter our own reasons instead — see the drafting prompt in pipeline.ts.)
+//
+// The tokens below are isProviderFault's list above, which got this right for
+// the circuit breaker on 2026-08-31 — the same question ("did the provider judge
+// this request, or is it down?") deserved the same answer in both places.
+export const SAFETY_REJECTION =
+  /content[_ ]polic|sensitivecontentdetected|safety|nsfw|moderation|likeness|blocked by the provider|invalid prompt/i;

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { failureReasonFromLog, isProviderBalanceFailure, summarizeFailureDetail } from "./report-constants";
+import {
+  failureKind,
+  failureKindFromLog,
+  failureReasonFromLog,
+  isProviderBalanceFailure,
+  summarizeFailureDetail,
+} from "./report-constants";
 
 // Incident-replay tests, same spirit as send-plan.test.ts: the positive
 // cases are the real provider strings that motivated the detector, the
@@ -128,6 +134,118 @@ describe("the reason a failed render gives", () => {
     expect(failureReasonFromLog([{}])).toBe("Generation failed after 1 attempt.");
     // Wrong types inside are dropped, not trusted.
     expect(failureReasonFromLog([{ issues: "provider_error", steps: [{ step: "generate" }, 7] }])).toBe(
+      "Generation failed after 1 attempt.",
+    );
+  });
+});
+
+// The failure-rate split (2026-09-25, operator: "Fix the render failure
+// rate"). Every string below is a real failure from Admin > Reports, the
+// ones that made up System's 20%: each must land in the bucket it belongs in.
+describe("what kind of failure a render was", () => {
+  const at = (issues: string[], steps: { step: string; detail: string }[]) =>
+    [{ attempt: 1, passed: false, compiledPrompt: "", issues, steps }] as Parameters<typeof failureKind>[0];
+  const gen = (detail: string) => at([], [{ step: "generate", detail }]);
+
+  it("a provider's likeness or safety refusal is REFUSED", () => {
+    for (const detail of [
+      'fal.ai (Seedance 2.5) error (422): {"detail":[{"loc":["body","image_urls"],"msg":"The images or videos provided may contain likenesses of real people or other private information that cannot be processed.","type":"content_policy_violation"}]}',
+      'BytePlus ModelArk (Seedance 2.5) error (422): BytePlus ModelArk task failed: {"id":"cgt-1","status":"failed","error":{"code":"OutputVideoSensitiveContentDetected","message":"The output video may contain sensitive information."}}',
+      'fal.ai (Kling O3 Pro) error (422): {"detail":[{"loc":["body"],"msg":"The content could not be processed because it contained material flagged by a content checker.","type":"content_policy_violation"}]}',
+      'fal.ai (Gemini Omni Flash 1.1 (start/end frame)) error (422): {"detail":[{"loc":["body","prompt"],"msg":"Request blocked due to safety violations (harmful content). Please modify your input and retry.","type":"content_policy_violation"}]}',
+      // The OpenAI sentence the image lane wrote until 2026-09-10.
+      "That description was flagged by OpenAI's safety filter and couldn't be generated.",
+    ]) {
+      expect(failureKind(gen(detail)), detail.slice(0, 60)).toBe("refused");
+    }
+  });
+
+  it("the account's own brand rules and our own gates are REFUSED", () => {
+    expect(
+      failureKind(at(["No third-party trademarks"], [
+        { step: "validate", detail: 'Blocked by brand rules: No third-party trademarks (triggered by: "the ferrari f40").' },
+      ])),
+    ).toBe("refused");
+    expect(failureKind(at(["content_policy"], []))).toBe("refused");
+    expect(failureKind(at(["output_blocked"], []))).toBe("refused");
+    expect(failureKind(at(["refused_before_render"], []))).toBe("refused");
+  });
+
+  it("a request WE got wrong, a provider down or a spent budget is BROKE", () => {
+    for (const detail of [
+      'fal.ai (MiniMax H3 Max Reference to Video 480p) error (422): {"detail":[{"loc":["body","reference_video_urls",0],"msg":"Video duration exceeds the maximum allowed. Maximum is 15.0 seconds.","type":"video_duration"}]}',
+      'fal.ai (Kling O3 Pro) error (422): {"detail":[{"loc":["body","frontal_image_url"],"msg":"The aspect ratio of the image should be between 0.4 and 2.5.","type":"image_aspect_ratio_error"}]}',
+      'fal.ai (Seedance 2.5) error (403): {"detail":"User is locked. Reason: Exhausted balance. Top up your balance at fal.ai/dashboard/billing."}',
+      "This request already used its 4 generation attempts without producing a usable image.",
+      "fal.ai (Kling O3) error (500): Internal Server Error",
+    ]) {
+      expect(failureKind(gen(detail)), detail.slice(0, 60)).toBe("broke");
+    }
+  });
+
+  it("reads the words only where a verdict is written, never the prompt", () => {
+    // A lifeguard in a safety vest is a scene. The draft carries the prompt;
+    // what failed here was a timeout.
+    const attempts = at([], [
+      { step: "draft", detail: "A lifeguard in a bright safety vest scans the waves." },
+      { step: "review", detail: "Keep the safety vest and the moderation of the light." },
+      { step: "generate", detail: "fal.ai (Kling O3) error (504): Gateway Timeout" },
+    ]);
+    expect(failureKind(attempts)).toBe("broke");
+  });
+
+  it("an earlier attempt's refusal is the render's story", () => {
+    const attempts = [
+      { attempt: 1, passed: false, compiledPrompt: "", issues: [], steps: [{ step: "generate" as const, detail: 'fal.ai (Seedance 2.0) error (422): {"detail":[{"msg":"may contain likenesses of real people","type":"content_policy_violation"}]}' }] },
+      { attempt: 2, passed: false, compiledPrompt: "", issues: [], steps: [{ step: "generate" as const, detail: "This request already used its 4 generation attempts without producing a usable image." }] },
+    ];
+    expect(failureKind(attempts)).toBe("refused");
+  });
+
+  it("a Stop is STOPPED, and an unreadable log is BROKE (nothing says it was refused)", () => {
+    expect(failureKind(at(["cancelled"], [{ step: "generate", detail: "Stopped." }]))).toBe("stopped");
+    expect(failureKind([])).toBe("broke");
+    expect(failureKindFromLog(null)).toBe("broke");
+    expect(failureKindFromLog([{}])).toBe("broke");
+  });
+});
+
+// Moderation's reason for a render that failed in the JOB RUNNER (a fal
+// webhook or the reaper): the provider's reply is logged as a step, but the
+// attempt is never marked "provider_error", so the summary read "Generation
+// failed after 1 attempt." for most of the list (found 2026-09-25).
+describe("the admin's reason for a failure the job runner recorded", () => {
+  const log = [
+    {
+      attempt: 1,
+      passed: false,
+      compiledPrompt: "",
+      issues: [],
+      steps: [
+        { step: "draft", detail: "A woman walks through neon rain." },
+        {
+          step: "generate",
+          detail:
+            'fal.ai (Seedance 2.0) error (422): {"detail":[{"loc":["body","image_urls"],"msg":"The images or videos provided may contain likenesses of real people or other private information that cannot be processed.","type":"content_policy_violation"}]}',
+        },
+      ],
+    },
+  ];
+
+  it("names the provider, the status and what the provider said", () => {
+    expect(failureReasonFromLog(log)).toBe(
+      "fal.ai (Seedance 2.0) error (422): The images or videos provided may contain likenesses of real people or other private information that cannot be processed.",
+    );
+  });
+
+  it("stays out of summarizeFailureDetail, which the Sets screen shows customers", () => {
+    expect(summarizeFailureDetail(log as Parameters<typeof summarizeFailureDetail>[0])).toBe(
+      "Generation failed after 1 attempt.",
+    );
+  });
+
+  it("keeps the generic line when there is truly nothing from a provider", () => {
+    expect(failureReasonFromLog([{ issues: [], steps: [{ step: "generate", detail: "Rendering…" }] }])).toBe(
       "Generation failed after 1 attempt.",
     );
   });

@@ -7,6 +7,7 @@
 // caller in src/lib/generations/actions.ts.
 
 import { draftWithClaude } from "@/lib/generations/providers/anthropic";
+import { SAFETY_REJECTION } from "@/lib/generations/provider-fault";
 import {
   generateVideo,
   generateSpeech,
@@ -510,32 +511,11 @@ const NON_RETRYABLE_STATUS_CODES = new Set([401, 403, 404, 422]);
 // Paid image calls allowed per generation, across all attempts.
 const MAX_PAID_IMAGE_CALLS = 4;
 
-// Phrases a provider uses when it has decided the CONTENT is the problem.
-// Retrying these is pure waste: the same prompt fails the same classifier
-// every time, and each rejection can still cost a render (Flux returns a
-// blacked-out image with HTTP 200 and bills for it). Deliberately distinct
-// from a bare 400, which really can be transient — see the comment on
-// NON_RETRYABLE_STATUS_CODES above.
-// A PROVIDER'S CONTENT REFUSAL IS TERMINAL. Getting this list wrong is how
-// the removed soften-and-retry ladder survived one level up.
-//
-// Until 2026-09-09 this was written in English prose — /safety|nsfw|content
-// policy|moderation|blocked by the provider/ — and matched NONE of the four
-// refusal strings fal and BytePlus actually emit. fal answers
-// `content_policy_violation`; ModelArk answers
-// `InputTextSensitiveContentDetected` and its two siblings. Neither contains
-// "content policy" with a space, so a content refusal fell through to the
-// retry machinery and was re-drafted under an instruction whose stated
-// purpose was that "plain description passes content filters far more
-// reliably". That is the ladder, reassembled, in the file the removal
-// never opened. (The instruction itself was rewritten on 2026-09-10 to give
-// the drafter our own reasons instead — see the drafting prompt below.)
-//
-// The tokens below are provider-fault.ts's list, which got this right for the
-// circuit breaker on 2026-08-31 — the same question ("did the provider judge
-// this request, or is it down?") deserved the same answer in both places.
-const SAFETY_REJECTION =
-  /content[_ ]polic|sensitivecontentdetected|safety|nsfw|moderation|likeness|blocked by the provider|invalid prompt/i;
+// SAFETY_REJECTION (provider-fault.ts): the phrases a provider uses when it
+// has decided the CONTENT is the problem. A PROVIDER'S CONTENT REFUSAL IS
+// TERMINAL, so the retry below stops on it. It lives beside isProviderFault
+// so the admin's failure split (report-constants.ts failureKind) reads the
+// same list without importing this module.
 
 function isNonRetryableProviderError(message: string): boolean {
   const match = message.match(/\((\d{3})\)/);

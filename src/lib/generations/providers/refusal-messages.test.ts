@@ -17,7 +17,7 @@ import {
   readOpenAiRefusal,
 } from "./refusal-messages";
 import { forceRefundEligible, REFUSED_BEFORE_RENDER_ISSUE } from "../refund-rules";
-import { isProviderFault } from "../provider-fault";
+import { isProviderFault, SAFETY_REJECTION } from "../provider-fault";
 import en from "../../i18n/messages/en";
 import es from "../../i18n/messages/es";
 import pt from "../../i18n/messages/pt";
@@ -59,10 +59,13 @@ describe("provider refusals", () => {
 
   it("stay terminal: the pipeline stops on them and the model breaker ignores them", () => {
     const pipeline = src("../pipeline.ts");
-    const literal = pipeline.match(/const SAFETY_REJECTION =\s*\/(.+)\/([a-z]*);/);
-    if (!literal) throw new Error("SAFETY_REJECTION moved out of pipeline.ts — re-point this test at it.");
-    const safetyRejection = new RegExp(literal[1], literal[2]);
-    // And it is still what decides the retry, not just a regex left lying about.
+    // The list lives in provider-fault.ts since 2026-09-25 (the admin's
+    // failure split reads it too), so it is imported rather than parsed out
+    // of the pipeline's source. The pipeline must still take it from there
+    // and still decide the retry with it, not keep a copy of its own.
+    const safetyRejection = SAFETY_REJECTION;
+    expect(pipeline).toContain('import { SAFETY_REJECTION } from "@/lib/generations/provider-fault";');
+    expect(pipeline).not.toMatch(/const SAFETY_REJECTION\s*=/);
     expect(pipeline).toContain("SAFETY_REJECTION.test(message)");
     for (const [name, msg] of messages) {
       expect(safetyRejection.test(msg), `${name} would be retried`).toBe(true);

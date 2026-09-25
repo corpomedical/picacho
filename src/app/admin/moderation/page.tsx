@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { AdminErrorBanner } from "@/components/admin-error-banner";
 import { setCommunityPostModeration } from "@/lib/admin/actions";
-import { failureReasonFromLog } from "@/lib/generations/report-constants";
+import { failureKindFromLog, failureReasonFromLog } from "@/lib/generations/report-constants";
 
 // The moderation area (2026-08-27, operator: "I need a moderation area for
 // it [community]"). Everything currently shared into the community feed —
@@ -229,8 +229,13 @@ export default async function AdminModerationPage({
       <h2 className="mt-12 text-base font-semibold text-neutral-900">Failed generations</h2>
       <p className="mt-1 text-sm text-neutral-500">
         Renders that ended in failure — a provider error, a refusal, a crash, a result that missed —
-        newest first, each with the reason it gave. The badge counts the last 24 hours of these. Renders
-        someone stopped on purpose are left out.
+        newest first, each with the reason it gave. <span className="font-medium">Broke</span> is ours or the
+        provider&apos;s to fix; <span className="font-medium">refused</span> is a content rule saying no. The
+        badge counts the last 24 hours of these. Renders someone stopped on purpose are left out. Rates are in{" "}
+        <a href="/admin/system" className="underline">
+          System
+        </a>
+        .
       </p>
       <div className="mt-4 space-y-3">
         {failedError ? (
@@ -255,9 +260,18 @@ export default async function AdminModerationPage({
                     {failureReasonFromLog(g.pipeline_log) ?? "Stopped on purpose."}
                   </p>
                 </div>
-                <Badge tone="danger" className="flex-shrink-0">
-                  failed
-                </Badge>
+                {/* The same split System's failure rate makes (failureKind,
+                    report-constants.ts): broke is ours or the provider's to
+                    fix, refused is a content rule working. */}
+                {failureKindFromLog(g.pipeline_log) === "refused" ? (
+                  <Badge tone="warning" className="flex-shrink-0">
+                    refused
+                  </Badge>
+                ) : (
+                  <Badge tone="danger" className="flex-shrink-0">
+                    broke
+                  </Badge>
+                )}
               </Card>
             </Link>
           ))
