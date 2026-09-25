@@ -83,10 +83,12 @@ describe("the Sets home: the send to a set says its price whenever it can spend 
   });
 
   it("shows it as words beside the arrow, and names the button by it", () => {
-    const button = home.slice(home.indexOf("{shootsOnArrival ? ("), home.indexOf("<SendIcon", home.indexOf("{shootsOnArrival ? (")));
-    expect(button).toContain("{shootPrice}");
+    // Step 6a draws the button's words beside the arrow at every width: the build's, or this price.
+    expect(home).toContain("const sendWords = setPick === null ? buildLabel : shootsOnArrival ? shootPrice : null;");
+    expect(home).toContain("const sendLabel = sendWords ?? s.shootHere;");
+    const button = home.slice(home.indexOf("{sendWords !== null && ("), home.indexOf("<SendIcon", home.indexOf("{sendWords !== null && (")));
+    expect(button).toContain("{sendWords}");
     expect(button).toContain("title={sendLabel}");
     expect(button).toContain("aria-label={sendLabel}");
-    expect(home).toContain("const sendLabel = shootsOnArrival ? shootPrice : s.shootHere;");
   });
 });

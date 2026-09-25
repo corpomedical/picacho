@@ -2512,7 +2512,7 @@ const pt = {
     clipPreviewAlt: "Quadros do clipe que você escolheu",
     emptyTitle: "Nenhum set ainda",
     emptyBody:
-      "Descreva um lugar acima. Quando estiver pronto, abra, coloque o boneco do seu personagem numa marca, enquadre e fotografe.",
+      "Diga acima quem está nela e onde. O Astra constrói o lugar, coloca seu personagem nele e enquadra a foto para você fotografar.",
     statusBuilding: "Construindo…",
     statusBuildingHint: "1–5 minutos. Você pode sair — volte em até dez minutos para buscá-lo.",
     statusBuildingHintFinishes:
@@ -2766,6 +2766,10 @@ const pt = {
     // fotografa quando você disser Fotografar.
     homeHeadline: "O que vamos fotografar hoje?",
     homePlaceholder: "Quem está nela, onde e o que acontece. O Astra constrói o lugar, coloca seus personagens nele e enquadra a foto.",
+    homePlaceholderSet: "Quem está nela e o que acontece. Para construir outro lugar, escolha Set → Um lugar novo.",
+    buildThisPlace: "Construir este lugar",
+    buildThisPlaceLeft: "Construir este lugar · restam {left} de {limit} este mês",
+    buildNoneLeft: "Nenhuma construção restante este mês — escolha um set que você já tem",
     newPlace: "Um lugar novo",
     setChip: "Set",
     askFirst: "Perguntar antes",

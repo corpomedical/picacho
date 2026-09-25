@@ -114,6 +114,12 @@ export type SetsHomeData =
       error: null;
       sets: SetSummary[];
       usedThisMonth: number;
+      /**
+       * Whether usedThisMonth was read: false when the count could not be
+       * read (it is then 0, and the build action refuses on its own). The
+       * build button then says no number (Helios Cut 3, step 6).
+       */
+      usedKnown: boolean;
       /** -1 = unlimited (admin). */
       monthlyLimit: number;
       /** Stills shot in any of these sets since the billing month began (the dashboard). */

@@ -213,10 +213,12 @@ export async function getSetsHome(): Promise<SetsHomeData> {
       lastShotAt: shots?.last ?? null,
     };
   });
+  const used = await countSetBuildsThisMonth(access.userId, access.periodStart);
   return {
     error: null,
     sets,
-    usedThisMonth: (await countSetBuildsThisMonth(access.userId, access.periodStart)) ?? 0,
+    usedThisMonth: used ?? 0,
+    usedKnown: used !== null,
     monthlyLimit: access.monthlyLimit,
     shotsThisMonth,
     photoSetsOn: access.isAdmin && (await isPhotoSetsEnabled(access.supabase)),

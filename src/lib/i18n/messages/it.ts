@@ -2511,7 +2511,7 @@ const it = {
     clipPreviewAlt: "Fotogrammi della clip che hai scelto",
     emptyTitle: "Ancora nessun set",
     emptyBody:
-      "Descrivi un luogo qui sopra. Quando è pronto, aprilo, metti la sagoma del tuo personaggio su un segno, inquadra e scatta.",
+      "Scrivi qui sopra chi c'è e dove. Astra costruisce il luogo, ci mette il tuo personaggio e inquadra lo scatto per te.",
     statusBuilding: "In costruzione…",
     statusBuildingHint: "1–5 minuti. Puoi uscire — torna entro dieci minuti per ritirarlo.",
     statusBuildingHintFinishes:
@@ -2765,6 +2765,10 @@ const it = {
     // tua parola per scattare.
     homeHeadline: "Cosa scattiamo oggi?",
     homePlaceholder: "Chi c'è, dove e cosa succede. Astra costruisce il luogo, ci mette i personaggi e inquadra lo scatto.",
+    homePlaceholderSet: "Chi c'è e cosa succede. Per costruire un altro luogo, scegli Set → Un nuovo luogo.",
+    buildThisPlace: "Costruisci questo luogo",
+    buildThisPlaceLeft: "Costruisci questo luogo · ne restano {left} di {limit} questo mese",
+    buildNoneLeft: "Nessuna costruzione rimasta questo mese: scegli un set che hai già",
     newPlace: "Un nuovo luogo",
     setChip: "Set",
     askFirst: "Chiedi prima",

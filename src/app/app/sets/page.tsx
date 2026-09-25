@@ -90,6 +90,7 @@ export default async function SetsPage({
         <SetsHome
           initialSets={data.sets}
           usedThisMonth={data.usedThisMonth}
+          usedKnown={data.usedKnown}
           monthlyLimit={data.monthlyLimit}
           shotsThisMonth={data.shotsThisMonth}
           photoSetsOn={data.photoSetsOn}

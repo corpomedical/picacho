@@ -16,6 +16,7 @@ import { SET_BRIEF_MAX_CHARS, SET_PHOTO_NOTES_MAX_CHARS } from "@/lib/sets/set-c
 import { SHOT_WORDS_MAX_CHARS } from "@/lib/sets/shot-words";
 import { stillQuoteInput } from "@/lib/sets/take";
 import { tryAgainWords } from "@/lib/sets/try-again";
+import { latestSetId } from "@/lib/sets/latest-set";
 import {
   SETS_NOT_OPEN,
   SETS_SESSION_EXPIRED,
@@ -153,6 +154,7 @@ function Chevron() {
 export function SetsHome({
   initialSets,
   usedThisMonth,
+  usedKnown,
   monthlyLimit,
   shotsThisMonth,
   photoSetsOn,
@@ -164,6 +166,8 @@ export function SetsHome({
 }: {
   initialSets: SetSummary[];
   usedThisMonth: number;
+  /** Whether usedThisMonth was read: when not, the build button names no number (the action still holds the cap). */
+  usedKnown: boolean;
   monthlyLimit: number;
   /** Stills shot in these sets this billing month (the dashboard line). */
   shotsThisMonth: number;
@@ -208,7 +212,12 @@ export function SetsHome({
   // Who is in the frame, where (a set already built, or a new place), and
   // whether Astra waits for the word after framing.
   const [characterId, setCharacterId] = useState(characters[0]?.id ?? "");
-  const [setPick, setSetPick] = useState<string | null>(null);
+  // The Set chip starts on the latest set (Helios Cut 3, step 6b): the ready
+  // set with the newest still, else the newest ready set, else a new place
+  // (latest-set.ts) — so a returning person's message goes to the place
+  // they were shooting in, and building somewhere new is a choice. A failed
+  // build tried again starts on a new place, which is what it is.
+  const [setPick, setSetPick] = useState<string | null>(() => (againWords ? null : latestSetId(initialSets)));
   const [askFirst, setAskFirst] = useState(true);
   const [menu, setMenu] = useState<"character" | "set" | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -227,6 +236,10 @@ export function SetsHome({
   if (initialSets !== seenInitial) {
     setSeenInitial(initialSets);
     setSets(initialSets);
+    // The picked set is gone (deleted in another tab or on another device):
+    // the chip goes back to the latest set, so a message never goes to a
+    // set that isn't there.
+    if (setPick !== null && !initialSets.some((x) => x.id === setPick && x.status === "ready")) setSetPick(latestSetId(initialSets));
   }
 
   const buildingIds = pollingStopped
@@ -505,7 +518,8 @@ export function SetsHome({
       return;
     }
     setSets((prev) => prev.filter((x) => x.id !== id));
-    if (setPick === id) setSetPick(null);
+    // The picked set deleted: the chip moves to the latest of the rest.
+    if (setPick === id) setSetPick(latestSetId(sets.filter((x) => x.id !== id)));
     router.refresh();
   }
 
@@ -580,7 +594,23 @@ export function SetsHome({
   const shootsOnArrival = setPick !== null && !askFirst;
   const stillCredits = quoteSend(stillQuoteInput()).totalCredits;
   const shootPrice = stillCredits === 1 ? s.shootButtonOne : formatMsg(s.shootButton, { n: stillCredits });
-  const sendLabel = shootsOnArrival ? shootPrice : s.shootHere;
+  // What the build button uses of the month, in words beside the round
+  // arrow at every width (Helios Cut 3, step 6a): "Build this place · 1 of
+  // 1 left this month", and at the cap "No builds left this month — pick a
+  // set you have" on a button that stays disabled. With no cap, or a count
+  // that could not be read (the action then refuses on its own), no number.
+  const left = Math.max(0, monthlyLimit - used);
+  const buildLabel = starting
+    ? s.starting
+    : monthlyLimit < 0 || !usedKnown
+      ? s.buildThisPlace
+      : atCap
+        ? s.buildNoneLeft
+        : formatMsg(s.buildThisPlaceLeft, { left, limit: monthlyLimit });
+  // A picked set: its price when it can shoot on arrival, otherwise the
+  // arrow alone ("Shoot" is its name): it frames and waits.
+  const sendWords = setPick === null ? buildLabel : shootsOnArrival ? shootPrice : null;
+  const sendLabel = sendWords ?? s.shootHere;
 
   return (
     <div className="space-y-10">
@@ -688,7 +718,7 @@ export function SetsHome({
                   }
                 }}
                 rows={2}
-                placeholder={s.homePlaceholder}
+                placeholder={setPick ? s.homePlaceholderSet : s.homePlaceholder}
                 aria-label={s.homeHeadline}
                 disabled={starting}
                 autoFocus
@@ -811,13 +841,14 @@ export function SetsHome({
                     {askFirst ? s.askBeforeShooting : s.shootWithoutAsking}
                   </button>
                 </div>
-                <div className="flex items-center gap-3">
-                  {shootsOnArrival ? (
-                    <span className="text-xs font-medium tabular-nums text-atelier-ink" aria-hidden>
-                      {shootPrice}
+                <div className="ml-auto flex min-w-0 items-center gap-3">
+                  {sendWords !== null && (
+                    <span
+                      className={`min-w-0 text-right text-xs font-medium leading-snug tabular-nums ${setPick === null && atCap && usedKnown ? "text-atelier-muted" : "text-atelier-ink"}`}
+                      aria-hidden
+                    >
+                      {sendWords}
                     </span>
-                  ) : (
-                    <span className="hidden text-xs tabular-nums text-atelier-muted sm:inline">{setPick ? "" : usageLine}</span>
                   )}
                   <button
                     type="submit"

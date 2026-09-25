@@ -13,6 +13,7 @@ import itMsgs from "../i18n/messages/it";
 const home = readFileSync(join(__dirname, "../../components/sets/sets-home.tsx"), "utf8");
 const homePage = readFileSync(join(__dirname, "../../app/app/sets/page.tsx"), "utf8");
 const setPage = readFileSync(join(__dirname, "../../app/app/sets/[id]/page.tsx"), "utf8");
+const types = readFileSync(join(__dirname, "types.ts"), "utf8");
 const data = readFileSync(join(__dirname, "data.ts"), "utf8");
 const actions = readFileSync(join(__dirname, "actions.ts"), "utf8");
 const LANGS = [
@@ -102,5 +103,63 @@ describe("a failed build from words offers Try again (step 5)", () => {
     }
     expect(en.sets.buildTryAgainHint).toContain("uses one of this month's builds");
     expect(en.sets.buildTryAgainHint).toContain("never counted");
+  });
+});
+
+describe("the build button says what it spends, and the Set chip starts on the latest set (step 6)", () => {
+  it("the usage line hidden below 640 px is gone; the button's words show at every width", () => {
+    expect(home).not.toContain('<span className="hidden text-xs tabular-nums text-atelier-muted sm:inline">');
+    expect(home).not.toMatch(/hidden[^"]*sm:inline/);
+    const words = home.slice(home.indexOf("{sendWords !== null && ("), home.indexOf("<SendIcon", home.indexOf("{sendWords !== null && (")));
+    expect(words).toContain("{sendWords}");
+    // No "hidden" class on the words (aria-hidden is fine: the button carries them as its name).
+    expect(words).not.toMatch(/[\s"`]hidden[\s"`]/);
+    expect(words).toContain("title={sendLabel}");
+    expect(words).toContain("aria-label={sendLabel}");
+  });
+
+  it("the words are picked by what is left this month", () => {
+    expect(home).toContain("const left = Math.max(0, monthlyLimit - used);");
+    const label = home.slice(home.indexOf("const buildLabel = starting"), home.indexOf("const sendWords"));
+    expect(label).toContain("? s.starting");
+    expect(label).toContain("monthlyLimit < 0 || !usedKnown");
+    expect(label).toContain("? s.buildThisPlace");
+    expect(label).toContain("? s.buildNoneLeft");
+    expect(label).toContain("formatMsg(s.buildThisPlaceLeft, { left, limit: monthlyLimit })");
+    // At the cap a new place stays unsendable (the button is disabled), exactly as before.
+    expect(home).toContain("const canSend = brief.trim().length > 0 && !submitting && (setPick !== null || !atCap);");
+    expect(home).toContain("disabled={!canSend}");
+  });
+
+  it("a count that could not be read says no number", () => {
+    expect(types).toContain("usedKnown: boolean;");
+    expect(data).toContain("usedThisMonth: used ?? 0,");
+    expect(data).toContain("usedKnown: used !== null,");
+    expect(homePage).toContain("usedKnown={data.usedKnown}");
+  });
+
+  it("the Set chip starts on the latest set, and moves to the latest of the rest when that one goes", () => {
+    expect(home).toContain("const [setPick, setSetPick] = useState<string | null>(() => (againWords ? null : latestSetId(initialSets)));");
+    expect(bodyOf(home, "  async function remove(id: string, status: SetStatus) {")).toContain(
+      "if (setPick === id) setSetPick(latestSetId(sets.filter((x) => x.id !== id)));",
+    );
+    expect(home).toContain(
+      'if (setPick !== null && !initialSets.some((x) => x.id === setPick && x.status === "ready")) setSetPick(latestSetId(initialSets));',
+    );
+    expect(home).toContain("placeholder={setPick ? s.homePlaceholderSet : s.homePlaceholder}");
+  });
+
+  it("says it in every language, with the numbers filled", () => {
+    for (const [loc, t] of LANGS) {
+      for (const k of ["buildThisPlace", "buildThisPlaceLeft", "buildNoneLeft", "homePlaceholderSet", "emptyBody"] as const) {
+        expect(t.sets[k].trim().length, `${loc} sets.${k}`).toBeGreaterThan(0);
+      }
+      expect(t.sets.buildThisPlaceLeft, loc).toContain("{left}");
+      expect(t.sets.buildThisPlaceLeft, loc).toContain("{limit}");
+      expect(t.sets.buildThisPlaceLeft.startsWith(t.sets.buildThisPlace), loc).toBe(true);
+    }
+    expect(en.sets.buildThisPlaceLeft).toBe("Build this place · {left} of {limit} left this month");
+    // The empty list no longer walks the person through marks and stand-ins by hand.
+    expect(en.sets.emptyBody).not.toMatch(/\bmark\b|stand-in/);
   });
 });

@@ -2659,7 +2659,7 @@ const en = {
     clipPreviewAlt: "Frames from the clip you chose",
     emptyTitle: "No sets yet",
     emptyBody:
-      "Describe a place above. Once it's built, open it, stand your character's stand-in on a mark, frame the shot and shoot.",
+      "Say who is in it and where, above. Astra builds the place, stands your character in it and frames the shot for you to shoot.",
     statusBuilding: "Building…",
     statusBuildingHint: "About 1–5 minutes. You can leave — come back within ten minutes to collect it.",
     statusBuildingHintFinishes:
@@ -2925,6 +2925,12 @@ const en = {
     // labels; {bar} is the identity bar.
     homeHeadline: "What are we shooting today?",
     homePlaceholder: "Who is in it, where, and what happens. Astra builds the place, stands them in it and frames the shot.",
+    // With a set picked (the chip starts on the latest set, Helios Cut 3, step 6): the words go to that set.
+    homePlaceholderSet: "Who is in it and what happens. To build somewhere new, choose Set → A new place.",
+    // The build button's words, beside the round arrow at every width (step 6): what a press uses of the month.
+    buildThisPlace: "Build this place",
+    buildThisPlaceLeft: "Build this place · {left} of {limit} left this month",
+    buildNoneLeft: "No builds left this month — pick a set you have",
     newPlace: "A new place",
     setChip: "Set",
     askFirst: "Ask first",

@@ -404,6 +404,11 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     // A failed build from words, tried again (step 5).
     "buildTryAgain",
     "buildTryAgainHint",
+    // The build button's words and the placeholder with a set picked (step 6).
+    "buildThisPlace",
+    "buildThisPlaceLeft",
+    "buildNoneLeft",
+    "homePlaceholderSet",
   ] as const;
   const SERVER_KEYS = [
     "setPhotoUnreadable",
