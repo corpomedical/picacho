@@ -1220,9 +1220,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
 
   // A Helios take (sets/actions.ts takeInSet): the one caller that marks
   // its frames in server memory (server-built.ts), never through a form
-  // field, so no request can claim to be one. Its clip is stored without
-  // the engine's own voice where the engine cannot be switched off (the
-  // voice payload below, 2026-09-25).
+  // field, so no request can claim to be one. Its clip keeps its stills'
+  // shape whatever its words say (below), and is stored without the
+  // engine's own voice where the engine cannot be switched off (the voice
+  // payload further down, 2026-09-25).
   const heliosTake = contentType === "video" && serverBuiltFrames();
 
   // Aspect ratio — resolution order (real incident, 2026-08-07: a user typed
@@ -1237,7 +1238,11 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   const requestedAspectRatio = (formData.get("video_aspect_ratio") as string) || "";
   const iconAspectRatio: VideoAspectRatio | null =
     requestedAspectRatio === "16:9" || requestedAspectRatio === "9:16" ? requestedAspectRatio : null;
-  const promptAspectRatio = contentType === "video" ? detectAspectRatioFromPrompt(userInput) : null;
+  // A Helios take's words describe the moment, never the frame, which its
+  // two stills already fixed (2026-09-25): "like a reel" asked a 16:9 take
+  // for 9:16 between two 16:9 frames. Its explicit ratio (sets/take.ts
+  // takeAspectRatio) is the one that counts.
+  const promptAspectRatio = contentType === "video" && !heliosTake ? detectAspectRatioFromPrompt(userInput) : null;
   const videoAspectRatio: VideoAspectRatio = promptAspectRatio ?? iconAspectRatio ?? "16:9";
 
   // Optional free resolution upgrade (2026-08-30). Validated against the

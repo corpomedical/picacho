@@ -15,6 +15,8 @@ import { quoteSend, type SendQuoteInput } from "../generations/quote";
 import { cleanText } from "./set-spec";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 import { FILM_MOVE_WORDS, FILM_TEXTURE_WORDS, type FilmMove, type FilmTexture } from "./moves";
+import type { RigFormat } from "./rig";
+import type { VideoAspectRatio } from "../generations/aspect-ratio";
 
 export type SetTakeEngine = "omni" | "veo";
 
@@ -33,6 +35,27 @@ export const SET_TAKE_DEFAULT_ENGINE: SetTakeEngine = "omni";
 
 export function isSetTakeEngine(v: unknown): v is SetTakeEngine {
   return v === "omni" || v === "veo";
+}
+
+/**
+ * The shape a take's clip is asked for: its still's own (2026-09-25). The
+ * engines offer two, read at source that day (fal's llms.txt pages):
+ *
+ * - Gemini Omni Flash 1.1 image-to-video: aspect_ratio "16:9" | "9:16",
+ *   default "16:9", and no audio parameter.
+ * - Veo 3.1 first-last-frame: aspect_ratio "auto" | "16:9" | "9:16",
+ *   default "auto". fal.ts deliberately leaves it unsent, so the frames
+ *   decide; the ratio here is what the row records for it.
+ *
+ * Neither renders a square or anything wider than 16:9: square and 4:3
+ * stills make the engine invent the sides, Scope and Flat the top and
+ * bottom. The page plays those last three inside their band (set-view.tsx
+ * takeBand); the square it does not, which is why a new set frames in 16:9
+ * (rig.ts DEFAULT_SET_RIG). A Helios take's words never turn this ratio
+ * (generations/actions.ts heliosTake).
+ */
+export function takeAspectRatio(format: RigFormat): VideoAspectRatio {
+  return format === "vertical" ? "9:16" : "16:9";
 }
 
 /**

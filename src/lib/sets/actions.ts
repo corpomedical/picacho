@@ -45,6 +45,7 @@ import {
   SET_TAKE_DEFAULT_ENGINE,
   SET_TAKE_ENGINES,
   SET_TAKES_PER_10_MIN,
+  takeAspectRatio,
   takesCredits,
 } from "@/lib/sets/take";
 import { lookStoragePath } from "@/lib/sets/look";
@@ -1570,9 +1571,13 @@ async function takeWork(
   // 2026-09-25): the operator's 16 rules were reading "One continuous shot,
   // no cuts…" as his words. The platform's gates read it whole.
   fd.set("set_take", "1");
-  // A tall frame renders a tall clip; every other rig format renders 16:9
-  // and the page plays it inside its frame lines (shot-rig.ts keeps the format).
-  if (still.format === "vertical") fd.set("video_aspect_ratio", "9:16");
+  // The still's own shape, the one ratio the frames already hold: a tall
+  // frame renders a tall clip, every other rig format 16:9, and the page
+  // plays it inside its frame lines (shot-rig.ts keeps the format). Sent
+  // for every take, and runGeneration lets no words in the direction turn
+  // it (heliosTake, 2026-09-25): "like a reel" rendered a 9:16 clip between
+  // two 16:9 frames.
+  fd.set("video_aspect_ratio", takeAspectRatio(still.format));
   fd.set("storyboard_start_path", startUrl);
   fd.set("storyboard_end_path", endUrl);
   // The clip's frames are ours, and the plan was checked above: the frames

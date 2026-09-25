@@ -8,10 +8,12 @@ import {
   SET_TAKE_DEFAULT_ENGINE,
   SET_TAKE_ENGINES,
   stillQuoteInput,
+  takeAspectRatio,
   takeQuoteInput,
   takesCredits,
   type TakeSource,
 } from "./take";
+import { RIG_FORMAT_ORDER } from "./rig";
 import { quoteSend } from "../generations/quote";
 import { FILM_MOVE_WORDS, FILM_TEXTURE_WORDS } from "./moves";
 import { MODEL_CAPABILITIES } from "../generations/send-plan";
@@ -101,6 +103,38 @@ describe("the take's words reach the video model as written (actions.ts)", () =>
     expect(prompt).toBeGreaterThan(-1);
     expect(final).toBeGreaterThan(prompt);
     expect(final).toBeLessThan(take.indexOf("withServerBuiltFrames(() => runGeneration(fd))"));
+  });
+});
+
+// A take asks for its still's own shape (2026-09-25): the engines render
+// 16:9 or 9:16 only, and a Helios take's words can no longer flip it —
+// "like a reel" asked a 16:9 take for 9:16 between two 16:9 frames.
+describe("the take's shape", () => {
+  const src = readFileSync(join(__dirname, "actions.ts"), "utf8");
+  const take = src.slice(src.indexOf("export async function takeInSet("), src.indexOf("// Delete\n"));
+  const run = readFileSync(join(__dirname, "../generations/actions.ts"), "utf8");
+
+  it("is 9:16 for a tall still and 16:9 for every other format", () => {
+    for (const f of RIG_FORMAT_ORDER) expect(takeAspectRatio(f)).toBe(f === "vertical" ? "9:16" : "16:9");
+  });
+
+  it("is sent for every take, before the clip is asked for", () => {
+    const ratio = take.indexOf('fd.set("video_aspect_ratio", takeAspectRatio(still.format));');
+    expect(ratio).toBeGreaterThan(-1);
+    expect(take).not.toContain('if (still.format === "vertical") fd.set("video_aspect_ratio", "9:16");');
+    expect(take.match(/video_aspect_ratio/g)).toHaveLength(1);
+    expect(ratio).toBeLessThan(take.indexOf("withServerBuiltFrames(() => runGeneration(fd))"));
+  });
+
+  it("is not turned by the take's words, while the composer's still are read", () => {
+    const helios = run.indexOf('const heliosTake = contentType === "video" && serverBuiltFrames();');
+    const words = run.indexOf(
+      'const promptAspectRatio = contentType === "video" && !heliosTake ? detectAspectRatioFromPrompt(userInput) : null;',
+    );
+    expect(helios).toBeGreaterThan(-1);
+    expect(words).toBeGreaterThan(helios);
+    expect(run.match(/const heliosTake = /g)).toHaveLength(1);
+    expect(run).not.toContain('const promptAspectRatio = contentType === "video" ? detectAspectRatioFromPrompt(userInput) : null;');
   });
 });
 
