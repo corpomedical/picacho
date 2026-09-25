@@ -18,6 +18,7 @@ import {
   setEditsMonthlyLimit,
   SETS_LIST_LIMIT,
   SET_EDITS_MONTH_SCOPE,
+  HELIOS_SIMPLE_FOR_ALL,
   SET_RESERVED_BRIEF, setTakesEligible } from "@/lib/sets/set-config";
 import { readShotCameras } from "@/lib/sets/shot-camera";
 import { readShotWords } from "@/lib/sets/shot-words-store";
@@ -476,6 +477,10 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     // The chat's reader v2 (Helios Cut 2): admins until the phrase check
     // passes; readShotTurn holds the same rule on the server.
     readerV2: access.isAdmin || SHOT_READER_V2_OPEN_TO_ALL,
+    // The new layout, Set · Shoot · Film (Helios Cut 3, step 10): admins
+    // until HELIOS_SIMPLE_FOR_ALL opens it; its own gate, so models on
+    // things (modelsOn above) stay admins only either way.
+    simpleLayout: access.isAdmin || HELIOS_SIMPLE_FOR_ALL,
     // The Producer's lamp is on this page (step 12): the chat's "elsewhere"
     // answer then offers it, with the person's words, unsent. Only reader
     // v2's reply reads it, so an account v2 is not open to reads nothing for

@@ -8,7 +8,7 @@ import itMsgs from "../i18n/messages/it";
 
 // The new layout (2026-09-24, "I want the UI to be simpler and friendlier
 // while also being professional"): a draft an admin switches on from the
-// bar. Set · Shoot · Film as numbered steps; "In this set" down the left in
+// bar, behind its own gate (HELIOS_SIMPLE_FOR_ALL, Helios Cut 3). Set · Shoot · Film as numbered steps; "In this set" down the left in
 // place of the tool rail; one panel on the right; the same stage, shots
 // and actions underneath. Read as source, like the page's other tests.
 
@@ -16,6 +16,9 @@ const read = (p: string) => readFileSync(join(__dirname, p), "utf8");
 const view = read("../../components/sets/set-view.tsx");
 const panel = read("../../components/sets/things-panel.tsx");
 const frame = read("../../components/sets/studio-frame.tsx");
+const config = read("set-config.ts");
+const data = read("data.ts");
+const setPage = read("../../app/app/sets/[id]/page.tsx");
 
 const fnOf = (source: string, head: string, next: string) => {
   const a = source.indexOf(head);
@@ -26,12 +29,30 @@ const fnOf = (source: string, head: string, next: string) => {
 };
 
 describe("the switch", () => {
-  it("is an admin's, on a wide screen, remembered in the browser or asked for in the address", () => {
-    expect(view).toContain("const simpleOn = simple && wide && modelsOn;");
-    expect(view).toContain('if (asked ? asked === "simple" : window.localStorage.getItem("helios.layout") === "simple") setSimple(true);');
+  // Its own gate (Helios Cut 3, step 10): simpleLayout, admins until
+  // HELIOS_SIMPLE_FOR_ALL opens it — never models' admin-only switch.
+  it("is where the layout is offered, on a wide screen, remembered in the browser or asked for in the address", () => {
+    expect(view).toContain("const simpleOn = simple && wide && simpleLayout;");
+    expect(view).not.toMatch(/const simple(On|Phone) = [^;]*modelsOn/);
+    expect(view).toContain("if (!simpleLayout) return;");
+    expect(view).toContain('const stored = asked ? null : window.localStorage.getItem("helios.layout");');
+    expect(view).toContain('want = asked ? asked === "simple" : HELIOS_SIMPLE_FOR_ALL ? stored !== "classic" : stored === "simple";');
+    expect(view).toContain("}, [simpleLayout]);");
     expect(view).toContain('window.localStorage.setItem("helios.layout", next ? "simple" : "classic");');
-    expect(view).toContain("{modelsOn && wide && (");
+    expect(view).toContain("{simpleLayout && wide && (");
     expect(view).toContain("data-layout-toggle");
+  });
+
+  it("starts on when it is everyone's default, so a load never paints Classic first", () => {
+    expect(view).toContain("const [simple, setSimple] = useState<boolean>(() => simpleLayout && HELIOS_SIMPLE_FOR_ALL);");
+  });
+
+  it("is admins' until its own switch opens it, and the page is handed the gate", () => {
+    expect(config).toContain("export const HELIOS_SIMPLE_FOR_ALL = false;");
+    expect(data).toContain("simpleLayout: access.isAdmin || HELIOS_SIMPLE_FOR_ALL,");
+    expect(setPage).toContain("simpleLayout={data.simpleLayout}");
+    // Models on things keep their own admin-only gate.
+    expect(data).toContain("modelsOn: access.isAdmin,");
   });
 });
 
@@ -83,7 +104,7 @@ describe("the new layout", () => {
 
 describe("the new layout on a phone", () => {
   it("keeps the same steps; in Set the list is a strip over the stage's foot and the setup chips step aside", () => {
-    expect(view).toContain("const simplePhone = simple && !wide && modelsOn;");
+    expect(view).toContain("const simplePhone = simple && !wide && simpleLayout;");
     expect(view).toContain('const simplePhoneSet = simplePhone && !filmOpen && !cutOpen && simpleStep === "set";');
     expect(view).toContain("const simpleSteps = simpleOn || simplePhone");
     expect(view).toContain("{!viewingShot && !simpleOn && !simplePhoneSet && setupChipsView(false)}");
@@ -94,7 +115,7 @@ describe("the new layout on a phone", () => {
   });
 
   it("puts the switch at the stage's foot, where the bar has no room for it", () => {
-    expect(view).toContain("{modelsOn && !wide && (");
+    expect(view).toContain("{simpleLayout && !wide && (");
     expect(view).toContain("data-layout-toggle-phone");
   });
 });

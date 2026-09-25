@@ -163,6 +163,12 @@ export type SetPageData =
        */
       readerV2: boolean;
       /**
+       * Whether the set page offers the new layout, Set · Shoot · Film
+       * (Helios Cut 3, step 10): admins, and every account once
+       * set-config.ts HELIOS_SIMPLE_FOR_ALL is on, when it is also the default.
+       */
+      simpleLayout: boolean;
+      /**
        * Whether the Producer's lamp is on this page (producer/enabled.ts
        * producerVisible, the app layout's own rule): the chat's answer about
        * something outside the set then offers "Ask the Producer", which opens

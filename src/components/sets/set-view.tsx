@@ -171,6 +171,7 @@ import {
   type TurnOutcomes,
 } from "@/lib/sets/turn-reply";
 import {
+  HELIOS_SIMPLE_FOR_ALL,
   SET_COMPARE_PX,
   SET_MAX_TILT_DOWN_DEG,
   SET_MAX_TILT_UP_DEG,
@@ -743,6 +744,7 @@ export function SetView({
   identityBar,
   matchOn,
   modelsOn = false,
+  simpleLayout = false,
   initialThingModels = [],
   takesOn,
   liveOn = false,
@@ -777,6 +779,12 @@ export function SetView({
   matchOn: boolean;
   /** Whether a model file can be put on a thing (thing-model.ts): admins, while our own model builder is proved. */
   modelsOn?: boolean;
+  /**
+   * Whether the new layout (Set · Shoot · Film) is offered here: admins, and
+   * every account once set-config.ts HELIOS_SIMPLE_FOR_ALL is on (data.ts
+   * simpleLayout; Helios Cut 3, step 10). Its own gate, not models'.
+   */
+  simpleLayout?: boolean;
   /** The models kept with the set (thing-model-store.ts): each thing's newest, by the key it was kept under. */
   initialThingModels?: { key: string; url: string; flip: boolean }[];
   /**
@@ -1159,22 +1167,30 @@ export function SetView({
   // the stage as a clip — what a re-shoot engine is given as the shot's
   // motion. Held in the page only until it is sent or the page is left.
   const [recording, setRecording] = useState(false);
-  // The new layout (things-panel.tsx, 2026-09-24): a draft an admin switches
-  // on from the bar, remembered in this browser (or ?layout=simple). The
-  // stage, the shots and every action are the same; only where they are
-  // drawn changes. Set and Shoot are both today's shooting mode, told apart
-  // by what the right-hand panel holds; Film is Film.
-  const [simple, setSimple] = useState(false);
+  // The new layout (things-panel.tsx, 2026-09-24): offered where
+  // `simpleLayout` says (admins, and everyone once HELIOS_SIMPLE_FOR_ALL is
+  // on), switched from the bar, remembered in this browser (or
+  // ?layout=simple / ?layout=classic). While it is an admin's draft it is
+  // off until asked for; once it is everyone's it is the default, and it
+  // starts on, so a load never paints Classic first; a stored "classic"
+  // opts that browser out. The stage, the shots and every action are the
+  // same; only where they are drawn changes. Set and Shoot are both today's
+  // shooting mode, told apart by what the right-hand panel holds; Film is
+  // Film.
+  const [simple, setSimple] = useState<boolean>(() => simpleLayout && HELIOS_SIMPLE_FOR_ALL);
   const [simpleStep, setSimpleStep] = useState<"set" | "shoot">("set");
   useEffect(() => {
-    if (!modelsOn) return;
+    if (!simpleLayout) return;
+    let want: boolean = HELIOS_SIMPLE_FOR_ALL;
     try {
       const asked = new URLSearchParams(window.location.search).get("layout");
-      if (asked ? asked === "simple" : window.localStorage.getItem("helios.layout") === "simple") setSimple(true);
+      const stored = asked ? null : window.localStorage.getItem("helios.layout");
+      want = asked ? asked === "simple" : HELIOS_SIMPLE_FOR_ALL ? stored !== "classic" : stored === "simple";
     } catch {
-      // No storage (a private window): the classic layout.
+      // No storage (a private window): the default layout.
     }
-  }, [modelsOn]);
+    setSimple(want);
+  }, [simpleLayout]);
   // The first visit (first-visit.tsx; Helios Cut 3, step 9): three tips on a
   // set with no stills, once per browser. `tips` is the one showing, null
   // when the card is away. ?tour=1 shows them again.
@@ -1274,10 +1290,10 @@ export function SetView({
   // for the status bar. Film opening takes the dock to its tab; closing on
   // it goes back to Camera (adjust-state-during-render, as the rig did).
   const wide = useWide();
-  /** The new layout is drawn: switched on, by an admin, on a screen wide enough for its three columns. */
-  const simpleOn = simple && wide && modelsOn;
+  /** The new layout is drawn: switched on, where it is offered, on a screen wide enough for its three columns. */
+  const simpleOn = simple && wide && simpleLayout;
   /** The new layout on a phone: the same steps; in Set the list is a strip over the stage's foot, and nothing else moves. */
-  const simplePhone = simple && !wide && modelsOn;
+  const simplePhone = simple && !wide && simpleLayout;
   /** A phone's Set step: the setup chips step aside (they are Shoot's), and the strip names who and what is in the set. */
   const simplePhoneSet = simplePhone && !filmOpen && !cutOpen && simpleStep === "set";
   const [dockTab, setDockTab] = useState<DockTab>("astra");
@@ -9977,7 +9993,7 @@ export function SetView({
           )
         }
       >
-        {modelsOn && wide && (
+        {simpleLayout && wide && (
           <button
             type="button"
             onClick={toggleLayout}
@@ -10282,8 +10298,8 @@ export function SetView({
                 // The new layout's Shoot on a phone: the chips already name who is in the still, so the strip stays in Set.
                 castShown && !simplePhone && castStrip("pointer-events-auto relative max-w-full")
               )}
-              {/* A phone's bar has no room for the switch: it sits here, an admin's. */}
-              {modelsOn && !wide && (
+              {/* A phone's bar has no room for the switch: it sits here, where the layout is offered. */}
+              {simpleLayout && !wide && (
                 <button
                   type="button"
                   onClick={toggleLayout}

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import raceTrack from "./fixtures-race-track.json";
-import { SET_EDITS_MONTH_SCOPE, setEditsMonthlyLimit, setTakesEligible } from "./set-config";
+import { HELIOS_SIMPLE_FOR_ALL, SET_EDITS_MONTH_SCOPE, setEditsMonthlyLimit, setTakesEligible } from "./set-config";
 import { mediaUrl, thumbUrl } from "../media/url";
 
 // The set page's loader, for what a take was rendered from (2026-09-16). A
@@ -274,6 +274,20 @@ describe("the month's Astra changes, for the editor", () => {
     expect((await page(ready(world([still(1)])))).readerV2).toBe(true);
     who = { plan: "elite", isAdmin: false };
     expect((await page(ready(world([still(1)])))).readerV2).toBe(false);
+  });
+
+  // The new layout (Helios Cut 3, step 10): its own gate, admins until
+  // HELIOS_SIMPLE_FOR_ALL opens it; models on things stay admins only.
+  it("offers the new layout to admins only, until it opens to everyone", async () => {
+    expect(HELIOS_SIMPLE_FOR_ALL).toBe(false);
+    who = { plan: "growth", isAdmin: true };
+    const admin = await page(ready(world([still(1)])));
+    expect(admin.simpleLayout).toBe(true);
+    expect(admin.modelsOn).toBe(true);
+    who = { plan: "elite", isAdmin: false };
+    const paying = await page(ready(world([still(1)])));
+    expect(paying.simpleLayout).toBe(false);
+    expect(paying.modelsOn).toBe(false);
   });
 });
 
