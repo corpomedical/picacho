@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.107.0",
+    build: 146,
+    date: "2026-09-25",
+    title: "Director's Cut: the timeline's monitor plays your video the way it was rendered",
+    items: [
+      "The monitor now plays the titles, zooms and flashes. Before, the preview's security rules refused the animation library, style sheets and fonts a project keeps in its own folder, because they came from storage, so all of that stood still. They are now served from the site itself.",
+      "Titles now show in their real typeface. The renderer downloads the Google fonts a title names, like League Gothic and Montserrat, when it makes the video; the preview now loads the same fonts, instead of a stand-in.",
+      "Asking for a change on an edit made before the timeline now brings back a version that opens on the timeline. Each edit's session keeps the instructions it started with, so every change now asks Opus for the editable project too.",
+    ],
+  },
+  {
     version: "1.106.0",
     build: 145,
     date: "2026-09-25",

@@ -35,6 +35,17 @@ export const AGENT_SKILLS = [
   "slideshow",
 ] as const;
 
+/**
+ * How each video's editable project is built and handed over. In the brief,
+ * and again in every change: a session started before the timeline runs on
+ * the brief it began with, so its changes would otherwise come back without
+ * a project.
+ */
+export const PROJECT_RULES = `- Build each video in its own HyperFrames project folder, /workspace/projects/<slug>/. Link the footage into it once (ln -s /workspace/footage footage) and refer to clips only as footage/clip-N.<ext>.
+- Everything else the composition uses — music, sound effects, images, fonts, sub-compositions — lives inside that folder and is referred to by a relative path. No absolute paths, no ../, nothing in /tmp, no files fetched at play time except scripts and fonts from cdn.jsdelivr.net and Google Fonts.
+- Keep every clip, audio and text element a direct, timed element (data-start, data-duration, data-media-start, data-volume, data-track-index) so each one shows as its own block on a timeline.
+- After the final render, pack the folder without the footage: tar --format=ustar --exclude=./footage --exclude=./node_modules -cf /tmp/<slug>.project.tar -C /workspace/projects/<slug> . then copy it into /mnt/session/outputs/ and add "project":"<slug>.project.tar" to that video's entry in result.json. Keep a pack under 150 MB.`;
+
 export const AGENT_SYSTEM = `You are the editor behind Picacho's Director's Cut. A customer uploaded raw footage and wrote a brief. You make the finished video (or videos) yourself, start to finish, with HyperFrames — the HTML-to-video framework whose own workflow skills are attached to you. Nobody is available to answer questions: never ask, decide. Nobody reviews your work before the customer sees it, so it has to be what a strong professional editor would hand over.
 
 THE JOB
@@ -78,10 +89,7 @@ DELIVER
 - Then reply with one short line saying it is done.
 
 THE EDITABLE PROJECT — the customer opens it on a timeline and keeps editing it
-- Build each video in its own HyperFrames project folder, /workspace/projects/<slug>/. Link the footage into it once (ln -s /workspace/footage footage) and refer to clips only as footage/clip-N.<ext>.
-- Everything else the composition uses — music, sound effects, images, fonts, sub-compositions — lives inside that folder and is referred to by a relative path. No absolute paths, no ../, nothing in /tmp, no files fetched at play time except scripts and fonts from cdn.jsdelivr.net and Google Fonts.
-- Keep every clip, audio and text element a direct, timed element (data-start, data-duration, data-media-start, data-volume, data-track-index) so each one shows as its own block on a timeline.
-- After the final render, pack the folder without the footage: tar --format=ustar --exclude=./footage --exclude=./node_modules -cf /tmp/<slug>.project.tar -C /workspace/projects/<slug> . then copy it into /mnt/session/outputs/ and add "project":"<slug>.project.tar" to that video's entry in result.json. Keep a pack under 150 MB.
+${PROJECT_RULES}
 
 CHANGES
 - Later messages may carry a change the customer asked for, between markers. Edit the project you already built rather than starting over, re-check, re-render, write the new videos and packs with new file names (e.g. hook-reel-v2.mp4, hook-reel-v2.project.tar) and a fresh result.json that lists only the new versions.
@@ -163,6 +171,7 @@ NOTE>>>`);
     const lines = extras.clips.map((c) => `- Clip ${c.index}: "${c.name.slice(0, 120)}" ${c.url}`).join("\n");
     parts.push(`If your copies of the footage are gone, fresh download links (valid 12 hours):\n${lines}`);
   }
+  parts.push(`Hand over each new version's editable project too, even if your first instructions did not mention it:\n${PROJECT_RULES}`);
   parts.push("Make the change and deliver the new versions.");
   return parts.join("\n\n");
 }

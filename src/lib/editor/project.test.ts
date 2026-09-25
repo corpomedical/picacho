@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { footageIndex, previewCsp, projectDir, projectToken, readProjectToken, readTar, safeProjectPath, withRuntime } from "./project";
+import { footageIndex, previewCsp, projectDir, projectToken, readProjectToken, readTar, safeProjectPath, withFonts, withRuntime } from "./project";
 
 /** A minimal ustar writer for the tests: one 512-byte header per entry, data padded to 512. */
 function tar(entries: { name: string; data?: string; type?: string; prefix?: string }[]): Uint8Array {
@@ -66,6 +66,25 @@ describe("the preview page", () => {
     expect(served.indexOf("hyperframe.runtime.iife.js")).toBeLessThan(served.indexOf("gsap.js"));
     expect(withRuntime(served, "0.8.72")).toBe(served);
     expect(withRuntime("<body><p>x</p></body>", "0.8.72").startsWith('<script src="https://cdn.jsdelivr.net/npm/@hyperframes/core@0.8.72/')).toBe(true);
+  });
+
+  it("loads the Google fonts the page names, as HyperFrames' renderer does when it renders (his live edit: League Gothic + Montserrat)", () => {
+    const page = `<html><head><style>
+      #title-open .word { font-family: "League Gothic", sans-serif; }
+      .tag { font-family: "Montserrat", sans-serif; }
+      .end { font-family: "League Gothic", sans-serif; }
+      .ui { font-family: -apple-system, "Helvetica Neue", sans-serif; }
+      @font-face { font-family: "Own Face"; src: url(assets/own.woff2); }
+      .own { font-family: "Own Face", serif; }
+    </style></head><body><p style="font-family: 'Inter', sans-serif">x</p></body></html>`;
+    const served = withFonts(page);
+    const links = [...served.matchAll(/css\?family=([^:]+):/g)].map((m) => m[1]);
+    expect(links).toEqual(["League+Gothic", "Montserrat", "Inter"]);
+    expect(served).toContain("400italic,700italic&amp;display=block");
+    expect(served.indexOf("<link")).toBeGreaterThan(served.indexOf("<head>"));
+    // Already loaded by the page, declared by it, or a system face: nothing added.
+    expect(withFonts('<head><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400&amp;display=swap"></head><p style="font-family: Inter">x</p>')).not.toContain("css?family");
+    expect(withFonts("<head></head><p style=\"font-family: Georgia, serif\">x</p>")).toBe("<head></head><p style=\"font-family: Georgia, serif\">x</p>");
   });
 });
 

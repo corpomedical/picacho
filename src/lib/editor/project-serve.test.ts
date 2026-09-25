@@ -59,6 +59,22 @@ describe("the preview route", () => {
     expect((await serveProjectFile(tok(), ["footage", "clip-7.mp4"], new URLSearchParams(), deps())).status).toBe(404);
   });
 
+  it("passes the page's scripts, styles and fonts through itself: the preview's policy refuses them from storage", async () => {
+    const stored = { [`${DIR}/assets/gsap.min.js`]: "window.gsap={}", [`${DIR}/assets/look.css`]: "body{}", [`${DIR}/assets/fonts/a.woff2`]: "wOF2" };
+    const js = await serveProjectFile(tok(), ["assets", "gsap.min.js"], new URLSearchParams(), deps(stored));
+    expect(js.status).toBe(200);
+    expect(js.headers.get("Content-Type")).toBe("text/javascript; charset=utf-8");
+    expect(js.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(await js.text()).toBe("window.gsap={}");
+    expect((await serveProjectFile(tok(), ["assets", "look.css"], new URLSearchParams(), deps(stored))).headers.get("Content-Type")).toBe("text/css; charset=utf-8");
+    const font = await serveProjectFile(tok(), ["assets", "fonts", "a.woff2"], new URLSearchParams(), deps(stored));
+    expect(font.headers.get("Content-Type")).toBe("font/woff2");
+    expect(font.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect((await serveProjectFile(tok(), ["assets", "missing.js"], new URLSearchParams(), deps(stored))).status).toBe(404);
+    // What the page's policy does take from storage (footage, audio, images) still redirects.
+    expect((await serveProjectFile(tok(), ["assets", "sfx", "hit.mp3"], new URLSearchParams(), deps(stored))).status).toBe(302);
+  });
+
   it("opens nothing for a bad token, another video, or a path that climbs out", async () => {
     expect((await serveProjectFile("x.y.z.w", ["index.html"], new URLSearchParams(), deps())).status).toBe(404);
     const other = projectToken(EDIT, "33333333-3333-4333-8333-333333333333");

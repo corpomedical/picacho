@@ -5,6 +5,9 @@
 //
 //   *.html → served from here, with the preview's own narrow policy
 //            (index.html?draft=1 is the editor's unsaved working copy);
+//   scripts, styles, fonts → passed through from here too: that policy takes
+//            code, styles and fonts from this address only, so a redirect to
+//            storage would be refused and the page would play without them;
 //   the rest → a short-lived redirect to the stored object.
 //
 // No session cookie is involved: the frame is sandboxed to an opaque origin,
@@ -13,10 +16,27 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { EDITOR_BUCKET, type ClipRecord, type DeliveryRecord } from "./job";
-import { footageIndex, PROJECT_DRAFT, PROJECT_ENTRY, previewCsp, readProjectToken, safeProjectPath, withRuntime } from "./project";
+import { footageIndex, PROJECT_DRAFT, PROJECT_ENTRY, previewCsp, readProjectToken, safeProjectPath, withFonts, withRuntime } from "./project";
 import { HYPERFRAMES_VERSION } from "./agent-prompt";
 
 const REDIRECT_SECONDS = 60 * 60;
+
+const PASS_THROUGH: Record<string, string> = {
+  js: "text/javascript; charset=utf-8",
+  mjs: "text/javascript; charset=utf-8",
+  css: "text/css; charset=utf-8",
+  woff: "font/woff",
+  woff2: "font/woff2",
+  ttf: "font/ttf",
+  otf: "font/otf",
+};
+const PASS_THROUGH_MAX_BYTES = 8 * 1024 * 1024;
+
+/** The type a project file is passed through with, or null when it is redirected to storage. */
+export function passThroughType(rel: string): string | null {
+  if (footageIndex(rel) !== null) return null;
+  return PASS_THROUGH[rel.split(".").pop()?.toLowerCase() ?? ""] ?? null;
+}
 
 function notFound(): Response {
   return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
@@ -50,9 +70,9 @@ export async function serveProjectFile(
     for (const p of tryPaths) {
       const { data } = await deps.admin.storage.from(EDITOR_BUCKET).download(p);
       if (!data) continue;
-      // The page the frame plays gets the runtime (project.ts withRuntime); a sub-composition the runtime fetches does not.
+      // The page the frame plays gets the runtime and the Google fonts it names (project.ts); a sub-composition the runtime fetches does not.
       const text = await data.text();
-      return new Response(rel === PROJECT_ENTRY ? withRuntime(text, HYPERFRAMES_VERSION) : text, {
+      return new Response(rel === PROJECT_ENTRY ? withRuntime(withFonts(text), HYPERFRAMES_VERSION) : text, {
         status: 200,
         headers: {
           "Content-Type": "text/html; charset=utf-8",
@@ -66,6 +86,24 @@ export async function serveProjectFile(
       });
     }
     return notFound();
+  }
+
+  const type = passThroughType(rel);
+  if (type) {
+    const { data } = await deps.admin.storage.from(EDITOR_BUCKET).download(stored);
+    if (!data) return notFound();
+    if (data.size <= PASS_THROUGH_MAX_BYTES) {
+      return new Response(await data.arrayBuffer(), {
+        status: 200,
+        headers: {
+          "Content-Type": type,
+          "X-Content-Type-Options": "nosniff",
+          "Referrer-Policy": "no-referrer",
+          "Cache-Control": "private, max-age=600",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
   }
 
   const { data: signed } = await deps.admin.storage.from(EDITOR_BUCKET).createSignedUrl(stored, REDIRECT_SECONDS);

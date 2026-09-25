@@ -140,12 +140,55 @@ export function runtimeUrl(version: string): string {
  */
 export function withRuntime(html: string, version: string): string {
   if (html.includes("hyperframe.runtime")) return html;
-  const tag = `<script src="${runtimeUrl(version)}"></script>`;
+  return atTopOfHead(html, `<script src="${runtimeUrl(version)}"></script>`);
+}
+
+function atTopOfHead(html: string, tag: string): string {
   const head = /<head(\s[^>]*)?>/i.exec(html);
   if (head) return html.slice(0, head.index + head[0].length) + tag + html.slice(head.index + head[0].length);
   const body = /<body(\s[^>]*)?>/i.exec(html);
   if (body) return html.slice(0, body.index) + tag + html.slice(body.index);
   return tag + html;
+}
+
+/** Names a page may use without loading anything: CSS's generic families and the faces every system has. */
+const SYSTEM_FONTS = new Set(
+  [
+    "serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui", "ui-serif", "ui-sans-serif", "ui-monospace", "ui-rounded", "emoji", "math",
+    "inherit", "initial", "unset", "revert", "-apple-system", "blinkmacsystemfont", "segoe ui", "helvetica", "helvetica neue", "arial", "arial black",
+    "times", "times new roman", "georgia", "courier", "courier new", "verdana", "tahoma", "trebuchet ms", "impact",
+  ],
+);
+
+/**
+ * The Google fonts a page names without loading. HyperFrames' renderer fetches
+ * those itself when it compiles a render (so the delivered video has them);
+ * the browser preview does not, and would set every title in a fallback face.
+ * So the route adds a stylesheet per such family, from Google's first CSS
+ * API, which answers with whatever weights the family has; one link each, so
+ * a name Google doesn't know fails on its own. Only the first name of each
+ * font-family list counts: the rest are fallbacks.
+ */
+export function withFonts(html: string): string {
+  const skip = new Set<string>(SYSTEM_FONTS);
+  for (const m of html.matchAll(/@font-face\s*\{[^}]*?font-family\s*:\s*['"]?([^;'"}]+)/gi)) skip.add(m[1].trim().toLowerCase());
+  for (const m of html.matchAll(/fonts\.googleapis\.com\/css2?\?([^"'\s>)]+)/gi)) {
+    for (const family of new URLSearchParams(m[1].replace(/&amp;/g, "&")).getAll("family")) {
+      for (const part of family.split("|")) skip.add(part.split(":")[0].replace(/\+/g, " ").trim().toLowerCase());
+    }
+  }
+  const wanted = new Map<string, string>();
+  for (const m of html.matchAll(/font-family\s*:\s*([^;{}<>]+)/gi)) {
+    const name = m[1].split(",")[0].trim().replace(/^['"]+|['"]+$/g, "").trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9 ]{1,59}$/.test(name) || skip.has(name.toLowerCase())) continue;
+    wanted.set(name.toLowerCase(), name);
+  }
+  if (wanted.size === 0) return html;
+  const links = [...wanted.values()]
+    .slice(0, 8)
+    .map((name) => `<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=${name.replace(/ /g, "+")}:100,200,300,400,500,600,700,800,900,400italic,700italic&amp;display=block">`)
+    .join("");
+  return atTopOfHead(html, links);
 }
 
 // ------------------------------------------------------------ preview policy

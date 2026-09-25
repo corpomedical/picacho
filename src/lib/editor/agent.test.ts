@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { activityOf, collectDelivery, editorApiKey, parseResult, readSession, sendChange, startSession } from "./agent";
-import { AGENT_SKILLS, AGENT_SYSTEM, changeMessage, jobMessage } from "./agent-prompt";
+import { AGENT_SKILLS, AGENT_SYSTEM, changeMessage, jobMessage, PROJECT_RULES } from "./agent-prompt";
 
 /** Just the Managed Agents calls agent.ts makes, recorded. */
 function fakeClient(opts: {
@@ -74,6 +74,15 @@ describe("the editor's standing brief", () => {
     const songOnly = changeMessage("", { song: { index: 5, name: "s.mp3", seconds: 60, url: "https://x/s" } });
     expect(songOnly).not.toContain("<<<NOTE");
     expect(songOnly).toContain("sent a song to re-cut it to");
+  });
+
+  it("asks for the editable project with every change: a session started before the timeline never saw that rule", () => {
+    const msg = changeMessage("shorter");
+    expect(msg).toContain("editable project too, even if your first instructions did not mention it");
+    expect(msg).toContain('add "project":"<slug>.project.tar" to that video\'s entry in result.json');
+    expect(msg.indexOf("project.tar")).toBeLessThan(msg.indexOf("Make the change and deliver the new versions."));
+    // The brief says the same words.
+    expect(AGENT_SYSTEM).toContain(`THE EDITABLE PROJECT — the customer opens it on a timeline and keeps editing it\n${PROJECT_RULES}\n\nCHANGES`);
   });
 });
 
