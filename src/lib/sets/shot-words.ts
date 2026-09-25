@@ -15,7 +15,15 @@
 //
 // THE MONEY. One reading a message: a few hundred tokens in, under a hundred
 // out, on the same small model the look's people reader uses (look-people.ts)
-// — well under a cent (admin/economics.ts quotes its rates).
+// — well under a cent. The only rate in code is identity-check/route.ts's
+// THE MONEY ($0.75 per 1M input tokens, $4.50 per 1M output, read
+// 2026-09-22); the model's page (developers.openai.com/api/docs/models/
+// gpt-5.4-mini) has the rest, cached input included — re-read it before
+// quoting a cost. This model can spend output tokens on hidden reasoning
+// before it writes (describe-image.ts: a tight cap came back EMPTY,
+// operator report 2026-08-25), so what a reading really costs is MEASURED,
+// not argued: every reading logs its token counts, and never its words
+// (readerUsageOf; Helios Cut 2, step 0, 2026-09-25).
 //
 // Relative imports only: tested with a fake fetch.
 
@@ -265,9 +273,50 @@ export function facingFor(facing: FigureFacing, mark: { x: number; z: number }, 
 }
 
 /**
+ * What one reading used, for the log: token counts and how the answer
+ * ended, read off the Chat Completions answer — never a word of the
+ * message, the instructions or the answer. `cached` is the input the
+ * provider served from its prompt cache; `reasoning` is output spent before
+ * the visible text, billed as output and counted against the cap; `finish`
+ * "length" means the cap cut the answer. Null for anything not reported.
+ */
+export type ReaderUsage = {
+  model: string;
+  prompt: number | null;
+  cached: number | null;
+  completion: number | null;
+  reasoning: number | null;
+  finish: string | null;
+};
+
+export function readerUsageOf(data: unknown, model: string): ReaderUsage {
+  const d = (data && typeof data === "object" ? data : {}) as {
+    usage?: {
+      prompt_tokens?: unknown;
+      completion_tokens?: unknown;
+      prompt_tokens_details?: { cached_tokens?: unknown } | null;
+      completion_tokens_details?: { reasoning_tokens?: unknown } | null;
+    } | null;
+    choices?: { finish_reason?: unknown }[] | null;
+  };
+  const count = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null);
+  const finish = Array.isArray(d.choices) ? d.choices[0]?.finish_reason : undefined;
+  return {
+    model,
+    prompt: count(d.usage?.prompt_tokens),
+    cached: count(d.usage?.prompt_tokens_details?.cached_tokens),
+    completion: count(d.usage?.completion_tokens),
+    reasoning: count(d.usage?.completion_tokens_details?.reasoning_tokens),
+    // The provider's own word ("stop", "length"…), kept short: never text.
+    finish: typeof finish === "string" && /^[a-z_]{1,32}$/.test(finish) ? finish : null,
+  };
+}
+
+/**
  * The model's answer to `text` under `instructions`, as text — or null when
  * it could not be asked or did not answer (the header: fail open). Never
- * logs the words.
+ * logs the words; logs what the reading used (readerUsageOf), whatever the
+ * answer turns out to be — an answer the cap emptied most of all.
  */
 export async function askShotWords(
   instructions: string,
@@ -303,6 +352,7 @@ export async function askShotWords(
       return null;
     }
     const data = (await res.json()) as { choices?: { message?: { content?: unknown } }[] } | null;
+    console.info("[sets] reader usage", readerUsageOf(data, SHOT_WORDS_MODEL));
     const answer = data?.choices?.[0]?.message?.content;
     return typeof answer === "string" ? answer : null;
   } catch (err) {

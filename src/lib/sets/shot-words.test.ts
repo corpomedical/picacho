@@ -308,6 +308,126 @@ describe("askShotWords", () => {
   });
 });
 
+// Measure the reader before changing it (Helios Cut 2, step 0, 2026-09-25):
+// nothing recorded what a reading used, so whether this model spends hidden
+// reasoning on it (describe-image.ts says gpt-5.4-mini can) was argued,
+// never read. Every reading now logs its token counts — and never a word.
+describe("what a reading used, logged without its words", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  const MESSAGE = "Eva leans on the purple-elephant car";
+  const ANSWER = answer({ intent: "frame", direction: "Eva leans on the purple-elephant car" });
+  const reply = (body: unknown) => (async () => new Response(JSON.stringify(body), { status: 200 })) as typeof fetch;
+
+  it("logs one line with the token counts and how the answer ended", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-test");
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const fetchFn = reply({
+      choices: [{ message: { content: ANSWER }, finish_reason: "stop" }],
+      usage: {
+        prompt_tokens: 712,
+        completion_tokens: 58,
+        prompt_tokens_details: { cached_tokens: 0 },
+        completion_tokens_details: { reasoning_tokens: 0 },
+      },
+    });
+    expect(await askShotWords("INSTRUCTIONS", MESSAGE, { fetchFn })).toBe(ANSWER);
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(info).toHaveBeenCalledWith("[sets] reader usage", {
+      model: "gpt-5.4-mini",
+      prompt: 712,
+      cached: 0,
+      completion: 58,
+      reasoning: 0,
+      finish: "stop",
+    });
+  });
+
+  it("logs a reading the cap emptied too, and nulls for anything not reported", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-test");
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const emptied = reply({ choices: [{ message: { content: "" }, finish_reason: "length" }], usage: { prompt_tokens: 700, completion_tokens: 400, completion_tokens_details: { reasoning_tokens: 400 } } });
+    await askShotWords("i", MESSAGE, { fetchFn: emptied });
+    expect(info).toHaveBeenLastCalledWith("[sets] reader usage", { model: "gpt-5.4-mini", prompt: 700, cached: null, completion: 400, reasoning: 400, finish: "length" });
+    await askShotWords("i", MESSAGE, { fetchFn: reply({ choices: [{ message: { content: ANSWER } }] }) });
+    expect(info).toHaveBeenLastCalledWith("[sets] reader usage", { model: "gpt-5.4-mini", prompt: null, cached: null, completion: null, reasoning: null, finish: null });
+    // A finish reason that is not the provider's own short word is not kept.
+    await askShotWords("i", MESSAGE, { fetchFn: reply({ choices: [{ message: { content: ANSWER }, finish_reason: MESSAGE }] }) });
+    expect(info).toHaveBeenLastCalledWith("[sets] reader usage", expect.objectContaining({ finish: null }));
+  });
+
+  it("never logs the message, the instructions or the answer — whatever happens", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-test");
+    const logged: unknown[][] = [];
+    for (const level of ["info", "warn", "log", "error", "debug"] as const) {
+      vi.spyOn(console, level).mockImplementation((...args: unknown[]) => void logged.push(args));
+    }
+    const fetchFns = [
+      reply({ choices: [{ message: { content: ANSWER }, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1 } }),
+      (async () => new Response(ANSWER, { status: 500 })) as typeof fetch,
+      (async () => {
+        throw new Error(MESSAGE);
+      }) as typeof fetch,
+    ];
+    for (const fetchFn of fetchFns) await askShotWords("SECRET INSTRUCTIONS", MESSAGE, { fetchFn });
+    expect(logged.length).toBeGreaterThan(0);
+    const all = JSON.stringify(logged);
+    expect(all).not.toContain("purple-elephant");
+    expect(all).not.toContain("SECRET INSTRUCTIONS");
+  });
+});
+
+// Source pin (§7.2 of the Cut 2 spec): no console call in the reader's two
+// files is handed the words — a variable named for them, that is; the
+// strings a line says are its own.
+describe("the reader's files log no words", () => {
+  const WORDS = /\b(text|message|messages|turns|answer|content|instructions|input|words|parsed|data)\b/;
+  /** Each console call's arguments, with its string literals taken out (a template keeps its ${} parts). */
+  const consoleArgs = (source: string): string[] => {
+    const out: string[] = [];
+    for (const m of source.matchAll(/console\.(log|info|warn|error|debug)\(/g)) {
+      let depth = 1;
+      let i = (m.index ?? 0) + m[0].length;
+      const start = i;
+      while (depth > 0 && i < source.length) {
+        const ch = source[i++];
+        if (ch === "(") depth++;
+        else if (ch === ")") depth--;
+      }
+      const args = source.slice(start, i - 1);
+      const expressions = args
+        // The one reader of the answer allowed in a log: it keeps counts only (pinned below).
+        .replace(/readerUsageOf\(data, SHOT_WORDS_MODEL\)/g, "")
+        // A database error's own message ("timeout") is the database's, not the person's.
+        .replace(/\b(\w*[Ee]rror)\.message\b/g, "$1")
+        .replace(/`([^`]*)`/g, (_all, body: string) => [...body.matchAll(/\$\{([^}]*)\}/g)].map((e) => e[1]).join(" "))
+        .replace(/"(?:[^"\\]|\\.)*"/g, "")
+        .replace(/'(?:[^'\\]|\\.)*'/g, "");
+      out.push(expressions);
+    }
+    return out;
+  };
+
+  it("hands every console call counts, codes and error names only", () => {
+    for (const file of ["shot-words.ts", "words-actions.ts"]) {
+      const calls = consoleArgs(readFileSync(join(__dirname, file), "utf8"));
+      expect(calls.length, file).toBeGreaterThan(0);
+      for (const args of calls) expect(args, `${file}: console(${args})`).not.toMatch(WORDS);
+    }
+  });
+
+  it("logs the usage line from the counts alone", () => {
+    const src = readFileSync(join(__dirname, "shot-words.ts"), "utf8");
+    expect(src).toContain('console.info("[sets] reader usage", readerUsageOf(data, SHOT_WORDS_MODEL));');
+    const usageOf = src.slice(src.indexOf("export function readerUsageOf("), src.indexOf("\n}\n", src.indexOf("export function readerUsageOf(")));
+    expect(usageOf).not.toMatch(/\bmessage\b|\bcontent\b/);
+  });
+});
+
 // The Sets home reads a new place out of the message before it builds
 // (words-actions.ts readSetRequest) — a paid call. At the month's build cap
 // the build is refused whatever the reader says, so the reader is not asked
