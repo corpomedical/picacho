@@ -12,6 +12,8 @@ import { frameKey, PEAKS_PER_SECOND, type Previews } from "./media-previews";
 
 export const HEADER_W = 172;
 
+/** A lane whose clips overlap stacks them in rows of at least this height, like separate tracks. */
+const SUB_ROW = 32;
 const HEIGHT: Record<LaneKey, number> = { graphics: 30, titles: 34, story: 76, backdrop: 0, "clip-sound": 50, music: 56, effects: 40, voice: 46 };
 const COLOR: Record<LaneKey, { solid: string; rgb: string }> = {
   graphics: { solid: "#d58ab5", rgb: "213,138,181" },
@@ -60,7 +62,31 @@ export function TimelineView({
 
   const width = Math.max(1, model.duration) * pps + 120;
   const lanes = model.lanes;
-  const total = lanes.reduce((n, l) => n + HEIGHT[l.key], 0);
+  // Overlapping clips on one lane get their own rows (the picture track stays one row: its overlaps are dissolves).
+  const layout = useMemo(() => {
+    const out: { top: number; h: number; rowH: number; rowOf: Map<string, number> }[] = [];
+    for (const l of lanes) {
+      const rowOf = new Map<string, number>();
+      let rows = 1;
+      if (l.key !== "story") {
+        const ends: number[] = [];
+        for (const c of [...l.clips].sort((a, b) => a.start - b.start || a.end - b.end)) {
+          let r = ends.findIndex((e) => e <= c.start + 0.001);
+          if (r < 0) {
+            r = ends.length;
+            ends.push(c.end);
+          } else ends[r] = c.end;
+          rowOf.set(c.id, r);
+        }
+        rows = Math.max(1, ends.length);
+      }
+      const h = rows === 1 ? HEIGHT[l.key] : Math.max(HEIGHT[l.key], rows * SUB_ROW);
+      const prev = out.at(-1);
+      out.push({ top: prev ? prev.top + prev.h : 26, h, rowH: h / rows, rowOf });
+    }
+    return out;
+  }, [lanes]);
+  const total = layout.reduce((n, x) => n + x.h, 0);
 
   const edges = useMemo(() => {
     const pts = new Set<number>([0, model.duration]);
@@ -141,11 +167,11 @@ export function TimelineView({
   }, [pps, model.duration]);
 
   return (
-    <div className="flex min-h-0 flex-1 select-none">
+    <div className="flex min-h-0 flex-1 select-none overflow-y-auto overflow-x-hidden">
       <div className="shrink-0 border-r border-[rgba(255,255,255,0.07)] bg-[#0d0e13]" style={{ width: HEADER_W }}>
         <div className="h-[26px] border-b border-[rgba(255,255,255,0.07)]" />
-        {lanes.map((l) => (
-          <div key={l.key} className="flex items-center gap-2 border-b border-[rgba(255,255,255,0.07)] px-3" style={{ height: HEIGHT[l.key] }}>
+        {lanes.map((l, li) => (
+          <div key={l.key} className="flex items-center gap-2 border-b border-[rgba(255,255,255,0.07)] px-3" style={{ height: layout[li].h }}>
             <span className="h-[70%] max-h-[30px] w-1 rounded-sm" style={{ background: COLOR[l.key].solid }} />
             <span className="w-6 font-mono text-[11px] text-[#9aa0ad]">{l.code}</span>
             <span className="truncate text-[12px] text-[#c6c9d1]">{labels.lanes[l.key] ?? l.name}</span>
@@ -154,7 +180,7 @@ export function TimelineView({
       </div>
       <div
         ref={scroller}
-        className={`relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden ${tool === "razor" ? "cursor-crosshair" : ""}`}
+        className={`relative h-max min-w-0 flex-1 overflow-x-auto overflow-y-hidden ${tool === "razor" ? "cursor-crosshair" : ""}`}
         onPointerMove={(e) => {
           if (scrubbing) onSeek(timeAt(e.clientX));
           setHoverT(timeAt(e.clientX));
@@ -184,8 +210,7 @@ export function TimelineView({
           </div>
 
           {lanes.map((l, li) => {
-            const top = 26 + lanes.slice(0, li).reduce((n, x) => n + HEIGHT[x.key], 0);
-            const h = HEIGHT[l.key];
+            const { top, h, rowH, rowOf } = layout[li];
             return (
               <div
                 key={l.key}
@@ -212,7 +237,8 @@ export function TimelineView({
                       laneKey={l.key}
                       left={start * pps}
                       w={Math.max(4, (end - start) * pps)}
-                      h={h}
+                      top={(rowOf.get(c.id) ?? 0) * rowH}
+                      h={rowH}
                       selected={selected === c.id}
                       previews={previews}
                       mediaStart={live && live.mode === "start" ? c.mediaStart + (live.start - c.start) : c.mediaStart}
@@ -252,6 +278,7 @@ function ClipBlock({
   laneKey,
   left,
   w,
+  top,
   h,
   selected,
   previews,
@@ -264,6 +291,8 @@ function ClipBlock({
   laneKey: LaneKey;
   left: number;
   w: number;
+  /** Offset of the clip's row inside its lane. */
+  top: number;
   h: number;
   selected: boolean;
   previews: Previews;
@@ -283,13 +312,17 @@ function ClipBlock({
   const bars = peaks ? waveformPath(peaks, mediaStart, len, w, h - 20) : null;
   const volumeY = clip.volume !== null && (clip.kind === "audio" || laneKey === "clip-sound") ? 14 + (1 - clip.volume) * (h - 24) : null;
   const handle = "absolute top-0 z-10 h-full w-[7px] cursor-ew-resize";
+  const inset = h >= 40 ? 4 : 2;
+  const silent = clip.volume === 0;
   return (
     <div
-      className="absolute top-1 overflow-hidden rounded-[6px]"
+      className="absolute overflow-hidden rounded-[6px]"
       style={{
         left,
+        top: top + inset,
         width: w,
-        height: h - 8,
+        height: h - inset * 2,
+        opacity: silent && !selected ? 0.42 : 1,
         background: laneKey === "story" ? "#1a1d24" : `rgba(${color.rgb},0.14)`,
         boxShadow: `inset 0 0 0 1px rgba(${color.rgb},${laneKey === "story" ? 0.25 : 0.55})${selected ? ", 0 0 0 2px #e0a468" : ""}`,
       }}
@@ -319,6 +352,11 @@ function ClipBlock({
           className="pointer-events-none absolute left-1 top-1 max-w-[calc(100%-8px)] truncate rounded-[4px] px-1.5 text-[10px]"
           style={{ background: laneKey === "story" ? "rgba(7,8,11,0.72)" : "transparent", color: laneKey === "story" ? "#ecedf1" : color.solid }}
         >
+          {silent && (
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" className="mr-1 inline-block align-[-1px]" aria-hidden="true">
+              <path d="M11 5 6 9H2v6h4l5 4zM22 9l-6 6M16 9l6 6" />
+            </svg>
+          )}
           {laneKey === "titles" ? `T  ${clip.label}` : clip.label}
         </span>
       )}

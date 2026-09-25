@@ -72,9 +72,15 @@ export type Note = { role: "editor" | "you"; text: string; song?: string };
 /** `project`: the editable HyperFrames project behind it, when Opus handed one over (project.ts). */
 export type Output = { title: string; summary: string; aspect: string; seconds: number; generationId: string; turn: number; project?: ProjectManifest | null };
 
-/** What was delivered, and the conversation (stored in the row's `plan` column). */
-/** `exports`: timeline edits sent to be rendered (export.ts), newest last. */
-export type DeliveryRecord = { outputs: Output[]; history: Note[]; exports?: ExportRecord[] };
+/** A composed music take, kept in the video's project (composer.ts). */
+export type ComposerTake = { id: string; source: string; engine: "eleven" | "ace"; file: string; seconds: number; prompt: string; costUsd: number; createdAt: number };
+
+/**
+ * What was delivered, and the conversation (stored in the row's `plan` column).
+ * `exports`: timeline edits sent to be rendered (export.ts), newest last;
+ * `takes`: music the composer wrote for a video.
+ */
+export type DeliveryRecord = { outputs: Output[]; history: Note[]; exports?: ExportRecord[]; takes?: ComposerTake[] };
 
 export type EditRow = {
   id: string;

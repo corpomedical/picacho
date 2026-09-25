@@ -14,6 +14,8 @@ import { splitClip, type TimelineClip } from "@/lib/editor/timeline";
 import { useProject } from "./use-project";
 import { useMediaPreviews } from "./media-previews";
 import { Icon, Monitor, timecode, type MonitorHandle } from "./monitor";
+import { ScorePanel } from "./score-panel";
+import { isTake } from "@/lib/editor/composer";
 import { TimelineView } from "./timeline-view";
 
 const MIN_PPS = 8;
@@ -47,7 +49,7 @@ export function EditBay({
   const b = d.bay;
   const [pick, setPick] = useState(0);
   const [showNew, setShowNew] = useState(false);
-  const [rightTab, setRightTab] = useState<"director" | "inspect">("director");
+  const [rightTab, setRightTab] = useState<RightTab>("director");
 
   const latestTurn = detail?.outputs[0]?.turn ?? 0;
   const videos = useMemo(() => (detail?.outputs ?? []).filter((o) => o.turn === latestTurn), [detail, latestTurn]);
@@ -196,6 +198,7 @@ export function EditBay({
           apiRef={project}
           rightTab={rightTab}
           setRightTab={setRightTab}
+          onRefresh={onRefresh}
         />
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -230,6 +233,8 @@ export function EditBay({
   );
 }
 
+type RightTab = "director" | "score" | "inspect";
+
 function formatCut(template: string, n: number) {
   return template.replace("{n}", String(n));
 }
@@ -242,6 +247,7 @@ function ProjectBay({
   apiRef,
   rightTab,
   setRightTab,
+  onRefresh,
 }: {
   detail: EditDetail;
   generationId: string;
@@ -249,8 +255,9 @@ function ProjectBay({
   director: ReactNode;
   /** Lets the top bar save the working copy before Export. */
   apiRef: React.MutableRefObject<{ saveNow: () => Promise<void> } | null>;
-  rightTab: "director" | "inspect";
-  setRightTab: (t: "director" | "inspect") => void;
+  rightTab: RightTab;
+  setRightTab: (t: RightTab) => void;
+  onRefresh: () => Promise<void>;
 }) {
   const { t } = useLocale();
   const d = t.directorsCut;
@@ -277,6 +284,7 @@ function ProjectBay({
   const model = ready?.model ?? null;
   const clips = useMemo(() => model?.lanes.flatMap((l) => l.clips) ?? [], [model]);
   const selectedClip = clips.find((c) => c.id === selected) ?? null;
+  const takes = useMemo(() => detail.takes.filter((x) => x.source === generationId), [detail.takes, generationId]);
   const cutPoints = useMemo(() => (model?.lanes.find((l) => l.key === "story")?.clips ?? []).map((c) => c.start).filter((s) => s > 0), [model]);
 
   // Fit the whole video in the timeline's width when it first opens.
@@ -382,10 +390,28 @@ function ProjectBay({
 
         {/* Right: Director / Inspect */}
         <div className="flex min-h-0 flex-col border-l border-[rgba(255,255,255,0.07)] bg-[#0d0e13]">
-          <Tabs value={rightTab} onChange={(v) => setRightTab(v as "director" | "inspect")} items={[["director", b.director], ["inspect", b.inspect]]} />
+          <Tabs value={rightTab} onChange={(v) => setRightTab(v as RightTab)} items={[["director", b.director], ["score", b.score], ["inspect", b.inspect]]} />
           <div className="min-h-0 flex-1 overflow-y-auto">
             {rightTab === "director" ? (
               director
+            ) : rightTab === "score" ? (
+              ready ? (
+                <ScorePanel
+                  editId={detail.id}
+                  generationId={generationId}
+                  base={ready.base}
+                  duration={ready.model.duration}
+                  cuts={cutPoints}
+                  takes={takes}
+                  inUse={clips.find((c) => isTake(c.src))?.src ?? null}
+                  onComposed={onRefresh}
+                  onUse={(take) => {
+                    setSelected(project.placeMusic(take));
+                  }}
+                />
+              ) : (
+                <p className="p-5 text-[13px] text-[#9aa0ad]">{b.opening}</p>
+              )
             ) : selectedClip ? (
               <Inspector
                 clip={selectedClip}

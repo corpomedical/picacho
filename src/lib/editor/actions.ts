@@ -26,6 +26,7 @@ import type { ProbeResult } from "./analyze";
 import { probeClip } from "./work";
 import { PROJECT_DRAFT, projectToken } from "./project";
 import { bundlePlan, type ExportRecord } from "./export";
+import { aceBody, composeCostUsd, elevenBody, ENGINES, MAX_TAKES, promptText, sectionsFromCuts, type ComposerEngine, type Section } from "./composer";
 import { buildZip, type ZipEntry } from "./zip";
 import { HEYGEN_MAX_BUNDLE_BYTES, heygenConfigured, readRender, startRender, uploadBundle } from "./heygen";
 import { EDITOR_NOT_OPEN, EDITOR_UNAVAILABLE, editorAllowed, isEditorEnabled } from "./enabled";
@@ -41,6 +42,7 @@ import {
   planUploads,
   songProblem,
   type AspectHint,
+  type ComposerTake,
   type EditRow,
   type FileOffer,
   type Note,
@@ -318,6 +320,8 @@ export type EditDetail = {
   cutNumber: number;
   /** Timeline edits sent to render (Export), newest last. */
   exports: { id: string; source: string; status: "rendering" | "done" | "failed"; error: string | null; resultId: string | null }[];
+  /** Music the composer wrote, newest last. */
+  takes: { id: string; source: string; engine: "eleven" | "ace"; file: string; seconds: number }[];
 };
 
 /** One edit in full, for the bench. */
@@ -367,6 +371,7 @@ export async function getEdit(editId: string): Promise<{ error: string | null; e
       error: row.error,
       cutNumber: row.render?.turn ?? 1,
       exports: (row.plan?.exports ?? []).map((x) => ({ id: x.id, source: x.source, status: x.status, error: x.error ?? null, resultId: x.resultId ?? null })),
+      takes: (row.plan?.takes ?? []).map((x) => ({ id: x.id, source: x.source, engine: x.engine, file: x.file, seconds: x.seconds })),
     },
   };
 }
@@ -535,6 +540,83 @@ export async function checkExport(editId: string, exportId: string): Promise<{ e
     { title, summary: "Your edit on the timeline, rendered.", aspect: source.aspect, seconds, generationId, turn: source.turn, project: source.project ?? null },
   );
   return { error: null, status: "done", generationId };
+}
+
+/**
+ * The track composer (composer.ts): up to three takes of music timed to the
+ * cut, from ElevenLabs Music v2.5 or ACE-Step on fal. Each take is kept in the
+ * video's project (so the preview plays it and Export carries it) and costs
+ * what fal lists, recorded on the edit.
+ */
+export async function composeTrack(
+  editId: string,
+  generationId: string,
+  input: { engine: ComposerEngine; prompt: string; styles: string[]; instrumental: boolean; seconds: number; sections: Section[]; takes: number },
+): Promise<{ error: null; takes: EditDetail["takes"] } | { error: string }> {
+  const access = await editorAccess();
+  if (access.error !== null) return { error: access.error };
+  if (!process.env.FAL_KEY) return { error: "The composer isn't switched on yet." };
+  if (await rateLimited(access.userId, "video-edit-compose", 60 * 60, 30)) {
+    return { error: "That's a lot of music in an hour — try again a little later." };
+  }
+  const row = await ownEdit(access.userId, editId);
+  const output = row?.plan?.outputs.find((o) => o.generationId === generationId);
+  if (!row || !output?.project) return { error: "That video isn't yours or no longer exists." };
+  const engine: ComposerEngine = input?.engine === "ace" ? "ace" : "eleven";
+  const prompt = typeof input?.prompt === "string" ? input.prompt.trim().slice(0, 800) : "";
+  const styles = (Array.isArray(input?.styles) ? input.styles : []).filter((s): s is string => typeof s === "string").map((s) => s.slice(0, 40)).slice(0, 12);
+  if (!prompt && styles.length === 0) return { error: "Describe the music, or pick a mood." };
+  const seconds = Math.min(ENGINES[engine].maxSeconds, Math.max(5, Number(input?.seconds) || output.seconds || 30));
+  const sections = sectionsFromCuts(seconds, (Array.isArray(input?.sections) ? input.sections : []).map((s) => Number(s?.start)).filter(Number.isFinite));
+  const takes = Math.max(1, Math.min(MAX_TAKES, Math.round(Number(input?.takes) || MAX_TAKES)));
+  const req = { engine, prompt, styles, instrumental: input?.instrumental !== false, seconds, sections, takes };
+  const admin = createAdminClient();
+  const made = await Promise.allSettled(
+    Array.from({ length: takes }, async () => {
+      const seed = Math.floor(Math.random() * 2_000_000_000);
+      const res = await fetch(`https://fal.run/${ENGINES[engine].endpoint}`, {
+        method: "POST",
+        headers: { authorization: `Key ${process.env.FAL_KEY}`, "content-type": "application/json" },
+        body: JSON.stringify(engine === "eleven" ? elevenBody(req, seed) : aceBody(req, seed)),
+        signal: AbortSignal.timeout(240_000),
+      });
+      if (!res.ok) throw new Error(`${engine} ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      const url = ((await res.json()) as { audio?: { url?: unknown } }).audio?.url;
+      if (typeof url !== "string" || !/^https:\/\/[a-z0-9.-]*fal\.media\//i.test(url)) throw new Error(`${engine}: no audio`);
+      const audio = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+      if (!audio.ok) throw new Error(`${engine}: download ${audio.status}`);
+      const bytes = new Uint8Array(await audio.arrayBuffer());
+      const id = crypto.randomUUID();
+      const type = audio.headers.get("content-type") ?? "";
+      const ext = /mpeg|mp3/i.test(type) || /\.mp3$/i.test(url) ? "mp3" : /wav/i.test(type) || /\.wav$/i.test(url) ? "wav" : engine === "eleven" ? "mp3" : "wav";
+      const file = `assets/music/take-${id.slice(0, 8)}.${ext}`;
+      const { error } = await admin.storage
+        .from(EDITOR_BUCKET)
+        .upload(`${output.project!.dir}/${file}`, bytes, { contentType: ext === "mp3" ? "audio/mpeg" : "audio/wav", upsert: true });
+      if (error) throw new Error(`keep take: ${error.message}`);
+      const take: ComposerTake = { id, source: generationId, engine, file, seconds, prompt: promptText(req).slice(0, 400), costUsd: composeCostUsd(engine, seconds, 1), createdAt: Date.now() };
+      return { take, bytes: bytes.byteLength };
+    }),
+  );
+  const done = made.flatMap((m) => (m.status === "fulfilled" ? [m.value] : []));
+  for (const m of made) if (m.status === "rejected") console.error(`[editor] compose for ${row.id} failed:`, m.reason instanceof Error ? m.reason.message : m.reason);
+  if (done.length === 0) return { error: "The composer couldn't make music this time. Try again." };
+  // The takes join the project (Export bundles them) and the edit's record; fal charges each one it made.
+  const outputs = row.plan!.outputs.map((o) =>
+    o.generationId === generationId && o.project
+      ? { ...o, project: { ...o.project, files: [...o.project.files, ...done.map((d) => ({ path: d.take.file, bytes: d.bytes }))] } }
+      : o,
+  );
+  const spent = done.reduce((n, d) => n + d.take.costUsd, 0);
+  await admin
+    .from("video_edits")
+    .update({
+      plan: { ...row.plan!, outputs, takes: [...(row.plan?.takes ?? []), ...done.map((d) => d.take)] },
+      cost_usd: Math.round((Number(row.cost_usd) + spent) * 10000) / 10000,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", row.id);
+  return { error: null, takes: done.map((d) => ({ id: d.take.id, source: d.take.source, engine: d.take.engine, file: d.take.file, seconds: d.take.seconds })) };
 }
 
 function kick(editId: string): void {

@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Composition } from "@hyperframes/sdk";
 import { openProject, saveProjectDraft } from "@/lib/editor/actions";
+import { isTake, musicElement } from "@/lib/editor/composer";
 import { buildTimeline, backdrops, type ProjectElement, type TimelineClip, type TimelineModel, type TimingEdit } from "@/lib/editor/timeline";
 
 const SAVE_AFTER_MS = 900;
@@ -145,19 +146,40 @@ export function useProject(editId: string, generationId: string, clipNames: read
   );
 
   const element = useCallback((id: string) => comp.current?.getElement(id) ?? null, []);
-  const parentOf = useCallback((id: string): string | null => {
-    const c = comp.current;
-    if (!c) return null;
-    const find = (els: readonly { id: string; children: readonly unknown[] }[], parent: string | null): string | null | undefined => {
-      for (const e of els) {
-        if (e.id === id) return parent;
-        const hit = find(e.children as { id: string; children: readonly unknown[] }[], e.id);
-        if (hit !== undefined) return hit;
-      }
-      return undefined;
-    };
-    return find(c.getRootElements() as unknown as { id: string; children: readonly unknown[] }[], null) ?? null;
-  }, []);
+  const parentOf = useCallback((id: string) => parentIn(comp.current, id), []);
+
+  /**
+   * A composed take goes on the music track from 0 s, as one undo step: an
+   * earlier take comes off, and the music already there is muted (it stays on
+   * the timeline, so the Inspector can bring it back up). Returns the new
+   * clip's id.
+   */
+  const placeMusic = useCallback(
+    (take: { id: string; file: string; seconds: number }): string | null => {
+      const c = comp.current;
+      const now = read();
+      if (!c || !now) return null;
+      const music = now.model.lanes.find((l) => l.key === "music")?.clips ?? [];
+      const audio = now.model.lanes.filter((l) => l.audio).flatMap((l) => l.clips);
+      const roots = c.getRootElements() as unknown as ProjectElement[];
+      const stage = audio.length ? parentIn(c, audio[0].id) : (roots.find((r) => r.attributes["data-composition-id"] !== undefined)?.id ?? null);
+      c.batch(() => {
+        for (const m of music) {
+          if (isTake(m.src)) c.removeElement(m.id);
+          else c.setAttribute(m.id, "data-volume", "0");
+        }
+        c.dispatch({
+          type: "addElement",
+          parent: stage,
+          index: Number.MAX_SAFE_INTEGER,
+          html: musicElement(`music-${take.id.slice(0, 8)}`, take.file, Math.min(take.seconds, now.model.duration)),
+        });
+      });
+      changed();
+      return read()?.model.lanes.flatMap((l) => l.clips).find((x) => x.src === take.file)?.id ?? null;
+    },
+    [read, changed],
+  );
 
   const undo = useCallback(() => {
     comp.current?.undo();
@@ -168,5 +190,20 @@ export function useProject(editId: string, generationId: string, clipNames: read
     changed();
   }, [changed]);
 
-  return { state, applyTimings, setVolume, remove, split, element, parentOf, undo, redo, saveNow: save };
+  return { state, applyTimings, setVolume, remove, split, placeMusic, element, parentOf, undo, redo, saveNow: save };
+}
+
+/** The id of the element that holds `id` (null at the top level). */
+function parentIn(c: Composition | null, id: string): string | null {
+  if (!c) return null;
+  type Node = { id: string; children: readonly unknown[] };
+  const find = (els: readonly Node[], parent: string | null): string | null | undefined => {
+    for (const e of els) {
+      if (e.id === id) return parent;
+      const hit = find(e.children as Node[], e.id);
+      if (hit !== undefined) return hit;
+    }
+    return undefined;
+  };
+  return find(c.getRootElements() as unknown as Node[], null) ?? null;
 }
