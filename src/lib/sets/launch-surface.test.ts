@@ -30,7 +30,24 @@ describe("the surface rides the launch switch", () => {
     const home = read("../../app/page.tsx");
     expect(home).toContain("{SETS_OPEN_TO_PLANS && (");
     expect(home).toContain('href="/guides/helios"');
-    expect(read("../page-dates.ts")).toContain('"/guides/helios": "2026-09-19"');
+    // Moved when the guide's words changed: photo builds and poses came out (Helios Cut 3, step 7).
+    expect(read("../page-dates.ts")).toContain('"/guides/helios": "2026-09-26"');
+  });
+
+  it("the guide promises only what a customer can do (Helios Cut 3, step 7)", () => {
+    const page = read("../../app/guides/helios/page.tsx");
+    // A build from a photo is admins only (photoSetsOn), and poses are off (SET_POSE_WORDS_OPEN).
+    expect(page).not.toMatch(/photo you upload|choose a pose/i);
+    expect(page).toContain("a sitting room with a green sofa by the window");
+    expect(page).toContain("Drag your character to a mark and say where they look.");
+    expect(read("./set-shot-prompt.ts")).toContain("export const SET_POSE_WORDS_OPEN = false");
+  });
+
+  it("the Sets home links the guide, behind the same switch, in words every language has", () => {
+    const home = read("../../components/sets/sets-home.tsx");
+    const link = home.slice(home.indexOf("{SETS_OPEN_TO_PLANS && ("), home.indexOf("</Link>", home.indexOf("{SETS_OPEN_TO_PLANS && (")));
+    expect(link).toContain('href="/guides/helios"');
+    expect(link).toContain("{t.marketing.home.heliosCta}");
   });
 
   it("the screenshots the guide and the home section embed are in the repo", () => {

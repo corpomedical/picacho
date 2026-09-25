@@ -12,7 +12,7 @@ import { deleteSet, pollSetBuild, submitSetBuild, submitSetPhotoBuild } from "@/
 import { readSetRequest } from "@/lib/sets/words-actions";
 import { buildingHintKey, pageSetNotice, photoMetaKey } from "@/lib/sets/leaving";
 import { preparePhoto } from "@/lib/sets/photo-client";
-import { SET_BRIEF_MAX_CHARS, SET_PHOTO_NOTES_MAX_CHARS } from "@/lib/sets/set-config";
+import { SETS_OPEN_TO_PLANS, SET_BRIEF_MAX_CHARS, SET_PHOTO_NOTES_MAX_CHARS } from "@/lib/sets/set-config";
 import { SHOT_WORDS_MAX_CHARS } from "@/lib/sets/shot-words";
 import { stillQuoteInput } from "@/lib/sets/take";
 import { tryAgainWords } from "@/lib/sets/try-again";
@@ -873,6 +873,14 @@ export function SetsHome({
           {error && <p className="mt-2 text-sm text-red-600">{localizeServerText(error, t)}</p>}
         </form>
         <p className="max-w-2xl text-sm text-atelier-muted">{s.subtitle}</p>
+        {/* The public guide (English for every language, as the marketing
+            home links it), only while it is published: it is 404 until
+            Helios is open to the plans (Helios Cut 3, step 7). */}
+        {SETS_OPEN_TO_PLANS && (
+          <Link href="/guides/helios" className="text-sm font-medium text-atelier-accent underline-offset-2 hover:underline">
+            {t.marketing.home.heliosCta}
+          </Link>
+        )}
       </div>
 
       {/* Example shoots: recreate one and it fills the composer */}

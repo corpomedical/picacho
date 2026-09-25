@@ -37,7 +37,7 @@ export const PAGE_UPDATED = {
   "/compare/higgsfield": "2026-09-06",
   "/tools/identity-check": "2026-08-30",
   "/guides": "2026-09-09",
-  "/guides/helios": "2026-09-19",
+  "/guides/helios": "2026-09-26",
   "/guides/ai-character-consistency": "2026-09-20",
   "/guides/ai-camera-movements": "2026-08-28",
   "/guides/seedance-2": "2026-09-20",

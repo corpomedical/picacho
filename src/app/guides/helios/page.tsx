@@ -16,7 +16,10 @@ import { SETS_OPEN_TO_PLANS, SET_BUILDS_MONTHLY_LIMITS } from "@/lib/sets/set-co
 // Editorial rules (the guides' standing three, bent once on #1 on purpose:
 // this one is about our own product, said so from the first line):
 //  2. Every claim below shipped and was verified on the live stage — the
-//     screenshots are the real workspace on a real set.
+//     screenshots are the real workspace on a real set. Two claims came out
+//     on 2026-09-26 (Helios Cut 3, step 7) because customers can't do them:
+//     building a set from an uploaded photo (admins only, photoSetsOn) and
+//     picking a pose (SET_POSE_WORDS_OPEN is off).
 //  3. One CTA band at the end.
 const TITLE = "Helios 3D: Direct AI Shots Inside a Real Set";
 const DESCRIPTION =
@@ -40,11 +43,11 @@ const DOT = "mt-[9px] h-1 w-1 flex-shrink-0 rounded-full bg-ochre";
 const STEPS: { name: string; copy: string }[] = [
   {
     name: "Build the set",
-    copy: "Describe the location in a sentence or two — a rain-dark market, a racing circuit at golden hour, the sitting room in a photo you upload. Astra builds it as real 3D geometry: walls, floors, furniture, marks to stand on, cameras already placed. It's yours to keep and reshoot forever.",
+    copy: "Describe the location in a sentence or two — a rain-dark market, a racing circuit at golden hour, a sitting room with a green sofa by the window. Astra builds it as real 3D geometry: walls, floors, furniture, marks to stand on, cameras already placed. It's yours to keep and reshoot forever.",
   },
   {
     name: "Place the person and the camera",
-    copy: "Drag your character to a mark, choose a pose, say where they look. Orbit the camera to the exact framing you want — the frame lines are the picture, and what you framed out never comes back in the render.",
+    copy: "Drag your character to a mark and say where they look. Orbit the camera to the exact framing you want — the frame lines are the picture, and what you framed out never comes back in the render.",
   },
   {
     name: "Set the rig",
