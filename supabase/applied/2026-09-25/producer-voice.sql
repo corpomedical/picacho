@@ -2,9 +2,9 @@
 -- character, its sounds ai"). Code: src/lib/producer/ (speech.ts speakHuman,
 -- store.ts loadProducerVoice), the voice picker in Settings > Preferences.
 --
--- RUN THIS BEFORE PUSHING THE CODE. Idempotent: a second paste is harmless.
--- (The code also copes without it — it then speaks with the first voice in
--- Admin > Voices and the picker can't save — but run it first all the same.)
+-- APPLIED 2026-09-25 (the operator ran it with the push: "Pushed, SQL ran";
+-- the live Settings page lists the four voices from voice_presets and a
+-- preview came back from fal). Idempotent: a second paste is harmless.
 --
 -- Which of the admin-picked voices (voice_presets, the same list characters
 -- choose from) the person's Producer speaks with. NULL = the first voice in
