@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.104.0",
+    build: 143,
+    date: "2026-09-25",
+    title: "The Producer's bulb, redesigned as glass and light",
+    items: [
+      "The bulb is a glass sphere now instead of a flat dot: a hot core, a highlight on the glass, a shadow side and a filament inside, set in a dark glass disc with a thin reflection that turns slowly round its rim.",
+      "Its light comes in layers: a tight halo, a soft bloom, and a warm pool of light spilling onto the page around it, which breathes gently and widens when the Producer is open.",
+      "When it first appears it warms up like a real filament, with a couple of flickers before it holds. Hovering brightens it.",
+      "While you talk, rings of sound ripple out from the bulb and the pool of light swells with the voice. Tucked into an edge, the bulb becomes a glowing filament tube. The same sphere is the small bulb in the Producer's header and the orb that pulses while it speaks.",
+      "All of it is drawn with CSS, nothing loads, and it stays still for people who turn off motion.",
+    ],
+  },
+  {
     version: "1.103.0",
     build: 142,
     date: "2026-09-25",
