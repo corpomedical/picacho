@@ -398,6 +398,9 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     "filmFileDifferent",
     "filmFileFailed",
     "filmFileShortSound",
+    // The Sets home says what a delete does to the month's builds (Helios Cut 3, step 4).
+    "deleteConfirmBuilding",
+    "deleteConfirmFailed",
   ] as const;
   const SERVER_KEYS = [
     "setPhotoUnreadable",

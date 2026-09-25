@@ -2673,7 +2673,12 @@ const en = {
     untitled: "Untitled set",
     open: "Open set",
     delete: "Delete",
-    deleteConfirm: "Delete this set? The stills you shot in it stay in History.",
+    // Said by what the delete does to the month's builds (Helios Cut 3, step 4): a
+    // deleted build still counts, a still-building one is stopped and still
+    // counts, and a failed one never counted (lib/sets/data.ts countSetBuildsThisMonth).
+    deleteConfirm: "Delete this set? Deleting doesn't give its build back. The stills you shot in it stay in History.",
+    deleteConfirmBuilding: "Stop this build and delete it? It still counts as one of this month's builds.",
+    deleteConfirmFailed: "Delete this failed build? It never counted toward your builds.",
     deleting: "Deleting…",
     back: "All sets",
     loadFailed: "The set couldn't load — reload the page.",

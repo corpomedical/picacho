@@ -21,7 +21,7 @@ import {
   SET_NOT_FOUND,
   SET_PHOTO_UNREADABLE,
 } from "@/lib/sets/messages";
-import type { SetCharacter, SetSummary } from "@/lib/sets/types";
+import type { SetCharacter, SetStatus, SetSummary } from "@/lib/sets/types";
 import { LocalDate } from "@/components/local-date";
 
 // The Sets home (Astra Sets, 2026-09-10; Astra chat since 2026-09-14): it
@@ -453,8 +453,15 @@ export function SetsHome({
     router.refresh();
   }
 
-  async function remove(id: string) {
-    if (!window.confirm(s.deleteConfirm)) return;
+  /**
+   * Delete, after a confirm that says what it does to the month's builds
+   * (Helios Cut 3, step 4): a ready set's build is not given back, a build
+   * still running is stopped and still counts, and a failed one never
+   * counted — the count's own rule (data.ts countSetBuildsThisMonth).
+   */
+  async function remove(id: string, status: SetStatus) {
+    const question = status === "building" ? s.deleteConfirmBuilding : status === "failed" ? s.deleteConfirmFailed : s.deleteConfirm;
+    if (!window.confirm(question)) return;
     setDeleting(id);
     let res: Awaited<ReturnType<typeof deleteSet>>;
     try {
@@ -883,7 +890,7 @@ export function SetsHome({
                       )}
                       <button
                         type="button"
-                        onClick={() => void remove(x.id)}
+                        onClick={() => void remove(x.id, x.status)}
                         disabled={deleting === x.id}
                         className="cursor-pointer text-xs text-atelier-muted transition-colors hover:text-red-600 disabled:opacity-50"
                       >
