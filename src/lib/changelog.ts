@@ -32,6 +32,7 @@ export const RELEASES: Release[] = [
       "After an Astra change, the line under it says how many changes are left this month.",
       "Undo of an Astra change now also brings back the set's own title and description, so the stills after it stop describing the undone change. When that can't be done, the page says the description still mentions it. Every Undo says the change still counts this month.",
       "Each chat reading now records how many tokens it used, never your words, so its real cost can be measured.",
+      "⌘K on a set can now take the film stock, the lens character and the palette off, set an era or take it off, and pick a genre, which sets the genre's light and palette exactly as the rig's \"Use these\" does.",
     ],
   },
   {
