@@ -16,6 +16,20 @@ import type { BrandRule } from "@/lib/brand-rules/types";
 import { ContentPolicyRefusal } from "@/lib/generations/content-policy";
 import { gatePrompt } from "@/lib/generations/policy-log";
 import { maybeNotifyLowCredits } from "@/lib/push/low-credits";
+import {
+  followRepeatSend,
+  isRepeatReservation,
+  REPEAT_FOLLOW_DEADLINE_MS,
+} from "@/lib/generations/repeat-send";
+import {
+  apiRepeatAnswer,
+  IDEMPOTENCY_KEY_REUSED,
+  IDEMPOTENT_TAKE_DELETED,
+  idempotentGenerationId,
+  isSameRequest,
+  type KeyedRow,
+} from "@/lib/api/idempotency";
+import { PLAIN_FREE_USED_TODAY, withoutSalesPitch } from "@/lib/api/plain-errors";
 
 // The API's image generation path.
 //
@@ -33,12 +47,40 @@ export type ApiGenerationResult =
   | {
       error: null;
       id: string;
-      status: "succeeded" | "failed";
+      // "generating" only ever answers a repeated idempotency key whose first
+      // delivery is still rendering: the take exists and is charged, and
+      // get_generation / GET /api/v1/generations/{id} fetch it when it lands.
+      status: "succeeded" | "failed" | "generating";
       prompt: string;
       imageUrl: string | null;
       matchScore: number | null;
       creditsUsed: number;
     };
+
+/**
+ * Gives back the spends an aborted request did take, through the same atomic
+ * RPCs refundGenerationCosts uses. Only for the guarded-spend abort, where
+ * the row's charge was zeroed before anything ran. Never throws: a failure
+ * is logged with every number a person needs to put it right.
+ */
+async function releaseSpends(
+  supabase: SupabaseClient,
+  userId: string,
+  taken: { bonus: number; purchased: number; free: boolean },
+): Promise<void> {
+  const calls: [string, Record<string, unknown>][] = [];
+  if (taken.bonus > 0) calls.push(["add_bonus_credits", { p_user_id: userId, p_amount: taken.bonus }]);
+  if (taken.purchased > 0) calls.push(["add_purchased_credits", { p_user_id: userId, p_amount: taken.purchased }]);
+  if (taken.free) calls.push(["refund_daily_free_generation", { p_user_id: userId }]);
+  for (const [fn, args] of calls) {
+    try {
+      const { error } = await supabase.rpc(fn, args);
+      if (error) console.error("API spend-race abort couldn't give back a spend", { fn, ...args, error: error.message });
+    } catch (err) {
+      console.error("API spend-race abort couldn't give back a spend", { fn, ...args, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+}
 
 export async function runApiImageGeneration(params: {
   supabase: SupabaseClient;
@@ -46,8 +88,62 @@ export async function runApiImageGeneration(params: {
   prompt: string;
   characterId: string | null;
   origin: string;
+  /**
+   * The caller's own name for this request (MCP generate_image's
+   * idempotency_key), already parsed by parseIdempotencyKey. The same name
+   * from the same account returns the first request's image and is never
+   * charged twice. Null or absent: every call is a new image, as before.
+   */
+  idempotencyKey?: string | null;
 }): Promise<ApiGenerationResult> {
   const { supabase, userId, prompt, characterId } = params;
+  const startedAt = Date.now();
+
+  // ONE REQUEST, CHARGED ONCE (Press Tour cut 0, 2026-09-25; see
+  // api/idempotency.ts). With a key, the row's primary key is made from it,
+  // so a retried request finds the first one's row instead of starting a
+  // second render. Asked FIRST, before the content gate and the credit
+  // check, which the first delivery's own row would trip (its charge may be
+  // the credit this one is refused for), and asked again wherever a later
+  // refusal could still be that row's doing — the composer's rule
+  // (repeat-send.ts).
+  let keyedRowId: string | null = null;
+  if (params.idempotencyKey) {
+    // The HMAC's secret. Always present where the admin client works at all;
+    // absent, nothing is charged and nothing starts.
+    const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!secret) return { error: "Couldn't start that generation.", status: 500 };
+    keyedRowId = idempotentGenerationId({ userId, key: params.idempotencyKey }, secret);
+  }
+  const followRepeat = async (): Promise<ApiGenerationResult | null> => {
+    if (!keyedRowId) return null;
+    const readKeyedRow = async () => {
+      const { data, error } = await supabase
+        .from("generations")
+        .select("prompt_input, character_profile_id, deleted_at, credits_used")
+        .eq("id", keyedRowId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      return error ? null : ((data ?? null) as KeyedRow | null);
+    };
+    const first = await readKeyedRow();
+    if (!first) return null;
+    // A key reused for a different picture is refused, not answered with
+    // the old one as if it were new — and never charged.
+    if (!isSameRequest(first, { prompt, characterId })) return { error: IDEMPOTENCY_KEY_REUSED, status: 409 };
+    // Deleted means gone (get_generation says the same): its link is not
+    // handed back through the side door of a retry.
+    if (first.deleted_at) return { error: IDEMPOTENT_TAKE_DELETED, status: 410 };
+    const outcome = await followRepeatSend(supabase, userId, { id: keyedRowId }, {
+      deadlineAt: startedAt + REPEAT_FOLLOW_DEADLINE_MS,
+    });
+    // Re-read after the take settled: a refund releases credits_used after
+    // the status write, and the answer reports what was actually kept.
+    const settled = outcome.kind === "none" ? null : await readKeyedRow();
+    return apiRepeatAnswer(outcome, settled?.credits_used ?? first.credits_used ?? null, params.origin);
+  };
+  const repeatOfEarlier = await followRepeat();
+  if (repeatOfEarlier) return repeatOfEarlier;
 
   // The platform content policy, before ownership, allowance or reservation —
   // so a refused request costs nothing and writes no row. See
@@ -128,9 +224,14 @@ export async function runApiImageGeneration(params: {
   // purchased credit handling, same suspension check.
   // Same credit gate as the composer, minus the human cooldown: the API's
   // own per-minute limit is the right shape for a script (see route.ts).
+  //
+  // Its refusals are written for Picacho's own pages and end in "pick a plan
+  // or top up credits". The API says what happened and stops there
+  // (withoutSalesPitch, api/plain-errors.ts): these texts reach people
+  // through Claude and ChatGPT, whose rules forbid upgrade prompts.
   let allowance = await checkGenerationAllowance(supabase, userId, 1, { skipCooldown: true });
   if (allowance.error) {
-    return { error: allowance.error, status: 402 };
+    return (await followRepeat()) ?? { error: withoutSalesPitch(allowance.error), status: 402 };
   }
 
   // Atomic reservation, same as the composer: the check-and-insert runs under a
@@ -142,7 +243,7 @@ export async function runApiImageGeneration(params: {
   for (let attempt = 0; attempt < 5 && !generationId; attempt++) {
     if (attempt > 0) {
       const re = await checkGenerationAllowance(supabase, userId, 1, { skipCooldown: true });
-      if (re.error) return { error: re.error, status: 402 };
+      if (re.error) return (await followRepeat()) ?? { error: withoutSalesPitch(re.error), status: 402 };
       allowance = re;
     }
     const monthlyPortion =
@@ -154,8 +255,10 @@ export async function runApiImageGeneration(params: {
       p_monthly_portion: monthlyPortion,
       p_limit: allowance.monthlyLimit ?? 0,
       p_since: allowance.periodStartIso ?? new Date(0).toISOString(),
-      // No id → the RPC generates one; there's no client-supplied id on this path.
+      // No key → no id, and the RPC generates one. With a key, the id made
+      // from it: a second delivery of this request meets the primary key.
       p_row: {
+        ...(keyedRowId ? { id: keyedRowId } : {}),
         character_profile_id: characterId,
         prompt_input: prompt,
         status: "generating",
@@ -168,6 +271,14 @@ export async function runApiImageGeneration(params: {
       },
     });
     if (reserveError) {
+      // The key's row id is taken: the other delivery of this request
+      // reserved it first. Follow that take. Only on a duplicate key — any
+      // other failure may have committed THIS request's row, and following
+      // our own unrendered row would just wait out the clock.
+      if (keyedRowId && isRepeatReservation(reserveError)) {
+        const repeat = await followRepeat();
+        if (repeat) return repeat;
+      }
       console.error("API generation reservation failed", reserveError);
       return { error: "Couldn't start that generation.", status: 500 };
     }
@@ -175,7 +286,8 @@ export async function runApiImageGeneration(params: {
   }
 
   if (!generationId) {
-    return { error: "Insufficient credits for that request.", status: 402 };
+    // The other delivery's charge may be what filled the month.
+    return (await followRepeat()) ?? { error: "Insufficient credits for that request.", status: 402 };
   }
 
   // The insert IS the charge — getMonthlyUsage sums credits_used — so the
@@ -187,17 +299,30 @@ export async function runApiImageGeneration(params: {
     ? await consumePurchasedCredits(supabase, userId, allowance.consumePurchased)
     : true;
   const freeOk = allowance.consumeFree ? await consumeFreeGeneration(supabase, userId) : true;
-  if (!purchasedOk || !freeOk) {
+  if (!purchasedOk || !bonusOk || !freeOk) {
     // Concurrent request already took the last credit / today's free
     // generation — abort before any paid work and release this row's charge.
+    // bonusOk is part of the rule, as in every composer twin: without it, ten
+    // concurrent calls on one bonus credit each passed the read, one spend
+    // succeeded, and nine renders ran unpaid on rows that still said
+    // bonus_credits_used 1, so a later refund handed back credits never
+    // taken (review M2).
     await supabase
       .from("generations")
       .update({ status: "failed", credits_used: 0, purchased_credits_used: 0, bonus_credits_used: 0, free_generation_used: false })
       .eq("id", generationId);
+    // A split spend can half succeed (bonus taken, purchased refused): give
+    // back exactly what this request took, since the row no longer records it
+    // and no refund will ever find it.
+    await releaseSpends(supabase, userId, {
+      bonus: bonusOk ? allowance.consumeBonus ?? 0 : 0,
+      purchased: purchasedOk ? allowance.consumePurchased ?? 0 : 0,
+      free: freeOk && Boolean(allowance.consumeFree),
+    });
     return {
-      error: allowance.consumeFree
-        ? "You've used today's free generation — it comes back tomorrow. Top up credits or pick a plan to keep going."
-        : "Insufficient credits for that request.",
+      // What happened, not what to buy (Press Tour cut 0): the old text
+      // ended "Top up credits or pick a plan to keep going."
+      error: allowance.consumeFree ? PLAIN_FREE_USED_TODAY : "Insufficient credits for that request.",
       status: 402,
     };
   }

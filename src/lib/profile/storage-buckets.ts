@@ -44,6 +44,18 @@ export const USER_STORAGE_BUCKETS = [
   // Added 2026-09-17 WITH the lane that created it (recast): uploaded clips
   // of real people performing, one per take, under `${userId}/`.
   "recast-sources",
+  // Added 2026-09-25 (Press Tour, Cut 0): Director's Cut footage and
+  // projects, `${userId}/${editId}/...` (src/lib/editor/job.ts), created
+  // with the editor and never swept until now.
+  "edit-footage",
+  // Added 2026-09-25 WITH the bucket (supabase/pending/press-tour-02-products.sql):
+  // Press Tour's product photos, logo crops and ads, `${userId}/...`. Until
+  // that file runs the bucket is missing and the sweep skips it harmlessly.
+  "press-kit",
+  // Added 2026-09-26 WITH the bucket (same file, section 6): a person's own
+  // photos staged for Press Tour, `${userId}/uploads/...`, until the server
+  // reads them (or /api/cron/press-uploads sweeps them after 3 hours).
+  "press-uploads",
 ];
 
 // The one storage sweep both deletion paths share. This was two hand-copied

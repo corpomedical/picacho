@@ -116,7 +116,10 @@ export async function authenticateApiRequest(
       error: {
         status: 403,
         code: "no_api_access",
-        message: "API access is included with the Elite plan. Contact us to enable it on this account.",
+        // What happened, and nothing to buy (Press Tour cut 0, 2026-09-25).
+        // This text reaches a person through Claude or ChatGPT, whose app
+        // rules forbid upgrade prompts; it used to name the Elite plan.
+        message: API_ACCESS_OFF,
       },
     };
   }
@@ -148,3 +151,60 @@ export async function authenticateApiRequest(
 // script is EXPECTED to be fast here; the point is to bound a runaway loop,
 // not to imitate a person. Credits remain the real limit.
 export const API_RATE_LIMIT_PER_MINUTE = 30;
+
+/** The no_api_access refusal: a plain statement, never a plan or a price. */
+export const API_ACCESS_OFF = "API access isn't turned on for this account.";
+
+export type RevokeOutcome = "revoked" | "already_revoked" | "not_found" | "failed";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Revokes one of a person's own keys, through the SERVICE-ROLE client.
+ *
+ * It used to run through the person's cookie client and lean on the api_keys
+ * "Update own" RLS policy, and it read only `error` (Press Tour critique #3,
+ * 2026-09-25). An UPDATE that RLS filters to zero rows is not an error, so
+ * the day that policy is dropped (it also lets a person clear revoked_at on a
+ * key, or rewrite its hash) every revoke would have answered "done" while the
+ * key kept working. So the write goes through the service role, filtered to
+ * the person's own key explicitly, and the rows it changed are COUNTED: the
+ * answer is "revoked" only when a row actually changed.
+ *
+ * Zero rows is then told apart by one read: a key already revoked (a double
+ * press, a second tab) is done, not an error; a key that is not this
+ * person's is "not_found", whoever's it is. A key that exists, is live and
+ * still did not change is "failed": the write did not take, and saying
+ * otherwise is the bug this replaces.
+ */
+export async function revokeOwnApiKey(
+  admin: SupabaseClient,
+  userId: string,
+  keyId: string,
+  now: Date = new Date(),
+): Promise<RevokeOutcome> {
+  // Not a uuid is not a key of anyone's; asking Postgres would only turn it
+  // into a cast error and a false "try again".
+  if (!userId || !UUID_RE.test(keyId)) return "not_found";
+  // Revoked, not deleted: a key that made forty thousand calls is part of
+  // this account's history, and "which key did that?" has to stay answerable.
+  const { data: changed, error } = await admin
+    .from("api_keys")
+    .update({ revoked_at: now.toISOString() })
+    .eq("id", keyId)
+    .eq("user_id", userId)
+    .is("revoked_at", null)
+    .select("id");
+  if (error) return "failed";
+  if ((changed ?? []).length > 0) return "revoked";
+
+  const { data: row, error: readError } = await admin
+    .from("api_keys")
+    .select("revoked_at")
+    .eq("id", keyId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (readError) return "failed";
+  if (!row) return "not_found";
+  return row.revoked_at ? "already_revoked" : "failed";
+}

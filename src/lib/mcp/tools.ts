@@ -10,10 +10,16 @@
 // character render against the character's own identity photo and returns
 // that number. An agent driving a generic video API gets a file back and has
 // no way to know whether the face is right; an agent driving this one gets
-// `match_score` and can decide to try again. Tools that hand a model a
-// number it can act on are worth more than tools that hand it a URL, and the
-// descriptions below say so, because the description is the only
-// documentation the model ever reads.
+// `match_score` and can show it to the person. The descriptions below say
+// so, because the description is the only documentation the model ever
+// reads.
+//
+// NO PAID LOOPS (Press Tour cut 0, 2026-09-25). The first descriptions told
+// the model to treat a low score as a reason to "adjust the prompt and call
+// again" — an instruction to spend the person's credits, unasked, in a loop
+// whose exit is a number the model does not control. The score is now
+// reported, and another image is the person's decision. The protocol test
+// fails if either text invites a re-roll again.
 //
 // Definitions kept pure and alias-free so the shapes can be unit-tested —
 // a malformed inputSchema is invisible until a client silently stops offering
@@ -62,10 +68,12 @@ export const MCP_TOOLS: McpTool[] = [
     title: "Generate a character image",
     description:
       "Render an image of one of this account's characters and return it with an identity score. " +
-      "SPENDS A CREDIT. The response carries match_score (0-100): how closely the rendered face " +
-      "matches the character's own reference photo. Treat a low score as a signal to adjust the " +
-      "prompt and call again rather than accepting the result — that number is the point of this " +
-      "tool. Takes roughly 20-60 seconds.",
+      "SPENDS A CREDIT on every call. The response carries match_score (0-100): how closely the " +
+      "rendered face matches the character's own reference photo. Show the image and its score to " +
+      "the person; a score is information for them, not a reason to render again, so only make " +
+      "another image when the person asks for one. Send an idempotency_key with every call: if a " +
+      "call times out, calling again with the same key returns the first image instead of charging " +
+      "twice. Takes roughly 20-60 seconds.",
     inputSchema: {
       type: "object",
       properties: {
@@ -79,6 +87,12 @@ export const MCP_TOOLS: McpTool[] = [
           type: "string",
           description: "From list_characters. Omit to render without a character.",
         },
+        idempotency_key: {
+          type: "string",
+          description:
+            "A unique string you make up for this one image, such as a random UUID. The same key with the same prompt returns the first result and is never charged twice; use a new key for each new image.",
+          maxLength: 255,
+        },
       },
       required: ["prompt"],
       additionalProperties: false,
@@ -87,7 +101,11 @@ export const MCP_TOOLS: McpTool[] = [
       type: "object",
       properties: {
         id: { type: "string" },
-        status: { type: "string" },
+        status: {
+          type: "string",
+          description:
+            "succeeded, or generating when a repeated idempotency_key's image is still rendering — fetch it with get_generation.",
+        },
         image_url: { type: ["string", "null"] },
         final_prompt: {
           type: ["string", "null"],
@@ -103,6 +121,8 @@ export const MCP_TOOLS: McpTool[] = [
     },
     // Not read-only and not idempotent: every call bills. A client SHOULD put
     // a human in the loop before invoking it, and these hints are how it knows.
+    // idempotentHint stays false even with idempotency_key: the key is
+    // optional, and a call without one is a new, billed image.
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
   {
@@ -132,16 +152,22 @@ export const MCP_TOOLS: McpTool[] = [
     name: "get_usage",
     title: "Check credits",
     description:
-      "How many credits this account has left in the current period, plus any purchased credits. Worth checking before a batch of generations, since each one spends.",
+      "How many credits this account can still spend: what is left of the plan's allowance this period, plus the bonus and purchased credit balances, which are spent after it. Worth checking before a batch of generations, since each one spends.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     outputSchema: {
       type: "object",
       properties: {
         plan: { type: "string" },
+        plan_label: { type: "string" },
         included_this_period: { type: "number" },
         used_this_period: { type: "number" },
-        remaining_this_period: { type: "number" },
+        remaining_this_period: {
+          type: "number",
+          description: "Left of the plan's own allowance this period. Bonus and purchased credits are separate.",
+        },
+        bonus_credits: { type: "number" },
         purchased_credits: { type: "number" },
+        period_started_at: { type: ["string", "null"] },
       },
       required: ["plan", "remaining_this_period"],
     },
@@ -170,5 +196,6 @@ export const MCP_SERVER_INFO = {
 export const MCP_INSTRUCTIONS =
   "Picacho renders images of a saved character and verifies the result: every character render comes back with " +
   "match_score, a 0-100 measure of how closely the rendered face matches that character's reference photo. " +
-  "Start with list_characters to get a character_id. Generations spend credits — check get_usage before a batch, " +
-  "and prefer adjusting the prompt over re-rolling the same one when a score comes back low.";
+  "Start with list_characters to get a character_id. Every generate_image call spends a credit: check get_usage " +
+  "before a batch, show the person each image with its score, and only make another when they ask. Send an " +
+  "idempotency_key with each generate_image call so a retried call is never charged twice.";

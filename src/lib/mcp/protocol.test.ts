@@ -1,19 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   ASSUMED_PROTOCOL_VERSION,
+  authFailureReply,
   classifyMessage,
   isAcceptableProtocolHeader,
   isAllowedOrigin,
   JSON_RPC_VERSION,
   LATEST_PROTOCOL_VERSION,
   negotiateProtocolVersion,
+  RPC_UNAUTHORIZED,
   rpcError,
   rpcResult,
   SUPPORTED_PROTOCOL_VERSIONS,
   toolError,
   toolResult,
 } from "./protocol";
-import { getMcpTool, isSpendingTool, MCP_TOOLS } from "./tools";
+import { getMcpTool, isSpendingTool, MCP_INSTRUCTIONS, MCP_TOOLS } from "./tools";
 
 // MCP framing (2026-09-01).
 //
@@ -82,6 +84,13 @@ describe("version negotiation", () => {
     expect(negotiateProtocolVersion(42)).toBe(LATEST_PROTOCOL_VERSION);
   });
 
+  it("speaks 2025-11-25 as its newest version (Press Tour cut 0)", () => {
+    // Until 2026-09-25 a client on 2025-11-25 got a hard 400 on its header.
+    expect(LATEST_PROTOCOL_VERSION).toBe("2025-11-25");
+    expect(isAcceptableProtocolHeader("2025-11-25")).toBe(true);
+    expect(negotiateProtocolVersion("2025-11-25")).toBe("2025-11-25");
+  });
+
   it("but the HTTP HEADER is strict, which is the opposite rule", () => {
     // Same value, two different requirements: unsupported in the initialize
     // PARAMETER negotiates; unsupported in the header is a specified 400.
@@ -140,6 +149,32 @@ describe("reply framing", () => {
   });
 });
 
+describe("authFailureReply", () => {
+  it("a bad key is HTTP 401 with a plain WWW-Authenticate: Bearer", () => {
+    // Claude offers to connect an account only on a 401 carrying this header.
+    const r = authFailureReply(4, { status: 401, message: "That API key isn't valid." });
+    expect(r.status).toBe(401);
+    expect(r.headers).toEqual({ "www-authenticate": "Bearer" });
+    expect(r.body).toEqual({
+      jsonrpc: JSON_RPC_VERSION,
+      id: 4,
+      error: { code: RPC_UNAUTHORIZED, message: "That API key isn't valid." },
+    });
+  });
+
+  it("REGRESSION #40: no resource_metadata until the document it names exists", () => {
+    const r = authFailureReply(1, { status: 401, message: "x" });
+    expect(Object.values(r.headers).join(" ")).not.toMatch(/resource_metadata|realm|error=/);
+  });
+
+  it("a key that is fine but not allowed is 403, with no challenge to re-authenticate", () => {
+    const r = authFailureReply("a", { status: 403, message: "API access isn't turned on for this account." });
+    expect(r.status).toBe(403);
+    expect(r.headers).toEqual({});
+    expect(r.body).toMatchObject({ id: "a", error: { code: RPC_UNAUTHORIZED } });
+  });
+});
+
 describe("tool results", () => {
   it("returns structured data BOTH ways", () => {
     // The spec asks a tool returning structuredContent to also serialise it
@@ -195,5 +230,36 @@ describe("tool definitions", () => {
     const d = getMcpTool("generate_image")!.description;
     expect(d).toContain("SPENDS A CREDIT");
     expect(d).toContain("match_score");
+  });
+
+  it("MONEY: no text tells the model to render again on a low score (Press Tour cut 0)", () => {
+    // The first texts said "treat a low score as a signal to adjust the
+    // prompt and call again" and "prefer adjusting the prompt over
+    // re-rolling": an instruction to spend the person's credits, unasked,
+    // in a loop whose exit is a number the model does not control.
+    const texts = [MCP_INSTRUCTIONS, ...MCP_TOOLS.map((t) => t.description)];
+    for (const text of texts) {
+      expect(text).not.toMatch(/low score|adjust(ing)? the prompt|re-?roll|call again rather/i);
+    }
+    // And says instead that another image is the person's call.
+    expect(getMcpTool("generate_image")!.description).toContain("only make another image when the person asks");
+    expect(MCP_INSTRUCTIONS).toContain("only make another when they ask");
+  });
+
+  it("MONEY: generate_image takes an optional idempotency_key, and still declares itself not idempotent", () => {
+    // Optional, so a call without one is a new, billed image: the hint a
+    // client uses to skip confirmation must not claim otherwise.
+    const gen = getMcpTool("generate_image")!;
+    const props = gen.inputSchema.properties as Record<string, { type: string; maxLength?: number }>;
+    expect(props.idempotency_key).toMatchObject({ type: "string", maxLength: 255 });
+    expect(gen.inputSchema.required).toEqual(["prompt"]);
+    expect(gen.annotations?.idempotentHint).toBe(false);
+    expect(gen.description).toContain("idempotency_key");
+  });
+
+  it("no tool text sells: no plans, prices or upgrades (ChatGPT forbids them)", () => {
+    for (const text of [MCP_INSTRUCTIONS, ...MCP_TOOLS.map((t) => t.description)]) {
+      expect(text).not.toMatch(/upgrade|pick a plan|top up|elite|pricing|\$\d/i);
+    }
   });
 });

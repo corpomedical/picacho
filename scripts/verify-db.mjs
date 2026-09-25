@@ -94,7 +94,23 @@ const COLUMNS = {
   // The refusal log both content gates write (applied/2026-09-11).
   policy_refusals: ["user_id", "gate", "reason", "strict_lane", "created_at"],
   notes: ["title", "body"],
-  products: ["image_paths"],
+  // Press Tour's product card (pending/press-tour-02-products.sql) on the
+  // Product Studio table: card-service.ts selects every one of these by name
+  // (types.ts PRODUCT_CARD_COLUMNS), so one missing column fails every card read.
+  products: [
+    "image_paths", "logo_path", "brand_kit_id", "source_url", "category", "dna", "dna_photos",
+    "label_strings", "no_readable_text", "logo_box", "palette", "angles", "lock_refs",
+    "photos_hash", "status", "confirmed_at", "deleted_at",
+  ],
+  // The brand kit and the consents behind a confirmed card or kit (same file).
+  brand_kits: [
+    "user_id", "name", "source_url", "logo_path", "palette", "fonts", "tone", "tagline",
+    "default_cta", "photos_hash", "status", "confirmed_at", "deleted_at",
+  ],
+  product_consents: [
+    "user_id", "kind", "product_id", "brand_kit_id", "answer", "photos_hash",
+    "notice_version", "locale", "method", "place", "ip_hash", "created_at",
+  ],
   app_settings: ["key", "value"],
   feature_flags: ["key", "enabled"],
   voice_presets: ["label"],
@@ -163,7 +179,15 @@ const COLUMNS = {
 // Feature-flag rows the code reads by key. A missing row reads as OFF
 // everywhere (every reader defaults closed), which is why nobody would
 // notice — the switch simply never appears in Admin > Feature flags.
-const FLAGS = ["astra_sets", "astra_photo_sets", "astra_previz", "experimental_models", "chat_agent", "voice_mode", "astra_recce", "recast", "recast_lock", "face_verification", "live", "live_paid_plans"];
+const FLAGS = [
+  "astra_sets", "astra_photo_sets", "astra_previz", "experimental_models", "chat_agent", "voice_mode", "astra_recce", "recast", "recast_lock", "face_verification", "live", "live_paid_plans",
+  // Press Tour (pending/press-tour-01-flags.sql), every one inserted OFF;
+  // src/lib/press-tour/enabled.ts PRESS_TOUR_FLAGS, pinned to this list by rollout.test.ts.
+  "press_tour", "press_tour_posting", "press_post_tiktok_direct", "press_post_meta",
+  "press_trends", "press_tour_plans", "product_lock_person_reshoot", "press_post_x",
+  "press_tour_trial", "press_tour_mcp", "product_lock_calibrated", "product_lock_reshoot",
+  "product_lock_refund",
+];
 
 // RPCs the app calls (schema.sql + pending files).
 const RPCS = [
@@ -183,6 +207,9 @@ const RPCS = [
   "auth_email_status",
   "blast_recipient_emails",
   "drip_candidates",
+  // Press Tour's staged-upload sweep (pending/press-tour-02-products.sql
+  // section 6; SECURITY INVOKER, revoked from public, anon, authenticated).
+  "press_stale_uploads",
 ];
 
 // Functions the ANON key must NOT be able to execute (2026-09-09). Every one
@@ -239,6 +266,12 @@ const BUCKETS = [
   "layer-sources",
   // The clips the Mystique door performs (applied/2026-09-18/recast.sql).
   "recast-sources",
+  // Director's Cut footage and projects (src/lib/editor/job.ts EDITOR_BUCKET).
+  "edit-footage",
+  // Press Tour's product photos, logos and ads (pending/press-tour-02-products.sql).
+  "press-kit",
+  // Press Tour's staged uploads, 12 MB pictures only (same file, section 6).
+  "press-uploads",
 ];
 
 let missing = 0;
@@ -312,6 +345,32 @@ async function main() {
   const ANON = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const anonHeaders = { apikey: ANON, authorization: `Bearer ${ANON}`, "content-type": "application/json" };
   const schemaSql = fs.readFileSync(new URL("../supabase/schema.sql", import.meta.url), "utf8");
+  // schema.sql is a snapshot that LAGS (supabase/README.md): a function
+  // created since the last dump lives only in applied/<date>/ or pending/.
+  // Without these, such a function printed "no signature in schema.sql,
+  // cannot probe" and was never called with the anon key at all, which is
+  // how spend_bonus_credits and add_bonus_credits (applied/2026-09-23) went
+  // unprobed (Press Tour review M1). The snapshot is asked first; the files
+  // after it, the newest last, so a later signature wins.
+  const sqlFilesIn = (dir) => {
+    let out = [];
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return out; // an empty pending/ is the normal steady state
+    }
+    for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      const full = new URL(e.isDirectory() ? `${e.name}/` : e.name, dir);
+      if (e.isDirectory()) out = out.concat(sqlFilesIn(full));
+      else if (e.name.endsWith(".sql")) out.push(fs.readFileSync(full, "utf8"));
+    }
+    return out;
+  };
+  const laterSql = [
+    ...sqlFilesIn(new URL("../supabase/applied/", import.meta.url)),
+    ...sqlFilesIn(new URL("../supabase/pending/", import.meta.url)),
+  ];
   const valueFor = (type) =>
     /uuid\[\]/.test(type) ? [crypto.randomUUID()]
     : /uuid/.test(type) ? crypto.randomUUID()
@@ -321,13 +380,24 @@ async function main() {
     : /jsonb/.test(type) ? {}
     : /text\[\]/.test(type) ? ["probe"]
     : "probe";
+  const signatureOf = (fn) => {
+    const re = new RegExp(`create or replace function public\\.${fn}\\(([^)]*)\\)`, "i");
+    const fromSchema = schemaSql.match(re);
+    if (fromSchema) return fromSchema[1];
+    let found = null;
+    for (const sql of laterSql) {
+      const m = sql.match(re);
+      if (m) found = m[1];
+    }
+    return found;
+  };
   const argsFor = (fn) => {
-    const m = schemaSql.match(new RegExp(`CREATE OR REPLACE FUNCTION public\\.${fn}\\(([^)]*)\\)`));
-    if (!m) return null;
+    const signature = signatureOf(fn);
+    if (signature === null) return null;
     const out = {};
-    for (const part of m[1].split(",").map((x) => x.trim()).filter(Boolean)) {
-      const a = part.match(/^(\w+)\s+([^=]+?)(?:\s+DEFAULT.*)?$/);
-      if (a) out[a[1]] = valueFor(a[2]);
+    for (const part of signature.split(",").map((x) => x.trim()).filter(Boolean)) {
+      const a = part.match(/^(\w+)\s+([^=]+?)(?:\s+DEFAULT.*)?$/i);
+      if (a) out[a[1]] = valueFor(a[2].toLowerCase());
     }
     return out;
   };
@@ -342,7 +412,7 @@ async function main() {
 
   console.log("\nanon key may NOT execute:");
   for (const fn of PRIVATE_RPCS) {
-    if (argsFor(fn) === null) { bad(`${fn} — no signature in schema.sql, cannot probe`); continue; }
+    if (argsFor(fn) === null) { bad(`${fn} — no signature in schema.sql, applied/ or pending/, cannot probe`); continue; }
     const r = await anonCall(fn);
     if (/42501/.test(r.text)) ok(fn);
     // Status only, never the body: an exposed function's body IS the leak

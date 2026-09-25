@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
-import { generateApiKey } from "@/lib/api/keys";
+import { generateApiKey, revokeOwnApiKey } from "@/lib/api/keys";
 import type { PlanId } from "@/lib/plans";
 
 // Creating and revoking the caller's own API keys, from Settings.
@@ -79,16 +79,14 @@ export async function revokeApiKey(formData: FormData): Promise<{ error: string 
   const id = String(formData.get("id") ?? "");
   if (!id) return { error: "Nothing to revoke." };
 
-  // Revoked, not deleted: a key that made forty thousand calls is part of
-  // this account's history, and "which key did that?" has to stay answerable.
-  const { error } = await supabase
-    .from("api_keys")
-    .update({ revoked_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("user_id", userData.user.id)
-    .is("revoked_at", null);
-
-  if (error) return { error: "Couldn't revoke that key — try again." };
+  // The session above says WHO; the write itself goes through the service
+  // role, filtered to this person's key, and counts the rows it changed
+  // (revokeOwnApiKey, Press Tour critique #3). The cookie client's UPDATE
+  // leaned on the "Update own" RLS policy and read only `error`, so without
+  // that policy it would have matched nothing and still answered "done".
+  const outcome = await revokeOwnApiKey(createAdminClient(), userData.user.id, id);
+  if (outcome === "not_found") return { error: "That key isn't on this account." };
+  if (outcome === "failed") return { error: "Couldn't revoke that key — try again." };
 
   revalidatePath("/app/settings");
   return { error: null };

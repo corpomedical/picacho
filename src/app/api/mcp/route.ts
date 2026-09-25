@@ -3,9 +3,12 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { API_RATE_LIMIT_PER_MINUTE, authenticateApiRequest } from "@/lib/api/keys";
 import { rateLimited } from "@/lib/rate-limit";
 import { runApiImageGeneration } from "@/lib/api/generate";
+import { parseIdempotencyKey } from "@/lib/api/idempotency";
+import { apiUsageSummary, type UsageProfile } from "@/lib/api/usage";
 import { getOrigin } from "@/lib/origin";
-import { absolutizeMediaUrl } from "@/lib/media/url";
+import { absolutizeMediaUrl, toMediaUrl } from "@/lib/media/url";
 import {
+  authFailureReply,
   classifyMessage,
   isAcceptableProtocolHeader,
   isAllowedOrigin,
@@ -21,7 +24,8 @@ import {
   toolResult,
   type ToolTextResult,
 } from "@/lib/mcp/protocol";
-import { getMcpTool, MCP_INSTRUCTIONS, MCP_SERVER_INFO, MCP_TOOLS } from "@/lib/mcp/tools";
+import { getMcpTool, isSpendingTool, MCP_INSTRUCTIONS, MCP_SERVER_INFO, MCP_TOOLS } from "@/lib/mcp/tools";
+import type { PlanId } from "@/lib/plans";
 
 // POST /api/mcp — Picacho as an MCP server.
 //
@@ -50,14 +54,18 @@ export const runtime = "nodejs";
 // mid-write.
 export const maxDuration = 300;
 
-function jsonRpc(body: unknown, status = 200) {
+function jsonRpc(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return NextResponse.json(body, {
     status,
     // Answering a POSTed request with application/json is one of the two
     // framings the transport permits; the other is an SSE stream.
-    headers: { "content-type": "application/json" },
+    headers: { ...headers, "content-type": "application/json" },
   });
 }
+
+// Said with a 401 (a key missing, wrong or revoked), where making a key is
+// the fix. Not with a 403: a new key does not lift a suspension.
+const WHERE_KEYS_LIVE = "Create one in Picacho under Settings → Security → API keys.";
 
 // The MCP endpoint must exist for GET as well as POST. 405 is the spec's own
 // answer for "this server offers no server-initiated stream", which is true:
@@ -131,7 +139,9 @@ export async function POST(request: Request) {
   // initialize and ping are answered before authentication on purpose. A
   // client that cannot complete a handshake cannot show the user WHY its key
   // was rejected — it just fails to connect. Neither method reads any data or
-  // spends anything.
+  // spends anything. (The OAuth cut revisits this: a client discovers that a
+  // server wants sign-in from a 401 on initialize. With a static key and no
+  // authorization server there is nothing yet for that 401 to lead to.)
   if (method === "initialize") {
     return jsonRpc(
       rpcResult(id, {
@@ -170,13 +180,17 @@ export async function POST(request: Request) {
     request.headers.get("authorization"),
   );
   if (!caller) {
-    // Reported as a TOOL error rather than a JSON-RPC one so the model is
-    // actually told what to fix. A protocol error at this point surfaces to
-    // the user as a failed call with no explanation, and the fix — set an API
-    // key — is something a person has to do.
-    return jsonRpc(
-      rpcResult(id, toolError(`${authError.message} Create one in Picacho under Settings → Security → API keys.`)),
-    );
+    // HTTP 401 with WWW-Authenticate (403 when the key is fine but not
+    // allowed), not HTTP 200 with a tool error (Press Tour cut 0). The fix
+    // is a person's — set or replace the key — so the CLIENT has to learn
+    // of it, and a client only acts on the status line; the model, which
+    // got the old tool error, can do nothing about a key. See
+    // authFailureReply for why there is no resource_metadata yet.
+    const reply = authFailureReply(id, {
+      status: authError.status,
+      message: authError.status === 401 ? `${authError.message} ${WHERE_KEYS_LIVE}` : authError.message,
+    });
+    return jsonRpc(reply.body, reply.status, reply.headers);
   }
 
   // The same per-user limit the REST API enforces, on the same counter — so
@@ -205,8 +219,18 @@ export async function POST(request: Request) {
     // so it is diagnosable, and reported as a tool error so the conversation
     // can continue rather than dying on a protocol fault.
     console.error(`MCP tool ${toolName} threw:`, err);
+    // A spending tool may have charged before it threw, so it is not told
+    // to simply try again: another call is the person's decision, and the
+    // same idempotency_key keeps it from being charged twice.
     return jsonRpc(
-      rpcResult(id, toolError("Something went wrong running that tool. Try again in a moment.")),
+      rpcResult(
+        id,
+        toolError(
+          isSpendingTool(toolName)
+            ? "Something went wrong making that image, and it may still have been made. Ask the person before trying again; a retry with the same idempotency_key can't be charged twice."
+            : "Something went wrong running that tool. Try again in a moment.",
+        ),
+      ),
     );
   }
 }
@@ -214,7 +238,7 @@ export async function POST(request: Request) {
 type ToolContext = {
   supabase: ReturnType<typeof createAdminClient>;
   userId: string;
-  plan: string;
+  plan: PlanId;
   origin: string;
 };
 
@@ -239,41 +263,30 @@ async function callTool(
   }
 
   if (name === "get_usage") {
-    // Deliberately the SAME helpers the REST route uses, not a second
-    // implementation. The first version of this summed credits_used since the
-    // raw current_period_start, which is wrong twice over: getMonthlyUsageWith
-    // exists because that column is a BILLING period anchor — on an annual
-    // plan it is a year ago, so the window covered twelve months of usage —
-    // and the answer has to count bonus_credits, which a comped account lives
-    // on entirely. Since 2026-09-23 bonus is a depleting BALANCE rather than a
-    // wider ceiling, so it is reported beside purchased credits instead of
-    // inside `included`. An agent asking "how many credits do I have" must get
-    // the same answer the API and the app give.
-    const { PLAN_LIMITS, PLAN_LABELS } = await import("@/lib/plans");
+    // Deliberately the SAME helpers and the same rules the REST route uses,
+    // not a second implementation. The first version of this summed
+    // credits_used since the raw current_period_start, which is wrong:
+    // getMonthlyUsageWith exists because that column is a BILLING period
+    // anchor — on an annual plan it is a year ago. The second still
+    // overstated the balance (Press Tour cut 0, 2026-09-25): it added bonus
+    // credits into remaining_this_period, and it counted a lapsed
+    // subscription's full allowance, both of which the spend path refuses.
+    // apiUsageSummary is those rules, with GET /api/v1/usage's reasons; an
+    // agent asking "how many credits do I have" gets the answer a script
+    // gets, and the parity test (lib/mcp/route.test.ts) holds the two routes
+    // together.
     const { getMonthlyUsageWith } = await import("@/lib/generations/core");
     const { data: profile } = await ctx.supabase
       .from("profiles")
-      .select("plan, bonus_credits, purchased_credits, current_period_start")
+      .select("plan, plan_status, bonus_credits, purchased_credits, current_period_start")
       .eq("id", ctx.userId)
       .single();
-    const plan = ctx.plan as keyof typeof PLAN_LIMITS;
     const used = await getMonthlyUsageWith(
       ctx.supabase,
       ctx.userId,
       profile?.current_period_start as string | null | undefined,
     );
-    const included = PLAN_LIMITS[plan] ?? 0;
-    const mcpBonus = (profile?.bonus_credits ?? 0) as number;
-    return toolResult({
-      plan: ctx.plan,
-      plan_label: PLAN_LABELS[plan] ?? ctx.plan,
-      included_this_period: included,
-      used_this_period: used,
-      remaining_this_period: Math.max(0, included - used) + mcpBonus,
-      bonus_credits: mcpBonus,
-      purchased_credits: (profile?.purchased_credits ?? 0) as number,
-      period_started_at: (profile?.current_period_start as string | null) ?? null,
-    });
+    return toolResult(apiUsageSummary(ctx.plan, (profile ?? null) as UsageProfile, used));
   }
 
   if (name === "get_generation") {
@@ -294,11 +307,17 @@ async function callTool(
       .is("deleted_at", null)
       .maybeSingle();
     if (!data) return toolError("No generation with that id on this account.");
+    // Re-signed through toMediaUrl, as GET /api/v1/generations/{id} does
+    // (Press Tour cut 0). The stored value is either an old Supabase signed
+    // URL whose 7-day token has long expired, or a media-route URL signed
+    // under whatever key was current when it was written — handed out raw,
+    // both were dead links. toMediaUrl re-mints either under today's key.
+    const mediaUrl = toMediaUrl(data.result_url as string | null);
     return toolResult({
       id: data.id as string,
       status: data.status as string,
       content_type: data.content_type as string,
-      image_url: data.result_url ? absolutizeMediaUrl(data.result_url as string, ctx.origin) : null,
+      image_url: mediaUrl ? absolutizeMediaUrl(mediaUrl, ctx.origin) : null,
       match_score: (data.match_score as number | null) ?? null,
       credits_used: (data.credits_used as number | null) ?? null,
     });
@@ -311,6 +330,11 @@ async function callTool(
       return toolError("That prompt is longer than 2000 characters — trim it and try again.");
     }
     const characterId = typeof args.character_id === "string" ? args.character_id : null;
+    // Optional. With one, a retried call returns the first call's image and
+    // is never charged twice (api/idempotency.ts). Refused before anything
+    // runs when it is unusable, so a bad key never costs a credit.
+    const idempotency = parseIdempotencyKey(args.idempotency_key);
+    if (idempotency.error !== null) return toolError(idempotency.error);
 
     const result = await runApiImageGeneration({
       supabase: ctx.supabase,
@@ -318,13 +342,35 @@ async function callTool(
       prompt,
       characterId,
       origin: ctx.origin,
+      idempotencyKey: idempotency.key,
     });
 
-    if (result.status !== "succeeded") {
-      // A refused or failed render is a TOOL error: the model is told why in
-      // words it can act on — out of credits, blocked by a rule, provider
-      // refusal — instead of getting a protocol fault it cannot interpret.
-      return toolError(result.error ?? "That generation didn't complete.");
+    if (result.error !== null) {
+      // A refused render is a TOOL error: the model is told why in words it
+      // can pass on — out of credits, blocked by a rule, a key reused —
+      // instead of getting a protocol fault it cannot interpret.
+      return toolError(result.error);
+    }
+    if (result.status === "failed") {
+      // Says whether it cost anything, because that is what the person
+      // needs to know next; never that another call would do better.
+      return toolError(
+        result.creditsUsed === 0
+          ? "That image didn't come out. Nothing was charged."
+          : "That image didn't come out.",
+      );
+    }
+    if (result.status === "generating") {
+      // A repeat of a request whose image is still rendering: it exists and
+      // is charged once. Not an error — get_generation fetches it, free.
+      return toolResult({
+        id: result.id,
+        status: result.status,
+        image_url: null,
+        final_prompt: null,
+        match_score: null,
+        credits_used: result.creditsUsed,
+      });
     }
 
     return toolResult({

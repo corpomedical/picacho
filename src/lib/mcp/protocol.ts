@@ -22,8 +22,18 @@
  *
  * 2025-03-26 is listed because the transport spec says a client that sends no
  * MCP-Protocol-Version header should be assumed to be speaking it.
+ *
+ * 2025-11-25 added 2026-09-25 (Press Tour cut 0). Everything it changed that
+ * touches a server like this one is optional or already true here: icons,
+ * tasks, URL elicitation and sampling tools are capabilities this server
+ * does not declare; input-validation failures already come back as tool
+ * results with isError; a foreign Origin already gets 403; there is no SSE
+ * stream for its polling change to apply to. Its authorization additions
+ * (client metadata documents, scope step-up) matter only once OAuth exists
+ * (cut 8). So speaking it needed nothing but this line — and a client on it
+ * was, until now, refused with a hard 400 on the header.
  */
-export const SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26"] as const;
+export const SUPPORTED_PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"] as const;
 export const LATEST_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0];
 /** What to assume when the header is absent — the spec names this exact value. */
 export const ASSUMED_PROTOCOL_VERSION = "2025-03-26";
@@ -39,6 +49,11 @@ export const RPC_INVALID_REQUEST = -32600;
 export const RPC_METHOD_NOT_FOUND = -32601;
 export const RPC_INVALID_PARAMS = -32602;
 export const RPC_INTERNAL_ERROR = -32603;
+// Implementation-defined, from JSON-RPC's reserved server range
+// (-32000..-32099): the request was refused before it ran because its
+// credential was missing, invalid, revoked, or not allowed to use the API.
+// It rides an HTTP 401 or 403 — see authFailureReply.
+export const RPC_UNAUTHORIZED = -32001;
 
 export type RpcId = string | number | null;
 
@@ -171,13 +186,43 @@ export function toolResult(structured: Record<string, unknown>): ToolTextResult 
 }
 
 /**
+ * The HTTP answer to a request whose credential failed (Press Tour cut 0,
+ * 2026-09-25).
+ *
+ * This used to be HTTP 200 carrying a tool result with isError. That told
+ * the MODEL, which cannot fix a key, and hid the failure from the CLIENT,
+ * which can: Claude offers to connect an account only on a 401 carrying
+ * WWW-Authenticate. So a missing, invalid or revoked key is HTTP 401 with a
+ * plain `WWW-Authenticate: Bearer` (RFC 6750), and a key that is fine but not
+ * allowed (suspended, no API access) is 403, the MCP authorization spec's
+ * answer for insufficient permissions. The body is a JSON-RPC error with the
+ * request's id and the reason, so a client that shows it shows the reason.
+ *
+ * NO resource_metadata parameter yet, on purpose (critique #40): it would
+ * point clients at /.well-known/oauth-protected-resource, which does not
+ * exist until the OAuth cut, and Claude would try discovery against it and
+ * fail. Add it in the same commit as that document.
+ */
+export function authFailureReply(
+  id: RpcId,
+  failure: { status: 401 | 403; message: string },
+): { status: 401 | 403; headers: Record<string, string>; body: RpcResponse } {
+  return {
+    status: failure.status,
+    headers: failure.status === 401 ? { "www-authenticate": "Bearer" } : {},
+    body: rpcError(id, RPC_UNAUTHORIZED, failure.message),
+  };
+}
+
+/**
  * A tool that ran and failed.
  *
  * NOT a JSON-RPC error. The distinction is the whole reason an agent can work
  * with this: a protocol error aborts the call and the model never sees why,
- * while isError:true hands the model the reason as text so it can correct
- * itself and try again — which for this server is the point, since the most
- * common failure is a render that came back under the identity threshold.
+ * while isError:true hands the model the reason as text it can relay to the
+ * person — out of credits, blocked by a rule, a refused provider. It is not
+ * an invitation to call a spending tool again: that is the person's decision
+ * (tools.ts says so to the model).
  */
 export function toolError(message: string): ToolTextResult {
   return { content: [{ type: "text", text: message }], isError: true };
