@@ -39,7 +39,7 @@ import type { RigTab } from "@/lib/sets/rig-dock";
 import { SceneTree, sceneNames, type SceneTarget } from "./scene-tree";
 import { Sequencer } from "./sequencer";
 import { beatAtTime, beatSpans, timeOf } from "@/lib/sets/sequencer";
-import { StatusList, StudioBar, StudioDock, StudioRail, StudioStatus, useWide } from "./studio-frame";
+import { StatusList, StudioBar, StudioDock, StudioRail, StudioStatus, useWide, useWideAt } from "./studio-frame";
 import { ThingsPanel, ThingsStrip, type PanelRow } from "./things-panel";
 import { clearMarks } from "@/lib/sets/marks";
 import { BADGE_HIT_SLOP_PX, FIGURE_TAP_WAIT_MS, TAP_SLOP_PX, badgeAt, elementForHits, isTap, type ElementHit, type StageHit, type TapStart } from "@/lib/sets/stage-pick";
@@ -1290,8 +1290,14 @@ export function SetView({
   // for the status bar. Film opening takes the dock to its tab; closing on
   // it goes back to Camera (adjust-state-during-render, as the rig did).
   const wide = useWide();
+  /**
+   * The width the new layout's three columns need (Helios Cut 3, step 11):
+   * the list and the panel take 272 + 340 px, which leaves the stage 568 px
+   * at 1180 (an iPad Air on its side). Between a phone and this, Classic.
+   */
+  const wide3 = useWideAt("(min-width: 1180px)");
   /** The new layout is drawn: switched on, where it is offered, on a screen wide enough for its three columns. */
-  const simpleOn = simple && wide && simpleLayout;
+  const simpleOn = simple && wide3 && simpleLayout;
   /** The new layout on a phone: the same steps; in Set the list is a strip over the stage's foot, and nothing else moves. */
   const simplePhone = simple && !wide && simpleLayout;
   /** A phone's Set step: the setup chips step aside (they are Shoot's), and the strip names who and what is in the set. */
@@ -9993,7 +9999,8 @@ export function SetView({
           )
         }
       >
-        {simpleLayout && wide && (
+        {/* Only where the switch does something: from 1180 px, where the three columns fit; below it, down to a phone, Classic. */}
+        {simpleLayout && wide3 && (
           <button
             type="button"
             onClick={toggleLayout}

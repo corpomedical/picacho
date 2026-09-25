@@ -53,22 +53,40 @@ export function StudioSvg({ d, className, box = "0 0 24 24" }: { d: string; clas
 }
 
 /**
- * Whether the page has the width for the frame (768 px and up). Below it a
- * phone keeps its own layout: the bar, the stage, the conversation under
- * it. Read once for the server (wide), then from the window.
+ * Whether the window matches a width query. Read once for the server (wide,
+ * so a computer paints its own layout first), then from the window. Each
+ * query keeps one subscribe function for the page's life: a new one on
+ * every render would make React unsubscribe and subscribe again each time.
  */
-const WIDE = "(min-width: 768px)";
-const subscribeWide = (cb: () => void) => {
-  const m = window.matchMedia(WIDE);
-  m.addEventListener("change", cb);
-  return () => m.removeEventListener("change", cb);
-};
-export function useWide(): boolean {
+const subscribers = new Map<string, (cb: () => void) => () => void>();
+function subscribeTo(query: string) {
+  let subscribe = subscribers.get(query);
+  if (!subscribe) {
+    subscribe = (cb: () => void) => {
+      const m = window.matchMedia(query);
+      m.addEventListener("change", cb);
+      return () => m.removeEventListener("change", cb);
+    };
+    subscribers.set(query, subscribe);
+  }
+  return subscribe;
+}
+export function useWideAt(query: string): boolean {
   return useSyncExternalStore(
-    subscribeWide,
-    () => window.matchMedia(WIDE).matches,
+    subscribeTo(query),
+    () => window.matchMedia(query).matches,
     () => true,
   );
+}
+
+/**
+ * Whether the page has the width for the frame (768 px and up). Below it a
+ * phone keeps its own layout: the bar, the stage, the conversation under
+ * it.
+ */
+const WIDE = "(min-width: 768px)";
+export function useWide(): boolean {
+  return useWideAt(WIDE);
 }
 
 export type StudioModeLink = { label: string; href?: string; onClick?: () => void };

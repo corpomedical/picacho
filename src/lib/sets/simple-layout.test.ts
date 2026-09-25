@@ -32,15 +32,28 @@ describe("the switch", () => {
   // Its own gate (Helios Cut 3, step 10): simpleLayout, admins until
   // HELIOS_SIMPLE_FOR_ALL opens it — never models' admin-only switch.
   it("is where the layout is offered, on a wide screen, remembered in the browser or asked for in the address", () => {
-    expect(view).toContain("const simpleOn = simple && wide && simpleLayout;");
+    expect(view).toContain("const simpleOn = simple && wide3 && simpleLayout;");
     expect(view).not.toMatch(/const simple(On|Phone) = [^;]*modelsOn/);
     expect(view).toContain("if (!simpleLayout) return;");
     expect(view).toContain('const stored = asked ? null : window.localStorage.getItem("helios.layout");');
     expect(view).toContain('want = asked ? asked === "simple" : HELIOS_SIMPLE_FOR_ALL ? stored !== "classic" : stored === "simple";');
     expect(view).toContain("}, [simpleLayout]);");
     expect(view).toContain('window.localStorage.setItem("helios.layout", next ? "simple" : "classic");');
-    expect(view).toContain("{simpleLayout && wide && (");
+    expect(view).toContain("{simpleLayout && wide3 && (");
     expect(view).toContain("data-layout-toggle");
+  });
+
+  // The width floor (Helios Cut 3, step 11): three columns from 1180 px;
+  // tablets and small windows keep Classic, and no switch shows there,
+  // where it would do nothing. A phone keeps its own layout below 768.
+  it("draws three columns only from 1180 px, with Classic and no switch below it", () => {
+    expect(view).toContain('const wide3 = useWideAt("(min-width: 1180px)");');
+    expect(view).not.toContain("{simpleLayout && wide && (");
+    expect(frame).toContain("export function useWideAt(query: string): boolean {");
+    expect(frame).toContain('return useWideAt(WIDE);');
+    // One subscribe per query, kept: React would resubscribe on every render otherwise.
+    expect(frame).toContain("const subscribers = new Map<string, (cb: () => void) => () => void>();");
+    expect(frame).toMatch(/useSyncExternalStore\(\s*subscribeTo\(query\),/);
   });
 
   it("starts on when it is everyone's default, so a load never paints Classic first", () => {
