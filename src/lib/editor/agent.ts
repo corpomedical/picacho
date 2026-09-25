@@ -11,7 +11,7 @@
 // folder refuses symlinks, so the agent renders elsewhere and copies in.
 
 import Anthropic, { toFile } from "@anthropic-ai/sdk";
-import { changeMessage, jobMessage } from "./agent-prompt";
+import { changeMessage, jobMessage, type ChangeExtras } from "./agent-prompt";
 import type { Word } from "./transcribe";
 
 const BETAS = ["managed-agents-2026-04-01"] as const;
@@ -234,8 +234,8 @@ export function parseResult(raw: string): { outputs: Omit<Delivered["outputs"][n
   return { outputs, notes: typeof b.notes === "string" ? b.notes.slice(0, 1000) : "" };
 }
 
-export async function sendChange(sessionId: string, note: string, client: Anthropic = editorClient()): Promise<void> {
+export async function sendChange(sessionId: string, note: string, extras: ChangeExtras = {}, client: Anthropic = editorClient()): Promise<void> {
   await client.beta.sessions.events.send(sessionId, {
-    events: [{ type: "user.message", content: [{ type: "text", text: changeMessage(note) }] }],
+    events: [{ type: "user.message", content: [{ type: "text", text: changeMessage(note, extras) }] }],
   });
 }

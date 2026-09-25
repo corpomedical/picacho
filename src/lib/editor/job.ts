@@ -65,7 +65,8 @@ export type SessionRecord = {
   activity?: string | null;
 };
 
-export type Note = { role: "editor" | "you"; text: string };
+/** `song`: the file name of a song sent with that change. */
+export type Note = { role: "editor" | "you"; text: string; song?: string };
 export type Output = { title: string; summary: string; aspect: string; seconds: number; generationId: string; turn: number };
 
 /** What was delivered, and the conversation (stored in the row's `plan` column). */
@@ -147,6 +148,51 @@ export function footageProblem(clips: ClipRecord[]): string | null {
   }
   if (!clips.some((c) => c.probe?.hasVideo)) return "Add at least one clip with picture — audio alone can only be the music.";
   if (total > MAX_TOTAL_SECONDS) return `That's ${Math.round(total / 60)} minutes of footage; an edit takes up to ${MAX_TOTAL_SECONDS / 60} minutes.`;
+  return null;
+}
+
+/** A song sent with a change: well over any edit's length, well under a mix tape. */
+export const MAX_SONG_SECONDS = 10 * 60;
+export const MAX_SONG_BYTES = 200 * 1024 * 1024;
+export const SONG_TYPES = Object.keys(AUDIO_TYPES);
+
+/**
+ * A song sent with a change (operator, 2026-09-25: the first live edit asked
+ * for "dramatic music" with no song in the pile, and the editor's note offered
+ * to re-cut to one — the page had no way to send it). It takes the next clip
+ * slot, so the editor sees it as one more of the customer's own files, and a
+ * retry of the same change reuses that slot.
+ */
+export function planSong(userId: string, editId: string, clips: ClipRecord[], f: FileOffer): { error: string } | { error: null; clip: ClipRecord } {
+  const type = typeof f?.type === "string" ? f.type.toLowerCase() : "";
+  const ext = AUDIO_TYPES[type];
+  if (!ext) return { error: `"${shortName(f?.name)}" isn't a song we can read (MP3, M4A, WAV).` };
+  const size = Number(f?.size);
+  if (!(size > 0)) return { error: `"${shortName(f?.name)}" is empty.` };
+  if (size > MAX_SONG_BYTES) return { error: `"${shortName(f?.name)}" is over ${MAX_SONG_BYTES / 1024 / 1024} MB.` };
+  if (clips.length >= MAX_CLIPS) return { error: `This edit already has ${MAX_CLIPS} files.` };
+  return {
+    error: null,
+    clip: {
+      path: `${userId}/${editId}/clip-${clips.length}.${ext}`,
+      name: shortName(f?.name),
+      bytes: size,
+      contentType: type,
+      probe: null,
+      // Nothing to listen for: a song's words are lyrics, not lines to cut on.
+      speech: "no-speech",
+      words: [],
+      analyzed: true,
+    },
+  };
+}
+
+/** After probing the uploaded song: can the editor build on it? */
+export function songProblem(name: string, probe: ProbeResult | null): string | null {
+  if (!probe) return `"${name}" couldn't be read.`;
+  if (!probe.hasAudio) return `"${name}" has no sound.`;
+  if (!(probe.duration > 1)) return `"${name}" is too short to cut to.`;
+  if (probe.duration > MAX_SONG_SECONDS) return `"${name}" is over ${MAX_SONG_SECONDS / 60} minutes.`;
   return null;
 }
 

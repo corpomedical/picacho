@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { footageProblem, nextStep, phaseOf, planUploads, type ClipRecord, type SessionRecord } from "./job";
+import { MAX_CLIPS, MAX_SONG_BYTES, footageProblem, nextStep, phaseOf, planSong, planUploads, songProblem, type ClipRecord, type SessionRecord } from "./job";
 import { parseProbe, probeArgs, speechArgs } from "./analyze";
 import { agreeingWords, parseTranscript } from "./transcribe";
 import { whisperCostUsd } from "./prices";
@@ -46,6 +46,25 @@ describe("job rules", () => {
     expect(nextStep({ stage: "analyzing", clips: [rec(video, true)], render: null })).toEqual({ kind: "start" });
     expect(nextStep({ stage: "directing", clips: [], render: session })).toEqual({ kind: "watch" });
     expect(nextStep({ stage: "done", clips: [], render: session })).toEqual({ kind: "none" });
+  });
+
+  it("takes a song sent with a change into the next clip slot (the first live edit asked for music it wasn't given)", () => {
+    const five = [rec(video, true), rec(video, true), rec(video, true), rec(video, true), rec(video, true)];
+    const ok = planSong("u1", "e1", five, { name: "Epic Score.mp3", size: 4_000_000, type: "audio/mpeg" });
+    expect(ok.error).toBeNull();
+    if (ok.error === null) {
+      expect(ok.clip).toMatchObject({ path: "u1/e1/clip-5.mp3", name: "Epic Score.mp3", speech: "no-speech", analyzed: true, probe: null });
+    }
+    expect(planSong("u1", "e1", five, { name: "take.mp4", size: 5, type: "video/mp4" }).error).toContain("isn't a song");
+    expect(planSong("u1", "e1", five, { name: "huge.wav", size: MAX_SONG_BYTES + 1, type: "audio/wav" }).error).toContain("over 200 MB");
+    expect(planSong("u1", "e1", Array.from({ length: MAX_CLIPS }, () => rec(video, true)), { name: "s.mp3", size: 5, type: "audio/mpeg" }).error).toContain(
+      "already has",
+    );
+    const song = { duration: 185, hasVideo: false, hasAudio: true, width: null, height: null, fps: null } as unknown as ClipRecord["probe"];
+    expect(songProblem("s.mp3", song)).toBeNull();
+    expect(songProblem("s.mp3", null)).toContain("couldn't be read");
+    expect(songProblem("s.mp3", { ...song!, hasAudio: false })).toContain("no sound");
+    expect(songProblem("s.mp3", { ...song!, duration: 11 * 60 })).toContain("over 10 minutes");
   });
 
   it("names the step the page shows", () => {

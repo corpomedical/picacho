@@ -59,6 +59,22 @@ describe("the editor's standing brief", () => {
     expect(msg).toContain("Download: https://x/a");
     expect(changeMessage("  shorter  ")).toContain("<<<NOTE\nshorter\nNOTE>>>");
   });
+
+  it("carries a song sent with a change as the customer's own music, and fresh links to every file", () => {
+    const withSong = changeMessage("more drama", {
+      song: { index: 5, name: "Epic Score.mp3", seconds: 185.2, url: "https://x/song" },
+      clips: [{ index: 0, name: "a.mp4", url: "https://x/a2" }],
+    });
+    expect(withSong).toContain("<<<NOTE\nmore drama\nNOTE>>>");
+    expect(withSong).toContain('Clip 5: "Epic Score.mp3", 185.2 s, sound only');
+    expect(withSong).toContain("the music rules apply");
+    expect(withSong).toContain("Download: https://x/song");
+    expect(withSong).toContain('- Clip 0: "a.mp4" https://x/a2');
+    // A song with no words: no empty NOTE fence.
+    const songOnly = changeMessage("", { song: { index: 5, name: "s.mp3", seconds: 60, url: "https://x/s" } });
+    expect(songOnly).not.toContain("<<<NOTE");
+    expect(songOnly).toContain("sent a song to re-cut it to");
+  });
 });
 
 describe("agent.ts", () => {
@@ -173,7 +189,7 @@ describe("agent.ts", () => {
 
   it("sends a change into the same session, fenced", async () => {
     const { client, calls } = fakeClient();
-    await sendChange("sesn_1", "no captions", client);
+    await sendChange("sesn_1", "no captions", {}, client);
     expect(JSON.stringify(calls.send[0])).toContain("<<<NOTE\\nno captions\\nNOTE>>>");
   });
 });

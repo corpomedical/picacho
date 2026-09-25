@@ -20,13 +20,14 @@ import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import {
   getEdit,
   listEdits,
+  prepareSong,
   reviseEdit,
   startEdit,
   submitEdit,
   type EditDetail,
   type EditSummary,
 } from "@/lib/editor/actions";
-import { ASPECT_HINTS, EDITOR_BUCKET, MAX_CLIPS, type AspectHint } from "@/lib/editor/job";
+import { ASPECT_HINTS, EDITOR_BUCKET, MAX_CLIPS, SONG_TYPES, type AspectHint } from "@/lib/editor/job";
 
 const WORKING = new Set(["analyzing", "directing", "bundling", "rendering"]);
 const POLL_MS = 4000;
@@ -601,22 +602,44 @@ function Notes({ detail, guard, onSent }: { detail: EditDetail | null; guard: Gu
   const { t } = useLocale();
   const d = t.directorsCut;
   const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
+  // A song to re-cut to, sent with the change (the editor only uses music the customer brings).
+  const [song, setSong] = useState<File | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const songInput = useRef<HTMLInputElement>(null);
   const canAsk = detail?.stage === "done";
   const lastIsYou = detail?.notes.at(-1)?.role === "you";
 
   async function send() {
-    if (!detail || !text.trim() || busy) return;
-    setBusy(true);
+    if (!detail || (!text.trim() && !song) || busy) return;
     setProblem(null);
-    const res = await guard(() => reviseEdit(detail.id, text));
-    setBusy(false);
+    let offer: { name: string; size: number; type: string } | null = null;
+    if (song) {
+      setBusy(d.songUploading);
+      offer = { name: song.name, size: song.size, type: song.type };
+      const sent = offer;
+      const place = await guard(() => prepareSong(detail.id, sent));
+      if (!place || place.error !== null) {
+        setProblem(place?.error ?? null);
+        setBusy(null);
+        return;
+      }
+      const { error } = await createClient().storage.from(EDITOR_BUCKET).uploadToSignedUrl(place.path, place.token, song, { contentType: song.type });
+      if (error) {
+        setProblem(error.message);
+        setBusy(null);
+        return;
+      }
+    }
+    setBusy(d.sending);
+    const res = await guard(() => reviseEdit(detail.id, text, offer));
+    setBusy(null);
     if (res?.error) {
       setProblem(res.error);
       return;
     }
     setText("");
+    setSong(null);
     await onSent();
   }
 
@@ -630,8 +653,9 @@ function Notes({ detail, guard, onSent }: { detail: EditDetail | null; guard: Gu
               {n.text}
             </p>
           ) : (
-            <p key={i} className="max-w-[85%] self-end rounded-[14px] bg-[rgba(224,164,104,0.14)] px-3.5 py-2.5 text-sm text-[#ecedf1]">
-              {n.text}
+            <p key={i} className="flex max-w-[85%] flex-col gap-1 self-end rounded-[14px] bg-[rgba(224,164,104,0.14)] px-3.5 py-2.5 text-sm text-[#ecedf1]">
+              {n.song && <span className="font-mono text-xs text-[#e0a468]">♪ {n.song}</span>}
+              {n.text && <span>{n.text}</span>}
             </p>
           ),
         )}
@@ -647,6 +671,23 @@ function Notes({ detail, guard, onSent }: { detail: EditDetail | null; guard: Gu
           {d.openHistory}
         </Link>
       )}
+      {song && (
+        <div className="flex min-h-9 items-center justify-between gap-2 rounded-full bg-[rgba(224,164,104,0.1)] pl-3.5 pr-1 font-mono text-xs text-[#e0a468]">
+          <span className="line-clamp-1">♪ {song.name}</span>
+          <button
+            type="button"
+            onClick={() => setSong(null)}
+            disabled={busy !== null}
+            aria-label={d.removeSong}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#c6c9d1] hover:bg-[rgba(255,255,255,0.08)]"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+      )}
+      {busy && <p className="font-mono text-xs text-[#9aa0ad]">{busy}</p>}
       <form
         className="flex gap-2"
         onSubmit={(e) => {
@@ -654,6 +695,31 @@ function Notes({ detail, guard, onSent }: { detail: EditDetail | null; guard: Gu
           void send();
         }}
       >
+        <button
+          type="button"
+          onClick={() => songInput.current?.click()}
+          disabled={!canAsk || busy !== null}
+          aria-label={d.addSong}
+          title={d.addSong}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[rgba(255,255,255,0.12)] text-[#c6c9d1] hover:border-[rgba(224,164,104,0.5)] hover:text-[#ecedf1] disabled:opacity-40"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M9 18V5l11-2v13" />
+            <circle cx="6" cy="18" r="3" />
+            <circle cx="17" cy="16" r="3" />
+          </svg>
+        </button>
+        <input
+          ref={songInput}
+          type="file"
+          accept={SONG_TYPES.join(",")}
+          className="hidden"
+          onChange={(e) => {
+            const f = e.currentTarget.files?.[0] ?? null;
+            if (f) setSong(f);
+            e.currentTarget.value = "";
+          }}
+        />
         <label htmlFor="dc-change" className="sr-only">
           {d.askChange}
         </label>
@@ -661,15 +727,15 @@ function Notes({ detail, guard, onSent }: { detail: EditDetail | null; guard: Gu
           id="dc-change"
           value={text}
           maxLength={2000}
-          disabled={!canAsk || busy}
+          disabled={!canAsk || busy !== null}
           onChange={(e) => setText(e.target.value)}
-          placeholder={d.askChange}
+          placeholder={song ? d.songNote : d.askChange}
           className="min-h-11 min-w-0 flex-1 rounded-full border border-[rgba(255,255,255,0.1)] bg-[#101116] px-4 text-sm text-[#ecedf1] placeholder:text-[#6b6f7a] focus:border-[rgba(224,164,104,0.6)] focus:outline-none disabled:opacity-50"
         />
         <button
           type="submit"
           aria-label={d.send}
-          disabled={!canAsk || busy || !text.trim()}
+          disabled={!canAsk || busy !== null || (!text.trim() && !song)}
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#e0a468] text-[#1a0f07] disabled:opacity-40"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
