@@ -2792,6 +2792,7 @@ const it = {
     stepPlacing: "Posizionamento di {name}",
     placedAt: "Su {mark}",
     yourCamera: "La tua camera personale",
+    yourCameraInline: "la tua camera personale",
     lensMm: "{mm} mm",
     facingCamera: "verso la camera",
     facingAway: "di spalle alla camera",

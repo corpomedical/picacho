@@ -2793,6 +2793,7 @@ const pt = {
     stepPlacing: "Colocando {name}",
     placedAt: "Em {mark}",
     yourCamera: "Sua própria câmera",
+    yourCameraInline: "sua própria câmera",
     lensMm: "{mm} mm",
     facingCamera: "de frente para a câmera",
     facingAway: "de costas para a câmera",

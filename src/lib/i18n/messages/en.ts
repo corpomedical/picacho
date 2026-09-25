@@ -2950,6 +2950,8 @@ const en = {
     stepPlacing: "Placing {name}",
     placedAt: "On {mark}",
     yourCamera: "Your own camera",
+    /** The same, inside a sentence ("The camera is at your own camera, 24 mm."). */
+    yourCameraInline: "your own camera",
     lensMm: "{mm} mm",
     facingCamera: "facing the camera",
     facingAway: "facing away from the camera",

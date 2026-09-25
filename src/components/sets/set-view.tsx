@@ -8022,7 +8022,8 @@ export function SetView({
     if (Math.abs(d) >= 135) return s.facingAway;
     return d > 0 ? s.facingRight : s.facingLeft;
   })();
-  const placedLine = formatMsg(s.placedLine, { name: characterName, mark: markLabel, facing: facingLabel, camera: cameraLabel, lens: lensLabel });
+  // Inside the sentence the own camera is lower-case; a set's named camera keeps its name.
+  const placedLine = formatMsg(s.placedLine, { name: characterName, mark: markLabel, facing: facingLabel, camera: cameraId ? cameraLabel : s.yourCameraInline, lens: lensLabel });
   const credits = quote.totalCredits === 1 ? s.creditsOne : formatMsg(s.creditsMany, { n: quote.totalCredits });
   // A take's whole price: the end still plus the clip, as the server charges them.
   const takeCredits = takesCredits(takeEngine, { clips: 1, stills: 1 });
