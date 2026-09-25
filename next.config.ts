@@ -127,7 +127,11 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        source: "/:path*",
+        // The Director's Cut preview frame (/api/edit-project/…) is the one
+        // path picacho.ai frames itself: it is left out here, and the rule
+        // below gives it everything else. Its pages carry SAMEORIGIN and their
+        // own narrow CSP from the route (src/lib/editor/project-serve.ts).
+        source: "/:path((?!api/edit-project/).*)",
         headers: [
           // Stops the site from being embedded in an <iframe> on another
           // domain (clickjacking protection).
@@ -162,6 +166,16 @@ const nextConfig: NextConfig = {
           // connect-src https: — practically no XSS containment). Keeping a
           // second copy here would also be wrong: two CSP headers combine as
           // an intersection, so a stale one silently re-breaks the page.
+        ],
+      },
+      {
+        // Everything the rule above gives, except X-Frame-Options (see there).
+        source: "/api/edit-project/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Permissions-Policy", value: "camera=(), geolocation=(), payment=()" },
+          { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
         ],
       },
     ];

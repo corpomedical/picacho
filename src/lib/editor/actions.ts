@@ -24,6 +24,7 @@ import { sendChange, type Activity } from "./agent";
 import type { ChangeExtras } from "./agent-prompt";
 import type { ProbeResult } from "./analyze";
 import { probeClip } from "./work";
+import { PROJECT_DRAFT, projectToken } from "./project";
 import { EDITOR_NOT_OPEN, EDITOR_UNAVAILABLE, editorAllowed, isEditorEnabled } from "./enabled";
 import {
   ASPECT_HINTS,
@@ -291,7 +292,8 @@ export async function listEdits(): Promise<{ error: string | null; edits: EditSu
   };
 }
 
-export type EditOutput = { title: string; summary: string; aspect: string; seconds: number; turn: number; url: string | null };
+/** `editable`: Opus handed over the project, so it opens on the timeline (openProject). */
+export type EditOutput = { title: string; summary: string; aspect: string; seconds: number; turn: number; url: string | null; generationId: string; editable: boolean };
 
 export type EditDetail = {
   id: string;
@@ -341,7 +343,16 @@ export async function getEdit(editId: string): Promise<{ error: string | null; e
       analyzed: row.clips.filter((c) => c.analyzed).length,
       outputs: [...delivered]
         .sort((a, b) => b.turn - a.turn)
-        .map((o) => ({ title: o.title, summary: o.summary, aspect: o.aspect, seconds: o.seconds, turn: o.turn, url: urls.get(o.generationId) ?? null })),
+        .map((o) => ({
+          title: o.title,
+          summary: o.summary,
+          aspect: o.aspect,
+          seconds: o.seconds,
+          turn: o.turn,
+          url: urls.get(o.generationId) ?? null,
+          generationId: o.generationId,
+          editable: Boolean(o.project),
+        })),
       notes: row.plan?.history ?? [],
       activity:
         row.stage === "directing" && row.render
@@ -354,6 +365,68 @@ export async function getEdit(editId: string): Promise<{ error: string | null; e
 }
 
 /** The first step right away, after the reply is sent; the minute cron carries on from there. */
+/** The largest composition the editor saves: the page is text; its media are files beside it. */
+const MAX_PROJECT_HTML = 3 * 1024 * 1024;
+
+export type OpenedProject =
+  | { error: null; html: string; base: string; aspect: string; seconds: number; title: string; draft: boolean }
+  | { error: string };
+
+/**
+ * A delivered video's editable project, for the timeline: the working copy
+ * (else the delivered page) as text for the HyperFrames SDK, and the base the
+ * sealed preview frame loads it from (project.ts, project-serve.ts).
+ */
+export async function openProject(editId: string, generationId: string): Promise<OpenedProject> {
+  const access = await editorAccess();
+  if (access.error !== null) return { error: access.error };
+  const row = await ownEdit(access.userId, editId);
+  const output = row?.plan?.outputs.find((o) => o.generationId === generationId);
+  if (!row || !output) return { error: "That video isn't yours or no longer exists." };
+  if (!output.project) return { error: "This video was made before the timeline existed. Ask for a change and the new version opens here." };
+  const admin = createAdminClient();
+  let html: string | null = null;
+  let draft = false;
+  for (const [name, isDraft] of [[PROJECT_DRAFT, true], [output.project.entry, false]] as const) {
+    const { data } = await admin.storage.from(EDITOR_BUCKET).download(`${output.project.dir}/${name}`);
+    if (data) {
+      html = await data.text();
+      draft = isDraft;
+      break;
+    }
+  }
+  if (html === null) return { error: "Couldn't open this video's project. Try again." };
+  return {
+    error: null,
+    html,
+    base: `/api/edit-project/${projectToken(row.id, generationId)}/`,
+    aspect: output.aspect,
+    seconds: output.seconds,
+    title: output.title,
+    draft,
+  };
+}
+
+/** The timeline's working copy, kept beside the delivered page; the preview plays it with ?draft=1. */
+export async function saveProjectDraft(editId: string, generationId: string, html: string): Promise<{ error: string | null }> {
+  const access = await editorAccess();
+  if (access.error !== null) return { error: access.error };
+  if (typeof html !== "string" || html.length > MAX_PROJECT_HTML || !html.includes("data-composition-id")) {
+    return { error: "That doesn't look like this video's project." };
+  }
+  if (await rateLimited(access.userId, "video-edit-draft", 60 * 60, 600)) {
+    return { error: "That's a lot of saves in an hour — give it a minute." };
+  }
+  const row = await ownEdit(access.userId, editId);
+  const output = row?.plan?.outputs.find((o) => o.generationId === generationId);
+  if (!row || !output?.project) return { error: "That video isn't yours or no longer exists." };
+  const { error } = await createAdminClient()
+    .storage.from(EDITOR_BUCKET)
+    .upload(`${output.project.dir}/${PROJECT_DRAFT}`, new TextEncoder().encode(html), { contentType: "text/html", upsert: true });
+  if (error) return { error: "Couldn't save. Try again." };
+  return { error: null };
+}
+
 function kick(editId: string): void {
   after(async () => {
     try {

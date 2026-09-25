@@ -85,7 +85,9 @@ function buildCsp(nonce: string): string {
     // A blob: URL is only ever one this page made itself.
     `connect-src 'self' blob:${supabaseOrigin ? ` ${supabaseOrigin} ${supabaseWs}` : ""} https://*.fal.media`,
     `font-src 'self' data: https://fonts.gstatic.com`,
-    `frame-src https://js.stripe.com https://hooks.stripe.com`,
+    // 'self': the Director's Cut preview frame loads the video's project from
+    // /api/edit-project/… (sandboxed, opaque origin — src/lib/editor/project.ts).
+    `frame-src 'self' https://js.stripe.com https://hooks.stripe.com`,
     `object-src 'none'`,
     `base-uri 'self'`,
     `form-action 'self' https://checkout.stripe.com https://billing.stripe.com`,
@@ -231,6 +233,9 @@ export const config = {
     // api/v1 is excluded: it authenticates with an API key, has no
     // session cookie to refresh, and every request through it would
     // otherwise pay for a pointless Supabase auth round-trip.
-    "/((?!_next/static|_next/image|api/v1|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // api/edit-project is excluded too: the Director's Cut preview frame reads
+    // it with a signed token and no cookies (an opaque-origin sandbox sends
+    // none), and its pages carry their own CSP, which this one must not replace.
+    "/((?!_next/static|_next/image|api/v1|api/edit-project|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

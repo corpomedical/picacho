@@ -68,7 +68,7 @@ export type SessionView = {
 export type Delivered = {
   /** The result.json this delivery was read from — a later turn must bring a different one. */
   resultId: string;
-  outputs: { file: string; title: string; summary: string; aspect: string; seconds: number; bytes: Uint8Array }[];
+  outputs: { file: string; title: string; summary: string; aspect: string; seconds: number; bytes: Uint8Array; project: Uint8Array | null }[];
   notes: string;
 };
 
@@ -204,13 +204,20 @@ export async function collectDelivery(
       .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0];
     if (!file) throw new AgentError(`the editor listed ${o.file} but did not deliver it`);
     const bytes = new Uint8Array(await (await client.beta.files.download(file.id)).arrayBuffer());
-    outputs.push({ ...o, bytes });
+    // The editable project rides along; a missing one costs the timeline, never the video.
+    const pack = o.projectFile
+      ? files.filter((f) => f.filename === o.projectFile).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0]
+      : undefined;
+    const project = pack ? new Uint8Array(await (await client.beta.files.download(pack.id)).arrayBuffer()) : null;
+    outputs.push({ file: o.file, title: o.title, summary: o.summary, aspect: o.aspect, seconds: o.seconds, bytes, project });
   }
   return { resultId: results[0].id, outputs, notes: parsed.notes };
 }
 
 /** result.json → the delivered list. Tolerant of extra fields; strict about what we store. */
-export function parseResult(raw: string): { outputs: Omit<Delivered["outputs"][number], "bytes">[]; notes: string } | null {
+export function parseResult(
+  raw: string,
+): { outputs: (Omit<Delivered["outputs"][number], "bytes" | "project"> & { projectFile: string | null })[]; notes: string } | null {
   let body: unknown;
   try {
     body = JSON.parse(raw);
@@ -229,6 +236,7 @@ export function parseResult(raw: string): { outputs: Omit<Delivered["outputs"][n
       summary: typeof o.summary === "string" ? o.summary.slice(0, 600) : "",
       aspect: o.aspect === "9:16" || o.aspect === "1:1" || o.aspect === "16:9" ? (o.aspect as string) : "16:9",
       seconds: Number.isFinite(Number(o.seconds)) ? Math.max(0, Number(o.seconds)) : 0,
+      projectFile: typeof o.project === "string" && /^[\w.-]+\.project\.tar$/.test(o.project) ? o.project : null,
     }));
   if (outputs.length === 0) return null;
   return { outputs, notes: typeof b.notes === "string" ? b.notes.slice(0, 1000) : "" };

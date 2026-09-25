@@ -38,6 +38,7 @@ import { whisperCostUsd } from "./prices";
 import { transcribeTwice } from "./transcribe";
 import { extractSpeech, probeClip } from "./work";
 import { mediaUrl } from "../media/url";
+import { footageIndex, PROJECT_ENTRY, projectDir, readTar, type ProjectManifest } from "./project";
 
 type Admin = SupabaseClient;
 
@@ -193,7 +194,8 @@ async function runStep(step: Step, row: EditRow, deps: AdvanceDeps, now: () => n
       for (const [i, o] of delivery.outputs.entries()) {
         const generationId = derivedUuid(`video-edit:${row.id}:${session.turn}:${i}`);
         await deliverOne(admin, row, generationId, o);
-        outputs.push({ title: o.title, summary: o.summary, aspect: o.aspect, seconds: o.seconds, generationId, turn: session.turn });
+        const project = o.project ? await keepProject(admin, row, generationId, o.project) : null;
+        outputs.push({ title: o.title, summary: o.summary, aspect: o.aspect, seconds: o.seconds, generationId, turn: session.turn, project });
       }
       const said = delivery.outputs.map((o) => (o.title ? `${o.title}: ${o.summary}` : o.summary)).filter(Boolean);
       const plan: DeliveryRecord = {
@@ -212,6 +214,59 @@ async function runStep(step: Step, row: EditRow, deps: AdvanceDeps, now: () => n
 
     default:
       return "wait";
+  }
+}
+
+const PROJECT_TYPES: Record<string, string> = {
+  html: "text/html",
+  css: "text/css",
+  js: "text/javascript",
+  mjs: "text/javascript",
+  json: "application/json",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  m4a: "audio/mp4",
+  ogg: "audio/ogg",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  svg: "image/svg+xml",
+  woff2: "font/woff2",
+  woff: "font/woff",
+  ttf: "font/ttf",
+  otf: "font/otf",
+};
+
+/**
+ * The editable project Opus handed over with a video, unpacked into the
+ * footage bucket beside it (project.ts). Best effort: a pack that can't be
+ * read or kept costs the timeline for that video, never the video itself.
+ */
+async function keepProject(admin: Admin, row: EditRow, generationId: string, pack: Uint8Array): Promise<ProjectManifest | null> {
+  try {
+    const files = readTar(pack).filter((f) => footageIndex(f.path) === null && !f.path.startsWith("footage/"));
+    if (!files.some((f) => f.path === PROJECT_ENTRY)) throw new Error("no index.html in the pack");
+    const dir = projectDir(row.user_id, row.id, generationId);
+    for (let i = 0; i < files.length; i += 6) {
+      await Promise.all(
+        files.slice(i, i + 6).map(async (f) => {
+          const ext = f.path.split(".").pop()?.toLowerCase() ?? "";
+          const { error } = await admin.storage
+            .from(EDITOR_BUCKET)
+            .upload(`${dir}/${f.path}`, f.data, { contentType: PROJECT_TYPES[ext] ?? "application/octet-stream", upsert: true });
+          if (error) throw new Error(`${f.path}: ${error.message}`);
+        }),
+      );
+    }
+    return { dir, entry: PROJECT_ENTRY, files: files.map((f) => ({ path: f.path, bytes: f.data.byteLength })) };
+  } catch (err) {
+    console.error(`[editor] ${row.id} project for ${generationId} not kept:`, err instanceof Error ? err.message : err);
+    return null;
   }
 }
 

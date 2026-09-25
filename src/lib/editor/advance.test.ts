@@ -24,6 +24,22 @@ import { AgentError, collectDelivery, readSession, startSession } from "./agent"
 import type { EditRow, SessionRecord } from "./job";
 
 type Row = Record<string, unknown>;
+
+/** A tiny ustar pack: name → text. */
+function tar(entries: Record<string, string>): Uint8Array {
+  const blocks: Buffer[] = [];
+  for (const [name, text] of Object.entries(entries)) {
+    const data = Buffer.from(text);
+    const h = Buffer.alloc(512);
+    h.write(`./${name}`, 0, "utf8");
+    h.write(data.length.toString(8).padStart(11, "0") + "\0", 124, "ascii");
+    h.write("0", 156, "ascii");
+    blocks.push(h, data, Buffer.alloc((512 - (data.length % 512)) % 512));
+  }
+  blocks.push(Buffer.alloc(1024));
+  return new Uint8Array(Buffer.concat(blocks));
+}
+
 function fakeAdmin() {
   const tables: Record<string, Row[]> = { video_edits: [], generations: [] };
   const files = new Map<string, Uint8Array>();
@@ -168,12 +184,28 @@ describe("advanceEdit v2", () => {
       resultId: "file_r1",
       notes: "Two clips had no usable sound.",
       outputs: [
-        { file: "a.mp4", title: "Hook A", summary: "Opens on the explosion.", aspect: "9:16", seconds: 18.4, bytes: new Uint8Array([1]) },
-        { file: "b.mp4", title: "Hook B", summary: "Opens on the face.", aspect: "9:16", seconds: 21, bytes: new Uint8Array([2]) },
+        {
+          file: "a.mp4",
+          title: "Hook A",
+          summary: "Opens on the explosion.",
+          aspect: "9:16",
+          seconds: 18.4,
+          bytes: new Uint8Array([1]),
+          project: tar({ "index.html": "<html></html>", "assets/hit.wav": "RIFF", "footage/clip-0.mp4": "never kept" }),
+        },
+        // A pack without its index.html costs the timeline, not the video.
+        { file: "b.mp4", title: "Hook B", summary: "Opens on the face.", aspect: "9:16", seconds: 21, bytes: new Uint8Array([2]), project: tar({ "x.css": "a{}" }) },
       ],
     });
     expect(await advanceEdit(edit().id, { admin, now: () => 100_000 })).toBe("done");
     const ids = [0, 1].map((i) => derivedUuid(`video-edit:${edit().id}:1:${i}`));
+    const dir = `u1/${edit().id}/projects/${ids[0]}`;
+    expect(files.has(`edit-footage/${dir}/index.html`)).toBe(true);
+    expect(files.has(`edit-footage/${dir}/assets/hit.wav`)).toBe(true);
+    expect(files.has(`edit-footage/${dir}/footage/clip-0.mp4`)).toBe(false);
+    const kept = (tables.video_edits[0] as unknown as EditRow).plan?.outputs;
+    expect(kept?.[0].project).toEqual({ dir, entry: "index.html", files: [{ path: "index.html", bytes: 13 }, { path: "assets/hit.wav", bytes: 4 }] });
+    expect(kept?.[1].project).toBeNull();
     expect(tables.generations.map((g) => g.id)).toEqual(ids);
     expect(tables.generations[0]).toMatchObject({ user_id: "u1", status: "succeeded", model_id: "video-editor", credits_used: 0, video_duration_seconds: 18, video_aspect_ratio: "9:16" });
     expect(files.has(`generated-videos/u1/${ids[1]}.mp4`)).toBe(true);

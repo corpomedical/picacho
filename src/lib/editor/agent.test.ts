@@ -160,9 +160,35 @@ describe("agent.ts", () => {
     expect(parseResult("not json")).toBeNull();
     expect(parseResult(JSON.stringify({ outputs: [] }))).toBeNull();
     expect(parseResult(JSON.stringify({ outputs: [{ file: "a.mp4", aspect: "4:3", seconds: "x" }] }))).toEqual({
-      outputs: [{ file: "a.mp4", title: "", summary: "", aspect: "16:9", seconds: 0 }],
+      outputs: [{ file: "a.mp4", title: "", summary: "", aspect: "16:9", seconds: 0, projectFile: null }],
       notes: "",
     });
+    // The editable project's pack: a .project.tar name, nothing else.
+    const withPack = (project: string) => parseResult(JSON.stringify({ outputs: [{ file: "a.mp4", project }] }))?.outputs[0].projectFile;
+    expect(withPack("a.project.tar")).toBe("a.project.tar");
+    expect(withPack("../a.project.tar")).toBeNull();
+    expect(withPack("a.tar.gz")).toBeNull();
+  });
+
+  it("brings the editable project with its video, and still the video when the pack is missing", async () => {
+    const result = JSON.stringify({
+      outputs: [
+        { file: "a.mp4", title: "A", project: "a.project.tar" },
+        { file: "b.mp4", title: "B", project: "b.project.tar" },
+      ],
+    });
+    const { client } = fakeClient({
+      files: [
+        { id: "f_res", filename: "result.json", created_at: "t", body: result },
+        { id: "f_a", filename: "a.mp4", created_at: "t", body: new Uint8Array([1]) },
+        { id: "f_ap", filename: "a.project.tar", created_at: "t", body: new Uint8Array([9, 9]) },
+        { id: "f_b", filename: "b.mp4", created_at: "t", body: new Uint8Array([2]) },
+      ],
+    });
+    const got = await collectDelivery("s", {}, client);
+    expect(Array.from(got!.outputs[0].project ?? [])).toEqual([9, 9]);
+    expect(got!.outputs[1].project).toBeNull();
+    expect(got!.outputs[0]).not.toHaveProperty("projectFile");
   });
 
   it("reads what it is doing from its latest tool call (the first real session wrote no prose for minutes)", () => {

@@ -10,6 +10,7 @@
 
 import type { ProbeResult } from "./analyze";
 import type { Word } from "./transcribe";
+import type { ProjectManifest } from "./project";
 
 export const EDITOR_BUCKET = "edit-footage";
 export const MAX_CLIPS = 12;
@@ -67,7 +68,8 @@ export type SessionRecord = {
 
 /** `song`: the file name of a song sent with that change. */
 export type Note = { role: "editor" | "you"; text: string; song?: string };
-export type Output = { title: string; summary: string; aspect: string; seconds: number; generationId: string; turn: number };
+/** `project`: the editable HyperFrames project behind it, when Opus handed one over (project.ts). */
+export type Output = { title: string; summary: string; aspect: string; seconds: number; generationId: string; turn: number; project?: ProjectManifest | null };
 
 /** What was delivered, and the conversation (stored in the row's `plan` column). */
 export type DeliveryRecord = { outputs: Output[]; history: Note[] };
