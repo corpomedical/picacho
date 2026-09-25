@@ -20,6 +20,21 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.111.0",
+    build: 150,
+    date: "2026-09-25",
+    title: "Helios's chat never spends a set change or a still on words it didn't read",
+    items: [
+      "Asking a set's chat to change the set itself (add a row of flags, recolour the barriers) now shows a card first: your words as Astra will read them, and how many of the month's Astra changes you have left. Astra runs only when you press \"Change the set\", in every mode. \"Have Astra rescale it\" goes through the same card.",
+      "A message the chat couldn't read, because the reader was down or busy, now changes nothing and shoots nothing. It says so and offers \"Use my words as what happens\". Before, the words became what happens on their own, and \"Shoot without asking\" shot a paid still of them.",
+      "Golden hour, the light and the look are no longer read as changes to the set, so they no longer go to Astra.",
+      "The message a new set was built from is never sent to Astra a second time.",
+      "After an Astra change, the line under it says how many changes are left this month.",
+      "Undo of an Astra change now also brings back the set's own title and description, so the stills after it stop describing the undone change. When that can't be done, the page says the description still mentions it. Every Undo says the change still counts this month.",
+      "Each chat reading now records how many tokens it used, never your words, so its real cost can be measured.",
+    ],
+  },
+  {
     version: "1.110.0",
     build: 149,
     date: "2026-09-25",
