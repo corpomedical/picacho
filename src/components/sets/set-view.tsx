@@ -10,6 +10,12 @@ import { formatMsg } from "@/lib/i18n/format";
 import { quoteSend } from "@/lib/generations/quote";
 import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { saveSetLayout, saveSetThumbnail, shootInSet, takeInSet } from "@/lib/sets/actions";
+import { readSetPress } from "@/lib/sets/press-actions";
+import { cutOff, followPress, lostAnswer, newPressId, pressReadOf, stillGoingAnswer, type PressRead } from "@/lib/sets/press-follow";
+import { shotFileName, shotFileUrl } from "@/lib/sets/still-file";
+import { downloadResult, downloadResultNative } from "@/components/download-button";
+import { isNativeAppClient } from "@/lib/native/platform";
+import { recordDownload } from "@/lib/generations/actions";
 import { addElementPhoto, assignElementPhoto, prepareElementSheets, removeElementPhoto, settleElementPhotos } from "@/lib/sets/element-actions";
 import { thumbUrl } from "@/lib/media/url";
 import { editSetWithAstra, readAstraEdit, rebuildThingFromPhotos, saveSetEdit } from "@/lib/sets/editor-actions";
@@ -121,7 +127,9 @@ import { dropUnsaved, keepUnsaved, savedFilmKey, savedRigKey, takeUnsaved } from
 //
 // Nothing here touches money. The prices come from quoteSend (the function
 // the server charges with, through take.ts), and shootInSet hands the frame
-// to runGeneration like any other image send. Everything drawn comes from the
+// to runGeneration like any other image send. Every paid press carries its
+// own id, and a press whose answer is lost is followed by that id, never
+// pressed again (press-follow.ts, 2026-09-25). Everything drawn comes from the
 // normalised spec through build-scene.ts; three.js loads dynamically, only
 // on this route.
 
@@ -409,6 +417,9 @@ type Revision = {
 type ShotFacts = { seconds: number; frame: string };
 /** A take's two frames and what rendered between them (take.ts), with the words that asked for it: enough to render the clip again. */
 type TakeFrames = TakeSource & { words?: string };
+/** What a Shoot and a Take answer: a lost answer followed by its press id comes back as the same (press-follow.ts). */
+type ShootAnswer = Awaited<ReturnType<typeof shootInSet>>;
+type TakeAnswer = Awaited<ReturnType<typeof takeInSet>>;
 
 const sourceOf = (f: TakeFrames): TakeSource => ({ start: f.start, end: f.end, characterId: f.characterId, direction: f.direction, engine: f.engine });
 /** A take's frames as the retry sends them: what it was rendered from (SetShot.takeFrom) and the words kept with it. */
@@ -644,6 +655,10 @@ export function SetView({
   // read it, the message itself.
   const [direction, setDirection] = useState("");
   const [shooting, setShooting] = useState(false);
+  // A paid press whose answer was lost is being followed by its id
+  // (press-follow.ts, 2026-09-25): Shoot stays held meanwhile, and the page
+  // says "still rendering" instead of "try again".
+  const [following, setFollowing] = useState(false);
   const [error, setError] = useState(() => {
     const asked = initialCharacterId && !characters.some((c) => c.id === initialCharacterId) ? unshootable.find((u) => u.id === initialCharacterId) : undefined;
     return asked ? formatMsg(t.sets.cast.notCastable, { name: asked.name }) : "";
@@ -759,8 +774,8 @@ export function SetView({
   const [loadedFilmKey] = useState(() => savedFilmKey(savedFilm));
   const filmSavedRef = useRef(loadedFilmKey);
   const [filmSel, setFilmSel] = useState<number | null>(null);
-  /** Rendering: which beat the chain is on; null when idle. */
-  const [filmBusy, setFilmBusy] = useState<{ beat: number; clipOnly: boolean } | null>(null);
+  /** Rendering: which beat the chain is on, and whether its lost answer is being followed (press-follow.ts); null when idle. */
+  const [filmBusy, setFilmBusy] = useState<{ beat: number; clipOnly: boolean; following?: true } | null>(null);
   const [filmError, setFilmError] = useState("");
   /**
    * Every change to the move goes through here: the film is edited, then
@@ -4446,6 +4461,41 @@ export function SetView({
     scheduleSave();
   }
 
+  // ---- a paid press whose answer was lost (press-follow.ts, 2026-09-25) ----
+
+  /** What a follow says when the answer does not come: nothing started, or History. */
+  const lostWords = { neverStarted: s.pressNeverStarted, stillGoing: s.pressStillGoing };
+  /** Follows a press from its send until its answer is there, while the page is here. */
+  function followLost<T>(sentAt: number, read: () => Promise<PressRead<T> | null>) {
+    return followPress<T>({ sentAt, read, alive: () => aliveRef.current });
+  }
+  /**
+   * One read of a shot's press (press-actions.ts readSetPress). A read that
+   * throws is asked again, unless a deploy left the tab behind: then the
+   * reload is on its way and the page says so.
+   */
+  function shotPressRead(pressId: string) {
+    return async (): Promise<PressRead<ShootAnswer> | null> => {
+      try {
+        const r = await readSetPress(setId, { pressId });
+        return pressReadOf(r, "shot");
+      } catch (err) {
+        return staleHere(err) ? { state: "error", error: t.generate.refreshNeeded } : null;
+      }
+    };
+  }
+  /** The same for a take's press, or a film beat's: the Render's id and the beat's number. */
+  function takePressRead(pressId: string, filmBeat?: number) {
+    return async (): Promise<PressRead<TakeAnswer> | null> => {
+      try {
+        const r = await readSetPress(setId, filmBeat === undefined ? { pressId } : { pressId, filmBeat });
+        return pressReadOf(r, "take");
+      } catch (err) {
+        return staleHere(err) ? { state: "error", error: t.generate.refreshNeeded } : null;
+      }
+    };
+  }
+
   /**
    * The still: shot from the frame as it is, with what happens
    * (`directionNow` when send() knows it before state does), and every
@@ -4481,6 +4531,9 @@ export function SetView({
     }
     busy.shooting = true;
     setShooting(true);
+    // This press's own id, fresh for every Shoot (press-follow.ts): a
+    // browser's resend of it is followed on the server, never shot again.
+    const pressId = newPressId();
     const startedAt = new Date().getTime();
     // The camera, the figure's mark (in the layout) and the canvas shape the
     // frame was just taken from: stored with the still as sent, they say
@@ -4494,10 +4547,13 @@ export function SetView({
     const frameLabel = `${cameraLabel} · ${lensLabel} · ${markLabel}`;
     keepRevision(said, cameraId);
     let result: Awaited<ReturnType<typeof shootInSet>>;
+    let sentAt: number | null = null;
     try {
       // The things' sheets this frame carries are drawn first, once each (R1).
       if ((await drawSheetsFor(planFor(pose, layoutRef.current.mark).riding)) === null) return;
+      sentAt = new Date().getTime();
       result = await shootInSet(setId, {
+        pressId,
         frameDataUri: frame,
         characterId,
         direction: said,
@@ -4511,15 +4567,36 @@ export function SetView({
         stillEngine,
         greyed: grey,
       });
+      // A resend of this press found the first delivery still rendering
+      // (press.ts, repeat-send.ts): that one is followed, never pressed again.
+      if (stillGoingAnswer(result.error)) {
+        setFollowing(true);
+        result = lostAnswer(await followLost(sentAt, shotPressRead(pressId)), lostWords);
+      }
     } catch (err) {
-      // The take may still be running on the server (a dropped connection
-      // does not stop it); it lands in History either way.
-      const stale = staleHere(err);
-      setError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
-      return;
+      // The answer was lost, not the still (operator, 2026-09-25, Cut 1). A
+      // dropped connection does not stop the render, which is charged on the
+      // server all the same, so "try again" here paid twice. It is followed
+      // by its press id, Shoot is held meanwhile, and what lands is shown as
+      // if the answer had come. A deploy answers at once; a throw at the
+      // platform's ceiling is a render cut off mid-way, never a deploy.
+      if (!cutOff(sentAt, new Date().getTime())) {
+        const stale = staleHere(err);
+        if (stale) {
+          setError(t.generate.refreshNeeded);
+          return;
+        }
+      }
+      if (sentAt === null) {
+        setError(t.generate.submitFailed);
+        return;
+      }
+      setFollowing(true);
+      result = lostAnswer(await followLost(sentAt, shotPressRead(pressId)), lostWords);
     } finally {
       busyRef.current.shooting = false;
       setShooting(false);
+      setFollowing(false);
     }
     if (result.error !== null) {
       setError(result.error);
@@ -4630,6 +4707,8 @@ export function SetView({
     }
     busy.taking = true;
     setShooting(true);
+    // This press's own id, fresh for every Take (press-follow.ts).
+    const pressId = newPressId();
     const startedAt = new Date().getTime();
     const pose = apiRef.current?.pose() ?? null;
     const canvasAspect = apiRef.current?.canvasAspect();
@@ -4638,10 +4717,13 @@ export function SetView({
     const frameLabel = `${cameraLabel} · ${lensLabel} · ${markLabel}`;
     keepRevision(said, cameraId);
     let result: Awaited<ReturnType<typeof takeInSet>>;
+    let sentAt: number | null = null;
     try {
       // The end still carries the things' sheets like any still (R1).
       if ((await drawSheetsFor(planFor(pose, layoutRef.current.mark).riding)) === null) return;
+      sentAt = new Date().getTime();
       result = await takeInSet(setId, {
+        pressId,
         startGenerationId: takeStart.id,
         frameDataUri: frame,
         characterId,
@@ -4655,13 +4737,32 @@ export function SetView({
         stillEngine,
         greyed: grey,
       });
+      // A resend found the first delivery still rendering: followed, never pressed again.
+      if (stillGoingAnswer(result.error)) {
+        setFollowing(true);
+        result = lostAnswer(await followLost(sentAt, takePressRead(pressId)), lostWords);
+      }
     } catch (err) {
-      const stale = staleHere(err);
-      setError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
-      return;
+      // The answer was lost, not the take (Cut 1, as shoot's): the end still
+      // and the clip go on rendering and are charged all the same. Followed
+      // by its press id with the Take held, and shown as if it had answered.
+      if (!cutOff(sentAt, new Date().getTime())) {
+        const stale = staleHere(err);
+        if (stale) {
+          setError(t.generate.refreshNeeded);
+          return;
+        }
+      }
+      if (sentAt === null) {
+        setError(t.generate.submitFailed);
+        return;
+      }
+      setFollowing(true);
+      result = lostAnswer(await followLost(sentAt, takePressRead(pressId)), lostWords);
     } finally {
       busyRef.current.taking = false;
       setShooting(false);
+      setFollowing(false);
     }
     if (result.error !== null) {
       setError(result.error);
@@ -5363,6 +5464,12 @@ export function SetView({
     let drawn = { time: rigRef.current.time, figure: layoutRef.current.mark as { x: number; z: number; facingDeg: number }, movers: "[]" };
     const stages = filmStages(film.beats, { mark: layoutRef.current.mark, pose: layoutRef.current.pose, time: rigRef.current.time });
     let stagedAway = false;
+    // This Render's own id (press-follow.ts), one for all its beats: each
+    // beat says which it is (filmBeat), so the server tells a browser's
+    // resend of a beat from the next beat and counts the Render once
+    // (press.ts filmBeatPressId, renderPaidBefore). Render pressed again is
+    // a new id.
+    const pressId = newPressId();
     // Whatever stops the chain — a refusal, a lost stage, anything thrown —
     // the film is let go, or it would stay locked as rendering, and a throw
     // is said in the dock rather than left to the console.
@@ -5404,9 +5511,21 @@ export function SetView({
           setFilmError(s.loadFailed);
           break;
         }
+        const sentAt = new Date().getTime();
+        const beatWords = { neverStarted: formatMsg(s.filmBeatNeverStarted, { n: i + 1 }), stillGoing: formatMsg(s.filmBeatStillGoing, { n: i + 1 }) };
+        // A beat whose answer was lost, followed by its press with the Render
+        // still held (filmBusyRef), and handed on as if the answer had come.
+        const followBeat = async (): Promise<TakeAnswer> => {
+          setFilmBusy({ beat: i, clipOnly: job.end !== null, following: true });
+          const followed = await followLost(sentAt, takePressRead(pressId, i));
+          setFilmBusy({ beat: i, clipOnly: job.end !== null });
+          return lostAnswer(followed, beatWords);
+        };
         let result: Awaited<ReturnType<typeof takeInSet>>;
         try {
           result = await takeInSet(setId, {
+            pressId,
+            filmBeat: i,
             startGenerationId: startId,
             endGenerationId: job.end,
             // The film's one look, the same for every beat (filmLook).
@@ -5439,10 +5558,21 @@ export function SetView({
             gaze: beat.gaze,
             film: true,
           });
+          // A resend of this beat found the first delivery still rendering.
+          if (stillGoingAnswer(result.error)) result = await followBeat();
         } catch (err) {
-          const stale = staleHere(err);
-          setFilmError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
-          break;
+          // Before, the film forgot this beat's paid end still and clip, and
+          // the next Render shot and charged it again (audit F2, Cut 1). A
+          // deploy answers at once; anything else is followed by the beat's
+          // press and kept on the film as if the answer had come.
+          if (!cutOff(sentAt, new Date().getTime())) {
+            const stale = staleHere(err);
+            if (stale) {
+              setFilmError(t.generate.refreshNeeded);
+              break;
+            }
+          }
+          result = await followBeat();
         }
         if (result.error !== null) {
           setFilmError(result.error);
@@ -5559,9 +5689,16 @@ export function SetView({
     setError("");
     setTakeRetry(null);
     setShooting(true);
+    // This press's own id, fresh for every Try the clip again (press-follow.ts).
+    const pressId = newPressId();
+    const sentAt = new Date().getTime();
+    // Whether the frames are offered for the clip again: never while a clip
+    // of this press may still land, which a second press would pay for twice.
+    let offerAgain = true;
     let result: Awaited<ReturnType<typeof takeInSet>>;
     try {
       result = await takeInSet(setId, {
+        pressId,
         startGenerationId: f.start,
         endGenerationId: f.end,
         frameDataUri: "",
@@ -5574,19 +5711,37 @@ export function SetView({
         words: f.words,
         rig: rigRef.current,
       });
+      // A resend found the first delivery still rendering: followed, never pressed again.
+      if (stillGoingAnswer(result.error)) {
+        setFollowing(true);
+        const followed = await followLost(sentAt, takePressRead(pressId));
+        offerAgain = followed.kind === "landed" || followed.kind === "never-started";
+        result = lostAnswer(followed, lostWords);
+      }
     } catch (err) {
-      const stale = staleHere(err);
-      setError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
-      // The frames stay on offer: nothing was rendered.
-      setTakeRetry(f);
-      return;
+      // The answer was lost, not the clip (Cut 1, as shoot's): it goes on
+      // rendering and is charged all the same. A deploy answers at once, so
+      // the frames stay on offer for it; anything else is followed.
+      if (!cutOff(sentAt, new Date().getTime())) {
+        const stale = staleHere(err);
+        if (stale) {
+          setError(t.generate.refreshNeeded);
+          setTakeRetry(f);
+          return;
+        }
+      }
+      setFollowing(true);
+      const followed = await followLost(sentAt, takePressRead(pressId));
+      offerAgain = followed.kind === "landed" || followed.kind === "never-started";
+      result = lostAnswer(followed, lostWords);
     } finally {
       busyRef.current.taking = false;
       setShooting(false);
+      setFollowing(false);
     }
     if (result.error !== null) {
       setError(result.error);
-      setTakeRetry(f);
+      if (offerAgain) setTakeRetry(f);
       return;
     }
     const id = result.takeGenerationId;
@@ -6150,18 +6305,47 @@ export function SetView({
   }, [generatingKey, setId, leftBehind]);
 
   /**
-   * The frame as a picture on disk — 3D Jutsu's static-frame export. Cut to
-   * the frame lines, because the frame lines are the picture: the still that
-   * comes back is cut there too (frame-cut.ts), so a Scope frame downloads
-   * as the 2.39 : 1 band it was composed in and not the 3:2 the model draws.
+   * The stage's sketch as a picture on disk — 3D Jutsu's static-frame
+   * export, named as the sketch (Cut 1, 2026-09-25): it used to be the only
+   * download, and saved this grey frame while a finished still was on
+   * screen. Cut to the frame lines, because the frame lines are the picture:
+   * the still that comes back is cut there too (frame-cut.ts), so a Scope
+   * frame downloads as the 2.39 : 1 band it was composed in and not the 3:2
+   * the model draws.
    */
   function downloadFrame() {
     const shot = apiRef.current?.frame({ cut: true });
     if (!shot) return;
     const a = document.createElement("a");
     a.href = shot;
-    a.download = `${(title || "set").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-frame.jpg`;
+    a.download = `${(title || "set").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-sketch.jpg`;
     a.click();
+  }
+
+  /**
+   * The finished still or take itself as a file (still-file.ts, Cut 1,
+   * 2026-09-25): the untouched original, as History's Download saves it.
+   * Mirrors DownloadButton's handler (download-button.tsx): the native
+   * share sheet in the Android shell, one download at a time, and the
+   * download recorded fire-and-forget, which can never fail it.
+   */
+  const shotFileBusyRef = useRef(false);
+  async function downloadShot(shot: SetShot) {
+    const url = shotFileUrl(shot);
+    if (!url || shotFileBusyRef.current) return;
+    shotFileBusyRef.current = true;
+    const name = shotFileName(title, shot.kind, stillNumber(shot), url);
+    try {
+      if (isNativeAppClient()) {
+        const handled = await downloadResultNative(url, name).catch(() => false);
+        if (!handled) await downloadResult(url, name);
+      } else {
+        await downloadResult(url, name);
+      }
+      void recordDownload(shot.generationId).catch(() => {});
+    } finally {
+      shotFileBusyRef.current = false;
+    }
   }
 
   /**
@@ -6293,7 +6477,7 @@ export function SetView({
                 : null;
   const filmWholeFrom = filmPlan.jobs.every((job) => job.end === null) ? (filmPlan.jobs[0]?.beat ?? 0) : null;
   const filmRenderLabel = filmBusy
-    ? formatMsg(filmBusy.clipOnly ? s.filmRenderingClip : s.filmRendering, { i: filmBusy.beat + 1, n: film.beats.length })
+    ? formatMsg(filmBusy.following ? s.filmBeatFollowing : filmBusy.clipOnly ? s.filmRenderingClip : s.filmRendering, { i: filmBusy.beat + 1, n: film.beats.length })
     : filmPlan.again
       ? filmPlan.rendering
         ? s.filmClipsRendering
@@ -6311,8 +6495,11 @@ export function SetView({
   const reelShots = reelReady ? (filmClipShots as SetShot[]) : [];
   const filmStartShot = film.startId ? (shots.find((sh) => sh.generationId === film.startId) ?? null) : null;
   const scaleWarn = Boolean(sourcePhotoUrl) && !scaleDismissed && ready && oversizedSeating(spec);
+  // The engine the stills are drawn with, named wherever Helios names one
+  // (2026-09-25: the panel said GPT Image 2.5 over a Nano Banana pick).
+  const stillEngineName = getImageModel(stillEngine).name;
   const shootLabel = shooting
-    ? s.shooting
+    ? (following ? s.pressFollowingShort : s.shooting)
     : quote.totalCredits === 1
       ? s.shootButtonOne
       : formatMsg(s.shootButton, { n: quote.totalCredits });
@@ -6451,6 +6638,10 @@ export function SetView({
   const thread = [...shots].reverse();
   const viewingAt = viewing ? shots.findIndex((x) => x.generationId === viewing) : -1;
   const viewingShot = viewingAt >= 0 ? shots[viewingAt] : null;
+  // The file the shot on screen downloads as (still-file.ts); null for the
+  // stage, or a shot not finished, whose download is the sketch.
+  const viewingFile = viewingShot ? shotFileUrl(viewingShot) : null;
+  const barDownloadLabel = viewingFile ? (viewingShot?.kind === "take" ? s.downloadTake : s.downloadStill) : s.downloadFrame;
   const stillLine = (shot: SetShot) => {
     const low = shot.score !== null && shot.score < identityBar;
     return shot.status !== "succeeded"
@@ -6821,7 +7012,7 @@ export function SetView({
               <span className="whitespace-nowrap text-[#f0cda6]">{formatMsg(s.filmBeatLabel, { n: filmSel + 1 })}</span>
               <span className="whitespace-nowrap normal-case tabular-nums">{formatMsg(s.takeSeconds, { s: SET_TAKE_ENGINES[film.engine].seconds })}</span>
               {filmBusy?.beat === filmSel ? (
-                <span className="whitespace-nowrap normal-case text-[#e0a468]">{filmBusy.clipOnly ? s.filmBeatClip : s.filmBeatStill}</span>
+                <span className="whitespace-nowrap normal-case text-[#e0a468]">{filmBusy.following ? s.filmBeatFollowingShort : filmBusy.clipOnly ? s.filmBeatClip : s.filmBeatStill}</span>
               ) : filmClipShots[filmSel] ? (
                 <span
                   className={`whitespace-nowrap normal-case ${
@@ -7063,6 +7254,11 @@ export function SetView({
             </>
           )}
         </div>
+        {following && simpleStep === "shoot" && (
+          <p className="border-t border-[rgba(255,255,255,0.07)] px-3.5 py-2 text-[12px] text-[#c6c9d1]" aria-live="polite" data-press-following>
+            {s.pressFollowing}
+          </p>
+        )}
         {(error || rigError) && <p className="border-t border-[rgba(255,255,255,0.07)] px-3.5 py-2 text-[12px] text-red-400">{localizeServerText(error || rigError, t)}</p>}
         {chatComposer}
       </aside>
@@ -7325,7 +7521,7 @@ export function SetView({
             <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.07)] px-4 py-3">
               <span className="text-[11px] font-medium uppercase tracking-widest text-[#c6c9d1]">{s.astraLabel}</span>
               <span className="flex items-center gap-2">
-                <span className="text-[11px] text-[#9aa0ad]">{s.panelMeta}</span>
+                <span className="text-[11px] text-[#9aa0ad]">{formatMsg(s.panelMeta, { engine: stillEngineName })}</span>
                 <button
                   type="button"
                   onClick={() => setChatOpen(false)}
@@ -7636,7 +7832,7 @@ export function SetView({
                   <AstraMark />
                   <p className="flex items-center gap-2 text-sm text-[#c6c9d1]">
                     <Spinner className="h-4 w-4 flex-shrink-0" />
-                    {editingSet ? s.editorAsking : shooting ? `${s.shooting} ${s.shootingLine}` : s.threadReading}
+                    {editingSet ? s.editorAsking : following ? s.pressFollowing : shooting ? `${s.shooting} ${formatMsg(s.shootingLine, { engine: stillEngineName })}` : s.threadReading}
                   </p>
                 </div>
               )}
@@ -7745,7 +7941,7 @@ export function SetView({
                       data-still-engine={stillEngine}
                       className="flex h-8 cursor-pointer items-center gap-1 whitespace-nowrap rounded-full bg-[rgba(255,255,255,0.06)] px-3 text-xs text-[#c6c9d1] tabular-nums hover:bg-[rgba(255,255,255,0.1)]"
                     >
-                      {getImageModel(stillEngine).name} · {credits}
+                      {stillEngineName} · {credits}
                       <Chevron />
                     </button>
                     {menu === "engine" && (
@@ -7866,10 +8062,11 @@ export function SetView({
         </div>
         <button
           type="button"
-          onClick={downloadFrame}
-          disabled={!ready}
-          title={s.downloadFrame}
-          aria-label={s.downloadFrame}
+          onClick={viewingFile && viewingShot ? () => void downloadShot(viewingShot) : downloadFrame}
+          disabled={!viewingFile && !ready}
+          title={barDownloadLabel}
+          aria-label={barDownloadLabel}
+          data-bar-download
           className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-[6px] text-[#d6d9e0] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad] disabled:opacity-100"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
@@ -8400,6 +8597,16 @@ export function SetView({
                       {s.directLive}
                     </Link>
                   )}
+                  {viewingFile && (
+                    <button type="button" onClick={() => void downloadShot(viewingShot)} className={glassBtn} data-shot-download>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden>
+                        <path d="M12 3v12" />
+                        <path d="m7 10 5 5 5-5" />
+                        <path d="M4 19h16" />
+                      </svg>
+                      {viewingShot.kind === "take" ? s.downloadTake : s.downloadStill}
+                    </button>
+                  )}
                   <Link href={`/app/history/${viewingShot.generationId}`} className={glassBtn}>
                     {s.openTake}
                   </Link>
@@ -8601,7 +8808,7 @@ export function SetView({
                         </span>
                       )}
                       {filmBusy?.beat === i ? (
-                        <span className="whitespace-nowrap normal-case text-[#e0a468]">{filmBusy.clipOnly ? s.filmBeatClip : s.filmBeatStill}</span>
+                        <span className="whitespace-nowrap normal-case text-[#e0a468]">{filmBusy.following ? s.filmBeatFollowingShort : filmBusy.clipOnly ? s.filmBeatClip : s.filmBeatStill}</span>
                       ) : filmClipShots[i] ? (
                         <span
                           className={`whitespace-nowrap normal-case ${
