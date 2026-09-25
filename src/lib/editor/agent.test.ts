@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { activityOf, collectDelivery, parseResult, readSession, sendChange, startSession } from "./agent";
+import { activityOf, collectDelivery, editorApiKey, parseResult, readSession, sendChange, startSession } from "./agent";
 import { AGENT_SKILLS, AGENT_SYSTEM, changeMessage, jobMessage } from "./agent-prompt";
 
 /** Just the Managed Agents calls agent.ts makes, recorded. */
@@ -175,5 +175,16 @@ describe("agent.ts", () => {
     const { client, calls } = fakeClient();
     await sendChange("sesn_1", "no captions", client);
     expect(JSON.stringify(calls.send[0])).toContain("<<<NOTE\\nno captions\\nNOTE>>>");
+  });
+});
+
+describe("the key it calls with (the first live edit: \"Agent not found\" — the site's key is another workspace)", () => {
+  it("prefers the agent workspace's own key, else the shared one", () => {
+    vi.stubEnv("DIRECTORS_CUT_ANTHROPIC_API_KEY", "sk-editor");
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-shared");
+    expect(editorApiKey()).toBe("sk-editor");
+    vi.stubEnv("DIRECTORS_CUT_ANTHROPIC_API_KEY", "");
+    expect(editorApiKey()).toBe("sk-shared");
+    vi.unstubAllEnvs();
   });
 });

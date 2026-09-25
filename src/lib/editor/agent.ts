@@ -80,6 +80,21 @@ export function agentConfig(): { agentId: string; environmentId: string } | null
   return agentId && environmentId ? { agentId, environmentId } : null;
 }
 
+/**
+ * The key of the Anthropic workspace the agent lives in. An agent, its
+ * environment and its sessions belong to one workspace, and the live site's
+ * ANTHROPIC_API_KEY (the Producer's) is another one: the first live edit got
+ * "Agent not found" three times (2026-09-25). DIRECTORS_CUT_ANTHROPIC_API_KEY
+ * names the agent's workspace; without it, the shared key.
+ */
+export function editorApiKey(): string | undefined {
+  return process.env.DIRECTORS_CUT_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || undefined;
+}
+
+function editorClient(): Anthropic {
+  return new Anthropic({ apiKey: editorApiKey() });
+}
+
 function budgetCents(): string {
   const n = Number(process.env.DIRECTORS_CUT_BUDGET_CENTS);
   return String(Number.isInteger(n) && n > 0 ? n : DEFAULT_BUDGET_CENTS);
@@ -88,7 +103,7 @@ function budgetCents(): string {
 /** Start the edit: transcripts mounted as files, footage fetched by the agent from signed URLs. */
 export async function startSession(
   job: { editId: string; brief: string; aspectHint: string; lengthHint: number | null; clips: JobClip[] },
-  client: Anthropic = new Anthropic(),
+  client: Anthropic = editorClient(),
 ): Promise<string> {
   const config = agentConfig();
   if (!config) throw new AgentError("Director's Cut agent is not configured (DIRECTORS_CUT_AGENT_ID / DIRECTORS_CUT_ENVIRONMENT_ID)");
@@ -122,7 +137,7 @@ export async function startSession(
   return session.id;
 }
 
-export async function readSession(sessionId: string, client: Anthropic = new Anthropic()): Promise<SessionView> {
+export async function readSession(sessionId: string, client: Anthropic = editorClient()): Promise<SessionView> {
   const session = await client.beta.sessions.retrieve(sessionId);
   const cents = Number(session.usage?.list_cost?.amount ?? 0);
   let stopReason: string | null = null;
@@ -167,7 +182,7 @@ export async function readSession(sessionId: string, client: Anthropic = new Ant
 export async function collectDelivery(
   sessionId: string,
   opts: { alreadyDelivered?: string | null } = {},
-  client: Anthropic = new Anthropic(),
+  client: Anthropic = editorClient(),
 ): Promise<Delivered | null> {
   let files: { id: string; filename: string; created_at?: string }[] = [];
   for (let attempt = 0; attempt < 3 && files.length === 0; attempt++) {
@@ -219,7 +234,7 @@ export function parseResult(raw: string): { outputs: Omit<Delivered["outputs"][n
   return { outputs, notes: typeof b.notes === "string" ? b.notes.slice(0, 1000) : "" };
 }
 
-export async function sendChange(sessionId: string, note: string, client: Anthropic = new Anthropic()): Promise<void> {
+export async function sendChange(sessionId: string, note: string, client: Anthropic = editorClient()): Promise<void> {
   await client.beta.sessions.events.send(sessionId, {
     events: [{ type: "user.message", content: [{ type: "text", text: changeMessage(note) }] }],
   });

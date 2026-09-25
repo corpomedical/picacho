@@ -34,7 +34,9 @@ if (!skillsDir || !existsSync(skillsDir)) {
 }
 const state: State = existsSync(statePath) ? JSON.parse(readFileSync(statePath, "utf8")) : { skills: {} };
 const save = () => writeFileSync(statePath, JSON.stringify(state, null, 2));
-const client = new Anthropic();
+// The agent is created in this key's workspace, and the live site must call it
+// with a key from the same one (src/lib/editor/agent.ts editorApiKey).
+const client = new Anthropic({ apiKey: process.env.DIRECTORS_CUT_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY });
 
 function filesUnder(root: string, rel = ""): string[] {
   const out: string[] = [];
