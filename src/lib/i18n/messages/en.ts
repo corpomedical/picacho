@@ -2870,9 +2870,12 @@ const en = {
     stageUndo: "Undo move",
     stageUndoHint: "Put the camera and the figure back where they were — ⌘Z or Ctrl+Z",
     figureMovedOut: "The figure stands on open floor, so it moved out of that object.",
-    frameHint: "The bright square is the frame. Anything outside it stays out of the still.",
+    frameHint: "The bright box is the frame. Anything outside it stays out of the still.",
     standInNote:
       "The grey figure only marks where your character stands, how big they are and which way they face. The still takes their face, hair and features from their own photos.",
+    // The first-visit card's second tip: the grey blocks on the stage (Helios Cut 3, step 8).
+    tipBlocks:
+      "The blocks are a rough sketch of the place. The still keeps where each thing stands, how big it is and which way it faces, and draws the real thing.",
     descriptionLabel: "Astra's description",
     shootTitle: "Shoot this frame",
     characterLabel: "Character",
@@ -3037,7 +3040,7 @@ const en = {
     shotInSeconds: "Shot in {s} seconds.",
     newestFirst: "the newest first",
     viewerHint: "The still is in the viewer. Press Back to the frame, or the frame tile, to keep shooting from the stage.",
-    frameHintShort: "The bright square is the frame. The grey figure marks where {name} stands and which way they face; the still takes their face from their own photos.",
+    frameHintShort: "The bright box is the frame. The grey figure marks where {name} stands and which way they face; the still takes their face from their own photos.",
     // The Set Editor (drawn 2026-09-14, canvas page G; built the same day):
     // Build beside Shoot, laid out the way a pro tool is — a tool rail, the
     // docked canvas with the gizmo, a context bar of exact numbers, the

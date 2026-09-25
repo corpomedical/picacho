@@ -409,6 +409,8 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     "buildThisPlaceLeft",
     "buildNoneLeft",
     "homePlaceholderSet",
+    // The first-visit card's tip on the blocks (step 8).
+    "tipBlocks",
   ] as const;
   const SERVER_KEYS = [
     "setPhotoUnreadable",
@@ -444,6 +446,20 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     for (const t of [es, pt, it_]) {
       for (const k of SETS_KEYS) expect(t.sets[k], `sets.${k}`).not.toBe(en.sets[k]);
     }
+  });
+
+  it("calls the frame a box, not a square, and the stand-in's size its size (Helios Cut 3, step 8)", () => {
+    // New sets are 16:9, so "square" was wrong; the first-visit card reads these.
+    const square = { en: /square/i, es: /cuadrado/i, pt: /quadrado/i, it: /quadrato/i };
+    for (const [lang, t] of [["en", en], ["es", es], ["pt", pt], ["it", it_]] as const) {
+      expect(t.sets.frameHint, `${lang} frameHint`).not.toMatch(square[lang]);
+      expect(t.sets.frameHintShort, `${lang} frameHintShort`).not.toMatch(square[lang]);
+      expect(t.sets.frameHintShort, `${lang} frameHintShort`).toContain("{name}");
+    }
+    expect(en.sets.frameHint).toBe("The bright box is the frame. Anything outside it stays out of the still.");
+    expect(it_.sets.standInNote).toContain("quanto è grande");
+    // The blocks' tip promises no pose, no car and no models.
+    for (const t of [en, es, pt, it_]) expect(t.sets.tipBlocks).not.toMatch(/pose|posa|car\b|coche|carro|auto\b|model/i);
   });
 
   // Two versions of each build-time line (2026-09-11): with the finisher

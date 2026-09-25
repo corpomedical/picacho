@@ -2717,9 +2717,11 @@ const pt = {
     stageUndo: "Desfazer movimento",
     stageUndoHint: "Voltar a câmera e o boneco para onde estavam — ⌘Z ou Ctrl+Z",
     figureMovedOut: "O boneco fica em chão livre, então saiu de dentro desse objeto.",
-    frameHint: "O quadrado iluminado é o enquadramento. O que ficar fora dele não entra na foto.",
+    frameHint: "A área iluminada é o enquadramento. O que ficar fora dela não entra na foto.",
     standInNote:
       "O boneco cinza só marca onde o seu personagem fica, o tamanho dele e para onde olha. A foto pega o rosto, o cabelo e os traços das fotos do próprio personagem.",
+    tipBlocks:
+      "Os blocos são um esboço aproximado do lugar. A foto mantém onde cada coisa fica, o tamanho dela e para onde está virada, e desenha a coisa de verdade.",
     descriptionLabel: "A descrição do Astra",
     shootTitle: "Fotografar este enquadramento",
     characterLabel: "Personagem",
@@ -2867,7 +2869,7 @@ const pt = {
     shotInSeconds: "Fotografado em {s} segundos.",
     newestFirst: "as mais recentes primeiro",
     viewerHint: "A foto está no visualizador. Toque em Voltar para o enquadramento, ou na miniatura do enquadramento, para continuar fotografando a partir do palco.",
-    frameHintShort: "O quadrado brilhante é o enquadramento. A figura cinza marca onde {name} fica e para onde olha; a foto usa seu rosto a partir de suas próprias fotos.",
+    frameHintShort: "A área iluminada é o enquadramento. A figura cinza marca onde {name} fica e para onde olha; a foto usa seu rosto a partir de suas próprias fotos.",
     editorOpen: "Construir",
     editorBuildTab: "Construir",
     editorShootTab: "Fotografar",

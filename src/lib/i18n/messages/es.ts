@@ -2717,9 +2717,11 @@ const es = {
     stageUndo: "Deshacer movimiento",
     stageUndoHint: "Devolver la cámara y la figura a donde estaban — ⌘Z o Ctrl+Z",
     figureMovedOut: "La figura va sobre suelo libre, así que salió de ese objeto.",
-    frameHint: "El cuadrado iluminado es el encuadre. Lo que quede fuera no sale en la foto.",
+    frameHint: "El recuadro iluminado es el encuadre. Lo que quede fuera no sale en la foto.",
     standInNote:
       "La figura gris solo marca dónde está tu personaje, su tamaño y hacia dónde mira. La foto toma su cara, su pelo y sus rasgos de sus propias fotos.",
+    tipBlocks:
+      "Los bloques son un boceto aproximado del lugar. La foto respeta dónde está cada cosa, su tamaño y hacia dónde mira, y dibuja la cosa real.",
     descriptionLabel: "La descripción de Astra",
     shootTitle: "Fotografiar este encuadre",
     characterLabel: "Personaje",
@@ -2867,7 +2869,7 @@ const es = {
     shotInSeconds: "Fotografiado en {s} segundos.",
     newestFirst: "las más recientes primero",
     viewerHint: "La foto está en el visor. Toca Volver al encuadre, o la miniatura del encuadre, para seguir fotografiando desde el escenario.",
-    frameHintShort: "El cuadrado luminoso es el encuadre. La figura gris marca dónde se coloca {name} y hacia dónde mira; la foto toma su rostro a partir de sus propias fotos.",
+    frameHintShort: "El recuadro iluminado es el encuadre. La figura gris marca dónde se coloca {name} y hacia dónde mira; la foto toma su rostro a partir de sus propias fotos.",
     editorOpen: "Construir",
     editorBuildTab: "Construir",
     editorShootTab: "Fotografiar",

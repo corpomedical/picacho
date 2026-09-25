@@ -2716,9 +2716,11 @@ const it = {
     stageUndo: "Annulla spostamento",
     stageUndoHint: "Riporta la camera e la sagoma dov'erano — ⌘Z o Ctrl+Z",
     figureMovedOut: "La sagoma sta su un pavimento libero, quindi è uscita da quell'oggetto.",
-    frameHint: "Il quadrato illuminato è l'inquadratura. Ciò che resta fuori non entra nella foto.",
+    frameHint: "Il riquadro illuminato è l'inquadratura. Ciò che resta fuori non entra nella foto.",
     standInNote:
-      "La sagoma grigia indica solo dove sta il tuo personaggio, quanto è alto e dove guarda. La foto prende volto, capelli e lineamenti dalle sue foto.",
+      "La sagoma grigia indica solo dove sta il tuo personaggio, quanto è grande e dove guarda. La foto prende volto, capelli e lineamenti dalle sue foto.",
+    tipBlocks:
+      "I blocchi sono uno schizzo approssimativo del luogo. La foto mantiene dove sta ogni cosa, quanto è grande e dove è rivolta, e disegna la cosa vera.",
     descriptionLabel: "La descrizione di Astra",
     shootTitle: "Scatta questa inquadratura",
     characterLabel: "Personaggio",
@@ -2866,7 +2868,7 @@ const it = {
     shotInSeconds: "Scattato in {s} secondi.",
     newestFirst: "le più recenti per prime",
     viewerHint: "La foto è nel visualizzatore. Tocca Torna all'inquadratura, o la miniatura dell'inquadratura, per continuare a scattare dal palco.",
-    frameHintShort: "Il quadrato luminoso è l'inquadratura. La figura grigia indica dove si trova {name} e verso dove guarda; la foto usa il proprio volto dalle proprie foto.",
+    frameHintShort: "Il riquadro illuminato è l'inquadratura. La figura grigia indica dove si trova {name} e verso dove guarda; la foto usa il proprio volto dalle proprie foto.",
     editorOpen: "Costruisci",
     editorBuildTab: "Costruisci",
     editorShootTab: "Scatta",
