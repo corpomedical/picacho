@@ -11,9 +11,9 @@
 
 /**
  * What the browser may record a rehearsal into, best first. An engine takes
- * MP4 (recast.ts recastContainerOf takes video/mp4 and video/quicktime
- * only), so a WebM recording can be watched and downloaded but has to be
- * remade before it can be sent.
+ * MP4. Recast converts any other upload to one on the server (2026-09-25,
+ * recast.ts recastUploadFormatOf), so a WebM recording can be dropped in
+ * too — MP4 first all the same, because it skips that conversion.
  */
 export const REHEARSAL_MIMES = ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9", "video/webm"] as const;
 /** What the recording is encoded at: a blockout is flat colour, and 8 Mbit/s keeps its edges clean. */

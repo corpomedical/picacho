@@ -9,10 +9,13 @@ import type { RecastClipProblem } from "./recast";
 export const RECAST_NOT_OPEN = "Recasting is in private testing.";
 export const RECAST_UNAVAILABLE = "Recasting isn't available right now.";
 export const RECAST_NEEDS_DATABASE = "Recasting needs a database update first (recast.sql).";
+// The formats past MP4 and MOV (2026-09-25): the bucket admits them once
+// recast-formats.sql has run.
+export const RECAST_NEEDS_FORMATS = "Recasting this kind of video needs a database update first (recast-formats.sql).";
 export const RECAST_NEEDS_RIGHTS = "Confirm the clip is yours to use first.";
 export const RECAST_TOO_FAST = "You're starting takes quickly — give it a minute and try again.";
 export const RECAST_UPLOAD_UNREADABLE = "Couldn't read that upload — try again.";
-export const RECAST_NOT_A_VIDEO = "That file doesn't read as an MP4 or MOV video.";
+export const RECAST_NOT_A_VIDEO = "That file doesn't read as a video.";
 export const RECAST_CLIP_TOO_SHORT = "That clip is under 3 seconds.";
 export const RECAST_CLIP_TOO_LONG = "That clip is over 30 seconds.";
 export const RECAST_CLIP_TOO_BIG = "That clip is over 50 MB.";

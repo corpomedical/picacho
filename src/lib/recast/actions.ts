@@ -34,6 +34,7 @@ import {
   RECAST_JOB_TOO_LONG,
   RECAST_GROUP_ONE_PART,
   RECAST_NEEDS_DATABASE,
+  RECAST_NEEDS_FORMATS,
   RECAST_NEEDS_PICTURE,
   RECAST_NEEDS_RIGHTS,
   RECAST_NEEDS_ROLES,
@@ -51,6 +52,7 @@ import {
 import {
   parseRecastEngine,
   parseRecastSourcePath,
+  parseRecastUploadPath,
   RECAST_BUCKET,
   RECAST_ENGINE_ORDER,
   RECAST_ENGINES,
@@ -60,12 +62,13 @@ import {
   RECAST_MAX_IMAGES,
   RECAST_MODEL_IDS,
   recastClipProblem,
-  recastContainerOf,
+  recastCodecSends,
   recastCreditCost,
   recastCastsTogether,
   recastChainFits,
   recastCrowdSharesTake,
   recastEngineFits,
+  recastFormatConverts,
   recastImageRoom,
   recastImageSendsAsIs,
   recastImageUsable,
@@ -74,9 +77,12 @@ import {
   recastRestageImageRoom,
   recastSourcePath,
   recastTakesCast,
+  recastUploadFormatOf,
+  recastUploadPath,
   type RecastClip,
   type RecastContainer,
   type RecastEngine,
+  type RecastUploadFormat,
 } from "@/lib/recast/recast";
 import {
   composeRecastBrief,
@@ -102,6 +108,7 @@ import { parseRecastSendId, RECAST_MAX_TAKES, recastRepeatAnswer, recastTakeIds 
 import { RECAST_LOCK_THRESHOLD, readRecastRecipes, recastRow, type RecastSource } from "@/lib/recast/store";
 import { isWholeClip, recastFitFor, recastSendWindow, recastWindowCredits, recastWindowProblem, type RecastWindow } from "@/lib/recast/trim";
 import { cutRecastWindow } from "@/lib/recast/trim-run";
+import { convertRecastUpload, sampleRecastFrames } from "@/lib/recast/convert-run";
 import {
   CHAIN_CLIP_PLACEHOLDER,
   CHAIN_LOOK_PLACEHOLDER,
@@ -178,6 +185,42 @@ async function readUpload(admin: Admin, path: string): Promise<{ clip: RecastCli
   const probe = probeMp4(buf);
   if (!probe) return { error: RECAST_NOT_A_VIDEO };
   return { clip: { seconds: probe.seconds, frames: probe.frames, width: probe.width, height: probe.height, bytes: buf.length }, bytes: buf };
+}
+
+/**
+ * The upload as the door's read sees it, converted first when it has to be
+ * (2026-09-25): a WebM, an MKV, an AVI… — or an MP4 or MOV that will not
+ * read as one, or whose picture the engines cannot decode — becomes
+ * <id>.mp4 (convert-run.ts), and the file that was sent is removed. The
+ * path returned is the one every later step stands on.
+ */
+async function readUploadForTake(
+  admin: Admin,
+  path: string,
+  upload: { userId: string; takeId: string; format: RecastUploadFormat },
+  /** Stills for the read are wanted from the file itself — the browser had none to send. */
+  wantFrames: boolean,
+): Promise<{ path: string; clip: RecastClip; converted: boolean; frames: string[] } | { error: string }> {
+  const { data: blob, error } = await admin.storage.from(RECAST_BUCKET).download(path);
+  if (error || !blob) return { error: RECAST_UPLOAD_UNREADABLE };
+  const buf = Buffer.from(await blob.arrayBuffer());
+
+  const probe = recastFormatConverts(upload.format) ? null : probeMp4(buf);
+  if (probe && recastCodecSends(probe.codec)) {
+    const clip = { seconds: probe.seconds, frames: probe.frames, width: probe.width, height: probe.height, bytes: buf.length };
+    // An HEVC clip in a browser that cannot play HEVC arrives with no stills;
+    // the server can decode it, so the clip is still understood.
+    const frames = wantFrames ? await sampleRecastFrames(buf, upload.format, clip.seconds) : [];
+    return { path, clip, converted: false, frames };
+  }
+
+  const converted = await convertRecastUpload(admin, upload.userId, upload.takeId, buf, upload.format, wantFrames);
+  if ("error" in converted) {
+    // A file ffmpeg cannot read is not a video; anything else is ours.
+    return { error: converted.error === "convert-failed" || converted.error === "unreadable" ? RECAST_NOT_A_VIDEO : RECAST_UPLOAD_UNREADABLE };
+  }
+  if (converted.path !== path) await removeSource(admin, path);
+  return { path: converted.path, clip: converted.clip, converted: true, frames: converted.frames };
 }
 
 /** One of the person's own finished takes, used as the performance. */
@@ -291,33 +334,54 @@ async function sendAddedImage(admin: Admin, userId: string, image: AddedImage): 
   return { path, url: signed.signedUrl, made };
 }
 
-/** Step 1: a place for the clip, and the id it will be known by. */
+/**
+ * Step 1: a place for the clip, and the id it will be known by. The type is
+ * read from what the browser called the file and, failing that, its name
+ * (recast.ts recastUploadFormatOf) — and `contentType` is the one type the
+ * browser must upload it under, whatever it called it.
+ */
 export async function reserveRecastUpload(input: {
   size: number;
   type: string;
+  /** The file's name — how an .mkv the browser gave no type is still known. */
+  name?: string;
 }): Promise<{ error: string } | { error: null; path: string; contentType: string }> {
   const access = await recastAccess();
   if (access.error !== null) return { error: access.error };
 
-  const container = recastContainerOf(typeof input?.type === "string" ? input.type : "");
-  if (!container) return { error: RECAST_NOT_A_VIDEO };
+  const upload = recastUploadFormatOf({
+    type: typeof input?.type === "string" ? input.type : "",
+    name: typeof input?.name === "string" ? input.name : "",
+  });
+  if (!upload) return { error: RECAST_NOT_A_VIDEO };
   const size = typeof input?.size === "number" ? input.size : 0;
   if (!(size > 0) || size > RECAST_MAX_BYTES) return { error: RECAST_CLIP_TOO_BIG };
   if (await rateLimited(access.userId, "recast-upload", 600, 12)) return { error: RECAST_TOO_FAST };
 
   // The bucket arrives with recast.sql; without it the browser's upload
-  // would fail with storage's own words.
+  // would fail with storage's own words. The formats past MP4 and MOV are
+  // admitted by recast-formats.sql — until it has run, the bucket refuses
+  // them, and the door says which update is missing instead.
   const admin = createAdminClient();
-  const { error: bucketError } = await admin.storage.getBucket(RECAST_BUCKET);
+  const { data: bucket, error: bucketError } = await admin.storage.getBucket(RECAST_BUCKET);
   if (bucketError) return { error: RECAST_NEEDS_DATABASE };
+  const admits = bucket?.allowed_mime_types;
+  if (Array.isArray(admits) && admits.length > 0 && !admits.includes(upload.contentType)) return { error: RECAST_NEEDS_FORMATS };
 
-  return { error: null, path: recastSourcePath(access.userId, crypto.randomUUID(), container), contentType: input.type };
+  return { error: null, path: recastUploadPath(access.userId, crypto.randomUUID(), upload.format), contentType: upload.contentType };
 }
 
 export type RecastQuote = { engine: RecastEngine; credits: number; fits: boolean };
 
 export type RecastInspection = {
   error: null;
+  /**
+   * The clip's path from here on — a new one when it was converted to an MP4
+   * (the file that was sent is gone). Undefined for a take from the library.
+   */
+  path?: string;
+  /** Converted: where the MP4 plays, for a preview the browser could not play from the file it was given. An hour. */
+  convertedUrl?: string;
   seconds: number;
   /** The file's own frame count (null when it will not say) — what a window is priced from. */
   frames: number | null;
@@ -344,23 +408,32 @@ export async function inspectRecastClip(input: {
   const admin = createAdminClient();
 
   let clip: RecastClip;
+  let path: string | undefined;
+  let convertedUrl: string | undefined;
+  let frames = typeof input?.frames === "string" ? input.frames.split("\n").filter((f) => f.startsWith("data:image/jpeg;base64,")) : [];
   if (typeof input?.takeId === "string" && input.takeId) {
     const own = await readOwnTake(access.supabase, access.userId, input.takeId);
     if ("error" in own) return { error: own.error };
     clip = own.clip;
   } else {
-    const parsed = parseRecastSourcePath(typeof input?.path === "string" ? input.path : "");
+    const parsed = parseRecastUploadPath(typeof input?.path === "string" ? input.path : "");
     if (!parsed || parsed.userId !== access.userId) return { error: RECAST_UPLOAD_UNREADABLE };
-    const read = await readUpload(admin, input.path!);
+    const read = await readUploadForTake(admin, input.path!, parsed, frames.length < RECAST_FRAMES_MIN);
     if ("error" in read) {
       await removeSource(admin, input.path!);
       return { error: read.error };
     }
     clip = read.clip;
+    path = read.path;
     const problem = recastClipProblem(clip);
     if (problem) {
-      await removeSource(admin, input.path!);
+      await removeSource(admin, read.path);
       return { error: recastClipProblemMessage(problem) };
+    }
+    if (read.frames.length > frames.length) frames = read.frames;
+    if (read.converted) {
+      const { data: signed } = await admin.storage.from(RECAST_BUCKET).createSignedUrl(read.path, 60 * 60);
+      convertedUrl = signed?.signedUrl ?? undefined;
     }
   }
 
@@ -368,7 +441,6 @@ export async function inspectRecastClip(input: {
   // never a refusal of the take itself — a clip that cannot be read can
   // still be taken, it is simply not understood.
   let read: RecastRead | null = null;
-  const frames = typeof input?.frames === "string" ? input.frames.split("\n").filter((f) => f.startsWith("data:image/jpeg;base64,")) : [];
   if (frames.length >= RECAST_FRAMES_MIN && !(await rateLimited(access.userId, "recast-read", 600, 20))) {
     const used = frames.slice(0, RECAST_FRAME_COUNT);
     const times = recastSampleTimes(clip.seconds, used.length);
@@ -378,6 +450,8 @@ export async function inspectRecastClip(input: {
 
   return {
     error: null,
+    ...(path ? { path } : {}),
+    ...(convertedUrl ? { convertedUrl } : {}),
     seconds: Math.round(clip.seconds * 10) / 10,
     // The frame count the door prices a window with (trim.ts) — the same
     // number the action will scale when it charges.
@@ -398,7 +472,7 @@ export async function inspectRecastClip(input: {
 export async function discardRecastUpload(path: string): Promise<void> {
   const access = await recastAccess();
   if (access.error !== null) return;
-  const parsed = parseRecastSourcePath(typeof path === "string" ? path : "");
+  const parsed = parseRecastUploadPath(typeof path === "string" ? path : "");
   if (!parsed || parsed.userId !== access.userId) return;
   const admin = createAdminClient();
   const { data: standing } = await admin
@@ -409,6 +483,8 @@ export async function discardRecastUpload(path: string): Promise<void> {
     .limit(1);
   if (standing?.length) return;
   await removeSource(admin, path);
+  // A clip let go while it was being converted may have left its MP4 under the same id.
+  if (recastFormatConverts(parsed.format)) await removeSource(admin, recastSourcePath(access.userId, parsed.takeId, "mp4"));
 }
 
 /**

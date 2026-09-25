@@ -690,10 +690,91 @@ export function parseRecastSourcePath(path: string): { userId: string; takeId: s
   return m ? { userId: m[1], takeId: m[2], container: m[3] as RecastContainer } : null;
 }
 
-export function recastContainerOf(mimeType: string): RecastContainer | null {
-  if (mimeType === "video/mp4") return "mp4";
-  if (mimeType === "video/quicktime") return "mov";
-  return null;
+// ANY VIDEO A PERSON HAS IN HAND (2026-09-25, operator: "Tried uploading a
+// video to recast and it failed because of file formats"). The door took
+// MP4 and MOV and nothing else — and only when the browser named the type,
+// which it often does not for an .mkv or an .avi. Now the rest upload as
+// they are and the server converts them to an H.264 MP4 (convert-run.ts)
+// before anything is read for money, so a take still stands on an MP4 or a
+// MOV and nothing downstream changed.
+//
+// The upload's type is recognised by what the browser says, and failing
+// that by its name: a Windows browser calls an .mts "model/vnd.mts" and a
+// .ts "video/vnd.dlna.mpeg-tts", and an .mkv is often "" (no type at all).
+// Each format uploads under ONE type of ours — the one the bucket admits
+// (recast-formats.sql) — whatever the browser called it.
+export type RecastUploadFormat = RecastContainer | "webm" | "mkv" | "avi" | "wmv" | "flv" | "3gp" | "mpg" | "ts" | "ogv";
+
+type RecastFormatSpec = { format: RecastUploadFormat; contentType: string; alsoTypes: string[]; extensions: string[] };
+
+const RECAST_FORMATS: RecastFormatSpec[] = [
+  // An .m4v is an MP4 by another name, and uploads as one.
+  { format: "mp4", contentType: "video/mp4", alsoTypes: ["video/x-m4v"], extensions: ["mp4", "m4v"] },
+  { format: "mov", contentType: "video/quicktime", alsoTypes: [], extensions: ["mov", "qt"] },
+  { format: "webm", contentType: "video/webm", alsoTypes: [], extensions: ["webm"] },
+  { format: "mkv", contentType: "video/x-matroska", alsoTypes: ["video/matroska"], extensions: ["mkv"] },
+  { format: "avi", contentType: "video/x-msvideo", alsoTypes: ["video/avi", "video/msvideo"], extensions: ["avi"] },
+  { format: "wmv", contentType: "video/x-ms-wmv", alsoTypes: ["video/x-ms-asf"], extensions: ["wmv", "asf"] },
+  { format: "flv", contentType: "video/x-flv", alsoTypes: [], extensions: ["flv"] },
+  { format: "3gp", contentType: "video/3gpp", alsoTypes: ["video/3gpp2"], extensions: ["3gp", "3g2"] },
+  { format: "mpg", contentType: "video/mpeg", alsoTypes: [], extensions: ["mpg", "mpeg"] },
+  { format: "ts", contentType: "video/mp2t", alsoTypes: ["video/vnd.dlna.mpeg-tts", "model/vnd.mts"], extensions: ["ts", "mts", "m2ts"] },
+  { format: "ogv", contentType: "video/ogg", alsoTypes: [], extensions: ["ogv"] },
+];
+
+/** Every type an upload is stored under — exactly the bucket's allowed list (recast-formats.sql). */
+export const RECAST_UPLOAD_TYPES: string[] = RECAST_FORMATS.map((f) => f.contentType);
+
+/** The file picker's filter: any video, plus the names a browser may not know as video. */
+export const RECAST_UPLOAD_ACCEPT: string = ["video/*", ...RECAST_FORMATS.flatMap((f) => f.extensions.map((e) => `.${e}`))].join(",");
+
+/**
+ * What an upload is, from what the browser called it and, failing that, its
+ * name. Null for anything that is neither — the file is refused before a
+ * byte is sent.
+ */
+export function recastUploadFormatOf(file: { type: string; name: string }): { format: RecastUploadFormat; contentType: string } | null {
+  const type = (typeof file?.type === "string" ? file.type : "").toLowerCase().split(";")[0].trim();
+  const byType = RECAST_FORMATS.find((f) => f.contentType === type || f.alsoTypes.includes(type));
+  if (byType) return { format: byType.format, contentType: byType.contentType };
+  const ext = /\.([a-z0-9]{2,4})$/i.exec(typeof file?.name === "string" ? file.name : "")?.[1]?.toLowerCase() ?? "";
+  const byName = RECAST_FORMATS.find((f) => f.extensions.includes(ext));
+  return byName ? { format: byName.format, contentType: byName.contentType } : null;
+}
+
+/** Whether an upload is converted before it is read: everything but MP4 and MOV. */
+export function recastFormatConverts(format: RecastUploadFormat): boolean {
+  return format !== "mp4" && format !== "mov";
+}
+
+/**
+ * Video codecs sent as they are, in an MP4 or a MOV. H.264 and HEVC —
+ * what every phone and screen recorder makes. Anything else inside the
+ * right box (an old camera's Motion JPEG, MPEG-4 Part 2, ProRes) is
+ * converted like a foreign file. A codec the probe cannot name is sent as
+ * it always was.
+ */
+const RECAST_SENDABLE_CODECS = new Set(["avc1", "avc3", "hvc1", "hev1"]);
+
+export function recastCodecSends(codec: string | null): boolean {
+  return codec === null || RECAST_SENDABLE_CODECS.has(codec);
+}
+
+export function recastUploadPath(userId: string, takeId: string, format: RecastUploadFormat): string {
+  return `${userId}/${takeId}.${format}`;
+}
+
+const UPLOAD_PATH_RE = new RegExp(`^([0-9a-f-]{36})\\/([0-9a-f-]{36})\\.(${RECAST_FORMATS.map((f) => f.format).join("|")})$`);
+
+/**
+ * Reads back a path the door was given to upload to, whatever its format —
+ * for the read and the discard. A TAKE is only ever started on
+ * parseRecastSourcePath's MP4 or MOV, so a file that was never converted
+ * cannot be sent to an engine.
+ */
+export function parseRecastUploadPath(path: string): { userId: string; takeId: string; format: RecastUploadFormat } | null {
+  const m = UPLOAD_PATH_RE.exec(path);
+  return m ? { userId: m[1], takeId: m[2], format: m[3] as RecastUploadFormat } : null;
 }
 
 /**

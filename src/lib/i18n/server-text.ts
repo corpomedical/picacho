@@ -179,6 +179,7 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "Recasting is in private testing.": "recastNotOpen",
   "Recasting isn't available right now.": "recastUnavailable",
   "Recasting needs a database update first (recast.sql).": "recastNeedsDatabase",
+  "Recasting this kind of video needs a database update first (recast-formats.sql).": "recastNeedsFormats",
   // The expression set (lib/characters/expression-messages.ts, 2026-09-19).
   "That close-up can't be made — refresh and try again.": "expressionBadRequest",
   "Couldn't find that character — refresh and try again.": "expressionNoCharacter",
@@ -190,7 +191,7 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "Confirm the clip is yours to use first.": "recastNeedsRights",
   "You're starting takes quickly — give it a minute and try again.": "recastTooFast",
   "Couldn't read that upload — try again.": "recastUploadUnreadable",
-  "That file doesn't read as an MP4 or MOV video.": "recastNotAVideo",
+  "That file doesn't read as a video.": "recastNotAVideo",
   "That clip is under 3 seconds.": "recastClipTooShort",
   "That clip is over 30 seconds.": "recastClipTooLong",
   "That clip is over 50 MB.": "recastClipTooBig",

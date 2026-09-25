@@ -581,10 +581,31 @@ describe("the words a take is sent", () => {
 
 describe("inspectRecastClip", () => {
   it("reads the file for the numbers and the frames for the meaning", () => {
-    expect(inspect).toContain("readUpload(admin, input.path!)");
+    expect(inspect).toContain("readUploadForTake(admin, input.path!, parsed,");
     expect(inspect).toContain("askRecastRead(");
     expect(inspect).toContain("parseRecastRead(");
     expect(inspect).toContain("recastCreditCost(engine, clip)");
+  });
+
+  it("converts a clip the engines cannot take before reading it for money (2026-09-25)", () => {
+    const reader = source.slice(source.indexOf("async function readUploadForTake("), source.indexOf("/** One of the person's own finished takes"));
+    // An MP4 or MOV is probed as it is; anything else, or one that will not
+    // probe, or one whose picture no engine decodes, is converted — and the
+    // conversion is probed again (convert-run.ts), so the numbers are always
+    // the stored file's own.
+    expect(reader).toContain("recastFormatConverts(upload.format) ? null : probeMp4(buf)");
+    expect(reader).toContain("recastCodecSends(probe.codec)");
+    expect(reader).toContain("convertRecastUpload(");
+    const run = readFileSync(join(__dirname, "convert-run.ts"), "utf8");
+    expect(run).toContain("const probe = probeMp4(bytes);");
+    // The price is quoted on the clip the take will stand on.
+    expect(inspect).toContain("clip = read.clip;");
+    expect(inspect).toContain("path = read.path;");
+  });
+
+  it("starts a take only on an MP4 or a MOV — the converted file, never the one sent", () => {
+    expect(start).toContain("parseRecastSourcePath(");
+    expect(start).not.toContain("parseRecastUploadPath(");
   });
 
   it("brakes the read, and a clip it cannot read can still be taken", () => {

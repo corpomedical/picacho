@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CHAIN_LOOK_PLACEHOLDER } from "../generations/chain";
 import {
@@ -7,14 +7,20 @@ import {
   recastCrowdSharesTake,
   parseRecastEngine,
   parseRecastSourcePath,
+  parseRecastUploadPath,
   RECAST_COST_BASIS_USD_PER_CREDIT,
+  RECAST_UPLOAD_ACCEPT,
+  RECAST_UPLOAD_TYPES,
+  recastFormatConverts,
+  recastUploadFormatOf,
+  recastUploadPath,
   RECAST_ENGINE_ORDER,
   RECAST_ENGINES,
   RECAST_JOB_ORDER,
   RECAST_MODEL_IDS,
   recastBilledSeconds,
   recastClipProblem,
-  recastContainerOf,
+  recastCodecSends,
   recastCreditCost,
   recastEngineFits,
   recastEngineFor,
@@ -248,11 +254,96 @@ describe("the source clip's path", () => {
     }
   });
 
-  it("knows MP4 and MOV and nothing else", () => {
-    expect(recastContainerOf("video/mp4")).toBe("mp4");
-    expect(recastContainerOf("video/quicktime")).toBe("mov");
-    expect(recastContainerOf("video/webm")).toBeNull();
-    expect(recastContainerOf("")).toBeNull();
+  it("starts a take on an MP4 or a MOV only — a file never converted cannot reach an engine", () => {
+    expect(parseRecastSourcePath(`${USER}/${TAKE}.webm`)).toBeNull();
+    expect(parseRecastSourcePath(`${USER}/${TAKE}.avi`)).toBeNull();
+    expect(parseRecastSourcePath(`${USER}/${TAKE}.mp4`)).toEqual({ userId: USER, takeId: TAKE, container: "mp4" });
+  });
+});
+
+// 2026-09-25, operator: "Tried uploading a video to recast and it failed
+// because of file formats."
+describe("what a person may upload", () => {
+  const file = (name: string, type = "") => ({ name, type });
+
+  it("knows MP4 and MOV as the takes' own, and does not convert them", () => {
+    expect(recastUploadFormatOf(file("a.mp4", "video/mp4"))).toEqual({ format: "mp4", contentType: "video/mp4" });
+    expect(recastUploadFormatOf(file("a.mov", "video/quicktime"))).toEqual({ format: "mov", contentType: "video/quicktime" });
+    expect(recastFormatConverts("mp4")).toBe(false);
+    expect(recastFormatConverts("mov")).toBe(false);
+  });
+
+  it("takes every common video format, and converts it", () => {
+    const cases: [string, string, string][] = [
+      ["clip.webm", "video/webm", "webm"],
+      ["obs.mkv", "video/x-matroska", "mkv"],
+      ["old.avi", "video/x-msvideo", "avi"],
+      ["win.wmv", "video/x-ms-wmv", "wmv"],
+      ["flash.flv", "video/x-flv", "flv"],
+      ["phone.3gp", "video/3gpp", "3gp"],
+      ["dvd.mpg", "video/mpeg", "mpg"],
+      ["cam.ts", "video/mp2t", "ts"],
+      ["clip.ogv", "video/ogg", "ogv"],
+    ];
+    for (const [name, type, format] of cases) {
+      const got = recastUploadFormatOf(file(name, type));
+      expect(got?.format, name).toBe(format);
+      expect(recastFormatConverts(got!.format), name).toBe(true);
+    }
+  });
+
+  it("knows a file by its name when the browser gives it no type, or a wrong one", () => {
+    // Chrome on Windows and macOS gives an .mkv no type at all; others say octet-stream.
+    expect(recastUploadFormatOf(file("Recording 2026-09-25.mkv"))).toEqual({ format: "mkv", contentType: "video/x-matroska" });
+    expect(recastUploadFormatOf(file("GOPR0001.AVI", "application/octet-stream"))?.format).toBe("avi");
+    // Windows' own names for camcorder files.
+    expect(recastUploadFormatOf(file("00001.MTS", "model/vnd.mts"))?.format).toBe("ts");
+    expect(recastUploadFormatOf(file("00002.m2ts", "video/vnd.dlna.mpeg-tts"))?.format).toBe("ts");
+    // An .m4v is an MP4 by another name.
+    expect(recastUploadFormatOf(file("export.m4v", "video/x-m4v"))).toEqual({ format: "mp4", contentType: "video/mp4" });
+    expect(recastUploadFormatOf(file("clip.MOV"))).toEqual({ format: "mov", contentType: "video/quicktime" });
+    // A type with parameters still reads.
+    expect(recastUploadFormatOf(file("x", "video/webm;codecs=vp9"))?.format).toBe("webm");
+  });
+
+  it("still refuses what is not a video", () => {
+    for (const f of [file("photo.jpg", "image/jpeg"), file("song.mp3", "audio/mpeg"), file("notes.txt", "text/plain"), file("noext"), file("")]) {
+      expect(recastUploadFormatOf(f), f.name).toBeNull();
+    }
+  });
+
+  it("uploads each format under one type, and the bucket admits exactly those", () => {
+    // The browser's own name for the file never reaches storage.
+    expect(recastUploadFormatOf(file("a.mkv", "video/matroska"))?.contentType).toBe("video/x-matroska");
+    expect(new Set(RECAST_UPLOAD_TYPES).size).toBe(RECAST_UPLOAD_TYPES.length);
+    // The SQL that admits them: pending until it runs, then filed under applied/<date>/.
+    const root = join(__dirname, "../../../supabase");
+    const candidates = [join(root, "pending/recast-formats.sql"), ...readdirSync(join(root, "applied")).map((d) => join(root, "applied", d, "recast-formats.sql"))];
+    const sqlPath = candidates.find((p) => existsSync(p));
+    expect(sqlPath, "recast-formats.sql").toBeDefined();
+    const sql = readFileSync(sqlPath!, "utf8");
+    const listed = [...sql.slice(sql.indexOf("array[")).matchAll(/'(video\/[^']+)'/g)].map((m) => m[1]);
+    expect(listed.sort()).toEqual([...RECAST_UPLOAD_TYPES].sort());
+  });
+
+  it("offers every format in the file picker", () => {
+    expect(RECAST_UPLOAD_ACCEPT.split(",")).toEqual(expect.arrayContaining(["video/*", ".mkv", ".avi", ".mts", ".m4v", ".webm"]));
+  });
+
+  it("reads back an upload's path in any format, and nothing that is not one of ours", () => {
+    expect(recastUploadPath(USER, TAKE, "mkv")).toBe(`${USER}/${TAKE}.mkv`);
+    expect(parseRecastUploadPath(`${USER}/${TAKE}.mkv`)).toEqual({ userId: USER, takeId: TAKE, format: "mkv" });
+    expect(parseRecastUploadPath(`${USER}/${TAKE}.mp4`)).toEqual({ userId: USER, takeId: TAKE, format: "mp4" });
+    for (const bad of [`${USER}/../${TAKE}.mkv`, `${USER}/${TAKE}.exe`, `${USER}/${TAKE}.mkv/x`, `${TAKE}.webm`, ""]) {
+      expect(parseRecastUploadPath(bad), bad).toBeNull();
+    }
+  });
+
+  it("sends H.264 and HEVC as they are, and converts any other picture inside an MP4 or MOV", () => {
+    for (const c of ["avc1", "avc3", "hvc1", "hev1"]) expect(recastCodecSends(c), c).toBe(true);
+    for (const c of ["jpeg", "mp4v", "apch", "s263", "av01"]) expect(recastCodecSends(c), c).toBe(false);
+    // A codec the probe cannot name goes as it always went.
+    expect(recastCodecSends(null)).toBe(true);
   });
 });
 

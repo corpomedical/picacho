@@ -37,6 +37,12 @@ describe("probeMp4", () => {
     }
   });
 
+  it("names the video track's codec (the recast lane converts what the engines cannot decode)", () => {
+    for (const file of ["public/hero-band-3.mp4", "public/hero-band-4.mp4"]) {
+      expect(probeMp4(readFileSync(file))!.codec, file).toBe("avc1");
+    }
+  });
+
   it("rejects a buffer that is not an MP4", () => {
     expect(probeMp4(Buffer.from("RIFF....WEBPVP8 not a video at all"))).toBeNull();
     expect(probeMp4(Buffer.alloc(4))).toBeNull();

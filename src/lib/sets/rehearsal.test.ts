@@ -76,7 +76,7 @@ describe("the frame plan", () => {
     expect(rehearsalFits(15)).toBe(true);
     expect(rehearsalFits(16)).toBe(false);
     expect(rehearsalFits(0)).toBe(false);
-    // MP4 first: the re-shoot lane's storage takes mp4 and mov only (recast.ts recastContainerOf).
+    // MP4 first: the re-shoot lane sends it as it is; anything else is converted first (recast.ts recastFormatConverts).
     expect(REHEARSAL_MIMES[0]).toContain("video/mp4");
   });
 });

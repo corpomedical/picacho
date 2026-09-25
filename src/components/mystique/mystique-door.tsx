@@ -36,13 +36,15 @@ import {
   RECAST_MAX_BYTES,
   recastCastsTogether,
   recastImageRoom,
-  recastContainerOf,
   recastEngineFor,
   recastEnginesOf,
   recastMissing,
   recastRestageImageRoom,
   recastRestageSeconds,
   recastTakesCast,
+  recastFormatConverts,
+  recastUploadFormatOf,
+  RECAST_UPLOAD_ACCEPT,
   type RecastEngine,
   type RecastJob,
 } from "@/lib/recast/recast";
@@ -95,7 +97,15 @@ import { TakeViewer } from "@/components/mystique/take-viewer";
 // is the number charged.
 
 type Source =
-  | { kind: "upload"; phase: "uploading" | "inspecting" | "ready"; url: string; path: string | null; name: string }
+  | {
+      kind: "upload";
+      phase: "uploading" | "inspecting" | "ready";
+      url: string;
+      path: string | null;
+      name: string;
+      /** Not an MP4 or a MOV: the server converts it while it is read (recast.ts recastFormatConverts). */
+      converts?: boolean;
+    }
   | { kind: "take"; phase: "inspecting" | "ready"; url: string; takeId: string; name: string };
 
 type Viewing = { take: RecastTake; media: { resultUrl: string; sourceUrl: string | null } | null };
@@ -604,8 +614,8 @@ export function MystiqueDoor({
     return res;
   }
 
-  async function pickFile(file: File | undefined) {
-    if (!file || starting) return;
+  async function pickFile(picked: File | undefined) {
+    if (!picked || starting) return;
     setError("");
     setClipError("");
     setRights(false);
@@ -615,19 +625,28 @@ export function MystiqueDoor({
     const mine = ++pickRef.current;
     uploadRef.current?.abort();
     if (source?.kind === "upload" && source.path) void discardRecastUpload(source.path).catch(() => {});
-    if (!recastContainerOf(file.type)) {
+    // Any video (2026-09-25): known by its type, or by its name when the
+    // browser gave it none — an .mkv or an .avi often arrives typeless.
+    const upload = recastUploadFormatOf(picked);
+    if (!upload) {
       setClip(null);
       setClipError(RECAST_NOT_A_VIDEO);
       return;
     }
-    if (file.size > RECAST_MAX_BYTES) {
+    if (picked.size > RECAST_MAX_BYTES) {
       setClip(null);
       setClipError(RECAST_CLIP_TOO_BIG);
       return;
     }
+    // The file under the one type the bucket admits for its format — storage
+    // takes the type from the upload itself, and the sampling below only
+    // tries a file typed as video. The bytes are the same bytes.
+    const file =
+      picked.type === upload.contentType ? picked : new File([picked], picked.name, { type: upload.contentType, lastModified: picked.lastModified });
+    const converts = recastFormatConverts(upload.format);
     const url = URL.createObjectURL(file);
     setUploaded(null);
-    setClip({ kind: "upload", phase: "uploading", url, path: null, name: file.name });
+    setClip({ kind: "upload", phase: "uploading", url, path: null, name: file.name, converts });
     // A clip that cannot be used says why where it was dropped (2026-09-22) —
     // not under the Take button at the foot of the form, below a drop area
     // that had just gone blank.
@@ -650,7 +669,7 @@ export function MystiqueDoor({
     // The frames for the read are sampled while the file uploads, not after.
     const sampling = sampleClip(file).catch(() => ({ ok: false as const, error: RECAST_UPLOAD_UNREADABLE }));
     try {
-      const reserved = await reserveRecastUpload({ size: file.size, type: file.type });
+      const reserved = await reserveRecastUpload({ size: picked.size, type: picked.type, name: picked.name });
       if (mine !== pickRef.current) return;
       if (reserved.error !== null) return fail(reserved.error);
       const sent = await sendClip(reserved.path, reserved.contentType, file, (share) => {
@@ -665,12 +684,22 @@ export function MystiqueDoor({
         return;
       }
       if (sent === "failed") return fail(RECAST_UPLOAD_UNREADABLE);
-      setClip({ kind: "upload", phase: "inspecting", url, path: reserved.path, name: file.name });
+      setClip({ kind: "upload", phase: "inspecting", url, path: reserved.path, name: file.name, converts });
       const res = await inspect(mine, { path: reserved.path }, sampling);
       if (res === null) return;
       if (res.error !== null) return fail(res.error);
       setSeen(res);
-      setClip({ kind: "upload", phase: "ready", url, path: reserved.path, name: file.name });
+      // A converted clip lives at a new path. Its preview moves to the MP4
+      // only when this browser could not play the file it was given (an AVI,
+      // a WMV) — one it could play keeps playing from the device.
+      setClip({
+        kind: "upload",
+        phase: "ready",
+        url: !probe.ok && res.convertedUrl ? res.convertedUrl : url,
+        path: res.path ?? reserved.path,
+        name: file.name,
+        converts,
+      });
       setClipWindow(recastFitWindow(defaultRecastWindow(res.seconds, job), res.seconds, job));
     } catch (err) {
       const stale = isStaleDeployError(err);
@@ -1275,7 +1304,9 @@ export function MystiqueDoor({
                             }`}
                           >
                             {source.phase !== "uploading"
-                              ? m.reading
+                              ? source.kind === "upload" && source.converts
+                                ? m.converting
+                                : m.reading
                               : uploaded === null
                                 ? m.uploading
                                 : formatMsg(m.uploadingShare, { n: Math.floor(uploaded * 100) })}
@@ -2007,7 +2038,7 @@ export function MystiqueDoor({
               <input
                 ref={fileRef}
                 type="file"
-                accept="video/mp4,video/quicktime"
+                accept={RECAST_UPLOAD_ACCEPT}
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];

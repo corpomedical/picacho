@@ -28,20 +28,41 @@ export type Mp4Probe = {
    * the frame count is a price and is read from the file like the rest.
    */
   frames: number | null;
+  /**
+   * The video track's codec, as the four letters of its first sample entry
+   * ("avc1", "hvc1", "mp4v", "jpeg", "apch"…) — null when the table is not
+   * where the spec puts it. Added for the recast lane (2026-09-25): an MP4 or
+   * MOV the engines cannot decode (an old camera's Motion JPEG) is converted
+   * rather than sent.
+   */
+  codec: string | null;
 };
 
-/** trak → mdia → minf → stbl → stsz|stz2: sample_count sits 8 bytes into either table. */
-function trackFrames(buf: Buffer, trak: { start: number; end: number }): number | null {
+/** trak → mdia → minf → stbl: the sample table, where the frames and the codec are listed. */
+function sampleTable(buf: Buffer, trak: { start: number; end: number }): { type: string; start: number; end: number }[] | null {
   let scope = trak;
   for (const type of ["mdia", "minf", "stbl"]) {
     const next = boxes(buf, scope.start, scope.end).find((b) => b.type === type);
     if (!next) return null;
     scope = next;
   }
-  const table = boxes(buf, scope.start, scope.end).find((b) => b.type === "stsz" || b.type === "stz2");
+  return boxes(buf, scope.start, scope.end);
+}
+
+/** stsz|stz2: sample_count sits 8 bytes into either table. */
+function trackFrames(buf: Buffer, stbl: { type: string; start: number; end: number }[] | null): number | null {
+  const table = stbl?.find((b) => b.type === "stsz" || b.type === "stz2");
   if (!table || table.start + 12 > table.end) return null;
   const count = buf.readUInt32BE(table.start + 8);
   return count > 0 ? count : null;
+}
+
+/** stsd: version/flags and entry_count, then the first entry's size and its four-letter type. */
+function trackCodec(buf: Buffer, stbl: { type: string; start: number; end: number }[] | null): string | null {
+  const table = stbl?.find((b) => b.type === "stsd");
+  if (!table || table.start + 16 > table.end) return null;
+  const codec = buf.toString("latin1", table.start + 12, table.start + 16);
+  return /^[\x20-\x7e]{4}$/.test(codec) ? codec : null;
 }
 
 function boxes(buf: Buffer, start: number, end: number): { type: string; start: number; end: number }[] {
@@ -106,11 +127,13 @@ export function probeMp4(buf: Buffer): Mp4Probe | null {
     const width = buf.readUInt32BE(dimOffset) / 65536;
     const height = buf.readUInt32BE(dimOffset + 4) / 65536;
     if (width > 0 && height > 0) {
+      const stbl = sampleTable(buf, trak);
       return {
         seconds: duration / timescale,
         width: Math.round(width),
         height: Math.round(height),
-        frames: trackFrames(buf, trak),
+        frames: trackFrames(buf, stbl),
+        codec: trackCodec(buf, stbl),
       };
     }
   }

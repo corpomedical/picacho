@@ -309,7 +309,8 @@ export async function sweepRecastOrphans(supabase: SupabaseClient, userId: strin
     }
 
     const gone = old
-      .map((o) => ({ name: o.name, clipId: o.name.replace(/\.(mp4|mov)$/, "") }))
+      // Any extension: a clip may still be the WebM or AVI it was sent as (recast.ts RecastUploadFormat).
+      .map((o) => ({ name: o.name, clipId: o.name.replace(/\.[a-z0-9]+$/, "") }))
       .filter((o) => !spokenFor.has(o.clipId))
       .map((o) => `${userId}/${o.name}`);
     if (gone.length > 0) await admin.storage.from(RECAST_BUCKET).remove(gone);
