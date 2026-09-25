@@ -165,17 +165,22 @@ describe("the size test is editSetWithAstra's own", () => {
 
 describe("every reply sentence in all four languages", () => {
   const catalogs = { en, es, pt, it: it_ };
-  const holes = (v: string) => [...v.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+  // Which placeholders, not how often: a language may say a name once where English says it twice.
+  const holes = (v: string) => [...new Set([...v.matchAll(/\{(\w+)\}/g)].map((m) => m[1]))].sort();
+
+  // Every sentence, the nested ones too (the chips, the colours, the "not
+  // yet" lines, Cut 2 step 8), by its path: "chips.sides.back_left".
+  const leaves = (v: unknown, at = ""): [string, string][] =>
+    typeof v === "string" ? [[at, v]] : Object.entries(v as Record<string, unknown>).flatMap(([k, x]) => leaves(x, at ? `${at}.${k}` : k));
 
   it("the same keys and the same placeholders", () => {
-    const keys = Object.keys(en.sets.reply).sort();
+    const want = new Map(leaves(en.sets.reply));
     for (const [locale, cat] of Object.entries(catalogs)) {
-      expect(Object.keys(cat.sets.reply).sort(), locale).toEqual(keys);
-      for (const key of keys) {
-        const got = (cat.sets.reply as Record<string, string>)[key];
-        const want = (en.sets.reply as Record<string, string>)[key];
-        expect(got.trim().length, `${locale} ${key}`).toBeGreaterThan(0);
-        expect(holes(got), `${locale} ${key}`).toEqual(holes(want));
+      const got = new Map(leaves(cat.sets.reply));
+      expect([...got.keys()].sort(), locale).toEqual([...want.keys()].sort());
+      for (const [key, text] of got) {
+        expect(text.trim().length, `${locale} ${key}`).toBeGreaterThan(0);
+        expect(holes(text), `${locale} ${key}`).toEqual(holes(want.get(key) ?? ""));
       }
     }
   });

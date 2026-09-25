@@ -12,7 +12,7 @@
 
 import { formatMsg } from "@/lib/i18n/format";
 import type { Messages } from "@/lib/i18n/messages/en";
-import { astraCardCanGo, astraCardKind, astraCardWords } from "@/lib/sets/astra-card";
+import { astraCardCanGo, astraCardKind, astraCardLine, astraCardWords } from "@/lib/sets/astra-card";
 import { SET_EDIT_MAX_CHARS } from "@/lib/sets/set-config";
 
 type Reply = Messages["sets"]["reply"];
@@ -56,21 +56,9 @@ export function AstraChangeCard({
   buildLabel: string;
 }) {
   const kind = astraCardKind({ editsLeft, editsCap, tooBig });
-  // The person's words go in last (formatMsg fills in order), so a "{n}" they
-  // typed is never taken for a number.
-  const { quoted, cut } = astraCardWords(words);
-  const line =
-    kind === "none"
-      ? formatMsg(copy.astraNone, { build: buildLabel, words: quoted })
-      : kind === "tooBig"
-        ? formatMsg(copy.astraTooBig, { build: buildLabel, words: quoted })
-        : kind === "askOpen"
-          ? formatMsg(copy.astraAskOpen, { words: quoted })
-          : kind === "askUnknown"
-            ? formatMsg(copy.astraAskUnknown, { cap: editsCap, words: quoted })
-            : kind === "askLast"
-              ? formatMsg(copy.astraAskLast, { words: quoted })
-              : formatMsg(copy.astraAsk, { n: editsLeft ?? 0, words: quoted });
+  // One sentence for the card and the chat's reply (astra-card.ts astraCardLine): the person's words go in last.
+  const { cut } = astraCardWords(words);
+  const line = astraCardLine(copy, { kind, words, editsLeft, editsCap, build: buildLabel });
   const canGo = astraCardCanGo(kind);
   return (
     <div className="space-y-2.5 rounded-[14px] bg-[rgba(255,255,255,0.05)] p-3.5 ring-1 ring-[rgba(240,196,142,0.3)]" data-astra-card={kind}>

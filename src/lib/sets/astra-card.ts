@@ -13,6 +13,8 @@
 // Pure and client-safe, relative imports only: astra-change-card.tsx draws
 // it, the tests read it.
 
+import { formatMsg } from "../i18n/format";
+import type { Messages } from "../i18n/messages/en";
 import { SET_EDIT_MAX_CHARS, SET_EDIT_MAX_SPEC_CHARS } from "./set-config";
 import { cleanText, type SetSpec } from "./set-spec";
 
@@ -55,4 +57,32 @@ export function astraCardWords(said: string): { quoted: string; cut: boolean } {
 /** Whether a working copy is past what Astra can answer whole: editSetWithAstra's own test, run on the page. */
 export function astraTooBig(spec: SetSpec): boolean {
   return JSON.stringify(spec).length > SET_EDIT_MAX_SPEC_CHARS;
+}
+
+/**
+ * The card's sentence in the person's language: the kind's own wording,
+ * with the words Astra will read quoted (astraCardWords). The person's
+ * words go in last, so a "{n}" they typed is never taken for a number. The
+ * card (astra-change-card.tsx) and the chat's reply (turn-reply.ts) both
+ * say it through here, so they can never say it differently.
+ */
+export function astraCardLine(
+  copy: Pick<Messages["sets"]["reply"], "astraAsk" | "astraAskLast" | "astraAskOpen" | "astraAskUnknown" | "astraNone" | "astraTooBig">,
+  input: { kind: AstraCardKind; words: string; editsLeft: number | null; editsCap: number; build: string },
+): string {
+  const words = astraCardWords(input.words).quoted;
+  switch (input.kind) {
+    case "none":
+      return formatMsg(copy.astraNone, { build: input.build, words });
+    case "tooBig":
+      return formatMsg(copy.astraTooBig, { build: input.build, words });
+    case "askOpen":
+      return formatMsg(copy.astraAskOpen, { words });
+    case "askUnknown":
+      return formatMsg(copy.astraAskUnknown, { cap: input.editsCap, words });
+    case "askLast":
+      return formatMsg(copy.astraAskLast, { words });
+    case "ask":
+      return formatMsg(copy.astraAsk, { n: input.editsLeft ?? 0, words });
+  }
 }

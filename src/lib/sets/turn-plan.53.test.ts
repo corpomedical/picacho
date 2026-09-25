@@ -7,6 +7,8 @@ import { normaliseSetSpec, type SetObject, type SetSpec } from "./set-spec";
 import { CANT_CODES, type ShotReading } from "./shot-reading";
 import { takesCredits } from "./take";
 import { blockersOf, planSays, planTurn, shootDecision, type PageState, type PlanShot, type StepKind, type TurnPlan } from "./turn-plan";
+import en from "../i18n/messages/en";
+import { composeReply, plannedFacts, replyText, replyThingsOf, replyWordsOf, type ReplyFacts } from "./turn-reply";
 
 // The 53 audited requests, re-run free (Helios Cut 2 spec §7.3, step 7,
 // 2026-09-25 — operator: "Run, keep going."). One hand-written reading per
@@ -15,8 +17,9 @@ import { blockersOf, planSays, planTurn, shootDecision, type PageState, type Pla
 // It proves the routing — the bucket, that there is something to say, that
 // every "not yet" is named, and that nothing paid runs without its press.
 // It does not prove the model reads the phrases that way: only check A,
-// which the owner runs, does that (spec §7.4). The reply itself is step 8's
-// (turn-reply.ts composeReply): that step adds it to this table.
+// which the owner runs, does that (spec §7.4). Step 8 adds the reply
+// (turn-reply.ts composeReply): every row's is composed, never empty, and
+// names each "not yet" it shows.
 
 const specOf = (json: unknown): SetSpec => {
   const n = normaliseSetSpec(json);
@@ -242,6 +245,47 @@ function bucketOf(plan: TurnPlan, row: Row): Bucket {
 
 const stateFor = (row: Row, over: Partial<PageState> = {}) => raceState({ ...row.state, ...over });
 
+const EN = replyWordsOf(en);
+/** The page's facts as a row leaves them, for its reply: the race set's names (#44: the showroom's two cars). */
+function factsFor(row: Row, plan: TurnPlan, state: PageState): ReplyFacts {
+  const spec = row.n === 44 ? showroom : race;
+  const base: ReplyFacts = {
+    locale: "en",
+    mode: state.mode,
+    characters: state.characters.map((c) => ({ id: c.id, name: c.name })),
+    characterId: state.characterId,
+    marks: spec.marks.map((m) => ({ id: m.id, label: m.label })),
+    cameras: spec.cameras.map((c) => ({ id: c.id, label: c.label })),
+    things: replyThingsOf(spec, spec.marks[0], EN),
+    markId: state.markId,
+    pose: state.pose,
+    facing: "camera",
+    cameraId: state.cameraId,
+    frameX: state.frameX,
+    rig: state.rig,
+    direction: state.direction,
+    lensMm: 50,
+    distanceM: 2.4,
+    spot: null,
+    credits: state.credits,
+    takeEngine: state.takeEngine,
+    takeFrom: 2,
+    newestStill: 2,
+    lastStill: { n: 2, status: "succeeded", score: 88 },
+    editsLeft: state.editsLeft,
+    editsCap: state.editsCap,
+    tooBig: state.tooBig,
+    producerOn: false,
+    shot: shootDecision(plan, state),
+  };
+  return plannedFacts(plan, base);
+}
+/** A row's reply, composed as planned. */
+const replyFor = (row: Row, state: PageState) => {
+  const plan = planTurn(row.reading, state);
+  return replyText(composeReply(plan, null, factsFor(row, plan, state), EN));
+};
+
 describe("the 53 audited requests (spec §7.3)", () => {
   it("has all 53, numbered, each once", () => {
     expect(ROWS.map((r) => r.n)).toEqual(Array.from({ length: 53 }, (_, i) => i + 1));
@@ -256,8 +300,13 @@ describe("the 53 audited requests (spec §7.3)", () => {
       const plan = planTurn(row.reading, state);
 
       expect(bucketOf(plan, row)).toBe(row.bucket);
-      // The reply has something to say (step 8 composes it from this plan).
+      // The reply has something to say, and says it (step 8, turn-reply.ts).
       expect(planSays(plan)).toBe(true);
+      const said = replyFor(row, state);
+      expect(said.trim().length).toBeGreaterThan(0);
+      expect(said).not.toMatch(/\{\w+\}/);
+      // Each "not yet" it shows is named in words, with their own when quoted.
+      for (const c of (row.reading.cant ?? []).slice(0, 3)) expect(said, c.code).toContain(c.said ? `Not yet — “${c.said}”` : "Not yet — part of that");
       // Every "not yet" the reading had is named, each with its code.
       for (const c of row.reading.cant ?? []) expect(plan.cant).toContainEqual(c);
       // Only free steps run.
@@ -286,6 +335,8 @@ describe("the 53 audited requests (spec §7.3)", () => {
     expect(count("partly")).toBe(13);
     expect(count("notYet")).toBe(11);
     expect(ROWS.every((row) => planSays(planTurn(row.reading, stateFor(row))))).toBe(true);
+    // None silent, in "Shoot without asking" too.
+    for (const row of ROWS) expect(replyFor(row, stateFor(row, { mode: row.state?.mode === "talk" ? "talk" : "auto" })).trim().length, `#${row.n}`).toBeGreaterThan(0);
   });
 });
 
