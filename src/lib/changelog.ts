@@ -20,6 +20,24 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.110.0",
+    build: 149,
+    date: "2026-09-25",
+    title: "Helios never charges twice, tells the truth about what it charged, and makes calmer films",
+    items: [
+      "Every Shoot, Take, clip retry and film Render now carries its own id. If a phone or a browser loses the connection and quietly sends the same press again, Helios recognises it and answers with the first one's result, so the same press can never be charged twice (supabase/pending/helios-presses.sql).",
+      "When the connection drops while a still or a take is rendering, Helios no longer says \"try again\". It checks with the server, says \"still rendering — it will appear here\" while it is, and puts the result on the strip when it lands. A film keeps the beats you already paid for instead of shooting them again.",
+      "A take stops before anything is charged when the character you picked isn't the person in its start still. Before, the clip could morph one person into another and charge in full.",
+      "Films no longer stop halfway on \"You're shooting quickly\". The take limit counts only takes that started a paid render, and a film's own beats don't trip the three-second pause between sends.",
+      "The messages about money say exactly what happened: charged, refunded, or nothing charged.",
+      "An Astra change to the set runs once per press, and only a change that is saved counts against the month. After a dropped connection the page shows what was actually saved.",
+      "Takes and films are silent until dubbing arrives. Gemini Omni, the default take engine, can't be told to stay quiet, so its invented voice is now taken out of the stored clip; the picture is untouched.",
+      "A take keeps its still's shape, and words like \"vertical\" or \"tiktok\" in the direction can no longer flip it. New sets frame 16:9, the shape the take engines render, so films stop inventing the sides of every frame. Existing sets keep their frame.",
+      "Your brand rules no longer judge Picacho's own fixed wording in a take, only your words.",
+      "A finished still has its own Download (the old icon saved the grey sketch), and the panel names the picture engine you actually picked.",
+    ],
+  },
+  {
     version: "1.109.0",
     build: 148,
     date: "2026-09-25",
