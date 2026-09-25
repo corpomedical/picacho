@@ -19,12 +19,15 @@ import { after } from "next/server";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
 import { SESSION_EXPIRED_MESSAGE } from "@/lib/generations/user-facing-error";
-import { advanceEdit } from "./advance";
+import { advanceEdit, deliverOne, derivedUuid } from "./advance";
 import { sendChange, type Activity } from "./agent";
 import type { ChangeExtras } from "./agent-prompt";
 import type { ProbeResult } from "./analyze";
 import { probeClip } from "./work";
 import { PROJECT_DRAFT, projectToken } from "./project";
+import { bundlePlan, type ExportRecord } from "./export";
+import { buildZip, type ZipEntry } from "./zip";
+import { HEYGEN_MAX_BUNDLE_BYTES, heygenConfigured, readRender, startRender, uploadBundle } from "./heygen";
 import { EDITOR_NOT_OPEN, EDITOR_UNAVAILABLE, editorAllowed, isEditorEnabled } from "./enabled";
 import {
   ASPECT_HINTS,
@@ -41,6 +44,7 @@ import {
   type EditRow,
   type FileOffer,
   type Note,
+  type Output,
   type Phase,
 } from "./job";
 
@@ -312,6 +316,8 @@ export type EditDetail = {
   error: string | null;
   /** 1 for the first delivery, then +1 per change. */
   cutNumber: number;
+  /** Timeline edits sent to render (Export), newest last. */
+  exports: { id: string; source: string; status: "rendering" | "done" | "failed"; error: string | null; resultId: string | null }[];
 };
 
 /** One edit in full, for the bench. */
@@ -360,6 +366,7 @@ export async function getEdit(editId: string): Promise<{ error: string | null; e
           : null,
       error: row.error,
       cutNumber: row.render?.turn ?? 1,
+      exports: (row.plan?.exports ?? []).map((x) => ({ id: x.id, source: x.source, status: x.status, error: x.error ?? null, resultId: x.resultId ?? null })),
     },
   };
 }
@@ -425,6 +432,109 @@ export async function saveProjectDraft(editId: string, generationId: string, htm
     .upload(`${output.project.dir}/${PROJECT_DRAFT}`, new TextEncoder().encode(html), { contentType: "text/html", upsert: true });
   if (error) return { error: "Couldn't save. Try again." };
   return { error: null };
+}
+
+/**
+ * Export: the timeline's working copy, rendered (export.ts). Bundles the page,
+ * the project's files and the clips it plays, sends them to HeyGen's
+ * renderer, and records the render on the edit; checkExport collects it.
+ */
+export async function exportProject(editId: string, generationId: string): Promise<{ error: null; exportId: string } | { error: string }> {
+  const access = await editorAccess();
+  if (access.error !== null) return { error: access.error };
+  if (!heygenConfigured()) return { error: "Export isn't switched on yet." };
+  if (await rateLimited(access.userId, "video-edit-export", 60 * 60, 20)) {
+    return { error: "That's a lot of exports in an hour — try again a little later." };
+  }
+  const row = await ownEdit(access.userId, editId);
+  const output = row?.plan?.outputs.find((o) => o.generationId === generationId);
+  if (!row || !output?.project) return { error: "That video isn't yours or no longer exists." };
+  if ((row.plan?.exports ?? []).some((x) => x.source === generationId && x.status === "rendering")) {
+    return { error: "This edit is already rendering." };
+  }
+  const admin = createAdminClient();
+  const bucket = admin.storage.from(EDITOR_BUCKET);
+  const read = async (path: string) => {
+    const { data } = await bucket.download(path);
+    return data ? new Uint8Array(await data.arrayBuffer()) : null;
+  };
+  const page = (await read(`${output.project.dir}/${PROJECT_DRAFT}`)) ?? (await read(`${output.project.dir}/${output.project.entry}`));
+  if (!page) return { error: "Couldn't open this video's project. Try again." };
+  const html = new TextDecoder().decode(page);
+  const plan = bundlePlan(html, output.project, row.clips);
+  const entries: ZipEntry[] = [{ name: "index.html", data: page }];
+  for (const p of plan.project) {
+    const data = await read(`${output.project.dir}/${p}`);
+    if (data) entries.push({ name: p, data });
+  }
+  for (const f of plan.footage) {
+    const data = await read(f.path);
+    if (!data) return { error: "One of your clips couldn't be read. Try again." };
+    entries.push({ name: f.name, data });
+  }
+  const exportId = crypto.randomUUID();
+  let renderId: string;
+  try {
+    const zip = buildZip(entries);
+    if (zip.byteLength > HEYGEN_MAX_BUNDLE_BYTES) return { error: "This edit is too large to render in one go (over 200 MB)." };
+    const assetId = await uploadBundle(zip, { filename: `${exportId}.zip`, idempotencyKey: exportId });
+    const aspect = (["16:9", "9:16", "1:1"] as const).find((a) => a === output.aspect) ?? "16:9";
+    renderId = await startRender(assetId, { aspect, fps: 30, quality: "high", title: output.title, idempotencyKey: `render-${exportId}` });
+  } catch (err) {
+    console.error(`[editor] export for ${row.id} failed:`, err instanceof Error ? err.message : err);
+    return { error: "The renderer didn't take this edit. Try again in a moment." };
+  }
+  const record: ExportRecord = { id: exportId, source: generationId, renderId, status: "rendering", startedAt: Date.now() };
+  const { error } = await admin
+    .from("video_edits")
+    .update({ plan: { ...row.plan!, exports: [...(row.plan?.exports ?? []), record] }, updated_at: new Date().toISOString() })
+    .eq("id", row.id);
+  if (error) return { error: "Couldn't keep track of the render. Try again." };
+  return { error: null, exportId };
+}
+
+/** An export's render, read back; when it is finished, the video goes into History (once) and onto the bench. */
+export async function checkExport(editId: string, exportId: string): Promise<{ error: string | null; status: ExportRecord["status"] | null; generationId?: string | null }> {
+  const access = await editorAccess();
+  if (access.error !== null) return { error: access.error, status: null };
+  const row = await ownEdit(access.userId, editId);
+  const record = row?.plan?.exports?.find((x) => x.id === exportId);
+  if (!row || !record) return { error: "That export isn't yours or no longer exists.", status: null };
+  if (record.status !== "rendering") return { error: null, status: record.status, generationId: record.resultId ?? null };
+  let state;
+  try {
+    state = await readRender(record.renderId);
+  } catch (err) {
+    console.error(`[editor] export ${exportId} unreadable:`, err instanceof Error ? err.message : err);
+    return { error: null, status: "rendering" };
+  }
+  if (state.status === "queued" || state.status === "rendering") return { error: null, status: "rendering" };
+  const admin = createAdminClient();
+  const source = row.plan!.outputs.find((o) => o.generationId === record.source);
+  const settle = async (patch: Partial<ExportRecord>, output?: Output) => {
+    const exports = (row.plan?.exports ?? []).map((x) => (x.id === exportId ? { ...x, ...patch } : x));
+    const outputs = output && !row.plan!.outputs.some((o) => o.generationId === output.generationId) ? [...row.plan!.outputs, output] : row.plan!.outputs;
+    await admin
+      .from("video_edits")
+      .update({ plan: { ...row.plan!, outputs, exports }, updated_at: new Date().toISOString() })
+      .eq("id", row.id);
+  };
+  if (state.status === "failed" || !state.videoUrl || !source) {
+    await settle({ status: "failed", error: state.failure ?? "The render failed." });
+    return { error: null, status: "failed" };
+  }
+  const res = await fetch(state.videoUrl, { signal: AbortSignal.timeout(120_000) });
+  if (!res.ok) return { error: null, status: "rendering" };
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  const generationId = derivedUuid(`video-edit-export:${exportId}`);
+  const seconds = state.duration ?? source.seconds;
+  const title = `${source.title || "Your edit"} · your edit`;
+  await deliverOne(admin, row, generationId, { title, summary: "", aspect: source.aspect, seconds, bytes });
+  await settle(
+    { status: "done", resultId: generationId },
+    { title, summary: "Your edit on the timeline, rendered.", aspect: source.aspect, seconds, generationId, turn: source.turn, project: source.project ?? null },
+  );
+  return { error: null, status: "done", generationId };
 }
 
 function kick(editId: string): void {

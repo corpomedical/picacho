@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocale } from "@/lib/i18n/provider";
-import type { EditDetail, EditSummary } from "@/lib/editor/actions";
+import { checkExport, exportProject, type EditDetail, type EditSummary } from "@/lib/editor/actions";
 import { splitClip, type TimelineClip } from "@/lib/editor/timeline";
 import { useProject } from "./use-project";
 import { useMediaPreviews } from "./media-previews";
@@ -24,6 +24,7 @@ export function EditBay({
   selectedId,
   onSelectEdit,
   detail,
+  onRefresh,
   director,
   newEdit,
   fallback,
@@ -32,6 +33,8 @@ export function EditBay({
   selectedId: string | null;
   onSelectEdit: (id: string) => void;
   detail: EditDetail | null;
+  /** Re-read the edit (a finished export adds a video to it). */
+  onRefresh: () => Promise<void>;
   /** The Director tab: Opus's notes and "ask for a change". */
   director: ReactNode;
   /** The brief form, for a new edit; it calls `close` once the edit has started. */
@@ -52,6 +55,47 @@ export function EditBay({
   const editable = detail?.stage === "done" && video?.editable === true;
 
   useEffect(() => setPick(0), [detail?.id, latestTurn]);
+
+  // Export: save the working copy, send it to render, follow the render until
+  // it lands in History (a render in flight survives a reload: it is on the edit).
+  const project = useRef<{ saveNow: () => Promise<void> } | null>(null);
+  const [sending, setSending] = useState(false);
+  const [exportNote, setExportNote] = useState<string | null>(null);
+  const rendering = detail?.exports.find((x) => x.source === video?.generationId && x.status === "rendering") ?? null;
+  const detailId = detail?.id ?? null;
+  const renderingId = rendering?.id ?? null;
+
+  async function doExport() {
+    if (!detail || !video || sending) return;
+    setSending(true);
+    setExportNote(null);
+    try {
+      await project.current?.saveNow();
+      const res = await exportProject(detail.id, video.generationId);
+      if (res.error !== null) setExportNote(res.error);
+      else await onRefresh();
+    } catch {
+      setExportNote(b.exportFailed);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!detailId || !renderingId) return;
+    const timer = setInterval(async () => {
+      try {
+        const res = await checkExport(detailId, renderingId);
+        if (res.status === "done" || res.status === "failed") {
+          setExportNote(res.status === "done" ? b.exported : b.exportFailed);
+          await onRefresh();
+        }
+      } catch {
+        // A dropped poll is retried on the next tick.
+      }
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [detailId, renderingId, onRefresh, b.exported, b.exportFailed]);
 
   return (
     <div data-directors-cut className="flex h-[calc(100dvh-7rem)] min-h-[720px] flex-col overflow-hidden rounded-[16px] bg-[#07080b] text-[#c6c9d1] shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
@@ -98,10 +142,37 @@ export function EditBay({
           </div>
         )}
         <div className="flex-1" />
+        {exportNote && (
+          <span className="max-w-[260px] truncate text-[12px] text-[#9aa0ad]" role="status">
+            {exportNote}
+          </span>
+        )}
         {video?.url && (
           <a href={video.url} download className="text-[13px] text-[#e0a468] hover:text-[#f0bd86]">
             {d.download}
           </a>
+        )}
+        {editable && (
+          <button
+            type="button"
+            onClick={() => void doExport()}
+            disabled={sending || rendering !== null}
+            className="flex h-8 items-center gap-2 rounded-lg bg-[#e0a468] px-3.5 text-[13px] font-semibold text-[#1a0f07] disabled:opacity-60"
+          >
+            {sending || rendering ? (
+              <>
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-[#1a0f07] border-t-transparent" aria-hidden="true" />
+                {b.exporting}
+              </>
+            ) : (
+              <>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
+                </svg>
+                {b.export}
+              </>
+            )}
+          </button>
         )}
         <button
           type="button"
@@ -122,6 +193,7 @@ export function EditBay({
           generationId={video.generationId}
           aspect={video.aspect}
           director={director}
+          apiRef={project}
           rightTab={rightTab}
           setRightTab={setRightTab}
         />
@@ -167,6 +239,7 @@ function ProjectBay({
   generationId,
   aspect,
   director,
+  apiRef,
   rightTab,
   setRightTab,
 }: {
@@ -174,6 +247,8 @@ function ProjectBay({
   generationId: string;
   aspect: string;
   director: ReactNode;
+  /** Lets the top bar save the working copy before Export. */
+  apiRef: React.MutableRefObject<{ saveNow: () => Promise<void> } | null>;
   rightTab: "director" | "inspect";
   setRightTab: (t: "director" | "inspect") => void;
 }) {
@@ -182,6 +257,12 @@ function ProjectBay({
   const b = d.bay;
   const clipNames = useMemo(() => detail.clips.map((c) => c.name), [detail.clips]);
   const project = useProject(detail.id, generationId, clipNames);
+  useEffect(() => {
+    apiRef.current = { saveNow: project.saveNow };
+    return () => {
+      apiRef.current = null;
+    };
+  }, [apiRef, project.saveNow]);
   const ready = project.state.status === "ready" ? project.state : null;
   const previews = useMediaPreviews(ready?.base ?? null, ready?.model ?? null);
   const monitor = useRef<MonitorHandle | null>(null);

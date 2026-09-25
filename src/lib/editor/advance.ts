@@ -271,7 +271,7 @@ async function keepProject(admin: Admin, row: EditRow, generationId: string, pac
 }
 
 /** One finished video into our storage and one finished row in History. Derived id: a redone tick lands on the same row. */
-async function deliverOne(
+export async function deliverOne(
   admin: Admin,
   row: EditRow,
   generationId: string,

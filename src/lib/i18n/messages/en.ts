@@ -125,6 +125,10 @@ const en = {
     songNote: "Anything else?",
     // The Edit Bay (pro editor, board A, 2026-09-25).
     bay: {
+      export: "Export",
+      exporting: "Rendering your edit…",
+      exported: "Your edit is in History.",
+      exportFailed: "The render failed. Try Export again.",
       yourEdits: "Your edits",
       newEdit: "New edit",
       close: "Close",

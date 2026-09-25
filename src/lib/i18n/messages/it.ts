@@ -111,6 +111,10 @@ const it = {
     songNote: "Altro?",
     // The Edit Bay (pro editor, board A, 2026-09-25).
     bay: {
+      export: "Esporta",
+      exporting: "Sto renderizzando il tuo montaggio…",
+      exported: "Il tuo montaggio è nella Cronologia.",
+      exportFailed: "Il rendering non è riuscito. Riprova a esportare.",
       yourEdits: "I tuoi montaggi",
       newEdit: "Nuovo montaggio",
       close: "Chiudi",

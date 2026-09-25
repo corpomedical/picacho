@@ -112,6 +112,10 @@ const pt = {
     songNote: "Algo mais?",
     // The Edit Bay (pro editor, board A, 2026-09-25).
     bay: {
+      export: "Exportar",
+      exporting: "Renderizando sua edição…",
+      exported: "Sua edição está no Histórico.",
+      exportFailed: "A renderização falhou. Exporte de novo.",
       yourEdits: "Suas edições",
       newEdit: "Nova edição",
       close: "Fechar",

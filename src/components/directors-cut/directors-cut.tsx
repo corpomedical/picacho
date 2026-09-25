@@ -126,6 +126,7 @@ export function DirectorsCut({ initialEdits, initialDetail = null }: { initialEd
         selectedId={selectedId}
         onSelectEdit={setSelectedId}
         detail={detail}
+        onRefresh={() => refresh(selectedId)}
         director={<Notes bare detail={detail} guard={guard} onSent={() => refresh(selectedId)} />}
         newEdit={(close) => (
           <div className="flex flex-col gap-6">
