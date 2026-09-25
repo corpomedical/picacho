@@ -3228,6 +3228,7 @@ const pt = {
       // Astra's own cut (W3), a figure left on the ground (W5), the help priced for the person's take (W6), a failed Astra undo (W7).
       replyRetryHeld: "Tentar de novo não fotografa sozinho; toque para fotografar este quadro.",
       replyHeldTake: "Nada foi fotografado: o {take} espera o próprio botão.",
+      replyHomeHeld: "Você enviou isto antes de o set abrir, então enquadrei e não fotografei nada. Toque em Fotografar quando estiver do seu jeito.",
       replyRepriced: "O preço mudou; nada foi gasto. Toque de novo com o preço novo.",
       astraCutMessage: "O Astra só recebe os primeiros {n} caracteres.",
       cantRaiseGround: "{name} ainda não pode sentar nem ficar em cima das coisas: a figura fica no chão.",

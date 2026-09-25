@@ -1196,11 +1196,19 @@ export function composeReply(plan: TurnPlan, outcomes: TurnOutcomes | null, fact
   }
   for (const n of out.notes) notes.push({ rank: NOTE_RANK[n.kind], text: pageNoteText(n, facts, words) });
   const held = facts.shot !== null && facts.shot.kind === "none" && facts.shot.offer !== null && facts.shot.held.length > 0 ? facts.shot : null;
-  // Said by what held it: Try again only, the chat's own take only, or a
-  // part that isn't done (review of Cut 2, W1 and understanding N1).
+  // Said by what held it: Try again only, the chat's own take only, the
+  // Sets home's message only (Helios Cut 3, money fix), or a part that
+  // isn't done (review of Cut 2, W1 and understanding N1).
   if (held) {
     const only = held.held.length === 1 ? held.held[0] : null;
-    const text = only === "retry" ? r.replyRetryHeld : only === "take" ? fill(r.replyHeldTake, { take: r.takeWord }) : r.replyHeldShot;
+    const text =
+      only === "retry"
+        ? r.replyRetryHeld
+        : only === "take"
+          ? fill(r.replyHeldTake, { take: r.takeWord })
+          : only === "home"
+            ? r.replyHomeHeld
+            : r.replyHeldShot;
     notes.push({ rank: NOTE_RANK.held, text });
   }
   notes.sort((a, b) => a.rank - b.rank);

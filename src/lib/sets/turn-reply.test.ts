@@ -909,6 +909,23 @@ describe("replies that say only what happened (review of Cut 2)", () => {
     }
   });
 
+  it("the Sets home's message held in Ask before shooting says why, and offers [Shoot as it is · n] (Helios Cut 3, money fix)", () => {
+    for (const l of LOCALES) {
+      const w = WORDS[l];
+      const s = stateOf();
+      const plan = planTurn({ steps: ["closer"], shoot: true }, s);
+      const shot = shootDecision(plan, s, { home: true });
+      const model = composeReply(plan, null, plannedFacts(plan, factsOf({ mode: s.mode, shot, locale: l }, w)), w);
+      const text = replyText(model);
+      expectClean(text, l);
+      expect(text, l).toContain(w.reply.replyHomeHeld);
+      expect(text, l).not.toContain(w.reply.replyHeldShot);
+      expect(model.lines.find((x) => x.kind === "needs")?.buttons, l).toEqual([
+        { kind: "shootAsIs", press: "still", credits: CREDITS.still, label: fill(w.reply.shootAsIs, { credits: creditsLabel(w.reply, CREDITS.still) }) },
+      ]);
+    }
+  });
+
   it("the figure is 'beside it' only when the turn put her by the thing (W5)", () => {
     for (const l of LOCALES) {
       const w = WORDS[l];

@@ -599,6 +599,20 @@ describe("the shoot matrix (spec §3.3), every cell", () => {
     expect(decide({ steps: ["closer"] }, { source: "retry", mode: "auto" })).toEqual({ kind: "none", held: ["retry"], offer: "still" });
   });
 
+  it("the Sets home's message, run on arrival, never shoots in Ask before shooting; it offers [Shoot as it is] (Helios Cut 3, money fix)", () => {
+    const ask = stateOf();
+    const auto = stateOf({ mode: "auto" });
+    const shootWords = planTurn({ steps: ["closer"], shoot: true }, ask);
+    // Arrived from the home: framed, held, and the priced offer instead.
+    expect(shootDecision(shootWords, ask, { home: true })).toEqual({ kind: "none", held: ["home"], offer: "still" });
+    // The same words typed on the set's page still shoot, as they always have.
+    expect(shootDecision(shootWords, ask)).toEqual({ kind: "still", held: [], offer: null });
+    // "Shoot without asking", chosen on the home, is the person's word to shoot.
+    expect(shootDecision(planTurn({ steps: ["closer"] }, auto), auto, { home: true })).toEqual({ kind: "still", held: [], offer: null });
+    // Words that don't ask to shoot are not held: there was nothing to shoot.
+    expect(shootDecision(planTurn({ steps: ["closer"] }, ask), ask, { home: true })).toEqual({ kind: "none", held: [], offer: null });
+  });
+
   it("the priced buttons shoot what their label says, in every mode", () => {
     const s = (takeStart: TakeStart | null) => stateOf({ takeStart });
     expect(pressFor("doItShoot", s(chat))).toEqual({ kind: "still", credits: CREDITS.still, afterSave: false });

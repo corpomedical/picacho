@@ -483,6 +483,12 @@ type FrameNote = {
   moved: CameraMove | null;
   /** Just talking is on: the words were read, and nothing moved. */
   planned?: boolean;
+  /**
+   * The Sets home's message asked to shoot, and arrived in "Ask before
+   * shooting": framed, and nothing shot until the person presses Shoot
+   * (Helios Cut 3, money fix).
+   */
+  held?: boolean;
 };
 
 /**
@@ -501,6 +507,8 @@ type TurnContext = {
   dropped: readonly string[];
   messageCut: boolean;
   origin: "build" | null;
+  /** The Sets home's message, run on arrival: in "Ask before shooting" it never shoots (Helios Cut 3, money fix). */
+  home?: boolean;
   /** The reader's short names for this set's things and people, for LAST TURNS. */
   aliases: ReaderAliases;
   /** The person's message; null for a button's turn. */
@@ -6656,9 +6664,12 @@ export function SetView({
    * into a frame (readShotWords), done to the stage, and shot at once when
    * the words say so or Astra is not asked to wait. `origin: "build"` is
    * passed by the Sets home's message alone (the initialAsk effect below),
-   * never by the composer.
+   * never by the composer. So is `home`: the Sets home's message runs on
+   * arrival, with no press on this page, so it shoots only when the person
+   * chose "Shoot without asking" there — never because its words say shoot
+   * (Helios Cut 3, money fix, 2026-09-26).
    */
-  async function send(text: string, opts?: { origin?: "build" }) {
+  async function send(text: string, opts?: { origin?: "build"; home?: boolean }) {
     const message = text.trim();
     if (!message || reading || shooting || editingSet || !ready) return;
     // Reader v2 runs the message as one turn (Helios Cut 2, step 11a):
@@ -6726,12 +6737,17 @@ export function SetView({
       return;
     }
     const moved = applyWords(words);
-    setNote({ built, talk: false, moved: moved && moved !== "none" ? moved : null });
+    // The Sets home's message arrived and ran with no press on this page:
+    // in "Ask before shooting" it never shoots, even when its words say
+    // shoot — the frame card's Shoot, priced, takes it from here (Helios
+    // Cut 3, money fix). "Shoot without asking", chosen there, shoots.
+    const held = opts?.home === true && askFirst && words.intent === "shoot";
+    setNote({ built, talk: false, moved: moved && moved !== "none" ? moved : null, held });
     // The direction is what the card shows: the reader's own words when it
     // read any ("she leans on the counter"), otherwise the direction already
     // framed. The raw message would put "go" in the picture's words
     // (found reviewing Helios, 2026-09-17).
-    if (words.intent === "shoot" || !askFirst) await pressShoot(words.direction || direction);
+    if (opts?.home === true ? !askFirst : words.intent === "shoot" || !askFirst) await pressShoot(words.direction || direction);
   }
 
   // The message from the Sets home, once the stage can act on it — then the
@@ -6739,13 +6755,15 @@ export function SetView({
   // (check of the Cut 2 spec, item 4): left behind, a reload would make the
   // person's own next message the "build" turn, and their Astra change
   // would be dropped as already built. The build turn is this call's alone.
+  // It is sent as the home's (`home`): it shoots on arrival only in "Shoot
+  // without asking" (Helios Cut 3, money fix).
   useEffect(() => {
     if (!ready || !initialAsk || askedRef.current) return;
     askedRef.current = true;
     const url = new URL(window.location.href);
     for (const key of ["ask", "character", "askFirst", "from"]) url.searchParams.delete(key);
     window.history.replaceState(null, "", `${url.pathname}${url.search}`);
-    void send(initialAsk, initialAskBuilt ? { origin: "build" } : undefined);
+    void send(initialAsk, initialAskBuilt ? { origin: "build", home: true } : { home: true });
     // send reads the latest state through closures; it is not a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, initialAsk]);
@@ -6897,7 +6915,7 @@ export function SetView({
    * "Try again" reads the same words again as a message turn that never
    * shoots (source "retry", check of the spec, item 1).
    */
-  async function sendTurn(message: string, opts?: { origin?: "build"; source?: "message" | "retry" }) {
+  async function sendTurn(message: string, opts?: { origin?: "build"; source?: "message" | "retry"; home?: boolean }) {
     const api = apiRef.current;
     if (reading || shooting || editingSet || following !== null || shootDue !== null || !ready || !api) return;
     const source = opts?.source ?? "message";
@@ -6969,6 +6987,7 @@ export function SetView({
       dropped: res?.dropped ?? [],
       messageCut: res?.cut ?? false,
       origin: opts?.origin ?? null,
+      home: opts?.home === true,
       aliases: res?.aliases ?? NO_ALIASES,
       asked: message,
       pressed: null,
@@ -7336,7 +7355,9 @@ export function SetView({
     // Whether the picture changed: a take set up or its move is not a new frame.
     const changed = snapshotDiff(before, now).some((k) => k !== "takeStart" && k !== "takeMove" && k !== "takeEngine");
     // A priced row shoots what it paid for, unless what it ran into holds it (paidDecision); a message as the matrix says.
-    const shot = ctx.paid ? paidDecision(shown, ctx.paid) : shootDecision(shown, { mode: state.mode, source: ctx.source }, { changed, cant: extraCant.length > 0 });
+    const shot = ctx.paid
+      ? paidDecision(shown, ctx.paid)
+      : shootDecision(shown, { mode: state.mode, source: ctx.source }, { changed, cant: extraCant.length > 0, home: ctx.home === true });
     // The one press id for this turn's shot, minted here, fired from the next render (shootDue).
     if (shot.kind !== "none") setShootDue({ pressId: newPressId(), kind: shot.kind, turnId: id });
     if (plan.steps.length > 0) {
@@ -8127,7 +8148,11 @@ export function SetView({
       ? s.justTalkNote
       : note?.talk
         ? s.talkReply
-        : [note?.built ? s.reply.noteBuiltFromWords : null, note?.moved ? formatMsg(s.frameLineMoved, { name: characterName }) : null]
+        : [
+            note?.built ? s.reply.noteBuiltFromWords : null,
+            note?.moved ? formatMsg(s.frameLineMoved, { name: characterName }) : null,
+            note?.held ? s.reply.replyHomeHeld : null,
+          ]
             .filter(Boolean)
             .join(" ");
   // The frame card's rows the newest turn moved, for their dot (spec §5.1):

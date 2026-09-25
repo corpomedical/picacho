@@ -255,8 +255,12 @@ export type TurnPlan = {
   takeAfter: TakeStart | null;
 };
 
-/** Why a message turn that would have shot did not (money rule 2 and critic item 1). */
-export type Blocker = "why" | "cant" | "dropped" | "which" | "astra" | "hour" | "take" | "takeFormat" | "cut" | "messageCut" | "who" | "retry";
+/**
+ * Why a message turn that would have shot did not (money rule 2 and critic
+ * item 1). "home": the message was carried from the Sets home and the
+ * person left "Ask before shooting" on there (Helios Cut 3, money fix).
+ */
+export type Blocker = "why" | "cant" | "dropped" | "which" | "astra" | "hour" | "take" | "takeFormat" | "cut" | "messageCut" | "who" | "retry" | "home";
 
 export type ShootDecision = {
   kind: "none" | "still" | "take";
@@ -1163,9 +1167,15 @@ export function blockersOf(plan: TurnPlan): Blocker[] {
  * · n] would do. A take only when the PERSON set it up: the chat's own take
  * is a blocker, on this turn and every later one (money rule 3). `after`
  * is what the executors found: whether anything really changed, and a
- * "not yet" a step met on the stage (a raise past what words do).
+ * "not yet" a step met on the stage (a raise past what words do); `home`
+ * says the message was carried from the Sets home, which in "Ask before
+ * shooting" never shoots on arrival (Helios Cut 3, money fix).
  */
-export function shootDecision(plan: TurnPlan, state: Pick<PageState, "mode" | "source">, after?: { changed?: boolean; cant?: boolean }): ShootDecision {
+export function shootDecision(
+  plan: TurnPlan,
+  state: Pick<PageState, "mode" | "source">,
+  after?: { changed?: boolean; cant?: boolean; home?: boolean },
+): ShootDecision {
   const none = (held: Blocker[] = [], offer: ShootDecision["offer"] = null): ShootDecision => ({ kind: "none", held, offer });
   if (plan.kind === "guard") return none(["why"]);
   if (plan.kind !== "run" || !plan.reading) return none();
@@ -1178,6 +1188,13 @@ export function shootDecision(plan: TurnPlan, state: Pick<PageState, "mode" | "s
   const held = blockersOf(plan);
   if (after?.cant && !held.includes("cant")) held.push("cant");
   if (state.source === "retry") held.push("retry");
+  // A message sent from the Sets home arrives with the set's page and runs
+  // there on its own: nobody pressed anything priced on this page, so in
+  // "Ask before shooting" it frames and offers [Shoot as it is · n] rather
+  // than spend (Helios Cut 3, money fix: the home now opens on the latest
+  // set, so this is every returning person's path). "Shoot without asking",
+  // chosen on the home, is the person's word to shoot.
+  if (after?.home && state.mode === "ask") held.push("home");
   const kind = plan.takeAfter?.armedBy === "person" ? "take" : "still";
   if (held.length > 0) return none(held, kind);
   return { kind, held: [], offer: null };

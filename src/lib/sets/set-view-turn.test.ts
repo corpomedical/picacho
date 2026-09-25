@@ -108,7 +108,7 @@ describe("a take the chat set up renders only from a press priced as a take (rul
     expect(view).toContain("shootNow: pressLabel,");
     expect(view).toContain("else if (!justTalk) void pressShoot();");
     expect(view).toContain("title={draft.trim() || justTalk ? s.threadPlaceholder : pressLabel}");
-    expect(bodyOf('  async function send(text: string, opts?: { origin?: "build" }) {')).toContain("await pressShoot(words.direction || direction);");
+    expect(bodyOf('  async function send(text: string, opts?: { origin?: "build"; home?: boolean }) {')).toContain("await pressShoot(words.direction || direction);");
   });
 
   it("the only take() calls are the priced Take buttons, a generic Shoot's person's take and the due shot (pin #9)", () => {
@@ -165,7 +165,7 @@ describe("an Astra change is pressed on its card (rule 1)", () => {
 // The turn engine (Helios Cut 2, step 11a): one reading, one plan, run with
 // the page's own handlers in the plan's order, said from what it reached.
 describe("the chat's turn engine", () => {
-  const sendTurn = bodyOf('  async function sendTurn(message: string, opts?: { origin?: "build"; source?: "message" | "retry" }) {');
+  const sendTurn = bodyOf('  async function sendTurn(message: string, opts?: { origin?: "build"; source?: "message" | "retry"; home?: boolean }) {');
   const runTurn = bodyOf("  function runTurn(reading: ShotReading | null, ctx: TurnContext & Partial<PaidRow>): number | null {");
   const undoTurn = bodyOf("  async function undoTurn(ctx: TurnContext, plan: TurnPlan | null) {");
   const replyAction = bodyOf("  function replyAction(turn: ChatTurn, action: ReplyAction) {");
@@ -174,7 +174,7 @@ describe("the chat's turn engine", () => {
   const notStarted = bodyOf("  function dueNotStarted(due: ShootDue) {");
 
   it("runs for reader v2's accounts only, and hands back to v1 when the server says off", () => {
-    const send = bodyOf('  async function send(text: string, opts?: { origin?: "build" }) {');
+    const send = bodyOf('  async function send(text: string, opts?: { origin?: "build"; home?: boolean }) {');
     const v2 = send.indexOf("if (readerV2 && !readerOffRef.current) return sendTurn(message, opts);");
     expect(v2).toBeGreaterThan(send.indexOf("if (!message || reading || shooting || editingSet || !ready) return;"));
     expect(v2).toBeLessThan(send.indexOf("await readShotWords("));
@@ -210,7 +210,7 @@ describe("the chat's turn engine", () => {
     }
     // A priced row's shot is decided on what the row ran into (review of Cut 2, S1); a message's by the matrix.
     const decided = runTurn.indexOf(
-      "const shot = ctx.paid ? paidDecision(shown, ctx.paid) : shootDecision(shown, { mode: state.mode, source: ctx.source }, { changed, cant: extraCant.length > 0 });",
+      "      : shootDecision(shown, { mode: state.mode, source: ctx.source }, { changed, cant: extraCant.length > 0, home: ctx.home === true });",
     );
     const due = runTurn.indexOf('if (shot.kind !== "none") setShootDue({ pressId: newPressId(), kind: shot.kind, turnId: id });');
     expect(decided).toBeGreaterThan(-1);

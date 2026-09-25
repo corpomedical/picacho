@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/provider";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { formatMsg } from "@/lib/i18n/format";
+import { quoteSend } from "@/lib/generations/quote";
 import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { deleteSet, pollSetBuild, submitSetBuild, submitSetPhotoBuild } from "@/lib/sets/actions";
 import { readSetRequest } from "@/lib/sets/words-actions";
@@ -13,6 +14,7 @@ import { buildingHintKey, pageSetNotice, photoMetaKey } from "@/lib/sets/leaving
 import { preparePhoto } from "@/lib/sets/photo-client";
 import { SET_BRIEF_MAX_CHARS, SET_PHOTO_NOTES_MAX_CHARS } from "@/lib/sets/set-config";
 import { SHOT_WORDS_MAX_CHARS } from "@/lib/sets/shot-words";
+import { stillQuoteInput } from "@/lib/sets/take";
 import { tryAgainWords } from "@/lib/sets/try-again";
 import {
   SETS_NOT_OPEN,
@@ -569,6 +571,16 @@ export function SetsHome({
     .filter(Boolean)
     .join(" · ");
   const canSend = brief.trim().length > 0 && !submitting && (setPick !== null || !atCap);
+  // A message to a set already built runs on that set's page when it
+  // arrives (set-view.tsx, the initialAsk effect). In "Ask before shooting"
+  // it only frames: nothing is spent until a priced Shoot is pressed there.
+  // In "Shoot without asking" it shoots a still on arrival, so this button
+  // says so, at the price the set's page charges — its own still quote, the
+  // one the server charges with (Helios Cut 3, money fix, 2026-09-26).
+  const shootsOnArrival = setPick !== null && !askFirst;
+  const stillCredits = quoteSend(stillQuoteInput()).totalCredits;
+  const shootPrice = stillCredits === 1 ? s.shootButtonOne : formatMsg(s.shootButton, { n: stillCredits });
+  const sendLabel = shootsOnArrival ? shootPrice : s.shootHere;
 
   return (
     <div className="space-y-10">
@@ -800,12 +812,18 @@ export function SetsHome({
                   </button>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="hidden text-xs tabular-nums text-atelier-muted sm:inline">{setPick ? "" : usageLine}</span>
+                  {shootsOnArrival ? (
+                    <span className="text-xs font-medium tabular-nums text-atelier-ink" aria-hidden>
+                      {shootPrice}
+                    </span>
+                  ) : (
+                    <span className="hidden text-xs tabular-nums text-atelier-muted sm:inline">{setPick ? "" : usageLine}</span>
+                  )}
                   <button
                     type="submit"
                     disabled={!canSend}
-                    title={s.shootHere}
-                    aria-label={s.shootHere}
+                    title={sendLabel}
+                    aria-label={sendLabel}
                     className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
                   >
                     {starting ? (

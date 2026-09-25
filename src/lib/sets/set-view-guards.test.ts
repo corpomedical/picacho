@@ -35,7 +35,7 @@ const between = (source: string, from: string, to: string) => {
   return source.slice(start, end);
 };
 
-const send = bodyOf(view, "  async function send(text: string, opts?: { origin?: \"build\" }) {");
+const send = bodyOf(view, "  async function send(text: string, opts?: { origin?: \"build\"; home?: boolean }) {");
 
 describe("a change to the set itself waits for a press on the Astra card", () => {
   it("never calls Astra from a message: the edit branch shows the card", () => {
@@ -172,11 +172,14 @@ describe("the Sets home's message is the only build turn", () => {
   it("the address forgets it with the message, and only the Sets home's message is sent as the build turn", () => {
     const effect = between(view, "if (!ready || !initialAsk || askedRef.current) return;", "}, [ready, initialAsk]);");
     expect(effect).toContain('for (const key of ["ask", "character", "askFirst", "from"]) url.searchParams.delete(key);');
-    expect(effect).toContain('void send(initialAsk, initialAskBuilt ? { origin: "build" } : undefined);');
-    // Nothing else passes an origin: the composer's own sends never do. The
-    // chat's reader v2 hands the same message and its origin back to v1 when
-    // the server says v2 is off (Helios Cut 2, step 11a).
-    expect(view.match(/\{ origin: "build" \}/g)).toHaveLength(1);
+    // Sent as the Sets home's (`home`): it shoots on arrival only in "Shoot without asking" (Helios Cut 3, money fix).
+    expect(effect).toContain('void send(initialAsk, initialAskBuilt ? { origin: "build", home: true } : { home: true });');
+    // Nothing else passes an origin, or says it is the home's: the composer's
+    // own sends never do. The chat's reader v2 hands the same message, its
+    // origin and `home` back to v1 when the server says v2 is off (Helios
+    // Cut 2, step 11a).
+    expect(view.match(/\{ origin: "build"[^}]*\}/g)).toEqual(['{ origin: "build", home: true }']);
+    expect(view.match(/\bhome: true\b/g)).toHaveLength(2);
     expect(view.match(/\bsend\([^,()]+,/g)).toEqual(["send(text: string,", "send(initialAsk,", "send(message,"]);
     expect(view).toContain("if (source === \"message\") void send(message, opts);");
     expect(view.match(/\bsendTurn\([^,()]+,/g)).toEqual(["sendTurn(message,", "sendTurn(message: string,", "sendTurn(turn.asked,"]);
@@ -184,7 +187,7 @@ describe("the Sets home's message is the only build turn", () => {
 
   it("a built message is framed, never carded — and a later edit still gets the card", () => {
     expect(send).toContain('const built = opts?.origin === "build" && words.intent === "edit";');
-    expect(send).toContain("setNote({ built, talk: false, moved: moved && moved !== \"none\" ? moved : null });");
+    expect(send).toContain("setNote({ built, talk: false, moved: moved && moved !== \"none\" ? moved : null, held });");
   });
 });
 

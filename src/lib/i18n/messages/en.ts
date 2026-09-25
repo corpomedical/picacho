@@ -3419,6 +3419,8 @@ const en = {
       // Astra's own cut (W3), a figure left on the ground (W5), the help priced for the person's take (W6), a failed Astra undo (W7).
       replyRetryHeld: "Try again doesn't shoot on its own; press to shoot this frame.",
       replyHeldTake: "Nothing was shot: the {take} waits for its own press.",
+      // A message sent from the Sets home in "Ask before shooting": framed on arrival, never shot (Helios Cut 3, money fix).
+      replyHomeHeld: "You sent this before the set opened, so I framed it and shot nothing. Press Shoot when it looks right.",
       replyRepriced: "The price changed since; nothing was spent. Press again at the new price.",
       astraCutMessage: "Astra gets only the first {n} characters.",
       cantRaiseGround: "{name} can't sit or stand on top of things yet: the figure stays on the ground.",
