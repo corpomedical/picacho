@@ -7,6 +7,8 @@ import {
   ELEMENT_SHEETS_SENTENCES,
   ELEMENT_WINS_SENTENCE,
   LOOK_SENTENCE,
+  POSE_VERB,
+  SET_POSE_WORDS_OPEN,
   SET_SHOT_FIXED_SENTENCES,
   SOURCE_PHOTO_SENTENCE,
   buildSetShotPrompt,
@@ -14,6 +16,11 @@ import {
   stripSetShotScaffold,
   withoutElementSentences,
 } from "./set-shot-prompt";
+import { STAND_POSES, normaliseSetSpec } from "./set-spec";
+import { setElements } from "./elements";
+import raceTrack from "./fixtures-race-track.json";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 
 // The server-built prompt for a still in a Set. What it must always say is
@@ -392,5 +399,92 @@ describe("the things' own sheets (R1, 2026-09-21)", () => {
     expect(stripSetShotScaffold(p)).toBe("a red car at dusk");
     const without = withoutElementSentences(p);
     expect(without).toBe(buildSetShotPrompt({ description: "a red car at dusk", direction: "", look: {} }));
+  });
+});
+
+// The pose's own verb and "the car" (Helios Cut 2, step 9, 2026-09-25 —
+// operator: "Run, keep going."), admins only until the owner's proof stills
+// (check of the spec, item 2).
+describe("the figure's pose in the words", () => {
+  const layout = { mark: { x: 0, z: 0, facingDeg: 180 }, camera: { position: [0, 1.6, -5] as [number, number, number], target: [0, 1, 0] as [number, number, number], fovDeg: 40 } };
+
+  it("says what the figure does with its own verb, the same verb twice", () => {
+    for (const pose of STAND_POSES) {
+      const verb = POSE_VERB[pose];
+      const p = buildSetShotPrompt({ description: "d", direction: "", layout, pose });
+      expect(p, pose).toContain(`The person ${verb} where the grey figure ${verb}, at its scale; their body faces the camera.`);
+      expect(buildSetShotPrompt({ description: "d", direction: "", pose }), pose).toContain(`The person ${verb} where the grey figure ${verb}, at its scale, facing the same way.`);
+    }
+    expect(POSE_VERB).toEqual({ stand: "stands", sit: "sits", walk: "walks", lean: "leans" });
+  });
+
+  it("reads as it always did standing, or with no pose handed in", () => {
+    const today = buildSetShotPrompt({ description: "d", direction: "x", layout });
+    expect(buildSetShotPrompt({ description: "d", direction: "x", layout, pose: "stand" })).toBe(today);
+    expect(today).toContain("The person stands where the grey figure stands, at its scale; their body faces the camera.");
+  });
+
+  it("is stripped for the brand check with every verb and every facing", () => {
+    for (const pose of STAND_POSES) {
+      for (const facingDeg of [0, 45, 90, 135, 180, 225, 270, 315]) {
+        const full = buildSetShotPrompt({ description: "d", direction: "", layout: { ...layout, mark: { ...layout.mark, facingDeg } }, pose });
+        expect(stripSetShotScaffold(full), `${pose} ${facingDeg}`).toBe("d");
+      }
+      expect(stripSetShotScaffold(buildSetShotPrompt({ description: "d", direction: "", pose })), pose).toBe("d");
+    }
+    // Never a sentence that only looks like it: two different verbs are the person's words.
+    const theirs = "The person sits where the grey figure stands, at its scale, facing the same way.";
+    expect(stripSetShotScaffold(buildSetShotPrompt({ description: "d", direction: theirs }))).toBe(`d In this frame: ${theirs}`);
+  });
+
+  it("says 'the car' for a look at the set's only car, and the strip removes it for a still and a take", () => {
+    const n = normaliseSetSpec(raceTrack);
+    if (!n.ok) throw new Error("fixture");
+    const els = setElements(n.spec);
+    const car = els.find((e) => e.kind === "car");
+    if (!car) throw new Error("the race set has its car");
+    for (const lead of ["still", "take"] as const) {
+      const said = gazeWords({ at: "object", index: car.members[0][0] }, n.spec, { x: 0, z: 0, facingDeg: 0 }, lead, els);
+      expect(said).toMatch(/at the car, their eyes on it\.$/);
+      expect(stripSetShotScaffold(buildSetShotPrompt({ description: "d", direction: "x", gaze: said }))).toBe("d In this frame: x.");
+    }
+  });
+
+  it("is admins' until the owner's yes: shootStill and the take gate both on it (read as source)", () => {
+    expect(SET_POSE_WORDS_OPEN).toBe(false);
+    const src = readFileSync(join(__dirname, "actions.ts"), "utf8");
+    const still = src.slice(src.indexOf("async function shootStill("), src.indexOf("export async function takeInSet("));
+    expect(still).toContain("const poseWords = access.isAdmin || SET_POSE_WORDS_OPEN;");
+    expect(still).toContain("...(poseWords && layout ? { pose: layout.pose } : {}),");
+    expect(still).toContain('gazeWords(layout.gaze, shown, layout.mark, "still", poseWords ? els : undefined)');
+    const take = src.slice(src.indexOf("async function takeWork("));
+    expect(take).toContain('"take", access.isAdmin || SET_POSE_WORDS_OPEN ? endEls : undefined)');
+    // Nowhere else is a pose or the things handed to the words.
+    expect(src.match(/pose: layout\.pose/g)).toHaveLength(1);
+    expect(src.match(/gazeWords\(/g)).toHaveLength(2);
+  });
+});
+
+// Their words decide the clothes (Cut 2, step 9): the saved outfit photo
+// sits the shot out, on the still and on the take's end still and clip.
+// Read as source, as the other shootStill pins here are: actions.ts cannot
+// be loaded without its "@/" modules.
+describe("the outfit set aside", () => {
+  const src = readFileSync(join(__dirname, "actions.ts"), "utf8");
+  const still = src.slice(src.indexOf("async function shootStill("), src.indexOf("export async function takeInSet("));
+  const take = src.slice(src.indexOf("async function takeWork("));
+
+  it("sends use_outfit 0 on a still only when asked, before the render", () => {
+    expect(still).toContain('if (input.outfit === false) fd.set("use_outfit", "0");');
+    expect(still.indexOf('fd.set("use_outfit", "0")')).toBeLessThan(still.indexOf("runGeneration(fd)"));
+    expect(still.match(/fd\.set\("use_outfit"/g)).toHaveLength(1);
+  });
+
+  it("passes it to the take's end still and sets it on the clip", () => {
+    // Inside the end still's own input, not its options.
+    const endStill = take.slice(take.indexOf("await shootStill(access, setId, owned, {"), take.indexOf("startedAt: ctx.startedAt,"));
+    expect(endStill).toContain("...(input.outfit === false ? { outfit: false as const } : {}),");
+    expect(take).toContain('if (input.outfit === false) fd.set("use_outfit", "0");');
+    expect(take.indexOf('fd.set("use_outfit", "0")')).toBeLessThan(take.indexOf("runGeneration(fd)"));
   });
 });

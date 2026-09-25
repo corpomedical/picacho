@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PATH_MAX_POINTS, alongPath, gazeWords, normaliseGaze, normalisePath, pathLength, sideOf } from "./people";
-import { normaliseSetSpec } from "./set-spec";
+import { normaliseSetSpec, type SetObject } from "./set-spec";
+import { setElements } from "./elements";
 import showroomOpen from "./fixtures-showroom-open.json";
 
 // The people (cut D): where the figure looks, in words and on the stage,
@@ -45,6 +46,42 @@ describe("the eye-line", () => {
     expect(gazeWords({ at: "point", x: 5, z: 0 }, spec, mark)).toBe("They look off to their left, at something 5 m away, out of the frame.");
     expect(gazeWords({ at: "point", x: 3, z: 4 }, spec, mark)).toContain("straight ahead of them, at something 5 m away");
     expect(gazeWords({ at: "point", x: 0, z: -2 }, spec, mark)).toContain("back over their shoulder");
+  });
+});
+
+// "The car" by name (Helios Cut 2, step 9, 2026-09-25 — operator: "Run,
+// keep going."): a look at a block of the set's ONLY car names the car;
+// with two, which one is only in the geometry, so the geometry stays.
+describe("the eye-line on a car", () => {
+  const els = setElements(spec);
+  const car = els.find((e) => e.kind === "car");
+  if (!car) throw new Error("the showroom has its car");
+  const block = car.members[0][0];
+  const o = spec.objects[block];
+  const geometry = `They look at the ${o.shape} ${o.size.map((n) => Math.round(n * 10) / 10).join(" × ")} m, their eyes on it.`;
+
+  it("names the only car, for a still and a take", () => {
+    expect(gazeWords({ at: "object", index: block }, spec, mark, "still", els)).toBe("They look at the car, their eyes on it.");
+    expect(gazeWords({ at: "object", index: block }, spec, mark, "take", els)).toBe("By the end of the shot they look at the car, their eyes on it.");
+  });
+
+  it("keeps the geometry without the set's things handed in, as every still did", () => {
+    expect(gazeWords({ at: "object", index: block }, spec, mark)).toBe(geometry);
+  });
+
+  it("keeps the geometry with two cars, and for a block that is no car", () => {
+    const members = [...new Set(car.members.map(([m]) => m))];
+    const copies = members.map((i) => ({ ...spec.objects[i], position: [spec.objects[i].position[0] - 9, spec.objects[i].position[1], spec.objects[i].position[2]] }) as SetObject);
+    const two = normaliseSetSpec({ ...spec, objects: [...spec.objects, ...copies] });
+    if (!two.ok) throw new Error("two cars");
+    const twoEls = setElements(two.spec);
+    expect(twoEls.filter((e) => e.kind === "car")).toHaveLength(2);
+    expect(gazeWords({ at: "object", index: block }, two.spec, mark, "still", twoEls)).toBe(geometry);
+    const loose = els.find((e) => e.kind === "object");
+    if (loose) {
+      const lo = spec.objects[loose.members[0][0]];
+      expect(gazeWords({ at: "object", index: loose.members[0][0] }, spec, mark, "still", els)).toContain(`the ${lo.shape} `);
+    }
   });
 });
 

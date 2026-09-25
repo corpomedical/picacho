@@ -49,6 +49,16 @@ describe("stripSetTakeScaffold", () => {
     }
   });
 
+  it("for an eye-line at the set's only car, by name (Cut 2, step 9)", () => {
+    const car = { objects: [thing("box", [4.4, 1.2, 1.9])] };
+    const gaze = gazeWords({ at: "object", index: 0 }, car, mark, "take", [{ kind: "car", members: [[0, 0]] }]);
+    expect(gaze).toBe("By the end of the shot they look at the car, their eyes on it.");
+    expect(stripSetTakeScaffold(buildSetTakePrompt(DIRECTION, { gaze }))).toBe(SAID);
+    const vehicle = gazeWords({ at: "object", index: 0 }, car, mark, "take", [{ kind: "vehicle", members: [[0, 0]] }]);
+    expect(vehicle).toBe("By the end of the shot they look at the vehicle, their eyes on it.");
+    expect(stripSetTakeScaffold(buildSetTakePrompt(DIRECTION, { gaze: vehicle }))).toBe(SAID);
+  });
+
   it("for an eye-line at the camera, at a thing and out of the frame", () => {
     for (const g of gazes) {
       const gaze = gazeWords(g, spec, mark, "take");

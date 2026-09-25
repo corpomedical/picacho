@@ -29,7 +29,7 @@
 //
 // Relative imports only: tested without the "@/" alias.
 
-import { SET_SHAPES, cleanText, type SetLayout } from "./set-spec";
+import { SET_SHAPES, cleanText, type SetLayout, type StandPose } from "./set-spec";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 import { RIG_FIXED_SENTENCES, RIG_NUMBERED_SENTENCE } from "./rig";
 import { RIG_BLADES, bladesWords } from "./furniture";
@@ -154,6 +154,23 @@ const LIGHT_WINS_SENTENCE = "Where the description's hour or light differs from 
 // until 2026-09-18 only the description reached the model.
 const HOUR_WINS_SENTENCE = "Where the description's hour differs from the time of day above, the hour above wins.";
 const RENDER_PREFIX = "Render the location photorealistically, as it really looks";
+
+// The figure's pose in the words (Helios Cut 2, step 9, 2026-09-25 —
+// operator: "Run, keep going."). The stage draws the grey figure sitting,
+// walking or leaning, but every still said it "stands" where the figure
+// stands, so a leaning figure was read against the words. The verb now
+// follows the pose, and an eye-line on the set's only car says "the car"
+// (people.ts gazeWords) instead of its biggest block's size.
+//
+// NOT YET FOR EVERYONE (check of the spec, item 2): both change the paid
+// still's prompt, and no still has proved the sit and lean verbs yet. They
+// go to admins only until the owner says yes to 2–3 one-credit proof
+// stills; then this flips to true in its own commit. With it false, every
+// other account's still reads exactly as it did (actions.ts shootStill).
+export const SET_POSE_WORDS_OPEN = false;
+
+/** The verb the figure sentence says for each pose: the person does what the grey figure does, where it does it. */
+export const POSE_VERB: Record<StandPose, string> = { stand: "stands", sit: "sits", walk: "walks", lean: "leans" };
 const GAZE_SENTENCE = "Wherever they are looking, make it unmistakable: turn the head and eyes to it.";
 const FACE_SENTENCE = "The grey figure has no face, hair or clothing to copy: take the person's face, hair and features only from the character photos.";
 const NO_TEXT_SENTENCE = "No text, logos or brand names anywhere in the picture.";
@@ -245,12 +262,15 @@ export const SET_SHOT_GAZE_SENTENCE = new RegExp(
   "(?:By the end of the shot they|They) look " +
     "(?:straight into the camera, eyes to the lens" +
     `|at the (?:${SET_SHAPES.join("|")}) ${GAZE_N} × ${GAZE_N} × ${GAZE_N} m, their eyes on it` +
+    // The set's only car or vehicle, by name (Cut 2, step 9): people.ts thing().
+    "|at the (?:car|vehicle), their eyes on it" +
     `|(?:straight ahead of them|back over their shoulder|off to their (?:left|right)), at something ${GAZE_N} m away, out of the frame` +
     ")\\.",
   "g",
 );
+// Every pose's verb (POSE_VERB), the same verb twice.
 const FIGURE_FACING_SENTENCE =
-  /The person stands where the grey figure stands, at its scale(?:, facing the same way|; their body (?:faces the camera|has their back to the camera|is in profile, facing frame (?:left|right)|is turned three-quarters (?:toward|away from) the camera, facing frame (?:left|right)))\./g;
+  /The person (stands|sits|walks|leans) where the grey figure \1, at its scale(?:, facing the same way|; their body (?:faces the camera|has their back to the camera|is in profile, facing frame (?:left|right)|is turned three-quarters (?:toward|away from) the camera, facing frame (?:left|right)))\./g;
 
 /**
  * The prompt's fixed sentences — Picacho's own words, the same in every Set
@@ -319,10 +339,13 @@ export function buildSetShotPrompt(input: {
   elements?: readonly string[];
   /** Every thing whose sheet rides was drawn plain grey in the sketch (2026-09-24). */
   elementsGrey?: boolean;
+  /** The figure's pose (Cut 2, step 9), said with its own verb; absent or "stand" reads as it always did. Only where SET_POSE_WORDS_OPEN allows (actions.ts). */
+  pose?: StandPose;
 }): string {
   const description = cleanText(input.description, 300);
   const direction = cleanText(input.direction, SET_DIRECTION_MAX_CHARS);
   const facing = describeFacing(input.layout ?? null);
+  const verb = POSE_VERB[input.pose ?? "stand"] ?? POSE_VERB.stand;
   return [
     ...SKETCH_SENTENCES,
     input.band === "rows" ? BAND_ROWS_SENTENCE : input.band === "columns" ? BAND_COLUMNS_SENTENCE : "",
@@ -350,8 +373,8 @@ export function buildSetShotPrompt(input: {
       : []),
     input.sourcePhoto ? SOURCE_PHOTO_SENTENCE : "",
     facing
-      ? `The person stands where the grey figure stands, at its scale; their body ${facing}.`
-      : "The person stands where the grey figure stands, at its scale, facing the same way.",
+      ? `The person ${verb} where the grey figure ${verb}, at its scale; their body ${facing}.`
+      : `The person ${verb} where the grey figure ${verb}, at its scale, facing the same way.`,
     input.gaze ?? "",
     // Closed with a full stop when it has none: the words reader hands its
     // direction back bare, and be0a3eaa's prompt read "a helmet on her hand

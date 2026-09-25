@@ -8,6 +8,7 @@
 // layout reads a gaze through here, so nothing here may import it at run
 // time.
 
+import type { SetElement } from "./elements";
 import type { SetObject, SetSpec } from "./set-spec";
 
 export type Gaze = { at: "camera" } | { at: "object"; index: number } | { at: "point"; x: number; z: number };
@@ -33,8 +34,21 @@ export function normaliseGaze(v: unknown, objects: number): Gaze | null {
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
-/** How a thing is named to the models: its shape and its size, the way the scene tree names it (furniture.ts says the same). */
-function thing(o: SetObject): string {
+/** The set's things as the words need them (elements.ts setElements): what each is, and which blocks it is made of. */
+export type NamedThings = readonly Pick<SetElement, "kind" | "members">[];
+
+/**
+ * How a thing is named to the models: its shape and its size, the way the
+ * scene tree names it (furniture.ts says the same). With the set's things
+ * handed in (Helios Cut 2, step 9, 2026-09-25), a block of the set's ONLY
+ * car is "the car", and of its only vehicle "the vehicle": the model draws
+ * a car there, and "the box 4.4 × 1.2 × 1.9 m" is a block it was told
+ * never to draw. With two cars, which one is only in the geometry, so the
+ * geometry stays (set-shot-prompt.ts SET_POSE_WORDS_OPEN gates who gets it).
+ */
+function thing(o: SetObject, index: number, els?: NamedThings): string {
+  const el = els?.find((e) => e.members.some(([m]) => m === index));
+  if (els && el && (el.kind === "car" || el.kind === "vehicle") && els.filter((e) => e.kind === el.kind).length === 1) return `the ${el.kind}`;
   return `the ${o.shape} ${r1(o.size[0])} × ${r1(o.size[1])} × ${r1(o.size[2])} m`;
 }
 
@@ -55,20 +69,23 @@ export function sideOf(mark: { x: number; z: number; facingDeg: number }, point:
 /**
  * The eye-line as a sentence. `lead` opens it: "They look" for a still,
  * "By the end of the shot they look" for a take. Empty with no gaze, or a
- * thing the set no longer has.
+ * thing the set no longer has. `els`, the set's things, lets a look at the
+ * only car say "the car" (thing above); without it, the words are as they
+ * always were.
  */
 export function gazeWords(
   gaze: Gaze | null,
   spec: Pick<SetSpec, "objects">,
   mark: { x: number; z: number; facingDeg: number },
   lead: "still" | "take" = "still",
+  els?: NamedThings,
 ): string {
   if (!gaze) return "";
   const open = lead === "take" ? "By the end of the shot they look" : "They look";
   if (gaze.at === "camera") return `${open} straight into the camera, eyes to the lens.`;
   if (gaze.at === "object") {
     const o = spec.objects[gaze.index];
-    return o ? `${open} at ${thing(o)}, their eyes on it.` : "";
+    return o ? `${open} at ${thing(o, gaze.index, els)}, their eyes on it.` : "";
   }
   const d = r1(Math.hypot(gaze.x - mark.x, gaze.z - mark.z));
   const side = sideOf(mark, gaze);

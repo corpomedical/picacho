@@ -82,6 +82,8 @@ export type SetCharacter = {
   thumbUrl: string | null;
   /** Who is in its photos has not been answered for these photos (likeness.ts): the figure's card asks before a shot. */
   likenessNeeded?: boolean;
+  /** A saved outfit photo rides this character's shots (Helios Cut 2, step 9): the chat can set it aside for words that say what they wear. */
+  hasOutfit?: boolean;
 };
 
 export type SetDetail = {

@@ -186,10 +186,10 @@ function world(items: { gen: Row; shot: Row }[], opts: { takeColumn?: boolean } 
       rows: items.map((i) => i.gen),
     },
     character_profiles: {
-      columns: ["id", "user_id", "name", "reference_image_urls", "created_at"],
+      columns: ["id", "user_id", "name", "reference_image_urls", "outfit_image_urls", "created_at"],
       rows: [
-        { id: PERSON, user_id: USER, name: "Eva", reference_image_urls: ["eva.jpg"], created_at: at(0) },
-        { id: NO_PHOTO, user_id: USER, name: "Sam", reference_image_urls: [], created_at: at(0) },
+        { id: PERSON, user_id: USER, name: "Eva", reference_image_urls: ["eva.jpg"], outfit_image_urls: ["eva-suit.jpg"], created_at: at(0) },
+        { id: NO_PHOTO, user_id: USER, name: "Sam", reference_image_urls: [], outfit_image_urls: null, created_at: at(0) },
       ],
     },
     app_settings: { columns: ["key", "value"], rows: [] },
@@ -260,6 +260,26 @@ describe("the month's Astra changes, for the editor", () => {
     expect((await page(ready(world([still(1)])))).astraEditsCap).toBe(-1);
     who = { plan: "starter", isAdmin: false };
     expect((await page(ready(world([still(1)])))).astraEditsCap).toBe(setEditsMonthlyLimit("starter", false));
+  });
+});
+
+// Whether a saved outfit photo rides a character's shots (Helios Cut 2,
+// step 9, 2026-09-25): the chat sets it aside for words that say what they
+// wear only when there is one to set aside.
+describe("a character's saved outfit", () => {
+  const ready = (tables: Tables): Tables => {
+    tables.location_sets.rows[0] = { ...tables.location_sets.rows[0], status: "ready", spec: raceTrack };
+    return tables;
+  };
+
+  it("is known for each character the page can cast", async () => {
+    const out = await page(ready(world([still(1)])));
+    expect(out.characters.map((c) => [c.name, c.hasOutfit])).toEqual([["Eva", true]]);
+    const tables = ready(world([still(1)]));
+    tables.character_profiles.rows[0].outfit_image_urls = [];
+    expect((await page(tables)).characters[0].hasOutfit).toBe(false);
+    tables.character_profiles.rows[0].outfit_image_urls = null;
+    expect((await page(tables)).characters[0].hasOutfit).toBe(false);
   });
 });
 

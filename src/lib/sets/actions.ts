@@ -38,7 +38,7 @@ import {
 import { cleanText, normaliseElementOrder, normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
 import { setBuildInput } from "@/lib/sets/set-builder-prompt";
 import { photoBuildRequest, setAstraRequest } from "@/lib/sets/astra-request";
-import { buildSetShotPrompt } from "@/lib/sets/set-shot-prompt";
+import { buildSetShotPrompt, SET_POSE_WORDS_OPEN } from "@/lib/sets/set-shot-prompt";
 import {
   buildSetTakePrompt,
   isSetTakeEngine,
@@ -782,6 +782,13 @@ async function shootStill(
      * rides was drawn grey.
      */
     greyed?: unknown;
+    /**
+     * The person's own words say what they wear for this shot (Helios Cut 2,
+     * step 9, 2026-09-25): false sets the character's saved outfit photo
+     * aside for it, as the composer's outfit chip does ("use_outfit" 0,
+     * generations/actions.ts). Anything else keeps the outfit, as before.
+     */
+    outfit?: false;
   },
   opts: ShootOpts,
 ): Promise<ShootResult> {
@@ -1028,14 +1035,19 @@ async function shootStill(
     : { distanceM: 0, fovDeg: 40, cameraBearingDeg: 0, push };
   const rigWords = rigWordsByItem(rig, rigCtx);
   const fd = new FormData();
+  // The pose's own verb and "the car" in an eye-line (Cut 2, step 9): admins
+  // only until the owner's proof stills say yes (set-shot-prompt.ts
+  // SET_POSE_WORDS_OPEN); everyone else's still reads as it did.
+  const poseWords = access.isAdmin || SET_POSE_WORDS_OPEN;
   // `lifted` only chooses whether the prompt explains a brightened sketch;
   // a false value from a crafted request changes one sentence, still gated.
   const shot = {
     description: owned.spec.description,
     lifted: input.lifted === true,
     layout,
+    ...(poseWords && layout ? { pose: layout.pose } : {}),
     // The eye-line (cut D): the layout's gaze, read against the set, in Picacho's words.
-    gaze: layout ? gazeWords(layout.gaze, shown, layout.mark) : "",
+    gaze: layout ? gazeWords(layout.gaze, shown, layout.mark, "still", poseWords ? els : undefined) : "",
     look,
     sourcePhoto: sourcePhotoUrl !== null,
     rig: rigSentences(rig, rigCtx),
@@ -1084,6 +1096,8 @@ async function shootStill(
   // instead of paying for another (generations/repeat-send.ts).
   if (opts.generationId) fd.set("generation_id", opts.generationId);
   fd.set("character_id", characterId);
+  // Their words decide the clothes this time (Cut 2, step 9): the saved outfit photo sits it out.
+  if (input.outfit === false) fd.set("use_outfit", "0");
   // The prompt is already the one the image model should read: the drafter
   // would rewrite the composition instructions it exists to carry. Still
   // gated, in the strict lane, inside runGeneration.
@@ -1352,6 +1366,8 @@ async function takeWork(
     /** The still engine and the things drawn grey in the sketch, as a still's (shootStill). */
     stillEngine?: unknown;
     greyed?: unknown;
+    /** Their words decide the clothes (Cut 2, step 9): false sets the saved outfit photo aside for the end still and the clip. */
+    outfit?: false;
   },
   ctx: TakeCtx,
 ): Promise<TakeResult> {
@@ -1500,6 +1516,7 @@ async function takeWork(
       // Where this beat leaves the things that move (movers.ts): the frame
       // was drawn with them there.
       movers: input.movers,
+      ...(input.outfit === false ? { outfit: false as const } : {}),
     }, {
       startedAt: ctx.startedAt,
       // The end still's row id is the press's (press.ts), so a resend meets it.
@@ -1555,6 +1572,8 @@ async function takeWork(
   fd.set("video_model_id", engine.model);
   fd.set("video_duration_seconds", String(engine.seconds));
   fd.set("character_id", input.characterId);
+  // The clip keeps the end still's clothes (Cut 2, step 9): their words, not the saved outfit photo.
+  if (input.outfit === false) fd.set("use_outfit", "0");
   // The clip's row id, made from the press's (press.ts, 2026-09-25): a
   // resend of this press meets it at the reservation instead of paying for
   // a second clip.
@@ -1563,7 +1582,8 @@ async function takeWork(
   // Where the figure ends (the take's own layout), for the eye-line's side words.
   const endLayout = normaliseSetLayout(input.layout, owned.spec);
   // And where the things that move end (movers.ts), for the same words.
-  const endShown = movedSpec(owned.spec, setElements(owned.spec), normalisePlacements(input.movers));
+  const endEls = setElements(owned.spec);
+  const endShown = movedSpec(owned.spec, endEls, normalisePlacements(input.movers));
   const endMark = endLayout?.mark ?? { x: owned.spec.marks[0].x, z: owned.spec.marks[0].z, facingDeg: owned.spec.marks[0].facingDeg };
   fd.set(
     "prompt",
@@ -1574,7 +1594,8 @@ async function takeWork(
       // names a thing by where it stands, and a thing that drove away stands
       // somewhere else by the last frame.
       rack: rackWords(normaliseRack(input.rack, owned.spec.objects.length), endShown),
-      gaze: gazeWords(normaliseGaze(input.gaze, owned.spec.objects.length), endShown, endMark, "take"),
+      // "The car" by name only where the pose words are open (Cut 2, step 9), as the end still says it.
+      gaze: gazeWords(normaliseGaze(input.gaze, owned.spec.objects.length), endShown, endMark, "take", access.isAdmin || SET_POSE_WORDS_OPEN ? endEls : undefined),
     }),
   );
   // The words are already what the video model should read: the drafter

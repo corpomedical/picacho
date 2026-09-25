@@ -55,7 +55,7 @@ async function shootableCharacters(db: SupabaseClient, userId: string): Promise<
 async function charactersOf(db: SupabaseClient, userId: string): Promise<{ shootable: SetCharacter[]; unshootable: { id: string; name: string }[] }> {
   const { data: chars } = await db
     .from("character_profiles")
-    .select("id, name, reference_image_urls")
+    .select("id, name, reference_image_urls, outfit_image_urls")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -70,6 +70,10 @@ async function charactersOf(db: SupabaseClient, userId: string): Promise<{ shoot
       name: (c.name as string) ?? "",
       thumbUrl: thumbUrl(mediaUrl("character-references", (c.reference_image_urls as string[])[0]), 320),
       likenessNeeded: !likeness.missing && needsLikenessAnswer({ paths: c.reference_image_urls as string[], record: likeness.records.get(c.id as string) ?? null }),
+      // A saved outfit photo rides their shots unless their words say what
+      // they wear (Helios Cut 2, step 9): the chat sets it aside only when
+      // there is one, and says so (turn-plan.ts).
+      hasOutfit: Array.isArray(c.outfit_image_urls) && c.outfit_image_urls.length > 0,
     })),
     unshootable: (chars ?? []).filter((c) => !has(c)).map((c) => ({ id: c.id as string, name: (c.name as string) ?? "" })),
   };
