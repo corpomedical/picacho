@@ -6672,6 +6672,8 @@ export function SetView({
   async function send(text: string, opts?: { origin?: "build"; home?: boolean }) {
     const message = text.trim();
     if (!message || reading || shooting || editingSet || !ready) return;
+    // A folded phone chat unfolds to show the answer (Helios Cut 3, step 2).
+    if (!wide) setChatOpen(true);
     // Reader v2 runs the message as one turn (Helios Cut 2, step 11a):
     // admins, until the phrase check passes. Everyone else keeps v1 below.
     if (readerV2 && !readerOffRef.current) return sendTurn(message, opts);
@@ -9204,14 +9206,21 @@ export function SetView({
               <span className="text-[11px] font-medium uppercase tracking-widest text-[#c6c9d1]">{s.astraLabel}</span>
               <span className="flex items-center gap-2">
                 <span className="text-[11px] text-[#9aa0ad]">{formatMsg(s.panelMeta, { engine: stillEngineName })}</span>
+                {/* The phone's fold (Helios Cut 3, step 2): the conversation folds away and the
+                    words box with its priced send stays; before, this button was hidden below md,
+                    the only width that draws this header, so a phone's chat could not be closed.
+                    A 36 px target; the negative margins keep the header's height as designed. */}
                 <button
                   type="button"
-                  onClick={() => setChatOpen(false)}
-                  title={s.chatHide}
-                  aria-label={s.chatHide}
-                  className="hidden h-6 w-6 cursor-pointer items-center justify-center rounded text-[#d6d9e0] hover:text-[#ecedf1] md:flex"
+                  onClick={() => setChatOpen((v) => !v)}
+                  aria-expanded={chatOpen}
+                  title={chatOpen ? s.chatHide : s.palette.chatShow}
+                  aria-label={chatOpen ? s.chatHide : s.palette.chatShow}
+                  className="-my-2.5 -mr-2 flex h-9 w-9 cursor-pointer items-center justify-center rounded text-[#d6d9e0] hover:text-[#ecedf1]"
                 >
-                  ›
+                  <span aria-hidden className={`inline-block transition-transform motion-reduce:transition-none ${chatOpen ? "rotate-90" : "-rotate-90"}`}>
+                    ›
+                  </span>
                 </button>
               </span>
             </div>
@@ -11048,19 +11057,18 @@ export function SetView({
         {!wide && elementCardView("sheet")}
 
         {/* On a phone the conversation sits under the stage; on the frame it is the dock's Astra tab, with the composer at the dock's foot. */}
-        {!wide &&
-          (chatOpen ? (
-            <aside className={`z-30 flex h-[42%] min-h-0 flex-none flex-col overflow-hidden border-t border-[rgba(255,255,255,0.11)] bg-[#16171c] ${PANEL_BG} border-x-0 border-b-0 shadow-none`}>
-              {chatHeader}
-              {chatThread}
-              {chatComposer}
-            </aside>
-          ) : (
-            <button type="button" onClick={() => setChatOpen(true)} className={`absolute bottom-3.5 right-3.5 z-30 ${DCHIP} h-10 pl-1.5`}>
-              <AstraMark />
-              {s.astraLabel}
-            </button>
-          ))}
+        {/* Folded (Helios Cut 3, step 2), the thread goes and the header and the words box
+            stay, so the priced send is always on screen; the folded panel does not clip, so
+            the composer's "/" and @ menus still open upward over the stage. */}
+        {!wide && (
+          <aside
+            className={`z-30 flex min-h-0 flex-none flex-col ${chatOpen ? "h-[42%] overflow-hidden" : "overflow-visible"} border-t border-[rgba(255,255,255,0.11)] bg-[#16171c] ${PANEL_BG} border-x-0 border-b-0 shadow-none`}
+          >
+            {chatHeader}
+            {chatOpen && chatThread}
+            {chatComposer}
+          </aside>
+        )}
       </div>
 
         {wide && simpleOn && !cutOpen && stepPanelView()}
