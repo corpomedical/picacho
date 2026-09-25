@@ -43,9 +43,14 @@ const WEB_MIC_DENIED =
 
 export type VoicePhase = "off" | "listening" | "hearing" | "sending" | "speaking";
 export type SpokenAudio = { data: string; mime: string; seconds: number };
+/** One piece of a spoken reply: the human voice's fal.media URL, or the fallback's MP3 bytes. */
+export type SpokenPiece = { url: string } | { data: string };
 
+// 850 → 700 ms (2026-09-25, operator: "make it faster at responses"): the
+// pause that ends a turn. 700 still bridges the breath between two clauses;
+// shorter starts cutting people off mid-thought.
 const TICK_MS = 50;
-const SILENCE_MS = 850;
+const SILENCE_MS = 700;
 const MIN_VOICED_MS = 250;
 const BARGE_MS = 350;
 const MAX_SPEECH_MS = 45_000;
@@ -64,6 +69,42 @@ function toBase64(blob: Blob): Promise<string> {
     r.onerror = () => reject(r.error);
     r.readAsDataURL(blob);
   });
+}
+
+type Prepared = { el: HTMLAudioElement; release: () => void; crossOrigin: boolean };
+
+/**
+ * A piece becomes an audio element the moment it arrives, so it is already
+ * loading while the piece before it plays — the gap between sentences is
+ * then only what the browser needs to start, not a download.
+ *
+ * The human voice plays straight from fal.media (the CSP allows it). It is
+ * requested with CORS — crossOrigin BEFORE src — because a cross-origin file
+ * without it still plays through the session's graph, but SILENT: the browser
+ * zeroes its samples. fal answers with access-control-allow-origin: *
+ * (checked 2026-09-25). The fallback's bytes play from a blob: URL, never
+ * data: (lib/audio/playable-url.ts).
+ */
+function prepare(piece: SpokenPiece): Prepared {
+  const el = new Audio();
+  el.preload = "auto";
+  if ("url" in piece) {
+    el.crossOrigin = "anonymous";
+    el.src = piece.url;
+    return { el, release: () => {}, crossOrigin: true };
+  }
+  const source = playableAudioUrl(piece.data);
+  el.src = source.url;
+  return { el, release: source.release, crossOrigin: false };
+}
+
+function discard(p: Prepared) {
+  p.el.pause();
+  p.el.removeAttribute("src");
+  try {
+    p.el.load();
+  } catch {}
+  p.release();
 }
 
 function rmsOf(analyser: AnalyserNode, buf: Float32Array<ArrayBuffer>): number {
@@ -105,7 +146,7 @@ export function useHandsFree({
   }, [onUtterance, onInterrupt]);
 
   // Playback: pieces arrive by index and play strictly in order.
-  const queue = useRef(new Map<number, string>());
+  const queue = useRef(new Map<number, Prepared>());
   const nextIndex = useRef(0);
   const playing = useRef<HTMLAudioElement | null>(null);
   const turnDone = useRef(true);
@@ -178,19 +219,24 @@ export function useHandsFree({
     [newSegment],
   );
 
-  const stopPlayback = useCallback(() => {
+  const clearQueue = useCallback(() => {
+    queue.current.forEach(discard);
     queue.current.clear();
+  }, []);
+
+  const stopPlayback = useCallback(() => {
+    clearQueue();
     if (playing.current) {
       playing.current.pause();
       playing.current = null;
     }
-  }, []);
+  }, [clearQueue]);
 
   const playNext = useCallback(() => {
     if (playing.current) return;
-    if (dropTurnAudio.current) queue.current.clear();
-    const data = queue.current.get(nextIndex.current);
-    if (data === undefined) {
+    if (dropTurnAudio.current) clearQueue();
+    const piece = queue.current.get(nextIndex.current);
+    if (piece === undefined) {
       if (turnDone.current && phaseRef.current === "speaking") {
         if (endPending.current) stopRef.current();
         else go(session.current ? "listening" : "off");
@@ -199,10 +245,7 @@ export function useHandsFree({
     }
     queue.current.delete(nextIndex.current);
     nextIndex.current++;
-    // A blob: URL, not data: — the site's CSP refuses data: media, which is
-    // why no reply was ever heard (lib/audio/playable-url.ts).
-    const source = playableAudioUrl(data);
-    const el = new Audio(source.url);
+    const el = piece.el;
     const s = session.current;
     if (s && s.ctx.state === "running") {
       // Through the session's graph, so the bulb can follow the reply's voice.
@@ -214,18 +257,38 @@ export function useHandsFree({
     }
     playing.current = el;
     go("speaking");
+    let settled = false;
     const done = () => {
-      source.release();
+      if (settled) return;
+      settled = true;
+      piece.release();
       if (playing.current === el) playing.current = null;
       playNextRef.current();
     };
     el.onended = done;
-    el.onerror = done;
-    void el.play().catch(() => {
-      setNotice("Tap anywhere to let the Producer's voice play.");
+    el.onerror = () => {
+      // The CORS request failed (fal changed its headers, a proxy stripped
+      // them): the same file once more as a plain element outside the graph —
+      // heard without the light rather than not heard.
+      if (piece.crossOrigin && !settled) {
+        const plain = new Audio(el.src);
+        playing.current = plain;
+        plain.onended = done;
+        plain.onerror = done;
+        void plain.play().catch(done);
+        return;
+      }
       done();
+    };
+    void el.play().catch((err: unknown) => {
+      // A load failure is el.onerror's to handle; only a refused play (no
+      // user gesture yet) asks for a tap.
+      if ((err as { name?: string } | null)?.name === "NotAllowedError") {
+        setNotice("Tap anywhere to let the Producer's voice play.");
+        done();
+      }
     });
-  }, [go]);
+  }, [go, clearQueue]);
 
   useEffect(() => {
     playNextRef.current = playNext;
@@ -402,9 +465,11 @@ export function useHandsFree({
   }, [stopPlayback]);
 
   const enqueue = useCallback(
-    (index: number, data: string) => {
+    (index: number, piece: SpokenPiece) => {
       if (dropTurnAudio.current) return;
-      queue.current.set(index, data);
+      const old = queue.current.get(index);
+      if (old) discard(old);
+      queue.current.set(index, prepare(piece));
       playNext();
     },
     [playNext],

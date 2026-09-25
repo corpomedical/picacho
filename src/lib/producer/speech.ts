@@ -1,13 +1,14 @@
 import { fetchWithTimeout } from "../generations/providers/fetch-with-timeout";
-import { MAX_SPOKEN_SECONDS, SPEECH_MODEL, TRANSCRIBE_MODEL } from "./prices";
+import { HUMAN_SPEECH_ENDPOINT, MAX_SPOKEN_SECONDS, SPEECH_MODEL, TRANSCRIBE_MODEL } from "./prices";
 
 // The Producer's ears and voice (2026-09-25, operator: "OpenAI in + out").
 //
 // Same provider and key as the composer's mic (lib/voice/actions.ts), but
 // metered like the rest of a Producer turn: the route adds each call's cost
-// to the turn and settles once. Neither function keeps the audio — a
-// recording is transcribed and dropped, and speech goes straight back to the
-// person's device (privacy policy, "Voice and the assistant").
+// to the turn and settles once. We keep no audio — a recording is transcribed
+// and dropped; the OpenAI voice goes straight back to the person's device,
+// and the human voice's file is the one fal hosts for every render (privacy
+// policy, "Voice and the assistant", names both providers).
 
 // A minute of Opus-in-WebM at the ~32 kbit/s browsers record speech at is
 // ~240 KB; 2 MB leaves room for Safari's larger mp4/AAC without letting one
@@ -77,7 +78,56 @@ export async function transcribe(input: SpokenInput): Promise<string> {
   return typeof data.text === "string" ? data.text.trim() : "";
 }
 
-/** Text → MP3 bytes as base64. Throws on a provider failure. */
+// THE HUMAN VOICE (2026-09-25, operator: "make it sound more human … its
+// sounds ai"): ElevenLabs Turbo v2.5 on fal, speaking with one of the
+// admin-picked voices in voice_presets (never a named ElevenLabs default —
+// those are being retired, see providers/fal.ts generateSpeech).
+//
+// What makes it sound like one person talking rather than sentences read one
+// by one: every piece is sent with `previous_text`, so the model knows where
+// the reply has come from and carries the intonation on. Stability 0.4 lets
+// the delivery move (ElevenLabs' own guidance: lower is more expressive,
+// higher more monotone); speed 1.05 is conversational rather than read-aloud.
+//
+// Returns fal's audio URL. The browser plays it straight from fal.media: the
+// site's CSP allows https://*.fal.media for media, and fal serves it with
+// access-control-allow-origin: * (checked 2026-09-25), so it can also run
+// through the page's audio graph for the bulb's light. No download, no
+// re-encoding on our side — the first sound arrives sooner.
+export async function speakHuman(text: string, voiceId: string, previousText: string): Promise<string> {
+  const res = await fetchWithTimeout(
+    `https://fal.run/${HUMAN_SPEECH_ENDPOINT}`,
+    {
+      method: "POST",
+      headers: { authorization: `Key ${process.env.FAL_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        text,
+        voice: voiceId,
+        stability: 0.4,
+        similarity_boost: 0.75,
+        speed: 1.05,
+        ...(previousText ? { previous_text: previousText.slice(-600) } : {}),
+      }),
+    },
+    20_000,
+  );
+  if (!res.ok) {
+    console.error("producer: human speech failed", res.status, (await res.text()).slice(0, 300));
+    throw new Error(`human speech ${res.status}`);
+  }
+  const data = (await res.json()) as { audio?: { url?: unknown } };
+  const url = data.audio?.url;
+  if (typeof url !== "string" || !/^https:\/\/[a-z0-9.-]*fal\.media\//i.test(url)) {
+    throw new Error("human speech: no audio url");
+  }
+  return url;
+}
+
+export function isHumanVoiceConfigured(): boolean {
+  return Boolean(process.env.FAL_KEY);
+}
+
+/** Text → MP3 bytes as base64 (the OpenAI fallback voice). Throws on a provider failure. */
 export async function speak(text: string): Promise<string> {
   const res = await fetchWithTimeout(
     "https://api.openai.com/v1/audio/speech",

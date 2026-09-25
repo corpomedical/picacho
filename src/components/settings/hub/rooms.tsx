@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { ProducerNameForm } from "@/components/settings/producer-name-form";
+import { ProducerVoiceForm } from "@/components/settings/producer-voice-form";
+import type { ProducerVoiceChoice } from "@/lib/producer/actions";
 import type { Messages } from "@/lib/i18n/messages";
 import type { Locale } from "@/lib/i18n/locales";
 import { localizedHref } from "@/lib/i18n/routing";
@@ -136,6 +138,7 @@ export function PreferencesTab({
   setsOn,
   marketingEnabled,
   producerName = null,
+  producerVoices = null,
 }: {
   t: Messages;
   notifyPrefs: { notify_render_ready: boolean; notify_render_failed: boolean; notify_low_credits: boolean };
@@ -145,6 +148,8 @@ export function PreferencesTab({
   marketingEnabled: boolean;
   /** The Producer's name, or null when this account has no Producer. */
   producerName?: string | null;
+  /** The voices it can speak with and the current one, or null when this account has no Producer. */
+  producerVoices?: { voices: ProducerVoiceChoice[]; current: string | null } | null;
 }) {
   const s = t.settings;
   return (
@@ -165,6 +170,15 @@ export function PreferencesTab({
       {producerName !== null && (
         <SettingsSection title="Your assistant" description="What the lamp in the corner answers to. Pick one, or give it your own name.">
           <ProducerNameForm initialName={producerName} />
+          {producerVoices && (
+            <div className="space-y-3 border-t border-atelier-rule/60 pt-5">
+              <div>
+                <p className="text-sm font-medium text-atelier-ink">Its voice</p>
+                <p className="mt-0.5 text-xs text-atelier-muted">How it sounds when it talks back. Tap ▶ to hear one.</p>
+              </div>
+              <ProducerVoiceForm voices={producerVoices.voices} current={producerVoices.current} />
+            </div>
+          )}
         </SettingsSection>
       )}
       {/* ?tab=notifications lands on this anchor. */}

@@ -15,7 +15,7 @@ import { readSpokenInput, MAX_AUDIO_BYTES } from "./speech";
 import { spotForTool, spotSelector, isSpot } from "./spots";
 import { runNotesCommand, normalizeNotePath, MAX_NOTES, type Note, type NotesStore } from "./notes";
 import { PRODUCER_TOOLS, composerHref, isVoiceAction, readSearchFilters, searchText, validatePreparedSend } from "./tools";
-import { closeTail, visibleText, INTERRUPTED_ANSWER } from "./history";
+import { closeTail, currentEffort, effortMessage, toApiMessage, visibleText, INTERRUPTED_ANSWER } from "./history";
 import { parseProducerFrames } from "./sse";
 import { producerAllowed, PRODUCER_NEEDS_ELITE, PRODUCER_NOT_OPEN, PRODUCER_SUSPENDED } from "./enabled";
 import { VIDEO_MODELS, isDormantVideoModel, requiresReferenceImage } from "../generations/providers/video-models";
@@ -225,6 +225,24 @@ describe("history", () => {
   it("shows only text blocks", () => {
     expect(visibleText([{ type: "thinking", thinking: "secret" }, { type: "text", text: "Hello" }])).toBe("Hello");
   });
+
+  it("knows the effort the conversation is at: the last effort message's, else medium", () => {
+    const hi = { role: "user" as const, content: [{ type: "text", text: "hi" }] };
+    const state = { role: "system" as const, content: "note", display: { kind: "state" } };
+    expect(currentEffort([])).toBe("medium");
+    expect(currentEffort([hi, state])).toBe("medium");
+    expect(currentEffort([effortMessage("low"), hi, state])).toBe("low");
+    expect(currentEffort([effortMessage("low"), hi, effortMessage("medium"), hi])).toBe("medium");
+  });
+
+  it("sends an effort message with its level in output_config, or drops it without the beta", () => {
+    expect(toApiMessage(effortMessage("low"), true)).toEqual({ role: "system", content: [], output_config: { effort: "low" } });
+    expect(toApiMessage(effortMessage("low"), false)).toBeNull();
+    // Everything else passes through as role + content, display left behind.
+    const state = { role: "system" as const, content: "note", display: { kind: "state", fingerprint: {} } };
+    expect(toApiMessage(state, true)).toEqual({ role: "system", content: "note" });
+    expect(toApiMessage(state, false)).toEqual({ role: "system", content: "note" });
+  });
 });
 
 describe("stream parsing", () => {
@@ -249,6 +267,9 @@ describe("voice", () => {
     // 300 characters = 25 s = $0.05 × 25/60.
     expect(speechCostUsd(300)).toBeCloseTo(0.05 * (25 / 60), 10);
     expect(speechCostUsd(720)).toBeCloseTo(0.05, 10);
+    // The human voice, ElevenLabs Turbo v2.5 on fal: $0.05 per 1,000 characters.
+    expect(speechCostUsd(300, "human")).toBeCloseTo(0.015, 10);
+    expect(speechCostUsd(1000, "human")).toBeCloseTo(0.05, 10);
   });
 
   it("knows exactly three voice actions", () => {
@@ -269,6 +290,22 @@ describe("voice", () => {
     expect(out).toEqual(["Sure. Here's the plan for Friday, three shots in all."]);
     expect(c.flush()).toEqual(["The first is a close-up at golden hour and the second walks the market"]);
     expect(c.flush()).toEqual([]);
+  });
+
+  it("lets a short first sentence go at once, so the voice starts sooner", () => {
+    const c = sentenceChunker();
+    expect(c.push("Oh, nice idea. ")).toEqual(["Oh, nice idea."]);
+    // Only the first piece goes early: short sentences after it wait for company.
+    expect(c.push("Okay. That works for me. ")).toEqual([]);
+    expect(c.flush()).toEqual(["Okay. That works for me."]);
+  });
+
+  it("cuts a long opening sentence at a clause break", () => {
+    const c = sentenceChunker();
+    expect(c.push("Okay, so the thing about golden hour light, especially in a market")).toEqual([
+      "Okay, so the thing about golden hour light,",
+    ]);
+    expect(c.flush()).toEqual(["especially in a market"]);
   });
 
   it("breaks a long run with no sentence end at a space", () => {

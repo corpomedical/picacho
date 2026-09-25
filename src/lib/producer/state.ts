@@ -180,7 +180,7 @@ export async function buildStateNote(
       : null,
     focus ? `They pressed "Ask why" on render ${focus}: that is the one this message is about.` : null,
     a.spoken
-      ? "They are talking to you out loud and hear your answer spoken (see WHEN YOU ARE TALKING OUT LOUD). Their words were transcribed from speech, so allow for a misheard word. Prepared cards still appear on their screen."
+      ? "They are talking to you out loud and hear your answer spoken (see WHEN YOU ARE TALKING OUT LOUD). Their words were transcribed from speech, so allow for a misheard word. Prepared cards still appear on their screen. Sound like a person, not a narrator: open with a short first sentence (it is spoken while you are still saying the rest), use everyday words and contractions, and the small reactions a person would use (\"oh, nice\", \"right\", \"okay, so\") where they fit. No headings, bullets, markdown or emoji: everything you write is heard."
       : null,
   ].filter(Boolean);
 

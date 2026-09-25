@@ -14,11 +14,21 @@ import {
   unitsForCostUsd,
   type CallUsage,
 } from "@/lib/producer/prices";
-import { isVoiceConfigured, readSpokenInput, speak, transcribe } from "@/lib/producer/speech";
+import { isHumanVoiceConfigured, isVoiceConfigured, readSpokenInput, speak, speakHuman, transcribe } from "@/lib/producer/speech";
 import { sentenceChunker } from "@/lib/producer/sentences";
 import { spotForTool } from "@/lib/producer/spots";
-import { appendMessages, loadMessages, loadPrefs, openThread } from "@/lib/producer/store";
-import { closeTail, visibleText, type StoredBlock, type StoredMessage } from "@/lib/producer/history";
+import { appendMessages, loadMessages, loadPrefs, loadProducerVoice, openThread } from "@/lib/producer/store";
+import {
+  TOP_LEVEL_EFFORT,
+  closeTail,
+  currentEffort,
+  effortMessage,
+  toApiMessage,
+  visibleText,
+  type Effort,
+  type StoredBlock,
+  type StoredMessage,
+} from "@/lib/producer/history";
 import { buildStateNote, type StateFingerprint } from "@/lib/producer/state";
 import { loadWatchBar, loadWatchList } from "@/lib/producer/watch";
 import { runTool, toolStatus, type ToolCall } from "@/lib/producer/run-tools";
@@ -54,6 +64,14 @@ import { rateLimited } from "@/lib/rate-limit";
 // sentence as it streams (lib/producer/sentences.ts) — each piece goes to
 // text-to-speech the moment it is complete and plays in order on the device.
 //
+// A HUMAN VOICE, SOONER (2026-09-25, operator: "make it sound more human and
+// make it faster at responses … lets change the voice character, its sounds
+// ai"). The reply speaks with ElevenLabs (Turbo v2.5 on fal) in the voice the
+// person picked (Settings), each piece carrying the words before it so the
+// intonation runs on; OpenAI's voice is only the fallback. A spoken turn runs
+// at low effort (history.ts says how, without losing the cache), and the
+// conversation's reads run while the recording is still being transcribed.
+//
 // WHERE IT IS WORKING. Each tool call also sends a `spot` event naming the
 // part of the page it concerns (composer, renders, one render, notes), so
 // the sheet can light that part's bottom edge (lib/producer/spots.ts).
@@ -69,6 +87,7 @@ export const maxDuration = 300;
 
 const MAX_MESSAGE_CHARS = 5000;
 const FALLBACK_BETA = "server-side-fallback-2026-07-01";
+const EFFORT_BETA = "mid-conversation-output-config-2026-07-01";
 const REFUSED_TEXT = "I can't help with that one. Ask me another way, or about something else.";
 
 function sse(event: string, data: unknown): string {
@@ -76,9 +95,12 @@ function sse(event: string, data: unknown): string {
 }
 
 type ApiMessage = Anthropic.Beta.Messages.BetaMessageParam;
+type Turn = { role: "user" | "assistant" | "system"; content: unknown; display?: Record<string, unknown> | null };
 
-function toApi(rows: StoredMessage[]): ApiMessage[] {
-  return rows.map((m) => ({ role: m.role, content: m.content as ApiMessage["content"] }));
+// Effort messages are dropped when the per-turn effort beta is off (the retry
+// below); the SDK's types don't know output_config on a message yet.
+function toApi(turns: Turn[], withEffort: boolean): ApiMessage[] {
+  return turns.map((t) => toApiMessage(t, withEffort)).filter((m) => m !== null) as unknown as ApiMessage[];
 }
 
 export async function POST(request: NextRequest) {
@@ -191,6 +213,24 @@ export async function POST(request: NextRequest) {
     return units;
   }
 
+  // ---- The conversation's reads, started now ----------------------------------
+  // They used to wait for the transcription; now they run alongside it (the
+  // words are only needed for the turn itself). A failure surfaces below.
+  const loading = (async () => {
+    const [thread, prefs, watchBar, humanVoice] = await Promise.all([
+      openThread(admin, user.id),
+      loadPrefs(admin, user.id),
+      loadWatchBar(supabase),
+      loadProducerVoice(admin, user.id).catch(() => null),
+    ]);
+    const [rows, watch] = await Promise.all([
+      loadMessages(admin, thread.id),
+      loadWatchList(supabase, user.id, prefs.watchSeenAt, watchBar),
+    ]);
+    return { thread, prefs, watchBar, humanVoice, rows, watch };
+  })();
+  loading.catch(() => {}); // awaited below; the transcription may return first
+
   // ---- A spoken message becomes words first ---------------------------------
   if (spoken) {
     try {
@@ -209,25 +249,20 @@ export async function POST(request: NextRequest) {
   }
 
   // ---- The conversation, and this turn's opening messages -----------------
-  let thread: Awaited<ReturnType<typeof openThread>>;
-  let rows: Awaited<ReturnType<typeof loadMessages>>;
-  let prefs: Awaited<ReturnType<typeof loadPrefs>>;
+  let loaded: Awaited<typeof loading>;
   try {
-    [thread, prefs] = await Promise.all([openThread(admin, user.id), loadPrefs(admin, user.id)]);
-    rows = await loadMessages(admin, thread.id);
+    loaded = await loading;
   } catch (err) {
     console.error("producer:", err);
     await settle("transient");
     return NextResponse.json({ error: "The Producer is unavailable right now." }, { status: 503 });
   }
+  const { thread, prefs, watchBar, humanVoice, rows, watch } = loaded;
 
   const stored: StoredMessage[] = rows.map((r) => ({ role: r.role, content: r.content }));
   const repairs = closeTail(stored);
-  const lastState = [...rows].reverse().find((r) => r.role === "system")?.display?.fingerprint as
-    | StateFingerprint
-    | undefined;
-  const watchBar = await loadWatchBar(supabase);
-  const watch = await loadWatchList(supabase, user.id, prefs.watchSeenAt, watchBar);
+  const lastState = [...rows].reverse().find((r) => r.role === "system" && r.display?.kind === "state")?.display
+    ?.fingerprint as StateFingerprint | undefined;
   const state = await buildStateNote(supabase, {
     userId: user.id,
     name: prefs.name,
@@ -239,8 +274,12 @@ export async function POST(request: NextRequest) {
     spoken: Boolean(spoken) || speakReplies,
   });
 
+  // Talking out loud runs at low effort — the first word sooner; typing at
+  // the usual medium. Only a CHANGE is written (history.ts).
+  const wantEffort: Effort = spoken || speakReplies ? "low" : TOP_LEVEL_EFFORT;
   const opening = [
     ...repairs.map((m) => ({ role: m.role, content: m.content, display: null })),
+    ...(wantEffort !== currentEffort(rows) ? [effortMessage(wantEffort)] : []),
     { role: "user" as const, content: [{ type: "text", text: message }], display: { text: message } },
     { role: "system" as const, content: state.text, display: { kind: "state", fingerprint: state.fingerprint } },
   ];
@@ -254,7 +293,7 @@ export async function POST(request: NextRequest) {
     );
   }
   let seq = opened.nextSeq;
-  const history: ApiMessage[] = toApi([...stored, ...opening.map((m) => ({ role: m.role, content: m.content as StoredBlock[] | string }))]);
+  const turns: Turn[] = [...rows, ...opening];
 
   const client = new Anthropic();
   const upstream = new AbortController();
@@ -280,26 +319,48 @@ export async function POST(request: NextRequest) {
 
       if (spoken) send("heard", { text: message });
 
-      // Read-aloud: sentences go to text-to-speech as they complete and are
-      // sent in order. One failure stops the voice for the rest of the turn —
-      // the words are still on screen.
+      // Read-aloud: sentences go to speech as they complete and are sent in
+      // order. The human voice first, each piece told what was said before it;
+      // if it fails, that piece and the rest of the answer use OpenAI's voice —
+      // a change of voice beats a silence. Both failing stops the voice for
+      // the rest of the turn; the words are still on screen.
       const chunker = sentenceChunker();
       let voiceChain: Promise<void> = Promise.resolve();
       let voiceIndex = 0;
       let voiceBroken = false;
+      let humanBroken = !humanVoice || !isHumanVoiceConfigured();
+      let saidSoFar = "";
+      type Speech = { kind: "human"; url: string } | { kind: "openai"; data: string };
+      const synth = async (piece: string, before: string): Promise<Speech | null> => {
+        if (!humanBroken && humanVoice) {
+          try {
+            return { kind: "human", url: await speakHuman(piece, humanVoice.elevenLabsVoiceId, before) };
+          } catch {
+            humanBroken = true;
+          }
+        }
+        if (!isVoiceConfigured()) return null;
+        try {
+          return { kind: "openai", data: await speak(piece) };
+        } catch {
+          return null;
+        }
+      };
       const say = (pieces: string[]) => {
         if (!speakReplies) return;
         for (const piece of pieces) {
           const index = voiceIndex++;
-          const job = speakReplies && !voiceBroken ? speak(piece).catch(() => null) : Promise.resolve(null);
+          const before = saidSoFar;
+          saidSoFar = before ? `${before} ${piece}` : piece;
+          const job = voiceBroken ? Promise.resolve(null) : synth(piece, before);
           voiceChain = voiceChain.then(async () => {
             const audio = await job;
             if (!audio || upstream.signal.aborted) {
               voiceBroken = true;
               return;
             }
-            totals.cost += speechCostUsd(piece.length);
-            send("audio", { index, data: audio });
+            totals.cost += speechCostUsd(piece.length, audio.kind);
+            send("audio", audio.kind === "human" ? { index, url: audio.url } : { index, data: audio.data });
           });
         }
       };
@@ -308,6 +369,7 @@ export async function POST(request: NextRequest) {
       const cards: PreparedSend[] = [];
       let notesChanged = false;
       let withFallbacks = true;
+      let withEffort = true;
       let outcome: "ok" | "aborted" | TurnFailure = "ok";
 
       const call = async (answerNow: boolean) => {
@@ -319,14 +381,16 @@ export async function POST(request: NextRequest) {
               thinking: { type: "adaptive" },
               // Set explicitly: Opus 5.5's default is medium, and a default is
               // a thing that moves under you. Constant for the whole
-              // conversation — a top-level effort change resets the cache.
-              output_config: { effort: "medium" },
+              // conversation — a top-level effort change resets the cache; a
+              // spoken turn moves it with an effort message instead.
+              output_config: { effort: TOP_LEVEL_EFFORT },
               cache_control: { type: "ephemeral" },
               system: systemBlocks,
               tools,
               tool_choice: answerNow ? { type: "none" } : { type: "auto" },
-              messages: history,
-              ...(withFallbacks ? { betas: [FALLBACK_BETA], fallbacks: "default" as const } : {}),
+              messages: toApi(turns, withEffort),
+              betas: [...(withFallbacks ? [FALLBACK_BETA] : []), ...(withEffort ? [EFFORT_BETA] : [])],
+              ...(withFallbacks ? { fallbacks: "default" as const } : {}),
             },
             { timeout: 120_000, maxRetries: 1, signal: upstream.signal },
           );
@@ -351,18 +415,29 @@ export async function POST(request: NextRequest) {
           }
           return s.finalMessage();
         };
-        try {
-          return await drain();
-        } catch (err) {
-          const status = (err as { status?: number })?.status;
-          const msg = err instanceof Error ? err.message : String(err);
-          if (withFallbacks && !sentText && status === 400 && /fallback/i.test(msg)) {
-            console.error("producer: retrying without fallbacks —", msg.slice(0, 200));
-            withFallbacks = false;
-            s = run();
+        // A 400 naming one of the two betas: once more without it, rather
+        // than failing the turn. Without the effort beta the turn runs at
+        // the top level (medium) — slower to start, never broken.
+        for (;;) {
+          try {
             return await drain();
+          } catch (err) {
+            const status = (err as { status?: number })?.status;
+            const msg = err instanceof Error ? err.message : String(err);
+            if (!sentText && status === 400 && withFallbacks && /fallback/i.test(msg)) {
+              console.error("producer: retrying without fallbacks —", msg.slice(0, 200));
+              withFallbacks = false;
+              s = run();
+              continue;
+            }
+            if (!sentText && status === 400 && withEffort && /effort|output_config|mid-conversation/i.test(msg)) {
+              console.error("producer: retrying without the per-turn effort —", msg.slice(0, 200));
+              withEffort = false;
+              s = run();
+              continue;
+            }
+            throw err;
           }
-          throw err;
         }
       };
 
@@ -440,8 +515,7 @@ export async function POST(request: NextRequest) {
             });
             if (!saved.ok) throw new Error(`producer: couldn't save the tool round — ${saved.error}`);
             seq = saved.nextSeq;
-            history.push({ role: "assistant", content: content as ApiMessage["content"] });
-            history.push(results as ApiMessage);
+            turns.push({ role: "assistant", content }, results);
             continue;
           }
 

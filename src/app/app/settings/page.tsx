@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { loadProducerName } from "@/lib/producer/actions";
+import { loadProducerName, loadProducerVoices } from "@/lib/producer/actions";
 import { redirect } from "next/navigation";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getMonthlyUsage } from "@/lib/generations/actions";
@@ -339,8 +339,10 @@ export default async function SettingsPage({
           .maybeSingle()
       : { data: null };
   // The Producer's name row: only for accounts that have the Producer.
-  const producerName =
-    activeTab === "preferences" ? await loadProducerName().then((p) => (p.available ? p.name : null)) : null;
+  const [producerName, producerVoices] =
+    activeTab === "preferences"
+      ? await Promise.all([loadProducerName().then((p) => (p.available ? p.name : null)), loadProducerVoices()])
+      : [null, null];
 
   const notifyPrefs = {
     notify_render_ready: (notifyRow as { notify_render_ready?: boolean } | null)?.notify_render_ready !== false,
@@ -618,6 +620,7 @@ export default async function SettingsPage({
           // default (false → emails on), matching what the blast query does.
           marketingEnabled={profile?.marketing_opt_out !== true}
           producerName={producerName}
+          producerVoices={producerVoices}
         />
       )}
 

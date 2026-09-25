@@ -374,8 +374,10 @@ export function ProducerLamp({
           } else if (ev.event === "heard" && typeof ev.data.text === "string") {
             const heard = ev.data.text;
             setLines((prev) => prev.map((l) => (l.seq === userSeq ? { ...l, text: heard } : l)));
+          } else if (ev.event === "audio" && typeof ev.data.url === "string") {
+            voice.enqueue(Number(ev.data.index) || 0, { url: ev.data.url });
           } else if (ev.event === "audio" && typeof ev.data.data === "string") {
-            voice.enqueue(Number(ev.data.index) || 0, ev.data.data);
+            voice.enqueue(Number(ev.data.index) || 0, { data: ev.data.data });
           } else if (ev.event === "spot" && isSpot(ev.data.spot)) {
             light(ev.data.spot, typeof ev.data.id === "string" ? ev.data.id : null, 8000);
           } else if (ev.event === "error" && typeof ev.data.error === "string") {

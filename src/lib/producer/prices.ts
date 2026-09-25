@@ -95,12 +95,21 @@ export const MAX_OUTPUT_TOKENS = 8000;
 // minute of speech is more than $0.05 / $12 per 1M = ~4,166 audio tokens.
 // A spoken turn of 10 s in and that reply is 10/60 × $0.003 + $0.021 ≈
 // $0.0215, added to the turn's own cost and settled with it.
+//
+// THE HUMAN VOICE (2026-09-25, operator: "make it sound more human … lets
+// change the voice character, its sounds ai"): ElevenLabs Turbo v2.5 through
+// fal (fal-ai/elevenlabs/tts/turbo-v2.5), read from fal's model page on
+// 2026-09-25: $0.05 per 1,000 characters = $50 per 1M. A 300-character reply
+// is 300 × $50/1M = $0.015. The OpenAI voice stays only as the fallback when
+// no ElevenLabs voice or fal key is available, billed at its ceiling above.
 export const TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe";
 export const TRANSCRIBE_USD_PER_MINUTE = 0.003;
 export const SPEECH_MODEL = "gpt-4o-mini-tts";
 export const SPEECH_CEILING_USD_PER_MINUTE = 0.05;
 export const SPEECH_CHARS_PER_SECOND = 12;
 export const SPEECH_USD_PER_MCHAR = (SPEECH_CEILING_USD_PER_MINUTE / (60 * SPEECH_CHARS_PER_SECOND)) * 1_000_000;
+export const HUMAN_SPEECH_ENDPOINT = "fal-ai/elevenlabs/tts/turbo-v2.5";
+export const HUMAN_SPEECH_USD_PER_MCHAR = 50;
 // A spoken message is capped at a minute: hands-free turns are sentences,
 // and the cap bounds what one recording can cost ($0.003).
 export const MAX_SPOKEN_SECONDS = 60;
@@ -110,8 +119,9 @@ export function transcribeCostUsd(seconds: number): number {
   return (s / 60) * TRANSCRIBE_USD_PER_MINUTE;
 }
 
-export function speechCostUsd(chars: number): number {
-  return (Math.max(0, chars) * SPEECH_USD_PER_MCHAR) / 1_000_000;
+export function speechCostUsd(chars: number, voice: "human" | "openai" = "openai"): number {
+  const rate = voice === "human" ? HUMAN_SPEECH_USD_PER_MCHAR : SPEECH_USD_PER_MCHAR;
+  return (Math.max(0, chars) * rate) / 1_000_000;
 }
 
 // Tool rounds per turn. A plan for three shots is read → three prepares →

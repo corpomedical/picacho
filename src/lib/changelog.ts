@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.101.0",
+    build: 140,
+    date: "2026-09-25",
+    title: "The Producer sounds like a person, answers sooner, and you pick its voice",
+    items: [
+      "The Producer's spoken replies now use a human voice: ElevenLabs, the engine behind the character voices. Each sentence carries the words said before it, so the tone runs on instead of restarting every sentence. OpenAI's voice stays only as a backup if ElevenLabs is unreachable.",
+      "Pick the voice in Settings → Preferences → Your assistant → Its voice. The list is the voices in Admin → Voices, and ▶ plays a line exactly as the Producer would say it.",
+      "Faster: when you talk to it, the Producer thinks less before its first word (a real test answered in 1.15 s instead of 2.07 s). It also reads your conversation while your words are still being transcribed, starts speaking after its first short sentence, and loads each next sentence while the current one plays. It takes your turn as finished after 0.7 s of quiet, down from 0.85 s.",
+      "It is asked to talk like a person out loud: a short first sentence, contractions, small reactions like \"oh, nice\", and no lists or formatting read aloud.",
+      "The privacy policy now names who turns the Producer's replies into speech (ElevenLabs through fal, OpenAI as the backup), in all four languages.",
+    ],
+  },
+  {
     version: "1.100.0",
     build: 139,
     date: "2026-09-25",

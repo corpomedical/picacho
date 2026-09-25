@@ -50,6 +50,55 @@ export function closeTail(messages: StoredMessage[]): StoredMessage[] {
   return [];
 }
 
+// ---------------------------------------------------------------------------
+// Effort, per turn (2026-09-25, operator: "make it faster at responses").
+//
+// A spoken turn runs at LOW effort — less thinking before the first word —
+// and a typed one at the conversation's usual MEDIUM. Opus 5.5 takes the
+// change as an effort-only system message (beta mid-conversation-output-
+// config-2026-07-01): empty content, the level in output_config. It holds
+// from the next user turn until another one changes it, and — unlike moving
+// the request's top-level effort — leaves the cached prefix intact, so a
+// voice conversation doesn't re-pay the whole history on every switch.
+// Checked with a real call on 2026-09-25 (with the fallbacks beta alongside).
+//
+// Stored like any other message (append-only): role "system", content [],
+// display { kind: "effort", effort }. The level lives in `display` because
+// the table has no column for it; toApiMessage puts it back where the API
+// wants it.
+
+export type Effort = "low" | "medium";
+export const TOP_LEVEL_EFFORT: Effort = "medium";
+
+type Row = { role: "user" | "assistant" | "system"; content: unknown; display?: Record<string, unknown> | null };
+
+function effortOf(row: Row): Effort | null {
+  const d = row.display;
+  if (row.role !== "system" || d?.kind !== "effort") return null;
+  return d.effort === "low" || d.effort === "medium" ? d.effort : null;
+}
+
+/** The level the stored conversation is at now: its last effort message's, else the request's top level. */
+export function currentEffort(rows: Row[]): Effort {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const e = effortOf(rows[i]);
+    if (e) return e;
+  }
+  return TOP_LEVEL_EFFORT;
+}
+
+/** The message that moves the conversation to `effort`, as stored. */
+export function effortMessage(effort: Effort) {
+  return { role: "system" as const, content: [] as StoredBlock[], display: { kind: "effort", effort } };
+}
+
+/** One stored message as the API takes it (an effort message carries its level in output_config). */
+export function toApiMessage(row: Row, withEffort: boolean): Record<string, unknown> | null {
+  const effort = effortOf(row);
+  if (effort) return withEffort ? { role: "system", content: [], output_config: { effort } } : null;
+  return { role: row.role, content: row.content };
+}
+
 /** The text a person should see from one assistant message's blocks. */
 export function visibleText(content: StoredBlock[] | string): string {
   if (typeof content === "string") return content;

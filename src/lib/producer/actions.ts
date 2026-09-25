@@ -2,7 +2,18 @@
 
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { isProducerEnabled, isProducerOpenToElite, producerAllowed, PRODUCER_UNAVAILABLE } from "./enabled";
-import { closeThread, loadMessages, loadPrefs, notesStore, openThread, savePrefs, DEFAULT_PRODUCER_NAME } from "./store";
+import {
+  closeThread,
+  loadMessages,
+  loadPrefs,
+  loadProducerVoice,
+  notesStore,
+  openThread,
+  savePrefs,
+  DEFAULT_PRODUCER_NAME,
+} from "./store";
+import { isHumanVoiceConfigured, speakHuman } from "./speech";
+import { rateLimited } from "@/lib/rate-limit";
 import { MAX_NOTE_CHARS, normalizeNotePath, type Note } from "./notes";
 import { loadWatchBar, loadWatchList, type WatchItem } from "./watch";
 import type { PreparedSend } from "./tools";
@@ -159,4 +170,64 @@ export async function loadProducerName(): Promise<{ available: boolean; name: st
   if (!g.ok) return { available: false, name: DEFAULT_PRODUCER_NAME };
   const prefs = await loadPrefs(g.admin, g.userId);
   return { available: true, name: prefs.name };
+}
+
+// ---------------------------------------------------------------------------
+// The voice (2026-09-25, operator: "lets change the voice character, its
+// sounds ai"). The choices are the admin-picked voices in voice_presets —
+// the same list characters speak from — so a new voice is added in
+// Admin > Voices, not here.
+
+export type ProducerVoiceChoice = { id: string; label: string; description: string | null };
+
+/** For Settings: the voices to pick from and the one it speaks with now (null = no voices yet). */
+export async function loadProducerVoices(): Promise<{ voices: ProducerVoiceChoice[]; current: string | null } | null> {
+  const g = await gate();
+  if (!g.ok) return null;
+  const [{ data }, voice] = await Promise.all([
+    g.admin.from("voice_presets").select("id, label, description").order("sort_order", { ascending: true }).limit(50),
+    loadProducerVoice(g.admin, g.userId).catch(() => null),
+  ]);
+  const voices = (data ?? []).map((v) => ({
+    id: v.id as string,
+    label: String(v.label ?? ""),
+    description: (v.description as string | null) ?? null,
+  }));
+  return { voices, current: voice?.presetId ?? null };
+}
+
+async function voiceExists(admin: ReturnType<typeof createAdminClient>, id: string): Promise<{ elevenlabs_voice_id: string } | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const { data } = await admin.from("voice_presets").select("elevenlabs_voice_id").eq("id", id).maybeSingle();
+  return (data as { elevenlabs_voice_id: string } | null) ?? null;
+}
+
+export async function setProducerVoice(presetId: string): Promise<{ error: string | null }> {
+  const g = await gate();
+  if (!g.ok) return { error: g.error };
+  if (!(await voiceExists(g.admin, String(presetId ?? "")))) return { error: "That voice isn't available any more." };
+  const r = await savePrefs(g.admin, g.userId, { voice_preset_id: presetId });
+  if (r.error) console.error("producer: voice save failed", r.error);
+  return { error: r.error ? "The voice didn't save. Try again." : null };
+}
+
+// A short line in the voice, exactly as the Producer would say it (same
+// model and settings as speech.ts). ~70 characters = $0.0035 on fal; not
+// metered, like the character voice previews, but rate-limited.
+export async function previewProducerVoice(presetId: string): Promise<{ url?: string; error?: string }> {
+  const g = await gate();
+  if (!g.ok) return { error: g.error };
+  if (!isHumanVoiceConfigured()) return { error: "Voices aren't set up on this server yet." };
+  if (await rateLimited(g.userId, "producer-voice-preview", 60, 8)) {
+    return { error: "You're trying voices a bit fast. Wait a moment and try again." };
+  }
+  const preset = await voiceExists(g.admin, String(presetId ?? ""));
+  if (!preset) return { error: "That voice isn't available any more." };
+  const { name } = await loadPrefs(g.admin, g.userId);
+  try {
+    const url = await speakHuman(`Hi, I'm ${name}. Tell me what we're making, and I'll set it up for you.`, preset.elevenlabs_voice_id, "");
+    return { url };
+  } catch {
+    return { error: "That voice didn't play. Try again." };
+  }
 }
