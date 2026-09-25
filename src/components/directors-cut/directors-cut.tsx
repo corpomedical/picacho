@@ -2,11 +2,11 @@
 
 // Director's Cut (operator, 2026-09-24): raw footage in, a finished edit out.
 //
-// The page he picked from the boards: B, "The Bench" — bin and brief on the
-// left, the monitor and the cut in the middle, the director's notes on the
-// right, where a change is asked for. Until the first edit exists it opens
-// as A's plain brief instead (an empty monitor and notes column look dead).
-// On a phone the three columns stack: monitor, the cut, notes, then the bin.
+// Until the first edit exists it opens as the plain brief. After that it is
+// the Edit Bay (bay/edit-bay.tsx — board A, his pick 2026-09-25, replacing
+// the bench he called "trash"): Opus's cut on a real multi-track timeline,
+// the brief for a new edit in a dialog over it, the director's notes in its
+// right-hand Director tab.
 //
 // Colours are literal hex, as on the Mystique door: the Screening theme
 // redefines Tailwind's `white` as near-black, so no `white` utilities here.
@@ -28,6 +28,7 @@ import {
   type EditSummary,
 } from "@/lib/editor/actions";
 import { ASPECT_HINTS, EDITOR_BUCKET, MAX_CLIPS, SONG_TYPES, type AspectHint } from "@/lib/editor/job";
+import { EditBay } from "./bay/edit-bay";
 
 const WORKING = new Set(["analyzing", "directing", "bundling", "rendering"]);
 const POLL_MS = 4000;
@@ -116,49 +117,31 @@ export function DirectorsCut({ initialEdits, initialDetail = null }: { initialEd
     );
   }
 
-  // B: the bench.
+  // B: the Edit Bay (board A, the operator's pick 2026-09-25) — Opus's cut on
+  // a real timeline; a new edit's brief opens over it.
   return (
-    <div data-directors-cut className="scroll-mt-4 text-[#c6c9d1]">
-      {/* The bench's three columns need more than the app's 5xl content
-          column: from lg up, only this page's column widens (keyed on its own
-          marker, as Generate's is). Here rather than in globals.css so the
-          page carries its own rule; the CSP allows inline style, as the
-          app layout's font variables use. */}
-      <style>{`@media (min-width:1024px){[data-app-content]:has(> [data-directors-cut]){max-width:1440px}}`}</style>
-      <div className="mb-5 px-1">{header(false)}</div>
-      <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)_320px]">
-        <section aria-label={d.bin} className="order-4 flex flex-col gap-4 rounded-[20px] bg-[#0b0c10] p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.08)] lg:order-1">
-          <BriefForm onStarted={onStarted} guard={guard} />
-          <div className="flex flex-col gap-2 border-t border-[rgba(255,255,255,0.08)] pt-4">
-            <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-[#6b6f7a]">{d.edits}</span>
-            <ul className="flex flex-col gap-1">
-              {edits.map((e) => (
-                <li key={e.id}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(e.id)}
-                    aria-current={e.id === selectedId ? "true" : undefined}
-                    className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm ${
-                      e.id === selectedId ? "bg-[rgba(224,164,104,0.12)] text-[#ecedf1]" : "text-[#9aa0ad] hover:bg-[rgba(255,255,255,0.04)]"
-                    }`}
-                  >
-                    <span className="line-clamp-1">{e.brief || e.summary || e.clipNames.join(", ")}</span>
-                    <StageDot stage={e.stage} />
-                  </button>
-                </li>
-              ))}
-            </ul>
+    <div className="scroll-mt-4">
+      <EditBay
+        edits={edits}
+        selectedId={selectedId}
+        onSelectEdit={setSelectedId}
+        detail={detail}
+        director={<Notes bare detail={detail} guard={guard} onSent={() => refresh(selectedId)} />}
+        newEdit={(close) => (
+          <div className="flex flex-col gap-6">
+            {header(true)}
+            <BriefForm
+              wide
+              guard={guard}
+              onStarted={async (id) => {
+                close();
+                await onStarted(id);
+              }}
+            />
           </div>
-        </section>
-
-        <section aria-label={d.theCut} className="order-1 flex min-w-0 flex-col gap-4 lg:order-2">
-          <Screen key={`${detail?.id ?? "none"}:${detail?.outputs.length ?? 0}`} detail={detail} loading={selectedId !== null && detail === null} />
-        </section>
-
-        <section aria-label={d.notes} className="order-3 lg:order-3">
-          <Notes detail={detail} guard={guard} onSent={() => refresh(selectedId)} />
-        </section>
-      </div>
+        )}
+        fallback={<Screen key={`${detail?.id ?? "none"}:${detail?.outputs.length ?? 0}`} detail={detail} loading={selectedId !== null && detail === null} />}
+      />
       {error && <p className="mt-4 text-sm text-[#f0a3a3]">{error}</p>}
     </div>
   );
@@ -598,7 +581,7 @@ function useFrames(url: string | null, times: number[]): (string | null)[] {
 
 // ------------------------------------------------------------- the notes
 
-function Notes({ detail, guard, onSent }: { detail: EditDetail | null; guard: Guard; onSent: () => Promise<void> }) {
+function Notes({ detail, guard, onSent, bare = false }: { detail: EditDetail | null; guard: Guard; onSent: () => Promise<void>; bare?: boolean }) {
   const { t } = useLocale();
   const d = t.directorsCut;
   const [text, setText] = useState("");
@@ -644,8 +627,8 @@ function Notes({ detail, guard, onSent }: { detail: EditDetail | null; guard: Gu
   }
 
   return (
-    <div className="flex h-full min-h-[320px] flex-col gap-3.5 rounded-[20px] bg-[#0b0c10] p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
-      <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-[#6b6f7a]">{d.notes}</span>
+    <div className={bare ? "flex h-full flex-col gap-3.5 p-4" : "flex h-full min-h-[320px] flex-col gap-3.5 rounded-[20px] bg-[#0b0c10] p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]"}>
+      {!bare && <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-[#6b6f7a]">{d.notes}</span>}
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto">
         {(detail?.notes ?? []).map((n, i) =>
           n.role === "editor" ? (
@@ -746,11 +729,6 @@ function Notes({ detail, guard, onSent }: { detail: EditDetail | null; guard: Gu
       {problem && <p className="text-sm text-[#f0a3a3]">{problem}</p>}
     </div>
   );
-}
-
-function StageDot({ stage }: { stage: string }) {
-  const color = stage === "done" ? "#9aa0ad" : stage === "failed" ? "#f0a3a3" : "#e0a468";
-  return <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${WORKING.has(stage) ? "animate-pulse" : ""}`} style={{ background: color }} />;
 }
 
 function clock(seconds: number): string {

@@ -123,6 +123,31 @@ export function readProjectToken(token: string, nowMs: number = Date.now()): { e
   return diff === 0 ? { editId, generationId } : null;
 }
 
+// ------------------------------------------------------------ preview runtime
+
+/** The HyperFrames runtime the preview needs, pinned to the version Opus builds with. */
+export function runtimeUrl(version: string): string {
+  return `https://cdn.jsdelivr.net/npm/@hyperframes/core@${version}/dist/hyperframe.runtime.iife.js`;
+}
+
+/**
+ * The page the preview frame plays, with HyperFrames' runtime in it. The
+ * player normally injects the runtime by reaching into the frame, which a
+ * sealed (opaque-origin) frame forbids; without it nothing is timed and the
+ * project's own script fails on window.__timelines. So the route serves the
+ * page with the runtime already at the top of <head>, before any of the
+ * page's scripts run. A page that already carries it is left alone.
+ */
+export function withRuntime(html: string, version: string): string {
+  if (html.includes("hyperframe.runtime")) return html;
+  const tag = `<script src="${runtimeUrl(version)}"></script>`;
+  const head = /<head(\s[^>]*)?>/i.exec(html);
+  if (head) return html.slice(0, head.index + head[0].length) + tag + html.slice(head.index + head[0].length);
+  const body = /<body(\s[^>]*)?>/i.exec(html);
+  if (body) return html.slice(0, body.index) + tag + html.slice(body.index);
+  return tag + html;
+}
+
 // ------------------------------------------------------------ preview policy
 
 /**

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { footageIndex, previewCsp, projectDir, projectToken, readProjectToken, readTar, safeProjectPath } from "./project";
+import { footageIndex, previewCsp, projectDir, projectToken, readProjectToken, readTar, safeProjectPath, withRuntime } from "./project";
 
 /** A minimal ustar writer for the tests: one 512-byte header per entry, data padded to 512. */
 function tar(entries: { name: string; data?: string; type?: string; prefix?: string }[]): Uint8Array {
@@ -55,6 +55,17 @@ describe("the packed project", () => {
     expect(footageIndex("footage/clip-3.mp4/../x")).toBeNull();
     expect(footageIndex("assets/clip-3.mp4")).toBeNull();
     expect(projectDir("u1", "e1", "g1")).toBe("u1/e1/projects/g1");
+  });
+});
+
+describe("the preview page", () => {
+  it("carries HyperFrames' runtime before its own scripts (a sealed frame can't have it injected)", () => {
+    const page = '<!DOCTYPE html><html><head lang="en"><script src="gsap.js"></script></head><body><script>window.__timelines.main = 1</script></body></html>';
+    const served = withRuntime(page, "0.8.72");
+    expect(served.indexOf("hyperframe.runtime.iife.js")).toBeGreaterThan(served.indexOf("<head"));
+    expect(served.indexOf("hyperframe.runtime.iife.js")).toBeLessThan(served.indexOf("gsap.js"));
+    expect(withRuntime(served, "0.8.72")).toBe(served);
+    expect(withRuntime("<body><p>x</p></body>", "0.8.72").startsWith('<script src="https://cdn.jsdelivr.net/npm/@hyperframes/core@0.8.72/')).toBe(true);
   });
 });
 

@@ -38,14 +38,16 @@ describe("the preview route", () => {
     const stored = { [`${DIR}/index.html`]: "<html>saved</html>", [`${DIR}/draft.html`]: "<html>draft</html>" };
     const page = await serveProjectFile(tok(), ["index.html"], new URLSearchParams(), deps(stored));
     expect(page.status).toBe(200);
-    expect(await page.text()).toBe("<html>saved</html>");
+    const pageText = await page.text();
+    expect(pageText).toContain("<html>saved</html>");
+    expect(pageText).toContain("@hyperframes/core@0.8.72/dist/hyperframe.runtime.iife.js");
     expect(page.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'self'");
     expect(page.headers.get("X-Frame-Options")).toBe("SAMEORIGIN");
     const draft = await serveProjectFile(tok(), ["index.html"], new URLSearchParams("draft=1"), deps(stored));
-    expect(await draft.text()).toBe("<html>draft</html>");
+    expect(await draft.text()).toContain("<html>draft</html>");
     // No draft saved yet: the delivered page.
     const noDraft = await serveProjectFile(tok(), ["index.html"], new URLSearchParams("draft=1"), deps({ [`${DIR}/index.html`]: "<html>saved</html>" }));
-    expect(await noDraft.text()).toBe("<html>saved</html>");
+    expect(await noDraft.text()).toContain("<html>saved</html>");
   });
 
   it("sends the project's files and the edit's own clips as short redirects", async () => {
