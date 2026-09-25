@@ -191,7 +191,8 @@ describe("advanceEdit v2", () => {
           aspect: "9:16",
           seconds: 18.4,
           bytes: new Uint8Array([1]),
-          project: tar({ "index.html": "<html></html>", "assets/hit.wav": "RIFF", "footage/clip-0.mp4": "never kept" }),
+          // HyperFrames' own notes files ride in a pack; the bucket takes only a page's types, so they stay out.
+          project: tar({ "index.html": "<html></html>", "assets/hit.wav": "RIFF", "footage/clip-0.mp4": "never kept", "CLAUDE.md": "notes", "AGENTS.md": "notes" }),
         },
         // A pack without its index.html costs the timeline, not the video.
         { file: "b.mp4", title: "Hook B", summary: "Opens on the face.", aspect: "9:16", seconds: 21, bytes: new Uint8Array([2]), project: tar({ "x.css": "a{}" }) },
@@ -203,6 +204,7 @@ describe("advanceEdit v2", () => {
     expect(files.has(`edit-footage/${dir}/index.html`)).toBe(true);
     expect(files.has(`edit-footage/${dir}/assets/hit.wav`)).toBe(true);
     expect(files.has(`edit-footage/${dir}/footage/clip-0.mp4`)).toBe(false);
+    expect(files.has(`edit-footage/${dir}/CLAUDE.md`)).toBe(false);
     const kept = (tables.video_edits[0] as unknown as EditRow).plan?.outputs;
     expect(kept?.[0].project).toEqual({ dir, entry: "index.html", files: [{ path: "index.html", bytes: 13 }, { path: "assets/hit.wav", bytes: 4 }] });
     expect(kept?.[1].project).toBeNull();

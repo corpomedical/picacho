@@ -242,6 +242,8 @@ const PROJECT_TYPES: Record<string, string> = {
   otf: "font/otf",
 };
 
+const typeOf = (path: string): string | null => PROJECT_TYPES[path.split(".").pop()?.toLowerCase() ?? ""] ?? null;
+
 /**
  * The editable project Opus handed over with a video, unpacked into the
  * footage bucket beside it (project.ts). Best effort: a pack that can't be
@@ -249,16 +251,15 @@ const PROJECT_TYPES: Record<string, string> = {
  */
 async function keepProject(admin: Admin, row: EditRow, generationId: string, pack: Uint8Array): Promise<ProjectManifest | null> {
   try {
-    const files = readTar(pack).filter((f) => footageIndex(f.path) === null && !f.path.startsWith("footage/"));
+    // Only what a page loads: the bucket takes those types alone (supabase/pending/edit-footage-project-types.sql),
+    // and one refused file would cost the whole project. HyperFrames' notes (CLAUDE.md, AGENTS.md) stay out.
+    const files = readTar(pack).filter((f) => footageIndex(f.path) === null && !f.path.startsWith("footage/") && typeOf(f.path) !== null);
     if (!files.some((f) => f.path === PROJECT_ENTRY)) throw new Error("no index.html in the pack");
     const dir = projectDir(row.user_id, row.id, generationId);
     for (let i = 0; i < files.length; i += 6) {
       await Promise.all(
         files.slice(i, i + 6).map(async (f) => {
-          const ext = f.path.split(".").pop()?.toLowerCase() ?? "";
-          const { error } = await admin.storage
-            .from(EDITOR_BUCKET)
-            .upload(`${dir}/${f.path}`, f.data, { contentType: PROJECT_TYPES[ext] ?? "application/octet-stream", upsert: true });
+          const { error } = await admin.storage.from(EDITOR_BUCKET).upload(`${dir}/${f.path}`, f.data, { contentType: typeOf(f.path)!, upsert: true });
           if (error) throw new Error(`${f.path}: ${error.message}`);
         }),
       );

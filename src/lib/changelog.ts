@@ -28,6 +28,7 @@ export const RELEASES: Release[] = [
       "The monitor now plays the titles, zooms and flashes. Before, the preview's security rules refused the animation library, style sheets and fonts a project keeps in its own folder, because they came from storage, so all of that stood still. They are now served from the site itself.",
       "Titles now show in their real typeface. The renderer downloads the Google fonts a title names, like League Gothic and Montserrat, when it makes the video; the preview now loads the same fonts, instead of a stand-in.",
       "Asking for a change on an edit made before the timeline now brings back a version that opens on the timeline. Each edit's session keeps the instructions it started with, so every change now asks Opus for the editable project too.",
+      "Projects can now be kept at all. The footage storage accepted only video, audio and JPEG files, so a project's page, scripts and fonts were refused, and no video could open on the timeline or save its edits. The storage now accepts a project's file types (supabase/pending/edit-footage-project-types.sql). HyperFrames' own notes files in a project are left out rather than costing the whole project.",
     ],
   },
   {
