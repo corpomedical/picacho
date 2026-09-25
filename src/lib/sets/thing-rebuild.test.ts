@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import beach from "./fixtures-beach.json";
 import raceTrack from "./fixtures-race-track.json";
+import rainyMarket from "./fixtures-rainy-market.json";
+import showroomClosed from "./fixtures-showroom-closed.json";
 import showroomOpen from "./fixtures-showroom-open.json";
 import { normaliseSetSpec, type SetObject, type SetSpec } from "./set-spec";
 import { resolvePhotos, setElements, type ElementPhoto } from "./elements";
@@ -11,8 +14,10 @@ import {
   THING_REBUILD_INSTRUCTIONS,
   THING_REBUILD_MAX_OBJECTS,
   THING_REBUILD_MAX_OUTPUT_TOKENS,
+  THING_REBUILD_MAX_SENT_CHARS,
   THING_REBUILD_OPEN_TO_ALL,
   parseRebuildText,
+  rebuiltThingIn,
   spliceThing,
   thingLocalBlocks,
   thingRebuildInput,
@@ -74,10 +79,31 @@ describe("what Astra is sent", () => {
   it("costs at most $0.70 a rebuild, worst case", () => {
     // Every input token billed as a cache write; four photos at ≤ 2,048 px ≈ 2,300 tokens each
     // (set-config.ts: the photo-build rules and a 1536×1024 photo measured 2,150–2,280);
-    // the instructions and the car's blocks at ~2.24 characters a token.
-    const text = THING_REBUILD_INSTRUCTIONS.length + JSON.stringify(thingLocalBlocks(race, car)).length + 400;
+    // the instructions and the largest thing a rebuild sends (THING_REBUILD_MAX_SENT_CHARS,
+    // 2026-09-25 — the car's own blocks until then) at ~2.24 characters a token.
+    const text = THING_REBUILD_INSTRUCTIONS.length + THING_REBUILD_MAX_SENT_CHARS + 400;
     const inputTokens = Math.ceil(text / 2.24) + 4 * 2_300;
     expect(worstCaseAstraUsd(inputTokens, THING_REBUILD_MAX_OUTPUT_TOKENS)).toBeLessThan(0.7);
+    // The figures in thing-rebuild.ts: 15,004 characters, 15,899 tokens, $0.6987.
+    expect(THING_REBUILD_INSTRUCTIONS.length).toBe(3_104);
+    expect(inputTokens).toBe(15_899);
+    expect(Math.round(worstCaseAstraUsd(inputTokens, THING_REBUILD_MAX_OUTPUT_TOKENS) * 10_000) / 10_000).toBe(0.6987);
+  });
+
+  it("sends every thing of every fixture whole: the largest, the race-track car, is 11,025 characters", () => {
+    // The bound is on what is sent (2026-09-25): until then a rebuild was
+    // refused by the WHOLE set's size, though only the thing is sent.
+    let largest = 0;
+    for (const [name, fixture] of Object.entries({ beach, raceTrack, rainyMarket, showroomClosed, showroomOpen })) {
+      const spec = load(fixture);
+      for (const el of setElements(spec)) {
+        const sent = JSON.stringify(thingLocalBlocks(spec, el)).length;
+        expect(sent, `${name} ${el.key}`).toBeLessThanOrEqual(THING_REBUILD_MAX_SENT_CHARS);
+        largest = Math.max(largest, sent);
+      }
+    }
+    expect(largest).toBe(JSON.stringify(thingLocalBlocks(race, car)).length);
+    expect(largest).toBe(11_025);
   });
 });
 
@@ -126,6 +152,17 @@ describe("the splice", () => {
     expect(apart).toEqual({ ok: false, why: "split" });
   });
 
+  it("is found again on the saved set by its old key, as the page does after reading a rebuild back", () => {
+    const r = spliceThing(race, car, answer((o) => (o.material === "paint" ? { ...o, color: "#1d4fb8" } : o)));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(rebuiltThingIn(r.spec, car.key)).toEqual({ key: r.key, blocks: r.blocks });
+    // Unrebuilt, it is itself.
+    expect(rebuiltThingIn(race, car.key)).toEqual({ key: car.key, blocks: car.members.length });
+    // A key on no thing: nothing.
+    expect(rebuiltThingIn(race, "c_00000000_90_90")).toBeNull();
+  });
+
   it("splits a row that was only partly the thing, and takes only the thing's copies", () => {
     const show = load(showroomOpen);
     const els = setElements(show);
@@ -163,8 +200,20 @@ describe("the card", () => {
     expect(fn.indexOf("await astraChangeSlot(access)")).toBeLessThan(fn.indexOf("await askAstra("));
   });
 
+  it("is judged by the thing it sends, before any photo is read or the press is claimed (2026-09-25)", () => {
+    const fn = actions.slice(actions.indexOf("export async function rebuildThingFromPhotos"), actions.indexOf("export async function readAstraEdit"));
+    const check = fn.indexOf("if (JSON.stringify(thingLocalBlocks(working, thing)).length > THING_REBUILD_MAX_SENT_CHARS) return { error: THING_REBUILD_TOO_BIG };");
+    expect(check).toBeGreaterThan(fn.indexOf("if (!thing) return { error: SET_ELEMENT_GONE };"));
+    expect(check).toBeLessThan(fn.indexOf("await listElementPhotos("));
+    expect(check).toBeLessThan(fn.indexOf("return oncePerPress("));
+    // The whole set's size is a chat edit's limit, not a rebuild's.
+    expect(fn).not.toContain("JSON.stringify(working).length > SET_EDIT_MAX_SPEC_CHARS");
+    // The same blocks thingRebuildInput sends.
+    expect(readFileSync(join(__dirname, "thing-rebuild.ts"), "utf8")).toContain("${JSON.stringify(thingLocalBlocks(spec, el))}");
+  });
+
   it("follows the thing to its new key, and its Undo takes it back", () => {
-    expect(view).toContain("moveThingKey(key, to);");
+    expect(view).toContain("moveThingKey(key, to.key);");
     expect(view).toContain("moveThingKey(to, from);");
     expect(view).toContain("specBeforeEditRef.current = before;");
   });

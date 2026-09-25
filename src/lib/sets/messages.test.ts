@@ -20,7 +20,12 @@ import {
   SET_PHOTO_UNCHECKED,
   SET_PHOTO_UNREADABLE,
   SET_EDIT_MONTHLY_CAP_ONE,
+  SET_EDIT_NOT_SAVED,
+  SET_EDIT_STILL_WORKING,
   SET_EDIT_TOO_BIG,
+  SET_EDIT_TRIES_USED,
+  SET_EDIT_UNCHECKED,
+  THING_REBUILD_TOO_BIG,
   matchFailureMessage,
   setEditMonthlyCapMessage,
   setFailureMessage,
@@ -67,7 +72,9 @@ describe("the monthly cap sentence", () => {
 
   it("says 1 change, not 1 changes, for Astra's month too, in every language", () => {
     expect(setEditMonthlyCapMessage(1)).toBe(SET_EDIT_MONTHLY_CAP_ONE);
-    expect(setEditMonthlyCapMessage(20)).toContain("Astra for 20 changes this billing month");
+    // Changes made, not asked for, since only a saved change counts (2026-09-25).
+    expect(setEditMonthlyCapMessage(20)).toContain("made 20 changes with Astra this billing month");
+    expect(SET_EDIT_MONTHLY_CAP_ONE).toContain("made 1 change with Astra this billing month");
     for (const t of [es, pt, it_]) {
       expect(localizeServerText(setEditMonthlyCapMessage(1), t)).toBe(t.serverText.setEditMonthlyCapOne);
       const twenty = localizeServerText(setEditMonthlyCapMessage(20), t);
@@ -77,6 +84,14 @@ describe("the monthly cap sentence", () => {
       expect(localizeServerText(SET_EDIT_TOO_BIG, t)).toBe(t.serverText.setEditTooBig);
     }
     expect(localizeServerText(setEditMonthlyCapMessage(20), en)).toBe(setEditMonthlyCapMessage(20));
+  });
+
+  it("says in every language that the month's changes are the ones made", () => {
+    for (const t of [en, es, pt, it_]) {
+      expect(t.serverText.setEditMonthlyCap).toContain("{used}");
+      expect(t.serverText.setEditMonthlyCap).not.toMatch(/asked|pedido|pediu|chiesto/);
+      expect(t.serverText.setEditMonthlyCapOne).not.toMatch(/asked|pedido|pediu|chiesto/);
+    }
   });
 
   it("reaches every language, singular and plural, with the count carried", () => {
@@ -94,6 +109,44 @@ describe("the monthly cap sentence", () => {
     for (const wire of [SET_BUILD_FAILED, SET_BUILD_FAILED_RETRY, SET_BUILD_LOST, SET_BUILD_REFUSED]) {
       for (const t of [es, pt, it_]) expect(localizeServerText(wire, t)).not.toBe(wire);
     }
+  });
+});
+
+// One Astra job per press, and only saved changes counted (2026-09-25, Cut
+// 1 — operator: "GO ahead"): what a repeat, a read-back and a spent month
+// of tries say, and a thing too detailed to rebuild.
+describe("an Astra press's sentences reach every language", () => {
+  const WIRE = [
+    [SET_EDIT_STILL_WORKING, "setEditStillWorking"],
+    [SET_EDIT_NOT_SAVED, "setEditNotSaved"],
+    [SET_EDIT_UNCHECKED, "setEditUnchecked"],
+    [SET_EDIT_TRIES_USED, "setEditTriesUsed"],
+    [THING_REBUILD_TOO_BIG, "thingRebuildTooBig"],
+  ] as const;
+
+  it("English readers get the wire sentence itself; the others get it translated", () => {
+    for (const [wire, key] of WIRE) {
+      expect(en.serverText[key], key).toBe(wire);
+      expect(localizeServerText(wire, en)).toBe(wire);
+      for (const t of [es, pt, it_]) {
+        expect(localizeServerText(wire, t), key).toBe(t.serverText[key]);
+        expect(t.serverText[key], key).not.toBe(wire);
+      }
+    }
+  });
+
+  it("never says try again where it may already have landed, or where only a reload can tell", () => {
+    // A repeat may still save; an unchecked press may have saved: "try
+    // again" could spend a second change for one that landed.
+    expect(SET_EDIT_STILL_WORKING).not.toMatch(/try again/i);
+    expect(SET_EDIT_UNCHECKED).not.toMatch(/try again/i);
+    expect(SET_EDIT_UNCHECKED).toMatch(/reload/i);
+    // One that did not save may be asked again.
+    expect(SET_EDIT_NOT_SAVED).toMatch(/try again/i);
+  });
+
+  it("none of them is a prompt-gate refusal", () => {
+    for (const [wire] of WIRE) expect(isPolicyRefusal(wire)).toBe(false);
   });
 });
 
@@ -360,6 +413,11 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     "setEditMonthlyCap",
     "setEditMonthlyCapOne",
     "setEditTooBig",
+    "setEditStillWorking",
+    "setEditNotSaved",
+    "setEditUnchecked",
+    "setEditTriesUsed",
+    "thingRebuildTooBig",
   ] as const;
 
   it("as non-empty strings", () => {

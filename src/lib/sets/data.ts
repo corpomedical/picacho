@@ -106,8 +106,10 @@ export async function countSetBuildsThisMonth(
 }
 
 /**
- * Astra changes asked for this billing month: the limiter's own record of
- * them (editor-actions.ts counts each in SET_EDITS_MONTH_SCOPE), read with
+ * Astra changes saved this billing month, plus any being made right now
+ * (editor-actions.ts reserves one before Astra runs and gives it back
+ * unless it saves, 2026-09-25): the limiter's own record of them
+ * (editor-actions.ts counts each in SET_EDITS_MONTH_SCOPE), read with
  * the service role since the person cannot read it. Null when it cannot be
  * read — then nothing is shown, and the action still holds the cap.
  */

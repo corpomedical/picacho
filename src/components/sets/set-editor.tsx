@@ -6,7 +6,8 @@ import { useLocale } from "@/lib/i18n/provider";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { formatMsg } from "@/lib/i18n/format";
-import { clearSetEdit, editSetWithAstra, saveSetEdit } from "@/lib/sets/editor-actions";
+import { clearSetEdit, editSetWithAstra, readAstraEdit, saveSetEdit } from "@/lib/sets/editor-actions";
+import { followAstraEdit, type FollowedEdit } from "@/lib/sets/astra-follow";
 import { SET_EDIT_TOO_BIG, SET_SAVE_FAILED } from "@/lib/sets/messages";
 import { SET_EDIT_MAX_SPEC_CHARS } from "@/lib/sets/set-config";
 import { dropUnsaved, keepUnsaved, savedEditKey, takeUnsaved } from "@/lib/sets/unsaved";
@@ -874,23 +875,56 @@ export function SetEditor({
         return;
       }
     }
-    let r: Awaited<ReturnType<typeof editSetWithAstra>>;
+    // One id per press (astra-press.ts, 2026-09-25): a browser's silent
+    // resend of this call is answered at once and never runs Astra twice.
+    const pressId = crypto.randomUUID();
+    const before = specRef.current;
+    let r: Awaited<ReturnType<typeof editSetWithAstra>> | null = null;
+    let followed: FollowedEdit | null = null;
     const askedAt = new Date().getTime();
     try {
-      r = await editSetWithAstra(setId, text);
-    } catch (err) {
-      // A dropped connection or a stale deploy: the bar is let go and says
-      // so, rather than saying Astra is still at work for good.
-      // A stale deploy reloads through the one shared guard, and saveMissed
-      // keeps the working copy across it — the reload here used to take the
-      // unsaved change with it (2026-09-18).
-      const stale = isStaleDeployError(err);
-      if (stale) saveMissed(specRef.current, err);
-      setAskError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
-      return;
+      try {
+        r = await editSetWithAstra(setId, text, pressId);
+      } catch (err) {
+        // A stale deploy: the bar is let go and says so. It reloads through
+        // the one shared guard, and saveMissed keeps the working copy across
+        // it — the reload here used to take the unsaved change with it
+        // (2026-09-18).
+        if (isStaleDeployError(err)) {
+          saveMissed(specRef.current, err);
+          setAskError(t.generate.refreshNeeded);
+          return;
+        }
+        // A dropped connection may still have saved (Astra usually finishes
+        // on the server): read back below rather than "try again", which
+        // spent a second change for one that had landed.
+      }
+      if (r === null || (r.error !== null && r.pending)) {
+        followed = await followAstraEdit(() => readAstraEdit(setId, pressId).catch((thrown: unknown) => ({ thrown })), {
+          before,
+          stop: (err) => {
+            if (!isStaleDeployError(err)) return false;
+            saveMissed(specRef.current, err);
+            setAskError(t.generate.refreshNeeded);
+            return true;
+          },
+        });
+      }
     } finally {
       setAsking(false);
     }
+    if (followed) {
+      if (followed.kind !== "none" && followed.kind !== "left" && followed.kind !== "error" && followed.editsLeft !== undefined) setEditsLeft(followed.editsLeft);
+      if (followed.kind === "saved") {
+        setAsk("");
+        commitFromServer(followed.spec);
+        dropUnsaved(setId, "edit", askedAt);
+        setAskNote(followed.changed);
+      } else if (followed.kind === "none") setAskError(t.generate.submitFailed);
+      else if (followed.kind !== "left") setAskError(followed.error);
+      return;
+    }
+    if (!r) return;
     if (r.editsLeft !== undefined) setEditsLeft(r.editsLeft);
     if (r.error !== null) {
       setAskError(r.error);

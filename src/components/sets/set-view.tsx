@@ -12,8 +12,9 @@ import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { saveSetLayout, saveSetThumbnail, shootInSet, takeInSet } from "@/lib/sets/actions";
 import { addElementPhoto, assignElementPhoto, prepareElementSheets, removeElementPhoto, settleElementPhotos } from "@/lib/sets/element-actions";
 import { thumbUrl } from "@/lib/media/url";
-import { editSetWithAstra, rebuildThingFromPhotos, saveSetEdit } from "@/lib/sets/editor-actions";
-import { THING_REBUILD_OPEN_TO_ALL } from "@/lib/sets/thing-rebuild";
+import { editSetWithAstra, readAstraEdit, rebuildThingFromPhotos, saveSetEdit } from "@/lib/sets/editor-actions";
+import { followAstraEdit, type FollowedEdit } from "@/lib/sets/astra-follow";
+import { THING_REBUILD_OPEN_TO_ALL, rebuiltThingIn } from "@/lib/sets/thing-rebuild";
 import { SELECTABLE_IMAGE_MODEL_IDS, getImageModel } from "@/lib/generations/providers/image-models";
 import { matchSetShot } from "@/lib/sets/match-actions";
 import { readShotWords } from "@/lib/sets/words-actions";
@@ -5724,27 +5725,46 @@ export function SetView({
     busyRef.current.editing = true;
     setEditingSet(true);
     const before = spec;
-    let res: Awaited<ReturnType<typeof editSetWithAstra>>;
+    // One id per press (astra-press.ts, 2026-09-25): a browser's silent
+    // resend of this call is answered at once and never runs Astra twice.
+    const pressId = crypto.randomUUID();
+    let res: Awaited<ReturnType<typeof editSetWithAstra>> | null = null;
+    let followed: FollowedEdit | null = null;
     try {
-      res = await editSetWithAstra(setId, message);
-    } catch (err) {
-      // A dropped connection or a stale deploy: the conversation is let go
-      // and says so, rather than waiting on Astra for good.
-      if (!leftBehind(err)) setError(t.generate.submitFailed);
-      return;
+      try {
+        res = await editSetWithAstra(setId, message, pressId);
+      } catch (err) {
+        // A stale deploy lets the conversation go and says so. A dropped
+        // connection may still have saved (Astra usually finishes on the
+        // server), so the set is read back below instead of saying "try
+        // again" — which spent a second change for one that had landed.
+        if (leftBehind(err)) return;
+      }
+      if (res === null || (res.error !== null && res.pending)) followed = await followAstraEdit(() => readAstraEdit(setId, pressId).catch((thrown: unknown) => ({ thrown })), { before, stop: leftBehind });
     } finally {
       busyRef.current.editing = false;
       setEditingSet(false);
     }
+    const apply = (next: SetSpec, changed: number) => {
+      specBeforeEditRef.current = before;
+      setSpec(next);
+      drawSet(next);
+      setSetChanged(changed);
+      refreshThumbnail(next);
+    };
+    if (followed) {
+      if (followed.kind === "saved") apply(followed.spec, followed.changed);
+      // Only when nothing reached the server is it worth trying again.
+      else if (followed.kind === "none") setError(t.generate.submitFailed);
+      else if (followed.kind !== "left") setError(followed.error);
+      return;
+    }
+    if (!res) return;
     if (res.error !== null) {
       setError(res.error);
       return;
     }
-    specBeforeEditRef.current = before;
-    setSpec(res.spec);
-    drawSet(res.spec);
-    setSetChanged(res.changed);
-    refreshThumbnail(res.spec);
+    apply(res.spec, res.changed);
   }
 
   /**
@@ -5761,29 +5781,51 @@ export function SetView({
     setRebuilding(key);
     setRebuildNote(null);
     const before = spec;
-    let res: Awaited<ReturnType<typeof rebuildThingFromPhotos>>;
+    // One id per press, as editSet's (astra-press.ts, 2026-09-25).
+    const pressId = crypto.randomUUID();
+    let res: Awaited<ReturnType<typeof rebuildThingFromPhotos>> | null = null;
+    let followed: FollowedEdit | null = null;
     try {
-      res = await rebuildThingFromPhotos(setId, key);
-    } catch (err) {
-      if (!leftBehind(err)) setRebuildNote({ key, text: t.generate.submitFailed, ok: false });
-      return;
+      try {
+        res = await rebuildThingFromPhotos(setId, key, pressId);
+      } catch (err) {
+        // As editSet: a stale deploy lets go, a dropped connection is read back.
+        if (leftBehind(err)) return;
+      }
+      if (res === null || (res.error !== null && res.pending)) followed = await followAstraEdit(() => readAstraEdit(setId, pressId).catch((thrown: unknown) => ({ thrown })), { before, stop: leftBehind });
     } finally {
       busyRef.current.editing = false;
       setEditingSet(false);
       setRebuilding(null);
     }
+    // The set as saved, and the card on the thing's new key: `to` is null when
+    // a read-back finds no thing where this one stood (edited meanwhile).
+    const apply = (next: SetSpec, changed: number, to: { key: string; blocks: number } | null) => {
+      specBeforeEditRef.current = before;
+      setSpec(next);
+      drawSet(next);
+      setSetChanged(changed);
+      refreshThumbnail(next);
+      if (!to) {
+        setRebuildNote(null);
+        return;
+      }
+      moveThingKey(key, to.key);
+      setRebuildNote({ key: to.key, text: formatMsg(cast.rebuildDone, { n: to.blocks }), ok: true, from: key });
+    };
+    if (followed) {
+      // Read back rather than answered: the thing is found the way its photos find it.
+      if (followed.kind === "saved") apply(followed.spec, followed.changed, rebuiltThingIn(followed.spec, key));
+      else if (followed.kind === "none") setRebuildNote({ key, text: t.generate.submitFailed, ok: false });
+      else if (followed.kind !== "left") setRebuildNote({ key, text: localizeServerText(followed.error, t), ok: false });
+      return;
+    }
+    if (!res) return;
     if (res.error !== null) {
       setRebuildNote({ key, text: localizeServerText(res.error, t), ok: false });
       return;
     }
-    const to = res.key;
-    specBeforeEditRef.current = before;
-    setSpec(res.spec);
-    drawSet(res.spec);
-    setSetChanged(res.changed);
-    refreshThumbnail(res.spec);
-    moveThingKey(key, to);
-    setRebuildNote({ key: to, text: formatMsg(cast.rebuildDone, { n: res.blocks }), ok: true, from: key });
+    apply(res.spec, res.changed, { key: res.key, blocks: res.blocks });
   }
 
   /** The card, the list's order and a model on the thing follow it to the key its new blocks gave it. */

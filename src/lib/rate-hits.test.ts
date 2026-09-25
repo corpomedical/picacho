@@ -228,7 +228,8 @@ describe("every limiter's window", () => {
     expect(calls.length).toBeGreaterThan(30);
     expect(calls.filter((c) => c.window === null).map((c) => c.where)).toEqual([]);
     expect(calls.filter((c) => typeof c.window === "number" && c.window > RATE_HITS_LONGEST_WINDOW_SECONDS).map((c) => c.where)).toEqual([]);
-    expect(calls.filter((c) => c.window === "monthly")).toHaveLength(1);
+    // The month's Astra changes and the month's Astra tries (2026-09-25), both from monthlyWindowStart.
+    expect(calls.filter((c) => c.window === "monthly")).toHaveLength(2);
   });
 
   it("counts the month of Astra changes from the billing month's start, no further back", () => {

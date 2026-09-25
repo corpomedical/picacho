@@ -142,7 +142,7 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "The set couldn't be started — try again in a moment.": "setBuildCouldntStart",
   "You've built 1 set this billing month — the limit on your plan. It resets with your billing period.":
     "setMonthlyCapOne",
-  "You've asked Astra for 1 change this billing month — the limit on your plan. It resets with your billing period; the editor's own tools still work.":
+  "You've made 1 change with Astra this billing month — the limit on your plan. It resets with your billing period; the editor's own tools still work.":
     "setEditMonthlyCapOne",
   "This set has grown too big for Astra to rewrite in one answer — change it with the editor's own tools.": "setEditTooBig",
   "This set couldn't be built, and the build is back in your allowance. Try describing the place differently.":
@@ -256,6 +256,14 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "That change can't be made here.": "setEditRefused",
   "You're changing the set quickly — give it a moment.": "setEditTooFast",
   "That change took too long — try again in a moment.": "setEditTimedOut",
+  // One Astra job per press, and what the page reads back after a dropped
+  // connection (lib/sets/astra-press.ts, astra-follow.ts, 2026-09-25), and
+  // the month's tries (set-config.ts SET_EDIT_SPARE_TRIES).
+  "Astra is still on that change — it will show on the set once it's saved.": "setEditStillWorking",
+  "Astra didn't change the set this time — it's as it was. Try again when you're ready.": "setEditNotSaved",
+  "We couldn't check whether Astra saved that change — reload the set to see it.": "setEditUnchecked",
+  "Too many of this month's Astra changes didn't land, so Astra is paused on your sets until your billing period resets. The editor's own tools still work.":
+    "setEditTriesUsed",
   // Takes (lib/sets/messages.ts, 2026-09-15) — a clip from one still to a
   // newly shot end frame.
   "That still can't start a take — pick another.": "setTakeBadStart",
@@ -291,6 +299,7 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "Astra's new shape didn't fit where the old one stood, so the set is unchanged — try again.": "thingRebuildDidntFit",
   "Astra couldn't rebuild this from its photos — try again in a moment.": "thingRebuildFailed",
   "Rebuilding from photos is for admins while we prove it.": "thingRebuildAdminsOnly",
+  "This thing has too many blocks for Astra to rebuild in one answer — change it with the editor's own tools.": "thingRebuildTooBig",
   "Put a photo on this thing first — its model is built from its front photo.": "thingBuildNoPhoto",
   "The model couldn't be built from this photo — try a clearer photo of the whole thing.": "thingBuildFailed",
   "That thing changed on the set — tap it again.": "setElementGone",
@@ -419,7 +428,7 @@ const PATTERNS: {
     params: (m) => ({ used: m[1] }),
   },
   {
-    re: /^You've asked Astra for (\d+) changes this billing month — the limit on your plan\./,
+    re: /^You've made (\d+) changes with Astra this billing month — the limit on your plan\./,
     key: "setEditMonthlyCap",
     params: (m) => ({ used: m[1] }),
   },

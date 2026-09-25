@@ -131,11 +131,45 @@ describe("every Helios server call a page makes", () => {
 });
 
 describe("the set page", () => {
-  it("lets the conversation go when an Astra change throws", () => {
+  // Since 2026-09-25 (Cut 1 — operator: "GO ahead", never charge twice) a
+  // throw is not "try again": Astra usually finished and saved on the
+  // server, and asking again spent a second change. Each press names
+  // itself (astra-press.ts), and a throw or a repeat's `pending` answer is
+  // followed by reading back what was saved (astra-follow.ts), with the
+  // spinner still up. "Try again" is said only when nothing reached the
+  // server.
+  it("reads back an Astra change that threw, instead of saying try again", () => {
     const edit = between(view, "async function editSet(message: string) {", "\n  }\n");
-    expect(edit).toMatch(/try \{\s*res = await editSetWithAstra\(setId, message\);\s*\} catch \(err\) \{/);
+    expect(edit).toContain("const pressId = crypto.randomUUID();");
+    expect(edit).toMatch(/try \{\s*res = await editSetWithAstra\(setId, message, pressId\);\s*\} catch \(err\) \{[\s\S]*?if \(leftBehind\(err\)\) return;\s*\}/);
+    const follow = edit.indexOf(
+      "followed = await followAstraEdit(() => readAstraEdit(setId, pressId).catch((thrown: unknown) => ({ thrown })), { before, stop: leftBehind });",
+    );
+    expect(follow).toBeGreaterThan(-1);
+    expect(edit).toContain("if (res === null || (res.error !== null && res.pending)) followed = await followAstraEdit(");
+    // The spinner stays up while it follows, and always comes down.
+    expect(follow).toBeLessThan(edit.indexOf("setEditingSet(false);"));
     expect(edit).toMatch(/\} finally \{\s*(?:busyRef\.current\.editing = false;\s*)?setEditingSet\(false\);\s*\}/);
-    expect(edit).toContain("if (!leftBehind(err)) setError(t.generate.submitFailed);");
+    expect(edit).toContain('followed.kind === "none") setError(t.generate.submitFailed)');
+    expect(edit.match(/t\.generate\.submitFailed/g)).toHaveLength(1);
+    expect(edit).toContain('if (followed.kind === "saved") apply(followed.spec, followed.changed);');
+    expect(edit).not.toContain("if (!leftBehind(err)) setError(t.generate.submitFailed);");
+  });
+
+  it("reads back a rebuild that threw the same way, and finds the thing on the saved set", () => {
+    const rebuild = between(view, "async function rebuildThing(key: string) {", "\n  }\n");
+    expect(rebuild).toContain("const pressId = crypto.randomUUID();");
+    expect(rebuild).toMatch(/try \{\s*res = await rebuildThingFromPhotos\(setId, key, pressId\);\s*\} catch \(err\) \{[\s\S]*?if \(leftBehind\(err\)\) return;\s*\}/);
+    const follow = rebuild.indexOf(
+      "followed = await followAstraEdit(() => readAstraEdit(setId, pressId).catch((thrown: unknown) => ({ thrown })), { before, stop: leftBehind });",
+    );
+    expect(follow).toBeGreaterThan(-1);
+    expect(follow).toBeLessThan(rebuild.indexOf("setRebuilding(null);"));
+    expect(rebuild).toMatch(/\} finally \{\s*busyRef\.current\.editing = false;\s*setEditingSet\(false\);\s*setRebuilding\(null\);\s*\}/);
+    expect(rebuild).toContain("rebuiltThingIn(followed.spec, key)");
+    expect(rebuild).toContain('followed.kind === "none") setRebuildNote({ key, text: t.generate.submitFailed, ok: false });');
+    expect(rebuild.match(/t\.generate\.submitFailed/g)).toHaveLength(1);
+    expect(rebuild).not.toContain("if (!leftBehind(err)) setRebuildNote({ key, text: t.generate.submitFailed, ok: false });");
   });
 
   it("shows an Undo only once it is saved, and says when it is not", () => {
@@ -230,11 +264,13 @@ describe("the Build editor", () => {
     const ask = between(editor, "async function sendAsk() {", "\n  }\n");
     const flush = ask.indexOf("if (!(await saveCopy(specRef.current))) {");
     expect(flush).toBeGreaterThan(-1);
-    expect(flush).toBeLessThan(ask.indexOf("r = await editSetWithAstra(setId, text);"));
+    expect(flush).toBeLessThan(ask.indexOf("r = await editSetWithAstra(setId, text, pressId);"));
     expect(ask).toMatch(/if \(!staleRef\.current\) setAskError\(SET_SAVE_FAILED\);\s*setAsking\(false\);\s*return;/);
     // Astra's answer, saved by the server, holds whatever was kept before it was asked for.
-    expect(ask).toMatch(/const askedAt = new Date\(\)\.getTime\(\);\s*try \{\s*r = await editSetWithAstra/);
+    expect(ask).toMatch(/const askedAt = new Date\(\)\.getTime\(\);\s*try \{\s*try \{\s*r = await editSetWithAstra\(setId, text, pressId\)/);
     expect(ask).toMatch(/commitFromServer\(r\.spec\);\s*dropUnsaved\(setId, "edit", askedAt\);/);
+    // A press read back as saved lands the same way (astra-follow.ts, 2026-09-25).
+    expect(ask).toMatch(/commitFromServer\(followed\.spec\);\s*dropUnsaved\(setId, "edit", askedAt\);/);
   });
 
   it("puts a copy the last load could not save back, as an edit", () => {

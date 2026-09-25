@@ -13,9 +13,11 @@ import {
   SET_BRIEF_TOO_SHORT,
   SET_EDIT_FAILED,
   SET_EDIT_REFUSED,
+  SET_EDIT_STILL_WORKING,
   SET_EDIT_TIMED_OUT,
   SET_EDIT_TOO_BIG,
   SET_EDIT_TOO_FAST,
+  SET_EDIT_TRIES_USED,
   SET_NOT_FOUND,
   SET_NOT_READY,
   SET_SAVE_FAILED,
@@ -23,6 +25,7 @@ import {
   THING_REBUILD_DIDNT_FIT,
   THING_REBUILD_FAILED,
   THING_REBUILD_NO_PHOTOS,
+  THING_REBUILD_TOO_BIG,
   SET_ELEMENT_GONE,
   setEditMonthlyCapMessage,
 } from "@/lib/sets/messages";
@@ -33,14 +36,25 @@ import {
   SET_EDIT_MAX_SPEC_CHARS,
   SET_EDIT_PER_10_MIN,
   SET_EDIT_POLL_MS,
+  SET_EDIT_TRIES_MONTH_SCOPE,
   SET_EDITS_MONTH_SCOPE,
+  setEditTriesMonthlyLimit,
   setEditsMonthlyLimit,
 } from "@/lib/sets/set-config";
-import { countAstraEditsThisMonth } from "@/lib/sets/data";
+import { astraEditsLeft, countAstraEditsThisMonth } from "@/lib/sets/data";
+import { claimAstraPress, endAstraPress, giveBackAstraEdit, parseAstraPressId, readAstraPress } from "@/lib/sets/astra-press";
+import type { AstraEditRead } from "@/lib/sets/astra-follow";
 import { cleanText, normaliseSetSpec, parseSetSpecText, specTextForGate, type SetSpec } from "@/lib/sets/set-spec";
 import { ELEMENT_KEY_RE, resolvePhotos, setElements, type ElementPhoto } from "@/lib/sets/elements";
 import { listElementPhotos } from "@/lib/sets/references";
-import { THING_REBUILD_OPEN_TO_ALL, parseRebuildText, spliceThing, thingRebuildRequest } from "@/lib/sets/thing-rebuild";
+import {
+  THING_REBUILD_MAX_SENT_CHARS,
+  THING_REBUILD_OPEN_TO_ALL,
+  parseRebuildText,
+  spliceThing,
+  thingLocalBlocks,
+  thingRebuildRequest,
+} from "@/lib/sets/thing-rebuild";
 import { listModelFiles } from "@/lib/sets/thing-model-store";
 import { THING_MODEL_BUCKET, setModelPath } from "@/lib/sets/thing-model";
 
@@ -132,31 +146,92 @@ export async function clearSetEdit(setId: string): Promise<{ error: string | nul
 
 type Access = Extract<Awaited<ReturnType<typeof setsAccess>>, { error: null }>;
 
+/** A change reserved from the month: given back unless the press saves. */
+type Slot = { error: null; editsLeft: number | null; monthly: number; reserved: boolean; given?: boolean };
+
 /**
  * One of the month's Astra changes, at the edits' own pace
  * (set-config.ts SET_EDITS_MONTHLY_LIMITS, SET_EDIT_PER_10_MIN): the
  * limiter's window reaches back to the billing month's start, the one
- * builds are counted from, so each request that gets this far is one of
- * the month's — Astra's refusals and timeouts cost too. Asked last, so a
- * request the gate or the pace refused is not one of them. Every answer
- * from here on says how many are left (null: no cap, or the count could
- * not be read).
+ * builds are counted from. Asked last, so a request the gate or the pace
+ * refused is not one of them. Every answer from here on says how many are
+ * left (null: no cap, or the count could not be read).
+ *
+ * RESERVED, not spent (2026-09-25, Cut 1 — operator: "GO ahead"). The
+ * change is taken before Astra runs, atomically, so parallel presses can
+ * never pass the cap — but a press that does not save gives it back
+ * (giveBackAstraChange). Until then "Astra's refusals and timeouts cost
+ * too": a Basic month whose one edit timed out and one was refused was
+ * spent with nothing on the set. Astra is still billed for every try, so
+ * the month's tries are capped as well: the changes plus
+ * SET_EDIT_SPARE_TRIES (set-config.ts has the money). The pace still
+ * counts every try.
  */
-async function astraChangeSlot(access: Access): Promise<{ error: string; editsLeft?: number } | { error: null; editsLeft: number | null }> {
+async function astraChangeSlot(access: Access): Promise<{ error: string; editsLeft?: number | null } | Slot> {
   const { userId } = access;
   if (await rateLimited(userId, "set-astra-edit", 60 * 10, SET_EDIT_PER_10_MIN)) return { error: SET_EDIT_TOO_FAST };
   const monthly = setEditsMonthlyLimit(access.plan, access.isAdmin);
-  let editsLeft: number | null = null;
-  if (monthly >= 0) {
-    const since = monthlyWindowStart(access.periodStart).getTime();
-    const windowSeconds = Math.max(1, Math.ceil((new Date().getTime() - since) / 1000));
-    if (monthly === 0 || (await rateLimited(userId, SET_EDITS_MONTH_SCOPE, windowSeconds, monthly))) {
-      return { error: setEditMonthlyCapMessage(monthly), editsLeft: 0 };
-    }
-    const used = await countAstraEditsThisMonth(userId, access.periodStart);
-    editsLeft = used === null ? null : Math.max(0, monthly - used);
+  if (monthly < 0) return { error: null, editsLeft: null, monthly, reserved: false };
+  const since = monthlyWindowStart(access.periodStart).getTime();
+  const windowSeconds = Math.max(1, Math.ceil((new Date().getTime() - since) / 1000));
+  // Refused at the cap: nothing was reserved, so nothing is given back.
+  if (monthly === 0 || (await rateLimited(userId, SET_EDITS_MONTH_SCOPE, windowSeconds, monthly))) {
+    return { error: setEditMonthlyCapMessage(monthly), editsLeft: 0 };
   }
-  return { error: null, editsLeft };
+  const slot: Slot = { error: null, editsLeft: null, monthly, reserved: true };
+  // Too many tries that didn't land this month: the change just reserved goes back.
+  if (await rateLimited(userId, SET_EDIT_TRIES_MONTH_SCOPE, windowSeconds, setEditTriesMonthlyLimit(access.plan, access.isAdmin))) {
+    return { error: SET_EDIT_TRIES_USED, editsLeft: await giveBackAstraChange(access, slot) };
+  }
+  // This reservation included, as the page's own count reads it.
+  const used = await countAstraEditsThisMonth(userId, access.periodStart);
+  slot.editsLeft = used === null ? null : Math.max(0, monthly - used);
+  return slot;
+}
+
+/**
+ * A press that did not save gives its change back to the month, once
+ * however often it is asked (a later throw after a returned failure never
+ * refunds twice), and says how many are left after it.
+ */
+async function giveBackAstraChange(access: Access, slot: Slot): Promise<number | null> {
+  if (!slot.reserved || slot.given) return slot.editsLeft;
+  slot.given = true;
+  await giveBackAstraEdit(createAdminClient(), access.userId);
+  const used = await countAstraEditsThisMonth(access.userId, access.periodStart);
+  slot.editsLeft = used === null ? null : Math.max(0, slot.monthly - used);
+  return slot.editsLeft;
+}
+
+/**
+ * One Astra job per press (astra-press.ts, 2026-09-25): the page sends a
+ * fresh id with each press, and only the first delivery with it runs. A
+ * browser's silent resend of the same press is answered at once — never
+ * gated, paced, counted or sent to Astra — and the page reads back what
+ * the first one saved (astra-follow.ts). The first delivery always leaves
+ * an end marker, saved or not, so that read-back has a definite answer;
+ * `run` calls `kept` the moment its change is saved. A press with no id
+ * (a tab from before this deploy) is served as before.
+ */
+async function oncePerPress<T extends { error: string | null }>(
+  userId: string,
+  pressId: unknown,
+  run: (kept: () => void) => Promise<T>,
+): Promise<T | { error: string; pending: true } | { error: string }> {
+  const press = parseAstraPressId(pressId);
+  if (press === null) return run(() => {});
+  const claim = await claimAstraPress(createAdminClient(), userId, press);
+  if (claim === "repeat") return { error: SET_EDIT_STILL_WORKING, pending: true };
+  // The claim could not be asked: refused as the pace limiter refuses in the same outage (it fails closed).
+  if (claim === "unavailable") return { error: SET_EDIT_TOO_FAST };
+  let saved = false;
+  try {
+    return await run(() => {
+      saved = true;
+    });
+  } finally {
+    await endAstraPress(createAdminClient(), userId, press, saved ? "saved" : "unsaved");
+  }
 }
 
 /**
@@ -192,13 +267,15 @@ async function askAstra(setId: string, request: AstraJobRequest, what: string, f
  * The prompt bar: one change request, applied by Astra to the working spec.
  * The person's words are gated as their own; Astra's answer is parsed,
  * normalised and gated whole, like a build's — then saved as the working
- * copy and handed back with how many pieces it touched.
+ * copy and handed back with how many pieces it touched. `pressId` names
+ * this press (oncePerPress); `pending` answers a repeat delivery of one.
  */
 export async function editSetWithAstra(
   setId: string,
   instruction: string,
+  pressId?: string,
 ): Promise<
-  | { error: string; editsLeft?: number | null }
+  | { error: string; editsLeft?: number | null; pending?: true }
   | { error: null; spec: SetSpec; changed: number; editsLeft: number | null }
 > {
   const access = await setsAccess();
@@ -213,48 +290,60 @@ export async function editSetWithAstra(
   const working = owned.edited ?? owned.spec;
   if (JSON.stringify(working).length > SET_EDIT_MAX_SPEC_CHARS) return { error: SET_EDIT_TOO_BIG };
 
-  // The person's own words, judged before anything leaves Picacho — as a
-  // brief is (actions.ts submitSetBuild). A refusal answers with the gate's
-  // own sentence.
-  try {
-    await gatePrompt({ prompt: text, userId, hasRealPersonReference: false });
-  } catch (err) {
-    if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
-    throw err;
-  }
-  const slot = await astraChangeSlot(access);
-  if (slot.error !== null) return slot;
-  const { editsLeft } = slot;
+  // Everything above is free and gives a repeat the same answer. The press
+  // is claimed before the gate, so a repeat delivery never logs a second
+  // policy refusal, and before the pace, the month and Astra.
+  return oncePerPress(userId, pressId, async (kept) => {
+    // The person's own words, judged before anything leaves Picacho — as a
+    // brief is (actions.ts submitSetBuild). A refusal answers with the gate's
+    // own sentence.
+    try {
+      await gatePrompt({ prompt: text, userId, hasRealPersonReference: false });
+    } catch (err) {
+      if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
+      throw err;
+    }
+    const slot = await astraChangeSlot(access);
+    if (slot.error !== null) return slot;
 
-  const answer = await askAstra(setId, setEditRequest(working, text, openAiSafetyId(userId)), "edit", SET_EDIT_FAILED);
-  if (answer.error !== null) return { error: answer.error, editsLeft };
+    // From here every answer that does not save gives the change back; so
+    // does a throw, which is then passed on.
+    try {
+      const answer = await askAstra(setId, setEditRequest(working, text, openAiSafetyId(userId)), "edit", SET_EDIT_FAILED);
+      if (answer.error !== null) return { error: answer.error, editsLeft: await giveBackAstraChange(access, slot) };
 
-  const parsed = parseSetSpecText(answer.text);
-  if (!parsed.ok) return { error: SET_EDIT_FAILED, editsLeft };
-  const next = parsed.spec;
+      const parsed = parseSetSpecText(answer.text);
+      if (!parsed.ok) return { error: SET_EDIT_FAILED, editsLeft: await giveBackAstraChange(access, slot) };
+      const next = parsed.spec;
 
-  // Astra's words, judged before anyone reads them — in the strict lane, the
-  // lane every shot of this set will render them in (build-tick does the
-  // same for a build's answer). Logged under the provider.
-  const gateWords = specTextForGate(next);
-  try {
-    await assertPromptAllowed({ prompt: gateWords, hasRealPersonReference: true });
-  } catch (err) {
-    if (!(err instanceof ContentPolicyRefusal)) throw err;
-    await recordPolicyRefusal({
-      userId,
-      gate: "prompt",
-      reason: err.reason,
-      strictLane: true,
-      prompt: gateWords,
-      provider: "astra",
-    });
-    return { error: SET_EDIT_REFUSED, editsLeft };
-  }
+      // Astra's words, judged before anyone reads them — in the strict lane, the
+      // lane every shot of this set will render them in (build-tick does the
+      // same for a build's answer). Logged under the provider.
+      const gateWords = specTextForGate(next);
+      try {
+        await assertPromptAllowed({ prompt: gateWords, hasRealPersonReference: true });
+      } catch (err) {
+        if (!(err instanceof ContentPolicyRefusal)) throw err;
+        await recordPolicyRefusal({
+          userId,
+          gate: "prompt",
+          reason: err.reason,
+          strictLane: true,
+          prompt: gateWords,
+          provider: "astra",
+        });
+        return { error: SET_EDIT_REFUSED, editsLeft: await giveBackAstraChange(access, slot) };
+      }
 
-  const saved = await writeEdited(setId, userId, next);
-  if (saved.error !== null) return { error: saved.error, editsLeft };
-  return { error: null, spec: next, changed: countSpecChanges(working, next), editsLeft };
+      const saved = await writeEdited(setId, userId, next);
+      if (saved.error !== null) return { error: saved.error, editsLeft: await giveBackAstraChange(access, slot) };
+      kept();
+      return { error: null, spec: next, changed: countSpecChanges(working, next), editsLeft: slot.editsLeft };
+    } catch (err) {
+      await giveBackAstraChange(access, slot);
+      throw err;
+    }
+  });
 }
 
 /**
@@ -263,15 +352,16 @@ export async function editSetWithAstra(
  * photos passed the picture gate when they were put on it), and its new
  * blocks replace the old ones in the working copy, where the old ones
  * stood. No words: the answer is only blocks, so nothing new can reach a
- * render prompt. One of the month's Astra changes, like any edit. A thing
- * whose new blocks would not be one thing where the old one stood is left
- * as it was, and the page says so.
+ * render prompt. One of the month's Astra changes, like any edit — counted
+ * only when it saves (2026-09-25). A thing whose new blocks would not be
+ * one thing where the old one stood is left as it was, and the page says so.
  */
 export async function rebuildThingFromPhotos(
   setId: string,
   key: string,
+  pressId?: string,
 ): Promise<
-  | { error: string; editsLeft?: number | null }
+  | { error: string; editsLeft?: number | null; pending?: true }
   | { error: null; spec: SetSpec; changed: number; key: string; blocks: number; editsLeft: number | null }
 > {
   const access = await setsAccess();
@@ -282,7 +372,6 @@ export async function rebuildThingFromPhotos(
   if (owned.error !== null) return { error: owned.error };
   if (typeof key !== "string" || !ELEMENT_KEY_RE.test(key)) return { error: SET_ELEMENT_GONE };
   const working = owned.edited ?? owned.spec;
-  if (JSON.stringify(working).length > SET_EDIT_MAX_SPEC_CHARS) return { error: SET_EDIT_TOO_BIG };
 
   // The thing the page named, on the saved set now (the page may be a moment
   // ahead: a key that merely moved still finds it), and the photos on it.
@@ -291,43 +380,91 @@ export async function rebuildThingFromPhotos(
   const thingKey = resolvePhotos(els, [probe]).held[0]?.key ?? null;
   const thing = els.find((e) => e.key === thingKey);
   if (!thing) return { error: SET_ELEMENT_GONE };
+  // A rebuild sends only this thing's blocks, never the whole set, so it is
+  // judged by exactly what thingRebuildInput stringifies (2026-09-25): the
+  // whole-set limit (SET_EDIT_MAX_SPEC_CHARS) belongs to chat edits, which
+  // send the whole set, and refused a small car on a big set. Before any
+  // photo is read, the press claimed or anything spent.
+  if (JSON.stringify(thingLocalBlocks(working, thing)).length > THING_REBUILD_MAX_SENT_CHARS) return { error: THING_REBUILD_TOO_BIG };
   const admin = createAdminClient();
   const listing = await listElementPhotos(admin, userId, setId);
   const held = resolvePhotos(els, listing.photos).held.find((h) => h.key === thing.key);
   const pathOf = new Map(listing.photos.map((p) => [p.refId, p.path]));
   const paths = (held?.photos ?? []).map((p) => pathOf.get(p.refId)).filter((p): p is string => Boolean(p));
   if (paths.length === 0) return { error: THING_REBUILD_NO_PHOTOS };
-  const photos: string[] = [];
-  for (const path of paths) {
-    const { data, error } = await admin.storage.from("generated-images").download(path);
-    if (error || !data) {
-      console.warn("[sets] rebuild could not read a photo:", error?.message);
-      return { error: THING_REBUILD_FAILED };
+
+  // Claimed before the photos are downloaded, so a repeat delivery is
+  // caught during those seconds too (oncePerPress).
+  return oncePerPress(userId, pressId, async (kept) => {
+    const photos: string[] = [];
+    for (const path of paths) {
+      const { data, error } = await admin.storage.from("generated-images").download(path);
+      if (error || !data) {
+        console.warn("[sets] rebuild could not read a photo:", error?.message);
+        return { error: THING_REBUILD_FAILED };
+      }
+      photos.push(`data:image/jpeg;base64,${Buffer.from(await data.arrayBuffer()).toString("base64")}`);
     }
-    photos.push(`data:image/jpeg;base64,${Buffer.from(await data.arrayBuffer()).toString("base64")}`);
-  }
 
-  const slot = await astraChangeSlot(access);
-  if (slot.error !== null) return slot;
-  const { editsLeft } = slot;
-  const answer = await askAstra(setId, thingRebuildRequest(working, thing, photos, openAiSafetyId(userId)), "rebuild", THING_REBUILD_FAILED);
-  if (answer.error !== null) return { error: answer.error, editsLeft };
-  const raw = parseRebuildText(answer.text);
-  if (!raw) return { error: THING_REBUILD_FAILED, editsLeft };
-  const spliced = spliceThing(working, thing, raw);
-  if (!spliced.ok) {
-    console.warn("[sets] rebuild did not fit:", spliced.why);
-    return { error: THING_REBUILD_DIDNT_FIT, editsLeft };
-  }
-  const next = holdEditedText(spliced.spec, owned.edited ? [owned.edited, owned.spec] : [owned.spec]);
-  const saved = await writeEdited(setId, userId, next);
-  if (saved.error !== null) return { error: saved.error, editsLeft };
+    const slot = await astraChangeSlot(access);
+    if (slot.error !== null) return slot;
+    // From here every answer that does not save gives the change back; so
+    // does a throw, which is then passed on.
+    try {
+      const answer = await askAstra(setId, thingRebuildRequest(working, thing, photos, openAiSafetyId(userId)), "rebuild", THING_REBUILD_FAILED);
+      if (answer.error !== null) return { error: answer.error, editsLeft: await giveBackAstraChange(access, slot) };
+      const raw = parseRebuildText(answer.text);
+      if (!raw) return { error: THING_REBUILD_FAILED, editsLeft: await giveBackAstraChange(access, slot) };
+      const spliced = spliceThing(working, thing, raw);
+      if (!spliced.ok) {
+        console.warn("[sets] rebuild did not fit:", spliced.why);
+        return { error: THING_REBUILD_DIDNT_FIT, editsLeft: await giveBackAstraChange(access, slot) };
+      }
+      const next = holdEditedText(spliced.spec, owned.edited ? [owned.edited, owned.spec] : [owned.spec]);
+      const saved = await writeEdited(setId, userId, next);
+      if (saved.error !== null) return { error: saved.error, editsLeft: await giveBackAstraChange(access, slot) };
+      kept();
 
-  // A model file kept on the thing (thing-model.ts) follows it to its new key.
-  const kept = (await listModelFiles(admin, userId, setId)).find((f) => f.key === thing.key);
-  if (kept) {
-    const { error } = await admin.storage.from(THING_MODEL_BUCKET).move(kept.path, setModelPath(userId, setId, spliced.key, kept.at, kept.flip));
-    if (error) console.warn("[sets] a kept model stays on the old key:", error.message);
-  }
-  return { error: null, spec: next, changed: countSpecChanges(working, next), key: spliced.key, blocks: spliced.blocks, editsLeft };
+      // A model file kept on the thing (thing-model.ts) follows it to its new
+      // key. The rebuild is saved already: a failure here is logged, and never
+      // turns a saved rebuild into an error or an unsaved press.
+      try {
+        const keptModel = (await listModelFiles(admin, userId, setId)).find((f) => f.key === thing.key);
+        if (keptModel) {
+          const { error } = await admin.storage
+            .from(THING_MODEL_BUCKET)
+            .move(keptModel.path, setModelPath(userId, setId, spliced.key, keptModel.at, keptModel.flip));
+          if (error) console.warn("[sets] a kept model stays on the old key:", error.message);
+        }
+      } catch (err) {
+        console.warn("[sets] a kept model stays on the old key:", err instanceof Error ? err.message : String(err));
+      }
+      return { error: null, spec: next, changed: countSpecChanges(working, next), key: spliced.key, blocks: spliced.blocks, editsLeft: slot.editsLeft };
+    } catch (err) {
+      await giveBackAstraChange(access, slot);
+      throw err;
+    }
+  });
+}
+
+/**
+ * What became of an Astra press, for the page after a dropped connection or
+ * a repeat's `pending` answer (astra-follow.ts, 2026-09-25): where the press
+ * stands and the working copy as saved, with how many changes are left once
+ * the press has ended. The person's own set, and their own press rows only.
+ * No limiter, like the other reads: the page reads at most every 4 s, for
+ * at most ~350 s.
+ */
+export async function readAstraEdit(setId: string, pressId: string): Promise<AstraEditRead> {
+  const access = await setsAccess();
+  if (access.error !== null) return { error: access.error };
+  const press = parseAstraPressId(pressId);
+  if (press === null) return { error: SET_NOT_FOUND };
+  // The press's end marker is written after its save, so it is read first:
+  // a spec read after a "saved" is never older than that save.
+  const state = await readAstraPress(createAdminClient(), access.userId, press);
+  const owned = await ownedSpecs(setId, access.userId);
+  if (owned.error !== null) return { error: owned.error };
+  const ended = state === "saved" || state === "unsaved" || state === "lost";
+  return { error: null, press: state, spec: owned.edited ?? owned.spec, ...(ended ? { editsLeft: await astraEditsLeft(access) } : {}) };
 }

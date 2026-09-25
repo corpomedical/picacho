@@ -9,10 +9,12 @@ import {
   SET_BUILDS_MONTHLY_LIMITS,
   SET_EDIT_MAX_CHARS,
   SET_EDIT_MAX_SPEC_CHARS,
+  SET_EDIT_SPARE_TRIES,
   SET_EDITS_MONTHLY_LIMITS,
   SET_PHOTO_BUILD_INPUT_TOKENS,
   SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS,
   SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS,
+  setEditTriesMonthlyLimit,
   setEditsMonthlyLimit,
 } from "../sets/set-config";
 import { setEditInput, setEditRequest } from "../sets/set-edit-prompt";
@@ -185,6 +187,25 @@ describe("the Astra-edit ceiling", () => {
     expect(setEditsMonthlyLimit("growth", false)).toBe(SET_EDITS_MONTHLY_LIMITS.growth);
     expect(setEditsMonthlyLimit("platinum", false)).toBe(0);
     expect(setEditsMonthlyLimit(null, false)).toBe(0);
+  });
+
+  it("allows SET_EDIT_SPARE_TRIES failed tries a month, and the figures in set-config.ts are what they cost at worst", () => {
+    // Only saved changes count against the month since 2026-09-25; every
+    // try is still billed, so tries are capped at the changes plus 3.
+    const perEdit = worstCaseAstraUsd(Math.ceil(longestInputChars() / 2.24), SET_BUILD_MAX_OUTPUT_TOKENS);
+    expect(SET_EDIT_SPARE_TRIES).toBe(3);
+    const written: Record<string, number> = { basic: 3.1, starter: 4.34, growth: 8.06, studio: 14.26, elite: 32.87 };
+    for (const tier of PRICING_TIERS) {
+      const id = tier.id as keyof typeof SET_EDITS_MONTHLY_LIMITS;
+      const tries = setEditTriesMonthlyLimit(id, false);
+      expect(tries, id).toBe(SET_EDITS_MONTHLY_LIMITS[id] + SET_EDIT_SPARE_TRIES);
+      expect(Math.round(tries * perEdit * 100) / 100, id).toBe(written[id]);
+    }
+    // At most $1.86 a person a month more than counting every try.
+    expect(Math.round(SET_EDIT_SPARE_TRIES * perEdit * 100) / 100).toBe(1.86);
+    expect(setEditTriesMonthlyLimit("growth", true)).toBe(-1);
+    expect(setEditTriesMonthlyLimit(null, false)).toBe(0);
+    expect(setEditTriesMonthlyLimit("none", false)).toBe(0);
   });
 
   it("sends only a set Astra can answer whole, and every set Astra has built so far is one", () => {

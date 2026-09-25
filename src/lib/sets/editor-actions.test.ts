@@ -3,8 +3,27 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import raceTrack from "./fixtures-race-track.json";
 import { normaliseSetSpec, type SetSpec } from "./set-spec";
-import { SET_BRIEF_TOO_SHORT, SET_EDIT_FAILED, SET_EDIT_TOO_BIG, SET_EDIT_TOO_FAST, setEditMonthlyCapMessage } from "./messages";
-import { SET_EDIT_MAX_SPEC_CHARS, SET_EDITS_MONTH_SCOPE, setEditsMonthlyLimit } from "./set-config";
+import {
+  SET_BRIEF_TOO_SHORT,
+  SET_EDIT_FAILED,
+  SET_EDIT_REFUSED,
+  SET_EDIT_STILL_WORKING,
+  SET_EDIT_TOO_BIG,
+  SET_EDIT_TOO_FAST,
+  SET_EDIT_TRIES_USED,
+  SET_NOT_FOUND,
+  SET_SAVE_FAILED,
+  SETS_SESSION_EXPIRED,
+  setEditMonthlyCapMessage,
+} from "./messages";
+import {
+  SET_EDIT_MAX_SPEC_CHARS,
+  SET_EDIT_TRIES_MONTH_SCOPE,
+  SET_EDITS_MONTH_SCOPE,
+  setEditTriesMonthlyLimit,
+  setEditsMonthlyLimit,
+} from "./set-config";
+import type { AstraPressKind } from "./astra-follow";
 
 // Astra's changes to a set, bounded (2026-09-16). An edit is a build's call
 // and free to the person: only a 10-minute pace held it, and a working copy
@@ -17,6 +36,11 @@ import { SET_EDIT_MAX_SPEC_CHARS, SET_EDITS_MONTH_SCOPE, setEditsMonthlyLimit } 
 // editor-actions.ts imports through "@/", which this suite does not resolve:
 // the session, the database, the limiter, the gate and Astra are stood in
 // for; the Sets modules are the real ones.
+//
+// One Astra job per press, and only saved changes counted (2026-09-25, Cut
+// 1 — operator: "GO ahead"): the claim, the end marker and the give-back
+// (astra-press.ts) are stood in for with stateful fakes that write steps;
+// astra-press.test.ts holds the real ones against a fake table.
 
 const USER = "11111111-1111-4111-8111-111111111111";
 const SET = "22222222-2222-4222-8222-222222222222";
@@ -34,6 +58,21 @@ let edited: SetSpec | null;
 let limited: Record<string, boolean>;
 let used: number | null;
 let answer: { state: "done"; text: string; usage: null; costUsd: number } | { state: "failed"; kind: "incomplete"; detail: string; usage: null; costUsd: number };
+/** What submitAstraJob does: accept, refuse, or throw. */
+let submit: "ok" | "refused" | "throws";
+/** Whether the gate refuses Astra's answer, the save fails, the kept model's move throws. */
+let answerGateRefuses: boolean;
+let saveFails: boolean;
+let moveThrows: boolean;
+let rebuildOpen: boolean;
+/** The press claims: ids seen, and whether the claim can be asked at all. */
+const claimed = new Set<string>();
+let claimDown: boolean;
+/** Where readAstraPress says the press stands, and what else happens as it reads. */
+let pressState: AstraPressKind;
+let onReadPress: () => void;
+/** Each end marker, with how many writes had landed when it was left. */
+const ends: { end: string; writes: number }[] = [];
 const steps: string[] = [];
 const limits: { scope: string; windowSeconds: number; max: number }[] = [];
 const writes: unknown[] = [];
@@ -56,8 +95,8 @@ vi.mock("@/lib/supabase/server", () => ({
             ? { data: { edited_spec: edited }, error: null }
             : { data: { status: "ready", spec: SPEC }, error: null },
         update: (values: unknown) => {
-          writes.push(values);
-          const done = { eq: () => done, is: async () => ({ error: null }) };
+          if (!saveFails) writes.push(values);
+          const done = { eq: () => done, is: async () => ({ error: saveFails ? { message: "timeout" } : null }) };
           return done;
         },
       };
@@ -70,6 +109,7 @@ vi.mock("@/lib/supabase/server", () => ({
           return { data: new Blob([new Uint8Array([0xff, 0xd8, 0xff])]), error: null };
         },
         move: async (from: string, to: string) => {
+          if (moveThrows) throw new Error("storage down");
           storage.push(`move ${bucket} ${from} → ${to}`);
           return { error: null };
         },
@@ -79,7 +119,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 vi.mock("@/lib/rate-limit", () => ({
   rateLimited: async (_user: string, scope: string, windowSeconds: number, max: number) => {
-    steps.push(scope === "set-astra-edit" ? "pace" : scope === SET_EDITS_MONTH_SCOPE ? "month" : scope);
+    steps.push(scope === "set-astra-edit" ? "pace" : scope === SET_EDITS_MONTH_SCOPE ? "month" : scope === SET_EDIT_TRIES_MONTH_SCOPE ? "tries" : scope);
     limits.push({ scope, windowSeconds, max });
     return limited[scope] === true;
   },
@@ -92,6 +132,10 @@ vi.mock("@/lib/generations/content-policy", () => ({
   },
   assertPromptAllowed: async () => {
     steps.push("answer gate");
+    if (answerGateRefuses) {
+      const { ContentPolicyRefusal } = await import("@/lib/generations/content-policy");
+      throw new ContentPolicyRefusal("test" as never, "Refused by the gate.");
+    }
   },
 }));
 vi.mock("@/lib/generations/policy-log", () => ({
@@ -108,9 +152,15 @@ vi.mock("@/lib/generations/providers/astra", () => ({
   submitAstraJob: async (req: { input: unknown; instructions: string }) => {
     sent.push(req);
     steps.push("astra");
+    if (submit === "throws") throw new Error("network down");
+    if (submit === "refused") return { ok: false, kind: "refused", detail: "safety" };
     return { ok: true, responseId: "resp_1" };
   },
-  pollAstraJob: async () => answer,
+  // A later tick, so two deliveries of one press really overlap.
+  pollAstraJob: async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return answer;
+  },
   cancelAstraJob: async () => {},
 }));
 vi.mock("@/lib/openai/safety-id", () => ({ openAiSafetyId: () => "safety" }));
@@ -123,6 +173,34 @@ vi.mock("@/lib/sets/data", () => ({
     steps.push("count");
     return used;
   },
+  astraEditsLeft: async () => {
+    steps.push("left");
+    return used === null ? null : 10 - used;
+  },
+}));
+vi.mock("@/lib/sets/astra-press", async () => ({
+  ...(await import("./astra-press")),
+  claimAstraPress: async (_admin: unknown, _user: string, id: string) => {
+    steps.push("claim");
+    if (claimDown) return "unavailable";
+    if (claimed.has(id)) return "repeat";
+    claimed.add(id);
+    return "first";
+  },
+  endAstraPress: async (_admin: unknown, _user: string, _id: string, end: string) => {
+    steps.push(`end ${end}`);
+    ends.push({ end, writes: writes.length });
+  },
+  readAstraPress: async () => {
+    steps.push("read press");
+    onReadPress();
+    return pressState;
+  },
+  giveBackAstraEdit: async () => {
+    steps.push("give back");
+    if (typeof used === "number") used -= 1;
+    return true;
+  },
 }));
 vi.mock("@/lib/sets/editor-model", async () => await import("./editor-model"));
 vi.mock("@/lib/sets/messages", async () => await import("./messages"));
@@ -130,15 +208,28 @@ vi.mock("@/lib/sets/set-edit-prompt", async () => await import("./set-edit-promp
 vi.mock("@/lib/sets/set-config", async () => await import("./set-config"));
 vi.mock("@/lib/sets/set-spec", async () => await import("./set-spec"));
 vi.mock("@/lib/sets/elements", async () => await import("./elements"));
-vi.mock("@/lib/sets/thing-rebuild", async () => await import("./thing-rebuild"));
+// The rebuild is admins' until its first live proof; `rebuildOpen` opens it
+// here so its month's arithmetic can be held as a plan will meet it.
+vi.mock("@/lib/sets/thing-rebuild", async () => {
+  const real = await import("./thing-rebuild");
+  return {
+    ...real,
+    get THING_REBUILD_OPEN_TO_ALL() {
+      return rebuildOpen;
+    },
+  };
+});
 vi.mock("@/lib/sets/thing-model", async () => await import("./thing-model"));
 vi.mock("@/lib/sets/references", () => ({ listElementPhotos: async () => ({ photos, sheets: [] }) }));
 vi.mock("@/lib/sets/thing-model-store", () => ({ listModelFiles: async () => modelFiles }));
 
-import { editSetWithAstra, rebuildThingFromPhotos } from "./editor-actions";
-import { setElements } from "./elements";
-import { thingLocalBlocks } from "./thing-rebuild";
-import { THING_REBUILD_ADMINS_ONLY, THING_REBUILD_DIDNT_FIT, THING_REBUILD_NO_PHOTOS } from "./messages";
+import { editSetWithAstra, readAstraEdit, rebuildThingFromPhotos } from "./editor-actions";
+import { resolvePhotos, setElements, type ElementPhoto } from "./elements";
+import { THING_REBUILD_MAX_SENT_CHARS, thingLocalBlocks } from "./thing-rebuild";
+import { THING_REBUILD_ADMINS_ONLY, THING_REBUILD_DIDNT_FIT, THING_REBUILD_NO_PHOTOS, THING_REBUILD_TOO_BIG } from "./messages";
+
+const PRESS = "3f2a4b5c-6d7e-4f80-9a1b-2c3d4e5f6a7b";
+const LATER = "4f2a4b5c-6d7e-4f80-9a1b-2c3d4e5f6a7b";
 
 const recoloured = (): string => JSON.stringify({ ...SPEC, objects: SPEC.objects.map((o, i) => (i === 0 ? { ...o, color: "#aa3322" } : o)) });
 
@@ -148,6 +239,16 @@ beforeEach(() => {
   limited = {};
   used = 3;
   answer = { state: "done", text: recoloured(), usage: null, costUsd: 0.31 };
+  submit = "ok";
+  answerGateRefuses = false;
+  saveFails = false;
+  moveThrows = false;
+  rebuildOpen = false;
+  claimed.clear();
+  claimDown = false;
+  pressState = "none";
+  onReadPress = () => {};
+  ends.length = 0;
   steps.length = 0;
   limits.length = 0;
   writes.length = 0;
@@ -158,10 +259,10 @@ beforeEach(() => {
 });
 
 describe("an Astra change", () => {
-  it("is counted among the month's after the gate and the pace, then sent, and says how many are left", async () => {
+  it("is reserved from the month's after the gate and the pace, with its try counted, then sent, and says how many are left", async () => {
     const out = await editSetWithAstra(SET, "make the first barrier brick red");
     expect(out.error).toBeNull();
-    expect(steps).toEqual(["gate", "pace", "month", "count", "astra", "answer gate"]);
+    expect(steps).toEqual(["gate", "pace", "month", "tries", "count", "astra", "answer gate"]);
     const cap = setEditsMonthlyLimit("growth", false);
     expect(out.editsLeft).toBe(cap - 3);
     const month = limits.find((l) => l.scope === SET_EDITS_MONTH_SCOPE)!;
@@ -170,14 +271,22 @@ describe("an Astra change", () => {
     const since = (new Date().getTime() - new Date(PERIOD).getTime()) / 1000;
     expect(month.windowSeconds).toBeGreaterThanOrEqual(Math.floor(since));
     expect(month.windowSeconds).toBeLessThanOrEqual(Math.ceil(since) + 5);
+    // The month's tries: the changes plus the spare ones, over the same window.
+    const tries = limits.find((l) => l.scope === SET_EDIT_TRIES_MONTH_SCOPE)!;
+    expect(tries.max).toBe(setEditTriesMonthlyLimit("growth", false));
+    expect(tries.max).toBe(13);
+    expect(tries.windowSeconds).toBe(month.windowSeconds);
     expect(writes).toHaveLength(1);
   });
 
-  it("is refused at the month's cap before Astra is asked, and says none are left", async () => {
+  it("is refused at the month's cap before Astra is asked, says none are left, and gives nothing back", async () => {
     limited[SET_EDITS_MONTH_SCOPE] = true;
     const out = await editSetWithAstra(SET, "make the first barrier brick red");
     expect(out).toEqual({ error: setEditMonthlyCapMessage(setEditsMonthlyLimit("growth", false)), editsLeft: 0 });
     expect(steps).not.toContain("astra");
+    // Nothing was reserved: nothing is given back, and the tries are not counted.
+    expect(steps).not.toContain("give back");
+    expect(steps).not.toContain("tries");
     expect(writes).toEqual([]);
   });
 
@@ -208,14 +317,207 @@ describe("an Astra change", () => {
     expect(await editSetWithAstra(SET, "hi")).toEqual({ error: SET_BRIEF_TOO_SHORT });
   });
 
-  it("still says how many are left when Astra's answer fails after the count", async () => {
+  it("gives the change back when Astra's answer fails, and says how many are left after it", async () => {
     answer = { state: "failed", kind: "incomplete", detail: "max_output_tokens", usage: null, costUsd: 0.62 };
+    // Ten counted, this reservation among them: given back, nine.
     used = 10;
     const out = await editSetWithAstra(SET, "make the first barrier brick red");
-    expect(out).toEqual({ error: SET_EDIT_FAILED, editsLeft: 0 });
+    expect(out).toEqual({ error: SET_EDIT_FAILED, editsLeft: 1 });
+    expect(steps.filter((x) => x === "give back")).toHaveLength(1);
+    expect(steps.indexOf("give back")).toBeLessThan(steps.lastIndexOf("count"));
+    expect(steps.slice(steps.indexOf("give back"))).toEqual(["give back", "count"]);
     used = null;
     const unread = await editSetWithAstra(SET, "make the first barrier brick red");
     expect(unread).toEqual({ error: SET_EDIT_FAILED, editsLeft: null });
+  });
+});
+
+// Only saved changes count against the month (2026-09-25, Cut 1). A change
+// is reserved before Astra runs, so parallel presses never pass the cap,
+// and every press that does not save gives it back — once.
+describe("the month's change, given back unless it saves", () => {
+  const ask = () => editSetWithAstra(SET, "make the first barrier brick red");
+  const givenBack = () => steps.filter((x) => x === "give back").length;
+
+  it("keeps a saved change", async () => {
+    expect((await ask()).error).toBeNull();
+    expect(givenBack()).toBe(0);
+  });
+
+  it("gives it back when Astra refuses the request", async () => {
+    submit = "refused";
+    expect(await ask()).toEqual({ error: SET_EDIT_REFUSED, editsLeft: setEditsMonthlyLimit("growth", false) - 2 });
+    expect(givenBack()).toBe(1);
+    expect(writes).toEqual([]);
+  });
+
+  it("gives it back when the gate refuses Astra's answer", async () => {
+    answerGateRefuses = true;
+    expect((await ask()).error).toBe(SET_EDIT_REFUSED);
+    expect(givenBack()).toBe(1);
+    expect(writes).toEqual([]);
+  });
+
+  it("gives it back when the answer can't be saved", async () => {
+    saveFails = true;
+    expect(await ask()).toEqual({ error: SET_SAVE_FAILED, editsLeft: setEditsMonthlyLimit("growth", false) - 2 });
+    expect(givenBack()).toBe(1);
+  });
+
+  it("gives it back when the call throws, and passes the throw on", async () => {
+    submit = "throws";
+    await expect(ask()).rejects.toThrow("network down");
+    expect(givenBack()).toBe(1);
+  });
+
+  it("gives nothing back for an admin, who reserves nothing", async () => {
+    access = { ...access, plan: "none", isAdmin: true };
+    submit = "refused";
+    expect(await ask()).toEqual({ error: SET_EDIT_REFUSED, editsLeft: null });
+    expect(givenBack()).toBe(0);
+    expect(steps).not.toContain("tries");
+  });
+
+  it("pauses Astra once the month's tries are spent, giving back the change it had just reserved", async () => {
+    limited[SET_EDIT_TRIES_MONTH_SCOPE] = true;
+    const out = await ask();
+    expect(out).toEqual({ error: SET_EDIT_TRIES_USED, editsLeft: setEditsMonthlyLimit("growth", false) - 2 });
+    expect(steps).toEqual(["gate", "pace", "month", "tries", "give back", "count"]);
+    expect(sent).toEqual([]);
+    expect(writes).toEqual([]);
+  });
+});
+
+// One Astra job per press (astra-press.ts, 2026-09-25, Cut 1). Chromium
+// silently resends a POST whose connection dropped, and the second delivery
+// ran a whole second job: the gate, the pace, one more of the month's
+// changes, a second Astra bill and a second save.
+describe("one Astra job per press", () => {
+  const ask = (press?: string) => editSetWithAstra(SET, "make the first barrier brick red", press);
+
+  it("runs a press once: a repeat is answered at once, never gated, paced, counted or sent", async () => {
+    expect((await ask(PRESS)).error).toBeNull();
+    steps.length = 0;
+    expect(await ask(PRESS)).toEqual({ error: SET_EDIT_STILL_WORKING, pending: true });
+    expect(steps).toEqual(["claim"]);
+    expect(sent).toHaveLength(1);
+    expect(writes).toHaveLength(1);
+    expect(limits.filter((l) => l.scope === SET_EDITS_MONTH_SCOPE)).toHaveLength(1);
+    // A new press is a new job.
+    expect((await ask(LATER)).error).toBeNull();
+    expect(sent).toHaveLength(2);
+  });
+
+  it("sends two deliveries of one press arriving together to Astra once", async () => {
+    const [a, b] = await Promise.all([ask(PRESS), ask(PRESS)]);
+    expect(sent).toHaveLength(1);
+    expect(writes).toHaveLength(1);
+    expect([a, b].filter((r) => r.error === null)).toHaveLength(1);
+    expect([a, b].filter((r) => r.error === SET_EDIT_STILL_WORKING && "pending" in r && r.pending === true)).toHaveLength(1);
+  });
+
+  it("claims after the free checks and before the gate", async () => {
+    await ask(PRESS);
+    expect(steps.slice(0, 3)).toEqual(["claim", "gate", "pace"]);
+    steps.length = 0;
+    edited = BIG;
+    expect(await ask(LATER)).toEqual({ error: SET_EDIT_TOO_BIG });
+    edited = null;
+    expect(await editSetWithAstra(SET, "hi", LATER)).toEqual({ error: SET_BRIEF_TOO_SHORT });
+    expect(steps).toEqual([]);
+    // Refused for free, so the same press can still run.
+    expect((await ask(LATER)).error).toBeNull();
+  });
+
+  it("leaves a 'saved' marker after the save, and 'unsaved' for everything that did not save", async () => {
+    await ask(PRESS);
+    expect(ends).toEqual([{ end: "saved", writes: 1 }]);
+    expect(steps.at(-1)).toBe("end saved");
+
+    const unsaved = async (setup: () => void, id: string) => {
+      ends.length = 0;
+      setup();
+      await ask(id).catch(() => {});
+      expect(ends.map((e) => e.end), id).toEqual(["unsaved"]);
+    };
+    await unsaved(() => {
+      answer = { state: "failed", kind: "incomplete", detail: "max_output_tokens", usage: null, costUsd: 0.62 };
+    }, "5f2a4b5c-6d7e-4f80-9a1b-2c3d4e5f6a7b");
+    await unsaved(() => {
+      answer = { state: "done", text: recoloured(), usage: null, costUsd: 0.31 };
+      answerGateRefuses = true;
+    }, "6f2a4b5c-6d7e-4f80-9a1b-2c3d4e5f6a7b");
+    await unsaved(() => {
+      answerGateRefuses = false;
+      submit = "throws";
+    }, "7f2a4b5c-6d7e-4f80-9a1b-2c3d4e5f6a7b");
+    // The throw still reaches the page, marker written.
+    await expect(ask("8f2a4b5c-6d7e-4f80-9a1b-2c3d4e5f6a7b")).rejects.toThrow("network down");
+    expect(ends.at(-1)?.end).toBe("unsaved");
+    // The person's words refused by the gate: nothing ran, the marker says so.
+    submit = "ok";
+    ends.length = 0;
+    expect((await editSetWithAstra(SET, "something forbidden", "9f2a4b5c-6d7e-4f80-9a1b-2c3d4e5f6a7b")).error).toBe("Refused by the gate.");
+    expect(ends.map((e) => e.end)).toEqual(["unsaved"]);
+  });
+
+  it("refuses a press whose claim can't be asked, as the pace does in the same outage", async () => {
+    claimDown = true;
+    expect(await ask(PRESS)).toEqual({ error: SET_EDIT_TOO_FAST });
+    expect(steps).toEqual(["claim"]);
+    expect(sent).toEqual([]);
+  });
+
+  it("serves a page that sends no id, or no usable one, as before", async () => {
+    expect((await ask()).error).toBeNull();
+    expect((await ask("not-a-uuid")).error).toBeNull();
+    expect(steps).not.toContain("claim");
+    expect(ends).toEqual([]);
+    expect(sent).toHaveLength(2);
+  });
+});
+
+// What became of a press, for the page after a dropped connection
+// (astra-follow.ts, 2026-09-25).
+describe("readAstraEdit", () => {
+  const RECOLOURED: SetSpec = JSON.parse(recoloured()) as SetSpec;
+
+  it("asks who is asking first, and reads nothing for a stranger", async () => {
+    access = { error: SETS_SESSION_EXPIRED } as unknown as Access;
+    expect(await readAstraEdit(SET, PRESS)).toEqual({ error: SETS_SESSION_EXPIRED });
+    expect(steps).toEqual([]);
+  });
+
+  it("knows no press without a usable id", async () => {
+    expect(await readAstraEdit(SET, "not-a-uuid")).toEqual({ error: SET_NOT_FOUND });
+    expect(await readAstraEdit("not-a-set", PRESS)).toEqual({ error: SET_NOT_FOUND });
+  });
+
+  it("hands back the working copy as saved and where the press stands, and the count only once it has ended", async () => {
+    pressState = "running";
+    expect(await readAstraEdit(SET, PRESS)).toEqual({ error: null, press: "running", spec: SPEC });
+    expect(steps).not.toContain("left");
+    edited = RECOLOURED;
+    for (const press of ["saved", "unsaved", "lost"] as const) {
+      pressState = press;
+      const r = await readAstraEdit(SET, PRESS);
+      expect(r).toMatchObject({ error: null, press, editsLeft: 7 });
+      if (r.error === null) expect(r.spec.objects[0].color).toBe("#aa3322");
+    }
+    for (const press of ["none", "unread"] as const) {
+      pressState = press;
+      expect("editsLeft" in (await readAstraEdit(SET, PRESS))).toBe(false);
+    }
+  });
+
+  it("reads the press before the set, so a 'saved' never comes with the copy from before the save", async () => {
+    pressState = "saved";
+    onReadPress = () => {
+      edited = JSON.parse(recoloured()) as SetSpec;
+    };
+    const r = await readAstraEdit(SET, PRESS);
+    expect(r.error).toBeNull();
+    if (r.error === null) expect(r.spec.objects[0].color).toBe("#aa3322");
   });
 });
 
@@ -236,6 +538,100 @@ describe("a thing rebuilt from its photos", () => {
     access.isAdmin = true;
     expect(await rebuildThingFromPhotos(SET, car.key)).toEqual({ error: THING_REBUILD_NO_PHOTOS });
     expect(steps).toEqual([]);
+  });
+
+  it("claims a press once: the same press delivered twice asks Astra once", async () => {
+    access.isAdmin = true;
+    photos = [onCar(1)];
+    answer = { state: "done", text: blue(), usage: null, costUsd: 0.2 };
+    expect((await rebuildThingFromPhotos(SET, car.key, PRESS)).error).toBeNull();
+    expect(await rebuildThingFromPhotos(SET, car.key, PRESS)).toEqual({ error: SET_EDIT_STILL_WORKING, pending: true });
+    expect(sent).toHaveLength(1);
+    expect(writes).toHaveLength(1);
+    // The claim comes before the photos are read, so a repeat reads none.
+    expect(storage.filter((x) => x.startsWith("download"))).toHaveLength(1);
+    expect(ends.map((e) => e.end)).toEqual(["saved"]);
+  });
+
+  it("stays saved when the kept model's move throws after the save", async () => {
+    access.isAdmin = true;
+    photos = [onCar(1)];
+    modelFiles = [{ path: `${USER}/sets/${SET}.model.${car.key}.abc.f.glb`, key: car.key, at: 1790205070123, flip: true }];
+    moveThrows = true;
+    answer = { state: "done", text: blue(), usage: null, costUsd: 0.2 };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const r = await rebuildThingFromPhotos(SET, car.key, PRESS);
+    warn.mockRestore();
+    expect(r.error).toBeNull();
+    expect(writes).toHaveLength(1);
+    expect(ends).toEqual([{ end: "saved", writes: 1 }]);
+    expect(steps).not.toContain("give back");
+  });
+
+  it("counts against the month only when it saves: new blocks that don't fit give the change back", async () => {
+    // As a Growth plan will meet it once the rebuild opens (THING_REBUILD_OPEN_TO_ALL).
+    rebuildOpen = true;
+    photos = [onCar(1)];
+    const apart = thingLocalBlocks(SPEC, car).map((o, i) => (i === 0 ? { ...o, position: [40, 0.5, 40] } : o));
+    answer = { state: "done", text: JSON.stringify({ objects: apart }), usage: null, costUsd: 0.2 };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(await rebuildThingFromPhotos(SET, car.key, PRESS)).toEqual({ error: THING_REBUILD_DIDNT_FIT, editsLeft: setEditsMonthlyLimit("growth", false) - 2 });
+    warn.mockRestore();
+    expect(steps.filter((x) => x === "give back")).toHaveLength(1);
+    expect(ends.map((e) => e.end)).toEqual(["unsaved"]);
+    // A rebuild that saves keeps its change.
+    steps.length = 0;
+    answer = { state: "done", text: blue(), usage: null, costUsd: 0.2 };
+    expect((await rebuildThingFromPhotos(SET, car.key, LATER)).error).toBeNull();
+    expect(steps).not.toContain("give back");
+    expect(steps).toEqual(["claim", "pace", "month", "tries", "count", "astra", "end saved"]);
+  });
+
+  it("gives the change back when the call throws, and passes the throw on", async () => {
+    rebuildOpen = true;
+    photos = [onCar(1)];
+    submit = "throws";
+    await expect(rebuildThingFromPhotos(SET, car.key, PRESS)).rejects.toThrow("network down");
+    expect(steps.filter((x) => x === "give back")).toHaveLength(1);
+    expect(ends.map((e) => e.end)).toEqual(["unsaved"]);
+  });
+
+  it("rebuilds a thing on a set too big for a chat edit: only the thing is sent", async () => {
+    access.isAdmin = true;
+    photos = [onCar(1)];
+    const box = SPEC.objects.find((o) => o.shape === "box")!;
+    // Seventy small boxes far from the car, apart from each other and from it.
+    const far = Array.from({ length: 70 }, (_, i) => ({ ...box, repeat: null, size: [0.5, 0.5, 0.5] as [number, number, number], position: [-80 + i * 2, 0.25, 80] as [number, number, number], rotation: [0, 0, 0] as [number, number, number] }));
+    const grown = normaliseSetSpec({ ...SPEC, objects: [...SPEC.objects, ...far] });
+    if (!grown.ok) throw new Error("grown");
+    edited = grown.spec;
+    expect(JSON.stringify(edited).length).toBeGreaterThan(SET_EDIT_MAX_SPEC_CHARS);
+    const carThere = setElements(edited).find((e) => e.key === car.key)!;
+    expect(JSON.stringify(thingLocalBlocks(edited, carThere))).toBe(JSON.stringify(thingLocalBlocks(SPEC, car)));
+    answer = { state: "done", text: blue(), usage: null, costUsd: 0.2 };
+    const r = await rebuildThingFromPhotos(SET, car.key);
+    expect(r.error).toBeNull();
+    expect(steps).toContain("astra");
+    expect(writes).toHaveLength(1);
+    // A chat edit of the same set is still refused whole.
+    expect(await editSetWithAstra(SET, "make the first barrier brick red")).toEqual({ error: SET_EDIT_TOO_BIG });
+  });
+
+  it("refuses a thing too detailed to send whole, before anything is read, claimed or spent", async () => {
+    access.isAdmin = true;
+    // The car's own objects again where they stand: they join the car.
+    const carObjects = [...new Set(car.members.map(([oi]) => oi))].map((oi) => SPEC.objects[oi]);
+    const doubled = normaliseSetSpec({ ...SPEC, objects: [...SPEC.objects, ...carObjects] });
+    if (!doubled.ok) throw new Error("doubled");
+    edited = doubled.spec;
+    const probe: ElementPhoto = { refId: "00000000-0000-4000-8000-000000000000", anchor: car.key, slot: 1, at: 0, url: "" };
+    const els = setElements(edited);
+    const found = els.find((e) => e.key === resolvePhotos(els, [probe]).held[0]?.key)!;
+    expect(JSON.stringify(thingLocalBlocks(edited, found)).length).toBeGreaterThan(THING_REBUILD_MAX_SENT_CHARS);
+    photos = [{ ...onCar(1), anchor: found.key }];
+    expect(await rebuildThingFromPhotos(SET, car.key, PRESS)).toEqual({ error: THING_REBUILD_TOO_BIG });
+    expect(steps).toEqual([]);
+    expect(storage.filter((x) => x.startsWith("download"))).toEqual([]);
   });
 
   it("sends the thing's blocks and every photo on it, and saves the new blocks where the old ones stood", async () => {
@@ -307,7 +703,7 @@ describe("the editor's prompt bar", () => {
     expect(send.slice(cap, send.indexOf("}", cap))).toContain("setAskError(s.editorAskCapped);");
     // Before the flush and before the call: nothing saved, gated or paced.
     expect(cap).toBeLessThan(send.indexOf("await saveCopy("));
-    expect(cap).toBeLessThan(send.indexOf("r = await editSetWithAstra(setId, text);"));
+    expect(cap).toBeLessThan(send.indexOf("r = await editSetWithAstra(setId, text, pressId);"));
   });
 
   it("names a history row for what it holds, not for where it sits", () => {
@@ -325,10 +721,24 @@ describe("the editor's prompt bar", () => {
     expect(editor).not.toContain("{i === 0 ? s.editorOriginal : formatMsg(s.editorEditN, { n: i })}");
   });
 
-  it("never stays on 'Astra is changing the set…' when the call throws", () => {
-    expect(send).toMatch(/try \{\s*r = await editSetWithAstra\(setId, text\);\s*\} catch \(err\) \{/);
+  it("never stays on 'Astra is changing the set…' when the call throws, and reads back what was saved", () => {
+    expect(send).toContain("const pressId = crypto.randomUUID();");
+    expect(send).toMatch(/try \{\s*r = await editSetWithAstra\(setId, text, pressId\);\s*\} catch \(err\) \{/);
     expect(send).toMatch(/\} finally \{\s*setAsking\(false\);\s*\}/);
-    expect(send).toContain("setAskError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);");
+    // A stale deploy keeps the copy and says to refresh, as before.
+    expect(send).toMatch(/if \(isStaleDeployError\(err\)\) \{\s*saveMissed\(specRef\.current, err\);\s*setAskError\(t\.generate\.refreshNeeded\);\s*return;\s*\}/);
+    // Anything else is followed (astra-follow.ts), inside the busy state.
+    const follow = send.indexOf("followed = await followAstraEdit(() => readAstraEdit(setId, pressId).catch((thrown: unknown) => ({ thrown })), {");
+    expect(follow).toBeGreaterThan(-1);
+    expect(follow).toBeLessThan(send.indexOf("setAsking(false);\n    }"));
+    expect(send).toContain("if (r === null || (r.error !== null && r.pending)) {");
+    // "Try again" only when nothing reached the server.
+    expect(send).toContain('} else if (followed.kind === "none") setAskError(t.generate.submitFailed);');
+    expect(send.match(/t\.generate\.submitFailed/g)).toHaveLength(1);
+    expect(send).not.toContain("setAskError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);");
+    // A saved press lands like an answered one: history, the counter, the note.
+    expect(send).toMatch(/if \(followed\.kind === "saved"\) \{\s*setAsk\(""\);\s*commitFromServer\(followed\.spec\);\s*dropUnsaved\(setId, "edit", askedAt\);\s*setAskNote\(followed\.changed\);/);
+    expect(send).toContain("followed.editsLeft !== undefined) setEditsLeft(followed.editsLeft);");
   });
 
   it("is handed the count by the set page", () => {

@@ -80,6 +80,12 @@ export const THING_REBUILD_NO_PHOTOS = "Put a photo on this thing first — Astr
 export const THING_REBUILD_DIDNT_FIT = "Astra's new shape didn't fit where the old one stood, so the set is unchanged — try again.";
 export const THING_REBUILD_FAILED = "Astra couldn't rebuild this from its photos — try again in a moment.";
 export const THING_REBUILD_ADMINS_ONLY = "Rebuilding from photos is for admins while we prove it.";
+/**
+ * The thing's own blocks are past what one rebuild may send (thing-rebuild.ts
+ * THING_REBUILD_MAX_SENT_CHARS, 2026-09-25): said before any photo is read
+ * or anything is spent.
+ */
+export const THING_REBUILD_TOO_BIG = "This thing has too many blocks for Astra to rebuild in one answer — change it with the editor's own tools.";
 // A thing's 3D model built from its photo (thing-build.ts, 2026-09-24).
 export const THING_BUILD_NO_PHOTO = "Put a photo on this thing first — its model is built from its front photo.";
 export const THING_BUILD_FAILED = "The model couldn't be built from this photo — try a clearer photo of the whole thing.";
@@ -127,15 +133,36 @@ export const SET_EDIT_TOO_FAST = "You're changing the set quickly — give it a 
 export const SET_RIG_CHECK_FAILED = "The rig check couldn't read this still — the still is kept as it is.";
 export const SET_RIG_CHECK_TOO_FAST = "You're checking stills quickly — give it a moment.";
 export const SET_EDIT_TIMED_OUT = "That change took too long — try again in a moment.";
+/**
+ * A press delivered twice (astra-press.ts, 2026-09-25, Cut 1): the second
+ * delivery answers at once and the page reads back what the first one saved.
+ * It never says try again — the first delivery may still land.
+ */
+export const SET_EDIT_STILL_WORKING = "Astra is still on that change — it will show on the set once it's saved.";
+/** The page read back a press that ended without saving (astra-follow.ts): nothing changed, and nothing was counted. */
+export const SET_EDIT_NOT_SAVED = "Astra didn't change the set this time — it's as it was. Try again when you're ready.";
+/** The page could not read back whether a press saved (astra-follow.ts): only a reload can say. Never "try again" — that could spend a second change. */
+export const SET_EDIT_UNCHECKED = "We couldn't check whether Astra saved that change — reload the set to see it.";
+/**
+ * The month's Astra tries are spent: its changes plus SET_EDIT_SPARE_TRIES
+ * that didn't land (set-config.ts, 2026-09-25). Astra is billed for every
+ * try, so it pauses until the billing period resets.
+ */
+export const SET_EDIT_TRIES_USED =
+  "Too many of this month's Astra changes didn't land, so Astra is paused on your sets until your billing period resets. The editor's own tools still work.";
 /** The working copy is past what Astra can answer whole (set-config.ts SET_EDIT_MAX_SPEC_CHARS). */
 export const SET_EDIT_TOO_BIG = "This set has grown too big for Astra to rewrite in one answer — change it with the editor's own tools.";
-/** Pattern: localizeServerText reads the count back out of it (set-config.ts SET_EDITS_MONTHLY_LIMITS). */
+/**
+ * Pattern: localizeServerText reads the count back out of it (set-config.ts
+ * SET_EDITS_MONTHLY_LIMITS). Changes "made", not "asked for", since
+ * 2026-09-25: only a change that saves counts.
+ */
 export function setEditMonthlyCapMessage(used: number): string {
   if (used === 1) return SET_EDIT_MONTHLY_CAP_ONE;
-  return `You've asked Astra for ${used} changes this billing month — the limit on your plan. It resets with your billing period; the editor's own tools still work.`;
+  return `You've made ${used} changes with Astra this billing month — the limit on your plan. It resets with your billing period; the editor's own tools still work.`;
 }
 export const SET_EDIT_MONTHLY_CAP_ONE =
-  "You've asked Astra for 1 change this billing month — the limit on your plan. It resets with your billing period; the editor's own tools still work.";
+  "You've made 1 change with Astra this billing month — the limit on your plan. It resets with your billing period; the editor's own tools still work.";
 
 // Takes (2026-09-15): a clip from one still to a newly shot end frame.
 export const SET_TAKE_BAD_START = "That still can't start a take — pick another.";

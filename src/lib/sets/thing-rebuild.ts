@@ -34,6 +34,22 @@ export const THING_REBUILD_MAX_OUTPUT_TOKENS = 10_000;
 export const THING_REBUILD_LENGTH_RANGE = [0.8, 1.25] as const;
 /** Everyone with Astra changes may ask once the first live rebuild is proved; admins only until then (the operator's proof rule). */
 export const THING_REBUILD_OPEN_TO_ALL = false;
+/**
+ * The most of the thing's own blocks one rebuild sends, as thingRebuildInput
+ * writes them (2026-09-25). A rebuild never sends the whole set, so it was
+ * wrong to refuse one by the whole set's size (SET_EDIT_MAX_SPEC_CHARS
+ * belongs to chat edits, which do), and nothing bounded one huge thing.
+ * Worst case at this bound, every input token a cache write:
+ *   text = the instructions (3,104 characters measured 2026-09-25)
+ *     + 11,500 + ~400 of framing = 15,004 characters ≈ 6,699 tokens at 2.24
+ *   + 4 photos × 2,300 tokens = 15,899 input tokens × $12.50/1M = $0.1987
+ *   + 10,000 output tokens × $50/1M = $0.50
+ *   = $0.6987, under the $0.70 thing-rebuild.test.ts pins.
+ * Every thing in every fixture fits: the race-track car's 48 blocks are
+ * 11,025 characters, a showroom car's 29 about 6,700, the rainy market's
+ * stall 8,615, the beach's largest thing 3,807.
+ */
+export const THING_REBUILD_MAX_SENT_CHARS = 11_500;
 
 export const THING_REBUILD_INSTRUCTIONS = `You rebuild ONE thing on a film set for a pre-visualisation tool, from photos of the real thing. You are given the thing's current blocks as JSON (simple 3D primitives) and 1 to 4 photos of it; the first photo is its front or its best view. Answer with NEW blocks for this thing only, as JSON matching the schema, so that from every side it matches the photos as closely as simple shapes allow.
 
@@ -87,6 +103,21 @@ export function thingLocalBlocks(spec: SetSpec, el: SetElement): SetObject[] {
       rotation: o.rotation.map(cm) as Vec3,
     };
   });
+}
+
+/**
+ * Where a rebuilt thing is now, found the way its photos find it
+ * (spliceThing's own probe): its key and how many blocks it has, or null
+ * when no thing on `spec` answers to `oldKey`. The page uses it when it
+ * learns of a rebuild by reading the saved set back (astra-follow.ts)
+ * rather than from the rebuild's own answer.
+ */
+export function rebuiltThingIn(spec: SetSpec, oldKey: string): { key: string; blocks: number } | null {
+  const els = setElements(spec);
+  const probe: ElementPhoto = { refId: "00000000-0000-4000-8000-000000000000", anchor: oldKey, slot: 1, at: 0, url: "" };
+  const key = resolvePhotos(els, [probe]).held[0]?.key;
+  const el = key === undefined ? undefined : els.find((e) => e.key === key);
+  return el ? { key: el.key, blocks: el.members.length } : null;
 }
 
 const kindWord = (el: SetElement) => (el.kind === "car" ? "a car" : el.kind === "vehicle" ? "a vehicle" : "an object");

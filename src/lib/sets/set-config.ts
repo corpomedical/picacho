@@ -200,6 +200,18 @@ export const SET_EDIT_POLL_MS = 2_500;
 export const SET_EDIT_DEADLINE_MS = 180_000;
 export const SET_EDIT_PER_10_MIN = 10;
 
+// One Astra job per press (astra-press.ts, 2026-09-25, Cut 1 — operator:
+// "GO ahead"). The page names each edit or rebuild; a browser's silent
+// resend of the same press is answered at once and never runs Astra again.
+/** How long a press's claim counts: a resend arrives within the page's 300 s. Must stay ≤ RATE_HITS_LONGEST_WINDOW_SECONDS (rate-hits.ts). */
+export const SET_EDIT_PRESS_WINDOW_SECONDS = 60 * 60;
+/** The set page's 300 s maxDuration (app/app/sets/[id]/page.tsx) plus 20 s: a claim older than this with no end marker belongs to a delivery the platform stopped. */
+export const SET_EDIT_PRESS_LIFETIME_MS = 320_000;
+/** How often the page reads back what a press saved after a dropped connection (astra-follow.ts). */
+export const SET_EDIT_FOLLOW_POLL_MS = 4_000;
+/** How long the page follows a press before it says to reload: the longest a delivery can live, and 30 s for its end marker to land. */
+export const SET_EDIT_FOLLOW_CAP_MS = SET_EDIT_PRESS_LIFETIME_MS + 30_000;
+
 // An Astra edit is a build's call without the retry, and like a build it is
 // free to the person, so its spend is bounded the same way: a monthly cap
 // per plan, counted from the billing month's start (2026-09-16 — until then
@@ -220,6 +232,26 @@ export const SET_EDIT_PER_10_MIN = 10;
 //     Basic 2 → $1.24 of $9      Starter 4 → $2.48 of $19   Growth 10 → $6.20 of $79
 //     Studio 20 → $12.40 of $299   Elite 50 → $31.01 of $499
 //   — the operator's numbers to move before SETS_OPEN_TO_PLANS flips.
+//
+// Only changes that SAVE count against the month (2026-09-25, Cut 1 —
+// operator: "GO ahead", never charge twice). A change is still reserved
+// before Astra runs, so parallel presses never pass the cap, and a press
+// that does not save gives it back. A Basic month whose one edit timed
+// out and one was refused had spent both with nothing on the set. Astra
+// is still billed for every try, so tries are capped too: the plan's
+// changes plus SET_EDIT_SPARE_TRIES that didn't land (SET_EDIT_TRIES_MONTH_SCOPE,
+// counted from the same billing month's start). Tries at worst, at the
+// $0.62 an edit above (9,615 × $12.50/1M + 10,000 × $50/1M = $0.6201875):
+//     Basic 5 → $3.10 of $9      Starter 7 → $4.34 of $19   Growth 13 → $8.06 of $79
+//     Studio 23 → $14.26 of $299   Elite 53 → $32.87 of $499
+//   — at most $1.86 more per person per month than before (3 × $0.62). It
+//   also closes the pace-only hole the 2026-09-16 note describes (10 per
+//   10 minutes ≈ $37 an hour): failed tries are bounded by the month too.
+//   The pace (SET_EDIT_PER_10_MIN) still counts every try, on purpose.
+//   SET_EDIT_SPARE_TRIES is the operator's number to move.
+export const SET_EDIT_SPARE_TRIES = 3;
+/** The limiter's bucket every Astra try of the month is counted in, saved or not (editor-actions.ts). */
+export const SET_EDIT_TRIES_MONTH_SCOPE = "set-astra-try-month";
 export const SET_EDITS_MONTHLY_LIMITS = {
   none: 0,
   basic: 2,
@@ -246,6 +278,14 @@ export const SET_EDITS_MONTH_SCOPE = "set-astra-edit-month";
 export function setEditsMonthlyLimit(plan: string | null | undefined, isAdmin: boolean): number {
   if (isAdmin) return -1;
   return SET_EDITS_MONTHLY_LIMITS[(plan ?? "none") as PlanId] ?? 0;
+}
+
+/** Astra tries a month, saved or not: -1 = unlimited (admin), 0 with no changes at all, else the changes plus SET_EDIT_SPARE_TRIES. */
+export function setEditTriesMonthlyLimit(plan: string | null | undefined, isAdmin: boolean): number {
+  const cap = setEditsMonthlyLimit(plan, isAdmin);
+  if (cap < 0) return -1;
+  if (cap === 0) return 0;
+  return cap + SET_EDIT_SPARE_TRIES;
 }
 
 // The stage camera's tilt (set-view.tsx). OrbitControls keeps the camera within 0.62π of
