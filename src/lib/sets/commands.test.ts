@@ -146,6 +146,7 @@ function context(over: Partial<ShootCommandContext> = {}): ShootCommandContext &
     downloadFrame: spy("downloadFrame"),
     canShoot: true,
     shoot: spy("shoot"),
+    rigExtras: true,
     ...over,
   };
 }
@@ -278,6 +279,20 @@ describe("the rig's commands, shared by ⌘K and the chat", () => {
     for (const id of ids) expect(all).toContain(id);
     expect(all).toContain("lens:50");
     expect(all).toContain("aid:thirds");
+  });
+
+  // Review of Cut 2, R3 (2026-09-25): steps 3–13 are reader v2's until check A.
+  it("list Cut 2's new rows (a look off, eras, genres) only on reader v2's page; every other row as before", () => {
+    const EXTRA = (id: string) => ["stock:none", "character:none", "palette:none", "era:none"].includes(id) || id.startsWith("era:") || id.startsWith("genre:");
+    const without = shootCommands(context({ rigExtras: false })).map((c) => c.id);
+    const withThem = shootCommands(context()).map((c) => c.id);
+    expect(without.filter(EXTRA)).toEqual([]);
+    expect(withThem.filter((id) => !EXTRA(id))).toEqual(without);
+    expect(rigCommandIds().filter(EXTRA).every((id) => withThem.includes(id))).toBe(true);
+    // Left out, as an old page's context leaves it.
+    expect(shootCommands(context({ rigExtras: undefined })).map((c) => c.id)).toEqual(without);
+    // The chat answers with every id either way.
+    for (const id of rigCommandIds().filter(EXTRA)) expect(rigPatchFor(id, { cameraBearingDeg: 0 }), id).not.toBeNull();
   });
 
   it("answer null for an id that is not one, and a fresh change every time", () => {

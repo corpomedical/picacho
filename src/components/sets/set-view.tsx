@@ -8133,17 +8133,24 @@ export function SetView({
   // only while that turn is the thread's last word, before a still folds it.
   const lastTurn = v2On ? turns[turns.length - 1] : undefined;
   const turnRows = new Set<FrameRow>(lastTurn && lastTurn.shotsAt === shots.length ? frameRowsChanged(lastTurn.plan, lastTurn.outcomes) : []);
-  /** A frame card row's label, with the dot when the last message changed it. */
-  const rowLabel = (label: string, row: FrameRow) => (
-    <dt className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]" data-row-changed={turnRows.has(row) || undefined}>
-      {label}
-      {turnRows.has(row) && (
-        <span className="h-1.5 w-1.5 flex-none rounded-full bg-[#e0a468]" title={s.reply.rowChanged}>
+  /**
+   * A frame card row's label, with the dot when the last message changed it.
+   * A row with no dot is the plain block label it always was, so a label
+   * stays on its row's first line when the value wraps; one with a dot keeps
+   * the dot on that line too (review of Cut 2, R2: every account's card had
+   * its labels centred on wrapped rows).
+   */
+  const rowLabel = (label: string, row: FrameRow) =>
+    turnRows.has(row) ? (
+      <dt className="flex items-start gap-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]" data-row-changed>
+        {label}
+        <span className="mt-[6px] h-1.5 w-1.5 flex-none rounded-full bg-[#e0a468]" title={s.reply.rowChanged}>
           <span className="sr-only">{s.reply.rowChanged}</span>
         </span>
-      )}
-    </dt>
-  );
+      </dt>
+    ) : (
+      <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{label}</dt>
+    );
   const frameNumber = revisions[revisions.length - 1]?.id ?? 1;
 
   // ---- the rig check, said and shown (rig-check.ts) ----
@@ -8494,6 +8501,8 @@ export function SetView({
     downloadFrame,
     canShoot: canShootNow,
     shoot: () => void pressShoot(),
+    // Cut 2's new rig rows are reader v2's until check A (review of Cut 2, R3).
+    rigExtras: v2On,
   });
   // The commands the palette lists, built only while it is open.
   const paletteCommands = paletteOpen ? shootCommands(commandContext()) : [];

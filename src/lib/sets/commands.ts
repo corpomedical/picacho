@@ -155,6 +155,13 @@ export type ShootCommandContext = {
   downloadFrame(): void;
   canShoot: boolean;
   shoot(): void;
+  /**
+   * List Cut 2's new rig commands (the looks taken off, eras, genres): the
+   * chat's reader v2 page only, until check A opens it to everyone — the
+   * spec's rule for steps 3–13 (review of Cut 2, R3). The chat answers with
+   * every id either way (rigCommandIds).
+   */
+  rigExtras?: boolean;
 };
 
 /** Every command the set page offers, in the order the palette lists them with no query. */
@@ -184,7 +191,7 @@ export function shootCommands(ctx: ShootCommandContext): Command[] {
   // then the lens ring's chips (not the chat's: its lens_mm goes through the
   // page's pickLens, which reads the rig's sensor), then focus, light, time
   // and look.
-  const rigCommand = (c: RigCommand) => add(c.id, c.group, c.label(w), () => ctx.setRig(c.patch(ctx.cameraBearingDeg)));
+  const rigCommand = (c: RigCommand) => (c.extra && !ctx.rigExtras ? 0 : add(c.id, c.group, c.label(w), () => ctx.setRig(c.patch(ctx.cameraBearingDeg))));
   for (const c of RIG_COMMANDS) if (c.group === "frame") rigCommand(c);
   for (const mm of LENSES_MM) add(`lens:${mm}`, "lens", w.lensMm(mm), () => ctx.pickLens(mm));
   for (const c of RIG_COMMANDS) if (c.group !== "frame") rigCommand(c);
@@ -228,6 +235,8 @@ type RigCommand = {
   label: (w: RigCommandWords) => string;
   /** A light plot is aimed from where the camera stands (light-schemes.ts schemeDefaults): the chat hands the bearing the camera ends the turn on. */
   patch: (cameraBearingDeg: number) => Partial<SetRig>;
+  /** New in Cut 2 (step 3): listed by ⌘K only with ShootCommandContext.rigExtras. */
+  extra?: true;
 };
 
 /**
@@ -263,13 +272,13 @@ const RIG_COMMANDS: readonly RigCommand[] = [
   // A look can be taken off in words too ("no grain", "not black and
   // white"), so each look group has its own "none", with the rig's "Off".
   ...RIG_STOCKS.map((st): RigCommand => ({ id: `stock:${st.id}`, group: "look", label: (w) => `${w.stock} · ${w.stocks[st.id]}`, patch: () => ({ stock: st.id }) })),
-  { id: "stock:none", group: "look", label: (w) => `${w.stock} · ${w.off}`, patch: () => ({ stock: null }) },
+  { id: "stock:none", group: "look", label: (w) => `${w.stock} · ${w.off}`, patch: () => ({ stock: null }), extra: true },
   ...RIG_LENSES.map((l): RigCommand => ({ id: `character:${l.id}`, group: "look", label: (w) => `${w.lensCharacter} · ${w.lenses[l.id]}`, patch: () => ({ lens: l.id }) })),
-  { id: "character:none", group: "look", label: (w) => `${w.lensCharacter} · ${w.off}`, patch: () => ({ lens: null }) },
+  { id: "character:none", group: "look", label: (w) => `${w.lensCharacter} · ${w.off}`, patch: () => ({ lens: null }), extra: true },
   ...RIG_PALETTES.map((p): RigCommand => ({ id: `palette:${p.id}`, group: "look", label: (w) => `${w.palette} · ${w.palettes[p.id]}`, patch: () => ({ palette: p.id }) })),
-  { id: "palette:none", group: "look", label: (w) => `${w.palette} · ${w.off}`, patch: () => ({ palette: null }) },
-  ...RIG_ERAS.map((e): RigCommand => ({ id: `era:${e.id}`, group: "look", label: (w) => `${w.era} · ${w.eras[e.id]}`, patch: () => ({ era: e.id }) })),
-  { id: "era:none", group: "look", label: (w) => `${w.era} · ${w.off}`, patch: () => ({ era: null }) },
+  { id: "palette:none", group: "look", label: (w) => `${w.palette} · ${w.off}`, patch: () => ({ palette: null }), extra: true },
+  ...RIG_ERAS.map((e): RigCommand => ({ id: `era:${e.id}`, group: "look", label: (w) => `${w.era} · ${w.eras[e.id]}`, patch: () => ({ era: e.id }), extra: true })),
+  { id: "era:none", group: "look", label: (w) => `${w.era} · ${w.off}`, patch: () => ({ era: null }), extra: true },
   // A genre adds no words of its own (rig.ts): it is its light and its
   // grade, so picking one sets both, as the panel's "Use these" does.
   ...RIG_GENRES.map((g): RigCommand => ({
@@ -277,6 +286,7 @@ const RIG_COMMANDS: readonly RigCommand[] = [
     group: "look",
     label: (w) => `${w.genre} · ${w.genres[g]}`,
     patch: (bearing) => ({ genre: g, ...genreLookPatch(g, bearing) }),
+    extra: true,
   })),
 ];
 

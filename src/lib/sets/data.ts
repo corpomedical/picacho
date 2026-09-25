@@ -475,8 +475,10 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     // passes; readShotTurn holds the same rule on the server.
     readerV2: access.isAdmin || SHOT_READER_V2_OPEN_TO_ALL,
     // The Producer's lamp is on this page (step 12): the chat's "elsewhere"
-    // answer then offers it, with the person's words, unsent.
-    producerOn: await producerOnFor(access),
+    // answer then offers it, with the person's words, unsent. Only reader
+    // v2's reply reads it, so an account v2 is not open to reads nothing for
+    // it — no profile, no flags on every set page (review of Cut 2, R4).
+    producerOn: access.isAdmin || SHOT_READER_V2_OPEN_TO_ALL ? await producerOnFor(access) : false,
     // The photos on the set's things and the sheets already drawn (R1,
     // 2026-09-21): the folder is the list, read with the service client
     // inside the person's own folder only; the storage paths stay here.

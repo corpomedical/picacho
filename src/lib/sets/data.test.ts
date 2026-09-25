@@ -304,12 +304,17 @@ describe("the Producer's lamp on this page", () => {
     expect((await page(ready(world([still(1)]), { producer: true }))).producerOn).toBe(false);
   });
 
-  it("is on for Elite in good standing only once producer_elite is on", async () => {
+  // Only reader v2's reply offers the Producer, and v2 is admins' until check A
+  // (SHOT_READER_V2_OPEN_TO_ALL false): an Elite page reads nothing for it
+  // until then (review of Cut 2, R4). The Elite rule itself is producerVisible's
+  // (producer/enabled.test.ts holds it against the layout's).
+  it("reads nothing for Elite while reader v2 is not theirs, even with producer_elite on", async () => {
     process.env.ANTHROPIC_API_KEY = "test-key";
     who = { plan: "elite", isAdmin: false };
-    expect((await page(ready(world([still(1)]), { producer: true }))).producerOn).toBe(false);
-    expect((await page(ready(world([still(1)]), { producer: true, producer_elite: true }))).producerOn).toBe(true);
-    expect((await page(ready(world([still(1)]), { producer: true, producer_elite: true }, "past_due"))).producerOn).toBe(false);
+    const out = await page(ready(world([still(1)]), { producer: true, producer_elite: true }));
+    expect(SHOT_READER_V2_OPEN_TO_ALL).toBe(false);
+    expect(out.producerOn).toBe(false);
+    expect(reads.some((r) => r.table === "profiles" || r.table === "feature_flags")).toBe(false);
   });
 
   it("reads nothing for an account that could never have it", async () => {
