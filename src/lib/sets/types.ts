@@ -140,6 +140,12 @@ export type SetPageData =
       liveOn: boolean;
       /** Astra changes left this billing month (set-config.ts SET_EDITS_MONTHLY_LIMITS); null when uncapped or unread. */
       astraEditsLeft: number | null;
+      /**
+       * The plan's Astra changes a month (set-config.ts setEditsMonthlyLimit):
+       * −1 for no cap (admins), 0 for none. Beside the count, so the Astra card
+       * can tell "no cap" from "a count that could not be read" (Helios Cut 2).
+       */
+      astraEditsCap: number;
       /** The photos on the set's things (references.ts listElementPhotos, R1), oldest first, and the hashes of the sheets already drawn. */
       elementPhotos: { photos: ElementPhoto[]; sheets: string[] };
       /** The picture model stills are drawn with (app_settings image_model): the things' sheets ride "gpt-image" only. */

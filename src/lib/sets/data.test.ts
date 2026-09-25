@@ -244,6 +244,23 @@ describe("the month's Astra changes, for the editor", () => {
     rateReadFails = false;
     expect((await page(world([still(1)]))).astraEditsLeft).toBeNull();
   });
+
+  // Beside the count, the plan's cap (Helios Cut 2, step 1, 2026-09-25): a
+  // null count is "no monthly cap" only for −1; for a plan with a cap it is
+  // a count that could not be read, and the Astra card says that instead.
+  it("hands the plan's cap beside the count, so an unread count is never 'no cap'", async () => {
+    who = { plan: "growth", isAdmin: false };
+    rateReadFails = true;
+    const unread = await page(ready(world([still(1)])));
+    expect(unread.astraEditsLeft).toBeNull();
+    expect(unread.astraEditsCap).toBe(setEditsMonthlyLimit("growth", false));
+    expect(unread.astraEditsCap).toBeGreaterThan(0);
+    rateReadFails = false;
+    who = { plan: "growth", isAdmin: true };
+    expect((await page(ready(world([still(1)])))).astraEditsCap).toBe(-1);
+    who = { plan: "starter", isAdmin: false };
+    expect((await page(ready(world([still(1)])))).astraEditsCap).toBe(setEditsMonthlyLimit("starter", false));
+  });
 });
 
 describe("whether the page offers takes", () => {

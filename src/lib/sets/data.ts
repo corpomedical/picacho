@@ -439,6 +439,9 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     // The month's Astra changes left (set-config.ts SET_EDITS_MONTHLY_LIMITS),
     // shown in the editor's prompt bar; the action holds the cap.
     astraEditsLeft: spec ? await astraEditsLeft(access) : null,
+    // And the plan's cap beside it (Helios Cut 2, step 1): a null count is
+    // "no cap" only when the cap is −1; otherwise it could not be read.
+    astraEditsCap: setEditsMonthlyLimit(access.plan, access.isAdmin),
     // The photos on the set's things and the sheets already drawn (R1,
     // 2026-09-21): the folder is the list, read with the service client
     // inside the person's own folder only; the storage paths stay here.

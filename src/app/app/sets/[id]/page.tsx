@@ -69,6 +69,9 @@ export default async function SetPage({
   const ask = (first(query.ask) ?? "").trim().slice(0, SHOT_WORDS_MAX_CHARS) || null;
   const character = first(query.character);
   const askFirst = first(query.askFirst) !== "0";
+  // The message is the one the Sets home built this set from (sets-home.tsx
+  // threadHref): its place part is built already, never sent to Astra again.
+  const askBuilt = ask !== null && first(query.from) === "build";
   const ready = data.error === null && data.set.status === "ready" && data.set.spec !== null && !native;
 
   // The set's second life (the Set Editor, drawn on canvas page G and built
@@ -115,6 +118,9 @@ export default async function SetPage({
         initialAsk={ask}
         initialCharacterId={character}
         initialAskFirst={askFirst}
+        initialAskBuilt={askBuilt}
+        astraEditsLeft={data.astraEditsLeft}
+        astraEditsCap={data.astraEditsCap}
       />
     );
   }

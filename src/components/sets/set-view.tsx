@@ -50,6 +50,8 @@ import { ElementCard, type CardElement } from "./element-card";
 import { answerLikeness } from "@/lib/characters/likeness-actions";
 import { LIKENESS_ANSWERS, type LikenessAnswer } from "@/lib/characters/likeness";
 import { CastStrip, type CastChip } from "./cast-strip";
+import { AstraChangeCard } from "./astra-change-card";
+import { astraCardWords, astraTooBig } from "@/lib/sets/astra-card";
 import {
   retryableTakes,
   SET_TAKE_DEFAULT_ENGINE,
@@ -403,8 +405,15 @@ function elementBadge(b: ElementBadge, coarse: boolean): HTMLDivElement {
 
 /** What Astra did with the last message, said above the frame. */
 type FrameNote = {
-  /** The reader could not read the words, so they became what happens. */
-  fallback: boolean;
+  /**
+   * The reader could not read the words (down, busy, not the shape): the
+   * message, kept for "Use my words as what happens". Nothing changed and
+   * nothing was shot (Helios Cut 2, step 1, 2026-09-25): the words used to
+   * become what happens on their own, and "Shoot without asking" shot them.
+   */
+  down?: string;
+  /** The message built this set on the Sets home, so its place part was not sent to Astra again. */
+  built?: boolean;
   /** The words were about neither the frame nor the shot. */
   talk: boolean;
   /** How the camera had to move round something built, if it did. */
@@ -569,6 +578,9 @@ export function SetView({
   initialElementPhotos = { photos: [], sheets: [] },
   stillModel = "gpt-image",
   unshootable = [],
+  astraEditsLeft,
+  astraEditsCap,
+  initialAskBuilt = false,
 }: {
   setId: string;
   /** The set's name, said in the workspace's own bar. */
@@ -601,6 +613,20 @@ export function SetView({
   stillModel?: string;
   /** The person's characters with no photo yet (R1): named when this page is asked to cast one. */
   unshootable?: { id: string; name: string }[];
+  /**
+   * The month's Astra changes left when the page was drawn (data.ts
+   * astraEditsLeft): null for no cap (admins) or a count that could not be
+   * read. The Astra card says it; the action holds the cap.
+   */
+  astraEditsLeft: number | null;
+  /** The plan's Astra changes a month (set-config.ts setEditsMonthlyLimit): −1 for no cap, 0 for none. */
+  astraEditsCap: number;
+  /**
+   * The message in `initialAsk` is the one the Sets home just built this
+   * set from (?from=build): what it says about the place is already built,
+   * so it is never handed to Astra again (Helios Cut 2, 2026-09-25).
+   */
+  initialAskBuilt?: boolean;
   /** A message the person sent from the Sets home, asked the moment the stage is ready. */
   initialAsk?: string | null;
   /** The character picked on the Sets home. */
@@ -768,6 +794,20 @@ export function SetView({
   const [lookAside, setLookAside] = useState(false);
   const [rebuildNote, setRebuildNote] = useState<{ key: string; text: string; ok: boolean; from?: string } | null>(null);
   const [setChanged, setSetChanged] = useState<number | null>(null);
+  // The month's Astra changes left, as the last answer that carried a
+  // number said it (Helios Cut 2, step 1, 2026-09-25): seeded from the
+  // page's read and replaced only by a NUMBER — an edit's or a rebuild's
+  // answer, success or not, or a followed press once it has ended. A null
+  // (no cap, or a count that could not be read) keeps the last one, so the
+  // card never goes stale on a count it had, nor claims "no monthly cap".
+  const [editsLeft, setEditsLeft] = useState<number | null>(astraEditsLeft);
+  const keepEditsLeft = (n: number | null | undefined) => {
+    if (typeof n === "number" && Number.isFinite(n)) setEditsLeft(Math.max(0, n));
+  };
+  // A change to the set itself, waiting on the Astra card for its press:
+  // the person's words, as they asked. Nothing reaches Astra without that
+  // press, in any mode (the owner's decision 1).
+  const [astraAsk, setAstraAsk] = useState<{ words: string } | null>(null);
   // The conversation panel floats over the stage and can fold away.
   const [chatOpen, setChatOpen] = useState(true);
   // A photo set's photo beside camera 1, folded behind a chip.
@@ -6044,14 +6084,20 @@ export function SetView({
   }
 
   /**
-   * Words about the place itself — "make the barriers brick red", "now
-   * golden hour" — handed to Astra, which edits the set's data server-side
-   * (editor-actions.ts, gated like a build) and hands the revised set back.
-   * The stage rebuilds under the camera; the line under the frame says how
-   * many pieces changed, with Undo beside it. The Build editor's tools and
-   * Astra's original stay one press away for anything by hand.
+   * Words about the place itself — "make the barriers brick red" — handed
+   * to Astra, which edits the set's data server-side (editor-actions.ts,
+   * gated like a build) and hands the revised set back. The stage rebuilds
+   * under the camera; the line under the frame says how many pieces
+   * changed, with Undo beside it. The Build editor's tools and Astra's
+   * original stay one press away for anything by hand.
+   *
+   * Called ONLY from the Astra card's button (Helios Cut 2, step 1,
+   * 2026-09-25): one of the month's changes, and Picacho's cost, is spent
+   * on a press that said so — never straight from a message, in any mode.
    */
   async function editSet(message: string) {
+    const busy = busyRef.current;
+    if (busy.editing || busy.shooting || busy.taking || busy.matching) return;
     busyRef.current.editing = true;
     setEditingSet(true);
     const before = spec;
@@ -6086,6 +6132,8 @@ export function SetView({
       refreshThumbnail(next);
     };
     if (followed) {
+      // A press that has ended says how many are left; the others keep the last count.
+      if (followed.kind === "saved" || followed.kind === "unsaved") keepEditsLeft(followed.editsLeft);
       if (followed.kind === "saved") apply(followed.spec, followed.changed);
       // Only when nothing reached the server is it worth trying again.
       else if (followed.kind === "none") setError(t.generate.submitFailed);
@@ -6093,6 +6141,8 @@ export function SetView({
       return;
     }
     if (!res) return;
+    // Every answer from the month's count on carries one, saved or not.
+    keepEditsLeft(res.editsLeft);
     if (res.error !== null) {
       setError(res.error);
       return;
@@ -6147,6 +6197,7 @@ export function SetView({
       setRebuildNote({ key: to.key, text: formatMsg(cast.rebuildDone, { n: to.blocks }), ok: true, from: key });
     };
     if (followed) {
+      if (followed.kind === "saved" || followed.kind === "unsaved") keepEditsLeft(followed.editsLeft);
       // Read back rather than answered: the thing is found the way its photos find it.
       if (followed.kind === "saved") apply(followed.spec, followed.changed, rebuiltThingIn(followed.spec, key));
       else if (followed.kind === "none") setRebuildNote({ key, text: t.generate.submitFailed, ok: false });
@@ -6154,6 +6205,7 @@ export function SetView({
       return;
     }
     if (!res) return;
+    keepEditsLeft(res.editsLeft);
     if (res.error !== null) {
       setRebuildNote({ key, text: localizeServerText(res.error, t), ok: false });
       return;
@@ -6213,12 +6265,32 @@ export function SetView({
     refreshThumbnail(before);
   }
 
+  /** A change to the set itself, asked for: onto the Astra card, with the conversation open to show it. */
+  function askAstraCard(words: string) {
+    setAstraAsk({ words });
+    if (wide) setDockTab("astra");
+    else setChatOpen(true);
+  }
+
+  /**
+   * "Use my words as what happens", after a reading that failed: the
+   * message becomes what happens, by the person's own press — and nothing
+   * is shot (Helios Cut 2, step 1, 2026-09-25).
+   */
+  function wordsAsHappens(message: string) {
+    setDirection(message);
+    keepRevision(message, cameraId);
+    setNote(null);
+  }
+
   /**
    * A message from the composer, or the one carried from the Sets home: read
    * into a frame (readShotWords), done to the stage, and shot at once when
-   * the words say so or Astra is not asked to wait.
+   * the words say so or Astra is not asked to wait. `origin: "build"` is
+   * passed by the Sets home's message alone (the initialAsk effect below),
+   * never by the composer.
    */
-  async function send(text: string) {
+  async function send(text: string, opts?: { origin?: "build" }) {
     const message = text.trim();
     if (!message || reading || shooting || editingSet || !ready) return;
     setError("");
@@ -6226,15 +6298,19 @@ export function SetView({
     setMentionForced(false);
     setViewing(null);
     setSetChanged(null);
+    setAstraAsk(null);
     pendingRef.current = [...pendingRef.current, message];
     setPendingAsks(pendingRef.current);
     setNote(null);
     setReading(true);
     let words: ShotWords | null = null;
+    let refused = false;
     try {
       const res = await readShotWords(setId, { text: message });
-      if (res.error !== null) setError(res.error);
-      else words = res.words;
+      if (res.error !== null) {
+        setError(res.error);
+        refused = true;
+      } else words = res.words;
     } catch (err) {
       const stale = staleHere(err);
       if (stale) {
@@ -6242,34 +6318,43 @@ export function SetView({
         setReading(false);
         return;
       }
-      // The reader is down: the words are what happens, and the frame is as it was.
+      // The reader is down: said below, and nothing changes.
     } finally {
       setReading(false);
+    }
+    // A reading that failed — the reader down, too many readings in ten
+    // minutes (readShotWords answers null), an answer not the shape —
+    // changes nothing and shoots nothing, in every mode (the owner's
+    // decision 2; Helios Cut 2, step 1, 2026-09-25). Until then the whole
+    // message became what happens, and "Shoot without asking" shot it: a
+    // paid still of words nobody had read. The words stay one press away.
+    if (!words) {
+      if (!refused) setNote({ down: message, talk: false, moved: null });
+      return;
     }
     // Just talking (3D Jutsu's ask-only mode): the words are read and
     // answered, but nothing moves and nothing is spent.
     if (justTalk) {
-      setNote({ fallback: !words, talk: words?.intent === "talk", moved: null, planned: true });
+      setNote({ talk: words.intent === "talk", moved: null, planned: true });
       return;
     }
-    if (!words) {
-      setDirection(message);
-      setNote({ fallback: true, talk: false, moved: null });
-      keepRevision(message, cameraId);
-      if (!askFirst) await (takeStart ? take(message) : shoot(message));
+    // The message the Sets home just built this set from: what it says
+    // about the place is built already, so it is framed, never sent to
+    // Astra again (a second paid rewrite of what the build just made).
+    const built = opts?.origin === "build" && words.intent === "edit";
+    // Words about the place itself are Astra's: a card that says what it
+    // uses of the month, and waits for its press — never Astra at once
+    // (the owner's decision 1).
+    if (words.intent === "edit" && !built) {
+      askAstraCard(message);
       return;
     }
-    // Words about the place itself go to Astra, which edits the set.
-    if (words.intent === "edit") {
-      await editSet(message);
-      return;
-    }
-    if (words.intent === "talk" && !words.direction && !hasCameraWords(words) && !words.markId && !words.facing) {
-      setNote({ fallback: false, talk: true, moved: null });
+    if (!built && words.intent === "talk" && !words.direction && !hasCameraWords(words) && !words.markId && !words.facing) {
+      setNote({ talk: true, moved: null });
       return;
     }
     const moved = applyWords(words);
-    setNote({ fallback: false, talk: false, moved: moved && moved !== "none" ? moved : null });
+    setNote({ built, talk: false, moved: moved && moved !== "none" ? moved : null });
     // The direction is what the card shows: the reader's own words when it
     // read any ("she leans on the counter"), otherwise the direction already
     // framed. The raw message would put "go" in the picture's words
@@ -6278,14 +6363,17 @@ export function SetView({
   }
 
   // The message from the Sets home, once the stage can act on it — then the
-  // address forgets it, so a reload does not ask again.
+  // address forgets it, so a reload does not ask again. `from` goes with it
+  // (check of the Cut 2 spec, item 4): left behind, a reload would make the
+  // person's own next message the "build" turn, and their Astra change
+  // would be dropped as already built. The build turn is this call's alone.
   useEffect(() => {
     if (!ready || !initialAsk || askedRef.current) return;
     askedRef.current = true;
     const url = new URL(window.location.href);
-    for (const key of ["ask", "character", "askFirst"]) url.searchParams.delete(key);
+    for (const key of ["ask", "character", "askFirst", "from"]) url.searchParams.delete(key);
     window.history.replaceState(null, "", `${url.pathname}${url.search}`);
-    void send(initialAsk);
+    void send(initialAsk, initialAskBuilt ? { origin: "build" } : undefined);
     // send reads the latest state through closures; it is not a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, initialAsk]);
@@ -6583,7 +6671,7 @@ export function SetView({
     setViewing(null);
     pendingRef.current = [...pendingRef.current, s.anotherAngle];
     setPendingAsks(pendingRef.current);
-    setNote({ fallback: false, talk: false, moved: null });
+    setNote({ talk: false, moved: null });
     keepRevision(direction, next.id);
   }
 
@@ -6708,7 +6796,7 @@ export function SetView({
     ? s.justTalkNote
     : note?.talk
       ? s.talkReply
-      : [note?.fallback ? s.wordsFallback : null, note?.moved ? formatMsg(s.frameLineMoved, { name: characterName }) : null]
+      : [note?.built ? s.reply.noteBuiltFromWords : null, note?.moved ? formatMsg(s.frameLineMoved, { name: characterName }) : null]
           .filter(Boolean)
           .join(" ");
   const frameNumber = revisions[revisions.length - 1]?.id ?? 1;
@@ -7867,6 +7955,12 @@ export function SetView({
                   <AstraMark />
                   <p className="text-sm leading-relaxed text-[#d6d9e0]">
                     {setChanged === 0 ? s.editorAskNothing : setChanged === 1 ? s.editorAskDoneOne : formatMsg(s.editorAskDone, { n: setChanged })}{" "}
+                    {/* What is left of the month after it, as the last answer said (Helios Cut 2, step 1): the Build editor's own words. */}
+                    {editsLeft !== null && (
+                      <span className="text-[#9aa0ad]" data-edits-left>
+                        {editsLeft === 0 ? s.editorAskLeftNone : editsLeft === 1 ? s.editorAskLeftOne : formatMsg(s.editorAskLeft, { n: editsLeft })}.{" "}
+                      </span>
+                    )}
                     {setChanged > 0 && (
                       <button type="button" onClick={() => void undoSetEdit()} className="cursor-pointer font-medium text-[#e0a468]">
                         {s.editorUndo}
@@ -7876,10 +7970,44 @@ export function SetView({
                 </div>
               )}
 
+              {/* A change to the set itself, waiting for its press (Helios Cut 2, step 1). */}
+              {astraAsk && (
+                <div className="flex items-start gap-2.5">
+                  <AstraMark />
+                  <div className="min-w-0 flex-1">
+                    <AstraChangeCard
+                      words={astraAsk.words}
+                      editsLeft={editsLeft}
+                      editsCap={astraEditsCap}
+                      tooBig={astraTooBig(spec)}
+                      busy={reading || shooting || editingSet || !ready}
+                      shootCredits={null}
+                      onGo={() => {
+                        // Exactly the words the card quoted: what Astra reads.
+                        const { quoted } = astraCardWords(astraAsk.words);
+                        setAstraAsk(null);
+                        void editSet(quoted);
+                      }}
+                      onNotNow={() => setAstraAsk(null)}
+                      copy={s.reply}
+                      buildLabel={s.editorOpen}
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* Astra's turn: the frame in a sentence, then as a card, and Shoot to approve it */}
               <div className="flex items-start gap-2.5">
                 <AstraMark />
                 <div className="min-w-0 flex-1 space-y-2.5">
+                  {note?.down !== undefined && (
+                    <p className="text-sm leading-relaxed text-[#d6d9e0]" data-reader-down>
+                      {s.reply.replyReaderDown}{" "}
+                      <button type="button" onClick={() => wordsAsHappens(note.down ?? "")} disabled={!ready} className="cursor-pointer font-medium text-[#e0a468] disabled:text-[#9aa0ad]">
+                        {s.reply.useMyWords}
+                      </button>
+                    </p>
+                  )}
                   {characters.length === 0 ? (
                     <p className="text-sm leading-relaxed text-[#d6d9e0]">
                       {s.noCharacters}{" "}
@@ -8475,7 +8603,8 @@ export function SetView({
                 disabled={editingSet || reading || shooting}
                 onClick={() => {
                   setScaleDismissed(true);
-                  void editSet(s.scaleFixAsk);
+                  // One of the month's changes: the card says so and waits for its press.
+                  askAstraCard(s.scaleFixAsk);
                 }}
                 className="cursor-pointer rounded-full bg-[#e0a468] px-3 py-1.5 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:bg-[#2a2b33] disabled:text-[#c6c9d1] disabled:opacity-100"
               >

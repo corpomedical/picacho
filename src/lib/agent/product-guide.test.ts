@@ -45,6 +45,21 @@ describe("renderProductGuide", () => {
     expect(guide).not.toContain("in private testing");
   });
 
+  // Helios Cut 2, step 1 (2026-09-25): the assistant tells the truth about
+  // what a set's own chat spends. Helios sits behind the sidebar's Tools
+  // door since d31ed06; a change to the set itself is always a press on a
+  // card that shows the month's changes; stills and takes are priced on
+  // their buttons; and it shoots unasked only in "Shoot without asking".
+  it("says where Helios is, and what the set's chat spends and when", () => {
+    expect(guide).toContain('"Helios 3D" behind the Tools door in the sidebar (/app/sets)');
+    expect(guide).toContain('It never changes the set itself unless the person presses "Change the set" on a card that shows the month\'s changes left');
+    expect(guide).toContain("stills and takes are priced on their buttons");
+    expect(guide).toContain('it shoots on its own only in "Shoot without asking"');
+    expect(guide).toContain("The Producer does not change sets: it tells the person what to type there.");
+    // Never the promise the page cannot keep in "Shoot without asking".
+    expect(guide).not.toMatch(/asks before anything that costs/i);
+  });
+
   it("never leaks a drafted (unproven) preset", () => {
     for (const p of CINEMA_PRESETS) {
       if (p.proven === false) {

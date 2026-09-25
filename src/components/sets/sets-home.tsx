@@ -312,12 +312,19 @@ export function SetsHome({
     return () => window.removeEventListener("keydown", onKey);
   }, [menu]);
 
-  /** Where a message goes: the set's page, the message and the choices in the address. */
-  function threadHref(setId: string, message: string): string {
+  /**
+   * Where a message goes: the set's page, the message and the choices in
+   * the address. `built`: this message is the one the set is being built
+   * from (?from=build), so the set's page never hands its place part to
+   * Astra again — only the build branch below says so, never a message to
+   * a set already built (Helios Cut 2, step 1, 2026-09-25).
+   */
+  function threadHref(setId: string, message: string, built = false): string {
     const q = new URLSearchParams();
     q.set("ask", message.slice(0, SHOT_WORDS_MAX_CHARS));
     if (characterId) q.set("character", characterId);
     if (!askFirst) q.set("askFirst", "0");
+    if (built) q.set("from", "build");
     return `/app/sets/${setId}?${q.toString()}`;
   }
 
@@ -385,7 +392,7 @@ export function SetsHome({
       ...prev,
     ]);
     setBrief("");
-    router.push(threadHref(res.id, message));
+    router.push(threadHref(res.id, message, true));
   }
 
   // The photo, prepared in the browser (upright, at most 2048 px, a JPEG

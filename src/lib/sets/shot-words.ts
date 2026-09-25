@@ -105,8 +105,12 @@ export function shotWordsInstructions(stage: { spec: SetSpec | null; characters:
   lines.push(`Lenses: ${LENSES_MM.join(", ")} mm.`);
   if (stage.characters.length > 0) lines.push(`Characters they may name: ${stage.characters.join(", ")}.`);
   lines.push(`Answer exactly this shape: ${SHAPE}${stage.askPlace ? ',"place":null' : ""}}`);
+  // "edit" hands the words to Astra — one of the month's paid changes, on a
+  // press of its card (set-view.tsx). The time of day, the light and the
+  // look are not Astra's: "now golden hour" used to be read as an edit and
+  // sent to a rewrite of the whole set (Helios Cut 2, step 1, 2026-09-25).
   lines.push(
-    '- intent: "shoot" when they ask to take the picture now (shoot, go, take it, do it, one more); "frame" when they set up the shot: who, what happens, where the camera stands; "edit" when they ask to change the PLACE ITSELF — recolour, add, remove, move or relight what is built (make the walls red, add a row of flags, remove the car, now golden hour) — never for the camera or the person; "talk" when the words are about none of these.',
+    '- intent: "shoot" when they ask to take the picture now (shoot, go, take it, do it, one more); "frame" when they set up the shot: who, what happens, where the camera stands; "edit" when they ask to change the PLACE ITSELF — recolour, add, remove or move what is built (make the walls red, add a row of flags, remove the car) — never for the camera or the person, never the time of day, the light or the look; "talk" when the words are about none of these.',
     "- direction: what happens in the picture — the pose, the action, the expression, the mood — in their own words, without the camera settings and without the place. Empty when they said nothing about it.",
     "- camera_id: one of the camera ids, only when they name that camera. side: where the camera stands relative to THE PERSON: front, back, left, right, or front_left, front_right, back_left, back_right (from behind: back; over the shoulder: back_left; profile: left). Only the person has sides here: when they name the side of something else — the front of the car, behind the building, the back of the room — leave side null and put their words in direction, since the camera cannot be placed by that thing. size: close_up, medium, full (the whole person), wide (the person small in the place). height: low, eye, high. tilt_deg: degrees the camera tilts, + up and − down, only when they say so. lens_mm: one of the lenses, when they name one. mark_id: one of the mark ids, when they name a mark or the spot it names. facing: where the person faces: camera, away, left, right.",
   );

@@ -154,6 +154,19 @@ describe("shotWordsInstructions", () => {
     expect(text).toContain("when they name the side of something else — the front of the car, behind the building, the back of the room — leave side null");
   });
 
+  // Changed on purpose, and only here (Helios Cut 2, step 1, 2026-09-25):
+  // "relight" and "now golden hour" were listed as edits, so the hour of
+  // day went to a paid rewrite of the whole set by Astra. The time of day,
+  // the light and the look are never Astra's.
+  it("never reads the time of day, the light or the look as a change to the set", () => {
+    const text = shotWordsInstructions({ spec, characters: [], askPlace: false });
+    const intent = text.split("\n").find((l) => l.startsWith("- intent:"));
+    expect(intent).toBe(
+      '- intent: "shoot" when they ask to take the picture now (shoot, go, take it, do it, one more); "frame" when they set up the shot: who, what happens, where the camera stands; "edit" when they ask to change the PLACE ITSELF — recolour, add, remove or move what is built (make the walls red, add a row of flags, remove the car) — never for the camera or the person, never the time of day, the light or the look; "talk" when the words are about none of these.',
+    );
+    expect(text).not.toMatch(/relight|golden hour/i);
+  });
+
   it("asks for the place only on the home, where there is no set", () => {
     const text = shotWordsInstructions({ spec: null, characters: [], askPlace: true });
     expect(text).toContain('"facing":null,"place":null}');

@@ -71,7 +71,11 @@ describe("what the set page spends", () => {
     const send = bodyOf("  async function send(");
     expect(send).toContain("take(words.direction || direction) : shoot(words.direction || direction)");
     expect(send).not.toContain("shoot(words.direction || message)");
-    // The reader being down is the one case the message itself is the direction.
-    expect(send).toMatch(/setDirection\(message\);[\s\S]*?take\(message\) : shoot\(message\)/);
+    // The reader being down no longer makes the message the direction and
+    // shoots it (Helios Cut 2, step 1, 2026-09-25 — the owner's decision 2:
+    // a failed reading never shoots): the words become what happens only on
+    // the person's own press, and nothing is shot then either.
+    expect(send).not.toMatch(/take\(message\)|shoot\(message\)|setDirection\(message\)/);
+    expect(bodyOf("  function wordsAsHappens(")).toContain("setDirection(message);");
   });
 });

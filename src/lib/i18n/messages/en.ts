@@ -2972,7 +2972,6 @@ const en = {
     lookKept: "This is the look",
     lookOnLine: "The look is on: the next still in this set keeps these objects.",
     shootWord: "Shoot",
-    wordsFallback: "I took that as what happens in the frame.",
     talkReply: "Say who is in the frame, what happens, or where to put the camera.",
     buildingLine: "Astra is building the place from your words.",
     buildFailedLine: "The place couldn't be built, so nothing was shot.",
@@ -3357,6 +3356,29 @@ const en = {
     editorViewDepth: "Depth",
     editorHex: "Hex",
     editorFind: "Find in the scene…",
+    // Astra's replies in the conversation (Helios Cut 2, 2026-09-25 —
+    // operator: "Run, keep going."). Every sentence is the page's own, in the
+    // person's language; the words it quotes are the person's own. A change to
+    // the set itself is always a card with the month's changes left and a
+    // press (the owner's decision 1), and a message that could not be read
+    // changes nothing and shoots nothing (decision 2).
+    reply: {
+      replyReaderDown: "I couldn't read that just now, so nothing changed.",
+      replyCutMessage: "I read the first {n} characters.",
+      useMyWords: "Use my words as what happens",
+      noteBuiltFromWords: "The set was built from these words, so I didn't send the place part to Astra again. If something's missing, ask for it here.",
+      astraAsk: "Changing the set itself is Astra's job: “{words}”. It uses 1 of your {n} changes left this month, only if it saves, and takes a minute or more.",
+      astraAskLast: "Changing the set itself is Astra's job: “{words}”. It uses your last change this month, only if it saves, and takes a minute or more.",
+      astraAskOpen: "Changing the set itself is Astra's job: “{words}”. It uses one Astra change (this account has no monthly cap) and takes a minute or more.",
+      astraAskUnknown: "Changing the set itself is Astra's job: “{words}”. It uses 1 of your {cap} changes this month, only if it saves; I couldn't read how many are left. It takes a minute or more.",
+      astraNone: "That needs Astra: “{words}”. This month's changes are used up; the {build} editor's own tools still work, free.",
+      astraTooBig: "That needs Astra: “{words}”. This set is too big for Astra to change in one go; the {build} editor's own tools still work, free.",
+      astraGo: "Change the set",
+      astraGoShoot: "Change it, then shoot · {credits}",
+      notNow: "Not now",
+      creditOne: "1 credit",
+      creditsN: "{n} credits",
+    },
     rig: {
       chip: "Rig",
       title: "Rig",
