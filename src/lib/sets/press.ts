@@ -21,7 +21,7 @@ import { SET_PRESS_RUNNING, SET_SAVE_FAILED } from "./messages";
 // one per film Render, its beats told apart by their number), and:
 //
 // 1. The press's first write is a claim row under that id
-//    (location_set_presses, supabase/pending/helios-presses.sql), right after
+//    (location_set_presses, supabase/applied/2026-09-25/helios-presses.sql), right after
 //    the set is found to be the person's own and before anything is counted,
 //    drawn, uploaded or charged. A second delivery meets its primary key,
 //    does NOTHING else, and waits for the first delivery's answer, which is
@@ -140,7 +140,7 @@ type DbError = { code?: string; message?: string } | null | undefined;
 function isMissingTable(error: DbError): boolean {
   return error?.code === "PGRST205" || error?.code === "42P01" || /does not exist|schema cache/.test(error?.message ?? "");
 }
-const MISSING = `[sets] ${TABLE} is missing — presses are served untracked until supabase/pending/helios-presses.sql runs`;
+const MISSING = `[sets] ${TABLE} is missing — presses are served untracked until supabase/applied/2026-09-25/helios-presses.sql runs`;
 
 /**
  * Claims a press for this delivery, or finds that another delivery of the

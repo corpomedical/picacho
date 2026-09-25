@@ -431,7 +431,7 @@ describe("the table", () => {
   });
 
   it("is created by its pending SQL, server-only, and checked by verify-db", () => {
-    const sql = readFileSync(join(__dirname, "../../../supabase/pending/helios-presses.sql"), "utf8");
+    const sql = readFileSync(join(__dirname, "../../../supabase/applied/2026-09-25/helios-presses.sql"), "utf8");
     expect(sql).toContain("create table if not exists public.location_set_presses (");
     expect(sql).toContain("id uuid primary key,");
     expect(sql).toContain("kind text not null check (kind in ('shot','take','edit')),");

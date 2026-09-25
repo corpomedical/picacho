@@ -25,7 +25,7 @@ export const RELEASES: Release[] = [
     date: "2026-09-25",
     title: "Helios never charges twice, tells the truth about what it charged, and makes calmer films",
     items: [
-      "Every Shoot, Take, clip retry and film Render now carries its own id. If a phone or a browser loses the connection and quietly sends the same press again, Helios recognises it and answers with the first one's result, so the same press can never be charged twice (supabase/pending/helios-presses.sql).",
+      "Every Shoot, Take, clip retry and film Render now carries its own id. If a phone or a browser loses the connection and quietly sends the same press again, Helios recognises it and answers with the first one's result, so the same press can never be charged twice (supabase/applied/2026-09-25/helios-presses.sql).",
       "When the connection drops while a still or a take is rendering, Helios no longer says \"try again\". It checks with the server, says \"still rendering — it will appear here\" while it is, and puts the result on the strip when it lands. A film keeps the beats you already paid for instead of shooting them again.",
       "A take stops before anything is charged when the character you picked isn't the person in its start still. Before, the clip could morph one person into another and charge in full.",
       "Films no longer stop halfway on \"You're shooting quickly\". The take limit counts only takes that started a paid render, and a film's own beats don't trip the three-second pause between sends.",
