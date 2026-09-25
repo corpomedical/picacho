@@ -284,7 +284,8 @@ describe("the chat's turn engine", () => {
   it("presses an Astra change only on its card: the words, the reading, where things stand (rule 1, pin #1)", () => {
     // The definition, v1's card, and the chat's card through goAstra.
     expect(view.match(/\beditSet\(/g)).toHaveLength(3);
-    expect(goAstra).toContain("void editSet({ said: need.said, gloss: need.gloss }, frame, then).then((r) => {");
+    // The gloss rides with the server's seal on it, or the server drops it (review of Cut 2, R1).
+    expect(goAstra).toContain("void editSet({ said: need.said, gloss: need.gloss, seal: need.seal }, frame, then).then((r) => {");
     expect(goAstra).toContain("const then = thenShoot ? { pressId: newPressId(), turnId: turn.id } : undefined;");
     expect(goAstra).toContain("if (!need || !need.canGo || editingSet) return;");
     expect(view.match(/\bgoAstra\(/g)).toHaveLength(2);

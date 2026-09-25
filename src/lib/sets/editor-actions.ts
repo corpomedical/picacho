@@ -44,7 +44,7 @@ import {
 } from "@/lib/sets/set-config";
 import { astraEditsLeft, countAstraEditsThisMonth } from "@/lib/sets/data";
 import { claimAstraPress, endAstraPress, giveBackAstraEdit, parseAstraPressId, readAstraPress } from "@/lib/sets/astra-press";
-import { editUndoOf, heldTextOf, sealedEditText, type EditUndo } from "@/lib/sets/edit-seal";
+import { editUndoOf, heldTextOf, openReaderMeaning, sealedEditText, type EditUndo } from "@/lib/sets/edit-seal";
 import type { AstraEditRead } from "@/lib/sets/astra-follow";
 import { cleanText, normaliseSetSpec, parseSetSpecText, specTextForGate, type SetSpec } from "@/lib/sets/set-spec";
 import { ELEMENT_KEY_RE, resolvePhotos, setElements, type ElementPhoto } from "@/lib/sets/elements";
@@ -286,12 +286,19 @@ async function askAstra(setId: string, request: AstraJobRequest, what: string, f
  * against the person, policy-log.ts); passing alone, their words made the
  * difference and it counts, as it always did (critic item 12). With no
  * meaning, the gate is called exactly as before.
+ *
+ * The meaning is taken only with `meaningSeal`, the seal readShotTurn put
+ * on the words and the gloss it read (edit-seal.ts sealReaderMeaning), and
+ * only when it opens for exactly these words, this set and this person
+ * (review of Cut 2, R1, 2026-09-25). Any other meaning — one a browser
+ * wrote itself, to have its own refusals logged as the model's — is
+ * dropped, and the request and the gate are exactly as with none.
  */
 export async function editSetWithAstra(
   setId: string,
   instruction: string,
   pressId?: string,
-  more?: { meaning?: unknown; frame?: unknown },
+  more?: { meaning?: unknown; meaningSeal?: unknown; frame?: unknown },
 ): Promise<
   | { error: string; editsLeft?: number | null; pending?: true }
   | { error: null; spec: SetSpec; changed: number; editsLeft: number | null; undo: EditUndo | null }
@@ -307,7 +314,8 @@ export async function editSetWithAstra(
   // and paid for, and counted among the month's changes.
   const working = owned.edited ?? owned.spec;
   if (JSON.stringify(working).length > SET_EDIT_MAX_SPEC_CHARS) return { error: SET_EDIT_TOO_BIG };
-  const meaning = editMeaningOf(more?.meaning);
+  const glossed = editMeaningOf(more?.meaning);
+  const meaning = glossed && openReaderMeaning(setId, userId, text, glossed, more?.meaningSeal) ? glossed : "";
   const frame = editFrameOf(more?.frame, working);
   const extra = meaning || frame ? { ...(meaning ? { meaning } : {}), ...(frame ? { frame } : {}) } : undefined;
 

@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { countSetBuildsThisMonth } from "@/lib/sets/data";
+import { sealReaderMeaning } from "@/lib/sets/edit-seal";
 import { SET_NOT_FOUND, SET_NOT_READY } from "@/lib/sets/messages";
 import { cleanText, normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
 import {
@@ -220,5 +221,9 @@ export async function readShotTurn(
     console.warn(`[sets] shot reader failed: the answer was not the shape (finish ${reply.usage.finish ?? "unknown"})`);
     return none("down", cut);
   }
-  return { error: null, reading: parsed.reading, why: "ok", cut, dropped: parsed.dropped, aliases: stage.aliases };
+  // The gloss rides to Astra only under this server's seal (edit-seal.ts):
+  // a meaning a browser wrote itself is never judged as the reader's.
+  const change = parsed.reading.setChange;
+  const reading: ShotReading = change ? { ...parsed.reading, setChange: { ...change, seal: sealReaderMeaning(setId, userId, change.said, change.gloss) } } : parsed.reading;
+  return { error: null, reading, why: "ok", cut, dropped: parsed.dropped, aliases: stage.aliases };
 }

@@ -423,7 +423,7 @@ describe("the Astra card (spec §3.2, the owner's decision 1)", () => {
     for (const mode of ["ask", "auto"] as TurnMode[]) {
       const plan = planTurn({ ...change, shoot: true }, stateOf({ mode }));
       expect(plan.steps).toEqual([]);
-      expect(plan.needs).toEqual([{ kind: "astra", said: "add a row of flags along the pit wall", gloss: "a row of small flags", cut: false, card: "ask", canGo: true }]);
+      expect(plan.needs).toEqual([{ kind: "astra", said: "add a row of flags along the pit wall", gloss: "a row of small flags", seal: null, cut: false, card: "ask", canGo: true }]);
       expect(shootDecision(plan, stateOf({ mode }))).toEqual({ kind: "none", held: ["astra"], offer: "still" });
     }
   });

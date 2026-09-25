@@ -67,8 +67,10 @@ vi.mock("@/lib/sets/set-spec", async () => await import("./set-spec"));
 vi.mock("@/lib/sets/shot-words", async () => await import("./shot-words"));
 vi.mock("@/lib/sets/shot-reading", async () => await import("./shot-reading"));
 vi.mock("@/lib/sets/reader-context", async () => await import("./reader-context"));
+vi.mock("@/lib/sets/edit-seal", async () => await import("./edit-seal"));
 
 import { readShotTurn } from "./words-actions";
+import { openReaderMeaning } from "./edit-seal";
 
 type Sent = { model: string; messages: { role: string; content: string }[]; [k: string]: unknown };
 let sent: Sent[];
@@ -115,6 +117,8 @@ beforeEach(() => {
     { id: LENA, name: "Lena", reference_image_urls: [] },
   ];
   vi.stubEnv("OPENAI_API_KEY", "sk-test-only");
+  // The seal's key (edit-seal.ts): any will do here.
+  vi.stubEnv("MEDIA_SIGNING_SECRET", "test-only");
   for (const level of ["log", "info", "warn", "error", "debug"] as const) {
     vi.spyOn(console, level).mockImplementation((...args: unknown[]) => void logged.push([level, ...args]));
   }
@@ -285,6 +289,25 @@ describe("readShotTurn: what comes back", () => {
     const r = await readShotTurn(SET, { text: "now she's smiling", now: NOW });
     if (r.error !== null) throw new Error(r.error);
     expect(r.reading?.happens).toEqual({ keep: ["She leans on the car"], add: ["she's smiling"] });
+  });
+
+  // Review of Cut 2, R1 (2026-09-25): the gloss reaches Astra as the
+  // reader's only under this server's seal, which only a reading carries.
+  it("seals a set change's words and the reader's gloss for this set and this person, and nothing else opens it", async () => {
+    reader(JSON.stringify({ set_change: { said: "add a row of flags along the pit wall", gloss: "a row of small flags along the pit wall" } }));
+    const r = await readShotTurn(SET, { text: "add a row of flags along the pit wall", now: NOW });
+    if (r.error !== null) throw new Error(r.error);
+    const change = r.reading?.setChange;
+    expect(change?.said).toBe("add a row of flags along the pit wall");
+    expect(typeof change?.seal).toBe("string");
+    expect(openReaderMeaning(SET, USER, change?.said ?? "", change?.gloss ?? "", change?.seal)).toBe(true);
+    expect(openReaderMeaning(SET, USER, change?.said ?? "", "something else", change?.seal)).toBe(false);
+    expect(openReaderMeaning(SET, STRANGER, change?.said ?? "", change?.gloss ?? "", change?.seal)).toBe(false);
+    // With no gloss there is nothing to seal.
+    reader(JSON.stringify({ set_change: { said: "add a row of flags along the pit wall" } }));
+    const plain = await readShotTurn(SET, { text: "add a row of flags along the pit wall", now: NOW });
+    if (plain.error !== null) throw new Error(plain.error);
+    expect(plain.reading?.setChange).toEqual({ said: "add a row of flags along the pit wall", gloss: null, cut: false, seal: null });
   });
 
   it("names what did not match, never guesses it: an alias the stage never listed, words the person never wrote", async () => {

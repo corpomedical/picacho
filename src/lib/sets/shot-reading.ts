@@ -222,8 +222,12 @@ export type ShotReading = ShotAct & {
   undo?: true;
   happens?: HappensOp;
   wardrobe?: true;
-  /** Their own words asking to change the set itself (≤300, SET_EDIT_MAX_CHARS; `cut` when they wrote more), and the model's short English gloss, gated as the reader's (spec §6.2). */
-  setChange?: { said: string; gloss: string | null; cut: boolean };
+  /**
+   * Their own words asking to change the set itself (≤300, SET_EDIT_MAX_CHARS; `cut` when they wrote more), and the model's short English gloss, gated as the reader's (spec §6.2).
+   * `seal` is the server's (edit-seal.ts sealReaderMeaning), added by readShotTurn after the parse — never by the parse, never by the model: without it
+   * the gloss never rides to Astra (review of Cut 2, R1).
+   */
+  setChange?: { said: string; gloss: string | null; cut: boolean; seal?: string | null };
   ask?: AskTopic[];
   /** The model's one labelled line of advice, ≤160 characters. */
   idea?: string;

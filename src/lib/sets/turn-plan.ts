@@ -192,7 +192,8 @@ export type StepKind = Step["kind"];
 
 /** What waits for a press before it happens. */
 export type Need =
-  | { kind: "astra"; said: string; gloss: string | null; cut: boolean; card: AstraCardKind; canGo: boolean }
+  /** `seal`: the server's over the words and the gloss (edit-seal.ts), without which the gloss never rides to Astra. */
+  | { kind: "astra"; said: string; gloss: string | null; seal: string | null; cut: boolean; card: AstraCardKind; canGo: boolean }
   | { kind: "which"; slot: "near" | "facing" | "gaze"; candidates: string[]; side?: NearSide }
   /** [Use the hour instead]: a sun plot was set while a time is set. */
   | { kind: "hour" }
@@ -1001,7 +1002,7 @@ export function planTurn(reading: ShotReading | null, state: PageState): TurnPla
     if (state.origin === "build") notes.push({ kind: "builtFromWords" });
     else {
       const card = astraCardKind({ editsLeft: state.editsLeft, editsCap: state.editsCap, tooBig: state.tooBig });
-      needs.push({ kind: "astra", said: r.setChange.said, gloss: r.setChange.gloss, cut: r.setChange.cut, card, canGo: astraCardCanGo(card) });
+      needs.push({ kind: "astra", said: r.setChange.said, gloss: r.setChange.gloss, seal: r.setChange.seal ?? null, cut: r.setChange.cut, card, canGo: astraCardCanGo(card) });
     }
   }
   // The set this message built already has its place: "a different place" is not asked of it.

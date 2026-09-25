@@ -159,7 +159,7 @@ describe("the plan: expectShoot and expectCards", () => {
 
   it("expectCards is exactly those cards, in any order; absent, cards aren't checked", () => {
     const needs = [
-      { kind: "astra", said: "x", gloss: null, cut: false, card: "ask", canGo: true },
+      { kind: "astra", said: "x", gloss: null, seal: null, cut: false, card: "ask", canGo: true },
       { kind: "which", slot: "near", candidates: ["c_car1", "c_car2"] },
     ] as TurnPlan["needs"];
     expect(graded({}, { entry: entry({ expectCards: ["which", "astra"] }), plan: { plan: plan(needs), decision: decided() } }).misses).toEqual([]);

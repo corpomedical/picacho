@@ -239,7 +239,7 @@ vi.mock("@/lib/sets/thing-model-store", () => ({ listModelFiles: async () => mod
 
 import { editSetWithAstra, readAstraEdit, rebuildThingFromPhotos, undoAstraEdit } from "./editor-actions";
 import { SET_EDIT_MEANING_MAX_CHARS, setEditInput } from "./set-edit-prompt";
-import { editTextOf, openEditSeal } from "./edit-seal";
+import { editTextOf, openEditSeal, sealReaderMeaning } from "./edit-seal";
 import { buildSetShotPrompt } from "./set-shot-prompt";
 import { resolvePhotos, setElements, type ElementPhoto } from "./elements";
 import { THING_REBUILD_MAX_SENT_CHARS, thingLocalBlocks } from "./thing-rebuild";
@@ -509,6 +509,8 @@ describe("one Astra job per press", () => {
 describe("a change from the set's chat: meaning and frame", () => {
   const SAID = "put a red Ferrari by the pit wall";
   const FRAME = { mark: { x: 1.234, z: -2.5, facingDeg: 90 }, camera: { position: [4, 1.5, 6], target: [1.2, 1, -2.5] } };
+  /** A meaning as readShotTurn hands it on: with the server's seal over these words and this gloss (review of Cut 2, R1). */
+  const sealed = (said: string, meaning: string) => ({ meaning, meaningSeal: sealReaderMeaning(SET, USER, said, meaning) });
 
   it("with nothing more, gates and sends exactly as before", async () => {
     expect((await editSetWithAstra(SET, SAID, PRESS)).error).toBeNull();
@@ -523,7 +525,7 @@ describe("a change from the set's chat: meaning and frame", () => {
   });
 
   it("sends the person's words as the request, then the reader's meaning, labelled, then the frame", async () => {
-    const out = await editSetWithAstra(SET, SAID, PRESS, { meaning: "a red sports car by the pit wall", frame: FRAME });
+    const out = await editSetWithAstra(SET, SAID, PRESS, { ...sealed(SAID, "a red sports car by the pit wall"), frame: FRAME });
     expect(out.error).toBeNull();
     const input = String(sent[0].input);
     expect(input).toContain(`The change request:\n${SAID}\n\n`);
@@ -535,7 +537,7 @@ describe("a change from the set's chat: meaning and frame", () => {
   });
 
   it("puts a refusal the reader's meaning earns on its own under the reader, never on the person", async () => {
-    const out = await editSetWithAstra(SET, SAID, PRESS, { meaning: "something forbidden by the wall" });
+    const out = await editSetWithAstra(SET, SAID, PRESS, sealed(SAID, "something forbidden by the wall"));
     expect(out.error).toBe("Refused by the gate.");
     expect(refusals).toEqual([{ prompt: `${SAID}\nsomething forbidden by the wall`, provider: "reader" }]);
     // Refused before the pace, the month and Astra: nothing is spent.
@@ -544,7 +546,7 @@ describe("a change from the set's chat: meaning and frame", () => {
   });
 
   it("puts a refusal of the person's own words on the person, as it always was", async () => {
-    const out = await editSetWithAstra(SET, "put something forbidden by the wall", PRESS, { meaning: "a thing by the wall" });
+    const out = await editSetWithAstra(SET, "put something forbidden by the wall", PRESS, sealed("put something forbidden by the wall", "a thing by the wall"));
     expect(out.error).toBe("Refused by the gate.");
     expect(refusals).toEqual([{ prompt: "put something forbidden by the wall\na thing by the wall", provider: null }]);
     // With no meaning there is no attribution: their words, counted.
@@ -556,7 +558,7 @@ describe("a change from the set's chat: meaning and frame", () => {
   it("holds the meaning to its cap and the frame to the set", async () => {
     const long = "a row of small flags ".repeat(20);
     await editSetWithAstra(SET, SAID, PRESS, {
-      meaning: long,
+      ...sealed(SAID, long),
       // The figure off the set: no frame at all.
       frame: { mark: { x: SPEC.bounds.x, z: 0, facingDeg: 0 }, camera: FRAME.camera },
     });
@@ -570,6 +572,35 @@ describe("a change from the set's chat: meaning and frame", () => {
     const input2 = String(sent[0].input);
     expect(input2).toContain("Where the person stands now (never add a person): x 1.23, z -2.5, facing 90°.");
     expect(input2).not.toContain("The camera now");
+  });
+
+  // Review of Cut 2, R1 (2026-09-25): `more.meaning` came from the browser
+  // and was judged as the reader's, so any account could send its own words
+  // there and have their refusals logged under "reader", never counted.
+  it("drops a meaning without the reader's seal, or with one for other words, another set or another person: gated and sent as their words alone", async () => {
+    const forged = [
+      { meaning: "something forbidden by the wall" },
+      { meaning: "something forbidden by the wall", meaningSeal: "x".repeat(32) },
+      { meaning: "something forbidden by the wall", meaningSeal: sealReaderMeaning(SET, USER, SAID, "a harmless gloss") },
+      { meaning: "something forbidden by the wall", meaningSeal: sealReaderMeaning(SET, USER, "other words", "something forbidden by the wall") },
+      { meaning: "something forbidden by the wall", meaningSeal: sealReaderMeaning("33333333-3333-4333-8333-333333333333", USER, SAID, "something forbidden by the wall") },
+      { meaning: "something forbidden by the wall", meaningSeal: sealReaderMeaning(SET, "44444444-4444-4444-8444-444444444444", SAID, "something forbidden by the wall") },
+    ];
+    for (const [i, more] of forged.entries()) {
+      gated.length = 0;
+      sent.length = 0;
+      refusals.length = 0;
+      const out = await editSetWithAstra(SET, SAID, `${PRESS.slice(0, -2)}${String(10 + i)}`, more);
+      expect(out.error).toBeNull();
+      // Exactly the gate and the request of a change with nothing more.
+      expect(gated).toEqual([SAID]);
+      expect(sent[0].input).toBe(setEditInput(SPEC, SAID));
+      expect(refusals).toEqual([]);
+    }
+    // And a forged meaning on words the gate refuses is the person's refusal, counted.
+    refusals.length = 0;
+    await editSetWithAstra(SET, "put something forbidden by the wall", LATER, { meaning: "a thing by the wall", meaningSeal: "y".repeat(32) });
+    expect(refusals).toEqual([{ prompt: "put something forbidden by the wall", provider: null }]);
   });
 
   it("lets the meaning reach the gate only inside the reader's attribution (read as source)", () => {

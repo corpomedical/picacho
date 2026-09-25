@@ -23,7 +23,9 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { HeldText } from "./editor-model";
-import { SET_LIMITS, type SetSpec } from "./set-spec";
+import { SET_EDIT_MAX_CHARS } from "./set-config";
+import { editMeaningOf } from "./set-edit-prompt";
+import { cleanText, SET_LIMITS, type SetSpec } from "./set-spec";
 
 /** The words of a set that a browser may never write: its title, its description and its labels (marks', then cameras', each sorted). */
 export type EditText = { title: string; description: string; labels: string[] };
@@ -105,4 +107,42 @@ export function sealedEditText(setId: string, userId: string, undo: unknown): Ed
   const { text, seal } = undo as { text?: unknown; seal?: unknown };
   const read = readEditText(text);
   return read !== null && openEditSeal(setId, userId, read, seal) ? read : null;
+}
+
+// ---------------------------------------------------------------------------
+// The chat reader's meaning of a set change (review of Cut 2, R1, 2026-09-25).
+//
+// A set change asked in the chat reaches Astra with the reader's short
+// English gloss of the person's words, and a refusal that gloss earns on its
+// own is logged under the reader and never counts against the person
+// (editor-actions.ts editSetWithAstra). The gloss must therefore be the
+// READER's — never a field any browser can fill with its own words to have
+// their refusals logged as the model's (refusal-attribution.ts: "NOT A
+// REQUEST FIELD"). So the server that read the message (words-actions.ts
+// readShotTurn) seals the words and the gloss it wrote, for this set and
+// this person; editSetWithAstra takes the gloss only when that seal opens
+// for exactly the words it is asked to change, and otherwise sends and
+// judges the person's words alone, as before step 10.
+// ---------------------------------------------------------------------------
+
+/** The words and the gloss as editSetWithAstra reads them: the request held to Astra's 300, the gloss to its 200. */
+function meaningParts(said: string, meaning: string): string {
+  return JSON.stringify([cleanText(said, SET_EDIT_MAX_CHARS), editMeaningOf(meaning)]);
+}
+
+/** The reader's seal over a set change's words and its gloss; null with no key or no gloss (then no gloss rides). */
+export function sealReaderMeaning(setId: string, userId: string, said: string, meaning: string | null): string | null {
+  const key = sealKey();
+  if (key === null || !meaning || editMeaningOf(meaning).length === 0) return null;
+  return createHmac("sha256", key).update(`set-edit-meaning:v1:${setId}:${userId}:${meaningParts(said, meaning)}`).digest("base64url").slice(0, SEAL_CHARS);
+}
+
+/** Whether `seal` is the reader's seal over exactly these words and this gloss, for this set and this person. Timing-safe; false with no key. */
+export function openReaderMeaning(setId: string, userId: string, said: string, meaning: string, seal: unknown): boolean {
+  if (typeof seal !== "string" || seal.length !== SEAL_CHARS) return false;
+  const expected = sealReaderMeaning(setId, userId, said, meaning);
+  if (expected === null) return false;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(seal);
+  return a.length === b.length && timingSafeEqual(a, b);
 }

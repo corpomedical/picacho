@@ -49,7 +49,7 @@ describe("a change to the set itself waits for a press on the Astra card", () =>
     // The definition and v1's card; the chat's own card calls it through
     // goAstra (set-view-turn.test.ts), once step 11a is in.
     expect(view.match(/\beditSet\(/g)!.length).toBeLessThanOrEqual(3);
-    expect(view).toContain("  async function editSet(\n    change: { said: string; gloss?: string | null },\n    frame: EditFrame | null,");
+    expect(view).toContain("  async function editSet(\n    change: { said: string; gloss?: string | null; seal?: string | null },\n    frame: EditFrame | null,");
     const card = between(view, "<AstraChangeCard\n                      words={astraAsk.words}", "/>");
     const onGo = between(card, "onGo={() => {", "}}");
     expect(onGo).toContain("const { quoted } = astraCardWords(astraAsk.words);");

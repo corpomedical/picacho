@@ -6395,7 +6395,7 @@ export function SetView({
    * whether the change landed, and the seal its Undo needs.
    */
   async function editSet(
-    change: { said: string; gloss?: string | null },
+    change: { said: string; gloss?: string | null; seal?: string | null },
     frame: EditFrame | null,
     then?: { pressId: string; turnId: number },
   ): Promise<{ landed: boolean; before: SetSpec; undo: EditUndo | null }> {
@@ -6415,8 +6415,10 @@ export function SetView({
     let followed: FollowedEdit | null = null;
     try {
       try {
-        // What the chat read, and where things stand, ride only when there are any.
-        const more = change.gloss || frame ? { ...(change.gloss ? { meaning: change.gloss } : {}), ...(frame ? { frame } : {}) } : undefined;
+        // What the chat read, and where things stand, ride only when there are
+        // any; the gloss with the server's own seal on it, or the server drops it (review of Cut 2, R1).
+        const more =
+          change.gloss || frame ? { ...(change.gloss ? { meaning: change.gloss, meaningSeal: change.seal ?? null } : {}), ...(frame ? { frame } : {}) } : undefined;
         res = more ? await editSetWithAstra(setId, change.said, pressId, more) : await editSetWithAstra(setId, change.said, pressId);
       } catch (err) {
         // A stale deploy lets the conversation go and says so. A dropped
@@ -7541,7 +7543,7 @@ export function SetView({
     const pose = apiRef.current?.pose() ?? null;
     const frame: EditFrame = { mark: layoutRef.current.mark, camera: pose ? { position: pose.position, target: pose.target } : null };
     const then = thenShoot ? { pressId: newPressId(), turnId: turn.id } : undefined;
-    void editSet({ said: need.said, gloss: need.gloss }, frame, then).then((r) => {
+    void editSet({ said: need.said, gloss: need.gloss, seal: need.seal }, frame, then).then((r) => {
       if (!r.landed) return;
       const astra = { before: r.before, undo: r.undo, kind: "edit" as const, landed: true };
       const stack = turnUndoRef.current;
