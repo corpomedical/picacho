@@ -1,9 +1,10 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_RIG_OVERLAYS, DEFAULT_SET_RIG, RIG_SQUEEZES, RIG_ERAS, RIG_FIXED_SENTENCES, RIG_FORMATS, RIG_FORMAT_ORDER, RIG_GENRES, RIG_GENRE_SUGGESTS, RIG_LENSES, RIG_LIGHTS, RIG_NUMBERED_SENTENCE, RIG_PALETTES, RIG_STOCKS, depthOfField, exposureGain, exposureStops, focalMm, formatFrame, isLabPalette, labLooksOf, lightDirectionWords, lookStill, normaliseSetRig, rigCheckItems, rigSentences, rigWordsByItem, sensorCocMm, sensorHeightMm, shutterFraction, type SetRig, letterbox, bandSide } from "./rig";
+import { DEFAULT_RIG_OVERLAYS, DEFAULT_SET_RIG, NEW_SET_RIG, RIG_SQUEEZES, RIG_ERAS, RIG_FIXED_SENTENCES, RIG_FORMATS, RIG_FORMAT_ORDER, RIG_GENRES, RIG_GENRE_SUGGESTS, RIG_LENSES, RIG_LIGHTS, RIG_NUMBERED_SENTENCE, RIG_PALETTES, RIG_STOCKS, depthOfField, exposureGain, exposureStops, focalMm, formatFrame, isLabPalette, labLooksOf, lightDirectionWords, lookStill, normaliseSetRig, rigCheckItems, rigSentences, rigWordsByItem, sensorCocMm, sensorHeightMm, shutterFraction, type SetRig, letterbox, bandSide } from "./rig";
 import { fovForLens } from "./build-scene";
 import { FILM_MOVES } from "./moves";
+import { filmContextKey } from "./film";
 
 // The rig (Helios Cinema, canvas page I): one door in, real optics, and
 // words that say exactly what each look is — every one unproven until its
@@ -65,14 +66,28 @@ describe("formats: the render asked for, and the band cut from it", () => {
 });
 
 describe("normaliseSetRig", () => {
-  it("turns junk into the default rig: 16:9, nothing asked", () => {
+  it("turns junk into the default rig: square, nothing asked", () => {
     for (const junk of [null, undefined, 7, "rig", [], { format: "cinemascope" }]) {
       expect(normaliseSetRig(junk)).toEqual(DEFAULT_SET_RIG);
     }
-    // 16:9 since 2026-09-25: the shape every take engine renders.
-    expect(DEFAULT_SET_RIG.format).toBe("wide");
-    // A saved square stays square.
+    // A set with no rig saved was framed square, and still is (review,
+    // 2026-09-25): its stills and its film's context key stay as they were.
+    expect(DEFAULT_SET_RIG.format).toBe("square");
+    // A new set is made 16:9 (NEW_SET_RIG), the shape every take engine
+    // renders, and reads back as it was written.
+    expect(NEW_SET_RIG).toEqual({ ...DEFAULT_SET_RIG, format: "wide" });
+    expect(normaliseSetRig(NEW_SET_RIG)).toEqual(NEW_SET_RIG);
     expect(normaliseSetRig({ format: "square" }).format).toBe("square");
+  });
+
+  it("leaves the film of a set with no saved rig on the key it was rendered under (review, 2026-09-25)", () => {
+    // The key a film was saved with before the 16:9 change, when a set with
+    // no rig opened square: the page builds it from normaliseSetRig(null).
+    const before: SetRig = { ...DEFAULT_SET_RIG, format: "square" };
+    const key = (rig: SetRig) => filmContextKey({ characterId: "c", rig, mark: { x: 0, z: 0, facingDeg: 0 }, setKey: "s" });
+    expect(key(normaliseSetRig(null))).toBe(key(before));
+    // A new set's films are keyed 16:9 from the start.
+    expect(key(normaliseSetRig(NEW_SET_RIG))).not.toBe(key(before));
   });
 
   it("keeps a real rig, and drops what it doesn't know", () => {
@@ -156,16 +171,17 @@ describe("the words that ride", () => {
     const square: SetRig = { ...DEFAULT_SET_RIG, format: "square" };
     expect(rigSentences(square, ctx)).toEqual([]);
     expect(rigCheckItems(square)).toEqual([]);
+    expect(rigSentences(DEFAULT_SET_RIG, ctx)).toEqual([]);
   });
 
-  it("says only the 16:9 band of the default rig, and checks nothing after", () => {
-    const lines = rigSentences(DEFAULT_SET_RIG, ctx);
+  it("says only the 16:9 band of a new set's rig, and checks nothing after", () => {
+    const lines = rigSentences(NEW_SET_RIG, ctx);
     expect(lines).toEqual([
       "This frame will be cut to a 16 : 9 band across its middle: keep the person and everything that matters inside that band.",
     ]);
     // Picacho's own words, which the brand check reads the still without.
     expect(RIG_FIXED_SENTENCES).toContain(lines[0]);
-    expect(rigCheckItems(DEFAULT_SET_RIG)).toEqual([]);
+    expect(rigCheckItems(NEW_SET_RIG)).toEqual([]);
   });
 
   it("checks every look it asked for in words — never the frame, which the stage holds, nor what the lab makes", () => {

@@ -37,7 +37,8 @@ vi.mock("@/lib/generations/core", () => ({
 }));
 vi.mock("@/lib/generations/identity-gate", async () => await import("./identity-gate"));
 
-import { runImageIdentityGate, type GateDeps } from "./identity-gate-run";
+import { GATE_WALL_CLOCK_BUDGET_MS, runImageIdentityGate, type GateDeps } from "./identity-gate-run";
+import { OPENAI_IMAGE_TIMEOUT_MS } from "./providers/openai-images";
 
 const ABS = (u: string) => `https://picacho.test${u}`;
 
@@ -122,6 +123,29 @@ describe("a lab still under the likeness gate", () => {
 
 // And the wiring that hands the gate those two things (actions.ts is a
 // "use server" module, which cannot load here, so its source is read).
+describe("the gate's clock (2026-09-25)", () => {
+  // elapsedMs now counts from the request's first line (or a Helios press's,
+  // server-press.ts), so the budget is what is left of the platform's 300 s
+  // after one more full render and its scoring, storing and last write.
+  it("leaves room for one more full render inside the request's 300 s", () => {
+    expect(GATE_WALL_CLOCK_BUDGET_MS).toBe(300_000 - OPENAI_IMAGE_TIMEOUT_MS - 25_000);
+    expect(GATE_WALL_CLOCK_BUDGET_MS).toBe(125_000);
+  });
+
+  it("re-renders a miss inside the budget, and delivers it as it is past it", async () => {
+    scores.set(ABS("/print/first.png"), 40);
+    scores.set(ABS("/plain/second.png"), 90);
+    const inTime = await runImageIdentityGate(deps({ elapsedMs: GATE_WALL_CLOCK_BUDGET_MS }));
+    expect(inTime.retries).toBe(1);
+    rendered.length = 0;
+    const late = await runImageIdentityGate(deps({ elapsedMs: GATE_WALL_CLOCK_BUDGET_MS + 1 }));
+    expect(late.retries).toBe(0);
+    expect(late.settledAt).toBeNull();
+    expect(late.resultUrl).toBe("/print/first.png");
+    expect(rendered).toEqual([]);
+  });
+});
+
 describe("the set shot's side of it (generations/actions.ts)", () => {
   const src = readFileSync(join(__dirname, "actions.ts"), "utf8");
 

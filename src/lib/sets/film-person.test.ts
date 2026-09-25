@@ -6,7 +6,7 @@ import es from "../i18n/messages/es";
 import pt from "../i18n/messages/pt";
 import itMsgs from "../i18n/messages/it";
 import { localizeServerText, MAPPED_SERVER_STRINGS } from "../i18n/server-text";
-import { SET_TAKE_OTHER_PERSON, SET_TAKE_START_OTHER_PERSON } from "./messages";
+import { SET_TAKE_END_OTHER_PERSON, SET_TAKE_OTHER_PERSON, SET_TAKE_RETRY_END_OTHER_PERSON, SET_TAKE_START_OTHER_PERSON } from "./messages";
 
 // The second real film (2026-09-21): it opened on a still of Eva with Anubis
 // picked on the page, every end frame was drawn with Anubis, and beat 1
@@ -57,11 +57,18 @@ describe("who a film is of", () => {
 describe("the server holds a film's beat to its start still's person", () => {
   it("before anything is counted, shot or charged — for every take, not only a film's", () => {
     expect(take).not.toContain("if (input.film === true) {\n    const { data: startGen }");
-    const check = take.indexOf("if (otherPerson) return { error: input.film === true ? SET_TAKE_OTHER_PERSON : SET_TAKE_START_OTHER_PERSON };");
+    const check = take.indexOf("if (otherIn(startId)) return { error: input.film === true ? SET_TAKE_OTHER_PERSON : SET_TAKE_START_OTHER_PERSON };");
     expect(check).toBeGreaterThan(take.indexOf("if (!startUrl) return { error: SET_TAKE_BAD_START };"));
+    // A kept end frame of someone else is said as the end's (review, 2026-09-25).
+    const end = take.indexOf("if (reuseId && otherIn(reuseId)) return { error: input.film === true ? SET_TAKE_END_OTHER_PERSON : SET_TAKE_RETRY_END_OTHER_PERSON };");
+    expect(end).toBeGreaterThan(check);
     for (const later of ["checkGenerationAllowance(", 'rateLimited(userId, "set-take"', "await shootStill(", "withServerBuiltFrames("]) {
       expect(check, later).toBeLessThan(take.indexOf(later));
+      expect(end, later).toBeLessThan(take.indexOf(later));
     }
+    // Each frame is judged as itself: the read names every row's id.
+    expect(take).toContain('.select("id, character_profile_id").in("id", framesOf)');
+    expect(take).toContain("(g) => g.id === frameId && typeof g.character_profile_id === \"string\"");
     // The start still, and a kept end still, read as the person's own rows.
     const read = take.slice(take.indexOf("const framesOf ="), check);
     expect(read).toContain('.in("id", framesOf)');
@@ -76,6 +83,24 @@ describe("the server holds a film's beat to its start still's person", () => {
     expect(MAPPED_SERVER_STRINGS).toContain(SET_TAKE_OTHER_PERSON);
     for (const m of [en, es, pt, itMsgs]) expect(localizeServerText(SET_TAKE_OTHER_PERSON, m)).toBe(m.serverText.setTakeOtherPerson);
     expect(SET_TAKE_OTHER_PERSON).toContain("nothing was charged");
+  });
+
+  it("says a kept end frame of someone else as the end's, in every language, and the page drops it", () => {
+    for (const [msg, key] of [
+      [SET_TAKE_END_OTHER_PERSON, "setTakeEndOtherPerson"],
+      [SET_TAKE_RETRY_END_OTHER_PERSON, "setTakeRetryEndOtherPerson"],
+    ] as const) {
+      expect(MAPPED_SERVER_STRINGS).toContain(msg);
+      for (const m of [en, es, pt, itMsgs]) {
+        expect(m.serverText[key], key).toBeTruthy();
+        expect(localizeServerText(msg, m), key).toBe(m.serverText[key]);
+      }
+      expect(en.serverText[key]).toBe(msg);
+      expect(msg).toContain("nothing was charged");
+      expect(msg).not.toMatch(/opens on|Reload/);
+    }
+    // A film's page drops that end, so its next Render shoots the beat whole.
+    expect(view).toContain("if (job.end && (result.error === SET_TAKE_BAD_END || result.error === SET_TAKE_END_OTHER_PERSON)) {");
   });
 
   it("says so for a single take too, in every language", () => {

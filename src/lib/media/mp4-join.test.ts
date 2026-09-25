@@ -739,6 +739,30 @@ describe("withoutSoundMp4", () => {
     expect(Buffer.compare(Buffer.from(SHOW), Buffer.from(before))).toBe(0);
   });
 
+  it("reads a Node Buffer as it reads plain bytes, and leaves it as it was", () => {
+    // The server hands in the provider's file as a Buffer, whose slice()
+    // shares memory: the patches meant for the new index once landed in the
+    // source instead, one clip coming out with no playable track (review,
+    // 2026-09-25).
+    const plain = withoutSoundMp4(SHOW.slice());
+    expect(plain.ok).toBe(true);
+    for (const source of [Buffer.from(SHOW.slice().buffer), Buffer.from(SHOW)]) {
+      const before = Buffer.from(source);
+      const out = withoutSoundMp4(source);
+      expect(out.ok).toBe(true);
+      if (!out.ok || !plain.ok) return;
+      expect(Buffer.compare(Buffer.from(out.bytes), Buffer.from(plain.bytes))).toBe(0);
+      expect(Buffer.compare(source, before)).toBe(0);
+      // What it wrote reads back as picture alone.
+      expect(withoutSoundMp4(out.bytes)).toMatchObject({ ok: true, hadSound: false });
+    }
+    // A join of Buffers is the join of the plain bytes.
+    const joined = joinMp4([SHOW, SHOW2], { sound: false });
+    const fromBuffers = joinMp4([Buffer.from(SHOW), Buffer.from(SHOW2)], { sound: false });
+    expect(joined.ok && fromBuffers.ok).toBe(true);
+    if (joined.ok && fromBuffers.ok) expect(Buffer.compare(Buffer.from(fromBuffers.bytes), Buffer.from(joined.bytes))).toBe(0);
+  });
+
   it("refuses what it cannot read, and never throws", () => {
     expect(withoutSoundMp4(new TextEncoder().encode("not a video at all, just words"))).toEqual({ ok: false, reason: "unreadable" });
     expect(withoutSoundMp4(new Uint8Array(0))).toEqual({ ok: false, reason: "unreadable" });

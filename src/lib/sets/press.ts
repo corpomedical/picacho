@@ -206,6 +206,10 @@ export async function claimPress(
       if (!row) return { kind: "foreign" };
       if (String(row.set_id).toLowerCase() !== setId.toLowerCase() || row.kind !== kind) return { kind: "foreign" };
       if (row.state === "done" && isPressAnswer(row.result)) return { kind: "repeat", answer: row.result };
+      // Done with no answer: the first delivery threw (runPress). Nothing
+      // more is coming, so this one says "still rendering" at once and the
+      // page reads what the press left (press-actions.ts readSetPress).
+      if (row.state === "done") return { kind: "running" };
     }
     if (now() >= clock.deadlineAt) return { kind: "running" };
     await sleep(clock.intervalMs ?? REPEAT_POLL_MS);
@@ -233,24 +237,52 @@ export async function finishPress(admin: SupabaseClient, press: { id: string; us
 }
 
 /**
+ * A press whose work threw: its row is marked done with no answer, so the
+ * page following it is told at once what the press left (readSetPress reads
+ * the rows it reserved, or finds none) instead of "still rendering" until the
+ * row goes stale 330 s later (review, 2026-09-25). Never throws.
+ */
+async function breakPress(admin: SupabaseClient, press: { id: string; userId: string }): Promise<void> {
+  try {
+    const { error } = await admin
+      .from(TABLE)
+      .update({ state: "done", result: null, finished_at: new Date().toISOString() })
+      .eq("id", press.id)
+      .eq("user_id", press.userId)
+      .eq("state", "running");
+    if (error) warnOnce("finish", `[sets] couldn't mark a press that threw: ${error.message}`);
+  } catch (e) {
+    warnOnce("finish", `[sets] couldn't mark a press that threw: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/**
  * Runs `work` once per press: claims it, runs it, stores its answer. A
  * second delivery never runs it and answers with the first's answer, "still
  * rendering" when that did not come in time, and SET_SAVE_FAILED for an id
- * that belongs to another press. A press that throws is rethrown; its row
- * stays running and goes stale (PRESS_STALE_MS).
+ * that belongs to another press. `work` is told how the press was claimed:
+ * only a claimed press is known to be this delivery's alone (actions.ts
+ * takeInSet counts a film Render once only then). A press that throws is
+ * marked done with no answer (breakPress) and rethrown.
  */
 export async function runPress<T extends { error: string | null }>(
   admin: SupabaseClient,
   press: { id: string | null; userId: string; setId: string; kind: PressKind },
   clock: FollowClock,
-  work: () => Promise<T>,
+  work: (claim: Extract<PressClaim, { kind: "claimed" | "untracked" }>) => Promise<T>,
   said?: { running?: string; foreign?: string },
 ): Promise<T | { error: string }> {
   const claim = await claimPress(admin, press, clock);
   if (claim.kind === "repeat") return claim.answer as unknown as T;
   if (claim.kind === "running") return { error: said?.running ?? SET_PRESS_RUNNING };
   if (claim.kind === "foreign") return { error: said?.foreign ?? SET_SAVE_FAILED };
-  const answer = await work();
+  let answer: T;
+  try {
+    answer = await work(claim);
+  } catch (e) {
+    if (claim.kind === "claimed") await breakPress(admin, { id: claim.id, userId: press.userId });
+    throw e;
+  }
   if (claim.kind === "claimed") await finishPress(admin, { id: claim.id, userId: press.userId }, answer);
   return answer;
 }
@@ -288,14 +320,23 @@ export async function readPress(
 }
 
 /**
- * Whether another beat of this film Render has already reserved a still or
- * a clip: the Render was counted by the limiters then, and its later beats
- * are not counted again (actions.ts takeWork). A read that fails says no, so
- * the beat is counted: closed, like the limiter itself.
+ * Whether another beat of this film Render has already shot a still or a
+ * clip on this set: the Render was counted by the limiters then, and its
+ * later beats are not counted again (actions.ts takeWork). Read from the
+ * set's own shots, which only Helios writes (the person may read them, never
+ * write them), not from History: any send may name its own row id there, so
+ * a row under a sibling's id proved nothing (review, 2026-09-25). A read
+ * that fails says no, so the beat is counted: closed, like the limiter itself.
  */
-export async function renderPaidBefore(db: SupabaseClient, userId: string, render: { pressId: string; beat: number }): Promise<boolean> {
+export async function renderPaidBefore(db: SupabaseClient, userId: string, render: { pressId: string; beat: number; setId: string }): Promise<boolean> {
   try {
-    const { data, error } = await db.from("generations").select("id").eq("user_id", userId).in("id", filmSiblingIds(render.pressId, render.beat)).limit(1);
+    const { data, error } = await db
+      .from("location_set_shots")
+      .select("generation_id")
+      .eq("set_id", render.setId)
+      .eq("user_id", userId)
+      .in("generation_id", filmSiblingIds(render.pressId, render.beat))
+      .limit(1);
     if (error) return false;
     return Array.isArray(data) && data.length > 0;
   } catch {

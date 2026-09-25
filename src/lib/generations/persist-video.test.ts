@@ -69,9 +69,16 @@ describe("persistVideo", () => {
     expect(uploads[0].path).toMatch(PATH_RE);
     expect(out).toEqual({ url: `/api/media/generated-videos/${uploads[0].path}`, silent: true });
     // The stored file itself has no sound track left to take out.
+    // The stored file reads (a corrupted one would not) and has no sound
+    // track left to take out.
     const stored = withoutSoundMp4(uploads[0].body);
-    expect(stored.ok && stored.hadSound).toBe(false);
+    expect(stored).toMatchObject({ ok: true, hadSound: false });
     expect(uploads[0].body.length).toBeLessThan(SPEAKING.length);
+    // And it is exactly what the remux makes of a plain copy of the clip:
+    // the server's Buffer changed nothing on the way (review, 2026-09-25).
+    const expected = withoutSoundMp4(SPEAKING.slice());
+    expect(expected.ok).toBe(true);
+    if (expected.ok) expect(Buffer.compare(Buffer.from(uploads[0].body), Buffer.from(expected.bytes))).toBe(0);
   });
 
   it("keeps the sound when nobody asked, as persistGeneratedVideo always has", async () => {

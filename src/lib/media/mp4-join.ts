@@ -221,7 +221,9 @@ function describe(b: Uint8Array, v: DataView, stsd: Box): Pick<TrackIn, "stsdKey
       rates.max = Math.max(rates.max, v.getUint32(kid.body + 4));
       continue;
     }
-    const bytes = b.slice(kid.start, kid.end);
+    // A copy of its own (never b.slice, which shares a Buffer's memory):
+    // the esds's rates are zeroed in it below.
+    const bytes = new Uint8Array(b.subarray(kid.start, kid.end));
     const at = kid.type === "esds" ? esdsRatesAt(b, kid) : null;
     if (at !== null) {
       if (esdsAt !== null) throw new Unreadable();
@@ -485,10 +487,17 @@ function runs(values: number[]): [number, number][] {
   return out;
 }
 
+/**
+ * A view of the bytes to write through: its own offsets, whatever buffer
+ * it sits in (a Node Buffer's often starts part-way into a shared one).
+ */
+const viewOf = (x: Uint8Array) => new DataView(x.buffer, x.byteOffset, x.byteLength);
+
 /** A copy of a tkhd with its track id and duration set. */
 function patchTkhd(tkhd: Uint8Array, trackId: number, duration: number): Uint8Array {
-  const out = tkhd.slice();
-  const v = new DataView(out.buffer);
+  // new Uint8Array(x) always copies; a Buffer's slice() would not.
+  const out = new Uint8Array(tkhd);
+  const v = viewOf(out);
   const v1 = out[8] === 1;
   v.setUint32(8 + (v1 ? 20 : 12), trackId);
   if (v1) v.setBigUint64(8 + 28, BigInt(duration));
@@ -498,8 +507,8 @@ function patchTkhd(tkhd: Uint8Array, trackId: number, duration: number): Uint8Ar
 
 /** A copy of a track's sample description with the film's bitrate notes written in. */
 function withRates(track: TrackIn, rates: { buffer: number; max: number; avg: number }): Uint8Array {
-  const out = track.stsd.slice();
-  const v = new DataView(out.buffer);
+  const out = new Uint8Array(track.stsd);
+  const v = viewOf(out);
   if (track.btrtAt !== null) {
     v.setUint32(track.btrtAt, rates.buffer);
     v.setUint32(track.btrtAt + 4, rates.max);
@@ -606,11 +615,23 @@ export function withoutSoundMp4(bytes: Uint8Array): { ok: true; bytes: Uint8Arra
   return { ok: true, bytes: out.bytes, hadSound: out.soundDropped };
 }
 
+/**
+ * The same bytes as a plain Uint8Array, with no copy. A Node Buffer is a
+ * Uint8Array whose slice() shares its memory instead of copying, and the
+ * reading above copies parts with slice() (review, 2026-09-25: the server
+ * handed persistVideo's Buffer straight in, and the patches meant for the
+ * new index were written into the source file, one test clip coming out
+ * with no playable track).
+ */
+function plainBytes(file: Uint8Array): Uint8Array {
+  return Object.getPrototypeOf(file) === Uint8Array.prototype ? file : new Uint8Array(file.buffer, file.byteOffset, file.byteLength);
+}
+
 function join(files: readonly Uint8Array[], keepSound: boolean): JoinResult {
   if (files.length === 0) return { ok: false, reason: "empty" };
   let parsed: FileIn[];
   try {
-    parsed = files.map(readFile);
+    parsed = files.map((file) => readFile(plainBytes(file)));
   } catch {
     return { ok: false, reason: "unreadable" };
   }
@@ -773,7 +794,7 @@ function join(files: readonly Uint8Array[], keepSound: boolean): JoinResult {
   const out = new Uint8Array(dataStart + dataLength);
   out.set(first.ftyp, 0);
   out.set(moov, first.ftyp.length);
-  new DataView(out.buffer).setUint32(first.ftyp.length + moovLength, dataLength + 8);
+  viewOf(out).setUint32(first.ftyp.length + moovLength, dataLength + 8);
   out.set(tag("mdat"), first.ftyp.length + moovLength + 4);
   for (const p of order) {
     const sample = parsed[p.file].tracks[p.track].samples[p.index];

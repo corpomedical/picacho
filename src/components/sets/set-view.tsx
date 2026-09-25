@@ -11,7 +11,7 @@ import { quoteSend } from "@/lib/generations/quote";
 import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { saveSetLayout, saveSetThumbnail, shootInSet, takeInSet } from "@/lib/sets/actions";
 import { readSetPress } from "@/lib/sets/press-actions";
-import { cutOff, followPress, lostAnswer, newPressId, pressReadOf, stillGoingAnswer, type PressRead } from "@/lib/sets/press-follow";
+import { followPress, lateThrow, lostAnswer, newPressId, pressReadOf, stillGoingAnswer, type LostWords, type PressRead, type PressRows } from "@/lib/sets/press-follow";
 import { shotFileName, shotFileUrl } from "@/lib/sets/still-file";
 import { downloadResult, downloadResultNative } from "@/components/download-button";
 import { isNativeAppClient } from "@/lib/native/platform";
@@ -89,7 +89,19 @@ import { RigPanel } from "@/components/sets/rig-panel";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
 import { canBeLook, newestLook } from "@/lib/sets/look";
 import { matchSummary, placeMatchedCamera, solveMatchPose, type CameraMove, type MatchClamp } from "@/lib/sets/match-shot";
-import { SET_LIKENESS_NEEDED, SET_PHOTO_UNREADABLE, SET_SAVE_FAILED, SET_TAKE_BAD_END, SET_TAKE_NEEDS_PLAN, THING_BUILD_FAILED, THING_MODEL_SAVE_FAILED } from "@/lib/sets/messages";
+import {
+  SET_LIKENESS_NEEDED,
+  SET_PHOTO_UNREADABLE,
+  SET_PICK_CHARACTER,
+  SET_SAVE_FAILED,
+  SET_TAKE_BAD_END,
+  SET_TAKE_END_OTHER_PERSON,
+  SET_TAKE_NEEDS_PLAN,
+  SET_TAKE_RETRY_END_OTHER_PERSON,
+  SET_TAKE_START_OTHER_PERSON,
+  THING_BUILD_FAILED,
+  THING_MODEL_SAVE_FAILED,
+} from "@/lib/sets/messages";
 import { preparePhoto } from "@/lib/sets/photo-client";
 import { facingFor, hasCameraWords, wordsToMatch, type ShotWords } from "@/lib/sets/shot-words";
 import {
@@ -657,8 +669,13 @@ export function SetView({
   const [shooting, setShooting] = useState(false);
   // A paid press whose answer was lost is being followed by its id
   // (press-follow.ts, 2026-09-25): Shoot stays held meanwhile, and the page
-  // says "still rendering" instead of "try again".
-  const [following, setFollowing] = useState(false);
+  // says "still rendering" instead of "try again" — once a read has shown the
+  // press at work. Until then it says it is checking (review, 2026-09-25: an
+  // offline press said "still rendering" for five and a half minutes).
+  const [following, setFollowing] = useState<"checking" | "rendering" | null>(null);
+  // The still engine a press in flight was sent with, for the line that
+  // names it while it is drawn (the pill may change meanwhile).
+  const [pressEngine, setPressEngine] = useState<string>(stillModel);
   const [error, setError] = useState(() => {
     const asked = initialCharacterId && !characters.some((c) => c.id === initialCharacterId) ? unshootable.find((u) => u.id === initialCharacterId) : undefined;
     return asked ? formatMsg(t.sets.cast.notCastable, { name: asked.name }) : "";
@@ -775,7 +792,7 @@ export function SetView({
   const filmSavedRef = useRef(loadedFilmKey);
   const [filmSel, setFilmSel] = useState<number | null>(null);
   /** Rendering: which beat the chain is on, and whether its lost answer is being followed (press-follow.ts); null when idle. */
-  const [filmBusy, setFilmBusy] = useState<{ beat: number; clipOnly: boolean; following?: true } | null>(null);
+  const [filmBusy, setFilmBusy] = useState<{ beat: number; clipOnly: boolean; following?: "checking" | "rendering" } | null>(null);
   const [filmError, setFilmError] = useState("");
   /**
    * Every change to the move goes through here: the film is edited, then
@@ -4463,11 +4480,76 @@ export function SetView({
 
   // ---- a paid press whose answer was lost (press-follow.ts, 2026-09-25) ----
 
-  /** What a follow says when the answer does not come: nothing started, or History. */
-  const lostWords = { neverStarted: s.pressNeverStarted, stillGoing: s.pressStillGoing };
-  /** Follows a press from its send until its answer is there, while the page is here. */
-  function followLost<T>(sentAt: number, read: () => Promise<PressRead<T> | null>) {
-    return followPress<T>({ sentAt, read, alive: () => aliveRef.current });
+  /** What a follow says when the answer does not come: nothing started, still going, not known, or History. */
+  const lostWords: LostWords = { neverStarted: s.pressNeverStarted, stillGoing: s.pressStillGoing, unchecked: s.pressUnchecked, inHistory: s.pressInHistory };
+  /**
+   * Follows a press from its send until its answer is there, while the page
+   * is here. `onRunning` is told when a read first shows the press reached
+   * the server, so the page stops saying it is checking.
+   */
+  function followLost<T>(sentAt: number, read: () => Promise<PressRead<T> | null>, onRunning?: () => void) {
+    return followPress<T>({ sentAt, read, alive: () => aliveRef.current, onRunning });
+  }
+  /**
+   * What a press whose answer was lost left, put on the set as History has
+   * it (press-actions.ts readSetPress, review 2026-09-25): its still when it
+   * finished, and its clip unless it failed — followed in place like any take
+   * still rendering. Rows the strip already shows are left as they are. Says
+   * which ids it kept, for a film to keep and a take to offer its clip again.
+   */
+  function keepLeftRows(
+    rows: PressRows,
+    at: { format: SetShot["format"]; squeeze: number; pose: SetShot["pose"]; words: string | null; characterId: string | null; engine: SetTakeEngine; takeFrom: TakeSource | null },
+  ): { still: string | null; take: string | null } {
+    const still = rows.still?.status === "succeeded" ? rows.still : null;
+    const clip = rows.take && rows.take.status !== "failed" ? rows.take : null;
+    const createdAt = new Date().toISOString();
+    const add: SetShot[] = [];
+    if (clip) {
+      add.push({
+        generationId: clip.id,
+        status: clip.status,
+        resultUrl: clip.resultUrl,
+        viewUrl: null,
+        posterUrl: clip.posterUrl,
+        kind: "take",
+        seconds: SET_TAKE_ENGINES[at.engine].seconds,
+        score: null,
+        createdAt,
+        hasLookObjects: false,
+        words: at.words,
+        format: at.format,
+        squeeze: at.squeeze,
+        rigAsked: [],
+        rigCheck: null,
+        pose: null,
+        takeFrom: at.takeFrom,
+      });
+    }
+    if (still) {
+      add.push({
+        generationId: still.id,
+        status: "succeeded",
+        resultUrl: still.resultUrl,
+        viewUrl: still.viewUrl,
+        posterUrl: null,
+        kind: "still",
+        seconds: null,
+        score: null,
+        createdAt,
+        hasLookObjects: false,
+        words: at.words,
+        format: at.format,
+        squeeze: at.squeeze,
+        rigAsked: [],
+        rigCheck: null,
+        pose: at.pose,
+        takeFrom: null,
+        characterId: at.characterId,
+      });
+    }
+    if (add.length > 0) setShots((prev) => [...add.filter((a) => !prev.some((p) => p.generationId === a.generationId)), ...prev]);
+    return { still: still?.id ?? null, take: clip?.id ?? null };
   }
   /**
    * One read of a shot's press (press-actions.ts readSetPress). A read that
@@ -4530,11 +4612,14 @@ export function SetView({
       return;
     }
     busy.shooting = true;
+    setPressEngine(stillEngine);
     setShooting(true);
     // This press's own id, fresh for every Shoot (press-follow.ts): a
     // browser's resend of it is followed on the server, never shot again.
     const pressId = newPressId();
     const startedAt = new Date().getTime();
+    // The rig it is shot with, for a still whose answer is lost (keepLeftRows).
+    const shotRig = normaliseSetRig(rigRef.current);
     // The camera, the figure's mark (in the layout) and the canvas shape the
     // frame was just taken from: stored with the still as sent, they say
     // where its objects and its person are when it is a look.
@@ -4548,6 +4633,8 @@ export function SetView({
     keepRevision(said, cameraId);
     let result: Awaited<ReturnType<typeof shootInSet>>;
     let sentAt: number | null = null;
+    // The rows a press whose answer was lost left, when that is how its follow ended.
+    let left: PressRows | null = null;
     try {
       // The things' sheets this frame carries are drawn first, once each (R1).
       if ((await drawSheetsFor(planFor(pose, layoutRef.current.mark).riding)) === null) return;
@@ -4570,17 +4657,20 @@ export function SetView({
       // A resend of this press found the first delivery still rendering
       // (press.ts, repeat-send.ts): that one is followed, never pressed again.
       if (stillGoingAnswer(result.error)) {
-        setFollowing(true);
-        result = lostAnswer(await followLost(sentAt, shotPressRead(pressId)), lostWords);
+        setFollowing("rendering");
+        const followed = await followLost(sentAt, shotPressRead(pressId));
+        left = followed.kind === "rows" ? followed.rows : null;
+        result = lostAnswer(followed, lostWords);
       }
     } catch (err) {
       // The answer was lost, not the still (operator, 2026-09-25, Cut 1). A
       // dropped connection does not stop the render, which is charged on the
       // server all the same, so "try again" here paid twice. It is followed
       // by its press id, Shoot is held meanwhile, and what lands is shown as
-      // if the answer had come. A deploy answers at once; a throw at the
-      // platform's ceiling is a render cut off mid-way, never a deploy.
-      if (!cutOff(sentAt, new Date().getTime())) {
+      // if the answer had come. A deploy is refused at once; a later throw
+      // is a render stopped mid-way (a crash, the platform's cut-off), never
+      // a deploy (press-follow.ts lateThrow).
+      if (!lateThrow(sentAt, new Date().getTime())) {
         const stale = staleHere(err);
         if (stale) {
           setError(t.generate.refreshNeeded);
@@ -4591,15 +4681,19 @@ export function SetView({
         setError(t.generate.submitFailed);
         return;
       }
-      setFollowing(true);
-      result = lostAnswer(await followLost(sentAt, shotPressRead(pressId)), lostWords);
+      setFollowing("checking");
+      const followed = await followLost(sentAt, shotPressRead(pressId), () => setFollowing("rendering"));
+      left = followed.kind === "rows" ? followed.rows : null;
+      result = lostAnswer(followed, lostWords);
     } finally {
       busyRef.current.shooting = false;
       setShooting(false);
-      setFollowing(false);
+      setFollowing(null);
     }
     if (result.error !== null) {
       setError(result.error);
+      // What a lost answer left in History joins the strip (review, 2026-09-25).
+      if (left) keepLeftRows(left, { format: shotRig.format, squeeze: shotRig.squeeze, pose, words: asked ?? null, characterId, engine: takeEngine, takeFrom: null });
       return;
     }
     const shot: SetShot = {
@@ -4706,10 +4800,14 @@ export function SetView({
       return;
     }
     busy.taking = true;
+    setPressEngine(stillEngine);
     setShooting(true);
     // This press's own id, fresh for every Take (press-follow.ts).
     const pressId = newPressId();
     const startedAt = new Date().getTime();
+    // The rig its end still is shot with, for a take whose answer is lost (keepLeftRows).
+    const shotRig = normaliseSetRig(rigRef.current);
+    const startId = takeStart.id;
     const pose = apiRef.current?.pose() ?? null;
     const canvasAspect = apiRef.current?.canvasAspect();
     const asked = pendingRef.current.length > 0 ? pendingRef.current.join("\n") : undefined;
@@ -4718,6 +4816,8 @@ export function SetView({
     keepRevision(said, cameraId);
     let result: Awaited<ReturnType<typeof takeInSet>>;
     let sentAt: number | null = null;
+    // The rows a press whose answer was lost left, when that is how its follow ended.
+    let left: PressRows | null = null;
     try {
       // The end still carries the things' sheets like any still (R1).
       if ((await drawSheetsFor(planFor(pose, layoutRef.current.mark).riding)) === null) return;
@@ -4739,14 +4839,16 @@ export function SetView({
       });
       // A resend found the first delivery still rendering: followed, never pressed again.
       if (stillGoingAnswer(result.error)) {
-        setFollowing(true);
-        result = lostAnswer(await followLost(sentAt, takePressRead(pressId)), lostWords);
+        setFollowing("rendering");
+        const followed = await followLost(sentAt, takePressRead(pressId));
+        left = followed.kind === "rows" ? followed.rows : null;
+        result = lostAnswer(followed, lostWords);
       }
     } catch (err) {
       // The answer was lost, not the take (Cut 1, as shoot's): the end still
       // and the clip go on rendering and are charged all the same. Followed
       // by its press id with the Take held, and shown as if it had answered.
-      if (!cutOff(sentAt, new Date().getTime())) {
+      if (!lateThrow(sentAt, new Date().getTime())) {
         const stale = staleHere(err);
         if (stale) {
           setError(t.generate.refreshNeeded);
@@ -4757,15 +4859,35 @@ export function SetView({
         setError(t.generate.submitFailed);
         return;
       }
-      setFollowing(true);
-      result = lostAnswer(await followLost(sentAt, takePressRead(pressId)), lostWords);
+      setFollowing("checking");
+      const followed = await followLost(sentAt, takePressRead(pressId), () => setFollowing("rendering"));
+      left = followed.kind === "rows" ? followed.rows : null;
+      result = lostAnswer(followed, lostWords);
     } finally {
       busyRef.current.taking = false;
       setShooting(false);
-      setFollowing(false);
+      setFollowing(null);
     }
     if (result.error !== null) {
       setError(result.error);
+      if (left) {
+        // What a lost answer left joins the strip, the clip followed in place
+        // (review, 2026-09-25). Its end still in and no clip reserved: the
+        // request is over (the follow ended on it), so the clip alone is
+        // offered again, never the whole take.
+        // A take's end still's row id is its press's own (press.ts).
+        const frames: TakeFrames = { start: startId, end: left.still?.id ?? pressId, characterId, direction: said, engine: takeEngine, words: asked };
+        const kept = keepLeftRows(left, {
+          format: shotRig.format,
+          squeeze: shotRig.squeeze,
+          pose,
+          words: asked ?? null,
+          characterId,
+          engine: takeEngine,
+          takeFrom: sourceOf(frames),
+        });
+        if (kept.still && !kept.take) setTakeRetry({ ...frames, end: kept.still });
+      }
       return;
     }
     const endStill: SetShot = {
@@ -4824,7 +4946,9 @@ export function SetView({
     setTakeStart(null);
     setShotElements(result.still.elements);
     setLookAside(result.still.lookAside);
-    if (!result.takeGenerationId && result.still.succeeded) setTakeRetry(frames);
+    // Never while another delivery's clip of this press may still land
+    // (repeat-send.ts): a clip tried again is a new press, charged again.
+    if (!result.takeGenerationId && result.still.succeeded && !stillGoingAnswer(result.takeError)) setTakeRetry(frames);
     if (!result.still.succeeded) setError(`${s.takeEndFailed}${result.still.failure ? ` ${result.still.failure}` : ""}`);
     else if (result.takeError) setError(result.takeError);
     if (result.still.succeeded) setViewing(result.takeGenerationId ?? result.still.generationId);
@@ -5512,13 +5636,22 @@ export function SetView({
           break;
         }
         const sentAt = new Date().getTime();
-        const beatWords = { neverStarted: formatMsg(s.filmBeatNeverStarted, { n: i + 1 }), stillGoing: formatMsg(s.filmBeatStillGoing, { n: i + 1 }) };
+        const beatWords: LostWords = {
+          neverStarted: formatMsg(s.filmBeatNeverStarted, { n: i + 1 }),
+          stillGoing: formatMsg(s.filmBeatStillGoing, { n: i + 1 }),
+          unchecked: formatMsg(s.filmBeatUnchecked, { n: i + 1 }),
+          inHistory: formatMsg(s.filmBeatKept, { n: i + 1 }),
+        };
+        // What a lost answer left, when that is how the beat's follow ended.
+        const left: { rows: PressRows | null } = { rows: null };
         // A beat whose answer was lost, followed by its press with the Render
         // still held (filmBusyRef), and handed on as if the answer had come.
-        const followBeat = async (): Promise<TakeAnswer> => {
-          setFilmBusy({ beat: i, clipOnly: job.end !== null, following: true });
-          const followed = await followLost(sentAt, takePressRead(pressId, i));
+        // "checking" until a read shows it reached the server.
+        const followBeat = async (seen: "checking" | "rendering"): Promise<TakeAnswer> => {
+          setFilmBusy({ beat: i, clipOnly: job.end !== null, following: seen });
+          const followed = await followLost(sentAt, takePressRead(pressId, i), () => setFilmBusy({ beat: i, clipOnly: job.end !== null, following: "rendering" }));
           setFilmBusy({ beat: i, clipOnly: job.end !== null });
+          if (followed.kind === "rows") left.rows = followed.rows;
           return lostAnswer(followed, beatWords);
         };
         let result: Awaited<ReturnType<typeof takeInSet>>;
@@ -5559,26 +5692,52 @@ export function SetView({
             film: true,
           });
           // A resend of this beat found the first delivery still rendering.
-          if (stillGoingAnswer(result.error)) result = await followBeat();
+          if (stillGoingAnswer(result.error)) result = await followBeat("rendering");
         } catch (err) {
           // Before, the film forgot this beat's paid end still and clip, and
           // the next Render shot and charged it again (audit F2, Cut 1). A
-          // deploy answers at once; anything else is followed by the beat's
-          // press and kept on the film as if the answer had come.
-          if (!cutOff(sentAt, new Date().getTime())) {
+          // deploy is refused at once; anything later is followed by the
+          // beat's press and kept on the film as if the answer had come.
+          if (!lateThrow(sentAt, new Date().getTime())) {
             const stale = staleHere(err);
             if (stale) {
               setFilmError(t.generate.refreshNeeded);
               break;
             }
           }
-          result = await followBeat();
+          result = await followBeat("checking");
+        }
+        if (result.error !== null && left.rows) {
+          // No answer, but what the beat reserved (review, 2026-09-25): its
+          // end still when it finished and its clip unless it failed are
+          // kept on the film and the strip, so the next Render renders only
+          // what is missing instead of shooting and charging the beat again.
+          const made = keepLeftRows(left.rows, {
+            format: normaliseSetRig(rigRef.current).format,
+            squeeze: normaliseSetRig(rigRef.current).squeeze,
+            pose: beat.end,
+            words: beat.words || null,
+            characterId: filmCharacterId,
+            engine: film.engine,
+            takeFrom: null,
+          });
+          if (job.end === null && made.still) {
+            keep({ ...kept, clips: [...upTo(kept.clips, i), made.take], ends: [...upTo(kept.ends, i), made.still] });
+          } else if (job.end !== null && made.take) {
+            const clips = upTo(kept.clips, Math.max(kept.clips.length, i + 1));
+            clips[i] = made.take;
+            keep({ ...kept, clips });
+          }
+          const keptSome = (job.end === null && made.still !== null) || (job.end !== null && made.take !== null);
+          // Nothing to keep: its end frame did not pass, or its clip failed.
+          setFilmError(keptSome ? result.error : job.end === null ? formatMsg(s.filmEndFailed, { n: i + 1 }) : s.filmBeatFailed);
+          break;
         }
         if (result.error !== null) {
           setFilmError(result.error);
-          // The end frame it would have ended on is gone: the next render
-          // shoots the beat whole.
-          if (job.end && result.error === SET_TAKE_BAD_END) {
+          // The end frame it would have ended on is gone, or shows someone
+          // else (review, 2026-09-25): the next render shoots the beat whole.
+          if (job.end && (result.error === SET_TAKE_BAD_END || result.error === SET_TAKE_END_OTHER_PERSON)) {
             const ends = [...kept.ends];
             ends[i] = null;
             keep({ ...kept, ends });
@@ -5677,6 +5836,9 @@ export function SetView({
     }
   }
 
+  /** Whether a press's lost answer left a clip that may still land (not one that failed): its frames are not offered again meanwhile. */
+  const clipMayLand = (rows: PressRows) => rows.take !== null && rows.take.status !== "failed";
+
   /**
    * The clip of a take rendered again between the same two frames — the
    * end still reused (takeInSet endGenerationId), so nothing is shot and
@@ -5695,6 +5857,10 @@ export function SetView({
     // Whether the frames are offered for the clip again: never while a clip
     // of this press may still land, which a second press would pay for twice.
     let offerAgain = true;
+    // The rows a press whose answer was lost left, when that is how its follow ended.
+    let left: PressRows | null = null;
+    // The frame's shape, for a clip whose answer is lost (keepLeftRows).
+    const endShot = shots.find((sh) => sh.generationId === f.end) ?? null;
     let result: Awaited<ReturnType<typeof takeInSet>>;
     try {
       result = await takeInSet(setId, {
@@ -5713,16 +5879,19 @@ export function SetView({
       });
       // A resend found the first delivery still rendering: followed, never pressed again.
       if (stillGoingAnswer(result.error)) {
-        setFollowing(true);
+        setFollowing("rendering");
         const followed = await followLost(sentAt, takePressRead(pressId));
-        offerAgain = followed.kind === "landed" || followed.kind === "never-started";
+        // Offered again only when this press's clip can no longer land:
+        // what it said, nothing started, or a request over with no clip.
+        offerAgain = followed.kind === "landed" || followed.kind === "never-started" || (followed.kind === "rows" && !clipMayLand(followed.rows));
+        left = followed.kind === "rows" ? followed.rows : null;
         result = lostAnswer(followed, lostWords);
       }
     } catch (err) {
       // The answer was lost, not the clip (Cut 1, as shoot's): it goes on
-      // rendering and is charged all the same. A deploy answers at once, so
-      // the frames stay on offer for it; anything else is followed.
-      if (!cutOff(sentAt, new Date().getTime())) {
+      // rendering and is charged all the same. A deploy is refused at once,
+      // so the frames stay on offer for it; anything else is followed.
+      if (!lateThrow(sentAt, new Date().getTime())) {
         const stale = staleHere(err);
         if (stale) {
           setError(t.generate.refreshNeeded);
@@ -5730,18 +5899,24 @@ export function SetView({
           return;
         }
       }
-      setFollowing(true);
-      const followed = await followLost(sentAt, takePressRead(pressId));
-      offerAgain = followed.kind === "landed" || followed.kind === "never-started";
+      setFollowing("checking");
+      const followed = await followLost(sentAt, takePressRead(pressId), () => setFollowing("rendering"));
+      offerAgain = followed.kind === "landed" || followed.kind === "never-started" || (followed.kind === "rows" && !clipMayLand(followed.rows));
+      left = followed.kind === "rows" ? followed.rows : null;
       result = lostAnswer(followed, lostWords);
     } finally {
       busyRef.current.taking = false;
       setShooting(false);
-      setFollowing(false);
+      setFollowing(null);
     }
     if (result.error !== null) {
       setError(result.error);
-      if (offerAgain) setTakeRetry(f);
+      // A clip that a lost answer left joins the strip, followed in place (review, 2026-09-25).
+      if (left) keepLeftRows({ still: null, take: left.take }, { format: endShot?.format ?? "square", squeeze: endShot?.squeeze ?? 1, pose: null, words: f.words ?? null, characterId: f.characterId, engine: f.engine, takeFrom: sourceOf(f) });
+      // A refusal pressing again cannot pass is not offered again: who a
+      // clip tried again is of cannot be changed here (review, 2026-09-25).
+      const cannotPass = result.error === SET_TAKE_START_OTHER_PERSON || result.error === SET_TAKE_RETRY_END_OTHER_PERSON || result.error === SET_PICK_CHARACTER;
+      if (offerAgain && !cannotPass) setTakeRetry(f);
       return;
     }
     const id = result.takeGenerationId;
@@ -5882,7 +6057,10 @@ export function SetView({
     const before = spec;
     // One id per press (astra-press.ts, 2026-09-25): a browser's silent
     // resend of this call is answered at once and never runs Astra twice.
-    const pressId = crypto.randomUUID();
+    // newPressId, never crypto.randomUUID alone: that throws outside a
+    // secure context or on an old WebView, with the editor already held
+    // (review, 2026-09-25).
+    const pressId = newPressId();
     let res: Awaited<ReturnType<typeof editSetWithAstra>> | null = null;
     let followed: FollowedEdit | null = null;
     try {
@@ -5937,7 +6115,7 @@ export function SetView({
     setRebuildNote(null);
     const before = spec;
     // One id per press, as editSet's (astra-press.ts, 2026-09-25).
-    const pressId = crypto.randomUUID();
+    const pressId = newPressId();
     let res: Awaited<ReturnType<typeof rebuildThingFromPhotos>> | null = null;
     let followed: FollowedEdit | null = null;
     try {
@@ -6477,7 +6655,10 @@ export function SetView({
                 : null;
   const filmWholeFrom = filmPlan.jobs.every((job) => job.end === null) ? (filmPlan.jobs[0]?.beat ?? 0) : null;
   const filmRenderLabel = filmBusy
-    ? formatMsg(filmBusy.following ? s.filmBeatFollowing : filmBusy.clipOnly ? s.filmRenderingClip : s.filmRendering, { i: filmBusy.beat + 1, n: film.beats.length })
+    ? formatMsg(
+        filmBusy.following === "checking" ? s.filmBeatChecking : filmBusy.following ? s.filmBeatFollowing : filmBusy.clipOnly ? s.filmRenderingClip : s.filmRendering,
+        { i: filmBusy.beat + 1, n: film.beats.length },
+      )
     : filmPlan.again
       ? filmPlan.rendering
         ? s.filmClipsRendering
@@ -6498,8 +6679,14 @@ export function SetView({
   // The engine the stills are drawn with, named wherever Helios names one
   // (2026-09-25: the panel said GPT Image 2.5 over a Nano Banana pick).
   const stillEngineName = getImageModel(stillEngine).name;
+  // A press in flight is named by the engine it was sent with (review,
+  // 2026-09-25): the pill stays live, and may change meanwhile.
+  const pressEngineName = getImageModel(pressEngine).name;
+  // A lost answer being followed: checking until a read shows the press at work, then still rendering.
+  const followingShort = following === "checking" ? s.pressCheckingShort : s.pressFollowingShort;
+  const followingLine = following === "checking" ? s.pressChecking : s.pressFollowing;
   const shootLabel = shooting
-    ? (following ? s.pressFollowingShort : s.shooting)
+    ? (following ? followingShort : s.shooting)
     : quote.totalCredits === 1
       ? s.shootButtonOne
       : formatMsg(s.shootButton, { n: quote.totalCredits });
@@ -7012,7 +7199,7 @@ export function SetView({
               <span className="whitespace-nowrap text-[#f0cda6]">{formatMsg(s.filmBeatLabel, { n: filmSel + 1 })}</span>
               <span className="whitespace-nowrap normal-case tabular-nums">{formatMsg(s.takeSeconds, { s: SET_TAKE_ENGINES[film.engine].seconds })}</span>
               {filmBusy?.beat === filmSel ? (
-                <span className="whitespace-nowrap normal-case text-[#e0a468]">{filmBusy.following ? s.filmBeatFollowingShort : filmBusy.clipOnly ? s.filmBeatClip : s.filmBeatStill}</span>
+                <span className="whitespace-nowrap normal-case text-[#e0a468]">{filmBusy.following === "checking" ? s.filmBeatCheckingShort : filmBusy.following ? s.filmBeatFollowingShort : filmBusy.clipOnly ? s.filmBeatClip : s.filmBeatStill}</span>
               ) : filmClipShots[filmSel] ? (
                 <span
                   className={`whitespace-nowrap normal-case ${
@@ -7256,7 +7443,7 @@ export function SetView({
         </div>
         {following && simpleStep === "shoot" && (
           <p className="border-t border-[rgba(255,255,255,0.07)] px-3.5 py-2 text-[12px] text-[#c6c9d1]" aria-live="polite" data-press-following>
-            {s.pressFollowing}
+            {followingLine}
           </p>
         )}
         {(error || rigError) && <p className="border-t border-[rgba(255,255,255,0.07)] px-3.5 py-2 text-[12px] text-red-400">{localizeServerText(error || rigError, t)}</p>}
@@ -7768,7 +7955,7 @@ export function SetView({
                             disabled={!canShootNow}
                             className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-[#e0a468] px-[18px] text-sm font-semibold text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-[#2a2b33] disabled:text-[#c6c9d1] disabled:opacity-100"
                           >
-                            {takeStart ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel}
+                            {takeStart && !shooting ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel}
                           </button>
                           <button
                             type="button"
@@ -7832,7 +8019,7 @@ export function SetView({
                   <AstraMark />
                   <p className="flex items-center gap-2 text-sm text-[#c6c9d1]">
                     <Spinner className="h-4 w-4 flex-shrink-0" />
-                    {editingSet ? s.editorAsking : following ? s.pressFollowing : shooting ? `${s.shooting} ${formatMsg(s.shootingLine, { engine: stillEngineName })}` : s.threadReading}
+                    {editingSet ? s.editorAsking : following ? followingLine : shooting ? `${s.shooting} ${formatMsg(s.shootingLine, { engine: pressEngineName })}` : s.threadReading}
                   </p>
                 </div>
               )}
@@ -8023,7 +8210,7 @@ export function SetView({
             disabled={!canShootNow}
             className="flex h-7 flex-none cursor-pointer items-center whitespace-nowrap rounded-[6px] bg-[#e0a468] px-3.5 text-[12px] font-semibold text-[#1b1c20] disabled:cursor-default disabled:bg-[#2a2b33] disabled:text-[#c6c9d1]"
           >
-            {takeStart ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel}
+            {takeStart && !shooting ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel}
           </button>
           )
         }
@@ -8808,7 +8995,7 @@ export function SetView({
                         </span>
                       )}
                       {filmBusy?.beat === i ? (
-                        <span className="whitespace-nowrap normal-case text-[#e0a468]">{filmBusy.following ? s.filmBeatFollowingShort : filmBusy.clipOnly ? s.filmBeatClip : s.filmBeatStill}</span>
+                        <span className="whitespace-nowrap normal-case text-[#e0a468]">{filmBusy.following === "checking" ? s.filmBeatCheckingShort : filmBusy.following ? s.filmBeatFollowingShort : filmBusy.clipOnly ? s.filmBeatClip : s.filmBeatStill}</span>
                       ) : filmClipShots[i] ? (
                         <span
                           className={`whitespace-nowrap normal-case ${
@@ -9188,6 +9375,12 @@ export function SetView({
             onTab={setDockTab}
             foot={
               <>
+                {/* A press being followed says so here too, whichever tab is open (review, 2026-09-25). */}
+                {following && dockTab !== "astra" && (
+                  <p className="border-t border-[rgba(255,255,255,0.07)] px-3.5 py-2 text-[12px] text-[#c6c9d1]" aria-live="polite" data-press-following>
+                    {followingLine}
+                  </p>
+                )}
                 {dockTab !== "astra" && (error || rigError) && (
                   <p className="border-t border-[rgba(255,255,255,0.07)] px-3.5 py-2 text-[12px] text-red-400">{localizeServerText(error || rigError, t)}</p>
                 )}

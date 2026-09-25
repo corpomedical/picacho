@@ -18,8 +18,22 @@ import type { ProviderBudget } from "@/lib/generations/providers/image";
 // in a module that can be tested without a network, and everything here is
 // mechanical: call the scorer, call the renderer, move a file, write a row.
 
-/** How long a render may have taken before the gate declines to retry it. */
-const GATE_WALL_CLOCK_BUDGET_MS = 110_000;
+/**
+ * How long the REQUEST may already have run when the gate would start its
+ * one free re-render. The clock (`elapsedMs`) starts on runGeneration's first
+ * line, or on a Helios press's first line when there is one
+ * (generations/server-press.ts, 2026-09-25), no longer just before the
+ * render, because the platform counts its 300 s from there. The re-render
+ * must still fit inside them: one more render (GPT Image's full 150 s,
+ * openai-images.ts OPENAI_IMAGE_TIMEOUT_MS), ~20 s to score, store and
+ * develop it, and ~5 s for the row's last write, so 300 − 150 − 25 = 125 s
+ * (identity-gate-run.test.ts holds the sum). It was 110 s counted from just
+ * before the render, with runGeneration's own checks on top; re-derived for
+ * the earlier start (review, 2026-09-25). A Helios still whose look took
+ * long to prepare is now delivered without the re-render rather than cut off
+ * mid-way with both renders charged and its row stuck.
+ */
+export const GATE_WALL_CLOCK_BUDGET_MS = 125_000;
 
 export type GateOutcome = {
   /** The URL to actually deliver — the better of the attempts. */
@@ -104,7 +118,7 @@ export type GateDeps = {
      */
     budget?: ProviderBudget;
   };
-  /** Wall-clock ms already spent on this request, to protect maxDuration. */
+  /** Wall-clock ms the request has already run (from its first line, or its Helios press's), to protect maxDuration. */
   elapsedMs: number;
   absolutize: (url: string) => string;
   /**

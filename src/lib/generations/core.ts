@@ -557,7 +557,11 @@ export async function persistVideo(
     let body: Uint8Array = bytes;
     let silent = false;
     if (options.dropSound) {
-      const out = withoutSoundMp4(bytes);
+      // A plain Uint8Array over the same bytes, never the Buffer itself: a
+      // Buffer's slice() shares memory, and the remux once wrote its patches
+      // into the source file through it (review, 2026-09-25). mp4-join now
+      // guards its own door as well.
+      const out = withoutSoundMp4(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
       if (out.ok) {
         body = out.bytes;
         silent = true;

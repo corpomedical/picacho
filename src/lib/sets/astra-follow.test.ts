@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import raceTrack from "./fixtures-race-track.json";
-import { followAstraEdit, type AstraEditRead, type AstraPressKind } from "./astra-follow";
+import { SET_EDIT_NONE_AFTER_MS, followAstraEdit, type AstraEditRead, type AstraPressKind } from "./astra-follow";
 import { countSpecChanges } from "./editor-model";
 import { SET_EDIT_NOT_SAVED, SET_EDIT_UNCHECKED, SET_NOT_FOUND } from "./messages";
 import { SET_EDIT_FOLLOW_CAP_MS, SET_EDIT_FOLLOW_POLL_MS } from "./set-config";
@@ -60,12 +60,16 @@ describe("followAstraEdit", () => {
     expect(SET_EDIT_NOT_SAVED).not.toMatch(/couldn't reach/i);
   });
 
-  it("gives a delivery that hasn't claimed yet one more look, and says nothing reached the server only after two", async () => {
+  it("gives a delivery that hasn't claimed yet time to, and says nothing reached the server only after two reads and 24 s", async () => {
     expect((await follow(rig([at("none"), at("saved", AFTER)]))).kind).toBe("saved");
-    const r = rig([at("none"), at("none"), at("saved", AFTER)]);
+    // Two reads 4 s apart are not enough (review, 2026-09-25): a slow claim still lands.
+    expect((await follow(rig([at("none"), at("none"), at("saved", AFTER)]))).kind).toBe("saved");
+    const r = rig([at("none")]);
     expect(await follow(r)).toEqual({ kind: "none" });
-    expect(r.reads()).toBe(2);
-    expect(r.sleeps).toEqual([SET_EDIT_FOLLOW_POLL_MS]);
+    // Reads at 0, 4 … 24 s: the seventh, 24 s in, is the first that may say so.
+    expect(SET_EDIT_NONE_AFTER_MS).toBe(24_000);
+    expect(r.reads()).toBe(SET_EDIT_NONE_AFTER_MS / SET_EDIT_FOLLOW_POLL_MS + 1);
+    expect(r.sleeps.reduce((a, b) => a + b, 0)).toBe(SET_EDIT_NONE_AFTER_MS);
   });
 
   it("judges a press the platform stopped by the saved copy", async () => {

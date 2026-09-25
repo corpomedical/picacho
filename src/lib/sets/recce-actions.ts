@@ -44,6 +44,7 @@ import {
   SET_CLIP_MIN_SECONDS,
 } from "@/lib/sets/recce-read";
 import { recceColumns } from "@/lib/sets/recce-store";
+import { NEW_SET_RIG } from "@/lib/sets/rig";
 
 // The Recce, cut 1 (board K, 2026-09-17): a clip becomes a set. The clip
 // itself never arrives — the browser sampled its frames (recce-client.ts)
@@ -83,7 +84,7 @@ async function reserveRecceRow(
 ): Promise<{ ok: false; error: string; missingColumn: boolean } | { ok: true; setId: string; release: () => Promise<void> }> {
   const { data: row, error: insertError } = await admin
     .from("location_sets")
-    .insert({ ...extra, user_id: access.userId, brief: RESERVED, status: "building", attempts: 0 })
+    .insert({ ...extra, user_id: access.userId, brief: RESERVED, status: "building", attempts: 0, rig: NEW_SET_RIG })
     .select("id, created_at")
     .single();
   if (insertError || !row) {

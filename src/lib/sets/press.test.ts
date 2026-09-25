@@ -229,6 +229,13 @@ describe("claimPress", () => {
     }
   });
 
+  it("says running at once for a first delivery that threw (done, with no answer)", async () => {
+    const { clock, sleeps } = clockOf();
+    const { db } = fakeDb((c) => (c.op === "insert" ? { error: DUP } : { data: { set_id: SET, kind: "shot", state: "done", result: null } }));
+    expect(await claimPress(db, press, clock)).toEqual({ kind: "running" });
+    expect(sleeps).toEqual([]);
+  });
+
   it("keeps following through failed reads and malformed answers, and never runs the press again", async () => {
     const failing = fakeDb((c) => (c.op === "insert" ? { error: DUP } : { error: { message: "network down" } }));
     expect(await claimPress(failing.db, press, clockOf().clock)).toEqual({ kind: "running" });
@@ -313,10 +320,30 @@ describe("runPress", () => {
     expect(calls).toEqual([]);
   });
 
-  it("rethrows a press that throws, and stores no answer for it", async () => {
+  it("rethrows a press that throws, marking its row done with no answer, so a follower is told at once", async () => {
     const { db, calls } = fakeDb(() => ({}));
     await expect(runPress(db, press, clockOf().clock, async () => Promise.reject(new Error("boom")))).rejects.toThrow("boom");
-    expect(calls.some((c) => c.op === "update")).toBe(false);
+    const updates = calls.filter((c) => c.op === "update");
+    expect(updates).toHaveLength(1);
+    expect(updates[0].values).toMatchObject({ state: "done", result: null });
+    expect(updates[0].filters).toEqual([
+      ["eq", "id", PRESS],
+      ["eq", "user_id", USER],
+      ["eq", "state", "running"],
+    ]);
+    // Untracked, there is no row to mark.
+    const untracked = fakeDb(() => ({}));
+    await expect(runPress(untracked.db, { ...press, id: null }, clockOf().clock, async () => Promise.reject(new Error("boom")))).rejects.toThrow("boom");
+    expect(untracked.calls).toEqual([]);
+  });
+
+  it("tells the work how its press was claimed", async () => {
+    const claimed = vi.fn(async () => ({ error: null }));
+    await runPress(fakeDb(() => ({})).db, press, clockOf().clock, claimed);
+    expect(claimed).toHaveBeenCalledWith({ kind: "claimed", id: PRESS });
+    const untracked = vi.fn(async () => ({ error: null }));
+    await runPress(fakeDb(() => ({})).db, { ...press, id: null }, clockOf().clock, untracked);
+    expect(untracked).toHaveBeenCalledWith({ kind: "untracked" });
   });
 
   it("says a caller's own sentences when it gives them", async () => {
@@ -350,15 +377,17 @@ describe("readPress", () => {
 });
 
 describe("renderPaidBefore", () => {
-  const render = { pressId: PRESS, beat: 1 };
+  const render = { pressId: PRESS, beat: 1, setId: SET };
 
-  it("looks for the Render's other beats' rows among the person's own", async () => {
-    const { db, calls } = fakeDb(() => ({ data: [{ id: "x" }] }));
+  it("looks for the Render's other beats among the set's own shots, which only Helios writes", async () => {
+    const { db, calls } = fakeDb(() => ({ data: [{ generation_id: "x" }] }));
     expect(await renderPaidBefore(db, USER, render)).toBe(true);
-    expect(calls[0]).toMatchObject({ table: "generations", op: "select", cols: "id", limit: 1 });
+    // Not History: any send may name its own row id there (review, 2026-09-25).
+    expect(calls[0]).toMatchObject({ table: "location_set_shots", op: "select", cols: "generation_id", limit: 1 });
     expect(calls[0].filters).toEqual([
+      ["eq", "set_id", SET],
       ["eq", "user_id", USER],
-      ["in", "id", filmSiblingIds(PRESS, 1)],
+      ["in", "generation_id", filmSiblingIds(PRESS, 1)],
     ]);
   });
 

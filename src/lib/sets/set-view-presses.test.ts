@@ -65,7 +65,8 @@ describe("every paid press sends its own id", () => {
   });
 
   it("never keeps an id past its press", () => {
-    expect(view.match(/newPressId\(\)/g)).toHaveLength(4);
+    // Shoot, Take, Try the clip again and Render, plus Astra's edit and rebuild (review, 2026-09-25).
+    expect(view.match(/newPressId\(\)/g)).toHaveLength(6);
     expect(view).not.toMatch(/use(State|Ref)[^\n]*pressId/);
   });
 });
@@ -80,17 +81,23 @@ describe("a lost answer is followed, never 'try again'", () => {
       // A resend's "still rendering" answer is followed the same way.
       expect(tried, h.signature).toContain("if (stillGoingAnswer(result.error)) {");
       expect(tried, h.signature).toContain(h.read);
-      // A deploy answers at once; a throw at the platform's ceiling is followed, not reloaded over.
-      const notCut = caught.indexOf("if (!cutOff(sentAt, new Date().getTime())) {");
+      // A deploy is refused at once; a later throw is followed, not reloaded over (press-follow.ts lateThrow).
+      const notCut = caught.indexOf("if (!lateThrow(sentAt, new Date().getTime())) {");
       expect(notCut, h.signature).toBeGreaterThan(-1);
       const stale = caught.indexOf("const stale = staleHere(err);");
       expect(stale, h.signature).toBeGreaterThan(notCut);
       expect(caught.indexOf("setError(t.generate.refreshNeeded);"), h.signature).toBeGreaterThan(stale);
       expect(caught, h.signature).toContain("await followLost(");
       expect(caught, h.signature).toContain(h.read);
-      expect(caught, h.signature).toContain("setFollowing(true);");
+      // Checking until a read shows the press reached the server (review, 2026-09-25).
+      expect(caught, h.signature).toContain('setFollowing("checking");');
+      expect(caught, h.signature).toContain('() => setFollowing("rendering")');
+      // A resend's own "still rendering" answer is at work already.
+      expect(tried, h.signature).toContain('setFollowing("rendering");');
+      // What a lost answer left is read off the follow.
+      expect(caught, h.signature).toContain('left = followed.kind === "rows" ? followed.rows : null;');
       // Shoot is let go only once the follow is over.
-      expect(released, h.signature).toContain("setFollowing(false);");
+      expect(released, h.signature).toContain("setFollowing(null);");
       expect(released, h.signature).toContain(`busyRef.current.${h.flag} = false;`);
     }
   });
@@ -111,28 +118,70 @@ describe("a lost answer is followed, never 'try again'", () => {
     expect(retry).not.toContain("nothing was rendered");
     // A throw is followed: it never says "couldn't reach the server" and offers the frames again.
     expect(between(retry, "} catch (err) {", "} finally {")).not.toContain("t.generate.submitFailed");
-    expect(retry.match(/offerAgain = followed\.kind === "landed" \|\| followed\.kind === "never-started";/g)).toHaveLength(2);
-    expect(retry).toContain("if (offerAgain) setTakeRetry(f);");
+    expect(
+      retry.match(/offerAgain = followed\.kind === "landed" \|\| followed\.kind === "never-started" \|\| \(followed\.kind === "rows" && !clipMayLand\(followed\.rows\)\);/g),
+    ).toHaveLength(2);
+    expect(view).toContain('const clipMayLand = (rows: PressRows) => rows.take !== null && rows.take.status !== "failed";');
+    expect(retry).toContain("if (offerAgain && !cannotPass) setTakeRetry(f);");
+  });
+
+  it("never offers the clip again after a refusal pressing again cannot pass (review, 2026-09-25)", () => {
+    const retry = bodyOf("  async function retryClip(");
+    expect(retry).toContain(
+      "const cannotPass = result.error === SET_TAKE_START_OTHER_PERSON || result.error === SET_TAKE_RETRY_END_OTHER_PERSON || result.error === SET_PICK_CHARACTER;",
+    );
+  });
+
+  it("never offers a take's clip while another delivery's clip may still land (review, 2026-09-25)", () => {
+    expect(bodyOf("  async function take(")).toContain(
+      "if (!result.takeGenerationId && result.still.succeeded && !stillGoingAnswer(result.takeError)) setTakeRetry(frames);",
+    );
+  });
+
+  it("puts what a lost answer left on the strip, and offers only the clip again when the end still is in (review, 2026-09-25)", () => {
+    const keep = bodyOf("  function keepLeftRows(");
+    expect(keep).toContain('const still = rows.still?.status === "succeeded" ? rows.still : null;');
+    expect(keep).toContain('const clip = rows.take && rows.take.status !== "failed" ? rows.take : null;');
+    // Never twice on the strip.
+    expect(keep).toContain("add.filter((a) => !prev.some((p) => p.generationId === a.generationId))");
+    const shoot = bodyOf("  async function shoot(");
+    expect(shoot).toContain("if (left) keepLeftRows(left, {");
+    const take = bodyOf("  async function take(");
+    expect(take).toContain("const kept = keepLeftRows(left, {");
+    expect(take).toContain("if (kept.still && !kept.take) setTakeRetry({ ...frames, end: kept.still });");
+    expect(bodyOf("  async function retryClip(")).toContain("if (left) keepLeftRows({ still: null, take: left.take }, {");
   });
 
   it("keeps a film's beat whose answer was lost, and goes on from it", () => {
     const render = bodyOf("  async function renderFilm(");
     const call = render.indexOf("result = await takeInSet(setId, {");
     const beat = render.slice(call, render.indexOf("if (result.error !== null) {", call));
-    expect(beat).toContain("if (stillGoingAnswer(result.error)) result = await followBeat();");
+    expect(beat).toContain('if (stillGoingAnswer(result.error)) result = await followBeat("rendering");');
     const caught = beat.slice(beat.indexOf("} catch (err) {"));
-    expect(caught).toContain("if (!cutOff(sentAt, new Date().getTime())) {");
+    expect(caught).toContain("if (!lateThrow(sentAt, new Date().getTime())) {");
     expect(caught).toContain("const stale = staleHere(err);");
     expect(caught).toContain("setFilmError(t.generate.refreshNeeded);");
-    expect(caught).toContain("result = await followBeat();");
+    expect(caught).toContain('result = await followBeat("checking");');
     expect(caught).not.toContain("t.generate.submitFailed");
     // The follow says so on the button and the beat, and reads the beat by the Render's id.
-    const follow = between(render, "const followBeat = async (): Promise<TakeAnswer> => {", "};");
-    expect(follow).toContain("setFilmBusy({ beat: i, clipOnly: job.end !== null, following: true });");
-    expect(follow).toContain("await followLost(sentAt, takePressRead(pressId, i));");
+    const follow = between(render, 'const followBeat = async (seen: "checking" | "rendering"): Promise<TakeAnswer> => {', "};");
+    expect(follow).toContain("setFilmBusy({ beat: i, clipOnly: job.end !== null, following: seen });");
+    expect(follow).toContain('await followLost(sentAt, takePressRead(pressId, i), () => setFilmBusy({ beat: i, clipOnly: job.end !== null, following: "rendering" }));');
+    expect(follow).toContain('if (followed.kind === "rows") left.rows = followed.rows;');
     expect(follow).toContain("return lostAnswer(followed, beatWords);");
     // What lands goes through the code an answer takes: kept on the film (keep) after it.
-    expect(render.indexOf("keep({", call)).toBeGreaterThan(render.indexOf("result = await followBeat();"));
+    expect(render.indexOf("keep({", call)).toBeGreaterThan(render.indexOf('result = await followBeat("checking");'));
+  });
+
+  it("keeps what a beat whose answer never came left, so the next Render does not charge it again (review, 2026-09-25)", () => {
+    const render = bodyOf("  async function renderFilm(");
+    const kept = between(render, "if (result.error !== null && left.rows) {", "\n        }\n");
+    expect(kept).toContain("const made = keepLeftRows(left.rows, {");
+    expect(kept).toContain("keep({ ...kept, clips: [...upTo(kept.clips, i), made.take], ends: [...upTo(kept.ends, i), made.still] });");
+    expect(kept).toContain("clips[i] = made.take;");
+    expect(kept).toContain("break;");
+    // Before the ordinary refusal path, which keeps nothing.
+    expect(render.indexOf("if (result.error !== null && left.rows) {")).toBeLessThan(render.indexOf("if (result.error !== null) {\n          setFilmError(result.error);"));
   });
 
   it("reads a press back by its id, and asks again when a read fails", () => {
@@ -143,15 +192,25 @@ describe("a lost answer is followed, never 'try again'", () => {
     }
     expect(bodyOf("  function shotPressRead(pressId: string) {")).toContain('return pressReadOf(r, "shot");');
     expect(bodyOf("  function takePressRead(pressId: string, filmBeat?: number) {")).toContain('return pressReadOf(r, "take");');
-    expect(view).toContain("return followPress<T>({ sentAt, read, alive: () => aliveRef.current });");
+    expect(view).toContain("return followPress<T>({ sentAt, read, alive: () => aliveRef.current, onRunning });");
   });
 
-  it("says it is still rendering while it follows", () => {
-    expect(view).toContain("? (following ? s.pressFollowingShort : s.shooting)");
-    expect(view).toContain("editingSet ? s.editorAsking : following ? s.pressFollowing : shooting ?");
-    expect(view).toContain("formatMsg(filmBusy.following ? s.filmBeatFollowing : filmBusy.clipOnly ? s.filmRenderingClip : s.filmRendering,");
-    expect(view.match(/\{filmBusy\.following \? s\.filmBeatFollowingShort : filmBusy\.clipOnly \? s\.filmBeatClip : s\.filmBeatStill\}/g)).toHaveLength(2);
-    expect(view).toMatch(/\{following && simpleStep === "shoot" && \([\s\S]{0,200}data-press-following>\s*\{s\.pressFollowing\}/);
+  it("says it is checking, then still rendering, while it follows", () => {
+    expect(view).toContain('const followingShort = following === "checking" ? s.pressCheckingShort : s.pressFollowingShort;');
+    expect(view).toContain('const followingLine = following === "checking" ? s.pressChecking : s.pressFollowing;');
+    expect(view).toContain("? (following ? followingShort : s.shooting)");
+    expect(view).toContain("editingSet ? s.editorAsking : following ? followingLine : shooting ?");
+    expect(view).toContain('filmBusy.following === "checking" ? s.filmBeatChecking : filmBusy.following ? s.filmBeatFollowing : filmBusy.clipOnly ? s.filmRenderingClip : s.filmRendering,');
+    expect(
+      view.match(/\{filmBusy\.following === "checking" \? s\.filmBeatCheckingShort : filmBusy\.following \? s\.filmBeatFollowingShort : filmBusy\.clipOnly \? s\.filmBeatClip : s\.filmBeatStill\}/g),
+    ).toHaveLength(2);
+    expect(view).toMatch(/\{following && simpleStep === "shoot" && \([\s\S]{0,200}data-press-following>\s*\{followingLine\}/);
+  });
+
+  it("says so on the Take button and in the classic dock too (review, 2026-09-25)", () => {
+    expect(view.match(/\{takeStart && !shooting \? formatMsg\(s\.takeButton, \{ n: takeCredits \}\) : shootLabel\}/g)).toHaveLength(2);
+    expect(view).not.toContain("{takeStart ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel}");
+    expect(view).toMatch(/\{following && dockTab !== "astra" && \([\s\S]{0,200}data-press-following>\s*\{followingLine\}/);
   });
 });
 
@@ -193,7 +252,14 @@ describe("the panel names the engine picked", () => {
   it("says the one source's name everywhere", () => {
     expect(view).toContain("const stillEngineName = getImageModel(stillEngine).name;");
     expect(view).toContain("formatMsg(s.panelMeta, { engine: stillEngineName })");
-    expect(view).toContain("formatMsg(s.shootingLine, { engine: stillEngineName })");
+    // A still being drawn is named by the engine it was sent with (review, 2026-09-25).
+    expect(view).toContain("formatMsg(s.shootingLine, { engine: pressEngineName })");
+    expect(view).toContain("const pressEngineName = getImageModel(pressEngine).name;");
+    for (const signature of ["  async function shoot(", "  async function take("]) {
+      const body = bodyOf(signature);
+      expect(body.indexOf("setPressEngine(stillEngine);"), signature).toBeGreaterThan(-1);
+      expect(body.indexOf("setPressEngine(stillEngine);"), signature).toBeLessThan(body.indexOf("setShooting(true);"));
+    }
     expect(view).toContain("{stillEngineName} · {credits}");
     expect(view).not.toContain("{s.panelMeta}");
     expect(view).not.toContain("s.engineChip");
@@ -217,17 +283,33 @@ describe("the words, in all four languages", () => {
         "filmBeatFollowingShort",
         "filmBeatNeverStarted",
         "filmBeatStillGoing",
+        "pressChecking",
+        "pressCheckingShort",
+        "pressUnchecked",
+        "pressInHistory",
+        "filmBeatChecking",
+        "filmBeatCheckingShort",
+        "filmBeatUnchecked",
+        "filmBeatKept",
       ] as const) {
         expect(s[key].trim(), `${lang} ${key}`).not.toBe("");
       }
       expect(s.filmBeatFollowing, lang).toContain("{i}");
       expect(s.filmBeatFollowing, lang).toContain("{n}");
-      expect(s.filmBeatNeverStarted, lang).toContain("{n}");
-      expect(s.filmBeatStillGoing, lang).toContain("{n}");
-      expect(s.pressStillGoing, lang).toContain(HISTORY[lang]);
-      expect(s.filmBeatStillGoing, lang).toContain(HISTORY[lang]);
+      expect(s.filmBeatChecking, lang).toContain("{i}");
+      expect(s.filmBeatChecking, lang).toContain("{n}");
+      for (const key of ["filmBeatNeverStarted", "filmBeatStillGoing", "filmBeatUnchecked", "filmBeatKept"] as const) expect(s[key], `${lang} ${key}`).toContain("{n}");
+      for (const key of ["pressStillGoing", "filmBeatStillGoing", "pressUnchecked", "pressInHistory", "filmBeatUnchecked"] as const) {
+        expect(s[key], `${lang} ${key}`).toContain(HISTORY[lang]);
+      }
+      // Checking is not rendering: it never claims the press reached the server.
+      expect(s.pressChecking, lang).not.toBe(s.pressFollowing);
     }
     expect(en.sets.pressNeverStarted).toContain("nothing was charged");
+    // Said when nothing is known: never "no need to press again".
+    expect(en.sets.pressUnchecked).not.toContain("no need");
+    // A film beat that has not come back warns that Render would shoot it again.
+    expect(en.sets.filmBeatStillGoing).toContain("shoot beat {n} again");
   });
 
   it("names the sketch, the still and the take apart", () => {

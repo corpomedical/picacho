@@ -75,7 +75,8 @@ describe("submitSetRecceBuild, as source", () => {
     // Not importable (exporting it would make it a callable action), so the
     // two must move together: these are the lines the cap's race rests on.
     for (const line of [
-      '.insert({ ...extra, user_id: access.userId, brief: RESERVED, status: "building", attempts: 0 })',
+      // A new set frames in 16:9 from its first still (rig.ts NEW_SET_RIG, 2026-09-25).
+      '.insert({ ...extra, user_id: access.userId, brief: RESERVED, status: "building", attempts: 0, rig: NEW_SET_RIG })',
       '.select("id, created_at")',
       "countSetBuildsThisMonth(access.userId, access.periodStart, row.created_at as string)",
       "if (upToMine > access.monthlyLimit) {",

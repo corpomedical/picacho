@@ -202,11 +202,21 @@ export const SET_TAKE_OFF_FACE_KEPT_END = "This beat's end frame scored under yo
 export const SET_TAKE_OTHER_PERSON = "This film opens on a still of someone else, so this beat wasn't shot and nothing was charged. Reload the page: the film is shot with the person in its opening still.";
 /**
  * A single take or a clip rendered again, asked for with another person
- * than its start still (or its kept end still) shows (2026-09-25): the
+ * than its start still shows (2026-09-25): the
  * engine morphs one person into the other, charged in full. Nothing shot or
  * charged.
  */
 export const SET_TAKE_START_OTHER_PERSON = "This take starts on a still of someone else, so it wasn't shot and nothing was charged. Pick that person, or start from a still of the one you picked.";
+/**
+ * A film beat whose clip is rendered again on its kept end frame, and that
+ * frame shows another person than the film's (review, 2026-09-25: it used to
+ * say "This film opens on a still of someone else… Reload the page", which a
+ * reload never cured). Nothing shot or charged; the page drops the end, so
+ * the next Render shoots the beat whole.
+ */
+export const SET_TAKE_END_OTHER_PERSON = "This beat's end frame shows someone else, so its clip wasn't made and nothing was charged. Press Render to shoot the beat again.";
+/** The same for a clip tried again on its take's end still (2026-09-25). Nothing shot or charged. */
+export const SET_TAKE_RETRY_END_OTHER_PERSON = "This take ends on a still of someone else, so its clip wasn't made and nothing was charged. Shoot a new take with the person you picked.";
 /**
  * Takes and films are every paid plan's (set-config.ts setTakesEligible,
  * 2026-09-19 "Open to all plans"): said before anything is shot, never

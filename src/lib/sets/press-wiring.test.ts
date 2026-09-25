@@ -70,7 +70,17 @@ describe("a take's press (takeInSet)", () => {
     ]) {
       expect(at(take, earlier), earlier).toBeLessThan(first);
     }
-    expect(takeWrapper).toContain("withServerPress({ startedAt, skipCooldown: true }, () => takeWork(");
+    // Only a film's beats skip the 3-second cooldown (review, 2026-09-25):
+    // a single take and a clip tried again keep it, as any send does.
+    expect(takeWrapper).toContain("withServerPress({ startedAt, skipCooldown: ctx.render !== null }, () =>");
+    expect(takeWrapper).not.toContain("skipCooldown: true");
+    expect(takeWrapper).toContain("render: film && pressId !== null && beat !== null ? { pressId, beat } : null");
+  });
+
+  it("counts a Render once only when this delivery holds its claim", () => {
+    // Untracked (the ledger's SQL not run, or the claim failed), every beat
+    // is counted, as before Cut 1 (review, 2026-09-25).
+    expect(takeWrapper).toContain('takeWork(access, setId, owned, input, claim.kind === "claimed" ? ctx : { ...ctx, render: null })');
   });
 
   it("gives the end still and the clip their ids from the press", () => {
@@ -111,7 +121,7 @@ describe("the limiters count a press once, as it is about to pay (S3)", () => {
     const body = take.slice(brake, take.indexOf("};", brake));
     expect(body).toContain("if (renderCounted) return null;");
     expect(body).toContain('rateLimited(userId, "set-take", 60 * 10, SET_TAKES_PER_10_MIN)) ? SET_TAKE_TOO_FAST : null;');
-    expect(take).toContain("const renderCounted = ctx.render ? await renderPaidBefore(access.supabase, userId, ctx.render) : false;");
+    expect(take).toContain("const renderCounted = ctx.render ? await renderPaidBefore(access.supabase, userId, { ...ctx.render, setId }) : false;");
     expect(take.match(/takeBrake\b/g)).toHaveLength(3); // defined, and used twice
     expect(take).toContain("beforePaid: takeBrake,");
     expect(take).toContain("skipShotBrake: renderCounted,");

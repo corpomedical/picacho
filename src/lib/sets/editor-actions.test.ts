@@ -722,7 +722,7 @@ describe("the editor's prompt bar", () => {
   });
 
   it("never stays on 'Astra is changing the set…' when the call throws, and reads back what was saved", () => {
-    expect(send).toContain("const pressId = crypto.randomUUID();");
+    expect(send).toContain("const pressId = newPressId();");
     expect(send).toMatch(/try \{\s*r = await editSetWithAstra\(setId, text, pressId\);\s*\} catch \(err\) \{/);
     expect(send).toMatch(/\} finally \{\s*setAsking\(false\);\s*\}/);
     // A stale deploy keeps the copy and says to refresh, as before.

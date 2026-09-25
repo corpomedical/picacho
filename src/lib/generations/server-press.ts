@@ -11,11 +11,12 @@
 //   second render, the opening frame and the repeat follower all read
 //   runGeneration's start, so they started renders that could be cut off
 //   after they were reserved and charged.
-// - The 3-second cooldown. A take's end still and its clip, and a film's
-//   beats, are one press's own renders, a few seconds apart by design; a
-//   film stopped between its beats on "You're generating a bit fast" (admins
-//   are exempt, so the operator never saw it). The take already asks for its
-//   whole price without the cooldown, and is bounded by its own limiter.
+// - The 3-second cooldown. A film's beats are one Render's own renders, a
+//   few seconds apart by design; a film stopped between its beats on "You're
+//   generating a bit fast" (admins are exempt, so the operator never saw
+//   it). A Render is bounded by the take limiter. A single take keeps it: its
+//   clip comes a whole still's render after its end still (review,
+//   2026-09-25).
 //
 // Neither may come from a request field: runGeneration is a server action
 // any browser can call with any form fields. So, as server-built.ts holds
@@ -28,7 +29,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 export type ServerPress = {
   /** The press's first line (epoch ms): the start of the request's 300 s. */
   startedAt: number;
-  /** The press's renders skip runGeneration's 3-second cooldown (a take's, bounded by its own limiter). */
+  /** The press's renders skip runGeneration's 3-second cooldown (a film beat's, bounded by the take limiter). */
   skipCooldown: boolean;
 };
 

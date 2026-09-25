@@ -281,6 +281,8 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "This beat's end frame scored under your identity bar, so its clip wasn't made and nothing was charged. Press Render to shoot the beat again.": "setTakeOffFaceKeptEnd",
   "This film opens on a still of someone else, so this beat wasn't shot and nothing was charged. Reload the page: the film is shot with the person in its opening still.": "setTakeOtherPerson",
   "This take starts on a still of someone else, so it wasn't shot and nothing was charged. Pick that person, or start from a still of the one you picked.": "setTakeStartOtherPerson",
+  "This beat's end frame shows someone else, so its clip wasn't made and nothing was charged. Press Render to shoot the beat again.": "setTakeEndOtherPerson",
+  "This take ends on a still of someone else, so its clip wasn't made and nothing was charged. Shoot a new take with the person you picked.": "setTakeRetryEndOtherPerson",
   // Helios Cut 1 (lib/sets/messages.ts, 2026-09-25): the take limiter, the
   // still's time guard, and a press delivered twice.
   "You're starting takes and films quickly — try again in a few minutes. Nothing was charged.": "setTakeTooFast",

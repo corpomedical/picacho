@@ -26,7 +26,7 @@
 // or generations/repeat-send.ts, which imports it.
 
 import { SET_PRESS_RUNNING } from "./messages";
-import type { SetPressState } from "./press-actions";
+import type { PressRowState, SetPressState } from "./press-actions";
 
 /** How often a lost press is read back: at most ~83 reads over a whole follow. */
 export const PRESS_POLL_MS = 4_000;
@@ -34,8 +34,27 @@ export const PRESS_POLL_MS = 4_000;
 export const SET_REQUEST_CEILING_MS = 300_000;
 /** A follow runs this long past the ceiling, so a request the platform stopped has surely ended. */
 export const PRESS_FOLLOW_GRACE_MS = 30_000;
-/** A throw this long after the send is the platform's cut-off, never a deploy (cutOff). */
-export const PRESS_CUT_OFF_AFTER_MS = SET_REQUEST_CEILING_MS - 30_000;
+/**
+ * A throw this long after the send is never a deploy (lateThrow): a stale
+ * action is refused as soon as it arrives. It was the platform's 270 s
+ * cut-off; a function that crashed a minute in reads the same "unexpected
+ * response", and reloading over it lost a paid film beat (review,
+ * 2026-09-25). A deploy that throws later all the same is still caught: the
+ * follow's first read of it throws as stale, and that read reloads the tab.
+ */
+export const PRESS_STALE_WITHIN_MS = 20_000;
+/**
+ * "Nothing started" is said before the deadline only once the press has been
+ * looked for, and not found, this long after its send, on PRESS_NONE_READS
+ * reads in a row (review, 2026-09-25: an offline press held Shoot for 330 s).
+ * A delivery that reaches the server claims its press within seconds, before
+ * anything is counted or charged (press.ts claimPress), so a minute covers a
+ * cold start with room to spare.
+ */
+export const PRESS_NONE_AFTER_MS = 60_000;
+export const PRESS_NONE_READS = 2;
+/** A read that has not come back by then is taken as failed, so the deadline is always kept (review, 2026-09-25). */
+export const PRESS_READ_TIMEOUT_MS = 20_000;
 
 /**
  * The answers that mean "a delivery of this press is still rendering": the
@@ -51,16 +70,33 @@ export const PRESS_STILL_GOING_ANSWERS: readonly string[] = [
   SET_PRESS_RUNNING,
 ];
 
-/** One read of a press: nothing under it, running, its answer, or a sentence to show. */
-export type PressRead<T> = { state: "none" } | { state: "running" } | { state: "done"; result: T } | { state: "error"; error: string };
+/** The still and clip rows a press reserved, read from History with no answer to go with them. */
+export type PressRows = { still: PressRowState | null; take: PressRowState | null };
+
+/**
+ * One read of a press: nothing under it, running, its answer, a sentence to
+ * show, or the rows it left. `final`: nothing more will change, so the
+ * follow ends on this read (the request is over, or what it left is settled).
+ */
+export type PressRead<T> =
+  | { state: "none"; final?: boolean }
+  | { state: "running" }
+  | { state: "done"; result: T }
+  | { state: "error"; error: string }
+  | { state: "rows"; rows: PressRows; final: boolean };
 
 /** How a follow ended. */
 export type PressFollowed<T> =
   | { kind: "landed"; result: T }
-  // The last read, past the ceiling, found nothing under the press: nothing was reserved or charged.
+  // Nothing under the press, for good: nothing was reserved or charged.
   | { kind: "never-started" }
-  // Past the ceiling with a row there, or with reads that failed: it shows in History once it settles.
+  // A read showed it at work, and no answer came by the deadline: it shows in History once it settles.
   | { kind: "still-going" }
+  // No read ever showed it at work, nor said for good that nothing started
+  // (offline, or nothing could say): whether it went through is not known.
+  | { kind: "unchecked" }
+  // No answer, but the rows it reserved: what History has.
+  | { kind: "rows"; rows: PressRows }
   | { kind: "error"; error: string }
   // The page went: the follow stops quietly.
   | { kind: "left" };
@@ -83,40 +119,92 @@ export function newPressId(): string {
 /**
  * Reads a lost press back every PRESS_POLL_MS until its answer is there,
  * or until the platform's ceiling plus PRESS_FOLLOW_GRACE_MS from the send,
- * when the request has surely ended. A read that fails (`null`) is asked
- * again and never taken as "nothing started": that verdict would invite a
- * second charge. Only the last read, past the deadline, decides between
- * never-started and still-going.
+ * when the request has surely ended. A read that fails (`null`, or none by
+ * PRESS_READ_TIMEOUT_MS) is asked again and never taken as "nothing
+ * started": that verdict would invite a second charge. "Nothing started" is
+ * said on a read the server calls final, on PRESS_NONE_READS such reads in a
+ * row PRESS_NONE_AFTER_MS after the send, or on the last read. Rows the
+ * server calls final end the follow with what History has; rows that may
+ * still change are kept, and said at the deadline. A follow on which no read
+ * ever showed the press at work says so (unchecked), never "it's still
+ * going": it does not know. `onRunning` is told the first time a read shows
+ * the press at work, so the page can stop saying "checking" and say "still
+ * rendering".
  */
 export async function followPress<T>(opts: {
   sentAt: number;
   read: () => Promise<PressRead<T> | null>;
   alive: () => boolean;
+  onRunning?: () => void;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 }): Promise<PressFollowed<T>> {
   const now = opts.now ?? Date.now;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const deadline = opts.sentAt + SET_REQUEST_CEILING_MS + PRESS_FOLLOW_GRACE_MS;
+  let seenRunning = false;
+  let noneInARow = 0;
+  let rows: PressRows | null = null;
   for (;;) {
     if (!opts.alive()) return { kind: "left" };
     const last = now() >= deadline;
-    // null = a read that failed, asked again.
-    const r = await opts.read();
+    // null = a read that failed, or hung past its time: asked again.
+    const r = await readWithin(opts.read);
     if (!opts.alive()) return { kind: "left" };
     if (r?.state === "done") return { kind: "landed", result: r.result };
     if (r?.state === "error") return { kind: "error", error: r.error };
-    if (last) return r?.state === "none" ? { kind: "never-started" } : { kind: "still-going" };
+    if (r?.state === "rows") {
+      rows = r.rows;
+      if (r.final) return { kind: "rows", rows };
+    }
+    if ((r?.state === "running" || r?.state === "rows") && !seenRunning) {
+      seenRunning = true;
+      opts.onRunning?.();
+    }
+    if (r?.state === "none") {
+      noneInARow += 1;
+      if (r.final || last || (noneInARow >= PRESS_NONE_READS && now() - opts.sentAt >= PRESS_NONE_AFTER_MS)) return { kind: "never-started" };
+    } else if (r !== null) {
+      noneInARow = 0;
+    }
+    if (last) {
+      if (rows) return { kind: "rows", rows };
+      return seenRunning ? { kind: "still-going" } : { kind: "unchecked" };
+    }
     await sleep(Math.min(PRESS_POLL_MS, Math.max(0, deadline - now())));
   }
 }
 
 /**
+ * One read, or null when it fails or has not come back within
+ * PRESS_READ_TIMEOUT_MS: a read hung on a half-dead connection would
+ * otherwise hold the press past its deadline (review, 2026-09-25).
+ */
+function readWithin<T>(read: () => Promise<PressRead<T> | null>): Promise<PressRead<T> | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), PRESS_READ_TIMEOUT_MS);
+    const done = (r: PressRead<T> | null) => {
+      clearTimeout(timer);
+      resolve(r);
+    };
+    try {
+      read().then(done, () => done(null));
+    } catch {
+      done(null);
+    }
+  });
+}
+
+/** What a follow says when no answer comes: nothing started, still going, not known, or in History. */
+export type LostWords = { neverStarted: string; stillGoing: string; unchecked: string; inHistory: string };
+
+/**
  * A follow as the answer the press would have had: what landed, or a
  * sentence in its place. "left" is an empty sentence: the page has gone,
- * and nothing is said.
+ * and nothing is said. Rows with no answer say History; a caller that can
+ * keep them (a film, a take) reads the follow itself first.
  */
-export function lostAnswer<T>(followed: PressFollowed<T>, words: { neverStarted: string; stillGoing: string }): T | { error: string } {
+export function lostAnswer<T>(followed: PressFollowed<T>, words: LostWords): T | { error: string } {
   switch (followed.kind) {
     case "landed":
       return followed.result;
@@ -124,6 +212,10 @@ export function lostAnswer<T>(followed: PressFollowed<T>, words: { neverStarted:
       return { error: words.neverStarted };
     case "still-going":
       return { error: words.stillGoing };
+    case "unchecked":
+      return { error: words.unchecked };
+    case "rows":
+      return { error: words.inHistory };
     case "error":
       return { error: followed.error };
     case "left":
@@ -137,14 +229,15 @@ export function stillGoingAnswer(error: string | null | undefined): boolean {
 }
 
 /**
- * Whether a throw came so long after the send that the platform cut the
- * request at its ceiling. stale-deploy.ts reads a function cut off there as
- * "an unexpected response", the same as a deploy, but it is a render
- * stopped mid-way, which a reload would lose: it is followed instead. A
- * stale action answers at once, so the two cannot be confused.
+ * Whether a throw came too long after the send to be a deploy. A stale
+ * action is refused at once; stale-deploy.ts also reads a function that
+ * crashed, or that the platform cut at its ceiling, as "an unexpected
+ * response", but that is a render stopped mid-way after it may have been
+ * charged, which a reload would lose: it is followed instead
+ * (PRESS_STALE_WITHIN_MS).
  */
-export function cutOff(sentAt: number | null, now: number): boolean {
-  return sentAt !== null && now - sentAt >= PRESS_CUT_OFF_AFTER_MS;
+export function lateThrow(sentAt: number | null, now: number): boolean {
+  return sentAt !== null && now - sentAt >= PRESS_STALE_WITHIN_MS;
 }
 
 type Answered = Extract<SetPressState, { state: "answered" }>;
@@ -152,16 +245,27 @@ type Answered = Extract<SetPressState, { state: "answered" }>;
 export type PressAnswerOf<K extends Answered["kind"]> = Extract<Answered, { kind: K }>["answer"];
 
 /**
- * readSetPress's answer as one read of the follow (server-money's poll,
- * press-actions.ts, 2026-09-25):
+ * Whether what a press reserved is settled, though nothing says its request
+ * is over (the ledger's SQL not run yet): a shot's still has finished, or a
+ * take has reserved its clip (all that is left of its request is writing it
+ * down), or its end still failed (a take stops there).
+ */
+function rowsSettled(rows: PressRows, kind: Answered["kind"]): boolean {
+  if (kind === "shot") return rows.still !== null && rows.still.status !== "generating";
+  return rows.take !== null || rows.still?.status === "failed";
+}
+
+/**
+ * readSetPress's answer as one read of the follow (press-actions.ts,
+ * 2026-09-25):
  * - answered → done, with the press's own answer, `{ error }` refusals
  *   included, handled as that return would have been;
- * - running → running; unanswered (the request ended without an answer,
- *   leaving rows that may still land) → running too, so the last read says
- *   "History", never "nothing was charged";
- * - not-found → none: nothing under the press was reserved or charged;
- * - unknown (the ledger unreadable, or its SQL not run yet) → a failed
- *   read, asked again: it is never taken as "nothing started".
+ * - running → running;
+ * - unanswered → the rows it reserved, final when its request is over or
+ *   what it reserved is settled (rowsSettled): never "nothing was charged";
+ * - not-found → none, final when its request is over;
+ * - unknown (neither the ledger nor History could say) → a failed read,
+ *   asked again: it is never taken as "nothing started".
  */
 export function pressReadOf<K extends Answered["kind"]>(r: SetPressState, kind: K): PressRead<PressAnswerOf<K>> | null {
   if (r.error !== null) return { state: "error", error: r.error };
@@ -169,10 +273,13 @@ export function pressReadOf<K extends Answered["kind"]>(r: SetPressState, kind: 
     case "answered":
       return r.kind === kind ? { state: "done", result: r.answer as PressAnswerOf<K> } : null;
     case "running":
-    case "unanswered":
       return { state: "running" };
+    case "unanswered": {
+      const rows = { still: r.still, take: r.take };
+      return { state: "rows", rows, final: r.ended || rowsSettled(rows, kind) };
+    }
     case "not-found":
-      return { state: "none" };
+      return { state: "none", final: r.ended };
     default:
       return null;
   }

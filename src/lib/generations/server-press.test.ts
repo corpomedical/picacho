@@ -35,7 +35,7 @@ describe("runGeneration reads it, and nothing a request carries (generations/act
     expect(run).toContain("deadlineAt: sendStartedAt + OPENING_FRAME_DEADLINE_MS");
   });
 
-  it("skips the cooldown only for a Helios take, on both of its allowance checks", () => {
+  it("skips the cooldown only for a Helios press that asks (a film's beats), on both of its allowance checks", () => {
     const cooldown = run.indexOf("const cooldown = serverPress()?.skipCooldown ? { skipCooldown: true } : undefined;");
     expect(cooldown).toBeGreaterThan(-1);
     expect(cooldown).toBeLessThan(run.indexOf("checkGenerationAllowance("));
@@ -66,11 +66,12 @@ describe("the Helios actions set it around their own work (sets/actions.ts)", ()
     expect(bodyAfter("export async function takeInSet(").startsWith("const startedAt = Date.now();")).toBe(true);
   });
 
-  it("keeps a still's cooldown and lifts a take's", () => {
+  it("keeps a still's and a single take's cooldown, and lifts only a film beat's", () => {
     const shoot = sets.slice(sets.indexOf("export async function shootInSet("), sets.indexOf("async function shootStill("));
     const take = sets.slice(sets.indexOf("export async function takeInSet("), sets.indexOf("async function takeWork("));
     expect(shoot).toContain("withServerPress({ startedAt, skipCooldown: false }");
-    expect(take).toContain("withServerPress({ startedAt, skipCooldown: true }");
+    // ctx.render is set only for a film beat of a named Render (review, 2026-09-25).
+    expect(take).toContain("withServerPress({ startedAt, skipCooldown: ctx.render !== null }");
     expect(sets.split("withServerPress(").length - 1).toBe(2);
   });
 });

@@ -51,7 +51,7 @@ export function isSetTakeEngine(v: unknown): v is SetTakeEngine {
  * stills make the engine invent the sides, Scope and Flat the top and
  * bottom. The page plays those last three inside their band (set-view.tsx
  * takeBand); the square it does not, which is why a new set frames in 16:9
- * (rig.ts DEFAULT_SET_RIG). A Helios take's words never turn this ratio
+ * (rig.ts NEW_SET_RIG). A Helios take's words never turn this ratio
  * (generations/actions.ts heliosTake).
  */
 export function takeAspectRatio(format: RigFormat): VideoAspectRatio {
@@ -80,7 +80,7 @@ export const SET_TAKE_FIXED_SENTENCES: readonly string[] = [TAKE_ONE_SHOT, TAKE_
  * It reaches the video model as written (takeInSet sets prompt_is_final,
  * 2026-09-21): the drafter rewrote it into vivid sentences of its own and
  * lost the move. The gates still run, brand rules included — on the
- * person's words only (set_take, take-scaffold.ts, 2026-09-25).
+ * person's words only (pipeline.ts setTake, take-scaffold.ts, 2026-09-25).
  */
 export function buildSetTakePrompt(
   direction: string,

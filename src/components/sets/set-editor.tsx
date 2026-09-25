@@ -8,6 +8,7 @@ import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { formatMsg } from "@/lib/i18n/format";
 import { clearSetEdit, editSetWithAstra, readAstraEdit, saveSetEdit } from "@/lib/sets/editor-actions";
 import { followAstraEdit, type FollowedEdit } from "@/lib/sets/astra-follow";
+import { newPressId } from "@/lib/sets/press-follow";
 import { SET_EDIT_TOO_BIG, SET_SAVE_FAILED } from "@/lib/sets/messages";
 import { SET_EDIT_MAX_SPEC_CHARS } from "@/lib/sets/set-config";
 import { dropUnsaved, keepUnsaved, savedEditKey, takeUnsaved } from "@/lib/sets/unsaved";
@@ -877,7 +878,10 @@ export function SetEditor({
     }
     // One id per press (astra-press.ts, 2026-09-25): a browser's silent
     // resend of this call is answered at once and never runs Astra twice.
-    const pressId = crypto.randomUUID();
+    // newPressId, never crypto.randomUUID alone: that throws outside a
+    // secure context or on an old WebView, with the editor already held
+    // (review, 2026-09-25).
+    const pressId = newPressId();
     const before = specRef.current;
     let r: Awaited<ReturnType<typeof editSetWithAstra>> | null = null;
     let followed: FollowedEdit | null = null;

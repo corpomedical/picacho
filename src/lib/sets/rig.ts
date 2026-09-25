@@ -636,14 +636,13 @@ export type SetRig = {
 export const DEFAULT_SET_RIG: SetRig = {
   genre: null,
   era: null,
-  // 16:9 since 2026-09-25, the square before. Neither take engine renders a
-  // square (Gemini Omni "16:9" | "9:16"; Veo "auto" | "16:9" | "9:16", read
-  // at source that day), so a square still made every take invent about
-  // 44% of its width, each beat its own (the 2026-09-21 film audit). The
-  // 16:9 still is the clip's own shape, and the wide render is also the
-  // cheaper one (THE MONEY above: $0.0619 against $0.0735). A saved rig
-  // keeps its frame, and every frame stays pickable.
-  format: "wide",
+  // What a set with no saved rig was framed in, and still is: the square.
+  // New sets are written with NEW_SET_RIG (16:9) when they are made, so a
+  // set that already has stills and a film keeps the frame they were shot
+  // in, and its film's context key with it (review, 2026-09-25: flipping
+  // this default re-keyed every such film, and its next Render shot and
+  // charged every beat again).
+  format: "square",
   stock: null,
   lens: null,
   stop: null,
@@ -660,6 +659,18 @@ export const DEFAULT_SET_RIG: SetRig = {
   time: null,
 };
 
+/**
+ * The rig a NEW set is made with (actions.ts reserveBuildRow and
+ * recce-actions.ts reserveRecceRow write it into the row, 2026-09-25): 16:9.
+ * Neither take engine renders a square (Gemini Omni "16:9" | "9:16"; Veo
+ * "auto" | "16:9" | "9:16", read at source that day), so a square still made
+ * every take invent about 44% of its width, each beat its own (the
+ * 2026-09-21 film audit). The 16:9 still is the clip's own shape, and the
+ * wide render is also the cheaper one (THE MONEY above: $0.0619 against
+ * $0.0735). Every frame stays pickable.
+ */
+export const NEW_SET_RIG: SetRig = { ...DEFAULT_SET_RIG, format: "wide" };
+
 const ids = <T extends { id: string }>(list: readonly T[]) => list.map((x) => x.id);
 const oneOf = <T extends string>(v: unknown, list: readonly T[]): T | null =>
   typeof v === "string" && (list as readonly string[]).includes(v) ? (v as T) : null;
@@ -669,8 +680,9 @@ const wrapDeg = (d: number) => ((d % 360) + 360) % 360;
 /**
  * Any stored or sent rig through one door, the way normaliseSetFilm is the
  * door for films: unknown ids fall back to off, the format to the default
- * rig's 16:9 (2026-09-25), angles are wrapped and clamped, and nothing
- * throws.
+ * rig's square (a set with no rig saved, or one saved before formats; a new
+ * set is written with NEW_SET_RIG's 16:9), angles are wrapped and clamped,
+ * and nothing throws.
  */
 export function normaliseSetRig(v: unknown): SetRig {
   if (!v || typeof v !== "object" || Array.isArray(v)) return { ...DEFAULT_SET_RIG };

@@ -19,7 +19,7 @@ type Filters = [string, string, unknown][];
 type LedgerRow = { kind: string; state: string; result: unknown; created_at: string } | null;
 let access: { error: string } | { error: null; supabase: unknown; userId: string; plan: string; isAdmin: boolean };
 let ledger: { row: LedgerRow; error: { code?: string; message: string } | null };
-let generations: { rows: { id: string; status: string }[]; error: { message: string } | null };
+let generations: { rows: { id: string; status: string; result_url?: string | null; poster_url?: string | null }[]; error: { message: string } | null };
 let ledgerReads: Filters[];
 let generationReads: Filters[];
 let writes: string[];
@@ -59,6 +59,11 @@ vi.mock("@/lib/sets/access", () => ({
   UUID_RE: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
 }));
 vi.mock("@/lib/sets/press", async () => await import("./press"));
+// Signing stood in for: a stored path becomes a media url, and a thumbnail says its width.
+vi.mock("@/lib/media/url", () => ({
+  toMediaUrl: (stored: string | null | undefined) => (stored ? `/api/media/${stored}` : null),
+  thumbUrl: (url: string | null | undefined, width = 640) => (url ? `${url}?w=${width}` : null),
+}));
 vi.mock("@/lib/sets/messages", async () => await import("./messages"));
 
 const { readSetPress } = await import("./press-actions");
@@ -114,35 +119,53 @@ describe("readSetPress", () => {
     expect(generationReads).toEqual([]);
   });
 
-  it("says what a press the platform stopped left behind", async () => {
+  it("says what a press the platform stopped left behind, and that its request is over", async () => {
     ledger.row = { kind: "take", state: "running", result: null, created_at: ago(400_000) };
-    generations.rows = [{ id: PRESS, status: "succeeded" }];
+    generations.rows = [{ id: PRESS, status: "succeeded", result_url: "u/still.png" }];
     expect(await readSetPress(SET, { pressId: PRESS })).toEqual({
       error: null,
       state: "unanswered",
-      still: { id: PRESS, status: "succeeded" },
+      // Signed as the page's loader signs a shot (data.ts): the still at the strip's size.
+      still: { id: PRESS, status: "succeeded", resultUrl: "/api/media/u/still.png?w=640", viewUrl: "/api/media/u/still.png?w=1600", posterUrl: null },
       take: null,
+      ended: true,
     });
   });
 
-  it("says not-found only when nothing was started under the press", async () => {
-    expect(await readSetPress(SET, { pressId: PRESS })).toEqual({ error: null, state: "not-found" });
+  it("says a press that threw is over at once, with what it left or nothing (review, 2026-09-25)", async () => {
+    // press.ts runPress marks a press whose work threw as done, with no answer.
+    ledger.row = { kind: "shot", state: "done", result: null, created_at: ago(5_000) };
+    expect(await readSetPress(SET, { pressId: PRESS })).toEqual({ error: null, state: "not-found", ended: true });
+    generations.rows = [{ id: PRESS, status: "failed" }];
+    expect(await readSetPress(SET, { pressId: PRESS })).toMatchObject({ state: "unanswered", still: { id: PRESS, status: "failed" }, take: null, ended: true });
   });
 
-  it("finds the rows of a press that never claimed a ledger row", async () => {
+  it("says not-found only when nothing was started under the press, and not over while it may still arrive", async () => {
+    expect(await readSetPress(SET, { pressId: PRESS })).toEqual({ error: null, state: "not-found", ended: false });
+  });
+
+  it("finds the rows of a press that never claimed a ledger row, and never calls it over", async () => {
     generations.rows = [
-      { id: pressClipId(PRESS), status: "generating" },
-      { id: PRESS, status: "succeeded" },
+      { id: pressClipId(PRESS), status: "generating", result_url: null, poster_url: null },
+      { id: PRESS, status: "succeeded", result_url: "u/still.png" },
     ];
     expect(await readSetPress(SET, { pressId: PRESS })).toEqual({
       error: null,
       state: "unanswered",
-      still: { id: PRESS, status: "succeeded" },
-      take: { id: pressClipId(PRESS), status: "generating" },
+      still: { id: PRESS, status: "succeeded", resultUrl: "/api/media/u/still.png?w=640", viewUrl: "/api/media/u/still.png?w=1600", posterUrl: null },
+      take: { id: pressClipId(PRESS), status: "generating", resultUrl: null, viewUrl: null, posterUrl: null },
+      ended: false,
     });
   });
 
-  it("says unknown when the ledger isn't there, or the rows can't be read", async () => {
+  it("reads History even when the ledger isn't there (its SQL not run yet)", async () => {
+    ledger.error = { code: "PGRST205", message: "Could not find the table in the schema cache" };
+    generations.rows = [{ id: PRESS, status: "succeeded", result_url: "u/still.png" }];
+    expect(await readSetPress(SET, { pressId: PRESS })).toMatchObject({ state: "unanswered", still: { id: PRESS, status: "succeeded" }, ended: false });
+    expect(generationReads).toHaveLength(1);
+  });
+
+  it("says unknown when neither can say: no ledger and no rows, or the rows can't be read", async () => {
     ledger.error = { code: "PGRST205", message: "Could not find the table in the schema cache" };
     expect(await readSetPress(SET, { pressId: PRESS })).toEqual({ error: null, state: "unknown" });
     ledger.error = null;

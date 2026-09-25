@@ -92,18 +92,22 @@ describe("the wiring, read as source", () => {
   const generations = read("../generations/actions.ts");
   const pipeline = read("../generations/pipeline.ts");
 
-  it("the take's clip marks itself, next to its final prompt and before it is sent", () => {
-    const mark = take.indexOf('fd.set("set_take", "1");');
-    expect(mark).toBeGreaterThan(take.indexOf('fd.set("prompt_is_final", "1");'));
-    expect(mark).toBeLessThan(take.indexOf("withServerBuiltFrames("));
-    // A still never does: it has set_shot.
+  it("the take's clip is known by the frames' mark in server memory, never a form field (review, 2026-09-25)", () => {
+    // No request can claim to be a take: the only mark is the one takeWork
+    // sets around its own runGeneration call (server-built.ts).
+    expect(take).not.toContain("set_take");
     expect(still).not.toContain("set_take");
+    expect(generations).not.toContain("set_take");
+    expect(take).toContain("withServerBuiltFrames(() => runGeneration(fd))");
+    // A still keeps its own form mark, set_shot.
     expect(still).toContain('fd.set("set_shot", "1");');
   });
 
-  it("runGeneration reads it for video only, and hands it to the pipeline", () => {
-    expect(generations).toContain('const isSetTake = contentType === "video" && formData.get("set_take") === "1";');
-    expect(generations).toContain("setTake: isSetTake,");
+  it("runGeneration hands that mark, for video only, to the pipeline", () => {
+    expect(generations).toContain('const heliosTake = contentType === "video" && serverBuiltFrames();');
+    expect(generations).toContain("setTake: heliosTake,");
+    // Declared before the pipeline is called.
+    expect(generations.indexOf("const heliosTake =")).toBeLessThan(generations.indexOf("setTake: heliosTake,"));
   });
 
   it("the pipeline's brand check reads the take through its own strip", () => {

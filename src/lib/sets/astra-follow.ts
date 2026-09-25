@@ -14,8 +14,8 @@
 // until it has ended, and shows what the server holds:
 // - saved: the set as saved, with how many pieces changed;
 // - unsaved: nothing changed (and nothing was counted);
-// - none, seen twice: nothing reached the server — the ONE case that says
-//   try again;
+// - none, seen twice and for SET_EDIT_NONE_AFTER_MS: nothing reached the
+//   server — the ONE case that says try again;
 // - checks failing past SET_EDIT_FOLLOW_CAP_MS: reload to see it.
 //
 // Pure and client-safe, relative imports only: the test drives it with a
@@ -47,8 +47,15 @@ export type FollowedEdit =
   // A deploy left the tab behind: the reload is on its way, and says so itself.
   | { kind: "left" };
 
-/** How many reads in a row must find no press before the page says nothing reached the server: one grace read for a delivery that hasn't claimed yet. */
+/** How many reads must find no press before the page says nothing reached the server: one grace read for a delivery that hasn't claimed yet. */
 const NONE_READS = 2;
+/**
+ * And for how long from the start of the follow (review, 2026-09-25): two
+ * reads 4 s apart were too quick for a delivery slow to claim (a cold start,
+ * a slow sign-in check, a rebuild listing its photos), and "try again" then
+ * ran and billed a second Astra job on top of the first.
+ */
+export const SET_EDIT_NONE_AFTER_MS = 24_000;
 
 export async function followAstraEdit(
   read: () => Promise<AstraEditRead | { thrown: unknown }>,
@@ -82,7 +89,7 @@ export async function followAstraEdit(
       if (r.press === "lost") return countSpecChanges(opts.before, r.spec) > 0 ? saved() : { kind: "unsaved", error: SET_EDIT_NOT_SAVED, editsLeft: r.editsLeft };
       if (r.press === "none") {
         noneSeen += 1;
-        if (noneSeen >= NONE_READS) return { kind: "none" };
+        if (noneSeen >= NONE_READS && now() - start >= SET_EDIT_NONE_AFTER_MS) return { kind: "none" };
       }
       // running, unread: read again.
     }

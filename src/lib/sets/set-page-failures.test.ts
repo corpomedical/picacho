@@ -140,7 +140,7 @@ describe("the set page", () => {
   // server.
   it("reads back an Astra change that threw, instead of saying try again", () => {
     const edit = between(view, "async function editSet(message: string) {", "\n  }\n");
-    expect(edit).toContain("const pressId = crypto.randomUUID();");
+    expect(edit).toContain("const pressId = newPressId();");
     expect(edit).toMatch(/try \{\s*res = await editSetWithAstra\(setId, message, pressId\);\s*\} catch \(err\) \{[\s\S]*?if \(leftBehind\(err\)\) return;\s*\}/);
     const follow = edit.indexOf(
       "followed = await followAstraEdit(() => readAstraEdit(setId, pressId).catch((thrown: unknown) => ({ thrown })), { before, stop: leftBehind });",
@@ -158,7 +158,7 @@ describe("the set page", () => {
 
   it("reads back a rebuild that threw the same way, and finds the thing on the saved set", () => {
     const rebuild = between(view, "async function rebuildThing(key: string) {", "\n  }\n");
-    expect(rebuild).toContain("const pressId = crypto.randomUUID();");
+    expect(rebuild).toContain("const pressId = newPressId();");
     expect(rebuild).toMatch(/try \{\s*res = await rebuildThingFromPhotos\(setId, key, pressId\);\s*\} catch \(err\) \{[\s\S]*?if \(leftBehind\(err\)\) return;\s*\}/);
     const follow = rebuild.indexOf(
       "followed = await followAstraEdit(() => readAstraEdit(setId, pressId).catch((thrown: unknown) => ({ thrown })), { before, stop: leftBehind });",

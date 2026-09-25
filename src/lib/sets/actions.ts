@@ -50,6 +50,7 @@ import {
 } from "@/lib/sets/take";
 import { lookStoragePath } from "@/lib/sets/look";
 import {
+  NEW_SET_RIG,
   RIG_FORMATS,
   formatFrame,
   bandSide,
@@ -120,6 +121,8 @@ import {
   SET_TAKE_OFF_FACE_REFUNDED,
   SET_TAKE_OTHER_PERSON,
   SET_TAKE_START_OTHER_PERSON,
+  SET_TAKE_END_OTHER_PERSON,
+  SET_TAKE_RETRY_END_OTHER_PERSON,
   SET_TAKE_TOO_FAST,
   SET_TAKE_ELEMENT_DROPPED,
   SET_LIKENESS_NEEDED,
@@ -217,7 +220,7 @@ async function reserveBuildRow(
 ): Promise<Reserved> {
   const { data: row, error: insertError } = await admin
     .from("location_sets")
-    .insert({ ...extra, user_id: access.userId, brief: RESERVED, status: "building", attempts: 0 })
+    .insert({ ...extra, user_id: access.userId, brief: RESERVED, status: "building", attempts: 0, rig: NEW_SET_RIG })
     .select("id, created_at")
     .single();
   if (insertError || !row) {
@@ -1267,10 +1270,12 @@ async function finishedStillUrl(
  * the first's claim row before anything is counted, drawn, uploaded or
  * charged, and answers with the first's answer. The end still's row id and
  * the clip's are made from the press id, so even without the ledger the
- * reservation refuses a second charge. Its renders skip runGeneration's
- * 3-second cooldown and count the request's 300 s from this first line
- * (server-press.ts): a take's end still and clip, and a film's beats, are
- * one press's own renders, bounded by the take limiter.
+ * reservation refuses a second charge. Its renders count the request's
+ * 300 s from this first line (server-press.ts). A film's beats also skip
+ * runGeneration's 3-second cooldown: the next beat follows the last one's
+ * clip within seconds, one Render bounded by the take limiter. A single
+ * take or a clip rendered again keeps it, as any send does (review,
+ * 2026-09-25): its clip comes a whole still's render after its end still.
  */
 export async function takeInSet(setId: string, input: Parameters<typeof takeWork>[3] & { pressId?: string; filmBeat?: number }): Promise<TakeResult> {
   const startedAt = Date.now();
@@ -1289,8 +1294,13 @@ export async function takeInSet(setId: string, input: Parameters<typeof takeWork
   // A film's beats share their Render's id; a beat that does not say which it is is served untracked, never taken for another beat's repeat.
   const ledgerId = pressId === null || (film && beat === null) ? null : pressLedgerId(pressId, beat);
   const ctx: TakeCtx = { startedAt, stillId: ledgerId, clipId: ledgerId ? pressClipId(ledgerId) : null, render: film && pressId !== null && beat !== null ? { pressId, beat } : null };
-  return runPress(createAdminClient(), { id: ledgerId, userId: access.userId, setId, kind: "take" }, { deadlineAt: startedAt + REPEAT_FOLLOW_DEADLINE_MS }, () =>
-    withServerPress({ startedAt, skipCooldown: true }, () => takeWork(access, setId, owned, input, ctx)),
+  return runPress(createAdminClient(), { id: ledgerId, userId: access.userId, setId, kind: "take" }, { deadlineAt: startedAt + REPEAT_FOLLOW_DEADLINE_MS }, (claim) =>
+    withServerPress({ startedAt, skipCooldown: ctx.render !== null }, () =>
+      // A Render is counted once only when this delivery holds its claim
+      // (review, 2026-09-25): untracked (the ledger's SQL not run yet, or the
+      // claim failed), every beat is counted by the limiters, as before.
+      takeWork(access, setId, owned, input, claim.kind === "claimed" ? ctx : { ...ctx, render: null }),
+    ),
   );
 }
 
@@ -1363,9 +1373,16 @@ async function takeWork(
   if (!UUID_RE.test(characterId)) return { error: SET_PICK_CHARACTER };
   const reuseId = typeof input?.endGenerationId === "string" && input.endGenerationId.length > 0 ? input.endGenerationId : null;
   const framesOf = reuseId && UUID_RE.test(reuseId) ? [startId, reuseId] : [startId];
-  const { data: framePeople } = await access.supabase.from("generations").select("character_profile_id").in("id", framesOf).eq("user_id", userId);
-  const otherPerson = (framePeople ?? []).some((g) => typeof g.character_profile_id === "string" && g.character_profile_id.toLowerCase() !== characterId.toLowerCase());
-  if (otherPerson) return { error: input.film === true ? SET_TAKE_OTHER_PERSON : SET_TAKE_START_OTHER_PERSON };
+  const { data: framePeople } = await access.supabase.from("generations").select("id, character_profile_id").in("id", framesOf).eq("user_id", userId);
+  const otherIn = (frameId: string) =>
+    (framePeople ?? []).some(
+      (g) => g.id === frameId && typeof g.character_profile_id === "string" && g.character_profile_id.toLowerCase() !== characterId.toLowerCase(),
+    );
+  if (otherIn(startId)) return { error: input.film === true ? SET_TAKE_OTHER_PERSON : SET_TAKE_START_OTHER_PERSON };
+  // The kept end frame is the one of someone else (review, 2026-09-25): said
+  // as the end's, never as "the film opens on", and a film's page drops that
+  // end so its next Render shoots the beat whole.
+  if (reuseId && otherIn(reuseId)) return { error: input.film === true ? SET_TAKE_END_OTHER_PERSON : SET_TAKE_RETRY_END_OTHER_PERSON };
   // Who is in the character's photos (R1.12): the end still's shot asks
   // too, but a take on a kept end frame never shoots one.
   {
@@ -1401,7 +1418,7 @@ async function takeWork(
   // id is good for at most FILM_MAX_BEATS beats, and a new one costs a slot.
   // The limiter cannot give a slot back: a render the prompt gate or the
   // person's own brand rules refuse after this point still counts.
-  const renderCounted = ctx.render ? await renderPaidBefore(access.supabase, userId, ctx.render) : false;
+  const renderCounted = ctx.render ? await renderPaidBefore(access.supabase, userId, { ...ctx.render, setId }) : false;
   const takeBrake = async (): Promise<string | null> => {
     if (renderCounted) return null;
     return (await rateLimited(userId, "set-take", 60 * 10, SET_TAKES_PER_10_MIN)) ? SET_TAKE_TOO_FAST : null;
@@ -1570,7 +1587,8 @@ async function takeWork(
   // out, as a still's are (pipeline.ts setTake, take-scaffold.ts,
   // 2026-09-25): the operator's 16 rules were reading "One continuous shot,
   // no cuts…" as his words. The platform's gates read it whole.
-  fd.set("set_take", "1");
+  // runGeneration knows a take by the frames' mark in server memory
+  // (withServerBuiltFrames below), never by a form field.
   // The still's own shape, the one ratio the frames already hold: a tall
   // frame renders a tall clip, every other rig format 16:9, and the page
   // plays it inside its frame lines (shot-rig.ts keeps the format). Sent

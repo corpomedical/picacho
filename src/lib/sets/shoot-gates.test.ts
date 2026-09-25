@@ -60,7 +60,8 @@ describe("what the set page spends", () => {
   it("the bar's button does what the frame card's does, and says what it charges", () => {
     const bar = view.slice(view.indexOf("        primary={"), view.indexOf("        }\n      >"));
     expect(bar).toContain("onClick={() => void (takeStart ? take() : shoot())}");
-    expect(bar).toContain("{takeStart ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel}");
+    // While a take is out it says what it is doing, as Shoot does (review, 2026-09-25).
+    expect(bar).toContain("{takeStart && !shooting ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel}");
     expect(bar).toContain("disabled={!canShootNow}");
     // The palette takes the take too, rather than shooting a still over it.
     expect(view).toContain("shoot: () => void (takeStart ? take() : shoot()),");

@@ -636,11 +636,6 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // it changes what the scene role MEANS — pixels riding a final prompt,
   // not an image described into text (see placeImageUrl below).
   const isSetShot = formData.get("set_shot") === "1";
-  // A Helios take's clip (sets/actions.ts takeWork, 2026-09-25): like
-  // set_shot, it only lets the sender's OWN brand rules read the take without
-  // Picacho's fixed take sentences (pipeline.ts setTake). It never touches
-  // the platform's gates, so a browser that sets it gains nothing.
-  const isSetTake = contentType === "video" && formData.get("set_take") === "1";
   // A Helios rig format (sets/rig.ts, 2026-09-15): a set shot names its
   // format, and the server works out the render and the cut from the name
   // alone. GPT Image renders the format's 3:2 (or 2:3) shape; the picture is
@@ -1223,7 +1218,8 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // field, so no request can claim to be one. Its clip keeps its stills'
   // shape whatever its words say (below), and is stored without the
   // engine's own voice where the engine cannot be switched off (the voice
-  // payload further down, 2026-09-25).
+  // payload further down, 2026-09-25), and its brand rules read it without
+  // Picacho's fixed take sentences (pipeline.ts setTake).
   const heliosTake = contentType === "video" && serverBuiltFrames();
 
   // Aspect ratio — resolution order (real incident, 2026-08-07: a user typed
@@ -1457,11 +1453,11 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   });
   const creditWeight = sendQuote.totalCredits;
 
-  // A Helios take's renders skip the 3-second cooldown (server-press.ts,
-  // 2026-09-25): its end still, its clip and a film's next beat are one
-  // press's own renders, seconds apart by design, bounded by the take
-  // limiter and asked for whole first. Admins were already exempt. Read from
-  // server memory, never from a form field.
+  // A Helios film's beats skip the 3-second cooldown (server-press.ts,
+  // 2026-09-25): a Render's next beat follows the last one's clip within
+  // seconds by design, bounded by the take limiter and asked for whole
+  // first. Admins were already exempt. Read from server memory, never from a
+  // form field.
   const cooldown = serverPress()?.skipCooldown ? { skipCooldown: true } : undefined;
   let allowance = await checkGenerationAllowance(supabase, userData.user.id, creditWeight, cooldown);
   // A first delivery that reserved after the check at the top trips the
@@ -2347,8 +2343,11 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         // brand rules are read through them (pipeline.ts, set-shot-prompt.ts).
         setShot: isSetShot,
         // A Helios take's clip, read the same way through its own fixed
-        // sentences (sets/take-scaffold.ts, 2026-09-25).
-        setTake: isSetTake,
+        // sentences (sets/take-scaffold.ts, 2026-09-25). Known by the
+        // frames' mark in server memory (heliosTake), never a form field: it
+        // only lets the sender's OWN brand rules skip Picacho's sentences,
+        // but no request may claim to be a take (review, 2026-09-25).
+        setTake: heliosTake,
           policyWarningAcknowledged,
           brandRules: await loadBrandRules(supabase, userData.user!.id),
           persistImage: (base64) => storeSetImage(userData.user!.id, base64),
