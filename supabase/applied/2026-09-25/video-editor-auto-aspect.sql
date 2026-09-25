@@ -4,7 +4,9 @@
 -- a YouTube cut 16:9 — instead of the page forcing one; the operator's first
 -- real edit asked for shorts and was forced into one 16:9 reel.
 --
--- RUN THIS BEFORE PUSHING THE CODE. Idempotent: a second paste is harmless.
+-- APPLIED 2026-09-25 (the operator ran it with the v2 push: "Done"; the
+-- column's default reads 'auto' in the live schema). Idempotent: a second
+-- paste is harmless.
 
 alter table public.video_edits drop constraint if exists video_edits_aspect_check;
 alter table public.video_edits add constraint video_edits_aspect_check
