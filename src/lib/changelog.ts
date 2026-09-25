@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.108.0",
+    build: 147,
+    date: "2026-09-25",
+    title: "The Producer's lamp has three looks: Two fireflies, Eclipse, and the original, perfected",
+    items: [
+      "The lamp in the corner is now Two fireflies: two small warm lights with soft trails that dance round each other. They sit side by side while it listens, swirl faster while it talks, and chase round a circle while it thinks.",
+      "Settings > Preferences > Your assistant has a new Its look row. Pick Two fireflies, Eclipse (a golden corona round a dark moon) or The original, perfected (the warm bulb, lit from inside). Each choice shows the real lamp, alive, and talks when you point at it or pick it. The choice is saved to your account, so it follows you to every device.",
+      "The look is the same wherever the Producer shows: the lamp, its tab on any edge of the screen, the header of its sheet and the voice line. The ring that follows the sound while you talk stays.",
+      "Until supabase/pending/producer-look.sql runs, every lamp shows Two fireflies, and choosing another look says it didn't save.",
+    ],
+  },
+  {
     version: "1.107.0",
     build: 146,
     date: "2026-09-25",
