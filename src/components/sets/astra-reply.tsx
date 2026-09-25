@@ -121,15 +121,25 @@ export function replySections(lines: readonly ReplyLine[]): ReplySection[] {
   return out;
 }
 
+/** What an earlier turn that did nothing keeps: its answers in words, so a question is never left unanswered in the thread. */
+const KEPT_SAID: ReadonlySet<ReplyLineKind> = new Set(["answer", "idea", "notYet", "notYetMore"]);
+
 /**
  * The lines a turn's reply draws. An earlier turn keeps only what it did
- * (its Done, Undone or Here's what I'd do). An answered one — a press on
- * it, or a later message — loses what was waiting for a press: its Needs
- * part, the card and the which-one with it. The page asks the same
- * question before it draws the turn at all.
+ * (its Done, Undone or Here's what I'd do) or, when it did nothing, what it
+ * said: the answers, Astra's idea and the "not yet" lines, as words, never
+ * a button (found drawing the reply on the page, 2026-09-25: an answer to
+ * "What would look good here?" vanished when the next message went, and
+ * left the question unanswered). An answered one — a press on it, or a
+ * later message — loses what was waiting for a press: its Needs part, the
+ * card and the which-one with it. The page asks the same question before
+ * it draws the turn at all.
  */
 export function shownLines(model: ReplyModel, at: { compact: boolean; open: boolean }): ReplyLine[] {
-  if (at.compact) return model.lines.filter((l) => l.kind === "done" || l.kind === "undone" || l.kind === "planned").slice(0, 1);
+  if (at.compact) {
+    const did = model.lines.find((l) => l.kind === "done" || l.kind === "undone" || l.kind === "planned");
+    return did ? [did] : model.lines.filter((l) => KEPT_SAID.has(l.kind));
+  }
   if (at.open) return model.lines;
   const out: ReplyLine[] = [];
   let needs = false;

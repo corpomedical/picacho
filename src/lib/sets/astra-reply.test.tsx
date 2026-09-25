@@ -281,6 +281,21 @@ describe("what the reply shows, and when", () => {
     }
   });
 
+  it("an earlier turn that did nothing keeps its answer in words, with no buttons", () => {
+    const idea = modelOf({ idea: "Low and close lets the car loom behind her.", suggest: [{ size: "medium", height: "low" }] });
+    const notYet = modelOf({ cant: [{ code: "camera_inside", said: "from inside the car" }] });
+    for (const layout of REPLY_LAYOUTS) {
+      const a = draw(idea, { compact: true, live: false, layout });
+      expect(buttonsIn(a), layout).toEqual([]);
+      expect(text(a), layout).toContain("Low and close lets the car loom behind her.");
+      // The ways to try it waited for a press: they go.
+      expect(text(a), layout).not.toContain("Medium shot");
+      const b = draw(notYet, { compact: true, live: false, layout });
+      expect(text(b), layout).toContain("Not yet");
+      expect(buttonsIn(b), layout).toEqual([]);
+    }
+  });
+
   it("while a press is followed, says Cut 1's line in place of the shot line", () => {
     const model = modelOf({ shoot: true });
     expect(text(draw(model))).toContain("Shooting this frame · 1 credit.");
