@@ -51,6 +51,7 @@ import { ElementCard, type CardElement } from "./element-card";
 import { answerLikeness } from "@/lib/characters/likeness-actions";
 import { LIKENESS_ANSWERS, type LikenessAnswer } from "@/lib/characters/likeness";
 import { CastStrip, type CastChip } from "./cast-strip";
+import { FirstVisit, HELIOS_TOUR_KEY } from "./first-visit";
 import { AstraChangeCard } from "./astra-change-card";
 import { AstraReply, shownLines } from "./astra-reply";
 import { askProducer } from "@/lib/producer/ask-event";
@@ -1174,6 +1175,44 @@ export function SetView({
       // No storage (a private window): the classic layout.
     }
   }, [modelsOn]);
+  // The first visit (first-visit.tsx; Helios Cut 3, step 9): three tips on a
+  // set with no stills, once per browser. `tips` is the one showing, null
+  // when the card is away. ?tour=1 shows them again.
+  const [tips, setTips] = useState<number | null>(null);
+  const tourAskedRef = useRef(false);
+  // ?tour=1 is read once and the address forgets it here, in its own effect:
+  // the ?ask= effect below clears the address only when a message came, so
+  // left to it a reload would replay the tips.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("tour")) return;
+    tourAskedRef.current = url.searchParams.get("tour") === "1";
+    url.searchParams.delete("tour");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+  }, []);
+  const tipsCheckedRef = useRef(false);
+  useEffect(() => {
+    if (!ready || tipsCheckedRef.current) return;
+    tipsCheckedRef.current = true;
+    let seen = false;
+    try {
+      seen = window.localStorage.getItem(HELIOS_TOUR_KEY) === "1";
+    } catch {
+      // Blocked storage counts as seen, like the video tour: a card that
+      // could never be put away for good would come back on every visit.
+      seen = true;
+    }
+    if (tourAskedRef.current || (!seen && initialShots.length === 0)) setTips(0);
+  }, [ready, initialShots.length]);
+  /** × and Close: the tips are away, and this browser has seen them. */
+  function closeTips() {
+    setTips(null);
+    try {
+      window.localStorage.setItem(HELIOS_TOUR_KEY, "1");
+    } catch {
+      // Blocked storage already counts as seen.
+    }
+  }
   /**
    * Models on things (thing-model.ts, 2026-09-24): the stage draws each in
    * place of its thing's blocks. A model loaded here shows at once from the
@@ -8403,6 +8442,23 @@ export function SetView({
   );
 
   const studioMode: StudioMode = cutOpen ? "cut" : filmOpen ? "film" : "shoot";
+  /** The first-visit card, where the stage is being set up: not over a still, a failed stage, Film or Cut, or a phone's rig or card sheet. */
+  const tipsShown = tips !== null && ready && !loadFailed && !viewingShot && studioMode === "shoot" && !(!wide && (rigOpen || elementCard));
+  /** The tips in order: the grey figure, the blocks, the bright box. */
+  const tipWords = [s.standInNote, s.tipBlocks, s.frameHint] as const;
+  /** One drawing for its three places: Classic's stage foot, the new layout's stage corner, a phone's conversation. */
+  const firstVisitView = (className: string) =>
+    tips !== null && (
+      <FirstVisit
+        tips={tipWords}
+        step={tips}
+        onNext={() => setTips((i) => (i === null ? i : Math.min(i + 1, tipWords.length - 1)))}
+        onClose={closeTips}
+        words={{ stepsLabel: t.onboarding.stepsLabel, next: t.common.next, close: t.common.close, dismiss: t.common.dismiss }}
+        surface={PANEL_BG}
+        className={className}
+      />
+    );
   /** Whether the rig is showing: the dock's own tabs on a wide screen, the phone's panel below it. */
   const rigShown = wide ? dockTab === "camera" || dockTab === "light" || dockTab === "look" : rigOpen;
   // A phone's Film: the setup chips are one row that swipes, so the film dock
@@ -10216,6 +10272,8 @@ export function SetView({
               the gizmo on the right. */}
           {!viewingShot && !loadFailed && !filmOpen && !simpleOn && (
             <div className="pointer-events-none absolute bottom-[104px] left-3.5 right-3.5 z-20 flex flex-col items-start gap-2 md:right-[190px]" data-stage-foot>
+              {/* The first-visit card: here on a computer's Classic, and on a phone while its conversation is folded. */}
+              {tipsShown && (wide || !chatOpen) && firstVisitView("pointer-events-auto w-full max-w-[340px]")}
               {simplePhoneSet ? (
                 <div className="pointer-events-auto relative max-w-full">
                   <ThingsStrip rows={[...panelPeople, ...panelThings]} selected={elementCard?.key ?? null} onOpen={(key) => openElementCard(key)} w={sw} />
@@ -10245,6 +10303,8 @@ export function SetView({
               </span>
             </div>
           )}
+          {/* The new layout on a computer draws no stage foot: the first-visit card has its own corner. */}
+          {simpleOn && tipsShown && <div className="absolute bottom-[104px] left-3.5 z-20 w-[340px] max-w-[calc(100%-28px)]">{firstVisitView("w-full")}</div>}
 
           {/* Match this shot: the read in progress, what it matched, or what went wrong */}
           {matchOn && (matching || matched || matchError) && (
@@ -11065,6 +11125,7 @@ export function SetView({
             className={`z-30 flex min-h-0 flex-none flex-col ${chatOpen ? "h-[42%] overflow-hidden" : "overflow-visible"} border-t border-[rgba(255,255,255,0.11)] bg-[#16171c] ${PANEL_BG} border-x-0 border-b-0 shadow-none`}
           >
             {chatHeader}
+            {chatOpen && tipsShown && <div className="flex-none px-3.5 pt-3">{firstVisitView("w-full")}</div>}
             {chatOpen && chatThread}
             {chatComposer}
           </aside>
