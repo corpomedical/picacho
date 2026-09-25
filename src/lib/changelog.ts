@@ -20,6 +20,22 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.105.0",
+    build: 144,
+    date: "2026-09-25",
+    title: "Director's Cut becomes a real editor: a multi-track timeline, Export, and a music composer",
+    items: [
+      "Every video Opus makes now comes with its editable project, and it opens in the Edit Bay: the monitor in the middle, your footage, sounds and titles on the left, and a multi-track timeline underneath. The tracks are titles (V2), the picture (V1), the clips' own sound (A1), music (A2), effects (A3) and voice (A4), with frames from the footage on the shots and waveforms on the sound.",
+      "Edit it the way a professional editor works. Drag a clip to move it and pull its edges to trim it. Cut it in two with the razor (B, or S at the playhead), or delete it. Set a sound's volume in Inspect. Clips snap to cuts and to the playhead; ⌘Z and ⇧⌘Z undo and redo, Space plays, and the monitor jumps from cut to cut.",
+      "Your changes save a moment after you stop, and the monitor replays your version from the same moment. The delivered video stays as it was until you export.",
+      "Export renders the timeline as you left it into a new finished video, which lands in History next to the original.",
+      "The new Score tab composes music for the cut. Describe it and pick moods (Dramatic, Epic, Tense…) and sounds (Hybrid orchestral, Synthwave, Piano…). It writes three takes timed to your cuts: a build, a rise, the big hit landing on a real cut, and an outro. ElevenLabs Music makes the real track, $1.80 for three takes of a 30-second video (fal charges $0.60 per started minute); ACE-Step makes quick drafts for about 2¢. The price is on the button before you press it.",
+      "Listen to each take, then press Use to put it on the music track. The music that was there is muted but stays on the timeline, ⌘Z brings it back, and the exported video carries the take.",
+      "Clips that overlap on a track stack in rows like separate tracks, and muted clips show faded with a speaker-off mark.",
+      "Edits made before this update have no project, so they still open as a finished video. New edits and changes open in the bay once Opus is given its new instructions after this push.",
+    ],
+  },
+  {
     version: "1.104.0",
     build: 143,
     date: "2026-09-25",
