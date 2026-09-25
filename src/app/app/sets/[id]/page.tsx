@@ -121,6 +121,7 @@ export default async function SetPage({
         initialAskBuilt={askBuilt}
         astraEditsLeft={data.astraEditsLeft}
         astraEditsCap={data.astraEditsCap}
+        readerV2={data.readerV2}
       />
     );
   }

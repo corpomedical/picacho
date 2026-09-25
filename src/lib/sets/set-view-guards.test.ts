@@ -50,7 +50,7 @@ describe("a change to the set itself waits for a press on the Astra card", () =>
     // goAstra (set-view-turn.test.ts), once step 11a is in.
     expect(view.match(/\beditSet\(/g)!.length).toBeLessThanOrEqual(3);
     expect(view).toContain("  async function editSet(\n    change: { said: string; gloss?: string | null },\n    frame: EditFrame | null,");
-    const card = between(view, "<AstraChangeCard", "/>");
+    const card = between(view, "<AstraChangeCard\n                      words={astraAsk.words}", "/>");
     const onGo = between(card, "onGo={() => {", "}}");
     expect(onGo).toContain("const { quoted } = astraCardWords(astraAsk.words);");
     expect(onGo).toContain("setAstraAsk(null);");
@@ -67,7 +67,7 @@ describe("a change to the set itself waits for a press on the Astra card", () =>
   });
 
   it("hands the card the month's count, the plan's cap and the set's size, as the action judges them", () => {
-    const card = between(view, "<AstraChangeCard", "/>");
+    const card = between(view, "<AstraChangeCard\n                      words={astraAsk.words}", "/>");
     expect(card).toContain("editsLeft={editsLeft}");
     expect(card).toContain("editsCap={astraEditsCap}");
     expect(card).toContain("tooBig={astraTooBig(spec)}");
@@ -119,7 +119,7 @@ describe("a reading that failed changes nothing and shoots nothing", () => {
 
 // Undo that gives back Astra's words too (Helios Cut 2, step 2, 2026-09-25).
 describe("the changed line's Undo", () => {
-  const undo = bodyOf(view, "  async function undoSetEdit() {");
+  const undo = bodyOf(view, '  async function undoSetEdit(inTurn = false): Promise<"undone" | "textKept" | null> {');
 
   it("keeps each change's seal and kind with the set it replaced", () => {
     const edit = bodyOf(view, "  async function editSet(\n");
@@ -136,7 +136,10 @@ describe("the changed line's Undo", () => {
     expect(undo).toContain("const last = lastEditUndoRef.current?.before === before ? lastEditUndoRef.current : null;");
     expect(undo).toContain("const res = await undoAstraEdit(setId, before, last?.undo ?? null);");
     for (const call of ["editSetWithAstra(", "editSet(", "rebuildThingFromPhotos(", "saveSetEdit("]) expect(undo, call).not.toContain(call);
-    expect(undo).toContain('setUndoNote(last?.kind !== "rebuild" && !saved.textRestored ? "textKept" : "undone");');
+    expect(undo).toContain('const said = last?.kind !== "rebuild" && !saved.textRestored ? "textKept" : "undone";');
+    // The changed line's Undo says it where the line stood; a turn's Undo says it in its own reply.
+    expect(undo).toContain("if (!inTurn) setUndoNote(said);");
+    expect(undo).toContain("return said;");
     const note = between(view, "{undoNote !== null && (", "</div>");
     expect(note).toContain('{undoNote === "textKept" ? s.reply.noteUndoAstraText : s.reply.noteUndoAstra}');
   });
@@ -166,9 +169,13 @@ describe("the Sets home's message is the only build turn", () => {
     const effect = between(view, "if (!ready || !initialAsk || askedRef.current) return;", "}, [ready, initialAsk]);");
     expect(effect).toContain('for (const key of ["ask", "character", "askFirst", "from"]) url.searchParams.delete(key);');
     expect(effect).toContain('void send(initialAsk, initialAskBuilt ? { origin: "build" } : undefined);');
-    // Nothing else passes an origin: the composer's own sends never do.
+    // Nothing else passes an origin: the composer's own sends never do. The
+    // chat's reader v2 hands the same message and its origin back to v1 when
+    // the server says v2 is off (Helios Cut 2, step 11a).
     expect(view.match(/\{ origin: "build" \}/g)).toHaveLength(1);
-    expect(view.match(/\bsend\([^,()]+,/g)).toEqual(["send(text: string,", "send(initialAsk,"]);
+    expect(view.match(/\bsend\([^,()]+,/g)).toEqual(["send(text: string,", "send(initialAsk,", "send(message,"]);
+    expect(view).toContain("if (source === \"message\") void send(message, opts);");
+    expect(view.match(/\bsendTurn\([^,()]+,/g)).toEqual(["sendTurn(message,", "sendTurn(message: string,", "sendTurn(turn.asked,"]);
   });
 
   it("a built message is framed, never carded — and a later edit still gets the card", () => {

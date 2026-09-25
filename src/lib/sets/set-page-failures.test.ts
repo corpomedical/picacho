@@ -177,8 +177,9 @@ describe("the set page", () => {
   });
 
   it("shows an Undo only once it is saved, and says when it is not", () => {
-    const undo = between(view, "async function undoSetEdit() {", "\n  }\n");
-    expect(undo).toContain("if (!before || undoingRef.current) return;");
+    // It answers what came back, so a turn's Undo can say it (Helios Cut 2, step 11a).
+    const undo = between(view, 'async function undoSetEdit(inTurn = false): Promise<"undone" | "textKept" | null> {', "\n  }\n");
+    expect(undo).toContain("if (!before || undoingRef.current) return null;");
     // Saved through undoAstraEdit since Helios Cut 2, step 2 (2026-09-25),
     // which can give back Astra's words too; the page then shows the copy
     // as the server saved it.

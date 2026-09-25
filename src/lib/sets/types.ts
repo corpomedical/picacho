@@ -148,6 +148,14 @@ export type SetPageData =
        * can tell "no cap" from "a count that could not be read" (Helios Cut 2).
        */
       astraEditsCap: number;
+      /**
+       * Whether the set's chat reads with reader v2 (Helios Cut 2, 2026-09-25):
+       * one message sets who, where, the camera, the light and the look at
+       * once, and the page runs it as one turn. Admins until the owner's
+       * phrase check passes (shot-reading.ts SHOT_READER_V2_OPEN_TO_ALL);
+       * readShotTurn checks again, and answers "off" otherwise.
+       */
+      readerV2: boolean;
       /** The photos on the set's things (references.ts listElementPhotos, R1), oldest first, and the hashes of the sheets already drawn. */
       elementPhotos: { photos: ElementPhoto[]; sheets: string[] };
       /** The picture model stills are drawn with (app_settings image_model): the things' sheets ride "gpt-image" only. */

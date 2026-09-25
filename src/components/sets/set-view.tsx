@@ -24,7 +24,7 @@ import { followAstraEdit, type FollowedEdit } from "@/lib/sets/astra-follow";
 import { THING_REBUILD_OPEN_TO_ALL, rebuiltThingIn } from "@/lib/sets/thing-rebuild";
 import { SELECTABLE_IMAGE_MODEL_IDS, getImageModel } from "@/lib/generations/providers/image-models";
 import { matchSetShot } from "@/lib/sets/match-actions";
-import { readShotWords } from "@/lib/sets/words-actions";
+import { readShotTurn, readShotWords } from "@/lib/sets/words-actions";
 import { STAND_IN_EYE_M, fovForLens, nearestLens, type StageQuality } from "@/lib/sets/build-scene";
 import { dockTabAfter, dockTabsFor, railToolForKey, studioChecked, studioHeld, studioLab, type DockTab, type RailTool, type StatusItem, type StudioMode } from "@/lib/sets/studio";
 import { VIEW_MODES, viewModeMaterial, type ViewMode } from "@/lib/sets/view-modes";
@@ -81,7 +81,7 @@ import { checkShotRig, saveSetRig } from "@/lib/sets/rig-actions";
 import { RIG_PALETTES, depthOfField, exposureGain, findLook, focalMm, formatFrame, letterbox, normaliseSetRig, sensorCocMm, sensorHeightMm, shutterFraction, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
 import { bearingDeg } from "@/lib/sets/light-schemes";
 import { stagedSpec, timeLabel, sunAt } from "@/lib/sets/time-of-day";
-import { shootCommands } from "@/lib/sets/commands";
+import { rigCommandIds, rigPatchFor, shootCommands, TIME_PRESETS } from "@/lib/sets/commands";
 import { CommandPalette } from "./command-palette";
 import { labPreviewCodes } from "@/lib/sets/lab-preview";
 import { beatJumps, layBeatMove, poseAlong, relayMoves, samePose, type FilmMove, type FilmTexture } from "@/lib/sets/moves";
@@ -91,7 +91,7 @@ import type { RigCheck } from "@/lib/sets/rig-check";
 import { RigPanel } from "@/components/sets/rig-panel";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
 import { canBeLook, newestLook } from "@/lib/sets/look";
-import { matchSummary, placeMatchedCamera, solveMatchPose, type CameraMove, type MatchClamp } from "@/lib/sets/match-shot";
+import { matchSummary, placeMatchedCamera, solveMatchPose, type CameraMove, type MatchClamp, type ShotMatch } from "@/lib/sets/match-shot";
 import {
   SET_LIKENESS_NEEDED,
   SET_PHOTO_UNREADABLE,
@@ -106,10 +106,61 @@ import {
   THING_MODEL_SAVE_FAILED,
 } from "@/lib/sets/messages";
 import { preparePhoto } from "@/lib/sets/photo-client";
-import { facingFor, hasCameraWords, wordsToMatch, type ShotWords } from "@/lib/sets/shot-words";
-import type { FrameX } from "@/lib/sets/shot-reading";
+import { facingFor, hasCameraWords, wordsToMatch, type FigureFacing, type ShotWords } from "@/lib/sets/shot-words";
+import type { CantCode, FrameX, ReaderAliases, ReaderStep, ReaderWhy, ShotReading } from "@/lib/sets/shot-reading";
 import type { EditFrame } from "@/lib/sets/set-edit-prompt";
-import { frameXAfter, pressFor, type TakeMove, type TakeStart } from "@/lib/sets/turn-plan";
+import { READER_CONTEXT_MAX, cameraSideOf, type ReaderNow } from "@/lib/sets/reader-context";
+import {
+  TURN_UNDO_MAX,
+  USE_HOUR_READING,
+  cameraSpotOf,
+  cameraStep,
+  facingToward,
+  frameXAfter,
+  framedMatch,
+  gazeFor,
+  largestObjectOf,
+  lookPatch,
+  nudgeMark,
+  pickTakeStart,
+  planTurn,
+  pointBeside,
+  pressFor,
+  resolveWhich,
+  shiftPose,
+  shootDecision,
+  snapshotDiff,
+  spotToMatch,
+  turnedFacing,
+  undoPlan,
+  vehicleOf,
+  type CameraSpot,
+  type Need,
+  type PageState,
+  type PlanCharacter,
+  type ShootDecision,
+  type StepClamp,
+  type TakeMove,
+  type TakeStart,
+  type TurnPlan,
+  type TurnSnapshot,
+  type TurnSource,
+  type TurnState,
+} from "@/lib/sets/turn-plan";
+import {
+  composeReply,
+  creditsLabel,
+  fill,
+  replyThingsOf,
+  replyWordsOf,
+  turnDid,
+  type Outcome,
+  type PageNote,
+  type ReplyAction,
+  type ReplyFacts,
+  type ReplyModel,
+  type TurnOutcomes,
+} from "@/lib/sets/turn-reply";
 import {
   SET_COMPARE_PX,
   SET_MAX_TILT_DOWN_DEG,
@@ -435,6 +486,82 @@ type ShootDue = { pressId: string; kind: "still" | "take"; turnId: number };
 /** How long a due shot waits after the render that holds its turn: longer than the light's 60 ms rebuild. */
 const SHOOT_DUE_MS = 150;
 
+/** Where a turn came from and how its reading came back (Helios Cut 2, step 11a). */
+type TurnContext = {
+  source: TurnSource;
+  why: ReaderWhy;
+  dropped: readonly string[];
+  messageCut: boolean;
+  origin: "build" | null;
+  /** The reader's short names for this set's things and people, for LAST TURNS. */
+  aliases: ReaderAliases;
+  /** The person's message; null for a button's turn. */
+  asked: string | null;
+};
+const NO_ALIASES: ReaderAliases = { things: {}, people: {} };
+/** A button's turn (Do it, a which-one, Use the hour, Undo): a stored reading, never read again, never shot. */
+const TURN_BUTTON: TurnContext = { source: "button", why: "ok", dropped: [], messageCut: false, origin: null, aliases: NO_ALIASES, asked: null };
+
+/** One turn of the set's chat (reader v2): what was asked, what the page made of it and did, and the reply said from that. */
+type ChatTurn = {
+  id: number;
+  asked: string | null;
+  plan: TurnPlan;
+  /** What the page's steps reached; null for a turn nothing ran for (said as planned). */
+  outcomes: TurnOutcomes | null;
+  /** The page as the reply read it after the turn, with the shot it decided. */
+  facts: ReplyFacts;
+  reply: ReplyModel;
+  /** What the turn did in the page's own words, for the reader's LAST TURNS (turn-reply.ts turnDid). */
+  did: string;
+  /** The stills and takes on the strip when it was said: one that lands after it carries its words, and the turn folds into it. */
+  shotsAt: number;
+  /** Answered — a later turn, or a press on this one: its buttons go (Undo stays while it is the newest). */
+  settled: boolean;
+};
+/** A turn kept to undo, with the turn it belongs to (an Astra change it pressed joins it later). */
+type PageSnapshot = TurnSnapshot & { turnId: number };
+/** Turns shown this visit, like the frame's revisions. */
+const TURNS_KEPT = 12;
+/** What a camera word step changes, for its chip: the last step of each kind says where the camera got to. */
+const STEP_DIMENSION: Record<ReaderStep, "distance" | "height" | "side" | "tilt" | "lens"> = {
+  closer: "distance",
+  further: "distance",
+  higher: "height",
+  lower: "height",
+  left: "side",
+  right: "side",
+  other_side: "side",
+  tilt_up: "tilt",
+  tilt_down: "tilt",
+  wider: "lens",
+  longer: "lens",
+};
+
+/** The ⌘K ids a rig restored by Undo is back on, as chips: each look, the hour and the exposure (commands.ts). */
+function rigRestoredChips(from: SetRig, to: SetRig): Outcome[] {
+  const ids = new Set(rigCommandIds());
+  const out: Outcome[] = [];
+  const id = (x: string) => (ids.has(x) ? out.push({ kind: "rig", id: x }) : 0);
+  if (to.format !== from.format) id(`format:${to.format}`);
+  if (to.squeeze !== from.squeeze) id(`squeeze:${to.squeeze}`);
+  if (to.stop !== from.stop) id(to.stop === null ? "stop:off" : `stop:${to.stop}`);
+  if ((to.light?.scheme ?? null) !== (from.light?.scheme ?? null)) id(to.light ? `light:${to.light.scheme}` : "light:as-built");
+  if (to.time !== from.time) {
+    const preset = TIME_PRESETS.find((p) => p.hour === to.time);
+    if (to.time === null) id("time:as-built");
+    else if (preset) id(`time:${preset.id}`);
+    else out.push({ kind: "hour", hour: to.time });
+  }
+  if (to.stock !== from.stock) id(to.stock ? `stock:${to.stock}` : "stock:none");
+  if (to.lens !== from.lens) id(to.lens ? `character:${to.lens}` : "character:none");
+  if (to.palette !== from.palette) id(to.palette ? `palette:${to.palette}` : "palette:none");
+  if (to.era !== from.era) id(to.era ? `era:${to.era}` : "era:none");
+  if (to.genre !== from.genre && to.genre) id(`genre:${to.genre}`);
+  if (to.ev !== from.ev) out.push({ kind: "ev", ev: to.ev });
+  return out;
+}
+
 /** A frame as Astra or the person set it, to step back to (this visit only). */
 type Revision = {
   id: number;
@@ -594,6 +721,8 @@ export function SetView({
   astraEditsLeft,
   astraEditsCap,
   initialAskBuilt = false,
+  readerV2 = false,
+  producerOn = false,
 }: {
   setId: string;
   /** The set's name, said in the workspace's own bar. */
@@ -634,6 +763,15 @@ export function SetView({
   astraEditsLeft: number | null;
   /** The plan's Astra changes a month (set-config.ts setEditsMonthlyLimit): −1 for no cap, 0 for none. */
   astraEditsCap: number;
+  /**
+   * The chat reads with reader v2 and runs each message as one turn
+   * (Helios Cut 2, step 11a, 2026-09-25): admins until the phrase check
+   * passes (data.ts readerV2). Otherwise, or when the server says "off",
+   * the chat is v1's, with the same money guards.
+   */
+  readerV2?: boolean;
+  /** The Producer's lamp is on this page, so "do it elsewhere" can hand the words to it (Cut 2, step 12). */
+  producerOn?: boolean;
   /**
    * The message in `initialAsk` is the one the Sets home just built this
    * set from (?from=build): what it says about the place is already built,
@@ -825,6 +963,17 @@ export function SetView({
   // the person's words, as they asked. Nothing reaches Astra without that
   // press, in any mode (the owner's decision 1).
   const [astraAsk, setAstraAsk] = useState<{ words: string } | null>(null);
+  // The chat's turns (Helios Cut 2, reader v2, step 11a): this visit's, the
+  // newest last, each with its reply; the turns kept to undo; and whether
+  // the server said reader v2 is not this account's after all ("off").
+  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const turnIdRef = useRef(0);
+  const turnUndoRef = useRef<PageSnapshot[]>([]);
+  const [readerOff, setReaderOff] = useState(false);
+  const readerOffRef = useRef(false);
+  const v2On = readerV2 && !readerOff;
+  // Every sentence of a reply, from the person's own catalog (turn-reply.ts).
+  const replyWords = useMemo(() => replyWordsOf(t), [t]);
   // The conversation panel floats over the stage and can fold away.
   const [chatOpen, setChatOpen] = useState(true);
   // A photo set's photo beside camera 1, folded behind a chip.
@@ -5112,7 +5261,10 @@ export function SetView({
       firedRef.current.add(due.pressId);
       setShootDue(null);
       const opts = { pressId: due.pressId };
-      void (due.kind === "take" ? take(undefined, opts) : shoot(undefined, [], opts));
+      void (due.kind === "take" ? take(undefined, opts) : shoot(undefined, [], opts)).then((sent) => {
+        // It could not start (busy, the likeness, no one on the chip): the turn says so, with Shoot as it is.
+        if (!sent) dueNotStarted(due);
+      });
     }, SHOOT_DUE_MS);
     return () => clearTimeout(timer);
     // Only the due shot starts it: its closure is the render that holds the
@@ -6395,9 +6547,9 @@ export function SetView({
    * description still mentions the change. Never Astra, never a refund: the
    * change still counts this month, and the page says that as well.
    */
-  async function undoSetEdit() {
+  async function undoSetEdit(inTurn = false): Promise<"undone" | "textKept" | null> {
     const before = specBeforeEditRef.current;
-    if (!before || undoingRef.current) return;
+    if (!before || undoingRef.current) return null;
     undoingRef.current = true;
     // The seal and kind of THIS change: a later change replaces both.
     const last = lastEditUndoRef.current?.before === before ? lastEditUndoRef.current : null;
@@ -6409,24 +6561,27 @@ export function SetView({
       if (res.error === null) saved = res;
     } catch (err) {
       failed = leftBehind(err) ? null : t.generate.submitFailed;
-      if (failed === null) return;
+      if (failed === null) return null;
     } finally {
       undoingRef.current = false;
     }
     if (failed !== null || !saved) {
       if (failed !== null) setError(failed);
-      return;
+      return null;
     }
     // Another edit landed meanwhile: that one is the set now.
-    if (specBeforeEditRef.current !== before) return;
+    if (specBeforeEditRef.current !== before) return null;
     specBeforeEditRef.current = null;
     lastEditUndoRef.current = null;
     setSetChanged(null);
-    setUndoNote(last?.kind !== "rebuild" && !saved.textRestored ? "textKept" : "undone");
+    const said = last?.kind !== "rebuild" && !saved.textRestored ? "textKept" : "undone";
+    // A turn's Undo says it in its own reply (Helios Cut 2, step 11a); the changed line's where the line stood.
+    if (!inTurn) setUndoNote(said);
     // The copy as saved: the pieces as they were, and the words the server kept.
     setSpec(saved.spec);
     drawSet(saved.spec);
     refreshThumbnail(saved.spec);
+    return said;
   }
 
   /** A change to the set itself, asked for: onto the Astra card, with the conversation open to show it. */
@@ -6457,6 +6612,9 @@ export function SetView({
   async function send(text: string, opts?: { origin?: "build" }) {
     const message = text.trim();
     if (!message || reading || shooting || editingSet || !ready) return;
+    // Reader v2 runs the message as one turn (Helios Cut 2, step 11a):
+    // admins, until the phrase check passes. Everyone else keeps v1 below.
+    if (readerV2 && !readerOffRef.current) return sendTurn(message, opts);
     setError("");
     setDraft("");
     setMentionForced(false);
@@ -6542,6 +6700,862 @@ export function SetView({
     // send reads the latest state through closures; it is not a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, initialAsk]);
+
+  // ---- the chat's turns (Helios Cut 2, reader v2, step 11a, 2026-09-25) ----
+  //
+  // One message is read once (readShotTurn) into one plan (turn-plan.ts
+  // planTurn), and the page runs the plan's steps with the handlers it
+  // already has, in the plan's order: who, the frame's shape, where she
+  // stands, the pose, the camera, the facing, the eye-line, then the light
+  // aimed from where the camera ENDED, what happens, a moving shot. Each
+  // step says what it reached (the side the camera got to, not the side
+  // asked), and the reply is said from that (turn-reply.ts composeReply).
+  // Everything a turn does is free. What costs waits for a press priced on
+  // its button, and the one shot a message may take — when it asked for
+  // one, or in "Shoot without asking", past nothing that holds it — is
+  // decided by shootDecision and fired by the shootDue effect with one press
+  // id: nothing below calls shoot() or take() (spec §3.8, pin #9).
+
+  /** The page as a turn changes it: its state now, in the plan's terms (turn-plan.ts TurnState). */
+  function turnStateNow(): TurnState {
+    const pose = apiRef.current?.pose() ?? poseNow;
+    return {
+      characterId: characterId || null,
+      markId: layoutRef.current.markId,
+      mark: layoutRef.current.mark,
+      pose: layoutRef.current.pose,
+      gaze: layoutRef.current.gaze,
+      cameraId,
+      camera: pose,
+      rig: rigRef.current,
+      direction,
+      frameX: frameXRef.current,
+      takeStart,
+      takeMove: takeMoveRef.current,
+      takeEngine,
+      outfitOff: outfitOffRef.current,
+    };
+  }
+
+  /** The mark she stands on, or null once she stands on a spot of her own (dragged, placed by a thing). */
+  function markOn(id: string | null, m: Mark): string | null {
+    return id !== null && spec.marks.some((x) => x.id === id && Math.hypot(x.x - m.x, x.z - m.z) < 0.05) ? id : null;
+  }
+
+  /** Which way she faces as the camera sees her (the frame card's rule, facingLabel). */
+  function facingSeen(m: Mark, camera: Pose): FigureFacing {
+    const bearing = Math.atan2(camera.position[0] - m.x, camera.position[2] - m.z) / DEG;
+    const d = ((((m.facingDeg - bearing) % 360) + 540) % 360) - 180;
+    if (Math.abs(d) <= 45) return "camera";
+    if (Math.abs(d) >= 135) return "away";
+    return d > 0 ? "right" : "left";
+  }
+
+  /** The person's characters as the plan reads them: those with a photo can be cast (R1), and the ones without are named. */
+  const planCharacters: PlanCharacter[] = [
+    ...characters.map((c) => ({ id: c.id, name: c.name, hasPhoto: true, hasOutfit: c.hasOutfit === true })),
+    ...unshootable.map((u) => ({ id: u.id, name: u.name, hasPhoto: false })),
+  ];
+
+  /** What the plan reads of the page (turn-plan.ts PageState). */
+  function planStateOf(ctx: TurnContext, st: TurnState): PageState {
+    return {
+      mode: justTalk ? "talk" : askFirst ? "ask" : "auto",
+      source: ctx.source,
+      origin: ctx.origin,
+      why: ctx.why,
+      dropped: ctx.dropped,
+      messageCut: ctx.messageCut,
+      characterId: st.characterId,
+      characters: planCharacters,
+      markId: markOn(st.markId, st.mark),
+      pose: st.pose,
+      cameraId: st.cameraId,
+      frameX: st.frameX,
+      rig: st.rig,
+      cameraBearingDeg: bearingDeg(st.mark, { x: st.camera.position[0], z: st.camera.position[2] }),
+      direction: st.direction,
+      takeStart: st.takeStart,
+      takeMove: st.takeMove,
+      takeEngine: st.takeEngine,
+      shots: shots.map((sh) => ({ generationId: sh.generationId, kind: sh.kind, status: sh.status, format: sh.format, characterId: sh.characterId ?? null })),
+      filmOpen,
+      editsLeft,
+      editsCap: astraEditsCap,
+      tooBig: astraTooBig(spec),
+      credits: pageCredits,
+    };
+  }
+
+  /** What the reply reads of the page after a turn, and the shot it decided (turn-reply.ts ReplyFacts). */
+  function replyFactsOf(st: TurnState, shot: ShootDecision | null): ReplyFacts {
+    const sensorMm = sensorHeightMm(st.rig.sensor, st.rig.format);
+    const stills = shots.filter((sh) => sh.kind === "still");
+    const newest = stills[0] ?? null;
+    const lookNow = newestLook(shots);
+    const lookShotNow = lookNow ? (shots.find((sh) => sh.generationId === lookNow) ?? null) : null;
+    const planShots = planStateOf(TURN_BUTTON, st).shots;
+    return {
+      locale,
+      mode: justTalk ? "talk" : askFirst ? "ask" : "auto",
+      characters: [...characters.map((c) => ({ id: c.id, name: c.name })), ...unshootable],
+      characterId: st.characterId,
+      marks: spec.marks.map((m) => ({ id: m.id, label: labelOfMark(m.id) })),
+      cameras: spec.cameras.map((c) => ({ id: c.id, label: labelOfCamera(c.id) })),
+      things: replyThingsOf(spec, st.mark, replyWords),
+      markId: markOn(st.markId, st.mark),
+      pose: st.pose,
+      facing: facingSeen(st.mark, st.camera),
+      cameraId: st.cameraId,
+      frameX: st.frameX,
+      rig: st.rig,
+      direction: st.direction,
+      lensMm: nearestLens(st.camera.fovDeg, sensorMm),
+      distanceM: Math.hypot(st.camera.position[0] - st.mark.x, st.camera.position[2] - st.mark.z),
+      spot: { spot: cameraSpotOf(st.camera, st.mark), facingDeg: st.mark.facingDeg, sensorHeightMm: sensorMm },
+      credits: pageCredits,
+      takeEngine: st.takeEngine,
+      takeFrom: st.takeStart?.n ?? pickTakeStart(planShots, st.characterId, st.rig.format)?.n ?? null,
+      newestStill: lookShotNow ? stillNumber(lookShotNow) : null,
+      lastStill: newest
+        ? { n: stillNumber(newest), status: newest.status === "succeeded" || newest.status === "failed" ? newest.status : "generating", score: newest.score }
+        : null,
+      editsLeft,
+      editsCap: astraEditsCap,
+      tooBig: astraTooBig(spec),
+      producerOn,
+      shot,
+    };
+  }
+
+  /** A turn joins the thread; the ones before it are answered, so only the newest keeps its buttons. */
+  function addTurn(turn: ChatTurn) {
+    setTurns((prev) => [...prev.map((x) => (x.settled ? x : { ...x, settled: true })), turn].slice(-TURNS_KEPT));
+  }
+  /** A press on a turn's card or button was made: its other buttons go (Undo stays while it is the newest). */
+  function settleTurn(id: number) {
+    setTurns((prev) => prev.map((x) => (x.id === id && !x.settled ? { ...x, settled: true } : x)));
+  }
+
+  /**
+   * A message, read against the set as it stands (readShotTurn), then run
+   * as one turn. Nothing is sent while anything else is: a read, a shot, an
+   * Astra change, or a press whose answer is being followed (Cut 1). The
+   * page sends what it knows of the frame (NOW) and its last three turns;
+   * the server checks every value and writes the reader's context itself.
+   * "Try again" reads the same words again as a message turn that never
+   * shoots (source "retry", check of the spec, item 1).
+   */
+  async function sendTurn(message: string, opts?: { origin?: "build"; source?: "message" | "retry" }) {
+    const api = apiRef.current;
+    if (reading || shooting || editingSet || following !== null || !ready || !api) return;
+    const source = opts?.source ?? "message";
+    setError("");
+    if (source === "message") setDraft("");
+    setMentionForced(false);
+    setViewing(null);
+    setSetChanged(null);
+    setUndoNote(null);
+    setAstraAsk(null);
+    // The message is kept with the still it leads to, as in v1: a retry's is already there.
+    if (source === "message") {
+      pendingRef.current = [...pendingRef.current, message];
+      setPendingAsks(pendingRef.current);
+    }
+    setNote(null);
+    setReading(true);
+    const now: ReaderNow = {
+      who: characterId || null,
+      markId: markOn(layoutRef.current.markId, layoutRef.current.mark),
+      mark: layoutRef.current.mark,
+      pose: layoutRef.current.pose,
+      gaze: layoutRef.current.gaze,
+      // Null once the view has left the set's camera, so "camera 2" is never "already so" when it isn't.
+      cameraId,
+      camera: api.pose(),
+      frameX: frameXRef.current,
+      rig: rigRef.current,
+      direction,
+    };
+    // What the last turns asked and did, in the page's own words (turn-reply.ts turnDid).
+    const lastTurns = turns
+      .filter((x) => x.asked !== null)
+      .slice(-READER_CONTEXT_MAX.turns)
+      .map((x) => ({ said: x.asked ?? "", did: x.did }));
+    let res: Awaited<ReturnType<typeof readShotTurn>> | null = null;
+    try {
+      res = await readShotTurn(setId, { text: message, now, turns: lastTurns, ...(opts?.origin ? { origin: opts.origin } : {}) });
+    } catch (err) {
+      if (staleHere(err)) {
+        setError(t.generate.refreshNeeded);
+        return;
+      }
+      // The reader could not be reached: said as a reading that failed, and nothing changes.
+    } finally {
+      setReading(false);
+    }
+    if (res && res.error !== null) {
+      setError(res.error);
+      return;
+    }
+    if (res?.why === "off") {
+      // Reader v2 is not this account's after all (the switch moved since
+      // the page was drawn): v1 reads the words, with its own guards.
+      readerOffRef.current = true;
+      setReaderOff(true);
+      if (source === "message") {
+        pendingRef.current = pendingRef.current.slice(0, -1);
+        setPendingAsks(pendingRef.current);
+      }
+      if (source === "message") void send(message, opts);
+      return;
+    }
+    // The newest render's runTurn: it reads the page as it is now, after the read.
+    const said = runTurnRef.current?.(res?.reading ?? null, {
+      source,
+      why: res ? res.why : "down",
+      dropped: res?.dropped ?? [],
+      messageCut: res?.cut ?? false,
+      origin: opts?.origin ?? null,
+      aliases: res?.aliases ?? NO_ALIASES,
+      asked: message,
+    });
+    // No words were left once cleaned: nothing to keep with a still.
+    if (said === null && source === "message") {
+      pendingRef.current = pendingRef.current.slice(0, -1);
+      setPendingAsks(pendingRef.current);
+    }
+  }
+
+  /**
+   * One turn: the plan, a snapshot for Undo, the steps, what they reached,
+   * the reply, and whether a picture is taken. `source` "button" is Do it,
+   * a which-one choice or Use the hour: a stored reading, never read again
+   * and never shot (spec §3.6). Answers the turn's id (null when nothing
+   * was said).
+   */
+  function runTurn(reading: ShotReading | null, ctx: TurnContext): number | null {
+    const api = apiRef.current;
+    const before = turnStateNow();
+    const state = planStateOf(ctx, before);
+    const plan = planTurn(reading, state);
+    const id = (turnIdRef.current += 1);
+    if (plan.kind === "nothing") return null;
+    if (plan.kind === "undo") {
+      void undoTurn(ctx, plan);
+      return id;
+    }
+    const base = { id, asked: ctx.asked, shotsAt: shots.length, settled: false };
+    if (plan.kind !== "run" || !api) {
+      // A reading that failed, or Just talking's "here's what I'd do": nothing runs.
+      const facts = replyFactsOf(before, null);
+      addTurn({ ...base, plan, outcomes: null, facts, reply: composeReply(plan, null, facts, replyWords), did: turnDid(plan, { chips: [], notes: [] }, ctx.aliases) });
+      return id;
+    }
+
+    // The steps, in the plan's order, each writing what it reached into `now`.
+    const now: TurnState = { ...before };
+    const chips: Outcome[] = [];
+    const pageNotes: PageNote[] = [];
+    const extraCant: CantCode[] = [];
+    const extraDropped: string[] = [];
+    let movedRound = false;
+    if (plan.steps.length > 0) keepStage(false, false);
+    const sensorNow = () => sensorHeightMm(now.rig.sensor, now.rig.format);
+    const camXz = (): [number, number] => [now.camera.position[0], now.camera.position[2]];
+    const rigNow = (patch: Partial<SetRig>) => {
+      // Written at once: the size solve, the thirds and a lens read the band of the rig this turn set.
+      rigRef.current = { ...rigRef.current, ...patch };
+      now.rig = rigRef.current;
+      setRig((r) => ({ ...r, ...patch }));
+    };
+    const placeFigure = (m: Mark, pickedMarkId?: string) => {
+      // The stage first: the camera's solve and matchTo read where the figure stands.
+      now.mark = m;
+      if (pickedMarkId !== undefined) now.markId = pickedMarkId;
+      api.placeMark(m);
+      layoutRef.current = { ...layoutRef.current, markId: now.markId ?? layoutRef.current.markId, mark: m };
+      if (pickedMarkId !== undefined) setMarkId(pickedMarkId);
+      setMark(m);
+    };
+    const cameraAt = (moved: CameraMove | null, named: string | null) => {
+      const pose = api.pose();
+      now.camera = pose;
+      now.cameraId = named;
+      setCameraId(named);
+      setFovDeg(pose.fovDeg);
+      if (moved === "around" || moved === "blocked") movedRound = true;
+    };
+    /** A word solve (shot-words.ts wordsToMatch's shape), with her on the third the turn keeps. */
+    const solveAt = (match: ShotMatch, from: Pose, frameX: FrameX) => {
+      const band = formatFrame(now.rig.format, now.rig.squeeze);
+      const framed = framedMatch(match, frameX, { bandAspect: band.bandAspect, heightShare: band.heightShare });
+      const solved = solveMatchPose(framed.match, {
+        mark: now.mark,
+        current: from,
+        // The words path's own frame: what it hands over is the render's lens, so centred it passes no band (applyWords).
+        referenceAspect: 1,
+        bounds: spec.bounds,
+        canvasAspect: api.canvasAspect(),
+        ...(framed.frame ? { frame: framed.frame } : {}),
+      });
+      cameraAt(api.matchTo(solved.pose), null);
+    };
+
+    for (const step of plan.steps) {
+      switch (step.kind) {
+        case "who":
+          setCharacterId(step.characterId);
+          now.characterId = step.characterId;
+          chips.push({ kind: "who", characterId: step.characterId, was: step.was });
+          break;
+        case "takeCancel":
+          // The take started on someone else, or in another shape (Cut 1's person check, check item 7).
+          setTakeStart(null);
+          takeMoveRef.current = null;
+          now.takeStart = null;
+          now.takeMove = null;
+          break;
+        case "frame": {
+          const patch: Partial<SetRig> = {};
+          const bearing = bearingDeg(now.mark, { x: camXz()[0], z: camXz()[1] });
+          for (const rid of step.ids) Object.assign(patch, rigPatchFor(rid, { cameraBearingDeg: bearing }) ?? {});
+          rigNow(patch);
+          for (const rid of step.ids) chips.push({ kind: "rig", id: rid });
+          break;
+        }
+        case "place": {
+          const from = { x: now.mark.x, z: now.mark.z };
+          let m: Mark = now.mark;
+          let picked: string | undefined;
+          if (step.markId !== undefined) {
+            const mk = spec.marks.find((x) => x.id === step.markId);
+            if (mk) {
+              m = { x: mk.x, z: mk.z, facingDeg: mk.facingDeg };
+              picked = mk.id;
+              chips.push({ kind: "mark", markId: mk.id });
+            }
+          } else if (step.near) {
+            const near = step.near;
+            const el = els.find((e) => e.key === near.key);
+            if (el) {
+              const p = pointBeside(el, near.side, { camera: now.camera, mark: now.mark, bounds: spec.bounds }, vehicleOf(el, vehicles));
+              // Clear of anything built, stepped toward the camera, as a figure dropped by hand is (marks.ts).
+              const open = clearMarks([{ ...p, facingDeg: m.facingDeg }], spec.objects, spec.bounds, camXz());
+              m = open.marks[0];
+              if (open.moved > 0) pageNotes.push({ kind: "stepped", key: el.key });
+              chips.push({ kind: "near", key: el.key, side: near.side });
+            } else extraDropped.push("near.thing");
+          }
+          if (step.nudge) {
+            const open = clearMarks([nudgeMark(m, now.camera, step.nudge.right, step.nudge.toward)], spec.objects, spec.bounds, camXz());
+            m = open.marks[0];
+            chips.push({ kind: "nudge", right: step.nudge.right, toward: step.nudge.toward });
+          }
+          placeFigure(m, picked);
+          // No camera words: the camera moves with her, so she stays framed.
+          if (step.cameraFollows && Math.hypot(m.x - from.x, m.z - from.z) > 1e-3) {
+            cameraAt(api.matchTo(shiftPose(now.camera, from, m)), null);
+            pageNotes.push({ kind: "cameraFollowed" });
+          }
+          break;
+        }
+        case "pose":
+          // Drawn at once too: a sitting figure's eyes are lower, and the camera's solve reads them.
+          api.setPose(step.pose);
+          setPose(step.pose);
+          now.pose = step.pose;
+          layoutRef.current = { ...layoutRef.current, pose: step.pose };
+          chips.push({ kind: "pose", pose: step.pose });
+          break;
+        case "camera": {
+          const prevFrameX = now.frameX;
+          const frameX = frameXAfter(prevFrameX, step.cameraId !== undefined ? { kind: "camera", frameX: step.frameX } : { kind: "words", frameX: step.frameX });
+          if (step.cameraId !== undefined) {
+            const c = spec.cameras.find((x) => x.id === step.cameraId);
+            if (c) {
+              api.goTo({ position: c.position, target: c.target, fovDeg: c.fovDeg });
+              cameraAt(null, c.id);
+              chips.push({ kind: "camera", cameraId: c.id });
+            }
+          }
+          const words = step.side !== undefined || step.size !== undefined || step.height !== undefined || step.tiltDeg !== undefined;
+          const steps = step.steps ?? [];
+          if (words) {
+            // Solved FROM the camera the turn is at (a named one, if it named one).
+            const band = formatFrame(now.rig.format, now.rig.squeeze);
+            const w = wordsToMatch(
+              { side: step.side ?? null, size: step.size ?? null, height: step.height ?? null, tiltDeg: step.tiltDeg ?? null, lensMm: step.lensMm ?? null },
+              { mark: now.mark, current: now.camera, sensorHeightMm: sensorNow(), frame: { heightShare: band.heightShare } },
+            );
+            solveAt(w.match, w.from, frameX);
+          } else if (step.frameX !== undefined || (step.lensMm !== undefined && frameX !== "centre" && steps.length === 0)) {
+            // Her place across the frame, from where the camera stands: the lens stays unless asked.
+            const spot = cameraSpotOf(now.camera, now.mark);
+            const at = spotToMatch(step.lensMm !== undefined ? { ...spot, fovDeg: fovForLens(step.lensMm, sensorNow()) } : spot, now.mark);
+            solveAt(at.match, at.from, frameX);
+          } else if (step.lensMm !== undefined && steps.length === 0) {
+            // A lens alone: the camera stays where it is, as the lens ring does.
+            const f = fovForLens(step.lensMm, sensorNow());
+            api.setFov(f);
+            cameraAt(null, now.cameraId);
+          }
+          const afterWords = cameraSpotOf(now.camera, now.mark);
+          const sideAfterWords = cameraSideOf(now.mark, now.camera);
+          // The word steps, each from the last (turn-plan.ts cameraStep), solved once.
+          const walked: { spot: CameraSpot; clamp: StepClamp | null }[] = [];
+          if (steps.length > 0) {
+            let spot = step.lensMm !== undefined && !words ? { ...afterWords, fovDeg: fovForLens(step.lensMm, sensorNow()) } : afterWords;
+            for (const st of steps) {
+              const r = cameraStep(st, spot, now.mark, sensorNow());
+              spot = r.spot;
+              if (r.cant) extraCant.push(r.cant);
+              walked.push({ spot, clamp: r.clamp });
+            }
+            const at = spotToMatch(spot, now.mark);
+            solveAt(at.match, at.from, frameX);
+          }
+          now.frameX = frameX;
+          frameXRef.current = frameX;
+          // What the camera REACHED, read off the stage after the solve.
+          const reached = cameraSpotOf(now.camera, now.mark);
+          if (step.size !== undefined) chips.push({ kind: "size", size: step.size });
+          if (step.height !== undefined) chips.push({ kind: "height", height: step.height, m: afterWords.heightM });
+          if (step.side !== undefined) chips.push({ kind: "side", side: sideAfterWords });
+          if (step.tiltDeg !== undefined) chips.push({ kind: "tilt", deg: afterWords.pitchDeg });
+          if (step.lensMm !== undefined) chips.push({ kind: "lens", mm: step.lensMm });
+          if (step.frameX !== undefined) chips.push({ kind: "frameX", frameX: step.frameX });
+          steps.forEach((st, i) => {
+            chips.push({ kind: "step", step: st });
+            const dim = STEP_DIMENSION[st];
+            // The last step of its kind says where the camera got to; earlier ones where the words took it.
+            const last = !steps.some((x, j) => j > i && STEP_DIMENSION[x] === dim);
+            const spot = last ? reached : walked[i].spot;
+            const clamp = walked[i].clamp;
+            if (dim === "distance") chips.push({ kind: "distance", m: spot.distanceM, clamp });
+            else if (dim === "height") chips.push({ kind: "height", height: null, m: spot.heightM, clamp });
+            else if (dim === "side") chips.push({ kind: "side", side: last ? cameraSideOf(now.mark, now.camera) : cameraSideOf(now.mark, spotToMatch(spot, now.mark).from) });
+            else if (dim === "tilt") chips.push({ kind: "tilt", deg: spot.pitchDeg, clamp });
+            else chips.push({ kind: "lens", mm: nearestLens(spot.fovDeg, sensorNow()), clamp });
+          });
+          break;
+        }
+        case "facing": {
+          let deg = now.mark.facingDeg;
+          if (step.facing !== undefined) {
+            if (typeof step.facing === "string") deg = facingFor(step.facing, now.mark, now.camera);
+            else {
+              const key = step.facing.key;
+              const el = els.find((e) => e.key === key);
+              if (el) deg = facingToward(now.mark, { x: el.centre[0], z: el.centre[2] });
+            }
+            chips.push({ kind: "facing", facing: step.facing });
+          }
+          // Her own left or right, as a director says it (turn-plan.ts turnedFacing).
+          if (step.turn !== undefined) {
+            deg = turnedFacing(deg, step.turn);
+            chips.push({ kind: "turn", turn: step.turn });
+          }
+          placeFigure({ ...now.mark, facingDeg: deg });
+          break;
+        }
+        case "gaze": {
+          const g = step.gaze;
+          let gaze: Gaze | null = now.gaze;
+          if (g === "camera" || g === "none") gaze = gazeFor(g, now.mark);
+          else if ("side" in g) gaze = gazeFor({ side: g.side }, now.mark);
+          else {
+            const el = els.find((e) => e.key === g.key);
+            const oi = el ? largestObjectOf(el, spec.objects) : null;
+            if (oi !== null) gaze = gazeFor({ objectIndex: oi }, now.mark);
+            else extraDropped.push("gaze.thing");
+          }
+          setGaze(gaze);
+          now.gaze = gaze;
+          layoutRef.current = { ...layoutRef.current, gaze };
+          chips.push({ kind: "gaze", gaze: g });
+          break;
+        }
+        case "look": {
+          // The light is aimed from where the camera ENDED this turn (light-schemes.ts schemeDefaults).
+          const { patch } = lookPatch(step, now.rig, bearingDeg(now.mark, { x: camXz()[0], z: camXz()[1] }));
+          if (Object.keys(patch).length > 0) rigNow(patch);
+          for (const rid of step.ids) chips.push({ kind: "rig", id: rid });
+          if (step.hour !== undefined) chips.push({ kind: "hour", hour: step.hour });
+          if (step.evThirds !== undefined) chips.push({ kind: "ev", ev: now.rig.ev });
+          if (step.look === "off") {
+            pickLook(null);
+            chips.push({ kind: "look", look: "off" });
+          } else if (step.look !== undefined) {
+            // "newest", or a still by its number: one this set has, that can be a look (look.ts).
+            const n = step.look;
+            const shot = n === "newest" ? shots.find(canBeLook) : shots.find((sh) => sh.kind === "still" && stillNumber(sh) === n);
+            if (shot && canBeLook(shot)) {
+              pickLook(shot.generationId);
+              chips.push({ kind: "look", look: stillNumber(shot) });
+            } else extraDropped.push("look");
+          }
+          break;
+        }
+        case "words":
+          if (step.happens) {
+            setDirection(step.happens.text);
+            now.direction = step.happens.text;
+            chips.push({ kind: "happens", text: step.happens.text });
+          }
+          // Their words say what they wear: the saved outfit photo sits the next still or take out (step 9).
+          if (step.outfitOff) {
+            outfitOffRef.current = true;
+            now.outfitOff = true;
+          }
+          break;
+        case "takeArm": {
+          // Set up for free; rendered only by its own priced press (money rule 3).
+          // A plan without takes is told, as "Take it somewhere" tells it.
+          if (!takesOn) {
+            setError(SET_TAKE_NEEDS_PLAN);
+            break;
+          }
+          const start: TakeStart = { id: step.still.id, n: step.still.n, armedBy: "chat" };
+          setTakeStart(start);
+          now.takeStart = start;
+          chips.push({ kind: "takeFrom", still: step.still.n });
+          break;
+        }
+        case "motion": {
+          if (!takesOn) break;
+          if (step.move !== undefined || step.textures !== undefined) {
+            const kept: TakeMove = { move: step.move ?? now.takeMove?.move ?? null, textures: step.textures ?? now.takeMove?.textures ?? [] };
+            takeMoveRef.current = kept;
+            now.takeMove = kept;
+          }
+          if (step.move !== undefined) chips.push({ kind: "move", move: step.move });
+          for (const tx of step.textures ?? []) chips.push({ kind: "texture", texture: tx });
+          if (step.engine !== undefined) {
+            setTakeEngine(step.engine);
+            now.takeEngine = step.engine;
+            chips.push({ kind: "engine", engine: step.engine });
+          }
+          // The end frame laid the Film tab's way (moves.ts), from the take's start still's own camera.
+          if (step.layEnd && step.move !== undefined && now.takeStart) {
+            const startId = now.takeStart.id;
+            const from = shots.find((sh) => sh.generationId === startId)?.pose ?? now.camera;
+            api.goTo(layBeatMove(step.move, from, now.mark, spec.bounds, (p) => api.roomFor(p)));
+            cameraAt(null, null);
+            now.frameX = frameXAfter(now.frameX, { kind: "match" });
+            frameXRef.current = now.frameX;
+          }
+          break;
+        }
+      }
+    }
+    if (movedRound) pageNotes.push({ kind: "frameLineMoved" });
+    if (plan.steps.length > 0) {
+      setViewing(null);
+      setPoseNow(now.camera);
+      scheduleSave();
+      keepRevision(now.direction, now.cameraId);
+    }
+
+    // What the stage found as it ran joins the plan: a raise past what words
+    // do, a thing or a still that wasn't there, a take this plan can't render.
+    const shown: TurnPlan = {
+      ...plan,
+      cant: [...plan.cant, ...extraCant.filter((c, i, all) => all.indexOf(c) === i && !plan.cant.some((x) => x.code === c)).map((code) => ({ code, said: null }))],
+      dropped: [...plan.dropped, ...extraDropped.filter((d) => !plan.dropped.includes(d))],
+      ...(takesOn ? {} : { needs: plan.needs.filter((n) => n.kind !== "take"), notes: plan.notes.filter((n) => n.kind !== "takeArmed"), takeAfter: now.takeStart }),
+    };
+    // Whether the picture changed: a take set up or its move is not a new frame.
+    const changed = snapshotDiff(before, now).some((k) => k !== "takeStart" && k !== "takeMove" && k !== "takeEngine");
+    const shot = shootDecision(shown, { mode: state.mode, source: ctx.source }, { changed, cant: extraCant.length > 0 });
+    // The one press id for this turn's shot, minted here, fired from the next render (shootDue).
+    if (shot.kind !== "none") setShootDue({ pressId: newPressId(), kind: shot.kind, turnId: id });
+    if (plan.steps.length > 0) {
+      turnUndoRef.current = [...turnUndoRef.current, { turnId: id, before, after: { ...now }, stillShot: shot.kind !== "none" }].slice(-TURN_UNDO_MAX);
+    }
+    const outcomes: TurnOutcomes = { chips, notes: pageNotes };
+    const facts = replyFactsOf(now, shot);
+    addTurn({ ...base, plan: shown, outcomes, facts, reply: composeReply(shown, outcomes, facts, replyWords), did: turnDid(shown, outcomes, ctx.aliases) });
+    return id;
+  }
+  const runTurnRef = useRef<typeof runTurn | null>(null);
+  useEffect(() => {
+    runTurnRef.current = runTurn;
+  });
+
+  /** The page put back as a turn found it: every setter, the stage at once, and the arrangement saved (spec §3.5). */
+  function restoreTurnState(st: TurnState) {
+    const api = apiRef.current;
+    if (!api) return;
+    keepStage(false, false);
+    setCharacterId(st.characterId ?? "");
+    api.placeMark(st.mark);
+    layoutRef.current = { ...layoutRef.current, markId: st.markId ?? layoutRef.current.markId, mark: st.mark, pose: st.pose, gaze: st.gaze };
+    if (st.markId !== null) setMarkId(st.markId);
+    setMark(st.mark);
+    setPose(st.pose);
+    setGaze(st.gaze);
+    api.goTo(st.camera);
+    setFovDeg(st.camera.fovDeg);
+    setPoseNow(st.camera);
+    setCameraId(st.cameraId);
+    rigRef.current = st.rig;
+    setRig(st.rig);
+    setDirection(st.direction);
+    frameXRef.current = st.frameX;
+    setTakeStart(st.takeStart);
+    takeMoveRef.current = st.takeMove;
+    setTakeEngine(st.takeEngine);
+    outfitOffRef.current = st.outfitOff;
+    scheduleSave();
+  }
+
+  /** What an Undo put back, as chips: only what differs from the page it found. */
+  function restoredChips(from: TurnState, to: TurnState): Outcome[] {
+    const out: Outcome[] = [];
+    if (to.characterId !== from.characterId && to.characterId) out.push({ kind: "who", characterId: to.characterId, was: from.characterId });
+    if (Math.hypot(to.mark.x - from.mark.x, to.mark.z - from.mark.z) > 1e-3) {
+      const on = markOn(to.markId, to.mark);
+      out.push(on ? { kind: "mark", markId: on } : { kind: "ownSpot" });
+    } else if (Math.abs(to.mark.facingDeg - from.mark.facingDeg) > 0.5) out.push({ kind: "facing", facing: facingSeen(to.mark, to.camera) });
+    if (to.pose !== from.pose) out.push({ kind: "pose", pose: to.pose });
+    const cam = (p: Pose) => p.position.concat(p.target).map((n) => Math.round(n * 100));
+    if (cam(to.camera).join() !== cam(from.camera).join() || to.cameraId !== from.cameraId) {
+      if (to.cameraId) out.push({ kind: "camera", cameraId: to.cameraId });
+      out.push({ kind: "height", height: null, m: to.camera.position[1] });
+      out.push({ kind: "side", side: cameraSideOf(to.mark, to.camera) });
+    }
+    if (Math.abs(to.camera.fovDeg - from.camera.fovDeg) > 0.05) out.push({ kind: "lens", mm: nearestLens(to.camera.fovDeg, sensorHeightMm(to.rig.sensor, to.rig.format)) });
+    if (to.frameX !== from.frameX) out.push({ kind: "frameX", frameX: to.frameX });
+    if (JSON.stringify(to.gaze) !== JSON.stringify(from.gaze)) {
+      const g = to.gaze;
+      const key = g?.at === "object" ? els.find((e) => e.members.some(([o]) => o === g.index))?.key : undefined;
+      if (!g) out.push({ kind: "gaze", gaze: "none" });
+      else if (g.at === "camera") out.push({ kind: "gaze", gaze: "camera" });
+      else if (key) out.push({ kind: "gaze", gaze: { key } });
+    }
+    out.push(...rigRestoredChips(from.rig, to.rig));
+    if (to.direction !== from.direction) out.push({ kind: "happens", text: to.direction });
+    if (to.takeStart?.id !== from.takeStart?.id && to.takeStart) out.push({ kind: "takeFrom", still: to.takeStart.n });
+    if (to.takeEngine !== from.takeEngine) out.push({ kind: "engine", engine: to.takeEngine });
+    return out;
+  }
+
+  /**
+   * Undo, one turn back (spec §3.5): the page as that turn found it, with
+   * the person's own moves since then undone too and said so; the Astra
+   * change it pressed brought back through undoAstraEdit — never Astra,
+   * never a refund; stills it shot stay. Nothing is read again. From a
+   * message ("undo that") the rest of the message is offered with Do it.
+   */
+  async function undoTurn(ctx: TurnContext, plan: TurnPlan | null) {
+    const current = turnStateNow();
+    const stack = turnUndoRef.current;
+    const top = stack[stack.length - 1];
+    const u = undoPlan(stack, current, top?.astra ? specBeforeEditRef.current === top.astra.before : false);
+    const id = plan ? turnIdRef.current : (turnIdRef.current += 1);
+    const chips: Outcome[] = [];
+    const pageNotes: PageNote[] = [];
+    let restored = current;
+    if (u.kind === "none") pageNotes.push({ kind: "undoNone" });
+    else {
+      turnUndoRef.current = stack.slice(0, -1);
+      restored = u.snapshot.before;
+      restoreTurnState(restored);
+      chips.push(...restoredChips(current, restored));
+      if (u.handMoves) pageNotes.push({ kind: "undoHand" });
+      if (u.astra) {
+        const back = await undoSetEdit(true);
+        if (back === "textKept") pageNotes.push({ kind: "undoAstraText" });
+        else if (back === "undone") pageNotes.push({ kind: "undoAstra" });
+      }
+      if (u.stillsStay) pageNotes.push({ kind: "stillsStay" });
+    }
+    const shown = plan ?? planTurn({ undo: true }, planStateOf(ctx, current));
+    const outcomes: TurnOutcomes = { chips, notes: pageNotes };
+    const facts = replyFactsOf(restored, null);
+    addTurn({ id, asked: ctx.asked, shotsAt: shots.length, settled: false, plan: shown, outcomes, facts, reply: composeReply(shown, outcomes, facts, replyWords), did: turnDid(shown, outcomes, ctx.aliases) });
+  }
+
+  /** A stored reading a button runs: a preview, an undo's rest, or a suggestion row — without its questions, idea, options or "not yet" again. */
+  function readingOf(turn: ChatTurn, row: number | "plan" | "rest"): ShotReading | null {
+    const r = row === "plan" ? turn.plan.reading : row === "rest" ? turn.plan.proposal : (turn.plan.suggestions[row]?.act ?? null);
+    if (!r) return null;
+    const act: ShotReading = { ...r };
+    delete act.ask;
+    delete act.idea;
+    delete act.suggest;
+    delete act.cant;
+    delete act.shoot;
+    delete act.undo;
+    return act;
+  }
+
+  /**
+   * A turn's reply said again at today's prices, when a press finds its
+   * button's price no longer true (the take's engine changed since): the
+   * press spends nothing, and the button shows what it would cost now
+   * (spec §3.8 rule 7).
+   */
+  function repriceTurn(turn: ChatTurn) {
+    const facts: ReplyFacts = { ...turn.facts, credits: pageCredits, takeEngine };
+    const plan: TurnPlan = {
+      ...turn.plan,
+      needs: turn.plan.needs.map((n) => (n.kind === "take" ? { ...n, engine: takeEngine, credits: pageCredits.take[takeEngine] } : n)),
+      suggestions: turn.plan.suggestions.map((sg) =>
+        sg.second ? { ...sg, second: { ...sg.second, credits: sg.second.kind === "take" ? pageCredits.take[sg.act.engine ?? takeEngine] : pageCredits.still } } : sg,
+      ),
+    };
+    setTurns((prev) => prev.map((x) => (x.id === turn.id ? { ...x, plan, facts, reply: composeReply(plan, x.outcomes, facts, replyWords) } : x)));
+  }
+
+  /**
+   * A press on a reply's button. Only the newest turn's buttons act, and
+   * nothing while a read, a shot or an Astra change is out. Do it, a
+   * which-one, Use the hour and Undo run as their own turn and never shoot;
+   * every paid button spends exactly what its label says, with its own id
+   * minted at the click, or nothing when its price has moved (rule 7).
+   */
+  function replyAction(turn: ChatTurn, action: ReplyAction) {
+    if (reading || shooting || editingSet || matching || following !== null || !ready) return;
+    const newest = turns[turns.length - 1];
+    if (!newest || newest.id !== turn.id || (turn.settled && action.kind !== "undo")) return;
+    const button = TURN_BUTTON;
+    switch (action.kind) {
+      case "undo":
+        void undoTurn(button, null);
+        return;
+      case "doIt": {
+        const r = readingOf(turn, action.row);
+        if (r) runTurn(r, button);
+        return;
+      }
+      case "doItShoot":
+      case "doItTake": {
+        const r = readingOf(turn, action.row);
+        const kind = action.kind === "doItTake" ? "take" : "still";
+        const price = kind === "take" ? pageCredits.take[r?.engine ?? takeEngine] : pageCredits.still;
+        if (!r) return;
+        if (price !== action.credits) {
+          repriceTurn(turn);
+          return;
+        }
+        // The row runs as a button turn (it never shoots itself), then its
+        // priced shot fires from the render that holds it, with this click's id.
+        const at = runTurn(r, button);
+        if (at !== null) setShootDue({ pressId: newPressId(), kind, turnId: at });
+        return;
+      }
+      case "which": {
+        const need = turn.plan.needs.find((n): n is Extract<Need, { kind: "which" }> => n.kind === "which" && n.slot === action.slot);
+        if (need && turn.plan.reading) runTurn(resolveWhich(turn.plan.reading, need, action.key), button);
+        return;
+      }
+      case "useHour":
+        runTurn(USE_HOUR_READING, button);
+        return;
+      case "take":
+        // [Take · n]: the take's own priced press, the one that may render a take the chat set up.
+        if (!takeStart) return;
+        if (pageCredits.take[takeEngine] !== action.credits) {
+          repriceTurn(turn);
+          return;
+        }
+        settleTurn(turn.id);
+        void take();
+        return;
+      case "shootAsIs": {
+        const price = action.press === "take" ? pageCredits.take[takeEngine] : pageCredits.still;
+        if (price !== action.credits || (action.press === "take" && !takeStart)) {
+          repriceTurn(turn);
+          return;
+        }
+        settleTurn(turn.id);
+        void (action.press === "take" ? take() : shoot());
+        return;
+      }
+      case "astraGo":
+      case "astraGoShoot":
+        goAstra(turn, action.kind === "astraGoShoot");
+        return;
+      case "notNow":
+        settleTurn(turn.id);
+        return;
+      case "useMyWords":
+        if (turn.asked !== null) wordsAsHappens(turn.asked);
+        settleTurn(turn.id);
+        return;
+      case "tryAgain":
+        if (turn.asked !== null) void sendTurn(turn.asked, { source: "retry" });
+        return;
+      case "openFilm":
+        studioModes.film.onClick();
+        return;
+      case "openCard":
+        openElementCard(action.key);
+        return;
+      case "buildNew":
+        router.push("/app/sets");
+        return;
+      case "at":
+        setMentionForced(true);
+        draftRef.current?.focus();
+        return;
+      case "askProducer":
+        // The Producer's lamp opens with the words, unsent (Cut 2, step 12).
+        window.dispatchEvent(new CustomEvent("producer:ask", { detail: { text: turn.asked ?? "" } }));
+        return;
+    }
+  }
+
+  /**
+   * The Astra card's press from a turn: the person's own words (≤300, what
+   * the card quoted), what the chat read them to mean, and where the person
+   * and the camera stand. "Change it, then shoot" mints the still's id at
+   * the click; the still is taken only once the change saves (spec §3.3).
+   * A change that lands becomes part of its turn, so Undo brings the set
+   * back — through undoAstraEdit, never Astra.
+   */
+  function goAstra(turn: ChatTurn, thenShoot: boolean) {
+    const need = turn.plan.needs.find((n): n is Extract<Need, { kind: "astra" }> => n.kind === "astra");
+    if (!need || !need.canGo || editingSet) return;
+    settleTurn(turn.id);
+    const pose = apiRef.current?.pose() ?? null;
+    const frame: EditFrame = { mark: layoutRef.current.mark, camera: pose ? { position: pose.position, target: pose.target } : null };
+    const then = thenShoot ? { pressId: newPressId(), turnId: turn.id } : undefined;
+    void editSet({ said: need.said, gloss: need.gloss }, frame, then).then((r) => {
+      if (!r.landed) return;
+      const astra = { before: r.before, undo: r.undo, kind: "edit" as const, landed: true };
+      const stack = turnUndoRef.current;
+      const top = stack[stack.length - 1];
+      if (top && top.turnId === turn.id) turnUndoRef.current = [...stack.slice(0, -1), { ...top, astra }];
+      else {
+        const here = turnStateNow();
+        turnUndoRef.current = [...stack, { turnId: turn.id, before: here, after: here, astra }].slice(-TURN_UNDO_MAX);
+      }
+    });
+  }
+
+  /** A shot a turn decided that could not start (busy, the likeness, no one to cast): said on the turn, with Shoot as it is (spec §6.3). */
+  function dueNotStarted(due: ShootDue) {
+    const r = replyWords.reply;
+    setTurns((prev) =>
+      prev.map((x) => {
+        if (x.id !== due.turnId) return x;
+        const outcomes: TurnOutcomes = { chips: x.outcomes?.chips ?? [], notes: [...(x.outcomes?.notes ?? []), { kind: "notStarted" }] };
+        const facts: ReplyFacts = { ...x.facts, shot: { kind: "none", held: [], offer: null } };
+        // Said again with only what is still open: a card or a which-one already answered never comes back.
+        const plan: TurnPlan = { ...x.plan, needs: x.plan.needs.filter((n) => n.kind === "take" || n.kind === "takeFormat") };
+        const reply = composeReply(plan, x.outcomes ? outcomes : null, facts, replyWords);
+        const n = due.kind === "take" ? facts.credits.take[facts.takeEngine] : facts.credits.still;
+        const credits = creditsLabel(r, n);
+        const label = due.kind === "take" ? fill(r.takeNow, { take: r.takeLabel, credits }) : fill(r.shootAsIs, { credits });
+        const lines = x.outcomes ? reply.lines : [...reply.lines, { kind: "note" as const, text: r.noteNotStarted, buttons: [] }];
+        return { ...x, plan, settled: false, facts, reply: { ...reply, lines: [...lines, { kind: "needs", text: r.replyNeeds, buttons: [{ kind: "shootAsIs", press: due.kind, credits: n, label }] }] } };
+      }),
+    );
+    turnUndoRef.current = turnUndoRef.current.map((sn) => (sn.turnId === due.turnId ? { ...sn, stillShot: false } : sn));
+  }
 
   // The thread grows downward; the newest turn is what the person is waiting
   // for — and an error is said at its end, under the frame, so one raised
@@ -8123,11 +9137,82 @@ export function SetView({
                 );
               })}
 
-              {pendingAsks.map((ask, i) => (
-                <div key={`ask-${i}`} className="max-w-[86%] self-end whitespace-pre-wrap rounded-[16px] rounded-br-[4px] bg-[#ecedf1] px-3.5 py-2.5 text-sm leading-relaxed text-[#1b1c20]">
-                  {ask}
-                </div>
-              ))}
+              {/* v1's waiting messages; reader v2's are its turns, below. */}
+              {!v2On &&
+                pendingAsks.map((ask, i) => (
+                  <div key={`ask-${i}`} className="max-w-[86%] self-end whitespace-pre-wrap rounded-[16px] rounded-br-[4px] bg-[#ecedf1] px-3.5 py-2.5 text-sm leading-relaxed text-[#1b1c20]">
+                    {ask}
+                  </div>
+                ))}
+
+              {/* The chat's turns (Helios Cut 2, reader v2, step 11a): the
+                  person's words, then the reply said from what the page did,
+                  its buttons live on the newest turn only. A plain drawing
+                  until the owner picks the reply's layout (step 11b); a still
+                  that lands carries the words of the turns before it, and
+                  they fold into it, as v1's messages do. */}
+              {v2On &&
+                turns.map((tn) => {
+                  if (tn.shotsAt !== shots.length) return null;
+                  const newest = tn.id === turns[turns.length - 1]?.id;
+                  const lines = newest ? tn.reply.lines : tn.reply.lines.filter((l) => l.kind === "done" || l.kind === "undone" || l.kind === "planned").slice(0, 1);
+                  const held = reading || shooting || editingSet || following !== null || !ready;
+                  const card = newest && !tn.settled ? tn.reply.astra : null;
+                  return (
+                    <Fragment key={`turn-${tn.id}`}>
+                      {tn.asked !== null && (
+                        <div className="max-w-[86%] self-end whitespace-pre-wrap rounded-[16px] rounded-br-[4px] bg-[#ecedf1] px-3.5 py-2.5 text-sm leading-relaxed text-[#1b1c20]">
+                          {tn.asked}
+                        </div>
+                      )}
+                      {(lines.length > 0 || card) && (
+                        <div className="flex items-start gap-2.5" data-turn={tn.id}>
+                          <AstraMark />
+                          <div className="min-w-0 flex-1 space-y-1.5">
+                            {lines
+                              .filter((l) => l.kind !== "astra")
+                              .map((line, i) => (
+                                <p key={i} className="text-sm leading-relaxed text-[#d6d9e0]" data-reply-line={line.kind}>
+                                  {line.text}
+                                  {newest &&
+                                    line.buttons
+                                      .filter((btn) => !tn.settled || btn.kind === "undo")
+                                      .map((btn, j) => (
+                                        <button
+                                          key={j}
+                                          type="button"
+                                          onClick={() => replyAction(tn, btn)}
+                                          disabled={held}
+                                          data-reply-button={btn.kind}
+                                          className="ml-2 cursor-pointer font-medium text-[#e0a468] disabled:text-[#9aa0ad]"
+                                        >
+                                          {btn.label}
+                                        </button>
+                                      ))}
+                                </p>
+                              ))}
+                            {/* A change to the set itself waits on its card: the words Astra reads, the month's changes, its own press. */}
+                            {card && (
+                              <AstraChangeCard
+                                words={card.said}
+                                editsLeft={editsLeft}
+                                editsCap={astraEditsCap}
+                                tooBig={astraTooBig(spec)}
+                                busy={held}
+                                shootCredits={card.shootCredits}
+                                onGo={() => replyAction(tn, { kind: "astraGo" })}
+                                onGoShoot={() => replyAction(tn, { kind: "astraGoShoot", credits: card.shootCredits ?? pageCredits.still })}
+                                onNotNow={() => replyAction(tn, { kind: "notNow" })}
+                                copy={s.reply}
+                                buildLabel={s.editorOpen}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </Fragment>
+                  );
+                })}
 
               {/* An Astra edit of the set, landed: how much of it changed. */}
               {setChanged !== null && (

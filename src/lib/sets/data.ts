@@ -20,6 +20,7 @@ import {
   SET_RESERVED_BRIEF, setTakesEligible } from "@/lib/sets/set-config";
 import { readShotCameras } from "@/lib/sets/shot-camera";
 import { readShotWords } from "@/lib/sets/shot-words-store";
+import { SHOT_READER_V2_OPEN_TO_ALL } from "@/lib/sets/shot-reading";
 import { seesLookObjects } from "@/lib/sets/look-cutout";
 import { normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
 import { normaliseSetFilm, type SetFilm } from "@/lib/sets/film";
@@ -446,6 +447,9 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     // And the plan's cap beside it (Helios Cut 2, step 1): a null count is
     // "no cap" only when the cap is −1; otherwise it could not be read.
     astraEditsCap: setEditsMonthlyLimit(access.plan, access.isAdmin),
+    // The chat's reader v2 (Helios Cut 2): admins until the phrase check
+    // passes; readShotTurn holds the same rule on the server.
+    readerV2: access.isAdmin || SHOT_READER_V2_OPEN_TO_ALL,
     // The photos on the set's things and the sheets already drawn (R1,
     // 2026-09-21): the folder is the list, read with the service client
     // inside the person's own folder only; the storage paths stay here.

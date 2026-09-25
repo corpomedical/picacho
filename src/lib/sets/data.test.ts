@@ -79,6 +79,7 @@ vi.mock("@/lib/characters/likeness-store", () => ({ readLikeness: async () => ({
 vi.mock("@/lib/sets/set-config", async () => await import("./set-config"));
 vi.mock("@/lib/sets/shot-camera", async () => await import("./shot-camera"));
 vi.mock("@/lib/sets/shot-words-store", async () => await import("./shot-words-store"));
+vi.mock("@/lib/sets/shot-reading", async () => await import("./shot-reading"));
 vi.mock("@/lib/sets/look-cutout", async () => await import("./look-cutout"));
 vi.mock("@/lib/sets/set-spec", async () => await import("./set-spec"));
 vi.mock("@/lib/sets/film", async () => await import("./film"));
@@ -89,6 +90,7 @@ vi.mock("@/lib/sets/set-shots", async () => await import("./set-shots"));
 vi.mock("@/lib/sets/messages", async () => await import("./messages"));
 
 import { getSetPage } from "./data";
+import { SHOT_READER_V2_OPEN_TO_ALL } from "./shot-reading";
 
 /**
  * PostgREST over the tables given, as far as the loader asks it: a select
@@ -260,6 +262,16 @@ describe("the month's Astra changes, for the editor", () => {
     expect((await page(ready(world([still(1)])))).astraEditsCap).toBe(-1);
     who = { plan: "starter", isAdmin: false };
     expect((await page(ready(world([still(1)])))).astraEditsCap).toBe(setEditsMonthlyLimit("starter", false));
+  });
+
+  // The chat's reader v2 (Helios Cut 2, step 11a, 2026-09-25): admins only
+  // until the owner's phrase check opens it (SHOT_READER_V2_OPEN_TO_ALL).
+  it("reads the chat with reader v2 for admins only, until it opens to everyone", async () => {
+    expect(SHOT_READER_V2_OPEN_TO_ALL).toBe(false);
+    who = { plan: "growth", isAdmin: true };
+    expect((await page(ready(world([still(1)])))).readerV2).toBe(true);
+    who = { plan: "elite", isAdmin: false };
+    expect((await page(ready(world([still(1)])))).readerV2).toBe(false);
   });
 });
 
