@@ -20,6 +20,22 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.112.0",
+    build: 151,
+    date: "2026-09-25",
+    title: "The Producer talks like a phone call, ignores the room, answers several things at once and fixes Helios sets",
+    items: [
+      "Talk over the Producer and it goes quiet at once and listens, the way a phone call works. A cough or a word from the TV only dips its voice for a moment, and it carries on.",
+      "Voices that weren't talking to the Producer are left alone: a video playing, a TV, someone else in the room. Each thing it hears is checked for whether it was said to it. What wasn't shows as a small note with \"Answer it\", costs nothing, and is never answered on its own.",
+      "Several things at once work. Pause mid-question and the two parts go together. Ask something new while it answers, and it stops, keeps what it had said, and answers the new question plus anything still unanswered. A message typed while it answers shows at once and goes when it's done.",
+      "It spells names right: \"Picacho\", its own name and your characters' names are no longer heard as something else.",
+      "It can fix a Helios set by hand: stand a car back on its wheels, turn a thing, move it, or set it on the floor. It's free, saved to the set's Build copy (Astra's original is kept), and \"undo that\" puts it back. On the set's page, the page reloads to show the fix; a new still (1 credit, your press) shows it in a picture.",
+      "The lamp moves like a real object. It glides on a spring, keeps the speed of a throw, flattens against the edge as it docks, and its light fades out of one shape and into the next. The edge lights up only where letting go will dock.",
+      "What tells when you start and stop talking now runs on your device. What the Producer heard is also checked by Anthropic, the AI it runs on, and the transcription is told your characters' names. The privacy policy says so in all four languages.",
+      "Your Producer starts one fresh conversation to take the new abilities. Its notes about you carry over.",
+    ],
+  },
+  {
     version: "1.111.0",
     build: 150,
     date: "2026-09-25",
