@@ -7136,6 +7136,10 @@ export function SetView({
           lenses: s.rig.lenses,
           palette: s.rig.palette,
           palettes: s.rig.palettes,
+          era: s.rig.era,
+          eras: s.rig.eras,
+          genre: s.rig.genre,
+          genres: s.rig.genres,
           overlays: {
             thirds: s.rig.overlayThirds,
             golden: s.rig.overlayGolden,

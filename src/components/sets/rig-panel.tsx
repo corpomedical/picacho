@@ -51,6 +51,7 @@ import { compassWord, sunAt, timeLabel } from "@/lib/sets/time-of-day";
 import { RIG_TAB_SECTIONS, tabAfterFilm, tabsFor, type RigSection, type RigTab } from "@/lib/sets/rig-dock";
 import { FILM_MOVES, FILM_TEXTURES, type FilmMove, type FilmTexture } from "@/lib/sets/moves";
 import { RIG_BLADES } from "@/lib/sets/furniture";
+import { genreLookPatch } from "@/lib/sets/commands";
 
 // The rig (Helios Cinema, 2026-09-15, drawn as canvas page I): the camera
 // department, docked left of the stage — Blender's tool panel to the
@@ -759,7 +760,8 @@ export function RigPanel({
   const stopsLabel = `${stops > 0 ? "+" : ""}${nf.format(stops)}`;
   const evLabel = `${rig.ev > 0 ? "+" : ""}${nf.format(rig.ev)}`;
   const atReference = rig.ev === 0 && rig.iso === RIG_REFERENCE_EXPOSURE.iso && rig.shutterDeg === RIG_REFERENCE_EXPOSURE.shutterDeg;
-  const suggestion = rig.genre ? RIG_GENRE_SUGGESTS[rig.genre] : null;
+  const genre = rig.genre;
+  const suggestion = genre ? RIG_GENRE_SUGGESTS[genre] : null;
   const suggestionInUse = Boolean(suggestion && rig.light?.scheme === suggestion.light && rig.palette === suggestion.palette);
   const lightLine = rig.light ? null : r.asBuiltLine;
 
@@ -967,15 +969,16 @@ export function RigPanel({
               </select>
             </label>
           </div>
-          {suggestion && rig.genre && (
+          {suggestion && genre && (
             <p className="mt-2 text-[11.5px] leading-4 text-[#c6c9d1]">
-              {formatMsg(r.suggests, { genre: r.genres[rig.genre], light: r.lights[suggestion.light], palette: r.palettes[suggestion.palette] })}{" "}
+              {formatMsg(r.suggests, { genre: r.genres[genre], light: r.lights[suggestion.light], palette: r.palettes[suggestion.palette] })}{" "}
               {suggestionInUse ? (
                 <span className="font-medium text-[#9aa0ad]">{r.inUse}</span>
               ) : (
                 <button
                   type="button"
-                  onClick={() => set({ light: schemeDefaults(suggestion.light, cameraBearingDeg), palette: suggestion.palette })}
+                  // The one mapping ⌘K and the chat use for a genre (commands.ts, Helios Cut 2, step 3).
+                  onClick={() => set(genreLookPatch(genre, cameraBearingDeg))}
                   className="cursor-pointer font-medium text-[#e0a468] hover:underline"
                 >
                   {r.useThese}
