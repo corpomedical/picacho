@@ -57,7 +57,7 @@ import {
   type TurnWord,
 } from "./shot-reading";
 import { HEIGHT_M, type CameraHeight, type CameraSide, type FigureFacing, type LensMm, type ShotSize } from "./shot-words";
-import type { SetTakeEngine } from "./take";
+import { SET_TAKE_DEFAULT_ENGINE, type SetTakeEngine } from "./take";
 import type { Vehicle } from "./vehicles";
 
 // ---------------------------------------------------------------------------
@@ -957,7 +957,10 @@ export function planTurn(reading: ShotReading | null, state: PageState): TurnPla
 
   // 13. A moving shot: the take the person or the chat set up keeps it;
   // else the chat sets one up, for free, from a still of the chip's person
-  // in this frame's shape — which renders only from its priced press.
+  // in this frame's shape — which renders only from its priced press. A take
+  // the chat sets up starts on the default engine unless the words name one,
+  // as "Take it somewhere" does, so its price is never a leftover from an
+  // earlier, pricier take (review of Cut 2, S3).
   let engine = state.takeEngine;
   const wantsMove = r.move !== undefined || r.textures !== undefined;
   const motion: Extract<Step, { kind: "motion" }> = { kind: "motion", layEnd: false };
@@ -976,6 +979,9 @@ export function planTurn(reading: ShotReading | null, state: PageState): TurnPla
     notes.push({ kind: "takeArmed", still: start });
     take = { id: start.id, n: start.n, armedBy: "chat" };
     armed = true;
+    const armEngine = r.engine ?? SET_TAKE_DEFAULT_ENGINE;
+    if (armEngine !== state.takeEngine) motion.engine = armEngine;
+    engine = armEngine;
     if (move !== undefined) motion.move = move;
     if (textures !== undefined) motion.textures = [...textures];
     motion.layEnd = layEnd;
@@ -1026,8 +1032,19 @@ export function planTurn(reading: ShotReading | null, state: PageState): TurnPla
   plan.suggestions = (r.suggest ?? []).map((act) => ({ act, second: secondButton(planTurn(act, after), after) }));
 
   if (proposal) {
-    // Just talking: nothing runs, nothing waits — Do it runs it all as a button turn.
-    return { ...plan, kind: "proposal", needs: [], notes: [], takeAfter: state.takeStart };
+    // Just talking: nothing runs, nothing waits — Do it runs it all as a
+    // button turn. What it would ask or couldn't do is still said: a "which
+    // one?" (its taps are button turns, never a shot), a person who can't be
+    // cast; and a take on a still of another shape stays on the plan, unsaid
+    // (the frame has not changed yet), so no priced button stands beside a
+    // row that can't be shot as it is (review of Cut 2, S1 and U4).
+    return {
+      ...plan,
+      kind: "proposal",
+      needs: needs.filter((n) => n.kind === "which" || n.kind === "takeFormat"),
+      notes: notes.filter((n) => n.kind === "notCastable" || n.kind === "whoUnknown"),
+      takeAfter: state.takeStart,
+    };
   }
   return plan;
 }
@@ -1116,6 +1133,21 @@ export function shootDecision(plan: TurnPlan, state: Pick<PageState, "mode" | "s
 }
 
 /**
+ * A priced "Do it and shoot · n" or "Do it and take · n" press, once its row
+ * has run as a button turn (review of Cut 2, S1): the shot the press paid
+ * for, unless something the row ran into holds it — a "which one?", a "not
+ * yet", a part that didn't match, a person who can't be cast, a take on a
+ * still of another shape. Then nothing is shot and `offer` puts [Shoot as
+ * it is · n] (or [Take · n]) beside what holds it. A take the chat set up
+ * holds neither: a still leaves it waiting, and "Do it and take" is the
+ * priced Take press that may render it.
+ */
+export function paidDecision(plan: TurnPlan, kind: "still" | "take"): ShootDecision {
+  const held = blockersOf(plan).filter((b) => b !== "take");
+  return held.length > 0 ? { kind: "none", held, offer: kind } : { kind, held: [], offer: null };
+}
+
+/**
  * The priced second button beside a suggestion or a Just-talking preview
  * (spec §3.6), worked out from that row's own plan: a take when it sets one
  * up, when the person's take waits, or when its move rides a take already
@@ -1126,6 +1158,11 @@ export function shootDecision(plan: TurnPlan, state: Pick<PageState, "mode" | "s
  */
 export function secondButton(plan: TurnPlan, state: Pick<PageState, "credits" | "takeEngine">): SecondButton | null {
   if (plan.reading?.setChange || plan.needs.some((n) => n.kind === "astra")) return null;
+  // A row that waits on a "which one?", a take on a still of another shape,
+  // or a person who can't be cast is not a frame to shoot yet: Do it asks,
+  // and nothing priced stands beside it (review of Cut 2, S1).
+  if (plan.needs.some((n) => n.kind === "which" || n.kind === "takeFormat")) return null;
+  if (plan.notes.some((n) => n.kind === "notCastable" || n.kind === "whoUnknown")) return null;
   const motion = plan.steps.find((s): s is Extract<Step, { kind: "motion" }> => s.kind === "motion");
   const engine = motion?.engine ?? state.takeEngine;
   const wantsMove = plan.reading?.move !== undefined || plan.reading?.textures !== undefined;
@@ -1214,11 +1251,32 @@ export function snapshotDiff(a: TurnState, b: TurnState): (keyof TurnState)[] {
   return (Object.keys(a) as (keyof TurnState)[]).filter((k) => !closeEnough(a[k], b[k]));
 }
 
+/** Whether two takes are the same take, set up the same way. */
+const sameTake = (a: TakeStart | null, b: TakeStart | null): boolean => (a === null || b === null ? a === b : a.id === b.id && a.n === b.n && a.armedBy === b.armedBy);
+
+/**
+ * What Undo puts back of the take (review of Cut 2, S2): the take as that
+ * turn found it, but only while it is still as the turn left it. Once
+ * something since rendered it, cancelled it or set another one up, the take
+ * stays as it is now: a take that already rendered never comes back set up
+ * — least of all as the person's own, which "Shoot without asking" and every
+ * generic Shoot would render again on their own.
+ */
+export function undoneTake(snapshot: Pick<TurnSnapshot, "before" | "after">, current: TurnState): Pick<TurnState, "takeStart" | "takeMove" | "takeEngine"> {
+  const from = sameTake(current.takeStart, snapshot.after.takeStart) ? snapshot.before : current;
+  return { takeStart: from.takeStart, takeMove: from.takeMove, takeEngine: from.takeEngine };
+}
+
+/** What Undo leaves as it is, so not a move by hand either: the take when it has moved on, and the outfit flag a shot uses up. */
+const TAKE_KEYS: readonly (keyof TurnState)[] = ["takeStart", "takeMove", "takeEngine"];
+
 export type UndoPlan =
   | { kind: "none" }
   | {
       kind: "restore";
       snapshot: TurnSnapshot;
+      /** The page to put back: the turn's `before`, with the take as undoneTake leaves it. */
+      restore: TurnState;
       /** The person moved things by hand since that turn: those moves are undone too, and the reply says so. */
       handMoves: boolean;
       /** undoAstraEdit with the change's seal — never Astra, never a refund (money rule 5); `sealed` says whether its words come back. */
@@ -1237,10 +1295,17 @@ export function undoPlan(stack: readonly TurnSnapshot[], current: TurnState, ast
   const snapshot = stack[stack.length - 1];
   if (!snapshot) return { kind: "none" };
   const a = snapshot.astra;
+  const take = undoneTake(snapshot, current);
+  const takeKept = !sameTake(current.takeStart, snapshot.after.takeStart);
+  // The outfit flag is used up by the shot a turn takes (set-view.tsx
+  // shoot/take): that is no move of theirs, so it never says "your own
+  // moves since" (review of Cut 2, U N2); nor is a take that moved on.
+  const moved = snapshotDiff(current, snapshot.after).filter((k) => k !== "outfitOff" && !(takeKept && TAKE_KEYS.includes(k)));
   return {
     kind: "restore",
     snapshot,
-    handMoves: snapshotDiff(current, snapshot.after).length > 0,
+    restore: { ...snapshot.before, ...take },
+    handMoves: moved.length > 0,
     astra: a && a.landed && astraLatest ? { before: a.before, undo: a.undo, kind: a.kind, sealed: a.kind === "rebuild" || a.undo !== null } : null,
     stillsStay: snapshot.stillShot === true,
   };

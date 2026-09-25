@@ -166,7 +166,7 @@ describe("an Astra change is pressed on its card (rule 1)", () => {
 // the page's own handlers in the plan's order, said from what it reached.
 describe("the chat's turn engine", () => {
   const sendTurn = bodyOf('  async function sendTurn(message: string, opts?: { origin?: "build"; source?: "message" | "retry" }) {');
-  const runTurn = bodyOf("  function runTurn(reading: ShotReading | null, ctx: TurnContext): number | null {");
+  const runTurn = bodyOf("  function runTurn(reading: ShotReading | null, ctx: TurnContext & Partial<PaidRow>): number | null {");
   const undoTurn = bodyOf("  async function undoTurn(ctx: TurnContext, plan: TurnPlan | null) {");
   const replyAction = bodyOf("  function replyAction(turn: ChatTurn, action: ReplyAction) {");
   const goAstra = bodyOf("  function goAstra(turn: ChatTurn, thenShoot: boolean) {");
@@ -185,7 +185,8 @@ describe("the chat's turn engine", () => {
   });
 
   it("sends nothing while anything else is out, and reads once", () => {
-    expect(sendTurn).toContain("if (reading || shooting || editingSet || following !== null || !ready || !api) return;");
+    // A shot a turn decided and not yet fired is busy too (review of Cut 2, N1).
+    expect(sendTurn).toContain("if (reading || shooting || editingSet || following !== null || shootDue !== null || !ready || !api) return;");
     expect(sendTurn.match(/readShotTurn\(/g)).toHaveLength(1);
     expect(sendTurn).toContain("res = await readShotTurn(setId, { text: message, now, turns: lastTurns, ...(opts?.origin ? { origin: opts.origin } : {}) });");
     // A read that throws is a reading that failed: nothing changes (decision 2).
@@ -207,7 +208,10 @@ describe("the chat's turn engine", () => {
     ] as const) {
       expect(body, name).not.toMatch(/\bshoot\(|\btake\(|pressShoot\(/);
     }
-    const decided = runTurn.indexOf("const shot = shootDecision(shown, { mode: state.mode, source: ctx.source }, { changed, cant: extraCant.length > 0 });");
+    // A priced row's shot is decided on what the row ran into (review of Cut 2, S1); a message's by the matrix.
+    const decided = runTurn.indexOf(
+      "const shot = ctx.paid ? paidDecision(shown, ctx.paid) : shootDecision(shown, { mode: state.mode, source: ctx.source }, { changed, cant: extraCant.length > 0 });",
+    );
     const due = runTurn.indexOf('if (shot.kind !== "none") setShootDue({ pressId: newPressId(), kind: shot.kind, turnId: id });');
     expect(decided).toBeGreaterThan(-1);
     expect(due).toBeGreaterThan(decided);
@@ -252,16 +256,18 @@ describe("the chat's turn engine", () => {
     expect(replyAction).toContain("if (need && turn.plan.reading) runTurn(resolveWhich(turn.plan.reading, need, action.key), button);");
     expect(replyAction).toContain("runTurn(USE_HOUR_READING, button);");
     // Try again is a message turn read again that never shoots; "Use my words" only sets the words.
-    expect(replyAction).toContain('if (turn.asked !== null) void sendTurn(turn.asked, { source: "retry" });');
+    // It keeps the turn's origin: the Sets home's build message is read as one again (review of Cut 2, S5).
+    expect(replyAction).toContain('if (turn.asked !== null) void sendTurn(turn.asked, { source: "retry", ...(turn.origin ? { origin: turn.origin } : {}) });');
+    expect(runTurn).toContain("const base = { id, asked: ctx.asked, origin: ctx.origin, shotsAt: shots.length, settled: false };");
     expect(replyAction).toContain("if (turn.asked !== null) wordsAsHappens(turn.asked);");
     // Only the newest turn's buttons act, and none while anything is out.
-    expect(replyAction).toContain("if (reading || shooting || editingSet || matching || following !== null || !ready) return;");
+    expect(replyAction).toContain("if (reading || shooting || editingSet || matching || following !== null || shootDue !== null || !ready) return;");
     expect(replyAction).toContain('if (!newest || newest.id !== turn.id || (turn.settled && action.kind !== "undo")) return;');
   });
 
   it("spends on a reply's paid button exactly what its label says, or nothing (rule 7)", () => {
     for (const [kind, check] of [
-      ["doItShoot", "if (price !== action.credits) {"],
+      ["doItShoot", "if (!now || now.kind !== (kind === \"take\" ? \"take\" : \"shoot\") || now.credits !== action.credits) {"],
       ["take", "if (pageCredits.take[takeEngine] !== action.credits) {"],
       ["shootAsIs", 'if (price !== action.credits || (action.press === "take" && !takeStart)) {'],
       // "Change it, then shoot" on the card says the still's price (step 11b).
@@ -274,11 +280,16 @@ describe("the chat's turn engine", () => {
       const checked = branch.indexOf(check);
       expect(checked, kind).toBeGreaterThan(-1);
       expect(branch.indexOf("repriceTurn(turn);"), kind).toBeGreaterThan(checked);
-      const spent = Math.min(...["take()", "shoot()", "setShootDue(", "goAstra("].map((c) => branch.indexOf(c)).filter((i) => i > -1));
+      const spent = Math.min(...["take()", "shoot()", "setShootDue(", "goAstra(", "paid: kind"].map((c) => branch.indexOf(c)).filter((i) => i > -1));
       expect(branch.indexOf("repriceTurn(turn);"), kind).toBeLessThan(spent);
     }
-    // "Do it and shoot/take": the row runs as a button turn, then its own id is minted for the shot.
-    expect(replyAction).toContain("if (at !== null) setShootDue({ pressId: newPressId(), kind, turnId: at });");
+    // "Do it and shoot/take": the row runs as a button turn whose shot runTurn decides and mints, held by what
+    // the row ran into (review of Cut 2, S1) — never set straight from the click.
+    expect(replyAction).toContain("runTurn(r, { ...button, paid: kind });");
+    expect(replyAction).not.toContain("setShootDue(");
+    // The price checked is the one the row's button would say now, from the same answer the reprice says (S3).
+    expect(replyAction).toContain("const now = secondNow(turn, action.row);");
+    expect(bodyOf("  function repriceTurn(turn: ChatTurn) {")).toContain("suggestions: turn.plan.suggestions.map((sg, i) => ({ ...sg, second: secondNow(turn, i) })),");
   });
 
   it("presses an Astra change only on its card: the words, the reading, where things stand (rule 1, pin #1)", () => {
@@ -287,7 +298,9 @@ describe("the chat's turn engine", () => {
     // The gloss rides with the server's seal on it, or the server drops it (review of Cut 2, R1).
     expect(goAstra).toContain("void editSet({ said: need.said, gloss: need.gloss, seal: need.seal }, frame, then).then((r) => {");
     expect(goAstra).toContain("const then = thenShoot ? { pressId: newPressId(), turnId: turn.id } : undefined;");
-    expect(goAstra).toContain("if (!need || !need.canGo || editingSet) return;");
+    // editSet's own busy rule, read before the card is settled (review of Cut 2, N3).
+    expect(goAstra).toContain("if (!need || !need.canGo || editingSet || b.editing || b.shooting || b.taking || b.matching) return;");
+    expect(goAstra.indexOf("b.matching) return;")).toBeLessThan(goAstra.indexOf("settleTurn(turn.id);"));
     expect(view.match(/\bgoAstra\(/g)).toHaveLength(2);
     expect(replyAction).toContain('goAstra(turn, action.kind === "astraGoShoot");');
     // The card on a turn presses through the reply's own actions (drawn inside the reply since step 11b).
@@ -334,8 +347,14 @@ describe("the reply and the composer (step 11b)", () => {
     const run = bodyOf("  function runSlash(i: number) {");
     expect(run).toContain("c.run();");
     for (const call of ["readShotTurn(", "readShotWords(", "send(", "sendTurn(", "shoot(", "take("]) expect(run, call).not.toContain(call);
-    // Enter and the send button pick the row while the menu is open.
-    expect(view.match(/else if \(slashQuery !== null\) runSlash\(slashPick\);/g)).toHaveLength(2);
+    // Enter picks the row while the menu is open; the send arrow picks it only when it spends nothing: the
+    // arrow shows no price, so it never runs the Shoot row, and is held while that row is highlighted (review of Cut 2, M1).
+    expect(view.match(/else if \(slashQuery !== null\) runSlash\(slashPick\);/g)).toHaveLength(1);
+    const submit = between(view, "onSubmit={(e) => {", "className=");
+    expect(submit).toContain("else if (slashQuery !== null) {\n                  if (!slashPaid) runSlash(slashPick);\n                }");
+    expect(submit.match(/runSlash\(/g)).toHaveLength(1);
+    expect(view).toContain('const slashPaid = slashQuery !== null && slashList[slashPick]?.id === "shoot";');
+    expect(view).toContain("disabled={reading || shooting || editingSet || !ready || slashPaid || (!draft.trim() && (!characterId || justTalk))}");
   });
 
   it("counts past 500 of the 600 the reader reads, and says what to write on reader v2", () => {

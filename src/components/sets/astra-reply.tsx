@@ -54,10 +54,26 @@ export function buttonCredits(b: ReplyAction): number | null {
   }
 }
 
-/** Whether a button says what it spends: always for a free one; for a paid one, its own price is in its label. */
+/** A digit, and a letter or digit in any script: the edges a price must stand between. */
+const isDigit = (c: string) => c >= "0" && c <= "9";
+const isWordChar = (c: string) => c.length > 0 && (isDigit(c) || c.toLowerCase() !== c.toUpperCase());
+
+/**
+ * Whether `part` stands in `text` as a whole price: no digit just before it
+ * and no letter or digit just after — "11 credits" does not say "1 credit",
+ * nor "1 credits" (review of Cut 2, money N2).
+ */
+function saysWhole(text: string, part: string): boolean {
+  for (let at = text.indexOf(part); at >= 0; at = text.indexOf(part, at + 1)) {
+    if (!isDigit(text[at - 1] ?? "") && !isWordChar(text[at + part.length] ?? "")) return true;
+  }
+  return false;
+}
+
+/** Whether a button says what it spends: always for a free one; for a paid one, its own price is in its label, whole. */
 export function saysItsPrice(b: ReplyButton, copy: Pick<Reply, "creditOne" | "creditsN">): boolean {
   const n = buttonCredits(b);
-  return n === null || b.label.includes(creditsLabel(copy, n));
+  return n === null || saysWhole(b.label, creditsLabel(copy, n));
 }
 
 /** The reply's parts, in its order (§5.1): a Needs line gathers the card, the which-one and the take's note after it. */

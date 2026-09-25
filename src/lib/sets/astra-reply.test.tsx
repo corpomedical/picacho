@@ -210,6 +210,11 @@ describe("every button that spends shows its price, in every layout and language
     expect(saysItsPrice({ kind: "take", credits: 4, label: "Take · 4 credits" }, en.sets.reply)).toBe(true);
     expect(saysItsPrice({ kind: "take", credits: 4, label: "Take · 1 credit" }, en.sets.reply)).toBe(false);
     expect(saysItsPrice({ kind: "undo", label: "Undo" }, en.sets.reply)).toBe(true);
+    // A price inside another is not the price (review of Cut 2, N2): "11 credits" never passes for 1 credit.
+    expect(saysItsPrice({ kind: "shootAsIs", press: "still", credits: 1, label: "Shoot as it is · 11 credits" }, en.sets.reply)).toBe(false);
+    expect(saysItsPrice({ kind: "shootAsIs", press: "still", credits: 1, label: "Shoot as it is · 1 credits" }, en.sets.reply)).toBe(false);
+    expect(saysItsPrice({ kind: "shootAsIs", press: "still", credits: 1, label: "Shoot as it is · 1 credit" }, en.sets.reply)).toBe(true);
+    expect(saysItsPrice({ kind: "take", credits: 4, label: "Take · 14 credits" }, en.sets.reply)).toBe(false);
     expect(buttonCredits({ kind: "astraGo" } as ReplyAction)).toBeNull();
   });
 

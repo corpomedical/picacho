@@ -124,11 +124,13 @@ import {
   largestObjectOf,
   lookPatch,
   nudgeMark,
+  paidDecision,
   pickTakeStart,
   planTurn,
   pointBeside,
   pressFor,
   resolveWhich,
+  secondButton,
   shiftPose,
   shootDecision,
   snapshotDiff,
@@ -140,6 +142,7 @@ import {
   type Need,
   type PageState,
   type PlanCharacter,
+  type SecondButton,
   type ShootDecision,
   type StepClamp,
   type TakeMove,
@@ -505,11 +508,19 @@ type TurnContext = {
 const NO_ALIASES: ReaderAliases = { things: {}, people: {} };
 /** A button's turn (Do it, a which-one, Use the hour, Undo): a stored reading, never read again, never shot. */
 const TURN_BUTTON: TurnContext = { source: "button", why: "ok", dropped: [], messageCut: false, origin: null, aliases: NO_ALIASES, asked: null };
+/**
+ * A priced "Do it and shoot · n" or "Do it and take · n": the row runs as a
+ * button turn, then the shot it paid for is decided on what the row ran
+ * into (turn-plan.ts paidDecision; review of Cut 2, S1).
+ */
+type PaidRow = { paid: "still" | "take" };
 
 /** One turn of the set's chat (reader v2): what was asked, what the page made of it and did, and the reply said from that. */
 type ChatTurn = {
   id: number;
   asked: string | null;
+  /** "build" for the Sets home's message to the set it just built: Try again reads it as that again (review of Cut 2, S5). */
+  origin: "build" | null;
   plan: TurnPlan;
   /** What the page's steps reached; null for a turn nothing ran for (said as planned). */
   outcomes: TurnOutcomes | null;
@@ -963,9 +974,15 @@ export function SetView({
   // answer, success or not, or a followed press once it has ended. A null
   // (no cap, or a count that could not be read) keeps the last one, so the
   // card never goes stale on a count it had, nor claims "no monthly cap".
+  //
+  // A change that SAVED with no count (the month's count could not be read)
+  // makes the count unknown instead: the last number was from before it,
+  // one too many (review of Cut 2, S4). A change that did not save gives its
+  // reservation back, so the last number stays true.
   const [editsLeft, setEditsLeft] = useState<number | null>(astraEditsLeft);
-  const keepEditsLeft = (n: number | null | undefined) => {
-    if (typeof n === "number" && Number.isFinite(n)) setEditsLeft(Math.max(0, n));
+  const keepEditsLeft = (n: number | null | undefined, saved = false) => {
+    const next = typeof n === "number" && Number.isFinite(n) ? Math.max(0, n) : saved ? null : undefined;
+    if (next !== undefined) setEditsLeft(next);
   };
   // A change to the set itself, waiting on the Astra card for its press:
   // the person's words, as they asked. Nothing reaches Astra without that
@@ -6447,7 +6464,7 @@ export function SetView({
     };
     if (followed) {
       // A press that has ended says how many are left; the others keep the last count.
-      if (followed.kind === "saved" || followed.kind === "unsaved") keepEditsLeft(followed.editsLeft);
+      if (followed.kind === "saved" || followed.kind === "unsaved") keepEditsLeft(followed.editsLeft, followed.kind === "saved");
       if (followed.kind === "saved") return apply(followed.spec, followed.changed);
       // Only when nothing reached the server is it worth trying again.
       else if (followed.kind === "none") setError(t.generate.submitFailed);
@@ -6456,7 +6473,7 @@ export function SetView({
     }
     if (!res) return { ...none, before };
     // Every answer from the month's count on carries one, saved or not.
-    keepEditsLeft(res.editsLeft);
+    keepEditsLeft(res.editsLeft, res.error === null);
     if (res.error !== null) {
       setError(res.error);
       return { ...none, before };
@@ -6514,7 +6531,7 @@ export function SetView({
       setRebuildNote({ key: to.key, text: formatMsg(cast.rebuildDone, { n: to.blocks }), ok: true, from: key });
     };
     if (followed) {
-      if (followed.kind === "saved" || followed.kind === "unsaved") keepEditsLeft(followed.editsLeft);
+      if (followed.kind === "saved" || followed.kind === "unsaved") keepEditsLeft(followed.editsLeft, followed.kind === "saved");
       // Read back rather than answered: the thing is found the way its photos find it.
       if (followed.kind === "saved") apply(followed.spec, followed.changed, rebuiltThingIn(followed.spec, key));
       else if (followed.kind === "none") setRebuildNote({ key, text: t.generate.submitFailed, ok: false });
@@ -6522,7 +6539,7 @@ export function SetView({
       return;
     }
     if (!res) return;
-    keepEditsLeft(res.editsLeft);
+    keepEditsLeft(res.editsLeft, res.error === null);
     if (res.error !== null) {
       setRebuildNote({ key, text: localizeServerText(res.error, t), ok: false });
       return;
@@ -6863,7 +6880,7 @@ export function SetView({
    */
   async function sendTurn(message: string, opts?: { origin?: "build"; source?: "message" | "retry" }) {
     const api = apiRef.current;
-    if (reading || shooting || editingSet || following !== null || !ready || !api) return;
+    if (reading || shooting || editingSet || following !== null || shootDue !== null || !ready || !api) return;
     const source = opts?.source ?? "message";
     setError("");
     if (source === "message") setDraft("");
@@ -6949,7 +6966,7 @@ export function SetView({
    * and never shot (spec §3.6). Answers the turn's id (null when nothing
    * was said).
    */
-  function runTurn(reading: ShotReading | null, ctx: TurnContext): number | null {
+  function runTurn(reading: ShotReading | null, ctx: TurnContext & Partial<PaidRow>): number | null {
     const api = apiRef.current;
     const before = turnStateNow();
     const state = planStateOf(ctx, before);
@@ -6960,7 +6977,7 @@ export function SetView({
       void undoTurn(ctx, plan);
       return id;
     }
-    const base = { id, asked: ctx.asked, shotsAt: shots.length, settled: false };
+    const base = { id, asked: ctx.asked, origin: ctx.origin, shotsAt: shots.length, settled: false };
     if (plan.kind !== "run" || !api) {
       // A reading that failed, or Just talking's "here's what I'd do": nothing runs.
       const facts = replyFactsOf(before, null);
@@ -7282,7 +7299,8 @@ export function SetView({
     };
     // Whether the picture changed: a take set up or its move is not a new frame.
     const changed = snapshotDiff(before, now).some((k) => k !== "takeStart" && k !== "takeMove" && k !== "takeEngine");
-    const shot = shootDecision(shown, { mode: state.mode, source: ctx.source }, { changed, cant: extraCant.length > 0 });
+    // A priced row shoots what it paid for, unless what it ran into holds it (paidDecision); a message as the matrix says.
+    const shot = ctx.paid ? paidDecision(shown, ctx.paid) : shootDecision(shown, { mode: state.mode, source: ctx.source }, { changed, cant: extraCant.length > 0 });
     // The one press id for this turn's shot, minted here, fired from the next render (shootDue).
     if (shot.kind !== "none") setShootDue({ pressId: newPressId(), kind: shot.kind, turnId: id });
     if (plan.steps.length > 0) {
@@ -7375,7 +7393,8 @@ export function SetView({
     if (u.kind === "none") pageNotes.push({ kind: "undoNone" });
     else {
       turnUndoRef.current = stack.slice(0, -1);
-      restored = u.snapshot.before;
+      // The turn's `before`, with the take as it is now once it has rendered or moved on (undoneTake).
+      restored = u.restore;
       restoreTurnState(restored);
       chips.push(...restoredChips(current, restored));
       if (u.handMoves) pageNotes.push({ kind: "undoHand" });
@@ -7389,7 +7408,7 @@ export function SetView({
     const shown = plan ?? planTurn({ undo: true }, planStateOf(ctx, current));
     const outcomes: TurnOutcomes = { chips, notes: pageNotes };
     const facts = replyFactsOf(restored, null);
-    addTurn({ id, asked: ctx.asked, shotsAt: shots.length, settled: false, plan: shown, outcomes, facts, reply: composeReply(shown, outcomes, facts, replyWords), did: turnDid(shown, outcomes, ctx.aliases) });
+    addTurn({ id, asked: ctx.asked, origin: ctx.origin, shotsAt: shots.length, settled: false, plan: shown, outcomes, facts, reply: composeReply(shown, outcomes, facts, replyWords), did: turnDid(shown, outcomes, ctx.aliases) });
   }
 
   /** A stored reading a button runs: a preview, an undo's rest, or a suggestion row — without its questions, idea, options or "not yet" again. */
@@ -7417,11 +7436,22 @@ export function SetView({
     const plan: TurnPlan = {
       ...turn.plan,
       needs: turn.plan.needs.map((n) => (n.kind === "take" ? { ...n, engine: takeEngine, credits: pageCredits.take[takeEngine] } : n)),
-      suggestions: turn.plan.suggestions.map((sg) =>
-        sg.second ? { ...sg, second: { ...sg.second, credits: sg.second.kind === "take" ? pageCredits.take[sg.act.engine ?? takeEngine] : pageCredits.still } } : sg,
-      ),
+      suggestions: turn.plan.suggestions.map((sg, i) => ({ ...sg, second: secondNow(turn, i) })),
     };
     setTurns((prev) => prev.map((x) => (x.id === turn.id ? { ...x, plan, facts, reply: composeReply(plan, x.outcomes, facts, replyWords) } : x)));
+  }
+
+  /**
+   * A row's second button as it would be said NOW (turn-plan.ts
+   * secondButton), from its own plan against the page as it stands: the
+   * price check of "Do it and shoot/take" and the reprice use this one
+   * answer, so a label and its check can never disagree (review of Cut 2, S3).
+   */
+  function secondNow(turn: ChatTurn, row: number | "plan" | "rest"): SecondButton | null {
+    const st = planStateOf(TURN_BUTTON, turnStateNow());
+    if (row === "plan") return secondButton(turn.plan, st);
+    const r = readingOf(turn, row);
+    return r ? secondButton(planTurn(r, st), st) : null;
   }
 
   /**
@@ -7432,7 +7462,8 @@ export function SetView({
    * minted at the click, or nothing when its price has moved (rule 7).
    */
   function replyAction(turn: ChatTurn, action: ReplyAction) {
-    if (reading || shooting || editingSet || matching || following !== null || !ready) return;
+    // A shot a turn decided and not yet fired counts as busy: a press inside its wait would replace it, and "Shooting · n" would not be true (review of Cut 2, N1).
+    if (reading || shooting || editingSet || matching || following !== null || shootDue !== null || !ready) return;
     const newest = turns[turns.length - 1];
     if (!newest || newest.id !== turn.id || (turn.settled && action.kind !== "undo")) return;
     const button = TURN_BUTTON;
@@ -7449,16 +7480,19 @@ export function SetView({
       case "doItTake": {
         const r = readingOf(turn, action.row);
         const kind = action.kind === "doItTake" ? "take" : "still";
-        const price = kind === "take" ? pageCredits.take[r?.engine ?? takeEngine] : pageCredits.still;
         if (!r) return;
-        if (price !== action.credits) {
+        // The price the row's button would say NOW, from its own plan (the
+        // engine a take the chat sets up starts on included): one that moved,
+        // or a row that can no longer be shot as it is, is said again.
+        const now = secondNow(turn, action.row);
+        if (!now || now.kind !== (kind === "take" ? "take" : "shoot") || now.credits !== action.credits) {
           repriceTurn(turn);
           return;
         }
-        // The row runs as a button turn (it never shoots itself), then its
-        // priced shot fires from the render that holds it, with this click's id.
-        const at = runTurn(r, button);
-        if (at !== null) setShootDue({ pressId: newPressId(), kind, turnId: at });
+        // The row runs as a button turn; its priced shot is decided on what
+        // the row ran into and fires from the render that holds it, with one
+        // id minted there — or is held, with Shoot as it is (review of Cut 2, S1).
+        runTurn(r, { ...button, paid: kind });
         return;
       }
       case "which": {
@@ -7506,7 +7540,8 @@ export function SetView({
         settleTurn(turn.id);
         return;
       case "tryAgain":
-        if (turn.asked !== null) void sendTurn(turn.asked, { source: "retry" });
+        // The same words, read again as what they were: the Sets home's build message stays one (review of Cut 2, S5).
+        if (turn.asked !== null) void sendTurn(turn.asked, { source: "retry", ...(turn.origin ? { origin: turn.origin } : {}) });
         return;
       case "openFilm":
         studioModes.film.onClick();
@@ -7538,7 +7573,9 @@ export function SetView({
    */
   function goAstra(turn: ChatTurn, thenShoot: boolean) {
     const need = turn.plan.needs.find((n): n is Extract<Need, { kind: "astra" }> => n.kind === "astra");
-    if (!need || !need.canGo || editingSet) return;
+    // editSet's own busy rule, read BEFORE the card is settled: a press it would refuse leaves the card where it was (review of Cut 2, N3).
+    const b = busyRef.current;
+    if (!need || !need.canGo || editingSet || b.editing || b.shooting || b.taking || b.matching) return;
     settleTurn(turn.id);
     const pose = apiRef.current?.pose() ?? null;
     const frame: EditFrame = { mark: layoutRef.current.mark, camera: pose ? { position: pose.position, target: pose.target } : null };
@@ -8386,6 +8423,8 @@ export function SetView({
   const slashQuery = v2On && !slashOff && draft.startsWith("/") && !draft.includes("\n") ? draft.slice(1) : null;
   const slashList = slashQuery !== null ? filterCommands(slashQuery, shootCommands(commandContext()), s.palette.groups).slice(0, SLASH_ROWS) : [];
   const slashPick = slashAt >= 0 && slashAt < slashList.length ? slashAt : 0;
+  /** The highlighted "/" row spends (⌘K's Shoot): the send arrow never runs it (review of Cut 2, M1). */
+  const slashPaid = slashQuery !== null && slashList[slashPick]?.id === "shoot";
   function runSlash(i: number) {
     const c = slashList[i];
     if (!c) return;
@@ -9210,7 +9249,7 @@ export function SetView({
                 turns.map((tn) => {
                   if (tn.shotsAt !== shots.length) return null;
                   const newest = tn.id === turns[turns.length - 1]?.id;
-                  const held = reading || shooting || editingSet || following !== null || !ready;
+                  const held = reading || shooting || editingSet || matching || following !== null || shootDue !== null || !ready;
                   const card = newest && !tn.settled ? tn.reply.astra : null;
                   const said = shownLines(tn.reply, { compact: !newest, open: newest && !tn.settled }).length > 0;
                   return (
@@ -9296,9 +9335,12 @@ export function SetView({
                       editsLeft={editsLeft}
                       editsCap={astraEditsCap}
                       tooBig={astraTooBig(spec)}
-                      busy={reading || shooting || editingSet || !ready}
+                      busy={reading || shooting || editingSet || matching || following !== null || !ready}
                       shootCredits={null}
                       onGo={() => {
+                        // editSet's own busy rule, read before the card goes: a press it would refuse keeps the card (review of Cut 2, N3, R5).
+                        const b = busyRef.current;
+                        if (b.editing || b.shooting || b.taking || b.matching) return;
                         // Exactly the words the card quoted: what Astra reads.
                         const { quoted } = astraCardWords(astraAsk.words);
                         setAstraAsk(null);
@@ -9492,8 +9534,13 @@ export function SetView({
               onSubmit={(e) => {
                 e.preventDefault();
                 if (mentionOpen && mentionList[0]) pickMention(mentionList[0]);
-                else if (slashQuery !== null) runSlash(slashPick);
-                else if (draft.trim()) void send(draft);
+                // The send arrow runs a free "/" row, never the paid Shoot row:
+                // the arrow shows no price, and on a phone it is the usual tap
+                // (review of Cut 2, M1). Shoot runs from its own row, which
+                // says what it charges, or from Enter on it.
+                else if (slashQuery !== null) {
+                  if (!slashPaid) runSlash(slashPick);
+                } else if (draft.trim()) void send(draft);
                 // Just talking is the mode that spends nothing: with nothing
                 // written there is nothing to answer, and an empty send used
                 // to shoot anyway (found in the rundown, 2026-09-16).
@@ -9667,7 +9714,7 @@ export function SetView({
                 <span className="flex-1" />
                 <button
                   type="submit"
-                  disabled={reading || shooting || editingSet || !ready || (!draft.trim() && (!characterId || justTalk))}
+                  disabled={reading || shooting || editingSet || !ready || slashPaid || (!draft.trim() && (!characterId || justTalk))}
                   title={draft.trim() || justTalk ? s.threadPlaceholder : pressLabel}
                   aria-label={draft.trim() || justTalk ? s.threadPlaceholder : pressLabel}
                   data-send-shoots={sendSaysPrice || undefined}

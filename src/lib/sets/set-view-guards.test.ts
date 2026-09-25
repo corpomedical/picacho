@@ -71,7 +71,11 @@ describe("a change to the set itself waits for a press on the Astra card", () =>
     expect(card).toContain("editsLeft={editsLeft}");
     expect(card).toContain("editsCap={astraEditsCap}");
     expect(card).toContain("tooBig={astraTooBig(spec)}");
-    expect(card).toContain("busy={reading || shooting || editingSet || !ready}");
+    // Busy while a match or a followed press is out too: a press editSet would refuse never clears the card (review of Cut 2, N3, R5).
+    expect(card).toContain("busy={reading || shooting || editingSet || matching || following !== null || !ready}");
+    const onGo = between(card, "onGo={() => {", "}}");
+    expect(onGo.indexOf("if (b.editing || b.shooting || b.taking || b.matching) return;")).toBeGreaterThan(-1);
+    expect(onGo.indexOf("if (b.editing || b.shooting || b.taking || b.matching) return;")).toBeLessThan(onGo.indexOf("setAstraAsk(null);"));
     // v1 offers no "Change it, then shoot": nothing is shot after an edit here.
     expect(card).toContain("shootCredits={null}");
     expect(card).not.toContain("onGoShoot");
@@ -185,10 +189,12 @@ describe("the Sets home's message is the only build turn", () => {
 });
 
 describe("the month's changes left follow every answer that carries a number", () => {
-  it("keeps only a number, never a null", () => {
+  it("keeps only a number, never a null — except after a change that saved, when the count becomes unknown", () => {
     expect(view).toContain("const [editsLeft, setEditsLeft] = useState<number | null>(astraEditsLeft);");
-    const keep = between(view, "const keepEditsLeft = (n: number | null | undefined) => {", "};");
-    expect(keep).toContain('if (typeof n === "number" && Number.isFinite(n)) setEditsLeft(Math.max(0, n));');
+    const keep = between(view, "const keepEditsLeft = (n: number | null | undefined, saved = false) => {", "};");
+    // A number replaces it; a change that saved with no count leaves it unknown, one that didn't keeps it (review of Cut 2, S4).
+    expect(keep).toContain('const next = typeof n === "number" && Number.isFinite(n) ? Math.max(0, n) : saved ? null : undefined;');
+    expect(keep).toContain("if (next !== undefined) setEditsLeft(next);");
     // Every write goes through it.
     expect(view.match(/setEditsLeft\(/g)).toHaveLength(1);
   });
@@ -196,9 +202,9 @@ describe("the month's changes left follow every answer that carries a number", (
   it("an edit's and a rebuild's answers, saved or not, and a followed press once it has ended", () => {
     for (const signature of ["  async function editSet(\n", "  async function rebuildThing(key: string) {"]) {
       const body = bodyOf(view, signature);
-      expect(body, signature).toContain('if (followed.kind === "saved" || followed.kind === "unsaved") keepEditsLeft(followed.editsLeft);');
+      expect(body, signature).toContain('if (followed.kind === "saved" || followed.kind === "unsaved") keepEditsLeft(followed.editsLeft, followed.kind === "saved");');
       // Before the error branch: a refusal's count is kept too.
-      const kept = body.indexOf("keepEditsLeft(res.editsLeft);");
+      const kept = body.indexOf("keepEditsLeft(res.editsLeft, res.error === null);");
       expect(kept, signature).toBeGreaterThan(-1);
       expect(kept, signature).toBeLessThan(body.indexOf("if (res.error !== null) {"));
     }

@@ -74,9 +74,10 @@ describe("every paid press sends its own id", () => {
   it("never keeps an id past its press", () => {
     // Shoot, Take, Try the clip again and Render, plus Astra's edit and
     // rebuild (review, 2026-09-25); and the chat's (Helios Cut 2, step 11a):
-    // a turn's decided shot, a priced "Do it and shoot/take" and "Change it,
-    // then shoot", each minted once at its decision or click.
-    expect(view.match(/newPressId\(\)/g)).toHaveLength(9);
+    // a turn's decided shot (a priced "Do it and shoot/take" included, whose
+    // shot the turn decides: review of Cut 2, S1) and "Change it, then
+    // shoot", each minted once at its decision or click.
+    expect(view.match(/newPressId\(\)/g)).toHaveLength(8);
     expect(view).not.toMatch(/use(State|Ref)[^\n]*pressId/);
     // The one place an id waits is the due shot, which is cleared before its call (set-view-turn.test.ts).
     expect(view).toContain("type ShootDue = { pressId: string; kind: \"still\" | \"take\"; turnId: number };");

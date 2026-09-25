@@ -34,6 +34,7 @@ import {
   largestObjectOf,
   lookPatch,
   nudgeMark,
+  paidDecision,
   pickTakeStart,
   planSays,
   planTurn,
@@ -47,6 +48,7 @@ import {
   spotToMatch,
   turnedFacing,
   undoPlan,
+  undoneTake,
   vehicleOf,
   type CameraSpot,
   type Need,
@@ -324,6 +326,21 @@ describe("a moving shot (exchange 6, critic item 1)", () => {
     const plan = planTurn({ move: "arc-left", engine: "veo" }, stateOf());
     expect(plan.steps.at(-1)).toEqual({ kind: "motion", move: "arc-left", engine: "veo", layEnd: true });
     expect(plan.needs).toEqual([{ kind: "take", still: { id: "g-2", n: 2 }, engine: "veo", credits: CREDITS.take.veo }]);
+  });
+
+  // Review of Cut 2, S3 (2026-09-25): the chat's take kept the last engine chosen, so one Veo take made every later take the chat set up a Veo take.
+  it("a take the chat sets up starts on the default engine, whatever engine an earlier take used, unless the words name one", () => {
+    const plan = planTurn({ move: "push-in" }, stateOf({ takeEngine: "veo" }));
+    expect(plan.steps.at(-1)).toEqual({ kind: "motion", move: "push-in", engine: "omni", layEnd: true });
+    expect(plan.needs).toEqual([{ kind: "take", still: { id: "g-2", n: 2 }, engine: "omni", credits: CREDITS.take.omni }]);
+    expect(secondButton(planTurn({ move: "push-in" }, stateOf({ source: "button", takeEngine: "veo" })), stateOf({ takeEngine: "veo" }))).toEqual({
+      kind: "take",
+      credits: CREDITS.take.omni,
+    });
+    // Named, it is that engine; a move that rides a take already set up keeps that take's engine.
+    expect(planTurn({ move: "push-in", engine: "veo" }, stateOf({ takeEngine: "veo" })).needs).toEqual([{ kind: "take", still: { id: "g-2", n: 2 }, engine: "veo", credits: CREDITS.take.veo }]);
+    const riding = planTurn({ move: "crane-up" }, stateOf({ takeEngine: "veo", takeStart: { id: "g-2", n: 2, armedBy: "person" } }));
+    expect(riding.steps).toEqual([{ kind: "motion", move: "crane-up", layEnd: false }]);
   });
 
   it("an armed take keeps the move for its press; Film open makes it a beat, for later", () => {
@@ -638,6 +655,38 @@ describe("the priced second button (spec §3.6)", () => {
     expect(secondButton(planTurn({ move: "push-in" }, stateOf({ mode: "talk", characterId: EVA, shots: [SHOTS[0]] })), talk)).toBeNull();
   });
 
+  // Review of Cut 2, S1 (2026-09-25): a row that still waits on something was offered "Do it and shoot · 1 credit".
+  it("is none for a row that waits on a which-one, a take on a still of another shape, or a person who can't be cast", () => {
+    const TWO_CARS = [CAR.key, CAR2];
+    expect(second({ near: { thing: { candidates: TWO_CARS }, side: "beside" } })).toBeNull();
+    expect(second({ gaze: { candidates: TWO_CARS } })).toBeNull();
+    expect(second({ rig: ["format:square"] }, { takeStart: { id: "g-2", n: 2, armedBy: "person" } })).toBeNull();
+    expect(second({ characterId: LENA, size: "wide" })).toBeNull();
+    expect(second({ characterId: "not-a-character", size: "wide" })).toBeNull();
+    // The Just-talking preview the same.
+    const talk = stateOf({ mode: "talk" });
+    expect(secondButton(planTurn({ near: { thing: { candidates: TWO_CARS }, side: "beside" } }, talk), talk)).toBeNull();
+    expect(secondButton(planTurn({ characterId: LENA }, talk), talk)).toBeNull();
+    // And in a suggestion row.
+    const plan = planTurn({ suggest: [{ characterId: LENA, size: "wide" }, { size: "wide" }] }, stateOf());
+    expect(plan.suggestions.map((x) => x.second)).toEqual([null, { kind: "shoot", credits: CREDITS.still }]);
+  });
+
+  it("a priced row shoots what it paid for only past nothing that holds it; held, it offers Shoot as it is (paidDecision)", () => {
+    const button = stateOf({ source: "button" });
+    expect(paidDecision(planTurn({ size: "wide" }, button), "still")).toEqual({ kind: "still", held: [], offer: null });
+    expect(paidDecision(planTurn({ move: "push-in" }, button), "take")).toEqual({ kind: "take", held: [], offer: null });
+    // A which-one the row ran into, a take on another shape, a person with no photo.
+    expect(paidDecision(planTurn({ near: { thing: { candidates: [CAR.key, CAR2] }, side: "beside" } }, button), "still")).toEqual({ kind: "none", held: ["which"], offer: "still" });
+    const person: TakeStart = { id: "g-2", n: 2, armedBy: "person" };
+    expect(paidDecision(planTurn({ rig: ["format:square"] }, stateOf({ source: "button", takeStart: person })), "take")).toEqual({ kind: "none", held: ["takeFormat"], offer: "take" });
+    expect(paidDecision(planTurn({ characterId: LENA, size: "wide" }, button), "still")).toEqual({ kind: "none", held: ["who"], offer: "still" });
+    // The chat's own waiting take holds neither: a still leaves it waiting, "Do it and take" is its priced press.
+    const chat = stateOf({ source: "button", takeStart: { id: "g-2", n: 2, armedBy: "chat" } });
+    expect(paidDecision(planTurn({ size: "wide" }, chat), "still")).toEqual({ kind: "still", held: [], offer: null });
+    expect(paidDecision(planTurn({ move: "arc-left" }, chat), "take")).toEqual({ kind: "take", held: [], offer: null });
+  });
+
   it("each suggestion row carries its own, from the state the turn leaves", () => {
     const plan = planTurn({ suggest: [{ rig: ["light:contre-jour"], lensMm: 85 }, { move: "push-in" }, { move: "orbit-90", characterId: EVA }] }, stateOf());
     expect(plan.suggestions.map((s) => s.second)).toEqual([
@@ -697,6 +746,45 @@ describe("undo (spec §3.5)", () => {
     const moved = stateNow({ pose: "sit", mark: { x: MARK.x + 1, z: MARK.z, facingDeg: 0 } });
     expect(undoPlan([{ before, after, stillShot: true }], moved, false)).toMatchObject({ kind: "restore", handMoves: true, stillsStay: true });
     expect(undoPlan([], after, false)).toEqual({ kind: "none" });
+  });
+
+  // Review of Cut 2, S2 (2026-09-25): Undo re-armed a take the person had already rendered, as their own.
+  it("brings a take back only while it is as that turn left it: a rendered, cancelled or replaced take is never set up again", () => {
+    const person: TakeStart = { id: "g-2", n: 2, armedBy: "person" };
+    const before = stateNow({ takeStart: person, takeEngine: "veo" });
+    const after = stateNow({ takeStart: person, takeEngine: "veo", camera: { ...C2_POSE, fovDeg: 30 } });
+    // The take rendered since (take() clears it), and the engine went back: Undo leaves it gone, and it's no move of theirs.
+    const rendered = stateNow({ takeStart: null, takeEngine: "omni", camera: { ...C2_POSE, fovDeg: 30 } });
+    const u = undoPlan([{ before, after }], rendered, false);
+    if (u.kind !== "restore") throw new Error("restore");
+    expect(u.restore.takeStart).toBeNull();
+    expect(u.restore.takeEngine).toBe("omni");
+    expect(u.restore.camera).toEqual(before.camera);
+    expect(u.handMoves).toBe(false);
+    expect(undoneTake({ before, after }, rendered)).toEqual({ takeStart: null, takeMove: null, takeEngine: "omni" });
+    // So an automatic message after it shoots a still, never a take.
+    const auto = stateOf({ mode: "auto", takeStart: u.restore.takeStart, takeEngine: u.restore.takeEngine });
+    expect(shootDecision(planTurn({ size: "wide" }, auto), auto).kind).toBe("still");
+    // Nothing since: the take the turn found comes back, with its engine.
+    const same = undoPlan([{ before: stateNow(), after: stateNow({ takeStart: { ...person, armedBy: "chat" } }) }], stateNow({ takeStart: { ...person, armedBy: "chat" } }), false);
+    if (same.kind !== "restore") throw new Error("restore");
+    expect(same.restore.takeStart).toBeNull();
+    const kept = undoPlan([{ before, after }], after, false);
+    if (kept.kind !== "restore") throw new Error("restore");
+    expect(kept.restore.takeStart).toEqual(person);
+    expect(kept.restore.takeEngine).toBe("veo");
+    // The person set another take up since: it stays.
+    const other: TakeStart = { id: "g-1", n: 1, armedBy: "person" };
+    const replaced = undoPlan([{ before, after }], stateNow({ takeStart: other, camera: { ...C2_POSE, fovDeg: 30 } }), false);
+    if (replaced.kind !== "restore") throw new Error("restore");
+    expect(replaced.restore.takeStart).toEqual(other);
+  });
+
+  it("the outfit flag a shot used up is no move of theirs (review of Cut 2, N2)", () => {
+    const before = stateNow();
+    const after = stateNow({ direction: "In a red coat.", outfitOff: true });
+    const shot = stateNow({ direction: "In a red coat.", outfitOff: false });
+    expect(undoPlan([{ before, after, stillShot: true }], shot, false)).toMatchObject({ kind: "restore", handMoves: false });
   });
 
   it("compares states to a thousandth, and keeps twelve turns", () => {

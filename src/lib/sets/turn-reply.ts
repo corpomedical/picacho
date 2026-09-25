@@ -1214,6 +1214,8 @@ export function composeReply(plan: TurnPlan, outcomes: TurnOutcomes | null, fact
       if (buttons.length > 0) needLines.push({ kind: "which", text: r.replyWhich, buttons });
       else unmatched = true;
     } else if (need.kind === "takeFormat") {
+      // A preview has changed no frame yet: its take-format need only keeps the priced button away.
+      if (plan.kind === "proposal") continue;
       needLines.push({ kind: "note", text: fill(r.noteTakeFormat, { take: r.takeWord, from: words.rig.formats[need.stillFormat], to: words.rig.formats[need.format] }), buttons: [] });
     } else if (need.kind === "hour") {
       presses.push({ kind: "useHour", label: r.useHour });
