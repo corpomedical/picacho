@@ -55,6 +55,9 @@ function actionsOf(source: string): { actions: Action[]; others: string[] } {
   return { actions, others };
 }
 
+/** The Sets folder's "use server" files, by name. */
+const setsServerFilesNames = () => walk(__dirname).filter(isUseServer).map((f) => relative(__dirname, f));
+
 const SESSION_CHECK = /\bsetsAccess\(\)|\.auth\.getUser\(\)/;
 const WORK = /\bcreateAdminClient\(|\badvanceSetBuild\(|\bsubmitAstraJob\(|\brunGeneration\(|\.storage\b/;
 
@@ -113,6 +116,10 @@ describe('no "use server" file can hand out the build tick', () => {
     );
     const poll = actions.find((a) => a.name === "pollSetBuild")!;
     expect(poll.params.trim()).toBe("setId: string");
+    // What became of a press (press-actions.ts, 2026-09-25): an action like
+    // any other, scanned with the rest.
+    expect(setsServerFilesNames()).toContain("press-actions.ts");
+    expect(actionsOf(readFileSync(join(__dirname, "press-actions.ts"), "utf8")).actions.map((a) => a.name)).toEqual(["readSetPress"]);
   });
 
   it("the page's poll runs the tick for the session's own person, with the photo switch it always used, and hands back the result and whether it settled the build", () => {

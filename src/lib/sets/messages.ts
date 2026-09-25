@@ -141,18 +141,45 @@ export const SET_EDIT_MONTHLY_CAP_ONE =
 export const SET_TAKE_BAD_START = "That still can't start a take — pick another.";
 /** A take's end frame did not pass its checks, so no clip was asked for (2026-09-21); the still's own reason rides beside it. */
 export const SET_TAKE_END_FAILED = "The end frame didn't pass, so the take didn't start.";
-export const SET_TAKE_FAILED = "The end frame is in, but the take couldn't start — try the take again in a moment.";
+/**
+ * The end frame is kept and its clip was not started or charged (reworded
+ * 2026-09-25, Cut 1): the old words asked for the take again, which shoots
+ * and charges a new end frame when only the clip needs rendering. The page
+ * offers the clip on its own; a film renders it alone on its next Render.
+ */
+export const SET_TAKE_FAILED = "The end frame is in, but its clip couldn't start and wasn't charged — render the clip again in a moment.";
 /** A film's beat stopped before its end frame was shot, free: the film's look could not be made (2026-09-21). */
 export const SET_TAKE_LOOK_DROPPED = "This beat stopped before its end frame was shot: the film's look couldn't be made this time. Nothing was charged — press Render to try again.";
+/**
+ * The same for a look the person picked that can never be made from its
+ * still (a lasting reason, actions.ts LASTING_LOOK_DROPS; 2026-09-25): "try
+ * again" looped the film on the same refusal.
+ */
+export const SET_TAKE_LOOK_CANT = "This beat stopped before its end frame was shot: the look picked for the film can't be made from that still. Nothing was charged — pick another look for the film, or none.";
 /** The same, for a reference photo picked as the film's look. */
 /** A film's beat whose thing's photo sheet was not drawn (R1, 2026-09-21): stopped before anything is shot. */
 export const SET_TAKE_ELEMENT_DROPPED = "This beat stopped before its end frame was shot: a photo on one of its things couldn't be drawn this time. Nothing was charged — press Render to try again.";
 /** A shot of a character whose photos have no likeness answer (R1.12, likeness.ts): the figure's card asks it. */
 export const SET_LIKENESS_NEEDED = "Tell us who is in this character's photos before shooting: open the person's card on the stage.";
-/** A film's end frame under the identity bar: its clip is not made (2026-09-21). */
+/**
+ * A film's end frame under the identity bar: its clip is not made
+ * (2026-09-21). Said when the frame's charge stands, or can't be read back
+ * (2026-09-25: it never claims a refund it can't confirm).
+ */
 export const SET_TAKE_OFF_FACE = "This beat's end frame scored under your identity bar, so its clip wasn't made and only the frame was charged. Press Render to shoot it again.";
+/** The same when the identity gate settled the frame and refunded it (its row's credits_used is 0; 2026-09-25). */
+export const SET_TAKE_OFF_FACE_REFUNDED = "This beat's end frame scored under your identity bar, so its clip wasn't made and the frame was refunded. Press Render to shoot it again.";
+/** The same for an end frame kept from an earlier render: nothing was shot, so nothing was charged (2026-09-25). */
+export const SET_TAKE_OFF_FACE_KEPT_END = "This beat's end frame scored under your identity bar, so its clip wasn't made and nothing was charged. Press Render to shoot the beat again.";
 /** A film's beat asked for with another person than its start still shows (2026-09-21). Nothing shot or charged. */
 export const SET_TAKE_OTHER_PERSON = "This film opens on a still of someone else, so this beat wasn't shot and nothing was charged. Reload the page: the film is shot with the person in its opening still.";
+/**
+ * A single take or a clip rendered again, asked for with another person
+ * than its start still (or its kept end still) shows (2026-09-25): the
+ * engine morphs one person into the other, charged in full. Nothing shot or
+ * charged.
+ */
+export const SET_TAKE_START_OTHER_PERSON = "This take starts on a still of someone else, so it wasn't shot and nothing was charged. Pick that person, or start from a still of the one you picked.";
 /**
  * Takes and films are every paid plan's (set-config.ts setTakesEligible,
  * 2026-09-19 "Open to all plans"): said before anything is shot, never
@@ -161,6 +188,25 @@ export const SET_TAKE_OTHER_PERSON = "This film opens on a still of someone else
 export const SET_TAKE_NEEDS_PLAN = "Takes and films are part of the paid plans. Upgrade in Settings → Plan & billing.";
 /** A film beat's clip rendered again on its own end still, and that still is gone (film.ts filmJobs). */
 export const SET_TAKE_BAD_END = "That beat's end frame is gone — render again to shoot a new one.";
+/**
+ * The take limiter (take.ts SET_TAKES_PER_10_MIN), counted only at a
+ * press's first paid step, and once per film Render (2026-09-25): said
+ * before anything of this press is charged.
+ */
+export const SET_TAKE_TOO_FAST = "You're starting takes and films quickly — try again in a few minutes. Nothing was charged.";
+/**
+ * A still whose preparation (the look's cutout and sheet) left too little of
+ * the request's 300 s for its render (set-config.ts SET_STILL_START_BY_MS,
+ * 2026-09-25). Nothing was reserved; the sheet it made is kept, so the next
+ * press is quicker.
+ */
+export const SET_SHOT_NO_TIME = "Getting this shot ready took too long, so it wasn't shot and nothing was charged — try again.";
+/**
+ * A press delivered twice whose first delivery was still working when the
+ * second one's clock ran out (press.ts, 2026-09-25). It never says it
+ * failed: the first delivery's still or take lands in the set and History.
+ */
+export const SET_PRESS_RUNNING = "Still rendering — it will appear here when it lands, and nothing more is charged.";
 
 /**
  * A read that did not come back → the sentence shown, by the provider's

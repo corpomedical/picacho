@@ -290,6 +290,23 @@ export const MAX_SET_THUMB_BYTES = 400 * 1024;
 export const SETS_LIST_LIMIT = 60;
 export const SET_SHOTS_LIMIT = 48;
 
+// The request's 300 s (page.tsx maxDuration), counted from a Helios press's
+// first line (generations/server-press.ts, 2026-09-25, Cut 1 — operator:
+// "GO ahead"). A render the platform cuts off after its reservation sits
+// charged on "generating" until the reaper, and the page says it couldn't
+// reach the server. So a render that could not finish is not started.
+//
+// A still: GPT Image's full 150 s (openai-images.ts OPENAI_IMAGE_TIMEOUT_MS)
+// + ~20 s to score, store and develop it + ~10 s of runGeneration's own
+// checks must still fit, so its preparation (the look's cutout and sheet)
+// may take 120 s at most. The sheet it made is kept for the next press.
+export const SET_STILL_START_BY_MS = 120_000;
+// A take's clip: its runGeneration (checks, reservation, the queue submit —
+// the render itself runs in the background) and the take's records need
+// well under a minute, so the clip starts by 240 s or not at all. The end
+// frame is kept; the clip is rendered again on its own.
+export const SET_TAKE_CLIP_START_BY_MS = 240_000;
+
 // Where the files live. Both buckets are swept whole, recursively, by
 // account deletion (profile/storage-buckets.ts), so neither needs a line
 // there. The frame rides a take as an ordinary chat attachment — recorded

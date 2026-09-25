@@ -238,8 +238,10 @@ export const SET_SHOT_RIG_SENTENCES: readonly string[] = [
 // was deleted from what the BRAND-RULE CHECK reads, while the model was
 // sent it whole (found reviewing Helios, fixed 2026-09-18). The check may
 // never read less than the model is sent, except Picacho's own words.
+// Exported for a take's eye-line, the "By the end of the shot" form
+// (take-scaffold.ts, 2026-09-25).
 const GAZE_N = "\\d+(?:\\.\\d)?";
-const SET_SHOT_GAZE_SENTENCE = new RegExp(
+export const SET_SHOT_GAZE_SENTENCE = new RegExp(
   "(?:By the end of the shot they|They) look " +
     "(?:straight into the camera, eyes to the lens" +
     `|at the (?:${SET_SHAPES.join("|")}) ${GAZE_N} × ${GAZE_N} × ${GAZE_N} m, their eyes on it` +

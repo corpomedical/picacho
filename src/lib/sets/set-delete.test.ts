@@ -63,6 +63,14 @@ describe("deleting a set", () => {
     expect(del.slice(shots, del.indexOf("return { error: null };", shots))).not.toMatch(/return \{ error: /);
   });
 
+  it("removes the set's presses with it, once the set is marked gone (press.ts, 2026-09-25)", () => {
+    // A press's stored answer can quote the person's words (a brand rule's block).
+    const gone = del.indexOf("if (!gone?.length) continue;");
+    const presses = del.indexOf("await clearSetPresses(admin, setId, userId);");
+    expect(presses).toBeGreaterThan(gone);
+    expect(gone).toBeGreaterThan(-1);
+  });
+
   it("leaves the stills and takes to History", () => {
     expect(del).not.toMatch(/\.from\("generations"\)/);
   });

@@ -33,6 +33,7 @@ import { FACE_LINE_INSTRUCTION, pickSetForShot, takeFaceLine, type ExpressionSlo
 import { type ImageAspect, type ImageQuality, type ImageResolution } from "@/lib/generations/providers/image-resolution";
 import { ImageSafetyRejection, describeImageUsage, type OpenAiImageSize, type OpenAiImageUsage } from "@/lib/generations/providers/openai-images";
 import { stripSetShotScaffold } from "@/lib/sets/set-shot-prompt";
+import { stripSetTakeScaffold } from "@/lib/sets/take-scaffold";
 import type { VideoAspectRatio } from "@/lib/generations/aspect-ratio";
 import type { VideoResolution } from "@/lib/generations/providers/video-resolution";
 import type { BrandRule } from "@/lib/brand-rules/types";
@@ -693,6 +694,13 @@ export type RealPipelineOptions = {
    * "No copyrighted characters" on the sentence about the character photos.
    */
   setShot?: boolean;
+  /**
+   * A Helios take's clip (2026-09-25): the same for a take's words, which
+   * are Picacho's fixed take sentences round the person's direction
+   * (sets/take-scaffold.ts stripSetTakeScaffold). Only the sender's own
+   * brand rules read it; the platform's gates never do.
+   */
+  setTake?: boolean;
   // The person was shown a provider-policy warning for this exact send and
   // chose to continue. Recorded as a step in the attempt log so it travels
   // with the generation — including into a QUEUED video's resume state, which
@@ -1195,8 +1203,9 @@ export async function runRealPipeline(
       // weaker, but compliance must never fail open on a network blip.
       // A Set's shot is judged without Picacho's own fixed sentences (the
       // setShot option): what is left is Astra's description and the
-      // person's direction, which is what a brand rule is about.
-      const brandText = options.setShot ? stripSetShotScaffold(reviewedPrompt) : reviewedPrompt;
+      // person's direction, which is what a brand rule is about. A take
+      // likewise, without its own (setTake, 2026-09-25).
+      const brandText = options.setShot ? stripSetShotScaffold(reviewedPrompt) : options.setTake ? stripSetTakeScaffold(reviewedPrompt) : reviewedPrompt;
       const verdict = await classifyProhibitions(brandText, brandProhibitions);
       const violated = verdict.checked
         ? brandProhibitions.filter((r) => verdict.violations.some((v) => v.id === r.id))

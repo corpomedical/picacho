@@ -91,6 +91,10 @@ describe("a still that does not pass says why, wherever it was shot", () => {
     expect(actions).toContain("if (!still.succeeded) return { error: null, still, reusedEnd: false, takeGenerationId: null, takeError: SET_TAKE_END_FAILED };");
     expect(SET_TAKE_END_FAILED).not.toMatch(/is in/);
     expect(SET_TAKE_FAILED).toMatch(/end frame is in/);
+    // And says the clip wasn't charged, asking for the clip, not the take,
+    // which would shoot and charge a new end frame (2026-09-25).
+    expect(SET_TAKE_FAILED).not.toMatch(/try the take again/);
+    expect(SET_TAKE_FAILED).toContain("wasn't charged");
   });
 
   it("says it on the page: the still, the take and the film's beat", () => {

@@ -13,9 +13,14 @@ import { readIdentityThreshold } from "@/lib/generations/face-lock";
 
 import { withModelWrittenPrompt } from "@/lib/generations/refusal-attribution";
 import { withServerBuiltFrames } from "@/lib/generations/server-built";
+import { withServerPress } from "@/lib/generations/server-press";
+import { REPEAT_FOLLOW_DEADLINE_MS } from "@/lib/generations/repeat-send";
 import { cancelAstraJob, submitAstraJob } from "@/lib/generations/providers/astra";
 import { openAiSafetyId } from "@/lib/openai/safety-id";
-import { setsAccess, UUID_RE } from "@/lib/sets/access";
+import { setsAccess, UUID_RE, type SetsAccess } from "@/lib/sets/access";
+// One press, one answer, one charge (press.ts; operator, 2026-09-25: "GO
+// ahead" on Cut 1). Server-only, like this file.
+import { clearSetPresses, parseFilmBeat, parsePressId, pressClipId, pressLedgerId, renderPaidBefore, runPress } from "@/lib/sets/press";
 import { advanceSetBuild, logBriefRefusedByAstra, type PollResult } from "@/lib/sets/build-tick";
 import { countSetBuildsThisMonth } from "@/lib/sets/data";
 import { isPhotoSetsEnabled } from "@/lib/sets/enabled";
@@ -29,7 +34,7 @@ import {
   SET_RESERVED_BRIEF,
   setFramePath,
   setPhotoPath,
-  setThumbPath, setTakesEligible, setElementSheetPath } from "@/lib/sets/set-config";
+  setThumbPath, setTakesEligible, setElementSheetPath, SET_STILL_START_BY_MS, SET_TAKE_CLIP_START_BY_MS } from "@/lib/sets/set-config";
 import { cleanText, normaliseElementOrder, normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
 import { setBuildInput } from "@/lib/sets/set-builder-prompt";
 import { photoBuildRequest, setAstraRequest } from "@/lib/sets/astra-request";
@@ -101,14 +106,20 @@ import {
   SET_PICK_CHARACTER,
   SET_SAVE_FAILED,
   SET_SHOOT_TOO_FAST,
+  SET_SHOT_NO_TIME,
   SET_TAKE_BAD_END,
   SET_TAKE_BAD_START,
   SET_TAKE_NEEDS_PLAN,
   SET_TAKE_END_FAILED,
   SET_TAKE_FAILED,
+  SET_TAKE_LOOK_CANT,
   SET_TAKE_LOOK_DROPPED,
   SET_TAKE_OFF_FACE,
+  SET_TAKE_OFF_FACE_KEPT_END,
+  SET_TAKE_OFF_FACE_REFUNDED,
   SET_TAKE_OTHER_PERSON,
+  SET_TAKE_START_OTHER_PERSON,
+  SET_TAKE_TOO_FAST,
   SET_TAKE_ELEMENT_DROPPED,
   SET_LIKENESS_NEEDED,
   setMonthlyCapMessage,
@@ -598,7 +609,7 @@ export async function saveSetThumbnail(setId: string, dataUri: string): Promise<
   return { error: null };
 }
 
-type ShootResult =
+export type ShootResult =
   | { error: string }
   | {
       error: null;
@@ -632,6 +643,25 @@ type ShootResult =
       elements: ShotElementStatus[];
     };
 
+/** Who is asking, once setsAccess has said yes. */
+type SetsOk = Extract<SetsAccess, { error: null }>;
+
+/**
+ * What the still is told by the caller that shot it (2026-09-25, Cut 1).
+ * shootInSet passes the first two; only takeInSet sets the rest. None of
+ * them is ever a request field.
+ */
+type ShootOpts = {
+  /** The press's first line: the request's 300 s count from here (set-config.ts SET_STILL_START_BY_MS). Only shootInSet and takeInSet set it; never a request field. */
+  startedAt: number;
+  /** The still's row id, made from the press's id (press.ts): a resend meets it at the reservation. Only shootInSet and takeInSet set it; never a request field. */
+  generationId?: string | null;
+  /** The take's limiter, asked just before the still's first paid step; a sentence stops the still. Only takeInSet sets it; never a request field. */
+  beforePaid?: () => Promise<string | null>;
+  /** A film Render already counted by an earlier beat: the stills limiter is not asked again. Only takeInSet sets it; never a request field. */
+  skipShotBrake?: boolean;
+};
+
 /** A character's photos with no likeness answer for them (likeness.ts); a missing table blocks nothing. */
 async function likenessBlocks(db: Awaited<ReturnType<typeof createClient>>, userId: string, characterId: string, paths: readonly string[]): Promise<boolean> {
   const kept = await readLikeness(db, userId, [characterId]);
@@ -656,9 +686,37 @@ function stillFailure(result: { attempts: AttemptLog[]; rulesBlock?: { label: st
  * One still in a Set: the square snapshot the person framed, their
  * character, and a line about the moment. An ordinary image take from here
  * on — see the header.
+ *
+ * ONE PRESS, ONE CHARGE (operator, 2026-09-25: "GO ahead" on Cut 1). The
+ * page names each press (`pressId`, a fresh id per Shoot). A browser that
+ * resends the request after a dropped connection delivers the same press
+ * twice; the second delivery meets the first's claim row before anything is
+ * counted, drawn, uploaded or charged, and answers with the first's answer
+ * (press.ts runPress). The still's row id IS the press id, so even without
+ * the ledger the reservation refuses a second charge. The clock starts on
+ * this first line: the request's 300 s count from here (server-press.ts).
  */
-export async function shootInSet(
+export async function shootInSet(setId: string, input: Parameters<typeof shootStill>[3] & { pressId?: string }): Promise<ShootResult> {
+  const startedAt = Date.now();
+  const access = await setsAccess();
+  if (access.error !== null) return { error: access.error };
+  const owned = await readyOwnedSpec(setId, access.userId);
+  if (owned.error !== null) return { error: owned.error };
+  const pressId = parsePressId(input?.pressId);
+  return runPress(createAdminClient(), { id: pressId, userId: access.userId, setId, kind: "shot" }, { deadlineAt: startedAt + REPEAT_FOLLOW_DEADLINE_MS }, () =>
+    withServerPress({ startedAt, skipCooldown: false }, () => shootStill(access, setId, owned, input, { startedAt, generationId: pressId })),
+  );
+}
+
+/**
+ * The still itself, for shootInSet and for a take's end frame (takeInSet).
+ * Not exported: only those two may hand it the press's options, and both
+ * have checked who is asking and that the set is theirs.
+ */
+async function shootStill(
+  access: SetsOk,
   setId: string,
+  owned: { spec: SetSpec },
   input: {
     frameDataUri: string;
     characterId: string;
@@ -721,9 +779,8 @@ export async function shootInSet(
      */
     greyed?: unknown;
   },
+  opts: ShootOpts,
 ): Promise<ShootResult> {
-  const access = await setsAccess();
-  if (access.error !== null) return { error: access.error };
   const { userId } = access;
 
   const frame = typeof input?.frameDataUri === "string" ? input.frameDataUri : "";
@@ -731,9 +788,6 @@ export async function shootInSet(
   const bytes = Buffer.from(frame.slice(frame.indexOf(",") + 1), "base64");
   if (bytes.byteLength > MAX_SET_FRAME_BYTES) return { error: SET_FRAME_TOO_LARGE };
   if (bytes.byteLength < 2 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return { error: SET_FRAME_UNREADABLE };
-
-  const owned = await readyOwnedSpec(setId, userId);
-  if (owned.error !== null) return { error: owned.error };
 
   const characterId = typeof input.characterId === "string" ? input.characterId : "";
   if (!UUID_RE.test(characterId)) return { error: SET_PICK_CHARACTER };
@@ -782,7 +836,11 @@ export async function shootInSet(
     }
   }
 
-  if (await rateLimited(userId, "set-shot", 60 * 10, 12)) return { error: SET_SHOOT_TOO_FAST };
+  // The burst brake, before the look's paid cuts and sheet. A film Render
+  // is counted once, at its first paid beat (takeInSet, 2026-09-25): its
+  // later beats' end frames are not counted again, so a film is never
+  // stopped halfway by the stills it is made of.
+  if (!opts.skipShotBrake && (await rateLimited(userId, "set-shot", 60 * 10, 12))) return { error: SET_SHOOT_TOO_FAST };
 
   const admin = createAdminClient();
 
@@ -916,7 +974,21 @@ export async function shootInSet(
   // to cut clear of its person never will, and the Film tab says so before
   // Render (set-view.tsx filmLookNone).
   if (lookDropped && (input.lookRequired === "picked" || (input.lookRequired === "default" && !LASTING_LOOK_DROPS.has(lookDropReason)))) {
-    return { error: SET_TAKE_LOOK_DROPPED };
+    // A picked look that can never be made from its still says so, and not
+    // "try again", which looped the film on the same refusal (2026-09-25).
+    // A lasting reason reaches here only for a picked look.
+    return { error: LASTING_LOOK_DROPS.has(lookDropReason) ? SET_TAKE_LOOK_CANT : SET_TAKE_LOOK_DROPPED };
+  }
+  // Time: the look's cutout and sheet may have taken most of the request's
+  // 300 s (2026-09-25). A render started this late can be cut off by the
+  // platform after it was reserved and charged, so it is not started. Free;
+  // the sheet is kept, so the next press is quick.
+  if (Date.now() - opts.startedAt > SET_STILL_START_BY_MS) return { error: SET_SHOT_NO_TIME };
+  // A take's press is counted here, just before its first paid step, after
+  // every stop above that costs nothing (takeInSet, 2026-09-25).
+  if (opts.beforePaid) {
+    const stop = await opts.beforePaid();
+    if (stop) return { error: stop };
   }
   const { error: uploadError } = await admin.storage
     .from("chat-attachments")
@@ -1003,6 +1075,10 @@ export async function shootInSet(
   // under Astra, never against the person (refusal-attribution.ts).
   const modelOnlyPrompt = buildSetShotPrompt({ ...shot, direction: "" });
   fd.set("content_type", "image");
+  // The press's id is the still's row id (2026-09-25): a resend of this press
+  // meets it at the reservation and follows the first delivery's still
+  // instead of paying for another (generations/repeat-send.ts).
+  if (opts.generationId) fd.set("generation_id", opts.generationId);
   fd.set("character_id", characterId);
   // The prompt is already the one the image model should read: the drafter
   // would rewrite the composition instructions it exists to carry. Still
@@ -1042,9 +1118,12 @@ export async function shootInSet(
     return { error: result.error };
   }
 
-  const { error: shotError } = await admin
+  const { error: shotInsertError } = await admin
     .from("location_set_shots")
     .insert({ set_id: setId, generation_id: result.id, user_id: userId });
+  // A duplicate is this press's other delivery having recorded the same
+  // still (its id is the press's, 2026-09-25): it is recorded.
+  const shotError = shotInsertError?.code === "23505" ? null : shotInsertError;
   if (shotError) console.error("shootInSet couldn't record the shot:", shotError.message);
   // The person's message, as written, in an update of its own whose failure
   // is ignored (shot-words-store.ts: until set-shot-words.sql runs the
@@ -1118,6 +1197,22 @@ export type TakeResult =
     };
 
 /**
+ * What takeInSet hands the take's body (2026-09-25, Cut 1), all worked out
+ * on the server from the press: the first line's time, the rows' ids made
+ * from the press id, and for a film beat its Render.
+ */
+type TakeCtx = {
+  /** The press's first line: the request's 300 s count from here (set-config.ts SET_TAKE_CLIP_START_BY_MS). */
+  startedAt: number;
+  /** The end still's row id (press.ts): the press's own, or its film beat's. Null for a press that named none. */
+  stillId: string | null;
+  /** The clip's row id, made from the still's (press.ts pressClipId). */
+  clipId: string | null;
+  /** A film beat's Render and its number: an earlier beat of the same Render already counted it (press.ts renderPaidBefore). */
+  render: { pressId: string; beat: number } | null;
+};
+
+/**
  * A take in Helios (take.ts, 2026-09-15): a clip from an earlier still to
  * the frame on the stage now. The end frame is shot first as an ordinary
  * still with the START riding as its look, so both frames show the same
@@ -1163,8 +1258,45 @@ async function finishedStillUrl(
     : null;
 }
 
-export async function takeInSet(
+/**
+ * ONE PRESS, ONE CHARGE (operator, 2026-09-25: "GO ahead" on Cut 1): as a
+ * still's (shootInSet). The page names each Take and each clip rendered
+ * again (`pressId`), and a film Render once for all its beats, each beat
+ * saying which it is (`filmBeat`). A second delivery of the same press meets
+ * the first's claim row before anything is counted, drawn, uploaded or
+ * charged, and answers with the first's answer. The end still's row id and
+ * the clip's are made from the press id, so even without the ledger the
+ * reservation refuses a second charge. Its renders skip runGeneration's
+ * 3-second cooldown and count the request's 300 s from this first line
+ * (server-press.ts): a take's end still and clip, and a film's beats, are
+ * one press's own renders, bounded by the take limiter.
+ */
+export async function takeInSet(setId: string, input: Parameters<typeof takeWork>[3] & { pressId?: string; filmBeat?: number }): Promise<TakeResult> {
+  const startedAt = Date.now();
+  const access = await setsAccess();
+  if (access.error !== null) return { error: access.error };
+  // A take is every paid plan's since 2026-09-19 ("Open to all plans",
+  // set-config.ts setTakesEligible): said here, before its end still is
+  // shot and paid for, not by the clip's own send afterwards.
+  if (!setTakesEligible(access.plan, access.isAdmin)) return { error: SET_TAKE_NEEDS_PLAN };
+  // The set, for the rack's words (cut C): a rack names one of its things.
+  const owned = await readyOwnedSpec(setId, access.userId);
+  if (owned.error !== null) return { error: owned.error };
+  const film = input?.film === true;
+  const pressId = parsePressId(input?.pressId);
+  const beat = film ? parseFilmBeat(input?.filmBeat) : null;
+  // A film's beats share their Render's id; a beat that does not say which it is is served untracked, never taken for another beat's repeat.
+  const ledgerId = pressId === null || (film && beat === null) ? null : pressLedgerId(pressId, beat);
+  const ctx: TakeCtx = { startedAt, stillId: ledgerId, clipId: ledgerId ? pressClipId(ledgerId) : null, render: film && pressId !== null && beat !== null ? { pressId, beat } : null };
+  return runPress(createAdminClient(), { id: ledgerId, userId: access.userId, setId, kind: "take" }, { deadlineAt: startedAt + REPEAT_FOLLOW_DEADLINE_MS }, () =>
+    withServerPress({ startedAt, skipCooldown: true }, () => takeWork(access, setId, owned, input, ctx)),
+  );
+}
+
+async function takeWork(
+  access: SetsOk,
   setId: string,
+  owned: { spec: SetSpec },
   input: {
     startGenerationId: string;
     /**
@@ -1177,7 +1309,7 @@ export async function takeInSet(
      * The film's one look (renderFilm, 2026-09-21): a still of this set, the
      * same for every beat, never the beat before's end still. Absent, the
      * take's start still is its look, as a single take's is. Checked in
-     * shootInSet like any look. A thing's own photos ride as its sheet
+     * shootStill like any look. A thing's own photos ride as its sheet
      * instead (R1), never as the look.
      */
     lookGenerationId?: string | null;
@@ -1206,52 +1338,41 @@ export async function takeInSet(
     elementOrder?: unknown;
     /** The beat's movers (movers.ts): where the things that move stand in its end frame, and in the words written about it. */
     movers?: unknown;
-    /** The still engine and the things drawn grey in the sketch, as a still's (shootInSet). */
+    /** The still engine and the things drawn grey in the sketch, as a still's (shootStill). */
     stillEngine?: unknown;
     greyed?: unknown;
   },
+  ctx: TakeCtx,
 ): Promise<TakeResult> {
-  const access = await setsAccess();
-  if (access.error !== null) return { error: access.error };
   const { userId } = access;
-  // A take is every paid plan's since 2026-09-19 ("Open to all plans",
-  // set-config.ts setTakesEligible): said here, before its end still is
-  // shot and paid for, not by the clip's own send afterwards.
-  if (!setTakesEligible(access.plan, access.isAdmin)) return { error: SET_TAKE_NEEDS_PLAN };
 
   // The start: a finished still of THIS set, the person's own, not deleted.
   const startId = typeof input?.startGenerationId === "string" ? input.startGenerationId : "";
   const startUrl = await finishedStillUrl(access.supabase, setId, userId, startId);
-  // The set, for the rack's words (cut C): a rack names one of its things.
-  const owned = await readyOwnedSpec(setId, userId);
-  if (owned.error !== null) return { error: owned.error };
   if (!startUrl) return { error: SET_TAKE_BAD_START };
-  // A film's beat is shot with the person its start still shows
-  // (2026-09-21): the first film opened on a still of one character with
-  // another picked, and beat 1 morphed one into the other. The page sends
-  // that person; a page left open from before is told, before anything is
-  // shot or charged.
-  if (input.film === true) {
-    const { data: startGen } = await access.supabase
-      .from("generations")
-      .select("character_profile_id")
-      .eq("id", startId)
-      .eq("user_id", userId)
-      .maybeSingle();
-    const startPerson = typeof startGen?.character_profile_id === "string" ? startGen.character_profile_id : null;
-    if (startPerson !== null && startPerson !== input.characterId) return { error: SET_TAKE_OTHER_PERSON };
-  }
+  // Who the take is of. A film's beat is shot with the person its start
+  // still shows (2026-09-21): the first film opened on a still of one
+  // character with another picked, and beat 1 morphed one into the other.
+  // Every take now, a single take and a clip rendered again too
+  // (2026-09-25): the engine morphed one person into the other, charged in
+  // full (the 2 and 6 face scores of 21 Sep). The start still, and a kept
+  // end still, must show the person picked; a still with no person on record
+  // passes, as before. Stopped before anything is counted, shot or charged.
+  const characterId = typeof input?.characterId === "string" ? input.characterId : "";
+  if (!UUID_RE.test(characterId)) return { error: SET_PICK_CHARACTER };
+  const reuseId = typeof input?.endGenerationId === "string" && input.endGenerationId.length > 0 ? input.endGenerationId : null;
+  const framesOf = reuseId && UUID_RE.test(reuseId) ? [startId, reuseId] : [startId];
+  const { data: framePeople } = await access.supabase.from("generations").select("character_profile_id").in("id", framesOf).eq("user_id", userId);
+  const otherPerson = (framePeople ?? []).some((g) => typeof g.character_profile_id === "string" && g.character_profile_id.toLowerCase() !== characterId.toLowerCase());
+  if (otherPerson) return { error: input.film === true ? SET_TAKE_OTHER_PERSON : SET_TAKE_START_OTHER_PERSON };
   // Who is in the character's photos (R1.12): the end still's shot asks
   // too, but a take on a kept end frame never shoots one.
   {
-    const { data: who } = UUID_RE.test(typeof input?.characterId === "string" ? input.characterId : "")
-      ? await access.supabase.from("character_profiles").select("reference_image_urls").eq("id", input.characterId).eq("user_id", userId).maybeSingle()
-      : { data: null };
+    const { data: who } = await access.supabase.from("character_profiles").select("reference_image_urls").eq("id", characterId).eq("user_id", userId).maybeSingle();
     const paths = Array.isArray(who?.reference_image_urls) ? (who.reference_image_urls as string[]) : [];
-    if (await likenessBlocks(access.supabase, userId, input.characterId, paths)) return { error: SET_LIKENESS_NEEDED };
+    if (await likenessBlocks(access.supabase, userId, characterId, paths)) return { error: SET_LIKENESS_NEEDED };
   }
   // An end frame the set already has: the same checks, before a take is counted.
-  const reuseId = typeof input?.endGenerationId === "string" && input.endGenerationId.length > 0 ? input.endGenerationId : null;
   const reusedUrl = reuseId ? await finishedStillUrl(access.supabase, setId, userId, reuseId) : null;
   if (reuseId && !reusedUrl) return { error: SET_TAKE_BAD_END };
   const engineKey = isSetTakeEngine(input.engine) ? input.engine : SET_TAKE_DEFAULT_ENGINE;
@@ -1268,7 +1389,22 @@ export async function takeInSet(
     });
     if (allowance.error) return { error: allowance.error };
   }
-  if (await rateLimited(userId, "set-take", 60 * 10, SET_TAKES_PER_10_MIN)) return { error: SET_SHOOT_TOO_FAST };
+  // The take limiter counts a press once, as it is about to pay (2026-09-25):
+  // after every stop above and in the end still's shot that costs nothing
+  // (the look, the things' sheets, the time), just before its first paid
+  // render — the end still's, or the clip's when the end is kept. A film
+  // Render is one press: its later beats find what its first paid beat
+  // reserved (the rows under the Render's ids, press.ts renderPaidBefore)
+  // and are counted by neither limiter, so a film is refused at its first
+  // paid beat or not at all, never halfway. It cannot be bypassed: a Render
+  // id is good for at most FILM_MAX_BEATS beats, and a new one costs a slot.
+  // The limiter cannot give a slot back: a render the prompt gate or the
+  // person's own brand rules refuse after this point still counts.
+  const renderCounted = ctx.render ? await renderPaidBefore(access.supabase, userId, ctx.render) : false;
+  const takeBrake = async (): Promise<string | null> => {
+    if (renderCounted) return null;
+    return (await rateLimited(userId, "set-take", 60 * 10, SET_TAKES_PER_10_MIN)) ? SET_TAKE_TOO_FAST : null;
+  };
 
   let still: Extract<ShootResult, { error: null }>;
   let endUrl: string | null;
@@ -1307,13 +1443,17 @@ export async function takeInSet(
       const score = typeof endRow?.match_score === "number" ? endRow.match_score : null;
       const bar = score !== null ? await readIdentityThreshold(access.supabase) : 0;
       if (score !== null && bar > 0 && score < bar) {
-        return { error: null, still: { ...still, score }, reusedEnd: true, takeGenerationId: null, takeError: SET_TAKE_OFF_FACE, stopped: "face" };
+        // Nothing was shot, so nothing was charged, and it says so (2026-09-25).
+        return { error: null, still: { ...still, score }, reusedEnd: true, takeGenerationId: null, takeError: SET_TAKE_OFF_FACE_KEPT_END, stopped: "face" };
       }
     }
+    // Counted here, just before the press's one paid step: the clip.
+    const braked = await takeBrake();
+    if (braked) return { error: braked };
   } else {
     // The end frame: an ordinary still, every check inside running again,
     // with the start riding as its look so the two frames share one world.
-    const shot = await shootInSet(setId, {
+    const shot = await shootStill(access, setId, owned, {
       frameDataUri: input.frameDataUri,
       characterId: input.characterId,
       direction: input.direction,
@@ -1323,7 +1463,7 @@ export async function takeInSet(
       words: input.words,
       // The look the caller named (a film's one look), else the start.
       // A named look is required: the beat stops, free, rather than shoot
-      // an end frame without it (shootInSet lookRequired).
+      // an end frame without it (shootStill lookRequired).
       ...(input.lookGenerationId !== undefined
         ? {
             lookGenerationId: input.lookGenerationId ?? null,
@@ -1342,34 +1482,54 @@ export async function takeInSet(
       // Where this beat leaves the things that move (movers.ts): the frame
       // was drawn with them there.
       movers: input.movers,
+    }, {
+      startedAt: ctx.startedAt,
+      // The end still's row id is the press's (press.ts), so a resend meets it.
+      generationId: ctx.stillId,
+      // The take is counted just before the still's first paid step.
+      beforePaid: takeBrake,
+      // A film Render counted by an earlier beat: not counted again.
+      skipShotBrake: renderCounted,
     });
     if (shot.error !== null) return { error: shot.error };
     still = shot;
     // Said as what it is: the end frame did not pass, so no clip was asked
     // for (2026-09-21 — this used to say "the end frame is in").
     if (!still.succeeded) return { error: null, still, reusedEnd: false, takeGenerationId: null, takeError: SET_TAKE_END_FAILED };
-    // A film's end frame under the identity bar makes no clip (2026-09-21):
-    // the video engine morphs between two different faces. Only the frame
-    // is charged, and the film shoots the beat again on the next Render.
-    if (input.film === true && still.score !== null) {
-      const bar = await readIdentityThreshold(access.supabase);
-      if (bar > 0 && still.score < bar) {
-        return { error: null, still, reusedEnd: false, takeGenerationId: null, takeError: SET_TAKE_OFF_FACE, stopped: "face" };
-      }
-    }
-
-    // The two frames' RAW stored urls — resolveMaybeSignedUrl in the video
-    // lane takes our own /api/media paths, never a thumbnail transform.
+    // The end frame's row, read once its checks are done: its RAW stored url
+    // — resolveMaybeSignedUrl in the video lane takes our own /api/media
+    // paths, never a thumbnail transform — and what it was charged.
     const { data: endGen } = await access.supabase
       .from("generations")
-      .select("result_url")
+      .select("result_url, credits_used")
       .eq("id", still.generationId)
       .eq("user_id", userId)
       .maybeSingle();
+    // A film's end frame under the identity bar makes no clip (2026-09-21):
+    // the video engine morphs between two different faces. The film shoots
+    // the beat again on the next Render.
+    if (input.film === true && still.score !== null) {
+      const bar = await readIdentityThreshold(access.supabase);
+      if (bar > 0 && still.score < bar) {
+        // Said as it is (2026-09-25): the identity gate refunds a frame it
+        // settled, within the plan's daily ceiling (generations/actions.ts,
+        // the gate's settlement), and its row then says 0. A row that can't
+        // be read is said as charged: never a refund it can't confirm.
+        const offFace = endGen?.credits_used === 0 ? SET_TAKE_OFF_FACE_REFUNDED : SET_TAKE_OFF_FACE;
+        return { error: null, still, reusedEnd: false, takeGenerationId: null, takeError: offFace, stopped: "face" };
+      }
+    }
     endUrl = typeof endGen?.result_url === "string" ? toMediaUrl(endGen.result_url) : null;
   }
   const reusedEnd = reuseId !== null;
   if (!endUrl) return { error: null, still, reusedEnd, takeGenerationId: null, takeError: SET_TAKE_FAILED };
+  // Time (2026-09-25): a clip started this late can be cut off by the
+  // platform after its reservation, and sit charged on "generating" until
+  // the reaper. It is not started: the end frame is kept, and the clip is
+  // rendered again on its own — the page offers that when the still is in
+  // and the clip is not, and a film keeps the end and renders the clip
+  // alone on its next Render.
+  if (Date.now() - ctx.startedAt > SET_TAKE_CLIP_START_BY_MS) return { error: null, still, reusedEnd, takeGenerationId: null, takeError: SET_TAKE_FAILED };
 
   const engine = SET_TAKE_ENGINES[engineKey];
   const fd = new FormData();
@@ -1377,6 +1537,10 @@ export async function takeInSet(
   fd.set("video_model_id", engine.model);
   fd.set("video_duration_seconds", String(engine.seconds));
   fd.set("character_id", input.characterId);
+  // The clip's row id, made from the press's (press.ts, 2026-09-25): a
+  // resend of this press meets it at the reservation instead of paying for
+  // a second clip.
+  if (ctx.clipId) fd.set("generation_id", ctx.clipId);
   const textures = Array.isArray(input.textures) ? [...new Set(input.textures.filter(isFilmTexture))] : [];
   // Where the figure ends (the take's own layout), for the eye-line's side words.
   const endLayout = normaliseSetLayout(input.layout, owned.spec);
@@ -1401,6 +1565,11 @@ export async function takeInSet(
   // as it would a still's composition (shootInSet). Still gated, brand
   // rules included, inside runGeneration (2026-09-21, the first real film).
   fd.set("prompt_is_final", "1");
+  // Its brand rules are judged with Picacho's fixed take sentences taken
+  // out, as a still's are (pipeline.ts setTake, take-scaffold.ts,
+  // 2026-09-25): the operator's 16 rules were reading "One continuous shot,
+  // no cuts…" as his words. The platform's gates read it whole.
+  fd.set("set_take", "1");
   // A tall frame renders a tall clip; every other rig format renders 16:9
   // and the page plays it inside its frame lines (shot-rig.ts keeps the format).
   if (still.format === "vertical") fd.set("video_aspect_ratio", "9:16");
@@ -1417,9 +1586,12 @@ export async function takeInSet(
   // The take joins the set's shots like a still does, with the words that
   // asked for it; a failure to record leaves it in History all the same.
   const admin = createAdminClient();
-  const { error: takeRowError } = await admin
+  const { error: takeInsertError } = await admin
     .from("location_set_shots")
     .insert({ set_id: setId, generation_id: clip.id, user_id: userId });
+  // A duplicate is this press's other delivery having recorded the same
+  // clip (its id is made from the press's, 2026-09-25): it is recorded.
+  const takeRowError = takeInsertError?.code === "23505" ? null : takeInsertError;
   if (takeRowError) console.error("takeInSet couldn't record the take:", takeRowError.message);
   else {
     const key = { setId, generationId: clip.id, userId };
@@ -1542,6 +1714,10 @@ export async function deleteSet(setId: string): Promise<{ error: string | null }
     // audit counts only live sets', and the cutouts went above).
     const { error: shotsError } = await admin.from("location_set_shots").delete().eq("set_id", setId).eq("user_id", userId);
     if (shotsError) console.warn("deleteSet couldn't remove the set's shot records:", shotsError.message);
+    // And its presses' answers (press.ts, 2026-09-25): an answer can quote
+    // the person's words (a brand rule's block). Failures ignored; they are
+    // pruned within a day anyway.
+    await clearSetPresses(admin, setId, userId);
     return { error: null };
   }
   return { error: SET_DELETE_FAILED };

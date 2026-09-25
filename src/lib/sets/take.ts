@@ -35,14 +35,29 @@ export function isSetTakeEngine(v: unknown): v is SetTakeEngine {
   return v === "omni" || v === "veo";
 }
 
+/**
+ * The presses a person may START in ten minutes — a take, a clip rendered
+ * again, or a film's Render (its beats count once, actions.ts takeWork,
+ * 2026-09-25). Counted at the press's first paid step, after every stop
+ * Helios makes for free, so a stop costs no slot.
+ */
 export const SET_TAKES_PER_10_MIN = 4;
+
+// Picacho's own fixed sentences in a take's words (2026-09-25): the brand
+// check reads the take without them (take-scaffold.ts), as it reads a still
+// without its own (set-shot-prompt.ts stripSetShotScaffold).
+export const TAKE_ONE_SHOT = "One continuous shot, no cuts: the camera moves from the first frame to the last frame, inside the same place.";
+export const TAKE_NATURAL = "The person carries the moment naturally.";
+export const TAKE_KEEP = "Keep the person, the clothes and the place exactly as the frames show them.";
+export const SET_TAKE_FIXED_SENTENCES: readonly string[] = [TAKE_ONE_SHOT, TAKE_NATURAL, TAKE_KEEP];
 
 /**
  * The take's prompt: the move between the frames, and the person's own
  * direction. The frames carry the composition; the words carry the motion.
  * It reaches the video model as written (takeInSet sets prompt_is_final,
  * 2026-09-21): the drafter rewrote it into vivid sentences of its own and
- * lost the move. The gates still run, brand rules included.
+ * lost the move. The gates still run, brand rules included — on the
+ * person's words only (set_take, take-scaffold.ts, 2026-09-25).
  */
 export function buildSetTakePrompt(
   direction: string,
@@ -53,7 +68,7 @@ export function buildSetTakePrompt(
 ): string {
   const said = cleanText(direction, SET_DIRECTION_MAX_CHARS);
   return [
-    "One continuous shot, no cuts: the camera moves from the first frame to the last frame, inside the same place.",
+    TAKE_ONE_SHOT,
     motion.move ? FILM_MOVE_WORDS[motion.move] : "",
     ...(motion.textures ?? []).map((t) => FILM_TEXTURE_WORDS[t]),
     // The rack of focus (cut C, furniture.ts rackWords): where the focus travels during the move.
@@ -63,8 +78,8 @@ export function buildSetTakePrompt(
     // Closed with a full stop when it has none, as a still's words are
     // (set-shot-prompt.ts): the first real film's words would otherwise run
     // into the next sentence, "…to the car Keep the person…" (2026-09-21).
-    said.length > 0 ? (/[.!?…"”')\]]$/.test(said) ? said : `${said}.`) : "The person carries the moment naturally.",
-    "Keep the person, the clothes and the place exactly as the frames show them.",
+    said.length > 0 ? (/[.!?…"”')\]]$/.test(said) ? said : `${said}.`) : TAKE_NATURAL,
+    TAKE_KEEP,
   ]
     .filter(Boolean)
     .join(" ");

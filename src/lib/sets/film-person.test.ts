@@ -6,7 +6,7 @@ import es from "../i18n/messages/es";
 import pt from "../i18n/messages/pt";
 import itMsgs from "../i18n/messages/it";
 import { localizeServerText, MAPPED_SERVER_STRINGS } from "../i18n/server-text";
-import { SET_TAKE_OTHER_PERSON } from "./messages";
+import { SET_TAKE_OTHER_PERSON, SET_TAKE_START_OTHER_PERSON } from "./messages";
 
 // The second real film (2026-09-21): it opened on a still of Eva with Anubis
 // picked on the page, every end frame was drawn with Anubis, and beat 1
@@ -50,18 +50,41 @@ describe("who a film is of", () => {
   });
 });
 
+// Every take since 2026-09-25 (Cut 1): a single take, or a clip rendered
+// again, with another character picked in the chip shot the other person
+// as its end frame, charged the still and the clip in full, and morphed one
+// into the other (the 2 and 6 face scores of 21 Sep).
 describe("the server holds a film's beat to its start still's person", () => {
-  it("before anything is counted, shot or charged", () => {
-    const check = take.indexOf("if (startPerson !== null && startPerson !== input.characterId) return { error: SET_TAKE_OTHER_PERSON };");
+  it("before anything is counted, shot or charged — for every take, not only a film's", () => {
+    expect(take).not.toContain("if (input.film === true) {\n    const { data: startGen }");
+    const check = take.indexOf("if (otherPerson) return { error: input.film === true ? SET_TAKE_OTHER_PERSON : SET_TAKE_START_OTHER_PERSON };");
     expect(check).toBeGreaterThan(take.indexOf("if (!startUrl) return { error: SET_TAKE_BAD_START };"));
-    expect(check).toBeLessThan(take.indexOf("checkGenerationAllowance("));
-    expect(check).toBeLessThan(take.indexOf('rateLimited(userId, "set-take"'));
-    expect(take).toContain("if (input.film === true) {\n    const { data: startGen } = await access.supabase");
+    for (const later of ["checkGenerationAllowance(", 'rateLimited(userId, "set-take"', "await shootStill(", "withServerBuiltFrames("]) {
+      expect(check, later).toBeLessThan(take.indexOf(later));
+    }
+    // The start still, and a kept end still, read as the person's own rows.
+    const read = take.slice(take.indexOf("const framesOf ="), check);
+    expect(read).toContain('.in("id", framesOf)');
+    expect(read).toContain('.eq("user_id", userId)');
+    // A character that is not an id is refused before the check.
+    const pick = take.indexOf("if (!UUID_RE.test(characterId)) return { error: SET_PICK_CHARACTER };");
+    expect(pick).toBeGreaterThan(-1);
+    expect(pick).toBeLessThan(check);
   });
 
   it("says so in every language", () => {
     expect(MAPPED_SERVER_STRINGS).toContain(SET_TAKE_OTHER_PERSON);
     for (const m of [en, es, pt, itMsgs]) expect(localizeServerText(SET_TAKE_OTHER_PERSON, m)).toBe(m.serverText.setTakeOtherPerson);
     expect(SET_TAKE_OTHER_PERSON).toContain("nothing was charged");
+  });
+
+  it("says so for a single take too, in every language", () => {
+    expect(MAPPED_SERVER_STRINGS).toContain(SET_TAKE_START_OTHER_PERSON);
+    for (const m of [en, es, pt, itMsgs]) {
+      expect(m.serverText.setTakeStartOtherPerson).toBeTruthy();
+      expect(localizeServerText(SET_TAKE_START_OTHER_PERSON, m)).toBe(m.serverText.setTakeStartOtherPerson);
+    }
+    expect(en.serverText.setTakeStartOtherPerson).toBe(SET_TAKE_START_OTHER_PERSON);
+    expect(SET_TAKE_START_OTHER_PERSON).toContain("nothing was charged");
   });
 });

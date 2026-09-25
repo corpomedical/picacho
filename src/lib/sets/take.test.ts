@@ -150,11 +150,12 @@ describe("a take that ends on a still the set already has (actions.ts)", () => {
   it("shoots a frame only when it does not reuse one", () => {
     const reuse = take.indexOf("if (reuseId && reusedUrl) {");
     const otherwise = take.indexOf("} else {", reuse);
-    const shoot = take.indexOf("await shootInSet(");
+    // The still's body since 2026-09-25 (shootInSet is its wrapper, Cut 1).
+    const shoot = take.indexOf("await shootStill(");
     expect(reuse).toBeGreaterThan(-1);
     expect(shoot).toBeGreaterThan(otherwise);
-    expect(take.slice(reuse, otherwise)).not.toContain("shootInSet");
-    expect(take.match(/shootInSet\(/g)).toHaveLength(1);
+    expect(take.slice(reuse, otherwise)).not.toContain("shootStill");
+    expect(take.match(/shootStill\(/g)).toHaveLength(1);
   });
 });
 
@@ -246,7 +247,7 @@ describe("a take asks for its whole price first (actions.ts)", () => {
     expect(take.slice(ask, take.indexOf("});", ask))).toContain("skipCooldown: true");
     expect(take).toContain("if (allowance.error) return { error: allowance.error };");
     expect(ask).toBeLessThan(take.indexOf('rateLimited(userId, "set-take"'));
-    expect(ask).toBeLessThan(take.indexOf("await shootInSet("));
+    expect(ask).toBeLessThan(take.indexOf("await shootStill("));
     // Only when a still is to be shot: a reused end leaves the clip, which runGeneration asks for itself.
     expect(take).toMatch(/ if \(!reuseId\) \{\s*const allowance = await checkGenerationAllowance\(/);
     // The engine asked for is the engine the clip is sent on.

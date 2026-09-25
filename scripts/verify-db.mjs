@@ -143,6 +143,12 @@ const COLUMNS = {
   // from, so a failed one can be rendered again after a reload
   // (applied/2026-09-16/helios-take-frames.sql).
   location_set_shots: ["set_id", "generation_id", "user_id", "created_at", "camera", "words", "rig", "rig_check", "take"],
+  // One row per Helios press (pending/helios-presses.sql, 2026-09-25): a
+  // second delivery of the same shot or take answers with the first's
+  // answer instead of running again. Until it runs, presses are served
+  // untracked (src/lib/sets/press.ts) — their charge is still protected by
+  // the row ids made from the press id, so nobody would notice it missing.
+  location_set_presses: ["id", "user_id", "set_id", "kind", "state", "result", "created_at", "finished_at"],
   // Face verification, "Verify it's you" (applied/2026-09-22/
   // face-verification.sql, written 2026-09-19, run in production
   // 2026-09-22): the consent records, the photos sent, and the deletions

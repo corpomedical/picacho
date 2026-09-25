@@ -54,7 +54,8 @@ describe("a film beat's stage", () => {
 
   it("a beat's frame is not saved as the set's arrangement", () => {
     expect(actions).toContain("if (layout && input.beat !== true) {");
-    const take = bodyOf(actions, "export async function takeInSet(", "\n}\n");
+    // To the delete: takeInSet is a wrapper round takeWork since 2026-09-25 (Cut 1).
+    const take = bodyOf(actions, "export async function takeInSet(", "// Delete\n");
     expect(take).toContain("beat: input.film === true,");
   });
 });

@@ -6,7 +6,7 @@
 
 import { SUNRISE, SUNSET, sunAt } from "./time-of-day";
 import { RIG_TIME_STEP } from "./rig";
-import type { SetObject, SetSpec } from "./set-spec";
+import { SET_SHAPES, type SetObject, type SetSpec } from "./set-spec";
 
 /** The sun's direction at an hour, unit length, in the set's own axes (time-of-day.ts sunLight places it the same way). */
 export function sunDirection(hour: number): [number, number, number] {
@@ -85,10 +85,27 @@ export function thingWords(o: SetObject): string {
   return `the ${o.shape} ${r1(o.size[0])} × ${r1(o.size[1])} × ${r1(o.size[2])} m`;
 }
 
+/** The rack back to the figure, as the take says it. */
+export const RACK_BACK_WORDS = "During the move the focus racks back onto the person: they end sharp, whatever was sharp before falls soft.";
+
+const RACK_N = "\\d+(?:\\.\\d)?";
+const escapeRe = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/**
+ * Every rack sentence rackWords can write, anchored whole (2026-09-25): the
+ * take's brand check reads the take without them (take-scaffold.ts), and
+ * never deletes a direction of the person's own that merely opens like one.
+ * Tracks thingWords' one-decimal numbers; the test builds real sentences.
+ */
+export const RACK_SENTENCE = new RegExp(
+  `${escapeRe(RACK_BACK_WORDS)}` +
+    `|During the move the focus racks from the person to the (?:${SET_SHAPES.join("|")}) ${RACK_N} × ${RACK_N} × ${RACK_N} m: the person falls soft as it comes sharp\\.`,
+  "g",
+);
+
 /** The rack's words for the take: the focus travels during the move, from the person to the thing, or back to the person. */
 export function rackWords(rack: FilmRack | null, spec: Pick<SetSpec, "objects">): string {
   if (!rack) return "";
-  if (rack.to === "figure") return "During the move the focus racks back onto the person: they end sharp, whatever was sharp before falls soft.";
+  if (rack.to === "figure") return RACK_BACK_WORDS;
   const o = spec.objects[rack.index];
   if (!o) return "";
   return `During the move the focus racks from the person to ${thingWords(o)}: the person falls soft as it comes sharp.`;

@@ -42,7 +42,7 @@ describe("everything gated on it asks it", () => {
     const take = actions.slice(actions.indexOf("export async function takeInSet("), actions.indexOf("// Delete\n"));
     const gate = take.indexOf("if (!setTakesEligible(access.plan, access.isAdmin)) return { error: SET_TAKE_NEEDS_PLAN };");
     expect(gate).toBeGreaterThan(-1);
-    for (const later of ["finishedStillUrl(", "checkGenerationAllowance(", 'rateLimited(userId, "set-take"', "await shootInSet(", "withServerBuiltFrames(() => runGeneration(fd))"]) {
+    for (const later of ["finishedStillUrl(", "checkGenerationAllowance(", 'rateLimited(userId, "set-take"', "await shootStill(", "withServerBuiltFrames(() => runGeneration(fd))"]) {
       expect(take.indexOf(later), later).toBeGreaterThan(gate);
     }
     const film = read("sets/film-actions.ts");

@@ -259,16 +259,25 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   // Takes (lib/sets/messages.ts, 2026-09-15) — a clip from one still to a
   // newly shot end frame.
   "That still can't start a take — pick another.": "setTakeBadStart",
-  "The end frame is in, but the take couldn't start — try the take again in a moment.": "setTakeFailed",
+  "The end frame is in, but its clip couldn't start and wasn't charged — render the clip again in a moment.": "setTakeFailed",
   "That beat's end frame is gone — render again to shoot a new one.": "setTakeBadEnd",
   "The end frame didn't pass, so the take didn't start.": "setTakeEndFailed",
   "This beat stopped before its end frame was shot: the film's look couldn't be made this time. Nothing was charged — press Render to try again.": "setTakeLookDropped",
+  "This beat stopped before its end frame was shot: the look picked for the film can't be made from that still. Nothing was charged — pick another look for the film, or none.": "setTakeLookCant",
   "This beat stopped before its end frame was shot: a photo on one of its things couldn't be drawn this time. Nothing was charged — press Render to try again.": "setTakeElementDropped",
   "Tell us who is in these photos before saving.": "likenessNeedsAnswer",
   "Couldn't record your answer — nothing was saved. Try again.": "likenessCouldntRecord",
   "Tell us who is in this character's photos before shooting: open the person's card on the stage.": "setLikenessNeeded",
   "This beat's end frame scored under your identity bar, so its clip wasn't made and only the frame was charged. Press Render to shoot it again.": "setTakeOffFace",
+  "This beat's end frame scored under your identity bar, so its clip wasn't made and the frame was refunded. Press Render to shoot it again.": "setTakeOffFaceRefunded",
+  "This beat's end frame scored under your identity bar, so its clip wasn't made and nothing was charged. Press Render to shoot the beat again.": "setTakeOffFaceKeptEnd",
   "This film opens on a still of someone else, so this beat wasn't shot and nothing was charged. Reload the page: the film is shot with the person in its opening still.": "setTakeOtherPerson",
+  "This take starts on a still of someone else, so it wasn't shot and nothing was charged. Pick that person, or start from a still of the one you picked.": "setTakeStartOtherPerson",
+  // Helios Cut 1 (lib/sets/messages.ts, 2026-09-25): the take limiter, the
+  // still's time guard, and a press delivered twice.
+  "You're starting takes and films quickly — try again in a few minutes. Nothing was charged.": "setTakeTooFast",
+  "Getting this shot ready took too long, so it wasn't shot and nothing was charged — try again.": "setShotNoTime",
+  "Still rendering — it will appear here when it lands, and nothing more is charged.": "setPressRunning",
   "This photo can't be used as a reference.": "setRefRefused",
   "We couldn't check this photo — try again in a moment.": "setRefUnchecked",
   "That's a lot of photos at once — try again in a few minutes.": "setRefTooFast",

@@ -10,6 +10,8 @@ import {
   SET_MATCH_POLL_MS,
   SET_PHOTO_MAX_ASPECT,
   SET_PHOTO_MIN_SIDE_PX,
+  SET_STILL_START_BY_MS,
+  SET_TAKE_CLIP_START_BY_MS,
   isCurrentSetThumb,
   photoFit,
   setPhotoPath,
@@ -139,5 +141,18 @@ describe("Match this shot's ceiling (2026-09-11)", () => {
     // The research read took 41.8 s; the picture check reads for 10–100 s.
     expect(SET_MATCH_MIN_READ_MS).toBeGreaterThan(41_800);
     expect(SET_MATCH_DEADLINE_MS - SET_MATCH_MIN_READ_MS).toBeGreaterThan(100_000);
+  });
+});
+
+// A Helios render that could not finish inside the request's 300 s is not
+// started (Cut 1, operator 2026-09-25: "GO ahead"): cut off after its
+// reservation, it sat charged until the reaper.
+describe("a Helios press's time", () => {
+  it("leaves a still GPT Image's full 150 s and ~30 s to score, store and check", () => {
+    expect(SET_STILL_START_BY_MS + 150_000 + 30_000).toBeLessThanOrEqual(300_000);
+  });
+
+  it("starts a take's clip with a minute to spare for its start and records", () => {
+    expect(SET_TAKE_CLIP_START_BY_MS).toBeLessThanOrEqual(250_000);
   });
 });

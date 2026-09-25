@@ -6,7 +6,7 @@ import es from "../i18n/messages/es";
 import pt from "../i18n/messages/pt";
 import itMsgs from "../i18n/messages/it";
 import { localizeServerText, MAPPED_SERVER_STRINGS } from "../i18n/server-text";
-import { SET_TAKE_ELEMENT_DROPPED, SET_TAKE_LOOK_DROPPED, SET_TAKE_OFF_FACE } from "./messages";
+import { SET_TAKE_ELEMENT_DROPPED, SET_TAKE_LOOK_CANT, SET_TAKE_LOOK_DROPPED, SET_TAKE_OFF_FACE, SET_TAKE_OFF_FACE_KEPT_END, SET_TAKE_OFF_FACE_REFUNDED } from "./messages";
 
 // The first real film (2026-09-21) paid for every clip between two frames
 // that did not match. A film's beat now stops before it pays for such a
@@ -23,7 +23,8 @@ describe("a beat whose look could not be made", () => {
     expect(stop).toBeGreaterThan(shoot.indexOf("const framePath = setFramePath(userId, crypto.randomUUID());"));
     expect(stop).toBeLessThan(shoot.indexOf(".upload(framePath"));
     expect(stop).toBeLessThan(shoot.indexOf("runGeneration("));
-    expect(shoot).toContain("return { error: SET_TAKE_LOOK_DROPPED };");
+    // A picked look that can never be made says so, not "try again" (2026-09-25).
+    expect(shoot).toContain("return { error: LASTING_LOOK_DROPS.has(lookDropReason) ? SET_TAKE_LOOK_CANT : SET_TAKE_LOOK_DROPPED };");
   });
 
   it("keeps every reason it dropped, and the lasting ones let the film's own opening still render without it", () => {
@@ -43,11 +44,19 @@ describe("a film's end frame under the identity bar", () => {
   it("makes no clip, in a new frame and in one kept from an earlier render", () => {
     expect(take).toContain("if (input.film === true && still.score !== null) {");
     expect(take).toContain("const bar = await readIdentityThreshold(access.supabase);");
-    expect(take).toContain('return { error: null, still, reusedEnd: false, takeGenerationId: null, takeError: SET_TAKE_OFF_FACE, stopped: "face" };');
+    // Said as it is (2026-09-25): refunded when the frame's row says so,
+    // charged when it doesn't or can't be read, and nothing for a kept end.
+    const offFace = take.indexOf("const offFace = endGen?.credits_used === 0 ? SET_TAKE_OFF_FACE_REFUNDED : SET_TAKE_OFF_FACE;");
+    expect(offFace).toBeGreaterThan(-1);
+    const read = take.indexOf('.select("result_url, credits_used")');
+    expect(read).toBeGreaterThan(-1);
+    expect(read).toBeLessThan(offFace);
+    expect(take).toContain('return { error: null, still, reusedEnd: false, takeGenerationId: null, takeError: offFace, stopped: "face" };');
     expect(take).toContain('.select("match_score")');
-    expect(take).toContain('return { error: null, still: { ...still, score }, reusedEnd: true, takeGenerationId: null, takeError: SET_TAKE_OFF_FACE, stopped: "face" };');
+    expect(take).toContain('return { error: null, still: { ...still, score }, reusedEnd: true, takeGenerationId: null, takeError: SET_TAKE_OFF_FACE_KEPT_END, stopped: "face" };');
     // Before the clip is asked for.
-    expect(take.indexOf("SET_TAKE_OFF_FACE, stopped")).toBeLessThan(take.indexOf("runGeneration(fd)"));
+    expect(take.indexOf('stopped: "face"')).toBeGreaterThan(-1);
+    expect(take.indexOf('stopped: "face"')).toBeLessThan(take.indexOf("runGeneration(fd)"));
   });
 
   it("is never kept as the beat's end, so the next render shoots it whole", () => {
@@ -62,6 +71,9 @@ describe("the words", () => {
       [SET_TAKE_LOOK_DROPPED, "setTakeLookDropped"],
       [SET_TAKE_ELEMENT_DROPPED, "setTakeElementDropped"],
       [SET_TAKE_OFF_FACE, "setTakeOffFace"],
+      [SET_TAKE_OFF_FACE_REFUNDED, "setTakeOffFaceRefunded"],
+      [SET_TAKE_OFF_FACE_KEPT_END, "setTakeOffFaceKeptEnd"],
+      [SET_TAKE_LOOK_CANT, "setTakeLookCant"],
     ] as const) {
       expect(MAPPED_SERVER_STRINGS).toContain(msg);
       for (const m of [en, es, pt, itMsgs]) {
@@ -72,5 +84,10 @@ describe("the words", () => {
     }
     expect(SET_TAKE_LOOK_DROPPED).toContain("Nothing was charged");
     expect(SET_TAKE_OFF_FACE).toContain("only the frame was charged");
+    expect(SET_TAKE_OFF_FACE_REFUNDED).toContain("refunded");
+    expect(SET_TAKE_OFF_FACE_REFUNDED).not.toContain("charged");
+    expect(SET_TAKE_OFF_FACE_KEPT_END).toContain("nothing was charged");
+    expect(SET_TAKE_LOOK_CANT).toContain("Nothing was charged");
+    expect(SET_TAKE_LOOK_CANT).not.toContain("try again");
   });
 });

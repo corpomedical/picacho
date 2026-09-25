@@ -139,6 +139,7 @@ const SHARED_SCENE_INSTRUCTION =
   "not about to begin, and the character is never standing still in a posed portrait.";
 import { advancedVideoPlan, FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
 import { serverBuiltFrames } from "@/lib/generations/server-built";
+import { serverPress } from "@/lib/generations/server-press";
 import {
   getVideoModel,
   getDefaultDurationSeconds,
@@ -475,11 +476,14 @@ function withIdentityRecord(
 // Shared cost/abuse guardrail for both single and multi-angle generation.
 
 export async function runGeneration(formData: FormData): Promise<RunResult> {
-  // The platform stops this request at 300 s (maxDuration on the page); the
-  // opening frame reads its deadline from the very first line, not from the
-  // gate's later requestStartedAt, because everything before the render
-  // counts against the same ceiling.
-  const sendStartedAt = Date.now();
+  const sendStartedAt = Math.min(Date.now(), serverPress()?.startedAt ?? Number.POSITIVE_INFINITY);
+  // The platform stops this request at 300 s (maxDuration on the page), and
+  // everything before the render counts against that ceiling: the identity
+  // gate's second render, the opening frame and the repeat follower all read
+  // their deadlines from here. A Helios press's first line is the request's
+  // real start (2026-09-25): its look's cutout and sheet can take ~150 s
+  // before this call, so its start is taken from server memory
+  // (server-press.ts; no form field can set it).
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return { error: "Your session expired — please log in again." };
@@ -632,6 +636,11 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // it changes what the scene role MEANS — pixels riding a final prompt,
   // not an image described into text (see placeImageUrl below).
   const isSetShot = formData.get("set_shot") === "1";
+  // A Helios take's clip (sets/actions.ts takeWork, 2026-09-25): like
+  // set_shot, it only lets the sender's OWN brand rules read the take without
+  // Picacho's fixed take sentences (pipeline.ts setTake). It never touches
+  // the platform's gates, so a browser that sets it gains nothing.
+  const isSetTake = contentType === "video" && formData.get("set_take") === "1";
   // A Helios rig format (sets/rig.ts, 2026-09-15): a set shot names its
   // format, and the server works out the render and the cut from the name
   // alone. GPT Image renders the format's 3:2 (or 2:3) shape; the picture is
@@ -1436,7 +1445,13 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   });
   const creditWeight = sendQuote.totalCredits;
 
-  let allowance = await checkGenerationAllowance(supabase, userData.user.id, creditWeight);
+  // A Helios take's renders skip the 3-second cooldown (server-press.ts,
+  // 2026-09-25): its end still, its clip and a film's next beat are one
+  // press's own renders, seconds apart by design, bounded by the take
+  // limiter and asked for whole first. Admins were already exempt. Read from
+  // server memory, never from a form field.
+  const cooldown = serverPress()?.skipCooldown ? { skipCooldown: true } : undefined;
+  let allowance = await checkGenerationAllowance(supabase, userData.user.id, creditWeight, cooldown);
   // A first delivery that reserved after the check at the top trips the
   // cooldown, or spent the last credit, just the same.
   if (allowance.error) return (await followRepeat()) ?? { error: allowance.error };
@@ -1588,7 +1603,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   let placeholderId: string | null = null;
   for (let attempt = 0; attempt < 5 && !placeholderId; attempt++) {
     if (attempt > 0) {
-      const reAllowance = await checkGenerationAllowance(supabase, userData.user.id, creditWeight);
+      const reAllowance = await checkGenerationAllowance(supabase, userData.user.id, creditWeight, cooldown);
       if (reAllowance.error) return (await followRepeat()) ?? { error: reAllowance.error };
       allowance = reAllowance;
       consumePurchased = reAllowance.consumePurchased;
@@ -1717,10 +1732,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     };
   }
 
-  // Wall clock for the identity gate: the image lane is synchronous under a
-  // hard 300s Vercel ceiling, and the gate declines to start a second render
-  // when there is no longer room for one. See GATE_WALL_CLOCK_BUDGET_MS.
-  const requestStartedAt = Date.now();
+  // The identity gate's wall clock is sendStartedAt, the request's real start (2026-09-25).
   // What the gate decided, hoisted so the terminal write below can fold it in
   // — it runs inside the try, where the render inputs are in scope.
   let gateOutcome: GateOutcome | null = null;
@@ -2322,6 +2334,9 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         // Picacho's own fixed sentences round the person's direction, and the
         // brand rules are read through them (pipeline.ts, set-shot-prompt.ts).
         setShot: isSetShot,
+        // A Helios take's clip, read the same way through its own fixed
+        // sentences (sets/take-scaffold.ts, 2026-09-25).
+        setTake: isSetTake,
           policyWarningAcknowledged,
           brandRules: await loadBrandRules(supabase, userData.user!.id),
           persistImage: (base64) => storeSetImage(userData.user!.id, base64),
@@ -2525,7 +2540,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
                 // is bounded like one.
                 budget: newProviderBudget(1),
               },
-              elapsedMs: Date.now() - requestStartedAt,
+              elapsedMs: Date.now() - sendStartedAt,
               absolutize: (u: string) => absolutizeMediaUrl(u, origin),
               // A lab still is scored on its negative: grain, a camcorder's
               // smear or black and white are the look, not a lost face.
