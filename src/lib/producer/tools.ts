@@ -19,7 +19,10 @@ import {
 //
 // NONE OF THEM SPENDS. prepare_send fills in a send and hands it to the person
 // as a card; the composer's own receipt and the person's own tap are the only
-// way a credit moves (operator, 2026-09-24: "Prepares, you send").
+// way a credit moves (operator, 2026-09-24: "Prepares, you send"). The set
+// tools (2026-09-25, operator: "The assistant should be able to fix these
+// things and know how to do them") change a set's Build copy — free and
+// undoable — and never shoot (lib/producer/set-tools.ts).
 
 export const TOOL_NAMES = {
   search: "search_renders",
@@ -27,6 +30,9 @@ export const TOOL_NAMES = {
   prepare: "prepare_send",
   voice: "voice_control",
   memory: "memory",
+  readSet: "read_set",
+  fixSet: "fix_set_thing",
+  undoSet: "undo_set_change",
 } as const;
 
 // What voice_control can do (2026-09-25, operator: the mic and speaker stay on
@@ -111,6 +117,67 @@ export const PRODUCER_TOOLS = [
       required: ["action"],
       properties: {
         action: { type: "string", enum: ["end_voice", "mute_replies", "unmute_replies"] },
+      },
+    },
+  },
+  {
+    name: TOOL_NAMES.readSet,
+    description:
+      "Read one of their Helios 3D sets as it stands now: its things by the names the set page uses (Car, Car 2, Object 3), whether each car stands on its wheels or is upside down, how high each sits off the floor, which are drawn from a 3D model file, and the render ids of the newest stills taken from it (look_at_render shows one). Free. If the app's note says they are on a set's page (/app/sets/<id>), pass that id; null means the set their newest still came from, else their newest set.",
+    strict: true,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["set_id"],
+      properties: {
+        set_id: { ...nullableString, description: "The set's id, or null (see above)." },
+      },
+    },
+  },
+  {
+    name: TOOL_NAMES.fixSet,
+    description:
+      "Fix one thing in one of their Helios sets, as a whole: upright stands a car back on its wheels (a half turn about its own length, so it faces the same way, then set on the floor); turn turns it about an axis through its centre; move moves it; floor sets its lowest point on the floor. Free, saved to the set's Build copy (Astra's original is kept); undo_set_change puts it back. Existing stills don't change: a new still (Shoot, 1 credit, their press) shows the fix. Read the set first.",
+    strict: true,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["set_id", "thing", "action", "axis", "degrees", "move"],
+      properties: {
+        set_id: { ...nullableString, description: "The set's id from read_set, or null for the same set read_set picks." },
+        thing: { type: "string", description: "The thing's key from read_set, or its name there (\"Car\", \"Car 2\")." },
+        action: { type: "string", enum: ["upright", "turn", "move", "floor"] },
+        axis: {
+          anyOf: [{ type: "string", enum: ["x", "y", "z"] }, { type: "null" }],
+          description: "For turn: y turns it to face another way; x and z tip it over. Null otherwise.",
+        },
+        degrees: { type: ["number", "null"], description: "For turn: -360 to 360. Null otherwise." },
+        move: {
+          anyOf: [
+            {
+              type: "object",
+              additionalProperties: false,
+              required: ["x", "y", "z"],
+              properties: { x: { type: "number" }, y: { type: "number" }, z: { type: "number" } },
+            },
+            { type: "null" },
+          ],
+          description: "For move: metres to move it by (x across, y up, z along). Null otherwise.",
+        },
+      },
+    },
+  },
+  {
+    name: TOOL_NAMES.undoSet,
+    description:
+      "Put back the set as it was before your last change to it (fix_set_thing, or a previous undo — so undoing twice redoes). Free.",
+    strict: true,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["set_id"],
+      properties: {
+        set_id: { ...nullableString, description: "The set whose change to undo, or null for your last change to any set." },
       },
     },
   },

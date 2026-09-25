@@ -15,7 +15,16 @@ import { readSpokenInput, MAX_AUDIO_BYTES } from "./speech";
 import { spotForTool, spotSelector, isSpot } from "./spots";
 import { runNotesCommand, normalizeNotePath, MAX_NOTES, type Note, type NotesStore } from "./notes";
 import { PRODUCER_TOOLS, composerHref, isVoiceAction, readSearchFilters, searchText, validatePreparedSend } from "./tools";
-import { closeTail, currentEffort, effortMessage, toApiMessage, visibleText, INTERRUPTED_ANSWER } from "./history";
+import {
+  closeTail,
+  currentEffort,
+  effortMessage,
+  lastAnswerCut,
+  toApiMessage,
+  unansweredBefore,
+  visibleText,
+  INTERRUPTED_ANSWER,
+} from "./history";
 import { parseProducerFrames } from "./sse";
 import { producerAllowed, PRODUCER_NEEDS_ELITE, PRODUCER_NOT_OPEN, PRODUCER_SUSPENDED } from "./enabled";
 import { VIDEO_MODELS, isDormantVideoModel, requiresReferenceImage } from "../generations/providers/video-models";
@@ -214,6 +223,40 @@ describe("history", () => {
     ]);
     expect(out).toHaveLength(1);
     expect((out[0].content as unknown as { tool_use_id: string }[]).map((b) => b.tool_use_id)).toEqual(["t1", "t2"]);
+  });
+
+  // The data (2026-09-25): "…the same content she has." then "But for
+  // Picacho." two seconds later cut the first answer off before it began.
+  it("hands back what a cut-off turn never answered, oldest first", () => {
+    const user = (text: string) => ({ role: "user" as const, content: [], display: { text } });
+    const note = { role: "system" as const, content: "note", display: { kind: "state" } };
+    const answer = (text: string, extra: Record<string, unknown> = {}) => ({
+      role: "assistant" as const,
+      content: [],
+      display: { text, cards: [], ...extra },
+    });
+    const repair = { role: "assistant" as const, content: [], display: null };
+    const toolRound = { role: "assistant" as const, content: [], display: null };
+    const toolResults = { role: "user" as const, content: [], display: null };
+
+    expect(unansweredBefore([user("hi"), note, answer("hey")])).toEqual([]);
+    expect(unansweredBefore([answer("hey"), user("the same content she has."), note])).toEqual([
+      "the same content she has.",
+    ]);
+    // Two in a row, the first closed by a repair and the second cut mid-tool.
+    expect(
+      unansweredBefore([answer("hey"), user("one"), note, repair, user("two"), note, toolRound, toolResults]),
+    ).toEqual(["one", "two"]);
+    // A deliberate silence (background speech) is an answer: nothing comes back.
+    expect(unansweredBefore([user("tv line"), note, answer("")])).toEqual([]);
+    // A cut-off answer is an answer as far as it got, and is named instead.
+    const cut = [user("one"), note, answer("So the first thing", { cut: true })];
+    expect(unansweredBefore(cut)).toEqual([]);
+    expect(lastAnswerCut(cut)).toBe("So the first thing");
+    expect(lastAnswerCut([user("one"), note, answer("All of it.")])).toBeNull();
+    // At most the last four.
+    const many = [answer("x"), ...["a", "b", "c", "d", "e"].flatMap((t) => [user(t), note, repair])];
+    expect(unansweredBefore(many)).toEqual(["b", "c", "d", "e"]);
   });
 
   it("leaves a finished conversation alone", () => {

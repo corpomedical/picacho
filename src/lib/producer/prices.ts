@@ -119,6 +119,22 @@ export function transcribeCostUsd(seconds: number): number {
   return (s / 60) * TRANSCRIBE_USD_PER_MINUTE;
 }
 
+// THE JUDGE (2026-09-25, operator: "doesnt pick up every voice on the
+// background and processes it"): each spoken message is judged "said to the
+// Producer or not" by Claude Haiku 4.5 before it becomes a turn (gate.ts).
+// Read from Anthropic's pricing page (platform.claude.com/docs/en/about-
+// claude/pricing) on 2026-09-25: $1 per 1M input tokens, $5 per 1M output.
+// A judgement reads ~700 tokens and writes ~20: 700 × $1/1M + 20 × $5/1M =
+// $0.0008. A message it drops costs its transcription, the judgement and the
+// cut-short first call, and is charged nothing (the route settles it at 0).
+export const GATE_MODEL = "claude-haiku-4-5-20251001";
+export const GATE_USD_PER_M_IN = 1;
+export const GATE_USD_PER_M_OUT = 5;
+
+export function gateCostUsd(input: number, output: number): number {
+  return (Math.max(0, input) * GATE_USD_PER_M_IN + Math.max(0, output) * GATE_USD_PER_M_OUT) / 1_000_000;
+}
+
 export function speechCostUsd(chars: number, voice: "human" | "openai" = "openai"): number {
   const rate = voice === "human" ? HUMAN_SPEECH_USD_PER_MCHAR : SPEECH_USD_PER_MCHAR;
   return (Math.max(0, chars) * rate) / 1_000_000;

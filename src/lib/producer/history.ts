@@ -19,7 +19,12 @@
 export type StoredBlock = { type: string; [k: string]: unknown };
 export type StoredMessage = { role: "user" | "assistant" | "system"; content: StoredBlock[] | string };
 
-export const INTERRUPTED_ANSWER = "That answer didn't arrive. Ask again and I'll pick it up from here.";
+// Worded (2026-09-25) so it doesn't tell the model to wait to be asked
+// again: the unanswered message is handed back with the next turn
+// (unansweredBefore, below) and answered then. The old wording, "That answer
+// didn't arrive. Ask again and I'll pick it up from here.", made it drop the
+// first of two questions asked in a row.
+export const INTERRUPTED_ANSWER = "(Cut off before I answered.)";
 
 /** What must be appended before a new user message can follow `messages`. */
 export function closeTail(messages: StoredMessage[]): StoredMessage[] {
@@ -97,6 +102,90 @@ export function toApiMessage(row: Row, withEffort: boolean): Record<string, unkn
   const effort = effortOf(row);
   if (effort) return withEffort ? { role: "system", content: [], output_config: { effort } } : null;
   return { role: row.role, content: row.content };
+}
+
+// ---------------------------------------------------------------------------
+// Several things at once (2026-09-25, operator: "it looks like the assistant
+// cant handle several questions at once. check the data"). The data showed
+// the shape: "…the same content she has." then, two seconds later, "But for
+// Picacho." — the second message cut the first answer off before it began,
+// and the first question was never answered. Now a message that arrives
+// while an answer is under way still cuts it off (as in a conversation), but
+// nothing said is dropped: what was already said is kept (the route stores a
+// cut-off answer as far as it got, marked `cut`), and whatever the person
+// said that never got an answer is handed back with the next turn.
+
+/** A shown answer that was cut off part-way (the route stores it with display.cut). */
+export const CUT_MARK = " —";
+
+/**
+ * The person's messages, oldest first, that came after the last answer they
+ * were shown — the ones a cut-off turn never answered. Tool rounds and
+ * repairs (display null) and the app's notes don't count as answers.
+ */
+export function unansweredBefore(rows: Row[], max = 4): string[] {
+  const out: string[] = [];
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i];
+    if (r.role === "assistant" && r.display) break;
+    if (r.role === "user" && typeof r.display?.text === "string" && r.display.text.trim()) {
+      out.unshift(r.display.text.trim());
+    }
+  }
+  return out.slice(-max);
+}
+
+/** The last answer the person was shown, if it was cut off part-way. */
+export function lastAnswerCut(rows: Row[]): string | null {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i];
+    if (r.role === "assistant" && r.display) {
+      return r.display.cut === true && typeof r.display.text === "string" ? r.display.text : null;
+    }
+  }
+  return null;
+}
+
+// What the judge of a spoken message reads (gate.ts), and when a message
+// spoken over an answer waits for that answer to be saved (route.ts).
+
+type TimedRow = Row & { created_at?: string };
+
+/** The conversation's last few shown lines, oldest first, for the judge. */
+export function recentLines(rows: TimedRow[], max = 6): { who: "person" | "assistant"; text: string }[] {
+  const out: { who: "person" | "assistant"; text: string }[] = [];
+  for (let i = rows.length - 1; i >= 0 && out.length < max; i--) {
+    const r = rows[i];
+    const text = typeof r.display?.text === "string" ? r.display.text.trim() : "";
+    if (!text) continue;
+    if (r.role === "user") out.unshift({ who: "person", text });
+    else if (r.role === "assistant") out.unshift({ who: "assistant", text });
+  }
+  return out;
+}
+
+/** Seconds since the Producer last said something the person saw (null: never). */
+export function secondsSinceAssistant(rows: TimedRow[], now: number): number | null {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i];
+    if (r.role === "assistant" && typeof r.display?.text === "string" && r.display.text.trim() && r.created_at) {
+      const t = Date.parse(r.created_at);
+      return Number.isFinite(t) ? Math.max(0, (now - t) / 1000) : null;
+    }
+  }
+  return null;
+}
+
+/**
+ * An answer is still being written: the conversation doesn't end on one of
+ * the Producer's own messages (it ends on the app's note, or mid-way through
+ * a tool round).
+ */
+export function answerPending(rows: Row[]): boolean {
+  const last = rows[rows.length - 1];
+  if (!last) return false;
+  if (last.role !== "assistant") return true;
+  return Array.isArray(last.content) && (last.content as StoredBlock[]).some((b) => b.type === "tool_use");
 }
 
 /** The text a person should see from one assistant message's blocks. */

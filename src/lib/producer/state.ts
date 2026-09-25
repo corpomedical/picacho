@@ -53,6 +53,12 @@ export async function buildStateNote(
     focus?: unknown;
     /** They spoke this message and/or hear the answer read aloud. */
     spoken?: boolean;
+    /** Their earlier messages that never got an answer (history.ts unansweredBefore). */
+    unanswered?: string[];
+    /** The last answer they were shown, when it was cut off part-way (history.ts lastAnswerCut). */
+    cutAnswer?: string | null;
+    /** They cut in while it was being read aloud: the part of it they heard (the sheet reports it). */
+    heard?: string | null;
   },
 ): Promise<{ text: string; fingerprint: StateFingerprint }> {
   const [profileResult, castResult, rulesResult, rendersResult] = await Promise.all([
@@ -179,8 +185,21 @@ export async function buildStateNote(
           .join("\n")}`
       : null,
     focus ? `They pressed "Ask why" on render ${focus}: that is the one this message is about.` : null,
+    // Several things at once (2026-09-25): nothing they said is dropped.
+    a.unanswered && a.unanswered.length > 0
+      ? `Before this message they also said the following, and your answer was cut off before you replied, so it is still unanswered:\n${a.unanswered
+          .map((t) => `- "${clean(t, 300)}"`)
+          .join("\n")}\nAnswer that and this message together, in order, as one reply. Don't mention the interruption unless it matters.`
+      : null,
+    a.heard !== undefined && a.heard !== null
+      ? a.heard.trim()
+        ? `They cut in while your last answer was being read aloud. They heard only this much of it: "${clean(a.heard, 600)}". They did not hear the rest; don't assume they did, and don't repeat it unless they ask.`
+        : "They cut in before any of your last answer was read aloud: they heard none of it."
+      : a.cutAnswer
+        ? `Your last answer was cut off part-way, after: "${clean(a.cutAnswer, 400)}". Don't pick it up again unless they ask.`
+        : null,
     a.spoken
-      ? "They are talking to you out loud and hear your answer spoken (see WHEN YOU ARE TALKING OUT LOUD). Their words were transcribed from speech, so allow for a misheard word. Prepared cards still appear on their screen. Sound like a person, not a narrator: open with a short first sentence (it is spoken while you are still saying the rest), use everyday words and contractions, and the small reactions a person would use (\"oh, nice\", \"right\", \"okay, so\") where they fit. No headings, bullets, markdown or emoji: everything you write is heard."
+      ? "They are talking to you out loud and hear your answer spoken (see WHEN YOU ARE TALKING OUT LOUD). Their words were transcribed from speech, so allow for a misheard word. Prepared cards still appear on their screen. If they asked more than one thing, answer each of them, in order, briefly. Sound like a person, not a narrator: open with a short first sentence (it is spoken while you are still saying the rest), use everyday words and contractions, and the small reactions a person would use (\"oh, nice\", \"right\", \"okay, so\") where they fit. No headings, bullets, markdown or emoji: everything you write is heard."
       : null,
   ].filter(Boolean);
 

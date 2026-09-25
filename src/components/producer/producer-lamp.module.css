@@ -15,8 +15,11 @@
     0 10px 28px -10px rgba(0, 0, 0, 0.7);
   transition: transform 160ms ease;
 }
-.lamp:hover {
-  transform: scale(1.06);
+/* A pointer that hovers (a finger's "hover" sticks after a drag). */
+@media (hover: hover) {
+  .lamp:hover {
+    transform: scale(1.06);
+  }
 }
 .lamp:focus-visible {
   outline: 2px solid #e0a468;
@@ -26,7 +29,9 @@
    class, so an edge tab can round only its inner side; a finger on it drags
    it instead of scrolling the page. */
 .lamp {
-  border-radius: 9999px;
+  /* Half its 44 px, not 9999px: the flight interpolates the corners, and a
+     huge radius stays a full stadium until the very last frames. */
+  border-radius: 22px;
   touch-action: none;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
@@ -304,12 +309,13 @@
 
 /* ── Movable lamp, edge tabs, hiding (2026-09-25, operator: "Lets make it
    movable and dismissible. Also, if taken to any edge, its lives as an edge
-   tab. Give it nice effects when it transitions to an edge tab") ──────────
-   movable-lamp.tsx sets left/top/width/height inline; everything that moves
-   here is a transition on those, so every change of place animates itself:
-   a spring for the flight (it overshoots a touch and settles), the shape a
-   beat later — the lamp arrives round, then melts into the edge, and the
-   look's light for the new shape fades in once it has (lamp-looks.tsx). */
+   tab. Give it nice effects when it transitions to an edge tab"; then "the
+   animation when sticking to the sides looks cheap. Try to make it look
+   premium") ────────────────────────────────────────────────────────────────
+   movable-lamp.tsx sets the final left/top/width/height inline and plays
+   the way there with the Web Animations API: one spring (lamp-motion.ts)
+   moves position, size and corners together. So nothing here transitions
+   those; this sheet only draws the states. */
 .anchor,
 .insetProbe {
   visibility: hidden;
@@ -324,64 +330,56 @@
 }
 .placed {
   transition:
-    left 520ms cubic-bezier(0.34, 1.45, 0.64, 1),
-    top 520ms cubic-bezier(0.34, 1.45, 0.64, 1),
-    width 440ms 80ms cubic-bezier(0.3, 1.35, 0.5, 1),
-    height 440ms 80ms cubic-bezier(0.3, 1.35, 0.5, 1),
-    border-radius 440ms 80ms ease,
     background 300ms ease,
-    box-shadow 320ms ease,
+    box-shadow 360ms ease,
     opacity 300ms ease,
-    transform 160ms ease;
+    transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 @media (prefers-reduced-motion: no-preference) {
   .lamp:not(.anchor) {
-    animation: lampIn 380ms cubic-bezier(0.3, 1.4, 0.5, 1);
+    animation: lampIn 460ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 }
 @keyframes lampIn {
   from {
     opacity: 0;
-    transform: scale(0.4);
+    transform: scale(0.6);
+    filter: blur(4px);
   }
 }
 
-/* In the hand: it follows the pointer exactly (no flight), a little bigger
-   and brighter, and leans into an edge it is about to join. */
+/* In the hand: it follows the pointer exactly (no flight), lifted a touch
+   and brighter. Near an edge it is drawn toward it — the transform is set
+   inline, growing with closeness (movable-lamp.tsx), eased here so the pull
+   is smooth rather than stepped. */
 .lamp.dragging {
   z-index: 50;
   cursor: grabbing;
-  transform: scale(1.12);
+  transform: scale(1.06);
   box-shadow:
     0 0 0 1px rgba(224, 164, 104, 0.5),
-    0 0 28px rgba(224, 164, 104, 0.5),
+    0 0 28px rgba(224, 164, 104, 0.45),
     0 18px 36px -12px rgba(0, 0, 0, 0.75);
   transition:
-    width 240ms ease,
-    height 240ms ease,
-    border-radius 240ms ease,
-    transform 180ms ease,
-    box-shadow 200ms ease;
-}
-.lamp.dragging.lean_left {
-  transform-origin: left center;
-  transform: scale(0.9, 1.22);
-}
-.lamp.dragging.lean_right {
-  transform-origin: right center;
-  transform: scale(0.9, 1.22);
-}
-.lamp.dragging.lean_top {
-  transform-origin: center top;
-  transform: scale(1.22, 0.9);
-}
-.lamp.dragging.lean_bottom {
-  transform-origin: center bottom;
-  transform: scale(1.22, 0.9);
+    transform 110ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 220ms ease;
 }
 .lamp.dragging.overTarget {
   transform: scale(0.72);
   opacity: 0.8;
+}
+
+/* The light between two shapes: the old one dims into a soft blur before
+   the new shape's light is drawn (lamp-looks.tsx marks it data-light; its
+   arrival is the look's .roundBox/.tabBox animation, at --light-delay). */
+.lightOut [data-light] {
+  opacity: 0;
+  filter: blur(2px);
+  scale: 0.84;
+  transition:
+    opacity 110ms ease-in,
+    filter 110ms ease-in,
+    scale 110ms ease-in;
 }
 
 /* The tab: a slim tube of light on the edge, rounded on the page's side,
@@ -405,22 +403,33 @@
     0 0 calc(14px + var(--glow, 0) * 36px) rgba(224, 164, 104, calc(0.3 + var(--glow, 0) * 0.5));
 }
 .lamp.tab_right {
-  border-radius: 14px 0 0 14px;
+  border-radius: 12px 0 0 12px;
 }
 .lamp.tab_left {
-  border-radius: 0 14px 14px 0;
+  border-radius: 0 12px 12px 0;
 }
 .lamp.tab_top {
-  border-radius: 0 0 14px 14px;
+  border-radius: 0 0 12px 12px;
 }
 .lamp.tab_bottom {
-  border-radius: 14px 14px 0 0;
+  border-radius: 12px 12px 0 0;
 }
 .tab::after {
   content: "";
   position: absolute;
   pointer-events: none;
   opacity: 0.9;
+}
+/* The warm spill onto the page arrives with the tab's light, not before. */
+@media (prefers-reduced-motion: no-preference) {
+  .tab::after {
+    animation: spillIn 520ms var(--light-delay, 0ms) cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+  }
+}
+@keyframes spillIn {
+  from {
+    opacity: 0;
+  }
 }
 .tab_right::after {
   right: 100%;
@@ -475,137 +484,64 @@
   right: -4px;
 }
 
-/* Where it will land, while it is dragged near an edge. */
-.edgeHint {
+/* Where it would dock if let go now: a thin warm light on the edge, as
+   strong as the edge's pull (opacity set inline). No pulsing, no ghost. */
+.dockHint {
   position: fixed;
   z-index: 44;
   pointer-events: none;
-  background: rgba(224, 164, 104, 0.12);
+  border-radius: 9999px;
+  background: rgba(255, 222, 176, 0.9);
   box-shadow:
-    0 0 0 1px rgba(224, 164, 104, 0.55),
-    0 0 26px rgba(224, 164, 104, 0.45);
-}
-.hint_right {
-  border-radius: 14px 0 0 14px;
-}
-.hint_left {
-  border-radius: 0 14px 14px 0;
-}
-.hint_top {
-  border-radius: 0 0 14px 14px;
-}
-.hint_bottom {
-  border-radius: 14px 14px 0 0;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .edgeHint {
-    animation: hintPulse 900ms ease-in-out infinite;
-  }
-}
-@keyframes hintPulse {
-  50% {
-    opacity: 0.45;
-  }
+    0 0 10px 1px rgba(255, 205, 140, 0.55),
+    0 0 26px 4px rgba(224, 164, 104, 0.28);
+  transition: opacity 140ms linear;
 }
 
-/* Landing: a wash of light runs out along the edge from the tab — bright at
-   the edge, fading into the page and toward its two ends — while a soft bloom
-   opens and fades where it landed. */
-.edgeFlash {
+/* The moment the tab touches the edge: a soft warm bloom where it touched,
+   opening a little and fading — nothing runs along the edge. One layer,
+   started at the contact (its delay comes from the landing's own spring,
+   movable-lamp.tsx). */
+.contactGlow {
   position: fixed;
   z-index: 44;
   pointer-events: none;
-}
-.edgeFlash::before,
-.edgeFlash::after {
-  content: "";
-  position: absolute;
-  opacity: 0;
-}
-.edgeFlash::after {
-  inset: -48px;
   border-radius: 9999px;
-  background: radial-gradient(closest-side, rgba(255, 214, 160, 0.6), rgba(224, 164, 104, 0.18) 55%, transparent);
-}
-.flash_left::before,
-.flash_right::before {
-  top: 50%;
-  height: 100%;
-  width: 30px;
-  -webkit-mask-image: linear-gradient(180deg, transparent, #000 30%, #000 70%, transparent);
-  mask-image: linear-gradient(180deg, transparent, #000 30%, #000 70%, transparent);
-}
-.flash_right::before {
-  right: 0;
-  background: linear-gradient(to left, #ffe2b8 0 2px, rgba(255, 205, 140, 0.55) 3px, rgba(224, 164, 104, 0.16) 45%, transparent);
-}
-.flash_left::before {
-  left: 0;
-  background: linear-gradient(to right, #ffe2b8 0 2px, rgba(255, 205, 140, 0.55) 3px, rgba(224, 164, 104, 0.16) 45%, transparent);
-}
-.flash_top::before,
-.flash_bottom::before {
-  left: 50%;
-  width: 100%;
-  height: 30px;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent);
-}
-.flash_top::before {
-  top: 0;
-  background: linear-gradient(to bottom, #ffe2b8 0 2px, rgba(255, 205, 140, 0.55) 3px, rgba(224, 164, 104, 0.16) 45%, transparent);
-}
-.flash_bottom::before {
-  bottom: 0;
-  background: linear-gradient(to top, #ffe2b8 0 2px, rgba(255, 205, 140, 0.55) 3px, rgba(224, 164, 104, 0.16) 45%, transparent);
+  opacity: 0;
+  background: radial-gradient(closest-side, rgba(255, 224, 180, 0.62), rgba(236, 170, 104, 0.2) 58%, transparent);
 }
 @media (prefers-reduced-motion: no-preference) {
-  .flash_left::before,
-  .flash_right::before {
-    animation: runY 1100ms 180ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  .contactGlow.alongY {
+    animation: contactAlongY 980ms cubic-bezier(0.16, 0.8, 0.3, 1) both;
   }
-  .flash_top::before,
-  .flash_bottom::before {
-    animation: runX 1100ms 180ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
-  }
-  .edgeFlash::after {
-    animation: bloom 850ms 160ms ease-out both;
+  .contactGlow.alongX {
+    animation: contactAlongX 980ms cubic-bezier(0.16, 0.8, 0.3, 1) both;
   }
 }
-@keyframes runY {
+@keyframes contactAlongY {
   0% {
-    opacity: 1;
-    transform: translateY(-50%) scaleY(0.6);
+    opacity: 0;
+    transform: scale(0.8, 0.5);
   }
-  45% {
-    opacity: 1;
+  16% {
+    opacity: 0.85;
   }
   100% {
     opacity: 0;
-    transform: translateY(-50%) scaleY(7);
+    transform: scale(1, 1);
   }
 }
-@keyframes runX {
+@keyframes contactAlongX {
   0% {
-    opacity: 1;
-    transform: translateX(-50%) scaleX(0.6);
+    opacity: 0;
+    transform: scale(0.5, 0.8);
   }
-  45% {
-    opacity: 1;
+  16% {
+    opacity: 0.85;
   }
   100% {
     opacity: 0;
-    transform: translateX(-50%) scaleX(7);
-  }
-}
-@keyframes bloom {
-  0% {
-    opacity: 0.9;
-    transform: scale(0.5);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1.3);
+    transform: scale(1, 1);
   }
 }
 
@@ -661,8 +597,6 @@
   transform: scale(0.15);
   opacity: 0;
   transition:
-    left 300ms ease-in,
-    top 300ms ease-in,
     transform 300ms ease-in,
     opacity 300ms ease-in;
 }
@@ -721,7 +655,9 @@
 @media (prefers-reduced-motion: reduce) {
   .placed,
   .lamp.dragging,
-  .lamp.leaving {
+  .lamp.leaving,
+  .lightOut [data-light],
+  .dockHint {
     transition-duration: 1ms !important;
     transition-delay: 0ms !important;
   }

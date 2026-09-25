@@ -72,6 +72,32 @@ export function settle(cx: number, cy: number, s: Stage): Place {
   return { kind: "free", x: fraction((cx - s.left) / w), y: fraction((cy - s.top) / h) };
 }
 
+/**
+ * Where a lamp let go at (cx, cy) while moving at (vx, vy) px/s lives
+ * (2026-09-25, "make it look premium": it ignored the throw). Let go near an
+ * edge, it joins it as before. Thrown toward an edge, it goes there if the
+ * throw would carry it that far (Apple's momentum projection, lamp-motion.ts).
+ * Otherwise it glides a short way on and stops: a careful drop, with a slow
+ * hand, stays where it was put.
+ */
+export function settleThrown(cx: number, cy: number, vx: number, vy: number, s: Stage): Place {
+  if (nearestEdge(cx, cy, s).gap <= SNAP_GAP || Math.hypot(vx, vy) < THROW_SPEED) return settle(cx, cy, s);
+  const px = cx + ((vx / 1000) * 0.998) / 0.002;
+  const py = cy + ((vy / 1000) * 0.998) / 0.002;
+  const far = nearestEdge(px, py, s);
+  if (far.gap <= SNAP_GAP) {
+    const c = clampCentre(px, py, s);
+    const w = Math.max(1, s.right - s.left);
+    const h = Math.max(1, s.bottom - s.top);
+    const t = isSideEdge(far.edge) ? (c.cy - s.top) / h : (c.cx - s.left) / w;
+    return { kind: "edge", edge: far.edge, t: fraction(t) };
+  }
+  const glide = clampCentre(cx + ((vx / 1000) * 0.99) / 0.01, cy + ((vy / 1000) * 0.99) / 0.01, s);
+  return settle(glide.cx, glide.cy, s);
+}
+/** Slower than this (px/s) at the release is a placing hand, not a throw. */
+export const THROW_SPEED = 550;
+
 /** The lamp's box for a free or edge place (home is the CSS's to decide). */
 export function boxFor(place: Exclude<Place, { kind: "home" }>, s: Stage): Box {
   const w = s.right - s.left;

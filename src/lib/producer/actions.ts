@@ -25,7 +25,7 @@ import { monthlyWindowStart } from "@/lib/generations/core";
 // as the route: a hidden lamp is not an access control.
 
 export type ProducerLine =
-  | { seq: number; role: "user"; text: string }
+  | { seq: number; role: "user"; text: string; /** Typed during an answer: goes when it finishes. */ queued?: boolean }
   | { seq: number; role: "assistant"; text: string; cards: PreparedSend[] };
 
 export type ProducerSnapshot = {
@@ -80,7 +80,7 @@ export async function loadProducer(): Promise<{ error: string } | { error: null;
     const lines: ProducerLine[] = [];
     for (const r of rows) {
       const d = r.display as { text?: unknown; cards?: unknown; kind?: unknown } | null;
-      if (!d || d.kind === "state") continue;
+      if (!d || d.kind === "state" || d.kind === "set_undo") continue;
       const text = typeof d.text === "string" ? d.text : "";
       if (r.role === "user") lines.push({ seq: r.seq, role: "user", text });
       else if (r.role === "assistant") {

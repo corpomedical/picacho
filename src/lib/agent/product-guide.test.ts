@@ -57,7 +57,12 @@ describe("renderProductGuide", () => {
     expect(guide).toContain('It never changes the set itself unless the person presses "Change the set" on a card that shows the month\'s changes left');
     expect(guide).toContain("stills and takes are priced on their buttons");
     expect(guide).toContain('it shoots on its own only in "Shoot without asking"');
-    expect(guide).toContain("The Producer does not change sets: it tells the person what to type there.");
+    // The Producer's hands in Helios (2026-09-25, operator: "The assistand
+    // should be able to fix these things"): one thing at a time, free and
+    // undoable; anything else is still the set page's to do.
+    expect(guide).toContain("The Producer can read a set and fix one thing in it as a whole");
+    expect(guide).toContain("free and undoable, saved to the set's Build copy; for anything else it tells the person what to type there.");
+    expect(guide).not.toContain("The Producer does not change sets");
     // Never the promise the page cannot keep in "Shoot without asking".
     expect(guide).not.toMatch(/asks before anything that costs/i);
   });

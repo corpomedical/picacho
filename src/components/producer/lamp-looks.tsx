@@ -23,7 +23,7 @@ type InnerProps = { c: (names: string) => string; tab: boolean };
 
 /**
  * What goes inside the lamp for a look, in three layers:
- * - the pool of light it throws on the page (round only, and not on a mark);
+ * - the pool of light it throws on the page (it fades out on a tab; none on a mark);
  * - the dark glass (.disc), which fills the lamp and so changes shape with it
  *   when it docks to an edge or leaves one;
  * - the light itself, drawn for one shape: round, or a tab drawn for the right
@@ -57,9 +57,9 @@ export function LookInner({
     : m.roundBox;
   return (
     <>
-      {!tab && !bare && <span className={m.pool} />}
+      {!bare && <span className={m.pool} />}
       <span className={m.disc} />
-      <span key={`${look}:${tab ? (edge ?? "right") : "round"}`} className={box}>
+      <span key={`${look}:${tab ? (edge ?? "right") : "round"}`} data-light className={box}>
         <Inner c={c} tab={tab} />
       </span>
     </>

@@ -10,9 +10,9 @@ import { HUMAN_SPEECH_ENDPOINT, MAX_SPOKEN_SECONDS, SPEECH_MODEL, TRANSCRIBE_MOD
 // and the human voice's file is the one fal hosts for every render (privacy
 // policy, "Voice and the assistant", names both providers).
 
-// A minute of Opus-in-WebM at the ~32 kbit/s browsers record speech at is
-// ~240 KB; 2 MB leaves room for Safari's larger mp4/AAC without letting one
-// request carry a podcast.
+// The sheet sends 16 kHz mono WAV (32 KB a second, so 2 MB is ~65 s — it
+// keeps merged recordings under ~55 s); a minute of Opus-in-WebM from an
+// older sheet is ~240 KB. 2 MB never lets one request carry a podcast.
 export const MAX_AUDIO_BYTES = 2 * 1024 * 1024;
 const ALLOWED_MIME = /^audio\/(webm|mp4|mpeg|ogg|wav|x-m4a|m4a|aac)(;.*)?$/;
 // The voice (2026-09-25, operator: "must speak and interact like ChatGPT"):
@@ -44,7 +44,10 @@ export function readSpokenInput(raw: unknown): { input: SpokenInput } | { error:
   }
   if (bytes.length === 0) return { error: "Didn't catch any sound." };
   if (bytes.length > MAX_AUDIO_BYTES) return { error: "That was too long. Keep it under a minute." };
-  const seconds = Math.min(MAX_SPOKEN_SECONDS, Math.max(1, Number(a.seconds) || MAX_SPOKEN_SECONDS));
+  // A WAV's length is its own (16 kHz mono 16-bit, as the sheet records):
+  // the client's figure is only trusted for compressed formats.
+  const claimed = mime.includes("wav") ? (bytes.length - 44) / 32000 : Number(a.seconds);
+  const seconds = Math.min(MAX_SPOKEN_SECONDS, Math.max(1, Math.ceil(claimed) || MAX_SPOKEN_SECONDS));
   return { input: { bytes, mime, seconds } };
 }
 
@@ -58,12 +61,35 @@ function extensionFor(mime: string): string {
 
 /** Speech → text. Throws on a provider failure; returns "" when nothing was said. */
 export async function transcribe(input: SpokenInput): Promise<string> {
+  return (await transcribeHeard(input)).text;
+}
+
+/**
+ * Speech → text, with how sure the transcriber was (the mean log-probability
+ * of its tokens; OpenAI returns them for gpt-4o-mini-transcribe at no extra
+ * cost) and the words it should expect (2026-09-25: "Picacho" came out as
+ * "Pikachu" — the product, the assistant's name and the person's characters
+ * are now named up front). Throws on a provider failure; text "" when
+ * nothing was said.
+ */
+export async function transcribeHeard(
+  input: SpokenInput,
+  expect: { assistant?: string; names?: string[] } = {},
+): Promise<{ text: string; confidence: number | null }> {
   const form = new FormData();
   form.set("model", TRANSCRIBE_MODEL);
   form.set(
     "file",
     new Blob([new Uint8Array(input.bytes)], { type: input.mime.split(";")[0] }),
     `speech.${extensionFor(input.mime)}`,
+  );
+  form.append("include[]", "logprobs");
+  const names = [...new Set((expect.names ?? []).map((n) => n.trim()).filter(Boolean))].slice(0, 20);
+  form.set(
+    "prompt",
+    `Someone talking to ${expect.assistant?.trim() || "their assistant"} in Picacho, an AI studio for images and videos of their characters.${
+      names.length ? ` Names that may come up: ${names.join(", ")}.` : ""
+    }`,
   );
   const res = await fetchWithTimeout(
     "https://api.openai.com/v1/audio/transcriptions",
@@ -74,8 +100,12 @@ export async function transcribe(input: SpokenInput): Promise<string> {
     console.error("producer: transcription failed", res.status, (await res.text()).slice(0, 300));
     throw new Error(`transcription ${res.status}`);
   }
-  const data = (await res.json()) as { text?: unknown };
-  return typeof data.text === "string" ? data.text.trim() : "";
+  const data = (await res.json()) as { text?: unknown; logprobs?: { logprob?: unknown }[] };
+  const text = typeof data.text === "string" ? data.text.trim() : "";
+  const lps = Array.isArray(data.logprobs)
+    ? data.logprobs.map((l) => l.logprob).filter((v): v is number => typeof v === "number" && Number.isFinite(v))
+    : [];
+  return { text, confidence: lps.length ? lps.reduce((a, b) => a + b, 0) / lps.length : null };
 }
 
 // THE HUMAN VOICE (2026-09-25, operator: "make it sound more human … its

@@ -25,7 +25,7 @@ import { writeLampHidden } from "./lamp-place";
 import { lampMood, type LampLook } from "./lamp-look";
 import { LookMark } from "./lamp-looks";
 import { Spotlight, type LitSpot } from "./spotlight";
-import { useHandsFree, type SpokenAudio } from "./use-hands-free";
+import { useHandsFree, type SpokenAudio, type UtteranceMeta } from "./use-hands-free";
 
 // The Producer's lamp and sheet (2026-09-24; operator: "A lamp on every
 // page", "Prepares, you send", "User picks" the name).
@@ -94,11 +94,17 @@ const W = {
   talkOver: "Talk over it anytime",
   newCards: (n: number) => `${n} prepared`,
   heardPlaceholder: "…",
+  ignored: (text: string) => `Heard “${text.length > 70 ? `${text.slice(0, 70)}…` : text}”. Not for me, so I let it be.`,
+  answerIt: "Answer it",
+  backgroundTip: "There's a lot of talk around you. Headphones help, or type to me.",
+  queued: "Next",
   limitReached: "You've used this period's assistant allowance.",
   hideLamp: "Hide the lamp",
 };
 
 const READ_ALOUD_KEY = "picacho.producer.readAloud";
+// The sheet reopens after the page reloads to show a set it just fixed.
+const REOPEN_KEY = "picacho.producer.reopen";
 // Voice survives a reload of the page (the tab's session only): it stays on
 // until the person turns it off or asks the Producer to.
 const VOICE_ON_KEY = "picacho.producer.voiceOn";
@@ -117,6 +123,20 @@ const LONG_CONVERSATION = 120;
 
 type Streaming = { text: string; cards: PreparedSend[]; status: string | null };
 type SendInput = { text?: string; audio?: SpokenAudio; focus?: string };
+/**
+ * One request to the Producer. A spoken one is `accepted` only once the
+ * server has judged it was said to the Producer (its "heard" event); until
+ * then it touches nothing on screen and stops nothing.
+ */
+type Turn = {
+  controller: AbortController;
+  live: Streaming;
+  userSeq: number;
+  accepted: boolean;
+  /** Superseded by a later message that cut it off. */
+  cut: boolean;
+  spoken: SpokenAudio[] | null;
+};
 
 export function ProducerLamp({
   name: initialName,
@@ -145,10 +165,6 @@ export function ProducerLamp({
   const [streaming, setStreaming] = useState<Streaming | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmFresh, setConfirmFresh] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
-  // send() is called from the voice loop's callback, which can't see fresh
-  // state — this ref is the "a turn is running" guard it can see.
-  const streamingRef = useRef(false);
   const openRef = useRef(open);
   useEffect(() => {
     openRef.current = open;
@@ -176,20 +192,38 @@ export function ProducerLamp({
     window.setTimeout(() => setLit((prev) => prev.filter((l) => l.until > Date.now())), 2700);
   }, []);
 
-  // A message spoken while an answer is still arriving replaces that answer,
-  // as in a spoken conversation: the old one is abandoned, the new one sent.
-  const pendingAudioRef = useRef<SpokenAudio | null>(null);
+  // SEVERAL THINGS AT ONCE, SPOKEN OR TYPED (2026-09-25, operator: "it looks
+  // like the assistant cant handle several questions at once. check the
+  // data"). The data: a second spoken message cut the first answer off before
+  // it began, and the first question was never answered; a typed follow-up
+  // while it answered was silently ignored. Now:
+  //   - a recording is sent at once; one that arrives before the last got
+  //     its answer is merged with it and they go together, in order;
+  //   - said over an answer, it is sent WITHOUT stopping that answer: only
+  //     when the server has judged it was said to the Producer (its "heard")
+  //     is the old answer stopped — kept as far as it got — and the new one
+  //     answers what they just said plus anything left unanswered. Judged not
+  //     for the Producer (the TV, someone else), the old answer carries on;
+  //   - a typed message during an answer shows at once and goes when that
+  //     answer has finished.
+  const currentRef = useRef<Turn | null>(null);
+  const probeRef = useRef<Turn | null>(null);
+  const queuedRef = useRef<(SendInput & { queuedSeq?: number })[]>([]);
+  // Bumped when a typed message is queued or an answer ends: the effect
+  // below sends the next one once she is quiet.
+  const [queueTick, setQueueTick] = useState(0);
+  const [ignored, setIgnored] = useState<string | null>(null);
+  const ignoredTimes = useRef<number[]>([]);
+  const [backgroundTip, setBackgroundTip] = useState(false);
+  // A set the Producer changed (fix_set_thing): the set page shows it after a
+  // reload, once the answer and its speech are done.
+  const [reloadFor, setReloadFor] = useState<string | null>(null);
   const voice = useHandsFree({
-    onUtterance: (audio) => {
-      if (streamingRef.current) {
-        pendingAudioRef.current = audio;
-        abortRef.current?.abort();
-        return;
-      }
-      void send({ audio });
+    onUtterance: (audio: SpokenAudio, meta: UtteranceMeta) => {
+      void sendSpokenRef.current(audio, meta);
     },
-    onInterrupt: () => abortRef.current?.abort(),
   });
+  const sendSpokenRef = useRef<(audio: SpokenAudio, meta: UtteranceMeta) => Promise<void>>(async () => {});
   const [unseenCards, setUnseenCards] = useState(0);
 
   // Voice stays on across a reload, and off only when the person says so.
@@ -327,7 +361,7 @@ export function ProducerLamp({
     const corner = home();
     const away = lamp && corner ? Math.hypot(lamp.left - corner.left, lamp.top - corner.top) > 4 : false;
     if (!away) setWheelReady(true);
-    const ready = away ? window.setTimeout(() => setWheelReady(true), 460) : undefined;
+    const ready = away ? window.setTimeout(() => setWheelReady(true), 560) : undefined;
     const t = window.setTimeout(measure, 220);
     window.addEventListener("resize", measure);
     return () => {
@@ -358,39 +392,131 @@ export function ProducerLamp({
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  async function send({ text, audio, focus }: SendInput) {
+  function send({ text, audio, focus }: SendInput) {
+    if (audio) return sendSpoken(audio, { interrupting: currentRef.current !== null });
     const message = (text ?? "").trim();
-    if ((!message && !audio) || streamingRef.current) return;
+    if (!message) return;
+    if (usage && usage.used >= usage.cap) {
+      setError(W.limitReached);
+      return;
+    }
+    setInput("");
+    if (currentRef.current) {
+      // Answering already: it shows now and goes when this answer is done.
+      const seq = -Date.now();
+      setLines((prev) => [...prev, { seq, role: "user", text: message, queued: true }]);
+      queuedRef.current.push({ text: message, focus, queuedSeq: seq });
+      setQueueTick((n) => n + 1);
+      return;
+    }
+    return runTurn({ text: message, focus });
+  }
+
+  async function sendSpoken(audio: SpokenAudio, meta: UtteranceMeta) {
     if (usage && usage.used >= usage.cap) {
       setError(W.limitReached);
       voice.stop();
       return;
     }
+    // Not yet answered (the server hasn't said "heard"): this one joins it,
+    // and they are sent again together, in the order they were said.
+    const waiting = probeRef.current;
+    let audios = [audio];
+    if (waiting && waiting.spoken) {
+      waiting.controller.abort();
+      audios = [...waiting.spoken, audio].slice(-4);
+      // The newest first, as many as fit in ~55 s (the upload holds ~65 s).
+      while (audios.length > 1 && audios.reduce((n, a) => n + a.seconds, 0) > 55) audios = audios.slice(1);
+    }
+    const interrupting = meta.interrupting || currentRef.current !== null;
+    return runTurn({ spoken: audios, interrupting, heard: interrupting && readAloud ? voice.heardText() : null });
+  }
+  sendSpokenRef.current = sendSpoken;
+
+  /** The answer on screen stops here (a later message cut it off, or Stop). */
+  function finalize(turn: Turn, cut: boolean) {
+    const text = turn.live.text.trim();
+    if (text || turn.live.cards.length > 0) {
+      setLines((prev) => [
+        ...prev,
+        { seq: -Date.now() - 1, role: "assistant", text: cut && text ? `${text} —` : text, cards: turn.live.cards },
+      ]);
+    }
+  }
+
+  /** A turn takes the screen: whatever answer was showing is kept as far as it got. */
+  function becomeCurrent(turn: Turn) {
+    const old = currentRef.current;
+    if (old && old !== turn) {
+      old.cut = true;
+      old.controller.abort();
+      finalize(old, true);
+    }
+    currentRef.current = turn;
+    setStreaming({ ...turn.live });
+  }
+
+  function stopAnswer() {
+    const t = currentRef.current;
+    if (t) t.controller.abort();
+    voice.dropReply();
+  }
+
+  async function runTurn({
+    text,
+    focus,
+    spoken = null,
+    interrupting = false,
+    heard = null,
+  }: {
+    text?: string;
+    focus?: string;
+    spoken?: SpokenAudio[] | null;
+    interrupting?: boolean;
+    heard?: string | null;
+  }) {
     setError(null);
-    if (!audio) setInput("");
-    const userSeq = -Date.now();
-    setLines((prev) => [...prev, { seq: userSeq, role: "user", text: audio ? W.heardPlaceholder : message }]);
+    const turn: Turn = {
+      controller: new AbortController(),
+      live: { text: "", cards: [], status: W.thinking },
+      userSeq: -Date.now(),
+      accepted: !spoken,
+      cut: false,
+      spoken,
+    };
     const speak = readAloud;
-    if (speak) voice.beginTurn();
-    const live: Streaming = { text: "", cards: [], status: W.thinking };
-    streamingRef.current = true;
-    setStreaming(live);
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const accept = (words: string) => {
+      if (turn.accepted && currentRef.current === turn) return;
+      turn.accepted = true;
+      if (probeRef.current === turn) probeRef.current = null;
+      // The old answer, if any, stops here; its unplayed speech goes.
+      if (spoken) voice.dropReply();
+      becomeCurrent(turn);
+      setLines((prev) => [...prev, { seq: turn.userSeq, role: "user", text: words }]);
+      if (speak) voice.beginTurn();
+      if (spoken) voice.markAccepted(spoken[spoken.length - 1]?.level);
+    };
+    if (spoken) probeRef.current = turn;
+    else accept(text ?? "");
     let notesChanged = false;
     let failed: string | null = null;
+    let wasIgnored = false;
+    const last = spoken ? spoken[spoken.length - 1] : null;
     try {
       const res = await fetch("/api/producer", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          message: audio ? undefined : message,
-          audio: audio ?? undefined,
+          message: spoken ? undefined : text,
+          audio: spoken ?? undefined,
           speak,
           page: pathname,
           focus: focus ?? null,
+          interrupting: spoken ? interrupting : undefined,
+          nearness: last?.nearness ?? null,
+          heard: heard ?? undefined,
         }),
-        signal: controller.signal,
+        signal: turn.controller.signal,
       });
       if (!res.ok || !res.body) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -398,13 +524,14 @@ export function ProducerLamp({
         throw new Error(body?.error ?? "That didn't go through. Try again.");
       }
       if ((res.headers.get("content-type") ?? "").includes("application/json")) {
-        // A recording with nothing said in it: drop the placeholder, listen on.
-        setLines((prev) => prev.filter((l) => l.seq !== userSeq));
+        // A recording with nothing said in it: nothing changes.
+        wasIgnored = true;
         return;
       }
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buffer = "";
+      const live = turn.live;
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -412,6 +539,26 @@ export function ProducerLamp({
         const parsed = parseProducerFrames(buffer);
         buffer = parsed.rest;
         for (const ev of parsed.events) {
+          if (ev.event === "heard" && typeof ev.data.text === "string") {
+            accept(ev.data.text);
+            continue;
+          }
+          if (ev.event === "ignored") {
+            wasIgnored = true;
+            const words = typeof ev.data.text === "string" ? ev.data.text : "";
+            if (words) {
+              setIgnored(words);
+              const now = Date.now();
+              ignoredTimes.current = [...ignoredTimes.current.filter((t) => now - t < 60_000), now];
+              if (ignoredTimes.current.length >= 3) setBackgroundTip(true);
+            }
+            continue;
+          }
+          if (ev.event === "error" && typeof ev.data.error === "string") {
+            failed = ev.data.error;
+            continue;
+          }
+          if (!turn.accepted || currentRef.current !== turn) continue;
           if (ev.event === "delta" && typeof ev.data.text === "string") {
             live.text += ev.data.text;
             live.status = null;
@@ -424,17 +571,14 @@ export function ProducerLamp({
             if (ev.data.action === "end_voice") voice.endAfterPlayback();
             else if (ev.data.action === "mute_replies") setAloud(false);
             else if (ev.data.action === "unmute_replies") setAloud(true);
-          } else if (ev.event === "heard" && typeof ev.data.text === "string") {
-            const heard = ev.data.text;
-            setLines((prev) => prev.map((l) => (l.seq === userSeq ? { ...l, text: heard } : l)));
           } else if (ev.event === "audio" && typeof ev.data.url === "string") {
-            voice.enqueue(Number(ev.data.index) || 0, { url: ev.data.url });
+            voice.enqueue(Number(ev.data.index) || 0, { url: ev.data.url }, typeof ev.data.text === "string" ? ev.data.text : "");
           } else if (ev.event === "audio" && typeof ev.data.data === "string") {
-            voice.enqueue(Number(ev.data.index) || 0, { data: ev.data.data });
+            voice.enqueue(Number(ev.data.index) || 0, { data: ev.data.data }, typeof ev.data.text === "string" ? ev.data.text : "");
+          } else if (ev.event === "set_changed" && typeof ev.data.setId === "string") {
+            setReloadFor(ev.data.setId);
           } else if (ev.event === "spot" && isSpot(ev.data.spot)) {
             light(ev.data.spot, typeof ev.data.id === "string" ? ev.data.id : null, 8000);
-          } else if (ev.event === "error" && typeof ev.data.error === "string") {
-            failed = ev.data.error;
           } else if (ev.event === "done") {
             notesChanged = ev.data.notesChanged === true;
             const units = Number(ev.data.units) || 0;
@@ -444,28 +588,66 @@ export function ProducerLamp({
         }
       }
     } catch (err) {
-      if (!controller.signal.aborted) failed = err instanceof Error ? err.message : "That didn't go through. Try again.";
+      if (!turn.controller.signal.aborted) failed = err instanceof Error ? err.message : "That didn't go through. Try again.";
     } finally {
-      abortRef.current = null;
-      streamingRef.current = false;
-      settleLights();
-      voice.endTurn();
-      if (live.text || live.cards.length > 0) {
-        setLines((prev) => [...prev, { seq: -Date.now() - 1, role: "assistant", text: live.text.trim(), cards: live.cards }]);
-      }
-      setStreaming(null);
-      if (failed) setError(failed);
-      if (notesChanged) {
-        const r = await loadProducer();
-        if (r.error === null) setNotes(r.snapshot.notes);
-      }
-      const pending = pendingAudioRef.current;
-      if (pending) {
-        pendingAudioRef.current = null;
-        void send({ audio: pending });
+      if (probeRef.current === turn) probeRef.current = null;
+      if (!turn.accepted) {
+        // Never became a turn (nothing said, not for the Producer, merged
+        // into a later recording, or failed): if she had stopped for it,
+        // she carries on; nothing else changes.
+        if (!turn.controller.signal.aborted) {
+          voice.resume();
+          if (failed && !wasIgnored) setError(failed);
+        }
+      } else if (currentRef.current === turn) {
+        currentRef.current = null;
+        settleLights();
+        voice.endTurn();
+        finalize(turn, turn.controller.signal.aborted);
+        setStreaming(null);
+        if (failed) setError(failed);
+        setQueueTick((n) => n + 1);
+        if (notesChanged) {
+          const r = await loadProducer().catch(() => null);
+          if (r && r.error === null) setNotes(r.snapshot.notes);
+        }
       }
     }
   }
+
+  // The next typed message goes once the answer before it has finished and
+  // she has stopped speaking (it used to cut her off mid-sentence).
+  useEffect(() => {
+    if (streaming !== null || voice.phase === "speaking" || voice.held) return;
+    const next = queuedRef.current.shift();
+    if (!next?.text) return;
+    setLines((prev) => prev.filter((l) => l.seq !== next.queuedSeq));
+    void runTurn({ text: next.text, focus: next.focus });
+    // runTurn is this render's (fresh settings); the tick re-checks the queue.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queueTick, streaming, voice.phase, voice.held]);
+
+  useEffect(() => {
+    if (!reloadFor || streaming !== null || voice.phase === "speaking" || voice.held) return;
+    if (!pathname.startsWith(`/app/sets/${reloadFor}`)) {
+      const t = window.setTimeout(() => setReloadFor(null), 0);
+      return () => window.clearTimeout(t);
+    }
+    try {
+      window.sessionStorage.setItem(REOPEN_KEY, "1");
+    } catch {}
+    window.location.reload();
+  }, [reloadFor, streaming, voice.phase, voice.held, pathname]);
+  useEffect(() => {
+    try {
+      if (window.sessionStorage.getItem(REOPEN_KEY) !== "1") return;
+      window.sessionStorage.removeItem(REOPEN_KEY);
+    } catch {
+      return;
+    }
+    const t = window.setTimeout(() => setOpen(true), 0);
+    return () => window.clearTimeout(t);
+  }, []);
 
   async function doFresh() {
     setConfirmFresh(false);
@@ -701,7 +883,7 @@ export function ProducerLamp({
                     </div>
                   )}
 
-                  {lines.map((l) =>
+                  {lines.filter((l) => !(l.role === "user" && l.queued)).map((l) =>
                     l.role === "user" ? (
                       <div key={l.seq} className="ml-auto w-fit max-w-[88%] whitespace-pre-wrap rounded-[14px] rounded-br-[4px] bg-atelier-ink/[0.07] px-3.5 py-2 text-[14.5px] leading-relaxed">
                         {l.text}
@@ -735,6 +917,18 @@ export function ProducerLamp({
                     </div>
                   )}
 
+                  {/* Typed while it answered: after this answer, in order. */}
+                  {lines
+                    .filter((l) => l.role === "user" && l.queued)
+                    .map((l) => (
+                      <div key={l.seq} className="ml-auto w-fit max-w-[88%] opacity-60">
+                        <div className="whitespace-pre-wrap rounded-[14px] rounded-br-[4px] bg-atelier-ink/[0.07] px-3.5 py-2 text-[14.5px] leading-relaxed">
+                          {l.text}
+                        </div>
+                        <div className="mt-1 text-right text-[11px] text-atelier-muted">{W.queued}</div>
+                      </div>
+                    ))}
+
                   {error && <p className="text-sm text-[#ff8a80]">{error}</p>}
                   {lines.length >= LONG_CONVERSATION && !busy && (
                     <p className="text-[13px] text-atelier-muted">{W.longConversation}</p>
@@ -749,8 +943,27 @@ export function ProducerLamp({
                   }}
                   className="border-t border-atelier-rule p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
                 >
+                  {ignored && (
+                    <div className="mb-2 flex items-center gap-2 px-1 text-[12px] text-atelier-muted" role="status">
+                      <span className="min-w-0 flex-1">{W.ignored(ignored)}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const words = ignored;
+                          setIgnored(null);
+                          void send({ text: words });
+                        }}
+                        className="flex-none rounded-full border border-atelier-rule px-2.5 py-1 font-semibold text-atelier-ink hover:bg-atelier-ink/5"
+                      >
+                        {W.answerIt}
+                      </button>
+                    </div>
+                  )}
+                  {backgroundTip && voice.active && (
+                    <p className="mb-2 px-1 text-[12px] text-atelier-muted">{W.backgroundTip}</p>
+                  )}
                   {(voiceLine || voice.notice) && (
-                    <div className="mb-2 flex items-center gap-3 px-1" aria-live="polite">
+                    <div className="mb-2 flex items-center gap-3 px-1" aria-live="polite" data-voice-engine={voice.engine ?? undefined}>
                       {voiceLine && (
                         <LookMark look={look} mood={mood} size={26} glow={glow} />
                       )}
@@ -797,10 +1010,10 @@ export function ProducerLamp({
                       disabled={!loaded}
                       className="min-h-[34px] flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-snug text-atelier-ink outline-none placeholder:text-atelier-muted"
                     />
-                    {busy ? (
+                    {busy || voice.phase === "speaking" || voice.held ? (
                       <button
                         type="button"
-                        onClick={() => abortRef.current?.abort()}
+                        onClick={stopAnswer}
                         aria-label={W.stop}
                         className="grid h-[34px] w-[34px] flex-none place-items-center rounded-full border border-atelier-rule text-atelier-ink"
                       >

@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { lookAtRender } from "./look";
 import { runNotesCommand } from "./notes";
 import { notesStore } from "./store";
+import { fixSetTool, readSetTool, undoSetTool, type SetChange, type SetToolResult } from "./set-tools";
 import {
   TOOL_NAMES,
   readSearchFilters,
@@ -30,6 +31,8 @@ export type ToolOutcome = {
   notesChanged?: boolean;
   /** A voice_control call: what the device should do with the mic/speaker. */
   voice?: VoiceAction;
+  /** A set was changed: which, and the copy it replaced (kept for undo). */
+  setChange?: SetChange;
 };
 
 export type ToolContext = {
@@ -156,8 +159,21 @@ function voiceControl(call: ToolCall): ToolOutcome {
   return { result: { type: "tool_result", tool_use_id: call.id, content: said }, voice: action };
 }
 
+function fromSet(call: ToolCall, r: SetToolResult): ToolOutcome {
+  return {
+    result: { type: "tool_result", tool_use_id: call.id, content: r.text, ...(r.isError ? { is_error: true } : {}) },
+    ...(r.setChange ? { setChange: r.setChange } : {}),
+  };
+}
+
 export async function runTool(ctx: ToolContext, call: ToolCall): Promise<ToolOutcome> {
   switch (call.name) {
+    case TOOL_NAMES.readSet:
+      return fromSet(call, await readSetTool(ctx, asRecord(call.input)));
+    case TOOL_NAMES.fixSet:
+      return fromSet(call, await fixSetTool(ctx, asRecord(call.input)));
+    case TOOL_NAMES.undoSet:
+      return fromSet(call, await undoSetTool(ctx, asRecord(call.input)));
     case TOOL_NAMES.voice:
       return voiceControl(call);
     case TOOL_NAMES.search:
@@ -186,6 +202,12 @@ export function toolStatus(name: string): string {
       return "Checking my notes";
     case TOOL_NAMES.voice:
       return "Adjusting voice";
+    case TOOL_NAMES.readSet:
+      return "Reading the set";
+    case TOOL_NAMES.fixSet:
+      return "Fixing the set";
+    case TOOL_NAMES.undoSet:
+      return "Undoing the change";
     default:
       return "Working";
   }

@@ -63,7 +63,11 @@ function buildCsp(nonce: string): string {
     // 'self' https: 'unsafe-inline' are fallbacks for pre-strict-dynamic
     // browsers only — anything that understands 'strict-dynamic' ignores
     // them, so modern browsers run nonce-approved scripts and nothing else.
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://js.stripe.com https: 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+    // 'wasm-unsafe-eval' (2026-09-25): the Producer's speech detector runs
+    // the Silero model with onnxruntime's WebAssembly build (public/vad,
+    // use-hands-free.ts). It allows compiling WebAssembly only — never
+    // JavaScript eval — and the only WebAssembly this site loads is its own.
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval' https://js.stripe.com https: 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
     // 'unsafe-inline' stays for styles: React writes style="" attributes
     // everywhere and Tailwind/Next inject style tags without nonce support.
     // Style injection is a far smaller sink than script and the script side
