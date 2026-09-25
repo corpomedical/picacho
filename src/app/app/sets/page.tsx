@@ -9,13 +9,17 @@ import { getSetsHome } from "@/lib/sets/data";
 import { finisherCanRun } from "@/lib/sets/finisher";
 import { SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_UNAVAILABLE } from "@/lib/sets/messages";
 import { SetsHome } from "@/components/sets/sets-home";
+import { SetsUpgrade } from "@/components/sets/sets-upgrade";
 
 // Sets (Astra Sets, Phase 1, 2026-09-10; Astra chat since 2026-09-14): the
 // home asks what we are shooting today. The person says who, where and
 // what happens; Astra builds the place if there is none, and the set's page
-// takes it from there as a conversation. Admins only while in testing,
-// behind the astra_sets flag — and to anyone else this page does not exist,
-// rather than advertising a feature they cannot open.
+// takes it from there as a conversation. On every paid plan since
+// 2026-09-19 (SETS_OPEN_TO_PLANS). A free account on the web gets a page
+// saying Helios is on the paid plans, with "See plans" (SetsUpgrade, Helios
+// Cut 3, step 3), instead of "not found". While Helios is closed to the
+// plans, and in the Android shell, a free account still gets "not found",
+// rather than an advert for a feature it cannot open.
 //
 // Whether a build can be left to finish is read here, on the server
 // (finisherCanRun: the finisher cron runs only with CRON_SECRET set), and
@@ -37,13 +41,15 @@ export default async function SetsPage() {
 
   const [data, notify] = await Promise.all([getSetsHome(), readRenderNotifyPrefs(supabase, userData.user.id)]);
   if (data.error === SETS_SESSION_EXPIRED) redirect("/login");
-  if (data.error === SETS_UNAVAILABLE || data.error === SETS_NOT_OPEN) notFound();
+  // Web-only until the Play listing is reinstated: the Android shell follows
+  // the reader-mode rule (lib/native/platform.ts). Read before the 404 below,
+  // which it decides for a free account.
+  const native = await isNativeApp();
+  if (data.error === SETS_UNAVAILABLE || (data.error === SETS_NOT_OPEN && (native || !SETS_OPEN_TO_PLANS))) notFound();
 
   const { t } = await getServerMessages();
+  if (data.error === SETS_NOT_OPEN) return <SetsUpgrade t={t} native={native} />;
   const s = t.sets;
-  // Web-only until the Play listing is reinstated: the Android shell follows
-  // the reader-mode rule (lib/native/platform.ts).
-  const native = await isNativeApp();
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">

@@ -8,10 +8,12 @@ import { getSetPage } from "@/lib/sets/data";
 import { finisherCanRun } from "@/lib/sets/finisher";
 import { buildingHintKey } from "@/lib/sets/leaving";
 import { SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_UNAVAILABLE, SET_NOT_FOUND } from "@/lib/sets/messages";
+import { SETS_OPEN_TO_PLANS } from "@/lib/sets/set-config";
 import { SHOT_WORDS_MAX_CHARS } from "@/lib/sets/shot-words";
 import { SetBuilding } from "@/components/sets/set-building";
 import { SetEditor } from "@/components/sets/set-editor";
 import { SetView } from "@/components/sets/set-view";
+import { SetsUpgrade } from "@/components/sets/sets-upgrade";
 
 // One Set, open (Astra Sets, 2026-09-10; a workspace with Astra since
 // 2026-09-14). Everything the view needs — the normalised set, the person's
@@ -59,11 +61,22 @@ export default async function SetPage({
 
   const [data, query] = await Promise.all([getSetPage(id), searchParams]);
   if (data.error === SETS_SESSION_EXPIRED) redirect("/login");
-  if (data.error === SETS_UNAVAILABLE || data.error === SETS_NOT_OPEN || data.error === SET_NOT_FOUND) notFound();
+  const native = await isNativeApp();
+  // A free account on the web gets the Sets home's upgrade page (Helios Cut
+  // 3, step 3); in the Android shell, or while Helios is closed to the plans,
+  // it stays 404. The access check runs before the set is looked up
+  // (lib/sets/data.ts getSetPage), so the page says nothing about whether
+  // this set exists. A set that isn't there, or isn't theirs, stays 404.
+  if (
+    data.error === SETS_UNAVAILABLE ||
+    data.error === SET_NOT_FOUND ||
+    (data.error === SETS_NOT_OPEN && (native || !SETS_OPEN_TO_PLANS))
+  )
+    notFound();
 
   const { t } = await getServerMessages();
+  if (data.error === SETS_NOT_OPEN) return <SetsUpgrade t={t} native={native} />;
   const s = t.sets;
-  const native = await isNativeApp();
   const set = data.error === null ? data.set : null;
   const finisherOn = finisherCanRun();
   const ask = (first(query.ask) ?? "").trim().slice(0, SHOT_WORDS_MAX_CHARS) || null;
