@@ -337,3 +337,19 @@ describe("the words, in all four languages", () => {
     }
   });
 });
+
+// ⌘K's Shoot row and the composer's send on an empty message render the take
+// when one is set up; they said "Shoot · 1 credit" while doing it
+// (found checking the Cut 2 design, 2026-09-25). They now say the take's price.
+describe("the generic Shoot entry points", () => {
+  it("say the take's price whenever they would render a take", () => {
+    expect(view).toContain("const pressLabel = takeStart && !shooting ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel;");
+    expect(view).toContain("shootNow: pressLabel,");
+    expect(view).toContain("title={draft.trim() || justTalk ? s.threadPlaceholder : pressLabel}");
+    expect(view).toContain("aria-label={draft.trim() || justTalk ? s.threadPlaceholder : pressLabel}");
+    // Every entry point that picks take() over shoot() is one of these, or a button already priced as a take.
+    const takeOrShoot = view.split("takeStart ? take() : shoot()").length - 1;
+    expect(takeOrShoot).toBe(4);
+    expect(view.split("{takeStart && !shooting ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel}").length - 1).toBe(2);
+  });
+});

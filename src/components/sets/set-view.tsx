@@ -6691,6 +6691,11 @@ export function SetView({
       ? s.shootButtonOne
       : formatMsg(s.shootButton, { n: quote.totalCredits });
   const canShootNow = !(shooting || matching || reading || editingSet || !characterId || loadFailed || !ready);
+  // What the generic Shoot entry points (⌘K's Shoot row, the composer's send
+  // on an empty message) actually do: with a take set up they render the
+  // take, so they say the take's price, as the frame card's button already
+  // did (2026-09-25: they said "Shoot · 1 credit" while running a take).
+  const pressLabel = takeStart && !shooting ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel;
   const shotCount = (() => {
     const stills = shots.filter((sh) => sh.kind === "still").length;
     const takes = shots.length - stills;
@@ -7026,7 +7031,7 @@ export function SetView({
           downloadFrame: s.downloadFrame,
           camera: (label) => formatMsg(s.palette.camera, { label }),
           mark: (label) => formatMsg(s.palette.mark, { label }),
-          shootNow: shootLabel,
+          shootNow: pressLabel,
         },
         rig,
         setRig: (patch) => setRig((r) => ({ ...r, ...patch })),
@@ -8146,8 +8151,8 @@ export function SetView({
                 <button
                   type="submit"
                   disabled={reading || shooting || editingSet || !ready || (!draft.trim() && (!characterId || justTalk))}
-                  title={draft.trim() || justTalk ? s.threadPlaceholder : shootLabel}
-                  aria-label={draft.trim() || justTalk ? s.threadPlaceholder : shootLabel}
+                  title={draft.trim() || justTalk ? s.threadPlaceholder : pressLabel}
+                  aria-label={draft.trim() || justTalk ? s.threadPlaceholder : pressLabel}
                   className="flex h-9 w-9 flex-shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#e0a468] text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-[rgba(255,255,255,0.06)] disabled:text-[#c6c9d1]"
                 >
                   {reading || shooting || editingSet ? <Spinner className="h-4 w-4" /> : <SendIcon className="h-4 w-4" />}

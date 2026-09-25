@@ -35,6 +35,7 @@ export const RELEASES: Release[] = [
       "A take keeps its still's shape, and words like \"vertical\" or \"tiktok\" in the direction can no longer flip it. New sets frame 16:9, the shape the take engines render, so films stop inventing the sides of every frame. Existing sets keep their frame.",
       "Your brand rules no longer judge Picacho's own fixed wording in a take, only your words.",
       "A finished still has its own Download (the old icon saved the grey sketch), and the panel names the picture engine you actually picked.",
+      "With a take set up, ⌘K's Shoot and the chat's send button now say the take's price. Before, they said \"Shoot · 1 credit\" and ran the take.",
     ],
   },
   {
