@@ -316,6 +316,117 @@ export function readerUsageOf(data: unknown, model: string): ReaderUsage {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Reader v2 (Helios Cut 2, step 6, 2026-09-25 — operator: "Run, keep going.").
+// ---------------------------------------------------------------------------
+
+/**
+ * The cap on a v2 reading sent WITHOUT reasoning_effort, visible text and
+ * hidden reasoning together. The pinned `reasoning_effort: "none"` keeps
+ * the reading at the model's documented default (developers.openai.com,
+ * read 2026-09-25: "none (default), low, medium, high and xhigh"), but this
+ * code has seen this model spend a tight cap on reasoning and come back
+ * EMPTY (describe-image.ts, operator report 2026-08-25). So if the API ever
+ * refuses the parameter, the one retry runs at the model's own default
+ * effort with room to think, and never uncapped: its worst output is
+ * 1,500 × $4.50 per 1M = $0.00675, ≈ $0.009 a reading with the worst input
+ * (2,980 tokens × $0.75 per 1M) — against $0.0049 on the pinned path. The
+ * $4.50 and $0.75 are identity-check/route.ts's THE MONEY (read
+ * 2026-09-22); what a reading really costs is measured by the usage log and
+ * check A (spec §7.4), which reports which path ran (`effort`).
+ */
+export const SHOT_READER_FALLBACK_MAX_COMPLETION = 1500;
+
+/**
+ * Set once the API has refused `reasoning_effort` for this model, for the
+ * life of this server instance: every later reading skips the parameter
+ * (and its failed first call) and says so once, not on every message.
+ */
+let readerEffortRefused = false;
+
+/** What one v2 reading answered: the model's text, what it used, and which effort path ran. */
+export type ShotReaderAnswer = { text: string; usage: ReaderUsage; effort: "none" | "default" };
+
+/**
+ * Reader v2's call (spec §2.1, §2.2): the messages as reader-context.ts
+ * readerMessages writes them — the fixed instructions FIRST, byte-identical
+ * on every call, so the provider's prompt cache holds them — as one sparse
+ * JSON object, at temperature 0 and seed 7, with `reasoning_effort: "none"`
+ * pinned and the answer capped at `maxCompletionTokens`.
+ *
+ * A 400 that names `reasoning_effort` is logged once and the call is tried
+ * once more without it, at SHOT_READER_FALLBACK_MAX_COMPLETION (a model
+ * that refuses the parameter must not turn every reading into "down"). No
+ * third call, ever. Anything else that fails is null: the action says the
+ * reader is down, and nothing changes and nothing shoots (the owner's
+ * decision 2).
+ *
+ * `prompt_cache_key` is not sent: the create-chat-completion reference
+ * could not be read at build time (2026-09-25: 403 and 404), and the
+ * prompt-caching guide names it for the Responses API only. The static
+ * block is the cached prefix either way; nothing depends on the key.
+ *
+ * Never logs the words: one usage line per answer, counts only.
+ */
+export async function askShotReader(
+  messages: readonly { role: "system" | "user"; content: string }[],
+  opts: { maxCompletionTokens: number; timeoutMs?: number; fetchFn?: typeof fetch },
+): Promise<ShotReaderAnswer | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    console.warn("[sets] shot reader skipped: OPENAI_API_KEY is not set");
+    return null;
+  }
+  const deadline = new AbortController();
+  const timer = setTimeout(() => deadline.abort(), opts.timeoutMs ?? SHOT_WORDS_TIMEOUT_MS);
+  const call = (pinned: boolean) =>
+    (opts.fetchFn ?? fetch)("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: SHOT_WORDS_MODEL,
+        messages,
+        max_completion_tokens: pinned ? opts.maxCompletionTokens : SHOT_READER_FALLBACK_MAX_COMPLETION,
+        temperature: 0,
+        seed: SEED,
+        ...(pinned ? { reasoning_effort: "none" } : {}),
+        response_format: { type: "json_object" },
+      }),
+      signal: deadline.signal,
+    });
+  try {
+    let pinned = !readerEffortRefused;
+    let res = await call(pinned);
+    if (!res.ok && res.status === 400 && pinned) {
+      // Only the provider's own error names the parameter; nothing of the
+      // message is read or logged here.
+      const refusal = await res.text().catch(() => "");
+      if (refusal.includes("reasoning_effort")) {
+        readerEffortRefused = true;
+        pinned = false;
+        console.warn(
+          `[sets] shot reader: ${SHOT_WORDS_MODEL} refused reasoning_effort; readings now run at its default effort, capped at ${SHOT_READER_FALLBACK_MAX_COMPLETION} tokens`,
+        );
+        res = await call(false);
+      }
+    }
+    if (!res.ok) {
+      console.warn(`[sets] shot reader failed: ${SHOT_WORDS_MODEL} answered ${res.status}`);
+      return null;
+    }
+    const data = (await res.json()) as { choices?: { message?: { content?: unknown } }[] } | null;
+    const effort = pinned ? "none" : "default";
+    console.info("[sets] reader usage", { ...readerUsageOf(data, SHOT_WORDS_MODEL), reader: "v2", effort });
+    const answer = data?.choices?.[0]?.message?.content;
+    return typeof answer === "string" ? { text: answer, usage: readerUsageOf(data, SHOT_WORDS_MODEL), effort } : null;
+  } catch (err) {
+    console.warn(`[sets] shot reader failed: ${err instanceof Error ? err.name : "error"}`);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * The model's answer to `text` under `instructions`, as text — or null when
  * it could not be asked or did not answer (the header: fail open). Never
