@@ -405,8 +405,10 @@ describe("the reply and the composer (step 11b)", () => {
     expect(view).toContain("placeholder={reading ? s.threadReading : v2On ? s.reply.composerPlaceholder : s.threadPlaceholder}");
   });
 
-  it("an empty send shoots, and says what and at what price, not only an arrow (rule 7)", () => {
-    expect(view).toContain("const sendSaysPrice = v2On && !draft.trim() && !justTalk;");
+  it("an empty send shoots, and says what and at what price, not only an arrow, on every account's page (rule 7)", () => {
+    // Reader v1 (every paying non-admin) as well as v2: the price no longer waits for v2On (Helios Cut 3, step 1).
+    expect(view).toContain("const sendSaysPrice = !draft.trim() && !justTalk;");
+    expect(view).not.toContain("v2On && !draft.trim()");
     const send = between(view, "data-send-shoots={sendSaysPrice || undefined}", "</button>");
     expect(send).toContain(") : sendSaysPrice ? (");
     expect(send).toContain("pressLabel");

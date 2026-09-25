@@ -9617,9 +9617,11 @@ export function SetView({
               <div ref={threadEndRef} aria-hidden />
             </div>
   );
-  // An empty send is a paid Shoot (pressShoot): on reader v2's page it
-  // shows its label and price, not only an arrow (money rule 7).
-  const sendSaysPrice = v2On && !draft.trim() && !justTalk;
+  // An empty send is a paid Shoot (pressShoot): on every account's page,
+  // reader v1 or v2, it shows its label and price, not only an arrow (money
+  // rule 7). With words in the box it is the arrow again: those words are
+  // read first, and only a message that asks to shoot spends.
+  const sendSaysPrice = !draft.trim() && !justTalk;
   const chatComposer = (
             <form
               onSubmit={(e) => {
