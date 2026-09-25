@@ -636,7 +636,14 @@ export type SetRig = {
 export const DEFAULT_SET_RIG: SetRig = {
   genre: null,
   era: null,
-  format: "square",
+  // 16:9 since 2026-09-25, the square before. Neither take engine renders a
+  // square (Gemini Omni "16:9" | "9:16"; Veo "auto" | "16:9" | "9:16", read
+  // at source that day), so a square still made every take invent about
+  // 44% of its width, each beat its own (the 2026-09-21 film audit). The
+  // 16:9 still is the clip's own shape, and the wide render is also the
+  // cheaper one (THE MONEY above: $0.0619 against $0.0735). A saved rig
+  // keeps its frame, and every frame stays pickable.
+  format: "wide",
   stock: null,
   lens: null,
   stop: null,
@@ -661,8 +668,9 @@ const wrapDeg = (d: number) => ((d % 360) + 360) % 360;
 
 /**
  * Any stored or sent rig through one door, the way normaliseSetFilm is the
- * door for films: unknown ids fall back to off, the format to the square,
- * angles are wrapped and clamped, and nothing throws.
+ * door for films: unknown ids fall back to off, the format to the default
+ * rig's 16:9 (2026-09-25), angles are wrapped and clamped, and nothing
+ * throws.
  */
 export function normaliseSetRig(v: unknown): SetRig {
   if (!v || typeof v !== "object" || Array.isArray(v)) return { ...DEFAULT_SET_RIG };
@@ -684,7 +692,7 @@ export function normaliseSetRig(v: unknown): SetRig {
   return {
     genre: oneOf(r.genre, RIG_GENRES),
     era: oneOf(r.era, ids(RIG_ERAS) as RigEra[]),
-    format: isRigFormat(r.format) ? r.format : "square",
+    format: isRigFormat(r.format) ? r.format : DEFAULT_SET_RIG.format,
     stock: oneOf(r.stock, ids(RIG_STOCKS) as RigStock[]),
     lens: oneOf(r.lens, ids(RIG_LENSES) as RigLens[]),
     stop,

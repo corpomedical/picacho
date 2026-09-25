@@ -65,10 +65,14 @@ describe("formats: the render asked for, and the band cut from it", () => {
 });
 
 describe("normaliseSetRig", () => {
-  it("turns junk into the default rig: square, nothing asked", () => {
+  it("turns junk into the default rig: 16:9, nothing asked", () => {
     for (const junk of [null, undefined, 7, "rig", [], { format: "cinemascope" }]) {
       expect(normaliseSetRig(junk)).toEqual(DEFAULT_SET_RIG);
     }
+    // 16:9 since 2026-09-25: the shape every take engine renders.
+    expect(DEFAULT_SET_RIG.format).toBe("wide");
+    // A saved square stays square.
+    expect(normaliseSetRig({ format: "square" }).format).toBe("square");
   });
 
   it("keeps a real rig, and drops what it doesn't know", () => {
@@ -149,7 +153,18 @@ describe("the words that ride", () => {
   });
 
   it("asks nothing of a square rig with nothing chosen", () => {
-    expect(rigSentences(DEFAULT_SET_RIG, ctx)).toEqual([]);
+    const square: SetRig = { ...DEFAULT_SET_RIG, format: "square" };
+    expect(rigSentences(square, ctx)).toEqual([]);
+    expect(rigCheckItems(square)).toEqual([]);
+  });
+
+  it("says only the 16:9 band of the default rig, and checks nothing after", () => {
+    const lines = rigSentences(DEFAULT_SET_RIG, ctx);
+    expect(lines).toEqual([
+      "This frame will be cut to a 16 : 9 band across its middle: keep the person and everything that matters inside that band.",
+    ]);
+    // Picacho's own words, which the brand check reads the still without.
+    expect(RIG_FIXED_SENTENCES).toContain(lines[0]);
     expect(rigCheckItems(DEFAULT_SET_RIG)).toEqual([]);
   });
 

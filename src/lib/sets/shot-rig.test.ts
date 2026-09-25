@@ -19,6 +19,9 @@ describe("normaliseShotRig", () => {
     expect(normaliseShotRig({ format: "scope" })).toEqual({ format: "scope", squeeze: 1, words: {} });
     expect(normaliseShotRig({ format: "scope", squeeze: 3 })).toEqual({ format: "scope", squeeze: 1, words: {} });
     expect(normaliseShotRig({ format: "imax" })).toEqual({ format: "square", squeeze: 1, words: {} });
+    // A shot recorded without a format was a square, whatever a new set's
+    // rig frames in now (16:9 since 2026-09-25, rig.ts DEFAULT_SET_RIG).
+    expect(normaliseShotRig({ words: {} })!.format).toBe("square");
     for (const junk of [null, 7, "rig", []]) expect(normaliseShotRig(junk)).toBeNull();
   });
 });
