@@ -204,8 +204,21 @@ export function formatEv(thirds: number): string {
  */
 function fillItems(template: string, items: string): string {
   const out = fill(template, { items });
-  const closed = [".", "!", "?", "”", "»", '"', "…"].includes(items.slice(-1));
-  return closed && template.endsWith("{items}.") ? out.slice(0, -1) : out;
+  return closesSentence(items) && template.endsWith("{items}.") ? out.slice(0, -1) : out;
+}
+const closesSentence = (items: string) => [".", "!", "?", "”", "»", '"', "…"].includes(items.slice(-1));
+
+/**
+ * The same line as parts (ReplyItems): the template's words either side of
+ * "{items}", with fillItems's rule for the full stop, so the pills and the
+ * sentence can never say it differently.
+ */
+function itemsOf(template: string, chips: string[]): ReplyItems {
+  const at = template.indexOf("{items}");
+  if (at < 0) return { lead: template, chips, tail: "" };
+  const tail = template.slice(at + "{items}".length);
+  const last = chips[chips.length - 1] ?? "";
+  return { lead: template.slice(0, at), chips, tail: tail === "." && closesSentence(last) ? "" : tail };
 }
 
 /** A price as every priced button says it: "1 credit", "4 credits". */
@@ -343,6 +356,78 @@ export type PageNote =
 
 export type TurnOutcomes = { chips: Outcome[]; notes: PageNote[] };
 
+/**
+ * The frame card's rows (set-view.tsx), for its "changed this turn" dot
+ * (spec §5.1): the card stays below the reply, and the dot says which of
+ * its rows the last message moved.
+ */
+export type FrameRow = "who" | "where" | "camera" | "rig" | "light" | "time" | "palette" | "happens";
+
+/** Which frame-card row a rig command's change shows on, by its ⌘K group (commands.ts ids are "group:value"). */
+const RIG_ROWS: Record<string, readonly FrameRow[]> = {
+  format: ["camera"],
+  squeeze: ["camera"],
+  stop: ["rig"],
+  stock: ["rig"],
+  character: ["rig"],
+  light: ["light"],
+  time: ["time"],
+  palette: ["palette"],
+  // A genre sets its light and its grade together (commands.ts genreLookPatch).
+  genre: ["light", "palette"],
+};
+
+/**
+ * The rows a turn changed, from what its steps REACHED (never what it
+ * planned): nothing for a preview, a reading that failed or a turn that
+ * found nothing to do. Rows the card doesn't show (an era, the exposure,
+ * the take's move) get no dot.
+ */
+export function frameRowsChanged(plan: Pick<TurnPlan, "kind">, outcomes: TurnOutcomes | null): FrameRow[] {
+  if (!outcomes || (plan.kind !== "run" && plan.kind !== "undo")) return [];
+  const rows = new Set<FrameRow>();
+  for (const o of outcomes.chips) {
+    switch (o.kind) {
+      case "who":
+        rows.add("who");
+        break;
+      case "mark":
+      case "ownSpot":
+      case "near":
+      case "nudge":
+      case "pose":
+      case "facing":
+      case "turn":
+      case "gaze":
+        rows.add("where");
+        break;
+      case "camera":
+      case "size":
+      case "height":
+      case "side":
+      case "distance":
+      case "tilt":
+      case "lens":
+      case "frameX":
+      case "step":
+        rows.add("camera");
+        break;
+      case "rig":
+        for (const row of RIG_ROWS[o.id.slice(0, o.id.indexOf(":"))] ?? []) rows.add(row);
+        break;
+      case "hour":
+        rows.add("time");
+        break;
+      case "happens":
+        rows.add("happens");
+        break;
+      default:
+        break;
+    }
+  }
+  return [...rows];
+}
+
 // ---------------------------------------------------------------------------
 // The reply, as data the page draws.
 // ---------------------------------------------------------------------------
@@ -394,7 +479,16 @@ export type ReplyLineKind =
   | "nothing"
   | "down"
   | "busy";
-export type ReplyLine = { kind: ReplyLineKind; text: string; buttons: ReplyButton[] };
+/**
+ * A line that lists chips (Done, Here's what I'd do, Undone, Already so, a
+ * way to try it) as its parts, so the page can draw them as pills (spec
+ * §5.2): the words before the chips, the chips themselves, and the words
+ * after them, all Picacho's own template around ⌘K's own labels. `text`
+ * is always the whole sentence, for the tests, the phrase check and a
+ * screen reader.
+ */
+export type ReplyItems = { lead: string; chips: string[]; tail: string };
+export type ReplyLine = { kind: ReplyLineKind; text: string; buttons: ReplyButton[]; items?: ReplyItems };
 /** The Astra card's own data, for astra-change-card.tsx. */
 export type ReplyAstraCard = { said: string; cut: boolean; card: AstraCardKind; canGo: boolean; shootCredits: number | null };
 export type ReplyModel = { lines: ReplyLine[]; astra: ReplyAstraCard | null };
@@ -1029,11 +1123,10 @@ export function composeReply(plan: TurnPlan, outcomes: TurnOutcomes | null, fact
   if (plan.kind === "nothing") return { lines, astra };
 
   const out = outcomes ?? plannedOutcomes(plan, facts);
-  const items = (chips: readonly Outcome[]) =>
-    chips
-      .map((o) => chipFor(o, facts, words))
-      .filter((x) => x.length > 0)
-      .join(" · ");
+  const chipsOf = (chips: readonly Outcome[]) => chips.map((o) => chipFor(o, facts, words)).filter((x) => x.length > 0);
+  /** A line of chips: the sentence, and its parts for the pills (ReplyItems). */
+  const pushItems = (kind: ReplyLineKind, template: string, chips: string[], buttons: ReplyButton[] = []) =>
+    lines.push({ kind, text: fillItems(template, chips.join(" · ")), buttons, items: itemsOf(template, chips) });
 
   // 1. The answers, from the page as the turn leaves it, then the idea.
   for (const topic of plan.ask) {
@@ -1043,25 +1136,25 @@ export function composeReply(plan: TurnPlan, outcomes: TurnOutcomes | null, fact
   if (plan.idea) push("idea", fill(r.replyIdea, { idea: plan.idea }));
 
   // 2. Done, or what it would do, or what was undone.
-  const done = items(out.chips);
+  const done = chipsOf(out.chips);
   if (plan.kind === "undo") {
     const restored = out.notes.some((n) => n.kind === "undoNone");
-    if (done) push("undone", fillItems(r.replyUndone, done));
+    if (done.length > 0) pushItems("undone", r.replyUndone, done);
     else if (!restored) push("undone", r.replyUndoneLast);
     // Anything else the message asked is offered, never run (spec §3.5).
     if (plan.proposal) {
-      const rest = items(actOutcomes(plan.proposal, facts));
-      if (rest) push("planned", fillItems(r.replyPlanned, rest), [{ kind: "doIt", row: "rest", label: r.doIt }]);
+      const rest = chipsOf(actOutcomes(plan.proposal, facts));
+      if (rest.length > 0) pushItems("planned", r.replyPlanned, rest, [{ kind: "doIt", row: "rest", label: r.doIt }]);
     }
   } else if (plan.kind === "proposal") {
-    if (done) {
+    if (done.length > 0) {
       const buttons: ReplyButton[] = [{ kind: "doIt", row: "plan", label: r.doIt }];
       const second = secondFor("plan", secondButton(plan, facts), r);
       if (second) buttons.push(second);
-      push("planned", fillItems(r.replyPlanned, done), buttons);
+      pushItems("planned", r.replyPlanned, done, buttons);
     }
-  } else if (done) {
-    push("done", fillItems(r.replyDone, done), [{ kind: "undo", label: r.undo }]);
+  } else if (done.length > 0) {
+    pushItems("done", r.replyDone, done, [{ kind: "undo", label: r.undo }]);
   }
   if (facts.shot && facts.shot.kind !== "none") {
     const n = facts.shot.kind === "take" ? facts.credits.take[facts.takeEngine] : facts.credits.still;
@@ -1070,7 +1163,7 @@ export function composeReply(plan: TurnPlan, outcomes: TurnOutcomes | null, fact
 
   // 3. Already so.
   const already = plan.already.map((k) => alreadyChip(k, facts, words)).filter((x): x is string => Boolean(x));
-  if (already.length > 0) push("already", fillItems(r.replyAlready, already.join(" · ")));
+  if (already.length > 0) pushItems("already", r.replyAlready, already);
 
   // 4. Notes: the plan's, the page's, and a held shot, in §5.1's order.
   const notes: { rank: number; text: string }[] = [];
@@ -1150,7 +1243,7 @@ export function composeReply(plan: TurnPlan, outcomes: TurnOutcomes | null, fact
       const buttons: ReplyButton[] = [{ kind: "doIt", row: i, label: r.doIt }];
       const second = secondFor(i, s.second, r);
       if (second) buttons.push(second);
-      push("way", items(actOutcomes(s.act, facts)), buttons);
+      pushItems("way", "{items}", chipsOf(actOutcomes(s.act, facts)), buttons);
     });
   }
 

@@ -52,6 +52,7 @@ import { answerLikeness } from "@/lib/characters/likeness-actions";
 import { LIKENESS_ANSWERS, type LikenessAnswer } from "@/lib/characters/likeness";
 import { CastStrip, type CastChip } from "./cast-strip";
 import { AstraChangeCard } from "./astra-change-card";
+import { AstraReply, shownLines } from "./astra-reply";
 import { astraCardWords, astraTooBig } from "@/lib/sets/astra-card";
 import {
   retryableTakes,
@@ -81,7 +82,7 @@ import { checkShotRig, saveSetRig } from "@/lib/sets/rig-actions";
 import { RIG_PALETTES, depthOfField, exposureGain, findLook, focalMm, formatFrame, letterbox, normaliseSetRig, sensorCocMm, sensorHeightMm, shutterFraction, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
 import { bearingDeg } from "@/lib/sets/light-schemes";
 import { stagedSpec, timeLabel, sunAt } from "@/lib/sets/time-of-day";
-import { rigCommandIds, rigPatchFor, shootCommands, TIME_PRESETS } from "@/lib/sets/commands";
+import { filterCommands, rigCommandIds, rigPatchFor, shootCommands, stepIndex, TIME_PRESETS, type ShootCommandContext } from "@/lib/sets/commands";
 import { CommandPalette } from "./command-palette";
 import { labPreviewCodes } from "@/lib/sets/lab-preview";
 import { beatJumps, layBeatMove, poseAlong, relayMoves, samePose, type FilmMove, type FilmTexture } from "@/lib/sets/moves";
@@ -106,7 +107,7 @@ import {
   THING_MODEL_SAVE_FAILED,
 } from "@/lib/sets/messages";
 import { preparePhoto } from "@/lib/sets/photo-client";
-import { facingFor, hasCameraWords, wordsToMatch, type FigureFacing, type ShotWords } from "@/lib/sets/shot-words";
+import { facingFor, hasCameraWords, SHOT_WORDS_MAX_CHARS, wordsToMatch, type FigureFacing, type ShotWords } from "@/lib/sets/shot-words";
 import type { CantCode, FrameX, ReaderAliases, ReaderStep, ReaderWhy, ShotReading } from "@/lib/sets/shot-reading";
 import type { EditFrame } from "@/lib/sets/set-edit-prompt";
 import { READER_CONTEXT_MAX, cameraSideOf, type ReaderNow } from "@/lib/sets/reader-context";
@@ -151,9 +152,11 @@ import {
   composeReply,
   creditsLabel,
   fill,
+  frameRowsChanged,
   replyThingsOf,
   replyWordsOf,
   turnDid,
+  type FrameRow,
   type Outcome,
   type PageNote,
   type ReplyAction,
@@ -523,6 +526,10 @@ type ChatTurn = {
 type PageSnapshot = TurnSnapshot & { turnId: number };
 /** Turns shown this visit, like the frame's revisions. */
 const TURNS_KEPT = 12;
+/** The chat's "/" menu shows this many of ⌘K's commands at once; typing narrows them (Cut 2, step 11b). */
+const SLASH_ROWS = 8;
+/** Past this many characters the composer counts toward what the reader reads (SHOT_WORDS_MAX_CHARS, 600; spec §3.7). */
+const COMPOSER_COUNT_FROM = 500;
 /** What a camera word step changes, for its chip: the last step of each kind says where the camera got to. */
 const STEP_DIMENSION: Record<ReaderStep, "distance" | "height" | "side" | "tilt" | "lens"> = {
   closer: "distance",
@@ -1257,6 +1264,11 @@ export function SetView({
   const [scaleDismissed, setScaleDismissed] = useState(false);
   // The composer's who menu, opened by "@" in the words or by the chip.
   const [mentionForced, setMentionForced] = useState(false);
+  // The chat's "/" menu (Helios Cut 2, step 11b): ⌘K's commands, typed
+  // into the composer — the row picked with ↑↓, and Esc to write a message
+  // that starts with "/" instead.
+  const [slashAt, setSlashAt] = useState(0);
+  const [slashOff, setSlashOff] = useState(false);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
   // Which toolbar menu is open, if any.
   const [menu, setMenu] = useState<MenuId | null>(null);
@@ -7476,6 +7488,11 @@ export function SetView({
       }
       case "astraGo":
       case "astraGoShoot":
+        // "Change it, then shoot" says the still's price: a price that moved says it again and spends nothing (Cut 2, step 11b).
+        if (action.kind === "astraGoShoot" && action.credits !== pageCredits.still) {
+          repriceTurn(turn);
+          return;
+        }
         goAstra(turn, action.kind === "astraGoShoot");
         return;
       case "notNow":
@@ -7982,13 +7999,31 @@ export function SetView({
     if (takes > 0) words.push(takes === 1 ? s.takesOne : formatMsg(s.takesMany, { n: takes }));
     return words.join(" · ");
   })();
-  const frameLead = note?.planned
-    ? s.justTalkNote
-    : note?.talk
-      ? s.talkReply
-      : [note?.built ? s.reply.noteBuiltFromWords : null, note?.moved ? formatMsg(s.frameLineMoved, { name: characterName }) : null]
-          .filter(Boolean)
-          .join(" ");
+  // v1's lead line over the frame card; on reader v2 each turn's reply says it (astra-reply.tsx, spec §6.3).
+  const frameLead = v2On
+    ? ""
+    : note?.planned
+      ? s.justTalkNote
+      : note?.talk
+        ? s.talkReply
+        : [note?.built ? s.reply.noteBuiltFromWords : null, note?.moved ? formatMsg(s.frameLineMoved, { name: characterName }) : null]
+            .filter(Boolean)
+            .join(" ");
+  // The frame card's rows the newest turn moved, for their dot (spec §5.1):
+  // only while that turn is the thread's last word, before a still folds it.
+  const lastTurn = v2On ? turns[turns.length - 1] : undefined;
+  const turnRows = new Set<FrameRow>(lastTurn && lastTurn.shotsAt === shots.length ? frameRowsChanged(lastTurn.plan, lastTurn.outcomes) : []);
+  /** A frame card row's label, with the dot when the last message changed it. */
+  const rowLabel = (label: string, row: FrameRow) => (
+    <dt className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]" data-row-changed={turnRows.has(row) || undefined}>
+      {label}
+      {turnRows.has(row) && (
+        <span className="h-1.5 w-1.5 flex-none rounded-full bg-[#e0a468]" title={s.reply.rowChanged}>
+          <span className="sr-only">{s.reply.rowChanged}</span>
+        </span>
+      )}
+    </dt>
+  );
   const frameNumber = revisions[revisions.length - 1]?.id ?? 1;
 
   // ---- the rig check, said and shown (rig-check.ts) ----
@@ -8268,77 +8303,93 @@ export function SetView({
     },
   } as const;
 
-  // The commands the palette lists (commands.ts), from this render's handlers and words — built only while it is open.
-  const paletteCommands = paletteOpen
-    ? shootCommands({
-        words: {
-          modes: { build: s.editorBuildTab, shoot: s.editorShootTab, film: s.filmTab, cut: s.studio.cutMode },
-          rigShow: s.palette.rigShow,
-          rigHide: s.palette.rigHide,
-          chatShow: s.palette.chatShow,
-          chatHide: s.chatHide,
-          formats: s.rig.formats,
-          frame: s.rig.frame,
-          squeeze: s.rig.squeeze,
-          lensMm: (mm) => formatMsg(s.lensMm, { mm }),
-          focus: s.rig.focus,
-          stop: s.rig.stop,
-          off: s.rig.off,
-          light: s.rig.light,
-          lights: s.rig.lights,
-          asBuilt: s.rig.asBuilt,
-          time: s.rig.time,
-          timePresets: s.palette.timePresets,
-          stock: s.rig.stock,
-          stocks: s.rig.stocks,
-          lensCharacter: s.rig.lens,
-          lenses: s.rig.lenses,
-          palette: s.rig.palette,
-          palettes: s.rig.palettes,
-          era: s.rig.era,
-          eras: s.rig.eras,
-          genre: s.rig.genre,
-          genres: s.rig.genres,
-          overlays: {
-            thirds: s.rig.overlayThirds,
-            golden: s.rig.overlayGolden,
-            safe: s.rig.overlaySafe,
-            centre: s.rig.overlayCentre,
-            falseColour: s.rig.overlayFalseColour,
-            histogram: s.rig.overlayHistogram,
-            meter: s.rig.overlayMeter,
-          },
-          frameFigure: s.frameFigure,
-          undoStage: s.palette.undoStage,
-          downloadFrame: s.downloadFrame,
-          camera: (label) => formatMsg(s.palette.camera, { label }),
-          mark: (label) => formatMsg(s.palette.mark, { label }),
-          shootNow: pressLabel,
-        },
-        rig,
-        setRig: (patch) => setRig((r) => ({ ...r, ...patch })),
-        mode: studioMode,
-        goToMode: (m) => {
-          if (m === "build") window.location.href = studioModes.build.href;
-          else studioModes[m].onClick();
-        },
-        rigOpen: wide ? dockTab === "camera" || dockTab === "light" || dockTab === "look" : rigOpen,
-        setRigOpen: (open) => (wide ? setDockTab(open ? "camera" : "astra") : setRigOpen(open)),
-        chatOpen: wide ? dockTab === "astra" : chatOpen,
-        setChatOpen: (open) => (wide ? setDockTab(open ? "astra" : "camera") : setChatOpen(open)),
-        cameraBearingDeg: cameraBearing,
-        cameras: spec.cameras.map((c) => ({ id: c.id, label: labelOfCamera(c.id) })),
-        pickCamera,
-        marks: spec.marks.map((m) => ({ id: m.id, label: labelOfMark(m.id) })),
-        pickMark,
-        pickLens,
-        frameFigure,
-        undoStage: () => stepStage(stageUndoRef, stageRedoRef),
-        downloadFrame,
-        canShoot: canShootNow,
-        shoot: () => void pressShoot(),
-      })
-    : [];
+  // What ⌘K and the chat's "/" build their commands from (commands.ts):
+  // one context, this render's handlers and words, so the two lists can
+  // never say or do different things (Cut 2, spec §6.3) — the Shoot row
+  // included, labelled with what it charges and pressed through pressShoot.
+  const commandContext = (): ShootCommandContext => ({
+    words: {
+      modes: { build: s.editorBuildTab, shoot: s.editorShootTab, film: s.filmTab, cut: s.studio.cutMode },
+      rigShow: s.palette.rigShow,
+      rigHide: s.palette.rigHide,
+      chatShow: s.palette.chatShow,
+      chatHide: s.chatHide,
+      formats: s.rig.formats,
+      frame: s.rig.frame,
+      squeeze: s.rig.squeeze,
+      lensMm: (mm) => formatMsg(s.lensMm, { mm }),
+      focus: s.rig.focus,
+      stop: s.rig.stop,
+      off: s.rig.off,
+      light: s.rig.light,
+      lights: s.rig.lights,
+      asBuilt: s.rig.asBuilt,
+      time: s.rig.time,
+      timePresets: s.palette.timePresets,
+      stock: s.rig.stock,
+      stocks: s.rig.stocks,
+      lensCharacter: s.rig.lens,
+      lenses: s.rig.lenses,
+      palette: s.rig.palette,
+      palettes: s.rig.palettes,
+      era: s.rig.era,
+      eras: s.rig.eras,
+      genre: s.rig.genre,
+      genres: s.rig.genres,
+      overlays: {
+        thirds: s.rig.overlayThirds,
+        golden: s.rig.overlayGolden,
+        safe: s.rig.overlaySafe,
+        centre: s.rig.overlayCentre,
+        falseColour: s.rig.overlayFalseColour,
+        histogram: s.rig.overlayHistogram,
+        meter: s.rig.overlayMeter,
+      },
+      frameFigure: s.frameFigure,
+      undoStage: s.palette.undoStage,
+      downloadFrame: s.downloadFrame,
+      camera: (label) => formatMsg(s.palette.camera, { label }),
+      mark: (label) => formatMsg(s.palette.mark, { label }),
+      shootNow: pressLabel,
+    },
+    rig,
+    setRig: (patch) => setRig((r) => ({ ...r, ...patch })),
+    mode: studioMode,
+    goToMode: (m) => {
+      if (m === "build") window.location.href = studioModes.build.href;
+      else studioModes[m].onClick();
+    },
+    rigOpen: wide ? dockTab === "camera" || dockTab === "light" || dockTab === "look" : rigOpen,
+    setRigOpen: (open) => (wide ? setDockTab(open ? "camera" : "astra") : setRigOpen(open)),
+    chatOpen: wide ? dockTab === "astra" : chatOpen,
+    setChatOpen: (open) => (wide ? setDockTab(open ? "astra" : "camera") : setChatOpen(open)),
+    cameraBearingDeg: cameraBearing,
+    cameras: spec.cameras.map((c) => ({ id: c.id, label: labelOfCamera(c.id) })),
+    pickCamera,
+    marks: spec.marks.map((m) => ({ id: m.id, label: labelOfMark(m.id) })),
+    pickMark,
+    pickLens,
+    frameFigure,
+    undoStage: () => stepStage(stageUndoRef, stageRedoRef),
+    downloadFrame,
+    canShoot: canShootNow,
+    shoot: () => void pressShoot(),
+  });
+  // The commands the palette lists, built only while it is open.
+  const paletteCommands = paletteOpen ? shootCommands(commandContext()) : [];
+  // The chat's "/" (reader v2's accounts, Cut 2, step 11b): a draft that
+  // starts with it lists the same commands, filtered as ⌘K filters them.
+  // Free, and never read: a pick runs the command and clears the draft.
+  const slashQuery = v2On && !slashOff && draft.startsWith("/") && !draft.includes("\n") ? draft.slice(1) : null;
+  const slashList = slashQuery !== null ? filterCommands(slashQuery, shootCommands(commandContext()), s.palette.groups).slice(0, SLASH_ROWS) : [];
+  const slashPick = slashAt >= 0 && slashAt < slashList.length ? slashAt : 0;
+  function runSlash(i: number) {
+    const c = slashList[i];
+    if (!c) return;
+    setDraft("");
+    setSlashAt(0);
+    c.run();
+  }
 
   // ---- the studio's frame (cut A): what the bar, the dock and the status bar show ----
   const dockTabs = dockTabsFor(studioMode, filmOpen);
@@ -9145,19 +9196,20 @@ export function SetView({
                   </div>
                 ))}
 
-              {/* The chat's turns (Helios Cut 2, reader v2, step 11a): the
-                  person's words, then the reply said from what the page did,
-                  its buttons live on the newest turn only. A plain drawing
-                  until the owner picks the reply's layout (step 11b); a still
-                  that lands carries the words of the turns before it, and
-                  they fold into it, as v1's messages do. */}
+              {/* The chat's turns (Helios Cut 2, reader v2, steps 11a and
+                  11b): the person's words, then Astra's reply said from what
+                  the page did (astra-reply.tsx, the layout the owner picks),
+                  its buttons live on the newest turn only; an earlier turn
+                  keeps what it did. A still that lands carries the words of
+                  the turns before it, and they fold into it, as v1's
+                  messages do. */}
               {v2On &&
                 turns.map((tn) => {
                   if (tn.shotsAt !== shots.length) return null;
                   const newest = tn.id === turns[turns.length - 1]?.id;
-                  const lines = newest ? tn.reply.lines : tn.reply.lines.filter((l) => l.kind === "done" || l.kind === "undone" || l.kind === "planned").slice(0, 1);
                   const held = reading || shooting || editingSet || following !== null || !ready;
                   const card = newest && !tn.settled ? tn.reply.astra : null;
+                  const said = shownLines(tn.reply, { compact: !newest, open: newest && !tn.settled }).length > 0;
                   return (
                     <Fragment key={`turn-${tn.id}`}>
                       {tn.asked !== null && (
@@ -9165,49 +9217,37 @@ export function SetView({
                           {tn.asked}
                         </div>
                       )}
-                      {(lines.length > 0 || card) && (
+                      {said && (
                         <div className="flex items-start gap-2.5" data-turn={tn.id}>
                           <AstraMark />
-                          <div className="min-w-0 flex-1 space-y-1.5">
-                            {lines
-                              .filter((l) => l.kind !== "astra")
-                              .map((line, i) => (
-                                <p key={i} className="text-sm leading-relaxed text-[#d6d9e0]" data-reply-line={line.kind}>
-                                  {line.text}
-                                  {newest &&
-                                    line.buttons
-                                      .filter((btn) => !tn.settled || btn.kind === "undo")
-                                      .map((btn, j) => (
-                                        <button
-                                          key={j}
-                                          type="button"
-                                          onClick={() => replyAction(tn, btn)}
-                                          disabled={held}
-                                          data-reply-button={btn.kind}
-                                          className="ml-2 cursor-pointer font-medium text-[#e0a468] disabled:text-[#9aa0ad]"
-                                        >
-                                          {btn.label}
-                                        </button>
-                                      ))}
-                                </p>
-                              ))}
-                            {/* A change to the set itself waits on its card: the words Astra reads, the month's changes, its own press. */}
-                            {card && (
-                              <AstraChangeCard
-                                words={card.said}
-                                editsLeft={editsLeft}
-                                editsCap={astraEditsCap}
-                                tooBig={astraTooBig(spec)}
-                                busy={held}
-                                shootCredits={card.shootCredits}
-                                onGo={() => replyAction(tn, { kind: "astraGo" })}
-                                onGoShoot={() => replyAction(tn, { kind: "astraGoShoot", credits: card.shootCredits ?? pageCredits.still })}
-                                onNotNow={() => replyAction(tn, { kind: "notNow" })}
-                                copy={s.reply}
-                                buildLabel={s.editorOpen}
-                              />
-                            )}
-                          </div>
+                          <AstraReply
+                            model={tn.reply}
+                            copy={s.reply}
+                            live={newest}
+                            settled={tn.settled}
+                            busy={held}
+                            compact={!newest}
+                            following={following ? followingLine : null}
+                            onAction={(action) => replyAction(tn, action)}
+                            astraCard={
+                              /* A change to the set itself waits on its card: the words Astra reads, the month's changes, its own press. */
+                              card && (
+                                <AstraChangeCard
+                                  words={card.said}
+                                  editsLeft={editsLeft}
+                                  editsCap={astraEditsCap}
+                                  tooBig={astraTooBig(spec)}
+                                  busy={held}
+                                  shootCredits={card.shootCredits}
+                                  onGo={() => replyAction(tn, { kind: "astraGo" })}
+                                  onGoShoot={() => replyAction(tn, { kind: "astraGoShoot", credits: card.shootCredits ?? pageCredits.still })}
+                                  onNotNow={() => replyAction(tn, { kind: "notNow" })}
+                                  copy={s.reply}
+                                  buildLabel={s.editorOpen}
+                                />
+                              )
+                            }
+                          />
                         </div>
                       )}
                     </Fragment>
@@ -9300,7 +9340,7 @@ export function SetView({
                           <span className="text-xs text-[#9aa0ad] tabular-nums">{formatMsg(s.revisionN, { n: frameNumber })}</span>
                         </div>
                         <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-[13px] leading-[18px]">
-                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{s.rowWho}</dt>
+                          {rowLabel(s.rowWho, "who")}
                           <dd className="flex items-center gap-1.5 text-[#ecedf1]">
                             {character?.thumbUrl ? (
                               // eslint-disable-next-line @next/next/no-img-element
@@ -9310,36 +9350,45 @@ export function SetView({
                             )}
                             {characterName}
                           </dd>
-                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{s.rowWhere}</dt>
+                          {rowLabel(s.rowWhere, "where")}
                           <dd className="text-[#ecedf1]">
                             {markLabel} · {facingLabel}
                           </dd>
-                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{s.rowCamera}</dt>
+                          {rowLabel(s.rowCamera, "camera")}
                           <dd className="text-[#ecedf1] tabular-nums">
                             {cameraLabel} · {lensLabel}
                             {rig.format !== "square" ? ` · ${s.rig.formats[rig.format]}` : ""}
                           </dd>
                           {rigLooksLine && (
                             <>
-                              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{s.rig.rowRig}</dt>
+                              {rowLabel(s.rig.rowRig, "rig")}
                               <dd className="text-[#f0cda6] tabular-nums">{rigLooksLine}</dd>
                             </>
                           )}
                           {rig.light && (
                             <>
-                              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{s.rig.rowLight}</dt>
+                              {rowLabel(s.rig.rowLight, "light")}
                               <dd className="text-[#f0cda6] tabular-nums">
                                 {s.rig.lights[rig.light.scheme]} · {formatMsg(s.rig.lightHeight, { deg: Math.round(rig.light.elevationDeg) })}
                               </dd>
                             </>
                           )}
+                          {/* The hour the rig sets, on reader v2's page (spec §5.1): the chat sets it, and the card says it. */}
+                          {v2On && rig.time !== null && (
+                            <>
+                              {rowLabel(s.rig.rowTime, "time")}
+                              <dd className="text-[#f0cda6] tabular-nums" data-row-time>
+                                {timeLabel(rig.time)}
+                              </dd>
+                            </>
+                          )}
                           {rig.palette && (
                             <>
-                              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{s.rig.rowPalette}</dt>
+                              {rowLabel(s.rig.rowPalette, "palette")}
                               <dd className="text-[#f0cda6]">{s.rig.palettes[rig.palette]}</dd>
                             </>
                           )}
-                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{s.rowHappens}</dt>
+                          {rowLabel(s.rowHappens, "happens")}
                           <dd className={direction ? "text-[#ecedf1]" : "text-[#9aa0ad]"}>{direction || "—"}</dd>
                           <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{s.rowCost}</dt>
                           <dd className="text-[#ecedf1] tabular-nums">{formatMsg(s.costLine, { credits })}</dd>
@@ -9432,11 +9481,15 @@ export function SetView({
               <div ref={threadEndRef} aria-hidden />
             </div>
   );
+  // An empty send is a paid Shoot (pressShoot): on reader v2's page it
+  // shows its label and price, not only an arrow (money rule 7).
+  const sendSaysPrice = v2On && !draft.trim() && !justTalk;
   const chatComposer = (
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 if (mentionOpen && mentionList[0]) pickMention(mentionList[0]);
+                else if (slashQuery !== null) runSlash(slashPick);
                 else if (draft.trim()) void send(draft);
                 // Just talking is the mode that spends nothing: with nothing
                 // written there is nothing to answer, and an empty send used
@@ -9445,6 +9498,37 @@ export function SetView({
               }}
               className="relative border-t border-[rgba(255,255,255,0.07)] px-3.5 pb-3.5 pt-3"
             >
+              {/* The "/" menu: ⌘K's own commands, free, the Shoot row at its price (Cut 2, step 11b). */}
+              {slashQuery !== null && (
+                <div
+                  role="listbox"
+                  aria-label={s.palette.title}
+                  className="absolute bottom-full left-3.5 right-3.5 z-30 mb-2 max-w-[22rem] rounded-[12px] border border-[rgba(255,255,255,0.11)] bg-[#1d1e24] p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]"
+                  data-slash-menu
+                >
+                  {slashList.length === 0 ? (
+                    <p className="px-2.5 py-1.5 text-xs text-[#c6c9d1]">{s.palette.empty}</p>
+                  ) : (
+                    slashList.map((c, i) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        role="option"
+                        aria-selected={i === slashPick}
+                        onMouseEnter={() => setSlashAt(i)}
+                        onClick={() => runSlash(i)}
+                        data-slash-command={c.id}
+                        className={`flex h-9 w-full cursor-pointer items-center gap-3 rounded-[7px] px-2.5 text-left text-[13px] ${
+                          i === slashPick ? "bg-[rgba(224,164,104,0.13)] text-[#f0cda6]" : "text-[#d6d9e0] hover:text-[#ecedf1]"
+                        }`}
+                      >
+                        <span className="min-w-0 flex-1 truncate">{c.label}</span>
+                        <span className="whitespace-nowrap text-[10.5px] uppercase tracking-[0.06em] text-[#9aa0ad]">{s.palette.groups[c.group]}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
               {mentionOpen && (
                 <div
                   role="listbox"
@@ -9481,25 +9565,54 @@ export function SetView({
               <textarea
                 ref={draftRef}
                 value={draft}
-                onChange={(e) => setDraft(e.target.value)}
+                onChange={(e) => {
+                  setDraft(e.target.value);
+                  // A fresh "/" opens the menu again, at its first row.
+                  setSlashAt(0);
+                  if (!e.target.value.startsWith("/")) setSlashOff(false);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Escape" && mentionOpen) {
                     e.preventDefault();
                     setMentionForced(false);
                     return;
                   }
+                  if (slashQuery !== null) {
+                    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setSlashAt(stepIndex(slashPick, e.key === "ArrowDown" ? 1 : -1, slashList.length));
+                      return;
+                    }
+                    if (e.key === "Escape") {
+                      // Words that start with "/", sent as words.
+                      e.preventDefault();
+                      setSlashOff(true);
+                      return;
+                    }
+                  }
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
                     if (mentionOpen && mentionList[0]) pickMention(mentionList[0]);
+                    else if (slashQuery !== null) runSlash(slashPick);
                     else if (draft.trim()) void send(draft);
                   }
                 }}
                 rows={2}
-                aria-label={s.threadPlaceholder}
-                placeholder={reading ? s.threadReading : s.threadPlaceholder}
+                aria-label={v2On ? s.reply.composerPlaceholder : s.threadPlaceholder}
+                placeholder={reading ? s.threadReading : v2On ? s.reply.composerPlaceholder : s.threadPlaceholder}
                 disabled={reading || shooting || editingSet}
                 className="block min-h-[44px] w-full resize-none border-none bg-transparent px-2 py-1.5 text-sm text-[#ecedf1] outline-none placeholder:text-[#9aa0ad] disabled:text-[#9aa0ad]"
               />
+              {/* Past 500 characters, how many of the 600 the reader reads (spec §3.7; Cut 2, step 11b). */}
+              {v2On && draft.length > COMPOSER_COUNT_FROM && (
+                <p
+                  className={`px-2 text-right text-[11px] tabular-nums ${draft.length > SHOT_WORDS_MAX_CHARS ? "text-[#e0a468]" : "text-[#9aa0ad]"}`}
+                  aria-live="polite"
+                  data-composer-count
+                >
+                  {formatMsg(s.reply.composerCount, { n: draft.length, max: SHOT_WORDS_MAX_CHARS })}
+                </p>
+              )}
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
@@ -9554,9 +9667,19 @@ export function SetView({
                   disabled={reading || shooting || editingSet || !ready || (!draft.trim() && (!characterId || justTalk))}
                   title={draft.trim() || justTalk ? s.threadPlaceholder : pressLabel}
                   aria-label={draft.trim() || justTalk ? s.threadPlaceholder : pressLabel}
-                  className="flex h-9 w-9 flex-shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#e0a468] text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-[rgba(255,255,255,0.06)] disabled:text-[#c6c9d1]"
+                  data-send-shoots={sendSaysPrice || undefined}
+                  className={`flex h-9 flex-shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#e0a468] text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-[rgba(255,255,255,0.06)] disabled:text-[#c6c9d1] ${
+                    sendSaysPrice ? "gap-1.5 whitespace-nowrap px-3.5 text-[12px] font-semibold" : "w-9"
+                  }`}
                 >
-                  {reading || shooting || editingSet ? <Spinner className="h-4 w-4" /> : <SendIcon className="h-4 w-4" />}
+                  {reading || shooting || editingSet ? (
+                    <Spinner className="h-4 w-4" />
+                  ) : sendSaysPrice ? (
+                    // An empty send shoots: it says what, and what it charges, where it can be read (Cut 2, step 11b).
+                    pressLabel
+                  ) : (
+                    <SendIcon className="h-4 w-4" />
+                  )}
                 </button>
               </div>
             </form>

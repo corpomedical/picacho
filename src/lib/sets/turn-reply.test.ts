@@ -29,6 +29,7 @@ import {
   fill,
   formatEv,
   formatMetres,
+  frameRowsChanged,
   plannedFacts,
   replyText,
   replyThingsOf,
@@ -38,6 +39,7 @@ import {
   type OutcomeKind,
   type PageNote,
   type ReplyFacts,
+  type TurnOutcomes,
   type ReplyModel,
   type ReplyWords,
 } from "./turn-reply";
@@ -460,6 +462,8 @@ describe("the nine exchanges (spec §1)", () => {
           { kind: "doIt", row: "plan", label: "Do it" },
           { kind: "doItShoot", row: "plan", credits: CREDITS.still, label: "Do it and shoot · 1 credit" },
         ],
+        // The same line as parts, for the pills (Cut 2, step 11b).
+        items: { lead: "Here's what I'd do: ", chips: ["Time of day · Night · 21:00"], tail: ". Nothing moves until you press." },
       },
     ]);
   });
@@ -774,6 +778,88 @@ describe("the small parts", () => {
 
   it("says the engine's own length on its chip", () => {
     expect(chipFor({ kind: "engine", engine: "veo" }, factsOf(), EN)).toBe(`Veo · ${SET_TAKE_ENGINES.veo.seconds} s`);
+  });
+});
+
+// The reply drawn as pills (Cut 2, step 11b, astra-reply.tsx): a line of
+// chips carries its parts, and they say exactly what its sentence says.
+describe("a line of chips, as parts for the pills", () => {
+  it("every chip line's parts put back together are its sentence, in every language", () => {
+    const readings: ShotReading[] = [
+      { characterId: EVA, near: { thing: { key: CAR.key }, side: "beside" }, pose: "lean", height: "low", rig: ["time:golden", "character:anamorphic"] },
+      { rig: ["time:night"], happens: { keep: [], add: ["she leans on the car"] } },
+      { cameraId: "c2", pose: "stand" },
+      { idea: "A low sun behind him.", suggest: [{ size: "wide", rig: ["time:night"] }, { lensMm: 85 }] },
+    ];
+    let seen = 0;
+    for (const l of LOCALES) {
+      for (const reading of readings) {
+        for (const mode of ["ask", "talk"] as const) {
+          const { model } = reply(reading, { mode }, { mode, locale: l }, WORDS[l]);
+          for (const line of model.lines) {
+            if (!line.items) continue;
+            seen += 1;
+            const { lead, chips, tail } = line.items;
+            expect(chips.length, `${l} ${line.kind}`).toBeGreaterThan(0);
+            expect(`${lead}${chips.join(" · ")}${tail}`, `${l} ${line.kind}`).toBe(line.text);
+          }
+        }
+      }
+    }
+    expect(seen).toBeGreaterThan(20);
+  });
+
+  it("a last chip that closes its own sentence gets no second full stop in the parts either", () => {
+    const { model } = reply({ happens: { keep: [], add: ["she leans on the car"] } });
+    const done = model.lines.find((l) => l.kind === "done");
+    expect(done?.items?.chips[done.items.chips.length - 1]).toBe("What happens: “She leans on the car.”");
+    expect(done?.items?.tail).toBe("");
+    expect(done?.text.endsWith("car.”")).toBe(true);
+  });
+
+  it("lines that aren't lists of chips have no parts", () => {
+    const { model } = reply({ ask: ["lens"], cant: [{ code: "roll", said: "Dutch angle" }] });
+    for (const line of model.lines) if (line.kind !== "done" && line.kind !== "already" && line.kind !== "way") expect(line.items, line.kind).toBeUndefined();
+  });
+});
+
+// The frame card's dot (spec §5.1): the rows the last message moved, from
+// what the page reached.
+describe("the frame card's rows a turn changed", () => {
+  const run = { kind: "run" } as const;
+  it("maps each outcome to the row that shows it", () => {
+    expect(
+      frameRowsChanged(run, {
+        chips: [
+          { kind: "who", characterId: EVA, was: MARCO },
+          { kind: "near", key: CAR.key, side: "beside" },
+          { kind: "height", height: "low", m: 0.7 },
+          { kind: "rig", id: "time:golden" },
+          { kind: "rig", id: "character:anamorphic" },
+          { kind: "happens", text: "She leans." },
+        ],
+        notes: [],
+      }).sort(),
+    ).toEqual(["camera", "happens", "rig", "time", "where", "who"]);
+    expect(frameRowsChanged(run, { chips: [{ kind: "rig", id: "genre:noir" }], notes: [] }).sort()).toEqual(["light", "palette"]);
+    expect(frameRowsChanged(run, { chips: [{ kind: "rig", id: "format:wide" }, { kind: "hour", hour: 18.25 }], notes: [] }).sort()).toEqual(["camera", "time"]);
+    // Rows the card doesn't show get no dot: an era, the exposure, the take's move.
+    expect(frameRowsChanged(run, { chips: [{ kind: "rig", id: "era:1970s" }, { kind: "ev", ev: 1 }, { kind: "move", move: "push-in" }], notes: [] })).toEqual([]);
+  });
+
+  it("says nothing for a preview, a failed reading or a turn said as planned", () => {
+    const chips: TurnOutcomes = { chips: [{ kind: "who", characterId: EVA, was: MARCO }], notes: [] };
+    for (const kind of ["proposal", "guard", "nothing"] as const) expect(frameRowsChanged({ kind }, chips), kind).toEqual([]);
+    expect(frameRowsChanged(run, null)).toEqual([]);
+    expect(frameRowsChanged({ kind: "undo" }, chips)).toEqual(["who"]);
+  });
+
+  it("knows every rig command's group, or leaves it out on purpose", () => {
+    const shown = new Set(["format", "squeeze", "stop", "stock", "character", "light", "time", "palette", "genre"]);
+    for (const id of rigCommandIds()) {
+      const rows = frameRowsChanged(run, { chips: [{ kind: "rig", id }], notes: [] });
+      expect(rows.length > 0, id).toBe(shown.has(id.slice(0, id.indexOf(":"))));
+    }
   });
 });
 

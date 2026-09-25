@@ -3250,6 +3250,8 @@ const es = {
       noteNotStarted: "Ahora mismo no he podido empezar la foto; pulsa Fotografiar cuando quieras.",
       composerPlaceholder: "Dime la toma —quién, dónde, el look, la luz— o pregúntame lo que quieras sobre ella.",
       composerCount: "{n} / {max}",
+      // The frame card's dot on a row the last message moved (step 11b).
+      rowChanged: "Lo cambió tu último mensaje",
       sensorNames: { fullframe: "formato completo", super35: "Super 35", large: "formato grande", mft: "Micro Cuatro Tercios", super16: "Super 16", phone: "un sensor de móvil" },
       chips: {
         whoWas: "{name} (antes {was})",
@@ -3605,6 +3607,8 @@ const es = {
       rowRig: "Rig",
       rowLight: "Luz",
       rowPalette: "Paleta",
+      // The frame card's hour, on reader v2's page (Helios Cut 2, step 11b).
+      rowTime: "Hora",
       checkTitle: "Chequeo del rig",
       checkLanded: "Funcionaron {n} de {m}",
       checkAll: "Funcionaron todos los looks",

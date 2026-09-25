@@ -264,6 +264,8 @@ describe("the chat's turn engine", () => {
       ["doItShoot", "if (price !== action.credits) {"],
       ["take", "if (pageCredits.take[takeEngine] !== action.credits) {"],
       ["shootAsIs", 'if (price !== action.credits || (action.press === "take" && !takeStart)) {'],
+      // "Change it, then shoot" on the card says the still's price (step 11b).
+      ["astraGoShoot", 'if (action.kind === "astraGoShoot" && action.credits !== pageCredits.still) {'],
     ] as const) {
       const at = replyAction.indexOf(`case "${kind}"`);
       expect(at, kind).toBeGreaterThan(-1);
@@ -272,7 +274,7 @@ describe("the chat's turn engine", () => {
       const checked = branch.indexOf(check);
       expect(checked, kind).toBeGreaterThan(-1);
       expect(branch.indexOf("repriceTurn(turn);"), kind).toBeGreaterThan(checked);
-      const spent = Math.min(...["take()", "shoot()", "setShootDue("].map((c) => branch.indexOf(c)).filter((i) => i > -1));
+      const spent = Math.min(...["take()", "shoot()", "setShootDue(", "goAstra("].map((c) => branch.indexOf(c)).filter((i) => i > -1));
       expect(branch.indexOf("repriceTurn(turn);"), kind).toBeLessThan(spent);
     }
     // "Do it and shoot/take": the row runs as a button turn, then its own id is minted for the shot.
@@ -287,8 +289,8 @@ describe("the chat's turn engine", () => {
     expect(goAstra).toContain("if (!need || !need.canGo || editingSet) return;");
     expect(view.match(/\bgoAstra\(/g)).toHaveLength(2);
     expect(replyAction).toContain('goAstra(turn, action.kind === "astraGoShoot");');
-    // The card on a turn presses through the reply's own actions.
-    const card = between(view, "{card && (", "/>");
+    // The card on a turn presses through the reply's own actions (drawn inside the reply since step 11b).
+    const card = between(view, "astraCard={", "/>");
     expect(card).toContain('onGo={() => replyAction(tn, { kind: "astraGo" })}');
     expect(card).toContain('onNotNow={() => replyAction(tn, { kind: "notNow" })}');
     expect(card).toContain("shootCredits={card.shootCredits}");
@@ -298,5 +300,61 @@ describe("the chat's turn engine", () => {
     expect(view).toContain("if (!sent) dueNotStarted(due);");
     expect(notStarted).toContain('needs: x.plan.needs.filter((n) => n.kind === "take" || n.kind === "takeFormat")');
     expect(notStarted).toContain('{ kind: "shootAsIs", press: due.kind, credits: n, label }');
+  });
+});
+
+// The reply and the composer (Helios Cut 2, step 11b): each turn drawn by
+// astra-reply.tsx (its own test holds the prices on every button), the "/"
+// menu built from ⌘K's own context, the counter, the placeholder, the
+// empty send saying what it charges, and the frame card's dot and hour.
+describe("the reply and the composer (step 11b)", () => {
+  it("draws every turn through AstraReply, its buttons pressed through replyAction", () => {
+    const turnsJsx = between(view, "{v2On &&\n                turns.map((tn) => {", "{/* An Astra edit of the set, landed: how much of it changed. */}");
+    expect(turnsJsx).toContain("<AstraReply");
+    expect(turnsJsx).toContain("onAction={(action) => replyAction(tn, action)}");
+    expect(turnsJsx).toContain("compact={!newest}");
+    expect(turnsJsx).toContain("following={following ? followingLine : null}");
+    // The page asks the reply's own question before it draws a turn at all.
+    expect(turnsJsx).toContain("const said = shownLines(tn.reply, { compact: !newest, open: newest && !tn.settled }).length > 0;");
+    // No button of the page's own inside a turn: the reply and the card draw them.
+    expect(turnsJsx).not.toMatch(/<button\b/);
+    // On reader v2 the reply says what v1's lead line said.
+    expect(view).toContain("const frameLead = v2On\n    ? \"\"");
+  });
+
+  it("lists ⌘K's own commands under \"/\", from one shared context: the Shoot row at its price, through pressShoot", () => {
+    const ctx = between(view, "const commandContext = (): ShootCommandContext => ({", "\n  });\n");
+    expect(ctx).toContain("shootNow: pressLabel,");
+    expect(ctx).toContain("shoot: () => void pressShoot(),");
+    expect(view).toContain("const paletteCommands = paletteOpen ? shootCommands(commandContext()) : [];");
+    expect(view).toContain('const slashQuery = v2On && !slashOff && draft.startsWith("/") && !draft.includes("\\n") ? draft.slice(1) : null;');
+    expect(view).toContain("filterCommands(slashQuery, shootCommands(commandContext()), s.palette.groups).slice(0, SLASH_ROWS)");
+    // A pick runs the command: free, never read, never sent as words.
+    const run = bodyOf("  function runSlash(i: number) {");
+    expect(run).toContain("c.run();");
+    for (const call of ["readShotTurn(", "readShotWords(", "send(", "sendTurn(", "shoot(", "take("]) expect(run, call).not.toContain(call);
+    // Enter and the send button pick the row while the menu is open.
+    expect(view.match(/else if \(slashQuery !== null\) runSlash\(slashPick\);/g)).toHaveLength(2);
+  });
+
+  it("counts past 500 of the 600 the reader reads, and says what to write on reader v2", () => {
+    expect(view).toContain("{v2On && draft.length > COMPOSER_COUNT_FROM && (");
+    expect(view).toContain("formatMsg(s.reply.composerCount, { n: draft.length, max: SHOT_WORDS_MAX_CHARS })");
+    expect(view).toContain("placeholder={reading ? s.threadReading : v2On ? s.reply.composerPlaceholder : s.threadPlaceholder}");
+  });
+
+  it("an empty send shoots, and says what and at what price, not only an arrow (rule 7)", () => {
+    expect(view).toContain("const sendSaysPrice = v2On && !draft.trim() && !justTalk;");
+    const send = between(view, "data-send-shoots={sendSaysPrice || undefined}", "</button>");
+    expect(send).toContain(") : sendSaysPrice ? (");
+    expect(send).toContain("pressLabel");
+  });
+
+  it("dots the frame card's rows the last message moved, and says the hour it set", () => {
+    expect(view).toContain("frameRowsChanged(lastTurn.plan, lastTurn.outcomes)");
+    for (const row of ['rowLabel(s.rowWho, "who")', 'rowLabel(s.rowWhere, "where")', 'rowLabel(s.rowCamera, "camera")', 'rowLabel(s.rig.rowLight, "light")', 'rowLabel(s.rig.rowTime, "time")', 'rowLabel(s.rowHappens, "happens")']) {
+      expect(view, row).toContain(row);
+    }
+    expect(view).toContain("{v2On && rig.time !== null && (");
   });
 });

@@ -3436,6 +3436,8 @@ const en = {
       noteNotStarted: "I couldn't start the shot just now; press Shoot when you're ready.",
       composerPlaceholder: "Tell me the shot — who, where, the look, the light — or ask me anything about it.",
       composerCount: "{n} / {max}",
+      // The frame card's dot on a row the last message moved (step 11b).
+      rowChanged: "Changed by your last message",
       sensorNames: { fullframe: "full frame", super35: "Super 35", large: "large format", mft: "Micro Four Thirds", super16: "Super 16", phone: "a phone sensor" },
       chips: {
         whoWas: "{name} (was {was})",
@@ -3794,6 +3796,8 @@ const en = {
       rowRig: "Rig",
       rowLight: "Light",
       rowPalette: "Palette",
+      // The frame card's hour, on reader v2's page (Helios Cut 2, step 11b).
+      rowTime: "Time",
       checkTitle: "Rig check",
       checkLanded: "{n} of {m} landed",
       checkAll: "Every look landed",
