@@ -28,7 +28,7 @@
 //
 // Pure, relative imports only: the page and the tests share it.
 
-import { fovForLens, LENSES_MM, nearestLens } from "./build-scene";
+import { fovForLens, LENSES_MM, nearestLens, STAND_IN_EYE_M } from "./build-scene";
 import { rigPatchFor } from "./commands";
 import { astraCardCanGo, astraCardKind, type AstraCardKind } from "./astra-card";
 import type { EditUndo } from "./edit-seal";
@@ -38,7 +38,7 @@ import type { CameraPose, ShotMatch } from "./match-shot";
 import { PERSON_RADIUS_M } from "./marks";
 import type { FilmMove, FilmTexture } from "./moves";
 import type { Gaze } from "./people";
-import { stepEv, type RigFormat, type RigLightScheme, type SetRig } from "./rig";
+import { stepEv, type RigFormat, type RigLightScheme, type RigLightState, type SetRig } from "./rig";
 import { SET_MAX_TILT_DOWN_DEG, SET_MAX_TILT_UP_DEG } from "./set-config";
 import type { SetObject, SetSpec, StandPose } from "./set-spec";
 import {
@@ -82,6 +82,8 @@ export const WORD_STEP = {
   /** tilt_up / tilt_down. */
   tiltDeg: 5,
 } as const;
+/** How far off the axis a word step lets her eyes go, as a share of the band's half-height: inside, with a little air (review of Cut 2, U3). */
+export const EYE_ROOM = 0.8;
 /** Beside a thing: its edge, the person's own radius (marks.ts), and this much air. */
 export const NEAR_CLEARANCE_M = 0.15;
 /** A look out of frame is at a point this far out on that side. */
@@ -274,11 +276,26 @@ export const hasCameraKeys = (r: ShotAct): boolean => CAMERA_KEYS.some((k) => r[
 const FRAME_GROUPS = new Set(["format", "squeeze"]);
 const groupOf = (id: string) => id.slice(0, id.indexOf(":"));
 
-/** Whether a rig change is already the rig: a light plot by its scheme (its aim follows the camera), everything else by value. */
+/** How near a plot's aim must be to count as the same: a light plot is kept to a tenth of a degree, so 2° is "the same" and a camera moved round her is not. */
+const LIGHT_SAME_DEG = 2;
+
+/**
+ * Whether a light plot is already the rig's: the same scheme AIMED the same
+ * way. A plot is anchored in the world from where the camera stood when it
+ * was set (light-schemes.ts schemeDefaults), so the same scheme asked for
+ * from a camera that has moved since is a new aim, not "already so" (review
+ * of Cut 2, U2: "contre-jour" restated from the other side left her
+ * front-lit and said it was already so).
+ */
+function lightAlready(want: RigLightState | null | undefined, have: RigLightState | null): boolean {
+  if (!want || !have) return (want ?? null) === (have ?? null);
+  const turn = Math.abs(wrapDeg(want.azimuthDeg - have.azimuthDeg + 180) - 180);
+  return want.scheme === have.scheme && turn <= LIGHT_SAME_DEG && Math.abs(want.elevationDeg - have.elevationDeg) <= LIGHT_SAME_DEG;
+}
+
+/** Whether a rig change is already the rig: a light plot by its scheme and its aim, everything else by value. */
 function rigAlready(patch: Partial<SetRig>, rig: SetRig): boolean {
-  return (Object.keys(patch) as (keyof SetRig)[]).every((k) =>
-    k === "light" ? (patch.light?.scheme ?? null) === (rig.light?.scheme ?? null) : patch[k] === rig[k],
-  );
+  return (Object.keys(patch) as (keyof SetRig)[]).every((k) => (k === "light" ? lightAlready(patch.light, rig.light) : patch[k] === rig[k]));
 }
 
 function stillOf(shots: readonly PlanShot[], id: string): { shot: PlanShot; n: number } | null {
@@ -546,12 +563,25 @@ export function cameraSpotOf(pose: CameraPose, mark: Xz & { facingDeg: number })
  * own left or right round her; "other_side" mirrors it across the way she
  * faces (on that line, front and back swap); the lens steps one along the
  * listed lenses on the rig's own body.
+ *
+ * Closer, further, higher and lower keep what the camera AIMS at on her,
+ * not its tilt: the height where the aim crosses her line, held between
+ * her feet and her eyes (`eyeM`, the stand-in's for her pose), and the tilt
+ * worked out again from the new spot — "lower" from eye level looks up at
+ * her instead of sliding her face out of the top of the frame. When even
+ * that would put her eyes past EYE_ROOM of the band's half-height (a step
+ * closer from a low medium shot aimed at her waist), the tilt follows her
+ * eyes just enough to keep them in (review of Cut 2, U3). `bandShare` is
+ * the band's share of the render's height (rig.ts formatFrame heightShare).
+ * tilt_up and tilt_down change the tilt itself.
  */
 export function cameraStep(
   step: ReaderStep,
   spot: CameraSpot,
   mark: { facingDeg: number },
   sensorHeightMm?: number,
+  eyeM: number = STAND_IN_EYE_M.stand,
+  bandShare = 1,
 ): { spot: CameraSpot; clamp: StepClamp | null; cant: "altitude" | null } {
   const out = { ...spot };
   let hit: StepClamp | null = null;
@@ -613,6 +643,16 @@ export function cameraStep(
       break;
     }
   }
+  if (step === "closer" || step === "further" || step === "higher" || step === "lower") {
+    const aimY = clamp(spot.heightM + spot.distanceM * Math.tan(spot.pitchDeg * DEG), 0, eyeM);
+    let pitch = Math.atan2(aimY - out.heightM, out.distanceM) / DEG;
+    // Her eyes, off the axis: kept inside the band's EYE_ROOM.
+    const room = EYE_ROOM * (Math.atan(clamp(bandShare, 0.05, 1) * Math.tan((out.fovDeg * DEG) / 2)) / DEG);
+    const eyeAt = Math.atan2(eyeM - out.heightM, out.distanceM) / DEG;
+    if (eyeAt - pitch > room) pitch = eyeAt - room;
+    else if (pitch - eyeAt > room) pitch = eyeAt + room;
+    out.pitchDeg = clamp(pitch, -SET_MAX_TILT_DOWN_DEG, SET_MAX_TILT_UP_DEG);
+  }
   return { spot: out, clamp: hit, cant };
 }
 
@@ -622,12 +662,14 @@ export function cameraSteps(
   spot: CameraSpot,
   mark: { facingDeg: number },
   sensorHeightMm?: number,
+  eyeM?: number,
+  bandShare?: number,
 ): { spot: CameraSpot; clamps: StepClamp[]; cant: "altitude" | null } {
   let now = spot;
   const clamps: StepClamp[] = [];
   let cant: "altitude" | null = null;
   for (const s of steps) {
-    const r = cameraStep(s, now, mark, sensorHeightMm);
+    const r = cameraStep(s, now, mark, sensorHeightMm, eyeM, bandShare);
     now = r.spot;
     if (r.clamp && !clamps.includes(r.clamp)) clamps.push(r.clamp);
     cant = cant ?? r.cant;
@@ -914,8 +956,15 @@ export function planTurn(reading: ShotReading | null, state: PageState): TurnPla
 
   // 11. The look and the light, after the camera: the page aims a plot from
   // its final bearing (lookPatch); the clash is the same from any bearing.
+  // When this turn moves the camera (its own words, or a place it follows),
+  // where it ends is not known here, so a plot is never "already so": the
+  // page aims it again from the camera's final bearing (review of Cut 2, U2).
+  const cameraMoves = steps.some((st) => st.kind === "camera" || (st.kind === "place" && st.cameraFollows)) || (r.move !== undefined && !cameraKeys);
   if (lookIds.length > 0 || r.hour !== undefined || r.evThirds !== undefined || r.look !== undefined) {
-    const changed = lookIds.filter((id) => !rigAlready(rigPatchFor(id, { cameraBearingDeg: state.cameraBearingDeg }) ?? {}, rig));
+    const changed = lookIds.filter((id) => {
+      const patch = rigPatchFor(id, { cameraBearingDeg: state.cameraBearingDeg }) ?? {};
+      return (cameraMoves && "light" in patch && patch.light !== null) || !rigAlready(patch, rig);
+    });
     for (const id of lookIds) if (!changed.includes(id)) already.push(id);
     const hour = r.hour !== undefined && r.hour !== rig.time ? r.hour : undefined;
     if (r.hour !== undefined && hour === undefined) already.push("hour");
@@ -1158,6 +1207,8 @@ export function paidDecision(plan: TurnPlan, kind: "still" | "take"): ShootDecis
  */
 export function secondButton(plan: TurnPlan, state: Pick<PageState, "credits" | "takeEngine">): SecondButton | null {
   if (plan.reading?.setChange || plan.needs.some((n) => n.kind === "astra")) return null;
+  // An undo in Just talking's preview: Do it steps back, and an undo never shoots (money rule 6).
+  if (plan.reading?.undo) return null;
   // A row that waits on a "which one?", a take on a still of another shape,
   // or a person who can't be cast is not a frame to shoot yet: Do it asks,
   // and nothing priced stands beside it (review of Cut 2, S1).
@@ -1225,7 +1276,17 @@ export type TurnState = {
   takeMove: TakeMove | null;
   takeEngine: SetTakeEngine;
   outfitOff: boolean;
+  /**
+   * The look (the still the world is drawn from): picked, with the still or
+   * none, or following the newest still on its own — then which still that
+   * is changes as stills land, and is no one's move (review of Cut 2, U6:
+   * Undo said "Undone" and left a picked look pinned).
+   */
+  look: TurnLook;
 };
+
+/** The look as a turn leaves it: picked (a still, or none), or following the newest still. */
+export type TurnLook = { pinned: true; id: string | null } | { pinned: false };
 
 /** One turn, to undo: the state before and after it, the Astra change it pressed (if any), and whether it shot a still. */
 export type TurnSnapshot = {

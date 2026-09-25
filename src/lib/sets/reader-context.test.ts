@@ -271,6 +271,26 @@ describe("THINGS", () => {
 });
 
 describe("the aliases", () => {
+  // Review of Cut 2, U1 (2026-09-25): numbered nearest first, the aliases
+  // moved when she did, and LAST TURNS kept the old ones — "the other car"
+  // then named the car she already stood by.
+  it("name each thing by its place in the set, so a thing keeps its alias wherever she moves", () => {
+    const two = withSecondCar("#1e5bd6");
+    const [first, second] = setElements(two).filter((e) => e.kind === "car");
+    const by = (el: typeof first) => ({ x: el.max[0] + 0.5, z: el.centre[2], facingDeg: 0 });
+    const atFirst = readerStageBlock({ spec: two, characters: CAST, things: readerThings(two, by(first)) });
+    const atSecond = readerStageBlock({ spec: two, characters: CAST, things: readerThings(two, by(second)) });
+    // Listed nearest first each time…
+    expect(readerThings(two, by(first))[0].key).toBe(first.key);
+    expect(readerThings(two, by(second))[0].key).toBe(second.key);
+    // …and named the same both times.
+    expect(atFirst.aliases.things).toEqual({ t1: first.key, t2: second.key });
+    expect(atSecond.aliases.things).toEqual({ t1: first.key, t2: second.key });
+    expect(atSecond.text).toContain("THINGS: t2: Car 2, blue,");
+    // So "near t2" said after the first turn still names the blue car on the next read, and "the other one" (t1) is the red one.
+    expect(atSecond.aliases.things.t1).toBe(first.key);
+  });
+
   it("become thing1… and person1… when a camera or a mark already has a t or p name", () => {
     // Built by hand: normaliseSetSpec names every camera c1… and every mark m1….
     const spec: SetSpec = { ...race, cameras: race.cameras.map((c, i) => (i === 0 ? { ...c, id: "t1" } : c)) };

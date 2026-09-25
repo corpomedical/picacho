@@ -164,6 +164,7 @@ import {
   type Outcome,
   type PageNote,
   type ReplyAction,
+  type ReplyButton,
   type ReplyFacts,
   type ReplyModel,
   type TurnOutcomes,
@@ -504,10 +505,12 @@ type TurnContext = {
   aliases: ReaderAliases;
   /** The person's message; null for a button's turn. */
   asked: string | null;
+  /** A button's turn: the button's own label, so the reader's LAST TURNS says what was pressed (review of Cut 2, U1). */
+  pressed: string | null;
 };
 const NO_ALIASES: ReaderAliases = { things: {}, people: {} };
 /** A button's turn (Do it, a which-one, Use the hour, Undo): a stored reading, never read again, never shot. */
-const TURN_BUTTON: TurnContext = { source: "button", why: "ok", dropped: [], messageCut: false, origin: null, aliases: NO_ALIASES, asked: null };
+const TURN_BUTTON: TurnContext = { source: "button", why: "ok", dropped: [], messageCut: false, origin: null, aliases: NO_ALIASES, asked: null, pressed: null };
 /**
  * A priced "Do it and shoot · n" or "Do it and take · n": the row runs as a
  * button turn, then the shot it paid for is decided on what the row ran
@@ -521,6 +524,13 @@ type ChatTurn = {
   asked: string | null;
   /** "build" for the Sets home's message to the set it just built: Try again reads it as that again (review of Cut 2, S5). */
   origin: "build" | null;
+  /**
+   * The reader's short names this turn was said in: a button pressed on it
+   * runs with them, so its LAST TURNS line names the same car (review of
+   * Cut 2, U1), and the label it was pressed by.
+   */
+  aliases: ReaderAliases;
+  pressed: string | null;
   plan: TurnPlan;
   /** What the page's steps reached; null for a turn nothing ran for (said as planned). */
   outcomes: TurnOutcomes | null;
@@ -1469,6 +1479,10 @@ export function SetView({
   const stageRedoRef = useRef<StageState[]>([]);
   const stageTouchedAtRef = useRef(0);
   const stageTouchRef = useRef<(() => void) | null>(null);
+  // An orbit's press: kept for Undo as the view stood, the third left alone
+  // until the view MOVES — a click that moves nothing keeps it (review of
+  // Cut 2, understanding N3).
+  const stageHoldRef = useRef<(() => void) | null>(null);
   // A tap on a thing on the stage (R1, stage-pick.ts): what the page does
   // with it. Null leaves the stage as it was — a press is an orbit or a drag.
   const elementTapRef = useRef<((hit: ElementHit) => void) | null>(null);
@@ -2110,13 +2124,15 @@ export function SetView({
         // flag goes at the end, so a later move from code never drops it.
         let orbitArmed = false;
         controls.addEventListener("start", () => {
-          stageTouchRef.current?.();
+          stageHoldRef.current?.();
           orbitArmed = true;
         });
         controls.addEventListener("change", () => {
           if (!orbitArmed) return;
           orbitArmed = false;
           setCameraId(null);
+          // The view moved by hand: a third the chat set ends here, not on the press (check of the spec, item 6).
+          frameXRef.current = frameXAfter(frameXRef.current, { kind: "hand" });
         });
         controls.addEventListener("end", () => {
           orbitArmed = false;
@@ -3329,6 +3345,7 @@ export function SetView({
   // The Turn tool turns the figure where it stands: the frame keeps its third.
   useEffect(() => {
     stageTouchRef.current = () => keepStage(true, stageToolRef.current !== "turn");
+    stageHoldRef.current = () => keepStage(true, false);
     stageStepRef.current = {
       undo: () => stepStage(stageUndoRef, stageRedoRef),
       redo: () => stepStage(stageRedoRef, stageUndoRef),
@@ -6766,6 +6783,7 @@ export function SetView({
       takeMove: takeMoveRef.current,
       takeEngine,
       outfitOff: outfitOffRef.current,
+      look: lookPinnedRef.current ? { pinned: true, id: lookId } : { pinned: false },
     };
   }
 
@@ -6909,11 +6927,12 @@ export function SetView({
       rig: rigRef.current,
       direction,
     };
-    // What the last turns asked and did, in the page's own words (turn-reply.ts turnDid).
+    // What the last turns asked and did, in the page's own words (turn-reply.ts turnDid) — a button
+    // pressed (a which-one, Do it) as its label, so "the other one" after a tap knows which was tapped (review of Cut 2, U1).
     const lastTurns = turns
-      .filter((x) => x.asked !== null)
+      .filter((x) => x.asked !== null || x.pressed !== null)
       .slice(-READER_CONTEXT_MAX.turns)
-      .map((x) => ({ said: x.asked ?? "", did: x.did }));
+      .map((x) => ({ said: x.asked ?? `(pressed) ${x.pressed ?? ""}`, did: x.did }));
     let res: Awaited<ReturnType<typeof readShotTurn>> | null = null;
     try {
       res = await readShotTurn(setId, { text: message, now, turns: lastTurns, ...(opts?.origin ? { origin: opts.origin } : {}) });
@@ -6951,6 +6970,7 @@ export function SetView({
       origin: opts?.origin ?? null,
       aliases: res?.aliases ?? NO_ALIASES,
       asked: message,
+      pressed: null,
     });
     // No words were left once cleaned: nothing to keep with a still.
     if (said === null && source === "message") {
@@ -6977,7 +6997,7 @@ export function SetView({
       void undoTurn(ctx, plan);
       return id;
     }
-    const base = { id, asked: ctx.asked, origin: ctx.origin, shotsAt: shots.length, settled: false };
+    const base = { id, asked: ctx.asked, origin: ctx.origin, aliases: ctx.aliases, pressed: ctx.pressed, shotsAt: shots.length, settled: false };
     if (plan.kind !== "run" || !api) {
       // A reading that failed, or Just talking's "here's what I'd do": nothing runs.
       const facts = replyFactsOf(before, null);
@@ -7034,7 +7054,13 @@ export function SetView({
       cameraAt(api.matchTo(solved.pose), null);
     };
 
-    for (const step of plan.steps) {
+    // A moving shot that lays its end frame moves the camera AFTER the look
+    // step, so the look runs last then: a plot set in the same words is aimed
+    // from where the take ends, as §3.1 step 11 asks (review of Cut 2,
+    // understanding N5).
+    const laysEnd = plan.steps.some((st) => st.kind === "motion" && st.layEnd);
+    const order = laysEnd ? [...plan.steps.filter((st) => st.kind !== "look"), ...plan.steps.filter((st) => st.kind === "look")] : plan.steps;
+    for (const step of order) {
       switch (step.kind) {
         case "who":
           setCharacterId(step.characterId);
@@ -7139,7 +7165,8 @@ export function SetView({
           if (steps.length > 0) {
             let spot = step.lensMm !== undefined && !words ? { ...afterWords, fovDeg: fovForLens(step.lensMm, sensorNow()) } : afterWords;
             for (const st of steps) {
-              const r = cameraStep(st, spot, now.mark, sensorNow());
+              // What the camera aims at on her is kept, her eyes inside the band, in this pose (review of Cut 2, U3).
+              const r = cameraStep(st, spot, now.mark, sensorNow(), STAND_IN_EYE_M[now.pose], formatFrame(now.rig.format, now.rig.squeeze).heightShare);
               spot = r.spot;
               if (r.cant) extraCant.push(r.cant);
               walked.push({ spot, clamp: r.clamp });
@@ -7194,14 +7221,20 @@ export function SetView({
         case "gaze": {
           const g = step.gaze;
           let gaze: Gaze | null = now.gaze;
+          let set = true;
           if (g === "camera" || g === "none") gaze = gazeFor(g, now.mark);
           else if ("side" in g) gaze = gazeFor({ side: g.side }, now.mark);
           else {
             const el = els.find((e) => e.key === g.key);
             const oi = el ? largestObjectOf(el, spec.objects) : null;
             if (oi !== null) gaze = gazeFor({ objectIndex: oi }, now.mark);
-            else extraDropped.push("gaze.thing");
+            else {
+              extraDropped.push("gaze.thing");
+              set = false;
+            }
           }
+          // Said as done only when it was: a thing not found is said under "didn't match", never both (review of Cut 2, understanding N4).
+          if (!set) break;
           setGaze(gaze);
           now.gaze = gaze;
           layoutRef.current = { ...layoutRef.current, gaze };
@@ -7217,6 +7250,7 @@ export function SetView({
           if (step.evThirds !== undefined) chips.push({ kind: "ev", ev: now.rig.ev });
           if (step.look === "off") {
             pickLook(null);
+            now.look = { pinned: true, id: null };
             chips.push({ kind: "look", look: "off" });
           } else if (step.look !== undefined) {
             // "newest", or a still by its number: one this set has, that can be a look (look.ts).
@@ -7224,6 +7258,7 @@ export function SetView({
             const shot = n === "newest" ? shots.find(canBeLook) : shots.find((sh) => sh.kind === "still" && stillNumber(sh) === n);
             if (shot && canBeLook(shot)) {
               pickLook(shot.generationId);
+              now.look = { pinned: true, id: shot.generationId };
               chips.push({ kind: "look", look: stillNumber(shot) });
             } else extraDropped.push("look");
           }
@@ -7340,6 +7375,13 @@ export function SetView({
     takeMoveRef.current = st.takeMove;
     setTakeEngine(st.takeEngine);
     outfitOffRef.current = st.outfitOff;
+    // The look as the turn found it: the still it was picked on, or back to following the newest (review of Cut 2, U6).
+    if (st.look.pinned) pickLook(st.look.id);
+    else {
+      lookPinnedRef.current = false;
+      setLookPinned(false);
+      setLookId(newestLook(shots));
+    }
     scheduleSave();
   }
 
@@ -7371,6 +7413,11 @@ export function SetView({
     if (to.direction !== from.direction) out.push({ kind: "happens", text: to.direction });
     if (to.takeStart?.id !== from.takeStart?.id && to.takeStart) out.push({ kind: "takeFrom", still: to.takeStart.n });
     if (to.takeEngine !== from.takeEngine) out.push({ kind: "engine", engine: to.takeEngine });
+    if (JSON.stringify(to.look) !== JSON.stringify(from.look)) {
+      const id = to.look.pinned ? to.look.id : newestLook(shots);
+      const shot = id ? shots.find((sh) => sh.generationId === id) : null;
+      out.push({ kind: "look", look: shot ? stillNumber(shot) : "off" });
+    }
     return out;
   }
 
@@ -7408,10 +7455,28 @@ export function SetView({
     const shown = plan ?? planTurn({ undo: true }, planStateOf(ctx, current));
     const outcomes: TurnOutcomes = { chips, notes: pageNotes };
     const facts = replyFactsOf(restored, null);
-    addTurn({ id, asked: ctx.asked, origin: ctx.origin, shotsAt: shots.length, settled: false, plan: shown, outcomes, facts, reply: composeReply(shown, outcomes, facts, replyWords), did: turnDid(shown, outcomes, ctx.aliases) });
+    addTurn({
+      id,
+      asked: ctx.asked,
+      origin: ctx.origin,
+      aliases: ctx.aliases,
+      pressed: ctx.pressed,
+      shotsAt: shots.length,
+      settled: false,
+      plan: shown,
+      outcomes,
+      facts,
+      reply: composeReply(shown, outcomes, facts, replyWords),
+      did: turnDid(shown, outcomes, ctx.aliases),
+    });
   }
 
-  /** A stored reading a button runs: a preview, an undo's rest, or a suggestion row — without its questions, idea, options or "not yet" again. */
+  /**
+   * A stored reading a button runs: a preview, an undo's rest, or a
+   * suggestion row — without its questions, idea, options or "not yet"
+   * again. A Just-talking preview keeps its undo: Do it on "undo that"
+   * steps back, as the message would have (review of Cut 2, U4).
+   */
   function readingOf(turn: ChatTurn, row: number | "plan" | "rest"): ShotReading | null {
     const r = row === "plan" ? turn.plan.reading : row === "rest" ? turn.plan.proposal : (turn.plan.suggestions[row]?.act ?? null);
     if (!r) return null;
@@ -7421,7 +7486,7 @@ export function SetView({
     delete act.suggest;
     delete act.cant;
     delete act.shoot;
-    delete act.undo;
+    if (row !== "plan") delete act.undo;
     return act;
   }
 
@@ -7466,7 +7531,9 @@ export function SetView({
     if (reading || shooting || editingSet || matching || following !== null || shootDue !== null || !ready) return;
     const newest = turns[turns.length - 1];
     if (!newest || newest.id !== turn.id || (turn.settled && action.kind !== "undo")) return;
-    const button = TURN_BUTTON;
+    // A button's turn runs in the names its turn was said in, and is told to the reader as what was pressed (review of Cut 2, U1).
+    const pressedLabel = (action as Partial<ReplyButton>).label ?? null;
+    const button: TurnContext = { ...TURN_BUTTON, aliases: turn.aliases, pressed: pressedLabel };
     switch (action.kind) {
       case "undo":
         void undoTurn(button, null);

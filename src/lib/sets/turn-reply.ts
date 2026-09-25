@@ -1064,8 +1064,8 @@ function planNoteText(n: Note, facts: ReplyFacts, words: ReplyWords): string | n
     case "builtFromWords":
       return r.noteBuiltFromWords;
     case "placeKept":
-      // The thing asked beside the mark is named under "didn't match" (plan.dropped).
-      return null;
+      // Its own line, not "didn't match": the thing is there, one place was used (review of Cut 2, understanding N4).
+      return fill(r.notePlaceKept, { name: name(facts.characterId), mark: markLabel(facts, n.markId) ?? n.markId });
   }
 }
 
@@ -1147,11 +1147,14 @@ export function composeReply(plan: TurnPlan, outcomes: TurnOutcomes | null, fact
       if (rest.length > 0) pushItems("planned", r.replyPlanned, rest, [{ kind: "doIt", row: "rest", label: r.doIt }]);
     }
   } else if (plan.kind === "proposal") {
-    if (done.length > 0) {
+    // "Undo that" in Just talking is offered like the rest, never said as
+    // "I couldn't place that" (review of Cut 2, U4): Do it steps back.
+    const planned = plan.reading?.undo ? [r.chips.undoLast, ...done] : done;
+    if (planned.length > 0) {
       const buttons: ReplyButton[] = [{ kind: "doIt", row: "plan", label: r.doIt }];
       const second = secondFor("plan", secondButton(plan, facts), r);
       if (second) buttons.push(second);
-      pushItems("planned", r.replyPlanned, done, buttons);
+      pushItems("planned", r.replyPlanned, planned, buttons);
     }
   } else if (done.length > 0) {
     pushItems("done", r.replyDone, done, [{ kind: "undo", label: r.undo }]);
@@ -1252,7 +1255,10 @@ export function composeReply(plan: TurnPlan, outcomes: TurnOutcomes | null, fact
   // 8. What was cut or left out.
   if (plan.messageCut) push("cut", fill(r.replyCutMessage, { n: SHOT_WORDS_MAX_CHARS }));
   if (plan.directionCut) push("cut", fill(r.replyCutDirection, { n: SET_DIRECTION_MAX_CHARS, tail: plan.directionCut }));
-  if (plan.dropped.length > 0 || unmatched) push("dropped", r.replyDropped);
+  // The thing left for a mark said in the same words is said by its note, and still holds the shot (placeKept).
+  const keptPlace = plan.notes.some((n) => n.kind === "placeKept");
+  const dropped = plan.dropped.filter((d) => !(keptPlace && d === "near"));
+  if (dropped.length > 0 || unmatched) push("dropped", r.replyDropped);
 
   // Never silent.
   if (lines.length === 0) push("nothing", r.replyNothing);

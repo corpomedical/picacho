@@ -875,3 +875,21 @@ describe("meaning, not words: a source pin", () => {
     expect(code).not.toMatch(/\b(said|gloss)\.(includes|indexOf|startsWith|endsWith|toLowerCase)\(/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The review of Cut 2 (2026-09-25): replies that said something the page did not do.
+// ---------------------------------------------------------------------------
+
+describe("replies that say only what happened (review of Cut 2)", () => {
+  it("a mark and a thing said at once: the mark used, said in its own line, never 'didn't match' for a car that is there (understanding N4)", () => {
+    for (const l of LOCALES) {
+      const { text, model } = reply({ markId: "m2", near: { thing: { key: CAR.key }, side: "beside" } }, {}, { locale: l }, WORDS[l]);
+      expectClean(text, l);
+      expect(text, l).toContain(fill(WORDS[l].reply.notePlaceKept, { name: "Marco", mark: race.marks[1].label }));
+      expect(model.lines.some((x) => x.kind === "dropped"), l).toBe(false);
+    }
+    // Still held in Shoot without asking: two places were asked for.
+    const auto = stateOf({ mode: "auto" });
+    expect(shootDecision(planTurn({ markId: "m2", near: { thing: { key: CAR.key }, side: "beside" } }, auto), auto).kind).toBe("none");
+  });
+});

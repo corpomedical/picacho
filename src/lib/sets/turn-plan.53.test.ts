@@ -377,6 +377,31 @@ describe("the conditions the table names (spec §7.3)", () => {
     expect(shootDecision(plan, stateFor(row, { mode: "auto" })).kind).toBe("none");
   });
 
+  // Review of Cut 2, U4 (2026-09-25): Just talking said "I couldn't place
+  // that" to readings it had understood.
+  it("in Just talking, #46 offers the undo with Do it, and two cars that fit ask which one — never 'I couldn't place that'", () => {
+    const undo = ROWS[45];
+    const talk = stateFor(undo, { mode: "talk" });
+    const plan = planTurn(undo.reading, talk);
+    expect(plan.kind).toBe("proposal");
+    const said = replyText(composeReply(plan, null, factsFor(undo, plan, talk), EN));
+    expect(said).toContain("Here's what I'd do: Undo the last change. Nothing moves until you press. [Do it]");
+    expect(said).not.toContain(EN.reply.replyNothing);
+    expect(said).not.toContain("Do it and shoot");
+    // Two cars that fit: the which-one line, its taps button turns; no priced button beside a row that waits on it.
+    const which: ShotReading = { near: { thing: { candidates: [SHOW_CAR1, SHOW_CAR2] }, side: "beside" } };
+    const row44 = ROWS[43];
+    const talk44 = stateFor(row44, { mode: "talk" });
+    const whichPlan = planTurn(which, talk44);
+    const whichSaid = replyText(composeReply(whichPlan, null, factsFor(row44, whichPlan, talk44), EN));
+    expect(whichSaid).toContain(EN.reply.replyWhich);
+    expect(whichSaid).not.toContain(EN.reply.replyNothing);
+    expect(whichSaid).not.toContain("credit");
+    // A person with no photo is said, as in Ask before shooting.
+    const lena = planTurn({ characterId: "not-on-this-account" }, raceState({ mode: "talk" }));
+    expect(lena.notes).toEqual([{ kind: "whoUnknown", characterId: "not-on-this-account" }]);
+  });
+
   it("#47 'shoot her from a low angle' is camera words: night and low in one turn, and no shot in Ask before shooting", () => {
     const row = ROWS[46];
     const plan = planTurn(row.reading, stateFor(row));

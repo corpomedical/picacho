@@ -86,28 +86,50 @@ async function readyOwnedSpec(setId: string, userId: string): Promise<{ error: s
   return { error: null, spec: n.spec };
 }
 
+/** How many characters the reader is told of (reader-context.ts READER_CONTEXT_MAX.characters). */
+const READER_CHARACTERS = 20;
+
+/** A character row as the reader reads it; null for one with no id or no name. */
+function readerCharacterOf(c: { id?: unknown; name?: unknown; reference_image_urls?: unknown }): ReaderCharacter | null {
+  const id = typeof c.id === "string" ? c.id : "";
+  const name = typeof c.name === "string" ? c.name.trim() : "";
+  return id.length > 0 && name.length > 0 ? { id, name, hasPhoto: Array.isArray(c.reference_image_urls) && c.reference_image_urls.length > 0 } : null;
+}
+
 /**
  * The person's characters, newest first, at most 20: id, name, and whether
  * it has a photo to be shot with (data.ts charactersOf's rule). v1 reads
  * the names only, as it always has; v2's STAGE lists each under an alias,
  * "(no photo yet)" when it can't be cast (reader-context.ts). Empty on any
  * failure.
+ *
+ * `keep`: the one on the page's chip (NOW's who). An older character than
+ * the newest twenty is still theirs, and NOW names them, so they take the
+ * twentieth place — read by id, and only ever this person's own (review of
+ * Cut 2, U7: "Who: no one yet." while someone stood in the frame).
  */
-async function characterList(userId: string): Promise<ReaderCharacter[]> {
-  const { data } = await createAdminClient()
+async function characterList(userId: string, keep?: string | null): Promise<ReaderCharacter[]> {
+  const admin = createAdminClient();
+  const { data } = await admin
     .from("character_profiles")
     .select("id, name, reference_image_urls")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(50);
-  return (data ?? [])
-    .map((c) => ({
-      id: typeof c.id === "string" ? c.id : "",
-      name: typeof c.name === "string" ? c.name.trim() : "",
-      hasPhoto: Array.isArray(c.reference_image_urls) && c.reference_image_urls.length > 0,
-    }))
-    .filter((c) => c.id.length > 0 && c.name.length > 0)
-    .slice(0, 20);
+  const all = (data ?? []).map(readerCharacterOf).filter((c): c is ReaderCharacter => c !== null);
+  const list = all.slice(0, READER_CHARACTERS);
+  if (!keep || list.some((c) => c.id === keep)) return list;
+  let kept = all.find((c) => c.id === keep) ?? null;
+  if (!kept && UUID_RE.test(keep)) {
+    const { data: row } = await admin
+      .from("character_profiles")
+      .select("id, name, reference_image_urls")
+      .eq("id", keep)
+      .eq("user_id", userId)
+      .maybeSingle();
+    kept = row ? readerCharacterOf(row) : null;
+  }
+  return kept ? [...list.slice(0, READER_CHARACTERS - 1), kept] : list;
 }
 
 /** The names of the person's characters, so the reader knows a name from a pose (v1). Empty on any failure. */
@@ -205,7 +227,9 @@ export async function readShotTurn(
   if (await rateLimited(userId, "set-words", 60 * 10, SHOT_WORDS_PER_10_MIN)) return none("limited", cut);
 
   const spec = owned.spec;
-  const characters = await characterList(userId);
+  // The one on the chip is kept in the list even past the newest twenty, so NOW can name them.
+  const chipWho = input?.now && typeof input.now === "object" ? (input.now as { who?: unknown }).who : null;
+  const characters = await characterList(userId, typeof chipWho === "string" ? chipWho : null);
   const castIds = characters.map((c) => c.id);
   const now = normaliseReaderNow(input?.now, spec, castIds) ?? normaliseReaderNow({}, spec, castIds);
   if (!now) return none("down", cut);

@@ -11,10 +11,12 @@
 //   of her (the race car at 4.3 m and 4.5 m), a grey bench behind, three
 //   walls. The "which one?" set.
 //
-// THE ALIASES ARE THE PAGE'S. THINGS are listed nearest first (readerThings),
-// so the corpus's t1/t2/t3 hold only if the sets put them in that order:
-// checkFixture refuses a set whose aliases don't match what the phrases
-// expect. The corpus's descriptions ("3 m to their left") are notes for a
+// THE ALIASES ARE THE PAGE'S. A thing's alias is its place in the set's own
+// order (elements.ts setElements, by its first block; reader-context.ts
+// ReaderThing.n — stable for the visit since the review of Cut 2, U1), so
+// the corpus's t1/t2/t3 hold only if the sets list their blocks in that
+// order: checkFixture refuses a set whose aliases don't match what the
+// phrases expect. The corpus's descriptions ("3 m to their left") are notes for a
 // reader; where the built set differs, the dry run says so.
 //
 // Every character id, still and price is made up here; nothing is read
@@ -126,7 +128,7 @@ function buildShowroom(): BuiltSet {
   const loose = new Set(els.filter((e) => e.kind === "object").flatMap((e) => e.members.map(([o]) => o)));
   const car = carObjects(base);
   const carLength = car.max[2] - car.min[2];
-  // Car 2, blue, its front 5 m behind her; the stand past it, 5.5 m to her right (after Car 2, so the aliases stay t1 Car 1, t2 Car 2, t3 the stand).
+  // Car 2, blue, its front 5 m behind her; the stand past it, 5.5 m to her right (its blocks after Car 2's, so the aliases stay t1 Car 1, t2 Car 2, t3 the stand).
   const car2 = carCopy(car, { s: 1, x: SHOWROOM_SPOT.x, z: SHOWROOM_SPOT.z - 5 - carLength / 2, body: "#1f4fd1" });
   const stand = box([SHOWROOM_SPOT.x - 5.5 - 0.3, 0.45, SHOWROOM_SPOT.z], [0.6, 0.9, 0.6], "#f4f4f2");
   const objects = [...base.objects.filter((_, i) => !loose.has(i)), ...car2, stand];

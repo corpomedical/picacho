@@ -14,6 +14,7 @@ import { wordsToMatch } from "./shot-words";
 import { takesCredits } from "./take";
 import { findVehicles } from "./vehicles";
 import {
+  EYE_ROOM,
   FRAME_X_AT,
   GAZE_POINT_M,
   NEAR_CLEARANCE_M,
@@ -170,6 +171,27 @@ describe("planTurn: the order of work (spec §3.1)", () => {
     // The sun faces the camera across her: the camera's bearing + 192° (light-schemes.ts contre-jour).
     expect(lit?.azimuthDeg).toBeCloseTo((final + 192) % 360, 1);
     expect(lookPatch(look, stateOf().rig, stateOf().cameraBearingDeg).patch.light?.azimuthDeg).not.toBeCloseTo(lit?.azimuthDeg ?? 0, 0);
+  });
+
+  // Review of Cut 2, U2 (2026-09-25): a plot was "already so" by its scheme
+  // alone, but it is anchored in the world from where the camera stood.
+  it("a light plot is already so only when aimed the same way; restated after the camera moved, or with a camera move, it is aimed again", () => {
+    const fromFront = { scheme: "contre-jour" as const, azimuthDeg: 192, elevationDeg: 5 };
+    // Set from bearing 0; the camera is now at 180: the same words are a new aim.
+    const moved = planTurn({ rig: ["light:contre-jour"] }, stateOf({ rig: rigWith({ light: fromFront }), cameraBearingDeg: 180 }));
+    expect(moved.already).toEqual([]);
+    expect(moved.steps).toEqual([{ kind: "look", ids: ["light:contre-jour"] }]);
+    // Asked from where it was set: already so.
+    const same = planTurn({ rig: ["light:contre-jour"] }, stateOf({ rig: rigWith({ light: fromFront }), cameraBearingDeg: 0 }));
+    expect(same.already).toEqual(["light:contre-jour"]);
+    expect(same.steps).toEqual([]);
+    // With a camera move in the same words, where the camera ends decides: never already so.
+    const withMove = planTurn({ side: "back", rig: ["light:contre-jour"] }, stateOf({ rig: rigWith({ light: fromFront }), cameraBearingDeg: 0 }));
+    expect(withMove.already).not.toContain("light:contre-jour");
+    expect(withMove.steps.find((st) => st.kind === "look")).toEqual({ kind: "look", ids: ["light:contre-jour"] });
+    // A plot off stays off: "as built" is already so without a camera to aim from.
+    expect(planTurn({ rig: ["light:as-built"] }, stateOf()).already).toEqual(["light:as-built"]);
+    expect(planTurn({ side: "back", rig: ["light:as-built"] }, stateOf()).already).toEqual(["light:as-built"]);
   });
 
   it("says what was already so, and runs nothing for it", () => {
@@ -713,6 +735,7 @@ describe("undo (spec §3.5)", () => {
     takeMove: null,
     takeEngine: "omni",
     outfitOff: false,
+    look: { pinned: false },
     ...over,
   });
 
@@ -778,6 +801,19 @@ describe("undo (spec §3.5)", () => {
     const replaced = undoPlan([{ before, after }], stateNow({ takeStart: other, camera: { ...C2_POSE, fovDeg: 30 } }), false);
     if (replaced.kind !== "restore") throw new Error("restore");
     expect(replaced.restore.takeStart).toEqual(other);
+  });
+
+  // Review of Cut 2, U6 (2026-09-25).
+  it("a look picked is part of the turn: Undo sees it, and a look that follows the newest still is no one's move", () => {
+    const before = stateNow();
+    const after = stateNow({ look: { pinned: true, id: "g-1" } });
+    expect(snapshotDiff(before, after)).toEqual(["look"]);
+    // Following the newest still whatever it is: the same look.
+    expect(snapshotDiff(stateNow({ look: { pinned: false } }), stateNow({ look: { pinned: false } }))).toEqual([]);
+    const u = undoPlan([{ before, after }], after, false);
+    if (u.kind !== "restore") throw new Error("restore");
+    expect(u.restore.look).toEqual({ pinned: false });
+    expect(u.handMoves).toBe(false);
   });
 
   it("the outfit flag a shot used up is no move of theirs (review of Cut 2, N2)", () => {
@@ -891,6 +927,43 @@ describe("the camera's word steps (spec §3.5, check of the spec item 6)", () =>
     expect(step("higher", { heightM: 2.2 })).toMatchObject({ spot: { heightM: 2.6 }, clamp: "high", cant: null });
     expect(step("higher", { heightM: 2.4 })).toMatchObject({ spot: { heightM: 2.6 }, clamp: "high", cant: "altitude" });
     expect(step("higher", { heightM: 6 })).toMatchObject({ spot: { heightM: 6 }, clamp: "high", cant: "altitude" });
+  });
+
+  // Review of Cut 2, U3 (2026-09-25): the steps kept the tilt, so "lower"
+  // from eye level, or "closer" from a low or high framing, pushed her eyes
+  // out of the picture.
+  it("closer, further, higher and lower keep her eyes inside the band, from a high, an eye-level and a low start", () => {
+    const eye = 1.65;
+    const band = formatFrame("wide").heightShare;
+    const half = Math.atan(band * Math.tan((fovForLens(50) * DEG) / 2)) / DEG;
+    const offAxis = (sp: CameraSpot) => Math.atan2(eye - sp.heightM, sp.distanceM) / DEG - sp.pitchDeg;
+    const eyeFrom = (h: number, d: number) => Math.atan2(eye - h, d) / DEG;
+    const starts: Record<string, CameraSpot> = {
+      "eye-level close-up": spot({ distanceM: 1, heightM: 1.65, pitchDeg: 0 }),
+      "high close-up": spot({ distanceM: 1.2, heightM: 2.4, pitchDeg: eyeFrom(2.4, 1.2) }),
+      // 0.7 m high, 2.4 m away, her eyes near the top of the band (the review's probe had them at +0.76).
+      "low medium": spot({ distanceM: 2.4, heightM: 0.7, pitchDeg: eyeFrom(0.7, 2.4) - 0.76 * half }),
+    };
+    for (const [name, start] of Object.entries(starts)) {
+      expect(Math.abs(offAxis(start)), name).toBeLessThanOrEqual(half);
+      for (const st of ["closer", "further", "higher", "lower"] as const) {
+        const after = cameraStep(st, start, facing, undefined, eye, band).spot;
+        expect(Math.abs(offAxis(after)), `${name}, ${st}`).toBeLessThan(half);
+        // Within EYE_ROOM, unless the stage's own tilt limit stopped the camera following her.
+        if (after.pitchDeg < SET_MAX_TILT_UP_DEG - 1e-6) expect(Math.abs(offAxis(after)), `${name}, ${st}`).toBeLessThanOrEqual(Math.max(half * EYE_ROOM, Math.abs(offAxis(start))) + 1e-6);
+      }
+      // And a chain of them, each from the last (inside what the stage can tilt: from 0.3 m and a metre away, +20° can't reach her eyes).
+      const chained = cameraSteps(["closer", "higher", "further", "lower"], start, facing, undefined, eye, band).spot;
+      expect(Math.abs(offAxis(chained)), `${name}, chained`).toBeLessThan(half);
+    }
+    // "No, lower" from the low medium looks up at her from 0.3 m instead of keeping its tilt.
+    const lower = cameraStep("lower", starts["low medium"], facing, undefined, eye, band).spot;
+    expect(lower.heightM).toBeCloseTo(0.3, 6);
+    expect(lower.pitchDeg).toBeGreaterThan(starts["low medium"].pitchDeg);
+    // What it aimed at stays where it was when her eyes are in anyway: "further" from eye level keeps the level aim.
+    expect(cameraStep("further", starts["eye-level close-up"], facing, undefined, eye, band).spot.pitchDeg).toBeCloseTo(0, 6);
+    // tilt_up and tilt_down still change the tilt itself.
+    expect(cameraStep("tilt_down", starts["eye-level close-up"], facing, undefined, eye, band).spot.pitchDeg).toBeCloseTo(-5, 6);
   });
 
   it("left and right orbit the camera to its own side by 20°; the other side mirrors across her facing", () => {

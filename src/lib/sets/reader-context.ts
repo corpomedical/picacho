@@ -94,6 +94,14 @@ export type ThingWhere = "ahead" | "left" | "right" | "behind";
 /** One of the set's things as the reader is told of it, and as a "which one?" button names it. */
 export type ReaderThing = {
   key: string;
+  /**
+   * Its place in the set's own order (elements.ts setElements), from 1: its
+   * alias is t{n} whatever the order it is listed in, so "t2" names the same
+   * car on every read of the visit, wherever she has moved since (review of
+   * Cut 2, U1: nearest-first numbers moved under LAST TURNS, and "the other
+   * car" picked the one she stood by).
+   */
+  n: number;
   kind: ElementKind;
   /** English, for the model: "the car", "Car 2", "an object" (the page's elementName rule). */
   label: string;
@@ -274,6 +282,7 @@ export function readerThings(spec: SetSpec, mark: { x: number; z: number; facing
     const height = e.max[1] - e.min[1];
     const thing: ReaderThing = {
       key: e.key,
+      n: order + 1,
       kind: e.kind,
       label: count[e.kind] > 1 ? `${numbered[e.kind]} ${e.ordinal}` : lone[e.kind],
       colour: colourWord(spec.objects[largest].color),
@@ -298,7 +307,9 @@ const ALIAS_RE = /^([tp])(\d+)$/;
  * STAGE, and the aliases the reading's answer is mapped back through. The
  * aliases are t1… and p1…; if the set's own camera or mark ids already use
  * one of them, both become thing1… and person1…, so an alias is never a
- * camera or a mark. (normaliseSetSpec names them c1… and m1… today, so
+ * camera or a mark. A thing's number is its place in the set's own order
+ * (ReaderThing.n), not in the list: the list is nearest first and changes
+ * as she moves, the alias never does. (normaliseSetSpec names them c1… and m1… today, so
  * this is a guard for a spec that ever names them otherwise.)
  * Held to 1,500 characters: the farthest things go first, then characters
  * from the end — never `keep`, the one in the frame, whom NOW names.
@@ -317,14 +328,14 @@ export function readerStageBlock(input: {
     const m = ALIAS_RE.exec(id);
     if (!m) return false;
     const n = Number(m[2]);
-    return m[1] === "t" ? n >= 1 && n <= things.length : n >= 1 && n <= characters.length;
+    return m[1] === "t" ? things.some((t) => t.n === n) : n >= 1 && n <= characters.length;
   });
-  const thingAlias = (i: number) => (clash ? `thing${i + 1}` : `t${i + 1}`);
+  const thingAlias = (n: number) => (clash ? `thing${n}` : `t${n}`);
   const personAlias = (i: number) => (clash ? `person${i + 1}` : `p${i + 1}`);
 
   const named = (xs: readonly { id: string; label: string }[]) => xs.map((x) => `${x.id}: ${x.label || x.id}`).join("; ");
   const people = characters.map((ch, i) => ({ ch, alias: personAlias(i) }));
-  const listed = things.map((t, i) => ({ t, alias: thingAlias(i) }));
+  const listed = things.map((t) => ({ t, alias: thingAlias(t.n) }));
 
   const compose = (ps: typeof people, ts: typeof listed) => {
     const personLine = ps.length

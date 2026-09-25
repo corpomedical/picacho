@@ -221,7 +221,9 @@ describe("the chat's turn engine", () => {
 
   it("runs the plan's steps with the page's handlers, the stage written at once", () => {
     expect(runTurn).toContain("const plan = planTurn(reading, state);");
-    expect(runTurn).toContain("for (const step of plan.steps) {");
+    // In the plan's order — the look last when a moving shot lays its end, so a plot is aimed from where the take ends (review of Cut 2, N5).
+    expect(runTurn).toContain("for (const step of order) {");
+    expect(runTurn).toContain('const order = laysEnd ? [...plan.steps.filter((st) => st.kind !== "look"), ...plan.steps.filter((st) => st.kind === "look")] : plan.steps;');
     // The rig this turn set is read at once by the size solve, the thirds and a lens.
     expect(runTurn).toContain("rigRef.current = { ...rigRef.current, ...patch };");
     // The figure first: the camera's solve and matchTo read where it stands.
@@ -250,7 +252,11 @@ describe("the chat's turn engine", () => {
   });
 
   it("runs Do it, a which-one and Use the hour as button turns: no reading, no shot (rule 6)", () => {
-    expect(view).toContain('const TURN_BUTTON: TurnContext = { source: "button", why: "ok", dropped: [], messageCut: false, origin: null, aliases: NO_ALIASES, asked: null };');
+    expect(view).toContain('const TURN_BUTTON: TurnContext = { source: "button", why: "ok", dropped: [], messageCut: false, origin: null, aliases: NO_ALIASES, asked: null, pressed: null };');
+    // A button's turn runs in its turn's names, and is told to the reader as what was pressed (review of Cut 2, U1).
+    expect(replyAction).toContain("const button: TurnContext = { ...TURN_BUTTON, aliases: turn.aliases, pressed: pressedLabel };");
+    expect(sendTurn).toContain(".filter((x) => x.asked !== null || x.pressed !== null)");
+    expect(sendTurn).toContain('.map((x) => ({ said: x.asked ?? `(pressed) ${x.pressed ?? ""}`, did: x.did }));');
     expect(replyAction).not.toContain("readShotTurn(");
     expect(replyAction).toContain("if (r) runTurn(r, button);");
     expect(replyAction).toContain("if (need && turn.plan.reading) runTurn(resolveWhich(turn.plan.reading, need, action.key), button);");
@@ -258,7 +264,7 @@ describe("the chat's turn engine", () => {
     // Try again is a message turn read again that never shoots; "Use my words" only sets the words.
     // It keeps the turn's origin: the Sets home's build message is read as one again (review of Cut 2, S5).
     expect(replyAction).toContain('if (turn.asked !== null) void sendTurn(turn.asked, { source: "retry", ...(turn.origin ? { origin: turn.origin } : {}) });');
-    expect(runTurn).toContain("const base = { id, asked: ctx.asked, origin: ctx.origin, shotsAt: shots.length, settled: false };");
+    expect(runTurn).toContain("const base = { id, asked: ctx.asked, origin: ctx.origin, aliases: ctx.aliases, pressed: ctx.pressed, shotsAt: shots.length, settled: false };");
     expect(replyAction).toContain("if (turn.asked !== null) wordsAsHappens(turn.asked);");
     // Only the newest turn's buttons act, and none while anything is out.
     expect(replyAction).toContain("if (reading || shooting || editingSet || matching || following !== null || shootDue !== null || !ready) return;");
@@ -308,6 +314,32 @@ describe("the chat's turn engine", () => {
     expect(card).toContain('onGo={() => replyAction(tn, { kind: "astraGo" })}');
     expect(card).toContain('onNotNow={() => replyAction(tn, { kind: "notNow" })}');
     expect(card).toContain("shootCredits={card.shootCredits}");
+  });
+
+  // Review of Cut 2, U6 (2026-09-25): Undo left a picked look pinned and said "Undone".
+  it("keeps the look in the turn's state and puts it back on Undo, picked or following the newest still", () => {
+    expect(bodyOf("  function turnStateNow(): TurnState {")).toContain("look: lookPinnedRef.current ? { pinned: true, id: lookId } : { pinned: false },");
+    expect(restore).toContain("if (st.look.pinned) pickLook(st.look.id);");
+    expect(restore).toContain("lookPinnedRef.current = false;");
+    expect(runTurn).toContain("now.look = { pinned: true, id: shot.generationId };");
+    expect(bodyOf("  function restoredChips(from: TurnState, to: TurnState): Outcome[] {")).toContain('out.push({ kind: "look", look: shot ? stillNumber(shot) : "off" });');
+    // Undo puts back the take only while it is as the turn left it (turn-plan.ts undoneTake; review of Cut 2, S2).
+    expect(undoTurn).toContain("restored = u.restore;");
+  });
+
+  it("says an eye-line as done only when it was set, and a word step keeps her eyes in the band (review of Cut 2, U3, N4)", () => {
+    const gaze = runTurn.slice(runTurn.indexOf('case "gaze": {'), runTurn.indexOf('case "look": {'));
+    expect(gaze.indexOf("if (!set) break;")).toBeLessThan(gaze.indexOf('chips.push({ kind: "gaze", gaze: g });'));
+    expect(runTurn).toContain("const r = cameraStep(st, spot, now.mark, sensorNow(), STAND_IN_EYE_M[now.pose], formatFrame(now.rig.format, now.rig.squeeze).heightShare);");
+  });
+
+  it("ends a third on the first move of an orbit, not on its press (review of Cut 2, understanding N3)", () => {
+    const start = between(view, 'controls.addEventListener("start", () => {', "});");
+    expect(start).toContain("stageHoldRef.current?.();");
+    expect(start).not.toContain("stageTouchRef");
+    const change = between(view, 'controls.addEventListener("change", () => {', 'controls.addEventListener("end", () => {');
+    expect(change).toContain('frameXRef.current = frameXAfter(frameXRef.current, { kind: "hand" });');
+    expect(view).toContain("stageHoldRef.current = () => keepStage(true, false);");
   });
 
   it("says a decided shot that could not start, with Shoot as it is at its price, and never a card again", () => {

@@ -31,21 +31,31 @@ let access: Access;
 let limited: boolean;
 const limits: { scope: string; windowSeconds: number; max: number }[] = [];
 let characterRows: { id: string; name: string; reference_image_urls: string[] | null }[];
+/** The characters read one by one, by id. */
+const characterReads: string[] = [];
 
 vi.mock("@/lib/supabase/server", () => ({
   createAdminClient: () => ({
     from: (table: string) => {
       let cols = "";
+      let limit = Number.MAX_SAFE_INTEGER;
+      const eqs: Record<string, unknown> = {};
       const builder = {
         select: (c: string) => ((cols = c), builder),
-        eq: () => builder,
+        eq: (col: string, value: unknown) => ((eqs[col] = value), builder),
         is: () => builder,
         order: () => builder,
-        limit: () => builder,
-        maybeSingle: async () =>
-          cols === "edited_spec" ? { data: { edited_spec: null }, error: null } : { data: { status: "ready", spec: SPEC }, error: null },
+        limit: (n: number) => ((limit = n), builder),
+        maybeSingle: async () => {
+          // One character, by id and owner (words-actions.ts characterList's `keep`).
+          if (table === "character_profiles") {
+            characterReads.push(String(eqs.id));
+            return { data: eqs.user_id === USER ? (characterRows.find((c) => c.id === eqs.id) ?? null) : null, error: null };
+          }
+          return cols === "edited_spec" ? { data: { edited_spec: null }, error: null } : { data: { status: "ready", spec: SPEC }, error: null };
+        },
         // The character list is awaited on the builder itself.
-        then: (resolve: (v: unknown) => void) => resolve({ data: table === "character_profiles" ? characterRows : [], error: null }),
+        then: (resolve: (v: unknown) => void) => resolve({ data: table === "character_profiles" ? characterRows.slice(0, limit) : [], error: null }),
       };
       return builder;
     },
@@ -109,6 +119,7 @@ beforeEach(() => {
   access = { error: null, userId: USER, isAdmin: true, plan: "starter", monthlyLimit: 5, periodStart: null };
   limited = false;
   limits.length = 0;
+  characterReads.length = 0;
   sent = [];
   logged.length = 0;
   characterRows = [
@@ -282,6 +293,38 @@ describe("readShotTurn: what comes back", () => {
     });
     expect(r.aliases.people).toEqual({ p1: EVA, p2: MARCO, p3: LENA });
     expect(r.aliases.things.t1).toBe(CAR.key);
+  });
+
+  // Review of Cut 2, U7 (2026-09-25): the chip's person, older than the
+  // newest twenty, was dropped from STAGE and NOW said "Who: no one yet."
+  it("keeps the person on the chip in STAGE and NOW when they are older than the newest twenty, read by id and only their own", async () => {
+    const id = (i: number) => `aaaaaaaa-aaaa-4aaa-8aaa-${String(i).padStart(12, "0")}`;
+    characterRows = Array.from({ length: 60 }, (_, i) => ({ id: id(i), name: `Person ${i}`, reference_image_urls: ["p.jpg"] }));
+    // In the fifty listed, past twenty.
+    reader("{}");
+    const r = await readShotTurn(SET, { text: "a bit closer", now: { ...NOW, who: id(33) } });
+    if (r.error !== null) throw new Error(r.error);
+    expect(r.aliases.people.p20).toBe(id(33));
+    expect(Object.keys(r.aliases.people)).toHaveLength(20);
+    expect(sent[0].messages[1].content).toContain("Who: p20 Person 33.");
+    expect(characterReads).toEqual([]);
+    // Past the fifty: read by id.
+    reader("{}");
+    const far = await readShotTurn(SET, { text: "a bit closer", now: { ...NOW, who: id(57) } });
+    if (far.error !== null) throw new Error(far.error);
+    expect(far.aliases.people.p20).toBe(id(57));
+    expect(sent[1].messages[1].content).toContain("Who: p20 Person 57.");
+    expect(characterReads).toEqual([id(57)]);
+    // Among the twenty: the list as it is, nothing read.
+    reader("{}");
+    await readShotTurn(SET, { text: "a bit closer", now: { ...NOW, who: id(3) } });
+    expect(characterReads).toEqual([id(57)]);
+    // Not theirs: dropped, as a forged who always is.
+    reader("{}");
+    const stranger = await readShotTurn(SET, { text: "a bit closer", now: { ...NOW, who: STRANGER } });
+    if (stranger.error !== null) throw new Error(stranger.error);
+    expect(Object.values(stranger.aliases.people)).not.toContain(STRANGER);
+    expect(sent[3].messages[1].content).toContain("Who: no one yet.");
   });
 
   it("keeps a piece of what happens only from NOW's own text, as the server checked it", async () => {

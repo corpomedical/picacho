@@ -3247,6 +3247,8 @@ const it = {
       noteStillsStay: "Le foto già scattate restano nella striscia.",
       noteWhoUnknown: "Non conosco nessun personaggio di nome «{said}»; scegline uno con @.",
       noteNotStarted: "Non sono riuscito a far partire lo scatto adesso; premi Scatta quando vuoi.",
+      // A mark and a thing said at once: the mark was used, and it says so (review of Cut 2, understanding N4).
+      notePlaceKept: "{name} può stare in un solo posto alla volta, quindi ho usato {mark}.",
       composerPlaceholder: "Dimmi l'inquadratura — chi, dove, il look, la luce — o chiedimi qualsiasi cosa.",
       composerCount: "{n} / {max}",
       // The frame card's dot on a row the last message moved (step 11b).
@@ -3318,6 +3320,8 @@ const it = {
         which: "{thing} · {colour} · {where}",
         whichWhere: { ahead: "davanti", left: "alla sua sinistra", right: "alla sua destra", behind: "dietro" },
         astra: "Modifica di Astra: «{words}»",
+        // Just talking's preview of "undo that" (review of Cut 2, U4).
+        undoLast: "Annullare l'ultima modifica",
       },
       colours: {
         red: "colore rosso",

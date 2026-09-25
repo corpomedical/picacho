@@ -3434,6 +3434,8 @@ const en = {
       noteStillsStay: "Stills already shot stay in the filmstrip.",
       noteWhoUnknown: "I don't know a character called “{said}”; pick one with @.",
       noteNotStarted: "I couldn't start the shot just now; press Shoot when you're ready.",
+      // A mark and a thing said at once: the mark was used, and it says so (review of Cut 2, understanding N4).
+      notePlaceKept: "{name} can stand in one place at a time, so I used {mark}.",
       composerPlaceholder: "Tell me the shot — who, where, the look, the light — or ask me anything about it.",
       composerCount: "{n} / {max}",
       // The frame card's dot on a row the last message moved (step 11b).
@@ -3505,6 +3507,8 @@ const en = {
         which: "{thing} · {colour} · {where}",
         whichWhere: { ahead: "in front of them", left: "to their left", right: "to their right", behind: "behind them" },
         astra: "Astra change: “{words}”",
+        // Just talking's preview of "undo that" (review of Cut 2, U4).
+        undoLast: "Undo the last change",
       },
       // Written as a phrase in es/pt/it ("color rojo") so it agrees with nothing.
       colours: {
