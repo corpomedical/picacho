@@ -348,14 +348,7 @@ export function MovableLamp({
           style={{ ...lampPosition, "--glow": live ? level : 0 } as React.CSSProperties}
           className={lampClass}
         >
-          <span className={styles.glass} aria-hidden="true" />
           <span className={styles.bulb} aria-hidden="true" />
-          {live && (
-            <span className={styles.ripples} aria-hidden="true">
-              <span className={styles.ripple} />
-              <span className={`${styles.ripple} ${styles.ripple2}`} />
-            </span>
-          )}
           {tabEdge
             ? (unseenCards > 0 || dot > 0) && <span className={styles.tabDot} aria-label={newCardsLabel} />
             : !open && (

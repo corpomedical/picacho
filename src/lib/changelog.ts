@@ -20,6 +20,15 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.106.0",
+    build: 145,
+    date: "2026-09-25",
+    title: "The Producer's bulb is the original again",
+    items: [
+      "The glass-and-filament bulb from earlier today is gone; the lamp is the plain warm bulb it started with, breathing gently. The lamp still moves, tucks into any edge as a tab, and can be hidden.",
+    ],
+  },
+  {
     version: "1.105.0",
     build: 144,
     date: "2026-09-25",
