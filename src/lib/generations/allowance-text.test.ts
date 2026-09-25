@@ -27,6 +27,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 vi.mock("@/lib/media/url", () => ({ mediaUrl: () => null }));
 vi.mock("@/lib/media/faststart", () => ({ faststartRemux: async () => null }));
+vi.mock("@/lib/media/mp4-join", () => ({ withoutSoundMp4: () => ({ ok: false, reason: "unreadable" }) }));
 vi.mock("@/lib/plans", async () => await import("../plans"));
 vi.mock("@/lib/generations/providers/video-models", async () => await import("./providers/video-models"));
 

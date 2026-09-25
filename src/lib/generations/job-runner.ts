@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { probeImage } from "@/lib/media/image-probe";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
-import { persistGeneratedVideo, persistImageBytes } from "@/lib/generations/core";
+import { persistGeneratedVideo, persistImageBytes, persistVideo } from "@/lib/generations/core";
 import { LAYERS_TIERS, layerStoragePath, type LayersTier } from "@/lib/generations/layers";
 import {
   forceRefundEligible,
@@ -208,6 +208,10 @@ type JobRow = {
       externalId?: string | null;
       nativeAudio: boolean;
       keepsSourceAudio?: boolean;
+      // The lane asks the runner to take the engine's own sound out of the
+      // stored file (2026-09-25): the voice-lock.ts ALWAYS_SPEAKS engines
+      // have no switch, so asking them for silence is not getting it.
+      dropEngineAudio?: boolean;
     };
   };
   resume: ResumeState;
@@ -1013,6 +1017,8 @@ export async function saveVideoJob(params: {
     externalId?: string | null;
     nativeAudio: boolean;
     keepsSourceAudio?: boolean;
+    /** Take the engine's own sound out of the stored file — see JobRow.payload.voice. */
+    dropEngineAudio?: boolean;
   };
 }): Promise<void> {
   const admin = createAdminClient();
@@ -1091,6 +1097,13 @@ async function finish(
          * take into an unspoken one. See voice-lock.ts.
          */
         voiceSpoke?: boolean;
+        /**
+         * The stored file was checked and carries no sound track: the
+         * engine's own was taken out (payload voice.dropEngineAudio,
+         * core.ts persistVideo). Passed explicitly by the one caller that
+         * did it, like voiceSpoke, so a request alone never reads as done.
+         */
+        fileSilent?: boolean;
       }
     | { status: "failed"; attempts: AttemptLog[]; fault?: FailureFault; notify?: LaneNotice },
 ): Promise<boolean> {
@@ -1235,6 +1248,7 @@ async function finish(
             modelId,
             nativeAudioRequested: jobRow?.payload?.voice?.nativeAudio !== false,
             keepsSourceAudio: jobRow?.payload?.voice?.keepsSourceAudio === true,
+            fileSilent: outcome.status === "succeeded" && outcome.fileSilent === true,
           }),
           presetId: jobRow?.payload?.voice?.presetId ?? null,
           // resume carries the provider's own permanent id; the payload's
@@ -2167,6 +2181,9 @@ export async function advanceGeneration(
   // whole row was failed terminally, and a rendered, billed video was
   // thrown away over a dialogue problem (2026-08-31 inspection).
   let collectedVideoUrl: string | null = null;
+  // Whether that stored file was checked to carry no sound (persistVideo),
+  // so the salvage below records it as the delivery path would have.
+  let collectedSilent = false;
   try {
     if (row.stage === "layers") {
       // Single-stage lane. Every delivered layer is fetched from fal and
@@ -2479,14 +2496,22 @@ export async function advanceGeneration(
       // one of those paths persists, so one write covers them all and a
       // future stage cannot forget to pass it along.
       row.resume.attempts = withProviderCost(row.resume.attempts, handle.provider, completionTokens);
+      const wantsDialogue = Boolean(row.resume.dialogueText?.trim() && row.resume.dialogueVoiceId);
+      // The engine's own sound out of the stored file, when the lane asked
+      // (payload voice.dropEngineAudio, 2026-09-25) — never on a run our
+      // dialogue lane re-voices: the lip-sync pass replaces the track anyway.
+      const dropSound = row.payload.voice?.dropEngineAudio === true && !wantsDialogue;
       // Ours from here, or theirs if the copy fails — see
       // persistGeneratedVideo. A render that plays from the provider beats a
       // success with a dead link, and the lifecycle header means their copy
-      // no longer expires, which is what makes that fallback honest.
-      const videoUrl =
-        (await persistGeneratedVideo(admin, userId, providerVideoUrl)) ?? providerVideoUrl;
+      // no longer expires, which is what makes that fallback honest. The
+      // provider's own file keeps its sound, so only a stored copy that was
+      // written without it counts as silent.
+      const persisted = await persistVideo(admin, userId, providerVideoUrl, { dropSound });
+      const videoUrl = persisted?.url ?? providerVideoUrl;
+      const fileSilent = dropSound && persisted?.silent === true;
       collectedVideoUrl = videoUrl;
-      const wantsDialogue = Boolean(row.resume.dialogueText?.trim() && row.resume.dialogueVoiceId);
+      collectedSilent = fileSilent;
 
       // Stop pressed while the video job was finishing: the render is done
       // and billed, so it is delivered — but the dialogue stages have not
@@ -2495,16 +2520,26 @@ export async function advanceGeneration(
       // a fresh paid TTS job after Stop). Deliver silent, surcharge back.
       const stoppedBeforeDialogue = wantsDialogue && Boolean(gen?.cancel_requested);
       if (!wantsDialogue || stoppedBeforeDialogue) {
+        const delivered = stoppedBeforeDialogue
+          ? appendStep(
+              row.resume.attempts ?? [],
+              "Stopped before the dialogue — showing the video without it.",
+              "speech",
+            )
+          : (row.resume.attempts ?? []);
         const didTransition = await finish(generationId, userId, {
           status: "succeeded",
           resultUrl: videoUrl,
-          attempts: stoppedBeforeDialogue
+          attempts: dropSound
             ? appendStep(
-                row.resume.attempts ?? [],
-                "Stopped before the dialogue — showing the video without it.",
-                "speech",
+                delivered,
+                fileSilent
+                  ? "Took the engine's own sound out of the clip: it stays silent until it is dubbed."
+                  : "Couldn't take the engine's own sound out of the clip, so it keeps it.",
+                "generate",
               )
-            : (row.resume.attempts ?? []),
+            : delivered,
+          fileSilent,
         });
         if (stoppedBeforeDialogue) {
           try {
@@ -2864,6 +2899,7 @@ export async function advanceGeneration(
           `${message} Showing the video without dialogue.`,
           "speech",
         ),
+        fileSilent: salvageUrl === collectedVideoUrl && collectedSilent,
       });
       // Only when dialogue was actually CHARGED (2026-08-31 inspection): a
       // no-dialogue video can land in this catch too — a transport blip

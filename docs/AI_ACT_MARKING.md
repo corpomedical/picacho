@@ -46,6 +46,21 @@ sample of three made this look engine-dependent and roughly balanced. Across
 the whole roster it is not balanced: marking is the exception, and the two
 engines that have it account for two renders.
 
+**2026-09-25: Helios takes on gemini-omni lose that manifest.** Gemini Omni
+has no switch for its own invented voice, and Helios takes are "silent now,
+dubbed later" (operator, 2026-09-23), so the runner now stores a Helios take
+rendered on it as a remuxed, picture-only file (`persistVideo` in core.ts,
+`withoutSoundMp4` in media/mp4-join.ts). A remux writes only
+`ftyp moov mdat`, so the provider's C2PA manifest measured in the row above
+(the top-level `uuid` box) no longer reaches those files: checked the same
+day on five Google-encoded renders, `ftyp uuid moov free mdat` in,
+`ftyp moov mdat` out. Any way of dropping the sound does this, ffmpeg
+included; the film download, a join in the browser, already dropped it
+from every film of two beats or more.
+Every other gemini-omni and minimax-h3 clip is stored as it came. Option B
+below (mark on delivery ourselves) is what restores it, and the duty applies
+from 2 December 2026.
+
 ### Two corrections to the 2026-09-03 table
 
 **gemini-omni was recorded as unmarked, and it is marked.** There is exactly

@@ -22,7 +22,10 @@ describe("the film's download", () => {
   it("joins the rendered beats the reel plays, in order, and hands over one file", () => {
     expect(download).toContain("if (filmFileBusy || !reelReady) return;");
     expect(download).toMatch(/reelShots\.map\(async \(shot\) => \{\s*const res = await fetch\(shot\.resultUrl!\);\s*if \(!res\.ok\) throw new Error/);
-    expect(download).toContain("const joined = joinMp4(parts);");
+    // Picture only: a film is silent until it is dubbed, and older beats
+    // that still speak join with the silent ones (2026-09-25).
+    expect(download).toContain("const joined = joinMp4(parts, { sound: false });");
+    expect(download).not.toContain("joinMp4(parts);");
     expect(download).toContain('new Blob([joined.bytes as Uint8Array<ArrayBuffer>], { type: "video/mp4" })');
     expect(download).toContain('a.download = `${(title || "set").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-film.mp4`;');
     expect(download).toContain("setTimeout(() => URL.revokeObjectURL(href), 60_000);");
@@ -41,6 +44,10 @@ describe("the film's download", () => {
     expect(dock).toContain("{filmFileBusy ? s.filmDownloading : `↓ ${s.filmDownload}`}");
     const reel = between("{reel !== null && reelReady && reelShots[reel] && (", "{/* A still in the stage's place");
     expect(reel).toContain("onClick={() => void downloadFilm()}");
+    // The reel plays silent too, so no older beat's voice cuts in.
+    expect(reel).toMatch(/<video\s[\s\S]*?\bmuted\b[\s\S]*?\/>/);
+    // On the reel's own element, before it closes.
+    expect(reel).toMatch(/<video\s(?:(?!\/>)[\s\S])*\bmuted\b/);
     expect(reel).toContain("{filmFileBusy ? s.filmDownloading : `↓ ${s.filmDownload}`}");
     expect(view).toContain('import { joinMp4 } from "@/lib/media/mp4-join";');
   });

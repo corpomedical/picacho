@@ -120,6 +120,11 @@ export function assignedVoiceFor(
  * This is why a delivered clip's voice cannot be inferred from what we
  * REQUESTED. On these two, asking for silence and getting it are different
  * things, and the row has to say which happened.
+ *
+ * Since 2026-09-25 a lane can ask the runner to take that sound out of the
+ * stored file instead (job payload voice.dropEngineAudio; Helios takes,
+ * "silent now, dubbed later"), and the row then says `silent` only when the
+ * stored file was checked to carry no sound track (fileSilent below).
  */
 export const ALWAYS_SPEAKS: readonly string[] = ["minimax-h3", "gemini-omni"];
 
@@ -151,8 +156,16 @@ export function voiceSourceFor(input: {
    * is audible, and that is the one worth counting.
    */
   keepsSourceAudio?: boolean;
+  /**
+   * The stored file was checked to carry no sound track: the engine's own
+   * was taken out after the render (job-runner.ts, core.ts persistVideo,
+   * 2026-09-25). A fact about the file rather than about the request, so it
+   * outranks everything but our own voice.
+   */
+  fileSilent?: boolean;
 }): VoiceSource {
   if (input.spoke) return "character";
+  if (input.fileSilent) return "silent";
   if (input.keepsSourceAudio) return "source";
   return engineAudioReaches(input.modelId, input.nativeAudioRequested) ? "engine" : "silent";
 }

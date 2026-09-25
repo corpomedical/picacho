@@ -194,14 +194,33 @@ describe("voiceSourceFor", () => {
     ).toBe("character");
   });
 
+  // A Helios take on an engine with no switch (2026-09-25): the runner took
+  // the engine's sound out of the stored file and checked it.
+  it("calls a take silent when its stored file was checked to carry no sound", () => {
+    for (const modelId of ["gemini-omni", "minimax-h3"]) {
+      expect(voiceSourceFor({ spoke: false, modelId, nativeAudioRequested: false, fileSilent: true })).toBe("silent");
+    }
+  });
+
+  it("still reports our own voice over a file said to be silent", () => {
+    expect(voiceSourceFor({ spoke: true, modelId: "gemini-omni", nativeAudioRequested: false, fileSilent: true })).toBe("character");
+  });
+
+  it("leaves Omni's take the engine's unless the file was checked", () => {
+    expect(voiceSourceFor({ spoke: false, modelId: "gemini-omni", nativeAudioRequested: false, fileSilent: false })).toBe("engine");
+    expect(voiceSourceFor({ spoke: false, modelId: "gemini-omni", nativeAudioRequested: false })).toBe("engine");
+  });
+
   it("never reports anything outside the four the column allows", () => {
     for (const spoke of [true, false]) {
       for (const nativeAudioRequested of [true, false]) {
         for (const keepsSourceAudio of [true, false]) {
-          for (const modelId of ["veo", "minimax-h3", "unknown-model", ""]) {
-            expect(
-              isVoiceSource(voiceSourceFor({ spoke, modelId, nativeAudioRequested, keepsSourceAudio })),
-            ).toBe(true);
+          for (const fileSilent of [true, false]) {
+            for (const modelId of ["veo", "minimax-h3", "gemini-omni", "unknown-model", ""]) {
+              expect(
+                isVoiceSource(voiceSourceFor({ spoke, modelId, nativeAudioRequested, keepsSourceAudio, fileSilent })),
+              ).toBe(true);
+            }
           }
         }
       }
@@ -239,6 +258,40 @@ describe("the microphone rule and the record agree", () => {
     // The lane stopped reading the sound preference when the rule landed;
     // a reintroduced read would mean the setting silently does nothing.
     expect(actions).not.toContain("generateNativeAudio: videoSound");
+  });
+
+  // A Helios take on an engine with no switch has its sound taken out of the
+  // stored file (2026-09-25, "silent now, dubbed later"). The lane asks; the
+  // runner does it, names no lane, and says silent only for a checked file.
+  const runner = read("job-runner.ts");
+
+  it("asks for the engine's sound out only on a Helios take, on an engine that cannot be silenced", () => {
+    expect(actions).toContain('const heliosTake = contentType === "video" && serverBuiltFrames();');
+    expect(actions).toContain(
+      "...(heliosTake && !wantsDialogue && ALWAYS_SPEAKS.includes(videoModelId) ? { dropEngineAudio: true } : {}),",
+    );
+    // Right beside the record of what the engine was asked for.
+    const pinned = actions.indexOf("nativeAudio: !wantsDialogue && !character && videoSound !== false,");
+    const asked = actions.indexOf("{ dropEngineAudio: true }");
+    expect(pinned).toBeGreaterThan(-1);
+    expect(asked).toBeGreaterThan(pinned);
+    expect(actions.slice(pinned, asked)).not.toContain("}),");
+  });
+
+  it("takes the sound out where the clip is stored, never on a run our dialogue re-voices", () => {
+    expect(runner).toContain("const dropSound = row.payload.voice?.dropEngineAudio === true && !wantsDialogue;");
+    expect(runner).toContain("await persistVideo(admin, userId, providerVideoUrl, { dropSound })");
+    expect(runner).toContain("const fileSilent = dropSound && persisted?.silent === true;");
+    expect(runner.indexOf("const wantsDialogue = Boolean(")).toBeLessThan(runner.indexOf("const dropSound = "));
+  });
+
+  it("records silent only for a stored file that was checked", () => {
+    expect(runner).toContain('fileSilent: outcome.status === "succeeded" && outcome.fileSilent === true');
+    expect(runner).toContain("fileSilent: salvageUrl === collectedVideoUrl && collectedSilent,");
+  });
+
+  it("keeps the runner lane-neutral", () => {
+    expect(runner).not.toMatch(/helios|takeInSet/i);
   });
 });
 

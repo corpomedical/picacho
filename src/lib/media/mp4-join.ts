@@ -52,11 +52,28 @@
 // padded end) is never kept before another beat: it decodes to a whole
 // frame, which would run over.
 //
+// SOUND OFF (2026-09-25). Helios takes are silent until they are dubbed
+// (operator, 2026-09-23: "silent now, dubbed later"), but Gemini Omni, the
+// default take engine, has no switch for its own invented voice, and a
+// film's older beats still carry it. So a join can leave every sound track
+// out ({ sound: false }) and withoutSoundMp4 silences one clip the same way:
+// the sound tracks are dropped before anything is compared or written, and
+// the picture's samples are copied as they are, with no re-encode, which is
+// why it runs in the browser and in any server function (ffmpeg is traced
+// into only a few routes, next.config.ts). As with any join, only ftyp, moov
+// and mdat are written, so a provider's C2PA manifest (a top-level uuid box;
+// Gemini Omni's among them, docs/AI_ACT_MARKING.md) does not survive.
+//
 // Pure, relative-import only, Uint8Array in and out: the browser and the
 // tests run the same code. Never throws.
 
+export type JoinOptions = {
+  /** false leaves every sound track out and joins the picture alone. */
+  sound?: boolean;
+};
+
 export type JoinResult =
-  | { ok: true; bytes: Uint8Array; seconds: number }
+  | { ok: true; bytes: Uint8Array; seconds: number; soundDropped: boolean }
   | { ok: false; reason: "empty" | "unreadable" | "different" | "short-sound" };
 
 type Box = { type: string; start: number; body: number; end: number };
@@ -563,24 +580,52 @@ function keptCounts(parsed: FileIn[]): number[][] | null {
 
 /**
  * The clips as one MP4, when they can be joined as they are. A single clip
- * comes back as it is; no clip, or clips that differ, are refused.
+ * comes back as it is; no clip, or clips that differ, are refused. With
+ * `{ sound: false }` every sound track is left out first, so clips with and
+ * without sound join as picture alone, and a single clip that had sound is
+ * written again without it.
  */
-export function joinMp4(files: readonly Uint8Array[]): JoinResult {
+export function joinMp4(files: readonly Uint8Array[], options: JoinOptions = {}): JoinResult {
   try {
-    return join(files);
+    return join(files, options.sound !== false);
   } catch {
     // An allocation the browser refuses, or anything else unforeseen.
     return { ok: false, reason: "unreadable" };
   }
 }
 
-function join(files: readonly Uint8Array[]): JoinResult {
+/**
+ * One clip with its sound tracks taken out, the picture's samples copied as
+ * they are (a Helios take, "silent now, dubbed later", 2026-09-25). A clip
+ * with no sound comes back as the same bytes. Refuses what a join would
+ * refuse to read, and a clip with no picture to keep; never throws.
+ */
+export function withoutSoundMp4(bytes: Uint8Array): { ok: true; bytes: Uint8Array; hadSound: boolean } | { ok: false; reason: "unreadable" } {
+  const out = joinMp4([bytes], { sound: false });
+  if (!out.ok) return { ok: false, reason: "unreadable" };
+  return { ok: true, bytes: out.bytes, hadSound: out.soundDropped };
+}
+
+function join(files: readonly Uint8Array[], keepSound: boolean): JoinResult {
   if (files.length === 0) return { ok: false, reason: "empty" };
   let parsed: FileIn[];
   try {
     parsed = files.map(readFile);
   } catch {
     return { ok: false, reason: "unreadable" };
+  }
+  // Sound off: every sound track is left out here, before anything below
+  // compares, cuts or writes, so the rest of the join sees picture alone
+  // and numbers the tracks it keeps from 1.
+  let soundDropped = false;
+  if (!keepSound) {
+    parsed = parsed.map((file) => {
+      const tracks = file.tracks.filter((t) => t.handler !== "soun");
+      if (tracks.length !== file.tracks.length) soundDropped = true;
+      return { ...file, tracks };
+    });
+    // A sound-only file has no picture to keep.
+    if (parsed.some((file) => file.tracks.length === 0)) return { ok: false, reason: "unreadable" };
   }
   const first = parsed[0];
   const movieTs = first.movieTimescale;
@@ -590,7 +635,9 @@ function join(files: readonly Uint8Array[]): JoinResult {
         t.edit ? t.edit.duration / file.movieTimescale : t.samples.reduce((n, x) => n + x.delta, 0) / t.timescale,
       ),
     );
-  if (parsed.length === 1) return { ok: true, bytes: files[0], seconds: secondsOf(first) };
+  // A single clip is handed back as it is, unless its sound was just left
+  // out: then it is written again below, as a one-clip join.
+  if (parsed.length === 1 && !soundDropped) return { ok: true, bytes: files[0], seconds: secondsOf(first), soundDropped: false };
 
   // The same tracks, set up the same way.
   for (const file of parsed.slice(1)) {
@@ -732,5 +779,5 @@ function join(files: readonly Uint8Array[]): JoinResult {
     const sample = parsed[p.file].tracks[p.track].samples[p.index];
     out.set(parsed[p.file].bytes.subarray(sample.offset, sample.offset + sample.size), newOffset[p.file][p.track][p.index]);
   }
-  return { ok: true, bytes: out, seconds: movieDuration / movieTs };
+  return { ok: true, bytes: out, seconds: movieDuration / movieTs, soundDropped };
 }

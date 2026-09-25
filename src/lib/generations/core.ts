@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/server";
 import { mediaUrl } from "@/lib/media/url";
 import { faststartRemux } from "@/lib/media/faststart";
+import { withoutSoundMp4 } from "@/lib/media/mp4-join";
 import { PLAN_LABELS, PLAN_LIMITS, onDailyFreeTier, freeSlotOpen, spendableCredits, type PlanId } from "@/lib/plans";
 import { FREE_TIER_GENERATION_CREDITS } from "@/lib/generations/providers/video-models";
 
@@ -503,6 +504,29 @@ export async function persistGeneratedVideo(
   userId: string,
   providerUrl: string,
 ): Promise<string | null> {
+  return (await persistVideo(supabase, userId, providerUrl))?.url ?? null;
+}
+
+/** A video stored in our bucket, and whether the stored file was checked to carry no sound track. */
+export type PersistedVideo = { url: string; silent: boolean };
+
+/**
+ * persistGeneratedVideo, and able to store the clip without its sound
+ * (2026-09-25). A lane asks for that when its engine has no switch for its
+ * own invented voice (voice-lock.ts ALWAYS_SPEAKS; a Helios take on Gemini
+ * Omni, "silent now, dubbed later"): the sound tracks are left out with no
+ * re-encode (media/mp4-join.ts withoutSoundMp4), in any server function,
+ * since ffmpeg is traced into only a few routes. `silent` is true only when
+ * that was done. A file the remux cannot read is stored as it came, with
+ * its sound, and says so: a paid clip is never lost over its sound. Every
+ * other failure is persistGeneratedVideo's own, null.
+ */
+export async function persistVideo(
+  supabase: SupabaseClient,
+  userId: string,
+  providerUrl: string,
+  options: { dropSound?: boolean } = {},
+): Promise<PersistedVideo | null> {
   try {
     // Bounded: this runs while the caller holds the 90s advance claim, and a
     // download that outlives the lease invites a second caller to re-collect
@@ -528,6 +552,20 @@ export async function persistGeneratedVideo(
       return null;
     }
 
+    // The engine's own sound out, when the lane asked (above). The picture's
+    // samples are copied as they are; only the index is written anew.
+    let body: Uint8Array = bytes;
+    let silent = false;
+    if (options.dropSound) {
+      const out = withoutSoundMp4(bytes);
+      if (out.ok) {
+        body = out.bytes;
+        silent = true;
+      } else {
+        console.warn("persistVideo: couldn't take the sound out; storing the clip as it came.");
+      }
+    }
+
     // Move the moov index to the front while the whole file is in hand
     // (2026-09-05 slowness check: some providers deliver it at the TAIL, so
     // playback — and every posterless <video preload="metadata"> — paid a
@@ -536,7 +574,7 @@ export async function persistGeneratedVideo(
     // returns null for anything it isn't certain about (already-faststarted
     // files included) and the original bytes ship unchanged — a video that
     // starts one trip slower beats any risk to a render someone paid for.
-    const arranged = faststartRemux(bytes) ?? bytes;
+    const arranged = faststartRemux(body) ?? body;
 
     const contentType = res.headers.get("content-type") ?? "video/mp4";
     // .mov only when the provider says so — ModelArk's 2.5 can return it.
@@ -550,7 +588,7 @@ export async function persistGeneratedVideo(
       console.warn(`persistGeneratedVideo: upload failed (${error.message}); keeping their URL.`);
       return null;
     }
-    return mediaUrl("generated-videos", path);
+    return { url: mediaUrl("generated-videos", path), silent };
   } catch (err) {
     console.warn(
       `persistGeneratedVideo: ${err instanceof Error ? err.message : String(err)}; keeping their URL.`,

@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
-import { joinMp4 } from "./mp4-join";
+import { joinMp4, withoutSoundMp4 } from "./mp4-join";
 
 // Joining clips into one MP4 without re-encoding (Helios Film, "Download as
 // one file", canvas page H: "that stitch is the one link to prove before
@@ -519,6 +519,48 @@ describe.skipIf(!ffmpeg)("joinMp4, read back by ffmpeg", { timeout: 60_000 }, ()
     // Every frame's length, the delay before the first picture included.
     expect(joined.seconds).toBeCloseTo((out.length * 512) / 12288, 3);
   });
+
+  // Sound off (2026-09-25): a Helios take is stored without the engine's
+  // invented voice, and a film joins picture alone, "silent now, dubbed
+  // later" (operator, 2026-09-23).
+  it("takes one clip's sound out and keeps every frame of its picture as it was", () => {
+    const silent = joinMp4([SHOW], { sound: false });
+    expect(silent.ok).toBe(true);
+    if (!silent.ok) return;
+    expect(silent.soundDropped).toBe(true);
+    const picture = packets(SHOW).filter((p) => p.stream === 0);
+    const out = packets(silent.bytes);
+    expect(out.every((p) => p.stream === 0)).toBe(true);
+    expect(out.map((p) => [p.size, p.hash, p.dts, p.pts])).toEqual(picture.map((p) => [p.size, p.hash, p.dts, p.pts]));
+    expect(decodeErrors(silent.bytes)).toBe("");
+    expect(silent.seconds).toBeCloseTo((121 * 512) / 12288, 3);
+    // Wherever the picture's track was: sound first, as some engines write it.
+    const swapped = joinMp4([soundFirst(SHOW)], { sound: false });
+    expect(swapped.ok && packets(swapped.bytes).map((p) => [p.stream, p.hash])).toEqual(picture.map((p) => [0, p.hash]));
+  });
+
+  it("joins a speaking clip with a silent one as picture alone, which it refuses with the sound on", () => {
+    // A film whose older beats still carry the engine's voice, beside new
+    // silent ones: SHOW has AAC, SHOW2 none.
+    const joined = joinMp4([SHOW, SHOW2], { sound: false });
+    expect(joined.ok).toBe(true);
+    if (!joined.ok) return;
+    expect(joined.soundDropped).toBe(true);
+    const out = packets(joined.bytes);
+    expect(out.some((p) => p.stream === 1)).toBe(false);
+    expect(out.map((p) => p.hash)).toEqual([...packets(SHOW).filter((p) => p.stream === 0), ...packets(SHOW2)].map((p) => p.hash));
+    expect(decodeErrors(joined.bytes)).toBe("");
+    expect(joinMp4([SHOW, SHOW2])).toEqual({ ok: false, reason: "different" });
+  });
+
+  it("refuses a clip with no picture to keep", () => {
+    const soundOnly = asFile(SHOW, (file, dir) => {
+      const out = join(dir, "sound.mp4");
+      execFileSync(ffmpeg!, ["-hide_banner", "-loglevel", "error", "-i", file, "-vn", "-c", "copy", out]);
+      return new Uint8Array(readFileSync(out));
+    });
+    expect(withoutSoundMp4(soundOnly)).toEqual({ ok: false, reason: "unreadable" });
+  });
 });
 
 describe("joinMp4", () => {
@@ -665,5 +707,41 @@ describe("joinMp4", () => {
     const before = Array.from(HERO.subarray(0, 4096));
     joinMp4([HERO, HERO2]);
     expect(Array.from(HERO.subarray(0, 4096))).toEqual(before);
+  });
+
+  it("says when it left sound out, and only then", () => {
+    const joined = joinMp4([HERO, HERO2]);
+    expect(joined.ok && joined.soundDropped).toBe(false);
+    // Asked to leave out sound a clip never had: nothing was dropped.
+    const quiet = joinMp4([HERO, HERO2], { sound: false });
+    expect(quiet.ok && quiet.soundDropped).toBe(false);
+  });
+});
+
+describe("withoutSoundMp4", () => {
+  it("hands a clip with no sound back as it is", () => {
+    const out = withoutSoundMp4(HERO);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.hadSound).toBe(false);
+    expect(out.bytes).toBe(HERO);
+  });
+
+  it("writes a clip with sound again as picture alone: one track, index first, the clip untouched", () => {
+    const before = SHOW.slice();
+    const out = withoutSoundMp4(SHOW);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.hadSound).toBe(true);
+    expect(topLevel(out.bytes).map((x) => x.type)).toEqual(["ftyp", "moov", "mdat"]);
+    expect(boxesInMoov(out.bytes, "trak")).toHaveLength(1);
+    expect(boxesInMoov(out.bytes, "smhd")).toHaveLength(0);
+    expect(Buffer.compare(Buffer.from(SHOW), Buffer.from(before))).toBe(0);
+  });
+
+  it("refuses what it cannot read, and never throws", () => {
+    expect(withoutSoundMp4(new TextEncoder().encode("not a video at all, just words"))).toEqual({ ok: false, reason: "unreadable" });
+    expect(withoutSoundMp4(new Uint8Array(0))).toEqual({ ok: false, reason: "unreadable" });
+    expect(withoutSoundMp4(SHOW.slice(0, SHOW.length - 1000))).toEqual({ ok: false, reason: "unreadable" });
   });
 });

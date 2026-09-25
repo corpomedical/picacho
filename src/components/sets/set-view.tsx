@@ -6167,9 +6167,9 @@ export function SetView({
   /**
    * The film as one file (canvas page H, "Download as one file"): the
    * rendered beats fetched and joined in the browser as they are, with no
-   * re-encode (mp4-join.ts). Beats rendered in different formats, or whose
-   * sound stops short of the picture, cannot be joined that way: the dock
-   * says which, and they stay in History one by one.
+   * re-encode (mp4-join.ts), picture only: a film is silent until it is
+   * dubbed (2026-09-25). Beats rendered in different formats cannot be
+   * joined that way: the dock says so, and they stay in History one by one.
    */
   async function downloadFilm() {
     if (filmFileBusy || !reelReady) return;
@@ -6183,7 +6183,11 @@ export function SetView({
           return new Uint8Array(await res.arrayBuffer());
         }),
       );
-      const joined = joinMp4(parts);
+      // Films are silent until they are dubbed (operator, 2026-09-23:
+      // "silent now, dubbed later"). Clips rendered before 2026-09-25 still
+      // carry the engine's voice; leaving every sound track out joins them
+      // with the silent ones, with no sound cut at each beat.
+      const joined = joinMp4(parts, { sound: false });
       if (!joined.ok) {
         setFilmError(
           joined.reason === "different"
@@ -8198,12 +8202,14 @@ export function SetView({
                       className="overflow-hidden"
                       style={band ? { aspectRatio: String(band), width: `min(100cqw, ${band} * 100cqh)` } : { width: "100%", height: "100%" }}
                     >
+                      {/* The film plays silent until it is dubbed, and older clips still speak (2026-09-25). */}
                       <video
                         ref={(el) => {
                           reelVideosRef.current[i] = el;
                         }}
                         src={shot.resultUrl ?? undefined}
                         preload="auto"
+                        muted
                         playsInline
                         onPlaying={() => setReelWaiting(false)}
                         onTimeUpdate={(e) => {

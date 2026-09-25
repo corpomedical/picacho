@@ -105,7 +105,7 @@ import {
   readIdentityThreshold,
   VIDEO_FACE_REFUND_FLAG,
 } from "@/lib/generations/face-lock";
-import { isVoiceSource, speechSeedFor, type VoiceSource } from "@/lib/generations/voice-lock";
+import { ALWAYS_SPEAKS, isVoiceSource, speechSeedFor, type VoiceSource } from "@/lib/generations/voice-lock";
 import { OPENING_FRAME_FLAG, openingFrameApplies, openingFramePath } from "@/lib/generations/opening-frame";
 import {
   makeOpeningFrame,
@@ -1217,6 +1217,13 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     }
     videoDurationSeconds = storyboardShots.reduce((n, s) => n + s.seconds, 0);
   }
+
+  // A Helios take (sets/actions.ts takeInSet): the one caller that marks
+  // its frames in server memory (server-built.ts), never through a form
+  // field, so no request can claim to be one. Its clip is stored without
+  // the engine's own voice where the engine cannot be switched off (the
+  // voice payload below, 2026-09-25).
+  const heliosTake = contentType === "video" && serverBuiltFrames();
 
   // Aspect ratio — resolution order (real incident, 2026-08-07: a user typed
   // "16:9, no side bars" into their prompt and still got a pillarboxed video,
@@ -2413,6 +2420,12 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
             // row would record `engine` for a clip the engine was never
             // allowed to speak on.
             nativeAudio: !wantsDialogue && !character && videoSound !== false,
+            // A take always has its character, so the engine is never asked
+            // for sound; only the engines with no switch still speak, and
+            // the runner takes theirs out of the stored file ("silent now,
+            // dubbed later", operator 2026-09-23). videoModelId is the final
+            // model, after the circuit breaker.
+            ...(heliosTake && !wantsDialogue && ALWAYS_SPEAKS.includes(videoModelId) ? { dropEngineAudio: true } : {}),
           },
           // So finish() knows there are opening frames to remove once the
           // clip lands (opening-frame.ts, openingFramePath).
