@@ -24,6 +24,7 @@ export function creditsWord(copy: Pick<Reply, "creditOne" | "creditsN">, n: numb
 
 export function AstraChangeCard({
   words,
+  cut: wasCut = false,
   editsLeft,
   editsCap,
   tooBig,
@@ -37,6 +38,12 @@ export function AstraChangeCard({
 }: {
   /** The person's own words asking for the change: quoted as Astra will read them. */
   words: string;
+  /**
+   * The words handed in were already cut to what Astra reads (reader v2's
+   * set_change, shot-reading.ts): the card says so, since it can't see the
+   * rest to work it out (review of Cut 2, W2).
+   */
+  cut?: boolean;
   /** The month's changes left; null for no cap (admins) or a count that could not be read. */
   editsLeft: number | null;
   /** The plan's changes a month (set-config.ts setEditsMonthlyLimit): −1 for no cap. */
@@ -57,13 +64,18 @@ export function AstraChangeCard({
 }) {
   const kind = astraCardKind({ editsLeft, editsCap, tooBig });
   // One sentence for the card and the chat's reply (astra-card.ts astraCardLine): the person's words go in last.
-  const { cut } = astraCardWords(words);
+  const cut = wasCut || astraCardWords(words).cut;
   const line = astraCardLine(copy, { kind, words, editsLeft, editsCap, build: buildLabel });
   const canGo = astraCardCanGo(kind);
   return (
     <div className="space-y-2.5 rounded-[14px] bg-[rgba(255,255,255,0.05)] p-3.5 ring-1 ring-[rgba(240,196,142,0.3)]" data-astra-card={kind}>
       <p className="text-sm leading-relaxed text-[#d6d9e0]">{line}</p>
-      {cut && <p className="text-xs text-[#c6c9d1]">{formatMsg(copy.replyCutMessage, { n: SET_EDIT_MAX_CHARS })}</p>}
+      {/* What Astra is sent, not what the chat read (600): "Astra gets only the first 300 characters" (review of Cut 2, W3). */}
+      {cut && (
+        <p className="text-xs text-[#c6c9d1]" data-astra-cut>
+          {formatMsg(copy.astraCutMessage, { n: SET_EDIT_MAX_CHARS })}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         {canGo && (
           <button

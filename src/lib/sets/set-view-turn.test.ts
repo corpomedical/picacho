@@ -342,6 +342,16 @@ describe("the chat's turn engine", () => {
     expect(view).toContain("stageHoldRef.current = () => keepStage(true, false);");
   });
 
+  it("says what a reply's press really did: a failed Astra undo is kept to try again, a moved price says so (review of Cut 2, W7, W16)", () => {
+    const failed = undoTurn.slice(undoTurn.indexOf("if (u.astra) {"));
+    expect(failed).toContain('pageNotes.push({ kind: "undoAstraFailed" });');
+    expect(failed).toContain("if (top) turnUndoRef.current = [...turnUndoRef.current, { ...top, before: restored, after: restored }].slice(-TURN_UNDO_MAX);");
+    const reprice = bodyOf("  function repriceTurn(turn: ChatTurn) {");
+    expect(reprice).toContain('return { ...model, lines: [{ kind: "note", text: replyWords.reply.replyRepriced, buttons: [] }, ...model.lines] };');
+    // The help answer knows whose take is waiting (W6).
+    expect(bodyOf("  function replyFactsOf(st: TurnState, shot: ShootDecision | null): ReplyFacts {")).toContain("takeArmedBy: st.takeStart?.armedBy ?? null,");
+  });
+
   it("says a decided shot that could not start, with Shoot as it is at its price, and never a card again", () => {
     expect(view).toContain("if (!sent) dueNotStarted(due);");
     expect(notStarted).toContain('needs: x.plan.needs.filter((n) => n.kind === "take" || n.kind === "takeFormat")');

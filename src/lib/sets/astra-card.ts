@@ -13,8 +13,8 @@
 // Pure and client-safe, relative imports only: astra-change-card.tsx draws
 // it, the tests read it.
 
-import { formatMsg } from "../i18n/format";
 import type { Messages } from "../i18n/messages/en";
+import { fill } from "./fill";
 import { SET_EDIT_MAX_CHARS, SET_EDIT_MAX_SPEC_CHARS } from "./set-config";
 import { cleanText, type SetSpec } from "./set-spec";
 
@@ -61,8 +61,9 @@ export function astraTooBig(spec: SetSpec): boolean {
 
 /**
  * The card's sentence in the person's language: the kind's own wording,
- * with the words Astra will read quoted (astraCardWords). The person's
- * words go in last, so a "{n}" they typed is never taken for a number. The
+ * with the words Astra will read quoted (astraCardWords). Filled in one
+ * pass (fill.ts), so a "{n}" or a "$&" they typed is quoted as they typed it
+ * (review of Cut 2, W4: formatMsg read "$'" in their words as a pattern). The
  * card (astra-change-card.tsx) and the chat's reply (turn-reply.ts) both
  * say it through here, so they can never say it differently.
  */
@@ -73,16 +74,16 @@ export function astraCardLine(
   const words = astraCardWords(input.words).quoted;
   switch (input.kind) {
     case "none":
-      return formatMsg(copy.astraNone, { build: input.build, words });
+      return fill(copy.astraNone, { build: input.build, words });
     case "tooBig":
-      return formatMsg(copy.astraTooBig, { build: input.build, words });
+      return fill(copy.astraTooBig, { build: input.build, words });
     case "askOpen":
-      return formatMsg(copy.astraAskOpen, { words });
+      return fill(copy.astraAskOpen, { words });
     case "askUnknown":
-      return formatMsg(copy.astraAskUnknown, { cap: input.editsCap, words });
+      return fill(copy.astraAskUnknown, { cap: input.editsCap, words });
     case "askLast":
-      return formatMsg(copy.astraAskLast, { words });
+      return fill(copy.astraAskLast, { words });
     case "ask":
-      return formatMsg(copy.astraAsk, { n: input.editsLeft ?? 0, words });
+      return fill(copy.astraAsk, { n: input.editsLeft ?? 0, words });
   }
 }

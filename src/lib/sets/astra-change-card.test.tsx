@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import en from "../i18n/messages/en";
 import es from "../i18n/messages/es";
@@ -139,7 +141,21 @@ describe("the card quotes only what Astra will read (check of the spec, item 9)"
     const html = text(draw({ words: long }));
     expect(html).toContain(`“${quoted}”`);
     expect(html).not.toContain("and the end");
-    expect(html).toContain(formatMsg(en.sets.reply.replyCutMessage, { n: SET_EDIT_MAX_CHARS }));
+    // Astra's own limit, not the reader's 600 (review of Cut 2, W3).
+    expect(html).toContain(formatMsg(en.sets.reply.astraCutMessage, { n: SET_EDIT_MAX_CHARS }));
+    expect(html).not.toContain(formatMsg(en.sets.reply.replyCutMessage, { n: SET_EDIT_MAX_CHARS }));
+  });
+
+  // Review of Cut 2, W2 (2026-09-25): reader v2 hands the card words already
+  // cut to 300, so the card could never see the cut on its own.
+  it("says the cut when the words it is handed were already cut", () => {
+    const cutAlready = astraCardWords(`${"make the barriers brick red and ".repeat(15)}and the end`).quoted;
+    expect(astraCardWords(cutAlready).cut).toBe(false);
+    expect(text(draw({ words: cutAlready }))).not.toContain(formatMsg(en.sets.reply.astraCutMessage, { n: SET_EDIT_MAX_CHARS }));
+    expect(text(draw({ words: cutAlready, cut: true }))).toContain(formatMsg(en.sets.reply.astraCutMessage, { n: SET_EDIT_MAX_CHARS }));
+    // And the page hands v2's cut to it.
+    const view = readFileSync(join(__dirname, "../../components/sets/set-view.tsx"), "utf8");
+    expect(view).toContain("words={card.said}\n                                  cut={card.cut}");
   });
 
   it("a message that fits is quoted whole, as editSetWithAstra cleans it, with no cut line", () => {
@@ -149,6 +165,15 @@ describe("the card quotes only what Astra will read (check of the spec, item 9)"
 
   it("a person's own braces are never taken for a number", () => {
     expect(text(draw({ words: "call it {n} flags" }))).toContain("“call it {n} flags”");
+  });
+
+  // Review of Cut 2, W4 (2026-09-25): replaceAll read "$'", "$&" and "$$" in their words as patterns.
+  it("quotes dollar signs as they were typed", () => {
+    for (const words of ["make the neon sign read '$' in red", "a price board with $$ signs", "a sign that says $& off"]) {
+      const said = text(draw({ words }));
+      expect(said, words).toContain(`“${words}”`);
+      expect(said.split("“").length, words).toBe(2);
+    }
   });
 });
 

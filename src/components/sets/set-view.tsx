@@ -6865,6 +6865,7 @@ export function SetView({
       spot: { spot: cameraSpotOf(st.camera, st.mark), facingDeg: st.mark.facingDeg, sensorHeightMm: sensorMm },
       credits: pageCredits,
       takeEngine: st.takeEngine,
+      takeArmedBy: st.takeStart?.armedBy ?? null,
       takeFrom: st.takeStart?.n ?? pickTakeStart(planShots, st.characterId, st.rig.format)?.n ?? null,
       newestStill: lookShotNow ? stillNumber(lookShotNow) : null,
       lastStill: newest
@@ -7449,6 +7450,13 @@ export function SetView({
         const back = await undoSetEdit(true);
         if (back === "textKept") pageNotes.push({ kind: "undoAstraText" });
         else if (back === "undone") pageNotes.push({ kind: "undoAstra" });
+        else {
+          // The set change is still there (the undo refused, or never came
+          // back): said so, and kept to undo again — from the stage as it
+          // stands now, so trying again moves nothing else (review of Cut 2, W7).
+          pageNotes.push({ kind: "undoAstraFailed" });
+          if (top) turnUndoRef.current = [...turnUndoRef.current, { ...top, before: restored, after: restored }].slice(-TURN_UNDO_MAX);
+        }
       }
       if (u.stillsStay) pageNotes.push({ kind: "stillsStay" });
     }
@@ -7503,7 +7511,12 @@ export function SetView({
       needs: turn.plan.needs.map((n) => (n.kind === "take" ? { ...n, engine: takeEngine, credits: pageCredits.take[takeEngine] } : n)),
       suggestions: turn.plan.suggestions.map((sg, i) => ({ ...sg, second: secondNow(turn, i) })),
     };
-    setTurns((prev) => prev.map((x) => (x.id === turn.id ? { ...x, plan, facts, reply: composeReply(plan, x.outcomes, facts, replyWords) } : x)));
+    // Said, not silent: the press spent nothing, and why (review of Cut 2, W16).
+    const said = (x: ChatTurn): ReplyModel => {
+      const model = composeReply(plan, x.outcomes, facts, replyWords);
+      return { ...model, lines: [{ kind: "note", text: replyWords.reply.replyRepriced, buttons: [] }, ...model.lines] };
+    };
+    setTurns((prev) => prev.map((x) => (x.id === turn.id ? { ...x, plan, facts, reply: said(x) } : x)));
   }
 
   /**
@@ -9343,6 +9356,7 @@ export function SetView({
                               card && (
                                 <AstraChangeCard
                                   words={card.said}
+                                  cut={card.cut}
                                   editsLeft={editsLeft}
                                   editsCap={astraEditsCap}
                                   tooBig={astraTooBig(spec)}

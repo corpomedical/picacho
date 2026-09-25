@@ -892,4 +892,75 @@ describe("replies that say only what happened (review of Cut 2)", () => {
     const auto = stateOf({ mode: "auto" });
     expect(shootDecision(planTurn({ markId: "m2", near: { thing: { key: CAR.key }, side: "beside" } }, auto), auto).kind).toBe("none");
   });
+
+  it("a held shot is said by what held it: Try again alone, the chat's own take alone, or a part that isn't done (W1, understanding N1)", () => {
+    for (const l of LOCALES) {
+      const w = WORDS[l];
+      // Try again, with every step done: it only didn't shoot because Try again never does.
+      const retry = reply({ steps: ["closer"], shoot: true }, { source: "retry" }, { locale: l }, w).text;
+      expect(retry, l).toContain(w.reply.replyRetryHeld);
+      expect(retry, l).not.toContain(w.reply.replyHeldShot);
+      // "A bit closer" in Shoot without asking with the chat's take waiting: the take waits for its press.
+      const take = reply({ steps: ["closer"] }, { mode: "auto", takeStart: { id: "g-2", n: 2, armedBy: "chat" } }, { locale: l }, w).text;
+      expect(take, l).toContain(fill(w.reply.replyHeldTake, { take: w.reply.takeWord }));
+      expect(take, l).not.toContain(w.reply.replyHeldShot);
+      // A "not yet": part of it isn't done.
+      expect(reply({ shoot: true, cant: [{ code: "weather", said: null }] }, {}, { locale: l }, w).text, l).toContain(w.reply.replyHeldShot);
+    }
+  });
+
+  it("the figure is 'beside it' only when the turn put her by the thing (W5)", () => {
+    for (const l of LOCALES) {
+      const w = WORDS[l];
+      const beside = reply({ pose: "sit", near: { thing: { key: CAR.key }, side: "front" }, cant: [{ code: "raise_figure", said: null }] }, {}, { locale: l }, w).text;
+      const alone = reply({ pose: "sit", cant: [{ code: "raise_figure", said: null }] }, {}, { locale: l }, w).text;
+      expect(beside, l).toContain(fill(w.reply.cant.raise_figure, { name: "Marco" }).slice(1));
+      expect(alone, l).toContain(fill(w.reply.cantRaiseGround, { name: "Marco" }).slice(1));
+      expect(alone, l).not.toContain(fill(w.reply.cant.raise_figure, { name: "Marco" }).slice(1));
+      expectClean(alone, l);
+    }
+  });
+
+  it("the help in Shoot without asking prices the person's own take when it is set up (W6)", () => {
+    const auto = factsOf({ mode: "auto" });
+    expect(answerFor("help", auto, EN).text).toContain(`(${creditsLabel(EN.reply, CREDITS.still)})`);
+    const withTake = answerFor("help", { ...auto, takeArmedBy: "person" }, EN).text;
+    expect(withTake).toContain(`(as your take, ${creditsLabel(EN.reply, CREDITS.take.omni)})`);
+    // The chat's own take never renders on its own: the still's price.
+    expect(answerFor("help", { ...auto, takeArmedBy: "chat" }, EN).text).toContain(`(${creditsLabel(EN.reply, CREDITS.still)})`);
+    for (const l of LOCALES) expectClean(answerFor("help", { ...factsOf({ mode: "auto", locale: l }, WORDS[l]), takeArmedBy: "person" }, WORDS[l]).text, l);
+  });
+
+  it("an Undo whose Astra change could not be undone says so, never 'Undone: the last change.' (W7)", () => {
+    for (const l of LOCALES) {
+      const w = WORDS[l];
+      const plan = planTurn({ undo: true }, stateOf());
+      const text = replyText(composeReply(plan, { chips: [], notes: [{ kind: "undoAstraFailed" }] }, factsOf({ locale: l }, w), w));
+      expect(text, l).toContain(w.reply.noteUndoAstraFailed);
+      expect(text, l).not.toContain(w.reply.replyUndoneLast);
+    }
+  });
+
+  it("the weather line names the palette and the hour as this language's rig does (W9)", () => {
+    for (const l of LOCALES) {
+      const w = WORDS[l];
+      const text = cantLine("weather", null, factsOf({ locale: l }, w), w).text;
+      expect(text, l).toContain(w.rig.palettes["harbour-4am"]);
+      expect(text, l).toContain(w.rig.timePresets.night);
+      expect(text, l).not.toContain("Harbour 4am");
+      expectClean(text, l);
+    }
+  });
+
+  it("the reply's Astra line says Astra's own cut, not the reader's (W3)", () => {
+    const long = `${"make the barriers brick red and ".repeat(15)}and the end`;
+    const { text } = reply({ setChange: { said: long.slice(0, 300), gloss: null, cut: true } });
+    expect(text).toContain(fill(EN.reply.astraCutMessage, { n: 300 }));
+    expect(text).not.toContain(fill(EN.reply.replyCutMessage, { n: 300 }));
+  });
+
+  it("'turn left' says whose left: the figure's own (W10)", () => {
+    for (const l of LOCALES) expect(WORDS[l].reply.chips.turnWays.left, l).not.toBe(WORDS[l].reply.chips.turnWays.right);
+    expect(EN.reply.chips.turnWays.left).toBe("to their own left");
+  });
 });

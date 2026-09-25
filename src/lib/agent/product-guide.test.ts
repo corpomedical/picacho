@@ -51,7 +51,9 @@ describe("renderProductGuide", () => {
   // card that shows the month's changes; stills and takes are priced on
   // their buttons; and it shoots unasked only in "Shoot without asking".
   it("says where Helios is, and what the set's chat spends and when", () => {
-    expect(guide).toContain('"Helios 3D" behind the Tools door in the sidebar (/app/sets)');
+    // The sidebar's own word, as the Upscale line says it: never the design's "Tools door" (review of Cut 2, W15).
+    expect(guide).toContain('"Helios 3D" under "Tools" in the sidebar (/app/sets)');
+    expect(guide).not.toContain("Tools door");
     expect(guide).toContain('It never changes the set itself unless the person presses "Change the set" on a card that shows the month\'s changes left');
     expect(guide).toContain("stills and takes are priced on their buttons");
     expect(guide).toContain('it shoots on its own only in "Shoot without asking"');

@@ -36,6 +36,7 @@
 import { formatMsg } from "../i18n/format";
 import type { Messages } from "../i18n/messages/en";
 import { astraCardKind, astraCardLine, astraCardWords, type AstraCardKind } from "./astra-card";
+import { fill } from "./fill";
 import { nearestLens } from "./build-scene";
 import { rigCommandLabel, rigPatchFor, type RigCommandWords } from "./commands";
 import { setElements, type SetElement } from "./elements";
@@ -154,28 +155,8 @@ export function replyWordsOf(t: Messages): ReplyWords {
   };
 }
 
-/**
- * A template filled in ONE pass: each {key} is replaced by its value, and a
- * value is never read again — so a name, a quote or an idea holding "{n}"
- * stays as written. Unknown keys stay as they are (a test finds them).
- */
-export function fill(template: string, vars: Record<string, string | number>): string {
-  let out = "";
-  let at = 0;
-  while (at < template.length) {
-    const open = template.indexOf("{", at);
-    const close = open < 0 ? -1 : template.indexOf("}", open);
-    if (open < 0 || close < 0) {
-      out += template.slice(at);
-      break;
-    }
-    const key = template.slice(open + 1, close);
-    out += template.slice(at, open);
-    out += Object.prototype.hasOwnProperty.call(vars, key) ? String(vars[key]) : template.slice(open, close + 1);
-    at = close + 1;
-  }
-  return out;
-}
+/** The one-pass fill, shared with the Astra card (fill.ts): re-exported, so the page and the tests keep their import. */
+export { fill } from "./fill";
 
 /** Metres with at most one decimal, in the person's own number format (en 2.6, es/pt/it 2,6). */
 export function formatMetres(n: number, locale: string): string {
@@ -283,6 +264,12 @@ export type ReplyFacts = {
   spot?: { spot: CameraSpot; facingDeg: number; sensorHeightMm: number } | null;
   credits: { still: number; take: Record<SetTakeEngine, number> };
   takeEngine: SetTakeEngine;
+  /**
+   * Who set up the take waiting now, if one is: the PERSON's renders on
+   * its own in "Shoot without asking" (pressFor), so the help answer prices
+   * that (review of Cut 2, W6).
+   */
+  takeArmedBy?: "chat" | "person" | null;
   /** The still a take would start from now, by its number; null when none fits. */
   takeFrom: number | null;
   /** The newest still's number (a look of "newest"). */
@@ -351,6 +338,8 @@ export type PageNote =
   | { kind: "undoHand" }
   | { kind: "undoAstra" }
   | { kind: "undoAstraText" }
+  /** The turn's Astra change could not be undone: it is still there, and Undo can be tried again (review of Cut 2, W7). */
+  | { kind: "undoAstraFailed" }
   | { kind: "stillsStay" }
   | { kind: "undoNone" };
 
@@ -828,8 +817,19 @@ function cardThing(facts: Pick<ReplyFacts, "things">): ReplyThing | null {
   return facts.things.find((t) => t.kind === "car") ?? facts.things[0] ?? null;
 }
 
-/** Why a "not yet" item can't be done, where to do it now, and the button that goes there. */
-export function cantLine(code: CantCode, said: string | null, facts: ReplyFacts, words: ReplyWords): { text: string; buttons: ReplyButton[] } {
+/**
+ * Why a "not yet" item can't be done, where to do it now, and the button
+ * that goes there. `ran.near`: the turn placed her by a thing, so the
+ * figure left on the ground IS beside it; otherwise that is not said
+ * (review of Cut 2, W5).
+ */
+export function cantLine(
+  code: CantCode,
+  said: string | null,
+  facts: ReplyFacts,
+  words: ReplyWords,
+  ran: { near?: boolean } = {},
+): { text: string; buttons: ReplyButton[] } {
   const r = words.reply;
   const c = r.cant;
   const name = personOf(facts, words);
@@ -841,7 +841,7 @@ export function cantLine(code: CantCode, said: string | null, facts: ReplyFacts,
       buttons.push({ kind: "at", label: r.pickWithAt });
       break;
     case "raise_figure":
-      why = capital(fill(c.raise_figure, { name }));
+      why = capital(fill(ran.near ? c.raise_figure : r.cantRaiseGround, { name }));
       break;
     case "aim_thing":
       why = fill(c.aim_thing, { name });
@@ -854,6 +854,10 @@ export function cantLine(code: CantCode, said: string | null, facts: ReplyFacts,
       break;
     case "thing_unknown":
       why = fill(c.thing_unknown, { name });
+      break;
+    case "weather":
+      // The palette and the hour by their own names in this language (review of Cut 2, W9).
+      why = fill(c.weather, { night: words.rig.timePresets.night ?? "", palette: words.rig.palettes["harbour-4am"] });
       break;
     case "film_beats":
       why = fill(c.film_beats, { film: words.film });
@@ -993,7 +997,17 @@ export function answerFor(topic: AskTopic, facts: ReplyFacts, words: ReplyWords)
     case "help":
       // What it says about money depends on the mode (check of the spec, item 5): in
       // "Shoot without asking" a changed frame IS shot at once, at its price.
-      return plain(facts.mode === "auto" ? fill(r.answerHelpAuto, { mode: words.autoMode, credits: creditsLabel(r, facts.credits.still) }) : r.answerHelp);
+      // With the person's own take set up, the changed frame is that take, at its price (pressFor; review of Cut 2, W6).
+      if (facts.mode !== "auto") return plain(r.answerHelp);
+      return plain(
+        fill(r.answerHelpAuto, {
+          mode: words.autoMode,
+          credits:
+            facts.takeArmedBy === "person"
+              ? fill(r.answerHelpAutoTake, { take: r.takeWord, credits: creditsLabel(r, facts.credits.take[facts.takeEngine]) })
+              : creditsLabel(r, facts.credits.still),
+        }),
+      );
     case "elsewhere": {
       const text = fill(r.answerElsewhere, { settings: words.settings, billing: words.billing });
       if (!facts.producerOn) return plain(text);
@@ -1028,6 +1042,7 @@ const NOTE_RANK: Record<Note["kind"] | PageNote["kind"] | "held", number> = {
   undoHand: 12,
   undoAstra: 12,
   undoAstraText: 12,
+  undoAstraFailed: 12,
   stillsStay: 13,
   undoNone: 14,
 };
@@ -1041,10 +1056,9 @@ function planNoteText(n: Note, facts: ReplyFacts, words: ReplyWords): string | n
   switch (n.kind) {
     case "notCastable":
       return fill(words.notCastable, { name: name(n.characterId) });
-    case "whoUnknown": {
-      const known = nameOf(facts, n.characterId);
-      return known ? fill(r.noteWhoUnknown, { said: known }) : null;
-    }
+    case "whoUnknown":
+      // Someone the page doesn't know can't be named: said under "didn't match" (review of Cut 2, W12).
+      return null;
     case "takeCancelled":
       return fill(r.noteTakeCancelled, { take: r.takeWord, name: name(n.characterId) });
     case "takeCancelledFormat":
@@ -1087,6 +1101,8 @@ function pageNoteText(n: PageNote, facts: ReplyFacts, words: ReplyWords): string
       return r.noteUndoAstra;
     case "undoAstraText":
       return r.noteUndoAstraText;
+    case "undoAstraFailed":
+      return r.noteUndoAstraFailed;
     case "stillsStay":
       return r.noteStillsStay;
     case "undoNone":
@@ -1138,7 +1154,8 @@ export function composeReply(plan: TurnPlan, outcomes: TurnOutcomes | null, fact
   // 2. Done, or what it would do, or what was undone.
   const done = chipsOf(out.chips);
   if (plan.kind === "undo") {
-    const restored = out.notes.some((n) => n.kind === "undoNone");
+    // Nothing to undo, or only an Astra change that could not be undone: never "Undone: the last change." (review of Cut 2, W7).
+    const restored = out.notes.some((n) => n.kind === "undoNone" || n.kind === "undoAstraFailed");
     if (done.length > 0) pushItems("undone", r.replyUndone, done);
     else if (!restored) push("undone", r.replyUndoneLast);
     // Anything else the message asked is offered, never run (spec §3.5).
@@ -1179,13 +1196,20 @@ export function composeReply(plan: TurnPlan, outcomes: TurnOutcomes | null, fact
   }
   for (const n of out.notes) notes.push({ rank: NOTE_RANK[n.kind], text: pageNoteText(n, facts, words) });
   const held = facts.shot !== null && facts.shot.kind === "none" && facts.shot.offer !== null && facts.shot.held.length > 0 ? facts.shot : null;
-  if (held) notes.push({ rank: NOTE_RANK.held, text: r.replyHeldShot });
+  // Said by what held it: Try again only, the chat's own take only, or a
+  // part that isn't done (review of Cut 2, W1 and understanding N1).
+  if (held) {
+    const only = held.held.length === 1 ? held.held[0] : null;
+    const text = only === "retry" ? r.replyRetryHeld : only === "take" ? fill(r.replyHeldTake, { take: r.takeWord }) : r.replyHeldShot;
+    notes.push({ rank: NOTE_RANK.held, text });
+  }
   notes.sort((a, b) => a.rank - b.rank);
   for (const n of notes) push("note", n.text);
 
   // 5. Not yet: at most three lines, then how many more.
+  const nearRan = out.chips.some((o) => o.kind === "near");
   plan.cant.slice(0, NOT_YET_SHOWN).forEach((c) => {
-    const line = cantLine(c.code, c.said, facts, words);
+    const line = cantLine(c.code, c.said, facts, words, { near: nearRan });
     push("notYet", line.text, line.buttons);
   });
   if (plan.cant.length > NOT_YET_SHOWN) push("notYetMore", fill(r.replyNotYetMore, { n: plan.cant.length - NOT_YET_SHOWN }));
@@ -1205,7 +1229,8 @@ export function composeReply(plan: TurnPlan, outcomes: TurnOutcomes | null, fact
       buttons.push({ kind: "notNow", label: r.notNow });
       // Only the words Astra will read are quoted, and a longer message says so (check of the spec, item 9).
       const cut = astraCardWords(need.said).cut || need.cut;
-      needLines.push({ kind: "astra", text: cut ? `${text} ${fill(r.replyCutMessage, { n: SET_EDIT_MAX_CHARS })}` : text, buttons });
+      // Astra's own limit, not the reader's: "Astra gets only the first 300" (review of Cut 2, W3).
+      needLines.push({ kind: "astra", text: cut ? `${text} ${fill(r.astraCutMessage, { n: SET_EDIT_MAX_CHARS })}` : text, buttons });
       astra = { said: need.said, cut, card: need.card, canGo: need.canGo, shootCredits };
     } else if (need.kind === "which") {
       const buttons: ReplyButton[] = [];
