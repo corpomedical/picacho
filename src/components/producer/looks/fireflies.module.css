@@ -1,0 +1,237 @@
+/* The Producer's lamp, look "Two fireflies" (2026-09-25, operator: "I like Two
+   fireflies. Lets try that and add Eclipse and The original perfected in the
+   settings for the user to select from"). Round-4 concept o07, rendered and
+   critiqued before he chose it: two small warm lights with soft trails dancing round each other; side by side when you speak, swirling faster when it talks, chasing round a circle while it thinks.
+   Ported by scratchpad/presence/r4/port_looks.py; states are .idle,
+   .listening, .talking, .thinking on the lamp, --glow (0..1) is the voice. */
+/* The dark glass the look sits in and its pool of light on the page (the
+   round-4 shared rules, scoped to this look). */
+.look.look {
+  background: transparent;
+}
+.look .disc {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 32% 24%, rgba(255, 240, 220, 0.1), transparent 42%),
+    radial-gradient(circle at 50% 38%, rgba(36, 30, 24, 0.97), rgba(14, 12, 10, 0.99));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 240, 220, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.6);
+  transition: box-shadow 400ms ease;
+}
+.look .pool {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 150px;
+  height: 150px;
+  margin: -75px 0 0 -75px;
+  border-radius: 9999px;
+  pointer-events: none;
+  opacity: 0.35;
+  background: radial-gradient(closest-side, rgba(224, 164, 104, 0.24), rgba(224, 164, 104, 0.08) 42%, transparent 72%);
+  transition:
+    opacity 600ms ease,
+    transform 600ms ease;
+}
+.look.listening .pool {
+  opacity: 0.7;
+}
+.look.talking .pool {
+  opacity: 1;
+  transform: scale(1.3);
+}
+.look.thinking .pool {
+  opacity: 0.45;
+}
+.look.tab .disc {
+  background: linear-gradient(180deg, rgba(42, 33, 24, 0.97), rgba(20, 16, 12, 0.98));
+}
+.look.tab .pool {
+  display: none;
+}
+/* The light, drawn for one shape (lamp-looks.tsx keys the box by shape, so
+   docking or leaving an edge mounts a new one). The lamp's own box takes
+   about half a second to fly and change shape (producer-lamp.module.css,
+   .placed); the new light fades in once it has, instead of sticking out of
+   the old shape. The round box is the lamp's frame, a centring grid like the
+   lamp itself. */
+.roundBox {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  display: grid;
+  place-items: center;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .roundBox,
+  .tabBox {
+    animation: shapeIn 260ms 320ms cubic-bezier(0.3, 1.3, 0.5, 1) backwards;
+  }
+}
+@keyframes shapeIn {
+  from {
+    opacity: 0;
+    scale: 0.55;
+  }
+}
+/* The tab's content is drawn for the right edge (rounded on the page's side);
+   on the other edges the box turns so that side still faces the page. */
+.tabBox {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 64px;
+  margin: -32px 0 0 -6px;
+  border-radius: 14px 0 0 14px;
+  display: grid;
+  place-items: center;
+}
+.tabBox.left {
+  transform: scaleX(-1);
+}
+.tabBox.top {
+  transform: rotate(-90deg);
+}
+.tabBox.bottom {
+  transform: rotate(90deg);
+}
+
+/* The look itself. */
+.look{--p:path('M22.00,22.00 C19.15,15.61 22.82,10.37 27.74,13.81 C32.65,17.25 28.98,22.49 22.00,22.00 C15.02,21.51 11.35,26.75 16.26,30.19 C21.18,33.63 24.85,28.39 22.00,22.00 Z');--T:8s;--gap:1.2%;--ha:.5;--go:.85}
+.look::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;box-shadow:0 0 14px rgba(224,164,104,.22);opacity:var(--go)}
+.look.tab::before{display:none}
+.look .disc{background:radial-gradient(closest-side,rgba(224,164,104,.06),rgba(224,164,104,.05) 70%,rgba(160,104,56,.12) 100%),radial-gradient(circle at 32% 24%,rgba(255,240,220,.1),transparent 42%),radial-gradient(circle at 50% 38%,rgba(36,30,24,.97),rgba(14,12,10,.99));box-shadow:inset 0 1px 0 rgba(255,240,220,.12),inset 0 -1px 0 rgba(0,0,0,.6),inset 0 0 9px rgba(224,164,104,var(--rim,.14))}
+.look.listening{--rim:.22;--ha:.6;--go:1}
+.look.talking{--rim:calc(.12 + var(--glow,.7) * .3);--ha:calc(.42 + var(--glow,.7) * .26);--go:calc(.6 + var(--glow,.7) * .6)}
+.look.thinking{--ha:.12;--go:.45;--rim:.1}
+.look.thinking .pool{opacity:.16}
+.look .field{position:absolute;inset:0;border-radius:inherit;overflow:hidden;pointer-events:none}
+.look .haze{position:absolute;left:50%;top:50%;width:42px;height:42px;margin:-21px 0 0 -21px;border-radius:50%;background:radial-gradient(closest-side,rgba(255,217,168,var(--ha)) 0%,rgba(240,186,128,calc(var(--ha) * .6)) 34%,rgba(224,164,104,calc(var(--ha) * .25)) 60%,rgba(224,164,104,0) 82%)}
+.look.talking .haze{scale:calc(1 + var(--glow,.7) * .35)}
+.look .ff{position:absolute;left:0;top:0;border-radius:50%;offset-path:var(--p);offset-rotate:0deg;offset-anchor:center;offset-distance:var(--s);mix-blend-mode:plus-lighter;--k:0;--s:calc(var(--o) - var(--k) * var(--gap))}
+.look .fa{--o:4%;--c1:255,238,204;--c2:255,202,128;--c3:230,156,82}
+.look .fb{--o:50%;--c1:255,212,192;--c2:236,142,112;--c3:190,92,70}
+.look .hd{width:34px;height:34px}
+.look .fb.hd{width:13px;height:13px}
+.look .hd::before,.look .hd::after{content:'';position:absolute;left:50%;top:50%;border-radius:50%}
+.look .hd::before{width:100%;height:100%;translate:-50% -50%;scale:var(--hs,1);opacity:var(--ho,1);background:radial-gradient(closest-side,rgba(var(--c1),.95),rgba(var(--c2),.6) 20%,rgba(var(--c3),.25) 44%,rgba(var(--c3),.07) 72%,rgba(var(--c3),0))}
+.look .fb.hd::before{background:radial-gradient(closest-side,rgba(var(--c1),.85),rgba(var(--c2),.6) 26%,rgba(var(--c3),.24) 54%,rgba(var(--c3),.05) 80%,rgba(var(--c3),0))}
+.look .hd::after{width:8.5px;height:8.5px;margin:-4.25px 0 0 -4.25px;background:radial-gradient(circle at 45% 40%,#fff2da,#ffd9a8 50%,#eeb070);opacity:var(--co,1);box-shadow:0 0 2px .5px rgba(255,196,128,.8),0 0 var(--bl,9px) var(--bs,2.5px) rgba(255,200,140,.7)}
+.look .fb.hd::after{width:3px;height:3px;margin:-1.5px 0 0 -1.5px;background:radial-gradient(circle at 45% 40%,#ffc9b0,#e98f70);--co:1;box-shadow:0 0 1px .4px rgba(255,190,160,.85),0 0 4px 1px rgba(233,143,112,.75)}
+.look .t{width:12px;height:12px;opacity:0;filter:blur(.8px);display:block}
+.look .t2{width:9px;height:9px}
+.look .t3{width:6px;height:6px}
+.look .fb.t1{width:9px;height:9px}
+.look .fb.t2{width:7px;height:7px}
+.look .fb.t3{width:4px;height:4px}
+.look .t4,.look .t5,.look .t6{display:none}
+.look .t::before{content:'';position:absolute;inset:0;border-radius:50%;background:radial-gradient(closest-side,rgba(var(--c1),.9),rgba(var(--c2),.45) 45%,rgba(var(--c3),0))}
+.look.thinking .t{filter:blur(.5px)}
+.look.thinking .t::before{background:radial-gradient(closest-side,rgba(var(--c1),.95),rgba(var(--c2),.5) 32%,rgba(var(--c3),.12) 60%,rgba(var(--c3),0) 78%)}
+.look .t1{--k:1;--to:.75}
+.look .t2{--k:2;--to:.5}
+.look .t3{--k:3;--to:.3}
+.look .t4{--k:4}
+.look .t5{--k:5}
+.look .t6{--k:6}
+.look.listening{--T:3.2s}
+.look.listening .fa{--o:0%;--p:path('M22,21.5 A0.5,0.5 0 1,1 22,22.5 A0.5,0.5 0 1,1 22,21.5 Z')}
+.look.listening .fb{--o:0%;--p:path('M22,14.5 A7.5,7.5 0 1,1 22,29.5 A7.5,7.5 0 1,1 22,14.5 Z')}
+.look.listening .fa.hd{--hs:.5}
+.look.listening .fb.hd{--hs:1.3}
+.look.listening .fa.hd::after{scale:.78}
+.look.listening .fb.hd::after{scale:1.3}
+.look.listening .fa.hd::after{--bl:6px;--bs:1.5px}
+.look.talking{--p:path('M22.00,22.00 C22.65,12.40 29.96,9.15 33.42,16.92 C36.88,24.68 29.57,27.93 22.00,22.00 C14.43,16.07 7.12,19.32 10.58,27.08 C14.04,34.85 21.35,31.60 22.00,22.00 Z');--T:2.4s;--gap:6%}
+.look.talking .fb{--o:29%}
+.look.talking .fa.hd::before{--hs:calc(.56 + var(--glow,.7) * .2)}
+.look.talking .fb.hd::before{--hs:calc(1 + var(--glow,.7) * .3)}
+.look.talking .fa.hd::after{--bl:calc(6px + var(--glow,.7) * 6px);--bs:calc(1.5px + var(--glow,.7) * 1.5px)}
+.look.thinking{--p:path('M22,15 A7,7 0 1,1 22,29 A7,7 0 1,1 22,15 Z');--T:1.5s;--gap:5%}
+.look.thinking .fa{--o:0%}
+.look.thinking .fb{--o:50%}
+.look.thinking .t4,.look.thinking .t5,.look.thinking .t6{display:block}
+.look.thinking .fa.t{--tz:1}
+.look.thinking .fb.t{--tz:.85}
+.look.thinking .t1{width:calc(10px * var(--tz));height:calc(10px * var(--tz));--to:.9}
+.look.thinking .t2{width:calc(8.5px * var(--tz));height:calc(8.5px * var(--tz));--to:.78}
+.look.thinking .t3{width:calc(7px * var(--tz));height:calc(7px * var(--tz));--to:.64}
+.look.thinking .t4{width:calc(5.5px * var(--tz));height:calc(5.5px * var(--tz));--to:.5}
+.look.thinking .t5{width:calc(4.5px * var(--tz));height:calc(4.5px * var(--tz));--to:.36}
+.look.thinking .t6{width:calc(3.5px * var(--tz));height:calc(3.5px * var(--tz));--to:.2}
+.look.thinking .fa.hd::before{--hs:.5}
+.look.thinking .fb.hd::before{--hs:1.1}
+.look.thinking .fa.hd::after{scale:.82}
+.look.tab{--p:path('M6,32 C8.2,27 8.2,17 6,17 C3.8,17 3.8,27 6,32 C8.2,37 8.2,47 6,47 C3.8,47 3.8,37 6,32 Z')}
+/* A tab keeps its own path while listening too (the round lamp's listening
+   paths are drawn round the 44 px lamp's centre, outside a 12 px tab). */
+.look.tab.listening .fa,.look.tab.listening .fb{--p:path('M6,32 C8.2,27 8.2,17 6,17 C3.8,17 3.8,27 6,32 C8.2,37 8.2,47 6,47 C3.8,47 3.8,37 6,32 Z')}
+.look.tab .fb{--o:50%}
+.look.tab .fa.hd{width:12px;height:12px}
+.look.tab .fb.hd{width:10px;height:10px}
+.look.tab .fa.hd::after{scale:.62}
+.look.tab .haze{width:3px;height:54px;margin:-27px 0 0 -1.5px;border-radius:9999px;background:linear-gradient(180deg,transparent,rgba(255,206,146,.24) 20%,rgba(255,226,190,.45) 50%,rgba(255,206,146,.24) 80%,transparent);box-shadow:0 0 6px rgba(224,164,104,.28);scale:1}
+@media (prefers-reduced-motion: no-preference){
+.look::before{transition:opacity 500ms ease}
+.look .haze{transition:opacity 500ms ease,scale 500ms ease}
+.look .hd::before{transition:scale 400ms ease}
+.look.talking .t,.look.thinking .t{opacity:var(--to)}
+.look.idle::before{animation:glow 4.2s ease-in-out infinite}
+.look.idle .ff{animation:run var(--T) linear infinite,inI 500ms ease-out}
+.look.idle .fa.hd{animation:run var(--T) linear infinite,blink 3.6s ease-in-out infinite,inI 500ms ease-out}
+.look.idle .fb.hd{animation:run var(--T) linear infinite,flick 4.4s ease-in-out -1.7s infinite,inI 500ms ease-out}
+.look.listening .ff{animation:runL var(--T) linear infinite,inL 400ms ease-out}
+.look.listening .fa.hd{animation:runL 2.4s linear infinite,inL 400ms ease-out}
+.look.talking .ff{animation:runT var(--T) linear infinite,inT 300ms ease-out}
+.look.thinking .ff{animation:runK var(--T) linear infinite,inK 300ms ease-out}
+.look.idle .haze{animation:breathe 4.2s ease-in-out infinite}
+.look.listening .hd::before{animation:attend 2.4s ease-in-out infinite}
+.look.listening .haze{animation:swell 2.4s ease-in-out infinite}
+.look.tab .haze{animation:thread 4.2s ease-in-out infinite}
+}
+@keyframes run{from{offset-distance:var(--s)}
+to{offset-distance:calc(var(--s) + 100%)}
+}
+@keyframes runL{from{offset-distance:var(--s)}
+to{offset-distance:calc(var(--s) + 100%)}
+}
+@keyframes runT{from{offset-distance:var(--s)}
+to{offset-distance:calc(var(--s) + 100%)}
+}
+@keyframes runK{from{offset-distance:var(--s)}
+to{offset-distance:calc(var(--s) + 100%)}
+}
+@keyframes inI{from{opacity:0}
+}
+@keyframes inL{from{opacity:0}
+}
+@keyframes inT{from{opacity:0}
+}
+@keyframes inK{from{opacity:0}
+}
+@keyframes glow{0%,100%{opacity:.7}
+50%{opacity:1}
+}
+@keyframes blink{0%,100%{opacity:1}
+55%{opacity:.88}
+}
+@keyframes flick{0%,100%{opacity:1}
+55%{opacity:.75}
+}
+@keyframes attend{0%,100%{scale:var(--hs,1)}
+50%{scale:calc(var(--hs,1) * 1.16)}
+}
+@keyframes breathe{0%,100%{opacity:.85;scale:.97}
+50%{opacity:1;scale:1.04}
+}
+@keyframes swell{0%,100%{scale:1}
+50%{scale:1.12}
+}
+@keyframes thread{0%,100%{opacity:.8}
+50%{opacity:1}
+}
+

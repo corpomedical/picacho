@@ -21,6 +21,8 @@ import styles from "./producer-lamp.module.css";
 import { Wheel, WHEEL_R } from "./wheel";
 import { MovableLamp } from "./movable-lamp";
 import { writeLampHidden } from "./lamp-place";
+import { lampMood, type LampLook } from "./lamp-look";
+import { LookMark } from "./lamp-looks";
 import { Spotlight, type LitSpot } from "./spotlight";
 import { useHandsFree, type SpokenAudio } from "./use-hands-free";
 
@@ -119,11 +121,14 @@ export function ProducerLamp({
   name: initialName,
   watchCount,
   voiceAvailable,
+  look,
 }: {
   name: string;
   watchCount: number;
   /** The server has a speech provider configured (OPENAI_API_KEY). */
   voiceAvailable: boolean;
+  /** How the lamp looks: the person's pick in Settings (lamp-look.ts). */
+  look: LampLook;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -445,6 +450,11 @@ export function ProducerLamp({
   }
 
   const busy = streaming !== null;
+  const mood = lampMood(voice.phase, busy);
+  // The look's light: the voice's loudness while a mic session measures it;
+  // a reply read aloud with the mic off has no meter, so it talks at a
+  // steady middle strength instead of its dimmest.
+  const glow = voice.metered ? voice.level : mood === "talking" ? 0.7 : 0;
   const wheelShown = open && wheelReady && center !== null && !(center.phone && typing);
   // The sheet ends just above the wheel; with the keyboard up on a phone the
   // wheel tucks away and the sheet reaches the bottom.
@@ -473,7 +483,9 @@ export function ProducerLamp({
         open={open}
         onToggle={() => setOpen((v) => !v)}
         live={voice.active}
-        level={voice.level}
+        level={glow}
+        look={look}
+        mood={mood}
         lift={lift}
         unseenCards={unseenCards}
         dot={dot}
@@ -533,7 +545,7 @@ export function ProducerLamp({
           >
             {/* Header */}
             <div className="flex items-center gap-3 border-b border-atelier-rule px-4 py-3">
-              <span className={`${styles.bulb} ${styles.bulbSm}`} aria-hidden="true" />
+              <LookMark look={look} mood={mood} size={22} glow={glow} />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[15px] font-semibold leading-tight">
                   {view === "notes" ? W.notes : name}
@@ -711,11 +723,7 @@ export function ProducerLamp({
                   {(voiceLine || voice.notice) && (
                     <div className="mb-2 flex items-center gap-3 px-1" aria-live="polite">
                       {voiceLine && (
-                        <span
-                          className={`${styles.bulb} ${styles.voiceOrb}`}
-                          style={{ "--glow": voice.level } as React.CSSProperties}
-                          aria-hidden="true"
-                        />
+                        <LookMark look={look} mood={mood} size={26} glow={glow} />
                       )}
                       <div className="min-w-0 flex-1 leading-tight">
                         <div className="text-[14px] font-medium text-atelier-ink">{voiceLine ?? voice.notice}</div>

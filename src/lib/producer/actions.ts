@@ -13,6 +13,7 @@ import {
   DEFAULT_PRODUCER_NAME,
 } from "./store";
 import { isHumanVoiceConfigured, speakHuman } from "./speech";
+import { LAMP_LOOKS, parseLampLook, type LampLook } from "@/components/producer/lamp-look";
 import { rateLimited } from "@/lib/rate-limit";
 import { MAX_NOTE_CHARS, normalizeNotePath, type Note } from "./notes";
 import { loadWatchBar, loadWatchList, type WatchItem } from "./watch";
@@ -230,4 +231,28 @@ export async function previewProducerVoice(presetId: string): Promise<{ url?: st
   } catch {
     return { error: "That voice didn't play. Try again." };
   }
+}
+
+// ---------------------------------------------------------------------------
+// The lamp's look (2026-09-25, operator: "I like Two fireflies. Lets try that
+// and add Eclipse and The original perfected in the settings for the user to
+// select from"). Saved on the account, so it follows the person to every
+// device; lamp-look.ts lists the looks.
+
+/** For Settings: the look the lamp shows now (null = this account has no Producer). */
+export async function loadProducerLook(): Promise<LampLook | null> {
+  const g = await gate();
+  if (!g.ok) return null;
+  // Missing column (producer-look.sql not run yet) → an error and no row → the default.
+  const { data } = await g.admin.from("producer_prefs").select("lamp_look").eq("user_id", g.userId).maybeSingle();
+  return parseLampLook((data as { lamp_look?: unknown } | null)?.lamp_look);
+}
+
+export async function setProducerLook(look: string): Promise<{ error: string | null }> {
+  const g = await gate();
+  if (!g.ok) return { error: g.error };
+  if (!(LAMP_LOOKS as readonly string[]).includes(look)) return { error: "That look isn't available." };
+  const r = await savePrefs(g.admin, g.userId, { lamp_look: look });
+  if (r.error) console.error("producer: look save failed", r.error);
+  return { error: r.error ? "The look didn't save. Try again." : null };
 }

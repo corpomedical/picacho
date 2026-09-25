@@ -40,6 +40,8 @@ const WEB_MIC_DENIED =
 //
 // THE LIGHT. `level` (0..1) is the loudness of whoever is talking right now —
 // the person while they speak, the Producer while it answers — for the bulb.
+// It is only measured while a mic session is open (`metered`); a reply read
+// aloud with the mic off plays without a meter, so `level` stays 0 then.
 
 export type VoicePhase = "off" | "listening" | "hearing" | "sending" | "speaking";
 export type SpokenAudio = { data: string; mime: string; seconds: number };
@@ -137,6 +139,7 @@ export function useHandsFree({
 }) {
   const [phase, setPhase] = useState<VoicePhase>("off");
   const [level, setLevel] = useState(0);
+  const [metered, setMetered] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const phaseRef = useRef<VoicePhase>("off");
   const session = useRef<Session | null>(null);
@@ -311,6 +314,7 @@ export function useHandsFree({
       void s.ctx.close().catch(() => {});
     }
     setLevel(0);
+    setMetered(false);
     go("off");
   }, [go, stopPlayback]);
 
@@ -379,6 +383,7 @@ export function useHandsFree({
       segmentAt: performance.now(),
     };
     session.current = s;
+    setMetered(true);
     newSegment();
     go("listening");
 
@@ -497,6 +502,7 @@ export function useHandsFree({
   return {
     phase,
     level,
+    metered,
     notice,
     supported,
     active: phase !== "off",

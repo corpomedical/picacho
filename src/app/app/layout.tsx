@@ -9,6 +9,7 @@ import { isProducerEnabled, isProducerOpenToElite, producerAllowed } from "@/lib
 import { countWatch, loadWatchBar } from "@/lib/producer/watch";
 import { DEFAULT_PRODUCER_NAME } from "@/lib/producer/store";
 import { ProducerLamp } from "@/components/producer/producer-lamp";
+import { parseLampLook, type LampLook } from "@/components/producer/lamp-look";
 import { isVoiceConfigured } from "@/lib/producer/speech";
 import { setsEligible } from "@/lib/sets/set-config";
 import { RatePrompt } from "@/components/rate-prompt";
@@ -103,19 +104,23 @@ export default async function AppLayout({
   // first, so every other account skips the flag reads and the watch count.
   const producerEligible =
     isAdmin || (profile?.plan === "elite" && !producerAllowed(profile, true).error);
-  let producer: { name: string; watchCount: number } | null = null;
+  let producer: { name: string; watchCount: number; look: LampLook } | null = null;
   if (
     producerEligible &&
     (isAdmin || (await isProducerOpenToElite(supabase))) &&
     (await isProducerEnabled(supabase))
   ) {
-    const [{ data: prefs }, watchBar] = await Promise.all([
+    const [{ data: prefs }, { data: lookRow }, watchBar] = await Promise.all([
       supabase.from("producer_prefs").select("display_name, watch_seen_at").eq("user_id", data.user.id).maybeSingle(),
+      // On its own: before producer-look.sql runs the column is missing, the
+      // read errors, and the lamp simply takes the default look.
+      supabase.from("producer_prefs").select("lamp_look").eq("user_id", data.user.id).maybeSingle(),
       loadWatchBar(supabase),
     ]);
     producer = {
       name: (prefs?.display_name as string | null)?.trim() || DEFAULT_PRODUCER_NAME,
       watchCount: await countWatch(supabase, data.user.id, prefs?.watch_seen_at as string | null, watchBar),
+      look: parseLampLook((lookRow as { lamp_look?: unknown } | null)?.lamp_look),
     };
   }
 
@@ -183,7 +188,12 @@ export default async function AppLayout({
       {showRatePrompt && <RatePrompt />}
       <DownloadToasts />
       {producer && (
-        <ProducerLamp name={producer.name} watchCount={producer.watchCount} voiceAvailable={isVoiceConfigured()} />
+        <ProducerLamp
+          name={producer.name}
+          watchCount={producer.watchCount}
+          voiceAvailable={isVoiceConfigured()}
+          look={producer.look}
+        />
       )}
       {/* data-app-scroll: the app's one real scroller — the native quick
           pill watches its scrollTop to decide when to slide in. */}

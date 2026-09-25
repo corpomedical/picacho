@@ -181,7 +181,7 @@ export async function loadProducerVoice(admin: SupabaseClient, userId: string): 
 export async function savePrefs(
   admin: SupabaseClient,
   userId: string,
-  patch: { display_name?: string | null; watch_seen_at?: string; voice_preset_id?: string | null },
+  patch: { display_name?: string | null; watch_seen_at?: string; voice_preset_id?: string | null; lamp_look?: string | null },
 ): Promise<{ error: string | null }> {
   const { error } = await admin
     .from("producer_prefs")

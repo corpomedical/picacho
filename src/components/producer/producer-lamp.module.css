@@ -2,7 +2,8 @@
    Its own module rather than globals.css, so the branch never touches the
    shared stylesheet other sessions are editing (Director's Cut did the same).
 
-   A small warm bulb that floats over every /app page and opens the Producer.
+   A small lamp that floats over every /app page and opens the Producer. What
+   it looks like is the person's pick (lamp-look.ts; looks/ draws each one).
    Bottom-right; on phones the component lifts it above whatever is docked at
    the bottom, and in the app it sits above the tab bar (--native-tab-bar). */
 .lamp {
@@ -35,18 +36,15 @@
   bottom: calc(var(--native-tab-bar, 0px) + 14px);
 }
 
-.bulb {
-  display: block;
-  width: 20px;
-  height: 20px;
+/* The real lamp at its real size, standing still in Settings' look picker. */
+.previewLamp {
+  position: relative;
+  width: 44px;
+  height: 44px;
   border-radius: 9999px;
-  background: radial-gradient(circle at 50% 40%, #ffd9a8 0 18%, #e0a468 48%, #7a4d23 100%);
-  box-shadow: 0 0 14px rgba(224, 164, 104, 0.6);
-}
-.bulbSm {
-  width: 18px;
-  height: 18px;
-  flex: none;
+  box-shadow:
+    0 0 0 1px rgba(243, 237, 228, 0.1),
+    0 10px 28px -10px rgba(0, 0, 0, 0.7);
 }
 
 .statusDot {
@@ -57,16 +55,8 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .lamp .bulb {
-    animation: glow 3.2s ease-in-out infinite;
-  }
   .statusDot {
     animation: pulse 1.1s ease-in-out infinite;
-  }
-}
-@keyframes glow {
-  50% {
-    box-shadow: 0 0 22px rgba(224, 164, 104, 0.9);
   }
 }
 @keyframes pulse {
@@ -88,28 +78,13 @@
 /* ── Live: the bulb follows the sound (2026-09-25, operator: "The light bulb
    lights depending on the sound that is spoken or spoken to") ─────────────
    --glow (0..1) is set on the lamp from the voice loop: the person's voice
-   while they talk, the Producer's while it answers. The idle breathing stops;
-   the light is the sound. */
+   while they talk, the Producer's while it answers. The look inside answers
+   it too (looks/*.module.css); this ring is the lamp's own. */
 .lampLive {
   box-shadow:
     0 0 0 1px rgba(224, 164, 104, 0.4),
     0 0 calc(10px + var(--glow, 0) * 34px) rgba(224, 164, 104, calc(0.22 + var(--glow, 0) * 0.45)),
     0 10px 28px -10px rgba(0, 0, 0, 0.7);
-}
-.lampLive .bulb,
-.voiceOrb {
-  animation: none !important;
-  transform: scale(calc(1 + var(--glow, 0) * 0.45));
-  box-shadow: 0 0 calc(12px + var(--glow, 0) * 30px) calc(var(--glow, 0) * 6px)
-    rgba(255, 205, 140, calc(0.5 + var(--glow, 0) * 0.45));
-  transition:
-    transform 70ms linear,
-    box-shadow 70ms linear;
-}
-.voiceOrb {
-  width: 26px;
-  height: 26px;
-  flex: none;
 }
 
 /* The one-tap off switch beside a live lamp while the sheet is closed. */
@@ -333,7 +308,8 @@
    movable-lamp.tsx sets left/top/width/height inline; everything that moves
    here is a transition on those, so every change of place animates itself:
    a spring for the flight (it overshoots a touch and settles), the shape a
-   beat later — the bulb arrives round, then melts into the edge. */
+   beat later — the lamp arrives round, then melts into the edge, and the
+   look's light for the new shape fades in once it has (lamp-looks.tsx). */
 .anchor,
 .insetProbe {
   visibility: hidden;
@@ -357,12 +333,6 @@
     box-shadow 320ms ease,
     opacity 300ms ease,
     transform 160ms ease;
-}
-.placed .bulb {
-  transition:
-    width 460ms 110ms cubic-bezier(0.3, 1.35, 0.5, 1),
-    height 460ms 110ms cubic-bezier(0.3, 1.35, 0.5, 1),
-    border-radius 460ms 110ms ease;
 }
 @media (prefers-reduced-motion: no-preference) {
   .lamp:not(.anchor) {
@@ -414,8 +384,8 @@
   opacity: 0.8;
 }
 
-/* The tab: a slim tube of light on the edge, rounded on the page's side, its
-   bulb stretched into a filament, warm light spilling onto the page. */
+/* The tab: a slim tube of light on the edge, rounded on the page's side,
+   warm light spilling onto the page; the look draws what is inside it. */
 .lamp.tab {
   background: linear-gradient(180deg, rgba(42, 33, 24, 0.97), rgba(20, 16, 12, 0.98));
   box-shadow:
@@ -445,16 +415,6 @@
 }
 .lamp.tab_bottom {
   border-radius: 14px 14px 0 0;
-}
-.tab_left .bulb,
-.tab_right .bulb {
-  width: 4px;
-  height: 40px;
-}
-.tab_top .bulb,
-.tab_bottom .bulb {
-  width: 40px;
-  height: 4px;
 }
 .tab::after {
   content: "";
@@ -760,7 +720,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .placed,
-  .placed .bulb,
   .lamp.dragging,
   .lamp.leaving {
     transition-duration: 1ms !important;

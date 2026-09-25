@@ -2,6 +2,8 @@ import Link from "next/link";
 import { ProducerNameForm } from "@/components/settings/producer-name-form";
 import { ProducerVoiceForm } from "@/components/settings/producer-voice-form";
 import { ProducerLampForm } from "@/components/settings/producer-lamp-form";
+import { ProducerLookForm } from "@/components/settings/producer-look-form";
+import type { LampLook } from "@/components/producer/lamp-look";
 import type { ProducerVoiceChoice } from "@/lib/producer/actions";
 import type { Messages } from "@/lib/i18n/messages";
 import type { Locale } from "@/lib/i18n/locales";
@@ -140,6 +142,7 @@ export function PreferencesTab({
   marketingEnabled,
   producerName = null,
   producerVoices = null,
+  producerLook = null,
 }: {
   t: Messages;
   notifyPrefs: { notify_render_ready: boolean; notify_render_failed: boolean; notify_low_credits: boolean };
@@ -151,6 +154,8 @@ export function PreferencesTab({
   producerName?: string | null;
   /** The voices it can speak with and the current one, or null when this account has no Producer. */
   producerVoices?: { voices: ProducerVoiceChoice[]; current: string | null } | null;
+  /** The lamp's look, or null when this account has no Producer. */
+  producerLook?: LampLook | null;
 }) {
   const s = t.settings;
   return (
@@ -174,6 +179,15 @@ export function PreferencesTab({
           <div className="border-t border-atelier-rule/60 pt-5">
             <ProducerLampForm />
           </div>
+          {producerLook && (
+            <div className="space-y-3 border-t border-atelier-rule/60 pt-5">
+              <div>
+                <p className="text-sm font-medium text-atelier-ink">Its look</p>
+                <p className="mt-0.5 text-xs text-atelier-muted">How the lamp in the corner shows itself. Pick one to see it talk.</p>
+              </div>
+              <ProducerLookForm current={producerLook} />
+            </div>
+          )}
           {producerVoices && (
             <div className="space-y-3 border-t border-atelier-rule/60 pt-5">
               <div>

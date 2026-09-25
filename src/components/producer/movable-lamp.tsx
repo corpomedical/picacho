@@ -21,6 +21,8 @@ import {
   type Place,
   type Stage,
 } from "./lamp-place";
+import { LookInner, lookClasses } from "./lamp-looks";
+import type { LampLook, LampMood } from "./lamp-look";
 
 // The lamp you can move (2026-09-25, operator: "The light bulb is disturbing
 // some of the buttons", then "Lets make it movable and dismissible. Also, if
@@ -29,15 +31,22 @@ import {
 //
 // DRAG IT anywhere (mouse, finger or pen; a tap still opens the Producer).
 // LET GO near an edge and it becomes that edge's tab: it springs to the edge,
-// melts from a round bulb into a slim glowing tab while its bulb stretches
-// into a filament, and a flash of light runs along the edge. Pull a tab out
-// and it swells back into the bulb under your finger. DROP IT ON × (bottom
+// its dark glass melts from round into a slim tab, the look's light for the
+// new shape fades in once the shape has settled (lamp-looks.tsx), and a flash
+// of light runs along the edge. Pull a tab out and it swells back into the
+// round lamp under your finger. DROP IT ON × (bottom
 // centre, shown while dragging) to hide it, with Undo; Settings > Preferences
 // > Your assistant brings it back. It can't be hidden while voice is live —
 // the lamp is then the way to see it's listening, and End is beside it.
 //
 // While the sheet is open it flies back to its corner, because the wheel
 // opens into that corner (producer-lamp.tsx waits for it to land).
+//
+// WHAT IT LOOKS LIKE (2026-09-25, operator: "I like Two fireflies. Lets try
+// that and add Eclipse and The original perfected in the settings for the user
+// to select from"): one of three looks (lamp-look.ts, lamp-looks.tsx), in one
+// of four moods (idle, listening, talking, thinking) that producer-lamp.tsx
+// works out from the voice loop and the answer in flight.
 //
 // Positions are computed here (lamp-place.ts) and animated by CSS transitions
 // on left/top/size; HOME is read from an invisible twin carrying the lamp's
@@ -60,6 +69,8 @@ export function MovableLamp({
   onToggle,
   live,
   level,
+  look,
+  mood,
   lift,
   unseenCards,
   dot,
@@ -74,7 +85,10 @@ export function MovableLamp({
   onToggle: () => void;
   /** Voice is on: the lamp follows the sound and can't be hidden. */
   live: boolean;
+  /** The look's light (0..1): the voice's loudness, or a steady strength while it talks unmetered. */
   level: number;
+  look: LampLook;
+  mood: LampMood;
   /** On a phone, how far above the bottom the composer's dock pushes the corner. */
   lift: number | null;
   unseenCards: number;
@@ -316,6 +330,7 @@ export function MovableLamp({
     tabEdge ? `${styles.tab} ${styles[`tab_${tabEdge}`]}` : "",
     leaving ? styles.leaving : "",
     over ? styles.overTarget : "",
+    lookClasses(look, mood, tabEdge !== null),
     "fixed z-[45] grid h-11 w-11 place-items-center",
   ]
     .filter(Boolean)
@@ -345,10 +360,11 @@ export function MovableLamp({
           aria-label={openLabel}
           aria-expanded={open}
           title={`${name} (${W.moveHint})`}
-          style={{ ...lampPosition, "--glow": live ? level : 0 } as React.CSSProperties}
+          // --glow: the look's light, worked out by the parent (producer-lamp.tsx).
+          style={{ ...lampPosition, "--glow": level } as React.CSSProperties}
           className={lampClass}
         >
-          <span className={styles.bulb} aria-hidden="true" />
+          <LookInner look={look} tab={tabEdge !== null} edge={tabEdge} />
           {tabEdge
             ? (unseenCards > 0 || dot > 0) && <span className={styles.tabDot} aria-label={newCardsLabel} />
             : !open && (
