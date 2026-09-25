@@ -115,6 +115,38 @@ describe("a reading that failed changes nothing and shoots nothing", () => {
   });
 });
 
+// Undo that gives back Astra's words too (Helios Cut 2, step 2, 2026-09-25).
+describe("the changed line's Undo", () => {
+  const undo = bodyOf(view, "  async function undoSetEdit() {");
+
+  it("keeps each change's seal and kind with the set it replaced", () => {
+    const edit = bodyOf(view, "  async function editSet(message: string) {");
+    expect(edit).toContain("const apply = (next: SetSpec, changed: number, undo: EditUndo | null = null) => {");
+    expect(edit).toContain('lastEditUndoRef.current = { before, kind: "edit", undo };');
+    expect(edit).toContain("apply(res.spec, res.changed, res.undo);");
+    // A read-back has no seal.
+    expect(edit).toContain('if (followed.kind === "saved") apply(followed.spec, followed.changed);');
+    const rebuild = bodyOf(view, "  async function rebuildThing(key: string) {");
+    expect(rebuild).toContain('lastEditUndoRef.current = { before, kind: "rebuild", undo: null };');
+  });
+
+  it("sends this change's seal, never Astra, and says what came back", () => {
+    expect(undo).toContain("const last = lastEditUndoRef.current?.before === before ? lastEditUndoRef.current : null;");
+    expect(undo).toContain("const res = await undoAstraEdit(setId, before, last?.undo ?? null);");
+    for (const call of ["editSetWithAstra(", "editSet(", "rebuildThingFromPhotos(", "saveSetEdit("]) expect(undo, call).not.toContain(call);
+    expect(undo).toContain('setUndoNote(last?.kind !== "rebuild" && !saved.textRestored ? "textKept" : "undone");');
+    const note = between(view, "{undoNote !== null && (", "</div>");
+    expect(note).toContain('{undoNote === "textKept" ? s.reply.noteUndoAstraText : s.reply.noteUndoAstra}');
+  });
+
+  it("says it once: the next message, or the next change, clears it", () => {
+    expect(send).toContain("setUndoNote(null);");
+    for (const signature of ["  async function editSet(message: string) {", "  async function rebuildThing(key: string) {"]) {
+      expect(bodyOf(view, signature), signature).toContain("setUndoNote(null);");
+    }
+  });
+});
+
 describe("the Sets home's message is the only build turn", () => {
   it("the home marks only its build branch", () => {
     const homeSend = bodyOf(home, "  async function send() {");

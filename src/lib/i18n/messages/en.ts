@@ -3378,6 +3378,8 @@ const en = {
       notNow: "Not now",
       creditOne: "1 credit",
       creditsN: "{n} credits",
+      noteUndoAstra: "The set change is undone; it still counts this month.",
+      noteUndoAstraText: "The set's pieces are back as they were, but its description still mentions the change; it still counts this month.",
     },
     rig: {
       chip: "Rig",

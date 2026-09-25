@@ -175,9 +175,12 @@ describe("the set page", () => {
   it("shows an Undo only once it is saved, and says when it is not", () => {
     const undo = between(view, "async function undoSetEdit() {", "\n  }\n");
     expect(undo).toContain("if (!before || undoingRef.current) return;");
-    const saved = undo.indexOf("failed = (await saveSetEdit(setId, before)).error;");
-    const told = undo.indexOf("setError(failed);");
-    const shown = undo.indexOf("setSpec(before);");
+    // Saved through undoAstraEdit since Helios Cut 2, step 2 (2026-09-25),
+    // which can give back Astra's words too; the page then shows the copy
+    // as the server saved it.
+    const saved = undo.indexOf("const res = await undoAstraEdit(setId, before, last?.undo ?? null);");
+    const told = undo.indexOf("if (failed !== null) setError(failed);");
+    const shown = undo.indexOf("setSpec(saved.spec);");
     expect(saved).toBeGreaterThan(-1);
     expect(told).toBeGreaterThan(saved);
     expect(shown).toBeGreaterThan(told);

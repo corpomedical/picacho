@@ -281,12 +281,22 @@ export function sizeFromScale(o: SetObject, scale: { x: number; y: number; z: nu
 // ---------------------------------------------------------------------------
 
 /**
+ * What holdEditedText reads of a stored copy: its words alone, so the words
+ * an Undo proves with a seal (edit-seal.ts, Helios Cut 2, 2026-09-25) can
+ * stand first. Every SetSpec is one.
+ */
+export type HeldText = Pick<SetSpec, "title" | "description"> & {
+  marks: readonly { label: string }[];
+  cameras: readonly { label: string }[];
+};
+
+/**
  * A browser's edit may move and recolour, never write: the title and
  * description come from the stored copy, and any mark or camera label the
  * stored copies never carried is dropped. Astra's own edits don't pass
  * through here — they are gated whole, like a build.
  */
-export function holdEditedText(next: SetSpec, stored: SetSpec[]): SetSpec {
+export function holdEditedText(next: SetSpec, stored: readonly HeldText[]): SetSpec {
   const held = clone(next);
   const first = stored[0];
   if (first) {

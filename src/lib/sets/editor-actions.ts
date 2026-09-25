@@ -43,6 +43,7 @@ import {
 } from "@/lib/sets/set-config";
 import { astraEditsLeft, countAstraEditsThisMonth } from "@/lib/sets/data";
 import { claimAstraPress, endAstraPress, giveBackAstraEdit, parseAstraPressId, readAstraPress } from "@/lib/sets/astra-press";
+import { editUndoOf, heldTextOf, sealedEditText, type EditUndo } from "@/lib/sets/edit-seal";
 import type { AstraEditRead } from "@/lib/sets/astra-follow";
 import { cleanText, normaliseSetSpec, parseSetSpecText, specTextForGate, type SetSpec } from "@/lib/sets/set-spec";
 import { ELEMENT_KEY_RE, resolvePhotos, setElements, type ElementPhoto } from "@/lib/sets/elements";
@@ -269,6 +270,9 @@ async function askAstra(setId: string, request: AstraJobRequest, what: string, f
  * normalised and gated whole, like a build's — then saved as the working
  * copy and handed back with how many pieces it touched. `pressId` names
  * this press (oncePerPress); `pending` answers a repeat delivery of one.
+ * `undo` seals the words of the copy Astra was handed (edit-seal.ts), so
+ * the changed line's Undo can bring them back too (undoAstraEdit); null
+ * when nothing can be sealed.
  */
 export async function editSetWithAstra(
   setId: string,
@@ -276,7 +280,7 @@ export async function editSetWithAstra(
   pressId?: string,
 ): Promise<
   | { error: string; editsLeft?: number | null; pending?: true }
-  | { error: null; spec: SetSpec; changed: number; editsLeft: number | null }
+  | { error: null; spec: SetSpec; changed: number; editsLeft: number | null; undo: EditUndo | null }
 > {
   const access = await setsAccess();
   if (access.error !== null) return { error: access.error };
@@ -338,7 +342,7 @@ export async function editSetWithAstra(
       const saved = await writeEdited(setId, userId, next);
       if (saved.error !== null) return { error: saved.error, editsLeft: await giveBackAstraChange(access, slot) };
       kept();
-      return { error: null, spec: next, changed: countSpecChanges(working, next), editsLeft: slot.editsLeft };
+      return { error: null, spec: next, changed: countSpecChanges(working, next), editsLeft: slot.editsLeft, undo: editUndoOf(setId, userId, working) };
     } catch (err) {
       await giveBackAstraChange(access, slot);
       throw err;
@@ -445,6 +449,39 @@ export async function rebuildThingFromPhotos(
       throw err;
     }
   });
+}
+
+/**
+ * The changed line's Undo of an Astra change (Helios Cut 2, step 2,
+ * 2026-09-25): the set as it stood before, saved back — with the words it
+ * had then when the page sends the seal of them (edit-seal.ts), so an
+ * undone "add a row of flags" no longer leaves "lined with flags" in the
+ * description every later still reads. Without a seal that opens (a change
+ * read back after a dropped connection, a page from before this deploy, a
+ * rebuild — which never changes the words), it is exactly saveSetEdit: the
+ * words stay the server's, and the page says so. Never calls Astra and
+ * never touches the month's count: the change still counts, and the page
+ * says that too. The saved copy comes back, so the page draws what the
+ * server holds.
+ */
+export async function undoAstraEdit(
+  setId: string,
+  before: unknown,
+  undo?: { text: unknown; seal: unknown } | null,
+): Promise<{ error: string } | { error: null; spec: SetSpec; textRestored: boolean }> {
+  const access = await setsAccess();
+  if (access.error !== null) return { error: access.error };
+  const owned = await ownedSpecs(setId, access.userId);
+  if (owned.error !== null) return { error: owned.error };
+  const n = normaliseSetSpec(before);
+  if (!n.ok) return { error: SET_SAVE_FAILED };
+  if (await rateLimited(access.userId, "set-edit", 60, 40)) return { error: SET_SAVE_FAILED };
+  const stored = owned.edited ? [owned.edited, owned.spec] : [owned.spec];
+  const sealed = sealedEditText(setId, access.userId, undo);
+  const held = holdEditedText(n.spec, sealed ? [heldTextOf(sealed), ...stored] : stored);
+  const saved = await writeEdited(setId, access.userId, held);
+  if (saved.error !== null) return { error: saved.error };
+  return { error: null, spec: held, textRestored: sealed !== null };
 }
 
 /**

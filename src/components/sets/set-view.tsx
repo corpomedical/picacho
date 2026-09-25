@@ -18,7 +18,8 @@ import { isNativeAppClient } from "@/lib/native/platform";
 import { recordDownload } from "@/lib/generations/actions";
 import { addElementPhoto, assignElementPhoto, prepareElementSheets, removeElementPhoto, settleElementPhotos } from "@/lib/sets/element-actions";
 import { thumbUrl } from "@/lib/media/url";
-import { editSetWithAstra, readAstraEdit, rebuildThingFromPhotos, saveSetEdit } from "@/lib/sets/editor-actions";
+import { editSetWithAstra, readAstraEdit, rebuildThingFromPhotos, undoAstraEdit } from "@/lib/sets/editor-actions";
+import type { EditUndo } from "@/lib/sets/edit-seal";
 import { followAstraEdit, type FollowedEdit } from "@/lib/sets/astra-follow";
 import { THING_REBUILD_OPEN_TO_ALL, rebuiltThingIn } from "@/lib/sets/thing-rebuild";
 import { SELECTABLE_IMAGE_MODEL_IDS, getImageModel } from "@/lib/generations/providers/image-models";
@@ -794,6 +795,10 @@ export function SetView({
   const [lookAside, setLookAside] = useState(false);
   const [rebuildNote, setRebuildNote] = useState<{ key: string; text: string; ok: boolean; from?: string } | null>(null);
   const [setChanged, setSetChanged] = useState<number | null>(null);
+  // What the changed line's Undo did, said once where the line stood: the
+  // change is undone (and still counts this month), or its pieces are but
+  // its description could not come back (Helios Cut 2, step 2).
+  const [undoNote, setUndoNote] = useState<"undone" | "textKept" | null>(null);
   // The month's Astra changes left, as the last answer that carried a
   // number said it (Helios Cut 2, step 1, 2026-09-25): seeded from the
   // page's read and replaced only by a NUMBER — an edit's or a rebuild's
@@ -1234,6 +1239,11 @@ export function SetView({
   // The set as it stood before the last Astra edit, for the changed line's
   // Undo, and whether that Undo is being saved.
   const specBeforeEditRef = useRef<SetSpec | null>(null);
+  // What that Undo needs to give back Astra's words too (Helios Cut 2, step
+  // 2, 2026-09-25): the change's kind, and for an edit the server's seal
+  // over the words it replaced (edit-seal.ts) — none for an edit read back
+  // after a dropped connection. Kept with the `before` it belongs to.
+  const lastEditUndoRef = useRef<{ before: SetSpec; kind: "edit" | "rebuild"; undo: EditUndo | null } | null>(null);
   const undoingRef = useRef(false);
   // The stage calls this when an orbit settles; it points at scheduleSave,
   // which is declared below the stage's effect.
@@ -6124,8 +6134,11 @@ export function SetView({
       busyRef.current.editing = false;
       setEditingSet(false);
     }
-    const apply = (next: SetSpec, changed: number) => {
+    // A read-back carries no seal: its Undo keeps the server's words, and says so.
+    const apply = (next: SetSpec, changed: number, undo: EditUndo | null = null) => {
       specBeforeEditRef.current = before;
+      lastEditUndoRef.current = { before, kind: "edit", undo };
+      setUndoNote(null);
       setSpec(next);
       drawSet(next);
       setSetChanged(changed);
@@ -6147,7 +6160,7 @@ export function SetView({
       setError(res.error);
       return;
     }
-    apply(res.spec, res.changed);
+    apply(res.spec, res.changed, res.undo);
   }
 
   /**
@@ -6185,6 +6198,9 @@ export function SetView({
     // a read-back finds no thing where this one stood (edited meanwhile).
     const apply = (next: SetSpec, changed: number, to: { key: string; blocks: number } | null) => {
       specBeforeEditRef.current = before;
+      // A rebuild never changes the set's words (holdEditedText): nothing to seal.
+      lastEditUndoRef.current = { before, kind: "rebuild", undo: null };
+      setUndoNote(null);
       setSpec(next);
       drawSet(next);
       setSetChanged(changed);
@@ -6238,31 +6254,45 @@ export function SetView({
    * edit, saved back. The page shows it once it is saved: an Undo that
    * does not save leaves the set as the server has it, Undo still offered,
    * and says why.
+   *
+   * With the edit's seal, its words come back too — the title and the
+   * description every later still reads (undoAstraEdit, Helios Cut 2, step
+   * 2, 2026-09-25); without one the pieces come back and the page says the
+   * description still mentions the change. Never Astra, never a refund: the
+   * change still counts this month, and the page says that as well.
    */
   async function undoSetEdit() {
     const before = specBeforeEditRef.current;
     if (!before || undoingRef.current) return;
     undoingRef.current = true;
+    // The seal and kind of THIS change: a later change replaces both.
+    const last = lastEditUndoRef.current?.before === before ? lastEditUndoRef.current : null;
     let failed: string | null;
+    let saved: { spec: SetSpec; textRestored: boolean } | null = null;
     try {
-      failed = (await saveSetEdit(setId, before)).error;
+      const res = await undoAstraEdit(setId, before, last?.undo ?? null);
+      failed = res.error;
+      if (res.error === null) saved = res;
     } catch (err) {
       failed = leftBehind(err) ? null : t.generate.submitFailed;
       if (failed === null) return;
     } finally {
       undoingRef.current = false;
     }
-    if (failed !== null) {
-      setError(failed);
+    if (failed !== null || !saved) {
+      if (failed !== null) setError(failed);
       return;
     }
     // Another edit landed meanwhile: that one is the set now.
     if (specBeforeEditRef.current !== before) return;
     specBeforeEditRef.current = null;
+    lastEditUndoRef.current = null;
     setSetChanged(null);
-    setSpec(before);
-    drawSet(before);
-    refreshThumbnail(before);
+    setUndoNote(last?.kind !== "rebuild" && !saved.textRestored ? "textKept" : "undone");
+    // The copy as saved: the pieces as they were, and the words the server kept.
+    setSpec(saved.spec);
+    drawSet(saved.spec);
+    refreshThumbnail(saved.spec);
   }
 
   /** A change to the set itself, asked for: onto the Astra card, with the conversation open to show it. */
@@ -6298,6 +6328,7 @@ export function SetView({
     setMentionForced(false);
     setViewing(null);
     setSetChanged(null);
+    setUndoNote(null);
     setAstraAsk(null);
     pendingRef.current = [...pendingRef.current, message];
     setPendingAsks(pendingRef.current);
@@ -7967,6 +7998,14 @@ export function SetView({
                       </button>
                     )}
                   </p>
+                </div>
+              )}
+
+              {/* What the changed line's Undo did (Helios Cut 2, step 2). */}
+              {undoNote !== null && (
+                <div className="flex items-start gap-2.5" data-undo-note={undoNote}>
+                  <AstraMark />
+                  <p className="text-sm leading-relaxed text-[#d6d9e0]">{undoNote === "textKept" ? s.reply.noteUndoAstraText : s.reply.noteUndoAstra}</p>
                 </div>
               )}
 

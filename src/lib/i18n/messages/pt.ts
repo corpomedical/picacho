@@ -3196,6 +3196,8 @@ const pt = {
       notNow: "Agora não",
       creditOne: "1 crédito",
       creditsN: "{n} créditos",
+      noteUndoAstra: "A mudança do set foi desfeita; ela ainda conta neste mês.",
+      noteUndoAstraText: "As peças do set voltaram ao que eram, mas a descrição ainda menciona a mudança; ela ainda conta neste mês.",
     },
     rig: {
       chip: "Rig",

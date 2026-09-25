@@ -203,6 +203,9 @@ vi.mock("@/lib/sets/astra-press", async () => ({
   },
 }));
 vi.mock("@/lib/sets/editor-model", async () => await import("./editor-model"));
+vi.mock("@/lib/sets/edit-seal", async () => await import("./edit-seal"));
+// The seal's key (edit-seal.ts): any will do here.
+vi.stubEnv("MEDIA_SIGNING_SECRET", "test-only");
 vi.mock("@/lib/sets/messages", async () => await import("./messages"));
 vi.mock("@/lib/sets/set-edit-prompt", async () => await import("./set-edit-prompt"));
 vi.mock("@/lib/sets/set-config", async () => await import("./set-config"));
@@ -223,7 +226,9 @@ vi.mock("@/lib/sets/thing-model", async () => await import("./thing-model"));
 vi.mock("@/lib/sets/references", () => ({ listElementPhotos: async () => ({ photos, sheets: [] }) }));
 vi.mock("@/lib/sets/thing-model-store", () => ({ listModelFiles: async () => modelFiles }));
 
-import { editSetWithAstra, readAstraEdit, rebuildThingFromPhotos } from "./editor-actions";
+import { editSetWithAstra, readAstraEdit, rebuildThingFromPhotos, undoAstraEdit } from "./editor-actions";
+import { editTextOf, openEditSeal } from "./edit-seal";
+import { buildSetShotPrompt } from "./set-shot-prompt";
 import { resolvePhotos, setElements, type ElementPhoto } from "./elements";
 import { THING_REBUILD_MAX_SENT_CHARS, thingLocalBlocks } from "./thing-rebuild";
 import { THING_REBUILD_ADMINS_ONLY, THING_REBUILD_DIDNT_FIT, THING_REBUILD_NO_PHOTOS, THING_REBUILD_TOO_BIG } from "./messages";
@@ -479,6 +484,94 @@ describe("one Astra job per press", () => {
 
 // What became of a press, for the page after a dropped connection
 // (astra-follow.ts, 2026-09-25).
+// Undo that gives back Astra's words too (Helios Cut 2, step 2, 2026-09-25 —
+// critic item 4): an undone change used to leave Astra's description on the
+// set, where every later still read it.
+describe("undoing an Astra change", () => {
+  /** Astra's answer: the first barrier red, and new words for the set. */
+  const flagged = (): string =>
+    JSON.stringify({
+      ...SPEC,
+      title: "Flagged circuit",
+      description: "A race track lined with a row of flags along the pit wall.",
+      objects: SPEC.objects.map((o, i) => (i === 0 ? { ...o, color: "#aa3322" } : o)),
+    });
+  /** The copy the last update wrote. */
+  const lastWrite = () => (writes[writes.length - 1] as { edited_spec: SetSpec }).edited_spec;
+
+  it("seals the words of the copy Astra was handed", async () => {
+    answer = { state: "done", text: flagged(), usage: null, costUsd: 0.31 };
+    const out = await editSetWithAstra(SET, "add a row of flags along the pit wall");
+    if (out.error !== null) throw new Error(out.error);
+    expect(out.undo).not.toBeNull();
+    expect(out.undo!.text).toEqual(editTextOf(SPEC));
+    expect(openEditSeal(SET, USER, out.undo!.text, out.undo!.seal)).toBe(true);
+    expect(out.spec.description).toBe("A race track lined with a row of flags along the pit wall.");
+  });
+
+  it("with the seal, brings the words back — and the next still reads the description from before", async () => {
+    answer = { state: "done", text: flagged(), usage: null, costUsd: 0.31 };
+    const out = await editSetWithAstra(SET, "add a row of flags along the pit wall");
+    if (out.error !== null) throw new Error(out.error);
+    // The server now holds Astra's copy.
+    edited = out.spec;
+    steps.length = 0;
+    sent.length = 0;
+    const undone = await undoAstraEdit(SET, SPEC, out.undo);
+    expect(undone).toMatchObject({ error: null, textRestored: true });
+    const saved = lastWrite();
+    expect(saved.title).toBe(SPEC.title);
+    expect(saved.description).toBe(SPEC.description);
+    expect(saved.objects).toEqual(SPEC.objects);
+    if (undone.error === null) expect(undone.spec).toEqual(saved);
+    // What a still is told of the place is the set's description (actions.ts shootStill).
+    const prompt = buildSetShotPrompt({ description: saved.description, direction: "" });
+    expect(prompt).toContain(SPEC.description);
+    expect(prompt).not.toContain("flags");
+    // Never Astra, never the month.
+    expect(sent).toHaveLength(0);
+    for (const step of ["astra", "pace", "month", "tries", "count", "give back", "claim"]) expect(steps, step).not.toContain(step);
+    expect(steps).toEqual(["set-edit"]);
+  });
+
+  it("without a seal that opens, brings the pieces back and keeps the server's words", async () => {
+    answer = { state: "done", text: flagged(), usage: null, costUsd: 0.31 };
+    const out = await editSetWithAstra(SET, "add a row of flags along the pit wall");
+    if (out.error !== null) throw new Error(out.error);
+    edited = out.spec;
+    const forged = { text: { ...out.undo!.text, description: "Anything the page likes." }, seal: out.undo!.seal };
+    for (const undo of [undefined, null, forged, { text: out.undo!.text, seal: "x".repeat(32) }]) {
+      const undone = await undoAstraEdit(SET, SPEC, undo);
+      expect(undone, JSON.stringify(undo)).toMatchObject({ error: null, textRestored: false });
+      const saved = lastWrite();
+      expect(saved.objects).toEqual(SPEC.objects);
+      expect(saved.description).toBe("A race track lined with a row of flags along the pit wall.");
+      expect(saved.title).toBe("Flagged circuit");
+    }
+    expect(sent).toHaveLength(1);
+  });
+
+  it("keeps to the editor's pace, and to the person's own set", async () => {
+    limited["set-edit"] = true;
+    expect(await undoAstraEdit(SET, SPEC, null)).toEqual({ error: SET_SAVE_FAILED });
+    expect(writes).toEqual([]);
+    limited = {};
+    expect(await undoAstraEdit("not-a-set", SPEC, null)).toEqual({ error: SET_NOT_FOUND });
+    expect(await undoAstraEdit(SET, { not: "a set" }, null)).toEqual({ error: SET_SAVE_FAILED });
+    access = { error: SETS_SESSION_EXPIRED } as never;
+    expect(await undoAstraEdit(SET, SPEC, null)).toEqual({ error: SETS_SESSION_EXPIRED });
+    expect(writes).toEqual([]);
+  });
+
+  it("never asks Astra or the month (read as source)", () => {
+    const src = readFileSync(join(__dirname, "editor-actions.ts"), "utf8");
+    const body = src.slice(src.indexOf("export async function undoAstraEdit("), src.indexOf("\n}\n", src.indexOf("export async function undoAstraEdit(")));
+    for (const call of ["askAstra(", "astraChangeSlot(", "giveBackAstraChange(", "oncePerPress(", "submitAstraJob("]) expect(body, call).not.toContain(call);
+    expect(body.indexOf("await setsAccess()")).toBeGreaterThan(-1);
+    expect(body).toContain('if (await rateLimited(access.userId, "set-edit", 60, 40)) return { error: SET_SAVE_FAILED };');
+  });
+});
+
 describe("readAstraEdit", () => {
   const RECOLOURED: SetSpec = JSON.parse(recoloured()) as SetSpec;
 
