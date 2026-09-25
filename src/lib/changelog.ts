@@ -23,7 +23,7 @@ export const RELEASES: Release[] = [
     version: "1.111.0",
     build: 150,
     date: "2026-09-25",
-    title: "Helios's chat never spends a set change or a still on words it didn't read",
+    title: "Helios's chat never spends on words it didn't read, and a chat that understands a whole message is with admins until its check",
     items: [
       "Asking a set's chat to change the set itself (add a row of flags, recolour the barriers) now shows a card first: your words as Astra will read them, and how many of the month's Astra changes you have left. Astra runs only when you press \"Change the set\", in every mode. \"Have Astra rescale it\" goes through the same card.",
       "A message the chat couldn't read, because the reader was down or busy, now changes nothing and shoots nothing. It says so and offers \"Use my words as what happens\". Before, the words became what happens on their own, and \"Shoot without asking\" shot a paid still of them.",
@@ -33,6 +33,11 @@ export const RELEASES: Release[] = [
       "Undo of an Astra change now also brings back the set's own title and description, so the stills after it stop describing the undone change. When that can't be done, the page says the description still mentions it. Every Undo says the change still counts this month.",
       "Each chat reading now records how many tokens it used, never your words, so its real cost can be measured.",
       "⌘K on a set can now take the film stock, the lens character and the palette off, set an era or take it off, and pick a genre, which sets the genre's light and palette exactly as the rig's \"Use these\" does.",
+      "For admins only, until the paid phrase check (check A) passes: the set's chat reads one message as a whole. \"Eva leans on the car, golden hour, anamorphic, low angle\" sets who, where she stands, her pose, the camera and the look at once, for free. It understands corrections against what's on screen (\"a bit closer\", \"no, lower\", \"the other car\", \"now she's smiling\", \"undo that\"). It answers questions from the page's own facts: the lens, focus, cost, changes left, who's in the frame, what's on the set. It can put her on the left or right third.",
+      "For admins only, until check A: every chat reply says what it did, what isn't possible yet and where to do that instead, and what needs your OK. Every button that spends shows its price. \"What happens\" is always your own words, never rewritten, and when they say what someone wears, that character's saved outfit photo sits the shot out. \"Just talking\" shows what it would do, with Do it. A take the chat sets up waits for its own priced Take press, and Undo steps back one message at a time. The composer lists ⌘K's commands under \"/\", and the frame card marks what your last message changed.",
+      "For admins only, until check A: a question about something outside the set (your plan, your credits) offers \"Ask the Producer\", which opens the Producer's lamp with your words already typed, unsent. This shows only where the lamp is: admins, and Elite accounts when the Producer is on for them.",
+      "For admins only, until you approve two or three one-credit proof stills: a still can say what the figure does (sits, walks or leans, as the grey figure does) and call the set's only car \"the car\". Everyone else's stills read exactly as before.",
+      "The paid phrase check is built and has been run for free: 100 phrases in English, Spanish, Portuguese and Italian, read the way a set's page reads them. Check A is yours to run once the OpenAI balance is topped up, 20 phrases have been written by someone who hasn't read the chat's rules, and the price has been re-read. It costs about $0.24 and stops before $0.50. If it passes, the new chat can be opened to everyone in its own change (scripts/helios-reader-check/README.md).",
     ],
   },
   {
