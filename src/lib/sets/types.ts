@@ -156,6 +156,13 @@ export type SetPageData =
        * readShotTurn checks again, and answers "off" otherwise.
        */
       readerV2: boolean;
+      /**
+       * Whether the Producer's lamp is on this page (producer/enabled.ts
+       * producerVisible, the app layout's own rule): the chat's answer about
+       * something outside the set then offers "Ask the Producer", which opens
+       * the lamp with the person's words, unsent (Helios Cut 2, step 12).
+       */
+      producerOn: boolean;
       /** The photos on the set's things (references.ts listElementPhotos, R1), oldest first, and the hashes of the sheets already drawn. */
       elementPhotos: { photos: ElementPhoto[]; sheets: string[] };
       /** The picture model stills are drawn with (app_settings image_model): the things' sheets ride "gpt-image" only. */

@@ -65,3 +65,19 @@ export function producerAllowed(
   if (profile?.plan === "elite" && inGoodStanding) return { error: null, isAdmin };
   return { error: PRODUCER_NEEDS_ELITE, isAdmin };
 }
+
+/**
+ * Whether this person's pages carry the Producer's lamp: admins, and Elite
+ * in good standing once `producer_elite` is on, with the Producer switched
+ * on — the route's own rule (producerAllowed). Lifted out of the app
+ * layout (Helios Cut 2, step 12, 2026-09-25) so a set's page can ask the
+ * same question before its chat offers "Ask the Producer": the button is
+ * offered only where the lamp it opens is on the page. Eligibility first,
+ * so every other account skips the flag reads.
+ */
+export async function producerVisible(supabase: SupabaseClient, profile: ProducerProfile, isAdmin: boolean): Promise<boolean> {
+  const eligible = isAdmin || (profile?.plan === "elite" && !producerAllowed(profile, true).error);
+  if (!eligible) return false;
+  if (!isAdmin && !(await isProducerOpenToElite(supabase))) return false;
+  return isProducerEnabled(supabase);
+}

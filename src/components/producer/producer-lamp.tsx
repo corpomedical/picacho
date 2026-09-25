@@ -17,6 +17,7 @@ import type { PreparedSend } from "@/lib/producer/tools";
 import type { Note } from "@/lib/producer/notes";
 import type { WatchItem } from "@/lib/producer/watch";
 import { isSpot, type Spot } from "@/lib/producer/spots";
+import { PRODUCER_ASK_EVENT, producerAskDraft, producerAskText } from "@/lib/producer/ask-event";
 import styles from "./producer-lamp.module.css";
 import { Wheel, WHEEL_R } from "./wheel";
 import { MovableLamp } from "./movable-lamp";
@@ -235,6 +236,34 @@ export function ProducerLamp({
   useEffect(() => {
     if (open && !loaded) void load();
   }, [open, loaded, load]);
+
+  // A set's chat hands a question over (Helios Cut 2, step 12; ask-event.ts):
+  // the lamp opens on the conversation with the words in its field, UNSENT —
+  // a Producer turn is always the person's own press. A draft they had
+  // started stays, the words after it.
+  const askedRef = useRef(false);
+  useEffect(() => {
+    const onAsk = (e: Event) => {
+      const text = producerAskText(e);
+      if (text === null) return;
+      setView("chat");
+      setInput((current) => producerAskDraft(current, text));
+      setOpen(true);
+      askedRef.current = true;
+    };
+    window.addEventListener(PRODUCER_ASK_EVENT, onAsk);
+    return () => window.removeEventListener(PRODUCER_ASK_EVENT, onAsk);
+  }, []);
+  // The field takes the keyboard once the conversation has loaded (it is held until then), sized to the words.
+  useEffect(() => {
+    if (!open || !loaded || !askedRef.current) return;
+    askedRef.current = false;
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
+    el.focus();
+  }, [open, loaded, view]);
 
   // A rename in Settings arrives as a new prop after the router refresh.
   useEffect(() => setName(initialName), [initialName]);

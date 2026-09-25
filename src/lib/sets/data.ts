@@ -11,6 +11,7 @@ import { DEFAULT_IDENTITY_THRESHOLD, resolveIdentityThresholdSetting } from "@/l
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { isPhotoSetsEnabled } from "@/lib/sets/enabled";
 import { isLiveEnabled, isLiveOpenToPlans, liveAllowed } from "@/lib/live/enabled";
+import { producerVisible, type ProducerProfile } from "@/lib/producer/enabled";
 import { readPhotoSources } from "@/lib/sets/photo";
 import {
   isCurrentSetThumb,
@@ -221,6 +222,29 @@ export async function getSetsHome(): Promise<SetsHomeData> {
     photoSetsOn: access.isAdmin && (await isPhotoSetsEnabled(access.supabase)),
     characters: await shootableCharacters(access.supabase, access.userId),
   };
+}
+
+/**
+ * Whether this page carries the Producer's lamp — the app layout's own
+ * question (producer/enabled.ts producerVisible), so the set chat offers
+ * "Ask the Producer" only where the lamp it opens is on the page (Helios
+ * Cut 2, step 12). Only admins and Elite can have it: everyone else is
+ * answered with no read. An Elite account's standing (plan_status) is the
+ * one fact setsAccess doesn't read, so it is read here, for Elite only.
+ */
+async function producerOnFor(access: { supabase: SupabaseClient; userId: string; plan: string; isAdmin: boolean }): Promise<boolean> {
+  if (!access.isAdmin && access.plan !== "elite") return false;
+  try {
+    let profile: ProducerProfile = { plan: access.plan, role: access.isAdmin ? "admin" : null };
+    if (!access.isAdmin) {
+      const { data } = await access.supabase.from("profiles").select("plan, plan_status, role, status").eq("id", access.userId).maybeSingle();
+      profile = (data as ProducerProfile) ?? null;
+    }
+    return await producerVisible(access.supabase, profile, access.isAdmin);
+  } catch {
+    // Closed, as every Producer switch fails (producer/enabled.ts): the page loads without the offer.
+    return false;
+  }
 }
 
 export async function getSetPage(setId: string): Promise<SetPageData> {
@@ -450,6 +474,9 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     // The chat's reader v2 (Helios Cut 2): admins until the phrase check
     // passes; readShotTurn holds the same rule on the server.
     readerV2: access.isAdmin || SHOT_READER_V2_OPEN_TO_ALL,
+    // The Producer's lamp is on this page (step 12): the chat's "elsewhere"
+    // answer then offers it, with the person's words, unsent.
+    producerOn: await producerOnFor(access),
     // The photos on the set's things and the sheets already drawn (R1,
     // 2026-09-21): the folder is the list, read with the service client
     // inside the person's own folder only; the storage paths stay here.

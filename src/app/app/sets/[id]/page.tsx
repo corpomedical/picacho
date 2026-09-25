@@ -122,6 +122,7 @@ export default async function SetPage({
         astraEditsLeft={data.astraEditsLeft}
         astraEditsCap={data.astraEditsCap}
         readerV2={data.readerV2}
+        producerOn={data.producerOn}
       />
     );
   }

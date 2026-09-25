@@ -53,6 +53,7 @@ import { LIKENESS_ANSWERS, type LikenessAnswer } from "@/lib/characters/likeness
 import { CastStrip, type CastChip } from "./cast-strip";
 import { AstraChangeCard } from "./astra-change-card";
 import { AstraReply, shownLines } from "./astra-reply";
+import { askProducer } from "@/lib/producer/ask-event";
 import { astraCardWords, astraTooBig } from "@/lib/sets/astra-card";
 import {
   retryableTakes,
@@ -7520,7 +7521,7 @@ export function SetView({
         return;
       case "askProducer":
         // The Producer's lamp opens with the words, unsent (Cut 2, step 12).
-        window.dispatchEvent(new CustomEvent("producer:ask", { detail: { text: turn.asked ?? "" } }));
+        askProducer(turn.asked ?? "");
         return;
     }
   }

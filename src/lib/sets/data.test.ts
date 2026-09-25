@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import raceTrack from "./fixtures-race-track.json";
 import { SET_EDITS_MONTH_SCOPE, setEditsMonthlyLimit, setTakesEligible } from "./set-config";
@@ -88,6 +88,8 @@ vi.mock("@/lib/sets/shot-rig", async () => await import("./shot-rig"));
 vi.mock("@/lib/sets/shot-take", async () => await import("./shot-take"));
 vi.mock("@/lib/sets/set-shots", async () => await import("./set-shots"));
 vi.mock("@/lib/sets/messages", async () => await import("./messages"));
+// The real rule, reading the fake database's flags (Helios Cut 2, step 12).
+vi.mock("@/lib/producer/enabled", async () => await import("../producer/enabled"));
 
 import { getSetPage } from "./data";
 import { SHOT_READER_V2_OPEN_TO_ALL } from "./shot-reading";
@@ -272,6 +274,50 @@ describe("the month's Astra changes, for the editor", () => {
     expect((await page(ready(world([still(1)])))).readerV2).toBe(true);
     who = { plan: "elite", isAdmin: false };
     expect((await page(ready(world([still(1)])))).readerV2).toBe(false);
+  });
+});
+
+// The Producer's lamp on a set's page (Helios Cut 2, step 12, 2026-09-25):
+// the chat offers "Ask the Producer" only where the app layout mounts the
+// lamp (producer/enabled.ts producerVisible), asked the same way.
+describe("the Producer's lamp on this page", () => {
+  const KEY = process.env.ANTHROPIC_API_KEY;
+  afterEach(() => {
+    if (KEY === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = KEY;
+  });
+  const ready = (tables: Tables, flags: Record<string, boolean>, planStatus: string | null = "active"): Tables => {
+    tables.location_sets.rows[0] = { ...tables.location_sets.rows[0], status: "ready", spec: raceTrack };
+    return {
+      ...tables,
+      feature_flags: { columns: ["key", "enabled"], rows: Object.entries(flags).map(([key, enabled]) => ({ key, enabled })) },
+      profiles: { columns: ["id", "plan", "plan_status", "role", "status"], rows: [{ id: USER, plan: "elite", plan_status: planStatus, role: null, status: null }] },
+    };
+  };
+
+  it("is on for an admin with the Producer on, and off with it off", async () => {
+    process.env.ANTHROPIC_API_KEY = "test-key";
+    who = { plan: "growth", isAdmin: true };
+    expect((await page(ready(world([still(1)]), { producer: true }))).producerOn).toBe(true);
+    expect((await page(ready(world([still(1)]), { producer: false }))).producerOn).toBe(false);
+    delete process.env.ANTHROPIC_API_KEY;
+    expect((await page(ready(world([still(1)]), { producer: true }))).producerOn).toBe(false);
+  });
+
+  it("is on for Elite in good standing only once producer_elite is on", async () => {
+    process.env.ANTHROPIC_API_KEY = "test-key";
+    who = { plan: "elite", isAdmin: false };
+    expect((await page(ready(world([still(1)]), { producer: true }))).producerOn).toBe(false);
+    expect((await page(ready(world([still(1)]), { producer: true, producer_elite: true }))).producerOn).toBe(true);
+    expect((await page(ready(world([still(1)]), { producer: true, producer_elite: true }, "past_due"))).producerOn).toBe(false);
+  });
+
+  it("reads nothing for an account that could never have it", async () => {
+    process.env.ANTHROPIC_API_KEY = "test-key";
+    who = { plan: "studio", isAdmin: false };
+    const out = await page(ready(world([still(1)]), { producer: true, producer_elite: true }));
+    expect(out.producerOn).toBe(false);
+    expect(reads.some((r) => r.table === "profiles" || r.table === "feature_flags")).toBe(false);
   });
 });
 

@@ -5,7 +5,7 @@ import { isRecceEnabled, isSetsEnabled } from "@/lib/sets/enabled";
 import { isRecastEnabled } from "@/lib/recast/enabled";
 import { isLiveEnabled, isLiveOpenToPlans, liveAllowed } from "@/lib/live/enabled";
 import { isEditorEnabled } from "@/lib/editor/enabled";
-import { isProducerEnabled, isProducerOpenToElite, producerAllowed } from "@/lib/producer/enabled";
+import { producerVisible } from "@/lib/producer/enabled";
 import { countWatch, loadWatchBar } from "@/lib/producer/watch";
 import { DEFAULT_PRODUCER_NAME } from "@/lib/producer/store";
 import { ProducerLamp } from "@/components/producer/producer-lamp";
@@ -100,16 +100,11 @@ export default async function AppLayout({
   const cutVisible = isAdmin && (await isEditorEnabled(supabase));
 
   // The Producer's lamp (2026-09-24): admins, and Elite once `producer_elite`
-  // is on — the route's own rule (lib/producer/enabled.ts). Eligibility
-  // first, so every other account skips the flag reads and the watch count.
-  const producerEligible =
-    isAdmin || (profile?.plan === "elite" && !producerAllowed(profile, true).error);
+  // is on — the route's own rule (lib/producer/enabled.ts producerVisible,
+  // which a set's page asks too). Eligibility first, so every other account
+  // skips the flag reads and the watch count.
   let producer: { name: string; watchCount: number; look: LampLook } | null = null;
-  if (
-    producerEligible &&
-    (isAdmin || (await isProducerOpenToElite(supabase))) &&
-    (await isProducerEnabled(supabase))
-  ) {
+  if (await producerVisible(supabase, profile, isAdmin)) {
     const [{ data: prefs }, { data: lookRow }, watchBar] = await Promise.all([
       supabase.from("producer_prefs").select("display_name, watch_seen_at").eq("user_id", data.user.id).maybeSingle(),
       // On its own: before producer-look.sql runs the column is missing, the
