@@ -11,6 +11,9 @@ const root = join(__dirname, "..", "..");
 const door = readFileSync(join(root, "components", "recce", "recce-door.tsx"), "utf8");
 const home = readFileSync(join(root, "components", "sets", "sets-home.tsx"), "utf8");
 const sidebar = readFileSync(join(root, "components", "app-sidebar.tsx"), "utf8");
+// The door's path lives in the sidebar's one list of tools since the Tools
+// door (2026-09-25); the sidebar still carries the visibility gate.
+const tools = readFileSync(join(root, "lib", "nav", "tools.ts"), "utf8");
 const page = readFileSync(join(root, "app", "app", "recce", "page.tsx"), "utf8");
 
 describe("the Recce door", () => {
@@ -21,7 +24,7 @@ describe("the Recce door", () => {
   });
 
   it("hangs in the nav behind its own visibility, at its own path", () => {
-    expect(sidebar).toContain('href: "/app/recce"');
+    expect(tools).toContain('href: "/app/recce"');
     expect(sidebar).toContain("recceVisible");
   });
 

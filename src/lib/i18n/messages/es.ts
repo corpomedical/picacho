@@ -67,6 +67,15 @@ const es = {
     liveSub: "Dirige la toma mientras se reproduce.",
     directorsCut: "Director's Cut",
     directorsCutSub: "Tu material en bruto, editado para ti.",
+    generateSub: "Imágenes y vídeos de tus personajes.",
+    notesSub: "Ideas y guiones, junto a tu trabajo.",
+    toolsTitle: "Todo lo que hace Picacho",
+    toolsSearchHint: "Escribe un nombre en {key} para ir directo",
+    toolsGroupMake: "Crear una toma",
+    toolsGroupEdit: "Editar lo que hiciste",
+    toolsGroupStart: "Empezar y guardar",
+    pinTool: "Fijar {name} en el menú",
+    unpinTool: "Quitar {name} del menú",
   },
   // The More page (/app/more): the app bar's fifth tab.
   directorsCut: {
@@ -1963,7 +1972,8 @@ const es = {
     start: "Enviar",
   },
   search: {
-    placeholder: "Buscar proyectos, personajes, historial…",
+    placeholder: "Buscar herramientas, proyectos, personajes, historial…",
+    pages: "Páginas",
     startTyping: "Empieza a escribir para buscar.",
     noMatches: "No hay resultados para \"{query}\".",
     projects: "Proyectos",
@@ -2063,9 +2073,9 @@ const es = {
     promptTitle: "Descríbelo con tus palabras",
     promptBody:
       "No hace falta ingeniería de prompts: escríbelo como se lo contarías a un amigo. Picacho redacta y revisa el texto por ti.",
-    templatesTitle: "Empieza desde una plantilla",
-    templatesBody:
-      "Escenas listas — retratos, fotos de producto, unboxings y más. Toca una y llega al compositor ya rellenada, lista para ajustar.",
+    toolsTitle: "Todas tus herramientas están aquí",
+    toolsBody:
+      "Plantillas, Mejorar vídeo, Capas y cada herramienta nueva están en Herramientas, cada una con una línea que dice qué hace. Fija las que más usas para tenerlas en el menú.",
     communityTitle: "Mira lo que crean otros",
     communityBody:
       "Tomas reales compartidas por otros usuarios — corazones, vistas e ideas que vale la pena tomar prestadas. Comparte lo tuyo desde la página de Historial de cualquier toma.",

@@ -75,6 +75,16 @@ const en = {
     liveSub: "Direct a take as it plays.",
     directorsCut: "Director's Cut",
     directorsCutSub: "Your raw footage, edited for you.",
+    // The Tools door's panel (2026-09-25): every tool, one line on what it does.
+    generateSub: "Images and videos of your characters.",
+    notesSub: "Ideas and scripts, kept with your work.",
+    toolsTitle: "Everything Picacho makes",
+    toolsSearchHint: "Type a name in {key} to jump to it",
+    toolsGroupMake: "Make a take",
+    toolsGroupEdit: "Edit what you made",
+    toolsGroupStart: "Start and keep",
+    pinTool: "Pin {name} to the menu",
+    unpinTool: "Unpin {name} from the menu",
   },
   // The More page (/app/more): the app bar's fifth tab.
   // Live (/app/live, 2026-09-24): H3 Max Director, a take directed as it plays.
@@ -2081,7 +2091,8 @@ const en = {
     start: "Start",
   },
   search: {
-    placeholder: "Search projects, characters, history…",
+    placeholder: "Search tools, projects, characters, history…",
+    pages: "Pages",
     startTyping: "Start typing to search.",
     noMatches: "No matches for \"{query}\".",
     projects: "Projects",
@@ -2181,9 +2192,9 @@ const en = {
     promptTitle: "Describe it in plain words",
     promptBody:
       "No prompt engineering needed — write it like you'd tell a friend. Picacho drafts and reviews the wording for you.",
-    templatesTitle: "Start from a template",
-    templatesBody:
-      "Ready-made scenes — headshots, product shots, unboxings and more. Tap one and it lands in the composer prefilled, ready to tweak.",
+    toolsTitle: "All your tools are here",
+    toolsBody:
+      "Templates, Upscale video, Layers and every new tool live under Tools, each with a line on what it does. Pin the ones you use most to keep them in the menu.",
     communityTitle: "See what others make",
     communityBody:
       "Real takes shared by other users — hearts, views, and ideas worth borrowing. Share your own best work from any take's History page.",

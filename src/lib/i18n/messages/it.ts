@@ -66,6 +66,15 @@ const it = {
     liveSub: "Dirigi la ripresa mentre scorre.",
     directorsCut: "Director's Cut",
     directorsCutSub: "Il tuo girato grezzo, montato per te.",
+    generateSub: "Immagini e video dei tuoi personaggi.",
+    notesSub: "Idee e copioni, accanto al tuo lavoro.",
+    toolsTitle: "Tutto ciò che fa Picacho",
+    toolsSearchHint: "Scrivi un nome in {key} per andarci subito",
+    toolsGroupMake: "Crea una ripresa",
+    toolsGroupEdit: "Modifica ciò che hai fatto",
+    toolsGroupStart: "Inizia e conserva",
+    pinTool: "Fissa {name} nel menu",
+    unpinTool: "Togli {name} dal menu",
   },
   // The More page (/app/more): the app bar's fifth tab.
   directorsCut: {
@@ -1962,7 +1971,8 @@ const it = {
     start: "Invia",
   },
   search: {
-    placeholder: "Cerca progetti, personaggi, cronologia…",
+    placeholder: "Cerca strumenti, progetti, personaggi, cronologia…",
+    pages: "Pagine",
     startTyping: "Inizia a digitare per cercare.",
     noMatches: "Nessun risultato per \"{query}\".",
     projects: "Progetti",
@@ -2062,9 +2072,9 @@ const it = {
     promptTitle: "Descrivilo con parole tue",
     promptBody:
       "Niente ingegneria dei prompt: scrivilo come lo racconteresti a un amico. Picacho redige e rivede il testo per te.",
-    templatesTitle: "Parti da un modello",
-    templatesBody:
-      "Scene pronte — ritratti, foto prodotto, unboxing e altro. Toccane una e arriva nel compositore già precompilata, pronta da ritoccare.",
+    toolsTitle: "Tutti i tuoi strumenti sono qui",
+    toolsBody:
+      "Modelli, Migliora video, Livelli e ogni nuovo strumento stanno in Strumenti, ognuno con una riga che dice cosa fa. Fissa quelli che usi di più per tenerli nel menu.",
     communityTitle: "Guarda cosa creano gli altri",
     communityBody:
       "Riprese reali condivise dagli altri utenti — cuori, visualizzazioni e idee da cui prendere spunto. Condividi i tuoi migliori dalla pagina Cronologia di ogni ripresa.",

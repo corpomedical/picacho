@@ -4410,7 +4410,7 @@ function GenerateFormInner({
     { targetId: "tour-prompt", title: ob.promptTitle, body: ob.promptBody },
     { targetId: "tour-send", title: ob.sendTitle, body: ob.sendBody },
     { targetId: "tour-characters", title: ob.charactersTitle, body: ob.charactersBody },
-    { targetId: "tour-templates", title: ob.templatesTitle, body: ob.templatesBody },
+    { targetId: "tour-tools", title: ob.toolsTitle, body: ob.toolsBody },
     { targetId: "tour-community", title: ob.communityTitle, body: ob.communityBody },
     { targetId: "tour-menu", title: ob.menuTitle, body: ob.menuBody },
     { targetId: null, title: ob.doneTitle, body: ob.doneBody },

@@ -20,6 +20,22 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.103.0",
+    build: 142,
+    date: "2026-09-25",
+    title: "A cleaner menu: your places in the sidebar, every tool behind one Tools door",
+    items: [
+      "The website's sidebar drops from 17 rows to 8 for an admin: Home, Generate, Tools, then Characters, Media, History, Projects and Community. Your 6 recent takes show in full again. Before, at 1440 × 900 they had a 49 px slot, and on a 1366 × 768 laptop your name and the settings gear fell below the screen.",
+      "Tools opens a panel with every tool you can use and one line saying what each does, on three shelves: Make a take, Edit what you made, Start and keep. The next tool we launch becomes a card there instead of a new row.",
+      "Pin a tool you use every day: the pin on its card puts it back in the menu under Tools. Pins are kept per browser, like the sidebar's collapse setting.",
+      "\"New\" is now a small dot. It goes once you open the tool, or 14 days after launch. Upscale video and Layers had worn their badge since 3 September.",
+      "Search (⌘K) finds pages and tools now, not only takes, characters and projects: type \"upscale\", \"edit\" or \"live\" to jump there.",
+      "Home has a row on the website, like the phone's first tab. Media is one row that opens the Media page (All · Images · Videos | History). Admin moved into the gear menu.",
+      "The Projects and Characters lists left the sidebar: their rows open the full pages. The app no longer loads those two lists on every page.",
+      "The first-visit tour's Templates stop now points at Tools, in all four languages.",
+    ],
+  },
+  {
     version: "1.102.0",
     build: 141,
     date: "2026-09-25",

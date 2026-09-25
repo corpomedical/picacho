@@ -10,6 +10,24 @@ import { formatMsg } from "@/lib/i18n/format";
 
 const EMPTY: SearchResults = { projects: [], characters: [], generations: [] };
 
+/** A page or tool ⌘K can jump to, matched here on its own words. */
+export type SearchPage = { href: string; label: string; sub?: string };
+
+// Case- and accent-blind, so "vídeo" and "video" find the same tool.
+function fold(text: string): string {
+  return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function matchPages(pages: readonly SearchPage[], query: string): SearchPage[] {
+  const q = fold(query.trim());
+  if (!q) return [];
+  // A name that matches beats a line that does ("edit" → Director's Cut via
+  // its line, but a tool NAMED like the query comes first).
+  const byName = pages.filter((p) => fold(p.label).includes(q));
+  const byLine = pages.filter((p) => !byName.includes(p) && p.sub !== undefined && fold(p.sub).includes(q));
+  return [...byName, ...byLine].slice(0, 6);
+}
+
 function SearchIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -28,7 +46,7 @@ function ResultGroup({ label, children }: { label: string; children: React.React
   );
 }
 
-function ResultItem({ label, onClick }: { label: string; onClick: () => void }) {
+function ResultItem({ label, sub, onClick }: { label: string; sub?: string; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -36,11 +54,20 @@ function ResultItem({ label, onClick }: { label: string; onClick: () => void }) 
       className="block w-full truncate border-b border-atelier-rule/50 px-3 py-2 text-left text-sm text-atelier-ink transition-colors last:border-0 hover:bg-atelier-ink/5"
     >
       {label}
+      {sub && <span className="ml-2 text-xs text-atelier-muted">{sub}</span>}
     </button>
   );
 }
 
-export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SearchDialog({
+  open,
+  onClose,
+  pages = [],
+}: {
+  open: boolean;
+  onClose: () => void;
+  pages?: readonly SearchPage[];
+}) {
   const { t } = useLocale();
   const se = t.search;
   const [query, setQuery] = useState("");
@@ -108,8 +135,9 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
     router.push(href);
   }
 
+  const pageMatches = matchPages(pages, query);
   const hasResults =
-    results.projects.length + results.characters.length + results.generations.length > 0;
+    pageMatches.length + results.projects.length + results.characters.length + results.generations.length > 0;
 
   return (
     <div
@@ -152,6 +180,13 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
             </p>
           ) : (
             <>
+              {pageMatches.length > 0 && (
+                <ResultGroup label={se.pages}>
+                  {pageMatches.map((p) => (
+                    <ResultItem key={p.href} label={p.label} sub={p.sub} onClick={() => go(p.href)} />
+                  ))}
+                </ResultGroup>
+              )}
               {results.projects.length > 0 && (
                 <ResultGroup label={se.projects}>
                   {results.projects.map((p) => (

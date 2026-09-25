@@ -1,15 +1,13 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type SVGProps } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type SVGProps } from "react";
 import { PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/cn";
-import { ProjectRow } from "@/components/project-row";
 import { DeleteGenerationButton } from "@/components/delete-generation-button";
-import { DeleteCharacterButton } from "@/components/delete-character-button";
-import { SearchDialog } from "@/components/search-dialog";
+import { SearchDialog, type SearchPage } from "@/components/search-dialog";
 import { VoiceRecorderButton } from "@/components/voice-recorder-button";
 import { parseVoiceCommand } from "@/lib/voice/commands";
 import { updateUsername } from "@/lib/profile/actions";
@@ -17,6 +15,21 @@ import { logout } from "@/lib/auth/actions";
 import { useTheme, type ThemeMode } from "@/lib/theme/theme-provider";
 import { useLocale } from "@/lib/i18n/provider";
 import type { Messages } from "@/lib/i18n/messages";
+import { formatMsg } from "@/lib/i18n/format";
+import {
+  PINNED_STORAGE_KEY,
+  SEEN_STORAGE_KEY,
+  TOOL_GROUPS,
+  isToolNew,
+  localDay,
+  parseToolKeys,
+  togglePin,
+  toolForPath,
+  visibleTools,
+  type NavTool,
+  type ToolGroup,
+  type ToolKey,
+} from "@/lib/nav/tools";
 import { Logo } from "@/components/logo";
 import { EarlyAccessBadge } from "@/components/early-access-badge";
 import { SkipRefinementToggle } from "@/components/settings/skip-refinement-toggle";
@@ -28,19 +41,6 @@ type RecentJob = {
   prompt_input: string;
   status: string;
   content_type: string | null;
-};
-
-type RecentCharacter = {
-  id: string;
-  name: string;
-};
-
-type RecentProject = {
-  id: string;
-  name: string;
-  is_starred: boolean;
-  is_pinned: boolean;
-  is_archived: boolean;
 };
 
 function BoltIcon(props: SVGProps<SVGSVGElement>) {
@@ -157,21 +157,40 @@ function NotesIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-function ImageIcon(props: SVGProps<SVGSVGElement>) {
+function HomeIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <circle cx="9" cy="9" r="2" />
-      <path d="m21 15-5-5L5 21" />
+      <path d="M3.5 11 12 4l8.5 7" />
+      <path d="M5.5 9.5V20h13V9.5" />
     </svg>
   );
 }
 
-function VideoIcon(props: SVGProps<SVGSVGElement>) {
+function ToolsIcon(props: SVGProps<SVGSVGElement>) {
+  // Four tiles: the door to every tool.
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <rect x="2.5" y="5.5" width="14" height="13" rx="2" />
-      <path d="m21.5 8.5-5 3.5 5 3.5v-7Z" />
+      <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
+    </svg>
+  );
+}
+
+function PinIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M9 3.5h6l-1 6 3.5 3.5h-11L10 9.5l-1-6Z" />
+      <path d="M12 13v7.5" />
+    </svg>
+  );
+}
+
+function ChevronRightIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="m9 6 6 6-6 6" />
     </svg>
   );
 }
@@ -259,14 +278,6 @@ function UpscaleIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7" />
-    </svg>
-  );
-}
-
-function ChevronDownIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="m6 9 6 6 6-6" />
     </svg>
   );
 }
@@ -386,30 +397,233 @@ const THEME_OPTIONS: { value: ThemeMode; icon: (props: SVGProps<SVGSVGElement>) 
   { value: "dark", icon: MoonIcon },
 ];
 
-// Images and Videos are grouped under a collapsible "Media" submenu (see
-// mediaOpen below) rather than sitting as two flat top-level items — split
-// out here so the two halves can be rendered around that group in the JSX
-// while keeping the original top-to-bottom order (generate, projects,
-// characters, history, [Media], notes).
-function getNavItems(t: Messages["nav"]) {
-  return [
-    { href: "/app/templates", label: t.templates, icon: TemplatesIcon },
-    { href: "/app/projects", label: t.projects, icon: FolderIcon },
-    { href: "/app/character", label: t.characters, icon: UserIcon },
-    { href: "/app/history", label: t.history, icon: ClockIcon },
-    { href: "/app/community", label: t.community, icon: CommunityIcon },
-  ];
+type Glyph = (props: SVGProps<SVGSVGElement>) => React.JSX.Element;
+
+const ROW_ACTIVE = "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]";
+const ROW_IDLE = "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink";
+
+// The Tools door (operator, 2026-09-25: "B" on the sidebar draft). The menu
+// keeps the places a person goes back to; every tool sits behind one row whose
+// panel says what each one does. Its list is lib/nav/tools.ts.
+const TOOLS_PANEL_ID = "sidebar-tools-panel";
+
+const TOOL_ICONS: Record<ToolKey, Glyph> = {
+  generate: BoltIcon,
+  live: LiveIcon,
+  recast: MystiqueIcon,
+  sets: SetsIcon,
+  recce: RecceIcon,
+  cut: CutIcon,
+  upscale: UpscaleIcon,
+  layers: LayersIcon,
+  templates: TemplatesIcon,
+  notes: NotesIcon,
+};
+
+// A tool's two words: its name, and one line saying what it does. Eight of the
+// ten lines were already said by the phone's lamp and More page, so a tool
+// reads the same wherever it is offered.
+function toolWords(t: Messages, key: ToolKey): { label: string; sub: string } {
+  switch (key) {
+    case "generate":
+      return { label: t.nav.generate, sub: t.nav.generateSub };
+    case "live":
+      return { label: t.nav.live, sub: t.nav.liveSub };
+    case "recast":
+      return { label: t.nav.mystique, sub: t.nav.recastSub };
+    case "sets":
+      return { label: t.nav.sets, sub: t.moreHub.setsSubWeb };
+    case "recce":
+      return { label: t.nav.recce, sub: t.recce.headline };
+    case "cut":
+      return { label: t.nav.directorsCut, sub: t.nav.directorsCutSub };
+    case "upscale":
+      return { label: t.nav.upscale, sub: t.moreHub.upscaleSub };
+    case "layers":
+      return { label: t.nav.layers, sub: t.moreHub.layersSub };
+    case "templates":
+      return { label: t.nav.templates, sub: t.moreHub.templatesSub };
+    case "notes":
+      return { label: t.nav.notes, sub: t.nav.notesSub };
+  }
 }
 
-function getTrailingNavItems(t: Messages["nav"]) {
-  return [{ href: "/app/notes", label: t.notes, icon: NotesIcon }];
+function groupTitle(t: Messages, group: ToolGroup): string {
+  return group === "make" ? t.nav.toolsGroupMake : group === "edit" ? t.nav.toolsGroupEdit : t.nav.toolsGroupStart;
 }
 
-function getMediaItems(t: Messages["nav"]) {
-  return [
-    { href: "/app/images", label: t.images, icon: ImageIcon },
-    { href: "/app/videos", label: t.videos, icon: VideoIcon },
-  ];
+// The one mark for "new" in the menu: a lit dot. Seven NEW pills in a row
+// said nothing (2026-09-25); a dot that goes once the tool is opened does.
+function NewDot({ label }: { label: string }) {
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      className="block h-1.5 w-1.5 flex-shrink-0 rounded-full bg-atelier-accent shadow-[0_0_8px_var(--color-atelier-accent)]"
+    />
+  );
+}
+
+function ToolsPanel({
+  anchorRef,
+  tools,
+  pinned,
+  newKeys,
+  currentKey,
+  onTogglePin,
+  onClose,
+}: {
+  anchorRef: React.RefObject<HTMLButtonElement | null>;
+  tools: NavTool[];
+  pinned: ToolKey[];
+  newKeys: ReadonlySet<ToolKey>;
+  currentKey: ToolKey | undefined;
+  onTogglePin: (key: ToolKey) => void;
+  onClose: (returnFocus: boolean) => void;
+}) {
+  const { t } = useLocale();
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Beside the sidebar on a computer, anchored to the Tools row; a sheet
+  // over the drawer on a phone, where there is no room beside it.
+  const [pos, setPos] = useState<{ wide: boolean; left: number; top: number; maxHeight: number } | null>(null);
+
+  useLayoutEffect(() => {
+    function place() {
+      const anchor = anchorRef.current;
+      if (!anchor) return;
+      const wide = window.innerWidth >= 768;
+      const row = anchor.getBoundingClientRect();
+      const aside = anchor.closest("aside")?.getBoundingClientRect() ?? row;
+      const top = Math.max(12, Math.min(row.top - 8, window.innerHeight - 320));
+      const next = { wide, left: aside.right + 8, top, maxHeight: window.innerHeight - top - 12 };
+      setPos((prev) =>
+        prev && prev.wide === next.wide && prev.left === next.left && prev.top === next.top && prev.maxHeight === next.maxHeight
+          ? prev
+          : next,
+      );
+    }
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [anchorRef]);
+
+  // Keyboard: the first tool takes focus when the panel opens, Escape hands
+  // it back to the Tools row.
+  const placed = pos !== null;
+  useEffect(() => {
+    if (placed) panelRef.current?.querySelector<HTMLElement>("a[href]")?.focus({ preventScroll: true });
+  }, [placed]);
+
+  useEffect(() => {
+    function onPointerDown(e: MouseEvent) {
+      const target = e.target as Node;
+      if (panelRef.current?.contains(target) || anchorRef.current?.contains(target)) return;
+      onClose(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose(true);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [anchorRef, onClose]);
+
+  if (!pos) return null;
+
+  return createPortal(
+    <div
+      ref={panelRef}
+      id={TOOLS_PANEL_ID}
+      role="dialog"
+      aria-label={t.nav.tools}
+      data-tools-panel
+      style={pos.wide ? { left: pos.left, top: pos.top, maxHeight: pos.maxHeight } : undefined}
+      className={cn(
+        "fixed z-50 overflow-y-auto overscroll-contain rounded-control bg-atelier-surface/95 p-4 backdrop-blur-xl shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.3)]",
+        pos.wide ? "w-[600px]" : "inset-x-3 bottom-3 top-[4.5rem]",
+      )}
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-1">
+        <p className="text-sm font-medium text-atelier-ink">{t.nav.toolsTitle}</p>
+        {pos.wide && <p className="text-[11px] text-atelier-muted">{formatMsg(t.nav.toolsSearchHint, { key: "⌘K" })}</p>}
+      </div>
+      {TOOL_GROUPS.map((group) => {
+        const shelf = tools.filter((tool) => tool.group === group);
+        if (shelf.length === 0) return null;
+        return (
+          <div key={group} className="mt-3">
+            <p className="px-1 pb-1.5 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
+              {groupTitle(t, group)}
+            </p>
+            <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2">
+              {shelf.map((tool, i) => {
+                const { label, sub } = toolWords(t, tool.key);
+                const Icon = TOOL_ICONS[tool.key];
+                const isPinned = pinned.includes(tool.key);
+                // A shelf's first card spans the row when the rest pair up,
+                // so no shelf ends on a lone half-width card.
+                const lead = i === 0 && shelf.length % 2 === 1 && shelf.length > 1;
+                return (
+                  <div
+                    key={tool.key}
+                    className={cn(
+                      "group relative rounded-control border transition-colors hover:bg-atelier-ink/[0.04]",
+                      lead && "md:col-span-2",
+                      tool.key === currentKey ? "border-atelier-accent/50 bg-atelier-ink/[0.04]" : "border-atelier-rule",
+                    )}
+                  >
+                    <Link
+                      href={tool.href}
+                      onClick={() => onClose(false)}
+                      aria-current={tool.key === currentKey ? "page" : undefined}
+                      className="flex items-start gap-3 rounded-control px-3 py-2.5 pr-10"
+                    >
+                      <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-control bg-atelier-ink/[0.06] text-atelier-ink">
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-x-1.5">
+                          <span className="text-sm text-atelier-ink">{label}</span>
+                          {newKeys.has(tool.key) && (
+                            <span className="rounded-full bg-atelier-accent/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-widest text-atelier-accent">
+                              {t.nav.newBadge}
+                            </span>
+                          )}
+                        </span>
+                        <span className="mt-0.5 block text-xs leading-snug text-atelier-muted">{sub}</span>
+                      </span>
+                    </Link>
+                    {/* Generate is always in the menu, so it has nothing to pin. */}
+                    {tool.key !== "generate" && (
+                      <button
+                        type="button"
+                        onClick={() => onTogglePin(tool.key)}
+                        aria-pressed={isPinned}
+                        aria-label={formatMsg(isPinned ? t.nav.unpinTool : t.nav.pinTool, { name: label })}
+                        title={formatMsg(isPinned ? t.nav.unpinTool : t.nav.pinTool, { name: label })}
+                        className={cn(
+                          "absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-control transition-[opacity,color]",
+                          isPinned
+                            ? "text-atelier-accent"
+                            : "text-atelier-muted hover:text-atelier-ink focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100",
+                        )}
+                      >
+                        <PinIcon className={cn("h-3.5 w-3.5", isPinned && "fill-current")} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>,
+    document.body,
+  );
 }
 
 export function AppSidebar({
@@ -417,8 +631,6 @@ export function AppSidebar({
   username,
   plan,
   recentJobs,
-  characters,
-  projects,
   supportEmail,
   skipAiRefinement,
   voiceModeEnabled,
@@ -432,8 +644,6 @@ export function AppSidebar({
   username: string;
   plan: PlanId;
   recentJobs: RecentJob[];
-  characters: RecentCharacter[];
-  projects: RecentProject[];
   supportEmail: string;
   voiceModeEnabled: boolean;
   skipAiRefinement: boolean;
@@ -453,10 +663,14 @@ export function AppSidebar({
   const { theme, setTheme } = useTheme();
   const { t } = useLocale();
   const s = t.settings;
-  const NAV_ITEMS = getNavItems(t.nav);
-  const TRAILING_NAV_ITEMS = getTrailingNavItems(t.nav);
-  const MEDIA_ITEMS = getMediaItems(t.nav);
-  const [mediaOpen, setMediaOpen] = useState(false);
+  // The tools this account may open, behind the one Tools row.
+  const tools = visibleTools({ setsVisible, recceVisible, mystiqueVisible, liveVisible, cutVisible });
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const toolsButtonRef = useRef<HTMLButtonElement>(null);
+  // Pins and the tools this person has already opened: per-browser
+  // conveniences like the collapse preference, read after mount so the
+  // server and first client render agree (no dots or pins until then).
+  const [toolPrefs, setToolPrefs] = useState<{ pinned: ToolKey[]; seen: ToolKey[]; today: string } | null>(null);
   const themeLabel: Record<ThemeMode, string> = {
     default: s.themeDefault,
     light: s.themeLight,
@@ -557,7 +771,56 @@ export function AppSidebar({
   // would stay open over the new page until manually dismissed.
   useEffect(() => {
     setMobileOpen(false);
+    setToolsOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    let pinned: ToolKey[] = [];
+    let seen: ToolKey[] = [];
+    try {
+      pinned = parseToolKeys(window.localStorage.getItem(PINNED_STORAGE_KEY));
+      seen = parseToolKeys(window.localStorage.getItem(SEEN_STORAGE_KEY));
+    } catch {
+      // Storage blocked: no pins, and every new tool keeps its dot.
+    }
+    setToolPrefs({ pinned, seen, today: localDay(new Date()) });
+  }, []);
+
+  // Opening a new tool is what retires its dot.
+  const currentTool = toolForPath(pathname, tools);
+  const openedNewKey = currentTool?.newUntil ? currentTool.key : null;
+  const prefsLoaded = toolPrefs !== null;
+  useEffect(() => {
+    if (!openedNewKey || !prefsLoaded) return;
+    setToolPrefs((prev) => {
+      if (!prev || prev.seen.includes(openedNewKey)) return prev;
+      const seen = [...prev.seen, openedNewKey];
+      try {
+        window.localStorage.setItem(SEEN_STORAGE_KEY, JSON.stringify(seen));
+      } catch {
+        // Storage blocked — the dot comes back next visit, nothing breaks.
+      }
+      return { ...prev, seen };
+    });
+  }, [openedNewKey, prefsLoaded]);
+
+  function toggleToolPin(key: ToolKey) {
+    setToolPrefs((prev) => {
+      const base = prev ?? { pinned: [], seen: [], today: localDay(new Date()) };
+      const pinned = togglePin(base.pinned, key);
+      try {
+        window.localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(pinned));
+      } catch {
+        // Storage blocked — the pin holds for this visit.
+      }
+      return { ...base, pinned };
+    });
+  }
+
+  const closeTools = useCallback((returnFocus: boolean) => {
+    setToolsOpen(false);
+    if (returnFocus) toolsButtonRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     if (editingUsername) usernameInputRef.current?.focus();
@@ -637,12 +900,76 @@ export function AppSidebar({
     return pathname === href || pathname?.startsWith(`${href}/`);
   }
 
-  // Whether either child of the Media group is the current page — used both
-  // to highlight the group's own row and to auto-expand it so landing
-  // directly on /app/images or /app/videos (e.g. from a bookmark) doesn't
-  // hide the active page inside a collapsed submenu.
-  const isMediaActive = isActive("/app/images") || isActive("/app/videos");
-  const mediaExpanded = mediaOpen || isMediaActive;
+  const seenSet = new Set<ToolKey>(toolPrefs?.seen ?? []);
+  const newKeys = new Set<ToolKey>(
+    toolPrefs ? tools.filter((tool) => isToolNew(tool, toolPrefs.today, seenSet)).map((tool) => tool.key) : [],
+  );
+  const pinnedTools = (toolPrefs?.pinned ?? [])
+    .map((key) => tools.find((tool) => tool.key === key))
+    .filter((tool): tool is NavTool => tool !== undefined && tool.key !== "generate");
+  // The Tools row lights while you are on a tool it holds, unless that tool
+  // is pinned (its own row lights then) — so you always see where you are.
+  const onUnpinnedTool =
+    currentTool !== undefined && currentTool.key !== "generate" && !pinnedTools.includes(currentTool);
+
+  // Every page and tool, for ⌘K: a feature nobody can find by name is the
+  // one people miss.
+  const searchPages: SearchPage[] = [
+    { href: "/app", label: t.nav.home },
+    ...tools.map((tool) => ({ href: tool.href, ...toolWords(t, tool.key) })),
+    { href: "/app/character", label: t.nav.characters },
+    { href: "/app/media", label: t.nav.media },
+    { href: "/app/history", label: t.nav.history },
+    { href: "/app/projects", label: t.nav.projects },
+    { href: "/app/community", label: t.nav.community },
+    { href: "/app/settings", label: t.nav.settings },
+    ...(isAdmin ? [{ href: "/admin", label: t.nav.admin }] : []),
+  ];
+
+  // One row of the menu. The collapsed rail keeps the icon and moves the dot
+  // onto its corner.
+  function navRow({
+    href,
+    label,
+    Icon,
+    active,
+    dot = false,
+    tourId,
+  }: {
+    href: string;
+    label: string;
+    Icon: Glyph;
+    active: boolean;
+    dot?: boolean;
+    tourId?: string;
+  }) {
+    return (
+      <Link
+        key={href}
+        href={href}
+        title={label}
+        aria-label={label}
+        aria-current={active ? "page" : undefined}
+        data-tour-id={tourId}
+        className={cn(
+          "relative flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
+          iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
+          active ? ROW_ACTIVE : ROW_IDLE,
+        )}
+      >
+        <Icon className="h-4 w-4 flex-shrink-0" />
+        {!iconOnly && <span className="flex-1 text-left">{label}</span>}
+        {dot &&
+          (iconOnly ? (
+            <span className="absolute right-1.5 top-1.5">
+              <NewDot label={t.nav.newBadge} />
+            </span>
+          ) : (
+            <NewDot label={t.nav.newBadge} />
+          ))}
+      </Link>
+    );
+  }
 
   // Global voice command — "open characters" navigates, "new chat" clears
   // the Generate thread, and anything else is forwarded to Generate as a
@@ -801,209 +1128,96 @@ export function AppSidebar({
       </div>
 
       <nav className={cn("mt-2 space-y-0.5", iconOnly && "flex flex-col items-center")}>
-        {/* Generate — the app's front door, a flat link again since 2026-09-03
-            (operator pick B on the design canvas): Upscale moved out from
-            under it into the Tools group below, so nothing here can fold. */}
-        <Link
-          href="/app/generate"
-          title={t.nav.generate}
-          aria-label={t.nav.generate}
+        {/* The places a person goes back to, and one door to every tool
+            (operator, 2026-09-25: "B"). A new tool is a card behind the door,
+            never a new row here — the list is lib/nav/tools.ts. */}
+        {navRow({ href: "/app", label: t.nav.home, Icon: HomeIcon, active: pathname === "/app" })}
+        {navRow({ href: "/app/generate", label: t.nav.generate, Icon: BoltIcon, active: isActive("/app/generate") })}
+        <button
+          ref={toolsButtonRef}
+          type="button"
+          onClick={() => setToolsOpen((v) => !v)}
+          title={t.nav.tools}
+          aria-label={t.nav.tools}
+          aria-haspopup="dialog"
+          aria-expanded={toolsOpen}
+          aria-controls={toolsOpen ? TOOLS_PANEL_ID : undefined}
+          data-tour-id="tour-tools"
           className={cn(
-            "flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
-            iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
-            isActive("/app/generate")
-              ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
-              : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
+            "relative flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
+            iconOnly ? "h-9 w-9 justify-center" : "w-full px-2.5 py-2",
+            toolsOpen
+              ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink"
+              : onUnpinnedTool
+                ? ROW_ACTIVE
+                : ROW_IDLE,
           )}
         >
-          <BoltIcon className="h-4 w-4 flex-shrink-0" />
-          {!iconOnly && t.nav.generate}
-        </Link>
-
-        {NAV_ITEMS.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            title={item.label}
-            aria-label={item.label}
-            data-tour-id={
-              item.href === "/app/character"
-                ? "tour-characters"
-                : item.href === "/app/templates"
-                  ? "tour-templates"
-                  : item.href === "/app/community"
-                    ? "tour-community"
-                    : undefined
-            }
-            className={cn(
-              "flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
-              iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
-              isActive(item.href)
-                ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
-                : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-            )}
-          >
-            <item.icon className="h-4 w-4 flex-shrink-0" />
-            {!iconOnly && item.label}
-          </Link>
-        ))}
-
-        {/* Media group — Images + Videos collapsed under one entry instead of
-            two flat top-level items. Collapsed-rail (iconOnly) mode skips the
-            expand/collapse UX entirely (cramped in a 56px-wide rail) and just
-            links straight to Images. */}
-        {iconOnly ? (
-          <Link
-            href="/app/images"
-            title={t.nav.media}
-            aria-label={t.nav.media}
-            className={cn(
-              "flex h-9 w-9 items-center justify-center rounded-control text-sm transition-colors",
-              isMediaActive
-                ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
-                : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-            )}
-          >
-            <MediaIcon className="h-4 w-4 flex-shrink-0" />
-          </Link>
-        ) : (
-          <div>
-            <button
-              type="button"
-              onClick={() => setMediaOpen((v) => !v)}
-              title={t.nav.media}
-              aria-label={t.nav.media}
-              aria-expanded={mediaExpanded}
-              className={cn(
-                "flex w-full items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 py-2 text-sm transition-colors",
-                isMediaActive
-                  ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
-                  : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-              )}
-            >
-              <MediaIcon className="h-4 w-4 flex-shrink-0" />
-              <span className="flex-1 text-left">{t.nav.media}</span>
-              <ChevronDownIcon
-                className={cn("h-3.5 w-3.5 flex-shrink-0 transition-transform", mediaExpanded && "rotate-180")}
-              />
-            </button>
-            {mediaExpanded && (
-              <div className="ml-4 mt-0.5 space-y-0.5 border-l border-atelier-rule/70 pl-2">
-                {MEDIA_ITEMS.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    title={item.label}
-                    aria-label={item.label}
-                    className={cn(
-                      "flex items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 py-1.5 text-sm transition-colors",
-                      isActive(item.href)
-                        ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
-                        : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-                    )}
-                  >
-                    <item.icon className="h-3.5 w-3.5 flex-shrink-0" />
-                    {item.label}
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
+          <ToolsIcon className="h-4 w-4 flex-shrink-0" />
+          {iconOnly ? (
+            newKeys.size > 0 && (
+              <span className="absolute right-1.5 top-1.5">
+                <NewDot label={t.nav.newBadge} />
+              </span>
+            )
+          ) : (
+            <>
+              <span className="flex-1 text-left">{t.nav.tools}</span>
+              {newKeys.size > 0 && <NewDot label={t.nav.newBadge} />}
+              <span className="text-xs tabular-nums text-atelier-muted/70">{tools.length}</span>
+              <ChevronRightIcon className="h-3.5 w-3.5 flex-shrink-0" />
+            </>
+          )}
+        </button>
+        {pinnedTools.map((tool) =>
+          navRow({
+            href: tool.href,
+            label: toolWords(t, tool.key).label,
+            Icon: TOOL_ICONS[tool.key],
+            active: isActive(tool.href),
+            dot: newKeys.has(tool.key),
+          }),
         )}
 
-        {/* Tools — the utilities, gathered at the foot of the nav
-            (operator, 2026-09-03, in two passes: the group first sat between
-            Community and Media, which made Media read as a tool; then "move
-            Notes and admin to tools"). Everything above the heading is the
-            work — making a take and the material it comes from. Everything
-            below it is a side room you visit on purpose: Upscale video,
-            Notes, and Admin for the accounts that have it.
+        <div aria-hidden="true" className={cn("my-2 border-t border-atelier-rule", iconOnly ? "mx-auto w-6" : "mx-2.5")} />
 
-            A heading claims every row after it until the next heading, so
-            this one must stay LAST and anything added that is not a utility
-            belongs above it. The collapsed rail drops the heading and just
-            stacks the icons, like every other group. */}
-        {!iconOnly && (
-          <p className="px-2.5 pb-1 pt-4 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
-            {t.nav.tools}
-          </p>
-        )}
-        {/* The Tools rows, from one list: same chrome as the trailing items
-            plus a New badge while a tool is new. When the next tool lands,
-            drop the badge from the previous one here — one edit. */}
-        {[
-          ...(setsVisible ? [{ href: "/app/sets", label: t.nav.sets, Icon: SetsIcon, badge: t.nav.newBadge }] : []),
-          ...(recceVisible ? [{ href: "/app/recce", label: t.nav.recce, Icon: RecceIcon, badge: t.nav.newBadge }] : []),
-          ...(mystiqueVisible ? [{ href: "/app/mystique", label: t.nav.mystique, Icon: MystiqueIcon, badge: t.nav.newBadge }] : []),
-          ...(liveVisible ? [{ href: "/app/live", label: t.nav.live, Icon: LiveIcon, badge: t.nav.newBadge }] : []),
-          ...(cutVisible ? [{ href: "/app/edit", label: t.nav.directorsCut, Icon: CutIcon, badge: t.nav.newBadge }] : []),
-          { href: "/app/upscale", label: t.nav.upscale, Icon: UpscaleIcon, badge: t.nav.newBadge },
-          { href: "/app/layers", label: t.nav.layers, Icon: LayersIcon, badge: t.nav.newBadge },
-        ].map((tool) => (
-          <Link
-            key={tool.href}
-            href={tool.href}
-            title={tool.label}
-            aria-label={tool.label}
-            className={cn(
-              "flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
-              iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
-              isActive(tool.href)
-                ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
-                : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-            )}
-          >
-            <tool.Icon className="h-4 w-4 flex-shrink-0" />
-            {!iconOnly && (
-              <>
-                <span className="flex-1 text-left">{tool.label}</span>
-                {tool.badge && (
-                  <span className="flex-shrink-0 rounded-full bg-atelier-accent/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-widest text-atelier-accent">
-                    {tool.badge}
-                  </span>
-                )}
-              </>
-            )}
-          </Link>
-        ))}
-
-        {TRAILING_NAV_ITEMS.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            title={item.label}
-            aria-label={item.label}
-            className={cn(
-              "flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
-              iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
-              isActive(item.href)
-                ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
-                : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-            )}
-          >
-            <item.icon className="h-4 w-4 flex-shrink-0" />
-            {!iconOnly && item.label}
-          </Link>
-        ))}
-        {isAdmin && (
-          <Link
-            href="/admin"
-            title={t.nav.admin}
-            aria-label={t.nav.admin}
-            className={cn(
-              "flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
-              iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
-              pathname?.startsWith("/admin")
-                ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
-                : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-            )}
-          >
-            <ShieldIcon className="h-4 w-4 flex-shrink-0" />
-            {!iconOnly && t.nav.admin}
-          </Link>
-        )}
-
+        {navRow({
+          href: "/app/character",
+          label: t.nav.characters,
+          Icon: UserIcon,
+          active: isActive("/app/character"),
+          tourId: "tour-characters",
+        })}
+        {/* One row to the phone's Media page (All · Images · Videos |
+            History); the old Images and Videos pages still light it. */}
+        {navRow({
+          href: "/app/media",
+          label: t.nav.media,
+          Icon: MediaIcon,
+          active: isActive("/app/media") || isActive("/app/images") || isActive("/app/videos"),
+        })}
+        {navRow({ href: "/app/history", label: t.nav.history, Icon: ClockIcon, active: isActive("/app/history") })}
+        {navRow({ href: "/app/projects", label: t.nav.projects, Icon: FolderIcon, active: isActive("/app/projects") })}
+        {navRow({
+          href: "/app/community",
+          label: t.nav.community,
+          Icon: CommunityIcon,
+          active: isActive("/app/community"),
+          tourId: "tour-community",
+        })}
       </nav>
+
+      {toolsOpen && (
+        <ToolsPanel
+          anchorRef={toolsButtonRef}
+          tools={tools}
+          pinned={toolPrefs?.pinned ?? []}
+          newKeys={newKeys}
+          currentKey={currentTool?.key}
+          onTogglePin={toggleToolPin}
+          onClose={closeTools}
+        />
+      )}
 
       {!iconOnly && (
         <div className="mt-6 min-h-0 flex-1 space-y-6 overflow-y-auto pb-2">
@@ -1041,72 +1255,6 @@ export function AppSidebar({
                           below — invisible controls don't exist on phones. */}
                       <DeleteGenerationButton
                         id={job.id}
-                        className="h-5 w-5 flex-shrink-0 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus:opacity-100"
-                      />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between px-2.5">
-              <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
-                {t.nav.projects}
-              </p>
-              <Link href="/app/projects/new" className="text-xs text-atelier-muted hover:text-atelier-ink">
-                {s.newShort}
-              </Link>
-            </div>
-            {projects.length === 0 ? (
-              <p className="mt-2 px-2.5 text-xs text-atelier-muted">{s.noneYet}</p>
-            ) : (
-              <ul className="mt-1 space-y-0.5">
-                {projects.map((p) => (
-                  <li key={p.id}>
-                    <ProjectRow project={p} variant="sidebar" />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between px-2.5">
-              <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
-                {t.nav.characters}
-              </p>
-              <Link href="/app/character/new" className="text-xs text-atelier-muted hover:text-atelier-ink">
-                {s.newShort}
-              </Link>
-            </div>
-            {characters.length === 0 ? (
-              <p className="mt-2 px-2.5 text-xs text-atelier-muted">{s.noneYet}</p>
-            ) : (
-              <ul className="mt-1 space-y-0.5">
-                {characters.map((c) => (
-                  <li key={c.id}>
-                    <Link
-                      href={`/app/character/${c.id}`}
-                      className={cn(
-                        "group flex items-center gap-2 rounded-control px-2.5 py-2 text-xs transition-colors",
-                        pathname === `/app/character/${c.id}`
-                          ? "bg-atelier-ink/[0.08] text-atelier-ink"
-                          : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-                      )}
-                    >
-                      <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink/10 text-[9px] font-semibold text-atelier-muted">
-                        {c.name.charAt(0).toUpperCase()}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate">{c.name}</span>
-                      <DeleteCharacterButton
-                        id={c.id}
-                        name={c.name}
-                        // Visible by default; hover-revealed ONLY where hover
-                        // exists (2026-08-24, bmazloum: on a phone there is no
-                        // hover, so an opacity-0 control simply doesn't exist —
-                        // he couldn't delete anything).
                         className="h-5 w-5 flex-shrink-0 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus:opacity-100"
                       />
                     </Link>
@@ -1290,6 +1438,18 @@ export function AppSidebar({
                 <HelpIcon className="h-4 w-4 flex-shrink-0" />
                 {s.help}
               </a>
+              {/* Admin lives here since the Tools door (2026-09-25): a side
+                  room for the few accounts that have it, not a menu row. */}
+              {isAdmin && (
+                <Link
+                  href="/admin"
+                  onClick={() => setSettingsOpen(false)}
+                  className="flex items-center gap-2.5 rounded-control px-2.5 py-2 text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
+                >
+                  <ShieldIcon className="h-4 w-4 flex-shrink-0" />
+                  {t.nav.admin}
+                </Link>
+              )}
               <Link
                 href="/app/settings"
                 onClick={() => setSettingsOpen(false)}
@@ -1317,7 +1477,7 @@ export function AppSidebar({
       </div>
       </aside>
 
-      <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} pages={searchPages} />
     </>
   );
 }

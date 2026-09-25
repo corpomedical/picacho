@@ -67,6 +67,15 @@ const pt = {
     liveSub: "Dirija a cena enquanto ela roda.",
     directorsCut: "Director's Cut",
     directorsCutSub: "Suas gravações brutas, editadas para você.",
+    generateSub: "Imagens e vídeos dos seus personagens.",
+    notesSub: "Ideias e roteiros, junto do seu trabalho.",
+    toolsTitle: "Tudo o que o Picacho faz",
+    toolsSearchHint: "Digite um nome em {key} para ir direto",
+    toolsGroupMake: "Criar um take",
+    toolsGroupEdit: "Editar o que você fez",
+    toolsGroupStart: "Começar e guardar",
+    pinTool: "Fixar {name} no menu",
+    unpinTool: "Tirar {name} do menu",
   },
   // The More page (/app/more): the app bar's fifth tab.
   directorsCut: {
@@ -1963,7 +1972,8 @@ const pt = {
     start: "Enviar",
   },
   search: {
-    placeholder: "Buscar projetos, personagens, histórico…",
+    placeholder: "Buscar ferramentas, projetos, personagens, histórico…",
+    pages: "Páginas",
     startTyping: "Comece a digitar para buscar.",
     noMatches: "Nenhum resultado para \"{query}\".",
     projects: "Projetos",
@@ -2063,9 +2073,9 @@ const pt = {
     promptTitle: "Descreva com suas palavras",
     promptBody:
       "Não precisa de engenharia de prompt: escreva como contaria a um amigo. O Picacho redige e revisa o texto por você.",
-    templatesTitle: "Comece por um modelo",
-    templatesBody:
-      "Cenas prontas — retratos, fotos de produto, unboxings e mais. Toque em uma e ela chega ao compositor preenchida, pronta para ajustar.",
+    toolsTitle: "Todas as suas ferramentas estão aqui",
+    toolsBody:
+      "Modelos, Melhorar vídeo, Camadas e cada ferramenta nova ficam em Ferramentas, cada uma com uma linha dizendo o que faz. Fixe as que você mais usa para mantê-las no menu.",
     communityTitle: "Veja o que os outros criam",
     communityBody:
       "Takes reais compartilhados por outros usuários — corações, visualizações e ideias que valem emprestar. Compartilhe os seus melhores pela página de Histórico de cada take.",

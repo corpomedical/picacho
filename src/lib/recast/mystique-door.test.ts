@@ -22,6 +22,9 @@ const root = join(__dirname, "..", "..");
 const door = readFileSync(join(root, "components", "mystique", "mystique-door.tsx"), "utf8");
 const viewer = readFileSync(join(root, "components", "mystique", "take-viewer.tsx"), "utf8");
 const sidebar = readFileSync(join(root, "components", "app-sidebar.tsx"), "utf8");
+// The door's path lives in the sidebar's one list of tools since the Tools
+// door (2026-09-25); the sidebar still carries the visibility gate.
+const tools = readFileSync(join(root, "lib", "nav", "tools.ts"), "utf8");
 const layout = readFileSync(join(root, "app", "app", "layout.tsx"), "utf8");
 const page = readFileSync(join(root, "app", "app", "mystique", "page.tsx"), "utf8");
 
@@ -33,7 +36,7 @@ const keysOf = (s: string) => [...s.matchAll(/\n    (\w+): /g)].map((m) => m[1])
 
 describe("the Mystique door", () => {
   it("hangs in the nav behind its own visibility, at its own path", () => {
-    expect(sidebar).toContain('href: "/app/mystique"');
+    expect(tools).toContain('href: "/app/mystique"');
     expect(sidebar).toContain("mystiqueVisible");
     expect(layout).toContain("const mystiqueVisible = isAdmin && (await isRecastEnabled(supabase))");
   });

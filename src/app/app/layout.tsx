@@ -52,16 +52,15 @@ export default async function AppLayout({
   const [
     { data: profile },
     { data: recentJobs },
-    { data: characters },
-    { data: projects },
     { data: supportEmailSetting },
   ] = await Promise.all([
     supabase.from("profiles").select("role, username, plan, plan_status, status, skip_ai_refinement, rating_prompted_at").eq("id", data.user.id).single(),
-    // Explicit user_id filters below, not just RLS — an admin's SELECT
-    // policy on these tables intentionally allows reading every user's rows
+    // Explicit user_id filter below, not just RLS — an admin's SELECT
+    // policy on generations intentionally allows reading every user's rows
     // (that's what powers /admin), so without this an admin browsing their
-    // own /app pages would see everyone else's recent jobs/characters/
-    // projects here instead of just their own.
+    // own /app pages would see everyone else's recent jobs here instead of
+    // just their own. (The sidebar's Characters and Projects lists left with
+    // the Tools door, 2026-09-25: their rows open the full pages.)
     supabase
       .from("generations")
       .select("id, prompt_input, status, content_type")
@@ -69,21 +68,6 @@ export default async function AppLayout({
       // Rows are soft-deleted (the ledger keeps counting them); the jobs
       // menu is a user-facing surface, so deleted work must not linger here.
       .is("deleted_at", null)
-      .order("created_at", { ascending: false })
-      .limit(6),
-    supabase
-      .from("character_profiles")
-      .select("id, name")
-      .eq("user_id", data.user.id)
-      .order("created_at", { ascending: false })
-      .limit(6),
-    supabase
-      .from("projects")
-      .select("id, name, is_starred, is_pinned, is_archived")
-      .eq("user_id", data.user.id)
-      .eq("is_archived", false)
-      .order("is_pinned", { ascending: false })
-      .order("is_starred", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(6),
     supabase.from("app_settings").select("value").eq("key", "support_email").single(),
@@ -170,8 +154,6 @@ export default async function AppLayout({
         username={profile?.username ?? (data.user.email ?? "").split("@")[0]}
         plan={(profile?.plan ?? "none") as PlanId}
         recentJobs={recentJobs ?? []}
-        characters={characters ?? []}
-        projects={projects ?? []}
         supportEmail={supportEmailSetting?.value ?? SUPPORT_EMAIL_FALLBACK}
         skipAiRefinement={profile?.skip_ai_refinement === true}
         voiceModeEnabled={voiceModeEnabled}
