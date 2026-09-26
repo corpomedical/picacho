@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withJobAlert } from "@/lib/push/admin-alerts";
 import { createAdminClient } from "@/lib/supabase/server";
 import { isPressTourEnabled } from "@/lib/press-tour/enabled";
 import { pressTick } from "@/lib/press-tour/campaign-machine";
@@ -29,7 +30,7 @@ export const maxDuration = 300;
 
 const BATCH = 4;
 
-export async function GET(request: Request) {
+async function run(request: Request) {
   const secret = process.env.CRON_SECRET;
   const auth = request.headers.get("authorization");
   if (!secret || auth !== `Bearer ${secret}`) {
@@ -44,3 +45,5 @@ export async function GET(request: Request) {
   }
   return NextResponse.json({ ok: true, ...report });
 }
+
+export const GET = withJobAlert("press", run);

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withJobAlert } from "@/lib/push/admin-alerts";
 import { createAdminClient } from "@/lib/supabase/server";
 import { sweepStaleUploads } from "@/lib/press-tour/upload-sweep";
 
@@ -14,7 +15,7 @@ import { sweepStaleUploads } from "@/lib/press-tour/upload-sweep";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-export async function GET(request: Request) {
+async function run(request: Request) {
   const secret = process.env.CRON_SECRET;
   const auth = request.headers.get("authorization");
   if (!secret || auth !== `Bearer ${secret}`) {
@@ -26,3 +27,5 @@ export async function GET(request: Request) {
   else if (result.removed > 0 || !result.done) console.info("press-uploads: staged uploads removed", result);
   return NextResponse.json(result, { status: result.error ? 500 : 200 });
 }
+
+export const GET = withJobAlert("press-uploads", run);

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withJobAlert } from "@/lib/push/admin-alerts";
 import { createAdminClient } from "@/lib/supabase/server";
 import { readPressTourSwitches } from "@/lib/press-tour/enabled";
 import { postsTick } from "@/lib/social/runtime";
@@ -33,7 +34,7 @@ const BATCH = 4;
 /** Claimed posts stop starting new calls after this; the lease (6 min) outlives it. */
 const BUDGET_MS = 240_000;
 
-export async function GET(request: Request) {
+async function run(request: Request) {
   const secret = process.env.CRON_SECRET;
   const auth = request.headers.get("authorization");
   if (!secret || auth !== `Bearer ${secret}`) {
@@ -46,3 +47,5 @@ export async function GET(request: Request) {
   }
   return NextResponse.json({ ok: true, posting: switches.press_tour_posting, ...report });
 }
+
+export const GET = withJobAlert("press-posts", run);
