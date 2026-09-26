@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import raceTrack from "./fixtures-race-track.json";
-import { HELIOS_SIMPLE_FOR_ALL, SET_EDITS_MONTH_SCOPE, setEditsMonthlyLimit, setTakesEligible } from "./set-config";
+import { HELIOS_SIMPLE_FOR_ALL, SETS_OPEN_TO_PLANS, SET_EDITS_MONTH_SCOPE, setEditsMonthlyLimit, setTakesEligible } from "./set-config";
 import { mediaUrl, thumbUrl } from "../media/url";
 
 // The set page's loader, for what a take was rendered from (2026-09-16). A
@@ -276,18 +276,27 @@ describe("the month's Astra changes, for the editor", () => {
     expect((await page(ready(world([still(1)])))).readerV2).toBe(false);
   });
 
-  // The new layout (Helios Cut 3, step 10): its own gate, admins until
-  // HELIOS_SIMPLE_FOR_ALL opens it; models on things stay admins only.
-  it("offers the new layout to admins only, until it opens to everyone", async () => {
-    expect(HELIOS_SIMPLE_FOR_ALL).toBe(false);
+  // The new layout (Helios Cut 3, step 10): its own gate. Since the flip
+  // (step 18) it is every account's that can open Helios; models on things
+  // stay admins only.
+  it("offers the new layout to every account that can open Helios, and models on things to admins only", async () => {
+    expect(HELIOS_SIMPLE_FOR_ALL).toBe(true);
     who = { plan: "growth", isAdmin: true };
     const admin = await page(ready(world([still(1)])));
     expect(admin.simpleLayout).toBe(true);
     expect(admin.modelsOn).toBe(true);
     who = { plan: "elite", isAdmin: false };
     const paying = await page(ready(world([still(1)])));
-    expect(paying.simpleLayout).toBe(false);
+    expect(paying.simpleLayout).toBe(true);
     expect(paying.modelsOn).toBe(false);
+  });
+
+  // The flip opens the layout to everyone who can open Helios, which is
+  // every paid plan only while Sets are open to the plans: were Sets closed
+  // again, the layout switch must be looked at in the same change (the
+  // pattern of product-guide.test.ts's SETS_OPEN_TO_PLANS pin).
+  it("opens the new layout to everyone only while Sets are open to the plans", () => {
+    expect(!HELIOS_SIMPLE_FOR_ALL || SETS_OPEN_TO_PLANS, "Sets closed again: look at HELIOS_SIMPLE_FOR_ALL and the Producer's SETS line in the same change").toBe(true);
   });
 });
 

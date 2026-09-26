@@ -10,8 +10,9 @@ import pt from "../i18n/messages/pt";
 import itMsgs from "../i18n/messages/it";
 
 // The new layout (2026-09-24, "I want the UI to be simpler and friendlier
-// while also being professional"): a draft an admin switches on from the
-// bar, behind its own gate (HELIOS_SIMPLE_FOR_ALL, Helios Cut 3). Set · Shoot · Film as numbered steps; "In this set" down the left in
+// while also being professional"): an admin's draft behind its own gate
+// (HELIOS_SIMPLE_FOR_ALL, Helios Cut 3), the default for every account that
+// can open Helios since the flip (step 18). Set · Shoot · Film as numbered steps; "In this set" down the left in
 // place of the tool rail; one panel on the right; the same stage, shots
 // and actions underneath. Read as source, like the page's other tests.
 
@@ -33,9 +34,9 @@ const fnOf = (source: string, head: string, next: string) => {
   return source.slice(a, b);
 };
 
-describe("the switch", () => {
+describe("the switch: the new layout for every account that can open Helios", () => {
   // Its own gate (Helios Cut 3, step 10): simpleLayout, admins until
-  // HELIOS_SIMPLE_FOR_ALL opens it — never models' admin-only switch.
+  // HELIOS_SIMPLE_FOR_ALL opened it (step 18) — never models' admin-only switch.
   it("is where the layout is offered, on a wide screen, remembered in the browser or asked for in the address", () => {
     expect(view).toContain("const simpleOn = simple && wide3 && simpleLayout;");
     expect(view).not.toMatch(/const simple(On|Phone) = [^;]*modelsOn/);
@@ -66,8 +67,8 @@ describe("the switch", () => {
     expect(view).toContain("const [simple, setSimple] = useState<boolean>(() => simpleLayout && HELIOS_SIMPLE_FOR_ALL);");
   });
 
-  it("is admins' until its own switch opens it, and the page is handed the gate", () => {
-    expect(config).toContain("export const HELIOS_SIMPLE_FOR_ALL = false;");
+  it("is every account's that can open Helios, by its own switch, and the page is handed the gate", () => {
+    expect(config).toContain("export const HELIOS_SIMPLE_FOR_ALL = true;");
     expect(data).toContain("simpleLayout: access.isAdmin || HELIOS_SIMPLE_FOR_ALL,");
     expect(setPage).toContain("simpleLayout={data.simpleLayout}");
     // Models on things keep their own admin-only gate.

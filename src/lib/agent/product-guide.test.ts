@@ -4,7 +4,7 @@ import { PRICING_TIERS } from "../pricing";
 import { FREE_TIER_VIDEO_MODEL_ID } from "../plans";
 import { TEMPLATES } from "../templates";
 import { CINEMA_PRESETS } from "../generations/cinema-presets";
-import { SETS_OPEN_TO_PLANS } from "../sets/set-config";
+import { HELIOS_SIMPLE_FOR_ALL, SETS_OPEN_TO_PLANS } from "../sets/set-config";
 
 // The guide is appended to a CACHED system block (see context.ts): its
 // bytes must be deterministic, and its numbers must be the same ones the
@@ -34,7 +34,7 @@ describe("renderProductGuide", () => {
     expect(guide).toContain("1 credit per 3 seconds");
   });
 
-  it("describes Helios as launched — every paid plan, the four modes, the caps — and keeps photo builds unoffered", () => {
+  it("describes Helios as launched — every paid plan, its layouts, the caps — and keeps photo builds unoffered", () => {
     // SETS_OPEN_TO_PLANS flipped 2026-09-19 (the launch commit): the
     // assistant now walks a paying customer to the real page.
     expect(SETS_OPEN_TO_PLANS, "Sets closed again: put the private-testing SETS line back in product-guide.ts").toBe(true);
@@ -75,6 +75,27 @@ describe("renderProductGuide", () => {
     expect(guide).toContain('to build a new place, choose Set → "A new place"');
     expect(guide).toContain('"Build this place · N of M left this month"');
     expect(guide).toContain("a failed build never counts toward the month, and deleting a set never gives its build back.");
+  });
+
+  // Helios Cut 3, step 18 (the flip): the Producer reads these lines as its
+  // click-paths, so they give both layouts by width. The three steps from
+  // 1180 px and on a phone held upright; Build · Shoot · Film · Cut between
+  // them and for anyone who picked "Classic layout" (critic 14: "Advanced"
+  // and "Edit it yourself" do not exist there).
+  it("gives the set page's click-paths for both layouts, by the screen's width", () => {
+    expect(HELIOS_SIMPLE_FOR_ALL, "The new layout closed again: put the four-modes-only SETS line back").toBe(true);
+    expect(guide).toContain("On a screen 1180 px wide or more, and on a phone held upright, it opens in three steps in its top bar");
+    expect(guide).toContain('"Advanced" in the top bar (a sliders icon on a phone) shows the rest');
+    expect(guide).toContain('with it on, "Edit it yourself" under "The place" opens Build (edit the geometry)');
+    expect(guide).toContain('On screens between a phone and 1180 px (tablets, small windows, a phone on its side), and for anyone who picked "Classic layout", the set page is a workspace with four modes in its top bar');
+    expect(guide).toContain('with no "Advanced"');
+    // The old sentence gave four modes to every screen.
+    expect(guide).not.toContain("The set page is a workspace with four modes");
+    // Only the empty box's send says its price; typed words are read first (critic 4).
+    expect(guide).toContain('with the box empty it reads "Shoot · 1 credit" (or the take and its price); with words typed it is an arrow, and a message that asks for a shot spends that price.');
+    // Build by hand, in either layout.
+    expect(guide).toContain('open the set and press "Build" in its top bar; in the three-step layout (1180 px and wider), turn on "Advanced" and press "Edit it yourself" under "The place" (or ⌘K → Build).');
+    expect(guide).toContain('tap the thing on the stage, or its row under "In this set" in the three-step layout, to open its card');
   });
 
   it("never leaks a drafted (unproven) preset", () => {

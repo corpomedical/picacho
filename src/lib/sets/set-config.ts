@@ -45,13 +45,16 @@ export const SETS_OPEN_TO_PLANS = true;
 /**
  * The set page's new layout (Set · Shoot · Film, things-panel.tsx; Helios
  * Cut 3): true makes it the default for every account that can open Helios,
- * where the screen is wide enough for it or is a phone, and a stored
- * `helios.layout=classic` (the bar's "Classic layout") opts that browser
- * out. False keeps it an admin's draft, switched on from the bar. Its own
- * gate, not models' (data.ts modelsOn stays admins only): the layout spends
- * nothing differently, so opening it is this one line, after its proof.
+ * where the screen is wide enough for it (1180 px) or is a phone, and a
+ * stored `helios.layout=classic` (the bar's "Classic layout", one of
+ * Advanced's) opts that browser out. False keeps it an admin's draft,
+ * switched on from the bar. Its own gate, not models' (data.ts modelsOn
+ * stays admins only): the layout spends nothing differently. ON since the
+ * flip (Helios Cut 3, step 18); closing it again is this one line, together
+ * with the SETS line in lib/agent/product-guide.ts, which tells the
+ * Producer the click-paths of the layout this switch opens.
  */
-export const HELIOS_SIMPLE_FOR_ALL = false;
+export const HELIOS_SIMPLE_FOR_ALL = true;
 
 export const SET_BUILDS_MONTHLY_LIMITS = {
   none: 0,

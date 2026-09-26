@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.117.0",
+    build: 156,
+    date: "2026-09-26",
+    title: "Helios sets open in three simple steps: Set, Shoot, Film",
+    items: [
+      "A set now opens in three steps in its top bar: Set (the place, who and what is in it, and Astra), Shoot and Film. This is the layout on screens 1180 px wide or more and on phones; tablets and smaller windows keep the layout you know.",
+      "Shoot starts with four choices: the frame's shape, how close the camera is (Shot size), who is in the shot and which camera. There is one Shoot button, under the words box, and with nothing typed it says its price, \"Shoot · 1 credit\".",
+      "Everything else is one press away under \"Advanced\" in the top bar: the camera department (formats, lenses, stops, light, looks), pose and gaze, the tools and the readouts, and the bar's History and Download (a still you open keeps its own Download). Your browser remembers the choice, and a small dot on Advanced tells you when a hidden setting is still in use. Whatever you set there still applies to every still.",
+      "Astra's answers show in every step, the \"In this set\" list says which things' photos go into the next still, and a reload keeps you on the step you were on.",
+      "Prefer the old layout? Turn on Advanced and press \"Classic layout\"; your browser keeps it. Prices, plans and what each press spends are unchanged.",
+      "Aly knows the new layout and the classic one, and gives directions for the screen you're on.",
+    ],
+  },
+  {
     version: "1.116.0",
     build: 155,
     date: "2026-09-26",
