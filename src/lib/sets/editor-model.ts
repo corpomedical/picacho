@@ -21,6 +21,7 @@ import {
   type SetMark,
   type SetObject,
   type SetShape,
+  specTextForGate,
   type SetSpec,
   type Vec3,
 } from "./set-spec";
@@ -311,6 +312,18 @@ export function holdEditedText(next: SetSpec, stored: readonly HeldText[]): SetS
   for (const m of held.marks) if (!allowed.has(m.label)) m.label = "";
   for (const c of held.cameras) if (!allowed.has(c.label)) c.label = "";
   return held;
+}
+
+/**
+ * Whether Astra's answer leaves the set exactly as it was handed (Helios Cut
+ * 4, step A1, 2026-09-26 — the owner's decision D11: an answer that changes
+ * nothing does not count). No piece differs (countSpecChanges) and the gate
+ * would read the same words (specTextForGate). Both, not one: a field that
+ * countSpecChanges is ever taught to pass over (a name, B1) still changes the
+ * words the gate reads, and such an answer is a change.
+ */
+export function changesNothing(before: SetSpec, after: SetSpec): boolean {
+  return countSpecChanges(before, after) === 0 && specTextForGate(before) === specTextForGate(after);
 }
 
 /** How many pieces of the set an edit touched — said, never shown as text. */

@@ -3452,6 +3452,7 @@ const es = {
     editorAskDone: "Listo — han cambiado {n} piezas del set.",
     editorAskDoneOne: "Listo — ha cambiado una pieza del set.",
     editorAskNothing: "Astra no ha cambiado nada — ha entendido que el set ya estaba así.",
+    editorAskNothingFree: "Astra no ha cambiado nada — ha entendido que el set ya estaba así. No ha contado.",
     editorAskLeft: "Quedan {n} este mes",
     editorAskLeftOne: "Queda 1 este mes",
     editorAskLeftNone: "No quedan este mes",

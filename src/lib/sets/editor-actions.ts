@@ -9,7 +9,7 @@ import { withModelWrittenPrompt } from "@/lib/generations/refusal-attribution";
 import { cancelAstraJob, pollAstraJob, submitAstraJob, type AstraJobRequest } from "@/lib/generations/providers/astra";
 import { openAiSafetyId } from "@/lib/openai/safety-id";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
-import { countSpecChanges, holdEditedText } from "@/lib/sets/editor-model";
+import { changesNothing, countSpecChanges, holdEditedText } from "@/lib/sets/editor-model";
 import {
   SET_BRIEF_TOO_SHORT,
   SET_EDIT_FAILED,
@@ -351,6 +351,18 @@ export async function editSetWithAstra(
       const parsed = parseSetSpecText(answer.text);
       if (!parsed.ok) return { error: SET_EDIT_FAILED, editsLeft: await giveBackAstraChange(access, slot) };
       const next = parsed.spec;
+
+      // An answer that changes nothing (Helios Cut 4, step A1, 2026-09-26 —
+      // the owner's decision D11): Astra read the set as already so. It
+      // gives its change back and saves nothing, so the press ends unsaved
+      // (no kept()), and the answer is the copy Astra was handed with
+      // `changed: 0` and no Undo — there is nothing to undo, and the page
+      // keeps the Undo of the change before it. Asked before the gate: the
+      // words are the ones already saved, so no second read of them is
+      // spent. The try still counts (Astra was billed for it).
+      if (changesNothing(working, next)) {
+        return { error: null, spec: working, changed: 0, editsLeft: await giveBackAstraChange(access, slot), undo: null };
+      }
 
       // Astra's words, judged before anyone reads them — in the strict lane, the
       // lane every shot of this set will render them in (build-tick does the

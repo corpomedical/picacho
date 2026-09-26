@@ -407,6 +407,68 @@ describe("the month's change, given back unless it saves", () => {
   });
 });
 
+// An answer that changes nothing (Helios Cut 4, step A1, 2026-09-26 — the
+// owner's decision D11): it used to be saved and counted as one of the
+// month's changes. Now it gives its change back and saves nothing, before
+// the gate reads Astra's words a second time.
+describe("an answer that changes nothing", () => {
+  const ask = (press?: string) => editSetWithAstra(SET, "make the set look like it already does", press);
+
+  it("gives its change back once, saves nothing, never reads the gate, and hands back the copy Astra was handed", async () => {
+    answer = { state: "done", text: JSON.stringify(SPEC), usage: null, costUsd: 0.31 };
+    const out = await ask(PRESS);
+    expect(out).toEqual({ error: null, spec: SPEC, changed: 0, editsLeft: setEditsMonthlyLimit("growth", false) - 2, undo: null });
+    expect(steps.filter((x) => x === "give back")).toHaveLength(1);
+    expect(steps).not.toContain("answer gate");
+    expect(writes).toEqual([]);
+    // The press ends unsaved, so a read-back says nothing changed, never "saved".
+    expect(ends.map((e) => e.end)).toEqual(["unsaved"]);
+    // The try itself was billed and stays counted: only the change comes back.
+    expect(steps.filter((x) => x === "tries")).toHaveLength(1);
+  });
+
+  it("is judged against the working copy Astra was handed, not Astra's original", async () => {
+    edited = JSON.parse(recoloured()) as SetSpec;
+    answer = { state: "done", text: recoloured(), usage: null, costUsd: 0.31 };
+    const out = await ask();
+    expect(out).toMatchObject({ error: null, changed: 0, undo: null });
+    expect(writes).toEqual([]);
+    // Astra's original, against that copy, is a change like any other.
+    answer = { state: "done", text: JSON.stringify(SPEC), usage: null, costUsd: 0.31 };
+    expect(await ask()).toMatchObject({ error: null, changed: 1 });
+    expect(writes).toHaveLength(1);
+  });
+
+  it("still saves and counts a change of the description alone", async () => {
+    answer = { state: "done", text: JSON.stringify({ ...SPEC, description: `${SPEC.description} Bunting hangs over the pit lane.`.slice(0, 300) }), usage: null, costUsd: 0.31 };
+    const out = await ask(PRESS);
+    expect(out).toMatchObject({ error: null, changed: 1 });
+    expect(steps).toContain("answer gate");
+    expect(steps).not.toContain("give back");
+    expect(writes).toHaveLength(1);
+    expect(ends.map((e) => e.end)).toEqual(["saved"]);
+  });
+
+  it("gives nothing back for an admin, who reserved nothing", async () => {
+    access = { ...access, plan: "none", isAdmin: true };
+    answer = { state: "done", text: JSON.stringify(SPEC), usage: null, costUsd: 0.31 };
+    expect(await ask()).toEqual({ error: null, spec: SPEC, changed: 0, editsLeft: null, undo: null });
+    expect(steps).not.toContain("give back");
+    expect(writes).toEqual([]);
+  });
+
+  it("is asked before the answer's gate and after the parse (read as source)", () => {
+    const src = readFileSync(join(__dirname, "editor-actions.ts"), "utf8");
+    const body = src.slice(src.indexOf("export async function editSetWithAstra("), src.indexOf("export async function rebuildThingFromPhotos("));
+    const nothing = body.indexOf("if (changesNothing(working, next)) {");
+    expect(nothing).toBeGreaterThan(body.indexOf("const next = parsed.spec;"));
+    expect(nothing).toBeLessThan(body.indexOf("const gateWords = specTextForGate(next);"));
+    expect(body.slice(nothing, body.indexOf("\n      }\n", nothing))).toContain(
+      "return { error: null, spec: working, changed: 0, editsLeft: await giveBackAstraChange(access, slot), undo: null };",
+    );
+  });
+});
+
 // One Astra job per press (astra-press.ts, 2026-09-25, Cut 1). Chromium
 // silently resends a POST whose connection dropped, and the second delivery
 // ran a whole second job: the gate, the pace, one more of the month's

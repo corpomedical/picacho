@@ -3451,6 +3451,7 @@ const it = {
     editorAskDone: "Fatto — {n} parti del set modificate.",
     editorAskDoneOne: "Fatto — una parte del set modificata.",
     editorAskNothing: "Astra non ha cambiato nulla — per come l'ha letto, il set era già così.",
+    editorAskNothingFree: "Astra non ha cambiato nulla — per come l'ha letto, il set era già così. Non è stato conteggiato.",
     editorAskLeft: "Ne restano {n} questo mese",
     editorAskLeftOne: "Ne resta 1 questo mese",
     editorAskLeftNone: "Nessuna rimasta questo mese",

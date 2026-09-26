@@ -5,6 +5,7 @@ import {
   addLight,
   addMark,
   addObject,
+  changesNothing,
   countSpecChanges,
   duplicateObject,
   holdEditedText,
@@ -183,6 +184,18 @@ describe("what an edit touched", () => {
     expect(countSpecChanges(a, b)).toBe(2);
     expect(countSpecChanges(a, okOf(patchSky(a, { kind: "night" })))).toBe(1);
     expect(countSpecChanges(a, a)).toBe(0);
+  });
+
+  // Helios Cut 4, step A1 (2026-09-26): an Astra answer that changes nothing gives its change back.
+  it("knows an answer that changes nothing: no piece and no word differs", () => {
+    const a = base();
+    expect(changesNothing(a, a)).toBe(true);
+    expect(changesNothing(a, JSON.parse(JSON.stringify(a)) as SetSpec)).toBe(true);
+    expect(changesNothing(a, okOf(patchObject(a, 0, { color: "#112233" })))).toBe(false);
+    expect(changesNothing(a, okOf(patchSky(a, { kind: "night" })))).toBe(false);
+    expect(changesNothing(a, { ...a, description: "A concrete yard, wet after rain." })).toBe(false);
+    expect(changesNothing(a, { ...a, title: "Wet yard" })).toBe(false);
+    expect(changesNothing(a, { ...a, marks: a.marks.map((m) => ({ ...m, label: "gate" })) })).toBe(false);
   });
 });
 

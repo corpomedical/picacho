@@ -160,6 +160,25 @@ describe("the set page", () => {
     expect(edit).not.toContain("if (!leftBehind(err)) setError(t.generate.submitFailed);");
   });
 
+  // An answer that changed nothing (Helios Cut 4, step A1, 2026-09-26 —
+  // critic item 12): it went through apply(), which dropped the Undo of the
+  // change before it and, after "Change it, then shoot", shot a paid still
+  // of a set Astra had not changed.
+  it("says an answer that changed nothing on its own line, never through apply(): the last change keeps its Undo, and nothing is shot", () => {
+    const edit = between(view, "async function editSet(\n", "\n  }\n");
+    const nothing = edit.indexOf("if (res.changed === 0) {");
+    expect(nothing).toBeGreaterThan(edit.indexOf("if (res.error !== null) {"));
+    expect(nothing).toBeLessThan(edit.lastIndexOf("return apply(res.spec, res.changed, res.undo);"));
+    const branch = edit.slice(nothing, edit.indexOf("\n    }\n", nothing));
+    expect(branch).toContain("setAstraNothing(true);");
+    expect(branch).toContain("return { ...none, before };");
+    expect(branch).not.toMatch(/apply\(|setShootDue|specBeforeEditRef|lastEditUndoRef|setSetChanged|setSpec\(/);
+    // A count the answer could not read keeps the page's count (the change went back).
+    expect(edit).toContain("keepEditsLeft(res.editsLeft, res.error === null && res.changed > 0);");
+    // Its own line, in the words that say it didn't count.
+    expect(view).toMatch(/\{astraNothing && \([\s\S]{0,200}\{s\.editorAskNothingFree\}/);
+  });
+
   it("reads back a rebuild that threw the same way, and finds the thing on the saved set", () => {
     const rebuild = between(view, "async function rebuildThing(key: string) {", "\n  }\n");
     expect(rebuild).toContain("const pressId = newPressId();");
@@ -279,6 +298,20 @@ describe("the Build editor", () => {
     expect(ask).toMatch(/commitFromServer\(r\.spec\);\s*dropUnsaved\(setId, "edit", askedAt\);/);
     // A press read back as saved lands the same way (astra-follow.ts, 2026-09-25).
     expect(ask).toMatch(/commitFromServer\(followed\.spec\);\s*dropUnsaved\(setId, "edit", askedAt\);/);
+  });
+
+  // Helios Cut 4, step A1 (critic item 12): commitFromServer pushed a copy
+  // of the set as it stood onto the history, so Undo stepped over nothing.
+  it("adds no history step for an answer that changed nothing, and says it didn't count", () => {
+    const ask = between(editor, "async function sendAsk() {", "\n  }\n");
+    const nothing = ask.indexOf("if (r.changed === 0) {");
+    expect(nothing).toBeGreaterThan(ask.indexOf("if (r.error !== null) {"));
+    expect(nothing).toBeLessThan(ask.indexOf("commitFromServer(r.spec);"));
+    const branch = ask.slice(nothing, ask.indexOf("\n    }\n", nothing));
+    expect(branch).toContain('setAskNote("nothing");');
+    expect(branch).toContain("return;");
+    expect(branch).not.toContain("commitFromServer");
+    expect(editor).toMatch(/askNote === "nothing" \? \(\s*<span>\{s\.editorAskNothingFree\}<\/span>/);
   });
 
   it("puts a copy the last load could not save back, as an edit", () => {

@@ -203,11 +203,15 @@ describe("the month's changes left follow every answer that carries a number", (
   });
 
   it("an edit's and a rebuild's answers, saved or not, and a followed press once it has ended", () => {
-    for (const signature of ["  async function editSet(\n", "  async function rebuildThing(key: string) {"]) {
+    // An edit's answer that changed nothing saved nothing (Helios Cut 4, step A1): its count is kept like an unsaved one's.
+    for (const [signature, keeps] of [
+      ["  async function editSet(\n", "keepEditsLeft(res.editsLeft, res.error === null && res.changed > 0);"],
+      ["  async function rebuildThing(key: string) {", "keepEditsLeft(res.editsLeft, res.error === null);"],
+    ] as const) {
       const body = bodyOf(view, signature);
       expect(body, signature).toContain('if (followed.kind === "saved" || followed.kind === "unsaved") keepEditsLeft(followed.editsLeft, followed.kind === "saved");');
       // Before the error branch: a refusal's count is kept too.
-      const kept = body.indexOf("keepEditsLeft(res.editsLeft, res.error === null);");
+      const kept = body.indexOf(keeps);
       expect(kept, signature).toBeGreaterThan(-1);
       expect(kept, signature).toBeLessThan(body.indexOf("if (res.error !== null) {"));
     }

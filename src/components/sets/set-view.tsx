@@ -991,6 +991,9 @@ export function SetView({
   const [lookAside, setLookAside] = useState(false);
   const [rebuildNote, setRebuildNote] = useState<{ key: string; text: string; ok: boolean; from?: string } | null>(null);
   const [setChanged, setSetChanged] = useState<number | null>(null);
+  // Astra's last answer changed nothing (Helios Cut 4, step A1): said on its
+  // own line, so the line of the change before it keeps its Undo.
+  const [astraNothing, setAstraNothing] = useState(false);
   // What the changed line's Undo did, said once where the line stood: the
   // change is undone (and still counts this month), or its pieces are but
   // its description could not come back (Helios Cut 2, step 2).
@@ -6607,6 +6610,7 @@ export function SetView({
     if (busy.editing || busy.shooting || busy.taking || busy.matching) return none;
     busyRef.current.editing = true;
     setEditingSet(true);
+    setAstraNothing(false);
     const before = spec;
     // One id per press (astra-press.ts, 2026-09-25): a browser's silent
     // resend of this call is answered at once and never runs Astra twice.
@@ -6640,6 +6644,7 @@ export function SetView({
       specBeforeEditRef.current = before;
       lastEditUndoRef.current = { before, kind: "edit", undo };
       setUndoNote(null);
+      setAstraNothing(false);
       setSpec(next);
       drawSet(next);
       setSetChanged(changed);
@@ -6659,9 +6664,18 @@ export function SetView({
     }
     if (!res) return { ...none, before };
     // Every answer from the month's count on carries one, saved or not.
-    keepEditsLeft(res.editsLeft, res.error === null);
+    keepEditsLeft(res.editsLeft, res.error === null && res.changed > 0);
     if (res.error !== null) {
       setError(res.error);
+      return { ...none, before };
+    }
+    // An answer that changed nothing saved nothing and gave its change back
+    // (editor-actions.ts, Helios Cut 4, step A1). Never through apply(): the
+    // set, the Undo of the change before it and its line stay as they were,
+    // and "Change it, then shoot" shoots nothing — no still is paid for
+    // after "Astra changed nothing". Shoot is still the person's own press.
+    if (res.changed === 0) {
+      setAstraNothing(true);
       return { ...none, before };
     }
     return apply(res.spec, res.changed, res.undo);
@@ -6705,6 +6719,7 @@ export function SetView({
       // A rebuild never changes the set's words (holdEditedText): nothing to seal.
       lastEditUndoRef.current = { before, kind: "rebuild", undo: null };
       setUndoNote(null);
+      setAstraNothing(false);
       setSpec(next);
       drawSet(next);
       setSetChanged(changed);
@@ -6792,6 +6807,7 @@ export function SetView({
     specBeforeEditRef.current = null;
     lastEditUndoRef.current = null;
     setSetChanged(null);
+    setAstraNothing(false);
     const said = last?.kind !== "rebuild" && !saved.textRestored ? "textKept" : "undone";
     // A turn's Undo says it in its own reply (Helios Cut 2, step 11a); the changed line's where the line stood.
     if (!inTurn) setUndoNote(said);
@@ -6843,6 +6859,7 @@ export function SetView({
     setMentionForced(false);
     setViewing(null);
     setSetChanged(null);
+    setAstraNothing(false);
     setUndoNote(null);
     setAstraAsk(null);
     pendingRef.current = [...pendingRef.current, message];
@@ -7087,6 +7104,7 @@ export function SetView({
     setMentionForced(false);
     setViewing(null);
     setSetChanged(null);
+    setAstraNothing(false);
     setUndoNote(null);
     setAstraAsk(null);
     // The message is kept with the still it leads to, as in v1: a retry's is already there.
@@ -9824,6 +9842,14 @@ export function SetView({
                       </button>
                     )}
                   </p>
+                </div>
+              )}
+
+              {/* An Astra answer that changed nothing (Helios Cut 4, step A1): nothing saved, the change given back. */}
+              {astraNothing && (
+                <div className="flex items-start gap-2.5" data-astra-nothing>
+                  <AstraMark />
+                  <p className="text-sm leading-relaxed text-[#d6d9e0]">{s.editorAskNothingFree}</p>
                 </div>
               )}
 

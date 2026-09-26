@@ -3452,6 +3452,7 @@ const pt = {
     editorAskDone: "Pronto — {n} partes do set mudaram.",
     editorAskDoneOne: "Pronto — uma parte do set mudou.",
     editorAskNothing: "O Astra não mudou nada — leu o set como já sendo assim.",
+    editorAskNothingFree: "O Astra não mudou nada — leu o set como já sendo assim. Não contou.",
     editorAskLeft: "Restam {n} este mês",
     editorAskLeftOne: "Resta 1 este mês",
     editorAskLeftNone: "Nenhuma restante este mês",

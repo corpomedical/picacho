@@ -3647,6 +3647,8 @@ const en = {
     editorAskDone: "Done — {n} pieces of the set changed.",
     editorAskDoneOne: "Done — one piece of the set changed.",
     editorAskNothing: "Astra changed nothing — it read the set as already so.",
+    // An answer that changed nothing: saved nothing, and its change went back (Helios Cut 4, step A1).
+    editorAskNothingFree: "Astra changed nothing — it read the set as already so. It didn't count.",
     editorAskLeft: "{n} left this month",
     editorAskLeftOne: "1 left this month",
     editorAskLeftNone: "None left this month",

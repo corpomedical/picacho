@@ -499,7 +499,9 @@ export function SetEditor({
   const measureRef = useRef<SVGSVGElement>(null);
   const [ask, setAsk] = useState("");
   const [asking, setAsking] = useState(false);
-  const [askNote, setAskNote] = useState<number | null>(null);
+  // How many pieces Astra's last answer changed, or "nothing" for an answer
+  // that changed nothing and gave its change back (Helios Cut 4, step A1).
+  const [askNote, setAskNote] = useState<number | "nothing" | null>(null);
   // The month's Astra changes left, as the server last said.
   const [editsLeft, setEditsLeft] = useState<number | null>(astraEditsLeft);
   // A set grown past what Astra can answer whole is changed with the tools
@@ -935,6 +937,14 @@ export function SetEditor({
       return;
     }
     setAsk("");
+    // An answer that changed nothing saved nothing and gave its change back
+    // (editor-actions.ts, Helios Cut 4, step A1): no history step for it, so
+    // Undo still steps back over the last real change, not over a copy of
+    // the set as it stands.
+    if (r.changed === 0) {
+      setAskNote("nothing");
+      return;
+    }
     commitFromServer(r.spec);
     dropUnsaved(setId, "edit", askedAt);
     setAskNote(r.changed);
@@ -1598,11 +1608,13 @@ export function SetEditor({
                     <span className="text-red-400">{localizeServerText(askError, t)}</span>
                   ) : askNote === null ? (
                     <span className="text-[#c6c9d1]">{localizeServerText(SET_EDIT_TOO_BIG, t)}</span>
+                  ) : askNote === "nothing" ? (
+                    <span>{s.editorAskNothingFree}</span>
                   ) : askNote === 0 ? (
                     <span>{s.editorAskNothing}</span>
                   ) : (
                     <>
-                      <span>{askNote === 1 ? s.editorAskDoneOne : formatMsg(s.editorAskDone, { n: askNote ?? 0 })}</span>
+                      <span>{askNote === 1 ? s.editorAskDoneOne : formatMsg(s.editorAskDone, { n: askNote })}</span>
                       <button type="button" onClick={undo} className="cursor-pointer font-medium text-[#e0a468]">
                         {s.editorUndo}
                       </button>

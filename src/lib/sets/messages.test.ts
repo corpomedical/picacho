@@ -384,6 +384,8 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     "compareNote",
     "figureMovedOut",
     "editorAskCapped",
+    // An answer that changed nothing, said so (Helios Cut 4, step A1).
+    "editorAskNothingFree",
     "editorOpened",
     "editorAskLeft",
     "editorAskLeftOne",
