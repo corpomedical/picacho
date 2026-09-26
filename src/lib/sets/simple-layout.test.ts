@@ -115,6 +115,41 @@ describe("the new layout", () => {
   });
 });
 
+// The conversation in every step (Helios Cut 3, step 13): a reply sent from
+// Shoot or Film shows there, not only in Set.
+describe("the conversation in every step", () => {
+  const panelView = () => fnOf(view, "  function stepPanelView() {", "  function setupChipsView(");
+
+  it("draws the thread under Set, Shoot and Film alike, one branch at a time", () => {
+    expect(panelView().split("{chatThread}").length - 1).toBe(3);
+    expect(panelView()).toMatch(/\{rigTab && rigPanel\(rigTab\)\}\s*<\/div>\s*\{chatThread\}/);
+    expect(panelView()).toMatch(/\{rigPanel\("film"\)\}\s*<\/div>\s*\{chatThread\}/);
+  });
+
+  it("scrolls the thread alone in Shoot and Film, so a reply never takes the chips or the beat off the screen", () => {
+    // The thread's move to its newest line is a scrollIntoView: in one
+    // scroll with the controls it would scroll them away. Split, the
+    // controls scroll on their own, and the thread is its own scroll.
+    expect(view).toContain('threadEndRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });');
+    expect(panelView()).toContain('const split = !elementCard && (!simpleShooting || simpleStep === "shoot");');
+    expect(panelView()).toContain('<div className={split ? "flex min-h-0 flex-1 flex-col" : "min-h-0 flex-1 overflow-y-auto"}');
+    expect(panelView()).toContain('<div className="max-h-[60%] flex-none overflow-y-auto" data-step-film>');
+    expect(panelView()).toContain('<div className="max-h-[60%] flex-none overflow-y-auto" data-step-shoot-controls>');
+    // The thread is its own scroll where it is a flex child.
+    expect(view).toMatch(/const chatThread = \(\s*<div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">/);
+  });
+
+  it("goes back to the conversation when Film closes in the new layout, and keeps Classic's Film tab", () => {
+    expect(view).toContain('setDockTab(simpleOn && !filmOpen ? "astra" : dockTabAfter(dockTab, "shoot", filmOpen, filmOpen));');
+    expect(view).not.toContain('setDockTab(simple ? "astra"');
+  });
+
+  it("takes ⌘K's camera to Shoot and its conversation to Set", () => {
+    expect(view).toMatch(/setRigOpen: \(open\) => \{[\s\S]{0,160}if \(simpleOn && open\) setSimpleStep\("shoot"\);/);
+    expect(view).toMatch(/setChatOpen: \(open\) => \{[\s\S]{0,160}if \(simpleOn && open\) setSimpleStep\("set"\);/);
+  });
+});
+
 describe("the new layout on a phone", () => {
   it("keeps the same steps; in Set the list is a strip over the stage's foot and the setup chips step aside", () => {
     expect(view).toContain("const simplePhone = simple && !wide && simpleLayout;");

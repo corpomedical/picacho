@@ -1306,7 +1306,12 @@ export function SetView({
   const [dockFilmWas, setDockFilmWas] = useState(filmOpen);
   if (dockFilmWas !== filmOpen) {
     setDockFilmWas(filmOpen);
-    setDockTab(dockTabAfter(dockTab, "shoot", filmOpen, filmOpen));
+    // Leaving Film in the new layout goes back to the conversation, not the
+    // camera department (Helios Cut 3, step 13): Shoot's panel would
+    // otherwise open it unasked. Opening Film, and Classic at every width
+    // (a tablet's too, where `simple` can be on but the layout is Classic),
+    // keep the dock's own rule, so Classic's Film tab still opens.
+    setDockTab(simpleOn && !filmOpen ? "astra" : dockTabAfter(dockTab, "shoot", filmOpen, filmOpen));
   }
   const [stageTool, setStageTool] = useState<RailTool>("select");
   const stageToolRef = useRef<RailTool>("select");
@@ -8593,9 +8598,20 @@ export function SetView({
       else studioModes[m].onClick();
     },
     rigOpen: wide ? dockTab === "camera" || dockTab === "light" || dockTab === "look" : rigOpen,
-    setRigOpen: (open) => (wide ? setDockTab(open ? "camera" : "astra") : setRigOpen(open)),
+    // In the new layout the camera department is Shoot's and the
+    // conversation leads Set (Helios Cut 3, step 13): showing either goes
+    // to its step too, so ⌘K never opens something the panel is not drawing.
+    setRigOpen: (open) => {
+      if (!wide) return setRigOpen(open);
+      setDockTab(open ? "camera" : "astra");
+      if (simpleOn && open) setSimpleStep("shoot");
+    },
     chatOpen: wide ? dockTab === "astra" : chatOpen,
-    setChatOpen: (open) => (wide ? setDockTab(open ? "astra" : "camera") : setChatOpen(open)),
+    setChatOpen: (open) => {
+      if (!wide) return setChatOpen(open);
+      setDockTab(open ? "astra" : "camera");
+      if (simpleOn && open) setSimpleStep("set");
+    },
     cameraBearingDeg: cameraBearing,
     cameras: spec.cameras.map((c) => ({ id: c.id, label: labelOfCamera(c.id) })),
     pickCamera,
@@ -8987,24 +9003,38 @@ export function SetView({
    */
   function stepPanelView() {
     const rigTab = dockTab === "camera" || dockTab === "light" || dockTab === "look" ? dockTab : null;
+    // Shoot and Film carry the conversation under their own controls (Helios
+    // Cut 3, step 13), so a reply sent from either shows there. They split
+    // the panel: the controls on top, scrolling on their own up to 60% of
+    // it, and the thread below in its own scroll. The thread's move to its
+    // newest line (threadEndRef) then scrolls the thread alone, and never
+    // takes the chips or the beat's controls off the screen. Set and a
+    // thing's card keep the one scroll they had.
+    const split = !elementCard && (!simpleShooting || simpleStep === "shoot");
     return (
       <aside aria-label={!simpleShooting ? sw.stepFilm : simpleStep === "shoot" ? sw.shotTitle : sw.setTitle} data-step-panel className="flex w-[340px] flex-none flex-col border-l border-[rgba(255,255,255,0.07)] bg-[#15161b]">
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className={split ? "flex min-h-0 flex-1 flex-col" : "min-h-0 flex-1 overflow-y-auto"} data-step-split={split ? "" : undefined}>
           {elementCard ? (
             elementCardView("dock")
           ) : !simpleShooting ? (
-            <div data-step-film>
-              {filmBeatView()}
-              {rigPanel("film")}
-            </div>
+            <>
+              <div className="max-h-[60%] flex-none overflow-y-auto" data-step-film>
+                {filmBeatView()}
+                {rigPanel("film")}
+              </div>
+              {chatThread}
+            </>
           ) : simpleStep === "shoot" ? (
             <>
-              <div className="flex flex-col gap-3 border-b border-[rgba(255,255,255,0.07)] p-4" data-step-shoot>
-                <h2 className="text-[15px] font-semibold text-[#ecedf1]">{sw.shotTitle}</h2>
-                <p className="text-[12.5px] leading-snug text-[#c6c9d1]">{sw.shotHint}</p>
-                {!viewingShot && setupChipsView(true)}
+              <div className="max-h-[60%] flex-none overflow-y-auto" data-step-shoot-controls>
+                <div className="flex flex-col gap-3 border-b border-[rgba(255,255,255,0.07)] p-4" data-step-shoot>
+                  <h2 className="text-[15px] font-semibold text-[#ecedf1]">{sw.shotTitle}</h2>
+                  <p className="text-[12.5px] leading-snug text-[#c6c9d1]">{sw.shotHint}</p>
+                  {!viewingShot && setupChipsView(true)}
+                </div>
+                {rigTab && rigPanel(rigTab)}
               </div>
-              {rigTab && rigPanel(rigTab)}
+              {chatThread}
             </>
           ) : (
             <>
