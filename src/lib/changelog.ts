@@ -20,6 +20,26 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.113.0",
+    build: 152,
+    date: "2026-09-26",
+    title: "Helios says what every Shoot and build spends, folds its chat on a phone, and shows free accounts which plans have it",
+    items: [
+      "With nothing typed, the send button under a set's words box now says what it does and what it costs, \"Shoot · 1 credit\" (or your take and its price), on every account and every screen. Before, a phone showed a bare arrow that spent a credit. With words typed it is still the arrow: your words are read first, and only a message that asks for a shot spends.",
+      "On a phone, the set's conversation folds. The small arrow in the Astra header hides the thread and keeps the words box and the priced Shoot on screen, so the stage grows; press it again, or send a message, and the conversation comes back. While it is folded, a press that couldn't go (no credits, a likeness still to answer) shows as a red line above the words box.",
+      "A take can no longer be paid for between two frames of different shapes. If the frame has changed shape since the still the take starts on, the take's banner says so and Take is refused with nothing spent: set the frame back, or cancel the take.",
+      "A free account that opens Helios 3D on the web now sees what it is, that it's part of the paid plans, and \"See plans\", instead of a \"not found\" page. The Android app is unchanged.",
+      "On the Sets home, the build button says what it uses at every screen size: \"Build this place · 1 of 1 left this month\", or \"No builds left this month — pick a set you have\" at the limit. In \"Shoot without asking\" it also names the still it will shoot once the place is built, with its price.",
+      "The Sets home now starts on your latest set, so what you type goes to the place you were shooting in. To build somewhere new, choose Set → \"A new place\". A message sent from the home frames the shot when the set opens and spends nothing, unless you chose \"Shoot without asking\", and then the button shows the price first.",
+      "A build from words that failed now has \"Try again\", on its card and on its own page. It puts your words back in the box; nothing is used until you press the build button, and a failed build never counts toward your month.",
+      "Deleting a set now says what happens to the month's builds: deleting a finished set, or one still building, doesn't give its build back, and a failed build never counted.",
+      "The Helios 3D guide no longer promises building from a photo you upload or choosing a pose, which aren't offered yet, and the Sets home links to it: \"See how Helios 3D works →\".",
+      "The first time you open a set with no stills yet, a small card beside the stage explains what you're looking at in three short tips: the grey figure, the blocks, and the bright box that is the frame. It shows once in each browser and never blocks the page.",
+      "The Producer knows all of this: where a free account is sent, that the Sets home starts on your latest set, how to build a new place, Try again, and that deleting a set never gives a build back.",
+      "The team is trying a simpler set page first: three steps, Set · Shoot · Film, with the frame's shape, the shot size, who's in it and which camera up front, one priced Shoot, and the rest of the studio one press away under \"Advanced\". Your set page stays as it is until it's ready for everyone.",
+    ],
+  },
+  {
     version: "1.112.0",
     build: 151,
     date: "2026-09-25",
