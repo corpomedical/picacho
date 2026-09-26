@@ -506,6 +506,8 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     // A model on a thing (thing-model.ts, 2026-09-24): admins only while our
     // own model builder is proved.
     modelsOn: access.isAdmin,
+    // The naming pass's priced button (name-actions.ts, Helios Cut 4, step B4): admins only; the action checks again.
+    namingOn: access.isAdmin,
     // The models kept with the set (thing-model-store.ts): admins only, like
     // the row that puts them there; read in the owner's own folder only.
     thingModels: status === "ready" && access.isAdmin ? await listThingModels(createAdminClient(), access.userId, row.id as string) : [],

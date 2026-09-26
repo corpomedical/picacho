@@ -306,6 +306,13 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "Astra's new shape didn't fit where the old one stood, so the set is unchanged — try again.": "thingRebuildDidntFit",
   "Astra couldn't rebuild this from its photos — try again in a moment.": "thingRebuildFailed",
   "Rebuilding from photos is for admins while we prove it.": "thingRebuildAdminsOnly",
+  // The naming pass (lib/sets/messages.ts, Helios Cut 4, step B4).
+  "Naming a set's things is for admins while we prove it.": "setNamingAdminsOnly",
+  "You're naming sets quickly — try again in a little while.": "setNamingTooFast",
+  "Still naming this set's things — reload the set in a moment to see the names.": "setNamingStillWorking",
+  "The set's things couldn't be named this time — try again in a moment.": "setNamingFailed",
+  "Those names can't be used here, so the set is unchanged.": "setNamingRefused",
+  "We couldn't check the names, so the set is unchanged. Try again in a moment.": "setNamingUnchecked",
   "This thing has too many blocks for Astra to rebuild in one answer — change it with the editor's own tools.": "thingRebuildTooBig",
   "Put a photo on this thing first — its model is built from its front photo.": "thingBuildNoPhoto",
   "The model couldn't be built from this photo — try a clearer photo of the whole thing.": "thingBuildFailed",

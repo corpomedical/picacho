@@ -370,7 +370,13 @@ export type ShotReaderAnswer = { text: string; usage: ReaderUsage; effort: "none
  */
 export async function askShotReader(
   messages: readonly { role: "system" | "user"; content: string }[],
-  opts: { maxCompletionTokens: number; timeoutMs?: number; fetchFn?: typeof fetch },
+  opts: {
+    maxCompletionTokens: number;
+    timeoutMs?: number;
+    fetchFn?: typeof fetch;
+    /** Which call the usage line is for: the chat's reading (v2, the default) or a set's naming pass (name-actions.ts, Helios Cut 4, step B4). Only the log line reads it. */
+    reader?: "v2" | "naming";
+  },
 ): Promise<ShotReaderAnswer | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -416,7 +422,7 @@ export async function askShotReader(
     }
     const data = (await res.json()) as { choices?: { message?: { content?: unknown } }[] } | null;
     const effort = pinned ? "none" : "default";
-    console.info("[sets] reader usage", { ...readerUsageOf(data, SHOT_WORDS_MODEL), reader: "v2", effort });
+    console.info("[sets] reader usage", { ...readerUsageOf(data, SHOT_WORDS_MODEL), reader: opts.reader ?? "v2", effort });
     const answer = data?.choices?.[0]?.message?.content;
     return typeof answer === "string" ? { text: answer, usage: readerUsageOf(data, SHOT_WORDS_MODEL), effort } : null;
   } catch (err) {

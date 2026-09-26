@@ -143,6 +143,16 @@ export async function claimAstraPress(admin: SupabaseClient, userId: string, pre
   return claimOnce(admin, userId, astraPressScope(pressId), "an Astra press");
 }
 
+/** A naming pass's press (name-actions.ts, Helios Cut 4, step B4): the same one-shot claim, under its own scope. It has no end marker and no read-back. */
+export function namingPressScope(id: string): string {
+  return `set-name-press:${id}`;
+}
+
+/** Whether this delivery is the naming press's first: one paid call per press, whatever Chromium resends. */
+export async function claimNamingPress(admin: SupabaseClient, userId: string, pressId: string): Promise<"first" | "repeat" | "unavailable"> {
+  return claimOnce(admin, userId, namingPressScope(pressId), "a naming press");
+}
+
 /** One row under `scope`, idempotent (max 1): true when the row is there now, written by this call or before it. Never throws. */
 async function leaveMark(admin: SupabaseClient, userId: string, scope: string, what: string): Promise<boolean> {
   try {

@@ -150,6 +150,8 @@ export type SetPageData =
       matchOn: boolean;
       /** A model file on a thing (thing-model.ts): admins, while our own model builder is proved. */
       modelsOn: boolean;
+      /** The naming pass's priced button (name-actions.ts, Helios Cut 4, step B4): admins only; the action checks again. */
+      namingOn: boolean;
       /** The models kept with the set (thing-model-store.ts): each thing's newest, admins only. */
       thingModels: { key: string; url: string; flip: boolean }[];
       /** Whether this person's plan takes clips and renders films: every paid plan's (set-config.ts setTakesEligible, 2026-09-19); takeInSet checks again. */

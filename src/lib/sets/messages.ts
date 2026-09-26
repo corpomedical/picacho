@@ -86,6 +86,14 @@ export const THING_REBUILD_ADMINS_ONLY = "Rebuilding from photos is for admins w
  * or anything is spent.
  */
 export const THING_REBUILD_TOO_BIG = "This thing has too many blocks for Astra to rebuild in one answer — change it with the editor's own tools.";
+// The naming pass (name-actions.ts, Helios Cut 4, step B4, 2026-09-26): admins only, on a priced press.
+export const SET_NAMING_ADMINS_ONLY = "Naming a set's things is for admins while we prove it.";
+export const SET_NAMING_TOO_FAST = "You're naming sets quickly — try again in a little while.";
+/** The same press, delivered again: the first delivery's names show once they are saved. */
+export const SET_NAMING_STILL_WORKING = "Still naming this set's things — reload the set in a moment to see the names.";
+export const SET_NAMING_FAILED = "The set's things couldn't be named this time — try again in a moment.";
+export const SET_NAMING_REFUSED = "Those names can't be used here, so the set is unchanged.";
+export const SET_NAMING_UNCHECKED = "We couldn't check the names, so the set is unchanged. Try again in a moment.";
 // A thing's 3D model built from its photo (thing-build.ts, 2026-09-24).
 export const THING_BUILD_NO_PHOTO = "Put a photo on this thing first — its model is built from its front photo.";
 export const THING_BUILD_FAILED = "The model couldn't be built from this photo — try a clearer photo of the whole thing.";

@@ -19,6 +19,8 @@ import { recordDownload } from "@/lib/generations/actions";
 import { addElementPhoto, assignElementPhoto, prepareElementSheets, removeElementPhoto, settleElementPhotos } from "@/lib/sets/element-actions";
 import { thumbUrl } from "@/lib/media/url";
 import { editSetWithAstra, readAstraEdit, rebuildThingFromPhotos, undoAstraEdit } from "@/lib/sets/editor-actions";
+import { nameSet } from "@/lib/sets/name-actions";
+import { NAME_SET_MAX_USD } from "@/lib/sets/name-prompt";
 import type { EditUndo } from "@/lib/sets/edit-seal";
 import { fileSeal, sealBookOf, sealFor, type SealBook } from "@/lib/sets/seal-book";
 import { followAstraEdit, type FollowedEdit } from "@/lib/sets/astra-follow";
@@ -757,6 +759,16 @@ function Option({ active, onPick, hint, children }: { active: boolean; onPick: (
   );
 }
 
+/** The naming pass's worst price (name-prompt.ts NAME_SET_MAX_USD), rounded up to a tenth of a cent, in the person's own money format (Helios Cut 4, step B4). */
+function namingPrice(locale: string): string {
+  const worst = Math.ceil(NAME_SET_MAX_USD * 1000) / 1000;
+  try {
+    return new Intl.NumberFormat(locale, { style: "currency", currency: "USD", minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(worst);
+  } catch {
+    return `$${worst.toFixed(3)}`;
+  }
+}
+
 export function SetView({
   setId,
   title,
@@ -769,6 +781,7 @@ export function SetView({
   identityBar,
   matchOn,
   modelsOn = false,
+  namingOn = false,
   simpleLayout = false,
   initialThingModels = [],
   takesOn,
@@ -806,6 +819,12 @@ export function SetView({
   matchOn: boolean;
   /** Whether a model file can be put on a thing (thing-model.ts): admins, while our own model builder is proved. */
   modelsOn?: boolean;
+  /**
+   * Whether the naming pass's priced button is offered (name-actions.ts,
+   * Helios Cut 4, step B4): admins only; the action checks again. It runs
+   * only on a press.
+   */
+  namingOn?: boolean;
   /**
    * Whether the new layout (Set · Shoot · Film) is offered here: admins, and
    * every account once set-config.ts HELIOS_SIMPLE_FOR_ALL is on (data.ts
@@ -1031,6 +1050,9 @@ export function SetView({
   /** The look stayed out of the last still on purpose: it showed a thing now drawn from its own photos. */
   const [lookAside, setLookAside] = useState(false);
   const [rebuildNote, setRebuildNote] = useState<{ key: string; text: string; ok: boolean; from?: string } | null>(null);
+  /** The naming pass in flight, and what the last one said (Helios Cut 4, step B4). */
+  const [naming, setNaming] = useState(false);
+  const [namingNote, setNamingNote] = useState<{ text: string; ok: boolean } | null>(null);
   const [setChanged, setSetChanged] = useState<number | null>(null);
   // Astra's last answer changed nothing (Helios Cut 4, step A1): said on its
   // own line, so the line of the change before it keeps its Undo.
@@ -4907,6 +4929,8 @@ export function SetView({
               }
             : null
         }
+        // The naming pass on the set itself's card: admins, its price on its button (Helios Cut 4, step B4).
+        naming={el.kind === "structure" && namingOn ? { label: namingLabel, working: naming, held: editingSet || rebuilding !== null, note: namingNote, onName: () => void nameThings() } : null}
         drive={
           thingKey && filmOpen && filmSel !== null && !filmBusy && !previz
             ? {
@@ -6860,6 +6884,42 @@ export function SetView({
     setRefsLost(r.lost.gaze || r.lost.rack ? r.lost : null);
     if (r.changed) putRefs(r);
   }
+
+  /**
+   * The naming pass (name-actions.ts, Helios Cut 4, step B4): an admin's
+   * priced press, one paid call, never on its own. The set comes back with
+   * names on its objects and nothing else changed: no block moves, so the
+   * stage isn't redrawn, and names are in no key, so no photo, eye-line or
+   * film follows anything. The last change's Undo stays as it was.
+   */
+  async function nameThings() {
+    if (!namingOn || naming || busyRef.current.editing || editingSet) return;
+    setNaming(true);
+    setNamingNote(null);
+    let res: Awaited<ReturnType<typeof nameSet>> | null = null;
+    try {
+      res = await nameSet(setId, newPressId());
+    } catch (err) {
+      if (leftBehind(err)) return;
+    } finally {
+      setNaming(false);
+    }
+    if (!res) {
+      setNamingNote({ text: t.generate.submitFailed, ok: false });
+      return;
+    }
+    if (res.error !== null) {
+      setNamingNote({ text: localizeServerText(res.error, t), ok: false });
+      return;
+    }
+    // Its words and names, sealed like every spec the server hands (Helios Cut 4, step A6b).
+    fileSeal(sealsRef.current, res.seal);
+    setSpec(res.spec);
+    setNamingNote(res.named > 0 ? { text: formatMsg(cast.nameDone, { n: res.named }), ok: true } : { text: cast.nameNone, ok: false });
+  }
+
+  /** The naming button's words, with its worst price in them. */
+  const namingLabel = useMemo(() => fill(s.cast.nameButton, { price: namingPrice(locale) }), [locale, s.cast.nameButton]);
 
   /**
    * A thing's blocks rebuilt by Astra from its photos (editor-actions.ts
@@ -9475,6 +9535,25 @@ export function SetView({
                 {engineLine}
                 {/* Photos or a model where a model can be added (admins, modelsOn); photos alone otherwise. */}
                 <p className="text-[12.5px] leading-snug text-[#c6c9d1]">{modelsOn ? sw.setHint : sw.setHintPhotos}</p>
+                {/* The naming pass: admins, its price on its button, on a press only (Helios Cut 4, step B4). */}
+                {namingOn && (
+                  <div className="flex flex-wrap items-center gap-1.5" data-step-naming>
+                    <button
+                      type="button"
+                      onClick={() => void nameThings()}
+                      disabled={naming || editingSet || rebuilding !== null}
+                      data-step-naming-go
+                      className="h-7 cursor-pointer rounded-full border border-[rgba(255,255,255,0.12)] px-2.5 text-[11px] text-[#d6d9e0] hover:bg-[rgba(255,255,255,0.06)] disabled:cursor-default disabled:text-[#9aa0ad] disabled:hover:bg-transparent"
+                    >
+                      {naming ? cast.nameWorking : namingLabel}
+                    </button>
+                    {namingNote && !naming && (
+                      <p className={`w-full text-[11px] leading-snug ${namingNote.ok ? "text-[#8fcf9a]" : "text-[#e0a468]"}`} data-step-naming-note>
+                        {namingNote.text}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
               {chatThread}
             </>

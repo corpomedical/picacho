@@ -47,6 +47,7 @@ export function ElementCard({
   drive,
   model = null,
   rebuild = null,
+  naming = null,
   casting,
   c,
   variant,
@@ -133,6 +134,21 @@ export function ElementCard({
     uses: string | null;
     /** Whether a press can come to anything: false with the month's changes used up or Astra paused (astraCardCanGo). */
     canGo: boolean;
+  } | null;
+  /**
+   * The naming pass on the set itself's card (name-actions.ts, Helios Cut
+   * 4, step B4): admins only, its price on its button, on a press and
+   * never on its own. Null where it is not offered.
+   */
+  naming?: {
+    /** The button's words with the price in them. */
+    label: string;
+    working: boolean;
+    /** Anything else keeping the set busy (an Astra change): the press waits. */
+    held: boolean;
+    /** What the last pass said, already in words. */
+    note: { text: string; ok: boolean } | null;
+    onName: () => void;
   } | null;
   /**
    * The figure's card (R1, "Who plays this person?"): the person's
@@ -224,6 +240,24 @@ export function ElementCard({
       </div>
 
       {element.kind === "structure" && <p className="text-[12px] leading-snug text-[#c6c9d1]">{c.structureLine}</p>}
+      {element.kind === "structure" && naming && (
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-[rgba(255,255,255,0.07)] pt-2" data-el-naming>
+          <button
+            type="button"
+            onClick={naming.onName}
+            disabled={naming.working || naming.held}
+            data-el-naming-go
+            className={`${DRIVE_CHIP(naming.working)} disabled:cursor-default disabled:opacity-60`}
+          >
+            {naming.working ? c.nameWorking : naming.label}
+          </button>
+          {naming.note && !naming.working && (
+            <p className={`w-full text-[11px] leading-snug ${naming.note.ok ? "text-[#8fcf9a]" : "text-[#e0a468]"}`} data-el-naming-note={naming.note.ok ? "done" : "not"}>
+              {naming.note.text}
+            </p>
+          )}
+        </div>
+      )}
 
       {element.kind === "figure" && (
         <div className="flex items-center gap-2.5">

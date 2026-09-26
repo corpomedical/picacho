@@ -126,6 +126,7 @@ export default async function SetPage({
         identityBar={data.identityBar}
         matchOn={data.matchOn}
         modelsOn={data.modelsOn}
+        namingOn={data.namingOn}
         simpleLayout={data.simpleLayout}
         initialThingModels={data.thingModels}
         takesOn={data.takesOn}

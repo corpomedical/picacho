@@ -10,6 +10,7 @@ import {
   countSpecChanges,
   duplicateObject,
   holdEditedText,
+  namesByBlock,
   patchCamera,
   patchFog,
   patchGround,
@@ -23,6 +24,7 @@ import {
   removeObject,
   selectionAfter,
   sizeFromScale,
+  stampNames,
 } from "./editor-model";
 import { inferMaterial } from "./stage-materials";
 
@@ -227,6 +229,23 @@ describe("the server's hold on names", () => {
     const other = unnamed(stored);
     other.objects[0] = { ...other.objects[0], material: word === "glass" ? "brick" : "glass" };
     expect("name" in carryNames(stored, other).objects[0]).toBe(false);
+  });
+
+  // Helios Cut 4, step B4: the naming pass puts its names on the stored copies by block.
+  it("stamps the naming pass's names by block, replacing an old name, never touching another block", () => {
+    const stored = yard();
+    const named = namesByBlock([{ ...stored.objects[0], name: "wooden crate" }, { ...stored.objects[1], name: "bench" }]);
+    // The copy as stored: object 0 named "crate" before, object 1 ("traffic cone") moved since.
+    const now = { ...stored, objects: stored.objects.map((o, i) => (i === 1 ? { ...o, position: [o.position[0] + 1, o.position[1], o.position[2]] as typeof o.position } : o)) };
+    const { spec, stamped } = stampNames(named, now);
+    expect(stamped).toBe(1);
+    expect(spec.objects[0].name).toBe("wooden crate");
+    // Moved since the pass read it: not the block it named, so it keeps what it had.
+    expect(spec.objects[1].name).toBe("traffic cone");
+    expect(spec.objects.slice(2)).toEqual(now.objects.slice(2));
+    // Nothing to change: the same copy back.
+    expect(stampNames(namesByBlock(spec.objects), spec)).toEqual({ spec, stamped: 0 });
+    expect(namesByBlock(unnamed(stored).objects).size).toBe(0);
   });
 
   it("never counts a name as a piece of the set", () => {

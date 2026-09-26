@@ -328,6 +328,42 @@ function blockKey(o: SetObject): string {
   return JSON.stringify([o.shape, o.position, o.rotation, o.size, o.color, o.roughness, o.metalness, o.emissive, o.emissiveIntensity, o.castShadow, o.repeat, o.material ?? inferMaterial(o)]);
 }
 
+/** The block an object is, whatever its name (blockKey): the naming pass finds its named blocks again in the stored copies by it (name-actions.ts). */
+export const blockKeyOf = blockKey;
+
+/**
+ * The names a copy's objects carry, by the block each is (Helios Cut 4,
+ * step B4): the first name listed for a block, as carryNames reads them.
+ */
+export function namesByBlock(objects: readonly SetObject[]): Map<string, string> {
+  const named = new Map<string, string>();
+  for (const o of objects) {
+    if (o.name === undefined) continue;
+    const k = blockKey(o);
+    if (!named.has(k)) named.set(k, o.name);
+  }
+  return named;
+}
+
+/**
+ * The naming pass's names put on a stored copy (Helios Cut 4, step B4):
+ * every object of `to` that is the same block as a named one — apart from
+ * its name — takes that name, replacing any it had; every other object is
+ * left exactly as it is. Unlike carryNames, a name `to` carries is
+ * overwritten: the pass has just named that block again. `stamped` counts
+ * the objects whose name changed; the same object back when none did.
+ */
+export function stampNames<T extends Pick<SetSpec, "objects">>(named: ReadonlyMap<string, string>, to: T): { spec: T; stamped: number } {
+  let stamped = 0;
+  const objects = to.objects.map((o) => {
+    const name = named.get(blockKey(o));
+    if (name === undefined || o.name === name) return o;
+    stamped += 1;
+    return { ...o, name };
+  });
+  return { spec: stamped > 0 ? { ...to, objects } : to, stamped };
+}
+
 /**
  * Names carried forward (Helios Cut 4, step B1): every object of `to` with
  * no name, identical to an object of `from` apart from the name, takes that

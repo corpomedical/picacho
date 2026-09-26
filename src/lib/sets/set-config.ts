@@ -204,6 +204,25 @@ export const SET_MATCH_DEADLINE_MS = 270_000;
 /** A read is not started with less than this left before the deadline: the one measured read took 41.8 s. */
 export const SET_MATCH_MIN_READ_MS = 45_000;
 
+// The naming pass (Helios Cut 4, step B4, 2026-09-26 — the owner's decision D1 (B)): one
+// gpt-5.4-mini call names a set's things and parts (name-prompt.ts, name-actions.ts). A NEW PAID
+// CALL: admins only, and only on an admin's press of its priced button — never on its own.
+//   One press at worst: name-prompt.ts NAME_SET_MAX_USD = $0.0141675 (reader-prices.ts,
+//   gpt-5.4-mini, read 2026-09-25), plus the content check on the names, whose price is not in
+//   code (content-policy.ts reads with up to five readers).
+//   The burst brake, as a match's (SET_MATCH_PER_HOUR): 10 an hour → 10 × $0.0141675 =
+//   $0.141675 an hour per admin at most, plus the checks.
+// Nothing is counted against the month: a naming pass is not an Astra change.
+export const SET_NAMING_PER_HOUR = 10;
+/**
+ * Whether a build and an Astra edit name their sets on their own. OFF, and
+ * nothing calls the naming pass but the button (critic item 9): turned on,
+ * it is a new paid call on every build and every edit, so the build's worst
+ * case ($1.155, the top of this file) and the edit and tries tables below must be
+ * worked out again in the commit that turns it on, with the owner's yes.
+ */
+export const SET_NAMING_AUTO = false;
+
 // The Set Editor's Astra edits (2026-09-14): the prompt bar sends the working
 // spec and one change request, and waits inside the server action like a
 // match does — well inside the set page's 300 s budget. The request rides
