@@ -2,7 +2,7 @@
 // behind both, and the verdict words every surface prints (Spec v1 §1.1,
 // §1.2, §6; v2: press-tour-synthesis.md §3.1 items 7, 9, 28, 30, S4/N2).
 //
-// supabase/pending/press-tour-02-products.sql holds the same lists and
+// supabase/applied/2026-09-26/press-tour-02-products.sql holds the same lists and
 // limits as CHECKs and triggers; types.test.ts reads that file and fails if
 // the two ever disagree, so a value the server writes here is a value the
 // database accepts.

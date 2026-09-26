@@ -4,7 +4,7 @@
 // what Admin's score distributions and the hand-labelling tool read
 // (spec §1.8 "Record-only until calibrated"; calibration.ts).
 //
-// THE TABLE is created by supabase/pending/press-tour-03-campaigns.sql (the
+// THE TABLE is created by supabase/applied/2026-09-26/press-tour-03-campaigns.sql (the
 // campaign engine's file). This module codes to the shape below; the SQL
 // must hold exactly these columns (FRAME_CHECK_COLUMNS, pinned by
 // records.test.ts), with RLS on and NO policies (service role only), and

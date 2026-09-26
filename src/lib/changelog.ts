@@ -35,7 +35,7 @@ export const RELEASES: Release[] = [
       "Every new word is in English, Spanish, Portuguese and Italian: the wall, the cut, the press line, every answer from filming and posting, the notifications, the consent page and Connected apps. Notifications follow your usual switches: your ad is ready or couldn't be finished (it opens that ad), a post went out or didn't (it opens that ad's press line), and an account needs connecting again (at most once a day per account).",
       "Admin › Settings now refuses a Press Tour setting that wouldn't read as typed (a film lane the quote doesn't price, a word where a number belongs, an unknown plan) instead of saving it and quietly switching the thing off. verify-db now also asks about the film switch, the Press Tour settings and every campaign column.",
       "The privacy policy has a Press Tour section (product cards and ads; product checks read by Google's Cloud Vision and Gemini; connected social accounts with encrypted keys; connected apps), and the account-deletion page lists what is deleted and how to disconnect.",
-      "Needs supabase/pending/press-tour-03b-film.sql, press-tour-04-social.sql, press-tour-07-mcp-oauth.sql and press-tour-08-waitlist.sql (in that order, after 03) before the push.",
+      "Ran 2026-09-26: supabase/applied/2026-09-26/press-tour-03b-film.sql, press-tour-04-social.sql, press-tour-07-mcp-oauth.sql and press-tour-08-waitlist.sql.",
     ],
   },
   {
@@ -55,7 +55,7 @@ export const RELEASES: Release[] = [
       "A press that arrives twice never charges twice. Stopping an ad gives back every still that wasn't painted, and an ad left waiting 7 days closes on its own. Stills keep going every minute in the background, so they finish even if you close the page, and a still already painted is never painted (or paid for) twice. If a price changes between planning and painting, the receipt shows the new price at once; a character whose photos changed after planning can be answered for right on the page.",
       "On a phone all three stills show at once, one decision card sits under them with Start over below it, and the dock at the bottom grows with its words and leaves the Producer's lamp its corner. In a narrower window the quote and the Film key sit under the stills instead of beside them.",
       "Admin → Product checks: every frame the check has read, how its scores spread, and a queue to label frames as correct, wrong or not readable, with the calibration gate (300 true matches, 100 true mismatches, 15 products, 3 lanes) worked out live. Meeting it turns nothing on. Only admin and bake-off frames keep their picture; customer frames are numbers only. scripts/press-tour-bakeoff.mjs prints the bake-off's price (3 products: $11.73 typical, at most $13.59) and spends nothing without --go and a CAP_USD ceiling.",
-      "Every word is in English, Spanish, Portuguese and Italian, including the product card's messages and the access messages, which used to reach the page in English. Needs supabase/pending/press-tour-03-campaigns.sql (after 01 and 02) before the push.",
+      "Every word is in English, Spanish, Portuguese and Italian, including the product card's messages and the access messages, which used to reach the page in English. Needs supabase/applied/2026-09-26/press-tour-03-campaigns.sql (after 01 and 02) before the push.",
     ],
   },
   {

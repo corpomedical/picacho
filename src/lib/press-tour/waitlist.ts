@@ -1,7 +1,7 @@
 // "Tell me when Instagram opens" (the press line's Coming soon column,
 // design A publish-desktop): a person's wish to hear, once, by email, when
 // posting to a network opens to them. One row per person per network in
-// press_network_waitlist (supabase/pending/press-tour-08-waitlist.sql, RLS
+// press_network_waitlist (supabase/applied/2026-09-26/press-tour-08-waitlist.sql, RLS
 // on, zero policies: only the service role reads or writes it). The switch
 // starts OFF; turning it off deletes the row. Nothing here sends anything:
 // when a network opens, the operator writes to the people on its list once

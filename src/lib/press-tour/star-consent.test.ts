@@ -157,7 +157,7 @@ describe("the words and the table agree", () => {
   });
 
   it("writes only what press-tour-03-campaigns.sql accepts", () => {
-    const sql = readFileSync(join(__dirname, "..", "..", "..", "supabase", "pending", "press-tour-03-campaigns.sql"), "utf8");
+    const sql = readFileSync(join(__dirname, "..", "..", "..", "supabase", "applied", "2026-09-26", "press-tour-03-campaigns.sql"), "utf8");
     expect(sql).toContain("create table if not exists public.character_ad_consents");
     expect(sql).toContain("check (answer in ('me', 'permission', 'not_a_person'))");
     expect(sql).toMatch(/character_ad_consents_place check \(place in \([^)]*'door'/);

@@ -640,7 +640,7 @@ describe("SEC-2: a revoked family stays revoked, even mid-race", () => {
   });
 
   it("the database refuses a new token in a revoked family (press-tour-07-mcp-oauth.sql's guard)", () => {
-    const sql = readFileSync(join(__dirname, "..", "..", "..", "..", "supabase", "pending", "press-tour-07-mcp-oauth.sql"), "utf8");
+    const sql = readFileSync(join(__dirname, "..", "..", "..", "..", "supabase", "applied", "2026-09-26", "press-tour-07-mcp-oauth.sql"), "utf8");
     const guard = sql.slice(sql.indexOf("create or replace function public.oauth_tokens_guard()"), sql.indexOf("create or replace function public.mcp_ui_nonces_guard()"));
     const insertBranch = guard.slice(guard.indexOf("if tg_op = 'INSERT' then"), guard.indexOf("return new;"));
     expect(insertBranch).toContain("from public.oauth_revoked_families f where f.family_id = new.family_id");
@@ -717,7 +717,7 @@ describe("SEC-1: nothing is kept for good", () => {
   });
 
   it("the app prune keeps any app with a connection, one being authorized, or one disabled by hand, in the same statement", () => {
-    const sql = readFileSync(join(__dirname, "..", "..", "..", "..", "supabase", "pending", "press-tour-07-mcp-oauth.sql"), "utf8");
+    const sql = readFileSync(join(__dirname, "..", "..", "..", "..", "supabase", "applied", "2026-09-26", "press-tour-07-mcp-oauth.sql"), "utf8");
     const fn = sql.slice(sql.indexOf("create or replace function public.prune_oauth_clients"), sql.indexOf("$function$;", sql.indexOf("create or replace function public.prune_oauth_clients")));
     expect(fn).toContain("security invoker");
     expect(fn).not.toMatch(/security definer/i);

@@ -271,7 +271,7 @@ export async function toggleFeatureFlag(formData: FormData) {
 // before this list learns about them) still save, just length-capped, so the
 // page never blocks an operator from a new knob.
 function validateAppSetting(key: string, value: string): string | null {
-  // Press Tour's settings (pending/press-tour-01-flags.sql) and its film lane
+  // Press Tour's settings (applied/2026-09-26/press-tour-01-flags.sql) and its film lane
   // (press-tour-03b-film.sql): each reader fails closed on a malformed value,
   // so a typo here would silently switch something off while the page said
   // it saved. Both answer null for any key that isn't theirs.

@@ -189,7 +189,7 @@ export function ProductChecksView({ error, show, calibrated, reshootOn, refundOn
         <Card className="mt-6">
           <p className="text-sm text-atelier-ink">The frame record isn&apos;t in the database yet.</p>
           <p className="mt-1 text-sm text-atelier-muted">
-            Paste <code className="text-xs">supabase/pending/press-tour-03-campaigns.sql</code> (it creates product_frame_checks); frames read before that are not kept.
+            Paste <code className="text-xs">supabase/applied/2026-09-26/press-tour-03-campaigns.sql</code> (it creates product_frame_checks); frames read before that are not kept.
           </p>
         </Card>
       ) : load.state === "error" ? (

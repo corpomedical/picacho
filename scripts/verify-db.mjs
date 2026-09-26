@@ -64,7 +64,7 @@ const COLUMNS = {
     // start action refunds and refuses a take whose meter did not land, so
     // Live simply cannot run until the file does; this line says why.
     "live",
-    // Press Tour's campaign engine (pending/press-tour-03-campaigns.sql):
+    // Press Tour's campaign engine (applied/2026-09-26/press-tour-03-campaigns.sql):
     // written through jsonb_populate_record, so a still reserved before the
     // file runs would silently lose which campaign it belongs to.
     "press_tour", "product_verdict", "product_gated_at", "product_retries",
@@ -98,7 +98,7 @@ const COLUMNS = {
   // The refusal log both content gates write (applied/2026-09-11).
   policy_refusals: ["user_id", "gate", "reason", "strict_lane", "created_at"],
   notes: ["title", "body"],
-  // Press Tour's product card (pending/press-tour-02-products.sql) on the
+  // Press Tour's product card (applied/2026-09-26/press-tour-02-products.sql) on the
   // Product Studio table: card-service.ts selects every one of these by name
   // (types.ts PRODUCT_CARD_COLUMNS), so one missing column fails every card read.
   products: [
@@ -116,10 +116,10 @@ const COLUMNS = {
     "notice_version", "locale", "method", "place", "ip_hash", "created_at",
   ],
   // Press Tour's campaigns, the checker's per-frame record and the star's
-  // ad-use answer (pending/press-tour-03-campaigns.sql). campaign-machine.ts
+  // ad-use answer (applied/2026-09-26/press-tour-03-campaigns.sql). campaign-machine.ts
   // CAMPAIGN_COLUMNS selects the first list by name; product-lock/records.ts
   // FRAME_CHECK_COLUMNS writes the second. The last five are the film, the
-  // press wall and the cut (pending/press-tour-03b-film.sql); the machine
+  // press wall and the cut (applied/2026-09-26/press-tour-03b-film.sql); the machine
   // selects them too, so without them every campaign read fails.
   press_campaigns: [
     "user_id", "source", "send_id", "product_id", "brand_kit_id", "character_ids", "trial_id",
@@ -143,7 +143,7 @@ const COLUMNS = {
     "user_id", "character_id", "answer", "ads_ok", "photos_hash", "notice_version",
     "locale", "method", "place", "ip_hash", "consented_at",
   ],
-  // Press Tour publishing (pending/press-tour-04-social.sql): lib/social/store.ts
+  // Press Tour publishing (applied/2026-09-26/press-tour-04-social.sql): lib/social/store.ts
   // selects these by name (CONNECTION_COLUMNS, POST_COLUMNS).
   social_connections: [
     "user_id", "network", "external_id", "handle", "display_name", "scopes", "status",
@@ -159,7 +159,7 @@ const COLUMNS = {
     "token_tag", "key_version", "attempts", "next_attempt_at", "last_error",
   ],
   press_social_testers: ["user_id", "networks"],
-  // "Tell me when <network> opens" (pending/press-tour-08-waitlist.sql):
+  // "Tell me when <network> opens" (applied/2026-09-26/press-tour-08-waitlist.sql):
   // lib/press-tour/waitlist.ts selects and writes these by name.
   press_network_waitlist: ["user_id", "network", "created_at"],
   scheduled_posts: [
@@ -170,7 +170,7 @@ const COLUMNS = {
     "external_post_id", "permalink", "last_error", "cost_usd", "published_at", "trend_derived",
     "deleted_at",
   ],
-  // Picacho inside Claude and ChatGPT (pending/press-tour-07-mcp-oauth.sql):
+  // Picacho inside Claude and ChatGPT (applied/2026-09-26/press-tour-07-mcp-oauth.sql):
   // lib/mcp/oauth/store.ts and lib/mcp/press/nonce.ts select these by name.
   oauth_clients: ["client_id", "kind", "client_name", "redirect_uris", "trust", "disabled_at", "fetched_at"],
   oauth_pending_authorizations: [
@@ -260,21 +260,21 @@ const COLUMNS = {
 // notice — the switch simply never appears in Admin > Feature flags.
 const FLAGS = [
   "astra_sets", "astra_photo_sets", "astra_previz", "experimental_models", "chat_agent", "voice_mode", "astra_recce", "recast", "recast_lock", "face_verification", "live", "live_paid_plans",
-  // Press Tour (pending/press-tour-01-flags.sql), every one inserted OFF;
+  // Press Tour (applied/2026-09-26/press-tour-01-flags.sql), every one inserted OFF;
   // src/lib/press-tour/enabled.ts PRESS_TOUR_FLAGS, pinned to this list by rollout.test.ts.
   "press_tour", "press_tour_posting", "press_post_tiktok_direct", "press_post_meta",
   "press_trends", "press_tour_plans", "product_lock_person_reshoot", "press_post_x",
   "press_tour_trial", "press_tour_mcp", "product_lock_calibrated", "product_lock_reshoot",
   "product_lock_refund",
-  // Press Tour filming (pending/press-tour-03b-film.sql), inserted OFF;
+  // Press Tour filming (applied/2026-09-26/press-tour-03b-film.sql), inserted OFF;
   // src/lib/press-tour/film.ts FILM_FLAG, pinned here by rollout.test.ts.
   "press_tour_film",
 ];
 
 // app_settings rows the code reads by key, where a missing row changes
-// behaviour without a word. Press Tour's (pending/press-tour-01-flags.sql,
+// behaviour without a word. Press Tour's (applied/2026-09-26/press-tour-01-flags.sql,
 // enabled.ts PRESS_TOUR_SETTINGS) read as 0 / "no plan" when missing, and
-// press_film_lane (pending/press-tour-03b-film.sql, film.ts
+// press_film_lane (applied/2026-09-26/press-tour-03b-film.sql, film.ts
 // FILM_LANE_SETTING) as the default lane. Pinned by rollout.test.ts.
 const SETTINGS = [
   "press_tour_plan_list", "press_trial_daily_usd", "press_trial_daily_cap",
@@ -286,9 +286,9 @@ const SETTINGS = [
 const RPCS = [
   "api_rate_check",
   "reserve_generations",
-  // Press Tour's campaign claim (pending/press-tour-03-campaigns.sql).
+  // Press Tour's campaign claim (applied/2026-09-26/press-tour-03-campaigns.sql).
   "claim_press_campaigns",
-  // Press Tour's posts claim (pending/press-tour-04-social.sql).
+  // Press Tour's posts claim (applied/2026-09-26/press-tour-04-social.sql).
   "claim_scheduled_posts",
   "claim_job_advance",
   "spend_daily_free_generation",
@@ -304,7 +304,7 @@ const RPCS = [
   "auth_email_status",
   "blast_recipient_emails",
   "drip_candidates",
-  // Press Tour's staged-upload sweep (pending/press-tour-02-products.sql
+  // Press Tour's staged-upload sweep (applied/2026-09-26/press-tour-02-products.sql
   // section 6; SECURITY INVOKER, revoked from public, anon, authenticated).
   "press_stale_uploads",
 ];
@@ -326,9 +326,9 @@ const PRIVATE_RPCS = [
   "api_rate_check",
   "auth_email_status",
   "blast_recipient_emails",
-  // The press cron's claim (pending/press-tour-03-campaigns.sql): the service role's alone.
+  // The press cron's claim (applied/2026-09-26/press-tour-03-campaigns.sql): the service role's alone.
   "claim_press_campaigns",
-  // The posts clock's claim (pending/press-tour-04-social.sql): the service role's alone.
+  // The posts clock's claim (applied/2026-09-26/press-tour-04-social.sql): the service role's alone.
   "claim_scheduled_posts",
   "claim_job_advance",
   "clawback_credit_purchase",
@@ -369,7 +369,7 @@ const BUCKETS = [
   "recast-sources",
   // Director's Cut footage and projects (src/lib/editor/job.ts EDITOR_BUCKET).
   "edit-footage",
-  // Press Tour's product photos, logos and ads (pending/press-tour-02-products.sql).
+  // Press Tour's product photos, logos and ads (applied/2026-09-26/press-tour-02-products.sql).
   "press-kit",
   // Press Tour's staged uploads, 12 MB pictures only (same file, section 6).
   "press-uploads",

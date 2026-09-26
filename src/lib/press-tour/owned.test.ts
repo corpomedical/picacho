@@ -239,7 +239,7 @@ describe("the kinds point at real tables with the right delete rule", () => {
   const schema = readFileSync(join(supabase, "schema.sql"), "utf8");
   // Wherever it is now: pending/, or filed under applied/<date>/.
   const productsPath = [
-    join(supabase, "pending", "press-tour-02-products.sql"),
+    join(supabase, "applied", "2026-09-26", "press-tour-02-products.sql"),
     ...readdirSync(join(supabase, "applied")).map((d) => join(supabase, "applied", d, "press-tour-02-products.sql")),
   ].find((p) => existsSync(p));
   const products = readFileSync(productsPath!, "utf8");

@@ -48,7 +48,7 @@ export const USER_STORAGE_BUCKETS = [
   // projects, `${userId}/${editId}/...` (src/lib/editor/job.ts), created
   // with the editor and never swept until now.
   "edit-footage",
-  // Added 2026-09-25 WITH the bucket (supabase/pending/press-tour-02-products.sql):
+  // Added 2026-09-25 WITH the bucket (supabase/applied/2026-09-26/press-tour-02-products.sql):
   // Press Tour's product photos, logo crops and ads, `${userId}/...`. Until
   // that file runs the bucket is missing and the sweep skips it harmlessly.
   "press-kit",

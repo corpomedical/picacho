@@ -10,7 +10,7 @@ import { PLAN_LIMITS } from "../plans";
 //      call so it still works when the database is what's wrong.
 //   2. The provider keys it cannot run without (PRESS_TOUR_REQUIRED_KEYS).
 //   3. feature_flags.press_tour, inserted OFF by
-//      supabase/pending/press-tour-01-flags.sql. Every other Press Tour switch
+//      supabase/applied/2026-09-26/press-tour-01-flags.sql. Every other Press Tour switch
 //      reads as off while this one is off.
 //
 // WHO is decided by pressTourAllowed below: admins first (operator's rule),

@@ -88,7 +88,7 @@ describe("the waitlist", () => {
   });
 
   it("keeps the table the service role's alone: RLS on, no policies, nothing for people", () => {
-    const sql = readFileSync(join(__dirname, "..", "..", "..", "supabase", "pending", "press-tour-08-waitlist.sql"), "utf8");
+    const sql = readFileSync(join(__dirname, "..", "..", "..", "supabase", "applied", "2026-09-26", "press-tour-08-waitlist.sql"), "utf8");
     expect(sql).toContain("create table if not exists public.press_network_waitlist");
     expect(sql).toContain("alter table public.press_network_waitlist enable row level security;");
     expect(sql).toContain("revoke all on table public.press_network_waitlist from public, anon, authenticated;");
