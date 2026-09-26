@@ -194,6 +194,7 @@ export default async function AppLayout({
           watchCount={producer.watchCount}
           voiceAvailable={isVoiceConfigured()}
           look={producer.look}
+          diagnostics={isAdmin}
         />
       )}
       {/* data-app-scroll: the app's one real scroller — the native quick

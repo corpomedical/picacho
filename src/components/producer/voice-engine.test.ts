@@ -118,6 +118,55 @@ describe("talking over her", () => {
     expect(acts[1].at - t).toBeLessThanOrEqual(450);
   });
 
+  it("on a laptop that cancels her voice, stops her even though the canceller turns the person down while both talk", () => {
+    // 2026-09-26, operator on a computer: "I still cant interrupt her". Chrome
+    // cancels her (the mic hears ~3% of her), but while both talk it also turns
+    // the person down: their voice reaches the page at 0.012, under any
+    // loudness bar tied to her level. With her quiet, the canceller lets go.
+    const b = new BargeIn();
+    run(b, repeat(125, (i) => ({ p: 0.1, mic: herVoice(i) * 0.03, out: herVoice(i) })));
+    expect(b.echoCancelled).toBe(true);
+    let ducked = false;
+    const acts: { at: number; action: BargeAction }[] = [];
+    const t0 = 125 * 32;
+    for (let i = 0; i < 40; i++) {
+      const now = t0 + i * 32;
+      const a = b.step({ p: 0.9, mic: ducked ? 0.09 : 0.012, out: ducked ? 0 : herVoice(i), now }, true);
+      if (a) acts.push({ at: now - t0, action: a });
+      if (a === "duck") ducked = true;
+      if (a === "confirm") break;
+    }
+    expect(acts.map((a) => a.action)).toEqual(["duck", "confirm"]);
+    // Quiet within ~a quarter second of them starting, held within ~0.6 s.
+    expect(acts[0].at).toBeLessThanOrEqual(260);
+    expect(acts[1].at).toBeLessThanOrEqual(640);
+  });
+
+  it("on that laptop, a flicker of 'speech' in what's left of her echo doesn't stop her", () => {
+    const b = new BargeIn();
+    run(b, repeat(125, (i) => ({ p: 0.1, mic: herVoice(i) * 0.03, out: herVoice(i) })));
+    // Three frames in ten where the model half-hears a voice in the residue.
+    const flicker = repeat(60, (i) => ({ p: i % 10 < 3 ? 0.8 : 0.1, mic: herVoice(i) * 0.03, out: herVoice(i) }));
+    expect(run(b, flicker, 125 * 32)).toEqual([]);
+  });
+
+  it("where her voice isn't cancelled, speech alone never stops her (her own voice is speech)", () => {
+    const b = new BargeIn();
+    // The mic hears her at 60% of her level, and it sounds like speech; when
+    // she dips, her echo goes with her.
+    let ducked = false;
+    const acts: BargeAction[] = [];
+    for (let i = 0; i < 250; i++) {
+      const out = herVoice(i) * (ducked ? 0 : 1);
+      const a = b.step({ p: out > 0.02 ? 0.9 : 0.1, mic: out * 0.6, out, now: i * 32 }, true);
+      if (a) acts.push(a);
+      if (a === "duck") ducked = true;
+      if (a === "unduck" || a === "confirm") ducked = false;
+    }
+    expect(b.echoCancelled).toBe(false);
+    expect(acts).not.toContain("confirm");
+  });
+
   it("stops her even before it has learned the room (the dip test needs no history)", () => {
     const b = new BargeIn();
     const acts = runLive(b, () => ({ p: 0.95, mic: 0.2 }), 0, 40);

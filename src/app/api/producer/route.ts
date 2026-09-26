@@ -32,7 +32,7 @@ import {
   transcribeHeard,
   type SpokenInput,
 } from "@/lib/producer/speech";
-import { judgeSpoken, type Verdict } from "@/lib/producer/gate";
+import { gateSignals, judgeSpoken, type Verdict } from "@/lib/producer/gate";
 import { sentenceChunker } from "@/lib/producer/sentences";
 import { spotForTool } from "@/lib/producer/spots";
 import { DEFAULT_PRODUCER_NAME, appendMessages, loadMessages, loadPrefs, loadProducerVoice, openThread } from "@/lib/producer/store";
@@ -175,6 +175,8 @@ export async function POST(request: NextRequest) {
     nearness?: unknown;
     /** What the sheet calls it: only a spelling hint for the transcriber. */
     name?: unknown;
+    /** They talked over her and kept going after she went quiet (the sheet's barge-in held). */
+    talkedOver?: unknown;
   } | null;
   // One recording, or several said in a row while an answer was under way
   // (2026-09-25, "several questions at once"): each is transcribed and they
@@ -470,6 +472,25 @@ export async function POST(request: NextRequest) {
   const interrupting = spoken && body?.interrupting === true;
   const nearness =
     typeof body?.nearness === "number" && Number.isFinite(body.nearness) ? Math.max(0, Math.min(4, body.nearness)) : null;
+  const talkedOver = spoken && body?.talkedOver === true;
+  // An admin sees why a spoken message was let be (on the "Not for me" note),
+  // so a wrong call can be read off a screenshot: the judge's own signals.
+  const ignoredEvent = () => {
+    if (!isAdmin) return { text: message };
+    const sig = gateSignals({ confidence, nearness, whileAnswering: interrupting || answerPending(rows), talkedOver });
+    return {
+      text: message,
+      why: [
+        `loud: ${sig.loud.replace(/ \(.*\)$/, "")}`,
+        `transcriber sure: ${sig.sure}`,
+        sig.whileAnswering ? "while answering" : null,
+        sig.talkedOver ? "talked over" : null,
+        interrupting && heard ? "had her words" : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    };
+  };
   const verdict: Promise<Verdict> = spoken
     ? judgeSpoken(
         {
@@ -480,6 +501,11 @@ export async function POST(request: NextRequest) {
           nearness,
           whileAnswering: interrupting || answerPending(rows),
           sinceAssistant: secondsSinceAssistant(rows, Date.now()),
+          // What she had said aloud of the answer they cut into (the sheet's
+          // report): her own voice caught by the mic can then be told from
+          // theirs. Only this request's judge reads it.
+          herWords: interrupting && heard ? heard.slice(-600) : null,
+          talkedOver,
         },
         { signal: request.signal },
       ).then((j) => {
@@ -526,7 +552,7 @@ export async function POST(request: NextRequest) {
         // Withdrawn by the sheet while it was judged (merged into the next
         // recording), or not for the Producer: nothing is written or charged.
         if (v === "not_for_producer" || request.signal.aborted) {
-          if (v === "not_for_producer") emit("ignored", { text: message });
+          if (v === "not_for_producer") emit("ignored", ignoredEvent());
           finish(await settle("ignored").catch(() => 0));
           return;
         }
@@ -565,7 +591,7 @@ export async function POST(request: NextRequest) {
         ((nearness !== null && nearness < 0.5) || (confidence !== null && confidence < -0.7) || (await recentlyIgnored))
       ) {
         if ((await verdict) === "not_for_producer" || request.signal.aborted) {
-          emit("ignored", { text: message });
+          emit("ignored", ignoredEvent());
           finish(await settle("ignored").catch(() => 0));
           return;
         }
@@ -663,15 +689,26 @@ export async function POST(request: NextRequest) {
       let voiceIndex = 0;
       let voiceBroken = false;
       let humanBroken = !humanVoice || !isHumanVoiceConfigured();
+      // Her own voice is tried twice before a piece falls back, and a fallback
+      // is for that piece only: a second, different voice for the rest of the
+      // answer was one of the tone changes the operator heard (2026-09-26,
+      // "Her voice changes tones from sentence to sentence"). Two pieces in a
+      // row failing both tries means the service is down: the rest falls back.
+      let humanFailures = 0;
       let saidSoFar = "";
       type Speech = { kind: "human"; url: string } | { kind: "openai"; data: string };
-      const synth = async (piece: string, before: string): Promise<Speech | null> => {
+      const synth = async (piece: string, before: string, after: string): Promise<Speech | null> => {
         if (!humanBroken && humanVoice) {
-          try {
-            return { kind: "human", url: await speakHuman(piece, humanVoice.elevenLabsVoiceId, before) };
-          } catch {
-            humanBroken = true;
+          for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+              const url = await speakHuman(piece, humanVoice.elevenLabsVoiceId, before, after);
+              humanFailures = 0;
+              return { kind: "human", url };
+            } catch {
+              // once more, then this piece falls back
+            }
           }
+          if (++humanFailures >= 2) humanBroken = true;
         }
         if (!isVoiceConfigured()) return null;
         try {
@@ -679,6 +716,22 @@ export async function POST(request: NextRequest) {
         } catch {
           return null;
         }
+      };
+      // Each piece after the first waits a moment for the words after it
+      // (the voice's next_text), so it isn't read as the end of the answer.
+      // The first plays at once, told what has arrived after it so far; a
+      // later one waits for the next piece, at most HOLD_FOR_NEXT_MS — while
+      // the piece before it is still playing, so it adds no silence.
+      const HOLD_FOR_NEXT_MS = 350;
+      let heldPiece: string | null = null;
+      let heldTimer: ReturnType<typeof setTimeout> | null = null;
+      const releaseHeld = (after?: string) => {
+        if (heldTimer) clearTimeout(heldTimer);
+        heldTimer = null;
+        if (heldPiece === null) return;
+        const piece = heldPiece;
+        heldPiece = null;
+        speakPiece(piece, after ?? chunker.pending());
       };
       const say = (pieces: string[]) => {
         if (!speakReplies) return;
@@ -688,11 +741,35 @@ export async function POST(request: NextRequest) {
           pendingSpeech.push(...pieces);
           return;
         }
-        for (const piece of pieces) {
+        pieces.forEach((piece, i) => {
+          const next = pieces[i + 1];
+          if (voiceIndex === 0 && heldPiece === null) {
+            speakPiece(piece, next ?? chunker.pending());
+            return;
+          }
+          releaseHeld(piece);
+          if (next !== undefined) {
+            speakPiece(piece, next);
+            return;
+          }
+          heldPiece = piece;
+          heldTimer = setTimeout(() => releaseHeld(), HOLD_FOR_NEXT_MS);
+        });
+      };
+      // Everything said so far goes: before a lookup (her words mustn't wait
+      // through it) and at the end of the answer.
+      const sayAllNow = () => {
+        say(chunker.flush());
+        releaseHeld("");
+      };
+      function speakPiece(piece: string, after: string) {
+        // Cut off while a piece waited for the words after it: never voiced (or paid for).
+        if (upstream.signal.aborted) return;
+        {
           const index = voiceIndex++;
           const before = saidSoFar;
           saidSoFar = before ? `${before} ${piece}` : piece;
-          const job = voiceBroken ? Promise.resolve(null) : synth(piece, before);
+          const job = voiceBroken ? Promise.resolve(null) : synth(piece, before, after);
           voiceChain = voiceChain.then(async () => {
             const audio = await job;
             if (!audio || upstream.signal.aborted) {
@@ -708,7 +785,7 @@ export async function POST(request: NextRequest) {
             );
           });
         }
-      };
+      }
       const speakText = (text: string) => say(chunker.push(text));
       flushSpeech = () => {
         const pieces = pendingSpeech;
@@ -766,6 +843,9 @@ export async function POST(request: NextRequest) {
             if (event.type === "message_start") {
               cutCall = event.message.usage as CallUsage;
             } else if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
+              // What she said before looking something up is spoken now,
+              // not after the lookup.
+              sayAllNow();
               send("status", { text: toolStatus(event.content_block.name) });
               const spot = spotForTool(event.content_block.name);
               if (spot) send("spot", { spot });
@@ -989,11 +1069,11 @@ export async function POST(request: NextRequest) {
           held.length = 0;
           pendingSpeech = [];
           holding = false;
-          emit("ignored", { text: message });
+          emit("ignored", ignoredEvent());
         } else {
           // The last words, then every queued piece of speech, before the
           // turn is settled — their cost belongs to it.
-          say(chunker.flush());
+          sayAllNow();
           try {
             await voiceChain;
           } catch {

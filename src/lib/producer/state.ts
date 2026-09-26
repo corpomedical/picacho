@@ -199,7 +199,19 @@ export async function buildStateNote(
         ? `Your last answer was cut off part-way, after: "${clean(a.cutAnswer, 400)}". Don't pick it up again unless they ask.`
         : null,
     a.spoken
-      ? "They are talking to you out loud and hear your answer spoken (see WHEN YOU ARE TALKING OUT LOUD). Their words were transcribed from speech, so allow for a misheard word. Prepared cards still appear on their screen. If they asked more than one thing, answer each of them, in order, briefly. Sound like a person, not a narrator: open with a short first sentence (it is spoken while you are still saying the rest), use everyday words and contractions, and the small reactions a person would use (\"oh, nice\", \"right\", \"okay, so\") where they fit. No headings, bullets, markdown or emoji: everything you write is heard."
+      ? // Spoken turns (2026-09-26, operator: "She also sounds ai. I want her
+        // to sound human"). Text written to be read still sounds read, even in
+        // a good voice (OpenAI's Realtime guide: "Text replies are not
+        // automatically good for speech"). The old hint asked for a short
+        // first sentence and named three reactions to use; a model copies
+        // named phrases, and a lone chirpy fragment spoken on its own set a
+        // different tone from the sentence after it.
+        "They are talking to you out loud and hear your answer spoken (see WHEN YOU ARE TALKING OUT LOUD). Their words were transcribed from speech, so allow for a misheard word. Prepared cards still appear on their screen. If they asked more than one thing, answer each of them, in order, briefly. " +
+        "Write only the words you will say. It is heard once, in order: no lists, headings, markdown, emoji, brackets, slashes, ids or links. " +
+        "One idea per sentence, the way people talk: most sentences six to eighteen words, none over twenty-five, and open with a full sentence rather than a lone word or two. " +
+        "A simple answer is one or two sentences; an explanation three or four, then stop and offer the rest. Ask at most one question, at the end. " +
+        "Say numbers, money, dates and times as a person would (\"about three credits\", \"Friday evening\", \"twelve seconds\"), never as figures or codes. " +
+        "Use everyday words and contractions, react to what they just said in your own words, and don't start answers the same way twice in a row."
       : null,
   ].filter(Boolean);
 

@@ -55,6 +55,24 @@ const QUICK_REDIP_MS = 500;
 /** The most of her level the mic can hear of her (the learning's own ceiling, as ratios are read). */
 const MAX_LEAK = 1.5;
 
+// TALKING OVER HER ON A COMPUTER (2026-09-26, operator: "I still cant
+// interrupt her while she is speaking like GPT works", on a computer). Chrome
+// cancels her voice there (Chrome-wide echo cancellation, on by default since
+// Chrome 111 on a Mac), and while both talk its suppressor turns the PERSON
+// down too — so on a laptop their voice never beat a threshold tied to her
+// level, and she never went quiet. Where her echo is known to be cancelled
+// (the learned leak is small), speech itself is the trigger, as ChatGPT's and
+// LiveKit's are: the speech model sure it hears someone for most of a third
+// of a second, however quiet. She goes quiet at once; with her silent the
+// suppressor lets go and the usual confirm hears them at full level. A device
+// that doesn't cancel her keeps the loudness rule, so her own voice can't
+// trip it — and dips that keep coming straight back teach it that.
+/** Her echo is cancelled when the mic hears less than this share of her. */
+const CANCELLED_LEAK = 0.1;
+const SPEECH_P = 0.7;
+const SPEECH_WINDOW = 10; // ~320 ms
+const SPEECH_FRAMES = 7; // ~225 ms of it sure it's speech
+
 export class BargeIn {
   /** How much of the playback's loudness reaches the mic (learned). */
   leak = 0.3;
@@ -78,16 +96,24 @@ export class BargeIn {
   private releasedAt: number | null = null;
   /** Whether the current dip began straight after the last one ended. */
   private quickDip = false;
+  /** The last frames while she spoke: was the speech model sure someone was talking? */
+  private speechWin: boolean[] = [];
 
   /** True once the device is known to send much of her voice back (the sheet then suggests Stop). */
   get strict(): boolean {
     return this.leakSamples >= 20 && this.leak > STRICT_LEAK;
   }
 
+  /** True once the mic is known to hear almost none of her: speech alone may stop her. */
+  get echoCancelled(): boolean {
+    return this.leakSamples >= 10 && this.leak < CANCELLED_LEAK;
+  }
+
   /** The mic frame while she is replying (playing, or with speech queued). */
   step(f: VoiceFrame, replying: boolean): BargeAction {
     if (!replying) {
       this.window = [];
+      this.speechWin = [];
       this.outs = [];
       this.falseStarts = [];
       this.releasedAt = null;
@@ -127,15 +153,20 @@ export class BargeIn {
     if (this.duckedAt === null) {
       this.window.push({ candidate, mic: f.mic });
       if (this.window.length > WINDOW_FRAMES) this.window.shift();
+      this.speechWin.push(f.p >= SPEECH_P && f.mic > Math.max(0.001, this.floor));
+      if (this.speechWin.length > SPEECH_WINDOW) this.speechWin.shift();
       const recent = this.window.slice(-4).filter((w) => w.candidate);
-      if (recent.length >= DUCK_FRAMES) {
+      const spoken = this.echoCancelled && this.speechWin.filter(Boolean).length >= SPEECH_FRAMES;
+      if (recent.length >= DUCK_FRAMES || spoken) {
         // She goes quiet at once. With her silent there is no echo left, so
         // whatever the mic still hears is someone else — or it was her.
         this.duckedAt = f.now;
         this.quickDip = this.releasedAt !== null && f.now - this.releasedAt <= QUICK_REDIP_MS;
-        this.preMic = Math.max(...recent.map((w) => w.mic));
+        const heard = recent.length ? recent.map((w) => w.mic) : this.window.slice(-SPEECH_WINDOW).map((w) => w.mic);
+        this.preMic = Math.max(...heard);
         this.preOut = outMax;
         this.user = 0;
+        this.speechWin = [];
         return "duck";
       }
       return null;
@@ -143,7 +174,13 @@ export class BargeIn {
 
     const since = f.now - this.duckedAt;
     // Her voice takes a moment to leave the room (and the echo canceller).
-    if (since >= 150 && f.mic > Math.max(0.02, 3 * this.floor) && (f.p >= 0.3 || f.mic > 0.04)) this.user++;
+    // Where her echo is cancelled, someone the model is sure of counts even
+    // quietly (a laptop's mic across the desk).
+    const person =
+      f.mic > Math.max(0.02, 3 * this.floor) && (f.p >= 0.3 || f.mic > 0.04)
+        ? true
+        : this.echoCancelled && f.p >= 0.5 && f.mic > Math.max(0.004, 2 * this.floor);
+    if (since >= 150 && person) this.user++;
     if (this.user >= 3) {
       this.falseStarts = [];
       return this.confirm();
@@ -203,6 +240,7 @@ export class BargeIn {
     this.falseStarts = [];
     this.releasedAt = null;
     this.quickDip = false;
+    this.speechWin = [];
   }
 }
 

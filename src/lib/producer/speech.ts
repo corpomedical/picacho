@@ -124,7 +124,15 @@ export async function transcribeHeard(
 // access-control-allow-origin: * (checked 2026-09-25), so it can also run
 // through the page's audio graph for the bulb's light. No download, no
 // re-encoding on our side — the first sound arrives sooner.
-export async function speakHuman(text: string, voiceId: string, previousText: string): Promise<string> {
+// STEADIER, AND TOLD WHAT COMES NEXT (2026-09-26, operator: "Her voice
+// changes tones from sentence to sentence. She also sounds ai"). Each piece
+// is its own generation; ElevenLabs: lower stability means "a wider range of
+// variability between generations", so 0.4 let every seam land on a new tone
+// — 0.5 is their default. A piece without next_text is read as the END of
+// what's being said (the falling tone at each seam); fal's turbo endpoint
+// takes next_text, so every piece now carries the words after it. style 0,
+// as ElevenLabs recommends, sent rather than assumed.
+export async function speakHuman(text: string, voiceId: string, previousText: string, nextText = ""): Promise<string> {
   const res = await fetchWithTimeout(
     `https://fal.run/${HUMAN_SPEECH_ENDPOINT}`,
     {
@@ -133,10 +141,12 @@ export async function speakHuman(text: string, voiceId: string, previousText: st
       body: JSON.stringify({
         text,
         voice: voiceId,
-        stability: 0.4,
+        stability: 0.5,
         similarity_boost: 0.75,
+        style: 0,
         speed: 1.05,
         ...(previousText ? { previous_text: previousText.slice(-600) } : {}),
+        ...(nextText.trim() ? { next_text: nextText.trim().slice(0, 300) } : {}),
       }),
     },
     20_000,

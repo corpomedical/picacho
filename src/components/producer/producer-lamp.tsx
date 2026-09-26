@@ -144,6 +144,7 @@ export function ProducerLamp({
   watchCount,
   voiceAvailable,
   look,
+  diagnostics = false,
 }: {
   name: string;
   watchCount: number;
@@ -151,6 +152,8 @@ export function ProducerLamp({
   voiceAvailable: boolean;
   /** How the lamp looks: the person's pick in Settings (lamp-look.ts). */
   look: LampLook;
+  /** An admin's readouts: how much of her voice the mic hears (2026-09-26, "I still cant interrupt her"). */
+  diagnostics?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -228,6 +231,8 @@ export function ProducerLamp({
   // below sends the next one once she is quiet.
   const [queueTick, setQueueTick] = useState(0);
   const [ignored, setIgnored] = useState<string | null>(null);
+  // An admin's line under the note: the signals the judge read (route.ts).
+  const [ignoredWhy, setIgnoredWhy] = useState<string | null>(null);
   const ignoredTimes = useRef<number[]>([]);
   const [backgroundTip, setBackgroundTip] = useState(false);
   // A set the Producer changed (fix_set_thing): the set page shows it after a
@@ -445,7 +450,12 @@ export function ProducerLamp({
       while (audios.length > 1 && audios.reduce((n, a) => n + a.seconds, 0) > 55) audios = audios.slice(1);
     }
     const interrupting = meta.interrupting || currentRef.current !== null;
-    return runTurn({ spoken: audios, interrupting, heard: interrupting && readAloud ? voice.heardText() : null });
+    return runTurn({
+      spoken: audios,
+      interrupting,
+      heard: interrupting && readAloud ? voice.heardText() : null,
+      talkedOver: meta.talkedOver === true,
+    });
   }
   sendSpokenRef.current = sendSpoken;
 
@@ -484,12 +494,14 @@ export function ProducerLamp({
     spoken = null,
     interrupting = false,
     heard = null,
+    talkedOver = false,
   }: {
     text?: string;
     focus?: string;
     spoken?: SpokenAudio[] | null;
     interrupting?: boolean;
     heard?: string | null;
+    talkedOver?: boolean;
   }) {
     setError(null);
     const turn: Turn = {
@@ -534,6 +546,7 @@ export function ProducerLamp({
           // server's settings read is slow (route.ts).
           name: spoken ? name : undefined,
           heard: heard ?? undefined,
+          talkedOver: spoken ? talkedOver : undefined,
         }),
         signal: turn.controller.signal,
       });
@@ -568,6 +581,7 @@ export function ProducerLamp({
             const words = typeof ev.data.text === "string" ? ev.data.text : "";
             if (words) {
               setIgnored(words);
+              setIgnoredWhy(typeof ev.data.why === "string" ? ev.data.why : null);
               const now = Date.now();
               ignoredTimes.current = [...ignoredTimes.current.filter((t) => now - t < 60_000), now];
               if (ignoredTimes.current.length >= 3) setBackgroundTip(true);
@@ -965,7 +979,10 @@ export function ProducerLamp({
                 >
                   {ignored && (
                     <div className="mb-2 flex items-center gap-2 px-1 text-[12px] text-atelier-muted" role="status">
-                      <span className="min-w-0 flex-1">{W.ignored(ignored)}</span>
+                      <span className="min-w-0 flex-1">
+                        {W.ignored(ignored)}
+                        {ignoredWhy && <span className="mt-0.5 block text-[11px] opacity-70">Why: {ignoredWhy}</span>}
+                      </span>
                       <button
                         type="button"
                         onClick={() => {
@@ -978,6 +995,13 @@ export function ProducerLamp({
                         {W.answerIt}
                       </button>
                     </div>
+                  )}
+                  {diagnostics && voice.active && voice.echo && (
+                    <p className="mb-2 px-1 text-[11px] text-atelier-muted" data-voice-echo>
+                      Echo check (admins): {Math.round(voice.echo.leak * 100)}% of her voice reaches the mic
+                      {voice.echo.strict ? " — too much, she can't hear you over herself" : ""} · talking over her dipped{" "}
+                      {voice.echo.dips}, stopped {voice.echo.stops} · ears: {voice.engine ?? "off"}
+                    </p>
                   )}
                   {backgroundTip && voice.active && (
                     <p className="mb-2 px-1 text-[12px] text-atelier-muted">{W.backgroundTip}</p>

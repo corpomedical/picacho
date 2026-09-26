@@ -71,7 +71,11 @@ export type SpokenAudio = { data: string; mime: string; seconds: number; level?:
 /** One piece of a spoken reply: the human voice's fal.media URL, or the fallback's MP3 bytes. */
 export type SpokenPiece = { url: string } | { data: string };
 /** How a recording came about: said over an answer that was under way. */
-export type UtteranceMeta = { interrupting: boolean };
+export type UtteranceMeta = {
+  interrupting: boolean;
+  /** They started while she spoke and kept talking after she went quiet (the barge-in held). */
+  talkedOver?: boolean;
+};
 
 /** The longest single recording (a monologue is cut here and sent). */
 const MAX_UTTERANCE_MS = 30_000;
@@ -304,6 +308,11 @@ export function useHandsFree({
   const [notice, setNotice] = useState<string | null>(null);
   const [held, setHeld] = useState(false);
   const [engine, setEngine] = useState<"silero" | "basic" | null>(null);
+  // How much of her own voice the mic hears while she speaks (the learned
+  // leak), about once a second while she is audible — an admin's readout.
+  const [echo, setEcho] = useState<{ leak: number; strict: boolean; dips: number; stops: number } | null>(null);
+  const dipCount = useRef(0);
+  const stopCount = useRef(0);
   const phaseRef = useRef<VoicePhase>("off");
   const session = useRef<Session | null>(null);
   const handlers = useRef({ onUtterance, onInterrupt });
@@ -597,6 +606,11 @@ export function useHandsFree({
         const action = barge.current.step({ p, mic, out, now }, replyingAudibly());
         // Diagnostics, off unless asked for (localStorage picacho.producer.voiceDebug = 1).
         if (debug && debug.push({ t: Math.round(now), p: Math.round(p * 100) / 100, mic: Math.round(mic * 1000) / 1000, out: Math.round(out * 1000) / 1000, replying: replyingAudibly(), action, leak: Math.round(barge.current.leak * 1000) / 1000 }) > 3000) debug.shift();
+        if (action === "duck") dipCount.current++;
+        if (action === "confirm") stopCount.current++;
+        if (replyingAudibly() && frameCount.current % 30 === 0) {
+          setEcho({ leak: barge.current.leak, strict: barge.current.strict, dips: dipCount.current, stops: stopCount.current });
+        }
         if (action === "duck") setDuck(0, 0.01);
         else if (action === "unduck") setDuck(1, 0.08);
         else if (action === "confirm") {
@@ -670,7 +684,7 @@ export function useHandsFree({
             level: lvl,
             nearness: voiceLevel.current.nearness(lvl),
           },
-          { interrupting: interrupting || replyUnderway() },
+          { interrupting: interrupting || replyUnderway(), talkedOver: interrupting },
         );
       },
     };
@@ -766,6 +780,8 @@ export function useHandsFree({
     held,
     /** Which ears are listening: the speech model, or the loudness fallback. */
     engine,
+    /** Her voice as the mic hears it while she speaks, and how often talking over her dipped or stopped her. */
+    echo,
     start,
     stop,
     beginTurn,

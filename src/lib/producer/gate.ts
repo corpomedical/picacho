@@ -33,27 +33,36 @@ export type GateInput = {
   whileAnswering: boolean;
   /** Seconds since the assistant last said something (null: nothing yet). */
   sinceAssistant: number | null;
+  /**
+   * What the assistant was saying out loud when this was heard (the part of
+   * its current answer played so far, as the sheet reports it), so its own
+   * voice caught by the mic can be told from the person's words. Null when
+   * it wasn't speaking.
+   */
+  herWords?: string | null;
+  /** They started talking while it spoke and kept talking after it went quiet. */
+  talkedOver?: boolean;
 };
+
+/** Why a spoken message was judged as it was: the signals the judge read, for an admin's screen. */
+export type GateSignals = { loud: string; sure: string; whileAnswering: boolean; talkedOver: boolean };
 
 const SYSTEM = `You are a filter in front of a voice assistant. Its microphone stays open while the person uses the app, so it also hears things that were not said to the assistant. For each thing it picks up, decide whether the person using the app said it TO the assistant.
 
 It was said to the assistant when it asks the assistant something, answers or reacts to what the assistant just said, tells it to do something, corrects it, or carries on the conversation with it.
 
+The app is a studio where people make images and videos of their own characters, and they often say out loud what they want to make: a scene, a shot, a look, what a character does or says. That is said to the assistant, even though it can sound like a description, narration or a line from a script.
+
 It was not said to the assistant when it is something else the microphone happened to hear: a video, TV, podcast or song playing nearby; other people in the room; the person talking to someone else or on the phone; or the assistant's own voice coming back through the speaker.
 
 Judge by what the words mean in this conversation, not by particular words. Speech that has nothing to do with the conversation and reads like dialogue, narration, commentary or someone else's talk is most likely not for the assistant. A short reply that fits what the assistant just said is for it, even if it is only a word or two. Words that are much quieter than the person's own voice, or that the transcriber was unsure of, lean towards not for the assistant, but meaning comes first. If you can't tell, say unclear.
 
+When the person talks while the assistant is speaking, the microphone may also catch the end of what the assistant was saying. If the words go beyond the assistant's own words with something of the person's (a question, a correction, "wait", "stop", a new request), they were said to it; if they are only the assistant's own words, they were not.
+
 The person may call the assistant by its name. The transcriber may misspell that name, or write an everyday word that sounds like it as the name, so the name appearing in the words is not by itself a sign they were said to the assistant: judge what the whole sentence means.`;
 
-function describe(a: GateInput): string {
-  const convo = a.recent.length
-    ? a.recent.map((l) => `- ${l.who === "assistant" ? a.name : "Person"}: ${l.text.replace(/\s+/g, " ").slice(0, 280)}`).join("\n")
-    : "(nothing yet: this would be the first thing said)";
-  const when = a.whileAnswering
-    ? `${a.name} was in the middle of answering when this was heard.`
-    : a.sinceAssistant === null
-      ? `${a.name} hasn't said anything yet.`
-      : `${a.name} last spoke ${Math.round(a.sinceAssistant)} seconds ago.`;
+/** The judge's reading of the signals, in words (shared with an admin's "why"). */
+export function gateSignals(a: Pick<GateInput, "confidence" | "nearness" | "whileAnswering" | "talkedOver">): GateSignals {
   const sure =
     a.confidence === null ? "unknown" : a.confidence > -0.25 ? "high" : a.confidence > -0.7 ? "medium" : "low";
   const loud =
@@ -64,7 +73,24 @@ function describe(a: GateInput): string {
         : a.nearness >= 0.3
           ? "noticeably quieter than the person's own voice"
           : "much quieter than the person's own voice";
-  return `The conversation so far, oldest first:\n${convo}\n\n${when}\nHow sure the transcriber was of the words: ${sure}.\nHow loud it was: ${loud}.\n\nWhat the microphone just picked up:\n"${a.words.replace(/\s+/g, " ").slice(0, 600)}"`;
+  return { loud, sure, whileAnswering: a.whileAnswering, talkedOver: a.talkedOver === true };
+}
+
+function describe(a: GateInput): string {
+  const convo = a.recent.length
+    ? a.recent.map((l) => `- ${l.who === "assistant" ? a.name : "Person"}: ${l.text.replace(/\s+/g, " ").slice(0, 280)}`).join("\n")
+    : "(nothing yet: this would be the first thing said)";
+  const when = a.whileAnswering
+    ? `${a.name} was in the middle of answering when this was heard.`
+    : a.sinceAssistant === null
+      ? `${a.name} hasn't said anything yet.`
+      : `${a.name} last spoke ${Math.round(a.sinceAssistant)} seconds ago.`;
+  const { sure, loud } = gateSignals(a);
+  const her = a.herWords?.trim()
+    ? `\nWhat ${a.name} was saying out loud when this was heard (the end of it): "${a.herWords.replace(/\s+/g, " ").trim().slice(-400)}"`
+    : "";
+  const over = a.talkedOver ? `\nThey started talking while ${a.name} was speaking and kept talking after ${a.name} went quiet.` : "";
+  return `The conversation so far, oldest first:\n${convo}\n\n${when}${her}${over}\nHow sure the transcriber was of the words: ${sure}.\nHow loud it was: ${loud}.\n\nWhat the microphone just picked up:\n"${a.words.replace(/\s+/g, " ").slice(0, 600)}"`;
 }
 
 const TOOL = {

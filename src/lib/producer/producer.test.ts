@@ -337,10 +337,33 @@ describe("voice", () => {
 
   it("lets a short first sentence go at once, so the voice starts sooner", () => {
     const c = sentenceChunker();
-    expect(c.push("Oh, nice idea. ")).toEqual(["Oh, nice idea."]);
+    // A lone "Oh, nice idea." waits for company (it took a tone of its own).
+    expect(c.push("Oh, nice idea. ")).toEqual([]);
+    expect(c.push("Let's shoot it tonight. ")).toEqual(["Oh, nice idea. Let's shoot it tonight."]);
     // Only the first piece goes early: short sentences after it wait for company.
     expect(c.push("Okay. That works for me. ")).toEqual([]);
     expect(c.flush()).toEqual(["Okay. That works for me."]);
+  });
+
+  it("speaks the rest in a few long runs, not a call per sentence (fewer seams in her tone)", () => {
+    const c = sentenceChunker();
+    const reply =
+      "Sure, here's the plan. The first shot is a close-up of Eva at golden hour. She turns to the light and smiles. " +
+      "The second walks the market with her. The camera follows at hip height. It stays loose and warm. " +
+      "The third ends on the rooftop at night. Neon from the street washes over her face. We hold for a beat. " +
+      "Each is five seconds on Seedance, so three credits each, nine in all. You'll have forty-one left after. ";
+    const out: string[] = [];
+    for (const word of reply.split(/(?<= )/)) out.push(...c.push(word));
+    out.push(...c.flush());
+    expect(out[0]).toBe("Sure, here's the plan. The first shot is a close-up of Eva at golden hour.");
+    // The old 40-character minimum made 7 pieces of this (6 seams); now at most 4 (3).
+    expect(out.length).toBeLessThanOrEqual(4);
+    expect(out.slice(1, -1).every((p) => p.length >= 100)).toBe(true);
+    expect(out.join(" ")).toBe(reply.trim());
+    // What has arrived past the last piece is there for the voice's next_text.
+    const d = sentenceChunker();
+    d.push("Right, got it, that's the one. And then the next part is on its way");
+    expect(d.pending()).toBe("And then the next part is on its way");
   });
 
   it("cuts a long opening sentence at a clause break", () => {
