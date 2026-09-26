@@ -30,6 +30,7 @@ export const RELEASES: Release[] = [
       "Her voice keeps one tone through an answer. She speaks in fewer, longer pieces, each piece knows the words that come after it, her voice settings are steadier, and a failed piece no longer switches the rest of the answer to a different voice.",
       "When she talks, she's asked to speak rather than write: short sentences, numbers the way people say them, no lists, and no stock phrases.",
       "For admins: the \"Not for me\" note says why she let a line be, and while she speaks the sheet shows how much of her voice reaches the mic.",
+      "Aly speaks with the same voice every time. Nobody had picked a voice, and every voice in the list had the same position, so her default was whichever one the database returned first, and it could change between answers. The voice list now has a fixed order, and Admin > Character voices marks Aly's default and has a \"Make default\" button.",
     ],
   },
   {
