@@ -100,7 +100,11 @@ describe("the Sets home: the send to a set says its price whenever it can spend 
     expect(home).toContain(
       "const sendWords = setPick === null ? (buildShoots ? `${buildLabel} · ${shootPrice}` : buildLabel) : shootsOnArrival ? shootPrice : null;",
     );
-    expect(home).toContain("const sendLabel = sendWords ?? s.shootHere;");
+    // With nothing to spend, the arrow is named for what it does (review of Cut 3): it frames, and shoots nothing.
+    expect(home).toContain("const sendLabel = sendWords ?? s.frameInSet;");
+    expect(home).not.toContain("sendWords ?? s.shootHere");
+    for (const t of [en, es, pt, itMsgs]) expect(t.sets.frameInSet.trim().length).toBeGreaterThan(0);
+    expect(en.sets.frameInSet).toContain("nothing is shot until you press Shoot");
     const button = home.slice(home.indexOf("{sendWords !== null && ("), home.indexOf("<SendIcon", home.indexOf("{sendWords !== null && (")));
     expect(button).toContain("{sendWords}");
     expect(button).toContain("title={sendLabel}");

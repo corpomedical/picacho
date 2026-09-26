@@ -2682,7 +2682,7 @@ const en = {
     // A failed build from words, tried again (Helios Cut 3, step 5): its words go back in the box.
     buildTryAgain: "Try again",
     buildTryAgainHint:
-      "Puts its words back in the box above. Building it again uses one of this month's builds — this failed one never counted.",
+      "Puts its words back in the box at the top of Helios 3D. Building it again uses one of this month's builds — this failed one never counted.",
     deleting: "Deleting…",
     back: "All sets",
     loadFailed: "The set couldn't load — reload the page.",
@@ -2954,6 +2954,8 @@ const en = {
     // The build button's words, beside the round arrow at every width (step 6): what a press uses of the month.
     buildThisPlace: "Build this place",
     buildThisPlaceLeft: "Build this place · {left} of {limit} left this month",
+    /** The same with one build left: languages whose verb agrees with the number say it in the singular (review of Cut 3). */
+    buildThisPlaceLeftOne: "Build this place · 1 of {limit} left this month",
     buildNoneLeft: "No builds left this month — pick a set you have",
     newPlace: "A new place",
     setChip: "Set",
@@ -2982,6 +2984,8 @@ const en = {
     statsStills: "{n} stills this month",
     statsBuildsMonth: "{n} builds this month",
     shootHere: "Shoot",
+    /** The Sets home's round arrow with a set picked in "Ask before shooting": it opens the set and frames the message; nothing is shot there until Shoot is pressed (review of Cut 3). */
+    frameInSet: "Frame it in this set — nothing is shot until you press Shoot",
     pickCharacterFirst: "Pick a character with a saved photo to shoot.",
     threadPlaceholder: "Say what happens next, or where to put the camera",
     threadReading: "Reading that…",

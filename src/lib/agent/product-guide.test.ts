@@ -67,6 +67,16 @@ describe("renderProductGuide", () => {
     expect(guide).not.toMatch(/asks before anything that costs/i);
   });
 
+  // Review of Cut 3: the Sets home's Set chip starts on the latest set, so
+  // "describe it and Astra builds it" alone sent a returning person's new
+  // place into yesterday's set. The guide says how a new place is built.
+  it("says the Sets home starts on the latest set, and how a new place is built", () => {
+    expect(guide).toContain('On the Sets home the "Set" chip starts on the person\'s latest set, so words typed there go to that set');
+    expect(guide).toContain('to build a new place, choose Set → "A new place"');
+    expect(guide).toContain('"Build this place · N of M left this month"');
+    expect(guide).toContain("a failed build never counts toward the month, and deleting a set never gives its build back.");
+  });
+
   it("never leaks a drafted (unproven) preset", () => {
     for (const p of CINEMA_PRESETS) {
       if (p.proven === false) {

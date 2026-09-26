@@ -104,6 +104,16 @@ describe("a failed build from words offers Try again (step 5)", () => {
     expect(en.sets.buildTryAgainHint).toContain("uses one of this month's builds");
     expect(en.sets.buildTryAgainHint).toContain("never counted");
   });
+
+  it("names where the box is, which is true on the Sets home and on the failed set's own page (review of Cut 3)", () => {
+    // The set's page has no box above its Try again: the words go to the Sets home's.
+    expect(setPage).toContain("title={s.buildTryAgainHint}");
+    expect(en.sets.buildTryAgainHint).toContain("the box at the top of Helios 3D");
+    for (const [loc, t] of LANGS) {
+      expect(t.sets.buildTryAgainHint, loc).toContain("Helios 3D");
+      expect(t.sets.buildTryAgainHint, loc).not.toMatch(/box above|de arriba\.|caixa acima|qui sopra/);
+    }
+  });
 });
 
 describe("the build button says what it spends, and the Set chip starts on the latest set (step 6)", () => {
@@ -126,6 +136,8 @@ describe("the build button says what it spends, and the Set chip starts on the l
     expect(label).toContain("? s.buildThisPlace");
     expect(label).toContain("? s.buildNoneLeft");
     expect(label).toContain("formatMsg(s.buildThisPlaceLeft, { left, limit: monthlyLimit })");
+    // One left in the singular (review of Cut 3): "queda 1 de 1", never "quedan 1 de 1".
+    expect(label).toContain("left === 1\n          ? formatMsg(s.buildThisPlaceLeftOne, { limit: monthlyLimit })");
     // At the cap a new place stays unsendable (the button is disabled), exactly as before.
     expect(home).toContain("const canSend = brief.trim().length > 0 && !submitting && (setPick !== null || !atCap);");
     expect(home).toContain("disabled={!canSend}");
@@ -159,6 +171,17 @@ describe("the build button says what it spends, and the Set chip starts on the l
       expect(t.sets.buildThisPlaceLeft.startsWith(t.sets.buildThisPlace), loc).toBe(true);
     }
     expect(en.sets.buildThisPlaceLeft).toBe("Build this place · {left} of {limit} left this month");
+    // The singular, filled as the home fills it, agrees with its one build in every language.
+    for (const [loc, t] of LANGS) {
+      expect(t.sets.buildThisPlaceLeftOne, loc).toContain("{limit}");
+      expect(t.sets.buildThisPlaceLeftOne, loc).not.toContain("{left}");
+      expect(t.sets.buildThisPlaceLeftOne.startsWith(t.sets.buildThisPlace), loc).toBe(true);
+    }
+    const one = (t: { sets: { buildThisPlaceLeftOne: string } }) => t.sets.buildThisPlaceLeftOne.replace("{limit}", "1");
+    expect(one(en)).toBe("Build this place · 1 of 1 left this month");
+    expect(one(es)).toBe("Construir este lugar · queda 1 de 1 este mes");
+    expect(one(pt)).toBe("Construir este lugar · resta 1 de 1 este mês");
+    expect(one(itMsgs)).toBe("Costruisci questo luogo · ne resta 1 di 1 questo mese");
     // The empty list no longer walks the person through marks and stand-ins by hand.
     expect(en.sets.emptyBody).not.toMatch(/\bmark\b|stand-in/);
   });

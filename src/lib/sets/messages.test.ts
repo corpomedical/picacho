@@ -407,7 +407,10 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     // The build button's words and the placeholder with a set picked (step 6).
     "buildThisPlace",
     "buildThisPlaceLeft",
+    "buildThisPlaceLeftOne",
     "buildNoneLeft",
+    // The home's arrow with a set picked, named for framing (review of Cut 3).
+    "frameInSet",
     "homePlaceholderSet",
     // The first-visit card's tip on the blocks (step 8).
     "tipBlocks",

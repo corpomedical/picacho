@@ -599,6 +599,8 @@ export function SetsHome({
   // 1 left this month", and at the cap "No builds left this month — pick a
   // set you have" on a button that stays disabled. With no cap, or a count
   // that could not be read (the action then refuses on its own), no number.
+  // One left is said in the singular: Spanish, Portuguese and Italian agree
+  // the verb with it ("queda 1", not "quedan 1"; review of Cut 3).
   const left = Math.max(0, monthlyLimit - used);
   const buildLabel = starting
     ? s.starting
@@ -606,16 +608,20 @@ export function SetsHome({
       ? s.buildThisPlace
       : atCap
         ? s.buildNoneLeft
-        : formatMsg(s.buildThisPlaceLeft, { left, limit: monthlyLimit });
+        : left === 1
+          ? formatMsg(s.buildThisPlaceLeftOne, { limit: monthlyLimit })
+          : formatMsg(s.buildThisPlaceLeft, { left, limit: monthlyLimit });
   // A new place in "Shoot without asking": once the build is ready, the
   // set's page runs the message as the home's and shoots a still, so the
   // button names that still's price after the build's (review of Cut 3,
   // money lens). Only while the button can build.
   const buildShoots = setPick === null && !askFirst && !starting && !atCap;
-  // A picked set: its price when it can shoot on arrival, otherwise the
-  // arrow alone ("Shoot" is its name): it frames and waits.
+  // A picked set: its price when it can shoot on arrival; otherwise the
+  // arrow alone, named for what it does there: it opens the set and frames
+  // the message, and nothing is shot until Shoot is pressed on the set's
+  // page (review of Cut 3; "Shoot" named a press that shot nothing).
   const sendWords = setPick === null ? (buildShoots ? `${buildLabel} · ${shootPrice}` : buildLabel) : shootsOnArrival ? shootPrice : null;
-  const sendLabel = sendWords ?? s.shootHere;
+  const sendLabel = sendWords ?? s.frameInSet;
 
   return (
     <div className="space-y-10">
