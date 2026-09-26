@@ -80,7 +80,9 @@ describe("the new layout", () => {
     expect(view).toContain("steps={simpleSteps}");
     expect(frame).toContain("data-studio-steps");
     // A phone's bar has room for the names only; the numbers come back from md up.
-    expect(frame).toContain('<span className="hidden md:inline">{i + 1} · </span>');
+    expect(frame).toContain('<span className="hidden md:inline">{i + 1} ·{"\\u00a0"}</span>');
+    // A plain trailing space is dropped by the flex item ("1 ·Set").
+    expect(frame).not.toContain('{i + 1} · </span>');
     expect(view).toContain('onClick={() => setSimpleStep("shoot")}');
     // Film's button is the render, the sequencer's own.
     expect(view).toMatch(/simpleOn && filmOpen && !cutOpen \? \([\s\S]{0,200}onClick=\{\(\) => void renderFilm\(\)\}/);

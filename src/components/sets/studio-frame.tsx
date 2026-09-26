@@ -174,15 +174,18 @@ export function StudioBar({
       <span className="flex-1" />
       {steps ? (
         <nav aria-label={stepsLabel} className={SEG} data-studio-steps>
+          {/* The number's space is a no-break one: the step is a flex item, and
+              a flex item drops a plain trailing space ("1 ·Set", seen on the
+              Cut 3 captures, 2026-09-26). */}
           {steps.map((st, i) =>
             st.on ? (
               <span key={st.id} aria-current="step" className={SEG_ON}>
-                <span className="hidden md:inline">{i + 1} · </span>
+                <span className="hidden md:inline">{i + 1} ·{"\u00a0"}</span>
                 {st.label}
               </span>
             ) : (
               <button key={st.id} type="button" onClick={st.onClick} className={SEG_OFF}>
-                <span className="hidden md:inline">{i + 1} · </span>
+                <span className="hidden md:inline">{i + 1} ·{"\u00a0"}</span>
                 {st.label}
               </button>
             ),
