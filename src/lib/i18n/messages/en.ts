@@ -2763,6 +2763,8 @@ const en = {
       shotSize: "Shot size",
       /** The shape chip's hint while a take is armed: the shape is held, so a take is never paid for between two frames of different shapes. */
       aspectHeld: "A take keeps the shape of the still it starts on. Cancel the take to change the shape.",
+      /** Said when a take would start on a still of another shape than the frame (review of Cut 3): a take is sent at its end still's ratio, so it is refused, and nothing is spent. */
+      takeShapeDiffers: "This take starts on a {still} still, and the frame is now {frame}. Set the frame back to {still}, or cancel the take.",
     },
     cast: {
       strip: "Cast and props",

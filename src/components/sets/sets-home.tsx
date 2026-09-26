@@ -607,9 +607,14 @@ export function SetsHome({
       : atCap
         ? s.buildNoneLeft
         : formatMsg(s.buildThisPlaceLeft, { left, limit: monthlyLimit });
+  // A new place in "Shoot without asking": once the build is ready, the
+  // set's page runs the message as the home's and shoots a still, so the
+  // button names that still's price after the build's (review of Cut 3,
+  // money lens). Only while the button can build.
+  const buildShoots = setPick === null && !askFirst && !starting && !atCap;
   // A picked set: its price when it can shoot on arrival, otherwise the
   // arrow alone ("Shoot" is its name): it frames and waits.
-  const sendWords = setPick === null ? buildLabel : shootsOnArrival ? shootPrice : null;
+  const sendWords = setPick === null ? (buildShoots ? `${buildLabel} · ${shootPrice}` : buildLabel) : shootsOnArrival ? shootPrice : null;
   const sendLabel = sendWords ?? s.shootHere;
 
   return (

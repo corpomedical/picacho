@@ -82,9 +82,24 @@ describe("the Sets home: the send to a set says its price whenever it can spend 
     expect(quoteSend(stillQuoteInput()).totalCredits).toBeGreaterThan(0);
   });
 
+  // Review of Cut 3 (money lens): a new place built in "Shoot without
+  // asking" is shot on arrival too (the arrival runs as the home's), so the
+  // build button names that still after the build.
+  it("names the still a new place is shot with on arrival in Shoot without asking", () => {
+    expect(home).toContain("const buildShoots = setPick === null && !askFirst && !starting && !atCap;");
+    // The build's own message goes to the new set with the mode it was sent in.
+    expect(home).toContain("router.push(threadHref(res.id, message, true));");
+    expect(home).toContain('if (!askFirst) q.set("askFirst", "0");');
+    // And the set's page shoots it on arrival only then.
+    expect(view).toContain('void send(initialAsk, initialAskBuilt ? { origin: "build", home: true } : { home: true });');
+    expect(view).toContain("if (opts?.home === true ? !askFirst : words.intent === \"shoot\" || !askFirst) await pressShoot(words.direction || direction);");
+  });
+
   it("shows it as words beside the arrow, and names the button by it", () => {
     // Step 6a draws the button's words beside the arrow at every width: the build's, or this price.
-    expect(home).toContain("const sendWords = setPick === null ? buildLabel : shootsOnArrival ? shootPrice : null;");
+    expect(home).toContain(
+      "const sendWords = setPick === null ? (buildShoots ? `${buildLabel} · ${shootPrice}` : buildLabel) : shootsOnArrival ? shootPrice : null;",
+    );
     expect(home).toContain("const sendLabel = sendWords ?? s.shootHere;");
     const button = home.slice(home.indexOf("{sendWords !== null && ("), home.indexOf("<SendIcon", home.indexOf("{sendWords !== null && (")));
     expect(button).toContain("{sendWords}");

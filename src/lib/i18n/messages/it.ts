@@ -2600,6 +2600,7 @@ const it = {
       advancedInUse: "Ci sono impostazioni avanzate attive",
       shotSize: "Tipo di piano",
       aspectHeld: "Una ripresa mantiene il formato della foto da cui parte. Annulla la ripresa per cambiare formato.",
+      takeShapeDiffers: "Questa ripresa parte da una foto {still} e ora l'inquadratura è {frame}. Riporta l'inquadratura a {still} o annulla la ripresa.",
     },
     cast: {
       strip: "Cast e oggetti",

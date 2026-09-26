@@ -2601,6 +2601,7 @@ const pt = {
       advancedInUse: "Há ajustes avançados em uso",
       shotSize: "Tamanho do plano",
       aspectHeld: "Um take mantém o formato da foto em que começa. Cancele o take para mudar o formato.",
+      takeShapeDiffers: "Este take começa numa foto {still}, e agora o enquadramento é {frame}. Volte o enquadramento para {still} ou cancele o take.",
     },
     cast: {
       strip: "Elenco e objetos",

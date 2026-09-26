@@ -274,9 +274,38 @@ describe("the shape and the size first", () => {
 
   it("holds the shape while a take is armed, and says why, so a take is never paid for between two shapes", () => {
     expect(chips()).toContain("title={takeStart ? sw.aspectHeld : s.rig.frame}");
-    expect(chips()).toContain("disabled={!ready || Boolean(takeStart)}");
-    expect(chips()).toContain('{menu === "format" && !takeStart && (');
+    // Review of Cut 3: operable, so a tap on a phone or a keyboard reaches the reason; a disabled
+    // button's title reached neither. Greyed, and marked held, while the frame keeps the take's shape.
+    expect(chips()).toContain("disabled={!ready}");
+    expect(chips()).not.toContain("disabled={!ready || Boolean(takeStart)}");
+    expect(chips()).toContain("aria-disabled={takeStart && !takeShapeOff ? true : undefined}");
+    expect(chips()).toContain("aria-disabled:text-onmedia/60");
+    const menu = fnOf(chips(), '{menu === "format" &&', "{/* Shot size");
+    const held = menu.slice(0, menu.indexOf(") : ("));
+    expect(held).toContain("(takeStart ? (");
+    expect(held).toContain("{sw.aspectHeld}");
+    expect(held).toContain('role="note"');
+    // While held, the only shape offered is the take's own, and only when the frame has left it.
+    expect(held).toContain("{takeShapeOff && takeStartShape && (");
+    expect(held).toContain("setRig((r) => ({ ...r, format: takeStartShape }));");
+    expect(held).not.toContain("RIG_FORMAT_ORDER");
     for (const m of [en, es, pt, itMsgs]) expect(m.sets.simple.aspectHeld).toBeTruthy();
+  });
+
+  it("refuses a take whose start still has another shape than the frame, at the one press every route reaches", () => {
+    // take() is where the Aspect chip, ⌘K's frame rows, the Rig and a stage Undo all end.
+    const take = fnOf(view, "  async function take(directionNow?: string", "    // This press's own id");
+    expect(take).toContain("const startShape = shots.find((sh) => sh.generationId === takeStart.id)?.format;");
+    expect(take).toContain("if (startShape && startShape !== rigRef.current.format) {");
+    expect(take).toContain("setError(formatMsg(s.simple.takeShapeDiffers, { still: s.rig.formats[startShape], frame: s.rig.formats[rigRef.current.format] }));");
+    // Before anything is minted or sent: the slice ends at the press's id.
+    expect(take).not.toContain("newPressId()");
+    // The banner says it before the press, in words.
+    expect(view).toContain('const takeShapeOff = takeStartShape !== null && takeStartShape !== rig.format;');
+    expect(view).toContain("{formatMsg(sw.takeShapeDiffers, { still: s.rig.formats[takeStartShape], frame: s.rig.formats[rig.format] })}");
+    for (const m of [en, es, pt, itMsgs]) {
+      for (const hole of ["{still}", "{frame}"]) expect(m.sets.simple.takeShapeDiffers, hole).toContain(hole);
+    }
   });
 
   it("frames close-up to wide the way the words do, free and local, and always says Shot size", () => {

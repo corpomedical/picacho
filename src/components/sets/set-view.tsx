@@ -5249,6 +5249,17 @@ export function SetView({
       setError(SET_TAKE_NEEDS_PLAN);
       return false;
     }
+    // A take is sent at its end still's ratio (take.ts takeAspectRatio), so
+    // a frame that has left the shape of the still the take starts on would
+    // pay for a clip between two frames of different shapes. Every route
+    // that changes the shape — the Aspect chip, ⌘K's frame rows, the Rig, a
+    // stage Undo, a shape picked before the take was armed — ends at this
+    // press, so it is checked here (review of Cut 3, money lens).
+    const startShape = shots.find((sh) => sh.generationId === takeStart.id)?.format;
+    if (startShape && startShape !== rigRef.current.format) {
+      setError(formatMsg(s.simple.takeShapeDiffers, { still: s.rig.formats[startShape], frame: s.rig.formats[rigRef.current.format] }));
+      return false;
+    }
     if (likenessNeeded(characterId)) {
       setError(SET_LIKENESS_NEEDED);
       openElementCard(FIGURE_KEY);
@@ -8273,6 +8284,17 @@ export function SetView({
   // never run a take (turn-plan.ts pressFor, one answer for both).
   const genericPress = pressFor("shoot", { takeStart, takeEngine, credits: pageCredits });
   const pressLabel = genericPress.kind === "take" && !shooting ? formatMsg(s.takeButton, { n: genericPress.credits }) : shootLabel;
+  // What the next generic press costs, where a lean page names a price
+  // (review of Cut 3, money lens): with the person's own take armed that
+  // press is the take, and a typed message that asks for a shot spends it,
+  // so no line may go on saying a still's price.
+  const nextPressPrice = genericPress.kind === "take" ? formatMsg(s.takeButton, { n: genericPress.credits }) : credits;
+  // The shape of the still an armed take starts on, and whether the frame
+  // has left it: a take is sent at its end still's ratio (take.ts
+  // takeAspectRatio), so take() refuses a frame of another shape, and the
+  // banner and the Aspect chip say so before anything is pressed.
+  const takeStartShape = takeStart ? (shots.find((sh) => sh.generationId === takeStart.id)?.format ?? null) : null;
+  const takeShapeOff = takeStartShape !== null && takeStartShape !== rig.format;
   /** A generic Shoot, doing what its label says (pressFor "shoot"): the person's own take, else a still. */
   function pressShoot(directionNow?: string): Promise<boolean> {
     return pressFor("shoot", { takeStart, takeEngine, credits: pageCredits }).kind === "take" ? take(directionNow) : shoot(directionNow);
@@ -9130,13 +9152,14 @@ export function SetView({
     // thing's card keep the one scroll they had.
     const split = !elementCard && (!simpleShooting || simpleStep === "shoot");
     // Lean, the composer's engine pill is Advanced's (Helios Cut 3, step
-    // 15b): the engine the stills are drawn with, and what a still costs,
-    // are still said, here under the step's title, as a phone's
+    // 15b): the engine the stills are drawn with, and what the next press
+    // costs, are still said, here under the step's title, as a phone's
     // conversation header says them. A typed message that asks to shoot
-    // spends that, and the pill was where it was read.
+    // spends that — a still, or the person's armed take at the take's
+    // price (review of Cut 3) — and the pill was where it was read.
     const engineLine = lean ? (
       <p className="-mt-1 text-[11px] text-[#9aa0ad]" data-step-engine>
-        {formatMsg(s.panelMeta, { engine: stillEngineName })} · {credits}
+        {formatMsg(s.panelMeta, { engine: stillEngineName })} · {nextPressPrice}
       </p>
     ) : null;
     return (
@@ -9205,39 +9228,61 @@ export function SetView({
         {shapeChips && (
           <>
             {/* Aspect: the frame's shape, free and on the stage at once; the price does not depend on it (take.ts).
-                A take keeps the shape of the still it starts on, so while one is armed the shape is held, and says
-                why, rather than let a take be paid for between two frames of different shapes. */}
+                A take keeps the shape of the still it starts on, so while one is armed the shape is held. The chip
+                still opens, to say why where a tap or a keyboard reaches it (a disabled button's title reaches
+                neither), and offers only the take's own shape when the frame has left it (review of Cut 3). */}
             <div className={chipAnchor}>
               <button
                 type="button"
                 onClick={() => toggleMenu("format")}
-                aria-haspopup="listbox"
+                aria-haspopup={takeStart ? undefined : "listbox"}
                 aria-expanded={menu === "format"}
                 aria-label={`${s.rig.frame} · ${s.rig.formats[rig.format]}`}
+                aria-disabled={takeStart && !takeShapeOff ? true : undefined}
                 title={takeStart ? sw.aspectHeld : s.rig.frame}
-                disabled={!ready || Boolean(takeStart)}
-                className={DCHIP}
+                disabled={!ready}
+                className={`${DCHIP} aria-disabled:cursor-default aria-disabled:text-onmedia/60`}
                 data-aspect-chip
               >
                 {s.rig.formats[rig.format]}
                 <Chevron />
               </button>
-              {menu === "format" && !takeStart && (
-                <div role="listbox" aria-label={s.rig.frame} className={DMENU}>
-                  {RIG_FORMAT_ORDER.map((f) => (
-                    <Option
-                      key={f}
-                      active={rig.format === f}
-                      onPick={() => {
-                        setRig((r) => ({ ...r, format: f }));
-                        setMenu(null);
-                      }}
-                    >
-                      {s.rig.formats[f]}
-                    </Option>
-                  ))}
-                </div>
-              )}
+              {menu === "format" &&
+                (takeStart ? (
+                  <div className={`${DMENU} w-60`} data-aspect-held>
+                    <p role="note" className="px-2.5 py-1.5 text-[12px] leading-snug text-[#c6c9d1]">
+                      {sw.aspectHeld}
+                    </p>
+                    {takeShapeOff && takeStartShape && (
+                      <div role="listbox" aria-label={s.rig.frame}>
+                        <Option
+                          active={false}
+                          onPick={() => {
+                            setRig((r) => ({ ...r, format: takeStartShape }));
+                            setMenu(null);
+                          }}
+                        >
+                          {s.rig.formats[takeStartShape]}
+                        </Option>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div role="listbox" aria-label={s.rig.frame} className={DMENU}>
+                    {RIG_FORMAT_ORDER.map((f) => (
+                      <Option
+                        key={f}
+                        active={rig.format === f}
+                        onPick={() => {
+                          setRig((r) => ({ ...r, format: f }));
+                          setMenu(null);
+                        }}
+                      >
+                        {s.rig.formats[f]}
+                      </Option>
+                    ))}
+                  </div>
+                ))}
             </div>
             {/* Shot size: frames the figure close up to wide, the way the words do, free and local. The chip
                 always says "Shot size": a hand on the camera could make any size it named untrue. */}
@@ -9525,8 +9570,9 @@ export function SetView({
               <span className="flex items-center gap-2">
                 <span className="text-[11px] text-[#9aa0ad]">
                   {formatMsg(s.panelMeta, { engine: stillEngineName })}
-                  {/* Lean, the composer's engine pill and its price are Advanced's: the price is said here (Helios Cut 3, step 15b). */}
-                  {lean ? ` · ${credits}` : null}
+                  {/* Lean, the composer's engine pill and its price are Advanced's: the price is said here (Helios Cut 3, step 15b),
+                      the armed take's when the next press is the take (review of Cut 3). */}
+                  {lean ? ` · ${nextPressPrice}` : null}
                 </span>
                 {/* The phone's fold (Helios Cut 3, step 2): the conversation folds away and the
                     words box with its priced send stays; before, this button was hidden below md,
@@ -9883,7 +9929,8 @@ export function SetView({
                           {rowLabel(s.rowHappens, "happens")}
                           <dd className={direction ? "text-[#ecedf1]" : "text-[#9aa0ad]"}>{direction || "—"}</dd>
                           <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{s.rowCost}</dt>
-                          <dd className="text-[#ecedf1] tabular-nums">{formatMsg(s.costLine, { credits })}</dd>
+                          {/* Lean, the card has no Shoot of its own, so with the person's take armed its Cost says the take's price (review of Cut 3). */}
+                          <dd className="text-[#ecedf1] tabular-nums">{lean && genericPress.kind === "take" ? nextPressPrice : formatMsg(s.costLine, { credits })}</dd>
                         </dl>
                         {takeStart && (
                           <div className="flex flex-wrap items-center gap-1.5 pt-1">
@@ -10583,7 +10630,17 @@ export function SetView({
           {/* a take under way: where it starts, until the end frame is taken */}
           {takeStart && !viewingShot && (
             <div className={`absolute ${bannerLeft} top-16 z-20 flex flex-wrap items-center gap-2`}>
-              <span className="rounded-full bg-[#e0a468] px-3 py-1.5 text-xs font-semibold text-black">{formatMsg(s.takeBanner, { n: takeStart.n })}</span>
+              {/* Lean, the bar and the frame card draw no Take, so the banner names its price (review of Cut 3). */}
+              <span className="rounded-full bg-[#e0a468] px-3 py-1.5 text-xs font-semibold text-black">
+                {formatMsg(s.takeBanner, { n: takeStart.n })}
+                {lean && genericPress.kind === "take" ? ` · ${nextPressPrice}` : ""}
+              </span>
+              {/* The frame has left the start still's shape: said before the Take is pressed, which refuses it (review of Cut 3). */}
+              {takeShapeOff && takeStartShape && (
+                <span className="rounded-full bg-black/70 px-3 py-1.5 text-xs text-[#f0cda6]" data-take-shape>
+                  {formatMsg(sw.takeShapeDiffers, { still: s.rig.formats[takeStartShape], frame: s.rig.formats[rig.format] })}
+                </span>
+              )}
               {takeStartOldKey && (
                 <span className="rounded-full bg-black/70 px-3 py-1.5 text-xs text-[#f0cda6]" data-take-start-old>
                   {formatMsg(cast.takeStartOld, { name: elementName(takeStartOldKey) })}

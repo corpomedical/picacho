@@ -150,11 +150,11 @@ describe("the first Shoot screen", () => {
   it("names the engine as text where its pill steps aside", () => {
     const panel = between("  function stepPanelView() {", "  function setupChipsView(");
     expect(panel).toContain("const engineLine = lean ? (");
-    // With a still's price, which the pill carried: a typed message that asks to shoot spends it.
-    expect(panel).toContain("{formatMsg(s.panelMeta, { engine: stillEngineName })} · {credits}");
+    // With the next press's price, which the pill carried: a typed message that asks to shoot spends it.
+    expect(panel).toContain("{formatMsg(s.panelMeta, { engine: stillEngineName })} · {nextPressPrice}");
     expect(panel.split("{engineLine}").length - 1).toBe(2);
     // A phone's conversation header says it too, lean only.
-    expect(between("  const chatHeader = (", "  const chatThread = (")).toContain("{lean ? ` · ${credits}` : null}");
+    expect(between("  const chatHeader = (", "  const chatThread = (")).toContain("{lean ? ` · ${nextPressPrice}` : null}");
     expect(view).toContain("{!justTalk && !lean && (");
     // The pill and its price stay in the source for Classic and Advanced.
     expect(view).toContain("{stillEngineName} · {credits}");
@@ -174,7 +174,7 @@ describe("the first Shoot screen", () => {
     expect(view).toMatch(/\{!lean && \(\s*<div className="flex flex-wrap items-center gap-2 pt-1">\s*<button\s+type="button"\s+onClick=\{\(\) => void \(takeStart \? take\(\) : shoot\(\)\)\}/);
     // Its Cost row is outside the gate.
     const card = between("{rowLabel(s.rowWho, \"who\")}", "{!lean && (\n                        <div className=\"flex flex-wrap items-center gap-2 pt-1\">");
-    expect(card).toContain("{formatMsg(s.costLine, { credits })}");
+    expect(card).toContain('{lean && genericPress.kind === "take" ? nextPressPrice : formatMsg(s.costLine, { credits })}');
     // The bar: Film's Render and Set's Next: Shoot come first, then nothing while lean in Set or Shoot.
     const bar = view.slice(view.indexOf("        primary={"), view.indexOf("        }\n      >"));
     expect(bar.indexOf("simpleOn && filmOpen && !cutOpen ? (")).toBeLessThan(bar.indexOf(") : lean && simpleShooting ? null : ("));
@@ -187,6 +187,23 @@ describe("the first Shoot screen", () => {
     expect(view).toContain("const stripShown = !filmOpen && !(lean && shots.length === 0);");
     expect(view).toContain("{stripShown && (\n          <div\n            ref={stripRef}");
     expect(view).toContain("simpleOn, simplePhoneSet, advanced, stripShown]);");
+  });
+
+  // Review of Cut 3 (money lens): lean, the bar and the frame card draw no
+  // Take, and a typed message runs the person's armed take (pressShoot), so
+  // every price on screen is the next press's, never a still's under a take.
+  it("names the armed take's price wherever a lean page names a price", () => {
+    expect(view).toContain(
+      'const nextPressPrice = genericPress.kind === "take" ? formatMsg(s.takeButton, { n: genericPress.credits }) : credits;',
+    );
+    // The same answer the empty send's label and pressShoot read.
+    expect(view.indexOf("const genericPress = pressFor(\"shoot\"")).toBeLessThan(view.indexOf("const nextPressPrice ="));
+    // The take banner, lean only.
+    expect(view).toMatch(/\{formatMsg\(s\.takeBanner, \{ n: takeStart\.n \}\)\}\s*\{lean && genericPress\.kind === "take" \? ` · \$\{nextPressPrice\}` : ""\}/);
+    // The frame card's Cost row, lean only; Classic's card keeps its own Take button beside it.
+    expect(view).toContain('{lean && genericPress.kind === "take" ? nextPressPrice : formatMsg(s.costLine, { credits })}');
+    // No lean line is left saying the still's price by itself.
+    expect(view).not.toContain("{lean ? ` · ${credits}` : null}");
   });
 
   it("says only what the Shoot step always shows", () => {

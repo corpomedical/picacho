@@ -2601,6 +2601,7 @@ const es = {
       advancedInUse: "Hay ajustes avanzados en uso",
       shotSize: "Tamaño del plano",
       aspectHeld: "Una toma mantiene el formato de la foto con la que empieza. Cancela la toma para cambiar el formato.",
+      takeShapeDiffers: "Esta toma empieza en una foto {still} y ahora el encuadre es {frame}. Vuelve a poner el encuadre en {still} o cancela la toma.",
     },
     cast: {
       strip: "Reparto y atrezo",
