@@ -9,6 +9,7 @@ import {
   VERDICT_WEIGHT,
   cardSaveBlock,
   clampBox,
+  openingCard,
   clockSeconds,
   clockTenths,
   firstDecisionShot,
@@ -226,7 +227,7 @@ describe("what blocks a plan", () => {
 });
 
 describe("what blocks a product card", () => {
-  const ready = { picked: 4, hasFront: true, words: 2, noReadableText: false, consent: true, starOpen: false, starAnswered: false };
+  const ready = { picked: 4, hasFront: true, words: 2, noReadableText: false, consent: true };
 
   it("asks for 3 to 5 photos, exactly as the card service does", () => {
     expect(PICK_MIN).toBe(ANGLES_MIN);
@@ -236,13 +237,21 @@ describe("what blocks a product card", () => {
     expect(cardSaveBlock(ready)).toBeNull();
   });
 
-  it("then the front, the words (or no readable text), the consent, and the star's answer when it is asked", () => {
+  it("then the front, the words (or no readable text), and the consent", () => {
     expect(cardSaveBlock({ ...ready, hasFront: false })).toBe("front");
     expect(cardSaveBlock({ ...ready, words: 0 })).toBe("words");
     expect(cardSaveBlock({ ...ready, words: 0, noReadableText: true })).toBeNull();
     expect(cardSaveBlock({ ...ready, consent: false })).toBe("consent");
-    expect(cardSaveBlock({ ...ready, starOpen: true })).toBe("star");
-    expect(cardSaveBlock({ ...ready, starOpen: true, starAnswered: true })).toBeNull();
+  });
+
+  it("never waits on the star's answer: a product card saves whoever the door has picked to star", () => {
+    // Save once waited for an answer about the door's pick of star, who may
+    // not be the one the person meant (pre-flight review, 2026-09-26). An
+    // old caller's star fields change nothing; painting still waits for the
+    // answer on the server (campaign-service.test.ts, paint.test.ts).
+    const withStar = { ...ready, starOpen: true, starAnswered: false } as Parameters<typeof cardSaveBlock>[0];
+    expect(cardSaveBlock(withStar)).toBeNull();
+    expect(cardSaveBlock({ ...withStar, consent: false })).toBe("consent");
   });
 });
 
@@ -256,6 +265,35 @@ describe("the logo box", () => {
     expect(any.x).toBe(0);
     expect(any.y).toBe(0);
     expect(any.x + any.w).toBeLessThanOrEqual(1);
+  });
+
+  it("opens a card with its own logo box kept, so saving a confirmed card again keeps its logo (pre-flight review, 2026-09-26)", () => {
+    // The door's "Edit its card" opens a confirmed card in the sheet. Saving
+    // sends only the box the sheet holds, and the server removes a crop no
+    // box points at: a sheet that opened with no box lost the logo.
+    const card = {
+      photos: ["u/p/a.jpg", "u/p/b.jpg", "u/p/c.jpg"],
+      angles: [
+        { path: "u/p/a.jpg", view: "three_quarter" as const },
+        { path: "u/p/b.jpg", view: "front" as const },
+        { path: "u/p/c.jpg", view: "side" as const },
+      ],
+      logoBox: { path: "u/p/b.jpg", x: 0.3, y: 0.35, w: 0.4, h: 0.2 },
+    };
+    expect(openingCard(card)).toEqual({
+      picked: ["u/p/a.jpg", "u/p/b.jpg", "u/p/c.jpg"],
+      views: { "u/p/a.jpg": "three_quarter", "u/p/b.jpg": "front", "u/p/c.jpg": "side" },
+      logo: { path: "u/p/b.jpg", box: { x: 0.3, y: 0.35, w: 0.4, h: 0.2 } },
+    });
+    // A box on a photo that is not the front is not one the sheet can show: not kept.
+    expect(openingCard({ ...card, logoBox: { ...card.logoBox, path: "u/p/a.jpg" } }).logo).toBeNull();
+    // A draft with no views yet: its first photo is the front, and it has no box.
+    expect(openingCard({ photos: ["u/p/a.jpg", "u/p/b.jpg"], angles: [], logoBox: null })).toEqual({
+      picked: ["u/p/a.jpg", "u/p/b.jpg"],
+      views: { "u/p/a.jpg": "front" },
+      logo: null,
+    });
+    expect(openingCard(null)).toEqual({ picked: [], views: {}, logo: null });
   });
 
   it("names a product page by its host", () => {

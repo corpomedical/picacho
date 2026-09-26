@@ -14,7 +14,6 @@ import {
   recordConsent,
   reservePressUploads,
 } from "@/lib/press-tour/actions";
-import { recordStarConsent } from "@/lib/press-tour/star-consent-actions";
 import {
   PRODUCT_REGULATED_REFUSED,
   PRODUCT_VIEWS,
@@ -24,13 +23,12 @@ import {
   type ProductCard,
   type ProductView,
 } from "@/lib/press-tour/types";
-import { PICK_MAX, cardSaveBlock, type Box, type StarAnswer } from "@/lib/press-tour/door-view";
-import type { PressCharacter, PressProduct } from "@/lib/press-tour/door-data";
+import { PICK_MAX, cardSaveBlock, openingCard, type Box } from "@/lib/press-tour/door-view";
+import type { PressProduct } from "@/lib/press-tour/door-data";
 import { cn } from "@/lib/cn";
 import { ROW, RadioDot, TickBox } from "./controls";
 import { CheckIcon, CloseIcon, EditIcon, InfoIcon, LinkIcon, PhotosIcon, UploadIcon } from "./icons";
 import { LogoCrop } from "./logo-crop";
-import { StarAskFields, type StarDraft } from "./star-ask";
 import s from "./press-tour.module.css";
 
 // THE PRODUCT CARD (spec §1.1; synthesis §2.3 item 1; the
@@ -38,8 +36,10 @@ import s from "./press-tour.module.css";
 // the person's own photos, then set by the person: 3–5 angles (one the
 // front), the words on the label ticked and spelled (or "No readable text
 // on this product"), an optional logo box, the colours, and "I own this
-// product or may advertise it" — then, when the star has not answered yet,
-// who the star is and that they may appear in ads.
+// product or may advertise it". Nothing about the star: who the star is and
+// that they may appear in ads is asked on the door's Starring tile, beside
+// Change, so this card never waits on an answer about a star the person may
+// be about to change (door-view.ts cardSaveBlock).
 //
 // Every step is a server action in lib/press-tour/actions.ts (card-service
 // decides; this sheet only asks). What the server answers in English is
@@ -51,19 +51,20 @@ type Word = { key: string; read: string | null; text: string; ticked: boolean; e
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const UPLOADS_AT_ONCE = 5;
 
-export type ProductSaved = { product: PressProduct; starAnswer: StarAnswer | null };
+export type ProductSaved = { product: PressProduct };
 
 export function ProductSheet({
   initial,
-  star,
   brandKitId,
   onClose,
   onSaved,
 }: {
-  /** A draft card to finish, or null to start one. */
+  /**
+   * A draft card to finish, a confirmed card to edit (the door's "Edit its
+   * card": its name and its words; its photos stay, as the server allows
+   * only a draft new ones), or null to start one.
+   */
   initial: PressProduct | null;
-  /** The star the door has chosen: asked here too when it has no answer yet. */
-  star: PressCharacter | null;
   brandKitId: string | null;
   onClose: () => void;
   onSaved: (saved: ProductSaved) => void;
@@ -78,14 +79,11 @@ export function ProductSheet({
   const [url, setUrl] = useState(initial?.card.sourceUrl ?? "");
   const [card, setCard] = useState<ProductCard | null>(initial?.card ?? null);
   const [urls, setUrls] = useState<Record<string, string>>(initial?.photoUrls ?? {});
-  const [picked, setPicked] = useState<string[]>(() => (initial ? initial.card.photos.slice(0, PICK_MAX) : []));
-  const [views, setViews] = useState<Record<string, ProductView>>(() => {
-    const out: Record<string, ProductView> = {};
-    for (const a of initial?.card.angles ?? []) out[a.path] = a.view;
-    const first = initial?.card.photos[0];
-    if (first && !Object.values(out).includes("front")) out[first] = "front";
-    return out;
-  });
+  // The card as it opens, read once: its photos, their views, and its logo
+  // box, kept as it was so saving a confirmed card again keeps its logo.
+  const [opening] = useState(() => openingCard(initial?.card ?? null));
+  const [picked, setPicked] = useState<string[]>(opening.picked);
+  const [views, setViews] = useState<Record<string, ProductView>>(opening.views);
   const [words, setWords] = useState<Word[]>(() =>
     (initial?.card.labelStrings ?? []).map((w, i) => ({ key: `s${i}`, read: null, text: w, ticked: true, editing: false })),
   );
@@ -96,11 +94,9 @@ export function ProductSheet({
   const [readLater, setReadLater] = useState(false);
   const [name, setName] = useState(initial?.card.name ?? "");
   const [palette, setPalette] = useState<string[]>(initial?.card.palette ?? []);
-  const [logo, setLogo] = useState<Box | null>(null);
-  const [logoDone, setLogoDone] = useState<"used" | "skipped" | null>(null);
+  const [logo, setLogo] = useState<Box | null>(opening.logo?.box ?? null);
+  const [logoDone, setLogoDone] = useState<"used" | "skipped" | null>(opening.logo ? "used" : null);
   const [consent, setConsent] = useState<ConsentAnswer | null>(null);
-  const starOpen = !!star && star.photoCount > 0 && !star.adAnswer;
-  const [starDraft, setStarDraft] = useState<StarDraft>({ answer: null, adsOk: false });
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refused, setRefused] = useState(initial?.card.category === "regulated");
@@ -125,7 +121,7 @@ export function ProductSheet({
 
   const front = picked.find((p) => views[p] === "front") ?? null;
   // A box drawn on one photo means nothing on another: a new front starts over.
-  const [logoOn, setLogoOn] = useState<string | null>(null);
+  const [logoOn, setLogoOn] = useState<string | null>(opening.logo?.path ?? null);
   if (front !== logoOn) {
     setLogoOn(front);
     setLogo(null);
@@ -260,8 +256,6 @@ export function ProductSheet({
         words: labelStrings.length,
         noReadableText: noText,
         consent: consent !== null,
-        starOpen,
-        starAnswered: starDraft.answer !== null && starDraft.adsOk,
       })
     : null;
 
@@ -275,17 +269,6 @@ export function ProductSheet({
       setBusy(null);
       setError(consented.error);
       return;
-    }
-    let starAnswer: StarAnswer | null = null;
-    if (starOpen && star && starDraft.answer) {
-      const kept = await guard(() => recordStarConsent({ characterId: star.id, answer: starDraft.answer!, adsOk: starDraft.adsOk }));
-      if (!kept) return setBusy(null);
-      if (kept.error !== null) {
-        setBusy(null);
-        setError(kept.error);
-        return;
-      }
-      starAnswer = kept.answer;
     }
     const res = await guard(() =>
       confirmProductCard({
@@ -308,7 +291,7 @@ export function ProductSheet({
       return;
     }
     setFlagged([]);
-    onSaved({ product: { card: res.card, photoUrls: res.photoUrls }, starAnswer });
+    onSaved({ product: { card: res.card, photoUrls: res.photoUrls } });
   }
 
   const blockWords: Record<NonNullable<typeof block>, string> = {
@@ -316,7 +299,6 @@ export function ProductSheet({
     front: m.blockFront,
     words: m.blockWords,
     consent: m.blockConsent,
-    star: m.blockStar,
   };
   const photos = card?.photos ?? [];
   const viewWord: Record<ProductView, string> = {
@@ -700,27 +682,6 @@ export function ProductSheet({
                   ))}
                 </fieldset>
               </Sec>
-
-              {/* 5 · Starring, while the star has not answered */}
-              {starOpen && star && (
-                <Sec n={5} title={m.starring}>
-                  <div className="mt-2.5 flex items-center gap-2.5">
-                    {star.photoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- our own media route, already sized
-                      <img src={star.photoUrl} alt="" className="h-11 w-11 flex-none rounded-[10px] object-cover ring-1 ring-[rgba(255,240,220,0.22)]" />
-                    ) : (
-                      <span aria-hidden="true" className="h-11 w-11 flex-none rounded-[10px] bg-[rgba(255,255,255,0.05)]" />
-                    )}
-                    <p className="font-numeral text-[22px] italic leading-none text-[#f0cda6]">
-                      {star.name || m.untitledStar}
-                      <small className="mt-1 block font-sans text-[12px] not-italic text-[#9aa0ad]">{m.yourCharacter}</small>
-                    </p>
-                  </div>
-                  <div className="mt-2.5">
-                    <StarAskFields name={star.name} draft={starDraft} onChange={setStarDraft} m={m} />
-                  </div>
-                </Sec>
-              )}
             </>
           )}
         </div>

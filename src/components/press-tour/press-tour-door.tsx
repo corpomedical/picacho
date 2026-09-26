@@ -212,7 +212,11 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
           // The press line opens on arrival only for an ad that is ready now.
           if (res.campaign.stage !== "ready") setLine((l) => (l === "auto" ? "closed" : l));
         }
-      } catch {
+      } catch (err) {
+        // A deploy that landed while the tab was open throws here for as
+        // long as the tab runs the old build: only a reload reads the ad,
+        // through the one shared guard (stale-deploy.ts).
+        if (isStaleDeployError(err) && reloadForNewDeploy()) return;
         /* no ad shown is not a broken door: the person can plan a new one */
       } finally {
         if (live) setLoading(false);
@@ -233,7 +237,11 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
         const res = await actions.getCampaign({ campaignId: id });
         if (res.ok) setCampaign(res.campaign);
         else setPollTick((n) => n + 1);
-      } catch {
+      } catch (err) {
+        // A deploy that lands while stills paint makes every ask throw from
+        // this tab, so asking again would spin on a frozen ad forever: the
+        // shared guard reloads it onto the new build, once (stale-deploy.ts).
+        if (isStaleDeployError(err) && reloadForNewDeploy()) return;
         setPollTick((n) => n + 1);
       }
     }, POLL_MS);
@@ -537,7 +545,6 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
   function productSaved(saved: ProductSaved) {
     setProds((prev) => [saved.product, ...prev.filter((p) => p.card.id !== saved.product.card.id)]);
     setProductId(saved.product.card.id);
-    if (saved.starAnswer && star) setChars((prev) => prev.map((c) => (c.id === star.id ? { ...c, adAnswer: saved.starAnswer } : c)));
     setSheet(null);
     setError(null);
   }
@@ -716,6 +723,17 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
                   <CheckIcon className="mt-px h-3 w-3 flex-none text-[#e0a468]" />
                   {m.saidProduct}
                 </p>
+                {/* A confirmed card stays editable until an ad is planned
+                    with it: a plan refused over its name or a ticked label
+                    word says to press this (PLAN_REFUSED_LABEL_CLAIM), and
+                    without it the only way on was a whole new card. */}
+                {!castFixed && (
+                  <div className="mt-2">
+                    <button type="button" disabled={!emailConfirmed} onClick={() => setSheet({ initial: product })} className={GHOST}>
+                      {m.editCard}
+                    </button>
+                  </div>
+                )}
               </>
             ) : (
               <>
@@ -1240,7 +1258,7 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
         </>
       )}
 
-      {sheet && <ProductSheet initial={sheet.initial} star={star} brandKitId={kitId} onClose={() => setSheet(null)} onSaved={productSaved} />}
+      {sheet && <ProductSheet initial={sheet.initial} brandKitId={kitId} onClose={() => setSheet(null)} onSaved={productSaved} />}
 
       {campaign && stage === "ready" && campaign.master && line !== "closed" && (
         <PressLine

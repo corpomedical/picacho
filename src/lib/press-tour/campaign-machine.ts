@@ -21,7 +21,11 @@
 //                       credits, and the better of the two is kept
 //                       (v2 #15: before any video spend, shown as "We
 //                       repainted this once, free"). "Not readable" and
-//                       "Not checked" never repaint.
+//                       "Not checked" never repaint. A repaint the content
+//                       or ad rules refuse (the house's, or the person's
+//                       below) ends nothing: the still keeps the painting
+//                       it had and says why. Only a still with no painting
+//                       at all ends the ad.
 //   awaiting_approval   the person approves or keeps each still, or
 //                       repaints one at 1 credit (N4). Nothing re-shoots and
 //                       nothing is refunded for a miss (operator,
@@ -94,9 +98,13 @@ import {
   BLOCK_PAINTING,
   BLOCK_PLANNING,
   CAMPAIGN_EXPIRED,
+  CAMPAIGN_MESSAGES,
   PAINT_FAILED,
+  PAINT_FAILED_CHARGED,
   PLAN_STALLED,
   STILL_REFUSED,
+  STILL_REFUSED_CHARGED,
+  STILL_REPAINT_REFUSED,
   blockDecide,
 } from "./campaign-messages";
 import { parseAdPlan, type AdPlan, type PlannedShot } from "./planner";
@@ -450,8 +458,10 @@ export type PaintOutcome =
        * around it) failed: retried once, at its price when its charge went
        * back, on the house when it stayed (v2 #11).
        * gone: the reserved row is no longer there to paint (treated like provider).
-       * refused: a content gate refused the still (terminal for the campaign).
-       * gate: a consent the still needs is missing (terminal).
+       * refused: a content gate refused the still. Terminal for the
+       *   campaign only when the still has no painting to keep; a refused
+       *   repaint (the house's or the person's) leaves the still as it was.
+       * gate: a consent the still needs is missing (the same rule).
        */
       cause: "provider" | "gone" | "refused" | "gate";
       error: string;
@@ -494,6 +504,20 @@ export function missed(a: StillAttempt, faceGateOn: boolean): boolean {
   return faceGateOn && a.face === "didnt_match";
 }
 
+/**
+ * The words a still shows when this attempt was refused or gated, or null.
+ * The attempt's `error` is never shown raw (a lane's own words can ride in
+ * it), so a refusal gets fixed words; a gate's own sentence is shown when
+ * it is one of ours (the consent or the card it needs), since it says what
+ * to do. Only a still that keeps an earlier painting ever shows it: a
+ * refused first painting ends the ad (paintStep).
+ */
+function refusalReason(outcome: Extract<PaintOutcome, { kind: "failed" }>): string | null {
+  if (outcome.cause === "refused") return STILL_REPAINT_REFUSED;
+  if (outcome.cause === "gate") return (CAMPAIGN_MESSAGES as readonly string[]).includes(outcome.error) ? outcome.error : null;
+  return null;
+}
+
 /** The painting's result, written into its attempt. A house painting keeps the better of the two; any other becomes the one shown. */
 export function withOutcome(
   stills: readonly StillState[],
@@ -520,7 +544,14 @@ export function withOutcome(
             escalations: outcome.escalations,
             doneAt: nowIso,
           }
-        : { ...target, status: "failed", doneAt: nowIso, error: outcome.error.slice(0, 300), credits: outcome.refunded ? 0 : target.credits };
+        : {
+            ...target,
+            status: "failed",
+            doneAt: nowIso,
+            error: outcome.error.slice(0, 300),
+            credits: outcome.refunded ? 0 : target.credits,
+            reason: refusalReason(outcome),
+          };
     const attempts = s.attempts.map((a) => (a.n === n ? done : a));
     if (done.status !== "painted") return { ...s, attempts };
     const previous = keptAttempt({ ...s, attempts });
@@ -547,6 +578,57 @@ export function houseRepaintDue(stills: readonly StillState[], faceGateOn: boole
 /** A still with no painted attempt and nothing left in flight: it will never be painted. */
 export function stillLost(still: StillState): boolean {
   return !inFlight(still) && !still.attempts.some((a) => a.status === "painted");
+}
+
+/**
+ * Why the still's newest attempt, a repaint after the painting it shows,
+ * did not happen (refusalReason), or null. A later painting replaces it.
+ * The house's own free repaint, refused, says nothing of itself: the person
+ * never asked for it, and the check's reason (why the still missed) is
+ * what they need to decide on it. A gate's sentence still shows, since it
+ * says what to do.
+ */
+export function repaintRefusal(still: StillState): string | null {
+  const last = still.attempts.at(-1);
+  if (!last || last.status !== "failed" || !last.reason) return null;
+  if (last.kind === "house" && last.reason === STILL_REPAINT_REFUSED) return null;
+  return still.keep !== null && last.n > still.keep ? last.reason : null;
+}
+
+/**
+ * Credits the person was charged for attempts that painted nothing and did
+ * not get back: a failed attempt whose charge stayed (the refund rules, the
+ * automatic_refunds switch or the daily cap, kept it). One whose charge paid
+ * for the house's retry that then painted is not counted: that still was
+ * delivered at its price (v2 #11). Reserved attempts are not counted here:
+ * a closing ad releases them (failCampaign).
+ */
+export function creditsKept(stills: readonly StillState[]): number {
+  let kept = 0;
+  for (const s of stills) {
+    for (const a of s.attempts) {
+      if (a.status !== "failed" || a.credits <= 0) continue;
+      const paidFor = s.attempts.some((r) => r.n > a.n && r.kind === "retry" && r.credits === 0 && r.status === "painted");
+      if (!paidFor) kept += a.credits;
+    }
+  }
+  return kept;
+}
+
+/** The closing words that say "nothing was charged for the ones that didn't paint", and what they say when that isn't so. */
+const CHARGED_WORDS: Readonly<Record<string, string>> = {
+  [PAINT_FAILED]: PAINT_FAILED_CHARGED,
+  [STILL_REFUSED]: STILL_REFUSED_CHARGED,
+};
+
+/**
+ * An ad's closing words, from what actually came back: never "nothing was
+ * charged" over a credit it kept. `charged` is what to say instead when a
+ * credit stayed; by default our own closing's charged twin, or the words
+ * as they are when they never spoke of a charge.
+ */
+export function failWords(error: string, keptCredits: number, charged: string = CHARGED_WORDS[error] ?? error): string {
+  return keptCredits > 0 ? charged : error;
 }
 
 /** Whether a failed attempt of this kind gets its one retry (only the paid paintings do, once per still; paid or on the house: v2 #11). */
@@ -817,7 +899,8 @@ function stillView(shot: PlannedShot, still: StillState | null, imageUrl: (path:
     imageUrl: kept?.path ? imageUrl(kept.path) : null,
     face: kept ? kept.face : shot.star ? "not_checked" : "no_one_in_shot",
     product: kept ? kept.product : "not_checked",
-    reason: kept?.reason ?? null,
+    // A refused repaint says why first; the painting kept is shown as it was.
+    reason: still && kept ? (repaintRefusal(still) ?? kept.reason ?? null) : null,
     // A shot planned without the product (a hook) has no product check to clear (PT-01).
     productExpected: shot.productVisibility !== "absent",
     decision: still && kept ? still.decision : "pending",
@@ -1014,32 +1097,46 @@ export async function releaseAttempts(
 /**
  * Close a campaign as failed: the stage first (so nothing paints on), then
  * every attempt it still held is ended and refunded, and the refund is
- * written down.
+ * written down. The closing words are chosen from what actually came back
+ * (failWords): a failed still whose charge the refund rules kept, or a held
+ * one whose release did not go through, turns "nothing was charged for the
+ * ones that didn't paint" into words that say one was. `charged` is the
+ * closing to use instead when a credit stayed (failWords), for words that
+ * are not our own: a refusal's sentence from a picture lane or a gate.
  */
-export async function failCampaign(deps: MachineDeps, row: CampaignRow, error: string): Promise<void> {
+export async function failCampaign(deps: MachineDeps, row: CampaignRow, error: string, charged?: string): Promise<void> {
   const nowIso = nowOf(deps).toISOString();
-  const closed = await mutateCampaign<{ stills: StillAttempt[]; takes: Take[] }>(deps.db, row.id, null, (fresh) =>
-    isTerminal(fresh.stage)
-      ? { refuse: { stills: [], takes: [] } }
-      : {
-          patch: {
-            stage: "failed",
-            error,
-            stills: closeAttempts(fresh.stills, error, nowIso),
-            shots: closeOpenTakes(fresh.shots, error, nowIso),
-            locked_at: null,
-            cut_due_at: null,
-          },
-          value: { stills: reservedAttempts(fresh.stills).map((r) => r.attempt), takes: openTakes(fresh.shots).map((t) => t.take) },
-        },
-  );
+  const closed = await mutateCampaign<{ stills: StillAttempt[]; takes: Take[]; kept: number }>(deps.db, row.id, null, (fresh) => {
+    if (isTerminal(fresh.stage)) return { refuse: { stills: [], takes: [], kept: 0 } };
+    const kept = creditsKept(fresh.stills);
+    return {
+      patch: {
+        stage: "failed",
+        error: failWords(error, kept, charged),
+        stills: closeAttempts(fresh.stills, error, nowIso),
+        shots: closeOpenTakes(fresh.shots, error, nowIso),
+        locked_at: null,
+        cut_due_at: null,
+      },
+      value: { stills: reservedAttempts(fresh.stills).map((r) => r.attempt), takes: openTakes(fresh.shots).map((t) => t.take), kept },
+    };
+  });
   if (!closed.ok) return;
-  let back = await releaseAttempts(deps, row.userId, closed.value.stills, error);
+  const stillsBack = await releaseAttempts(deps, row.userId, closed.value.stills, error);
   const takeBack = await releaseTakes(deps, row.userId, closed.value.takes, error);
-  back += takeBack.credits;
-  if (back > 0 || takeBack.rowIds.length > 0) {
+  const back = stillsBack + takeBack.credits;
+  // A held still whose release did not go through keeps its credits until
+  // the orphan reaper settles it by the ordinary rules: not "nothing".
+  const unreleased = closed.value.stills.reduce((n, a) => n + a.credits, 0) - stillsBack;
+  const words = failWords(error, closed.value.kept + unreleased, charged);
+  const reword = words !== failWords(error, closed.value.kept, charged);
+  if (back > 0 || takeBack.rowIds.length > 0 || reword) {
     await mutateCampaign(deps.db, row.id, null, (fresh) => ({
-      patch: { credits_refunded: fresh.creditsRefunded + back, shots: withTakesRefunded(fresh.shots, takeBack.rowIds) },
+      patch: {
+        credits_refunded: fresh.creditsRefunded + back,
+        shots: withTakesRefunded(fresh.shots, takeBack.rowIds),
+        ...(reword && fresh.stage === "failed" ? { error: words } : {}),
+      },
       value: null,
     }));
   }
@@ -1165,8 +1262,15 @@ async function paintStep(deps: MachineDeps, row: CampaignRow): Promise<StepResul
       }
     }
     patch.stills = stills;
+    // A refusal or a missing consent ends the ad only when the still has no
+    // painting to keep. A refused repaint (the house's after the check, or
+    // the person's) is written as failed, its credits settled as paint.ts
+    // settled them, and the still keeps the painting it had and says why
+    // (repaintRefusal): the stills already painted and paid for go on to
+    // the person, never thrown away with the ad.
     const lost = stillOf(stills, shot);
-    if (terminal || (lost && stillLost(lost))) return { patch, value: "fail" as const };
+    const keeps = lost ? keptAttempt(lost) !== null : false;
+    if ((terminal && !keeps) || (lost && stillLost(lost))) return { patch, value: "fail" as const };
     return { patch, value: "go" as const };
   });
   // A retry reserved but not written down (the ad closed, or the write
@@ -1179,13 +1283,19 @@ async function paintStep(deps: MachineDeps, row: CampaignRow): Promise<StepResul
   if (!written.ok) return written.reason === "refused" ? "idle" : "unavailable";
 
   if (written.value === "fail") {
-    const error =
-      outcome.kind === "failed" && outcome.cause === "refused"
-        ? outcome.error || STILL_REFUSED
-        : outcome.kind === "failed" && outcome.cause === "gate"
-          ? outcome.error
-          : PAINT_FAILED;
-    await failCampaign(deps, written.row, error);
+    const refused = outcome.kind === "failed" && outcome.cause === "refused";
+    const error = refused
+      ? outcome.error || STILL_REFUSED
+      : outcome.kind === "failed" && outcome.cause === "gate"
+        ? outcome.error
+        : PAINT_FAILED;
+    // A refusal closes with the refuser's own sentence, and a picture
+    // lane's says "nothing was charged" (IMAGE_REQUEST_REFUSED): true of
+    // that one request, false when an earlier attempt at the still kept its
+    // credit (a painting that failed after the lane was called, whose refund
+    // the refund rules held back, then a house retry the lane refused). The
+    // ad then closes with our words that say so (M-1).
+    await failCampaign(deps, written.row, error, refused ? STILL_REFUSED_CHARGED : undefined);
     return "failed";
   }
   if (outcome.kind === "painted") return "painted";

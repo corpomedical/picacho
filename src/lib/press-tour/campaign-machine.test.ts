@@ -1,9 +1,27 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { IMAGE_REQUEST_REFUSED } from "../generations/providers/refusal-messages";
 import { FRAME_CHECK_COLUMNS } from "../product-lock/records";
 import { CAMPAIGN_STAGES, type Verdict } from "./campaign-types";
-import { BLOCK_CHECKING, BLOCK_FILMING_NOT_OPEN, BLOCK_PAINTING, BLOCK_PLANNING, CAMPAIGN_EXPIRED, PAINT_FAILED, PLAN_STALLED, STILL_REFUSED, blockDecide } from "./campaign-messages";
+import {
+  AD_CONSENT_NEEDED,
+  BLOCK_CHECKING,
+  BLOCK_FILMING_NOT_OPEN,
+  BLOCK_PAINTING,
+  BLOCK_PLANNING,
+  CAMPAIGN_EXPIRED,
+  CAMPAIGN_MESSAGES,
+  PAINT_FAILED,
+  PAINT_FAILED_CHARGED,
+  PLAN_REFUSED_AD_RULES,
+  PLAN_REFUSED_LABEL_CLAIM,
+  PLAN_STALLED,
+  STILL_REFUSED,
+  STILL_REFUSED_CHARGED,
+  STILL_REPAINT_REFUSED,
+  blockDecide,
+} from "./campaign-messages";
 import { CHARACTER_A, PRODUCT_A, USER_A, fakeDb, type Row } from "./campaign-fixtures";
 import {
   CAMPAIGN_TRANSITIONS,
@@ -18,8 +36,10 @@ import {
   campaignRowFrom,
   campaignView,
   canMove,
+  creditsKept,
   derivedUuid,
   driveCampaign,
+  failWords,
   stillRowId,
   houseRepaintDue,
   houseRowId,
@@ -31,6 +51,7 @@ import {
   pressCampaignId,
   pressTick,
   readCampaign,
+  repaintRefusal,
   repaintRowId,
   stepCampaign,
   stepOnce,
@@ -638,14 +659,248 @@ describe("the machine", () => {
     expect(deps.reservePaid).not.toHaveBeenCalled();
   });
 
-  it("a content refusal closes the ad at once, with its own words", async () => {
+  it("a content refusal of a first painting closes the ad at once, with its own words", async () => {
     const db = fakeDb({}, { now: NOW });
     const row = painting(db);
-    const deps = machine(db, { paint: vi.fn(async (): Promise<PaintOutcome> => ({ kind: "failed", cause: "refused", error: STILL_REFUSED, usd: 0.09, refunded: false })) });
+    const deps = machine(db, { paint: vi.fn(async (): Promise<PaintOutcome> => ({ kind: "failed", cause: "refused", error: STILL_REFUSED, usd: 0.09, refunded: true })) });
     expect(await stepCampaign(deps, String(row.id))).toBe("failed");
     const now = campaignRowFrom(db.tables.press_campaigns[0])!;
     expect(now).toMatchObject({ stage: "failed", error: STILL_REFUSED });
     expect(deps.reserveHouse).not.toHaveBeenCalled();
+
+    // Refused after the picture was drawn, and the refund rules kept its
+    // credit: "nothing was charged" would be false (CHG-2).
+    const db2 = fakeDb({}, { now: NOW });
+    const row2 = painting(db2);
+    const kept = machine(db2, { paint: vi.fn(async (): Promise<PaintOutcome> => ({ kind: "failed", cause: "refused", error: STILL_REFUSED, usd: 0.09, refunded: false })) });
+    expect(await stepCampaign(kept, String(row2.id))).toBe("failed");
+    expect(campaignRowFrom(db2.tables.press_campaigns[0])!).toMatchObject({ stage: "failed", error: STILL_REFUSED_CHARGED });
+  });
+
+  // B1 (CHG-1 / PAINT-1): a refused or gated REPAINT never throws away the
+  // stills already painted and paid for. Only a still with no painting to
+  // keep ends the ad.
+  it("a refused house repaint keeps the first painting and its check's reason, and the ad reaches the person (B1)", async () => {
+    const db = fakeDb({}, { now: NOW });
+    const row = painting(db, { credits_charged: 3 });
+    const outcomes: PaintOutcome[] = [
+      painted(),
+      painted({ product: "didnt_match", reason: "The words on the label came out different." }),
+      painted(),
+      { kind: "failed", cause: "refused", error: STILL_REFUSED, usd: 0.09, refunded: false },
+    ];
+    const deps = machine(db, { paint: vi.fn(async () => outcomes.shift()!) });
+    const steps = await driveCampaign(deps, String(row.id), { budgetMs: 60_000 });
+    expect(steps).toEqual(["painted", "painted", "painted", "checked", "repainting", "painted", "checked", "waiting"]);
+    const after = campaignRowFrom(db.tables.press_campaigns[0])!;
+    expect(after).toMatchObject({ stage: "awaiting_approval", error: null, creditsCharged: 3, creditsRefunded: 0 });
+    expect(new Date(after.expiresAt!).getTime() - NOW.getTime()).toBe(WAIT_MS);
+    // The house attempt is written as failed (it held 0 credits); the still keeps its first painting.
+    expect(after.stills[1].attempts.map((a) => [a.kind, a.status, a.credits])).toEqual([
+      ["paint", "painted", 1],
+      ["house", "failed", 0],
+    ]);
+    expect(after.stills.map((st) => st.keep)).toEqual([1, 1, 1]);
+    // Nothing was released: every paid still was delivered.
+    expect(deps.released).toEqual([]);
+    const view = campaignView(after, { imageUrl: (p) => `/api/media/generated-images/${p}` });
+    // The person never asked for the house's repaint: the still says why it missed, not that a repaint was refused (W4).
+    expect(view.stills[1]).toMatchObject({ product: "didnt_match", reason: "The words on the label came out different.", houseRepainted: false });
+    expect(after.stills[1].attempts[1].reason).toBe(STILL_REPAINT_REFUSED);
+    expect(view.stills[1].imageUrl).toContain("/api/media/");
+    expect(view.error).toBeNull();
+  });
+
+  /** Every still painted and shown, and shot 1's repaint (the person's, 1 credit) reserved: the ad is back in painting. */
+  function repainting(db: ReturnType<typeof fakeDb>) {
+    const p = plan();
+    let stills: StillState[] = p.shots.map((s) => ({ shot: s.shot, attempts: [attempt({ rowId: stillRowId(SEND, s.shot) })], keep: 1, decision: "pending" as const }));
+    stills = withReserved(stills, 1, { rowId: repaintRowId(SEND), kind: "repaint", credits: 1, note: "Warmer light" }, iso)!;
+    db.tables.generations.push({ id: repaintRowId(SEND), user_id: USER_A, status: "generating", credits_used: 1, created_at: iso });
+    const row = campaignRow({ plan: p, stills, stage: "painting", credits_charged: 4, keyframe_ids: p.shots.map((s) => stillRowId(SEND, s.shot)) });
+    db.tables.press_campaigns.push(row);
+    return row;
+  }
+
+  it("a refused paid repaint keeps the painting, its credit comes back, and the ad returns to the person (B1)", async () => {
+    const db = fakeDb({}, { now: NOW });
+    const row = repainting(db);
+    // The ad check refused the person's note before the picture was asked for: paint.ts forced the refund.
+    const deps = machine(db, { paint: vi.fn(async (): Promise<PaintOutcome> => ({ kind: "failed", cause: "refused", error: PLAN_REFUSED_AD_RULES, usd: 0, refunded: true })) });
+    const steps = await driveCampaign(deps, String(row.id), { budgetMs: 60_000 });
+    expect(steps).toEqual(["painted", "checked", "waiting"]);
+    const after = campaignRowFrom(db.tables.press_campaigns[0])!;
+    expect(after).toMatchObject({ stage: "awaiting_approval", error: null, creditsCharged: 4, creditsRefunded: 1 });
+    // The three stills cost 3 credits; the refused repaint cost nothing.
+    expect(after.creditsCharged - after.creditsRefunded).toBe(3);
+    expect(after.stills[0].attempts.map((a) => [a.kind, a.status, a.credits])).toEqual([
+      ["paint", "painted", 1],
+      ["repaint", "failed", 0],
+    ]);
+    expect(after.stills.map((st) => st.keep)).toEqual([1, 1, 1]);
+    expect(deps.released).toEqual([]);
+    expect(deps.reserveHouse).not.toHaveBeenCalled();
+    expect(deps.reservePaid).not.toHaveBeenCalled();
+    const view = campaignView(after, { imageUrl: (p) => `/api/media/generated-images/${p}` });
+    // The ad policy's own words ("Change your goal and plan again") are not a still's words.
+    expect(view.stills[0]).toMatchObject({ reason: STILL_REPAINT_REFUSED });
+    expect(view.stills[0].imageUrl).toContain("/api/media/");
+    expect(view.stills[1].reason).toBeNull();
+  });
+
+  it("a repaint stopped by a missing consent keeps the painting too, and says what the consent needs (B1)", async () => {
+    const db = fakeDb({}, { now: NOW });
+    const row = repainting(db);
+    const deps = machine(db, { paint: vi.fn(async (): Promise<PaintOutcome> => ({ kind: "failed", cause: "gate", error: AD_CONSENT_NEEDED, usd: 0, refunded: true })) });
+    expect(await driveCampaign(deps, String(row.id), { budgetMs: 60_000 })).toEqual(["painted", "checked", "waiting"]);
+    const after = campaignRowFrom(db.tables.press_campaigns[0])!;
+    expect(after).toMatchObject({ stage: "awaiting_approval", creditsRefunded: 1 });
+    expect(campaignView(after, { imageUrl: () => "https://x/s.png" }).stills[0].reason).toBe(AD_CONSENT_NEEDED);
+  });
+
+  it("a refused retry of a first painting has nothing to keep: the ad still ends", async () => {
+    const db = fakeDb({}, { now: NOW });
+    const row = painting(db, { credits_charged: 3 });
+    const outcomes: PaintOutcome[] = [
+      { kind: "failed", cause: "provider", error: "lane down", usd: 0, refunded: true },
+      { kind: "failed", cause: "refused", error: STILL_REFUSED, usd: 0, refunded: true },
+    ];
+    const deps = machine(db, { paint: vi.fn(async () => outcomes.shift()!) });
+    expect(await stepCampaign(deps, String(row.id))).toBe("retrying");
+    expect(await stepCampaign(deps, String(row.id))).toBe("failed");
+    const now = campaignRowFrom(db.tables.press_campaigns[0])!;
+    expect(now).toMatchObject({ stage: "failed", error: STILL_REFUSED });
+    expect(now.creditsCharged - now.creditsRefunded).toBe(0);
+  });
+
+  // CHG-2: the closing words come from what actually came back.
+  it("a still whose charge the refund rules kept, then whose house retry failed, closes with words that say it was charged (CHG-2)", async () => {
+    const db = fakeDb({}, { now: NOW });
+    const row = painting(db, { credits_charged: 3 });
+    const outcomes: PaintOutcome[] = [
+      { kind: "failed", cause: "provider", error: "crop failed", usd: 0.09, refunded: false },
+      { kind: "failed", cause: "provider", error: "lane down", usd: 0, refunded: false },
+    ];
+    const deps = machine(db, { paint: vi.fn(async () => outcomes.shift()!) });
+    expect(await stepCampaign(deps, String(row.id))).toBe("retrying");
+    expect(await stepCampaign(deps, String(row.id))).toBe("failed");
+    const now = campaignRowFrom(db.tables.press_campaigns[0])!;
+    expect(now).toMatchObject({ stage: "failed", error: PAINT_FAILED_CHARGED });
+    expect(now.error).not.toMatch(/Nothing was charged/);
+    // Shots 2 and 3 came back; shot 1's credit stayed.
+    expect(now).toMatchObject({ creditsCharged: 3, creditsRefunded: 2 });
+    expect(campaignView(now, { imageUrl: () => null }).error).toBe(PAINT_FAILED_CHARGED);
+  });
+
+  it("the same, closed by a refused retry: the refusal's words say the charge stayed (CHG-2)", async () => {
+    const db = fakeDb({}, { now: NOW });
+    const row = painting(db, { credits_charged: 3 });
+    const outcomes: PaintOutcome[] = [
+      { kind: "failed", cause: "provider", error: "crop failed", usd: 0.09, refunded: false },
+      { kind: "failed", cause: "refused", error: STILL_REFUSED, usd: 0.09, refunded: false },
+    ];
+    const deps = machine(db, { paint: vi.fn(async () => outcomes.shift()!) });
+    await stepCampaign(deps, String(row.id));
+    expect(await stepCampaign(deps, String(row.id))).toBe("failed");
+    expect(campaignRowFrom(db.tables.press_campaigns[0])!).toMatchObject({ stage: "failed", error: STILL_REFUSED_CHARGED });
+  });
+
+  it("the same, when the picture lane refused the retry in its own words: never its \"nothing was charged\" over the kept credit (M-1)", async () => {
+    // Shot 1's paid painting failed after the lane was called and the refund
+    // rules kept its credit; the house retry was then refused at request
+    // stage, whose sentence says "nothing was generated and nothing was
+    // charged". True of that request, false of the still.
+    const db = fakeDb({}, { now: NOW });
+    const row = painting(db, { credits_charged: 3 });
+    const outcomes: PaintOutcome[] = [
+      { kind: "failed", cause: "provider", error: "the picture lane failed", usd: 0.09, refunded: false },
+      { kind: "failed", cause: "refused", error: IMAGE_REQUEST_REFUSED, usd: 0, refunded: false },
+    ];
+    const deps = machine(db, { paint: vi.fn(async () => outcomes.shift()!) });
+    expect(await stepCampaign(deps, String(row.id))).toBe("retrying");
+    expect(await stepCampaign(deps, String(row.id))).toBe("failed");
+    const now = campaignRowFrom(db.tables.press_campaigns[0])!;
+    expect(now).toMatchObject({ stage: "failed", error: STILL_REFUSED_CHARGED, creditsCharged: 3, creditsRefunded: 2 });
+    expect(now.error).not.toMatch(/nothing was charged/i);
+    expect(campaignView(now, { imageUrl: () => null }).error).toBe(STILL_REFUSED_CHARGED);
+
+    // With the first painting's credit back, nothing was kept: the lane's
+    // own sentence still closes the ad, as before.
+    const db2 = fakeDb({}, { now: NOW });
+    const row2 = painting(db2, { credits_charged: 3 });
+    const back: PaintOutcome[] = [
+      { kind: "failed", cause: "provider", error: "the picture lane failed", usd: 0.09, refunded: true },
+      { kind: "failed", cause: "refused", error: IMAGE_REQUEST_REFUSED, usd: 0, refunded: true },
+    ];
+    const deps2 = machine(db2, { paint: vi.fn(async () => back.shift()!) });
+    expect(await stepCampaign(deps2, String(row2.id))).toBe("retrying");
+    expect(await stepCampaign(deps2, String(row2.id))).toBe("failed");
+    const now2 = campaignRowFrom(db2.tables.press_campaigns[0])!;
+    expect(now2).toMatchObject({ stage: "failed", error: IMAGE_REQUEST_REFUSED });
+    expect(now2.creditsCharged - now2.creditsRefunded).toBe(0);
+  });
+
+  it("a held still whose release did not go through turns the words too (CHG-2)", async () => {
+    const db = fakeDb({}, { now: NOW });
+    const row = painting(db, { credits_charged: 3 });
+    const fail: PaintOutcome = { kind: "failed", cause: "provider", error: "lane down", usd: 0, refunded: true };
+    const deps = machine(db, {
+      paint: vi.fn(async () => fail),
+      releaseRow: vi.fn(async ({ rowId, credits }) => credits > 0 && rowId !== stillRowId(SEND, 3)),
+    });
+    await stepCampaign(deps, String(row.id));
+    expect(await stepCampaign(deps, String(row.id))).toBe("failed");
+    const now = campaignRowFrom(db.tables.press_campaigns[0])!;
+    expect(now).toMatchObject({ stage: "failed", error: PAINT_FAILED_CHARGED, creditsCharged: 4, creditsRefunded: 3 });
+  });
+
+  it("which failed attempts kept a charge, and the words that follow", () => {
+    const failed = (over: Partial<StillAttempt>) => attempt({ status: "failed", path: null, ...over });
+    // Kept, and its house retry failed: counted.
+    const lost: StillState = { shot: 1, attempts: [failed({ credits: 1 }), failed({ n: 2, kind: "retry", credits: 0 })], keep: null, decision: "pending" };
+    // Kept, and it paid for the house's retry that painted: delivered at its price, not counted.
+    const delivered: StillState = { shot: 2, attempts: [failed({ credits: 1 }), attempt({ n: 2, kind: "retry", credits: 0 })], keep: 2, decision: "pending" };
+    // Refunded (its credits written as 0): not counted.
+    const back: StillState = { shot: 3, attempts: [failed({ credits: 0 }), attempt({ n: 2, kind: "retry", credits: 1 })], keep: 2, decision: "pending" };
+    expect(creditsKept([lost])).toBe(1);
+    expect(creditsKept([delivered, back])).toBe(0);
+    expect(failWords(PAINT_FAILED, 0)).toBe(PAINT_FAILED);
+    expect(failWords(PAINT_FAILED, 1)).toBe(PAINT_FAILED_CHARGED);
+    expect(failWords(STILL_REFUSED, 2)).toBe(STILL_REFUSED_CHARGED);
+    // Words that never said "nothing was charged" stay as they are.
+    expect(failWords(AD_CONSENT_NEEDED, 1)).toBe(AD_CONSENT_NEEDED);
+    for (const w of [PAINT_FAILED_CHARGED, STILL_REFUSED_CHARGED]) expect(w).not.toMatch(/nothing was charged/i);
+  });
+
+  it("a refused repaint's words last only until a later painting replaces them", () => {
+    let stills: StillState[] = [{ shot: 1, attempts: [attempt()], keep: 1, decision: "pending" }];
+    stills = withReserved(stills, 1, { rowId: repaintRowId(SEND), kind: "repaint", credits: 1 }, iso)!;
+    stills = withOutcome(stills, 1, 2, { kind: "failed", cause: "refused", error: "a lane's own words", usd: 0, refunded: true }, iso);
+    expect(stills[0]).toMatchObject({ keep: 1 });
+    expect(repaintRefusal(stills[0])).toBe(STILL_REPAINT_REFUSED);
+    // A lane's raw words are never what the still shows.
+    expect(stills[0].attempts[1].reason).toBe(STILL_REPAINT_REFUSED);
+    stills = withReserved(stills, 1, { rowId: repaintRowId("99999999-9999-4999-8999-999999999999"), kind: "repaint", credits: 1 }, iso)!;
+    stills = withOutcome(stills, 1, 3, painted(), iso);
+    expect(repaintRefusal(stills[0])).toBeNull();
+    // A provider failure writes no still words (it is retried, or the still keeps its painting as it was).
+    const provider = withOutcome(
+      withReserved([{ shot: 1, attempts: [attempt()], keep: 1, decision: "pending" }], 1, { rowId: repaintRowId(SEND), kind: "repaint", credits: 1 }, iso)!,
+      1,
+      2,
+      { kind: "failed", cause: "provider", error: "x", usd: 0, refunded: true },
+      iso,
+    );
+    expect(repaintRefusal(provider[0])).toBeNull();
+  });
+
+  it("the new sentences are in the list the i18n map and the MCP card read", () => {
+    for (const w of [PLAN_REFUSED_LABEL_CLAIM, STILL_REPAINT_REFUSED, PAINT_FAILED_CHARGED, STILL_REFUSED_CHARGED]) {
+      expect(CAMPAIGN_MESSAGES as readonly string[]).toContain(w);
+    }
+    // The label-claim refusal points at the card, never at the goal.
+    expect(PLAN_REFUSED_LABEL_CLAIM).toMatch(/Words on the label/);
+    expect(PLAN_REFUSED_LABEL_CLAIM).not.toMatch(/goal/i);
   });
 
   it("a closed campaign is never painted on", async () => {

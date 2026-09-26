@@ -6,6 +6,8 @@ import es from "../i18n/messages/es";
 import pt from "../i18n/messages/pt";
 import itMessages from "../i18n/messages/it";
 import { renderProductGuide } from "../agent/product-guide";
+import { MAPPED_SERVER_STRINGS, localizeServerText } from "../i18n/server-text";
+import { CAMPAIGN_MESSAGES, PLAN_REFUSED_LABEL_CLAIM } from "./campaign-messages";
 
 // The Press Tour door's decisions, pinned as source (build map §5.1; the
 // Recast door's test is the model): its own page and a pinned row under
@@ -180,6 +182,85 @@ describe("the Press Tour door", () => {
     expect(filming).toContain("press: null,");
     expect(door).toContain("aria-disabled={key.disabled}");
     expect(door).toContain("if (!key.disabled && key.press) key.press();");
+  });
+
+  it("reloads onto a new deploy instead of asking a stale build again and again (pre-flight review, 2026-09-26)", () => {
+    // A deploy that landed while stills painted froze the door: the arrival
+    // read and the poll swallowed Next 16's stale-action error and asked
+    // again forever. Both go through the one shared guard, as every other
+    // press on the door does.
+    const GUARD = "if (isStaleDeployError(err) && reloadForNewDeploy()) return;";
+    const arrival = door.slice(door.indexOf("// The ad left open, read once on arrival."), door.indexOf("// While the engine works"));
+    const poll = door.slice(door.indexOf("// While the engine works"), door.indexOf("const run = useCallback("));
+    expect(arrival.length).toBeGreaterThan(100);
+    expect(poll.length).toBeGreaterThan(100);
+    for (const [name, text] of [["arrival", arrival], ["poll", poll]] as const) {
+      expect(text, name).not.toMatch(/\}\s*catch\s*\{/);
+      const at = text.indexOf("} catch (err) {");
+      expect(at, name).toBeGreaterThan(-1);
+      const caught = text.slice(at);
+      expect(caught, name).toContain(GUARD);
+      // In the poll, the guard runs before the next ask is scheduled.
+      if (name === "poll") expect(caught.indexOf(GUARD), name).toBeLessThan(caught.indexOf("setPollTick((n) => n + 1);"));
+    }
+  });
+
+  it("saves a product card without a question about the star (pre-flight review, 2026-09-26)", () => {
+    // The sheet held Save for an answer about whichever character the door
+    // had picked, and closing it to change the star lost the card. The star
+    // is asked on its own Starring tile, beside Change; the engine still
+    // holds painting until it answers (campaign-service.test.ts, paint.test.ts).
+    const sheetPart = read("components", "press-tour", "product-sheet.tsx");
+    expect(code(sheetPart)).not.toMatch(/recordStarConsent|StarAskFields|starDraft|adAnswer|\bstar\b/);
+    expect(door).toContain("<ProductSheet initial={sheet.initial} brandKitId={kitId}");
+    expect(door).not.toMatch(/<ProductSheet[^>]*\bstar=/);
+    // The Starring tile still asks, and saves the answer through its own action.
+    expect(door).toContain("<StarAskFields name={star.name} draft={starDraft} onChange={setStarDraft}");
+    expect(door).toContain("await recordStarConsent({ characterId: star.id, answer: starDraft.answer, adsOk: starDraft.adsOk });");
+  });
+
+  it("says every sentence of the campaign engine in the person's language (pre-flight review, 2026-09-26)", () => {
+    // The door's error line, a still's reason and the MCP card show these
+    // through localizeServerText, which passes an unmapped sentence through
+    // in English: four new ones did, in Spanish, Portuguese and Italian.
+    for (const sentence of CAMPAIGN_MESSAGES) {
+      expect(MAPPED_SERVER_STRINGS, sentence).toContain(sentence);
+      expect(localizeServerText(sentence, en), sentence).toBe(sentence);
+      for (const lang of ["es", "pt", "it"] as const) {
+        expect(localizeServerText(sentence, CATALOGS[lang]), `${lang}: ${sentence}`).not.toBe(sentence);
+      }
+    }
+  });
+
+  it("opens a confirmed card again from the door, and the label-claim refusal names that button in every language (pre-flight review, 2026-09-26)", () => {
+    // Planning needs a confirmed card, and a plan refused over its name or a
+    // ticked label word said to untick it under Words on the label, a step
+    // of the card sheet the door only opened for a draft: the only way on
+    // was a whole new card. The confirmed tile now opens the same sheet with
+    // the card, until an ad is planned with it.
+    const confirmed = door.slice(door.indexOf('product.card.status === "confirmed" ? ('), door.indexOf("{m.finishCard}"));
+    expect(confirmed.length).toBeGreaterThan(200);
+    const edit = confirmed.slice(confirmed.indexOf("{!castFixed && ("));
+    expect(edit).toContain('<button type="button" disabled={!emailConfirmed} onClick={() => setSheet({ initial: product })} className={GHOST}>');
+    expect(edit.indexOf("{m.editCard}")).toBeGreaterThan(0);
+    expect(edit.indexOf("{m.editCard}")).toBeLessThan(edit.indexOf("productDraft"));
+    // The refusal says the button's own name, the sheet step's own name and
+    // both rule sets the check reads (the ad rules and the person's brand
+    // rules), never the goal and never an example of one set alone.
+    for (const lang of LANGS) {
+      const c = CATALOGS[lang];
+      const words = localizeServerText(PLAN_REFUSED_LABEL_CLAIM, c);
+      expect(words, lang).toContain(c.pressTour.editCard);
+      expect(words, lang).toContain(c.pressTour.cardStep2);
+      expect(words.toLowerCase(), lang).toContain(c.brandRules.tab.toLowerCase());
+    }
+    expect(PLAN_REFUSED_LABEL_CLAIM).not.toMatch(/goal|best|#1/i);
+    // The sheet opens a card with its logo box kept, so saving a confirmed
+    // card again for its words keeps its logo (door-view.test.ts openingCard).
+    const sheetPart = read("components", "press-tour", "product-sheet.tsx");
+    expect(sheetPart).toContain("const [opening] = useState(() => openingCard(initial?.card ?? null));");
+    expect(sheetPart).toContain('useState<"used" | "skipped" | null>(opening.logo ? "used" : null)');
+    expect(sheetPart).toContain("useState<string | null>(opening.logo?.path ?? null)");
   });
 
   it("puts every moment up on the wall and leaves each missed shot to the person: keep, re-film at its price, or cut", () => {

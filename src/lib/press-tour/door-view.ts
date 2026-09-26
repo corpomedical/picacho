@@ -8,7 +8,7 @@
 // bundle must not pull a server module): only types come in.
 
 import type { CampaignStage, MomentView, PressQuote, ShotView, StillView, TakeView, Verdict } from "./campaign-types";
-import type { ProductCard } from "./types";
+import type { ProductCard, ProductView } from "./types";
 
 // ---------------------------------------------------------------------------
 // The route: five stops, in the order they happen (spec §1.12 stages mapped
@@ -203,23 +203,26 @@ export function planBlock(input: {
 export const PICK_MIN = 3;
 export const PICK_MAX = 5;
 
-export type CardBlock = "photos" | "front" | "words" | "consent" | "star" | null;
+export type CardBlock = "photos" | "front" | "words" | "consent" | null;
 
+// The product card is about the product alone. It once also held Save until
+// the person answered for whichever character the door had picked as star,
+// who may not be the star they meant, and closing the sheet to change the
+// star lost everything typed on the card (pre-flight review, 2026-09-26).
+// The star's answer is asked on its own Starring tile, beside Change, and
+// the engine still holds painting and filming until it is given
+// (paint.ts starReadiness).
 export function cardSaveBlock(input: {
   picked: number;
   hasFront: boolean;
   words: number;
   noReadableText: boolean;
   consent: boolean;
-  /** The star still needs its answer (section 5 is shown). */
-  starOpen: boolean;
-  starAnswered: boolean;
 }): CardBlock {
   if (input.picked < PICK_MIN || input.picked > PICK_MAX) return "photos";
   if (!input.hasFront) return "front";
   if (!input.noReadableText && input.words === 0) return "words";
   if (!input.consent) return "consent";
-  if (input.starOpen && !input.starAnswered) return "star";
   return null;
 }
 
@@ -234,6 +237,34 @@ export function clampBox(b: Box): Box {
   const y = Math.min(1 - h, Math.max(0, Number.isFinite(b.y) ? b.y : 0));
   const round = (n: number) => Math.round(n * 10000) / 10000;
   return { x: round(x), y: round(y), w: round(Math.min(w, 1 - round(x))), h: round(Math.min(h, 1 - round(y))) };
+}
+
+/**
+ * What the card sheet opens with for a card it is given: a draft to finish,
+ * or a confirmed card opened again from the door's "Edit its card" (a plan
+ * the ad rules refused over its name or a ticked label word says to press
+ * it: PLAN_REFUSED_LABEL_CLAIM). Its photos picked, their views (the first
+ * photo is the front when none is), and its logo box when that box sits on
+ * the front it opens with, the one photo a box is drawn on in the sheet.
+ * The box is kept because saving sends only the box the sheet holds, and
+ * confirmProductCard removes a crop no box points at: a confirmed card
+ * saved again for its words would otherwise lose its logo.
+ */
+export function openingCard(card: Pick<ProductCard, "photos" | "angles" | "logoBox"> | null): {
+  picked: string[];
+  views: Record<string, ProductView>;
+  logo: { path: string; box: Box } | null;
+} {
+  if (!card) return { picked: [], views: {}, logo: null };
+  const picked = card.photos.slice(0, PICK_MAX);
+  const views: Record<string, ProductView> = {};
+  for (const a of card.angles) views[a.path] = a.view;
+  const first = card.photos[0];
+  if (first && !Object.values(views).includes("front")) views[first] = "front";
+  const front = picked.find((p) => views[p] === "front") ?? null;
+  const b = card.logoBox;
+  const logo = b && front && b.path === front ? { path: b.path, box: { x: b.x, y: b.y, w: b.w, h: b.h } } : null;
+  return { picked, views, logo };
 }
 
 /** The host of a product's page, for the "solstad.coffee · 4 photos" line. */

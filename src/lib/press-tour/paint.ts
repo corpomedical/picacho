@@ -15,10 +15,14 @@
 //   3. the ad policy step (planner.ts adPolicyCheck: the ad packs plus the
 //      person's own rules, on meaning, whatever brand_rules_enforcement says);
 //   4. the picture lane, with the identity photo and the product photos in
-//      ONE reference list, at 2:3 (1024x1536);
+//      ONE reference list, at 2:3 (1024x1536): the identity photo only when
+//      the star is in the shot, the product's only when the shot shows it,
+//      and the prompt's "Image N" names exactly those, in that order;
 //   5. the crop to 9:16 (864x1536) with sharp, keeping the face and the
-//      product when a locator says where they are (v2 #2);
-//   6. the output gate on the cropped still;
+//      product when a locator says where they are (v2 #2), only those the
+//      shot is planned to show;
+//   6. the output gate on the cropped still (the locator and the gate have
+//      hard deadlines so a whole step fits its function: stillDeadlines);
 //   7. the row is delivered ("succeeded", the still's link) as soon as the
 //      output gate passes, so a step killed during the checks never loses
 //      a paid painting: the next step adopts it (M2);
@@ -52,10 +56,13 @@
 //
 // Alias-free (vitest has no "@/"): paint.test.ts imports it as it is.
 
+import { randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import sharp from "sharp";
 import { photosHash } from "../characters/likeness";
 import { readLikeness } from "../characters/likeness-store";
+import { OPENAI_IMAGE_TIMEOUT_MS } from "../generations/providers/openai-images";
+import { JUDGE_CALL_CEILING_USD, JUDGE_TIMEOUT_MS } from "../product-lock/judge";
 import { currentStarAnswer } from "./star-consent";
 import { MAX_ESCALATIONS_PER_AD } from "../product-lock/product-lock";
 import type { ShotRole, Verdict } from "./campaign-types";
@@ -72,6 +79,7 @@ import { escalationsUsed, readCampaign, stillOf, type AttemptKind, type PaintOut
 import {
   adPolicyCheck,
   endorsementCheck,
+  labelWordsLine,
   type PlannedShot,
   type PlannerDeps,
   type PolicyRule,
@@ -92,9 +100,101 @@ export const STILL_ASPECT = 9 / 16;
 /** Where stills are kept: the composer's image bucket, so History and the media route serve them as they are. */
 export const STILL_BUCKET = "generated-images";
 
-/** A still's place: under the owner's folder, named after its row (a row is painted once). */
-export function stillPath(userId: string, campaignId: string, rowId: string): string {
-  return `${userId}/press/${campaignId}/${rowId}.png`;
+/**
+ * A still's place: under the owner's folder, named after its row AND the
+ * painting (PAINT-5). One row can be painted more than once: a step stopped
+ * mid-way (its function ended, or its lease ran out) leaves the attempt
+ * reserved, and the next step paints it again. The store never overwrites
+ * (core.ts persistImageBytes, upsert off) and answers a name that is taken
+ * with that file's link, so a second painting under the row's one name was
+ * never kept: the output gate judged, and the row delivered, the FIRST
+ * painting's file while the checks read the second one's bytes. Each
+ * painting now has its own name, and the attempt keeps the path that was
+ * delivered (readers read it from there, never rebuild it).
+ */
+export function stillPath(userId: string, campaignId: string, rowId: string, painting: string): string {
+  return `${stillPrefix(userId, campaignId, rowId)}-${painting}.png`;
+}
+
+/** What every painting of one row is named from; `${prefix}.png` is a still painted before PAINT-5. */
+function stillPrefix(userId: string, campaignId: string, rowId: string): string {
+  return `${userId}/press/${campaignId}/${rowId}`;
+}
+
+const PAINTING_ID = /^[a-z0-9]{6,32}$/;
+
+/** A fresh name part for one painting: 12 hex characters. */
+export function newPaintingId(): string {
+  return randomBytes(6).toString("hex");
+}
+
+// ---------------------------------------------------------------------------
+// The step's time (PAINT-5)
+// ---------------------------------------------------------------------------
+
+/**
+ * The picture lane fetches every reference photo before it renders, each
+ * with its own 20 s timeout (openai-images.ts fetchAsBlob; not exported
+ * there, so pinned by paint.test.ts).
+ */
+export const LANE_REFERENCE_FETCH_MS = 20_000;
+/** The framing reader's own worst: two Gemini calls (one retry of a busy answer) and the 1.5 s wait between them (judge.ts callGemini). */
+export const FRAMING_MAX_MS = 2 * JUDGE_TIMEOUT_MS + 1_500;
+/**
+ * What the framing reader and the output gate always get, even after the
+ * slowest picture lane. Left to themselves the two could take minutes (the
+ * output gate's readers, retries and vote run to about 6 minutes by their
+ * own timeouts), which no 300 s function holds beside the lane and the
+ * check. So each gets a hard deadline: whatever the step has left before
+ * its painting must be delivered, and never less than this. Past it the
+ * crop is centred (as with no locator), and the gate "couldn't run" (fails
+ * closed: the painting is not shown and the ordinary refund rules decide).
+ */
+export const FRAMING_FLOOR_MS = 12_000;
+export const OUTPUT_GATE_FLOOR_MS = 25_000;
+/** What a framing call abandoned at its deadline is booked at: it may still run and bill, twice with its retry (judge.ts's own rule). */
+export const FRAMING_LATE_USD = 2 * JUDGE_CALL_CEILING_USD;
+
+/**
+ * From the picture lane's call to the delivered row, at the worst: the
+ * reference fetches, the lane's own timeout, and the framing reader's and
+ * the output gate's floors (the crop and the store ride in the step's margin).
+ */
+export function stillDeliveryMs(laneTimeoutMs: number = OPENAI_IMAGE_TIMEOUT_MS): number {
+  return LANE_REFERENCE_FETCH_MS + laneTimeoutMs + FRAMING_FLOOR_MS + OUTPUT_GATE_FLOOR_MS;
+}
+
+/** One paint step at its worst: the delivery, then the check's own budget, and the margin for the gates, reads and writes around them. */
+export function paintStepWorstMs(input: { laneTimeoutMs: number; checkBudgetMs: number; marginMs: number }): number {
+  return stillDeliveryMs(input.laneTimeoutMs) + input.checkBudgetMs + input.marginMs;
+}
+
+/**
+ * The framing reader's and the output gate's deadlines, `elapsedMs` after
+ * the picture lane was called: the time left before the painting must be
+ * delivered, the gate's floor kept for the gate, each at least its floor.
+ * After a quick lane both get far more than they need; after the slowest
+ * one, exactly their floors.
+ */
+export function stillDeadlines(elapsedMs: number, laneTimeoutMs: number = OPENAI_IMAGE_TIMEOUT_MS): { framingMs: number; gateMs: number } {
+  const left = stillDeliveryMs(laneTimeoutMs) - Math.max(0, elapsedMs);
+  return {
+    framingMs: Math.min(FRAMING_MAX_MS, Math.max(FRAMING_FLOOR_MS, left - OUTPUT_GATE_FLOOR_MS)),
+    gateMs: Math.max(OUTPUT_GATE_FLOOR_MS, left),
+  };
+}
+
+/** `work`, or `late()` once `ms` have passed (the work is left to finish on its own). */
+async function withDeadline<T>(work: Promise<T>, ms: number, late: () => T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(late()), Math.max(0, ms));
+  });
+  try {
+    return await Promise.race([work, deadline]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 /** Where something sits on the uncropped still, each 0..1 of it. */
@@ -176,6 +276,14 @@ const PRODUCT_DIRECTION: Record<ProductVisibility, string> = {
  * the person's confirmed strings (quoted, cleaned); everything else is the
  * plan's still, which already passed every gate when it was planned and is
  * judged again here as a whole.
+ *
+ * Every "Image N" names a picture actually sent, in the order the lane gets
+ * them (image.ts buildImageReferences: the identity photo first, then the
+ * product's photos): the person is Image 1 only when the star is in the
+ * shot, and `productRefs` is the number of product photos sent. A shot
+ * planned without the product ("absent", the character alone) never names
+ * the product, its photos or its label (PAINT-2, PAINT-3); a packshot never
+ * names a person.
  */
 export function stillPrompt(input: {
   shot: Pick<PlannedShot, "still" | "productVisibility" | "star" | "camera">;
@@ -185,28 +293,39 @@ export function stillPrompt(input: {
   note: string | null;
 }): string {
   const { shot, product } = input;
+  const person = shot.star;
+  const shown = shot.productVisibility !== "absent";
+  const refs = shown ? Math.max(0, Math.floor(input.productRefs)) : 0;
   const lines: string[] = [
     "A photorealistic still from a short vertical video ad, in a tall portrait frame, natural light, no text overlays.",
     shot.still,
   ];
   if (shot.camera) lines.push(`Framing: ${shot.camera}.`);
-  const first = shot.star ? 2 : 1;
-  if (shot.star) {
+  const first = person ? 2 : 1;
+  if (person) {
     lines.push("Image 1 is the person in this ad: keep their face, hair and features exactly as in Image 1.");
+    // The plan is written without ever seeing the star (planner.ts tells the
+    // drafter not to describe them), so this is what says who the scene's
+    // character is (PAINT-4).
+    lines.push("The character in this scene is the person in Image 1.");
   }
-  if (input.productRefs > 0) {
-    const refs =
-      input.productRefs === 1 ? `Image ${first} is a photo of the product` : `Images ${first} to ${first + input.productRefs - 1} are photos of the product`;
-    lines.push(`${refs}${product.name ? ` (${cleanText(product.name, 120)})` : ""}: reproduce it exactly, its shape, colours, label and logo.`);
+  if (refs > 0) {
+    const named = refs === 1 ? `Image ${first} is a photo of the product` : `Images ${first} to ${first + refs - 1} are photos of the product`;
+    lines.push(`${named}${product.name ? ` (${cleanText(product.name, 120)})` : ""}: reproduce it exactly, its shape, colours, label and logo.`);
   }
-  if (shot.productVisibility !== "absent" && !product.noReadableText && product.labelStrings.length > 0) {
-    const words = product.labelStrings.map((s) => `"${(cleanText(s, 80) ?? "").replace(/"/g, "'")}"`).join(", ");
-    lines.push(`The label's printed words, spelled exactly: ${words}.`);
-  }
+  const label = shown ? labelWordsLine(product) : null;
+  if (label) lines.push(label);
   if (PRODUCT_DIRECTION[shot.productVisibility]) lines.push(PRODUCT_DIRECTION[shot.productVisibility]);
-  lines.push("Keep the person's face and the product well inside the centre of the frame, away from its left and right edges.");
+  const subject = person && shown ? "the person's face and the product" : person ? "the person's face" : "the product";
+  lines.push(`Keep ${subject} well inside the centre of the frame, away from its left and right edges.`);
   if (input.house) {
-    lines.push("Keep the product exactly as in its photos and the person exactly as in Image 1; compose so both sit comfortably in the centre.");
+    lines.push(
+      person && refs > 0
+        ? "Keep the product exactly as in its photos and the person exactly as in Image 1; compose so both sit comfortably in the centre."
+        : person
+          ? "Keep the person exactly as in Image 1; compose so they sit comfortably in the centre."
+          : "Keep the product exactly as in its photos; compose so it sits comfortably in the centre.",
+    );
   }
   const note = cleanText(input.note, 200);
   if (note) lines.push(`The advertiser asks for this change: ${note}`);
@@ -669,8 +788,13 @@ export interface PaintDeps {
   db: SupabaseClient;
   /** The picture lane: the prompt and the reference photos in; a 2:3 PNG (base64) and what it cost out. */
   generateStill: (input: { prompt: string; identityUrl: string | null; productUrls: string[] }) => Promise<{ base64: string; usd: number }>;
-  /** Where the face and the product sit on the uncropped still, when a locator is available (product-lock/judge.ts locateFraming). */
-  locate?: (input: { png: Buffer; productPhotoPaths: string[] }) => Promise<{ face: Box | null; product: Box | null } | null>;
+  /**
+   * Where the face and the product sit on the uncropped still, when a
+   * locator is available (product-lock/judge.ts locateFraming), and what
+   * asking cost (booked into the still's usd like every other call).
+   * `timeoutMs` is the time it has: its own calls should give up by then.
+   */
+  locate?: (input: { png: Buffer; productPhotoPaths: string[]; timeoutMs: number }) => Promise<{ face: Box | null; product: Box | null; usd?: number } | null>;
   /** Keep the finished still at `path` in STILL_BUCKET; returns its stored (relative media) link. */
   storeStill: (userId: string, path: string, bytes: Buffer) => Promise<string>;
   removeStill: (path: string) => Promise<void>;
@@ -694,6 +818,8 @@ export interface PaintDeps {
   ownRules: (userId: string) => Promise<PolicyRule[]>;
   refund: MoneyDeps["refund"];
   now?: () => Date;
+  /** A fresh name part for each painting (newPaintingId); tests pin it. */
+  paintingId?: () => string;
 }
 
 const num = (v: unknown, lo: number, hi: number): number | null =>
@@ -705,32 +831,57 @@ const verdictOr = (raw: unknown, fallback: Verdict): Verdict =>
     : fallback;
 
 /**
+ * The painting a delivered row holds, when it is one of this row's: the path
+ * the delivery wrote beside it (press_tour.painted.path), or a still painted
+ * before PAINT-5 under the row's one name; either only while the row's link
+ * points at it.
+ */
+function deliveredPath(resultUrl: string, pt: { painted?: { path?: unknown } }, prefix: string): string | null {
+  const written = typeof pt.painted?.path === "string" ? pt.painted.path : null;
+  const candidates = [written, `${prefix}.png`];
+  for (const p of candidates) {
+    if (!p || p.includes("..")) continue;
+    const ours = p === `${prefix}.png` || (p.startsWith(`${prefix}-`) && PAINTING_ID.test(p.slice(prefix.length + 1, -4)) && p.endsWith(".png"));
+    if (ours && resultUrl.includes(p)) return p;
+  }
+  return null;
+}
+
+/**
  * A still's row already delivered for this very attempt (M2, PT-07): a step
  * killed after the row was marked "succeeded" left the painting and, when
  * the checks finished, their verdicts on the row (press_tour.check). The
  * next step adopts it instead of painting it again. Null when the row is not
- * this attempt's delivered still.
+ * this attempt's delivered still. A shot planned without the product reads
+ * its product as not checked whatever was written (it is "Not planned").
  */
 export function adoptedOutcome(
   row: { status?: unknown; result_url?: unknown; press_tour?: unknown },
-  expect: { path: string; star: boolean },
+  expect: { userId: string; campaignId: string; rowId: string; star: boolean; productExpected: boolean },
 ): Extract<PaintOutcome, { kind: "painted" }> | null {
-  if (row.status !== "succeeded" || typeof row.result_url !== "string" || !row.result_url.includes(expect.path)) return null;
-  const pt = (row.press_tour && typeof row.press_tour === "object" ? row.press_tour : {}) as { painted?: { fits?: unknown }; check?: Record<string, unknown> };
+  if (row.status !== "succeeded" || typeof row.result_url !== "string") return null;
+  const pt = (row.press_tour && typeof row.press_tour === "object" ? row.press_tour : {}) as { painted?: { fits?: unknown; path?: unknown }; check?: Record<string, unknown> };
+  const path = deliveredPath(row.result_url, pt, stillPrefix(expect.userId, expect.campaignId, expect.rowId));
+  if (!path) return null;
   const check = pt.check && typeof pt.check === "object" ? pt.check : null;
   const fits = typeof check?.fits === "boolean" ? check.fits : typeof pt.painted?.fits === "boolean" ? pt.painted.fits : null;
   const faceFallback: Verdict = expect.star ? "not_checked" : "no_one_in_shot";
   return {
     kind: "painted",
-    path: expect.path,
+    path,
     face: expect.star ? (check ? verdictOr(check.face, faceFallback) : faceFallback) : "no_one_in_shot",
-    product: check ? verdictOr(check.product, "not_checked") : "not_checked",
+    product: expect.productExpected && check ? productVerdictOf(verdictOr(check.product, "not_checked")) : "not_checked",
     reason: check && typeof check.reason === "string" ? check.reason.slice(0, 300) : null,
     fits,
     faceScore: check ? num(check.faceScore, 0, 100) : null,
     escalations: check && typeof check.escalations === "number" && Number.isInteger(check.escalations) && check.escalations >= 0 ? check.escalations : 0,
     usd: 0,
   };
+}
+
+/** A product verdict as a still keeps it: "no one in this shot" is the face's word, never the product's. */
+function productVerdictOf(v: Verdict): Verdict {
+  return v === "no_one_in_shot" ? "not_checked" : v;
 }
 
 /**
@@ -753,7 +904,15 @@ export async function paintKeyframe(
   const planned = row?.plan?.shots.find((s) => s.shot === shot);
   // Nothing to do: the campaign closed, or this attempt was already written.
   if (!row || !attempt || attempt.status !== "reserved" || !planned) return { kind: "skipped" };
-  const path = stillPath(userId, campaignId, attempt.rowId);
+  // This painting's own file (PAINT-5): a row painted again after a stopped
+  // step never lands on, or is judged as, an earlier painting's file.
+  const minted = deps.paintingId ? deps.paintingId() : newPaintingId();
+  const path = stillPath(userId, campaignId, attempt.rowId, PAINTING_ID.test(minted) ? minted : newPaintingId());
+  // A shot planned without the product (the character alone, a hook) sends
+  // no product photo, never names it, keeps the face in the crop, and its
+  // product check stays "Not planned" (PAINT-2, PAINT-3).
+  const productShown = planned.productVisibility !== "absent";
+  const clock = () => (deps.now ? deps.now() : new Date()).getTime();
 
   /**
    * `when`: "before" the picture lane was called (nothing was spent: the
@@ -779,7 +938,7 @@ export async function paintKeyframe(
     if (error) return { kind: "later" };
     const r = (data ?? null) as { status?: unknown; credits_used?: unknown; result_url?: unknown; press_tour?: unknown } | null;
     if (r) {
-      const adopted = adoptedOutcome(r, { path, star: planned.star });
+      const adopted = adoptedOutcome(r, { userId, campaignId, rowId: attempt.rowId, star: planned.star, productExpected: productShown });
       if (adopted) return adopted;
     }
     if (!r || r.status !== "generating") {
@@ -805,11 +964,22 @@ export async function paintKeyframe(
     star = ready.star;
   }
 
-  const refPaths = productReferencePaths(card);
+  // The pictures are opened BEFORE the words are written, so every "Image N"
+  // the prompt names is a picture that is sent, in the order it is sent: the
+  // identity photo first (only when the star is in the shot), then the
+  // product's photos that could be opened. Nothing is spent by signing.
+  const identityUrl = star ? await deps.signCharacterPhoto(star.identityPath).catch(() => null) : null;
+  if (star && !identityUrl) return fail("provider", "identity photo unsigned", "We couldn't open your character's photo.", "before");
+  const refPaths = productShown ? productReferencePaths(card) : [];
+  const signed = refPaths.length > 0 ? await deps.signProductPhotos(refPaths).catch(() => ({}) as Record<string, string>) : {};
+  const sentPaths = refPaths.filter((p) => typeof signed[p] === "string" && signed[p].length > 0);
+  const productUrls = sentPaths.map((p) => signed[p]);
+  if (refPaths.length > 0 && productUrls.length === 0) return fail("provider", "product photos unsigned", "We couldn't open your product's photos.", "before");
+
   const prompt = stillPrompt({
     shot: planned,
     product: card,
-    productRefs: refPaths.length,
+    productRefs: productUrls.length,
     house: attempt.kind === "house",
     note: attempt.note,
   });
@@ -841,13 +1011,11 @@ export async function paintKeyframe(
     }
   }
 
-  // 4. The picture lane: identity first, then the product, one list.
-  const identityUrl = star ? await deps.signCharacterPhoto(star.identityPath).catch(() => null) : null;
-  if (star && !identityUrl) return fail("provider", "identity photo unsigned", "We couldn't open your character's photo.", "before");
-  const signed = await deps.signProductPhotos(refPaths).catch(() => ({}) as Record<string, string>);
-  const productUrls = refPaths.map((p) => signed[p]).filter((u): u is string => typeof u === "string" && u.length > 0);
-  if (productUrls.length === 0) return fail("provider", "product photos unsigned", "We couldn't open your product's photos.", "before");
-
+  // 4. The picture lane: identity first, then the product, one list. The
+  //    step's clock starts here: the framing reader and the output gate get
+  //    what is left of the time to delivery, never less than their floors
+  //    (stillDeadlines, PAINT-5).
+  const laneStarted = clock();
   let png: Buffer;
   try {
     const made = await deps.generateStill({ prompt, identityUrl, productUrls });
@@ -864,13 +1032,32 @@ export async function paintKeyframe(
     return fail("provider", "the picture lane failed", "The picture couldn't be painted this time.", "after");
   }
 
-  // 5. The 9:16 crop, keeping the face and the product (v2 #2).
+  // 5. The 9:16 crop, keeping the face and the product (v2 #2): only what
+  //    the shot is planned to show (no product on a shot without it, no face
+  //    on a packshot), so a thing that isn't meant to be there never pushes
+  //    what is out of the frame.
   let cropped: Buffer;
   let crop: CropWindow;
   try {
     const meta = await sharp(png, { limitInputPixels: 50_000_000 }).metadata();
-    const located = deps.locate ? await deps.locate({ png, productPhotoPaths: refPaths }).catch(() => null) : null;
-    crop = cropWindow(meta.width ?? STILL_RENDER.width, meta.height ?? STILL_RENDER.height, located);
+    let located: Awaited<ReturnType<NonNullable<PaintDeps["locate"]>>> = null;
+    if (deps.locate) {
+      const framingMs = stillDeadlines(clock() - laneStarted).framingMs;
+      let late = false;
+      located = await withDeadline(
+        deps.locate({ png, productPhotoPaths: sentPaths, timeoutMs: framingMs }).catch(() => null),
+        framingMs,
+        () => {
+          late = true;
+          return null;
+        },
+      );
+      // Booked like every other call: its own answer's cost, or the ceiling
+      // for one given up on (it may still run and bill).
+      usd += late ? FRAMING_LATE_USD : (num(located?.usd, 0, 1) ?? 0);
+    }
+    const boxes = located ? { face: star ? located.face : null, product: productShown ? located.product : null } : null;
+    crop = cropWindow(meta.width ?? STILL_RENDER.width, meta.height ?? STILL_RENDER.height, boxes);
     cropped = await sharp(png, { limitInputPixels: 50_000_000 })
       .extract({ left: crop.left, top: crop.top, width: crop.width, height: crop.height })
       .png()
@@ -887,8 +1074,13 @@ export async function paintKeyframe(
     return fail("provider", "the still could not be stored", "The picture couldn't be saved this time.", "after");
   }
   const url = deps.absolutize(stored);
-  const judged = await deps.outputGate({ url, promptScores: gate.scores ?? null }).catch(
-    (): GateAnswer => ({ ok: false, reason: "unavailable", message: PAINT_COULDNT_START }),
+  // A hard deadline (PAINT-5): an answer later than the step can wait is no
+  // answer, and the gate fails closed as when its readers are down.
+  const unavailable = (): GateAnswer => ({ ok: false, reason: "unavailable", message: PAINT_COULDNT_START });
+  const judged = await withDeadline(
+    deps.outputGate({ url, promptScores: gate.scores ?? null }).catch(unavailable),
+    stillDeadlines(clock() - laneStarted).gateMs,
+    unavailable,
   );
   if (!judged.ok) {
     await deps.removeStill(path).catch(() => undefined);
@@ -925,7 +1117,8 @@ export async function paintKeyframe(
       return false;
     }
   };
-  const painted = { ...pressTour, painted: { fits: crop.fits } };
+  // The path rides beside the delivered row, so a step that adopts it finds this painting's file (adoptedOutcome).
+  const painted = { ...pressTour, painted: { fits: crop.fits, path } };
   const early = await delivered({}, [{ step: "generate", detail }], painted);
 
   // 8. The checks, on the cropped still.
@@ -942,7 +1135,7 @@ export async function paintKeyframe(
       identityThreshold: threshold,
       productVisibility: planned.productVisibility,
       product: card,
-      productPhotoPaths: refPaths,
+      productPhotoPaths: sentPaths,
       productPhotoUrls: productUrls,
       escalationsLeft: Math.max(0, MAX_ESCALATIONS_PER_AD - escalationsUsed(row.stills)),
     });
@@ -950,7 +1143,10 @@ export async function paintKeyframe(
     check = { face: star ? "not_checked" : "no_one_in_shot", product: "not_checked", reason: null, faceScore: null, usd: 0, escalations: 0 };
   }
   const face: Verdict = star ? (check.face === "no_one_in_shot" ? "not_checked" : check.face) : "no_one_in_shot";
-  const product: Verdict = check.product === "no_one_in_shot" ? "not_checked" : check.product;
+  // A shot planned without the product has no product check, whatever the
+  // checker said: it reads "Not planned" and never sends the still to the
+  // house for a repaint over the product (missed()).
+  const product: Verdict = productShown ? productVerdictOf(check.product) : "not_checked";
   const faceScore = num(check.faceScore, 0, 100);
   const escalations = Math.max(0, Math.round(check.escalations || 0));
   usd += num(check.usd, 0, 10) ?? 0;

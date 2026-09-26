@@ -1,6 +1,10 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import sharp from "sharp";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { photosHash } from "../characters/likeness";
+import { OPENAI_IMAGE_TIMEOUT_MS } from "../generations/providers/openai-images";
+import { CHECK_BUDGET_MS } from "../product-lock/check";
 import {
   AD_CONSENT_NEEDED,
   CHARACTER_NEEDS_PHOTO,
@@ -11,25 +15,33 @@ import {
   STILL_REFUSED,
 } from "./campaign-messages";
 import { CHARACTER_A, PRODUCT_A, USER_A, adConsent, character, confirmedProduct, fakeDb } from "./campaign-fixtures";
-import { stillRowId, houseRowId, initialStills, paidRetryRowId, pressCampaignId, withReserved, type StillState } from "./campaign-machine";
+import { houseRepaintDue, stillRowId, houseRowId, initialStills, paidRetryRowId, pressCampaignId, withOutcome, withReserved, type StillState } from "./campaign-machine";
 import {
+  FRAMING_FLOOR_MS,
+  FRAMING_LATE_USD,
+  FRAMING_MAX_MS,
+  LANE_REFERENCE_FETCH_MS,
+  OUTPUT_GATE_FLOOR_MS,
   STILL_BUCKET,
   cropWindow,
   endStillRow,
   paintKeyframe,
+  paintStepWorstMs,
   pressRowPayload,
   productReferencePaths,
   reserveHouseRow,
   reservePaidRetry,
   reserveStillRows,
   starReadiness,
+  stillDeadlines,
+  stillDeliveryMs,
   stillPath,
   stillPrompt,
   type MoneyDeps,
   type PaintDeps,
   type PressRowSpec,
 } from "./paint";
-import { AD_POLICY_RULES, normaliseAdPlan, type AdPlan } from "./planner";
+import { AD_POLICY_RULES, labelWordsLine, normaliseAdPlan, type AdPlan } from "./planner";
 
 // A still: reserved in the person's own press (the Recast shape), then
 // painted and checked with every gate called explicitly, in order, never
@@ -42,17 +54,20 @@ const iso = NOW.toISOString();
 const SEND = "77777777-7777-4777-8777-777777777777";
 const CAMPAIGN = pressCampaignId(SEND);
 const PHOTOS = [`${USER_A}/eva-1.jpg`];
+/** The painting name part the fake painter mints (PAINT-5). */
+const PAINTING = "a1b2c3d4e5f6";
 
 let png2x3: Buffer;
 beforeAll(async () => {
   png2x3 = await sharp({ create: { width: 1024, height: 1536, channels: 3, background: "#806040" } }).png().toBuffer();
 });
 
+/** A 15 s plan whose hook shows the product (a hook planned without it is "absent": over[0]). */
 function plan(over: Record<string, unknown>[] = []): AdPlan {
   return normaliseAdPlan(
     {
       angle: "Morning ritual",
-      shots: [0, 1, 2].map((i) => ({ still: `Still ${i + 1}: she holds the can.`, ...(over[i] ?? {}) })),
+      shots: [0, 1, 2].map((i) => ({ still: `Still ${i + 1}: the character holds the can.`, ...(i === 0 ? { product_visibility: "required_label" } : {}), ...(over[i] ?? {}) })),
     },
     { length: 15 },
   )!;
@@ -148,7 +163,34 @@ function painter(db: ReturnType<typeof fakeDb>, over: Partial<PaintDeps> = {}): 
     identityThreshold: vi.fn(async () => 70),
     ownRules: vi.fn(async () => []),
     refund: vi.fn(async () => true),
+    paintingId: () => PAINTING,
     ...over,
+  };
+}
+
+type Sent = { prompt: string; identityUrl: string | null; productUrls: string[] };
+const sentOf = (deps: PaintDeps): Sent => (deps.generateStill as ReturnType<typeof vi.fn>).mock.calls[0][0] as Sent;
+
+/**
+ * The pictures a prompt names, read back from its words: who "Image 1 is the
+ * person" points at, and the range of product photos.
+ */
+function picturesNamed(prompt: string): { person: number | null; product: [number, number] | null } {
+  const person = /Image (\d+) is the person/.exec(prompt);
+  const one = /Image (\d+) is a photo of the product/.exec(prompt);
+  const many = /Images (\d+) to (\d+) are photos of the product/.exec(prompt);
+  return {
+    person: person ? Number(person[1]) : null,
+    product: one ? [Number(one[1]), Number(one[1])] : many ? [Number(many[1]), Number(many[2])] : null,
+  };
+}
+
+/** What the pictures actually sent are, in the lane's order (image.ts: identity first, then the product's photos). */
+function picturesSent(sent: Sent): { person: number | null; product: [number, number] | null } {
+  const first = sent.identityUrl ? 2 : 1;
+  return {
+    person: sent.identityUrl ? 1 : null,
+    product: sent.productUrls.length > 0 ? [first, first + sent.productUrls.length - 1] : null,
   };
 }
 
@@ -199,6 +241,7 @@ describe("the words and the references", () => {
       note: "Warmer light\u0007 please",
     });
     expect(text).toContain("Image 1 is the person");
+    expect(text).toContain("The character in this scene is the person in Image 1.");
     expect(text).toContain("Images 2 to 3 are photos of the product");
     expect(text).toContain(`"SOL'STAD"`);
     expect(text).toContain("label turned to the camera");
@@ -214,8 +257,31 @@ describe("the words and the references", () => {
       note: null,
     });
     expect(text).not.toContain("Image 1 is the person");
+    expect(text).not.toContain("The character in this scene");
+    expect(text).not.toMatch(/person|face/i);
     expect(text).toContain("Image 1 is a photo of the product");
+    expect(text).toContain("Keep the product exactly as in its photos; compose so it sits comfortably in the centre.");
     expect(text).not.toContain("printed words");
+  });
+
+  it("a shot planned without the product never names it, its photos or its label, even when photos are counted (PAINT-2)", () => {
+    const text = stillPrompt({
+      shot: { still: "The character yawns at an empty kitchen counter at dawn.", productVisibility: "absent", star: true, camera: "medium shot" },
+      product: { name: "Solstad", labelStrings: ["SOLSTAD"], noReadableText: false },
+      productRefs: 3,
+      house: true,
+      note: null,
+    });
+    expect(text).not.toMatch(/product|label|solstad/i);
+    expect(picturesNamed(text)).toEqual({ person: 1, product: null });
+    expect(text).toContain("Keep the person's face well inside the centre of the frame");
+    expect(text).toContain("Keep the person exactly as in Image 1; compose so they sit comfortably in the centre.");
+  });
+
+  it("the label line is the one the plan's ad policy step judged (G4)", () => {
+    const product = { name: "Solstad", labelStrings: ["SOLSTAD", 'Cold "brew"'], noReadableText: false };
+    const text = stillPrompt({ shot: { still: "x", productVisibility: "required_label", star: true, camera: "" }, product, productRefs: 1, house: false, note: null });
+    expect(text).toContain(labelWordsLine(product)!);
   });
 });
 
@@ -379,8 +445,9 @@ describe("paintKeyframe", () => {
     const out = await paintKeyframe(deps, { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 });
     expect(out).toMatchObject({ kind: "painted", face: "match", product: "match", faceScore: 91, escalations: 1, fits: true });
     expect(deps.order).toEqual(["promptGate", "adPolicy", "generate", "locate", "store", "outputGate", "check"]);
-    // The stored still is 9:16.
-    const path = stillPath(USER_A, CAMPAIGN, rowId);
+    // The stored still is 9:16, under this painting's own name.
+    const path = stillPath(USER_A, CAMPAIGN, rowId, PAINTING);
+    expect(out.kind === "painted" && out.path).toBe(path);
     const meta = await sharp(db.files.get(`${STILL_BUCKET}/${path}`)!).metadata();
     expect([meta.width, meta.height]).toEqual([864, 1536]);
     // One reference list: the identity photo, then the product's photos.
@@ -488,11 +555,11 @@ describe("paintKeyframe", () => {
 
   it("a row this attempt already delivered (a step stopped after painting) is adopted, never painted again (M2)", async () => {
     const { db, rowId } = world();
-    const path = stillPath(USER_A, CAMPAIGN, rowId);
+    const path = stillPath(USER_A, CAMPAIGN, rowId, "0f0f0f0f0f0f");
     Object.assign(db.tables.generations.find((g) => g.id === rowId)!, {
       status: "succeeded",
       result_url: `/api/media/${STILL_BUCKET}/${path}?v=sig`,
-      press_tour: { campaign_id: CAMPAIGN, painted: { fits: true }, check: { face: "match", product: "not_readable", reason: "The label couldn't be read here.", faceScore: 81, escalations: 1, fits: true } },
+      press_tour: { campaign_id: CAMPAIGN, painted: { fits: true, path }, check: { face: "match", product: "not_readable", reason: "The label couldn't be read here.", faceScore: 81, escalations: 1, fits: true } },
     });
     const deps = painter(db);
     expect(await paintKeyframe(deps, { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 })).toEqual({
@@ -510,8 +577,19 @@ describe("paintKeyframe", () => {
     expect(deps.refund).not.toHaveBeenCalled();
     // Killed during the checks: adopted as painted, its checks "Not checked".
     const second = world();
-    Object.assign(second.db.tables.generations[0], { status: "succeeded", result_url: `/api/media/${STILL_BUCKET}/${stillPath(USER_A, CAMPAIGN, second.rowId)}`, press_tour: { painted: { fits: null } } });
-    expect(await paintKeyframe(painter(second.db), { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 })).toMatchObject({ kind: "painted", face: "not_checked", product: "not_checked" });
+    const secondPath = stillPath(USER_A, CAMPAIGN, second.rowId, "0e0e0e0e0e0e");
+    Object.assign(second.db.tables.generations[0], { status: "succeeded", result_url: `/api/media/${STILL_BUCKET}/${secondPath}`, press_tour: { painted: { fits: null, path: secondPath } } });
+    expect(await paintKeyframe(painter(second.db), { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 })).toMatchObject({ kind: "painted", path: secondPath, face: "not_checked", product: "not_checked" });
+    // A still delivered before PAINT-5, under the row's one name, is adopted as it is.
+    const legacy = world();
+    const legacyPath = `${USER_A}/press/${CAMPAIGN}/${legacy.rowId}.png`;
+    Object.assign(legacy.db.tables.generations[0], { status: "succeeded", result_url: `/api/media/${STILL_BUCKET}/${legacyPath}?v=sig`, press_tour: { painted: { fits: true } } });
+    expect(await paintKeyframe(painter(legacy.db), { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 })).toMatchObject({ kind: "painted", path: legacyPath });
+    // Another row's painting is never adopted as this one's.
+    const other = world();
+    const otherPath = stillPath(USER_A, CAMPAIGN, stillRowId(SEND, 2), "0d0d0d0d0d0d");
+    Object.assign(other.db.tables.generations[0], { status: "succeeded", result_url: `/api/media/${STILL_BUCKET}/${otherPath}`, press_tour: { painted: { fits: true, path: otherPath } } });
+    expect(await paintKeyframe(painter(other.db), { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 })).toMatchObject({ kind: "failed", cause: "gone" });
   });
 
   it("a row gone after its charge went back says so (the machine then retries at the still's price)", async () => {
@@ -571,7 +649,7 @@ describe("paintKeyframe", () => {
     const deps = painter(db, { outputGate: vi.fn(async () => ({ ok: false as const, reason: "refused" as const, message: "No." })) });
     const out = await paintKeyframe(deps, { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 });
     expect(out).toMatchObject({ kind: "failed", cause: "refused", error: STILL_REFUSED });
-    expect(deps.removeStill).toHaveBeenCalledWith(stillPath(USER_A, CAMPAIGN, rowId));
+    expect(deps.removeStill).toHaveBeenCalledWith(stillPath(USER_A, CAMPAIGN, rowId, PAINTING));
     expect(deps.refund).toHaveBeenCalledWith(rowId, { force: false });
     expect(deps.checkStill).not.toHaveBeenCalled();
   });
@@ -616,6 +694,12 @@ describe("paintKeyframe", () => {
     expect((deps.generateStill as ReturnType<typeof vi.fn>).mock.calls[0][0].identityUrl).toBeNull();
     expect((deps.promptGate as ReturnType<typeof vi.fn>).mock.calls[0][0].hasRealPersonReference).toBe(false);
     expect((deps.checkStill as ReturnType<typeof vi.fn>).mock.calls[0][0].star).toBeNull();
+    // Its words never name a person or a face (Image 1 is the product's front photo).
+    const sent = sentOf(deps);
+    expect(sent.prompt).not.toMatch(/person|face/i);
+    expect(sent.prompt).not.toContain("The character in this scene");
+    expect(picturesNamed(sent.prompt)).toEqual(picturesSent(sent));
+    expect(picturesNamed(sent.prompt).product?.[0]).toBe(1);
   });
 
   it("a house row never reaches the refund authority", async () => {
@@ -633,5 +717,207 @@ describe("paintKeyframe", () => {
       face: "not_checked",
       product: "not_checked",
     });
+  });
+});
+
+describe("a shot planned without the product (PAINT-2, PAINT-3)", () => {
+  const HOOK = "The character yawns at an empty kitchen counter at dawn.";
+  const absentWorld = () => world({ plan: plan([{ product_visibility: "absent", still: HOOK }]) });
+
+  it("sends no product photo, never names the product or its label, and reads 'Not planned' whatever the checker says", async () => {
+    const { db } = absentWorld();
+    const deps = painter(db, {
+      checkStill: vi.fn(async () => ({ face: "match" as const, product: "product_missing" as const, reason: null, faceScore: 88, usd: 0.01, escalations: 0 })),
+    });
+    const out = await paintKeyframe(deps, { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 });
+    expect(out).toMatchObject({ kind: "painted", face: "match", product: "not_checked" });
+    const sent = sentOf(deps);
+    expect(sent.productUrls).toEqual([]);
+    expect(sent.identityUrl).toContain("eva-1.jpg");
+    expect(deps.signProductPhotos).not.toHaveBeenCalled();
+    expect(sent.prompt).not.toMatch(/product|label|solstad/i);
+    expect(sent.prompt).toContain("The character in this scene is the person in Image 1.");
+    // The gates judged the same words.
+    expect((deps.promptGate as ReturnType<typeof vi.fn>).mock.calls[0][0].prompt).toBe(sent.prompt);
+    // The check knows no product is planned, and reads no product photo.
+    const checked = (deps.checkStill as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(checked).toMatchObject({ productVisibility: "absent", productPhotoPaths: [], productPhotoUrls: [] });
+    // The row says so, and the still never goes to the house for a repaint over the product.
+    expect(db.tables.generations[0]).toMatchObject({ product_verdict: "not_checked" });
+    const stills = withOutcome(db.tables.press_campaigns[0].stills as StillState[], 1, 1, out, iso);
+    expect(houseRepaintDue(stills, true)).toBeNull();
+  });
+
+  it("the crop keeps the face: a product the framing reader found anyway never pushes it out", async () => {
+    // A red band where the face is, at the left edge; a product found at the right edge.
+    const red = await sharp({ create: { width: 120, height: 1536, channels: 3, background: "#ff0000" } }).png().toBuffer();
+    const faceLeft = await sharp(png2x3).composite([{ input: red, left: 0, top: 0 }]).png().toBuffer();
+    const { db } = absentWorld();
+    const deps = painter(db, {
+      generateStill: vi.fn(async () => ({ base64: faceLeft.toString("base64"), usd: 0.07 })),
+      locate: vi.fn(async () => ({ face: { x: 0.01, y: 0.1, w: 0.1, h: 0.12 }, product: { x: 0.88, y: 0.5, w: 0.12, h: 0.2 } })),
+    });
+    const out = await paintKeyframe(deps, { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 });
+    expect(out).toMatchObject({ kind: "painted", fits: true });
+    const kept = db.files.get(`${STILL_BUCKET}/${stillPath(USER_A, CAMPAIGN, stillRowId(SEND, 1), PAINTING)}`)!;
+    const { data, info } = await sharp(kept).raw().toBuffer({ resolveWithObject: true });
+    const at = (x: number, y: number) => Array.from(data.subarray((y * info.width + x) * info.channels, (y * info.width + x) * info.channels + 3));
+    expect(info.width).toBe(864);
+    expect(at(10, 200)).toEqual([255, 0, 0]);
+  });
+});
+
+describe("every 'Image N' is a picture that was sent (PAINT-3)", () => {
+  it("a house repaint of a shot with the star: the person is Image 1, then the product's photos", async () => {
+    const { db } = world({ kind: "house" });
+    const deps = painter(db);
+    await paintKeyframe(deps, { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 });
+    const sent = sentOf(deps);
+    expect(sent.productUrls).toHaveLength(3);
+    expect(picturesNamed(sent.prompt)).toEqual(picturesSent(sent));
+    expect(sent.prompt).toContain("the person exactly as in Image 1");
+    expect(sent.prompt).toContain("The character in this scene is the person in Image 1.");
+  });
+
+  it("a product photo that could not be opened is not counted", async () => {
+    const { db } = world({ kind: "house" });
+    const deps = painter(db, {
+      signProductPhotos: vi.fn(async (paths: string[]) => Object.fromEntries(paths.filter((p) => !p.endsWith("side.jpg")).map((p) => [p, `https://storage.test/press-kit/${p}`]))),
+    });
+    await paintKeyframe(deps, { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 });
+    const sent = sentOf(deps);
+    expect(sent.productUrls).toHaveLength(2);
+    expect(picturesNamed(sent.prompt)).toEqual({ person: 1, product: [2, 3] });
+    // The checker is handed the same photos, path for link.
+    const checked = (deps.checkStill as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(checked.productPhotoPaths).toHaveLength(2);
+    expect(checked.productPhotoPaths.every((p: string, i: number) => checked.productPhotoUrls[i].endsWith(p))).toBe(true);
+  });
+
+  it("a house repaint of a packshot: no person anywhere, the product's photos from Image 1", async () => {
+    const { db } = world({ kind: "house", plan: plan([{}, { star: false }, {}]) });
+    const c = db.tables.press_campaigns[0];
+    const stills = c.stills as StillState[];
+    c.stills = stills.map((s) => (s.shot === 1 ? { ...s, attempts: [] } : s.shot === 2 ? { ...s, attempts: stills[0].attempts } : s));
+    const deps = painter(db);
+    await paintKeyframe(deps, { userId: USER_A, campaignId: CAMPAIGN, shot: 2, attempt: 1 });
+    const sent = sentOf(deps);
+    expect(sent.identityUrl).toBeNull();
+    expect(picturesNamed(sent.prompt)).toEqual({ person: null, product: [1, 3] });
+    expect(sent.prompt).not.toMatch(/person|face/i);
+    expect(sent.prompt).toContain("Keep the product exactly as in its photos; compose so it sits comfortably in the centre.");
+  });
+});
+
+describe("a painting's own file, and the step's time (PAINT-5)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("a row painted again after a stopped step gets its own file: the gate, the row and the checks all see the second painting", async () => {
+    const blue = await sharp({ create: { width: 1024, height: 1536, channels: 3, background: "#0000ff" } }).png().toBuffer();
+    const { db, rowId } = world();
+    // The store as core.ts persistImageBytes has it: a taken name is never overwritten, its link is answered.
+    const storeStill = vi.fn(async (_userId: string, path: string, bytes: Buffer) => {
+      if (!db.files.has(`${STILL_BUCKET}/${path}`)) await db.db.storage.from(STILL_BUCKET).upload(path, bytes);
+      return `/api/media/${STILL_BUCKET}/${path}?v=sig`;
+    });
+    const first = await paintKeyframe(painter(db, { storeStill, paintingId: () => "aaaaaaaaaaaa" }), { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 });
+    // The step was stopped before its row was written: the attempt is painted again.
+    Object.assign(db.tables.generations.find((g) => g.id === rowId)!, { status: "generating", result_url: null, press_tour: {} });
+    const deps = painter(db, { storeStill, paintingId: () => "bbbbbbbbbbbb", generateStill: vi.fn(async () => ({ base64: blue.toString("base64"), usd: 0.07 })) });
+    const second = await paintKeyframe(deps, { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 });
+    expect(first.kind === "painted" && second.kind === "painted").toBe(true);
+    if (first.kind !== "painted" || second.kind !== "painted") return;
+    expect(second.path).not.toBe(first.path);
+    const kept = db.files.get(`${STILL_BUCKET}/${second.path}`)!;
+    const { data } = await sharp(kept).raw().toBuffer({ resolveWithObject: true });
+    expect(Array.from(data.subarray(0, 3))).toEqual([0, 0, 255]);
+    expect((deps.outputGate as ReturnType<typeof vi.fn>).mock.calls[0][0].url).toContain(second.path);
+    expect((deps.checkStill as ReturnType<typeof vi.fn>).mock.calls[0][0].still.bytes.equals(kept)).toBe(true);
+    expect(db.tables.generations.find((g) => g.id === rowId)).toMatchObject({ result_url: expect.stringContaining(second.path), press_tour: { painted: { path: second.path } } });
+  });
+
+  it("the framing reader and the output gate get what is left before delivery, never less than their floors", () => {
+    const window = stillDeliveryMs();
+    expect(window).toBe(LANE_REFERENCE_FETCH_MS + OPENAI_IMAGE_TIMEOUT_MS + FRAMING_FLOOR_MS + OUTPUT_GATE_FLOOR_MS);
+    // A quick lane: the reader its whole natural time, the gate everything left.
+    expect(stillDeadlines(40_000)).toEqual({ framingMs: FRAMING_MAX_MS, gateMs: window - 40_000 });
+    // The slowest lane: the reader its floor, and after the reader's whole floor, the gate its own.
+    const slowest = LANE_REFERENCE_FETCH_MS + OPENAI_IMAGE_TIMEOUT_MS;
+    expect(stillDeadlines(slowest).framingMs).toBe(FRAMING_FLOOR_MS);
+    expect(stillDeadlines(slowest + FRAMING_FLOOR_MS).gateMs).toBe(OUTPUT_GATE_FLOOR_MS);
+    expect(stillDeadlines(10 * 60_000)).toEqual({ framingMs: FRAMING_FLOOR_MS, gateMs: OUTPUT_GATE_FLOOR_MS });
+    expect(FRAMING_MAX_MS).toBe(41_500);
+  });
+
+  it("a whole paint step, at its worst, fits the 300 s both routes allow; the sources say what the sum says", () => {
+    const worst = paintStepWorstMs({ laneTimeoutMs: OPENAI_IMAGE_TIMEOUT_MS, checkBudgetMs: CHECK_BUDGET_MS, marginMs: 15_000 });
+    expect(worst).toBe(297_000);
+    expect(worst).toBeLessThanOrEqual(300_000);
+    const read = (rel: string) => readFileSync(join(__dirname, rel), "utf8");
+    // The lane fetches each reference with its own 20 s timeout before it renders.
+    expect(read("../generations/providers/openai-images.ts")).toMatch(/async function fetchAsBlob[\s\S]{0,200}fetchWithTimeout\(url, \{\}, 20_000\)/);
+    // The framing reader's retry waits 1.5 s by default.
+    expect(read("../product-lock/judge.ts")).toContain("deps.retryDelayMs ?? 1500");
+    // The runtime counts the step this way, and both routes run 300 s.
+    const runtime = read("campaign-runtime.ts");
+    expect(runtime).toContain("export const WORST_STEP_MS = paintStepWorstMs({ laneTimeoutMs: OPENAI_IMAGE_TIMEOUT_MS, checkBudgetMs: CHECK_BUDGET_MS, marginMs: STEP_MARGIN_MS });");
+    expect(runtime).toContain("laneTimeoutMs: stillDeliveryMs(OPENAI_IMAGE_TIMEOUT_MS),");
+    expect(runtime).toContain("export const STEP_MARGIN_MS = 15_000;");
+    expect(runtime).toContain("export const KICK_FUNCTION_MS = 300_000;");
+    expect(read("../../app/api/cron/press/route.ts")).toContain("export const maxDuration = 300;");
+    expect(read("../../app/app/press-tour/page.tsx")).toContain("export const maxDuration = 300;");
+  });
+
+  /** Runs a paint with setTimeout faked, moving the fake clock until it settles. */
+  async function settle<T>(work: Promise<T>): Promise<T> {
+    let done = false;
+    let value: T | undefined;
+    void work.then((v) => {
+      done = true;
+      value = v;
+    });
+    for (let i = 0; i < 5000 && !done; i++) {
+      await new Promise((r) => setImmediate(r));
+      await vi.advanceTimersByTimeAsync(1_000);
+    }
+    expect(done).toBe(true);
+    return value as T;
+  }
+
+  it("an output gate slower than the step can wait fails closed: the painting is not shown, the ordinary refund rules decide", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { db, rowId } = world();
+    // The lane took the whole window: the gate gets its floor.
+    let calls = 0;
+    const t0 = NOW.getTime();
+    const deps = painter(db, {
+      now: () => new Date(calls++ === 0 ? t0 : t0 + stillDeliveryMs()),
+      outputGate: vi.fn(() => new Promise<never>(() => undefined)),
+    });
+    const out = await settle(paintKeyframe(deps, { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 }));
+    expect(out).toMatchObject({ kind: "failed", cause: "provider" });
+    expect(deps.removeStill).toHaveBeenCalledWith(stillPath(USER_A, CAMPAIGN, rowId, PAINTING));
+    expect(deps.refund).toHaveBeenCalledWith(rowId, { force: false });
+    expect(deps.checkStill).not.toHaveBeenCalled();
+  });
+
+  it("a framing reader past its deadline leaves the crop centred, is booked at its ceiling, and the still is delivered", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { db } = world();
+    const deps = painter(db, { locate: vi.fn(() => new Promise<never>(() => undefined)) });
+    const out = await settle(paintKeyframe(deps, { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 }));
+    expect(out).toMatchObject({ kind: "painted", fits: null });
+    expect(out.kind === "painted" && out.usd).toBeCloseTo(0.07 + FRAMING_LATE_USD + 0.02, 6);
+    // It was told the time it has.
+    expect((deps.locate as ReturnType<typeof vi.fn>).mock.calls[0][0].timeoutMs).toBe(FRAMING_MAX_MS);
+  });
+
+  it("the framing reader's own cost is booked into the still's", async () => {
+    const { db } = world();
+    const deps = painter(db, { locate: vi.fn(async () => ({ face: null, product: { x: 0.7, y: 0.4, w: 0.25, h: 0.3 }, usd: 0.004 })) });
+    const out = await paintKeyframe(deps, { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 });
+    expect(out.kind === "painted" && out.usd).toBeCloseTo(0.07 + 0.004 + 0.02, 6);
   });
 });

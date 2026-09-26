@@ -30,7 +30,11 @@
 //      no health or guaranteed-result claims, no real public figures, no
 //      implied endorsement) run through classify.ts on MEANING, with the
 //      person's own active forbid rules beside them, INDEPENDENT of the
-//      brand_rules_enforcement switch (v2 #12);
+//      brand_rules_enforcement switch (v2 #12). It judges the product's own
+//      words first (its name and its ticked label words, which every still
+//      that shows the product spells out: productClaimText), then the plan
+//      with those words beside it, so a label the paint-time check would
+//      refuse is refused here, free, before any still is paid for (G4);
 //   3. the ENDORSEMENT RUBRIC (v2 #9), judged on meaning: an ad that
 //      presents its star as an independent customer, reviewer or expert
 //      vouching for the product, or a real person endorsing something they
@@ -51,6 +55,7 @@ import {
   PLAN_LIMIT,
   PLAN_REFUSED_AD_RULES,
   PLAN_REFUSED_ENDORSEMENT,
+  PLAN_REFUSED_LABEL_CLAIM,
   PLAN_UNAVAILABLE,
 } from "./campaign-messages";
 import { fenceUntrusted } from "./extract-page";
@@ -249,6 +254,30 @@ export function parseAdPlan(raw: unknown): AdPlan | null {
   return again;
 }
 
+/**
+ * The label's words as a still's prompt spells them out (paint.ts
+ * stillPrompt): the person's ticked strings, cleaned and quoted; null when
+ * the card has nothing printed to spell. One writer, so the plan-time check
+ * judges exactly the line a still will carry.
+ */
+export function labelWordsLine(product: Pick<ProductCard, "labelStrings" | "noReadableText">): string | null {
+  if (product.noReadableText || product.labelStrings.length === 0) return null;
+  const words = product.labelStrings.map((s) => `"${(cleanText(s, 80) ?? "").replace(/"/g, "'")}"`).join(", ");
+  return `The label's printed words, spelled exactly: ${words}.`;
+}
+
+/**
+ * The product's own words every still that shows it carries: its name (the
+ * prompt names the product's photos by it) and its label line. Null when
+ * there are none. The ad policy step judges these at plan time (G4): they
+ * come from the card, not the plan, so the plan alone never showed them.
+ */
+export function productClaimText(product: Pick<ProductCard, "name" | "labelStrings" | "noReadableText">): string | null {
+  const name = cleanText(product.name, 120);
+  const lines = [name ? `The product's name: ${name}` : null, labelWordsLine(product)].filter((l): l is string => l !== null);
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
 /** Every word of the plan the gates judge, one line each. */
 export function planText(plan: AdPlan): string {
   const lines = [`Ad: ${plan.angle}`];
@@ -335,6 +364,8 @@ export function buildPlannerInstructions(input: PlannerInput): string {
     "- Nobody in the ad is a minor. Nothing sexual. Ordinary, everyday settings.",
     "- The only words on screen are each shot's on_screen_text (at most 6 words, or empty). No other printed text, signs or captions inside the picture.",
     "- Describe what is SEEN, in plain concrete words: the setting, the light, what the character does, where the product is.",
+    "- The character's looks come only from their own photos, which you never see. Never describe their gender, age, hair, skin, face or body, and never call them he, she, a man or a woman: call them only \"the character\" (or \"they\").",
+    '- A shot whose product_visibility is "absent" has no product in it at all: never mention the product in that shot\'s still.',
     "",
     'Reply with ONLY minified JSON: {"angle": "<the ad\'s idea in 2-5 words>", "cta": "<a call to action, at most 8 words>", "shots": [' +
       '{"direction": "<one plain sentence: what happens>", "still": "<the still picture, 1-3 sentences>", "motion": "<how the shot moves, 1 sentence>", ' +
@@ -575,8 +606,32 @@ export function repaintText(plan: AdPlan, shot: number, note: string): string {
 /** Plan one ad and pass it through every gate. Never throws. */
 export async function planAd(
   deps: PlannerDeps,
-  input: PlannerInput & { star: StarKind; ownRules: readonly PolicyRule[] },
+  input: PlannerInput & {
+    /** The whole card: its label words are judged here, as every still will carry them. */
+    product: PlannerInput["product"] & Pick<ProductCard, "labelStrings" | "noReadableText">;
+    star: StarKind;
+    ownRules: readonly PolicyRule[];
+  },
 ): Promise<PlanResult> {
+  // 0. The product's own words alone, before the paid draft (G4, PAINT-7):
+  //    a still's prompt spells out the ticked label words and names the
+  //    product, and the paint-time check reads them there for the first
+  //    time, so a claim-like label ("Clinically proven") used to pass
+  //    planning and refuse shot 1 after the stills were paid for, failing
+  //    the whole ad. Judged on its own so a refusal can say it is the card,
+  //    not the goal, that has to change (the verdict names the rule broken,
+  //    not which part of a combined text broke it), and first so a card
+  //    that can't pass costs this one small call, never the draft. One call
+  //    to the classifier (brand-rules/classify.ts, the utility reader,
+  //    gpt-5.4-mini) per plan, a fraction of a cent, on meaning like every
+  //    other judgement here, never a word list. The paint-time check stays
+  //    as it is.
+  const claim = productClaimText(input.product);
+  if (claim) {
+    const card = await adPolicyCheck(deps, claim, input.ownRules);
+    if (!card.ok) return card.code === "refused" ? { ok: false, code: "refused", error: PLAN_REFUSED_LABEL_CLAIM } : card;
+  }
+
   let raw: unknown;
   try {
     raw = await deps.direct(buildPlannerInstructions(input));
@@ -595,8 +650,10 @@ export async function planAd(
     return message ? { ok: false, code: "refused", error: message } : { ok: false, code: "unavailable", error: PLAN_UNAVAILABLE };
   }
 
-  // 2. The ad policy step.
-  const policy = await adPolicyCheck(deps, text, input.ownRules);
+  // 2. The ad policy step on the plan, with the product's words (step 0)
+  //    beside it as the stills will carry them, so a combination is judged
+  //    before anything is paid too.
+  const policy = await adPolicyCheck(deps, claim ? `${text}\n${claim}` : text, input.ownRules);
   if (!policy.ok) return policy;
 
   // 3. The endorsement rubric.

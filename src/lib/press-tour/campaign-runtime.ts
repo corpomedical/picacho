@@ -89,11 +89,13 @@ import {
   STILL_RENDER,
   endStillRow,
   paintKeyframe,
+  paintStepWorstMs,
   productReferencePaths,
   reserveHouseRow,
   reserveHouseRowWith,
   reservePaidRetry,
   reservePaidRetryWith,
+  stillDeliveryMs,
   type GateAnswer,
   type MoneyDeps,
   type PaintDeps,
@@ -107,20 +109,30 @@ export const KICK_FUNCTION_MS = 300_000;
 /** Room for the gates, the readers and the writes around the picture lane and the checks. */
 export const STEP_MARGIN_MS = 15_000;
 /**
- * The longest one paint step may take: the picture lane's own timeout, the
- * check's budget, and the margin around them (M2).
+ * The longest one paint step may take (M2, PAINT-5): the picture lane's
+ * reference fetches (20 s) and its own timeout (150 s), the framing reader
+ * and the output gate, the check's budget (75 s) and the margin (15 s).
+ * Counted at their own timeouts the framing reader (two 20 s Gemini calls
+ * and a 1.5 s wait: 41.5 s) and the output gate (its readers, retries and
+ * vote: about 6 minutes) put a step far past the 300 s both routes allow
+ * (app/app/press-tour/page.tsx and api/cron/press maxDuration). So those two
+ * have hard deadlines inside the step instead (paint.ts stillDeadlines):
+ * what is left before the painting must be delivered, at least 12 s and
+ * 25 s. That makes 20 + 150 + 12 + 25 + 75 + 15 = 297 s at the very worst,
+ * inside the function (paint.test.ts pins the sum and the sources).
  */
-export const WORST_STEP_MS = OPENAI_IMAGE_TIMEOUT_MS + CHECK_BUDGET_MS + STEP_MARGIN_MS;
+export const WORST_STEP_MS = paintStepWorstMs({ laneTimeoutMs: OPENAI_IMAGE_TIMEOUT_MS, checkBudgetMs: CHECK_BUDGET_MS, marginMs: STEP_MARGIN_MS });
 /**
  * A kick starts a step only while a WHOLE step still fits in the function
  * (M2, PT-07: campaign-machine.ts kickBudgetMs): a step started at 190 s
  * used to be killed mid-render at 300 s, its paid picture lost and its lease
- * held for 6 minutes. In practice the kick paints the first still and the
- * cron's minute carries on from there.
+ * held for 6 minutes. The lane's part is everything from its call to the
+ * delivered row (paint.ts stillDeliveryMs). The kick paints the first still
+ * and the cron's minute carries on from there.
  */
 export const KICK_BUDGET_MS = kickBudgetMs({
   functionMs: KICK_FUNCTION_MS,
-  laneTimeoutMs: OPENAI_IMAGE_TIMEOUT_MS,
+  laneTimeoutMs: stillDeliveryMs(OPENAI_IMAGE_TIMEOUT_MS),
   checkBudgetMs: CHECK_BUDGET_MS,
   marginMs: STEP_MARGIN_MS,
 });
@@ -207,9 +219,12 @@ const stillChecker = (db: SupabaseClient): StillChecker => async (input) => {
   // the words of EVERY photo the person chose make the corpus a still's
   // words are compared with (v2 #7, PT-04): a side panel's line is the
   // product's own, never a conflict.
-  const textPaths = input.product.photos.length > 0 ? input.product.photos : input.productPhotoPaths;
+  // A shot planned without the product has no product check (check.ts):
+  // none of its photos is read for it.
+  const productExpected = input.productVisibility !== "absent";
+  const textPaths = !productExpected ? [] : input.product.photos.length > 0 ? input.product.photos : input.productPhotoPaths;
   const [references, textPhotos, identity, owner] = await Promise.all([
-    Promise.all(input.productPhotoPaths.slice(0, 3).map((p) => download(db, PRESS_KIT_BUCKET, p))),
+    Promise.all((productExpected ? input.productPhotoPaths : []).slice(0, 3).map((p) => download(db, PRESS_KIT_BUCKET, p))),
     Promise.all(textPaths.slice(0, 6).map((p) => download(db, PRESS_KIT_BUCKET, p))),
     input.star ? download(db, "character-references", input.star.identityPath) : Promise.resolve(null),
     db.from("profiles").select("role").eq("id", input.userId).maybeSingle(),
@@ -293,8 +308,10 @@ export function paintDeps(): PaintDeps {
     },
     // The face AND the product, so the crop can keep both (v2 #2, PT-10).
     // Boxes are shares of the picture, so the readers' smaller JPEGs place
-    // them on the full still as they are.
-    locate: async ({ png, productPhotoPaths }) => {
+    // them on the full still as they are. The reader's calls give up inside
+    // the time paint.ts gives it (two tries and the wait between them), and
+    // what it cost is booked into the still's usd, answered or not.
+    locate: async ({ png, productPhotoPaths, timeoutMs }) => {
       const [frame, ...refs] = await Promise.all([
         prepareFrame(png),
         ...productPhotoPaths.slice(0, 3).map(async (p) => {
@@ -304,8 +321,12 @@ export function paintDeps(): PaintDeps {
       ]);
       if (!frame) return null;
       const references = refs.filter((r): r is NonNullable<typeof r> => r !== null).map((r) => r.bytes);
-      const answer = await locateFraming({ frame: frame.bytes, references });
-      return answer.ok ? answer.value : null;
+      const retryDelayMs = 1_000;
+      const answer = await locateFraming(
+        { frame: frame.bytes, references },
+        { timeoutMs: Math.max(1_000, Math.floor((timeoutMs - retryDelayMs) / 2)), retryDelayMs },
+      );
+      return answer.ok ? { ...answer.value, usd: answer.usd } : { face: null, product: null, usd: answer.usd };
     },
     storeStill: (userId, path, bytes) => persistImageBytes(userId, path, bytes, "image/png"),
     removeStill: async (path) => {

@@ -19,6 +19,17 @@ export const PLAN_REFUSED_AD_RULES =
   "This ad would say something ads can't: a made-up review, a hidden sponsorship, a best-in-class claim or a health claim. Change your goal and plan again.";
 export const PLAN_REFUSED_ENDORSEMENT =
   "This ad would show your character as an independent customer or expert vouching for the product. Your character can present the product, not review it. Change your goal and plan again.";
+/**
+ * The ad rules tripped on the product's own card (a ticked label word or
+ * its name), not on the goal: changing the goal would not help, so the
+ * words point at the card (planner.ts). The check reads the ad rules and
+ * the person's own brand rules together, so the words name both and give
+ * no example of either. Planning needs a confirmed card, so the words name
+ * the door's own button for editing one ("Edit its card", pressTour.editCard
+ * in every language: press-tour-door.test.ts pins the two together).
+ */
+export const PLAN_REFUSED_LABEL_CLAIM =
+  "Your product's name, or a word ticked on its label, can't appear in an ad under our ad rules or your brand rules. On Press Tour, press \"Edit its card\", untick that word under \"Words on the label\" or change the name, then plan again.";
 export const PLAN_STALLED = "Planning this ad didn't finish. Nothing was charged. Plan it again.";
 
 // --- What the ad needs before it can go on ------------------------------------
@@ -44,6 +55,11 @@ export const CAMPAIGN_READ_FAILED = "We couldn't open this ad just now. Try agai
 export const STILL_IN_PROGRESS = "That still is being painted. Wait for it to finish.";
 export const STILL_NOT_READY = "That still isn't painted yet.";
 export const STILL_REPAINT_LIMIT = "That still has been repainted as many times as it can be. Keep it, or start a new ad.";
+/**
+ * A still's own line when its repaint (the house's after the check, or the
+ * person's) was refused: the ad goes on, and the still keeps its painting.
+ */
+export const STILL_REPAINT_REFUSED = "This still couldn't be repainted under our content and ad rules, so it keeps the painting it had.";
 export const SHOT_NOT_IN_AD = "That shot isn't in this ad.";
 export const CANCEL_WAIT = "Your stills are being painted. Try again in a moment.";
 
@@ -52,6 +68,16 @@ export const CANCEL_WAIT = "Your stills are being painted. Try again in a moment
 export const PAINT_FAILED = "We couldn't paint your stills. Nothing was charged for the ones that didn't paint.";
 export const STILL_REFUSED =
   "One of your stills couldn't be shown under our content rules, so this ad stopped. Nothing was charged for the ones that didn't paint.";
+/**
+ * The same two closings when a still that didn't paint kept its charge:
+ * it failed after the picture was asked for, and the refund rules (the
+ * automatic_refunds switch, the daily cap) kept the credit. Chosen from
+ * what actually came back (campaign-machine.ts failCampaign), so the ad
+ * never says "nothing was charged" over a credit it kept.
+ */
+export const PAINT_FAILED_CHARGED = "We couldn't paint your stills. A still that failed partway through painting was still charged.";
+export const STILL_REFUSED_CHARGED =
+  "One of your stills couldn't be shown under our content rules, so this ad stopped. A still that failed partway through painting was still charged.";
 export const CAMPAIGN_EXPIRED = "This ad waited 7 days for your decision and was closed. Filming was never charged.";
 
 // --- What blocks the next step (CampaignView.blocker) --------------------------
@@ -78,6 +104,7 @@ export const CAMPAIGN_MESSAGES = [
   PLAN_UNAVAILABLE,
   PLAN_REFUSED_AD_RULES,
   PLAN_REFUSED_ENDORSEMENT,
+  PLAN_REFUSED_LABEL_CLAIM,
   PLAN_STALLED,
   CAMPAIGN_BAD_REQUEST,
   PRODUCT_NOT_CONFIRMED,
@@ -94,10 +121,13 @@ export const CAMPAIGN_MESSAGES = [
   STILL_IN_PROGRESS,
   STILL_NOT_READY,
   STILL_REPAINT_LIMIT,
+  STILL_REPAINT_REFUSED,
   SHOT_NOT_IN_AD,
   CANCEL_WAIT,
   PAINT_FAILED,
   STILL_REFUSED,
+  PAINT_FAILED_CHARGED,
+  STILL_REFUSED_CHARGED,
   CAMPAIGN_EXPIRED,
   BLOCK_PLANNING,
   BLOCK_PAINTING,
