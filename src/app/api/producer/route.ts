@@ -36,7 +36,7 @@ import { gateSignals, judgeSpoken, type Verdict } from "@/lib/producer/gate";
 import { sentenceChunker } from "@/lib/producer/sentences";
 import { spotForTool } from "@/lib/producer/spots";
 import { DEFAULT_PRODUCER_NAME, appendMessages, loadMessages, loadPrefs, loadProducerVoice, openThread } from "@/lib/producer/store";
-import { isStreamableVoiceId, isVoiceStreamConfigured, openVoiceStream, type VoiceStream } from "@/lib/producer/voice-stream";
+import { isStreamableVoiceId, isVoiceStreamConfigured, openVoiceStream, resumeAt, type VoiceStream } from "@/lib/producer/voice-stream";
 import {
   CUT_MARK,
   INTERRUPTED_ANSWER,
@@ -805,14 +805,29 @@ export async function POST(request: NextRequest) {
         isVoiceStreamConfigured()
       );
       let pendingTakeText = "";
-      const takeFailed = (started: boolean) => {
+      // Words said before a lookup while the message was still being judged:
+      // spoken as soon as it's accepted, not after the lookup.
+      let flushOwed = false;
+      // A failed take (review of the take, 2026-09-26): one that never spoke
+      // gives its place in the order back to the fal pieces and isn't charged
+      // (fal meters what it speaks); one that spoke is charged for what it
+      // voiced, and fal picks up from the sentence it stopped in.
+      const takeFailed = () => {
         const t = take;
         takeBroken = true;
         take = null;
         if (!t) return;
-        totals.cost += speechCostUsd(t.vs.chars, "human");
-        if (!started && !upstream.signal.aborted) say(chunker.push(t.fed));
-        else send("audio_stream", { index: t.index, end: true });
+        if (upstream.signal.aborted) return;
+        if (!t.vs.started) {
+          if (voiceIndex === t.index + 1) voiceIndex = t.index;
+          else send("audio_stream", { index: t.index, end: true });
+          say(chunker.push(t.fed));
+          return;
+        }
+        totals.cost += speechCostUsd(Math.min(t.vs.voiced, t.vs.sent), "human");
+        send("audio_stream", { index: t.index, end: true });
+        const rest = t.fed.slice(resumeAt(t.fed, t.vs.voiced));
+        if (rest.trim()) say(chunker.push(rest));
       };
       const openTake = () => {
         const index = voiceIndex++;
@@ -821,27 +836,37 @@ export async function POST(request: NextRequest) {
           onAudio: (data, words) => {
             if (!upstream.signal.aborted) send("audio_stream", { index, data, text: words });
           },
-          onError: (why, started) => {
+          onError: (why) => {
             console.error("producer: voice take failed", why);
-            takeFailed(started);
+            if (take?.vs === vs) takeFailed();
           },
         });
         take = { vs, index, fed: "" };
         upstream.signal.addEventListener("abort", () => vs.abort(), { once: true });
+        if (upstream.signal.aborted) vs.abort();
       };
       const feedTake = (text: string) => {
+        // Cut off already: nothing opens, nothing is spoken or paid for.
+        if (upstream.signal.aborted) return;
         if (!take) openTake();
         take!.vs.push(text);
         take!.fed += text;
       };
-      /** The take's last words, then its end: resolves when all its audio is out. */
+      /** The take's last words, then its end: resolves when all its audio is out (or it failed). */
       const endTake = async () => {
         const t = take;
         if (!t) return;
+        if (upstream.signal.aborted) {
+          // Cut off: it stops here, charged for what went out.
+          t.vs.abort();
+          take = null;
+          totals.cost += speechCostUsd(t.vs.sent, "human");
+          return;
+        }
         await t.vs.end();
         if (take !== t) return; // it failed, and takeFailed settled it
         take = null;
-        totals.cost += speechCostUsd(t.vs.chars, "human");
+        totals.cost += speechCostUsd(t.vs.sent, "human");
         send("audio_stream", { index: t.index, end: true });
       };
       const speakText = (text: string) => {
@@ -861,7 +886,9 @@ export async function POST(request: NextRequest) {
           const text = pendingTakeText;
           pendingTakeText = "";
           feedTake(text);
+          if (flushOwed) take?.vs.flush();
         }
+        flushOwed = false;
         const pieces = pendingSpeech;
         pendingSpeech = [];
         say(pieces);
@@ -921,6 +948,7 @@ export async function POST(request: NextRequest) {
               // not after the lookup.
               sayAllNow();
               take?.vs.flush();
+              if (holding && pendingTakeText) flushOwed = true;
               send("status", { text: toolStatus(event.content_block.name) });
               const spot = spotForTool(event.content_block.name);
               if (spot) send("spot", { spot });

@@ -90,16 +90,21 @@ describe("her voice, one piece to the next", () => {
     expect(route).toContain("body?.stream === true &&");
     expect(route).toContain("isStreamableVoiceId(humanVoice.elevenLabsVoiceId) &&");
     expect(route).toContain("isVoiceStreamConfigured()");
-    // A take that never started hands what it was fed to the pieces; one that
-    // failed part-way ends its stream on the sheet.
-    expect(route).toContain("if (!started && !upstream.signal.aborted) say(chunker.push(t.fed));");
-    expect(route).toContain('else send("audio_stream", { index: t.index, end: true });');
+    // A take that never spoke gives its place back to the fal pieces and isn't
+    // charged; one that failed part-way is charged for what it voiced and fal
+    // picks up from the sentence it stopped in (review of the take, 2026-09-26).
+    expect(route).toContain("if (voiceIndex === t.index + 1) voiceIndex = t.index;");
+    expect(route).toContain("say(chunker.push(t.fed));");
+    expect(route).toContain("const rest = t.fed.slice(resumeAt(t.fed, t.vs.voiced));");
+    expect(route).toContain('totals.cost += speechCostUsd(Math.min(t.vs.voiced, t.vs.sent), "human");');
+    // Nothing opens after the answer is cut off.
+    expect(route).toContain("if (upstream.signal.aborted) return;\n        if (!take) openTake();");
     // Before a lookup the take speaks what it has; at the end it finishes before the turn is settled.
     const toolStart = route.indexOf('event.content_block.type === "tool_use"');
     expect(route.slice(toolStart, toolStart + 400)).toContain("take?.vs.flush();");
     expect(route).toContain("await endTake();\n          sayAllNow();");
-    // Metered at the voice's rate on what was sent to be spoken.
-    expect(route).toContain('totals.cost += speechCostUsd(t.vs.chars, "human");');
+    // Metered at the voice's rate on what actually went out.
+    expect(route).toContain('totals.cost += speechCostUsd(t.vs.sent, "human");');
     const lamp = read("../../components/producer/producer-lamp.tsx");
     expect(lamp).toContain("stream: speak && voice.canStream ? true : undefined,");
     expect(lamp).toContain('ev.event === "audio_stream"');

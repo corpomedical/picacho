@@ -415,6 +415,8 @@ export function useHandsFree({
   const queue = useRef(new Map<number, Prepared>());
   /** Takes still receiving audio (queued or playing), by the answer's piece index. */
   const streams = useRef(new Map<number, Prepared>());
+  /** Places in the order the server gave up (a take that never spoke): skipped, not waited for. */
+  const skipped = useRef(new Set<number>());
   const nextIndex = useRef(0);
   const playing = useRef<Prepared | null>(null);
   const heldRef = useRef(false);
@@ -467,6 +469,11 @@ export function useHandsFree({
   }, []);
 
   const stopPlayback = useCallback(() => {
+    // How far a take got before it stopped is what they heard of it.
+    if (playing.current?.stream) {
+      const said = takeSaid(playing.current, false);
+      if (said) saidAloud.current.push(said);
+    }
     clearQueue();
     streams.current.clear();
     if (playing.current) {
@@ -487,6 +494,10 @@ export function useHandsFree({
     // they're saying will either stop her or turn out to be nothing.
     if (userTalking.current && !startedDuringReply.current) return;
     if (dropTurnAudio.current) clearQueue();
+    while (!queue.current.has(nextIndex.current) && skipped.current.has(nextIndex.current)) {
+      skipped.current.delete(nextIndex.current);
+      nextIndex.current++;
+    }
     const piece = queue.current.get(nextIndex.current);
     if (piece === undefined) {
       if (turnDone.current && phaseRef.current === "speaking") {
@@ -837,6 +848,7 @@ export function useHandsFree({
     bargeConfirmed.current = false;
     saidAloud.current = [];
     nextIndex.current = 0;
+    skipped.current.clear();
     turnDone.current = false;
     dropTurnAudio.current = false;
   }, [setDuck, setHold, stopPlayback]);
@@ -862,7 +874,16 @@ export function useHandsFree({
       if (dropTurnAudio.current) return;
       let p = streams.current.get(index);
       if (!p) {
-        if (!chunk) return;
+        // A take already played or stopped: its late chunks are dropped, never replayed.
+        if (index < nextIndex.current) return;
+        if (!chunk) {
+          // Ended with nothing said: that place is skipped.
+          if (end) {
+            skipped.current.add(index);
+            playNext();
+          }
+          return;
+        }
         p = prepareStream();
         streams.current.set(index, p);
         const old = queue.current.get(index);
@@ -886,6 +907,15 @@ export function useHandsFree({
   /** The answer finished arriving: once it has all played, listen again. */
   const endTurn = useCallback(() => {
     turnDone.current = true;
+    // Nothing more can arrive: every take still open ends where it is, so it
+    // can finish playing (an answer cut off without its end would otherwise
+    // wait forever).
+    streams.current.forEach((p) => {
+      if (p.stream && !p.stream.ended) {
+        p.stream.ended = true;
+        p.stream.pump();
+      }
+    });
     if (playing.current || queue.current.size > 0 || heldRef.current) return;
     if (endPending.current) {
       stop();

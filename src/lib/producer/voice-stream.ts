@@ -15,15 +15,24 @@
 // — first message: voices (exactly one for eleven_v3_conversational) and
 // credentials; then inputs [{ text, voice_id }]; flush; keep_alive (resets a
 // 20 s idle timeout); close_socket (flushes, sends is_final, closes). Server
-// messages: { audio (base64) }, { is_final_audio_for_turn }, { is_final },
-// { message, error, code }.
+// messages: { audio (base64), alignment { chars } }, { is_final_audio_for_turn },
+// { is_final }, { message, error, code }.
+//
+// A TAKE ONLY SUCCEEDS ON is_final (review of the take, 2026-09-26): a close
+// without it, an error, or silence past a deadline is a failure, reported with
+// how many characters were voiced, so the route can hand the rest to fal.
 
 export const VOICE_STREAM_MODEL = "eleven_v3_conversational";
 const URL_BASE = "wss://api.elevenlabs.io/v1/text-to-dialogue/stream-input";
 /** mp3_44100_128: 16,000 bytes a second — the sheet times what was heard from it. */
 export const VOICE_STREAM_FORMAT = "mp3_44100_128";
 export const VOICE_STREAM_BYTES_PER_SECOND = 16_000;
-const IDLE_KEEPALIVE_MS = 10_000;
+const TICK_MS = 1_000;
+const KEEPALIVE_MS = 10_000;
+/** No audio this long after it was asked to speak (a flush or the end): a voice's cold start took up to 10.6 s. */
+const FIRST_AUDIO_DEADLINE_MS = 25_000;
+/** Once speaking, no message from ElevenLabs this long while it owes audio: stalled. */
+const STALL_DEADLINE_MS = 15_000;
 
 /** An ElevenLabs voice id (20 characters). A legacy NAME such as "Rachel" only works through fal. */
 export function isStreamableVoiceId(id: string | null | undefined): id is string {
@@ -39,12 +48,14 @@ export type VoiceStream = {
   push(text: string): void;
   /** Speak what's buffered now (before a lookup), keeping the take open. */
   flush(): void;
-  /** No more words: speak the rest and finish. Resolves when the last audio has arrived. */
+  /** No more words: speak the rest and finish. Resolves when the take has finished or failed. */
   end(): Promise<void>;
-  /** Cut off: nothing more is spoken. */
+  /** Cut off: nothing more is spoken, and no failure is reported. */
   abort(): void;
-  /** Characters sent to be spoken (what is billed). */
-  readonly chars: number;
+  /** Characters actually sent to ElevenLabs over the open socket (what it bills). */
+  readonly sent: number;
+  /** Characters it has voiced so far (from each chunk's words). */
+  readonly voiced: number;
   /** Whether any audio has come back yet. */
   readonly started: boolean;
 };
@@ -53,42 +64,49 @@ type Options = {
   voiceId: string;
   /** Each MP3 chunk, base64, in order, with the words it says (sync_alignment). */
   onAudio: (b64: string, words: string) => void;
-  /** The take failed; `started` says whether any audio had come back first. */
-  onError: (why: string, started: boolean) => void;
+  /** The take failed. `voiced` says how much of it was heard (0: nothing). */
+  onError: (why: string, voiced: number) => void;
   stability?: number;
-  /** For tests: the socket factory. */
+  /** For tests: the socket factory and the clock. */
   connect?: (url: string) => WebSocket;
+  now?: () => number;
 };
 
 export function openVoiceStream(o: Options): VoiceStream {
   const key = process.env.ELEVENLABS_API_KEY ?? "";
+  const now = o.now ?? (() => Date.now());
   const url = `${URL_BASE}?model_id=${VOICE_STREAM_MODEL}&output_format=${VOICE_STREAM_FORMAT}&sync_alignment=true`;
   const ws = (o.connect ?? ((u: string) => new WebSocket(u)))(url);
   let open = false;
   let closed = false;
   let failed = false;
+  let aborted = false;
+  let gotFinal = false;
   let started = false;
-  let chars = 0;
   let ended = false;
-  const outbox: string[] = [];
+  let sent = 0;
+  let voiced = 0;
+  // Asked to speak (a flush or the end) and still owed audio since then.
+  let owedSince: number | null = null;
+  let lastHeard = now();
+  let lastKeepAlive = now();
+  const outbox: { text: string; chars: number }[] = [];
   let finish: () => void = () => {};
   const finished = new Promise<void>((r) => (finish = r));
-  let idle: ReturnType<typeof setInterval> | null = null;
 
-  const send = (msg: Record<string, unknown>) => {
-    const text = JSON.stringify(msg);
-    if (open && !closed) ws.send(text);
-    else if (!closed) outbox.push(text);
+  const write = (text: string, chars: number) => {
+    ws.send(text);
+    sent += chars;
   };
-  const fail = (why: string) => {
-    if (failed || closed) return;
-    failed = true;
-    o.onError(why, started);
-    shut();
+  const send = (msg: Record<string, unknown>, chars = 0) => {
+    const text = JSON.stringify(msg);
+    if (closed) return;
+    if (open) write(text, chars);
+    else outbox.push({ text, chars });
   };
   const shut = () => {
-    if (idle) clearInterval(idle);
-    idle = null;
+    if (timer) clearInterval(timer);
+    timer = null;
     if (!closed) {
       closed = true;
       try {
@@ -97,17 +115,34 @@ export function openVoiceStream(o: Options): VoiceStream {
     }
     finish();
   };
+  const fail = (why: string) => {
+    if (failed || aborted || gotFinal) return;
+    failed = true;
+    shut();
+    o.onError(why, voiced);
+  };
+
+  let timer: ReturnType<typeof setInterval> | null = setInterval(() => {
+    const t = now();
+    // Through a lookup the socket's 20 s idle limit is kept at bay — only
+    // while more words may come; after close_socket it is ElevenLabs' turn.
+    if (open && !closed && !ended && t - lastKeepAlive >= KEEPALIVE_MS) {
+      lastKeepAlive = t;
+      ws.send(JSON.stringify({ keep_alive: true }));
+    }
+    if (owedSince !== null) {
+      const limit = started ? STALL_DEADLINE_MS : FIRST_AUDIO_DEADLINE_MS;
+      if (t - Math.max(owedSince, lastHeard) > limit) fail(started ? "stalled" : "no audio");
+    }
+  }, TICK_MS);
 
   ws.onopen = () => {
     open = true;
-    ws.send(JSON.stringify({ voices: [o.voiceId], xi_api_key: key, voice_settings: { stability: o.stability ?? 0.5 } }));
-    for (const m of outbox.splice(0)) ws.send(m);
-    // A lookup can outlast the socket's 20 s idle limit: keep it alive.
-    idle = setInterval(() => {
-      if (open && !closed) ws.send(JSON.stringify({ keep_alive: true }));
-    }, IDLE_KEEPALIVE_MS);
+    write(JSON.stringify({ voices: [o.voiceId], xi_api_key: key, voice_settings: { stability: o.stability ?? 0.5 } }), 0);
+    for (const m of outbox.splice(0)) write(m.text, m.chars);
   };
   ws.onmessage = (e: MessageEvent) => {
+    lastHeard = now();
     let m: { audio?: unknown; alignment?: { chars?: unknown } | null; is_final?: unknown; error?: unknown; message?: unknown } = {};
     try {
       m = JSON.parse(String(e.data));
@@ -116,43 +151,72 @@ export function openVoiceStream(o: Options): VoiceStream {
     }
     if (typeof m.audio === "string" && m.audio) {
       started = true;
-      const chars = Array.isArray(m.alignment?.chars) ? (m.alignment.chars as unknown[]).filter((c) => typeof c === "string").join("") : "";
-      o.onAudio(m.audio, chars);
+      const words = Array.isArray(m.alignment?.chars)
+        ? (m.alignment.chars as unknown[]).filter((c) => typeof c === "string").join("")
+        : "";
+      voiced += words.length;
+      if (!ended) owedSince = null;
+      o.onAudio(m.audio, words);
     }
     if (m.error) fail(`${String(m.error)}: ${String(m.message ?? "")}`.slice(0, 200));
-    if (m.is_final) shut();
+    if (m.is_final) {
+      gotFinal = true;
+      shut();
+    }
   };
   ws.onerror = () => fail("socket error");
   ws.onclose = () => {
-    if (!ended && !failed) fail("closed early");
+    if (!gotFinal && !aborted) fail(ended ? "closed before it finished" : "closed early");
     else shut();
   };
 
   return {
     push(text: string) {
       if (!text || closed || ended) return;
-      chars += text.length;
-      send({ inputs: [{ text, voice_id: o.voiceId }] });
+      send({ inputs: [{ text, voice_id: o.voiceId }] }, text.length);
     },
     flush() {
-      if (!closed && !ended) send({ flush: true });
+      if (closed || ended) return;
+      send({ flush: true });
+      owedSince = owedSince ?? now();
     },
     end() {
       if (!ended && !closed) {
         ended = true;
         send({ close_socket: true });
+        owedSince = now();
       }
       return finished;
     },
     abort() {
+      aborted = true;
       ended = true;
       shut();
     },
-    get chars() {
-      return chars;
+    get sent() {
+      return sent;
+    },
+    get voiced() {
+      return voiced;
     },
     get started() {
       return started;
     },
   };
+}
+
+/**
+ * Where to pick up after a take that failed part-way: the start of the
+ * sentence it was in when it stopped, so the fallback voice begins on a
+ * whole sentence (a few words may be heard twice; none are lost).
+ */
+export function resumeAt(fed: string, voiced: number): number {
+  if (voiced <= 0) return 0;
+  if (voiced >= fed.length) return fed.length;
+  const before = fed.slice(0, voiced);
+  const re = /[.!?…](?:["')\]]*)\s+|\n+/g;
+  let cut = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(before))) cut = m.index + m[0].length;
+  return cut;
 }

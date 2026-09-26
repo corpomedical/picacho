@@ -250,9 +250,10 @@ export function ProducerLamp({
   // Her voice is woken before it's needed: the first answer in a voice
   // ElevenLabs hasn't used for a while took 6-11 s to start (warmProducerVoice;
   // the server does it at most once every two minutes).
+  const wantWarm = (open && readAloud && loaded) || voice.active;
   useEffect(() => {
-    if ((open && readAloud) || voice.active) void warmProducerVoice().catch(() => {});
-  }, [open, readAloud, voice.active]);
+    if (wantWarm) void warmProducerVoice().catch(() => {});
+  }, [wantWarm]);
 
   // Voice stays on across a reload, and off only when the person says so.
   useEffect(() => {

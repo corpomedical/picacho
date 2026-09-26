@@ -1,6 +1,7 @@
 "use server";
 
 import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { after } from "next/server";
 import {
   isProducerEnabled,
   isProducerOpenToElite,
@@ -240,16 +241,21 @@ export async function warmProducerVoice(): Promise<void> {
     const voice = await loadProducerVoice(g.admin, g.userId);
     if (!voice || !isStreamableVoiceId(voice.elevenLabsVoiceId)) return;
     if (await rateLimited(g.userId, "producer-voice-warm", 120, 1)) return;
-    const res = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voice.elevenLabsVoiceId}?output_format=mp3_22050_32`,
-      {
-        method: "POST",
-        headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY ?? "", "content-type": "application/json" },
-        body: JSON.stringify({ text: "Mm.", model_id: "eleven_flash_v2_5" }),
-        signal: AbortSignal.timeout(15_000),
-      },
-    );
-    await res.arrayBuffer().catch(() => null);
+    // After the action has answered: server actions run one at a time per
+    // page, and a cold voice takes up to ~11 s — the sheet's other actions
+    // (its conversation, notes, voice) mustn't wait behind it.
+    const voiceId = voice.elevenLabsVoiceId;
+    after(async () => {
+      try {
+        const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_22050_32`, {
+          method: "POST",
+          headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY ?? "", "content-type": "application/json" },
+          body: JSON.stringify({ text: "Mm.", model_id: "eleven_flash_v2_5" }),
+          signal: AbortSignal.timeout(15_000),
+        });
+        await res.arrayBuffer().catch(() => null);
+      } catch {}
+    });
   } catch {
     // A warm-up that fails costs only the slow first answer it was meant to spare.
   }
