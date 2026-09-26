@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.119.0",
+    build: 158,
+    date: "2026-09-26",
+    title: "The invite card names the credit it gives: an extra credit",
+    items: [
+      "The invite card in Settings → Profile said you and the friend who joins with your link each get \"1 bonus credit\". The reward is a bought credit: it lands in Extra credits, with the credits you buy, and never expires. Bonus credits are the ones an admin gives, and Settings now shows them on a line of their own, so the card pointed at the wrong number. It now says \"1 extra credit\" in English, Portuguese and Italian. Spanish already said \"crédito extra\".",
+      "The getting-started guide's Invite friends step says \"an extra credit\" too. Its picture still shows the old line until the guide's pictures are next taken.",
+    ],
+  },
+  {
     version: "1.118.0",
     build: 157,
     date: "2026-09-26",
