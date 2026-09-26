@@ -35,7 +35,7 @@ import {
 import { judgeSpoken, type Verdict } from "@/lib/producer/gate";
 import { sentenceChunker } from "@/lib/producer/sentences";
 import { spotForTool } from "@/lib/producer/spots";
-import { appendMessages, loadMessages, loadPrefs, loadProducerVoice, openThread } from "@/lib/producer/store";
+import { DEFAULT_PRODUCER_NAME, appendMessages, loadMessages, loadPrefs, loadProducerVoice, openThread } from "@/lib/producer/store";
 import {
   CUT_MARK,
   INTERRUPTED_ANSWER,
@@ -173,6 +173,8 @@ export async function POST(request: NextRequest) {
     heard?: unknown;
     interrupting?: unknown;
     nearness?: unknown;
+    /** What the sheet calls it: only a spelling hint for the transcriber. */
+    name?: unknown;
   } | null;
   // One recording, or several said in a row while an answer was under way
   // (2026-09-25, "several questions at once"): each is transcribed and they
@@ -219,7 +221,7 @@ export async function POST(request: NextRequest) {
   });
   if (reserveError) {
     console.error("producer: budget check failed", reserveError.message);
-    return NextResponse.json({ error: "The Producer is unavailable right now." }, { status: 503 });
+    return NextResponse.json({ error: "Your assistant is unavailable right now." }, { status: 503 });
   }
   if (!reservationId) {
     return NextResponse.json({ error: "You've used this period's assistant allowance." }, { status: 402 });
@@ -343,6 +345,12 @@ export async function POST(request: NextRequest) {
   // calls the Producer and their characters' names (read now, waited for at
   // most a moment so the transcription never waits long for them).
   let confidence: number | null = null;
+  // Only a spelling hint for this person's own recording: what their sheet
+  // shows as its name.
+  const nameHint =
+    typeof body?.name === "string"
+      ? body.name.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 24)
+      : "";
   if (spoken) {
     const soon = <T,>(p: Promise<T>, fallback: T) =>
       Promise.race([p.catch(() => fallback), new Promise<T>((r) => setTimeout(() => r(fallback), 300))]);
@@ -359,7 +367,11 @@ export async function POST(request: NextRequest) {
         })(),
         [] as string[],
       ),
-      soon(loading.then((l) => l.prefs.name), ""),
+      // The name they call it, from their settings when those load in time,
+      // else the one the sheet shows (sent with the recording), else the
+      // default: a name left out of the prompt comes back "Allie" (tested
+      // 2026-09-26: English 3/3 "Aly" with the name, 0/3 without).
+      soon(loading.then((l) => l.prefs.name), nameHint || DEFAULT_PRODUCER_NAME),
     ]);
     try {
       const heardParts = await Promise.all(
@@ -399,7 +411,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error("producer:", err);
     await settle("transient");
-    return NextResponse.json({ error: "The Producer is unavailable right now." }, { status: 503 });
+    return NextResponse.json({ error: "Your assistant is unavailable right now." }, { status: 503 });
   }
   const { thread, prefs, watchBar, humanVoice, watch } = loaded;
   let rows = loaded.rows;
@@ -634,7 +646,7 @@ export async function POST(request: NextRequest) {
         : writeOpening(true);
       opened.catch(() => {});
       const failureText = (f: typeof openFailure) =>
-        f === "busy" ? "Your Producer is still answering the last message." : f === "limited" ? "Slow down a moment." : "That didn't go through. Try again.";
+        f === "busy" ? "Still answering your last message." : f === "limited" ? "Slow down a moment." : "That didn't go through. Try again.";
       if (!holding && !(await opened)) {
         emit("error", { error: failureText(openFailure) });
         finish(await settle(openFailure === "transient" ? "transient" : "busy").catch(() => 0));
@@ -956,7 +968,7 @@ export async function POST(request: NextRequest) {
           send("error", {
             error:
               outcome === "provider_unavailable"
-                ? "The Producer is unavailable right now."
+                ? "Your assistant is unavailable right now."
                 : "That didn't go through. Try again.",
           });
         }

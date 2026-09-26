@@ -3264,7 +3264,7 @@ const it = {
       openFilm: "Apri {film}",
       openCard: "Apri la scheda di {thing}",
       buildNew: "Costruisci un nuovo luogo",
-      askProducer: "Chiedi al Producer",
+      askProducer: "Chiedi ad Aly",
       pickWithAt: "Scegli con @",
       takeWord: "ripresa",
       takeLabel: "Ripresa",
@@ -3429,7 +3429,7 @@ const it = {
       answerHelp: "Posso decidere chi c'è, dove sta e dove guarda, la posa, il terzo sinistro o destro, la camera e l'obiettivo, la luce, l'ora e il look, e cosa succede, e far partire una ripresa da una foto. Chiedo prima di tutto ciò che costa crediti o cambia il set in sé.",
       answerHelpAuto: "Posso decidere chi c'è, dove sta e dove guarda, la posa, il terzo sinistro o destro, la camera e l'obiettivo, la luce, l'ora e il look, e cosa succede, e far partire una ripresa da una foto. In {mode}, un'inquadratura che cambia viene scattata subito ({credits}); chiedo sempre prima di cambiare il set in sé.",
       answerElsewhere: "È fuori da questo set: {settings} → {billing} ha il tuo piano e i tuoi crediti.",
-      answerElsewhereProducer: " Oppure chiedi al Producer (la lampada).",
+      answerElsewhereProducer: " Oppure chiedi ad Aly (la lampada).",
     },
     rig: {
       chip: "Rig",

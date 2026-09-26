@@ -714,8 +714,8 @@ describe("answers from the page's facts (spec §5.6)", () => {
   it("elsewhere: Settings, and the Producer only where the lamp is", () => {
     expect(say("elsewhere")).toEqual({ text: "That's outside this set: Settings → Plan & billing has your plan and credits.", buttons: [] });
     expect(say("elsewhere", { producerOn: true })).toEqual({
-      text: "That's outside this set: Settings → Plan & billing has your plan and credits. Or ask the Producer (the lamp).",
-      buttons: [{ kind: "askProducer", label: "Ask the Producer" }],
+      text: "That's outside this set: Settings → Plan & billing has your plan and credits. Or ask Aly (the lamp).",
+      buttons: [{ kind: "askProducer", label: "Ask Aly" }],
     });
   });
 });

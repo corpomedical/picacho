@@ -3265,7 +3265,7 @@ const pt = {
       openFilm: "Abrir {film}",
       openCard: "Abrir o cartão de {thing}",
       buildNew: "Construir um lugar novo",
-      askProducer: "Perguntar ao Producer",
+      askProducer: "Perguntar à Aly",
       pickWithAt: "Escolher com @",
       takeWord: "take",
       takeLabel: "Take",
@@ -3429,7 +3429,7 @@ const pt = {
       answerHelp: "Posso definir quem aparece, onde fica e para onde olha, a pose, o terço esquerdo ou direito, a câmera e a lente, a luz, a hora e o visual, e o que acontece, e começar um take a partir de uma foto. Pergunto antes de qualquer coisa que custe créditos ou mude o próprio set.",
       answerHelpAuto: "Posso definir quem aparece, onde fica e para onde olha, a pose, o terço esquerdo ou direito, a câmera e a lente, a luz, a hora e o visual, e o que acontece, e começar um take a partir de uma foto. Em {mode}, um quadro que muda é fotografado na hora ({credits}); sempre pergunto antes de mudar o próprio set.",
       answerElsewhere: "Isso fica fora deste set: {settings} → {billing} tem seu plano e seus créditos.",
-      answerElsewhereProducer: " Ou pergunte ao Producer (a lâmpada).",
+      answerElsewhereProducer: " Ou pergunte à Aly (a lâmpada).",
     },
     rig: {
       chip: "Rig",

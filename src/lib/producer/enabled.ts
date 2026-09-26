@@ -42,9 +42,10 @@ async function flagOn(supabase: SupabaseClient, key: string): Promise<boolean> {
 }
 
 export const PRODUCER_SUSPENDED = "This account is suspended.";
-export const PRODUCER_NOT_OPEN = "The Producer isn't open to your account yet.";
-export const PRODUCER_NEEDS_ELITE = "The Producer is part of the Elite plan.";
-export const PRODUCER_UNAVAILABLE = "The Producer is switched off for the moment.";
+// Said to people who don't have it (or no longer do): the product's own name.
+export const PRODUCER_NOT_OPEN = "Aly isn't open to your account yet.";
+export const PRODUCER_NEEDS_ELITE = "Aly is part of the Elite plan.";
+export const PRODUCER_UNAVAILABLE = "Your assistant is switched off for the moment.";
 
 export type ProducerProfile = {
   plan?: unknown;

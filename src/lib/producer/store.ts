@@ -7,7 +7,12 @@ import type { Note, NotesStore } from "./notes";
 // scoped by the user id the caller took from the session (producer.sql grants
 // sessions SELECT on their own rows and nothing else).
 
-export const DEFAULT_PRODUCER_NAME = "Producer";
+// Aly (2026-09-26, operator: "We need to give the assistant a name" →
+// "How about Aly?" → "Yes, Aly + the fixes"). Checked first: no image or
+// video AI uses it; spoken, speech-to-text writes it "Aly" when the prompt
+// names it (English 3/3; other languages 4 in 6, misses "Ali", "Alê") and
+// "Allie" when it doesn't. People who named it themselves keep their name.
+export const DEFAULT_PRODUCER_NAME = "Aly";
 
 export type ThreadRow = { id: string; setup: ProducerSetup };
 

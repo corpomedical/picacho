@@ -530,6 +530,9 @@ export function ProducerLamp({
           focus: focus ?? null,
           interrupting: spoken ? interrupting : undefined,
           nearness: last?.nearness ?? null,
+          // What this sheet calls it: the transcriber's spelling hint when the
+          // server's settings read is slow (route.ts).
+          name: spoken ? name : undefined,
           heard: heard ?? undefined,
         }),
         signal: turn.controller.signal,

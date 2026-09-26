@@ -45,7 +45,7 @@ export function ProducerAccessRow({
   const button = state !== "admin" || granted;
   return (
     <div className="mt-4">
-      <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Assistant (the Producer)</p>
+      <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Assistant (Aly)</p>
       {grantReady && button ? (
         <form action={setProducerAccess} className="mt-2 flex items-center gap-2">
           <input type="hidden" name="user_id" value={userId} />
@@ -64,12 +64,12 @@ export function ProducerAccessRow({
         {grantReady
           ? state === "admin"
             ? "Admins always have it."
-            : `For anyone the Elite rule doesn't cover: a pilot, a partner, another plan, or Elite before it opens to Elite. They get the lamp on every page and Elite's allowance: ${eliteUnits.toLocaleString("en-US")} units a month, at most $${eliteUnitsUsd.toFixed(0)} of turns. Revoking stops it at once: it refuses their next message and takes its lamp away (or the lamp goes on their next full page load). Their conversation and notes stay.`
+            : `For anyone the Elite rule doesn't cover: a pilot, a partner, another plan, or Elite before Aly opens to Elite. They get the lamp on every page and Elite's allowance: ${eliteUnits.toLocaleString("en-US")} units a month, at most $${eliteUnitsUsd.toFixed(0)} of turns. Revoking stops it at once: it refuses their next message and takes its lamp away (or the lamp goes on their next full page load). Their conversation and notes stay.`
           : "Granting needs supabase/applied/2026-09-26/producer-access.sql. Run it in Supabase, then reload this page."}
       </p>
       {!producerOn && (
         <p className="mt-1 text-xs text-amber-600">
-          The Producer is switched off for everyone right now (Flags: producer), granted or not.
+          Aly is switched off for everyone right now (Flags: producer), granted or not.
         </p>
       )}
     </div>

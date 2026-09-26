@@ -17,7 +17,7 @@ import {
 
 // What a refused microphone means, said for where the person actually is.
 const APP_TOO_OLD =
-  "Talking needs the latest Picacho app. Update it from Google Play, then tap the mic again. You can type to the Producer meanwhile.";
+  "Talking needs the latest Picacho app. Update it from Google Play, then tap the mic again. You can type meanwhile.";
 const APP_MIC_DENIED =
   "The microphone is off for Picacho. Turn it on in your phone's Settings → Apps → Picacho → Permissions → Microphone, then tap the mic again.";
 const WEB_MIC_DENIED =
@@ -437,7 +437,7 @@ export function useHandsFree({
       // A load failure is el.onerror's to handle; only a refused play (no
       // user gesture yet) asks for a tap.
       if ((err as { name?: string } | null)?.name === "NotAllowedError") {
-        setNotice("Tap anywhere to let the Producer's voice play.");
+        setNotice("Tap anywhere to let the reply play.");
         done();
       }
     });

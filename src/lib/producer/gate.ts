@@ -41,7 +41,9 @@ It was said to the assistant when it asks the assistant something, answers or re
 
 It was not said to the assistant when it is something else the microphone happened to hear: a video, TV, podcast or song playing nearby; other people in the room; the person talking to someone else or on the phone; or the assistant's own voice coming back through the speaker.
 
-Judge by what the words mean in this conversation, not by particular words. Speech that has nothing to do with the conversation and reads like dialogue, narration, commentary or someone else's talk is most likely not for the assistant. A short reply that fits what the assistant just said is for it, even if it is only a word or two. Words that are much quieter than the person's own voice, or that the transcriber was unsure of, lean towards not for the assistant, but meaning comes first. If you can't tell, say unclear.`;
+Judge by what the words mean in this conversation, not by particular words. Speech that has nothing to do with the conversation and reads like dialogue, narration, commentary or someone else's talk is most likely not for the assistant. A short reply that fits what the assistant just said is for it, even if it is only a word or two. Words that are much quieter than the person's own voice, or that the transcriber was unsure of, lean towards not for the assistant, but meaning comes first. If you can't tell, say unclear.
+
+The person may call the assistant by its name. The transcriber may misspell that name, or write an everyday word that sounds like it as the name, so the name appearing in the words is not by itself a sign they were said to the assistant: judge what the whole sentence means.`;
 
 function describe(a: GateInput): string {
   const convo = a.recent.length

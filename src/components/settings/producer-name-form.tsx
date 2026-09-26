@@ -4,11 +4,11 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { setProducerName } from "@/lib/producer/actions";
 
-// What the person calls their Producer (operator, 2026-09-24: "User picks" —
-// Producer by default, Concierge the other named choice, or their own).
-// English only while the Producer is admins-only, like its sheet.
+// What the person calls their assistant (operator, 2026-09-24: "User picks";
+// 2026-09-26: Aly by default — Producer, the old default, and Concierge are
+// the other named choices, or their own). English only, like its sheet.
 
-const PRESETS = ["Producer", "Concierge"] as const;
+const PRESETS = ["Aly", "Producer", "Concierge"] as const;
 
 export function ProducerNameForm({ initialName }: { initialName: string }) {
   const router = useRouter();

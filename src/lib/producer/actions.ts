@@ -101,7 +101,7 @@ export async function loadProducer(): Promise<{ error: string } | { error: null;
     };
   } catch (err) {
     console.error("producer: load failed —", err);
-    return { error: "The Producer couldn't load just now." };
+    return { error: "Your assistant couldn't load just now." };
   }
 }
 
@@ -158,7 +158,8 @@ export async function clearProducerNotes(): Promise<{ error: string | null }> {
 
 /**
  * What the person calls it (operator, 2026-09-24: "User picks"). Empty or
- * "Producer" stores null, so the default can be renamed later in one place.
+ * the default (Aly) stores null, so the default can be renamed later in one
+ * place — as it was on 2026-09-26, from Producer to Aly.
  */
 export async function setProducerName(raw: string): Promise<{ error: string | null; name: string }> {
   const g = await gate();

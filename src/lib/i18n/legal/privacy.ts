@@ -26,11 +26,15 @@ import type { LegalDoc } from "./types";
 // Later still ("doesnt pick up every voice on the background"): what the
 // mic heard is also judged by Anthropic (gate.ts), and the transcription
 // names the Producer and the characters — a paragraph in each language.
+// September 26, 2026: the assistant is named (Aly, renameable), and it is no
+// longer Elite-only — an admin can give it to any account — so "the
+// personal assistant on Elite accounts" became "on Elite accounts and on
+// accounts we give it to", in each language.
 const UPDATED: Record<Locale, string> = {
-  en: "September 25, 2026",
-  es: "25 de septiembre de 2026",
-  it: "25 settembre 2026",
-  pt: "25 de setembro de 2026",
+  en: "September 26, 2026",
+  es: "26 de septiembre de 2026",
+  it: "26 settembre 2026",
+  pt: "26 de setembro de 2026",
 };
 
 const privacy: Record<Locale, LegalDoc> = {
@@ -77,9 +81,9 @@ const privacy: Record<Locale, LegalDoc> = {
       {
         heading: "Voice and the assistant",
         paragraphs: [
-          "If you use a microphone feature (the mic in the composer, or talking to the Producer), your recording is sent to our AI provider, OpenAI, to be turned into text. Picacho does not store the recording; only the resulting text is kept, as part of your prompt or conversation. When the Producer answers out loud, its reply is sent to our voice provider, ElevenLabs (through fal), to be turned into speech; if that is unavailable, OpenAI does it instead. The microphone is used only after you tap a mic button and allow access.",
-          "While you talk to the Producer, the words it heard are also checked by Anthropic, the AI provider the Producer runs on, to tell whether they were said to it; anything that wasn't (a video playing, someone else in the room) is dropped and not kept. To spell names right, the transcription request also names the Producer and your characters.",
-          "The Producer, the personal assistant on Elite accounts, keeps your conversation with it and the short notes it writes about how you work, so it can pick up where you left off. You can read, edit and delete every note, and clear the conversation, from the Producer itself. Both are deleted with your account.",
+          "If you use a microphone feature (the mic in the composer, or talking to Aly, the personal assistant), your recording is sent to our AI provider, OpenAI, to be turned into text. Picacho does not store the recording; only the resulting text is kept, as part of your prompt or conversation. When the assistant answers out loud, its reply is sent to our voice provider, ElevenLabs (through fal), to be turned into speech; if that is unavailable, OpenAI does it instead. The microphone is used only after you tap a mic button and allow access.",
+          "While you talk to the assistant, the words it heard are also checked by Anthropic, the AI provider the assistant runs on, to tell whether they were said to it; anything that wasn't (a video playing, someone else in the room) is dropped and not kept. To spell names right, the transcription request also names the assistant (Aly, or the name you gave it) and your characters.",
+          "The personal assistant (Aly), on Elite accounts and on accounts we give it to, keeps your conversation with it and the short notes it writes about how you work, so it can pick up where you left off. You can read, edit and delete every note, and clear the conversation, from the assistant itself. Both are deleted with your account.",
         ],
       },
       {
@@ -185,9 +189,9 @@ const privacy: Record<Locale, LegalDoc> = {
       {
         heading: "La voz y el asistente",
         paragraphs: [
-          "Si usas una función de micrófono (el micrófono del compositor, o hablar con el Producer), tu grabación se envía a nuestro proveedor de IA, OpenAI, para convertirla en texto. Picacho no guarda la grabación; solo se conserva el texto resultante, como parte de tu prompt o de tu conversación. Cuando el Producer responde en voz alta, su respuesta se envía a nuestro proveedor de voz, ElevenLabs (a través de fal), para convertirla en voz; si no está disponible, lo hace OpenAI. El micrófono solo se usa después de que toques un botón de micrófono y permitas el acceso.",
-          "Mientras hablas con el Producer, las palabras que ha oído también las revisa Anthropic, el proveedor de IA con el que funciona el Producer, para saber si iban dirigidas a él; lo que no (un vídeo que suena, otra persona en la sala) se descarta y no se guarda. Para escribir bien los nombres, la solicitud de transcripción también incluye el nombre del Producer y los de tus personajes.",
-          "El Producer, el asistente personal de las cuentas Elite, guarda tu conversación con él y las notas breves que escribe sobre tu forma de trabajar, para poder continuar donde lo dejaste. Puedes leer, editar y borrar cada nota, y vaciar la conversación, desde el propio Producer. Ambas se eliminan con tu cuenta.",
+          "Si usas una función de micrófono (el micrófono del compositor, o hablar con Aly, el asistente personal), tu grabación se envía a nuestro proveedor de IA, OpenAI, para convertirla en texto. Picacho no guarda la grabación; solo se conserva el texto resultante, como parte de tu prompt o de tu conversación. Cuando el asistente responde en voz alta, su respuesta se envía a nuestro proveedor de voz, ElevenLabs (a través de fal), para convertirla en voz; si no está disponible, lo hace OpenAI. El micrófono solo se usa después de que toques un botón de micrófono y permitas el acceso.",
+          "Mientras hablas con el asistente, las palabras que ha oído también las revisa Anthropic, el proveedor de IA con el que funciona el asistente, para saber si iban dirigidas a él; lo que no (un vídeo que suena, otra persona en la sala) se descarta y no se guarda. Para escribir bien los nombres, la solicitud de transcripción también incluye el nombre del asistente (Aly, o el que le hayas dado) y los de tus personajes.",
+          "El asistente personal (Aly), en las cuentas Elite y en las cuentas a las que se lo damos, guarda tu conversación con él y las notas breves que escribe sobre tu forma de trabajar, para poder continuar donde lo dejaste. Puedes leer, editar y borrar cada nota, y vaciar la conversación, desde el propio asistente. Ambas se eliminan con tu cuenta.",
         ],
       },
       {
@@ -295,9 +299,9 @@ const privacy: Record<Locale, LegalDoc> = {
       {
         heading: "Voz e o assistente",
         paragraphs: [
-          "Se você usar um recurso de microfone (o microfone do compositor, ou falar com o Producer), sua gravação é enviada ao nosso provedor de IA, a OpenAI, para ser convertida em texto. O Picacho não armazena a gravação; apenas o texto resultante é mantido, como parte do seu prompt ou da sua conversa. Quando o Producer responde em voz alta, a resposta é enviada ao nosso provedor de voz, a ElevenLabs (por meio da fal), para ser convertida em fala; se não estiver disponível, a OpenAI faz isso. O microfone só é usado depois que você toca em um botão de microfone e permite o acesso.",
-          "Enquanto você fala com o Producer, as palavras que ele ouviu também são verificadas pela Anthropic, o provedor de IA em que o Producer funciona, para saber se foram ditas a ele; o que não foi (um vídeo tocando, outra pessoa na sala) é descartado e não é mantido. Para escrever os nomes corretamente, o pedido de transcrição também inclui o nome do Producer e os dos seus personagens.",
-          "O Producer, o assistente pessoal das contas Elite, guarda a sua conversa com ele e as notas curtas que escreve sobre a sua forma de trabalhar, para continuar de onde você parou. Você pode ler, editar e apagar cada nota, e limpar a conversa, no próprio Producer. Ambas são excluídas junto com a sua conta.",
+          "Se você usar um recurso de microfone (o microfone do compositor, ou falar com o assistente pessoal, a Aly), sua gravação é enviada ao nosso provedor de IA, a OpenAI, para ser convertida em texto. O Picacho não armazena a gravação; apenas o texto resultante é mantido, como parte do seu prompt ou da sua conversa. Quando o assistente responde em voz alta, a resposta é enviada ao nosso provedor de voz, a ElevenLabs (por meio da fal), para ser convertida em fala; se não estiver disponível, a OpenAI faz isso. O microfone só é usado depois que você toca em um botão de microfone e permite o acesso.",
+          "Enquanto você fala com o assistente, as palavras que ele ouviu também são verificadas pela Anthropic, o provedor de IA em que o assistente funciona, para saber se foram ditas a ele; o que não foi (um vídeo tocando, outra pessoa na sala) é descartado e não é mantido. Para escrever os nomes corretamente, o pedido de transcrição também inclui o nome do assistente (Aly, ou o que você deu a ele) e os dos seus personagens.",
+          "O assistente pessoal (Aly), nas contas Elite e nas contas às quais o oferecemos, guarda a sua conversa com ele e as notas curtas que escreve sobre a sua forma de trabalhar, para continuar de onde você parou. Você pode ler, editar e apagar cada nota, e limpar a conversa, no próprio assistente. Ambas são excluídas junto com a sua conta.",
         ],
       },
       {
@@ -405,9 +409,9 @@ const privacy: Record<Locale, LegalDoc> = {
       {
         heading: "La voce e l'assistente",
         paragraphs: [
-          "Se usi una funzione del microfono (il microfono del compositore, o parlare con il Producer), la tua registrazione viene inviata al nostro fornitore di IA, OpenAI, per essere trasformata in testo. Picacho non conserva la registrazione; viene mantenuto solo il testo risultante, come parte del tuo prompt o della tua conversazione. Quando il Producer risponde a voce, la sua risposta viene inviata al nostro fornitore di voce, ElevenLabs (tramite fal), per essere trasformata in parlato; se non è disponibile, lo fa OpenAI. Il microfono viene usato solo dopo che tocchi un pulsante del microfono e ne consenti l'accesso.",
-          "Mentre parli con il Producer, le parole che ha sentito vengono controllate anche da Anthropic, il fornitore di IA su cui funziona il Producer, per capire se erano rivolte a lui; ciò che non lo era (un video in riproduzione, un'altra persona nella stanza) viene scartato e non conservato. Per scrivere bene i nomi, la richiesta di trascrizione include anche il nome del Producer e quelli dei tuoi personaggi.",
-          "Il Producer, l'assistente personale degli account Elite, conserva la tua conversazione con lui e le brevi note che scrive sul tuo modo di lavorare, per riprendere da dove avevi lasciato. Puoi leggere, modificare ed eliminare ogni nota, e cancellare la conversazione, dal Producer stesso. Entrambe vengono eliminate insieme al tuo account.",
+          "Se usi una funzione del microfono (il microfono del compositore, o parlare con Aly, l'assistente personale), la tua registrazione viene inviata al nostro fornitore di IA, OpenAI, per essere trasformata in testo. Picacho non conserva la registrazione; viene mantenuto solo il testo risultante, come parte del tuo prompt o della tua conversazione. Quando l'assistente risponde a voce, la sua risposta viene inviata al nostro fornitore di voce, ElevenLabs (tramite fal), per essere trasformata in parlato; se non è disponibile, lo fa OpenAI. Il microfono viene usato solo dopo che tocchi un pulsante del microfono e ne consenti l'accesso.",
+          "Mentre parli con l'assistente, le parole che ha sentito vengono controllate anche da Anthropic, il fornitore di IA su cui funziona l'assistente, per capire se erano rivolte a lui; ciò che non lo era (un video in riproduzione, un'altra persona nella stanza) viene scartato e non conservato. Per scrivere bene i nomi, la richiesta di trascrizione include anche il nome dell'assistente (Aly, o quello che gli hai dato) e quelli dei tuoi personaggi.",
+          "L'assistente personale (Aly), negli account Elite e negli account a cui lo concediamo, conserva la tua conversazione con lui e le brevi note che scrive sul tuo modo di lavorare, per riprendere da dove avevi lasciato. Puoi leggere, modificare ed eliminare ogni nota, e cancellare la conversazione, dall'assistente stesso. Entrambe vengono eliminate insieme al tuo account.",
         ],
       },
       {

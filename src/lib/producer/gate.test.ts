@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { gatePromptFor, judgeSpoken } from "./gate";
 import { answerPending, recentLines, secondsSinceAssistant } from "./history";
 
@@ -104,5 +106,26 @@ describe("the conversation's shape", () => {
       answerPending([user("q"), note, { role: "assistant" as const, content: [{ type: "tool_use", id: "t" }], display: null }]),
     ).toBe(true);
     expect(answerPending([user("q"), note, { role: "user" as const, content: [], display: null }])).toBe(true);
+  });
+});
+
+// The assistant is named Aly (2026-09-26). Tested for ~5 cents that day:
+// the transcriber writes "Aly" when its prompt names it and "Allie" when it
+// doesn't, and a misspelled name ("Ali, pode preparar a primeira") must still
+// read as said to it — by meaning, never a list of spellings.
+describe("a name the transcriber may misspell", () => {
+  const read = (p: string) => readFileSync(join(__dirname, p), "utf8");
+  it("tells the judge a name can come out misspelled, and lists no spellings", () => {
+    const gate = read("./gate.ts");
+    expect(gate).toContain(
+      "The transcriber may misspell that name, or write an everyday word that sounds like it as the name, so the name appearing in the words is not by itself a sign they were said to the assistant: judge what the whole sentence means.",
+    );
+    for (const spelling of ["Ally", "Allie", "Ali ", "Alê"]) expect(gate).not.toContain(spelling);
+  });
+  it("always gives the transcriber a name: settings, else the sheet's, else Aly", () => {
+    const route = read("../../app/api/producer/route.ts");
+    expect(route).toContain("soon(loading.then((l) => l.prefs.name), nameHint || DEFAULT_PRODUCER_NAME)");
+    expect(read("../../components/producer/producer-lamp.tsx")).toContain("name: spoken ? name : undefined,");
+    expect(read("./store.ts")).toContain('export const DEFAULT_PRODUCER_NAME = "Aly";');
   });
 });

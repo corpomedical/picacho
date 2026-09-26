@@ -3265,7 +3265,7 @@ const es = {
       openFilm: "Abrir {film}",
       openCard: "Abrir la ficha de {thing}",
       buildNew: "Construir un lugar nuevo",
-      askProducer: "Preguntar al Producer",
+      askProducer: "Preguntar a Aly",
       pickWithAt: "Elegir con @",
       takeWord: "toma",
       takeLabel: "Toma",
@@ -3429,7 +3429,7 @@ const es = {
       answerHelp: "Puedo poner quién sale, dónde está y adónde mira, su pose, el tercio izquierdo o derecho, la cámara y la lente, la luz, la hora y el look, y lo que pasa, y empezar una toma desde una foto. Pregunto antes de todo lo que cueste créditos o cambie el set en sí.",
       answerHelpAuto: "Puedo poner quién sale, dónde está y adónde mira, su pose, el tercio izquierdo o derecho, la cámara y la lente, la luz, la hora y el look, y lo que pasa, y empezar una toma desde una foto. En {mode}, un encuadre que cambia se fotografía al momento ({credits}); siempre pregunto antes de cambiar el set en sí.",
       answerElsewhere: "Eso queda fuera de este set: {settings} → {billing} tiene tu plan y tus créditos.",
-      answerElsewhereProducer: " O pregúntale al Producer (la lámpara).",
+      answerElsewhereProducer: " O pregúntale a Aly (la lámpara).",
     },
     rig: {
       chip: "Rig",

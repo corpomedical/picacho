@@ -3472,7 +3472,7 @@ const en = {
       openFilm: "Open {film}",
       openCard: "Open {thing}'s card",
       buildNew: "Build a new place",
-      askProducer: "Ask the Producer",
+      askProducer: "Ask Aly",
       pickWithAt: "Pick with @",
       takeWord: "take",
       takeLabel: "Take",
@@ -3639,7 +3639,7 @@ const en = {
       // In "Shoot without asking" a changed frame IS shot at once (check of the spec, item 5).
       answerHelpAuto: "I can set who's in the frame, where they stand and look, their pose, the left or right third, the camera and lens, the light, time and look, and what happens, and start a take from a still. In {mode}, a changed frame is shot at once ({credits}); I always ask before changing the set itself.",
       answerElsewhere: "That's outside this set: {settings} → {billing} has your plan and credits.",
-      answerElsewhereProducer: " Or ask the Producer (the lamp).",
+      answerElsewhereProducer: " Or ask Aly (the lamp).",
     },
     rig: {
       chip: "Rig",
