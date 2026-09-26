@@ -42,7 +42,7 @@ describe("the switch", () => {
     expect(view).toContain("if (!simpleLayout) return;");
     expect(view).toContain('const stored = asked ? null : window.localStorage.getItem("helios.layout");');
     expect(view).toContain('want = asked ? asked === "simple" : HELIOS_SIMPLE_FOR_ALL ? stored !== "classic" : stored === "simple";');
-    expect(view).toContain("}, [simpleLayout]);");
+    expect(view).toContain("}, [simpleLayout, setId]);");
     expect(view).toContain('window.localStorage.setItem("helios.layout", next ? "simple" : "classic");');
     expect(view).toContain("{simpleLayout && wide3 && (");
     expect(view).toContain("data-layout-toggle");
@@ -211,6 +211,33 @@ describe("the cast strip's facts in the list", () => {
     expect(strip).toContain("{loose.length > 0 && <LoosePhotos loose={loose} targets={targets} onPutOn={onPutOn} onRemoveLoose={onRemoveLoose} c={c} />}");
     expect(strip).toContain("buttonClassName = `${CHIP} border-dashed border-[rgba(214,217,224,0.4)] text-[#d6d9e0]`,");
     expect(strip).toContain("menuClassName = MENU,");
+  });
+});
+
+// The step survives a reload, and Build by hand (Helios Cut 3, step 17): the
+// Producer's fix reloads the page, and a person in Shoot came back in Set.
+describe("the step, kept for the tab", () => {
+  it("writes Set or Shoot per set to sessionStorage on every change, and reads it back with the layout", () => {
+    const keep = fnOf(view, '  function setSimpleStep(step: "set" | "shoot") {', "\n  }\n");
+    expect(keep).toContain("setSimpleStepNow(step);");
+    expect(keep).toMatch(/try \{\s*window\.sessionStorage\.setItem\(`helios\.step:\$\{setId\}`, step\);\s*\} catch/);
+    expect(view).toMatch(/try \{\s*if \(window\.sessionStorage\.getItem\(`helios\.step:\$\{setId\}`\) === "shoot"\) step = "shoot";\s*\} catch/);
+    expect(view).toContain("setSimpleStepNow(step);\n  }, [simpleLayout, setId]);");
+    // Every step change goes through the one that keeps it.
+    expect(view.match(/setSimpleStepNow\(/g)?.length).toBe(2);
+  });
+
+  it("offers Build by hand beside Astra only when the page gives it", () => {
+    const w = en.sets.simple;
+    const draw = (onEdit?: () => void) =>
+      renderToStaticMarkup(
+        createElement(ThingsPanel, { people: [], things: [], selected: null, onOpen: () => {}, onPlace: () => {}, onEdit, placeLine: w.placeText, models: false, w, c: en.sets.cast }),
+      );
+    expect(draw()).not.toContain(w.placeEdit);
+    expect(draw()).toContain(w.placeChange);
+    expect(draw(() => {})).toContain(w.placeEdit);
+    expect(draw(() => {})).toContain("data-panel-edit");
+    expect(panel).toContain("onEdit?: () => void;");
   });
 });
 

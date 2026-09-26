@@ -154,6 +154,7 @@ export function ThingsPanel({
   selected,
   onOpen,
   onPlace,
+  onEdit,
   placeLine,
   models,
   loose,
@@ -167,6 +168,13 @@ export function ThingsPanel({
   onOpen: (key: string) => void;
   /** Change the place: Astra, in the Set step's panel. */
   onPlace: () => void;
+  /**
+   * Edit the place by hand: the Build editor (?build=1). Given, "Edit it
+   * yourself" sits beside "Change it with Astra"; the page gives it only
+   * while Advanced is on (Helios Cut 3, step 17). The list is drawn from
+   * 1180 px up, well clear of the editor's own 640 px floor.
+   */
+  onEdit?: () => void;
   placeLine: string;
   /**
    * Whether a thing can take a 3D model here (data.ts modelsOn, admins
@@ -239,9 +247,20 @@ export function ThingsPanel({
       <div className="flex flex-col gap-1.5 rounded-[12px] bg-[#1d1e24] p-3.5" data-panel-place>
         <h2 className="text-[14px] font-semibold text-[#ecedf1]">{w.place}</h2>
         <p className="text-[12.5px] leading-snug text-[#c6c9d1]">{placeLine}</p>
-        <button type="button" onClick={onPlace} className="self-start text-[12.5px] font-semibold text-[#f0cda6] hover:text-[#ffe2c2]">
-          {w.placeChange}
-        </button>
+        {onEdit ? (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <button type="button" onClick={onPlace} className="self-start text-[12.5px] font-semibold text-[#f0cda6] hover:text-[#ffe2c2]">
+              {w.placeChange}
+            </button>
+            <button type="button" onClick={onEdit} className="text-[12.5px] font-semibold text-[#d6d9e0] hover:text-[#ecedf1]" data-panel-edit>
+              {w.placeEdit}
+            </button>
+          </div>
+        ) : (
+          <button type="button" onClick={onPlace} className="self-start text-[12.5px] font-semibold text-[#f0cda6] hover:text-[#ffe2c2]">
+            {w.placeChange}
+          </button>
+        )}
       </div>
     </nav>
   );

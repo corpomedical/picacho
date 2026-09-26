@@ -1178,10 +1178,25 @@ export function SetView({
   // shooting mode, told apart by what the right-hand panel holds; Film is
   // Film.
   const [simple, setSimple] = useState<boolean>(() => simpleLayout && HELIOS_SIMPLE_FOR_ALL);
-  const [simpleStep, setSimpleStep] = useState<"set" | "shoot">("set");
+  const [simpleStep, setSimpleStepNow] = useState<"set" | "shoot">("set");
+  /**
+   * Set or Shoot, kept for this tab and this set (sessionStorage
+   * helios.step:<id>; Helios Cut 3, step 17): a reload opens where the
+   * person was. The Producer's fix to a set reloads the page, and before
+   * this a person in Shoot came back in Set. Film and Cut are in the address.
+   */
+  function setSimpleStep(step: "set" | "shoot") {
+    setSimpleStepNow(step);
+    try {
+      window.sessionStorage.setItem(`helios.step:${setId}`, step);
+    } catch {
+      // No storage: the step is this visit's only.
+    }
+  }
   useEffect(() => {
     if (!simpleLayout) return;
     let want: boolean = HELIOS_SIMPLE_FOR_ALL;
+    let step: "set" | "shoot" = "set";
     try {
       const asked = new URLSearchParams(window.location.search).get("layout");
       const stored = asked ? null : window.localStorage.getItem("helios.layout");
@@ -1189,8 +1204,14 @@ export function SetView({
     } catch {
       // No storage (a private window): the default layout.
     }
+    try {
+      if (window.sessionStorage.getItem(`helios.step:${setId}`) === "shoot") step = "shoot";
+    } catch {
+      // No storage: the set opens on Set, as ever.
+    }
     setSimple(want);
-  }, [simpleLayout]);
+    setSimpleStepNow(step);
+  }, [simpleLayout, setId]);
   // The first visit (first-visit.tsx; Helios Cut 3, step 9): three tips on a
   // set with no stills, once per browser. `tips` is the one showing, null
   // when the card is away. ?tour=1 shows them again.

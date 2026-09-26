@@ -2581,6 +2581,7 @@ const it = {
       place: "Il luogo",
       placeText: "Costruito da Astra. Pareti, terreno e cielo restano forme semplici.",
       placeChange: "Cambialo con Astra",
+      placeEdit: "Modificalo da te",
       rowModel: "Modello 3D",
       rowLoading: "Caricamento del modello…",
       rowPhotos: "{n} foto",

@@ -2737,6 +2737,8 @@ const en = {
       place: "The place",
       placeText: "Built by Astra. Walls, ground and sky stay simple shapes.",
       placeChange: "Change it with Astra",
+      /** Beside it: the Build editor, for the person who would rather move the blocks by hand. */
+      placeEdit: "Edit it yourself",
       rowModel: "3D model",
       rowLoading: "Loading its model…",
       rowPhotos: "{n} photos",
