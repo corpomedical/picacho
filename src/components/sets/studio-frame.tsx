@@ -110,6 +110,7 @@ export function StudioBar({
   children,
   primary,
   steps,
+  stepsLabel,
 }: {
   back: { href: string; label: string };
   title: string;
@@ -132,6 +133,8 @@ export function StudioBar({
    * place of the modes. Absent, the modes are drawn as ever.
    */
   steps?: readonly { id: string; label: string; on: boolean; onClick: () => void }[] | null;
+  /** The steps' name for screen readers, in the page's language (set-editor.tsx draws no steps). */
+  stepsLabel?: string;
 }) {
   const modeButton = (id: StudioMode) => {
     const m = modes[id];
@@ -170,7 +173,7 @@ export function StudioBar({
       {meta && <span className="hidden whitespace-nowrap text-[11px] tabular-nums text-[#9aa0ad] xl:inline">{meta}</span>}
       <span className="flex-1" />
       {steps ? (
-        <nav aria-label="Steps" className={SEG} data-studio-steps>
+        <nav aria-label={stepsLabel} className={SEG} data-studio-steps>
           {steps.map((st, i) =>
             st.on ? (
               <span key={st.id} aria-current="step" className={SEG_ON}>

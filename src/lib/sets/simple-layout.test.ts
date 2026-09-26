@@ -140,6 +140,32 @@ describe("the floating tools", () => {
   });
 });
 
+// Words a paying customer reads in the new layout (Helios Cut 3, step 12):
+// a model on a thing is an admin's (modelsOn), so everyone else's list and
+// Set panel speak of photos alone, and the bar's steps are named in the
+// page's language, not a hard-coded "Steps".
+describe("the words where a model cannot be added", () => {
+  it("say photos alone, and photos or a model only where models are on", () => {
+    expect(panel).toContain("models: boolean;");
+    expect(panel).toContain("{models ? w.noThings : w.noThingsPhotos}");
+    expect(panel).toContain("{models ? w.thingsHint : w.thingsHintPhotos}");
+    expect(view).toContain("models={modelsOn}");
+    expect(view).toContain("{modelsOn ? sw.setHint : sw.setHintPhotos}");
+    for (const m of [en, es, pt, itMsgs]) {
+      for (const key of ["noThingsPhotos", "thingsHintPhotos", "setHintPhotos"] as const) {
+        expect(m.sets.simple[key], key).not.toMatch(/model|modelo|modello/i);
+      }
+    }
+  });
+
+  it("name the bar's steps in the page's language", () => {
+    expect(frame).toContain("stepsLabel?: string;");
+    expect(frame).toContain("<nav aria-label={stepsLabel} className={SEG} data-studio-steps>");
+    expect(frame).not.toContain('aria-label="Steps"');
+    expect(view).toContain("stepsLabel={sw.stepsLabel}");
+  });
+});
+
 describe("the words", () => {
   it("exist in every language, with their placeholders", () => {
     const keys = Object.keys(en.sets.simple) as (keyof typeof en.sets.simple)[];

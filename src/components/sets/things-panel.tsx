@@ -91,6 +91,7 @@ export function ThingsPanel({
   onOpen,
   onPlace,
   placeLine,
+  models,
   w,
 }: {
   people: readonly PanelRow[];
@@ -101,6 +102,12 @@ export function ThingsPanel({
   /** Change the place: Astra, in the Set step's panel. */
   onPlace: () => void;
   placeLine: string;
+  /**
+   * Whether a thing can take a 3D model here (data.ts modelsOn, admins
+   * only): the list's lines then say "photos or a model"; otherwise
+   * photos alone, so nobody is told of a model they cannot add.
+   */
+  models: boolean;
   w: Words;
 }) {
   const line = (r: PanelRow) => rowLine(r, w);
@@ -144,8 +151,8 @@ export function ThingsPanel({
       </div>
       <div className="flex flex-col gap-1.5">
         <h2 className="px-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#9aa0ad]">{w.things}</h2>
-        {things.length ? things.map(row) : <p className="px-1.5 text-[12px] leading-snug text-[#9aa0ad]">{w.noThings}</p>}
-        <p className="px-1.5 pt-1 text-[11.5px] leading-snug text-[#9aa0ad]">{w.thingsHint}</p>
+        {things.length ? things.map(row) : <p className="px-1.5 text-[12px] leading-snug text-[#9aa0ad]">{models ? w.noThings : w.noThingsPhotos}</p>}
+        <p className="px-1.5 pt-1 text-[11.5px] leading-snug text-[#9aa0ad]">{models ? w.thingsHint : w.thingsHintPhotos}</p>
       </div>
       <div className="flex-1" />
       <div className="flex flex-col gap-1.5 rounded-[12px] bg-[#1d1e24] p-3.5" data-panel-place>

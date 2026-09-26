@@ -9010,7 +9010,8 @@ export function SetView({
             <>
               <div className="flex flex-col gap-2 border-b border-[rgba(255,255,255,0.07)] p-4" data-step-set>
                 <h2 className="text-[15px] font-semibold text-[#ecedf1]">{sw.setTitle}</h2>
-                <p className="text-[12.5px] leading-snug text-[#c6c9d1]">{sw.setHint}</p>
+                {/* Photos or a model where a model can be added (admins, modelsOn); photos alone otherwise. */}
+                <p className="text-[12.5px] leading-snug text-[#c6c9d1]">{modelsOn ? sw.setHint : sw.setHintPhotos}</p>
               </div>
               {chatThread}
             </>
@@ -9961,6 +9962,7 @@ export function SetView({
         mode={studioMode}
         modes={studioModes}
         steps={simpleSteps}
+        stepsLabel={sw.stepsLabel}
         view={{ mode: viewMode, onChange: setViewMode, label: s.studio.viewLabel, names: { lit: s.editorViewLit, clay: s.editorViewClay, wire: s.editorViewWire, depth: s.editorViewDepth } }}
         find={{ label: s.studio.find, kbd: s.palette.open, onOpen: () => setPaletteOpen(true) }}
         rendering={renderingCount > 0 ? { label: renderingCount === 1 ? s.studio.renderingOne : formatMsg(s.studio.rendering, { n: renderingCount }) } : null}
@@ -10071,6 +10073,7 @@ export function SetView({
                 setSimpleStep("set");
               }}
               placeLine={sw.placeText}
+              models={modelsOn}
               w={sw}
             />
           ) : (

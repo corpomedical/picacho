@@ -2724,11 +2724,16 @@ const en = {
       stepSet: "Set",
       stepShoot: "Shoot",
       stepFilm: "Film",
+      /** The steps' name for screen readers (the bar's Set · Shoot · Film). */
+      stepsLabel: "Steps",
       inSet: "In this set",
       people: "People",
       things: "Things",
       noThings: "Nothing on this set can take photos or a model yet.",
       thingsHint: "Pick one to give it photos or a 3D model.",
+      /** The same two lines where models on things are not offered (data.ts modelsOn, admins only): photos alone. */
+      noThingsPhotos: "Nothing on this set can take photos yet.",
+      thingsHintPhotos: "Pick one to give it photos.",
       place: "The place",
       placeText: "Built by Astra. Walls, ground and sky stay simple shapes.",
       placeChange: "Change it with Astra",
@@ -2743,6 +2748,7 @@ const en = {
       shotHint: "Who is in it, the look, the camera and where they stand. Move the camera on the stage.",
       setTitle: "Set the scene",
       setHint: "Pick a thing on the left to give it photos or a model, or ask Astra to change the place.",
+      setHintPhotos: "Pick a thing on the left to give it photos, or ask Astra to change the place.",
       nextShoot: "Next: Shoot",
     },
     cast: {
