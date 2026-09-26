@@ -3,7 +3,8 @@
 // 2026-09-25 — operator: "Run, keep going.").
 //
 // corpus.json is spec v2's corpus-v2.json (the Appendix), copied here so
-// the check and its phrases travel together. Its conventions block says how
+// the check and its phrases travel together; version 3 (Helios Cut 4, step
+// B3, 2026-09-26) reads its sets named and adds the phrases about parts. Its conventions block says how
 // every expectation reads; grade.mts is those conventions as code. A corpus
 // that names a key the reader doesn't have, an alias its set doesn't list,
 // or a set change its own phrase doesn't contain is refused before a single
@@ -52,8 +53,10 @@ export type Fixture = {
   cameras: { id: string; label: string }[];
   marks: { id: string; label: string }[];
   characters: { alias: string; name: string; hasPhoto: boolean; hasOutfit: boolean }[];
-  things: { alias: string; label: string; kind: string; colour: string; size: string; where: string }[];
-  structureNotThings?: string[];
+  /** `name`: the set's own name for the thing, when the fixture names it (fixtures.mts HAND_NAMES). */
+  things: { alias: string; label: string; kind: string; colour: string; size: string; where: string; name?: string }[];
+  /** The set's named parts (Helios Cut 4, step B3): s1… by their place among the parts, as the reader is told them. */
+  parts?: { alias: string; name: string; size?: string; where?: string }[];
   now: FixtureNow;
   stills: { n: number; who: string; format: string; status: string }[];
   edits: { left: number | null; cap: number };
@@ -65,6 +68,8 @@ export type EntryContext = {
   turns?: { said: string; did: string }[];
   locale?: Locale;
   origin?: "build";
+  /** The set as it was before any name: the fixture file itself, as every set saved before the naming pass reads (Helios Cut 4, step B3). */
+  unnamed?: true;
 };
 
 export type CorpusEntry = {
@@ -105,7 +110,7 @@ const EXPECT_KEYS: ReadonlySet<string> = new Set([...WIRE_KEYS, ...PSEUDO_KEYS])
 
 /** Every alias an expectation points at, for the check that its set lists them. */
 function aliasesIn(v: unknown, out: Set<string>): void {
-  if (typeof v === "string" && /^[tp]\d+$/.test(v)) out.add(v);
+  if (typeof v === "string" && /^[tps]\d+$/.test(v)) out.add(v);
   else if (Array.isArray(v)) for (const x of v) aliasesIn(x, out);
   else if (isObject(v)) for (const x of Object.values(v)) aliasesIn(x, out);
 }
@@ -151,6 +156,7 @@ export function entryProblems(e: CorpusEntry, fixtures: Record<string, Fixture>)
   const ctx = e.context ?? {};
   if (ctx.locale !== undefined && !(LOCALES as readonly string[]).includes(ctx.locale)) out.push(`${at}: locale "${ctx.locale}"`);
   if (ctx.origin !== undefined && ctx.origin !== "build") out.push(`${at}: origin "${ctx.origin}"`);
+  if (ctx.unnamed !== undefined && ctx.unnamed !== true) out.push(`${at}: unnamed must be true when given`);
   for (const k of Object.keys(ctx.now ?? {})) if (!(k in fx.now)) out.push(`${at}: context.now names "${k}", which NOW doesn't have`);
   const mode = ctx.now?.mode ?? fx.now.mode;
   if (!(MODES as readonly string[]).includes(mode)) out.push(`${at}: mode "${mode}"`);
@@ -161,7 +167,8 @@ export function entryProblems(e: CorpusEntry, fixtures: Record<string, Fixture>)
       for (const w of sc.includes) if (typeof w !== "string" || !e.phrase.toLowerCase().includes(w.toLowerCase())) out.push(`${at}: set_change must include "${String(w)}", which the phrase doesn't say`);
     }
   }
-  const known = new Set([...fx.characters.map((c) => c.alias), ...fx.things.map((t) => t.alias)]);
+  // An unnamed set has no parts to name: an s-alias there is the corpus's error.
+  const known = new Set([...fx.characters.map((c) => c.alias), ...fx.things.map((t) => t.alias), ...(ctx.unnamed ? [] : (fx.parts ?? []).map((s) => s.alias))]);
   const used = new Set<string>();
   for (const alt of alts) aliasesIn(alt, used);
   const nowWho = ctx.now?.who;

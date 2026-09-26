@@ -51,6 +51,8 @@ import {
   SHEET_LANES,
   capitalised,
   elementPlaces,
+  isPartKey,
+  partShapes,
   photoThingsChanged,
   planShotSheets,
   resolvePhotos,
@@ -146,9 +148,11 @@ import {
   lookPatch,
   nudgeMark,
   paidDecision,
+  partFacingPoint,
   pickTakeStart,
   planTurn,
   pointBeside,
+  pointByPart,
   pressFor,
   resolveWhich,
   secondButton,
@@ -178,6 +182,7 @@ import {
   creditsLabel,
   fill,
   frameRowsChanged,
+  replyPartsOf,
   replyThingsOf,
   replyWordsOf,
   turnDid,
@@ -7248,6 +7253,7 @@ export function SetView({
       marks: spec.marks.map((m) => ({ id: m.id, label: labelOfMark(m.id) })),
       cameras: spec.cameras.map((c) => ({ id: c.id, label: labelOfCamera(c.id) })),
       things: replyThingsOf(spec, st.mark, replyWords),
+      parts: replyPartsOf(spec, st.mark),
       markId: markOn(st.markId, st.mark),
       pose: st.pose,
       facing: facingSeen(st.mark, st.camera),
@@ -7410,6 +7416,13 @@ export function SetView({
     const pageNotes: PageNote[] = [];
     const extraCant: CantCode[] = [];
     const extraDropped: string[] = [];
+    // The set's named parts, read once for the turn: a reading's "thing" may be one (Helios Cut 4, step B3).
+    let partsNow: ReturnType<typeof partShapes> | null = null;
+    const partOfKey = (key: string) => {
+      if (!isPartKey(key)) return null;
+      partsNow ??= partShapes(spec, els);
+      return partsNow.find((p) => p.key === key) ?? null;
+    };
     let movedRound = false;
     if (plan.steps.length > 0) keepStage(false, false);
     const sensorNow = () => sensorHeightMm(now.rig.sensor, now.rig.format);
@@ -7495,13 +7508,18 @@ export function SetView({
           } else if (step.near) {
             const near = step.near;
             const el = els.find((e) => e.key === near.key);
-            if (el) {
-              const p = pointBeside(el, near.side, { camera: now.camera, mark: now.mark, bounds: spec.bounds }, vehicleOf(el, vehicles));
+            // A named part of the set (Helios Cut 4, step B3): she stands at its nearest face.
+            const part = el ? null : partOfKey(near.key);
+            if (el || part) {
+              const p = el
+                ? pointBeside(el, near.side, { camera: now.camera, mark: now.mark, bounds: spec.bounds }, vehicleOf(el, vehicles))
+                : pointByPart(part!.footprints, now.mark, spec.bounds);
               // Clear of anything built, stepped toward the camera, as a figure dropped by hand is (marks.ts).
               const open = clearMarks([{ ...p, facingDeg: m.facingDeg }], spec.objects, spec.bounds, camXz());
               m = open.marks[0];
-              if (open.moved > 0) pageNotes.push({ kind: "stepped", key: el.key });
-              chips.push({ kind: "near", key: el.key, side: near.side });
+              if (open.moved > 0) pageNotes.push({ kind: "stepped", key: near.key });
+              // A part has no front of its own: she stands at its nearest face, said as "beside" whatever side was asked.
+              chips.push({ kind: "near", key: near.key, side: el ? near.side : "beside" });
             } else extraDropped.push("near.thing");
           }
           if (step.nudge) {
@@ -7605,7 +7623,9 @@ export function SetView({
             else {
               const key = step.facing.key;
               const el = els.find((e) => e.key === key);
+              const part = el ? null : partOfKey(key);
               if (el) deg = facingToward(now.mark, { x: el.centre[0], z: el.centre[2] });
+              else if (part) deg = facingToward(now.mark, partFacingPoint(part, now.mark));
             }
             chips.push({ kind: "facing", facing: step.facing });
           }
@@ -7626,8 +7646,11 @@ export function SetView({
           else {
             const el = els.find((e) => e.key === g.key);
             const oi = el ? largestObjectOf(el, spec.objects) : null;
+            const part = el ? null : partOfKey(g.key);
             // With the thing's key, so the eye-line follows it through a change to the set (object-ref.ts, step A9).
             if (el && oi !== null) gaze = { at: "object", index: oi, key: el.key };
+            // A part's largest block, by number alone: the set's own blocks are followed by their block (object-ref.ts, critic items 7 and 21).
+            else if (part) gaze = { at: "object", index: part.largest };
             else {
               extraDropped.push("gaze.thing");
               set = false;

@@ -235,6 +235,13 @@ describe("the model's answer, held to the set", () => {
     expect(read({ gaze: "none" }).reading.gaze).toBe("none");
     expect(read({ gaze: { thing: "t9" } })).toEqual({ reading: {}, dropped: ["gaze.thing", "gaze"] });
     expect(read({ who: "p2" }).reading.characterId).toBe(MARCO);
+    // A part's alias (s1…) maps to its part key beside the things' (Helios Cut 4, step B3).
+    const parts = { aliases: { things: { t1: CAR, s1: "s:grandstand", s2: "s:barriers" }, people: { p1: EVA } } };
+    expect(read({ facing: { thing: "s1" } }, parts).reading.facing).toEqual({ key: "s:grandstand" });
+    expect(read({ near: { thing: "s2", side: "beside" } }, parts).reading.near).toEqual({ thing: { key: "s:barriers" }, side: "beside" });
+    expect(read({ gaze: { thing: ["s1", "t1"] } }, parts).reading.gaze).toEqual({ candidates: ["s:grandstand", CAR] });
+    // A set that names no part lists none: s1 is then an alias it doesn't know.
+    expect(read({ facing: { thing: "s1" } })).toEqual({ reading: {}, dropped: ["facing.thing", "facing"] });
     // An alias is looked up as the map's own key, never through the prototype.
     expect(read({ who: "constructor" })).toEqual({ reading: {}, dropped: ["who"] });
   });
@@ -537,9 +544,12 @@ describe("what kind of reading it is", () => {
 describe("the instructions", () => {
   const source = readFileSync(join(__dirname, "shot-reading.ts"), "utf8");
 
-  it("are the spec's measured draft: under 6,300 characters, a plain literal with nothing put into it", () => {
-    expect(SHOT_READER_STATIC.length).toBeLessThanOrEqual(6300);
-    expect(SHOT_READER_STATIC.length).toBe(6164);
+  it("are the spec's measured draft, grown for the set's parts: at most 7,000 characters, a plain literal with nothing put into it", () => {
+    // 6,164 with a 6,300 ceiling until Helios Cut 4, step B3 (2026-09-26):
+    // near, facing and gaze take PARTS too (+65). The ceiling is 7,000 (D27),
+    // for the weather and aim lines still to come; the cache refills once.
+    expect(SHOT_READER_STATIC.length).toBeLessThanOrEqual(7000);
+    expect(SHOT_READER_STATIC.length).toBe(6229);
     const at = source.indexOf("export const SHOT_READER_STATIC = `");
     expect(at).toBeGreaterThan(-1);
     const body = source.slice(at + "export const SHOT_READER_STATIC = `".length, source.indexOf("`;", at));
@@ -552,6 +562,14 @@ describe("the instructions", () => {
       expect(SHOT_READER_STATIC, phrase).toContain(phrase);
     }
     expect(SHOT_READER_STATIC).not.toContain("Never describe the person");
+  });
+
+  it("let near, facing and gaze name a part as well as a thing, and keep thing_unknown for what is in neither (Helios Cut 4, step B3)", () => {
+    for (const start of ["near:", "facing:", "gaze:"]) {
+      const l = SHOT_READER_STATIC.split("\n").find((x) => x.startsWith(start));
+      expect(l, start).toContain('{"thing": alias from THINGS or PARTS');
+    }
+    expect(SHOT_READER_STATIC).toContain("thing_unknown (a built part in neither THINGS nor PARTS)");
   });
 
   it("list exactly the values the parser accepts", () => {

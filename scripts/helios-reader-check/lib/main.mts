@@ -51,7 +51,7 @@ const networkLine = (net: NetGuard) => `network: ${net.liveCalls} live calls, ${
 type Planned = { p: PreparedEntry; version: "v2" | "v1"; blind: boolean; worst: number; typical: number; messages: { role: "system" | "user"; content: string }[] };
 
 function v1Messages(p: PreparedEntry): { role: "system" | "user"; content: string }[] {
-  const instructions = shotWordsInstructions({ spec: p.set.spec, characters: p.characters.map((c) => c.name), askPlace: false });
+  const instructions = shotWordsInstructions({ spec: p.spec, characters: p.characters.map((c) => c.name), askPlace: false });
   return [
     { role: "system", content: instructions },
     { role: "user", content: p.message },

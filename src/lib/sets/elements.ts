@@ -285,6 +285,33 @@ export function setParts(spec: Pick<SetSpec, "objects">, els: readonly SetElemen
   return [...parts.values()];
 }
 
+/**
+ * A part as a turn of the chat points at it (Helios Cut 4, step B3): "s:"
+ * and its name in lower case, the way setParts groups it. It lives only in
+ * a reading, a turn's plan and its chips; it is never stored: an eye-line
+ * on a part keeps the part's block by number, the stored shape old code
+ * reads (object-ref.ts; critic items 7 and 21).
+ */
+export const PART_KEY_PREFIX = "s:";
+export const partKeyOf = (name: string): string => `${PART_KEY_PREFIX}${name.toLowerCase()}`;
+export const isPartKey = (key: string): boolean => key.startsWith(PART_KEY_PREFIX);
+
+/** A named part with where it stands: each copy of each of its blocks on the ground (a repeated barrier is two long boxes, never one box between them), and the box round them all. */
+export type PartShape = SetPart & { key: string; footprints: { min: Vec3; max: Vec3 }[]; min: Vec3; max: Vec3 };
+
+/** The set's named parts (setParts, in the set's order), each with its blocks' boxes as placed (look-cutout.ts placedCopies). */
+export function partShapes(spec: Pick<SetSpec, "objects" | "bounds">, els: readonly SetElement[]): PartShape[] {
+  const parts = setParts(spec, els);
+  if (parts.length === 0) return [];
+  const placed = placedCopies(spec.objects, spec.bounds);
+  return parts.map((p) => {
+    const footprints = placed.filter((c) => p.objects.includes(c.object)).map((c) => ({ min: c.min, max: c.max }));
+    const min = [0, 1, 2].map((i) => Math.min(...footprints.map((f) => f.min[i]))) as Vec3;
+    const max = [0, 1, 2].map((i) => Math.max(...footprints.map((f) => f.max[i]))) as Vec3;
+    return { ...p, key: partKeyOf(p.name), footprints, min, max };
+  });
+}
+
 /** Which thing each block copy belongs to, as "object:copy" → key. */
 export function copyToElement(els: readonly SetElement[]): Map<string, string> {
   const out = new Map<string, string>();

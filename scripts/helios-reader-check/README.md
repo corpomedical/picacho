@@ -22,7 +22,7 @@ npx tsx scripts/helios-reader-check/run.mts --live --max-usd 0.50
 
   Every hard gate an answer should trip must fire, and no wrong answer may pass. This tests the grader against a bad reader.
 - **`--live --max-usd n` (check A).** This is the real model, in this order:
-  1. v2 on the 100 corpus phrases;
+  1. v2 on the 105 corpus phrases;
   2. v2 on the 20 blind phrases;
   3. v1 on the 53 audited phrases, for the before/after table.
 
@@ -62,10 +62,10 @@ It reads only `OPENAI_API_KEY`. It deletes every Supabase variable and the Anthr
 ## What it costs (from the dry run's plan, prices of 2026-09-25)
 
 - **Worst case per call:** the input counted at 2.5 characters per token with nothing cached, plus the whole answer cap. That is 600 tokens for v2 and 400 for v1; hidden reasoning counts against the cap.
-  - v2: about $0.0048 per call.
+  - v2: about $0.0047–0.0049 per call.
   - v1: about $0.0025 per call.
-- **Ceiling:** about $0.70 if every call hit its worst case, which is above the $0.50 cap.
-- **Typical:** about $0.24 in all (120 × ≈$0.0017 + 53 × ≈$0.0008), estimated at 4 characters per token with nothing cached and 90 tokens out. The spec's estimate is $0.22–0.27.
+- **Ceiling:** about $0.73 if every call hit its worst case, which is above the $0.50 cap.
+- **Typical:** about $0.25 in all (125 × ≈$0.0017 + 53 × ≈$0.0008), estimated at 4 characters per token with nothing cached and 90 tokens out. The spec's estimate is $0.22–0.27.
 - The spend guard stops before the cap. So the run ends early only if calls cost close to their worst.
 
 **If the API refuses `reasoning_effort`,** the reader would retry once at the model's own effort, capped at 1,500 tokens, which is about $0.009 a reading. This check never sends that retry. The reading comes back empty and the run stops, so the owner can decide (check of the spec, item 8).
@@ -92,8 +92,8 @@ Everything below also goes to `out/check-a-<stamp>/`, together with the ledger a
 - reasoning tokens on more than 5% of calls.
 
 **Soft bars:**
-- 27 of the 29 designed-full audited requests pass every expected field;
-- 85 of the 100 phrases pass;
+- 28 of the 30 designed-full audited requests pass every expected field (29 and 27 until Helios Cut 4 added A19);
+- 85% of the phrases pass: 90 of the 105;
 - 16 of the 20 blind phrases pass;
 - every expected reply mention is found.
 
@@ -111,7 +111,7 @@ Exit codes:
 
 ## Files
 
-- `corpus.json`: spec v2's `corpus-v2.json`, unchanged. Its `conventions` block is what `lib/grade.mts` implements.
+- `corpus.json`: spec v2's `corpus-v2.json`. Version 3 (Helios Cut 4, step B3, 2026-09-26) reads its sets named, puts A19 on a named part (facing the grandstand), and adds X104–X108 (a look at a part, the same words on an unnamed set, a named stand, "the other one" between two cars of one name, standing by a part). Its `conventions` block is what `lib/grade.mts` implements.
 - `dry-extras.json`: keys the dry run's perfect reader adds to a phrase's expectations where the expected reply needs a key the phrase only *allows*. For X56, the Sets home's build turn, that key is the set change. Only the dry run reads this file.
 - `prices.json`: the reader's prices and the date they were read.
 - `blind-corpus.template.json`: the blind phrases' form. `blind-corpus.json` is the filled copy.
@@ -120,7 +120,9 @@ Exit codes:
   - **showroom:** the open showroom with a blue second car and a white stand;
   - **garage:** two red cars and a bench, built here.
 
-  THINGS are listed nearest first, so the corpus's `t1`, `t2` and `t3` hold only because the sets place them in that order, and the run refuses a set whose aliases don't match. Where a built set differs from the corpus's description (the race car is 0.3 m to Marco's right; the showroom's stand is 5.5 m away rather than 2 m, so that it stays `t3`), the run prints a note.
+  Each set is read **named**, as a set the naming pass had named: `HAND_NAMES` puts hand-written names on through `withNames` (the race's car and its grandstand, pit garages and barriers; the showroom's two coupes and its stand; the garage's two cars with one name, so "which one?" stays a real question). The fixture files on disk stay nameless: a phrase with `context.unnamed` reads its set as saved before any name.
+
+  THINGS and PARTS are listed nearest first, but a thing's alias is its place in the set's own order and a part's (`s1`, `s2`, `s3`) its place among the parts, so the corpus's aliases hold only because the sets place them in that order, and the run refuses a set whose aliases or names don't match. Where a built set differs from the corpus's description (the race car is 0.3 m to Marco's right; the showroom's stand is 5.5 m away rather than 2 m, so that it stays `t3`), the run prints a note.
 - `lib/grade.mts`: the grader. `lib/answers.mts`: the perfect and garbage answers. `lib/turn.mts`: one reading through the page's code. `lib/main.mts` and `lib/dry.mts`: the runs. `lib/fence.mts`, `lib/net.mts` and `lib/env.mts`: the fences. `lib/money.mts`: the arithmetic.
 - It reuses the Astra Sets eval's network guard, spend guard, ledger and `.env` parser (`scripts/astra-sets-eval/lib/`).
 

@@ -12,7 +12,7 @@ import { actualUsd, priceProblems, worstUsd, type Prices } from "./money.mts";
 // operator: "Run, keep going."): the command line never goes live by
 // accident, a call's money is reserved and settled by the arithmetic the
 // plan prints, the per-call fence sends only what was reserved, and the two
-// free dry runs hold — the perfect reader passes all 100 phrases, and every
+// free dry runs hold — the perfect reader passes all 105 phrases, and every
 // wrong answer fails with every hard gate it owes.
 
 describe("the command line: dry unless --live, and --live only with a cap", () => {
@@ -127,10 +127,10 @@ describe("the dry runs (spec §6.4)", () => {
   const l = loaded.l;
 
   it("the corpus, its three sets and the phrases' aliases agree", () => {
-    expect(l.entries).toHaveLength(100);
-    expect(new Set(l.entries.map((p) => p.entry.id)).size).toBe(100);
-    // corpus.json is the spec's corpus-v2.json: nothing added to a phrase.
-    expect(l.corpus.version).toBe(2);
+    expect(l.entries).toHaveLength(105);
+    expect(new Set(l.entries.map((p) => p.entry.id)).size).toBe(105);
+    // corpus.json is the spec's corpus-v2.json, version 3 since Helios Cut 4, step B3: its sets read named, A19 on a named part, X104–X108.
+    expect(l.corpus.version).toBe(3);
     expect(l.corpus.defaultForbid).toEqual(["shoot", "set_change", "undo", "who"]);
   });
 
@@ -139,13 +139,39 @@ describe("the dry runs (spec §6.4)", () => {
     expect(run.unsatisfiable).toEqual([]);
     const failing = run.corpus.filter((x) => !x.g.pass || x.g.mentionsMissing.length > 0).map((x) => `${x.p.entry.id}: ${[...x.g.hard, ...x.g.misses, ...x.g.mentionsMissing].join("; ")}`);
     expect(failing).toEqual([]);
-    expect(run.corpus).toHaveLength(100);
+    expect(run.corpus).toHaveLength(105);
     expect(new Set(run.corpus.map((x) => x.p.locale))).toEqual(new Set(["en", "es", "pt", "it"]));
+  });
+
+  it("reads each set named, as a set the naming pass named, and the old set unnamed (Helios Cut 4, step B3)", () => {
+    const race = l.entries.find((p) => p.entry.id === "A19")!;
+    const bare = l.entries.find((p) => p.entry.id === "X105")!;
+    // The fixture file on disk has no name; the named copy differs from it only by names.
+    expect(race.set.bare.objects.some((o) => o.name !== undefined)).toBe(false);
+    const nameless = race.spec.objects.map((o) => {
+      const copy = { ...o };
+      delete copy.name;
+      return copy;
+    });
+    expect(nameless).toEqual(race.set.bare.objects);
+    expect(race.parts.map((s) => [s.n, s.name])).toEqual([
+      [2, "pit garages"],
+      [1, "barriers"],
+      [3, "grandstand"],
+    ]);
+    expect(race.aliases.things).toMatchObject({ s1: "s:barriers", s2: "s:pit garages", s3: "s:grandstand" });
+    expect(race.messages[1].content).toContain("THINGS: t1: the car (red sports car), red,");
+    expect(race.messages[1].content).toContain("\nPARTS: s2: pit garages, grey, 120 m long, 12 m to their left; s1: barriers,");
+    // Unnamed, the grandstand is in neither list, and STAGE has no PARTS line.
+    expect(bare.spec).toBe(bare.set.bare);
+    expect(bare.parts).toEqual([]);
+    expect(bare.messages[1].content).not.toContain("PARTS");
+    expect(bare.messages[1].content).toContain("THINGS: t1: the car, red,");
   });
 
   it("the garbage reader fails every phrase, four ways, with every hard gate it owes", () => {
     const run = garbageRun(l);
-    expect(run.rows).toHaveLength(400);
+    expect(run.rows).toHaveLength(420);
     expect(run.rows.filter((x) => x.g.pass).map((x) => `${x.p.entry.id} ${x.name}`)).toEqual([]);
     expect(run.missing).toEqual([]);
     // Each gate is owed somewhere, so none of them is untested.

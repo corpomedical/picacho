@@ -65,7 +65,7 @@ export function rawObject(text: string | null): Record<string, unknown> | null {
  * "down" (words-actions.ts readShotTurn): nothing moves, nothing shoots.
  */
 export function readV2(p: PreparedEntry, text: string | null): Reading {
-  const parsed = text === null ? null : parseShotReading(text, { spec: p.set.spec, aliases: p.aliases, message: p.message, nowHappens: p.now.direction });
+  const parsed = text === null ? null : parseShotReading(text, { spec: p.spec, aliases: p.aliases, message: p.message, nowHappens: p.now.direction });
   const why: ReaderWhy = parsed ? "ok" : "down";
   const state = { ...p.state, why, dropped: parsed?.dropped ?? [] };
   const plan = planTurn(parsed?.reading ?? null, state);
@@ -102,7 +102,7 @@ export function gradeV2(p: PreparedEntry, r: Reading, defaultForbid: readonly st
 
 /** v1's answer on the same phrase (spec §7.4's before/after table): its fields only; v1 has no plan or reply to grade. */
 export function gradeV1(p: PreparedEntry, text: string | null, defaultForbid: readonly string[], call?: CallFacts | null): { grade: Grade; wire: Wire | null } {
-  const words = text === null ? null : parseShotWords(text, { spec: p.set.spec, askPlace: false });
+  const words = text === null ? null : parseShotWords(text, { spec: p.spec, askPlace: false });
   const wire = words ? v1WireOf(words, p.message, p.now.direction) : null;
   return {
     wire,

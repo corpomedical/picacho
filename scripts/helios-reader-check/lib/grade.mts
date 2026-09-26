@@ -24,8 +24,8 @@
 // (summarise), since it is about the calls, not a phrase.
 //
 // Everything else a phrase expects is a MISS, not a gate: the soft bars
-// count them (27 of the 29 designed-full audited requests, 85 of 100, 16 of
-// 20 blind, every expected reply mention).
+// count them (all but two of the 30 designed-full audited requests, 85% of
+// the phrases, 16 of 20 blind, every expected reply mention).
 //
 // Pure: no file, no network, no clock.
 
@@ -76,10 +76,12 @@ export const CARD_KINDS = ["astra", "which", "take", "hour"] as const;
 export type CardKind = (typeof CARD_KINDS)[number];
 
 /**
- * The 29 audited requests the design fully handles, 23 outright and 6 after
- * one press (spec §7.3): the soft bar asks 27 of them to pass.
+ * The audited requests the design fully handles: the 29 of Helios Cut 2
+ * (23 outright and 6 after one press, spec §7.3), and A19 since Helios Cut
+ * 4, step B3 (facing the grandstand, a named part). The soft bar asks all
+ * but two of them to pass.
  */
-export const DESIGNED_FULL = [1, 7, 8, 11, 12, 14, 17, 18, 21, 23, 26, 28, 29, 32, 35, 36, 37, 38, 39, 40, 44, 45, 46, 47, 48, 49, 51, 52, 53].map((n) => `A${n}`);
+export const DESIGNED_FULL = [1, 7, 8, 11, 12, 14, 17, 18, 19, 21, 23, 26, 28, 29, 32, 35, 36, 37, 38, 39, 40, 44, 45, 46, 47, 48, 49, 51, 52, 53].map((n) => `A${n}`);
 
 export type Wire = Record<string, unknown>;
 
@@ -388,7 +390,7 @@ export function summarise(input: { corpus: readonly Grade[]; blind?: readonly Gr
   const hardGates = all.reduce((n, g) => n + g.hard.length, 0);
   const audited = input.corpus.filter((g) => DESIGNED_FULL.includes(g.id));
   const corpusNeeded = Math.ceil((85 / 100) * input.corpus.length);
-  const auditedNeeded = audited.length === DESIGNED_FULL.length ? 27 : Math.max(0, audited.length - 2);
+  const auditedNeeded = audited.length === DESIGNED_FULL.length ? DESIGNED_FULL.length - 2 : Math.max(0, audited.length - 2);
   const bars: Bars = {
     hardGates,
     corpus: { passed: input.corpus.filter((g) => g.pass).length, of: input.corpus.length, needed: corpusNeeded },

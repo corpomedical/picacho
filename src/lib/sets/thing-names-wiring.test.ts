@@ -80,3 +80,19 @@ describe("Build", () => {
     expect(editor).toContain("const objectName = sceneNames(spec, s).objectName;");
   });
 });
+
+// Helios Cut 4, step B3 (2026-09-26): a turn of the chat may point at a
+// named part of the set ("s:grandstand"); the page stands her at its
+// nearest face, faces its nearest point, and keeps an eye-line on it by its
+// largest block's number alone (critic items 7 and 21: no new stored shape).
+describe("a turn that points at a named part", () => {
+  it("resolves the part's key on the page, never stores it, and names it in the reply's facts", () => {
+    expect(view).toContain("if (!isPartKey(key)) return null;");
+    expect(view).toContain("partsNow ??= partShapes(spec, els);");
+    expect(view).toContain(": pointByPart(part!.footprints, now.mark, spec.bounds);");
+    expect(view).toContain('chips.push({ kind: "near", key: near.key, side: el ? near.side : "beside" });');
+    expect(view).toContain("else if (part) deg = facingToward(now.mark, partFacingPoint(part, now.mark));");
+    expect(view).toContain('else if (part) gaze = { at: "object", index: part.largest };');
+    expect(view).toContain("parts: replyPartsOf(spec, st.mark),");
+  });
+});

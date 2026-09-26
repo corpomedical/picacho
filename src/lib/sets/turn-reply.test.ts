@@ -32,6 +32,7 @@ import {
   frameRowsChanged,
   plannedFacts,
   replyText,
+  replyPartsOf,
   replyThingsOf,
   replyWordsOf,
   turnDid,
@@ -889,6 +890,56 @@ describe("the frame card's rows a turn changed", () => {
       const rows = frameRowsChanged(run, { chips: [{ kind: "rig", id }], notes: [] });
       expect(rows.length > 0, id).toBe(shown.has(id.slice(0, id.indexOf(":"))));
     }
+  });
+});
+
+// Helios Cut 4, step B3 (2026-09-26): the set's named parts reach the reply.
+describe("the set's named parts", () => {
+  const names: Record<number, string> = { 4: "barriers" };
+  for (const i of [11, 12, 13, 14, 15, 16]) names[i] = "grandstand";
+  const named = specOf({ ...raceTrack, objects: race.objects.map((o, i) => (names[i] ? { ...o, name: names[i] } : o)) });
+  const parts = replyPartsOf(named, MARK);
+
+  it("are named as a label shows a name, with their colour and side; a set without names has none", () => {
+    expect(parts).toEqual([
+      { key: "s:barriers", name: "Barriers", colour: "grey", where: "left" },
+      { key: "s:grandstand", name: "Grandstand", colour: "grey", where: "right" },
+    ]);
+    expect(replyPartsOf(race, MARK)).toEqual([]);
+  });
+
+  it("are said by name in what was done, in every language", () => {
+    for (const l of LOCALES) {
+      const { text } = reply({ facing: { key: "s:grandstand" }, gaze: { key: "s:barriers" } }, {}, { locale: l, parts }, WORDS[l]);
+      expect(text, l).toContain("Grandstand");
+      expect(text, l).toContain("Barriers");
+    }
+    const near = reply({ near: { thing: { key: "s:barriers" }, side: "beside" } }, {}, { parts });
+    expect(near.text).toContain("Barriers · beside");
+  });
+
+  it("can be a \"which one?\" button, named, coloured and placed like a thing", () => {
+    const { model } = reply({ gaze: { candidates: ["s:grandstand", CAR.key] } }, {}, { parts });
+    const which = model.lines.find((x) => x.kind === "which");
+    expect(which?.buttons).toHaveLength(2);
+    expect(which?.buttons[0]).toMatchObject({ kind: "which", slot: "gaze", key: "s:grandstand" });
+    expect(which?.buttons[0].label).toBe(fill(EN.reply.chips.which, { thing: "Grandstand", colour: EN.reply.colours.grey, where: EN.reply.chips.whichWhere.right }));
+  });
+
+  it("follow the things when asked what is on the set", () => {
+    expect(answerFor("things", factsOf({ parts }), EN).text).toBe("On this set: Car (red). Parts of the set: Barriers, Grandstand.");
+    expect(answerFor("things", factsOf({ things: [], parts }), EN).text).toBe(`${EN.reply.answerThingsNone} Parts of the set: Barriers, Grandstand.`);
+    expect(answerFor("things", factsOf({ parts: [] }), EN).text).toBe("On this set: Car (red).");
+  });
+
+  it("change what thing_unknown says: no names yet, or not one of the set's named things and parts", () => {
+    for (const l of LOCALES) {
+      const unnamed = cantLine("thing_unknown", null, factsOf({ locale: l }, WORDS[l]), WORDS[l]).text;
+      const withParts = cantLine("thing_unknown", null, factsOf({ locale: l, parts }, WORDS[l]), WORDS[l]).text;
+      expect(unnamed, l).toContain(fill(CATALOGS[l].sets.reply.cant.thing_unknown, { name: "Marco" }));
+      expect(withParts, l).toContain(fill(CATALOGS[l].sets.reply.cantThingUnknownNamed, { name: "Marco" }));
+    }
+    expect(EN.reply.cant.thing_unknown).toBe("This set's parts have no names yet, only its cars and loose objects. Turn {name} with ↺ ↻.");
   });
 });
 

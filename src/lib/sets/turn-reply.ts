@@ -39,10 +39,10 @@ import { astraCardKind, astraCardLine, astraCardWords, type AstraCardKind } from
 import { fill } from "./fill";
 import { nearestLens } from "./build-scene";
 import { rigCommandLabel, rigPatchFor, type RigCommandWords } from "./commands";
-import { setElements, thingLabelText, thingLabels, type SetElement, type ThingWords } from "./elements";
+import { capitalised, setElements, thingLabelText, thingLabels, type SetElement, type ThingWords } from "./elements";
 import { schemeHasSun } from "./light-schemes";
 import type { FilmMove, FilmTexture } from "./moves";
-import { cameraSideOf, readerThings, type ColourId, type ThingWhere } from "./reader-context";
+import { cameraSideOf, readerParts, readerThings, type ColourId, type ThingWhere } from "./reader-context";
 import { depthOfField, sensorCocMm, stepEv, type RigSensor, type SetRig } from "./rig";
 import { SET_DIRECTION_MAX_CHARS, SET_EDIT_MAX_CHARS } from "./set-config";
 import type { SetSpec, StandPose } from "./set-spec";
@@ -232,6 +232,14 @@ export function replyThingsOf(spec: SetSpec, mark: { x: number; z: number; facin
   return readerThings(spec, mark).map((t) => ({ key: t.key, name: thingLabelText(labels.get(t.key)!, words.things), kind: t.kind, colour: t.colour, where: t.where }));
 }
 
+/** One of the set's named parts as the reply names it (Helios Cut 4, step B3): its key ("s:grandstand"), its name as a label shows it, its colour and where it lies. */
+export type ReplyPart = { key: string; name: string; colour: ColourId; where: ThingWhere };
+
+/** The parts a reply can name: the reader's own twelve nearest (reader-context.ts readerParts), each by its name, capitalised as every label is. Empty on a set that names none. */
+export function replyPartsOf(spec: SetSpec, mark: { x: number; z: number; facingDeg: number }): ReplyPart[] {
+  return readerParts(spec, mark).map((p) => ({ key: p.key, name: capitalised(p.name), colour: p.colour, where: p.where }));
+}
+
 /**
  * What the reply reads of the page, as it stands after the turn (for a
  * preview, as it stands now): names, the frame, the rig, the prices, the
@@ -246,6 +254,8 @@ export type ReplyFacts = {
   marks: readonly { id: string; label: string }[];
   cameras: readonly { id: string; label: string }[];
   things: readonly ReplyThing[];
+  /** The set's named parts (replyPartsOf); absent or empty on a set that names none. */
+  parts?: readonly ReplyPart[];
   markId: string | null;
   pose: StandPose;
   /** Which way she faces, by the camera (shot-words.ts facingFor's words). */
@@ -494,7 +504,9 @@ export function replyText(model: ReplyModel): string {
 
 const nameOf = (facts: Pick<ReplyFacts, "characters">, id: string | null): string | null => (id ? (facts.characters.find((c) => c.id === id)?.name ?? null) : null);
 const personOf = (facts: Pick<ReplyFacts, "characters" | "characterId">, words: Pick<ReplyWords, "yourCharacter">): string => nameOf(facts, facts.characterId) ?? words.yourCharacter;
-const thingOf = (facts: Pick<ReplyFacts, "things">, key: string, words: Pick<ReplyWords, "things">): string => facts.things.find((t) => t.key === key)?.name ?? words.things.object;
+/** A thing or a named part by its key, as the reply names it: the reader's list first, then the parts (Helios Cut 4, step B3). */
+const namedOf = (facts: Pick<ReplyFacts, "things" | "parts">, key: string): ReplyThing | ReplyPart | undefined => facts.things.find((t) => t.key === key) ?? facts.parts?.find((p) => p.key === key);
+const thingOf = (facts: Pick<ReplyFacts, "things" | "parts">, key: string, words: Pick<ReplyWords, "things">): string => namedOf(facts, key)?.name ?? words.things.object;
 const markLabel = (facts: Pick<ReplyFacts, "marks">, id: string | null): string | null => (id ? (facts.marks.find((m) => m.id === id)?.label ?? null) : null);
 const stillLabel = (words: Pick<ReplyWords, "still">, n: number) => formatMsg(words.still, { n });
 /** A sentence's first letter up, for a name that opens one ("your character can't…"). */
@@ -852,7 +864,8 @@ export function cantLine(
       why = fill(c.altitude, { m: formatMetres(HEIGHT_M.high, facts.locale) });
       break;
     case "thing_unknown":
-      why = fill(c.thing_unknown, { name });
+      // A set whose parts have names: what was asked is in neither list; one without: its parts have no names yet (Helios Cut 4, step B3).
+      why = fill((facts.parts?.length ?? 0) > 0 ? r.cantThingUnknownNamed : c.thing_unknown, { name });
       break;
     case "weather":
       // The palette and the hour by their own names in this language (review of Cut 2, W9).
@@ -992,7 +1005,11 @@ export function answerFor(topic: AskTopic, facts: ReplyFacts, words: ReplyWords)
     }
     case "things":
       return plain(
-        facts.things.length > 0 ? fill(r.answerThings, { list: facts.things.map((t) => `${t.name} (${r.colours[t.colour]})`).join(", ") }) : r.answerThingsNone,
+        [
+          facts.things.length > 0 ? fill(r.answerThings, { list: facts.things.map((t) => `${t.name} (${r.colours[t.colour]})`).join(", ") }) : r.answerThingsNone,
+          // The set's named parts after its things (Helios Cut 4, step B3).
+          ...((facts.parts?.length ?? 0) > 0 ? [fill(r.answerParts, { list: (facts.parts ?? []).map((p) => p.name).join(", ") })] : []),
+        ].join(" "),
       );
     case "help":
       // What it says about money depends on the mode (check of the spec, item 5): in
@@ -1243,7 +1260,7 @@ export function composeReply(plan: TurnPlan, outcomes: TurnOutcomes | null, fact
     } else if (need.kind === "which") {
       const buttons: ReplyButton[] = [];
       for (const key of need.candidates) {
-        const t = facts.things.find((x) => x.key === key);
+        const t = namedOf(facts, key);
         if (!t) continue;
         buttons.push({ kind: "which", slot: need.slot, key, label: fill(r.chips.which, { thing: t.name, colour: r.colours[t.colour], where: r.chips.whichWhere[t.where] }) });
       }

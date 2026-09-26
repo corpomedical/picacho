@@ -5,9 +5,9 @@
 // closer", "no, lower", "the other car", "now she's smiling". So each
 // reading is handed, after the fixed instructions (shot-reading.ts
 // SHOT_READER_STATIC, first so the provider's prompt cache holds them):
-// - STAGE: the set's cameras and marks by id, the person's characters and
-//   the set's things under short aliases (p1…, t1…), so the model never
-//   sees a character's id or an element key;
+// - STAGE: the set's cameras and marks by id, the person's characters, the
+//   set's things and its named parts under short aliases (p1…, t1…, s1…),
+//   so the model never sees a character's id or an element key;
 // - NOW: who is in the frame, where, and how the camera, the look and
 //   "what happens" stand — written HERE, on the server, from values it has
 //   checked, never from the page's own sentence;
@@ -23,8 +23,8 @@
 
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 import { SET_LIMITS, STAND_POSES, cleanText, type SetSpec, type StandPose, type Vec3 } from "./set-spec";
-import { setElements, thingLabels, type ElementKind } from "./elements";
-import type { ColourId } from "./colour-words";
+import { partShapes, setElements, thingLabels, type ElementKind } from "./elements";
+import { colourWord, type ColourId } from "./colour-words";
 import type { CameraPose } from "./match-shot";
 import { normaliseGaze, sideOf, type Gaze } from "./people";
 import { focalMm, normaliseSetRig, sensorHeightMm, type RigFormat, type SetRig } from "./rig";
@@ -38,14 +38,23 @@ import { timeLabel } from "./time-of-day";
 // ---------------------------------------------------------------------------
 
 export const READER_CONTEXT_MAX = {
-  /** STAGE, whole: the farthest things go first, then characters from the end (never the one in the frame). */
-  stage: 1500,
+  /**
+   * STAGE, whole: the farthest parts go first, then the farthest things,
+   * then characters from the end (never the one in the frame). 2,000 since
+   * Helios Cut 4, step B3 (2026-09-26), for the set's named parts (was
+   * 1,500): at most 500 more characters, ~200 tokens × $0.75/1M = $0.00015
+   * a reading at worst, uncached (scripts/helios-reader-check/prices.json,
+   * gpt-5.4-mini, read 2026-09-25).
+   */
+  stage: 2000,
   /** NOW, whole, before the build line: what happens is shortened first. */
   now: 600,
   /** At most this many turns, each side at most turnChars. */
   turns: 3,
   turnChars: 200,
   things: 12,
+  /** Named parts of the set (PARTS), nearest first. */
+  parts: 12,
   characters: 20,
   /** A character's name as the reader sees it: a set's own label is held to the same (SET_LIMITS.labelChars). */
   nameChars: SET_LIMITS.labelChars,
@@ -104,8 +113,14 @@ export type ReaderThing = {
    */
   n: number;
   kind: ElementKind;
-  /** English, for the model: "the car", "Car 2", "an object" (the page's elementName rule). */
+  /** English, for the model: "the car", "Car 2", "an object" (the page's elementName rule). Every mention of the thing uses it. */
   label: string;
+  /**
+   * Its name when the set names it (elements.ts thingNameOf; Helios Cut 4,
+   * step B3), as written: STAGE says it in brackets after the label, "t1:
+   * the car (red sports car)". Null without one.
+   */
+  name: string | null;
   colour: ColourId;
   /** "4.4 m long" for a car or a vehicle, "1.2 m tall" for an object. */
   size: string;
@@ -114,6 +129,31 @@ export type ReaderThing = {
   where: ThingWhere;
   /** The set's object indices it is made of: an eye-line on one of them is on it. */
   objects: number[];
+};
+
+/**
+ * One of the set's named parts as the reader is told of it (Helios Cut 4,
+ * step B3): the grandstand, the barriers. Structure, never a thing: it
+ * can't move and takes no photos, but she can stand by it, face it and
+ * look at it. Only a part the set names is listed (elements.ts setParts).
+ */
+export type ReaderPart = {
+  /** elements.ts partKeyOf: "s:" and its name in lower case. */
+  key: string;
+  /** Its place among the set's parts (setParts' order), from 1: its alias is s{n}, fixed for the visit as a thing's is. */
+  n: number;
+  /** As written. */
+  name: string;
+  colour: ColourId;
+  /** "120 m long", or "12 m tall" for a part taller than it is long. */
+  size: string;
+  /** From the figure to the nearest edge of its nearest block, metres. */
+  distanceM: number;
+  /** Which way that nearest edge lies from the figure. */
+  where: ThingWhere;
+  objects: number[];
+  /** Its largest block: an eye-line on the part looks at it (turn-plan.ts). */
+  largest: number;
 };
 
 export type ReaderMessage = { role: "system" | "user"; content: string };
@@ -221,7 +261,8 @@ const WHERE_WORDS: Record<ThingWhere, string> = { ahead: "ahead of them", left: 
  * rule (elements.ts labelOf, Helios Cut 4, step B2): a lone car is "the
  * car", several are "Car 1", "Car 2", counted over the whole set; coloured
  * by its largest block; placed by people.ts sideOf. In English, for the
- * model, and without the set's names: those reach the reader in step B3.
+ * model; a thing the set names carries its name too (step B3), and its
+ * label stays the handle, so "Car 2" means the same car named or not.
  */
 export function readerThings(spec: SetSpec, mark: { x: number; z: number; facingDeg: number }): ReaderThing[] {
   const els = setElements(spec);
@@ -240,6 +281,7 @@ export function readerThings(spec: SetSpec, mark: { x: number; z: number; facing
       n: order + 1,
       kind: e.kind,
       label: l.several ? `${numbered[e.kind]} ${l.ordinal}` : lone[e.kind],
+      name: l.name,
       colour: l.colour,
       size: e.kind === "object" ? `${num(height)} m tall` : `${num(length)} m long`,
       distanceM: Math.round(Math.hypot(dx, dz) * 10) / 10,
@@ -252,77 +294,132 @@ export function readerThings(spec: SetSpec, mark: { x: number; z: number; facing
   return things.slice(0, READER_CONTEXT_MAX.things).map((t) => t.thing);
 }
 
+/**
+ * The set's named parts the reader may name, nearest to the figure first,
+ * at most twelve (Helios Cut 4, step B3): each measured from the figure to
+ * the nearest edge of its nearest block (turn-plan.ts nearestOnPart's
+ * rule), sized by the box round all its blocks, coloured by its largest.
+ * Empty on a set that names none: every set until an admin's naming pass.
+ */
+export function readerParts(spec: Pick<SetSpec, "objects" | "bounds">, mark: { x: number; z: number; facingDeg: number }): ReaderPart[] {
+  const shapes = partShapes(spec, setElements(spec));
+  const parts = shapes.map((p, order) => {
+    let best = { d: Infinity, x: p.min[0], z: p.min[2] };
+    for (const f of p.footprints) {
+      const x = clamp(mark.x, f.min[0], f.max[0]);
+      const z = clamp(mark.z, f.min[2], f.max[2]);
+      const d = Math.hypot(mark.x - x, mark.z - z);
+      if (d < best.d) best = { d, x, z };
+    }
+    const length = Math.max(p.max[0] - p.min[0], p.max[2] - p.min[2]);
+    const height = p.max[1] - p.min[1];
+    const part: ReaderPart = {
+      key: p.key,
+      n: order + 1,
+      name: p.name,
+      colour: colourWord(spec.objects[p.largest]?.color ?? ""),
+      size: height > length ? `${num(height)} m tall` : `${num(length)} m long`,
+      distanceM: Math.round(best.d * 10) / 10,
+      // From inside it (standing on a road), its middle says where it lies.
+      where: best.d < 0.05 ? sideOf(mark, { x: (p.min[0] + p.max[0]) / 2, z: (p.min[2] + p.max[2]) / 2 }) : sideOf(mark, { x: best.x, z: best.z }),
+      objects: [...p.objects],
+      largest: p.largest,
+    };
+    return { part, order };
+  });
+  parts.sort((a, b) => a.part.distanceM - b.part.distanceM || a.order - b.order);
+  return parts.slice(0, READER_CONTEXT_MAX.parts).map((p) => p.part);
+}
+
 // ---------------------------------------------------------------------------
 // The blocks.
 // ---------------------------------------------------------------------------
 
-const ALIAS_RE = /^([tp])(\d+)$/;
+const ALIAS_RE = /^([tps])(\d+)$/;
+
+/** A name as a STAGE line carries it: the marks that part a line (, ; brackets) made spaces, so a name can't break the list. */
+const listName = (name: string) => name.replace(/[,;()[\]\n]/g, " ").replace(/\s+/g, " ").trim();
 
 /**
  * STAGE, and the aliases the reading's answer is mapped back through. The
- * aliases are t1… and p1…; if the set's own camera or mark ids already use
- * one of them, both become thing1… and person1…, so an alias is never a
- * camera or a mark. A thing's number is its place in the set's own order
- * (ReaderThing.n), not in the list: the list is nearest first and changes
- * as she moves, the alias never does. (normaliseSetSpec names them c1… and m1… today, so
- * this is a guard for a spec that ever names them otherwise.)
- * Held to 1,500 characters: the farthest things go first, then characters
- * from the end — never `keep`, the one in the frame, whom NOW names.
+ * aliases are t1…, s1… and p1…; if the set's own camera or mark ids already
+ * use one of them, all become thing1…, part1… and person1…, so an alias is
+ * never a camera or a mark. A thing's number is its place in the set's own
+ * order (ReaderThing.n), a part's its place among the parts (ReaderPart.n),
+ * not in the list: the list is nearest first and changes as she moves, the
+ * alias never does. (normaliseSetSpec names them c1… and m1… today, so
+ * this is a guard for a spec that ever names them otherwise.) A part's
+ * alias maps to its part key ("s:grandstand") beside the things', so a
+ * reading's "thing" may be either (shot-reading.ts thingPick).
+ * PARTS is said only when the set names a part: an unnamed set's STAGE is
+ * exactly what it was before Helios Cut 4.
+ * Held to 2,000 characters: the farthest parts go first, then the farthest
+ * things, then characters from the end — never `keep`, the one in the
+ * frame, whom NOW names.
  */
 export function readerStageBlock(input: {
   spec: Pick<SetSpec, "cameras" | "marks">;
   characters: readonly ReaderCharacter[];
   things: readonly ReaderThing[];
+  parts?: readonly ReaderPart[];
   keep?: string | null;
 }): { text: string; aliases: ReaderAliases } {
   const { spec } = input;
   const characters = input.characters.slice(0, READER_CONTEXT_MAX.characters);
   const things = input.things.slice(0, READER_CONTEXT_MAX.things);
+  const partsIn = (input.parts ?? []).slice(0, READER_CONTEXT_MAX.parts);
   const ids = [...spec.cameras.map((c) => c.id), ...spec.marks.map((m) => m.id)];
   const clash = ids.some((id) => {
     const m = ALIAS_RE.exec(id);
     if (!m) return false;
     const n = Number(m[2]);
-    return m[1] === "t" ? things.some((t) => t.n === n) : n >= 1 && n <= characters.length;
+    return m[1] === "t" ? things.some((t) => t.n === n) : m[1] === "s" ? partsIn.some((p) => p.n === n) : n >= 1 && n <= characters.length;
   });
   const thingAlias = (n: number) => (clash ? `thing${n}` : `t${n}`);
+  const partAlias = (n: number) => (clash ? `part${n}` : `s${n}`);
   const personAlias = (i: number) => (clash ? `person${i + 1}` : `p${i + 1}`);
 
   const named = (xs: readonly { id: string; label: string }[]) => xs.map((x) => `${x.id}: ${x.label || x.id}`).join("; ");
   const people = characters.map((ch, i) => ({ ch, alias: personAlias(i) }));
   const listed = things.map((t) => ({ t, alias: thingAlias(t.n) }));
+  const partsListed = partsIn.map((p) => ({ p, alias: partAlias(p.n) }));
 
-  const compose = (ps: typeof people, ts: typeof listed) => {
+  const compose = (ps: typeof people, ts: typeof listed, ss: typeof partsListed) => {
     const personLine = ps.length
       ? ps.map(({ ch, alias }) => `${alias}: ${cleanText(ch.name, READER_CONTEXT_MAX.nameChars) || "unnamed"}${ch.hasPhoto ? "" : " (no photo yet)"}`).join("; ")
       : "none";
-    const thingLine = ts.length ? ts.map(({ t, alias }) => `${alias}: ${t.label}, ${t.colour}, ${t.size}, ${num(t.distanceM)} m ${WHERE_WORDS[t.where]}`).join("; ") : "none";
-    return [
-      "STAGE",
-      `Cameras: ${named(spec.cameras)}.`,
-      `Marks: ${spec.marks.length ? named(spec.marks) : "none"}.`,
-      `Characters: ${personLine}.`,
-      `THINGS: ${thingLine}.`,
-    ].join("\n");
+    const thingName = (t: ReaderThing) => {
+      const name = t.name === null ? "" : listName(t.name);
+      return name ? `${t.label} (${name})` : t.label;
+    };
+    const thingLine = ts.length ? ts.map(({ t, alias }) => `${alias}: ${thingName(t)}, ${t.colour}, ${t.size}, ${num(t.distanceM)} m ${WHERE_WORDS[t.where]}`).join("; ") : "none";
+    const lines = ["STAGE", `Cameras: ${named(spec.cameras)}.`, `Marks: ${spec.marks.length ? named(spec.marks) : "none"}.`, `Characters: ${personLine}.`, `THINGS: ${thingLine}.`];
+    if (ss.length) lines.push(`PARTS: ${ss.map(({ p, alias }) => `${alias}: ${listName(p.name) || "part"}, ${p.colour}, ${p.size}, ${num(p.distanceM)} m ${WHERE_WORDS[p.where]}`).join("; ")}.`);
+    return lines.join("\n");
   };
 
   let ps = people;
   let ts = listed;
-  let text = compose(ps, ts);
+  let ss = partsListed;
+  let text = compose(ps, ts, ss);
+  while (text.length > READER_CONTEXT_MAX.stage && ss.length > 0) {
+    ss = ss.slice(0, -1);
+    text = compose(ps, ts, ss);
+  }
   while (text.length > READER_CONTEXT_MAX.stage && ts.length > 0) {
     ts = ts.slice(0, -1);
-    text = compose(ps, ts);
+    text = compose(ps, ts, ss);
   }
   while (text.length > READER_CONTEXT_MAX.stage) {
     const drop = ps.findLastIndex((p) => p.ch.id !== input.keep);
     if (drop < 0) break;
     ps = ps.filter((_, i) => i !== drop);
-    text = compose(ps, ts);
+    text = compose(ps, ts, ss);
   }
   return {
     text: text.slice(0, READER_CONTEXT_MAX.stage),
     aliases: {
-      things: Object.fromEntries(ts.map(({ t, alias }) => [alias, t.key])),
+      things: Object.fromEntries([...ts.map(({ t, alias }) => [alias, t.key]), ...ss.map(({ p, alias }) => [alias, p.key])]),
       people: Object.fromEntries(ps.map(({ ch, alias }) => [alias, ch.id])),
     },
   };
@@ -416,6 +513,8 @@ export function readerNowLine(
     characters: readonly ReaderCharacter[];
     aliases: ReaderAliases;
     things: readonly ReaderThing[];
+    /** The set's named parts: an eye-line on one of their blocks is "looking at s1" (Helios Cut 4, step B3). */
+    parts?: readonly ReaderPart[];
     origin?: "build" | null;
   },
 ): string {
@@ -427,7 +526,7 @@ export function readerNowLine(
 
   const mark = ctx.spec.marks.find((m) => m.id === now.markId);
   const thingAlias = (index: number) => {
-    const t = ctx.things.find((x) => x.objects.includes(index));
+    const t = ctx.things.find((x) => x.objects.includes(index)) ?? ctx.parts?.find((x) => x.objects.includes(index));
     return t ? aliasOf(ctx.aliases.things, t.key) : null;
   };
   const place = `${mark ? `On ${mark.id} ${mark.label || mark.id}` : "On a spot of their own"}, facing ${FACING_WORDS[facingOf(now.mark, now.camera)]}, ${POSE_WORDS[now.pose]}, ${eyeLine(now.gaze, now, thingAlias)}.`;

@@ -471,6 +471,79 @@ export function pointBeside(
   return { x: r2(x), z: r2(z) };
 }
 
+/** A block on the ground: its box as placed (elements.ts PartShape footprints). */
+type Footprint = { min: readonly number[]; max: readonly number[] };
+/** How low a block's top may be and still be ground she stands ON, not beside (a painted line, a road, a floor), metres. */
+const PART_FLAT_TOP_M = 0.3;
+
+/** A point on a part's edge: where, the way out from it toward her, how far, and whether she stands within a block (and whether that block is flat ground). */
+export type PartPoint = { x: number; z: number; out: [number, number]; distanceM: number; inside: boolean; flat: boolean };
+
+/**
+ * The nearest point of a part to her, on the ground (Helios Cut 4, step
+ * B3): over each copy of each of its blocks, never the box round them all,
+ * since a part can be two barriers 28 m apart with her between them. With
+ * the way out from that point toward her: from inside a block, through its
+ * nearest face. `inside` is true when she stands within a block's footprint.
+ */
+export function nearestOnPart(footprints: readonly Footprint[], at: Xz): PartPoint | null {
+  let best: PartPoint | null = null;
+  for (const f of footprints) {
+    const flat = f.max[1] <= PART_FLAT_TOP_M;
+    const x = clamp(at.x, f.min[0], f.max[0]);
+    const z = clamp(at.z, f.min[2], f.max[2]);
+    const d = Math.hypot(at.x - x, at.z - z);
+    let hit: PartPoint;
+    if (d > EPS) hit = { x, z, out: [(at.x - x) / d, (at.z - z) / d], distanceM: d, inside: false, flat };
+    else {
+      // Inside: out through the nearest face.
+      const faces: { gap: number; x: number; z: number; out: [number, number] }[] = [
+        { gap: at.x - f.min[0], x: f.min[0], z: at.z, out: [-1, 0] },
+        { gap: f.max[0] - at.x, x: f.max[0], z: at.z, out: [1, 0] },
+        { gap: at.z - f.min[2], x: at.x, z: f.min[2], out: [0, -1] },
+        { gap: f.max[2] - at.z, x: at.x, z: f.max[2], out: [0, 1] },
+      ];
+      const face = faces.reduce((a, b) => (b.gap < a.gap ? b : a));
+      hit = { x: face.x, z: face.z, out: face.out, distanceM: 0, inside: true, flat };
+    }
+    // Standing on a flat block wins (she is at it already); else the nearest.
+    const rank = (h: PartPoint) => (h.inside && h.flat ? -1 : h.distanceM);
+    if (!best || rank(hit) < rank(best)) best = hit;
+  }
+  return best;
+}
+
+/**
+ * Where she stands by a part: at its nearest face, past it by her own
+ * radius and 0.15 m, as pointBeside does for a thing. A part has no front
+ * of its own, so the side said is not used: a 120 m grandstand's middle can
+ * be 60 m away, its nearest face is where a director means. Standing on a
+ * flat part (a road, a painted line) already, she stays where she is.
+ * Held inside the set; the page then steps her clear of anything built
+ * (marks.ts clearMarks).
+ */
+export function pointByPart(footprints: readonly Footprint[], mark: Xz, bounds?: { x: number; z: number }): Xz {
+  const near = nearestOnPart(footprints, mark);
+  if (!near || (near.inside && near.flat)) return { x: r2(mark.x), z: r2(mark.z) };
+  const out = PERSON_RADIUS_M + NEAR_CLEARANCE_M;
+  let x = near.x + near.out[0] * out;
+  let z = near.z + near.out[1] * out;
+  if (bounds) {
+    const hbx = Math.max(0, bounds.x / 2 - PERSON_RADIUS_M);
+    const hbz = Math.max(0, bounds.z / 2 - PERSON_RADIUS_M);
+    x = clamp(x, -hbx, hbx);
+    z = clamp(z, -hbz, hbz);
+  }
+  return { x: r2(x), z: r2(z) };
+}
+
+/** Where she faces to face a part: its nearest point (the middle of a long stand can be far off to one side); from on top of it, its middle. */
+export function partFacingPoint(part: { footprints: readonly Footprint[]; min: readonly number[]; max: readonly number[] }, mark: Xz): Xz {
+  const near = nearestOnPart(part.footprints, mark);
+  if (!near || near.distanceM < 0.05) return { x: (part.min[0] + part.max[0]) / 2, z: (part.min[2] + part.max[2]) / 2 };
+  return { x: near.x, z: near.z };
+}
+
 /** A move in the picture's terms: + right is picture right, + toward is toward the camera. Her facing is kept. */
 export function nudgeMark<M extends Xz>(mark: M, camera: CameraPose, right: number, toward: number): M {
   const cam = { x: camera.position[0], z: camera.position[2] };

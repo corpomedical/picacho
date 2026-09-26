@@ -4,7 +4,7 @@ import { join } from "node:path";
 import raceTrack from "./fixtures-race-track.json";
 import { fovForLens } from "./build-scene";
 import { widenFovDeg } from "./compare";
-import { setElements } from "./elements";
+import { partShapes, setElements } from "./elements";
 import { solveMatchPose, type CameraPose } from "./match-shot";
 import { NEW_SET_RIG, formatFrame, sensorHeightMm, type RigFormat, type SetRig } from "./rig";
 import { normaliseSetSpec, type SetSpec } from "./set-spec";
@@ -34,12 +34,15 @@ import {
   keepSnapshot,
   largestObjectOf,
   lookPatch,
+  nearestOnPart,
   nudgeMark,
   paidDecision,
+  partFacingPoint,
   pickTakeStart,
   planSays,
   planTurn,
   pointBeside,
+  pointByPart,
   pressFor,
   resolveWhich,
   secondButton,
@@ -888,6 +891,37 @@ describe("where she stands (spec §3.1 step 6)", () => {
     const back = pointBeside(CAR, "back", { camera: C2_POSE, mark: MARK }, v);
     expect(back.z).toBeCloseTo(v!.z - v!.halfLength - out, 2);
     expect(vehicleOf({ ...CAR, kind: "object" }, vehicles)).toBeNull();
+  });
+
+  // Helios Cut 4, step B3: a named part of the set, tested on the race track (spec: "whether today's near solver handles a 120 m box is unknown").
+  it("by a part she stands at its nearest face, never the middle of a 120 m box, and faces its nearest point", () => {
+    const names: Record<number, string> = { 0: "track", 4: "barriers" };
+    for (const i of [11, 12, 13, 14, 15, 16]) names[i] = "grandstand";
+    const named = specOf({ ...raceTrack, objects: race.objects.map((o, i) => (names[i] ? { ...o, name: names[i] } : o)) });
+    const parts = partShapes(named, setElements(named));
+    const barriers = parts.find((p) => p.name === "barriers")!;
+    const stand = parts.find((p) => p.name === "grandstand")!;
+    // The barriers are two copies of one 120 m block, at x = ±14: she is at x = 1.5, between them.
+    expect(barriers.footprints).toHaveLength(2);
+    expect(barriers.min[0]).toBeCloseTo(-14.325, 3);
+    expect(barriers.max[0]).toBeCloseTo(14.325, 3);
+    const near = nearestOnPart(barriers.footprints, MARK)!;
+    expect(near).toMatchObject({ x: 13.675, z: 0, inside: false });
+    expect(near.distanceM).toBeCloseTo(12.175, 3);
+    // By the nearer barrier, on her side of it, past it by her radius and 0.15 m.
+    expect(pointByPart(barriers.footprints, MARK, named.bounds)).toEqual({ x: Math.round((13.675 - out) * 100) / 100, z: 0 });
+    expect(pointByPart(barriers.footprints, { x: -3, z: 20 }, named.bounds)).toEqual({ x: Math.round((-13.675 + out) * 100) / 100, z: 20 });
+    // The grandstand's middle is 33 m off and 0 m along; its nearest face is at x = −18, level with her.
+    expect(pointByPart(stand.footprints, MARK, named.bounds)).toEqual({ x: Math.round((-18 + out) * 100) / 100, z: 0 });
+    expect(partFacingPoint(stand, { x: 1.5, z: 40 })).toEqual({ x: -18, z: 40 });
+    expect(facingToward({ x: 1.5, z: 40 }, partFacingPoint(stand, { x: 1.5, z: 40 }))).toBe(270);
+    // Standing on a flat part already (the track, a plane on the ground), she stays where she is.
+    const track = parts.find((p) => p.name === "track")!;
+    expect(nearestOnPart(track.footprints, MARK)).toMatchObject({ inside: true, flat: true });
+    expect(pointByPart(track.footprints, MARK, named.bounds)).toEqual({ x: 1.5, z: 0 });
+    // Inside a block that stands: out through its nearest face.
+    expect(pointByPart([{ min: [-2, 0, -1], max: [2, 3, 1] }], { x: 1.5, z: 0 })).toEqual({ x: 2 + out, z: 0 });
+    expect(pointByPart([], { x: 1, z: 2 })).toEqual({ x: 1, z: 2 });
   });
 
   it("a nudge is in the picture's terms, and the camera can follow by the same offset", () => {

@@ -1,7 +1,7 @@
 {
- "version": 2,
- "written": "2026-09-25",
- "spec": "Helios Cut 2 spec v2, Appendix",
+ "version": 3,
+ "written": "2026-09-26",
+ "spec": "Helios Cut 2 spec v2, Appendix; Helios Cut 4, step B3 (names and parts)",
  "defaultForbid": [
   "shoot",
   "set_change",
@@ -19,7 +19,8 @@
   "expectShoot": "none (default) | still | take: shootDecision(plan, state) for the entry's mode, with source 'message'.",
   "expectCards": "when present, exactly these Needs cards: astra | which | take | hour. Absent: not checked.",
   "expectReplyMentions": "case-insensitive substrings of the reply composed in context.locale (default en).",
-  "context": "now overrides fixture NOW fields; turns is LAST TURNS; locale is the interface language; origin 'build' marks the Sets home's first message on a set it just built."
+  "context": "now overrides fixture NOW fields; turns is LAST TURNS; locale is the interface language; origin 'build' marks the Sets home's first message on a set it just built; unnamed true reads the set as saved before any name (the fixture file itself), so it has no parts.",
+  "aliases": "t1… are the set's things by their place in the set's own order, s1… its named parts by their place among the parts, p1… the characters. Each set is read named (lib/fixtures.mts HAND_NAMES); a thing's `name` and each part are what the reader is told."
  },
  "fixtures": {
   "race": {
@@ -74,7 +75,8 @@
      "kind": "car",
      "colour": "red",
      "size": "4.4 m long",
-     "where": "3 m to their left"
+     "where": "3 m to their left",
+     "name": "red sports car"
     },
     {
      "alias": "t2",
@@ -85,11 +87,25 @@
      "where": "6 m behind them"
     }
    ],
-   "structureNotThings": [
-    "grandstand",
-    "pit wall",
-    "barriers",
-    "flags"
+   "parts": [
+    {
+     "alias": "s1",
+     "name": "barriers",
+     "size": "120 m long",
+     "where": "12.2 m to their left"
+    },
+    {
+     "alias": "s2",
+     "name": "pit garages",
+     "size": "120 m long",
+     "where": "12 m to their left"
+    },
+    {
+     "alias": "s3",
+     "name": "grandstand",
+     "size": "120 m long",
+     "where": "19.5 m to their right"
+    }
    ],
    "now": {
     "who": "p2",
@@ -172,7 +188,8 @@
      "kind": "car",
      "colour": "red",
      "size": "4.5 m long",
-     "where": "2 m to their left"
+     "where": "2 m to their left",
+     "name": "crimson sports coupe"
     },
     {
      "alias": "t2",
@@ -180,7 +197,8 @@
      "kind": "car",
      "colour": "blue",
      "size": "4.6 m long",
-     "where": "5 m behind them"
+     "where": "5 m behind them",
+     "name": "blue sports coupe"
     },
     {
      "alias": "t3",
@@ -188,7 +206,8 @@
      "kind": "object",
      "colour": "white",
      "size": "0.9 m tall",
-     "where": "2 m to their right"
+     "where": "2 m to their right",
+     "name": "white display stand"
     }
    ],
    "now": {
@@ -278,7 +297,8 @@
      "kind": "car",
      "colour": "red",
      "size": "4.3 m long",
-     "where": "3 m to their left"
+     "where": "3 m to their left",
+     "name": "red sports car"
     },
     {
      "alias": "t2",
@@ -286,7 +306,8 @@
      "kind": "car",
      "colour": "red",
      "size": "4.5 m long",
-     "where": "3 m to their right"
+     "where": "3 m to their right",
+     "name": "red sports car"
     },
     {
      "alias": "t3",
@@ -656,14 +677,15 @@
    "set": "race",
    "phrase": "Turn her to face the grandstand.",
    "expected": {
-    "cant": [
-     "thing_unknown"
-    ]
+    "facing": {
+     "thing": "s3"
+    }
    },
    "expectReplyMentions": [
-    "by name"
+    "grandstand"
    ],
-   "expectShoot": "none"
+   "expectShoot": "none",
+   "note": "Helios Cut 4, step B3: the race set is read named, so the grandstand is a part (s3) she can face. Unnamed, it is X105."
   },
   {
    "id": "A20",
@@ -1090,7 +1112,7 @@
     }
    },
    "expectReplyMentions": [
-    "Car 2"
+    "Blue sports coupe"
    ],
    "expectShoot": "none",
    "context": {
@@ -1544,7 +1566,11 @@
     "Car 1",
     "Car 2"
    ],
-   "expectShoot": "none"
+   "expectShoot": "none",
+   "context": {
+    "unnamed": true
+   },
+   "note": "Read unnamed (Helios Cut 4, step B3): a set saved before the naming pass still names its cars \"Car 1\" and \"Car 2\"."
   },
   {
    "id": "X67",
@@ -2025,7 +2051,7 @@
     "pose": "lean"
    },
    "expectReplyMentions": [
-    "Car 1"
+    "Red sports car"
    ],
    "expectShoot": "none",
    "note": "Eva is already cast: who p1 is the same person, not a swap."
@@ -2109,7 +2135,7 @@
     }
    },
    "expectReplyMentions": [
-    "Carro 2"
+    "Blue sports coupe"
    ],
    "expectShoot": "none",
    "context": {
@@ -2265,6 +2291,90 @@
     }
    },
    "note": "Shoot without asking, but a not-yet item blocks the automatic shot."
+  },
+  {
+   "id": "X104",
+   "set": "race",
+   "phrase": "Have her look up at the stands.",
+   "expected": {
+    "gaze": {
+     "thing": "s3"
+    }
+   },
+   "expectReplyMentions": [
+    "grandstand"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "X105",
+   "set": "race",
+   "phrase": "Turn her to face the grandstand.",
+   "expected": {
+    "cant": [
+     "thing_unknown"
+    ]
+   },
+   "expectReplyMentions": [
+    "names"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "unnamed": true
+   },
+   "note": "The set as saved before the naming pass: its parts have no names, so the grandstand is in neither THINGS nor PARTS."
+  },
+  {
+   "id": "X106",
+   "set": "showroom",
+   "phrase": "She leans on the display stand.",
+   "expected": {
+    "near": {
+     "thing": "t3"
+    },
+    "pose": "lean"
+   },
+   "expectReplyMentions": [
+    "White display stand"
+   ],
+   "expectShoot": "none"
+  },
+  {
+   "id": "X107",
+   "set": "garage",
+   "phrase": "No, the other one.",
+   "expected": {
+    "gaze": {
+     "thing": "t2"
+    }
+   },
+   "expectReplyMentions": [
+    "Red sports car 2"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "turns": [
+     {
+      "said": "she looks at the red car on her left",
+      "did": "gaze t1"
+     }
+    ]
+   },
+   "note": "Both cars are named \"red sports car\": the other one is still t2."
+  },
+  {
+   "id": "X108",
+   "set": "race",
+   "phrase": "Put her by the barriers.",
+   "expected": {
+    "near": {
+     "thing": "s1"
+    }
+   },
+   "expectReplyMentions": [
+    "barriers"
+   ],
+   "expectShoot": "none"
   }
  ]
 }

@@ -11,6 +11,14 @@
 //   of her (the race car at 4.3 m and 4.5 m), a grey bench behind, three
 //   walls. The "which one?" set.
 //
+// THE NAMES (Helios Cut 4, step B3). Each set is read NAMED, as a set the
+// naming pass (step B4) has named would be: hand-written names put on
+// through the field a saved set carries (withNames), the race's car and
+// three parts, the showroom's two coupes and its stand, the garage's two
+// cars with ONE name, so "which one?" is still a real question there. The
+// fixture files on disk stay nameless: they are the "old set", and a
+// phrase with context.unnamed reads its set without the names.
+//
 // THE ALIASES ARE THE PAGE'S. A thing's alias is its place in the set's own
 // order (elements.ts setElements, by its first block; reader-context.ts
 // ReaderThing.n — stable for the visit since the review of Cut 2, U1), so
@@ -28,14 +36,28 @@ import { astraTooBig } from "../../../src/lib/sets/astra-card.ts";
 import { fovForLens } from "../../../src/lib/sets/build-scene.ts";
 import { setElements } from "../../../src/lib/sets/elements.ts";
 import type { CameraPose } from "../../../src/lib/sets/match-shot.ts";
-import { normaliseReaderNow, normaliseReaderTurns, readerMessages, readerNowLine, readerStageBlock, readerThings, readerTurnsBlock, type ReaderCharacter, type ReaderMessage, type ReaderNow, type ReaderThing } from "../../../src/lib/sets/reader-context.ts";
+import {
+  normaliseReaderNow,
+  normaliseReaderTurns,
+  readerMessages,
+  readerNowLine,
+  readerParts,
+  readerStageBlock,
+  readerThings,
+  readerTurnsBlock,
+  type ReaderCharacter,
+  type ReaderMessage,
+  type ReaderNow,
+  type ReaderPart,
+  type ReaderThing,
+} from "../../../src/lib/sets/reader-context.ts";
 import { NEW_SET_RIG, normaliseSetRig, sensorHeightMm, type RigFormat, type RigSensor } from "../../../src/lib/sets/rig.ts";
 import { cleanText, normaliseSetSpec, type SetObject, type SetSpec } from "../../../src/lib/sets/set-spec.ts";
 import type { ReaderAliases } from "../../../src/lib/sets/shot-reading.ts";
 import { SHOT_WORDS_MAX_CHARS, sideUnit, type CameraSide, type FigureFacing } from "../../../src/lib/sets/shot-words.ts";
 import { takesCredits } from "../../../src/lib/sets/take.ts";
 import { cameraSpotOf, pickTakeStart, type PageState, type PlanShot, type TakeStart } from "../../../src/lib/sets/turn-plan.ts";
-import { replyThingsOf, type ReplyFacts, type ReplyWords } from "../../../src/lib/sets/turn-reply.ts";
+import { replyPartsOf, replyThingsOf, type ReplyFacts, type ReplyWords } from "../../../src/lib/sets/turn-reply.ts";
 import type { CorpusEntry, Fixture, FixtureName, FixtureNow, Locale, NowCamera } from "./corpus.mts";
 
 const SETS_DIR = fileURLToPath(new URL("../../../src/lib/sets/", import.meta.url));
@@ -112,10 +134,50 @@ const box = (position: [number, number, number], size: [number, number, number],
 /** Where she stands when NOW has no mark: the showroom's spot beside Car 1 (NOW: near t1, beside). */
 type Spot = { x: number; z: number; facingDeg: number };
 
-export type BuiltSet = { name: FixtureName; spec: SetSpec; spot: Spot | null };
+/** A built set: `spec` named (the phrases' set), `bare` the same set without a name (context.unnamed). */
+export type BuiltSet = { name: FixtureName; spec: SetSpec; bare: SetSpec; spot: Spot | null };
+
+/**
+ * A set with hand-written names on its objects (Helios Cut 4, step B3),
+ * through the field a saved set carries and the normaliser that cleans it
+ * (set-spec.ts SetObject.name). A key is a thing's alias — "t1", the first
+ * thing in the set's own order, every block of it — or objects by index:
+ * "4", "11-16". Nothing else about the set moves: names are in no key.
+ */
+export function withNames(spec: SetSpec, names: Record<string, string>, label: string): SetSpec {
+  const els = setElements(spec);
+  const named = new Map<number, string>();
+  for (const [key, name] of Object.entries(names)) {
+    const thing = /^t(\d+)$/.exec(key);
+    const range = /^(\d+)(?:-(\d+))?$/.exec(key);
+    if (thing) {
+      const el = els[Number(thing[1]) - 1];
+      if (!el) throw new Error(`the ${label} fixture has no ${key} to name`);
+      for (const [o] of el.members) named.set(o, name);
+    } else if (range) {
+      const from = Number(range[1]);
+      const to = Number(range[2] ?? range[1]);
+      for (let o = from; o <= to; o++) {
+        if (!spec.objects[o]) throw new Error(`the ${label} fixture has no object ${o} to name`);
+        named.set(o, name);
+      }
+    } else throw new Error(`withNames: "${key}" is neither a thing's alias nor object numbers`);
+  }
+  return specOf({ ...spec, objects: spec.objects.map((o, i) => (named.has(i) ? { ...o, name: named.get(i) } : o)) }, label);
+}
+
+/** The names each set is read with: what a naming pass could write, by hand (spec §4 B3). */
+export const HAND_NAMES: Record<FixtureName, Record<string, string>> = {
+  // The race track's car, and three parts of the set itself: its grandstand (objects 11–16), its pit garages (7–10) and its barriers (object 4, both copies).
+  race: { t1: "red sports car", "11-16": "grandstand", "7-10": "pit garages", "4": "barriers" },
+  showroom: { t1: "crimson sports coupe", t2: "blue sports coupe", t3: "white display stand" },
+  // One name for both cars: "the red car" still fits both.
+  garage: { t1: "red sports car", t2: "red sports car" },
+};
 
 function buildRace(): BuiltSet {
-  return { name: "race", spec: specOf(readFixture("fixtures-race-track.json"), "race"), spot: null };
+  const bare = specOf(readFixture("fixtures-race-track.json"), "race");
+  return { name: "race", spec: withNames(bare, HAND_NAMES.race, "race"), bare, spot: null };
 }
 
 /** Her spot on the showroom floor: 2 m to the right of Car 1 (so Car 1 is on her left), facing +z. */
@@ -145,7 +207,7 @@ function buildShowroom(): BuiltSet {
     },
     "showroom",
   );
-  return { name: "showroom", spec, spot: SHOWROOM_SPOT };
+  return { name: "showroom", spec: withNames(spec, HAND_NAMES.showroom, "showroom"), bare: spec, spot: SHOWROOM_SPOT };
 }
 
 function buildGarage(): BuiltSet {
@@ -185,7 +247,7 @@ function buildGarage(): BuiltSet {
     },
     "garage",
   );
-  return { name: "garage", spec, spot: null };
+  return { name: "garage", spec: withNames(spec, HAND_NAMES.garage, "garage"), bare: spec, spot: null };
 }
 
 /** The three sets, built once. */
@@ -200,6 +262,8 @@ export function buildSets(): Record<FixtureName, BuiltSet> {
 export type PreparedEntry = {
   entry: CorpusEntry;
   set: BuiltSet;
+  /** The set as this phrase reads it: named, or `bare` for context.unnamed. */
+  spec: SetSpec;
   locale: Locale;
   /** The message as the reader is given it (cleaned, at most 600), and whether it was longer. */
   message: string;
@@ -209,6 +273,7 @@ export type PreparedEntry = {
   nowWhoAlias: string | null;
   characters: (ReaderCharacter & { hasOutfit: boolean })[];
   things: ReaderThing[];
+  parts: ReaderPart[];
   aliases: ReaderAliases;
   messages: ReaderMessage[];
   /** The page state before the turn; the reading's why and drops go in per reading. */
@@ -248,9 +313,10 @@ export function prepareEntry(entry: CorpusEntry, fx: Fixture, set: BuiltSet): Pr
   });
   const idOf = (alias: string | null) => (alias ? (characters[fx.characters.findIndex((c) => c.alias === alias)]?.id ?? null) : null);
 
-  const markRow = nowFx.mark ? set.spec.marks.find((m) => m.id === nowFx.mark) : null;
+  const spec = entry.context?.unnamed ? set.bare : set.spec;
+  const markRow = nowFx.mark ? spec.marks.find((m) => m.id === nowFx.mark) : null;
   if (nowFx.mark && !markRow) throw new Error(`${entry.id}: mark ${nowFx.mark} is not on the ${set.name} set`);
-  const spot: Spot = markRow ? { x: markRow.x, z: markRow.z, facingDeg: markRow.facingDeg } : (set.spot ?? { x: set.spec.marks[0].x, z: set.spec.marks[0].z, facingDeg: set.spec.marks[0].facingDeg });
+  const spot: Spot = markRow ? { x: markRow.x, z: markRow.z, facingDeg: markRow.facingDeg } : (set.spot ?? { x: spec.marks[0].x, z: spec.marks[0].z, facingDeg: spec.marks[0].facingDeg });
   const rig = normaliseSetRig({ ...NEW_SET_RIG, ...nowFx.rig });
   const camera = poseOf(nowFx.camera, spot, rig.format, rig.sensor);
 
@@ -267,7 +333,7 @@ export function prepareEntry(entry: CorpusEntry, fx: Fixture, set: BuiltSet): Pr
       rig,
       direction: nowFx.direction,
     },
-    set.spec,
+    spec,
     characters.map((c) => c.id),
   );
   if (!checked) throw new Error(`${entry.id}: NOW did not check`);
@@ -275,9 +341,10 @@ export function prepareEntry(entry: CorpusEntry, fx: Fixture, set: BuiltSet): Pr
   // The server's own order (words-actions.ts readShotTurn).
   const message = cleanText(entry.phrase, SHOT_WORDS_MAX_CHARS);
   const messageCut = Array.from(cleanText(entry.phrase, Number.MAX_SAFE_INTEGER)).length > SHOT_WORDS_MAX_CHARS;
-  const things = readerThings(set.spec, checked.mark);
-  const stage = readerStageBlock({ spec: set.spec, characters, things, keep: checked.who });
-  const nowLine = readerNowLine(checked, { spec: set.spec, characters, aliases: stage.aliases, things, origin: entry.context?.origin === "build" ? "build" : null });
+  const things = readerThings(spec, checked.mark);
+  const parts = readerParts(spec, checked.mark);
+  const stage = readerStageBlock({ spec, characters, things, parts, keep: checked.who });
+  const nowLine = readerNowLine(checked, { spec, characters, aliases: stage.aliases, things, parts, origin: entry.context?.origin === "build" ? "build" : null });
   const turns = readerTurnsBlock(normaliseReaderTurns(entry.context?.turns ?? []));
   const messages = readerMessages(stage.text, nowLine, turns, message);
 
@@ -311,7 +378,7 @@ export function prepareEntry(entry: CorpusEntry, fx: Fixture, set: BuiltSet): Pr
     filmOpen: nowFx.filmOpen,
     editsLeft: fx.edits.left,
     editsCap: fx.edits.cap,
-    tooBig: astraTooBig(set.spec),
+    tooBig: astraTooBig(spec),
     credits: CREDITS,
   };
 
@@ -319,6 +386,7 @@ export function prepareEntry(entry: CorpusEntry, fx: Fixture, set: BuiltSet): Pr
   return {
     entry,
     set,
+    spec,
     locale,
     message,
     messageCut,
@@ -327,6 +395,7 @@ export function prepareEntry(entry: CorpusEntry, fx: Fixture, set: BuiltSet): Pr
     nowWhoAlias: whoIndex >= 0 ? fx.characters[whoIndex].alias : null,
     characters,
     things,
+    parts,
     aliases: stage.aliases,
     messages,
     state,
@@ -345,9 +414,10 @@ export function factsOf(p: PreparedEntry, words: ReplyWords, shot: ReplyFacts["s
     mode: p.state.mode,
     characters: p.characters.map((c) => ({ id: c.id, name: c.name })),
     characterId: p.state.characterId,
-    marks: p.set.spec.marks.map((m) => ({ id: m.id, label: m.label })),
-    cameras: p.set.spec.cameras.map((c) => ({ id: c.id, label: c.label })),
-    things: replyThingsOf(p.set.spec, p.now.mark, words),
+    marks: p.spec.marks.map((m) => ({ id: m.id, label: m.label })),
+    cameras: p.spec.cameras.map((c) => ({ id: c.id, label: c.label })),
+    things: replyThingsOf(p.spec, p.now.mark, words),
+    parts: replyPartsOf(p.spec, p.now.mark),
     markId: p.state.markId,
     pose: p.state.pose,
     facing: p.nowFacing,
@@ -378,8 +448,9 @@ export function factsOf(p: PreparedEntry, words: ReplyWords, shot: ReplyFacts["s
 /**
  * Whether a built set gives the aliases the corpus expects. Problems (an
  * alias a phrase names that the set doesn't give, or gives to another kind
- * of thing, colour or person) stop the check; notes (a described distance,
- * size or side the built set doesn't have) are only said.
+ * of thing, colour, name or person, or a part it names otherwise) stop the
+ * check; notes (a described distance, size or side the built set doesn't
+ * have) are only said.
  */
 export function checkFixture(fx: Fixture, set: BuiltSet, usedAliases: ReadonlySet<string>): { problems: string[]; notes: string[] } {
   const problems: string[] = [];
@@ -387,8 +458,9 @@ export function checkFixture(fx: Fixture, set: BuiltSet, usedAliases: ReadonlySe
   const mark = fx.now.mark ? set.spec.marks.find((m) => m.id === fx.now.mark) : null;
   const spot = mark ? { x: mark.x, z: mark.z, facingDeg: mark.facingDeg } : (set.spot ?? set.spec.marks[0]);
   const things = readerThings(set.spec, spot);
+  const parts = readerParts(set.spec, spot);
   const characters = fx.characters.map((c) => ({ id: CHARACTER_IDS[c.name] ?? c.name, name: c.name, hasPhoto: c.hasPhoto }));
-  const stage = readerStageBlock({ spec: set.spec, characters, things });
+  const stage = readerStageBlock({ spec: set.spec, characters, things, parts });
   for (const c of fx.cameras) {
     const got = set.spec.cameras.find((x) => x.id === c.id);
     if (!got) problems.push(`${set.name}: camera ${c.id} is missing`);
@@ -413,10 +485,24 @@ export function checkFixture(fx: Fixture, set: BuiltSet, usedAliases: ReadonlySe
     if (got.kind !== t.kind) wrong.push(`a ${got.kind}`);
     if (got.label !== t.label) wrong.push(`"${got.label}"`);
     if (got.colour !== t.colour) wrong.push(got.colour);
-    if (wrong.length > 0) (usedAliases.has(t.alias) ? problems : notes).push(`${set.name}: ${t.alias} is ${wrong.join(", ")}; the corpus says ${t.kind}, "${t.label}", ${t.colour}`);
+    if (got.name !== (t.name ?? null)) wrong.push(got.name === null ? "unnamed" : `named "${got.name}"`);
+    if (wrong.length > 0) (usedAliases.has(t.alias) ? problems : notes).push(`${set.name}: ${t.alias} is ${wrong.join(", ")}; the corpus says ${t.kind}, "${t.label}", ${t.colour}${t.name ? `, "${t.name}"` : ""}`);
     const where = `${got.size}, ${got.distanceM} m ${{ ahead: "ahead of them", left: "to their left", right: "to their right", behind: "behind them" }[got.where]}`;
     if (where !== `${t.size}, ${t.where}`) notes.push(`${set.name}: ${t.alias} ${t.label} is ${where} (the corpus says ${t.size}, ${t.where})`);
   }
+  // The set's named parts (Helios Cut 4, step B3): each alias the corpus lists is that part, and no named part goes unlisted.
+  for (const s of fx.parts ?? []) {
+    const key = stage.aliases.things[s.alias];
+    const got = parts.find((x) => x.key === key);
+    if (!got) {
+      (usedAliases.has(s.alias) ? problems : notes).push(`${set.name}: ${s.alias} (${s.name}) is not on the built set`);
+      continue;
+    }
+    if (got.name !== s.name) (usedAliases.has(s.alias) ? problems : notes).push(`${set.name}: ${s.alias} is "${got.name}"; the corpus says "${s.name}"`);
+    const where = `${got.size}, ${got.distanceM} m ${{ ahead: "ahead of them", left: "to their left", right: "to their right", behind: "behind them" }[got.where]}`;
+    if (s.size !== undefined && where !== `${s.size}, ${s.where}`) notes.push(`${set.name}: ${s.alias} ${s.name} is ${where} (the corpus says ${s.size}, ${s.where})`);
+  }
+  if (parts.length !== (fx.parts ?? []).length) problems.push(`${set.name}: the built set names ${parts.length} parts; the corpus lists ${(fx.parts ?? []).length}`);
   // Every Astra phrase expects a card that can go: a set too big for Astra would answer with the too-big card instead.
   if (astraTooBig(set.spec)) problems.push(`${set.name}: the built set is too big for Astra to change (astra-card.ts astraTooBig)`);
   if (things.length > fx.things.length) notes.push(`${set.name}: the built set lists ${things.length} things; the corpus describes ${fx.things.length}`);

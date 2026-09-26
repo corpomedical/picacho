@@ -17,6 +17,7 @@ import {
   normaliseReaderTurns,
   readerMessages,
   readerNowLine,
+  readerParts,
   readerStageBlock,
   readerThings,
   readerTurnsBlock,
@@ -270,6 +271,91 @@ describe("THINGS", () => {
   });
 });
 
+/** The race set named as a naming pass might (Helios Cut 4, step B3): its car, and three parts of the set itself. */
+function namedRace(extra: Record<number, string> = {}): SetSpec {
+  const names: Record<number, string> = { 4: "barriers", ...extra };
+  for (const i of [7, 8, 9, 10]) names[i] = "pit garages";
+  for (const i of [11, 12, 13, 14, 15, 16]) names[i] = "grandstand";
+  const car = setElements(race).find((e) => e.kind === "car")!;
+  for (const [o] of car.members) names[o] = "red sports car";
+  return specOf({ ...race, objects: race.objects.map((o, i) => (names[i] ? { ...o, name: names[i] } : o)) });
+}
+
+describe("names and PARTS (Helios Cut 4, step B3)", () => {
+  const named = namedRace();
+  const mark = named.marks[0];
+
+  it("give a named thing its name in brackets after the label every mention uses", () => {
+    const things = readerThings(named, mark);
+    expect(things[0]).toMatchObject({ label: "the car", name: "red sports car", colour: "red" });
+    const { text } = readerStageBlock({ spec: named, characters: CAST, things, parts: readerParts(named, mark) });
+    expect(text).toContain("THINGS: t1: the car (red sports car), red, ");
+    // Unnamed, the thing has no name and the line is as it always was.
+    expect(readerThings(race, mark)[0].name).toBeNull();
+  });
+
+  it("list the set's named parts nearest first, each by the nearest edge of its nearest block, numbered by their place among the parts", () => {
+    const parts = readerParts(named, mark);
+    expect(parts.map((p) => [p.n, p.name, p.size, p.distanceM, p.where])).toEqual([
+      [2, "pit garages", "120 m long", 12, "left"],
+      // The barriers are two long copies of one block, 28 m apart with her between them: the nearer one, never the box round both.
+      [1, "barriers", "120 m long", 12.2, "left"],
+      [3, "grandstand", "120 m long", 19.5, "right"],
+    ]);
+    expect(parts.map((p) => p.key)).toEqual(["s:pit garages", "s:barriers", "s:grandstand"]);
+    expect(parts.find((p) => p.name === "grandstand")).toMatchObject({ objects: [11, 12, 13, 14, 15, 16], largest: 11, colour: "grey" });
+    const { text, aliases } = readerStageBlock({ spec: named, characters: CAST, things: readerThings(named, mark), parts });
+    expect(text.split("\n").pop()).toBe("PARTS: s2: pit garages, grey, 120 m long, 12 m to their left; s1: barriers, grey, 120 m long, 12.2 m to their left; s3: grandstand, grey, 120 m long, 19.5 m to their right.");
+    expect(aliases.things).toEqual({ t1: setElements(named)[0].key, s2: "s:pit garages", s1: "s:barriers", s3: "s:grandstand" });
+  });
+
+  it("leave an unnamed set's STAGE exactly as it was: no PARTS line, no s-alias", () => {
+    expect(readerParts(race, mark)).toEqual([]);
+    const things = readerThings(race, mark);
+    const before = readerStageBlock({ spec: race, characters: CAST, things });
+    expect(readerStageBlock({ spec: race, characters: CAST, things, parts: [] })).toEqual(before);
+    expect(before.text).not.toContain("PARTS");
+    expect(before.text.split("\n").pop()).toMatch(/^THINGS: t1: the car, red, /);
+  });
+
+  it("keep a name from breaking the list: its commas, semicolons and brackets are spaces", () => {
+    const odd = namedRace({ 4: "barriers; (red, white)" });
+    const { text } = readerStageBlock({ spec: odd, characters: CAST, things: [], parts: readerParts(odd, mark) });
+    expect(text).toContain("s1: barriers red white, grey,");
+  });
+
+  it("become part1… with thing1… and person1… when a camera or a mark already has an s name", () => {
+    const spec: SetSpec = { ...named, cameras: named.cameras.map((c, i) => (i === 0 ? { ...c, id: "s2" } : c)) };
+    const { aliases } = readerStageBlock({ spec, characters: CAST, things: readerThings(spec, mark), parts: readerParts(spec, mark) });
+    expect(Object.keys(aliases.things).sort()).toEqual(["part1", "part2", "part3", "thing1"]);
+    expect(Object.keys(aliases.people)).toEqual(["person1", "person2", "person3"]);
+  });
+
+  it("let the farthest parts go first when STAGE runs long, then the farthest things", () => {
+    const many: ReaderCharacter[] = Array.from({ length: 20 }, (_, i) => ({ id: `id-${i}`, name: `Character number ${i} ${"n".repeat(30)}`, hasPhoto: true }));
+    const long = (s: string) => `${s} ${"z".repeat(40)}`.slice(0, 40);
+    const spec: SetSpec = { ...named, cameras: Array.from({ length: 17 }, (_, i) => ({ ...race.cameras[0], id: `c${i + 1}`, label: long(`Camera ${i + 1}`) })) };
+    const parts = readerParts(spec, mark);
+    const { text, aliases } = readerStageBlock({ spec, characters: many, things: readerThings(spec, mark), parts });
+    expect(text.length).toBeLessThanOrEqual(READER_CONTEXT_MAX.stage);
+    const kept = Object.values(aliases.things).filter((k) => k.startsWith("s:"));
+    expect(kept.length).toBeLessThan(parts.length);
+    // The nearest parts stay, and the thing stays while any part is dropped.
+    expect(kept).toEqual(parts.slice(0, kept.length).map((p) => p.key));
+    expect(aliases.things.t1).toBeDefined();
+  });
+
+  it("say an eye-line on a part's block by the part's alias in NOW", () => {
+    const now = nowOf({ gaze: { at: "object", index: 12 } }, named);
+    const things = readerThings(named, now.mark);
+    const parts = readerParts(named, now.mark);
+    const stage = readerStageBlock({ spec: named, characters: CAST, things, parts, keep: now.who });
+    expect(readerNowLine(now, { spec: named, characters: CAST, aliases: stage.aliases, things, parts })).toContain("looking at s3.");
+    // Without the parts, the same block is "part of the set", as before.
+    expect(readerNowLine(now, { spec: named, characters: CAST, aliases: stage.aliases, things })).toContain("looking at part of the set.");
+  });
+});
+
 describe("the aliases", () => {
   // Review of Cut 2, U1 (2026-09-25): numbered nearest first, the aliases
   // moved when she did, and LAST TURNS kept the old ones — "the other car"
@@ -314,12 +400,24 @@ describe("the aliases", () => {
 
 describe("STAGE's cap", () => {
   const many: ReaderCharacter[] = Array.from({ length: 20 }, (_, i) => ({ id: `id-${i}`, name: `Character number ${i} ${"n".repeat(30)}`, hasPhoto: i % 2 === 0 }));
+  const long = (s: string) => `${s} ${"z".repeat(40)}`.slice(0, 40);
+  /** The crates with `cameras` and `marks` of long labels, so STAGE runs past its cap. */
+  const crowded = (cameras: number, marks: number): SetSpec => ({
+    ...crates(15),
+    cameras: Array.from({ length: cameras }, (_, i) => ({ ...race.cameras[0], id: `c${i + 1}`, label: long(`Camera ${i + 1}`) })),
+    marks: Array.from({ length: marks }, (_, i) => ({ ...race.marks[0], id: `m${i + 1}`, label: long(`Mark ${i + 1}`) })),
+  });
 
-  it("stays within 1,500 characters by letting the farthest things go first", () => {
-    const spec = crates(15);
+  it("is 2,000 characters since the set's parts joined it (1,500 until Helios Cut 4, step B3)", () => {
+    expect(READER_CONTEXT_MAX.stage).toBe(2000);
+    expect(READER_CONTEXT_MAX.parts).toBe(12);
+  });
+
+  it("stays within 2,000 characters by letting the farthest things go first", () => {
+    const spec = crowded(6, 4);
     const things = readerThings(spec, spec.marks[0]);
     const { text, aliases } = readerStageBlock({ spec, characters: many, things, keep: "id-19" });
-    expect(text.length).toBeLessThanOrEqual(1500);
+    expect(text.length).toBeLessThanOrEqual(READER_CONTEXT_MAX.stage);
     const kept = Object.values(aliases.things);
     expect(kept.length).toBeGreaterThan(0);
     expect(kept.length).toBeLessThan(12);
@@ -331,15 +429,10 @@ describe("STAGE's cap", () => {
   });
 
   it("then lets characters go from the end, never the one in the frame", () => {
-    const long = (s: string) => `${s} ${"z".repeat(40)}`.slice(0, 40);
-    const spec: SetSpec = {
-      ...crates(15),
-      cameras: Array.from({ length: 6 }, (_, i) => ({ ...race.cameras[0], id: `c${i + 1}`, label: long(`Camera ${i + 1}`) })),
-      marks: Array.from({ length: 4 }, (_, i) => ({ ...race.marks[0], id: `m${i + 1}`, label: long(`Mark ${i + 1}`) })),
-    };
+    const spec = crowded(16, 10);
     const things = readerThings(spec, spec.marks[0]);
     const { text, aliases } = readerStageBlock({ spec, characters: many, things, keep: "id-19" });
-    expect(text.length).toBeLessThanOrEqual(1500);
+    expect(text.length).toBeLessThanOrEqual(READER_CONTEXT_MAX.stage);
     expect(Object.keys(aliases.things)).toHaveLength(0);
     expect(Object.values(aliases.people)).toContain("id-19");
     expect(Object.values(aliases.people)).toContain("id-0");
@@ -449,7 +542,7 @@ it("reads the showroom fixture without a word from the model", () => {
   const things = readerThings(spec, spec.marks[0]);
   expect(things[0]).toMatchObject({ kind: "car", label: "the car" });
   const { text } = readerStageBlock({ spec, characters: CAST, things });
-  expect(text.length).toBeLessThanOrEqual(1500);
+  expect(text.length).toBeLessThanOrEqual(READER_CONTEXT_MAX.stage);
   expect(text).not.toMatch(/[cvo]_[0-9a-f]{8}_/);
   expect(text).not.toContain(EVA);
 });

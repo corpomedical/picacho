@@ -29,6 +29,7 @@ import {
   normaliseReaderTurns,
   readerMessages,
   readerNowLine,
+  readerParts,
   readerStageBlock,
   readerThings,
   readerTurnsBlock,
@@ -192,7 +193,7 @@ export type ShotTurnAnswer =
  * read against the set as it stands. The page sends its own NOW (who, where,
  * the camera, the look, what happens) and up to three earlier turns; the
  * server checks every value (reader-context.ts normaliseReaderNow), writes
- * STAGE, THINGS and NOW itself, asks the reader, and holds the answer to
+ * STAGE, THINGS, PARTS and NOW itself, asks the reader, and holds the answer to
  * the set (shot-reading.ts parseShotReading): aliases mapped back to the
  * set's things and the person's own characters, what did not match named
  * in `dropped`, never guessed.
@@ -234,8 +235,10 @@ export async function readShotTurn(
   const now = normaliseReaderNow(input?.now, spec, castIds) ?? normaliseReaderNow({}, spec, castIds);
   if (!now) return none("down", cut);
   const things = readerThings(spec, now.mark);
-  const stage = readerStageBlock({ spec, characters, things, keep: now.who });
-  const nowLine = readerNowLine(now, { spec, characters, aliases: stage.aliases, things, origin: input?.origin === "build" ? "build" : null });
+  // The set's named parts beside its things (Helios Cut 4, step B3): none until an admin names the set.
+  const parts = readerParts(spec, now.mark);
+  const stage = readerStageBlock({ spec, characters, things, parts, keep: now.who });
+  const nowLine = readerNowLine(now, { spec, characters, aliases: stage.aliases, things, parts, origin: input?.origin === "build" ? "build" : null });
   const turnsBlock = readerTurnsBlock(normaliseReaderTurns(input?.turns));
   const reply = await askShotReader(readerMessages(stage.text, nowLine, turnsBlock, message), { maxCompletionTokens: SHOT_READER_MAX_COMPLETION });
   if (!reply) return none("down", cut);

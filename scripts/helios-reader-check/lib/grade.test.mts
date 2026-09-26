@@ -204,12 +204,14 @@ describe("the bars (spec §7.4)", () => {
   const ok = (id: string) => ({ id, pass: true, fields: true, hard: [], misses: [], mentionsMissing: [] });
   const miss = (id: string) => ({ ...ok(id), pass: false, fields: false, misses: ["expected size"] });
 
-  it("85 of 100, 27 of the 29 designed-full, 16 of 20 blind, no mention missing, no hard gate", () => {
+  it("85 of 100, all but two of the 30 designed-full, 16 of 20 blind, no mention missing, no hard gate", () => {
     const corpus = Array.from({ length: 100 }, (_, i) => (i < 53 ? `A${i + 1}` : `X${i + 1}`)).map(ok);
-    expect(DESIGNED_FULL).toHaveLength(29);
+    // 29 until Helios Cut 4, step B3 added A19 (facing a named part).
+    expect(DESIGNED_FULL).toHaveLength(30);
+    expect(DESIGNED_FULL).toContain("A19");
     expect(summarise({ corpus }).ok).toBe(true);
     const twoAudited = corpus.map((g) => (g.id === "A1" || g.id === "A7" ? miss(g.id) : g));
-    expect(summarise({ corpus: twoAudited }).audited).toEqual({ passed: 27, of: 29, needed: 27 });
+    expect(summarise({ corpus: twoAudited }).audited).toEqual({ passed: 28, of: 30, needed: 28 });
     expect(summarise({ corpus: twoAudited }).ok).toBe(true);
     const threeAudited = twoAudited.map((g) => (g.id === "A8" ? miss(g.id) : g));
     expect(summarise({ corpus: threeAudited }).ok).toBe(false);
