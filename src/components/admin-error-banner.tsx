@@ -32,6 +32,7 @@ const KNOWN_ERRORS = new Set<string>([
   "Couldn't erase their email from the promo sales — the account was NOT deleted, and nothing was changed. Try again; details are in the server log.",
   "This account's subscription is billed through Google Play and can't be cancelled from here — the account was NOT deleted. Have them cancel in the Play Store (or revoke it in the Play Console), then delete.",
   "Invalid role.",
+  "That voice isn't in the list any more.",
   "You can't remove your own admin role.",
   "Invalid plan.",
   "This account is billed through Google Play — comping over it would hide a live Google subscription. Have them cancel in the Play Store first, then set the plan.",

@@ -471,8 +471,12 @@ export async function makeDefaultVoicePreset(formData: FormData) {
   const { supabase } = await requireAdmin();
   const id = formData.get("id") as string;
   const { data: all, error: readError } = await supabase.from("voice_presets").select("id, sort_order");
-  if (readError || !all?.some((v) => v.id === id)) {
-    redirect(`/admin/voices?error=${encodeURIComponent(readError?.message ?? "That voice isn't in the list any more.")}`);
+  if (readError) {
+    console.error("makeDefaultVoicePreset: read failed", readError);
+    redirect(`/admin/voices?error=${encodeURIComponent(readError.message)}`);
+  }
+  if (!all?.some((v) => v.id === id)) {
+    redirect(`/admin/voices?error=${encodeURIComponent("That voice isn't in the list any more.")}`);
   }
   const lowest = Math.min(...all!.map((v) => Number(v.sort_order) || 0));
   const { error } = await supabase.from("voice_presets").update({ sort_order: lowest - 1 }).eq("id", id);
