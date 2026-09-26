@@ -250,16 +250,20 @@ export const SET_EDIT_FOLLOW_CAP_MS = SET_EDIT_PRESS_LIFETIME_MS + 30_000;
 //
 //   worst case = the largest input an edit sends (the instructions, the
 //     schema and a working copy at SET_EDIT_MAX_SPEC_CHARS, below, with the
-//     longest request: 21,536 characters ≈ 9,615 tokens at 2.24 characters
+//     longest request: 21,665 characters ≈ 9,672 tokens at 2.24 characters
 //     per token — 20,855 until the material words and 21,378 until the
-//     area light's size, both 2026-09-17), all billed as cache writes,
+//     area light's size, both 2026-09-17, and 21,536 until the builder's
+//     brand rule joined the edit's instructions, +129, Helios Cut 4 step
+//     A8, 2026-09-26), all billed as cache writes,
 //     + output to the 10,000-token cap
-//     = 9,615 × $12.50/1M + 10,000 × $50/1M = $0.12 + $0.50 = $0.62
+//     = 9,672 × $12.50/1M + 10,000 × $50/1M = $0.1209 + $0.50 = $0.6209
+//     (it was 9,615 tokens, $0.6201875, before step A8)
 //   the one live edit measured (2026-09-15, a race track): $0.31
 //
 //   At twice the build cap, a month's edits at worst cost:
-//     Basic 2 → $1.24 of $9      Starter 4 → $2.48 of $19   Growth 10 → $6.20 of $79
-//     Studio 20 → $12.40 of $299   Elite 50 → $31.01 of $499
+//     Basic 2 → $1.24 of $9      Starter 4 → $2.48 of $19   Growth 10 → $6.21 of $79
+//     Studio 20 → $12.42 of $299   Elite 50 → $31.05 of $499
+//     (before step A8: Growth $6.20, Studio $12.40, Elite $31.01)
 //   — the operator's numbers to move before SETS_OPEN_TO_PLANS flips.
 //
 // Only changes that SAVE count against the month (2026-09-25, Cut 1 —
@@ -270,10 +274,11 @@ export const SET_EDIT_FOLLOW_CAP_MS = SET_EDIT_PRESS_LIFETIME_MS + 30_000;
 // is still billed for every try, so tries are capped too: the plan's
 // changes plus SET_EDIT_SPARE_TRIES that didn't land (SET_EDIT_TRIES_MONTH_SCOPE,
 // counted from the same billing month's start). Tries at worst, at the
-// $0.62 an edit above (9,615 × $12.50/1M + 10,000 × $50/1M = $0.6201875):
-//     Basic 5 → $3.10 of $9      Starter 7 → $4.34 of $19   Growth 13 → $8.06 of $79
-//     Studio 23 → $14.26 of $299   Elite 53 → $32.87 of $499
-//   — at most $1.86 more per person per month than before (3 × $0.62). It
+// $0.62 an edit above (9,672 × $12.50/1M + 10,000 × $50/1M = $0.6209):
+//     Basic 5 → $3.10 of $9      Starter 7 → $4.35 of $19   Growth 13 → $8.07 of $79
+//     Studio 23 → $14.28 of $299   Elite 53 → $32.91 of $499
+//     (before step A8: Starter $4.34, Growth $8.06, Studio $14.26, Elite $32.87)
+//   — at most $1.86 more per person per month than before (3 × $0.6209). It
 //   also closes the pace-only hole the 2026-09-16 note describes (10 per
 //   10 minutes ≈ $37 an hour): failed tries are bounded by the month too.
 //   The pace (SET_EDIT_PER_10_MIN) still counts every try, on purpose.

@@ -26,6 +26,13 @@
 import { SET_LIGHT_KINDS, SET_LIMITS, SET_MATERIALS, SET_SHAPES, SET_SKY_KINDS } from "./set-spec";
 import type { AstraInput } from "../generations/providers/astra";
 
+/**
+ * The brand rule, one line shared by the build and the edit (Helios Cut 4,
+ * step A8): an edit's description rides every still (set-shot-prompt.ts),
+ * so "make it a Ferrari" must not write "Ferrari" into it either.
+ */
+export const SET_BRAND_RULE = "No brand names, logos, readable text or real trademarks anywhere, including the title and description. Signs are blank shapes.";
+
 export const SET_BUILDER_INSTRUCTIONS = `You build film sets for a pre-visualisation tool. From the brief, build ONE location as simple 3D primitives, as JSON matching the schema.
 
 Space
@@ -41,7 +48,7 @@ What to build
 - Indoors: four walls that meet at the corners with no gaps between them, and a ceiling. A glass wall or shop front is still a wall: model its frames and panes, and model what is outside the glass as you would an exterior.
 - Outdoors: every street, path or open side ends in something — facades, the buildings of a cross street, trees, hills or a skyline — at or just beyond the bounds (distant buildings can be plain large boxes). A place that truly ends at a natural horizon (open sea, desert, plains) models that surface out to the horizon as large planes or terrain filling that whole side of the view (a plane is at most 200 m across: lay several side by side); it never leaves the bare floor.
 - Where a person would stand, add a mark (1–${SET_LIMITS.maxMarks}), on open floor clear of every object: never inside a car, a desk or a wall (a seat or a low stage is fine). facingDeg is the direction they face around +Y: 0 faces +Z, 90 faces +X.
-- No brand names, logos, readable text or real trademarks anywhere, including the title and description. Signs are blank shapes.
+- ${SET_BRAND_RULE}
 - Use 30–150 objects. For rows or grids of identical things (columns, lamps, chairs, shelves, windows, trees), write the object ONCE with repeat { count, offset }: copy i sits at position + i × offset. Use repeat: null otherwise. At most ${SET_LIMITS.maxInstances} shapes after repeats.
 - Colours are "#rrggbb". Choose a believable palette for this specific place and time of day; do not default to greens or to flat pastel colours. roughness and metalness are 0–1. emissive (a colour, or null) is for things that glow: lamps, screens, windows at night; emissiveIntensity 0–10.
 - castShadow: true for large or important objects, false for small clutter.

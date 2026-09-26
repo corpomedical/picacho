@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SET_EDITOR_INSTRUCTIONS, SET_EDIT_MEANING_MAX_CHARS, editFrameLine, editFrameOf, editMeaningOf, setEditInput, setEditRequest } from "./set-edit-prompt";
-import { SET_SPEC_JSON_SCHEMA, SET_SPEC_SCHEMA_NAME } from "./set-builder-prompt";
+import { SET_BRAND_RULE, SET_BUILDER_INSTRUCTIONS, SET_SPEC_JSON_SCHEMA, SET_SPEC_SCHEMA_NAME } from "./set-builder-prompt";
 import { SET_BUILD_EFFORT, SET_BUILD_MAX_OUTPUT_TOKENS } from "./set-config";
 import { normaliseSetSpec, type SetSpec } from "./set-spec";
 import raceTrackFixture from "./fixtures-race-track.json";
@@ -43,6 +43,18 @@ describe("setEditRequest", () => {
   it("tells the model to return the full revised JSON, never a diff", () => {
     expect(SET_EDITOR_INSTRUCTIONS).toContain("FULL revised location");
     expect(SET_EDITOR_INSTRUCTIONS).toContain("Change only what the request asks for");
+  });
+
+  // Helios Cut 4, step A8 (2026-09-26): the builder's own brand rule, the
+  // same bytes, so an edit never writes a brand into the description every
+  // still reads. 1,127 → 1,256 characters; the Astra-edit ceiling moves with
+  // it (lib/astra/prices.test.ts).
+  it("carries the builder's brand rule, word for word", () => {
+    const rule = "No brand names, logos, readable text or real trademarks anywhere, including the title and description. Signs are blank shapes.";
+    expect(SET_BRAND_RULE).toBe(rule);
+    expect(SET_BUILDER_INSTRUCTIONS).toContain(`\n- ${rule}\n`);
+    expect(SET_EDITOR_INSTRUCTIONS).toContain(`\n- ${rule}\n- Update the description only if the change makes it wrong`);
+    expect(SET_EDITOR_INSTRUCTIONS.length).toBe(1256);
   });
 });
 

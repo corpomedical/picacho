@@ -156,15 +156,17 @@ describe("the Astra-edit ceiling", () => {
     return req.instructions.length + JSON.stringify(req.schema).length + framing + SET_EDIT_MAX_SPEC_CHARS + SET_EDIT_MAX_CHARS;
   };
 
-  it("matches the arithmetic in set-config.ts: 21,536 characters ≈ 9,615 tokens, $0.62 an edit at worst", () => {
+  it("matches the arithmetic in set-config.ts: 21,665 characters ≈ 9,672 tokens, $0.6209 an edit at worst", () => {
     // 20,855 characters until 2026-09-17, when every object and the ground
     // gained a material word (21,378), then a light gained a size for the
-    // area kind (21,536): the schema and the edit's instructions grew.
-    expect(longestInputChars()).toBe(21_536);
+    // area kind (21,536): the schema and the edit's instructions grew. Then
+    // the builder's brand rule joined the edit's instructions (Helios Cut 4,
+    // step A8, 2026-09-26): its 128 characters and a line break, 21,665.
+    expect(longestInputChars()).toBe(21_665);
     const tokens = Math.ceil(longestInputChars() / 2.24);
-    expect(tokens).toBe(9_615);
-    // 9,615 × $12.50/1M + 10,000 × $50/1M = $0.1201875 + $0.50
-    expect(worstCaseAstraUsd(tokens, SET_BUILD_MAX_OUTPUT_TOKENS)).toBeCloseTo(0.6201875, 9);
+    expect(tokens).toBe(9_672);
+    // 9,672 × $12.50/1M + 10,000 × $50/1M = $0.1209 + $0.50 (was 9,615 tokens, $0.6201875)
+    expect(worstCaseAstraUsd(tokens, SET_BUILD_MAX_OUTPUT_TOKENS)).toBeCloseTo(0.6209, 9);
   });
 
   it("caps a month at twice the builds, and the figures in set-config.ts are what those caps cost", () => {
@@ -172,9 +174,10 @@ describe("the Astra-edit ceiling", () => {
     const written: Record<string, [number, number]> = {
       basic: [1.24, 9],
       starter: [2.48, 19],
-      growth: [6.2, 79],
-      studio: [12.4, 299],
-      elite: [31.01, 499],
+      // Growth $6.20, Studio $12.40 and Elite $31.01 before step A8's brand rule.
+      growth: [6.21, 79],
+      studio: [12.42, 299],
+      elite: [31.05, 499],
     };
     for (const tier of PRICING_TIERS) {
       const id = tier.id as keyof typeof SET_EDITS_MONTHLY_LIMITS;
@@ -194,7 +197,8 @@ describe("the Astra-edit ceiling", () => {
     // try is still billed, so tries are capped at the changes plus 3.
     const perEdit = worstCaseAstraUsd(Math.ceil(longestInputChars() / 2.24), SET_BUILD_MAX_OUTPUT_TOKENS);
     expect(SET_EDIT_SPARE_TRIES).toBe(3);
-    const written: Record<string, number> = { basic: 3.1, starter: 4.34, growth: 8.06, studio: 14.26, elite: 32.87 };
+    // Starter $4.34, Growth $8.06, Studio $14.26 and Elite $32.87 before step A8's brand rule.
+    const written: Record<string, number> = { basic: 3.1, starter: 4.35, growth: 8.07, studio: 14.28, elite: 32.91 };
     for (const tier of PRICING_TIERS) {
       const id = tier.id as keyof typeof SET_EDITS_MONTHLY_LIMITS;
       const tries = setEditTriesMonthlyLimit(id, false);

@@ -10,11 +10,16 @@
 // through parseSetSpecText and normaliseSetSpec like every other spec.
 
 import type { AstraJobRequest } from "../generations/providers/astra";
-import { SET_SPEC_JSON_SCHEMA, SET_SPEC_SCHEMA_NAME } from "./set-builder-prompt";
+import { SET_BRAND_RULE, SET_SPEC_JSON_SCHEMA, SET_SPEC_SCHEMA_NAME } from "./set-builder-prompt";
 import { SET_BUILD_EFFORT, SET_BUILD_MAX_OUTPUT_TOKENS } from "./set-config";
 import { SET_LIMITS, cleanText, type SetSpec, type Vec3 } from "./set-spec";
 import { withMaterials } from "./stage-materials";
 
+// The builder's brand rule rides the edit too (Helios Cut 4, step A8,
+// 2026-09-26): the description Astra writes rides every still
+// (set-shot-prompt.ts), and until now an edit could write "Ferrari" into
+// it. It adds 129 characters to every edit's input: 21,536 → 21,665 at the
+// longest, $0.6201875 → $0.6209 at worst (set-config.ts).
 export const SET_EDITOR_INSTRUCTIONS = `You edit film sets for a pre-visualisation tool. You are given ONE existing location as JSON and ONE change request. Apply exactly the change asked and return the FULL revised location as JSON matching the schema.
 
 Rules:
@@ -24,6 +29,7 @@ Rules:
 - When the request names something loosely ("the barriers", "the red car"), pick the objects that best match it by shape, colour, size and position.
 - A change of light or time of day adjusts the lights and the sky together, so the set still reads clearly.
 - Every object and the ground carry a material word; keep them, and give anything you add one.
+- ${SET_BRAND_RULE}
 - Update the description only if the change makes it wrong; otherwise return it unchanged.
 - If nothing in the set answers the request, return the set unchanged.`;
 
