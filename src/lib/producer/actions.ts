@@ -20,6 +20,7 @@ import {
   DEFAULT_PRODUCER_NAME,
 } from "./store";
 import { isHumanVoiceConfigured, speakHuman } from "./speech";
+import { isStreamableVoiceId, isVoiceStreamConfigured } from "./voice-stream";
 import { LAMP_LOOKS, parseLampLook, type LampLook } from "@/components/producer/lamp-look";
 import { rateLimited } from "@/lib/rate-limit";
 import { MAX_NOTE_CHARS, normalizeNotePath, type Note } from "./notes";
@@ -224,6 +225,36 @@ export async function setProducerVoice(presetId: string): Promise<{ error: strin
 // A short line in the voice, exactly as the Producer would say it (same
 // model and settings as speech.ts). ~70 characters = $0.0035 on fal; not
 // metered, like the character voice previews, but rate-limited.
+/**
+ * Wakes her voice up before it's needed (2026-09-26). ElevenLabs loads a
+ * voice on its first use after a while: that first answer took 5.6–10.6 s
+ * to start speaking in the voice samples, the next ones 0.3–0.75 s. The
+ * sheet calls this when it opens with read-aloud on, and when hands-free
+ * starts; three characters in her voice (a fraction of a cent, unmetered),
+ * at most once every two minutes per person. Never throws.
+ */
+export async function warmProducerVoice(): Promise<void> {
+  try {
+    const g = await gate();
+    if (!g.ok || !isVoiceStreamConfigured()) return;
+    const voice = await loadProducerVoice(g.admin, g.userId);
+    if (!voice || !isStreamableVoiceId(voice.elevenLabsVoiceId)) return;
+    if (await rateLimited(g.userId, "producer-voice-warm", 120, 1)) return;
+    const res = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voice.elevenLabsVoiceId}?output_format=mp3_22050_32`,
+      {
+        method: "POST",
+        headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY ?? "", "content-type": "application/json" },
+        body: JSON.stringify({ text: "Mm.", model_id: "eleven_flash_v2_5" }),
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    await res.arrayBuffer().catch(() => null);
+  } catch {
+    // A warm-up that fails costs only the slow first answer it was meant to spare.
+  }
+}
+
 export async function previewProducerVoice(presetId: string): Promise<{ url?: string; error?: string }> {
   const g = await gate();
   if (!g.ok) return { error: g.error };

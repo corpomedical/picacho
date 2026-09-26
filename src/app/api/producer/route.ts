@@ -36,6 +36,7 @@ import { gateSignals, judgeSpoken, type Verdict } from "@/lib/producer/gate";
 import { sentenceChunker } from "@/lib/producer/sentences";
 import { spotForTool } from "@/lib/producer/spots";
 import { DEFAULT_PRODUCER_NAME, appendMessages, loadMessages, loadPrefs, loadProducerVoice, openThread } from "@/lib/producer/store";
+import { isStreamableVoiceId, isVoiceStreamConfigured, openVoiceStream, type VoiceStream } from "@/lib/producer/voice-stream";
 import {
   CUT_MARK,
   INTERRUPTED_ANSWER,
@@ -177,6 +178,8 @@ export async function POST(request: NextRequest) {
     name?: unknown;
     /** They talked over her and kept going after she went quiet (the sheet's barge-in held). */
     talkedOver?: unknown;
+    /** The sheet can play one continuous MP3 stream (MediaSource with audio/mpeg). */
+    stream?: unknown;
   } | null;
   // One recording, or several said in a row while an answer was under way
   // (2026-09-25, "several questions at once"): each is transcribed and they
@@ -786,8 +789,79 @@ export async function POST(request: NextRequest) {
           });
         }
       }
-      const speakText = (text: string) => say(chunker.push(text));
+      // ONE TAKE PER ANSWER (2026-09-26, his blind test: ElevenLabs' v3
+      // conversational model won, and speaks ~0.3 s after the first words;
+      // lib/producer/voice-stream.ts). Where the sheet can play a stream and
+      // the voice has a real ElevenLabs id, the answer's words go straight
+      // into one take as they're written, and its audio goes back as it
+      // arrives. If the take can't start, what was fed goes the piece-by-piece
+      // way above, and so does the rest; if it fails part-way, the rest does.
+      let take: { vs: VoiceStream; index: number; fed: string } | null = null;
+      let takeBroken = !(
+        speakReplies &&
+        body?.stream === true &&
+        humanVoice &&
+        isStreamableVoiceId(humanVoice.elevenLabsVoiceId) &&
+        isVoiceStreamConfigured()
+      );
+      let pendingTakeText = "";
+      const takeFailed = (started: boolean) => {
+        const t = take;
+        takeBroken = true;
+        take = null;
+        if (!t) return;
+        totals.cost += speechCostUsd(t.vs.chars, "human");
+        if (!started && !upstream.signal.aborted) say(chunker.push(t.fed));
+        else send("audio_stream", { index: t.index, end: true });
+      };
+      const openTake = () => {
+        const index = voiceIndex++;
+        const vs = openVoiceStream({
+          voiceId: humanVoice!.elevenLabsVoiceId,
+          onAudio: (data, words) => {
+            if (!upstream.signal.aborted) send("audio_stream", { index, data, text: words });
+          },
+          onError: (why, started) => {
+            console.error("producer: voice take failed", why);
+            takeFailed(started);
+          },
+        });
+        take = { vs, index, fed: "" };
+        upstream.signal.addEventListener("abort", () => vs.abort(), { once: true });
+      };
+      const feedTake = (text: string) => {
+        if (!take) openTake();
+        take!.vs.push(text);
+        take!.fed += text;
+      };
+      /** The take's last words, then its end: resolves when all its audio is out. */
+      const endTake = async () => {
+        const t = take;
+        if (!t) return;
+        await t.vs.end();
+        if (take !== t) return; // it failed, and takeFailed settled it
+        take = null;
+        totals.cost += speechCostUsd(t.vs.chars, "human");
+        send("audio_stream", { index: t.index, end: true });
+      };
+      const speakText = (text: string) => {
+        if (!speakReplies) return;
+        if (!takeBroken) {
+          if (holding) {
+            pendingTakeText += text;
+            return;
+          }
+          feedTake(text);
+          return;
+        }
+        say(chunker.push(text));
+      };
       flushSpeech = () => {
+        if (!takeBroken && pendingTakeText) {
+          const text = pendingTakeText;
+          pendingTakeText = "";
+          feedTake(text);
+        }
         const pieces = pendingSpeech;
         pendingSpeech = [];
         say(pieces);
@@ -846,6 +920,7 @@ export async function POST(request: NextRequest) {
               // What she said before looking something up is spoken now,
               // not after the lookup.
               sayAllNow();
+              take?.vs.flush();
               send("status", { text: toolStatus(event.content_block.name) });
               const spot = spotForTool(event.content_block.name);
               if (spot) send("spot", { spot });
@@ -1073,6 +1148,7 @@ export async function POST(request: NextRequest) {
         } else {
           // The last words, then every queued piece of speech, before the
           // turn is settled — their cost belongs to it.
+          await endTake();
           sayAllNow();
           try {
             await voiceChain;

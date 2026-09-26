@@ -82,7 +82,98 @@ const MAX_UTTERANCE_MS = 30_000;
 /** Where the speech model's files are served from (public/vad). */
 const VAD_BASE = "/vad/";
 
-type Prepared = { el: HTMLAudioElement; release: () => void; crossOrigin: boolean; text: string };
+type Prepared = { el: HTMLAudioElement; release: () => void; crossOrigin: boolean; text: string; stream?: StreamParts };
+
+// ONE TAKE PER ANSWER (2026-09-26, lib/producer/voice-stream.ts): the answer's
+// MP3 arrives in chunks as ElevenLabs speaks it, and one element plays it
+// through a MediaSource, growing as it comes — no gaps, and pause / play /
+// the graph work as for any piece. Each chunk carries the words it says, so
+// what she had said when they cut in is read off how far it has played.
+type StreamParts = {
+  ms: MediaSource;
+  sb: SourceBuffer | null;
+  pending: Uint8Array[];
+  ended: boolean;
+  /** The words, each with the second of audio it ends at. */
+  segs: { text: string; end: number }[];
+  seconds: number;
+  pump: () => void;
+};
+/** mp3_44100_128, as the server asks for it (voice-stream.ts VOICE_STREAM_BYTES_PER_SECOND). */
+const STREAM_BYTES_PER_SECOND = 16_000;
+
+/** Whether this browser can play the one-take stream (Chrome, Edge, Android; not every Safari). */
+export function canPlayVoiceStream(): boolean {
+  try {
+    return typeof MediaSource !== "undefined" && MediaSource.isTypeSupported("audio/mpeg");
+  } catch {
+    return false;
+  }
+}
+
+function prepareStream(): Prepared {
+  const el = new Audio();
+  el.preload = "auto";
+  const ms = new MediaSource();
+  const url = URL.createObjectURL(ms);
+  const parts: StreamParts = { ms, sb: null, pending: [], ended: false, segs: [], seconds: 0, pump: () => {} };
+  parts.pump = () => {
+    const sb = parts.sb;
+    if (!sb || sb.updating || ms.readyState !== "open") return;
+    if (parts.pending.length > 0) {
+      const total = parts.pending.reduce((n, c) => n + c.length, 0);
+      const buf = new Uint8Array(total);
+      let at = 0;
+      for (const c of parts.pending) {
+        buf.set(c, at);
+        at += c.length;
+      }
+      parts.pending = [];
+      try {
+        sb.appendBuffer(buf);
+      } catch {}
+      return;
+    }
+    if (parts.ended) {
+      try {
+        ms.endOfStream();
+      } catch {}
+    }
+  };
+  ms.addEventListener(
+    "sourceopen",
+    () => {
+      try {
+        parts.sb = ms.addSourceBuffer("audio/mpeg");
+        parts.sb.mode = "sequence";
+        parts.sb.addEventListener("updateend", parts.pump);
+        parts.pump();
+      } catch {}
+    },
+    { once: true },
+  );
+  el.src = url;
+  return { el, release: () => URL.revokeObjectURL(url), crossOrigin: false, text: "", stream: parts };
+}
+
+function bytesOf(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/** The words of a take played so far (all of it once it has ended). */
+function takeSaid(p: Prepared, finished: boolean): string {
+  const st = p.stream;
+  if (!st) return p.text;
+  const at = finished ? Infinity : p.el.currentTime;
+  return st.segs
+    .filter((g) => g.end <= at + 0.25)
+    .map((g) => g.text)
+    .join("")
+    .trim();
+}
 
 /**
  * A piece becomes an audio element the moment it arrives, so it is already
@@ -322,6 +413,8 @@ export function useHandsFree({
 
   // Playback: pieces arrive by index and play strictly in order.
   const queue = useRef(new Map<number, Prepared>());
+  /** Takes still receiving audio (queued or playing), by the answer's piece index. */
+  const streams = useRef(new Map<number, Prepared>());
   const nextIndex = useRef(0);
   const playing = useRef<Prepared | null>(null);
   const heldRef = useRef(false);
@@ -375,6 +468,7 @@ export function useHandsFree({
 
   const stopPlayback = useCallback(() => {
     clearQueue();
+    streams.current.clear();
     if (playing.current) {
       playing.current.el.pause();
       playing.current.release();
@@ -414,13 +508,18 @@ export function useHandsFree({
       } catch {}
     }
     playing.current = piece;
-    if (piece.text) saidAloud.current.push(piece.text);
+    if (piece.text && !piece.stream) saidAloud.current.push(piece.text);
     go("speaking");
     let settled = false;
     let fallback: Prepared | null = null;
     const done = () => {
       if (settled) return;
       settled = true;
+      if (piece.stream) {
+        const said = takeSaid(piece, true);
+        if (said) saidAloud.current.push(said);
+        streams.current.forEach((v, k) => v === piece && streams.current.delete(k));
+      }
       piece.release();
       if (playing.current === piece || (fallback && playing.current === fallback)) playing.current = null;
       if (queue.current.size === 0) replyEndedAt.current = performance.now();
@@ -500,7 +599,10 @@ export function useHandsFree({
   }, [go, setDuck, setHold, stopPlayback]);
 
   /** What she had said aloud of the current answer before it stopped. */
-  const heardText = useCallback(() => saidAloud.current.join(" ").trim(), []);
+  const heardText = useCallback(() => {
+    const now = playing.current?.stream ? takeSaid(playing.current, false) : "";
+    return [...saidAloud.current, now].join(" ").trim();
+  }, []);
 
   /** The server took a recording as said to the Producer: its level is the person's voice. */
   const markAccepted = useCallback((level: number | undefined) => {
@@ -750,6 +852,37 @@ export function useHandsFree({
     [playNext],
   );
 
+  /**
+   * A chunk of the answer's one take (route.ts `audio_stream`): the first
+   * makes its element and queues it at its index; later ones grow it; `end`
+   * closes it, so it can end when it has played.
+   */
+  const enqueueStream = useCallback(
+    (index: number, chunk: string | null, words: string, end: boolean) => {
+      if (dropTurnAudio.current) return;
+      let p = streams.current.get(index);
+      if (!p) {
+        if (!chunk) return;
+        p = prepareStream();
+        streams.current.set(index, p);
+        const old = queue.current.get(index);
+        if (old) discard(old);
+        queue.current.set(index, p);
+      }
+      const st = p.stream!;
+      if (chunk) {
+        const bytes = bytesOf(chunk);
+        st.pending.push(bytes);
+        st.seconds += bytes.length / STREAM_BYTES_PER_SECOND;
+        if (words) st.segs.push({ text: words, end: st.seconds });
+      }
+      if (end) st.ended = true;
+      st.pump();
+      playNext();
+    },
+    [playNext],
+  );
+
   /** The answer finished arriving: once it has all played, listen again. */
   const endTurn = useCallback(() => {
     turnDone.current = true;
@@ -788,6 +921,9 @@ export function useHandsFree({
     enqueue,
     endTurn,
     endAfterPlayback,
+    enqueueStream,
+    /** This browser can play the one-take stream (the sheet asks the server for it). */
+    canStream: typeof window !== "undefined" && canPlayVoiceStream(),
     resume,
     dropReply,
     heardText,

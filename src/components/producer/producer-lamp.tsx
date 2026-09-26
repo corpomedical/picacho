@@ -11,6 +11,7 @@ import {
   markWatchSeen,
   saveProducerNote,
   startFresh,
+  warmProducerVoice,
   type ProducerLine,
 } from "@/lib/producer/actions";
 import { parseProducerFrames } from "@/lib/producer/sse";
@@ -245,6 +246,13 @@ export function ProducerLamp({
   });
   const sendSpokenRef = useRef<(audio: SpokenAudio, meta: UtteranceMeta) => Promise<void>>(async () => {});
   const [unseenCards, setUnseenCards] = useState(0);
+
+  // Her voice is woken before it's needed: the first answer in a voice
+  // ElevenLabs hasn't used for a while took 6-11 s to start (warmProducerVoice;
+  // the server does it at most once every two minutes).
+  useEffect(() => {
+    if ((open && readAloud) || voice.active) void warmProducerVoice().catch(() => {});
+  }, [open, readAloud, voice.active]);
 
   // Voice stays on across a reload, and off only when the person says so.
   useEffect(() => {
@@ -542,6 +550,8 @@ export function ProducerLamp({
           focus: focus ?? null,
           interrupting: spoken ? interrupting : undefined,
           nearness: last?.nearness ?? null,
+          // One continuous take per answer where this browser can play it (use-hands-free.ts).
+          stream: speak && voice.canStream ? true : undefined,
           // What this sheet calls it: the transcriber's spelling hint when the
           // server's settings read is slow (route.ts).
           name: spoken ? name : undefined,
@@ -609,6 +619,13 @@ export function ProducerLamp({
             voice.enqueue(Number(ev.data.index) || 0, { url: ev.data.url }, typeof ev.data.text === "string" ? ev.data.text : "");
           } else if (ev.event === "audio" && typeof ev.data.data === "string") {
             voice.enqueue(Number(ev.data.index) || 0, { data: ev.data.data }, typeof ev.data.text === "string" ? ev.data.text : "");
+          } else if (ev.event === "audio_stream") {
+            voice.enqueueStream(
+              Number(ev.data.index) || 0,
+              typeof ev.data.data === "string" ? ev.data.data : null,
+              typeof ev.data.text === "string" ? ev.data.text : "",
+              ev.data.end === true,
+            );
           } else if (ev.event === "set_changed" && typeof ev.data.setId === "string") {
             setReloadFor(ev.data.setId);
           } else if (ev.event === "spot" && isSpot(ev.data.spot)) {

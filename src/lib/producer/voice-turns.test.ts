@@ -85,6 +85,27 @@ describe("her voice, one piece to the next", () => {
     expect(page).toContain("Aly&apos;s default");
   });
 
+  it("speaks an answer as one ElevenLabs take where the sheet can play it, and falls back to pieces", () => {
+    // 2026-09-26, his blind test: v3 conversational won 7 of 12 → "Yes, build it".
+    expect(route).toContain("body?.stream === true &&");
+    expect(route).toContain("isStreamableVoiceId(humanVoice.elevenLabsVoiceId) &&");
+    expect(route).toContain("isVoiceStreamConfigured()");
+    // A take that never started hands what it was fed to the pieces; one that
+    // failed part-way ends its stream on the sheet.
+    expect(route).toContain("if (!started && !upstream.signal.aborted) say(chunker.push(t.fed));");
+    expect(route).toContain('else send("audio_stream", { index: t.index, end: true });');
+    // Before a lookup the take speaks what it has; at the end it finishes before the turn is settled.
+    const toolStart = route.indexOf('event.content_block.type === "tool_use"');
+    expect(route.slice(toolStart, toolStart + 400)).toContain("take?.vs.flush();");
+    expect(route).toContain("await endTake();\n          sayAllNow();");
+    // Metered at the voice's rate on what was sent to be spoken.
+    expect(route).toContain('totals.cost += speechCostUsd(t.vs.chars, "human");');
+    const lamp = read("../../components/producer/producer-lamp.tsx");
+    expect(lamp).toContain("stream: speak && voice.canStream ? true : undefined,");
+    expect(lamp).toContain('ev.event === "audio_stream"');
+    expect(lamp).toContain("void warmProducerVoice().catch(() => {});");
+  });
+
   it("is asked to speak, not to write: no stock reactions, numbers in words", () => {
     const state = read("./state.ts");
     expect(state).not.toContain("open with a short first sentence");
