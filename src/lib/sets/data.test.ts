@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import raceTrack from "./fixtures-race-track.json";
-import { HELIOS_SIMPLE_FOR_ALL, SETS_OPEN_TO_PLANS, SET_EDITS_MONTH_SCOPE, setEditsMonthlyLimit, setTakesEligible } from "./set-config";
+import {
+  HELIOS_SIMPLE_FOR_ALL,
+  SETS_OPEN_TO_PLANS,
+  SET_EDIT_TRIES_MONTH_SCOPE,
+  SET_EDITS_MONTH_SCOPE,
+  setEditTriesMonthlyLimit,
+  setEditsMonthlyLimit,
+  setTakesEligible,
+} from "./set-config";
 import { mediaUrl, thumbUrl } from "../media/url";
 
 // The set page's loader, for what a take was rendered from (2026-09-16). A
@@ -264,6 +272,38 @@ describe("the month's Astra changes, for the editor", () => {
     expect((await page(ready(world([still(1)])))).astraEditsCap).toBe(-1);
     who = { plan: "starter", isAdmin: false };
     expect((await page(ready(world([still(1)])))).astraEditsCap).toBe(setEditsMonthlyLimit("starter", false));
+  });
+
+  // Astra paused on the month's tries (Helios Cut 4, step A3, 2026-09-26):
+  // the card said "1 of your n changes left" and offered a press the server
+  // then refused with "Astra is paused on your sets".
+  it("says Astra is paused once the month's tries reach their cap, and only then", async () => {
+    who = { plan: "growth", isAdmin: false, periodStart: "2026-09-05T00:00:00.000Z" };
+    const cap = setEditTriesMonthlyLimit("growth", false);
+    const tries = (n: number) => Array.from({ length: n }, () => ({ scope: SET_EDIT_TRIES_MONTH_SCOPE, created_at: "2026-09-16T10:00:00.000Z" }));
+    rateHits = tries(cap - 1);
+    expect((await page(ready(world([still(1)])))).astraPaused).toBe(false);
+    rateHits = tries(cap);
+    expect((await page(ready(world([still(1)])))).astraPaused).toBe(true);
+    // Last month's tries, and the month's changes, are not this month's tries.
+    rateHits = [
+      ...tries(cap - 1),
+      { scope: SET_EDIT_TRIES_MONTH_SCOPE, created_at: "2026-09-04T23:59:59.000Z" },
+      { scope: SET_EDITS_MONTH_SCOPE, created_at: "2026-09-16T10:00:00.000Z" },
+    ];
+    expect((await page(ready(world([still(1)])))).astraPaused).toBe(false);
+  });
+
+  it("is never paused for an admin, on a count it cannot read, or on a set still building", async () => {
+    rateHits = Array.from({ length: 200 }, () => ({ scope: SET_EDIT_TRIES_MONTH_SCOPE, created_at: "2026-09-16T10:00:00.000Z" }));
+    who = { plan: "growth", isAdmin: true };
+    expect((await page(ready(world([still(1)])))).astraPaused).toBe(false);
+    who = { plan: "growth", isAdmin: false };
+    expect((await page(world([still(1)]))).astraPaused).toBe(false);
+    rateReadFails = true;
+    expect((await page(ready(world([still(1)])))).astraPaused).toBe(false);
+    rateReadFails = false;
+    rateHits = [];
   });
 
   // The chat's reader v2 (Helios Cut 2, step 11a, 2026-09-25): admins only

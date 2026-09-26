@@ -154,6 +154,8 @@ export type PageState = {
   editsCap: number;
   /** The working copy is past what Astra can answer whole (astra-card.ts astraTooBig). */
   tooBig: boolean;
+  /** The month's Astra tries are spent (Helios Cut 4, step A3): the card is "paused", with no button. */
+  paused?: boolean;
   /** The page's prices, as its own buttons show them: a still (quote.totalCredits) and a take per engine (take.ts takesCredits, one clip and one still). */
   credits: { still: number; take: Record<SetTakeEngine, number> };
 };
@@ -1062,7 +1064,7 @@ export function planTurn(reading: ShotReading | null, state: PageState): TurnPla
   if (r.setChange) {
     if (state.origin === "build") notes.push({ kind: "builtFromWords" });
     else {
-      const card = astraCardKind({ editsLeft: state.editsLeft, editsCap: state.editsCap, tooBig: state.tooBig });
+      const card = astraCardKind({ editsLeft: state.editsLeft, editsCap: state.editsCap, tooBig: state.tooBig, paused: state.paused === true });
       needs.push({ kind: "astra", said: r.setChange.said, gloss: r.setChange.gloss, seal: r.setChange.seal ?? null, cut: r.setChange.cut, card, canGo: astraCardCanGo(card) });
     }
   }

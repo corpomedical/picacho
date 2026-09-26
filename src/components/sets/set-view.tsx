@@ -760,6 +760,7 @@ export function SetView({
   unshootable = [],
   astraEditsLeft,
   astraEditsCap,
+  astraPaused = false,
   initialAskBuilt = false,
   readerV2 = false,
   producerOn = false,
@@ -809,6 +810,12 @@ export function SetView({
   astraEditsLeft: number | null;
   /** The plan's Astra changes a month (set-config.ts setEditsMonthlyLimit): −1 for no cap, 0 for none. */
   astraEditsCap: number;
+  /**
+   * The month's Astra tries are spent when the page was drawn (data.ts
+   * astraTriesPaused; Helios Cut 4, step A3): the Astra card says Astra is
+   * paused, with no button. A press answered `paused` sets it too.
+   */
+  astraPaused?: boolean;
   /**
    * The chat reads with reader v2 and runs each message as one turn
    * (Helios Cut 2, step 11a, 2026-09-25): admins until the phrase check
@@ -1010,6 +1017,8 @@ export function SetView({
   // one too many (review of Cut 2, S4). A change that did not save gives its
   // reservation back, so the last number stays true.
   const [editsLeft, setEditsLeft] = useState<number | null>(astraEditsLeft);
+  // Astra paused on the month's tries (step A3): from the page's read, and from any answer that says so.
+  const [triesSpent, setTriesSpent] = useState(astraPaused);
   const keepEditsLeft = (n: number | null | undefined, saved = false) => {
     const next = typeof n === "number" && Number.isFinite(n) ? Math.max(0, n) : saved ? null : undefined;
     if (next !== undefined) setEditsLeft(next);
@@ -6666,6 +6675,7 @@ export function SetView({
     // Every answer from the month's count on carries one, saved or not.
     keepEditsLeft(res.editsLeft, res.error === null && res.changed > 0);
     if (res.error !== null) {
+      if (res.paused) setTriesSpent(true);
       setError(res.error);
       return { ...none, before };
     }
@@ -6742,6 +6752,7 @@ export function SetView({
     if (!res) return;
     keepEditsLeft(res.editsLeft, res.error === null);
     if (res.error !== null) {
+      if (res.paused) setTriesSpent(true);
       setRebuildNote({ key, text: localizeServerText(res.error, t), ok: false });
       return;
     }
@@ -7031,6 +7042,7 @@ export function SetView({
       editsLeft,
       editsCap: astraEditsCap,
       tooBig: astraTooBig(spec),
+      paused: triesSpent,
       credits: pageCredits,
     };
   }
@@ -7072,6 +7084,7 @@ export function SetView({
       editsLeft,
       editsCap: astraEditsCap,
       tooBig: astraTooBig(spec),
+      paused: triesSpent,
       producerOn,
       shot,
     };
@@ -9807,6 +9820,7 @@ export function SetView({
                                   editsLeft={editsLeft}
                                   editsCap={astraEditsCap}
                                   tooBig={astraTooBig(spec)}
+                                  paused={triesSpent ? t.serverText.setEditTriesUsed : null}
                                   busy={held}
                                   shootCredits={card.shootCredits}
                                   onGo={() => replyAction(tn, { kind: "astraGo" })}
@@ -9871,6 +9885,7 @@ export function SetView({
                       editsLeft={editsLeft}
                       editsCap={astraEditsCap}
                       tooBig={astraTooBig(spec)}
+                      paused={triesSpent ? t.serverText.setEditTriesUsed : null}
                       busy={reading || shooting || editingSet || matching || following !== null || !ready}
                       shootCredits={null}
                       onGo={() => {

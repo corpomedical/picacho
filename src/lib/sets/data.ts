@@ -16,7 +16,10 @@ import { readPhotoSources } from "@/lib/sets/photo";
 import {
   isCurrentSetThumb,
   setEditsMonthlyLimit,
+  setEditTriesMonthlyLimit,
+  setEditTriesSpent,
   SETS_LIST_LIMIT,
+  SET_EDIT_TRIES_MONTH_SCOPE,
   SET_EDITS_MONTH_SCOPE,
   HELIOS_SIMPLE_FOR_ALL,
   SET_RESERVED_BRIEF, setTakesEligible } from "@/lib/sets/set-config";
@@ -132,6 +135,38 @@ export async function countAstraEditsThisMonth(userId: string, periodStart: stri
     return null;
   }
   return count ?? 0;
+}
+
+/**
+ * Astra tries this billing month, saved or not (editor-actions.ts counts each
+ * in SET_EDIT_TRIES_MONTH_SCOPE; Helios Cut 4, step A3). Null when it cannot
+ * be read.
+ */
+export async function countAstraTriesThisMonth(userId: string, periodStart: string | null): Promise<number | null> {
+  const { count, error } = await createAdminClient()
+    .from("api_rate_hits")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("scope", SET_EDIT_TRIES_MONTH_SCOPE)
+    .gte("created_at", monthlyWindowStart(periodStart).toISOString());
+  if (error) {
+    console.warn("countAstraTriesThisMonth failed:", error.message);
+    return null;
+  }
+  return count ?? 0;
+}
+
+/**
+ * Whether Astra is paused on this person's sets until the billing period
+ * resets: the month's tries are spent (set-config.ts setEditTriesSpent). The
+ * page says so before a press (the Astra card's "paused"), and a press reads
+ * it before the gate reads any words (editor-actions.ts). No read for an
+ * account with no cap or no changes at all.
+ */
+export async function astraTriesPaused(access: { userId: string; plan: string; isAdmin: boolean; periodStart: string | null }): Promise<boolean> {
+  const limit = setEditTriesMonthlyLimit(access.plan, access.isAdmin);
+  if (limit <= 0) return false;
+  return setEditTriesSpent(await countAstraTriesThisMonth(access.userId, access.periodStart), limit);
 }
 
 /** What the editor shows of the month's Astra changes: how many are left, or null for no cap (admins) or no count. */
@@ -479,6 +514,10 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     // And the plan's cap beside it (Helios Cut 2, step 1): a null count is
     // "no cap" only when the cap is −1; otherwise it could not be read.
     astraEditsCap: setEditsMonthlyLimit(access.plan, access.isAdmin),
+    // Whether the month's Astra tries are spent (Helios Cut 4, step A3): the
+    // Astra card then says so before a press, with no button; the action
+    // holds the cap either way.
+    astraPaused: spec ? await astraTriesPaused(access) : false,
     // The chat's reader v2 (Helios Cut 2): admins until the phrase check
     // passes; readShotTurn holds the same rule on the server.
     readerV2: access.isAdmin || SHOT_READER_V2_OPEN_TO_ALL,

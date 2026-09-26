@@ -689,6 +689,20 @@ describe("answers from the page's facts (spec §5.6)", () => {
     expect(say("edits_left", { editsLeft: null, editsCap: 0 }).text).toBe("You have no Astra changes left this month; the Build editor's own tools still work.");
     expect(say("edits_left", { editsLeft: null, editsCap: -1 }).text).toBe("This account has no monthly cap on Astra changes.");
     expect(say("edits_left", { editsLeft: null, editsCap: 4 }).text).toBe("Your plan has 4 Astra changes a month; I couldn't read how many are left.");
+    // Paused on the month's tries (Helios Cut 4, step A3): the server's own sentence, never "4 left".
+    expect(say("edits_left", { paused: true }).text).toBe(EN.paused);
+    expect(EN.paused).toBe(en.serverText.setEditTriesUsed);
+  });
+
+  // Helios Cut 4, step A3 (2026-09-26): the card offered a press the server then refused.
+  it("the Astra card while the month's tries are spent: the server's sentence, and no press, in every language", () => {
+    const reading: ShotReading = { setChange: { said: "add a row of flags along the pit wall", gloss: "a row of small flags", cut: false } };
+    for (const l of LOCALES) {
+      const { text, model } = reply(reading, { paused: true }, { paused: true }, WORDS[l]);
+      expect(model.astra, l).toMatchObject({ card: "paused", canGo: false, shootCredits: null });
+      expect(text, l).toContain(CATALOGS[l].serverText.setEditTriesUsed);
+      expect(text, l).not.toContain(`[${WORDS[l].reply.astraGo}]`);
+    }
   });
 
   it("the last still, the set's things", () => {

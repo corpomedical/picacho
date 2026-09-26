@@ -481,6 +481,9 @@ describe("the Astra card (spec §3.2, the owner's decision 1)", () => {
     expect(card({ editsLeft: 0, editsCap: 4 })).toMatchObject({ card: "none", canGo: false });
     expect(card({ editsLeft: null, editsCap: 0 })).toMatchObject({ card: "none", canGo: false });
     expect(card({ tooBig: true })).toMatchObject({ card: "tooBig", canGo: false });
+    // The month's tries spent (Helios Cut 4, step A3): no button either.
+    expect(card({ paused: true })).toMatchObject({ card: "paused", canGo: false });
+    expect(card({ paused: true, editsLeft: 0, editsCap: 4 })).toMatchObject({ card: "none", canGo: false });
   });
 
   it("on the Sets home's build turn, the place part is not sent again, and 'a different place' is not asked", () => {

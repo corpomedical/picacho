@@ -23,6 +23,7 @@ import {
   SET_EDIT_TRIES_MONTH_SCOPE,
   SET_EDITS_MONTH_SCOPE,
   setEditTriesMonthlyLimit,
+  setEditTriesSpent,
   setEditsMonthlyLimit,
 } from "./set-config";
 import type { AstraPressKind } from "./astra-follow";
@@ -59,6 +60,8 @@ let access: Access;
 let edited: SetSpec | null;
 let limited: Record<string, boolean>;
 let used: number | null;
+/** The month's tries as data.ts countAstraTriesThisMonth reads them (Helios Cut 4, step A3). */
+let triesUsed: number | null;
 let answer: { state: "done"; text: string; usage: null; costUsd: number } | { state: "failed"; kind: "incomplete"; detail: string; usage: null; costUsd: number };
 /**
  * What submitAstraJob does: accept, refuse, or throw — or fail as
@@ -203,6 +206,13 @@ vi.mock("@/lib/sets/data", () => ({
     steps.push("left");
     return used === null ? null : 10 - used;
   },
+  // data.ts astraTriesPaused, over triesUsed: no read without a cap (data.test.ts holds the real one).
+  astraTriesPaused: async (a: { plan: string; isAdmin: boolean }) => {
+    const limit = setEditTriesMonthlyLimit(a.plan, a.isAdmin);
+    if (limit <= 0) return false;
+    steps.push("tries read");
+    return setEditTriesSpent(triesUsed, limit);
+  },
 }));
 vi.mock("@/lib/sets/astra-press", async () => ({
   ...(await import("./astra-press")),
@@ -274,6 +284,7 @@ beforeEach(() => {
   edited = null;
   limited = {};
   used = 3;
+  triesUsed = 3;
   answer = { state: "done", text: recoloured(), usage: null, costUsd: 0.31 };
   submit = "ok";
   answerGateRefuses = false;
@@ -301,7 +312,8 @@ describe("an Astra change", () => {
   it("is reserved from the month's after the gate and the pace, with its try counted, then sent, and says how many are left", async () => {
     const out = await editSetWithAstra(SET, "make the first barrier brick red");
     expect(out.error).toBeNull();
-    expect(steps).toEqual(["gate", "pace", "month", "tries", "count", "astra", "answer gate"]);
+    // The month's tries are read first, before the gate reads any words (Helios Cut 4, step A3).
+    expect(steps).toEqual(["tries read", "gate", "pace", "month", "tries", "count", "astra", "answer gate"]);
     const cap = setEditsMonthlyLimit("growth", false);
     expect(out.editsLeft).toBe(cap - 3);
     const month = limits.find((l) => l.scope === SET_EDITS_MONTH_SCOPE)!;
@@ -339,11 +351,11 @@ describe("an Astra change", () => {
 
   it("counts nothing the gate or the pace refused", async () => {
     expect((await editSetWithAstra(SET, "something forbidden")).error).toBe("Refused by the gate.");
-    expect(steps).toEqual(["gate"]);
+    expect(steps).toEqual(["tries read", "gate"]);
     steps.length = 0;
     limited["set-astra-edit"] = true;
     expect(await editSetWithAstra(SET, "make the first barrier brick red")).toEqual({ error: SET_EDIT_TOO_FAST });
-    expect(steps).toEqual(["gate", "pace"]);
+    expect(steps).toEqual(["tries read", "gate", "pace"]);
   });
 
   it("does not send a set too big for Astra to answer whole, and counts nothing for it", async () => {
@@ -420,10 +432,49 @@ describe("the month's change, given back unless it saves", () => {
   it("pauses Astra once the month's tries are spent, giving back the change it had just reserved", async () => {
     limited[SET_EDIT_TRIES_MONTH_SCOPE] = true;
     const out = await ask();
-    expect(out).toEqual({ error: SET_EDIT_TRIES_USED, editsLeft: setEditsMonthlyLimit("growth", false) - 2 });
-    expect(steps).toEqual(["gate", "pace", "month", "tries", "give back", "count"]);
+    // `paused` tells the page to say so on its card from now on (Helios Cut 4, step A3).
+    expect(out).toEqual({ error: SET_EDIT_TRIES_USED, editsLeft: setEditsMonthlyLimit("growth", false) - 2, paused: true });
+    expect(steps).toEqual(["tries read", "gate", "pace", "month", "tries", "give back", "count"]);
     expect(sent).toEqual([]);
     expect(writes).toEqual([]);
+  });
+});
+
+// The month's tries spent (Helios Cut 4, step A3, 2026-09-26): the card
+// offered a press the server then refused, and the press still spent a read
+// of the words by the gate (a classifier call) and a hit of the pace first.
+describe("a press once the month's tries are spent", () => {
+  it("is answered paused before the gate, the pace, the month or Astra, and spends nothing", async () => {
+    triesUsed = setEditTriesMonthlyLimit("growth", false);
+    const out = await editSetWithAstra(SET, "make the first barrier brick red", PRESS);
+    expect(out).toEqual({ error: SET_EDIT_TRIES_USED, paused: true });
+    expect(steps).toEqual(["claim", "tries read", "end unsaved"]);
+    expect(gated).toEqual([]);
+    expect(sent).toEqual([]);
+    expect(writes).toEqual([]);
+    // One under the cap still runs.
+    triesUsed = setEditTriesMonthlyLimit("growth", false) - 1;
+    expect((await editSetWithAstra(SET, "make the first barrier brick red", LATER)).error).toBeNull();
+  });
+
+  it("is never paused for an admin, and not on a count that could not be read (the limiter still holds the cap)", async () => {
+    access = { ...access, plan: "none", isAdmin: true };
+    triesUsed = 999;
+    expect((await editSetWithAstra(SET, "make the first barrier brick red")).error).toBeNull();
+    expect(steps).not.toContain("tries read");
+    access = { ...access, plan: "growth", isAdmin: false };
+    triesUsed = null;
+    expect((await editSetWithAstra(SET, "make the first barrier brick red")).error).toBeNull();
+  });
+
+  it("is answered paused before a rebuild reads any photo", async () => {
+    rebuildOpen = true;
+    const car = setElements(SPEC).find((e) => e.kind === "car")!;
+    photos = [{ refId: "33333331-3333-4333-8333-333333333333", anchor: car.key, slot: 1, at: 1, url: "", path: `${USER}/sets/${SET}.ref.${car.key}.1.x.jpg` }];
+    triesUsed = setEditTriesMonthlyLimit("growth", false);
+    expect(await rebuildThingFromPhotos(SET, car.key, PRESS)).toEqual({ error: SET_EDIT_TRIES_USED, paused: true });
+    expect(storage).toEqual([]);
+    expect(steps).toEqual(["claim", "tries read", "end unsaved"]);
   });
 });
 
@@ -603,7 +654,7 @@ describe("one Astra job per press", () => {
 
   it("claims after the free checks and before the gate", async () => {
     await ask(PRESS);
-    expect(steps.slice(0, 3)).toEqual(["claim", "gate", "pace"]);
+    expect(steps.slice(0, 4)).toEqual(["claim", "tries read", "gate", "pace"]);
     steps.length = 0;
     edited = BIG;
     expect(await ask(LATER)).toEqual({ error: SET_EDIT_TOO_BIG });
@@ -707,7 +758,7 @@ describe("a change from the set's chat: meaning and frame", () => {
     expect(out.error).toBe("Refused by the gate.");
     expect(refusals).toEqual([{ prompt: `${SAID}\nsomething forbidden by the wall`, provider: "reader" }]);
     // Refused before the pace, the month and Astra: nothing is spent.
-    expect(steps).toEqual(["claim", "gate", "end unsaved"]);
+    expect(steps).toEqual(["claim", "tries read", "gate", "end unsaved"]);
     expect(sent).toEqual([]);
   });
 
@@ -985,7 +1036,7 @@ describe("a thing rebuilt from its photos", () => {
     answer = { state: "done", text: blue(), usage: null, costUsd: 0.2 };
     expect((await rebuildThingFromPhotos(SET, car.key, LATER)).error).toBeNull();
     expect(steps).not.toContain("give back");
-    expect(steps).toEqual(["claim", "pace", "month", "tries", "count", "astra", "end saved"]);
+    expect(steps).toEqual(["claim", "tries read", "pace", "month", "tries", "count", "astra", "end saved"]);
   });
 
   it("gives the change back when the call throws, and passes the throw on", async () => {
@@ -1087,9 +1138,13 @@ describe("the editor's prompt bar", () => {
     expect(editor).toContain("{editsLeft !== null && (");
     expect(editor).toContain("editsLeft === 0 ? s.editorAskLeftNone : editsLeft === 1 ? s.editorAskLeftOne : formatMsg(s.editorAskLeft, { n: editsLeft })");
     // Send is no longer held at the cap in silence: it says why (below).
-    expect(editor).toContain("disabled={asking || ask.trim().length === 0 || astraTooBig}");
-    expect(editor).toContain("<span className=\"text-[#c6c9d1]\">{localizeServerText(SET_EDIT_TOO_BIG, t)}</span>");
-    expect(send).toContain("if (!text || asking || astraTooBig) return;");
+    // Held while Astra is paused on the month's tries too, and the bar says which (Helios Cut 4, step A3).
+    expect(editor).toContain("disabled={asking || ask.trim().length === 0 || astraTooBig || paused}");
+    expect(editor).toContain("<span className=\"text-[#c6c9d1]\">{localizeServerText(paused ? SET_EDIT_TRIES_USED : SET_EDIT_TOO_BIG, t)}</span>");
+    expect(editor).toContain("{(askNote !== null || askError || asking || astraTooBig || paused) && (");
+    expect(send).toContain("if (!text || asking || astraTooBig || paused) return;");
+    expect(send).toMatch(/if \(r\.error !== null\) \{\s*if \(r\.paused\) setPaused\(true\);\s*setAskError\(r\.error\);/);
+    expect(editor).toContain("const [paused, setPaused] = useState(astraPaused);");
     // Whatever the server says of the count, the bar keeps.
     expect(send).toContain("if (r.editsLeft !== undefined) setEditsLeft(r.editsLeft);");
   });

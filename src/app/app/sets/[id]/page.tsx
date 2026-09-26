@@ -99,6 +99,7 @@ export default async function SetPage({
         initialEdited={data.set.editedSpec}
         closeHref={`/app/sets/${data.set.id}`}
         astraEditsLeft={data.astraEditsLeft}
+        astraPaused={data.astraPaused}
       />
     );
   }
@@ -136,6 +137,7 @@ export default async function SetPage({
         initialAskBuilt={askBuilt}
         astraEditsLeft={data.astraEditsLeft}
         astraEditsCap={data.astraEditsCap}
+        astraPaused={data.astraPaused}
         readerV2={data.readerV2}
         producerOn={data.producerOn}
       />

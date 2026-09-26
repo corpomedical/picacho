@@ -28,6 +28,7 @@ export function AstraChangeCard({
   editsLeft,
   editsCap,
   tooBig,
+  paused = null,
   busy,
   shootCredits,
   onGo,
@@ -50,6 +51,13 @@ export function AstraChangeCard({
   editsCap: number;
   /** The working copy is past what Astra can answer whole (astra-card.ts astraTooBig). */
   tooBig: boolean;
+  /**
+   * The month's Astra tries are spent (Helios Cut 4, step A3): the sentence
+   * the server answers a press with then (serverText.setEditTriesUsed in the
+   * person's language), said instead of a count — with no button. Null or
+   * absent while Astra is not paused.
+   */
+  paused?: string | null;
   /** Something else is in flight: the buttons wait. */
   busy: boolean;
   /** The still's price, for "Change it, then shoot"; null offers no such button. */
@@ -62,10 +70,10 @@ export function AstraChangeCard({
   /** The Build editor's own name, in the person's language (sets.editorOpen). */
   buildLabel: string;
 }) {
-  const kind = astraCardKind({ editsLeft, editsCap, tooBig });
+  const kind = astraCardKind({ editsLeft, editsCap, tooBig, paused: paused !== null });
   // One sentence for the card and the chat's reply (astra-card.ts astraCardLine): the person's words go in last.
   const cut = wasCut || astraCardWords(words).cut;
-  const line = astraCardLine(copy, { kind, words, editsLeft, editsCap, build: buildLabel });
+  const line = astraCardLine(copy, { kind, words, editsLeft, editsCap, build: buildLabel, paused: paused ?? "" });
   const canGo = astraCardCanGo(kind);
   return (
     <div className="space-y-2.5 rounded-[14px] bg-[rgba(255,255,255,0.05)] p-3.5 ring-1 ring-[rgba(240,196,142,0.3)]" data-astra-card={kind}>

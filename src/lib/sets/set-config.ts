@@ -302,6 +302,19 @@ export function setEditTriesMonthlyLimit(plan: string | null | undefined, isAdmi
   return cap + SET_EDIT_SPARE_TRIES;
 }
 
+/**
+ * Whether Astra is paused on this person's sets for the rest of the billing
+ * month: the month's tries (SET_EDIT_TRIES_MONTH_SCOPE) have reached their
+ * cap (Helios Cut 4, step A3, 2026-09-26). The limiter refuses the next try
+ * exactly then (it counts, then refuses at the max). Never paused with no
+ * cap (admins, -1), with no changes at all (0: the plan's own "none" says
+ * that), or when the count could not be read (null: the action still holds
+ * the cap).
+ */
+export function setEditTriesSpent(used: number | null, triesLimit: number): boolean {
+  return triesLimit > 0 && used !== null && used >= triesLimit;
+}
+
 // The stage camera's tilt (set-view.tsx). OrbitControls keeps the camera within 0.62π of
 // straight down from what it looks at, so a tilt past ~21° up would move the camera; the aim
 // arrows and a matched shot stop just short of it.

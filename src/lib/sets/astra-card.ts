@@ -21,16 +21,22 @@ import { cleanText, type SetSpec } from "./set-spec";
 /**
  * Which sentence the card says (§3.2 of the Cut 2 spec):
  * - none: the month's changes are used up, or the plan has none — no button;
+ * - paused: the month's tries are spent, so Astra is paused on this
+ *   person's sets until the billing period resets (Helios Cut 4, step A3,
+ *   data.ts astraTriesPaused) — no button; it said "1 of your n changes
+ *   left" and offered a press the server then refused;
  * - tooBig: the set is too big for Astra to answer whole — no button;
  * - askOpen: an account with no monthly cap (admins);
  * - askUnknown: a cap, but the count could not be read;
  * - askLast / ask: one left, or n left.
+ * The order is the server's: the month's changes are counted before its tries.
  */
-export type AstraCardKind = "ask" | "askLast" | "askOpen" | "askUnknown" | "none" | "tooBig";
+export type AstraCardKind = "ask" | "askLast" | "askOpen" | "askUnknown" | "none" | "paused" | "tooBig";
 
-export function astraCardKind(input: { editsLeft: number | null; editsCap: number; tooBig: boolean }): AstraCardKind {
+export function astraCardKind(input: { editsLeft: number | null; editsCap: number; tooBig: boolean; paused?: boolean }): AstraCardKind {
   const { editsLeft, editsCap, tooBig } = input;
   if (editsCap === 0 || editsLeft === 0) return "none";
+  if (input.paused === true) return "paused";
   if (tooBig) return "tooBig";
   if (editsCap < 0) return "askOpen";
   if (editsLeft === null) return "askUnknown";
@@ -38,7 +44,7 @@ export function astraCardKind(input: { editsLeft: number | null; editsCap: numbe
 }
 
 /** Whether the card offers its button: never when nothing can come of the press. */
-export const astraCardCanGo = (kind: AstraCardKind): boolean => kind !== "none" && kind !== "tooBig";
+export const astraCardCanGo = (kind: AstraCardKind): boolean => kind !== "none" && kind !== "paused" && kind !== "tooBig";
 
 /**
  * The words Astra will read, cleaned exactly as editSetWithAstra cleans an
@@ -61,7 +67,9 @@ export function astraTooBig(spec: SetSpec): boolean {
 
 /**
  * The card's sentence in the person's language: the kind's own wording,
- * with the words Astra will read quoted (astraCardWords). Filled in one
+ * with the words Astra will read quoted (astraCardWords). "paused" says the
+ * server's own sentence for it (`paused`: serverText.setEditTriesUsed in the
+ * person's catalog), word for word what the press would answer. Filled in one
  * pass (fill.ts), so a "{n}" or a "$&" they typed is quoted as they typed it
  * (review of Cut 2, W4: formatMsg read "$'" in their words as a pattern). The
  * card (astra-change-card.tsx) and the chat's reply (turn-reply.ts) both
@@ -69,12 +77,14 @@ export function astraTooBig(spec: SetSpec): boolean {
  */
 export function astraCardLine(
   copy: Pick<Messages["sets"]["reply"], "astraAsk" | "astraAskLast" | "astraAskOpen" | "astraAskUnknown" | "astraNone" | "astraTooBig">,
-  input: { kind: AstraCardKind; words: string; editsLeft: number | null; editsCap: number; build: string },
+  input: { kind: AstraCardKind; words: string; editsLeft: number | null; editsCap: number; build: string; paused: string },
 ): string {
   const words = astraCardWords(input.words).quoted;
   switch (input.kind) {
     case "none":
       return fill(copy.astraNone, { build: input.build, words });
+    case "paused":
+      return input.paused;
     case "tooBig":
       return fill(copy.astraTooBig, { build: input.build, words });
     case "askOpen":

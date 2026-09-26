@@ -9,7 +9,7 @@ import { formatMsg } from "@/lib/i18n/format";
 import { clearSetEdit, editSetWithAstra, readAstraEdit, saveSetEdit } from "@/lib/sets/editor-actions";
 import { followAstraEdit, type FollowedEdit } from "@/lib/sets/astra-follow";
 import { newPressId } from "@/lib/sets/press-follow";
-import { SET_EDIT_TOO_BIG, SET_SAVE_FAILED } from "@/lib/sets/messages";
+import { SET_EDIT_TOO_BIG, SET_EDIT_TRIES_USED, SET_SAVE_FAILED } from "@/lib/sets/messages";
 import { SET_EDIT_MAX_SPEC_CHARS } from "@/lib/sets/set-config";
 import { dropUnsaved, keepUnsaved, savedEditKey, takeUnsaved } from "@/lib/sets/unsaved";
 import {
@@ -428,6 +428,7 @@ export function SetEditor({
   initialEdited,
   closeHref,
   astraEditsLeft,
+  astraPaused = false,
 }: {
   setId: string;
   /** Astra's set as first built — never changed, always restorable. */
@@ -437,6 +438,8 @@ export function SetEditor({
   closeHref: string;
   /** Astra changes left this billing month (set-config.ts SET_EDITS_MONTHLY_LIMITS); null when uncapped or unread. */
   astraEditsLeft: number | null;
+  /** The month's Astra tries are spent (data.ts astraTriesPaused; Helios Cut 4, step A3): Send is held, and the bar says why. */
+  astraPaused?: boolean;
 }) {
   const { t } = useLocale();
   const s = t.sets;
@@ -504,6 +507,8 @@ export function SetEditor({
   const [askNote, setAskNote] = useState<number | "nothing" | null>(null);
   // The month's Astra changes left, as the server last said.
   const [editsLeft, setEditsLeft] = useState<number | null>(astraEditsLeft);
+  // Astra paused on the month's tries: from the page's read, and from an answer that says so.
+  const [paused, setPaused] = useState(astraPaused);
   // A set grown past what Astra can answer whole is changed with the tools
   // alone (set-config.ts SET_EDIT_MAX_SPEC_CHARS); the server refuses it too.
   const astraTooBig = useMemo(() => JSON.stringify(spec).length > SET_EDIT_MAX_SPEC_CHARS, [spec]);
@@ -852,7 +857,7 @@ export function SetEditor({
 
   async function sendAsk() {
     const text = ask.trim();
-    if (!text || asking || astraTooBig) return;
+    if (!text || asking || astraTooBig || paused) return;
     // The month's changes are spent. Said here rather than sent: the server
     // refuses it anyway, but only after a gated, paid read of the words and
     // one of the pace's hits (editor-actions.ts). Send was held silently and
@@ -933,6 +938,7 @@ export function SetEditor({
     if (!r) return;
     if (r.editsLeft !== undefined) setEditsLeft(r.editsLeft);
     if (r.error !== null) {
+      if (r.paused) setPaused(true);
       setAskError(r.error);
       return;
     }
@@ -1600,14 +1606,15 @@ export function SetEditor({
   // Astra's prompt bar, at the dock's foot whatever the tab (the studio's frame, cut A).
   const promptBar = (
             <div className="p-3">
-              {(askNote !== null || askError || asking || astraTooBig) && (
+              {(askNote !== null || askError || asking || astraTooBig || paused) && (
                 <div className="mx-auto mb-2 flex w-fit max-w-full items-center gap-2 rounded-[8px] border border-[rgba(255,255,255,0.11)] bg-[rgba(25,26,32,0.94)] px-3 py-1.5 text-[12px] text-[#d6d9e0] shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]">
                   {asking ? (
                     <span>{s.editorAsking}</span>
                   ) : askError ? (
                     <span className="text-red-400">{localizeServerText(askError, t)}</span>
                   ) : askNote === null ? (
-                    <span className="text-[#c6c9d1]">{localizeServerText(SET_EDIT_TOO_BIG, t)}</span>
+                    // Paused on the month's tries (step A3) before too big: nothing Astra can do this month either way.
+                    <span className="text-[#c6c9d1]">{localizeServerText(paused ? SET_EDIT_TRIES_USED : SET_EDIT_TOO_BIG, t)}</span>
                   ) : askNote === "nothing" ? (
                     <span>{s.editorAskNothingFree}</span>
                   ) : askNote === 0 ? (
@@ -1647,7 +1654,7 @@ export function SetEditor({
                 <button
                   type="button"
                   onClick={() => void sendAsk()}
-                  disabled={asking || ask.trim().length === 0 || astraTooBig}
+                  disabled={asking || ask.trim().length === 0 || astraTooBig || paused}
                   className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-[7px] bg-[#e0a468] text-[#1b1c20] disabled:cursor-default disabled:bg-[rgba(255,255,255,0.06)] disabled:text-[#c6c9d1]"
                   aria-label={s.editorAskSend}
                 >

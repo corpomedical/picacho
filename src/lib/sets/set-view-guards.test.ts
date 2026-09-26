@@ -227,4 +227,18 @@ describe("the month's changes left follow every answer that carries a number", (
     expect(page).toContain("astraEditsLeft={data.astraEditsLeft}");
     expect(page).toContain("astraEditsCap={data.astraEditsCap}");
   });
+
+  // Helios Cut 4, step A3 (2026-09-26): the card said "1 of your n changes
+  // left" while the month's tries were spent, and offered a press the server
+  // then refused. The page is told, and learns it from any answer too.
+  it("knows when Astra is paused on the month's tries: from the page's read, and from an answer that says so", () => {
+    expect(page.match(/astraPaused=\{data\.astraPaused\}/g)).toHaveLength(2);
+    expect(view).toContain("const [triesSpent, setTriesSpent] = useState(astraPaused);");
+    // Both cards, and the chat's plan and reply, read it.
+    expect(view.match(/paused=\{triesSpent \? t\.serverText\.setEditTriesUsed : null\}/g)).toHaveLength(2);
+    expect(view.match(/paused: triesSpent,/g)).toHaveLength(2);
+    for (const signature of ["  async function editSet(\n", "  async function rebuildThing(key: string) {"]) {
+      expect(bodyOf(view, signature), signature).toContain("if (res.paused) setTriesSpent(true);");
+    }
+  });
 });

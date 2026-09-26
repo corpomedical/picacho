@@ -44,7 +44,7 @@ import {
   setEditTriesMonthlyLimit,
   setEditsMonthlyLimit,
 } from "@/lib/sets/set-config";
-import { astraEditsLeft, countAstraEditsThisMonth } from "@/lib/sets/data";
+import { astraEditsLeft, astraTriesPaused, countAstraEditsThisMonth } from "@/lib/sets/data";
 import { claimAstraPress, endAstraPress, giveBackAstraEdit, parseAstraPressId, readAstraPress } from "@/lib/sets/astra-press";
 import { editUndoOf, heldTextOf, openReaderMeaning, sealedEditText, type EditUndo } from "@/lib/sets/edit-seal";
 import type { AstraEditRead } from "@/lib/sets/astra-follow";
@@ -171,7 +171,7 @@ type Slot = { error: null; editsLeft: number | null; monthly: number; reserved: 
  * SET_EDIT_SPARE_TRIES (set-config.ts has the money). The pace still
  * counts every try.
  */
-async function astraChangeSlot(access: Access): Promise<{ error: string; editsLeft?: number | null } | Slot> {
+async function astraChangeSlot(access: Access): Promise<{ error: string; editsLeft?: number | null; paused?: true } | Slot> {
   const { userId } = access;
   if (await rateLimited(userId, "set-astra-edit", 60 * 10, SET_EDIT_PER_10_MIN)) return { error: SET_EDIT_TOO_FAST };
   const monthly = setEditsMonthlyLimit(access.plan, access.isAdmin);
@@ -185,7 +185,7 @@ async function astraChangeSlot(access: Access): Promise<{ error: string; editsLe
   const slot: Slot = { error: null, editsLeft: null, monthly, reserved: true };
   // Too many tries that didn't land this month: the change just reserved goes back.
   if (await rateLimited(userId, SET_EDIT_TRIES_MONTH_SCOPE, windowSeconds, setEditTriesMonthlyLimit(access.plan, access.isAdmin))) {
-    return { error: SET_EDIT_TRIES_USED, editsLeft: await giveBackAstraChange(access, slot) };
+    return { error: SET_EDIT_TRIES_USED, editsLeft: await giveBackAstraChange(access, slot), paused: true };
   }
   // This reservation included, as the page's own count reads it.
   const used = await countAstraEditsThisMonth(userId, access.periodStart);
@@ -326,7 +326,7 @@ export async function editSetWithAstra(
   pressId?: string,
   more?: { meaning?: unknown; meaningSeal?: unknown; frame?: unknown },
 ): Promise<
-  | { error: string; editsLeft?: number | null; pending?: true }
+  | { error: string; editsLeft?: number | null; pending?: true; paused?: true }
   | { error: null; spec: SetSpec; changed: number; editsLeft: number | null; undo: EditUndo | null }
 > {
   const access = await setsAccess();
@@ -349,6 +349,11 @@ export async function editSetWithAstra(
   // is claimed before the gate, so a repeat delivery never logs a second
   // policy refusal, and before the pace, the month and Astra.
   return oncePerPress(userId, pressId, async (kept) => {
+    // The month's tries spent: Astra is paused on this person's sets
+    // (Helios Cut 4, step A3, 2026-09-26). Said before the gate, so a press
+    // that can't run spends no read of the words (a classifier call) and no
+    // hit of the pace. `paused` tells the page to say so on its card.
+    if (await astraTriesPaused(access)) return { error: SET_EDIT_TRIES_USED, paused: true as const };
     // The person's own words, judged before anything leaves Picacho — as a
     // brief is (actions.ts submitSetBuild). A refusal answers with the gate's
     // own sentence. The reader's meaning rides only inside the reader's
@@ -441,7 +446,7 @@ export async function rebuildThingFromPhotos(
   key: string,
   pressId?: string,
 ): Promise<
-  | { error: string; editsLeft?: number | null; pending?: true }
+  | { error: string; editsLeft?: number | null; pending?: true; paused?: true }
   | { error: null; spec: SetSpec; changed: number; key: string; blocks: number; editsLeft: number | null }
 > {
   const access = await setsAccess();
@@ -476,6 +481,8 @@ export async function rebuildThingFromPhotos(
   // Claimed before the photos are downloaded, so a repeat delivery is
   // caught during those seconds too (oncePerPress).
   return oncePerPress(userId, pressId, async (kept) => {
+    // Paused on the month's tries (step A3): said before any photo is read.
+    if (await astraTriesPaused(access)) return { error: SET_EDIT_TRIES_USED, paused: true as const };
     const photos: string[] = [];
     for (const path of paths) {
       const { data, error } = await admin.storage.from("generated-images").download(path);

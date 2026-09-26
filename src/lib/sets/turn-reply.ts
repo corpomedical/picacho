@@ -100,6 +100,12 @@ export type ReplyWords = {
   yourCharacter: string;
   /** The mode that shoots on its own, by its own name ("Shoot without asking"). */
   autoMode: string;
+  /**
+   * Astra paused on the month's tries (Helios Cut 4, step A3): the server's
+   * own sentence for it (serverText.setEditTriesUsed), so the card and the
+   * chat say exactly what a press would answer.
+   */
+  paused: string;
   things: { car: string; carN: string; vehicle: string; vehicleN: string; object: string; objectN: string };
 };
 
@@ -151,6 +157,7 @@ export function replyWordsOf(t: Messages): ReplyWords {
     billing: t.settingsHub.tabBilling,
     yourCharacter: s.exampleCharacter,
     autoMode: s.shootWithoutAsking,
+    paused: t.serverText.setEditTriesUsed,
     things: { car: s.cast.car, carN: s.cast.carN, vehicle: s.cast.vehicle, vehicleN: s.cast.vehicleN, object: s.cast.object, objectN: s.cast.objectN },
   };
 }
@@ -278,6 +285,8 @@ export type ReplyFacts = {
   editsLeft: number | null;
   editsCap: number;
   tooBig: boolean;
+  /** The month's Astra tries are spent (Helios Cut 4, step A3): Astra is paused on this person's sets. */
+  paused?: boolean;
   /** The Producer's lamp is on this page (producerVisible): "elsewhere" offers it. */
   producerOn: boolean;
   /** This turn's shot (turn-plan.ts shootDecision), or null when none was decided. */
@@ -972,8 +981,9 @@ export function answerFor(topic: AskTopic, facts: ReplyFacts, words: ReplyWords)
       return plain(still + take);
     }
     case "edits_left": {
-      const kind = astraCardKind({ editsLeft: facts.editsLeft, editsCap: facts.editsCap, tooBig: false });
+      const kind = astraCardKind({ editsLeft: facts.editsLeft, editsCap: facts.editsCap, tooBig: false, paused: facts.paused === true });
       if (kind === "none") return plain(fill(r.answerEditsNone, { build: words.build }));
+      if (kind === "paused") return plain(words.paused);
       if (kind === "askOpen") return plain(r.answerEditsOpen);
       if (kind === "askUnknown") return plain(fill(r.answerEditsUnknown, { cap: facts.editsCap }));
       if (kind === "askLast") return plain(r.answerEditsOne);
@@ -1228,7 +1238,7 @@ export function composeReply(plan: TurnPlan, outcomes: TurnOutcomes | null, fact
   for (const need of plan.needs) {
     if (need.kind === "astra") {
       const shootCredits = need.canGo ? facts.credits.still : null;
-      const text = astraCardLine(r, { kind: need.card, words: need.said, editsLeft: facts.editsLeft, editsCap: facts.editsCap, build: words.build });
+      const text = astraCardLine(r, { kind: need.card, words: need.said, editsLeft: facts.editsLeft, editsCap: facts.editsCap, build: words.build, paused: words.paused });
       const buttons: ReplyButton[] = [];
       if (need.canGo) {
         buttons.push({ kind: "astraGo", label: r.astraGo });

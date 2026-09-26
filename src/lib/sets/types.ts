@@ -155,6 +155,12 @@ export type SetPageData =
        */
       astraEditsCap: number;
       /**
+       * The month's Astra tries are spent, so Astra is paused on this
+       * person's sets until the billing period resets (Helios Cut 4, step A3;
+       * data.ts astraTriesPaused). The Astra card says so, with no button.
+       */
+      astraPaused: boolean;
+      /**
        * Whether the set's chat reads with reader v2 (Helios Cut 2, 2026-09-25):
        * one message sets who, where, the camera, the light and the look at
        * once, and the page runs it as one turn. Admins until the owner's

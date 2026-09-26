@@ -128,6 +128,26 @@ describe("what the card says, and whether it offers the press", () => {
     expect(astraCardKind({ editsLeft: null, editsCap: 2, tooBig: false })).toBe("askUnknown");
     expect(astraCardKind({ editsLeft: 0, editsCap: 2, tooBig: true })).toBe("none");
     expect(astraCardKind({ editsLeft: 2, editsCap: 2, tooBig: true })).toBe("tooBig");
+    // Paused on the month's tries (Helios Cut 4, step A3): after "none", as the server counts the month before its tries.
+    expect(astraCardKind({ editsLeft: 2, editsCap: 4, tooBig: false, paused: true })).toBe("paused");
+    expect(astraCardKind({ editsLeft: null, editsCap: 4, tooBig: true, paused: true })).toBe("paused");
+    expect(astraCardKind({ editsLeft: 0, editsCap: 4, tooBig: false, paused: true })).toBe("none");
+    expect(astraCardKind({ editsLeft: 2, editsCap: 4, tooBig: false, paused: false })).toBe("ask");
+  });
+
+  // Helios Cut 4, step A3 (2026-09-26): the card said "It uses 1 of your 2
+  // changes left" and offered the press the server then refused.
+  it("paused: the server's own sentence for it, in the person's language, and no press", () => {
+    for (const t of [en, es, pt, it_]) {
+      const html = draw({ editsLeft: 2, editsCap: 4, paused: t.serverText.setEditTriesUsed, onGoShoot: noop, shootCredits: 1 }, t.sets.reply, t.sets.editorOpen);
+      expect(text(html)).toContain(t.serverText.setEditTriesUsed.replace(/\s+/g, " "));
+      expect(hasGo(html)).toBe(false);
+      expect(html).not.toContain("data-astra-go-shoot");
+      expect(html).toContain('data-astra-card="paused"');
+      expect(html).toContain("data-astra-not-now");
+    }
+    // Not paused: as before.
+    expect(hasGo(draw({ paused: null }))).toBe(true);
   });
 });
 
