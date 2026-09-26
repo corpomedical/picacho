@@ -123,7 +123,7 @@ export const PRODUCER_TOOLS = [
   {
     name: TOOL_NAMES.readSet,
     description:
-      "Read one of their Helios 3D sets as it stands now: its things by the names the set page uses (Car, Car 2, Object 3), whether each car stands on its wheels or is upside down, how high each sits off the floor, which are drawn from a 3D model file, and the render ids of the newest stills taken from it (look_at_render shows one). Free. If the app's note says they are on a set's page (/app/sets/<id>), pass that id; null means the set their newest still came from, else their newest set.",
+      "Read one of their Helios 3D sets as it stands now: its things by the names the set page uses (a name the set gives it, else Car, Car 2, Object 3), each with its key, its colour and which side of the figure it is on, the set's named parts (which can't be moved), whether each car stands on its wheels or is upside down, how high each sits off the floor, which are drawn from a 3D model file, and the render ids of the newest stills taken from it (look_at_render shows one). Free. If the app's note says they are on a set's page (/app/sets/<id>), pass that id; null means the set their newest still came from, else their newest set.",
     strict: true,
     input_schema: {
       type: "object",
@@ -145,7 +145,7 @@ export const PRODUCER_TOOLS = [
       required: ["set_id", "thing", "action", "axis", "degrees", "move"],
       properties: {
         set_id: { ...nullableString, description: "The set's id from read_set, or null for the same set read_set picks." },
-        thing: { type: "string", description: "The thing's key from read_set, or its name there (\"Car\", \"Car 2\")." },
+        thing: { type: "string", description: "The thing's key from read_set — when they say \"the red car\", pick the key whose colour and side there match — or its name there exactly (\"Car\", \"Car 2\", or the set's own name for it)." },
         action: { type: "string", enum: ["upright", "turn", "move", "floor"] },
         axis: {
           anyOf: [{ type: "string", enum: ["x", "y", "z"] }, { type: "null" }],

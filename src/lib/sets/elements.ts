@@ -36,6 +36,8 @@ import type { SetObject, SetSpec, Vec3 } from "./set-spec";
 import { LOOK_GROUP_MAX_M, entersOnTheWay, normaliseShotCamera, objectsOf, placedCopies, sketchProjector, type FrameBox, type LookSet, type Placed, type ShotCamera } from "./look-cutout";
 import { describeVehicle, isTyre, VEHICLE_POSE_PATTERN, type Vehicle } from "./vehicles";
 import { textKey } from "./film";
+import { colourWord, type ColourId } from "./colour-words";
+import { fill } from "./fill";
 
 /** The person's own element: the stand-in, played by a character (never a loose photo). */
 export const FIGURE_KEY = "figure";
@@ -143,6 +145,144 @@ export function thingNameOf(el: Pick<SetElement, "members">, spec: Pick<SetSpec,
     }
   }
   return best;
+}
+
+/** A thing's largest block by volume, the first listed between equals (turn-plan.ts largestObjectOf's rule), or null. */
+export function largestBlockOf(el: Pick<SetElement, "members">, objects: readonly Pick<SetObject, "size">[]): number | null {
+  let best: number | null = null;
+  let volume = -1;
+  for (const [o] of el.members) {
+    const size = objects[o]?.size;
+    if (!size) continue;
+    const v = size[0] * size[1] * size[2];
+    if (v > volume) {
+      volume = v;
+      best = o;
+    }
+  }
+  return best;
+}
+
+// ---------------------------------------------------------------------------
+// One naming rule (Helios Cut 4, step B2, 2026-09-26). The set page, the
+// chat's replies, Aly and the chat reader each named a thing by its own
+// copy of "Car", "Car 2"; now each reads labelOf, which adds its name when
+// the set gives it one and its colour, so a named set says "Red sports
+// car" everywhere and an unnamed one keeps "Car 2" and gains "red". A name
+// never groups or splits things: the things, their keys and their photos
+// are exactly setElements'.
+// ---------------------------------------------------------------------------
+
+/** How a thing is named: its name or its kind and number, and its colour. */
+export type ThingLabel = {
+  key: string;
+  /** Its name (thingNameOf), as written; null when none of its blocks has one. */
+  name: string | null;
+  kind: ElementKind;
+  /** Its number among things of its kind (setElements' ordinal)… */
+  ordinal: number;
+  /** …said only when the set has several of its kind: "Car 2", else "Car". */
+  several: boolean;
+  /** Among the set's things with the same name (ignoring case), which it is, from 1 in the set's order; 0 without a name. The second is "Red sports car 2". */
+  sameNameIndex: number;
+  /** Its largest block's colour word (colour-words.ts). */
+  colour: ColourId;
+  /** Its largest block: what a menu's row for it points at (the words then name that block, critic item 7). */
+  largest: number;
+};
+
+/** Every thing's label, in setElements' order. */
+export function thingLabels(spec: Pick<SetSpec, "objects">, els: readonly SetElement[]): ThingLabel[] {
+  const seen = new Map<string, number>();
+  return els.map((el) => {
+    const name = thingNameOf(el, spec);
+    let sameNameIndex = 0;
+    if (name !== null) {
+      const k = name.toLowerCase();
+      sameNameIndex = (seen.get(k) ?? 0) + 1;
+      seen.set(k, sameNameIndex);
+    }
+    const largest = largestBlockOf(el, spec.objects) ?? el.members[0][0];
+    return {
+      key: el.key,
+      name,
+      kind: el.kind,
+      ordinal: el.ordinal,
+      several: els.filter((e) => e.kind === el.kind).length > 1,
+      sameNameIndex,
+      colour: colourWord(spec.objects[largest]?.color ?? ""),
+      largest,
+    };
+  });
+}
+
+/** One thing's label (thingLabels). */
+export function labelOf(el: SetElement, els: readonly SetElement[], spec: Pick<SetSpec, "objects">): ThingLabel {
+  return thingLabels(spec, els).find((l) => l.key === el.key)!;
+}
+
+/** A name as a label shows it: its first letter capitalised, the rest as written (other scripts: the first letter only). */
+export function capitalised(name: string): string {
+  const [first = "", ...rest] = Array.from(name);
+  return first.toUpperCase() + rest.join("");
+}
+
+/** The words a label is said with, in the person's language (sets.cast). */
+export type ThingWords = { car: string; carN: string; vehicle: string; vehicleN: string; object: string; objectN: string; namedN: string };
+
+/**
+ * A thing's name on screen: its name, capitalised, with its number when
+ * another thing has the same name ("Red sports car 2"); else "Car" alone,
+ * "Car 2" among several, the same for vehicles and objects. Filled in one
+ * pass, so a name is never read as a template.
+ */
+export function thingLabelText(l: ThingLabel, w: ThingWords): string {
+  if (l.name !== null) {
+    const shown = capitalised(l.name);
+    return l.sameNameIndex > 1 ? fill(w.namedN, { name: shown, n: l.sameNameIndex }) : shown;
+  }
+  if (l.kind === "car") return l.several ? fill(w.carN, { n: l.ordinal }) : w.car;
+  if (l.kind === "vehicle") return l.several ? fill(w.vehicleN, { n: l.ordinal }) : w.vehicle;
+  return l.several ? fill(w.objectN, { n: l.ordinal }) : w.object;
+}
+
+/**
+ * A thing as a list row or a menu row names it: a named thing by its name;
+ * an unnamed one by its kind and number and, after them, its colour
+ * ("Car 2 · red"), so two cars can be told apart before any name is written.
+ */
+export function thingRowText(l: ThingLabel, w: ThingWords, colours: Record<ColourId, string>): string {
+  const text = thingLabelText(l, w);
+  return l.name !== null ? text : `${text} · ${colours[l.colour]}`;
+}
+
+/** The blocks of the set itself: every object none of whose copies is part of a thing (what a tap on the stage calls "Part of the set"). */
+export function setOwnBlocks(spec: Pick<SetSpec, "objects">, els: readonly SetElement[]): number[] {
+  const inThing = new Set(els.flatMap((e) => e.members.map(([o]) => o)));
+  return spec.objects.flatMap((_, i) => (inThing.has(i) ? [] : [i]));
+}
+
+/** A named part of the set: its blocks of the set itself carrying one name (ignoring case), and the largest of them. */
+export type SetPart = { name: string; objects: number[]; largest: number };
+
+/**
+ * The set's named parts ("grandstand", "pit wall"), in the set's order:
+ * the blocks of the set itself grouped by their name. Only named blocks are
+ * parts; the rest of the set itself has none until the naming pass names
+ * it. A name is shown as the first block of the group wrote it.
+ */
+export function setParts(spec: Pick<SetSpec, "objects">, els: readonly SetElement[]): SetPart[] {
+  const parts = new Map<string, SetPart>();
+  for (const i of setOwnBlocks(spec, els)) {
+    const o = spec.objects[i];
+    if (o.name === undefined) continue;
+    const k = o.name.toLowerCase();
+    const part = parts.get(k);
+    if (part) part.objects.push(i);
+    else parts.set(k, { name: o.name, objects: [i], largest: i });
+  }
+  for (const part of parts.values()) part.largest = largestBlockOf({ members: part.objects.map((o) => [o, 0]) }, spec.objects) ?? part.objects[0];
+  return [...parts.values()];
 }
 
 /** Which thing each block copy belongs to, as "object:copy" → key. */

@@ -10,6 +10,8 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 import { formatMsg } from "@/lib/i18n/format";
+// A thing's name may be the set's own (Helios Cut 4, step B2): filled in one pass, never read as a template.
+import { fill } from "@/lib/sets/fill";
 import type { Messages } from "@/lib/i18n/messages/en";
 import type { ElementPhoto } from "@/lib/sets/elements";
 import { ELEMENT_PHOTOS_MAX } from "@/lib/sets/elements";
@@ -23,7 +25,8 @@ const DRIVE_CHIP = (on: boolean) =>
   }`;
 
 export type CardElement =
-  | { kind: "car" | "vehicle" | "object"; key: string; name: string; tyres: number }
+  /** `colour`: an unnamed thing's colour word, said after its name in the title ("Car 2 · red"; Helios Cut 4, step B2). */
+  | { kind: "car" | "vehicle" | "object"; key: string; name: string; tyres: number; colour?: string }
   | { kind: "figure"; key: string; name: string }
   | { kind: "structure"; key: null; name: string };
 
@@ -196,7 +199,9 @@ export function ElementCard({
     >
       <div className="flex items-center gap-2">
         <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-[#ecedf1]">
-          {element.kind === "structure" ? c.structureTitle : element.name}
+          {/* A part of the set itself is named by the page: "Grandstand · part of the set" when the set names it, else "Part of the set" (Helios Cut 4, step B2). */}
+          {element.name || (element.kind === "structure" ? c.structureTitle : "")}
+          {"colour" in element && element.colour ? ` · ${element.colour}` : ""}
         </h3>
         {onShowIt && (
           <button
@@ -506,7 +511,7 @@ export function ElementCard({
                 disabled={!move.earlier}
                 className="h-7 cursor-pointer rounded-full border border-[rgba(255,255,255,0.12)] px-2.5 text-[11px] text-[#d6d9e0] hover:bg-[rgba(255,255,255,0.06)] disabled:cursor-default disabled:border-[rgba(255,255,255,0.06)] disabled:text-[#6b6f7a]"
               >
-                ↑ {formatMsg(c.moveEarlier, { name: element.name })}
+                ↑ {fill(c.moveEarlier, { name: element.name })}
               </button>
               <button
                 type="button"
@@ -514,7 +519,7 @@ export function ElementCard({
                 disabled={!move.later}
                 className="h-7 cursor-pointer rounded-full border border-[rgba(255,255,255,0.12)] px-2.5 text-[11px] text-[#d6d9e0] hover:bg-[rgba(255,255,255,0.06)] disabled:cursor-default disabled:border-[rgba(255,255,255,0.06)] disabled:text-[#6b6f7a]"
               >
-                ↓ {formatMsg(c.moveLater, { name: element.name })}
+                ↓ {fill(c.moveLater, { name: element.name })}
               </button>
             </div>
           )}

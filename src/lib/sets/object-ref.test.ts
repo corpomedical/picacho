@@ -7,7 +7,7 @@ import { ELEMENT_KEY_RE, setElements } from "./elements";
 import { GAZE_KEY_RE, gazeWords, type Gaze } from "./people";
 import { rackWords, type FilmRack } from "./furniture";
 import { LAYOUT_ELEMENT_KEY_RE, normaliseSetSpec, type SetObject, type SetSpec, type Vec3 } from "./set-spec";
-import { atThingNow, findThingNow, followObjectRef, followRefs, followRefsBack, keyedRef, largestBlockOf, onThingNow, pickedRef, thingOfBlock } from "./object-ref";
+import { atThingNow, findThingNow, followObjectRef, followRefs, followRefsBack, largestBlockOf, onThingNow, refRows, rowOfRef, rowRef, thingOfBlock } from "./object-ref";
 import en from "../i18n/messages/en";
 import es from "../i18n/messages/es";
 import pt from "../i18n/messages/pt";
@@ -42,17 +42,13 @@ describe("the key a ref keeps", () => {
     expect(LAYOUT_ELEMENT_KEY_RE.source).toBe(ELEMENT_KEY_RE.source);
   });
 
+  // A menu's pick (Helios Cut 4, step B2: one row per thing) is held in refRows' tests below.
   it("is the thing's for a block of a thing, and none for the set itself", () => {
-    expect(keyedRef(carBlocks[3], setElements(race))).toEqual({ index: carBlocks[3], key: car.key });
-    expect(keyedRef(structure, setElements(race))).toEqual({ index: structure });
+    const rows = refRows(race, setElements(race));
+    expect(rowRef(null, rowOfRef(rows, carBlocks[3])!)).toMatchObject({ key: car.key });
+    expect(rowRef(null, rowOfRef(rows, structure)!)).toEqual({ index: structure });
+    expect(thingOfBlock(setElements(race), carBlocks[3])?.key).toBe(car.key);
     expect(thingOfBlock(setElements(race), structure)).toBeNull();
-  });
-
-  it("a menu's pick of the row already chosen keeps the ref as stored, so a beat keeps its clip", () => {
-    const old = { index: carBlocks[0] };
-    expect(pickedRef(old, carBlocks[0], setElements(race))).toBe(old);
-    expect(pickedRef(old, carBlocks[1], setElements(race))).toEqual({ index: carBlocks[1], key: car.key });
-    expect(pickedRef(null, carBlocks[1], setElements(race))).toEqual({ index: carBlocks[1], key: car.key });
   });
 });
 
@@ -129,6 +125,50 @@ describe("followObjectRef: a change to the thing itself", () => {
     // By number alone it would be the first; with the second's key, it stays the second.
     expect(findThingNow(twins[1].key, els)?.key).toBe(twins[1].key);
     expect(followObjectRef({ index: shared, key: twins[1].key }, side(room), side(room))).toEqual({ index: shared, key: twins[1].key });
+  });
+});
+
+// The menus' rows (Helios Cut 4, step B2, 2026-09-26): one per thing, then
+// the set itself, so a wall or the grandstand stays reachable for everyone
+// (critic item 7); a thing's row stores its largest block with its key.
+describe("refRows: the eye-line's and a beat's focus's menus", () => {
+  it("has one row per thing, pointing at its largest block with its key: the words then name that block", () => {
+    const rows = refRows(race, setElements(race));
+    expect(rows.things).toHaveLength(setElements(race).length);
+    const row = rows.things[0];
+    expect(row).toMatchObject({ kind: "thing", value: `t:${car.key}`, key: car.key, index: largestBlockOf(car, race.objects) });
+    // Picked with nothing on it: the largest block, keyed, whichever block of the car the eye-line was near.
+    expect(rowRef(null, row)).toEqual({ index: largestBlockOf(car, race.objects), key: car.key });
+    const mark = { x: 0, z: 0, facingDeg: 0 };
+    expect(gazeWords({ at: "object", ...rowRef(null, row) }, race, mark)).toBe(gazeWords({ at: "object", index: largestBlockOf(car, race.objects)! }, race, mark));
+  });
+
+  it("keeps every block of the set itself reachable, for everyone: named parts first, then each block without a name", () => {
+    const plain = refRows(race, setElements(race));
+    const all = [...plain.things, ...plain.parts];
+    // Every block of the set is in exactly one row.
+    for (let i = 0; i < race.objects.length; i++) expect(all.filter((r) => r.objects.includes(i)), String(i)).toHaveLength(1);
+    expect(plain.parts.every((r) => r.kind === "part" && r.name === null && r.objects.length === 1)).toBe(true);
+    expect(plain.parts.map((r) => r.index)).toContain(structure);
+    // Named: one row for the part, at its largest block.
+    const own = plain.parts.map((r) => r.index);
+    const named: SetSpec = { ...race, objects: race.objects.map((o, i) => (i === own[0] || i === own[1] ? { ...o, name: "grandstand" } : o)) };
+    const rows = refRows(named, setElements(named));
+    expect(rows.parts[0]).toMatchObject({ kind: "part", name: "grandstand", objects: [own[0], own[1]] });
+    expect(rows.parts).toHaveLength(plain.parts.length - 1);
+    for (let i = 0; i < named.objects.length; i++) expect([...rows.things, ...rows.parts].filter((r) => r.objects.includes(i)), String(i)).toHaveLength(1);
+  });
+
+  it("finds a stored ref's row by its block, and a pick of the row it is in changes nothing (a beat keeps its clip)", () => {
+    const rows = refRows(race, setElements(race));
+    const onWheel = { index: carBlocks[0], key: car.key };
+    expect(rowOfRef(rows, onWheel.index)?.value).toBe(`t:${car.key}`);
+    expect(rowRef(onWheel, rows.things[0])).toBe(onWheel);
+    const unkeyed = { index: carBlocks[1] };
+    expect(rowRef(unkeyed, rows.things[0])).toBe(unkeyed);
+    expect(rowOfRef(rows, structure)?.value).toBe(`o${structure}`);
+    expect(rowRef(null, rowOfRef(rows, structure)!)).toEqual({ index: structure });
+    expect(rowOfRef(rows, race.objects.length + 5)).toBeNull();
   });
 });
 
@@ -254,9 +294,10 @@ describe("the page and the server", () => {
   });
 
   it("stores the thing's key on every pick: the menus and the chat", () => {
-    expect(view).toContain('setGaze({ at: "object", ...pickedRef(gaze?.at === "object" ? gaze : null, oi, els) });');
-    expect(view).toContain('{ to: "object" as const, ...pickedRef(had?.to === "object" ? had : null, Number(v.slice(1)), els) }');
-    expect(view).toContain('{ at: "object", ...pickedRef(had?.at === "object" ? had : null, Number(v.slice(1)), els) }');
+    // The menus' rows are things and parts of the set (Helios Cut 4, step B2): a row's pick keeps the ref already in it, else its block with the thing's key.
+    expect(view).toContain('setGaze({ at: "object", ...rowRef(gaze?.at === "object" ? gaze : null, row) });');
+    expect(view).toContain('{ to: "object" as const, ...rowRef(had?.to === "object" ? had : null, row) }');
+    expect(view).toContain('{ at: "object", ...rowRef(had?.at === "object" ? had : null, row) }');
     expect(view).toContain('if (el && oi !== null) gaze = { at: "object", index: oi, key: el.key };');
   });
 

@@ -175,6 +175,9 @@ describe("the words: complete in four languages (spec §5.3–§5.6)", () => {
       const r = WORDS[l].reply;
       expect(Object.keys(r.cant).sort(), l).toEqual([...CANT_CODES].sort());
       expect(Object.keys(r.colours).sort(), l).toEqual([...COLOUR_IDS].sort());
+      // Helios Cut 4, step B2: a second thing of one name, and a named part of the set itself.
+      expect(CATALOGS[l].sets.cast.namedN, l).toBe("{name} {n}");
+      expect(CATALOGS[l].sets.cast.structureNamed, l).toMatch(/^\{name\} · \S/);
       expect(Object.keys(r.chips.sides).sort(), l).toEqual([...CAMERA_SIDES].sort());
       expect(Object.keys(r.chips.sizes).sort(), l).toEqual([...SHOT_SIZES].sort());
       expect(Object.keys(r.chips.heights).sort(), l).toEqual([...CAMERA_HEIGHTS].sort());
@@ -759,6 +762,18 @@ describe("which one, and the things by the page's own names", () => {
     // In Portuguese, "Carro 2".
     const ptThings = replyThingsOf(showroom, showroom.marks[0], WORDS.pt);
     expect(ptThings.filter((t) => t.kind === "car").map((t) => t.name).sort()).toEqual(["Carro 1", "Carro 2"]);
+  });
+
+  // One naming rule (Helios Cut 4, step B2): a set that names its cars says
+  // their names, and the second of one name is numbered, in every language.
+  it("names the cars by the set's names when it has them, the second of one name numbered", () => {
+    const b1 = new Set(car1.members.map(([o]) => o));
+    const b2 = new Set(car2.members.map(([o]) => o));
+    const named: SetSpec = { ...showroom, objects: showroom.objects.map((o, i) => (b1.has(i) || b2.has(i) ? { ...o, name: "red sports car" } : o)) };
+    for (const l of LOCALES) {
+      const things = replyThingsOf(named, named.marks[0], WORDS[l]);
+      expect(things.filter((t) => t.kind === "car").map((t) => t.name).sort(), l).toEqual(["Red sports car", "Red sports car 2"]);
+    }
   });
 });
 

@@ -23,7 +23,8 @@
 
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 import { SET_LIMITS, STAND_POSES, cleanText, type SetSpec, type StandPose, type Vec3 } from "./set-spec";
-import { setElements, type ElementKind } from "./elements";
+import { setElements, thingLabels, type ElementKind } from "./elements";
+import type { ColourId } from "./colour-words";
 import type { CameraPose } from "./match-shot";
 import { normaliseGaze, sideOf, type Gaze } from "./people";
 import { focalMm, normaliseSetRig, sensorHeightMm, type RigFormat, type SetRig } from "./rig";
@@ -84,9 +85,9 @@ export type ReaderTurn = { said: string; did: string };
 /** A character the reader may meet by name: one of the person's own. */
 export type ReaderCharacter = { id: string; name: string; hasPhoto: boolean };
 
-/** Colour words, one per thing: the model reads them in English, the page says them in the person's language (spec §5.4). */
-export const COLOUR_IDS = ["red", "orange", "yellow", "olive", "green", "teal", "cyan", "blue", "navy", "purple", "pink", "brown", "black", "white", "grey"] as const;
-export type ColourId = (typeof COLOUR_IDS)[number];
+// Colour words live in a leaf module since Helios Cut 4, step B2 (the page
+// names things by colour too); passed on from here as before.
+export { COLOUR_IDS, colourWord, type ColourId } from "./colour-words";
 
 /** Which way a thing lies from the figure, by the figure's own front (people.ts sideOf). */
 export type ThingWhere = "ahead" | "left" | "right" | "behind";
@@ -211,71 +212,25 @@ export function normaliseReaderTurns(v: unknown): ReaderTurn[] {
 // The things.
 // ---------------------------------------------------------------------------
 
-/**
- * A block's colour as one of fifteen words: nearest by hue, with lightness
- * and saturation deciding black, white, grey, navy, olive and brown. The
- * garage's two red cars are both "red", which is why a "which one?" button
- * also says where each one is.
- */
-export function colourWord(hex: string): ColourId {
-  const m = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i.exec(hex.trim());
-  if (!m) return "grey";
-  const h6 = m[1].length === 3 ? m[1].replace(/./g, (c) => c + c) : m[1];
-  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h6.slice(i, i + 2), 16) / 255);
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const l = (max + min) / 2;
-  const d = max - min;
-  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
-  let hue = 0;
-  if (d > 0) {
-    if (max === r) hue = 60 * (((g - b) / d) % 6);
-    else if (max === g) hue = 60 * ((b - r) / d + 2);
-    else hue = 60 * ((r - g) / d + 4);
-  }
-  hue = wrapDeg(hue);
-
-  if (l < 0.1) return "black";
-  if (l > 0.93) return "white";
-  if (s < 0.15) return l < 0.2 ? "black" : l > 0.85 ? "white" : "grey";
-  if (hue < 15 || hue >= 345) return l > 0.75 ? "pink" : "red";
-  if (hue < 45) return l < 0.4 || (s < 0.8 && l < 0.65) ? "brown" : "orange";
-  if (hue < 90) return l < 0.35 || (s < 0.45 && l < 0.5) ? "olive" : hue < 70 ? "yellow" : "green";
-  if (hue < 160) return "green";
-  if (hue < 185) return "teal";
-  if (hue < 200) return "cyan";
-  if (hue < 250) return l < 0.3 ? "navy" : "blue";
-  if (hue < 290) return "purple";
-  return "pink";
-}
-
 const WHERE_WORDS: Record<ThingWhere, string> = { ahead: "ahead of them", left: "to their left", right: "to their right", behind: "behind them" };
 
 /**
  * The set's things the reader may name, nearest to the figure first, at
  * most twelve (elements.ts setElements: cars, vehicles and loose objects,
  * never structure — the grandstand, the pit wall). Named by the page's own
- * rule (set-view.tsx elementName): a lone car is "the car", several are
- * "Car 1", "Car 2", counted over the whole set; coloured by its largest
- * block; placed by people.ts sideOf.
+ * rule (elements.ts labelOf, Helios Cut 4, step B2): a lone car is "the
+ * car", several are "Car 1", "Car 2", counted over the whole set; coloured
+ * by its largest block; placed by people.ts sideOf. In English, for the
+ * model, and without the set's names: those reach the reader in step B3.
  */
 export function readerThings(spec: SetSpec, mark: { x: number; z: number; facingDeg: number }): ReaderThing[] {
   const els = setElements(spec);
-  const count: Record<ElementKind, number> = { car: 0, vehicle: 0, object: 0 };
-  for (const e of els) count[e.kind] += 1;
+  const labels = thingLabels(spec, els);
   const lone: Record<ElementKind, string> = { car: "the car", vehicle: "the vehicle", object: "an object" };
   const numbered: Record<ElementKind, string> = { car: "Car", vehicle: "Vehicle", object: "Object" };
   const things = els.map((e, order) => {
     const objects = [...new Set(e.members.map(([o]) => o))];
-    let largest = objects[0];
-    let volume = -1;
-    for (const o of objects) {
-      const [sx, sy, sz] = spec.objects[o].size;
-      if (sx * sy * sz > volume) {
-        volume = sx * sy * sz;
-        largest = o;
-      }
-    }
+    const l = labels[order];
     const dx = Math.max(e.min[0] - mark.x, 0, mark.x - e.max[0]);
     const dz = Math.max(e.min[2] - mark.z, 0, mark.z - e.max[2]);
     const length = Math.max(e.max[0] - e.min[0], e.max[2] - e.min[2]);
@@ -284,8 +239,8 @@ export function readerThings(spec: SetSpec, mark: { x: number; z: number; facing
       key: e.key,
       n: order + 1,
       kind: e.kind,
-      label: count[e.kind] > 1 ? `${numbered[e.kind]} ${e.ordinal}` : lone[e.kind],
-      colour: colourWord(spec.objects[largest].color),
+      label: l.several ? `${numbered[e.kind]} ${l.ordinal}` : lone[e.kind],
+      colour: l.colour,
       size: e.kind === "object" ? `${num(height)} m tall` : `${num(length)} m long`,
       distanceM: Math.round(Math.hypot(dx, dz) * 10) / 10,
       where: sideOf(mark, { x: e.centre[0], z: e.centre[2] }),

@@ -19,7 +19,9 @@ import { canMove } from "./movers";
 import { rotationXYZ } from "./marks";
 import { placedCopies } from "./look-cutout";
 import { isTyre } from "./vehicles";
-import { setElements, type SetElement } from "./elements";
+import { setElements, setParts, thingLabelText, thingLabels, type SetElement, type ThingWords } from "./elements";
+import type { ColourId } from "./colour-words";
+import { sideOf } from "./people";
 import type { SetObject, SetSpec, Vec3 } from "./set-spec";
 
 const DEG = Math.PI / 180;
@@ -28,11 +30,18 @@ export type Axis = "x" | "y" | "z";
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
 
-/** What the set page calls it: "Car" alone, "Car 2" among several. */
+/**
+ * Its kind and number as the set page says them in English: "Car" alone,
+ * "Car 2" among several. What an unnamed thing is called, and on a named
+ * set an alias Aly may still pass (critic item 15a).
+ */
 export function thingName(el: SetElement, all: readonly SetElement[]): string {
   const label = el.kind === "car" ? "Car" : el.kind === "vehicle" ? "Vehicle" : "Object";
   return all.filter((e) => e.kind === el.kind).length > 1 ? `${label} ${el.ordinal}` : label;
 }
+
+/** The page's words for a thing, in English: what Aly reads (the one naming rule, elements.ts thingLabelText). */
+const EN_THING_WORDS: ThingWords = { car: "Car", carN: "Car {n}", vehicle: "Vehicle", vehicleN: "Vehicle {n}", object: "Object", objectN: "Object {n}", namedN: "{name} {n}" };
 
 /** Whether it stands on its wheels: tyres below its body. Unknown for things without tyres. */
 export function uprightOf(spec: Pick<SetSpec, "objects" | "bounds">, el: SetElement): "upright" | "upside_down" | "unknown" {
@@ -53,8 +62,15 @@ export function uprightOf(spec: Pick<SetSpec, "objects" | "bounds">, el: SetElem
 
 export type ThingInfo = {
   key: string;
+  /** What the set page calls it (Helios Cut 4, step B2): its name when the set gives it one ("Red sports car"), else "Car", "Car 2". */
   name: string;
+  /** Its kind and number, "Car 2" (thingName): the same as `name` on a set without names, an alias Aly may pass on one with them. */
+  alias: string;
   kind: SetElement["kind"];
+  /** Its largest block's colour word (colour-words.ts). */
+  colour: ColourId;
+  /** Which way it lies from the figure where it stands (people.ts sideOf). */
+  side: "ahead" | "left" | "right" | "behind";
   /** Its middle, metres (x across, y up, z along). */
   centre: Vec3;
   /** Its extent along x, y and z, metres. */
@@ -67,13 +83,22 @@ export type ThingInfo = {
   fixable: boolean;
 };
 
-/** The set's things, as the Producer reads them. */
-export function describeThings(spec: SetSpec): ThingInfo[] {
+/**
+ * The set's things, as the Producer reads them: named as the set page names
+ * them, with their colour and where each lies from the figure — at `mark`,
+ * where the person left it, else the set's first mark.
+ */
+export function describeThings(spec: SetSpec, mark?: { x: number; z: number; facingDeg: number }): ThingInfo[] {
   const els = setElements(spec);
-  return els.map((el) => ({
+  const labels = thingLabels(spec, els);
+  const from = mark ?? spec.marks[0];
+  return els.map((el, i) => ({
     key: el.key,
-    name: thingName(el, els),
+    name: thingLabelText(labels[i], EN_THING_WORDS),
+    alias: thingName(el, els),
     kind: el.kind,
+    colour: labels[i].colour,
+    side: sideOf(from, { x: el.centre[0], z: el.centre[2] }),
     centre: el.centre,
     size: [0, 1, 2].map((i) => r3(el.max[i] - el.min[i])) as Vec3,
     lowest: r3(el.min[1]),
@@ -83,12 +108,28 @@ export function describeThings(spec: SetSpec): ThingInfo[] {
   }));
 }
 
-/** A thing by its key, its name ("Car 2", "car"), or its kind when it is the only one. */
+/** The set's named parts, as the Producer reads them: the set itself, which can't be moved (elements.ts setParts). */
+export function describeParts(spec: SetSpec): string[] {
+  return setParts(spec, setElements(spec)).map((p) => p.name);
+}
+
+/**
+ * A thing by what Aly passes (Helios Cut 4, step B2): its key; else the
+ * name the set page shows for it, exactly (case aside: "Red sports car",
+ * "Red sports car 2"); else its kind and number, "Car 2", kept as an alias
+ * on a named set (critic item 15a); else its kind when it is the only one.
+ * Never a colour or a kind picked out of free words (critic item 15b): Aly
+ * reads each thing's colour and side in read_set and passes its key.
+ */
 export function findThing(spec: SetSpec, ref: string): SetElement | null {
   const els = setElements(spec);
-  const want = ref.trim().toLowerCase().replace(/^the\s+/, "");
   const byKey = els.find((e) => e.key === ref.trim());
   if (byKey) return byKey;
+  const labels = thingLabels(spec, els);
+  const said = ref.trim().toLowerCase();
+  const shown = els.filter((_, i) => thingLabelText(labels[i], EN_THING_WORDS).toLowerCase() === said);
+  if (shown.length === 1) return shown[0];
+  const want = said.replace(/^the\s+/, "");
   const byName = els.find((e) => thingName(e, els).toLowerCase() === want);
   if (byName) return byName;
   const kind = want.replace(/\s*\d+$/, "");

@@ -11,6 +11,7 @@ import { formatMsg } from "@/lib/i18n/format";
 import type { Messages } from "@/lib/i18n/messages/en";
 import type { EditTarget } from "@/lib/sets/editor-model";
 import type { SetLightKind, SetObject, SetShape, SetSpec } from "@/lib/sets/set-spec";
+import { capitalised } from "@/lib/sets/elements";
 import { StudioSvg } from "./studio-frame";
 
 type Strings = Messages["sets"];
@@ -38,7 +39,9 @@ export function sceneNames(spec: SetSpec, s: Strings) {
     const total = spec.lights.filter((l) => l.kind === kind).length;
     return total > 1 ? `${lightKindName(kind)} ${before + 1}` : lightKindName(kind);
   };
-  const objectName = (o: SetObject) => `${shapeName(o.shape)} · ${r1(o.size[0])}×${r1(o.size[1])}×${r1(o.size[2])}`;
+  // A block the set names is called by its name and its shape, "Grandstand · Box" (Helios Cut 4, step B2), and found by either; one without, by its shape and size.
+  const objectName = (o: SetObject) =>
+    o.name !== undefined ? `${capitalised(o.name)} · ${shapeName(o.shape)}` : `${shapeName(o.shape)} · ${r1(o.size[0])}×${r1(o.size[1])}×${r1(o.size[2])}`;
   const markName = (mi: number) => spec.marks[mi].label || formatMsg(s.editorMarkN, { n: mi + 1 });
   const cameraName = (ci: number) => spec.cameras[ci].label || formatMsg(s.editorCameraN, { n: ci + 1 });
   return { shapeName, lightKindName, lightName, objectName, markName, cameraName };

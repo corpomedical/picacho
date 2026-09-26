@@ -51,7 +51,7 @@ describe("a render", () => {
     expect(credits).toBeGreaterThan(-1);
     expect(draw).toBeGreaterThan(credits);
     expect(draw).toBeLessThan(render.indexOf("keep(kept);"));
-    expect(render).toContain("setFilmError(formatMsg(cast.filmSheetBlocked, { name: elementName(unsheeted[0]) }));");
+    expect(render).toContain("setFilmError(fill(cast.filmSheetBlocked, { name: elementName(unsheeted[0]) }));");
     // Only the beats whose end frames are shot need sheets.
     expect(render).toContain("plan.jobs.filter((j) => j.end === null).flatMap((j) => filmBeatRides[j.beat] ?? [])");
   });
@@ -69,7 +69,7 @@ describe("an opening still older than the photos", () => {
   it("stops the render and names the thing; a single take only says so", () => {
     const rule = between("function newerPhotosIn(", "const filmOpeningOldKey");
     expect(rule).toContain("if (place.seen && heldOf.get(place.key)?.photos.some((ph) => ph.at > shotAt)) return place.key;");
-    expect(view).toContain("? formatMsg(cast.filmOpeningOld, { name: elementName(filmOpeningOldKey) })");
+    expect(view).toContain("? fill(cast.filmOpeningOld, { name: elementName(filmOpeningOldKey) })");
     expect(view).toContain("data-take-start-old");
   });
 });

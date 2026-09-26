@@ -31,7 +31,7 @@ import { dockTabAfter, dockTabsFor, railToolForKey, studioChecked, studioHeld, s
 import { VIEW_MODES, viewModeMaterial, type ViewMode } from "@/lib/sets/view-modes";
 import { azimuthOf, hourFromAzimuth, measureMetres, scaleBar, sunDirection, type MeasurePoint } from "@/lib/sets/furniture";
 import { PATH_MAX_POINTS, alongPath, pathLength, type Gaze } from "@/lib/sets/people";
-import { followRefs, followRefsBack, pickedRef, type FollowedRefs, type RefsState } from "@/lib/sets/object-ref";
+import { followRefs, followRefsBack, refRows, rowOfRef, rowRef, type FollowedRefs, type RefRow, type RefsState } from "@/lib/sets/object-ref";
 import { MOVERS_PER_BEAT, canMove, moverAlong, movedSpec, placementBefore, turnAbout, type Mover, type Placement } from "@/lib/sets/movers";
 import { SKETCH_MODEL_MATERIAL, THING_MODEL_BUCKET, fitThingModel, modelHome, modelUrlAllowed, type ThingModel } from "@/lib/sets/thing-model";
 import { keepThingModel, pollThingBuild, removeThingModel, reserveThingModel, startThingBuild, turnThingModel } from "@/lib/sets/model-actions";
@@ -45,7 +45,25 @@ import { StatusList, StudioBar, StudioDock, StudioRail, StudioStatus, useWide, u
 import { ThingsPanel, ThingsStrip, type LooseBundle, type PanelRow } from "./things-panel";
 import { clearMarks } from "@/lib/sets/marks";
 import { BADGE_HIT_SLOP_PX, FIGURE_TAP_WAIT_MS, TAP_SLOP_PX, badgeAt, elementForHits, isTap, type ElementHit, type StageHit, type TapStart } from "@/lib/sets/stage-pick";
-import { ELEMENT_SHEETS_PER_STILL, FIGURE_KEY, SHEET_LANES, elementPlaces, photoThingsChanged, planShotSheets, resolvePhotos, setElements as elementsOf, type ElementPhoto, type SetElement, type ShotElementStatus } from "@/lib/sets/elements";
+import {
+  ELEMENT_SHEETS_PER_STILL,
+  FIGURE_KEY,
+  SHEET_LANES,
+  capitalised,
+  elementPlaces,
+  photoThingsChanged,
+  planShotSheets,
+  resolvePhotos,
+  setElements as elementsOf,
+  setParts,
+  thingLabelText,
+  thingLabels,
+  thingRowText,
+  type ElementPhoto,
+  type SetElement,
+  type ShotElementStatus,
+  type ThingWords,
+} from "@/lib/sets/elements";
 import { afterShotWhy, beforeShoot, pageState, ridesState, statusWords as elementStatusWords, type ElementState } from "@/lib/sets/element-status";
 import { findVehicles } from "@/lib/sets/vehicles";
 import { shotCameraOf } from "@/lib/sets/shot-camera";
@@ -1528,7 +1546,7 @@ export function SetView({
   // thing, the sheets drawing now, and a sheet's last failed try, by hash.
   const [elementPhotos, setElementPhotos] = useState<ElementPhoto[]>(initialElementPhotos.photos);
   const [sheetHashes, setSheetHashes] = useState<string[]>(initialElementPhotos.sheets);
-  const [elementCard, setElementCard] = useState<{ key: string | null; prevTab: DockTab | null } | null>(null);
+  const [elementCard, setElementCard] = useState<{ key: string | null; prevTab: DockTab | null; oi?: number } | null>(null);
   const [photoPhase, setPhotoPhase] = useState<"idle" | "preparing" | "checking">("idle");
   const [photoError, setPhotoError] = useState("");
   const [shotElements, setShotElements] = useState<ShotElementStatus[] | null>(null);
@@ -3645,8 +3663,36 @@ export function SetView({
     apiRef.current?.setViewMode(viewMode);
   }, [viewMode, ready]);
 
+  /** The set's things, from the set as drawn now; what the stage taps and the shot plans read. */
+  const els = useMemo(() => elementsOf(spec), [spec]);
+  /**
+   * The one naming rule (elements.ts thingLabels, Helios Cut 4, step B2): a
+   * thing is called by its name when the set gives it one, else "Car 2";
+   * lists and menus add an unnamed thing's colour ("Car 2 · red").
+   */
+  const thingLabelOf = useMemo(() => new Map(thingLabels(spec, els).map((l) => [l.key, l])), [spec, els]);
+  const thingWords: ThingWords = { car: s.cast.car, carN: s.cast.carN, vehicle: s.cast.vehicle, vehicleN: s.cast.vehicleN, object: s.cast.object, objectN: s.cast.objectN, namedN: s.cast.namedN };
+  /**
+   * The eye-line's and a beat's focus's rows (object-ref.ts refRows): one per
+   * thing, pointing at its largest block with its key, then the set itself
+   * — its named parts, then each of its blocks without a name, as before —
+   * so a wall or the grandstand stays reachable for everyone (critic item 7).
+   */
+  const refMenu = useMemo(() => refRows(spec, els), [spec, els]);
   // The viewport's furniture (cut C): the elements and their words, handed to the loop.
   const names = sceneNames(spec, s);
+  /** A menu row's name: a thing's row name, a named part's name, or a block of the set itself as the scene tree names it. */
+  function refRowName(row: RefRow): string {
+    if (row.kind === "thing") return thingRowText(row.label, thingWords, s.reply.colours);
+    return row.name !== null ? capitalised(row.name) : spec.objects[row.index] ? names.objectName(spec.objects[row.index]) : "";
+  }
+  /** What a stored eye-line or focus pull on block `index` is on, named as its menu row names it. */
+  function refName(index: number): string {
+    const row = rowOfRef(refMenu, index);
+    return row ? refRowName(row) : "";
+  }
+  /** What her eye-line is on, named for the stage's label. */
+  const gazeOnName = gaze?.at === "object" ? refName(gaze.index) : "";
   useEffect(() => {
     if (!ready) return;
     apiRef.current?.setFurniture({
@@ -3682,7 +3728,7 @@ export function SetView({
           : gaze.at === "camera"
             ? s.studio.lookAtCamera
             : gaze.at === "object"
-              ? formatMsg(s.studio.lookAtThing, { thing: spec.objects[gaze.index] ? names.objectName(spec.objects[gaze.index]) : "" })
+              ? fill(s.studio.lookAtThing, { thing: gazeOnName })
               : s.studio.lookAtPoint,
       pathSvg: pathRef.current,
       pathFrom:
@@ -3695,7 +3741,7 @@ export function SetView({
       pathTo: filmOpen && filmSel !== null && film.beats[filmSel]?.figure ? film.beats[filmSel].figure : null,
     });
     return () => apiRef.current?.setFurniture(null);
-  }, [ready, s, measurePts, gaze, spec, names, filmOpen, filmSel, film, mark, pose, rig.time]);
+  }, [ready, s, measurePts, gaze, spec, names, gazeOnName, filmOpen, filmSel, film, mark, pose, rig.time]);
 
   // What a laid point becomes (cut D): the gaze's point, the next point of
   // the beat's path, or — for the thing whose card is open — where it
@@ -4236,8 +4282,6 @@ export function SetView({
   // ---- the set's things and their photos (R1, elements.ts) ----
 
   const cast = s.cast;
-  /** The set's things, from the set as drawn now; what the stage taps and the shot plans read. */
-  const els = useMemo(() => elementsOf(spec), [spec]);
   const vehicles = useMemo(() => findVehicles(spec), [spec]);
   /** Which photos are on which thing now, after any change to the set (moved, changed, gone). */
   const resolved = useMemo(() => resolvePhotos(els, elementPhotos), [els, elementPhotos]);
@@ -4267,14 +4311,16 @@ export function SetView({
   /** A thing's photos, for its model's paint (blueprint-paint.ts): its drawings are painted onto its sides. */
   const drawingsFor = useCallback((key: string) => (heldOf.get(key)?.photos ?? []).map((p) => p.url), [heldOf]);
   const drawingsKey = useMemo(() => thingModels.map((m) => `${m.key}=${drawingsFor(m.key).join("|")}`).join(","), [thingModels, drawingsFor]);
+  /** A thing's name, by the one naming rule (elements.ts thingLabelText): its name, else "Car", "Car 2"; the figure's is its character's. */
   function elementName(key: string): string {
     if (key === FIGURE_KEY) return character?.name ?? cast.person;
-    const e = els.find((x) => x.key === key);
-    if (!e) return "";
-    const many = els.filter((x) => x.kind === e.kind).length > 1;
-    if (e.kind === "car") return many ? formatMsg(cast.carN, { n: e.ordinal }) : cast.car;
-    if (e.kind === "vehicle") return many ? formatMsg(cast.vehicleN, { n: e.ordinal }) : cast.vehicle;
-    return many ? formatMsg(cast.objectN, { n: e.ordinal }) : cast.object;
+    const l = thingLabelOf.get(key);
+    return l ? thingLabelText(l, thingWords) : "";
+  }
+  /** A thing as a list row names it: an unnamed thing with its colour after it ("Car 2 · red"), so two cars can be told apart. */
+  function elementRowName(key: string): string {
+    const l = thingLabelOf.get(key);
+    return l ? thingRowText(l, thingWords, s.reply.colours) : elementName(key);
   }
   /** A character whose photos still need the likeness answer (data.ts), and not answered here since. */
   function likenessNeeded(id: string): boolean {
@@ -4441,9 +4487,10 @@ export function SetView({
     scheduleSave();
   }
 
-  function openElementCard(key: string | null) {
+  /** A thing's card, or (null) a part of the set itself — `oi`, the block tapped, names it when the set does (Helios Cut 4, step B2). */
+  function openElementCard(key: string | null, oi?: number) {
     setPhotoError("");
-    setElementCard((prev) => ({ key, prevTab: prev ? prev.prevTab : dockTab }));
+    setElementCard((prev) => ({ key, prevTab: prev ? prev.prevTab : dockTab, ...(key === null && oi !== undefined ? { oi } : {}) }));
     // A card is the dock's Scene tab on a computer; on a phone a sheet, which the rig's own sheet makes room for.
     if (wide) setDockTab("scene");
     else setRigOpen(false);
@@ -4669,7 +4716,8 @@ export function SetView({
         ? null
         : (hit) => {
             if (!hit || (hit.kind === "structure" && elementCard)) closeElementCard();
-            else openElementCard(hit.kind === "structure" ? null : hit.key);
+            else if (hit.kind === "structure") openElementCard(null, hit.oi);
+            else openElementCard(hit.key);
           };
     closeCardRef.current = elementCard ? closeElementCard : null;
   });
@@ -4694,15 +4742,24 @@ export function SetView({
     })();
   }, [ready, setKey, resolved, setId]);
 
-  /** The card for a key: a thing, the figure, or (null) a part of the set itself. */
-  function cardElementOf(key: string | null): CardElement {
+  /**
+   * The card for a key: a thing, the figure, or (null) a part of the set
+   * itself — "Grandstand · part of the set" when the block tapped (`oi`) is
+   * part of a named part of it (elements.ts setParts), else "Part of the set".
+   */
+  function cardElementOf(key: string | null, oi?: number): CardElement {
     if (key === FIGURE_KEY) return { kind: "figure", key, name: elementName(key) };
     const e = key === null ? undefined : els.find((x) => x.key === key);
-    return e ? { kind: e.kind, key: e.key, name: elementName(e.key), tyres: e.tyres } : { kind: "structure", key: null, name: cast.structureTitle };
+    if (e) {
+      const l = thingLabelOf.get(e.key);
+      return { kind: e.kind, key: e.key, name: elementName(e.key), tyres: e.tyres, ...(l && l.name === null ? { colour: s.reply.colours[l.colour] } : {}) };
+    }
+    const part = oi === undefined ? undefined : setParts(spec, els).find((p) => p.objects.includes(oi));
+    return { kind: "structure", key: null, name: part ? fill(cast.structureNamed, { name: capitalised(part.name) }) : cast.structureTitle };
   }
   function elementCardView(variant: "dock" | "sheet") {
     if (!elementCard) return null;
-    const el = cardElementOf(elementCard.key);
+    const el = cardElementOf(elementCard.key, elementCard.oi);
     const thingKey = el.kind === "car" || el.kind === "vehicle" || el.kind === "object" ? el.key : null;
     const h = thingKey ? heldOf.get(thingKey) : undefined;
     const st = thingKey ? livePlan.statuses.find((x) => x.key === thingKey) : undefined;
@@ -4913,7 +4970,7 @@ export function SetView({
         onReorder={reorderElement}
         chips={castChips}
         loose={resolved.loose.map((l) => l.photo)}
-        targets={els.map((e) => ({ key: e.key, name: elementName(e.key) }))}
+        targets={els.map((e) => ({ key: e.key, name: elementRowName(e.key) }))}
         hint={resolved.held.length === 0}
         onOpen={(key) => openElementCard(key)}
         onPutOn={(refId, key) => void putPhotoOn(refId, key)}
@@ -4964,7 +5021,7 @@ export function SetView({
         const h = heldOf.get(st.key);
         const v = elementView.get(st.key);
         if (!h || !v || h.photos.length === 0) return [];
-        return [{ key: st.key, name: elementName(st.key), thumb: thumbUrl(h.photos[0].url, 320) ?? h.photos[0].url, word: v.word, title: v.line, state: ridesState(v.state) ? "rides" : "idle" }];
+        return [{ key: st.key, name: elementRowName(st.key), thumb: thumbUrl(h.photos[0].url, 320) ?? h.photos[0].url, word: v.word, title: v.line, state: ridesState(v.state) ? "rides" : "idle" }];
       }),
   ];
 
@@ -6164,7 +6221,7 @@ export function SetView({
     if (unsheeted === null || unsheeted.length > 0) {
       filmBusyRef.current = false;
       setFilmBusy(null);
-      if (unsheeted) setFilmError(formatMsg(cast.filmSheetBlocked, { name: elementName(unsheeted[0]) }));
+      if (unsheeted) setFilmError(fill(cast.filmSheetBlocked, { name: elementName(unsheeted[0]) }));
       return;
     }
     // The film as this render writes it, saved the moment each beat lands
@@ -8397,7 +8454,7 @@ export function SetView({
             ? s.filmWhyStart
             : s.filmPickStill
           : filmOpeningOldKey
-            ? formatMsg(cast.filmOpeningOld, { name: elementName(filmOpeningOldKey) })
+            ? fill(cast.filmOpeningOld, { name: elementName(filmOpeningOldKey) })
           : film.beats.length === 0
             ? s.filmWhyBeats
             : filmPlan.again && filmPlan.rendering
@@ -8990,7 +9047,7 @@ export function SetView({
     const chip = castChipOf.get(e.key);
     return {
       key: e.key,
-      name: elementName(e.key),
+      name: elementRowName(e.key),
       thumb: first ? (thumbUrl(first.url, 320) ?? first.url) : null,
       state,
       photos: count,
@@ -9002,7 +9059,7 @@ export function SetView({
   /** Photos on nothing, with the strip's own menu: a row of the list, and a chip of the phone's strip. */
   const panelLoose: LooseBundle = {
     loose: resolved.loose.map((l) => l.photo),
-    targets: els.map((e) => ({ key: e.key, name: elementName(e.key) })),
+    targets: els.map((e) => ({ key: e.key, name: elementRowName(e.key) })),
     onPutOn: (refId, key) => void putPhotoOn(refId, key),
     onRemoveLoose: (refId) => void removePhoto(refId),
   };
@@ -9186,12 +9243,13 @@ export function SetView({
               </button>
               {/* The rack of focus (cut C, furniture.ts): where the focus travels during this beat's move. */}
               <select
-                value={film.beats[filmSel].rack ? (film.beats[filmSel].rack.to === "figure" ? "figure" : `o${film.beats[filmSel].rack.index}`) : ""}
+                value={film.beats[filmSel].rack ? (film.beats[filmSel].rack.to === "figure" ? "figure" : (rowOfRef(refMenu, film.beats[filmSel].rack.index)?.value ?? "")) : ""}
                 onChange={(e) => {
                   const at = filmSel;
                   const v = e.target.value;
                   const had = film.beats[at]?.rack;
-                  const rack = v === "" ? null : v === "figure" ? { to: "figure" as const } : { to: "object" as const, ...pickedRef(had?.to === "object" ? had : null, Number(v.slice(1)), els) };
+                  const row = [...refMenu.things, ...refMenu.parts].find((r) => r.value === v);
+                  const rack = v === "" ? null : v === "figure" ? { to: "figure" as const } : row ? { to: "object" as const, ...rowRef(had?.to === "object" ? had : null, row) } : null;
                   editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, rack } : bb)) }));
                 }}
                 disabled={Boolean(filmBusy)}
@@ -9201,21 +9259,31 @@ export function SetView({
               >
                 <option value="">{s.studio.rack} · {s.studio.rackNone}</option>
                 <option value="figure">{s.studio.rackFigure}</option>
-                {spec.objects.map((o, oi) => (
-                  <option key={oi} value={`o${oi}`}>
-                    {names.objectName(o)}
+                {refMenu.things.map((row) => (
+                  <option key={row.value} value={row.value}>
+                    {refRowName(row)}
                   </option>
                 ))}
+                {refMenu.parts.length > 0 && (
+                  <optgroup label={cast.structureTitle}>
+                    {refMenu.parts.map((row) => (
+                      <option key={row.value} value={row.value}>
+                        {refRowName(row)}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
               {/* The eye-line at the beat's end (cut D, people.ts): where the figure looks in the end frame and by the end of the clip. */}
               <select
-                value={film.beats[filmSel].gaze ? (film.beats[filmSel].gaze.at === "camera" ? "camera" : film.beats[filmSel].gaze.at === "object" ? `o${film.beats[filmSel].gaze.index}` : "point") : ""}
+                value={film.beats[filmSel].gaze ? (film.beats[filmSel].gaze.at === "camera" ? "camera" : film.beats[filmSel].gaze.at === "object" ? (rowOfRef(refMenu, film.beats[filmSel].gaze.index)?.value ?? "") : "point") : ""}
                 onChange={(e) => {
                   const at = filmSel;
                   const v = e.target.value;
                   if (v === "point") return;
                   const had = film.beats[at]?.gaze;
-                  const g: Gaze | null = v === "" ? null : v === "camera" ? { at: "camera" } : { at: "object", ...pickedRef(had?.at === "object" ? had : null, Number(v.slice(1)), els) };
+                  const row = [...refMenu.things, ...refMenu.parts].find((r) => r.value === v);
+                  const g: Gaze | null = v === "" ? null : v === "camera" ? { at: "camera" } : row ? { at: "object", ...rowRef(had?.at === "object" ? had : null, row) } : null;
                   editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, gaze: g } : bb)) }));
                 }}
                 disabled={Boolean(filmBusy)}
@@ -9226,11 +9294,20 @@ export function SetView({
                 <option value="">{s.studio.eyeline} · {s.studio.gazeNone}</option>
                 <option value="camera">{s.studio.gazeCamera}</option>
                 {film.beats[filmSel].gaze?.at === "point" && <option value="point">{s.studio.gazePoint}</option>}
-                {spec.objects.map((o, oi) => (
-                  <option key={oi} value={`o${oi}`}>
-                    {formatMsg(s.studio.gazeThing, { thing: names.objectName(o) })}
+                {refMenu.things.map((row) => (
+                  <option key={row.value} value={row.value}>
+                    {fill(s.studio.gazeThing, { thing: refRowName(row) })}
                   </option>
                 ))}
+                {refMenu.parts.length > 0 && (
+                  <optgroup label={cast.structureTitle}>
+                    {refMenu.parts.map((row) => (
+                      <option key={row.value} value={row.value}>
+                        {fill(s.studio.gazeThing, { thing: refRowName(row) })}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
             {/* The path (cut D): the points the figure walks through to this beat's figure, laid on the ground. */}
@@ -9644,7 +9721,7 @@ export function SetView({
               : gaze.at === "camera"
                 ? `${s.studio.gaze} · ${s.studio.gazeCamera}`
                 : gaze.at === "object"
-                  ? `${s.studio.gaze} · ${formatMsg(s.studio.gazeThing, { thing: spec.objects[gaze.index] ? names.objectName(spec.objects[gaze.index]) : "" })}`
+                  ? `${s.studio.gaze} · ${fill(s.studio.gazeThing, { thing: refName(gaze.index) })}`
                   : `${s.studio.gaze} · ${formatMsg(s.studio.gazePointSet, { x: gaze.x.toFixed(1), z: gaze.z.toFixed(1) })}`}
             <Chevron />
           </button>
@@ -9677,18 +9754,24 @@ export function SetView({
               >
                 {s.studio.gazePoint}
               </Option>
-              {spec.objects.map((o, oi) => (
-                <Option
-                  key={oi}
-                  active={gaze?.at === "object" && gaze.index === oi}
-                  onPick={() => {
-                    // With its thing's key, so the eye-line follows the thing (object-ref.ts, step A9); the chosen row again changes nothing.
-                    setGaze({ at: "object", ...pickedRef(gaze?.at === "object" ? gaze : null, oi, els) });
-                    setMenu(null);
-                  }}
-                >
-                  {formatMsg(s.studio.gazeThing, { thing: names.objectName(o) })}
-                </Option>
+              {/* One row per thing, then the set itself (object-ref.ts refRows, Helios Cut 4, step B2): a thing's row stores its largest block with its key, so the eye-line follows the thing (step A9); the chosen row again changes nothing. */}
+              {[...refMenu.things, ...refMenu.parts].map((row, i) => (
+                <Fragment key={row.value}>
+                  {i === refMenu.things.length && (
+                    <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.07em] text-[#9aa0ad]" data-gaze-parts>
+                      {cast.structureTitle}
+                    </div>
+                  )}
+                  <Option
+                    active={gaze?.at === "object" && row.objects.includes(gaze.index)}
+                    onPick={() => {
+                      setGaze({ at: "object", ...rowRef(gaze?.at === "object" ? gaze : null, row) });
+                      setMenu(null);
+                    }}
+                  >
+                    {fill(s.studio.gazeThing, { thing: refRowName(row) })}
+                  </Option>
+                </Fragment>
               ))}
             </div>
           )}
@@ -10001,7 +10084,7 @@ export function SetView({
                     {editHides.rig === "plot" && rig.light && <p data-edit-hides-rig="plot">{formatMsg(s.reply.noteRigPlotHides, { light: s.rig.lights[rig.light.scheme] })}</p>}
                     {editHides.photos.map((key) => (
                       <p key={key} data-edit-hides-photos>
-                        {formatMsg(s.reply.noteOwnPhotos, { thing: elementName(key) })}
+                        {fill(s.reply.noteOwnPhotos, { thing: elementName(key) })}
                       </p>
                     ))}
                   </div>
@@ -10234,7 +10317,7 @@ export function SetView({
                           const words = formatMsg(cast[why], { max: ELEMENT_SHEETS_PER_STILL, n: e.like ?? 1 });
                           return (
                             <p key={e.key} className="text-xs text-[#c6c9d1]" data-el-after>
-                              {formatMsg(cast.afterNotSent, { name: elementName(e.key), why: words })}
+                              {fill(cast.afterNotSent, { name: elementName(e.key), why: words })}
                             </p>
                           );
                         })}
@@ -10897,7 +10980,7 @@ export function SetView({
               )}
               {takeStartOldKey && (
                 <span className="rounded-full bg-black/70 px-3 py-1.5 text-xs text-[#f0cda6]" data-take-start-old>
-                  {formatMsg(cast.takeStartOld, { name: elementName(takeStartOldKey) })}
+                  {fill(cast.takeStartOld, { name: elementName(takeStartOldKey) })}
                 </span>
               )}
               <button type="button" onClick={() => setTakeStart(null)} className={glassBtn}>
@@ -11609,7 +11692,7 @@ export function SetView({
                   b.gaze.at === "camera"
                     ? s.studio.lookAtCamera
                     : b.gaze.at === "object"
-                      ? formatMsg(s.studio.lookAtThing, { thing: spec.objects[b.gaze.index] ? names.objectName(spec.objects[b.gaze.index]) : "" })
+                      ? fill(s.studio.lookAtThing, { thing: refName(b.gaze.index) })
                       : s.studio.lookAtPoint,
                 );
               }

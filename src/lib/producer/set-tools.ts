@@ -1,10 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { UUID_RE, setsAccess } from "../sets/access";
 import { clearSetEdit, saveSetEdit } from "../sets/editor-actions";
-import { normaliseSetSpec, type SetSpec, type Vec3 } from "../sets/set-spec";
+import { normaliseSetLayout, normaliseSetSpec, type SetSpec, type Vec3 } from "../sets/set-spec";
 import { checkSet } from "../sets/set-check";
 import { listThingModels } from "../sets/thing-model-store";
 import {
+  describeParts,
   describeThings,
   dropToFloor,
   findThing,
@@ -63,12 +64,12 @@ async function whichSet(ctx: Ctx, setId: unknown): Promise<string | null> {
   return (set?.id as string | undefined) ?? null;
 }
 
-type Loaded = { id: string; title: string; status: string; original: SetSpec; edited: SetSpec | null };
+type Loaded = { id: string; title: string; status: string; original: SetSpec; edited: SetSpec | null; layout: unknown };
 
 async function loadSet(ctx: Ctx, id: string): Promise<Loaded | null> {
   const { data: row } = await ctx.admin
     .from("location_sets")
-    .select("id, title, status, spec")
+    .select("id, title, status, spec, layout")
     .eq("id", id)
     .eq("user_id", ctx.userId)
     .is("deleted_at", null)
@@ -87,7 +88,7 @@ async function loadSet(ctx: Ctx, id: string): Promise<Loaded | null> {
     const en = normaliseSetSpec(e.edited_spec);
     if (en.ok) edited = en.spec;
   }
-  return { id, title: String(row.title ?? "") || n.spec.title, status: String(row.status), original: n.spec, edited };
+  return { id, title: String(row.title ?? "") || n.spec.title, status: String(row.status), original: n.spec, edited, layout: row.layout ?? null };
 }
 
 /** Helios for this person (the same rule as every set page and action). */
@@ -99,6 +100,7 @@ async function gate(ctx: Ctx): Promise<string | null> {
 }
 
 const m = (v: number) => `${Math.round(v * 10) / 10}`;
+const SIDE_WORDS = { ahead: "in front of the figure", left: "to the figure's left", right: "to the figure's right", behind: "behind the figure" } as const;
 
 export async function readSetTool(ctx: Ctx, input: { set_id?: unknown }): Promise<SetToolResult> {
   const blocked = await gate(ctx);
@@ -109,7 +111,9 @@ export async function readSetTool(ctx: Ctx, input: { set_id?: unknown }): Promis
   if (!set) return err("That set isn't theirs, or it no longer exists.");
   if (set.status !== "ready") return { text: `Set "${set.title}" (${id}) is ${set.status}: it can be read and fixed once it's ready.` };
   const working = set.edited ?? set.original;
-  const things = describeThings(working);
+  // Where the person left the figure (the page's saved arrangement), so "to its left" is theirs.
+  const things = describeThings(working, normaliseSetLayout(set.layout, working)?.mark);
+  const parts = describeParts(working);
   const models = await listThingModels(ctx.admin, ctx.userId, id).catch(() => []);
   const modelled = new Set(models.map((mo) => mo.key));
   const findings = checkSet(working).slice(0, 5);
@@ -125,7 +129,7 @@ export async function readSetTool(ctx: Ctx, input: { set_id?: unknown }): Promis
     `Set "${set.title}" (set_id ${id}). ${set.edited ? "It has been edited (Build, or an earlier fix); you are reading the edited copy." : "As Astra built it."}`,
     things.length === 0
       ? "It has no separate things (only structure: floor, walls, track)."
-      : `Things in it (the names the set page uses):\n${things
+      : `Things in it (the names the set page uses; to fix one, pass its key — pick it by its name, colour and side here, never by guessing):\n${things
           .map((t) => {
             const standing =
               t.upright === "upside_down"
@@ -137,9 +141,11 @@ export async function readSetTool(ctx: Ctx, input: { set_id?: unknown }): Promis
             const model = modelled.has(t.key)
               ? "; DRAWN FROM A 3D MODEL FILE on the stage (fixing its blocks won't change how the model faces; see the product guide)"
               : "";
-            return `- ${t.name} (key ${t.key}): ${t.kind}, ${m(t.size[0])} × ${m(t.size[1])} × ${m(t.size[2])} m at x ${m(t.centre[0])}, z ${m(t.centre[2])}; ${standing}; ${floor}; ${t.blocks} blocks${t.fixable ? "" : "; shares repeated blocks, so it can't be moved as one"}${model}`;
+            const alias = t.alias !== t.name ? `; also "${t.alias}"` : "";
+            return `- ${t.name} (key ${t.key}${alias}): ${t.kind}, ${t.colour}, ${SIDE_WORDS[t.side]}, ${m(t.size[0])} × ${m(t.size[1])} × ${m(t.size[2])} m at x ${m(t.centre[0])}, z ${m(t.centre[2])}; ${standing}; ${floor}; ${t.blocks} blocks${t.fixable ? "" : "; shares repeated blocks, so it can't be moved as one"}${model}`;
           })
           .join("\n")}`,
+    parts.length ? `Parts (the set itself, can't be moved): ${parts.join(", ")}.` : null,
     findings.length ? `The set's own check found: ${findings.map((f) => JSON.stringify(f)).join("; ")}` : null,
     shots && shots.length
       ? `Newest stills and takes from it (render ids for look_at_render): ${shots.map((s) => s.generation_id).join(", ")}.`

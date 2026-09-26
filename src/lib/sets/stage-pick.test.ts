@@ -38,8 +38,9 @@ describe("elementForHits", () => {
 
   it("maps a block to its element by object and copy; a block of no element is structure", () => {
     expect(elementForHits([hit({ oi: 3, copy: 1 })], keyOf, "figure")).toEqual({ kind: "element", key: "o_00000000_5_5" });
-    expect(elementForHits([hit({ oi: 3, copy: 0 })], keyOf, "figure")).toEqual({ kind: "structure" });
-    expect(elementForHits([hit({ oi: 9, copy: 0, distance: 2 }), hit({ oi: 0, copy: 0, distance: 5 })], keyOf, "figure")).toEqual({ kind: "structure" });
+    // With the block's object index, so its card can say its name (Helios Cut 4, step B2).
+    expect(elementForHits([hit({ oi: 3, copy: 0 })], keyOf, "figure")).toEqual({ kind: "structure", oi: 3 });
+    expect(elementForHits([hit({ oi: 9, copy: 0, distance: 2 }), hit({ oi: 0, copy: 0, distance: 5 })], keyOf, "figure")).toEqual({ kind: "structure", oi: 9 });
   });
 
   it("skips the sky, and the ground (or nothing) in front is nothing", () => {

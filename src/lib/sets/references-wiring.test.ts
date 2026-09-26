@@ -91,7 +91,8 @@ describe("the Look menu", () => {
 
 describe("the card and the strip", () => {
   it("open from a tap on the stage, and a tap on the ground closes the card", () => {
-    expect(view).toMatch(/if \(!hit \|\| \(hit\.kind === "structure" && elementCard\)\) closeElementCard\(\);\s*else openElementCard\(hit\.kind === "structure" \? null : hit\.key\);/);
+    // A part of the set itself opens with the block tapped, so its card can say its name (Helios Cut 4, step B2).
+    expect(view).toMatch(/if \(!hit \|\| \(hit\.kind === "structure" && elementCard\)\) closeElementCard\(\);\s*else if \(hit\.kind === "structure"\) openElementCard\(null, hit\.oi\);\s*else openElementCard\(hit\.key\);/);
     expect(view).toContain('{elementCardView("dock")}');
     expect(view).toContain('{!wide && elementCardView("sheet")}');
   });

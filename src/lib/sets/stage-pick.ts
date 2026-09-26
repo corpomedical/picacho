@@ -30,12 +30,13 @@ export function isTap(s: TapStart, up: { id: number; x: number; y: number; t: nu
 /** One ray hit on the stage, as the page reads it off three.js. */
 export type StageHit = { oi: number | null; copy: number | null; figure: boolean; ground: boolean; sky: boolean; distance: number };
 
-export type ElementHit = { kind: "element"; key: string } | { kind: "structure" } | null;
+/** What a tap touched: a thing (or the figure), a block of the set itself by its object's index (Helios Cut 4, step B2: its card names it when the set does), or nothing. */
+export type ElementHit = { kind: "element"; key: string } | { kind: "structure"; oi: number } | null;
 
 /**
  * What a tap touched: the nearest hit that is not sky. The figure is its
  * own element; a block belongs to the element `keyOfCopy` names, or else
- * is structure; the ground (or nothing) is null.
+ * is structure, with its object's index; the ground (or nothing) is null.
  */
 export function elementForHits(hits: readonly StageHit[], keyOfCopy: (oi: number, copy: number) => string | null, figureKey: string): ElementHit {
   const nearest = [...hits].filter((h) => !h.sky).sort((a, b) => a.distance - b.distance)[0];
@@ -43,7 +44,7 @@ export function elementForHits(hits: readonly StageHit[], keyOfCopy: (oi: number
   if (nearest.figure) return { kind: "element", key: figureKey };
   if (nearest.oi === null || nearest.copy === null) return null;
   const key = keyOfCopy(nearest.oi, nearest.copy);
-  return key ? { kind: "element", key } : { kind: "structure" };
+  return key ? { kind: "element", key } : { kind: "structure", oi: nearest.oi };
 }
 
 /** The thumbnail a tap landed on, by its box on screen grown by `slop`; the last drawn (topmost) wins. */

@@ -3266,9 +3266,13 @@ const en = {
       vehicleN: "Vehicle {n}",
       object: "Object",
       objectN: "Object {n}",
+      /** Helios Cut 4, step B2: a thing sharing its name with another ("Red sports car 2"); the name is the set's, capitalised. */
+      namedN: "{name} {n}",
       person: "Person",
       structureTitle: "Part of the set",
       structureLine: "Walls, floors and the track are the set itself. Photos go on cars, objects and people.",
+      /** Helios Cut 4, step B2: a tapped block of the set itself that the set names ("Grandstand · part of the set"); without a name, structureTitle. */
+      structureNamed: "{name} · part of the set",
       merged: "These vehicles touch, so they count as one thing and share one set of photos. Move them apart in Build to give each its own.",
       photosLabel: "Reference photos",
       front: "Front",

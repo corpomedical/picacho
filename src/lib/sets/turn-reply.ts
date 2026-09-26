@@ -39,7 +39,7 @@ import { astraCardKind, astraCardLine, astraCardWords, type AstraCardKind } from
 import { fill } from "./fill";
 import { nearestLens } from "./build-scene";
 import { rigCommandLabel, rigPatchFor, type RigCommandWords } from "./commands";
-import { setElements, type SetElement } from "./elements";
+import { setElements, thingLabelText, thingLabels, type SetElement, type ThingWords } from "./elements";
 import { schemeHasSun } from "./light-schemes";
 import type { FilmMove, FilmTexture } from "./moves";
 import { cameraSideOf, readerThings, type ColourId, type ThingWhere } from "./reader-context";
@@ -106,7 +106,7 @@ export type ReplyWords = {
    * chat say exactly what a press would answer.
    */
   paused: string;
-  things: { car: string; carN: string; vehicle: string; vehicleN: string; object: string; objectN: string };
+  things: ThingWords;
 };
 
 /** A reply's words from one catalog: the page and the tests build them the same way. */
@@ -158,7 +158,7 @@ export function replyWordsOf(t: Messages): ReplyWords {
     yourCharacter: s.exampleCharacter,
     autoMode: s.shootWithoutAsking,
     paused: t.serverText.setEditTriesUsed,
-    things: { car: s.cast.car, carN: s.cast.carN, vehicle: s.cast.vehicle, vehicleN: s.cast.vehicleN, object: s.cast.object, objectN: s.cast.objectN },
+    things: { car: s.cast.car, carN: s.cast.carN, vehicle: s.cast.vehicle, vehicleN: s.cast.vehicleN, object: s.cast.object, objectN: s.cast.objectN, namedN: s.cast.namedN },
   };
 }
 
@@ -218,28 +218,18 @@ export function creditsLabel(reply: Pick<Reply, "creditOne" | "creditsN">, n: nu
 // The page's facts.
 // ---------------------------------------------------------------------------
 
-/** One of the set's things as the reply names it: the page's own name (set-view's elementName rule), what it is, its colour and where it lies from the figure. */
+/** One of the set's things as the reply names it: the page's own name (elements.ts labelOf), what it is, its colour and where it lies from the figure. */
 export type ReplyThing = { key: string; name: string; kind: SetElement["kind"]; colour: ColourId; where: ThingWhere };
 
 /**
- * A thing's name as the page says it (set-view.tsx elementName): "Car" when
- * the set has one, "Car 2" when it has several, the same for vehicles and
- * objects, in the person's language.
+ * The things a reply can name: the reader's own twelve nearest
+ * (reader-context.ts readerThings), with the page's names — the one naming
+ * rule (elements.ts thingLabelText, Helios Cut 4, step B2): its name when
+ * the set gives it one, else "Car", "Car 2", in the person's language.
  */
-export function thingName(key: string, els: readonly Pick<SetElement, "key" | "kind" | "ordinal">[], words: Pick<ReplyWords, "things">): string {
-  const e = els.find((x) => x.key === key);
-  if (!e) return words.things.object;
-  const many = els.filter((x) => x.kind === e.kind).length > 1;
-  const w = words.things;
-  if (e.kind === "car") return many ? formatMsg(w.carN, { n: e.ordinal }) : w.car;
-  if (e.kind === "vehicle") return many ? formatMsg(w.vehicleN, { n: e.ordinal }) : w.vehicle;
-  return many ? formatMsg(w.objectN, { n: e.ordinal }) : w.object;
-}
-
-/** The things a reply can name: the reader's own twelve nearest (reader-context.ts readerThings), with the page's names. */
 export function replyThingsOf(spec: SetSpec, mark: { x: number; z: number; facingDeg: number }, words: Pick<ReplyWords, "things">): ReplyThing[] {
-  const els = setElements(spec);
-  return readerThings(spec, mark).map((t) => ({ key: t.key, name: thingName(t.key, els, words), kind: t.kind, colour: t.colour, where: t.where }));
+  const labels = new Map(thingLabels(spec, setElements(spec)).map((l) => [l.key, l]));
+  return readerThings(spec, mark).map((t) => ({ key: t.key, name: thingLabelText(labels.get(t.key)!, words.things), kind: t.kind, colour: t.colour, where: t.where }));
 }
 
 /**

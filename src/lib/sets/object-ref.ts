@@ -27,7 +27,7 @@
 //
 // Pure and relative-import only: the page and the server share it.
 
-import { resolvePhotos, setElements, type SetElement } from "./elements";
+import { largestBlockOf, resolvePhotos, setElements, setOwnBlocks, setParts, thingLabels, type SetElement, type ThingLabel } from "./elements";
 import type { FilmRack } from "./furniture";
 import type { Gaze } from "./people";
 import type { SetObject, SetSpec } from "./set-spec";
@@ -37,21 +37,6 @@ export type ObjectRef = { index: number; key?: string };
 /** The thing a block is part of (setElements' members), or null: structure is no thing. */
 export function thingOfBlock(els: readonly SetElement[], index: number): SetElement | null {
   return els.find((e) => e.members.some(([o]) => o === index)) ?? null;
-}
-
-/** A block picked now (a menu, the chat): its number, and the key of the thing it is part of, if any. */
-export function keyedRef(index: number, els: readonly SetElement[]): ObjectRef {
-  const el = thingOfBlock(els, index);
-  return el ? { index, key: el.key } : { index };
-}
-
-/**
- * A block picked from a menu, as a stored ref: the ref already there when
- * it is on that very block (a pick of the chosen row changes nothing, so a
- * film beat keeps its clip), else the block with its thing's key.
- */
-export function pickedRef<T extends ObjectRef>(current: T | null, index: number, els: readonly SetElement[]): T | ObjectRef {
-  return current && current.index === index ? current : keyedRef(index, els);
 }
 
 /** Where a thing stands now, by resolvePhotos' rules (exact key, same blocks moved, same family where it stood), or null. */
@@ -66,21 +51,9 @@ const sameBlock = (a: SetObject | undefined, b: SetObject | undefined): boolean 
 /** Named alike in the words: the same shape and the same size to the words' one decimal (people.ts, furniture.ts thingWords). */
 const namedAlike = (a: SetObject, b: SetObject): boolean => a.shape === b.shape && a.size.every((n, i) => Math.round(n * 10) === Math.round(b.size[i] * 10));
 
-/** The thing's largest block by volume (turn-plan.ts largestObjectOf's rule), or null. */
-export function largestBlockOf(el: Pick<SetElement, "members">, objects: readonly Pick<SetObject, "size">[]): number | null {
-  let best: number | null = null;
-  let volume = -1;
-  for (const [o] of el.members) {
-    const size = objects[o]?.size;
-    if (!size) continue;
-    const v = size[0] * size[1] * size[2];
-    if (v > volume) {
-      volume = v;
-      best = o;
-    }
-  }
-  return best;
-}
+// The thing's largest block by volume lives in elements.ts since Helios Cut
+// 4, step B2 (a thing's label names its colour); passed on from here.
+export { largestBlockOf };
 
 type Side = { spec: Pick<SetSpec, "objects">; els: readonly SetElement[] };
 
@@ -240,4 +213,54 @@ export function onThingNow<T extends Gaze | FilmRack>(r: T | null, els: readonly
   if (r === null) return null;
   if ("at" in r ? r.at !== "object" : r.to !== "object") return r;
   return atThingNow(r as T & ObjectRef, els, objects);
+}
+
+// ---------------------------------------------------------------------------
+// The menus' rows (Helios Cut 4, step B2, 2026-09-26). The eye-line menu and
+// a film beat's Focus and Eye-line listed every BLOCK — "Box · 1.9×0.5×3.7"
+// forty-nine times on the race track — so the car was a guess among boxes.
+// Now a row is a THING, named as the set page names it, and the ref it
+// stores is that thing's largest block with its key (the chat's own rule,
+// turn-plan.ts largestObjectOf): the still's words then name that block,
+// whichever block of the thing was on screen (critic item 7). The set
+// itself stays reachable for everyone (critic item 7): its named parts, one
+// row each, and every block of it without a name, as before, one row each.
+// ---------------------------------------------------------------------------
+
+/** A menu row: a thing, or a part of the set itself (a named part, or one block without a name). */
+export type RefRow =
+  | { kind: "thing"; value: string; index: number; key: string; objects: number[]; label: ThingLabel }
+  | { kind: "part"; value: string; index: number; objects: number[]; name: string | null };
+
+/** The menus' rows: every thing in the set's order, then the set itself — its named parts, then its blocks without a name. */
+export function refRows(spec: Pick<SetSpec, "objects">, els: readonly SetElement[]): { things: RefRow[]; parts: RefRow[] } {
+  const labels = thingLabels(spec, els);
+  const things: RefRow[] = els.map((el, i) => ({
+    kind: "thing",
+    value: `t:${el.key}`,
+    index: labels[i].largest,
+    key: el.key,
+    objects: [...new Set(el.members.map(([o]) => o))],
+    label: labels[i],
+  }));
+  const named: RefRow[] = setParts(spec, els).map((p) => ({ kind: "part", value: `o${p.largest}`, index: p.largest, objects: p.objects, name: p.name }));
+  const plain: RefRow[] = setOwnBlocks(spec, els)
+    .filter((i) => spec.objects[i].name === undefined)
+    .map((i) => ({ kind: "part", value: `o${i}`, index: i, objects: [i], name: null }));
+  return { things, parts: [...named, ...plain] };
+}
+
+/** The row a stored ref's block is in, or null (a block the set no longer has). */
+export function rowOfRef(rows: { things: readonly RefRow[]; parts: readonly RefRow[] }, index: number): RefRow | null {
+  return rows.things.find((r) => r.objects.includes(index)) ?? rows.parts.find((r) => r.objects.includes(index)) ?? null;
+}
+
+/**
+ * A row picked from a menu, as a stored ref: the ref already there when it
+ * is in that row (a pick of the chosen row changes nothing, so a film beat
+ * keeps its clip), else the row's block — a thing's largest, with its key.
+ */
+export function rowRef<T extends ObjectRef>(current: T | null, row: RefRow): T | ObjectRef {
+  if (current && row.objects.includes(current.index)) return current;
+  return row.kind === "thing" ? { index: row.index, key: row.key } : { index: row.index };
 }

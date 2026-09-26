@@ -100,6 +100,28 @@ describe("the Producer's hands in Helios", () => {
     expect(r.text).toContain("g1");
   });
 
+  // One naming rule (Helios Cut 4, step B2): Aly reads each thing by the
+  // page's name with its key, colour and side, and the set's named parts;
+  // it picks the key from here, never a colour out of free words.
+  it("lists each thing's name, key, colour and side, its alias on a named set, and the named parts", async () => {
+    const s = spec();
+    const car = setElements(s).find((e) => e.kind === "car")!;
+    const carBlocks = new Set(car.members.map(([o]) => o));
+    const wall = s.objects.findIndex((_, i) => !carBlocks.has(i));
+    const named: SetSpec = { ...s, objects: s.objects.map((o, i) => (carBlocks.has(i) ? { ...o, name: "yellow coupe" } : i === wall ? { ...o, name: "grandstand" } : o)) };
+    const plain = await readSetTool({ admin: fakeAdmin({ location_sets: [setRow(null)], location_set_shots: [] }), userId: "u1" }, { set_id: SET });
+    expect(plain.text).toMatch(new RegExp(`- Car \\(key ${car.key}\\): car, (${["red", "orange", "yellow", "olive", "green", "teal", "cyan", "blue", "navy", "purple", "pink", "brown", "black", "white", "grey"].join("|")}), (in front of the figure|to the figure's left|to the figure's right|behind the figure), `));
+    expect(plain.text).not.toContain("Parts (");
+    const r = await readSetTool({ admin: fakeAdmin({ location_sets: [setRow(named)], location_set_shots: [] }), userId: "u1" }, { set_id: SET });
+    expect(r.text).toContain(`- Yellow coupe (key ${car.key}; also "Car"): car, `);
+    expect(r.text).toContain("Parts (the set itself, can't be moved): grandstand.");
+    expect(r.text).toContain("pass its key");
+    // Found by the name the page shows.
+    const fixed = await fixSetTool({ admin: fakeAdmin({ location_sets: [setRow(named)], location_set_shots: [] }), userId: "u1" }, { set_id: SET, thing: "Yellow coupe", action: "floor", axis: null, degrees: null, move: null });
+    expect(fixed.isError).toBeUndefined();
+    expect(fixed.text).toMatch(/^(Done: )?Yellow coupe/);
+  });
+
   it("stands it back on its wheels, saved through the editor's own save, keeping the copy it replaced", async () => {
     const before = upsideDown();
     const admin = fakeAdmin({ location_sets: [setRow(before)], location_set_shots: [] });

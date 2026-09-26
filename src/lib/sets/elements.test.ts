@@ -22,8 +22,16 @@ import {
   photoThingsChanged,
   planShotSheets,
   resolvePhotos,
+  capitalised,
+  largestBlockOf,
   setElements,
+  setOwnBlocks,
+  setParts,
+  thingLabelText,
+  thingLabels,
   thingNameOf,
+  thingRowText,
+  type ThingWords,
   type ElementPhoto,
   type HeldPhotos,
 } from "./elements";
@@ -407,5 +415,86 @@ describe("names on things", () => {
     const single = blocks.filter((o) => car.members.filter(([p]) => p === o).length === 1).sort((a, b) => volume(b) - volume(a));
     const [big, small] = [single[0], single[single.length - 1]];
     expect(thingNameOf(car, withNames((oi) => (oi === big ? "body" : oi === small ? "mirror" : undefined)))).toBe("body");
+  });
+});
+
+// One naming rule (Helios Cut 4, step B2, 2026-09-26): every place that
+// names a thing reads labelOf — its name when the set gives it one, else
+// "Car", "Car 2" — and lists add an unnamed thing's colour.
+describe("one naming rule", () => {
+  const W: ThingWords = { car: "Car", carN: "Car {n}", vehicle: "Vehicle", vehicleN: "Vehicle {n}", object: "Object", objectN: "Object {n}", namedN: "{name} {n}" };
+  const COLOURS = Object.fromEntries(["red", "orange", "yellow", "olive", "green", "teal", "cyan", "blue", "navy", "purple", "pink", "brown", "black", "white", "grey"].map((c) => [c, c])) as Parameters<typeof thingRowText>[2];
+  const showroom = load(showroomOpen);
+  const els = setElements(showroom);
+  const named = (spec: SetSpec, pick: (oi: number) => string | undefined): SetSpec => ({
+    ...spec,
+    objects: spec.objects.map((o, i) => {
+      const name = pick(i);
+      return name === undefined ? o : { ...o, name };
+    }),
+  });
+
+  it("keeps today's names on a set without any, and adds each thing's colour, from its largest block", () => {
+    const labels = thingLabels(showroom, els);
+    expect(labels.map((l) => l.key)).toEqual(els.map((e) => e.key));
+    for (const [i, l] of labels.entries()) {
+      const e = els[i];
+      const several = els.filter((x) => x.kind === e.kind).length > 1;
+      const kind = e.kind === "car" ? "Car" : e.kind === "vehicle" ? "Vehicle" : "Object";
+      expect(thingLabelText(l, W)).toBe(several ? `${kind} ${e.ordinal}` : kind);
+      expect(l.name).toBeNull();
+      expect(l.sameNameIndex).toBe(0);
+      expect(l.largest).toBe(largestBlockOf(e, showroom.objects));
+      expect(thingRowText(l, W, COLOURS)).toBe(`${thingLabelText(l, W)} · ${l.colour}`);
+    }
+  });
+
+  it("calls a named thing by its name, capitalised, and numbers a second thing of the same name", () => {
+    // Two things of one kind (the showroom's objects; no fixture has two cars).
+    const cars = els.filter((e) => e.kind === "object");
+    expect(cars.length).toBeGreaterThan(1);
+    const blocksOf = (e: (typeof els)[number]) => new Set(e.members.map(([o]) => o));
+    const [a, b] = [blocksOf(cars[0]), blocksOf(cars[1])];
+    const spec = named(showroom, (i) => (a.has(i) ? "red sports car" : b.has(i) ? "Red Sports Car" : undefined));
+    const labels = thingLabels(spec, els);
+    const la = labels.find((l) => l.key === cars[0].key)!;
+    const lb = labels.find((l) => l.key === cars[1].key)!;
+    expect(thingLabelText(la, W)).toBe("Red sports car");
+    expect(thingLabelText(lb, W)).toBe("Red Sports Car 2");
+    // A named thing's row is its name alone.
+    expect(thingRowText(la, W, COLOURS)).toBe("Red sports car");
+    // The grouping never moves: the same things, the same keys.
+    expect(setElements(spec).map((e) => e.key)).toEqual(els.map((e) => e.key));
+    // A name is filled in one pass: "{n}" or "$&" in it stays as written.
+    const odd = thingLabels(named(showroom, (i) => (a.has(i) || b.has(i) ? "car {n} $&" : undefined)), els);
+    expect(thingLabelText(odd.find((l) => l.key === cars[1].key)!, W)).toBe("Car {n} $& 2");
+    // Unnamed things beside them keep their kind and number.
+    const other = labels.find((l) => l.name === null)!;
+    expect(thingLabelText(other, W)).toMatch(/^(Car|Object \d+)$/);
+  });
+
+  it("capitalises the first letter only, in any script", () => {
+    expect(capitalised("grandstand")).toBe("Grandstand");
+    expect(capitalised("éclairage")).toBe("Éclairage");
+    expect(capitalised("pit wall")).toBe("Pit wall");
+    expect(capitalised("")).toBe("");
+  });
+
+  it("lists as parts only the set's own blocks with a name, grouped by it (ignoring case), and the largest of each", () => {
+    const own = setOwnBlocks(race, setElements(race));
+    const inThing = new Set(setElements(race).flatMap((e) => e.members.map(([o]) => o)));
+    expect(own.length + inThing.size).toBe(race.objects.length);
+    expect(own.some((i) => inThing.has(i))).toBe(false);
+    expect(setParts(race, setElements(race))).toEqual([]);
+    const [s1, s2, s3] = own;
+    const car = [...inThing][0];
+    const spec = named(race, (i) => (i === s1 || i === s2 ? (i === s1 ? "Grandstand" : "grandstand") : i === s3 ? "pit wall" : i === car ? "red sports car" : undefined));
+    const parts = setParts(spec, setElements(spec));
+    expect(parts.map((p) => p.name)).toEqual(["Grandstand", "pit wall"]);
+    expect(parts[0].objects).toEqual([s1, s2]);
+    const vol = (i: number) => race.objects[i].size.reduce((x, y) => x * y, 1);
+    expect(parts[0].largest).toBe(vol(s2) > vol(s1) ? s2 : s1);
+    // A thing's block with a name is never a part.
+    expect(parts.some((p) => p.objects.includes(car))).toBe(false);
   });
 });

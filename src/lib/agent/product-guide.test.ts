@@ -62,6 +62,12 @@ describe("renderProductGuide", () => {
     // undoable; anything else is still the set page's to do.
     expect(guide).toContain("Aly, the personal assistant (the lamp), can read a set and fix one thing in it as a whole");
     expect(guide).toContain("free and undoable, saved to the set's Build copy; for anything else it tells the person what to type there.");
+    // One naming rule (Helios Cut 4, step B2): Aly reads names, colours and
+    // sides (it picks the key from read_set, never from free words), and the
+    // page names a thing by its name, else its kind, number and colour.
+    expect(guide).toContain('Aly reads each thing by the name the set page shows, with its colour and which side of the figure it is on, so "the red car" is the red one there.');
+    expect(guide).toContain('else as "Car", "Car 2" with its colour ("Car 2 · red")');
+    expect(guide).toContain('the eye-line and a film beat\'s focus list one row per thing, then "Part of the set" for the set\'s own blocks.');
     expect(guide).not.toContain("The Producer does not change sets");
     // Never the promise the page cannot keep in "Shoot without asking".
     expect(guide).not.toMatch(/asks before anything that costs/i);

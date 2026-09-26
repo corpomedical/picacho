@@ -86,7 +86,7 @@ describe("after an Astra change, what stills won't show of it", () => {
     const block = between(view, "{setChanged !== null && setChanged > 0 && editHides !== null", "{/* An Astra answer that changed nothing");
     expect(block).toContain("formatMsg(s.reply.noteRigHourHides, { time: timeLabel(rig.time) })");
     expect(block).toContain("formatMsg(s.reply.noteRigPlotHides, { light: s.rig.lights[rig.light.scheme] })");
-    expect(block).toContain("formatMsg(s.reply.noteOwnPhotos, { thing: elementName(key) })");
+    expect(block).toContain("fill(s.reply.noteOwnPhotos, { thing: elementName(key) })");
   });
 
   it("names the rig panel's own labels in every language", () => {

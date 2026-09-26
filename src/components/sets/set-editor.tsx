@@ -58,7 +58,7 @@ import { KELVIN_MAX, KELVIN_MIN, KELVIN_STEP, kelvinToHex, nearestKelvin } from 
 import { VIEW_MODES, viewModeMaterial, type ViewMode } from "@/lib/sets/view-modes";
 import { dockTabsFor, railToolForKey, type DockTab, type RailTool } from "@/lib/sets/studio";
 import { measureMetres, type MeasurePoint } from "@/lib/sets/furniture";
-import { SceneTree } from "./scene-tree";
+import { SceneTree, sceneNames } from "./scene-tree";
 import { StudioBar, StudioDock, StudioRail, StudioStatus } from "./studio-frame";
 import { KIT_KINDS, type KitKind } from "@/lib/sets/kit";
 import { checkSet, type SetFinding } from "@/lib/sets/set-check";
@@ -1597,7 +1597,8 @@ export function SetEditor({
     const total = spec.lights.filter((l) => l.kind === kind).length;
     return total > 1 ? `${lightKindName(kind)} ${before + 1}` : lightKindName(kind);
   };
-  const objectName = (o: SetObject) => `${shapeName(o.shape)} · ${r1(o.size[0])}×${r1(o.size[1])}×${r1(o.size[2])}`;
+  // The scene tree's own rule, so a named block reads the same in the tree and the inspector (Helios Cut 4, step B2).
+  const objectName = sceneNames(spec, s).objectName;
   const markName = (mi: number) => spec.marks[mi].label || formatMsg(s.editorMarkN, { n: mi + 1 });
   const cameraName = (ci: number) => spec.cameras[ci].label || formatMsg(s.editorCameraN, { n: ci + 1 });
   // A selection that no longer names anything reads as the set itself: a

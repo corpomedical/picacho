@@ -80,6 +80,9 @@ describe("the blades and the rack", () => {
     expect(actions).toContain("rack: rackWords(onThingNow(normaliseRack(input.rack, owned.spec.objects.length), endEls, owned.spec.objects), endShown),");
     const film = view.slice(view.indexOf("  function filmBeatView() {"), view.indexOf("  /**\n   * The new layout's right-hand panel, one per step"));
     expect(film).toContain('<option value="figure">{s.studio.rackFigure}</option>');
-    expect(film).toContain("{names.objectName(o)}");
+    // One row per thing, then the set itself under "Part of the set" (Helios Cut 4, step B2).
+    expect(film).toContain("{refMenu.things.map((row) => (");
+    expect(film).toContain("<optgroup label={cast.structureTitle}>");
+    expect(film).toContain("{refRowName(row)}");
   });
 });
