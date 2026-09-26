@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.118.0",
+    build: 157,
+    date: "2026-09-26",
+    title: "Refunds, bonus credits and the invoice date say what is true",
+    items: [
+      "Admin → Users → a person: the Refunds list now shows every render whose credits came back. It showed only the refunds that count toward the daily limit, so refusals, provider rejections, rules blocks and face-check misses were missing. Each refund now says whether it counted toward the daily limit. Recent generations marks the same renders \"refunded\".",
+      "The \"+0 cr back\" on every refund and the \"credits returned\" total are gone. A refund zeroes what the render spent and keeps no copy of it, so both always added up to zero, and there is no true number to show instead.",
+      "The Bonus credits box says what it does: its label shows their balance now, \"Bonus credits (replaces 12)\", because Save replaces that number rather than adding to it. To give 5 back, type the balance plus 5. The note under it no longer says bonus credits reset each month or should be set back to 0. They are spent once the plan's credits run out, before bought ones, and stay until spent. If a render or a refund moves the balance while the page is open, the refusal now says that, instead of blaming a referral (referrals give bought credits).",
+      "Settings: the plan meter counts only the plan's own credits again. It kept adding bonus credits to the plan's total after they stopped renewing each month (23 September). Once the plan ran out, it counted the bonus spent twice: a Growth account given 20, which had spent 150, read \"0 of 150 left\" with 10 bonus credits still to spend. An account with no plan and a grant was told its credits came \"back\" on a date. Bonus credits now have their own line under the meter, in all four languages. In Spanish they are \"créditos de regalo\"; the old line called them \"créditos extra\", which is the name for bought credits.",
+      "Plan & billing's invoice note says packs bought before 23 August 2026 came with a receipt, matching the list. It said 22 August, and so did the assistants' guide.",
+    ],
+  },
+  {
     version: "1.117.0",
     build: 156,
     date: "2026-09-26",
