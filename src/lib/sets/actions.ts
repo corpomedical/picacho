@@ -38,7 +38,8 @@ import {
 import { cleanText, normaliseElementOrder, normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
 import { setBuildInput } from "@/lib/sets/set-builder-prompt";
 import { photoBuildRequest, setAstraRequest } from "@/lib/sets/astra-request";
-import { buildSetShotPrompt, SET_POSE_WORDS_OPEN } from "@/lib/sets/set-shot-prompt";
+import { buildSetShotPrompt, SET_POSE_WORDS_OPEN, SET_THING_WORDS_OPEN } from "@/lib/sets/set-shot-prompt";
+import { thingPhrase } from "@/lib/sets/thing-phrase";
 import {
   buildSetTakePrompt,
   isSetTakeEngine,
@@ -1040,6 +1041,16 @@ async function shootStill(
   // only until the owner's proof stills say yes (set-shot-prompt.ts
   // SET_POSE_WORDS_OPEN); everyone else's still reads as it did.
   const poseWords = access.isAdmin || SET_POSE_WORDS_OPEN;
+  // The eye-line's thing said as what it is, "the red car" (Helios Cut 4,
+  // step B5): admins only until the proof stills (set-shot-prompt.ts
+  // SET_THING_WORDS_OPEN); everyone else's still names it as it did. A thing
+  // whose own sheet rides drawn grey is named by its place, without a colour.
+  const thingWordsOn = access.isAdmin || SET_THING_WORDS_OPEN;
+  const gazeNow = layout ? onThingNow(layout.gaze, els, owned.spec.objects) : null;
+  const gazeThing =
+    thingWordsOn && layout && gazeNow?.at === "object"
+      ? thingPhrase(gazeNow.index, shown, els, { camera: frameCamera, mark: layout.mark, grey: new Set(elementPlan.riding.filter((r) => greyed.has(r.key)).map((r) => r.key)) })
+      : null;
   // `lifted` only chooses whether the prompt explains a brightened sketch;
   // a false value from a crafted request changes one sentence, still gated.
   const shot = {
@@ -1050,7 +1061,7 @@ async function shootStill(
     // The eye-line (cut D): the layout's gaze, read against the set, in Picacho's words. Its
     // thing's key, when it has one, is read against the saved set first (object-ref.ts, Helios
     // Cut 4, step A9): a block number that drifted off that thing is read as the thing's block.
-    gaze: layout ? gazeWords(onThingNow(layout.gaze, els, owned.spec.objects), shown, layout.mark, "still", poseWords ? els : undefined) : "",
+    gaze: layout ? gazeWords(gazeNow, shown, layout.mark, "still", poseWords ? els : undefined, gazeThing) : "",
     look,
     sourcePhoto: sourcePhotoUrl !== null,
     rig: rigSentences(rig, rigCtx),
@@ -1588,6 +1599,14 @@ async function takeWork(
   const endEls = setElements(owned.spec);
   const endShown = movedSpec(owned.spec, endEls, normalisePlacements(input.movers));
   const endMark = endLayout?.mark ?? { x: owned.spec.marks[0].x, z: owned.spec.marks[0].z, facingDeg: owned.spec.marks[0].facingDeg };
+  // A thing's key, when the rack or eye-line has one, is read against the saved set first (object-ref.ts, step A9).
+  const rackEnd = onThingNow(normaliseRack(input.rack, owned.spec.objects.length), endEls, owned.spec.objects);
+  const gazeEnd = onThingNow(normaliseGaze(input.gaze, owned.spec.objects.length), endEls, owned.spec.objects);
+  // The thing said as what it is (Helios Cut 4, step B5), admins only until the proof take
+  // (SET_THING_WORDS_OPEN). A take's camera moves, so a thing that needs a place is named
+  // by the side of the figure it is on at the end, never by a third of a frame.
+  const takeThingWords = access.isAdmin || SET_THING_WORDS_OPEN;
+  const endThing = (index: number) => (takeThingWords ? thingPhrase(index, endShown, endEls, { camera: null, mark: endMark }) : null);
   fd.set(
     "prompt",
     buildSetTakePrompt(typeof input.direction === "string" ? input.direction : "", {
@@ -1596,10 +1615,9 @@ async function takeWork(
       // Against the set as the beat ENDS (movers.ts): a rack or an eye-line
       // names a thing by where it stands, and a thing that drove away stands
       // somewhere else by the last frame.
-      // A thing's key, when the rack or eye-line has one, is read against the saved set first (object-ref.ts, step A9).
-      rack: rackWords(onThingNow(normaliseRack(input.rack, owned.spec.objects.length), endEls, owned.spec.objects), endShown),
+      rack: rackWords(rackEnd, endShown, rackEnd?.to === "object" ? endThing(rackEnd.index) : null),
       // "The car" by name only where the pose words are open (Cut 2, step 9), as the end still says it.
-      gaze: gazeWords(onThingNow(normaliseGaze(input.gaze, owned.spec.objects.length), endEls, owned.spec.objects), endShown, endMark, "take", access.isAdmin || SET_POSE_WORDS_OPEN ? endEls : undefined),
+      gaze: gazeWords(gazeEnd, endShown, endMark, "take", access.isAdmin || SET_POSE_WORDS_OPEN ? endEls : undefined, gazeEnd?.at === "object" ? endThing(gazeEnd.index) : null),
     }),
   );
   // The words are already what the video model should read: the drafter

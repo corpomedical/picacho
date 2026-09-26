@@ -7,6 +7,7 @@
 import { SUNRISE, SUNSET, sunAt } from "./time-of-day";
 import { RIG_TIME_STEP } from "./rig";
 import { LAYOUT_ELEMENT_KEY_RE, SET_SHAPES, type SetObject, type SetSpec } from "./set-spec";
+import { THING_PHRASE_PATTERN } from "./thing-words";
 
 /** The sun's direction at an hour, unit length, in the set's own axes (time-of-day.ts sunLight places it the same way). */
 export function sunDirection(hour: number): [number, number, number] {
@@ -105,15 +106,20 @@ const escapeRe = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  */
 export const RACK_SENTENCE = new RegExp(
   `${escapeRe(RACK_BACK_WORDS)}` +
-    `|During the move the focus racks from the person to the (?:${SET_SHAPES.join("|")}) ${RACK_N} × ${RACK_N} × ${RACK_N} m: the person falls soft as it comes sharp\\.`,
+    `|During the move the focus racks from the person to (?:the (?:${SET_SHAPES.join("|")}) ${RACK_N} × ${RACK_N} × ${RACK_N} m|${THING_PHRASE_PATTERN}): the person falls soft as it comes sharp\\.`,
   "g",
 );
 
-/** The rack's words for the take: the focus travels during the move, from the person to the thing, or back to the person. */
-export function rackWords(rack: FilmRack | null, spec: Pick<SetSpec, "objects">): string {
+/**
+ * The rack's words for the take: the focus travels during the move, from
+ * the person to the thing, or back to the person. `named` (Helios Cut 4,
+ * step B5), when given, is the thing in Picacho's closed words
+ * (thing-phrase.ts): "…to the red car: the person falls soft…".
+ */
+export function rackWords(rack: FilmRack | null, spec: Pick<SetSpec, "objects">, named?: string | null): string {
   if (!rack) return "";
   if (rack.to === "figure") return RACK_BACK_WORDS;
   const o = spec.objects[rack.index];
   if (!o) return "";
-  return `During the move the focus racks from the person to ${thingWords(o)}: the person falls soft as it comes sharp.`;
+  return `During the move the focus racks from the person to ${named || thingWords(o)}: the person falls soft as it comes sharp.`;
 }

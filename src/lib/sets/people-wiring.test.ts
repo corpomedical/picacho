@@ -26,8 +26,8 @@ describe("the eye-line", () => {
 
   it("rides the still from the saved arrangement and the take from the beat, in Picacho's words, stripped before the brand check", () => {
     // "The car" by name only where the pose words are open (Cut 2, step 9, set-shot-prompt.ts SET_POSE_WORDS_OPEN).
-    expect(actions).toContain('gaze: layout ? gazeWords(onThingNow(layout.gaze, els, owned.spec.objects), shown, layout.mark, "still", poseWords ? els : undefined) : "",');
-    expect(actions).toContain('gaze: gazeWords(onThingNow(normaliseGaze(input.gaze, owned.spec.objects.length), endEls, owned.spec.objects), endShown, endMark, "take", access.isAdmin || SET_POSE_WORDS_OPEN ? endEls : undefined),');
+    expect(actions).toContain('gaze: layout ? gazeWords(gazeNow, shown, layout.mark, "still", poseWords ? els : undefined, gazeThing) : "",');
+    expect(actions).toContain('gaze: gazeWords(gazeEnd, endShown, endMark, "take", access.isAdmin || SET_POSE_WORDS_OPEN ? endEls : undefined, gazeEnd?.at === "object" ? endThing(gazeEnd.index) : null),');
     expect(view).toContain("gaze: beat.gaze,");
     expect(prompt).toContain("input.gaze ?? \"\",");
     expect(prompt).toContain("(?:By the end of the shot they|They) look ");

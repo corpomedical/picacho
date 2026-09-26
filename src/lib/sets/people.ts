@@ -87,7 +87,11 @@ export function sideOf(mark: { x: number; z: number; facingDeg: number }, point:
  * "By the end of the shot they look" for a take. Empty with no gaze, or a
  * thing the set no longer has. `els`, the set's things, lets a look at the
  * only car say "the car" (thing above); without it, the words are as they
- * always were.
+ * always were. `named` (Helios Cut 4, step B5), when given, is the thing
+ * in Picacho's closed words, built outside this module (thing-phrase.ts,
+ * critic item 6): "They look at the red car, their eyes on it." Only
+ * thing-phrase.ts's own words ever come in here (set-shot-prompt.ts
+ * SET_SHOT_GAZE_SENTENCE matches exactly those).
  */
 export function gazeWords(
   gaze: Gaze | null,
@@ -95,13 +99,14 @@ export function gazeWords(
   mark: { x: number; z: number; facingDeg: number },
   lead: "still" | "take" = "still",
   els?: NamedThings,
+  named?: string | null,
 ): string {
   if (!gaze) return "";
   const open = lead === "take" ? "By the end of the shot they look" : "They look";
   if (gaze.at === "camera") return `${open} straight into the camera, eyes to the lens.`;
   if (gaze.at === "object") {
     const o = spec.objects[gaze.index];
-    return o ? `${open} at ${thing(o, gaze.index, els)}, their eyes on it.` : "";
+    return o ? `${open} at ${named || thing(o, gaze.index, els)}, their eyes on it.` : "";
   }
   const d = r1(Math.hypot(gaze.x - mark.x, gaze.z - mark.z));
   const side = sideOf(mark, gaze);

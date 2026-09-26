@@ -80,6 +80,18 @@ describe("the eye-line on a car", () => {
     expect(gazeWords({ at: "object", index: block }, spec, mark, "take", els)).toBe("By the end of the shot they look at the car, their eyes on it.");
   });
 
+  // Helios Cut 4, step B5: the thing in Picacho's closed words, built outside this module (thing-phrase.ts) and handed in.
+  it("says a phrase it is handed in place of the block, and nothing else changes", () => {
+    expect(gazeWords({ at: "object", index: block }, spec, mark, "still", els, "the red car")).toBe("They look at the red car, their eyes on it.");
+    expect(gazeWords({ at: "object", index: block }, spec, mark, "take", undefined, "the red car to their left")).toBe("By the end of the shot they look at the red car to their left, their eyes on it.");
+    // No phrase, or an empty one: the words it always said.
+    expect(gazeWords({ at: "object", index: block }, spec, mark, "still", els, null)).toBe("They look at the car, their eyes on it.");
+    expect(gazeWords({ at: "object", index: block }, spec, mark, "still", undefined, "")).toBe(geometry);
+    // A phrase never reaches a look at the camera or a point.
+    expect(gazeWords({ at: "camera" }, spec, mark, "still", els, "the red car")).toBe("They look straight into the camera, eyes to the lens.");
+    expect(gazeWords({ at: "object", index: 999 }, spec, mark, "still", els, "the red car")).toBe("");
+  });
+
   it("keeps the geometry without the set's things handed in, as every still did", () => {
     expect(gazeWords({ at: "object", index: block }, spec, mark)).toBe(geometry);
   });

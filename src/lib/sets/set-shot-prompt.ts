@@ -36,6 +36,7 @@ import { RIG_BLADES, bladesWords } from "./furniture";
 import { VEHICLE_SENTENCE } from "./vehicles";
 import { ELEMENT_NAMING_SENTENCE } from "./elements";
 import { TIME_OF_DAY_SENTENCE } from "./time-of-day";
+import { THING_PHRASE_PATTERN } from "./thing-words";
 
 const DEG = Math.PI / 180;
 
@@ -169,6 +170,18 @@ const RENDER_PREFIX = "Render the location photorealistically, as it really look
 // other account's still reads exactly as it did (actions.ts shootStill).
 export const SET_POSE_WORDS_OPEN = false;
 
+/**
+ * A thing an eye-line or a focus pull is on, said as what it is (Helios
+ * Cut 4, step B5, 2026-09-26; the owner's decision D6): "the red car",
+ * and where two share a kind and a colour, "the red car at the right of the
+ * frame, nearest the camera" (thing-phrase.ts), instead of the size of the
+ * block the menu stored. It changes a paid still's and a take's words, so
+ * it is admins only until 2 proof stills and 1 rack take (proof P2) and
+ * the owner's yes; then this flips in its own commit. With it false, every
+ * other account's words are exactly as they were (actions.ts).
+ */
+export const SET_THING_WORDS_OPEN = false;
+
 /** The verb the figure sentence says for each pose: the person does what the grey figure does, where it does it. */
 export const POSE_VERB: Record<StandPose, string> = { stand: "stands", sit: "sits", walk: "walks", lean: "leans" };
 const GAZE_SENTENCE = "Wherever they are looking, make it unmistakable: turn the head and eyes to it.";
@@ -264,6 +277,8 @@ export const SET_SHOT_GAZE_SENTENCE = new RegExp(
     `|at the (?:${SET_SHAPES.join("|")}) ${GAZE_N} × ${GAZE_N} × ${GAZE_N} m, their eyes on it` +
     // The set's only car or vehicle, by name (Cut 2, step 9): people.ts thing().
     "|at the (?:car|vehicle), their eyes on it" +
+    // A thing in Picacho's closed words (Helios Cut 4, step B5): thing-words.ts, every form and no other.
+    `|at ${THING_PHRASE_PATTERN}, their eyes on it` +
     `|(?:straight ahead of them|back over their shoulder|off to their (?:left|right)), at something ${GAZE_N} m away, out of the frame` +
     ")\\.",
   "g",

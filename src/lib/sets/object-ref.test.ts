@@ -317,8 +317,12 @@ describe("the page and the server", () => {
   });
 
   it("the server reads the key against the saved set for a still's eye-line and a take's rack and eye-line", () => {
-    expect(actions).toContain("gazeWords(onThingNow(layout.gaze, els, owned.spec.objects), shown,");
-    expect(actions).toContain("rackWords(onThingNow(normaliseRack(input.rack, owned.spec.objects.length), endEls, owned.spec.objects), endShown)");
-    expect(actions).toContain("gazeWords(onThingNow(normaliseGaze(input.gaze, owned.spec.objects.length), endEls, owned.spec.objects), endShown,");
+    // Read once and handed to the words (Helios Cut 4, step B5 names the thing from the same ref).
+    expect(actions).toContain("const gazeNow = layout ? onThingNow(layout.gaze, els, owned.spec.objects) : null;");
+    expect(actions).toContain("gazeWords(gazeNow, shown,");
+    expect(actions).toContain("const rackEnd = onThingNow(normaliseRack(input.rack, owned.spec.objects.length), endEls, owned.spec.objects);");
+    expect(actions).toContain("rackWords(rackEnd, endShown,");
+    expect(actions).toContain("const gazeEnd = onThingNow(normaliseGaze(input.gaze, owned.spec.objects.length), endEls, owned.spec.objects);");
+    expect(actions).toContain("gazeWords(gazeEnd, endShown,");
   });
 });

@@ -38,6 +38,7 @@ import { describeVehicle, isTyre, VEHICLE_POSE_PATTERN, type Vehicle } from "./v
 import { textKey } from "./film";
 import { colourWord, type ColourId } from "./colour-words";
 import { fill } from "./fill";
+import { CAMERA_RANK_WORDS, FRAME_THIRD_WORDS } from "./thing-words";
 
 /** The person's own element: the stand-in, played by a character (never a loose photo). */
 export const FIGURE_KEY = "figure";
@@ -517,8 +518,9 @@ export type SheetPlan =
 export const ALIKE_HEIGHT_M = 0.2;
 export const ALIKE_DEPTH_RATIO = 1.15;
 
-const THIRD = { left: "at the left of the frame", middle: "in the middle of the frame", right: "at the right of the frame" } as const;
-const RANK = ["nearest the camera", "second from the camera", "third from the camera", "fourth from the camera", "fifth from the camera", "sixth from the camera"] as const;
+// The sheets' place words, shared with a still's words for a thing since Helios Cut 4, step B5 (thing-words.ts): the same words, byte for byte.
+const THIRD = FRAME_THIRD_WORDS;
+const RANK = CAMERA_RANK_WORDS;
 
 /**
  * Which things' sheets ride a still, in sheet order, and the sentence that
