@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.124.0",
+    build: 163,
+    date: "2026-09-26",
+    title: "Aly speaks each answer in one go, on ElevenLabs' conversational voice",
+    items: [
+      "Aly now says each answer as one continuous take on ElevenLabs' newest conversational model, instead of one recording per sentence. There are no seams where her tone can change, and she starts talking about a quarter of a second after the answer begins, where it used to take 1.2 to 1.8 seconds. It won a blind listening test against the old voice, 7 answers to 5.",
+      "Talking over her, pausing and resuming work as before, and when you cut in, the app still knows exactly how much you heard.",
+      "Her voice is warmed up when you open the lamp with read-aloud on, or start hands-free, so the first answer doesn't wait while ElevenLabs loads it (that took 6 to 11 seconds in tests).",
+      "If the new voice can't start, fails part-way or goes quiet, the rest of the answer is spoken the old way from the sentence it stopped in, and you're only charged for what was spoken. Safari and iPhones, which can't play the stream yet, and the old \"Rachel\" voice keep the old way.",
+      "The price is unchanged at $0.05 per 1,000 characters, now on Picacho's ElevenLabs account. The privacy policy says her replies go to ElevenLabs directly or through fal, in all four languages.",
+    ],
+  },
+  {
     version: "1.123.0",
     build: 162,
     date: "2026-09-26",
