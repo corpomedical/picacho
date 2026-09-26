@@ -128,7 +128,11 @@ describe("the first Shoot screen", () => {
     expect(camera).toBeGreaterThan(-1);
     // Look, then Rig through "Frame the figure", then Match and Compare, each behind the lean test.
     expect(chips()).toMatch(/\{!leanChips && \(\s*<div className=\{chipAnchor\}>\s*<button\s+type="button"\s+onClick=\{\(\) => toggleMenu\("look"\)\}/);
-    const rest = chips().slice(chips().indexOf("{!leanChips && (\n        <>"), chips().indexOf("        </>\n        )}"));
+    const restAt = chips().indexOf("{!leanChips && (\n        <>");
+    const restEnd = chips().indexOf("\n        </>\n        )}", restAt);
+    expect(restAt).toBeGreaterThan(-1);
+    expect(restEnd).toBeGreaterThan(restAt);
+    const rest = chips().slice(restAt, restEnd);
     for (const hidden of ["{rigChipLabel}", 'toggleMenu("figure")', 'toggleMenu("pose")', 'toggleMenu("gaze")', "turn(-TURN_STEP)", "turn(TURN_STEP)", "{s.frameFigure}"]) {
       expect(rest, hidden).toContain(hidden);
     }
@@ -136,7 +140,7 @@ describe("the first Shoot screen", () => {
     expect(chips()).toContain("{matchOn && !leanChips && (");
     expect(chips()).toContain("{sourcePhotoUrl && !leanChips && (");
     // Undo stays outside.
-    expect(chips().indexOf("{stageUndoCount > 0 && (")).toBeGreaterThan(chips().indexOf("        </>\n        )}"));
+    expect(chips().indexOf("{stageUndoCount > 0 && (")).toBeGreaterThan(restEnd);
   });
 
   it("keeps the camera department in the Shoot panel for Advanced", () => {

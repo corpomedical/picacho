@@ -246,6 +246,58 @@ describe("the step, kept for the tab", () => {
   });
 });
 
+// Aspect and Shot size (Helios Cut 3, step 16): the new layout's Shoot opens
+// on the frame's shape and how close the camera is, lean or not.
+describe("the shape and the size first", () => {
+  const chips = () => fnOf(view, "  function setupChipsView(inPanel: boolean) {", "\n  const chatHeader = (");
+
+  it("draws both, first in the row, in the new layout's Shoot only; Classic's row is as it was", () => {
+    expect(chips()).toContain('const shapeChips = (simpleOn || simplePhone) && studioMode === "shoot";');
+    const row = chips().slice(chips().indexOf("data-setup-row"));
+    const aspect = row.indexOf("data-aspect-chip");
+    const size = row.indexOf("data-size-chip");
+    const who = row.indexOf('onClick={() => toggleMenu("who")}');
+    expect(row.indexOf("{shapeChips && (")).toBeGreaterThan(-1);
+    expect(row.indexOf("{shapeChips && (")).toBeLessThan(aspect);
+    expect(aspect).toBeLessThan(size);
+    expect(size).toBeLessThan(who);
+    expect(view).toContain('type MenuId = "camera" | "figure" | "pose" | "gaze" | "look" | "history" | "mode" | "who" | "filmStart" | "engine" | "format" | "size";');
+  });
+
+  it("shows the frame's shape and picks one from every format, named for readers", () => {
+    const aspect = fnOf(chips(), "data-aspect-chip", "{/* Shot size");
+    expect(chips()).toContain("aria-label={`${s.rig.frame} · ${s.rig.formats[rig.format]}`}");
+    expect(aspect).toContain("{s.rig.formats[rig.format]}");
+    expect(aspect).toContain("{RIG_FORMAT_ORDER.map((f) => (");
+    expect(aspect).toContain("setRig((r) => ({ ...r, format: f }));");
+  });
+
+  it("holds the shape while a take is armed, and says why, so a take is never paid for between two shapes", () => {
+    expect(chips()).toContain("title={takeStart ? sw.aspectHeld : s.rig.frame}");
+    expect(chips()).toContain("disabled={!ready || Boolean(takeStart)}");
+    expect(chips()).toContain('{menu === "format" && !takeStart && (');
+    for (const m of [en, es, pt, itMsgs]) expect(m.sets.simple.aspectHeld).toBeTruthy();
+  });
+
+  it("frames close-up to wide the way the words do, free and local, and always says Shot size", () => {
+    const size = fnOf(chips(), "data-size-chip", "</>");
+    expect(size).toContain("{sw.shotSize}");
+    expect(size).toContain("{SHOT_SIZES.map((size) => (");
+    expect(size).toContain(
+      'applyWords({ intent: "frame", direction: "", place: null, cameraId: null, side: null, size, height: null, tiltDeg: null, lensMm: null, markId: null, facing: null });',
+    );
+    expect(size).toContain("active={false}");
+    expect(size).toContain("{s.reply.chips.sizes[size]}");
+    // Nothing that spends.
+    for (const call of ["shoot(", "take(", "pressShoot(", "send("]) expect(size, call).not.toContain(call);
+  });
+
+  it("names them in the Shoot step's line, in every language", () => {
+    expect(en.sets.simple.shotHint).toContain("shape");
+    expect(en.sets.simple.shotHint).toContain("shot size");
+  });
+});
+
 describe("the new layout on a phone", () => {
   it("keeps the same steps; in Set the list is a strip over the stage's foot and the setup chips step aside", () => {
     expect(view).toContain("const simplePhone = simple && !wide && simpleLayout;");

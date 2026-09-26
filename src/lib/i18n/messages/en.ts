@@ -2749,8 +2749,8 @@ const en = {
       /** Photos on nothing, as a row of the list (the cast strip's "{n} photos on nothing" under it). */
       loose: "Loose photos",
       shotTitle: "The shot",
-      /** Names only what the Shoot step always shows (Helios Cut 3, step 15b): the look, the mark, pose and gaze are Advanced's. */
-      shotHint: "Who is in it and which camera. Move the camera on the stage.",
+      /** Names only what the Shoot step always shows (Helios Cut 3, steps 15b and 16): the look, the mark, pose and gaze are Advanced's. */
+      shotHint: "The frame's shape, the shot size, who is in it and which camera. Move the camera on the stage.",
       setTitle: "Set the scene",
       setHint: "Pick a thing on the left to give it photos or a model, or ask Astra to change the place.",
       setHintPhotos: "Pick a thing on the left to give it photos, or ask Astra to change the place.",
@@ -2759,6 +2759,10 @@ const en = {
       advanced: "Advanced",
       /** Said for screen readers beside the dot on Advanced while it is off and a hidden setting still rides every still. */
       advancedInUse: "Advanced settings are in use",
+      /** The Shoot step's second chip (Helios Cut 3, step 16): close-up to wide, the way the words frame it. */
+      shotSize: "Shot size",
+      /** The shape chip's hint while a take is armed: the shape is held, so a take is never paid for between two frames of different shapes. */
+      aspectHeld: "A take keeps the shape of the still it starts on. Cancel the take to change the shape.",
     },
     cast: {
       strip: "Cast and props",

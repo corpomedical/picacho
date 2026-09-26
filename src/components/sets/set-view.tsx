@@ -81,7 +81,7 @@ import {
 import { oversizedSeating } from "@/lib/sets/human-scale";
 import { checkFilmCredits, readTakes, saveSetFilm } from "@/lib/sets/film-actions";
 import { checkShotRig, saveSetRig } from "@/lib/sets/rig-actions";
-import { RIG_PALETTES, depthOfField, exposureGain, findLook, focalMm, formatFrame, letterbox, normaliseSetRig, rigAdvancedInUse, sensorCocMm, sensorHeightMm, shutterFraction, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
+import { RIG_FORMAT_ORDER, RIG_PALETTES, depthOfField, exposureGain, findLook, focalMm, formatFrame, letterbox, normaliseSetRig, rigAdvancedInUse, sensorCocMm, sensorHeightMm, shutterFraction, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
 import { bearingDeg } from "@/lib/sets/light-schemes";
 import { stagedSpec, timeLabel, sunAt } from "@/lib/sets/time-of-day";
 import { filterCommands, rigCommandIds, rigPatchFor, shootCommands, stepIndex, TIME_PRESETS, type ShootCommandContext } from "@/lib/sets/commands";
@@ -109,7 +109,7 @@ import {
   THING_MODEL_SAVE_FAILED,
 } from "@/lib/sets/messages";
 import { preparePhoto } from "@/lib/sets/photo-client";
-import { facingFor, hasCameraWords, SHOT_WORDS_MAX_CHARS, wordsToMatch, type FigureFacing, type ShotWords } from "@/lib/sets/shot-words";
+import { facingFor, hasCameraWords, SHOT_SIZES, SHOT_WORDS_MAX_CHARS, wordsToMatch, type FigureFacing, type ShotWords } from "@/lib/sets/shot-words";
 import type { CantCode, FrameX, ReaderAliases, ReaderStep, ReaderWhy, ShotReading } from "@/lib/sets/shot-reading";
 import type { EditFrame } from "@/lib/sets/set-edit-prompt";
 import { READER_CONTEXT_MAX, cameraSideOf, type ReaderNow } from "@/lib/sets/reader-context";
@@ -625,7 +625,7 @@ const sourceOf = (f: TakeFrames): TakeSource => ({ start: f.start, end: f.end, c
 /** A take's frames as the retry sends them: what it was rendered from (SetShot.takeFrom) and the words kept with it. */
 const framesOf = (source: TakeSource, shot: SetShot): TakeFrames => ({ ...source, words: shot.words ?? undefined });
 
-type MenuId = "camera" | "figure" | "pose" | "gaze" | "look" | "history" | "mode" | "who" | "filmStart" | "engine";
+type MenuId = "camera" | "figure" | "pose" | "gaze" | "look" | "history" | "mode" | "who" | "filmStart" | "engine" | "format" | "size";
 
 const ACCENT = "#c8923a";
 const TURN_STEP = 30;
@@ -9195,9 +9195,76 @@ export function SetView({
     // turns, "Frame the figure", Match and Compare are Advanced's; whatever
     // they are set to still rides the still. Film's chips are unchanged.
     const leanChips = lean && studioMode === "shoot";
+    // The frame's shape and how close the camera is come first in the new
+    // layout's Shoot, lean or not (Helios Cut 3, step 16). Classic's row is
+    // as it was: its shape is on the Rig chip.
+    const shapeChips = (simpleOn || simplePhone) && studioMode === "shoot";
     return (
     <div ref={inPanel ? undefined : chipsRef} data-setup-chips className={inPanel ? "flex flex-wrap items-center gap-2" : `absolute left-3.5 right-3.5 top-3.5 z-20 ${chipsInRow ? "" : "flex flex-wrap items-center gap-2"}`}>
       <div data-setup-row className={chipsInRow ? "flex items-center gap-2 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" : "contents"}>
+        {shapeChips && (
+          <>
+            {/* Aspect: the frame's shape, free and on the stage at once; the price does not depend on it (take.ts).
+                A take keeps the shape of the still it starts on, so while one is armed the shape is held, and says
+                why, rather than let a take be paid for between two frames of different shapes. */}
+            <div className={chipAnchor}>
+              <button
+                type="button"
+                onClick={() => toggleMenu("format")}
+                aria-haspopup="listbox"
+                aria-expanded={menu === "format"}
+                aria-label={`${s.rig.frame} · ${s.rig.formats[rig.format]}`}
+                title={takeStart ? sw.aspectHeld : s.rig.frame}
+                disabled={!ready || Boolean(takeStart)}
+                className={DCHIP}
+                data-aspect-chip
+              >
+                {s.rig.formats[rig.format]}
+                <Chevron />
+              </button>
+              {menu === "format" && !takeStart && (
+                <div role="listbox" aria-label={s.rig.frame} className={DMENU}>
+                  {RIG_FORMAT_ORDER.map((f) => (
+                    <Option
+                      key={f}
+                      active={rig.format === f}
+                      onPick={() => {
+                        setRig((r) => ({ ...r, format: f }));
+                        setMenu(null);
+                      }}
+                    >
+                      {s.rig.formats[f]}
+                    </Option>
+                  ))}
+                </div>
+              )}
+            </div>
+            {/* Shot size: frames the figure close up to wide, the way the words do, free and local. The chip
+                always says "Shot size": a hand on the camera could make any size it named untrue. */}
+            <div className={chipAnchor}>
+              <button type="button" onClick={() => toggleMenu("size")} aria-haspopup="listbox" aria-expanded={menu === "size"} disabled={!ready} className={DCHIP} data-size-chip>
+                {sw.shotSize}
+                <Chevron />
+              </button>
+              {menu === "size" && (
+                <div role="listbox" aria-label={sw.shotSize} className={DMENU}>
+                  {SHOT_SIZES.map((size) => (
+                    <Option
+                      key={size}
+                      active={false}
+                      onPick={() => {
+                        applyWords({ intent: "frame", direction: "", place: null, cameraId: null, side: null, size, height: null, tiltDeg: null, lensMm: null, markId: null, facing: null });
+                        setMenu(null);
+                      }}
+                    >
+                      {s.reply.chips.sizes[size]}
+                    </Option>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
         <div className={chipAnchor}>
           <button
             type="button"

@@ -40,8 +40,9 @@ describe("the setup chips in a phone's Film", () => {
 
   it("hang every menu from the row there, so the scroller never cuts one off", () => {
     expect(view).toContain('const chipAnchor = chipsInRow ? "flex" : "relative";');
-    // Six chips open a menu (who, look, camera, mark, pose, gaze); none keeps a box of its own in the row.
-    expect(chipsBlock.split("<div className={chipAnchor}>").length - 1).toBe(6);
+    // Eight chips open a menu (the new layout's shape and shot size, Helios Cut 3, step 16; who, look,
+    // camera, mark, pose, gaze); none keeps a box of its own in the row.
+    expect(chipsBlock.split("<div className={chipAnchor}>").length - 1).toBe(8);
     expect(chipsBlock).not.toContain('<div className="relative">');
     // Every one of them opens downward, under the row.
     expect(chipsBlock).not.toContain("DMENU_UP");
