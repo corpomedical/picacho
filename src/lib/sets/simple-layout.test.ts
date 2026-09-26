@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { ThingsPanel, ThingsStrip, rowLine, type PanelRow } from "../../components/sets/things-panel";
 import en from "../i18n/messages/en";
 import es from "../i18n/messages/es";
 import pt from "../i18n/messages/pt";
@@ -19,6 +22,8 @@ const frame = read("../../components/sets/studio-frame.tsx");
 const config = read("set-config.ts");
 const data = read("data.ts");
 const setPage = read("../../app/app/sets/[id]/page.tsx");
+
+const formatN = (msg: string, n: number) => msg.replace("{n}", String(n));
 
 const fnOf = (source: string, head: string, next: string) => {
   const a = source.indexOf(head);
@@ -147,6 +152,65 @@ describe("the conversation in every step", () => {
   it("takes ⌘K's camera to Shoot and its conversation to Set", () => {
     expect(view).toMatch(/setRigOpen: \(open\) => \{[\s\S]{0,160}if \(simpleOn && open\) setSimpleStep\("shoot"\);/);
     expect(view).toMatch(/setChatOpen: \(open\) => \{[\s\S]{0,160}if \(simpleOn && open\) setSimpleStep\("set"\);/);
+  });
+});
+
+// The cast strip's three facts, in the list (Helios Cut 3, step 14): the new
+// layout never draws the strip, so its list says which things' photos ride
+// the next still and why the others don't, when the character needs the
+// person's answer, and what photos are on nothing, with the strip's own
+// menu to put them back.
+describe("the cast strip's facts in the list", () => {
+  const w = en.sets.simple;
+  const c = en.sets.cast;
+  const person: PanelRow = { key: "__figure", name: "Eva", thumb: null, round: true, state: "person" };
+  const car: PanelRow = { key: "car", name: "Car", thumb: null, state: "photos", photos: 2, word: c.stRides, rides: true, title: "sheet 1 of 1" };
+  const bike: PanelRow = { key: "bike", name: "Bike", thumb: null, state: "photos", photos: 1, word: c.stOut, rides: false };
+  const loose = { loose: [{ refId: "r1", url: "https://example.test/l.jpg" }] as never, targets: [{ key: "car", name: "Car" }], onPutOn: () => {}, onRemoveLoose: () => {} };
+
+  it("says whether a thing's photos ride, in the strip's words and ochre", () => {
+    expect(rowLine(car, w, c)).toEqual({ text: `${formatN(w.rowPhotos, 2)} · ${c.stRides}`, tone: "text-[#f0cda6]" });
+    expect(rowLine(bike, w, c)).toEqual({ text: `${w.rowOnePhoto} · ${c.stOut}`, tone: "text-[#c6c9d1]" });
+    // No photos, no word: the line is what it was.
+    expect(rowLine({ key: "box", name: "Box", thumb: null, state: "blocks" }, w, c)).toEqual({ text: w.rowBlocks, tone: "text-[#9aa0ad]" });
+    expect(view).toContain("word: chip?.word,");
+    expect(view).toContain('rides: chip?.state === "rides",');
+    expect(view).toContain("const castChipOf = new Map(castChips.map((ch) => [ch.key, ch]));");
+  });
+
+  it("says when the character needs the person's answer", () => {
+    expect(rowLine({ ...person, state: "answer" }, w, c)).toEqual({ text: c.needsAnswer, tone: "text-[#e0a468]" });
+    expect(rowLine(person, w, c).text).toBe(w.rowPlays);
+    expect(view).toContain('state: likenessNeeded(character.id) ? "answer" : "person",');
+  });
+
+  it("offers photos on nothing a way home, with the strip's own menu, in the list and on the phone's strip", () => {
+    const panelHtml = renderToStaticMarkup(
+      createElement(ThingsPanel, { people: [person], things: [car], selected: null, onOpen: () => {}, onPlace: () => {}, placeLine: w.placeText, models: false, loose, w, c }),
+    );
+    expect(panelHtml).toContain("data-cast-loose");
+    expect(panelHtml).toContain(w.loose);
+    expect(panelHtml).toContain(c.looseOne);
+    expect(panelHtml).toContain('title="sheet 1 of 1"');
+    const stripHtml = renderToStaticMarkup(createElement(ThingsStrip, { rows: [person, car], selected: null, onOpen: () => {}, loose, w, c }));
+    expect(stripHtml).toContain("data-cast-loose");
+    expect(stripHtml).toContain(`${formatN(w.rowPhotos, 2)} · ${c.stRides}`);
+    // With nothing loose, nothing is added.
+    const none = renderToStaticMarkup(createElement(ThingsStrip, { rows: [person], selected: null, onOpen: () => {}, loose: { ...loose, loose: [] }, w, c }));
+    expect(none).not.toContain("data-cast-loose");
+    expect(none.startsWith("<nav")).toBe(true);
+    // The list scrolls, so its menu opens downward; the strip's opens upward, outside the strip's own scroll.
+    expect(panel).toContain("menuClassName={LOOSE_MENU_BELOW}");
+    expect(view).toContain("loose={panelLoose}");
+    expect(view).toContain("loose: resolved.loose.map((l) => l.photo),");
+  });
+
+  it("keeps Classic's strip drawing the same popover, kept in cast-strip.tsx", () => {
+    const strip = read("../../components/sets/cast-strip.tsx");
+    expect(strip).toContain("export function LoosePhotos(");
+    expect(strip).toContain("{loose.length > 0 && <LoosePhotos loose={loose} targets={targets} onPutOn={onPutOn} onRemoveLoose={onRemoveLoose} c={c} />}");
+    expect(strip).toContain("buttonClassName = `${CHIP} border-dashed border-[rgba(214,217,224,0.4)] text-[#d6d9e0]`,");
+    expect(strip).toContain("menuClassName = MENU,");
   });
 });
 

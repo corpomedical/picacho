@@ -2744,6 +2744,8 @@ const en = {
       rowBlocks: "Blocks",
       rowPlays: "Plays the figure",
       rowNobody: "Nobody cast",
+      /** Photos on nothing, as a row of the list (the cast strip's "{n} photos on nothing" under it). */
+      loose: "Loose photos",
       shotTitle: "The shot",
       shotHint: "Who is in it, the look, the camera and where they stand. Move the camera on the stage.",
       setTitle: "Set the scene",

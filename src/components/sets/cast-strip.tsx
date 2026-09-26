@@ -9,8 +9,8 @@
 // row, so on a phone the card's Move buttons do it. Literal colours only
 // (the Screening theme turns Tailwind's `white` near-black, 42b64bc).
 
-import { useRef, useState } from "react";
-import { formatMsg } from "@/lib/i18n/format";
+import { useRef, useState, type ReactNode } from "react";
+import { formatMsg } from "../../lib/i18n/format";
 import type { Messages } from "@/lib/i18n/messages/en";
 import type { ElementPhoto } from "@/lib/sets/elements";
 
@@ -35,6 +35,97 @@ const MENU =
 /** How far a mouse or pen travels on a chip before it is a drag, not a click (stage-pick.ts's mouse slop, a little more). */
 const DRAG_SLOP_PX = 6;
 const ITEM = "flex cursor-pointer items-center gap-2 rounded-[8px] px-2.5 py-1.5 text-left text-[12px] text-[#c6c9d1] hover:bg-[rgba(255,255,255,0.05)] hover:text-[#ecedf1]";
+/** The loose photos' menu opening downward: for a list that scrolls, where one opening upward would be cut off at its top. */
+export const LOOSE_MENU_BELOW = MENU.replace("bottom-full", "top-full").replace("mb-2", "mt-2");
+
+/**
+ * Photos on nothing (their thing changed or left the set, or they came from
+ * before R1): the button that counts them and the menu that puts each back
+ * on a thing or removes it. The strip draws it as its dashed chip; the new
+ * layout's list and phone strip (things-panel.tsx, Helios Cut 3, step 14)
+ * draw their own button round the same menu.
+ */
+export function LoosePhotos({
+  loose,
+  targets,
+  onPutOn,
+  onRemoveLoose,
+  c,
+  className = "relative flex-none",
+  buttonClassName = `${CHIP} border-dashed border-[rgba(214,217,224,0.4)] text-[#d6d9e0]`,
+  menuClassName = MENU,
+  children,
+}: {
+  loose: readonly ElementPhoto[];
+  /** The things a loose photo can be put on. */
+  targets: readonly { key: string; name: string }[];
+  onPutOn: (refId: string, key: string) => void;
+  onRemoveLoose: (refId: string) => void;
+  c: Cast;
+  className?: string;
+  buttonClassName?: string;
+  menuClassName?: string;
+  /** What the button shows; the strip's photo and count when absent. */
+  children?: ReactNode;
+}) {
+  const [looseOpen, setLooseOpen] = useState(false);
+  if (loose.length === 0) return null;
+  return (
+    <div className={className}>
+      <button
+        type="button"
+        onClick={() => setLooseOpen((v) => !v)}
+        aria-expanded={looseOpen}
+        title={c.stLooseLong}
+        data-cast-loose
+        className={buttonClassName}
+      >
+        {children ?? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element -- a private media thumbnail, like the filmstrip's */}
+            <img src={loose[0].url} alt="" className="h-5 w-5 flex-none rounded-[5px] object-cover opacity-70" />
+            {loose.length === 1 ? c.looseOne : formatMsg(c.looseN, { n: loose.length })}
+          </>
+        )}
+      </button>
+      {looseOpen && (
+        <div role="menu" aria-label={c.stLoose} className={menuClassName}>
+          {loose.map((p) => (
+            <div key={p.refId} className="flex flex-col gap-0.5 border-b border-[rgba(255,255,255,0.06)] pb-1 last:border-b-0">
+              {/* eslint-disable-next-line @next/next/no-img-element -- a private media thumbnail, like the filmstrip's */}
+              <img src={p.url} alt="" className="m-1 h-12 w-12 rounded-[6px] object-cover" />
+              {targets.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setLooseOpen(false);
+                    onPutOn(p.refId, t.key);
+                  }}
+                  className={ITEM}
+                >
+                  {formatMsg(c.putOn, { name: t.name })}
+                </button>
+              ))}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setLooseOpen(false);
+                  onRemoveLoose(p.refId);
+                }}
+                className={`${ITEM} text-[#f08c8c] hover:text-[#f5a3a3]`}
+              >
+                {c.remove}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function CastStrip({
   chips,
@@ -63,7 +154,6 @@ export function CastStrip({
   c: Cast;
   className: string;
 }) {
-  const [looseOpen, setLooseOpen] = useState(false);
   const [hintOpen, setHintOpen] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ key: string; id: number; x: number; live: boolean } | null>(null);
@@ -167,57 +257,7 @@ export function CastStrip({
           </button>
         )}
       </div>
-      {loose.length > 0 && (
-        <div className="relative flex-none">
-          <button
-            type="button"
-            onClick={() => setLooseOpen((v) => !v)}
-            aria-expanded={looseOpen}
-            title={c.stLooseLong}
-            data-cast-loose
-            className={`${CHIP} border-dashed border-[rgba(214,217,224,0.4)] text-[#d6d9e0]`}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element -- a private media thumbnail, like the filmstrip's */}
-            <img src={loose[0].url} alt="" className="h-5 w-5 flex-none rounded-[5px] object-cover opacity-70" />
-            {loose.length === 1 ? c.looseOne : formatMsg(c.looseN, { n: loose.length })}
-          </button>
-          {looseOpen && (
-            <div role="menu" aria-label={c.stLoose} className={MENU}>
-              {loose.map((p) => (
-                <div key={p.refId} className="flex flex-col gap-0.5 border-b border-[rgba(255,255,255,0.06)] pb-1 last:border-b-0">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- a private media thumbnail, like the filmstrip's */}
-                  <img src={p.url} alt="" className="m-1 h-12 w-12 rounded-[6px] object-cover" />
-                  {targets.map((t) => (
-                    <button
-                      key={t.key}
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setLooseOpen(false);
-                        onPutOn(p.refId, t.key);
-                      }}
-                      className={ITEM}
-                    >
-                      {formatMsg(c.putOn, { name: t.name })}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setLooseOpen(false);
-                      onRemoveLoose(p.refId);
-                    }}
-                    className={`${ITEM} text-[#f08c8c] hover:text-[#f5a3a3]`}
-                  >
-                    {c.remove}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {loose.length > 0 && <LoosePhotos loose={loose} targets={targets} onPutOn={onPutOn} onRemoveLoose={onRemoveLoose} c={c} />}
       {hint && hintOpen && (
         <p className="absolute bottom-full left-0 mb-2 max-w-[320px] rounded-[10px] border border-[rgba(255,255,255,0.1)] bg-[rgba(0,0,0,0.78)] px-3 py-2 text-[11.5px] leading-snug text-[#d6d9e0]">
           {c.stripAddHint}

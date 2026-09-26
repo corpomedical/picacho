@@ -2589,6 +2589,7 @@ const es = {
       rowBlocks: "Bloques",
       rowPlays: "Hace de la figura",
       rowNobody: "Nadie asignado",
+      loose: "Fotos sueltas",
       shotTitle: "La toma",
       shotHint: "Quién sale, el aspecto, la cámara y dónde está. Mueve la cámara en el escenario.",
       setTitle: "Prepara la escena",

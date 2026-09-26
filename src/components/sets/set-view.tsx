@@ -40,7 +40,7 @@ import { SceneTree, sceneNames, type SceneTarget } from "./scene-tree";
 import { Sequencer } from "./sequencer";
 import { beatAtTime, beatSpans, timeOf } from "@/lib/sets/sequencer";
 import { StatusList, StudioBar, StudioDock, StudioRail, StudioStatus, useWide, useWideAt } from "./studio-frame";
-import { ThingsPanel, ThingsStrip, type PanelRow } from "./things-panel";
+import { ThingsPanel, ThingsStrip, type LooseBundle, type PanelRow } from "./things-panel";
 import { clearMarks } from "@/lib/sets/marks";
 import { BADGE_HIT_SLOP_PX, FIGURE_TAP_WAIT_MS, TAP_SLOP_PX, badgeAt, elementForHits, isTap, type ElementHit, type StageHit, type TapStart } from "@/lib/sets/stage-pick";
 import { ELEMENT_SHEETS_PER_STILL, FIGURE_KEY, SHEET_LANES, elementPlaces, planShotSheets, resolvePhotos, setElements as elementsOf, type ElementPhoto, type SetElement, type ShotElementStatus } from "@/lib/sets/elements";
@@ -8683,10 +8683,23 @@ export function SetView({
         { id: "film", label: sw.stepFilm, on: !simpleShooting, onClick: () => studioModes.film.onClick() },
       ]
     : null;
-  /** The list's rows, for the column on a computer and the strip on a phone. */
+  /**
+   * The list's rows, for the column on a computer and the strip on a phone.
+   * They say what the cast strip says, which this layout never draws (Helios
+   * Cut 3, step 14), from the same chips: whether a thing's photos ride the
+   * next still or why not, and when the character needs the person's answer.
+   */
+  const castChipOf = new Map(castChips.map((ch) => [ch.key, ch]));
   const panelPeople: PanelRow[] = [
     character
-      ? { key: FIGURE_KEY, name: character.name, thumb: character.thumbUrl, round: true, state: "person" }
+      ? {
+          key: FIGURE_KEY,
+          name: character.name,
+          thumb: character.thumbUrl,
+          round: true,
+          state: likenessNeeded(character.id) ? "answer" : "person",
+          title: castChipOf.get(FIGURE_KEY)?.title,
+        }
       : { key: FIGURE_KEY, name: cast.person, thumb: null, round: true, state: "nobody" },
   ];
   const panelThings: PanelRow[] = els.map((e): PanelRow => {
@@ -8696,8 +8709,25 @@ export function SetView({
     const loaded = thingModelState[e.key];
     const state = model && loaded !== "failed" ? (loaded === "ready" ? "model" : "loading") : count > 0 ? "photos" : "blocks";
     const first = held?.photos[0];
-    return { key: e.key, name: elementName(e.key), thumb: first ? (thumbUrl(first.url, 320) ?? first.url) : null, state, photos: count };
+    const chip = castChipOf.get(e.key);
+    return {
+      key: e.key,
+      name: elementName(e.key),
+      thumb: first ? (thumbUrl(first.url, 320) ?? first.url) : null,
+      state,
+      photos: count,
+      word: chip?.word,
+      rides: chip?.state === "rides",
+      title: chip?.title,
+    };
   });
+  /** Photos on nothing, with the strip's own menu: a row of the list, and a chip of the phone's strip. */
+  const panelLoose: LooseBundle = {
+    loose: resolved.loose.map((l) => l.photo),
+    targets: els.map((e) => ({ key: e.key, name: elementName(e.key) })),
+    onPutOn: (refId, key) => void putPhotoOn(refId, key),
+    onRemoveLoose: (refId) => void removePhoto(refId),
+  };
   function toggleLayout() {
     const next = !simple;
     setSimple(next);
@@ -10104,7 +10134,9 @@ export function SetView({
               }}
               placeLine={sw.placeText}
               models={modelsOn}
+              loose={panelLoose}
               w={sw}
+              c={cast}
             />
           ) : (
             <StudioRail mode={studioMode} tool={stageTool} onTool={(id) => studioKeysRef.current.tool(id)} names={s.studio.tools} notes={s.studio.toolNotes} />
@@ -10332,7 +10364,7 @@ export function SetView({
               {tipsShown && (wide || !chatOpen) && firstVisitView("pointer-events-auto w-full max-w-[340px]")}
               {simplePhoneSet ? (
                 <div className="pointer-events-auto relative max-w-full">
-                  <ThingsStrip rows={[...panelPeople, ...panelThings]} selected={elementCard?.key ?? null} onOpen={(key) => openElementCard(key)} w={sw} />
+                  <ThingsStrip rows={[...panelPeople, ...panelThings]} selected={elementCard?.key ?? null} onOpen={(key) => openElementCard(key)} loose={panelLoose} w={sw} c={cast} />
                 </div>
               ) : (
                 // The new layout's Shoot on a phone: the chips already name who is in the still, so the strip stays in Set.

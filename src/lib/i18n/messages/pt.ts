@@ -2589,6 +2589,7 @@ const pt = {
       rowBlocks: "Blocos",
       rowPlays: "Faz a figura",
       rowNobody: "Ninguém escalado",
+      loose: "Fotos soltas",
       shotTitle: "A tomada",
       shotHint: "Quem aparece, o visual, a câmera e onde está. Mova a câmera no cenário.",
       setTitle: "Monte a cena",

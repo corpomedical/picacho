@@ -2588,6 +2588,7 @@ const it = {
       rowBlocks: "Blocchi",
       rowPlays: "Interpreta la figura",
       rowNobody: "Nessuno scelto",
+      loose: "Foto non assegnate",
       shotTitle: "L'inquadratura",
       shotHint: "Chi c'è, lo stile, la camera e dove sta. Muovi la camera sulla scena.",
       setTitle: "Prepara la scena",
