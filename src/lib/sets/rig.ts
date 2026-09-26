@@ -671,6 +671,24 @@ export const DEFAULT_SET_RIG: SetRig = {
  */
 export const NEW_SET_RIG: SetRig = { ...DEFAULT_SET_RIG, format: "wide" };
 
+/**
+ * Whether the rig carries a setting the new layout hides while Advanced is
+ * off (Helios Cut 3, step 15a): any field but the frame's shape set away
+ * from the default rig. NEW_SET_RIG differs from DEFAULT_SET_RIG in the
+ * format alone, so one comparison answers for both. The Advanced button's
+ * dot reads it: a hidden setting still rides every still, and the dot says
+ * one is there. The default rig's light is null, so any light counts.
+ */
+export function rigAdvancedInUse(rig: SetRig): boolean {
+  return (Object.keys(DEFAULT_SET_RIG) as (keyof SetRig)[]).some((k) =>
+    k === "format"
+      ? false
+      : k === "overlays"
+        ? RIG_OVERLAY_KEYS.some((o) => rig.overlays[o] !== DEFAULT_SET_RIG.overlays[o])
+        : rig[k] !== DEFAULT_SET_RIG[k],
+  );
+}
+
 const ids = <T extends { id: string }>(list: readonly T[]) => list.map((x) => x.id);
 const oneOf = <T extends string>(v: unknown, list: readonly T[]): T | null =>
   typeof v === "string" && (list as readonly string[]).includes(v) ? (v as T) : null;

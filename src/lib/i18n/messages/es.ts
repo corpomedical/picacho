@@ -2597,6 +2597,8 @@ const es = {
       setHint: "Elige una cosa a la izquierda para darle fotos o un modelo, o pide a Astra que cambie el lugar.",
       setHintPhotos: "Elige una cosa a la izquierda para darle fotos, o pide a Astra que cambie el lugar.",
       nextShoot: "Siguiente: Rodar",
+      advanced: "Avanzado",
+      advancedInUse: "Hay ajustes avanzados en uso",
     },
     cast: {
       strip: "Reparto y atrezo",

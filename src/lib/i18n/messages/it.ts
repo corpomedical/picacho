@@ -2596,6 +2596,8 @@ const it = {
       setHint: "Scegli un oggetto a sinistra per dargli foto o un modello, o chiedi ad Astra di cambiare il luogo.",
       setHintPhotos: "Scegli un oggetto a sinistra per dargli foto, o chiedi ad Astra di cambiare il luogo.",
       nextShoot: "Avanti: Scatta",
+      advanced: "Avanzate",
+      advancedInUse: "Ci sono impostazioni avanzate attive",
     },
     cast: {
       strip: "Cast e oggetti",

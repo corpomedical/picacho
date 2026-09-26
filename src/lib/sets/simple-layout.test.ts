@@ -44,7 +44,8 @@ describe("the switch", () => {
     expect(view).toContain('want = asked ? asked === "simple" : HELIOS_SIMPLE_FOR_ALL ? stored !== "classic" : stored === "simple";');
     expect(view).toContain("}, [simpleLayout, setId]);");
     expect(view).toContain('window.localStorage.setItem("helios.layout", next ? "simple" : "classic");');
-    expect(view).toContain("{simpleLayout && wide3 && (");
+    // In the new layout the switch is one of Advanced's (Helios Cut 3, step 15a); in Classic everyone offered the layout sees it.
+    expect(view).toContain("{simpleLayout && wide3 && (!simple || advanced) && (");
     expect(view).toContain("data-layout-toggle");
   });
 
@@ -116,7 +117,7 @@ describe("the new layout", () => {
 
   it("moves the setup chips off the stage, and the frame lines start clear of the floating tools", () => {
     expect(view).toContain("{!viewingShot && !simpleOn && !simplePhoneSet && setupChipsView(false)}");
-    expect(view).toContain("insetsRef.current = { left: simpleOn ? 82 : 14, right: 14, top, bottom };");
+    expect(view).toContain("insetsRef.current = { left: simpleOn && advanced ? 82 : 14, right: 14, top, bottom };");
   });
 });
 
@@ -150,7 +151,8 @@ describe("the conversation in every step", () => {
   });
 
   it("takes ⌘K's camera to Shoot and its conversation to Set", () => {
-    expect(view).toMatch(/setRigOpen: \(open\) => \{[\s\S]{0,160}if \(simpleOn && open\) setSimpleStep\("shoot"\);/);
+    // Advanced's line comes first (Helios Cut 3, step 15a): the camera department is Advanced's.
+    expect(view).toMatch(/setRigOpen: \(open\) => \{[\s\S]{0,320}if \(simpleOn && open\) setSimpleStep\("shoot"\);/);
     expect(view).toMatch(/setChatOpen: \(open\) => \{[\s\S]{0,160}if \(simpleOn && open\) setSimpleStep\("set"\);/);
   });
 });
@@ -238,6 +240,8 @@ describe("the step, kept for the tab", () => {
     expect(draw(() => {})).toContain(w.placeEdit);
     expect(draw(() => {})).toContain("data-panel-edit");
     expect(panel).toContain("onEdit?: () => void;");
+    // The page gives it while Advanced is on (Helios Cut 3, step 15a), and it opens the Build editor as Build does.
+    expect(view).toMatch(/onEdit=\{\s*advanced\s*\? \(\) => \{\s*window\.location\.href = studioModes\.build\.href;\s*\}\s*: undefined\s*\}/);
   });
 });
 
@@ -254,7 +258,7 @@ describe("the new layout on a phone", () => {
   });
 
   it("puts the switch at the stage's foot, where the bar has no room for it", () => {
-    expect(view).toContain("{simpleLayout && !wide && (");
+    expect(view).toContain("{simpleLayout && !wide && (!simple || advanced) && (");
     expect(view).toContain("data-layout-toggle-phone");
   });
 });
@@ -263,6 +267,11 @@ describe("the floating tools", () => {
   it("are only the ones that work here: nothing dimmed with a note", () => {
     expect(frame).toContain('const tools = railToolsFor(mode).filter((t) => !compact || t.use !== "off");');
     expect(view).toMatch(/<StudioRail\s+compact/);
+  });
+
+  it("float only while Advanced is on (Helios Cut 3, step 15a)", () => {
+    expect(view).toContain("{simpleOn && advanced && !viewingShot && (");
+    expect(view).not.toContain("{simpleOn && !viewingShot && (");
   });
 });
 

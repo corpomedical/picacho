@@ -81,7 +81,7 @@ import {
 import { oversizedSeating } from "@/lib/sets/human-scale";
 import { checkFilmCredits, readTakes, saveSetFilm } from "@/lib/sets/film-actions";
 import { checkShotRig, saveSetRig } from "@/lib/sets/rig-actions";
-import { RIG_PALETTES, depthOfField, exposureGain, findLook, focalMm, formatFrame, letterbox, normaliseSetRig, sensorCocMm, sensorHeightMm, shutterFraction, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
+import { RIG_PALETTES, depthOfField, exposureGain, findLook, focalMm, formatFrame, letterbox, normaliseSetRig, rigAdvancedInUse, sensorCocMm, sensorHeightMm, shutterFraction, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
 import { bearingDeg } from "@/lib/sets/light-schemes";
 import { stagedSpec, timeLabel, sunAt } from "@/lib/sets/time-of-day";
 import { filterCommands, rigCommandIds, rigPatchFor, shootCommands, stepIndex, TIME_PRESETS, type ShootCommandContext } from "@/lib/sets/commands";
@@ -1180,6 +1180,23 @@ export function SetView({
   const [simple, setSimple] = useState<boolean>(() => simpleLayout && HELIOS_SIMPLE_FOR_ALL);
   const [simpleStep, setSimpleStepNow] = useState<"set" | "shoot">("set");
   /**
+   * Advanced (Helios Cut 3, step 15a): the new layout opens lean, with the
+   * camera department, pose and gaze, the tools, the readouts and the
+   * status bar one press away in the bar. Remembered in this browser
+   * (localStorage helios.advanced, read with the layout below). Everything
+   * hidden stays in force: the button's dot says when a hidden setting is
+   * still riding the stills. Classic has no Advanced and is never lean.
+   */
+  const [advanced, setAdvanced] = useState(false);
+  function setAdvancedOn(on: boolean) {
+    setAdvanced(on);
+    try {
+      window.localStorage.setItem("helios.advanced", on ? "1" : "0");
+    } catch {
+      // No storage: this visit only.
+    }
+  }
+  /**
    * Set or Shoot, kept for this tab and this set (sessionStorage
    * helios.step:<id>; Helios Cut 3, step 17): a reload opens where the
    * person was. The Producer's fix to a set reloads the page, and before
@@ -1197,13 +1214,16 @@ export function SetView({
     if (!simpleLayout) return;
     let want: boolean = HELIOS_SIMPLE_FOR_ALL;
     let step: "set" | "shoot" = "set";
+    let adv = false;
     try {
       const asked = new URLSearchParams(window.location.search).get("layout");
       const stored = asked ? null : window.localStorage.getItem("helios.layout");
       want = asked ? asked === "simple" : HELIOS_SIMPLE_FOR_ALL ? stored !== "classic" : stored === "simple";
+      adv = window.localStorage.getItem("helios.advanced") === "1";
     } catch {
-      // No storage (a private window): the default layout.
+      // No storage (a private window): the default layout, lean.
     }
+    setAdvanced(adv);
     try {
       if (window.sessionStorage.getItem(`helios.step:${setId}`) === "shoot") step = "shoot";
     } catch {
@@ -1323,6 +1343,8 @@ export function SetView({
   const simplePhone = simple && !wide && simpleLayout;
   /** A phone's Set step: the setup chips step aside (they are Shoot's), and the strip names who and what is in the set. */
   const simplePhoneSet = simplePhone && !filmOpen && !cutOpen && simpleStep === "set";
+  /** The new layout with Advanced off: its first screens, and nothing else. Classic is never lean. */
+  const lean = (simpleOn || simplePhone) && !advanced;
   const [dockTab, setDockTab] = useState<DockTab>("astra");
   const [dockFilmWas, setDockFilmWas] = useState(filmOpen);
   if (dockFilmWas !== filmOpen) {
@@ -1371,6 +1393,23 @@ export function SetView({
     layingRef.current = laying;
   }, [laying]);
   const layAddRef = useRef<(kind: NonNullable<Laying>, p: MeasurePoint) => void>(() => {});
+  // Going lean (Advanced off, or into the new layout with it off) puts the
+  // hidden tools down (Helios Cut 3, step 15a): the rail and the view
+  // switch leave the screen, so the stage goes back to Select and Lit, and
+  // a measure or a laying half done is let go, rather than a drag doing
+  // what nothing on screen says. A phone's camera-department sheet closes
+  // with them: it is Advanced's. Adjusted during render, as the dock's tab is.
+  const [leanWas, setLeanWas] = useState(lean);
+  if (leanWas !== lean) {
+    setLeanWas(lean);
+    if (lean) {
+      setStageTool("select");
+      setViewMode("lit");
+      setMeasurePts([]);
+      setLaying(null);
+      setRigOpen(false);
+    }
+  }
   const eyelineRef = useRef<SVGSVGElement>(null);
   const pathRef = useRef<SVGSVGElement>(null);
   const [rigError, setRigError] = useState("");
@@ -3480,14 +3519,22 @@ export function SetView({
         if (ready) frameFigure();
       },
       palette: () => setPaletteOpen((v) => !v),
-      view: (m) => setViewMode(m),
+      // Lean (Advanced off, Helios Cut 3, step 15a), the view switch and the
+      // rail are off the screen, and so are their keys: 1-4 and V G R D do
+      // nothing a person cannot see. C, L and M open what they name, so they
+      // turn Advanced on first.
+      view: (m) => {
+        if (!lean) setViewMode(m);
+      },
       escape: () => {
         setMeasurePts([]);
         setLaying(null);
       },
       tool: (id) => {
-        if (id === "select" || id === "move" || id === "turn" || id === "measure") setStageTool(id);
-        else if (id === "camera" || id === "light") {
+        if (lean && (id === "camera" || id === "light" || id === "mark")) setAdvancedOn(true);
+        if (id === "select" || id === "move" || id === "turn" || id === "measure") {
+          if (!lean) setStageTool(id);
+        } else if (id === "camera" || id === "light") {
           if (wide) setDockTab(id);
           else setRigOpen(true);
         } else if (id === "mark") setMenu((m) => (m === "figure" ? null : "figure"));
@@ -3668,8 +3715,9 @@ export function SetView({
       // Nothing stands over the stage from the left any more: the rig is the
       // dock's, beside the viewport (2026-09-17).
       // The new layout's tools float at the stage's left edge (64 px and a
-      // gap): the frame and its readout start clear of them.
-      insetsRef.current = { left: simpleOn ? 82 : 14, right: 14, top, bottom };
+      // gap) while Advanced is on: the frame and its readout start clear of
+      // them. Lean, there are no tools, and the frame keeps the whole stage.
+      insetsRef.current = { left: simpleOn && advanced ? 82 : 14, right: 14, top, bottom };
       apiRef.current?.relayout();
     };
     measure();
@@ -3679,7 +3727,7 @@ export function SetView({
     if (stripRef.current) ro.observe(stripRef.current);
     return () => ro.disconnect();
     // `viewing`: the chips leave with a still in view and return with the stage.
-  }, [rig.format, rigOpen, filmOpen, cutOpen, ready, viewing, simpleOn, simplePhoneSet]);
+  }, [rig.format, rigOpen, filmOpen, cutOpen, ready, viewing, simpleOn, simplePhoneSet, advanced]);
 
   // The stop ring's depth of field, previewed on the live view only.
   useEffect(() => {
@@ -8623,6 +8671,8 @@ export function SetView({
     // conversation leads Set (Helios Cut 3, step 13): showing either goes
     // to its step too, so ⌘K never opens something the panel is not drawing.
     setRigOpen: (open) => {
+      // The camera department is Advanced's (Helios Cut 3, step 15a): asking for it turns Advanced on.
+      if (open && lean) setAdvancedOn(true);
       if (!wide) return setRigOpen(open);
       setDockTab(open ? "camera" : "astra");
       if (simpleOn && open) setSimpleStep("shoot");
@@ -8681,6 +8731,16 @@ export function SetView({
   };
   const sw = s.simple;
   const simpleShooting = !filmOpen && !cutOpen;
+  /**
+   * A setting Advanced hides is still in force (Helios Cut 3, step 15a): a
+   * pose but standing, a gaze, a look the person picked (it no longer
+   * follows the newest still), or the camera department set away from the
+   * default rig in anything but the frame's shape (rig.ts rigAdvancedInUse).
+   * Advanced's dot says so while it is off.
+   */
+  const advancedInUse = pose !== "stand" || gaze !== null || lookPinned || rigAdvancedInUse(rig);
+  /** The stage's banners start clear of the floating tools where they float (the new layout with Advanced on). */
+  const bannerLeft = simpleOn && advanced ? "left-[82px]" : "left-3.5";
   const simpleSteps = simpleOn || simplePhone
     ? [
         {
@@ -10044,8 +10104,9 @@ export function SetView({
         modes={studioModes}
         steps={simpleSteps}
         stepsLabel={sw.stepsLabel}
-        view={{ mode: viewMode, onChange: setViewMode, label: s.studio.viewLabel, names: { lit: s.editorViewLit, clay: s.editorViewClay, wire: s.editorViewWire, depth: s.editorViewDepth } }}
-        find={{ label: s.studio.find, kbd: s.palette.open, onOpen: () => setPaletteOpen(true) }}
+        // Lean (Helios Cut 3, step 15a), the view modes and Find wait under Advanced; ⌘K still opens the commands.
+        view={lean ? null : { mode: viewMode, onChange: setViewMode, label: s.studio.viewLabel, names: { lit: s.editorViewLit, clay: s.editorViewClay, wire: s.editorViewWire, depth: s.editorViewDepth } }}
+        find={lean ? null : { label: s.studio.find, kbd: s.palette.open, onOpen: () => setPaletteOpen(true) }}
         rendering={renderingCount > 0 ? { label: renderingCount === 1 ? s.studio.renderingOne : formatMsg(s.studio.rendering, { n: renderingCount }) } : null}
         primary={
           simpleOn && filmOpen && !cutOpen ? (
@@ -10082,8 +10143,9 @@ export function SetView({
           )
         }
       >
-        {/* Only where the switch does something: from 1180 px, where the three columns fit; below it, down to a phone, Classic. */}
-        {simpleLayout && wide3 && (
+        {/* Only where the switch does something: from 1180 px, where the three columns fit; below it, down to a phone, Classic.
+            In the new layout it is one of Advanced's (Helios Cut 3, step 15a); in Classic it shows to everyone the layout is offered to. */}
+        {simpleLayout && wide3 && (!simple || advanced) && (
           <button
             type="button"
             onClick={toggleLayout}
@@ -10095,6 +10157,28 @@ export function SetView({
             {simple ? sw.toggleClassic : sw.toggleNew}
           </button>
         )}
+        {/* Advanced (Helios Cut 3, step 15a): the new layout's one door to everything its first screens leave out,
+            in the History button's quiet style. Its dot says a hidden setting still rides the stills. */}
+        {(simpleOn || simplePhone) && (
+          <button
+            type="button"
+            onClick={() => setAdvancedOn(!advanced)}
+            aria-pressed={advanced}
+            data-advanced
+            className={`flex h-8 flex-none cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2 text-xs font-medium md:px-2.5 ${
+              advanced ? "bg-[#2a2b33] text-[#ecedf1]" : "text-[#d6d9e0] hover:text-[#ecedf1]"
+            }`}
+          >
+            {sw.advanced}
+            {lean && advancedInUse && (
+              <>
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[#e0a468]" data-advanced-dot />
+                <span className="sr-only">{sw.advancedInUse}</span>
+              </>
+            )}
+          </button>
+        )}
+        {!lean && (
         <div className="relative">
           <button
             type="button"
@@ -10115,6 +10199,9 @@ export function SetView({
             </div>
           )}
         </div>
+        )}
+        {/* The bar's Download is Advanced's too; a still being viewed keeps the viewer's own. */}
+        {!lean && (
         <button
           type="button"
           onClick={viewingFile && viewingShot ? () => void downloadShot(viewingShot) : downloadFrame}
@@ -10130,6 +10217,7 @@ export function SetView({
             <path d="M4 19h16" />
           </svg>
         </button>
+        )}
       </StudioBar>
 
       <CommandPalette
@@ -10153,6 +10241,14 @@ export function SetView({
                 studioModes.shoot.onClick();
                 setSimpleStep("set");
               }}
+              // Build by hand is Advanced's (Helios Cut 3, steps 15a and 17): the editor, as the Build mode opens it.
+              onEdit={
+                advanced
+                  ? () => {
+                      window.location.href = studioModes.build.href;
+                    }
+                  : undefined
+              }
               placeLine={sw.placeText}
               models={modelsOn}
               loose={panelLoose}
@@ -10184,10 +10280,13 @@ export function SetView({
               {/* Over the render, not over the chrome: on a daylight exterior #c6c9d1
                   came out at 1.8:1 — the token that exists for text painted on
                   media reads on any set (2026-09-18). */}
+              {/* Advanced's, in the new layout (Helios Cut 3, step 15a): lean, the lines alone. */}
+              {!lean && (
               <div className="absolute -top-[18px] left-0 right-0 flex justify-between gap-3 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.06em] text-onmedia">
                 <span className="min-w-0 truncate">{hudLeft}</span>
                 <span className="tabular-nums">{hudRight}</span>
               </div>
+              )}
               {(rig.overlays.thirds || rig.overlays.golden || rig.overlays.safe || rig.overlays.centre) && (
                 <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
                   {rig.overlays.thirds &&
@@ -10245,7 +10344,7 @@ export function SetView({
               sunDragRef.current = false;
               if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
             }}
-            className={`absolute left-0 top-0 z-20 flex -translate-x-1/2 -translate-y-1/2 cursor-grab touch-none items-center gap-1.5 active:cursor-grabbing ${viewingShot ? "hidden" : ""}`}
+            className={`absolute left-0 top-0 z-20 flex -translate-x-1/2 -translate-y-1/2 cursor-grab touch-none items-center gap-1.5 active:cursor-grabbing ${viewingShot || lean ? "hidden" : ""}`}
           >
             <svg viewBox="-20 -20 40 40" className="h-9 w-9" aria-hidden>
               <circle r="9" fill="none" stroke="#f0cda6" strokeWidth="1.5" />
@@ -10286,7 +10385,7 @@ export function SetView({
             <circle r="3.5" fill="#d8b37c" />
           </svg>
           {laying && (
-            <span className="pointer-events-none absolute left-3.5 top-[116px] z-20 rounded-full border border-onmedia/10 bg-black/70 px-3 py-1 text-[11px] text-[#f0cda6]" data-laying>
+            <span className={`pointer-events-none absolute ${bannerLeft} top-[116px] z-20 rounded-full border border-onmedia/10 bg-black/70 px-3 py-1 text-[11px] text-[#f0cda6]`} data-laying>
               {laying === "path"
                 ? s.studio.pathLaying
                 : laying === "mover"
@@ -10296,7 +10395,9 @@ export function SetView({
                     : s.studio.gazePick}
             </span>
           )}
-          <div className={`pointer-events-none absolute right-3.5 z-10 hidden items-end gap-2.5 md:flex ${viewingShot ? "md:hidden" : ""} ${filmOpen || cutOpen ? "bottom-3.5" : "bottom-[104px]"}`}>
+          {/* The scale and the gizmo, like the sun, are handed to the stage once (setFurniture): lean, they are
+              hidden by their class, never unmounted, so the stage never holds a detached element (Helios Cut 3, step 15a). */}
+          <div className={`pointer-events-none absolute right-3.5 z-10 hidden items-end gap-2.5 md:flex ${viewingShot || lean ? "md:hidden" : ""} ${filmOpen || cutOpen ? "bottom-3.5" : "bottom-[104px]"}`}>
             <div ref={scaleRef} data-scale className="flex items-center gap-1.5 rounded-[6px] border border-[rgba(255,255,255,0.1)] bg-black/50 px-2 py-1 text-[10.5px] text-[#d6d9e0]">
               <i className="block h-px bg-[#d6d9e0]" style={{ width: 60 }} />
               <span>1 m</span>
@@ -10323,8 +10424,8 @@ export function SetView({
 
           {/* The setup, as chips on the picture itself (or, in the new layout, in the Shoot panel). */}
           {!viewingShot && !simpleOn && !simplePhoneSet && setupChipsView(false)}
-          {/* The new layout's tools: the rail's, floating at the stage's corner. */}
-          {simpleOn && !viewingShot && (
+          {/* The new layout's tools: the rail's, floating at the stage's corner, while Advanced is on (Helios Cut 3, step 15a). */}
+          {simpleOn && advanced && !viewingShot && (
             <div className="absolute left-3.5 top-3.5 z-20 overflow-hidden rounded-[12px] border border-[rgba(255,255,255,0.08)] shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6)]" data-floating-tools>
               <StudioRail compact mode={studioMode} tool={stageTool} onTool={(id) => studioKeysRef.current.tool(id)} names={s.studio.tools} notes={s.studio.toolNotes} />
             </div>
@@ -10332,7 +10433,7 @@ export function SetView({
 
           {/* the human ruler's line: a photo build whose furniture dwarfs a person, and the fix one press away */}
           {scaleWarn && !takeStart && !viewingShot && (
-            <div className="absolute left-3.5 top-16 z-20 flex flex-wrap items-center gap-2">
+            <div className={`absolute ${bannerLeft} top-16 z-20 flex flex-wrap items-center gap-2`}>
               <span className="inline-flex items-center rounded-full border border-onmedia/10 bg-black/60 px-3 py-1.5 text-xs font-medium text-onmedia">
                 {s.scaleWarnLine}
               </span>
@@ -10362,7 +10463,7 @@ export function SetView({
 
           {/* a take under way: where it starts, until the end frame is taken */}
           {takeStart && !viewingShot && (
-            <div className="absolute left-3.5 top-16 z-20 flex flex-wrap items-center gap-2">
+            <div className={`absolute ${bannerLeft} top-16 z-20 flex flex-wrap items-center gap-2`}>
               <span className="rounded-full bg-[#e0a468] px-3 py-1.5 text-xs font-semibold text-black">{formatMsg(s.takeBanner, { n: takeStart.n })}</span>
               {takeStartOldKey && (
                 <span className="rounded-full bg-black/70 px-3 py-1.5 text-xs text-[#f0cda6]" data-take-start-old>
@@ -10391,8 +10492,9 @@ export function SetView({
                 // The new layout's Shoot on a phone: the chips already name who is in the still, so the strip stays in Set.
                 castShown && !simplePhone && castStrip("pointer-events-auto relative max-w-full")
               )}
-              {/* A phone's bar has no room for the switch: it sits here, where the layout is offered. */}
-              {simpleLayout && !wide && (
+              {/* A phone's bar has no room for the switch: it sits here, where the layout is offered.
+                  In the new layout it is one of Advanced's (Helios Cut 3, step 15a). */}
+              {simpleLayout && !wide && (!simple || advanced) && (
                 <button
                   type="button"
                   onClick={toggleLayout}
@@ -10417,7 +10519,7 @@ export function SetView({
 
           {/* Match this shot: the read in progress, what it matched, or what went wrong */}
           {matchOn && (matching || matched || matchError) && (
-            <div className={`absolute left-3.5 top-16 z-20 max-w-md space-y-1.5 rounded-[12px] p-3 ${PANEL_BG}`}>
+            <div className={`absolute ${bannerLeft} top-16 z-20 max-w-md space-y-1.5 rounded-[12px] p-3 ${PANEL_BG}`}>
               {matching ? (
                 <p className="text-xs text-[#c6c9d1]" aria-live="polite">
                   {s.matchReading}
@@ -11300,7 +11402,8 @@ export function SetView({
         )}
       </div>
 
-      {wide && (
+      {/* The status bar is Advanced's in the new layout (Helios Cut 3, step 15a). */}
+      {wide && !(simpleOn && !advanced) && (
         <StudioStatus>
           <span className="tabular-nums">
             {spec.objects.length === 1 ? s.studio.status.thingsOne : formatMsg(s.studio.status.things, { n: spec.objects.length })} ·{" "}

@@ -2754,6 +2754,10 @@ const en = {
       setHint: "Pick a thing on the left to give it photos or a model, or ask Astra to change the place.",
       setHintPhotos: "Pick a thing on the left to give it photos, or ask Astra to change the place.",
       nextShoot: "Next: Shoot",
+      /** The bar's switch for everything the first screens leave out: the camera department, pose and gaze, the tools and the readouts (Helios Cut 3, step 15a). */
+      advanced: "Advanced",
+      /** Said for screen readers beside the dot on Advanced while it is off and a hidden setting still rides every still. */
+      advancedInUse: "Advanced settings are in use",
     },
     cast: {
       strip: "Cast and props",
