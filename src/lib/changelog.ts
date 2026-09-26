@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.114.0",
+    build: 153,
+    date: "2026-09-26",
+    title: "Admins can give the Producer to any account",
+    items: [
+      "Admin > Users > a person's page has a new Assistant row. \"Grant access\" gives that account the Producer on any plan, even before the Producer is open to Elite. \"Revoke grant\" takes it back. The row says why each account has it or not: admin, granted, included with Elite, or off.",
+      "A granted account gets Elite's assistant allowance each month: 2,500 units, at most $50 of turns. The Producer and the composer's chat share it, so a grant works on a free account too.",
+      "Admin > Users has an Assistant tab that lists every granted account.",
+      "When the Producer stops being someone's (a grant revoked, a plan change, a suspension, or the switch turned off), its lamp takes itself off the page the next time it's refused. Before, it stayed and refused every message until a full reload.",
+      "The database change ran on 26 September (supabase/applied/2026-09-26/producer-access.sql).",
+    ],
+  },
+  {
     version: "1.113.0",
     build: 152,
     date: "2026-09-26",
