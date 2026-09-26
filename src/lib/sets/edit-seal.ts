@@ -22,22 +22,23 @@
 // Server-only (node:crypto). The page imports its types alone.
 
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { HeldText } from "./editor-model";
+import { editTextOf, type EditText, type HeldText } from "./editor-model";
 import { SET_EDIT_MAX_CHARS } from "./set-config";
 import { editMeaningOf } from "./set-edit-prompt";
 import { cleanText, SET_LIMITS, type SetSpec } from "./set-spec";
 
-/** The words of a set that a browser may never write: its title, its description and its labels (marks', then cameras', each sorted). */
-export type EditText = { title: string; description: string; labels: string[] };
-/** What an Astra change's answer carries for its Undo: the words it replaced, sealed. */
+// The words' shape and reading live in editor-model.ts, where the page can
+// name them too (Helios Cut 4, step A6); passed on from here as before.
+export { editTextOf, type EditText };
+/**
+ * A copy's words, sealed: what an Astra change's answer carries for its Undo
+ * (the words it replaced), and — since Helios Cut 4, step A6 — what every
+ * spec the server hands the page carries for its own words, so a later save
+ * of a copy with those words can bring them back.
+ */
 export type EditUndo = { text: EditText; seal: string };
 
 const SEAL_CHARS = 32;
-
-export function editTextOf(spec: SetSpec): EditText {
-  const labels = (xs: readonly { label: string }[]) => xs.map((x) => x.label).filter((l) => l.length > 0).sort();
-  return { title: spec.title, description: spec.description, labels: [...labels(spec.marks), ...labels(spec.cameras)] };
-}
 
 /** The signing key, as the rest of the app's seals take it; null when there is none, and then nothing is sealed or opened. */
 function sealKey(): string | null {

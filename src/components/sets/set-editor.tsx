@@ -12,6 +12,7 @@ import { newPressId } from "@/lib/sets/press-follow";
 import { SET_EDIT_TOO_BIG, SET_EDIT_TRIES_USED, SET_SAVE_FAILED } from "@/lib/sets/messages";
 import { SET_EDIT_MAX_SPEC_CHARS } from "@/lib/sets/set-config";
 import { dropUnsaved, keepUnsaved, savedEditKey, takeUnsaved } from "@/lib/sets/unsaved";
+import { fileSeal, sameWords, sealFor, type SealBook } from "@/lib/sets/seal-book";
 import {
   addCamera,
   addKit,
@@ -503,8 +504,15 @@ export function SetEditor({
   const [ask, setAsk] = useState("");
   const [asking, setAsking] = useState(false);
   // How many pieces Astra's last answer changed, or "nothing" for an answer
-  // that changed nothing and gave its change back (Helios Cut 4, step A1).
-  const [askNote, setAskNote] = useState<number | "nothing" | null>(null);
+  // that changed nothing and gave its change back (Helios Cut 4, step A1),
+  // or "textKept" for a step back onto words the server can't be shown to
+  // have written, which keeps its own (step A6).
+  const [askNote, setAskNote] = useState<number | "nothing" | "textKept" | null>(null);
+  // The seals the server handed for the words of the copies this visit has
+  // held (seal-book.ts; Helios Cut 4, step A6): every save sends the one for
+  // the words of the copy it saves, so a step back over an Astra change
+  // brings its old description back, not only its pieces.
+  const sealsRef = useRef<SealBook>(new Map());
   // The month's Astra changes left, as the server last said.
   const [editsLeft, setEditsLeft] = useState<number | null>(astraEditsLeft);
   // Astra paused on the month's tries: from the page's read, and from an answer that says so.
@@ -580,7 +588,7 @@ export function SetEditor({
     let error: string | null;
     const sentAt = new Date().getTime();
     try {
-      error = (clear ? await clearSetEdit(setId) : await saveSetEdit(setId, copy)).error;
+      error = (clear ? await clearSetEdit(setId) : await saveSetEdit(setId, copy, sealFor(sealsRef.current, copy))).error;
     } catch (err) {
       if (!saveMissed(copy, err)) setSaveState("failed");
       return false;
@@ -646,14 +654,23 @@ export function SetEditor({
   function goTo(index: number) {
     if (index < 0 || index >= history.length) return;
     const next = JSON.parse(history[index]) as SetSpec;
+    const from = specRef.current;
     // The thing in hand stays in hand, wherever the step left it
     // (editor-model.ts) — set before the rebuild, which puts the gizmo back
     // on whatever selRef names.
-    const keep = selectionAfter(sel, specRef.current, next);
+    const keep = selectionAfter(sel, from, next);
     selRef.current = keep;
     setSel(keep);
     setAt(index);
     applySpec(next);
+    // The save carries the seal of this step's words (saveCopy), so a step
+    // back over an Astra change brings its old words back too (Helios Cut 4,
+    // step A6). A step back onto words the server never sealed for this page
+    // keeps the server's, and the bar says so — as the set page's Undo does.
+    if (index < at && !sameWords(from, next) && sealFor(sealsRef.current, next) === null) {
+      setAskError("");
+      setAskNote("textKept");
+    }
     scheduleSave(next);
   }
 
@@ -951,6 +968,11 @@ export function SetEditor({
       setAskNote("nothing");
       return;
     }
+    // The words Astra was handed and the words it wrote, each sealed by the
+    // server (Helios Cut 4, step A6): ↺ back over this change brings the
+    // first back, ↻ onto it again the second.
+    fileSeal(sealsRef.current, r.undo);
+    fileSeal(sealsRef.current, r.seal);
     commitFromServer(r.spec);
     dropUnsaved(setId, "edit", askedAt);
     setAskNote(r.changed);
@@ -1503,6 +1525,8 @@ export function SetEditor({
   // A pending autosave flushes when the editor closes any way at all; one
   // that fails is kept for this tab, like any other (unsaved.ts).
   useEffect(() => {
+    // One book for the whole visit (it is filled in place, never replaced).
+    const seals = sealsRef.current;
     return () => {
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
       if (!saveTimerRef.current) return;
@@ -1510,7 +1534,7 @@ export function SetEditor({
       const copy = specRef.current;
       const base = savedKeyRef.current;
       const sentAt = new Date().getTime();
-      saveSetEdit(setId, copy).then(
+      saveSetEdit(setId, copy, sealFor(seals, copy)).then(
         (r) => {
           if (r.error !== null) keepUnsaved(setId, "edit", copy, base);
           else dropUnsaved(setId, "edit", sentAt);
@@ -1617,6 +1641,8 @@ export function SetEditor({
                     <span className="text-[#c6c9d1]">{localizeServerText(paused ? SET_EDIT_TRIES_USED : SET_EDIT_TOO_BIG, t)}</span>
                   ) : askNote === "nothing" ? (
                     <span>{s.editorAskNothingFree}</span>
+                  ) : askNote === "textKept" ? (
+                    <span>{s.reply.noteUndoAstraText}</span>
                   ) : askNote === 0 ? (
                     <span>{s.editorAskNothing}</span>
                   ) : (

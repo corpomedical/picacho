@@ -135,8 +135,17 @@ async function writeEdited(setId: string, userId: string, edited: SetSpec | null
   return { error: null };
 }
 
-/** The editor's autosave: the whole working spec, renormalised, its text held. */
-export async function saveSetEdit(setId: string, spec: unknown): Promise<{ error: string | null }> {
+/**
+ * The editor's autosave: the whole working spec, renormalised, its text held.
+ *
+ * `undo` (Helios Cut 4, step A6, 2026-09-26): the seal of the words of the
+ * copy being saved, as the server handed it (edit-seal.ts; the page's book,
+ * seal-book.ts). When it opens for this set and this person, those words
+ * stand first, as undoAstraEdit's do — so a step back in Build over an Astra
+ * change brings back the description it replaced, not only the pieces.
+ * Without one that opens, the words stay the server's, as every save's do.
+ */
+export async function saveSetEdit(setId: string, spec: unknown, undo?: unknown): Promise<{ error: string | null }> {
   const access = await setsAccess();
   if (access.error !== null) return { error: access.error };
   const owned = await ownedSpecs(setId, access.userId);
@@ -144,7 +153,9 @@ export async function saveSetEdit(setId: string, spec: unknown): Promise<{ error
   const n = normaliseSetSpec(spec);
   if (!n.ok) return { error: SET_SAVE_FAILED };
   if (await rateLimited(access.userId, "set-edit", 60, 40)) return { error: SET_SAVE_FAILED };
-  const held = holdEditedText(n.spec, owned.edited ? [owned.edited, owned.spec] : [owned.spec]);
+  const stored = owned.edited ? [owned.edited, owned.spec] : [owned.spec];
+  const sealed = sealedEditText(setId, access.userId, undo);
+  const held = holdEditedText(n.spec, sealed ? [heldTextOf(sealed), ...stored] : stored);
   return writeEdited(setId, access.userId, held);
 }
 
@@ -354,7 +365,9 @@ async function askAstra(
  * this press (oncePerPress); `pending` answers a repeat delivery of one.
  * `undo` seals the words of the copy Astra was handed (edit-seal.ts), so
  * the changed line's Undo can bring them back too (undoAstraEdit); null
- * when nothing can be sealed.
+ * when nothing can be sealed. `seal` seals the words of the copy it hands
+ * back (Helios Cut 4, step A6), so Build's step back onto that copy later —
+ * a redo — brings them back too (saveSetEdit).
  *
  * `more` (Helios Cut 2, step 10, 2026-09-25 — operator: "Run, keep going.")
  * is what the set's chat adds when its Astra card is pressed: the reader's
@@ -382,7 +395,7 @@ export async function editSetWithAstra(
   more?: { meaning?: unknown; meaningSeal?: unknown; frame?: unknown },
 ): Promise<
   | { error: string; editsLeft?: number | null; pending?: true; paused?: true }
-  | { error: null; spec: SetSpec; changed: number; editsLeft: number | null; undo: EditUndo | null }
+  | { error: null; spec: SetSpec; changed: number; editsLeft: number | null; undo: EditUndo | null; seal: EditUndo | null }
 > {
   // The action's own start: Astra is waited for inside the page's 300 s from here (askAstra).
   const startedAt = new Date().getTime();
@@ -452,7 +465,7 @@ export async function editSetWithAstra(
       // words are the ones already saved, so no second read of them is
       // spent. The try still counts (Astra was billed for it).
       if (changesNothing(working, next)) {
-        return { error: null, spec: working, changed: 0, editsLeft: await giveBackAstraChange(access, slot), undo: null };
+        return { error: null, spec: working, changed: 0, editsLeft: await giveBackAstraChange(access, slot), undo: null, seal: editUndoOf(setId, userId, working) };
       }
 
       // Astra's words, judged before anyone reads them — in the strict lane, the
@@ -480,7 +493,14 @@ export async function editSetWithAstra(
       const saved = await writeEdited(setId, userId, next);
       if (saved.error !== null) return { error: saved.error, editsLeft: await giveBackAstraChange(access, slot) };
       await kept();
-      return { error: null, spec: next, changed: countSpecChanges(working, next), editsLeft: slot.editsLeft, undo: editUndoOf(setId, userId, working) };
+      return {
+        error: null,
+        spec: next,
+        changed: countSpecChanges(working, next),
+        editsLeft: slot.editsLeft,
+        undo: editUndoOf(setId, userId, working),
+        seal: editUndoOf(setId, userId, next),
+      };
     } catch (err) {
       await giveBackAstraChange(access, slot);
       throw err;

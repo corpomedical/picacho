@@ -266,7 +266,8 @@ describe("the Build editor", () => {
   const missed = between(editor, "function saveMissed(copy: SetSpec, err: unknown): boolean {", "\n  }\n");
 
   it("never stays on 'Saving…' after a save throws, and keeps the copy that did not save", () => {
-    expect(save).toMatch(/try \{\s*error = \(clear \? await clearSetEdit\(setId\) : await saveSetEdit\(setId, copy\)\)\.error;\s*\} catch \(err\) \{\s*if \(!saveMissed\(copy, err\)\) setSaveState\("failed"\);/);
+    // The save carries the seal of the copy's words (Helios Cut 4, step A6).
+    expect(save).toMatch(/try \{\s*error = \(clear \? await clearSetEdit\(setId\) : await saveSetEdit\(setId, copy, sealFor\(sealsRef\.current, copy\)\)\)\.error;\s*\} catch \(err\) \{\s*if \(!saveMissed\(copy, err\)\) setSaveState\("failed"\);/);
     expect(save).toMatch(/if \(error !== null\) \{\s*saveMissed\(copy, null\);\s*setSaveState\("failed"\);/);
     expect(save).toMatch(/const sentAt = new Date\(\)\.getTime\(\);\s*try \{/);
     expect(save).toMatch(/savedKeyRef\.current = savedEditKey\(copy\);\s*dropUnsaved\(setId, "edit", sentAt\);/);

@@ -308,9 +308,10 @@ vi.mock("@/lib/sets/thing-model", async () => await import("./thing-model"));
 vi.mock("@/lib/sets/references", () => ({ listElementPhotos: async () => ({ photos, sheets: [] }) }));
 vi.mock("@/lib/sets/thing-model-store", () => ({ listModelFiles: async () => modelFiles }));
 
-import { editSetWithAstra, readAstraEdit, rebuildThingFromPhotos, undoAstraEdit } from "./editor-actions";
+import { editSetWithAstra, readAstraEdit, rebuildThingFromPhotos, saveSetEdit, undoAstraEdit } from "./editor-actions";
 import { SET_EDIT_MEANING_MAX_CHARS, setEditInput } from "./set-edit-prompt";
-import { editTextOf, openEditSeal, sealReaderMeaning } from "./edit-seal";
+import { editTextOf, editUndoOf, openEditSeal, sealReaderMeaning } from "./edit-seal";
+import { fileSeal, sealFor, type SealBook } from "./seal-book";
 import { buildSetShotPrompt } from "./set-shot-prompt";
 import { resolvePhotos, setElements, type ElementPhoto } from "./elements";
 import { THING_REBUILD_MAX_SENT_CHARS, thingLocalBlocks } from "./thing-rebuild";
@@ -559,7 +560,7 @@ describe("an answer that changes nothing", () => {
   it("gives its change back once, saves nothing, never reads the gate, and hands back the copy Astra was handed", async () => {
     answer = { state: "done", text: JSON.stringify(SPEC), usage: null, costUsd: 0.31 };
     const out = await ask(PRESS);
-    expect(out).toEqual({ error: null, spec: SPEC, changed: 0, editsLeft: setEditsMonthlyLimit("growth", false) - 2, undo: null });
+    expect(out).toEqual({ error: null, spec: SPEC, changed: 0, editsLeft: setEditsMonthlyLimit("growth", false) - 2, undo: null, seal: editUndoOf(SET, USER, SPEC) });
     expect(steps.filter((x) => x === "give back")).toHaveLength(1);
     expect(steps).not.toContain("answer gate");
     expect(writes).toEqual([]);
@@ -594,7 +595,7 @@ describe("an answer that changes nothing", () => {
   it("gives nothing back for an admin, who reserved nothing", async () => {
     access = { ...access, plan: "none", isAdmin: true };
     answer = { state: "done", text: JSON.stringify(SPEC), usage: null, costUsd: 0.31 };
-    expect(await ask()).toEqual({ error: null, spec: SPEC, changed: 0, editsLeft: null, undo: null });
+    expect(await ask()).toEqual({ error: null, spec: SPEC, changed: 0, editsLeft: null, undo: null, seal: editUndoOf(SET, USER, SPEC) });
     expect(steps).not.toContain("give back");
     expect(writes).toEqual([]);
   });
@@ -606,7 +607,7 @@ describe("an answer that changes nothing", () => {
     expect(nothing).toBeGreaterThan(body.indexOf("const next = parsed.spec;"));
     expect(nothing).toBeLessThan(body.indexOf("const gateWords = specTextForGate(next);"));
     expect(body.slice(nothing, body.indexOf("\n      }\n", nothing))).toContain(
-      "return { error: null, spec: working, changed: 0, editsLeft: await giveBackAstraChange(access, slot), undo: null };",
+      "return { error: null, spec: working, changed: 0, editsLeft: await giveBackAstraChange(access, slot), undo: null, seal: editUndoOf(setId, userId, working) };",
     );
   });
 });
@@ -1151,6 +1152,111 @@ describe("undoing an Astra change", () => {
     for (const call of ["askAstra(", "astraChangeSlot(", "giveBackAstraChange(", "oncePerPress(", "submitAstraJob("]) expect(body, call).not.toContain(call);
     expect(body.indexOf("await setsAccess()")).toBeGreaterThan(-1);
     expect(body).toContain('if (await rateLimited(access.userId, "set-edit", 60, 40)) return { error: SET_SAVE_FAILED };');
+  });
+});
+
+// Undo in Build brings back Astra's words too (Helios Cut 4, step A6a,
+// 2026-09-26 — operator: "resume"). A step back in Build over an Astra change
+// saved the pieces through the autosave, which keeps the server's words —
+// Astra's. Now every answer seals the words of the copy it hands back as well
+// as the copy it replaced, the page files both (seal-book.ts), and a save of
+// a copy with sealed words brings them back.
+describe("Build's steps over an Astra change", () => {
+  const flagged = (): string =>
+    JSON.stringify({
+      ...SPEC,
+      title: "Flagged circuit",
+      description: "A race track lined with a row of flags along the pit wall.",
+      objects: SPEC.objects.map((o, i) => (i === 0 ? { ...o, color: "#aa3322" } : o)),
+    });
+  const lastWrite = () => (writes[writes.length - 1] as { edited_spec: SetSpec }).edited_spec;
+
+  it("hands back the seal of the copy it saved, beside the seal of the copy it replaced", async () => {
+    answer = { state: "done", text: flagged(), usage: null, costUsd: 0.31 };
+    const out = await editSetWithAstra(SET, "add a row of flags along the pit wall");
+    if (out.error !== null) throw new Error(out.error);
+    expect(out.seal).not.toBeNull();
+    expect(out.seal!.text).toEqual(editTextOf(out.spec));
+    expect(openEditSeal(SET, USER, out.seal!.text, out.seal!.seal)).toBe(true);
+    expect(out.undo!.text).toEqual(editTextOf(SPEC));
+  });
+
+  it("brings back the words a step lands on when its save carries their seal: ↺ the old words, ↻ Astra's again", async () => {
+    answer = { state: "done", text: flagged(), usage: null, costUsd: 0.31 };
+    const out = await editSetWithAstra(SET, "add a row of flags along the pit wall");
+    if (out.error !== null) throw new Error(out.error);
+    edited = out.spec;
+    const book: SealBook = new Map();
+    fileSeal(book, out.undo);
+    fileSeal(book, out.seal);
+    steps.length = 0;
+    // ↺: the copy before the change, as Build's history holds it.
+    expect(await saveSetEdit(SET, SPEC, sealFor(book, SPEC))).toEqual({ error: null });
+    expect(lastWrite().description).toBe(SPEC.description);
+    expect(lastWrite().title).toBe(SPEC.title);
+    expect(lastWrite().objects).toEqual(SPEC.objects);
+    edited = lastWrite();
+    // ↻: Astra's copy again, its words with it.
+    expect(await saveSetEdit(SET, out.spec, sealFor(book, out.spec))).toEqual({ error: null });
+    expect(lastWrite().description).toBe("A race track lined with a row of flags along the pit wall.");
+    expect(lastWrite().title).toBe("Flagged circuit");
+    // Never Astra, never the month: the editor's own pace alone.
+    expect(steps).toEqual(["set-edit", "set-edit"]);
+  });
+
+  it("keeps the server's words without a seal that opens: none, forged, another set's or another person's", async () => {
+    answer = { state: "done", text: flagged(), usage: null, costUsd: 0.31 };
+    const out = await editSetWithAstra(SET, "add a row of flags along the pit wall");
+    if (out.error !== null) throw new Error(out.error);
+    edited = out.spec;
+    const forged = { text: { ...out.undo!.text, description: "Anything the page likes." }, seal: out.undo!.seal };
+    const otherSet = editUndoOf("33333333-3333-4333-8333-333333333333", USER, SPEC);
+    const otherPerson = editUndoOf(SET, "44444444-4444-4444-8444-444444444444", SPEC);
+    for (const undo of [undefined, null, forged, otherSet, otherPerson, { text: out.undo!.text, seal: "x".repeat(32) }, "junk"]) {
+      expect(await saveSetEdit(SET, SPEC, undo), JSON.stringify(undo)).toEqual({ error: null });
+      expect(lastWrite().description, JSON.stringify(undo)).toBe("A race track lined with a row of flags along the pit wall.");
+      expect(lastWrite().title).toBe("Flagged circuit");
+      expect(lastWrite().objects).toEqual(SPEC.objects);
+    }
+  });
+
+  it("still keeps a browser from writing words of its own: sealed words stand for the title and description, and labels only as sealed or stored", async () => {
+    const sealed = editUndoOf(SET, USER, SPEC)!;
+    const invented = { ...SPEC, title: "My own title", description: "Words the page wrote.", marks: SPEC.marks.map((m, i) => (i === 0 ? { ...m, label: "Invented" } : m)) };
+    expect(await saveSetEdit(SET, invented, sealed)).toEqual({ error: null });
+    expect(lastWrite().title).toBe(SPEC.title);
+    expect(lastWrite().description).toBe(SPEC.description);
+    expect(lastWrite().marks[0].label).toBe("");
+  });
+});
+
+// The Build page's side (set-editor.tsx, a client component, read as source).
+describe("Build's seal book (read as source)", () => {
+  const editor = readFileSync(join(__dirname, "../../components/sets/set-editor.tsx"), "utf8");
+  const send = editor.slice(editor.indexOf("async function sendAsk()"), editor.indexOf("// ---- the stage ----"));
+  const goTo = editor.slice(editor.indexOf("function goTo(index: number) {"), editor.indexOf("function undo() {"));
+
+  it("sends the seal of the saved copy's words with every save, the unmount's flush included", () => {
+    expect(editor).toContain("const sealsRef = useRef<SealBook>(new Map());");
+    expect(editor).toContain("await saveSetEdit(setId, copy, sealFor(sealsRef.current, copy))");
+    expect(editor).toContain("const seals = sealsRef.current;");
+    expect(editor).toContain("saveSetEdit(setId, copy, sealFor(seals, copy)).then(");
+    // Those two are every save Build makes.
+    expect(editor.match(/saveSetEdit\(/g)).toHaveLength(2);
+  });
+
+  it("files the words Astra was handed and the words it wrote before the change lands in the history", () => {
+    const filed = send.indexOf("fileSeal(sealsRef.current, r.undo);");
+    expect(filed).toBeGreaterThan(-1);
+    expect(send.indexOf("fileSeal(sealsRef.current, r.seal);")).toBeGreaterThan(filed);
+    expect(filed).toBeLessThan(send.indexOf("commitFromServer(r.spec);"));
+  });
+
+  it("says a step back kept the server's words only when it lands on other words with no seal for them", () => {
+    expect(goTo).toContain('if (index < at && !sameWords(from, next) && sealFor(sealsRef.current, next) === null) {');
+    expect(goTo.indexOf('setAskNote("textKept");')).toBeGreaterThan(-1);
+    expect(goTo.indexOf("scheduleSave(next);")).toBeGreaterThan(goTo.indexOf('setAskNote("textKept");'));
+    expect(editor).toContain('askNote === "textKept" ? (\n                    <span>{s.reply.noteUndoAstraText}</span>');
   });
 });
 

@@ -281,6 +281,20 @@ export function sizeFromScale(o: SetObject, scale: { x: number; y: number; z: nu
 // The server's hold on text, and what an Astra edit changed.
 // ---------------------------------------------------------------------------
 
+/** The words of a set that a browser may never write: its title, its description and its labels (marks', then cameras', each sorted). */
+export type EditText = { title: string; description: string; labels: string[] };
+
+/**
+ * A set's words as the server seals them (edit-seal.ts). Here, not there,
+ * so the page can name the words of any copy it holds and find the seal the
+ * server handed for them (seal-book.ts, Helios Cut 4, step A6); edit-seal.ts
+ * is server-only and passes this on.
+ */
+export function editTextOf(spec: Pick<SetSpec, "title" | "description" | "marks" | "cameras">): EditText {
+  const labels = (xs: readonly { label: string }[]) => xs.map((x) => x.label).filter((l) => l.length > 0).sort();
+  return { title: spec.title, description: spec.description, labels: [...labels(spec.marks), ...labels(spec.cameras)] };
+}
+
 /**
  * What holdEditedText reads of a stored copy: its words alone, so the words
  * an Undo proves with a seal (edit-seal.ts, Helios Cut 2, 2026-09-25) can
