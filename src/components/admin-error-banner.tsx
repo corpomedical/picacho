@@ -74,6 +74,9 @@ const KNOWN_ERRORS = new Set<string>([
   "No recipients match that audience (suspended accounts are excluded; service notices include opted-out accounts).",
   "A blast from this account is already in flight (or just ran) — check Recent sends before retrying. Nothing was sent.",
   "The blast could not be sent — nothing went out. Check RESEND_API_KEY and the server log.",
+  // product-lock/admin-actions.ts (Press Tour product checks, 2026-09-26)
+  "That label can't be saved.",
+  "Only frames that kept their picture can be labelled (customer frames wait for the privacy page).",
 ]);
 
 // Messages whose tail is dynamic (a Stripe or Postgres error string). The

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nativeTabFor, NATIVE_TAB_HREF, GENERATE_VIDEO_HREF, LIVE_HREF, RECAST_HREF } from "./tab-routes";
+import { nativeTabFor, NATIVE_TAB_HREF, GENERATE_VIDEO_HREF, LIVE_HREF, PRESS_TOUR_HREF, RECAST_HREF } from "./tab-routes";
 
 describe("the app bar's lit tab", () => {
   it("lights each tab on its own page and the pages below it", () => {
@@ -32,6 +32,9 @@ describe("the app bar's lit tab", () => {
     expect(nativeTabFor(GENERATE_VIDEO_HREF)).toBe("generate");
     expect(nativeTabFor(LIVE_HREF)).toBe("generate");
     expect(nativeTabFor("/app/liveX")).toBeNull();
+    expect(nativeTabFor(PRESS_TOUR_HREF)).toBe("generate");
+    expect(nativeTabFor(`${PRESS_TOUR_HREF}/campaign`)).toBe("generate");
+    expect(nativeTabFor("/app/press-tours")).toBeNull();
   });
 
   it("keeps More lit on everything the bar has no room for", () => {

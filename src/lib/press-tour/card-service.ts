@@ -87,6 +87,7 @@ import {
   type PreparedProductImages,
 } from "./product-images";
 import { PAGE_UNREADABLE, SVG_LOGO_REFUSED, safeFetch, vetUrl } from "./safe-fetch";
+import { SELF_TEST_FAILED, SELF_TEST_LIMIT, SELF_TEST_UNAVAILABLE } from "../product-lock/messages";
 import { robotsAllowsUrl } from "./site-text";
 import { PRESS_UPLOADS_BUCKET } from "./upload-sweep";
 import {
@@ -133,6 +134,20 @@ export const FREE_IMPORTS_PER_DAY = 3;
 export const FREE_IMPORTS_APP_PER_DAY = 300;
 /** Fetches of one website a minute, across the app (spec §1.1). */
 export const HOST_FETCHES_PER_MINUTE = 60;
+/**
+ * Card self-tests a day, per person (admins included). Each is every chosen
+ * photo read by the product checker: ≤ 5 × (two judge calls + one word
+ * reading) + the reference words + ≤ 2 second readings ≈ $0.05 at most
+ * (product-lock/check.ts selfTestCard).
+ */
+export const SELF_TESTS_PER_DAY = 20;
+/**
+ * Free card self-tests a day across the whole app (PT-SEC-4, the twin of
+ * FREE_IMPORTS_APP_PER_DAY): the checker's readings are paid, so the free
+ * trial's total is bounded, not only each account's.
+ */
+export const FREE_SELF_TESTS_APP_PER_DAY = 300;
+const SELF_TEST_SCOPE = "press-selftest";
 /** Confirmations, saves and consents an hour (no paid call). */
 export const CARD_WRITES_PER_HOUR = 120;
 /** Upload places handed out an hour. */
@@ -197,6 +212,7 @@ export const CARD_SERVICE_MESSAGES = [
   PRODUCT_SAVE_FAILED, PRODUCT_NOT_DRAFT, PRODUCT_READ_UNAVAILABLE, PRODUCT_ANGLES_REQUIRED, PRODUCT_FRONT_REQUIRED,
   PRODUCT_LABEL_REQUIRED, PRODUCT_CONSENT_REQUIRED, PRODUCT_LOGO_BOX_INVALID, BRAND_NAME_REQUIRED, BRAND_CONSENT_REQUIRED,
   BRAND_LOGO_INVALID, BRAND_SAVE_FAILED, CONSENT_SAVE_FAILED, PRESS_TOUR_FAILED,
+  SELF_TEST_FAILED, SELF_TEST_UNAVAILABLE, SELF_TEST_LIMIT,
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -223,9 +239,18 @@ export type FailCode =
   | "logoBox"
   | "consent"
   | "name"
-  | "logo";
+  | "logo"
+  | "selfTest";
 
-export type Failure = { error: string; code: FailCode; productId?: string; brandKitId?: string; photosHash?: string };
+export type Failure = {
+  error: string;
+  code: FailCode;
+  productId?: string;
+  brandKitId?: string;
+  photosHash?: string;
+  /** With code "selfTest": the chosen photos that did not read as the product, for the door to mark. */
+  photos?: string[];
+};
 const fail = (code: FailCode, error: string, extra: Omit<Failure, "error" | "code"> = {}): Failure => ({ error, code, ...extra });
 
 export type PressCaller = { userId: string; via: "admin" | "plan" | "trial" };
@@ -281,9 +306,27 @@ export interface CardDeps {
   importBrandSite?: (url: string) => ReturnType<typeof readBrandSite>;
   newId?: () => string;
   now?: () => Date;
+  /**
+   * THE CARD SELF-TEST SEAM (synthesis v2 #7: every chosen reference photo
+   * must read Match before a card is confirmed). actions.ts wires the product
+   * checker's selfTestCard here (product-lock/live.ts cardSelfTest); left out,
+   * confirming is exactly what it was before the checker existed, which is
+   * how every test above this seam's own runs.
+   */
+  selfTest?: CardSelfTest;
 }
 
-type Providers = Required<Omit<CardDeps, "db" | "rateLimited" | "hashKey">>;
+/** What the card service hands the self-test: the card as it is about to be confirmed, and every chosen photo. */
+export type CardSelfTestInput = {
+  caller: PressCaller;
+  card: Pick<ProductCard, "id" | "name" | "dna" | "palette" | "labelStrings" | "noReadableText">;
+  photos: { path: string; view: ProductView; bytes: Buffer }[];
+};
+/** passed: confirm. failed: the photos that did not read Match. unavailable: the checker could not run; fail closed. */
+export type CardSelfTestAnswer = { status: "passed" } | { status: "failed"; photos: string[] } | { status: "unavailable" };
+export type CardSelfTest = (input: CardSelfTestInput) => Promise<CardSelfTestAnswer>;
+
+type Providers = Required<Omit<CardDeps, "db" | "rateLimited" | "hashKey" | "selfTest">>;
 
 function providers(deps: CardDeps): Providers {
   return {
@@ -345,13 +388,18 @@ const IMPORT_SCOPE = "press-import";
  * Astra's monthly changes the same way). Null when they cannot be read.
  */
 async function importsUsedToday(deps: CardDeps, userId: string): Promise<number | null> {
+  return hitsToday(deps, userId, IMPORT_SCOPE);
+}
+
+/** A person's hits in one scope over the last day, only READ (null when it cannot be read). */
+async function hitsToday(deps: CardDeps, userId: string, scope: string): Promise<number | null> {
   try {
     const since = new Date(providers(deps).now().getTime() - DAY * 1000).toISOString();
     const { count, error } = await deps.db
       .from("api_rate_hits")
       .select("id", { count: "exact", head: true })
       .eq("user_id", userId)
-      .eq("scope", IMPORT_SCOPE)
+      .eq("scope", scope)
       .gte("created_at", since);
     return error || typeof count !== "number" ? null : count;
   } catch {
@@ -1106,6 +1154,56 @@ async function saveLogoCrop(db: SupabaseClient, userId: string, productId: strin
   }
 }
 
+/** The same confirmed words, in any order. */
+function sameWords(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  const left = [...a].sort();
+  const right = [...b].sort();
+  return left.every((w, i) => w === right[i]);
+}
+
+/**
+ * The card self-test behind the seam: its own daily budget, every chosen
+ * photo downloaded, then the checker. Null = passed. A checker that cannot
+ * run, or a photo that cannot be read back, fails closed: the card stays a
+ * draft and the person is asked to try again.
+ */
+async function runSelfTest(
+  deps: CardDeps,
+  caller: PressCaller,
+  x: { card: CardSelfTestInput["card"]; angles: ProductAngle[] },
+): Promise<Failure | null> {
+  if (!deps.selfTest) return null;
+  // The importBudget order (PT-SEC-4): the person's own count only READ
+  // first, so someone at their limit never spends a shared slot; then, on
+  // the free trial, the app-wide free cap ("busy" spends none of the
+  // person's own); then the person's own test, spent last.
+  const used = await hitsToday(deps, caller.userId, SELF_TEST_SCOPE);
+  if (used !== null && used >= SELF_TESTS_PER_DAY) return fail("limit", SELF_TEST_LIMIT, { productId: x.card.id });
+  if (
+    caller.via === "trial" &&
+    (await deps.rateLimited(deps.hashKey("all", "press-selftest-free"), "press-selftest-free", DAY, FREE_SELF_TESTS_APP_PER_DAY))
+  ) {
+    return fail("limit", PRESS_IMPORT_BUSY, { productId: x.card.id });
+  }
+  if (await deps.rateLimited(caller.userId, SELF_TEST_SCOPE, DAY, SELF_TESTS_PER_DAY)) return fail("limit", SELF_TEST_LIMIT, { productId: x.card.id });
+  const bytes = await Promise.all(x.angles.map((a) => download(deps.db, a.path)));
+  if (bytes.some((b) => b === null)) return fail("unavailable", SELF_TEST_UNAVAILABLE, { productId: x.card.id });
+  let answer: CardSelfTestAnswer;
+  try {
+    answer = await deps.selfTest({ caller, card: x.card, photos: x.angles.map((a, i) => ({ path: a.path, view: a.view, bytes: bytes[i] as Buffer })) });
+  } catch (err) {
+    console.error(`[press-tour] card self-test failed to run: ${err instanceof Error ? err.name : "error"}`);
+    answer = { status: "unavailable" };
+  }
+  if (answer.status === "passed") return null;
+  if (answer.status === "failed") {
+    const chosen = x.angles.map((a) => a.path);
+    return fail("selfTest", SELF_TEST_FAILED, { productId: x.card.id, photos: answer.photos.filter((p) => chosen.includes(p)) });
+  }
+  return fail("unavailable", SELF_TEST_UNAVAILABLE, { productId: x.card.id });
+}
+
 /**
  * The person's answers make the card: 3–5 photos with their views (one the
  * front), the label words confirmed or "no readable text", an optional
@@ -1197,6 +1295,24 @@ export async function confirmProductCard(
     const front = angles.find((a) => a.view === "front")!;
     const bytes = await download(deps.db, front.path);
     palette = bytes ? normalisePalette(await p.palette(bytes)) : [];
+  }
+
+  // The self-test, last before anything is written: every check above is
+  // free, so a card that would fail them never spends a reading. A card
+  // confirmed again with exactly the photos and words its passed test saw
+  // is not tested again (PT-SEC-4: re-confirming must not be a way to spend
+  // readings).
+  const alreadyPassed =
+    card.status === "confirmed" &&
+    card.photosHash === hash &&
+    card.noReadableText === noReadableText &&
+    sameWords(card.labelStrings, labelStrings);
+  if (deps.selfTest && !alreadyPassed) {
+    const refused = await runSelfTest(deps, caller, {
+      card: { id: card.id, name: cleanText(input?.name, CARD_LIMITS.productName) ?? card.name, dna, palette, labelStrings, noReadableText },
+      angles,
+    });
+    if (refused) return refused;
   }
 
   let logoPath: string | null = null;

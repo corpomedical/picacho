@@ -40,6 +40,8 @@ import { DNA_MAX_IMAGES, dnaImageFromBytes, type ProductDnaResult } from "./prod
 import { normalizeProductImage, type PreparedProductImages } from "./product-images";
 import { PAGE_UNREADABLE } from "./safe-fetch";
 import { PRODUCT_REGULATED_REFUSED } from "./types";
+import { SELF_TEST_FAILED, SELF_TEST_LIMIT, SELF_TEST_UNAVAILABLE } from "../product-lock/messages";
+import { FREE_SELF_TESTS_APP_PER_DAY, SELF_TESTS_PER_DAY, type CardSelfTest } from "./card-service";
 
 // The product card and brand kit on the server, against an in-memory
 // Supabase (tables, the three guards of press-tour-02-products.sql in
@@ -651,6 +653,112 @@ describe("confirmProductCard: consent required", () => {
   it("someone else's card is not found", async () => {
     const { w, card: c, angles } = await drafted();
     expect(await confirmProductCard(w.deps, { userId: B, via: "plan" }, { productId: c.id, angles, noReadableText: true })).toMatchObject({ error: NOT_YOURS });
+  });
+});
+
+describe("confirmProductCard: the card self-test seam (synthesis v2 #7)", () => {
+  async function ready(selfTest: CardSelfTest) {
+    const w = world({}, { selfTest });
+    const out = await importProductFromUrl(w.deps, ADMIN, { url: "https://shop.example/p/cold-brew" });
+    if (out.error !== null) throw new Error(out.error);
+    const c = out.card;
+    const angles = [
+      { path: c.photos[0], view: "front" as const },
+      { path: c.photos[1], view: "back" as const },
+      { path: c.photos[2], view: "side" as const },
+    ];
+    const chosen = angles.map((a) => a.path);
+    await recordConsent(w.deps, ADMIN, { kind: "product", productId: c.id, photos: chosen, answer: "own" }, { locale: "en", ip: null });
+    return { w, card: c, angles, chosen };
+  }
+
+  it("passed: the card is confirmed, and the test saw every chosen photo with the answers about to be saved", async () => {
+    const selfTest = vi.fn<CardSelfTest>(async () => ({ status: "passed" }));
+    const { w, card: c, angles, chosen } = await ready(selfTest);
+    const out = await confirmProductCard(w.deps, ADMIN, { productId: c.id, angles, labelStrings: ["SOLSTAD"], name: "Solstad 330" });
+    expect(out.error).toBeNull();
+    expect(selfTest).toHaveBeenCalledTimes(1);
+    const input = selfTest.mock.calls[0][0];
+    expect(input.caller).toEqual(ADMIN);
+    expect(input.card).toMatchObject({ id: c.id, name: "Solstad 330", labelStrings: ["SOLSTAD"], noReadableText: false });
+    expect(input.photos.map((p) => [p.path, p.view])).toEqual(angles.map((a) => [a.path, a.view]));
+    expect(input.photos.every((p) => Buffer.isBuffer(p.bytes) && p.bytes.length > 0)).toBe(true);
+    expect(chosen).toHaveLength(3);
+  });
+
+  it("failed: the card stays a draft, the failing photos are named, no logo crop is left behind", async () => {
+    const { w, card: c, angles, chosen } = await ready(async () => ({ status: "passed" }));
+    // One chosen photo fails; a path that is not one of them is never echoed back.
+    w.deps.selfTest = async () => ({ status: "failed", photos: [chosen[1], "someone/else.jpg"] });
+    const out = await confirmProductCard(w.deps, ADMIN, { productId: c.id, angles, labelStrings: ["SOLSTAD"], logoBox: { path: chosen[0], x: 0.1, y: 0.1, w: 0.3, h: 0.3 } });
+    expect(out).toMatchObject({ error: SELF_TEST_FAILED, code: "selfTest", productId: c.id, photos: [chosen[1]] });
+    expect(w.tables.products[0].status).toBe("draft");
+    expect([...w.files.keys()].some((k) => k.includes("/logo-"))).toBe(false);
+  });
+
+  it("unavailable, or a test that throws: fail closed, the card stays a draft", async () => {
+    const { w, card: c, angles } = await ready(async () => ({ status: "unavailable" }));
+    expect(await confirmProductCard(w.deps, ADMIN, { productId: c.id, angles, labelStrings: ["SOLSTAD"] })).toMatchObject({ error: SELF_TEST_UNAVAILABLE, code: "unavailable" });
+    w.deps.selfTest = async () => {
+      throw new Error("boom");
+    };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await confirmProductCard(w.deps, ADMIN, { productId: c.id, angles, labelStrings: ["SOLSTAD"] })).toMatchObject({ error: SELF_TEST_UNAVAILABLE });
+    spy.mockRestore();
+    expect(w.tables.products[0].status).toBe("draft");
+  });
+
+  it("runs only after every free check: no consent, no test", async () => {
+    const selfTest = vi.fn<CardSelfTest>(async () => ({ status: "passed" }));
+    const w = world({}, { selfTest });
+    const out = await importProductFromUrl(w.deps, ADMIN, { url: "https://shop.example/p/cold-brew" });
+    if (out.error !== null) throw new Error(out.error);
+    const angles = out.card.photos.slice(0, 3).map((path, i) => ({ path, view: i === 0 ? "front" : "side" }));
+    expect(await confirmProductCard(w.deps, ADMIN, { productId: out.card.id, angles, labelStrings: ["SOLSTAD"] })).toMatchObject({ code: "consent" });
+    expect(await confirmProductCard(w.deps, ADMIN, { productId: out.card.id, angles, labelStrings: [] })).toMatchObject({ code: "label" });
+    expect(selfTest).not.toHaveBeenCalled();
+  });
+
+  it(`its own daily budget (${SELF_TESTS_PER_DAY}): over it, nothing is read`, async () => {
+    const selfTest = vi.fn<CardSelfTest>(async () => ({ status: "passed" }));
+    const { w, card: c, angles } = await ready(selfTest);
+    w.spies.rateLimited.mockImplementation(async (_key, scope) => scope === "press-selftest");
+    expect(await confirmProductCard(w.deps, ADMIN, { productId: c.id, angles, labelStrings: ["SOLSTAD"] })).toMatchObject({ error: SELF_TEST_LIMIT, code: "limit" });
+    expect(selfTest).not.toHaveBeenCalled();
+    expect(w.spies.rateLimited).toHaveBeenCalledWith(A, "press-selftest", 86_400, SELF_TESTS_PER_DAY);
+  });
+
+  it("on the free trial the app-wide free cap is asked too: busy reads nothing and spends none of the person's own tests (PT-SEC-4)", async () => {
+    const selfTest = vi.fn<CardSelfTest>(async () => ({ status: "passed" }));
+    const { w, card: c, angles } = await ready(selfTest);
+    const trial: PressCaller = { userId: A, via: "trial" };
+    w.spies.rateLimited.mockImplementation(async (_key, scope) => scope === "press-selftest-free");
+    expect(await confirmProductCard(w.deps, trial, { productId: c.id, angles, labelStrings: ["SOLSTAD"] })).toMatchObject({ error: PRESS_IMPORT_BUSY, code: "limit" });
+    expect(selfTest).not.toHaveBeenCalled();
+    const scopes = w.spies.rateLimited.mock.calls.map((call) => [call[1], call[3]]);
+    expect(scopes).toContainEqual(["press-selftest-free", FREE_SELF_TESTS_APP_PER_DAY]);
+    expect(scopes.some(([scope]) => scope === "press-selftest")).toBe(false);
+    // A plan's test never touches the free cap.
+    w.spies.rateLimited.mockClear();
+    w.spies.rateLimited.mockImplementation(async () => false);
+    expect((await confirmProductCard(w.deps, ADMIN, { productId: c.id, angles, labelStrings: ["SOLSTAD"] })).error).toBeNull();
+    expect(w.spies.rateLimited.mock.calls.some((call) => call[1] === "press-selftest-free")).toBe(false);
+  });
+
+  it("a card confirmed again with the same photos and words is not tested again (PT-SEC-4)", async () => {
+    const selfTest = vi.fn<CardSelfTest>(async () => ({ status: "passed" }));
+    const { w, card: c, angles } = await ready(selfTest);
+    expect((await confirmProductCard(w.deps, ADMIN, { productId: c.id, angles, labelStrings: ["SOLSTAD"] })).error).toBeNull();
+    expect((await confirmProductCard(w.deps, ADMIN, { productId: c.id, angles, labelStrings: ["SOLSTAD"] })).error).toBeNull();
+    expect(selfTest).toHaveBeenCalledTimes(1);
+    // New words are a new test.
+    expect((await confirmProductCard(w.deps, ADMIN, { productId: c.id, angles, labelStrings: ["SOLSTAD", "Cold Brew"] })).error).toBeNull();
+    expect(selfTest).toHaveBeenCalledTimes(2);
+  });
+
+  it("without the seam wired, confirming is exactly what it was", async () => {
+    const w = world();
+    expect(w.deps.selfTest).toBeUndefined();
   });
 });
 

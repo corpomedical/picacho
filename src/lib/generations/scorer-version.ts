@@ -44,3 +44,22 @@ export function identityScorerVersion(model?: string | null): string {
   const resolved = (model ?? "").trim() || DEFAULT_SCORER_MODEL;
   return `${resolved}/p${IDENTITY_PROMPT_REVISION}`;
 }
+
+// THE PRODUCT CHECKER'S STAMP (Press Tour, 2026-09-26: spec §1.8 "Add
+// PRODUCT_PROMPT_REVISION to scorer-version.ts"). Every row of
+// product_frame_checks carries it beside its numbers, for the same reason as
+// the identity stamp above: a calibration set pooled across two prompts, or
+// two readers, measures neither. The identity prompt is NOT reused for
+// products (it tells the model clothing and setting must not lower a score).
+//
+// p1 (2026-09-26): locate (is a product in the role, where) and judge (is
+// it the same product) on the judge model; the words read by the label
+// reader; a second reading on the escalation model.
+export const PRODUCT_PROMPT_REVISION = 1;
+
+/** The stamp stored beside every product check, e.g. "gemini-3.1-flash-lite+claude-sonnet-5/p1". */
+export function productScorerVersion(judgeModel: string, escalationModel: string): string {
+  const judge = judgeModel.trim() || "unknown";
+  const second = escalationModel.trim() || "unknown";
+  return `${judge}+${second}/p${PRODUCT_PROMPT_REVISION}`;
+}

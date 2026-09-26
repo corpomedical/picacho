@@ -1,0 +1,462 @@
+/* PRESS TOUR, direction A "Red Carpet" (operator's pick, 2026-09-26): the
+   pieces the app's utilities do not carry. Everything sits on the door's
+   literal dark card (components/door-frame.tsx), so the colours here are
+   literal too, in both themes. Warm ochre-umber light only; red is reserved
+   for "Didn't match". One motion on the whole page: the flashbulb. */
+
+/* ── Stage light: two soft cones from the rig onto the title. Static. ── */
+.rig {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.rig i {
+  position: absolute;
+  top: -60px;
+  height: 330px;
+  filter: blur(26px);
+  opacity: 0.55;
+  background: linear-gradient(180deg, rgba(224, 164, 104, 0.12), rgba(178, 116, 62, 0.05) 62%, transparent 96%);
+  clip-path: polygon(40% 0, 60% 0, 100% 100%, 0 100%);
+}
+
+/* The line above the title: who stars in what, in condensed caps. */
+.cast {
+  font-family: var(--font-marquee);
+  font-stretch: 62%;
+  font-variation-settings: "wdth" 62;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  color: #7d7f88;
+}
+.cast b {
+  font-weight: 800;
+  color: #b3aca2;
+}
+.cast small {
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  color: #62656e;
+}
+@media (max-width: 767.98px) {
+  .cast {
+    font-size: 11.5px;
+    letter-spacing: 0.14em;
+  }
+}
+
+/* The floor the stills stand on: umber, never red. */
+.floor {
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+  height: 70px;
+  filter: blur(8px);
+  background: radial-gradient(50% 50% at 50% 50%, rgba(170, 110, 58, 0.26), rgba(120, 78, 40, 0.1) 55%, transparent 78%);
+}
+
+/* ── The fixed verdict set: a word AND a shape per verdict ─────────────
+   Match = ochre disc with a tick; Didn't match = rose square with a cross
+   (the only red on any screen); Not readable = hatched square; Product
+   missing = dashed empty square; Not checked = hollow ring; No one in
+   this shot = a plain dash. */
+.g {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.g svg {
+  width: 9px;
+  height: 9px;
+}
+.gMatch {
+  border-radius: 99px;
+  background: #e8b27c;
+  color: #1a1208;
+}
+.gMiss {
+  border-radius: 2.5px;
+  background: #f08a80;
+  color: #2a0d0a;
+}
+.gUnread {
+  border-radius: 2.5px;
+  background: repeating-linear-gradient(135deg, rgba(236, 237, 241, 0.62) 0 1.4px, transparent 1.4px 3.6px);
+  box-shadow: inset 0 0 0 1px rgba(236, 237, 241, 0.55);
+}
+.gMissing {
+  border-radius: 2.5px;
+  outline: 1.3px dashed rgba(236, 237, 241, 0.7);
+  outline-offset: -1.5px;
+}
+.gUnchecked {
+  border-radius: 99px;
+  box-shadow: inset 0 0 0 1.3px rgba(236, 237, 241, 0.55);
+}
+.gNone {
+  width: 10px;
+}
+.gNone::before {
+  content: "";
+  width: 8px;
+  height: 1.5px;
+  border-radius: 2px;
+  background: rgba(236, 237, 241, 0.6);
+}
+
+/* The press stamp on a still. 11.5 px, sentence case. */
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  border-radius: 99px;
+  padding: 4px 9px 4px 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: rgba(10, 9, 8, 0.78);
+  backdrop-filter: blur(6px);
+  color: #d3d6dd;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
+}
+.stamp .k {
+  font-weight: 500;
+  opacity: 0.8;
+}
+.stampMatch {
+  color: #f0cda6;
+  box-shadow: inset 0 0 0 1.25px rgba(240, 196, 142, 0.7);
+}
+.stampMiss {
+  color: #ffb4ab;
+  box-shadow: inset 0 0 0 1.25px rgba(255, 138, 128, 0.75);
+}
+/* The same verdict inline (the phone's rows, tallies). */
+.vd {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: #c6c9d1;
+}
+.vd .g {
+  margin-top: 1.5px;
+}
+.vdMatch {
+  color: #f0cda6;
+}
+.vdMiss {
+  color: #ffb4ab;
+}
+
+/* The corner marks around a still that cleared every check (globals.css
+   .lock-frame draws them; here only their warm glow and inset). */
+.marks {
+  position: absolute;
+  inset: 6px;
+  z-index: 2;
+  filter: drop-shadow(0 0 6px rgba(232, 178, 124, 0.45));
+}
+
+/* A still's print on the stage. */
+.print {
+  position: relative;
+  overflow: hidden;
+  background: #101116;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 26px 40px -20px rgba(0, 0, 0, 0.9);
+}
+.print > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.shade {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 42%;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.66));
+  pointer-events: none;
+}
+/* Every applicable check matched, no one in the shot: a quieter warm edge. */
+.glow {
+  box-shadow: 0 0 0 1px rgba(240, 205, 166, 0.4), 0 0 30px -10px rgba(255, 222, 176, 0.35), 0 26px 40px -20px rgba(0, 0, 0, 0.9);
+}
+/* A still waiting on the person: a thin warm-yellow edge (never red). */
+.waiting {
+  box-shadow: 0 0 0 1.5px rgba(230, 196, 110, 0.85), 0 18px 28px -16px rgba(0, 0, 0, 0.9);
+}
+/* Being painted: a slow sheen on an empty print. Static under reduced motion. */
+.painting {
+  background:
+    linear-gradient(110deg, transparent 30%, rgba(255, 238, 214, 0.06) 50%, transparent 70%) 0 0 / 250% 100%,
+    #101116;
+  animation: sheen 2.4s linear infinite;
+}
+@keyframes sheen {
+  to {
+    background-position: -250% 0, 0 0;
+  }
+}
+
+/* ── THE SIGNATURE: the flashbulb ──────────────────────────────────────
+   Fires once, when a still shows up with the face AND the product both
+   reading Match. A warm white pop from the photographers' side, the print
+   over-exposes for a beat and settles, then the stamps land. Nothing else
+   on the page moves. Reduced motion: no pop, no fade; the stamps are simply
+   there, with the still afterglow. */
+.flash {
+  box-shadow: 0 0 0 1px rgba(240, 205, 166, 0.55), 0 0 38px -8px rgba(255, 222, 176, 0.45), 0 26px 40px -20px rgba(0, 0, 0, 0.9);
+}
+.flash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  opacity: 0;
+  background: radial-gradient(130% 95% at 80% 6%, rgba(255, 252, 244, 0.96), rgba(255, 232, 196, 0.5) 26%, rgba(255, 214, 160, 0.12) 52%, transparent 72%);
+  animation: flashbulb 1100ms cubic-bezier(0.16, 0.8, 0.24, 1) 500ms 1 both;
+}
+.flash > img {
+  animation: exposure 1100ms cubic-bezier(0.16, 0.8, 0.24, 1) 500ms 1 both;
+}
+.flash .land {
+  animation: stamp-land 420ms cubic-bezier(0.2, 0.9, 0.3, 1.2) 760ms 1 both;
+}
+@keyframes flashbulb {
+  0% {
+    opacity: 0;
+  }
+  5% {
+    opacity: 1;
+  }
+  22% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes exposure {
+  0% {
+    filter: none;
+  }
+  6% {
+    filter: brightness(1.9) contrast(0.8) saturate(0.6);
+  }
+  40% {
+    filter: brightness(1.12);
+  }
+  100% {
+    filter: none;
+  }
+}
+@keyframes stamp-land {
+  0% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.92);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flash::after,
+  .flash > img,
+  .flash .land,
+  .painting {
+    animation: none;
+  }
+  .flash::after {
+    opacity: 0;
+  }
+}
+
+/* ── The lit key (the composer's RENDER key, the one luminous ochre key) ── */
+.key {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  border-radius: 12px;
+  padding: 0 16px;
+  font-family: var(--font-marquee);
+  font-stretch: 112%;
+  font-variation-settings: "wdth" 112;
+  font-size: 12.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: linear-gradient(180deg, #f0bb84 0%, #dc9c5e 100%);
+  color: #1c1209;
+  box-shadow:
+    inset 0 -3px 0 #97602f,
+    inset 0 1px 0 rgba(255, 245, 230, 0.6),
+    0 6px 4px rgba(0, 0, 0, 0.25),
+    0 24px 28px -6px rgba(224, 164, 104, 0.28);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.key svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+.price {
+  margin-left: 2px;
+  border-radius: 6px;
+  background: rgba(28, 18, 9, 0.14);
+  padding: 3px 6px;
+  font-family: var(--font-slate);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0.03em;
+  font-stretch: 100%;
+  font-variation-settings: normal;
+}
+/* A blocked key is a different object, not a faded one: flat, unlit, no
+   price glow, aria-disabled, and a line above it says what blocks it. */
+.key[aria-disabled="true"] {
+  background: rgba(255, 255, 255, 0.045);
+  color: #858a95;
+  cursor: not-allowed;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+.key[aria-disabled="true"] .price {
+  background: rgba(255, 255, 255, 0.06);
+  color: #858a95;
+}
+.key:focus-visible {
+  outline: 2px solid #f0cda6;
+  outline-offset: 3px;
+}
+
+/* What blocks the next step: a warm dot and a plain line. */
+.blocker {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: #eed6a0;
+}
+.blocker::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  border-radius: 9px;
+  background: #e6c46e;
+  flex: none;
+}
+
+/* ── The route rail (static, grafted from B, in A's words) ───────────── */
+.pin {
+  width: 10px;
+  height: 10px;
+  border-radius: 99px;
+  box-shadow: inset 0 0 0 1.5px #4d505a;
+  background: #0b0c10;
+  flex: none;
+}
+.pinSm {
+  width: 9px;
+  height: 9px;
+}
+.pinDone {
+  background: #a09688;
+  box-shadow: none;
+}
+.pinNow {
+  background: #e0a468;
+  box-shadow: 0 0 0 3px rgba(224, 164, 104, 0.18), 0 0 10px rgba(224, 164, 104, 0.6);
+}
+.leg {
+  flex: 1;
+  height: 1.5px;
+  min-width: 16px;
+  border-radius: 2px;
+  background: #3a3c44;
+}
+.legDone {
+  background: #a09688;
+}
+
+/* ── The phone dock above the tab bar: opaque, grows with its text, and
+   the key leaves the Producer's lamp its corner. In the app it sits on the
+   bar and lets the Generate lamp rise into its bottom pad (the composer's
+   dock does the same: globals.css [data-dock]). ── */
+.dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: max(calc(var(--native-tab-bar, 18px) - 18px), 0px);
+  z-index: 30;
+  padding: 10px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  background: #0e0c0a;
+  box-shadow: 0 -12px 12px -4px #0e0c0a, 0 -1px 0 rgba(243, 237, 228, 0.06);
+  color: #c6c9d1;
+}
+:global(html.native-app) .dock {
+  padding-bottom: 30px;
+}
+.dockKey {
+  width: calc(100% - 58px);
+}
+@media (min-width: 768px) {
+  .dock {
+    display: none;
+  }
+}
+
+/* A photo tile in the product card: picked = a warm ring. */
+.tilePicked {
+  box-shadow: 0 0 0 2px rgba(240, 196, 142, 0.8);
+}
+
+/* The logo box on the front photo: the outside dims, the box glows. */
+.cropSel {
+  position: absolute;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1.5px rgba(240, 196, 142, 0.95), 0 0 0 600px rgba(8, 7, 6, 0.5);
+  touch-action: none;
+  cursor: move;
+}
+.cropSel:focus-visible {
+  outline: 2px solid #f0cda6;
+  outline-offset: 4px;
+}
+.handle {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  touch-action: none;
+}
+.handle::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 3px;
+  background: #f0cda6;
+  box-shadow: 0 0 0 1.5px rgba(26, 20, 16, 0.8);
+}

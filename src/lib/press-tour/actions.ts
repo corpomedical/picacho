@@ -32,6 +32,7 @@ import { headers } from "next/headers";
 import { getLocale } from "@/lib/i18n/server";
 import { hashedRateKey, rateLimited } from "@/lib/rate-limit";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { cardSelfTest } from "@/lib/product-lock/live";
 import {
   PRESS_TOUR_FAILED,
   confirmProductCard as confirmCard,
@@ -150,7 +151,9 @@ export async function confirmProductCard(input: {
   name?: string;
   brandKitId?: string | null;
 }): Promise<ProductConfirmed | Failure> {
-  return behindDoor("confirm a card", (caller, deps) => confirmCard(deps, caller, input));
+  // The card self-test (synthesis v2 #7): every chosen photo must read Match
+  // before the card is confirmed — wired only here, where it can spend.
+  return behindDoor("confirm a card", (caller, deps) => confirmCard({ ...deps, selfTest: cardSelfTest }, caller, input));
 }
 
 // ---------------------------------------------------------------------------

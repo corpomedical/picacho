@@ -7,6 +7,7 @@ import { isNativeAppClient } from "@/lib/native/platform";
 import { useBackCloser } from "@/lib/native/back-stack";
 import { useLocale } from "@/lib/i18n/provider";
 import { cn } from "@/lib/cn";
+import { NAV_TOOLS, SEEN_STORAGE_KEY, isToolNew, localDay, parseToolKeys } from "@/lib/nav/tools";
 import {
   CONTENT_TYPE_EVENT,
   DIRECTORS_CUT_HREF,
@@ -14,6 +15,7 @@ import {
   GENERATE_VIDEO_HREF,
   LIVE_HREF,
   NATIVE_TAB_HREF,
+  PRESS_TOUR_HREF,
   RECAST_HREF,
   nativeTabFor,
   type NativeTab,
@@ -46,6 +48,8 @@ import {
 // the same admin gate as its sidebar entry until the operator opens it.
 // LIVE (2026-09-24) is the third exposure, for every paid plan: the screen
 // opens whenever either door beyond Generate Video is open to the account.
+// PRESS TOUR (2026-09-26) sits beside Generate Video and Recast, admins
+// first, and wears the sidebar's New dot while its window is open.
 //
 // Rendered from the web app rather than built natively, so it stays in step
 // with the rest of the UI automatically. The look lives in globals.css under
@@ -143,6 +147,18 @@ function LiveIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+// Press Tour's glyph: a press camera with its flash glint (the sidebar's).
+function PressTourIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3" y="8" width="15" height="11.5" rx="2.5" />
+      <circle cx="10.5" cy="13.75" r="3" />
+      <path d="M7 8l1.2-2h4.6L14 8" />
+      <path d="M20.5 3v4M18.5 5h4" />
+    </svg>
+  );
+}
+
 // Director's Cut's glyph: the editor's scissors.
 function CutIcon(props: SVGProps<SVGSVGElement>) {
   return (
@@ -176,20 +192,41 @@ const CLOSE_MS = 200;
 // How long a picked choice is held lit before the lamp goes out.
 const PICK_MS = 300;
 
-type Choice = "video" | "recast" | "live" | "cut";
+type Choice = "video" | "recast" | "pressTour" | "live" | "cut";
 
-const CHOICE_HREF: Record<Choice, string> = { video: GENERATE_VIDEO_HREF, recast: RECAST_HREF, live: LIVE_HREF, cut: DIRECTORS_CUT_HREF };
+const CHOICE_HREF: Record<Choice, string> = {
+  video: GENERATE_VIDEO_HREF,
+  recast: RECAST_HREF,
+  pressTour: PRESS_TOUR_HREF,
+  live: LIVE_HREF,
+  cut: DIRECTORS_CUT_HREF,
+};
+
+const PRESS_TOUR_TOOL = NAV_TOOLS.find((tool) => tool.key === "pressTour");
+
+/** Whether Press Tour still wears New for this person: the sidebar's own rule and storage. */
+function pressTourIsNew(): boolean {
+  if (!PRESS_TOUR_TOOL) return false;
+  try {
+    const seen = new Set<string>(parseToolKeys(window.localStorage.getItem(SEEN_STORAGE_KEY)));
+    return isToolNew(PRESS_TOUR_TOOL, localDay(new Date()), seen);
+  } catch {
+    return false;
+  }
+}
 
 export function NativeTabBar({
   recastOn = false,
+  pressTourOn = false,
   liveOn = false,
   cutOn = false,
 }: {
   recastOn?: boolean;
+  pressTourOn?: boolean;
   liveOn?: boolean;
   cutOn?: boolean;
 }) {
-  const hasChoices = recastOn || liveOn || cutOn;
+  const hasChoices = recastOn || pressTourOn || liveOn || cutOn;
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useLocale();
@@ -213,6 +250,9 @@ export function NativeTabBar({
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [picked, setPicked] = useState<Choice | null>(null);
+  // Press Tour's New dot, read from storage each time the choices open (the
+  // sidebar retires it when the page is opened).
+  const [pressTourNew, setPressTourNew] = useState(false);
   // `open` mirrored in a ref, so close() can decide whether there is anything
   // to close without a state updater that has side effects.
   const openRef = useRef(false);
@@ -245,10 +285,11 @@ export function NativeTabBar({
 
   const openChoices = useCallback(() => {
     clearTimers();
+    setPressTourNew(pressTourOn && pressTourIsNew());
     openRef.current = true;
     setClosing(false);
     setOpen(true);
-  }, [clearTimers]);
+  }, [clearTimers, pressTourOn]);
 
   // A new page closes the choices: the tap that navigated has been answered.
   useEffect(() => {
@@ -393,6 +434,31 @@ export function NativeTabBar({
                   <span className="pj-txt">
                     <b>{t.nav.mystique}</b>
                     <span>{t.nav.recastSub}</span>
+                  </span>
+                </button>
+              )}
+              {pressTourOn && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={cn("pj-opt", picked === "pressTour" && "pj-picked")}
+                  onClick={() => choose("pressTour")}
+                >
+                  <span className="pj-ic">
+                    <PressTourIcon />
+                  </span>
+                  <span className="pj-txt">
+                    <b>
+                      {t.nav.pressTour}
+                      {pressTourNew && (
+                        <span
+                          role="img"
+                          aria-label={t.nav.newBadge}
+                          className="ml-2 inline-block h-1.5 w-1.5 rounded-full bg-[#e0a468] align-middle shadow-[0_0_8px_#e0a468]"
+                        />
+                      )}
+                    </b>
+                    <span>{t.nav.pressTourSub}</span>
                   </span>
                 </button>
               )}

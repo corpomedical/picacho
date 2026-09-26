@@ -23,6 +23,7 @@ import {
   isToolNew,
   localDay,
   parseToolKeys,
+  startingPins,
   togglePin,
   toolForPath,
   visibleTools,
@@ -263,6 +264,19 @@ function MystiqueIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+// Press Tour's glyph: a press camera with its flash glint (the Red Carpet
+// artboards, 2026-09-26).
+function PressTourIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3" y="8" width="15" height="11.5" rx="2.5" />
+      <circle cx="10.5" cy="13.75" r="3" />
+      <path d="M7 8l1.2-2h4.6L14 8" />
+      <path d="M20.5 3v4M18.5 5h4" />
+    </svg>
+  );
+}
+
 function SetsIcon(props: SVGProps<SVGSVGElement>) {
   // A floor, a back wall and a figure on its mark — a set, not a cube.
   return (
@@ -409,6 +423,7 @@ const TOOLS_PANEL_ID = "sidebar-tools-panel";
 
 const TOOL_ICONS: Record<ToolKey, Glyph> = {
   generate: BoltIcon,
+  pressTour: PressTourIcon,
   live: LiveIcon,
   recast: MystiqueIcon,
   sets: SetsIcon,
@@ -427,6 +442,8 @@ function toolWords(t: Messages, key: ToolKey): { label: string; sub: string } {
   switch (key) {
     case "generate":
       return { label: t.nav.generate, sub: t.nav.generateSub };
+    case "pressTour":
+      return { label: t.nav.pressTour, sub: t.nav.pressTourSub };
     case "live":
       return { label: t.nav.live, sub: t.nav.liveSub };
     case "recast":
@@ -639,6 +656,7 @@ export function AppSidebar({
   mystiqueVisible = false,
   liveVisible = false,
   cutVisible = false,
+  pressTourVisible = false,
 }: {
   isAdmin: boolean;
   username: string;
@@ -657,6 +675,8 @@ export function AppSidebar({
   liveVisible?: boolean;
   /** Director's Cut (the video editor) — admins only, behind the video_editor flag. */
   cutVisible?: boolean;
+  /** Press Tour (ads for your product) — admins only, behind the press_tour flag. */
+  pressTourVisible?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -664,7 +684,11 @@ export function AppSidebar({
   const { t } = useLocale();
   const s = t.settings;
   // The tools this account may open, behind the one Tools row.
-  const tools = visibleTools({ setsVisible, recceVisible, mystiqueVisible, liveVisible, cutVisible });
+  const tools = visibleTools({ setsVisible, recceVisible, mystiqueVisible, liveVisible, cutVisible, pressTourVisible });
+  // The keys this account can see, as one string: the pins below are re-read
+  // when it changes, so a default pin (DEFAULT_PINNED) is seeded only where
+  // its tool is shown.
+  const visibleKeys = tools.map((tool) => tool.key).join(" ");
   const [toolsOpen, setToolsOpen] = useState(false);
   const toolsButtonRef = useRef<HTMLButtonElement>(null);
   // Pins and the tools this person has already opened: per-browser
@@ -778,13 +802,16 @@ export function AppSidebar({
     let pinned: ToolKey[] = [];
     let seen: ToolKey[] = [];
     try {
-      pinned = parseToolKeys(window.localStorage.getItem(PINNED_STORAGE_KEY));
+      // Nothing stored yet: the default pins this account can see (Press
+      // Tour under Tools, Spec v2 N1). Anything stored is their own list.
+      pinned = startingPins(window.localStorage.getItem(PINNED_STORAGE_KEY), visibleKeys.split(" "));
       seen = parseToolKeys(window.localStorage.getItem(SEEN_STORAGE_KEY));
     } catch {
-      // Storage blocked: no pins, and every new tool keeps its dot.
+      // Storage blocked: only the default pins, and every new tool keeps its dot.
+      pinned = startingPins(null, visibleKeys.split(" "));
     }
     setToolPrefs({ pinned, seen, today: localDay(new Date()) });
-  }, []);
+  }, [visibleKeys]);
 
   // Opening a new tool is what retires its dot.
   const currentTool = toolForPath(pathname, tools);

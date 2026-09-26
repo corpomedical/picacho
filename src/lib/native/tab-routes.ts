@@ -18,7 +18,7 @@ export type NativeTab = "home" | "characters" | "media" | "generate" | "communit
 const ROUTES: Record<Exclude<NativeTab, "home">, readonly string[]> = {
   characters: ["/app/character"],
   media: ["/app/media", "/app/images", "/app/videos"],
-  generate: ["/app/generate", "/app/mystique", "/app/live", "/app/edit"],
+  generate: ["/app/generate", "/app/mystique", "/app/press-tour", "/app/live", "/app/edit"],
   community: ["/app/community"],
   // The Angle Stage is opened from a History take.
   history: ["/app/history", "/app/stage"],
@@ -68,6 +68,9 @@ export const NATIVE_TAB_HREF: Record<Exclude<NativeTab, "generate">, string> = {
 /** The lamp's two choices. "Generate Video" opens the composer on video. */
 export const GENERATE_VIDEO_HREF = "/app/generate?type=video";
 export const RECAST_HREF = "/app/mystique";
+/** Press Tour (2026-09-26): an ad for your product, starring your character —
+ *  admins first. It sits beside Generate Video and Recast in the lamp. */
+export const PRESS_TOUR_HREF = "/app/press-tour";
 /** The third choice (2026-09-24): Live, H3 Max Director — every paid plan. */
 export const LIVE_HREF = "/app/live";
 /** The fourth (2026-09-24): Director's Cut, the video editor — admins. */

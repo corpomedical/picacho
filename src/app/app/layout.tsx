@@ -5,6 +5,7 @@ import { isRecceEnabled, isSetsEnabled } from "@/lib/sets/enabled";
 import { isRecastEnabled } from "@/lib/recast/enabled";
 import { isLiveEnabled, isLiveOpenToPlans, liveAllowed } from "@/lib/live/enabled";
 import { isEditorEnabled } from "@/lib/editor/enabled";
+import { isPressTourEnabled } from "@/lib/press-tour/enabled";
 import { producerVisible, readProducerGrant } from "@/lib/producer/enabled";
 import { countWatch, loadWatchBar } from "@/lib/producer/watch";
 import { DEFAULT_PRODUCER_NAME } from "@/lib/producer/store";
@@ -103,6 +104,12 @@ export default async function AppLayout({
   // Director's Cut (2026-09-24): admins only, behind the video_editor
   // switch (lib/editor/enabled.ts). Admin first spares everyone the flag read.
   const cutVisible = isAdmin && (await isEditorEnabled(supabase));
+  // Press Tour (2026-09-26): admins only while it is built, behind the
+  // press_tour switch (lib/press-tour/enabled.ts, which also needs its
+  // provider keys). Admin first spares everyone else the flag read. Its row
+  // is a default pin under Tools (lib/nav/tools.ts DEFAULT_PINNED), and a
+  // choice in the phone's lamp.
+  const pressTourVisible = isAdmin && (await isPressTourEnabled(supabase));
 
   // The Producer's lamp (2026-09-24): admins, accounts an admin granted it
   // to, and Elite once `producer_elite` is on — the route's own rule
@@ -168,6 +175,7 @@ export default async function AppLayout({
         mystiqueVisible={mystiqueVisible}
         liveVisible={liveVisible}
         cutVisible={cutVisible}
+        pressTourVisible={pressTourVisible}
       />
       {/* Registers this device for push, once there's a session to
           attach it to. No-ops entirely on the web. */}
@@ -180,9 +188,10 @@ export default async function AppLayout({
         <RouteProgress />
       </Suspense>
       <ScrollReset />
-      {/* The Generate lamp offers Recast and Live to the accounts that can
-          open them: the same gates as the sidebar's entries. */}
-      <NativeTabBar recastOn={mystiqueVisible} liveOn={liveVisible} cutOn={cutVisible} />
+      {/* The Generate lamp offers Recast, Press Tour, Live and Director's Cut
+          to the accounts that can open them: the same gates as the sidebar's
+          entries. */}
+      <NativeTabBar recastOn={mystiqueVisible} pressTourOn={pressTourVisible} liveOn={liveVisible} cutOn={cutVisible} />
       <NativeQuickPill
         shareUrl={profile?.username ? `https://picacho.ai/r/${profile.username}` : undefined}
       />

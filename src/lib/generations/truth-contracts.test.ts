@@ -366,6 +366,20 @@ describe("localized server strings still match what the server says", () => {
     // A send delivered twice, answered from the first delivery's take
     // (2026-09-22).
     "./repeat-send.ts",
+    // Press Tour's product card, access, ownership, page reads and the star's
+    // answer: what the door shows (2026-09-26).
+    "../press-tour/card-service.ts",
+    "../press-tour/owned.ts",
+    "../press-tour/enabled.ts",
+    "../press-tour/types.ts",
+    "../press-tour/safe-fetch.ts",
+    "../press-tour/star-consent.ts",
+    // Press Tour's campaign engine: every sentence its actions and the
+    // campaign's blocker line return (2026-09-26).
+    "../press-tour/campaign-messages.ts",
+    // The product checker: a verdict's reason and the card self-test's
+    // answers (2026-09-26).
+    "../product-lock/messages.ts",
   ]
     .map((p) => src(p))
     .join("\n")

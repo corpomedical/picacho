@@ -64,6 +64,10 @@ const COLUMNS = {
     // start action refunds and refuses a take whose meter did not land, so
     // Live simply cannot run until the file does; this line says why.
     "live",
+    // Press Tour's campaign engine (pending/press-tour-03-campaigns.sql):
+    // written through jsonb_populate_record, so a still reserved before the
+    // file runs would silently lose which campaign it belongs to.
+    "press_tour", "product_verdict", "product_gated_at", "product_retries",
   ],
   push_tokens: ["token", "platform", "last_seen_at", "locale"],
   character_profiles: [
@@ -110,6 +114,28 @@ const COLUMNS = {
   product_consents: [
     "user_id", "kind", "product_id", "brand_kit_id", "answer", "photos_hash",
     "notice_version", "locale", "method", "place", "ip_hash", "created_at",
+  ],
+  // Press Tour's campaigns, the checker's per-frame record and the star's
+  // ad-use answer (pending/press-tour-03-campaigns.sql). campaign-machine.ts
+  // CAMPAIGN_COLUMNS selects the first list by name; product-lock/records.ts
+  // FRAME_CHECK_COLUMNS writes the second.
+  press_campaigns: [
+    "user_id", "source", "send_id", "product_id", "brand_kit_id", "character_ids", "trial_id",
+    "mcp_grant_id", "length_s", "aspect", "goal", "plan", "quote", "stills", "stage",
+    "stage_changed_at", "locked_at", "attempts", "version", "keyframe_ids", "shot_ids",
+    "cost_usd", "credits_charged", "credits_refunded", "error", "expires_at",
+    "overdue_notified_at", "deleted_at",
+  ],
+  product_frame_checks: [
+    "user_id", "product_id", "campaign_id", "generation_id", "source", "shot", "moment",
+    "at_seconds", "visibility", "frame_verdict", "shot_verdict", "reason", "presence",
+    "coverage", "judge_verdict", "judge_confidence", "escalated", "escalation_verdict",
+    "ocr_best", "ocr_conflict", "face_score", "lane", "frame_path", "scorer_version",
+    "cost_usd", "signals", "label", "labelled_by", "labelled_at",
+  ],
+  character_ad_consents: [
+    "user_id", "character_id", "answer", "ads_ok", "photos_hash", "notice_version",
+    "locale", "method", "place", "ip_hash", "consented_at",
   ],
   app_settings: ["key", "value"],
   feature_flags: ["key", "enabled"],
@@ -193,6 +219,8 @@ const FLAGS = [
 const RPCS = [
   "api_rate_check",
   "reserve_generations",
+  // Press Tour's campaign claim (pending/press-tour-03-campaigns.sql).
+  "claim_press_campaigns",
   "claim_job_advance",
   "spend_daily_free_generation",
   "spend_purchased_credits",
@@ -229,6 +257,8 @@ const PRIVATE_RPCS = [
   "api_rate_check",
   "auth_email_status",
   "blast_recipient_emails",
+  // The press cron's claim (pending/press-tour-03-campaigns.sql): the service role's alone.
+  "claim_press_campaigns",
   "claim_job_advance",
   "clawback_credit_purchase",
   "create_api_key_capped",

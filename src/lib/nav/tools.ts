@@ -8,6 +8,7 @@
 
 export type ToolKey =
   | "generate"
+  | "pressTour"
   | "live"
   | "recast"
   | "sets"
@@ -37,6 +38,9 @@ export type NavTool = {
 
 export const NAV_TOOLS: readonly NavTool[] = [
   { key: "generate", href: "/app/generate", group: "make" },
+  // Press Tour (2026-09-26): an ad for your product, starring your character.
+  // Admins first, behind the press_tour switch; pinned by default (below).
+  { key: "pressTour", href: "/app/press-tour", group: "make", newUntil: "2026-10-10" },
   { key: "live", href: "/app/live", group: "make", newUntil: "2026-10-08" },
   { key: "recast", href: "/app/mystique", group: "make", newUntil: "2026-10-05" },
   { key: "sets", href: "/app/sets", group: "make", newUntil: "2026-10-03" },
@@ -55,9 +59,11 @@ export type ToolGates = {
   mystiqueVisible: boolean;
   liveVisible: boolean;
   cutVisible: boolean;
+  pressTourVisible: boolean;
 };
 
 const GATE: Partial<Record<ToolKey, keyof ToolGates>> = {
+  pressTour: "pressTourVisible",
   sets: "setsVisible",
   recce: "recceVisible",
   recast: "mystiqueVisible",
@@ -118,6 +124,27 @@ export function parseToolKeys(raw: string | null | undefined): ToolKey[] {
     if (typeof item === "string" && KEYS.has(item) && !out.includes(item as ToolKey)) out.push(item as ToolKey);
   }
   return out;
+}
+
+/**
+ * The tools pinned under the Tools row for someone who has never pinned or
+ * unpinned anything (Spec v2 N1, 2026-09-26: Press Tour is a pinned row under
+ * Tools, never a new row in the menu). Seeded only while no pin list is
+ * stored, and only for the tools this account can see; the first pin or
+ * unpin stores the list, and from then on the person's own list is the only
+ * one read.
+ */
+export const DEFAULT_PINNED: readonly ToolKey[] = ["pressTour"];
+
+/**
+ * The pins to start from. `raw` is the stored list: null (or undefined) when
+ * nothing is stored, and then the default pins this account can see
+ * (`visible`, the keys of visibleTools) are the answer. Anything stored, even
+ * an empty list or junk, is the person's own choice and is read as it is.
+ */
+export function startingPins(raw: string | null | undefined, visible: readonly string[]): ToolKey[] {
+  if (raw !== null && raw !== undefined) return parseToolKeys(raw);
+  return DEFAULT_PINNED.filter((key) => visible.includes(key));
 }
 
 /** Pin or unpin one tool; a new pin goes to the end. */

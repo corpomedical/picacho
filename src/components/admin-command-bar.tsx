@@ -34,6 +34,7 @@ const NAV_ITEMS = [
   { href: "/admin/system", label: "System health", icon: PulseIcon },
   { href: "/admin/providers", label: "AI providers", icon: CpuIcon },
   { href: "/admin/voices", label: "Voices", icon: MicIcon },
+  { href: "/admin/product-checks", label: "Product checks", icon: ChartIcon },
   { href: "/admin/flags", label: "Feature flags", icon: ToggleIcon },
   { href: "/admin/settings", label: "Settings", icon: GearIcon },
   { href: "/admin/security", label: "Security", icon: ShieldIcon },
@@ -45,7 +46,7 @@ const NAV_GROUPS: { label: string | null; hrefs: string[] }[] = [
   { label: "People", hrefs: ["/admin/users", "/admin/feedback"] },
   { label: "Trust & Safety", hrefs: ["/admin/reports", "/admin/moderation"] },
   { label: "Money", hrefs: ["/admin/billing", "/admin/promo", "/admin/stats"] },
-  { label: "Product", hrefs: ["/admin/providers", "/admin/voices", "/admin/flags", "/admin/updates", "/admin/emails"] },
+  { label: "Product", hrefs: ["/admin/providers", "/admin/voices", "/admin/product-checks", "/admin/flags", "/admin/updates", "/admin/emails"] },
   { label: "System", hrefs: ["/admin/system", "/admin/settings"] },
 ];
 
