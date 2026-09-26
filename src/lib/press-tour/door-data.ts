@@ -30,6 +30,7 @@ import {
   BRAND_KIT_COLUMNS,
   PRODUCT_CARD_COLUMNS,
   brandKitFromRow,
+  cardWithHeldFiles,
   productCardFromRow,
   type BrandKit,
   type ProductCard,
@@ -54,6 +55,7 @@ export type PressCharacter = {
 
 /** A product card as the door shows it, with short-lived display links for its photos. */
 export type PressProduct = {
+  /** The card with only the files press-kit holds (cardWithHeldFiles): what the door counts, shows and hands the card sheet. */
   card: ProductCard;
   /** Display links keyed by storage path (card.photos, and the logo crop). Short-lived. */
   photoUrls: Record<string, string>;
@@ -207,18 +209,30 @@ async function readOpenCampaignId(admin: SupabaseClient, userId: string): Promis
   }
 }
 
+type SignedPaths = {
+  links: Record<string, string>;
+  /**
+   * Whether press-kit answered for the paths. When it did, a path it gave no
+   * link for is not there (a Product Studio leftover names photos in another
+   * bucket, 2026-08-27). When it could not be asked, nothing is known.
+   */
+  answered: boolean;
+};
+
 /** Short-lived display links for press-kit paths under the person's own folder; others are left out. */
-async function signPressPaths(admin: SupabaseClient, userId: string, paths: readonly string[]): Promise<Record<string, string>> {
+async function signPressPaths(admin: SupabaseClient, userId: string, paths: readonly string[]): Promise<SignedPaths> {
   const own = [...new Set(paths)].filter((path) => pathOwned(userId, path));
-  const out: Record<string, string> = {};
-  if (own.length === 0) return out;
+  const links: Record<string, string> = {};
+  if (own.length === 0) return { links, answered: true };
   try {
-    const { data } = await admin.storage.from(PRESS_KIT_BUCKET).createSignedUrls(own, PHOTO_URL_SECONDS);
-    for (const item of data ?? []) if (item?.path && item.signedUrl) out[item.path] = item.signedUrl;
+    const { data, error } = await admin.storage.from(PRESS_KIT_BUCKET).createSignedUrls(own, PHOTO_URL_SECONDS);
+    if (error || !Array.isArray(data)) return { links, answered: false };
+    for (const item of data) if (item?.path && item.signedUrl) links[item.path] = item.signedUrl;
+    return { links, answered: true };
   } catch {
     /* no display links is not a failure of the door */
+    return { links, answered: false };
   }
-  return out;
 }
 
 /** Everything the door opens on, in one pass. */
@@ -237,9 +251,15 @@ export async function getPressTourHome(clients: { db: SupabaseClient; admin: Sup
     if (card.logoPath) paths.push(card.logoPath);
   }
   for (const kit of kits) if (kit.logoPath) paths.push(kit.logoPath);
-  const links = await signPressPaths(admin, userId, paths);
+  const { links, answered } = await signPressPaths(admin, userId, paths);
 
-  const products: PressProduct[] = cards.map((card) => {
+  // A product photo counts, and shows, only when press-kit holds it: the
+  // tile's count, its "finish its card" line and the card sheet all see the
+  // same photos the server can read. When press-kit could not be asked, the
+  // card's own photos stand (nothing is known to be missing).
+  const held = (path: string) => (answered ? typeof links[path] === "string" : pathOwned(userId, path));
+  const products: PressProduct[] = cards.map((stored) => {
+    const card = cardWithHeldFiles(stored, held);
     const photoUrls: Record<string, string> = {};
     for (const path of [...card.photos, ...(card.logoPath ? [card.logoPath] : [])]) {
       if (links[path]) photoUrls[path] = links[path];

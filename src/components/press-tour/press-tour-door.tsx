@@ -317,7 +317,7 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
     if (!campaign || isClosed(campaign.stage)) return null;
     // The stops ahead of an open ad say what they hold, as the artboards
     // do: the film's price from the quote, and where the ad can post today.
-    if (stop === "line") return liveNetworks > 0 ? formatMsg(m.routeNetworks, { n: liveNetworks }) : m.routeSoon;
+    if (stop === "line") return liveNetworks > 0 ? formatMsg(liveNetworks === 1 ? m.routeNetworksOne : m.routeNetworks, { n: liveNetworks }) : m.routeSoon;
     if (i > now) return stop === "film" && quote && !quote.trial ? formatMsg(m.creditsTag, { n: quote.animate }) : null;
     if (stop === "film") return stage === "animating" ? m.routeFilming : m.routeFilmed;
     if (stop === "wall") {
@@ -325,7 +325,7 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
       if (stage === "assembling" || stage === "signing") return m.routeCutting;
       // The fixed words: "didn't match" counts only the moments that read so;
       // a product missing is counted under its own word.
-      if (didnt > 0) return formatMsg(m.routeMissed, { n: didnt });
+      if (didnt > 0) return formatMsg(didnt === 1 ? m.routeMissedOne : m.routeMissed, { n: didnt });
       if (misses > 0) return `${misses} ${m.verdictProductMissing}`;
       return formatMsg(m.routeRead, { n: wall.length });
     }
@@ -547,6 +547,15 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
   // ── Pieces ───────────────────────────────────────────────────────────────
   const productPhoto = product ? (product.card.photos.map((p) => product.photoUrls[p]).find(Boolean) ?? null) : null;
   const host = product ? sourceHost(product.card.sourceUrl) : null;
+  // Only the photos press-kit holds are on a door card (door-data.ts): a
+  // leftover card's photos kept elsewhere are neither counted nor shown.
+  const productPhotoCount = product ? product.card.photos.length : 0;
+  const productSub = [
+    host,
+    productPhotoCount > 0 ? formatMsg(productPhotoCount === 1 ? m.productPhotosOne : m.productPhotos, { n: productPhotoCount }) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const keyNoteId = `${ids}-key-note`;
   const errorLine = error ? (
     <p role="alert" className="text-[12.5px] leading-[1.4] text-[#eed6a0]">
@@ -675,10 +684,12 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
         {product ? (
           <>
             <p className="mt-1 truncate text-[15px] font-semibold leading-[1.2] text-[#ecedf1]">{product.card.name || m.untitledProduct}</p>
-            <p className="mt-[3px] flex items-center gap-[5px] text-xs text-[#9aa0ad]">
-              {host && <LinkIcon className="h-3 w-3 flex-none" />}
-              <span className="truncate">{host ? `${host} · ${formatMsg(m.productPhotos, { n: product.card.photos.length })}` : formatMsg(m.productPhotos, { n: product.card.photos.length })}</span>
-            </p>
+            {productSub && (
+              <p className="mt-[3px] flex items-center gap-[5px] text-xs text-[#9aa0ad]">
+                {host && <LinkIcon className="h-3 w-3 flex-none" />}
+                <span className="truncate">{productSub}</span>
+              </p>
+            )}
             {product.card.category === "regulated" ? (
               <p className="mt-2 text-[12px] leading-[1.4] text-[#eed6a0]">{localizeServerText(PRODUCT_REGULATED_REFUSED, t)}</p>
             ) : product.card.status === "confirmed" ? (
@@ -708,7 +719,11 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
               </>
             ) : (
               <>
-                <p className="mt-1.5 text-[12px] text-[#9aa0ad]">{m.productDraft}</p>
+                {productPhotoCount === 0 ? (
+                  <p className="mt-1.5 text-[12px] text-[#eed6a0]">{m.productNeedsPhotos}</p>
+                ) : (
+                  <p className="mt-1.5 text-[12px] text-[#9aa0ad]">{m.productDraft}</p>
+                )}
                 {!castFixed && (
                   <div className="mt-2">
                     <button type="button" disabled={!emailConfirmed} onClick={() => setSheet({ initial: product })} className={GHOST}>
@@ -999,7 +1014,7 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
             </div>
             {campaign && (
               <div className="hidden flex-none text-right text-xs leading-[1.6] text-[#858994] xl:block">
-                {creditsNow !== null && <p>{withNumber(m.creditsLeft, creditsNow)}</p>}
+                {creditsNow !== null && <p>{withNumber(creditsNow === 1 ? m.creditsLeftOne : m.creditsLeft, creditsNow)}</p>}
                 {/* The angle is The angle tile's; here only when the ad was last saved, so the promise keeps one line. */}
                 <p>{formatMsg(m.savedAgo, { when: ago(campaign.updatedAt, locale) })}</p>
               </div>
@@ -1024,7 +1039,7 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
             <RouteRail stops={stops} now={now} networks={networks} m={m} />
           </div>
           <div className="xl:hidden">
-            <PhoneRoute stops={stops} now={now} networks={networks} right={creditsNow !== null ? formatMsg(m.creditsLeft, { n: creditsNow }) : null} m={m} />
+            <PhoneRoute stops={stops} now={now} networks={networks} right={creditsNow !== null ? formatMsg(creditsNow === 1 ? m.creditsLeftOne : m.creditsLeft, { n: creditsNow }) : null} m={m} />
           </div>
 
           {!emailConfirmed && (
@@ -1058,7 +1073,7 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
               )}
               {campaign.creditsRefunded > 0 && (
                 <p role="status" className="mb-3 text-[12.5px] leading-[1.45] text-[#b9b2a6]">
-                  {formatMsg(m.creditsBack, { n: campaign.creditsRefunded })}
+                  {formatMsg(campaign.creditsRefunded === 1 ? m.creditsBackOne : m.creditsBack, { n: campaign.creditsRefunded })}
                 </p>
               )}
               {stage === "ready" && campaign.master ? (

@@ -100,6 +100,8 @@ import {
   PRODUCT_VIEWS,
   REGULATED,
   brandKitFromRow,
+  cardFiles,
+  cardWithHeldFiles,
   cleanText,
   normaliseLabelStrings,
   normalisePalette,
@@ -488,6 +490,65 @@ async function signedUrls(db: SupabaseClient, paths: readonly string[]): Promise
     /* no display links is not a failure of the card */
   }
   return out;
+}
+
+/**
+ * Which of these paths press-kit holds, asked once as display links that are
+ * thrown away: a path it answers for with no link is not there. Null when
+ * press-kit could not be asked (then nothing is taken to be missing).
+ */
+async function heldInPressKit(db: SupabaseClient, paths: readonly string[]): Promise<Set<string> | null> {
+  const list = uniq(paths);
+  if (list.length === 0) return new Set();
+  try {
+    const { data, error } = await bucket(db).createSignedUrls(list, 60);
+    if (error || !Array.isArray(data)) return null;
+    const held = new Set<string>();
+    for (const item of data) if (item?.path && item.signedUrl) held.add(item.path);
+    return held;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The card without the files press-kit does not hold, before it is edited or
+ * confirmed. A product's files are read from press-kit alone: a path that is
+ * not there (a Product Studio leftover of 2026-08-27 names photos in the
+ * character-references bucket) is not one of the card's files. It is dropped,
+ * never read from another bucket, copied or removed, so a leftover card can
+ * be finished with new photos (door-data.ts shows the door the same card).
+ * A draft's row is written without them; a confirmed card's photos change
+ * only with a consent, and its own confirm writes the chosen photos anyway.
+ */
+async function withoutMissingFiles(db: SupabaseClient, userId: string, card: ProductCard): Promise<ProductCard> {
+  const files = cardFiles(card);
+  const held = await heldInPressKit(db, files);
+  if (!held || files.every((path) => held.has(path))) return card;
+  const next = cardWithHeldFiles(card, (path) => held.has(path));
+  if (card.status !== "draft") return next;
+  // `next` only leaves things out of `card`: a list that changed is a shorter one.
+  const patch: Record<string, unknown> = {};
+  if (next.photos.length !== card.photos.length) patch.image_paths = next.photos;
+  if (next.dnaPhotos.length !== card.dnaPhotos.length) patch.dna_photos = next.dnaPhotos;
+  if (next.angles.length !== card.angles.length) patch.angles = next.angles;
+  if (next.logoBox !== card.logoBox) patch.logo_box = next.logoBox;
+  if (next.logoPath !== card.logoPath) patch.logo_path = next.logoPath;
+  if (next.lockRefs.length !== card.lockRefs.length) patch.lock_refs = next.lockRefs;
+  try {
+    const { error } = await db
+      .from("products")
+      .update(patch)
+      .eq("id", card.id)
+      .eq("user_id", userId)
+      .eq("status", "draft")
+      .is("deleted_at", null);
+    if (error) console.error(`[press-tour] missing files not dropped from the card: ${error.message}`);
+  } catch (err) {
+    // The card goes on without them either way: the next write carries its photos.
+    console.error(`[press-tour] missing files not dropped from the card: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return next;
 }
 
 /**
@@ -997,6 +1058,8 @@ export async function createProductFromUploads(
       }
     }
 
+    // The card's own photos that press-kit does not hold are not kept with the new ones.
+    if (existing) existing = await withoutMissingFiles(deps.db, userId, existing);
     return await readAndSave(deps, caller, {
       productId: existing?.id ?? p.newId(),
       existing,
@@ -1233,10 +1296,12 @@ export async function confirmProductCard(
   const over = await writeBudget(deps, caller);
   if (over) return over;
 
-  const card = await readCard(deps.db, userId, ref.id);
-  if (card === "unavailable") return fail("unavailable", OWNERSHIP_UNAVAILABLE);
-  if (!card || card.status === "archived") return fail("notYours", NOT_YOURS);
-  if (card.category === REGULATED) return fail("regulated", PRODUCT_REGULATED_REFUSED, { productId: card.id });
+  const stored = await readCard(deps.db, userId, ref.id);
+  if (stored === "unavailable") return fail("unavailable", OWNERSHIP_UNAVAILABLE);
+  if (!stored || stored.status === "archived") return fail("notYours", NOT_YOURS);
+  if (stored.category === REGULATED) return fail("regulated", PRODUCT_REGULATED_REFUSED, { productId: stored.id });
+  // Only photos press-kit holds can be chosen: a missing one is not the card's to confirm.
+  const card = await withoutMissingFiles(deps.db, userId, stored);
 
   const angles = parseAngles(input?.angles, card.photos);
   if (!angles) return fail("angles", PRODUCT_ANGLES_REQUIRED);

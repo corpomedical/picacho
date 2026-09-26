@@ -325,7 +325,7 @@ function PartsTable({ x, product, m }: { x: WallMoment; product: WallProduct | n
                 <i key={hex} className="h-2.5 w-2.5 rounded-[3px] ring-1 ring-inset ring-[rgba(255,255,255,0.2)]" style={{ backgroundColor: hex }} />
               ))}
             </span>
-            {formatMsg(m.nColours, { n: product.palette.length })}
+            {formatMsg(product.palette.length === 1 ? m.nColoursOne : m.nColours, { n: product.palette.length })}
           </span>
         ) : (
           m.cardColours

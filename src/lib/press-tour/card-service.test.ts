@@ -89,6 +89,8 @@ function fakeDb(seed: Record<string, Row[]> = {}) {
   };
   const files = new Map<string, Buffer>();
   const log: string[] = [];
+  /** Every bucket the service asked for. */
+  const buckets = new Set<string>();
   const now = "2026-09-25T12:00:00.000Z";
 
   // press-tour-02-products.sql's guards, in miniature: the rules the tests lean on.
@@ -217,6 +219,7 @@ function fakeDb(seed: Record<string, Row[]> = {}) {
 
   const storage = {
     from(bucketName: string) {
+      buckets.add(bucketName);
       const key = (p: string) => `${bucketName}/${p}`;
       return {
         async upload(path: string, data: Buffer) {
@@ -243,8 +246,16 @@ function fakeDb(seed: Record<string, Row[]> = {}) {
             .map(([k, v]) => ({ name: k.slice(prefix.length), metadata: { size: v.length } }));
           return { data, error: null };
         },
+        // As the storage API answers: a path it does not hold gets an error and no link.
         async createSignedUrls(paths: string[]) {
-          return { data: paths.map((p) => ({ path: p, signedUrl: `https://storage.test/${p}?token=t`, error: null })), error: null };
+          return {
+            data: paths.map((p) =>
+              files.has(key(p))
+                ? { path: p, signedUrl: `https://storage.test/${p}?token=t`, error: null }
+                : { path: p, signedUrl: null, error: "Either the object does not exist or you do not have access to it" },
+            ),
+            error: null,
+          };
         },
         async createSignedUploadUrl(path: string) {
           return { data: { path, token: `token-for-${key(path)}`, signedUrl: `https://storage.test/upload/${key(path)}` }, error: null };
@@ -254,7 +265,7 @@ function fakeDb(seed: Record<string, Row[]> = {}) {
   };
 
   const db = { from, storage } as unknown as SupabaseClient;
-  return { db, tables, files, log };
+  return { db, tables, files, log, buckets };
 }
 
 // Pictures: 5 distinct photos (different colours, so never duplicates) and a tiny one.
@@ -995,7 +1006,9 @@ describe("SEC-1 / F4: the category covers exactly the photos a read saw", () => 
     if (out.error !== null) throw new Error(out.error);
     const chosen = [out.card.photos[0], out.card.photos[1], out.card.photos[6]];
     await recordConsent(w.deps, ADMIN, { kind: "product", productId: out.card.id, photos: chosen, answer: "own" }, { locale: "en", ip: null });
-    w.files.delete(`${PRESS_KIT_BUCKET}/${chosen[2]}`);
+    // Still in press-kit, but no longer a picture (a photo that is not there at
+    // all is not one of the card's: "Product Studio leftovers" below).
+    w.files.set(`${PRESS_KIT_BUCKET}/${chosen[2]}`, Buffer.from("not a picture"));
     expect(await confirmProductCard(w.deps, ADMIN, { productId: out.card.id, angles: threeAngles(chosen), noReadableText: true })).toMatchObject({
       code: "read",
     });
@@ -1124,5 +1137,99 @@ describe("brand kits", () => {
     const out = await saveBrandKit(w.deps, ADMIN, { name: "Acme", palette: ["#fff"], confirm: true });
     expect(out).toMatchObject({ error: null, kit: { status: "draft", name: "Acme", palette: ["#ffffff"] } });
     expect(await saveBrandKit(w.deps, ADMIN, { name: "   " })).toMatchObject({ code: "name" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Product Studio leftovers (operator, 2026-09-26: the door showed "Climax
+// shirt · 1 photos" with a blank picture). A row from the abandoned
+// 2026-08-27 experiment names files in the character-references bucket.
+// Press Tour reads a product's files from press-kit alone, so a path press-kit
+// does not hold is dropped before the card is edited or confirmed: never read
+// from another bucket, never copied, and the old files are left where they are.
+// ---------------------------------------------------------------------------
+
+describe("Product Studio leftovers: files press-kit does not hold", () => {
+  const P = "eeeeeeee-0000-4000-8000-000000000001";
+  const OTHER_BUCKET = "character-references";
+  const OLD_PHOTO = `${A}/products/${P}/shirt-front.jpg`;
+  const OLD_LOGO = `${A}/products/${P}/logo.png`;
+  const NEW = [`${A}/products/${P}/n1.jpg`, `${A}/products/${P}/n2.jpg`, `${A}/products/${P}/n3.jpg`];
+  const leftover = (extra: Row = {}): Row => ({
+    id: P,
+    user_id: A,
+    name: "Climax shirt",
+    image_paths: [OLD_PHOTO],
+    logo_path: OLD_LOGO,
+    status: "draft",
+    created_at: "2026-08-27T10:00:00Z",
+    updated_at: "2026-08-27T10:00:00Z",
+    ...extra,
+  });
+  /** The leftover's own files, in the bucket Press Tour never reads. */
+  const keepOld = (w: ReturnType<typeof world>) => {
+    w.files.set(`${OTHER_BUCKET}/${OLD_PHOTO}`, photos[4]);
+    w.files.set(`${OTHER_BUCKET}/${OLD_LOGO}`, photos[4]);
+  };
+  /** A leftover that also holds three press-kit photos its read saw. */
+  const mixed = () => {
+    const w = world({ products: [leftover({ image_paths: [OLD_PHOTO, ...NEW], dna_photos: NEW, category: "liquid", dna: DNA_OK.ok ? DNA_OK.dna : null })] });
+    keepOld(w);
+    NEW.forEach((path, i) => w.files.set(`${PRESS_KIT_BUCKET}/${path}`, photos[i]));
+    return w;
+  };
+  const untouched = (w: ReturnType<typeof world>) => {
+    expect(w.log.some((l) => l.includes(OLD_PHOTO) || l.includes(OLD_LOGO))).toBe(false);
+    expect([...w.buckets].every((b) => b === PRESS_KIT_BUCKET || b === PRESS_UPLOADS_BUCKET), [...w.buckets].join()).toBe(true);
+    expect(w.files.has(`${OTHER_BUCKET}/${OLD_PHOTO}`)).toBe(true);
+    expect(w.files.has(`${OTHER_BUCKET}/${OLD_LOGO}`)).toBe(true);
+  };
+
+  it("adding photos to a leftover card keeps only the new ones: the old photo and logo are dropped, never read, copied or removed", async () => {
+    const w = world({ products: [leftover()] });
+    keepOld(w);
+    const out = await createProductFromUploads(w.deps, ADMIN, { uploads: stage(w, "dddddddd-0000-4000-8000-00000000000a", photos.slice(0, 3)), productId: P });
+    expect(out.error).toBeNull();
+    if (out.error !== null) return;
+    expect(out.card).toMatchObject({ id: P, name: "Climax shirt", logoPath: null, status: "draft", category: "liquid" });
+    expect(out.card.photos).toHaveLength(3);
+    expect(out.card.photos).not.toContain(OLD_PHOTO);
+    expect(out.card.dnaPhotos).toEqual(out.card.photos);
+    expect(Object.keys(out.photoUrls).sort()).toEqual([...out.card.photos].sort());
+    expect(w.tables.products[0]).toMatchObject({ image_paths: out.card.photos, logo_path: null });
+    untouched(w);
+  });
+
+  it("a missing path is dropped on confirm: chosen, it is refused before anything is read; the card is then finished with its press-kit photos", async () => {
+    const w = mixed();
+    const withOld = [OLD_PHOTO, NEW[0], NEW[1]];
+    await recordConsent(w.deps, ADMIN, { kind: "product", productId: P, photos: withOld, answer: "own" }, { locale: "en", ip: null });
+    w.spies.readDna.mockClear();
+    const refused = await confirmProductCard(w.deps, ADMIN, { productId: P, angles: threeAngles(withOld), labelStrings: ["CLIMAX"] });
+    expect(refused).toMatchObject({ error: PRODUCT_ANGLES_REQUIRED, code: "angles" });
+    expect(w.spies.readDna).not.toHaveBeenCalled();
+    // The draft's row no longer names what press-kit does not hold.
+    expect(w.tables.products[0]).toMatchObject({ status: "draft", image_paths: NEW, dna_photos: NEW, logo_path: null });
+
+    await recordConsent(w.deps, ADMIN, { kind: "product", productId: P, photos: NEW, answer: "own" }, { locale: "en", ip: null });
+    const done = await confirmProductCard(w.deps, ADMIN, { productId: P, angles: threeAngles(NEW), labelStrings: ["CLIMAX"] });
+    expect(done).toMatchObject({ error: null, card: { status: "confirmed", photos: NEW, logoPath: null, category: "liquid" } });
+    expect(w.spies.readDna).not.toHaveBeenCalled();
+    untouched(w);
+  });
+
+  it("when press-kit can't be asked, nothing is dropped", async () => {
+    const w = mixed();
+    const storage = w.db.storage as unknown as { from: (bucket: string) => Record<string, unknown> };
+    const real = storage.from.bind(storage);
+    storage.from = (bucket: string) => ({
+      ...real(bucket),
+      createSignedUrls: async () => {
+        throw new Error("storage is down");
+      },
+    });
+    // No consent for these photos: the confirm stops there, and the row is as it was.
+    expect(await confirmProductCard(w.deps, ADMIN, { productId: P, angles: threeAngles(NEW), labelStrings: ["CLIMAX"] })).toMatchObject({ code: "consent" });
+    expect(w.tables.products[0]).toMatchObject({ image_paths: [OLD_PHOTO, ...NEW], logo_path: OLD_LOGO });
   });
 });

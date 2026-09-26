@@ -408,6 +408,41 @@ export function brandKitFromRow(row: unknown): BrandKit | null {
 }
 
 /**
+ * The card with only the files `held` says press-kit holds: its photos, the
+ * photos its read saw, its views, a logo box on a photo that stays, the logo
+ * crop and the check references. Press Tour reads a product's files from
+ * press-kit alone; a path it does not hold (a Product Studio leftover of
+ * 2026-08-27 names photos in another bucket) is not one of the card's photos,
+ * so it is left out, never looked for anywhere else (door-data.ts, and
+ * card-service.ts before a card is edited or confirmed).
+ */
+export function cardWithHeldFiles(card: ProductCard, held: (path: string) => boolean): ProductCard {
+  return {
+    ...card,
+    photos: card.photos.filter(held),
+    dnaPhotos: card.dnaPhotos.filter(held),
+    angles: card.angles.filter((a) => held(a.path)),
+    logoBox: card.logoBox && held(card.logoBox.path) ? card.logoBox : null,
+    logoPath: card.logoPath && held(card.logoPath) ? card.logoPath : null,
+    lockRefs: card.lockRefs.filter(held),
+  };
+}
+
+/** Every file a card names (the photos, the photos its read saw, its views, the logo box's photo, the logo crop, the check references). */
+export function cardFiles(card: ProductCard): string[] {
+  return [
+    ...new Set([
+      ...card.photos,
+      ...card.dnaPhotos,
+      ...card.angles.map((a) => a.path),
+      ...(card.logoBox ? [card.logoBox.path] : []),
+      ...(card.logoPath ? [card.logoPath] : []),
+      ...card.lockRefs,
+    ]),
+  ];
+}
+
+/**
  * Whether a card may become 'confirmed' — the database's own rule
  * (products_confirmed_complete plus the consent trigger), asked before the
  * write so the door can say what is missing instead of failing it.

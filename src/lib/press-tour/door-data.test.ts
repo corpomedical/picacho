@@ -71,8 +71,15 @@ function kit(id: string, userId: string, extra: Row = {}): Row {
 
 type Query = { table: string; filters: string[] };
 
+/**
+ * What press-kit holds, for the fake: by default every path; `missing` paths
+ * are answered as the storage API answers a file it does not have (an error,
+ * no link); `down` fails the whole call.
+ */
+type Store = { missing?: ReadonlySet<string>; down?: boolean };
+
 /** A query builder that filters like PostgREST and records what each query named. */
-function fakeClient(tables: Record<string, Row[] | Error>, log: Query[], signed: string[][]) {
+function fakeClient(tables: Record<string, Row[] | Error>, log: Query[], signed: string[][], store: Store = {}) {
   const client = {
     from(table: string) {
       const q: Query = { table, filters: [] };
@@ -122,7 +129,15 @@ function fakeClient(tables: Record<string, Row[] | Error>, log: Query[], signed:
           async createSignedUrls(paths: string[]) {
             expect(bucket).toBe(PRESS_KIT_BUCKET);
             signed.push(paths);
-            return { data: paths.map((path) => ({ path, signedUrl: `https://signed/${path}` })), error: null };
+            if (store.down) throw new Error("storage is down");
+            return {
+              data: paths.map((path) =>
+                store.missing?.has(path)
+                  ? { path, signedUrl: null, error: "Either the object does not exist or you do not have access to it" }
+                  : { path, signedUrl: `https://signed/${path}`, error: null },
+              ),
+              error: null,
+            };
           },
         };
       },
@@ -242,6 +257,50 @@ describe("the Press Tour door's first read", () => {
     const before = { ...tables, character_ad_consents: new Error("missing") };
     const early = await getPressTourHome({ db: fakeClient(before, [], []), admin: fakeClient(before, [], []) }, A);
     expect(early.characters.map((c) => c.adAnswer)).toEqual([null, null]);
+  });
+
+  it("counts and shows a product photo only when press-kit holds it: a Product Studio leftover's photo in another bucket is neither", async () => {
+    // The operator's door, 2026-09-26: "Climax shirt · 1 photos" with a blank
+    // picture. Its row is from the 2026-08-27 experiment, whose files are in
+    // the character-references bucket; Press Tour reads press-kit alone.
+    const OLD = "77777777-7777-4777-8777-777777777777";
+    const oldPhoto = `${A}/products/${OLD}/shirt-front.jpg`;
+    const oldLogo = `${A}/products/${OLD}/logo.png`;
+    const newPhoto = `${A}/products/${P1}/a.jpg`;
+    const tables = {
+      character_profiles: [],
+      products: [
+        product(OLD, A, { name: "Climax shirt", image_paths: [oldPhoto], logo_path: oldLogo }),
+        product(P1, A, { image_paths: [newPhoto] }),
+      ],
+      brand_kits: [],
+      press_campaigns: [],
+    };
+    const signed: string[][] = [];
+    const home = await getPressTourHome(
+      { db: fakeClient(tables, [], signed), admin: fakeClient(tables, [], signed, { missing: new Set([oldPhoto, oldLogo]) }) },
+      A,
+    );
+    // Asked once, in press-kit only (the fake refuses any other bucket).
+    expect(signed).toHaveLength(1);
+    const byId = new Map(home.products.map((p) => [p.card.id, p]));
+    const leftover = byId.get(OLD)!;
+    expect(leftover.card.photos).toEqual([]);
+    expect(leftover.card.logoPath).toBeNull();
+    expect(leftover.photoUrls).toEqual({});
+    // The normal product's one photo counts and shows.
+    const fine = byId.get(P1)!;
+    expect(fine.card.photos).toEqual([newPhoto]);
+    expect(fine.photoUrls).toEqual({ [newPhoto]: `https://signed/${newPhoto}` });
+  });
+
+  it("when press-kit can't be asked, a card's own photos still count (nothing is known to be missing), with no picture", async () => {
+    const photo = `${A}/products/${P1}/a.jpg`;
+    const tables = { character_profiles: [], products: [product(P1, A)], brand_kits: [kit(K1, A)], press_campaigns: [] };
+    const home = await getPressTourHome({ db: fakeClient(tables, [], []), admin: fakeClient(tables, [], [], { down: true }) }, A);
+    expect(home.products[0].card.photos).toEqual([photo]);
+    expect(home.products[0].photoUrls).toEqual({});
+    expect(home.brandKits[0].logoUrl).toBeNull();
   });
 
   it("opens on empty shelves when a read fails, never a broken door", async () => {

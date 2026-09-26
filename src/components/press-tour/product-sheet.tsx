@@ -427,8 +427,8 @@ export function ProductSheet({
 
             {card && (
               <>
-                {card.sourceUrl && (
-                  <p className="mt-2 text-[11.5px] text-[#f0cda6]">{formatMsg(m.photosFound, { n: photos.length })}</p>
+                {card.sourceUrl && photos.length > 0 && (
+                  <p className="mt-2 text-[11.5px] text-[#f0cda6]">{formatMsg(photos.length === 1 ? m.photosFoundOne : m.photosFound, { n: photos.length })}</p>
                 )}
                 <label className="mt-3 block text-[12px] text-[#9aa0ad]">
                   {m.nameLabel}
@@ -517,7 +517,7 @@ export function ProductSheet({
                   </span>
                   <span>{m.keepNote}</span>
                 </p>
-                {skipped > 0 && <p className="mt-1 text-[11.5px] text-[#858994]">{formatMsg(m.photosSkipped, { n: skipped })}</p>}
+                {skipped > 0 && <p className="mt-1 text-[11.5px] text-[#858994]">{formatMsg(skipped === 1 ? m.photosSkippedOne : m.photosSkipped, { n: skipped })}</p>}
                 {readLater && <p className="mt-1 text-[11.5px] text-[#858994]">{m.readLater}</p>}
               </>
             )}
