@@ -65,7 +65,15 @@ type Side = { spec: Pick<SetSpec, "objects">; els: readonly SetElement[] };
  */
 export function followObjectRef<T extends ObjectRef>(ref: T, before: Side, after: Side): ObjectRef | null {
   const was: SetObject | undefined = before.spec.objects[ref.index];
-  const key = ref.key ?? thingOfBlock(before.els, ref.index)?.key ?? null;
+  // The stored key only while it still names a thing of `before` exactly: a
+  // move or a recolour outside an Astra change (Build, Aly) changes a
+  // thing's key and leaves the stored one stale, and a stale key followed
+  // through a change that also re-fingerprints the thing matches nothing —
+  // or the wrong thing of its family near where it USED to stand. Then the
+  // thing the ref's block is on now says (review of Cut 4 round 1), and the
+  // stale key only when the block is on no thing.
+  const exact = ref.key !== undefined && before.els.some((e) => e.key === ref.key) ? ref.key : null;
+  const key = exact ?? thingOfBlock(before.els, ref.index)?.key ?? ref.key ?? null;
   if (key !== null) {
     const el = findThingNow(key, after.els);
     if (!el) return null;
@@ -213,6 +221,37 @@ export function onThingNow<T extends Gaze | FilmRack>(r: T | null, els: readonly
   if (r === null) return null;
   if ("at" in r ? r.at !== "object" : r.to !== "object") return r;
   return atThingNow(r as T & ObjectRef, els, objects);
+}
+
+/**
+ * The saved eye-line and the film's beats' refs as the page loads them
+ * (data.ts getSetPage; review of Cut 4 round 1): read by the server's own
+ * rule (onThingNow), once, against the set as drawn. A keyed ref whose block
+ * number drifted off its thing — a Build delete between visits — was drawn
+ * on the stage at the drifted block while the paid still's words named the
+ * keyed thing: now the preview and the still agree. Unkeyed refs, and every
+ * ref still on its thing, are untouched; what was handed in comes back,
+ * value for value, when nothing moved, so a saved film keeps its bytes.
+ */
+export function savedRefsNow<L extends { gaze: Gaze | null }, F extends { beats: readonly { rack: FilmRack | null; gaze: Gaze | null }[] }>(
+  spec: Pick<SetSpec, "objects" | "bounds">,
+  layout: L | null,
+  film: F | null,
+): { layout: L | null; film: F | null } {
+  const keyed = (r: Gaze | FilmRack | null) => r !== null && ("at" in r ? r.at === "object" : r.to === "object") && (r as ObjectRef).key !== undefined;
+  if (!keyed(layout?.gaze ?? null) && !(film?.beats ?? []).some((b) => keyed(b.rack) || keyed(b.gaze))) return { layout, film };
+  const els = setElements(spec);
+  const gaze = layout ? onThingNow(layout.gaze, els, spec.objects) : null;
+  const nextLayout = layout && gaze !== layout.gaze ? { ...layout, gaze } : layout;
+  let moved = false;
+  const beats = (film?.beats ?? []).map((b) => {
+    const rack = onThingNow(b.rack, els, spec.objects);
+    const g = onThingNow(b.gaze, els, spec.objects);
+    if (rack === b.rack && g === b.gaze) return b;
+    moved = true;
+    return { ...b, rack, gaze: g };
+  });
+  return { layout: nextLayout, film: film && moved ? { ...film, beats } : film };
 }
 
 // ---------------------------------------------------------------------------

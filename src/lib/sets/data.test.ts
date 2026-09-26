@@ -13,6 +13,8 @@ import {
   setTakesEligible,
 } from "./set-config";
 import { mediaUrl, thumbUrl } from "../media/url";
+import { normaliseSetSpec } from "./set-spec";
+import { largestBlockOf, setElements } from "./elements";
 
 // The set page's loader, for what a take was rendered from (2026-09-16). A
 // take whose clip failed on an earlier visit offers "Try the clip again"
@@ -99,6 +101,7 @@ vi.mock("@/lib/sets/shot-take", async () => await import("./shot-take"));
 vi.mock("@/lib/sets/set-shots", async () => await import("./set-shots"));
 vi.mock("@/lib/sets/messages", async () => await import("./messages"));
 vi.mock("@/lib/sets/edit-seal", async () => await import("./edit-seal"));
+vi.mock("@/lib/sets/object-ref", async () => await import("./object-ref"));
 // The real rule, reading the fake database's flags (Helios Cut 2, step 12).
 vi.mock("@/lib/producer/enabled", async () => await import("../producer/enabled"));
 
@@ -439,6 +442,35 @@ describe("the seals of the words the page is handed", () => {
     const src = readFileSync(join(__dirname, "data.ts"), "utf8");
     expect(src).toContain("seal: drawn ? editUndoOf(row.id as string, access.userId, drawn) : null,");
     expect(src).toContain("originalSeal: spec ? editUndoOf(row.id as string, access.userId, spec) : null,");
+  });
+});
+
+// Review of Cut 4 round 1: the server reads a keyed ref whose block drifted
+// off its thing as that thing (actions.ts onThingNow), for a still and a
+// take; the page drew the drifted block, so the preview and the paid still
+// disagreed after a Build delete between visits.
+describe("the saved eye-line the page is handed", () => {
+  const withLayout = (tables: Tables, gaze: unknown): Tables => {
+    tables.location_sets.rows[0] = { ...tables.location_sets.rows[0], status: "ready", spec: raceTrack, layout: { markId: "m1", mark: { x: 0, z: 0, facingDeg: 0 }, gaze } };
+    return tables;
+  };
+  const race = normaliseSetSpec(raceTrack);
+  if (!race.ok) throw new Error("fixture");
+  const els = setElements(race.spec);
+  const car = els[0];
+  const carBlocks = new Set(car.members.map(([o]) => o));
+  const off = race.spec.objects.findIndex((_, i) => !carBlocks.has(i) && !els.some((e) => e.members.some(([o]) => o === i)));
+
+  it("reads a keyed eye-line whose block drifted off its thing as that thing's largest block, as a still reads it", async () => {
+    expect(off).toBeGreaterThanOrEqual(0);
+    const out = await page(withLayout(world([still(1)]), { at: "object", index: off, key: car.key }));
+    expect(out.set.layout?.gaze).toEqual({ at: "object", index: largestBlockOf(car, race.spec.objects), key: car.key });
+  });
+
+  it("leaves an unkeyed eye-line, and a keyed one still on its thing, exactly as saved", async () => {
+    expect((await page(withLayout(world([still(1)]), { at: "object", index: off }))).set.layout?.gaze).toEqual({ at: "object", index: off });
+    const onCar = [...carBlocks][3];
+    expect((await page(withLayout(world([still(1)]), { at: "object", index: onCar, key: car.key }))).set.layout?.gaze).toEqual({ at: "object", index: onCar, key: car.key });
   });
 });
 

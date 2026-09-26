@@ -1606,7 +1606,16 @@ async function takeWork(
   // (SET_THING_WORDS_OPEN). A take's camera moves, so a thing that needs a place is named
   // by the side of the figure it is on at the end, never by a third of a frame.
   const takeThingWords = access.isAdmin || SET_THING_WORDS_OPEN;
-  const endThing = (index: number) => (takeThingWords ? thingPhrase(index, endShown, endEls, { camera: null, mark: endMark }) : null);
+  // A thing drawn from its own photos is named without its block's colour,
+  // as a still names one whose sheet rides grey (review of Cut 4 round 1):
+  // the take's frames are stills its sheet rode, a kept end frame's too, so
+  // its colour in them follows the photos, not the block. Every thing with
+  // photos held, read only when the words will name a thing.
+  const endGrey =
+    takeThingWords && (rackEnd?.to === "object" || gazeEnd?.at === "object")
+      ? new Set(resolvePhotos(endEls, (await listElementPhotos(createAdminClient(), userId, setId)).photos).held.map((h) => h.key))
+      : undefined;
+  const endThing = (index: number) => (takeThingWords ? thingPhrase(index, endShown, endEls, { camera: null, mark: endMark, grey: endGrey }) : null);
   fd.set(
     "prompt",
     buildSetTakePrompt(typeof input.direction === "string" ? input.direction : "", {

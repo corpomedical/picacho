@@ -29,6 +29,7 @@ import { SHOT_READER_V2_OPEN_TO_ALL } from "@/lib/sets/shot-reading";
 import { seesLookObjects } from "@/lib/sets/look-cutout";
 import { normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
 import { editUndoOf } from "@/lib/sets/edit-seal";
+import { savedRefsNow } from "@/lib/sets/object-ref";
 import { normaliseSetFilm, type SetFilm } from "@/lib/sets/film";
 import { normaliseSetRig, RIG_CHECK_ITEMS, type SetRig } from "@/lib/sets/rig";
 import { readShotRigs } from "@/lib/sets/shot-rig";
@@ -361,7 +362,14 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
   // What the page actually draws — and what the layout and the look are
   // held against.
   const drawn = editedSpec ?? spec;
-  const layout = drawn && row.layout ? normaliseSetLayout(row.layout, drawn) : null;
+  const saved = drawn && row.layout ? normaliseSetLayout(row.layout, drawn) : null;
+  // The eye-line and the beats' refs read as a still and a take read them
+  // (object-ref.ts onThingNow; review of Cut 4 round 1): a keyed ref whose
+  // block drifted off its thing — a Build delete between visits — is drawn
+  // on its thing, the one the paid words name.
+  const refsNow = drawn ? savedRefsNow(drawn, saved, film) : { layout: saved, film };
+  const layout = refsNow.layout;
+  film = refsNow.film;
   // Built from a photo? Read on its own, as the person (their SELECT on the
   // table covers every column), so the read above stays exactly as it was.
   // A read that fails shows it as a text set for this one load.

@@ -52,7 +52,9 @@ describe("the set a shot is held against", () => {
   it("the page holds the layout, the shots and the look offer against the set it draws", () => {
     const data = read("data.ts");
     expect(data).toContain("const drawn = editedSpec ?? spec;");
-    expect(data).toContain("const layout = drawn && row.layout ? normaliseSetLayout(row.layout, drawn) : null;");
+    expect(data).toContain("const saved = drawn && row.layout ? normaliseSetLayout(row.layout, drawn) : null;");
+    // Its refs read against that set too (object-ref.ts savedRefsNow; review of Cut 4 round 1).
+    expect(data).toContain("const refsNow = drawn ? savedRefsNow(drawn, saved, film) : { layout: saved, film };");
     // The look offer: `spec` would offer a look cut from objects the editor has moved or removed.
     const lends = data.slice(data.indexOf("const lendsLook = (id: string)"), data.indexOf("const byId = new Map"));
     expect(lends).toContain("seesLookObjects(drawn, camera)");

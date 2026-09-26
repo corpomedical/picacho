@@ -7,7 +7,7 @@ import { ELEMENT_KEY_RE, setElements } from "./elements";
 import { GAZE_KEY_RE, gazeWords, type Gaze } from "./people";
 import { rackWords, type FilmRack } from "./furniture";
 import { LAYOUT_ELEMENT_KEY_RE, normaliseSetSpec, type SetObject, type SetSpec, type Vec3 } from "./set-spec";
-import { atThingNow, findThingNow, followObjectRef, followRefs, followRefsBack, largestBlockOf, onThingNow, refRows, rowOfRef, rowRef, thingOfBlock } from "./object-ref";
+import { atThingNow, findThingNow, followObjectRef, followRefs, followRefsBack, largestBlockOf, onThingNow, refRows, rowOfRef, rowRef, savedRefsNow, thingOfBlock } from "./object-ref";
 import en from "../i18n/messages/en";
 import es from "../i18n/messages/es";
 import pt from "../i18n/messages/pt";
@@ -101,6 +101,26 @@ describe("followObjectRef: a change to the thing itself", () => {
     expect(followObjectRef({ index: i, key: car.key }, side(race), side(moved))).toEqual({ index: i, key: setElements(moved)[0].key });
   });
 
+  // Review of Cut 4 round 1: a key made stale by a Build move (or an Aly fix,
+  // or a Build recolour) was followed before the block the ref is on, so an
+  // Astra recolour after it matched nothing and cleared her eye-line.
+  it("stays on the car when its stored key went stale in Build before an Astra recolour", () => {
+    const i = carBlocks[5];
+    const moved: SetSpec = { ...race, objects: race.objects.map((o, j) => (onCar(j) ? { ...o, position: [o.position[0] + 3, o.position[1], o.position[2]] as Vec3 } : o)) };
+    const movedCar = setElements(moved)[0];
+    expect(movedCar.key).not.toBe(car.key);
+    const blue: SetSpec = { ...moved, objects: moved.objects.map((o, j) => (onCar(j) ? { ...o, color: "#2244aa" } : o)) };
+    const blueCar = setElements(blue)[0];
+    expect(blueCar.fingerprint).not.toBe(car.fingerprint);
+    // The key still reads the car before it moved; the block is on the moved car.
+    const followed = followObjectRef({ index: i, key: car.key }, side(moved), side(blue));
+    expect(followed).toEqual({ index: i, key: blueCar.key });
+    // Unkeyed, as before step A9: the same block.
+    expect(followObjectRef({ index: i }, side(moved), side(blue))).toEqual({ index: i });
+    // A key that still names a thing exactly wins over the block's thing.
+    expect(followObjectRef({ index: i, key: movedCar.key }, side(moved), side(blue))).toEqual({ index: i, key: blueCar.key });
+  });
+
   it("lands on the thing's largest block when none of its blocks is the one it was on", () => {
     // The car rebuilt where it stood: every block a new shape (a rebuild from photos).
     const rebuilt: SetSpec = { ...race, objects: race.objects.map((o, i) => (onCar(i) ? { ...o, size: [o.size[0] * 1.3, o.size[1], o.size[2] * 1.1] as Vec3 } : o)) };
@@ -125,6 +145,39 @@ describe("followObjectRef: a change to the thing itself", () => {
     // By number alone it would be the first; with the second's key, it stays the second.
     expect(findThingNow(twins[1].key, els)?.key).toBe(twins[1].key);
     expect(followObjectRef({ index: shared, key: twins[1].key }, side(room), side(room))).toEqual({ index: shared, key: twins[1].key });
+  });
+});
+
+// Review of Cut 4 round 1: the page loads the saved refs as the server reads them.
+describe("savedRefsNow: the saved eye-line and the film's refs as the page loads them", () => {
+  const off = structure;
+  const layout = { markId: "m", gaze: { at: "object", index: off, key: car.key } as Gaze };
+  const film = {
+    engine: "veo",
+    beats: [
+      { words: "a", rack: { to: "object", index: off, key: car.key } as FilmRack, gaze: { at: "camera" } as Gaze },
+      { words: "b", rack: { to: "object", index: off } as FilmRack, gaze: { at: "object", index: carBlocks[2], key: car.key } as Gaze },
+    ],
+  };
+
+  it("moves only a keyed ref that drifted off its thing, onto the thing's largest block", () => {
+    const out = savedRefsNow(race, layout, film);
+    const largest = largestBlockOf(car, race.objects);
+    expect(out.layout?.gaze).toEqual({ at: "object", index: largest, key: car.key });
+    expect(out.film?.beats[0].rack).toEqual({ to: "object", index: largest, key: car.key });
+    // The camera, an unkeyed ref and a keyed ref still on its thing are the very values saved.
+    expect(out.film?.beats[0].gaze).toBe(film.beats[0].gaze);
+    expect(out.film?.beats[1]).toBe(film.beats[1]);
+    expect(out.layout?.markId).toBe("m");
+  });
+
+  it("hands back what it was given, value for value, when nothing drifted", () => {
+    const still = { markId: "m", gaze: { at: "object", index: carBlocks[1], key: car.key } as Gaze };
+    const plain = { engine: "veo", beats: [film.beats[1]] };
+    const out = savedRefsNow(race, still, plain);
+    expect(out.layout).toBe(still);
+    expect(out.film).toBe(plain);
+    expect(savedRefsNow(race, null, null)).toEqual({ layout: null, film: null });
   });
 });
 

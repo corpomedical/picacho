@@ -120,6 +120,18 @@ describe("a thing on a set", () => {
     expect(thingPhrase(RACE_CAR.members[0][0], race, els, { camera: CAMERA, mark: MARK, grey: new Set([RACE_CAR.key]) })).toBe(`the car ${FRAME_THIRD_WORDS[place.across]}`);
   });
 
+  // Review of Cut 4 round 1: a take said the block's colour for a thing drawn
+  // from its own photos ("the red car" for someone's blue car on its sheet).
+  it("a take on a thing with photos: no colour, named by the side of the figure it is on", () => {
+    const els = setElements(race);
+    const withPhotos = new Set([RACE_CAR.key]);
+    const said = thingPhrase(RACE_CAR.members[0][0], race, els, { camera: null, mark: MARK, grey: withPhotos });
+    expect(Object.values(THING_SIDE_WORDS).map((w) => `the car ${w}`)).toContain(said);
+    expect(said).not.toContain("red");
+    // Without photos, the block's colour, as before.
+    expect(thingPhrase(RACE_CAR.members[0][0], race, els, { camera: null, mark: MARK })).toBe("the red car");
+  });
+
   it("a block of the set itself is 'the {colour} structure' only when no other block of the set has its colour; else today's words", () => {
     const els = setElements(race);
     // Object 18 (a navy board) shares navy with 9, 13, 14 and 19; the grey walls share grey.
@@ -177,7 +189,9 @@ describe("who gets them (read as source)", () => {
     expect(still).toContain("? thingPhrase(gazeNow.index, shown, els, { camera: frameCamera, mark: layout.mark, grey: new Set(elementPlan.riding.filter((r) => greyed.has(r.key)).map((r) => r.key)) })");
     const take = src.slice(src.indexOf("async function takeWork("));
     expect(take).toContain("const takeThingWords = access.isAdmin || SET_THING_WORDS_OPEN;");
-    expect(take).toContain("const endThing = (index: number) => (takeThingWords ? thingPhrase(index, endShown, endEls, { camera: null, mark: endMark }) : null);");
+    // A thing drawn from its own photos in the take's frames is named without a colour (review of Cut 4 round 1).
+    expect(take).toContain("? new Set(resolvePhotos(endEls, (await listElementPhotos(createAdminClient(), userId, setId)).photos).held.map((h) => h.key))");
+    expect(take).toContain("const endThing = (index: number) => (takeThingWords ? thingPhrase(index, endShown, endEls, { camera: null, mark: endMark, grey: endGrey }) : null);");
     expect(src.match(/thingPhrase\(/g)).toHaveLength(2);
     // Built outside people.ts and furniture.ts (critic item 6): neither imports it.
     // (people.ts reads elements.ts for a type alone, which leaves nothing at run time.)
