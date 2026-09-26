@@ -12,6 +12,7 @@ import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { changesNothing, countSpecChanges, holdEditedText } from "@/lib/sets/editor-model";
 import {
   SET_BRIEF_TOO_SHORT,
+  SET_EDIT_ANSWER_UNCHECKED,
   SET_EDIT_FAILED,
   SET_EDIT_REFUSED,
   SET_EDIT_STILL_WORKING,
@@ -19,6 +20,7 @@ import {
   SET_EDIT_TOO_BIG,
   SET_EDIT_TOO_FAST,
   SET_EDIT_TRIES_USED,
+  SET_EDIT_UNAVAILABLE,
   SET_NOT_FOUND,
   SET_NOT_READY,
   SET_SAVE_FAILED,
@@ -148,8 +150,8 @@ export async function clearSetEdit(setId: string): Promise<{ error: string | nul
 
 type Access = Extract<Awaited<ReturnType<typeof setsAccess>>, { error: null }>;
 
-/** A change reserved from the month: given back unless the press saves. */
-type Slot = { error: null; editsLeft: number | null; monthly: number; reserved: boolean; given?: boolean };
+/** A change reserved from the month: given back unless the press saves. Its try is given back only if OpenAI never billed it. */
+type Slot = { error: null; editsLeft: number | null; monthly: number; reserved: boolean; given?: boolean; tryGiven?: boolean };
 
 /**
  * One of the month's Astra changes, at the edits' own pace
@@ -206,6 +208,20 @@ async function giveBackAstraChange(access: Access, slot: Slot): Promise<number |
 }
 
 /**
+ * A try OpenAI never billed gives back its row in the month's tries too
+ * (SET_EDIT_TRIES_MONTH_SCOPE; Helios Cut 4, step A2, 2026-09-26), once.
+ * Only for a submit providers/astra.ts marks `neverBilled`: a try that may
+ * have made a job keeps its row, or the cap on the month's tries — which
+ * bounds what failed tries cost Picacho (set-config.ts) — would have a hole
+ * (critic item 1). The change itself goes back through giveBackAstraChange.
+ */
+async function giveBackAstraTry(access: Access, slot: Slot): Promise<void> {
+  if (!slot.reserved || slot.tryGiven) return;
+  slot.tryGiven = true;
+  await giveBackAstraEdit(createAdminClient(), access.userId, SET_EDIT_TRIES_MONTH_SCOPE);
+}
+
+/**
  * One Astra job per press (astra-press.ts, 2026-09-25): the page sends a
  * fresh id with each press, and only the first delivery with it runs. A
  * browser's silent resend of the same press is answered at once — never
@@ -239,13 +255,23 @@ async function oncePerPress<T extends { error: string | null }>(
 /**
  * Astra's answer, waited for inside the action, like a match: polls until
  * the deadline, well inside the set page's 300 s budget, then cancels what
- * nobody will collect.
+ * nobody will collect. `billed: false` only when OpenAI certainly never
+ * made the job (providers/astra.ts neverBilled; Helios Cut 4, step A2): the
+ * caller gives the try back then, and says Astra couldn't be reached. Every
+ * other failure — a refusal, a poll that failed, a timeout — may have been
+ * billed, and its try stays counted.
  */
-async function askAstra(setId: string, request: AstraJobRequest, what: string, failed: string): Promise<{ error: string } | { error: null; text: string }> {
+async function askAstra(
+  setId: string,
+  request: AstraJobRequest,
+  what: string,
+  failed: string,
+): Promise<{ error: string; billed: boolean } | { error: null; text: string }> {
   const submitted = await submitAstraJob(request);
   if (!submitted.ok) {
     console.warn(`[sets] ${what} submit failed:`, submitted.kind, submitted.detail);
-    return { error: submitted.kind === "refused" ? SET_EDIT_REFUSED : failed };
+    if (submitted.neverBilled === true) return { error: SET_EDIT_UNAVAILABLE, billed: false };
+    return { error: submitted.kind === "refused" ? SET_EDIT_REFUSED : failed, billed: true };
   }
   const deadline = new Date().getTime() + SET_EDIT_DEADLINE_MS;
   let polled = await pollAstraJob(submitted.responseId);
@@ -255,11 +281,11 @@ async function askAstra(setId: string, request: AstraJobRequest, what: string, f
   }
   if (polled.state === "working") {
     await cancelAstraJob(submitted.responseId);
-    return { error: SET_EDIT_TIMED_OUT };
+    return { error: SET_EDIT_TIMED_OUT, billed: true };
   }
   if (polled.state === "failed") {
     console.warn(`[sets] ${what} failed:`, polled.kind, polled.detail);
-    return { error: polled.kind === "refused" ? SET_EDIT_REFUSED : failed };
+    return { error: polled.kind === "refused" ? SET_EDIT_REFUSED : failed, billed: true };
   }
   console.info(`[sets] ${what} usage`, { setId, usage: polled.usage, costUsd: polled.costUsd });
   return { error: null, text: polled.text };
@@ -346,7 +372,10 @@ export async function editSetWithAstra(
     // does a throw, which is then passed on.
     try {
       const answer = await askAstra(setId, setEditRequest(working, text, openAiSafetyId(userId), extra), "edit", SET_EDIT_FAILED);
-      if (answer.error !== null) return { error: answer.error, editsLeft: await giveBackAstraChange(access, slot) };
+      if (answer.error !== null) {
+        if (!answer.billed) await giveBackAstraTry(access, slot);
+        return { error: answer.error, editsLeft: await giveBackAstraChange(access, slot) };
+      }
 
       const parsed = parseSetSpecText(answer.text);
       if (!parsed.ok) return { error: SET_EDIT_FAILED, editsLeft: await giveBackAstraChange(access, slot) };
@@ -380,7 +409,10 @@ export async function editSetWithAstra(
           prompt: gateWords,
           provider: "astra",
         });
-        return { error: SET_EDIT_REFUSED, editsLeft: await giveBackAstraChange(access, slot) };
+        // A check that could not be made is not a refusal of the change
+        // (critic item 2): Astra answered and was billed, so the try stays
+        // counted — the change goes back, and the page says so.
+        return { error: err.reason === "unavailable" ? SET_EDIT_ANSWER_UNCHECKED : SET_EDIT_REFUSED, editsLeft: await giveBackAstraChange(access, slot) };
       }
 
       const saved = await writeEdited(setId, userId, next);
@@ -460,7 +492,10 @@ export async function rebuildThingFromPhotos(
     // does a throw, which is then passed on.
     try {
       const answer = await askAstra(setId, thingRebuildRequest(working, thing, photos, openAiSafetyId(userId)), "rebuild", THING_REBUILD_FAILED);
-      if (answer.error !== null) return { error: answer.error, editsLeft: await giveBackAstraChange(access, slot) };
+      if (answer.error !== null) {
+        if (!answer.billed) await giveBackAstraTry(access, slot);
+        return { error: answer.error, editsLeft: await giveBackAstraChange(access, slot) };
+      }
       const raw = parseRebuildText(answer.text);
       if (!raw) return { error: THING_REBUILD_FAILED, editsLeft: await giveBackAstraChange(access, slot) };
       const spliced = spliceThing(working, thing, raw);

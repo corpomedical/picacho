@@ -4408,6 +4408,8 @@ const pt = {
     setEditNotSaved: "O Astra não mudou o set desta vez — ele continua como estava. Tente de novo quando quiser.",
     setEditUnchecked: "Não conseguimos verificar se o Astra salvou essa mudança — recarregue o set para ver.",
     setEditTriesUsed: "Muitas mudanças do Astra não deram certo neste mês de faturamento, então o Astra fica em pausa nos seus sets até o seu período de faturamento renovar. As ferramentas do editor continuam funcionando.",
+    setEditUnavailable: "Não é possível falar com o Astra agora — nada foi gasto. Tente de novo em alguns minutos.",
+    setEditAnswerUnchecked: "Não conseguimos verificar a resposta do Astra, então o set continua igual e nenhuma mudança foi usada. Tente de novo daqui a pouco.",
     setRefRefused: "Esta foto não pode ser usada como referência.",
     setRefUnchecked: "Não conseguimos verificar esta foto; tente de novo daqui a pouco.",
     setRefTooFast: "São muitas fotos de uma vez; tente de novo em alguns minutos.",

@@ -264,6 +264,9 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "We couldn't check whether Astra saved that change — reload the set to see it.": "setEditUnchecked",
   "Too many of this month's Astra changes didn't land, so Astra is paused on your sets until your billing period resets. The editor's own tools still work.":
     "setEditTriesUsed",
+  // A try OpenAI never billed, and an answer the gate couldn't check (Helios Cut 4, step A2).
+  "Astra can't be reached right now — nothing was used. Try again in a few minutes.": "setEditUnavailable",
+  "We couldn't check Astra's answer, so the set is unchanged and no change was used. Try again in a moment.": "setEditAnswerUnchecked",
   // Takes (lib/sets/messages.ts, 2026-09-15) — a clip from one still to a
   // newly shot end frame.
   "That still can't start a take — pick another.": "setTakeBadStart",

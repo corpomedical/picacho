@@ -150,6 +150,18 @@ export const SET_EDIT_UNCHECKED = "We couldn't check whether Astra saved that ch
  */
 export const SET_EDIT_TRIES_USED =
   "Too many of this month's Astra changes didn't land, so Astra is paused on your sets until your billing period resets. The editor's own tools still work.";
+/**
+ * OpenAI never made the job (providers/astra.ts neverBilled; Helios Cut 4,
+ * step A2, 2026-09-26): nothing was billed, so the change AND the try come
+ * back. Said only then — a try that may have been billed keeps its row.
+ */
+export const SET_EDIT_UNAVAILABLE = "Astra can't be reached right now — nothing was used. Try again in a few minutes.";
+/**
+ * The gate couldn't read Astra's answer (content-policy.ts "unavailable";
+ * critic item 2): Astra answered and was billed, so the try stays counted,
+ * but the set is unchanged and its change went back.
+ */
+export const SET_EDIT_ANSWER_UNCHECKED = "We couldn't check Astra's answer, so the set is unchanged and no change was used. Try again in a moment.";
 /** The working copy is past what Astra can answer whole (set-config.ts SET_EDIT_MAX_SPEC_CHARS). */
 export const SET_EDIT_TOO_BIG = "This set has grown too big for Astra to rewrite in one answer — change it with the editor's own tools.";
 /**

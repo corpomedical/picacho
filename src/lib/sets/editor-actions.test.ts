@@ -5,12 +5,14 @@ import raceTrack from "./fixtures-race-track.json";
 import { normaliseSetSpec, type SetSpec } from "./set-spec";
 import {
   SET_BRIEF_TOO_SHORT,
+  SET_EDIT_ANSWER_UNCHECKED,
   SET_EDIT_FAILED,
   SET_EDIT_REFUSED,
   SET_EDIT_STILL_WORKING,
   SET_EDIT_TOO_BIG,
   SET_EDIT_TOO_FAST,
   SET_EDIT_TRIES_USED,
+  SET_EDIT_UNAVAILABLE,
   SET_NOT_FOUND,
   SET_SAVE_FAILED,
   SETS_SESSION_EXPIRED,
@@ -58,10 +60,16 @@ let edited: SetSpec | null;
 let limited: Record<string, boolean>;
 let used: number | null;
 let answer: { state: "done"; text: string; usage: null; costUsd: number } | { state: "failed"; kind: "incomplete"; detail: string; usage: null; costUsd: number };
-/** What submitAstraJob does: accept, refuse, or throw. */
-let submit: "ok" | "refused" | "throws";
-/** Whether the gate refuses Astra's answer, the save fails, the kept model's move throws. */
+/**
+ * What submitAstraJob does: accept, refuse, or throw — or fail as
+ * providers/astra.ts reports it (Helios Cut 4, step A2): "unbilled", OpenAI
+ * answered the POST without a job (neverBilled); "unsure", a job may exist
+ * (a 200 with no response id).
+ */
+let submit: "ok" | "refused" | "throws" | "unbilled" | "unsure";
+/** Whether the gate refuses Astra's answer (and why), the save fails, the kept model's move throws. */
 let answerGateRefuses: boolean;
+let answerGateReason: string;
 let saveFails: boolean;
 let moveThrows: boolean;
 let rebuildOpen: boolean;
@@ -127,14 +135,19 @@ vi.mock("@/lib/rate-limit", () => ({
 vi.mock("@/lib/generations/core", () => ({ monthlyWindowStart: (p: string | null) => new Date(p ?? "2026-09-10T00:00:00.000Z") }));
 vi.mock("@/lib/generations/content-policy", () => ({
   ContentPolicyRefusal: class ContentPolicyRefusal extends Error {
-    reason = "test";
-    userMessage = "Refused by the gate.";
+    reason: string;
+    userMessage: string;
+    constructor(reason = "test", userMessage = "Refused by the gate.") {
+      super(userMessage);
+      this.reason = reason;
+      this.userMessage = userMessage;
+    }
   },
   assertPromptAllowed: async () => {
     steps.push("answer gate");
     if (answerGateRefuses) {
       const { ContentPolicyRefusal } = await import("@/lib/generations/content-policy");
-      throw new ContentPolicyRefusal("test" as never, "Refused by the gate.");
+      throw new ContentPolicyRefusal(answerGateReason as never, "Refused by the gate.");
     }
   },
 }));
@@ -164,7 +177,9 @@ vi.mock("@/lib/generations/providers/astra", () => ({
     sent.push(req);
     steps.push("astra");
     if (submit === "throws") throw new Error("network down");
-    if (submit === "refused") return { ok: false, kind: "refused", detail: "safety" };
+    if (submit === "refused") return { ok: false, kind: "refused", detail: "safety", neverBilled: false };
+    if (submit === "unbilled") return { ok: false, kind: "rate_limited", detail: "429", neverBilled: true };
+    if (submit === "unsure") return { ok: false, kind: "unavailable", detail: "no response id", neverBilled: false };
     return { ok: true, responseId: "resp_1" };
   },
   // A later tick, so two deliveries of one press really overlap.
@@ -207,7 +222,11 @@ vi.mock("@/lib/sets/astra-press", async () => ({
     onReadPress();
     return pressState;
   },
-  giveBackAstraEdit: async () => {
+  giveBackAstraEdit: async (_admin: unknown, _user: string, scope: string = SET_EDITS_MONTH_SCOPE) => {
+    if (scope === SET_EDIT_TRIES_MONTH_SCOPE) {
+      steps.push("give back try");
+      return true;
+    }
     steps.push("give back");
     if (typeof used === "number") used -= 1;
     return true;
@@ -243,7 +262,7 @@ import { editTextOf, openEditSeal, sealReaderMeaning } from "./edit-seal";
 import { buildSetShotPrompt } from "./set-shot-prompt";
 import { resolvePhotos, setElements, type ElementPhoto } from "./elements";
 import { THING_REBUILD_MAX_SENT_CHARS, thingLocalBlocks } from "./thing-rebuild";
-import { THING_REBUILD_ADMINS_ONLY, THING_REBUILD_DIDNT_FIT, THING_REBUILD_NO_PHOTOS, THING_REBUILD_TOO_BIG } from "./messages";
+import { THING_REBUILD_ADMINS_ONLY, THING_REBUILD_DIDNT_FIT, THING_REBUILD_FAILED, THING_REBUILD_NO_PHOTOS, THING_REBUILD_TOO_BIG } from "./messages";
 
 const PRESS = "3f2a4b5c-6d7e-4f80-9a1b-2c3d4e5f6a7b";
 const LATER = "4f2a4b5c-6d7e-4f80-9a1b-2c3d4e5f6a7b";
@@ -258,6 +277,7 @@ beforeEach(() => {
   answer = { state: "done", text: recoloured(), usage: null, costUsd: 0.31 };
   submit = "ok";
   answerGateRefuses = false;
+  answerGateReason = "test";
   saveFails = false;
   moveThrows = false;
   rebuildOpen = false;
@@ -466,6 +486,90 @@ describe("an answer that changes nothing", () => {
     expect(body.slice(nothing, body.indexOf("\n      }\n", nothing))).toContain(
       "return { error: null, spec: working, changed: 0, editsLeft: await giveBackAstraChange(access, slot), undo: null };",
     );
+  });
+});
+
+// Tries that were never billed come back (Helios Cut 4, step A2, 2026-09-26).
+// A submit OpenAI refused before making a job (providers/astra.ts
+// neverBilled) cost nothing, yet counted among the month's tries and said
+// "try saying it differently". Only those come back: a try that may have
+// made a job keeps its row (critic item 1), or the tries cap — which bounds
+// what failed tries cost — would have a hole.
+describe("a try OpenAI never billed", () => {
+  const ask = (press?: string) => editSetWithAstra(SET, "make the first barrier brick red", press);
+  const count = (step: string) => steps.filter((x) => x === step).length;
+
+  it("gives back the try and the change, saves nothing, and says Astra couldn't be reached", async () => {
+    submit = "unbilled";
+    expect(await ask(PRESS)).toEqual({ error: SET_EDIT_UNAVAILABLE, editsLeft: setEditsMonthlyLimit("growth", false) - 2 });
+    expect(count("give back try")).toBe(1);
+    expect(count("give back")).toBe(1);
+    // The try goes back before the count is read for the answer.
+    expect(steps.indexOf("give back try")).toBeLessThan(steps.lastIndexOf("count"));
+    expect(writes).toEqual([]);
+    expect(ends.map((e) => e.end)).toEqual(["unsaved"]);
+    expect(SET_EDIT_UNAVAILABLE).toMatch(/nothing was used/);
+  });
+
+  it("keeps the try whenever a job may exist: a submit it can't be sure of, a refusal, a failed poll, a throw", async () => {
+    const tryKept = async (setup: () => void, error: string | RegExp) => {
+      steps.length = 0;
+      setup();
+      const out = await ask().catch((err: Error) => ({ error: err.message }));
+      if (typeof error === "string") expect(out.error).toBe(error);
+      else expect(out.error).toMatch(error);
+      expect(count("give back try")).toBe(0);
+      expect(count("give back")).toBe(1);
+    };
+    await tryKept(() => (submit = "unsure"), SET_EDIT_FAILED);
+    await tryKept(() => (submit = "refused"), SET_EDIT_REFUSED);
+    await tryKept(() => {
+      submit = "ok";
+      answer = { state: "failed", kind: "incomplete", detail: "max_output_tokens", usage: null, costUsd: 0.62 };
+    }, SET_EDIT_FAILED);
+    await tryKept(() => (submit = "throws"), /network down/);
+  });
+
+  it("gives nothing back for an admin, who reserved nothing, and still says so", async () => {
+    access = { ...access, plan: "none", isAdmin: true };
+    submit = "unbilled";
+    expect(await ask()).toEqual({ error: SET_EDIT_UNAVAILABLE, editsLeft: null });
+    expect(count("give back try")).toBe(0);
+    expect(count("give back")).toBe(0);
+  });
+
+  it("gives back a rebuild's try and change the same way", async () => {
+    rebuildOpen = true;
+    const car = setElements(SPEC).find((e) => e.kind === "car")!;
+    photos = [{ refId: "33333331-3333-4333-8333-333333333333", anchor: car.key, slot: 1, at: 1, url: "", path: `${USER}/sets/${SET}.ref.${car.key}.1.x.jpg` }];
+    submit = "unbilled";
+    expect(await rebuildThingFromPhotos(SET, car.key, PRESS)).toEqual({ error: SET_EDIT_UNAVAILABLE, editsLeft: setEditsMonthlyLimit("growth", false) - 2 });
+    expect(count("give back try")).toBe(1);
+    expect(count("give back")).toBe(1);
+    steps.length = 0;
+    submit = "unsure";
+    expect((await rebuildThingFromPhotos(SET, car.key, LATER)).error).toBe(THING_REBUILD_FAILED);
+    expect(count("give back try")).toBe(0);
+    expect(count("give back")).toBe(1);
+  });
+});
+
+// An answer the gate could not check (critic item 2): Astra answered and was
+// billed, so the try stays counted — and the page never says "nothing was
+// used" or that the change was refused.
+describe("an answer the gate could not check", () => {
+  it("gives the change back, keeps the try, saves nothing, and says it couldn't be checked", async () => {
+    answerGateRefuses = true;
+    answerGateReason = "unavailable";
+    const out = await editSetWithAstra(SET, "make the first barrier brick red", PRESS);
+    expect(out).toEqual({ error: SET_EDIT_ANSWER_UNCHECKED, editsLeft: setEditsMonthlyLimit("growth", false) - 2 });
+    expect(steps.filter((x) => x === "give back")).toHaveLength(1);
+    expect(steps).not.toContain("give back try");
+    expect(writes).toEqual([]);
+    expect(SET_EDIT_ANSWER_UNCHECKED).not.toMatch(/nothing was used|can't be made/i);
+    // A reading that refused it is still the refusal's sentence.
+    answerGateReason = "test";
+    expect((await editSetWithAstra(SET, "make the first barrier brick red", LATER)).error).toBe(SET_EDIT_REFUSED);
   });
 });
 

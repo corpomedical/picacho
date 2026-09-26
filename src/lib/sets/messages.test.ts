@@ -19,11 +19,13 @@ import {
   SET_PHOTO_TOO_SMALL,
   SET_PHOTO_UNCHECKED,
   SET_PHOTO_UNREADABLE,
+  SET_EDIT_ANSWER_UNCHECKED,
   SET_EDIT_MONTHLY_CAP_ONE,
   SET_EDIT_NOT_SAVED,
   SET_EDIT_STILL_WORKING,
   SET_EDIT_TOO_BIG,
   SET_EDIT_TRIES_USED,
+  SET_EDIT_UNAVAILABLE,
   SET_EDIT_UNCHECKED,
   THING_REBUILD_TOO_BIG,
   matchFailureMessage,
@@ -122,6 +124,9 @@ describe("an Astra press's sentences reach every language", () => {
     [SET_EDIT_UNCHECKED, "setEditUnchecked"],
     [SET_EDIT_TRIES_USED, "setEditTriesUsed"],
     [THING_REBUILD_TOO_BIG, "thingRebuildTooBig"],
+    // Helios Cut 4, step A2: a try never billed, and an answer the gate couldn't check.
+    [SET_EDIT_UNAVAILABLE, "setEditUnavailable"],
+    [SET_EDIT_ANSWER_UNCHECKED, "setEditAnswerUnchecked"],
   ] as const;
 
   it("English readers get the wire sentence itself; the others get it translated", () => {
@@ -143,6 +148,16 @@ describe("an Astra press's sentences reach every language", () => {
     expect(SET_EDIT_UNCHECKED).toMatch(/reload/i);
     // One that did not save may be asked again.
     expect(SET_EDIT_NOT_SAVED).toMatch(/try again/i);
+  });
+
+  // Helios Cut 4, step A2 (critic item 2): "nothing was used" only where it is
+  // true — a try OpenAI never billed. An answer the gate couldn't check was
+  // billed: its try stays counted, and only its change went back.
+  it("says nothing was used only for a try that was never billed", () => {
+    expect(SET_EDIT_UNAVAILABLE).toMatch(/nothing was used/);
+    expect(SET_EDIT_ANSWER_UNCHECKED).not.toMatch(/nothing was used/);
+    expect(SET_EDIT_ANSWER_UNCHECKED).toMatch(/no change was used/);
+    expect(SET_EDIT_ANSWER_UNCHECKED).not.toMatch(/can't be made|refused/i);
   });
 
   it("none of them is a prompt-gate refusal", () => {
@@ -435,6 +450,8 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     "setEditNotSaved",
     "setEditUnchecked",
     "setEditTriesUsed",
+    "setEditUnavailable",
+    "setEditAnswerUnchecked",
     "thingRebuildTooBig",
   ] as const;
 

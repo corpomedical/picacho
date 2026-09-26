@@ -107,20 +107,31 @@ export function buildAstraRequestBody(req: AstraJobRequest): Record<string, unkn
   };
 }
 
+/**
+ * `neverBilled` (Helios Cut 4, step A2, 2026-09-26): true only when OpenAI
+ * certainly never made the job, so nothing can be billed for it — nothing
+ * was sent (no key, a part we would not send), or OpenAI answered the POST
+ * itself with a refusal of the request: 401/403, 429, another 4xx, or a 5xx
+ * carrying OpenAI's own error body. False wherever a background job may
+ * exist and bill (up to $0.62 an edit): a POST that threw or timed out after
+ * sending, a 5xx with no error body (a proxy's page), a 200 with no response
+ * id — and OpenAI's misalignment refusal, which stays counted (the owner's
+ * decision D13). A caller gives a try back only on true (critic item 1).
+ */
 export type AstraSubmitResult =
   | { ok: true; responseId: string }
-  | { ok: false; kind: "config" | "refused" | "rate_limited" | "unavailable" | "bad_request"; detail: string };
+  | { ok: false; kind: "config" | "refused" | "rate_limited" | "unavailable" | "bad_request"; detail: string; neverBilled: boolean };
 
 export async function submitAstraJob(req: AstraJobRequest): Promise<AstraSubmitResult> {
   const key = process.env.OPENAI_API_KEY;
-  if (!key) return { ok: false, kind: "config", detail: "OPENAI_API_KEY is missing" };
+  if (!key) return { ok: false, kind: "config", detail: "OPENAI_API_KEY is missing", neverBilled: true };
   // Built before anything is sent: a part this client will not send is our
   // mistake, reported like any other request OpenAI would have rejected.
   let payload: string;
   try {
     payload = JSON.stringify(buildAstraRequestBody(req));
   } catch (err) {
-    return { ok: false, kind: "bad_request", detail: err instanceof Error ? err.message : String(err) };
+    return { ok: false, kind: "bad_request", detail: err instanceof Error ? err.message : String(err), neverBilled: true };
   }
   let res: Response;
   try {
@@ -134,7 +145,8 @@ export async function submitAstraJob(req: AstraJobRequest): Promise<AstraSubmitR
       30_000,
     );
   } catch (err) {
-    return { ok: false, kind: "unavailable", detail: err instanceof Error ? err.message : String(err) };
+    // Sent, maybe received: the job may exist and bill.
+    return { ok: false, kind: "unavailable", detail: err instanceof Error ? err.message : String(err), neverBilled: false };
   }
   const body = (await res.json().catch(() => null)) as { id?: string; error?: { code?: string; message?: string } } | null;
   if (!res.ok) {
@@ -143,14 +155,16 @@ export async function submitAstraJob(req: AstraJobRequest): Promise<AstraSubmitR
     // also means an unsupported region, or a project without access to the
     // model — our configuration, not the person's words, and it must never be
     // logged as a safety refusal of their brief.
-    if (body?.error?.code === MISALIGNMENT) return { ok: false, kind: "refused", detail };
-    if (res.status === 401 || res.status === 403) return { ok: false, kind: "config", detail };
-    if (res.status === 429) return { ok: false, kind: "rate_limited", detail };
-    if (res.status >= 500) return { ok: false, kind: "unavailable", detail };
-    return { ok: false, kind: "bad_request", detail };
+    if (body?.error?.code === MISALIGNMENT) return { ok: false, kind: "refused", detail, neverBilled: false };
+    if (res.status === 401 || res.status === 403) return { ok: false, kind: "config", detail, neverBilled: true };
+    if (res.status === 429) return { ok: false, kind: "rate_limited", detail, neverBilled: true };
+    // OpenAI's own error body says it answered the POST without a job; anything else in front of it proves nothing.
+    if (res.status >= 500) return { ok: false, kind: "unavailable", detail, neverBilled: typeof body?.error === "object" && body.error !== null };
+    return { ok: false, kind: "bad_request", detail, neverBilled: true };
   }
   if (!body?.id || !RESPONSE_ID_RE.test(body.id)) {
-    return { ok: false, kind: "unavailable", detail: "no response id" };
+    // A 200 whose id can't be read: the job may still have been made.
+    return { ok: false, kind: "unavailable", detail: "no response id", neverBilled: false };
   }
   return { ok: true, responseId: body.id };
 }

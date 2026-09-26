@@ -163,15 +163,19 @@ export async function readAstraPress(admin: SupabaseClient, userId: string, pres
  * the month. A delete that finds its row already gone (a concurrent give
  * back took it) looks once more. Never throws: false when nothing was
  * given back, and the change stays counted — the safe way round for money.
+ *
+ * `scope` (Helios Cut 4, step A2, 2026-09-26): the same for one of the
+ * month's tries (SET_EDIT_TRIES_MONTH_SCOPE), given back only for a try
+ * OpenAI certainly never billed (providers/astra.ts neverBilled).
  */
-export async function giveBackAstraEdit(admin: SupabaseClient, userId: string): Promise<boolean> {
+export async function giveBackAstraEdit(admin: SupabaseClient, userId: string, scope: string = SET_EDITS_MONTH_SCOPE): Promise<boolean> {
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
       const { data, error } = await admin
         .from("api_rate_hits")
         .select("id")
         .eq("user_id", userId)
-        .eq("scope", SET_EDITS_MONTH_SCOPE)
+        .eq("scope", scope)
         .order("id", { ascending: false })
         .limit(1);
       if (error) {
@@ -185,7 +189,7 @@ export async function giveBackAstraEdit(admin: SupabaseClient, userId: string): 
         .delete({ count: "exact" })
         .eq("id", id)
         .eq("user_id", userId)
-        .eq("scope", SET_EDITS_MONTH_SCOPE);
+        .eq("scope", scope);
       if (deleteError) {
         console.warn("[sets] couldn't give an Astra change back:", deleteError.message);
         return false;

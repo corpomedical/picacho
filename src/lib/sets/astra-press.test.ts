@@ -246,6 +246,18 @@ describe("giveBackAstraEdit", () => {
     expect(rows.map((r) => r.id)).toEqual([1, 3, 4, 5, 6]);
   });
 
+  // Helios Cut 4, step A2 (2026-09-26): a try OpenAI never billed comes back too, from its own bucket.
+  it("removes the newest of this person's month of tries when asked for that bucket, and never a change", async () => {
+    const rows = [month(1), month(2, USER, SET_EDIT_TRIES_MONTH_SCOPE), month(3, USER, SET_EDIT_TRIES_MONTH_SCOPE), month(4, OTHER, SET_EDIT_TRIES_MONTH_SCOPE)];
+    const { db } = fakeDb(rows);
+    expect(await giveBackAstraEdit(db, USER, SET_EDIT_TRIES_MONTH_SCOPE)).toBe(true);
+    expect(rows.map((r) => r.id)).toEqual([1, 2, 4]);
+    // Nothing in the bucket: nothing given, and the month's change untouched.
+    const none = [month(1)];
+    expect(await giveBackAstraEdit(fakeDb(none).db, USER, SET_EDIT_TRIES_MONTH_SCOPE)).toBe(false);
+    expect(none).toHaveLength(1);
+  });
+
   it("gives nothing back when there is nothing to give", async () => {
     const rows = [month(1, OTHER), month(2, USER, SET_EDIT_TRIES_MONTH_SCOPE)];
     const { db } = fakeDb(rows);
