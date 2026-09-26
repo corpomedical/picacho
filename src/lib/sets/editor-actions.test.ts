@@ -6,6 +6,7 @@ import { normaliseSetSpec, type SetSpec } from "./set-spec";
 import {
   SET_BRIEF_TOO_SHORT,
   SET_EDIT_ANSWER_UNCHECKED,
+  SET_EDIT_COUNT_UNREAD,
   SET_EDIT_FAILED,
   SET_EDIT_REFUSED,
   SET_EDIT_STILL_WORKING,
@@ -332,6 +333,8 @@ describe("an Astra change", () => {
 
   it("is refused at the month's cap before Astra is asked, says none are left, and gives nothing back", async () => {
     limited[SET_EDITS_MONTH_SCOPE] = true;
+    // The month's own count agrees the changes are used (Helios Cut 4, step A4).
+    used = setEditsMonthlyLimit("growth", false);
     const out = await editSetWithAstra(SET, "make the first barrier brick red");
     expect(out).toEqual({ error: setEditMonthlyCapMessage(setEditsMonthlyLimit("growth", false)), editsLeft: 0 });
     expect(steps).not.toContain("astra");
@@ -339,6 +342,27 @@ describe("an Astra change", () => {
     expect(steps).not.toContain("give back");
     expect(steps).not.toContain("tries");
     expect(writes).toEqual([]);
+  });
+
+  // Helios Cut 4, step A4 (2026-09-26): the limiter fails closed, so its
+  // refusal alone said "the limit on your plan" and "none left" — and the
+  // page hid the button — in an outage with changes still in hand.
+  it("says the count couldn't be checked, and hands back no count, when the limiter refuses under the cap or the count can't be read", async () => {
+    limited[SET_EDITS_MONTH_SCOPE] = true;
+    used = 3;
+    expect(await editSetWithAstra(SET, "make the first barrier brick red")).toEqual({ error: SET_EDIT_COUNT_UNREAD });
+    used = null;
+    expect(await editSetWithAstra(SET, "make the first barrier brick red")).toEqual({ error: SET_EDIT_COUNT_UNREAD });
+    // Nothing reserved, so nothing given back; no try counted; nothing sent.
+    expect(steps).not.toContain("give back");
+    expect(steps).not.toContain("tries");
+    expect(sent).toEqual([]);
+    // A plan with no changes at all is told so without a read.
+    access = { ...access, plan: "none" };
+    steps.length = 0;
+    expect(await editSetWithAstra(SET, "make the first barrier brick red")).toEqual({ error: setEditMonthlyCapMessage(0), editsLeft: 0 });
+    expect(steps).not.toContain("count");
+    expect(steps).not.toContain("month");
   });
 
   it("counts nothing for an admin, and says nothing of a count", async () => {

@@ -162,6 +162,13 @@ export const SET_EDIT_UNAVAILABLE = "Astra can't be reached right now — nothin
  * but the set is unchanged and its change went back.
  */
 export const SET_EDIT_ANSWER_UNCHECKED = "We couldn't check Astra's answer, so the set is unchanged and no change was used. Try again in a moment.";
+/**
+ * The month's limiter refused a change while the month's own count reads
+ * under the cap, or can't be read (Helios Cut 4, step A4, 2026-09-26): the
+ * limiter fails closed, so it may be an outage, not a spent month. Sent with
+ * no count, so the page keeps its own.
+ */
+export const SET_EDIT_COUNT_UNREAD = "We couldn't check your Astra changes — try again in a moment.";
 /** The working copy is past what Astra can answer whole (set-config.ts SET_EDIT_MAX_SPEC_CHARS). */
 export const SET_EDIT_TOO_BIG = "This set has grown too big for Astra to rewrite in one answer — change it with the editor's own tools.";
 /**

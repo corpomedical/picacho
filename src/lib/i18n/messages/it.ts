@@ -4410,6 +4410,7 @@ const it = {
     setEditTriesUsed: "Troppe modifiche di Astra non sono andate a buon fine in questo mese di fatturazione, quindi Astra è in pausa sui tuoi set finché non si rinnova il periodo di fatturazione. Gli strumenti dell'editor funzionano ancora.",
     setEditUnavailable: "Al momento Astra non è raggiungibile — non è stato usato nulla. Riprova tra qualche minuto.",
     setEditAnswerUnchecked: "Non siamo riusciti a controllare la risposta di Astra, quindi il set è rimasto uguale e non è stata usata nessuna modifica. Riprova tra un momento.",
+    setEditCountUnread: "Non siamo riusciti a controllare le tue modifiche di Astra — riprova tra un momento.",
     setRefRefused: "Questa foto non può essere usata come riferimento.",
     setRefUnchecked: "Non siamo riusciti a controllare questa foto: riprova tra un momento.",
     setRefTooFast: "Sono tante foto tutte insieme: riprova tra qualche minuto.",

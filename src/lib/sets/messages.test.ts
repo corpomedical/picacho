@@ -20,6 +20,7 @@ import {
   SET_PHOTO_UNCHECKED,
   SET_PHOTO_UNREADABLE,
   SET_EDIT_ANSWER_UNCHECKED,
+  SET_EDIT_COUNT_UNREAD,
   SET_EDIT_MONTHLY_CAP_ONE,
   SET_EDIT_NOT_SAVED,
   SET_EDIT_STILL_WORKING,
@@ -127,6 +128,8 @@ describe("an Astra press's sentences reach every language", () => {
     // Helios Cut 4, step A2: a try never billed, and an answer the gate couldn't check.
     [SET_EDIT_UNAVAILABLE, "setEditUnavailable"],
     [SET_EDIT_ANSWER_UNCHECKED, "setEditAnswerUnchecked"],
+    // Step A4: a limiter refusal with changes still in hand.
+    [SET_EDIT_COUNT_UNREAD, "setEditCountUnread"],
   ] as const;
 
   it("English readers get the wire sentence itself; the others get it translated", () => {
@@ -158,6 +161,12 @@ describe("an Astra press's sentences reach every language", () => {
     expect(SET_EDIT_ANSWER_UNCHECKED).not.toMatch(/nothing was used/);
     expect(SET_EDIT_ANSWER_UNCHECKED).toMatch(/no change was used/);
     expect(SET_EDIT_ANSWER_UNCHECKED).not.toMatch(/can't be made|refused/i);
+  });
+
+  // Step A4: a count that couldn't be checked never says the month is used up, or that none are left.
+  it("never says the month is used up when only the count couldn't be checked", () => {
+    expect(SET_EDIT_COUNT_UNREAD).not.toMatch(/limit|none|used up|resets/i);
+    expect(SET_EDIT_COUNT_UNREAD).toMatch(/try again/i);
   });
 
   it("none of them is a prompt-gate refusal", () => {
@@ -452,6 +461,7 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     "setEditTriesUsed",
     "setEditUnavailable",
     "setEditAnswerUnchecked",
+    "setEditCountUnread",
     "thingRebuildTooBig",
   ] as const;
 

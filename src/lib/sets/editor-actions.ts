@@ -13,6 +13,7 @@ import { changesNothing, countSpecChanges, holdEditedText } from "@/lib/sets/edi
 import {
   SET_BRIEF_TOO_SHORT,
   SET_EDIT_ANSWER_UNCHECKED,
+  SET_EDIT_COUNT_UNREAD,
   SET_EDIT_FAILED,
   SET_EDIT_REFUSED,
   SET_EDIT_STILL_WORKING,
@@ -179,7 +180,18 @@ async function astraChangeSlot(access: Access): Promise<{ error: string; editsLe
   const since = monthlyWindowStart(access.periodStart).getTime();
   const windowSeconds = Math.max(1, Math.ceil((new Date().getTime() - since) / 1000));
   // Refused at the cap: nothing was reserved, so nothing is given back.
-  if (monthly === 0 || (await rateLimited(userId, SET_EDITS_MONTH_SCOPE, windowSeconds, monthly))) {
+  if (monthly === 0) return { error: setEditMonthlyCapMessage(monthly), editsLeft: 0 };
+  if (await rateLimited(userId, SET_EDITS_MONTH_SCOPE, windowSeconds, monthly)) {
+    // The limiter fails closed, so a refusal here is not proof the month is
+    // used up (Helios Cut 4, step A4, 2026-09-26): the month's own count
+    // says. Under the cap, or unread, it says the count couldn't be checked
+    // and hands back no count, so the page keeps the one it has — never "the
+    // limit on your plan" and "none left" with changes still in hand. This
+    // is the rarer path (critic item 14): in an outage of the limiter the
+    // press claim and the pace, both earlier and both failing closed,
+    // usually answer first, with SET_EDIT_TOO_FAST — unchanged here.
+    const used = await countAstraEditsThisMonth(userId, access.periodStart);
+    if (used === null || used < monthly) return { error: SET_EDIT_COUNT_UNREAD };
     return { error: setEditMonthlyCapMessage(monthly), editsLeft: 0 };
   }
   const slot: Slot = { error: null, editsLeft: null, monthly, reserved: true };

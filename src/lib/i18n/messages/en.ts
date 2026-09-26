@@ -4692,6 +4692,7 @@ const en = {
     setEditTriesUsed: "Too many of this month's Astra changes didn't land, so Astra is paused on your sets until your billing period resets. The editor's own tools still work.",
     setEditUnavailable: "Astra can't be reached right now — nothing was used. Try again in a few minutes.",
     setEditAnswerUnchecked: "We couldn't check Astra's answer, so the set is unchanged and no change was used. Try again in a moment.",
+    setEditCountUnread: "We couldn't check your Astra changes — try again in a moment.",
     setRefRefused: "This photo can't be used as a reference.",
     setRefUnchecked: "We couldn't check this photo — try again in a moment.",
     setRefTooFast: "That's a lot of photos at once — try again in a few minutes.",
