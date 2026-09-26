@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withJobAlert } from "@/lib/push/admin-alerts";
 import { createAdminClient } from "@/lib/supabase/server";
 import { pruneRateHits } from "@/lib/rate-hits";
 import { retryFaceGroupDeletions } from "@/lib/faces/run";
@@ -19,7 +20,7 @@ import { retryFaceGroupDeletions } from "@/lib/faces/run";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-export async function GET(request: Request) {
+async function run(request: Request) {
   const secret = process.env.CRON_SECRET;
   const auth = request.headers.get("authorization");
   if (!secret || auth !== `Bearer ${secret}`) {
@@ -34,3 +35,6 @@ export async function GET(request: Request) {
   if (faces.deleted || faces.left) console.info("prune: owed face deletions", faces);
   return NextResponse.json({ rateHits, faces }, { status: rateHits.error ? 500 : 200 });
 }
+
+// A 5xx or a throw reaches the operator's phone, damped per job (lib/push/admin-alerts.ts, 2026-09-26).
+export const GET = withJobAlert("prune", run);

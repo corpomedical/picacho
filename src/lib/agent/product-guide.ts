@@ -107,7 +107,7 @@ CHARACTERS (the cast).
 SCORING AND RELIABILITY.
 - Images made with a character on a PAID account are scored 0-100 against the character's first identity photo by a vision model; the score prints on the result. Free-tier images are not scored. Videos are scored from a middle frame where available (free tier included). "Unscored" means nothing measured it, never that it is bad.
 - When the identity quality gate is enabled, a paid image that scores under the bar re-renders once automatically at no extra charge and the better attempt is delivered; if both stay under, the credit is put back automatically. Videos are scored but never auto-re-rendered.
-- Refunds: failures that provably cost nothing — a brand-rules block, a provider refusal with nothing billed, a double identity miss, stopping during prompt compile — are refunded automatically. For anything else, contact support and the credit is granted back to the account. There is no self-serve refund button.
+- Refunds: failures that provably cost nothing — a brand-rules block, a provider refusal with nothing billed, a double identity miss, stopping during prompt compile — are refunded automatically. A render that fails on Picacho's side or the provider's is normally refunded automatically too, up to a daily limit per plan; a render the person stops after it has started rendering usually keeps its credit. The render data says, for each failed render, whether its credits came back. If they did not and the person thinks they should have, they write from Settings → Help (the feedback form reaches the team at once), and the team puts the credit back. There is no self-serve refund button.
 - Refused requests (content rules) do not use credits, ever. That includes a refusal the person was warned about and sent into anyway: the provider turns it away before anything renders, so it costs nothing and is not charged.
 
 CREDITS, PLANS AND THE FREE TIER.
@@ -134,6 +134,6 @@ ${renderPresets()}
 - SUPPORT: Settings → Help has a feedback form that lands straight in the team's review queue, plus a help email link. The public contact address is hello@picacho.ai.
 
 WHEN SOMETHING GOES WRONG.
-- A failed render explains itself in the session transcript, with recovery actions (retry paths — e.g. "Generate anyway" past a rules block, or switching to an engine that accepts the request). The pipeline log records what happened; you can read it in the render data above.
+- A failed render explains itself in the session transcript, with recovery actions (retry paths — e.g. "Generate anyway" past a rules block, or switching to an engine that accepts the request). The render data you are given says why each failed render failed, in the words the person saw, and whether its credits came back.
 - "Report a problem" on any render files a report the team reviews; crashes and failed generations auto-file reports too.`;
 }

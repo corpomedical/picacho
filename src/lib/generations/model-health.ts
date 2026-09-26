@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { alertModelOff } from "@/lib/push/admin-alerts";
 
 // Circuit breaker for AI providers.
 //
@@ -68,6 +69,9 @@ export async function recordModelFailure(
   if (!modelId || !isProviderFault(error)) return;
 
   const admin = createAdminClient();
+  // Read before the failure lands, so the operator hears about the moment a
+  // model goes OUT, not every failure after it (2026-09-26, admin-alerts.ts).
+  const wasOut = await isOutOfService(admin, modelId);
   const { error: rpcError } = await admin.rpc("record_model_failure", {
     p_model_id: modelId,
     p_kind: kind,
@@ -78,7 +82,10 @@ export async function recordModelFailure(
     p_base_cooldown_ms: BASE_COOLDOWN_MS,
     p_max_cooldown_ms: MAX_COOLDOWN_MS,
   });
-  if (!rpcError) return;
+  if (!rpcError) {
+    await alertIfSwitchedOff(admin, modelId, wasOut);
+    return;
+  }
 
   // Fallback: the RPC isn't applied yet (pipeline.sql pending) or errored.
   // The old read-modify-write is lossy under concurrency but infinitely
@@ -116,6 +123,49 @@ export async function recordModelFailure(
       : {}),
     updated_at: new Date().toISOString(),
   });
+  await alertIfSwitchedOff(admin, modelId, wasOut);
+}
+
+// Out of service right now: tripped, and its trial time not yet come — the
+// same test getUnavailableModels applies. A read that fails counts as "not
+// out", so the check after the failure can still see a trip and alert.
+async function isOutOfService(admin: ReturnType<typeof createAdminClient>, modelId: string): Promise<boolean> {
+  try {
+    const { data } = await admin
+      .from("model_health")
+      .select("tripped_at, retry_after")
+      .eq("model_id", modelId)
+      .maybeSingle<{ tripped_at: string | null; retry_after: string | null }>();
+    if (!data?.tripped_at) return false;
+    return !data.retry_after || new Date(data.retry_after).getTime() > Date.now();
+  } catch {
+    return false;
+  }
+}
+
+// The operator's phone hears when THIS failure took the model out (it was
+// in service a moment ago and is out now). A failure while it was already
+// out — renders still finishing after the trip — re-trips it with a longer
+// wait but says nothing; the trial failing after its wait does say it again,
+// with the new wait. Never throws: this runs inside finish().
+async function alertIfSwitchedOff(
+  admin: ReturnType<typeof createAdminClient>,
+  modelId: string,
+  wasOut: boolean,
+): Promise<void> {
+  if (wasOut) return;
+  try {
+    const { data } = await admin
+      .from("model_health")
+      .select("tripped_at, retry_after, last_error")
+      .eq("model_id", modelId)
+      .maybeSingle<{ tripped_at: string | null; retry_after: string | null; last_error: string | null }>();
+    if (!data?.tripped_at) return;
+    if (data.retry_after && new Date(data.retry_after).getTime() <= Date.now()) return;
+    await alertModelOff({ modelId, lastError: data.last_error, retryAfter: data.retry_after });
+  } catch (err) {
+    console.error("model-health: switch-off alert failed:", err);
+  }
 }
 
 // Records a success. Clears the breaker completely — one good render proves

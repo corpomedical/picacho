@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { alertJobFailed, checkFalBalance, withJobAlert } from "@/lib/push/admin-alerts";
 import { createAdminClient } from "@/lib/supabase/server";
 import { reapStaleJobs } from "@/lib/generations/job-runner";
 import { persistGeneratedVideo, persistImageBytes } from "@/lib/generations/core";
@@ -6,7 +7,8 @@ import { extractVideoFrame } from "@/lib/generations/providers/fal";
 import { providerDownloadUrl } from "@/lib/generations/providers/provider-url";
 import { toMediaUrl } from "@/lib/media/url";
 
-// The daily reconcile (2026-09-05, closing a round-one audit coverage edge):
+// The reconcile (2026-09-05, closing a round-one audit coverage edge; it runs
+// hourly — vercel.json "30 * * * *" — though it was written as a daily):
 // until now the stuck-job reaper ran ONLY inside page loads — /app/generate
 // and, since this week, /app/history. A user whose render's webhook was
 // dropped and who then churned, or who generated through the public API and
@@ -28,7 +30,7 @@ export const runtime = "nodejs";
 // never let the platform default cut reconciliation short.
 export const maxDuration = 300;
 
-export async function GET(request: Request) {
+async function run(request: Request) {
   const secret = process.env.CRON_SECRET;
   const auth = request.headers.get("authorization");
   if (!secret || auth !== `Bearer ${secret}`) {
@@ -36,6 +38,13 @@ export async function GET(request: Request) {
   }
 
   const admin = createAdminClient();
+
+  // The fal balance, hourly (2026-09-26): below ten of the priciest renders
+  // the operator's phone is told, below one it is told every hour until the
+  // top-up — the same two lines Admin → AI Providers draws, which until now
+  // only someone opening that page could see. First, so a long poster
+  // backfill below can never starve it. Never throws.
+  const fal = await checkFalBalance();
 
   // Users with any job old enough that the reaper would look at it. The
   // hour-based prefilter is deliberately WIDER than the reaper's own
@@ -103,6 +112,14 @@ export async function GET(request: Request) {
   }
 
   console.log(`reconcile: swept ${reaped} user(s), ${failures} failure(s), ${userIds.length} nominated`);
+  if (failures > 0) {
+    // The run itself succeeds, so the route wrapper would never see this:
+    // someone's stuck render is still holding their credits.
+    await alertJobFailed(
+      "reconcile",
+      `Stuck renders for ${failures} of ${userIds.length} account(s) couldn't be cleared; the next hourly run tries again.`,
+    );
+  }
 
   // Community heal (2026-09-05, closing the last sliver of the expiring-link
   // finding): sharing copies a provider-hosted video into our storage first,
@@ -206,5 +223,15 @@ export async function GET(request: Request) {
   }
 
   console.log(`reconcile: healed ${postsHealed} community post(s), filled ${postersFilled} poster(s)`);
-  return NextResponse.json({ users: userIds.length, reaped, failures, postsHealed, postersFilled });
+  return NextResponse.json({
+    users: userIds.length,
+    reaped,
+    failures,
+    postsHealed,
+    postersFilled,
+    falBalanceUsd: fal.balanceUsd,
+  });
 }
+
+// A 5xx or a throw reaches the operator's phone, damped per job (lib/push/admin-alerts.ts, 2026-09-26).
+export const GET = withJobAlert("reconcile", run);

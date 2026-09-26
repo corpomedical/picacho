@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { MODEL_CAPABILITIES, CHARACTERLESS_MODEL_IDS } from "@/lib/generations/send-plan";
 import { VIDEO_MODELS } from "@/lib/generations/providers/video-models";
 import { renderProductGuide } from "@/lib/agent/product-guide";
+import { loadFailureNotes } from "@/lib/agent/failure-notes";
 
 // What the chat agent is allowed to know, assembled in cache order.
 //
@@ -58,7 +59,7 @@ HOW YOU BEHAVE
 - Answer from the data you are given. If the data does not say, say that it does not say rather than guessing — a confident wrong answer about someone's render is worse than "I can't tell from here".
 - Be brief. Two or three sentences unless asked for more. These are people mid-task, not readers.
 - Name specifics: the model, the score, the duration, the credit cost. Vague encouragement is worthless here.
-- When something failed, say what actually happened and what to change. You have the pipeline log; use it.
+- When something failed, say what actually happened and what to change. Each failed render in their list says why it failed and whether its credits came back; say that, in plain words, and never promise a refund the list does not show.
 - Write PLAIN PROSE. The surface shows your text exactly as you write it, with no markdown renderer behind it, so asterisks, pound signs and backticks arrive on screen as literal characters. Use short paragraphs; when a list is genuinely the clearest answer, put one item per line and start it with a dash.
 
 WHAT YOU CANNOT DO
@@ -149,6 +150,15 @@ export async function buildAgentContext(
   const rules = rulesResult.data;
   const recent = recentResult.data;
 
+  // Why each failed render failed, and whether its credits came back
+  // (failure-notes.ts). Read only for the failed ones: a log carries every
+  // attempt's compiled prompt, too heavy to pull for all fifteen.
+  const failureNotes = await loadFailureNotes(
+    supabase,
+    userId,
+    (recent ?? []).filter((g) => g.status === "failed").map((g) => g.id as string),
+  );
+
   const chars = characters ?? [];
   const current = characterId ? chars.find((c) => c.id === characterId) : null;
 
@@ -177,9 +187,10 @@ export async function buildAgentContext(
     const score = typeof g.match_score === "number" ? `${g.match_score}% match` : "unscored";
     const note = g.match_notes ? ` — ${clean(g.match_notes, 120)}` : "";
     const dur = g.video_duration_seconds ? `${g.video_duration_seconds}s ` : "";
+    const failure = failureNotes.get(g.id as string);
     return `- ${when} ${g.content_type} ${dur}on ${model}: ${g.status}, ${score}, ${
       g.credits_used ?? 0
-    }cr${note}. Asked for: "${clean(g.prompt_input, 160)}"`;
+    }cr${note}${failure ? ` — ${clean(failure, 360)}` : ""}. Asked for: "${clean(g.prompt_input, 160)}"`;
   });
 
   const project = `THE PERSON'S CURRENT WORK

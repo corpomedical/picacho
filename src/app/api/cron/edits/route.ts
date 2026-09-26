@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withJobAlert } from "@/lib/push/admin-alerts";
 import { createAdminClient } from "@/lib/supabase/server";
 import { advanceEdit } from "@/lib/editor/advance";
 import { isEditorEnabled } from "@/lib/editor/enabled";
@@ -19,7 +20,7 @@ export const maxDuration = 300;
 const START_BUDGET_MS = 25_000;
 const BATCH = 10;
 
-export async function GET(request: Request) {
+async function run(request: Request) {
   const secret = process.env.CRON_SECRET;
   const auth = request.headers.get("authorization");
   if (!secret || auth !== `Bearer ${secret}`) {
@@ -48,3 +49,6 @@ export async function GET(request: Request) {
   }
   return NextResponse.json({ ok: true, outcomes });
 }
+
+// A 5xx or a throw reaches the operator's phone, damped per job (lib/push/admin-alerts.ts, 2026-09-26).
+export const GET = withJobAlert("edits", run);

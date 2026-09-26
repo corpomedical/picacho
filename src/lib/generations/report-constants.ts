@@ -87,8 +87,9 @@ export function summarizeFailureDetail(attempts: AttemptLog[]): string | null {
 
 // A render's STORED log (generations.pipeline_log) read back as attempts. It
 // is only as well formed as whatever wrote it: an older row can lack
-// `issues`, a crash can leave no log at all (an empty list here).
-function attemptsFromLog(log: unknown): AttemptLog[] {
+// `issues`, a crash can leave no log at all (an empty list here). Exported
+// for the assistants' failure notes (lib/agent/failure-notes.ts).
+export function attemptsFromLog(log: unknown): AttemptLog[] {
   if (!Array.isArray(log)) return [];
   return log
     .filter((a): a is Record<string, unknown> => typeof a === "object" && a !== null)

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
+import { notifyAdmins } from "@/lib/push/web-push";
 
 // Stamps profiles.rating_prompted_at and drops the cached layout that decides
 // whether to show the star prompt.
@@ -109,6 +110,19 @@ export async function submitFeedback(
   // Answering the star prompt also closes it, so it isn't shown again.
   if (hasRating) {
     await closeRatingPrompt(userData.user.id);
+  }
+
+  // Someone WROTE to the team — the Help form is where the assistants send a
+  // person whose failed render kept its credits — so the operator's phone
+  // hears it, as it does a problem report (2026-09-26: this queue was the
+  // one a person could write into without anyone being told). A star with
+  // no words is not a message and stays quiet. notifyAdmins never throws.
+  if (trimmed) {
+    await notifyAdmins({
+      title: "New message from a customer",
+      body: `${hasRating ? `${"★".repeat(rating as number)} ` : ""}${trimmed.slice(0, 130)}`,
+      path: "#content",
+    });
   }
 
   return { error: null };

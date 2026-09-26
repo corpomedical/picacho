@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withJobAlert } from "@/lib/push/admin-alerts";
 import { createAdminClient } from "@/lib/supabase/server";
 import { notifyUser } from "@/lib/push/send";
 import { advanceSetBuild } from "@/lib/sets/build-tick";
@@ -22,7 +23,7 @@ export const runtime = "nodejs";
 // finisher.ts, then ends by 285 s, inside this.
 export const maxDuration = 300;
 
-export async function GET(request: Request) {
+async function run(request: Request) {
   const secret = process.env.CRON_SECRET;
   const auth = request.headers.get("authorization");
   if (!secret || auth !== `Bearer ${secret}`) {
@@ -40,3 +41,6 @@ export async function GET(request: Request) {
   });
   return NextResponse.json(outcome.body, { status: outcome.status });
 }
+
+// A 5xx or a throw reaches the operator's phone, damped per job (lib/push/admin-alerts.ts, 2026-09-26).
+export const GET = withJobAlert("sets", run);

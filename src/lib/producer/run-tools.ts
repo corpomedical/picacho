@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
+import { loadFailureNotes } from "../agent/failure-notes";
 import { lookAtRender } from "./look";
 import { runNotesCommand } from "./notes";
 import { notesStore } from "./store";
@@ -97,13 +98,23 @@ async function searchRenders(ctx: ToolContext, call: ToolCall): Promise<ToolOutc
   if (!data || data.length === 0) {
     return { result: { type: "tool_result", tool_use_id: call.id, content: "Nothing matched." } };
   }
+  // Why each failed one failed and whether its credits came back — the
+  // composer's own words (lib/agent/failure-notes.ts, 2026-09-26).
+  const failureNotes = await loadFailureNotes(
+    ctx.supabase,
+    ctx.userId,
+    data.filter((g) => g.status === "failed").map((g) => g.id as string),
+  );
   const lines = data.map((g) => {
     const model = g.model_id ?? g.video_model_id ?? (g.content_type === "image" ? "image" : "?");
     const who = g.character_profile_id ? names.get(g.character_profile_id as string) ?? "a character" : "no character";
     const score = typeof g.match_score === "number" ? `score ${g.match_score}` : "unscored";
     const len = g.video_duration_seconds ? ` ${g.video_duration_seconds}s` : "";
     const asked = String(g.prompt_input ?? "").replace(/\s+/g, " ").slice(0, 160);
-    return `- ${g.id} | ${String(g.created_at).slice(0, 10)} | ${g.content_type}${len} on ${model} | ${who} | ${g.status} | ${score} | ${g.credits_used ?? 0} cr | "${asked}"`;
+    const failure = failureNotes.get(g.id as string);
+    return `- ${g.id} | ${String(g.created_at).slice(0, 10)} | ${g.content_type}${len} on ${model} | ${who} | ${g.status}${
+      failure ? ` (${failure.replace(/\s+/g, " ").replace(/\|/g, "/").slice(0, 360)})` : ""
+    } | ${score} | ${g.credits_used ?? 0} cr | "${asked}"`;
   });
   return { result: { type: "tool_result", tool_use_id: call.id, content: lines.join("\n") } };
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withJobAlert } from "@/lib/push/admin-alerts";
 import { createAdminClient } from "@/lib/supabase/server";
 import { renderTemplate } from "@/lib/email/render";
 import { sendEmail, unsubscribeUrl } from "@/lib/email/send";
@@ -44,7 +45,7 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
   },
 };
 
-export async function GET(request: Request) {
+async function run(request: Request) {
   const secret = process.env.CRON_SECRET;
   const auth = request.headers.get("authorization");
   if (!secret || auth !== `Bearer ${secret}`) {
@@ -128,3 +129,6 @@ export async function GET(request: Request) {
 
   return NextResponse.json({ sent, skipped, considered: (candidates ?? []).length });
 }
+
+// A 5xx or a throw reaches the operator's phone, damped per job (lib/push/admin-alerts.ts, 2026-09-26).
+export const GET = withJobAlert("drip", run);

@@ -20,6 +20,23 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.116.0",
+    build: 155,
+    date: "2026-09-26",
+    title: "Your phone hears when renders fail, and the assistants can tell a customer why theirs did",
+    items: [
+      "When renders start failing, your phone is told. Three failures that broke inside fifteen minutes send one alert naming the model and the provider's words, at most once an hour. Refusals and stops stay off your phone.",
+      "A provider out of money sounds the siren for videos too, not only images: once per half hour, whichever saw it first.",
+      "When a model is switched off for failing, your phone says which one, what broke, and when it gets its trial render.",
+      "A scheduled job that fails (reconcile, reels, drip, prune, Sets, the video editor) tells your phone, at most once every three hours per job. The hourly reconcile also says when someone's stuck renders couldn't be cleared.",
+      "The fal balance is checked every hour. Below ten of the priciest renders you get a reminder every six hours; below one render, every hour until you top up.",
+      "A message written in Settings → Help now reaches your phone, the way problem reports already did. A star rating alone stays quiet.",
+      "A chargeback on a card payment now reaches your phone with the date to answer it by in Stripe. The credit pack it bought was already taken back automatically; until now nothing said a dispute had opened.",
+      "Aly and the composer's chat can now tell a customer why a render failed, in the words the composer showed them, and whether its credits came back. If they didn't, they send the person to Settings → Help. Until now the chat was told it could read the render's log, but never got it.",
+      "New: docs/SUPPORT_PLAYBOOK.md, which says what each alert means and what to do, how to answer the common customer problems, and what to switch off in an emergency.",
+    ],
+  },
+  {
     version: "1.115.0",
     build: 154,
     date: "2026-09-26",

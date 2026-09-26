@@ -1,6 +1,6 @@
 "use server";
 
-import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import type { AttemptLog } from "@/lib/generations/pipeline";
 import {
   REPORT_REASONS,
@@ -9,6 +9,8 @@ import {
   type ReportReason,
 } from "@/lib/generations/report-constants";
 import { notifyAdmins } from "@/lib/push/web-push";
+import { balanceSirenAllowed } from "@/lib/push/admin-alerts";
+import { balanceSiren } from "@/lib/push/alert-rules";
 
 // "Report a problem" on a specific result — separate from the quick
 // like/dislike reaction in actions.ts (setGenerationFeedback). A dislike is
@@ -112,31 +114,14 @@ export async function autoReportFailedGeneration(
     // "Generation failed" that let the 2026-08-25 fal lock hide among
     // routine failures for hours. Damped to one loud push per 30 minutes —
     // in a lock storm every user's every attempt fails, and 50 identical
-    // sirens are as useless as none. The damper looks across ALL users'
-    // recent auto-reports (admin client — the session client's RLS would
-    // only see this user's rows and re-alert per victim), runs BEFORE this
-    // failure's own row is inserted so it never self-matches, and fails
-    // OPEN: if the check itself errors, we'd rather repeat the alert than
-    // swallow it.
+    // sirens are as useless as none. Since 2026-09-26 the damper is the one
+    // the job runner's video path shares (admin-alerts.ts
+    // balanceSirenAllowed), so a lock seen by images and videos at once
+    // sounds once, whichever saw it first. It fails OPEN: if the check
+    // itself errors, we'd rather repeat the alert than swallow it. It used to
+    // be "any auto-report in the last 30 minutes mentions a lock", which let
+    // a video's silent report hold back the image siren.
     const providerLock = isProviderBalanceFailure(detail);
-    let lockAlreadyAlerted = false;
-    if (providerLock) {
-      try {
-        const admin = createAdminClient();
-        const windowStart = new Date(Date.now() - 30 * 60_000).toISOString();
-        const { data: recent } = await admin
-          .from("generation_reports")
-          .select("details")
-          .eq("source", "auto")
-          .gte("created_at", windowStart)
-          .limit(25);
-        lockAlreadyAlerted = (recent ?? []).some((r) =>
-          isProviderBalanceFailure(r.details ?? ""),
-        );
-      } catch {
-        // Best-effort damper — a hiccup here must never silence the alert.
-      }
-    }
 
     const { error } = await supabase.from("generation_reports").insert({
       generation_id: generationId,
@@ -146,12 +131,8 @@ export async function autoReportFailedGeneration(
       source: "auto",
     });
     if (error) console.error("autoReportFailedGeneration failed:", error.message);
-    else if (providerLock && !lockAlreadyAlerted) {
-      await notifyAdmins({
-        title: "🚨 Provider account locked — renders are failing",
-        body: `${detail.slice(0, 120)} — every generation fails until the balance is topped up.`,
-        path: "#system",
-      });
+    else if (providerLock && (await balanceSirenAllowed())) {
+      await notifyAdmins(balanceSiren(detail));
     } else {
       await notifyAdmins({ title: "Generation failed", body: detail.slice(0, 140), path: "#system" });
     }

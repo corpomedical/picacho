@@ -612,6 +612,22 @@ export async function POST(request: Request) {
 
         const ok = await clawbackCreditPurchase(supabase, paymentIntentId);
         if (!ok) return NextResponse.json({ received: false }, { status: 500 });
+
+        // A dispute has a deadline to answer in Stripe, and nothing else in
+        // Picacho says one opened — the clawback above is silent (2026-09-26,
+        // docs/SUPPORT_PLAYBOOK.md §3.7). Events aren't deduplicated here, so
+        // a redelivered one alerts again: a duplicate beats a missed
+        // deadline. notifyAdmins never throws.
+        const dueBy = dispute.evidence_details?.due_by
+          ? new Date(dispute.evidence_details.due_by * 1000).toISOString().slice(0, 10)
+          : null;
+        await notifyAdmins({
+          title: "Payment disputed (chargeback)",
+          body: `${(dispute.amount / 100).toFixed(2)} ${dispute.currency.toUpperCase()}. Answer it in Stripe → Disputes${
+            dueBy ? ` by ${dueBy}` : ""
+          }. Any credit pack it bought was taken back.`,
+          path: "#money",
+        });
         break;
       }
 

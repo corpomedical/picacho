@@ -48,6 +48,7 @@ import { getDialogueCreditWeight } from "@/lib/generations/providers/video-model
 import { recordModelFailure, recordModelSuccess } from "@/lib/generations/model-health";
 import { notifyUser, type PushMessage } from "@/lib/push/send";
 import { maybeNotifyLowCredits } from "@/lib/push/low-credits";
+import { alertRenderFailure } from "@/lib/push/admin-alerts";
 import {
   castScores,
   faceRecord,
@@ -1434,6 +1435,17 @@ async function finish(
     } catch (err) {
       console.error("Couldn't auto-file failure report:", err);
     }
+  }
+
+  // And tell the OPERATOR's phone when renders are failing (2026-09-26). The
+  // report above was the only trace of a failure here — every video lands in
+  // this function, and none of them ever pushed, so a fal lock or an outage
+  // at 2 AM surfaced when a customer wrote in. A provider out of money sounds
+  // the siren at once; anything that broke counts toward a burst of three in
+  // fifteen minutes; refusals and stops stay off the phone. Awaited, but it
+  // never throws (admin-alerts.ts).
+  if (outcome.status === "failed") {
+    await alertRenderFailure({ fault: outcome.fault, attempts: outcome.attempts, modelId });
   }
 
   // Tell the phone. This is the pay-off from the webhook work: a render now
