@@ -19,8 +19,8 @@
   "expectShoot": "none (default) | still | take: shootDecision(plan, state) for the entry's mode, with source 'message'.",
   "expectCards": "when present, exactly these Needs cards: astra | which | take | hour. Absent: not checked.",
   "expectReplyMentions": "case-insensitive substrings of the reply composed in context.locale (default en).",
-  "context": "now overrides fixture NOW fields; turns is LAST TURNS; locale is the interface language; origin 'build' marks the Sets home's first message on a set it just built; unnamed true reads the set as saved before any name (the fixture file itself), so it has no parts.",
-  "aliases": "t1… are the set's things by their place in the set's own order, s1… its named parts by their place among the parts, p1… the characters. Each set is read named (lib/fixtures.mts HAND_NAMES); a thing's `name` and each part are what the reader is told."
+  "context": "now overrides fixture NOW fields; turns is LAST TURNS; locale is the interface language; origin 'build' marks the Sets home's first message on a set it just built; named true reads the set as the naming pass would name it (lib/fixtures.mts HAND_NAMES), with its parts. Without it the set is read as saved, nameless (the fixture file itself), as every set is until an admin names it.",
+  "aliases": "t1… are the set's things by their place in the set's own order, s1… its named parts by their place among the parts, p1… the characters. A set is read as saved, nameless, unless the phrase's context says named; then a thing's `name` and each part are what the reader is told, and only then may a phrase name an s-alias."
  },
  "fixtures": {
   "race": {
@@ -677,15 +677,15 @@
    "set": "race",
    "phrase": "Turn her to face the grandstand.",
    "expected": {
-    "facing": {
-     "thing": "s3"
-    }
+    "cant": [
+     "thing_unknown"
+    ]
    },
    "expectReplyMentions": [
-    "grandstand"
+    "names"
    ],
    "expectShoot": "none",
-   "note": "Helios Cut 4, step B3: the race set is read named, so the grandstand is a part (s3) she can face. Unnamed, it is X105."
+   "note": "Read as saved, as every set is until an admin names it (review of Helios Cut 4 round 1): its parts have no names, so the grandstand is in neither THINGS nor PARTS. Named, it is X105."
   },
   {
    "id": "A20",
@@ -1112,7 +1112,7 @@
     }
    },
    "expectReplyMentions": [
-    "Blue sports coupe"
+    "Car 2"
    ],
    "expectShoot": "none",
    "context": {
@@ -1566,11 +1566,7 @@
     "Car 1",
     "Car 2"
    ],
-   "expectShoot": "none",
-   "context": {
-    "unnamed": true
-   },
-   "note": "Read unnamed (Helios Cut 4, step B3): a set saved before the naming pass still names its cars \"Car 1\" and \"Car 2\"."
+   "expectShoot": "none"
   },
   {
    "id": "X67",
@@ -2051,7 +2047,7 @@
     "pose": "lean"
    },
    "expectReplyMentions": [
-    "Red sports car"
+    "Car 1"
    ],
    "expectShoot": "none",
    "note": "Eva is already cast: who p1 is the same person, not a swap."
@@ -2135,7 +2131,7 @@
     }
    },
    "expectReplyMentions": [
-    "Blue sports coupe"
+    "Carro 2"
    ],
    "expectShoot": "none",
    "context": {
@@ -2304,25 +2300,28 @@
    "expectReplyMentions": [
     "grandstand"
    ],
-   "expectShoot": "none"
+   "expectShoot": "none",
+   "context": {
+    "named": true
+   }
   },
   {
    "id": "X105",
    "set": "race",
    "phrase": "Turn her to face the grandstand.",
    "expected": {
-    "cant": [
-     "thing_unknown"
-    ]
+    "facing": {
+     "thing": "s3"
+    }
    },
    "expectReplyMentions": [
-    "names"
+    "grandstand"
    ],
    "expectShoot": "none",
    "context": {
-    "unnamed": true
+    "named": true
    },
-   "note": "The set as saved before the naming pass: its parts have no names, so the grandstand is in neither THINGS nor PARTS."
+   "note": "A19 on the set an admin's naming pass named: the grandstand is a part (s3) she can face."
   },
   {
    "id": "X106",
@@ -2337,7 +2336,10 @@
    "expectReplyMentions": [
     "White display stand"
    ],
-   "expectShoot": "none"
+   "expectShoot": "none",
+   "context": {
+    "named": true
+   }
   },
   {
    "id": "X107",
@@ -2358,7 +2360,8 @@
       "said": "she looks at the red car on her left",
       "did": "gaze t1"
      }
-    ]
+    ],
+    "named": true
    },
    "note": "Both cars are named \"red sports car\": the other one is still t2."
   },
@@ -2374,7 +2377,72 @@
    "expectReplyMentions": [
     "barriers"
    ],
-   "expectShoot": "none"
+   "expectShoot": "none",
+   "context": {
+    "named": true
+   }
+  },
+  {
+   "id": "X109",
+   "set": "showroom",
+   "phrase": "No, the other car.",
+   "expected": {
+    "near": {
+     "thing": "t2"
+    }
+   },
+   "expectReplyMentions": [
+    "Blue sports coupe"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "turns": [
+     {
+      "said": "she leans on the red car",
+      "did": "near t1 beside; pose lean; happens set"
+     }
+    ],
+    "named": true
+   },
+   "note": "A44 on the named set: the other car is named, \"Blue sports coupe\"."
+  },
+  {
+   "id": "X110",
+   "set": "garage",
+   "phrase": "Eva leans on the car to her left.",
+   "expected": {
+    "near": {
+     "thing": "t1"
+    },
+    "pose": "lean"
+   },
+   "expectReplyMentions": [
+    "Red sports car"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "named": true
+   },
+   "note": "X88 on the named set: Eva is already cast, and the car is named."
+  },
+  {
+   "id": "X111",
+   "set": "showroom",
+   "phrase": "Ela olha para o carro azul.",
+   "expected": {
+    "gaze": {
+     "thing": "t2"
+    }
+   },
+   "expectReplyMentions": [
+    "Blue sports coupe"
+   ],
+   "expectShoot": "none",
+   "context": {
+    "locale": "pt",
+    "named": true
+   },
+   "note": "X92 on the named set: a name is said as written, in any language."
   }
  ]
 }

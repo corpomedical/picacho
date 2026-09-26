@@ -11,13 +11,15 @@
 //   of her (the race car at 4.3 m and 4.5 m), a grey bench behind, three
 //   walls. The "which one?" set.
 //
-// THE NAMES (Helios Cut 4, step B3). Each set is read NAMED, as a set the
-// naming pass (step B4) has named would be: hand-written names put on
-// through the field a saved set carries (withNames), the race's car and
-// three parts, the showroom's two coupes and its stand, the garage's two
-// cars with ONE name, so "which one?" is still a real question there. The
-// fixture files on disk stay nameless: they are the "old set", and a
-// phrase with context.unnamed reads its set without the names.
+// THE NAMES (Helios Cut 4, step B3). A phrase reads its set AS SAVED —
+// the fixture, nameless — as every set is until an admin's naming pass
+// (step B4) names it, and every non-admin's is: check A must measure the
+// STAGE those accounts send (review of Cut 4 round 1). A phrase about names
+// or parts says context.named, and reads its set as the pass would name
+// it: hand-written names put on through the field a saved set carries
+// (withNames), the race's car and three parts, the showroom's two coupes
+// and its stand, the garage's two cars with ONE name, so "which one?" is
+// still a real question there.
 //
 // THE ALIASES ARE THE PAGE'S. A thing's alias is its place in the set's own
 // order (elements.ts setElements, by its first block; reader-context.ts
@@ -134,7 +136,7 @@ const box = (position: [number, number, number], size: [number, number, number],
 /** Where she stands when NOW has no mark: the showroom's spot beside Car 1 (NOW: near t1, beside). */
 type Spot = { x: number; z: number; facingDeg: number };
 
-/** A built set: `spec` named (the phrases' set), `bare` the same set without a name (context.unnamed). */
+/** A built set: `spec` named (context.named), `bare` the same set as saved, without a name (every other phrase's). */
 export type BuiltSet = { name: FixtureName; spec: SetSpec; bare: SetSpec; spot: Spot | null };
 
 /**
@@ -262,7 +264,7 @@ export function buildSets(): Record<FixtureName, BuiltSet> {
 export type PreparedEntry = {
   entry: CorpusEntry;
   set: BuiltSet;
-  /** The set as this phrase reads it: named, or `bare` for context.unnamed. */
+  /** The set as this phrase reads it: `bare`, as saved, or named for context.named. */
   spec: SetSpec;
   locale: Locale;
   /** The message as the reader is given it (cleaned, at most 600), and whether it was longer. */
@@ -313,7 +315,7 @@ export function prepareEntry(entry: CorpusEntry, fx: Fixture, set: BuiltSet): Pr
   });
   const idOf = (alias: string | null) => (alias ? (characters[fx.characters.findIndex((c) => c.alias === alias)]?.id ?? null) : null);
 
-  const spec = entry.context?.unnamed ? set.bare : set.spec;
+  const spec = entry.context?.named ? set.spec : set.bare;
   const markRow = nowFx.mark ? spec.marks.find((m) => m.id === nowFx.mark) : null;
   if (nowFx.mark && !markRow) throw new Error(`${entry.id}: mark ${nowFx.mark} is not on the ${set.name} set`);
   const spot: Spot = markRow ? { x: markRow.x, z: markRow.z, facingDeg: markRow.facingDeg } : (set.spot ?? { x: spec.marks[0].x, z: spec.marks[0].z, facingDeg: spec.marks[0].facingDeg });

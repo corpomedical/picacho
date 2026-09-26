@@ -127,9 +127,9 @@ describe("the dry runs (spec §6.4)", () => {
   const l = loaded.l;
 
   it("the corpus, its three sets and the phrases' aliases agree", () => {
-    expect(l.entries).toHaveLength(105);
-    expect(new Set(l.entries.map((p) => p.entry.id)).size).toBe(105);
-    // corpus.json is the spec's corpus-v2.json, version 3 since Helios Cut 4, step B3: its sets read named, A19 on a named part, X104–X108.
+    expect(l.entries).toHaveLength(108);
+    expect(new Set(l.entries.map((p) => p.entry.id)).size).toBe(108);
+    // corpus.json is the spec's corpus-v2.json, version 3 since Helios Cut 4, step B3: X104–X111 read their sets named, every other phrase as saved.
     expect(l.corpus.version).toBe(3);
     expect(l.corpus.defaultForbid).toEqual(["shoot", "set_change", "undo", "who"]);
   });
@@ -139,13 +139,20 @@ describe("the dry runs (spec §6.4)", () => {
     expect(run.unsatisfiable).toEqual([]);
     const failing = run.corpus.filter((x) => !x.g.pass || x.g.mentionsMissing.length > 0).map((x) => `${x.p.entry.id}: ${[...x.g.hard, ...x.g.misses, ...x.g.mentionsMissing].join("; ")}`);
     expect(failing).toEqual([]);
-    expect(run.corpus).toHaveLength(105);
+    expect(run.corpus).toHaveLength(108);
     expect(new Set(run.corpus.map((x) => x.p.locale))).toEqual(new Set(["en", "es", "pt", "it"]));
   });
 
-  it("reads each set named, as a set the naming pass named, and the old set unnamed (Helios Cut 4, step B3)", () => {
-    const race = l.entries.find((p) => p.entry.id === "A19")!;
-    const bare = l.entries.find((p) => p.entry.id === "X105")!;
+  // Review of Cut 4 round 1: check A opens reader v2 to everyone, and every
+  // non-admin's set is nameless, so the corpus reads its sets as saved and
+  // only the phrases about names and parts read them named.
+  it("reads each set as saved, and named only where a phrase says so (Helios Cut 4, step B3)", () => {
+    const race = l.entries.find((p) => p.entry.id === "X105")!;
+    const bare = l.entries.find((p) => p.entry.id === "A19")!;
+    expect(race.entry.phrase).toBe(bare.entry.phrase);
+    const named = l.entries.filter((p) => p.entry.context?.named).map((p) => p.entry.id);
+    expect(named).toEqual(["X104", "X105", "X106", "X107", "X108", "X109", "X110", "X111"]);
+    for (const p of l.entries) expect(p.spec, p.entry.id).toBe(p.entry.context?.named ? p.set.spec : p.set.bare);
     // The fixture file on disk has no name; the named copy differs from it only by names.
     expect(race.set.bare.objects.some((o) => o.name !== undefined)).toBe(false);
     const nameless = race.spec.objects.map((o) => {
@@ -171,7 +178,7 @@ describe("the dry runs (spec §6.4)", () => {
 
   it("the garbage reader fails every phrase, four ways, with every hard gate it owes", () => {
     const run = garbageRun(l);
-    expect(run.rows).toHaveLength(420);
+    expect(run.rows).toHaveLength(432);
     expect(run.rows.filter((x) => x.g.pass).map((x) => `${x.p.entry.id} ${x.name}`)).toEqual([]);
     expect(run.missing).toEqual([]);
     // Each gate is owed somewhere, so none of them is untested.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fovForLens } from "./build-scene";
-import { setElements } from "./elements";
+import { setElements, thingLabelText, thingLabels } from "./elements";
 import { DEFAULT_SET_RIG, NEW_SET_RIG, sensorHeightMm } from "./rig";
 import { normaliseSetSpec, type SetObject, type SetSpec } from "./set-spec";
 import { SHOT_READER_STATIC } from "./shot-reading";
@@ -292,6 +292,34 @@ describe("names and PARTS (Helios Cut 4, step B3)", () => {
     expect(text).toContain("THINGS: t1: the car (red sports car), red, ");
     // Unnamed, the thing has no name and the line is as it always was.
     expect(readerThings(race, mark)[0].name).toBeNull();
+  });
+
+  // Review of Cut 4 round 1: the screen numbers same-named things by their
+  // own count ("Red sports car 2"), the label by the kind's ("Car 3"); a
+  // person who copies "red sports car 2" from the screen must reach the
+  // thing the screen calls that, not "Car 2".
+  it("say a same-named thing's number as the screen does, beside the kind's own number", () => {
+    const car = setElements(race).find((e) => e.kind === "car")!;
+    const blocks = [...new Set(car.members.map(([o]) => o))];
+    const copy = (dx: number, name: string) => blocks.map((i) => ({ ...race.objects[i], name, position: [race.objects[i].position[0] + dx, race.objects[i].position[1], race.objects[i].position[2]] }));
+    const three = specOf({
+      ...race,
+      objects: [...race.objects.map((o, i) => (blocks.includes(i) ? { ...o, name: "blue coupe" } : o)), ...copy(6, "red sports car"), ...copy(-6, "red sports car")],
+    });
+    const things = readerThings(three, three.marks[0]);
+    const cars = [...things].sort((a, b) => a.n - b.n).filter((t) => t.kind === "car");
+    expect(cars.map((t) => [t.n, t.label, t.name, t.nameN])).toEqual([
+      [1, "Car 1", "blue coupe", undefined],
+      [2, "Car 2", "red sports car", undefined],
+      [3, "Car 3", "red sports car", 2],
+    ]);
+    const { text } = readerStageBlock({ spec: three, characters: CAST, things });
+    expect(text).toContain("t2: Car 2 (red sports car), ");
+    expect(text).toContain("t3: Car 3 (red sports car 2), ");
+    // The screen's own labels, for the same set.
+    const labels = thingLabels(three, setElements(three));
+    const words = { car: "Car", carN: "Car {n}", vehicle: "Vehicle", vehicleN: "Vehicle {n}", object: "Object", objectN: "Object {n}", namedN: "{name} {n}" };
+    expect(labels.filter((l) => l.kind === "car").map((l) => thingLabelText(l, words))).toEqual(["Blue coupe", "Red sports car", "Red sports car 2"]);
   });
 
   it("list the set's named parts nearest first, each by the nearest edge of its nearest block, numbered by their place among the parts", () => {

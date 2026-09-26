@@ -121,6 +121,15 @@ export type ReaderThing = {
    * the car (red sports car)". Null without one.
    */
   name: string | null;
+  /**
+   * Its number among the things with the same name, as the screen shows it
+   * ("Red sports car 2", elements.ts thingLabelText): present only from the
+   * second such thing on. STAGE says it with the name, "t4: Car 3 (red
+   * sports car 2)", so the handle a person copies from the screen is the
+   * one the reader reads — never the kind's own number, which can differ
+   * (review of Cut 4 round 1).
+   */
+  nameN?: number;
   colour: ColourId;
   /** "4.4 m long" for a car or a vehicle, "1.2 m tall" for an object. */
   size: string;
@@ -282,6 +291,7 @@ export function readerThings(spec: SetSpec, mark: { x: number; z: number; facing
       kind: e.kind,
       label: l.several ? `${numbered[e.kind]} ${l.ordinal}` : lone[e.kind],
       name: l.name,
+      ...(l.name !== null && l.sameNameIndex > 1 ? { nameN: l.sameNameIndex } : {}),
       colour: l.colour,
       size: e.kind === "object" ? `${num(height)} m tall` : `${num(length)} m long`,
       distanceM: Math.round(Math.hypot(dx, dz) * 10) / 10,
@@ -390,7 +400,7 @@ export function readerStageBlock(input: {
       : "none";
     const thingName = (t: ReaderThing) => {
       const name = t.name === null ? "" : listName(t.name);
-      return name ? `${t.label} (${name})` : t.label;
+      return name ? `${t.label} (${name}${t.nameN ? ` ${t.nameN}` : ""})` : t.label;
     };
     const thingLine = ts.length ? ts.map(({ t, alias }) => `${alias}: ${thingName(t)}, ${t.colour}, ${t.size}, ${num(t.distanceM)} m ${WHERE_WORDS[t.where]}`).join("; ") : "none";
     const lines = ["STAGE", `Cameras: ${named(spec.cameras)}.`, `Marks: ${spec.marks.length ? named(spec.marks) : "none"}.`, `Characters: ${personLine}.`, `THINGS: ${thingLine}.`];

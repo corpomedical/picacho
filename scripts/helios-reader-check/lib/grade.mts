@@ -78,8 +78,11 @@ export type CardKind = (typeof CARD_KINDS)[number];
 /**
  * The audited requests the design fully handles: the 29 of Helios Cut 2
  * (23 outright and 6 after one press, spec §7.3), and A19 since Helios Cut
- * 4, step B3 (facing the grandstand, a named part). The soft bar asks all
- * but two of them to pass.
+ * 4, step B3, with the expectation its set as saved has — thing_unknown,
+ * since a nameless set's grandstand is in neither THINGS nor PARTS (review
+ * of Cut 4 round 1): the bar that opens reader v2 to everyone is graded on
+ * the STAGE every non-admin sends. Its named reading (X105) is not audited.
+ * The soft bar asks all but two of them to pass.
  */
 export const DESIGNED_FULL = [1, 7, 8, 11, 12, 14, 17, 18, 19, 21, 23, 26, 28, 29, 32, 35, 36, 37, 38, 39, 40, 44, 45, 46, 47, 48, 49, 51, 52, 53].map((n) => `A${n}`);
 

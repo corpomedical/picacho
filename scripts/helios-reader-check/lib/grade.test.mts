@@ -206,7 +206,7 @@ describe("the bars (spec §7.4)", () => {
 
   it("85 of 100, all but two of the 30 designed-full, 16 of 20 blind, no mention missing, no hard gate", () => {
     const corpus = Array.from({ length: 100 }, (_, i) => (i < 53 ? `A${i + 1}` : `X${i + 1}`)).map(ok);
-    // 29 until Helios Cut 4, step B3 added A19 (facing a named part).
+    // 29 until Helios Cut 4, step B3 added A19 (graded on its set as saved since the review of Cut 4 round 1).
     expect(DESIGNED_FULL).toHaveLength(30);
     expect(DESIGNED_FULL).toContain("A19");
     expect(summarise({ corpus }).ok).toBe(true);
