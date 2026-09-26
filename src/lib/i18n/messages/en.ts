@@ -3347,6 +3347,11 @@ const en = {
       rebuildWorking: "Astra is rebuilding it — about a minute…",
       rebuildDone: "Rebuilt from its photos · {n} blocks",
       rebuildUndo: "Undo",
+      // What a rebuild uses, under its button: the Astra card's own count (Helios Cut 4, step A10). None for an account with no cap.
+      rebuildUses: "Uses 1 of your {n} Astra changes left this month, only if it saves.",
+      rebuildUsesLast: "Uses your last Astra change this month, only if it saves.",
+      rebuildUsesUnknown: "Uses 1 of your {cap} Astra changes this month, only if it saves; how many are left couldn't be read.",
+      rebuildUsesNone: "This month's Astra changes are used up, so a rebuild waits for your next billing month.",
       driveTitle: "In beat {n}",
       driveLay: "Drive it here",
       driveLaying: "Tap where it ends",

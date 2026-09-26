@@ -57,7 +57,7 @@ import { FirstVisit, HELIOS_TOUR_KEY } from "./first-visit";
 import { AstraChangeCard } from "./astra-change-card";
 import { AstraReply, shownLines } from "./astra-reply";
 import { askProducer } from "@/lib/producer/ask-event";
-import { astraCardWords, astraTooBig } from "@/lib/sets/astra-card";
+import { astraCardCanGo, astraCardKind, astraCardWords, astraTooBig, rebuildUsesLine } from "@/lib/sets/astra-card";
 import {
   retryableTakes,
   SET_TAKE_DEFAULT_ENGINE,
@@ -4251,6 +4251,17 @@ export function SetView({
     if (!landedEdit || landedEdit.after !== spec) return null;
     return { rig: rigHidesEdit(landedEdit.before, landedEdit.after, rig), photos: photoThingsChanged(elementsOf(landedEdit.before), els, elementPhotos) };
   }, [landedEdit, spec, rig, els, elementPhotos]);
+  /**
+   * What "Rebuild from its photos" uses, said under its button, and whether
+   * a press can come to anything (astra-card.ts, Helios Cut 4, step A10):
+   * the Astra card's own kinds and count. A rebuild is one of the month's
+   * changes, so it waits with the month used up or Astra paused.
+   */
+  const rebuildKind = astraCardKind({ editsLeft, editsCap: astraEditsCap, tooBig: false, paused: triesSpent });
+  const rebuildUses = {
+    line: rebuildUsesLine(cast, { kind: rebuildKind, editsLeft, editsCap: astraEditsCap, paused: t.serverText.setEditTriesUsed }),
+    canGo: astraCardCanGo(rebuildKind),
+  };
   /** A thing's photos, for its model's paint (blueprint-paint.ts): its drawings are painted onto its sides. */
   const drawingsFor = useCallback((key: string) => (heldOf.get(key)?.photos ?? []).map((p) => p.url), [heldOf]);
   const drawingsKey = useMemo(() => thingModels.map((m) => `${m.key}=${drawingsFor(m.key).join("|")}`).join(","), [thingModels, drawingsFor]);
@@ -4826,6 +4837,9 @@ export function SetView({
                     ? () => void undoRebuild(thingKey, rebuildNote.from!)
                     : null,
                 onRebuild: () => void rebuildThing(thingKey),
+                // What it uses, from the Astra card's own count (Helios Cut 4, step A10).
+                uses: rebuildUses.line,
+                canGo: rebuildUses.canGo,
               }
             : null
         }

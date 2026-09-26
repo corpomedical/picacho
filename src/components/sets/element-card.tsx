@@ -122,6 +122,14 @@ export function ElementCard({
     onRebuild: () => void;
     /** Put the old blocks back: the Astra edit's own Undo, while it is still the last change. */
     onUndo: (() => void) | null;
+    /**
+     * What a rebuild uses, in words (astra-card.ts rebuildUsesLine, Helios
+     * Cut 4, step A10): one of the month's Astra changes, only if it saves;
+     * the month used up; or Astra paused. Null with no cap (admins).
+     */
+    uses: string | null;
+    /** Whether a press can come to anything: false with the month's changes used up or Astra paused (astraCardCanGo). */
+    canGo: boolean;
   } | null;
   /**
    * The figure's card (R1, "Who plays this person?"): the person's
@@ -373,12 +381,18 @@ export function ElementCard({
                 <button
                   type="button"
                   onClick={rebuild.onRebuild}
-                  disabled={rebuild.working || rebuild.held || busy}
+                  disabled={rebuild.working || rebuild.held || busy || !rebuild.canGo}
                   data-el-rebuild-go
                   className={`${DRIVE_CHIP(rebuild.working)} disabled:cursor-default disabled:opacity-60`}
                 >
                   {c.rebuildButton}
                 </button>
+              )}
+              {/* What it uses, before the press (Helios Cut 4, step A10). */}
+              {rebuild.photos > 0 && rebuild.uses && !rebuild.working && (
+                <p className="w-full text-[11px] leading-snug text-[#9aa0ad]" data-el-rebuild-uses>
+                  {rebuild.uses}
+                </p>
               )}
             </div>
           )}

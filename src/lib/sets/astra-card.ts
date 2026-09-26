@@ -97,3 +97,33 @@ export function astraCardLine(
       return fill(copy.astraAsk, { n: input.editsLeft ?? 0, words });
   }
 }
+
+/**
+ * What "Rebuild from its photos" uses, said under its button (Helios Cut 4,
+ * step A10), from the card's own kinds (astraCardKind with the set's size
+ * left out: a rebuild sends its thing, never the set, thing-rebuild.ts). A
+ * rebuild is one of the month's Astra changes, counted only if it saves,
+ * exactly as a change to the set is (editor-actions.ts
+ * rebuildThingFromPhotos). "paused" says the server's own sentence, as the
+ * card does. Null for an account with no cap (admins): nothing to count.
+ */
+export function rebuildUsesLine(
+  copy: Pick<Messages["sets"]["cast"], "rebuildUses" | "rebuildUsesLast" | "rebuildUsesUnknown" | "rebuildUsesNone">,
+  input: { kind: AstraCardKind; editsLeft: number | null; editsCap: number; paused: string },
+): string | null {
+  switch (input.kind) {
+    case "none":
+      return copy.rebuildUsesNone;
+    case "paused":
+      return input.paused;
+    case "askOpen":
+    case "tooBig":
+      return null;
+    case "askUnknown":
+      return fill(copy.rebuildUsesUnknown, { cap: input.editsCap });
+    case "askLast":
+      return copy.rebuildUsesLast;
+    case "ask":
+      return fill(copy.rebuildUses, { n: input.editsLeft ?? 0 });
+  }
+}
