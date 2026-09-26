@@ -77,7 +77,7 @@ describe("the blades and the rack", () => {
   it("carry a beat's rack into the take's words, read against the set on the server", () => {
     expect(view).toContain("rack: beat.rack,");
     // Against the set as the beat ENDS: a thing that drove away stands somewhere else (movers.ts).
-    expect(actions).toContain("rack: rackWords(normaliseRack(input.rack, owned.spec.objects.length), endShown),");
+    expect(actions).toContain("rack: rackWords(onThingNow(normaliseRack(input.rack, owned.spec.objects.length), endEls, owned.spec.objects), endShown),");
     const film = view.slice(view.indexOf("  function filmBeatView() {"), view.indexOf("  /**\n   * The new layout's right-hand panel, one per step"));
     expect(film).toContain('<option value="figure">{s.studio.rackFigure}</option>');
     expect(film).toContain("{names.objectName(o)}");

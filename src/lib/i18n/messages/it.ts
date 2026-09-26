@@ -3711,6 +3711,8 @@ const it = {
       noteOwnPhotos: "I fotogrammi disegnano {thing} dalle sue foto, quindi il suo colore segue quelle foto.",
       noteWordsDontMove: "Rotazioni e pose in queste parole non muovono {name}; dille nella chat.",
       noteWordsDontMoveStage: "Rotazioni e pose in queste parole non muovono {name}; il menu Posa e ↺ ↻ sì.",
+      noteGazeLost: "Lo sguardo di {name} era su qualcosa che è cambiato; impostalo di nuovo.",
+      noteRackLost: "Il cambio di fuoco di una battuta del film era su qualcosa che è cambiato; impostalo di nuovo.",
       noteTakeCancelledFormat: "Ho annullato la {take}: partiva da una foto {from} e l'inquadratura ora è {to}.",
       noteTakeFormat: "La {take} parte da una foto {from}, ma l'inquadratura ora è {to}: rimetti l'inquadratura su {from}, oppure annulla la {take} e scatta un nuovo inizio.",
       replyDone: "Fatto: {items}.",

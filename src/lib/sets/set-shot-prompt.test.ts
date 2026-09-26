@@ -456,7 +456,8 @@ describe("the figure's pose in the words", () => {
     const still = src.slice(src.indexOf("async function shootStill("), src.indexOf("export async function takeInSet("));
     expect(still).toContain("const poseWords = access.isAdmin || SET_POSE_WORDS_OPEN;");
     expect(still).toContain("...(poseWords && layout ? { pose: layout.pose } : {}),");
-    expect(still).toContain('gazeWords(layout.gaze, shown, layout.mark, "still", poseWords ? els : undefined)');
+    // The key of the eye-line's thing is read against the saved set first (object-ref.ts, Helios Cut 4, step A9).
+    expect(still).toContain('gazeWords(onThingNow(layout.gaze, els, owned.spec.objects), shown, layout.mark, "still", poseWords ? els : undefined)');
     const take = src.slice(src.indexOf("async function takeWork("));
     expect(take).toContain('"take", access.isAdmin || SET_POSE_WORDS_OPEN ? endEls : undefined)');
     // Nowhere else is a pose or the things handed to the words.

@@ -3712,6 +3712,8 @@ const es = {
       noteOwnPhotos: "{thing} se pinta a partir de sus propias fotos, así que su color en los fotogramas sigue esas fotos.",
       noteWordsDontMove: "Los giros y las poses de estas palabras no mueven a {name}; dilos en el chat.",
       noteWordsDontMoveStage: "Los giros y las poses de estas palabras no mueven a {name}; el menú Pose y ↺ ↻ sí.",
+      noteGazeLost: "La mirada de {name} estaba en algo que cambió; vuelve a fijarla.",
+      noteRackLost: "El cambio de foco de un tiempo de la película estaba en algo que cambió; vuelve a fijarlo.",
       noteTakeCancelledFormat: "He cancelado la {take}: empezaba en una foto {from} y el encuadre ahora es {to}.",
       noteTakeFormat: "La {take} empieza en una foto {from}, pero el encuadre ahora es {to}: vuelve a poner el encuadre en {from}, o cancela la {take} y fotografía un nuevo inicio.",
       replyDone: "Hecho: {items}.",

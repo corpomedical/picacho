@@ -25,6 +25,21 @@ describe("the eye-line", () => {
     expect(normaliseGaze({ at: "moon" }, 3)).toBeNull();
   });
 
+  // Helios Cut 4, step A9: the thing's key rides beside the block number
+  // (object-ref.ts), and a gaze stored without one loads without one.
+  it("keeps a thing's key beside the block, and a gaze stored without one loads byte for byte", () => {
+    const key = "c_89e319be_0_-1";
+    expect(normaliseGaze({ at: "object", index: 2, key }, 3)).toEqual({ at: "object", index: 2, key });
+    expect(JSON.stringify(normaliseGaze({ at: "object", index: 2 }, 3))).toBe('{"at":"object","index":2}');
+    for (const bad of ["car", "c_89e319be_0", 7, null, "x_89e319be_0_-1"]) {
+      expect(JSON.stringify(normaliseGaze({ at: "object", index: 2, key: bad }, 3)), String(bad)).toBe('{"at":"object","index":2}');
+    }
+    // The block still decides: a key never rescues a number the set doesn't have.
+    expect(normaliseGaze({ at: "object", index: 3, key }, 3)).toBeNull();
+    // The words read the number, as before.
+    expect(gazeWords({ at: "object", index: 0, key }, spec, mark)).toBe(gazeWords({ at: "object", index: 0 }, spec, mark));
+  });
+
   it("says which side of the figure a point lies, by its own front", () => {
     expect(sideOf(mark, { x: 0, z: 5 })).toBe("ahead");
     expect(sideOf(mark, { x: 0, z: -5 })).toBe("behind");

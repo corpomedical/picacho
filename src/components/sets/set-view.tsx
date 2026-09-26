@@ -31,6 +31,7 @@ import { dockTabAfter, dockTabsFor, railToolForKey, studioChecked, studioHeld, s
 import { VIEW_MODES, viewModeMaterial, type ViewMode } from "@/lib/sets/view-modes";
 import { azimuthOf, hourFromAzimuth, measureMetres, scaleBar, sunDirection, type MeasurePoint } from "@/lib/sets/furniture";
 import { PATH_MAX_POINTS, alongPath, pathLength, type Gaze } from "@/lib/sets/people";
+import { followRefs, followRefsBack, pickedRef, type FollowedRefs, type RefsState } from "@/lib/sets/object-ref";
 import { MOVERS_PER_BEAT, canMove, moverAlong, movedSpec, placementBefore, turnAbout, type Mover, type Placement } from "@/lib/sets/movers";
 import { SKETCH_MODEL_MATERIAL, THING_MODEL_BUCKET, fitThingModel, modelHome, modelUrlAllowed, type ThingModel } from "@/lib/sets/thing-model";
 import { keepThingModel, pollThingBuild, removeThingModel, reserveThingModel, startThingBuild, turnThingModel } from "@/lib/sets/model-actions";
@@ -1016,6 +1017,12 @@ export function SetView({
   // "Use my words as what happens" was pressed: its words set what happens,
   // never the figure's turn or pose — said on every press (step A7).
   const [wordsNote, setWordsNote] = useState(false);
+  // An eye-line or a beat's focus pull that was on a thing a change took
+  // away: cleared, and said once (object-ref.ts, Helios Cut 4, step A9).
+  const [refsLost, setRefsLost] = useState<FollowedRefs["lost"] | null>(null);
+  // What the last landed change did to those refs: as it found them and as
+  // it left them, so its Undo puts back exactly what was there (step A9).
+  const refsFollowRef = useRef<{ before: SetSpec; was: RefsState; now: RefsState } | null>(null);
   // What the changed line's Undo did, said once where the line stood: the
   // change is undone (and still counts this month), or its pieces are but
   // its description could not come back (Helios Cut 2, step 2).
@@ -1166,6 +1173,13 @@ export function SetView({
     if (filmBusyRef.current) return;
     setFilm((f) => filmAfterEdit(f, fn(f)));
   }, []);
+  // The film as it is now, for what an Astra change follows (object-ref.ts,
+  // Helios Cut 4, step A9): an edit's own closure holds the film of its
+  // press, a minute or more old.
+  const filmNowRef = useRef(film);
+  useEffect(() => {
+    filmNowRef.current = film;
+  }, [film]);
   // A film with no start picks the newest finished still for itself, the
   // moment Film or Cut opens (2026-09-21): a new film used to wait on the
   // start tile's menu, and until then Render stayed disabled with nothing
@@ -6653,6 +6667,7 @@ export function SetView({
     busyRef.current.editing = true;
     setEditingSet(true);
     setAstraNothing(false);
+    setRefsLost(null);
     const before = spec;
     // One id per press (astra-press.ts, 2026-09-25): a browser's silent
     // resend of this call is answered at once and never runs Astra twice.
@@ -6693,6 +6708,7 @@ export function SetView({
       setUndoNote(null);
       setAstraNothing(false);
       setLandedEdit({ before, after: next });
+      followEditRefs(before, next);
       setSpec(next);
       drawSet(next);
       setSetChanged(changed);
@@ -6730,6 +6746,43 @@ export function SetView({
     return apply(res.spec, res.changed, res.undo, res.seal);
   }
 
+  /** The page's eye-line and the film's beats' refs as they are now (object-ref.ts); no beats while a render writes the film. */
+  function refsNow(): RefsState {
+    return { gaze: layoutRef.current.gaze, beats: filmBusyRef.current ? [] : filmNowRef.current.beats.map((b) => ({ rack: b.rack, gaze: b.gaze })) };
+  }
+
+  /**
+   * Refs followed onto the page: the eye-line saved with the arrangement,
+   * and the beats' straight onto the film, never through filmAfterEdit —
+   * a beat still means the thing it meant, so its clip stays; whether the
+   * clips fit the changed set is the film's context key's to say
+   * (film.ts filmJobs), as for any change to the set.
+   */
+  function putRefs(r: RefsState) {
+    if (JSON.stringify(r.gaze) !== JSON.stringify(layoutRef.current.gaze)) {
+      setGaze(r.gaze);
+      layoutRef.current = { ...layoutRef.current, gaze: r.gaze };
+      scheduleSave();
+    }
+    if (!filmBusyRef.current && r.beats.length > 0 && r.beats.length === filmNowRef.current.beats.length) {
+      setFilm((f) => (f.beats.length !== r.beats.length ? f : { ...f, beats: f.beats.map((b, i) => ({ ...b, rack: r.beats[i].rack, gaze: r.beats[i].gaze })) }));
+    }
+  }
+
+  /**
+   * The eye-line and the film's focus pulls and eye-lines after an Astra
+   * change or a rebuild (object-ref.ts followRefs, Helios Cut 4, step A9):
+   * each on a thing stays on that thing, wherever the rewrite put its
+   * blocks; one whose thing is gone is cleared, and the page says so once.
+   */
+  function followEditRefs(before: SetSpec, after: SetSpec) {
+    const was = refsNow();
+    const r = followRefs(before, after, was.gaze, was.beats);
+    refsFollowRef.current = { before, was, now: { gaze: r.gaze, beats: r.beats } };
+    setRefsLost(r.lost.gaze || r.lost.rack ? r.lost : null);
+    if (r.changed) putRefs(r);
+  }
+
   /**
    * A thing's blocks rebuilt by Astra from its photos (editor-actions.ts
    * rebuildThingFromPhotos): the set comes back with the new blocks where
@@ -6743,6 +6796,7 @@ export function SetView({
     setEditingSet(true);
     setRebuilding(key);
     setRebuildNote(null);
+    setRefsLost(null);
     const before = spec;
     // One id per press, as editSet's (astra-press.ts, 2026-09-25).
     const pressId = newPressId();
@@ -6773,6 +6827,7 @@ export function SetView({
       setAstraNothing(false);
       // A rebuild draws a thing from its own photos by design, and leaves the light alone: nothing to say (step A7).
       setLandedEdit(null);
+      followEditRefs(before, next);
       setSpec(next);
       drawSet(next);
       setSetChanged(changed);
@@ -6864,6 +6919,14 @@ export function SetView({
     lastEditUndoRef.current = null;
     setSetChanged(null);
     setAstraNothing(false);
+    // The eye-line and the beats' refs go back with the set: exactly as the
+    // change found them where nothing moved them since (step A9). A turn's
+    // Undo has already put its eye-line back with the rest of the turn.
+    const followed = refsFollowRef.current?.before === before ? refsFollowRef.current : null;
+    refsFollowRef.current = null;
+    const back = followRefsBack(spec, saved.spec, refsNow(), followed, inTurn);
+    setRefsLost(back.lost.gaze || back.lost.rack ? back.lost : null);
+    if (back.changed) putRefs(back);
     const said = last?.kind !== "rebuild" && !saved.textRestored ? "textKept" : "undone";
     // A turn's Undo says it in its own reply (Helios Cut 2, step 11a); the changed line's where the line stood.
     if (!inTurn) setUndoNote(said);
@@ -6910,6 +6973,7 @@ export function SetView({
     // A folded phone chat unfolds to show the answer (Helios Cut 3, step 2).
     if (!wide) setChatOpen(true);
     setWordsNote(false);
+    setRefsLost(null);
     // Reader v2 runs the message as one turn (Helios Cut 2, step 11a):
     // admins, until the phrase check passes. Everyone else keeps v1 below.
     if (readerV2 && !readerOffRef.current) return sendTurn(message, opts);
@@ -7489,7 +7553,8 @@ export function SetView({
           else {
             const el = els.find((e) => e.key === g.key);
             const oi = el ? largestObjectOf(el, spec.objects) : null;
-            if (oi !== null) gaze = gazeFor({ objectIndex: oi }, now.mark);
+            // With the thing's key, so the eye-line follows it through a change to the set (object-ref.ts, step A9).
+            if (el && oi !== null) gaze = { at: "object", index: oi, key: el.key };
             else {
               extraDropped.push("gaze.thing");
               set = false;
@@ -7668,7 +7733,7 @@ export function SetView({
     if (to.frameX !== from.frameX) out.push({ kind: "frameX", frameX: to.frameX });
     if (JSON.stringify(to.gaze) !== JSON.stringify(from.gaze)) {
       const g = to.gaze;
-      const key = g?.at === "object" ? els.find((e) => e.members.some(([o]) => o === g.index))?.key : undefined;
+      const key = g?.at === "object" ? els.find((e) => (g.key !== undefined ? e.key === g.key : e.members.some(([o]) => o === g.index)))?.key : undefined;
       if (!g) out.push({ kind: "gaze", gaze: "none" });
       else if (g.at === "camera") out.push({ kind: "gaze", gaze: "camera" });
       else if (key) out.push({ kind: "gaze", gaze: { key } });
@@ -9109,7 +9174,8 @@ export function SetView({
                 onChange={(e) => {
                   const at = filmSel;
                   const v = e.target.value;
-                  const rack = v === "" ? null : v === "figure" ? { to: "figure" as const } : { to: "object" as const, index: Number(v.slice(1)) };
+                  const had = film.beats[at]?.rack;
+                  const rack = v === "" ? null : v === "figure" ? { to: "figure" as const } : { to: "object" as const, ...pickedRef(had?.to === "object" ? had : null, Number(v.slice(1)), els) };
                   editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, rack } : bb)) }));
                 }}
                 disabled={Boolean(filmBusy)}
@@ -9132,7 +9198,8 @@ export function SetView({
                   const at = filmSel;
                   const v = e.target.value;
                   if (v === "point") return;
-                  const g: Gaze | null = v === "" ? null : v === "camera" ? { at: "camera" } : { at: "object", index: Number(v.slice(1)) };
+                  const had = film.beats[at]?.gaze;
+                  const g: Gaze | null = v === "" ? null : v === "camera" ? { at: "camera" } : { at: "object", ...pickedRef(had?.at === "object" ? had : null, Number(v.slice(1)), els) };
                   editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, gaze: g } : bb)) }));
                 }}
                 disabled={Boolean(filmBusy)}
@@ -9599,7 +9666,8 @@ export function SetView({
                   key={oi}
                   active={gaze?.at === "object" && gaze.index === oi}
                   onPick={() => {
-                    setGaze({ at: "object", index: oi });
+                    // With its thing's key, so the eye-line follows the thing (object-ref.ts, step A9); the chosen row again changes nothing.
+                    setGaze({ at: "object", ...pickedRef(gaze?.at === "object" ? gaze : null, oi, els) });
                     setMenu(null);
                   }}
                 >
@@ -9920,6 +9988,17 @@ export function SetView({
                         {formatMsg(s.reply.noteOwnPhotos, { thing: elementName(key) })}
                       </p>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* An eye-line or a focus pull whose thing a change took away (Helios Cut 4, step A9): cleared, said once. */}
+              {refsLost && (
+                <div className="flex items-start gap-2.5" data-refs-lost>
+                  <AstraMark />
+                  <div className="min-w-0 flex-1 space-y-1 text-sm leading-relaxed text-[#d6d9e0]">
+                    {refsLost.gaze && <p data-refs-lost-gaze>{formatMsg(s.reply.noteGazeLost, { name: characterName })}</p>}
+                    {refsLost.rack && <p data-refs-lost-rack>{s.reply.noteRackLost}</p>}
                   </div>
                 </div>
               )}

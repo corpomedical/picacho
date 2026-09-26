@@ -140,6 +140,7 @@ import type { AttemptLog } from "@/lib/generations/pipeline";
 import { normaliseRack, rackWords } from "@/lib/sets/furniture";
 import { STAND_IN_EYE_M } from "@/lib/sets/build-scene";
 import { gazeWords, normaliseGaze } from "@/lib/sets/people";
+import { onThingNow } from "@/lib/sets/object-ref";
 
 // Sets' server actions (Astra Sets, Phase 1, 2026-09-10).
 //
@@ -1046,8 +1047,10 @@ async function shootStill(
     lifted: input.lifted === true,
     layout,
     ...(poseWords && layout ? { pose: layout.pose } : {}),
-    // The eye-line (cut D): the layout's gaze, read against the set, in Picacho's words.
-    gaze: layout ? gazeWords(layout.gaze, shown, layout.mark, "still", poseWords ? els : undefined) : "",
+    // The eye-line (cut D): the layout's gaze, read against the set, in Picacho's words. Its
+    // thing's key, when it has one, is read against the saved set first (object-ref.ts, Helios
+    // Cut 4, step A9): a block number that drifted off that thing is read as the thing's block.
+    gaze: layout ? gazeWords(onThingNow(layout.gaze, els, owned.spec.objects), shown, layout.mark, "still", poseWords ? els : undefined) : "",
     look,
     sourcePhoto: sourcePhotoUrl !== null,
     rig: rigSentences(rig, rigCtx),
@@ -1593,9 +1596,10 @@ async function takeWork(
       // Against the set as the beat ENDS (movers.ts): a rack or an eye-line
       // names a thing by where it stands, and a thing that drove away stands
       // somewhere else by the last frame.
-      rack: rackWords(normaliseRack(input.rack, owned.spec.objects.length), endShown),
+      // A thing's key, when the rack or eye-line has one, is read against the saved set first (object-ref.ts, step A9).
+      rack: rackWords(onThingNow(normaliseRack(input.rack, owned.spec.objects.length), endEls, owned.spec.objects), endShown),
       // "The car" by name only where the pose words are open (Cut 2, step 9), as the end still says it.
-      gaze: gazeWords(normaliseGaze(input.gaze, owned.spec.objects.length), endShown, endMark, "take", access.isAdmin || SET_POSE_WORDS_OPEN ? endEls : undefined),
+      gaze: gazeWords(onThingNow(normaliseGaze(input.gaze, owned.spec.objects.length), endEls, owned.spec.objects), endShown, endMark, "take", access.isAdmin || SET_POSE_WORDS_OPEN ? endEls : undefined),
     }),
   );
   // The words are already what the video model should read: the drafter

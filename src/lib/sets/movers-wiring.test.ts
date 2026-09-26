@@ -97,14 +97,14 @@ describe("the frame a beat is shot on", () => {
     expect(actions).toContain("spec: shown,");
     expect(actions).toContain("vehicles: vehicleWords(shown, layout?.camera),");
     // The things handed in only where the pose words are open (Cut 2, step 9).
-    expect(actions).toContain('gaze: layout ? gazeWords(layout.gaze, shown, layout.mark, "still", poseWords ? els : undefined) : "",');
+    expect(actions).toContain('gaze: layout ? gazeWords(onThingNow(layout.gaze, els, owned.spec.objects), shown, layout.mark, "still", poseWords ? els : undefined) : "",');
     expect(actions).toContain("const hasLookObjects = recorded && camera !== null && seesLookObjects(shown, camera);");
     // The THINGS stay the arrangement's, so a moved car keeps its key and its photos.
     expect(actions).toContain("const els = setElements(owned.spec);");
     // The clip's own words are about where the beat ENDS.
     expect(actions).toContain("const endEls = setElements(owned.spec);");
     expect(actions).toContain("const endShown = movedSpec(owned.spec, endEls, normalisePlacements(input.movers));");
-    expect(actions).toContain('gazeWords(normaliseGaze(input.gaze, owned.spec.objects.length), endShown, endMark, "take", access.isAdmin || SET_POSE_WORDS_OPEN ? endEls : undefined)');
+    expect(actions).toContain('gazeWords(onThingNow(normaliseGaze(input.gaze, owned.spec.objects.length), endEls, owned.spec.objects), endShown, endMark, "take", access.isAdmin || SET_POSE_WORDS_OPEN ? endEls : undefined)');
   });
 });
 

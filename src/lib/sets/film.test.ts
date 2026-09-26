@@ -46,6 +46,21 @@ describe("normaliseSetFilm", () => {
     expect(f.beats[0].end.fovDeg).toBe(40);
   });
 
+  // Helios Cut 4, step A9: a beat's rack and eye-line keep a thing's key
+  // beside the block, and a beat saved before loads exactly as it was.
+  it("keeps a rack's and an eye-line's thing key, and loads a beat saved before byte for byte", () => {
+    const key = "c_89e319be_0_-1";
+    const old = normaliseSetFilm({ beats: [{ words: "", end: goodPose, rack: { to: "object", index: 4 }, gaze: { at: "object", index: 7 } }] });
+    expect(JSON.stringify(old.beats[0].rack)).toBe('{"to":"object","index":4}');
+    expect(JSON.stringify(old.beats[0].gaze)).toBe('{"at":"object","index":7}');
+    const keyed = normaliseSetFilm({ beats: [{ words: "", end: goodPose, rack: { to: "object", index: 4, key }, gaze: { at: "object", index: 7, key } }] });
+    expect(keyed.beats[0].rack).toEqual({ to: "object", index: 4, key });
+    expect(keyed.beats[0].gaze).toEqual({ at: "object", index: 7, key });
+    // Saved again, a film comes back the same.
+    expect(normaliseSetFilm(JSON.parse(JSON.stringify(keyed)))).toEqual(keyed);
+    expect(normaliseSetFilm(JSON.parse(JSON.stringify(old)))).toEqual(old);
+  });
+
   it("drops what does not parse: bad engines, non-uuid starts, poseless beats", () => {
     const f = normaliseSetFilm({
       engine: "kling",

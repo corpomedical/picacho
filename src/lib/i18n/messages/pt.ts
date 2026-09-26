@@ -3712,6 +3712,8 @@ const pt = {
       noteOwnPhotos: "{thing} é pintado a partir das próprias fotos, então a cor nos quadros segue essas fotos.",
       noteWordsDontMove: "Giros e poses nessas palavras não movem {name}; diga no chat.",
       noteWordsDontMoveStage: "Giros e poses nessas palavras não movem {name}; o menu Pose e ↺ ↻ movem.",
+      noteGazeLost: "O olhar de {name} estava em algo que mudou; defina de novo.",
+      noteRackLost: "A mudança de foco de um tempo do filme estava em algo que mudou; defina de novo.",
       noteTakeCancelledFormat: "Cancelei o {take}: ele começava numa foto {from}, e o quadro agora é {to}.",
       noteTakeFormat: "O {take} começa numa foto {from}, mas o quadro agora é {to}: volte o quadro para {from}, ou cancele o {take} e fotografe um novo início.",
       replyDone: "Feito: {items}.",

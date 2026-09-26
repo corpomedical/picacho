@@ -3925,6 +3925,9 @@ const en = {
       noteOwnPhotos: "{thing} is drawn from its own photos, so its colour in stills follows them.",
       noteWordsDontMove: "Turns and poses in these words don't move {name}; say them in the chat instead.",
       noteWordsDontMoveStage: "Turns and poses in these words don't move {name}; the Pose menu and ↺ ↻ do.",
+      // An eye-line or a focus pull on a thing a change took away: cleared, said once (Helios Cut 4, step A9).
+      noteGazeLost: "{name}'s eye-line was on a thing that changed; set it again.",
+      noteRackLost: "A film beat's rack focus was on a thing that changed; set it again.",
       // A take keeps one shape (check of the spec, item 7): the chat's own is cancelled when the frame changes shape, the person's is kept and asked about (turn-plan.ts).
       noteTakeCancelledFormat: "I cancelled the {take}: it started on a {from} still, and the frame is now {to}.",
       noteTakeFormat: "The {take} starts on a {from} still, but the frame is now {to}: set the frame back to {from}, or cancel the {take} and shoot a new start.",

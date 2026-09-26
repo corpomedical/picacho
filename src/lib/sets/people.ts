@@ -11,7 +11,21 @@
 import type { SetElement } from "./elements";
 import type { SetObject, SetSpec } from "./set-spec";
 
-export type Gaze = { at: "camera" } | { at: "object"; index: number } | { at: "point"; x: number; z: number };
+/**
+ * An eye-line. At one of the set's things it is kept by block number, and
+ * since Helios Cut 4 (step A9) with the thing's key beside it
+ * (object-ref.ts): the page follows the thing when the set changes, and
+ * code that knows only the number reads the number and ignores the key.
+ * A gaze stored without a key loads without one, byte for byte.
+ */
+export type Gaze = { at: "camera" } | { at: "object"; index: number; key?: string } | { at: "point"; x: number; z: number };
+
+/**
+ * elements.ts ELEMENT_KEY_RE, repeated: this module imports nothing at run
+ * time (set-spec.ts reads a gaze through it), as set-spec.ts's own
+ * LAYOUT_ELEMENT_KEY_RE is; object-ref.test.ts holds them equal.
+ */
+export const GAZE_KEY_RE = /^([cvo])_([0-9a-f]{8})_(-?\d{1,4})_(-?\d{1,4})$/;
 
 /** How far a point may stand from the set's middle, metres — the film's own reach. */
 const REACH_M = 200;
@@ -23,7 +37,9 @@ export function normaliseGaze(v: unknown, objects: number): Gaze | null {
   if (!v || typeof v !== "object") return null;
   const g = v as Record<string, unknown>;
   if (g.at === "camera") return { at: "camera" };
-  if (g.at === "object" && typeof g.index === "number" && Number.isInteger(g.index) && g.index >= 0 && g.index < objects) return { at: "object", index: g.index };
+  if (g.at === "object" && typeof g.index === "number" && Number.isInteger(g.index) && g.index >= 0 && g.index < objects) {
+    return { at: "object", index: g.index, ...(typeof g.key === "string" && GAZE_KEY_RE.test(g.key) ? { key: g.key } : {}) };
+  }
   if (g.at === "point") {
     const x = num(g.x);
     const z = num(g.z);

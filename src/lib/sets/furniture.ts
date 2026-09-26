@@ -6,7 +6,7 @@
 
 import { SUNRISE, SUNSET, sunAt } from "./time-of-day";
 import { RIG_TIME_STEP } from "./rig";
-import { SET_SHAPES, type SetObject, type SetSpec } from "./set-spec";
+import { LAYOUT_ELEMENT_KEY_RE, SET_SHAPES, type SetObject, type SetSpec } from "./set-spec";
 
 /** The sun's direction at an hour, unit length, in the set's own axes (time-of-day.ts sunLight places it the same way). */
 export function sunDirection(hour: number): [number, number, number] {
@@ -67,14 +67,21 @@ export function bladesWords(blades: RigBlades | null): string {
   return `The iris has ${blades} blades: the bright points in the blur are ${shape}.`;
 }
 
-/** A beat's rack of focus (the film's Focus row): to the figure, or to one of the set's things by index. */
-export type FilmRack = { to: "figure" } | { to: "object"; index: number };
+/**
+ * A beat's rack of focus (the film's Focus row): to the figure, or to one of
+ * the set's things by index — since Helios Cut 4 (step A9) with the thing's
+ * key beside it (object-ref.ts), which older code ignores. A rack stored
+ * without a key loads without one, byte for byte.
+ */
+export type FilmRack = { to: "figure" } | { to: "object"; index: number; key?: string };
 
 export function normaliseRack(v: unknown, objects: number): FilmRack | null {
   if (!v || typeof v !== "object") return null;
   const r = v as Record<string, unknown>;
   if (r.to === "figure") return { to: "figure" };
-  if (r.to === "object" && typeof r.index === "number" && Number.isInteger(r.index) && r.index >= 0 && r.index < objects) return { to: "object", index: r.index };
+  if (r.to === "object" && typeof r.index === "number" && Number.isInteger(r.index) && r.index >= 0 && r.index < objects) {
+    return { to: "object", index: r.index, ...(typeof r.key === "string" && LAYOUT_ELEMENT_KEY_RE.test(r.key) ? { key: r.key } : {}) };
+  }
   return null;
 }
 

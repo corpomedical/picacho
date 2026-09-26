@@ -81,6 +81,16 @@ describe("the blades and the rack", () => {
     expect(normaliseRack({ to: "car" }, 3)).toBeNull();
   });
 
+  // Helios Cut 4, step A9: the thing's key rides beside the block number (object-ref.ts).
+  it("keeps a thing's key beside the block, and a rack stored without one loads byte for byte", () => {
+    const key = "o_0a1b2c3d_12_-40";
+    expect(normaliseRack({ to: "object", index: 2, key }, 3)).toEqual({ to: "object", index: 2, key });
+    expect(JSON.stringify(normaliseRack({ to: "object", index: 2 }, 3))).toBe('{"to":"object","index":2}');
+    expect(JSON.stringify(normaliseRack({ to: "object", index: 2, key: "the car" }, 3))).toBe('{"to":"object","index":2}');
+    expect(normaliseRack({ to: "object", index: 3, key }, 3)).toBeNull();
+    expect(rackWords({ to: "object", index: 0, key }, spec)).toBe(rackWords({ to: "object", index: 0 }, spec));
+  });
+
   it("names the thing by its shape and size, and says which way the focus travels", () => {
     const o = spec.objects[0];
     expect(thingWords(o)).toMatch(/^the [a-z]+ [\d.]+ × [\d.]+ × [\d.]+ m$/);
