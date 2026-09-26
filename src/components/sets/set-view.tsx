@@ -1055,8 +1055,10 @@ export function SetView({
   const [namingNote, setNamingNote] = useState<{ text: string; ok: boolean } | null>(null);
   const [setChanged, setSetChanged] = useState<number | null>(null);
   // Astra's last answer changed nothing (Helios Cut 4, step A1): said on its
-  // own line, so the line of the change before it keeps its Undo.
-  const [astraNothing, setAstraNothing] = useState(false);
+  // own line, so the line of the change before it keeps its Undo. "free"
+  // only when the server says its change really went back (`given`, review
+  // of Cut 4 round 1); "plain" makes no claim about the month.
+  const [astraNothing, setAstraNothing] = useState<false | "free" | "plain">(false);
   // The last Astra change that landed, as the two copies (Helios Cut 4, step
   // A7): what the rig's hour or plot, or a thing's own photos, hide of it in
   // stills is read from them while the set is still that copy.
@@ -6842,7 +6844,7 @@ export function SetView({
     // and "Change it, then shoot" shoots nothing — no still is paid for
     // after "Astra changed nothing". Shoot is still the person's own press.
     if (res.changed === 0) {
-      setAstraNothing(true);
+      setAstraNothing(res.given === true ? "free" : "plain");
       return { ...none, before };
     }
     return apply(res.spec, res.changed, res.undo, res.seal);
@@ -10182,8 +10184,9 @@ export function SetView({
                 <div className="flex items-start gap-2.5" data-edit-hides>
                   <AstraMark />
                   <div className="min-w-0 flex-1 space-y-1 text-sm leading-relaxed text-[#d6d9e0]">
-                    {editHides.rig === "time" && rig.time !== null && <p data-edit-hides-rig="time">{formatMsg(s.reply.noteRigHourHides, { time: timeLabel(rig.time) })}</p>}
-                    {editHides.rig === "plot" && rig.light && <p data-edit-hides-rig="plot">{formatMsg(s.reply.noteRigPlotHides, { light: s.rig.lights[rig.light.scheme] })}</p>}
+                    {/* Lean, the rig panel is Advanced's (Helios Cut 3, step 15b): the path starts there (review of Cut 4 round 1). */}
+                    {editHides.rig === "time" && rig.time !== null && <p data-edit-hides-rig="time">{formatMsg(lean ? s.reply.noteRigHourHidesLean : s.reply.noteRigHourHides, { time: timeLabel(rig.time), advanced: s.simple.advanced })}</p>}
+                    {editHides.rig === "plot" && rig.light && <p data-edit-hides-rig="plot">{formatMsg(lean ? s.reply.noteRigPlotHidesLean : s.reply.noteRigPlotHides, { light: s.rig.lights[rig.light.scheme], advanced: s.simple.advanced })}</p>}
                     {editHides.photos.map((key) => (
                       <p key={key} data-edit-hides-photos>
                         {fill(s.reply.noteOwnPhotos, { thing: elementName(key) })}
@@ -10208,7 +10211,7 @@ export function SetView({
               {astraNothing && (
                 <div className="flex items-start gap-2.5" data-astra-nothing>
                   <AstraMark />
-                  <p className="text-sm leading-relaxed text-[#d6d9e0]">{s.editorAskNothingFree}</p>
+                  <p className="text-sm leading-relaxed text-[#d6d9e0]">{astraNothing === "free" ? s.editorAskNothingFree : s.editorAskNothing}</p>
                 </div>
               )}
 
@@ -10263,10 +10266,11 @@ export function SetView({
                     </p>
                   )}
                   {/* After "Use my words as what happens", on every press (Helios Cut 4, step A7): the words don't
-                      turn or pose the figure. Reader v2's chat does both; v1's reads a facing but never a pose, so it points at the stage. */}
+                      turn or pose the figure. Reader v2's chat does both; v1's reads a facing but never a pose, so it points at the stage —
+                      and, lean, at Advanced first, where the pose and ↺ ↻ are (review of Cut 4 round 1). */}
                   {wordsNote && (
                     <p className="text-sm leading-relaxed text-[#d6d9e0]" data-words-note>
-                      {formatMsg(v2On ? s.reply.noteWordsDontMove : s.reply.noteWordsDontMoveStage, { name: characterName })}
+                      {formatMsg(v2On ? s.reply.noteWordsDontMove : lean ? s.reply.noteWordsDontMoveLean : s.reply.noteWordsDontMoveStage, { name: characterName, advanced: s.simple.advanced })}
                     </p>
                   )}
                   {characters.length === 0 ? (

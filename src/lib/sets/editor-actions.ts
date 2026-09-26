@@ -45,7 +45,7 @@ import {
   setEditTriesMonthlyLimit,
   setEditsMonthlyLimit,
 } from "@/lib/sets/set-config";
-import { astraEditsLeft, astraTriesPaused, countAstraEditsThisMonth } from "@/lib/sets/data";
+import { astraEditsLeft, astraTriesPaused, countAstraEditsThisMonth, countAstraTriesThisMonth } from "@/lib/sets/data";
 import {
   claimAstraPress,
   claimAstraPressGiveBack,
@@ -177,7 +177,7 @@ type Access = Extract<Awaited<ReturnType<typeof setsAccess>>, { error: null }>;
  * id (null for a tab from before presses had one): its give-back is claimed
  * once under it (astra-press.ts, Helios Cut 4, step A5).
  */
-type Slot = { error: null; editsLeft: number | null; monthly: number; reserved: boolean; press: string | null; given?: boolean; tryGiven?: boolean };
+type Slot = { error: null; editsLeft: number | null; monthly: number; reserved: boolean; press: string | null; given?: boolean; tryGiven?: boolean; back?: boolean };
 
 /**
  * One of the month's Astra changes, at the edits' own pace
@@ -225,8 +225,15 @@ async function astraChangeSlot(access: Access, press: string | null): Promise<{ 
   // back, and the page's read-back gives it (readAstraEdit).
   if (press !== null) await markAstraPressReserved(createAdminClient(), userId, press);
   // Too many tries that didn't land this month: the change just reserved goes back.
-  if (await rateLimited(userId, SET_EDIT_TRIES_MONTH_SCOPE, windowSeconds, setEditTriesMonthlyLimit(access.plan, access.isAdmin))) {
-    return { error: SET_EDIT_TRIES_USED, editsLeft: await giveBackAstraChange(access, slot), paused: true };
+  const triesCap = setEditTriesMonthlyLimit(access.plan, access.isAdmin);
+  if (await rateLimited(userId, SET_EDIT_TRIES_MONTH_SCOPE, windowSeconds, triesCap)) {
+    // The same limiter, failing closed the same way (step A4's rule, here
+    // for the tries; review of Cut 4 round 1): only the month's own count of
+    // tries at the cap pauses Astra on the page. Under it, or unread, the
+    // count couldn't be checked, and nothing is paused.
+    const tries = await countAstraTriesThisMonth(userId, access.periodStart);
+    if (tries !== null && tries >= triesCap) return { error: SET_EDIT_TRIES_USED, editsLeft: await giveBackAstraChange(access, slot), paused: true };
+    return { error: SET_EDIT_COUNT_UNREAD, editsLeft: await giveBackAstraChange(access, slot) };
   }
   // This reservation included, as the page's own count reads it.
   const used = await countAstraEditsThisMonth(userId, access.periodStart);
@@ -245,12 +252,17 @@ async function astraChangeSlot(access: Access, press: string | null): Promise<{ 
  * "lost" — is never given its change a second time by the read-back
  * (astra-press.ts refundLostAstraPress). A claim that is not the first
  * gives nothing; the change stays counted.
+ *
+ * `slot.back` says whether the change really went back (review of Cut 4
+ * round 1): a claim the limiter could not answer, or a row that could not be
+ * deleted, keeps it counted, and an answer that changed nothing then makes
+ * no claim that it was free (editSetWithAstra's `given`).
  */
 async function giveBackAstraChange(access: Access, slot: Slot): Promise<number | null> {
   if (!slot.reserved || slot.given) return slot.editsLeft;
   slot.given = true;
   const admin = createAdminClient();
-  if (slot.press === null || (await claimAstraPressGiveBack(admin, access.userId, slot.press)) === "first") await giveBackAstraEdit(admin, access.userId);
+  if (slot.press === null || (await claimAstraPressGiveBack(admin, access.userId, slot.press)) === "first") slot.back = await giveBackAstraEdit(admin, access.userId);
   const used = await countAstraEditsThisMonth(access.userId, access.periodStart);
   slot.editsLeft = used === null ? null : Math.max(0, slot.monthly - used);
   return slot.editsLeft;
@@ -395,7 +407,7 @@ export async function editSetWithAstra(
   more?: { meaning?: unknown; meaningSeal?: unknown; frame?: unknown },
 ): Promise<
   | { error: string; editsLeft?: number | null; pending?: true; paused?: true }
-  | { error: null; spec: SetSpec; changed: number; editsLeft: number | null; undo: EditUndo | null; seal: EditUndo | null }
+  | { error: null; spec: SetSpec; changed: number; editsLeft: number | null; undo: EditUndo | null; seal: EditUndo | null; given?: boolean }
 > {
   // The action's own start: Astra is waited for inside the page's 300 s from here (askAstra).
   const startedAt = new Date().getTime();
@@ -468,9 +480,12 @@ export async function editSetWithAstra(
       // `changed: 0` and no Undo — there is nothing to undo, and the page
       // keeps the Undo of the change before it. Asked before the gate: the
       // words are the ones already saved, so no second read of them is
-      // spent. The try still counts (Astra was billed for it).
+      // spent. The try still counts (Astra was billed for it). `given`: the
+      // change really went back — or none was reserved (no cap) — so the page
+      // may say it didn't use one; otherwise it says only that nothing changed.
       if (changesNothing(working, next)) {
-        return { error: null, spec: working, changed: 0, editsLeft: await giveBackAstraChange(access, slot), undo: null, seal: editUndoOf(setId, userId, working) };
+        const editsLeft = await giveBackAstraChange(access, slot);
+        return { error: null, spec: working, changed: 0, editsLeft, undo: null, seal: editUndoOf(setId, userId, working), given: !slot.reserved || slot.back === true };
       }
 
       // Astra's words, judged before anyone reads them — in the strict lane, the

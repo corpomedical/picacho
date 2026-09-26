@@ -94,6 +94,8 @@ export const SET_NAMING_STILL_WORKING = "Still naming this set's things — relo
 export const SET_NAMING_FAILED = "The set's things couldn't be named this time — try again in a moment.";
 export const SET_NAMING_REFUSED = "Those names can't be used here, so the set is unchanged.";
 export const SET_NAMING_UNCHECKED = "We couldn't check the names, so the set is unchanged. Try again in a moment.";
+/** The set changed between the pass's read and its save, so no block it named was still there as it was (review of Cut 4 round 1). */
+export const SET_NAMING_SET_CHANGED = "The set changed while its things were being named — press again.";
 // A thing's 3D model built from its photo (thing-build.ts, 2026-09-24).
 export const THING_BUILD_NO_PHOTO = "Put a photo on this thing first — its model is built from its front photo.";
 export const THING_BUILD_FAILED = "The model couldn't be built from this photo — try a clearer photo of the whole thing.";

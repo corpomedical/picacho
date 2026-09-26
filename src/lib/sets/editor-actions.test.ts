@@ -67,6 +67,8 @@ let limited: Record<string, boolean>;
 let used: number | null;
 /** The month's tries as data.ts countAstraTriesThisMonth reads them (Helios Cut 4, step A3). */
 let triesUsed: number | null;
+/** The tries as the count reads them once the tries' limiter has refused, when a concurrent press moved them since the first read (undefined: triesUsed). */
+let triesLater: number | null | undefined;
 let answer:
   | { state: "done"; text: string; usage: null; costUsd: number }
   | { state: "failed"; kind: "incomplete"; detail: string; usage: null; costUsd: number }
@@ -225,6 +227,10 @@ vi.mock("@/lib/sets/data", () => ({
     steps.push("count");
     return used;
   },
+  countAstraTriesThisMonth: async () => {
+    steps.push("tries count");
+    return triesLater === undefined ? triesUsed : triesLater;
+  },
   astraEditsLeft: async () => {
     steps.push("left");
     return used === null ? null : 10 - used;
@@ -314,6 +320,7 @@ import { editTextOf, editUndoOf, openEditSeal, sealReaderMeaning } from "./edit-
 import { fileSeal, sealFor, type SealBook } from "./seal-book";
 import { buildSetShotPrompt } from "./set-shot-prompt";
 import { resolvePhotos, setElements, type ElementPhoto } from "./elements";
+import { withMaterials } from "./stage-materials";
 import { THING_REBUILD_MAX_SENT_CHARS, thingLocalBlocks } from "./thing-rebuild";
 import { THING_REBUILD_ADMINS_ONLY, THING_REBUILD_DIDNT_FIT, THING_REBUILD_FAILED, THING_REBUILD_NO_PHOTOS, THING_REBUILD_TOO_BIG } from "./messages";
 
@@ -328,6 +335,7 @@ beforeEach(() => {
   limited = {};
   used = 3;
   triesUsed = 3;
+  triesLater = undefined;
   answer = { state: "done", text: recoloured(), usage: null, costUsd: 0.31 };
   submit = "ok";
   answerGateRefuses = false;
@@ -503,10 +511,32 @@ describe("the month's change, given back unless it saves", () => {
 
   it("pauses Astra once the month's tries are spent, giving back the change it had just reserved", async () => {
     limited[SET_EDIT_TRIES_MONTH_SCOPE] = true;
+    // A concurrent press took the last try after this one's first read.
+    triesLater = setEditTriesMonthlyLimit("growth", false);
     const out = await ask();
     // `paused` tells the page to say so on its card from now on (Helios Cut 4, step A3).
     expect(out).toEqual({ error: SET_EDIT_TRIES_USED, editsLeft: setEditsMonthlyLimit("growth", false) - 2, paused: true });
-    expect(steps).toEqual(["tries read", "gate", "pace", "month", "tries", "give back", "count"]);
+    expect(steps).toEqual(["tries read", "gate", "pace", "month", "tries", "tries count", "give back", "count"]);
+    expect(sent).toEqual([]);
+    expect(writes).toEqual([]);
+  });
+
+  // Review of Cut 4 round 1: the tries' limiter fails closed as the month's
+  // does (step A4), and its refusal alone paused Astra on the page — the
+  // card's button, the rebuild's and Build's Send hidden until a reload —
+  // with 2 of 13 tries used.
+  it("says the count couldn't be checked, pauses nothing and gives the change back, when the tries' limiter refuses under the cap or unread", async () => {
+    limited[SET_EDIT_TRIES_MONTH_SCOPE] = true;
+    for (const later of [3, null]) {
+      triesLater = later;
+      used = 3;
+      steps.length = 0;
+      const out = await ask();
+      // The reserved change went back: the month's count reads one fewer.
+      expect(out).toEqual({ error: SET_EDIT_COUNT_UNREAD, editsLeft: setEditsMonthlyLimit("growth", false) - 2 });
+      expect(out).not.toHaveProperty("paused");
+      expect(steps).toEqual(["tries read", "gate", "pace", "month", "tries", "tries count", "give back", "count"]);
+    }
     expect(sent).toEqual([]);
     expect(writes).toEqual([]);
   });
@@ -560,7 +590,7 @@ describe("an answer that changes nothing", () => {
   it("gives its change back once, saves nothing, never reads the gate, and hands back the copy Astra was handed", async () => {
     answer = { state: "done", text: JSON.stringify(SPEC), usage: null, costUsd: 0.31 };
     const out = await ask(PRESS);
-    expect(out).toEqual({ error: null, spec: SPEC, changed: 0, editsLeft: setEditsMonthlyLimit("growth", false) - 2, undo: null, seal: editUndoOf(SET, USER, SPEC) });
+    expect(out).toEqual({ error: null, spec: SPEC, changed: 0, editsLeft: setEditsMonthlyLimit("growth", false) - 2, undo: null, seal: editUndoOf(SET, USER, SPEC), given: true });
     expect(steps.filter((x) => x === "give back")).toHaveLength(1);
     expect(steps).not.toContain("answer gate");
     expect(writes).toEqual([]);
@@ -568,6 +598,27 @@ describe("an answer that changes nothing", () => {
     expect(ends.map((e) => e.end)).toEqual(["unsaved"]);
     // The try itself was billed and stays counted: only the change comes back.
     expect(steps.filter((x) => x === "tries")).toHaveLength(1);
+  });
+
+  // Review of Cut 4 round 1: Astra is handed the set with every material
+  // filled in (withMaterials) and must answer one on every object, so on a
+  // set built before materials an unchanged echo read as every piece changed.
+  it("is an answer that changes nothing when Astra echoes the set with the materials it was handed", async () => {
+    expect(SPEC.objects.every((o) => o.material === null || o.material === undefined)).toBe(true);
+    answer = { state: "done", text: JSON.stringify(withMaterials(SPEC)), usage: null, costUsd: 0.31 };
+    const out = await ask(PRESS);
+    expect(out).toMatchObject({ error: null, spec: SPEC, changed: 0, undo: null });
+    expect(steps.filter((x) => x === "give back")).toHaveLength(1);
+    expect(writes).toEqual([]);
+    // One block recoloured in that echo is still a change, saved and counted.
+    const red = withMaterials(SPEC);
+    answer = { state: "done", text: JSON.stringify({ ...red, objects: red.objects.map((o, i) => (i === 0 ? { ...o, color: "#aa3322" } : o)) }), usage: null, costUsd: 0.31 };
+    steps.length = 0;
+    const changed = await ask(LATER);
+    if (changed.error !== null) throw new Error(changed.error);
+    expect(changed.changed).toBeGreaterThan(0);
+    expect(steps).not.toContain("give back");
+    expect(writes).toHaveLength(1);
   });
 
   it("is judged against the working copy Astra was handed, not Astra's original", async () => {
@@ -580,6 +631,17 @@ describe("an answer that changes nothing", () => {
     answer = { state: "done", text: JSON.stringify(SPEC), usage: null, costUsd: 0.31 };
     expect(await ask()).toMatchObject({ error: null, changed: 1 });
     expect(writes).toHaveLength(1);
+  });
+
+  // Review of Cut 4 round 1: the page said "It didn't count" even when the
+  // give-back's claim could not be asked and the change stayed counted.
+  it("says the change went back only when it did: a claim that can't be asked keeps it counted, and given is false", async () => {
+    answer = { state: "done", text: JSON.stringify(SPEC), usage: null, costUsd: 0.31 };
+    givenDown = true;
+    const out = await ask(PRESS);
+    expect(out).toMatchObject({ error: null, changed: 0, given: false, editsLeft: setEditsMonthlyLimit("growth", false) - 3 });
+    expect(steps).not.toContain("give back");
+    expect(writes).toEqual([]);
   });
 
   it("still saves and counts a change of the description alone", async () => {
@@ -595,7 +657,7 @@ describe("an answer that changes nothing", () => {
   it("gives nothing back for an admin, who reserved nothing", async () => {
     access = { ...access, plan: "none", isAdmin: true };
     answer = { state: "done", text: JSON.stringify(SPEC), usage: null, costUsd: 0.31 };
-    expect(await ask()).toEqual({ error: null, spec: SPEC, changed: 0, editsLeft: null, undo: null, seal: editUndoOf(SET, USER, SPEC) });
+    expect(await ask()).toEqual({ error: null, spec: SPEC, changed: 0, editsLeft: null, undo: null, seal: editUndoOf(SET, USER, SPEC), given: true });
     expect(steps).not.toContain("give back");
     expect(writes).toEqual([]);
   });
@@ -604,11 +666,12 @@ describe("an answer that changes nothing", () => {
     const src = readFileSync(join(__dirname, "editor-actions.ts"), "utf8");
     const body = src.slice(src.indexOf("export async function editSetWithAstra("), src.indexOf("export async function rebuildThingFromPhotos("));
     const nothing = body.indexOf("if (changesNothing(working, next)) {");
-    expect(nothing).toBeGreaterThan(body.indexOf("const next = parsed.spec;"));
+    expect(body.indexOf("const next = carryNames(working, withoutNames(parsed.spec));")).toBeGreaterThan(0);
+    expect(nothing).toBeGreaterThan(body.indexOf("const next = carryNames(working, withoutNames(parsed.spec));"));
     expect(nothing).toBeLessThan(body.indexOf("const gateWords = specTextForGate(next);"));
-    expect(body.slice(nothing, body.indexOf("\n      }\n", nothing))).toContain(
-      "return { error: null, spec: working, changed: 0, editsLeft: await giveBackAstraChange(access, slot), undo: null, seal: editUndoOf(setId, userId, working) };",
-    );
+    const branch = body.slice(nothing, body.indexOf("\n      }\n", nothing));
+    expect(branch).toContain("const editsLeft = await giveBackAstraChange(access, slot);");
+    expect(branch).toContain("return { error: null, spec: working, changed: 0, editsLeft, undo: null, seal: editUndoOf(setId, userId, working), given: !slot.reserved || slot.back === true };");
   });
 });
 
@@ -912,8 +975,9 @@ describe("a press the platform cuts off", () => {
     expect(steps.filter((x) => x === "given")).toHaveLength(1);
     steps.length = 0;
     limited[SET_EDIT_TRIES_MONTH_SCOPE] = true;
+    triesLater = setEditTriesMonthlyLimit("growth", false);
     expect(await ask(LATER)).toMatchObject({ error: SET_EDIT_TRIES_USED, paused: true });
-    expect(steps.slice(steps.indexOf("month"))).toEqual(["month", "reserved", "tries", "given", "give back", "count", "end unsaved"]);
+    expect(steps.slice(steps.indexOf("month"))).toEqual(["month", "reserved", "tries", "tries count", "given", "give back", "count", "end unsaved"]);
   });
 
   it("gives a stopped press's change back as the page reads it, before the count — and only a stopped press", async () => {

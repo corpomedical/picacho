@@ -7,6 +7,7 @@ import {
   SET_NAMING_ADMINS_ONLY,
   SET_NAMING_FAILED,
   SET_NAMING_REFUSED,
+  SET_NAMING_SET_CHANGED,
   SET_NAMING_STILL_WORKING,
   SET_NAMING_TOO_FAST,
   SET_NAMING_UNCHECKED,
@@ -37,6 +38,8 @@ const RAW = { ...(raceTrack as Record<string, unknown>), stored: "as built" };
 type Access = { error: null; supabase: unknown; userId: string; plan: string; isAdmin: boolean; periodStart: string | null } | { error: string };
 let access: Access;
 let status: string;
+/** Astra's original as each read of the set returns it (RAW, unless a test saved names on it). */
+let storedSpec: Record<string, unknown>;
 /** The working copy each read of it returns, in turn (the last one repeats). */
 let editedReads: (SetSpec | null)[];
 let saveFails: boolean;
@@ -67,7 +70,7 @@ vi.mock("@/lib/supabase/server", () => ({
             return { data: { edited_spec: e }, error: null };
           }
           steps.push("read set");
-          return { data: { status, spec: RAW, brief: "A race track with a red car" }, error: null };
+          return { data: { status, spec: storedSpec, brief: "A race track with a red car" }, error: null };
         },
         update: (values: Record<string, unknown>) => {
           steps.push("save");
@@ -155,6 +158,7 @@ const RACE_NAMES = { t1: "red sports car", o11: "grandstand", o16: "grandstand",
 beforeEach(() => {
   access = ADMIN;
   status = "ready";
+  storedSpec = RAW;
   editedReads = [null];
   saveFails = false;
   limited = false;
@@ -301,6 +305,29 @@ describe("a press", () => {
     const res = await nameSet(SET, PRESS);
     expect(res).toMatchObject({ error: null, named: 0 });
     expect(steps).not.toContain("gate");
+    expect(writes).toEqual([]);
+  });
+
+  // Review of Cut 4 round 1: with nothing to write, the page said "Nothing
+  // was named: its pieces couldn't be told apart" while every name was on
+  // screen, or while the set had changed under the pass.
+  it("a second press on a set already named the same writes nothing and says it is named", async () => {
+    const first = await nameSet(SET, PRESS);
+    if (first.error !== null) throw new Error(first.error);
+    // Astra's original as the first press saved it, named; no working copy.
+    storedSpec = writes[0].spec as Record<string, unknown>;
+    writes.length = 0;
+    const again = await nameSet(SET, PRESS);
+    expect(again).toMatchObject({ error: null, named: first.named });
+    expect(writes).toEqual([]);
+  });
+
+  it("a set that changed under the pass, so no block it named is still there as it saw it, writes nothing and asks for another press", async () => {
+    const moved = (spec: SetSpec, by: number) => ({ ...spec, objects: spec.objects.map((o) => ({ ...o, position: [o.position[0] + by, o.position[1], o.position[2]] as typeof o.position })) });
+    // A working copy with every block moved off Astra's original, as the
+    // model read it; then every block moved again before the save.
+    editedReads = [moved(SPEC, 0.5), moved(SPEC, 1)];
+    expect(await nameSet(SET, PRESS)).toEqual({ error: SET_NAMING_SET_CHANGED });
     expect(writes).toEqual([]);
   });
 

@@ -979,7 +979,10 @@ export function SetEditor({
     // Undo still steps back over the last real change, not over a copy of
     // the set as it stands.
     if (r.changed === 0) {
-      setAskNote("nothing");
+      // "It didn't use one of your changes" only when the server says the
+      // change really went back (`given`, review of Cut 4 round 1); else 0,
+      // the line that says only that nothing changed.
+      setAskNote(r.given === true ? "nothing" : 0);
       return;
     }
     // The words Astra was handed and the words it wrote, each sealed by the

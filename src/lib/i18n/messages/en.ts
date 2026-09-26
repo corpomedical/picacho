@@ -3360,7 +3360,7 @@ const en = {
       nameButton: "Name its things and parts · ≤ {price} + content check",
       nameWorking: "Naming its things and parts…",
       nameDone: "Named {n}. Names show on screen, in the chat and to Aly, never in a still's words.",
-      nameNone: "Nothing was named: its pieces couldn't be told apart.",
+      nameNone: "Nothing was named: it couldn't tell what the pieces are.",
       driveTitle: "In beat {n}",
       driveLay: "Drive it here",
       driveLaying: "Tap where it ends",
@@ -3664,7 +3664,7 @@ const en = {
     editorAskDoneOne: "Done — one piece of the set changed.",
     editorAskNothing: "Astra changed nothing — it read the set as already so.",
     // An answer that changed nothing: saved nothing, and its change went back (Helios Cut 4, step A1).
-    editorAskNothingFree: "Astra changed nothing — it read the set as already so. It didn't count.",
+    editorAskNothingFree: "Astra changed nothing — it read the set as already so. It didn't use one of your changes.",
     editorAskLeft: "{n} left this month",
     editorAskLeftOne: "1 left this month",
     editorAskLeftNone: "None left this month",
@@ -3935,10 +3935,13 @@ const en = {
       // What the rig or a thing's own photos hide of an Astra change in stills, read from the two copies, never from words;
       // and what "Use my words as what happens" can't do, on every press (Helios Cut 4, step A7).
       noteRigHourHides: "The rig's time {time} still lights the set; Time of day → As built shows Astra's.",
+      noteRigHourHidesLean: "The rig's time {time} still lights the set; {advanced} → Time of day → As built shows Astra's.",
       noteRigPlotHides: "The rig's {light} plot still lights the set; Light → As built shows Astra's.",
+      noteRigPlotHidesLean: "The rig's {light} plot still lights the set; {advanced} → Light → As built shows Astra's.",
       noteOwnPhotos: "{thing} is drawn from its own photos, so its colour in stills follows them.",
       noteWordsDontMove: "Turns and poses in these words don't move {name}; say them in the chat instead.",
       noteWordsDontMoveStage: "Turns and poses in these words don't move {name}; the Pose menu and ↺ ↻ do.",
+      noteWordsDontMoveLean: "Turns and poses in these words don't move {name}; turn on {advanced} for the pose and ↺ ↻.",
       // An eye-line or a focus pull on a thing a change took away: cleared, said once (Helios Cut 4, step A9).
       noteGazeLost: "{name}'s eye-line was on a thing that changed; set it again.",
       noteRackLost: "A film beat's rack focus was on a thing that changed; set it again.",
@@ -4741,6 +4744,7 @@ const en = {
     setNamingFailed: "The set's things couldn't be named this time — try again in a moment.",
     setNamingRefused: "Those names can't be used here, so the set is unchanged.",
     setNamingUnchecked: "We couldn't check the names, so the set is unchanged. Try again in a moment.",
+    setNamingSetChanged: "The set changed while its things were being named — press again.",
     thingBuildNoPhoto: "Put a photo on this thing first — its model is built from its front photo.",
     thingBuildFailed: "The model couldn't be built from this photo — try a clearer photo of the whole thing.",
     setElementGone: "That thing changed on the set — tap it again.",

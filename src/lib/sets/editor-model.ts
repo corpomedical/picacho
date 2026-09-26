@@ -12,7 +12,7 @@
 // on the server for anything a browser sends.
 
 import { kitObjects, kitSize, type KitKind } from "./kit";
-import { inferMaterial } from "./stage-materials";
+import { inferMaterial, withMaterials } from "./stage-materials";
 import {
   normaliseSetSpec,
   SET_LIMITS,
@@ -441,9 +441,17 @@ export function holdEditedText(next: SetSpec, stored: readonly HeldText[]): SetS
  * would read the same words (specTextForGate). Both, not one: a field that
  * countSpecChanges is ever taught to pass over (a name, B1) still changes the
  * words the gate reads, and such an answer is a change.
+ *
+ * Materials as the stage draws them (review of Cut 4 round 1): Astra is
+ * handed every missing material filled in (set-edit-prompt.ts
+ * withMaterials) and its strict schema makes it answer one on every object
+ * and the ground, so on a set built before materials — every fixture — an
+ * unchanged echo came back with fifty explicit words where the set had
+ * none, and read as fifty pieces changed. A material not said is the word
+ * the stage draws it with (materialOf), on both sides, as blockKey reads it.
  */
 export function changesNothing(before: SetSpec, after: SetSpec): boolean {
-  return countSpecChanges(before, after) === 0 && specTextForGate(before) === specTextForGate(after);
+  return countSpecChanges(withMaterials(before), withMaterials(after)) === 0 && specTextForGate(before) === specTextForGate(after);
 }
 
 /** How many pieces of the set an edit touched — said, never shown as text. */

@@ -313,6 +313,7 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "The set's things couldn't be named this time — try again in a moment.": "setNamingFailed",
   "Those names can't be used here, so the set is unchanged.": "setNamingRefused",
   "We couldn't check the names, so the set is unchanged. Try again in a moment.": "setNamingUnchecked",
+  "The set changed while its things were being named — press again.": "setNamingSetChanged",
   "This thing has too many blocks for Astra to rebuild in one answer — change it with the editor's own tools.": "thingRebuildTooBig",
   "Put a photo on this thing first — its model is built from its front photo.": "thingBuildNoPhoto",
   "The model couldn't be built from this photo — try a clearer photo of the whole thing.": "thingBuildFailed",

@@ -12,6 +12,7 @@ import {
   SET_NAMING_ADMINS_ONLY,
   SET_NAMING_FAILED,
   SET_NAMING_REFUSED,
+  SET_NAMING_SET_CHANGED,
   SET_NAMING_STILL_WORKING,
   SET_NAMING_TOO_FAST,
   SET_NAMING_UNCHECKED,
@@ -175,7 +176,16 @@ export async function nameSet(
   if (original) update.spec = original;
   if (editedNext && editedNext !== fresh.edited) update.edited_spec = editedNext;
   const nowDrawn = editedNext ?? (original ? stampNames(byBlock, fresh.spec).spec : (fresh.edited ?? fresh.spec));
-  if (Object.keys(update).length === 0) return { error: null, spec: nowDrawn, named: 0, seal: editUndoOf(setId, userId, nowDrawn) };
+  if (Object.keys(update).length === 0) {
+    // Nothing to write (review of Cut 4 round 1): either every name is on its
+    // block already — a second press on a named set, answered the same — and
+    // the set is named; or a block the model named is no longer there as it
+    // saw it (the set changed between the two reads), and it is pressed again.
+    // Never "couldn't tell what the pieces are": neither is that.
+    const held = [...byBlock].every(([block, name]) => nowDrawn.objects.some((o) => o.name === name && blockKeyOf(o) === block));
+    if (!held) return { error: SET_NAMING_SET_CHANGED };
+    return { error: null, spec: nowDrawn, named: named.named, seal: editUndoOf(setId, userId, nowDrawn) };
+  }
   const { error } = await createAdminClient()
     .from("location_sets")
     .update({ ...update, updated_at: new Date().toISOString() })

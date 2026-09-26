@@ -34,7 +34,16 @@ const between = (source: string, from: string, to: string) => {
   return source.slice(start, end);
 };
 const LANGS = { en, es, pt, it: it_ } as const;
-const REPLY_KEYS = ["noteRigHourHides", "noteRigPlotHides", "noteOwnPhotos", "noteWordsDontMove", "noteWordsDontMoveStage"] as const;
+const REPLY_KEYS = [
+  "noteRigHourHides",
+  "noteRigHourHidesLean",
+  "noteRigPlotHides",
+  "noteRigPlotHidesLean",
+  "noteOwnPhotos",
+  "noteWordsDontMove",
+  "noteWordsDontMoveStage",
+  "noteWordsDontMoveLean",
+] as const;
 
 describe("the frame card says the hour for every account", () => {
   it("drops reader v2's gate from the Time row", () => {
@@ -84,8 +93,9 @@ describe("after an Astra change, what stills won't show of it", () => {
 
   it("says each under the changed line, only for a change that changed something", () => {
     const block = between(view, "{setChanged !== null && setChanged > 0 && editHides !== null", "{/* An Astra answer that changed nothing");
-    expect(block).toContain("formatMsg(s.reply.noteRigHourHides, { time: timeLabel(rig.time) })");
-    expect(block).toContain("formatMsg(s.reply.noteRigPlotHides, { light: s.rig.lights[rig.light.scheme] })");
+    // Lean, the rig panel is behind Advanced, and the path starts there (review of Cut 4 round 1).
+    expect(block).toContain("formatMsg(lean ? s.reply.noteRigHourHidesLean : s.reply.noteRigHourHides, { time: timeLabel(rig.time), advanced: s.simple.advanced })");
+    expect(block).toContain("formatMsg(lean ? s.reply.noteRigPlotHidesLean : s.reply.noteRigPlotHides, { light: s.rig.lights[rig.light.scheme], advanced: s.simple.advanced })");
     expect(block).toContain("fill(s.reply.noteOwnPhotos, { thing: elementName(key) })");
   });
 
@@ -96,6 +106,9 @@ describe("after an Astra change, what stills won't show of it", () => {
       expect(t.sets.reply.noteRigPlotHides, name).toContain(`${t.sets.rig.light} → ${t.sets.rig.asBuilt}`);
       expect(t.sets.reply.noteRigPlotHides, name).toContain("{light}");
       expect(t.sets.reply.noteOwnPhotos, name).toContain("{thing}");
+      // Lean: the same path, from the Advanced switch.
+      expect(t.sets.reply.noteRigHourHidesLean, name).toContain(`{advanced} → ${t.sets.rig.time} → ${t.sets.rig.timeAsBuilt}`);
+      expect(t.sets.reply.noteRigPlotHidesLean, name).toContain(`{advanced} → ${t.sets.rig.light} → ${t.sets.rig.asBuilt}`);
     }
   });
 });
@@ -108,14 +121,21 @@ describe("'Use my words as what happens' says what the words can't do, on every 
     expect(bodyOf(view, '  async function send(text: string, opts?: { origin?: "build"; home?: boolean }) {')).toContain("setWordsNote(false);");
   });
 
-  it("points reader v2 at the chat and reader v1 at the stage, naming the person", () => {
+  it("points reader v2 at the chat and reader v1 at the stage — lean, through Advanced — naming the person", () => {
     const line = between(view, "{wordsNote && (", "</p>");
-    expect(line).toContain("formatMsg(v2On ? s.reply.noteWordsDontMove : s.reply.noteWordsDontMoveStage, { name: characterName })");
+    expect(line).toContain("formatMsg(v2On ? s.reply.noteWordsDontMove : lean ? s.reply.noteWordsDontMoveLean : s.reply.noteWordsDontMoveStage, { name: characterName, advanced: s.simple.advanced })");
+    // Lean: the chips with the pose and ↺ ↻ are Advanced's (setupChipsView's leanChips).
+    expect(view).toContain("const lean = (simpleOn || simplePhone) && !advanced;");
+    expect(view).toContain("const leanChips = lean && studioMode === \"shoot\";");
     for (const [name, t] of Object.entries(LANGS)) {
       expect(t.sets.reply.noteWordsDontMove, name).toContain("{name}");
       expect(t.sets.reply.noteWordsDontMoveStage, name).toContain("{name}");
       expect(t.sets.reply.noteWordsDontMoveStage, name).toContain(t.sets.pose);
       expect(t.sets.reply.noteWordsDontMoveStage, name).toContain("↺ ↻");
+      expect(t.sets.reply.noteWordsDontMoveLean, name).toContain("{name}");
+      expect(t.sets.reply.noteWordsDontMoveLean, name).toContain("{advanced}");
+      expect(t.sets.reply.noteWordsDontMoveLean, name).toContain("↺ ↻");
+      expect(t.sets.simple.advanced.trim().length, name).toBeGreaterThan(0);
     }
   });
 });

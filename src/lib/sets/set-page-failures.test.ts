@@ -171,13 +171,14 @@ describe("the set page", () => {
     expect(nothing).toBeGreaterThan(edit.indexOf("if (res.error !== null) {"));
     expect(nothing).toBeLessThan(edit.lastIndexOf("return apply(res.spec, res.changed, res.undo, res.seal);"));
     const branch = edit.slice(nothing, edit.indexOf("\n    }\n", nothing));
-    expect(branch).toContain("setAstraNothing(true);");
+    // "It didn't use one of your changes" only when the change really went back (review of Cut 4 round 1).
+    expect(branch).toContain('setAstraNothing(res.given === true ? "free" : "plain");');
     expect(branch).toContain("return { ...none, before };");
     expect(branch).not.toMatch(/apply\(|setShootDue|specBeforeEditRef|lastEditUndoRef|setSetChanged|setSpec\(/);
     // A count the answer could not read keeps the page's count (the change went back).
     expect(edit).toContain("keepEditsLeft(res.editsLeft, res.error === null && res.changed > 0);");
-    // Its own line, in the words that say it didn't count.
-    expect(view).toMatch(/\{astraNothing && \([\s\S]{0,200}\{s\.editorAskNothingFree\}/);
+    // Its own line: the words that say it didn't use a change only when it didn't.
+    expect(view).toMatch(/\{astraNothing && \([\s\S]{0,200}\{astraNothing === "free" \? s\.editorAskNothingFree : s\.editorAskNothing\}/);
   });
 
   it("reads back a rebuild that threw the same way, and finds the thing on the saved set", () => {
@@ -304,13 +305,13 @@ describe("the Build editor", () => {
 
   // Helios Cut 4, step A1 (critic item 12): commitFromServer pushed a copy
   // of the set as it stood onto the history, so Undo stepped over nothing.
-  it("adds no history step for an answer that changed nothing, and says it didn't count", () => {
+  it("adds no history step for an answer that changed nothing, and says it didn't use a change only when it went back", () => {
     const ask = between(editor, "async function sendAsk() {", "\n  }\n");
     const nothing = ask.indexOf("if (r.changed === 0) {");
     expect(nothing).toBeGreaterThan(ask.indexOf("if (r.error !== null) {"));
     expect(nothing).toBeLessThan(ask.indexOf("commitFromServer(r.spec);"));
     const branch = ask.slice(nothing, ask.indexOf("\n    }\n", nothing));
-    expect(branch).toContain('setAskNote("nothing");');
+    expect(branch).toContain('setAskNote(r.given === true ? "nothing" : 0);');
     expect(branch).toContain("return;");
     expect(branch).not.toContain("commitFromServer");
     expect(editor).toMatch(/askNote === "nothing" \? \(\s*<span>\{s\.editorAskNothingFree\}<\/span>/);
