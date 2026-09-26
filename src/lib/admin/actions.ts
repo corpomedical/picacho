@@ -463,6 +463,27 @@ export async function addVoicePreset(formData: FormData) {
   revalidatePath("/admin/voices");
 }
 
+// Aly's default voice (2026-09-26): the first preset in the list is what she
+// speaks with for everyone who hasn't picked one in Settings. "Make default"
+// puts this one first (sort_order below every other) — the only order the
+// list has, so character pickers list it first too.
+export async function makeDefaultVoicePreset(formData: FormData) {
+  const { supabase } = await requireAdmin();
+  const id = formData.get("id") as string;
+  const { data: all, error: readError } = await supabase.from("voice_presets").select("id, sort_order");
+  if (readError || !all?.some((v) => v.id === id)) {
+    redirect(`/admin/voices?error=${encodeURIComponent(readError?.message ?? "That voice isn't in the list any more.")}`);
+  }
+  const lowest = Math.min(...all!.map((v) => Number(v.sort_order) || 0));
+  const { error } = await supabase.from("voice_presets").update({ sort_order: lowest - 1 }).eq("id", id);
+  if (error) {
+    console.error("makeDefaultVoicePreset: update failed", error);
+    redirect(`/admin/voices?error=${encodeURIComponent(error.message)}`);
+  }
+  revalidatePath("/admin/voices");
+  revalidatePath("/app/settings");
+}
+
 export async function deleteVoicePreset(formData: FormData) {
   const { supabase } = await requireAdmin();
   const id = formData.get("id") as string;

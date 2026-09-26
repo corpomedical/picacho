@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { addVoicePreset, deleteVoicePreset } from "@/lib/admin/actions";
+import { addVoicePreset, deleteVoicePreset, makeDefaultVoicePreset } from "@/lib/admin/actions";
 import { Card } from "@/components/ui/card";
 import { Label, Input } from "@/components/ui/field";
 import { SubmitButton } from "@/components/ui/submit-button";
@@ -16,7 +16,7 @@ export default async function AdminVoicesPage({
   const { data: voices } = await supabase
     .from("voice_presets")
     .select("*")
-    .order("sort_order", { ascending: true });
+    .order("sort_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true });
 
   return (
     <div>
@@ -72,10 +72,17 @@ export default async function AdminVoicesPage({
           </p>
         ) : (
           <div className="divide-y divide-neutral-100">
-            {voices.map((voice) => (
+            {voices.map((voice, i) => (
               <div key={voice.id} className="flex items-center justify-between gap-4 p-5">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-neutral-900">{voice.label}</p>
+                  <p className="text-sm font-medium text-neutral-900">
+                    {voice.label}
+                    {i === 0 && (
+                      <span className="ml-2 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
+                        Aly&apos;s default
+                      </span>
+                    )}
+                  </p>
                   {voice.description && (
                     <p className="mt-0.5 text-xs text-neutral-500">{voice.description}</p>
                   )}
@@ -85,6 +92,14 @@ export default async function AdminVoicesPage({
                 </div>
                 <div className="flex flex-shrink-0 items-center gap-2">
                   <VoicePreviewButton voicePresetId={voice.id} label={`Preview ${voice.label}`} />
+                  {i > 0 && (
+                    <form action={makeDefaultVoicePreset}>
+                      <input type="hidden" name="id" value={voice.id} />
+                      <SubmitButton variant="secondary" size="sm" pendingLabel="Updating…">
+                        Make default
+                      </SubmitButton>
+                    </form>
+                  )}
                   <form action={deleteVoicePreset}>
                     <input type="hidden" name="id" value={voice.id} />
                     <SubmitButton variant="secondary" size="sm">

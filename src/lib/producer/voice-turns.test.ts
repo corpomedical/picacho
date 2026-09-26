@@ -70,6 +70,21 @@ describe("her voice, one piece to the next", () => {
     expect(route).toContain("if (++humanFailures >= 2) humanBroken = true;");
   });
 
+  it("speaks with one default voice, every time: a fixed order, and the admin's Make default", () => {
+    // 2026-09-26: all four presets had sort_order 0, so "the first" was
+    // whichever row Postgres returned — free to differ between requests.
+    const store = read("./store.ts");
+    expect(store).toContain(
+      '.order("sort_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true })',
+    );
+    const admin = read("../admin/actions.ts");
+    expect(admin).toContain("export async function makeDefaultVoicePreset(formData: FormData)");
+    expect(admin).toContain('update({ sort_order: lowest - 1 })');
+    const page = read("../../app/admin/voices/page.tsx");
+    expect(page).toContain("Make default");
+    expect(page).toContain("Aly&apos;s default");
+  });
+
   it("is asked to speak, not to write: no stock reactions, numbers in words", () => {
     const state = read("./state.ts");
     expect(state).not.toContain("open with a short first sentence");

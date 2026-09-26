@@ -195,7 +195,7 @@ export async function loadProducerVoices(): Promise<{ voices: ProducerVoiceChoic
   const g = await gate();
   if (!g.ok) return null;
   const [{ data }, voice] = await Promise.all([
-    g.admin.from("voice_presets").select("id, label, description").order("sort_order", { ascending: true }).limit(50),
+    g.admin.from("voice_presets").select("id, label, description").order("sort_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true }).limit(50),
     loadProducerVoice(g.admin, g.userId).catch(() => null),
   ]);
   const voices = (data ?? []).map((v) => ({

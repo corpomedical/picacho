@@ -167,14 +167,16 @@ export type ProducerVoice = { presetId: string; label: string; elevenLabsVoiceId
 /**
  * The ElevenLabs voice the person's Producer speaks with: their pick from
  * voice_presets (producer_prefs.voice_preset_id), else the first voice in
- * that admin-curated list. Null when the list is empty — the route then falls
+ * that admin-curated list — lowest sort_order, then the earliest added, a
+ * fixed order (2026-09-26: with every sort_order 0 the "first" was whatever
+ * row came back first; the admin's "Make default" sets it on purpose). Null when the list is empty — the route then falls
  * back to the OpenAI voice. Reads the column on its own so a database without
  * producer-voice.sql still answers (with the first voice).
  */
 export async function loadProducerVoice(admin: SupabaseClient, userId: string): Promise<ProducerVoice | null> {
   const [{ data: pref }, { data: presets }] = await Promise.all([
     admin.from("producer_prefs").select("voice_preset_id").eq("user_id", userId).maybeSingle(),
-    admin.from("voice_presets").select("id, label, elevenlabs_voice_id").order("sort_order", { ascending: true }).limit(50),
+    admin.from("voice_presets").select("id, label, elevenlabs_voice_id").order("sort_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true }).limit(50),
   ]);
   const list = (presets ?? []).filter((p) => typeof p.elevenlabs_voice_id === "string" && p.elevenlabs_voice_id);
   if (list.length === 0) return null;

@@ -19,7 +19,7 @@ export default async function NewCharacterPage({
       .select("id, name")
       .eq("user_id", data.user.id)
       .order("name", { ascending: true }),
-    supabase.from("voice_presets").select("id, label, description").order("sort_order", { ascending: true }),
+    supabase.from("voice_presets").select("id, label, description").order("sort_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true }),
   ]);
 
   return (

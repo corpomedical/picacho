@@ -70,7 +70,7 @@ export default async function EditCharacterPage({
       .select("id, name")
       .eq("user_id", userData.user.id)
       .order("name", { ascending: true }),
-    supabase.from("voice_presets").select("id, label, description").order("sort_order", { ascending: true }),
+    supabase.from("voice_presets").select("id, label, description").order("sort_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true }),
   ]);
 
   // "In action" (2026-08-27 redesign, case 4): the character's recent
