@@ -2592,7 +2592,7 @@ const es = {
       rowNobody: "Nadie asignado",
       loose: "Fotos sueltas",
       shotTitle: "La toma",
-      shotHint: "Quién sale, el aspecto, la cámara y dónde está. Mueve la cámara en el escenario.",
+      shotHint: "Quién sale y qué cámara. Mueve la cámara en el escenario.",
       setTitle: "Prepara la escena",
       setHint: "Elige una cosa a la izquierda para darle fotos o un modelo, o pide a Astra que cambie el lugar.",
       setHintPhotos: "Elige una cosa a la izquierda para darle fotos, o pide a Astra que cambie el lugar.",

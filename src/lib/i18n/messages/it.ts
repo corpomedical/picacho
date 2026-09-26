@@ -2591,7 +2591,7 @@ const it = {
       rowNobody: "Nessuno scelto",
       loose: "Foto non assegnate",
       shotTitle: "L'inquadratura",
-      shotHint: "Chi c'è, lo stile, la camera e dove sta. Muovi la camera sulla scena.",
+      shotHint: "Chi c'è e quale camera. Muovi la camera sulla scena.",
       setTitle: "Prepara la scena",
       setHint: "Scegli un oggetto a sinistra per dargli foto o un modello, o chiedi ad Astra di cambiare il luogo.",
       setHintPhotos: "Scegli un oggetto a sinistra per dargli foto, o chiedi ad Astra di cambiare il luogo.",

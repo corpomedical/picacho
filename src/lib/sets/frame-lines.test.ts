@@ -23,7 +23,8 @@ describe("the frame lines", () => {
     expect(view).toContain('<div ref={inPanel ? undefined : chipsRef} data-setup-chips className={inPanel ? "flex flex-wrap items-center gap-2" : `absolute left-3.5 right-3.5 top-3.5 z-20 ${chipsInRow ? "" : "flex flex-wrap items-center gap-2"}`}>');
     expect(view).toContain("{!viewingShot && !simpleOn && !simplePhoneSet && setupChipsView(false)}");
     // `advanced` (Helios Cut 3, step 15a): the floating tools come and go with it, and the left edge with them.
-    expect(view).toContain("}, [rig.format, rigOpen, filmOpen, cutOpen, ready, viewing, simpleOn, simplePhoneSet, advanced]);");
+    // `stripShown` (step 15b): lean, the filmstrip waits for the first still, and the observer must find it when it comes.
+    expect(view).toContain("}, [rig.format, rigOpen, filmOpen, cutOpen, ready, viewing, simpleOn, simplePhoneSet, advanced, stripShown]);");
     expect(view).toContain("ref={stripRef}");
   });
 

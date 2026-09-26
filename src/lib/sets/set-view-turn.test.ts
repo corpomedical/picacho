@@ -396,7 +396,8 @@ describe("the reply and the composer (step 11b)", () => {
     expect(submit).toContain("else if (slashQuery !== null) {\n                  if (!slashPaid) runSlash(slashPick);\n                }");
     expect(submit.match(/runSlash\(/g)).toHaveLength(1);
     expect(view).toContain('const slashPaid = slashQuery !== null && slashList[slashPick]?.id === "shoot";');
-    expect(view).toContain("disabled={reading || shooting || editingSet || !ready || slashPaid || (!draft.trim() && (!characterId || justTalk))}");
+    // An empty send refuses exactly when the bar's Shoot did (canShootNow): it is the new layout's one Shoot (Helios Cut 3, step 15b).
+    expect(view).toContain("disabled={reading || shooting || editingSet || !ready || slashPaid || (!draft.trim() && (justTalk || !canShootNow))}");
   });
 
   it("counts past 500 of the 600 the reader reads, and says what to write on reader v2", () => {

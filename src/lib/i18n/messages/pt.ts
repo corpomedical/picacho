@@ -2592,7 +2592,7 @@ const pt = {
       rowNobody: "Ninguém escalado",
       loose: "Fotos soltas",
       shotTitle: "A tomada",
-      shotHint: "Quem aparece, o visual, a câmera e onde está. Mova a câmera no cenário.",
+      shotHint: "Quem aparece e qual câmera. Mova a câmera no cenário.",
       setTitle: "Monte a cena",
       setHint: "Escolha um item à esquerda para dar fotos ou um modelo, ou peça à Astra para mudar o lugar.",
       setHintPhotos: "Escolha um item à esquerda para dar fotos, ou peça à Astra para mudar o lugar.",

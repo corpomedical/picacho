@@ -1345,6 +1345,13 @@ export function SetView({
   const simplePhoneSet = simplePhone && !filmOpen && !cutOpen && simpleStep === "set";
   /** The new layout with Advanced off: its first screens, and nothing else. Classic is never lean. */
   const lean = (simpleOn || simplePhone) && !advanced;
+  /**
+   * The filmstrip is drawn (Film has its dock instead). Lean with no stills
+   * yet it holds only "The frame", already pressed, so it waits for the
+   * first still (Helios Cut 3, step 15b); the frame lines then fall to the
+   * stage's foot, which is why they follow it.
+   */
+  const stripShown = !filmOpen && !(lean && shots.length === 0);
   const [dockTab, setDockTab] = useState<DockTab>("astra");
   const [dockFilmWas, setDockFilmWas] = useState(filmOpen);
   if (dockFilmWas !== filmOpen) {
@@ -3727,7 +3734,7 @@ export function SetView({
     if (stripRef.current) ro.observe(stripRef.current);
     return () => ro.disconnect();
     // `viewing`: the chips leave with a still in view and return with the stage.
-  }, [rig.format, rigOpen, filmOpen, cutOpen, ready, viewing, simpleOn, simplePhoneSet, advanced]);
+  }, [rig.format, rigOpen, filmOpen, cutOpen, ready, viewing, simpleOn, simplePhoneSet, advanced, stripShown]);
 
   // The stop ring's depth of field, previewed on the live view only.
   useEffect(() => {
@@ -9122,6 +9129,16 @@ export function SetView({
     // takes the chips or the beat's controls off the screen. Set and a
     // thing's card keep the one scroll they had.
     const split = !elementCard && (!simpleShooting || simpleStep === "shoot");
+    // Lean, the composer's engine pill is Advanced's (Helios Cut 3, step
+    // 15b): the engine the stills are drawn with, and what a still costs,
+    // are still said, here under the step's title, as a phone's
+    // conversation header says them. A typed message that asks to shoot
+    // spends that, and the pill was where it was read.
+    const engineLine = lean ? (
+      <p className="-mt-1 text-[11px] text-[#9aa0ad]" data-step-engine>
+        {formatMsg(s.panelMeta, { engine: stillEngineName })} · {credits}
+      </p>
+    ) : null;
     return (
       <aside aria-label={!simpleShooting ? sw.stepFilm : simpleStep === "shoot" ? sw.shotTitle : sw.setTitle} data-step-panel className="flex w-[340px] flex-none flex-col border-l border-[rgba(255,255,255,0.07)] bg-[#15161b]">
         <div className={split ? "flex min-h-0 flex-1 flex-col" : "min-h-0 flex-1 overflow-y-auto"} data-step-split={split ? "" : undefined}>
@@ -9140,10 +9157,12 @@ export function SetView({
               <div className="max-h-[60%] flex-none overflow-y-auto" data-step-shoot-controls>
                 <div className="flex flex-col gap-3 border-b border-[rgba(255,255,255,0.07)] p-4" data-step-shoot>
                   <h2 className="text-[15px] font-semibold text-[#ecedf1]">{sw.shotTitle}</h2>
+                  {engineLine}
                   <p className="text-[12.5px] leading-snug text-[#c6c9d1]">{sw.shotHint}</p>
                   {!viewingShot && setupChipsView(true)}
                 </div>
-                {rigTab && rigPanel(rigTab)}
+                {/* The camera department is Advanced's (Helios Cut 3, step 15b). */}
+                {advanced && rigTab && rigPanel(rigTab)}
               </div>
               {chatThread}
             </>
@@ -9151,6 +9170,7 @@ export function SetView({
             <>
               <div className="flex flex-col gap-2 border-b border-[rgba(255,255,255,0.07)] p-4" data-step-set>
                 <h2 className="text-[15px] font-semibold text-[#ecedf1]">{sw.setTitle}</h2>
+                {engineLine}
                 {/* Photos or a model where a model can be added (admins, modelsOn); photos alone otherwise. */}
                 <p className="text-[12.5px] leading-snug text-[#c6c9d1]">{modelsOn ? sw.setHint : sw.setHintPhotos}</p>
               </div>
@@ -9170,6 +9190,11 @@ export function SetView({
   }
 
   function setupChipsView(inPanel: boolean) {
+    // Lean in Shoot (Helios Cut 3, step 15b): who is in it and which camera,
+    // and Undo after a move. The look, the Rig, the mark, pose and gaze, the
+    // turns, "Frame the figure", Match and Compare are Advanced's; whatever
+    // they are set to still rides the still. Film's chips are unchanged.
+    const leanChips = lean && studioMode === "shoot";
     return (
     <div ref={inPanel ? undefined : chipsRef} data-setup-chips className={inPanel ? "flex flex-wrap items-center gap-2" : `absolute left-3.5 right-3.5 top-3.5 z-20 ${chipsInRow ? "" : "flex flex-wrap items-center gap-2"}`}>
       <div data-setup-row className={chipsInRow ? "flex items-center gap-2 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" : "contents"}>
@@ -9212,6 +9237,7 @@ export function SetView({
         {/* The look (2026-09-11): an earlier still's objects, or — since
             2026-09-21 — a reference photo the person uploads, the thing
             in it drawn four ways round so every shot keeps its design. */}
+        {!leanChips && (
         <div className={chipAnchor}>
           <button
             type="button"
@@ -9260,6 +9286,7 @@ export function SetView({
             </div>
           )}
         </div>
+        )}
         <div className={chipAnchor}>
           <button type="button" onClick={() => toggleMenu("camera")} aria-haspopup="listbox" aria-expanded={menu === "camera"} disabled={!ready} className={DCHIP}>
             {cameraLabel}
@@ -9271,6 +9298,8 @@ export function SetView({
             </div>
           )}
         </div>
+        {!leanChips && (
+        <>
         <button
           type="button"
           onClick={() => (wide ? setDockTab((d) => (d === "camera" ? "astra" : "camera")) : setRigOpen((v) => !v))}
@@ -9381,6 +9410,8 @@ export function SetView({
         <button type="button" onClick={frameFigure} disabled={!ready} className={DCHIP}>
           {s.frameFigure}
         </button>
+        </>
+        )}
         {stageUndoCount > 0 && (
           <button
             type="button"
@@ -9392,7 +9423,7 @@ export function SetView({
             {s.stageUndo}
           </button>
         )}
-        {matchOn && (
+        {matchOn && !leanChips && (
           <>
             <input
               ref={matchFileRef}
@@ -9411,7 +9442,7 @@ export function SetView({
             </button>
           </>
         )}
-        {sourcePhotoUrl && (
+        {sourcePhotoUrl && !leanChips && (
           <button type="button" onClick={() => setCompareOpen((v) => !v)} aria-pressed={compareOpen} className={compareOpen ? DCHIP_ON : DCHIP}>
             {s.compareTitle}
           </button>
@@ -9425,7 +9456,11 @@ export function SetView({
             <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.07)] px-4 py-3">
               <span className="text-[11px] font-medium uppercase tracking-widest text-[#c6c9d1]">{s.astraLabel}</span>
               <span className="flex items-center gap-2">
-                <span className="text-[11px] text-[#9aa0ad]">{formatMsg(s.panelMeta, { engine: stillEngineName })}</span>
+                <span className="text-[11px] text-[#9aa0ad]">
+                  {formatMsg(s.panelMeta, { engine: stillEngineName })}
+                  {/* Lean, the composer's engine pill and its price are Advanced's: the price is said here (Helios Cut 3, step 15b). */}
+                  {lean ? ` · ${credits}` : null}
+                </span>
                 {/* The phone's fold (Helios Cut 3, step 2): the conversation folds away and the
                     words box with its priced send stays; before, this button was hidden below md,
                     the only width that draws this header, so a phone's chat could not be closed.
@@ -9793,6 +9828,9 @@ export function SetView({
                             </button>
                           </div>
                         )}
+                        {/* Lean (Helios Cut 3, step 15b), the one Shoot is the priced send under the words box;
+                            the card keeps its facts and its Cost row. */}
+                        {!lean && (
                         <div className="flex flex-wrap items-center gap-2 pt-1">
                           <button
                             type="button"
@@ -9811,6 +9849,7 @@ export function SetView({
                             {s.anotherAngle}
                           </button>
                         </div>
+                        )}
                         {error && <p className="text-sm text-red-400">{localizeServerText(error, t)}</p>}
                         {takeRetry && (
                           <button
@@ -10011,6 +10050,8 @@ export function SetView({
                 </p>
               )}
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {/* Lean (Helios Cut 3, step 15b), who is in it is the Shoot step's Who chip; "@" in the words still names them. */}
+                {!lean && (
                 <button
                   type="button"
                   onClick={() => setMentionForced((open) => !open)}
@@ -10022,6 +10063,12 @@ export function SetView({
                 >
                   @ {character?.name || s.characterLabel}
                 </button>
+                )}
+                {/* The mode steps aside only while it is "Ask before shooting", the default, where a message
+                    shoots only when its words ask for a shot. "Shoot without asking" makes every message spend,
+                    and "Just talking" makes the send spend nothing: either one always shows, lean or not, so the
+                    person can always see and undo it (Helios Cut 3, step 15b). */}
+                {!(lean && askFirst && !justTalk) && (
                 <div className="relative">
                   <button type="button" onClick={() => toggleMenu("mode")} aria-haspopup="listbox" aria-expanded={menu === "mode"} title={s.modeHint} className={chip(justTalk)}>
                     {justTalk ? s.justTalking : askFirst ? s.askBeforeShooting : s.shootWithoutAsking}
@@ -10033,7 +10080,9 @@ export function SetView({
                     </div>
                   )}
                 </div>
-                {!justTalk && (
+                )}
+                {/* The engine pill is Advanced's; lean, the engine is named over the panel (engineLine, or a phone's header). */}
+                {!justTalk && !lean && (
                   <div className="relative">
                     <button
                       type="button"
@@ -10061,7 +10110,8 @@ export function SetView({
                 <span className="flex-1" />
                 <button
                   type="submit"
-                  disabled={reading || shooting || editingSet || !ready || slashPaid || (!draft.trim() && (!characterId || justTalk))}
+                  // An empty send is the one Shoot in the new layout (Helios Cut 3, step 15b): it refuses exactly when the bar's did (canShootNow).
+                  disabled={reading || shooting || editingSet || !ready || slashPaid || (!draft.trim() && (justTalk || !canShootNow))}
                   title={draft.trim() || justTalk ? s.threadPlaceholder : pressLabel}
                   aria-label={draft.trim() || justTalk ? s.threadPlaceholder : pressLabel}
                   data-send-shoots={sendSaysPrice || undefined}
@@ -10131,7 +10181,9 @@ export function SetView({
             >
               {sw.nextShoot}
             </button>
-          ) : (
+          ) : lean && simpleShooting ? null : (
+          // Lean (Helios Cut 3, step 15b), Shoot is the priced send under the words box, the one Shoot,
+          // in the same place on a computer and a phone; Set keeps "Next: Shoot" above, and Film its Render.
           <button
             type="button"
             onClick={() => void (takeStart ? take() : shoot())}
@@ -10781,7 +10833,7 @@ export function SetView({
           )}
 
           {/* The filmstrip — the workspace's timeline: the frame, then every still, newest first */}
-          {!filmOpen && (
+          {stripShown && (
           <div
             ref={stripRef}
             data-filmstrip

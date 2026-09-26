@@ -115,6 +115,83 @@ describe("what lean hides", () => {
   });
 });
 
+// The controls Advanced hides, and one Shoot (Helios Cut 3, step 15b).
+describe("the first Shoot screen", () => {
+  const chips = () => between("  function setupChipsView(inPanel: boolean) {", "\n  const chatHeader = (");
+
+  it("shows who and which camera in Shoot, and Undo after a move; Film's chips are unchanged", () => {
+    expect(chips()).toContain('const leanChips = lean && studioMode === "shoot";');
+    // The Who and Camera chips are drawn whatever the state.
+    const who = chips().indexOf('onClick={() => toggleMenu("who")}');
+    const camera = chips().indexOf('onClick={() => toggleMenu("camera")}');
+    expect(who).toBeGreaterThan(-1);
+    expect(camera).toBeGreaterThan(-1);
+    // Look, then Rig through "Frame the figure", then Match and Compare, each behind the lean test.
+    expect(chips()).toMatch(/\{!leanChips && \(\s*<div className=\{chipAnchor\}>\s*<button\s+type="button"\s+onClick=\{\(\) => toggleMenu\("look"\)\}/);
+    const rest = chips().slice(chips().indexOf("{!leanChips && (\n        <>"), chips().indexOf("        </>\n        )}"));
+    for (const hidden of ["{rigChipLabel}", 'toggleMenu("figure")', 'toggleMenu("pose")', 'toggleMenu("gaze")', "turn(-TURN_STEP)", "turn(TURN_STEP)", "{s.frameFigure}"]) {
+      expect(rest, hidden).toContain(hidden);
+    }
+    expect(rest).not.toContain('toggleMenu("camera")');
+    expect(chips()).toContain("{matchOn && !leanChips && (");
+    expect(chips()).toContain("{sourcePhotoUrl && !leanChips && (");
+    // Undo stays outside.
+    expect(chips().indexOf("{stageUndoCount > 0 && (")).toBeGreaterThan(chips().indexOf("        </>\n        )}"));
+  });
+
+  it("keeps the camera department in the Shoot panel for Advanced", () => {
+    expect(between("  function stepPanelView() {", "  function setupChipsView(")).toContain("{advanced && rigTab && rigPanel(rigTab)}");
+  });
+
+  it("names the engine as text where its pill steps aside", () => {
+    const panel = between("  function stepPanelView() {", "  function setupChipsView(");
+    expect(panel).toContain("const engineLine = lean ? (");
+    // With a still's price, which the pill carried: a typed message that asks to shoot spends it.
+    expect(panel).toContain("{formatMsg(s.panelMeta, { engine: stillEngineName })} · {credits}");
+    expect(panel.split("{engineLine}").length - 1).toBe(2);
+    // A phone's conversation header says it too, lean only.
+    expect(between("  const chatHeader = (", "  const chatThread = (")).toContain("{lean ? ` · ${credits}` : null}");
+    expect(view).toContain("{!justTalk && !lean && (");
+    // The pill and its price stay in the source for Classic and Advanced.
+    expect(view).toContain("{stillEngineName} · {credits}");
+  });
+
+  it("never hides the mode while a message can spend: only \"Ask before shooting\" steps aside", () => {
+    expect(view).toContain("{!(lean && askFirst && !justTalk) && (");
+    const mode = between("{!(lean && askFirst && !justTalk) && (", "</button>");
+    expect(mode).toContain('onClick={() => toggleMenu("mode")}');
+    expect(mode).toContain("{justTalk ? s.justTalking : askFirst ? s.askBeforeShooting : s.shootWithoutAsking}");
+    // The @ chip is the Who chip's twin: lean, the Who chip is Shoot's.
+    expect(view).toMatch(/\{!lean && \(\s*<button\s+type="button"\s+onClick=\{\(\) => setMentionForced/);
+  });
+
+  it("draws one Shoot: the priced send; the frame card keeps its facts, and the bar keeps Next: Shoot and Film's Render", () => {
+    // The frame card's Shoot and Another angle.
+    expect(view).toMatch(/\{!lean && \(\s*<div className="flex flex-wrap items-center gap-2 pt-1">\s*<button\s+type="button"\s+onClick=\{\(\) => void \(takeStart \? take\(\) : shoot\(\)\)\}/);
+    // Its Cost row is outside the gate.
+    const card = between("{rowLabel(s.rowWho, \"who\")}", "{!lean && (\n                        <div className=\"flex flex-wrap items-center gap-2 pt-1\">");
+    expect(card).toContain("{formatMsg(s.costLine, { credits })}");
+    // The bar: Film's Render and Set's Next: Shoot come first, then nothing while lean in Set or Shoot.
+    const bar = view.slice(view.indexOf("        primary={"), view.indexOf("        }\n      >"));
+    expect(bar.indexOf("simpleOn && filmOpen && !cutOpen ? (")).toBeLessThan(bar.indexOf(") : lean && simpleShooting ? null : ("));
+    expect(bar.indexOf("simpleOn && simpleShooting && simpleStep === \"set\" && !takeStart ? (")).toBeLessThan(bar.indexOf(") : lean && simpleShooting ? null : ("));
+    // The send refuses when the bar's Shoot would have.
+    expect(view).toContain("(!draft.trim() && (justTalk || !canShootNow))");
+  });
+
+  it("waits for the first still before drawing the filmstrip, and the frame lines follow it", () => {
+    expect(view).toContain("const stripShown = !filmOpen && !(lean && shots.length === 0);");
+    expect(view).toContain("{stripShown && (\n          <div\n            ref={stripRef}");
+    expect(view).toContain("simpleOn, simplePhoneSet, advanced, stripShown]);");
+  });
+
+  it("says only what the Shoot step always shows", () => {
+    for (const m of [en, es, pt, itMsgs]) {
+      expect(m.sets.simple.shotHint).not.toMatch(/look|aspecto|visual|stile|where they stand|dónde está|onde está|dove sta/i);
+    }
+  });
+});
+
 describe("the rig in use", () => {
   it("is off on the default rig and a new set's, in every frame shape", () => {
     expect(rigAdvancedInUse(DEFAULT_SET_RIG)).toBe(false);

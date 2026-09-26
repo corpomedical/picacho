@@ -2749,7 +2749,8 @@ const en = {
       /** Photos on nothing, as a row of the list (the cast strip's "{n} photos on nothing" under it). */
       loose: "Loose photos",
       shotTitle: "The shot",
-      shotHint: "Who is in it, the look, the camera and where they stand. Move the camera on the stage.",
+      /** Names only what the Shoot step always shows (Helios Cut 3, step 15b): the look, the mark, pose and gaze are Advanced's. */
+      shotHint: "Who is in it and which camera. Move the camera on the stage.",
       setTitle: "Set the scene",
       setHint: "Pick a thing on the left to give it photos or a model, or ask Astra to change the place.",
       setHintPhotos: "Pick a thing on the left to give it photos, or ask Astra to change the place.",

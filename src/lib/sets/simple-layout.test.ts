@@ -105,7 +105,8 @@ describe("the new layout", () => {
     expect(panelView.indexOf("elementCardView(\"dock\")")).toBeLessThan(panelView.indexOf("setupChipsView(true)"));
     expect(panelView).toContain("{chatThread}");
     expect(panelView).toContain("{chatComposer}");
-    expect(panelView).toContain("{rigTab && rigPanel(rigTab)}");
+    // The camera department is Advanced's (Helios Cut 3, step 15b).
+    expect(panelView).toContain("{advanced && rigTab && rigPanel(rigTab)}");
     expect(view).toContain("{wide && simpleOn && !cutOpen && stepPanelView()}");
     // Film is one panel too (2026-09-24): the rehearsal, the beat, its move — the classic dock's Film tab, drawn by the same function.
     expect(panelView).toContain("{filmBeatView()}");
@@ -128,7 +129,7 @@ describe("the conversation in every step", () => {
 
   it("draws the thread under Set, Shoot and Film alike, one branch at a time", () => {
     expect(panelView().split("{chatThread}").length - 1).toBe(3);
-    expect(panelView()).toMatch(/\{rigTab && rigPanel\(rigTab\)\}\s*<\/div>\s*\{chatThread\}/);
+    expect(panelView()).toMatch(/\{advanced && rigTab && rigPanel\(rigTab\)\}\s*<\/div>\s*\{chatThread\}/);
     expect(panelView()).toMatch(/\{rigPanel\("film"\)\}\s*<\/div>\s*\{chatThread\}/);
   });
 
