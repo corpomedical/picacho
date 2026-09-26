@@ -1,0 +1,373 @@
+/* The wheel that opens out of the lamp (wheel.tsx). Two styles, Filament and
+   Blossom (wheel-style.ts). Its own module: producer-lamp.module.css is the
+   lamp and the sheet. Dark always, like the lamp itself.
+
+   --pct (0..100) is the month's use; --level (0..1) the voice's loudness;
+   --in / --out a control's delay opening and folding back. */
+
+.wheel {
+  z-index: 48;
+  pointer-events: none;
+}
+.wheel a,
+.wheel button {
+  pointer-events: auto;
+}
+
+/* ── Controls (both styles) ─────────────────────────────────────────────── */
+.badge {
+  position: absolute;
+  right: -3px;
+  top: -3px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: #e0a468;
+  color: #1a120a;
+  font: 600 10px/17px system-ui, sans-serif;
+  text-align: center;
+}
+.usageText {
+  position: absolute;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  color: #a89f92;
+  text-shadow: 0 1px 8px #000, 0 0 2px #000;
+}
+.usageText b {
+  color: #e0a468;
+  font-weight: 500;
+}
+.full .usageText b {
+  color: #f0c070;
+}
+.usageStack {
+  width: 64px;
+  text-align: right;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+/* ── Filament ─────────────────────────────────────────────────────────── */
+.filSvg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+.filTrack {
+  fill: none;
+  stroke: rgba(255, 217, 168, 0.2);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-dasharray: 100 100;
+}
+.filUse {
+  fill: none;
+  stroke: rgba(243, 237, 228, 0.09);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.filFill {
+  fill: none;
+  stroke: #e0a468;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: var(--pct) 100;
+  filter: drop-shadow(0 0 4px rgba(224, 164, 104, 0.9));
+}
+.full .filFill {
+  stroke: #f0c070;
+  filter: drop-shadow(0 0 7px rgba(240, 192, 112, 0.95));
+}
+.filSpark {
+  fill: none;
+  stroke: #fff3e0;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-dasharray: 8 100;
+  stroke-dashoffset: 8;
+  opacity: 0;
+  filter: drop-shadow(0 0 6px #ffd9a8) drop-shadow(0 0 14px #e0a468);
+}
+
+.bead {
+  position: absolute;
+  width: 42px;
+  height: 42px;
+  margin: -21px 0 0 -21px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  border-radius: 9999px;
+  cursor: pointer;
+  color: #e6ddd0;
+  background: radial-gradient(circle at 50% 35%, rgba(70, 60, 50, 0.98), rgba(30, 26, 21, 0.98));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 240, 220, 0.12),
+    0 0 0 1px rgba(255, 217, 168, 0.22),
+    0 8px 20px -8px rgba(0, 0, 0, 0.9);
+  transition: box-shadow 160ms ease, color 160ms ease;
+}
+.bead:hover:not(:disabled),
+.bead:focus-visible {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 240, 220, 0.12),
+    0 0 0 1.5px rgba(255, 217, 168, 0.75),
+    0 0 16px rgba(224, 164, 104, 0.35);
+}
+.bead:focus-visible {
+  outline: 2px solid #e0a468;
+  outline-offset: 3px;
+}
+.bead:disabled {
+  cursor: default;
+  color: rgba(230, 221, 208, 0.35);
+}
+.bead.on {
+  color: #e0a468;
+}
+.bead.hot {
+  color: #1a120a;
+  background: radial-gradient(circle at 45% 32%, #ffd9a8, #e0a468 72%);
+  box-shadow:
+    0 0 18px rgba(224, 164, 104, 0.55),
+    0 0 0 1px rgba(255, 217, 168, 0.6);
+}
+/* Talking: the Talk light breathes with the voice. */
+.bead.live {
+  box-shadow:
+    0 0 0 calc(3px + var(--level, 0) * 12px) rgba(224, 164, 104, 0.22),
+    0 0 22px rgba(255, 205, 140, 0.8),
+    0 0 0 1px rgba(255, 217, 168, 0.7);
+}
+.name {
+  position: absolute;
+  font-size: 12.5px;
+  line-height: 18px;
+  white-space: nowrap;
+  color: #f3ede4;
+  text-shadow: 0 1px 8px #000, 0 0 2px #000;
+}
+.nameUp {
+  text-align: right;
+}
+.name em {
+  font-style: normal;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  color: #e0a468;
+}
+
+/* ── Blossom ──────────────────────────────────────────────────────────── */
+.ringSvg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  z-index: 1;
+}
+.ringTrack {
+  fill: none;
+  stroke: rgba(243, 237, 228, 0.1);
+  stroke-width: 3;
+}
+.ringFill {
+  fill: none;
+  stroke: #e0a468;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: var(--pct) 100;
+  filter: drop-shadow(0 0 4px rgba(224, 164, 104, 0.9));
+}
+.full .ringFill {
+  stroke: #f0c070;
+}
+.arm {
+  position: absolute;
+  transform-origin: 50% 100%;
+}
+.petal {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  transform-origin: 50% 100%;
+  border-radius: 50% 50% 46% 46% / 64% 64% 36% 36%;
+  color: #e6ddd0;
+  background: radial-gradient(ellipse at 50% 22%, rgba(255, 217, 168, 0.16), rgba(40, 34, 28, 0.97) 55%, rgba(24, 20, 16, 0.97));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 217, 168, 0.2),
+    0 10px 26px -10px rgba(0, 0, 0, 0.9);
+  transition: box-shadow 160ms ease;
+}
+.petal:hover:not(:disabled),
+.petal:focus-visible {
+  box-shadow:
+    inset 0 0 0 1.5px rgba(255, 217, 168, 0.7),
+    0 0 18px rgba(224, 164, 104, 0.3);
+}
+.petal:focus-visible {
+  outline: 2px solid #e0a468;
+  outline-offset: 2px;
+}
+.petal:disabled {
+  cursor: default;
+  color: rgba(230, 221, 208, 0.35);
+}
+.petal.on {
+  color: #e0a468;
+}
+.petal.hot {
+  color: #1a120a;
+  background: radial-gradient(ellipse at 50% 22%, #ffd9a8, #e0a468 45%, #8a5528);
+  box-shadow: 0 0 22px rgba(224, 164, 104, 0.5);
+}
+.petal.live {
+  box-shadow:
+    0 0 calc(12px + var(--level, 0) * 26px) rgba(255, 205, 140, 0.75),
+    inset 0 0 0 1px rgba(255, 217, 168, 0.7);
+}
+.petalIcon {
+  position: absolute;
+  left: 50%;
+  top: 20px;
+  width: 22px;
+  height: 22px;
+  margin-left: -11px;
+  display: grid;
+  place-items: center;
+}
+.bloomLive {
+  position: absolute;
+  width: 62px;
+  height: 62px;
+  margin: -31px 0 0 -31px;
+  border-radius: 9999px;
+  box-shadow: 0 0 0 calc(var(--level, 0) * 10px) rgba(224, 164, 104, 0.2);
+}
+
+/* ── Motion ───────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  /* Filament: the arc draws, a spark runs along it, each control lights as
+     it passes, then its name; the use fills last. */
+  .filament .filTrack {
+    animation: draw 500ms cubic-bezier(0.4, 0, 0.2, 1) 80ms both;
+  }
+  .filament .filSpark {
+    animation: spark 620ms cubic-bezier(0.35, 0.1, 0.3, 1) 60ms both;
+  }
+  .filament .filFill {
+    animation: fill 900ms cubic-bezier(0.4, 0, 0.2, 1) 550ms both;
+  }
+  .filament .bead {
+    animation: beadIn 420ms cubic-bezier(0.3, 1.45, 0.5, 1) var(--in) both;
+  }
+  .filament .name,
+  .filament .usageText {
+    animation: nameIn 320ms ease calc(var(--in, 600ms) + 100ms) both;
+  }
+  .filament.closing .bead {
+    animation: beadOut 220ms cubic-bezier(0.5, 0, 0.75, 0) var(--out) both;
+  }
+  .filament.closing .name,
+  .filament.closing .usageText,
+  .filament.closing .filSvg {
+    animation: fadeOut 160ms ease both;
+  }
+
+  /* Blossom: petals open with a soft bounce; the ring fills. */
+  .blossom .petal {
+    animation: petalIn 700ms cubic-bezier(0.3, 1.45, 0.5, 1) var(--in) both;
+  }
+  .blossom .ringFill {
+    animation: fill 900ms cubic-bezier(0.4, 0, 0.2, 1) 350ms both;
+  }
+  .blossom .ringSvg,
+  .blossom .usageText {
+    animation: nameIn 320ms ease 300ms both;
+  }
+  .blossom.closing .petal {
+    animation: petalOut 240ms cubic-bezier(0.5, 0, 0.75, 0) var(--out) both;
+  }
+  .blossom.closing .ringSvg,
+  .blossom.closing .usageText {
+    animation: fadeOut 160ms ease both;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .closing {
+    opacity: 0;
+  }
+}
+@keyframes draw {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes spark {
+  0% {
+    stroke-dashoffset: 8;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: -100;
+    opacity: 0;
+  }
+}
+@keyframes fill {
+  from {
+    stroke-dashoffset: var(--pct);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes beadIn {
+  from {
+    opacity: 0;
+    transform: translate(var(--hx), var(--hy)) scale(0.3);
+    filter: brightness(0.3);
+  }
+}
+@keyframes beadOut {
+  to {
+    opacity: 0;
+    transform: translate(var(--hx), var(--hy)) scale(0.3);
+  }
+}
+@keyframes nameIn {
+  from {
+    opacity: 0;
+    translate: 6px 0;
+  }
+}
+@keyframes fadeOut {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes petalIn {
+  from {
+    opacity: 0;
+    transform: rotate(-40deg) scale(0.08);
+  }
+}
+@keyframes petalOut {
+  to {
+    opacity: 0;
+    transform: rotate(-30deg) scale(0.08);
+  }
+}

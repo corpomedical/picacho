@@ -23,6 +23,7 @@ import {
 import { isHumanVoiceConfigured, speakHuman } from "./speech";
 import { isStreamableVoiceId, isVoiceStreamConfigured } from "./voice-stream";
 import { LAMP_LOOKS, parseLampLook, type LampLook } from "@/components/producer/lamp-look";
+import { WHEEL_STYLES, parseWheelStyle, type WheelStyle } from "@/components/producer/wheel-style";
 import { rateLimited } from "@/lib/rate-limit";
 import { MAX_NOTE_CHARS, normalizeNotePath, type Note } from "./notes";
 import { loadWatchBar, loadWatchList, type WatchItem } from "./watch";
@@ -301,4 +302,26 @@ export async function setProducerLook(look: string): Promise<{ error: string | n
   const r = await savePrefs(g.admin, g.userId, { lamp_look: look });
   if (r.error) console.error("producer: look save failed", r.error);
   return { error: r.error ? "The look didn't save. Try again." : null };
+}
+
+// Which wheel opens out of the lamp (2026-09-27, operator: "I like it, and
+// add blossom. Let there be 2 options for the user to pick from").
+// wheel-style.ts lists them.
+
+/** For Settings: the wheel the lamp opens now (null = this account has no Producer). */
+export async function loadProducerWheel(): Promise<WheelStyle | null> {
+  const g = await gate();
+  if (!g.ok) return null;
+  // Missing column (producer-wheel.sql not run yet) → an error and no row → the default.
+  const { data } = await g.admin.from("producer_prefs").select("wheel_style").eq("user_id", g.userId).maybeSingle();
+  return parseWheelStyle((data as { wheel_style?: unknown } | null)?.wheel_style);
+}
+
+export async function setProducerWheel(style: string): Promise<{ error: string | null }> {
+  const g = await gate();
+  if (!g.ok) return { error: g.error };
+  if (!(WHEEL_STYLES as readonly string[]).includes(style)) return { error: "That wheel isn't available." };
+  const r = await savePrefs(g.admin, g.userId, { wheel_style: style });
+  if (r.error) console.error("producer: wheel save failed", r.error);
+  return { error: r.error ? "The wheel didn't save. Try again." : null };
 }

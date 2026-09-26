@@ -3,7 +3,9 @@ import { ProducerNameForm } from "@/components/settings/producer-name-form";
 import { ProducerVoiceForm } from "@/components/settings/producer-voice-form";
 import { ProducerLampForm } from "@/components/settings/producer-lamp-form";
 import { ProducerLookForm } from "@/components/settings/producer-look-form";
-import type { LampLook } from "@/components/producer/lamp-look";
+import { ProducerWheelForm } from "@/components/settings/producer-wheel-form";
+import { DEFAULT_LAMP_LOOK, type LampLook } from "@/components/producer/lamp-look";
+import type { WheelStyle } from "@/components/producer/wheel-style";
 import type { ProducerVoiceChoice } from "@/lib/producer/actions";
 import type { Messages } from "@/lib/i18n/messages";
 import type { Locale } from "@/lib/i18n/locales";
@@ -144,6 +146,7 @@ export function PreferencesTab({
   producerName = null,
   producerVoices = null,
   producerLook = null,
+  producerWheel = null,
 }: {
   t: Messages;
   notifyPrefs: { notify_render_ready: boolean; notify_render_failed: boolean; notify_low_credits: boolean };
@@ -157,6 +160,8 @@ export function PreferencesTab({
   producerVoices?: { voices: ProducerVoiceChoice[]; current: string | null } | null;
   /** The lamp's look, or null when this account has no Producer. */
   producerLook?: LampLook | null;
+  /** The wheel that opens out of the lamp, or null when this account has no Producer. */
+  producerWheel?: WheelStyle | null;
 }) {
   const s = t.settings;
   return (
@@ -187,6 +192,17 @@ export function PreferencesTab({
                 <p className="mt-0.5 text-xs text-atelier-muted">How the lamp in the corner shows itself. Pick one to see it talk.</p>
               </div>
               <ProducerLookForm current={producerLook} />
+            </div>
+          )}
+          {producerWheel && (
+            <div className="space-y-3 border-t border-atelier-rule/60 pt-5">
+              <div>
+                <p className="text-sm font-medium text-atelier-ink">Its wheel</p>
+                <p className="mt-0.5 text-xs text-atelier-muted">
+                  What opens out of the lamp with the chat: talk, read aloud, notes, start fresh, and how much of the month is used. Pick one to see it open.
+                </p>
+              </div>
+              <ProducerWheelForm current={producerWheel} look={producerLook ?? DEFAULT_LAMP_LOOK} />
             </div>
           )}
           {producerVoices && (

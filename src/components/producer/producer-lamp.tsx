@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { PRODUCER_NEEDS_ELITE, PRODUCER_NOT_OPEN, PRODUCER_SUSPENDED, PRODUCER_UNAVAILABLE } from "@/lib/producer/enabled";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import {
   clearProducerNotes,
   deleteProducerNote,
@@ -21,7 +21,8 @@ import type { WatchItem } from "@/lib/producer/watch";
 import { isSpot, type Spot } from "@/lib/producer/spots";
 import { PRODUCER_ASK_EVENT, producerAskDraft, producerAskText } from "@/lib/producer/ask-event";
 import styles from "./producer-lamp.module.css";
-import { Wheel, WHEEL_R } from "./wheel";
+import { Wheel } from "./wheel";
+import { wheelGeometry, type WheelStyle } from "./wheel-style";
 import { MovableLamp } from "./movable-lamp";
 import { writeLampHidden } from "./lamp-place";
 import { lampMood, type LampLook } from "./lamp-look";
@@ -40,8 +41,9 @@ import { useHandsFree, type SpokenAudio, type UtteranceMeta } from "./use-hands-
 //
 // Round 2 (2026-09-25, operator): opening the sheet grows a WHEEL out from
 // behind the bulb (wheel.tsx) — talk hands-free, read answers aloud, notes,
-// start fresh, name — whose rim is lit by how much of the month's assistant
-// allowance is used; hands-free voice (use-hands-free.ts); and a thin light
+// start fresh, name — lit by how much of the month's assistant allowance is
+// used (redrawn 2026-09-27 as Filament or Blossom, the person's pick, with
+// the sheet as a floating card above it); hands-free voice (use-hands-free.ts); and a thin light
 // on the bottom edge of whatever part of the page the Producer is working on
 // (spotlight.tsx).
 //
@@ -93,6 +95,7 @@ const W = {
   speaking: "Speaking",
   endVoice: "End",
   endVoiceLabel: "End the voice conversation",
+  typeInstead: "Type instead",
   talkOver: "Talk over it anytime",
   newCards: (n: number) => `${n} prepared`,
   heardPlaceholder: "…",
@@ -105,6 +108,8 @@ const W = {
 };
 
 const READ_ALOUD_KEY = "picacho.producer.readAloud";
+// The voice bar's nine bars, as shares of the voice's loudness.
+const VOICE_BARS = [0.4, 0.7, 1, 0.6, 0.9, 0.5, 0.8, 0.45, 0.65];
 // The sheet reopens after the page reloads to show a set it just fixed.
 const REOPEN_KEY = "picacho.producer.reopen";
 // Voice survives a reload of the page (the tab's session only): it stays on
@@ -145,6 +150,7 @@ export function ProducerLamp({
   watchCount,
   voiceAvailable,
   look,
+  wheelStyle,
   diagnostics = false,
 }: {
   name: string;
@@ -153,6 +159,8 @@ export function ProducerLamp({
   voiceAvailable: boolean;
   /** How the lamp looks: the person's pick in Settings (lamp-look.ts). */
   look: LampLook;
+  /** Which wheel opens out of the lamp: the person's pick in Settings (wheel-style.ts). */
+  wheelStyle: WheelStyle;
   /** An admin's readouts: how much of her voice the mic hears (2026-09-26, "I still cant interrupt her"). */
   diagnostics?: boolean;
 }) {
@@ -195,6 +203,21 @@ export function ProducerLamp({
   const [readAloud, setReadAloud] = useState(false);
   const [lit, setLit] = useState<LitSpot[]>([]);
   const [typing, setTyping] = useState(false);
+  // Closing: the wheel folds back into the lamp and the card sinks before
+  // both are taken off the page.
+  const [closing, setClosing] = useState(false);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    setClosing(!open);
+  }
+  useEffect(() => {
+    if (!closing) return;
+    const t = window.setTimeout(() => setClosing(false), 260);
+    return () => window.clearTimeout(t);
+  }, [closing]);
+  // Talking turns the text box into a voice bar; "Type" brings the box back.
+  const [typeInVoice, setTypeInVoice] = useState(false);
   const [center, setCenter] = useState<{ cx: number; cy: number; vh: number; phone: boolean } | null>(null);
 
   useEffect(() => setReadAloud(readStoredBool(READ_ALOUD_KEY)), []);
@@ -251,6 +274,11 @@ export function ProducerLamp({
   // ElevenLabs hasn't used for a while took 6-11 s to start (warmProducerVoice;
   // the server does it at most once every two minutes).
   const wantWarm = (open && readAloud && loaded) || voice.active;
+  const [voiceWasActive, setVoiceWasActive] = useState(voice.active);
+  if (voice.active !== voiceWasActive) {
+    setVoiceWasActive(voice.active);
+    if (!voice.active) setTypeInVoice(false);
+  }
   useEffect(() => {
     if (wantWarm) void warmProducerVoice().catch(() => {});
   }, [wantWarm]);
@@ -312,6 +340,7 @@ export function ProducerLamp({
       if (text === null) return;
       setView("chat");
       setInput((current) => producerAskDraft(current, text));
+      setTypeInVoice(true);
       setOpen(true);
       askedRef.current = true;
     };
@@ -718,13 +747,21 @@ export function ProducerLamp({
   // a reply read aloud with the mic off has no meter, so it talks at a
   // steady middle strength instead of its dimmest.
   const glow = voice.metered ? voice.level : mood === "talking" ? 0.7 : 0;
-  const wheelShown = open && wheelReady && center !== null && !(center.phone && typing);
-  // The sheet ends just above the wheel; with the keyboard up on a phone the
-  // wheel tucks away and the sheet reaches the bottom.
-  // (Kept while a moved lamp is still flying home, so the sheet doesn't jump
+  const sheetShown = open || closing;
+  const wheelShown = (open ? wheelReady : closing) && center !== null && !(center.phone && typing);
+  // The card ends just above the wheel's reach; with the keyboard up on a
+  // phone the wheel tucks away and the card reaches down to the keyboard.
+  // (Kept while a moved lamp is still flying home, so the card doesn't jump
   // when the wheel appears.)
   const sheetBottom =
-    open && center && !(center.phone && typing) ? Math.round(center.vh - (center.cy - WHEEL_R) + 10) : undefined;
+    sheetShown && center && !(center.phone && typing)
+      ? Math.round(center.vh - (center.cy - wheelGeometry(wheelStyle, center.phone).reach) + 10)
+      : undefined;
+  // It grows with the conversation, up to near the top of the screen.
+  const sheetStyle = {
+    bottom: sheetBottom ?? 8,
+    maxHeight: `calc(100dvh - ${sheetBottom ?? 8}px - ${center?.phone ? "6dvh" : "16px"})`,
+  };
   const voiceLine =
     voice.phase === "listening"
       ? W.listening
@@ -762,7 +799,18 @@ export function ProducerLamp({
       <Spotlight lit={lit} />
 
       {wheelShown && center && (
+        <div
+          aria-hidden="true"
+          className={closing ? `${styles.veil} ${styles.veilClosing}` : styles.veil}
+          style={{ "--vx": `${center.cx}px`, "--vy": `${center.cy}px` } as CSSProperties}
+        />
+      )}
+
+      {wheelShown && center && (
         <Wheel
+          style={wheelStyle}
+          phone={center.phone}
+          closing={closing}
           cx={center.cx}
           cy={center.cy}
           used={usage?.used ?? 0}
@@ -791,20 +839,21 @@ export function ProducerLamp({
         />
       )}
 
-      {open && (
+      {sheetShown && (
         <>
           <button
             type="button"
             aria-label={W.close}
             onClick={() => setOpen(false)}
-            className="fixed inset-0 z-[46] bg-black/60 md:hidden"
+            className={`fixed inset-0 z-[46] bg-black/60 md:hidden ${closing ? "pointer-events-none opacity-0 transition-opacity duration-200" : ""}`}
           />
           <section
             data-producer-sheet
             role="dialog"
             aria-label={name}
-            style={sheetBottom !== undefined ? { bottom: sheetBottom } : undefined}
-            className={`${styles.sheet} fixed z-[47] flex flex-col overflow-hidden border border-atelier-rule bg-atelier-surface text-atelier-ink shadow-[0_30px_80px_-30px_rgba(0,0,0,0.75)] backdrop-blur-xl inset-x-0 bottom-0 top-[6dvh] rounded-[22px] md:inset-x-auto md:bottom-4 md:right-4 md:top-4 md:w-[420px] md:rounded-[18px]`}
+            inert={closing}
+            style={sheetStyle}
+            className={`${styles.sheet} ${closing ? styles.sheetClosing : ""} fixed z-[47] flex flex-col overflow-hidden border border-atelier-rule bg-atelier-surface text-atelier-ink shadow-[0_40px_90px_-30px_rgba(0,0,0,0.9)] backdrop-blur-xl inset-x-3 rounded-[24px] md:inset-x-auto md:right-4 md:w-[404px]`}
           >
             {/* Header */}
             <div className="flex items-center gap-3 border-b border-atelier-rule px-4 py-3">
@@ -813,6 +862,9 @@ export function ProducerLamp({
                 <div className="truncate text-[15px] font-semibold leading-tight">
                   {view === "notes" ? W.notes : name}
                 </div>
+                {voiceLine && view === "chat" && (
+                  <div className="truncate text-[12px] leading-tight text-atelier-accent">{voiceLine}</div>
+                )}
               </div>
               {view === "chat" ? null : (
                 <button
@@ -1024,76 +1076,130 @@ export function ProducerLamp({
                   {backgroundTip && voice.active && (
                     <p className="mb-2 px-1 text-[12px] text-atelier-muted">{W.backgroundTip}</p>
                   )}
-                  {(voiceLine || voice.notice) && (
-                    <div className="mb-2 flex items-center gap-3 px-1" aria-live="polite" data-voice-engine={voice.engine ?? undefined}>
-                      {voiceLine && (
-                        <LookMark look={look} mood={mood} size={26} glow={glow} />
-                      )}
+                  {voice.active && !typeInVoice ? (
+                    // Talking: the text box is a live voice bar.
+                    <div
+                      className={`${styles.voiceBar} flex items-center gap-3 rounded-[20px] py-2 pl-3.5 pr-2`}
+                      aria-live="polite"
+                      data-voice-engine={voice.engine ?? undefined}
+                    >
+                      <span className={styles.voiceBars} aria-hidden="true">
+                        {VOICE_BARS.map((shape, i) => (
+                          <i key={i} style={{ height: `${Math.round(5 + glow * 20 * shape)}px` }} />
+                        ))}
+                      </span>
                       <div className="min-w-0 flex-1 leading-tight">
-                        <div className="text-[14px] font-medium text-atelier-ink">{voiceLine ?? voice.notice}</div>
-                        {voiceLine && (
-                          <div className="text-[12px] text-atelier-muted">{voice.notice ?? W.talkOver}</div>
-                        )}
+                        <div className="text-[14px] font-medium text-atelier-ink">{voiceLine ?? W.listening}</div>
+                        <div className="truncate text-[12px] text-atelier-muted">{voice.notice ?? W.talkOver}</div>
                       </div>
-                      {voice.active && (
+                      {(busy || voice.phase === "speaking" || voice.held) && (
                         <button
                           type="button"
-                          onClick={voice.stop}
-                          aria-label={W.endVoiceLabel}
-                          className="rounded-full border border-atelier-rule px-3.5 py-1.5 text-[13px] font-semibold text-atelier-ink hover:bg-atelier-ink/5"
+                          onClick={stopAnswer}
+                          aria-label={W.stop}
+                          className="grid h-[34px] w-[34px] flex-none place-items-center rounded-full border border-atelier-rule text-atelier-ink"
                         >
-                          {W.endVoice}
+                          <span className="h-3 w-3 rounded-[2px] bg-current" />
                         </button>
                       )}
-                    </div>
-                  )}
-                  <div className="flex items-end gap-2 rounded-[20px] border border-atelier-rule bg-atelier-ink/[0.03] py-1.5 pl-4 pr-1.5">
-                    <textarea
-                      id="producer-input"
-                      ref={inputRef}
-                      rows={1}
-                      value={input}
-                      onChange={(e) => {
-                        setInput(e.target.value);
-                        const el = e.target;
-                        el.style.height = "auto";
-                        el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                          e.preventDefault();
-                          void send({ text: input });
-                        }
-                      }}
-                      onFocus={() => setTyping(true)}
-                      onBlur={() => setTyping(false)}
-                      placeholder={W.placeholder(name)}
-                      maxLength={5000}
-                      disabled={!loaded}
-                      className="min-h-[34px] flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-snug text-atelier-ink outline-none placeholder:text-atelier-muted"
-                    />
-                    {busy || voice.phase === "speaking" || voice.held ? (
                       <button
                         type="button"
-                        onClick={stopAnswer}
-                        aria-label={W.stop}
-                        className="grid h-[34px] w-[34px] flex-none place-items-center rounded-full border border-atelier-rule text-atelier-ink"
+                        onClick={() => {
+                          setTypeInVoice(true);
+                          requestAnimationFrame(() => inputRef.current?.focus());
+                        }}
+                        aria-label={W.typeInstead}
+                        title={W.typeInstead}
+                        className="grid h-[34px] w-[34px] flex-none place-items-center rounded-full text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink"
                       >
-                        <span className="h-3 w-3 rounded-[2px] bg-current" />
-                      </button>
-                    ) : (
-                      <button
-                        type="submit"
-                        aria-label={W.send}
-                        disabled={!input.trim() || !loaded}
-                        className="grid h-[34px] w-[34px] flex-none place-items-center rounded-full bg-atelier-accent text-[#1a120a] disabled:opacity-40"
-                      >
-                        <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" />
+                        <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <rect x="1.5" y="4" width="13" height="8.5" rx="1.5" />
+                          <path d="M4 6.75h.01M6.5 6.75h.01M9 6.75h.01M11.5 6.75h.01M5 9.75h6" />
                         </svg>
                       </button>
-                    )}
-                  </div>
+                      <button
+                        type="button"
+                        onClick={voice.stop}
+                        aria-label={W.endVoiceLabel}
+                        className="h-[34px] flex-none rounded-full bg-atelier-ink px-3.5 text-[13px] font-semibold text-atelier-surface"
+                      >
+                        {W.endVoice}
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {(voiceLine || voice.notice) && (
+                        <div className="mb-2 flex items-center gap-3 px-1" aria-live="polite" data-voice-engine={voice.engine ?? undefined}>
+                          {voiceLine && (
+                            <LookMark look={look} mood={mood} size={26} glow={glow} />
+                          )}
+                          <div className="min-w-0 flex-1 leading-tight">
+                            <div className="text-[14px] font-medium text-atelier-ink">{voiceLine ?? voice.notice}</div>
+                            {voiceLine && (
+                              <div className="text-[12px] text-atelier-muted">{voice.notice ?? W.talkOver}</div>
+                            )}
+                          </div>
+                          {voice.active && (
+                            <button
+                              type="button"
+                              onClick={voice.stop}
+                              aria-label={W.endVoiceLabel}
+                              className="rounded-full border border-atelier-rule px-3.5 py-1.5 text-[13px] font-semibold text-atelier-ink hover:bg-atelier-ink/5"
+                            >
+                              {W.endVoice}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      <div className="flex items-end gap-2 rounded-[20px] border border-atelier-rule bg-atelier-ink/[0.03] py-1.5 pl-4 pr-1.5">
+                        <textarea
+                          id="producer-input"
+                          ref={inputRef}
+                          rows={1}
+                          value={input}
+                          onChange={(e) => {
+                            setInput(e.target.value);
+                            const el = e.target;
+                            el.style.height = "auto";
+                            el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                              e.preventDefault();
+                              void send({ text: input });
+                            }
+                          }}
+                          onFocus={() => setTyping(true)}
+                          onBlur={() => setTyping(false)}
+                          placeholder={W.placeholder(name)}
+                          maxLength={5000}
+                          disabled={!loaded}
+                          className="min-h-[34px] flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-snug text-atelier-ink outline-none placeholder:text-atelier-muted"
+                        />
+                        {busy || voice.phase === "speaking" || voice.held ? (
+                          <button
+                            type="button"
+                            onClick={stopAnswer}
+                            aria-label={W.stop}
+                            className="grid h-[34px] w-[34px] flex-none place-items-center rounded-full border border-atelier-rule text-atelier-ink"
+                          >
+                            <span className="h-3 w-3 rounded-[2px] bg-current" />
+                          </button>
+                        ) : (
+                          <button
+                            type="submit"
+                            aria-label={W.send}
+                            disabled={!input.trim() || !loaded}
+                            className="grid h-[34px] w-[34px] flex-none place-items-center rounded-full bg-atelier-accent text-[#1a120a] disabled:opacity-40"
+                          >
+                            <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </form>
               </>
             )}

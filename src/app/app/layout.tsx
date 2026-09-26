@@ -11,6 +11,7 @@ import { countWatch, loadWatchBar } from "@/lib/producer/watch";
 import { DEFAULT_PRODUCER_NAME } from "@/lib/producer/store";
 import { ProducerLamp } from "@/components/producer/producer-lamp";
 import { parseLampLook, type LampLook } from "@/components/producer/lamp-look";
+import { parseWheelStyle, type WheelStyle } from "@/components/producer/wheel-style";
 import { isVoiceConfigured } from "@/lib/producer/speech";
 import { setsEligible } from "@/lib/sets/set-config";
 import { RatePrompt } from "@/components/rate-prompt";
@@ -116,19 +117,22 @@ export default async function AppLayout({
   // (lib/producer/enabled.ts producerVisible,
   // which a set's page asks too). Eligibility first, so every other account
   // skips the flag reads and the watch count.
-  let producer: { name: string; watchCount: number; look: LampLook } | null = null;
+  let producer: { name: string; watchCount: number; look: LampLook; wheel: WheelStyle } | null = null;
   if (await producerVisible(supabase, profile, isAdmin)) {
-    const [{ data: prefs }, { data: lookRow }, watchBar] = await Promise.all([
+    const [{ data: prefs }, { data: lookRow }, { data: wheelRow }, watchBar] = await Promise.all([
       supabase.from("producer_prefs").select("display_name, watch_seen_at").eq("user_id", data.user.id).maybeSingle(),
       // On its own: before producer-look.sql runs the column is missing, the
       // read errors, and the lamp simply takes the default look.
       supabase.from("producer_prefs").select("lamp_look").eq("user_id", data.user.id).maybeSingle(),
+      // The same for the wheel before producer-wheel.sql: Filament.
+      supabase.from("producer_prefs").select("wheel_style").eq("user_id", data.user.id).maybeSingle(),
       loadWatchBar(supabase),
     ]);
     producer = {
       name: (prefs?.display_name as string | null)?.trim() || DEFAULT_PRODUCER_NAME,
       watchCount: await countWatch(supabase, data.user.id, prefs?.watch_seen_at as string | null, watchBar),
       look: parseLampLook((lookRow as { lamp_look?: unknown } | null)?.lamp_look),
+      wheel: parseWheelStyle((wheelRow as { wheel_style?: unknown } | null)?.wheel_style),
     };
   }
 
@@ -203,6 +207,7 @@ export default async function AppLayout({
           watchCount={producer.watchCount}
           voiceAvailable={isVoiceConfigured()}
           look={producer.look}
+          wheelStyle={producer.wheel}
           diagnostics={isAdmin}
         />
       )}

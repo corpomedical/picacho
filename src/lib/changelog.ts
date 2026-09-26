@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.125.0",
+    build: 164,
+    date: "2026-09-27",
+    title: "Aly's wheel, redrawn: pick Filament or Blossom, with the chat as a floating card",
+    items: [
+      "The wheel that opens out of Aly's lamp is redrawn, and there are two to pick from in Settings → Preferences → Your assistant → Its wheel. Filament (the default) is a thin arc of light round the lamp: opening Aly sends a spark along it that lights each control with its name beside it (Talk, Read aloud, Notes, Start fresh, Name and voice), and an inner arc fills with the month's use. Blossom is five petals that open out of the bulb with a soft bounce, with a ring round the bulb that fills with the month's use. Fully lit still means the month's allowance is used up.",
+      "The chat is now a floating card that rises out of the lamp's corner and grows with the conversation, instead of a panel down the whole side, so more of the page stays in view. The corner round the lamp dims while the wheel is out, so its names read over any page.",
+      "While you talk, the text box becomes a live voice bar: what she's doing (Listening, Hearing you, Thinking, Speaking), bars that move with the voice, Stop, a keyboard button to type instead, and End. Her status also shows under her name, and Talk on the wheel reads End talk.",
+      "Both wheels fold back into the lamp, and the card sinks away, when the chat closes.",
+      "The choice is saved on the account. Until the new database column is added, everyone gets Filament and choosing Blossom says it didn't save.",
+    ],
+  },
+  {
     version: "1.124.0",
     build: 163,
     date: "2026-09-26",

@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { readProducerGrant } from "@/lib/producer/enabled";
-import { loadProducerLook, loadProducerName, loadProducerVoices } from "@/lib/producer/actions";
+import { loadProducerLook, loadProducerName, loadProducerVoices, loadProducerWheel } from "@/lib/producer/actions";
 import { redirect } from "next/navigation";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getMonthlyUsage } from "@/lib/generations/actions";
@@ -355,14 +355,15 @@ export default async function SettingsPage({
           .maybeSingle()
       : { data: null };
   // The Producer's name row: only for accounts that have the Producer.
-  const [producerName, producerVoices, producerLook] =
+  const [producerName, producerVoices, producerLook, producerWheel] =
     activeTab === "preferences"
       ? await Promise.all([
           loadProducerName().then((p) => (p.available ? p.name : null)),
           loadProducerVoices(),
           loadProducerLook(),
+          loadProducerWheel(),
         ])
-      : [null, null, null];
+      : [null, null, null, null];
 
   const notifyPrefs = {
     notify_render_ready: (notifyRow as { notify_render_ready?: boolean } | null)?.notify_render_ready !== false,
@@ -646,6 +647,7 @@ export default async function SettingsPage({
           producerName={producerName}
           producerVoices={producerVoices}
           producerLook={producerLook}
+          producerWheel={producerWheel}
         />
       )}
 

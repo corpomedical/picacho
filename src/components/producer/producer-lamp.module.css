@@ -138,141 +138,88 @@
   }
 }
 
-.wheel {
-  position: fixed;
-  z-index: 48;
-  pointer-events: none;
-}
-.disc {
-  position: absolute;
-  inset: 0;
-  border-radius: 9999px;
-  /* Only the quarter that faces the page (plus the bulb's own round) is
-     drawn: below and right of the bulb sit the screen edge or, in the app,
-     the tab bar, which the dial must not cover. */
-  clip-path: polygon(0 0, calc(50% + 34px) 0, calc(50% + 34px) calc(50% + 34px), 0 calc(50% + 34px));
-  background:
-    radial-gradient(circle at 50% 50%, rgba(224, 164, 104, 0.1) 0 18%, transparent 19%),
-    radial-gradient(circle at 50% 50%, rgba(30, 26, 21, 0.97) 0 62%, rgba(20, 17, 13, 0.97) 100%);
-  box-shadow:
-    inset 0 0 0 1px rgba(243, 237, 228, 0.08),
-    0 20px 60px -20px rgba(0, 0, 0, 0.85);
-}
-.rim {
-  position: absolute;
-  inset: 0;
-  overflow: visible;
-}
-.rimTrack {
-  fill: none;
-  stroke: rgba(243, 237, 228, 0.1);
-  stroke-width: 3;
-  stroke-linecap: round;
-}
-.rimFill {
-  fill: none;
-  stroke: #e0a468;
-  stroke-width: 3;
-  stroke-linecap: round;
-  filter: drop-shadow(0 0 4px rgba(224, 164, 104, 0.8));
-}
-.rimFull {
-  stroke: #f0c070;
-  filter: drop-shadow(0 0 7px rgba(240, 192, 112, 0.95));
-}
-.usageLabel {
-  position: absolute;
-  transform: translate(-100%, -50%);
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  color: #a89f92;
-}
-
-.control {
-  position: absolute;
-  width: 34px;
-  height: 34px;
-  margin: -17px 0 0 -17px;
-  display: grid;
-  place-items: center;
-  border-radius: 9999px;
-  border: 0;
-  cursor: pointer;
-  pointer-events: auto;
-  color: #d9d0c3;
-  background: linear-gradient(180deg, rgba(48, 41, 34, 0.98), rgba(30, 26, 21, 0.98));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 240, 220, 0.08),
-    0 0 0 1px rgba(243, 237, 228, 0.1);
-  transition: color 140ms ease, background 140ms ease, box-shadow 140ms ease;
-}
-.control:hover:not(:disabled) {
-  color: #f3ede4;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 240, 220, 0.1),
-    0 0 0 1px rgba(224, 164, 104, 0.45);
-}
-.control:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-.control:focus-visible {
-  outline: 2px solid #e0a468;
-  outline-offset: 2px;
-}
-.controlOn {
-  color: #1a120a;
-  background: radial-gradient(circle at 50% 38%, #f6c890, #e0a468 70%);
-  box-shadow: 0 0 14px rgba(224, 164, 104, 0.6);
-}
-.controlOn:hover:not(:disabled) {
-  color: #1a120a;
-}
-/* Talking: the mic's ring breathes with the voice it hears. */
-.controlLive {
-  box-shadow:
-    0 0 0 calc(2px + var(--level, 0) * 9px) rgba(224, 164, 104, 0.22),
-    0 0 16px rgba(224, 164, 104, 0.7);
-}
-.controlBadge {
-  position: absolute;
-  right: -4px;
-  top: -4px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: #e0a468;
-  color: #1a120a;
-  font: 600 9.5px/16px system-ui, sans-serif;
-  text-align: center;
-}
-
+/* The chat as a floating card (2026-09-27, Filament): it rises out of the
+   lamp's corner, above the wheel (wheel.tsx), and grows with the
+   conversation up to the top of the screen. It folds back down when it
+   closes (.sheetClosing). */
 @media (prefers-reduced-motion: no-preference) {
-  .wheel .disc,
-  .wheel .rim,
-  .wheel .usageLabel {
-    animation: wheelIn 260ms cubic-bezier(0.2, 0.9, 0.3, 1.1) both;
+  .sheet {
+    transform-origin: 100% 100%;
+    animation: cardIn 480ms cubic-bezier(0.2, 0.9, 0.3, 1.02) 100ms both;
   }
-  .wheel .control {
-    animation: controlOut 300ms cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
-    animation-delay: var(--delay, 0ms);
+  .sheetClosing {
+    animation: cardOut 200ms cubic-bezier(0.5, 0, 0.75, 0) both;
   }
 }
-@keyframes wheelIn {
+@keyframes cardIn {
   from {
-    transform: scale(0.3);
+    opacity: 0;
+    transform: translateY(24px) scale(0.94);
+    clip-path: inset(100% 0 0 0 round 24px);
+  }
+  to {
+    clip-path: inset(0 0 0 0 round 24px);
+  }
+}
+@keyframes cardOut {
+  to {
+    opacity: 0;
+    transform: translateY(18px) scale(0.96);
+  }
+}
+/* The corner round the lamp dims while the wheel is out, so its names read
+   over any page; the page itself stays usable (no pointer events). */
+.veil {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at var(--vx) var(--vy),
+    rgba(8, 7, 5, 0.86) 0,
+    rgba(8, 7, 5, 0.74) 210px,
+    rgba(8, 7, 5, 0.2) 460px,
+    rgba(8, 7, 5, 0) 700px
+  );
+}
+@media (prefers-reduced-motion: no-preference) {
+  .veil {
+    animation: veilIn 400ms ease both;
+  }
+  .veilClosing {
+    animation: fadeAway 200ms ease both;
+  }
+}
+@keyframes veilIn {
+  from {
     opacity: 0;
   }
 }
-@keyframes controlOut {
-  from {
-    transform: translate(var(--dx, 0), var(--dy, 0)) scale(0.4);
+@keyframes fadeAway {
+  to {
     opacity: 0;
   }
+}
+
+/* Talking: the text box becomes a live voice bar. */
+.voiceBar {
+  border: 1px solid rgba(224, 164, 104, 0.4);
+  background: radial-gradient(ellipse at 15% 50%, rgba(224, 164, 104, 0.2), rgba(224, 164, 104, 0.03) 70%);
+}
+.voiceBars {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 26px;
+  flex: none;
+}
+.voiceBars i {
+  display: block;
+  width: 3px;
+  border-radius: 2px;
+  background: #e0a468;
+  box-shadow: 0 0 6px rgba(224, 164, 104, 0.6);
+  transition: height 90ms linear;
 }
 
 /* ── Where the Producer is working: a thin light on an element's bottom
