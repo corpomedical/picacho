@@ -213,6 +213,21 @@ export const SET_EDIT_MAX_CHARS = 300;
 export const SET_EDIT_POLL_MS = 2_500;
 export const SET_EDIT_DEADLINE_MS = 180_000;
 export const SET_EDIT_PER_10_MIN = 10;
+// And never past this long from the action's own start (Helios Cut 4, step A5,
+// 2026-09-26), as the match's clock runs (SET_MATCH_DEADLINE_MS): the free
+// checks, the gate on the words and a rebuild's photos all come before the
+// submit, and 180 s from a late submit ran past the page's 300 s, where the
+// platform stopped the press before its give-back and its end marker. The
+// last poll starts within SET_EDIT_POLL_MS of the deadline and times out at
+// 15 s, the cancel after it at 10 s (providers/astra.ts): 225 + 2.5 + 15 + 10
+// = 252.5 s, which leaves 47.5 s of the 300 for the gate on Astra's answer,
+// the save and the markers.
+export const SET_EDIT_ACTION_DEADLINE_MS = 225_000;
+
+/** When an edit or rebuild stops waiting for Astra: 180 s from the submit, and never past 225 s from the action's start. */
+export function setEditPollDeadline(startedAt: number, submittedAt: number): number {
+  return Math.min(submittedAt + SET_EDIT_DEADLINE_MS, startedAt + SET_EDIT_ACTION_DEADLINE_MS);
+}
 
 // One Astra job per press (astra-press.ts, 2026-09-25, Cut 1 — operator:
 // "GO ahead"). The page names each edit or rebuild; a browser's silent

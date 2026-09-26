@@ -49,6 +49,28 @@
 // WHY END MARKERS: comparing working copies would not be reliable. The
 // editor's autosave changes them too, and the save can race the read.
 //
+// A PRESS THE PLATFORM STOPPED (Helios Cut 4, step A5, 2026-09-26 — the
+// owner's decision D12; operator: "resume"). A delivery the platform stops
+// at the page's 300 s never reaches its give-back: the page said "Astra
+// didn't change the set" while the change it had reserved stayed spent. So:
+// 3. Once the month's change is reserved, the press leaves
+//    `set-astra-press-reserved:<id>`.
+// 4. Every give-back of a press's change — its own, when it does not save
+//    (editor-actions.ts giveBackAstraChange), or the read-back's, for a
+//    press the platform stopped (refundLostAstraPress) — first claims the
+//    one-shot `set-astra-press-given:<id>`, and gives only as its first
+//    claimer. So a press gives its change back once, whichever comes
+//    first: a delivery that gave its change back and was stopped before
+//    its "unsaved" marker reads "lost", but its "given" row is there, and
+//    the read-back gives nothing (critic item 13).
+// 5. The "saved" marker is written the moment the change is saved
+//    (editor-actions.ts oncePerPress), so a delivery stopped after its save
+//    reads "saved", never "lost".
+// The read-back runs only while a page follows the press (astra-follow.ts,
+// at most SET_EDIT_FOLLOW_CAP_MS): a press whose tab was closed never gets
+// that refund. The try itself is never given back here: a stopped press
+// may have been billed (critic item 1).
+//
 // WHO FOLLOWS the first delivery: the page. A repeat answers at once, and
 // the page reads back what was saved. The page needs that loop anyway for a
 // call that throws, so there is one implementation, not a server-side
@@ -76,6 +98,11 @@ export function astraPressEndScope(id: string, end: "saved" | "unsaved"): string
   return `set-astra-press-${end}:${id}`;
 }
 
+/** The press's own marks (Helios Cut 4, step A5): its change reserved, and its change given back. */
+export function astraPressMarkScope(id: string, mark: "reserved" | "given"): string {
+  return `set-astra-press-${mark}:${id}`;
+}
+
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 /** One row under `scope`, if none is there yet: true when this call wrote it. Throws what the client throws. */
@@ -89,25 +116,45 @@ async function oneShot(admin: SupabaseClient, userId: string, scope: string): Pr
   return { data, error };
 }
 
+/** A one-shot claim: "first" when this call wrote the row, "repeat" when it was there, "unavailable" when the limiter could not be asked. Never throws. */
+async function claimOnce(admin: SupabaseClient, userId: string, scope: string, what: string): Promise<"first" | "repeat" | "unavailable"> {
+  try {
+    const { data, error } = await oneShot(admin, userId, scope);
+    if (error) {
+      console.warn(`[sets] couldn't claim ${what}:`, error.message);
+      return "unavailable";
+    }
+    if (data === true) return "first";
+    if (data === false) return "repeat";
+    console.warn(`[sets] couldn't claim ${what}: no answer`);
+    return "unavailable";
+  } catch (err) {
+    console.warn(`[sets] couldn't claim ${what}:`, message(err));
+    return "unavailable";
+  }
+}
+
 /**
  * Whether this delivery is the press's first. "unavailable" when the claim
  * could not be asked: the caller refuses the press then, as the pace
  * limiter does in the same outage.
  */
 export async function claimAstraPress(admin: SupabaseClient, userId: string, pressId: string): Promise<"first" | "repeat" | "unavailable"> {
+  return claimOnce(admin, userId, astraPressScope(pressId), "an Astra press");
+}
+
+/** One row under `scope`, idempotent (max 1): true when the row is there now, written by this call or before it. Never throws. */
+async function leaveMark(admin: SupabaseClient, userId: string, scope: string, what: string): Promise<boolean> {
   try {
-    const { data, error } = await oneShot(admin, userId, astraPressScope(pressId));
+    const { data, error } = await oneShot(admin, userId, scope);
     if (error) {
-      console.warn("[sets] couldn't claim an Astra press:", error.message);
-      return "unavailable";
+      console.warn(`[sets] couldn't mark ${what}:`, error.message);
+      return false;
     }
-    if (data === true) return "first";
-    if (data === false) return "repeat";
-    console.warn("[sets] couldn't claim an Astra press: no answer");
-    return "unavailable";
+    return data === true || data === false;
   } catch (err) {
-    console.warn("[sets] couldn't claim an Astra press:", message(err));
-    return "unavailable";
+    console.warn(`[sets] couldn't mark ${what}:`, message(err));
+    return false;
   }
 }
 
@@ -115,18 +162,38 @@ export async function claimAstraPress(admin: SupabaseClient, userId: string, pre
  * The press's end marker: saved or not. Idempotent (max 1). Never throws:
  * without it the page reads "running" until SET_EDIT_PRESS_LIFETIME_MS,
  * then judges by the saved copy (astra-follow.ts "lost") — late, not wrong.
+ * True when the marker is there (Helios Cut 4, step A5): a "saved" written
+ * the moment the change saved is not written again.
  */
-export async function endAstraPress(admin: SupabaseClient, userId: string, pressId: string, end: "saved" | "unsaved"): Promise<void> {
-  try {
-    const { error } = await oneShot(admin, userId, astraPressEndScope(pressId, end));
-    if (error) console.warn("[sets] couldn't mark an Astra press's end:", error.message);
-  } catch (err) {
-    console.warn("[sets] couldn't mark an Astra press's end:", message(err));
-  }
+export async function endAstraPress(admin: SupabaseClient, userId: string, pressId: string, end: "saved" | "unsaved"): Promise<boolean> {
+  return leaveMark(admin, userId, astraPressEndScope(pressId, end), "an Astra press's end");
+}
+
+/**
+ * The press reserved one of the month's changes (Helios Cut 4, step A5):
+ * written the moment it is reserved, so a press the platform stops from
+ * then on can be found to owe it back. Never throws; a marker that could
+ * not be written only means such a press keeps its change counted — the
+ * safe way round for money.
+ */
+export async function markAstraPressReserved(admin: SupabaseClient, userId: string, pressId: string): Promise<boolean> {
+  return leaveMark(admin, userId, astraPressMarkScope(pressId, "reserved"), "an Astra press's reserved change");
+}
+
+/**
+ * The one right to give a press's reserved change back (Helios Cut 4, step
+ * A5; critic item 13): claimed by whichever give-back asks first — the
+ * press's own or the read-back's (refundLostAstraPress). Only "first" gives;
+ * "repeat" (already given) and "unavailable" (the limiter could not be
+ * asked) give nothing, and the change stays counted — the safe way round for
+ * money, as giveBackAstraEdit's own failures are.
+ */
+export async function claimAstraPressGiveBack(admin: SupabaseClient, userId: string, pressId: string): Promise<"first" | "repeat" | "unavailable"> {
+  return claimOnce(admin, userId, astraPressMarkScope(pressId, "given"), "an Astra press's give-back");
 }
 
 /** Where a press stands, from its rows (the person's own, already filtered): an end marker first, saved over unsaved. */
-export function pressStateOf(rows: { scope: string; created_at: string }[], pressId: string, nowMs: number): Exclude<AstraPressKind, "unread"> {
+export function pressStateOf(rows: readonly { scope: string; created_at: string }[], pressId: string, nowMs: number): Exclude<AstraPressKind, "unread"> {
   if (rows.some((r) => r.scope === astraPressEndScope(pressId, "saved"))) return "saved";
   if (rows.some((r) => r.scope === astraPressEndScope(pressId, "unsaved"))) return "unsaved";
   const claim = rows.find((r) => r.scope === astraPressScope(pressId));
@@ -135,24 +202,52 @@ export function pressStateOf(rows: { scope: string; created_at: string }[], pres
   return nowMs - Date.parse(claim.created_at) > SET_EDIT_PRESS_LIFETIME_MS ? "lost" : "running";
 }
 
-/** Where a press stands on the server; "unread" when its rows could not be read. */
-export async function readAstraPress(admin: SupabaseClient, userId: string, pressId: string, nowMs: number = new Date().getTime()): Promise<AstraPressKind> {
+type PressRow = { scope: string; created_at: string };
+
+/** This person's rows of this press under the scopes asked; null when they could not be read. */
+async function pressRows(admin: SupabaseClient, userId: string, scopes: string[]): Promise<PressRow[] | null> {
   try {
-    const { data, error } = await admin
-      .from("api_rate_hits")
-      .select("scope, created_at")
-      .eq("user_id", userId)
-      .in("scope", [astraPressScope(pressId), astraPressEndScope(pressId, "saved"), astraPressEndScope(pressId, "unsaved")]);
+    const { data, error } = await admin.from("api_rate_hits").select("scope, created_at").eq("user_id", userId).in("scope", scopes);
     if (error) {
       console.warn("[sets] couldn't read an Astra press:", error.message);
-      return "unread";
+      return null;
     }
-    const rows = ((data ?? []) as { scope?: unknown; created_at?: unknown }[]).map((r) => ({ scope: String(r.scope), created_at: String(r.created_at) }));
-    return pressStateOf(rows, pressId, nowMs);
+    return ((data ?? []) as { scope?: unknown; created_at?: unknown }[]).map((r) => ({ scope: String(r.scope), created_at: String(r.created_at) }));
   } catch (err) {
     console.warn("[sets] couldn't read an Astra press:", message(err));
-    return "unread";
+    return null;
   }
+}
+
+const stateScopes = (pressId: string) => [astraPressScope(pressId), astraPressEndScope(pressId, "saved"), astraPressEndScope(pressId, "unsaved")];
+
+/** Where a press stands on the server; "unread" when its rows could not be read. */
+export async function readAstraPress(admin: SupabaseClient, userId: string, pressId: string, nowMs: number = new Date().getTime()): Promise<AstraPressKind> {
+  const rows = await pressRows(admin, userId, stateScopes(pressId));
+  return rows === null ? "unread" : pressStateOf(rows, pressId, nowMs);
+}
+
+/**
+ * A press the platform stopped gives back the change it reserved, once
+ * (Helios Cut 4, step A5, 2026-09-26 — the owner's decision D12): asked by
+ * the page's read-back (editor-actions.ts readAstraEdit). Only a press that
+ * is "lost" on its own rows — claimed, never ended, older than any delivery
+ * lives — that left its "reserved" marker, and whose change no give-back
+ * has claimed yet ("given"), within the claim's own window; then only as
+ * the first claimer of "given", so two read-backs at once give one. Never
+ * the try: a stopped press may have been billed (critic item 1). A lost
+ * press that had saved and whose "saved" marker failed gains the person one
+ * change (D12's accepted cost). Never throws: true when it gave one back now.
+ */
+export async function refundLostAstraPress(admin: SupabaseClient, userId: string, pressId: string, nowMs: number = new Date().getTime()): Promise<boolean> {
+  const rows = await pressRows(admin, userId, [...stateScopes(pressId), astraPressMarkScope(pressId, "reserved"), astraPressMarkScope(pressId, "given")]);
+  if (rows === null || pressStateOf(rows, pressId, nowMs) !== "lost") return false;
+  const claim = rows.find((r) => r.scope === astraPressScope(pressId));
+  if (!claim || nowMs - Date.parse(claim.created_at) > SET_EDIT_PRESS_WINDOW_SECONDS * 1000) return false;
+  if (!rows.some((r) => r.scope === astraPressMarkScope(pressId, "reserved"))) return false;
+  if (rows.some((r) => r.scope === astraPressMarkScope(pressId, "given"))) return false;
+  if ((await claimAstraPressGiveBack(admin, userId, pressId)) !== "first") return false;
+  return giveBackAstraEdit(admin, userId);
 }
 
 /**

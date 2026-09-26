@@ -1,6 +1,9 @@
 import { isDeepStrictEqual } from "node:util";
 import { describe, expect, it } from "vitest";
 import {
+  SET_EDIT_ACTION_DEADLINE_MS,
+  SET_EDIT_DEADLINE_MS,
+  SET_EDIT_POLL_MS,
   SET_MATCH_DEADLINE_MS,
   SET_MATCH_EFFORT,
   SET_MATCH_INPUT_TOKENS,
@@ -14,6 +17,7 @@ import {
   SET_TAKE_CLIP_START_BY_MS,
   isCurrentSetThumb,
   photoFit,
+  setEditPollDeadline,
   setPhotoPath,
   setThumbPath,
 } from "./set-config";
@@ -154,5 +158,25 @@ describe("a Helios press's time", () => {
 
   it("starts a take's clip with a minute to spare for its start and records", () => {
     expect(SET_TAKE_CLIP_START_BY_MS).toBeLessThanOrEqual(250_000);
+  });
+});
+
+// An Astra edit's wait (Helios Cut 4, step A5, 2026-09-26): a delivery the
+// platform stopped at the page's 300 s never reached its give-back or its
+// end marker. The clock now runs from the action's start, as the match's does.
+describe("an Astra edit's wait", () => {
+  it("stops 180 s after the submit, and never past 225 s from the action's start", () => {
+    expect(setEditPollDeadline(0, 10_000)).toBe(10_000 + SET_EDIT_DEADLINE_MS);
+    expect(setEditPollDeadline(0, 100_000)).toBe(SET_EDIT_ACTION_DEADLINE_MS);
+    expect(SET_EDIT_DEADLINE_MS).toBe(180_000);
+    expect(SET_EDIT_ACTION_DEADLINE_MS).toBe(225_000);
+  });
+
+  it("leaves 47.5 s of the page's 300 s after the last poll and the cancel", () => {
+    // The last poll starts within one interval of the deadline and times out
+    // at 15 s; the cancel after it at 10 s (providers/astra.ts).
+    const lastWord = SET_EDIT_ACTION_DEADLINE_MS + SET_EDIT_POLL_MS + 15_000 + 10_000;
+    expect(lastWord).toBe(252_500);
+    expect(300_000 - lastWord).toBe(47_500);
   });
 });

@@ -10,6 +10,7 @@ import {
   SET_EDIT_FAILED,
   SET_EDIT_REFUSED,
   SET_EDIT_STILL_WORKING,
+  SET_EDIT_TIMED_OUT,
   SET_EDIT_TOO_BIG,
   SET_EDIT_TOO_FAST,
   SET_EDIT_TRIES_USED,
@@ -20,7 +21,10 @@ import {
   setEditMonthlyCapMessage,
 } from "./messages";
 import {
+  SET_EDIT_ACTION_DEADLINE_MS,
+  SET_EDIT_DEADLINE_MS,
   SET_EDIT_MAX_SPEC_CHARS,
+  SET_EDIT_POLL_MS,
   SET_EDIT_TRIES_MONTH_SCOPE,
   SET_EDITS_MONTH_SCOPE,
   setEditTriesMonthlyLimit,
@@ -63,7 +67,11 @@ let limited: Record<string, boolean>;
 let used: number | null;
 /** The month's tries as data.ts countAstraTriesThisMonth reads them (Helios Cut 4, step A3). */
 let triesUsed: number | null;
-let answer: { state: "done"; text: string; usage: null; costUsd: number } | { state: "failed"; kind: "incomplete"; detail: string; usage: null; costUsd: number };
+let answer:
+  | { state: "done"; text: string; usage: null; costUsd: number }
+  | { state: "failed"; kind: "incomplete"; detail: string; usage: null; costUsd: number }
+  // Astra still at it, however often it is asked (the deadline's tests).
+  | { state: "working" };
 /**
  * What submitAstraJob does: accept, refuse, or throw — or fail as
  * providers/astra.ts reports it (Helios Cut 4, step A2): "unbilled", OpenAI
@@ -83,8 +91,17 @@ let claimDown: boolean;
 /** Where readAstraPress says the press stands, and what else happens as it reads. */
 let pressState: AstraPressKind;
 let onReadPress: () => void;
-/** Each end marker, with how many writes had landed when it was left. */
+/** Each end marker, with how many writes had landed when it was left; whether a marker can be written at all. */
 const ends: { end: string; writes: number }[] = [];
+let endDown: boolean;
+/** Presses whose change a give-back has claimed (astra-press.ts claimAstraPressGiveBack, Helios Cut 4, step A5), and whether the claim can be asked. */
+const givenClaimed = new Set<string>();
+let givenDown: boolean;
+/** How long the gate on the person's words takes, in the test's clock (the deadline's tests). */
+let gateMs: number;
+/** When each poll of Astra started, and when the job was cancelled. */
+const polledAt: number[] = [];
+const cancelledAt: number[] = [];
 const steps: string[] = [];
 const limits: { scope: string; windowSeconds: number; max: number }[] = [];
 const writes: unknown[] = [];
@@ -122,6 +139,7 @@ vi.mock("@/lib/supabase/server", () => ({
         },
         move: async (from: string, to: string) => {
           if (moveThrows) throw new Error("storage down");
+          steps.push("model move");
           storage.push(`move ${bucket} ${from} → ${to}`);
           return { error: null };
         },
@@ -165,6 +183,7 @@ vi.mock("@/lib/generations/policy-log", () => ({
   gatePrompt: async ({ prompt }: { prompt: string }) => {
     steps.push("gate");
     gated.push(prompt);
+    if (gateMs > 0) await new Promise((resolve) => setTimeout(resolve, gateMs));
     if (prompt.includes("forbidden")) {
       const { refusalProviderFor } = await import("../generations/refusal-attribution");
       refusals.push({ prompt, provider: await refusalProviderFor(prompt, async (text) => text.includes("forbidden")) });
@@ -188,10 +207,13 @@ vi.mock("@/lib/generations/providers/astra", () => ({
   },
   // A later tick, so two deliveries of one press really overlap.
   pollAstraJob: async () => {
+    polledAt.push(Date.now());
     await new Promise((resolve) => setTimeout(resolve, 0));
     return answer;
   },
-  cancelAstraJob: async () => {},
+  cancelAstraJob: async () => {
+    cancelledAt.push(Date.now());
+  },
 }));
 vi.mock("@/lib/openai/safety-id", () => ({ openAiSafetyId: () => "safety" }));
 vi.mock("@/lib/sets/access", () => ({
@@ -226,12 +248,31 @@ vi.mock("@/lib/sets/astra-press", async () => ({
   },
   endAstraPress: async (_admin: unknown, _user: string, _id: string, end: string) => {
     steps.push(`end ${end}`);
+    if (endDown) return false;
     ends.push({ end, writes: writes.length });
+    return true;
+  },
+  markAstraPressReserved: async () => {
+    steps.push("reserved");
+    return true;
+  },
+  claimAstraPressGiveBack: async (_admin: unknown, _user: string, id: string) => {
+    steps.push("given");
+    if (givenDown) return "unavailable";
+    if (givenClaimed.has(id)) return "repeat";
+    givenClaimed.add(id);
+    return "first";
   },
   readAstraPress: async () => {
     steps.push("read press");
     onReadPress();
     return pressState;
+  },
+  // astra-press.test.ts holds the real one against a fake table: here, a stopped press's change comes back.
+  refundLostAstraPress: async () => {
+    steps.push("refund lost");
+    if (typeof used === "number") used -= 1;
+    return true;
   },
   giveBackAstraEdit: async (_admin: unknown, _user: string, scope: string = SET_EDITS_MONTH_SCOPE) => {
     if (scope === SET_EDIT_TRIES_MONTH_SCOPE) {
@@ -298,6 +339,12 @@ beforeEach(() => {
   pressState = "none";
   onReadPress = () => {};
   ends.length = 0;
+  endDown = false;
+  givenClaimed.clear();
+  givenDown = false;
+  gateMs = 0;
+  polledAt.length = 0;
+  cancelledAt.length = 0;
   steps.length = 0;
   limits.length = 0;
   writes.length = 0;
@@ -737,6 +784,158 @@ describe("one Astra job per press", () => {
   });
 });
 
+// A press the platform cuts off (Helios Cut 4, step A5, 2026-09-26 — the
+// owner's decision D12; operator: "resume"). A delivery stopped at the
+// page's 300 s never reached its give-back, and the page said "Astra didn't
+// change the set" while the change stayed spent. Now Astra is waited for
+// only until 225 s from the action's start, the press marks its change
+// reserved and its save the moment each happens, and every give-back of a
+// press's change is claimed once (critic item 13), so the page's read-back
+// can give a stopped press its change — once.
+describe("a press the platform cuts off", () => {
+  const ask = (press?: string) => editSetWithAstra(SET, "make the first barrier brick red", press);
+  const cap = setEditsMonthlyLimit("growth", false);
+  const failed = { state: "failed", kind: "incomplete", detail: "max_output_tokens", usage: null, costUsd: 0.62 } as const;
+
+  /** An edit whose Astra never answers, its gate taking `gate` ms: when it polled, cancelled and ended, from its start. */
+  const waited = async (gate: number, press: string) => {
+    vi.useFakeTimers();
+    try {
+      answer = { state: "working" };
+      gateMs = gate;
+      const start = Date.now();
+      const out = ask(press);
+      await vi.advanceTimersByTimeAsync(400_000);
+      return { out: await out, first: polledAt[0] - start, last: Math.max(...polledAt) - start, cancelled: cancelledAt.map((t) => t - start) };
+    } finally {
+      vi.useRealTimers();
+    }
+  };
+
+  it("stops waiting for Astra 225 s after the action started, however late Astra was asked", async () => {
+    // Asked 100 s in (a slow gate): 180 s from the submit would poll on to 280 s.
+    const late = await waited(100_000, PRESS);
+    expect(late.out).toEqual({ error: SET_EDIT_TIMED_OUT, editsLeft: cap - 2 });
+    expect(late.first).toBe(100_000);
+    expect(late.last).toBeGreaterThan(SET_EDIT_ACTION_DEADLINE_MS - SET_EDIT_POLL_MS);
+    expect(late.last).toBeLessThanOrEqual(SET_EDIT_ACTION_DEADLINE_MS + SET_EDIT_POLL_MS);
+    expect(late.cancelled).toHaveLength(1);
+    expect(late.cancelled[0]).toBeLessThan(300_000);
+    expect(ends.map((e) => e.end)).toEqual(["unsaved"]);
+    // Asked at once: still 180 s from the submit, as before.
+    polledAt.length = 0;
+    cancelledAt.length = 0;
+    const early = await waited(0, LATER);
+    expect(early.last).toBeGreaterThan(SET_EDIT_DEADLINE_MS - SET_EDIT_POLL_MS);
+    expect(early.last).toBeLessThanOrEqual(SET_EDIT_DEADLINE_MS + SET_EDIT_POLL_MS);
+  });
+
+  it("runs the clock from the action's start (read as source)", () => {
+    const src = readFileSync(join(__dirname, "editor-actions.ts"), "utf8");
+    expect(src).toContain("const deadline = setEditPollDeadline(startedAt, new Date().getTime());");
+    for (const fn of ["export async function editSetWithAstra(", "export async function rebuildThingFromPhotos("]) {
+      const body = src.slice(src.indexOf(fn));
+      // Taken first, before the session, the set or any photo is read.
+      expect(body.indexOf("const startedAt = new Date().getTime();"), fn).toBeGreaterThan(-1);
+      expect(body.indexOf("const startedAt = new Date().getTime();"), fn).toBeLessThan(body.indexOf("await setsAccess()"));
+      expect(body.slice(0, body.indexOf("\n}\n"))).toMatch(/await askAstra\([^;]*, startedAt\);/);
+    }
+  });
+
+  it("marks its change reserved the moment the month's change is taken — only a press with an id that reserved one", async () => {
+    await ask(PRESS);
+    expect(steps.slice(steps.indexOf("month"), steps.indexOf("month") + 3)).toEqual(["month", "reserved", "tries"]);
+    steps.length = 0;
+    await ask();
+    expect(steps).not.toContain("reserved");
+    // At the month's cap nothing was reserved.
+    steps.length = 0;
+    limited[SET_EDITS_MONTH_SCOPE] = true;
+    used = cap;
+    await ask(LATER);
+    expect(steps).not.toContain("reserved");
+    // An admin reserves nothing.
+    limited = {};
+    access = { ...access, plan: "none", isAdmin: true };
+    steps.length = 0;
+    await ask("5f2a4b5c-6d7e-4f80-9a1b-2c3d4e5f6a7b");
+    expect(steps).not.toContain("reserved");
+  });
+
+  it("marks a saved change 'saved' the moment it is saved: before the model's move, and never again after", async () => {
+    access.isAdmin = true;
+    const car = setElements(SPEC).find((e) => e.kind === "car")!;
+    photos = [{ refId: "33333331-3333-4333-8333-333333333333", anchor: car.key, slot: 1, at: 1, url: "", path: `${USER}/sets/${SET}.ref.${car.key}.1.x.jpg` }];
+    modelFiles = [{ path: `${USER}/sets/${SET}.model.${car.key}.abc.f.glb`, key: car.key, at: 1790205070123, flip: true }];
+    answer = { state: "done", text: JSON.stringify({ objects: thingLocalBlocks(SPEC, car).map((o) => (o.material === "paint" ? { ...o, color: "#1d4fb8" } : o)) }), usage: null, costUsd: 0.2 };
+    expect((await rebuildThingFromPhotos(SET, car.key, PRESS)).error).toBeNull();
+    expect(steps.indexOf("end saved")).toBeGreaterThan(-1);
+    expect(steps.indexOf("end saved")).toBeLessThan(steps.indexOf("model move"));
+    expect(steps.filter((x) => x.startsWith("end "))).toEqual(["end saved"]);
+    expect(ends).toEqual([{ end: "saved", writes: 1 }]);
+  });
+
+  it("writes 'saved' again on the way out when the first write of it failed, never 'unsaved'", async () => {
+    endDown = true;
+    expect((await ask(PRESS)).error).toBeNull();
+    expect(steps.filter((x) => x.startsWith("end "))).toEqual(["end saved", "end saved"]);
+  });
+
+  it("gives a press's change back under its one 'given' claim, and gives nothing when another give-back claimed it first", async () => {
+    answer = failed;
+    expect(await ask(PRESS)).toEqual({ error: SET_EDIT_FAILED, editsLeft: cap - 2 });
+    expect(steps.indexOf("given")).toBeGreaterThan(-1);
+    expect(steps.indexOf("given")).toBeLessThan(steps.indexOf("give back"));
+    // Already given (the page's read-back got there first): nothing more, and the count says so.
+    used = 3;
+    steps.length = 0;
+    givenClaimed.add(LATER);
+    expect(await ask(LATER)).toEqual({ error: SET_EDIT_FAILED, editsLeft: cap - 3 });
+    expect(steps).toContain("given");
+    expect(steps).not.toContain("give back");
+    // A claim that can't be asked gives nothing: the change stays counted.
+    steps.length = 0;
+    givenDown = true;
+    expect(await ask("5f2a4b5c-6d7e-4f80-9a1b-2c3d4e5f6a7b")).toEqual({ error: SET_EDIT_FAILED, editsLeft: cap - 3 });
+    expect(steps).not.toContain("give back");
+    // A press with no id (a tab from before presses had one) gives back as before, with no claim.
+    steps.length = 0;
+    expect(await ask()).toEqual({ error: SET_EDIT_FAILED, editsLeft: cap - 2 });
+    expect(steps).not.toContain("given");
+    expect(steps.filter((x) => x === "give back")).toHaveLength(1);
+  });
+
+  it("gives an answer that changed nothing, and a paused press, their change back under the same claim", async () => {
+    answer = { state: "done", text: JSON.stringify(SPEC), usage: null, costUsd: 0.31 };
+    expect(await ask(PRESS)).toMatchObject({ error: null, changed: 0 });
+    expect(steps.filter((x) => x === "given")).toHaveLength(1);
+    steps.length = 0;
+    limited[SET_EDIT_TRIES_MONTH_SCOPE] = true;
+    expect(await ask(LATER)).toMatchObject({ error: SET_EDIT_TRIES_USED, paused: true });
+    expect(steps.slice(steps.indexOf("month"))).toEqual(["month", "reserved", "tries", "given", "give back", "count", "end unsaved"]);
+  });
+
+  it("gives a stopped press's change back as the page reads it, before the count — and only a stopped press", async () => {
+    pressState = "lost";
+    used = 5;
+    expect(await readAstraEdit(SET, PRESS)).toMatchObject({ error: null, press: "lost", editsLeft: 6 });
+    expect(steps).toEqual(["read press", "refund lost", "left"]);
+    for (const press of ["none", "running", "saved", "unsaved", "unread"] as const) {
+      steps.length = 0;
+      pressState = press;
+      await readAstraEdit(SET, PRESS);
+      expect(steps, press).not.toContain("refund lost");
+    }
+    // Not for a set that isn't theirs, or a session that expired.
+    pressState = "lost";
+    steps.length = 0;
+    expect(await readAstraEdit("not-a-set", PRESS)).toEqual({ error: SET_NOT_FOUND });
+    access = { error: SETS_SESSION_EXPIRED } as unknown as Access;
+    expect(await readAstraEdit(SET, PRESS)).toEqual({ error: SETS_SESSION_EXPIRED });
+    expect(steps).not.toContain("refund lost");
+  });
+});
+
 // What became of a press, for the page after a dropped connection
 // (astra-follow.ts, 2026-09-25).
 // Undo that gives back Astra's words too (Helios Cut 2, step 2, 2026-09-25 —
@@ -977,7 +1176,8 @@ describe("readAstraEdit", () => {
     for (const press of ["saved", "unsaved", "lost"] as const) {
       pressState = press;
       const r = await readAstraEdit(SET, PRESS);
-      expect(r).toMatchObject({ error: null, press, editsLeft: 7 });
+      // A stopped press's change comes back as it is read (Helios Cut 4, step A5): one more left.
+      expect(r).toMatchObject({ error: null, press, editsLeft: press === "lost" ? 8 : 7 });
       if (r.error === null) expect(r.spec.objects[0].color).toBe("#aa3322");
     }
     for (const press of ["none", "unread"] as const) {
@@ -1060,7 +1260,8 @@ describe("a thing rebuilt from its photos", () => {
     answer = { state: "done", text: blue(), usage: null, costUsd: 0.2 };
     expect((await rebuildThingFromPhotos(SET, car.key, LATER)).error).toBeNull();
     expect(steps).not.toContain("give back");
-    expect(steps).toEqual(["claim", "tries read", "pace", "month", "tries", "count", "astra", "end saved"]);
+    // The press marks its change reserved the moment the month's is taken (Helios Cut 4, step A5).
+    expect(steps).toEqual(["claim", "tries read", "pace", "month", "reserved", "tries", "count", "astra", "end saved"]);
   });
 
   it("gives the change back when the call throws, and passes the throw on", async () => {

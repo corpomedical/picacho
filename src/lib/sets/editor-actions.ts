@@ -35,18 +35,27 @@ import {
 } from "@/lib/sets/messages";
 import { editFrameOf, editMeaningOf, setEditRequest } from "@/lib/sets/set-edit-prompt";
 import {
-  SET_EDIT_DEADLINE_MS,
   SET_EDIT_MAX_CHARS,
   SET_EDIT_MAX_SPEC_CHARS,
   SET_EDIT_PER_10_MIN,
   SET_EDIT_POLL_MS,
   SET_EDIT_TRIES_MONTH_SCOPE,
   SET_EDITS_MONTH_SCOPE,
+  setEditPollDeadline,
   setEditTriesMonthlyLimit,
   setEditsMonthlyLimit,
 } from "@/lib/sets/set-config";
 import { astraEditsLeft, astraTriesPaused, countAstraEditsThisMonth } from "@/lib/sets/data";
-import { claimAstraPress, endAstraPress, giveBackAstraEdit, parseAstraPressId, readAstraPress } from "@/lib/sets/astra-press";
+import {
+  claimAstraPress,
+  claimAstraPressGiveBack,
+  endAstraPress,
+  giveBackAstraEdit,
+  markAstraPressReserved,
+  parseAstraPressId,
+  readAstraPress,
+  refundLostAstraPress,
+} from "@/lib/sets/astra-press";
 import { editUndoOf, heldTextOf, openReaderMeaning, sealedEditText, type EditUndo } from "@/lib/sets/edit-seal";
 import type { AstraEditRead } from "@/lib/sets/astra-follow";
 import { cleanText, normaliseSetSpec, parseSetSpecText, specTextForGate, type SetSpec } from "@/lib/sets/set-spec";
@@ -151,8 +160,13 @@ export async function clearSetEdit(setId: string): Promise<{ error: string | nul
 
 type Access = Extract<Awaited<ReturnType<typeof setsAccess>>, { error: null }>;
 
-/** A change reserved from the month: given back unless the press saves. Its try is given back only if OpenAI never billed it. */
-type Slot = { error: null; editsLeft: number | null; monthly: number; reserved: boolean; given?: boolean; tryGiven?: boolean };
+/**
+ * A change reserved from the month: given back unless the press saves. Its
+ * try is given back only if OpenAI never billed it. `press` is the press's
+ * id (null for a tab from before presses had one): its give-back is claimed
+ * once under it (astra-press.ts, Helios Cut 4, step A5).
+ */
+type Slot = { error: null; editsLeft: number | null; monthly: number; reserved: boolean; press: string | null; given?: boolean; tryGiven?: boolean };
 
 /**
  * One of the month's Astra changes, at the edits' own pace
@@ -172,11 +186,11 @@ type Slot = { error: null; editsLeft: number | null; monthly: number; reserved: 
  * SET_EDIT_SPARE_TRIES (set-config.ts has the money). The pace still
  * counts every try.
  */
-async function astraChangeSlot(access: Access): Promise<{ error: string; editsLeft?: number | null; paused?: true } | Slot> {
+async function astraChangeSlot(access: Access, press: string | null): Promise<{ error: string; editsLeft?: number | null; paused?: true } | Slot> {
   const { userId } = access;
   if (await rateLimited(userId, "set-astra-edit", 60 * 10, SET_EDIT_PER_10_MIN)) return { error: SET_EDIT_TOO_FAST };
   const monthly = setEditsMonthlyLimit(access.plan, access.isAdmin);
-  if (monthly < 0) return { error: null, editsLeft: null, monthly, reserved: false };
+  if (monthly < 0) return { error: null, editsLeft: null, monthly, reserved: false, press };
   const since = monthlyWindowStart(access.periodStart).getTime();
   const windowSeconds = Math.max(1, Math.ceil((new Date().getTime() - since) / 1000));
   // Refused at the cap: nothing was reserved, so nothing is given back.
@@ -194,7 +208,11 @@ async function astraChangeSlot(access: Access): Promise<{ error: string; editsLe
     if (used === null || used < monthly) return { error: SET_EDIT_COUNT_UNREAD };
     return { error: setEditMonthlyCapMessage(monthly), editsLeft: 0 };
   }
-  const slot: Slot = { error: null, editsLeft: null, monthly, reserved: true };
+  const slot: Slot = { error: null, editsLeft: null, monthly, reserved: true, press };
+  // The press's "reserved" marker, the moment the change is taken (Helios
+  // Cut 4, step A5): a press the platform stops from here on is owed it
+  // back, and the page's read-back gives it (readAstraEdit).
+  if (press !== null) await markAstraPressReserved(createAdminClient(), userId, press);
   // Too many tries that didn't land this month: the change just reserved goes back.
   if (await rateLimited(userId, SET_EDIT_TRIES_MONTH_SCOPE, windowSeconds, setEditTriesMonthlyLimit(access.plan, access.isAdmin))) {
     return { error: SET_EDIT_TRIES_USED, editsLeft: await giveBackAstraChange(access, slot), paused: true };
@@ -209,11 +227,19 @@ async function astraChangeSlot(access: Access): Promise<{ error: string; editsLe
  * A press that did not save gives its change back to the month, once
  * however often it is asked (a later throw after a returned failure never
  * refunds twice), and says how many are left after it.
+ *
+ * Once per press, too (Helios Cut 4, step A5; critic item 13): a press with
+ * an id first claims its one "given" row, so a delivery the platform stops
+ * after this give-back and before its "unsaved" marker — which then reads
+ * "lost" — is never given its change a second time by the read-back
+ * (astra-press.ts refundLostAstraPress). A claim that is not the first
+ * gives nothing; the change stays counted.
  */
 async function giveBackAstraChange(access: Access, slot: Slot): Promise<number | null> {
   if (!slot.reserved || slot.given) return slot.editsLeft;
   slot.given = true;
-  await giveBackAstraEdit(createAdminClient(), access.userId);
+  const admin = createAdminClient();
+  if (slot.press === null || (await claimAstraPressGiveBack(admin, access.userId, slot.press)) === "first") await giveBackAstraEdit(admin, access.userId);
   const used = await countAstraEditsThisMonth(access.userId, access.periodStart);
   slot.editsLeft = used === null ? null : Math.max(0, slot.monthly - used);
   return slot.editsLeft;
@@ -240,34 +266,50 @@ async function giveBackAstraTry(access: Access, slot: Slot): Promise<void> {
  * gated, paced, counted or sent to Astra — and the page reads back what
  * the first one saved (astra-follow.ts). The first delivery always leaves
  * an end marker, saved or not, so that read-back has a definite answer;
- * `run` calls `kept` the moment its change is saved. A press with no id
+ * `run` awaits `kept` the moment its change is saved. `id` is the press's,
+ * for its marks (astraChangeSlot, giveBackAstraChange). A press with no id
  * (a tab from before this deploy) is served as before.
+ *
+ * The "saved" marker is written inside `kept`, awaited, right after the save
+ * (Helios Cut 4, step A5, 2026-09-26): a delivery the platform stops after
+ * it saved reads "saved", never "lost" — a lost press with a reserved change
+ * is given it back by the read-back. The finally still leaves the end marker
+ * for every other way out, and "saved" again if `kept`'s write failed.
  */
 async function oncePerPress<T extends { error: string | null }>(
   userId: string,
   pressId: unknown,
-  run: (kept: () => void) => Promise<T>,
+  run: (press: { id: string | null; kept: () => Promise<void> }) => Promise<T>,
 ): Promise<T | { error: string; pending: true } | { error: string }> {
   const press = parseAstraPressId(pressId);
-  if (press === null) return run(() => {});
+  if (press === null) return run({ id: null, kept: async () => {} });
   const claim = await claimAstraPress(createAdminClient(), userId, press);
   if (claim === "repeat") return { error: SET_EDIT_STILL_WORKING, pending: true };
   // The claim could not be asked: refused as the pace limiter refuses in the same outage (it fails closed).
   if (claim === "unavailable") return { error: SET_EDIT_TOO_FAST };
   let saved = false;
+  let marked = false;
   try {
-    return await run(() => {
-      saved = true;
+    return await run({
+      id: press,
+      kept: async () => {
+        saved = true;
+        marked = await endAstraPress(createAdminClient(), userId, press, "saved");
+      },
     });
   } finally {
-    await endAstraPress(createAdminClient(), userId, press, saved ? "saved" : "unsaved");
+    if (!marked) await endAstraPress(createAdminClient(), userId, press, saved ? "saved" : "unsaved");
   }
 }
 
 /**
  * Astra's answer, waited for inside the action, like a match: polls until
  * the deadline, well inside the set page's 300 s budget, then cancels what
- * nobody will collect. `billed: false` only when OpenAI certainly never
+ * nobody will collect. The deadline is 180 s from the submit and never past
+ * 225 s from `startedAt`, the action's own start (set-config.ts
+ * setEditPollDeadline; Helios Cut 4, step A5): a press whose free checks,
+ * gate or photos took long no longer polls on until the platform stops it at
+ * 300 s, before its give-back or its marker. `billed: false` only when OpenAI certainly never
  * made the job (providers/astra.ts neverBilled; Helios Cut 4, step A2): the
  * caller gives the try back then, and says Astra couldn't be reached. Every
  * other failure — a refusal, a poll that failed, a timeout — may have been
@@ -278,6 +320,7 @@ async function askAstra(
   request: AstraJobRequest,
   what: string,
   failed: string,
+  startedAt: number,
 ): Promise<{ error: string; billed: boolean } | { error: null; text: string }> {
   const submitted = await submitAstraJob(request);
   if (!submitted.ok) {
@@ -285,7 +328,7 @@ async function askAstra(
     if (submitted.neverBilled === true) return { error: SET_EDIT_UNAVAILABLE, billed: false };
     return { error: submitted.kind === "refused" ? SET_EDIT_REFUSED : failed, billed: true };
   }
-  const deadline = new Date().getTime() + SET_EDIT_DEADLINE_MS;
+  const deadline = setEditPollDeadline(startedAt, new Date().getTime());
   let polled = await pollAstraJob(submitted.responseId);
   while (polled.state === "working" && new Date().getTime() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, SET_EDIT_POLL_MS));
@@ -341,6 +384,8 @@ export async function editSetWithAstra(
   | { error: string; editsLeft?: number | null; pending?: true; paused?: true }
   | { error: null; spec: SetSpec; changed: number; editsLeft: number | null; undo: EditUndo | null }
 > {
+  // The action's own start: Astra is waited for inside the page's 300 s from here (askAstra).
+  const startedAt = new Date().getTime();
   const access = await setsAccess();
   if (access.error !== null) return { error: access.error };
   const { userId } = access;
@@ -360,7 +405,7 @@ export async function editSetWithAstra(
   // Everything above is free and gives a repeat the same answer. The press
   // is claimed before the gate, so a repeat delivery never logs a second
   // policy refusal, and before the pace, the month and Astra.
-  return oncePerPress(userId, pressId, async (kept) => {
+  return oncePerPress(userId, pressId, async ({ id: press, kept }) => {
     // The month's tries spent: Astra is paused on this person's sets
     // (Helios Cut 4, step A3, 2026-09-26). Said before the gate, so a press
     // that can't run spends no read of the words (a classifier call) and no
@@ -382,13 +427,13 @@ export async function editSetWithAstra(
       if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
       throw err;
     }
-    const slot = await astraChangeSlot(access);
+    const slot = await astraChangeSlot(access, press);
     if (slot.error !== null) return slot;
 
     // From here every answer that does not save gives the change back; so
     // does a throw, which is then passed on.
     try {
-      const answer = await askAstra(setId, setEditRequest(working, text, openAiSafetyId(userId), extra), "edit", SET_EDIT_FAILED);
+      const answer = await askAstra(setId, setEditRequest(working, text, openAiSafetyId(userId), extra), "edit", SET_EDIT_FAILED, startedAt);
       if (answer.error !== null) {
         if (!answer.billed) await giveBackAstraTry(access, slot);
         return { error: answer.error, editsLeft: await giveBackAstraChange(access, slot) };
@@ -434,7 +479,7 @@ export async function editSetWithAstra(
 
       const saved = await writeEdited(setId, userId, next);
       if (saved.error !== null) return { error: saved.error, editsLeft: await giveBackAstraChange(access, slot) };
-      kept();
+      await kept();
       return { error: null, spec: next, changed: countSpecChanges(working, next), editsLeft: slot.editsLeft, undo: editUndoOf(setId, userId, working) };
     } catch (err) {
       await giveBackAstraChange(access, slot);
@@ -461,6 +506,8 @@ export async function rebuildThingFromPhotos(
   | { error: string; editsLeft?: number | null; pending?: true; paused?: true }
   | { error: null; spec: SetSpec; changed: number; key: string; blocks: number; editsLeft: number | null }
 > {
+  // The action's own start, as editSetWithAstra's: the photos' download counts against the 300 s too.
+  const startedAt = new Date().getTime();
   const access = await setsAccess();
   if (access.error !== null) return { error: access.error };
   const { userId } = access;
@@ -492,7 +539,7 @@ export async function rebuildThingFromPhotos(
 
   // Claimed before the photos are downloaded, so a repeat delivery is
   // caught during those seconds too (oncePerPress).
-  return oncePerPress(userId, pressId, async (kept) => {
+  return oncePerPress(userId, pressId, async ({ id: press, kept }) => {
     // Paused on the month's tries (step A3): said before any photo is read.
     if (await astraTriesPaused(access)) return { error: SET_EDIT_TRIES_USED, paused: true as const };
     const photos: string[] = [];
@@ -505,12 +552,12 @@ export async function rebuildThingFromPhotos(
       photos.push(`data:image/jpeg;base64,${Buffer.from(await data.arrayBuffer()).toString("base64")}`);
     }
 
-    const slot = await astraChangeSlot(access);
+    const slot = await astraChangeSlot(access, press);
     if (slot.error !== null) return slot;
     // From here every answer that does not save gives the change back; so
     // does a throw, which is then passed on.
     try {
-      const answer = await askAstra(setId, thingRebuildRequest(working, thing, photos, openAiSafetyId(userId)), "rebuild", THING_REBUILD_FAILED);
+      const answer = await askAstra(setId, thingRebuildRequest(working, thing, photos, openAiSafetyId(userId)), "rebuild", THING_REBUILD_FAILED, startedAt);
       if (answer.error !== null) {
         if (!answer.billed) await giveBackAstraTry(access, slot);
         return { error: answer.error, editsLeft: await giveBackAstraChange(access, slot) };
@@ -525,7 +572,8 @@ export async function rebuildThingFromPhotos(
       const next = holdEditedText(spliced.spec, owned.edited ? [owned.edited, owned.spec] : [owned.spec]);
       const saved = await writeEdited(setId, userId, next);
       if (saved.error !== null) return { error: saved.error, editsLeft: await giveBackAstraChange(access, slot) };
-      kept();
+      // Marked saved before the model's move, which may take a while.
+      await kept();
 
       // A model file kept on the thing (thing-model.ts) follows it to its new
       // key. The rebuild is saved already: a failure here is logged, and never
@@ -594,17 +642,25 @@ export async function undoAstraEdit(
  * the press has ended. The person's own set, and their own press rows only.
  * No limiter, like the other reads: the page reads at most every 4 s, for
  * at most ~350 s.
+ *
+ * A press the platform stopped ("lost") gives back the change it reserved
+ * here, once (astra-press.ts refundLostAstraPress; Helios Cut 4, step A5 —
+ * the owner's decision D12), before the count is read, so the page's count
+ * goes back up. Only while a page follows the press: a press whose tab was
+ * closed is never read back, and keeps its change counted.
  */
 export async function readAstraEdit(setId: string, pressId: string): Promise<AstraEditRead> {
   const access = await setsAccess();
   if (access.error !== null) return { error: access.error };
   const press = parseAstraPressId(pressId);
   if (press === null) return { error: SET_NOT_FOUND };
+  const admin = createAdminClient();
   // The press's end marker is written after its save, so it is read first:
   // a spec read after a "saved" is never older than that save.
-  const state = await readAstraPress(createAdminClient(), access.userId, press);
+  const state = await readAstraPress(admin, access.userId, press);
   const owned = await ownedSpecs(setId, access.userId);
   if (owned.error !== null) return { error: owned.error };
+  if (state === "lost") await refundLostAstraPress(admin, access.userId, press);
   const ended = state === "saved" || state === "unsaved" || state === "lost";
   return { error: null, press: state, spec: owned.edited ?? owned.spec, ...(ended ? { editsLeft: await astraEditsLeft(access) } : {}) };
 }

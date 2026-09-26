@@ -77,6 +77,18 @@ describe("followAstraEdit", () => {
     expect(await follow(rig([at("lost", BEFORE, 1)]))).toEqual({ kind: "unsaved", error: SET_EDIT_NOT_SAVED, editsLeft: 1 });
   });
 
+  // Helios Cut 4, step A5 (2026-09-26): the read gives a stopped press's
+  // reserved change back before it counts, so the count the page is handed
+  // is the one after — up by one from the count it had before the press.
+  it("hands the page the count after a stopped press's change came back, and says nothing changed", async () => {
+    const hadBefore = 3;
+    const r = rig([at("running", BEFORE), at("lost", BEFORE, hadBefore)]);
+    const out = await follow(r);
+    expect(out).toEqual({ kind: "unsaved", error: SET_EDIT_NOT_SAVED, editsLeft: hadBefore });
+    // "Nothing was counted" now holds for it: the press had reserved one of hadBefore + 1 and gave it back.
+    expect(SET_EDIT_NOT_SAVED).not.toMatch(/count|used/i);
+  });
+
   it("reads again after a read that threw, and lets go when a deploy has left the tab behind", async () => {
     const offline = rig([{ thrown: new TypeError("Failed to fetch") }, at("saved", AFTER)]);
     expect((await follow(offline, { stop: () => false })).kind).toBe("saved");

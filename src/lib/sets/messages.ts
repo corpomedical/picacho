@@ -139,7 +139,7 @@ export const SET_EDIT_TIMED_OUT = "That change took too long — try again in a 
  * It never says try again — the first delivery may still land.
  */
 export const SET_EDIT_STILL_WORKING = "Astra is still on that change — it will show on the set once it's saved.";
-/** The page read back a press that ended without saving (astra-follow.ts): nothing changed, and nothing was counted. */
+/** The page read back a press that ended without saving, or that the platform stopped (astra-follow.ts): nothing changed, and nothing was counted — a stopped press's change is given back by the read (Helios Cut 4, step A5). */
 export const SET_EDIT_NOT_SAVED = "Astra didn't change the set this time — it's as it was. Try again when you're ready.";
 /** The page could not read back whether a press saved (astra-follow.ts): only a reload can say. Never "try again" — that could spend a second change. */
 export const SET_EDIT_UNCHECKED = "We couldn't check whether Astra saved that change — reload the set to see it.";

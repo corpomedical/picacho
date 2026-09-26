@@ -196,8 +196,9 @@ describe("the card", () => {
 
   it("is one of the month's Astra changes, asked after the photos are found", () => {
     const fn = actions.slice(actions.indexOf("export async function rebuildThingFromPhotos"));
-    expect(fn.indexOf("return { error: THING_REBUILD_NO_PHOTOS }")).toBeLessThan(fn.indexOf("await astraChangeSlot(access)"));
-    expect(fn.indexOf("await astraChangeSlot(access)")).toBeLessThan(fn.indexOf("await askAstra("));
+    expect(fn.indexOf("await astraChangeSlot(access, press)")).toBeGreaterThan(-1);
+    expect(fn.indexOf("return { error: THING_REBUILD_NO_PHOTOS }")).toBeLessThan(fn.indexOf("await astraChangeSlot(access, press)"));
+    expect(fn.indexOf("await astraChangeSlot(access, press)")).toBeLessThan(fn.indexOf("await askAstra("));
   });
 
   it("is judged by the thing it sends, before any photo is read or the press is claimed (2026-09-25)", () => {

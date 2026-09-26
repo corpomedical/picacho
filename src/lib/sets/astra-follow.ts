@@ -14,6 +14,10 @@
 // until it has ended, and shows what the server holds:
 // - saved: the set as saved, with how many pieces changed;
 // - unsaved: nothing changed (and nothing was counted);
+// - lost — the platform stopped it: judged by the saved copy. The read gave
+//   back the change it had reserved (editor-actions.ts readAstraEdit, Helios
+//   Cut 4, step A5), once, so the count it carries is after that, and
+//   "nothing was counted" holds for it too;
 // - none, seen twice and for SET_EDIT_NONE_AFTER_MS: nothing reached the
 //   server — the ONE case that says try again;
 // - checks failing past SET_EDIT_FOLLOW_CAP_MS: reload to see it.
