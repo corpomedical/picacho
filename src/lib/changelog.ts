@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.120.0",
+    build: 159,
+    date: "2026-09-26",
+    title: "Aly can be interrupted on a computer, hears you as you, and keeps one tone",
+    items: [
+      "On a computer, talking over Aly now stops her, as in ChatGPT. Chrome was already removing her voice from the mic, but while you both talked it turned your voice down too, so she never noticed you. Now, once it's clear her echo is removed, hearing someone speak is enough: she goes quiet within about a quarter of a second, however softly you talk.",
+      "The check that decides whether you were talking to her now knows people describe scenes and shots out loud, so a description is no longer taken for a video playing. When you cut in, it also hears what she was saying at that moment, so her own words in the mic can't make yours look like background.",
+      "Her voice keeps one tone through an answer. She speaks in fewer, longer pieces, each piece knows the words that come after it, her voice settings are steadier, and a failed piece no longer switches the rest of the answer to a different voice.",
+      "When she talks, she's asked to speak rather than write: short sentences, numbers the way people say them, no lists, and no stock phrases.",
+      "For admins: the \"Not for me\" note says why she let a line be, and while she speaks the sheet shows how much of her voice reaches the mic.",
+    ],
+  },
+  {
     version: "1.119.0",
     build: 158,
     date: "2026-09-26",
