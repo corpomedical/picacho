@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.115.0",
+    build: 154,
+    date: "2026-09-26",
+    title: "The assistant is called Aly",
+    items: [
+      "The personal assistant in the lamp is now called Aly. Anyone who gave it their own name keeps it, and Settings > Preferences > Your assistant offers Aly, Producer, Concierge or a name of your own.",
+      "Aly's name always reaches the speech-to-text, so saying \"Aly\" is written \"Aly\". Before, a slow moment left the name out, and it came back as \"Allie\".",
+      "The check that tells whether you were talking to her now knows a name can come out misspelled (\"Ali\", \"Alê\"), and judges the whole sentence. In a test in four languages, every line said to her got through and every background line was ignored.",
+      "A Helios set's chat now says \"Ask Aly\" where it said \"Ask the Producer\", in all four languages.",
+      "The privacy policy names Aly and no longer says the assistant is Elite-only, in all four languages (updated 26 September).",
+    ],
+  },
+  {
     version: "1.114.0",
     build: 153,
     date: "2026-09-26",
