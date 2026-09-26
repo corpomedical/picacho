@@ -781,6 +781,7 @@ export function SetView({
   identityBar,
   matchOn,
   modelsOn = false,
+  studioHref = null,
   namingOn = false,
   simpleLayout = false,
   initialThingModels = [],
@@ -819,6 +820,8 @@ export function SetView({
   matchOn: boolean;
   /** Whether a model file can be put on a thing (thing-model.ts): admins, while our own model builder is proved. */
   modelsOn?: boolean;
+  /** Helios Studio's address for this set, when this account may open it (Helios Studio, 2026-09-26). */
+  studioHref?: string | null;
   /**
    * Whether the naming pass's priced button is offered (name-actions.ts,
    * Helios Cut 4, step B4): admins only; the action checks again. It runs
@@ -10754,6 +10757,16 @@ export function SetView({
             in the History button's quiet style. Its dot says a hidden setting still rides the stills. Below 640 px
             it is a sliders glyph, its word kept for screen readers: with History and Download back, the word
             pushed Download off a phone's bar in Spanish, Portuguese and Italian (review of Cut 3). */}
+        {studioHref && (
+          <a
+            href={studioHref}
+            data-studio-link
+            title="Open this set in Helios Studio, the Blender-style workspace"
+            className="flex h-8 flex-none items-center whitespace-nowrap rounded-[6px] px-2.5 text-xs font-semibold text-[#1b1c20] bg-[#e0a468] hover:bg-[#f0cda6]"
+          >
+            Studio
+          </a>
+        )}
         {(simpleOn || simplePhone) && (
           <button
             type="button"

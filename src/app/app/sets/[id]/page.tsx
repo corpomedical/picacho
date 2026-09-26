@@ -8,13 +8,14 @@ import { getSetPage } from "@/lib/sets/data";
 import { finisherCanRun } from "@/lib/sets/finisher";
 import { buildingHintKey } from "@/lib/sets/leaving";
 import { SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_UNAVAILABLE, SET_NOT_FOUND } from "@/lib/sets/messages";
-import { SETS_OPEN_TO_PLANS } from "@/lib/sets/set-config";
+import { HELIOS_STUDIO_FOR_ALL, SETS_OPEN_TO_PLANS } from "@/lib/sets/set-config";
 import { SHOT_WORDS_MAX_CHARS } from "@/lib/sets/shot-words";
 import { tryAgainWords } from "@/lib/sets/try-again";
 import { SetBuilding } from "@/components/sets/set-building";
 import { SetEditor } from "@/components/sets/set-editor";
 import { SetView } from "@/components/sets/set-view";
 import { SetsUpgrade } from "@/components/sets/sets-upgrade";
+import { HeliosStudio } from "@/components/studio/helios-studio";
 
 // One Set, open (Astra Sets, 2026-09-10; a workspace with Astra since
 // 2026-09-14). Everything the view needs — the normalised set, the person's
@@ -91,6 +92,11 @@ export default async function SetPage({
   // The set's second life (the Set Editor, drawn on canvas page G and built
   // 2026-09-14): ?build=1 opens the same set as a full-screen editor — Build
   // beside Shoot. It replaces the workspace whole, so only one stage runs.
+  // Helios Studio (2026-09-26): the Blender-style workspace, admins first.
+  const studioOn = data.error === null && (data.modelsOn || HELIOS_STUDIO_FOR_ALL);
+  if (ready && data.error === null && data.set.spec && studioOn && first(query.studio) === "1") {
+    return <HeliosStudio setId={data.set.id} title={data.set.title} spec={data.set.editedSpec ?? data.set.spec} />;
+  }
   if (ready && data.error === null && data.set.spec && first(query.build) === "1") {
     return (
       <SetEditor
@@ -126,6 +132,7 @@ export default async function SetPage({
         identityBar={data.identityBar}
         matchOn={data.matchOn}
         modelsOn={data.modelsOn}
+        studioHref={studioOn ? `/app/sets/${data.set.id}?studio=1` : null}
         namingOn={data.namingOn}
         simpleLayout={data.simpleLayout}
         initialThingModels={data.thingModels}
