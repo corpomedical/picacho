@@ -44,7 +44,7 @@ import { StatusList, StudioBar, StudioDock, StudioRail, StudioStatus, useWide, u
 import { ThingsPanel, ThingsStrip, type LooseBundle, type PanelRow } from "./things-panel";
 import { clearMarks } from "@/lib/sets/marks";
 import { BADGE_HIT_SLOP_PX, FIGURE_TAP_WAIT_MS, TAP_SLOP_PX, badgeAt, elementForHits, isTap, type ElementHit, type StageHit, type TapStart } from "@/lib/sets/stage-pick";
-import { ELEMENT_SHEETS_PER_STILL, FIGURE_KEY, SHEET_LANES, elementPlaces, planShotSheets, resolvePhotos, setElements as elementsOf, type ElementPhoto, type SetElement, type ShotElementStatus } from "@/lib/sets/elements";
+import { ELEMENT_SHEETS_PER_STILL, FIGURE_KEY, SHEET_LANES, elementPlaces, photoThingsChanged, planShotSheets, resolvePhotos, setElements as elementsOf, type ElementPhoto, type SetElement, type ShotElementStatus } from "@/lib/sets/elements";
 import { afterShotWhy, beforeShoot, pageState, ridesState, statusWords as elementStatusWords, type ElementState } from "@/lib/sets/element-status";
 import { findVehicles } from "@/lib/sets/vehicles";
 import { shotCameraOf } from "@/lib/sets/shot-camera";
@@ -84,7 +84,7 @@ import { checkFilmCredits, readTakes, saveSetFilm } from "@/lib/sets/film-action
 import { checkShotRig, saveSetRig } from "@/lib/sets/rig-actions";
 import { RIG_FORMAT_ORDER, RIG_PALETTES, depthOfField, exposureGain, findLook, focalMm, formatFrame, letterbox, normaliseSetRig, rigAdvancedInUse, sensorCocMm, sensorHeightMm, shutterFraction, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
 import { bearingDeg } from "@/lib/sets/light-schemes";
-import { stagedSpec, timeLabel, sunAt } from "@/lib/sets/time-of-day";
+import { rigHidesEdit, stagedSpec, timeLabel, sunAt } from "@/lib/sets/time-of-day";
 import { filterCommands, rigCommandIds, rigPatchFor, shootCommands, stepIndex, TIME_PRESETS, type ShootCommandContext } from "@/lib/sets/commands";
 import { CommandPalette } from "./command-palette";
 import { labPreviewCodes } from "@/lib/sets/lab-preview";
@@ -1009,6 +1009,13 @@ export function SetView({
   // Astra's last answer changed nothing (Helios Cut 4, step A1): said on its
   // own line, so the line of the change before it keeps its Undo.
   const [astraNothing, setAstraNothing] = useState(false);
+  // The last Astra change that landed, as the two copies (Helios Cut 4, step
+  // A7): what the rig's hour or plot, or a thing's own photos, hide of it in
+  // stills is read from them while the set is still that copy.
+  const [landedEdit, setLandedEdit] = useState<{ before: SetSpec; after: SetSpec } | null>(null);
+  // "Use my words as what happens" was pressed: its words set what happens,
+  // never the figure's turn or pose — said on every press (step A7).
+  const [wordsNote, setWordsNote] = useState(false);
   // What the changed line's Undo did, said once where the line stood: the
   // change is undone (and still counts this month), or its pieces are but
   // its description could not come back (Helios Cut 2, step 2).
@@ -4219,6 +4226,17 @@ export function SetView({
   /** Which photos are on which thing now, after any change to the set (moved, changed, gone). */
   const resolved = useMemo(() => resolvePhotos(els, elementPhotos), [els, elementPhotos]);
   const heldOf = useMemo(() => new Map(resolved.held.map((h) => [h.key, h])), [resolved]);
+  /**
+   * What stills will not show of the Astra change that just landed (Helios
+   * Cut 4, step A7): the rig's hour or plot drawing over its light or sky,
+   * and the things it touched that their own photos draw. Read from the two
+   * copies, key by key, while the set is still the copy it saved, under the
+   * rig as it is now: Time of day → As built takes the note away.
+   */
+  const editHides = useMemo(() => {
+    if (!landedEdit || landedEdit.after !== spec) return null;
+    return { rig: rigHidesEdit(landedEdit.before, landedEdit.after, rig), photos: photoThingsChanged(elementsOf(landedEdit.before), els, elementPhotos) };
+  }, [landedEdit, spec, rig, els, elementPhotos]);
   /** A thing's photos, for its model's paint (blueprint-paint.ts): its drawings are painted onto its sides. */
   const drawingsFor = useCallback((key: string) => (heldOf.get(key)?.photos ?? []).map((p) => p.url), [heldOf]);
   const drawingsKey = useMemo(() => thingModels.map((m) => `${m.key}=${drawingsFor(m.key).join("|")}`).join(","), [thingModels, drawingsFor]);
@@ -6674,6 +6692,7 @@ export function SetView({
       lastEditUndoRef.current = { before, kind: "edit", undo };
       setUndoNote(null);
       setAstraNothing(false);
+      setLandedEdit({ before, after: next });
       setSpec(next);
       drawSet(next);
       setSetChanged(changed);
@@ -6752,6 +6771,8 @@ export function SetView({
       lastEditUndoRef.current = { before, kind: "rebuild", undo: null };
       setUndoNote(null);
       setAstraNothing(false);
+      // A rebuild draws a thing from its own photos by design, and leaves the light alone: nothing to say (step A7).
+      setLandedEdit(null);
       setSpec(next);
       drawSet(next);
       setSetChanged(changed);
@@ -6869,6 +6890,8 @@ export function SetView({
     setDirection(message);
     keepRevision(message, cameraId);
     setNote(null);
+    // Said on every press, never by reading the words for turns or poses (Helios Cut 4, step A7).
+    setWordsNote(true);
   }
 
   /**
@@ -6886,6 +6909,7 @@ export function SetView({
     if (!message || reading || shooting || editingSet || !ready) return;
     // A folded phone chat unfolds to show the answer (Helios Cut 3, step 2).
     if (!wide) setChatOpen(true);
+    setWordsNote(false);
     // Reader v2 runs the message as one turn (Helios Cut 2, step 11a):
     // admins, until the phrase check passes. Everyone else keeps v1 below.
     if (readerV2 && !readerOffRef.current) return sendTurn(message, opts);
@@ -9883,6 +9907,23 @@ export function SetView({
                 </div>
               )}
 
+              {/* What stills won't show of that change (Helios Cut 4, step A7): the rig's hour or plot over
+                  its light or sky, and a thing drawn from its own photos. Read from the two copies, never words. */}
+              {setChanged !== null && setChanged > 0 && editHides !== null && (editHides.rig !== null || editHides.photos.length > 0) && (
+                <div className="flex items-start gap-2.5" data-edit-hides>
+                  <AstraMark />
+                  <div className="min-w-0 flex-1 space-y-1 text-sm leading-relaxed text-[#d6d9e0]">
+                    {editHides.rig === "time" && rig.time !== null && <p data-edit-hides-rig="time">{formatMsg(s.reply.noteRigHourHides, { time: timeLabel(rig.time) })}</p>}
+                    {editHides.rig === "plot" && rig.light && <p data-edit-hides-rig="plot">{formatMsg(s.reply.noteRigPlotHides, { light: s.rig.lights[rig.light.scheme] })}</p>}
+                    {editHides.photos.map((key) => (
+                      <p key={key} data-edit-hides-photos>
+                        {formatMsg(s.reply.noteOwnPhotos, { thing: elementName(key) })}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* An Astra answer that changed nothing (Helios Cut 4, step A1): nothing saved, the change given back. */}
               {astraNothing && (
                 <div className="flex items-start gap-2.5" data-astra-nothing>
@@ -9941,6 +9982,13 @@ export function SetView({
                       </button>
                     </p>
                   )}
+                  {/* After "Use my words as what happens", on every press (Helios Cut 4, step A7): the words don't
+                      turn or pose the figure. Reader v2's chat does both; v1's reads a facing but never a pose, so it points at the stage. */}
+                  {wordsNote && (
+                    <p className="text-sm leading-relaxed text-[#d6d9e0]" data-words-note>
+                      {formatMsg(v2On ? s.reply.noteWordsDontMove : s.reply.noteWordsDontMoveStage, { name: characterName })}
+                    </p>
+                  )}
                   {characters.length === 0 ? (
                     <p className="text-sm leading-relaxed text-[#d6d9e0]">
                       {s.noCharacters}{" "}
@@ -9993,8 +10041,9 @@ export function SetView({
                               </dd>
                             </>
                           )}
-                          {/* The hour the rig sets, on reader v2's page (spec §5.1): the chat sets it, and the card says it. */}
-                          {v2On && rig.time !== null && (
+                          {/* The hour the rig sets, on every account's card (Helios Cut 4, step A7): the rig panel sets it
+                              for everyone and the still is lit by it, so the card says it before the press, not only on reader v2. */}
+                          {rig.time !== null && (
                             <>
                               {rowLabel(s.rig.rowTime, "time")}
                               <dd className="text-[#f0cda6] tabular-nums" data-row-time>
@@ -10009,7 +10058,13 @@ export function SetView({
                             </>
                           )}
                           {rowLabel(s.rowHappens, "happens")}
-                          <dd className={direction ? "text-[#ecedf1]" : "text-[#9aa0ad]"}>{direction || "—"}</dd>
+                          <dd className={direction ? "text-[#ecedf1]" : "text-[#9aa0ad]"}>
+                            {direction || "—"}
+                            {/* Up front, beside what happens (Helios Cut 4, step A7): the stills' own rule, for everyone. */}
+                            <span className="mt-0.5 block text-[11px] leading-snug text-[#9aa0ad]" data-brand-line>
+                              {s.brandLine}
+                            </span>
+                          </dd>
                           <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#9aa0ad]">{s.rowCost}</dt>
                           {/* Lean, the card has no Shoot of its own, so with the person's take armed its Cost says the take's price (review of Cut 3). */}
                           <dd className="text-[#ecedf1] tabular-nums">{lean && genericPress.kind === "take" ? nextPressPrice : formatMsg(s.costLine, { credits })}</dd>
@@ -10243,6 +10298,12 @@ export function SetView({
                   data-composer-count
                 >
                   {formatMsg(s.reply.composerCount, { n: draft.length, max: SHOT_WORDS_MAX_CHARS })}
+                </p>
+              )}
+              {/* Up front, while there are words to send (Helios Cut 4, step A7): the stills' own rule, for everyone. */}
+              {draft.trim() !== "" && (
+                <p className="px-2 text-[11px] leading-snug text-[#9aa0ad]" data-brand-line>
+                  {s.brandLine}
                 </p>
               )}
               <div className="mt-2 flex flex-wrap items-center gap-1.5">

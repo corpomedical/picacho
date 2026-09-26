@@ -225,6 +225,26 @@ export function resolvePhotos(els: readonly SetElement[], photos: readonly Eleme
   return { held, loose };
 }
 
+/**
+ * The things an edit changed that are drawn from their own photos (Helios
+ * Cut 4, step A7): each thing holding photos after the edit whose blocks
+ * are not what they were — its fingerprint moved (a shape, a size, a colour,
+ * a material, a block more or less) — while the same photos were on it
+ * before. Its sheet rides its stills and the sketch draws it grey
+ * (set-shot-prompt.ts), so its colour in a still follows the photos, not
+ * the edit. Read from the blocks, never from words: a thing only moved, or
+ * one whose photos found it only now, says nothing. Keys of `after`, in its order.
+ */
+export function photoThingsChanged(before: readonly SetElement[], after: readonly SetElement[], photos: readonly ElementPhoto[]): string[] {
+  const printBefore = new Map(before.map((e) => [e.key, e.fingerprint]));
+  const was = new Map<string, string>();
+  for (const h of resolvePhotos(before, photos).held) for (const p of [...h.photos, ...h.extra]) was.set(p.refId, printBefore.get(h.key) ?? "");
+  const printAfter = new Map(after.map((e) => [e.key, e.fingerprint]));
+  return resolvePhotos(after, photos)
+    .held.filter((h) => [...h.photos, ...h.extra].some((p) => was.has(p.refId) && was.get(p.refId) !== printAfter.get(h.key)))
+    .map((h) => h.key);
+}
+
 // ---------------------------------------------------------------------------
 // Where things stand in a still, and which sheets ride it.
 // ---------------------------------------------------------------------------

@@ -19,6 +19,7 @@ import {
   copyToElement,
   elementPlaces,
   planSheets,
+  photoThingsChanged,
   planShotSheets,
   resolvePhotos,
   setElements,
@@ -184,6 +185,45 @@ describe("resolvePhotos: a photo finds its thing after the set changes", () => {
     expect(same.sheetHash).toBe(r.sheetHash);
     const other = resolvePhotos(setElements(race), five.slice(1)).held[0];
     expect(other.sheetHash).not.toBe(r.sheetHash);
+  });
+});
+
+// Helios Cut 4, step A7: after an Astra change, a note names each thing
+// the change touched that its own photos draw in stills.
+describe("photoThingsChanged: an edit that meets a thing drawn from its own photos", () => {
+  const els = setElements(race);
+  const car = els[0];
+  const onCar = (i: number) => car.members.some((m) => m[0] === i);
+  const photos = [photo(car.key)];
+  const recolour = (spec: SetSpec): SetSpec => ({ ...spec, objects: spec.objects.map((o, i) => (onCar(i) ? { ...o, color: "#aa2222" } : o)) });
+
+  it("names the car when its blocks change colour, under the key its photos found after", () => {
+    const red = recolour(race);
+    const after = setElements(red);
+    const keys = photoThingsChanged(els, after, photos);
+    expect(keys).toHaveLength(1);
+    expect(keys[0]).not.toBe(car.key);
+    expect(keys).toEqual(resolvePhotos(after, photos).held.map((h) => h.key));
+  });
+
+  it("says nothing for a car with no photos, a car only moved, or a change elsewhere", () => {
+    expect(photoThingsChanged(els, setElements(recolour(race)), [])).toEqual([]);
+    const moved: SetSpec = { ...race, objects: race.objects.map((o, i) => (onCar(i) ? { ...o, position: [o.position[0] + 3, o.position[1], o.position[2]] as Vec3 } : o)) };
+    expect(photoThingsChanged(els, setElements(moved), photos)).toEqual([]);
+    const structure = race.objects.findIndex((_, i) => !onCar(i));
+    const elsewhere: SetSpec = { ...race, objects: race.objects.map((o, i) => (i === structure ? { ...o, color: "#123456" } : o)) };
+    expect(photoThingsChanged(els, setElements(elsewhere), photos)).toEqual([]);
+  });
+
+  it("reads the blocks, not their order: a rewrite that reorders the objects says nothing", () => {
+    const reordered: SetSpec = { ...race, objects: [...race.objects].reverse() };
+    expect(photoThingsChanged(els, setElements(reordered), photos)).toEqual([]);
+    expect(photoThingsChanged(els, setElements(recolour(reordered)), photos)).toHaveLength(1);
+  });
+
+  it("says nothing when the photos were on nothing before", () => {
+    const gone: SetSpec = { ...race, objects: race.objects.filter((_, i) => !onCar(i)) };
+    expect(photoThingsChanged(setElements(gone), els, photos)).toEqual([]);
   });
 });
 

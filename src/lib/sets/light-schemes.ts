@@ -270,3 +270,8 @@ export function moveKeyLight(state: RigLightState, azimuthDeg: number, elevation
 export function schemeHasSun(scheme: RigLightScheme): boolean {
   return SCHEMES[scheme].key === "sun";
 }
+
+/** Whether the scheme draws its own sky over the set's (litSpec): the sky Astra wrote gives way under it. */
+export function schemeHasSky(scheme: RigLightScheme): boolean {
+  return SCHEMES[scheme].sky !== null;
+}

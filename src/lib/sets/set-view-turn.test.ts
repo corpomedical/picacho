@@ -420,6 +420,8 @@ describe("the reply and the composer (step 11b)", () => {
     for (const row of ['rowLabel(s.rowWho, "who")', 'rowLabel(s.rowWhere, "where")', 'rowLabel(s.rowCamera, "camera")', 'rowLabel(s.rig.rowLight, "light")', 'rowLabel(s.rig.rowTime, "time")', 'rowLabel(s.rowHappens, "happens")']) {
       expect(view, row).toContain(row);
     }
-    expect(view).toContain("{v2On && rig.time !== null && (");
+    // Every account's card says the hour, not only reader v2's (Helios Cut 4, step A7).
+    expect(view).toContain("{rig.time !== null && (");
+    expect(view).not.toContain("{v2On && rig.time !== null && (");
   });
 });

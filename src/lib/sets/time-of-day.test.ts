@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_SET_RIG, normaliseSetRig } from "./rig";
+import { DEFAULT_SET_RIG, normaliseSetRig, type SetRig } from "./rig";
 import { SET_LIMITS, normaliseSetSpec } from "./set-spec";
-import { TIME_OF_DAY_SENTENCE, compassWord, hourWords, lookAt, stagedSpec, sunAt, sunLight, timeApplies, timeLabel, timedSpec } from "./time-of-day";
+import { TIME_OF_DAY_SENTENCE, compassWord, hourWords, lookAt, rigHidesEdit, stagedSpec, sunAt, sunLight, timeApplies, timeLabel, timedSpec } from "./time-of-day";
 import { schemeDefaults } from "./light-schemes";
 import { nearestKelvin } from "./light-kelvin";
 import showroom from "./fixtures-showroom-open.json";
@@ -184,5 +184,56 @@ describe("what sends the hour", () => {
   it("a film beat is described at the beat's hour, the one its stage was rebuilt at", () => {
     const render = view.slice(view.indexOf("  async function renderFilm("), view.indexOf("\n  }\n", view.indexOf("  async function renderFilm(")));
     expect(render).toContain("rig: { ...rigRef.current, time: staged.time },");
+  });
+});
+
+// Helios Cut 4, step A7: after an Astra change, a note says when the rig's
+// hour or a light plot draws over what the change did to the set's own
+// light. Read key by key from the two copies (never from words), and in
+// step with what the stage draws (stagedSpec).
+describe("rigHidesEdit: what of a change to the set's light the rig draws over", () => {
+  const skyChanged = { ...room, sky: { kind: "gradient" as const, colors: ["#101020", "#303050"] } };
+  const sunChanged = { ...room, lights: room.lights.map((l) => (l.kind === "sun" ? { ...l, intensity: l.intensity * 0.3 } : l)) };
+  const lampAdded = { ...room, lights: [...room.lights.slice(0, 3), { ...room.lights.find((l) => l.kind === "spot")!, position: [2, 3, 2] as [number, number, number] }] };
+  const hour: SetRig = { ...DEFAULT_SET_RIG, time: 14 };
+  const sunPlot = { ...DEFAULT_SET_RIG, time: 12, light: schemeDefaults("golden-hour", 0) };
+  const lampPlot = { ...DEFAULT_SET_RIG, light: schemeDefaults("window", 0) };
+  const lampPlotHour = { ...DEFAULT_SET_RIG, time: 12, light: schemeDefaults("window", 0) };
+  const staged = (spec: typeof room, rig: SetRig) => stagedSpec(spec, rig, mark);
+
+  it("says nothing with no hour and no plot: the change shows as Astra made it", () => {
+    for (const next of [skyChanged, sunChanged, lampAdded]) expect(rigHidesEdit(room, next, DEFAULT_SET_RIG)).toBeNull();
+  });
+
+  it("names the hour when it applies and the change touched the sky or a sun or fill", () => {
+    expect(rigHidesEdit(room, skyChanged, hour)).toBe("time");
+    expect(rigHidesEdit(room, sunChanged, hour)).toBe("time");
+    // And the stage agrees: under the hour both copies draw the same sky and the same lights.
+    expect(staged(skyChanged, hour).sky).toEqual(staged(room, hour).sky);
+    expect(staged(sunChanged, hour).lights).toEqual(staged(room, hour).lights);
+  });
+
+  it("says nothing for a change to the lamps alone, which the hour and the plots keep", () => {
+    expect(rigHidesEdit(room, lampAdded, hour)).toBeNull();
+    expect(rigHidesEdit(room, lampAdded, sunPlot)).toBeNull();
+    expect(staged(lampAdded, hour).lights).not.toEqual(staged(room, hour).lights);
+  });
+
+  it("names the plot when a sun plot outranks the hour, or a lamp plot is on without one", () => {
+    expect(timeApplies(sunPlot)).toBe(false);
+    expect(rigHidesEdit(room, skyChanged, sunPlot)).toBe("plot");
+    expect(rigHidesEdit(room, sunChanged, sunPlot)).toBe("plot");
+    expect(rigHidesEdit(room, sunChanged, lampPlot)).toBe("plot");
+    // The window plot draws no sky of its own: Astra's new sky shows under it.
+    expect(rigHidesEdit(room, skyChanged, lampPlot)).toBeNull();
+    expect(staged(skyChanged, lampPlot).sky).toEqual(skyChanged.sky);
+    // With an hour under the lamp plot, the hour draws the sky.
+    expect(rigHidesEdit(room, skyChanged, lampPlotHour)).toBe("time");
+  });
+
+  it("reads only the light and the sky: a change to the blocks or the words says nothing", () => {
+    const moved = { ...room, description: "Something else entirely.", objects: room.objects.slice(1) };
+    expect(rigHidesEdit(room, moved, hour)).toBeNull();
+    expect(rigHidesEdit(room, room, sunPlot)).toBeNull();
   });
 });

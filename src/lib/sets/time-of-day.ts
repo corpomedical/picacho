@@ -20,7 +20,7 @@
 import type { SetLight, SetSpec } from "./set-spec";
 import { SET_LIMITS } from "./set-spec";
 import type { SetRig } from "./rig";
-import { litSpec, schemeHasSun } from "./light-schemes";
+import { litSpec, schemeHasSky, schemeHasSun } from "./light-schemes";
 import { kelvinToHex } from "./light-kelvin";
 
 export const TIME_MIN = 5;
@@ -121,6 +121,30 @@ export function timeApplies(rig: Pick<SetRig, "light" | "time">): boolean {
 export function stagedSpec(spec: SetSpec, rig: Pick<SetRig, "light" | "time">, mark: { x: number; z: number }): SetSpec {
   const lit = litSpec(spec, rig.light, mark);
   return timeApplies(rig) ? timedSpec(lit, rig.time, mark) : lit;
+}
+
+/** A light the rig keeps from the set as built, under a plot or an hour (litSpec, timedSpec): a lamp. */
+const isLamp = (l: SetLight) => l.kind === "point" || l.kind === "spot" || l.kind === "area";
+const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * What of an Astra change to the set's own light the rig draws over, on the
+ * stage and in stills (Helios Cut 4, step A7): "time" when the rig's hour
+ * applies, "plot" when a light plot is on without it, null when the change
+ * shows as it is. Read key by key from the two copies, never from words:
+ * the change touched a light the rig replaces (every light but the lamps,
+ * which stay under both), or the sky while the hour or the plot draws its
+ * own. A change to the lamps alone shows, and so says nothing. (A lamp past
+ * the room the rig's own lights leave, SET_LIMITS.maxLights, is not counted.)
+ */
+export function rigHidesEdit(before: Pick<SetSpec, "lights" | "sky">, after: Pick<SetSpec, "lights" | "sky">, rig: Pick<SetRig, "light" | "time">): "time" | "plot" | null {
+  const hour = timeApplies(rig);
+  if (!hour && !rig.light) return null;
+  const skyGivesWay = hour || (rig.light !== null && schemeHasSky(rig.light.scheme));
+  const skyHidden = skyGivesWay && !sameJson(before.sky, after.sky);
+  const lightsHidden = !sameJson(before.lights.filter((l) => !isLamp(l)), after.lights.filter((l) => !isLamp(l)));
+  if (!skyHidden && !lightsHidden) return null;
+  return hour ? "time" : "plot";
 }
 
 /** "16:45" for 16.75. */

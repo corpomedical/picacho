@@ -3546,6 +3546,8 @@ const en = {
     rowWhere: "Where",
     rowCamera: "Camera",
     rowHappens: "Happens",
+    // Said up front, beside what happens and the composer (Helios Cut 4, step A7): the stills' own rule (set-shot-prompt.ts NO_TEXT_SENTENCE).
+    brandLine: "Brand names and logos come back as look-alikes; signs and written words stay blank.",
     rowCost: "Cost",
     costLine: "{credits} · about a minute",
     astraLabel: "Astra",
@@ -3916,6 +3918,13 @@ const en = {
       creditsN: "{n} credits",
       noteUndoAstra: "The set change is undone; it still counts this month.",
       noteUndoAstraText: "The set's pieces are back as they were, but its description still mentions the change; it still counts this month.",
+      // What the rig or a thing's own photos hide of an Astra change in stills, read from the two copies, never from words;
+      // and what "Use my words as what happens" can't do, on every press (Helios Cut 4, step A7).
+      noteRigHourHides: "The rig's time {time} still lights the set; Time of day → As built shows Astra's.",
+      noteRigPlotHides: "The rig's {light} plot still lights the set; Light → As built shows Astra's.",
+      noteOwnPhotos: "{thing} is drawn from its own photos, so its colour in stills follows them.",
+      noteWordsDontMove: "Turns and poses in these words don't move {name}; say them in the chat instead.",
+      noteWordsDontMoveStage: "Turns and poses in these words don't move {name}; the Pose menu and ↺ ↻ do.",
       // A take keeps one shape (check of the spec, item 7): the chat's own is cancelled when the frame changes shape, the person's is kept and asked about (turn-plan.ts).
       noteTakeCancelledFormat: "I cancelled the {take}: it started on a {from} still, and the frame is now {to}.",
       noteTakeFormat: "The {take} starts on a {from} still, but the frame is now {to}: set the frame back to {from}, or cancel the {take} and shoot a new start.",
