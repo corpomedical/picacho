@@ -23,9 +23,12 @@ import {
   planShotSheets,
   resolvePhotos,
   setElements,
+  thingNameOf,
   type ElementPhoto,
   type HeldPhotos,
 } from "./elements";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 // The set's things (the per-thing reference photos, R1, 2026-09-21): which
 // blocks make one car or one object, the key a photo keeps, how a photo
@@ -355,5 +358,54 @@ describe("planShotSheets: only a drawn sheet rides", () => {
   it("with no camera sees nothing, and with no photos says nothing", () => {
     expect(shot({ shotCamera: null }).statuses.every((x) => x.status === "out")).toBe(true);
     expect(shot({ held: [] })).toEqual({ riding: [], sentences: [], statuses: [] });
+  });
+});
+
+// Names on things (Helios Cut 4, step B1, 2026-09-26): a thing's key and
+// the photos on it are made of its blocks' shapes, sizes, colours and
+// materials, never their names, so naming a set moves no photo and no
+// sheet; a thing's name is the one most of its blocks carry.
+describe("names on things", () => {
+  const named = (spec: SetSpec): SetSpec => ({ ...spec, objects: spec.objects.map((o, i) => ({ ...o, name: `block ${i}` })) });
+
+  it("leave every thing's key, members and fingerprint as they were, on all five fixtures", () => {
+    for (const spec of [race, load(showroomOpen), load(showroomClosed), load(rainyMarket), load(beach)]) {
+      expect(JSON.stringify(setElements(named(spec)))).toBe(JSON.stringify(setElements(spec)));
+    }
+  });
+
+  it("never enter a block's signature (pinned as source)", () => {
+    const src = readFileSync(join(__dirname, "elements.ts"), "utf8");
+    expect(src).toContain('const signature = (o: SetObject) => `${o.shape}|${o.size.map(cm).join(",")}|${o.color}|${o.material ?? ""}|${o.emissive ?? ""}`;');
+  });
+
+  it("are the name most of a thing's blocks carry, counted per copy; a tie goes to the largest block's; none is null", () => {
+    const car = setElements(race).find((e) => e.kind === "car")!;
+    const blocks = [...new Set(car.members.map(([o]) => o))];
+    expect(thingNameOf(car, race)).toBeNull();
+    const withNames = (pick: (oi: number, n: number) => string | undefined): SetSpec => ({
+      ...race,
+      objects: race.objects.map((o, i) => {
+        const at = blocks.indexOf(i);
+        const name = at >= 0 ? pick(i, at) : undefined;
+        return name === undefined ? o : { ...o, name };
+      }),
+    });
+    // Most blocks: the car.
+    expect(thingNameOf(car, withNames((_, n) => (n === 0 ? "wheel" : "red sports car")))).toBe("red sports car");
+    // Blocks without a name don't vote.
+    expect(thingNameOf(car, withNames((_, n) => (n === 0 ? "wheel" : undefined)))).toBe("wheel");
+    // Counted per copy: a repeated block counts as often as it is drawn.
+    const repeated = car.members.find(([o], _, all) => all.filter(([p]) => p === o).length > 1)?.[0];
+    if (repeated !== undefined) {
+      const copies = car.members.filter(([o]) => o === repeated).length;
+      const others = blocks.filter((o) => o !== repeated).slice(0, copies - 1);
+      expect(thingNameOf(car, withNames((oi) => (oi === repeated ? "tyres" : others.includes(oi) ? "body" : undefined)))).toBe("tyres");
+    }
+    // A tie: the largest block's name.
+    const volume = (oi: number) => race.objects[oi].size[0] * race.objects[oi].size[1] * race.objects[oi].size[2];
+    const single = blocks.filter((o) => car.members.filter(([p]) => p === o).length === 1).sort((a, b) => volume(b) - volume(a));
+    const [big, small] = [single[0], single[single.length - 1]];
+    expect(thingNameOf(car, withNames((oi) => (oi === big ? "body" : oi === small ? "mirror" : undefined)))).toBe("body");
   });
 });

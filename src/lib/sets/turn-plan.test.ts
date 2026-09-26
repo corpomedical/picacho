@@ -775,7 +775,7 @@ describe("undo (spec §3.5)", () => {
   it("brings the Astra change back through the seal, never through Astra; a rebuild's words were never changed", () => {
     const before = stateNow();
     const after = stateNow({ rig: rigWith({ time: 21 }) });
-    const sealed: TurnSnapshot = { before, after, astra: { before: race, undo: { text: { title: "t", description: "d", labels: [] }, seal: "s" }, kind: "edit", landed: true } };
+    const sealed: TurnSnapshot = { before, after, astra: { before: race, undo: { text: { title: "t", description: "d", labels: [], names: [] }, seal: "s" }, kind: "edit", landed: true } };
     expect(undoPlan([sealed], after, true)).toMatchObject({ kind: "restore", handMoves: false, astra: { kind: "edit", sealed: true }, stillsStay: false });
     const unsealed: TurnSnapshot = { ...sealed, astra: { before: race, undo: null, kind: "edit", landed: true } };
     expect(undoPlan([unsealed], after, true)).toMatchObject({ astra: { sealed: false } });

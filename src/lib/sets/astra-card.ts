@@ -16,7 +16,7 @@
 import type { Messages } from "../i18n/messages/en";
 import { fill } from "./fill";
 import { SET_EDIT_MAX_CHARS, SET_EDIT_MAX_SPEC_CHARS } from "./set-config";
-import { cleanText, type SetSpec } from "./set-spec";
+import { cleanText, withoutNames, type SetSpec } from "./set-spec";
 
 /**
  * Which sentence the card says (§3.2 of the Cut 2 spec):
@@ -60,9 +60,9 @@ export function astraCardWords(said: string): { quoted: string; cut: boolean } {
   return { quoted, cut: quoted.length < whole.length };
 }
 
-/** Whether a working copy is past what Astra can answer whole: editSetWithAstra's own test, run on the page. */
+/** Whether a working copy is past what Astra can answer whole: editSetWithAstra's own test, run on the page — on the copy as sent, without its names (Helios Cut 4, step B1). */
 export function astraTooBig(spec: SetSpec): boolean {
-  return JSON.stringify(spec).length > SET_EDIT_MAX_SPEC_CHARS;
+  return JSON.stringify(withoutNames(spec)).length > SET_EDIT_MAX_SPEC_CHARS;
 }
 
 /**

@@ -60,7 +60,9 @@ export function findThingNow(key: string, els: readonly SetElement[]): SetElemen
   return held ? (els.find((e) => e.key === held.key) ?? null) : null;
 }
 
-const sameBlock = (a: SetObject | undefined, b: SetObject | undefined): boolean => a !== undefined && b !== undefined && JSON.stringify(a) === JSON.stringify(b);
+/** The very same block, whatever its name (Helios Cut 4, step B1): a block named or renamed since is still that block. */
+const bare = (o: SetObject) => JSON.stringify({ ...o, name: undefined });
+const sameBlock = (a: SetObject | undefined, b: SetObject | undefined): boolean => a !== undefined && b !== undefined && bare(a) === bare(b);
 /** Named alike in the words: the same shape and the same size to the words' one decimal (people.ts, furniture.ts thingWords). */
 const namedAlike = (a: SetObject, b: SetObject): boolean => a.shape === b.shape && a.size.every((n, i) => Math.round(n * 10) === Math.round(b.size[i] * 10));
 

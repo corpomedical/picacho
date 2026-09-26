@@ -58,6 +58,20 @@ describe("setEditRequest", () => {
   });
 });
 
+// Names on things (Helios Cut 4, step B1, 2026-09-26): the whole-set edit
+// never carries them, so its worst case and its 16,000 characters don't
+// move; editSetWithAstra carries them back (editor-actions.test.ts).
+describe("a named set", () => {
+  it("sends exactly the bytes of its unnamed twin", () => {
+    const n = normaliseSetSpec(raceTrackFixture);
+    if (!n.ok) throw new Error("fixture");
+    const named: SetSpec = { ...n.spec, objects: n.spec.objects.map((o, i) => ({ ...o, name: `block ${i}` })) };
+    expect(setEditInput(named, "make the car blue")).toBe(setEditInput(n.spec, "make the car blue"));
+    expect(JSON.stringify(setEditRequest(named, "make the car blue", "safety"))).toBe(JSON.stringify(setEditRequest(n.spec, "make the car blue", "safety")));
+    expect(setEditInput(named, "make the car blue")).not.toContain('"name"');
+  });
+});
+
 describe("a set from before the material words", () => {
   it("is handed to the edit with the words the stage draws it with", () => {
     const r = normaliseSetSpec(raceTrackFixture);

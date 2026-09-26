@@ -59,7 +59,7 @@ describe("followAstraEdit", () => {
   // (Helios Cut 4, step A6b): a change read back keeps it, so a later step
   // back onto that copy brings its words back as an answered change's does.
   it("hands on the seal the read carried with the copy, and none when it carried none", async () => {
-    const seal = { text: { title: AFTER.title, description: AFTER.description, labels: [] }, seal: "s".repeat(32) };
+    const seal = { text: { title: AFTER.title, description: AFTER.description, labels: [], names: [] }, seal: "s".repeat(32) };
     const sealed: Step = { error: null, press: "saved", spec: AFTER, seal, editsLeft: 4 };
     expect(await follow(rig([sealed]))).toEqual({ kind: "saved", spec: AFTER, changed: countSpecChanges(BEFORE, AFTER), seal, editsLeft: 4 });
     expect(await follow(rig([{ ...sealed, press: "lost" }]))).toMatchObject({ kind: "saved", seal });

@@ -9,7 +9,7 @@ import { withModelWrittenPrompt } from "@/lib/generations/refusal-attribution";
 import { cancelAstraJob, pollAstraJob, submitAstraJob, type AstraJobRequest } from "@/lib/generations/providers/astra";
 import { openAiSafetyId } from "@/lib/openai/safety-id";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
-import { changesNothing, countSpecChanges, holdEditedText } from "@/lib/sets/editor-model";
+import { carryNames, changesNothing, countSpecChanges, holdEditedText } from "@/lib/sets/editor-model";
 import {
   SET_BRIEF_TOO_SHORT,
   SET_EDIT_ANSWER_UNCHECKED,
@@ -58,7 +58,7 @@ import {
 } from "@/lib/sets/astra-press";
 import { editUndoOf, heldTextOf, openReaderMeaning, sealedEditText, type EditUndo } from "@/lib/sets/edit-seal";
 import type { AstraEditRead } from "@/lib/sets/astra-follow";
-import { cleanText, normaliseSetSpec, parseSetSpecText, specTextForGate, type SetSpec } from "@/lib/sets/set-spec";
+import { cleanText, normaliseSetSpec, parseSetSpecText, specTextForGate, withoutNames, type SetSpec } from "@/lib/sets/set-spec";
 import { ELEMENT_KEY_RE, resolvePhotos, setElements, type ElementPhoto } from "@/lib/sets/elements";
 import { listElementPhotos } from "@/lib/sets/references";
 import {
@@ -407,9 +407,10 @@ export async function editSetWithAstra(
   const text = cleanText(typeof instruction === "string" ? instruction : "", SET_EDIT_MAX_CHARS);
   if (text.length < 3) return { error: SET_BRIEF_TOO_SHORT };
   // A set Astra cannot answer whole is not sent: the answer would be cut off
-  // and paid for, and counted among the month's changes.
+  // and paid for, and counted among the month's changes. Measured as it is
+  // sent, without its names (Helios Cut 4, step B1: set-edit-prompt.ts).
   const working = owned.edited ?? owned.spec;
-  if (JSON.stringify(working).length > SET_EDIT_MAX_SPEC_CHARS) return { error: SET_EDIT_TOO_BIG };
+  if (JSON.stringify(withoutNames(working)).length > SET_EDIT_MAX_SPEC_CHARS) return { error: SET_EDIT_TOO_BIG };
   const glossed = editMeaningOf(more?.meaning);
   const meaning = glossed && openReaderMeaning(setId, userId, text, glossed, more?.meaningSeal) ? glossed : "";
   const frame = editFrameOf(more?.frame, working);
@@ -454,7 +455,11 @@ export async function editSetWithAstra(
 
       const parsed = parseSetSpecText(answer.text);
       if (!parsed.ok) return { error: SET_EDIT_FAILED, editsLeft: await giveBackAstraChange(access, slot) };
-      const next = parsed.spec;
+      // Astra was sent no names and writes none (Helios Cut 4, step B1): any
+      // it wrote are dropped, and every block it left as it was takes its
+      // name back from the copy it was handed (carryNames), before the
+      // no-change check and the gate read the answer (critic item 12).
+      const next = carryNames(working, withoutNames(parsed.spec));
 
       // An answer that changes nothing (Helios Cut 4, step A1, 2026-09-26 —
       // the owner's decision D11): Astra read the set as already so. It

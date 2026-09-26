@@ -12,6 +12,7 @@
 // on the server for anything a browser sends.
 
 import { kitObjects, kitSize, type KitKind } from "./kit";
+import { inferMaterial } from "./stage-materials";
 import {
   normaliseSetSpec,
   SET_LIMITS,
@@ -21,9 +22,11 @@ import {
   type SetMark,
   type SetObject,
   type SetShape,
+  specNames,
   specTextForGate,
   type SetSpec,
   type Vec3,
+  withoutName,
 } from "./set-spec";
 
 /** What the editor has picked up: one thing, or one facet of the set itself. */
@@ -281,8 +284,12 @@ export function sizeFromScale(o: SetObject, scale: { x: number; y: number; z: nu
 // The server's hold on text, and what an Astra edit changed.
 // ---------------------------------------------------------------------------
 
-/** The words of a set that a browser may never write: its title, its description and its labels (marks', then cameras', each sorted). */
-export type EditText = { title: string; description: string; labels: string[] };
+/**
+ * The words of a set that a browser may never write: its title, its
+ * description, its labels (marks', then cameras', each sorted) and, since
+ * Helios Cut 4, step B1, its objects' names (each once, sorted).
+ */
+export type EditText = { title: string; description: string; labels: string[]; names: string[] };
 
 /**
  * A set's words as the server seals them (edit-seal.ts). Here, not there,
@@ -290,41 +297,104 @@ export type EditText = { title: string; description: string; labels: string[] };
  * server handed for them (seal-book.ts, Helios Cut 4, step A6); edit-seal.ts
  * is server-only and passes this on.
  */
-export function editTextOf(spec: Pick<SetSpec, "title" | "description" | "marks" | "cameras">): EditText {
+export function editTextOf(spec: Pick<SetSpec, "title" | "description" | "marks" | "cameras" | "objects">): EditText {
   const labels = (xs: readonly { label: string }[]) => xs.map((x) => x.label).filter((l) => l.length > 0).sort();
-  return { title: spec.title, description: spec.description, labels: [...labels(spec.marks), ...labels(spec.cameras)] };
+  return { title: spec.title, description: spec.description, labels: [...labels(spec.marks), ...labels(spec.cameras)], names: specNames(spec) };
 }
 
 /**
  * What holdEditedText reads of a stored copy: its words alone, so the words
  * an Undo proves with a seal (edit-seal.ts, Helios Cut 2, 2026-09-25) can
- * stand first. Every SetSpec is one.
+ * stand first. Every SetSpec is one. `objects` (Helios Cut 4, step B1): a
+ * stored copy's own objects, whose names a browser may keep and which carry
+ * onto the same blocks sent without one; `names`: sealed words' names
+ * (edit-seal.ts heldTextOf, a v2 seal), which a browser may keep and which
+ * carry onto nothing, since sealed words hold no blocks.
  */
 export type HeldText = Pick<SetSpec, "title" | "description"> & {
   marks: readonly { label: string }[];
   cameras: readonly { label: string }[];
+  objects?: readonly SetObject[];
+  names?: readonly string[];
 };
+
+/**
+ * An object as the same block, whatever its name: every other field, in one
+ * order, with a material not said read as the word the stage draws it with
+ * (stage-materials.ts inferMaterial) — the word an Astra change is handed
+ * for it (set-edit-prompt.ts withMaterials) and so hands back.
+ */
+function blockKey(o: SetObject): string {
+  return JSON.stringify([o.shape, o.position, o.rotation, o.size, o.color, o.roughness, o.metalness, o.emissive, o.emissiveIntensity, o.castShadow, o.repeat, o.material ?? inferMaterial(o)]);
+}
+
+/**
+ * Names carried forward (Helios Cut 4, step B1): every object of `to` with
+ * no name, identical to an object of `from` apart from the name, takes that
+ * object's name (the first one listed, when two identical blocks differ).
+ * An object that changed — moved, resized, recoloured — takes none: it is
+ * no longer what was named, until the naming pass names it again. Names
+ * `to` already carries stay. The same object back when nothing is carried.
+ *
+ * It keeps names on everything a change did not touch: an Astra change,
+ * which is sent without them (set-edit-prompt.ts) and so answers without
+ * them, and every save through holdEditedText — a Build autosave from a tab
+ * opened before the set was named, Aly's undo_set_change of a copy saved
+ * before, undoAstraEdit's copy from before (critic item 8).
+ */
+export function carryNames<T extends Pick<SetSpec, "objects">>(from: { readonly objects: readonly SetObject[] }, to: T): T {
+  const named = new Map<string, string>();
+  for (const o of from.objects) {
+    if (o.name === undefined) continue;
+    const k = blockKey(o);
+    if (!named.has(k)) named.set(k, o.name);
+  }
+  if (named.size === 0) return to;
+  let carried = false;
+  const objects = to.objects.map((o) => {
+    if (o.name !== undefined) return o;
+    const name = named.get(blockKey(o));
+    if (name === undefined) return o;
+    carried = true;
+    return { ...o, name };
+  });
+  return carried ? { ...to, objects } : to;
+}
 
 /**
  * A browser's edit may move and recolour, never write: the title and
  * description come from the stored copy, and any mark or camera label the
  * stored copies never carried is dropped. Astra's own edits don't pass
  * through here — they are gated whole, like a build.
+ *
+ * Names too (Helios Cut 4, step B1): a name a browser sent stays only when
+ * a stored copy (or the sealed words first) already carries it somewhere —
+ * a block duplicated in Build keeps its name, and a browser can never
+ * invent one — and every block sent without a name that a stored copy
+ * holds, unchanged, under one gets it back (carryNames, the first copy's
+ * first), so a save that knew nothing of names never erases them.
  */
 export function holdEditedText(next: SetSpec, stored: readonly HeldText[]): SetSpec {
-  const held = clone(next);
+  let held = clone(next);
   const first = stored[0];
   if (first) {
     held.title = first.title;
     held.description = first.description;
   }
   const allowed = new Set<string>([""]);
+  const names = new Set<string>();
   for (const s of stored) {
     for (const m of s.marks) allowed.add(m.label);
     for (const c of s.cameras) allowed.add(c.label);
+    for (const n of s.names ?? []) names.add(n);
+    for (const o of s.objects ?? []) if (o.name !== undefined) names.add(o.name);
   }
   for (const m of held.marks) if (!allowed.has(m.label)) m.label = "";
   for (const c of held.cameras) if (!allowed.has(c.label)) c.label = "";
+  if (held.objects.some((o) => o.name !== undefined && !names.has(o.name))) {
+    held.objects = held.objects.map((o) => (o.name !== undefined && !names.has(o.name) ? withoutName(o) : o));
+  }
+  for (const s of stored) if (s.objects) held = carryNames({ objects: s.objects }, held);
   return held;
 }
 
@@ -357,7 +427,8 @@ export function countSpecChanges(a: SetSpec, b: SetSpec): number {
     return c;
   };
   n += lists(a.lights, b.lights);
-  n += lists(a.objects, b.objects);
+  // A name is not a piece of the set (Helios Cut 4, step B1): naming changes nothing drawn.
+  n += lists(a.objects.map(withoutName), b.objects.map(withoutName));
   n += lists(a.marks, b.marks);
   n += lists(a.cameras, b.cameras);
   return n;

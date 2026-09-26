@@ -50,7 +50,7 @@ describe("the seal", () => {
     expect(seal).toMatch(/^[A-Za-z0-9_-]{32}$/);
     expect(openEditSeal(SET, USER, text, seal)).toBe(true);
     // Whatever order the page sends the keys in.
-    expect(openEditSeal(SET, USER, { labels: text.labels, description: text.description, title: text.title }, seal)).toBe(true);
+    expect(openEditSeal(SET, USER, { names: text.names, labels: text.labels, description: text.description, title: text.title }, seal)).toBe(true);
   });
 
   it("refuses a changed title, description or label, another set, another person, and any other seal", () => {
@@ -91,8 +91,8 @@ describe("the seal", () => {
 // Pages now hold seals for as long as they stay open (Helios Cut 4, step
 // A6b, 2026-09-26; critic item 16): a seal made before a deploy must still
 // open after it. The v1 seal is pinned byte for byte, and any change to what
-// a seal covers (names on things, step B1) is a new version put in front,
-// with v1 kept.
+// a seal covers is a new version put in front, with v1 kept: names on
+// things (step B1) are v2.
 describe("the seal's versions", () => {
   const text = editTextOf(SPEC);
   const v1 = (key: string, set: string, user: string, t: EditText) =>
@@ -100,10 +100,20 @@ describe("the seal's versions", () => {
       .update(`set-edit-text:v1:${set}:${user}:${JSON.stringify({ title: t.title, description: t.description, labels: t.labels })}`)
       .digest("base64url")
       .slice(0, 32);
+  const v2 = (key: string, set: string, user: string, t: EditText) =>
+    createHmac("sha256", key)
+      .update(`set-edit-text:v2:${set}:${user}:${JSON.stringify({ title: t.title, description: t.description, labels: t.labels, names: t.names })}`)
+      .digest("base64url")
+      .slice(0, 32);
 
-  it("is v1, exactly as the seals pages hold were made", () => {
-    expect(EDIT_SEAL_VERSIONS).toEqual(["v1"]);
-    expect(sealEditText(SET, USER, text)).toBe(v1("test-only-signing-secret", SET, USER, text));
+  it("is v2 now, over the words and the names, with v1 still opened", () => {
+    expect(EDIT_SEAL_VERSIONS).toEqual(["v2", "v1"]);
+    expect(sealEditText(SET, USER, text)).toBe(v2("test-only-signing-secret", SET, USER, text));
+    const named: EditText = { ...text, names: ["grandstand", "red sports car"] };
+    expect(sealEditText(SET, USER, named)).toBe(v2("test-only-signing-secret", SET, USER, named));
+    // The names are sealed: another list is refused.
+    expect(openEditSeal(SET, USER, { ...named, names: ["grandstand"] }, sealEditText(SET, USER, named))).toBe(false);
+    expect(openEditSeal(SET, USER, text, sealEditText(SET, USER, named))).toBe(false);
   });
 
   it("opens a seal of any version it lists, and none it does not", () => {
@@ -115,6 +125,18 @@ describe("the seal's versions", () => {
       .digest("base64url")
       .slice(0, 32);
     expect(openEditSeal(SET, USER, text, v9)).toBe(false);
+  });
+
+  it("gives back a v1 seal's words with no names: v1 never sealed them (critic item 16)", () => {
+    // A tab from before step B1 sends v1's words, with no names at all.
+    const old = { title: text.title, description: text.description, labels: text.labels };
+    const seal = v1("test-only-signing-secret", SET, USER, text);
+    expect(sealedEditText(SET, USER, { text: old, seal })).toEqual({ ...old, names: [] });
+    // Names added beside a v1 seal are proven by nothing, and dropped.
+    expect(sealedEditText(SET, USER, { text: { ...old, names: ["Invented"] }, seal })).toEqual({ ...old, names: [] });
+    // A v2 seal gives its names back.
+    const named: EditText = { ...text, names: ["grandstand"] };
+    expect(sealedEditText(SET, USER, { text: named, seal: v2("test-only-signing-secret", SET, USER, named) })).toEqual(named);
   });
 });
 
@@ -134,9 +156,15 @@ describe("what a page sends back", () => {
       { ...text, description: "d".repeat(SET_LIMITS.descriptionChars + 1) },
       { ...text, labels: ["l".repeat(SET_LIMITS.labelChars + 1)] },
       { ...text, labels: Array.from({ length: SET_LIMITS.maxMarks + SET_LIMITS.maxCameras + 1 }, () => "x") },
+      { ...text, names: "grandstand" },
+      { ...text, names: [3] },
+      { ...text, names: ["n".repeat(SET_LIMITS.nameChars + 1)] },
+      { ...text, names: Array.from({ length: SET_LIMITS.maxObjects + 1 }, (_, i) => `n${i}`) },
     ]) {
       expect(readEditText(bad), JSON.stringify(bad)).toBeNull();
     }
+    // A tab from before step B1 sends no names: read as none.
+    expect(readEditText({ title: text.title, description: text.description, labels: text.labels })).toEqual({ ...text, names: [] });
   });
 
   it("gives back the words only when the seal opens over exactly them", () => {
@@ -171,5 +199,19 @@ describe("sealed words, held first", () => {
     expect(kept.title).toBe("Flagged circuit");
     expect(kept.description).toBe("A race track lined with flags.");
     expect(kept.marks[0].label).toBe("");
+  });
+
+  it("let the names they carried stay on the blocks sent with them, and never carry one onto a block (step B1)", () => {
+    // The copy before: its car named. Astra's copy on the server: the car
+    // recoloured, so its blocks lost the name, and no stored copy has it.
+    const before: SetSpec = { ...SPEC, objects: SPEC.objects.map((o, i) => (i === 0 ? { ...o, name: "red sports car" } : o)) };
+    const astra: SetSpec = { ...SPEC, objects: SPEC.objects.map((o, i) => (i === 0 ? { ...o, color: "#1f4fd1" } : o)) };
+    const sealed = editTextOf(before);
+    expect(sealed.names).toEqual(["red sports car"]);
+    expect(holdEditedText(before, [heldTextOf(sealed), astra, SPEC]).objects[0].name).toBe("red sports car");
+    // Without the seal, no stored copy carries it: dropped.
+    expect("name" in holdEditedText(before, [astra, SPEC]).objects[0]).toBe(false);
+    // Sealed names carry onto nothing: a block sent without one stays without.
+    expect("name" in holdEditedText(SPEC, [heldTextOf(sealed), astra, SPEC]).objects[0]).toBe(false);
   });
 });

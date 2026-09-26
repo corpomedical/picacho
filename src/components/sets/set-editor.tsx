@@ -50,6 +50,7 @@ import {
   type SetShape,
   type SetSpec,
   type Vec3,
+  withoutNames,
 } from "@/lib/sets/set-spec";
 import type { StageQuality } from "@/lib/sets/build-scene";
 import { groundMaterialOf, materialOf } from "@/lib/sets/stage-materials";
@@ -530,7 +531,7 @@ export function SetEditor({
   const [paused, setPaused] = useState(astraPaused);
   // A set grown past what Astra can answer whole is changed with the tools
   // alone (set-config.ts SET_EDIT_MAX_SPEC_CHARS); the server refuses it too.
-  const astraTooBig = useMemo(() => JSON.stringify(spec).length > SET_EDIT_MAX_SPEC_CHARS, [spec]);
+  const astraTooBig = useMemo(() => JSON.stringify(withoutNames(spec)).length > SET_EDIT_MAX_SPEC_CHARS, [spec]);
   const [askError, setAskError] = useState("");
 
   const hostRef = useRef<HTMLDivElement>(null);

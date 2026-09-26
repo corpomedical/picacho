@@ -181,6 +181,62 @@ describe("the splice", () => {
   });
 });
 
+// Names on things (Helios Cut 4, step B1; critic item 5): a rebuild never
+// sends names — on the race track's car they would take its 48 blocks past
+// THING_REBUILD_MAX_SENT_CHARS and refuse it as too big — and its new
+// blocks carry the thing's name, never one the model wrote.
+describe("a named thing's rebuild", () => {
+  const LONG = "a thirty-two character long name";
+  const carBlocks = new Set(car.members.map(([oi]) => oi));
+  const named: SetSpec = { ...race, objects: race.objects.map((o, i) => (carBlocks.has(i) ? { ...o, name: LONG } : o)) };
+
+  it("sends the unnamed car's very bytes, 11,025 characters, under the bound its names would pass", () => {
+    const sent = JSON.stringify(thingLocalBlocks(named, car));
+    expect(sent).toBe(JSON.stringify(thingLocalBlocks(race, car)));
+    expect(sent.length).toBe(11_025);
+    expect(JSON.stringify(thingLocalBlocks(race, car).map((o) => ({ ...o, name: LONG }))).length).toBeGreaterThan(THING_REBUILD_MAX_SENT_CHARS);
+    expect(THING_REBUILD_MAX_SENT_CHARS).toBe(11_500);
+    const text = (thingRebuildInput(named, car, [photo])[0] as { content: { type: string; text?: string }[] }).content[0].text!;
+    expect(text).not.toContain('"name"');
+  });
+
+  it("stamps the thing's name on its new blocks and drops any the model wrote; the rest keep theirs", () => {
+    const withStand: SetSpec = { ...named, objects: named.objects.map((o, i) => (!carBlocks.has(i) && i === 0 ? { ...o, name: "grandstand" } : o)) };
+    const r = spliceThing(withStand, car, answer((o) => ({ ...o, ...(o.material === "paint" ? { color: "#1d4fb8" } : {}), name: "Ferrari" }) as SetObject));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const now = setElements(r.spec).find((e) => e.key === r.key)!;
+    for (const [oi] of now.members) expect(r.spec.objects[oi].name).toBe(LONG);
+    expect(JSON.stringify(r.spec)).not.toContain("Ferrari");
+    if (!carBlocks.has(0)) expect(r.spec.objects[0].name).toBe("grandstand");
+    // An unnamed thing's new blocks carry none.
+    const plain = spliceThing(race, car, answer((o) => ({ ...o, name: "Ferrari" }) as SetObject));
+    expect(plain.ok && plain.spec.objects.every((o) => !("name" in o))).toBe(true);
+  });
+
+  it("keeps the name on every copy of a row split because only part of it was the thing", () => {
+    // A row of four crates 3 m apart: each copy is a thing of its own.
+    const yard = load({
+      title: "Yard",
+      bounds: { x: 30, z: 30, height: 8 },
+      objects: [
+        { shape: "box", position: [0, 0.5, 20], size: [30, 1, 0.5], color: "#777777" },
+        { shape: "box", position: [-4.5, 0.4, 0], size: [0.8, 0.8, 0.8], color: "#8a5a2b", material: "timber", repeat: { count: 4, offset: [3, 0, 0] }, name: "crates" },
+      ],
+    });
+    const first = setElements(yard).find((e) => e.members.length === 1 && e.members[0][0] === 1 && e.members[0][1] === 0)!;
+    expect(first).toBeDefined();
+    // Answered as it was (a changed crate's photos would find its identical neighbour, as they should).
+    const r = spliceThing(yard, first, thingLocalBlocks(yard, first));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // The new crate and the three copies left standing, each on its own now, all "crates".
+    const crates = r.spec.objects.filter((o) => o.shape === "box" && o.size[0] < 1);
+    expect(crates).toHaveLength(4);
+    expect(crates.every((o) => o.name === "crates")).toBe(true);
+  });
+});
+
 // The card's row and the page's side, read as source like the page's other tests.
 describe("the card", () => {
   const view = readFileSync(join(__dirname, "../../components/sets/set-view.tsx"), "utf8");

@@ -26,13 +26,15 @@ import type { SetSpec } from "./set-spec";
 /** Seals the server handed this page, filed by the words each one seals. */
 export type SealBook = Map<string, EditUndo>;
 
-/** The one key for a set of words, whichever object they came in. */
+/** The one key for a set of words, whichever object they came in: with their names (Helios Cut 4, step B1), so a copy finds the seal of exactly its words. */
 function keyOf(text: EditText): string {
-  return JSON.stringify({ title: text.title, description: text.description, labels: text.labels });
+  return JSON.stringify({ title: text.title, description: text.description, labels: text.labels, names: Array.isArray(text.names) ? text.names : [] });
 }
 
+type Copy = Pick<SetSpec, "title" | "description" | "marks" | "cameras" | "objects">;
+
 /** The key of a copy's words. */
-export function wordsKey(spec: Pick<SetSpec, "title" | "description" | "marks" | "cameras">): string {
+export function wordsKey(spec: Copy): string {
   return keyOf(editTextOf(spec));
 }
 
@@ -52,11 +54,17 @@ export function fileSeal(book: SealBook, seal: EditUndo | null | undefined): voi
 }
 
 /** The seal the server handed for exactly this copy's words, or null when it handed none. */
-export function sealFor(book: SealBook, spec: Pick<SetSpec, "title" | "description" | "marks" | "cameras">): EditUndo | null {
+export function sealFor(book: SealBook, spec: Copy): EditUndo | null {
   return book.get(wordsKey(spec)) ?? null;
 }
 
-/** Whether two copies have the same words (a data comparison: title, description, labels). */
+/**
+ * Whether two copies have the same words a person reads as the set's (a
+ * data comparison: title, description, labels). Not the names: Build's
+ * note on a step back says the description still mentions the change,
+ * which a name that differs never makes true.
+ */
 export function sameWords(a: Pick<SetSpec, "title" | "description" | "marks" | "cameras">, b: Pick<SetSpec, "title" | "description" | "marks" | "cameras">): boolean {
-  return wordsKey(a) === wordsKey(b);
+  const words = (s: Pick<SetSpec, "title" | "description" | "marks" | "cameras">) => JSON.stringify(editTextOf({ ...s, objects: [] }));
+  return words(a) === words(b);
 }

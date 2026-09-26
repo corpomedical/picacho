@@ -179,7 +179,7 @@ import {
   SET_MAX_TILT_UP_DEG,
   SET_THUMB_PX,
 } from "@/lib/sets/set-config";
-import { SET_LIMITS, STAND_POSES, specInstanceCount, type SetLayout, type SetSpec, type StandPose, type Vec3 } from "@/lib/sets/set-spec";
+import { SET_LIMITS, STAND_POSES, specInstanceCount, specKeyText, type SetLayout, type SetSpec, type StandPose, type Vec3 } from "@/lib/sets/set-spec";
 import { REHEARSAL_BITRATE, REHEARSAL_FPS, REHEARSAL_MAX_SECONDS, REHEARSAL_MIMES, clipSize, flightSteps, recordSize, rehearsalFits, rehearsalSeconds } from "@/lib/sets/rehearsal";
 import type { SetCharacter, SetShot } from "@/lib/sets/types";
 import { dropUnsaved, keepUnsaved, savedFilmKey, savedRigKey, takeUnsaved } from "@/lib/sets/unsaved";
@@ -865,8 +865,10 @@ export function SetView({
   // camera menus follow the edit; the engine swaps its scene via
   // api.rebuild and keeps its own initial bounds for the drag clamps.
   const [spec, setSpec] = useState<SetSpec>(initialSpec);
-  // The set as one short key, for what a film was rendered in (film.ts).
-  const setKey = useMemo(() => textKey(JSON.stringify(spec)), [spec]);
+  // The set as one short key, for what a film was rendered in (film.ts):
+  // without its names (set-spec.ts specKeyText, Helios Cut 4, step B1), so
+  // naming a set never marks a film stale.
+  const setKey = useMemo(() => textKey(specKeyText(spec)), [spec]);
 
   const startPose: Pose = initialLayout?.camera ?? {
     position: spec.cameras[0].position,

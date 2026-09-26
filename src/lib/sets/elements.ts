@@ -113,6 +113,38 @@ export function setElements(spec: Pick<SetSpec, "objects" | "bounds">): SetEleme
   return found;
 }
 
+/**
+ * A thing's name (Helios Cut 4, step B1): the name most of its blocks carry,
+ * counted per copy, so a repeated block counts as often as it is drawn;
+ * between names carried equally, the one on its largest block (by volume;
+ * the first listed between equals); null when none of its blocks is named.
+ * Blocks without a name don't vote. Never part of its key: names are not
+ * in a block's signature, so naming a set moves no photo.
+ */
+export function thingNameOf(el: Pick<SetElement, "members">, spec: Pick<SetSpec, "objects">): string | null {
+  const count = new Map<string, number>();
+  for (const [oi] of el.members) {
+    const name = spec.objects[oi]?.name;
+    if (name !== undefined) count.set(name, (count.get(name) ?? 0) + 1);
+  }
+  if (count.size === 0) return null;
+  const top = Math.max(...count.values());
+  const tied = new Set([...count].filter(([, n]) => n === top).map(([name]) => name));
+  if (tied.size === 1) return [...tied][0];
+  let best: string | null = null;
+  let volume = -1;
+  for (const [oi] of el.members) {
+    const o = spec.objects[oi];
+    if (!o?.name || !tied.has(o.name)) continue;
+    const v = o.size[0] * o.size[1] * o.size[2];
+    if (v > volume) {
+      volume = v;
+      best = o.name;
+    }
+  }
+  return best;
+}
+
 /** Which thing each block copy belongs to, as "object:copy" → key. */
 export function copyToElement(els: readonly SetElement[]): Map<string, string> {
   const out = new Map<string, string>();

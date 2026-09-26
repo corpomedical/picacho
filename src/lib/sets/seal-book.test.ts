@@ -62,6 +62,23 @@ describe("the page's seal book", () => {
     expect(sealFor(book, shuffled)).not.toBeNull();
   });
 
+  // Names on things (Helios Cut 4, step B1): the seal covers them (v2), so
+  // the book finds a copy's seal by its words AND its names; Build's note on
+  // a step back reads the words a person reads as the set's, never a name.
+  it("files and finds a seal by the words with their names, and compares words without them", () => {
+    const named: SetSpec = { ...SPEC, objects: SPEC.objects.map((o, i) => (i === 0 ? { ...o, name: "grandstand" } : o)) };
+    const book: SealBook = new Map();
+    fileSeal(book, editUndoOf(SET, USER, named));
+    expect(sealFor(book, named)!.text.names).toEqual(["grandstand"]);
+    expect(sealFor(book, SPEC)).toBeNull();
+    expect(wordsKey(named)).not.toBe(wordsKey(SPEC));
+    expect(sameWords(named, SPEC)).toBe(true);
+    // A seal a tab was handed before B1 carries no names: filed as none.
+    const old = { text: { title: SPEC.title, description: SPEC.description, labels: editTextOf(SPEC).labels }, seal: "s".repeat(32) } as unknown as EditUndo;
+    fileSeal(book, old);
+    expect(sealFor(book, SPEC)).toBe(old);
+  });
+
   it("files nothing for no seal, or anything that isn't one", () => {
     const book: SealBook = new Map();
     for (const bad of [null, undefined, { text: null, seal: "x" }, { text: { title: 1, description: "", labels: [] }, seal: "x" }, { text: editTextOf(SPEC) }]) {

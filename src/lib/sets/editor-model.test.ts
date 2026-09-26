@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { normaliseSetSpec, SET_LIMITS, specInstanceCount, type SetSpec } from "./set-spec";
+import { normaliseSetSpec, SET_LIMITS, specInstanceCount, withoutName, type SetSpec } from "./set-spec";
 import {
   addCamera,
   addLight,
   addMark,
   addObject,
+  carryNames,
   changesNothing,
   countSpecChanges,
   duplicateObject,
@@ -23,6 +24,7 @@ import {
   selectionAfter,
   sizeFromScale,
 } from "./editor-model";
+import { inferMaterial } from "./stage-materials";
 
 // Every edit is a new spec through normaliseSetSpec — these tests hold the
 // editor to the same rules as the first build: caps kept, junk clamped, an
@@ -173,6 +175,66 @@ describe("the server's hold on text", () => {
     expect(held.marks[0].label).toBe("");
     expect(held.cameras[0].label).toBe("wide");
     expect(held.cameras[1].label).toBe("");
+  });
+});
+
+// Names on things (Helios Cut 4, step B1, 2026-09-26): a browser may keep a
+// name a stored copy carries and never invent one, and a save that knew
+// nothing of names never erases them (critic item 8).
+describe("the server's hold on names", () => {
+  /** A yard of three blocks: two named, one not. */
+  const yard = (): SetSpec => {
+    const s = okOf(addObject(okOf(addObject(base(), "cone", [3, 0])), "sphere", [-3, 0]));
+    return { ...s, objects: s.objects.map((o, i) => (i === 0 ? { ...o, name: "crate" } : i === 1 ? { ...o, name: "traffic cone" } : o)) };
+  };
+  const unnamed = (s: SetSpec): SetSpec => ({ ...s, objects: s.objects.map(withoutName) });
+
+  it("drops a name no stored copy carries, and keeps one a stored copy carries anywhere", () => {
+    const stored = yard();
+    const sent: SetSpec = { ...stored, objects: stored.objects.map((o, i) => (i === 2 ? { ...o, name: "traffic cone" } : i === 0 ? { ...o, name: "Ferrari crate" } : o)) };
+    const held = holdEditedText(sent, [stored]);
+    // Invented: dropped, then the stored name comes back onto the unchanged block.
+    expect(held.objects[0].name).toBe("crate");
+    // Carried somewhere in a stored copy: it may stay, on another block too.
+    expect(held.objects[2].name).toBe("traffic cone");
+    // A duplicate in Build keeps its name.
+    const doubled = okOf(duplicateObject(stored, 0));
+    expect(holdEditedText(doubled, [stored]).objects.filter((o) => o.name === "crate")).toHaveLength(2);
+  });
+
+  it("carries the stored names back onto every block sent unchanged without one, and none onto a block that changed", () => {
+    const stored = yard();
+    const moved = okOf(patchObject(unnamed(stored), 1, { position: [3, 0.6, 1] }));
+    const held = holdEditedText(moved, [stored]);
+    expect(held.objects[0].name).toBe("crate");
+    expect("name" in held.objects[1]).toBe(false);
+    expect("name" in held.objects[2]).toBe(false);
+    // The first stored copy's name wins; a later copy fills only what it left.
+    const renamed = { ...stored, objects: stored.objects.map((o, i) => (i === 0 ? { ...o, name: "wooden crate" } : o)) };
+    expect(holdEditedText(unnamed(stored), [renamed, stored]).objects[0].name).toBe("wooden crate");
+    // Nothing named anywhere: the copy comes back exactly as sent.
+    expect(JSON.stringify(holdEditedText(base(), [base()]))).toBe(JSON.stringify(base()));
+  });
+
+  it("carries a name across a material the stage infers: a block not said is the block Astra is handed with the word", () => {
+    const stored = yard();
+    expect(stored.objects[0].material).toBeNull();
+    const word = inferMaterial(stored.objects[0]);
+    const same = unnamed(stored);
+    same.objects[0] = { ...same.objects[0], material: word };
+    expect(carryNames(stored, same).objects[0].name).toBe("crate");
+    // Another word is another block: it takes no name.
+    const other = unnamed(stored);
+    other.objects[0] = { ...other.objects[0], material: word === "glass" ? "brick" : "glass" };
+    expect("name" in carryNames(stored, other).objects[0]).toBe(false);
+  });
+
+  it("never counts a name as a piece of the set", () => {
+    const stored = yard();
+    expect(countSpecChanges(unnamed(stored), stored)).toBe(0);
+    // But the gate reads names, so a named copy is not "nothing changed".
+    expect(changesNothing(unnamed(stored), stored)).toBe(false);
+    expect(changesNothing(stored, carryNames(stored, unnamed(stored)))).toBe(true);
   });
 });
 

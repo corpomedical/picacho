@@ -12,7 +12,7 @@
 import type { AstraJobRequest } from "../generations/providers/astra";
 import { SET_BRAND_RULE, SET_SPEC_JSON_SCHEMA, SET_SPEC_SCHEMA_NAME } from "./set-builder-prompt";
 import { SET_BUILD_EFFORT, SET_BUILD_MAX_OUTPUT_TOKENS } from "./set-config";
-import { SET_LIMITS, cleanText, type SetSpec, type Vec3 } from "./set-spec";
+import { SET_LIMITS, cleanText, withoutNames, type SetSpec, type Vec3 } from "./set-spec";
 import { withMaterials } from "./stage-materials";
 
 // The builder's brand rule rides the edit too (Helios Cut 4, step A8,
@@ -114,10 +114,17 @@ export function editFrameLine(frame: EditFrame): string {
  * been drawing it with (withMaterials), so the model keeps them rather than
  * guessing new ones. With `more`, the chat's two extra lines follow the
  * request, the meaning first; without, nothing else changes.
+ *
+ * Never with the objects' names (Helios Cut 4, step B1): a named set sends
+ * exactly the bytes of its unnamed twin, so names cost the whole-set path
+ * nothing — not its worst case (set-config.ts), not its 16,000 characters
+ * (SET_EDIT_MAX_SPEC_CHARS, measured on the same copy) — and Astra never
+ * writes one. editSetWithAstra carries them back onto every block the
+ * answer left as it was (editor-model.ts carryNames).
  */
 export function setEditInput(current: SetSpec, request: string, more?: EditMore): string {
   // A bare object (prices.test.ts measures the framing with one) goes as it is.
-  const sent = Array.isArray(current.objects) && current.ground ? withMaterials(current) : current;
+  const sent = Array.isArray(current.objects) && current.ground ? withMaterials(withoutNames(current)) : current;
   const base = `The current set:\n${JSON.stringify(sent)}\n\nThe change request:\n${request}`;
   const extra = [
     more?.meaning ? `What they mean, as read by the page (not their words): ${more.meaning}` : "",

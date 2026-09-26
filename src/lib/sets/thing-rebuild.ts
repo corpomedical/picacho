@@ -18,8 +18,8 @@
 
 import type { AstraInput, AstraJobRequest } from "../generations/providers/astra";
 import { SET_SPEC_JSON_SCHEMA } from "./set-builder-prompt";
-import { resolvePhotos, setElements, type ElementPhoto, type SetElement } from "./elements";
-import { SET_LIMITS, normaliseSetSpec, type SetObject, type SetSpec, type Vec3 } from "./set-spec";
+import { resolvePhotos, setElements, thingNameOf, type ElementPhoto, type SetElement } from "./elements";
+import { SET_LIMITS, normaliseSetSpec, withoutName, type SetObject, type SetSpec, type Vec3 } from "./set-spec";
 import { withMaterials } from "./stage-materials";
 
 /** Blocks one rebuild may answer with: a detailed car is 30–50. */
@@ -90,12 +90,19 @@ function copyOf(o: SetObject, copy: number): SetObject {
   return { ...o, repeat: null, position: [o.position[0] + step[0] * copy, o.position[1] + step[1] * copy, o.position[2] + step[2] * copy] };
 }
 
-/** The thing's blocks, each copy on its own, in its own frame: the footprint's middle at x = 0, z = 0. */
+/**
+ * The thing's blocks, each copy on its own, in its own frame: the
+ * footprint's middle at x = 0, z = 0. Without their names (Helios Cut 4,
+ * step B1; critic item 5): they are no part of what Astra rebuilds from,
+ * and on the race track's car they would take its 48 blocks from 11,025
+ * characters past THING_REBUILD_MAX_SENT_CHARS, refusing the rebuild as too
+ * big. spliceThing puts the thing's name back on its new blocks.
+ */
 export function thingLocalBlocks(spec: SetSpec, el: SetElement): SetObject[] {
   const sent = withMaterials(spec);
   const [cx, , cz] = el.centre;
   return el.members.map(([oi, copy]) => {
-    const o = copyOf(sent.objects[oi], copy);
+    const o = copyOf(withoutName(sent.objects[oi]), copy);
     return {
       ...o,
       position: [cm(o.position[0] - cx), cm(o.position[1]), cm(o.position[2] - cz)],
@@ -180,7 +187,11 @@ const family = (k: SetElement["kind"]) => (k === "object" ? "object" : "vehicle"
  * the place in the list its first block had (so it keeps its number among
  * its kind), then held to what the set promises. A repeated object that is
  * only partly this thing (a row of barriers the car touched) is split into
- * its copies, and only the thing's copies go.
+ * its copies, and only the thing's copies go, each keeping its own name.
+ *
+ * The new blocks carry the thing's name (Helios Cut 4, step B1: thingNameOf
+ * of the thing replaced), and never a name the model wrote: the answer is
+ * only blocks, and a name is the naming pass's to write.
  */
 export function spliceThing(spec: SetSpec, el: SetElement, raw: readonly unknown[]): RebuildResult {
   const [cx, , cz] = el.centre;
@@ -194,7 +205,8 @@ export function spliceThing(spec: SetSpec, el: SetElement, raw: readonly unknown
   // The trust boundary: the new blocks go through the set's own normaliser on their own first.
   const alone = normaliseSetSpec({ ...spec, objects: world });
   if (!alone.ok) return { ok: false, why: "empty" };
-  const fresh = alone.spec.objects;
+  const name = thingNameOf(el, spec);
+  const fresh = alone.spec.objects.map((o) => (name === null ? withoutName(o) : { ...withoutName(o), name }));
 
   const mine = new Map<number, Set<number>>();
   for (const [oi, copy] of el.members) mine.set(oi, (mine.get(oi) ?? new Set()).add(copy));

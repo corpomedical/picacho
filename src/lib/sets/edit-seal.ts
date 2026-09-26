@@ -50,17 +50,21 @@ function sealKey(): string | null {
  * The seal's versions this server opens, newest first; a seal is made with
  * the first (Helios Cut 4, step A6b, 2026-09-26; critic item 16). Pages now
  * hold seals for as long as they stay open, so a change to what a seal
- * covers is a new version put in front — names on things (step B1) will be
- * "v2" — and "v1" stays in the list: a seal a tab was handed before that
- * deploy still opens, for the words v1 covers and nothing more (a v1 seal
- * proves no names, and must never let names ride).
+ * covers is a new version put in front, and the old ones stay in the list:
+ * - "v2" (step B1, 2026-09-26): the words and the objects' names;
+ * - "v1": the title, the description and the labels. A seal a tab was
+ *   handed before B1's deploy still opens, for the words v1 covers and
+ *   nothing more: a v1 seal proves no names, so the names that come with it
+ *   are dropped (sealedEditText) and never ride.
  */
-export const EDIT_SEAL_VERSIONS = ["v1"] as const;
+export const EDIT_SEAL_VERSIONS = ["v2", "v1"] as const;
 type SealVersion = (typeof EDIT_SEAL_VERSIONS)[number];
 
-/** What a version seals of the words: v1, the title, the description and the labels, in one key order, whatever order the object came in. */
+/** What a version seals of the words, in one key order, whatever order the object came in: v1, the title, the description and the labels; v2, those and the names. */
 function sealedWords(version: SealVersion, text: EditText): string {
   switch (version) {
+    case "v2":
+      return JSON.stringify({ title: text.title, description: text.description, labels: text.labels, names: text.names });
     case "v1":
       return JSON.stringify({ title: text.title, description: text.description, labels: text.labels });
   }
@@ -86,16 +90,19 @@ export function editUndoOf(setId: string, userId: string, handed: SetSpec): Edit
 /**
  * A browser's words, held to the shape a set's words have (set-spec.ts
  * SET_LIMITS): anything else is not a set's text, and no seal is checked
- * for it. Counted by code point, as normaliseSetSpec cuts them.
+ * for it. Counted by code point, as normaliseSetSpec cuts them. `names`
+ * may be missing — a tab from before step B1 sends v1's words — and is
+ * then none.
  */
 export function readEditText(value: unknown): EditText | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const { title, description, labels } = value as Record<string, unknown>;
+  const { title, description, labels, names } = value as Record<string, unknown>;
   const fits = (v: unknown, max: number): v is string => typeof v === "string" && Array.from(v).length <= max;
   if (!fits(title, SET_LIMITS.titleChars) || !fits(description, SET_LIMITS.descriptionChars)) return null;
   if (!Array.isArray(labels) || labels.length > SET_LIMITS.maxMarks + SET_LIMITS.maxCameras) return null;
   if (!labels.every((l) => fits(l, SET_LIMITS.labelChars))) return null;
-  return { title, description, labels: [...labels] };
+  if (names !== undefined && (!Array.isArray(names) || names.length > SET_LIMITS.maxObjects || !names.every((n) => fits(n, SET_LIMITS.nameChars)))) return null;
+  return { title, description, labels: [...labels], names: Array.isArray(names) ? [...(names as string[])] : [] };
 }
 
 /** The version whose seal `seal` is, over exactly these words, for this set and this person; null when none is. Timing-safe; null with no key. */
@@ -121,19 +128,23 @@ export function openEditSeal(setId: string, userId: string, text: EditText, seal
  * mark or a camera, as it could in the copy it came from.
  */
 export function heldTextOf(text: EditText): HeldText {
-  return { title: text.title, description: text.description, marks: text.labels.map((label) => ({ label })), cameras: [] };
+  return { title: text.title, description: text.description, marks: text.labels.map((label) => ({ label })), cameras: [], names: [...text.names] };
 }
 
 /**
  * The words an Undo may put back, from what the page sent: the text, read
  * to its shape, and only when its seal opens. Null for anything else — the
- * Undo then keeps the server's words, as every save does.
+ * Undo then keeps the server's words, as every save does. Words opened by
+ * a v1 seal come back with no names: v1 never sealed them (step B1).
  */
 export function sealedEditText(setId: string, userId: string, undo: unknown): EditText | null {
   if (!undo || typeof undo !== "object") return null;
   const { text, seal } = undo as { text?: unknown; seal?: unknown };
   const read = readEditText(text);
-  return read !== null && openEditSeal(setId, userId, read, seal) ? read : null;
+  if (read === null) return null;
+  const version = openedVersion(setId, userId, read, seal);
+  if (version === null) return null;
+  return version === "v1" ? { ...read, names: [] } : read;
 }
 
 // ---------------------------------------------------------------------------

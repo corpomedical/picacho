@@ -16,6 +16,10 @@ import {
   type SetFilm,
 } from "./film";
 import { DEFAULT_SET_RIG, normaliseSetRig, type SetRig } from "./rig";
+import { normaliseSetSpec, specKeyText, type SetSpec } from "./set-spec";
+import raceTrack from "./fixtures-race-track.json";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { SET_TAKE_ENGINES, SET_TAKES_PER_10_MIN } from "./take";
 
 // The film's one door: whatever is stored or sent becomes a usable film or
@@ -323,6 +327,20 @@ describe("filmContextKey", () => {
     expect(key({ rig: rig({ light: { scheme: "moonlight", azimuthDeg: 40, elevationDeg: 30 } }) })).not.toBe(base);
     expect(key({ mark: { ...mark, facingDeg: 180 } })).not.toBe(base);
     expect(key({ setKey: "s2" })).not.toBe(base);
+  });
+
+  // Names on things (Helios Cut 4, step B1): the page keys the set by its
+  // JSON without names (set-spec.ts specKeyText), so naming a set never
+  // marks a film stale and re-renders its paid clips.
+  it("is the same for a set with names and without (the page's setKey, specKeyText)", () => {
+    const n = normaliseSetSpec(raceTrack);
+    if (!n.ok) throw new Error("fixture");
+    const named: SetSpec = { ...n.spec, objects: n.spec.objects.map((o, i) => ({ ...o, name: `block ${i}` })) };
+    expect(key({ setKey: textKey(specKeyText(named)) })).toBe(key({ setKey: textKey(specKeyText(n.spec)) }));
+    // An unnamed set's key is the one it always had: its JSON.
+    expect(textKey(specKeyText(n.spec))).toBe(textKey(JSON.stringify(n.spec)));
+    const view = readFileSync(join(__dirname, "../../components/sets/set-view.tsx"), "utf8");
+    expect(view).toContain("const setKey = useMemo(() => textKey(specKeyText(spec)), [spec]);");
   });
 
   it("ignores what never reaches the picture: the genre and the stage's grade", () => {

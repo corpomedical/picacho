@@ -5,9 +5,17 @@ import {
   parseSetSpecText,
   SET_LIMITS,
   specInstanceCount,
+  specKeyText,
+  specNames,
   specTextForGate,
+  withoutNames,
   type SetSpec,
 } from "./set-spec";
+import { createHash } from "node:crypto";
+import beach from "./fixtures-beach.json";
+import raceTrack from "./fixtures-race-track.json";
+import showroomClosed from "./fixtures-showroom-closed.json";
+import showroomOpen from "./fixtures-showroom-open.json";
 import { LENSES_MM, fovForLens, nearestLens } from "./build-scene";
 import { RIG_FORMAT_ORDER, RIG_SENSOR_ORDER, sensorHeightMm } from "./rig";
 import { normaliseShotCamera } from "./look-cutout";
@@ -366,5 +374,80 @@ describe("the layout's pose (cut 5)", () => {
     expect(normaliseSetLayout({ markId: "m1" }, r.spec)?.pose).toBe("stand");
     expect(normaliseSetLayout({ markId: "m1", pose: "sit" }, r.spec)?.pose).toBe("sit");
     expect(normaliseSetLayout({ markId: "m1", pose: "fly" }, r.spec)?.pose).toBe("stand");
+  });
+});
+
+// Names on objects (Helios Cut 4, step B1, 2026-09-26). A name is shown on
+// screen and read by the chat and Aly, and never part of anything that
+// moves money or keys. Every set saved before names must load exactly as
+// it did: its JSON is what a film's key and the page's copy are made of.
+describe("an object's name", () => {
+  const sha = (spec: SetSpec) => createHash("sha256").update(JSON.stringify(spec)).digest("hex").slice(0, 16);
+
+  it("leaves every set saved before names byte for byte as it was (the five fixtures, hashed before B1)", () => {
+    const before: [unknown, number, string][] = [
+      [beach, 10100, "eeee568a1584b930"],
+      [raceTrack, 12971, "ff0d09addf335a75"],
+      [rainyMarket, 11534, "6657b677787152c3"],
+      [showroomClosed, 13078, "2d752e2d736d1d67"],
+      [showroomOpen, 11627, "56412d8b749e7a44"],
+    ];
+    for (const [fixture, length, hash] of before) {
+      const spec = ok(fixture);
+      expect(JSON.stringify(spec)).toHaveLength(length);
+      expect(sha(spec)).toBe(hash);
+      expect(JSON.stringify(spec)).not.toContain('"name"');
+      expect(spec.objects.every((o) => !("name" in o))).toBe(true);
+      // The key text of an unnamed set is its JSON.
+      expect(specKeyText(spec)).toBe(JSON.stringify(spec));
+      expect(withoutNames(spec)).toBe(spec);
+    }
+  });
+
+  it("is cleaned and capped like a label, kept as written, and left out when blank — never null or empty", () => {
+    const s = ok({
+      objects: [
+        box({ name: "  Red\u202e sports   car " }),
+        box({ name: "n".repeat(100) }),
+        box({ name: "   " }),
+        box({ name: null }),
+        box({ name: 42 }),
+        box({ name: "The grandstand" }),
+      ],
+    });
+    expect(s.objects[0].name).toBe("Red sports car");
+    expect(s.objects[1].name).toBe("n".repeat(SET_LIMITS.nameChars));
+    expect(SET_LIMITS.nameChars).toBe(32);
+    for (const i of [2, 3, 4]) expect("name" in s.objects[i]).toBe(false);
+    // No word is taken off (an article is the naming pass's not to write, in any language).
+    expect(s.objects[5].name).toBe("The grandstand");
+    // Last among the object's keys, and read back unchanged.
+    expect(Object.keys(s.objects[0]).at(-1)).toBe("name");
+    expect(JSON.stringify(ok(JSON.parse(JSON.stringify(s))))).toBe(JSON.stringify(s));
+  });
+
+  it("never moves the set's key: specKeyText and withoutNames take every name off", () => {
+    const plain = ok(raceTrack);
+    const named = ok({ ...plain, objects: plain.objects.map((o, i) => (i % 3 === 0 ? { ...o, name: `thing ${i}` } : o)) });
+    expect(JSON.stringify(named)).not.toBe(JSON.stringify(plain));
+    expect(specKeyText(named)).toBe(specKeyText(plain));
+    expect(JSON.stringify(withoutNames(named))).toBe(JSON.stringify(plain));
+    // The named copy itself is left as it was.
+    expect(named.objects[0].name).toBe("thing 0");
+  });
+
+  it("is read by the gate with every other word a person will read: each name once, sorted, after the rest", () => {
+    const s = ok({
+      title: "T",
+      description: "D",
+      objects: [box({ name: "red sports car" }), box({ name: "grandstand" }), box({ name: "red sports car" }), box()],
+      marks: [{ label: "M", x: 0, z: 0, facingDeg: 0 }],
+      cameras: [{ label: "C", position: [0, 2, 5], target: [0, 1, 0], fovDeg: 40 }],
+    });
+    expect(specNames(s)).toEqual(["grandstand", "red sports car"]);
+    expect(specTextForGate(s).split("\n")).toEqual(["T", "D", "C", "M", "grandstand", "red sports car"]);
+    // A set without names reads exactly as before.
+    const plain = ok({ ...s, objects: s.objects.map((o) => ({ ...o, name: undefined })) });
+    expect(specTextForGate(plain)).toBe("T\nD\nC\nM");
   });
 });

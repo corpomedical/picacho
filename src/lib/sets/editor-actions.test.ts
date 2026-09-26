@@ -1545,6 +1545,140 @@ describe("a thing rebuilt from its photos", () => {
   });
 });
 
+// Names on things (Helios Cut 4, step B1, 2026-09-26): nothing writes them
+// yet (the naming pass is step B4), but every path that saves a set must
+// keep them — an Astra change is sent none and carries them back, a save
+// that knew nothing of them never erases them (critic item 8), a browser
+// never invents one, and a rebuild neither sends them nor loses them
+// (critic item 5).
+describe("names on things", () => {
+  const car = setElements(SPEC).find((e) => e.kind === "car")!;
+  const carBlocks = new Set(car.members.map(([oi]) => oi));
+  const stand = SPEC.objects.findIndex((_, i) => !carBlocks.has(i));
+  /** The race track named: its car, and one block of the set itself. */
+  const NAMED: SetSpec = {
+    ...SPEC,
+    objects: SPEC.objects.map((o, i) => (carBlocks.has(i) ? { ...o, name: "red sports car" } : i === stand ? { ...o, name: "grandstand" } : o)),
+  };
+  const lastWrite = () => (writes[writes.length - 1] as { edited_spec: SetSpec }).edited_spec;
+  const nameAt = (spec: SetSpec, i: number) => spec.objects[i].name;
+  /** Astra's answer: the set sent (no names), with the grandstand block recoloured — and any names it made up. */
+  const standRecoloured = (extra: Record<string, unknown> = {}) =>
+    JSON.stringify({ ...SPEC, objects: SPEC.objects.map((o, i) => (i === stand ? { ...o, color: "#2266aa", ...extra } : o)) });
+
+  it("sends Astra the unnamed twin's exact bytes, and carries the names back onto every block it left as it was", async () => {
+    edited = NAMED;
+    answer = { state: "done", text: standRecoloured(), usage: null, costUsd: 0.31 };
+    const out = await editSetWithAstra(SET, "make the grandstand blue");
+    if (out.error !== null) throw new Error(out.error);
+    expect(sent[0].input).toBe(setEditInput(SPEC, "make the grandstand blue"));
+    expect(String(sent[0].input)).not.toContain('"name"');
+    const saved = lastWrite();
+    for (const i of carBlocks) expect(nameAt(saved, i)).toBe("red sports car");
+    // The block Astra changed is no longer what was named: it takes none.
+    expect("name" in saved.objects[stand]).toBe(false);
+    expect(out.changed).toBe(1);
+  });
+
+  it("drops a name Astra wrote itself: names are never the model's", async () => {
+    edited = NAMED;
+    answer = { state: "done", text: standRecoloured({ name: "Ferrari stand" }), usage: null, costUsd: 0.31 };
+    const out = await editSetWithAstra(SET, "make the grandstand blue");
+    if (out.error !== null) throw new Error(out.error);
+    expect(JSON.stringify(lastWrite())).not.toContain("Ferrari");
+  });
+
+  it("reads an answer that changes nothing on a named set as nothing: names are carried before the check (critic item 12)", async () => {
+    edited = NAMED;
+    answer = { state: "done", text: JSON.stringify(SPEC), usage: null, costUsd: 0.31 };
+    const out = await editSetWithAstra(SET, "make the grandstand blue");
+    if (out.error !== null) throw new Error(out.error);
+    expect(out.changed).toBe(0);
+    expect(writes).toHaveLength(0);
+    expect(steps).toContain("give back");
+    expect(steps).not.toContain("answer gate");
+  });
+
+  it("measures a set's size for Astra without its names", async () => {
+    // Grown to just under the cap, then named past it.
+    const box = SPEC.objects.find((o) => o.shape === "box")!;
+    let objects = [...SPEC.objects];
+    for (let i = 0; JSON.stringify({ ...SPEC, objects: [...objects, box] }).length <= SET_EDIT_MAX_SPEC_CHARS - 200; i++) {
+      objects = [...objects, { ...box, position: [-90 + i, 0.5, 90] as [number, number, number] }];
+    }
+    const grown = normaliseSetSpec({ ...SPEC, objects });
+    if (!grown.ok) throw new Error("grown");
+    const named = normaliseSetSpec({ ...grown.spec, objects: grown.spec.objects.map((o) => ({ ...o, name: "a very long name for one block" })) });
+    if (!named.ok) throw new Error("named");
+    expect(JSON.stringify(grown.spec).length).toBeLessThanOrEqual(SET_EDIT_MAX_SPEC_CHARS);
+    expect(JSON.stringify(named.spec).length).toBeGreaterThan(SET_EDIT_MAX_SPEC_CHARS);
+    edited = named.spec;
+    answer = { state: "done", text: JSON.stringify(grown.spec), usage: null, costUsd: 0.31 };
+    expect((await editSetWithAstra(SET, "make the grandstand blue")).error).not.toBe(SET_EDIT_TOO_BIG);
+    expect(steps).toContain("astra");
+  });
+
+  it("keeps the names through a Build autosave from a tab opened before the set was named (critic item 8)", async () => {
+    edited = NAMED;
+    // The tab's copy: no names at all, one car block nudged.
+    const nudged = [...carBlocks][0];
+    const tab: SetSpec = { ...SPEC, objects: SPEC.objects.map((o, i) => (i === nudged ? { ...o, position: [o.position[0] + 0.1, o.position[1], o.position[2]] } : o)) };
+    expect(await saveSetEdit(SET, tab)).toEqual({ error: null });
+    const saved = lastWrite();
+    expect(nameAt(saved, stand)).toBe("grandstand");
+    for (const i of carBlocks) if (i !== nudged) expect(nameAt(saved, i)).toBe("red sports car");
+    // The block it moved is no longer the block that was named.
+    expect("name" in saved.objects[nudged]).toBe(false);
+  });
+
+  it("keeps the names when Aly puts back a copy saved before the set was named (undo_set_change → saveSetEdit)", async () => {
+    // Aly's undo saves the copy it replaced through saveSetEdit (producer/set-tools.ts undoSetTool): here, the unnamed original.
+    edited = NAMED;
+    expect(await saveSetEdit(SET, SPEC)).toEqual({ error: null });
+    expect(JSON.stringify(lastWrite())).toBe(JSON.stringify(NAMED));
+    const tools = readFileSync(join(__dirname, "../producer/set-tools.ts"), "utf8");
+    expect(tools).toContain("const saved = restoreTo ? await saveSetEdit(change.setId, restoreTo) : await clearSetEdit(change.setId);");
+  });
+
+  it("keeps the names when an Astra change's Undo sends the copy from before them (undoAstraEdit)", async () => {
+    edited = NAMED;
+    const out = await undoAstraEdit(SET, SPEC, null);
+    if (out.error !== null) throw new Error(out.error);
+    expect(JSON.stringify(out.spec)).toBe(JSON.stringify(NAMED));
+    expect(out.seal!.text.names).toEqual(["grandstand", "red sports car"]);
+  });
+
+  it("never lets a browser invent a name; one a stored copy carries may stay, on a copy of its block too", async () => {
+    edited = NAMED;
+    const invented: SetSpec = { ...NAMED, objects: NAMED.objects.map((o, i) => (i === stand ? { ...o, name: "Ferrari grandstand" } : o)) };
+    expect(await saveSetEdit(SET, invented)).toEqual({ error: null });
+    // The invented name goes; the stored one comes back, the block being unchanged.
+    expect(nameAt(lastWrite(), stand)).toBe("grandstand");
+    const doubled: SetSpec = { ...NAMED, objects: [...NAMED.objects, { ...NAMED.objects[stand], position: [0, 0.5, 60] }] };
+    expect(await saveSetEdit(SET, doubled)).toEqual({ error: null });
+    expect(nameAt(lastWrite(), NAMED.objects.length)).toBe("grandstand");
+  });
+
+  it("rebuilds a named car without sending its names or refusing it as too big, and its new blocks carry its name (critic item 5)", async () => {
+    access.isAdmin = true;
+    const LONG = "a thirty-two character long name";
+    expect(LONG).toHaveLength(32);
+    edited = { ...SPEC, objects: SPEC.objects.map((o, i) => (carBlocks.has(i) ? { ...o, name: LONG } : o)) };
+    // With its names the car's blocks would be past the bound; as sent, they are the unnamed car's.
+    const namedBlocks = thingLocalBlocks(SPEC, car).map((o) => ({ ...o, name: LONG }));
+    expect(JSON.stringify(namedBlocks).length).toBeGreaterThan(THING_REBUILD_MAX_SENT_CHARS);
+    expect(JSON.stringify(thingLocalBlocks(edited, car))).toBe(JSON.stringify(thingLocalBlocks(SPEC, car)));
+    photos = [{ refId: "33333331-3333-4333-8333-333333333333", anchor: car.key, slot: 1, at: 1, url: "", path: `${USER}/sets/${SET}.ref.${car.key}.1.x.jpg` }];
+    answer = { state: "done", text: JSON.stringify({ objects: thingLocalBlocks(SPEC, car).map((o) => (o.material === "paint" ? { ...o, color: "#1d4fb8", name: "Ferrari" } : o)) }), usage: null, costUsd: 0.2 };
+    const r = await rebuildThingFromPhotos(SET, car.key);
+    if (r.error !== null) throw new Error(r.error);
+    expect(String((sent[0].input as { content: { text?: string }[] }[])[0].content[0].text)).not.toContain('"name"');
+    const rebuilt = setElements(r.spec).find((e) => e.key === r.key)!;
+    for (const [oi] of rebuilt.members) expect(r.spec.objects[oi].name).toBe(LONG);
+    expect(JSON.stringify(r.spec)).not.toContain("Ferrari");
+  });
+});
+
 // The prompt bar says what the server holds (set-editor.tsx, a client
 // component, read as source).
 describe("the editor's prompt bar", () => {
@@ -1553,7 +1687,8 @@ describe("the editor's prompt bar", () => {
 
   it("shows the month's changes left, and holds send at none or at a set too big", () => {
     expect(editor).toContain("const [editsLeft, setEditsLeft] = useState<number | null>(astraEditsLeft);");
-    expect(editor).toContain("const astraTooBig = useMemo(() => JSON.stringify(spec).length > SET_EDIT_MAX_SPEC_CHARS, [spec]);");
+    // Measured as Astra is sent it, without names (Helios Cut 4, step B1).
+    expect(editor).toContain("const astraTooBig = useMemo(() => JSON.stringify(withoutNames(spec)).length > SET_EDIT_MAX_SPEC_CHARS, [spec]);");
     expect(editor).toContain("{editsLeft !== null && (");
     expect(editor).toContain("editsLeft === 0 ? s.editorAskLeftNone : editsLeft === 1 ? s.editorAskLeftOne : formatMsg(s.editorAskLeft, { n: editsLeft })");
     // Send is no longer held at the cap in silence: it says why (below).

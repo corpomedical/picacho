@@ -99,6 +99,18 @@ export type SetObject = {
   repeat: { count: number; offset: Vec3 } | null;
   /** What it is made of (SET_MATERIALS); null = inferred by the stage. */
   material: SetMaterial | null;
+  /**
+   * What a person on the set would call it ("red sports car", "grandstand";
+   * Helios Cut 4, step B1, 2026-09-26): shown on screen, read by the chat
+   * and by Aly, and NEVER part of anything that moves money or keys — a
+   * thing's key and its photos (elements.ts signature), a film's key
+   * (specKeyText) and the words a render provider reads (owner decision D2)
+   * never see it. Absent when the object has none: the key is LEFT OUT,
+   * never null or "", so every set saved before names loads byte for byte
+   * as it did. Written only by the server (holdEditedText keeps a browser
+   * from inventing one).
+   */
+  name?: string;
 };
 
 /** Where a person can stand. Only ever drawn as the neutral stand-in. */
@@ -125,6 +137,8 @@ export const SET_LIMITS = {
   titleChars: 60,
   descriptionChars: 300,
   labelChars: 40,
+  /** An object's name (SetObject.name, Helios Cut 4, step B1): 1–3 words. */
+  nameChars: 32,
   /** Full width of the set along x and z, metres. */
   minExtent: 2,
   maxExtent: 200,
@@ -252,6 +266,16 @@ function facing(value: unknown): number {
 /** A material word, or null for anything that is not one (an old set, a word the model made up). */
 function material(v: unknown): SetMaterial | null {
   return typeof v === "string" && (SET_MATERIALS as readonly string[]).includes(v) ? (v as SetMaterial) : null;
+}
+
+/**
+ * An object's name as it may be kept: cleaned and capped like a label, as
+ * written — no word is taken off it (the naming pass writes names without
+ * an article, in the title's language) — and left out when blank.
+ */
+function nameOf(v: unknown): { name: string } | Record<string, never> {
+  const name = cleanText(v, SET_LIMITS.nameChars);
+  return name.length > 0 ? { name } : {};
 }
 
 function pick<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -441,6 +465,9 @@ export function normaliseSetSpec(input: unknown): NormaliseResult {
       castShadow: o.castShadow === true,
       repeat,
       material: material(o.material),
+      // Last, and only when there is one (step B1): a set without names
+      // keeps exactly the JSON it had, so no film or key moves.
+      ...nameOf(o.name),
     });
   }
   if (objects.length === 0) return { ok: false, reason: "empty" };
@@ -550,9 +577,50 @@ export function specTextForGate(spec: SetSpec): string {
     spec.description,
     ...spec.cameras.map((c) => c.label),
     ...spec.marks.map((m) => m.label),
+    // The objects' names (Helios Cut 4, step B1): shown on screen, so read
+    // by the same strict-lane gate, each once, in one order. A set without
+    // names reads exactly as before.
+    ...specNames(spec),
   ]
     .filter((s) => s.length > 0)
     .join("\n");
+}
+
+/** Every name the set's objects carry, each once, sorted (Helios Cut 4, step B1). A bare object with no list (the eval's words-gate test) has none. */
+export function specNames(spec: Pick<SetSpec, "objects">): string[] {
+  const names = new Set<string>();
+  for (const o of Array.isArray(spec.objects) ? spec.objects : []) if (typeof o.name === "string" && o.name.length > 0) names.add(o.name);
+  return [...names].sort();
+}
+
+/** An object without its name: the same object when it has none. */
+export function withoutName(o: SetObject): SetObject {
+  if (o.name === undefined) return o;
+  const rest: SetObject = { ...o };
+  delete rest.name;
+  return rest;
+}
+
+/**
+ * The set with no names on it (Helios Cut 4, step B1): the same object when
+ * none has one, so an unnamed set is never copied. What goes to Astra for a
+ * whole-set change and what its size checks measure (set-edit-prompt.ts,
+ * editor-actions.ts, astra-card.ts), so names never use its characters.
+ */
+export function withoutNames<T extends Pick<SetSpec, "objects">>(spec: T): T {
+  if (!spec.objects.some((o) => o.name !== undefined)) return spec;
+  return { ...spec, objects: spec.objects.map(withoutName) };
+}
+
+/**
+ * The text a drawn set is keyed by (a film's context key, set-view.tsx
+ * setKey): its JSON with every name taken off (Helios Cut 4, step B1).
+ * Naming a set changes no picture — names never reach one (owner decision
+ * D2) — so it must never mark a film stale and re-render paid clips. An
+ * unnamed set's key text is exactly its JSON, as before.
+ */
+export function specKeyText(spec: SetSpec): string {
+  return JSON.stringify(withoutNames(spec));
 }
 
 // ---------------------------------------------------------------------------

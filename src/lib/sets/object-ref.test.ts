@@ -77,6 +77,14 @@ describe("followObjectRef: a whole-set rewrite that reorders the objects", () =>
   it("keeps a block of the set itself on that block, found by what it is (critic item 7)", () => {
     expect(followObjectRef({ index: structure }, side(race), side(reversed))).toEqual({ index: flip(structure) });
   });
+
+  // Names on things (Helios Cut 4, step B1): a block named since is still that very block.
+  it("finds the very block when the rewrite also named it", () => {
+    const named: SetSpec = { ...reversed, objects: reversed.objects.map((o) => ({ ...o, name: "named since" })) };
+    const i = carBlocks[2];
+    expect(followObjectRef({ index: i, key: car.key }, side(race), side(named))).toEqual({ index: flip(i), key: car.key });
+    expect(followObjectRef({ index: structure }, side(race), side(named))).toEqual({ index: flip(structure) });
+  });
 });
 
 describe("followObjectRef: a change to the thing itself", () => {
