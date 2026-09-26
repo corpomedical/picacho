@@ -1,3 +1,4 @@
+import type { EditUndo } from "./edit-seal";
 import type { ElementPhoto } from "./elements";
 import type { SetLayout, SetSpec, Vec3 } from "./set-spec";
 import type { SetFilm } from "./film";
@@ -97,6 +98,15 @@ export type SetDetail = {
   spec: SetSpec | null;
   /** The owner's working copy (the Set Editor, 2026-09-14): what the stage draws when it exists. */
   editedSpec: SetSpec | null;
+  /**
+   * The server's seals over the words of the copy the page draws (`editedSpec
+   * ?? spec`) and of Astra's original (`spec`), for this set and this person
+   * (edit-seal.ts; Helios Cut 4, step A6b). The page files them (seal-book.ts):
+   * a step back onto those words, or a change read back after a dropped
+   * connection, then brings them back. Null with no signing key, or no spec.
+   */
+  seal: EditUndo | null;
+  originalSeal: EditUndo | null;
   layout: SetLayout | null;
   /** The saved move (Helios Film, 2026-09-15): null until one is kept, or before helios-film.sql runs. */
   film: SetFilm | null;

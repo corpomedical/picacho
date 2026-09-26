@@ -46,16 +46,34 @@ function sealKey(): string | null {
   return key.length > 0 ? key : null;
 }
 
-function sealWith(key: string, setId: string, userId: string, text: EditText): string {
-  // One key order, whatever order the object came in.
-  const words = JSON.stringify({ title: text.title, description: text.description, labels: text.labels });
-  return createHmac("sha256", key).update(`set-edit-text:v1:${setId}:${userId}:${words}`).digest("base64url").slice(0, SEAL_CHARS);
+/**
+ * The seal's versions this server opens, newest first; a seal is made with
+ * the first (Helios Cut 4, step A6b, 2026-09-26; critic item 16). Pages now
+ * hold seals for as long as they stay open, so a change to what a seal
+ * covers is a new version put in front — names on things (step B1) will be
+ * "v2" — and "v1" stays in the list: a seal a tab was handed before that
+ * deploy still opens, for the words v1 covers and nothing more (a v1 seal
+ * proves no names, and must never let names ride).
+ */
+export const EDIT_SEAL_VERSIONS = ["v1"] as const;
+type SealVersion = (typeof EDIT_SEAL_VERSIONS)[number];
+
+/** What a version seals of the words: v1, the title, the description and the labels, in one key order, whatever order the object came in. */
+function sealedWords(version: SealVersion, text: EditText): string {
+  switch (version) {
+    case "v1":
+      return JSON.stringify({ title: text.title, description: text.description, labels: text.labels });
+  }
+}
+
+function sealWith(key: string, version: SealVersion, setId: string, userId: string, text: EditText): string {
+  return createHmac("sha256", key).update(`set-edit-text:${version}:${setId}:${userId}:${sealedWords(version, text)}`).digest("base64url").slice(0, SEAL_CHARS);
 }
 
 /** The seal over a set's words, for this set and this person; null with no key (Undo then keeps the words on the server, and says so). */
 export function sealEditText(setId: string, userId: string, text: EditText): string | null {
   const key = sealKey();
-  return key === null ? null : sealWith(key, setId, userId, text);
+  return key === null ? null : sealWith(key, EDIT_SEAL_VERSIONS[0], setId, userId, text);
 }
 
 /** A change's Undo: the words of the copy Astra was handed, sealed — null when nothing can be sealed. */
@@ -80,13 +98,21 @@ export function readEditText(value: unknown): EditText | null {
   return { title, description, labels: [...labels] };
 }
 
-/** Whether `seal` is this server's seal over exactly these words, for this set and this person. Timing-safe; false with no key. */
-export function openEditSeal(setId: string, userId: string, text: EditText, seal: unknown): boolean {
+/** The version whose seal `seal` is, over exactly these words, for this set and this person; null when none is. Timing-safe; null with no key. */
+function openedVersion(setId: string, userId: string, text: EditText, seal: unknown): SealVersion | null {
   const key = sealKey();
-  if (key === null || typeof seal !== "string" || seal.length !== SEAL_CHARS) return false;
-  const expected = Buffer.from(sealWith(key, setId, userId, text));
+  if (key === null || typeof seal !== "string" || seal.length !== SEAL_CHARS) return null;
   const given = Buffer.from(seal);
-  return expected.length === given.length && timingSafeEqual(expected, given);
+  for (const version of EDIT_SEAL_VERSIONS) {
+    const expected = Buffer.from(sealWith(key, version, setId, userId, text));
+    if (expected.length === given.length && timingSafeEqual(expected, given)) return version;
+  }
+  return null;
+}
+
+/** Whether `seal` is this server's seal over exactly these words, for this set and this person, in any version it opens. Timing-safe; false with no key. */
+export function openEditSeal(setId: string, userId: string, text: EditText, seal: unknown): boolean {
+  return openedVersion(setId, userId, text, seal) !== null;
 }
 
 /**

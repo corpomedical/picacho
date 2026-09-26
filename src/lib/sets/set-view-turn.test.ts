@@ -155,7 +155,7 @@ describe("an Astra change is pressed on its card (rule 1)", () => {
     expect(edit).toContain("then?: { pressId: string; turnId: number },");
     expect(edit).toContain("res = more ? await editSetWithAstra(setId, change.said, pressId, more) : await editSetWithAstra(setId, change.said, pressId);");
     // "Change it, then shoot": the still's id is the click's, set due inside apply — only on a saved change.
-    const apply = between(edit, "const apply = (next: SetSpec, changed: number, undo: EditUndo | null = null) => {", "return { landed: true, before, undo };");
+    const apply = between(edit, "const apply = (next: SetSpec, changed: number, undo: EditUndo | null, seal: EditUndo | null) => {", "return { landed: true, before, undo };");
     expect(apply).toContain('if (then) setShootDue({ pressId: then.pressId, kind: "still", turnId: then.turnId });');
     expect(edit.match(/setShootDue\(/g)).toHaveLength(1);
     expect(edit).not.toMatch(/\bshoot\(|\btake\(/);

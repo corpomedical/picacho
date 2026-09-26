@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import raceTrack from "./fixtures-race-track.json";
-import { editTextOf, editUndoOf, heldTextOf, openEditSeal, readEditText, sealEditText, sealedEditText, type EditText } from "./edit-seal";
+import { createHmac } from "node:crypto";
+import { EDIT_SEAL_VERSIONS, editTextOf, editUndoOf, heldTextOf, openEditSeal, readEditText, sealEditText, sealedEditText, type EditText } from "./edit-seal";
 import { holdEditedText } from "./editor-model";
 import { normaliseSetSpec, SET_LIMITS, type SetSpec } from "./set-spec";
 
@@ -84,6 +85,36 @@ describe("the seal", () => {
     expect(openEditSeal(SET, USER, text, seal)).toBe(true);
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "another-key");
     expect(openEditSeal(SET, USER, text, seal)).toBe(false);
+  });
+});
+
+// Pages now hold seals for as long as they stay open (Helios Cut 4, step
+// A6b, 2026-09-26; critic item 16): a seal made before a deploy must still
+// open after it. The v1 seal is pinned byte for byte, and any change to what
+// a seal covers (names on things, step B1) is a new version put in front,
+// with v1 kept.
+describe("the seal's versions", () => {
+  const text = editTextOf(SPEC);
+  const v1 = (key: string, set: string, user: string, t: EditText) =>
+    createHmac("sha256", key)
+      .update(`set-edit-text:v1:${set}:${user}:${JSON.stringify({ title: t.title, description: t.description, labels: t.labels })}`)
+      .digest("base64url")
+      .slice(0, 32);
+
+  it("is v1, exactly as the seals pages hold were made", () => {
+    expect(EDIT_SEAL_VERSIONS).toEqual(["v1"]);
+    expect(sealEditText(SET, USER, text)).toBe(v1("test-only-signing-secret", SET, USER, text));
+  });
+
+  it("opens a seal of any version it lists, and none it does not", () => {
+    expect(EDIT_SEAL_VERSIONS).toContain("v1");
+    expect(openEditSeal(SET, USER, text, v1("test-only-signing-secret", SET, USER, text))).toBe(true);
+    // A version it does not know, over the same words: refused.
+    const v9 = createHmac("sha256", "test-only-signing-secret")
+      .update(`set-edit-text:v9:${SET}:${USER}:${JSON.stringify({ title: text.title, description: text.description, labels: text.labels })}`)
+      .digest("base64url")
+      .slice(0, 32);
+    expect(openEditSeal(SET, USER, text, v9)).toBe(false);
   });
 });
 

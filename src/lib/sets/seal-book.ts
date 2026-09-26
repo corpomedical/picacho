@@ -36,6 +36,13 @@ export function wordsKey(spec: Pick<SetSpec, "title" | "description" | "marks" |
   return keyOf(editTextOf(spec));
 }
 
+/** A book holding the seals given (the ones the page was drawn with). */
+export function sealBookOf(...seals: (EditUndo | null | undefined)[]): SealBook {
+  const book: SealBook = new Map();
+  for (const seal of seals) fileSeal(book, seal);
+  return book;
+}
+
 /** File a seal the server handed (null or anything malformed is left out). */
 export function fileSeal(book: SealBook, seal: EditUndo | null | undefined): void {
   if (!seal || typeof seal.seal !== "string" || !seal.text || typeof seal.text !== "object") return;

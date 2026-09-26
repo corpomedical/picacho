@@ -28,6 +28,7 @@ import { readShotWords } from "@/lib/sets/shot-words-store";
 import { SHOT_READER_V2_OPEN_TO_ALL } from "@/lib/sets/shot-reading";
 import { seesLookObjects } from "@/lib/sets/look-cutout";
 import { normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
+import { editUndoOf } from "@/lib/sets/edit-seal";
 import { normaliseSetFilm, type SetFilm } from "@/lib/sets/film";
 import { normaliseSetRig, RIG_CHECK_ITEMS, type SetRig } from "@/lib/sets/rig";
 import { readShotRigs } from "@/lib/sets/shot-rig";
@@ -544,6 +545,12 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
       failure: status === "failed" ? setFailureMessage(row.failure as string | null, fromPhoto ? "photo" : "text") : null,
       spec,
       editedSpec,
+      // Every spec the server hands the page carries the seal of its words
+      // (edit-seal.ts; Helios Cut 4, step A6b): the page's Undo after a
+      // dropped connection and Build's steps bring them back with it. Sealed
+      // over the row's own id, the one the page sends back.
+      seal: drawn ? editUndoOf(row.id as string, access.userId, drawn) : null,
+      originalSeal: spec ? editUndoOf(row.id as string, access.userId, spec) : null,
       film,
       rig,
       layout,

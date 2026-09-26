@@ -156,7 +156,8 @@ describe("the set page", () => {
     expect(edit).toMatch(/\} finally \{\s*(?:busyRef\.current\.editing = false;\s*)?setEditingSet\(false\);\s*\}/);
     expect(edit).toContain('followed.kind === "none") setError(t.generate.submitFailed)');
     expect(edit.match(/t\.generate\.submitFailed/g)).toHaveLength(1);
-    expect(edit).toContain('if (followed.kind === "saved") return apply(followed.spec, followed.changed);');
+    // Read back with the seal the page holds for the words it replaced, and the one it was handed with the copy (Helios Cut 4, step A6b).
+    expect(edit).toContain('if (followed.kind === "saved") return apply(followed.spec, followed.changed, sealFor(sealsRef.current, before), followed.seal);');
     expect(edit).not.toContain("if (!leftBehind(err)) setError(t.generate.submitFailed);");
   });
 
@@ -168,7 +169,7 @@ describe("the set page", () => {
     const edit = between(view, "async function editSet(\n", "\n  }\n");
     const nothing = edit.indexOf("if (res.changed === 0) {");
     expect(nothing).toBeGreaterThan(edit.indexOf("if (res.error !== null) {"));
-    expect(nothing).toBeLessThan(edit.lastIndexOf("return apply(res.spec, res.changed, res.undo);"));
+    expect(nothing).toBeLessThan(edit.lastIndexOf("return apply(res.spec, res.changed, res.undo, res.seal);"));
     const branch = edit.slice(nothing, edit.indexOf("\n    }\n", nothing));
     expect(branch).toContain("setAstraNothing(true);");
     expect(branch).toContain("return { ...none, before };");

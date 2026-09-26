@@ -524,7 +524,7 @@ export async function rebuildThingFromPhotos(
   pressId?: string,
 ): Promise<
   | { error: string; editsLeft?: number | null; pending?: true; paused?: true }
-  | { error: null; spec: SetSpec; changed: number; key: string; blocks: number; editsLeft: number | null }
+  | { error: null; spec: SetSpec; changed: number; key: string; blocks: number; editsLeft: number | null; seal: EditUndo | null }
 > {
   // The action's own start, as editSetWithAstra's: the photos' download counts against the 300 s too.
   const startedAt = new Date().getTime();
@@ -609,7 +609,16 @@ export async function rebuildThingFromPhotos(
       } catch (err) {
         console.warn("[sets] a kept model stays on the old key:", err instanceof Error ? err.message : String(err));
       }
-      return { error: null, spec: next, changed: countSpecChanges(working, next), key: spliced.key, blocks: spliced.blocks, editsLeft: slot.editsLeft };
+      return {
+        error: null,
+        spec: next,
+        changed: countSpecChanges(working, next),
+        key: spliced.key,
+        blocks: spliced.blocks,
+        editsLeft: slot.editsLeft,
+        // The words it kept, sealed like every spec handed to the page (Helios Cut 4, step A6b).
+        seal: editUndoOf(setId, userId, next),
+      };
     } catch (err) {
       await giveBackAstraChange(access, slot);
       throw err;
@@ -622,20 +631,21 @@ export async function rebuildThingFromPhotos(
  * 2026-09-25): the set as it stood before, saved back — with the words it
  * had then when the page sends the seal of them (edit-seal.ts), so an
  * undone "add a row of flags" no longer leaves "lined with flags" in the
- * description every later still reads. Without a seal that opens (a change
- * read back after a dropped connection, a page from before this deploy, a
- * rebuild — which never changes the words), it is exactly saveSetEdit: the
- * words stay the server's, and the page says so when they differ from the
- * set's before (`textRestored`). Never calls Astra and
- * never touches the month's count: the change still counts, and the page
- * says that too. The saved copy comes back, so the page draws what the
- * server holds.
+ * description every later still reads. A change read back after a dropped
+ * connection sends the seal the page was handed with the copy before it
+ * (Helios Cut 4, step A6b). Without a seal that opens (a page from before
+ * that, no signing key, a rebuild — which never changes the words), it is
+ * exactly saveSetEdit: the words stay the server's, and the page says so
+ * when they differ from the set's before (`textRestored`). Never calls
+ * Astra and never touches the month's count: the change still counts, and
+ * the page says that too. The saved copy comes back with the seal of its
+ * words, so the page draws what the server holds.
  */
 export async function undoAstraEdit(
   setId: string,
   before: unknown,
   undo?: { text: unknown; seal: unknown } | null,
-): Promise<{ error: string } | { error: null; spec: SetSpec; textRestored: boolean }> {
+): Promise<{ error: string } | { error: null; spec: SetSpec; textRestored: boolean; seal: EditUndo | null }> {
   const access = await setsAccess();
   if (access.error !== null) return { error: access.error };
   const owned = await ownedSpecs(setId, access.userId);
@@ -652,14 +662,20 @@ export async function undoAstraEdit(
   // saved: through the seal, or because Astra never changed them (a plain
   // recolour) — so the page never says the description still mentions a
   // change it never had.
-  return { error: null, spec: held, textRestored: held.title === n.spec.title && held.description === n.spec.description };
+  return {
+    error: null,
+    spec: held,
+    textRestored: held.title === n.spec.title && held.description === n.spec.description,
+    // The words it saved, sealed like every spec handed to the page (Helios Cut 4, step A6b).
+    seal: editUndoOf(setId, access.userId, held),
+  };
 }
 
 /**
  * What became of an Astra press, for the page after a dropped connection or
  * a repeat's `pending` answer (astra-follow.ts, 2026-09-25): where the press
- * stands and the working copy as saved, with how many changes are left once
- * the press has ended. The person's own set, and their own press rows only.
+ * stands and the working copy as saved, with the seal of its words (step
+ * A6b) and how many changes are left once the press has ended. The person's own set, and their own press rows only.
  * No limiter, like the other reads: the page reads at most every 4 s, for
  * at most ~350 s.
  *
@@ -682,5 +698,9 @@ export async function readAstraEdit(setId: string, pressId: string): Promise<Ast
   if (owned.error !== null) return { error: owned.error };
   if (state === "lost") await refundLostAstraPress(admin, access.userId, press);
   const ended = state === "saved" || state === "unsaved" || state === "lost";
-  return { error: null, press: state, spec: owned.edited ?? owned.spec, ...(ended ? { editsLeft: await astraEditsLeft(access) } : {}) };
+  const spec = owned.edited ?? owned.spec;
+  // The words of the copy it hands back, sealed like every spec handed to the
+  // page (Helios Cut 4, step A6b): a change read back after a dropped
+  // connection keeps its words for a later step back onto it.
+  return { error: null, press: state, spec, seal: editUndoOf(setId, access.userId, spec), ...(ended ? { editsLeft: await astraEditsLeft(access) } : {}) };
 }

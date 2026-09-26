@@ -127,13 +127,25 @@ describe("the changed line's Undo", () => {
 
   it("keeps each change's seal and kind with the set it replaced", () => {
     const edit = bodyOf(view, "  async function editSet(\n");
-    expect(edit).toContain("const apply = (next: SetSpec, changed: number, undo: EditUndo | null = null) => {");
+    expect(edit).toContain("const apply = (next: SetSpec, changed: number, undo: EditUndo | null, seal: EditUndo | null) => {");
     expect(edit).toContain('lastEditUndoRef.current = { before, kind: "edit", undo };');
-    expect(edit).toContain("return apply(res.spec, res.changed, res.undo);");
-    // A read-back has no seal.
-    expect(edit).toContain('if (followed.kind === "saved") return apply(followed.spec, followed.changed);');
+    expect(edit).toContain("return apply(res.spec, res.changed, res.undo, res.seal);");
+    // A read-back's seal is the one the page was handed for the words it
+    // replaced (Helios Cut 4, step A6b): until then it had none, and its Undo
+    // kept Astra's words.
+    expect(edit).toContain('if (followed.kind === "saved") return apply(followed.spec, followed.changed, sealFor(sealsRef.current, before), followed.seal);');
+    // Every seal handed with a spec is filed.
+    const apply = edit.slice(edit.indexOf("const apply = ("), edit.indexOf("return { landed: true, before, undo };"));
+    expect(apply).toContain("fileSeal(sealsRef.current, undo);");
+    expect(apply).toContain("fileSeal(sealsRef.current, seal);");
     const rebuild = bodyOf(view, "  async function rebuildThing(key: string) {");
     expect(rebuild).toContain('lastEditUndoRef.current = { before, kind: "rebuild", undo: null };');
+    expect(rebuild).toContain("fileSeal(sealsRef.current, seal);");
+    expect(rebuild).toContain('if (followed.kind === "saved") apply(followed.spec, followed.changed, rebuiltThingIn(followed.spec, key), followed.seal);');
+    expect(rebuild).toContain("apply(res.spec, res.changed, { key: res.key, blocks: res.blocks }, res.seal);");
+    // The page opens with the seal of the words it draws, and files an Undo's.
+    expect(view).toContain("const [openingSeals] = useState<SealBook>(() => sealBookOf(initialSeal));");
+    expect(undo).toContain("fileSeal(sealsRef.current, saved.seal);");
   });
 
   it("sends this change's seal, never Astra, and says what came back", () => {

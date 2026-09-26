@@ -25,6 +25,7 @@
 // Pure and client-safe, relative imports only: the test drives it with a
 // scripted read, a fake clock and a recorded sleep.
 
+import type { EditUndo } from "./edit-seal";
 import { countSpecChanges } from "./editor-model";
 import { SET_EDIT_NOT_SAVED, SET_EDIT_UNCHECKED } from "./messages";
 import { SET_EDIT_FOLLOW_CAP_MS, SET_EDIT_FOLLOW_POLL_MS } from "./set-config";
@@ -38,11 +39,16 @@ import type { SetSpec } from "./set-spec";
  */
 export type AstraPressKind = "none" | "running" | "saved" | "unsaved" | "lost" | "unread";
 
-/** readAstraEdit's answer: the saved working copy and where the press stands. */
-export type AstraEditRead = { error: string } | { error: null; press: AstraPressKind; spec: SetSpec; editsLeft?: number | null };
+/**
+ * readAstraEdit's answer: the saved working copy and where the press stands,
+ * with the seal the server made over the copy's words (Helios Cut 4, step
+ * A6b; null with no signing key).
+ */
+export type AstraEditRead = { error: string } | { error: null; press: AstraPressKind; spec: SetSpec; seal?: EditUndo | null; editsLeft?: number | null };
 
 export type FollowedEdit =
-  | { kind: "saved"; spec: SetSpec; changed: number; editsLeft?: number | null }
+  // `seal`: the words of the copy as saved, sealed by the server — kept by the page like every spec's (seal-book.ts).
+  | { kind: "saved"; spec: SetSpec; changed: number; seal: EditUndo | null; editsLeft?: number | null }
   | { kind: "unsaved"; error: string; editsLeft?: number | null }
   // Nothing reached the server: the call never got there.
   | { kind: "none" }
@@ -86,7 +92,7 @@ export async function followAstraEdit(
     } else if (r.error !== null) {
       return { kind: "error", error: r.error };
     } else {
-      const saved = (): FollowedEdit => ({ kind: "saved", spec: r.spec, changed: countSpecChanges(opts.before, r.spec), editsLeft: r.editsLeft });
+      const saved = (): FollowedEdit => ({ kind: "saved", spec: r.spec, changed: countSpecChanges(opts.before, r.spec), seal: r.seal ?? null, editsLeft: r.editsLeft });
       if (r.press === "saved") return saved();
       if (r.press === "unsaved") return { kind: "unsaved", error: SET_EDIT_NOT_SAVED, editsLeft: r.editsLeft };
       // Stopped by the platform with no end marker: the saved copy is the only witness.

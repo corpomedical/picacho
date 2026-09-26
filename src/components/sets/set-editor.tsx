@@ -12,7 +12,8 @@ import { newPressId } from "@/lib/sets/press-follow";
 import { SET_EDIT_TOO_BIG, SET_EDIT_TRIES_USED, SET_SAVE_FAILED } from "@/lib/sets/messages";
 import { SET_EDIT_MAX_SPEC_CHARS } from "@/lib/sets/set-config";
 import { dropUnsaved, keepUnsaved, savedEditKey, takeUnsaved } from "@/lib/sets/unsaved";
-import { fileSeal, sameWords, sealFor, type SealBook } from "@/lib/sets/seal-book";
+import { fileSeal, sameWords, sealBookOf, sealFor, type SealBook } from "@/lib/sets/seal-book";
+import type { EditUndo } from "@/lib/sets/edit-seal";
 import {
   addCamera,
   addKit,
@@ -430,6 +431,8 @@ export function SetEditor({
   closeHref,
   astraEditsLeft,
   astraPaused = false,
+  initialSeal = null,
+  originalSeal = null,
 }: {
   setId: string;
   /** Astra's set as first built — never changed, always restorable. */
@@ -441,6 +444,13 @@ export function SetEditor({
   astraEditsLeft: number | null;
   /** The month's Astra tries are spent (data.ts astraTriesPaused; Helios Cut 4, step A3): Send is held, and the bar says why. */
   astraPaused?: boolean;
+  /**
+   * The server's seals over the words of the copy the editor opens on and of
+   * Astra's original (data.ts; Helios Cut 4, step A6b): a step back onto
+   * either, or "Astra's original" stepped onto again, brings its words back.
+   */
+  initialSeal?: EditUndo | null;
+  originalSeal?: EditUndo | null;
 }) {
   const { t } = useLocale();
   const s = t.sets;
@@ -512,7 +522,8 @@ export function SetEditor({
   // held (seal-book.ts; Helios Cut 4, step A6): every save sends the one for
   // the words of the copy it saves, so a step back over an Astra change
   // brings its old description back, not only its pieces.
-  const sealsRef = useRef<SealBook>(new Map());
+  const [openingSeals] = useState<SealBook>(() => sealBookOf(initialSeal, originalSeal));
+  const sealsRef = useRef<SealBook>(openingSeals);
   // The month's Astra changes left, as the server last said.
   const [editsLeft, setEditsLeft] = useState<number | null>(astraEditsLeft);
   // Astra paused on the month's tries: from the page's read, and from an answer that says so.
@@ -945,6 +956,8 @@ export function SetEditor({
       if (followed.kind !== "none" && followed.kind !== "left" && followed.kind !== "error" && followed.editsLeft !== undefined) setEditsLeft(followed.editsLeft);
       if (followed.kind === "saved") {
         setAsk("");
+        // Read back after a dropped connection: its words sealed as an answer's are (Helios Cut 4, step A6b).
+        fileSeal(sealsRef.current, followed.seal);
         commitFromServer(followed.spec);
         dropUnsaved(setId, "edit", askedAt);
         setAskNote(followed.changed);

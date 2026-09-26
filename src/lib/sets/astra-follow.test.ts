@@ -49,10 +49,21 @@ const follow = (r: ReturnType<typeof rig>, extra: { stop?: (err: unknown) => boo
 describe("followAstraEdit", () => {
   it("waits while the press runs, then shows what it saved, with the count the server gave", async () => {
     const r = rig([at("running"), at("running"), at("saved", AFTER, 4)]);
-    expect(await follow(r)).toEqual({ kind: "saved", spec: AFTER, changed: countSpecChanges(BEFORE, AFTER), editsLeft: 4 });
+    expect(await follow(r)).toEqual({ kind: "saved", spec: AFTER, changed: countSpecChanges(BEFORE, AFTER), seal: null, editsLeft: 4 });
     expect(countSpecChanges(BEFORE, AFTER)).toBeGreaterThan(0);
     expect(r.sleeps).toEqual([SET_EDIT_FOLLOW_POLL_MS, SET_EDIT_FOLLOW_POLL_MS]);
     expect(SET_EDIT_FOLLOW_POLL_MS).toBe(4_000);
+  });
+
+  // Every spec the server hands the page carries the seal of its words
+  // (Helios Cut 4, step A6b): a change read back keeps it, so a later step
+  // back onto that copy brings its words back as an answered change's does.
+  it("hands on the seal the read carried with the copy, and none when it carried none", async () => {
+    const seal = { text: { title: AFTER.title, description: AFTER.description, labels: [] }, seal: "s".repeat(32) };
+    const sealed: Step = { error: null, press: "saved", spec: AFTER, seal, editsLeft: 4 };
+    expect(await follow(rig([sealed]))).toEqual({ kind: "saved", spec: AFTER, changed: countSpecChanges(BEFORE, AFTER), seal, editsLeft: 4 });
+    expect(await follow(rig([{ ...sealed, press: "lost" }]))).toMatchObject({ kind: "saved", seal });
+    expect(await follow(rig([at("saved", AFTER)]))).toMatchObject({ kind: "saved", seal: null });
   });
 
   it("says a press that did not save left the set as it was", async () => {
@@ -73,7 +84,7 @@ describe("followAstraEdit", () => {
   });
 
   it("judges a press the platform stopped by the saved copy", async () => {
-    expect(await follow(rig([at("lost", AFTER, 1)]))).toEqual({ kind: "saved", spec: AFTER, changed: countSpecChanges(BEFORE, AFTER), editsLeft: 1 });
+    expect(await follow(rig([at("lost", AFTER, 1)]))).toEqual({ kind: "saved", spec: AFTER, changed: countSpecChanges(BEFORE, AFTER), seal: null, editsLeft: 1 });
     expect(await follow(rig([at("lost", BEFORE, 1)]))).toEqual({ kind: "unsaved", error: SET_EDIT_NOT_SAVED, editsLeft: 1 });
   });
 

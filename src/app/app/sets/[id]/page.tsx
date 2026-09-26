@@ -100,6 +100,8 @@ export default async function SetPage({
         closeHref={`/app/sets/${data.set.id}`}
         astraEditsLeft={data.astraEditsLeft}
         astraPaused={data.astraPaused}
+        initialSeal={data.set.seal}
+        originalSeal={data.set.originalSeal}
       />
     );
   }
@@ -140,6 +142,7 @@ export default async function SetPage({
         astraPaused={data.astraPaused}
         readerV2={data.readerV2}
         producerOn={data.producerOn}
+        initialSeal={data.set.seal}
       />
     );
   }

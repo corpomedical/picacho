@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import raceTrack from "./fixtures-race-track.json";
 import {
   HELIOS_SIMPLE_FOR_ALL,
@@ -96,10 +98,12 @@ vi.mock("@/lib/sets/shot-rig", async () => await import("./shot-rig"));
 vi.mock("@/lib/sets/shot-take", async () => await import("./shot-take"));
 vi.mock("@/lib/sets/set-shots", async () => await import("./set-shots"));
 vi.mock("@/lib/sets/messages", async () => await import("./messages"));
+vi.mock("@/lib/sets/edit-seal", async () => await import("./edit-seal"));
 // The real rule, reading the fake database's flags (Helios Cut 2, step 12).
 vi.mock("@/lib/producer/enabled", async () => await import("../producer/enabled"));
 
 import { getSetPage } from "./data";
+import { editTextOf, openEditSeal } from "./edit-seal";
 import { SHOT_READER_V2_OPEN_TO_ALL } from "./shot-reading";
 
 /**
@@ -392,6 +396,52 @@ describe("the Producer's lamp on this page", () => {
 // Whether a saved outfit photo rides a character's shots (Helios Cut 2,
 // step 9, 2026-09-25): the chat sets it aside for words that say what they
 // wear only when there is one to set aside.
+// Every spec the server hands the page carries the seal of its words (Helios
+// Cut 4, step A6b, 2026-09-26): a change read back after a dropped
+// connection, or Build's step back onto the copy it opened on, then brings
+// those words back — never words a browser wrote.
+describe("the seals of the words the page is handed", () => {
+  const ready = (tables: Tables, edited?: unknown): Tables => {
+    tables.location_sets.rows[0] = { ...tables.location_sets.rows[0], status: "ready", spec: raceTrack };
+    if (edited !== undefined) {
+      tables.location_sets.columns.push("edited_spec");
+      tables.location_sets.rows[0].edited_spec = edited;
+    }
+    return tables;
+  };
+  it("seals the words of the copy the page draws and of Astra's original, for this set and this person", async () => {
+    const flagged = { ...raceTrack, title: "Flagged circuit", description: "A race track lined with a row of flags along the pit wall." };
+    const out = await page(ready(world([still(1)]), flagged));
+    const { seal, originalSeal, spec, editedSpec } = out.set;
+    expect(editedSpec?.title).toBe("Flagged circuit");
+    expect(seal!.text).toEqual(editTextOf(editedSpec!));
+    expect(originalSeal!.text).toEqual(editTextOf(spec!));
+    expect(openEditSeal(SET, USER, seal!.text, seal!.seal)).toBe(true);
+    expect(openEditSeal(SET, USER, originalSeal!.text, originalSeal!.seal)).toBe(true);
+    // For this person's set only.
+    expect(openEditSeal(SET, "99999999-9999-4999-8999-999999999999", seal!.text, seal!.seal)).toBe(false);
+    // With no working copy, the page draws the original and both seal it.
+    const plain = await page(ready(world([still(1)])));
+    expect(plain.set.editedSpec).toBeNull();
+    expect(plain.set.seal).toEqual(plain.set.originalSeal);
+  });
+
+  // Without a signing key nothing is sealed at all (edit-seal.test.ts); the
+  // page's pictures are signed with the same key, so no page loads then.
+  it("seals nothing for a set still building", async () => {
+    const building = await page(world([still(1)]));
+    expect(building.set.spec).toBeNull();
+    expect(building.set.seal).toBeNull();
+    expect(building.set.originalSeal).toBeNull();
+  });
+
+  it("seals over the row's own id, the one the page sends back (read as source)", () => {
+    const src = readFileSync(join(__dirname, "data.ts"), "utf8");
+    expect(src).toContain("seal: drawn ? editUndoOf(row.id as string, access.userId, drawn) : null,");
+    expect(src).toContain("originalSeal: spec ? editUndoOf(row.id as string, access.userId, spec) : null,");
+  });
+});
+
 describe("a character's saved outfit", () => {
   const ready = (tables: Tables): Tables => {
     tables.location_sets.rows[0] = { ...tables.location_sets.rows[0], status: "ready", spec: raceTrack };

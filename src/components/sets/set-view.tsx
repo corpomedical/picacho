@@ -20,6 +20,7 @@ import { addElementPhoto, assignElementPhoto, prepareElementSheets, removeElemen
 import { thumbUrl } from "@/lib/media/url";
 import { editSetWithAstra, readAstraEdit, rebuildThingFromPhotos, undoAstraEdit } from "@/lib/sets/editor-actions";
 import type { EditUndo } from "@/lib/sets/edit-seal";
+import { fileSeal, sealBookOf, sealFor, type SealBook } from "@/lib/sets/seal-book";
 import { followAstraEdit, type FollowedEdit } from "@/lib/sets/astra-follow";
 import { THING_REBUILD_OPEN_TO_ALL, rebuiltThingIn } from "@/lib/sets/thing-rebuild";
 import { SELECTABLE_IMAGE_MODEL_IDS, getImageModel } from "@/lib/generations/providers/image-models";
@@ -764,6 +765,7 @@ export function SetView({
   initialAskBuilt = false,
   readerV2 = false,
   producerOn = false,
+  initialSeal = null,
 }: {
   setId: string;
   /** The set's name, said in the workspace's own bar. */
@@ -825,6 +827,12 @@ export function SetView({
   readerV2?: boolean;
   /** The Producer's lamp is on this page, so "do it elsewhere" can hand the words to it (Cut 2, step 12). */
   producerOn?: boolean;
+  /**
+   * The server's seal over the words of `spec` (data.ts; Helios Cut 4, step
+   * A6b): filed with every seal that comes after it, so the Undo of a change
+   * read back after a dropped connection brings those words back too.
+   */
+  initialSeal?: EditUndo | null;
   /**
    * The message in `initialAsk` is the one the Sets home just built this
    * set from (?from=build): what it says about the place is already built,
@@ -1621,9 +1629,16 @@ export function SetView({
   const specBeforeEditRef = useRef<SetSpec | null>(null);
   // What that Undo needs to give back Astra's words too (Helios Cut 2, step
   // 2, 2026-09-25): the change's kind, and for an edit the server's seal
-  // over the words it replaced (edit-seal.ts) — none for an edit read back
-  // after a dropped connection. Kept with the `before` it belongs to.
+  // over the words it replaced (edit-seal.ts) — for an edit read back after
+  // a dropped connection, the seal the page was handed with that copy
+  // (Helios Cut 4, step A6b). Kept with the `before` it belongs to.
   const lastEditUndoRef = useRef<{ before: SetSpec; kind: "edit" | "rebuild"; undo: EditUndo | null } | null>(null);
+  // Every seal the server handed with a spec, filed by the words it seals
+  // (seal-book.ts; Helios Cut 4, step A6b): a change read back after a
+  // dropped connection takes the seal of the words it replaced from here, so
+  // its Undo gives them back as an answered change's does.
+  const [openingSeals] = useState<SealBook>(() => sealBookOf(initialSeal));
+  const sealsRef = useRef<SealBook>(openingSeals);
   const undoingRef = useRef(false);
   // The stage calls this when an orbit settles; it points at scheduleSave,
   // which is declared below the stage's effect.
@@ -6648,8 +6663,13 @@ export function SetView({
       busyRef.current.editing = false;
       setEditingSet(false);
     }
-    // A read-back carries no seal: its Undo keeps the server's words, and says so.
-    const apply = (next: SetSpec, changed: number, undo: EditUndo | null = null) => {
+    // The seal of the words the change replaced: the server's own for an
+    // answered change, and for a read-back the one the page was handed with
+    // `before` (Helios Cut 4, step A6b) — none only when no seal was ever
+    // handed for those words, and then its Undo keeps the server's words, and says so.
+    const apply = (next: SetSpec, changed: number, undo: EditUndo | null, seal: EditUndo | null) => {
+      fileSeal(sealsRef.current, undo);
+      fileSeal(sealsRef.current, seal);
       specBeforeEditRef.current = before;
       lastEditUndoRef.current = { before, kind: "edit", undo };
       setUndoNote(null);
@@ -6665,7 +6685,7 @@ export function SetView({
     if (followed) {
       // A press that has ended says how many are left; the others keep the last count.
       if (followed.kind === "saved" || followed.kind === "unsaved") keepEditsLeft(followed.editsLeft, followed.kind === "saved");
-      if (followed.kind === "saved") return apply(followed.spec, followed.changed);
+      if (followed.kind === "saved") return apply(followed.spec, followed.changed, sealFor(sealsRef.current, before), followed.seal);
       // Only when nothing reached the server is it worth trying again.
       else if (followed.kind === "none") setError(t.generate.submitFailed);
       else if (followed.kind !== "left") setError(followed.error);
@@ -6688,7 +6708,7 @@ export function SetView({
       setAstraNothing(true);
       return { ...none, before };
     }
-    return apply(res.spec, res.changed, res.undo);
+    return apply(res.spec, res.changed, res.undo, res.seal);
   }
 
   /**
@@ -6724,7 +6744,9 @@ export function SetView({
     }
     // The set as saved, and the card on the thing's new key: `to` is null when
     // a read-back finds no thing where this one stood (edited meanwhile).
-    const apply = (next: SetSpec, changed: number, to: { key: string; blocks: number } | null) => {
+    const apply = (next: SetSpec, changed: number, to: { key: string; blocks: number } | null, seal: EditUndo | null) => {
+      // Its words, kept from the server's copy, sealed (Helios Cut 4, step A6b).
+      fileSeal(sealsRef.current, seal);
       specBeforeEditRef.current = before;
       // A rebuild never changes the set's words (holdEditedText): nothing to seal.
       lastEditUndoRef.current = { before, kind: "rebuild", undo: null };
@@ -6744,7 +6766,7 @@ export function SetView({
     if (followed) {
       if (followed.kind === "saved" || followed.kind === "unsaved") keepEditsLeft(followed.editsLeft, followed.kind === "saved");
       // Read back rather than answered: the thing is found the way its photos find it.
-      if (followed.kind === "saved") apply(followed.spec, followed.changed, rebuiltThingIn(followed.spec, key));
+      if (followed.kind === "saved") apply(followed.spec, followed.changed, rebuiltThingIn(followed.spec, key), followed.seal);
       else if (followed.kind === "none") setRebuildNote({ key, text: t.generate.submitFailed, ok: false });
       else if (followed.kind !== "left") setRebuildNote({ key, text: localizeServerText(followed.error, t), ok: false });
       return;
@@ -6756,7 +6778,7 @@ export function SetView({
       setRebuildNote({ key, text: localizeServerText(res.error, t), ok: false });
       return;
     }
-    apply(res.spec, res.changed, { key: res.key, blocks: res.blocks });
+    apply(res.spec, res.changed, { key: res.key, blocks: res.blocks }, res.seal);
   }
 
   /** The card, the list's order and a model on the thing follow it to the key its new blocks gave it. */
@@ -6798,7 +6820,7 @@ export function SetView({
     // The seal and kind of THIS change: a later change replaces both.
     const last = lastEditUndoRef.current?.before === before ? lastEditUndoRef.current : null;
     let failed: string | null;
-    let saved: { spec: SetSpec; textRestored: boolean } | null = null;
+    let saved: { spec: SetSpec; textRestored: boolean; seal: EditUndo | null } | null = null;
     try {
       const res = await undoAstraEdit(setId, before, last?.undo ?? null);
       failed = res.error;
@@ -6813,6 +6835,8 @@ export function SetView({
       if (failed !== null) setError(failed);
       return null;
     }
+    // The words it saved, sealed like every spec the server hands (Helios Cut 4, step A6b).
+    fileSeal(sealsRef.current, saved.seal);
     // Another edit landed meanwhile: that one is the set now.
     if (specBeforeEditRef.current !== before) return null;
     specBeforeEditRef.current = null;

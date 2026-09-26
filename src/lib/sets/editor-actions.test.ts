@@ -1237,7 +1237,9 @@ describe("Build's seal book (read as source)", () => {
   const goTo = editor.slice(editor.indexOf("function goTo(index: number) {"), editor.indexOf("function undo() {"));
 
   it("sends the seal of the saved copy's words with every save, the unmount's flush included", () => {
-    expect(editor).toContain("const sealsRef = useRef<SealBook>(new Map());");
+    // Opened with the seals of the copy it opens on and of Astra's original (step A6b).
+    expect(editor).toContain("const [openingSeals] = useState<SealBook>(() => sealBookOf(initialSeal, originalSeal));");
+    expect(editor).toContain("const sealsRef = useRef<SealBook>(openingSeals);");
     expect(editor).toContain("await saveSetEdit(setId, copy, sealFor(sealsRef.current, copy))");
     expect(editor).toContain("const seals = sealsRef.current;");
     expect(editor).toContain("saveSetEdit(setId, copy, sealFor(seals, copy)).then(");
@@ -1260,6 +1262,91 @@ describe("Build's seal book (read as source)", () => {
   });
 });
 
+// Every spec the server hands the page carries the seal of its words (Helios
+// Cut 4, step A6b, 2026-09-26 — the owner's decision D25). A change read back
+// after a dropped connection had no seal, so its Undo kept Astra's words and
+// said "its description still mentions the change". Now the page holds the
+// seal it was handed with the copy before the press, and its Undo sends it.
+describe("the seal on every spec the server hands the page", () => {
+  const flagged = (): string =>
+    JSON.stringify({
+      ...SPEC,
+      title: "Flagged circuit",
+      description: "A race track lined with a row of flags along the pit wall.",
+      objects: SPEC.objects.map((o, i) => (i === 0 ? { ...o, color: "#aa3322" } : o)),
+    });
+  const lastWrite = () => (writes[writes.length - 1] as { edited_spec: SetSpec }).edited_spec;
+  const opens = (seal: { text: unknown; seal: string } | null | undefined, spec: SetSpec) => {
+    expect(seal).not.toBeNull();
+    expect(seal!.text).toEqual(editTextOf(spec));
+    expect(openEditSeal(SET, USER, editTextOf(spec), seal!.seal)).toBe(true);
+  };
+
+  it("is on the read-back's copy, the Undo's and the rebuild's", async () => {
+    edited = JSON.parse(flagged()) as SetSpec;
+    pressState = "saved";
+    const read = await readAstraEdit(SET, PRESS);
+    if (read.error !== null) throw new Error(read.error);
+    opens(read.seal, read.spec);
+    const undone = await undoAstraEdit(SET, SPEC, null);
+    if (undone.error !== null) throw new Error(undone.error);
+    opens(undone.seal, undone.spec);
+    // The server's words, kept: the seal is over what it saved, not what the page sent.
+    expect(undone.seal!.text.description).toBe("A race track lined with a row of flags along the pit wall.");
+    access.isAdmin = true;
+    edited = null;
+    const car = setElements(SPEC).find((e) => e.kind === "car")!;
+    photos = [{ refId: "33333331-3333-4333-8333-333333333333", anchor: car.key, slot: 1, at: 1, url: "", path: `${USER}/sets/${SET}.ref.${car.key}.1.x.jpg` }];
+    answer = { state: "done", text: JSON.stringify({ objects: thingLocalBlocks(SPEC, car).map((o) => (o.material === "paint" ? { ...o, color: "#1d4fb8" } : o)) }), usage: null, costUsd: 0.2 };
+    const rebuilt = await rebuildThingFromPhotos(SET, car.key);
+    if (rebuilt.error !== null) throw new Error(rebuilt.error);
+    opens(rebuilt.seal, rebuilt.spec);
+  });
+
+  it("lets the Undo of a change read back after a dropped connection bring the words back", async () => {
+    // The page opened with the seal of the set's words (data.ts getSetPage).
+    const book: SealBook = new Map();
+    fileSeal(book, editUndoOf(SET, USER, SPEC));
+    // The press saved on the server; the page never saw the answer, and reads it back.
+    answer = { state: "done", text: flagged(), usage: null, costUsd: 0.31 };
+    const lost = await editSetWithAstra(SET, "add a row of flags along the pit wall", PRESS);
+    if (lost.error !== null) throw new Error(lost.error);
+    edited = lost.spec;
+    pressState = "saved";
+    const read = await readAstraEdit(SET, PRESS);
+    if (read.error !== null) throw new Error(read.error);
+    fileSeal(book, read.seal);
+    // The changed line's Undo, with the seal the page holds for the copy before the press.
+    const undone = await undoAstraEdit(SET, SPEC, sealFor(book, SPEC));
+    expect(undone).toMatchObject({ error: null, textRestored: true });
+    expect(lastWrite().description).toBe(SPEC.description);
+    expect(lastWrite().title).toBe(SPEC.title);
+    // And a later step onto Astra's copy again brings its words back too.
+    edited = lastWrite();
+    expect(await saveSetEdit(SET, read.spec, sealFor(book, read.spec))).toEqual({ error: null });
+    expect(lastWrite().description).toBe("A race track lined with a row of flags along the pit wall.");
+  });
+
+  it("keeps the server's words for a forged seal, or one for another set or person", async () => {
+    answer = { state: "done", text: flagged(), usage: null, costUsd: 0.31 };
+    const out = await editSetWithAstra(SET, "add a row of flags along the pit wall");
+    if (out.error !== null) throw new Error(out.error);
+    edited = out.spec;
+    const mine = editUndoOf(SET, USER, SPEC)!;
+    for (const undo of [
+      { text: { ...mine.text, description: "Words the page wrote." }, seal: mine.seal },
+      editUndoOf("33333333-3333-4333-8333-333333333333", USER, SPEC),
+      editUndoOf(SET, "44444444-4444-4444-8444-444444444444", SPEC),
+    ]) {
+      expect(await undoAstraEdit(SET, SPEC, undo)).toMatchObject({ error: null, textRestored: false });
+      expect(lastWrite().description).toBe("A race track lined with a row of flags along the pit wall.");
+    }
+    // The page's own seal restores them.
+    expect(await undoAstraEdit(SET, SPEC, mine)).toMatchObject({ error: null, textRestored: true });
+    expect(lastWrite().description).toBe(SPEC.description);
+  });
+});
+
 describe("readAstraEdit", () => {
   const RECOLOURED: SetSpec = JSON.parse(recoloured()) as SetSpec;
 
@@ -1276,7 +1363,8 @@ describe("readAstraEdit", () => {
 
   it("hands back the working copy as saved and where the press stands, and the count only once it has ended", async () => {
     pressState = "running";
-    expect(await readAstraEdit(SET, PRESS)).toEqual({ error: null, press: "running", spec: SPEC });
+    // With the seal of the copy's words, as every spec handed to the page (Helios Cut 4, step A6b).
+    expect(await readAstraEdit(SET, PRESS)).toEqual({ error: null, press: "running", spec: SPEC, seal: editUndoOf(SET, USER, SPEC) });
     expect(steps).not.toContain("left");
     edited = RECOLOURED;
     for (const press of ["saved", "unsaved", "lost"] as const) {
@@ -1524,11 +1612,23 @@ describe("the editor's prompt bar", () => {
     expect(send.match(/t\.generate\.submitFailed/g)).toHaveLength(1);
     expect(send).not.toContain("setAskError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);");
     // A saved press lands like an answered one: history, the counter, the note.
-    expect(send).toMatch(/if \(followed\.kind === "saved"\) \{\s*setAsk\(""\);\s*commitFromServer\(followed\.spec\);\s*dropUnsaved\(setId, "edit", askedAt\);\s*setAskNote\(followed\.changed\);/);
+    // Its words' seal filed first (Helios Cut 4, step A6b).
+    expect(send).toMatch(/if \(followed\.kind === "saved"\) \{\s*setAsk\(""\);[^\n]*\n\s*(?:\/\/[^\n]*\n\s*)?fileSeal\(sealsRef\.current, followed\.seal\);\s*commitFromServer\(followed\.spec\);\s*dropUnsaved\(setId, "edit", askedAt\);\s*setAskNote\(followed\.changed\);/);
     expect(send).toContain("followed.editsLeft !== undefined) setEditsLeft(followed.editsLeft);");
   });
 
   it("is handed the count by the set page", () => {
     expect(readFileSync(join(__dirname, "../../app/app/sets/[id]/page.tsx"), "utf8")).toContain("astraEditsLeft={data.astraEditsLeft}");
+  });
+
+  // Helios Cut 4, step A6b: the seals of the copy each page opens on, and Build's of Astra's original.
+  it("is handed the seals of the words it opens on by the set page, as the set page's workspace is", () => {
+    const page = readFileSync(join(__dirname, "../../app/app/sets/[id]/page.tsx"), "utf8");
+    const build = page.slice(page.indexOf("<SetEditor"), page.indexOf("/>", page.indexOf("<SetEditor")));
+    expect(build).toContain("initialSeal={data.set.seal}");
+    expect(build).toContain("originalSeal={data.set.originalSeal}");
+    const shoot = page.slice(page.indexOf("<SetView"), page.indexOf("/>", page.indexOf("<SetView")));
+    expect(shoot).toContain("initialSeal={data.set.seal}");
+    expect(shoot).toContain("spec={data.set.editedSpec ?? data.set.spec}");
   });
 });
