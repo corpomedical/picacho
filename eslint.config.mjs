@@ -23,7 +23,9 @@ const eslintConfig = [
     // linting two copies of it, contributing 32 of the 115 warnings the
     // "baseline" carried. Generated code from a dependency is not this
     // repo's to lint.
-    ignores: [".claude/", "android/", "ios/"],
+    //
+    // public/vad/ is vendored third-party minified code (see its README.txt).
+    ignores: [".claude/", "android/", "ios/", "public/vad/"],
   },
   ...nextCoreWebVitals,
   ...nextTypescript,
