@@ -20,6 +20,30 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.123.0",
+    build: 162,
+    date: "2026-09-26",
+    title: "Helios: an Astra change counts only when it changes the set, Undo brings back Astra's words, and a set's things are listed with their colour",
+    items: [
+      "An Astra change that changes nothing no longer uses one of the month's changes. When Astra reads the set as already so, nothing is saved and the page says \"Astra changed nothing — it read the set as already so. It didn't use one of your changes.\" When Astra couldn't be reached and never started on the change, nothing counts at all, not even the attempt, and the page says \"Astra can't be reached right now — nothing was used.\" When we couldn't check Astra's answer, the set stays as it was and the page says no change was used.",
+      "When too many of the month's Astra changes didn't land and Astra is paused on your sets, the Astra card says so before you press and offers no button, and Build holds Send and says why. Before, the card offered a change that was then refused.",
+      "A short hiccup in our change counter no longer tells you the month is used up or hides the button. It says \"We couldn't check your Astra changes — try again in a moment.\" and keeps the count you had.",
+      "If our servers' time limit stops an Astra change before it saves, the page gives that change back when it checks on it after the connection drops. A change whose page was closed stays counted.",
+      "Undo brings back Astra's words, not only the pieces: a step back in Build over an Astra change, and Undo of a change the page picked up after a dropped connection, now restore the set's description too, so the stills after it stop describing the undone change.",
+      "The frame card shows the rig's time of day, when one is set, on every account before you shoot.",
+      "One line beside \"What happens\" and under the words box says up front: \"Brand names and logos come back as look-alikes; signs and written words stay blank.\" An Astra change now also keeps brand names out of the set's description, as a build always has; every still of the set reads that description.",
+      "After an Astra change, a note says when something will hide it in stills: the rig's time of day or light still lighting the set (and where to switch it to As built), or a thing drawn from its own photos, whose colour follows those photos. After \"Use my words as what happens\", a note says those words don't turn or pose the person, and where to do that.",
+      "An eye-line and a film beat's focus pull stay on the same thing after Astra rewrites the set or rebuilds a thing. If the thing is gone, the page clears it and says so once.",
+      "The eye-line menu and a film beat's Focus and Eye-line menus list each thing once, with its colour (\"At Car 2 · red\"), instead of one row per block with its size; the set's own blocks are still there under \"Part of the set\". The \"In this set\" list, the phone's strip, the cast chips and a thing's card add the colour too.",
+      "Aly sees each thing's colour and which side of the figure it is on, so \"the red car\" reaches the red one. She finds a thing by the name the set page shows, and \"Car 2\" still works.",
+      "Prices and plans are unchanged.",
+      "For the team first (admins only until each is proven): a priced press, \"Name its things and parts · ≤ $0.015 + content check\", names a set's things and parts. It never runs on its own, is held to 10 presses an hour and never touches the month's Astra changes. Names show on screen (\"Red sports car\", \"Grandstand · part of the set\"), in the set's chat and to Aly, never in a still's words, and they move no photo, eye-line or film.",
+      "For the team first, until check A: the set's chat knows a named set's things and its named parts, so \"Turn her to face the grandstand\" and \"Put her by the barriers\" are done. The free phrase check now has 108 phrases and passes all of them.",
+      "For the team first, until two proof stills, one rack take and your yes: a still's eye-line and a take's eye-line and focus pull say \"the red car\" instead of a block's size.",
+      "Ready for when \"Rebuild from its photos\" opens to everyone (today only admins have it, and they have no monthly cap, so no one sees this yet): its button says it uses one of the month's Astra changes, only if it saves.",
+    ],
+  },
+  {
     version: "1.122.0",
     build: 161,
     date: "2026-09-26",
