@@ -7,7 +7,7 @@
 // Alias-free and import-free at runtime (vitest has no "@/"; the client
 // bundle must not pull a server module): only types come in.
 
-import type { CampaignStage, PressQuote, StillView, Verdict } from "./campaign-types";
+import type { CampaignStage, MomentView, PressQuote, ShotView, StillView, TakeView, Verdict } from "./campaign-types";
 import type { ProductCard } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -19,12 +19,17 @@ import type { ProductCard } from "./types";
 export const ROUTE_STOPS = ["plan", "stills", "film", "wall", "line"] as const;
 export type RouteStop = (typeof ROUTE_STOPS)[number];
 
-/** Which stop an ad is at (0..4). No campaign, or a closed one, is at the Plan. */
-export function routeIndex(stage: CampaignStage | null): number {
+/**
+ * Which stop an ad is at (0..4). No campaign, or a closed one, is at the
+ * Plan. An ad waiting on the person after filming (its shots are on the
+ * wall) is at the Press wall, not back at the Stills.
+ */
+export function routeIndex(stage: CampaignStage | null, filmed = false): number {
   switch (stage) {
+    case "awaiting_approval":
+      return filmed ? 3 : 1;
     case "painting":
     case "checking_keyframes":
-    case "awaiting_approval":
       return 1;
     case "animating":
       return 2;
@@ -239,4 +244,248 @@ export function sourceHost(url: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// The press wall (Cut 4): the filmed takes, their moments and the person's
+// choice. Nothing here decides for the person: a shot that missed waits for
+// Keep, Re-film or Cut; "Not readable" and "Not checked" are never a miss.
+// ---------------------------------------------------------------------------
+
+/**
+ * How bad a verdict is, worst first. The same order as the checker's own
+ * (product-lock.ts VERDICT_SEVERITY; door-view.test.ts pins them equal),
+ * kept here because the door imports nothing from the server at runtime.
+ */
+export const VERDICT_WEIGHT: Readonly<Record<Verdict, number>> = {
+  didnt_match: 5,
+  product_missing: 4,
+  not_checked: 3,
+  not_readable: 2,
+  match: 1,
+  no_one_in_shot: 0,
+};
+
+/** A miss: the only verdicts that ask the person to choose. */
+export function isMiss(v: Verdict): boolean {
+  return v === "didnt_match" || v === "product_missing";
+}
+
+/** A take we are still filming or reading. */
+export function takeBusy(t: TakeView): boolean {
+  return t.state === "filming" || t.state === "checking";
+}
+
+/** A shot we are still working on (being filmed again, or a take still being filmed or read). */
+export function shotBusy(s: ShotView): boolean {
+  return s.decision === "refilming" || s.takes.some(takeBusy);
+}
+
+/** Anything on the wall still in our hands: the door keeps asking until it is done. */
+export function wallBusy(shots: readonly ShotView[]): boolean {
+  return shots.some(shotBusy);
+}
+
+/**
+ * The take the wall shows for a shot: the one the person picked on the wall,
+ * else the take the cut uses, else the newest take that was read, else the
+ * newest.
+ */
+export function shownTake(s: ShotView, picked: number | null = null): TakeView | null {
+  if (picked !== null) {
+    const p = s.takes.find((t) => t.take === picked);
+    if (p) return p;
+  }
+  if (s.chosenTake !== null) {
+    const c = s.takes.find((t) => t.take === s.chosenTake);
+    if (c) return c;
+  }
+  const read = [...s.takes].reverse().find((t) => t.state === "checked");
+  return read ?? s.takes[s.takes.length - 1] ?? null;
+}
+
+/**
+ * One moment's word on the wall: the worse of the checks that apply to it
+ * (the product when the shot shows it, the face when someone is in it).
+ * A packshot with no one in it reads its product alone; a hook planned
+ * without the product reads its face alone.
+ */
+export function momentVerdict(m: MomentView, productExpected: boolean): Verdict {
+  const parts: Verdict[] = [];
+  if (productExpected) parts.push(m.product);
+  if (m.face !== "no_one_in_shot") parts.push(m.face);
+  if (parts.length === 0) return "not_checked";
+  return parts.reduce((a, b) => (VERDICT_WEIGHT[b] > VERDICT_WEIGHT[a] ? b : a));
+}
+
+/** One moment as the wall lays it out. */
+export type WallMoment = {
+  /** Stable across re-reads of the ad: shot, take and the moment's place in its take. */
+  key: string;
+  /** 1-based, across the whole wall, in cut order ("Moment 5"). */
+  index: number;
+  shot: number;
+  take: number;
+  /** Seconds into the ad (the shot's place in the cut plus the moment's time in its take), or null. */
+  at: number | null;
+  /** Seconds into the take, or null (for the frame). */
+  atTake: number | null;
+  verdict: Verdict;
+  moment: MomentView;
+};
+
+/**
+ * Every moment the wall shows, shot by shot in cut order, from the take
+ * each shot shows. `starts` gives each shot's first second in the cut (its
+ * still's span); a shot without one counts from 0.
+ */
+export function wallMoments(
+  shots: readonly ShotView[],
+  starts: Readonly<Record<number, number>>,
+  picked: Readonly<Record<number, number>> = {},
+): WallMoment[] {
+  const out: WallMoment[] = [];
+  for (const s of [...shots].sort((a, b) => a.shot - b.shot)) {
+    if (s.decision === "cut") continue;
+    const t = shownTake(s, picked[s.shot] ?? null);
+    if (!t || t.state !== "checked") continue;
+    const start = starts[s.shot] ?? 0;
+    for (const [i, m] of t.moments.entries()) {
+      out.push({
+        key: `${s.shot}-${t.take}-${i}`,
+        index: out.length + 1,
+        shot: s.shot,
+        take: t.take,
+        at: m.atSeconds === null ? null : Math.round((start + m.atSeconds) * 10) / 10,
+        atTake: m.atSeconds,
+        verdict: momentVerdict(m, s.productExpected),
+        moment: m,
+      });
+    }
+  }
+  return out;
+}
+
+/** The wall's tally: how many moments read each word (only the words that occur). */
+export function wallTally(moments: readonly WallMoment[]): { verdict: Verdict; count: number }[] {
+  const order: Verdict[] = ["match", "didnt_match", "product_missing", "not_readable", "not_checked"];
+  return order
+    .map((verdict) => ({ verdict, count: moments.filter((m) => m.verdict === verdict).length }))
+    .filter((x) => x.count > 0);
+}
+
+/** The worst moment on the wall: the first of the heaviest misses, or null when nothing missed. */
+export function worstMoment(moments: readonly WallMoment[]): WallMoment | null {
+  let worst: WallMoment | null = null;
+  for (const m of moments) {
+    if (!isMiss(m.verdict)) continue;
+    if (!worst || VERDICT_WEIGHT[m.verdict] > VERDICT_WEIGHT[worst.verdict]) worst = m;
+  }
+  return worst;
+}
+
+/** How many of a shot's shown moments missed. */
+export function shotMisses(moments: readonly WallMoment[], shot: number): number {
+  return moments.filter((m) => m.shot === shot && isMiss(m.verdict)).length;
+}
+
+/** The first shot that waits on the person, or null. */
+export function firstDecisionShot(shots: readonly ShotView[]): ShotView | null {
+  return [...shots].sort((a, b) => a.shot - b.shot).find((s) => s.needsDecision) ?? null;
+}
+
+/** The shots that still go into the cut. The last of them can't be cut. */
+export function shotsInCut(shots: readonly ShotView[]): number {
+  return shots.filter((s) => s.decision !== "cut").length;
+}
+
+/** "0:07.2": a moment's place, to a tenth of a second. */
+export function clockTenths(seconds: number | null): string {
+  if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return "–";
+  const tenths = Math.round(seconds * 10);
+  const whole = Math.floor(tenths / 10);
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}.${tenths % 10}`;
+}
+
+/** "0:15": a length in whole seconds. */
+export function clockSeconds(seconds: number | null): string {
+  if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return "–";
+  const whole = Math.round(seconds);
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
+}
+
+/** One cell of the letter row: the letter read, and the one the label has when they differ. */
+export type LetterCell = {
+  /** The letter read here ("" when the label has a letter that wasn't read). */
+  read: string;
+  /** The label's letter here when it differs ("" when this letter shouldn't be there), else null. */
+  want: string | null;
+};
+
+const LETTERS_MAX = 24;
+
+function lettersOf(s: string): string[] {
+  return Array.from(s.normalize("NFC").toLocaleUpperCase().replace(/\s+/g, " ").trim());
+}
+
+function distance(a: readonly string[], b: readonly string[]): number[][] {
+  const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) => Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)));
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+  }
+  return d;
+}
+
+/**
+ * The letter row of "Why moment N missed": what was read, letter by letter,
+ * against the label's word, marking every letter that differs and the
+ * letter the label has there. The part of the reading nearest the word is
+ * used (a line may carry other words). Null when the two are too far apart
+ * to spell out (more than half the letters differ), too long for a row, or
+ * the same.
+ */
+export function letterRow(read: string, expected: string): { cells: LetterCell[]; wrong: number } | null {
+  const want = lettersOf(expected);
+  const words = read.trim().split(/\s+/).filter(Boolean);
+  const span = Math.max(1, expected.trim().split(/\s+/).filter(Boolean).length);
+  const candidates = new Set<string>([read.trim()]);
+  for (let i = 0; i + span <= words.length; i++) candidates.add(words.slice(i, i + span).join(" "));
+  let best: { got: string[]; d: number[][] } | null = null;
+  for (const c of candidates) {
+    const got = lettersOf(c);
+    if (got.length === 0) continue;
+    const d = distance(got, want);
+    if (!best || d[got.length][want.length] < best.d[best.got.length][want.length]) best = { got, d };
+  }
+  if (!best || want.length === 0) return null;
+  const { got, d } = best;
+  const total = d[got.length][want.length];
+  if (total === 0 || total * 2 > want.length || Math.max(got.length, want.length) > LETTERS_MAX) return null;
+  const cells: LetterCell[] = [];
+  let i = got.length;
+  let j = want.length;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && d[i][j] === d[i - 1][j - 1] + (got[i - 1] === want[j - 1] ? 0 : 1)) {
+      cells.unshift({ read: got[i - 1], want: got[i - 1] === want[j - 1] ? null : want[j - 1] });
+      i--;
+      j--;
+    } else if (i > 0 && d[i][j] === d[i - 1][j] + 1) {
+      cells.unshift({ read: got[i - 1], want: "" });
+      i--;
+    } else {
+      cells.unshift({ read: "", want: want[j - 1] });
+      j--;
+    }
+  }
+  return { cells, wrong: cells.filter((c) => c.want !== null).length };
+}
+
+/** The one wrong letter, when exactly one letter was read as another: its 1-based place and the label's letter. */
+export function singleSwap(row: { cells: readonly LetterCell[]; wrong: number }): { at: number; want: string } | null {
+  if (row.wrong !== 1) return null;
+  const at = row.cells.findIndex((c) => c.want !== null);
+  const cell = row.cells[at];
+  return cell && cell.read && cell.want ? { at: at + 1, want: cell.want } : null;
 }

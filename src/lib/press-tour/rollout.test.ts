@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { USER_STORAGE_BUCKETS } from "../profile/storage-buckets";
+import { doorUrl, pressLineUrl } from "../mcp/press/card";
+import { CAMPAIGN_COLUMNS } from "./campaign-machine";
+import { adPath } from "./cut-state";
 import { PRESS_KIT_BUCKET, PRESS_UPLOADS_BUCKET } from "./card-service";
-import { PRESS_TOUR_FLAGS } from "./enabled";
+import { PRESS_TOUR_FLAGS, PRESS_TOUR_SETTINGS } from "./enabled";
+import { FILM_FLAG, FILM_LANE_SETTING } from "./film";
 import { BRAND_KIT_COLUMNS, PRODUCT_CARD_COLUMNS } from "./types";
 
 // Press Tour's rollout lists, across the files that each keep one (Cut 1
@@ -62,14 +66,50 @@ const STUDIO_BASE = ["id", "name", "created_at", "updated_at"];
 
 describe("verify-db asks about every switch the code reads", () => {
   const flags = verifyList("const FLAGS = [");
+  // 01's switches (enabled.ts) and filming's own (film.ts, inserted OFF by 03b).
+  const pressTourSwitches = [...PRESS_TOUR_FLAGS, FILM_FLAG];
 
   it("each Press Tour switch is probed", () => {
-    for (const f of PRESS_TOUR_FLAGS) expect(flags, f).toContain(f);
+    for (const f of pressTourSwitches) expect(flags, f).toContain(f);
   });
 
   it("and no Press Tour switch the code no longer reads", () => {
     const pressFlags = flags.filter((f) => /^(press_|product_lock_)/.test(f));
-    expect(pressFlags.sort()).toEqual([...PRESS_TOUR_FLAGS].sort());
+    expect(pressFlags.sort()).toEqual([...pressTourSwitches].sort());
+  });
+
+  it("03b inserts the film switch OFF", () => {
+    expect(findSql("press-tour-03b-film.sql")).toMatch(new RegExp(`insert into public\\.feature_flags[^;]*'${FILM_FLAG}',\\s*false,`));
+  });
+});
+
+describe("verify-db asks about every Press Tour setting the code reads", () => {
+  const settings = verifyList("const SETTINGS = [");
+  const pressTourSettings = [...Object.keys(PRESS_TOUR_SETTINGS), FILM_LANE_SETTING];
+
+  it("each one is probed, and no other press setting", () => {
+    expect([...settings].sort()).toEqual([...pressTourSettings].sort());
+  });
+
+  it("03b seeds the film lane", () => {
+    expect(findSql("press-tour-03b-film.sql")).toMatch(new RegExp(`insert into public\\.app_settings[^;]*'${FILM_LANE_SETTING}',`));
+  });
+});
+
+describe("verify-db probes every press_campaigns column the machine selects", () => {
+  it("03's and 03b's, so a missing 03b reads as MISSING, not as a dead door", () => {
+    const probed = verifyList("  press_campaigns: [");
+    const selected = CAMPAIGN_COLUMNS.split(",").map((c) => c.trim()).filter((c) => !["id", "created_at", "updated_at"].includes(c));
+    expect(selected).toEqual(expect.arrayContaining(["shots", "assembly", "renditions", "master_generation_id"]));
+    for (const col of selected) expect(probed, col).toContain(col);
+  });
+
+  it("and the columns other code writes by name: mcp_grant_id and platforms (lib/mcp/press/service.ts)", () => {
+    const probed = verifyList("  press_campaigns: [");
+    const mcp = readFileSync(join(repo, "src", "lib", "mcp", "press", "service.ts"), "utf8");
+    const written = [...mcp.matchAll(/\.from\("press_campaigns"\)\s*\.update\(\{ ([a-z_]+):/g)].map((m) => m[1]);
+    expect(written.sort()).toEqual(["mcp_grant_id", "platforms"]);
+    for (const col of written) expect(probed, col).toContain(col);
   });
 });
 
@@ -195,5 +235,24 @@ describe("verify-db probes every column 02 creates and the code reads", () => {
     for (const col of created) {
       if (col !== "id") expect(probed, col).toContain(col);
     }
+  });
+});
+
+describe("every link that opens an ad uses the address the door reads", () => {
+  // The pushes (adReady / adFailed, cut-state.ts adPath) once linked
+  // ?ad=<id>, which the page never read: a push opened the newest open ad,
+  // not the one it was about.
+  const id = "33333333-3333-4333-8333-333333333333";
+  const page = readFileSync(join(repo, "src", "app", "app", "press-tour", "page.tsx"), "utf8");
+
+  it("the page reads ?campaign=<id>", () => {
+    expect(page).toContain("const campaign = one(sp.campaign);");
+    expect(page).toContain("openCampaignId={address.campaignId ?? home.openCampaignId}");
+  });
+
+  it("the pushes, the MCP card and the press line all link it", () => {
+    expect(adPath(id)).toBe(`/app/press-tour?campaign=${id}`);
+    expect(doorUrl("https://picacho.ai", id)).toBe(`https://picacho.ai${adPath(id)}`);
+    expect(pressLineUrl("https://picacho.ai", id)).toBe(`https://picacho.ai${adPath(id)}#press-line`);
   });
 });

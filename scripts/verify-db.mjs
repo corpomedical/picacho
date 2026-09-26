@@ -118,13 +118,19 @@ const COLUMNS = {
   // Press Tour's campaigns, the checker's per-frame record and the star's
   // ad-use answer (pending/press-tour-03-campaigns.sql). campaign-machine.ts
   // CAMPAIGN_COLUMNS selects the first list by name; product-lock/records.ts
-  // FRAME_CHECK_COLUMNS writes the second.
+  // FRAME_CHECK_COLUMNS writes the second. The last five are the film, the
+  // press wall and the cut (pending/press-tour-03b-film.sql); the machine
+  // selects them too, so without them every campaign read fails.
   press_campaigns: [
     "user_id", "source", "send_id", "product_id", "brand_kit_id", "character_ids", "trial_id",
     "mcp_grant_id", "length_s", "aspect", "goal", "plan", "quote", "stills", "stage",
     "stage_changed_at", "locked_at", "attempts", "version", "keyframe_ids", "shot_ids",
+    "master_generation_id", "renditions", "product_verdict",
+    // Written by name by the MCP draft_post tool (lib/mcp/press/service.ts).
+    "platforms",
     "cost_usd", "credits_charged", "credits_refunded", "error", "expires_at",
     "overdue_notified_at", "deleted_at",
+    "shots", "film_charged_at", "cut_due_at", "delivered_at", "assembly",
   ],
   product_frame_checks: [
     "user_id", "product_id", "campaign_id", "generation_id", "source", "shot", "moment",
@@ -136,6 +142,53 @@ const COLUMNS = {
   character_ad_consents: [
     "user_id", "character_id", "answer", "ads_ok", "photos_hash", "notice_version",
     "locale", "method", "place", "ip_hash", "consented_at",
+  ],
+  // Press Tour publishing (pending/press-tour-04-social.sql): lib/social/store.ts
+  // selects these by name (CONNECTION_COLUMNS, POST_COLUMNS).
+  social_connections: [
+    "user_id", "network", "external_id", "handle", "display_name", "scopes", "status",
+    "access_expires_at", "refresh_expires_at", "last_refreshed_at", "refresh_lease_until",
+  ],
+  social_connection_secrets: [
+    "connection_id", "access_ciphertext", "access_iv", "access_tag", "refresh_ciphertext",
+    "refresh_iv", "refresh_tag", "key_version",
+  ],
+  oauth_states: ["state_hash", "user_id", "network", "pkce_verifier", "return_to", "expires_at", "used_at"],
+  social_revocations: [
+    "user_id", "network", "external_id", "token_kind", "token_ciphertext", "token_iv",
+    "token_tag", "key_version", "attempts", "next_attempt_at", "last_error",
+  ],
+  press_social_testers: ["user_id", "networks"],
+  // "Tell me when <network> opens" (pending/press-tour-08-waitlist.sql):
+  // lib/press-tour/waitlist.ts selects and writes these by name.
+  press_network_waitlist: ["user_id", "network", "created_at"],
+  scheduled_posts: [
+    "user_id", "campaign_id", "generation_id", "connection_id", "network", "account_external_id",
+    "rendition", "rendition_path", "rendition_sha256", "caption", "hashtags", "final_text",
+    "options", "ai_label", "consent", "payload_sha256", "idempotency_key", "stage",
+    "scheduled_for", "resume_at", "locked_at", "attempts", "upload_attempts", "external_ids",
+    "external_post_id", "permalink", "last_error", "cost_usd", "published_at", "trend_derived",
+    "deleted_at",
+  ],
+  // Picacho inside Claude and ChatGPT (pending/press-tour-07-mcp-oauth.sql):
+  // lib/mcp/oauth/store.ts and lib/mcp/press/nonce.ts select these by name.
+  oauth_clients: ["client_id", "kind", "client_name", "redirect_uris", "trust", "disabled_at", "fetched_at"],
+  oauth_pending_authorizations: [
+    "id", "client_id", "redirect_uri", "state", "code_challenge", "resource", "scopes", "user_id",
+    "decision", "expires_at", "used_at",
+  ],
+  oauth_grants: ["id", "user_id", "client_id", "scopes", "resource", "last_used_at", "revoked_at"],
+  oauth_codes: [
+    "code_hash", "grant_id", "user_id", "client_id", "redirect_uri", "code_challenge", "resource",
+    "scopes", "family_id", "expires_at", "used_at",
+  ],
+  oauth_tokens: [
+    "token_hash", "kind", "grant_id", "family_id", "user_id", "client_id", "scopes", "resource",
+    "expires_at", "used_at", "replaced_by", "revoked_at",
+  ],
+  mcp_ui_nonces: [
+    "nonce_hash", "user_id", "campaign_id", "purpose", "quote_total", "quote_paint", "quote_animate",
+    "quote_version", "grant_id", "expires_at", "used_at",
   ],
   app_settings: ["key", "value"],
   feature_flags: ["key", "enabled"],
@@ -213,6 +266,20 @@ const FLAGS = [
   "press_trends", "press_tour_plans", "product_lock_person_reshoot", "press_post_x",
   "press_tour_trial", "press_tour_mcp", "product_lock_calibrated", "product_lock_reshoot",
   "product_lock_refund",
+  // Press Tour filming (pending/press-tour-03b-film.sql), inserted OFF;
+  // src/lib/press-tour/film.ts FILM_FLAG, pinned here by rollout.test.ts.
+  "press_tour_film",
+];
+
+// app_settings rows the code reads by key, where a missing row changes
+// behaviour without a word. Press Tour's (pending/press-tour-01-flags.sql,
+// enabled.ts PRESS_TOUR_SETTINGS) read as 0 / "no plan" when missing, and
+// press_film_lane (pending/press-tour-03b-film.sql, film.ts
+// FILM_LANE_SETTING) as the default lane. Pinned by rollout.test.ts.
+const SETTINGS = [
+  "press_tour_plan_list", "press_trial_daily_usd", "press_trial_daily_cap",
+  "press_reshoot_daily_usd", "press_reshoot_user_30d", "press_x_daily_cap",
+  "product_lock_min_confidence", "press_film_lane",
 ];
 
 // RPCs the app calls (schema.sql + pending files).
@@ -221,6 +288,8 @@ const RPCS = [
   "reserve_generations",
   // Press Tour's campaign claim (pending/press-tour-03-campaigns.sql).
   "claim_press_campaigns",
+  // Press Tour's posts claim (pending/press-tour-04-social.sql).
+  "claim_scheduled_posts",
   "claim_job_advance",
   "spend_daily_free_generation",
   "spend_purchased_credits",
@@ -259,6 +328,8 @@ const PRIVATE_RPCS = [
   "blast_recipient_emails",
   // The press cron's claim (pending/press-tour-03-campaigns.sql): the service role's alone.
   "claim_press_campaigns",
+  // The posts clock's claim (pending/press-tour-04-social.sql): the service role's alone.
+  "claim_scheduled_posts",
   "claim_job_advance",
   "clawback_credit_purchase",
   "create_api_key_capped",
@@ -361,6 +432,14 @@ async function main() {
   for (const f of FLAGS) {
     if (present.includes(f)) ok(f);
     else bad(`feature flag ${f}`);
+  }
+
+  console.log("\nsettings:");
+  const sres = await fetch(`${BASE}/rest/v1/app_settings?select=key&key=in.(${SETTINGS.join(",")})`, { headers: h });
+  const seeded = sres.ok ? (await sres.json()).map((r) => r.key) : [];
+  for (const k of SETTINGS) {
+    if (seeded.includes(k)) ok(k);
+    else bad(`setting ${k}`);
   }
 
   console.log("\nbuckets:");

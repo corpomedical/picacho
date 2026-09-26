@@ -26,9 +26,12 @@ export function QuoteCard({ quote, stills, shotSeconds, m }: { quote: PressQuote
     return r.paid ? `${credits} · ${m.paid}` : credits;
   };
 
-  // The free first ad repaints nothing (critique #10): no repaint line there.
-  const policy = !quote.trial && quote.policy.reshoot === "off" && !quote.policy.refund ? m.policyOff : null;
   const due = next === "paint" ? quote.paint : next === "film" ? quote.animate : null;
+  // The free first ad repaints nothing (critique #10): no repaint line there.
+  // Before painting, what a still's miss means; once the stills are painted,
+  // what a filmed shot's miss means (operator, 2026-09-26: keep it, cut it,
+  // or film it again at the normal price).
+  const policy = !quote.trial && quote.policy.reshoot === "off" && !quote.policy.refund ? (next === "paint" ? m.policyOff : m.policyFilm) : null;
 
   return (
     <section aria-labelledby="press-quote" className="rounded-2xl bg-[rgba(255,255,255,0.03)] px-4 pb-3 pt-3 ring-1 ring-inset ring-[rgba(255,255,255,0.08)]">

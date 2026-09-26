@@ -26,6 +26,19 @@
 //   machine      claim_press_campaigns, notifyAdmins, the identity gate's
 //                bar, and a paid retry through the person's own allowance
 //                (v2 #11: paint.ts reservePaidRetry, service role)
+//   filming      (Cut 4, film.ts) fal.ts submitVideoJob on the film lane
+//                (openingFrame, generateNativeAudio false, 9:16), its queue
+//                verbs, model-health.ts (the busy check, the breaker's
+//                record), output-policy.ts judgeRender on the take (strict
+//                lane), core.ts persistVideo with the sound taken out; the
+//                checks through product-lock check.ts checkMoments (the
+//                ffmpeg sampler and the face scorer)
+//   the cut      (Cut 4, cut.ts) ffmpeg-static (cut-encode.ts), the private
+//                press-kit bucket, the brand kit's logo, the signing seam
+//                (sign.ts: no C2PA library is installed, so renditions are
+//                delivered unsigned and say why), the finished ad's copy in
+//                generated-videos for History, and the adReady / adFailed
+//                pushes as soon as lib/push knows those keys
 
 import { after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -38,8 +51,14 @@ import {
   consumePurchasedCredits,
   getMonthlyUsageWith,
   persistImageBytes,
+  persistVideo,
 } from "@/lib/generations/core";
 import { readIdentityThreshold } from "@/lib/generations/face-lock";
+import { getUnavailableModels, recordModelFailure, recordModelSuccess } from "@/lib/generations/model-health";
+import { cancelQueuedJob, checkQueuedJob, fetchQueuedVideoUrl, submitVideoJob } from "@/lib/generations/providers/fal";
+import { VIDEO_MODELS } from "@/lib/generations/providers/video-models";
+import { PREF_FOR_KEY } from "@/lib/push/prefs";
+import { notifyUser, type PushMessage } from "@/lib/push/send";
 import { refundGenerationCosts } from "@/lib/generations/job-runner";
 import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
 import { directScene } from "@/lib/generations/providers/anthropic";
@@ -49,7 +68,8 @@ import { reviewWithOpenAI } from "@/lib/generations/providers/openai";
 import { providerMediaOrigin } from "@/lib/generations/providers/provider-url";
 import { absolutizeMediaUrl, mediaUrl } from "@/lib/media/url";
 import { PLAN_LIMITS, spendableCredits, type PlanId } from "@/lib/plans";
-import { CHECK_BUDGET_MS, checkStill } from "@/lib/product-lock/check";
+import { CHECK_BUDGET_MS, checkMoments, checkStill } from "@/lib/product-lock/check";
+import { MAX_SHOT_BYTES } from "@/lib/product-lock/frames";
 import { prepareFrame } from "@/lib/product-lock/crop";
 import { locateFraming } from "@/lib/product-lock/judge";
 import { productCheckDeps } from "@/lib/product-lock/live";
@@ -58,14 +78,22 @@ import { hashedRateKey, rateLimited } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/server";
 import { PRESS_KIT_BUCKET } from "./card-service";
 import { driveCampaign, kickBudgetMs, stillOf, type CampaignRow, type MachineDeps } from "./campaign-machine";
-import type { CampaignCaller, CampaignDeps } from "./campaign-service";
+import type { CampaignCaller, CampaignDeps, FilmDoorDeps } from "./campaign-service";
+import { assembleStep, lateCuts, signStep, type AdNoticeKey, type CutDeps } from "./cut";
+import { loadCutFont } from "./cut-encode";
+import { checkShotsStep, filmRowPayload, filmStep, readFilmOpening, takeCheckFrom, type FilmDeps, type TakeCheckInput, type TakeCheckOutcome } from "./film";
+import { c2paSigner } from "./sign";
+import { BRAND_KIT_COLUMNS, brandKitFromRow } from "./types";
 import {
   STILL_BUCKET,
   STILL_RENDER,
   endStillRow,
   paintKeyframe,
+  productReferencePaths,
   reserveHouseRow,
+  reserveHouseRowWith,
   reservePaidRetry,
+  reservePaidRetryWith,
   type GateAnswer,
   type MoneyDeps,
   type PaintDeps,
@@ -335,6 +363,11 @@ export function machineDeps(): MachineDeps {
   const painter = paintDeps();
   return {
     db,
+    film: filmDeps(db),
+    cut: cutDeps(db),
+    stages: { animating: filmStep, checking_shots: checkShotsStep, assembling: assembleStep, signing: signStep, late: lateCuts },
+    settleRow: ({ userId, rowId, credits, reason }) =>
+      endStillRow({ db, refund: (id, opts) => refundGenerationCosts(id, opts) }, { userId, rowId, credits, detail: reason, force: false }),
     paint: (input) => paintKeyframe(painter, input),
     reserveHouse: async ({ campaign, shot, kind, rowId }: { campaign: CampaignRow; shot: number; kind: "house" | "retry"; rowId: string }) => {
       const planned = campaign.plan?.shots.find((s) => s.shot === shot);
@@ -427,5 +460,240 @@ export function campaignDeps(caller: CampaignCaller, personal: SupabaseClient): 
       });
     },
     imageUrl: (path) => mediaUrl(STILL_BUCKET, path),
+    filmDoor: filmDoorDeps(db),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Cut 4: filming, the checks on shots, the cut
+// ---------------------------------------------------------------------------
+
+/** A finished file's link lives this long (press-kit is private; the door asks again when it reopens). */
+const RENDITION_URL_SECONDS = 60 * 60;
+/** Downloading a take or a cut file waits at most this long. */
+const VIDEO_READ_MS = 60_000;
+
+const MEDIA_ROUTE = /^\/api\/media\/([^/]+)\/([^?]+)/;
+
+/** Bytes from storage, up to `max` (the still reader's 20 MB is too small for a video). */
+async function downloadVideo(db: SupabaseClient, bucket: string, path: string, max = MAX_SHOT_BYTES): Promise<Buffer | null> {
+  try {
+    const { data, error } = await db.storage.from(bucket).download(path);
+    if (error || !data || data.size > max) return null;
+    return Buffer.from(await data.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+/** A kept take's bytes: our media route (generated-videos), or the provider's https link when keeping it failed. */
+async function readVideoBytes(db: SupabaseClient, stored: string): Promise<Buffer | null> {
+  const m = MEDIA_ROUTE.exec(stored);
+  if (m) {
+    if (m[1] !== "generated-videos") return null;
+    let path: string;
+    try {
+      path = m[2].split("/").map(decodeURIComponent).join("/");
+    } catch {
+      return null;
+    }
+    if (path.includes("..")) return null;
+    return downloadVideo(db, "generated-videos", path);
+  }
+  if (!stored.startsWith("https://")) return null;
+  try {
+    const res = await fetch(stored, { signal: AbortSignal.timeout(VIDEO_READ_MS) });
+    if (!res.ok) return null;
+    if (Number(res.headers.get("content-length") ?? "0") > MAX_SHOT_BYTES) return null;
+    const bytes = Buffer.from(await res.arrayBuffer());
+    return bytes.length > 0 && bytes.length <= MAX_SHOT_BYTES ? bytes : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Whether the film lane is out of service right now (model-health.ts; the breaker never swaps it here). */
+async function laneBusy(modelId: string): Promise<boolean> {
+  return (await getUnavailableModels()).has(modelId);
+}
+
+/**
+ * adReady / adFailed / adFailedRefunded to the person's devices (lib/push
+ * send.ts PushMessage, prefs.ts PREF_FOR_KEY, text.ts, the catalogs); a key
+ * PREF_FOR_KEY doesn't name is never sent (never a push with no words).
+ * English: film-messages.ts AD_READY_PUSH / AD_FAILED_PUSH /
+ * AD_FAILED_REFUNDED_PUSH.
+ */
+async function pushAdNotice(input: { userId: string; key: AdNoticeKey; path: string }): Promise<void> {
+  if (!Object.prototype.hasOwnProperty.call(PREF_FOR_KEY, input.key)) {
+    console.info(`[press-tour] ${input.key} not pushed: lib/push doesn't know the key yet`);
+    return;
+  }
+  await notifyUser(input.userId, { message: { key: input.key as unknown as PushMessage["key"] }, path: input.path });
+}
+
+function filmDoorDeps(db: SupabaseClient): FilmDoorDeps {
+  return {
+    opening: () => readFilmOpening(db),
+    laneBusy,
+    // A kept take is stored as our media route's own link (or, rarely, the provider's): shown as it is.
+    videoUrl: (stored) => stored,
+    renditionUrl: async (path) => {
+      const { data } = await db.storage.from(PRESS_KIT_BUCKET).createSignedUrl(path, RENDITION_URL_SECONDS);
+      return data?.signedUrl ?? null;
+    },
+  };
+}
+
+/** lib/product-lock checkMoments on one filmed take, adapted to the campaign's TakeCheckOutcome. */
+const takeChecker =
+  (db: SupabaseClient) =>
+  async (input: TakeCheckInput): Promise<TakeCheckOutcome> => {
+    const ctx = { productExpected: input.productVisibility !== "absent", star: input.star !== null };
+    const refPaths = productReferencePaths(input.product);
+    const textPaths = input.product.photos.length > 0 ? input.product.photos : refPaths;
+    const [video, references, textPhotos, identity, owner, threshold] = await Promise.all([
+      readVideoBytes(db, input.video),
+      Promise.all(refPaths.slice(0, 3).map((p) => download(db, PRESS_KIT_BUCKET, p))),
+      Promise.all(textPaths.slice(0, 6).map((p) => download(db, PRESS_KIT_BUCKET, p))),
+      input.star ? download(db, "character-references", input.star.identityPath) : Promise.resolve(null),
+      db.from("profiles").select("role").eq("id", input.userId).maybeSingle(),
+      readIdentityThreshold(db).catch(() => 0),
+    ]);
+    const notChecked: TakeCheckOutcome = {
+      check: { face: ctx.star ? "not_checked" : "no_one_in_shot", product: "not_checked", reason: null, moments: [], escalations: 0, corner: null },
+      usd: 0,
+    };
+    if (!video) return notChecked;
+    const result = await checkMoments(
+      {
+        video,
+        seconds: input.seconds,
+        packshot: input.packshot,
+        visibility: input.productVisibility,
+        card: {
+          productId: input.product.id,
+          name: input.product.name || null,
+          labelStrings: input.product.labelStrings,
+          noReadableText: input.product.noReadableText,
+          dna: input.product.dna,
+          palette: input.product.palette,
+          references: references.filter((b): b is Buffer => b !== null),
+          referenceText: null,
+          textPhotos,
+        },
+        // A star whose photo could not be opened is "not checked", never a miss.
+        face: input.star ? (identity ? { identity, traitSummary: input.star.traitSummary, threshold } : undefined) : null,
+        escalationsLeft: input.escalationsLeft,
+        record: {
+          userId: input.userId,
+          productId: input.product.id,
+          campaignId: input.campaignId,
+          generationId: input.generationId,
+          shot: input.shot,
+          source: "moment",
+          lane: input.lane,
+          // Only an admin's own frames keep their picture (synthesis v2 #32).
+          keepFrames: (owner.data as { role?: string } | null)?.role === "admin",
+        },
+      },
+      productCheckDeps(),
+    );
+    return { check: takeCheckFrom(result, ctx, threshold), usd: result.signals.usd };
+  };
+
+function filmDeps(db: SupabaseClient): FilmDeps {
+  const moneyFor = (userId: string): MoneyDeps => ({
+    db,
+    allowance: (n) => checkGenerationAllowance(db, userId, n, { skipCooldown: true }),
+    spendBonus: (u, amount) => consumeBonusCredits(db, u, amount),
+    spendPurchased: (u, amount) => consumePurchasedCredits(db, u, amount),
+    refund: (id, opts) => refundGenerationCosts(id, opts),
+  });
+  const painter = paintDeps();
+  return {
+    lane: async () => (await readFilmOpening(db)).lane,
+    laneBusy,
+    submit: async ({ modelId, prompt, stillUrl, seconds }) => {
+      // The still IS the first frame, already 9:16: never reframed; no sound (critique #18).
+      const job = await submitVideoJob(prompt, modelId, {
+        characterAnchorImageUrl: stillUrl,
+        openingFrame: true,
+        generateNativeAudio: false,
+        durationSeconds: seconds,
+        aspectRatio: "9:16",
+      });
+      return { requestId: job.requestId, statusUrl: job.statusUrl, responseUrl: job.responseUrl, cancelUrl: job.cancelUrl, label: job.label };
+    },
+    poll: async (job) => {
+      const state = await checkQueuedJob(job);
+      return state.state === "failed" ? { state: "failed", error: state.error } : state.state === "completed" ? { state: "completed" } : { state: "pending" };
+    },
+    result: (job) => fetchQueuedVideoUrl(job),
+    cancel: (job) => cancelQueuedJob(job),
+    outputGate: async ({ url }): Promise<GateAnswer> => {
+      try {
+        await judgeRender({ url, kind: "video", strictLane: true });
+        return { ok: true };
+      } catch (err) {
+        if (err instanceof OutputPolicyRefusal) {
+          return { ok: false, reason: err.reason === "unavailable" ? "unavailable" : "refused", message: err.userMessage };
+        }
+        return { ok: false, reason: "unavailable", message: "The picture check could not run." };
+      }
+    },
+    keep: async ({ userId, providerUrl }) => (await persistVideo(db, userId, providerUrl, { dropSound: true }))?.url ?? null,
+    // A capability link that never expires: the lane may start the take minutes after it was sent.
+    stillUrl: (path) => absolutizeMediaUrl(mediaUrl(STILL_BUCKET, path), providerMediaOrigin()),
+    promptGate: painter.promptGate,
+    classify: painter.classify,
+    review: painter.review,
+    ownRules: (userId) => ownBrandRules(db, userId),
+    refund: (id, opts) => refundGenerationCosts(id, opts),
+    reservePaid: ({ campaign, spec, failedReservedAt }) =>
+      reservePaidRetryWith(moneyFor(campaign.userId), campaign.userId, spec, failedReservedAt, filmRowPayload),
+    reserveHouse: ({ campaign, spec }) => reserveHouseRowWith(db, campaign.userId, spec, filmRowPayload),
+    healthSuccess: (modelId) => recordModelSuccess(modelId, "video"),
+    healthFailure: (modelId, detail, userId) => recordModelFailure(modelId, "video", detail, userId),
+    checkTake: takeChecker(db),
+    // The row's own booked price (video-models.ts costPerSecondUsd: $0.112/s for kling-o3, its WITH-audio
+    // figure; audio-off is expected lower, and the bake-off's invoice line settles it). A ceiling, never a guess.
+    usdPerSecond: (modelId) => VIDEO_MODELS.find((m) => m.id === modelId)?.costPerSecondUsd ?? 0,
+  };
+}
+
+function cutDeps(db: SupabaseClient): CutDeps {
+  return {
+    readVideo: (stored) => readVideoBytes(db, stored),
+    readKit: (path) => downloadVideo(db, PRESS_KIT_BUCKET, path, 100 * 1024 * 1024),
+    writeKit: async (path, bytes) => {
+      const { error } = await db.storage.from(PRESS_KIT_BUCKET).upload(path, bytes, { contentType: "video/mp4", upsert: true });
+      if (error) console.error(`[press-tour] press-kit upload ${path} failed: ${error.message}`);
+      return !error;
+    },
+    removeKit: async (paths) => {
+      await db.storage.from(PRESS_KIT_BUCKET).remove(paths);
+    },
+    // History serves videos from generated-videos: the finished ad is copied there, under the owner's folder.
+    keepMaster: async ({ userId, campaignId, sha256, bytes }) => {
+      const path = `${userId}/press/${campaignId}/cut-${sha256.slice(0, 16)}.mp4`;
+      const { error } = await db.storage.from("generated-videos").upload(path, bytes, { contentType: "video/mp4", upsert: true });
+      return error ? null : mediaUrl("generated-videos", path);
+    },
+    // No maintained C2PA library is installed (package.json): unsigned, and why (sign.ts).
+    signer: c2paSigner(process.env, null),
+    brand: async ({ userId, brandKitId }) => {
+      const { data, error } = await db.from("brand_kits").select(BRAND_KIT_COLUMNS).eq("id", brandKitId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+      if (error) throw new Error(`the brand kit couldn't be read: ${error.message}`);
+      const kit = brandKitFromRow(data);
+      // Only a confirmed kit's logo (its ownership answer given) goes on an ad.
+      if (!kit || kit.status !== "confirmed" || !kit.logoPath || !kit.logoPath.startsWith(`${userId}/`)) return null;
+      const logo = await downloadVideo(db, PRESS_KIT_BUCKET, kit.logoPath, 12 * 1024 * 1024);
+      if (!logo) throw new Error("the brand logo couldn't be read");
+      return { logo, background: kit.palette[0] ?? null };
+    },
+    font: () => loadCutFont(),
+    notify: pushAdNotice,
+    refund: (id, opts) => refundGenerationCosts(id, opts),
   };
 }

@@ -7,7 +7,9 @@ import { machineDeps } from "@/lib/press-tour/campaign-runtime";
 // Press Tour's clock (2026-09-26, Cut 2; spec §1.12, synthesis #19), every
 // minute: campaigns that waited 7 days on the person close, drafts whose
 // planning died fail, a campaign stuck 45 minutes in one working stage
-// tells Admin once, and then up to BATCH campaigns are claimed through
+// tells Admin once, an ad whose cut we owed for a day closes with its
+// filming refunded by the ordinary rules (Cut 4: cut.ts lateCuts, counted as
+// `late`), and then up to BATCH campaigns are claimed through
 // claim_press_campaigns (oldest first, FOR UPDATE SKIP LOCKED, a 6-minute
 // lease) and each gets ONE step: one still painted and checked, or one
 // move of the stage machine (lib/press-tour/campaign-machine.ts). The steps
@@ -37,7 +39,7 @@ export async function GET(request: Request) {
   if (!(await isPressTourEnabled(admin))) return NextResponse.json({ ok: true, skipped: "off" });
 
   const report = await pressTick(machineDeps(), { batch: BATCH });
-  if (report.expired || report.stale || report.overdue || Object.keys(report.stepped).length > 0) {
+  if (report.expired || report.stale || report.overdue || report.late || Object.keys(report.stepped).length > 0) {
     console.info("press: tick", report);
   }
   return NextResponse.json({ ok: true, ...report });

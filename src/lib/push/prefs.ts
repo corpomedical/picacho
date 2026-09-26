@@ -22,4 +22,14 @@ export const PREF_FOR_KEY: Record<PushMessage["key"], NotificationPref> = {
   // something went wrong".
   setReady: "notify_render_ready",
   setFailed: "notify_render_failed",
+  // Press Tour (2026-09-26): a finished ad and a post that went out are
+  // "tell me when it's done"; an ad that couldn't be finished, a post that
+  // didn't go out and an account to connect again are "tell me when
+  // something went wrong".
+  adReady: "notify_render_ready",
+  adFailed: "notify_render_failed",
+  adFailedRefunded: "notify_render_failed",
+  postPublished: "notify_render_ready",
+  postFailed: "notify_render_failed",
+  reconnectNeeded: "notify_render_failed",
 };

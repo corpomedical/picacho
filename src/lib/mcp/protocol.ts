@@ -150,24 +150,43 @@ export function isAcceptableProtocolHeader(header: string | null): boolean {
  * Origin check, which the transport spec makes a MUST to stop DNS rebinding.
  *
  * A real MCP client is not a browser and sends no Origin at all, so absent is
- * allowed. When one IS present it must be our own site — that is precisely
- * the case being defended against, a page on another origin driving this
- * endpoint with the user's ambient credentials.
+ * allowed. When one IS present it must be our own site or one of the hosts
+ * Picacho runs inside (HOST_APP_ORIGINS; Press Tour cut 8) — anything else is
+ * precisely the case being defended against, a page on another origin
+ * driving this endpoint. (This endpoint takes no cookies: a credential is
+ * always a bearer header, so a host's origin gains nothing ambient.)
  */
 export function isAllowedOrigin(origin: string | null, siteOrigin: string | null): boolean {
   if (!origin) return true;
-  if (!siteOrigin) return false;
   try {
-    return new URL(origin).origin === new URL(siteOrigin).origin;
+    const o = new URL(origin).origin;
+    // The hosts Picacho is built for (spec §4.2): their web apps may reach
+    // this endpoint from the browser. Exact origins, no wildcards.
+    if (HOST_APP_ORIGINS.includes(o)) return true;
+    if (!siteOrigin) return false;
+    return o === new URL(siteOrigin).origin;
   } catch {
     return false;
   }
 }
 
+/** Browser origins of the hosts Picacho runs inside (Claude, ChatGPT), allowed by isAllowedOrigin. */
+export const HOST_APP_ORIGINS: readonly string[] = ["https://claude.ai", "https://claude.com", "https://chatgpt.com"];
+
+/** JSON-RPC error for a resource that is not there (MCP resources spec). */
+export const RPC_RESOURCE_NOT_FOUND = -32002;
+
 export type ToolTextResult = {
   content: { type: "text"; text: string }[];
   structuredContent?: Record<string, unknown>;
   isError?: boolean;
+  /**
+   * For the host's view only (MCP Apps: "not intended for model context";
+   * ChatGPT: "delivered only to the component"): Picacho's card reads its
+   * one-time code for a paid tap here (press/nonce.ts), and ChatGPT reads
+   * mcp/www_authenticate here to offer sign-in.
+   */
+  _meta?: Record<string, unknown>;
 };
 
 /**
@@ -186,32 +205,69 @@ export function toolResult(structured: Record<string, unknown>): ToolTextResult 
 }
 
 /**
+ * A `WWW-Authenticate: Bearer …` challenge (RFC 6750 §3; RFC 9728 §5.1).
+ * `resourceMetadata` names the protected-resource document, which is how
+ * Claude and ChatGPT find the authorization server; `error` is
+ * invalid_token (a credential was sent and failed) or insufficient_scope
+ * (it is fine but may not do this), with the scope that would. Quoted
+ * values are stripped of quotes and backslashes rather than escaped.
+ */
+export function bearerChallenge(p: {
+  resourceMetadata?: string | null;
+  error?: "invalid_token" | "insufficient_scope" | null;
+  description?: string | null;
+  scope?: string | null;
+} = {}): string {
+  const q = (v: string) => `"${v.replace(/["\\\r\n]/g, "")}"`;
+  const parts: string[] = [];
+  if (p.resourceMetadata) parts.push(`resource_metadata=${q(p.resourceMetadata)}`);
+  if (p.error) parts.push(`error=${q(p.error)}`);
+  if (p.error && p.description) parts.push(`error_description=${q(p.description)}`);
+  if (p.scope) parts.push(`scope=${q(p.scope)}`);
+  return parts.length > 0 ? `Bearer ${parts.join(", ")}` : "Bearer";
+}
+
+/**
  * The HTTP answer to a request whose credential failed (Press Tour cut 0,
- * 2026-09-25).
+ * 2026-09-25; cut 8, 2026-09-26).
  *
  * This used to be HTTP 200 carrying a tool result with isError. That told
  * the MODEL, which cannot fix a key, and hid the failure from the CLIENT,
  * which can: Claude offers to connect an account only on a 401 carrying
- * WWW-Authenticate. So a missing, invalid or revoked key is HTTP 401 with a
- * plain `WWW-Authenticate: Bearer` (RFC 6750), and a key that is fine but not
- * allowed (suspended, no API access) is 403, the MCP authorization spec's
- * answer for insufficient permissions. The body is a JSON-RPC error with the
- * request's id and the reason, so a client that shows it shows the reason.
+ * WWW-Authenticate. So a missing, invalid or revoked credential is HTTP 401
+ * with a WWW-Authenticate challenge (RFC 6750), and one that is fine but not
+ * allowed is 403: with an insufficient_scope challenge when a wider consent
+ * would fix it, with none when nothing the person signs into would
+ * (suspended, API access off).
  *
- * NO resource_metadata parameter yet, on purpose (critique #40): it would
- * point clients at /.well-known/oauth-protected-resource, which does not
- * exist until the OAuth cut, and Claude would try discovery against it and
- * fail. Add it in the same commit as that document.
+ * THE CHALLENGE. Plain `Bearer` while Picacho's own sign-in for apps is off
+ * (press_tour_mcp): it would point clients at documents that answer 404,
+ * and Claude would try discovery against them and fail (critique #40). With
+ * it on, `challenge` carries resource_metadata.
+ *
+ * THE BODY. A JSON-RPC error with the request's id and the reason — unless
+ * `asToolResult`, for a challenge: then the body is a tool result with
+ * isError and `_meta["mcp/www_authenticate"]`, which is how ChatGPT learns
+ * to show its sign-in (OpenAI, "Triggering authentication UI"). Claude acts
+ * on the status line and header; ChatGPT on this body; the same answer
+ * serves both.
  */
 export function authFailureReply(
   id: RpcId,
-  failure: { status: 401 | 403; message: string },
+  failure: { status: 401 | 403; message: string; challenge?: string | null },
+  opts: { asToolResult?: boolean } = {},
 ): { status: 401 | 403; headers: Record<string, string>; body: RpcResponse } {
-  return {
-    status: failure.status,
-    headers: failure.status === 401 ? { "www-authenticate": "Bearer" } : {},
-    body: rpcError(id, RPC_UNAUTHORIZED, failure.message),
-  };
+  const challenge = failure.challenge ?? (failure.status === 401 ? "Bearer" : null);
+  const headers: Record<string, string> = challenge ? { "www-authenticate": challenge } : {};
+  const body =
+    opts.asToolResult && failure.challenge
+      ? rpcResult(id, {
+          content: [{ type: "text", text: failure.message }],
+          isError: true,
+          _meta: { "mcp/www_authenticate": [failure.challenge] },
+        })
+      : rpcError(id, RPC_UNAUTHORIZED, failure.message);
+  return { status: failure.status, headers, body };
 }
 
 /**

@@ -43,6 +43,7 @@ import { PortalButton } from "@/components/settings/hub/portal-button";
 import { BUTTON_PRIMARY } from "@/components/settings/hub/parts";
 import { HelpPanel } from "@/components/settings/hub/help-panel";
 import { GenerationTab, PreferencesTab, PrivacyTab, ProfileTab, SecurityTab } from "@/components/settings/hub/rooms";
+import { loadConnectedApps } from "@/lib/mcp/oauth/connected-apps";
 
 // Settings, direction A "Front desk" (operator's pick on the Settings &
 // Invoices canvas, 2026-09-19): it opens on an Overview — who is signed in,
@@ -391,6 +392,10 @@ export default async function SettingsPage({
     created_at: string;
     last_used_at: string | null;
   }[];
+  // Connected apps (Press Tour Cut 8): shown whenever an app is connected,
+  // and while connecting apps is open to this account.
+  const connected = activeTab === "security" ? await loadConnectedApps(supabase, data.user) : null;
+  const connectedApps = connected?.show ? { apps: connected.apps, unavailable: connected.unavailable } : null;
 
   // ── Privacy & data ────────────────────────────────────────────────────
   // Only when the tab is open: a list of every shared post is not worth two
@@ -645,7 +650,14 @@ export default async function SettingsPage({
       )}
 
       {activeTab === "security" && (
-        <SecurityTab t={t} email={data.user.email ?? ""} hasPassword={hasPassword} apiEnabled={apiEnabled} apiKeys={apiKeys} />
+        <SecurityTab
+          t={t}
+          email={data.user.email ?? ""}
+          hasPassword={hasPassword}
+          apiEnabled={apiEnabled}
+          apiKeys={apiKeys}
+          connectedApps={connectedApps}
+        />
       )}
 
       {activeTab === "privacy" && (

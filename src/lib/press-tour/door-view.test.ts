@@ -1,12 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { CAMPAIGN_STAGES, type PressQuote, type StillView } from "./campaign-types";
+import { CAMPAIGN_STAGES, type MomentView, type PressQuote, type ShotView, type StillView, type TakeView } from "./campaign-types";
+import { VERDICT_SEVERITY } from "../product-lock/product-lock";
 import { ANGLES_MAX, ANGLES_MIN } from "./card-service";
 import {
   BOX_MIN,
   PICK_MAX,
   PICK_MIN,
+  VERDICT_WEIGHT,
   cardSaveBlock,
   clampBox,
+  clockSeconds,
+  clockTenths,
+  firstDecisionShot,
+  isMiss,
+  letterRow,
+  momentVerdict,
+  shotBusy,
+  shotMisses,
+  shotsInCut,
+  shownTake,
+  singleSwap,
+  wallBusy,
+  wallMoments,
+  wallTally,
+  worstMoment,
   decidedCount,
   firstWaiting,
   isClosed,
@@ -245,5 +262,149 @@ describe("the logo box", () => {
     expect(sourceHost("https://www.solstad.coffee/products/oat")).toBe("solstad.coffee");
     expect(sourceHost(null)).toBeNull();
     expect(sourceHost("not a url")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The press wall (Cut 4 UI)
+// ---------------------------------------------------------------------------
+
+function moment(extra: Partial<MomentView> = {}): MomentView {
+  return { atSeconds: 1.2, face: "match", product: "match", reason: null, ...extra };
+}
+
+function take(extra: Partial<TakeView> = {}): TakeView {
+  return {
+    take: 1,
+    state: "checked",
+    videoUrl: "/api/media/generated-videos/u/take-1.mp4",
+    moments: [moment({ atSeconds: 1.2 }), moment({ atSeconds: 2.6 }), moment({ atSeconds: 4.1 })],
+    worst: "match",
+    face: "match",
+    product: "match",
+    reason: null,
+    ...extra,
+  };
+}
+
+function shot(extra: Partial<ShotView> = {}): ShotView {
+  return {
+    shot: 1,
+    role: "hook",
+    takes: [take()],
+    chosenTake: 1,
+    decision: "pending",
+    needsDecision: false,
+    productExpected: true,
+    refilmCredits: 2,
+    canRefilm: true,
+    ...extra,
+  };
+}
+
+describe("the press wall", () => {
+  it("puts an ad waiting after filming at the Press wall, not back at the Stills", () => {
+    expect(routeIndex("awaiting_approval", true)).toBe(3);
+    expect(routeIndex("awaiting_approval", false)).toBe(1);
+    expect(routeIndex("awaiting_approval")).toBe(1);
+    expect(routeIndex("animating", true)).toBe(2);
+    expect(routeIndex("ready", true)).toBe(4);
+  });
+
+  it("weighs the verdicts exactly as the checker does", () => {
+    expect(VERDICT_WEIGHT).toEqual(VERDICT_SEVERITY);
+    expect(isMiss("didnt_match")).toBe(true);
+    expect(isMiss("product_missing")).toBe(true);
+    for (const v of ["match", "not_readable", "not_checked", "no_one_in_shot"] as const) expect(isMiss(v), v).toBe(false);
+  });
+
+  it("reads a moment by the checks that apply to its shot", () => {
+    // A packshot with no one in it: the product alone.
+    expect(momentVerdict(moment({ face: "no_one_in_shot", product: "didnt_match" }), true)).toBe("didnt_match");
+    // A hook planned without the product: the face alone (its product word is "not checked" and doesn't count).
+    expect(momentVerdict(moment({ face: "match", product: "not_checked" }), false)).toBe("match");
+    // Both apply: the worse.
+    expect(momentVerdict(moment({ face: "didnt_match", product: "match" }), true)).toBe("didnt_match");
+    expect(momentVerdict(moment({ face: "match", product: "not_readable" }), true)).toBe("not_readable");
+    // Nothing applies.
+    expect(momentVerdict(moment({ face: "no_one_in_shot", product: "not_checked" }), false)).toBe("not_checked");
+  });
+
+  it("lays every moment out in cut order, numbered across the wall, timed in the ad", () => {
+    const shots = [
+      shot({ shot: 2, role: "costar", takes: [take({ moments: [moment({ atSeconds: 0.8 }), moment({ atSeconds: 2.2, product: "didnt_match" }), moment({ atSeconds: 3.9, product: "not_readable" })] })] }),
+      shot({ shot: 1 }),
+    ];
+    const wall = wallMoments(shots, { 1: 0, 2: 5 });
+    expect(wall.map((m) => m.index)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(wall.map((m) => m.shot)).toEqual([1, 1, 1, 2, 2, 2]);
+    expect(wall[4]).toMatchObject({ index: 5, shot: 2, take: 1, at: 7.2, atTake: 2.2, verdict: "didnt_match" });
+    expect(wall.map((m) => m.key)).toEqual(["1-1-0", "1-1-1", "1-1-2", "2-1-0", "2-1-1", "2-1-2"]);
+    expect(wallTally(wall)).toEqual([
+      { verdict: "match", count: 4 },
+      { verdict: "didnt_match", count: 1 },
+      { verdict: "not_readable", count: 1 },
+    ]);
+    expect(worstMoment(wall)?.index).toBe(5);
+    expect(shotMisses(wall, 2)).toBe(1);
+    expect(shotMisses(wall, 1)).toBe(0);
+  });
+
+  it("leaves out a cut shot and a take not yet read, and never calls blur or a missing check the worst", () => {
+    const shots = [
+      shot({ shot: 1, decision: "cut" }),
+      shot({ shot: 2, takes: [take({ state: "filming", moments: [] })] }),
+      shot({ shot: 3, takes: [take({ moments: [moment({ product: "not_readable" }), moment({ product: "not_checked" })] })] }),
+    ];
+    const wall = wallMoments(shots, {});
+    expect(wall.map((m) => m.shot)).toEqual([3, 3]);
+    expect(worstMoment(wall)).toBeNull();
+    expect(wallBusy(shots)).toBe(true);
+    expect(shotBusy(shots[1])).toBe(true);
+    expect(shotBusy(shot({ decision: "refilming" }))).toBe(true);
+    expect(shotsInCut(shots)).toBe(2);
+  });
+
+  it("shows the person's pick, else the take the cut uses, else the newest read", () => {
+    const two = shot({ takes: [take({ take: 1 }), take({ take: 2, state: "checking", moments: [] })], chosenTake: null, needsDecision: true });
+    expect(shownTake(two)?.take).toBe(1);
+    expect(shownTake(two, 2)?.take).toBe(2);
+    expect(shownTake(shot({ chosenTake: 1, takes: [take({ take: 1 }), take({ take: 2 })] }))?.take).toBe(1);
+    expect(shownTake(shot({ takes: [] }))).toBeNull();
+    expect(firstDecisionShot([shot({ shot: 3, needsDecision: true }), shot({ shot: 2, needsDecision: true })])?.shot).toBe(2);
+    expect(firstDecisionShot([shot()])).toBeNull();
+  });
+
+  it("spells a misread label letter by letter, the label's letter under each one that differs", () => {
+    const row = letterRow("SOLSTAO", "SOLSTAD")!;
+    expect(row.cells.map((c) => c.read).join("")).toBe("SOLSTAO");
+    expect(row.wrong).toBe(1);
+    expect(row.cells[6]).toEqual({ read: "O", want: "D" });
+    expect(singleSwap(row)).toEqual({ at: 7, want: "D" });
+    // The part of a longer line nearest the word.
+    const line = letterRow("SOLSTAO COLD BREW", "Solstad")!;
+    expect(line.cells.map((c) => c.read).join("")).toBe("SOLSTAO");
+    // A letter missing, a letter extra.
+    const missing = letterRow("SOLSAD", "SOLSTAD")!;
+    expect(missing.wrong).toBe(1);
+    expect(missing.cells.find((c) => c.read === "")).toEqual({ read: "", want: "T" });
+    expect(singleSwap(missing)).toBeNull();
+    const extra = letterRow("SOLSTTAD", "SOLSTAD")!;
+    expect(extra.cells.filter((c) => c.want === "").length).toBe(1);
+    // Too far apart to spell out, the same word, or nothing to compare.
+    expect(letterRow("OATMILK", "SOLSTAD")).toBeNull();
+    expect(letterRow("solstad", "SOLSTAD")).toBeNull();
+    expect(letterRow("", "SOLSTAD")).toBeNull();
+    expect(letterRow("SOLSTAO", "")).toBeNull();
+    expect(letterRow("X".repeat(30), "X".repeat(29) + "Y")).toBeNull();
+  });
+
+  it("prints a moment's place to a tenth of a second and a length in seconds", () => {
+    expect(clockTenths(7.2)).toBe("0:07.2");
+    expect(clockTenths(0)).toBe("0:00.0");
+    expect(clockTenths(65.04)).toBe("1:05.0");
+    expect(clockTenths(null)).toBe("–");
+    expect(clockSeconds(15)).toBe("0:15");
+    expect(clockSeconds(null)).toBe("–");
   });
 });

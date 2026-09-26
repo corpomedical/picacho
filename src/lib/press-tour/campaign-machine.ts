@@ -48,6 +48,30 @@
 // (forced: nothing was delivered). Every other paid reservation is the
 // person's own press (campaign-service.ts).
 //
+// CUT 4 CARRIES IT ON PAST awaiting_approval (film -> check -> cut -> tag ->
+// sign -> deliver), admins only, behind press_tour_film (inserted OFF):
+//
+//   awaiting_approval ──"Film"──▶ animating ──▶ checking_shots ──▶ assembling ──▶ signing ──▶ ready
+//          ▲    │                     ▲              │                 │   ▲
+//          │    └──"Re-film shot N"───┘              │                 │   └─ Keep / Cut / "Make the cut"
+//          └──────────── a shot waits on the person ─┘◀── parked after 3 failed cut steps
+//
+//   animating       every take reserved in the Film press is submitted to
+//                   the film lane (film.ts), then collected, gated and kept.
+//   checking_shots  one filmed take read per step (3 moments, record-only).
+//   awaiting_approval (filmed) the press wall: a shot whose take didn't
+//                   match, has no usable take, or was filmed again waits on
+//                   the person (keep a take, re-film at its price, cut it
+//                   free). A miss starts nothing on its own.
+//   assembling      one cut step per claim (cut.ts): a segment, the end card,
+//                   then the join into the clean and tagged renditions.
+//   signing         C2PA on each rendition (sign.ts: unsigned, and why, until
+//                   the certificate and a library are there), then delivery:
+//                   the finished ad's History row, adReady.
+// The steps of those stages are the injected MachineDeps.stages (film.ts,
+// cut.ts), so this file never imports them. The 24 h rule (v2 #39) runs on
+// the cron's minute (cut.ts lateCuts).
+//
 // Alias-free (vitest has no "@/"): campaign-machine.test.ts imports it as it is.
 
 import { createHash } from "node:crypto";
@@ -57,6 +81,7 @@ import {
   type CampaignSource,
   type CampaignStage,
   type CampaignView,
+  type MasterView,
   type PressQuote,
   type ShotRole,
   type StillDecision,
@@ -75,7 +100,31 @@ import {
   blockDecide,
 } from "./campaign-messages";
 import { parseAdPlan, type AdPlan, type PlannedShot } from "./planner";
-import { parsePressQuote } from "./quote";
+import { parsePressQuote, shotCredits } from "./quote";
+import {
+  BLOCK_CUTTING,
+  BLOCK_FILMING,
+  BLOCK_FINISHING,
+  BLOCK_READING_SHOTS,
+  CUT_STALLED,
+  FILM_EXPIRED,
+  blockDecideShot,
+} from "./film-messages";
+import { parseAssembly, parseRenditions, RENDITION_KINDS, type RenditionKind } from "./cut-state";
+import {
+  closeOpenTakes,
+  filmed,
+  firstDecision,
+  openTakes,
+  parseShots,
+  shotViews,
+  withTakesRefunded,
+  type ShotContext,
+  type ShotState,
+  type Take,
+} from "./shots";
+import type { FilmDeps } from "./film";
+import type { CutDeps } from "./cut";
 
 // ---------------------------------------------------------------------------
 // Who, and the clock
@@ -124,11 +173,11 @@ export const CAMPAIGN_TRANSITIONS: Record<CampaignStage, readonly CampaignStage[
   planned: ["painting", "cancelled", "expired", "failed"],
   painting: ["checking_keyframes", "failed", "cancelled"],
   checking_keyframes: ["painting", "awaiting_approval", "failed", "cancelled"],
-  awaiting_approval: ["painting", "animating", "cancelled", "expired", "failed"],
+  awaiting_approval: ["painting", "animating", "assembling", "cancelled", "expired", "failed"],
   animating: ["checking_shots", "failed", "cancelled"],
-  checking_shots: ["animating", "assembling", "failed"],
-  assembling: ["signing", "failed"],
-  signing: ["ready", "failed"],
+  checking_shots: ["animating", "assembling", "awaiting_approval", "failed", "cancelled"],
+  assembling: ["signing", "awaiting_approval", "failed", "cancelled"],
+  signing: ["ready", "awaiting_approval", "failed", "cancelled"],
   ready: [],
   failed: [],
   cancelled: [],
@@ -275,7 +324,7 @@ function attemptFrom(raw: unknown): StillAttempt | null {
     faceScore: typeof r.faceScore === "number" && Number.isFinite(r.faceScore) ? r.faceScore : null,
     escalations: typeof r.escalations === "number" && Number.isInteger(r.escalations) && r.escalations >= 0 ? r.escalations : 0,
     note: strOrNull(r.note, 200),
-    at: typeof r.at === "string" ? r.at : "",
+    at: typeof r.at === "string" ? r.at.slice(0, 40) : "",
     doneAt: strOrNull(r.doneAt, 40),
     error: strOrNull(r.error, 300),
   };
@@ -527,7 +576,9 @@ export function withDecision(
 // ---------------------------------------------------------------------------
 
 export const CAMPAIGN_COLUMNS =
-  "id, user_id, source, send_id, product_id, brand_kit_id, character_ids, trial_id, mcp_grant_id, length_s, aspect, goal, plan, quote, stills, stage, stage_changed_at, locked_at, attempts, version, keyframe_ids, cost_usd, credits_charged, credits_refunded, error, expires_at, overdue_notified_at, created_at, updated_at, deleted_at";
+  "id, user_id, source, send_id, product_id, brand_kit_id, character_ids, trial_id, mcp_grant_id, length_s, aspect, goal, plan, quote, stills, stage, stage_changed_at, locked_at, attempts, version, keyframe_ids, cost_usd, credits_charged, credits_refunded, error, expires_at, overdue_notified_at, created_at, updated_at, deleted_at, " +
+  // Cut 4 (press-tour-03b-film.sql)
+  "shots, shot_ids, film_charged_at, cut_due_at, delivered_at, assembly, renditions, master_generation_id, product_verdict";
 
 export type CampaignRow = {
   id: string;
@@ -548,6 +599,18 @@ export type CampaignRow = {
   lockedAt: string | null;
   version: number;
   keyframeIds: string[];
+  /** Cut 4: every filmed shot and its takes (shots.ts). */
+  shots: ShotState[];
+  shotIds: string[];
+  filmChargedAt: string | null;
+  /** The 24 h rule's clock: null while the ad waits on the person, or once delivered. */
+  cutDueAt: string | null;
+  deliveredAt: string | null;
+  /** The cut's working state and its files, as stored (cut-state.ts parses them). */
+  assembly: unknown;
+  renditions: unknown;
+  masterGenerationId: string | null;
+  productVerdict: Verdict | null;
   costUsd: number;
   creditsCharged: number;
   creditsRefunded: number;
@@ -592,6 +655,15 @@ export function campaignRowFrom(raw: unknown): CampaignRow | null {
     lockedAt: strOrNull(r.locked_at, 40),
     version: typeof r.version === "number" ? r.version : 0,
     keyframeIds: ids(r.keyframe_ids),
+    shots: parseShots(r.shots, plan ? plan.shots.length : null),
+    shotIds: ids(r.shot_ids),
+    filmChargedAt: strOrNull(r.film_charged_at, 40),
+    cutDueAt: strOrNull(r.cut_due_at, 40),
+    deliveredAt: strOrNull(r.delivered_at, 40),
+    assembly: r.assembly ?? null,
+    renditions: r.renditions ?? null,
+    masterGenerationId: parseUuid(r.master_generation_id),
+    productVerdict: typeof r.product_verdict === "string" && (VERDICTS as readonly string[]).includes(r.product_verdict) ? (r.product_verdict as Verdict) : null,
     costUsd: num(r.cost_usd),
     creditsCharged: num(r.credits_charged),
     creditsRefunded: num(r.credits_refunded),
@@ -619,6 +691,16 @@ export type CampaignPatch = Partial<{
   expires_at: string | null;
   overdue_notified_at: string | null;
   deleted_at: string | null;
+  // Cut 4 (press-tour-03b-film.sql)
+  shots: ShotState[];
+  shot_ids: string[];
+  film_charged_at: string | null;
+  cut_due_at: string | null;
+  delivered_at: string | null;
+  assembly: Record<string, unknown> | null;
+  renditions: Record<string, unknown> | null;
+  master_generation_id: string | null;
+  product_verdict: Verdict | null;
 }>;
 
 /** Read one campaign (the service role; the owner filter is explicit whenever a person asked). */
@@ -680,8 +762,20 @@ export async function mutateCampaign<T>(
 // What the door is shown
 // ---------------------------------------------------------------------------
 
-/** What blocks the next step, in plain words (English; server-text.ts maps it), or null. */
-export function blockerFor(row: Pick<CampaignRow, "stage" | "stills">): string | null {
+/** A planned shot's checks: does it show the product, and the star. */
+export function contextOf(plan: AdPlan | null, shot: number): ShotContext {
+  const p = plan?.shots.find((x) => x.shot === shot);
+  return p ? { productExpected: p.productVisibility !== "absent", star: p.star } : { productExpected: false, star: false };
+}
+
+/**
+ * What blocks the next step, in plain words (English; server-text.ts and,
+ * for Cut 4's lines, film-messages.ts map it), or null. Before filming,
+ * awaiting_approval with every still decided says filming isn't open; the
+ * service clears that line when the film switch is on.
+ */
+export function blockerFor(row: Pick<CampaignRow, "stage" | "stills"> & Partial<Pick<CampaignRow, "shots" | "assembly" | "plan">>): string | null {
+  const shots = row.shots ?? [];
   switch (row.stage) {
     case "draft":
       return BLOCK_PLANNING;
@@ -690,10 +784,23 @@ export function blockerFor(row: Pick<CampaignRow, "stage" | "stills">): string |
     case "checking_keyframes":
       return BLOCK_CHECKING;
     case "awaiting_approval": {
+      if (filmed(shots)) {
+        const shot = firstDecision(shots, (n) => contextOf(row.plan ?? null, n));
+        if (shot !== null) return blockDecideShot(shot);
+        return parseAssembly(row.assembly).parked ? CUT_STALLED : null;
+      }
       const waiting = row.stills.find((s) => inFlight(s) || s.decision === "pending");
       if (waiting) return inFlight(waiting) ? BLOCK_PAINTING : blockDecide(waiting.shot);
       return BLOCK_FILMING_NOT_OPEN;
     }
+    case "animating":
+      return BLOCK_FILMING;
+    case "checking_shots":
+      return BLOCK_READING_SHOTS;
+    case "assembling":
+      return BLOCK_CUTTING;
+    case "signing":
+      return BLOCK_FINISHING;
     default:
       return null;
   }
@@ -727,7 +834,16 @@ function stillView(shot: PlannedShot, still: StillState | null, imageUrl: (path:
  */
 export function campaignView(
   row: CampaignRow,
-  opts: { imageUrl: (path: string) => string | null; quote?: PressQuote | null },
+  opts: {
+    imageUrl: (path: string) => string | null;
+    quote?: PressQuote | null;
+    /** A kept take's stored link as a viewable one (Cut 4). */
+    videoUrl?: (stored: string) => string | null;
+    /** Short-lived links to the finished files, made by the caller (press-kit is private). */
+    renditionUrls?: Partial<Record<RenditionKind, string>>;
+    /** Admins see why a file is unsigned. */
+    admin?: boolean;
+  },
 ): CampaignView {
   const shots = row.plan?.shots ?? [];
   return {
@@ -741,16 +857,70 @@ export function campaignView(
     aspect: "9:16",
     angle: row.plan?.angle ?? null,
     stills: shots.map((s) => stillView(s, stillOf(row.stills, s.shot), opts.imageUrl)),
+    shots: shotViews(
+      shots.map((s) => ({ shot: s.shot, role: s.role as ShotRole, productExpected: s.productVisibility !== "absent", star: s.star })),
+      row.shots,
+      {
+        videoUrl: opts.videoUrl ?? (() => null),
+        refilmCredits: (n) => shotCredits(shots.find((s) => s.shot === n)?.seconds ?? 5),
+      },
+    ),
+    master: masterView(row, opts.renditionUrls ?? {}, opts.admin === true),
+    creditsRefunded: Math.max(0, Math.round(row.creditsRefunded)),
     quote: opts.quote ?? row.quote,
     blocker: blockerFor(row),
     error: row.stage === "failed" || row.stage === "expired" ? (row.error ?? (row.stage === "expired" ? CAMPAIGN_EXPIRED : null)) : null,
+    cutOwed: cutOwed(row),
     updatedAt: row.updatedAt,
   };
+}
+
+/**
+ * Whether we owe this ad its cut right now (MONEY-1): filming was charged
+ * and the 24 h rule's clock runs (it stops only while the ad waits on the
+ * person's decision on the press wall). Closing it then would keep the
+ * filming credits and disarm the rule that refunds them, so it can't be.
+ */
+export function cutOwed(row: Pick<CampaignRow, "stage" | "filmChargedAt" | "cutDueAt">): boolean {
+  return row.filmChargedAt !== null && row.cutDueAt !== null && !isTerminal(row.stage) && row.stage !== "ready";
+}
+
+/** The finished ad, once it is ready: its History row and both files (each only with a link to it). */
+export function masterView(
+  row: Pick<CampaignRow, "stage" | "renditions" | "masterGenerationId"> & Partial<Pick<CampaignRow, "assembly">>,
+  urls: Partial<Record<RenditionKind, string>>,
+  admin: boolean,
+): MasterView | null {
+  if (row.stage !== "ready") return null;
+  const recs = parseRenditions(row.renditions);
+  const renditions = RENDITION_KINDS.flatMap((kind) => {
+    const rec = recs[kind];
+    const url = urls[kind];
+    return rec && url ? [{ kind, url, seconds: Math.round(rec.seconds * 10) / 10, signed: rec.signed }] : [];
+  });
+  const notes = RENDITION_KINDS.flatMap((kind) => {
+    const rec = recs[kind];
+    return rec && !rec.signed && rec.reason ? [`${kind}: ${rec.reason}`] : [];
+  });
+  // The end card was decided when the ad was cut (cut.ts makeEndCard); its path stays in the assembly after delivery.
+  const hasEndCard = parseAssembly(row.assembly ?? null).endCard !== null;
+  return { generationId: row.masterGenerationId, renditions, adminNote: admin && notes.length > 0 ? notes.join(" ") : null, hasEndCard };
 }
 
 // ---------------------------------------------------------------------------
 // The machine
 // ---------------------------------------------------------------------------
+
+/** One step of a stage owned by another module (film.ts, cut.ts), injected so this file never imports them. */
+export type StageRunner = (deps: MachineDeps, row: CampaignRow) => Promise<StepResult>;
+export interface StageRunners {
+  animating?: StageRunner;
+  checking_shots?: StageRunner;
+  assembling?: StageRunner;
+  signing?: StageRunner;
+  /** The 24 h rule, on the cron's minute (cut.ts lateCuts): how many ads it closed. */
+  late?: (deps: MachineDeps) => Promise<number>;
+}
 
 export interface MachineDeps {
   /** The service-role client. */
@@ -778,6 +948,18 @@ export interface MachineDeps {
   faceGateOn: () => Promise<boolean>;
   notifyAdmins: (message: { title: string; body: string; path?: string }) => Promise<void>;
   now?: () => Date;
+  /** Cut 4: filming and the checks on shots (film.ts). Absent = those stages wait. */
+  film?: FilmDeps;
+  /** Cut 4: the cut, signing and delivery (cut.ts). */
+  cut?: CutDeps;
+  /** Cut 4: the steps of the film stages (film.ts filmStep, checkShotsStep; cut.ts assembleStep, signStep, lateCuts). */
+  stages?: StageRunners;
+  /**
+   * End a row that was sent to a lane and will not be delivered: the
+   * ORDINARY refund rules (the render may be billed: PT-06), then failed.
+   * True when credits went back. Absent: the row is left to the reaper.
+   */
+  settleRow?: (input: { userId: string; rowId: string; credits: number; reason: string }) => Promise<boolean>;
 }
 
 export type StepResult =
@@ -789,7 +971,14 @@ export type StepResult =
   | "failed"
   | "idle"
   | "busy"
-  | "unavailable";
+  | "unavailable"
+  // Cut 4
+  | "submitted"
+  | "filming"
+  | "filmed"
+  | "checked_shot"
+  | "cut"
+  | "delivered";
 
 const nowOf = (deps: { now?: () => Date }) => (deps.now ? deps.now() : new Date());
 
@@ -829,19 +1018,56 @@ export async function releaseAttempts(
  */
 export async function failCampaign(deps: MachineDeps, row: CampaignRow, error: string): Promise<void> {
   const nowIso = nowOf(deps).toISOString();
-  const closed = await mutateCampaign<StillAttempt[]>(deps.db, row.id, null, (fresh) =>
+  const closed = await mutateCampaign<{ stills: StillAttempt[]; takes: Take[] }>(deps.db, row.id, null, (fresh) =>
     isTerminal(fresh.stage)
-      ? { refuse: [] }
+      ? { refuse: { stills: [], takes: [] } }
       : {
-          patch: { stage: "failed", error, stills: closeAttempts(fresh.stills, error, nowIso), locked_at: null },
-          value: reservedAttempts(fresh.stills).map((r) => r.attempt),
+          patch: {
+            stage: "failed",
+            error,
+            stills: closeAttempts(fresh.stills, error, nowIso),
+            shots: closeOpenTakes(fresh.shots, error, nowIso),
+            locked_at: null,
+            cut_due_at: null,
+          },
+          value: { stills: reservedAttempts(fresh.stills).map((r) => r.attempt), takes: openTakes(fresh.shots).map((t) => t.take) },
         },
   );
-  if (!closed.ok || closed.value.length === 0) return;
-  const back = await releaseAttempts(deps, row.userId, closed.value, error);
-  if (back > 0) {
-    await mutateCampaign(deps.db, row.id, null, (fresh) => ({ patch: { credits_refunded: fresh.creditsRefunded + back }, value: null }));
+  if (!closed.ok) return;
+  let back = await releaseAttempts(deps, row.userId, closed.value.stills, error);
+  const takeBack = await releaseTakes(deps, row.userId, closed.value.takes, error);
+  back += takeBack.credits;
+  if (back > 0 || takeBack.rowIds.length > 0) {
+    await mutateCampaign(deps.db, row.id, null, (fresh) => ({
+      patch: { credits_refunded: fresh.creditsRefunded + back, shots: withTakesRefunded(fresh.shots, takeBack.rowIds) },
+      value: null,
+    }));
   }
+}
+
+/**
+ * Takes an ad closes on while they are open: one never sent to the lane
+ * gets its credits back FORCED (nothing was spent); one the lane holds is
+ * stopped where the lane allows and settled by the ORDINARY rules (it may
+ * be billed). Returns the credits that went back and whose.
+ */
+export async function releaseTakes(deps: MachineDeps, userId: string, takes: readonly Take[], reason: string): Promise<{ credits: number; rowIds: string[] }> {
+  let credits = 0;
+  const rowIds: string[] = [];
+  for (const take of takes) {
+    let refunded = false;
+    if (take.status === "reserved") {
+      refunded = await deps.releaseRow({ userId, rowId: take.rowId, credits: take.credits, reason }).catch(() => false);
+    } else {
+      if (take.job && deps.film) await deps.film.cancel(take.job).catch(() => undefined);
+      refunded = deps.settleRow ? await deps.settleRow({ userId, rowId: take.rowId, credits: take.credits, reason }).catch(() => false) : false;
+    }
+    if (refunded && take.credits > 0) {
+      credits += take.credits;
+      rowIds.push(take.rowId);
+    }
+  }
+  return { credits, rowIds };
 }
 
 /**
@@ -860,7 +1086,12 @@ export async function stepCampaign(deps: MachineDeps, campaignId: string): Promi
 
   if (row.stage === "painting") return paintStep(deps, row);
   if (row.stage === "checking_keyframes") return checkStep(deps, row);
-  // Filming, the checks on shots, assembly and signing are a later cut.
+  // Cut 4: filming, the checks on shots, the cut and signing (film.ts,
+  // cut.ts), when wired; without them those stages wait.
+  if (row.stage === "animating" || row.stage === "checking_shots" || row.stage === "assembling" || row.stage === "signing") {
+    const run = deps.stages?.[row.stage];
+    return run ? run(deps, row) : "idle";
+  }
   return "idle";
 }
 
@@ -1077,6 +1308,12 @@ export function kickBudgetMs(input: { functionMs: number; laneTimeoutMs: number;
 }
 
 /**
+ * The results a kick carries on after. Not "submitted" or "filming": once
+ * the lane holds the takes, the cron's minute asks after them.
+ */
+const CONTINUE_AFTER: readonly StepResult[] = ["painted", "retrying", "repainting", "checked", "filmed", "checked_shot", "cut"];
+
+/**
  * A kick after a press: steps one campaign until it waits on the person,
  * closes, is held by someone else, or the time runs out (the cron carries
  * on from there). Never throws.
@@ -1088,32 +1325,48 @@ export async function driveCampaign(deps: MachineDeps, campaignId: string, opts:
     if (nowOf(deps).getTime() - started > opts.budgetMs) break;
     const result = await stepOnce(deps, campaignId).catch((): StepResult => "unavailable");
     steps.push(result);
-    if (result !== "painted" && result !== "retrying" && result !== "repainting" && result !== "checked") break;
+    if (!CONTINUE_AFTER.includes(result)) break;
   }
   return steps;
 }
 
-export type TickReport = { expired: number; stale: number; overdue: number; stepped: Record<string, StepResult> };
+export type TickReport = { expired: number; stale: number; overdue: number; late: number; stepped: Record<string, StepResult> };
+
+/** Stages whose one step is heavy work on this machine (ffmpeg): at most one of them per tick. */
+const HEAVY_STAGES: readonly CampaignStage[] = ["assembling"];
 
 /**
  * The cron's minute: close campaigns that waited too long, fail drafts
- * whose planning died, tell Admin about stuck ones (once per stage), then
- * claim a bounded batch and do one step of each, side by side.
+ * whose planning died, tell Admin about stuck ones (once per stage), close
+ * the ads we owed a cut for 24 h (v2 #39, cut.ts), then claim a bounded
+ * batch and do one step of each, side by side, with at most one heavy step
+ * (a cut) so the minute stays inside its function.
  */
 export async function pressTick(deps: MachineDeps, opts: { batch: number }): Promise<TickReport> {
   const now = nowOf(deps);
-  const report: TickReport = { expired: 0, stale: 0, overdue: 0, stepped: {} };
+  const report: TickReport = { expired: 0, stale: 0, overdue: 0, late: 0, stepped: {} };
 
-  // 1. Waited 7 days on the person: closed. Nothing to refund (filming never charged).
+  // 1. Waited 7 days on the person: closed, nothing refunded. Before
+  //    filming, filming was never charged; after it, the filmed shots were
+  //    delivered to History, and the words say so.
   try {
     const { data } = await deps.db
       .from("press_campaigns")
-      .update({ stage: "expired", error: CAMPAIGN_EXPIRED })
+      .select("id, film_charged_at")
       .in("stage", WAITING_STAGES as unknown as string[])
       .lt("expires_at", now.toISOString())
       .is("deleted_at", null)
-      .select("id");
-    report.expired = Array.isArray(data) ? data.length : 0;
+      .limit(50);
+    for (const r of (data ?? []) as { id: string; film_charged_at?: string | null }[]) {
+      const { data: closed } = await deps.db
+        .from("press_campaigns")
+        .update({ stage: "expired", error: r.film_charged_at ? FILM_EXPIRED : CAMPAIGN_EXPIRED, cut_due_at: null })
+        .eq("id", r.id)
+        .in("stage", WAITING_STAGES as unknown as string[])
+        .lt("expires_at", now.toISOString())
+        .select("id");
+      if (Array.isArray(closed)) report.expired += closed.length;
+    }
   } catch {
     /* next minute */
   }
@@ -1163,11 +1416,21 @@ export async function pressTick(deps: MachineDeps, opts: { batch: number }): Pro
     /* next minute */
   }
 
-  // 4. One step each, side by side (each step is one still: well inside the cron's time).
+  // 4. The 24 h rule (cut.ts lateCuts), when wired.
+  if (deps.stages?.late) {
+    report.late = await deps.stages.late(deps).catch(() => 0);
+  }
+
+  // 5. One step each, side by side; at most one heavy step (a cut) a minute.
   const claimed = await claimCampaigns(deps.db, opts.batch);
+  let heavy = false;
   await Promise.all(
     claimed.map(async (c) => {
       try {
+        if (HEAVY_STAGES.includes(c.stage)) {
+          if (heavy) return; // the next minute takes it
+          heavy = true;
+        }
         report.stepped[c.id] = await stepCampaign(deps, c.id);
       } catch {
         report.stepped[c.id] = "unavailable";

@@ -26,6 +26,7 @@
 // Every export of a "use server" file must be an async function; the shapes
 // are imported from campaign-types.ts.
 
+import { getLocale } from "@/lib/i18n/server";
 import { createClient } from "@/lib/supabase/server";
 import { PRESS_TOUR_FAILED, pressTourCaller } from "./card-service";
 import { campaignDeps } from "./campaign-runtime";
@@ -105,4 +106,33 @@ export async function getCampaign(input: { campaignId: string }): Promise<Campai
 /** Stop here: the stills stay in History; anything reserved and never painted comes back. */
 export async function cancelCampaign(input: { campaignId: string }): Promise<CampaignResult> {
   return behindDoor("cancel a campaign", (caller, deps) => service.cancelCampaign(deps, caller, input));
+}
+
+/**
+ * Film every shot from its approved still (Cut 4): charges the quote's film
+ * line once. The tag on the finished ad is in the language this press was
+ * made in (the account's language when the ad is cut: design A).
+ */
+export async function filmShots(input: { sendId: string; campaignId: string; captions?: boolean }): Promise<CampaignResult> {
+  return behindDoor("film an ad", async (caller, deps) => service.filmShots(deps, caller, { ...input, locale: await getLocale() }));
+}
+
+/** Put this take of this shot in the cut (free). */
+export async function keepTake(input: { campaignId: string; shot: number; take: number }): Promise<CampaignResult> {
+  return behindDoor("keep a take", (caller, deps) => service.keepTake(deps, caller, input));
+}
+
+/** Film one shot again at that shot's normal film price. */
+export async function refilmShot(input: { sendId: string; campaignId: string; shot: number; credits: number; note?: string }): Promise<CampaignResult> {
+  return behindDoor("film a shot again", (caller, deps) => service.refilmShot(deps, caller, input));
+}
+
+/** Leave one shot out of the cut (free). */
+export async function cutShot(input: { campaignId: string; shot: number }): Promise<CampaignResult> {
+  return behindDoor("cut a shot", (caller, deps) => service.cutShot(deps, caller, input));
+}
+
+/** Make the cut now, or again after it couldn't be finished (free). */
+export async function assembleNow(input: { campaignId: string }): Promise<CampaignResult> {
+  return behindDoor("make the cut", (caller, deps) => service.assembleNow(deps, caller, input));
 }

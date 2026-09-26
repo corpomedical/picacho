@@ -13,6 +13,8 @@ export function resolvePushText(
 ): { title: string; body: string } {
   const t = getMessages(isLocale(locale) ? locale : DEFAULT_LOCALE).push;
   const params = message.params ?? {};
+  // A network's own name (X, TikTok, Instagram, Threads), never translated.
+  const network = typeof params.network === "string" ? params.network.trim().slice(0, 40) : "";
   switch (message.key) {
     case "videoReady":
       return { title: t.videoReadyTitle, body: t.videoReadyBody };
@@ -36,5 +38,17 @@ export function resolvePushText(
     }
     case "setFailed":
       return { title: t.setFailedTitle, body: t.setFailedBody };
+    case "adReady":
+      return { title: t.adReadyTitle, body: t.adReadyBody };
+    case "adFailed":
+      return { title: t.adFailedTitle, body: t.adFailedBody };
+    case "adFailedRefunded":
+      return { title: t.adFailedTitle, body: t.adFailedRefundedBody };
+    case "postPublished":
+      return { title: t.postPublishedTitle, body: network ? formatMsg(t.postPublishedBody, { network }) : t.postPublishedBodyAny };
+    case "postFailed":
+      return { title: t.postFailedTitle, body: network ? formatMsg(t.postFailedBody, { network }) : t.postFailedBodyAny };
+    case "reconnectNeeded":
+      return { title: t.reconnectNeededTitle, body: network ? formatMsg(t.reconnectNeededBody, { network }) : t.reconnectNeededBodyAny };
   }
 }

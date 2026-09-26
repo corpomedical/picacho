@@ -10,6 +10,7 @@ import { OAuthButtons } from "@/components/oauth-buttons";
 import { getServerMessages } from "@/lib/i18n/server";
 import { isNativeApp, nativeSupportsAuthReturn } from "@/lib/native/server";
 import { Logo } from "@/components/logo";
+import { oauthResumePath } from "@/lib/mcp/oauth/resume";
 
 // "Log in | Picacho" in the tab and in a search result, via the root layout's
 // title.template — in the reader's language, since the heading already is.
@@ -26,15 +27,19 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; next?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, next } = await searchParams;
+  // Where to return after signing in: only ever the consent page of an app
+  // connection (Press Tour Cut 8; lib/mcp/oauth/resume.ts accepts exactly
+  // /oauth/authorize?pending=<id>). Anything else is ignored: /app as before.
+  const resume = oauthResumePath(next);
 
   // Already signed in — no reason to show the form and make them
   // re-authenticate, just send them straight back into the app.
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
-  if (data.user) redirect("/app");
+  if (data.user) redirect(resume ?? "/app");
 
   const { t } = await getServerMessages();
   const a = t.auth.login;
@@ -77,7 +82,7 @@ export default async function LoginPage({
           {showOAuth && (
             <>
               <div className="mt-6">
-                <OAuthButtons nativeReturn={native} />
+                <OAuthButtons nativeReturn={native} next={resume} />
               </div>
 
               <div className="my-6 flex items-center gap-3">
@@ -89,6 +94,7 @@ export default async function LoginPage({
           )}
 
           <form action={login} className={showOAuth ? "space-y-4" : "mt-6 space-y-4"}>
+            {resume && <input type="hidden" name="next" value={resume} />}
             <div>
               <Label htmlFor="email">{a.emailLabel}</Label>
               <Input id="email" name="email" type="email" required />

@@ -1,12 +1,13 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { API_RATE_LIMIT_PER_MINUTE, authenticateApiRequest } from "@/lib/api/keys";
+import { API_RATE_LIMIT_PER_MINUTE } from "@/lib/api/keys";
 import { rateLimited } from "@/lib/rate-limit";
 import { runApiImageGeneration } from "@/lib/api/generate";
 import { parseIdempotencyKey } from "@/lib/api/idempotency";
 import { apiUsageSummary, type UsageProfile } from "@/lib/api/usage";
 import { getOrigin } from "@/lib/origin";
 import { absolutizeMediaUrl, toMediaUrl } from "@/lib/media/url";
+import { readPressTourSwitches } from "@/lib/press-tour/enabled";
 import {
   authFailureReply,
   classifyMessage,
@@ -17,14 +18,24 @@ import {
   RPC_INVALID_REQUEST,
   RPC_METHOD_NOT_FOUND,
   RPC_PARSE_ERROR,
+  RPC_RESOURCE_NOT_FOUND,
   rpcError,
   rpcResult,
   SUPPORTED_PROTOCOL_VERSIONS,
   toolError,
   toolResult,
+  type RpcId,
   type ToolTextResult,
 } from "@/lib/mcp/protocol";
-import { getMcpTool, isSpendingTool, MCP_INSTRUCTIONS, MCP_SERVER_INFO, MCP_TOOLS } from "@/lib/mcp/tools";
+import { getMcpTool, isSpendingTool, listedTools, mcpInstructions, MCP_SERVER_INFO } from "@/lib/mcp/tools";
+import { apiAccessFailure, authenticateMcp, scopeFailure, type AuthContext, type McpAuthFailure } from "@/lib/mcp/auth";
+import { prmUrlFor, resourceFor } from "@/lib/mcp/oauth/config";
+import { touchGrant } from "@/lib/mcp/oauth/store";
+import { bearerFrom, bearerKind } from "@/lib/mcp/oauth/tokens";
+import { PRESS_MCP_SPEND_UNSURE } from "@/lib/mcp/press/messages";
+import { pressDeps, pressMcpCaller } from "@/lib/mcp/press/runtime";
+import { runPressTool } from "@/lib/mcp/press/service";
+import { PRESS_WIDGET_URI, widgetResourceContents, widgetResourceListing } from "@/lib/mcp/press/widget";
 import type { PlanId } from "@/lib/plans";
 
 // POST /api/mcp — Picacho as an MCP server.
@@ -47,11 +58,22 @@ import type { PlanId } from "@/lib/plans";
 // honest choice here: nothing streams. An image render is one bounded 20-60s
 // call, and pretending otherwise would add a transport mode with no message
 // to put on it.
+//
+// PRESS TOUR (Cut 8, 2026-09-26), behind press_tour_mcp (fail-closed):
+//   - sign-in for apps: Picacho's own OAuth access tokens (lib/mcp/oauth)
+//     beside the existing API keys, each checked for THIS resource; a
+//     failure is 401 with a challenge naming the protected-resource
+//     document (and, for ChatGPT, the same challenge in the body's _meta);
+//   - scopes: every tool needs its own (read / brand / generate);
+//   - Press Tour's tools and Picacho's card (the ui:// resource);
+//   - the MONEY rule: the only spender a model can call is generate_image.
+// With the switch off this endpoint is exactly what it was.
 
 export const runtime = "nodejs";
 // Same ceiling as the REST generation route, and for the same reason: a slow
 // provider should be cut off by us, mid-render, rather than by the platform
-// mid-write.
+// mid-write. Press Tour's paid steps return in seconds (the stills are
+// painted after the answer, in after()).
 export const maxDuration = 300;
 
 function jsonRpc(body: unknown, status = 200, headers: Record<string, string> = {}) {
@@ -63,9 +85,16 @@ function jsonRpc(body: unknown, status = 200, headers: Record<string, string> = 
   });
 }
 
-// Said with a 401 (a key missing, wrong or revoked), where making a key is
-// the fix. Not with a 403: a new key does not lift a suspension.
-const WHERE_KEYS_LIVE = "Create one in Picacho under Settings → Security → API keys.";
+function authReply(id: RpcId, failure: McpAuthFailure, oauthOn: boolean) {
+  const reply = authFailureReply(id, failure, { asToolResult: oauthOn });
+  return jsonRpc(reply.body, reply.status, reply.headers);
+}
+
+// Paid presses through MCP, per person (spec §4.4): a floor under a loop,
+// far above a person tapping a card.
+const SPENDS_PER_HOUR = 10;
+const SPENDS_PER_DAY = 30;
+const SPEND_LIMITED = "That's a lot of paid steps in a short time. Try again a little later.";
 
 // The MCP endpoint must exist for GET as well as POST. 405 is the spec's own
 // answer for "this server offers no server-initiated stream", which is true:
@@ -91,8 +120,8 @@ export async function POST(request: Request) {
 
   // DNS-rebinding guard, which the transport spec makes a MUST. A real MCP
   // client is not a browser and sends no Origin at all; when one IS present
-  // it has to be ours, because the attack being described is a page on
-  // another origin driving this endpoint.
+  // it has to be ours or a host's we run inside, because the attack being
+  // described is a page on another origin driving this endpoint.
   if (!isAllowedOrigin(request.headers.get("origin"), siteOrigin)) {
     return NextResponse.json({ error: "Origin not allowed." }, { status: 403 });
   }
@@ -134,23 +163,39 @@ export async function POST(request: Request) {
   const { id, method, params } = classified.message;
   const p = (params ?? {}) as Record<string, unknown>;
 
+  const supabase = createAdminClient();
+  // One read, fail-closed: every Press Tour switch is off while press_tour
+  // is, while a provider key is missing, and when the read fails.
+  const pressOn = (await readPressTourSwitches(supabase)).press_tour_mcp;
+  const authCtx: AuthContext = { oauthEnabled: pressOn, resource: resourceFor(siteOrigin), prmUrl: prmUrlFor(siteOrigin) };
+  const authorization = request.headers.get("authorization");
+
   // ---- methods that need no credential ---------------------------------
   //
-  // initialize and ping are answered before authentication on purpose. A
-  // client that cannot complete a handshake cannot show the user WHY its key
-  // was rejected — it just fails to connect. Neither method reads any data or
-  // spends anything. (The OAuth cut revisits this: a client discovers that a
-  // server wants sign-in from a 401 on initialize. With a static key and no
-  // authorization server there is nothing yet for that 401 to lead to.)
+  // initialize, ping, tools/list and the card's template are answered
+  // before authentication on purpose: none reads any data or spends
+  // anything, and a client that cannot complete a handshake cannot show the
+  // person WHY a credential was rejected. One exception: an app's own
+  // access token that was SENT and fails is answered 401 on every method,
+  // so an expired one is refreshed at once rather than at the next tool.
+  const handshake = ["initialize", "ping", "tools/list", "resources/list", "resources/read", "resources/templates/list"];
+  if (handshake.includes(method)) {
+    const sent = bearerFrom(authorization);
+    if (pressOn && sent && bearerKind(sent) !== "other") {
+      const check = await authenticateMcp(supabase, authorization, authCtx);
+      if (check.failure && check.failure.status === 401) return authReply(id, check.failure, pressOn);
+    }
+  }
+
   if (method === "initialize") {
     return jsonRpc(
       rpcResult(id, {
         protocolVersion: negotiateProtocolVersion(p.protocolVersion),
-        // listChanged is false: this tool list is a constant in the source,
-        // so there is no change to notify anyone about.
-        capabilities: { tools: { listChanged: false } },
+        // listChanged is false: these lists are constants in the source
+        // (the switch is read per request), so there is nothing to notify.
+        capabilities: { tools: { listChanged: false }, resources: { listChanged: false } },
         serverInfo: MCP_SERVER_INFO,
-        instructions: MCP_INSTRUCTIONS,
+        instructions: mcpInstructions({ pressTour: pressOn }),
       }),
     );
   }
@@ -158,7 +203,18 @@ export async function POST(request: Request) {
     return jsonRpc(rpcResult(id, {}));
   }
   if (method === "tools/list") {
-    return jsonRpc(rpcResult(id, { tools: MCP_TOOLS }));
+    return jsonRpc(rpcResult(id, { tools: listedTools({ pressTour: pressOn }) }));
+  }
+  if (method === "resources/list") {
+    return jsonRpc(rpcResult(id, { resources: pressOn ? [widgetResourceListing(siteOrigin)] : [] }));
+  }
+  if (method === "resources/templates/list") {
+    return jsonRpc(rpcResult(id, { resourceTemplates: [] }));
+  }
+  if (method === "resources/read") {
+    // The card's template: static HTML with no one's data in it.
+    if (pressOn && p.uri === PRESS_WIDGET_URI) return jsonRpc(rpcResult(id, widgetResourceContents(siteOrigin)));
+    return jsonRpc(rpcError(id, RPC_RESOURCE_NOT_FOUND, "Resource not found.", { uri: typeof p.uri === "string" ? p.uri : null }));
   }
   if (method !== "tools/call") {
     return jsonRpc(rpcError(id, RPC_METHOD_NOT_FOUND, `Unknown method: ${method}`));
@@ -167,31 +223,26 @@ export async function POST(request: Request) {
   // ---- tools/call ------------------------------------------------------
   const toolName = typeof p.name === "string" ? p.name : "";
   const tool = getMcpTool(toolName);
-  if (!tool) {
+  if (!tool || (tool.pressTour && !pressOn)) {
     // A protocol error, not a tool error: the call never happened, so there
-    // is no execution result to report.
+    // is no execution result to report. A Press Tour tool with the switch
+    // off does not exist.
     return jsonRpc(rpcError(id, RPC_INVALID_PARAMS, `Unknown tool: ${toolName || "(none)"}`));
   }
   const args = (p.arguments ?? {}) as Record<string, unknown>;
 
-  const supabase = createAdminClient();
-  const { caller, error: authError } = await authenticateApiRequest(
-    supabase,
-    request.headers.get("authorization"),
-  );
+  const { caller, failure } = await authenticateMcp(supabase, authorization, authCtx);
   if (!caller) {
-    // HTTP 401 with WWW-Authenticate (403 when the key is fine but not
-    // allowed), not HTTP 200 with a tool error (Press Tour cut 0). The fix
-    // is a person's — set or replace the key — so the CLIENT has to learn
-    // of it, and a client only acts on the status line; the model, which
-    // got the old tool error, can do nothing about a key. See
-    // authFailureReply for why there is no resource_metadata yet.
-    const reply = authFailureReply(id, {
-      status: authError.status,
-      message: authError.status === 401 ? `${authError.message} ${WHERE_KEYS_LIVE}` : authError.message,
-    });
-    return jsonRpc(reply.body, reply.status, reply.headers);
+    // HTTP 401 with WWW-Authenticate (403 when the credential is fine but
+    // not allowed), not HTTP 200 with a tool error (Press Tour cut 0). The
+    // fix is a person's — sign in again, set or replace the key — so the
+    // CLIENT has to learn of it.
+    return authReply(id, failure, pressOn);
   }
+  if (!caller.scopes.includes(tool.scope)) return authReply(id, scopeFailure(tool.scope, authCtx), pressOn);
+  // The standing tools keep their rule for an app too: API access (Elite,
+  // the per-account grant, or an admin). A key could not exist without it.
+  if (!tool.pressTour && !caller.apiAccess) return authReply(id, apiAccessFailure(), pressOn);
 
   // The same per-user limit the REST API enforces, on the same counter — so
   // an agent cannot get a second allowance by coming through this door.
@@ -205,14 +256,32 @@ export async function POST(request: Request) {
       ),
     );
   }
+  if (tool.pressTour && tool.spends) {
+    if (
+      (await rateLimited(caller.userId, "mcp-spend", 60 * 60, SPENDS_PER_HOUR)) ||
+      (await rateLimited(caller.userId, "mcp-spend-day", 24 * 60 * 60, SPENDS_PER_DAY))
+    ) {
+      return jsonRpc(rpcResult(id, toolError(SPEND_LIMITED)));
+    }
+  }
+  if (caller.grantId) {
+    const grantId = caller.grantId;
+    after(() => touchGrant(supabase, grantId));
+  }
 
   try {
-    const result = await callTool(toolName, args, {
-      supabase,
-      userId: caller.userId,
-      plan: caller.plan,
-      origin: siteOrigin,
-    });
+    let result: ToolTextResult;
+    if (tool.pressTour) {
+      const who = await pressMcpCaller(supabase, caller.userId, caller.grantId);
+      result = who.caller === null ? toolError(who.error) : await runPressTool(toolName, args, await pressDeps(who.caller, siteOrigin), who.caller);
+    } else {
+      result = await callTool(toolName, args, {
+        supabase,
+        userId: caller.userId,
+        plan: caller.plan,
+        origin: siteOrigin,
+      });
+    }
     return jsonRpc(rpcResult(id, result));
   } catch (err) {
     // An unexpected throw is ours, not the model's. Logged with the tool name
@@ -221,14 +290,17 @@ export async function POST(request: Request) {
     console.error(`MCP tool ${toolName} threw:`, err);
     // A spending tool may have charged before it threw, so it is not told
     // to simply try again: another call is the person's decision, and the
-    // same idempotency_key keeps it from being charged twice.
+    // same idempotency_key (or the card's one-time code) keeps it from being
+    // charged twice.
     return jsonRpc(
       rpcResult(
         id,
         toolError(
-          isSpendingTool(toolName)
-            ? "Something went wrong making that image, and it may still have been made. Ask the person before trying again; a retry with the same idempotency_key can't be charged twice."
-            : "Something went wrong running that tool. Try again in a moment.",
+          tool.pressTour && tool.spends
+            ? PRESS_MCP_SPEND_UNSURE
+            : isSpendingTool(toolName)
+              ? "Something went wrong making that image, and it may still have been made. Ask the person before trying again; a retry with the same idempotency_key can't be charged twice."
+              : "Something went wrong running that tool. Try again in a moment.",
         ),
       ),
     );

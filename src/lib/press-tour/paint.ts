@@ -427,6 +427,23 @@ function spread(total: number, n: number, i: number): number {
  * spend race releases every row, with anything already taken given back.
  */
 export async function reserveStillRows(deps: MoneyDeps, userId: string, specs: readonly PressRowSpec[]): Promise<Reserved> {
+  return reservePressRows(deps, userId, specs, pressRowPayload);
+}
+
+/** What one reserved row looks like: a still (pressRowPayload) or a filmed shot (film.ts filmRowPayload). */
+export type RowBuilder<S> = (spec: S, spend: { purchased: number; bonus: number }) => Record<string, unknown>;
+
+/**
+ * reserveStillRows for any Press Tour row shape (Cut 4: the filmed shots
+ * reserve through this same door, film.ts filmRowPayload), so every paid
+ * Press Tour row is reserved one way.
+ */
+export async function reservePressRows<S extends { id: string; credits: number }>(
+  deps: MoneyDeps,
+  userId: string,
+  specs: readonly S[],
+  build: RowBuilder<S>,
+): Promise<Reserved> {
   if (specs.length === 0) return { ok: false, code: "failed", error: PAINT_COULDNT_START };
   const total = specs.reduce((sum, s) => sum + s.credits, 0);
   let allowance: AllowanceAnswer;
@@ -435,7 +452,7 @@ export async function reserveStillRows(deps: MoneyDeps, userId: string, specs: r
   } catch {
     return { ok: false, code: "failed", error: PAINT_COULDNT_START };
   }
-  return reserveWith(deps, userId, specs, total, allowance);
+  return reserveWith(deps, userId, specs, total, allowance, build);
 }
 
 /**
@@ -453,6 +470,17 @@ export async function reservePaidRetry(
   spec: PressRowSpec,
   failedReservedAt: string,
 ): Promise<"reserved" | "window" | "refused"> {
+  return reservePaidRetryWith(deps, userId, spec, failedReservedAt, pressRowPayload);
+}
+
+/** reservePaidRetry for any Press Tour row shape (a filmed shot's retry: film.ts). */
+export async function reservePaidRetryWith<S extends { id: string; credits: number }>(
+  deps: MoneyDeps,
+  userId: string,
+  spec: S,
+  failedReservedAt: string,
+  build: RowBuilder<S>,
+): Promise<"reserved" | "window" | "refused"> {
   if (spec.credits <= 0) return "refused";
   let allowance: AllowanceAnswer;
   try {
@@ -462,23 +490,24 @@ export async function reservePaidRetry(
   }
   if (allowance.error || allowance.consumeFree) return "refused";
   if (allowance.periodStartIso && failedReservedAt && failedReservedAt < allowance.periodStartIso) return "window";
-  const reserved = await reserveWith(deps, userId, [spec], spec.credits, allowance);
+  const reserved = await reserveWith(deps, userId, [spec], spec.credits, allowance, build);
   return reserved.ok || reserved.code === "repeat" ? "reserved" : "refused";
 }
 
-async function reserveWith(
+async function reserveWith<S extends { id: string; credits: number }>(
   deps: MoneyDeps,
   userId: string,
-  specs: readonly PressRowSpec[],
+  specs: readonly S[],
   total: number,
   allowance: AllowanceAnswer,
+  build: RowBuilder<S>,
 ): Promise<Reserved> {
   if (allowance.error) return { ok: false, code: "allowance", error: allowance.error };
   if (allowance.consumeFree) return { ok: false, code: "allowance", error: PAINT_FREE_SLOT };
   const purchased = allowance.consumePurchased ?? 0;
   const bonus = allowance.consumeBonus ?? 0;
   const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, total - purchased - bonus);
-  const rows = specs.map((s, i) => pressRowPayload(s, { purchased: spread(purchased, specs.length, i), bonus: spread(bonus, specs.length, i) }));
+  const rows = specs.map((s, i) => build(s, { purchased: spread(purchased, specs.length, i), bonus: spread(bonus, specs.length, i) }));
 
   let ids: string[] = [];
   try {
@@ -527,6 +556,16 @@ async function reserveWith(
 
 /** A house row (0 credits): the checker's repaint or a retry. True when it exists afterwards (a repeat included). */
 export async function reserveHouseRow(db: SupabaseClient, userId: string, spec: PressRowSpec): Promise<boolean> {
+  return reserveHouseRowWith(db, userId, spec, pressRowPayload);
+}
+
+/** reserveHouseRow for any Press Tour row shape (a filmed shot's house retry: film.ts). */
+export async function reserveHouseRowWith<S extends { id: string; credits: number }>(
+  db: SupabaseClient,
+  userId: string,
+  spec: S,
+  build: RowBuilder<S>,
+): Promise<boolean> {
   if (spec.credits !== 0) return false;
   try {
     const { data, error } = await db.rpc("reserve_generations", {
@@ -534,7 +573,7 @@ export async function reserveHouseRow(db: SupabaseClient, userId: string, spec: 
       p_monthly_portion: 0,
       p_limit: 0,
       p_since: new Date(0).toISOString(),
-      p_rows: [pressRowPayload(spec)],
+      p_rows: [build(spec, { purchased: 0, bonus: 0 })],
     });
     if (error) return (error as { code?: string }).code === "23505" || /duplicate key/i.test(error.message ?? "");
     return Array.isArray(data) && data.length === 1;

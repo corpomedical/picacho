@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ASSUMED_PROTOCOL_VERSION,
   authFailureReply,
+  bearerChallenge,
   classifyMessage,
   isAcceptableProtocolHeader,
   isAllowedOrigin,
@@ -15,7 +16,7 @@ import {
   toolError,
   toolResult,
 } from "./protocol";
-import { getMcpTool, isSpendingTool, MCP_INSTRUCTIONS, MCP_TOOLS } from "./tools";
+import { getMcpTool, isModelCallable, isSpendingTool, MCP_INSTRUCTIONS, MCP_TOOLS } from "./tools";
 
 // MCP framing (2026-09-01).
 //
@@ -116,6 +117,14 @@ describe("isAllowedOrigin", () => {
     expect(isAllowedOrigin("null", site)).toBe(false);
   });
 
+  it("allows the web apps of the hosts Picacho runs inside, exactly (Press Tour cut 8)", () => {
+    expect(isAllowedOrigin("https://claude.ai", site)).toBe(true);
+    expect(isAllowedOrigin("https://chatgpt.com", site)).toBe(true);
+    expect(isAllowedOrigin("https://claude.ai.evil.example", site)).toBe(false);
+    expect(isAllowedOrigin("http://claude.ai", site)).toBe(false);
+    expect(isAllowedOrigin("https://evil.chatgpt.com", site)).toBe(false);
+  });
+
   it("allows our own origin, ignoring path and trailing slash", () => {
     expect(isAllowedOrigin(site, site)).toBe(true);
     expect(isAllowedOrigin("https://picacho.ai/", `${site}/api/mcp`)).toBe(true);
@@ -167,6 +176,32 @@ describe("authFailureReply", () => {
     expect(Object.values(r.headers).join(" ")).not.toMatch(/resource_metadata|realm|error=/);
   });
 
+  it("with sign-in for apps on: the challenge names the metadata, and ChatGPT's copy rides in the body's _meta", () => {
+    const challenge = bearerChallenge({ resourceMetadata: "https://picacho.ai/.well-known/oauth-protected-resource/api/mcp" });
+    expect(challenge).toBe('Bearer resource_metadata="https://picacho.ai/.well-known/oauth-protected-resource/api/mcp"');
+    const r = authFailureReply(9, { status: 401, message: "Connect your Picacho account to use this.", challenge }, { asToolResult: true });
+    expect(r.status).toBe(401);
+    expect(r.headers).toEqual({ "www-authenticate": challenge });
+    expect(r.body).toEqual({
+      jsonrpc: JSON_RPC_VERSION,
+      id: 9,
+      result: {
+        content: [{ type: "text", text: "Connect your Picacho account to use this." }],
+        isError: true,
+        _meta: { "mcp/www_authenticate": [challenge] },
+      },
+    });
+  });
+
+  it("bearerChallenge: RFC 6750 parameters, quotes and backslashes stripped", () => {
+    expect(bearerChallenge()).toBe("Bearer");
+    expect(bearerChallenge({ resourceMetadata: "https://x/y", error: "insufficient_scope", description: 'needs "generate"\\', scope: "generate" })).toBe(
+      'Bearer resource_metadata="https://x/y", error="insufficient_scope", error_description="needs generate", scope="generate"',
+    );
+    // A description is only sent with an error.
+    expect(bearerChallenge({ description: "x" })).toBe("Bearer");
+  });
+
   it("a key that is fine but not allowed is 403, with no challenge to re-authenticate", () => {
     const r = authFailureReply("a", { status: 403, message: "API access isn't turned on for this account." });
     expect(r.status).toBe(403);
@@ -213,12 +248,21 @@ describe("tool definitions", () => {
     expect(getMcpTool("nope")).toBeNull();
   });
 
-  it("MONEY: exactly one tool spends credits, and it is not marked read-only", () => {
+  it("MONEY: exactly one tool a MODEL can call spends credits, and it is not marked read-only", () => {
     // readOnlyHint is what tells a client it may skip the confirmation
     // prompt. Marking a billing tool read-only would let an agent spend a
     // customer's credits in a loop with no human in the way.
+    //
+    // Changed on purpose in Press Tour cut 8 (synthesis v2 #5): start_ad and
+    // approve_stills spend too, but they are Picacho's card's own tools
+    // (visibility ["app"]) and refuse to run without the card's one-time
+    // code, which a model never sees (press/press.test.ts). The spenders a
+    // model can call are still exactly one.
+    const modelSpenders = MCP_TOOLS.filter((t) => isModelCallable(t) && isSpendingTool(t.name)).map((t) => t.name);
+    expect(modelSpenders).toEqual(["generate_image"]);
     const spending = MCP_TOOLS.filter((t) => isSpendingTool(t.name)).map((t) => t.name);
-    expect(spending).toEqual(["generate_image"]);
+    expect(spending.sort()).toEqual(["approve_stills", "generate_image", "start_ad"]);
+    for (const name of spending) expect(getMcpTool(name)!.annotations?.readOnlyHint, name).toBe(false);
     expect(getMcpTool("generate_image")!.annotations?.readOnlyHint).toBe(false);
     for (const readOnly of ["list_characters", "get_generation", "get_usage"]) {
       expect(getMcpTool(readOnly)!.annotations?.readOnlyHint, readOnly).toBe(true);

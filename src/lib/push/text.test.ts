@@ -86,3 +86,60 @@ describe("every push key", () => {
     expect(resolvePushText({ key: "lowCredits", params: { n: 3 } }, "es").body).toBe("Te quedan 3 créditos.");
   });
 });
+
+describe("Press Tour's notifications (2026-09-26)", () => {
+  it("says the ad is ready, or that it couldn't be finished, in the device's language", () => {
+    expect(resolvePushText({ key: "adReady" }, "en")).toEqual({ title: "Your ad is ready", body: "Tap to watch it and save it." });
+    // "What came back" only when something did (PT-R3-04): adFailed promises nothing, adFailedRefunded says it.
+    expect(resolvePushText({ key: "adFailed" }, "en")).toEqual({ title: "Your ad couldn't be finished", body: "Tap to see what happened." });
+    expect(resolvePushText({ key: "adFailedRefunded" }, "en")).toEqual({ title: "Your ad couldn't be finished", body: "Tap to see what happened and what came back." });
+    for (const [loc, t] of LANGS) {
+      expect(resolvePushText({ key: "adReady" }, loc), loc).toEqual({ title: t.push.adReadyTitle, body: t.push.adReadyBody });
+      expect(resolvePushText({ key: "adFailed" }, loc), loc).toEqual({ title: t.push.adFailedTitle, body: t.push.adFailedBody });
+      expect(resolvePushText({ key: "adFailedRefunded" }, loc), loc).toEqual({ title: t.push.adFailedTitle, body: t.push.adFailedRefundedBody });
+      expect(t.push.adFailedBody, loc).not.toBe(t.push.adFailedRefundedBody);
+    }
+  });
+
+  it("names the network a post went to, keeps its name as it is, and still reads without one", () => {
+    for (const [loc] of LANGS) {
+      for (const key of ["postPublished", "postFailed", "reconnectNeeded"] as const) {
+        const named = resolvePushText({ key, params: { network: "TikTok" } }, loc);
+        expect(named.body, `${loc} ${key}`).toContain("TikTok");
+        expect(named.body, `${loc} ${key}`).not.toContain("{network}");
+        const bare = resolvePushText({ key }, loc);
+        expect(bare.body, `${loc} ${key}`).not.toContain("{network}");
+        expect(bare.body.trim().length, `${loc} ${key}`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("is translated, not copied from English, and matches the engine's English", async () => {
+    const { AD_READY_PUSH, AD_FAILED_PUSH, AD_FAILED_REFUNDED_PUSH } = await import("../press-tour/film-messages");
+    expect({ title: en.push.adReadyTitle, body: en.push.adReadyBody }).toEqual(AD_READY_PUSH);
+    expect({ title: en.push.adFailedTitle, body: en.push.adFailedBody }).toEqual(AD_FAILED_PUSH);
+    expect({ title: en.push.adFailedTitle, body: en.push.adFailedRefundedBody }).toEqual(AD_FAILED_REFUNDED_PUSH);
+    const keys = [
+      "adReadyTitle",
+      "adReadyBody",
+      "adFailedTitle",
+      "adFailedBody",
+      "adFailedRefundedBody",
+      "postPublishedTitle",
+      "postPublishedBody",
+      "postPublishedBodyAny",
+      "postFailedTitle",
+      "postFailedBody",
+      "postFailedBodyAny",
+      "reconnectNeededTitle",
+      "reconnectNeededBody",
+      "reconnectNeededBodyAny",
+    ] as const;
+    for (const [loc, t] of LANGS) {
+      for (const k of keys) {
+        expect(t.push[k].trim().length, `${loc} push.${k}`).toBeGreaterThan(0);
+        if (loc !== "en") expect(t.push[k], `${loc} push.${k}`).not.toBe(en.push[k]);
+      }
+    }
+  });
+});

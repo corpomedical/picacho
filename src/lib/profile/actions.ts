@@ -17,6 +17,7 @@ import { removeAllUserStorage } from "@/lib/profile/storage-buckets";
 import { erasePromoRedemptionEmail } from "@/lib/profile/promo-redemptions";
 import { removeUserRateHits } from "@/lib/rate-hits";
 import { deleteUserFaces } from "@/lib/faces/run";
+import { forgetSocialAccountsOnDelete } from "@/lib/social/forget";
 
 type ActionResult = { error: string | null };
 
@@ -502,6 +503,12 @@ export async function deleteAccount(formData: FormData) {
   // for the daily prune to finish (lib/faces/run.ts). Best-effort by design —
   // it never blocks the account's own deletion.
   await deleteUserFaces(admin, userId);
+  // Their connected social accounts (Press Tour posting), the same way: queued
+  // posts cancelled and each key revoked at the network while the rows that
+  // hold it still exist; a revoke that fails is owed in the one table that
+  // outlives the account (lib/social/forget.ts). Best-effort and bounded — it
+  // never blocks the deletion.
+  await forgetSocialAccountsOnDelete(admin, userId);
 
   const { error } = await admin.auth.admin.deleteUser(userId);
 

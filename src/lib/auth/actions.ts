@@ -7,6 +7,7 @@ import { getOrigin } from "@/lib/origin";
 import { notifyAdmins } from "@/lib/push/web-push";
 import { rateLimited, hashedRateKey } from "@/lib/rate-limit";
 import { isDisposableEmail } from "@/lib/auth/disposable-domains";
+import { oauthResumePath } from "@/lib/mcp/oauth/resume";
 
 // Pre-auth throttling (2026-09-05 audit). These are server actions, so the
 // auth request Supabase sees comes from VERCEL'S egress address — its
@@ -31,6 +32,11 @@ export async function login(formData: FormData) {
 
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
+  // An app connection waiting for this sign-in (Press Tour Cut 8): the ONE
+  // place a login may return to besides /app, validated to that exact shape
+  // (lib/mcp/oauth/resume.ts). It rides along on every bounce back to /login.
+  const resume = oauthResumePath(formData.get("next"));
+  const back = resume ? `&next=${encodeURIComponent(resume)}` : "";
 
   // Per-IP first, then per-target-email — distributed stuffing against one
   // account trips the second bucket even when each attacking address stays
@@ -38,11 +44,11 @@ export async function login(formData: FormData) {
   // password and matches the password-verify ceiling's reasoning.
   const ip = await callerIp();
   if (await rateLimited(hashedRateKey(ip, "login-ip"), "login-ip", 60, 10)) {
-    redirect("/login?error=throttled");
+    redirect(`/login?error=throttled${back}`);
   }
   const emailKey = String(email ?? "").trim().toLowerCase();
   if (await rateLimited(hashedRateKey(emailKey, "login-email"), "login-email", 15 * 60, 10)) {
-    redirect("/login?error=throttled");
+    redirect(`/login?error=throttled${back}`);
   }
 
   const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -56,7 +62,7 @@ export async function login(formData: FormData) {
       : /email not confirmed/i.test(error.message)
         ? "unconfirmed"
         : "failed";
-    redirect(`/login?error=${code}`);
+    redirect(`/login?error=${code}${back}`);
   }
 
   // An account with a verified authenticator steps up BEFORE it lands in
@@ -64,10 +70,10 @@ export async function login(formData: FormData) {
   // the fast path, not the gate.
   const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
   if (aal && aal.nextLevel === "aal2" && aal.currentLevel !== "aal2") {
-    redirect("/verify-2fa");
+    redirect(resume ? `/verify-2fa?next=${encodeURIComponent(resume)}` : "/verify-2fa");
   }
 
-  redirect("/app");
+  redirect(resume ?? "/app");
 }
 
 export async function signup(formData: FormData) {

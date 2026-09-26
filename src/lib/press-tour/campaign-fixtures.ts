@@ -2,7 +2,8 @@
 // paint, campaign-machine, campaign-service). Test-only: nothing in the app
 // imports it (campaign-machine.test.ts pins that).
 //
-// It holds what press-tour-03-campaigns.sql holds, in miniature: the
+// It holds what press-tour-03-campaigns.sql (and 03b-film.sql's columns)
+// holds, in miniature: the
 // press_campaigns guard (owner, send id and product fixed; a closed
 // campaign stays closed; version, updated_at and stage_changed_at bumped on
 // every update; a campaign's product must be the owner's confirmed one),
@@ -110,6 +111,12 @@ export function fakeDb(seed: Record<string, Row[]> = {}, clock: FakeClock = { no
       expires_at: null,
       overdue_notified_at: null,
       deleted_at: null,
+      // Cut 4 (press-tour-03b-film.sql)
+      shots: [],
+      film_charged_at: null,
+      cut_due_at: null,
+      delivered_at: null,
+      assembly: null,
     },
   };
 

@@ -107,6 +107,9 @@ describe("sitemap: every public page registers itself", () => {
       "/reset-password",
       "/admin-verify",
       "/verify-2fa",
+      // Connecting Claude or ChatGPT to an account (Press Tour cut 8): an
+      // account door, reachable only with a pending request's id.
+      "/oauth/authorize",
     ]);
     const pages: string[] = [];
     const walk = (dir: URL, route: string) => {
@@ -380,6 +383,16 @@ describe("localized server strings still match what the server says", () => {
     // The product checker: a verdict's reason and the card self-test's
     // answers (2026-09-26).
     "../product-lock/messages.ts",
+    // Press Tour's filming, the press wall and the cut (2026-09-26).
+    "../press-tour/film-messages.ts",
+    // Press Tour's posting: the press line's answers and a post's line.
+    "../social/messages.ts",
+    // Press Tour through Claude and ChatGPT: the tools' sentences, the
+    // sign-in answers, the paid-step limit, and Connected apps' answers.
+    "../mcp/press/messages.ts",
+    "../mcp/auth.ts",
+    "../../app/api/mcp/route.ts",
+    "../mcp/oauth/messages.ts",
   ]
     .map((p) => src(p))
     .join("\n")

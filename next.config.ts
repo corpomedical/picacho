@@ -72,6 +72,15 @@ const nextConfig: NextConfig = {
     // the customer presses Edit, inside the editor page's own function.
     "/api/cron/edits": ["./node_modules/ffmpeg-static/ffmpeg"],
     "/app/edit": ["./node_modules/ffmpeg-static/ffmpeg"],
+    // Press Tour's film, checks and cut (lib/press-tour/film.ts, cut.ts,
+    // 2026-09-26): the moments of every filmed shot are taken with the
+    // encoder (product-lock/frames.ts), and the cut normalises, captions,
+    // tags and joins with it (cut-encode.ts). Those steps run in the minute
+    // cron and, right after a press, inside the door's own page (a kick in
+    // after()). The captions and the tag are drawn from a font file read at
+    // runtime (the invoice's traced OFL Archivo), so it is named too.
+    "/api/cron/press": ["./node_modules/ffmpeg-static/ffmpeg", "./src/lib/billing/fonts/Archivo-SemiBold.ttf"],
+    "/app/press-tour": ["./node_modules/ffmpeg-static/ffmpeg", "./src/lib/billing/fonts/Archivo-SemiBold.ttf"],
     // The invoice PDF (2026-09-19) reads its fonts and the logo from disk
     // (lib/billing/invoice-pdf.ts): a path built at runtime, which tracing
     // cannot follow, so the files are named here for that one route.

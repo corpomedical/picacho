@@ -29,6 +29,12 @@ const ACTIONS = [
   "repaintStill",
   "getCampaign",
   "cancelCampaign",
+  // Cut 4
+  "filmShots",
+  "keepTake",
+  "refilmShot",
+  "cutShot",
+  "assembleNow",
 ] as const;
 
 function body(head: string): string {

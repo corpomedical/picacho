@@ -24,6 +24,10 @@ const h = vi.hoisted(() => ({
   generate: vi.fn(),
   rateLimited: vi.fn(),
   monthlyUsage: vi.fn(),
+  // press_tour_mcp (Press Tour cut 8): off unless a test turns it on.
+  pressOn: false,
+  pressCaller: vi.fn(),
+  pressDeps: vi.fn(),
 }));
 
 vi.mock("next/server", async (importOriginal) => ({
@@ -38,6 +42,9 @@ const db = {
   profiles: [] as Row[],
   generations: [] as Row[],
   character_profiles: [] as Row[],
+  oauth_clients: [] as Row[],
+  oauth_grants: [] as Row[],
+  oauth_tokens: [] as Row[],
 };
 
 /** The service-role client, over the four tables the route and keys.ts read. */
@@ -86,10 +93,20 @@ vi.mock("@/lib/mcp/protocol", async () => await import("./protocol"));
 vi.mock("@/lib/mcp/tools", async () => await import("./tools"));
 vi.mock("@/lib/plans", async () => await import("../plans"));
 vi.mock("@/lib/generations/core", () => ({ getMonthlyUsageWith: h.monthlyUsage }));
+vi.mock("@/lib/press-tour/enabled", () => ({ readPressTourSwitches: async () => ({ press_tour_mcp: h.pressOn }) }));
+vi.mock("@/lib/mcp/auth", async () => await import("./auth"));
+vi.mock("@/lib/mcp/oauth/config", async () => await import("./oauth/config"));
+vi.mock("@/lib/mcp/oauth/store", async () => await import("./oauth/store"));
+vi.mock("@/lib/mcp/oauth/tokens", async () => await import("./oauth/tokens"));
+vi.mock("@/lib/mcp/press/messages", async () => await import("./press/messages"));
+vi.mock("@/lib/mcp/press/service", async () => await import("./press/service"));
+vi.mock("@/lib/mcp/press/widget", async () => await import("./press/widget"));
+vi.mock("@/lib/mcp/press/runtime", () => ({ pressMcpCaller: h.pressCaller, pressDeps: h.pressDeps }));
 
 import { DELETE, GET, POST } from "../../app/api/mcp/route";
 import { GET as restUsage } from "../../app/api/v1/usage/route";
 import { API_ACCESS_OFF, hashApiKey } from "../api/keys";
+import { hashSecret } from "./oauth/tokens";
 import { mediaSig } from "../media/url";
 import { PLAN_LIMITS } from "../plans";
 import { RPC_UNAUTHORIZED, SUPPORTED_PROTOCOL_VERSIONS } from "./protocol";
@@ -133,6 +150,10 @@ beforeEach(() => {
   ];
   db.generations = [];
   db.character_profiles = [];
+  db.oauth_clients = [];
+  db.oauth_grants = [];
+  db.oauth_tokens = [];
+  h.pressOn = false;
   h.generate.mockReset();
   h.rateLimited.mockReset().mockResolvedValue(false);
   h.monthlyUsage.mockReset().mockResolvedValue(120);
@@ -372,5 +393,168 @@ describe("generate_image", () => {
     const res = (await (await call("generate_image", { prompt: "Eva" })).json()).result;
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toMatch(/Ask the person before trying again/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Press Tour cut 8: sign-in for apps, scopes, the card's tools
+// ---------------------------------------------------------------------------
+
+describe("with press_tour_mcp on", () => {
+  const PRM = "https://picacho.ai/.well-known/oauth-protected-resource/api/mcp";
+  const RESOURCE = "https://picacho.ai/api/mcp";
+  const TOKEN = "pmcp_at_test_access_token_for_elite_000000000";
+  const READ_ONLY = "pmcp_at_test_access_token_read_only_000000000";
+  const IO_TOKEN = "pmcp_at_test_access_token_for_picacho_io_0000";
+  const STARTER_TOKEN = "pmcp_at_test_access_token_for_starter_000000";
+  const future = "2026-12-31T00:00:00.000Z";
+
+  function token(t: string, over: Row = {}): Row {
+    return {
+      token_hash: hashSecret(t),
+      kind: "access",
+      grant_id: "g-elite",
+      user_id: "user-elite",
+      client_id: "pmcp_c_claude",
+      scopes: ["read", "brand", "generate"],
+      resource: RESOURCE,
+      expires_at: future,
+      revoked_at: null,
+      ...over,
+    };
+  }
+
+  const paint = vi.fn();
+  beforeEach(async () => {
+    h.pressOn = true;
+    db.oauth_clients = [
+      { client_id: "pmcp_c_claude", kind: "dcr", client_name: "Claude", redirect_uris: ["https://claude.ai/api/mcp/auth_callback"], trust: "verified", disabled_at: null, fetched_at: null },
+    ];
+    db.oauth_grants = [
+      { id: "g-elite", user_id: "user-elite", client_id: "pmcp_c_claude", scopes: ["read", "brand", "generate"], resource: RESOURCE, revoked_at: null },
+      { id: "g-read", user_id: "user-elite", client_id: "pmcp_c_claude", scopes: ["read"], resource: RESOURCE, revoked_at: null },
+      { id: "g-io", user_id: "user-elite", client_id: "pmcp_c_claude", scopes: ["read"], resource: "https://picacho.io/api/mcp", revoked_at: null },
+      { id: "g-starter", user_id: "user-starter", client_id: "pmcp_c_claude", scopes: ["read", "generate"], resource: RESOURCE, revoked_at: null },
+    ];
+    db.oauth_tokens = [
+      token(TOKEN),
+      token(READ_ONLY, { grant_id: "g-read", scopes: ["read"] }),
+      token(IO_TOKEN, { grant_id: "g-io", scopes: ["read"], resource: "https://picacho.io/api/mcp" }),
+      token(STARTER_TOKEN, { grant_id: "g-starter", user_id: "user-starter", scopes: ["read", "generate"] }),
+      token("pmcp_at_expired_token_000000000000000000000", { expires_at: "2020-01-01T00:00:00.000Z" }),
+    ];
+    paint.mockReset();
+    const { fakeDb } = await import("./fake-db");
+    const f = fakeDb({ mcp_ui_nonces: [] });
+    h.pressCaller.mockReset().mockImplementation(async (_db: unknown, userId: string, grantId: string | null) => ({
+      caller: { userId, via: "admin", grantId },
+      error: null,
+    }));
+    h.pressDeps.mockReset().mockImplementation(() => ({
+      db: f.db,
+      origin: "https://picacho.ai",
+      repaintCredits: 1,
+      engine: {
+        plan: vi.fn(),
+        paint,
+        approve: vi.fn(),
+        keep: vi.fn(),
+        get: async () => ({ ok: false, error: "That ad isn't on this account." }),
+        film: null,
+        importProduct: vi.fn(),
+        canSpend: true,
+      },
+    }));
+  });
+
+  it("no credential: 401 naming the protected-resource metadata, and the same challenge in the body for ChatGPT", async () => {
+    const res = await call("get_usage", {}, null);
+    expect(res.status).toBe(401);
+    const challenge = res.headers.get("www-authenticate");
+    expect(challenge).toBe(`Bearer resource_metadata="${PRM}"`);
+    const body = await res.json();
+    expect(body.result).toMatchObject({ isError: true, _meta: { "mcp/www_authenticate": [challenge] } });
+  });
+
+  it("an app's access token works, with the scopes its connection holds", async () => {
+    const res = await call("get_usage", {}, TOKEN);
+    expect(res.status).toBe(200);
+    expect((await res.json()).result.structuredContent.plan).toBe("elite");
+  });
+
+  it("MONEY: a read-only connection cannot spend: 403 insufficient_scope, and nothing renders", async () => {
+    const res = await call("generate_image", { prompt: "Eva" }, READ_ONLY);
+    expect(res.status).toBe(403);
+    const challenge = res.headers.get("www-authenticate")!;
+    expect(challenge).toContain('error="insufficient_scope"');
+    expect(challenge).toContain('scope="generate"');
+    expect(challenge).toContain(`resource_metadata="${PRM}"`);
+    expect(h.generate).not.toHaveBeenCalled();
+  });
+
+  it("SECURITY: a token minted for picacho.io is refused at picacho.ai (RFC 8707)", async () => {
+    const res = await call("get_usage", {}, IO_TOKEN);
+    expect(res.status).toBe(401);
+    expect(res.headers.get("www-authenticate")).toContain('error="invalid_token"');
+  });
+
+  it("an expired token is 401 on every method, the handshake included, so the app refreshes at once", async () => {
+    const init = await rpc({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }, { authorization: "Bearer pmcp_at_expired_token_000000000000000000000" });
+    expect(init.status).toBe(401);
+    const bare = await rpc({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    expect(bare.status).toBe(200);
+  });
+
+  it("the standing tools keep their API-access rule for apps; Press Tour's tools follow Press Tour's", async () => {
+    const usage = await call("get_usage", {}, STARTER_TOKEN);
+    expect(usage.status).toBe(403);
+    expect((await usage.json()).error.message).toBe(API_ACCESS_OFF);
+    const job = await call("get_ad_job", { plan_id: "55555555-5555-4555-8555-555555555555" }, STARTER_TOKEN);
+    expect(job.status).toBe(200);
+    expect(h.pressCaller).toHaveBeenCalledWith(expect.anything(), "user-starter", "g-starter");
+  });
+
+  it("MONEY: a model calling start_ad without the card's code spends nothing", async () => {
+    const res = await call("start_ad", { plan_id: "55555555-5555-4555-8555-555555555555" }, TOKEN);
+    expect(res.status).toBe(200);
+    const result = (await res.json()).result;
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/Picacho's card/);
+    expect(paint).not.toHaveBeenCalled();
+  });
+
+  it("existing API keys keep working", async () => {
+    const res = await call("get_usage", {}, ELITE_KEY);
+    expect(res.status).toBe(200);
+  });
+
+  it("lists Press Tour's tools with MCP Apps metadata, and serves the card's template", async () => {
+    const list = (await (await rpc({ jsonrpc: "2.0", id: 3, method: "tools/list" })).json()).result.tools as { name: string; _meta: { ui?: { visibility?: string[] } } }[];
+    const start = list.find((t) => t.name === "start_ad")!;
+    expect(start._meta.ui?.visibility).toEqual(["app"]);
+    const read = await (await rpc({ jsonrpc: "2.0", id: 4, method: "resources/read", params: { uri: "ui://picacho/press-tour/ad-v2.html" } })).json();
+    expect(read.result.contents[0]).toMatchObject({ mimeType: "text/html;profile=mcp-app" });
+    expect(read.result.contents[0].text).toContain("<!DOCTYPE html>");
+    const init = await (await rpc({ jsonrpc: "2.0", id: 5, method: "initialize", params: {} })).json();
+    expect(init.result.capabilities.resources).toEqual({ listChanged: false });
+  });
+
+  it("a browser request from Claude's or ChatGPT's own web app is allowed", async () => {
+    for (const origin of ["https://claude.ai", "https://chatgpt.com"]) {
+      const res = await rpc({ jsonrpc: "2.0", id: 1, method: "ping" }, { origin });
+      expect(res.status, origin).toBe(200);
+    }
+  });
+});
+
+describe("with press_tour_mcp off", () => {
+  it("Press Tour's tools and the card do not exist, and an app token is not a credential", async () => {
+    const res = await call("get_ad_job", { plan_id: "55555555-5555-4555-8555-555555555555" });
+    expect((await res.json()).error.code).toBe(-32602);
+    const read = await (await rpc({ jsonrpc: "2.0", id: 4, method: "resources/read", params: { uri: "ui://picacho/press-tour/ad-v2.html" } })).json();
+    expect(read.error.code).toBe(-32002);
+    const tok = await call("get_usage", {}, "pmcp_at_anything_00000000000000000000000000");
+    expect(tok.status).toBe(401);
+    expect(tok.headers.get("www-authenticate")).toBe("Bearer");
   });
 });

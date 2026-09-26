@@ -6,6 +6,14 @@ import { Card } from "@/components/ui/card";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/provider";
+import { oauthResumePath } from "@/lib/mcp/oauth/resume";
+
+// Where to go once stepped up: /app, or an app connection's consent page
+// that sent the person here (Press Tour Cut 8; exactly that one shape).
+function afterStepUp(): string {
+  if (typeof window === "undefined") return "/app";
+  return oauthResumePath(new URLSearchParams(window.location.search).get("next")) ?? "/app";
+}
 
 // The user second-factor challenge — the localized twin of /admin-verify,
 // and OUTSIDE /app for the same reason that page sits outside /admin: the
@@ -28,7 +36,7 @@ export default function VerifyTwoFactorPage() {
       if (listError || !totp) {
         // No factor after all (unenrolled in another tab, or signed out) —
         // the layout won't gate, so just go on in.
-        window.location.assign("/app");
+        window.location.assign(afterStepUp());
         return;
       }
       factorIdRef.current = totp.id;
@@ -60,7 +68,7 @@ export default function VerifyTwoFactorPage() {
     }
     // Full navigation so the server layout re-checks the stepped-up cookie
     // session and lets the person through.
-    window.location.assign("/app");
+    window.location.assign(afterStepUp());
   }
 
   return (

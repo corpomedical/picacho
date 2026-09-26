@@ -129,7 +129,16 @@ export type MomentSignals = {
   words: WordsSignal;
   ocrBest: number | null;
   conflict: string | null;
-  judge: { verdict: JudgeReading["verdict"]; confidence: number; labelInView: boolean; blurred: boolean } | null;
+  /** The confirmed label word the words read came closest to (the press wall's "Your label says"). */
+  labelExpected?: string | null;
+  judge: {
+    verdict: JudgeReading["verdict"];
+    confidence: number;
+    labelInView: boolean;
+    blurred: boolean;
+    /** The reading part by part (the press wall's Label / Logo / Shape / Colour rows). */
+    aspects?: { label: JudgeReading["label"]; logo: JudgeReading["logo"]; shape: JudgeReading["shape"]; colour: JudgeReading["colour"] };
+  } | null;
   escalated: boolean;
   face: number | null;
 };
@@ -327,7 +336,16 @@ function momentSignals(w: FrameWork, outcome: FrameOutcome): MomentSignals {
     words: outcome.words,
     ocrBest: label?.best ?? null,
     conflict: label?.conflict ?? null,
-    judge: judge ? { verdict: judge.verdict, confidence: judge.confidence, labelInView: judge.labelInView, blurred: judge.blurred } : null,
+    labelExpected: label?.bestString ?? null,
+    judge: judge
+      ? {
+          verdict: judge.verdict,
+          confidence: judge.confidence,
+          labelInView: judge.labelInView,
+          blurred: judge.blurred,
+          aspects: { label: judge.label, logo: judge.logo, shape: judge.shape, colour: judge.colour },
+        }
+      : null,
     escalated: w.signals.escalation !== undefined,
     face: w.face && !w.face.unusable && w.face.faceVisible ? w.face.score : null,
   };

@@ -27,8 +27,27 @@ const FCM_ENDPOINT = "https://fcm.googleapis.com/v1/projects";
 //
 // setReady and setFailed (2026-09-11) come only from the Sets finisher
 // (lib/sets/finisher.ts), sent web-only: see channels.ts.
+//
+// Press Tour (2026-09-26): adReady / adFailed / adFailedRefunded (credits
+// went back) come from the campaign engine
+// (lib/press-tour/campaign-runtime.ts); postPublished / postFailed /
+// reconnectNeeded are for the posts worker's hooks, with params.network the
+// network's own name.
 export type PushMessage = {
-  key: "videoReady" | "videoFailed" | "videoFailedRefunded" | "layersReady" | "lowCredits" | "setReady" | "setFailed";
+  key:
+    | "videoReady"
+    | "videoFailed"
+    | "videoFailedRefunded"
+    | "layersReady"
+    | "lowCredits"
+    | "setReady"
+    | "setFailed"
+    | "adReady"
+    | "adFailed"
+    | "adFailedRefunded"
+    | "postPublished"
+    | "postFailed"
+    | "reconnectNeeded";
   params?: Record<string, string | number>;
 };
 

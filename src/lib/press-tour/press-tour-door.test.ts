@@ -17,6 +17,8 @@ import { renderProductGuide } from "../agent/product-guide";
 const root = join(__dirname, "..", "..");
 const read = (...parts: string[]) => readFileSync(join(root, ...parts), "utf8");
 const door = read("components", "press-tour", "press-tour-door.tsx");
+const wallPart = read("components", "press-tour", "press-wall.tsx");
+const linePart = read("components", "press-tour", "press-line.tsx");
 /** Every piece of the door (the door, the running order, the quote, the product card...), by file. */
 const PARTS = readdirSync(join(root, "components", "press-tour"))
   .filter((f) => f.endsWith(".tsx"))
@@ -38,16 +40,25 @@ const CATALOGS = { en, es, pt, it: itMessages } as const;
 
 const section = (lang: Lang) => read("lib", "i18n", "messages", `${lang}.ts`).match(/\n  pressTour: \{[\s\S]*?\n  \},/)?.[0] ?? "";
 const keysOf = (s: string) => [...s.matchAll(/\n    (\w+): /g)].map((m) => m[1]);
-/** Every sentence the door can say in one language: its section and its two nav words. */
+/**
+ * Every sentence the door can say in one language: its section, its two nav
+ * words, and the engine's sentences it shows (filming, the wall, the cut
+ * and posting, mapped by server-text.ts under press* keys).
+ */
 const spoken = (lang: Lang) => {
   const c = CATALOGS[lang];
-  return [...Object.values(c.pressTour), c.nav.pressTour, c.nav.pressTourSub];
+  const engine = Object.entries(c.serverText)
+    .filter(([key]) => key.startsWith("press"))
+    .map(([, v]) => v);
+  return [...Object.values(c.pressTour), c.nav.pressTour, c.nav.pressTourSub, ...engine];
 };
 
 // No engine, vendor, model, server or resolution in customer words (Spec v2
 // #34: word boundaries, all four languages, a small allowlist of real words).
+// Posting's machinery too (social/messages.ts's rule): no tokens, queues,
+// containers, renditions, manifests, file tools or sign-in plumbing.
 const MACHINERY =
-  /\b(?:seedance|higgsfield|soul|kling|veo|minimax|hailuo|wan|luma|runway|nano banana|gpt(?:-image)?|gemini|openai|anthropic|claude|opus|sonnet|flux|fal|engine|model|models|provider|server|servidor|api|720p|1080p|4k|fps)\b/i;
+  /\b(?:seedance|higgsfield|soul|kling|veo|minimax|hailuo|wan|luma|runway|nano banana|gpt(?:-image)?|gemini|openai|anthropic|claude|opus|sonnet|flux|fal|engine|model|models|provider|server|servidor|api|720p|1080p|4k|fps|oauth|tokens?|queues?|renditions?|containers?|manifests?|ffmpeg|c2pa|webhooks?|lane|ocr|sha-?256|cron)\b/i;
 // Real words that share a spelling with a banned one, per language, lower
 // case only (an engine name is capitalised): Spanish "veo" is "I see".
 const REAL_WORDS: Partial<Record<Lang, RegExp>> = { es: /(?<=\s|^)veo(?=[\s.,;:!?]|$)/g };
@@ -55,10 +66,12 @@ const REAL_WORDS: Partial<Record<Lang, RegExp>> = { es: /(?<=\s|^)veo(?=[\s.,;:!
 // Spanish "Plan", which is the Spanish word too (the Red Carpet artboards);
 // "{n} cr" and "{n} s", the short forms the Spanish artboard prints as they
 // are; and Italian "Logo".
+// "Hashtags" is the Spanish and Portuguese word too, and TikTok's Italian
+// app calls Stitch "Stitch".
 const SAME_AS_ENGLISH: Record<Exclude<Lang, "en">, readonly string[]> = {
-  es: ["headline", "stepPlan", "creditsShort", "lengthSeconds"],
-  pt: ["headline", "creditsShort", "lengthSeconds"],
-  it: ["headline", "creditsShort", "lengthSeconds", "logoTag"],
+  es: ["headline", "stepPlan", "creditsShort", "lengthSeconds", "hashtags"],
+  pt: ["headline", "creditsShort", "lengthSeconds", "hashtags"],
+  it: ["headline", "creditsShort", "lengthSeconds", "logoTag", "ttStitch"],
 };
 
 describe("the Press Tour door", () => {
@@ -131,36 +144,102 @@ describe("the Press Tour door", () => {
     expect(printed.length).toBeGreaterThan(5);
     for (const vars of printed) {
       for (const [, value] of vars.matchAll(/\b(?:n|now|after): ([^,]+?)(?:,|\s*$)/g)) {
-        expect(value.trim(), vars).toMatch(/^(?:1|r\.credits|quote\.(?:total|paint|animate|balanceNow|balanceAfterNextStep)|credits|spend === "paint" \? quote\.paint : quote\.animate)$/);
+        // A re-film is priced by the contract's own field (ShotView.refilmCredits: the shot's normal film price).
+        expect(value.trim(), vars).toMatch(/^(?:1|r\.credits|shot\.refilmCredits|quote\.(?:total|paint|animate|balanceNow|balanceAfterNextStep)|credits|spend === "paint" \? quote\.paint : quote\.animate)$/);
       }
     }
   });
 
-  it("wires the ad through the contract alone, and keeps the Film key truly shut in this round", () => {
-    // The engine's actions come in as a CampaignActions prop from the page.
-    expect(all).not.toMatch(/from "@\/lib\/press-tour\/campaign-actions"/);
+  it("wires the ad through the contract alone, and opens the Film key only when the engine names no blocker", () => {
+    // The engine's actions come in as props from the page: the campaign's,
+    // posting's and the "tell me" list's, never imported by a piece.
+    expect(all).not.toMatch(/from "@\/lib\/press-tour\/(?:campaign-actions|publish-actions|waitlist-actions)"/);
     expect(door).toContain("actions: CampaignActions;");
+    expect(door).toContain("publish: PublishActions;");
+    expect(door).toContain("waitlist: WaitlistActions;");
     expect(page).toContain("const actions: CampaignActions = {");
+    expect(page).toContain("const publish: PublishActions = {");
     expect(page).toContain('from "@/lib/press-tour/campaign-actions"');
-    // Every spend carries a fresh sendId (campaign-types.ts).
-    for (const call of ["actions.planCampaign({", "actions.paintStills({", "actions.repaintStill({"]) {
+    expect(page).toContain('from "@/lib/press-tour/publish-actions"');
+    // Every spend carries a fresh sendId (campaign-types.ts), the film and a re-film included.
+    for (const call of ["actions.planCampaign({", "actions.paintStills({", "actions.repaintStill({", "actions.filmShots({", "actions.refilmShot({"]) {
       const at = door.indexOf(call);
       expect(at, call).toBeGreaterThan(-1);
       expect(door.slice(at, at + 120), call).toContain("sendId: crypto.randomUUID()");
     }
-    // Filming is not built: the key is shown, priced from the quote, aria-disabled, with no press.
-    const film = door.slice(door.indexOf("label: formatMsg(m.filmKey"), door.indexOf("m.filmSoon,") + 12);
+    // Film: priced from the quote's film line, shut while the engine names a
+    // blocker (a still undecided, filming switched off), saying what it is.
+    const film = door.slice(door.indexOf("// Film: open once the engine names no blocker"), door.indexOf("m.filmHint,") + 12);
     expect(film.length).toBeGreaterThan(100);
-    expect(film).toContain("disabled: true,");
-    expect(film).toContain("press: null,");
-    expect(film).toContain("blocker: server(campaign.blocker)");
+    expect(film).toContain("price: quote ? priceTag(quote.animate) : null,");
+    expect(film).toContain("disabled: campaign.blocker !== null || pending !== null,");
+    expect(film).toContain("blocker: server(campaign.blocker),");
+    // While we film, the key stays and stays shut.
+    const filming = door.slice(door.indexOf('} else if (stage === "animating") {'), door.indexOf("} else if (filmed) {"));
+    expect(filming).toContain("disabled: true,");
+    expect(filming).toContain("press: null,");
     expect(door).toContain("aria-disabled={key.disabled}");
     expect(door).toContain("if (!key.disabled && key.press) key.press();");
   });
 
+  it("puts every moment up on the wall and leaves each missed shot to the person: keep, re-film at its price, or cut", () => {
+    // The fixed verdict shapes on every print, the red ring only on the worst miss, the flash only on a match.
+    expect(wallPart).toContain("<Glyph v={x.verdict} />");
+    expect(wallPart).toContain("matched && s.flash,");
+    expect(wallPart).toContain('x.verdict === "not_readable" && s.momentUnread,');
+    expect(wallPart).toContain("worst && s.printMiss,");
+    // The three presses, and nothing decided for the person.
+    expect(wallPart).toContain("act.keep(shot.shot, take.take)");
+    expect(wallPart).toContain("act.refilm(shot.shot, note.trim())");
+    expect(wallPart).toContain("act.cut(shot.shot)");
+    expect(wallPart).toContain("formatMsg(m.creditsShort, { n: shot.refilmCredits })");
+    expect(wallPart).toContain("m.cutShot} <small");
+    expect(wallPart).toContain("{m.free}</small>");
+    // The honest lines, on both walls.
+    expect(wallPart.match(/\{m\.wallHonest\}/g)?.length).toBe(2);
+    // The letter row and the four parts only when the record holds both readings.
+    expect(wallPart).toContain("const d = x.moment.detail;\n  if (!d) return null;");
+    expect(en.pressTour.wallHonest).toBe("The check can be wrong, so every moment stays up for you to judge. Blur never counts as a miss.");
+  });
+
+  it("posts only what the person saw and pressed: TikTok's audit rules, the AI label always on, a consent per press", () => {
+    // Who can see it: no default, only what TikTok returned.
+    expect(linePart).toContain('value={ui.privacy ?? ""}');
+    expect(linePart).toContain('<option value="" disabled>');
+    expect(linePart).toContain("(sheet?.privacyOptions ?? []).map((p) =>");
+    // Comment, Duet and Stitch: unticked until ticked, greyed when the creator turned them off.
+    expect(linePart).toContain("<TickBox checked={!off && ui[key]} disabled={off}");
+    // Branded content never "Only me", and unavailable in test mode.
+    expect(linePart).toContain('disabled={p === "SELF_ONLY" && ui.commercial && ui.brandedContent}');
+    expect(linePart).toContain("disabled={!ui.commercial || !sheet || !sheet.brandedContentAvailable}");
+    // TikTok is never scheduled, and gets the clean file.
+    expect(linePart).toContain('when: net === "tiktok" ? "now" : at,');
+    expect(linePart).toContain('const file = net === "tiktok" ? clean : tagged;');
+    // The AI label: shown on, and it can't be switched off.
+    expect(linePart).toContain("<Switch on label={formatMsg(m.alwaysOnLabel, { label: title })} locked />");
+    // Every press sends the preview's consent token and ONE send id per network and consent token: a retry after a
+    // lost answer resends the same press, never a second post (MONEY-3); the id goes once the post went through.
+    expect(linePart).toContain("const held = sendIds[net]?.token === token ? sendIds[net]! : { token, id: crypto.randomUUID() };");
+    expect(linePart).toContain("const meta = { sendId: held.id, consentToken: token, locale, uiVersion: PRESS_LINE_VERSION };");
+    expect(linePart).toContain("setSendIds((prev) => (prev[net]?.id === held.id ? { ...prev, [net]: undefined } : prev));");
+    expect(linePart).not.toMatch(/sendId: crypto\.randomUUID\(\)/);
+    // A mismatched shot still in the cut is said on the press line (PT-R3-05), and the TikTok file's hand-posting note
+    // sits by the fallback download too (PT-R3-02).
+    expect(linePart).toContain("server(previews[net]?.draft?.cutWarning)");
+    expect(linePart.match(/\{m\.saveForTikTokNote\}/g)?.length).toBe(1);
+    expect(linePart).toContain("publish.consentAndSchedule({ ...draft, ...meta, when })");
+    expect(linePart).toContain("publish.consentAndPost({ ...draft, ...meta })");
+    // The Music Usage Confirmation line.
+    expect(en.pressTour.ttDeclaration).toContain("{music}");
+    expect(en.pressTour.ttMusicLink).toBe("Music Usage Confirmation");
+  });
+
   it("builds no re-shoot, no refund line and no trend claim (operator, 2026-09-26)", () => {
-    // No re-shoot key of any kind: the stills are repainted at their price, or kept.
-    expect(code(all)).not.toMatch(/re-?shoot(?!\s*===\s*"off")|refilm/i);
+    // No re-shoot of any kind: a still is repainted at its price, or kept; a
+    // filmed shot is re-filmed only by the person's press, at its normal
+    // price (the refilm presses above), never on its own.
+    expect(code(all)).not.toMatch(/re-?shoot(?!\s*===\s*"off")/i);
+    expect(code(all).match(/actions\.refilmShot\(/g)?.length).toBe(1);
     // The policy line prints only for the decided launch state.
     expect(all).toContain('quote.policy.reshoot === "off" && !quote.policy.refund');
     // The trend brief is not built: no trend card, no press_trends read.

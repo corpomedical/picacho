@@ -11,7 +11,10 @@ import { saveBrandKit } from "@/lib/press-tour/actions";
 import { recordStarConsent } from "@/lib/press-tour/star-consent-actions";
 import { PRODUCT_REGULATED_REFUSED } from "@/lib/press-tour/types";
 import { BLOCK_FILMING_NOT_OPEN } from "@/lib/press-tour/campaign-messages";
+import { CUT_STALLED } from "@/lib/press-tour/film-messages";
 import type { CampaignActions, CampaignResult, CampaignView } from "@/lib/press-tour/campaign-types";
+import type { PublishActions } from "@/lib/press-tour/publish-types";
+import type { WaitlistActions } from "@/lib/press-tour/waitlist";
 import type { PressBrandKit, PressCharacter, PressProduct } from "@/lib/press-tour/door-data";
 import {
   POLL_MS,
@@ -19,6 +22,7 @@ import {
   decidedCount,
   firstWaiting,
   isClosed,
+  isMiss,
   isWorking,
   nextSpend,
   planBlock,
@@ -26,11 +30,16 @@ import {
   routeIndex,
   shotSeconds,
   sourceHost,
+  wallBusy,
+  wallMoments,
   type NetworkStates,
   type PlanBlock,
 } from "@/lib/press-tour/door-view";
 import { cn } from "@/lib/cn";
 import { CheckIcon, EditIcon, LinkIcon, PressIcon, SendIcon } from "./icons";
+import { FinishedCut } from "./finished-cut";
+import { PostingAccounts, PressLine, type ConnectNote } from "./press-line";
+import { PhonePressWall, PressWall, type WallActions, type WallProduct } from "./press-wall";
 import { ProductSheet, type ProductSaved } from "./product-sheet";
 import { QuoteCard } from "./quote-card";
 import { PhoneRoute, RouteRail, type RouteStopView } from "./route-rail";
@@ -63,8 +72,15 @@ import s from "./press-tour.module.css";
 // - no purchase or upgrade link (reader mode inside the app);
 // - nothing says "locked": a check reads "Match", "Checked at 3 moments per
 //   shot"; there is no free re-shoot and no refund for a miss;
-// - the Film key is truly disabled (aria-disabled, and a line saying what
-//   blocks it): filming is not built in this round;
+// - a blocked key is truly disabled (aria-disabled, and a line saying what
+//   blocks it): the Film key opens only when the engine names no blocker
+//   (every still decided, press_tour_film on), priced from the quote;
+// - after filming, the press wall (press-wall.tsx) puts every moment up and
+//   a shot that missed waits for the person: Keep take N, Re-film shot N at
+//   that shot's own film price, or Cut this shot, free (operator,
+//   2026-09-26);
+// - the finished cut opens the press line (press-line.tsx), one sheet for
+//   every network, through the publishing actions handed in by the page;
 // - no trend line: the trend brief (press_trends) is not built, and there is
 //   no trend claim without a source.
 
@@ -80,6 +96,12 @@ export type PressTourDoorProps = {
   networks: NetworkStates;
   /** The engine's server actions, by the contract's names. */
   actions: CampaignActions;
+  /** Posting's server actions (publish-types.ts), by the contract's names. */
+  publish: PublishActions;
+  /** "Tell me when <network> opens" (waitlist.ts). */
+  waitlist: WaitlistActions;
+  /** A connect's answer on the way back from a network (?connected= / ?connect_error=): the press line opens on it. */
+  connectNote: ConnectNote | null;
 };
 
 type Length = 10 | 15 | 30;
@@ -124,9 +146,11 @@ type Key = {
   press: (() => void) | null;
   blocker: string | null;
   hint: string | null;
+  /** A second choice beside a lit one on the page (the wall's Keep take): drawn quiet, never lit. */
+  quiet?: boolean;
 };
 
-export function PressTourDoor({ characters, products, brandKits, openCampaignId, emailConfirmed, networks, actions }: PressTourDoorProps) {
+export function PressTourDoor({ characters, products, brandKits, openCampaignId, emailConfirmed, networks, actions, publish, waitlist, connectNote }: PressTourDoorProps) {
   const { t, locale } = useLocale();
   const m = t.pressTour;
   const ids = useId();
@@ -157,18 +181,24 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
   const [notes, setNotes] = useState<string | null>(null);
   const [selectedShot, setSelectedShot] = useState<number | null>(null);
   const [askCancel, setAskCancel] = useState(false);
+  // The press line: opened by its key, or on arrival back from connecting a
+  // network (or a #press-line link) once the ad is ready.
+  const [line, setLine] = useState<"auto" | "open" | "closed">(() =>
+    connectNote || (typeof window !== "undefined" && window.location.hash === "#press-line") ? "auto" : "closed",
+  );
+
+  // A connect's answer rides on the address once: take it off, so a reload doesn't say it again.
+  useEffect(() => {
+    if (!connectNote) return;
+    const url = new URL(window.location.href);
+    for (const k of ["connected", "connect_error", "network", "campaign"]) url.searchParams.delete(k);
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [connectNote]);
 
   // The phone's dock grows with its words; the page keeps exactly that much
   // room under the card, so its last line never hides behind the dock.
   const dockRef = useRef<HTMLDivElement>(null);
   const [dockRoom, setDockRoom] = useState(0);
-  useEffect(() => {
-    const el = dockRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setDockRoom(el.offsetHeight));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [loading]);
 
   // The ad left open, read once on arrival.
   useEffect(() => {
@@ -177,7 +207,11 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
     void (async () => {
       try {
         const res = await actions.getCampaign({ campaignId: openCampaignId });
-        if (live && res.ok) setCampaign(res.campaign);
+        if (live && res.ok) {
+          setCampaign(res.campaign);
+          // The press line opens on arrival only for an ad that is ready now.
+          if (res.campaign.stage !== "ready") setLine((l) => (l === "auto" ? "closed" : l));
+        }
       } catch {
         /* no ad shown is not a broken door: the person can plan a new one */
       } finally {
@@ -189,9 +223,10 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
     };
   }, [openCampaignId, actions]);
 
-  // While the engine works (planning, painting, checking), ask again.
+  // While the engine works (planning, painting, filming, checking, cutting,
+  // or a shot on the wall being filmed again), ask again.
   useEffect(() => {
-    if (!campaign || !isWorking(campaign.stage)) return;
+    if (!campaign || !(isWorking(campaign.stage) || wallBusy(campaign.shots))) return;
     const id = campaign.id;
     const timer = setTimeout(async () => {
       try {
@@ -254,8 +289,16 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
   // ── Where the ad is ──────────────────────────────────────────────────────
   const stage = campaign?.stage ?? null;
   const stills = campaign?.stills ?? [];
+  const shots = campaign?.shots ?? [];
+  const filmed = shots.length > 0;
   const quote = campaign?.quote ?? null;
-  const now = routeIndex(campaign && !isClosed(campaign.stage) ? campaign.stage : null);
+  const now = routeIndex(campaign && !isClosed(campaign.stage) ? campaign.stage : null, filmed);
+  const starts = Object.fromEntries(stills.map((x) => [x.shot, x.span[0]])) as Record<number, number>;
+  const wall = filmed ? wallMoments(shots, starts) : [];
+  const misses = wall.filter((x) => isMiss(x.verdict)).length;
+  const didnt = wall.filter((x) => x.verdict === "didnt_match").length;
+  const inFlight = wallBusy(shots);
+  const liveNetworks = Object.values(networks).filter((v) => v !== "comingSoon").length;
   const seconds = campaign ? plannedSeconds(stills) || campaign.lengthSeconds : length;
   const perShot = shotSeconds(stills);
   const decided = decidedCount(stills);
@@ -271,8 +314,22 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
       if (stage === "checking_keyframes") return m.routeChecking;
       return formatMsg(m.routeDecided, { d: decided, n: stills.length });
     }
-    // Filming, the press wall and the press line open in later updates.
-    return m.routeSoon;
+    if (!campaign || isClosed(campaign.stage)) return null;
+    // The stops ahead of an open ad say what they hold, as the artboards
+    // do: the film's price from the quote, and where the ad can post today.
+    if (stop === "line") return liveNetworks > 0 ? formatMsg(m.routeNetworks, { n: liveNetworks }) : m.routeSoon;
+    if (i > now) return stop === "film" && quote && !quote.trial ? formatMsg(m.creditsTag, { n: quote.animate }) : null;
+    if (stop === "film") return stage === "animating" ? m.routeFilming : m.routeFilmed;
+    if (stop === "wall") {
+      if (stage === "checking_shots") return m.routeChecking;
+      if (stage === "assembling" || stage === "signing") return m.routeCutting;
+      // The fixed words: "didn't match" counts only the moments that read so;
+      // a product missing is counted under its own word.
+      if (didnt > 0) return formatMsg(m.routeMissed, { n: didnt });
+      if (misses > 0) return `${misses} ${m.verdictProductMissing}`;
+      return formatMsg(m.routeRead, { n: wall.length });
+    }
+    return null;
   });
   const stops: RouteStopView[] = stopNames.map((name, i) => ({ name, sub: stopSubs[i] }));
 
@@ -334,18 +391,68 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
       blocker: server(campaign.blocker) ?? (stage === "painting" ? m.paintingNow : null),
       hint: stage === "planned" ? m.paintHint : null,
     };
+  } else if (stage === "ready") {
+    // The finished cut: the press line opens from here.
+    key = {
+      label: m.openLine,
+      price: null,
+      disabled: !campaign.master,
+      press: () => setLine("open"),
+      blocker: campaign.master ? null : m.cutMissing,
+      hint: m.openLineHint,
+    };
+  } else if (stage === "animating") {
+    // Filming: the key stays, shut, saying what we're doing.
+    key = {
+      label: formatMsg(m.filmKey, { n: stills.length }),
+      price: null,
+      disabled: true,
+      press: null,
+      blocker: server(campaign.blocker) ?? m.filmingNow,
+      hint: null,
+    };
+  } else if (filmed) {
+    // The press wall: Make the cut with the takes shown (free), once nothing
+    // is in our hands. While a shot waits, its Keep take is the lit choice
+    // and this one stays quiet; a cut we couldn't finish says so above it.
+    const campaignId = campaign.id;
+    const open = stage === "awaiting_approval" && !inFlight;
+    key = {
+      label: m.cutKey,
+      price: m.free,
+      disabled: !open || pending !== null,
+      press: () => void run("cut", () => actions.assembleNow({ campaignId }), null, campaignId),
+      // Shut while a shot is still in our hands: say so, when the engine names nothing else.
+      blocker: open ? null : (server(campaign.blocker) ?? (inFlight ? m.filmingNow : null)),
+      hint: open ? (campaign.blocker === CUT_STALLED ? server(campaign.blocker) : m.cutKeyHint) : null,
+      quiet: shots.some((x) => x.needsDecision),
+    };
   } else {
-    // Filming is not built in this round: the key is shown, priced and shut.
+    // Film: open once the engine names no blocker (every still decided, and
+    // filming switched on), priced from the quote's film line.
+    const campaignId = campaign.id;
     key = {
       label: formatMsg(m.filmKey, { n: stills.length }),
       price: quote ? priceTag(quote.animate) : null,
-      disabled: true,
-      press: null,
+      disabled: campaign.blocker !== null || pending !== null,
+      press: () => void run("film", () => actions.filmShots({ sendId: crypto.randomUUID(), campaignId }), null, campaignId),
       blocker: server(campaign.blocker),
       // The engine's own line already says filming is not open: no echo.
-      hint: campaign.blocker === BLOCK_FILMING_NOT_OPEN ? null : m.filmSoon,
+      hint: campaign.blocker === BLOCK_FILMING_NOT_OPEN ? null : m.filmHint,
     };
   }
+
+  // On a phone, while a shot on the wall waits, its card carries the choice
+  // and the quiet "Make the cut" sits under the wall (wall-phone): no dock,
+  // unless a press was refused and the dock must say so.
+  const dockShown = key !== null && (!(filmed && key.quiet) || error !== null);
+  useEffect(() => {
+    const el = dockRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setDockRoom(el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [loading, dockShown]);
 
   // ── Presses on a still ───────────────────────────────────────────────────
   const act: StillActions = {
@@ -355,6 +462,29 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
     repaint: (shot) =>
       campaign && void run("repaint", () => actions.repaintStill({ sendId: crypto.randomUUID(), campaignId: campaign.id, shot }), shot, campaign.id),
   };
+  // ── Presses on the wall ──────────────────────────────────────────────────
+  const wallAct: WallActions = {
+    keep: (shot, take) => campaign && void run("keep-take", () => actions.keepTake({ campaignId: campaign.id, shot, take }), shot, campaign.id),
+    // The price the wall showed rides with the press: a price that moved since is refused, never charged (MONEY-5).
+    refilm: (shot, note) =>
+      campaign &&
+      void run(
+        "refilm",
+        () =>
+          actions.refilmShot({
+            sendId: crypto.randomUUID(),
+            campaignId: campaign.id,
+            shot,
+            credits: campaign.shots.find((x) => x.shot === shot)?.refilmCredits ?? 0,
+            note: note || undefined,
+          }),
+        shot,
+        campaign.id,
+      ),
+    cut: (shot) => campaign && void run("cut-shot", () => actions.cutShot({ campaignId: campaign.id, shot }), shot, campaign.id),
+  };
+  const canDecideWall = stage === "awaiting_approval" && filmed && pending === null;
+
   const waiting = firstWaiting(stills);
   const shownShot = selectedShot ?? waiting?.shot ?? stills.find((x) => x.decision === "pending")?.shot ?? stills[0]?.shot ?? 1;
   const canRepaint = quote ? !quote.trial : true;
@@ -433,7 +563,7 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
         }}
         aria-disabled={key.disabled}
         aria-describedby={key.blocker || key.hint ? keyNoteId : undefined}
-        className={cn(s.key, className)}
+        className={cn(s.key, key.quiet && s.keyQuiet, className)}
       >
         {key.label}
         <SendIcon />
@@ -773,11 +903,44 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
     </div>
   );
 
-  const cancelControl = campaign && !isClosed(campaign.stage) && (
+  // The top line under the title, by where the ad is.
+  const subLine =
+    stage === "animating"
+      ? m.subFilming
+      : stage === "checking_shots"
+        ? m.subChecking
+        : stage === "assembling" || stage === "signing"
+          ? m.subCutting
+          : stage === "ready"
+            ? m.subReady
+            : filmed && stage === "awaiting_approval"
+              ? formatMsg(m.subWall, { n: wall.length })
+              : m.sub;
+
+  const wallProduct: WallProduct | null = product
+    ? { photo: productPhoto, shape: product.card.dna?.shape ?? [], marks: product.card.dna?.marks ?? [], palette: product.card.palette }
+    : null;
+
+  // A ready ad stays open for its press line; starting another only clears this page.
+  const newAdControl = stage === "ready" && (
+    <button
+      type="button"
+      onClick={() => {
+        setCampaign(null);
+        setError(null);
+      }}
+      className={QUIET}
+    >
+      {m.startNew}
+    </button>
+  );
+
+  // Not while we owe the cut (the server refuses it too: MONEY-1); once filmed, the question says the filming stays spent.
+  const cancelControl = campaign && !isClosed(campaign.stage) && stage !== "ready" && !campaign.cutOwed && (
     <div className="text-[12px]">
       {askCancel ? (
         <p className="flex flex-wrap items-center gap-x-3 text-[#9aa0ad]">
-          {m.cancelAsk}
+          {filmed ? m.cancelAskFilmed : m.cancelAsk}
           <button
             type="button"
             onClick={() => {
@@ -832,7 +995,7 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
               <h1 className="marquee bg-[linear-gradient(180deg,#fbf6ee_18%,#b9ad9c_100%)] bg-clip-text text-[26px] leading-none text-transparent md:text-[34px]">
                 {m.headline}
               </h1>
-              <p className="mt-2 max-w-[720px] text-[13px] leading-[1.45] text-[#9aa0ad] md:text-sm">{m.sub}</p>
+              <p className="mt-2 max-w-[720px] text-[13px] leading-[1.45] text-[#9aa0ad] md:text-sm">{subLine}</p>
             </div>
             {campaign && (
               <div className="hidden flex-none text-right text-xs leading-[1.6] text-[#858994] xl:block">
@@ -875,8 +1038,9 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
             className={cn(
               "mt-3.5 grid grid-cols-1 divide-y divide-[rgba(255,255,255,0.07)] rounded-[18px] bg-[rgba(255,255,255,0.022)] ring-1 ring-inset ring-[rgba(255,255,255,0.08)] xl:grid-cols-[1.08fr_1.2fr_0.82fr] xl:divide-x xl:divide-y-0",
               // On a phone the billing steps aside once the ad is planned,
-              // unless the star's answer is still needed (PT-05).
-              campaign && !starNeedsAnswer ? "max-md:hidden" : null,
+              // unless the star's answer is still needed (PT-05); once it is
+              // filmed, the wall takes the stage at every width (lock-desktop).
+              campaign && !starNeedsAnswer ? (filmed ? "hidden" : "max-md:hidden") : null,
             )}
           >
             {starTile}
@@ -884,61 +1048,157 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
             {angleTile}
           </div>
 
-          {/* The running order. */}
-          {/* On a phone the route line above already says where the stills are: the heading stays for screen readers only. */}
-          <div className={cn("mt-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1", campaign && stills.length > 0 && "max-md:sr-only")}>
-            <h2 className={LABEL}>{runningHead}</h2>
-            {stage === "awaiting_approval" && <p className="text-[12.5px] text-[#9aa0ad] max-md:hidden">{m.approveHint}</p>}
-          </div>
-
-          <div className={cn("mt-3 grid gap-6 xl:grid-cols-[minmax(0,1fr)_268px]", campaign && stills.length > 0 && !starNeedsAnswer && "max-md:mt-1")}>
-            <div className="min-w-0">
-              {campaign && stills.length > 0 ? (
+          {filmed && campaign ? (
+            <div className="mt-4">
+              {stage === "animating" && (
+                <p role="status" className="mb-3.5 rounded-2xl bg-[rgba(255,255,255,0.03)] px-4 py-3 text-[13px] leading-[1.45] text-[#9aa0ad] ring-1 ring-inset ring-[rgba(255,255,255,0.08)]">
+                  <b className="block text-[14px] font-semibold text-[#ecedf1]">{formatMsg(m.filmingTitle, { n: shots.length })}</b>
+                  {m.filmingBody}
+                </p>
+              )}
+              {campaign.creditsRefunded > 0 && (
+                <p role="status" className="mb-3 text-[12.5px] leading-[1.45] text-[#b9b2a6]">
+                  {formatMsg(m.creditsBack, { n: campaign.creditsRefunded })}
+                </p>
+              )}
+              {stage === "ready" && campaign.master ? (
                 <>
-                  {/* Side-by-side stills with their own keys need ~180 px each (a
-                      1024 px window with the sidebar); narrower, the phone's
-                      running order and its one decision card. */}
-                  <div className="hidden lg:block">
-                    <RunningOrder stills={stills} canAct={canAct} busyShot={busyShot} canRepaint={canRepaint} act={act} t={t} />
+                  <FinishedCut
+                    master={campaign.master}
+                    poster={stills.find((x) => x.imageUrl)?.imageUrl ?? null}
+                    productName={product?.card.name ?? null}
+                    t={t}
+                    keySlot={
+                      <div className="flex flex-col gap-2 max-md:hidden">
+                        {errorLine}
+                        {keyNote}
+                        {keyButton()}
+                        {newAdControl}
+                      </div>
+                    }
+                  />
+                  <div className="mt-6 hidden lg:block">
+                    <PressWall shots={shots} stills={stills} canAct={false} busyShot={null} act={wallAct} t={t} product={wallProduct} readOnly />
                   </div>
-                  <div className="lg:hidden">
-                    <PhoneRunningOrder
-                      stills={stills}
-                      canAct={canAct}
-                      busyShot={busyShot}
-                      canRepaint={canRepaint}
-                      act={act}
-                      t={t}
-                      selected={shownShot}
-                      onSelect={setSelectedShot}
-                    />
+                  <div className="mt-6 lg:hidden">
+                    <PhonePressWall shots={shots} stills={stills} canAct={false} busyShot={null} act={wallAct} t={t} product={wallProduct} readOnly />
+                    {newAdControl && <div className="mt-2 md:hidden">{newAdControl}</div>}
                   </div>
                 </>
-              ) : campaign && isClosed(campaign.stage) ? (
-                <p role="status" className="rounded-2xl bg-[rgba(255,255,255,0.03)] px-4 py-3.5 text-sm leading-[1.45] text-[#c6c9d1] ring-1 ring-inset ring-[rgba(255,255,255,0.08)]">
-                  {server(campaign.error) ?? m.adStopped}
-                </p>
               ) : (
-                emptyStage
+                <>
+                  {/* Three shots of three moments side by side, with why the worst missed and the choice beside it, need a wide card (lg); narrower, the phone's wall. */}
+                  <div className="hidden lg:block">
+                    <PressWall
+                      shots={shots}
+                      stills={stills}
+                      canAct={canDecideWall}
+                      busyShot={busyShot}
+                      act={wallAct}
+                      t={t}
+                      product={wallProduct}
+                      readOnly={stage !== "awaiting_approval"}
+                      keySlot={
+                        <>
+                          {errorLine}
+                          {keyNote}
+                          {keyButton()}
+                          {cancelControl}
+                        </>
+                      }
+                    />
+                    {stage !== "awaiting_approval" && (
+                      <div className="ml-auto mt-3.5 flex max-w-[300px] flex-col gap-2">
+                        {errorLine}
+                        {keyNote}
+                        {keyButton()}
+                      </div>
+                    )}
+                  </div>
+                  <div className="lg:hidden">
+                    <PhonePressWall
+                      shots={shots}
+                      stills={stills}
+                      canAct={canDecideWall}
+                      busyShot={busyShot}
+                      act={wallAct}
+                      t={t}
+                      product={wallProduct}
+                      readOnly={stage !== "awaiting_approval"}
+                    />
+                    {/* Between a phone and a wide card, the key sits under the wall; a phone carries it in its dock, except while a shot waits (then it is the quiet second choice, here). */}
+                    <div className={cn("mt-3 flex-col gap-2", dockShown ? "hidden md:flex" : "flex")}>
+                      {errorLine}
+                      {keyNote}
+                      {keyButton()}
+                    </div>
+                    {cancelControl && <div className="mt-2">{cancelControl}</div>}
+                  </div>
+                </>
               )}
             </div>
+          ) : (
+            <>
+            {/* The running order. */}
+            {/* On a phone the route line above already says where the stills are: the heading stays for screen readers only. */}
+            <div className={cn("mt-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1", campaign && stills.length > 0 && "max-md:sr-only")}>
+              <h2 className={LABEL}>{runningHead}</h2>
+              {stage === "awaiting_approval" && <p className="text-[12.5px] text-[#9aa0ad] max-md:hidden">{m.approveHint}</p>}
+            </div>
 
-            {/* The rail: the quote, what blocks the key, the key. A phone carries these in its dock. */}
-            <aside className="hidden flex-col gap-2 md:flex" aria-label={m.quoteLabel}>
-              {quote && <QuoteCard quote={quote} stills={stills.length} shotSeconds={perShot} m={m} />}
-              {errorLine}
-              {keyNote}
-              {keyButton()}
-              {cancelControl}
-            </aside>
-          </div>
-          {/* A phone has no rail: closing the ad sits under the stills, or an ad left open could not be let go for 7 days. */}
-          {cancelControl && <div className="mt-2 md:hidden">{cancelControl}</div>}
+            <div className={cn("mt-3 grid gap-6 xl:grid-cols-[minmax(0,1fr)_268px]", campaign && stills.length > 0 && !starNeedsAnswer && "max-md:mt-1")}>
+              <div className="min-w-0">
+                {campaign && stills.length > 0 ? (
+                  <>
+                    {/* Side-by-side stills with their own keys need ~180 px each (a
+                        1024 px window with the sidebar); narrower, the phone's
+                        running order and its one decision card. */}
+                    <div className="hidden lg:block">
+                      <RunningOrder stills={stills} canAct={canAct} busyShot={busyShot} canRepaint={canRepaint} act={act} t={t} />
+                    </div>
+                    <div className="lg:hidden">
+                      <PhoneRunningOrder
+                        stills={stills}
+                        canAct={canAct}
+                        busyShot={busyShot}
+                        canRepaint={canRepaint}
+                        act={act}
+                        t={t}
+                        selected={shownShot}
+                        onSelect={setSelectedShot}
+                      />
+                    </div>
+                  </>
+                ) : campaign && isClosed(campaign.stage) ? (
+                  <p role="status" className="rounded-2xl bg-[rgba(255,255,255,0.03)] px-4 py-3.5 text-sm leading-[1.45] text-[#c6c9d1] ring-1 ring-inset ring-[rgba(255,255,255,0.08)]">
+                    {server(campaign.error) ?? m.adStopped}
+                  </p>
+                ) : (
+                  emptyStage
+                )}
+              </div>
+
+              {/* The rail: the quote, what blocks the key, the key. A phone carries these in its dock. */}
+              <aside className="hidden flex-col gap-2 md:flex" aria-label={m.quoteLabel}>
+                {quote && <QuoteCard quote={quote} stills={stills.length} shotSeconds={perShot} m={m} />}
+                {errorLine}
+                {keyNote}
+                {keyButton()}
+                {cancelControl}
+              </aside>
+            </div>
+            {/* A phone has no rail: closing the ad sits under the stills, or an ad left open could not be let go for 7 days. */}
+            {cancelControl && <div className="mt-2 md:hidden">{cancelControl}</div>}
+            </>
+          )}
+
+          {/* The accounts it posts to (web only to connect), once any network can take a post. */}
+          {liveNetworks > 0 && <PostingAccounts publish={publish} campaignId={campaign?.id ?? null} connectNote={stage === "ready" && campaign?.master ? null : connectNote} />}
         </div>
       </DoorFrame>
 
       {/* The phone's dock: opaque, grows with its words, the key leaves the lamp its corner. */}
-      {key && (
+      {key && dockShown && (
         <>
           <div aria-hidden="true" className="md:hidden" style={{ height: dockRoom }} />
           <div ref={dockRef} className={s.dock}>
@@ -955,8 +1215,8 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
                 </p>
               )}
               {/* While a still waits, its decision card right above says the same (keep it, or repaint it): the dock does not repeat it. */}
-              {quote && !quote.trial && quote.policy.reshoot === "off" && !quote.policy.refund && !waiting && (
-                <p className="text-[11.5px] leading-[1.4] text-[#858994]">{m.policyOff}</p>
+              {quote && !quote.trial && quote.policy.reshoot === "off" && !quote.policy.refund && !waiting && !filmed && (
+                <p className="text-[11.5px] leading-[1.4] text-[#858994]">{spend === "paint" ? m.policyOff : m.policyFilm}</p>
               )}
               {key.hint && <p className="text-[11.5px] leading-[1.4] text-[#858994]">{key.hint}</p>}
             </div>
@@ -966,6 +1226,17 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
       )}
 
       {sheet && <ProductSheet initial={sheet.initial} star={star} brandKitId={kitId} onClose={() => setSheet(null)} onSaved={productSaved} />}
+
+      {campaign && stage === "ready" && campaign.master && line !== "closed" && (
+        <PressLine
+          campaign={campaign}
+          productName={product?.card.name ?? null}
+          publish={publish}
+          waitlist={waitlist}
+          connectNote={line === "auto" ? connectNote : null}
+          onClose={() => setLine("closed")}
+        />
+      )}
     </>
   );
 }

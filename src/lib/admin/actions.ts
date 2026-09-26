@@ -5,6 +5,7 @@ import { removeAllUserStorage } from "@/lib/profile/storage-buckets";
 import { erasePromoRedemptionEmail } from "@/lib/profile/promo-redemptions";
 import { removeUserRateHits } from "@/lib/rate-hits";
 import { deleteUserFaces } from "@/lib/faces/run";
+import { forgetSocialAccountsOnDelete } from "@/lib/social/forget";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/server";
 import { cancelStripeCustomerBilling } from "@/lib/stripe/cancel-customer";
@@ -18,6 +19,8 @@ import {
   MIN_IDENTITY_THRESHOLD,
 } from "@/lib/generations/identity-gate";
 import { SEEDANCE_LANE_KEY } from "@/lib/generations/providers/lane-setting";
+import { validatePressTourSetting } from "@/lib/press-tour/enabled";
+import { validateFilmLaneSetting } from "@/lib/press-tour/film-lane";
 
 // Called imperatively (not from a <form>) by AdminCommandBar, which polls
 // this on an interval to keep the nav's red-dot badges live without the
@@ -201,6 +204,11 @@ export async function deleteUser(formData: FormData) {
   // in the one table that outlives the account for the daily prune to finish
   // (lib/faces/run.ts). Best-effort by design — it never blocks the deletion.
   await deleteUserFaces(admin, userId);
+  // Their connected social accounts (Press Tour posting): the same call as
+  // the self-serve path, in the same place, for the same reason — queued
+  // posts cancelled, keys revoked at the network while the rows still exist,
+  // a failed revoke owed for the posts clock. Bounded; never blocks.
+  await forgetSocialAccountsOnDelete(admin, userId);
 
   // Auth delete BEFORE the storage purge — the same fail-loudly-first
   // ordering the self-serve path earned (round-two audit): the purge is
@@ -263,6 +271,12 @@ export async function toggleFeatureFlag(formData: FormData) {
 // before this list learns about them) still save, just length-capped, so the
 // page never blocks an operator from a new knob.
 function validateAppSetting(key: string, value: string): string | null {
+  // Press Tour's settings (pending/press-tour-01-flags.sql) and its film lane
+  // (press-tour-03b-film.sql): each reader fails closed on a malformed value,
+  // so a typo here would silently switch something off while the page said
+  // it saved. Both answer null for any key that isn't theirs.
+  const press = validatePressTourSetting(key, value) ?? validateFilmLaneSetting(key, value);
+  if (press) return press;
   switch (key) {
     case "video_model":
       return VIDEO_MODELS.some((m) => m.id === value)

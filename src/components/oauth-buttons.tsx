@@ -82,7 +82,9 @@ const PROVIDERS: { id: Provider; name: string; icon: (props: SVGProps<SVGSVGElem
 
 // `nativeReturn` is set only by a shell binary that carries the auth-callback
 // intent filter — see NATIVE_AUTH_UA_MARKER. The web path is untouched.
-export function OAuthButtons({ nativeReturn = false }: { nativeReturn?: boolean } = {}) {
+// `next` is an app connection's consent page to come back to (Press Tour
+// Cut 8; the login page validated it with lib/mcp/oauth/resume.ts). Web only.
+export function OAuthButtons({ nativeReturn = false, next = null }: { nativeReturn?: boolean; next?: string | null } = {}) {
   const { t } = useLocale();
   const o = t.auth.oauth;
   const [loadingProvider, setLoadingProvider] = useState<Provider | null>(null);
@@ -123,7 +125,9 @@ export function OAuthButtons({ nativeReturn = false }: { nativeReturn?: boolean 
         // In the app the provider must send the browser back to our own
         // private-use scheme, which the shell catches and walks into the
         // WebView. On the web it comes straight back to the callback route.
-        redirectTo: nativeReturn ? NATIVE_AUTH_REDIRECT : `${clientOrigin()}/auth/callback`,
+        redirectTo: nativeReturn
+          ? NATIVE_AUTH_REDIRECT
+          : `${clientOrigin()}/auth/callback${next ? `?next=${encodeURIComponent(next)}` : ""}`,
         // Take the redirect by hand on native — that is what lets the line
         // below open a Custom Tab instead of letting supabase-js call
         // window.location.assign. The PKCE verifier is written either way:

@@ -75,6 +75,13 @@ export default async function DeleteAccountPage() {
     deleteProject: t.projects.deleteProject,
     security: t.settingsHub.tabSecurity,
     disconnect: t.settings.disconnect,
+    // Press Tour (2026-09-26): a social account connected for posting, and
+    // an app (Claude, ChatGPT) connected to the account.
+    pressTour: t.nav.pressTour,
+    postingAccounts: t.pressTour.postingAccounts,
+    disconnectAccount: t.pressTour.disconnect,
+    connectedApps: t.connectApps.cardTitle,
+    disconnectApp: t.connectApps.cardRevoke,
   };
   const someItems = d.someDataItems.split("|").map((item) => formatMsg(item, itemLabels));
   const [otherBefore, otherAfter] = d.someDataOther.split("{email}");

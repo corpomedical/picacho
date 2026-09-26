@@ -13,6 +13,14 @@ describe("every push key answers to exactly one toggle", () => {
     expect(PREF_FOR_KEY.setReady).toBe("notify_render_ready");
     expect(PREF_FOR_KEY.setFailed).toBe("notify_render_failed");
   });
+  it("answers Press Tour's ad and post notices to the same switches (2026-09-26)", () => {
+    expect(PREF_FOR_KEY.adReady).toBe("notify_render_ready");
+    expect(PREF_FOR_KEY.postPublished).toBe("notify_render_ready");
+    expect(PREF_FOR_KEY.adFailed).toBe("notify_render_failed");
+    expect(PREF_FOR_KEY.adFailedRefunded).toBe("notify_render_failed");
+    expect(PREF_FOR_KEY.postFailed).toBe("notify_render_failed");
+    expect(PREF_FOR_KEY.reconnectNeeded).toBe("notify_render_failed");
+  });
   it("stays total when a key is added — a silent unmapped key would be un-toggleable", () => {
     for (const [key, pref] of Object.entries(PREF_FOR_KEY)) {
       expect(NOTIFICATION_PREFS as readonly string[], key).toContain(pref);

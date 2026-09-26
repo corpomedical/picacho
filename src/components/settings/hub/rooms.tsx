@@ -26,6 +26,7 @@ import { MfaCard } from "@/components/settings/mfa-card";
 import { ConnectedAccountRows } from "@/components/settings/connected-accounts-card";
 import { SessionsCard } from "@/components/settings/sessions-card";
 import { ApiKeysCard, type ApiKeyRow } from "@/components/settings/api-keys-card";
+import { ConnectedAppsCard, type ConnectedAppRow } from "@/components/settings/connected-apps-card";
 import {
   BlockedAccountsList,
   CookieChoiceControl,
@@ -226,12 +227,15 @@ export function SecurityTab({
   hasPassword,
   apiEnabled,
   apiKeys,
+  connectedApps = null,
 }: {
   t: Messages;
   email: string;
   hasPassword: boolean;
   apiEnabled: boolean;
   apiKeys: ApiKeyRow[];
+  /** Apps connected to the account (Press Tour Cut 8); null hides the section. */
+  connectedApps?: { apps: ConnectedAppRow[]; unavailable: boolean } | null;
 }) {
   const s = t.settings;
   const h = t.settingsHub;
@@ -262,6 +266,8 @@ export function SecurityTab({
       </SettingsSection>
       {/* Live credentials belong with the rest of them. */}
       {apiEnabled && <ApiKeysCard keys={apiKeys} enabled />}
+      {/* Apps signed in with this account: Claude, ChatGPT, a desktop tool. */}
+      {connectedApps && <ConnectedAppsCard apps={connectedApps.apps} unavailable={connectedApps.unavailable} />}
     </div>
   );
 }
