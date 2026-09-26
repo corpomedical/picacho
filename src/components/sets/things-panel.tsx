@@ -16,7 +16,7 @@
 import type { Messages } from "@/lib/i18n/messages/en";
 import type { ElementPhoto } from "@/lib/sets/elements";
 import { formatMsg } from "../../lib/i18n/format";
-import { LOOSE_MENU_BELOW, LoosePhotos } from "./cast-strip";
+import { LOOSE_MENU_BELOW, LOOSE_MENU_RIGHT, LoosePhotos } from "./cast-strip";
 
 type Words = Messages["sets"]["simple"];
 type Cast = Messages["sets"]["cast"];
@@ -132,9 +132,11 @@ export function ThingsStrip({
   return (
     <div className="flex max-w-full items-center gap-1.5">
       {strip}
+      {/* After the strip, at the screen's right: its menu hangs from the chip's right edge, so it stays on screen. */}
       <LoosePhotos
         {...loose}
         c={c}
+        menuClassName={LOOSE_MENU_RIGHT}
         buttonClassName="flex h-11 flex-none cursor-pointer items-center gap-2 rounded-full border border-dashed border-[rgba(214,217,224,0.4)] bg-[rgba(0,0,0,0.62)] pl-1 pr-3 backdrop-blur"
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- a private media thumbnail, like the filmstrip's */}

@@ -106,7 +106,7 @@ describe("the new layout", () => {
     expect(panelView).toContain("{chatThread}");
     expect(panelView).toContain("{chatComposer}");
     // The camera department is Advanced's (Helios Cut 3, step 15b).
-    expect(panelView).toContain("{advanced && rigTab && rigPanel(rigTab)}");
+    expect(panelView).toMatch(/\{advanced && rigTab && \(\s*<div className="[^"]*" data-step-shoot-rig>\s*\{rigPanel\(rigTab\)\}/);
     expect(view).toContain("{wide && simpleOn && !cutOpen && stepPanelView()}");
     // Film is one panel too (2026-09-24): the rehearsal, the beat, its move — the classic dock's Film tab, drawn by the same function.
     expect(panelView).toContain("{filmBeatView()}");
@@ -129,7 +129,7 @@ describe("the conversation in every step", () => {
 
   it("draws the thread under Set, Shoot and Film alike, one branch at a time", () => {
     expect(panelView().split("{chatThread}").length - 1).toBe(3);
-    expect(panelView()).toMatch(/\{advanced && rigTab && rigPanel\(rigTab\)\}\s*<\/div>\s*\{chatThread\}/);
+    expect(panelView()).toMatch(/\{advanced && rigTab && \(\s*<div className="min-h-0 max-h-\[45%\] shrink overflow-y-auto" data-step-shoot-rig>\s*\{rigPanel\(rigTab\)\}\s*<\/div>\s*\)\}\s*\{chatThread\}/);
     expect(panelView()).toMatch(/\{rigPanel\("film"\)\}\s*<\/div>\s*\{chatThread\}/);
   });
 
@@ -141,7 +141,11 @@ describe("the conversation in every step", () => {
     expect(panelView()).toContain('const split = !elementCard && (!simpleShooting || simpleStep === "shoot");');
     expect(panelView()).toContain('<div className={split ? "flex min-h-0 flex-1 flex-col" : "min-h-0 flex-1 overflow-y-auto"}');
     expect(panelView()).toContain('<div className="max-h-[60%] flex-none overflow-y-auto" data-step-film>');
-    expect(panelView()).toContain('<div className="max-h-[60%] flex-none overflow-y-auto" data-step-shoot-controls>');
+    // Shoot's chips sit in no scroll: their menus hang below them over the thread, and a scroll
+    // box cut them off at its foot (review of Cut 3). Only Advanced's camera department scrolls.
+    expect(panelView()).toContain('<div className="flex-none" data-step-shoot-controls>');
+    expect(panelView()).not.toMatch(/overflow-y-auto" data-step-shoot-controls/);
+    expect(panelView()).toContain('<div className="min-h-0 max-h-[45%] shrink overflow-y-auto" data-step-shoot-rig>');
     // The thread is its own scroll where it is a flex child.
     expect(view).toMatch(/const chatThread = \(\s*<div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">/);
   });
@@ -204,6 +208,9 @@ describe("the cast strip's facts in the list", () => {
     expect(none.startsWith("<nav")).toBe(true);
     // The list scrolls, so its menu opens downward; the strip's opens upward, outside the strip's own scroll.
     expect(panel).toContain("menuClassName={LOOSE_MENU_BELOW}");
+    // A phone's strip ends at the screen's right, so its menu hangs from the chip's right edge (review of Cut 3).
+    expect(panel).toContain("menuClassName={LOOSE_MENU_RIGHT}");
+    expect(read("../../components/sets/cast-strip.tsx")).toContain('export const LOOSE_MENU_RIGHT = MENU.replace("left-0", "right-0");');
     expect(view).toContain("loose={panelLoose}");
     expect(view).toContain("loose: resolved.loose.map((l) => l.photo),");
   });

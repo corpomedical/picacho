@@ -37,6 +37,8 @@ const DRAG_SLOP_PX = 6;
 const ITEM = "flex cursor-pointer items-center gap-2 rounded-[8px] px-2.5 py-1.5 text-left text-[12px] text-[#c6c9d1] hover:bg-[rgba(255,255,255,0.05)] hover:text-[#ecedf1]";
 /** The loose photos' menu opening downward: for a list that scrolls, where one opening upward would be cut off at its top. */
 export const LOOSE_MENU_BELOW = MENU.replace("bottom-full", "top-full").replace("mb-2", "mt-2");
+/** The loose photos' menu hung from the chip's right edge: for a phone's strip, whose chip sits at the screen's right, where one opening rightward ran off the screen (review of Cut 3). */
+export const LOOSE_MENU_RIGHT = MENU.replace("left-0", "right-0");
 
 /**
  * Photos on nothing (their thing changed or left the set, or they came from

@@ -82,6 +82,10 @@ describe("when the page shows it", () => {
   it("× and Close put it away for good, in a try", () => {
     const close = between("function closeTips() {", "\n  }\n");
     expect(close).toContain("setTips(null);");
+    // Focus goes to the words box on a computer, not to the page's top, when the card took it with it (review of Cut 3).
+    expect(close).toContain('const hadFocus = document.activeElement?.closest("[data-first-visit]") != null;');
+    expect(close).toContain("if (hadFocus && wide) draftRef.current?.focus();");
+    expect(close.indexOf("const hadFocus")).toBeLessThan(close.indexOf("setTips(null);"));
     expect(close).toMatch(/try \{\s*window\.localStorage\.setItem\(HELIOS_TOUR_KEY, "1"\);\s*\} catch \{/);
     expect(view).toContain("onClose={closeTips}");
     // The tips stay out of the Escape chain: closeTips is declared and handed to the card, nothing else.
@@ -121,9 +125,19 @@ describe("where it sits", () => {
   it("a phone with its conversation open: between the header and the thread", () => {
     const aside = between("{!wide && (\n          <aside", "</aside>");
     const header = aside.indexOf("{chatHeader}");
-    const tip = aside.indexOf('{chatOpen && tipsShown && <div className="flex-none px-3.5 pt-3">{firstVisitView("w-full")}</div>}');
+    const tip = aside.indexOf('{chatOpen && tipsShown && <div className="min-h-0 shrink overflow-y-auto px-3.5 pt-3">{firstVisitView("w-full")}</div>}');
     expect(tip).toBeGreaterThan(header);
     expect(tip).toBeLessThan(aside.indexOf("{chatOpen && chatThread}"));
+  });
+
+  it("gives way on a phone, never the words box: it shrinks and scrolls, and the composer keeps its height", () => {
+    // At 42% of a 390x844 phone the header, the card and the composer did not fit, and the
+    // priced send was cut off (review of Cut 3). The strip must never be flex-none again.
+    const aside = between("{!wide && (\n          <aside", "</aside>");
+    const strip = aside.slice(aside.indexOf("{chatOpen && tipsShown && <div"), aside.indexOf("{firstVisitView(\"w-full\")}"));
+    for (const cls of ["min-h-0", "shrink", "overflow-y-auto"]) expect(strip, cls).toContain(cls);
+    expect(strip).not.toContain("flex-none");
+    expect(view).toContain('className="relative flex-none border-t border-[rgba(255,255,255,0.07)] px-3.5 pb-3.5 pt-3"');
   });
 
   it("is one drawing for all three", () => {

@@ -47,6 +47,8 @@ describe("the state", () => {
     expect(keys).toContain("if (!lean) setViewMode(m);");
     expect(keys).toContain('if (lean && (id === "camera" || id === "light" || id === "mark")) setAdvancedOn(true);');
     expect(keys).toContain("if (!lean) setStageTool(id);");
+    // And go to Shoot, where the camera department and the mark chip are drawn (review of Cut 3).
+    expect(keys).toContain('if ((simpleOn || simplePhone) && (id === "camera" || id === "light" || id === "mark")) setSimpleStep("shoot");');
     // ⌘K's camera department turns it on too.
     expect(view).toMatch(/setRigOpen: \(open\) => \{[\s\S]{0,200}if \(open && lean\) setAdvancedOn\(true\);/);
   });
@@ -61,8 +63,21 @@ describe("the toggle", () => {
     expect(toggle).toContain("{lean && advancedInUse && (");
     expect(toggle).toContain('<span className="sr-only">{sw.advancedInUse}</span>');
     expect(toggle).toContain("h-1.5 w-1.5 rounded-full bg-[#e0a468]");
+    // A glyph below 640 px, its word kept for screen readers, so a phone's bar fits with History and Download back (review of Cut 3).
+    expect(toggle).toContain('<span className="sr-only sm:not-sr-only">{sw.advanced}</span>');
+    expect(toggle).toContain('className="h-4 w-4 sm:hidden" aria-hidden');
+    expect(toggle).toContain("title={sw.advanced}");
+    // No aria-label, which would drop the dot's words from the button's name.
+    expect(toggle).not.toContain("aria-label=");
     // Before History, in the bar's children.
     expect(view.indexOf("{(simpleOn || simplePhone) && (")).toBeLessThan(view.indexOf('onClick={() => toggleMenu("history")}'));
+  });
+
+  it("leaves History's number alone on a phone's bar in the new layout, and Classic's as it was", () => {
+    const history = between('onClick={() => toggleMenu("history")}', "<Chevron />");
+    expect(history).toContain("{simplePhone ? (");
+    expect(history).toContain('<span className="tabular-nums sm:hidden">{frameNumber}</span>');
+    expect(history).toContain("aria-label={`${s.historyLabel} · ${formatMsg(s.revisionN, { n: frameNumber })}`}");
   });
 
   it("says a hidden pose, gaze, picked look or rig setting is in force", () => {
@@ -144,7 +159,8 @@ describe("the first Shoot screen", () => {
   });
 
   it("keeps the camera department in the Shoot panel for Advanced", () => {
-    expect(between("  function stepPanelView() {", "  function setupChipsView(")).toContain("{advanced && rigTab && rigPanel(rigTab)}");
+    const panel = between("  function stepPanelView() {", "  function setupChipsView(");
+    expect(panel).toMatch(/\{advanced && rigTab && \(\s*<div className="[^"]*" data-step-shoot-rig>\s*\{rigPanel\(rigTab\)\}/);
   });
 
   it("names the engine as text where its pill steps aside", () => {

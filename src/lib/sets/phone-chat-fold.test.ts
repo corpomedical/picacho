@@ -53,6 +53,14 @@ describe("the phone's conversation folds", () => {
     expect(view).not.toContain("onClick={() => setChatOpen(true)} className={`absolute bottom-3.5 right-3.5 z-30");
   });
 
+  it("says a refused or failed press while folded, where the frame card's error line is away", () => {
+    // The one priced Shoot is the composer's empty send (pressShoot), which does not unfold:
+    // folded, its errors lived only in the thread (review of Cut 3).
+    expect(phone).toContain("{!chatOpen && (error || rigError) && (");
+    expect(phone).toContain("{localizeServerText(error || rigError, t)}");
+    expect(phone.indexOf("{!chatOpen && (error || rigError) && (")).toBeLessThan(phone.indexOf("{chatComposer}"));
+  });
+
   it("unfolds when a message goes, so its answer shows", () => {
     const send = between("async function send(text: string", "\n  }\n");
     const guard = send.indexOf("if (!message || reading || shooting || editingSet || !ready) return;");

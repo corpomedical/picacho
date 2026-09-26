@@ -1263,7 +1263,12 @@ export function SetView({
   }, [ready, initialShots.length]);
   /** × and Close: the tips are away, and this browser has seen them. */
   function closeTips() {
+    // The card goes with the focused button in it: on a computer, focus
+    // moves to the words box the tips lead to, instead of dropping to the
+    // page's top (review of Cut 3). A phone's keyboard is left down.
+    const hadFocus = document.activeElement?.closest("[data-first-visit]") != null;
     setTips(null);
+    if (hadFocus && wide) draftRef.current?.focus();
     try {
       window.localStorage.setItem(HELIOS_TOUR_KEY, "1");
     } catch {
@@ -3539,6 +3544,9 @@ export function SetView({
       },
       tool: (id) => {
         if (lean && (id === "camera" || id === "light" || id === "mark")) setAdvancedOn(true);
+        // In the new layout the camera department and the mark chip are Shoot's: from Set they
+        // opened nothing, and M left an unseen click-away over the page (review of Cut 3).
+        if ((simpleOn || simplePhone) && (id === "camera" || id === "light" || id === "mark")) setSimpleStep("shoot");
         if (id === "select" || id === "move" || id === "turn" || id === "measure") {
           if (!lean) setStageTool(id);
         } else if (id === "camera" || id === "light") {
@@ -9145,11 +9153,14 @@ export function SetView({
     const rigTab = dockTab === "camera" || dockTab === "light" || dockTab === "look" ? dockTab : null;
     // Shoot and Film carry the conversation under their own controls (Helios
     // Cut 3, step 13), so a reply sent from either shows there. They split
-    // the panel: the controls on top, scrolling on their own up to 60% of
-    // it, and the thread below in its own scroll. The thread's move to its
-    // newest line (threadEndRef) then scrolls the thread alone, and never
-    // takes the chips or the beat's controls off the screen. Set and a
-    // thing's card keep the one scroll they had.
+    // the panel: the controls on top and the thread below in its own scroll.
+    // Film's controls scroll on their own up to 60% of it (their pickers are
+    // native selects). Shoot's chips sit in no scroll, since their menus hang
+    // below them over the thread and a scroll box cut them off (review of
+    // Cut 3); only Advanced's camera department scrolls, up to 45%. The
+    // thread's move to its newest line (threadEndRef) then scrolls the thread
+    // alone, and never takes the chips or the beat's controls off the
+    // screen. Set and a thing's card keep the one scroll they had.
     const split = !elementCard && (!simpleShooting || simpleStep === "shoot");
     // Lean, the composer's engine pill is Advanced's (Helios Cut 3, step
     // 15b): the engine the stills are drawn with, and what the next press
@@ -9177,16 +9188,22 @@ export function SetView({
             </>
           ) : simpleStep === "shoot" ? (
             <>
-              <div className="max-h-[60%] flex-none overflow-y-auto" data-step-shoot-controls>
+              {/* The chips sit in no scroll of their own: their menus hang below them, over the
+                  thread, and a scroll box would cut them off at its foot (review of Cut 3). */}
+              <div className="flex-none" data-step-shoot-controls>
                 <div className="flex flex-col gap-3 border-b border-[rgba(255,255,255,0.07)] p-4" data-step-shoot>
                   <h2 className="text-[15px] font-semibold text-[#ecedf1]">{sw.shotTitle}</h2>
                   {engineLine}
                   <p className="text-[12.5px] leading-snug text-[#c6c9d1]">{sw.shotHint}</p>
                   {!viewingShot && setupChipsView(true)}
                 </div>
-                {/* The camera department is Advanced's (Helios Cut 3, step 15b). */}
-                {advanced && rigTab && rigPanel(rigTab)}
               </div>
+              {/* The camera department is Advanced's (Helios Cut 3, step 15b), and scrolls on its own. */}
+              {advanced && rigTab && (
+                <div className="min-h-0 max-h-[45%] shrink overflow-y-auto" data-step-shoot-rig>
+                  {rigPanel(rigTab)}
+                </div>
+              )}
               {chatThread}
             </>
           ) : (
@@ -10046,7 +10063,7 @@ export function SetView({
                 // to shoot anyway (found in the rundown, 2026-09-16).
                 else if (!justTalk) void pressShoot();
               }}
-              className="relative border-t border-[rgba(255,255,255,0.07)] px-3.5 pb-3.5 pt-3"
+              className="relative flex-none border-t border-[rgba(255,255,255,0.07)] px-3.5 pb-3.5 pt-3"
             >
               {/* The "/" menu: ⌘K's own commands, free, the Shoot row at its price (Cut 2, step 11b). */}
               {slashQuery !== null && (
@@ -10324,18 +10341,26 @@ export function SetView({
           </button>
         )}
         {/* Advanced (Helios Cut 3, step 15a): the new layout's one door to everything its first screens leave out,
-            in the History button's quiet style. Its dot says a hidden setting still rides the stills. */}
+            in the History button's quiet style. Its dot says a hidden setting still rides the stills. Below 640 px
+            it is a sliders glyph, its word kept for screen readers: with History and Download back, the word
+            pushed Download off a phone's bar in Spanish, Portuguese and Italian (review of Cut 3). */}
         {(simpleOn || simplePhone) && (
           <button
             type="button"
             onClick={() => setAdvancedOn(!advanced)}
             aria-pressed={advanced}
+            title={sw.advanced}
             data-advanced
-            className={`flex h-8 flex-none cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2 text-xs font-medium md:px-2.5 ${
+            className={`flex h-8 min-w-8 flex-none cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-[6px] px-1.5 text-xs font-medium sm:px-2 md:px-2.5 ${
               advanced ? "bg-[#2a2b33] text-[#ecedf1]" : "text-[#d6d9e0] hover:text-[#ecedf1]"
             }`}
           >
-            {sw.advanced}
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="h-4 w-4 sm:hidden" aria-hidden>
+              <path d="M2 4h6M11 4h3M2 12h3M8 12h6" />
+              <circle cx="9.5" cy="4" r="1.5" />
+              <circle cx="6.5" cy="12" r="1.5" />
+            </svg>
+            <span className="sr-only sm:not-sr-only">{sw.advanced}</span>
             {lean && advancedInUse && (
               <>
                 <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[#e0a468]" data-advanced-dot />
@@ -10356,7 +10381,15 @@ export function SetView({
             className="flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2 text-xs font-medium text-[#d6d9e0] hover:text-[#ecedf1] disabled:cursor-default disabled:text-[#9aa0ad] disabled:opacity-100 md:px-2.5"
           >
             <span className="hidden xl:inline">{s.historyLabel} · </span>
-            {formatMsg(s.revisionN, { n: frameNumber })}
+            {/* A phone's bar in the new layout shows the number alone; the button's name keeps the words (review of Cut 3). */}
+            {simplePhone ? (
+              <>
+                <span className="hidden sm:inline">{formatMsg(s.revisionN, { n: frameNumber })}</span>
+                <span className="tabular-nums sm:hidden">{frameNumber}</span>
+              </>
+            ) : (
+              formatMsg(s.revisionN, { n: frameNumber })
+            )}
             <Chevron />
           </button>
           {menu === "history" && (
@@ -11512,8 +11545,17 @@ export function SetView({
             className={`z-30 flex min-h-0 flex-none flex-col ${chatOpen ? "h-[42%] overflow-hidden" : "overflow-visible"} border-t border-[rgba(255,255,255,0.11)] bg-[#16171c] ${PANEL_BG} border-x-0 border-b-0 shadow-none`}
           >
             {chatHeader}
-            {chatOpen && tipsShown && <div className="flex-none px-3.5 pt-3">{firstVisitView("w-full")}</div>}
+            {/* The card gives way, never the words box: at 42% of a phone the header, the card and the
+                composer did not fit, and the priced send was cut off (review of Cut 3). It shrinks and
+                scrolls inside; the header and the composer keep their height. */}
+            {chatOpen && tipsShown && <div className="min-h-0 shrink overflow-y-auto px-3.5 pt-3">{firstVisitView("w-full")}</div>}
             {chatOpen && chatThread}
+            {/* Folded, the thread with the frame card's error line is away: a refused or failed press says why here (review of Cut 3). */}
+            {!chatOpen && (error || rigError) && (
+              <p className="border-t border-[rgba(255,255,255,0.07)] px-3.5 py-2 text-[12px] text-red-400" aria-live="polite" data-folded-error>
+                {localizeServerText(error || rigError, t)}
+              </p>
+            )}
             {chatComposer}
           </aside>
         )}
