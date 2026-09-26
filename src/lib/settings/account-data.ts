@@ -101,6 +101,8 @@ export async function loadAllowances(
     periodStart: string | null;
     setsOn: boolean;
     freeReferenceUsed: number;
+    /** Granted the Producer by an admin: one assistant allowance, Elite's, each month (api/agent/chat). */
+    producerGranted?: boolean;
   },
 ): Promise<Allowances> {
   const planActive = a.planStatus === null || a.planStatus === "active";
@@ -129,7 +131,12 @@ export async function loadAllowances(
       { key: "photos", left: left(FREE_REFERENCE_PHOTOS, a.freeReferenceUsed), cap: FREE_REFERENCE_PHOTOS, asPercent: false },
     ];
     if (assists !== null) items.push({ key: "assists", left: left(FREE_PROMPT_ASSIST_LIMIT, assists), cap: FREE_PROMPT_ASSIST_LIMIT, asPercent: false });
-    if (units !== null) items.push({ key: "assistant", left: left(FREE_CHAT_UNIT_LIMIT, units), cap: FREE_CHAT_UNIT_LIMIT, asPercent: true });
+    // Granted the Producer: its assistant allowance is Elite's and monthly, which
+    // this card ("for the life of a free account") would misstate — the
+    // lamp's own dial shows it instead.
+    if (units !== null && !a.producerGranted) {
+      items.push({ key: "assistant", left: left(FREE_CHAT_UNIT_LIMIT, units), cap: FREE_CHAT_UNIT_LIMIT, asPercent: true });
+    }
     return { lifetime: true, items };
   }
 
@@ -152,7 +159,7 @@ export async function loadAllowances(
   if (!Number.isFinite(assistCap)) items.push({ key: "assists", left: null, cap: null, asPercent: false });
   else if (assists !== null) items.push({ key: "assists", left: left(assistCap, assists), cap: assistCap, asPercent: false });
   if (units !== null) {
-    const cap = PLAN_CHAT_UNIT_LIMITS[a.plan];
+    const cap = a.producerGranted ? PLAN_CHAT_UNIT_LIMITS.elite : PLAN_CHAT_UNIT_LIMITS[a.plan];
     items.push({ key: "assistant", left: left(cap, units), cap, asPercent: true });
   }
   return { lifetime: false, items };

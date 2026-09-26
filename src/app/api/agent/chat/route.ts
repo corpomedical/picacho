@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { readProducerGrant } from "@/lib/producer/enabled";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { isChatAgentEnabled } from "@/lib/agent/enabled";
@@ -137,10 +138,17 @@ export async function POST(request: NextRequest) {
 
   // Free accounts meter against a LIFETIME total (no billing anchor to reset
   // against); paid accounts against the billing period, like every other meter.
-  const cap = isFree ? FREE_CHAT_UNIT_LIMIT : PLAN_CHAT_UNIT_LIMITS[plan];
-  const since = isFree
-    ? new Date(0).toISOString()
-    : monthlyWindowStart(profile?.current_period_start).toISOString();
+  // An account an admin granted the Producer to (2026-09-26) has ONE assistant
+  // allowance, Elite's, each month: the Producer and this chat write to the
+  // same ledger (record_agent_units sums every row), so metering this chat
+  // against the plan's own cap would let the Producer's turns use it up — for
+  // good on a free account (review of the grant, 2026-09-26).
+  const producerGranted = await readProducerGrant(admin, user.id);
+  const cap = producerGranted ? PLAN_CHAT_UNIT_LIMITS.elite : isFree ? FREE_CHAT_UNIT_LIMIT : PLAN_CHAT_UNIT_LIMITS[plan];
+  const since =
+    isFree && !producerGranted
+      ? new Date(0).toISOString()
+      : monthlyWindowStart(profile?.current_period_start).toISOString();
 
   // Reserve BEFORE the call, at the worst-case cost for the mode actually
   // being run. The real cost is unknowable until the turn ends, and someone

@@ -768,6 +768,33 @@ export async function setApiAccess(formData: FormData) {
   revalidatePath(`/admin/users/${userId}`);
 }
 
+// The Producer for one account (2026-09-26, operator: "Give me an option to
+// grant users access to The assistant in the admin area"). Any plan, even
+// while producer_elite is off; it meters against Elite's assistant
+// allowance (lib/producer/enabled.ts). Revoking takes the lamp away on their
+// next page; their conversation and notes are kept.
+export async function setProducerAccess(formData: FormData) {
+  const { admin } = await requireAdmin();
+  const userId = formData.get("user_id") as string;
+  const enabled = formData.get("producer_access") === "true";
+
+  const { error } = await admin
+    .from("profiles")
+    .update({ producer_access: enabled })
+    .eq("id", userId);
+  if (error) {
+    console.error("setProducerAccess: producer_access update failed", error);
+    // Before producer-access.sql runs the column is missing: say what to do.
+    const message = /producer_access/.test(error.message)
+      ? "Run supabase/applied/2026-09-26/producer-access.sql in Supabase first, then grant again."
+      : error.message;
+    redirect(`/admin/users/${userId}?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidatePath(`/admin/users/${userId}`);
+  revalidatePath("/admin/users");
+}
+
 // Manual controls for the provider circuit breaker (see
 // lib/generations/model-health.ts).
 //

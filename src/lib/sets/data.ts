@@ -11,7 +11,7 @@ import { DEFAULT_IDENTITY_THRESHOLD, resolveIdentityThresholdSetting } from "@/l
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { isPhotoSetsEnabled } from "@/lib/sets/enabled";
 import { isLiveEnabled, isLiveOpenToPlans, liveAllowed } from "@/lib/live/enabled";
-import { producerVisible, type ProducerProfile } from "@/lib/producer/enabled";
+import { producerVisible, readProducerGrant, type ProducerProfile } from "@/lib/producer/enabled";
 import { readPhotoSources } from "@/lib/sets/photo";
 import {
   isCurrentSetThumb,
@@ -231,17 +231,22 @@ export async function getSetsHome(): Promise<SetsHomeData> {
  * Whether this page carries the Producer's lamp — the app layout's own
  * question (producer/enabled.ts producerVisible), so the set chat offers
  * "Ask the Producer" only where the lamp it opens is on the page (Helios
- * Cut 2, step 12). Only admins and Elite can have it: everyone else is
- * answered with no read. An Elite account's standing (plan_status) is the
- * one fact setsAccess doesn't read, so it is read here, for Elite only.
+ * Cut 2, step 12). Admins, Elite and accounts an admin granted it to can
+ * have it: an admin is answered with no read, anyone else with the grant's
+ * one read first. An account's standing (plan_status) is the one fact
+ * setsAccess doesn't read, so it is read here, for Elite and granted
+ * accounts only.
  */
 async function producerOnFor(access: { supabase: SupabaseClient; userId: string; plan: string; isAdmin: boolean }): Promise<boolean> {
-  if (!access.isAdmin && access.plan !== "elite") return false;
   try {
     let profile: ProducerProfile = { plan: access.plan, role: access.isAdmin ? "admin" : null };
     if (!access.isAdmin) {
+      // An admin's grant opens it on any plan (read on its own: before
+      // producer-access.sql runs it reads as not granted).
+      const granted = await readProducerGrant(access.supabase, access.userId);
+      if (!granted && access.plan !== "elite") return false;
       const { data } = await access.supabase.from("profiles").select("plan, plan_status, role, status").eq("id", access.userId).maybeSingle();
-      profile = (data as ProducerProfile) ?? null;
+      profile = data ? { ...(data as Record<string, unknown>), producer_access: granted } : null;
     }
     return await producerVisible(access.supabase, profile, access.isAdmin);
   } catch {

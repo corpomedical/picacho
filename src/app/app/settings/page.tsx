@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { readProducerGrant } from "@/lib/producer/enabled";
 import { loadProducerLook, loadProducerName, loadProducerVoices } from "@/lib/producer/actions";
 import { redirect } from "next/navigation";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
@@ -241,15 +242,18 @@ export default async function SettingsPage({
   if (activeTab === "overview") {
     const [factors, allowances] = await Promise.all([
       supabase.auth.mfa.listFactors(),
-      loadAllowances(supabase, {
-        userId,
-        plan,
-        planStatus,
-        isAdmin,
-        periodStart,
-        setsOn,
-        freeReferenceUsed: (profile?.free_reference_generations_used ?? 0) as number,
-      }),
+      readProducerGrant(supabase, userId).then((producerGranted) =>
+        loadAllowances(supabase, {
+          userId,
+          plan,
+          planStatus,
+          isAdmin,
+          periodStart,
+          setsOn,
+          freeReferenceUsed: (profile?.free_reference_generations_used ?? 0) as number,
+          producerGranted,
+        }),
+      ),
     ]);
     overview = { twoStepOn: (factors.data?.totp ?? []).length > 0, allowances };
   }

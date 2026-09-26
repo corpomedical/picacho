@@ -10,10 +10,13 @@ import {
   setUserRole,
   setUserStatus,
 } from "@/lib/admin/actions";
+import { isProducerEnabled, isProducerOpenToElite, producerAccessState } from "@/lib/producer/enabled";
+import { PRODUCER_UNIT_USD } from "@/lib/producer/prices";
+import { ProducerAccessRow } from "@/components/admin/producer-access-row";
 import { getMonthlyUsage } from "@/lib/generations/actions";
 import { getUserEconomics } from "@/lib/admin/economics";
 import { UserEconomicsCard } from "@/components/admin/user-economics-card";
-import { PLAN_LIMITS, type PlanId } from "@/lib/plans";
+import { PLAN_CHAT_UNIT_LIMITS, PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SubmitButton } from "@/components/ui/submit-button";
@@ -47,6 +50,14 @@ export default async function AdminUserDetailPage({
 
   const { data: user } = await supabase.from("profiles").select("*").eq("id", id).single();
   if (!user) notFound();
+
+  // The assistant (the Producer) for this account: who has it and why
+  // (lib/producer/enabled.ts producerAllowed). The grant's column arrives
+  // with producer-access.sql; until then the row simply doesn't carry it.
+  const [producerOn, producerOpenToElite] = await Promise.all([
+    isProducerEnabled(supabase),
+    isProducerOpenToElite(supabase),
+  ]);
 
   const [
     { data: characters },
@@ -363,6 +374,16 @@ export default async function AdminUserDetailPage({
               migration. Their existing keys stop working the moment it&apos;s revoked.
             </p>
           </div>
+
+          <ProducerAccessRow
+            userId={user.id}
+            state={producerAccessState(user, producerOpenToElite)}
+            granted={user.producer_access === true}
+            grantReady={"producer_access" in user}
+            producerOn={producerOn}
+            eliteUnits={PLAN_CHAT_UNIT_LIMITS.elite}
+            eliteUnitsUsd={PLAN_CHAT_UNIT_LIMITS.elite * PRODUCER_UNIT_USD}
+          />
 
           <div className="mt-6 border-t border-neutral-100 pt-4">
             <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Billing</p>

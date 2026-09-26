@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { PRODUCER_NEEDS_ELITE, PRODUCER_NOT_OPEN, PRODUCER_SUSPENDED, PRODUCER_UNAVAILABLE } from "@/lib/producer/enabled";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   clearProducerNotes,
@@ -152,6 +153,20 @@ export function ProducerLamp({
   look: LampLook;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  // Refused because it is no longer theirs (a grant revoked, the plan or the
+  // switch changed, the account suspended): the layout that put the lamp on
+  // the page is drawn again without it. The app's layout isn't redrawn on an
+  // ordinary page change, so without this the lamp would linger until a full
+  // reload, refusing every message (review of the grant, 2026-09-26).
+  const goneIfRefused = useCallback(
+    (error: string | null | undefined) => {
+      if (error === PRODUCER_NOT_OPEN || error === PRODUCER_NEEDS_ELITE || error === PRODUCER_SUSPENDED || error === PRODUCER_UNAVAILABLE) {
+        router.refresh();
+      }
+    },
+    [router],
+  );
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"chat" | "notes">("chat");
   const [name, setName] = useState(initialName);
@@ -255,6 +270,7 @@ export function ProducerLamp({
     const r = await loadProducer();
     if (r.error !== null) {
       setLoadError(r.error || W.loadFailed);
+      goneIfRefused(r.error);
       return;
     }
     setName(r.snapshot.name);
@@ -265,7 +281,7 @@ export function ProducerLamp({
     setLoaded(true);
     if (r.snapshot.watch.length > 0) void markWatchSeen();
     setDot(0);
-  }, []);
+  }, [goneIfRefused]);
 
   useEffect(() => {
     if (open && !loaded) void load();
@@ -521,6 +537,7 @@ export function ProducerLamp({
       if (!res.ok || !res.body) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
         if (res.status === 402 && usage) setUsage({ ...usage, used: usage.cap });
+        if (res.status === 403) goneIfRefused(body?.error);
         throw new Error(body?.error ?? "That didn't go through. Try again.");
       }
       if ((res.headers.get("content-type") ?? "").includes("application/json")) {

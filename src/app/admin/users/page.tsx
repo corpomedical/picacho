@@ -15,6 +15,8 @@ const TABS = [
   { id: "active", label: "Active" },
   { id: "suspended", label: "Suspended" },
   { id: "admin", label: "Admins" },
+  // Accounts an admin granted the Producer to (the user page's "Assistant" row).
+  { id: "assistant", label: "Assistant" },
 ] as const;
 
 export default async function AdminUsersPage({
@@ -51,6 +53,7 @@ export default async function AdminUsersPage({
   if (activeTab === "active") query = query.eq("status", "active");
   if (activeTab === "suspended") query = query.eq("status", "suspended");
   if (activeTab === "admin") query = query.eq("role", "admin");
+  if (activeTab === "assistant") query = query.eq("producer_access", true);
 
   const { data: users, error } = await query;
 
@@ -101,7 +104,11 @@ export default async function AdminUsersPage({
       </div>
 
       <div className="mt-4 overflow-hidden rounded-[18px] border border-neutral-100 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03),0_12px_28px_-12px_rgba(0,0,0,0.06)]">
-        {error ? (
+        {error && activeTab === "assistant" && /producer_access/.test(error.message) ? (
+          <p className="p-6 text-sm text-neutral-500">
+            Nobody can be granted the assistant until supabase/applied/2026-09-26/producer-access.sql runs in Supabase.
+          </p>
+        ) : error ? (
           <p className="p-6 text-sm text-red-600">Couldn&apos;t load users: {error.message}</p>
         ) : !users || users.length === 0 ? (
           <p className="p-6 text-sm text-neutral-500">No users found.</p>

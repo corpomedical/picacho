@@ -1,7 +1,14 @@
 "use server";
 
 import { createAdminClient, createClient } from "@/lib/supabase/server";
-import { isProducerEnabled, isProducerOpenToElite, producerAllowed, PRODUCER_UNAVAILABLE } from "./enabled";
+import {
+  isProducerEnabled,
+  isProducerOpenToElite,
+  producerAllowed,
+  producerUnitCap,
+  readProducerGrant,
+  PRODUCER_UNAVAILABLE,
+} from "./enabled";
 import {
   closeThread,
   loadMessages,
@@ -18,7 +25,6 @@ import { rateLimited } from "@/lib/rate-limit";
 import { MAX_NOTE_CHARS, normalizeNotePath, type Note } from "./notes";
 import { loadWatchBar, loadWatchList, type WatchItem } from "./watch";
 import type { PreparedSend } from "./tools";
-import { PLAN_CHAT_UNIT_LIMITS, type PlanId } from "@/lib/plans";
 import { monthlyWindowStart } from "@/lib/generations/core";
 
 // The sheet's server actions (2026-09-24). Each one re-checks the same gate
@@ -51,12 +57,14 @@ async function gate() {
     .eq("id", user.id)
     .single();
   const isAdmin = profile?.role === "admin";
-  const access = producerAllowed(profile, isAdmin || (await isProducerOpenToElite(supabase)));
+  const granted = !isAdmin && profile ? await readProducerGrant(admin, user.id) : false;
+  const access = producerAllowed(
+    profile ? { ...profile, producer_access: granted } : profile,
+    isAdmin || granted || (await isProducerOpenToElite(supabase)),
+  );
   if (access.error) return { ok: false as const, error: access.error };
   // The same allowance and window the route meters against.
-  const cap = isAdmin
-    ? PLAN_CHAT_UNIT_LIMITS.elite
-    : PLAN_CHAT_UNIT_LIMITS[((profile?.plan as string | null) ?? "none") as PlanId] ?? 0;
+  const cap = producerUnitCap(access, profile?.plan);
   const since = monthlyWindowStart(profile?.current_period_start as string | null).toISOString();
   return { ok: true as const, supabase, admin, userId: user.id, cap, since };
 }

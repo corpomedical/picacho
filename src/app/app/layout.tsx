@@ -5,7 +5,7 @@ import { isRecceEnabled, isSetsEnabled } from "@/lib/sets/enabled";
 import { isRecastEnabled } from "@/lib/recast/enabled";
 import { isLiveEnabled, isLiveOpenToPlans, liveAllowed } from "@/lib/live/enabled";
 import { isEditorEnabled } from "@/lib/editor/enabled";
-import { producerVisible } from "@/lib/producer/enabled";
+import { producerVisible, readProducerGrant } from "@/lib/producer/enabled";
 import { countWatch, loadWatchBar } from "@/lib/producer/watch";
 import { DEFAULT_PRODUCER_NAME } from "@/lib/producer/store";
 import { ProducerLamp } from "@/components/producer/producer-lamp";
@@ -51,9 +51,10 @@ export default async function AppLayout({
   }
 
   const [
-    { data: profile },
+    { data: profileRow },
     { data: recentJobs },
     { data: supportEmailSetting },
+    producerGranted,
   ] = await Promise.all([
     supabase.from("profiles").select("role, username, plan, plan_status, status, skip_ai_refinement, rating_prompted_at").eq("id", data.user.id).single(),
     // Explicit user_id filter below, not just RLS — an admin's SELECT
@@ -72,7 +73,11 @@ export default async function AppLayout({
       .order("created_at", { ascending: false })
       .limit(6),
     supabase.from("app_settings").select("value").eq("key", "support_email").single(),
+    // An admin's grant of the Producer, on its own (lib/producer/enabled.ts):
+    // before producer-access.sql runs it reads as not granted.
+    readProducerGrant(supabase, data.user.id),
   ]);
+  const profile = profileRow ? { ...profileRow, producer_access: producerGranted } : profileRow;
 
   const isAdmin = profile?.role === "admin";
 
@@ -99,8 +104,9 @@ export default async function AppLayout({
   // switch (lib/editor/enabled.ts). Admin first spares everyone the flag read.
   const cutVisible = isAdmin && (await isEditorEnabled(supabase));
 
-  // The Producer's lamp (2026-09-24): admins, and Elite once `producer_elite`
-  // is on — the route's own rule (lib/producer/enabled.ts producerVisible,
+  // The Producer's lamp (2026-09-24): admins, accounts an admin granted it
+  // to, and Elite once `producer_elite` is on — the route's own rule
+  // (lib/producer/enabled.ts producerVisible,
   // which a set's page asks too). Eligibility first, so every other account
   // skips the flag reads and the watch count.
   let producer: { name: string; watchCount: number; look: LampLook } | null = null;

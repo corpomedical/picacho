@@ -1,7 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
-import { isProducerEnabled, isProducerOpenToElite, producerAllowed, PRODUCER_UNAVAILABLE } from "@/lib/producer/enabled";
+import {
+  isProducerEnabled,
+  isProducerOpenToElite,
+  producerAllowed,
+  producerUnitCap,
+  readProducerGrant,
+  PRODUCER_UNAVAILABLE,
+} from "@/lib/producer/enabled";
 import {
   BRAKE_USD,
   MAX_CALLS,
@@ -51,7 +58,7 @@ import { buildStateNote, type StateFingerprint } from "@/lib/producer/state";
 import { loadWatchBar, loadWatchList } from "@/lib/producer/watch";
 import { runTool, toolStatus, type ToolCall } from "@/lib/producer/run-tools";
 import type { PreparedSend } from "@/lib/producer/tools";
-import { PLAN_CHAT_UNIT_LIMITS, type PlanId } from "@/lib/plans";
+import type { PlanId } from "@/lib/plans";
 import { monthlyWindowStart } from "@/lib/generations/core";
 import { classifyTurnFailure, unitsForFailedTurn, type TurnFailure } from "@/lib/agent/failures";
 import { rateLimited } from "@/lib/rate-limit";
@@ -148,7 +155,13 @@ export async function POST(request: NextRequest) {
     }>();
 
   const isAdmin = profile?.role === "admin";
-  const access = producerAllowed(profile, isAdmin || (await isProducerOpenToElite(supabase)));
+  // An admin's grant (profiles.producer_access), read on its own: before
+  // producer-access.sql runs it reads as not granted.
+  const granted = !isAdmin && profile ? await readProducerGrant(admin, user.id) : false;
+  const access = producerAllowed(
+    profile ? { ...profile, producer_access: granted } : profile,
+    isAdmin || granted || (await isProducerOpenToElite(supabase)),
+  );
   if (access.error) return NextResponse.json({ error: access.error }, { status: 403 });
 
   const body = (await request.json().catch(() => null)) as {
@@ -193,9 +206,10 @@ export async function POST(request: NextRequest) {
   }
 
   // The same allowance the chat assistant draws on (one ledger, one unit).
-  // Admins meter against Elite's, whatever test plan their account holds.
+  // Admins and granted accounts meter against Elite's, whatever plan the
+  // account holds (producerUnitCap).
   const plan: PlanId = profile?.plan ?? "none";
-  const cap = isAdmin ? PLAN_CHAT_UNIT_LIMITS.elite : PLAN_CHAT_UNIT_LIMITS[plan];
+  const cap = producerUnitCap(access, plan);
   const since = monthlyWindowStart(profile?.current_period_start).toISOString();
   const { data: reservationId, error: reserveError } = await admin.rpc("record_agent_units", {
     p_user_id: user.id,
