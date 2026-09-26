@@ -67,7 +67,11 @@ import { GenerationTab, PreferencesTab, PrivacyTab, ProfileTab, SecurityTab } fr
 const TIER_ORDER: PlanId[] = ["none", "basic", "starter", "growth", "studio"];
 
 // Credit packs got a Stripe invoice from this day (commit ade8cf7). Older
-// packs came with a receipt only, and are listed as such.
+// packs came with a receipt only, and are listed as such. ade8cf7 was
+// committed partway through 22 August (13:18 UTC), so the whole of the 22nd
+// keeps its receipt row — a pack from later that day shows its invoice too
+// — and the Plan & billing note (settingsHub.receiptNote) names 23 August
+// to match.
 const PACK_INVOICES_SINCE = Date.parse("2026-08-23T00:00:00Z");
 
 export default async function SettingsPage({
@@ -173,11 +177,18 @@ export default async function SettingsPage({
   // Display-only mirror of the actual enforcement in checkGenerationAllowance
   // (generations/core.ts): the plan's monthly allowance only counts while
   // plan_status is NULL (comped / pre-Stripe grants) or "active" — a
-  // past_due or canceled subscription has its plan credits paused. Bonus
-  // credits (admin-granted) stack on top and are never paused — same rule as
-  // the enforcement.
+  // past_due or canceled subscription has its plan credits paused.
+  //
+  // The PLAN's allowance alone. Bonus credits (admin-granted) became a
+  // balance that is spent once on 2026-09-23 and left the enforced ceiling
+  // then, but this meter kept adding them: it counted the bonus spent twice
+  // once the plan ran out (off the balance, and inside the month's usage):
+  // a Growth account (140) given 20 that had spent 150 read "0 of 150 left"
+  // with 10 bonus credits still to spend, and a plan-less grant was
+  // promised "back to N" on a date. The bonus is said on its own line under
+  // the meter, never paused.
   const planAllowanceActive = planStatus == null || planStatus === "active";
-  const limit = (planAllowanceActive ? PLAN_LIMITS[plan] : 0) + bonus;
+  const limit = planAllowanceActive ? PLAN_LIMITS[plan] : 0;
   // A "live" Stripe subscription (active or behind on payment) means all
   // plan changes go through the Customer Portal, which handles proration.
   // Stripe-owned plans only: a Play-billed subscriber has no Stripe

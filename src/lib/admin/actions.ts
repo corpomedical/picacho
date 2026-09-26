@@ -687,12 +687,12 @@ export async function setUserPlan(formData: FormData) {
   revalidatePath("/admin/users");
 }
 
-// "Give this user a token" — bonus generation credits for the current month,
-// on top of whatever their plan normally allows (see checkGenerationAllowance
-// in generations/actions.ts, which adds this to the plan limit). Sets the
-// absolute value rather than incrementing, same as setUserPlan above — the
-// field always shows the true current amount so there's no mental math to
-// "add 3 more" on top of a number you'd otherwise have to look up first.
+// "Give this user a token" — the bonus balance: credits spent once the plan's
+// monthly ones run out, before bought ones, and gone once spent (a depleting
+// balance since 2026-09-23; checkGenerationAllowance in generations/core.ts).
+// Sets the absolute value rather than incrementing, same as setUserPlan
+// above — the field starts on the true current amount, and the page's label
+// names the balance it replaces, so giving 3 back is that number plus 3.
 export async function setBonusCredits(formData: FormData) {
   const { supabase, admin } = await requireAdmin();
   const userId = formData.get("user_id") as string;
@@ -711,10 +711,12 @@ export async function setBonusCredits(formData: FormData) {
   }
 
   // Compare-and-set against the value the page rendered: bonus_credits has
-  // a SECOND writer (the referral trigger increments it in the database),
-  // and the absolute write here silently erased any increment that landed
-  // between page render and save (round-two audit). A mismatch now asks the
-  // admin to look again instead of destroying a user's earned credit.
+  // other writers — renders spend it (spend_bonus_credits) and refunds put
+  // it back (add_bonus_credits) — and the absolute write here silently
+  // erased any change that landed between page render and save (round-two
+  // audit, when the other writer was the referral trigger; referrals have
+  // paid bought credits since). A mismatch asks the admin to look again
+  // instead of undoing a spend or a refund.
   const expectedRaw = formData.get("expected_bonus_credits") as string | null;
   const expected = expectedRaw === null ? null : Number.parseInt(expectedRaw, 10);
   let write = admin.from("profiles").update({ bonus_credits: bonusCredits }).eq("id", userId);
@@ -729,7 +731,7 @@ export async function setBonusCredits(formData: FormData) {
   if (!updated?.length) {
     redirect(
       `${redirectTo}?error=${encodeURIComponent(
-        "Their bonus credits changed while this page was open (a referral may have landed) — the value was NOT saved. Check the new number and try again.",
+        "Their bonus credits changed while this page was open (a render spent some, or a refund put some back) — the value was NOT saved. Check the new number and try again.",
       )}`,
     );
   }

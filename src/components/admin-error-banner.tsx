@@ -37,7 +37,7 @@ const KNOWN_ERRORS = new Set<string>([
   "This account is billed through Google Play — comping over it would hide a live Google subscription. Have them cancel in the Play Store first, then set the plan.",
   "Bonus credits must be 0 or more.",
   "That's more than 10,000 bonus credits — if you really mean it, do it in two steps.",
-  "Their bonus credits changed while this page was open (a referral may have landed) — the value was NOT saved. Check the new number and try again.",
+  "Their bonus credits changed while this page was open (a render spent some, or a refund put some back) — the value was NOT saved. Check the new number and try again.",
   "Missing generation id.",
   "Generation not found.",
   "Only succeeded generations can be featured.",

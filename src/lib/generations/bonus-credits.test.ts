@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { PLAN_LIMITS, spendableCredits } from "../plans";
 
@@ -193,4 +194,37 @@ describe("the balance the composer shows is the balance the gate spends", () => 
       if (!c.profile.plan_status) expect(oneMore.error).toContain(`only have ${shown} left`);
     });
   }
+});
+
+describe("no screen folds the bonus balance into the plan's monthly limit", () => {
+  // The 2026-09-23 fix took bonus out of nine display ceilings by hand and
+  // missed a tenth: Settings kept `(PLAN_LIMITS[plan] …) + bonus`, which
+  // counted the bonus spent twice once the plan ran out ("0 of 150 left"
+  // with 10 bonus credits still to spend) and promised a grant "back to N".
+  // This reads every screen and library file for that shape. Adding bonus
+  // to what is LEFT of the plan (spendableCredits) is fine; adding it to the
+  // plan's ceiling is the leak.
+  const LEAK = /PLAN_LIMITS\[[^\]]+\][^;{}<>]*?\+\s*\(?\s*(?:profile\??\.)?bonus/;
+
+  const sources = (dir: URL): { file: string; text: string }[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      if (entry.isDirectory()) return sources(new URL(`${entry.name}/`, dir));
+      if (!/\.tsx?$/.test(entry.name) || entry.name.includes(".test.")) return [];
+      const url = new URL(entry.name, dir);
+      return [{ file: url.pathname.replace(/^.*\/src\//, "src/"), text: readFileSync(url, "utf8") }];
+    });
+
+  it("the pattern catches the line Settings shipped with", () => {
+    expect(LEAK.test("const limit = (planAllowanceActive ? PLAN_LIMITS[plan] : 0) + bonus;")).toBe(true);
+    expect(LEAK.test("PLAN_LIMITS[(profile?.plan ?? \"none\") as PlanId] : 0) +\n    (profile?.bonus_credits ?? 0)")).toBe(true);
+    expect(LEAK.test("Math.max(0, creditsLimit - creditsUsed) + bonusCredits + purchasedCredits")).toBe(false);
+  });
+
+  it("nothing under src/app or src/lib adds bonus to PLAN_LIMITS", () => {
+    const offenders = [new URL("../../app/", import.meta.url), new URL("../", import.meta.url)]
+      .flatMap(sources)
+      .filter((s) => LEAK.test(s.text))
+      .map((s) => s.file);
+    expect(offenders).toEqual([]);
+  });
 });

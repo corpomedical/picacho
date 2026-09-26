@@ -15,6 +15,7 @@ import { PRODUCER_UNIT_USD } from "@/lib/producer/prices";
 import { ProducerAccessRow } from "@/components/admin/producer-access-row";
 import { getMonthlyUsage } from "@/lib/generations/actions";
 import { getUserEconomics } from "@/lib/admin/economics";
+import { onlyRefunded, refundLimit, wasRefunded, type RefundLimit } from "@/lib/admin/refunds";
 import { UserEconomicsCard } from "@/components/admin/user-economics-card";
 import { PLAN_CHAT_UNIT_LIMITS, PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import { Card } from "@/components/ui/card";
@@ -36,6 +37,13 @@ function timeAgo(dateStr: string) {
   if (days < 30) return `${days}d ago`;
   return new Date(dateStr).toLocaleDateString();
 }
+
+// What the Refunds list says of each refund (lib/admin/refunds.ts).
+const REFUND_LIMIT_LABELS: Record<RefundLimit, string> = {
+  failures: "counted in daily limit",
+  "face-check": "counted in face-check limit",
+  none: "not in daily limit",
+};
 
 export default async function AdminUserDetailPage({
   params,
@@ -78,7 +86,7 @@ export default async function AdminUserDetailPage({
     supabase
       .from("generations")
       .select(
-        "id, prompt_input, status, attempts, created_at, featured_at, content_type, video_model_id, model_id, credits_used, match_score, refunded_at",
+        "id, prompt_input, status, attempts, created_at, featured_at, content_type, video_model_id, model_id, credits_used, purchased_credits_used, bonus_credits_used, free_generation_used, match_score, refunded_at, identity_gated_at",
       )
       .eq("user_id", id)
       .order("created_at", { ascending: false })
@@ -108,7 +116,7 @@ export default async function AdminUserDetailPage({
   // every report this user ever filed or auto-filed, every refunded
   // generation, who referred them, and which auth provider they came
   // through.
-  const [{ data: reports }, { data: refunds }, { data: referrer }, providerLookup] =
+  const [{ data: reports }, { data: refunds, count: refundsCount }, { data: referrer }, providerLookup] =
     await Promise.all([
       supabase
         .from("generation_reports")
@@ -116,12 +124,20 @@ export default async function AdminUserDetailPage({
         .eq("user_id", id)
         .order("created_at", { ascending: false })
         .limit(50),
-      supabase
-        .from("generations")
-        .select("id, created_at, refunded_at, credits_used, purchased_credits_used, prompt_input, video_model_id, model_id, content_type")
-        .eq("user_id", id)
-        .not("refunded_at", "is", null)
-        .order("refunded_at", { ascending: false })
+      // Every render whose credits came back. Not "refunded_at is set":
+      // that is only the daily limit's counter, and a forced refund (a
+      // refusal, a provider rejection, a rules block) never stamps it —
+      // lib/admin/refunds.ts has the whole rule.
+      onlyRefunded(
+        supabase
+          .from("generations")
+          .select(
+            "id, created_at, refunded_at, identity_gated_at, prompt_input, video_model_id, model_id, content_type",
+            { count: "exact" },
+          )
+          .eq("user_id", id),
+      )
+        .order("created_at", { ascending: false })
         .limit(50),
       // referred_by holds a referring USER's id (promo_rep holds a rep's
       // name) — resolve it to something a human can recognize and click.
@@ -138,10 +154,6 @@ export default async function AdminUserDetailPage({
   const providers: string[] =
     (providerLookup?.app_metadata?.providers as string[] | undefined) ??
     (providerLookup?.app_metadata?.provider ? [providerLookup.app_metadata.provider as string] : []);
-  const refundedCreditsTotal = (refunds ?? []).reduce(
-    (sum, g) => sum + (g.credits_used ?? 0) + (g.purchased_credits_used ?? 0),
-    0,
-  );
 
   // Sign-in / session facts from auth.users + auth.sessions.
   const activity = (await getUserActivity([user])).get(user.id) ?? null;
@@ -324,14 +336,19 @@ export default async function AdminUserDetailPage({
           </div>
 
           <div className="mt-4">
+            {/* The box SETS the balance (setBonusCredits), so the label says
+                what it replaces: an admin giving N back types that plus N.
+                "(this month)" dated from when a grant renewed every month;
+                since 2026-09-23 it is spent once, like bought credits. */}
             <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">
-              Bonus credits (this month)
+              Bonus credits (replaces {bonusCredits})
             </p>
             <form action={setBonusCredits} className="mt-2 flex gap-2">
               <input type="hidden" name="user_id" value={user.id} />
               {/* The value this page RENDERED — the action refuses to write
-                  over a different one, so a referral credit landing while
-                  the tab sat open can't be silently erased. */}
+                  over a different one, so a render spending the balance, or a
+                  refund putting some back, while the tab sat open can't be
+                  silently overwritten. */}
               <input type="hidden" name="expected_bonus_credits" value={bonusCredits} />
               <input
                 type="number"
@@ -345,9 +362,10 @@ export default async function AdminUserDetailPage({
               <SubmitButton variant="secondary" size="sm">Save</SubmitButton>
             </form>
             <p className="mt-1.5 text-xs text-neutral-400">
-              Extra generations on top of their plan — a goodwill grant, not a plan change. Stacks
-              with whatever tier they&apos;re on; doesn&apos;t reset on its own, so set it back to 0
-              when it shouldn&apos;t carry into next month.
+              A goodwill grant, not a plan change. Save replaces their balance, it doesn&apos;t add
+              to it: to give 5 credits back, type {bonusCredits + 5}. Spent once the plan&apos;s
+              monthly credits run out, before bought ones, and kept until spent — it doesn&apos;t
+              reset at the end of the month.
             </p>
           </div>
 
@@ -611,15 +629,21 @@ export default async function AdminUserDetailPage({
             )}
           </Card>
 
-          {/* Every refund, with the credits that went back. */}
+          {/* Every refund. How many credits one gave back is recorded
+              nowhere: a refund zeroes the render's spend fields, which is
+              all the old "+N cr back" and its total added up, so both read
+              0. Each row says instead which daily limit it counted toward,
+              the one question the amount can't answer anyway (playbook
+              §3.1). A forced refund has no refund time, so it shows when
+              the render was sent. */}
           <Card>
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-neutral-900">
-                Refunds ({refunds?.length ?? 0})
+                Refunds ({refundsCount ?? refunds?.length ?? 0})
               </h2>
-              {refundedCreditsTotal > 0 && (
+              {(refundsCount ?? 0) > (refunds?.length ?? 0) && (
                 <span className="text-xs text-neutral-400">
-                  {refundedCreditsTotal} credit{refundedCreditsTotal === 1 ? "" : "s"} returned in total
+                  {refunds?.length ?? 0} of {refundsCount}
                 </span>
               )}
             </div>
@@ -627,20 +651,23 @@ export default async function AdminUserDetailPage({
               <p className="mt-2 text-sm text-neutral-500">No refunded generations.</p>
             ) : (
               <ul className="mt-3 divide-y divide-neutral-100">
-                {refunds.map((g) => (
-                  <li key={g.id} className="flex items-center justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
-                    <Link href={`/app/history/${g.id}`} className="min-w-0 flex-1 hover:opacity-70">
-                      <p className="truncate text-xs text-neutral-700">{g.prompt_input}</p>
-                      <p className="mt-0.5 text-xs text-neutral-400">
-                        {g.content_type} on {g.video_model_id ?? g.model_id ?? "?"} · refunded{" "}
-                        {g.refunded_at ? timeAgo(g.refunded_at) : "—"}
-                      </p>
-                    </Link>
-                    <span className="flex-shrink-0 text-xs font-medium text-neutral-700">
-                      +{(g.credits_used ?? 0) + (g.purchased_credits_used ?? 0)} cr back
-                    </span>
-                  </li>
-                ))}
+                {refunds.map((g) => {
+                  const refundedAt = g.refunded_at ?? g.identity_gated_at;
+                  return (
+                    <li key={g.id} className="flex items-center justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
+                      <Link href={`/app/history/${g.id}`} className="min-w-0 flex-1 hover:opacity-70">
+                        <p className="truncate text-xs text-neutral-700">{g.prompt_input}</p>
+                        <p className="mt-0.5 text-xs text-neutral-400">
+                          {g.content_type} on {g.video_model_id ?? g.model_id ?? "?"} ·{" "}
+                          {refundedAt ? <>refunded {timeAgo(refundedAt)}</> : <>sent {timeAgo(g.created_at)}</>}
+                        </p>
+                      </Link>
+                      <span className="flex-shrink-0 text-xs font-medium text-neutral-700">
+                        {REFUND_LIMIT_LABELS[refundLimit(g)]}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </Card>
@@ -698,7 +725,7 @@ export default async function AdminUserDetailPage({
                         {g.credits_used ?? 0} cr
                         {typeof g.match_score === "number" && <> · match {g.match_score}%</>}
                         {(g.attempts ?? 0) > 1 && <> · {g.attempts} attempts</>}
-                        {g.refunded_at && <> · refunded</>} · {timeAgo(g.created_at)}
+                        {wasRefunded(g) && <> · refunded</>} · {timeAgo(g.created_at)}
                       </p>
                     </Link>
                     {/* Public-gallery toggle (/gallery). Only rendered on

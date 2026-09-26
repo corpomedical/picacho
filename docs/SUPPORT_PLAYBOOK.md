@@ -86,11 +86,12 @@ These run with nobody watching.
 ### 3.1 "My render failed" / "I want my credits back"
 
 1. **Find the person.** Admin → Users → search their email. Open their failed render: History shows the steps. Admin → Moderation shows the reason with the provider's own words.
-2. **Did the credits come back?** Look at the render itself: **0 credits used means refunded**, and the assistants say "its credits were returned". Don't go by the Refunds list on the user's page. It only lists refunds that counted toward the daily limit, so refusals, provider rejections and write-offs are missing, and its "credits returned" total reads zero. §2 says which failures refund on their own.
-3. **The daily limit** (a rolling 24 hours, `src/lib/plans.ts refundedFailureDailyCap`) counts only the switch-controlled refunds. Free 10, Basic 12, Starter 30, Growth, Studio and Elite 60. Admins have no limit. A customer who hits it keeps paying for failures until the window rolls on. That is the case to put right by hand.
+2. **Did the credits come back?** Look under **Refunds** on the person's page. It lists every render whose credits came back, refusals, provider rejections and face-check misses included, and Recent generations marks the same renders "refunded". The assistants read the same thing ("its credits were returned"). Neither says how many credits went back: a refund zeroes what the render spent and keeps no copy (`src/lib/admin/refunds.ts`). §2 says which failures refund on their own.
+3. **The daily limit** (a rolling 24 hours, `src/lib/plans.ts refundedFailureDailyCap`) counts only the switch-controlled refunds: on the Refunds list, the ones marked "counted in daily limit". Free 10, Basic 12, Starter 30, Growth, Studio and Elite 60. Face-check refunds ("counted in face-check limit") have a limit of their own, the same size, and refunds marked "not in daily limit" never count. Admins have no limit. A customer who hits it keeps paying for failures until the window rolls on. That is the case to put right by hand.
 4. **Give credits back by hand:** Admin → Users → the person → **Bonus credits** → Save.
-   - **The box SETS the number, it does not add to it.** Type their current bonus plus what you're giving back.
-   - Bonus credits are spent before bought credits and don't expire at the month's end, despite the page's "(this month)" label.
+   - **The box SETS the number, it does not add to it.** Its label shows their balance now, "Bonus credits (replaces 12)": type that plus what you're giving back.
+   - Bonus credits are spent once the plan's monthly credits run out, before bought credits, and don't expire at the month's end.
+   - If Save says their bonus credits changed while the page was open, a render spent some or a refund put some back. Look at the new number and type again.
    - The only record is a server log line, so note it in your reply.
 5. **Reply** by email, in plain words: what happened, that the credits are back, and what to try next (the composer's line usually says it).
 
@@ -159,7 +160,7 @@ Code: `src/app/api/webhooks/stripe/route.ts`, `src/lib/stripe/`.
 - **Alert "Checkout failed" / "Billing portal failed".** Stripe's page couldn't open for someone. Admin → Reports has the Stripe error code. A card or country problem is theirs; a configuration error on every attempt is ours.
 - **Invoices.**
   - Settings → Plan & billing → Invoices, as PDFs.
-  - Packs bought before 23 August 2026 have a receipt only; for an invoice they write to hello@picacho.ai. The page's note says 22 August, and the cutoff in the code is the 23rd.
+  - Packs bought before 23 August 2026 have a receipt only; for an invoice they write to hello@picacho.ai.
 
 ### 3.8 Payments in the Android app (Google Play)
 
@@ -288,7 +289,7 @@ Add a line to the incident log (§5): what happened, what fixed it, and what cha
 
 - BytePlus's out-of-credit wording isn't recognised, so it reaches you as a burst or a switched-off model, not the siren.
 - There's no admin button to reset a password, resend a confirmation or remove two-step verification, and the two-step page has no help link.
-- The Refunds list on Admin → Users misses the refunds that don't count toward the daily limit, and its total reads zero. A fix is queued; §3.1 says how to check meanwhile.
+- A refund keeps no record of how many credits it gave back, so the Refunds list on Admin → Users can't show amounts.
 - The provider balances of OpenAI and BytePlus aren't checked on a schedule; only fal's is.
 - Picacho's own content refusals are logged (`policy_refusals`), but no admin page shows them.
 - There's no status page, and no error tracker beyond Vercel's logs.

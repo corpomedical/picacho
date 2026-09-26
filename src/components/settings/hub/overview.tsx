@@ -17,14 +17,14 @@ import { BUTTON_PRIMARY, BUTTON_SECONDARY, CARD, CARD_FRAME, Chevron, Meter, Sla
 export type CreditsModel =
   | {
       mode: "plan";
-      /** Plan credits left this billing month (bonus credits included, as enforcement counts them). */
+      /** The plan's own credits left this billing month. Bonus credits are not in it: enforcement spends them after it (core.ts). */
       left: number;
       limit: number;
       /** The plan's own credits are paused by a failed payment. */
       paused: boolean;
       /** When the allowance refills, ISO — the monthly window, not the yearly renewal. */
       resetsOn: string | null;
-      /** Admin-granted credits inside `limit`, said out loud so the number adds up. */
+      /** The admin-granted balance, said on its own line: spent after the plan's credits, before extra ones, and never renewed. */
       bonus: number;
       extra: number;
     }
@@ -117,8 +117,9 @@ export function CreditsBlock({
             <span className="font-numeral text-[38px] leading-[0.9] tabular-nums text-atelier-accent sm:text-[44px]">
               {credits.left}
             </span>
-            {/* A paused plan has nothing to count against: no "0 of 0". */}
-            {!(credits.paused && credits.limit === 0) && (
+            {/* Nothing to count against — a paused plan, or no plan and only
+                bonus credits: no "0 of 0". */}
+            {credits.limit > 0 && (
               <span className="text-[12.5px] text-atelier-muted sm:text-[13px]">
                 {formatMsg(h.ofLimitLeft, { limit: credits.limit })}
               </span>
@@ -134,7 +135,7 @@ export function CreditsBlock({
           </span>
           {credits.bonus > 0 && (
             <span className="text-xs text-atelier-muted">
-              {credits.bonus === 1 ? s.bonusIncludedOne : formatMsg(s.bonusIncluded, { n: credits.bonus })}
+              {credits.bonus === 1 ? s.bonusBalanceOne : formatMsg(s.bonusBalance, { n: credits.bonus })}
             </span>
           )}
         </div>

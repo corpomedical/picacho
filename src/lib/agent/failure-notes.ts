@@ -60,7 +60,9 @@ export function failureReasonForPerson(attempts: AttemptLog[]): string {
 }
 
 /** True when any credit source this render spent is still spent. */
-export function creditsKept(row: FailedRenderRow): boolean {
+export function creditsKept(
+  row: Pick<FailedRenderRow, "credits_used" | "purchased_credits_used" | "bonus_credits_used" | "free_generation_used">,
+): boolean {
   return (
     (row.credits_used ?? 0) > 0 ||
     (row.purchased_credits_used ?? 0) > 0 ||
