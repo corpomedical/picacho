@@ -538,7 +538,7 @@ const CHAPTERS: Chapter[] = [
         body: (
           <>
             Share your link. When someone signs up with it and makes their first take, you both get
-            a bonus credit. The link is built from your username.
+            an extra credit. The link is built from your username.
           </>
         ),
       },

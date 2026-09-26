@@ -1888,9 +1888,10 @@ const en = {
   },
   settings: {
     tutorial: "Tutorial",
-    // Referral card (give 5, get 5 — see supabase referrals.sql).
+    // Referral card (1 each, paid as bought credits by reward_referral_on_success:
+    // Settings shows them under Extra credits, so the card says "extra", not "bonus").
     inviteTitle: "Invite friends — you both get credits",
-    inviteBody: "Share your link. When someone signs up with it and creates their first take, you both get 1 bonus credit.",
+    inviteBody: "Share your link. When someone signs up with it and creates their first take, you both get 1 extra credit.",
     inviteCopy: "Copy link",
     inviteCopied: "Copied",
     inviteShare: "Share",

@@ -6,9 +6,11 @@ import { formatMsg } from "@/lib/i18n/format";
 import { isNativeAppClient } from "@/lib/native/platform";
 import { capPlugin } from "@/lib/native/bridge";
 
-// The referral card (give 5, get 5 — trigger and cap live in the database,
-// see supabase referrals.sql). The link is the user's username, which is
-// already unique and already theirs — no codes to mint or remember.
+// The referral card (1 each, paid as bought credits, the Settings line "Extra
+// credits" — trigger and cap live in the database, reward_referral_on_success,
+// last defined in supabase/applied/2026-09-05/audit-hardening.sql). The link
+// is the user's username, which is already unique and already theirs — no
+// codes to mint or remember.
 export function InviteCard({
   username,
   stats,

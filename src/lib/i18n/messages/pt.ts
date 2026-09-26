@@ -1782,7 +1782,7 @@ const pt = {
   settings: {
     tutorial: "Tutorial",
     inviteTitle: "Convide amigos — vocês dois ganham créditos",
-    inviteBody: "Compartilhe seu link. Quando alguém se cadastrar com ele e criar o primeiro take, vocês dois ganham 1 crédito bônus.",
+    inviteBody: "Compartilhe seu link. Quando alguém se cadastrar com ele e criar o primeiro take, vocês dois ganham 1 crédito extra.",
     inviteCopy: "Copiar link",
     inviteCopied: "Copiado",
     inviteShare: "Compartilhar",

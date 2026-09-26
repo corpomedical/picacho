@@ -41,7 +41,7 @@ export const PAGE_UPDATED = {
   "/guides/ai-character-consistency": "2026-09-20",
   "/guides/ai-camera-movements": "2026-08-28",
   "/guides/seedance-2": "2026-09-20",
-  "/guides/getting-started": "2026-09-21",
+  "/guides/getting-started": "2026-09-26",
   "/docs/api": "2026-09-01",
 } as const satisfies Record<string, string>;
 
