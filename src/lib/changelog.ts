@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.127.0",
+    build: 166,
+    date: "2026-09-27",
+    title: "A push-to-talk key: hold right Option to talk to Aly",
+    items: [
+      "Hold right Option (right Alt on Windows) to talk to Aly and let go to send, just like holding the lamp: the mic is open only while you hold it, \"Listening · let go to send\" shows beside the lamp, and she answers out loud. It works anywhere in the app, even while you're typing in a box, as long as Picacho is the tab you're in.",
+      "Typing with Option (é, ü, ©) never opens the mic: it waits a fifth of a second, and any other key cancels the hold.",
+      "Settings → Your assistant → Push-to-talk key shows the key, changes it to any other you press, or turns it off. It's kept on each computer. The lamp's tooltip names the key.",
+    ],
+  },
+  {
     version: "1.126.0",
     build: 165,
     date: "2026-09-27",

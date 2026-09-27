@@ -158,6 +158,7 @@ export function MovableLamp({
   onHoldStart,
   onHoldEnd,
   holdText = null,
+  holdKeyName = null,
 }: {
   name: string;
   open: boolean;
@@ -185,6 +186,8 @@ export function MovableLamp({
   onHoldEnd?: () => void;
   /** Said beside the lamp while it is held ("Listening · let go to send"). */
   holdText?: string | null;
+  /** The push-to-talk key, named in the lamp's tooltip ("Right Option ⌥"). */
+  holdKeyName?: string | null;
 }) {
   const [place, setPlace] = useState<Place>({ kind: "home" });
   const [hidden, setHidden] = useState(false);
@@ -731,7 +734,7 @@ export function MovableLamp({
           onContextMenu={onHoldStart ? (e) => e.preventDefault() : undefined}
           aria-label={openLabel}
           aria-expanded={open}
-          title={`${name} (${onHoldStart ? W.moveHoldHint : W.moveHint})`}
+          title={`${name} (${onHoldStart ? W.moveHoldHint : W.moveHint}${holdKeyName ? `, or hold ${holdKeyName}` : ""})`}
           // --glow: the look's light, worked out by the parent (producer-lamp.tsx).
           // (--light-delay is set on the element by the flight, above.)
           style={{ ...lampPosition, ...(dragTransform ?? {}), "--glow": level } as React.CSSProperties}

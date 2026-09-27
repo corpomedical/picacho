@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { PRODUCER_NEEDS_ELITE, PRODUCER_NOT_OPEN, PRODUCER_SUSPENDED, PRODUCER_UNAVAILABLE } from "@/lib/producer/enabled";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import {
   clearProducerNotes,
   deleteProducerNote,
@@ -24,6 +24,7 @@ import styles from "./producer-lamp.module.css";
 import { Wheel } from "./wheel";
 import { wheelGeometry, type WheelStyle } from "./wheel-style";
 import { countWords, subtitleView, type ChatStyle } from "./chat-style";
+import { DEFAULT_PTT_KEY, PTT_KEY_DELAY_MS, PTT_KEY_EVENT, PTT_KEY_STORAGE, isMac, pttKeyName, readPttKey, typesCharacter } from "./ptt-key";
 import { MovableLamp } from "./movable-lamp";
 import { writeLampHidden } from "./lamp-place";
 import { lampMood, type LampLook } from "./lamp-look";
@@ -113,6 +114,25 @@ const W = {
 };
 
 const READ_ALOUD_KEY = "picacho.producer.readAloud";
+
+// The push-to-talk key (ptt-key.ts): this device's choice, following Settings.
+function subscribePttKey(onChange: () => void) {
+  const onStorage = (e: StorageEvent) => e.key === PTT_KEY_STORAGE && onChange();
+  window.addEventListener("storage", onStorage);
+  window.addEventListener(PTT_KEY_EVENT, onChange);
+  return () => {
+    window.removeEventListener("storage", onStorage);
+    window.removeEventListener(PTT_KEY_EVENT, onChange);
+  };
+}
+const noSubscribe = () => () => {};
+
+/** Focus is in something that takes typing. */
+function editing(el: Element | null): boolean {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (el as HTMLElement).isContentEditable;
+}
 // The voice bar's nine bars, as shares of the voice's loudness.
 const VOICE_BARS = [0.4, 0.7, 1, 0.6, 0.9, 0.5, 0.8, 0.45, 0.65];
 // The sheet reopens after the page reloads to show a set it just fixed.
@@ -285,6 +305,75 @@ export function ProducerLamp({
   // ElevenLabs hasn't used for a while took 6-11 s to start (warmProducerVoice;
   // the server does it at most once every two minutes).
   const wantWarm = (open && readAloud && loaded) || voice.active;
+  // PUSH TO TALK, BY KEY (2026-09-27, operator: "We should also add a
+  // keyboard button dedicated if possible to trigger the push to talk", then
+  // "Right option"). Held, the mic opens like a hold of the lamp; let go, what
+  // was said is sent. The mic waits PTT_KEY_DELAY_MS and any other key cancels
+  // the hold, so Option + a letter (é, ü) never opens it. A key that types
+  // (if someone picks one) doesn't count while a text box has the keyboard.
+  // Only while this tab has the keyboard: a browser rule.
+  const pttKey = useSyncExternalStore(subscribePttKey, readPttKey, () => DEFAULT_PTT_KEY);
+  const mac = useSyncExternalStore(noSubscribe, isMac, () => false);
+  const { pushStart, pushEnd } = voice;
+  const canPush = voice.supported && voiceAvailable && !voice.handsFree;
+  useEffect(() => {
+    if (pttKey === "off" || !canPush) return;
+    let down = false;
+    let started = false;
+    let timer = 0;
+    const release = (send: boolean) => {
+      down = false;
+      window.clearTimeout(timer);
+      timer = 0;
+      if (started) {
+        started = false;
+        pushEnd(send);
+      }
+    };
+    const onDown = (e: KeyboardEvent) => {
+      if (e.code === pttKey) {
+        if (e.repeat || down) {
+          e.preventDefault();
+          return;
+        }
+        if (typesCharacter(pttKey) && editing(document.activeElement)) return;
+        e.preventDefault();
+        down = true;
+        timer = window.setTimeout(() => {
+          timer = 0;
+          started = true;
+          void pushStart();
+        }, PTT_KEY_DELAY_MS);
+        return;
+      }
+      // Another key while it is held: typing (Option + e), not talking.
+      if (down) release(false);
+    };
+    const onUp = (e: KeyboardEvent) => {
+      if (e.code !== pttKey || !down) return;
+      // On Windows a lone Alt would otherwise move the keyboard to the browser's menu.
+      e.preventDefault();
+      release(true);
+    };
+    const away = () => {
+      if (down) release(true);
+    };
+    const onVisibility = () => {
+      if (document.hidden) away();
+    };
+    window.addEventListener("keydown", onDown, true);
+    window.addEventListener("keyup", onUp, true);
+    window.addEventListener("blur", away);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("keydown", onDown, true);
+      window.removeEventListener("keyup", onUp, true);
+      window.removeEventListener("blur", away);
+      document.removeEventListener("visibilitychange", onVisibility);
+      release(false);
+    };
+  }, [pttKey, canPush, pushStart, pushEnd]);
+
   const [voiceWasActive, setVoiceWasActive] = useState(voice.active);
   if (voice.active !== voiceWasActive) {
     setVoiceWasActive(voice.active);
@@ -1000,6 +1089,7 @@ export function ProducerLamp({
         onHoldStart={voice.supported && voiceAvailable && !voice.handsFree ? () => void voice.pushStart() : undefined}
         onHoldEnd={() => voice.pushEnd(true)}
         holdText={voice.pushing === "opening" ? W.pushOpening : voice.pushing === "on" ? W.pushListening : null}
+        holdKeyName={pttKey !== "off" && canPush ? pttKeyName(pttKey, mac) : null}
       />
 
       <Spotlight lit={lit} />

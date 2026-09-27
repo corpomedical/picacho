@@ -5,6 +5,7 @@ import { ProducerLampForm } from "@/components/settings/producer-lamp-form";
 import { ProducerLookForm } from "@/components/settings/producer-look-form";
 import { ProducerWheelForm } from "@/components/settings/producer-wheel-form";
 import { ProducerChatForm } from "@/components/settings/producer-chat-form";
+import { ProducerPttKeyForm } from "@/components/settings/producer-ptt-key-form";
 import { DEFAULT_LAMP_LOOK, type LampLook } from "@/components/producer/lamp-look";
 import type { WheelStyle } from "@/components/producer/wheel-style";
 import type { ChatStyle } from "@/components/producer/chat-style";
@@ -189,6 +190,9 @@ export function PreferencesTab({
           <ProducerNameForm initialName={producerName} />
           <div className="border-t border-atelier-rule/60 pt-5">
             <ProducerLampForm />
+          </div>
+          <div className="border-t border-atelier-rule/60 pt-5">
+            <ProducerPttKeyForm />
           </div>
           {producerLook && (
             <div className="space-y-3 border-t border-atelier-rule/60 pt-5">
