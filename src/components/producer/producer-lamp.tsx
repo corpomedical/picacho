@@ -97,6 +97,8 @@ const W = {
   endVoice: "End",
   endVoiceLabel: "End the voice conversation",
   typeInstead: "Type instead",
+  pushOpening: "Opening the mic…",
+  pushListening: "Listening · let go to send",
   wholeChat: "Whole chat",
   you: "You",
   talkOver: "Talk over it anytime",
@@ -301,10 +303,11 @@ export function ProducerLamp({
   }, []);
   useEffect(() => {
     try {
-      if (voice.active && voice.phase !== "speaking") window.sessionStorage.setItem(VOICE_ON_KEY, "1");
-      if (voice.phase === "off") window.sessionStorage.removeItem(VOICE_ON_KEY);
+      // Hands-free only: a push-to-talk hold never comes back on a reload.
+      if (voice.handsFree) window.sessionStorage.setItem(VOICE_ON_KEY, "1");
+      else if (voice.phase === "off") window.sessionStorage.removeItem(VOICE_ON_KEY);
     } catch {}
-  }, [voice.active, voice.phase]);
+  }, [voice.handsFree, voice.phase]);
   useEffect(() => {
     if (open) setUnseenCards(0);
   }, [open]);
@@ -503,6 +506,7 @@ export function ProducerLamp({
       interrupting,
       heard: interrupting && readAloud ? voice.heardText() : null,
       talkedOver: meta.talkedOver === true,
+      pushToTalk: meta.pushToTalk === true,
     });
   }
   sendSpokenRef.current = sendSpoken;
@@ -544,6 +548,7 @@ export function ProducerLamp({
     interrupting = false,
     heard = null,
     talkedOver = false,
+    pushToTalk = false,
   }: {
     text?: string;
     focus?: string;
@@ -551,6 +556,8 @@ export function ProducerLamp({
     interrupting?: boolean;
     heard?: string | null;
     talkedOver?: boolean;
+    /** Held the lamp to say it: answered out loud, and not judged (route.ts). */
+    pushToTalk?: boolean;
   }) {
     setError(null);
     const turn: Turn = {
@@ -561,7 +568,8 @@ export function ProducerLamp({
       cut: false,
       spoken,
     };
-    const speak = readAloud;
+    // Asked out loud, answered out loud.
+    const speak = readAloud || pushToTalk;
     const accept = (words: string) => {
       if (turn.accepted && currentRef.current === turn) return;
       turn.accepted = true;
@@ -598,6 +606,7 @@ export function ProducerLamp({
           name: spoken ? name : undefined,
           heard: heard ?? undefined,
           talkedOver: spoken ? talkedOver : undefined,
+          pushToTalk: spoken && pushToTalk ? true : undefined,
         }),
         signal: turn.controller.signal,
       });
@@ -975,6 +984,7 @@ export function ProducerLamp({
         open={open}
         onToggle={() => setOpen((v) => !v)}
         live={voice.active}
+        endable={voice.handsFree}
         level={glow}
         look={look}
         mood={mood}
@@ -986,6 +996,10 @@ export function ProducerLamp({
         openLabel={W.open(name)}
         newCardsLabel={W.newCards(unseenCards)}
         endVoiceLabel={W.endVoiceLabel}
+        // Push to talk: hold the lamp (not while hands-free has the mic).
+        onHoldStart={voice.supported && voiceAvailable && !voice.handsFree ? () => void voice.pushStart() : undefined}
+        onHoldEnd={() => voice.pushEnd(true)}
+        holdText={voice.pushing === "opening" ? W.pushOpening : voice.pushing === "on" ? W.pushListening : null}
       />
 
       <Spotlight lit={lit} />

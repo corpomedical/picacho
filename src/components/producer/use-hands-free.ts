@@ -7,8 +7,10 @@ import {
   BargeIn,
   EnergySegmenter,
   VoiceLevel,
+  PUSH_MAX_SECONDS,
   concat,
   encodeWav,
+  pushWorthSending,
   rms,
   speechLevel,
   toBase64,
@@ -75,6 +77,8 @@ export type UtteranceMeta = {
   interrupting: boolean;
   /** They started while she spoke and kept talking after she went quiet (the barge-in held). */
   talkedOver?: boolean;
+  /** Held the lamp (or the key) to say it: meant for her, no need to judge. */
+  pushToTalk?: boolean;
 };
 
 /** The longest single recording (a monologue is cut here and sent). */
@@ -399,6 +403,10 @@ export function useHandsFree({
   const [notice, setNotice] = useState<string | null>(null);
   const [held, setHeld] = useState(false);
   const [engine, setEngine] = useState<"silero" | "basic" | null>(null);
+  // Hands-free: the always-open mic session (start / stop). Push to talk has
+  // its own mic, open only while held (pushStart / pushEnd).
+  const [handsFree, setHandsFree] = useState(false);
+  const [pushing, setPushing] = useState<"off" | "opening" | "on">("off");
   // How much of her own voice the mic hears while she speaks (the learned
   // leak), about once a second while she is audible — an admin's readout.
   const [echo, setEcho] = useState<{ leak: number; strict: boolean; dips: number; stops: number } | null>(null);
@@ -620,9 +628,143 @@ export function useHandsFree({
     if (typeof level === "number") voiceLevel.current.accept(level);
   }, []);
 
+  // PUSH TO TALK (2026-09-27, operator: "We need to add push to talk for
+  // people who hate having their mics open at all times. By long pressing the
+  // light bulb it would activate the mic and deactivating when unpressed").
+  // A microphone of its own, opened when the hold starts and closed (every
+  // track stopped, so the browser's mic light goes out) when it is let go.
+  // What was said is sent as one recording, no speech detector: the hold is
+  // the start and the end. She stops while they talk and carries on if it came
+  // to nothing (too short, or silence). It doesn't start while hands-free is on.
+  const push = useRef<{
+    stream: MediaStream | null;
+    ctx: AudioContext | null;
+    detach: () => void;
+    chunks: Float32Array[];
+    samples: number;
+    heldHer: boolean;
+  } | null>(null);
+  const pushEndRef = useRef<(send?: boolean) => void>(() => {});
+
+  const pushStart = useCallback(async () => {
+    if (session.current || push.current) return;
+    if (!supported) {
+      setNotice("This browser can't record. Try Chrome, Edge or Safari.");
+      return;
+    }
+    setNotice(null);
+    const p = { stream: null as MediaStream | null, ctx: null as AudioContext | null, detach: () => {}, chunks: [] as Float32Array[], samples: 0, heldHer: false };
+    push.current = p;
+    setPushing("opening");
+    if (playing.current !== null && !heldRef.current) {
+      hold();
+      p.heldHer = true;
+    }
+    const giveUp = (why: string | null) => {
+      if (push.current === p) {
+        push.current = null;
+        setPushing("off");
+        if (p.heldHer) resume();
+      }
+      if (why) setNotice(why);
+    };
+    if (await appCannotRecord()) return giveUp(APP_TOO_OLD);
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: { ideal: 1 },
+          ...({ voiceIsolation: true } as Record<string, boolean>),
+        },
+      });
+    } catch {
+      return giveUp((await nativeAppBuild()) !== null ? APP_MIC_DENIED : WEB_MIC_DENIED);
+    }
+    if (push.current !== p) {
+      // Let go (or ended) while the mic was opening: close it at once.
+      stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    p.stream = stream;
+    const ctx = new AudioContext();
+    p.ctx = ctx;
+    if (ctx.state === "suspended") await ctx.resume().catch(() => {});
+    const source = ctx.createMediaStreamSource(stream);
+    const node = ctx.createScriptProcessor(1024, 1, 1);
+    const sink = ctx.createGain();
+    sink.gain.value = 0;
+    let smooth = 0;
+    let n = 0;
+    node.onaudioprocess = (e) => {
+      if (push.current !== p) return;
+      const input = toSixteenK(e.inputBuffer.getChannelData(0).slice(), ctx.sampleRate);
+      p.chunks.push(input);
+      p.samples += input.length;
+      // The light follows their voice, ~10 times a second.
+      smooth = smooth * 0.55 + Math.min(1, rms(input) * 12) * 0.45;
+      if (++n % 2 === 0) setLevel(Math.round(smooth * 100) / 100);
+      if (p.samples >= 16000 * PUSH_MAX_SECONDS) pushEndRef.current(true);
+    };
+    source.connect(node);
+    node.connect(sink);
+    sink.connect(ctx.destination);
+    p.detach = () => {
+      node.onaudioprocess = null;
+      try {
+        source.disconnect();
+        node.disconnect();
+        sink.disconnect();
+      } catch {}
+    };
+    setMetered(true);
+    setPushing("on");
+    if (!p.heldHer) go("hearing");
+  }, [supported, hold, resume, go]);
+
+  /** Let go: the mic closes, and what was said is sent (unless `send` is false or nothing was said). */
+  const pushEnd = useCallback(
+    (send = true) => {
+      const p = push.current;
+      if (!p) return;
+      push.current = null;
+      p.detach();
+      p.stream?.getTracks().forEach((t) => t.stop());
+      void p.ctx?.close().catch(() => {});
+      setPushing("off");
+      setMetered(false);
+      setLevel(0);
+      const audio = concat(p.chunks);
+      if (!send || !pushWorthSending(audio)) {
+        if (heldRef.current) resume();
+        else if (phaseRef.current === "hearing") go(replyUnderway() ? "sending" : session.current ? "listening" : "off");
+        return;
+      }
+      if (!heldRef.current) go("sending");
+      handlers.current.onUtterance(
+        {
+          data: toBase64(encodeWav(audio)),
+          mime: "audio/wav",
+          seconds: Math.max(1, Math.round(audio.length / 16000)),
+          level: speechLevel(audio),
+        },
+        { interrupting: p.heldHer || replyUnderway(), pushToTalk: true },
+      );
+    },
+    [go, resume],
+  );
+  useEffect(() => {
+    pushEndRef.current = pushEnd;
+  }, [pushEnd]);
+
   const stop = useCallback(() => {
     const s = session.current;
     session.current = null;
+    setHandsFree(false);
+    // A hold under way ends too, unsent (End pressed mid-hold).
+    pushEndRef.current(false);
     endPending.current = false;
     stopPlayback();
     setHold(false);
@@ -645,6 +787,8 @@ export function useHandsFree({
 
   const start = useCallback(async () => {
     if (session.current) return;
+    // Hands-free takes over from a hold under way (its words are sent).
+    pushEndRef.current(true);
     if (!supported) {
       setNotice("This browser can't record. Try Chrome, Edge or Safari.");
       return;
@@ -699,6 +843,7 @@ export function useHandsFree({
 
     const s: Session = { stream, ctx, outAnalyser, outBus, outBuf: new Float32Array(outAnalyser.fftSize), detector: null };
     session.current = s;
+    setHandsFree(true);
     barge.current.reset();
     setMetered(true);
     go("listening");
@@ -939,6 +1084,12 @@ export function useHandsFree({
     notice,
     supported,
     active: phase !== "off",
+    /** The always-open mic is on (not a push-to-talk hold). */
+    handsFree,
+    /** Push to talk: the mic opening for a hold, open while held, or off. */
+    pushing,
+    pushStart,
+    pushEnd,
     /** She stopped mid-answer because the person talked over her. */
     held,
     /** Which ears are listening: the speech model, or the loudness fallback. */

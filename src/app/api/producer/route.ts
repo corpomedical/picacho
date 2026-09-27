@@ -180,6 +180,8 @@ export async function POST(request: NextRequest) {
     talkedOver?: unknown;
     /** The sheet can play one continuous MP3 stream (MediaSource with audio/mpeg). */
     stream?: unknown;
+    /** Said while holding the lamp (push to talk): meant for the Producer, not judged. */
+    pushToTalk?: unknown;
   } | null;
   // One recording, or several said in a row while an answer was under way
   // (2026-09-25, "several questions at once"): each is transcribed and they
@@ -314,7 +316,7 @@ export async function POST(request: NextRequest) {
   // Bounds what dropped words can cost to about one cut-short call every two
   // minutes, however long the mic stays open beside a loud room.
   const recentlyIgnored: Promise<boolean> =
-    spoken && body?.interrupting !== true
+    spoken && body?.interrupting !== true && body?.pushToTalk !== true
       ? (async () => {
           const { data } = await admin
             .from("agent_usage")
@@ -476,6 +478,11 @@ export async function POST(request: NextRequest) {
   const nearness =
     typeof body?.nearness === "number" && Number.isFinite(body.nearness) ? Math.max(0, Math.min(4, body.nearness)) : null;
   const talkedOver = spoken && body?.talkedOver === true;
+  // Push to talk (2026-09-27): the person held the lamp to say it, so it is
+  // for the Producer by what they did; the judge would only cost time and
+  // could wrongly let it be. Nothing else changes: it is transcribed, charged
+  // and answered like any spoken message.
+  const pushToTalk = spoken && body?.pushToTalk === true;
   // An admin sees why a spoken message was let be (on the "Not for me" note),
   // so a wrong call can be read off a screenshot: the judge's own signals.
   const ignoredEvent = () => {
@@ -494,7 +501,7 @@ export async function POST(request: NextRequest) {
         .join(" · "),
     };
   };
-  const verdict: Promise<Verdict> = spoken
+  const verdict: Promise<Verdict> = spoken && !pushToTalk
     ? judgeSpoken(
         {
           name: prefs.name,
@@ -542,8 +549,9 @@ export async function POST(request: NextRequest) {
         emit("done", { units, notesChanged: notes });
         if (!closed) controller.close();
       };
-      // Held until a spoken message is known to be for the Producer.
-      let holding = spoken && !interrupting;
+      // Held until a spoken message is known to be for the Producer (a
+      // push-to-talk one is known already).
+      let holding = spoken && !interrupting && !pushToTalk;
       const held: [string, unknown][] = [];
       const send = (event: string, data: unknown) => {
         if (holding) held.push([event, data]);

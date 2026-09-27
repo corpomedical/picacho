@@ -444,3 +444,20 @@ export function toSixteenK(input: Float32Array, rate: number): Float32Array {
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Push to talk (2026-09-27, use-hands-free.ts pushStart / pushEnd): a hold of
+// the lamp records until it is let go. A tap that turned into a hold by
+// accident, or a hold with nothing said, isn't sent.
+
+/** The shortest hold worth sending, in seconds. */
+export const PUSH_MIN_SECONDS = 0.35;
+/** The longest hold: it is sent at this point, as if let go. */
+export const PUSH_MAX_SECONDS = 60;
+/** Quieter than this (the RMS of the loudest half) is silence with the mic's own noise. */
+export const PUSH_SILENCE = 0.005;
+
+/** Whether a push-to-talk recording (16 kHz) is worth sending. */
+export function pushWorthSending(samples: Float32Array, sampleRate = 16000): boolean {
+  return samples.length >= sampleRate * PUSH_MIN_SECONDS && speechLevel(samples, sampleRate) >= PUSH_SILENCE;
+}

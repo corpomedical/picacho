@@ -83,6 +83,7 @@ const W = {
   undo: "Undo",
   bringBack: "Settings → Preferences brings it back.",
   moveHint: "drag to move",
+  moveHoldHint: "drag to move, hold to talk",
 };
 
 /** How long the old shape's light takes to dim out before the new one is drawn. */
@@ -134,11 +135,15 @@ function cornersNow(el: HTMLElement, box: Box): Corners {
   return [r[0] * fit, r[1] * fit, r[2] * fit, r[3] * fit];
 }
 
+/** How long the lamp is held still before the mic opens (push to talk). */
+const HOLD_MS = 420;
+
 export function MovableLamp({
   name,
   open,
   onToggle,
   live,
+  endable = live,
   level,
   look,
   mood,
@@ -150,12 +155,17 @@ export function MovableLamp({
   openLabel,
   newCardsLabel,
   endVoiceLabel,
+  onHoldStart,
+  onHoldEnd,
+  holdText = null,
 }: {
   name: string;
   open: boolean;
   onToggle: () => void;
   /** Voice is on: the lamp follows the sound and can't be hidden. */
   live: boolean;
+  /** Hands-free is on: End sits beside the closed lamp (a push-to-talk hold has none). */
+  endable?: boolean;
   /** The look's light (0..1): the voice's loudness, or a steady strength while it talks unmetered. */
   level: number;
   look: LampLook;
@@ -169,6 +179,12 @@ export function MovableLamp({
   openLabel: string;
   newCardsLabel: string;
   endVoiceLabel: string;
+  /** Push to talk: held still for HOLD_MS, the mic opens (undefined = holding does nothing). */
+  onHoldStart?: () => void;
+  /** Let go after a hold: what was said is sent. */
+  onHoldEnd?: () => void;
+  /** Said beside the lamp while it is held ("Listening · let go to send"). */
+  holdText?: string | null;
 }) {
   const [place, setPlace] = useState<Place>({ kind: "home" });
   const [hidden, setHidden] = useState(false);
@@ -192,6 +208,11 @@ export function MovableLamp({
   const gesture = useRef<{ id: number; x: number; y: number; cx: number; cy: number; moved: boolean } | null>(null);
   const samples = useRef<{ t: number; x: number; y: number }[]>([]);
   const suppressClick = useRef(false);
+  // Push to talk (2026-09-27, operator: "By long pressing the light bulb it
+  // would activate the mic and deactivating when unpressed"): a press held
+  // still for HOLD_MS is a hold, not a tap or a drag.
+  const holdRef = useRef<{ id: number; x: number; y: number; timer: number; fired: boolean } | null>(null);
+  const [holding, setHolding] = useState(false);
   const animRef = useRef<Animation | null>(null);
   const lastRef = useRef<{ box: Box; corners: Corners; edge: Edge | null } | null>(null);
   // Where the flight under way set off from (a flight retargeted before its
@@ -428,9 +449,53 @@ export function MovableLamp({
   // Near an edge it is drawn toward it, continuously (0 far, 1 touching).
   const pull = drag && near && !over && !reduced ? pullOf(near.gap, PULL_ZONE) : 0;
 
+  useEffect(() => {
+    if (!holding) return;
+    const away = () => endHold(true);
+    window.addEventListener("blur", away);
+    document.addEventListener("visibilitychange", away);
+    return () => {
+      window.removeEventListener("blur", away);
+      document.removeEventListener("visibilitychange", away);
+    };
+    // endHold reads refs only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [holding]);
+
+  function endHold(send: boolean) {
+    const h = holdRef.current;
+    holdRef.current = null;
+    if (!h) return false;
+    window.clearTimeout(h.timer);
+    if (!h.fired) return false;
+    setHolding(false);
+    if (send) onHoldEnd?.();
+    return true;
+  }
+
   function onPointerDown(e: React.PointerEvent<HTMLButtonElement>) {
     suppressClick.current = false;
-    if (open || !layout || e.button !== 0) return;
+    if (e.button !== 0) return;
+    if (onHoldStart) {
+      const h = { id: e.pointerId, x: e.clientX, y: e.clientY, timer: 0, fired: false };
+      h.timer = window.setTimeout(() => {
+        if (holdRef.current !== h) return;
+        h.fired = true;
+        // A hold, so not a drag: the lamp stays where it is.
+        dragRef.current = null;
+        setDrag(null);
+        setHolding(true);
+        try {
+          navigator.vibrate?.(12);
+        } catch {}
+        onHoldStart();
+      }, HOLD_MS);
+      holdRef.current = h;
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {}
+    }
+    if (open || !layout) return;
     const r = e.currentTarget.getBoundingClientRect();
     // From a tab, the lamp forms under the finger; from the round lamp, it
     // keeps the offset it was picked up with.
@@ -450,6 +515,15 @@ export function MovableLamp({
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLButtonElement>) {
+    const h = holdRef.current;
+    if (h && h.id === e.pointerId) {
+      if (h.fired) return; // held: it doesn't move
+      // Moved before the hold began: a drag (or nothing, when open).
+      if (Math.hypot(e.clientX - h.x, e.clientY - h.y) >= 6) {
+        window.clearTimeout(h.timer);
+        holdRef.current = null;
+      }
+    }
     const g = gesture.current;
     if (!g || g.id !== e.pointerId || !layout) return;
     const dx = e.clientX - g.x;
@@ -464,6 +538,14 @@ export function MovableLamp({
   }
 
   function onPointerUp(e: React.PointerEvent<HTMLButtonElement>) {
+    if (holdRef.current?.id === e.pointerId && endHold(true)) {
+      // Let go of a hold: sent, and no click opens the chat.
+      suppressClick.current = true;
+      gesture.current = null;
+      dragRef.current = null;
+      setDrag(null);
+      return;
+    }
     const g = gesture.current;
     gesture.current = null;
     const at = dragRef.current;
@@ -525,6 +607,7 @@ export function MovableLamp({
   }
 
   function onPointerCancel() {
+    endHold(true);
     gesture.current = null;
     dragRef.current = null;
     setDrag(null);
@@ -540,7 +623,7 @@ export function MovableLamp({
 
   // The End chip sits beside the lamp, on the page's side of a tab.
   let chip: { left: number; top: number } | null = null;
-  if (live && !open && box && !drag) {
+  if (endable && !open && box && !drag) {
     const c = 30;
     const gap = 10;
     const midY = box.top + box.height / 2 - c / 2;
@@ -645,9 +728,10 @@ export function MovableLamp({
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerCancel}
+          onContextMenu={onHoldStart ? (e) => e.preventDefault() : undefined}
           aria-label={openLabel}
           aria-expanded={open}
-          title={`${name} (${W.moveHint})`}
+          title={`${name} (${onHoldStart ? W.moveHoldHint : W.moveHint})`}
           // --glow: the look's light, worked out by the parent (producer-lamp.tsx).
           // (--light-delay is set on the element by the flight, above.)
           style={{ ...lampPosition, ...(dragTransform ?? {}), "--glow": level } as React.CSSProperties}
@@ -679,8 +763,27 @@ export function MovableLamp({
         </button>
       )}
 
+      {/* Held: what the lamp is doing, beside it on the page's side. */}
+      {holdText && (
+        <span
+          role="status"
+          aria-live="polite"
+          className={styles.holdPill}
+          style={
+            box
+              ? tabEdge === "left" || (!tabEdge && box.left < 180)
+                ? { left: box.left + box.width + 10, top: box.top + box.height / 2 - 15 }
+                : { right: Math.max(8, window.innerWidth - box.left + 10), top: box.top + box.height / 2 - 15 }
+              : { right: 74, bottom: 27 }
+          }
+        >
+          <span className={styles.holdDot} aria-hidden="true" />
+          {holdText}
+        </span>
+      )}
+
       {/* Voice is live with the sheet closed: the one-tap way to turn it off. */}
-      {live && !open && (
+      {endable && !open && (
         <button
           type="button"
           onClick={onEndVoice}

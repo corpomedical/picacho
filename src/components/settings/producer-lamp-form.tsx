@@ -44,7 +44,7 @@ export function ProducerLampForm() {
       <div className="min-w-0">
         <p className="text-sm font-medium text-atelier-ink">The lamp</p>
         <p className="mt-0.5 text-xs text-atelier-muted">
-          {describe(hidden, place)} Drag it anywhere; let go at an edge to tuck it in, or drop it on × to hide it.
+          {describe(hidden, place)} Drag it anywhere; let go at an edge to tuck it in, or drop it on × to hide it. Hold it to talk: the mic is open only while you hold.
         </p>
       </div>
       <div className="flex flex-wrap gap-2">

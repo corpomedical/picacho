@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.126.0",
+    build: 165,
+    date: "2026-09-27",
+    title: "Hold Aly's lamp to talk: the mic is open only while you hold it",
+    items: [
+      "Push to talk, for anyone who doesn't want a microphone left open: hold the lamp still for about half a second and the mic opens (\"Listening · let go to send\" shows beside it, and the lamp glows with your voice). Let go and it closes completely, and what you said goes to Aly, who answers out loud. A tap still opens the chat and a drag still moves the lamp.",
+      "Holding the lamp while she's talking stops her to listen; if the hold was too short or nothing was said, nothing is sent and she carries on. A hold is sent by itself after a minute.",
+      "What you say while holding is always taken as meant for her, so it skips the background check (no \"Not for me\" on it) and starts answering sooner.",
+      "Hands-free stays as it was, from Talk on the wheel. While it is on, holding the lamp does nothing extra.",
+      "Subtitles are narrower: the words sit in a column about 700 pixels wide on a dark oval behind them, instead of a dark band across the whole screen.",
+    ],
+  },
+  {
     version: "1.125.0",
     build: 164,
     date: "2026-09-27",
