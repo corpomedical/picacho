@@ -1084,11 +1084,12 @@ async function shootStill(
   };
   fd.set("prompt", buildSetShotPrompt({ ...shot, direction }));
   fd.set("set_format", rig.format);
-  // The engine the person picked, and on Nano Banana the render's own shape
-  // (rig.ts RIG_FORMATS): the cut to the frame lines is by proportion, so a
-  // 3:2 render cuts exactly as GPT Image's 1536 × 1024 does.
+  // The engine the person picked, and on Nano Banana or Seedream the
+  // render's own shape (rig.ts RIG_FORMATS): the cut to the frame lines is
+  // by proportion, so a 3:2 render cuts exactly as GPT Image's 1536 × 1024
+  // does.
   if (pickedEngine) fd.set("image_model_id", pickedEngine);
-  if (pickedEngine === "gemini") {
+  if (pickedEngine === "gemini" || pickedEngine === "seedream-5-pro") {
     const [w, h] = RIG_FORMATS[rig.format].render;
     fd.set("image_aspect", w === h ? "1:1" : w > h ? "3:2" : "2:3");
   }

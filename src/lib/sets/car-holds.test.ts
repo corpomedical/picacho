@@ -52,8 +52,9 @@ describe("the look", () => {
 });
 
 describe("the still's engine", () => {
-  it("is the composer's own two lanes, remembered in the browser, and sent with every still", () => {
-    expect([...SELECTABLE_IMAGE_MODEL_IDS]).toEqual(["gpt-image", "gemini"]);
+  it("is the composer's own lanes, remembered in the browser, and sent with every still", () => {
+    // Seedream 5.0 Pro joined 2026-09-28; the picker reads the list, so it is offered here too.
+    expect([...SELECTABLE_IMAGE_MODEL_IDS]).toEqual(["gpt-image", "gemini", "seedream-5-pro"]);
     expect(view).toContain('window.localStorage.setItem("helios.stillEngine", id);');
     expect(view).toContain("{SELECTABLE_IMAGE_MODEL_IDS.map((id) => (");
     expect(view.match(/stillEngine,\n/g)?.length).toBeGreaterThanOrEqual(3);

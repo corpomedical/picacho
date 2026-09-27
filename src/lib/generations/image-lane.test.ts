@@ -29,6 +29,7 @@ import {
   offersImageAspect,
   offersImageQuality,
   offersImageResolution,
+  seedreamImageSize,
 } from "./providers/image-resolution";
 import en from "../i18n/messages/en";
 import es from "../i18n/messages/es";
@@ -67,6 +68,7 @@ describe("the pickable picture lanes", () => {
     const keys: Record<string, string> = {
       "gpt-image": "imageModelJobGptImage",
       gemini: "imageModelJobNanoBananaPro",
+      "seedream-5-pro": "imageModelJobSeedream",
     };
     for (const id of SELECTABLE_IMAGE_MODEL_IDS) {
       const key = keys[id];
@@ -302,6 +304,7 @@ describe("free accounts", () => {
 
   it("pays for a paid-only lane with a plan, and the flag says which lanes those are", () => {
     expect(isImageModelPaidOnly("gemini")).toBe(true);
+    expect(isImageModelPaidOnly("seedream-5-pro")).toBe(true);
     expect(isImageModelPaidOnly("gpt-image")).toBe(false);
     expect(isImageModelPaidOnly("flux")).toBe(false);
   });
@@ -382,7 +385,12 @@ describe("the capability matrix", () => {
   // here would hand this lane the whole gallery through
   // baselineIdentityReferences, on a reference order and prompt suffixes
   // written for a flat list — unproven, so unclaimed.
-  it("keeps Nano Banana Pro to one identity photo until a probe says otherwise", () => {
+  it("keeps Nano Banana Pro and Seedream to one identity photo until a probe says otherwise", () => {
+    expect(MODEL_CAPABILITIES["seedream-5-pro"].identity).toEqual({
+      max: 1,
+      mechanism: "edit-source",
+      required: false,
+    });
     expect(MODEL_CAPABILITIES.gemini.identity).toEqual({
       max: 1,
       mechanism: "edit-source",
@@ -400,5 +408,70 @@ describe("the capability matrix", () => {
   it("falls back to the recommended lane on an unknown id", () => {
     expect(getImageModel("nope").id).toBe("gpt-image");
     expect(getImageModel("gemini").id).toBe("gemini");
+  });
+});
+
+// Seedream 5.0 Pro (2026-09-28, the operator: "both"). fal's own pages, read
+// that day: "$0.0675 per image for images of total area less than or equal
+// to 1536x1536 pixels", "$0.135" above it, "$0.0045" per input picture after
+// the first, at most ten, and "Total pixels must be between 1024x1024 and
+// 2048x2048".
+describe("Seedream 5.0 Pro", () => {
+  it("is one credit at both sizes, priced at ten input pictures, and opens on 2K", () => {
+    const offers = imageResolutionOffers("seedream-5-pro");
+    expect(offers.map((o) => o.value)).toEqual(["1K", "2K"]);
+    expect(offers.find((o) => o.value === "1K")!.costPerImageUsd).toBeCloseTo(0.0675 + 9 * 0.0045, 6);
+    expect(offers.find((o) => o.value === "2K")!.costPerImageUsd).toBeCloseTo(0.135 + 9 * 0.0045, 6);
+    expect(imageResolutionCreditWeight("seedream-5-pro", "1K")).toBe(1);
+    expect(imageResolutionCreditWeight("seedream-5-pro", "2K")).toBe(1);
+    // Not sold, so priced — and rendered — as the default, never free.
+    expect(offersImageResolution("seedream-5-pro", "4K")).toBe(false);
+    expect(imageResolutionCreditWeight("seedream-5-pro", "4K")).toBe(1);
+    expect(defaultImageResolution("seedream-5-pro")).toBe("2K");
+    expect(imageQualityOffers("seedream-5-pro")).toEqual([]);
+    expect(imageAspectOffers("seedream-5-pro")).toEqual(IMAGE_ASPECTS);
+  });
+
+  it("asks for pixels inside fal's limits and inside the band it charged, at every shape", () => {
+    for (const aspect of IMAGE_ASPECTS) {
+      for (const band of ["1K", "2K"] as const) {
+        const { width, height } = seedreamImageSize(band, aspect);
+        const area = width * height;
+        expect(width % 16, `${band} ${aspect}`).toBe(0);
+        expect(height % 16, `${band} ${aspect}`).toBe(0);
+        expect(area, `${band} ${aspect} under fal's floor`).toBeGreaterThanOrEqual(1024 * 1024);
+        expect(area, `${band} ${aspect} over fal's ceiling`).toBeLessThanOrEqual(2048 * 2048);
+        // 1K must stay on the $0.0675 side of fal's line, or it bills as 2K.
+        if (band === "1K") expect(area, `${aspect} crossed the price line`).toBeLessThanOrEqual(1536 * 1536);
+        const [w, h] = aspect.split(":").map(Number);
+        expect(Math.abs(width / height - w / h) / (w / h), `${band} ${aspect} shape`).toBeLessThan(0.03);
+      }
+    }
+    expect(seedreamImageSize(null, null)).toEqual({ width: 2048, height: 2048 });
+  });
+
+  it("dispatches on its id before any provider check, with the band this send paid for", () => {
+    const byId = image.indexOf('if (model.id === "seedream-5-pro")');
+    const byProvider = image.indexOf('if (model.provider === "fal")');
+    expect(byId).toBeGreaterThan(-1);
+    expect(byId).toBeLessThan(byProvider);
+    expect(image).toContain("generateImageWithSeedream(prompt, combinedRefs, {");
+  });
+
+  it("keeps the face when there are more than ten pictures, and never turns fal's filter off", () => {
+    const start = falImage.indexOf("export async function generateImageWithSeedream");
+    const fn = falImage.slice(start, falImage.indexOf("\n}\n", start));
+    // fal keeps the LAST ten; our array leads with the identity photo.
+    expect(fn).toContain(".slice(0, SEEDREAM_MAX_INPUT_IMAGES)");
+    expect(fn).toContain("image_size: seedreamImageSize(");
+    expect(fn).not.toContain("enable_safety_checker:");
+    expect(fn).toContain("res.status === 422");
+    expect(fn).toContain("throw new SeedreamImageRefusal(IMAGE_RESULT_REFUSED)");
+  });
+
+  it("is on the composer's picker and the Helios still picker, and sends Helios its shape", () => {
+    expect(SELECTABLE_IMAGE_MODEL_IDS).toContain("seedream-5-pro");
+    const sets = read("../sets/actions.ts");
+    expect(sets).toContain('pickedEngine === "gemini" || pickedEngine === "seedream-5-pro"');
   });
 });

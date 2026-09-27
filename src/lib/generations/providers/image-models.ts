@@ -85,6 +85,37 @@ export const IMAGE_MODELS = [
     recommended: false,
     description: "Google's Gemini 3 Pro Image — a second opinion when a prompt or a face fights the default.",
   },
+  {
+    // Seedream 5.0 Pro — ByteDance's picture model, the third lane a person
+    // can pick (2026-09-28, the operator: "both", after "I dont see it in
+    // Picacho" about the Seedream 5.0 Pro his BytePlus account had switched
+    // on). Through fal, like Nano Banana Pro, and NOT through that BytePlus
+    // account: fal needs no second key in Vercel, its ledger is the one the
+    // money checks already read, and fal's Seedream 5.0 Pro edit is the
+    // endpoint that was actually probed on a face.
+    //
+    // WHY IT IS OFFERED: the 2026-09-21 engine probe on Eva (a made-up
+    // photoreal character, three references, a blind five-judge panel) put
+    // Seedream 5.0 Pro edit FIRST of the six new engines at 85/100, and it
+    // did not refuse the photoreal face. That probe did not run our current
+    // lanes beside it, so "better than GPT Image" is NOT established — it is
+    // offered as a choice, not made the default.
+    //
+    // THE MONEY (fal's own model pages, read 2026-09-28 — re-read before
+    // quoting again): "$0.0675 per image for images of total area less than
+    // or equal to 1536x1536 pixels", "$0.135" above that, and "The first
+    // input image is not charged, and every additional input image will cost
+    // $0.0045". Sizes and their weights live in image-resolution.ts.
+    id: "seedream-5-pro",
+    name: "Seedream 5.0 Pro",
+    provider: "fal" as const,
+    falTextToImage: "bytedance/seedream/v5/pro/text-to-image",
+    falImageToImage: "bytedance/seedream/v5/pro/edit",
+    /** Paid plans only, like Nano Banana Pro. Enforced server-side in actions.ts (free accounts are pinned to the admin default). */
+    paidOnly: true,
+    recommended: false,
+    description: "ByteDance's Seedream 5.0 Pro — a third lane to try when a face or a prompt fights the other two.",
+  },
 ] as const;
 
 export type ImageModelId = (typeof IMAGE_MODELS)[number]["id"];
@@ -103,7 +134,7 @@ export function getImageModel(id: string) {
  * Every id here needs a job line in all four locales — image-lane.test.ts
  * fails the build otherwise, the same guard FEATURED_VIDEO_MODEL_IDS has.
  */
-export const SELECTABLE_IMAGE_MODEL_IDS = ["gpt-image", "gemini"] as const;
+export const SELECTABLE_IMAGE_MODEL_IDS = ["gpt-image", "gemini", "seedream-5-pro"] as const;
 
 /**
  * Whether this lane is a paid-plan lane. A free account is pinned to the
@@ -124,19 +155,20 @@ export function selectableImageModels() {
 /**
  * The lanes that can put SEVERAL distinct characters in one picture. Every
  * lane in the catalogue can today — GPT's multi-image edit always could,
- * FLUX.2 Pro's /edit joined it 2026-08-26, and Nano Banana Pro's /edit takes
- * a reference array too — so the guard in actions.ts is dormant. It stays
+ * FLUX.2 Pro's /edit joined it 2026-08-26, and Nano Banana Pro's and
+ * Seedream 5.0 Pro's /edit take a reference array too — so the guard in
+ * actions.ts is dormant. It stays
  * because it is the cheap protection against the opposite of a silent
  * failure: a future lane that takes ONE source image would otherwise render
  * a group scene from one person's photo and call it a success.
  */
-export const IMAGE_LANES_THAT_COMPOSITE = ["gpt-image", "flux", "gemini"] as const;
+export const IMAGE_LANES_THAT_COMPOSITE = ["gpt-image", "flux", "gemini", "seedream-5-pro"] as const;
 
 /**
  * The lanes that take an EXTRA photo beside the person — the outfit laid
  * out, an attached prop or background, a set's earlier still, the
- * photograph a photo set was built from. All three take a reference array,
- * so all three are here.
+ * photograph a photo set was built from. Every lane takes a reference
+ * array, so every lane is here.
  *
  * Read it from here, never by naming ids at the call site. The four gates in
  * actions.ts spelled out `"gpt-image" || "flux"` when Nano Banana Pro
@@ -147,7 +179,7 @@ export const IMAGE_LANES_THAT_COMPOSITE = ["gpt-image", "flux", "gemini"] as con
  * send receipt promised the photo rode. Found the same day, on the first
  * real render, from a low identity score.
  */
-export const IMAGE_LANES_THAT_TAKE_EXTRA_PHOTOS = ["gpt-image", "flux", "gemini"] as const;
+export const IMAGE_LANES_THAT_TAKE_EXTRA_PHOTOS = ["gpt-image", "flux", "gemini", "seedream-5-pro"] as const;
 
 /** Whether this picture lane receives the extra photos as pixels (see above). */
 export function imageLaneTakesExtraPhotos(id: string): boolean {

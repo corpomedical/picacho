@@ -1248,6 +1248,7 @@ const pt = {
     modelJobGeminiOmni: "Qualidade de topo — por um quarto do preço do Veo",
     imageModelJobGptImage: "O mais fiel ao texto — o padrão",
     imageModelJobNanoBananaPro: "O motor da Google — tente quando o padrão recusar",
+    imageModelJobSeedream: "O motor da ByteDance — uma terceira opção quando os outros falham",
     modelJobVeo: "Sem personagem — com áudio",
     freePinnedNote: "gera com {model}",
     issueNeedsCharacterWithAttachment: "Sua foto acompanha o seu prompt como referência, mas o rosto tem que vir de um personagem salvo. Escolha um ou mude para o Veo para gerar sem personagem.",

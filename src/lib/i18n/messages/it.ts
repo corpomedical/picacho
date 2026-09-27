@@ -1247,6 +1247,7 @@ const it = {
     modelJobGeminiOmni: "Qualità al top — a un quarto del prezzo di Veo",
     imageModelJobGptImage: "Il più fedele al testo — quello predefinito",
     imageModelJobNanoBananaPro: "Il motore di Google — provalo quando il predefinito rifiuta",
+    imageModelJobSeedream: "Il motore di ByteDance — una terza opzione quando gli altri sbagliano",
     modelJobVeo: "Senza personaggio — con audio",
     freePinnedNote: "genera con {model}",
     issueNeedsCharacterWithAttachment: "La tua foto accompagna il prompt come riferimento, ma il volto deve venire da un personaggio salvato. Scegline uno o passa a Veo per generare senza personaggio.",

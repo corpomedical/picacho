@@ -1343,6 +1343,7 @@ const en = {
     // SELECTABLE_IMAGE_MODEL_IDS — image-lane.test.ts fails on a missing one.
     imageModelJobGptImage: "Sharpest at following a prompt — the default",
     imageModelJobNanoBananaPro: "Google's engine — try it when the default says no",
+    imageModelJobSeedream: "ByteDance's engine — a third take when the others miss",
     modelJobVeo: "No character needed — with audio",
     freePinnedNote: "runs on {model}",
     issueNeedsCharacterWithAttachment: "Your photo rides along as a reference with your prompt — but the face has to come from a saved character. Pick one, or switch to Veo for a character-free take.",

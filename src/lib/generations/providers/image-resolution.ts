@@ -93,6 +93,30 @@ const GPT_OFFERS: readonly ImageResolutionOffer[] = [
   { value: "1K", costPerImageUsd: 0.0909, creditWeight: 1 },
 ];
 
+/**
+ * Seedream 5.0 Pro, fal's own model pages read 2026-09-28, verbatim:
+ *   "$0.0675 per image for images of total area less than or equal to
+ *    1536x1536 pixels" · "For total pixel area over 1536x1536, each request
+ *    will cost $0.135" · "The first input image is not charged, and every
+ *    additional input image will cost $0.0045".
+ *
+ * The endpoint takes up to ten input pictures, so the worst case adds nine
+ * paid ones ($0.0405), and each band is priced at that worst case:
+ *
+ *   1K (about 1024x1024 of area)  $0.0675 + $0.0405 = $0.108  -> 0.39 -> 1 credit
+ *   2K (about 2048x2048 of area)  $0.135  + $0.0405 = $0.1755 -> 0.63 -> 1 credit
+ *
+ * Both one credit, so the lane opens on 2K — the size the 2026-09-21 probe
+ * that scored it 85 rendered at (the endpoint's own default, auto_2K). The
+ * sizes are sent as exact pixel dimensions (seedreamImageSize below), never
+ * as fal's named presets: only a width and height guarantee the area stays
+ * on the side of fal's line this table priced.
+ */
+const SEEDREAM_OFFERS: readonly ImageResolutionOffer[] = [
+  { value: "1K", costPerImageUsd: 0.108, creditWeight: weigh(0.108) },
+  { value: "2K", costPerImageUsd: 0.1755, creditWeight: weigh(0.1755) },
+];
+
 /** FLUX.2 Pro, the admin-only fallback lane: one band, unchanged. */
 const FLUX_OFFERS: readonly ImageResolutionOffer[] = [
   { value: "1K", costPerImageUsd: 0.04, creditWeight: 1 },
@@ -100,6 +124,7 @@ const FLUX_OFFERS: readonly ImageResolutionOffer[] = [
 
 const OFFERS: Record<string, readonly ImageResolutionOffer[]> = {
   gemini: GEMINI_OFFERS,
+  "seedream-5-pro": SEEDREAM_OFFERS,
   "gpt-image": GPT_OFFERS,
   flux: FLUX_OFFERS,
 };
@@ -116,6 +141,9 @@ const OFFERS: Record<string, readonly ImageResolutionOffer[]> = {
  */
 const ASPECTS: Record<string, readonly ImageAspect[]> = {
   gemini: IMAGE_ASPECTS,
+  // Seedream takes any width and height whose ratio is between 1:16 and 16:1,
+  // so every shape here — sent as pixels, see seedreamImageSize.
+  "seedream-5-pro": IMAGE_ASPECTS,
   "gpt-image": ["3:2", "1:1", "2:3"],
   flux: ["1:1"],
 };
@@ -125,11 +153,37 @@ export const DEFAULT_IMAGE_ASPECT: ImageAspect = "1:1";
 
 /**
  * The lane's default size. 2K on Nano Banana Pro because fal charges the
- * same for it as for 1K (see GEMINI_OFFERS); 1K everywhere else, which is
- * the only band those lanes have.
+ * same for it as for 1K (see GEMINI_OFFERS), and on Seedream 5.0 Pro
+ * because both its bands are one credit (see SEEDREAM_OFFERS); 1K
+ * everywhere else, which is the only band those lanes have.
  */
 export function defaultImageResolution(modelId: string): ImageResolution {
-  return modelId === "gemini" ? "2K" : "1K";
+  return modelId === "gemini" || modelId === "seedream-5-pro" ? "2K" : "1K";
+}
+
+/**
+ * The exact pixels a Seedream 5.0 Pro picture is asked for, from the band
+ * and shape a send paid for. fal's rule for this endpoint: "Total pixels must
+ * be between 1024x1024 and 2048x2048". Each side is a multiple of 16.
+ *
+ *   1K  about 1024x1024 of area, rounded UP, so a wide or tall shape never
+ *       lands under fal's floor (21:9 comes out 1568x672 = 1,053,696 px).
+ *   2K  about 2048x2048 of area, rounded DOWN, so it never lands over fal's
+ *       ceiling (21:9 comes out 3120x1328 = 4,143,360 px).
+ *
+ * Either way the area stays inside the price band SEEDREAM_OFFERS charged.
+ */
+export function seedreamImageSize(
+  resolution: ImageResolution | null | undefined,
+  aspect: ImageAspect | null | undefined,
+): { width: number; height: number } {
+  const band = resolution === "1K" ? "1K" : "2K";
+  const [w, h] = (aspect ?? DEFAULT_IMAGE_ASPECT).split(":").map(Number);
+  const ratio = w / h;
+  const side = band === "1K" ? 1024 : 2048;
+  const area = side * side;
+  const snap = band === "1K" ? (n: number) => Math.ceil(n / 16) * 16 : (n: number) => Math.floor(n / 16) * 16;
+  return { width: snap(Math.sqrt(area * ratio)), height: snap(Math.sqrt(area / ratio)) };
 }
 
 /** Every size this lane sells, cheapest first. Unknown lane: the one-band default. */
@@ -242,6 +296,10 @@ const NO_QUALITY: readonly ImageQualityOffer[] = [];
 const QUALITIES: Record<string, readonly ImageQualityOffer[]> = {
   "gpt-image": GPT_QUALITY_OFFERS,
   gemini: NO_QUALITY,
+  // fal's Seedream 5.0 Pro schema has no quality parameter either (prompt,
+  // image_urls, image_size, num_images, output_format, sync_mode,
+  // enable_safety_checker — read 2026-09-28).
+  "seedream-5-pro": NO_QUALITY,
   flux: NO_QUALITY,
 };
 

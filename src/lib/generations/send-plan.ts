@@ -46,7 +46,7 @@ export type VideoModelId =
   | "seedance-2-mini"
   | "veo"
   | "wan-turbo";
-export type ImageModelId = "gpt-image" | "flux" | "gemini";
+export type ImageModelId = "gpt-image" | "flux" | "gemini" | "seedream-5-pro";
 
 export type ModelCapabilities = {
   kind: "video" | "image";
@@ -390,6 +390,24 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
     aspectControl: "param",
     photorealPolicy: "accepts",
   },
+  // Seedream 5.0 Pro since 2026-09-28 — the third lane a person can pick.
+  // Identical to Nano Banana Pro on every axis, identity.max included: its
+  // edit takes ten pictures, but the 2026-09-21 probe that scored it 85 on
+  // Eva gave it three photos of ONE person, and nothing has measured what it
+  // does with a gallery ordered and worded for a flat list. "accepts": that
+  // probe's photoreal face was not refused (fal, not BytePlus — BytePlus's
+  // real-face refusal is Seedance's, byteplus-seedance-access).
+  "seedream-5-pro": {
+    kind: "image",
+    identity: { max: 1, mechanism: "edit-source", required: false },
+    outfitImage: true,
+    continuation: false,
+    startEndFrames: false,
+    storyboard: false,
+    multiPerson: true,
+    aspectControl: "param",
+    photorealPolicy: "accepts",
+  },
 };
 
 // Baseline multi-reference (2026-08-30).
@@ -413,7 +431,7 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
 //                                                 replace the composition.
 //   veo                   "none"        max 0  -> NO. Receives no image.
 //   gpt-image, flux,    "edit-source" max 1  -> NO. One source image.
-//     gemini
+//     gemini, seedream
 //
 // The preferred photo always leads, so the model's primary identity signal
 // is byte-identical to what it was before this existed and the extra photos

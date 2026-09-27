@@ -6369,6 +6369,7 @@ function GenerateFormInner({
               const jobs: Record<string, string> = {
                 "gpt-image": g.imageModelJobGptImage,
                 gemini: g.imageModelJobNanoBananaPro,
+                "seedream-5-pro": g.imageModelJobSeedream,
               };
               return (
                 <button

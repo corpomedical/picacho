@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.129.0",
+    build: 168,
+    date: "2026-09-28",
+    title: "Seedream 5.0 Pro joins the picture engines",
+    items: [
+      "Paid accounts can pick Seedream 5.0 Pro (ByteDance) for a picture, beside GPT Image 2.5 and Nano Banana Pro: in the composer's Engine menu and in Helios's still-engine menu. Free accounts stay on the default, as they do for Nano Banana Pro.",
+      "It's one credit at both sizes it offers, 1K and 2K (it opens on 2K), and it can render every shape the Frame menu has, from 21:9 to 9:16. fal charges $0.0675 up to 1536×1536 and $0.135 above, plus $0.0045 for each reference photo after the first; the worst case, 2K with ten photos, is $0.18 against a credit's $0.28.",
+      "The character's photo, outfit, prop, look and place photos all ride with it, like the other engines. If a send carries more than ten photos, Seedream keeps the first ten, so the face is never the one dropped.",
+      "A picture Seedream won't draw ends as a refusal (refunded the usual way), never as a provider error that gets retried and charged again.",
+      "Why Seedream: in the September engine test on Eva it held her face best of six new engines (85 of 100). It hasn't been compared with GPT Image and Nano Banana Pro yet, so it is offered as a choice, not as the default.",
+    ],
+  },
+  {
     version: "1.128.0",
     build: 167,
     date: "2026-09-27",

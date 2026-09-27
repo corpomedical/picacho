@@ -1,5 +1,5 @@
 import { generateImageWithOpenAI, type OpenAiImageSize, type OpenAiImageUsage } from "@/lib/generations/providers/openai-images";
-import { generateImageWithFlux, generateImageWithGemini } from "@/lib/generations/providers/fal-image";
+import { generateImageWithFlux, generateImageWithGemini, generateImageWithSeedream } from "@/lib/generations/providers/fal-image";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { buildImageReferences } from "@/lib/generations/providers/image-references";
@@ -158,7 +158,7 @@ export async function generateImage(
     elements: elementImageUrls,
   });
 
-  // Two fal lanes now (2026-09-23), so route on the id, never on the
+  // Three fal lanes now (Seedream joined 2026-09-28), so route on the id, never on the
   // provider alone: generateImageWithFlux resolves getImageModel("flux") for
   // its own endpoints, so a `provider === "fal"` entry that isn't Flux would
   // have rendered on Flux while every log said otherwise — the "the log
@@ -168,6 +168,16 @@ export async function generateImage(
     chargeBudget(budget);
     return persistRemoteImage(
       await generateImageWithGemini(prompt, combinedRefs, {
+        resolution: imageResolution,
+        aspect: imageAspect,
+      }),
+    );
+  }
+
+  if (model.id === "seedream-5-pro") {
+    chargeBudget(budget);
+    return persistRemoteImage(
+      await generateImageWithSeedream(prompt, combinedRefs, {
         resolution: imageResolution,
         aspect: imageAspect,
       }),

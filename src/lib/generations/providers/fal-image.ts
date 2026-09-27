@@ -9,6 +9,7 @@ import { IMAGE_RESULT_REFUSED } from "@/lib/generations/providers/refusal-messag
 import {
   DEFAULT_IMAGE_ASPECT,
   defaultImageResolution,
+  seedreamImageSize,
   type ImageAspect,
   type ImageResolution,
 } from "@/lib/generations/providers/image-resolution";
@@ -35,6 +36,16 @@ export class GeminiImageRefusal extends Error {
   constructor(message: string) {
     super(message);
     this.name = "GeminiImageRefusal";
+  }
+}
+
+// Thrown when Seedream 5.0 Pro will not draw a request: a 422, a flagged
+// result, or an answer with no picture. Same contract as the two above —
+// final, refunded through the ordinary path, honest log.
+export class SeedreamImageRefusal extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SeedreamImageRefusal";
   }
 }
 
@@ -242,6 +253,120 @@ export async function generateImageWithGemini(
   if (!url) {
     throw new GeminiImageRefusal(IMAGE_RESULT_REFUSED);
   }
+  return url;
+}
+
+/** fal's own limit on Seedream 5.0 Pro edit's image_urls (its schema, read 2026-09-28). */
+export const SEEDREAM_MAX_INPUT_IMAGES = 10;
+
+/**
+ * Image generation via Seedream 5.0 Pro (ByteDance) on fal.ai — the third
+ * lane a person can pick for a picture (2026-09-28). Returns a hosted fal
+ * URL, like the other fal lanes; image.ts persists it.
+ *
+ * Its own function for the reason generateImageWithGemini is one: the
+ * request shape differs (exact `image_size` pixels, no `resolution`, no
+ * `aspect_ratio`) and so does the refusal shape, and a shared body is how a
+ * refusal on one lane sails through as a success on another.
+ *
+ * THE SIZE IS ALWAYS SENT, as pixels (image-resolution.ts seedreamImageSize).
+ * The endpoint's default is auto_2K, which on an edit follows the input
+ * pictures — the "square shot came back in the shape of the anchor photo"
+ * defect Nano Banana Pro had on its first day — and a named preset does not
+ * promise which side of fal's 1536x1536 price line it lands on.
+ *
+ * AT MOST TEN INPUT PICTURES, cut HERE. fal's words: "Up to 10 images are
+ * supported; if more are sent, only the last 10 are used." Our array leads
+ * with the person's identity photo (image-references.ts), so letting fal
+ * trim it would drop the face first and keep the set's props. Keeping the
+ * first ten keeps the face.
+ *
+ * enable_safety_checker is NOT sent. It defaults to on and fal says turning
+ * it off "requires account authorization"; our content policy is the gate
+ * that decides what may be sent (content-policy.ts), and turning a
+ * provider's own filter down to get more prompts through is the ladder
+ * removed on 2026-09-09.
+ */
+export async function generateImageWithSeedream(
+  prompt: string,
+  referenceImageUrl?: string | string[] | null,
+  /** The band and shape this send paid for, already validated against this lane's offers upstream. */
+  options?: { resolution?: ImageResolution | null; aspect?: ImageAspect | null },
+): Promise<string> {
+  const apiKey = process.env.FAL_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "FAL_KEY is not set. Add it to .env.local, or turn off the " +
+        "'real_ai_providers' flag in Admin > Feature flags to use the mock pipeline.",
+    );
+  }
+
+  const referenceUrls = (
+    Array.isArray(referenceImageUrl)
+      ? referenceImageUrl
+      : referenceImageUrl
+        ? [referenceImageUrl]
+        : []
+  )
+    .filter(Boolean)
+    .slice(0, SEEDREAM_MAX_INPUT_IMAGES);
+
+  const model = getImageModel("seedream-5-pro");
+  if (model.id !== "seedream-5-pro" || model.provider !== "fal") {
+    throw new Error("Seedream 5.0 Pro model config is misconfigured.");
+  }
+
+  const endpoint = referenceUrls.length ? model.falImageToImage : model.falTextToImage;
+  const body: Record<string, unknown> = {
+    prompt,
+    num_images: 1,
+    image_size: seedreamImageSize(
+      options?.resolution ?? defaultImageResolution("seedream-5-pro"),
+      options?.aspect ?? DEFAULT_IMAGE_ASPECT,
+    ),
+    output_format: "png",
+  };
+  if (referenceUrls.length) body.image_urls = referenceUrls;
+
+  const res = await fetchWithTimeout(
+    `https://fal.run/${endpoint}`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Key ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    },
+    120_000,
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    // fal's refusal status on its image endpoints (measured on Nano Banana
+    // Pro, 2026-09-23). Final, like every refusal: as an Error carrying a
+    // status code it would enter the retry ladder and buy the same answer
+    // again. Not yet seen from this endpoint — handled the same way so the
+    // first one cannot slip through as a provider outage.
+    if (res.status === 422) {
+      console.warn(`[seedream] 422 from ${endpoint}: ${text.slice(0, 300)}`);
+      throw new SeedreamImageRefusal(IMAGE_RESULT_REFUSED);
+    }
+    throw new Error(`fal.ai (Seedream 5.0 Pro) error (${res.status}): ${text.slice(0, 300)}`);
+  }
+
+  const data = await res.json();
+
+  // fal's safety checker on some endpoints answers 200 with a black frame and
+  // has_nsfw_concepts set (Flux, the 2026-08-14 incident). This endpoint's
+  // schema does not list the field, so it is read only if present.
+  const nsfwFlags: unknown = data?.has_nsfw_concepts;
+  if (Array.isArray(nsfwFlags) && nsfwFlags.some(Boolean)) {
+    throw new SeedreamImageRefusal(IMAGE_RESULT_REFUSED);
+  }
+
+  const url: string | undefined = data?.images?.[0]?.url ?? data?.image?.url;
+  if (!url) throw new SeedreamImageRefusal(IMAGE_RESULT_REFUSED);
   return url;
 }
 
