@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { AdminErrorBanner } from "@/components/admin-error-banner";
 import { setCommunityPostModeration } from "@/lib/admin/actions";
-import { failureKindFromLog, failureReasonFromLog } from "@/lib/generations/report-constants";
+import { attemptsFromLog, failureKindFromLog, failureReasonFromLog } from "@/lib/generations/report-constants";
 
 // The moderation area (2026-08-27, operator: "I need a moderation area for
 // it [community]"). Everything currently shared into the community feed —
@@ -254,7 +254,9 @@ export default async function AdminModerationPage({
                   <p className="truncate text-sm font-medium text-neutral-900">{g.prompt_input}</p>
                   <p className="mt-0.5 truncate text-xs text-neutral-500">
                     {emailById.get(g.user_id) ?? "Unknown user"} ·{" "}
-                    {new Date(g.created_at).toLocaleString()} · {g.attempts} attempts
+                    {new Date(g.created_at).toLocaleString()} ·{" "}
+                    {/* Press Tour's rows never fill the attempts column; their log holds the attempt. */}
+                    {Math.max(g.attempts ?? 0, attemptsFromLog(g.pipeline_log).length)} attempts
                   </p>
                   <p className="mt-1 line-clamp-2 break-words text-xs text-neutral-700">
                     {failureReasonFromLog(g.pipeline_log) ?? "Stopped on purpose."}

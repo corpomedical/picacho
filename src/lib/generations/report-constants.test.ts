@@ -244,6 +244,13 @@ describe("the admin's reason for a failure the job runner recorded", () => {
     );
   });
 
+  it("says the sentence a Press Tour still was ended with (issues [], one step)", () => {
+    const pressTour = [
+      { attempt: 1, passed: false, issues: [], compiledPrompt: "", steps: [{ step: "generate", detail: "The ad moved on before its stills were painted." }] },
+    ];
+    expect(failureReasonFromLog(pressTour)).toBe("The ad moved on before its stills were painted.");
+  });
+
   it("keeps the generic line when there is truly nothing from a provider", () => {
     expect(failureReasonFromLog([{ issues: [], steps: [{ step: "generate", detail: "Rendering…" }] }])).toBe(
       "Generation failed after 1 attempt.",

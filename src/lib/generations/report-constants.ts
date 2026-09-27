@@ -131,6 +131,19 @@ export function providerWordsFromAttempts(attempts: AttemptLog[]): string | null
   return null;
 }
 
+// Our own closing sentence, when a writer ended the row with one and tagged
+// no issue: Press Tour's endStillRow writes the reason as the attempt's only
+// step with issues [] (paint.ts), so Moderation read "Generation failed after
+// 1 attempt." for its stills while the reason sat in the log (operator,
+// 2026-09-27: "There are erros on moderation, check them"). A finished
+// sentence only: a progress line ("Rendering…") says nothing about why.
+function closingSentenceFromAttempts(attempts: AttemptLog[]): string | null {
+  const step = [...(attempts.at(-1)?.steps ?? [])]
+    .reverse()
+    .find((s) => /[.!?]$/.test(s.detail.trim()) && !s.detail.startsWith("Generated") && !s.detail.startsWith("Mock "));
+  return step ? step.detail.trim().slice(0, 500) : null;
+}
+
 // Why a stored render failed, for the admin's failed-render list. Null still
 // means stopped on purpose; a log with nothing to read says so instead of
 // throwing on the page.
@@ -138,7 +151,9 @@ export function failureReasonFromLog(log: unknown): string | null {
   const attempts = attemptsFromLog(log);
   if (attempts.length === 0) return "No reason was recorded.";
   const summary = summarizeFailureDetail(attempts);
-  if (summary !== null && GENERIC_FAILURE.test(summary)) return providerWordsFromAttempts(attempts) ?? summary;
+  if (summary !== null && GENERIC_FAILURE.test(summary)) {
+    return providerWordsFromAttempts(attempts) ?? closingSentenceFromAttempts(attempts) ?? summary;
+  }
   return summary;
 }
 
