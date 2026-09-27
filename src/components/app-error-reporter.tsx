@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { reportClientError } from "@/lib/generations/reports";
 import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { describeBrowser } from "@/lib/browser-label";
+import { isAbortError } from "@/lib/abort-error";
 
 // Renders nothing — mounted once in the logged-in app shell (app/layout.tsx)
 // so a real bug (a JS crash, a rejected promise nobody caught) gets filed as
@@ -116,6 +117,13 @@ export function AppErrorReporter() {
 
     function onRejection(event: PromiseRejectionEvent) {
       const reason = event.reason;
+      // A cancel nobody awaited is not a bug: an AbortError only ever means
+      // something was stopped on purpose (a request called off as the page
+      // left, a play() cut short by a pause). iPhone Safari files these with
+      // no stack at all, so they cannot even be traced (operator, 2026-09-27:
+      // /app/history, "AbortError: The operation was aborted.", thrown as a
+      // bare DOMException). Only rejections: a thrown AbortError still files.
+      if (isAbortError(reason)) return;
       const message =
         reason instanceof Error ? reason.message : typeof reason === "string" ? reason : "Unhandled promise rejection";
       // Same `??` -> `||` correction, and the same reason.
