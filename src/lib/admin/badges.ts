@@ -6,6 +6,13 @@ import { createClient } from "@/lib/supabase/server";
 // lib/admin/actions.ts (polled from the client so the red dots update live)
 // -- kept in one place so the two never drift into counting "new" two
 // different ways.
+/**
+ * When the admin last pressed Clear on Moderation's failed renders
+ * (app_settings key; 2026-09-27, operator: "Clear whatever is resolved").
+ * The badge and the list count only failures after it.
+ */
+export const MODERATION_CLEARED_KEY = "admin_moderation_cleared_at";
+
 export type AdminBadgeCounts = {
   "/admin/users": number;
   "/admin/moderation": number;
@@ -30,6 +37,14 @@ export async function computeAdminBadgeCounts(
   const last24hDate = new Date();
   last24hDate.setDate(last24hDate.getDate() - 1);
   const last24h = last24hDate.toISOString();
+  const { data: clearedSetting } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", MODERATION_CLEARED_KEY)
+    .maybeSingle();
+  const cleared = typeof clearedSetting?.value === "string" ? clearedSetting.value : null;
+  // Whichever is later: 24 hours ago, or the last Clear.
+  const failedSince = cleared && cleared > last24h ? cleared : last24h;
 
   const [
     { data: usersLastViewedSetting },
@@ -50,7 +65,7 @@ export async function computeAdminBadgeCounts(
       // failed with cancel_requested set, and a stop is nobody's problem
       // (autoReportFailedGeneration files no report for one either).
       .not("cancel_requested", "is", true)
-      .gte("created_at", last24h),
+      .gt("created_at", failedSince),
     supabase
       .from("generation_reports")
       .select("*", { count: "exact", head: true })

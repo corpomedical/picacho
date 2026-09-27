@@ -5,7 +5,8 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { AdminErrorBanner } from "@/components/admin-error-banner";
-import { setCommunityPostModeration } from "@/lib/admin/actions";
+import { clearModerationFailures, setCommunityPostModeration } from "@/lib/admin/actions";
+import { MODERATION_CLEARED_KEY } from "@/lib/admin/badges";
 import { attemptsFromLog, failureKindFromLog, failureReasonFromLog } from "@/lib/generations/report-constants";
 
 // The moderation area (2026-08-27, operator: "I need a moderation area for
@@ -43,10 +44,27 @@ type PostRow = {
 export default async function AdminModerationPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; cleared?: string }>;
 }) {
-  const { error: errorParam } = await searchParams;
+  const { error: errorParam, cleared: clearedParam } = await searchParams;
+  const showCleared = clearedParam === "1";
   const supabase = await createClient();
+
+  // The last Clear (clearModerationFailures): failures up to it are reviewed,
+  // and the list leaves them out unless asked to show them.
+  const { data: clearedSetting } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", MODERATION_CLEARED_KEY)
+    .maybeSingle();
+  const clearedAt = typeof clearedSetting?.value === "string" ? clearedSetting.value : null;
+
+  let failedQuery = supabase
+    .from("generations")
+    .select("id, user_id, prompt_input, status, attempts, created_at, pipeline_log")
+    .eq("status", "failed")
+    .not("cancel_requested", "is", true);
+  if (clearedAt && !showCleared) failedQuery = failedQuery.gt("created_at", clearedAt);
 
   const [{ data: postRows, error: postsError }, { data: failedRows, error: failedError }] =
     await Promise.all([
@@ -60,13 +78,7 @@ export default async function AdminModerationPage({
       // The failures the badge counts: stops left out (Stop saves a row as
       // failed with cancel_requested set, and a stop is nobody's problem),
       // and the log read so each one can say why it failed.
-      supabase
-        .from("generations")
-        .select("id, user_id, prompt_input, status, attempts, created_at, pipeline_log")
-        .eq("status", "failed")
-        .not("cancel_requested", "is", true)
-        .order("created_at", { ascending: false })
-        .limit(30),
+      failedQuery.order("created_at", { ascending: false }).limit(30),
     ]);
 
   const posts = (postRows ?? []) as PostRow[];
@@ -226,7 +238,29 @@ export default async function AdminModerationPage({
         )}
       </div>
 
-      <h2 className="mt-12 text-base font-semibold text-neutral-900">Failed generations</h2>
+      <div className="mt-12 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-base font-semibold text-neutral-900">Failed generations</h2>
+        <div className="flex items-center gap-3">
+          {clearedAt && (
+            <Link
+              href={showCleared ? "/admin/moderation" : "/admin/moderation?cleared=1"}
+              className="text-xs text-neutral-500 underline underline-offset-2 hover:text-neutral-900"
+            >
+              {showCleared ? "Hide cleared" : "Show cleared"}
+            </Link>
+          )}
+          {!showCleared && (failedRows ?? []).length > 0 && (
+            <form action={clearModerationFailures}>
+              <SubmitButton
+                className="rounded-full bg-neutral-900 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-neutral-700"
+                pendingLabel="Clearing…"
+              >
+                Clear all
+              </SubmitButton>
+            </form>
+          )}
+        </div>
+      </div>
       <p className="mt-1 text-sm text-neutral-500">
         Renders that ended in failure — a provider error, a refusal, a crash, a result that missed —
         newest first, each with the reason it gave. <span className="font-medium">Broke</span> is ours or the
@@ -244,7 +278,9 @@ export default async function AdminModerationPage({
           </Card>
         ) : !failedRows || failedRows.length === 0 ? (
           <Card className="text-center">
-            <p className="text-sm text-neutral-500">No failed renders. All clear.</p>
+            <p className="text-sm text-neutral-500">
+              {clearedAt && !showCleared ? "Nothing new since the last Clear." : "No failed renders. All clear."}
+            </p>
           </Card>
         ) : (
           failedRows.map((g) => (

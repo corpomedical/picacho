@@ -10,7 +10,7 @@ import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/server";
 import { cancelStripeCustomerBilling } from "@/lib/stripe/cancel-customer";
 import { PLAN_LIMITS } from "@/lib/plans";
-import { computeAdminBadgeCounts, type AdminBadgeCounts } from "@/lib/admin/badges";
+import { computeAdminBadgeCounts, MODERATION_CLEARED_KEY, type AdminBadgeCounts } from "@/lib/admin/badges";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { VIDEO_MODELS } from "@/lib/generations/providers/video-models";
 import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
@@ -931,6 +931,32 @@ export async function suspendModel(formData: FormData): Promise<void> {
 // posts" RLS policy with the admin's own session, same as the in-feed
 // control; hiding is the moderation verb on purpose (reversible, keeps the
 // sharer's row intact) — deletion stays the owner's own act.
+// Clear on Moderation's failed renders (2026-09-27, operator: "Clear whatever
+// is resolved"). A failed render has no open/resolved state of its own, so
+// Clear stamps the moment it was pressed: the badge and the list then count
+// only failures after it, and "Show cleared" brings the rest back. Upsert
+// through the service client, for the reason setSeedanceProvider gives.
+export async function clearModerationFailures() {
+  const { admin } = await requireAdmin();
+  const now = new Date().toISOString();
+  const { error } = await admin.from("app_settings").upsert(
+    {
+      key: MODERATION_CLEARED_KEY,
+      value: now,
+      description: "When an admin last cleared Moderation's failed renders. Its badge and list count only failures after this.",
+      updated_at: now,
+    },
+    { onConflict: "key" },
+  );
+
+  if (error) {
+    console.error("clearModerationFailures: upsert failed", error);
+    redirect(`/admin/moderation?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath("/admin", "layout");
+}
+
 export async function setCommunityPostModeration(formData: FormData) {
   const { supabase } = await requireAdmin();
   const postId = formData.get("post_id") as string;
