@@ -24,6 +24,7 @@ import { isHumanVoiceConfigured, speakHuman } from "./speech";
 import { isStreamableVoiceId, isVoiceStreamConfigured } from "./voice-stream";
 import { LAMP_LOOKS, parseLampLook, type LampLook } from "@/components/producer/lamp-look";
 import { WHEEL_STYLES, parseWheelStyle, type WheelStyle } from "@/components/producer/wheel-style";
+import { CHAT_STYLES, parseChatStyle, type ChatStyle } from "@/components/producer/chat-style";
 import { rateLimited } from "@/lib/rate-limit";
 import { MAX_NOTE_CHARS, normalizeNotePath, type Note } from "./notes";
 import { loadWatchBar, loadWatchList, type WatchItem } from "./watch";
@@ -324,4 +325,25 @@ export async function setProducerWheel(style: string): Promise<{ error: string |
   const r = await savePrefs(g.admin, g.userId, { wheel_style: style });
   if (r.error) console.error("producer: wheel save failed", r.error);
   return { error: r.error ? "The wheel didn't save. Try again." : null };
+}
+
+// How the chat shows itself (2026-09-27, operator: "Add the subtitles too as
+// an option in settings"). chat-style.ts lists them.
+
+/** For Settings: how the chat shows itself now (null = this account has no Producer). */
+export async function loadProducerChat(): Promise<ChatStyle | null> {
+  const g = await gate();
+  if (!g.ok) return null;
+  // Missing column (producer-wheel.sql not run yet) → an error and no row → the default.
+  const { data } = await g.admin.from("producer_prefs").select("chat_style").eq("user_id", g.userId).maybeSingle();
+  return parseChatStyle((data as { chat_style?: unknown } | null)?.chat_style);
+}
+
+export async function setProducerChat(style: string): Promise<{ error: string | null }> {
+  const g = await gate();
+  if (!g.ok) return { error: g.error };
+  if (!(CHAT_STYLES as readonly string[]).includes(style)) return { error: "That chat style isn't available." };
+  const r = await savePrefs(g.admin, g.userId, { chat_style: style });
+  if (r.error) console.error("producer: chat style save failed", r.error);
+  return { error: r.error ? "The chat style didn't save. Try again." : null };
 }

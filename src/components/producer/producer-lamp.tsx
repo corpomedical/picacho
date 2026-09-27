@@ -23,6 +23,7 @@ import { PRODUCER_ASK_EVENT, producerAskDraft, producerAskText } from "@/lib/pro
 import styles from "./producer-lamp.module.css";
 import { Wheel } from "./wheel";
 import { wheelGeometry, type WheelStyle } from "./wheel-style";
+import { countWords, subtitleView, type ChatStyle } from "./chat-style";
 import { MovableLamp } from "./movable-lamp";
 import { writeLampHidden } from "./lamp-place";
 import { lampMood, type LampLook } from "./lamp-look";
@@ -96,6 +97,8 @@ const W = {
   endVoice: "End",
   endVoiceLabel: "End the voice conversation",
   typeInstead: "Type instead",
+  wholeChat: "Whole chat",
+  you: "You",
   talkOver: "Talk over it anytime",
   newCards: (n: number) => `${n} prepared`,
   heardPlaceholder: "…",
@@ -151,6 +154,7 @@ export function ProducerLamp({
   voiceAvailable,
   look,
   wheelStyle,
+  chatStyle = "card",
   diagnostics = false,
 }: {
   name: string;
@@ -161,6 +165,8 @@ export function ProducerLamp({
   look: LampLook;
   /** Which wheel opens out of the lamp: the person's pick in Settings (wheel-style.ts). */
   wheelStyle: WheelStyle;
+  /** How the chat shows itself: a floating card, or subtitles (chat-style.ts). */
+  chatStyle?: ChatStyle;
   /** An admin's readouts: how much of her voice the mic hears (2026-09-26, "I still cant interrupt her"). */
   diagnostics?: boolean;
 }) {
@@ -207,9 +213,12 @@ export function ProducerLamp({
   // both are taken off the page.
   const [closing, setClosing] = useState(false);
   const [wasOpen, setWasOpen] = useState(open);
+  // Subtitles: "the whole chat" opens the card until the chat closes.
+  const [forceCard, setForceCard] = useState(false);
   if (open !== wasOpen) {
     setWasOpen(open);
     setClosing(!open);
+    if (!open) setForceCard(false);
   }
   useEffect(() => {
     if (!closing) return;
@@ -218,7 +227,7 @@ export function ProducerLamp({
   }, [closing]);
   // Talking turns the text box into a voice bar; "Type" brings the box back.
   const [typeInVoice, setTypeInVoice] = useState(false);
-  const [center, setCenter] = useState<{ cx: number; cy: number; vh: number; phone: boolean } | null>(null);
+  const [center, setCenter] = useState<{ cx: number; cy: number; vw: number; vh: number; phone: boolean } | null>(null);
 
   useEffect(() => setReadAloud(readStoredBool(READ_ALOUD_KEY)), []);
 
@@ -411,6 +420,7 @@ export function ProducerLamp({
       setCenter({
         cx: r.left + r.width / 2,
         cy: r.top + r.height / 2,
+        vw: window.innerWidth,
         vh: window.innerHeight,
         phone: window.matchMedia("(max-width: 767px)").matches,
       });
@@ -518,6 +528,7 @@ export function ProducerLamp({
     }
     currentRef.current = turn;
     setStreaming({ ...turn.live });
+    setSpokenWords(0);
   }
 
   function stopAnswer() {
@@ -773,6 +784,187 @@ export function ProducerLamp({
             ? W.speaking
             : null;
 
+  // Subtitles (chat-style.ts): the last thing she said, or is saying, with
+  // what she hasn't said aloud yet dimmed; your last words above it; the
+  // answer before that fading out above those.
+  const subs = chatStyle === "subtitles" && view === "chat" && !forceCard;
+  const [spokenWords, setSpokenWords] = useState(0);
+  const speaking = subs && sheetShown && voice.phase === "speaking";
+  const { heardText } = voice;
+  useEffect(() => {
+    if (!speaking) return;
+    const t = window.setInterval(() => setSpokenWords(countWords(heardText())), 150);
+    return () => window.clearInterval(t);
+  }, [speaking, heardText]);
+  const shownLines = lines.filter((l) => !(l.role === "user" && l.queued));
+  const lastUser = shownLines.findLastIndex((l) => l.role === "user");
+  const lastLine = shownLines[shownLines.length - 1];
+  const current = streaming ?? (lastLine?.role === "assistant" ? lastLine : null);
+  const olderLine = shownLines.slice(0, Math.max(0, lastUser)).findLast((l) => l.role === "assistant");
+  const subtitle = subtitleView(current?.text ?? "", speaking ? spokenWords : null);
+  // On a wide screen the subtitles sit at the very bottom, clear of the wheel
+  // on either side; otherwise just above the wheel, the full width.
+  const subsWide = !!center && !center.phone && center.vw >= 1100;
+
+  // The writing box and what sits over it: the card and the subtitles both use it.
+  const composerBody = (
+    <>
+      {ignored && (
+        <div className="mb-2 flex items-center gap-2 px-1 text-[12px] text-atelier-muted" role="status">
+          <span className="min-w-0 flex-1">
+            {W.ignored(ignored)}
+            {ignoredWhy && <span className="mt-0.5 block text-[11px] opacity-70">Why: {ignoredWhy}</span>}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              const words = ignored;
+              setIgnored(null);
+              void send({ text: words });
+            }}
+            className="flex-none rounded-full border border-atelier-rule px-2.5 py-1 font-semibold text-atelier-ink hover:bg-atelier-ink/5"
+          >
+            {W.answerIt}
+          </button>
+        </div>
+      )}
+      {diagnostics && voice.active && voice.echo && (
+        <p className="mb-2 px-1 text-[11px] text-atelier-muted" data-voice-echo>
+          Echo check (admins): {Math.round(voice.echo.leak * 100)}% of her voice reaches the mic
+          {voice.echo.strict ? " — too much, she can't hear you over herself" : ""} · talking over her dipped{" "}
+          {voice.echo.dips}, stopped {voice.echo.stops} · ears: {voice.engine ?? "off"}
+        </p>
+      )}
+      {backgroundTip && voice.active && (
+        <p className="mb-2 px-1 text-[12px] text-atelier-muted">{W.backgroundTip}</p>
+      )}
+      {voice.active && !typeInVoice ? (
+        // Talking: the text box is a live voice bar.
+        <div
+          className={`${styles.voiceBar} flex items-center gap-3 rounded-[20px] py-2 pl-3.5 pr-2`}
+          aria-live="polite"
+          data-voice-engine={voice.engine ?? undefined}
+        >
+          <span className={styles.voiceBars} aria-hidden="true">
+            {VOICE_BARS.map((shape, i) => (
+              <i key={i} style={{ height: `${Math.round(5 + glow * 20 * shape)}px` }} />
+            ))}
+          </span>
+          <div className="min-w-0 flex-1 leading-tight">
+            <div className="text-[14px] font-medium text-atelier-ink">{voiceLine ?? W.listening}</div>
+            <div className="truncate text-[12px] text-atelier-muted">{voice.notice ?? W.talkOver}</div>
+          </div>
+          {(busy || voice.phase === "speaking" || voice.held) && (
+            <button
+              type="button"
+              onClick={stopAnswer}
+              aria-label={W.stop}
+              className="grid h-[34px] w-[34px] flex-none place-items-center rounded-full border border-atelier-rule text-atelier-ink"
+            >
+              <span className="h-3 w-3 rounded-[2px] bg-current" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setTypeInVoice(true);
+              requestAnimationFrame(() => inputRef.current?.focus());
+            }}
+            aria-label={W.typeInstead}
+            title={W.typeInstead}
+            className="grid h-[34px] w-[34px] flex-none place-items-center rounded-full text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink"
+          >
+            <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="1.5" y="4" width="13" height="8.5" rx="1.5" />
+              <path d="M4 6.75h.01M6.5 6.75h.01M9 6.75h.01M11.5 6.75h.01M5 9.75h6" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={voice.stop}
+            aria-label={W.endVoiceLabel}
+            className="h-[34px] flex-none rounded-full bg-atelier-ink px-3.5 text-[13px] font-semibold text-atelier-surface"
+          >
+            {W.endVoice}
+          </button>
+        </div>
+      ) : (
+        <>
+          {(voiceLine || voice.notice) && (
+            <div className="mb-2 flex items-center gap-3 px-1" aria-live="polite" data-voice-engine={voice.engine ?? undefined}>
+              {voiceLine && (
+                <LookMark look={look} mood={mood} size={26} glow={glow} />
+              )}
+              <div className="min-w-0 flex-1 leading-tight">
+                <div className="text-[14px] font-medium text-atelier-ink">{voiceLine ?? voice.notice}</div>
+                {voiceLine && (
+                  <div className="text-[12px] text-atelier-muted">{voice.notice ?? W.talkOver}</div>
+                )}
+              </div>
+              {voice.active && (
+                <button
+                  type="button"
+                  onClick={voice.stop}
+                  aria-label={W.endVoiceLabel}
+                  className="rounded-full border border-atelier-rule px-3.5 py-1.5 text-[13px] font-semibold text-atelier-ink hover:bg-atelier-ink/5"
+                >
+                  {W.endVoice}
+                </button>
+              )}
+            </div>
+          )}
+          <div className="flex items-end gap-2 rounded-[20px] border border-atelier-rule bg-atelier-ink/[0.03] py-1.5 pl-4 pr-1.5">
+            <textarea
+              id="producer-input"
+              ref={inputRef}
+              rows={1}
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value);
+                const el = e.target;
+                el.style.height = "auto";
+                el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  void send({ text: input });
+                }
+              }}
+              onFocus={() => setTyping(true)}
+              onBlur={() => setTyping(false)}
+              placeholder={W.placeholder(name)}
+              maxLength={5000}
+              disabled={!loaded}
+              className="min-h-[34px] flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-snug text-atelier-ink outline-none placeholder:text-atelier-muted"
+            />
+            {busy || voice.phase === "speaking" || voice.held ? (
+              <button
+                type="button"
+                onClick={stopAnswer}
+                aria-label={W.stop}
+                className="grid h-[34px] w-[34px] flex-none place-items-center rounded-full border border-atelier-rule text-atelier-ink"
+              >
+                <span className="h-3 w-3 rounded-[2px] bg-current" />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                aria-label={W.send}
+                disabled={!input.trim() || !loaded}
+                className="grid h-[34px] w-[34px] flex-none place-items-center rounded-full bg-atelier-accent text-[#1a120a] disabled:opacity-40"
+              >
+                <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </>
+  );
+
   return (
     <>
       {/* The lamp: movable, tucks into any edge as a tab, can be hidden
@@ -839,7 +1031,112 @@ export function ProducerLamp({
         />
       )}
 
-      {sheetShown && (
+      {sheetShown && subs && (
+        // Subtitles: her words across the bottom of the screen, like a film's.
+        <section
+          data-producer-sheet
+          data-producer-subtitles
+          role="dialog"
+          aria-label={name}
+          inert={closing}
+          className={closing ? `${styles.subs} ${styles.subsClosing}` : styles.subs}
+          style={{
+            paddingBottom: subsWide ? 28 : (sheetBottom ?? 8),
+            paddingInline: subsWide ? wheelGeometry(wheelStyle, false).reach + 150 : 16,
+          }}
+        >
+          <div className={styles.subsInner}>
+            <div className="flex w-full items-center justify-end gap-1">
+              <button
+                type="button"
+                onClick={() => setForceCard(true)}
+                className="flex h-8 items-center gap-1.5 rounded-full px-3 text-[12.5px] text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
+              >
+                <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" />
+                </svg>
+                {W.wholeChat}
+              </button>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label={W.close}
+                className="grid h-8 w-8 place-items-center rounded-full text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
+              >
+                <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                  <path d="M4 4l8 8M12 4l-8 8" />
+                </svg>
+              </button>
+            </div>
+            {loadError && <p className="text-sm text-[#ff8a80]">{loadError}</p>}
+            {!loadError && !loaded && <p className={styles.subsLine}>…</p>}
+            {loaded && shownLines.length === 0 && !streaming && (
+              <>
+                <p className={styles.subsLine}>{W.emptyTitle(name)}</p>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {W.suggestions.map((q) => (
+                    <button
+                      key={q}
+                      type="button"
+                      onClick={() => send({ text: q })}
+                      className="rounded-full border border-atelier-rule px-3 py-1.5 text-[13px] text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            {olderLine && <p className={styles.subsOld}>{olderLine.text}</p>}
+            {lastUser >= 0 && (
+              <p className={styles.subsYou}>
+                <b>{W.you}</b> · {shownLines[lastUser].text}
+              </p>
+            )}
+            {current?.text ? (
+              <p className={styles.subsLine} aria-live="polite">
+                {subtitle.cut && "… "}
+                {subtitle.said}
+                {subtitle.rest && <span className={styles.subsRest}>{subtitle.said ? ` ${subtitle.rest}` : subtitle.rest}</span>}
+              </p>
+            ) : null}
+            {streaming?.status && (
+              <p className="flex items-center gap-2 text-[13px] text-atelier-muted">
+                <span className={styles.statusDot} aria-hidden="true" />
+                {streaming.status}
+              </p>
+            )}
+            {current && current.cards.length > 0 && (
+              <div className="w-full max-w-[440px] text-left">
+                <Cards cards={current.cards} onOpen={() => light("composer", null, 3500)} />
+              </div>
+            )}
+            {confirmFresh && (
+              <div className="flex flex-wrap items-center justify-center gap-2 text-[13px]">
+                <span>{W.freshConfirm}</span>
+                <button type="button" onClick={doFresh} className="rounded-full bg-atelier-accent px-3 py-1 font-semibold text-[#1a120a]">
+                  {W.yes}
+                </button>
+                <button type="button" onClick={() => setConfirmFresh(false)} className="rounded-full px-3 py-1 text-atelier-muted hover:text-atelier-ink">
+                  {W.cancel}
+                </button>
+              </div>
+            )}
+            {error && <p className="text-sm text-[#ff8a80]">{error}</p>}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void send({ text: input });
+              }}
+              className="w-full max-w-[560px] text-left"
+            >
+              {composerBody}
+            </form>
+          </div>
+        </section>
+      )}
+
+      {sheetShown && !subs && (
         <>
           <button
             type="button"
@@ -1047,159 +1344,7 @@ export function ProducerLamp({
                   }}
                   className="border-t border-atelier-rule p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
                 >
-                  {ignored && (
-                    <div className="mb-2 flex items-center gap-2 px-1 text-[12px] text-atelier-muted" role="status">
-                      <span className="min-w-0 flex-1">
-                        {W.ignored(ignored)}
-                        {ignoredWhy && <span className="mt-0.5 block text-[11px] opacity-70">Why: {ignoredWhy}</span>}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const words = ignored;
-                          setIgnored(null);
-                          void send({ text: words });
-                        }}
-                        className="flex-none rounded-full border border-atelier-rule px-2.5 py-1 font-semibold text-atelier-ink hover:bg-atelier-ink/5"
-                      >
-                        {W.answerIt}
-                      </button>
-                    </div>
-                  )}
-                  {diagnostics && voice.active && voice.echo && (
-                    <p className="mb-2 px-1 text-[11px] text-atelier-muted" data-voice-echo>
-                      Echo check (admins): {Math.round(voice.echo.leak * 100)}% of her voice reaches the mic
-                      {voice.echo.strict ? " — too much, she can't hear you over herself" : ""} · talking over her dipped{" "}
-                      {voice.echo.dips}, stopped {voice.echo.stops} · ears: {voice.engine ?? "off"}
-                    </p>
-                  )}
-                  {backgroundTip && voice.active && (
-                    <p className="mb-2 px-1 text-[12px] text-atelier-muted">{W.backgroundTip}</p>
-                  )}
-                  {voice.active && !typeInVoice ? (
-                    // Talking: the text box is a live voice bar.
-                    <div
-                      className={`${styles.voiceBar} flex items-center gap-3 rounded-[20px] py-2 pl-3.5 pr-2`}
-                      aria-live="polite"
-                      data-voice-engine={voice.engine ?? undefined}
-                    >
-                      <span className={styles.voiceBars} aria-hidden="true">
-                        {VOICE_BARS.map((shape, i) => (
-                          <i key={i} style={{ height: `${Math.round(5 + glow * 20 * shape)}px` }} />
-                        ))}
-                      </span>
-                      <div className="min-w-0 flex-1 leading-tight">
-                        <div className="text-[14px] font-medium text-atelier-ink">{voiceLine ?? W.listening}</div>
-                        <div className="truncate text-[12px] text-atelier-muted">{voice.notice ?? W.talkOver}</div>
-                      </div>
-                      {(busy || voice.phase === "speaking" || voice.held) && (
-                        <button
-                          type="button"
-                          onClick={stopAnswer}
-                          aria-label={W.stop}
-                          className="grid h-[34px] w-[34px] flex-none place-items-center rounded-full border border-atelier-rule text-atelier-ink"
-                        >
-                          <span className="h-3 w-3 rounded-[2px] bg-current" />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTypeInVoice(true);
-                          requestAnimationFrame(() => inputRef.current?.focus());
-                        }}
-                        aria-label={W.typeInstead}
-                        title={W.typeInstead}
-                        className="grid h-[34px] w-[34px] flex-none place-items-center rounded-full text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink"
-                      >
-                        <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                          <rect x="1.5" y="4" width="13" height="8.5" rx="1.5" />
-                          <path d="M4 6.75h.01M6.5 6.75h.01M9 6.75h.01M11.5 6.75h.01M5 9.75h6" />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={voice.stop}
-                        aria-label={W.endVoiceLabel}
-                        className="h-[34px] flex-none rounded-full bg-atelier-ink px-3.5 text-[13px] font-semibold text-atelier-surface"
-                      >
-                        {W.endVoice}
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      {(voiceLine || voice.notice) && (
-                        <div className="mb-2 flex items-center gap-3 px-1" aria-live="polite" data-voice-engine={voice.engine ?? undefined}>
-                          {voiceLine && (
-                            <LookMark look={look} mood={mood} size={26} glow={glow} />
-                          )}
-                          <div className="min-w-0 flex-1 leading-tight">
-                            <div className="text-[14px] font-medium text-atelier-ink">{voiceLine ?? voice.notice}</div>
-                            {voiceLine && (
-                              <div className="text-[12px] text-atelier-muted">{voice.notice ?? W.talkOver}</div>
-                            )}
-                          </div>
-                          {voice.active && (
-                            <button
-                              type="button"
-                              onClick={voice.stop}
-                              aria-label={W.endVoiceLabel}
-                              className="rounded-full border border-atelier-rule px-3.5 py-1.5 text-[13px] font-semibold text-atelier-ink hover:bg-atelier-ink/5"
-                            >
-                              {W.endVoice}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      <div className="flex items-end gap-2 rounded-[20px] border border-atelier-rule bg-atelier-ink/[0.03] py-1.5 pl-4 pr-1.5">
-                        <textarea
-                          id="producer-input"
-                          ref={inputRef}
-                          rows={1}
-                          value={input}
-                          onChange={(e) => {
-                            setInput(e.target.value);
-                            const el = e.target;
-                            el.style.height = "auto";
-                            el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                              e.preventDefault();
-                              void send({ text: input });
-                            }
-                          }}
-                          onFocus={() => setTyping(true)}
-                          onBlur={() => setTyping(false)}
-                          placeholder={W.placeholder(name)}
-                          maxLength={5000}
-                          disabled={!loaded}
-                          className="min-h-[34px] flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-snug text-atelier-ink outline-none placeholder:text-atelier-muted"
-                        />
-                        {busy || voice.phase === "speaking" || voice.held ? (
-                          <button
-                            type="button"
-                            onClick={stopAnswer}
-                            aria-label={W.stop}
-                            className="grid h-[34px] w-[34px] flex-none place-items-center rounded-full border border-atelier-rule text-atelier-ink"
-                          >
-                            <span className="h-3 w-3 rounded-[2px] bg-current" />
-                          </button>
-                        ) : (
-                          <button
-                            type="submit"
-                            aria-label={W.send}
-                            disabled={!input.trim() || !loaded}
-                            className="grid h-[34px] w-[34px] flex-none place-items-center rounded-full bg-atelier-accent text-[#1a120a] disabled:opacity-40"
-                          >
-                            <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  )}
+                  {composerBody}
                 </form>
               </>
             )}

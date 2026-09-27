@@ -194,6 +194,7 @@ export async function savePrefs(
     voice_preset_id?: string | null;
     lamp_look?: string | null;
     wheel_style?: string | null;
+    chat_style?: string | null;
   },
 ): Promise<{ error: string | null }> {
   const { error } = await admin
