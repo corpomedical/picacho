@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { playableAudioUrl } from "@/lib/audio/playable-url";
 import { appCannotRecord, nativeAppBuild } from "@/lib/native/app-build";
+import { connectionNote, vlog } from "./voice-log";
 import {
   BargeIn,
   EnergySegmenter,
@@ -528,12 +529,14 @@ export function useHandsFree({
     }
     playing.current = piece;
     if (piece.text && !piece.stream) saidAloud.current.push(piece.text);
+    vlog("play.start", { piece: nextIndex.current - 1, stream: !!piece.stream, graph: !!(s && s.ctx.state === "running") });
     go("speaking");
     let settled = false;
     let fallback: Prepared | null = null;
     const done = () => {
       if (settled) return;
       settled = true;
+      vlog("play.end", { at: Math.round(el.currentTime * 10) / 10 });
       if (piece.stream) {
         const said = takeSaid(piece, true);
         if (said) saidAloud.current.push(said);
@@ -546,6 +549,7 @@ export function useHandsFree({
     };
     el.onended = done;
     el.onerror = () => {
+      vlog("play.error", { code: el.error?.code ?? null, crossOrigin: piece.crossOrigin });
       // The CORS request failed (fal changed its headers, a proxy stripped
       // them): the same file once more as a plain element outside the graph —
       // heard without the light rather than not heard.
@@ -563,6 +567,7 @@ export function useHandsFree({
     void el.play().catch((err: unknown) => {
       // A load failure is el.onerror's to handle; only a refused play (no
       // user gesture yet) asks for a tap.
+      vlog("play.refused", { name: (err as { name?: string } | null)?.name ?? "error" });
       if ((err as { name?: string } | null)?.name === "NotAllowedError") {
         setNotice("Tap anywhere to let the reply play.");
         done();
@@ -656,6 +661,8 @@ export function useHandsFree({
     const p = { stream: null as MediaStream | null, ctx: null as AudioContext | null, detach: () => {}, chunks: [] as Float32Array[], samples: 0, heldHer: false };
     push.current = p;
     setPushing("opening");
+    const askedAt = performance.now();
+    vlog("push.start", { net: connectionNote() });
     if (playing.current !== null && !heldRef.current) {
       hold();
       p.heldHer = true;
@@ -667,6 +674,7 @@ export function useHandsFree({
         if (p.heldHer) resume();
       }
       if (why) setNotice(why);
+      vlog("push.failed", why ?? "");
     };
     if (await appCannotRecord()) return giveUp(APP_TOO_OLD);
     let stream: MediaStream;
@@ -721,6 +729,7 @@ export function useHandsFree({
     };
     setMetered(true);
     setPushing("on");
+    vlog("push.micReady", { ms: Math.round(performance.now() - askedAt), rate: ctx.sampleRate, ctx: ctx.state });
     if (!p.heldHer) go("hearing");
   }, [supported, hold, resume, go]);
 
@@ -737,7 +746,9 @@ export function useHandsFree({
       setMetered(false);
       setLevel(0);
       const audio = concat(p.chunks);
-      if (!send || !pushWorthSending(audio)) {
+      const worth = pushWorthSending(audio);
+      vlog("push.end", { s: audio.length / 16000, level: audio.length ? speechLevel(audio) : 0, sent: send && worth, why: !send ? "cancelled" : worth ? null : "too short or silent" });
+      if (!send || !worth) {
         if (heldRef.current) resume();
         else if (phaseRef.current === "hearing") go(replyUnderway() ? "sending" : session.current ? "listening" : "off");
         return;
@@ -761,6 +772,7 @@ export function useHandsFree({
 
   const stop = useCallback(() => {
     const s = session.current;
+    if (s) vlog("handsfree.stop");
     session.current = null;
     setHandsFree(false);
     // A hold under way ends too, unsent (End pressed mid-hold).
@@ -815,8 +827,9 @@ export function useHandsFree({
           ...({ voiceIsolation: true } as Record<string, boolean>),
         },
       });
-    } catch {
+    } catch (err) {
       go("off");
+      vlog("handsfree.micDenied", { name: (err as { name?: string } | null)?.name ?? "error" });
       setNotice((await nativeAppBuild()) !== null ? APP_MIC_DENIED : WEB_MIC_DENIED);
       return;
     }
@@ -844,6 +857,7 @@ export function useHandsFree({
     const s: Session = { stream, ctx, outAnalyser, outBus, outBuf: new Float32Array(outAnalyser.fftSize), detector: null };
     session.current = s;
     setHandsFree(true);
+    vlog("handsfree.start", { ctx: ctx.state, rate: ctx.sampleRate, net: connectionNote() });
     barge.current.reset();
     setMetered(true);
     go("listening");
@@ -885,7 +899,10 @@ export function useHandsFree({
         }
         if (barge.current.strict) setNotice((n) => n ?? DEVICE_ECHOES);
         // A monologue (or a TV that never pauses) is cut at the cap.
-        if (userTalking.current && now - speechStartedAt.current > MAX_UTTERANCE_MS) s.detector?.cut();
+        if (userTalking.current && now - speechStartedAt.current > MAX_UTTERANCE_MS) {
+          vlog("speech.cap", { s: MAX_UTTERANCE_MS / 1000 });
+          s.detector?.cut();
+        }
         // The light: whoever is talking, ~10 times a second.
         const target = Math.min(1, replyingAudibly() ? out * 6 : mic * 12);
         shown.current = shown.current * 0.55 + target * 0.45;
@@ -893,6 +910,7 @@ export function useHandsFree({
       },
       start: () => {
         if (session.current !== s) return;
+        vlog("speech.start", { replying: replyingAudibly() });
         userTalking.current = true;
         speechStartedAt.current = performance.now();
         startedDuringReply.current = replyingAudibly();
@@ -900,12 +918,14 @@ export function useHandsFree({
       },
       misfire: () => {
         if (session.current !== s) return;
+        vlog("speech.misfire", "too short to be speech");
         userTalking.current = false;
         if (phaseRef.current === "hearing" && !heldRef.current) go(replyUnderway() ? "sending" : "listening");
         playNextRef.current();
       },
       end: (audio) => {
         if (session.current !== s) return;
+        vlog("speech.end", { s: audio.length / 16000, level: speechLevel(audio), nearness: voiceLevel.current.nearness(speechLevel(audio)) });
         userTalking.current = false;
         const interrupting = bargeConfirmed.current;
         // Said while she was talking and it didn't stop her: her own voice,
@@ -917,12 +937,14 @@ export function useHandsFree({
             replyEndedAt.current >= speechStartedAt.current - 50 &&
             replyEndedAt.current - speechStartedAt.current < 700;
           if (!answeredAsSheEnded) {
+            vlog("dropped", "said while she spoke and didn't stop her (her own voice or the room)");
             playNextRef.current();
             return;
           }
         }
         const lvl = speechLevel(audio);
         if (voiceLevel.current.isFarAway(lvl)) {
+          vlog("dropped", { why: "far quieter than you usually are", level: lvl, usual: voiceLevel.current.usual });
           // Far quieter than the person ever is at this device: not them.
           if (interrupting) resume();
           else {
@@ -960,11 +982,13 @@ export function useHandsFree({
     });
     s.detector = basicDetector(ctx, stream, only("basic"));
     setEngine("basic");
+    vlog("ears", "loudness detector (the speech model is loading)");
     const loading = sileroDetector(ctx, stream, only("silero"));
     const timeout = new Promise<null>((r) => window.setTimeout(() => r(null), 25_000));
     void Promise.race([loading, timeout])
       .then(async (silero) => {
         if (!silero) {
+          vlog("ears", "speech model took over 25 s to load: staying on the loudness detector");
           // Too slow: let it finish in the background, then drop it.
           void loading.then((late) => late.stop()).catch(() => {});
           return;
@@ -981,8 +1005,9 @@ export function useHandsFree({
         s.detector = silero;
         basic?.stop();
         setEngine("silero");
+        vlog("ears", "speech model loaded and listening");
       })
-      .catch(() => {});
+      .catch((err) => vlog("ears", { failed: err instanceof Error ? err.message.slice(0, 80) : "speech model failed" }));
   }, [go, hold, resume, setDuck, supported]);
 
   /** A new answer is on its way: its spoken pieces start from 0. */

@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.128.0",
+    build: 167,
+    date: "2026-09-27",
+    title: "A voice log for admins, and a send that can't get through now says so",
+    items: [
+      "Admins get a Log button in Aly's chat: every step the mic, the send and her voice took on this phone or computer, with times, sizes, the connection (4G, speed) and the reason anything was dropped — never the words said. Copy puts it on the clipboard to paste into a report. It was added to find out why Aly hears nothing and can't answer outdoors: none of those attempts reached the server.",
+      "A message that gets no reply from Picacho at all (a weak signal) now gives up after 30 seconds plus 2 for each second of speech, and says \"Couldn't reach Picacho. The signal may be too weak here. Try again, or type it.\" instead of sitting on Thinking.",
+    ],
+  },
+  {
     version: "1.127.0",
     build: 166,
     date: "2026-09-27",

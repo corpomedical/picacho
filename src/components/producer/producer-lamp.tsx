@@ -24,6 +24,16 @@ import styles from "./producer-lamp.module.css";
 import { Wheel } from "./wheel";
 import { wheelGeometry, type WheelStyle } from "./wheel-style";
 import { countWords, subtitleView, type ChatStyle } from "./chat-style";
+import {
+  clearVoiceLog,
+  connectionNote,
+  enableVoiceLog,
+  formatVoiceLog,
+  getEmptyVoiceLog,
+  getVoiceLog,
+  subscribeVoiceLog,
+  vlog,
+} from "./voice-log";
 import { DEFAULT_PTT_KEY, PTT_KEY_DELAY_MS, PTT_KEY_EVENT, PTT_KEY_STORAGE, isMac, pttKeyName, readPttKey, typesCharacter } from "./ptt-key";
 import { MovableLamp } from "./movable-lamp";
 import { writeLampHidden } from "./lamp-place";
@@ -98,6 +108,8 @@ const W = {
   endVoice: "End",
   endVoiceLabel: "End the voice conversation",
   typeInstead: "Type instead",
+  sendTimedOut: "Couldn't reach Picacho. The signal may be too weak here. Try again, or type it.",
+  voiceLog: "Voice log",
   pushOpening: "Opening the mic…",
   pushListening: "Listening · let go to send",
   wholeChat: "Whole chat",
@@ -114,6 +126,9 @@ const W = {
 };
 
 const READ_ALOUD_KEY = "picacho.producer.readAloud";
+// A send with no reply from Picacho at all in this long (plus 2 s per second
+// of speech uploaded) gives up and says so.
+const SEND_TIMEOUT_MS = 30_000;
 
 // The push-to-talk key (ptt-key.ts): this device's choice, following Settings.
 function subscribePttKey(onChange: () => void) {
@@ -208,7 +223,7 @@ export function ProducerLamp({
     [router],
   );
   const [open, setOpen] = useState(false);
-  const [view, setView] = useState<"chat" | "notes">("chat");
+  const [view, setView] = useState<"chat" | "notes" | "log">("chat");
   const [name, setName] = useState(initialName);
   const [dot, setDot] = useState(watchCount);
   const [loaded, setLoaded] = useState(false);
@@ -305,6 +320,20 @@ export function ProducerLamp({
   // ElevenLabs hasn't used for a while took 6-11 s to start (warmProducerVoice;
   // the server does it at most once every two minutes).
   const wantWarm = (open && readAloud && loaded) || voice.active;
+  // The voice log (voice-log.ts): admins only, on this device.
+  useEffect(() => {
+    enableVoiceLog(diagnostics);
+    if (!diagnostics) return;
+    const online = () => vlog("net.online", connectionNote());
+    const offline = () => vlog("net.offline");
+    window.addEventListener("online", online);
+    window.addEventListener("offline", offline);
+    return () => {
+      window.removeEventListener("online", online);
+      window.removeEventListener("offline", offline);
+    };
+  }, [diagnostics]);
+
   // PUSH TO TALK, BY KEY (2026-09-27, operator: "We should also add a
   // keyboard button dedicated if possible to trigger the push to talk", then
   // "Right option"). Held, the mic opens like a hold of the lamp; let go, what
@@ -676,6 +705,26 @@ export function ProducerLamp({
     let failed: string | null = null;
     let wasIgnored = false;
     const last = spoken ? spoken[spoken.length - 1] : null;
+    // Timings for the voice log, and a send that never reaches Picacho (a weak
+    // signal outdoors, 2026-09-27) gives up with a message instead of sitting
+    // on "Thinking": no reply at all within SEND_TIMEOUT_MS plus 2 s for each
+    // second of speech being uploaded.
+    const sentAt = performance.now();
+    const since = () => Math.round(performance.now() - sentAt);
+    const audioSeconds = spoken ? spoken.reduce((n, a) => n + a.seconds, 0) : 0;
+    let timedOut = false;
+    let firstAudio = true;
+    const noReply = window.setTimeout(() => {
+      timedOut = true;
+      vlog("send.timeout", { ms: since() });
+      turn.controller.abort();
+    }, SEND_TIMEOUT_MS + audioSeconds * 2000);
+    vlog("send", {
+      kind: spoken ? (pushToTalk ? "voice, held" : "voice") : "typed",
+      audio_s: audioSeconds || null,
+      kb: spoken ? Math.round(spoken.reduce((n, a) => n + a.data.length, 0) / 1024) : null,
+      net: connectionNote(),
+    });
     try {
       const res = await fetch("/api/producer", {
         method: "POST",
@@ -699,6 +748,8 @@ export function ProducerLamp({
         }),
         signal: turn.controller.signal,
       });
+      window.clearTimeout(noReply);
+      vlog("send.reply", { status: res.status, ms: since() });
       if (!res.ok || !res.body) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
         if (res.status === 402 && usage) setUsage({ ...usage, used: usage.cap });
@@ -722,10 +773,12 @@ export function ProducerLamp({
         buffer = parsed.rest;
         for (const ev of parsed.events) {
           if (ev.event === "heard" && typeof ev.data.text === "string") {
+            vlog("heard", { ms: since(), words: ev.data.text.split(/\s+/).filter(Boolean).length });
             accept(ev.data.text);
             continue;
           }
           if (ev.event === "ignored") {
+            vlog("ignored", { ms: since(), why: typeof ev.data.why === "string" ? ev.data.why : null });
             wasIgnored = true;
             const words = typeof ev.data.text === "string" ? ev.data.text : "";
             if (words) {
@@ -738,8 +791,13 @@ export function ProducerLamp({
             continue;
           }
           if (ev.event === "error" && typeof ev.data.error === "string") {
+            vlog("server.error", { ms: since(), error: ev.data.error });
             failed = ev.data.error;
             continue;
+          }
+          if (firstAudio && (ev.event === "audio" || ev.event === "audio_stream")) {
+            firstAudio = false;
+            vlog("voice.first", { ms: since(), kind: ev.event === "audio_stream" ? "one take" : "pieces" });
           }
           if (!turn.accepted || currentRef.current !== turn) continue;
           if (ev.event === "delta" && typeof ev.data.text === "string") {
@@ -770,6 +828,7 @@ export function ProducerLamp({
           } else if (ev.event === "spot" && isSpot(ev.data.spot)) {
             light(ev.data.spot, typeof ev.data.id === "string" ? ev.data.id : null, 8000);
           } else if (ev.event === "done") {
+            vlog("done", { ms: since() });
             notesChanged = ev.data.notesChanged === true;
             const units = Number(ev.data.units) || 0;
             setUsage((u) => (u ? { ...u, used: u.used + units } : u));
@@ -778,14 +837,17 @@ export function ProducerLamp({
         }
       }
     } catch (err) {
-      if (!turn.controller.signal.aborted) failed = err instanceof Error ? err.message : "That didn't go through. Try again.";
+      if (timedOut) failed = W.sendTimedOut;
+      else if (!turn.controller.signal.aborted) failed = err instanceof Error ? err.message : "That didn't go through. Try again.";
+      vlog("send.failed", { ms: since(), error: timedOut ? "no reply in time" : err instanceof Error ? err.message.slice(0, 80) : "error", aborted: turn.controller.signal.aborted && !timedOut, net: connectionNote() });
     } finally {
+      window.clearTimeout(noReply);
       if (probeRef.current === turn) probeRef.current = null;
       if (!turn.accepted) {
         // Never became a turn (nothing said, not for the Producer, merged
         // into a later recording, or failed): if she had stopped for it,
         // she carries on; nothing else changes.
-        if (!turn.controller.signal.aborted) {
+        if (!turn.controller.signal.aborted || timedOut) {
           voice.resume();
           if (failed && !wasIgnored) setError(failed);
         }
@@ -1261,12 +1323,22 @@ export function ProducerLamp({
               <LookMark look={look} mood={mood} size={22} glow={glow} />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[15px] font-semibold leading-tight">
-                  {view === "notes" ? W.notes : name}
+                  {view === "notes" ? W.notes : view === "log" ? W.voiceLog : name}
                 </div>
                 {voiceLine && view === "chat" && (
                   <div className="truncate text-[12px] leading-tight text-atelier-accent">{voiceLine}</div>
                 )}
               </div>
+              {diagnostics && view === "chat" && (
+                <button
+                  type="button"
+                  onClick={() => setView("log")}
+                  className="rounded-control px-2.5 py-1.5 text-[12px] text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
+                  title="What the mic, the send and the speaker did (admins)"
+                >
+                  Log
+                </button>
+              )}
               {view === "chat" ? null : (
                 <button
                   type="button"
@@ -1318,7 +1390,9 @@ export function ProducerLamp({
               </div>
             )}
 
-            {view === "notes" ? (
+            {view === "log" ? (
+              <VoiceLogView />
+            ) : view === "notes" ? (
               <NotesView notes={notes} setNotes={setNotes} />
             ) : (
               <>
@@ -1491,6 +1565,48 @@ function Cards({ cards, onOpen }: { cards: PreparedSend[]; onOpen: () => void })
       <div className="flex items-center justify-between bg-atelier-ink/[0.03] px-3 py-2 text-[12.5px] text-atelier-muted">
         <span>{W.prepared}</span>
         {cards.length > 1 && <span className="font-semibold tabular-nums text-atelier-ink">{W.total(total)}</span>}
+      </div>
+    </div>
+  );
+}
+
+// The voice log (voice-log.ts), newest first; Copy puts it all on the clipboard.
+function VoiceLogView() {
+  const log = useSyncExternalStore(subscribeVoiceLog, getVoiceLog, getEmptyVoiceLog);
+  const [copied, setCopied] = useState<string | null>(null);
+  const text = formatVoiceLog(log);
+  const lines = text ? text.split("\n").reverse() : [];
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex items-center gap-2 border-b border-atelier-rule px-4 py-2 text-[12px] text-atelier-muted">
+        <span className="min-w-0 flex-1 truncate">{connectionNote()}</span>
+        <button
+          type="button"
+          onClick={() => {
+            const all = `${connectionNote()}\n${text}`;
+            navigator.clipboard
+              ?.writeText(all)
+              .then(() => setCopied("Copied"))
+              .catch(() => setCopied("Couldn't copy: take a screenshot"));
+          }}
+          className="rounded-full border border-atelier-rule px-2.5 py-1 font-semibold text-atelier-ink hover:bg-atelier-ink/5"
+        >
+          {copied ?? "Copy"}
+        </button>
+        <button type="button" onClick={() => clearVoiceLog()} className="rounded-full px-2.5 py-1 hover:text-atelier-ink">
+          Clear
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 font-mono text-[11px] leading-relaxed text-atelier-ink">
+        {lines.length === 0 ? (
+          <p className="text-atelier-muted">Nothing yet. Talk to her (hands-free or holding the lamp) and each step shows here.</p>
+        ) : (
+          lines.map((l, i) => (
+            <div key={i} className="whitespace-pre-wrap break-words">
+              {l}
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
