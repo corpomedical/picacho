@@ -24,6 +24,8 @@ import { GenerationDefaultsForm } from "@/components/settings/generation-default
 import { SkipRefinementToggle } from "@/components/settings/skip-refinement-toggle";
 import { BrandRulesPanel } from "@/components/brand-rules-panel";
 import { ThemePicker } from "@/components/settings/theme-picker";
+import { AppModePicker } from "@/components/light/app-mode-picker";
+import type { AppMode } from "@/lib/light/mode";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { NotificationsPanel } from "@/components/settings/notifications-panel";
 import { MarketingEmailsToggle } from "@/components/settings/marketing-emails-toggle";
@@ -154,6 +156,7 @@ export function PreferencesTab({
   producerWheel = null,
   producerChat = null,
   producerPersonality = null,
+  appMode = null,
 }: {
   t: Messages;
   notifyPrefs: { notify_render_ready: boolean; notify_render_failed: boolean; notify_low_credits: boolean };
@@ -173,6 +176,8 @@ export function PreferencesTab({
   producerChat?: ChatStyle | null;
   /** Her personality, or null when this account has no Producer. */
   producerPersonality?: Personality | null;
+  /** Light or the full studio; null before picacho-light.sql runs (switch hidden). */
+  appMode?: AppMode | null;
 }) {
   const s = t.settings;
   return (
@@ -182,6 +187,7 @@ export function PreferencesTab({
           <ThemePicker />
           <p className="mt-2 text-xs text-atelier-muted">{s.appearanceSubtitle}</p>
         </div>
+        {appMode && <AppModePicker current={appMode} />}
         <div className="flex items-center justify-between gap-4 border-t border-atelier-rule/60 pt-5">
           <div className="min-w-0">
             <p className="text-sm font-medium text-atelier-ink">{s.language}</p>

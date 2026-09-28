@@ -20,7 +20,9 @@ export function isScreeningPath(pathname: string | null | undefined): boolean {
   return pathname === "/app" || pathname.startsWith("/app/");
 }
 
-export type ThemeChoice = "default" | "light" | "dark";
+// "system" (Picacho Light, 2026-09-28: "Same as my device") follows the OS
+// inside the app too, where "default" means the Screening Room's dark.
+export type ThemeChoice = "default" | "light" | "dark" | "system";
 
 /**
  * Whether the page renders dark.
@@ -33,12 +35,13 @@ export type ThemeChoice = "default" | "light" | "dark";
 export function resolveDark(mode: ThemeChoice, screening: boolean, osDark: boolean): boolean {
   if (mode === "dark") return true;
   if (mode === "light") return false;
+  if (mode === "system") return osDark;
   return screening || osDark;
 }
 
 /** Anything stored that is not one of the three choices reads as "default". */
 export function readThemeChoice(raw: string | null | undefined): ThemeChoice {
-  return raw === "light" || raw === "dark" ? raw : "default";
+  return raw === "light" || raw === "dark" || raw === "system" ? raw : "default";
 }
 
 /** localStorage key for the Default / Light / Dark choice. */
@@ -56,9 +59,9 @@ export const THEME_INIT_SCRIPT = `
     var screening = path === "/app" || path.indexOf("/app/") === 0;
     var stored = null;
     try { stored = window.localStorage.getItem("${THEME_STORAGE_KEY}"); } catch (e) {}
-    var mode = stored === "light" || stored === "dark" ? stored : "default";
+    var mode = stored === "light" || stored === "dark" || stored === "system" ? stored : "default";
     var osDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    var isDark = mode === "dark" || (mode === "default" && (screening || osDark));
+    var isDark = mode === "dark" || (mode === "system" && osDark) || (mode === "default" && (screening || osDark));
     var root = window.document.documentElement;
     if (screening) root.classList.add("screening");
     if (isDark) root.classList.add("dark");

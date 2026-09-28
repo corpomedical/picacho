@@ -31,6 +31,8 @@ import { AppErrorReporter } from "@/components/app-error-reporter";
 import { ActivityHeartbeat } from "@/components/activity-heartbeat";
 import { SUPPORT_EMAIL_FALLBACK } from "@/lib/domains";
 import { SCREENING_FONT_VARS } from "@/lib/theme/screening-fonts";
+import { parseAppLook, resolveAppMode } from "@/lib/light/mode";
+import { ChoiceFrame, LightShell, LookSync, ModeGate } from "@/components/light/light-shell";
 
 export default async function AppLayout({
   children,
@@ -59,6 +61,7 @@ export default async function AppLayout({
     { data: recentJobs },
     { data: supportEmailSetting },
     producerGranted,
+    modeRead,
   ] = await Promise.all([
     supabase.from("profiles").select("role, username, plan, plan_status, status, skip_ai_refinement, rating_prompted_at").eq("id", data.user.id).single(),
     // Explicit user_id filter below, not just RLS — an admin's SELECT
@@ -80,10 +83,49 @@ export default async function AppLayout({
     // An admin's grant of the Producer, on its own (lib/producer/enabled.ts):
     // before producer-access.sql runs it reads as not granted.
     readProducerGrant(supabase, data.user.id),
+    // Picacho Light's two choices, on their own read: before
+    // picacho-light.sql runs it errors, and everyone stays in the full
+    // studio with no welcome step (lib/light/mode.ts resolveAppMode).
+    supabase.from("profiles").select("app_mode, app_look").eq("id", data.user.id).maybeSingle(),
   ]);
   const profile = profileRow ? { ...profileRow, producer_access: producerGranted } : profileRow;
 
   const isAdmin = profile?.role === "admin";
+
+  const modeRow = modeRead.data as { app_mode?: unknown; app_look?: unknown } | null;
+  const { mode: appMode, needsChoice } = resolveAppMode({ error: modeRead.error, mode: modeRow?.app_mode });
+  const accountLook = modeRead.error ? null : parseAppLook(modeRow?.app_look);
+
+  // PICACHO LIGHT (2026-09-28) and the welcome step: their own frame, none of
+  // the studio's sidebar, tab bar or lamp. Returned before the studio's flag
+  // reads, which this frame never shows.
+  if (appMode === "light" || needsChoice) {
+    const recent = (recentJobs ?? []).map((j) => ({ id: j.id as string, prompt: (j.prompt_input as string | null) ?? "" }));
+    return (
+      <div className="frost-ground flex h-full overflow-hidden">
+        <style dangerouslySetInnerHTML={{ __html: SCREENING_FONT_VARS }} />
+        <AppErrorReporter />
+        <ActivityHeartbeat />
+        <ModeGate mode={appMode} needsChoice={needsChoice} />
+        <LookSync look={accountLook} />
+        <NativePush />
+        <WebPushSync />
+        <Suspense fallback={null}>
+          <RouteProgress />
+        </Suspense>
+        <DownloadToasts />
+        {needsChoice ? (
+          <div data-app-scroll className="min-w-0 flex-1 overflow-y-auto">
+            <ChoiceFrame>{children}</ChoiceFrame>
+          </div>
+        ) : (
+          <Suspense fallback={null}>
+            <LightShell recent={recent}>{children}</LightShell>
+          </Suspense>
+        )}
+      </div>
+    );
+  }
 
   const voiceModeEnabled = await isVoiceModeEnabled(supabase);
   // Sets shows in the sidebar only to accounts that can open it (admins in
@@ -169,6 +211,7 @@ export default async function AppLayout({
           built from next/font's own family names. */}
       <style dangerouslySetInnerHTML={{ __html: SCREENING_FONT_VARS }} />
       <AppErrorReporter />
+      <LookSync look={accountLook} />
       {/* Times how long this person actually uses the app — see the
           component for why it only beats while the tab is visible. */}
       <ActivityHeartbeat />

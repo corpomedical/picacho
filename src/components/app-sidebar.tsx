@@ -699,6 +699,8 @@ export function AppSidebar({
     default: s.themeDefault,
     light: s.themeLight,
     dark: s.themeDark,
+    // Offered in Settings (Picacho Light); this quick menu keeps its three.
+    system: t.light.themeSystem,
   };
   const [collapsed, setCollapsed] = useState(false);
   // Separate from the desktop icon-only "collapsed" preference above — this

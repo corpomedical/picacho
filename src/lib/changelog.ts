@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.132.0",
+    build: 171,
+    date: "2026-09-28",
+    title: "Picacho Light: a simple chat for beginners, and a choice of look",
+    items: [
+      "New accounts get one more sign-up step, \"Make Picacho yours\": how they want to create (Light, a simple chat, or Advanced, the full studio) and which look they like (Light, Dark or Same as my device). Existing accounts stay on the full studio with their current look and never see the step.",
+      "Picacho Light is one chat box, like ChatGPT or Gemini: \"Hi <first name>, what should we make today?\", a Video | Picture switch, a plus to add a photo, a microphone (where the browser can listen) and four starter ideas, on the Picacho ridge background (quiet dark mountains in the dark look).",
+      "What you ask for comes back inside the conversation. It is made by the same engine, with the same defaults and prices, as the full studio's composer for a new account. Under each result: Download, Share, Make another, Open in full studio, the real charge (\"Used N credits\", read from the take itself) and three one-tap follow-ups. Make another and the follow-ups fill the box; nothing is charged until you press send. A render in progress can be stopped.",
+      "The left rail (a menu on the phone) has New chat, your recent takes, Switch to full studio and Settings.",
+      "Settings → Preferences: Appearance gains \"Same as my device\", and a new \"How you create\" switch moves between Light and the full studio at any time. The look you pick is also kept on your account, so a new device starts with it.",
+    ],
+  },
+  {
     version: "1.131.0",
     build: 170,
     date: "2026-09-28",

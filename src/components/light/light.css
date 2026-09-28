@@ -1,0 +1,190 @@
+/* PICACHO LIGHT (approved 2026-09-27, background B "Picacho ridge").
+   Its own tokens, scoped to .pl so the full studio's look is untouched.
+   Values are the design boards' own (Main / Chat / ChatDark / *Ridge). */
+@layer components {
+.pl {
+  --pl-ground: #ffffff;
+  --pl-rail: #f5f3f0;
+  --pl-chip: #ebe7e2;
+  --pl-bubble: #f1eeea;
+  --pl-line: #e0dbd5;
+  --pl-card-line: #e6e2dd;
+  --pl-ink: #1c1c1e;
+  --pl-muted: #5f5b57;
+  --pl-soft: #8f8983;
+  --pl-accent: #a84e24;
+  --pl-accent-hover: #8a3d18;
+  --pl-send-idle: #d9d4ce;
+  --pl-sky: linear-gradient(180deg, #ffffff 50%, #faf6f1 100%);
+  --pl-ridge-back: #f4efe9;
+  --pl-ridge-front: #ece5dd;
+  --pl-box: #ffffff;
+  --pl-box-shadow: 0 1px 2px rgba(28, 28, 30, 0.06), 0 10px 28px rgba(120, 70, 40, 0.1);
+  --pl-card: #ffffff;
+}
+/* The chat and the rail wear the boards' own face and ground; a studio page
+   shown inside the Light frame (Settings) keeps the studio's. */
+.pl-surface {
+  background: var(--pl-ground);
+  color: var(--pl-ink);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+html.dark .pl {
+  --pl-ground: #141313;
+  --pl-rail: #1f1d1c;
+  --pl-chip: #2c2927;
+  --pl-bubble: #2a2725;
+  --pl-line: #3a3633;
+  --pl-card-line: #3a3633;
+  --pl-ink: #edebe8;
+  --pl-muted: #aaa39c;
+  --pl-soft: #8f8983;
+  --pl-accent: #e08a5a;
+  --pl-accent-hover: #eaa27a;
+  --pl-send-idle: #3a3633;
+  --pl-sky: transparent;
+  --pl-ridge-back: #1b1918;
+  --pl-ridge-front: #211e1c;
+  --pl-box: #232120;
+  --pl-box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  --pl-card: #1f1d1c;
+}
+.pl-display {
+  font-family: var(--font-marquee-face, "Archivo"), Archivo, sans-serif;
+  font-variation-settings: "wdth" 100;
+}
+.pl-sky {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--pl-sky);
+}
+.pl-ridges {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  pointer-events: none;
+}
+.pl-box {
+  background: var(--pl-box);
+  box-shadow: var(--pl-box-shadow);
+}
+.pl-iconbtn {
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  border: 0;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--pl-ink);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.pl-iconbtn:hover {
+  background: var(--pl-chip);
+}
+.pl-iconbtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.pl-muted-btn {
+  color: var(--pl-muted);
+  width: 40px;
+  height: 40px;
+}
+.pl-seg {
+  display: flex;
+  background: var(--pl-chip);
+  border-radius: 22px;
+  padding: 4px;
+}
+.pl-seg button {
+  height: 36px;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  padding: 0 16px;
+  font-size: 14px;
+  color: var(--pl-muted);
+  cursor: pointer;
+}
+.pl-seg button[aria-pressed="true"] {
+  background: var(--pl-ground);
+  color: var(--pl-ink);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.pl-rail-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  border-radius: 20px;
+  color: var(--pl-ink);
+  font-size: 14px;
+  text-decoration: none;
+}
+.pl-rail-link:hover,
+.pl-rail-link[aria-current="page"] {
+  background: var(--pl-chip);
+}
+.pl-idea {
+  text-align: left;
+  border: 1px solid var(--pl-card-line);
+  background: var(--pl-card);
+  border-radius: 18px;
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--pl-ink);
+  cursor: pointer;
+}
+.pl-idea:hover {
+  border-color: var(--pl-accent);
+}
+.pl-chip-btn {
+  height: 40px;
+  border: 1px solid var(--pl-line);
+  background: var(--pl-ground);
+  border-radius: 20px;
+  padding: 0 16px;
+  font-size: 14px;
+  color: var(--pl-ink);
+  cursor: pointer;
+}
+.pl-chip-btn:hover {
+  border-color: var(--pl-accent);
+}
+.pl-progress {
+  width: 180px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--pl-chip);
+  overflow: hidden;
+}
+.pl-progress > div {
+  width: 40%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--pl-accent);
+  animation: pl-slide 1.6s ease-in-out infinite;
+}
+@keyframes pl-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pl-progress > div { animation: none; width: 60%; }
+}
+.pl input::placeholder,
+.pl textarea::placeholder {
+  color: var(--pl-soft);
+}
+.pl :focus-visible {
+  outline: 2px solid var(--pl-accent);
+  outline-offset: 2px;
+}
+}

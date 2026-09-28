@@ -19,6 +19,13 @@ describe("isScreeningPath", () => {
 });
 
 describe("resolveDark", () => {
+  it("follows the device everywhere when the choice is Same as my device", () => {
+    for (const screening of [true, false]) {
+      expect(resolveDark("system", screening, true)).toBe(true);
+      expect(resolveDark("system", screening, false)).toBe(false);
+    }
+  });
+
   it("makes the app dark by default, whatever the OS says", () => {
     expect(resolveDark("default", true, false)).toBe(true);
     expect(resolveDark("default", true, true)).toBe(true);
@@ -45,6 +52,7 @@ describe("readThemeChoice", () => {
     expect(readThemeChoice("dark")).toBe("dark");
     expect(readThemeChoice("default")).toBe("default");
     expect(readThemeChoice(null)).toBe("default");
+    expect(readThemeChoice("system")).toBe("system");
     expect(readThemeChoice("sepia")).toBe("default");
   });
 });
@@ -80,7 +88,7 @@ describe("THEME_INIT_SCRIPT", () => {
 
   it("agrees with resolveDark and isScreeningPath on every combination", () => {
     for (const pathname of ["/", "/pricing", "/app", "/app/generate"]) {
-      for (const stored of [null, "default", "light", "dark"]) {
+      for (const stored of [null, "default", "light", "dark", "system"]) {
         for (const osDark of [true, false]) {
           const classes = run(pathname, stored, osDark);
           const screening = isScreeningPath(pathname);

@@ -54,6 +54,7 @@ import { BUTTON_PRIMARY } from "@/components/settings/hub/parts";
 import { HelpPanel } from "@/components/settings/hub/help-panel";
 import { GenerationTab, PreferencesTab, PrivacyTab, ProfileTab, SecurityTab } from "@/components/settings/hub/rooms";
 import { loadConnectedApps } from "@/lib/mcp/oauth/connected-apps";
+import { parseAppMode } from "@/lib/light/mode";
 
 // Settings, direction A "Front desk" (operator's pick on the Settings &
 // Invoices canvas, 2026-09-19): it opens on an Overview — who is signed in,
@@ -382,6 +383,14 @@ export default async function SettingsPage({
           .eq("id", userId)
           .maybeSingle()
       : { data: null };
+  // Picacho Light's switch (lib/light/mode.ts): on its own read, so before
+  // picacho-light.sql runs the column is missing and the switch stays hidden.
+  const appModeRead =
+    activeTab === "preferences"
+      ? await supabase.from("profiles").select("app_mode").eq("id", userId).maybeSingle()
+      : null;
+  const appMode = appModeRead && !appModeRead.error ? (parseAppMode((appModeRead.data as { app_mode?: unknown } | null)?.app_mode) ?? "advanced") : null;
+
   // The Producer's name row: only for accounts that have the Producer.
   const [producerName, producerVoices, producerLook, producerWheel, producerChat, producerPersonality] =
     activeTab === "preferences"
@@ -687,6 +696,7 @@ export default async function SettingsPage({
           producerWheel={producerWheel}
           producerChat={producerChat}
           producerPersonality={producerPersonality}
+          appMode={appMode}
         />
       )}
 

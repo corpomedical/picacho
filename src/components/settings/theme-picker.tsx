@@ -4,6 +4,7 @@ import type { SVGProps } from "react";
 import { cn } from "@/lib/cn";
 import { useTheme, type ThemeMode } from "@/lib/theme/theme-provider";
 import { useLocale } from "@/lib/i18n/provider";
+import { saveAppChoices } from "@/lib/light/actions";
 
 function MonitorIcon(props: SVGProps<SVGSVGElement>) {
   return (
@@ -39,10 +40,21 @@ function CheckIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function HalfIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 4v16" />
+      <path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor" />
+    </svg>
+  );
+}
+
 const THEME_OPTIONS: { value: ThemeMode; icon: (props: SVGProps<SVGSVGElement>) => React.JSX.Element }[] = [
   { value: "default", icon: MonitorIcon },
   { value: "light", icon: SunIcon },
   { value: "dark", icon: MoonIcon },
+  { value: "system", icon: HalfIcon },
 ];
 
 export function ThemePicker() {
@@ -52,15 +64,23 @@ export function ThemePicker() {
     default: t.settings.themeDefault,
     light: t.settings.themeLight,
     dark: t.settings.themeDark,
+    system: t.light.themeSystem,
   };
 
+  function pick(mode: ThemeMode) {
+    setTheme(mode);
+    // Also kept on the account (Picacho Light), so a new device can start
+    // from it. Best effort: before picacho-light.sql runs it simply fails.
+    if (mode !== "default") void saveAppChoices({ look: mode }).catch(() => {});
+  }
+
   return (
-    <div className="grid grid-cols-3 gap-2">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
       {THEME_OPTIONS.map((opt) => (
         <button
           key={opt.value}
           type="button"
-          onClick={() => setTheme(opt.value)}
+          onClick={() => pick(opt.value)}
           className={cn(
             "flex flex-col items-center gap-1.5 rounded-control border px-3 py-3 text-sm transition-colors",
             theme === opt.value
