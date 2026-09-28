@@ -50,6 +50,8 @@ type Word = { key: string; read: string | null; text: string; ticked: boolean; e
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const UPLOADS_AT_ONCE = 5;
+/** A logo or graphic file: the brand kit's logo rules (transparency kept in a PNG; no SVG: card-service normaliseLogo). */
+const LOGO_FILE_TYPES = IMAGE_TYPES;
 
 export type ProductSaved = { product: PressProduct };
 
@@ -74,6 +76,7 @@ export function ProductSheet({
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const logoFileRef = useRef<HTMLInputElement>(null);
 
   const [mode, setMode] = useState<"link" | "photos">("link");
   const [url, setUrl] = useState(initial?.card.sourceUrl ?? "");
@@ -95,7 +98,12 @@ export function ProductSheet({
   const [name, setName] = useState(initial?.card.name ?? "");
   const [palette, setPalette] = useState<string[]>(initial?.card.palette ?? []);
   const [logo, setLogo] = useState<Box | null>(opening.logo?.box ?? null);
-  const [logoDone, setLogoDone] = useState<"used" | "skipped" | null>(opening.logo ? "used" : null);
+  // A logo FILE the card already holds (uploaded, no box on a photo): kept on save unless changed.
+  const [keptLogo] = useState<string | null>(() => (initial?.card.logoPath && !initial.card.logoBox ? initial.card.logoPath : null));
+  const [logoDone, setLogoDone] = useState<"used" | "skipped" | "uploaded" | "kept" | null>(opening.logo ? "used" : keptLogo ? "kept" : null);
+  // A logo or graphic the person picked from their files: sent with Save.
+  const [logoFile, setLogoFile] = useState<{ file: File; preview: string } | null>(null);
+  const [saving, setSaving] = useState(false);
   const [consent, setConsent] = useState<ConsentAnswer | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -125,6 +133,30 @@ export function ProductSheet({
   if (front !== logoOn) {
     setLogoOn(front);
     setLogo(null);
+    // A logo FILE is not drawn on a photo: a new front leaves it on the card.
+    if (logoDone !== "uploaded" && logoDone !== "kept") setLogoDone(null);
+  }
+
+  function pickLogoFile(file: File | undefined) {
+    if (!file) return;
+    if (!LOGO_FILE_TYPES.includes(file.type)) {
+      setError(m.logoFileType);
+      return;
+    }
+    setError(null);
+    setLogoFile((old) => {
+      if (old) URL.revokeObjectURL(old.preview);
+      return { file, preview: URL.createObjectURL(file) };
+    });
+    setLogo(null);
+    setLogoDone("uploaded");
+  }
+
+  function clearLogoFile() {
+    setLogoFile((old) => {
+      if (old) URL.revokeObjectURL(old.preview);
+      return null;
+    });
     setLogoDone(null);
   }
 
@@ -262,6 +294,15 @@ export function ProductSheet({
   async function save() {
     if (!card || busy || refused || block) return;
     setError(null);
+    setSaving(true);
+    try {
+      await saveCard(card);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveCard(card: ProductCard) {
     setBusy(m.saving);
     const consented = await guard(() => recordConsent({ kind: "product", productId: card.id, photos: picked, answer: consent!, place: "door" }));
     if (!consented) return setBusy(null);
@@ -270,6 +311,28 @@ export function ProductSheet({
       setError(consented.error);
       return;
     }
+    // The logo file goes up first, straight to a one-time place (like photos).
+    let logoUpload: string | null = null;
+    if (logoDone === "uploaded" && logoFile) {
+      setBusy(m.uploadingLogo);
+      const places = await guard(() => reservePressUploads({ purpose: "logo", files: [{ bytes: logoFile.file.size, type: logoFile.file.type }] }));
+      if (!places) return setBusy(null);
+      if (places.error !== null) {
+        setBusy(null);
+        setError(places.error);
+        return;
+      }
+      const place = places.uploads[0];
+      const { error: upErr } = await createClient().storage.from(places.bucket).uploadToSignedUrl(place.path, place.token, logoFile.file, { contentType: logoFile.file.type });
+      if (upErr) {
+        setBusy(null);
+        setError(m.uploadFailed);
+        return;
+      }
+      logoUpload = place.path;
+    }
+    // The card's readings run now (its photos and label words): the longest wait, so it says so.
+    setBusy(m.checkingCard);
     const res = await guard(() =>
       confirmProductCard({
         productId: card.id,
@@ -277,6 +340,8 @@ export function ProductSheet({
         labelStrings: noText ? [] : labelStrings,
         noReadableText: noText,
         logoBox: logo && front && logoDone === "used" ? { path: front, ...logo } : null,
+        logoUpload,
+        keepLogo: logoDone === "kept",
         palette: normalisePalette(palette),
         name: name.trim() || undefined,
         brandKitId,
@@ -600,7 +665,37 @@ export function ProductSheet({
 
               {/* 3 · Your logo, and the colours */}
               <Sec n={3} title={m.cardStep3} aside={m.optional}>
-                {front && urls[front] ? (
+                <input
+                  ref={logoFileRef}
+                  type="file"
+                  accept={LOGO_FILE_TYPES.join(",")}
+                  className="sr-only"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  onChange={(e) => {
+                    pickLogoFile(e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                />
+                {logoDone === "uploaded" || logoDone === "kept" ? (
+                  <div className="mt-2 flex min-h-11 items-center justify-between gap-3 text-[13px] text-[#c6c9d1]">
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      {(logoFile?.preview ?? (keptLogo ? urls[keptLogo] : null)) && (
+                        // eslint-disable-next-line @next/next/no-img-element -- the person's own file, or a short-lived signed link to it
+                        <img
+                          src={logoFile?.preview ?? urls[keptLogo!]}
+                          alt=""
+                          className="h-11 w-11 flex-none rounded-lg object-contain p-1 ring-1 ring-inset ring-[rgba(255,255,255,0.12)] [background:repeating-conic-gradient(#2a2c33_0_25%,#1c1d22_0_50%)_0_0/12px_12px]"
+                        />
+                      )}
+                      <CheckIcon className="h-3.5 w-3.5 flex-none text-[#e0a468]" />
+                      <span className="min-w-0">{m.logoFileOn}</span>
+                    </span>
+                    <button type="button" onClick={clearLogoFile} className={GHOST}>
+                      {m.change}
+                    </button>
+                  </div>
+                ) : front && urls[front] ? (
                   logoDone ? (
                     <div className="mt-2 flex min-h-11 items-center justify-between gap-3 text-[13px] text-[#c6c9d1]">
                       <span className="flex items-center gap-2">
@@ -625,6 +720,10 @@ export function ProductSheet({
                             {m.placeBox}
                           </button>
                         )}
+                        <button type="button" onClick={() => logoFileRef.current?.click()} className={GHOST}>
+                          <UploadIcon className="h-4 w-4" />
+                          {m.logoUpload}
+                        </button>
                         <button
                           type="button"
                           onClick={() => {
@@ -636,10 +735,20 @@ export function ProductSheet({
                           {m.skip}
                         </button>
                       </div>
+                      <p className="mt-2 text-[12px] leading-[1.42] text-[#858994]">{m.logoUploadHint}</p>
                     </>
                   )
                 ) : (
-                  <p className="mt-1.5 text-[12.5px] leading-[1.42] text-[#9aa0ad]">{m.logoNeedsFront}</p>
+                  <>
+                    <p className="mt-1.5 text-[12.5px] leading-[1.42] text-[#9aa0ad]">{m.logoNeedsFront}</p>
+                    <div className="mt-2.5 flex flex-wrap gap-2">
+                      <button type="button" onClick={() => logoFileRef.current?.click()} className={GHOST}>
+                        <UploadIcon className="h-4 w-4" />
+                        {m.logoUpload}
+                      </button>
+                    </div>
+                    <p className="mt-2 text-[12px] leading-[1.42] text-[#858994]">{m.logoUploadHint}</p>
+                  </>
                 )}
                 <p className="mt-3 text-[12.5px] leading-[1.42] text-[#9aa0ad]">{palette.length > 0 ? m.coloursLede : m.coloursLater}</p>
                 {palette.length > 0 && (
@@ -693,7 +802,7 @@ export function ProductSheet({
                 {localizeServerText(error, t)}
               </p>
             ) : busy ? (
-              <p className="mb-2 text-[12.5px] text-[#9aa0ad]">{busy}</p>
+              <BusyLine key={busy} words={busy} secondsWord={m.secondsSoFar} />
             ) : card && block ? (
               <p id={`${titleId}-block`} className={cn(s.blocker, "mb-1")}>
                 {blockWords[block]}
@@ -708,7 +817,7 @@ export function ProductSheet({
             aria-describedby={card && block ? `${titleId}-block` : undefined}
             className={s.key}
           >
-            {busy === m.saving ? m.saving : m.saveProduct}
+            {saving ? m.saving : m.saveProduct}
           </button>
         </footer>
       </section>
@@ -734,5 +843,31 @@ function Sec({ n, title, aside, children }: { n: number; title: string; aside?: 
       </div>
       {children}
     </section>
+  );
+}
+
+/**
+ * What the sheet is doing, with the seconds it has taken so far and a
+ * moving bar, so a card being read (its photos, its label words: up to a
+ * minute) never looks stuck (operator, 2026-09-26: "it took some time for
+ * the card to accept the logo").
+ */
+function BusyLine({ words, secondsWord }: { words: string; secondsWord: string }) {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const id = window.setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  return (
+    <div role="status" className="mb-2">
+      <p className="flex items-baseline justify-between gap-3 text-[12.5px] leading-[1.4] text-[#c6c9d1]">
+        <span>{words}</span>
+        {seconds >= 2 && <span className="flex-none tabular-nums text-[#858994]">{formatMsg(secondsWord, { n: seconds })}</span>}
+      </p>
+      <div aria-hidden="true" className="mt-1.5 h-[3px] overflow-hidden rounded-full bg-[rgba(255,255,255,0.06)]">
+        <div className={s.busyBar} />
+      </div>
+    </div>
   );
 }

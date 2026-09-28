@@ -7,6 +7,7 @@ import {
   ANGLES_MAX,
   ANGLES_MIN,
   BRAND_CONSENT_REQUIRED,
+  BRAND_LOGO_INVALID,
   FREE_IMPORTS_PER_DAY,
   FREE_UPLOAD_RESERVATIONS_PER_DAY,
   PAID_IMPORTS_PER_DAY,
@@ -38,7 +39,7 @@ import { PRESS_TOUR_CONFIRM_EMAIL, PRESS_TOUR_NOT_OPEN, PRESS_TOUR_REQUIRED_KEYS
 import { NOT_YOURS } from "./owned";
 import { DNA_MAX_IMAGES, dnaImageFromBytes, type ProductDnaResult } from "./product-dna";
 import { normalizeProductImage, type PreparedProductImages } from "./product-images";
-import { PAGE_UNREADABLE } from "./safe-fetch";
+import { PAGE_UNREADABLE, SVG_LOGO_REFUSED } from "./safe-fetch";
 import { PRODUCT_REGULATED_REFUSED } from "./types";
 import { SELF_TEST_FAILED, SELF_TEST_LIMIT, SELF_TEST_UNAVAILABLE } from "../product-lock/messages";
 import { FREE_SELF_TESTS_APP_PER_DAY, SELF_TESTS_PER_DAY, type CardSelfTest } from "./card-service";
@@ -606,6 +607,48 @@ describe("confirmProductCard: consent required", () => {
     expect(w.files.has(`${PRESS_KIT_BUCKET}/${out.card.logoPath}`)).toBe(true);
     expect(out.card.lockRefs).toEqual([...chosen, out.card.logoPath]);
     expect(out.card.confirmedAt).toBe("2026-09-25T12:00:00.000Z");
+  });
+
+  it("a logo or graphic FILE can be the card's logo instead of a box: kept transparent, in the card's folder, used as a reference (operator, 2026-09-26)", async () => {
+    const { w, card: c, angles, chosen } = await drafted();
+    await recordConsent(w.deps, ADMIN, { kind: "product", productId: c.id, photos: chosen, answer: "own" }, { locale: "en", ip: null });
+    const staged = `${A}/uploads/aaaaaaaa-0000-4000-8000-0000000000aa/0`;
+    const graphic = await sharp({ create: { width: 512, height: 256, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
+    w.files.set(`${PRESS_UPLOADS_BUCKET}/${staged}`, graphic);
+    const out = await confirmProductCard(w.deps, ADMIN, { productId: c.id, angles, labelStrings: ["SOLSTAD"], logoUpload: staged });
+    expect(out.error).toBeNull();
+    if (out.error !== null) return;
+    expect(out.card.logoPath).toMatch(new RegExp(`^${A}/products/${c.id}/logo-[0-9a-f]{32}\\.png$`));
+    expect(out.card.logoBox).toBeNull();
+    expect(out.card.lockRefs).toEqual([...chosen, out.card.logoPath]);
+    const saved = w.files.get(`${PRESS_KIT_BUCKET}/${out.card.logoPath}`) as Buffer;
+    expect((await sharp(saved).metadata()).hasAlpha).toBe(true);
+    // The staged file is let go.
+    expect(w.files.has(`${PRESS_UPLOADS_BUCKET}/${staged}`)).toBe(false);
+
+    // Saving it again with "keep" keeps that file; a box and a file at once is refused.
+    const again = await confirmProductCard(w.deps, ADMIN, { productId: c.id, angles, labelStrings: ["SOLSTAD"], keepLogo: true });
+    expect(again.error === null && again.card.logoPath).toBe(out.card.logoPath);
+    expect(
+      await confirmProductCard(w.deps, ADMIN, { productId: c.id, angles, labelStrings: ["SOLSTAD"], logoUpload: staged, logoBox: { path: chosen[0], x: 0.1, y: 0.1, w: 0.3, h: 0.3 } }),
+    ).toMatchObject({ code: "logoBox" });
+  });
+
+  it("a logo file that isn't one is refused before any reading is spent, and someone else's staged file is not yours", async () => {
+    const { w, card: c, angles, chosen } = await drafted();
+    await recordConsent(w.deps, ADMIN, { kind: "product", productId: c.id, photos: chosen, answer: "own" }, { locale: "en", ip: null });
+    const reads = w.spies.readDna.mock.calls.length;
+    const svg = `${A}/uploads/aaaaaaaa-0000-4000-8000-0000000000bb/0`;
+    w.files.set(`${PRESS_UPLOADS_BUCKET}/${svg}`, Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="100"><rect width="300" height="100"/></svg>'));
+    expect(await confirmProductCard(w.deps, ADMIN, { productId: c.id, angles, labelStrings: ["SOLSTAD"], logoUpload: svg })).toMatchObject({ code: "logo", error: SVG_LOGO_REFUSED });
+    const tiny = `${A}/uploads/aaaaaaaa-0000-4000-8000-0000000000cc/0`;
+    w.files.set(`${PRESS_UPLOADS_BUCKET}/${tiny}`, await sharp({ create: { width: 40, height: 40, channels: 4, background: "#fff" } }).png().toBuffer());
+    expect(await confirmProductCard(w.deps, ADMIN, { productId: c.id, angles, labelStrings: ["SOLSTAD"], logoUpload: tiny })).toMatchObject({ code: "logo", error: BRAND_LOGO_INVALID });
+    expect(w.spies.readDna.mock.calls.length).toBe(reads);
+    expect(
+      await confirmProductCard(w.deps, ADMIN, { productId: c.id, angles, labelStrings: ["SOLSTAD"], logoUpload: `${B}/uploads/aaaaaaaa-0000-4000-8000-0000000000dd/0` }),
+    ).toMatchObject({ error: NOT_YOURS });
+    expect(w.tables.products[0].status).toBe("draft");
   });
 
   it("a regulated card can never be confirmed, consent or not", async () => {

@@ -1282,6 +1282,10 @@ export async function confirmProductCard(
     labelStrings?: unknown;
     noReadableText?: unknown;
     logoBox?: unknown;
+    /** A logo or graphic file the person uploaded (a staged place from reservePressUploads "logo"), instead of a box on a photo. */
+    logoUpload?: unknown;
+    /** Keep the card's uploaded logo as it is (no box, no new file). */
+    keepLogo?: unknown;
     palette?: unknown;
     name?: unknown;
     brandKitId?: unknown;
@@ -1315,6 +1319,34 @@ export async function confirmProductCard(
 
   const logoBox = parseLogoBox(input?.logoBox, chosen);
   if (logoBox === "invalid") return fail("logoBox", PRODUCT_LOGO_BOX_INVALID);
+  const upload = input?.logoUpload ?? null;
+  if (upload !== null && (typeof upload !== "string" || !stagingPattern(userId).test(upload) || !pathOwned(userId, upload))) return fail("notYours", NOT_YOURS);
+  // One logo: a box on a photo, or a file, never both.
+  if (upload !== null && logoBox) return fail("logoBox", PRODUCT_LOGO_BOX_INVALID);
+  // The card's own uploaded logo, kept as it is: only a file in this card's folder that no box made.
+  const keptUpload =
+    input?.keepLogo === true && !logoBox && upload === null && card.logoPath && !card.logoBox && card.logoPath.startsWith(productFolder(userId, card.id))
+      ? card.logoPath
+      : null;
+  // The file is read and cleaned now, before any reading is spent on the card (the same
+  // rules as the brand kit's logo: PNG with its transparency, JPEG or WebP, no SVG).
+  let uploadedLogo: Awaited<ReturnType<typeof normaliseLogo>> | null = null;
+  if (typeof upload === "string") {
+    try {
+      const sizes = await stagedSizes(deps.db, [upload]);
+      if (!sizes) return fail("upload", PRODUCT_UPLOAD_MISSING);
+      if ((sizes.get(upload) ?? 0) > UPLOAD_MAX_BYTES) return fail("logo", BRAND_LOGO_INVALID);
+      const bytes = await download(deps.db, upload, PRESS_UPLOADS_BUCKET);
+      if (!bytes) return fail("upload", PRODUCT_UPLOAD_MISSING);
+      try {
+        uploadedLogo = await normaliseLogo(bytes);
+      } catch (err) {
+        return fail("logo", err instanceof LogoError && err.reason === "svg_refused" ? SVG_LOGO_REFUSED : BRAND_LOGO_INVALID);
+      }
+    } finally {
+      await removePaths(deps.db, [upload], PRESS_UPLOADS_BUCKET);
+    }
+  }
 
   // The consent for exactly these photos, before anything costs anything.
   const hash = photosHash(chosen);
@@ -1380,10 +1412,15 @@ export async function confirmProductCard(
     if (refused) return refused;
   }
 
-  let logoPath: string | null = null;
+  let logoPath: string | null = keptUpload;
   if (logoBox) {
     logoPath = await saveLogoCrop(deps.db, userId, card.id, logoBox);
     if (!logoPath) return fail("save", PRODUCT_SAVE_FAILED);
+  } else if (uploadedLogo) {
+    const path = `${productFolder(userId, card.id)}logo-${uploadedLogo.sha256.slice(0, 32)}.png`;
+    const { error } = await bucket(deps.db).upload(path, uploadedLogo.data, { contentType: "image/png", upsert: true });
+    if (error) return fail("save", PRODUCT_SAVE_FAILED);
+    logoPath = path;
   }
   const lockRefs = uniq([...chosen, ...(logoPath ? [logoPath] : [])]).slice(0, CARD_LIMITS.lockRefs);
   const name = cleanText(input?.name, CARD_LIMITS.productName) ?? card.name;

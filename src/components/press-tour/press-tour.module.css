@@ -791,3 +791,24 @@
   background: rgba(0, 0, 0, 0.5);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
 }
+
+/* The product sheet's busy line: a bar that moves while the card is read. */
+.busyBar {
+  width: 33%;
+  height: 100%;
+  border-radius: 999px;
+  background: #e0a468;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .busyBar {
+    animation: busy-slide 1.4s ease-in-out infinite;
+  }
+}
+@keyframes busy-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}

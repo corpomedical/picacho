@@ -147,6 +147,8 @@ export async function confirmProductCard(input: {
   labelStrings?: string[];
   noReadableText?: boolean;
   logoBox?: LogoBox | null;
+  logoUpload?: string | null;
+  keepLogo?: boolean;
   palette?: string[];
   name?: string;
   brandKitId?: string | null;

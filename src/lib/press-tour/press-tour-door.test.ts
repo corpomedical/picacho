@@ -66,14 +66,14 @@ const MACHINERY =
 const REAL_WORDS: Partial<Record<Lang, RegExp>> = { es: /(?<=\s|^)veo(?=[\s.,;:!?]|$)/g };
 // Keys that stay English on purpose: "Press Tour" in every language;
 // Spanish "Plan", which is the Spanish word too (the Red Carpet artboards);
-// "{n} cr" and "{n} s", the short forms the Spanish artboard prints as they
+// "{n} cr" and "{n} s" (secondsSoFar too), the short forms the Spanish artboard prints as they
 // are; and Italian "Logo".
 // "Hashtags" is the Spanish and Portuguese word too, and TikTok's Italian
 // app calls Stitch "Stitch".
 const SAME_AS_ENGLISH: Record<Exclude<Lang, "en">, readonly string[]> = {
-  es: ["headline", "stepPlan", "creditsShort", "lengthSeconds", "hashtags"],
-  pt: ["headline", "creditsShort", "lengthSeconds", "hashtags"],
-  it: ["headline", "creditsShort", "lengthSeconds", "logoTag", "ttStitch"],
+  es: ["headline", "stepPlan", "creditsShort", "lengthSeconds", "secondsSoFar", "hashtags"],
+  pt: ["headline", "creditsShort", "lengthSeconds", "secondsSoFar", "hashtags"],
+  it: ["headline", "creditsShort", "lengthSeconds", "secondsSoFar", "logoTag", "ttStitch"],
 };
 
 describe("the Press Tour door", () => {
@@ -259,7 +259,10 @@ describe("the Press Tour door", () => {
     // card again for its words keeps its logo (door-view.test.ts openingCard).
     const sheetPart = read("components", "press-tour", "product-sheet.tsx");
     expect(sheetPart).toContain("const [opening] = useState(() => openingCard(initial?.card ?? null));");
-    expect(sheetPart).toContain('useState<"used" | "skipped" | null>(opening.logo ? "used" : null)');
+    expect(sheetPart).toContain('useState<"used" | "skipped" | "uploaded" | "kept" | null>(opening.logo ? "used" : keptLogo ? "kept" : null)');
+    // A logo FILE (no box) is kept on that save too, and a new front photo never drops it.
+    expect(sheetPart).toContain('keepLogo: logoDone === "kept",');
+    expect(sheetPart).toContain('if (logoDone !== "uploaded" && logoDone !== "kept") setLogoDone(null);');
     expect(sheetPart).toContain("useState<string | null>(opening.logo?.path ?? null)");
   });
 
