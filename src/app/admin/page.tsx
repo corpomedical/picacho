@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { Card } from "@/components/ui/card";
 import { TrafficChart, type TrafficDay } from "@/components/admin/traffic-chart";
@@ -10,6 +10,9 @@ import { PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { currencyForPriceId, planIdForPriceId } from "@/lib/stripe/plans";
 import { fetchAll } from "@/lib/admin/fetch-all";
+import { loadToday, type InboxGroup } from "@/lib/admin/today";
+import { TodayPanel } from "@/components/admin/today-panel";
+import { AdminErrorBanner } from "@/components/admin-error-banner";
 
 const PRICE_BY_PLAN: Record<string, number> = Object.fromEntries(
   PRICING_TIERS.map((t) => [t.id, t.price]),
@@ -157,7 +160,15 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default async function AdminDashboard() {
+const INBOX_GROUPS: InboxGroup[] = ["renders", "money", "people", "safety", "system"];
+
+export default async function AdminDashboard({
+  searchParams,
+}: {
+  searchParams: Promise<{ need?: string; error?: string }>;
+}) {
+  const { need, error: actionError } = await searchParams;
+  const inboxFilter: InboxGroup | "all" = INBOX_GROUPS.includes(need as InboxGroup) ? (need as InboxGroup) : "all";
   // Re-checked here, not just in the admin layout: this page calls the
   // admin_traffic_daily RPC (SECURITY DEFINER over the whole page_views
   // table — hardened with its own role check in supabase/applied/2026-08-19/
@@ -508,6 +519,8 @@ export default async function AdminDashboard() {
     }),
   );
 
+  const today = await loadToday(createAdminClient());
+
   return (
     <div>
       {/* THE LEDGER (operator pick B, 2026-09-03): the overview reads as
@@ -529,6 +542,11 @@ export default async function AdminDashboard() {
           </p>
         </div>
       </div>
+
+      <AdminErrorBanner error={actionError} />
+      {/* Today (2026-09-28 admin redesign): what needs an admin right now,
+          with the buttons that settle it, above the ledger below. */}
+      <TodayPanel items={today.items} numbers={today.numbers} running={today.queue.length} filter={inboxFilter} />
 
       <Card className="mt-6 px-0 py-5">
         <dl className="grid divide-y divide-atelier-rule sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">

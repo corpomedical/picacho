@@ -25,7 +25,8 @@ import { PLAN_CHAT_UNIT_LIMITS, PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { AdminErrorBanner } from "@/components/admin-error-banner";
+import { AdminErrorBanner, AdminSuccessBanner } from "@/components/admin-error-banner";
+import { sendEmailToUser } from "@/lib/admin/email-actions";
 import { DeleteUserButton } from "@/components/delete-user-button";
 import { LocalDate } from "@/components/local-date";
 import { getUserActivity, formatDuration } from "@/lib/admin/activity";
@@ -62,10 +63,10 @@ export default async function AdminUserDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; message?: string }>;
 }) {
   const { id } = await params;
-  const { error: actionError } = await searchParams;
+  const { error: actionError, message: actionMessage } = await searchParams;
   const supabase = await createClient();
 
   const { data: user } = await supabase.from("profiles").select("*").eq("id", id).single();
@@ -173,7 +174,7 @@ export default async function AdminUserDetailPage({
   // runs they answer an error, and the cards say so.
   const serviceClient = createAdminClient();
   const generationIds = (generations ?? []).map((g) => g.id as string);
-  const [notesResult, changesResult, handRefundsResult] = await Promise.all([
+  const [notesResult, changesResult, handRefundsResult, templatesResult] = await Promise.all([
     serviceClient
       .from("admin_user_notes")
       .select("id, created_at, admin_id, body")
@@ -189,7 +190,9 @@ export default async function AdminUserDetailPage({
     generationIds.length
       ? serviceClient.from("admin_actions").select("target_id").eq("action", "render.refund").in("target_id", generationIds)
       : Promise.resolve({ data: [] as { target_id: string | null }[], error: null }),
+    serviceClient.from("email_templates").select("key, subject").order("key"),
   ]);
+  const templates = (templatesResult.data ?? []) as { key: string; subject: string }[];
   const auditReady = !isMissingAuditTable(changesResult.error) && !isMissingAuditTable(notesResult.error);
   const notes = (notesResult.data ?? []) as { id: string; created_at: string; admin_id: string | null; body: string }[];
   const changes = (changesResult.data ?? []) as AdminActionRow[];
@@ -230,6 +233,7 @@ export default async function AdminUserDetailPage({
 
       <div className="mt-4">
         <AdminErrorBanner error={actionError} />
+        <AdminSuccessBanner message={actionMessage} />
       </div>
 
       {/* min-w-0 on BOTH tracks. A grid item's default min-width is `auto`,
@@ -464,6 +468,38 @@ export default async function AdminUserDetailPage({
             </p>
               </div>
             </details>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-3">
+            {/* One email to this person (2026-09-28 admin redesign):
+                a reset link, or a saved template with their details. */}
+            <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Send an email</p>
+            <form action={sendEmailToUser} className="mt-2 flex flex-col gap-2">
+              <input type="hidden" name="user_id" value={user.id} />
+              <select
+                name="what"
+                aria-label="Which email"
+                defaultValue="password-reset"
+                className="w-full rounded-[10px] border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-400"
+              >
+                <option value="password-reset">Password reset link</option>
+                {templates.map((t) => (
+                  <option key={t.key} value={`template:${t.key}`}>
+                    Template: {t.subject}
+                  </option>
+                ))}
+              </select>
+              <label className="flex items-start gap-2 text-xs text-neutral-500">
+                <input type="checkbox" name="service_notice" className="mt-0.5" />
+                <span>
+                  Service notice (about their account: billing, security, terms). Only this reaches someone who opted out
+                  of marketing{user.marketing_opt_out ? " — and they did" : ""}.
+                </span>
+              </label>
+              <SubmitButton variant="secondary" size="sm" className="w-full" pendingLabel="Sending…">
+                Send to {user.email}
+              </SubmitButton>
+            </form>
           </div>
 
           <div className="mt-4">

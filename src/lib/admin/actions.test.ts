@@ -58,6 +58,8 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 // app_settings as updateAppSetting sees it (Press Tour's settings, below).
 const settings = { updates: [] as { key: string; value: string }[] };
+// The render queue's state machine: not exercised by these tests.
+vi.mock("@/lib/generations/job-runner", () => ({ advanceGeneration: async () => ({ state: "gone" }) }));
 // The activity log's writer is exercised in audit.test.ts.
 vi.mock("@/lib/admin/audit", async () => ({ ...(await import("./audit")), logAdminAction: async () => true }));
 vi.mock("@/lib/admin/require-admin", () => ({

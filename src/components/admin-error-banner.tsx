@@ -54,6 +54,14 @@ const KNOWN_ERRORS = new Set<string>([
   "Run supabase/pending/admin-activity.sql in Supabase first, then try again.",
   "A note needs some text (2,000 characters max).",
   "Couldn't save the note. Details are in the server log.",
+  "Couldn't reach the render's provider — nothing was changed. Details are in the server log.",
+  "That person has no email address on file.",
+  "Couldn't send the email. Details are in the server log.",
+  "Pick an email to send.",
+  "They opted out of marketing email. Tick \"service notice\" only if this is about their account (billing, security, terms).",
+  "That render isn't running any more — nothing was stopped.",
+  "Couldn't stop the render — nothing was changed. Details are in the server log.",
+  "The render was stopped, but its credits couldn't be refunded — refund it from the person's page. Details are in the server log.",
   "Generation not found.",
   "Only succeeded generations can be featured.",
   "Only admin-owned generations can be featured — customer content needs a consent mechanism the gallery doesn't have yet.",
@@ -225,6 +233,7 @@ const KNOWN_MESSAGES = new Set<string>([
   "Template saved.",
   "Template deleted.",
   "Test email sent — check your inbox.",
+  "Email sent.", // sendEmailToUser, from a person's page
 ]);
 
 // Success messages whose only dynamic part is a COUNT (email blast

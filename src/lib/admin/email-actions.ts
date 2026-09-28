@@ -8,6 +8,7 @@ import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { renderTemplate, type TemplateVars } from "@/lib/email/render";
 import { sendEmail, sendBatch, unsubscribeUrl } from "@/lib/email/send";
 import { rateLimited } from "@/lib/rate-limit";
+import { getOrigin } from "@/lib/origin";
 
 // Announcement email management. Design rule: NOTHING in the product sends
 // marketing email on its own — the only two paths that ever hand mail to
@@ -412,4 +413,58 @@ export async function sendEmailBlast(formData: FormData) {
     );
   }
   succeed(`Sent to ${result.sent} recipient${result.sent === 1 ? "" : "s"}.`);
+}
+
+// One email to one person, from their page (2026-09-28 admin redesign,
+// part 4): a password-reset link, or any saved template rendered with THEIR
+// variables. A template respects their marketing opt-out unless the admin
+// ticks "service notice" — the same rule, and the same reason, as the
+// blast's flag above. Every send is written to the activity log.
+export async function sendEmailToUser(formData: FormData) {
+  const { admin, userId: actingUserId } = await requireAdmin();
+  const targetId = (formData.get("user_id") as string) ?? "";
+  const what = ((formData.get("what") as string) ?? "").trim();
+  const serviceNotice = formData.get("service_notice") === "on";
+  const back = `/admin/users/${targetId}`;
+  const failHere = (msg: string) => redirect(`${back}?error=${encodeURIComponent(msg)}`);
+
+  const { data: person } = await admin
+    .from("profiles")
+    .select("id, email, username, plan, marketing_opt_out")
+    .eq("id", targetId)
+    .maybeSingle();
+  if (!person?.email) failHere("That person has no email address on file.");
+
+  if (what === "password-reset") {
+    const origin = await getOrigin();
+    const { error } = await admin.auth.resetPasswordForEmail(person!.email, {
+      redirectTo: `${origin}/auth/callback?next=/reset-password`,
+    });
+    if (error) {
+      console.error("sendEmailToUser: reset link failed", error);
+      failHere("Couldn't send the email. Details are in the server log.");
+    }
+  } else {
+    const key = what.startsWith("template:") ? what.slice("template:".length) : "";
+    if (!KEY_RE.test(key)) failHere("Pick an email to send.");
+    if (person!.marketing_opt_out && !serviceNotice) {
+      failHere("They opted out of marketing email. Tick \"service notice\" only if this is about their account (billing, security, terms).");
+    }
+    const { data: template } = await admin.from("email_templates").select("subject, body").eq("key", key).maybeSingle();
+    if (!template) failHere("Template not found.");
+    const unsubscribe = await unsubscribeUrl(person!.id as string);
+    const rendered = renderTemplate(template!.subject, template!.body, varsFor(person as { username: string | null; email: string; plan: string | null }), unsubscribe);
+    const { error } = await sendEmail({ to: person!.email, subject: rendered.subject, html: rendered.html, unsubscribeUrl: unsubscribe });
+    if (error) failHere("Couldn't send the email. Details are in the server log.");
+  }
+
+  await logAdminAction(admin, actingUserId, {
+    action: "email.user",
+    targetType: "email",
+    targetId: what,
+    subjectUserId: targetId,
+    after: serviceNotice ? `${what} (service notice)` : what,
+  });
+  revalidatePath(back);
+  redirect(`${back}?message=${encodeURIComponent("Email sent.")}`);
 }

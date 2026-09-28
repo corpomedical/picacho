@@ -18,6 +18,8 @@ export type AdminBadgeCounts = {
   "/admin/moderation": number;
   "/admin/reports": number;
   "/admin/feedback": number;
+  /** Renders running past the render queue's "stuck" line (lib/admin/today.ts STUCK_AFTER_MIN). */
+  "/admin/renders": number;
 };
 
 export async function computeAdminBadgeCounts(
@@ -51,6 +53,7 @@ export async function computeAdminBadgeCounts(
     { count: newFailed },
     { count: openReports },
     { count: openFeedback },
+    { count: stuckRenders },
   ] = await Promise.all([
     supabase
       .from("app_settings")
@@ -74,6 +77,14 @@ export async function computeAdminBadgeCounts(
       .from("feedback")
       .select("*", { count: "exact", head: true })
       .eq("status", "open"),
+    // Admins read every generation (RLS widens for them), so the caller's
+    // own session is enough. 20 minutes = STUCK_AFTER_MIN, kept literal so
+    // this module stays free of today.ts's provider imports.
+    supabase
+      .from("generations")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "generating")
+      .lt("created_at", new Date(Date.now() - 20 * 60_000).toISOString()),
   ]);
   const usersLastViewedAt = usersLastViewedSetting?.value ?? new Date(0).toISOString();
   const { count: newUsers } = await supabase
@@ -86,5 +97,6 @@ export async function computeAdminBadgeCounts(
     "/admin/moderation": newFailed ?? 0,
     "/admin/reports": openReports ?? 0,
     "/admin/feedback": openFeedback ?? 0,
+    "/admin/renders": stuckRenders ?? 0,
   };
 }

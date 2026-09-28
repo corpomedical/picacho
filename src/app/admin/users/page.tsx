@@ -10,6 +10,11 @@ import { LocalDate } from "@/components/local-date";
 import { getUserActivity, formatDuration } from "@/lib/admin/activity";
 import { cn } from "@/lib/cn";
 import { ADMIN_LOOK_LABELS, ADMIN_MODE_LABELS, parseAppLook, parseAppMode } from "@/lib/light/mode";
+import { applyUserFilters, searchTerm } from "@/lib/admin/user-search";
+
+// One page of the list (2026-09-28 admin redesign): the list used to load
+// every account in one query, which slows down with every sign-up.
+const PAGE_SIZE = 100;
 
 const TABS = [
   { id: "all", label: "All" },
@@ -25,12 +30,14 @@ const TABS = [
 export default async function AdminUsersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; error?: string; message?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; error?: string; message?: string; page?: string }>;
 }) {
   // ?message= carries success notices (deleteUser redirects here with one) —
   // it used to be silently dropped, so deleting a user landed on a list that
   // said nothing about whether it worked.
-  const { q, status, error: actionError, message } = await searchParams;
+  const { q: rawQ, status, error: actionError, message, page: rawPage } = await searchParams;
+  const q = searchTerm(rawQ);
+  const page = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
   const activeTab = TABS.some((t) => t.id === status) ? status! : "all";
   const supabase = await createClient();
 
@@ -49,17 +56,27 @@ export default async function AdminUsersPage({
     .from("profiles")
     .select(
       "id, email, role, plan, status, created_at, last_seen_at, session_started_at, session_seconds, total_active_seconds",
+      { count: "exact" },
     )
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
 
-  if (q) query = query.ilike("email", `%${q}%`);
-  if (activeTab === "active") query = query.eq("status", "active");
-  if (activeTab === "suspended") query = query.eq("status", "suspended");
-  if (activeTab === "admin") query = query.eq("role", "admin");
-  if (activeTab === "assistant") query = query.eq("producer_access", true);
-  if (activeTab === "light") query = query.eq("app_mode", "light");
+  // Email or name, or the account's id pasted whole (2026-09-28: email only before).
+  query = applyUserFilters(query, q, activeTab);
 
-  const { data: users, error } = await query;
+  const { data: users, error, count } = await query;
+  const pages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
+  const listHref = (next: number) => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (activeTab !== "all") params.set("status", activeTab);
+    if (next > 1) params.set("page", String(next));
+    const str = params.toString();
+    return str ? `/admin/users?${str}` : "/admin/users";
+  };
+  const exportParams = new URLSearchParams();
+  if (q) exportParams.set("q", q);
+  if (activeTab !== "all") exportParams.set("status", activeTab);
 
   // Each person's Picacho Light version and look, read on their own so the
   // list still loads if picacho-light.sql hasn't run (the columns are missing
@@ -106,9 +123,18 @@ export default async function AdminUsersPage({
         <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">People</p>
         <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">Users</h1>
       </div>
-        <form className="w-64">
-          <Input type="search" name="q" placeholder="Search by email" defaultValue={q ?? ""} />
-        </form>
+        <div className="flex items-center gap-2">
+          <a
+            href={`/admin/users/export${exportParams.toString() ? `?${exportParams}` : ""}`}
+            className="inline-flex h-9 items-center whitespace-nowrap rounded-[10px] border border-atelier-rule bg-atelier-surface px-3 text-[13px] font-medium text-atelier-ink hover:border-atelier-ink/30"
+          >
+            Export CSV
+          </a>
+          <form className="w-64">
+            {activeTab !== "all" && <input type="hidden" name="status" value={activeTab} />}
+            <Input type="search" name="q" placeholder="Search email, name or id" defaultValue={q} />
+          </form>
+        </div>
       </div>
 
       <div className="mt-4 flex gap-1 text-sm">
@@ -237,6 +263,27 @@ export default async function AdminUsersPage({
                 </div>
               );
             })}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 flex items-center justify-between text-sm text-atelier-muted">
+        <span>
+          {count ?? 0} {count === 1 ? "account" : "accounts"}
+          {pages > 1 && ` · page ${page} of ${pages}`}
+        </span>
+        {pages > 1 && (
+          <div className="flex gap-2">
+            {page > 1 && (
+              <Link href={listHref(page - 1)} className="rounded-full border border-atelier-rule px-3 py-1.5 text-atelier-ink hover:border-atelier-ink/30">
+                Newer
+              </Link>
+            )}
+            {page < pages && (
+              <Link href={listHref(page + 1)} className="rounded-full border border-atelier-rule px-3 py-1.5 text-atelier-ink hover:border-atelier-ink/30">
+                Older
+              </Link>
+            )}
           </div>
         )}
       </div>

@@ -26,11 +26,13 @@ const NAV_ITEMS = [
   { href: "/admin/users", label: "Users", icon: UsersIcon },
   { href: "/admin/stats", label: "Stats", icon: ChartIcon },
   { href: "/admin/billing", label: "Billing", icon: CardIcon },
+  { href: "/admin/payments", label: "Payments & disputes", icon: CardIcon },
   { href: "/admin/promo", label: "Promo codes", icon: TicketIcon },
   { href: "/admin/emails", label: "Emails", icon: MailIcon },
   { href: "/admin/moderation", label: "Moderation", icon: ShieldIcon },
   { href: "/admin/reports", label: "Reports", icon: FlagIcon },
   { href: "/admin/feedback", label: "Feedback", icon: ChatIcon },
+  { href: "/admin/renders", label: "Render queue", icon: PlayIcon },
   { href: "/admin/system", label: "System health", icon: PulseIcon },
   { href: "/admin/providers", label: "AI providers", icon: CpuIcon },
   { href: "/admin/voices", label: "Voices", icon: MicIcon },
@@ -46,9 +48,9 @@ const NAV_GROUPS: { label: string | null; hrefs: string[] }[] = [
   { label: null, hrefs: ["/admin"] },
   { label: "People", hrefs: ["/admin/users", "/admin/feedback"] },
   { label: "Trust & Safety", hrefs: ["/admin/reports", "/admin/moderation"] },
-  { label: "Money", hrefs: ["/admin/billing", "/admin/promo", "/admin/stats"] },
+  { label: "Money", hrefs: ["/admin/billing", "/admin/payments", "/admin/promo", "/admin/stats"] },
   { label: "Product", hrefs: ["/admin/providers", "/admin/voices", "/admin/product-checks", "/admin/flags", "/admin/updates", "/admin/emails"] },
-  { label: "System", hrefs: ["/admin/system"] },
+  { label: "System", hrefs: ["/admin/renders", "/admin/system"] },
   // Admin (2026-09-28 redesign): the log of what admins changed, beside the
   // settings and the second factor. Security used to be in no group at all,
   // so the rail never showed it.
@@ -675,6 +677,15 @@ function ToggleIcon(props: SVGProps<SVGSVGElement>) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <rect x="2" y="7" width="20" height="10" rx="5" />
       <circle cx="8" cy="12" r="3.2" />
+    </svg>
+  );
+}
+
+function PlayIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3.5" y="5" width="17" height="14" rx="2.5" />
+      <path d="m10 9.5 4.5 2.5-4.5 2.5Z" />
     </svg>
   );
 }

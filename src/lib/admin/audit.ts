@@ -30,6 +30,8 @@ export const ADMIN_ACTIONS = {
   "credits.take": { label: "Took credits", group: "credits" },
   "credits.set": { label: "Set bonus credits", group: "credits" },
   "render.refund": { label: "Refunded a render", group: "credits" },
+  "render.check": { label: "Checked a render", group: "renders" },
+  "render.stop": { label: "Stopped a render", group: "renders" },
   "user.plan": { label: "Changed plan", group: "plans" },
   "user.role": { label: "Changed role", group: "access" },
   "user.suspend": { label: "Suspended", group: "access" },
@@ -63,6 +65,9 @@ export const ADMIN_ACTIONS = {
   "email.template_save": { label: "Saved an email template", group: "emails" },
   "email.template_delete": { label: "Deleted an email template", group: "emails" },
   "email.blast": { label: "Sent an email blast", group: "emails" },
+  "email.user": { label: "Emailed a person", group: "emails" },
+  "export.users": { label: "Exported the users list", group: "access" },
+  "export.payments": { label: "Exported payments", group: "money" },
 } as const;
 
 export type AdminActionKind = keyof typeof ADMIN_ACTIONS;
@@ -70,6 +75,7 @@ export type AdminActionGroup = (typeof ADMIN_ACTIONS)[AdminActionKind]["group"];
 
 export const ADMIN_ACTION_GROUPS: { id: AdminActionGroup; label: string }[] = [
   { id: "credits", label: "Credits" },
+  { id: "renders", label: "Renders" },
   { id: "plans", label: "Plans" },
   { id: "access", label: "Accounts" },
   { id: "safety", label: "Safety" },

@@ -20,6 +20,7 @@ import {
   MIN_IDENTITY_THRESHOLD,
 } from "@/lib/generations/identity-gate";
 import { SEEDANCE_LANE_KEY } from "@/lib/generations/providers/lane-setting";
+import { advanceGeneration } from "@/lib/generations/job-runner";
 import { validatePressTourSetting } from "@/lib/press-tour/enabled";
 import { validateFilmLaneSetting } from "@/lib/press-tour/film-lane";
 
@@ -663,6 +664,7 @@ export async function setGenerationReportStatus(formData: FormData) {
   });
 
   revalidatePath("/admin/reports");
+  revalidatePath("/admin");
 }
 
 // Same open/resolved toggle as setGenerationReportStatus above, for the
@@ -695,6 +697,7 @@ export async function setFeedbackStatus(formData: FormData) {
   });
 
   revalidatePath("/admin/feedback");
+  revalidatePath("/admin");
 }
 
 // Feature / unfeature a generation on the public "Made with Picacho"
@@ -1248,7 +1251,7 @@ export async function refundRender(formData: FormData) {
   const { admin, userId: actingUserId } = await requireAdmin();
   const generationId = formData.get("generation_id") as string;
   const userId = formData.get("user_id") as string;
-  const redirectTo = `/admin/users/${userId}`;
+  const redirectTo = adminReturnPath(formData, `/admin/users/${userId}`);
   const reason = ((formData.get("reason") as string) ?? "").trim() || "Refunded from the admin";
 
   if (!generationId) redirect(`${redirectTo}?error=${encodeURIComponent("Missing generation id.")}`);
@@ -1270,7 +1273,126 @@ export async function refundRender(formData: FormData) {
     redirect(`${redirectTo}?error=${encodeURIComponent(message)}`);
   }
 
-  revalidatePath(redirectTo);
+  revalidatePath(`/admin/users/${userId}`);
+  revalidatePath("/admin");
+  revalidatePath("/admin/renders");
+}
+
+// Where a form pressed on Today or the render queue returns to: only ever a
+// page inside the admin area, never a path taken on trust from the form.
+function adminReturnPath(formData: FormData, fallback: string): string {
+  const raw = (formData.get("redirect_to") as string | null) ?? "";
+  return raw === "/admin" || raw.startsWith("/admin/") ? raw.split("?")[0] : fallback;
+}
+
+// Render queue (2026-09-28 admin redesign, part 3). "Check now" drives the
+// render one step through the SAME state machine the poller, the webhook and
+// the reaper use (advanceGeneration): a render whose webhook was dropped is
+// collected, a finished stage moves on, a dead job fails with the refund
+// rules. It never cancels a render that is still working.
+export async function checkRender(formData: FormData) {
+  const { admin, userId: actingUserId } = await requireAdmin();
+  const generationId = formData.get("generation_id") as string;
+  const redirectTo = adminReturnPath(formData, "/admin/renders");
+
+  const { data: row } = await admin
+    .from("generations")
+    .select("id, user_id, status")
+    .eq("id", generationId)
+    .maybeSingle<{ id: string; user_id: string; status: string }>();
+  if (!row) redirect(`${redirectTo}?error=${encodeURIComponent("Generation not found.")}`);
+
+  let result = "no provider job (a render that runs in one go, or one that lost its job)";
+  try {
+    const advanced = await advanceGeneration(row!.id, row!.user_id);
+    result = advanced.state;
+  } catch (err) {
+    console.error("checkRender: advanceGeneration failed", err);
+    redirect(`${redirectTo}?error=${encodeURIComponent("Couldn't reach the render's provider — nothing was changed. Details are in the server log.")}`);
+  }
+  const { data: after } = await admin.from("generations").select("status").eq("id", row!.id).maybeSingle();
+
+  await logAdminAction(admin, actingUserId, {
+    action: "render.check",
+    targetType: "render",
+    targetId: row!.id,
+    subjectUserId: row!.user_id,
+    before: row!.status,
+    after: `${after?.status ?? row!.status} (${result})`,
+  });
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/renders");
+}
+
+// Stop a render for someone, as their own Stop button would: the cooperative
+// cancel flag, then one step of advanceGeneration so the provider is told
+// now rather than on the next poll. With refund=1 whatever the render still
+// holds afterwards comes back as bonus credits (admin_refund_render, once);
+// a stop that already gave the credits back by the refund rules leaves
+// nothing to refund, and that is said, not treated as an error.
+export async function stopRender(formData: FormData) {
+  const { admin, userId: actingUserId } = await requireAdmin();
+  const generationId = formData.get("generation_id") as string;
+  const withRefund = formData.get("refund") === "1";
+  const redirectTo = adminReturnPath(formData, "/admin/renders");
+
+  const { data: row } = await admin
+    .from("generations")
+    .select("id, user_id, status")
+    .eq("id", generationId)
+    .maybeSingle<{ id: string; user_id: string; status: string }>();
+  if (!row) redirect(`${redirectTo}?error=${encodeURIComponent("Generation not found.")}`);
+  if (row!.status !== "generating") {
+    redirect(`${redirectTo}?error=${encodeURIComponent("That render isn't running any more — nothing was stopped.")}`);
+  }
+
+  const { error } = await admin
+    .from("generations")
+    .update({ cancel_requested: true })
+    .eq("id", row!.id)
+    .eq("status", "generating");
+  if (error) {
+    console.error("stopRender: cancel flag failed", error);
+    redirect(`${redirectTo}?error=${encodeURIComponent("Couldn't stop the render — nothing was changed. Details are in the server log.")}`);
+  }
+  try {
+    await advanceGeneration(row!.id, row!.user_id);
+  } catch (err) {
+    // The flag and the reaper remain as backstops, as for the person's own Stop.
+    console.error("stopRender: advanceGeneration failed", err);
+  }
+
+  await logAdminAction(admin, actingUserId, {
+    action: "render.stop",
+    targetType: "render",
+    targetId: row!.id,
+    subjectUserId: row!.user_id,
+    before: "generating",
+    after: "stop requested",
+  });
+
+  if (withRefund) {
+    const { error: refundError } = await admin.rpc("admin_refund_render", {
+      p_generation_id: row!.id,
+      p_admin_id: actingUserId,
+      p_reason: "Stopped from the admin",
+    });
+    if (refundError && !/nothing to refund|already refunded/.test(refundError.message)) {
+      console.error("stopRender: refund failed", refundError);
+      redirect(
+        `${redirectTo}?error=${encodeURIComponent(
+          isMissingAuditTable(refundError)
+            ? RUN_ACTIVITY_SQL
+            : "The render was stopped, but its credits couldn't be refunded — refund it from the person's page. Details are in the server log.",
+        )}`,
+      );
+    }
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/renders");
+  revalidatePath(`/admin/users/${row!.user_id}`);
 }
 
 // Private admin notes on a person (2026-09-28 admin redesign). Only admins
