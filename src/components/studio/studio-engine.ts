@@ -583,7 +583,8 @@ function renderProps() {
     p.insertAdjacentHTML("beforeend", `<p class="hint">Physical sky scatters sunlight like a real atmosphere; Studio lights everything evenly from soft boxes, for products and cars.</p>`);
   } else if (ptab === "render") {
     const [rp, rb] = panel("Render"); const r = document.createElement("div"); r.className = "row-btns";
-    r.innerHTML = `<button class="pbtn accent" id="rStill">Render still</button><button class="pbtn" id="rVideo">Render animation</button>`; rb.appendChild(r); p.appendChild(rp);
+    r.innerHTML = `<button class="pbtn accent" id="rStill">Render still</button><button class="pbtn" id="rVideo">Render animation</button>`; const r2 = document.createElement("div"); r2.className = "row-btns"; r2.innerHTML = `<button class="pbtn" id="rTStill">Path traced still</button><button class="pbtn" id="rTVideo">Path traced animation</button>`; rb.append(r, r2); p.appendChild(rp);
+    r2.querySelector("#rTStill").onclick = renderTracedStill; r2.querySelector("#rTVideo").onclick = renderTracedVideo;
     r.querySelector("#rStill").onclick = renderStill; r.querySelector("#rVideo").onclick = renderVideo;
     const [ep, eb] = panel("Engine"); eb.append(fr("Draft", ro("Helios viewport")), fr("Final", ro("AI render · in Picacho")));
     eb.insertAdjacentHTML("beforeend", `<p class="hint">The final render paints your character and your models onto this exact layout and motion.</p>`); p.appendChild(ep);
@@ -1017,7 +1018,7 @@ function drawShot(r, w, h) {
   r.render(scene, cam); helpers.visible = hv; shot.obj.visible = sv; scene.background = bg; scene.overrideMaterial = ov; hid.forEach((i) => (i.obj.visible = true)); skyObj.visible = skv;
 }
 function openWin(title, html) { $("dlgTitle").textContent = title; $("dlgBody").innerHTML = html; $("dlg").hidden = false; }
-$("dlgClose").onclick = () => { $("dlg").hidden = true; recording = false; };
+$("dlgClose").onclick = () => { $("dlg").hidden = true; recording = false; ptBusy = false; };
 function renderStill() { const [w, h] = outSize(); const r = offRenderer(w, h); drawShot(r, w, h); const url = off.toDataURL("image/jpeg", 0.92); openWin("Helios Render · still", `<img alt="Render of the shot camera" src="${url}"><div class="row-btns"><a class="pbtn accent" style="display:grid;place-items:center;text-decoration:none" download="helios-frame-${frameNo()}.jpg" href="${url}">Save image</a></div><p>Frame ${frameNo()} through the shot camera, ${shot.obj.userData.lensMm} mm, ${format}.</p><p>In Picacho this frame, with its depth and every object's place, goes to the image engine with your character's photos and your models. The engine paints the final photo onto this exact layout.</p>`); }
 let recording = false;
 async function renderVideo() {
@@ -1231,6 +1232,104 @@ function openExport() {
   $("exGlb").onclick = () => exportAs("glb"); $("exObj").onclick = () => exportAs("obj"); $("exStl").onclick = () => exportAs("stl");
 }
 
+// ================= path-traced renders (three-gpu-pathtracer) =================
+// The same scene, models and materials as the viewport, traced by the GPU with real bounced light and soft shadows.
+// The hemisphere fill becomes a sky-to-ground light dome, so a traced frame keeps the viewport's look.
+// ptSnap: a 2D copy of each finished trace, taken in the same task it was drawn (a WebGL canvas reads back empty later on)
+const ptCanvas = document.createElement("canvas"), ptSnap = document.createElement("canvas"); let ptR = null, pt = null, ptEnv = null, ptBusy = false, ptSamples = 128, ptFrameSamples = 12, ptHalf = true;
+async function ptEngine(w, h) {
+  if (!pt) {
+    const { WebGLPathTracer, GradientEquirectTexture } = await import("three-gpu-pathtracer");
+    ptR = new THREE.WebGLRenderer({ canvas: ptCanvas, antialias: false, preserveDrawingBuffer: true });
+    if (!ptR.capabilities.isWebGL2) throw new Error("this browser has no WebGL 2");
+    ptR.toneMapping = THREE.ACESFilmicToneMapping;
+    pt = new WebGLPathTracer(ptR); Object.assign(pt, { renderDelay: 0, fadeDuration: 0, minSamples: 1, rasterizeScene: false, dynamicLowRes: false, synchronizeRenderSize: true });
+    pt.bounces = 6; pt.tiles.set(2, 2); ptEnv = new GradientEquirectTexture(64);
+  }
+  ptR.setPixelRatio(1); ptR.setSize(w, h, false); return pt;
+}
+function ptPrep() {
+  const hv = helpers.visible, sv = shot.obj.visible, bg = scene.background, env = scene.environment, ei = scene.environmentIntensity, ov = scene.overrideMaterial, skv = skyObj?.visible, hv2 = hemi.visible;
+  const hid = items.filter((i) => i.noRender && i.obj.visible); hid.forEach((i) => (i.obj.visible = false));
+  // the tracer gathers lights by their own visible flag, not their parents', so a hidden lamp would still shine
+  const dark = []; items.filter((i) => !i.obj.visible).forEach((i) => i.obj.traverse((o) => { if (o.isLight && o.visible) { o.visible = false; dark.push(o); } }));
+  helpers.visible = false; shot.obj.visible = false; if (skyObj) skyObj.visible = false; scene.overrideMaterial = null;
+  scene.background = skyMode === "studio" ? studioBg : skyColor;
+  const studio = skyMode === "studio"; ptEnv.topColor.copy(studio ? new THREE.Color(0xffffff) : hemi.color); ptEnv.bottomColor.copy(studio ? new THREE.Color(0x9a9a9a) : hemi.groundColor); ptEnv.update();
+  scene.environment = ptEnv; scene.environmentIntensity = studio ? 1 : hemi.intensity; hemi.visible = false;
+  return () => { helpers.visible = hv; shot.obj.visible = sv; scene.background = bg; scene.environment = env; scene.environmentIntensity = ei; scene.overrideMaterial = ov; if (skyObj) skyObj.visible = skv; hemi.visible = hv2; hid.forEach((i) => (i.obj.visible = true)); dark.forEach((o) => (o.visible = true)); };
+}
+const ptTick = () => new Promise((r) => setTimeout(r, 0));
+async function ptTrace(w, h, samples, onSample) {
+  const cam = shot.obj.userData.cam; cam.aspect = w / h; cam.updateProjectionMatrix();
+  const engine = await ptEngine(w, h), restore = ptPrep();
+  try {
+    engine.setScene(scene, cam); engine.reset(); const t0 = performance.now(), snap = ptSnap.getContext("2d"); let lastSnap = 0; ptSnap.width = w; ptSnap.height = h;
+    while (engine.samples < samples && ptBusy) {
+      engine.renderSample(); if (engine.samples >= samples || performance.now() - lastSnap > 1000) { snap.drawImage(ptCanvas, 0, 0, w, h); lastSnap = performance.now(); } if (onSample) onSample(engine.samples);
+      if (engine.samples < 1 && performance.now() - t0 > 60000) throw new Error("the graphics card didn't start tracing within a minute");
+      await ptTick();
+    }
+  } finally { restore(); }
+}
+function ptFail(title, e) {
+  ptBusy = false;
+  openWin(title, `<p><b>This device can't path-trace this scene.</b> ${esc(e?.message || String(e))}.</p><p class="hint">Path tracing needs WebGL 2 with float textures, on a computer's graphics card. Render ▸ Render still and Render animation still work here, and give the same framing.</p>`);
+}
+function ptStop() { ptBusy = false; }
+async function renderTracedStill() {
+  if (ptBusy) return toast("A path-traced render is already running");
+  const [w, h] = outSize();
+  openWin("Helios Render · path traced still", `<div class="fr"><label>Samples</label><span id="ptSampF"></span></div><div class="row-btns"><button class="pbtn accent" id="ptGo">Trace</button><button class="pbtn" id="ptStop" disabled>Stop</button><a class="pbtn" id="ptSave" style="display:grid;place-items:center;text-decoration:none;pointer-events:none;opacity:.5" download="helios-traced-frame-${frameNo()}.png">Save image</a></div><div class="prog"><i id="prog"></i></div><p id="progTxt" style="font-family:var(--mono)"></p><div id="ptHost"></div><p class="hint">Frame ${frameNo()} through the shot camera, ${w} × ${h}. Light bounces like a real camera would see it: soft shadows, colour bleeding between surfaces, true reflections. More samples mean less grain; the picture sharpens as you watch.</p>`);
+  $("ptSampF").appendChild(field(ptSamples, { step: 4, dec: 0, min: 1, max: 4096, onCommit: (v) => (ptSamples = Math.round(v)) }));
+  const go = async () => {
+    const save = $("ptSave"); save.style.pointerEvents = "none"; save.style.opacity = ".5";
+    ptBusy = true; $("ptGo").disabled = true; $("ptStop").disabled = false; ptCanvas.style.width = "100%"; ptCanvas.style.height = "auto"; ptCanvas.style.display = "block"; $("ptHost").appendChild(ptCanvas);
+    const t0 = performance.now(), n = ptSamples;
+    try {
+      await ptTrace(w, h, n, (s) => { const pr = $("prog"); if (pr) pr.style.width = Math.min(100, (s / n) * 100) + "%"; const tx = $("progTxt"); if (tx) tx.textContent = `Sample ${Math.floor(s)} / ${n} · ${((performance.now() - t0) / 1000).toFixed(1)} s`; });
+    } catch (e) { return ptFail("Helios Render · path traced still", e); }
+    const done = ptBusy; ptBusy = false; if (!$("ptGo")) return;
+    $("ptGo").disabled = false; $("ptStop").disabled = true; save.href = ptSnap.toDataURL("image/png"); save.style.pointerEvents = ""; save.style.opacity = "";
+    const tx = $("progTxt"); if (tx) tx.textContent = `${done ? "Done" : "Stopped"} · ${Math.floor(pt.samples)} samples · ${((performance.now() - t0) / 1000).toFixed(1)} s`;
+  };
+  $("ptGo").onclick = go; $("ptStop").onclick = ptStop; go();
+}
+async function renderTracedVideo() {
+  if (ptBusy) return toast("A path-traced render is already running");
+  if (!("MediaRecorder" in window)) return openWin("Helios Render", "<p>This browser can't record video. Chrome, Edge and Firefox can.</p>");
+  const title = "Helios Render · path traced animation";
+  openWin(title, `<div class="fr"><label>Samples per frame</label><span id="ptSampF"></span></div><div class="fr"><label>Size</label><select class="sel2" id="ptSize" aria-label="Size"><option value="half" ${ptHalf ? "selected" : ""}>Half (faster)</option><option value="full" ${ptHalf ? "" : "selected"}>Full</option></select></div><div class="row-btns"><button class="pbtn accent" id="ptGo">Trace frames ${pStart}–${pEnd}</button><button class="pbtn" id="ptStop" disabled>Stop</button></div><div class="prog"><i id="prog"></i></div><p id="progTxt" style="font-family:var(--mono)"></p><div id="ptHost"></div><p class="hint">Traces every frame of the playback range (set it on the timeline), then plays them back into a video at ${FPS} fps. Few samples per frame keep it quick and leave a little grain; the model, materials and light match the still.</p>`);
+  $("ptSampF").appendChild(field(ptFrameSamples, { step: 1, dec: 0, min: 1, max: 512, onCommit: (v) => (ptFrameSamples = Math.round(v)) }));
+  $("ptSize").onchange = (e) => (ptHalf = e.target.value === "half");
+  $("ptStop").onclick = ptStop;
+  $("ptGo").onclick = async () => {
+    let [w, h] = outSize(); if (ptHalf) { w = Math.round(w / 2); h = Math.round(h / 2); }
+    ptBusy = true; $("ptGo").disabled = true; $("ptStop").disabled = false; ptCanvas.style.width = "100%"; ptCanvas.style.height = "auto"; ptCanvas.style.display = "block"; $("ptHost").appendChild(ptCanvas);
+    const was = time; play(false); const shots = [], total = pEnd - pStart + 1, t0 = performance.now();
+    try {
+      for (let f = pStart; f <= pEnd && ptBusy; f++) {
+        evaluate((f - 1) / FPS); await ptTrace(w, h, ptFrameSamples);
+        shots.push(await new Promise((r) => ptSnap.toBlob(r, "image/jpeg", 0.92)));
+        const i = f - pStart + 1, pr = $("prog"); if (pr) pr.style.width = (i / total) * 100 + "%";
+        const tx = $("progTxt"), el = (performance.now() - t0) / 1000; if (tx) tx.textContent = `Frame ${f} · ${i} / ${total} · ${el.toFixed(0)} s, about ${Math.max(0, (el / i) * (total - i)).toFixed(0)} s left`;
+      }
+    } catch (e) { setTime(was); return ptFail(title, e); }
+    setTime(was); const stopped = !ptBusy; ptBusy = false;
+    if (!shots.length || !$("ptGo")) return;
+    const tx = $("progTxt"); if (tx) tx.textContent = `${stopped ? "Stopped" : "Traced"} ${shots.length} frames · recording the video at ${FPS} fps…`;
+    const cv = document.createElement("canvas"); cv.width = w; cv.height = h; const ctx = cv.getContext("2d"); const stream = cv.captureStream(FPS);
+    const type = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm", "video/mp4"].find((t) => MediaRecorder.isTypeSupported(t)) || "";
+    const rec = new MediaRecorder(stream, type ? { mimeType: type, videoBitsPerSecond: 8e6 } : undefined); const chunks = []; rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    const bitmaps = await Promise.all(shots.map((b) => createImageBitmap(b)));
+    ctx.drawImage(bitmaps[0], 0, 0); rec.start();
+    for (const bm of bitmaps) { ctx.drawImage(bm, 0, 0); await new Promise((r) => setTimeout(r, 1000 / FPS)); }
+    rec.stop(); await new Promise((r) => (rec.onstop = r)); bitmaps.forEach((b) => b.close());
+    const blob = new Blob(chunks, { type: type || "video/webm" }), url = URL.createObjectURL(blob), ext = (type || "video/webm").includes("mp4") ? "mp4" : "webm";
+    openWin(title, `<video src="${url}" controls autoplay loop muted playsinline></video><div class="row-btns"><a class="pbtn accent" style="display:grid;place-items:center;text-decoration:none" download="helios-traced-${pStart}-${pEnd}.${ext}" href="${url}">Save video</a></div><p>${shots.length} path-traced frames, ${w} × ${h}, ${ptFrameSamples} samples each${stopped ? " (stopped early)" : ""}.</p>`);
+  };
+}
+
 // ================= constraints & motion paths =================
 function setTrack(it, targetId) {
   const b = it.obj.userData.track ?? null; it.obj.userData.track = targetId ?? null;
@@ -1425,7 +1524,7 @@ function commands() {
     ["Insert keyframe", () => keyItems()], ["Delete keyframe", () => delKey()], ["Interpolation: Bézier", () => setInterp("bezier")], ["Interpolation: Linear", () => setInterp("linear")], ["Interpolation: Constant", () => setInterp("constant")],
     ["Parent to active", parentTo], ["Clear parent", clearParent], ["Select all", ACTS.selAll], ["Select none", ACTS.selNone], ["Invert selection", ACTS.selInvert],
     ["Camera view", () => toggleCam()], ["Align camera to view", camToView], ["Frame all", frameAll], ["Frame selected", ACTS.frameSel], ["Top view", ACTS.top], ["Front view", ACTS.front], ["Right view", ACTS.right],
-    ["Toggle motion path", togglePath], ["Toggle sidebar", () => toggleN()], ["Maximize viewport", toggleMax], ["Render still", renderStill], ["Render animation", renderVideo], ["Physics: simulate", () => simulatePhys()], ["Physics: bake to keyframes", bakePhys], ["Physics: clear bake", clearBake], ["Import 3D model", () => fileIn.click()], ["Export (GLB, OBJ, STL) + print check", openExport],
+    ["Toggle motion path", togglePath], ["Toggle sidebar", () => toggleN()], ["Maximize viewport", toggleMax], ["Render still", renderStill], ["Render animation", renderVideo], ["Render: path traced still", renderTracedStill], ["Render: path traced animation", renderTracedVideo], ["Physics: simulate", () => simulatePhys()], ["Physics: bake to keyframes", bakePhys], ["Physics: clear bake", clearBake], ["Import 3D model", () => fileIn.click()], ["Export (GLB, OBJ, STL) + print check", openExport],
     ["Edit Mode (vertices)", toggleEdit], ["Join", joinSel], ["Move to collection", openMoveTo], ["X-ray", toggleXray], ["Local view", toggleLocal], ["Snap menu (3D cursor)", openSnapPie], ["Add marker", addMarker], ["Graph Editor", () => setEditor("graph")], ["Timeline", () => setEditor("timeline")], ["Pivot: 3D cursor", () => setPivot("cursor")], ["Pivot: median point", () => setPivot("median")], ["Pivot: individual origins", () => setPivot("individual")], ["Orientation: Local", () => setOrient("local")], ["Orientation: Global", () => setOrient("world")], ["World: physical sky", () => setSkyMode("physical")], ["World: studio lighting", () => setSkyMode("studio")], ["What Helios leaves out", openLeavesOut],
     ["Shading: Rendered", () => setShade("lit")], ["Shading: Solid", () => setShade("clay")], ["Shading: Wireframe", () => setShade("wire")],
   ];
@@ -1690,7 +1789,7 @@ function restoreSaved() {
 }
 // ================= wiring =================
 const ACTS = {
-  import: () => fileIn.click(), exportFile: openExport, renderStill, renderVideo, undo, redo, history: openHistory, keys: openKeys, dup: duplicate, del: () => del(), key: () => keyItems(), delKey: () => delKey(), hide: () => toggleHide(),
+  import: () => fileIn.click(), exportFile: openExport, renderStill, tracedStill: renderTracedStill, tracedVideo: renderTracedVideo, renderVideo, undo, redo, history: openHistory, keys: openKeys, dup: duplicate, del: () => del(), key: () => keyItems(), delKey: () => delKey(), hide: () => toggleHide(),
   frameSel: () => active && frameObj(active.obj), frameAll, camView: () => toggleCam(), camToView, top: () => viewAlong(new THREE.Vector3(0, 1, 0)), front: () => viewAlong(new THREE.Vector3(0, 0, 1)), right: () => viewAlong(new THREE.Vector3(1, 0, 0)),
   selAll: () => { items.filter((i) => !i.hidden && i.kind !== "sun").forEach((i) => selection.add(i)); active = active || [...selection][0]; refreshSel(); },
   selNone: () => select(null), selInvert: () => { const all = items.filter((i) => !i.hidden && i.kind !== "sun"); const was = new Set(selection); selection.clear(); all.forEach((i) => !was.has(i) && selection.add(i)); active = [...selection][0] || null; refreshSel(); },
@@ -1763,7 +1862,7 @@ wOn("keydown", (e) => {
   else if (k === "7") viewAlong(new THREE.Vector3(0, 1, 0)); else if (k === "1") viewAlong(new THREE.Vector3(0, 0, 1)); else if (k === "3") viewAlong(new THREE.Vector3(1, 0, 0));
   else if (k === "n") toggleN();
   else if (k === "h") toggleHide();
-  else if (k === "escape") { closeMenus(); $("dlg").hidden = true; $("pie").hidden = true; clearMeasure(); }
+  else if (k === "escape") { closeMenus(); if (!$("dlg").hidden) ptBusy = false; $("dlg").hidden = true; $("pie").hidden = true; clearMeasure(); }
   else if (k === "arrowright") setTime(Math.min(DUR, time + 1 / FPS)); else if (k === "arrowleft") setTime(Math.max(0, time - 1 / FPS));
   else if (k === "arrowup") jumpKey(1); else if (k === "arrowdown") jumpKey(-1);
 });
@@ -1800,5 +1899,5 @@ raf = requestAnimationFrame(tick);
 
 document.getElementById("sceneTitle").textContent = opts.title;
 document.getElementById("backLink").setAttribute("href", opts.backHref);
-return () => { saveNow(); stopped = true; cancelAnimationFrame(raf); clearInterval(saveTimer); ac.abort(); resizeObs.disconnect(); tc.dispose?.(); orbit.dispose(); renderer.dispose(); offR?.dispose(); };
+return () => { saveNow(); stopped = true; cancelAnimationFrame(raf); clearInterval(saveTimer); ac.abort(); resizeObs.disconnect(); tc.dispose?.(); orbit.dispose(); renderer.dispose(); offR?.dispose(); ptBusy = false; pt?.dispose(); ptR?.dispose(); };
 }
