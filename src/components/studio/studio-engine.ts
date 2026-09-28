@@ -1159,6 +1159,78 @@ function renderPhysics(p, it) {
   p.insertAdjacentHTML("beforeend", `<p class="hint">Simulate plays the fall on the timeline. Bake turns it into ordinary keyframes, so renders, the Graph Editor and saving all keep it.</p>`);
 }
 
+// ================= export (GLB / OBJ / STL) + print check =================
+// Real size: one Helios unit is one metre. STL can be written in millimetres, the unit printers' slicers assume.
+let expScope = "scene", stlUnit = "mm";
+const exportable = (it) => it.kind === "mesh" && !it.hidden;
+function exportTargets(scope = expScope) { const sel = [...selection].filter(exportable); return scope === "selection" && sel.length ? sel : items.filter(exportable); }
+function exportGroup(list, scale = 1) {
+  const g = new THREE.Group(); scene.updateMatrixWorld(true);
+  for (const it of list) {
+    const c = it.obj.clone(true); it.obj.matrixWorld.decompose(c.position, c.quaternion, c.scale); c.name = it.name;
+    const drop = []; c.traverse((o) => { if (o !== c && (o.isLight || o.isCamera || o.isLine || o.isPoints || o.isSprite || o.type === "AxesHelper")) drop.push(o); });
+    drop.forEach((o) => o.parent?.remove(o)); g.add(c);
+  }
+  g.scale.setScalar(scale); g.updateMatrixWorld(true); return g;
+}
+function printCheck(list) {
+  const g = exportGroup(list), v = new THREE.Vector3(), key = (x) => Math.round(x * 1e4);
+  const ids = new Map(), edges = new Map(); let tris = 0, vid = 0;
+  const idOf = () => { const k = key(v.x) + "," + key(v.y) + "," + key(v.z); let i = ids.get(k); if (i == null) { i = vid++; ids.set(k, i); } return i; };
+  const parent = []; const find = (a) => { while (parent[a] !== a) a = parent[a] = parent[parent[a]]; return a; };
+  g.traverse((o) => {
+    if (!o.isMesh || !o.geometry?.attributes?.position) return;
+    const pos = o.geometry.attributes.position, idx = o.geometry.index, n = idx ? idx.count : pos.count;
+    for (let i = 0; i + 2 < n; i += 3) {
+      const t = [0, 1, 2].map((j) => { v.fromBufferAttribute(pos, idx ? idx.getX(i + j) : i + j).applyMatrix4(o.matrixWorld); return idOf(); });
+      if (t[0] === t[1] || t[1] === t[2] || t[0] === t[2]) continue; tris++;
+      for (const a of t) if (parent[a] == null) parent[a] = a;
+      for (let j = 0; j < 3; j++) { const a = t[j], b = t[(j + 1) % 3], k = a < b ? a + ":" + b : b + ":" + a; edges.set(k, (edges.get(k) || 0) + 1); const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
+    }
+  });
+  let open = 0, over = 0; for (const c of edges.values()) { if (c === 1) open++; else if (c > 2) over++; }
+  const roots = new Set(); for (let i = 0; i < parent.length; i++) if (parent[i] != null) roots.add(find(i));
+  const size = new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3()).multiplyScalar(1000);
+  return { tris, open, over, parts: roots.size, size, closed: tris > 0 && open === 0 && over === 0 };
+}
+function printVerdict(c, list) {
+  const setBlocks = list.some((i) => i.saveKey === "place" || (i.saveKey || "").startsWith("el:") || i.saveKey === "person" || ["car", "person", "lamp"].includes(i.addKind));
+  if (!c.tris) return `<p class="hint">Nothing to check: there's no mesh in what you're exporting.</p>`;
+  if (c.closed && c.parts === 1) return `<p><b style="color:#7bc47f">Ready to print.</b> One sealed solid: every edge joins exactly two faces.</p>`;
+  if (c.closed) return `<p><b style="color:#e0b050">Sealed, but in ${c.parts} separate pieces.</b> Each piece is closed, so a printer can make them, but as loose or overlapping parts, not one object. Join them into one solid in a 3D tool (a boolean union) for a single print.</p>`;
+  return `<p><b style="color:#e06a5a">Won't print well as it is.</b> ${c.open ? `${c.open.toLocaleString()} open edge${c.open === 1 ? "" : "s"}` : ""}${c.open && c.over ? " and " : ""}${c.over ? `${c.over.toLocaleString()} edge${c.over === 1 ? "" : "s"} shared by more than two faces` : ""}: a printer needs one closed skin, and a slicer may fill these gaps badly or skip them.</p>${setBlocks ? `<p class="hint">The set's models are built from separate blocks and panels for the camera, not one sealed solid. Imported .glb models and models built from a photo are the good ones to print.</p>` : ""}`;
+}
+function download(data, name, type) {
+  const url = URL.createObjectURL(new Blob([data], { type })); const a = document.createElement("a");
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+const fileBase = () => (opts.title || "helios").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "helios";
+async function exportAs(fmt) {
+  const list = exportTargets(); if (!list.length) return toast("Nothing to export: there's no visible mesh");
+  const base = fileBase() + (expScope === "selection" && [...selection].some(exportable) ? "-" + list.map((i) => i.name).join("-").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40) : "");
+  try {
+    if (fmt === "glb") { const { GLTFExporter } = await import("three/examples/jsm/exporters/GLTFExporter.js"); const out = await new GLTFExporter().parseAsync(exportGroup(list), { binary: true }); download(out, base + ".glb", "model/gltf-binary"); }
+    else if (fmt === "obj") { const { OBJExporter } = await import("three/examples/jsm/exporters/OBJExporter.js"); download(new OBJExporter().parse(exportGroup(list)), base + ".obj", "text/plain"); }
+    else { const { STLExporter } = await import("three/examples/jsm/exporters/STLExporter.js"); download(new STLExporter().parse(exportGroup(list, stlUnit === "mm" ? 1000 : 1), { binary: true }), `${base}-${stlUnit}.stl`, "model/stl"); }
+    info(`Exported ${list.length} object${list.length === 1 ? "" : "s"} as ${fmt.toUpperCase()}`);
+  } catch (e) { toast("Export failed: " + (e?.message || e)); }
+}
+function openExport() {
+  const hasSel = [...selection].some(exportable); if (!hasSel) expScope = "scene";
+  const list = exportTargets(), c = printCheck(list), mm = (x) => (x >= 100 ? x.toFixed(0) : x.toFixed(1));
+  openWin("Export", `
+    <div class="row-btns"><label class="check"><input type="radio" name="expScope" value="selection" ${expScope === "selection" ? "checked" : ""} ${hasSel ? "" : "disabled"}> Selection${hasSel ? ` (${[...selection].filter(exportable).length})` : ""}</label><label class="check"><input type="radio" name="expScope" value="scene" ${expScope === "scene" ? "checked" : ""}> Whole scene</label></div>
+    <div class="row-btns"><button class="pbtn accent" id="exGlb">GLB</button><button class="pbtn" id="exObj">OBJ</button><button class="pbtn" id="exStl">STL</button></div>
+    <div class="fr"><label>STL units</label><select class="sel2" id="exUnit" aria-label="STL units"><option value="mm" ${stlUnit === "mm" ? "selected" : ""}>Millimetres (3D printers)</option><option value="m" ${stlUnit === "m" ? "selected" : ""}>Metres</option></select></div>
+    <p class="hint">GLB keeps colours and materials (Blender, Unity, Unreal, the web). OBJ is shape only, for any 3D tool. STL is shape only, for 3D printing. Everything is at real size, as it stands on the current frame.</p>
+    <h4 style="margin:14px 0 6px">Print check</h4>
+    <p style="font-family:var(--mono)">${list.length} object${list.length === 1 ? "" : "s"} · ${mm(c.size.x)} × ${mm(c.size.z)} × ${mm(c.size.y)} mm (W × D × H) · ${c.tris.toLocaleString()} triangles</p>
+    ${printVerdict(c, list)}`);
+  document.querySelectorAll('input[name="expScope"]').forEach((r) => (r.onchange = () => { expScope = r.value; openExport(); }));
+  $("exUnit").onchange = (e) => (stlUnit = e.target.value);
+  $("exGlb").onclick = () => exportAs("glb"); $("exObj").onclick = () => exportAs("obj"); $("exStl").onclick = () => exportAs("stl");
+}
+
 // ================= constraints & motion paths =================
 function setTrack(it, targetId) {
   const b = it.obj.userData.track ?? null; it.obj.userData.track = targetId ?? null;
@@ -1353,7 +1425,7 @@ function commands() {
     ["Insert keyframe", () => keyItems()], ["Delete keyframe", () => delKey()], ["Interpolation: Bézier", () => setInterp("bezier")], ["Interpolation: Linear", () => setInterp("linear")], ["Interpolation: Constant", () => setInterp("constant")],
     ["Parent to active", parentTo], ["Clear parent", clearParent], ["Select all", ACTS.selAll], ["Select none", ACTS.selNone], ["Invert selection", ACTS.selInvert],
     ["Camera view", () => toggleCam()], ["Align camera to view", camToView], ["Frame all", frameAll], ["Frame selected", ACTS.frameSel], ["Top view", ACTS.top], ["Front view", ACTS.front], ["Right view", ACTS.right],
-    ["Toggle motion path", togglePath], ["Toggle sidebar", () => toggleN()], ["Maximize viewport", toggleMax], ["Render still", renderStill], ["Render animation", renderVideo], ["Physics: simulate", () => simulatePhys()], ["Physics: bake to keyframes", bakePhys], ["Physics: clear bake", clearBake], ["Import 3D model", () => fileIn.click()],
+    ["Toggle motion path", togglePath], ["Toggle sidebar", () => toggleN()], ["Maximize viewport", toggleMax], ["Render still", renderStill], ["Render animation", renderVideo], ["Physics: simulate", () => simulatePhys()], ["Physics: bake to keyframes", bakePhys], ["Physics: clear bake", clearBake], ["Import 3D model", () => fileIn.click()], ["Export (GLB, OBJ, STL) + print check", openExport],
     ["Edit Mode (vertices)", toggleEdit], ["Join", joinSel], ["Move to collection", openMoveTo], ["X-ray", toggleXray], ["Local view", toggleLocal], ["Snap menu (3D cursor)", openSnapPie], ["Add marker", addMarker], ["Graph Editor", () => setEditor("graph")], ["Timeline", () => setEditor("timeline")], ["Pivot: 3D cursor", () => setPivot("cursor")], ["Pivot: median point", () => setPivot("median")], ["Pivot: individual origins", () => setPivot("individual")], ["Orientation: Local", () => setOrient("local")], ["Orientation: Global", () => setOrient("world")], ["World: physical sky", () => setSkyMode("physical")], ["World: studio lighting", () => setSkyMode("studio")], ["What Helios leaves out", openLeavesOut],
     ["Shading: Rendered", () => setShade("lit")], ["Shading: Solid", () => setShade("clay")], ["Shading: Wireframe", () => setShade("wire")],
   ];
@@ -1618,7 +1690,7 @@ function restoreSaved() {
 }
 // ================= wiring =================
 const ACTS = {
-  import: () => fileIn.click(), renderStill, renderVideo, undo, redo, history: openHistory, keys: openKeys, dup: duplicate, del: () => del(), key: () => keyItems(), delKey: () => delKey(), hide: () => toggleHide(),
+  import: () => fileIn.click(), exportFile: openExport, renderStill, renderVideo, undo, redo, history: openHistory, keys: openKeys, dup: duplicate, del: () => del(), key: () => keyItems(), delKey: () => delKey(), hide: () => toggleHide(),
   frameSel: () => active && frameObj(active.obj), frameAll, camView: () => toggleCam(), camToView, top: () => viewAlong(new THREE.Vector3(0, 1, 0)), front: () => viewAlong(new THREE.Vector3(0, 0, 1)), right: () => viewAlong(new THREE.Vector3(1, 0, 0)),
   selAll: () => { items.filter((i) => !i.hidden && i.kind !== "sun").forEach((i) => selection.add(i)); active = active || [...selection][0]; refreshSel(); },
   selNone: () => select(null), selInvert: () => { const all = items.filter((i) => !i.hidden && i.kind !== "sun"); const was = new Set(selection); selection.clear(); all.forEach((i) => !was.has(i) && selection.add(i)); active = [...selection][0] || null; refreshSel(); },
