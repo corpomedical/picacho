@@ -216,10 +216,13 @@ export function MystiqueDoor({
   lockOn,
   notify,
   balance,
+  initialClipId = null,
 }: {
   characters: RecastCharacter[];
   motions: RecastMotion[];
   initialTakes: RecastTake[];
+  /** A take's "Recast this clip" door: this motion is picked on arrival, as a tap on its card would. */
+  initialClipId?: string | null;
   lockOn: boolean;
   /** Their own notification settings (Settings → Notifications), which the in-page notice follows. */
   notify: { ready: boolean; failed: boolean };
@@ -805,6 +808,24 @@ export function MystiqueDoor({
    * how a 28 s crowd scene landed in Photo to life and came back as a room of
    * cloned children. Now the job stays, and the window shrinks to fit it.
    */
+  // The clip a take's "Recast this clip" door sent: picked once, and the
+  // address forgets it so a reload does not pick it over a later choice.
+  const clipLinkRef = useRef(false);
+  useEffect(() => {
+    if (!initialClipId || clipLinkRef.current) return;
+    clipLinkRef.current = true;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("clip");
+      window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}`);
+    } catch {
+      // The clip is picked either way.
+    }
+    const motion = motions.find((mo) => mo.takeId === initialClipId);
+    if (motion) void pickMotion(motion);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialClipId]);
+
   function chooseJob(next: RecastJob) {
     setJob(next);
     if (seen && clipWindow) setClipWindow(recastFitWindow(clipWindow, seen.seconds, next));

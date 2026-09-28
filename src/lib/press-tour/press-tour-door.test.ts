@@ -35,6 +35,7 @@ const sidebar = read("components", "app-sidebar.tsx");
 const tabBar = read("components", "native-tab-bar.tsx");
 const tools = read("lib", "nav", "tools.ts");
 const layout = read("app", "app", "layout.tsx");
+const gates = read("lib", "nav", "gates.ts");
 
 const LANGS = ["en", "es", "pt", "it"] as const;
 type Lang = (typeof LANGS)[number];
@@ -80,7 +81,8 @@ describe("the Press Tour door", () => {
   it("is a mode in Generate for exactly who can use the door, starring the character picked there (operator's 'All three', 2026-09-25)", () => {
     const page = read("app", "app", "generate", "page.tsx");
     expect(page).toContain("const pressTourOn = isAdmin && (await isPressTourEnabled(supabase));");
-    expect(read("app", "app", "layout.tsx")).toContain("const pressTourVisible = isAdmin && (await isPressTourEnabled(supabase));");
+    // The menu's rule, shared by the layout and a take's doors (lib/nav/gates.ts).
+    expect(gates).toContain("const pressTourVisible = isAdmin && (await isPressTourEnabled(supabase));");
     const form = read("components", "generate-form.tsx");
     expect(form).toContain("{pressTourOn && (");
     expect(form).toContain("`/app/press-tour?star=${encodeURIComponent(characterId)}`");
@@ -95,7 +97,7 @@ describe("the Press Tour door", () => {
     expect(sidebar).toContain('case "pressTour":');
     // No hand-written row: the pinned rows come from the one list of tools.
     expect(sidebar).not.toMatch(/navRow\(\{\s*href: "\/app\/press-tour"/);
-    expect(layout).toContain("const pressTourVisible = isAdmin && (await isPressTourEnabled(supabase));");
+    expect(gates).toContain("const pressTourVisible = isAdmin && (await isPressTourEnabled(supabase));");
     expect(layout).toContain("pressTourVisible={pressTourVisible}");
   });
 

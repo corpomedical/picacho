@@ -1,12 +1,8 @@
 import { redirect } from "next/navigation";
 import type { PlanId } from "@/lib/plans";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
-import { isRecceEnabled, isSetsEnabled } from "@/lib/sets/enabled";
-import { isRecastEnabled } from "@/lib/recast/enabled";
-import { isLiveEnabled, isLiveOpenToPlans, liveAllowed } from "@/lib/live/enabled";
-import { isEditorEnabled } from "@/lib/editor/enabled";
-import { isPressTourEnabled } from "@/lib/press-tour/enabled";
 import { producerVisible, readProducerGrant } from "@/lib/producer/enabled";
+import { readToolGates } from "@/lib/nav/gates";
 import { countWatch, loadWatchBar } from "@/lib/producer/watch";
 import { DEFAULT_PRODUCER_NAME } from "@/lib/producer/store";
 import { ProducerLamp } from "@/components/producer/producer-lamp";
@@ -15,7 +11,6 @@ import { parseWheelStyle, type WheelStyle } from "@/components/producer/wheel-st
 import { parseChatStyle, type ChatStyle } from "@/components/producer/chat-style";
 import { isVoiceConfigured } from "@/lib/producer/speech";
 import { isEUVisitor } from "@/lib/geo";
-import { setsEligible } from "@/lib/sets/set-config";
 import { RatePrompt } from "@/components/rate-prompt";
 import { NativePush } from "@/components/native-push";
 import { WebPushSync } from "@/components/web-push-sync";
@@ -98,33 +93,13 @@ export default async function AppLayout({
   const accountLook = modeRead.error ? null : parseAppLook(modeRow?.app_look);
 
   const voiceModeEnabled = await isVoiceModeEnabled(supabase);
-  // Sets shows in the sidebar only to accounts that can open it (admins in
-  // Phase 1). Eligibility first: it costs nothing, and spares everyone else
-  // the flag read.
-  const setsVisible = setsEligible(profile?.plan, isAdmin) && (await isSetsEnabled(supabase));
-  // The Recce door (board K): admins only while in testing, behind its own
-  // flag with both Sets switches under it. Admin first: spares everyone
-  // else the flag read.
-  const recceVisible = isAdmin && (await isRecceEnabled(supabase));
-  // The Mystique door (working title): the same rule — admins only while
-  // the recast lane is proved, behind its own flag.
-  const mystiqueVisible = isAdmin && (await isRecastEnabled(supabase));
-  // Live (H3 Max Director, 2026-09-24): admins, and every paid plan once
-  // `live_paid_plans` is on (lib/live/enabled.ts), behind its own switch.
-  // The plan first (no read): free accounts skip both flags, admins the plans one.
-  const liveVisible =
-    !liveAllowed(profile, true).error &&
-    (isAdmin || (await isLiveOpenToPlans(supabase))) &&
-    (await isLiveEnabled(supabase));
-  // Director's Cut (2026-09-24): admins only, behind the video_editor
-  // switch (lib/editor/enabled.ts). Admin first spares everyone the flag read.
-  const cutVisible = isAdmin && (await isEditorEnabled(supabase));
-  // Press Tour (2026-09-26): admins only while it is built, behind the
-  // press_tour switch (lib/press-tour/enabled.ts, which also needs its
-  // provider keys). Admin first spares everyone else the flag read. Its row
-  // is a default pin under Tools (lib/nav/tools.ts DEFAULT_PINNED), and a
-  // choice in the phone's lamp.
-  const pressTourVisible = isAdmin && (await isPressTourEnabled(supabase));
+  // Which gated tools this account may open: one rule, shared with a take's
+  // "Keep going" doors (lib/nav/gates.ts), each tool's plan or role read
+  // before its flag.
+  const { setsVisible, recceVisible, mystiqueVisible, liveVisible, cutVisible, pressTourVisible } = await readToolGates(
+    supabase,
+    profile,
+  );
 
   // The Producer's lamp (2026-09-24): admins, accounts an admin granted it
   // to, and Elite once `producer_elite` is on — the route's own rule

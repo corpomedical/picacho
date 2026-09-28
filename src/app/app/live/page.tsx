@@ -74,7 +74,7 @@ export default async function LivePage({ searchParams }: { searchParams: Promise
       if (setId && UUID.test(setId)) {
         words = (await readShotWords(supabase, setId, userId, [g.id]).catch(() => new Map<string, string>())).get(g.id) ?? null;
       }
-      still = { id: g.id, url: thumbUrl(stored, 1600) ?? stored, words };
+      still = { id: g.id, url: thumbUrl(stored, 1600) ?? stored, words, fromSet: Boolean(setId && UUID.test(setId)) };
     }
   }
 

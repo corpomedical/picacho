@@ -163,6 +163,7 @@ export function SetsHome({
   notifyReady,
   notifyFailed,
   againId = null,
+  photoFromTake = null,
 }: {
   initialSets: SetSummary[];
   usedThisMonth: number;
@@ -182,6 +183,13 @@ export function SetsHome({
   notifyFailed: boolean;
   /** A failed build's "Try again" on its own page (/app/sets?again=<id>): its words start in the box. */
   againId?: string | null;
+  /**
+   * A picture sent from its take's "Build a 3D set from it" door
+   * (/app/sets?photo=<id>, 2026-09-28): our own media URL of their own
+   * finished picture, checked by the page. It lands in the photo box exactly
+   * as a picked file would; nothing is built until they press Build.
+   */
+  photoFromTake?: string | null;
 }) {
   const { t } = useLocale();
   const s = t.sets;
@@ -340,6 +348,26 @@ export function SetsHome({
       // The words are in the box either way.
     }
   }, [againId]);
+
+  // ?photo= is read once, like ?again=: the picture goes through the same
+  // preparation as a picked file, and the address forgets it.
+  const photoTakeRef = useRef(false);
+  useEffect(() => {
+    if (!photoFromTake || !photoSetsOn || photoTakeRef.current) return;
+    photoTakeRef.current = true;
+    setMode("photo");
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("photo");
+      window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}`);
+    } catch {
+      // The picture is in the box either way.
+    }
+    fetch(photoFromTake)
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error("unreadable"))))
+      .then((blob) => pickPhoto(new File([blob], "picture", { type: blob.type || "image/png" })))
+      .catch(() => setError(SET_PHOTO_UNREADABLE));
+  }, [photoFromTake, photoSetsOn]);
 
   // Escape closes an open menu, as a click off it does (and as the set page's menus do).
   useEffect(() => {

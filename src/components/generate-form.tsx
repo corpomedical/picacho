@@ -53,6 +53,7 @@ import {
   reserveChatAttachmentPath,
   finalizeChatAttachment,
   deleteChatAttachment,
+  attachTakePicture,
   type ChatAttachment,
   type UploadErrorCode,
 } from "@/lib/attachments/actions";
@@ -4438,6 +4439,52 @@ function GenerateFormInner({
       setScenePlan(null);
     }
   }, [contentType]);
+
+  // A take's "Make a video from it" door (2026-09-28) arrives as
+  // ?still=<picture id>&type=video: the picture is attached exactly as a "+"
+  // upload would be (attachTakePicture copies it into their attachments), so
+  // the person writes what should happen and sends. Once per link: the ref
+  // stops React's dev double-run from attaching it twice.
+  const stillLinkRef = useRef<string | null>(null);
+  useEffect(() => {
+    const still = searchParams.get("still");
+    if (!still || stillLinkRef.current === still) return;
+    stillLinkRef.current = still;
+    const id = crypto.randomUUID();
+    setPendingAttachments((prev) => [
+      ...prev,
+      { id, name: g.stillFromTakeName, type: "image/png", size: 0, status: "uploading" },
+    ]);
+    router.replace("/app/generate", { scroll: false });
+    attachTakePicture(still)
+      .then((result) => {
+        setPendingAttachments((prev) =>
+          prev.map((a) => {
+            if (a.id !== id) return a;
+            if (result.error !== null || !result.attachment) return { ...a, status: "error", error: result.error ?? g.stillFromTakeFailed };
+            const att = result.attachment;
+            return {
+              ...a,
+              name: att.name,
+              type: att.type,
+              size: att.size,
+              status: "ready",
+              url: att.url,
+              path: att.path,
+              width: att.width,
+              height: att.height,
+              style: att.style,
+            };
+          }),
+        );
+        if (result.error !== null) setError(result.error);
+      })
+      .catch(() => {
+        setPendingAttachments((prev) => prev.map((a) => (a.id === id ? { ...a, status: "error", error: g.stillFromTakeFailed } : a)));
+        setError(g.stillFromTakeFailed);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Typing on the dashboard's landing composer and hitting send arrives here
   // as ?prompt=<text> — unlike ?voice=, this only fills the textarea so the

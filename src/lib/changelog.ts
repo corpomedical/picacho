@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.141.0",
+    build: 180,
+    date: "2026-09-29",
+    title: "Keep going: every finished take opens straight into the next tool",
+    items: [
+      "A take's page has a new \"Keep going\" shelf under its buttons. Each card sends this take into another tool with it already loaded, and nothing is spent until you press that tool's own button.",
+      "A picture: \"Make a video from it\" opens Generate in video mode with the picture attached, exactly as if you had added it with +. \"Direct it live\" opens Live on the picture. \"Build a 3D set from it\" opens Helios with the picture in its photo box.",
+      "A video: \"Recast this clip\" opens Recast with the clip already picked, even an older one that isn't in its list of recent videos.",
+      "A card only shows to people who can open that tool: the same rule as the Tools menu, now kept in one place both read.",
+      "Live now says \"Your picture\" instead of \"Your Helios still\" when the picture didn't come from Helios.",
+    ],
+  },
+  {
     version: "1.140.0",
     build: 179,
     date: "2026-09-28",

@@ -19,7 +19,11 @@ import { MystiqueDoor } from "@/components/mystique/mystique-door";
 // picture check's 10–100 s), so the route declares the budget that needs.
 export const maxDuration = 300;
 
-export default async function MystiquePage() {
+export default async function MystiquePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) redirect("/login");
@@ -33,9 +37,14 @@ export default async function MystiquePage() {
   // was a dead end there. Still admins only, behind the recast flag, so the
   // audience is unchanged; the door carries no purchase path (reader mode).
 
+  // A take's "Recast this clip" door (/app/mystique?clip=<id>): that clip
+  // heads the motions and the door picks it, as a tap on its card would.
+  const clip = (await searchParams).clip;
+  const clipId = typeof clip === "string" && /^[0-9a-f-]{36}$/i.test(clip) ? clip : null;
+
   // Clips that never became a take are cleared on the way in (best-effort).
   const [home, lockOn] = await Promise.all([
-    getRecastHome(supabase, userData.user.id),
+    getRecastHome(supabase, userData.user.id, clipId),
     isRecastLockOn(supabase),
     sweepRecastOrphans(supabase, userData.user.id),
   ]);
@@ -45,6 +54,7 @@ export default async function MystiquePage() {
       characters={home.characters}
       motions={home.motions}
       initialTakes={home.takes}
+      initialClipId={clipId && home.motions.some((mo) => mo.takeId === clipId) ? clipId : null}
       lockOn={lockOn}
       notify={home.notify}
       balance={home.balance}

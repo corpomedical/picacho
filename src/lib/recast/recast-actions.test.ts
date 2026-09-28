@@ -693,6 +693,7 @@ describe("the door survives a migration that has not run", () => {
     const home = data.slice(data.indexOf("export async function getRecastHome("), data.indexOf("const ORPHAN_AFTER_MS"));
     expect(home).not.toContain('.neq("status", "failed")');
     // A failed take can still never be offered as a performance to recast.
-    expect(home).toContain('.filter((g) => g.status === "succeeded")');
+    // (One rule, toMotion, serves the list and a take's pinned clip alike.)
+    expect(home).toContain('if (g.status !== "succeeded") return null;');
   });
 });

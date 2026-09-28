@@ -42,7 +42,8 @@ import {
 // token would turn this dark stage's text unreadable.
 
 export type LiveCharacter = { id: string; name: string; photos: { path: string; url: string }[] };
-export type LiveStill = { id: string; url: string; words: string | null };
+/** The picture Live opens on: a Helios still (fromSet), or any picture sent from its take's "Direct it live" door. */
+export type LiveStill = { id: string; url: string; words: string | null; fromSet: boolean };
 
 type Phase = "setup" | "opening" | "live" | "stopping" | "ended";
 type Direction = { text: string; seal: string; version: number; state: "pending" | "applied" | "rejected" };
@@ -581,7 +582,7 @@ export function LiveStage({
                 <div className="mt-2 flex flex-wrap gap-2">
                   {still && (
                     <button type="button" disabled={busy} aria-pressed={opening === "still"} onClick={() => setOpening("still")} className={pill(opening === "still")}>
-                      {m.openStill}
+                      {still.fromSet ? m.openStill : m.openPicture}
                     </button>
                   )}
                   <button type="button" disabled={busy} aria-pressed={opening === "words"} onClick={() => setOpening("words")} className={pill(opening === "words")}>

@@ -46,6 +46,11 @@ import type { GenerationFeedback } from "@/lib/generations/actions";
 import { getServerMessages } from "@/lib/i18n/server";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { UpscaleButton } from "@/components/upscale-button";
+import { KeepGoing, type KeepGoingDoor } from "@/components/keep-going";
+import { readToolGates } from "@/lib/nav/gates";
+import { isPhotoSetsEnabled } from "@/lib/sets/enabled";
+import { isNativeApp } from "@/lib/native/server";
+import { RECAST_MAX_SECONDS, RECAST_MIN_SECONDS } from "@/lib/recast/recast";
 import { LayersButton } from "@/components/layers-button";
 import {
   availableUpscaleTiers,
@@ -89,7 +94,7 @@ export default async function HistoryDetailPage({
   // an admin trying to review a flagged generation that isn't theirs).
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, plan, status")
     .eq("id", userData.user.id)
     .single();
   const isAdmin = profile?.role === "admin";
@@ -253,6 +258,39 @@ export default async function HistoryDetailPage({
       .eq("generation_id", generation.id)
       .maybeSingle();
     sharedToCommunity = Boolean(post);
+  }
+
+  // "Keep going" (ecosystem to-do #1, operator pick B, 2026-09-28): this
+  // take's doors into the other tools. The same gates as the Tools menu
+  // (lib/nav/gates.ts), so no card offers a tool its menu hides. Each door
+  // opens its tool with THIS take already in it; nothing is spent until the
+  // person presses that tool's own button.
+  const keepGoingDoors: KeepGoingDoor[] = [];
+  if (isOwner && generation.status === "succeeded" && isRenderableUrl(generation.result_url)) {
+    const gates = await readToolGates(supabase, profile);
+    const q = encodeURIComponent(generation.id as string);
+    if (generation.content_type === "image") {
+      keepGoingDoors.push({
+        key: "generate",
+        href: `/app/generate?still=${q}&type=video${generation.character_profile_id ? `&character=${encodeURIComponent(generation.character_profile_id as string)}` : ""}&studio=1`,
+        label: h.doorVideoFromPicture,
+        sub: h.doorVideoFromPictureSub,
+        tool: t.nav.generate,
+      });
+      if (gates.liveVisible) {
+        keepGoingDoors.push({ key: "live", href: `/app/live?from=${q}`, label: h.doorLive, sub: h.doorLiveSub, tool: t.nav.live });
+      }
+      // A set from a photo is admins only behind its own switch (sets/data.ts
+      // photoSetsOn), and Helios is web-only in the phone app (sets/page.tsx).
+      if (gates.setsVisible && profile?.role === "admin" && !(await isNativeApp()) && (await isPhotoSetsEnabled(supabase))) {
+        keepGoingDoors.push({ key: "sets", href: `/app/sets?photo=${q}`, label: h.doorSetFromPicture, sub: h.doorSetFromPictureSub, tool: t.nav.sets });
+      }
+    } else if (generation.content_type === "video") {
+      const seconds = Number(generation.video_duration_seconds) || 0;
+      if (gates.mystiqueVisible && seconds >= RECAST_MIN_SECONDS && seconds <= RECAST_MAX_SECONDS) {
+        keepGoingDoors.push({ key: "recast", href: `/app/mystique?clip=${q}`, label: h.doorRecast, sub: h.doorRecastSub, tool: t.nav.mystique });
+      }
+    }
   }
 
   // The chain, left to right: the character's identity photo, the take this
@@ -717,6 +755,8 @@ export default async function HistoryDetailPage({
               </div>
             )}
           </div>
+
+          <KeepGoing title={h.keepGoing} doors={keepGoingDoors} />
 
           <LineageChain nodes={lineageNodes} title={h.lineage} />
 

@@ -129,8 +129,19 @@ describe("the sidebar's tools", () => {
 
   it("Press Tour is shown to admins with the switch on, and handed to the phone's lamp by the same gate", () => {
     const layout = readFileSync(join(root, "app", "app", "layout.tsx"), "utf8");
+    // The rule lives in gates.ts, shared with a take's "Keep going" doors.
+    const gates = readFileSync(join(root, "lib", "nav", "gates.ts"), "utf8");
     // Admin first: every other account skips the flag read.
-    expect(layout).toContain("const pressTourVisible = isAdmin && (await isPressTourEnabled(supabase));");
+    expect(gates).toContain("const pressTourVisible = isAdmin && (await isPressTourEnabled(supabase));");
+    expect(layout).toContain("readToolGates(");
     expect(layout).toContain("pressTourOn={pressTourVisible}");
+  });
+
+  it("a take's Keep going doors read the same gates as the menu", () => {
+    const page = readFileSync(join(root, "app", "app", "history", "[id]", "page.tsx"), "utf8");
+    expect(page).toContain("const gates = await readToolGates(supabase, profile);");
+    expect(page).toContain("if (gates.liveVisible)");
+    expect(page).toContain("gates.setsVisible");
+    expect(page).toContain("gates.mystiqueVisible");
   });
 });

@@ -1,7 +1,7 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
-import { mediaUrl } from "@/lib/media/url";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { mediaStoragePath, mediaUrl, toMediaUrl } from "@/lib/media/url";
 import { rateLimited } from "@/lib/rate-limit";
 import { classifyRenderStyle } from "@/lib/generations/providers/describe-image";
 
@@ -240,6 +240,63 @@ export async function finalizeChatAttachment(formData: FormData): Promise<Upload
       style,
     },
   };
+}
+
+/**
+ * One of their own finished PICTURES, attached to the composer as if they had
+ * uploaded it with "+" (a take's "Make a video from it" door, 2026-09-28). The
+ * bytes are copied into their chat-attachments folder and then finalized by
+ * the same step as an upload, so the send treats it exactly like one: same
+ * measuring, same real-person check, same neutral "reference" role.
+ */
+export async function attachTakePicture(generationId: string): Promise<UploadResult> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) {
+    return { error: "Your session expired — please log in again.", errorCode: "SESSION_EXPIRED" };
+  }
+  if (typeof generationId !== "string" || !/^[0-9a-f-]{36}$/i.test(generationId)) return { error: "Not allowed." };
+
+  // Their own row only, even for an admin: this copies a file into THEIR folder.
+  const { data: take } = await supabase
+    .from("generations")
+    .select("id, result_url")
+    .eq("id", generationId)
+    .eq("user_id", data.user.id)
+    .eq("content_type", "image")
+    .eq("status", "succeeded")
+    .is("deleted_at", null)
+    .maybeSingle<{ id: string; result_url: string | null }>();
+  const stored = take ? mediaStoragePath(toMediaUrl(take.result_url)) : null;
+  if (!stored) return { error: "That picture isn't available any more." };
+
+  // The same upload budget a "+" upload spends (finalize meters its own).
+  if (await rateLimited(data.user.id, "upload", UPLOAD_RATE_WINDOW_SECONDS, UPLOAD_RATE_MAX_PER_WINDOW)) {
+    return { error: "You're uploading a bit fast — wait a moment and try again.", errorCode: "RATE_LIMITED" };
+  }
+
+  // The row is theirs (checked above), so the service role only reads a file
+  // they already own and writes into their own folder.
+  const admin = createAdminClient();
+  const { data: blob, error: readError } = await admin.storage.from(stored.bucket).download(stored.path);
+  if (readError || !blob) return { error: "That picture isn't available any more." };
+  if (blob.size > MAX_FILE_BYTES) return { error: "That picture is larger than 25MB.", errorCode: "TOO_LARGE" };
+
+  const type = blob.type.startsWith("image/") ? blob.type : "image/png";
+  const ext = type === "image/jpeg" ? "jpg" : type === "image/webp" ? "webp" : "png";
+  const name = `picture-${generationId.slice(0, 8)}.${ext}`;
+  const path = `${data.user.id}/${crypto.randomUUID()}-${name}`;
+  const { error: writeError } = await admin.storage
+    .from("chat-attachments")
+    .upload(path, blob, { contentType: type, upsert: false });
+  if (writeError) return { error: "Couldn't attach that picture — try again.", errorCode: "UPLOAD_INCOMPLETE" };
+
+  const done = new FormData();
+  done.set("path", path);
+  done.set("name", name);
+  done.set("type", type);
+  done.set("size", String(blob.size));
+  return finalizeChatAttachment(done);
 }
 
 export async function deleteChatAttachment(formData: FormData): Promise<{ error: string | null }> {

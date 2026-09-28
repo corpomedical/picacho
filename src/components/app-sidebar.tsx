@@ -422,7 +422,7 @@ const ROW_IDLE = "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-i
 // panel says what each one does. Its list is lib/nav/tools.ts.
 const TOOLS_PANEL_ID = "sidebar-tools-panel";
 
-const TOOL_ICONS: Record<ToolKey, Glyph> = {
+export const TOOL_ICONS: Record<ToolKey, Glyph> = {
   generate: BoltIcon,
   pressTour: PressTourIcon,
   live: LiveIcon,

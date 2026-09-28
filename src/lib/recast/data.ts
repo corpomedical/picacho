@@ -152,6 +152,8 @@ async function readTakeLogs(supabase: SupabaseClient, ids: string[]): Promise<Ma
 export async function getRecastHome(
   supabase: SupabaseClient,
   userId: string,
+  /** A take's "Recast this clip" door (/app/mystique?clip=<id>): this clip heads the motions even when it is older than the newest few. */
+  pinClipId: string | null = null,
 ): Promise<{
   characters: RecastCharacter[];
   motions: RecastMotion[];
@@ -249,24 +251,47 @@ export async function getRecastHome(
 
   // Anything finished, playable and the right length can be performed again
   // — including this door's own takes, so a recast can be recast.
+  const toMotion = (g: Record<string, unknown>): RecastMotion | null => {
+    if (g.status !== "succeeded") return null;
+    const url = playable(g);
+    const seconds = (g.video_duration_seconds as number | null) ?? 0;
+    if (!url || seconds < RECAST_MIN_SECONDS || seconds > RECAST_MAX_SECONDS) return null;
+    const prompt = ((g.prompt_input as string | null) ?? "").trim();
+    return {
+      takeId: g.id as string,
+      title: prompt.length > 0 ? prompt.slice(0, 80) : "Untitled take",
+      seconds,
+      posterUrl: thumbUrl(toMediaUrl(g.poster_url as string | null), 640),
+      videoUrl: url,
+      characterName: nameOf.get(g.character_profile_id as string) ?? null,
+    };
+  };
   const motions: RecastMotion[] = rows
-    .filter((g) => g.status === "succeeded")
-    .map((g) => {
-      const url = playable(g);
-      const seconds = (g.video_duration_seconds as number | null) ?? 0;
-      if (!url || seconds < RECAST_MIN_SECONDS || seconds > RECAST_MAX_SECONDS) return null;
-      const prompt = ((g.prompt_input as string | null) ?? "").trim();
-      return {
-        takeId: g.id as string,
-        title: prompt.length > 0 ? prompt.slice(0, 80) : "Untitled take",
-        seconds,
-        posterUrl: thumbUrl(toMediaUrl(g.poster_url as string | null), 640),
-        videoUrl: url,
-        characterName: nameOf.get(g.character_profile_id as string) ?? null,
-      };
-    })
+    .map(toMotion)
     .filter((m): m is RecastMotion => m !== null)
     .slice(0, 18);
+  if (pinClipId && /^[0-9a-f-]{36}$/i.test(pinClipId)) {
+    const listed = motions.findIndex((m) => m.takeId === pinClipId);
+    if (listed > 0) motions.unshift(...motions.splice(listed, 1));
+    if (listed < 0) {
+      // Older than the newest 120 videos, or past the newest 18 motions: read
+      // it on its own, under the same rules (their own finished video, the
+      // right length).
+      const inRows = rows.find((g) => g.id === pinClipId);
+      const { data: row } = inRows
+        ? { data: inRows }
+        : await supabase
+            .from("generations")
+            .select(TAKE_COLUMNS)
+            .eq("id", pinClipId)
+            .eq("user_id", userId)
+            .eq("content_type", "video")
+            .is("deleted_at", null)
+            .maybeSingle();
+      const pinned = row ? toMotion(row as Record<string, unknown>) : null;
+      if (pinned) motions.unshift(pinned);
+    }
+  }
 
   return { characters, motions, takes, notify, balance };
 }

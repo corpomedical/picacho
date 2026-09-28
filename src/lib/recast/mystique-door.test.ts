@@ -25,7 +25,8 @@ const sidebar = readFileSync(join(root, "components", "app-sidebar.tsx"), "utf8"
 // The door's path lives in the sidebar's one list of tools since the Tools
 // door (2026-09-25); the sidebar still carries the visibility gate.
 const tools = readFileSync(join(root, "lib", "nav", "tools.ts"), "utf8");
-const layout = readFileSync(join(root, "app", "app", "layout.tsx"), "utf8");
+// The gate rule lives in lib/nav/gates.ts, shared by the layout and a take's doors.
+const gates = readFileSync(join(root, "lib", "nav", "gates.ts"), "utf8");
 const page = readFileSync(join(root, "app", "app", "mystique", "page.tsx"), "utf8");
 
 const section = (lang: string) => {
@@ -38,7 +39,7 @@ describe("the Mystique door", () => {
   it("hangs in the nav behind its own visibility, at its own path", () => {
     expect(tools).toContain('href: "/app/mystique"');
     expect(sidebar).toContain("mystiqueVisible");
-    expect(layout).toContain("const mystiqueVisible = isAdmin && (await isRecastEnabled(supabase))");
+    expect(gates).toContain("const mystiqueVisible = isAdmin && (await isRecastEnabled(supabase))");
   });
 
   it("its page declares the check's budget and refuses everyone it is not for", () => {

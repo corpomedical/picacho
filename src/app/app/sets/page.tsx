@@ -5,6 +5,7 @@ import { readRenderNotifyPrefs } from "@/lib/generations/generation-defaults-ser
 import { getServerMessages } from "@/lib/i18n/server";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { isNativeApp } from "@/lib/native/server";
+import { toMediaUrl } from "@/lib/media/url";
 import { getSetsHome } from "@/lib/sets/data";
 import { finisherCanRun } from "@/lib/sets/finisher";
 import { SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_UNAVAILABLE } from "@/lib/sets/messages";
@@ -63,6 +64,23 @@ export default async function SetsPage({
   const native = await isNativeApp();
   if (data.error === SETS_UNAVAILABLE || (data.error === SETS_NOT_OPEN && (native || !SETS_OPEN_TO_PLANS))) notFound();
 
+  // A take's "Build a 3D set from it" door: their own finished picture only.
+  const photoId = first(query.photo);
+  let photoFromTake: string | null = null;
+  if (photoId && /^[0-9a-f-]{36}$/i.test(photoId) && data.error === null && data.photoSetsOn) {
+    const { data: take } = await supabase
+      .from("generations")
+      .select("result_url")
+      .eq("id", photoId)
+      .eq("user_id", userData.user.id)
+      .eq("content_type", "image")
+      .eq("status", "succeeded")
+      .is("deleted_at", null)
+      .maybeSingle<{ result_url: string | null }>();
+    const url = toMediaUrl(take?.result_url ?? null);
+    photoFromTake = url && url.startsWith("/api/media/") ? url : null;
+  }
+
   const { t } = await getServerMessages();
   if (data.error === SETS_NOT_OPEN) return <SetsUpgrade t={t} native={native} />;
   const s = t.sets;
@@ -99,6 +117,7 @@ export default async function SetsPage({
           notifyReady={notify.ready}
           notifyFailed={notify.failed}
           againId={first(query.again)}
+          photoFromTake={photoFromTake}
         />
       )}
     </div>
