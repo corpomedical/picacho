@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.140.0",
+    build: 179,
+    date: "2026-09-28",
+    title: "Press Tour (admins while it is in testing): a stopped ad says why, logos as files, and ads from Generate and Aly",
+    items: [
+      "An ad that stops keeps its reason on the Press Tour page for a day, with \"Start a new ad\". When the picture service we use blocks a still under its own safety rules, the page says so, says our checks had passed it, and says what was charged. Its stills read \"Shot N wasn't painted\" instead of looking busy.",
+      "The product card takes a logo or graphic as a file (a PNG keeps its transparency; JPG and WebP too), instead of drawing a box on a photo. Saving the card shows what it is doing and for how long.",
+      "A still our checker couldn't read says so plainly, a refused repaint on an approved still says why, and a product whose photos went missing reads \"Photos missing\" and can't be planned until it is added again.",
+      "Generate's + menu has \"Make an ad · Press Tour\", starring the character you picked there.",
+      "Aly can plan a Press Tour ad for you and hand you a card with the price of its stills; you press Paint yourself. She can also tell you where your ads stand, and why one stopped.",
+      "A new ad for the same product or brand gets a fresh angle instead of repeating an earlier one.",
+    ],
+  },
+  {
     version: "1.139.0",
     build: 178,
     date: "2026-09-28",
