@@ -58,7 +58,7 @@ export const maxDuration = 300;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type Search = { campaign?: string | string[]; connected?: string | string[]; connect_error?: string | string[]; network?: string | string[] };
+type Search = { campaign?: string | string[]; star?: string | string[]; connected?: string | string[]; connect_error?: string | string[]; network?: string | string[] };
 const one = (v: string | string[] | undefined): string | null => (typeof v === "string" ? v : null);
 
 /**
@@ -67,17 +67,20 @@ const one = (v: string | string[] | undefined): string | null => (typeof v === "
  * still checks it is the person's own), and a connect's answer on the way
  * back from a network (?connected=<network> or ?connect_error=<code>).
  */
-function fromAddress(sp: Search): { campaignId: string | null; connectNote: ConnectNote | null } {
+function fromAddress(sp: Search): { campaignId: string | null; starId: string | null; connectNote: ConnectNote | null } {
   const campaign = one(sp.campaign);
   const campaignId = campaign && UUID_RE.test(campaign) ? campaign.toLowerCase() : null;
+  // Generate's "Make an ad" names the character picked there (?star=<id>); the door picks it only if it is one of the person's own.
+  const star = one(sp.star);
+  const starId = star && UUID_RE.test(star) ? star.toLowerCase() : null;
   const connected = one(sp.connected);
-  if (isNetwork(connected)) return { campaignId, connectNote: { network: connected, outcome: "connected" } };
+  if (isNetwork(connected)) return { campaignId, starId, connectNote: { network: connected, outcome: "connected" } };
   const code = one(sp.connect_error);
   const network = one(sp.network);
   if (code && isNetwork(network) && (CONNECT_ERROR_CODES as readonly string[]).includes(code)) {
-    return { campaignId, connectNote: { network, outcome: code as ConnectErrorCode } };
+    return { campaignId, starId, connectNote: { network, outcome: code as ConnectErrorCode } };
   }
-  return { campaignId, connectNote: null };
+  return { campaignId, starId, connectNote: null };
 }
 
 export default async function PressTourPage({ searchParams }: { searchParams: Promise<Search> }) {
@@ -136,6 +139,7 @@ export default async function PressTourPage({ searchParams }: { searchParams: Pr
       products={home.products}
       brandKits={home.brandKits}
       openCampaignId={address.campaignId ?? home.openCampaignId}
+      initialStarId={address.starId}
       emailConfirmed={pressTourEmailError(userData.user) === null}
       networks={networkStates(switches)}
       actions={actions}

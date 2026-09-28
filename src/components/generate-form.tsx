@@ -1467,6 +1467,8 @@ export function GenerateForm(props: {
   phoneStats?: PhoneStats;
   /** Director's Cut is open to this account (admins, video_editor on): the "+" menu offers it. */
   directorsCutOn?: boolean;
+  /** Press Tour is open to this account (the door's own rule): the "+" menu offers an ad with this character. */
+  pressTourOn?: boolean;
 }) {
   return (
     <Suspense fallback={null}>
@@ -1959,6 +1961,7 @@ function GenerateFormInner({
   screenHeader,
   phoneStats,
   directorsCutOn = false,
+  pressTourOn = false,
 }: {
   characters: CharacterOption[];
   videoModels: VideoModelOption[];
@@ -1993,6 +1996,7 @@ function GenerateFormInner({
   screenHeader?: React.ReactNode;
   phoneStats?: PhoneStats;
   directorsCutOn?: boolean;
+  pressTourOn?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -9648,6 +9652,22 @@ function GenerateFormInner({
                             <path d="M8.1 8.1 20 20M14.5 9.5 20 4M8.1 15.9l3.4-3.4" />
                           </svg>
                           {t.directorsCut.menuEntry}
+                        </Link>
+                      )}
+                      {/* Press Tour (2026-09-28): an ad starring the character
+                          picked here, in the door's own place (?star= picks it there). */}
+                      {pressTourOn && (
+                        <Link
+                          href={characterId ? `/app/press-tour?star=${encodeURIComponent(characterId)}` : "/app/press-tour"}
+                          role="menuitem"
+                          onClick={() => setPlusMenuOpen(false)}
+                          className="flex w-full items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 py-2 text-left text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
+                        >
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1Z" />
+                            <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
+                          </svg>
+                          {g.makeAd}
                         </Link>
                       )}
                     </div>

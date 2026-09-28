@@ -32,6 +32,7 @@ import {
   networkStates,
   nextSpend,
   planBlock,
+  firstStar,
   doorMayReload,
   DOOR_RELOAD_WINDOW_MS,
   productState,
@@ -470,5 +471,19 @@ describe("the door's own reload guard", () => {
     const throwing = { getItem: () => { throw new Error("blocked"); }, setItem: () => undefined };
     expect(doorMayReload(throwing, t0)).toBe(true);
     expect(doorMayReload(null, t0)).toBe(true);
+  });
+});
+
+describe("the star Generate names", () => {
+  it("opens on the character picked in Generate when it is the person's own, else as before", () => {
+    const chars = [
+      { id: "a", photoCount: 0 },
+      { id: "b", photoCount: 2 },
+      { id: "c", photoCount: 1 },
+    ];
+    expect(firstStar(chars, "c")).toBe("c");
+    expect(firstStar(chars, "someone-elses")).toBe("b");
+    expect(firstStar(chars, null)).toBe("b");
+    expect(firstStar([], "c")).toBeNull();
   });
 });

@@ -77,6 +77,16 @@ const SAME_AS_ENGLISH: Record<Exclude<Lang, "en">, readonly string[]> = {
 };
 
 describe("the Press Tour door", () => {
+  it("is a mode in Generate for exactly who can use the door, starring the character picked there (operator's 'All three', 2026-09-25)", () => {
+    const page = read("app", "app", "generate", "page.tsx");
+    expect(page).toContain("const pressTourOn = isAdmin && (await isPressTourEnabled(supabase));");
+    expect(read("app", "app", "layout.tsx")).toContain("const pressTourVisible = isAdmin && (await isPressTourEnabled(supabase));");
+    const form = read("components", "generate-form.tsx");
+    expect(form).toContain("{pressTourOn && (");
+    expect(form).toContain("`/app/press-tour?star=${encodeURIComponent(characterId)}`");
+    expect(read("app", "app", "press-tour", "page.tsx")).toContain("initialStarId={address.starId}");
+  });
+
   it("hangs in the nav as a tool, pinned under Tools, never as a new menu row", () => {
     expect(tools).toContain('{ key: "pressTour", href: "/app/press-tour", group: "make"');
     expect(tools).toContain('export const DEFAULT_PINNED: readonly ToolKey[] = ["pressTour"];');

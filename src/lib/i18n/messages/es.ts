@@ -1049,6 +1049,7 @@ const es = {
     takePhoto: "Hacer una foto",
     createImage: "Crear imagen",
     createVideo: "Crear vídeo",
+    makeAd: "Crear un anuncio · Press Tour",
     advancedOptionsShow: "Más opciones — multiángulo, fotogramas de inicio y fin",
     advancedOptionsHide: "Ocultar opciones",
     createImagesTitle: "Crear imágenes",

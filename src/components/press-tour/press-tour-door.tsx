@@ -22,6 +22,7 @@ import {
   decidedCount,
   firstWaiting,
   isClosed,
+  firstStar,
   doorMayReload,
   productState,
   isMiss,
@@ -92,6 +93,8 @@ export type PressTourDoorProps = {
   brandKits: PressBrandKit[];
   /** The newest campaign not yet closed; the door asks the engine for its view. */
   openCampaignId: string | null;
+  /** The character Generate's "Make an ad" was on (?star=): picked when it is one of the person's own. */
+  initialStarId?: string | null;
   /** False until the account's email is confirmed: nothing that reaches a paid call runs before. */
   emailConfirmed: boolean;
   /** Where each network stands today (door-view.ts networkStates). */
@@ -178,7 +181,7 @@ function dismissStoppedAd(id: string): void {
   }
 }
 
-export function PressTourDoor({ characters, products, brandKits, openCampaignId, emailConfirmed, networks, actions, publish, waitlist, connectNote }: PressTourDoorProps) {
+export function PressTourDoor({ characters, products, brandKits, openCampaignId, initialStarId = null, emailConfirmed, networks, actions, publish, waitlist, connectNote }: PressTourDoorProps) {
   const { t, locale } = useLocale();
   const m = t.pressTour;
   const ids = useId();
@@ -188,7 +191,7 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
   const [prods, setProds] = useState(products);
   const [kits, setKits] = useState(brandKits);
 
-  const [starId, setStarId] = useState<string | null>(() => (characters.find((c) => c.photoCount > 0) ?? characters[0])?.id ?? null);
+  const [starId, setStarId] = useState<string | null>(() => firstStar(characters, initialStarId));
   const [productId, setProductId] = useState<string | null>(
     () => (products.find((p) => p.card.status === "confirmed" && p.card.category !== "regulated") ?? products[0])?.card.id ?? null,
   );

@@ -208,6 +208,11 @@ export function productState(card: Pick<ProductCard, "status"> & { photos: reado
   return card.photos.length === 0 ? "photosMissing" : "ready";
 }
 
+/** The star the door opens on: the one Generate named (if it is the person's own), else the first with photos, else the first. */
+export function firstStar<T extends { id: string; photoCount: number }>(characters: readonly T[], named: string | null): string | null {
+  return (characters.find((c) => c.id === named) ?? characters.find((c) => c.photoCount > 0) ?? characters[0])?.id ?? null;
+}
+
 export function planBlock(input: {
   emailConfirmed: boolean;
   star: { photoCount: number; adAnswer: StarAnswer | null } | null;

@@ -1049,6 +1049,7 @@ const pt = {
     takePhoto: "Tirar foto",
     createImage: "Criar imagem",
     createVideo: "Criar vídeo",
+    makeAd: "Criar um anúncio · Press Tour",
     advancedOptionsShow: "Mais opções — multiângulo, quadros inicial e final",
     advancedOptionsHide: "Ocultar opções",
     createImagesTitle: "Criar imagens",

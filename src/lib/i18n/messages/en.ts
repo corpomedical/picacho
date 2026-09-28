@@ -1118,6 +1118,7 @@ const en = {
     takePhoto: "Take photo",
     createImage: "Create image",
     createVideo: "Create video",
+    makeAd: "Make an ad · Press Tour",
     advancedOptionsShow: "More options — multi-angle, start & end frames",
     advancedOptionsHide: "Hide options",
     createImagesTitle: "Create images",

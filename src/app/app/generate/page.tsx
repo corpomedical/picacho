@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { getServerMessages } from "@/lib/i18n/server";
 import { isNativeApp } from "@/lib/native/server";
 import { isEditorEnabled } from "@/lib/editor/enabled";
+import { isPressTourEnabled } from "@/lib/press-tour/enabled";
 import { allowExternalPurchaseLink } from "@/lib/native/external-purchase";
 
 // No longer the constraint it used to be.
@@ -108,6 +109,8 @@ export default async function GeneratePage() {
   } = workspaceData;
   // Director's Cut in the "+" menu: admins, behind its switch (the sidebar's rule).
   const directorsCutOn = isAdmin && (await isEditorEnabled(supabase));
+  // Press Tour: the same rule as its door and its sidebar row (app/layout.tsx).
+  const pressTourOn = isAdmin && (await isPressTourEnabled(supabase));
 
   // The composer walkthrough used to auto-start on /app, when the composer
   // lived there in hero mode. /app is a dashboard now, so the walkthrough's
@@ -267,6 +270,7 @@ export default async function GeneratePage() {
         screenHeader={screenHeader}
         phoneStats={stats}
         directorsCutOn={directorsCutOn}
+        pressTourOn={pressTourOn}
         startOnboarding={onboardingProfile?.has_completed_onboarding !== true}
         characters={charactersForForm}
         videoModels={videoModels}

@@ -1048,6 +1048,7 @@ const it = {
     takePhoto: "Scatta foto",
     createImage: "Crea immagine",
     createVideo: "Crea video",
+    makeAd: "Crea uno spot · Press Tour",
     advancedOptionsShow: "Altre opzioni — multi-angolo, fotogramma iniziale e finale",
     advancedOptionsHide: "Nascondi opzioni",
     createImagesTitle: "Crea immagini",
