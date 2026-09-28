@@ -23,8 +23,9 @@ export const RELEASES: Release[] = [
     version: "1.142.0",
     build: 181,
     date: "2026-09-28",
-    title: "Admin redesign: Today's to-do list, a render queue, payments and disputes, an activity log, and credit, refund and email tools",
+    title: "Admin redesign: Today's to-do list, a render queue, payments and disputes, an activity log, and credit, refund and email tools — on the website and in the phone admin app",
     items: [
+      "The phone admin app (picacho-admin) can now act, not just look: Today with a button on every item, the Render queue, the Activity log, and a sheet for each person (give or take credits, refund a render, send an email, notes, suspend or reinstate). It asks for your authenticator code when you have one set up. Its buttons call picacho.ai's new admin API with your own sign-in and run the same code as the website's, so both land in the same activity log.",
       "Admin → Overview now opens with Today: sign-ups, renders, top-ups and the fal balance for the day, then \"Needs you\" — stuck renders, card disputes, failed renewals, open reports and feedback, a low fal balance and switched-off models, most urgent first, each with the buttons that settle it (Check now, Stop + refund, Refund, Open in Stripe, Email them, Reply, Resolve, Turn back on). Everything that was on the Overview is still below it.",
       "New Admin → Render queue: every render in flight, oldest first, refreshing every 15 seconds. Check now collects a render whose finished-message was lost; Stop and Stop + refund work like the person's own Stop button. A red dot in the menu counts stuck renders.",
       "New Admin → Payments & disputes: the last 100 Stripe charges (paid, failed, refunded, disputed) and recent disputes with their answer-by date, matched to accounts, each opening in Stripe. Export as a CSV.",

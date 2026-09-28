@@ -56,6 +56,7 @@ const KNOWN_ERRORS = new Set<string>([
   "Couldn't save the note. Details are in the server log.",
   "Couldn't reach the render's provider — nothing was changed. Details are in the server log.",
   "That person has no email address on file.",
+  "Couldn't update it — nothing was changed. Details are in the server log.",
   "Couldn't send the email. Details are in the server log.",
   "Pick an email to send.",
   "They opted out of marketing email. Tick \"service notice\" only if this is about their account (billing, security, terms).",

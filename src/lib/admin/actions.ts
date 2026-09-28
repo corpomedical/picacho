@@ -12,7 +12,17 @@ import { cancelStripeCustomerBilling } from "@/lib/stripe/cancel-customer";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { computeAdminBadgeCounts, MODERATION_CLEARED_KEY, type AdminBadgeCounts } from "@/lib/admin/badges";
 import { requireAdmin } from "@/lib/admin/require-admin";
-import { isMissingAuditTable, logAdminAction } from "@/lib/admin/audit";
+import { logAdminAction } from "@/lib/admin/audit";
+import {
+  opAddNote,
+  opAdjustCredits,
+  opCheckRender,
+  opRefundRender,
+  opSetFeedbackStatus,
+  opSetReportStatus,
+  opSetUserStatus,
+  opStopRender,
+} from "@/lib/admin/ops";
 import { VIDEO_MODELS } from "@/lib/generations/providers/video-models";
 import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
 import {
@@ -20,7 +30,6 @@ import {
   MIN_IDENTITY_THRESHOLD,
 } from "@/lib/generations/identity-gate";
 import { SEEDANCE_LANE_KEY } from "@/lib/generations/providers/lane-setting";
-import { advanceGeneration } from "@/lib/generations/job-runner";
 import { validatePressTourSetting } from "@/lib/press-tour/enabled";
 import { validateFilmLaneSetting } from "@/lib/press-tour/film-lane";
 
@@ -55,66 +64,17 @@ export async function setUserStatus(formData: FormData) {
   // off-site path from form input.
   const redirectTo = rawRedirect.startsWith("/admin/") ? rawRedirect : "/admin/users";
 
-  if (status !== "active" && status !== "suspended") {
-    redirect(`${redirectTo}?error=${encodeURIComponent("Invalid status.")}`);
-  }
-
-  // An admin suspending their own account would lock them out with no one
-  // else able to undo it if they're the only admin — block it outright
-  // rather than trust everyone to remember not to.
-  if (userId === actingUserId && status === "suspended") {
-    redirect(`${redirectTo}?error=${encodeURIComponent("You can't suspend your own account.")}`);
-  }
-
-  // Two layers must agree: the auth-layer ban (Supabase rejects login and
-  // token refresh, so a suspended user can't just mint a fresh session) and
-  // profiles.status (middleware + generation gate block the sessions that
-  // already exist). Ordered ban-first ON PURPOSE: the previous version wrote
-  // the profile flag first and a ban failure then redirected out, leaving a
-  // user marked suspended who could still sign straight back in — the two
-  // layers silently disagreeing, with the admin screen showing "suspended".
-  // Failing after the ban instead leaves the safer skew (can't log in, flag
-  // not yet set), and even that is compensated below: if the profile write
-  // fails, the ban is rolled back so both layers end up telling the same
-  // story, and the error banner says what actually happened.
-  const { error: banError } = await admin.auth.admin.updateUserById(userId, {
-    ban_duration: status === "suspended" ? "876000h" : "none",
-  });
-  if (banError) {
-    // Nothing was changed yet — plain failure, both layers untouched.
-    console.error("setUserStatus: login ban update failed — nothing changed", banError);
-    redirect(`${redirectTo}?error=${encodeURIComponent(banError.message)}`);
-  }
-
-  const { error } = await admin.from("profiles").update({ status }).eq("id", userId);
-  if (error) {
-    // Roll the ban back so the auth layer matches the profile flag again.
-    // Best-effort: if even the rollback fails, say so explicitly rather
-    // than reporting only half the truth.
-    const { error: rollbackError } = await admin.auth.admin.updateUserById(userId, {
-      ban_duration: status === "suspended" ? "none" : "876000h",
-    });
-    console.error("setUserStatus: profile status update failed after the login ban changed", {
-      error,
-      rollbackError,
-    });
-    redirect(
-      `${redirectTo}?error=${encodeURIComponent(
-        rollbackError
-          ? `Couldn't update the profile status (${error.message}) AND couldn't roll back the login ban (${rollbackError.message}) — the account's login ban does not match its listed status. Retry to reconcile.`
-          : `Couldn't update the profile status (${error.message}) — the login ban was rolled back, nothing changed.`,
-      )}`,
-    );
-  }
-
-  await logAdminAction(admin, actingUserId, {
-    action: status === "suspended" ? "user.suspend" : "user.reinstate",
-    targetType: "user",
-    targetId: userId,
-    subjectUserId: userId,
-    before: status === "suspended" ? "active" : "suspended",
-    after: status,
-  });
+  // The two layers — the auth-layer ban (Supabase rejects login and token
+  // refresh, so a suspended user can't mint a fresh session) and
+  // profiles.status (middleware + the generation gate block the sessions
+  // that already exist) — must agree. opSetUserStatus (lib/admin/ops.ts)
+  // bans FIRST, then writes the flag, and rolls the ban back if the flag
+  // fails: the old flag-first order left accounts marked suspended that
+  // could sign straight back in. It also refuses to suspend yourself —
+  // with no other admin, nobody could undo it. The phone admin app runs the
+  // same function.
+  const result = await opSetUserStatus(admin, actingUserId, { userId, status });
+  if (!result.ok) redirect(`${redirectTo}?error=${encodeURIComponent(result.error)}`);
 
   revalidatePath("/admin/users");
   revalidatePath(`/admin/users/${userId}`);
@@ -637,31 +597,12 @@ export async function deleteVoicePreset(formData: FormData) {
 // too early and needing to walk it back shouldn't require going through the
 // database directly.
 export async function setGenerationReportStatus(formData: FormData) {
-  const { supabase, admin, userId: actingUserId } = await requireAdmin();
-  const reportId = formData.get("report_id") as string;
-  const status = formData.get("status") as string;
-
-  if (status !== "open" && status !== "resolved") {
-    redirect(`/admin/reports?error=${encodeURIComponent("Invalid status.")}`);
-  }
-
-  const { error } = await supabase
-    .from("generation_reports")
-    .update({ status, resolved_at: status === "resolved" ? new Date().toISOString() : null })
-    .eq("id", reportId);
-
-  if (error) {
-    console.error("setGenerationReportStatus: status update failed", error);
-    redirect(`/admin/reports?error=${encodeURIComponent(error.message)}`);
-  }
-
-  await logAdminAction(admin, actingUserId, {
-    action: "report.status",
-    targetType: "report",
-    targetId: reportId,
-    before: status === "resolved" ? "open" : "resolved",
-    after: status,
+  const { admin, userId: actingUserId } = await requireAdmin();
+  const result = await opSetReportStatus(admin, actingUserId, {
+    reportId: formData.get("report_id") as string,
+    status: formData.get("status") as string,
   });
+  if (!result.ok) redirect(`/admin/reports?error=${encodeURIComponent(result.error)}`);
 
   revalidatePath("/admin/reports");
   revalidatePath("/admin");
@@ -670,31 +611,12 @@ export async function setGenerationReportStatus(formData: FormData) {
 // Same open/resolved toggle as setGenerationReportStatus above, for the
 // general feedback queue instead — see the feedback table and /admin/feedback.
 export async function setFeedbackStatus(formData: FormData) {
-  const { supabase, admin, userId: actingUserId } = await requireAdmin();
-  const feedbackId = formData.get("feedback_id") as string;
-  const status = formData.get("status") as string;
-
-  if (status !== "open" && status !== "resolved") {
-    redirect(`/admin/feedback?error=${encodeURIComponent("Invalid status.")}`);
-  }
-
-  const { error } = await supabase
-    .from("feedback")
-    .update({ status, resolved_at: status === "resolved" ? new Date().toISOString() : null })
-    .eq("id", feedbackId);
-
-  if (error) {
-    console.error("setFeedbackStatus: status update failed", error);
-    redirect(`/admin/feedback?error=${encodeURIComponent(error.message)}`);
-  }
-
-  await logAdminAction(admin, actingUserId, {
-    action: "feedback.status",
-    targetType: "feedback",
-    targetId: feedbackId,
-    before: status === "resolved" ? "open" : "resolved",
-    after: status,
+  const { admin, userId: actingUserId } = await requireAdmin();
+  const result = await opSetFeedbackStatus(admin, actingUserId, {
+    feedbackId: formData.get("feedback_id") as string,
+    status: formData.get("status") as string,
   });
+  if (!result.ok) redirect(`/admin/feedback?error=${encodeURIComponent(result.error)}`);
 
   revalidatePath("/admin/feedback");
   revalidatePath("/admin");
@@ -1184,8 +1106,6 @@ export async function setCommunityPostModeration(formData: FormData) {
   revalidatePath("/app/community");
 }
 
-const RUN_ACTIVITY_SQL = "Run supabase/pending/admin-activity.sql in Supabase first, then try again.";
-
 // Give or take bonus credits, with a reason (2026-09-28 admin redesign,
 // "Give or take credits" on the person's page). Adds to the balance instead
 // of replacing it, through the same atomic RPCs renders and refunds use
@@ -1196,49 +1116,13 @@ export async function adjustBonusCredits(formData: FormData) {
   const { admin, userId: actingUserId } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const redirectTo = `/admin/users/${userId}`;
-  const direction = formData.get("direction") === "take" ? "take" : "give";
-  const amount = Number.parseInt((formData.get("amount") as string) ?? "", 10);
-  const reason = ((formData.get("reason") as string) ?? "").trim();
-
-  if (!Number.isInteger(amount) || amount < 1 || amount > 10_000) {
-    redirect(`${redirectTo}?error=${encodeURIComponent("Credits must be a whole number from 1 to 10,000.")}`);
-  }
-  if (!reason || reason.length > 500) {
-    redirect(`${redirectTo}?error=${encodeURIComponent("Write why (500 characters max) — it goes in the activity log.")}`);
-  }
-
-  const { data: before } = await admin.from("profiles").select("bonus_credits").eq("id", userId).maybeSingle();
-  if (!before) redirect(`/admin/users?error=${encodeURIComponent("That person wasn't found.")}`);
-
-  if (direction === "give") {
-    const { error } = await admin.rpc("add_bonus_credits", { p_user_id: userId, p_amount: amount });
-    if (error) {
-      console.error("adjustBonusCredits: add failed", error);
-      redirect(`${redirectTo}?error=${encodeURIComponent("Couldn't change their credits — nothing was changed. Details are in the server log.")}`);
-    }
-  } else {
-    const { data: spent, error } = await admin.rpc("spend_bonus_credits", { p_user_id: userId, p_amount: amount });
-    if (error) {
-      console.error("adjustBonusCredits: take failed", error);
-      redirect(`${redirectTo}?error=${encodeURIComponent("Couldn't change their credits — nothing was changed. Details are in the server log.")}`);
-    }
-    if (spent !== true) {
-      redirect(`${redirectTo}?error=${encodeURIComponent("They have fewer bonus credits than that — nothing was taken.")}`);
-    }
-  }
-
-  const { data: after } = await admin.from("profiles").select("bonus_credits").eq("id", userId).maybeSingle();
-  await logAdminAction(admin, actingUserId, {
-    action: direction === "give" ? "credits.give" : "credits.take",
-    targetType: "user",
-    targetId: userId,
-    subjectUserId: userId,
-    before: before?.bonus_credits ?? 0,
-    after: after?.bonus_credits ?? null,
-    reason,
-    amount,
+  const result = await opAdjustCredits(admin, actingUserId, {
+    userId,
+    direction: formData.get("direction") === "take" ? "take" : "give",
+    amount: Number.parseInt((formData.get("amount") as string) ?? "", 10),
+    reason: (formData.get("reason") as string) ?? "",
   });
-
+  if (!result.ok) redirect(`${redirectTo}?error=${encodeURIComponent(result.error)}`);
   revalidatePath(redirectTo);
 }
 
@@ -1249,29 +1133,13 @@ export async function adjustBonusCredits(formData: FormData) {
 // second admin, fail instead of paying twice.
 export async function refundRender(formData: FormData) {
   const { admin, userId: actingUserId } = await requireAdmin();
-  const generationId = formData.get("generation_id") as string;
   const userId = formData.get("user_id") as string;
   const redirectTo = adminReturnPath(formData, `/admin/users/${userId}`);
-  const reason = ((formData.get("reason") as string) ?? "").trim() || "Refunded from the admin";
-
-  if (!generationId) redirect(`${redirectTo}?error=${encodeURIComponent("Missing generation id.")}`);
-
-  const { error } = await admin.rpc("admin_refund_render", {
-    p_generation_id: generationId,
-    p_admin_id: actingUserId,
-    p_reason: reason.slice(0, 500),
+  const result = await opRefundRender(admin, actingUserId, {
+    generationId: formData.get("generation_id") as string,
+    reason: (formData.get("reason") as string) ?? "",
   });
-  if (error) {
-    const message = /already refunded|admin_actions_one_refund_per_render|duplicate key/.test(error.message)
-      ? "This render was already refunded by hand — nothing was given twice."
-      : /nothing to refund/.test(error.message)
-        ? "This render took no credits (or already gave them back) — nothing to refund."
-        : isMissingAuditTable(error)
-          ? RUN_ACTIVITY_SQL
-          : "Couldn't refund the render — nothing was changed. Details are in the server log.";
-    console.error("refundRender: failed", error);
-    redirect(`${redirectTo}?error=${encodeURIComponent(message)}`);
-  }
+  if (!result.ok) redirect(`${redirectTo}?error=${encodeURIComponent(result.error)}`);
 
   revalidatePath(`/admin/users/${userId}`);
   revalidatePath("/admin");
@@ -1292,34 +1160,9 @@ function adminReturnPath(formData: FormData, fallback: string): string {
 // rules. It never cancels a render that is still working.
 export async function checkRender(formData: FormData) {
   const { admin, userId: actingUserId } = await requireAdmin();
-  const generationId = formData.get("generation_id") as string;
   const redirectTo = adminReturnPath(formData, "/admin/renders");
-
-  const { data: row } = await admin
-    .from("generations")
-    .select("id, user_id, status")
-    .eq("id", generationId)
-    .maybeSingle<{ id: string; user_id: string; status: string }>();
-  if (!row) redirect(`${redirectTo}?error=${encodeURIComponent("Generation not found.")}`);
-
-  let result = "no provider job (a render that runs in one go, or one that lost its job)";
-  try {
-    const advanced = await advanceGeneration(row!.id, row!.user_id);
-    result = advanced.state;
-  } catch (err) {
-    console.error("checkRender: advanceGeneration failed", err);
-    redirect(`${redirectTo}?error=${encodeURIComponent("Couldn't reach the render's provider — nothing was changed. Details are in the server log.")}`);
-  }
-  const { data: after } = await admin.from("generations").select("status").eq("id", row!.id).maybeSingle();
-
-  await logAdminAction(admin, actingUserId, {
-    action: "render.check",
-    targetType: "render",
-    targetId: row!.id,
-    subjectUserId: row!.user_id,
-    before: row!.status,
-    after: `${after?.status ?? row!.status} (${result})`,
-  });
+  const result = await opCheckRender(admin, actingUserId, { generationId: formData.get("generation_id") as string });
+  if (!result.ok) redirect(`${redirectTo}?error=${encodeURIComponent(result.error)}`);
 
   revalidatePath("/admin");
   revalidatePath("/admin/renders");
@@ -1333,66 +1176,16 @@ export async function checkRender(formData: FormData) {
 // nothing to refund, and that is said, not treated as an error.
 export async function stopRender(formData: FormData) {
   const { admin, userId: actingUserId } = await requireAdmin();
-  const generationId = formData.get("generation_id") as string;
-  const withRefund = formData.get("refund") === "1";
   const redirectTo = adminReturnPath(formData, "/admin/renders");
-
-  const { data: row } = await admin
-    .from("generations")
-    .select("id, user_id, status")
-    .eq("id", generationId)
-    .maybeSingle<{ id: string; user_id: string; status: string }>();
-  if (!row) redirect(`${redirectTo}?error=${encodeURIComponent("Generation not found.")}`);
-  if (row!.status !== "generating") {
-    redirect(`${redirectTo}?error=${encodeURIComponent("That render isn't running any more — nothing was stopped.")}`);
-  }
-
-  const { error } = await admin
-    .from("generations")
-    .update({ cancel_requested: true })
-    .eq("id", row!.id)
-    .eq("status", "generating");
-  if (error) {
-    console.error("stopRender: cancel flag failed", error);
-    redirect(`${redirectTo}?error=${encodeURIComponent("Couldn't stop the render — nothing was changed. Details are in the server log.")}`);
-  }
-  try {
-    await advanceGeneration(row!.id, row!.user_id);
-  } catch (err) {
-    // The flag and the reaper remain as backstops, as for the person's own Stop.
-    console.error("stopRender: advanceGeneration failed", err);
-  }
-
-  await logAdminAction(admin, actingUserId, {
-    action: "render.stop",
-    targetType: "render",
-    targetId: row!.id,
-    subjectUserId: row!.user_id,
-    before: "generating",
-    after: "stop requested",
+  const result = await opStopRender(admin, actingUserId, {
+    generationId: formData.get("generation_id") as string,
+    refund: formData.get("refund") === "1",
   });
-
-  if (withRefund) {
-    const { error: refundError } = await admin.rpc("admin_refund_render", {
-      p_generation_id: row!.id,
-      p_admin_id: actingUserId,
-      p_reason: "Stopped from the admin",
-    });
-    if (refundError && !/nothing to refund|already refunded/.test(refundError.message)) {
-      console.error("stopRender: refund failed", refundError);
-      redirect(
-        `${redirectTo}?error=${encodeURIComponent(
-          isMissingAuditTable(refundError)
-            ? RUN_ACTIVITY_SQL
-            : "The render was stopped, but its credits couldn't be refunded — refund it from the person's page. Details are in the server log.",
-        )}`,
-      );
-    }
-  }
+  if (!result.ok) redirect(`${redirectTo}?error=${encodeURIComponent(result.error)}`);
 
   revalidatePath("/admin");
   revalidatePath("/admin/renders");
-  revalidatePath(`/admin/users/${row!.user_id}`);
+  revalidatePath("/admin/users", "layout");
 }
 
 // Private admin notes on a person (2026-09-28 admin redesign). Only admins
@@ -1402,24 +1195,7 @@ export async function addUserNote(formData: FormData) {
   const { admin, userId: actingUserId } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const redirectTo = `/admin/users/${userId}`;
-  const body = ((formData.get("body") as string) ?? "").trim();
-
-  if (!body || body.length > 2000) {
-    redirect(`${redirectTo}?error=${encodeURIComponent("A note needs some text (2,000 characters max).")}`);
-  }
-
-  const { error } = await admin.from("admin_user_notes").insert({ user_id: userId, admin_id: actingUserId, body });
-  if (error) {
-    console.error("addUserNote: insert failed", error);
-    redirect(
-      `${redirectTo}?error=${encodeURIComponent(
-        isMissingAuditTable(error)
-          ? RUN_ACTIVITY_SQL
-          : "Couldn't save the note. Details are in the server log.",
-      )}`,
-    );
-  }
-
-  await logAdminAction(admin, actingUserId, { action: "user.note", targetType: "note", targetId: userId, subjectUserId: userId });
+  const result = await opAddNote(admin, actingUserId, { userId, body: (formData.get("body") as string) ?? "" });
+  if (!result.ok) redirect(`${redirectTo}?error=${encodeURIComponent(result.error)}`);
   revalidatePath(redirectTo);
 }
