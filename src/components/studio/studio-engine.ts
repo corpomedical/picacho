@@ -11,6 +11,7 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import * as CANNON from "cannon-es";
 import { setElements } from "@/lib/sets/elements";
 
 export type StudioOptions = { setId: string; title: string; spec: any; backHref: string };
@@ -51,7 +52,7 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(220, 220), new THREE.MeshS
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
 
 // ================= objects =================
-let nextId = 1, astraMaking = false, skyObj = null;
+let nextId = 1, astraMaking = false, skyObj = null, physCache = null;
 const MODE_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/></svg>`;
 const items = [];
 const std = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.55, ...o });
@@ -171,13 +172,14 @@ function evaluate(t) {
     if (it.interp === "bezier") u = u * u * (3 - 2 * u); else if (it.interp === "constant") u = 0;
     applyTRS(it.obj, { p: lerp(a.p, b.p, u), r: lerp(a.r, b.r, u), s: lerp(a.s, b.s, u) });
   }
+  if (physCache) applyPhys(t);
   if (typeof applyConstraints === "function") applyConstraints();
 }
 let time = 0; evaluate(time);
 
 // ================= undo (with grouped steps) =================
 const undoStack = [], redoStack = []; let txn = null;
-function push(c) { if (txn) { txn.push(c); return; } undoStack.push(c); redoStack.length = 0; }
+function push(c) { if (physCache && !c.keepPhys) physCache = null; if (txn) { txn.push(c); return; } undoStack.push(c); redoStack.length = 0; }
 function group(label, fn) { const outer = txn; txn = []; let out; try { out = fn(); } finally { const list = txn; txn = outer; if (list.length) push({ label, undo() { [...list].reverse().forEach((c) => c.undo()); }, redo() { list.forEach((c) => c.redo()); } }); } return out; }
 function undo() { const c = undoStack.pop(); if (!c) return toast("Nothing to undo"); c.undo(); redoStack.push(c); settle(); info("Undo · " + c.label); }
 function redo() { const c = redoStack.pop(); if (!c) return toast("Nothing to redo"); c.redo(); undoStack.push(c); settle(); info("Redo · " + c.label); }
@@ -515,6 +517,8 @@ function renderProps() {
       cb.appendChild(fr("Target", sel)); cb.appendChild(fr("Track Axis", ro("+Z (front)"))); cb.appendChild(fr("Up", ro("Z")));
       p.appendChild(cp);
     }
+  } else if (ptab === "physics") {
+    renderPhysics(p, it);
   } else if (ptab === "material") {
     const paint = it?.obj.userData.paint || [];
     if (!it || !paint.length) return none("Select an object with a surface to change its material.");
@@ -723,6 +727,23 @@ const PLANS = [
     say: "In Picacho I'd send your photo to our model builder and bring the model onto this stage, painted from the photo. That costs money, so there it runs only on your press. Nothing changes in this draft.",
     dry: true,
     steps() { return [S("Ask for a photo of the motorbike", `photo = helios.ui.ask_file(<s>"A photo of the motorbike"</s>)`), S("Build the model from the photo · about $0.30 · your press", `model = helios.ops.model.from_photo(photo, resolution=<k>1024</k>)`), S("Place it on the stage, painted from the photo", `helios.ops.object.import_model(model, paint_from=photo)`)]; },
+  },
+  {
+    ask: "Drop three boxes onto the car",
+    say: "I'll hang three boxes above the car, make the car solid, drop them from frame 1 and bake the fall into keyframes.",
+    next: ["Put the camera low behind the car at 24 mm, looking at Anubis"],
+    steps(ctx) {
+      const cs = cars(); if (!cs.length) return { fail: "There's no car in this scene to drop boxes on." };
+      const c = ctx.pick || (active && cs.includes(active) ? active : cs.length === 1 ? cs[0] : null);
+      if (!c) return { question: `There are ${cs.length} cars. Which one?`, options: cs };
+      const b = new THREE.Box3().setFromObject(c.obj), mid = b.getCenter(new V3());
+      const spots = [[-0.5, 1.6, 0.2, 0.3], [0.4, 3.0, -0.2, 0.9], [0, 4.4, 0.1, 1.7]];
+      return [
+        ...spots.map(([dx, dy, dz, ry], n) => { const pos = new V3(mid.x + dx, b.max.y + dy, mid.z + dz); return S(`Add box ${n + 1} at ${bl(pos)}, an active rigid body`, `box = helios.ops.object.add(type=<s>"CUBE"</s>, size=<k>0.8</k>, location=${bl(pos)})\nhelios.ops.rigidbody.add(box, type=<s>"ACTIVE"</s>, mass=<k>2</k>)`, () => { const it = addKind("box", pos, nextName("Box")); it.obj.scale.setScalar(0.4); it.obj.rotation.set(ry * 0.4, ry, 0); it.phys = { ...PHYS_DEF, type: "active", mass: 2 }; return it; }); }),
+        S(`Make ${c.name} a passive rigid body`, `helios.ops.rigidbody.add(<s>"${esc(c.name)}"</s>, type=<s>"PASSIVE"</s>)`, () => { setPhys(c, { ...(c.phys || PHYS_DEF), type: "passive" }); return c; }),
+        S("Simulate from frame 1 and bake to keyframes", `helios.ops.rigidbody.bake(frame_start=<k>1</k>, frame_end=<k>${FRAMES + 1}</k>)`, () => { setTime(0); bakePhys(); return null; }),
+      ];
+    },
   },
 ];
 const astraLog = [];
@@ -1012,6 +1033,132 @@ async function renderVideo() {
   openWin("Helios Render · animation", `<video src="${url}" controls autoplay loop muted playsinline></video><p>In Picacho this clip guides the video engine: it follows this exact motion and camera move, with your character and your car in place of the stand-ins.</p>`);
 }
 
+// ================= physics (rigid bodies) =================
+// Blender-style: each object can be an Active (falls, collides) or Passive (solid, follows its keyframes) rigid body.
+// Simulate fills a cache the timeline plays; Bake writes the cache as ordinary keyframes; Clear bake puts the old keys back.
+const PHYS_DEF = { type: "none", mass: 1, friction: 0.5, bounce: 0.2, shape: "auto" };
+const physOf = (it) => ({ ...PHYS_DEF, ...(it.phys || {}) });
+function setPhys(it, next) { propCmd("Rigid body", () => (it.phys ? { ...it.phys } : undefined), (v) => { it.phys = v; }, next); }
+function localBounds(obj) {
+  const q = obj.quaternion.clone(), p = obj.position.clone();
+  obj.quaternion.identity(); obj.position.set(0, 0, 0); obj.updateMatrixWorld(true);
+  const b = new THREE.Box3().setFromObject(obj, true);
+  obj.quaternion.copy(q); obj.position.copy(p); obj.updateMatrixWorld(true);
+  return b;
+}
+function physShape(it, ph) {
+  const b = localBounds(it.obj); if (b.isEmpty()) return null;
+  const size = b.getSize(new THREE.Vector3()), c = b.getCenter(new THREE.Vector3());
+  const round = ph.shape === "sphere" || (ph.shape === "auto" && ["sphere", "ico"].includes(it.addKind));
+  const shape = round ? new CANNON.Sphere(Math.max(0.01, Math.max(size.x, size.y, size.z) / 2)) : new CANNON.Box(new CANNON.Vec3(Math.max(0.01, size.x / 2), Math.max(0.01, size.y / 2), Math.max(0.01, size.z / 2)));
+  return [shape, new CANNON.Vec3(c.x, c.y, c.z)];
+}
+const physItems = () => items.filter((i) => i.phys && i.phys.type !== "none" && i.kind !== "sun" && i.kind !== "camera" && !i.hidden);
+function simulatePhys(from = time, quiet = false) {
+  physCache = null;
+  const start = Math.round(from * FPS);
+  if (start >= FRAMES) { toast("Go back to an earlier frame: the simulation runs from the current frame to the end"); return false; }
+  const list = physItems(), act = list.filter((i) => i.phys.type === "active");
+  if (!act.length) { if (!quiet) { toast("Nothing to simulate: make an object an Active rigid body in the Physics tab"); } return false; }
+  const nested = list.filter((i) => i.obj.parent !== scene);
+  const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.81, 0) });
+  world.broadphase = new CANNON.SAPBroadphase(world); world.allowSleep = true;
+  const floor = new CANNON.Body({ mass: 0, material: new CANNON.Material({ friction: 1, restitution: 1 }) });
+  floor.addShape(new CANNON.Plane()); floor.quaternion.setFromEuler(-Math.PI / 2, 0, 0); world.addBody(floor);
+  evaluate(start / FPS);
+  const bodies = [];
+  for (const it of list) {
+    if (it.obj.parent !== scene) continue;
+    const ph = physOf(it), sh = physShape(it, ph); if (!sh) continue;
+    const body = new CANNON.Body({ mass: ph.type === "active" ? Math.max(0.01, ph.mass) : 0, type: ph.type === "active" ? CANNON.Body.DYNAMIC : CANNON.Body.KINEMATIC, material: new CANNON.Material({ friction: Math.max(0, ph.friction), restitution: Math.min(1, Math.max(0, ph.bounce)) }) });
+    body.addShape(sh[0], sh[1]); body.position.copy(it.obj.position); body.quaternion.copy(it.obj.quaternion);
+    body.sleepSpeedLimit = 0.05; world.addBody(body); bodies.push([it, body, []]);
+  }
+  const rec = (it, body, out) => out.push({ p: [body.position.x, body.position.y, body.position.z], q: [body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w] });
+  for (const [it, body, out] of bodies) if (it.phys.type === "active") rec(it, body, out);
+  const SUB = 4, dt = 1 / (FPS * SUB);
+  for (let f = start + 1; f <= FRAMES; f++) {
+    evaluate(f / FPS);
+    for (const [it, body] of bodies) if (it.phys.type !== "active") { body.velocity.set((it.obj.position.x - body.position.x) * FPS, (it.obj.position.y - body.position.y) * FPS, (it.obj.position.z - body.position.z) * FPS); body.quaternion.copy(it.obj.quaternion); }
+    for (let s = 0; s < SUB; s++) world.step(dt);
+    for (const [it, body, out] of bodies) { if (it.phys.type === "active") rec(it, body, out); else body.position.copy(it.obj.position); }
+  }
+  physCache = { start, end: FRAMES, frames: new Map(bodies.filter(([it]) => it.phys.type === "active").map(([it, , out]) => [it, out])) };
+  evaluate(time); refreshOutlines(); renderAll();
+  if (!quiet) info(`Simulated ${physCache.frames.size} active bod${physCache.frames.size === 1 ? "y" : "ies"}, frames ${start + 1}–${FRAMES + 1} · press play or scrub to watch · Bake keeps it`);
+  if (nested.length) toast(`${nested.length} parented object${nested.length > 1 ? "s were" : " was"} left out: clear the parent (Alt+P) to simulate ${nested.length > 1 ? "them" : "it"}`);
+  return true;
+}
+function applyPhys(t) {
+  const f = Math.round(t * FPS);
+  for (const [it, arr] of physCache.frames) {
+    if (!items.includes(it) || !arr.length) continue;
+    if (f < physCache.start && it.keys.length) continue;
+    const fr = arr[Math.min(arr.length - 1, Math.max(0, f - physCache.start))];
+    it.obj.position.fromArray(fr.p); it.obj.quaternion.fromArray(fr.q);
+  }
+}
+function bakePhys() {
+  if (!physCache && !simulatePhys(time, true)) return toast("Nothing to bake: make an object an Active rigid body in the Physics tab");
+  const { start, frames } = physCache; let n = 0;
+  group("Bake physics", () => {
+    for (const [it, arr] of frames) {
+      if (!items.includes(it)) continue;
+      const b = { keys: clone(it.keys), interp: it.interp, bake: it.bake };
+      const keys = it.keys.filter((k) => k.t < start / FPS - 1e-6), s = it.obj.scale.toArray(), e = new THREE.Euler(), q = new THREE.Quaternion();
+      let prev = null;
+      arr.forEach((fr, i) => {
+        e.setFromQuaternion(q.fromArray(fr.q)); const r = [e.x, e.y, e.z];
+        if (prev) for (let k = 0; k < 3; k++) { while (r[k] - prev[k] > Math.PI) r[k] -= 2 * Math.PI; while (r[k] - prev[k] < -Math.PI) r[k] += 2 * Math.PI; }
+        prev = r; keys.push({ t: (start + i) / FPS, p: fr.p, r, s });
+      });
+      const a = { keys, interp: "linear", bake: { start, end: FRAMES, prev: it.bake ? it.bake.prev : b.keys, prevInterp: it.bake ? it.bake.prevInterp : b.interp } };
+      const put = (v) => { it.keys = clone(v.keys); it.interp = v.interp; it.bake = v.bake ? clone(v.bake) : undefined; };
+      put(a); push({ label: "bake", undo() { put(b); }, redo() { put(a); } }); n++;
+    }
+  });
+  physCache = null; evaluate(time); refreshSel();
+  info(`Baked ${n} object${n === 1 ? "" : "s"} to keyframes · one ⌘Z takes it back`);
+}
+function clearBake() {
+  const list = items.filter((i) => i.bake); if (!list.length) return toast("Nothing is baked");
+  group("Clear bake", () => list.forEach((it) => {
+    const b = { keys: clone(it.keys), interp: it.interp, bake: clone(it.bake) }, a = { keys: clone(it.bake.prev || []), interp: it.bake.prevInterp || "bezier", bake: undefined };
+    const put = (v) => { it.keys = clone(v.keys); it.interp = v.interp; it.bake = v.bake ? clone(v.bake) : undefined; };
+    put(a); push({ label: "clear bake", undo() { put(b); }, redo() { put(a); } });
+  }));
+  evaluate(time); refreshSel(); info(`Bake cleared on ${list.length} object${list.length === 1 ? "" : "s"}: their own keyframes are back`);
+}
+function renderPhysics(p, it) {
+  const [sp, sb] = panel("Simulation");
+  const baked = items.filter((i) => i.bake).length, bodies = physItems();
+  sb.appendChild(fr("Rigid bodies", ro(`${bodies.filter((i) => i.phys.type === "active").length} active · ${bodies.filter((i) => i.phys.type === "passive").length} passive`)));
+  sb.appendChild(fr("Cache", ro(physCache ? `frames ${physCache.start + 1}–${physCache.end + 1}` : "empty")));
+  sb.appendChild(fr("Gravity", ro("−9.81 m/s² · ground at 0")));
+  const r = document.createElement("div"); r.className = "row-btns";
+  r.innerHTML = `<button class="pbtn" id="phSim">Simulate from frame ${frameNo()}</button><button class="pbtn accent" id="phBake">Bake to keyframes</button>`;
+  const r2 = document.createElement("div"); r2.className = "row-btns"; r2.innerHTML = `<button class="pbtn" id="phClear" ${baked ? "" : "disabled"}>Clear bake${baked ? ` (${baked})` : ""}</button><button class="pbtn" id="phFree" ${physCache ? "" : "disabled"}>Free cache</button>`;
+  sb.append(r, r2); p.appendChild(sp);
+  r.querySelector("#phSim").onclick = () => simulatePhys(); r.querySelector("#phBake").onclick = bakePhys;
+  r2.querySelector("#phClear").onclick = clearBake; r2.querySelector("#phFree").onclick = () => { physCache = null; evaluate(time); refreshSel(); };
+  if (!it || it.kind === "camera") { p.insertAdjacentHTML("beforeend", `<p class="hint">Select an object to make it a rigid body. Active bodies fall and collide; passive ones stay solid and follow their own keyframes. The ground is always solid.</p>`); return; }
+  const ph = physOf(it);
+  const [bp, bb] = panel("Rigid Body");
+  const sel = (id, label, opts, v, on) => { const s = document.createElement("select"); s.className = "sel2"; s.id = id; s.setAttribute("aria-label", label); opts.forEach(([k, n]) => s.add(new Option(n, k, false, k === v))); s.onchange = () => on(s.value); bb.appendChild(fr(label, s)); };
+  sel("phType", "Type", [["none", "None"], ["active", "Active"], ["passive", "Passive"]], ph.type, (v) => { setPhys(it, { ...ph, type: v }); renderProps(); });
+  if (ph.type !== "none") {
+    sel("phShape", "Shape", [["auto", "Auto (from its bounds)"], ["box", "Box"], ["sphere", "Sphere"]], ph.shape, (v) => { setPhys(it, { ...ph, shape: v }); renderProps(); });
+    const num = (label, key, o) => bb.appendChild(fr(label, field(ph[key], { ...o, onCommit: (v) => { setPhys(it, { ...physOf(it), [key]: v }); renderProps(); } })));
+    if (ph.type === "active") num("Mass", "mass", { step: 0.1, unit: " kg", dec: 2, min: 0.01, max: 100000 });
+    num("Friction", "friction", { step: 0.05, dec: 2, min: 0, max: 2 });
+    num("Bounciness", "bounce", { step: 0.05, dec: 2, min: 0, max: 1 });
+  }
+  if (it.obj.parent !== scene) bb.insertAdjacentHTML("beforeend", `<p class="hint">This object has a parent, so the simulation leaves it out. Clear the parent (Alt+P) first.</p>`);
+  if (it.bake) bb.insertAdjacentHTML("beforeend", `<p class="hint">Baked: frames ${it.bake.start + 1}–${it.bake.end + 1} are keyframes now. Clear bake brings back its own.</p>`);
+  p.appendChild(bp);
+  p.insertAdjacentHTML("beforeend", `<p class="hint">Simulate plays the fall on the timeline. Bake turns it into ordinary keyframes, so renders, the Graph Editor and saving all keep it.</p>`);
+}
+
 // ================= constraints & motion paths =================
 function setTrack(it, targetId) {
   const b = it.obj.userData.track ?? null; it.obj.userData.track = targetId ?? null;
@@ -1206,7 +1353,7 @@ function commands() {
     ["Insert keyframe", () => keyItems()], ["Delete keyframe", () => delKey()], ["Interpolation: Bézier", () => setInterp("bezier")], ["Interpolation: Linear", () => setInterp("linear")], ["Interpolation: Constant", () => setInterp("constant")],
     ["Parent to active", parentTo], ["Clear parent", clearParent], ["Select all", ACTS.selAll], ["Select none", ACTS.selNone], ["Invert selection", ACTS.selInvert],
     ["Camera view", () => toggleCam()], ["Align camera to view", camToView], ["Frame all", frameAll], ["Frame selected", ACTS.frameSel], ["Top view", ACTS.top], ["Front view", ACTS.front], ["Right view", ACTS.right],
-    ["Toggle motion path", togglePath], ["Toggle sidebar", () => toggleN()], ["Maximize viewport", toggleMax], ["Render still", renderStill], ["Render animation", renderVideo], ["Import 3D model", () => fileIn.click()],
+    ["Toggle motion path", togglePath], ["Toggle sidebar", () => toggleN()], ["Maximize viewport", toggleMax], ["Render still", renderStill], ["Render animation", renderVideo], ["Physics: simulate", () => simulatePhys()], ["Physics: bake to keyframes", bakePhys], ["Physics: clear bake", clearBake], ["Import 3D model", () => fileIn.click()],
     ["Edit Mode (vertices)", toggleEdit], ["Join", joinSel], ["Move to collection", openMoveTo], ["X-ray", toggleXray], ["Local view", toggleLocal], ["Snap menu (3D cursor)", openSnapPie], ["Add marker", addMarker], ["Graph Editor", () => setEditor("graph")], ["Timeline", () => setEditor("timeline")], ["Pivot: 3D cursor", () => setPivot("cursor")], ["Pivot: median point", () => setPivot("median")], ["Pivot: individual origins", () => setPivot("individual")], ["Orientation: Local", () => setOrient("local")], ["Orientation: Global", () => setOrient("world")], ["World: physical sky", () => setSkyMode("physical")], ["World: studio lighting", () => setSkyMode("studio")], ["What Helios leaves out", openLeavesOut],
     ["Shading: Rendered", () => setShade("lit")], ["Shading: Solid", () => setShade("clay")], ["Shading: Wireframe", () => setShade("wire")],
   ];
@@ -1447,7 +1594,7 @@ function openLeavesOut() {
 // ================= saving (this browser, per set) =================
 const SAVE_KEY = "helios.studio." + opts.setId;
 function snapshot() {
-  return { v: 1, hour, format, lens: shot.obj.userData.lensMm, skyMode, markers, items: items.filter((i) => i.kind !== "sun" && (i.saveKey || i.addKind)).map((i) => ({ key: i.saveKey || null, add: i.addKind || null, name: i.name, coll: i.coll, t: trs(i.obj), keys: i.keys, interp: i.interp, hidden: i.hidden, noRender: !!i.noRender, color: i.obj.userData.paint?.[0] ? "#" + i.obj.userData.paint[0].color.getHexString() : null, array: i.obj.userData.array || null, mirror: i.obj.userData.mirror || null, track: i.obj.userData.track ? byId(i.obj.userData.track)?.saveKey || null : null })) };
+  return { v: 1, hour, format, lens: shot.obj.userData.lensMm, skyMode, markers, items: items.filter((i) => i.kind !== "sun" && (i.saveKey || i.addKind)).map((i) => ({ key: i.saveKey || null, add: i.addKind || null, name: i.name, coll: i.coll, t: trs(i.obj), keys: i.keys, interp: i.interp, hidden: i.hidden, noRender: !!i.noRender, color: i.obj.userData.paint?.[0] ? "#" + i.obj.userData.paint[0].color.getHexString() : null, array: i.obj.userData.array || null, mirror: i.obj.userData.mirror || null, track: i.obj.userData.track ? byId(i.obj.userData.track)?.saveKey || null : null, phys: i.phys || null, bake: i.bake || null })) };
 }
 let lastSaved = "";
 function saveNow() { try { const s = JSON.stringify(snapshot()); if (s !== lastSaved) { localStorage.setItem(SAVE_KEY, s); lastSaved = s; } } catch {} }
@@ -1461,7 +1608,7 @@ function restoreSaved() {
   for (const s of data.items) {
     let it = s.key ? items.find((i) => i.saveKey === s.key) : s.add ? addKind(s.add) : null;
     if (!it) continue; made.push([it, s]);
-    it.name = s.name; it.obj.name = s.name; it.coll = s.coll; applyTRS(it.obj, s.t); it.keys = s.keys || []; it.interp = s.interp || "bezier"; it.hidden = !!s.hidden; it.obj.visible = !s.hidden; it.noRender = !!s.noRender;
+    it.name = s.name; it.obj.name = s.name; it.coll = s.coll; applyTRS(it.obj, s.t); it.keys = s.keys || []; it.interp = s.interp || "bezier"; it.hidden = !!s.hidden; it.obj.visible = !s.hidden; it.noRender = !!s.noRender; it.phys = s.phys || undefined; it.bake = s.bake || undefined;
     if (s.color && it.obj.userData.paint?.length) it.obj.userData.paint.forEach((m) => m.color.set(s.color));
     it.obj.userData.array = s.array || undefined; it.obj.userData.mirror = s.mirror || undefined; if (s.array || s.mirror) applyArray(it);
   }
