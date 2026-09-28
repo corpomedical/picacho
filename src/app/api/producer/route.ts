@@ -36,7 +36,7 @@ import {
   transcribeHeard,
   type SpokenInput,
 } from "@/lib/producer/speech";
-import { gateSignals, judgeSpoken, type Verdict } from "@/lib/producer/gate";
+import { gateSignals, judgeSpoken, letBe, type Verdict } from "@/lib/producer/gate";
 import { sentenceChunker } from "@/lib/producer/sentences";
 import { spotForTool } from "@/lib/producer/spots";
 import {
@@ -476,13 +476,15 @@ export async function POST(request: NextRequest) {
       cutAnswer: heardOf(rs) === null ? lastAnswerCut(rs) : null,
     });
   };
-  // Every turn runs at the usual medium effort (2026-09-28, operator: "She
-  // almost never has an answer to the question. Make her as good as you").
-  // Talking out loud used to run at low effort for a sooner first word; the
-  // spoken acknowledgement (ack.ts) now covers that wait, so a spoken question
-  // gets the same thought as a typed one. Only a CHANGE is written (history.ts),
-  // so a conversation left at low moves back once.
-  const wantEffort: Effort = TOP_LEVEL_EFFORT;
+  // Talking out loud runs at low effort for a sooner first word, typing at the
+  // usual medium. For a morning (2026-09-28, "Make her as good as you") every
+  // turn ran at medium; that evening (operator: "struggling even more to
+  // answer… I want to feel like im talking to a person") the spoken turns went
+  // back to low: an answer that starts later is one more chance for the room
+  // to cut in, and a person answers at once. What she knows (the guide, the
+  // web, their account) doesn't depend on it. Only a CHANGE is written
+  // (history.ts).
+  const wantEffort: Effort = spoken || speakReplies ? "low" : TOP_LEVEL_EFFORT;
   const openingFor = (rs: typeof rows, state: Awaited<ReturnType<typeof noteFor>>) => {
     const stored: StoredMessage[] = rs.map((r) => ({ role: r.role, content: r.content }));
     return [
@@ -593,8 +595,9 @@ export async function POST(request: NextRequest) {
         const v = await verdict;
         // Withdrawn by the sheet while it was judged (merged into the next
         // recording), or not for the Producer: nothing is written or charged.
-        if (v === "not_for_producer" || request.signal.aborted) {
-          if (v === "not_for_producer") emit("ignored", ignoredEvent());
+        const room = letBe(v, { nearness, confidence });
+        if (room || request.signal.aborted) {
+          if (room) emit("ignored", ignoredEvent());
           finish(await settle("ignored").catch(() => 0));
           return;
         }
@@ -632,7 +635,7 @@ export async function POST(request: NextRequest) {
         holding &&
         ((nearness !== null && nearness < 0.5) || (confidence !== null && confidence < -0.7) || (await recentlyIgnored))
       ) {
-        if ((await verdict) === "not_for_producer" || request.signal.aborted) {
+        if (letBe(await verdict, { nearness, confidence }) || request.signal.aborted) {
           emit("ignored", ignoredEvent());
           finish(await settle("ignored").catch(() => 0));
           return;
@@ -678,7 +681,7 @@ export async function POST(request: NextRequest) {
       const opened: Promise<boolean> = holding
         ? (async () => {
             send("heard", { text: message });
-            if ((await verdict) === "not_for_producer") {
+            if (letBe(await verdict, { nearness, confidence })) {
               rejected = true;
               upstream.abort();
               return false;

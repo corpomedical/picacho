@@ -73,7 +73,31 @@ const SPEECH_P = 0.7;
 const SPEECH_WINDOW = 10; // ~320 ms
 const SPEECH_FRAMES = 7; // ~225 ms of it sure it's speech
 
+// SOMEONE ELSE'S VOICE (2026-09-28 evening, operator: "The assistant is
+// struggling even more to answer when picking up background voices and
+// noises… I want to feel like im talking to a person"). A person talking
+// carries on over the TV and stops when YOU speak to them. Once the
+// person's own level is known (VoiceLevel.usual, from what they said to
+// her), a voice heard with her silent that is much quieter than theirs is
+// the room: she comes straight back after the dip, and that voice's level is
+// remembered for a few seconds, so the same voice doesn't dip her again — a
+// voice as loud as the person's still does, and stops her.
+/** A voice under this share of the person's usual level is someone else's. */
+const NEAR_SHARE = 0.5;
+/** Louder than the remembered background voice by this much counts again. */
+const OVER_BACKGROUND = 1.6;
+/** How long a background voice is remembered after it was last heard. */
+const BACKGROUND_MS = 4000;
+
 export class BargeIn {
+  /** The person's usual speech level (VoiceLevel.usual), set by the sheet; null until known. */
+  usual: number | null = null;
+  /** A voice in the room that isn't theirs, heard lately: its level, and when it was last heard. */
+  private background: { level: number; at: number } | null = null;
+  /** The loudest the person-like frames were during this dip. */
+  private personPeak = 0;
+  /** Why she last came back after a dip: a quieter voice in the room, or nothing that held up. */
+  lastBack: "room" | "nothing" | null = null;
   /** How much of the playback's loudness reaches the mic (learned). */
   leak = 0.3;
   leakSamples = 0;
@@ -140,8 +164,12 @@ export class BargeIn {
     // And the room, when she is silent and nobody talks.
     if (f.p < 0.1 && outMax < 0.01) this.floor = this.floor * 0.95 + f.mic * 0.05;
 
+    // Someone else's voice, heard lately: at its level it doesn't count
+    // (it is remembered while it goes on).
+    const bg = this.background && f.now - this.background.at < BACKGROUND_MS ? this.background.level : 0;
+    if (bg > 0 && f.p >= 0.5 && f.mic <= OVER_BACKGROUND * bg) this.background!.at = f.now;
     const margin = this.strict ? 5 : 3;
-    const threshold = Math.max(0.02, 3 * this.floor, margin * this.leak * outMax);
+    const threshold = Math.max(0.02, 3 * this.floor, margin * this.leak * outMax, OVER_BACKGROUND * bg);
     // Louder than her echo could explain, and speech-like. The model is slow
     // on a word's first frames — browser traces on 2026-09-25 read 0.03-0.43
     // on "Wait," in one run and 0.00 for 600 ms of "Wait, make it four" in
@@ -153,7 +181,7 @@ export class BargeIn {
     if (this.duckedAt === null) {
       this.window.push({ candidate, mic: f.mic });
       if (this.window.length > WINDOW_FRAMES) this.window.shift();
-      this.speechWin.push(f.p >= SPEECH_P && f.mic > Math.max(0.001, this.floor));
+      this.speechWin.push(f.p >= SPEECH_P && f.mic > Math.max(0.001, this.floor, OVER_BACKGROUND * bg));
       if (this.speechWin.length > SPEECH_WINDOW) this.speechWin.shift();
       const recent = this.window.slice(-4).filter((w) => w.candidate);
       const spoken = this.echoCancelled && this.speechWin.filter(Boolean).length >= SPEECH_FRAMES;
@@ -166,6 +194,7 @@ export class BargeIn {
         this.preMic = Math.max(...heard);
         this.preOut = outMax;
         this.user = 0;
+        this.personPeak = 0;
         this.speechWin = [];
         return "duck";
       }
@@ -180,9 +209,22 @@ export class BargeIn {
       f.mic > Math.max(0.02, 3 * this.floor) && (f.p >= 0.3 || f.mic > 0.04)
         ? true
         : this.echoCancelled && f.p >= 0.5 && f.mic > Math.max(0.004, 2 * this.floor);
-    if (since >= 150 && person) this.user++;
+    if (since >= 150 && person) {
+      this.user++;
+      this.personPeak = Math.max(this.personPeak, f.mic);
+    }
     if (this.user >= 3) {
       this.falseStarts = [];
+      // Clear, with her silent, but much quieter than the person at the
+      // device: the room. She carries on, and tunes that voice out.
+      if (this.usual !== null && this.personPeak < NEAR_SHARE * this.usual) {
+        this.background = { level: Math.max(this.personPeak, this.background?.level ?? 0), at: f.now };
+        this.lastBack = "room";
+        this.window = [];
+        this.duckedAt = null;
+        this.releasedAt = f.now;
+        return "unduck";
+      }
       return this.confirm();
     }
     if (since > UNDUCK_AFTER_MS) {
@@ -221,6 +263,7 @@ export class BargeIn {
   }
 
   private release(): BargeAction {
+    this.lastBack = "nothing";
     this.window = [];
     this.releasedAt = this.duckedAt === null ? null : this.duckedAt + UNDUCK_AFTER_MS;
     this.duckedAt = null;
@@ -237,6 +280,8 @@ export class BargeIn {
     this.outs = [];
     this.window = [];
     this.duckedAt = null;
+    this.background = null;
+    this.personPeak = 0;
     this.falseStarts = [];
     this.releasedAt = null;
     this.quickDip = false;

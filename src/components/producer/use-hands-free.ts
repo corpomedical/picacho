@@ -483,6 +483,12 @@ export function useHandsFree({
   // How much of her own voice the mic hears while she speaks (the learned
   // leak), about once a second while she is audible — an admin's readout.
   const [echo, setEcho] = useState<{ leak: number; strict: boolean; dips: number; stops: number } | null>(null);
+  // Whether what the mic hears right now sounds like the person (as loud as
+  // they usually are), or someone further off; null until their level is
+  // known. The lamp says "Hearing you" only for the person (2026-09-28).
+  const [hearingNear, setHearingNear] = useState<boolean | null>(null);
+  const hearingNearRef = useRef<boolean | null>(null);
+  const speechPeak = useRef(0);
   const dipCount = useRef(0);
   const stopCount = useRef(0);
   const phaseRef = useRef<VoicePhase>("off");
@@ -954,11 +960,27 @@ export function useHandsFree({
         const now = performance.now();
         const mic = rms(frame);
         const out = rmsOf(outAnalyser, s.outBuf);
+        // A voice much quieter than theirs doesn't stop her (voice-engine.ts BargeIn).
+        barge.current.usual = voiceLevel.current.usual;
         const action = barge.current.step({ p, mic, out, now }, replyingAudibly());
+        if (userTalking.current && !startedDuringReply.current) {
+          speechPeak.current = Math.max(speechPeak.current, mic);
+          const usual = voiceLevel.current.usual;
+          const near = usual === null ? null : speechPeak.current >= 0.5 * usual;
+          if (near !== hearingNearRef.current) {
+            hearingNearRef.current = near;
+            setHearingNear(near);
+          }
+        }
         // Diagnostics, off unless asked for (localStorage picacho.producer.voiceDebug = 1).
         if (debug && debug.push({ t: Math.round(now), p: Math.round(p * 100) / 100, mic: Math.round(mic * 1000) / 1000, out: Math.round(out * 1000) / 1000, replying: replyingAudibly(), action, leak: Math.round(barge.current.leak * 1000) / 1000 }) > 3000) debug.shift();
         if (action === "duck") dipCount.current++;
         if (action === "confirm") stopCount.current++;
+        // What talking over her did, for the voice log (levels only).
+        if (action === "duck") vlog("barge.dip", { mic: Math.round(mic * 1000) / 1000 });
+        else if (action === "confirm") vlog("barge.stop", "they talked over her: she stops and listens");
+        else if (action === "unduck" && replyingAudibly())
+          vlog("barge.back", barge.current.lastBack === "room" ? "a voice much quieter than theirs: she carries on" : "nothing held up: she carries on");
         if (replyingAudibly() && frameCount.current % 30 === 0) {
           setEcho({ leak: barge.current.leak, strict: barge.current.strict, dips: dipCount.current, stops: stopCount.current });
         }
@@ -993,6 +1015,10 @@ export function useHandsFree({
         userTalking.current = true;
         speechStartedAt.current = performance.now();
         startedDuringReply.current = replyingAudibly();
+        speechPeak.current = 0;
+        const unknown = voiceLevel.current.usual === null;
+        hearingNearRef.current = unknown ? null : false;
+        setHearingNear(unknown ? null : false);
         if (!startedDuringReply.current && phaseRef.current === "listening") go("hearing");
       },
       misfire: () => {
@@ -1034,7 +1060,10 @@ export function useHandsFree({
         }
         bargeConfirmed.current = false;
         if (!heldRef.current) go("sending");
-        playCue("sent", s.ctx);
+        // No tone here (2026-09-28 evening, operator: "the noise it makes when
+        // it picks up background voices is annoying"): it sounded for every
+        // voice in the room. A hold of the lamp keeps its tones — it's the
+        // person's own press.
         const meta = { interrupting: interrupting || replyUnderway(), talkedOver: interrupting };
         const nearness = voiceLevel.current.nearness(lvl);
         packing.current = packing.current.then(async () => {
@@ -1242,6 +1271,8 @@ export function useHandsFree({
     engine,
     /** Her voice as the mic hears it while she speaks, and how often talking over her dipped or stopped her. */
     echo,
+    /** What the mic hears now sounds like the person (true), someone further off (false), or not known yet (null). */
+    hearingNear,
     start,
     stop,
     beginTurn,

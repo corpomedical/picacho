@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { gatePromptFor, judgeSpoken } from "./gate";
+import { gatePromptFor, judgeSpoken, letBe } from "./gate";
 import { answerPending, recentLines, secondsSinceAssistant } from "./history";
 
 const user = (text: string, created_at?: string) => ({ role: "user" as const, content: [], display: { text }, created_at });
@@ -127,5 +127,26 @@ describe("a name the transcriber may misspell", () => {
     expect(route).toContain("soon(loading.then((l) => l.prefs.name), nameHint || DEFAULT_PRODUCER_NAME)");
     expect(read("../../components/producer/producer-lamp.tsx")).toContain("name: spoken ? name : undefined,");
     expect(read("./store.ts")).toContain('export const DEFAULT_PRODUCER_NAME = "Aly";');
+  });
+});
+
+describe("what is let be (2026-09-28 evening: background voices)", () => {
+  it("lets be a clear no, and an unclear one that also sounds like the room", () => {
+    expect(letBe("not_for_producer", { nearness: 1, confidence: -0.1 })).toBe(true);
+    // Unclear, and noticeably quieter than the person, or words the transcriber wasn't sure of.
+    expect(letBe("unclear", { nearness: 0.35, confidence: -0.1 })).toBe(true);
+    expect(letBe("unclear", { nearness: 0.9, confidence: -1.2 })).toBe(true);
+  });
+
+  it("keeps an unclear one as loud as the person, or before their level is known", () => {
+    expect(letBe("unclear", { nearness: 0.8, confidence: -0.2 })).toBe(false);
+    expect(letBe("unclear", { nearness: null, confidence: null })).toBe(false);
+    expect(letBe("to_producer", { nearness: 0.2, confidence: -1.5 })).toBe(false);
+  });
+
+  it("no longer tells the judge that loud and clear leans towards the assistant", () => {
+    const gate = readFileSync(join(__dirname, "gate.ts"), "utf8");
+    expect(gate).not.toContain("lean towards said to the assistant");
+    expect(gate).toContain("Loudness is only a clue");
   });
 });

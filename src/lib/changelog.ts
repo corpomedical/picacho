@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.139.0",
+    build: 178,
+    date: "2026-09-28",
+    title: "Aly carries on over the room and stops for you, with no more tones",
+    items: [
+      "No more tone when she hears you hands-free: it sounded for every voice in the room. Holding the lamp to talk keeps its two tones, since that is your own press.",
+      "She carries on over voices much quieter than yours, like a TV or people across the room: a dip of about a quarter of a second, then she keeps talking and tunes that voice out for a few seconds. A voice as loud as yours still stops her within about half a second. Until she has heard you three times she stops for any clear voice, as before.",
+      "What she hears while she is quiet: this morning's change that made loud speech and questions on new topics count as said to her is undone (a TV and the people around ask questions too). When she can't tell and it was noticeably quieter than you, or the words were unclear, she lets it be.",
+      "With her chat closed, the lamp says \"Hearing you…\" and \"Got it\" only for a voice like yours, and background she lets be passes without a word.",
+      "Spoken answers start sooner again: talking to her runs at the faster setting it had before this morning. Typed questions keep the deeper one.",
+      "For admins, the voice log now says each time talking over her dipped her, stopped her, or she carried on, and why.",
+    ],
+  },
+  {
     version: "1.138.0",
     build: 177,
     date: "2026-09-28",

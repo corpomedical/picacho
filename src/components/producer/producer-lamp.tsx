@@ -137,6 +137,11 @@ const W = {
 };
 
 const READ_ALOUD_KEY = "picacho.producer.readAloud";
+// About as loud as the person usually is (the judge's own "about as loud"
+// line, gate.ts): quieter than this is someone further off, and she doesn't
+// say she heard it, got it, or let it be (2026-09-28 evening, operator: "I
+// want to feel like im talking to a person").
+const NEAR_ENOUGH = 0.6;
 // A send with no reply from Picacho at all in this long (plus 2 s per second
 // of speech uploaded) gives up and says so.
 const SEND_TIMEOUT_MS = 30_000;
@@ -285,6 +290,8 @@ export function ProducerLamp({
   const [typeInVoice, setTypeInVoice] = useState(false);
   // A moment's note beside the closed lamp (a spoken message let be).
   const [lampNote, setLampNote] = useState<string | null>(null);
+  // The last thing sent out loud sounded like the person (or their level isn't known yet).
+  const [sentNear, setSentNear] = useState(true);
   const lampNoteTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(lampNoteTimer.current), []);
   const [center, setCenter] = useState<{ cx: number; cy: number; vw: number; vh: number; phone: boolean } | null>(null);
@@ -649,6 +656,7 @@ export function ProducerLamp({
       voice.stop();
       return;
     }
+    setSentNear(meta.pushToTalk === true || audio.nearness == null || audio.nearness >= NEAR_ENOUGH);
     // Not yet answered (the server hasn't said "heard"): this one joins it,
     // and they are sent again together, in the order they were said.
     const waiting = probeRef.current;
@@ -831,6 +839,15 @@ export function ProducerLamp({
             vlog("ignored", { ms: since(), why: typeof ev.data.why === "string" ? ev.data.why : null });
             wasIgnored = true;
             const words = typeof ev.data.text === "string" ? ev.data.text : "";
+            // Much quieter than the person: the room (a TV, someone across
+            // it). Let be without a word, as a person would; only the tip
+            // about a noisy room counts it.
+            if (words && last?.nearness != null && last.nearness < NEAR_ENOUGH) {
+              const now = Date.now();
+              ignoredTimes.current = [...ignoredTimes.current.filter((t) => now - t < 60_000), now];
+              if (ignoredTimes.current.length >= 3) setBackgroundTip(true);
+              continue;
+            }
             if (words) {
               setIgnored(words);
               // With the chat closed, the lamp says so for a moment.
@@ -995,9 +1012,9 @@ export function ProducerLamp({
         ? W.pushListening
         : open
           ? null
-          : voice.phase === "hearing" && !voice.held
+          : voice.phase === "hearing" && !voice.held && voice.hearingNear !== false
             ? W.lampHearing
-            : voice.phase === "sending" || (busy && voice.phase !== "speaking" && (voice.active || readAloud))
+            : (voice.phase === "sending" && sentNear) || (busy && voice.phase !== "speaking" && (voice.active || readAloud))
               ? W.gotIt
               : lampNote;
   const wheelShown = (open ? wheelReady : closing) && center !== null && !(center.phone && typing);

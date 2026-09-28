@@ -193,6 +193,54 @@ describe("talking over her", () => {
   });
 });
 
+describe("someone else's voice in the room (2026-09-28 evening)", () => {
+  // The person's usual level is 0.12; a TV across the room reaches the mic at
+  // about a third of that. Her echo is cancelled (a laptop or a phone).
+  const learned = () => {
+    const b = new BargeIn();
+    b.usual = 0.12;
+    run(b, repeat(125, (i) => ({ p: 0.1, mic: herVoice(i) * 0.03, out: herVoice(i) })));
+    return b;
+  };
+
+  it("carries on over a voice much quieter than the person's: one short dip, then that voice is tuned out", () => {
+    const b = learned();
+    const t0 = 125 * 32;
+    const acts = runLive(b, () => ({ p: 0.9, mic: 0.035 }), t0, 100);
+    expect(acts.map((a) => a.action)).toEqual(["duck", "unduck"]);
+    // Back within half a second, and three more seconds of that voice don't dip her again.
+    expect(acts[1].at - t0).toBeLessThanOrEqual(500);
+  });
+
+  it("still stops for the person while that voice goes on", () => {
+    const b = learned();
+    const t0 = 125 * 32;
+    runLive(b, () => ({ p: 0.9, mic: 0.035 }), t0, 60);
+    const t1 = t0 + 60 * 32;
+    const acts = runLive(b, () => ({ p: 0.95, mic: 0.12 }), t1, 40);
+    expect(acts.map((a) => a.action)).toEqual(["duck", "confirm"]);
+    expect(acts[1].at - t1).toBeLessThanOrEqual(450);
+  });
+
+  it("forgets that voice a few seconds after it stops, and weighs it again", () => {
+    const b = learned();
+    const t0 = 125 * 32;
+    runLive(b, () => ({ p: 0.9, mic: 0.035 }), t0, 40);
+    const quiet = t0 + 40 * 32;
+    run(b, repeat(160, (i) => ({ p: 0.05, mic: herVoice(i) * 0.03, out: herVoice(i) })), quiet);
+    const t2 = quiet + 160 * 32;
+    const acts = runLive(b, () => ({ p: 0.9, mic: 0.035 }), t2, 40);
+    expect(acts.map((a) => a.action)).toEqual(["duck", "unduck"]);
+  });
+
+  it("before it knows the person's level, any clear voice stops her, as before", () => {
+    const b = learned();
+    b.usual = null;
+    const acts = runLive(b, () => ({ p: 0.9, mic: 0.035 }), 125 * 32, 40);
+    expect(acts.map((a) => a.action)).toEqual(["duck", "confirm"]);
+  });
+});
+
 describe("a real recording (headless Chrome, Silero v5, 2026-09-25)", () => {
   it("dips her voice within ~200 ms of the person starting", () => {
     const b = new BargeIn();
