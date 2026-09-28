@@ -206,3 +206,16 @@ html:has(.pl) body {
     bottom: calc(env(safe-area-inset-bottom, 0px) + 250px) !important;
   }
 }
+
+/* The phone menu (light-shell.tsx) sits inside the Light frame. In a phone's
+   browser the frame runs under the notch and the home indicator, so the
+   drawer keeps clear of both. In the app, body already carries those insets
+   (globals.css, html.native-app body), so the drawer adds none. */
+.pl-drawer {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+html.native-app .pl-drawer {
+  padding-top: 0;
+  padding-bottom: 0;
+}

@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.135.0",
+    build: 174,
+    date: "2026-09-28",
+    title: "Picacho Light's phone menu keeps Settings on screen in the iOS app",
+    items: [
+      "In the iOS app the Light menu ran past the bottom of the screen, so Settings couldn't be reached. The menu now ends where the chat box does, with Settings level with the send button.",
+      "In a phone's browser the menu also keeps clear of the notch and the home bar.",
+    ],
+  },
+  {
     version: "1.134.0",
     build: 173,
     date: "2026-09-28",

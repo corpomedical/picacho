@@ -371,7 +371,7 @@ function Rail({
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <nav aria-label={l.recent} className="pl-surface flex h-full flex-col gap-1 px-3 py-4" style={{ background: "var(--pl-rail)" }}>
+    <nav aria-label={l.recent} className="pl-surface flex h-full min-h-0 flex-col gap-1 px-3 py-4" style={{ background: "var(--pl-rail)" }}>
       <div className={`mb-2 flex ${folded ? "justify-center" : "justify-start"}`}>
         <button
           type="button"
@@ -466,14 +466,21 @@ export function LightShell({
 
   return (
     <ShellContext.Provider value={{ openMenu: () => setMenuOpen(true), newChat }}>
-      <div className="pl frost-ground flex h-full w-full overflow-hidden">
+      <div className="pl frost-ground relative flex h-full w-full overflow-hidden">
         <aside className={`hidden flex-shrink-0 transition-[width] duration-200 md:block ${folded ? "w-[72px]" : "w-[272px]"}`}>
           <Rail recent={recent} isAdmin={isAdmin} folded={folded} />
         </aside>
         {menuOpen && (
-          <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label={l.recent}>
+          // Sized to the Light frame, not the screen (operator, 2026-09-28,
+          // iOS app: "When I open the menu I cant access the settings icon.
+          // Its buried below the bottom edge screen"). The iOS shell insets
+          // the page (contentInset "always"), so a screen-fixed drawer ran
+          // past the visible bottom while the frame, like the chat box,
+          // stays on screen. light.css keeps it clear of the notch and the
+          // home indicator on a phone's browser.
+          <div className="absolute inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label={l.recent}>
             <button type="button" aria-label={l.closeMenu} className="absolute inset-0 bg-black/40" onClick={() => setMenuOpen(false)} />
-            <div className="absolute inset-y-0 left-0 w-[86%] max-w-[320px] pt-[env(safe-area-inset-top)] shadow-xl" style={{ background: "var(--pl-rail)" }}>
+            <div className="pl-drawer absolute inset-y-0 left-0 flex w-[86%] max-w-[320px] flex-col shadow-xl" style={{ background: "var(--pl-rail)" }}>
               <Rail recent={recent} isAdmin={isAdmin} folded={false} inDrawer onNavigate={() => setMenuOpen(false)} />
             </div>
           </div>
