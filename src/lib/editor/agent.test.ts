@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { activityOf, collectDelivery, editorApiKey, parseResult, readSession, sendChange, startSession } from "./agent";
+import { activityOf, collectDelivery, editorApiKey, isBillingError, parseResult, readSession, sendChange, startSession } from "./agent";
 import { AGENT_SKILLS, AGENT_SYSTEM, changeMessage, jobMessage, PROJECT_RULES } from "./agent-prompt";
 
 /** Just the Managed Agents calls agent.ts makes, recorded. */
@@ -132,7 +132,36 @@ describe("agent.ts", () => {
       costUsd: 2.12,
       latest: "Done — three shorts.",
       activity: null,
+      errorType: null,
     });
+  });
+
+  it("reads which error it gave up retrying — the one a retries_exhausted stop is about", async () => {
+    // Newest first, as the session of edit c7215eef showed it (2026-09-27).
+    const { client } = fakeClient({
+      session: { status: "idle", usage: { list_cost: { amount: "25", currency: "USD" } } },
+      events: [
+        { type: "session.status_idle", processed_at: "2026-09-27T10:02:51Z", stop_reason: { type: "retries_exhausted" } },
+        { type: "session.error", error: { type: "billing_error", message: "Your credit balance is too low to access the Anthropic API.", retry_status: { type: "exhausted" } } },
+        { type: "session.error", error: { type: "rate_limit_error", message: "slow down", retry_status: { type: "retrying" } } },
+      ],
+    });
+    expect(await readSession("s", client)).toMatchObject({ stopReason: "retries_exhausted", errorType: "billing_error", costUsd: 0.25 });
+
+    // An error it rode out is not why it stopped.
+    const rode = fakeClient({
+      session: { status: "idle", usage: { list_cost: { amount: "25" } } },
+      events: [{ type: "session.error", error: { type: "overloaded_error", retry_status: { type: "retrying" } } }],
+    });
+    expect((await readSession("s", rode.client)).errorType).toBeNull();
+  });
+
+  it("knows a billing refusal on a thrown call, whichever layer of the body carries the type", () => {
+    expect(isBillingError({ error: { type: "error", error: { type: "billing_error" } } })).toBe(true);
+    expect(isBillingError({ error: { type: "billing_error" } })).toBe(true);
+    expect(isBillingError({ error: { type: "error", error: { type: "overloaded_error" } } })).toBe(false);
+    expect(isBillingError(new Error("Your credit balance is too low"))).toBe(false);
+    expect(isBillingError(null)).toBe(false);
   });
 
   it("collects the newest result.json's videos, and nothing when it was already delivered", async () => {

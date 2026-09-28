@@ -8,6 +8,7 @@ import {
   FAILURE_BURST,
   actOnRenderFailure,
   balanceSiren,
+  editorCreditAlert,
   falBalanceAlert,
   jobFailedAlert,
   modelOffAlert,
@@ -239,6 +240,16 @@ describe("modelOffAlert", () => {
     const push = modelOffAlert({ modelLabel: "Veo 3", lastError: null, retryAfter: null, now: 0 });
     expect(push.body).toContain("It stays off until a trial render works.");
     expect(push.body).toContain("Last error: none recorded");
+  });
+});
+
+describe("editorCreditAlert", () => {
+  it("names the editor's own key — not the one Aly and the site use — and where to top it up", () => {
+    const push = editorCreditAlert();
+    expect(push.title).toContain("Director's Cut");
+    expect(push.body).toContain("DIRECTORS_CUT_ANTHROPIC_API_KEY");
+    expect(push.body).toContain("Plans & Billing");
+    expect(push.body.length).toBeLessThanOrEqual(180);
   });
 });
 

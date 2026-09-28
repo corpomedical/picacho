@@ -63,6 +63,11 @@ export type SessionView = {
   latest: string | null;
   /** What it is doing right now, from its latest tool call. */
   activity: Activity | null;
+  /**
+   * The platform's error type ("billing_error", "overloaded_error", …) behind
+   * the latest error it gave up retrying — what a retries_exhausted stop means.
+   */
+  errorType: string | null;
 };
 
 export type Delivered = {
@@ -73,6 +78,19 @@ export type Delivered = {
 };
 
 export class AgentError extends Error {}
+
+/**
+ * The agent workspace is out of credit: every call it makes is refused until
+ * someone tops it up (2026-09-27: edit c7215eef's session stopped two minutes
+ * in on "Your credit balance is too low", and the customer was told to try
+ * again in a few minutes). Read from the API's own error type, on a thrown
+ * SDK error or a session's error event.
+ */
+export function isBillingError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const body = (err as { error?: { type?: unknown; error?: { type?: unknown } } }).error;
+  return body?.type === "billing_error" || body?.error?.type === "billing_error";
+}
 
 export function agentConfig(): { agentId: string; environmentId: string } | null {
   const agentId = process.env.DIRECTORS_CUT_AGENT_ID;
@@ -144,10 +162,11 @@ export async function readSession(sessionId: string, client: Anthropic = editorC
   let idleAt: number | null = null;
   let latest: string | null = null;
   let activity: Activity | null = null;
+  let errorType: string | null = null;
   const events = await client.beta.sessions.events.list(sessionId, {
     order: "desc",
     limit: 30,
-    types: ["session.status_idle", "agent.message", "agent.tool_use"],
+    types: ["session.status_idle", "agent.message", "agent.tool_use", "session.error"],
   });
   // Newest first: the agent's words count only while nothing has happened since them.
   let acted = false;
@@ -161,6 +180,11 @@ export async function readSession(sessionId: string, client: Anthropic = editorC
       const at = Date.parse(e.processed_at);
       idleAt = Number.isFinite(at) ? at : null;
     }
+    // Only an error it stopped retrying: a rate limit it rode out is not why it stopped.
+    if (e.type === "session.error" && errorType === null) {
+      const error = (e as { error?: { type?: unknown; retry_status?: { type?: unknown } } }).error;
+      if (error?.retry_status?.type === "exhausted" && typeof error.type === "string") errorType = error.type;
+    }
     if (e.type === "agent.message" && latest === null && !acted) {
       const text = e.content
         .filter((b): b is { type: "text"; text: string } => b.type === "text")
@@ -171,7 +195,7 @@ export async function readSession(sessionId: string, client: Anthropic = editorC
       if (text) latest = text.slice(0, 200);
     }
   }
-  return { status: session.status, stopReason, idleAt, costUsd: Number.isFinite(cents) ? cents / 100 : 0, latest, activity };
+  return { status: session.status, stopReason, idleAt, costUsd: Number.isFinite(cents) ? cents / 100 : 0, latest, activity, errorType };
 }
 
 /**

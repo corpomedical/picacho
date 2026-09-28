@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { withJobAlert } from "@/lib/push/admin-alerts";
+import { alertEditorOutOfCredit, withJobAlert } from "@/lib/push/admin-alerts";
 import { createAdminClient } from "@/lib/supabase/server";
 import { advanceEdit } from "@/lib/editor/advance";
 import { isEditorEnabled } from "@/lib/editor/enabled";
@@ -43,9 +43,11 @@ async function run(request: Request) {
     if (Date.now() - started > START_BUDGET_MS) break;
     // Each edit's own heavy-step budget counts from when IT starts, so a
     // later edit may still begin one heavy step inside this run's budget.
-    outcomes[id] = await advanceEdit(id, { admin, heavyStartBudgetMs: Math.max(0, START_BUDGET_MS - (Date.now() - started)) }).catch(
-      (err: unknown) => `error: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    outcomes[id] = await advanceEdit(id, {
+      admin,
+      heavyStartBudgetMs: Math.max(0, START_BUDGET_MS - (Date.now() - started)),
+      onOutOfCredit: alertEditorOutOfCredit,
+    }).catch((err: unknown) => `error: ${err instanceof Error ? err.message : String(err)}`);
   }
   return NextResponse.json({ ok: true, outcomes });
 }

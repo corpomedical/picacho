@@ -40,6 +40,8 @@ export const ALERT_WINDOWS = {
   falLow: 6 * 60 * 60,
   /** fal below one render: every hourly check until it is topped up. */
   falCritical: 60 * 60,
+  /** Director's Cut's Anthropic workspace out of credit: the provider siren's half hour. */
+  editorCredit: 30 * 60,
 } as const;
 
 /** Failures inside ALERT_WINDOWS.failureCount that make a burst. */
@@ -142,6 +144,19 @@ export function modelOffAlert(input: {
       input.lastError ?? "none recorded",
       90,
     )}`,
+    path: "#system",
+  };
+}
+
+/**
+ * Director's Cut's Anthropic workspace refused a call for want of credit
+ * (2026-09-27: edit c7215eef stopped on it and nobody was told). Its key is
+ * its own — not the one Aly and the rest of the site use.
+ */
+export function editorCreditAlert(): AdminPush {
+  return {
+    title: "🚨 Director's Cut is out of Anthropic credit",
+    body: "The workspace behind DIRECTORS_CUT_ANTHROPIC_API_KEY refused a call: every new edit fails until it is topped up. Anthropic Console → Plans & Billing.",
     path: "#system",
   };
 }

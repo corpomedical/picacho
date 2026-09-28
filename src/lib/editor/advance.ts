@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type Anthropic from "@anthropic-ai/sdk";
 
-import { collectDelivery, readSession, startSession, AgentError, type JobClip } from "./agent";
+import { collectDelivery, isBillingError, readSession, startSession, AgentError, type JobClip } from "./agent";
 import {
   EDITOR_BUCKET,
   EDIT_COLUMNS,
@@ -50,6 +50,8 @@ export type AdvanceDeps = {
   heavyStartBudgetMs?: number;
   /** The tick stops starting steps after this. */
   tickBudgetMs?: number;
+  /** Tells the operator the editor's Anthropic workspace is out of credit (admin-alerts.ts, bound by the callers). */
+  onOutOfCredit?: () => Promise<void>;
 };
 
 export type AdvanceOutcome = "locked" | "missing" | "idle" | "advanced" | "done" | "failed";
@@ -61,6 +63,16 @@ const PROGRESS: Record<Step["kind"], string> = {
   watch: "Editing",
   none: "",
 };
+
+/**
+ * Our Anthropic workspace ran out of credit — nothing the customer did, and
+ * trying again in a few minutes won't help until someone tops it up.
+ */
+export const OUT_OF_CREDIT_ERROR = "The editor is paused on our side right now. We've been alerted — please try again later.";
+
+async function outOfCredit(deps: AdvanceDeps): Promise<void> {
+  await deps.onOutOfCredit?.().catch((err: unknown) => console.error("[editor] out-of-credit alert failed:", err));
+}
 
 export async function advanceEdit(editId: string, deps: AdvanceDeps): Promise<AdvanceOutcome> {
   const now = deps.now ?? Date.now;
@@ -83,12 +95,14 @@ export async function advanceEdit(editId: string, deps: AdvanceDeps): Promise<Ad
       try {
         next = await runStep(step, row, deps, now);
       } catch (err) {
-        const fatal = err instanceof AgentError;
+        const broke = isBillingError(err);
+        const fatal = err instanceof AgentError || broke;
         const attempts = row.attempts + 1;
         const message = err instanceof Error ? err.message : String(err);
         console.error(`[editor] ${row.id} ${step.kind} failed (attempt ${attempts}):`, message);
+        if (broke) await outOfCredit(deps);
         if (fatal || attempts >= MAX_ATTEMPTS) {
-          await save(admin, row.id, { stage: "failed", error: customerError(step, err), progress: null, attempts });
+          await save(admin, row.id, { stage: "failed", error: broke ? OUT_OF_CREDIT_ERROR : customerError(step, err), progress: null, attempts });
           outcome = "failed";
         } else {
           await save(admin, row.id, { attempts });
@@ -181,6 +195,10 @@ async function runStep(step: Step, row: EditRow, deps: AdvanceDeps, now: () => n
       // Idle: it finished its turn — delivered, or stopped for a reason.
       if (view.stopReason === "budget_reached") {
         return { stage: "failed", error: "The editor used up this edit's budget before finishing. Try a simpler brief or fewer clips.", cost_usd: cost };
+      }
+      if (view.stopReason === "retries_exhausted" && view.errorType === "billing_error") {
+        await outOfCredit(deps);
+        return { stage: "failed", error: OUT_OF_CREDIT_ERROR, cost_usd: cost };
       }
       if (view.stopReason === "retries_exhausted") {
         return { stage: "failed", error: "The editor ran into repeated errors. Try again in a few minutes.", cost_usd: cost };

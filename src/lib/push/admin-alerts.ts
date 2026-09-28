@@ -8,6 +8,7 @@ import { getFalBalance } from "@/lib/generations/providers/fal-ledger";
 import {
   ALERT_WINDOWS,
   actOnRenderFailure,
+  editorCreditAlert,
   falBalanceAlert,
   jobFailedAlert,
   modelOffAlert,
@@ -122,6 +123,15 @@ export async function alertJobFailed(job: string, message: string): Promise<void
     await sendOnce(limit, send, `job:${job}`, ALERT_WINDOWS.jobFailed, jobFailedAlert(job, message));
   } catch (err) {
     console.error("admin-alerts: job alert failed:", err);
+  }
+}
+
+/** Director's Cut's Anthropic workspace is out of credit (lib/editor/advance.ts). Damped to one per half hour. */
+export async function alertEditorOutOfCredit(): Promise<void> {
+  try {
+    await sendOnce(limit, send, "editor-credit", ALERT_WINDOWS.editorCredit, editorCreditAlert());
+  } catch (err) {
+    console.error("admin-alerts: editor credit alert failed:", err);
   }
 }
 

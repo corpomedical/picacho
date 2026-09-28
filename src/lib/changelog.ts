@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.130.0",
+    build: 169,
+    date: "2026-09-28",
+    title: "Director's Cut says when it's our account that ran dry",
+    items: [
+      "When the Anthropic account Director's Cut runs on is out of credit, the edit now says \"The editor is paused on our side right now. We've been alerted — please try again later.\" Before, it said the editor \"ran into repeated errors\" and to try again in a few minutes, which wouldn't have helped (edit c7215eef on 27 September stopped this way, two minutes in, after $0.25).",
+      "Admins get a phone alert naming the key to top up (DIRECTORS_CUT_ANTHROPIC_API_KEY — the editor's own, not the one Aly uses), at most once every half hour.",
+      "The same message and alert apply when the account refuses an edit before it starts, or refuses a change sent to a finished edit. An edit refused before it starts now fails at once, instead of retrying for two more minutes.",
+      "Other errors the editor gives up on keep the old message.",
+    ],
+  },
+  {
     version: "1.129.0",
     build: 168,
     date: "2026-09-28",

@@ -18,9 +18,10 @@
 import { after } from "next/server";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
+import { alertEditorOutOfCredit } from "@/lib/push/admin-alerts";
 import { SESSION_EXPIRED_MESSAGE } from "@/lib/generations/user-facing-error";
-import { advanceEdit, deliverOne, derivedUuid } from "./advance";
-import { sendChange, type Activity } from "./agent";
+import { advanceEdit, deliverOne, derivedUuid, OUT_OF_CREDIT_ERROR } from "./advance";
+import { isBillingError, sendChange, type Activity } from "./agent";
 import type { ChangeExtras } from "./agent-prompt";
 import type { ProbeResult } from "./analyze";
 import { probeClip } from "./work";
@@ -245,6 +246,10 @@ export async function reviseEdit(editId: string, note: string, song: FileOffer |
       .from("video_edits")
       .update({ stage: "done", progress: null, clips: row.clips, render: row.render, plan: row.plan, updated_at: new Date().toISOString() })
       .eq("id", row.id);
+    if (isBillingError(err)) {
+      await alertEditorOutOfCredit();
+      return { error: OUT_OF_CREDIT_ERROR };
+    }
     return { error: "The editor didn't take the change. Try again in a moment." };
   }
   kick(row.id);
@@ -622,7 +627,7 @@ export async function composeTrack(
 function kick(editId: string): void {
   after(async () => {
     try {
-      await advanceEdit(editId, { admin: createAdminClient(), heavyStartBudgetMs: 5_000, tickBudgetMs: 20_000 });
+      await advanceEdit(editId, { admin: createAdminClient(), heavyStartBudgetMs: 5_000, tickBudgetMs: 20_000, onOutOfCredit: alertEditorOutOfCredit });
     } catch (err) {
       console.error(`[editor] first tick for ${editId} failed:`, err instanceof Error ? err.message : err);
     }
