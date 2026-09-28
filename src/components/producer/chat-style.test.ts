@@ -2,16 +2,18 @@ import { describe, expect, it } from "vitest";
 import { CHAT_STYLES, CHAT_STYLE_LABELS, DEFAULT_CHAT_STYLE, countWords, parseChatStyle, subtitleView } from "./chat-style";
 
 describe("the chat's style", () => {
-  it("defaults to the floating card and offers exactly the card and subtitles", () => {
-    expect(DEFAULT_CHAT_STYLE).toBe("card");
+  it("defaults to subtitles (2026-09-28) and offers exactly the card and subtitles", () => {
+    expect(DEFAULT_CHAT_STYLE).toBe("subtitles");
     expect([...CHAT_STYLES]).toEqual(["card", "subtitles"]);
     expect(CHAT_STYLE_LABELS.subtitles.name).toBe("Subtitles");
   });
 
   it("reads a stored style, and anything else as the default", () => {
+    expect(parseChatStyle("card")).toBe("card");
     expect(parseChatStyle("subtitles")).toBe("subtitles");
-    expect(parseChatStyle(undefined)).toBe("card");
-    expect(parseChatStyle("teleprompter")).toBe("card");
+    expect(parseChatStyle(undefined)).toBe("subtitles");
+    expect(parseChatStyle(null)).toBe("subtitles");
+    expect(parseChatStyle("teleprompter")).toBe("subtitles");
   });
 
   it("counts the words she has said", () => {

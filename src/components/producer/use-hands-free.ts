@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { playableAudioUrl } from "@/lib/audio/playable-url";
 import { appCannotRecord, nativeAppBuild } from "@/lib/native/app-build";
 import { connectionNote, vlog } from "./voice-log";
+import { encodeOggOpus } from "./opus";
 import {
   BargeIn,
   EnergySegmenter,
@@ -83,7 +84,7 @@ export type UtteranceMeta = {
 };
 
 /** The longest single recording (a monologue is cut here and sent). */
-const MAX_UTTERANCE_MS = 30_000;
+const MAX_UTTERANCE_MS = 20_000;
 /** Where the speech model's files are served from (public/vad). */
 const VAD_BASE = "/vad/";
 
@@ -205,6 +206,45 @@ function prepare(piece: SpokenPiece, text: string): Prepared {
   return { el, release: source.release, crossOrigin: false, text };
 }
 
+// CUES (2026-09-28, operator: "If the chatbox is closed and the mic is on it
+// feels like she didnt get the msg"): a soft two-note tick the moment what
+// they said has been captured and is on its way, and a single higher note when
+// a push-to-talk mic is open (so the first word isn't said into a closed mic).
+// Made with an oscillator, quiet, under a fifth of a second.
+let cueCtx: AudioContext | null = null;
+export function playCue(kind: "sent" | "ready", ctx?: AudioContext | null) {
+  try {
+    const c = ctx && ctx.state === "running" ? ctx : (cueCtx ??= new AudioContext());
+    if (c.state === "suspended") void c.resume().catch(() => {});
+    const notes = kind === "sent" ? [880, 1320] : [1175];
+    const t0 = c.currentTime + 0.01;
+    notes.forEach((hz, i) => {
+      const osc = c.createOscillator();
+      const gain = c.createGain();
+      osc.type = "sine";
+      osc.frequency.value = hz;
+      const at = t0 + i * 0.075;
+      gain.gain.setValueAtTime(0, at);
+      gain.gain.linearRampToValueAtTime(0.07, at + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0008, at + 0.07);
+      osc.connect(gain);
+      gain.connect(c.destination);
+      osc.start(at);
+      osc.stop(at + 0.08);
+    });
+  } catch {}
+}
+
+/**
+ * A recording as it's uploaded (opus.ts): Ogg Opus where the browser has the
+ * encoder (~3 KB a second), else 16 kHz WAV (~32 KB a second).
+ */
+async function packRecording(audio: Float32Array): Promise<{ data: string; mime: string }> {
+  const ogg = await encodeOggOpus(audio).catch(() => null);
+  if (ogg) return { data: toBase64(ogg), mime: "audio/ogg" };
+  return { data: toBase64(encodeWav(audio)), mime: "audio/wav" };
+}
+
 function discard(p: Prepared) {
   p.el.pause();
   p.el.removeAttribute("src");
@@ -242,6 +282,36 @@ type VadGlobal = {
     }>;
   };
 };
+
+const noSubscribe = () => () => {};
+function canHearHere(): boolean {
+  return typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia && typeof AudioContext !== "undefined";
+}
+
+// The speech model, fetched before Talk is pressed (2026-09-28, operator:
+// "Fix Aly's listening"): opening the chat starts the download, so by the time
+// they talk the model is there instead of the loudness stand-in. Cached for a
+// week (next.config.ts, /vad/). Not on a phone in data-saver mode.
+let earsWarm: Promise<void> | null = null;
+export function warmEars(): void {
+  if (earsWarm || typeof window === "undefined") return;
+  const c = (navigator as unknown as { connection?: { saveData?: boolean } }).connection;
+  if (c?.saveData) return;
+  earsWarm = (async () => {
+    await loadScript(`${VAD_BASE}ort.wasm.min.js`);
+    await loadScript(`${VAD_BASE}bundle.min.js`);
+    await Promise.all(
+      ["ort-wasm-simd-threaded.wasm", "ort-wasm-simd-threaded.mjs", "silero_vad_v5.onnx", "vad.worklet.bundle.min.js"].map((f) =>
+        fetch(`${VAD_BASE}${f}`)
+          .then((r) => r.arrayBuffer())
+          .catch(() => null),
+      ),
+    );
+    vlog("ears.warm", "speech model downloaded ahead of Talk");
+  })().catch(() => {
+    earsWarm = null;
+  });
+}
 
 function loadScript(src: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -339,7 +409,9 @@ function basicDetector(ctx: AudioContext, stream: MediaStream, on: DetectorEvent
   // A ScriptProcessor: deprecated, but everywhere and CSP-free; the frames
   // are resampled to 16 kHz and cut into the model's 512-sample slices.
   const node = ctx.createScriptProcessor(1024, 1, 1);
-  const seg = new EnergySegmenter({ padFrames: 25, redemptionFrames: 22, minSpeechFrames: 8, maxFrames: 30 * 31 });
+  // At most ~20 s a recording (30 s until 2026-09-28): a sentence fits, and a
+  // noisy street can't hold one open for half a minute.
+  const seg = new EnergySegmenter({ padFrames: 25, redemptionFrames: 22, minSpeechFrames: 8, maxFrames: 20 * 31 });
   let pending: Float32Array = new Float32Array(0);
   let forceCut = false;
   node.onaudioprocess = (e) => {
@@ -416,6 +488,8 @@ export function useHandsFree({
   const phaseRef = useRef<VoicePhase>("off");
   const session = useRef<Session | null>(null);
   const handlers = useRef({ onUtterance, onInterrupt });
+  // Recordings are packed (opus.ts) and handed on in the order they were made.
+  const packing = useRef<Promise<void>>(Promise.resolve());
   useEffect(() => {
     handlers.current = { onUtterance, onInterrupt };
   }, [onUtterance, onInterrupt]);
@@ -448,11 +522,10 @@ export function useHandsFree({
   const shown = useRef(0);
   const frameCount = useRef(0);
 
-  const supported =
-    typeof window !== "undefined" &&
-    typeof navigator !== "undefined" &&
-    !!navigator.mediaDevices?.getUserMedia &&
-    typeof AudioContext !== "undefined";
+  // Read after hydration (false on the server and on the first client pass):
+  // read during render it made the lamp's tooltip differ between the two, a
+  // hydration mismatch React doesn't repair.
+  const supported = useSyncExternalStore(noSubscribe, canHearHere, () => false);
 
   const go = useCallback((p: VoicePhase) => {
     phaseRef.current = p;
@@ -730,6 +803,7 @@ export function useHandsFree({
     setMetered(true);
     setPushing("on");
     vlog("push.micReady", { ms: Math.round(performance.now() - askedAt), rate: ctx.sampleRate, ctx: ctx.state });
+    playCue("ready", ctx);
     if (!p.heldHer) go("hearing");
   }, [supported, hold, resume, go]);
 
@@ -754,15 +828,15 @@ export function useHandsFree({
         return;
       }
       if (!heldRef.current) go("sending");
-      handlers.current.onUtterance(
-        {
-          data: toBase64(encodeWav(audio)),
-          mime: "audio/wav",
-          seconds: Math.max(1, Math.round(audio.length / 16000)),
-          level: speechLevel(audio),
-        },
-        { interrupting: p.heldHer || replyUnderway(), pushToTalk: true },
-      );
+      playCue("sent");
+      const meta = { interrupting: p.heldHer || replyUnderway(), pushToTalk: true };
+      packing.current = packing.current.then(async () => {
+        const packed = await packRecording(audio);
+        handlers.current.onUtterance(
+          { ...packed, seconds: Math.max(1, Math.round(audio.length / 16000)), level: speechLevel(audio) },
+          meta,
+        );
+      });
     },
     [go, resume],
   );
@@ -770,9 +844,14 @@ export function useHandsFree({
     pushEndRef.current = pushEnd;
   }, [pushEnd]);
 
+  // What happens once she has said goodbye (the sheet closes its subtitles).
+  const afterEnd = useRef<(() => void) | null>(null);
   const stop = useCallback(() => {
     const s = session.current;
     if (s) vlog("handsfree.stop");
+    const then = endPending.current ? afterEnd.current : null;
+    afterEnd.current = null;
+    if (then) window.setTimeout(then, 0);
     session.current = null;
     setHandsFree(false);
     // A hold under way ends too, unsent (End pressed mid-hold).
@@ -955,17 +1034,16 @@ export function useHandsFree({
         }
         bargeConfirmed.current = false;
         if (!heldRef.current) go("sending");
-        const wav = encodeWav(audio);
-        handlers.current.onUtterance(
-          {
-            data: toBase64(wav),
-            mime: "audio/wav",
-            seconds: Math.max(1, Math.round(audio.length / 16000)),
-            level: lvl,
-            nearness: voiceLevel.current.nearness(lvl),
-          },
-          { interrupting: interrupting || replyUnderway(), talkedOver: interrupting },
-        );
+        playCue("sent", s.ctx);
+        const meta = { interrupting: interrupting || replyUnderway(), talkedOver: interrupting };
+        const nearness = voiceLevel.current.nearness(lvl);
+        packing.current = packing.current.then(async () => {
+          const packed = await packRecording(audio);
+          handlers.current.onUtterance(
+            { ...packed, seconds: Math.max(1, Math.round(audio.length / 16000)), level: lvl, nearness },
+            meta,
+          );
+        });
       },
     };
 
@@ -1009,6 +1087,45 @@ export function useHandsFree({
       })
       .catch((err) => vlog("ears", { failed: err instanceof Error ? err.message.slice(0, 80) : "speech model failed" }));
   }, [go, hold, resume, setDuck, supported]);
+
+  /**
+   * Her short acknowledgement (route.ts "ack", ack.ts): played at once while
+   * the answer is prepared — unless any of the answer is already playing or
+   * queued, or they're talking. Not part of the answer's order: the answer's
+   * first piece plays when it ends.
+   */
+  const playAck = useCallback(
+    (data: string) => {
+      if (dropTurnAudio.current || playing.current || queue.current.size > 0 || heldRef.current || userTalking.current) {
+        vlog("ack.skipped", playing.current || queue.current.size > 0 ? "the answer was already speaking" : "they were talking");
+        return;
+      }
+      const p = prepare({ data }, "");
+      const s = session.current;
+      if (s && s.ctx.state === "running") {
+        try {
+          s.ctx.createMediaElementSource(p.el).connect(s.outBus);
+        } catch {}
+      }
+      playing.current = p;
+      go("speaking");
+      vlog("ack.play");
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        p.release();
+        if (playing.current === p) playing.current = null;
+        playNextRef.current();
+        // Nothing of the answer yet: back to thinking until it arrives.
+        if (!playing.current && !turnDone.current && phaseRef.current === "speaking") go("sending");
+      };
+      p.el.onended = done;
+      p.el.onerror = done;
+      void p.el.play().catch(done);
+    },
+    [go],
+  );
 
   /** A new answer is on its way: its spoken pieces start from 0. */
   const beginTurn = useCallback(() => {
@@ -1095,10 +1212,14 @@ export function useHandsFree({
   }, [go, stop]);
 
   /** "End the conversation": finish saying goodbye, then close mic and speaker. */
-  const endAfterPlayback = useCallback(() => {
-    endPending.current = true;
-    if (!playing.current && queue.current.size === 0 && turnDone.current) stop();
-  }, [stop]);
+  const endAfterPlayback = useCallback(
+    (then?: () => void) => {
+      endPending.current = true;
+      afterEnd.current = then ?? null;
+      if (!playing.current && queue.current.size === 0 && turnDone.current) stop();
+    },
+    [stop],
+  );
 
   useEffect(() => () => stopRef.current(), []);
 
@@ -1128,6 +1249,7 @@ export function useHandsFree({
     endTurn,
     endAfterPlayback,
     enqueueStream,
+    playAck,
     /** This browser can play the one-take stream (the sheet asks the server for it). */
     canStream: typeof window !== "undefined" && canPlayVoiceStream(),
     resume,

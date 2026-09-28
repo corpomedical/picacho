@@ -4,14 +4,16 @@
 // read it on the server.
 //
 // Card: the conversation in a floating card that rises out of the lamp's
-// corner (the default). Subtitles: her words across the bottom of the screen
-// like a film's, the part not yet spoken dimmed, your last words above them,
-// a slim box to type in; the whole conversation and Notes still open as the
-// card. Saved on the account (producer_prefs.chat_style).
+// corner. Subtitles: her words across the bottom of the screen like a film's,
+// the part not yet spoken dimmed, your last words above them, a slim box to
+// type in; the whole conversation and Notes still open as the card. Saved on
+// the account (producer_prefs.chat_style). Subtitles are the default since
+// 2026-09-28 (operator: "Make the subtitles the default"); anyone who saved
+// the card keeps it.
 
 export const CHAT_STYLES = ["card", "subtitles"] as const;
 export type ChatStyle = (typeof CHAT_STYLES)[number];
-export const DEFAULT_CHAT_STYLE: ChatStyle = "card";
+export const DEFAULT_CHAT_STYLE: ChatStyle = "subtitles";
 
 export const CHAT_STYLE_LABELS: Record<ChatStyle, { name: string; line: string }> = {
   card: { name: "Floating card", line: "The conversation in a card that rises from the lamp." },

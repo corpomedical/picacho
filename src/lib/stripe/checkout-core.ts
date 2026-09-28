@@ -10,6 +10,7 @@ import {
   CREDIT_PACK_PRICE_IDS_EUR,
 } from "@/lib/stripe/credit-packs";
 import type { PlanId } from "@/lib/plans";
+import { getAssistantTopUp } from "@/lib/agent/topups";
 import { getOrigin } from "@/lib/origin";
 import { isEUVisitor } from "@/lib/geo";
 import { isNativeApp } from "@/lib/native/server";
@@ -457,6 +458,125 @@ export async function startCreditCheckout(
       userData.user.id,
       "checkout",
       `pack ${pack.id} price=${priceId} customer=${customerId ?? profile?.stripe_customer_id ?? "none"}`,
+      err,
+    );
+    return { url: null, clientSecret: null, returnTo, failure };
+  }
+}
+
+async function packTaxTreatment(
+  currency: "usd" | "eur",
+): Promise<{ behavior: "inclusive" | "exclusive" | null; code: string | null }> {
+  const ref = (currency === "eur" ? CREDIT_PACK_PRICE_IDS_EUR.small : null) ?? CREDIT_PACK_PRICE_IDS.small;
+  if (!ref) return { behavior: null, code: null };
+  try {
+    const price = await stripe.prices.retrieve(ref, { expand: ["product"] }, { timeout: 8_000, maxNetworkRetries: 1 });
+    const behavior = price.tax_behavior === "inclusive" || price.tax_behavior === "exclusive" ? price.tax_behavior : null;
+    const product = price.product;
+    const rawCode = product && typeof product === "object" && !("deleted" in product && product.deleted) ? product.tax_code : null;
+    const code = typeof rawCode === "string" ? rawCode : rawCode && typeof rawCode === "object" ? rawCode.id : null;
+    return { behavior, code };
+  } catch (err) {
+    console.error("assistant top-up: couldn't read the credit pack's tax treatment", err);
+    return { behavior: null, code: null };
+  }
+}
+
+// An assistant top-up (lib/agent/topups.ts, 2026-09-28): units for Aly and
+// the composer's assistant, spent after the month's own allowance and kept
+// until used. mode "payment" like a credit pack, with the same customer,
+// tax, address and invoice rules as startCreditCheckout above. Two
+// differences: the price is built inline (no Stripe Price to set up first —
+// the dollar and euro figures come from topups.ts, taxed like the credit
+// packs, packTaxTreatment above), and
+// the units ride on the session's metadata, which is what the webhook grants
+// from (an inline price has no id to look up). No promotion codes, like the
+// packs.
+export async function startAssistantTopUpCheckout(
+  topUpIdRaw: string | null,
+  requestedReturn: string,
+  ui: CheckoutUi,
+): Promise<CheckoutStart & { returnTo: string }> {
+  await blockInNativeApp();
+  const topUp = getAssistantTopUp(topUpIdRaw);
+  // The same allowlist as startCreditCheckout: back to the page they were on.
+  const returnTo = /^\/app\/[a-z0-9/-]*$/i.test(requestedReturn) ? requestedReturn : "/app/settings?tab=billing";
+  if (!topUp) {
+    redirect(`/app/settings?tab=billing&error=${encodeURIComponent("That top-up isn't available.")}`);
+  }
+
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) redirect("/login");
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("stripe_customer_id")
+    .eq("id", userData.user.id)
+    .single();
+
+  const currency: "usd" | "eur" = (await isEUVisitor()) ? "eur" : "usd";
+  const origin = await getOrigin();
+  let customerId: string | null = null;
+
+  try {
+    customerId = await ensureStripeCustomer(
+      userData.user.id,
+      userData.user.email,
+      profile?.stripe_customer_id,
+    );
+
+    // Taxed exactly like a credit pack, the other one-off purchase: its price
+    // says inclusive or exclusive, its product the tax code. Read from the
+    // smallest pack in this currency; if that read fails, the account's
+    // defaults apply (as they do to the annual plans' inline price).
+    const tax = await packTaxTreatment(currency);
+    const successTarget = `${origin}${returnTo}${returnTo.includes("?") ? "&" : "?"}topped=1`;
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      customer: customerId,
+      client_reference_id: userData.user.id,
+      line_items: [
+        {
+          price_data: {
+            currency,
+            unit_amount: topUp.price * 100,
+            ...(tax.behavior ? { tax_behavior: tax.behavior } : {}),
+            product_data: {
+              name: `Assistant top-up: ${topUp.units.toLocaleString("en-US")} units`,
+              description: "For Aly and the composer's assistant. Used after your monthly allowance; kept until used.",
+              ...(tax.code ? { tax_code: tax.code } : {}),
+            },
+          },
+          quantity: 1,
+        },
+      ],
+      automatic_tax: { enabled: true },
+      // Same requirement as startPlanCheckout — see the comment there.
+      customer_update: { address: "auto", name: "auto" },
+      // A numbered invoice per purchase, like the credit packs.
+      invoice_creation: { enabled: true },
+      // What the webhook grants from. Units are written here, at the price
+      // this person saw, so a later change to topups.ts can't change what a
+      // checkout already open grants.
+      metadata: {
+        supabase_user_id: userData.user.id,
+        assistant_topup: topUp.id,
+        assistant_units: String(topUp.units),
+      },
+      ...(ui === "embedded"
+        ? {
+            ui_mode: "embedded_page" as Stripe.Checkout.SessionCreateParams.UiMode,
+            return_url: successTarget,
+          }
+        : { success_url: successTarget, cancel_url: `${origin}${returnTo}` }),
+    });
+    return { url: session.url ?? null, clientSecret: session.client_secret ?? null, returnTo };
+  } catch (err) {
+    const failure = await reportCheckoutFailure(
+      userData.user.id,
+      "checkout",
+      `assistant top-up ${topUp.id} ${currency} customer=${customerId ?? profile?.stripe_customer_id ?? "none"}`,
       err,
     );
     return { url: null, clientSecret: null, returnTo, failure };

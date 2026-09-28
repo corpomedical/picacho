@@ -1,6 +1,16 @@
 import { Suspense } from "react";
-import { readProducerGrant } from "@/lib/producer/enabled";
-import { loadProducerChat, loadProducerLook, loadProducerName, loadProducerVoices, loadProducerWheel } from "@/lib/producer/actions";
+import { producerVisible, readProducerGrant } from "@/lib/producer/enabled";
+import { isChatAgentEnabled } from "@/lib/agent/enabled";
+import { readAssistantTopUp } from "@/lib/agent/allowance";
+import { AssistantTopUpPanel } from "@/components/settings/assistant-topup-panel";
+import {
+  loadProducerChat,
+  loadProducerLook,
+  loadProducerName,
+  loadProducerPersonality,
+  loadProducerVoices,
+  loadProducerWheel,
+} from "@/lib/producer/actions";
 import { redirect } from "next/navigation";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getMonthlyUsage } from "@/lib/generations/actions";
@@ -246,6 +256,23 @@ export default async function SettingsPage({
     setsEligible(profile?.plan ?? null, isAdmin) &&
     (await isSetsEnabled(supabase));
 
+  // ── Assistant top-ups (lib/agent/topups.ts, 2026-09-28) ───────────────
+  // For anyone whose assistant allowance is monthly: Aly's accounts, and a
+  // plan in good standing while the composer's assistant is on. Sold on the
+  // web only; in the app the balance still shows, never a way to buy.
+  const producerGranted =
+    activeTab === "overview" || activeTab === "billing" ? await readProducerGrant(supabase, userId) : false;
+  let assistantTopUp: { balance: number; href: string | null } | null = null;
+  if (activeTab === "overview" || activeTab === "billing") {
+    const monthlyAssistant =
+      (await producerVisible(supabase, { plan, plan_status: planStatus, producer_access: producerGranted }, isAdmin)) ||
+      (plan !== "none" && planAllowanceActive && (await isChatAgentEnabled(supabase)));
+    if (monthlyAssistant) {
+      const { balance } = await readAssistantTopUp(createAdminClient(), userId, monthlyWindowStart(periodStart).toISOString());
+      assistantTopUp = { balance, href: nativeApp ? null : `${settingsHref("billing")}#assistant-topup` };
+    }
+  }
+
   // ── Overview ──────────────────────────────────────────────────────────
   let overview: {
     twoStepOn: boolean;
@@ -254,20 +281,21 @@ export default async function SettingsPage({
   if (activeTab === "overview") {
     const [factors, allowances] = await Promise.all([
       supabase.auth.mfa.listFactors(),
-      readProducerGrant(supabase, userId).then((producerGranted) =>
-        loadAllowances(supabase, {
-          userId,
-          plan,
-          planStatus,
-          isAdmin,
-          periodStart,
-          setsOn,
-          freeReferenceUsed: (profile?.free_reference_generations_used ?? 0) as number,
-          producerGranted,
-        }),
-      ),
+      loadAllowances(supabase, {
+        userId,
+        plan,
+        planStatus,
+        isAdmin,
+        periodStart,
+        setsOn,
+        freeReferenceUsed: (profile?.free_reference_generations_used ?? 0) as number,
+        producerGranted,
+      }),
     ]);
-    overview = { twoStepOn: (factors.data?.totp ?? []).length > 0, allowances };
+    overview = {
+      twoStepOn: (factors.data?.totp ?? []).length > 0,
+      allowances: assistantTopUp ? { ...allowances, topUp: assistantTopUp } : allowances,
+    };
   }
 
   // ── Plan & billing ────────────────────────────────────────────────────
@@ -355,7 +383,7 @@ export default async function SettingsPage({
           .maybeSingle()
       : { data: null };
   // The Producer's name row: only for accounts that have the Producer.
-  const [producerName, producerVoices, producerLook, producerWheel, producerChat] =
+  const [producerName, producerVoices, producerLook, producerWheel, producerChat, producerPersonality] =
     activeTab === "preferences"
       ? await Promise.all([
           loadProducerName().then((p) => (p.available ? p.name : null)),
@@ -363,8 +391,9 @@ export default async function SettingsPage({
           loadProducerLook(),
           loadProducerWheel(),
           loadProducerChat(),
+          loadProducerPersonality(),
         ])
-      : [null, null, null, null, null];
+      : [null, null, null, null, null, null];
 
   const notifyPrefs = {
     notify_render_ready: (notifyRow as { notify_render_ready?: boolean } | null)?.notify_render_ready !== false,
@@ -583,7 +612,14 @@ export default async function SettingsPage({
             // Buying credits is a purchase, so it can't exist in the app
             // at all. The Play store component shows nothing unless the
             // installed binary can bill (lib/native/purchases.ts).
-            nativeApp ? <NativeStore userId={userId} currentPlan={plan} /> : <BuyCreditsPanel currencySymbol={currencySymbol} />
+            nativeApp ? (
+              <NativeStore userId={userId} currentPlan={plan} />
+            ) : (
+              <>
+                <BuyCreditsPanel currencySymbol={currencySymbol} />
+                {assistantTopUp && <AssistantTopUpPanel currencySymbol={currencySymbol} balance={assistantTopUp.balance} />}
+              </>
+            )
           }
           invoices={
             <Suspense fallback={<StripeCardSkeleton title={h.invoicesTitle} rows={3} />}>
@@ -650,6 +686,7 @@ export default async function SettingsPage({
           producerLook={producerLook}
           producerWheel={producerWheel}
           producerChat={producerChat}
+          producerPersonality={producerPersonality}
         />
       )}
 

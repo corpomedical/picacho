@@ -20,6 +20,28 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.131.0",
+    build: 170,
+    date: "2026-09-28",
+    title: "Aly listens outdoors, knows more, answers at once, has three personalities, and can be topped up",
+    items: [
+      "Aly hears better outdoors. What you say is now sent as Opus, about a tenth of the size it was (a 2.5-second test: 7,965 bytes instead of 80,044), so it gets through on a weak signal; a browser that can't make Opus still sends the old format. The server reads each recording's real length from the file.",
+      "Her speech detector is downloaded as soon as you open her, not when you press Talk, and the phone keeps it for a week instead of fetching it again on every visit (skipped when the phone is in data-saver mode). Until it's ready, the stand-in that listens for loudness now learns the street's noise in half the time, ends your sentence when your voice stops even over traffic, and cuts a sentence off at 20 seconds rather than letting noise hold it open.",
+      "Push to talk plays a short tone when the mic is really open, so the first word isn't lost, and another when what you said is sent. A hands-free sentence gets the \"sent\" tone too.",
+      "She answers anything, like a general assistant, not only questions about Picacho. For anything current (news, weather, prices, a release date) she searches the web, up to twice a question, and lists her sources under the answer as links. Each search costs $0.01 (Anthropic's price) plus reading what it found, counted in her allowance like everything she does.",
+      "She can read your account when you ask about it: plan, credits left and what this month's went on, the refill and renewal dates, the month's other allowances and any assistant top-up. Her guide to Picacho was rewritten against today's app: herself, the Android app, the sidebar and library pages, Layers and Live with their real prices, the API, billing, and what isn't open to customers yet.",
+      "The check that decides whether speech was meant for her no longer throws away a question just because it's about something other than Picacho (it dropped 5 of 15 such test lines), and a spoken question now gets the same thinking as a typed one.",
+      "She answers straight away: when you talk to her, as soon as she has accepted what you said she says a short \"Mm-hm, one sec.\" in her own voice and personality while the full answer is worked out. Each phrase is made once per server and kept, so it usually plays with no wait and costs nothing.",
+      "With her chat closed, the lamp now says what's happening: \"Hearing you…\" while you speak, \"Got it · thinking…\" once it's sent, and \"Not for me? Open me to answer it\" when she decided something wasn't meant for her.",
+      "Subtitles is now how her chat shows unless you picked the floating card in Settings (anyone who chose the card keeps it).",
+      "Three personalities in Settings → Preferences → Your assistant → Its personality: Default (the Aly you know), Sarcastic and Rude. Rude roasts, but never with slurs, swearing at you, or anything about your looks, race, religion, gender, sexuality or health, and drops the act if you're hurt or ask nicely. None of them changes what she knows or how carefully she works.",
+      "When you tell her to stop talking or shut down, the subtitles close once she has finished her last sentence.",
+      "When the month's assistant allowance runs out you can top it up: 500 units for $19, 1,250 for $45 or 2,500 for $85 (the same in euros in the EU), about twice what the units cost us. The buttons appear under the limit message in Aly's chat, as \"Top up the assistant\" in the composer's assistant, beside the Assistant meter on Settings → Overview once it's nearly used, and on Settings → Plan & billing. Each opens the payment page and comes with an invoice.",
+      "Bought units are used only after the month's own allowance is spent, work for both assistants, and stay until you use them. Her wheel reads \"Top-up 300 left\" (or however many) while you're on them. A full refund or a chargeback takes back what's left of that top-up. They aren't sold in the Android app.",
+      "Fixed: the lamp's tooltip could keep the wrong text, because the page drew it before the browser had checked for a microphone.",
+    ],
+  },
+  {
     version: "1.130.0",
     build: 169,
     date: "2026-09-28",

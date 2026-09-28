@@ -353,6 +353,11 @@ export class EnergySegmenter {
   private buf: Float32Array[] = [];
   private pre: Float32Array[] = [];
   private recent: number[] = [];
+  /** How loud their speech has been in this recording (an average of its loud frames). */
+  private talkLevel = 0;
+  /** The sound after their voice stopped, at the end of this recording (becomes the room). */
+  private tailSum = 0;
+  private tailCount = 0;
   constructor(
     private opts = { padFrames: 10, redemptionFrames: 22, minSpeechFrames: 8, maxFrames: 30 * 31 },
   ) {}
@@ -367,11 +372,13 @@ export class EnergySegmenter {
     let p = this.pOf(mic);
     if (!this.speaking && p < 0.3) this.floor = this.floor * 0.97 + mic * 0.03;
     // Speech has pauses; a room that got louder (an air conditioner coming
-    // on) doesn't. After 3 s of "speech", the quietest tenth of the last two
-    // seconds is taken as the room, so steady noise stops counting.
+    // on) doesn't. After 1.5 s of "speech" (3 s until 2026-09-28: outdoors,
+    // steady traffic kept a recording open to the 30 s cap), the quietest
+    // tenth of the last two seconds is taken as the room, so steady noise
+    // stops counting.
     this.recent.push(mic);
     if (this.recent.length > 62) this.recent.shift();
-    if (this.speaking && this.buf.length > 94) {
+    if (this.speaking && this.buf.length > 47) {
       const sorted = [...this.recent].sort((a, b) => a - b);
       const quiet = sorted[Math.floor(sorted.length / 10)] * 0.8;
       if (quiet > this.floor) {
@@ -387,6 +394,7 @@ export class EnergySegmenter {
         this.speaking = true;
         this.speechFrames = 1;
         this.silentFrames = 0;
+        this.talkLevel = mic;
         this.buf = [...this.pre];
         this.pre = [];
         event = { kind: "start" };
@@ -394,15 +402,30 @@ export class EnergySegmenter {
       return { p, event };
     }
     this.buf.push(frame);
-    if (p >= 0.5) {
+    // Their own voice ended when the sound falls well below how loud they've
+    // been talking (a quarter of it, about -12 dB), even if the street
+    // underneath is still loud against the room's floor.
+    const wellBelowThem = this.talkLevel > 0 && this.speechFrames >= this.opts.minSpeechFrames && mic < this.talkLevel * 0.25;
+    if (p >= 0.5 && !wellBelowThem) {
       this.speechFrames++;
       this.silentFrames = 0;
-    } else if (p < 0.35) {
+      this.tailSum = 0;
+      this.tailCount = 0;
+      this.talkLevel = this.talkLevel > 0 ? this.talkLevel * 0.92 + mic * 0.08 : mic;
+    } else if (p < 0.35 || wellBelowThem) {
       this.silentFrames++;
+      this.tailSum += mic;
+      this.tailCount++;
     }
     const tooLong = this.buf.length >= this.opts.maxFrames;
     if (this.silentFrames >= this.opts.redemptionFrames || tooLong) {
       this.speaking = false;
+      this.talkLevel = 0;
+      // What was left once they stopped is the room now (a street, traffic):
+      // a new recording needs speech above it, not above the quiet it had.
+      if (this.tailCount >= this.opts.redemptionFrames / 2) this.floor = Math.max(this.floor, (this.tailSum / this.tailCount) * 0.9);
+      this.tailSum = 0;
+      this.tailCount = 0;
       const enough = this.speechFrames >= this.opts.minSpeechFrames;
       const audio = concat(this.buf);
       this.buf = [];

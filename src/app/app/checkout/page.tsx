@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServerMessages } from "@/lib/i18n/server";
-import { startPlanCheckout, startCreditCheckout } from "@/lib/stripe/checkout-core";
+import { startPlanCheckout, startCreditCheckout, startAssistantTopUpCheckout } from "@/lib/stripe/checkout-core";
+import { getAssistantTopUp } from "@/lib/agent/topups";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { getCreditPack } from "@/lib/stripe/credit-packs";
@@ -17,6 +18,7 @@ import { isEUVisitor } from "@/lib/geo";
 //
 // Reached via /app/checkout?plan=<id>&interval=<month|annual>  (subscriptions)
 //         or /app/checkout?pack=<id>&return_to=<path>          (credit packs)
+//         or /app/checkout?topup=<id>&return_to=<path>         (assistant top-ups, lib/agent/topups.ts)
 
 export const dynamic = "force-dynamic";
 
@@ -26,11 +28,12 @@ export default async function CheckoutPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const { t } = await getServerMessages();
+  const { t, locale } = await getServerMessages();
   const c = t.checkout;
 
   const planParam = typeof params.plan === "string" ? params.plan : null;
   const packParam = typeof params.pack === "string" ? params.pack : null;
+  const topUpParam = typeof params.topup === "string" ? params.topup : null;
   const interval = params.interval === "annual" ? "annual" : "month";
   const returnTo = typeof params.return_to === "string" ? params.return_to : "";
 
@@ -76,6 +79,21 @@ export default async function CheckoutPage({
       summaryTitle = formatMsg(c.packTitle, { n: pack.credits });
       summaryCredits = c.packNote;
       summaryPrice = `${currencySymbol}${pack.price}`;
+    }
+  } else if (topUpParam) {
+    const {
+      clientSecret: cs,
+      returnTo: safeReturn,
+      failure: f,
+    } = await startAssistantTopUpCheckout(topUpParam, returnTo, "embedded");
+    clientSecret = cs;
+    failure = f;
+    backHref = safeReturn;
+    const topUp = getAssistantTopUp(topUpParam);
+    if (topUp) {
+      summaryTitle = formatMsg(c.topUpTitle, { n: topUp.units.toLocaleString(locale) });
+      summaryCredits = c.topUpNote;
+      summaryPrice = `${currencySymbol}${topUp.price}`;
     }
   } else {
     redirect("/app/settings?tab=usage");

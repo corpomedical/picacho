@@ -5,10 +5,12 @@ import { ProducerLampForm } from "@/components/settings/producer-lamp-form";
 import { ProducerLookForm } from "@/components/settings/producer-look-form";
 import { ProducerWheelForm } from "@/components/settings/producer-wheel-form";
 import { ProducerChatForm } from "@/components/settings/producer-chat-form";
+import { ProducerPersonalityForm } from "@/components/settings/producer-personality-form";
 import { ProducerPttKeyForm } from "@/components/settings/producer-ptt-key-form";
 import { DEFAULT_LAMP_LOOK, type LampLook } from "@/components/producer/lamp-look";
 import type { WheelStyle } from "@/components/producer/wheel-style";
 import type { ChatStyle } from "@/components/producer/chat-style";
+import type { Personality } from "@/lib/producer/personality";
 import type { ProducerVoiceChoice } from "@/lib/producer/actions";
 import type { Messages } from "@/lib/i18n/messages";
 import type { Locale } from "@/lib/i18n/locales";
@@ -151,6 +153,7 @@ export function PreferencesTab({
   producerLook = null,
   producerWheel = null,
   producerChat = null,
+  producerPersonality = null,
 }: {
   t: Messages;
   notifyPrefs: { notify_render_ready: boolean; notify_render_failed: boolean; notify_low_credits: boolean };
@@ -168,6 +171,8 @@ export function PreferencesTab({
   producerWheel?: WheelStyle | null;
   /** How the chat shows itself, or null when this account has no Producer. */
   producerChat?: ChatStyle | null;
+  /** Her personality, or null when this account has no Producer. */
+  producerPersonality?: Personality | null;
 }) {
   const s = t.settings;
   return (
@@ -223,6 +228,15 @@ export function PreferencesTab({
                 </p>
               </div>
               <ProducerChatForm current={producerChat} />
+            </div>
+          )}
+          {producerPersonality && (
+            <div className="space-y-3 border-t border-atelier-rule/60 pt-5">
+              <div>
+                <p className="text-sm font-medium text-atelier-ink">Its personality</p>
+                <p className="mt-0.5 text-xs text-atelier-muted">How she talks to you. It never changes what she knows or how carefully she works.</p>
+              </div>
+              <ProducerPersonalityForm current={producerPersonality} />
             </div>
           )}
           {producerVoices && (

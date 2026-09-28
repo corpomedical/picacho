@@ -40,3 +40,28 @@ export function wheelGeometry(style: WheelStyle, phone: boolean) {
 export function usageFraction(used: number, cap: number): number {
   return cap > 0 ? Math.min(1, Math.max(0, used / cap)) : 1;
 }
+
+/**
+ * What the wheel's meter says. Past the month's allowance a top-up carries
+ * on (2026-09-28, lib/agent/topups.ts): the meter stays lit and the words say
+ * what is left of it; "full" only when there is nothing left at all.
+ * `extra` is what top-ups add to this month's ceiling (the snapshot's).
+ */
+export function usageState(
+  used: number,
+  cap: number,
+  extra = 0,
+): { pct: number; full: boolean; onTopUp: boolean; topUpLeft: number; label: string } {
+  const pct = usageFraction(used, cap);
+  const x = Math.max(0, extra);
+  const topUpLeft = Math.max(0, cap + x - used);
+  const onTopUp = pct >= 1 && x > 0 && topUpLeft > 0;
+  const full = pct >= 1 && !onTopUp;
+  const n = (v: number) => v.toLocaleString("en-US");
+  const label = full
+    ? "Allowance used up for this period"
+    : onTopUp
+      ? `This month's allowance is used; ${n(topUpLeft)} topped-up units left`
+      : `${n(used)} of ${n(cap)} assistant units used this period${x > 0 ? `, plus ${n(x)} topped up` : ""}`;
+  return { pct, full, onTopUp, topUpLeft, label };
+}

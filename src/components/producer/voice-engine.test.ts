@@ -305,6 +305,8 @@ describe("the fallback ears", () => {
       if (e) kinds.push(e.kind);
     }
     expect(kinds).toEqual(["misfire"]);
+    // Endless steady noise is cut (at the cap or sooner) and then taken as the
+    // room (2026-09-28): it doesn't open recording after recording.
     const t = new EnergySegmenter({ padFrames: 2, redemptionFrames: 22, minSpeechFrames: 8, maxFrames: 50 });
     for (let i = 0; i < 30; i++) t.push(frame, 0.006);
     const ends: number[] = [];
@@ -312,6 +314,34 @@ describe("the fallback ears", () => {
       const e = t.push(frame, 0.08).event;
       if (e?.kind === "end") ends.push(i);
     }
-    expect(ends.length).toBeGreaterThan(2);
+    expect(ends.length).toBeGreaterThanOrEqual(1);
+    expect(ends[0]).toBeLessThanOrEqual(50);
+    expect(ends.length).toBeLessThanOrEqual(2);
+  });
+
+  it("ends a sentence said over street noise when the voice stops (outdoors, 2026-09-28)", () => {
+    // A quiet start, then they talk loudly, then only the street is left —
+    // loud against the quiet room, but far below their voice.
+    const s = new EnergySegmenter();
+    for (let i = 0; i < 30; i++) s.push(frame, 0.01);
+    const kinds: string[] = [];
+    for (let i = 0; i < 30; i++) {
+      const e = s.push(frame, 0.2).event;
+      if (e) kinds.push(e.kind);
+    }
+    let endedAt = -1;
+    for (let i = 0; i < 90; i++) {
+      const e = s.push(frame, 0.04 + (i % 3) * 0.004).event;
+      if (e) kinds.push(e.kind);
+      if (e?.kind === "end" && endedAt < 0) endedAt = i;
+    }
+    expect(kinds).toEqual(["start", "end"]);
+    // About the redemption time after the voice stopped (22 frames, 0.7 s), not the cap.
+    expect(endedAt).toBeGreaterThanOrEqual(20);
+    expect(endedAt).toBeLessThanOrEqual(26);
+    // The street is the room now: talking over it still starts a recording.
+    let restarted = false;
+    for (let i = 0; i < 10; i++) if (s.push(frame, 0.2).event?.kind === "start") restarted = true;
+    expect(restarted).toBe(true);
   });
 });

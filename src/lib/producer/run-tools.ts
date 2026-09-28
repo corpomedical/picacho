@@ -42,6 +42,8 @@ export type ToolContext = {
   /** Service role, for the Producer's own tables. */
   admin: SupabaseClient;
   userId: string;
+  /** Topped-up assistant units left (the person bought them; kept until used). */
+  topUpUnits?: number | null;
 };
 
 function asRecord(v: unknown): Record<string, unknown> {
@@ -195,8 +197,23 @@ export async function runTool(ctx: ToolContext, call: ToolCall): Promise<ToolOut
       return prepare(ctx, call);
     case TOOL_NAMES.memory:
       return memory(ctx, call);
+    case TOOL_NAMES.account:
+      return account(ctx, call);
     default:
       return errorResult(call.id, `There is no tool called ${call.name}.`);
+  }
+}
+
+// read_account (account-tool.ts): loaded when first used, so these tools'
+// tests don't need the app's import aliases.
+async function account(ctx: ToolContext, call: ToolCall): Promise<ToolOutcome> {
+  try {
+    const { readAccount } = await import("./account-tool");
+    const text = await readAccount(ctx.supabase, ctx.userId, { topUpUnits: ctx.topUpUnits ?? null });
+    return { result: { type: "tool_result", tool_use_id: call.id, content: text } };
+  } catch (err) {
+    console.error("producer: read_account failed —", err instanceof Error ? err.message : err);
+    return errorResult(call.id, "Their account couldn't be read just now. Say so, and point them to Settings (Overview).");
   }
 }
 
@@ -219,6 +236,10 @@ export function toolStatus(name: string): string {
       return "Fixing the set";
     case TOOL_NAMES.undoSet:
       return "Undoing the change";
+    case TOOL_NAMES.account:
+      return "Reading your account";
+    case TOOL_NAMES.web:
+      return "Searching the web";
     default:
       return "Working";
   }

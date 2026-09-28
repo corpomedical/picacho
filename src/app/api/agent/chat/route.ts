@@ -16,6 +16,8 @@ import { PLAN_CHAT_UNIT_LIMITS, FREE_CHAT_UNIT_LIMIT, type PlanId } from "@/lib/
 import { monthlyWindowStart } from "@/lib/generations/core";
 import { classifyTurnFailure, unitsForFailedTurn, type TurnFailure } from "@/lib/agent/failures";
 import { rateLimited } from "@/lib/rate-limit";
+import { reserveAssistantUnits, settleAssistantTopUp } from "@/lib/agent/allowance";
+import { isNativeApp } from "@/lib/native/server";
 
 // The project-aware chat agent (2026-08-30).
 //
@@ -157,31 +159,43 @@ export async function POST(request: NextRequest) {
   // in place with what the turn really cost. It is never a second charge —
   // see agent-chat.sql for what happened when it was.
   const reservedUnits = MAX_UNITS_PER_TURN[effectiveMode];
-  const { data: reservationId, error: reserveError } = await admin.rpc("record_agent_units", {
-    p_user_id: user.id,
-    p_since: since,
-    p_cap: cap,
-    p_units: reservedUnits,
-  });
-  if (reserveError) {
-    console.error("agent-chat: budget check failed", reserveError.message);
+  // Topped-up units count after the allowance (lib/agent/allowance.ts, 2026-09-28).
+  const reserved = await reserveAssistantUnits(admin, { userId: user.id, since, cap, units: reservedUnits });
+  if (!reserved.ok) {
+    console.error("agent-chat: budget check failed", reserved.error);
     return NextResponse.json({ error: "Chat is unavailable right now." }, { status: 503 });
   }
-  if (!reservationId) {
+  if (!reserved.id) {
+    // A monthly allowance can be topped up (lib/agent/topups.ts); a free
+    // account's lifetime one points at the plans. Never in the Android app.
+    const monthly = !isFree || producerGranted;
     return NextResponse.json(
       {
-        error: isFree
-          ? "You've used the free chat allowance. Any paid plan includes more."
-          : "You've used this period's chat allowance.",
+        error: monthly
+          ? "You've used this period's chat allowance."
+          : "You've used the free chat allowance. Any paid plan includes more.",
+        topUp: monthly && !(await isNativeApp()),
       },
       { status: 402 },
     );
   }
+  const reservationId = reserved.id;
+  const ownerId = user.id;
 
   // Rewrites the reservation row with what the turn actually cost. Called on
   // every exit path, including the failures — a reservation left standing at
-  // the worst case is a charge nobody can explain.
+  // the worst case is a charge nobody can explain. Then, for someone holding
+  // a top-up, what the month used past its allowance comes off it.
   async function settle(
+    usage: TurnUsage | null,
+    failure: TurnFailure | null,
+    deliveredText: boolean,
+  ) {
+    await settleLedger(usage, failure, deliveredText);
+    if (reserved.ok && reserved.topUp > 0) await settleAssistantTopUp(admin, { userId: ownerId, since, cap });
+  }
+
+  async function settleLedger(
     usage: TurnUsage | null,
     failure: TurnFailure | null,
     deliveredText: boolean,

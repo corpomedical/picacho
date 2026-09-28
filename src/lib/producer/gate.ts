@@ -1,6 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { GATE_MODEL } from "./prices";
 
+// 2026-09-28 (operator: "She almost never has an answer to the question"):
+// 5 of 15 spoken messages in his 10:51-10:54 run were let be. A question on a
+// new topic read as "nothing to do with the conversation"; now any question
+// or request of the person's own is for her, and their own clear voice leans
+// towards her — still judged by meaning, never by words.
+//
 // Was that said TO the Producer? (2026-09-25, operator: "doesnt pick up every
 // voice on the background and processes it"). The data that day: five lines
 // from social-media videos he was scrolling were transcribed, shown as his
@@ -49,13 +55,13 @@ export type GateSignals = { loud: string; sure: string; whileAnswering: boolean;
 
 const SYSTEM = `You are a filter in front of a voice assistant. Its microphone stays open while the person uses the app, so it also hears things that were not said to the assistant. For each thing it picks up, decide whether the person using the app said it TO the assistant.
 
-It was said to the assistant when it asks the assistant something, answers or reacts to what the assistant just said, tells it to do something, corrects it, or carries on the conversation with it.
+It was said to the assistant when it asks the assistant something, answers or reacts to what the assistant just said, tells it to do something, corrects it, or carries on the conversation with it. People ask their assistant about anything, not only the app: a question or request on a brand-new topic, said by the person, is for the assistant.
 
 The app is a studio where people make images and videos of their own characters, and they often say out loud what they want to make: a scene, a shot, a look, what a character does or says. That is said to the assistant, even though it can sound like a description, narration or a line from a script.
 
 It was not said to the assistant when it is something else the microphone happened to hear: a video, TV, podcast or song playing nearby; other people in the room; the person talking to someone else or on the phone; or the assistant's own voice coming back through the speaker.
 
-Judge by what the words mean in this conversation, not by particular words. Speech that has nothing to do with the conversation and reads like dialogue, narration, commentary or someone else's talk is most likely not for the assistant. A short reply that fits what the assistant just said is for it, even if it is only a word or two. Words that are much quieter than the person's own voice, or that the transcriber was unsure of, lean towards not for the assistant, but meaning comes first. If you can't tell, say unclear.
+Judge by what the words mean in this conversation, not by particular words. Speech that reads like dialogue, narration, commentary or someone else's talk, and isn't a question or request to the assistant, is most likely not for the assistant. A short reply that fits what the assistant just said is for it, even if it is only a word or two. Words about as loud as the person's own voice that the transcriber was sure of lean towards said to the assistant, unless what they mean plainly says otherwise (the person clearly talking to someone else). Words that are much quieter than the person's own voice, or that the transcriber was unsure of, lean towards not for the assistant, but meaning comes first. If you can't tell, say unclear.
 
 When the person talks while the assistant is speaking, the microphone may also catch the end of what the assistant was saying. If the words go beyond the assistant's own words with something of the person's (a question, a correction, "wait", "stop", a new request), they were said to it; if they are only the assistant's own words, they were not.
 

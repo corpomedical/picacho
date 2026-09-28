@@ -143,3 +143,18 @@ export function speechCostUsd(chars: number, voice: "human" | "openai" = "openai
 // Tool rounds per turn. A plan for three shots is read → three prepares →
 // answer, which fits with room for one look at a frame.
 export const MAX_CALLS = 6;
+
+// WEB SEARCH (2026-09-28, operator: "Make her as good as you", then "Yes,
+// turn it on" at about $0.05 a searched question). Read from Anthropic's web
+// search tool page (platform.claude.com/docs/en/agents-and-tools/tool-use/
+// web-search-tool) on 2026-09-28: "$10 per 1,000 searches, plus standard
+// token costs for search-generated content" — the results are input tokens,
+// already in the call's usage. So each search adds $10 / 1,000 = $0.01.
+// At most WEB_SEARCH_MAX_USES searches a question.
+export const WEB_SEARCH_USD_PER_SEARCH = 0.01;
+export const WEB_SEARCH_MAX_USES = 2;
+
+export function webSearchCostUsd(usage: unknown): number {
+  const n = (usage as { server_tool_use?: { web_search_requests?: unknown } } | null)?.server_tool_use?.web_search_requests;
+  return typeof n === "number" && n > 0 ? n * WEB_SEARCH_USD_PER_SEARCH : 0;
+}

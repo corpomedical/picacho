@@ -68,7 +68,12 @@ export type Allowance = {
   asPercent: boolean;
 };
 
-export type Allowances = { lifetime: boolean; items: Allowance[] };
+export type Allowances = {
+  lifetime: boolean;
+  items: Allowance[];
+  /** Assistant top-ups (lib/agent/topups.ts): units bought and left, and where to buy more (null in the app, or none on offer). Set by the page. */
+  topUp?: { balance: number; href: string | null };
+};
 
 async function countSince(
   supabase: SupabaseClient,

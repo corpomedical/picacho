@@ -20,8 +20,12 @@ import {
   speechCostUsd,
   transcribeCostUsd,
   unitsForCostUsd,
+  webSearchCostUsd,
   type CallUsage,
 } from "@/lib/producer/prices";
+import { lastAck, pickAck, speakAck } from "@/lib/producer/ack";
+import { citedSources } from "@/lib/producer/sources";
+import { DEFAULT_PERSONALITY } from "@/lib/producer/personality";
 import {
   MAX_AUDIO_BYTES,
   isHumanVoiceConfigured,
@@ -35,7 +39,15 @@ import {
 import { gateSignals, judgeSpoken, type Verdict } from "@/lib/producer/gate";
 import { sentenceChunker } from "@/lib/producer/sentences";
 import { spotForTool } from "@/lib/producer/spots";
-import { DEFAULT_PRODUCER_NAME, appendMessages, loadMessages, loadPrefs, loadProducerVoice, openThread } from "@/lib/producer/store";
+import {
+  DEFAULT_PRODUCER_NAME,
+  appendMessages,
+  loadMessages,
+  loadPersonality,
+  loadPrefs,
+  loadProducerVoice,
+  openThread,
+} from "@/lib/producer/store";
 import { isStreamableVoiceId, isVoiceStreamConfigured, openVoiceStream, resumeAt, type VoiceStream } from "@/lib/producer/voice-stream";
 import {
   CUT_MARK,
@@ -62,6 +74,8 @@ import type { PreparedSend } from "@/lib/producer/tools";
 import type { PlanId } from "@/lib/plans";
 import { monthlyWindowStart } from "@/lib/generations/core";
 import { classifyTurnFailure, unitsForFailedTurn, type TurnFailure } from "@/lib/agent/failures";
+import { reserveAssistantUnits, settleAssistantTopUp } from "@/lib/agent/allowance";
+import { isNativeApp } from "@/lib/native/server";
 import { rateLimited } from "@/lib/rate-limit";
 
 // The Producer's turn (2026-09-24) — Claude Opus 5.5 with its tools, for
@@ -220,19 +234,23 @@ export async function POST(request: NextRequest) {
   const plan: PlanId = profile?.plan ?? "none";
   const cap = producerUnitCap(access, plan);
   const since = monthlyWindowStart(profile?.current_period_start).toISOString();
-  const { data: reservationId, error: reserveError } = await admin.rpc("record_agent_units", {
-    p_user_id: user.id,
-    p_since: since,
-    p_cap: cap,
-    p_units: RESERVE_UNITS,
-  });
-  if (reserveError) {
-    console.error("producer: budget check failed", reserveError.message);
+  // What they have topped up counts too, after the month's own allowance
+  // (lib/agent/allowance.ts, 2026-09-28).
+  const reserved = await reserveAssistantUnits(admin, { userId: user.id, since, cap, units: RESERVE_UNITS });
+  if (!reserved.ok) {
+    console.error("producer: budget check failed", reserved.error);
     return NextResponse.json({ error: "Your assistant is unavailable right now." }, { status: 503 });
   }
-  if (!reservationId) {
-    return NextResponse.json({ error: "You've used this period's assistant allowance." }, { status: 402 });
+  if (!reserved.id) {
+    // topUp: the sheet offers the top-ups (lib/agent/topups.ts). Never in the
+    // Android app, where nothing may point at a way to buy.
+    return NextResponse.json(
+      { error: "You've used this period's assistant allowance.", topUp: !(await isNativeApp()) },
+      { status: 402 },
+    );
   }
+  const reservationId = reserved.id;
+  const ownerId = user.id;
 
   // Totals across every call of the turn, for the ledger.
   const totals = { cost: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, calls: 0, lastCall: 0 };
@@ -303,10 +321,12 @@ export async function POST(request: NextRequest) {
           output_tokens: ledger.output,
         })
         .eq("id", reservationId);
-      if (!error) return units;
+      if (!error) break;
       console.error("producer: settle write failed", { reservationId, attempt, error: error.message });
       await new Promise((r) => setTimeout(r, 300));
     }
+    // Past the month's allowance, the top-up pays (allowance.ts).
+    if (reserved.ok && reserved.topUp > 0) await settleAssistantTopUp(admin, { userId: ownerId, since, cap });
     return units;
   }
 
@@ -333,17 +353,18 @@ export async function POST(request: NextRequest) {
   // They used to wait for the transcription; now they run alongside it (the
   // words are only needed for the turn itself). A failure surfaces below.
   const loading = (async () => {
-    const [thread, prefs, watchBar, humanVoice] = await Promise.all([
+    const [thread, prefs, watchBar, humanVoice, personality] = await Promise.all([
       openThread(admin, user.id),
       loadPrefs(admin, user.id),
       loadWatchBar(supabase),
       loadProducerVoice(admin, user.id).catch(() => null),
+      loadPersonality(admin, user.id).catch(() => DEFAULT_PERSONALITY),
     ]);
     const [rows, watch] = await Promise.all([
       loadMessages(admin, thread.id),
       loadWatchList(supabase, user.id, prefs.watchSeenAt, watchBar),
     ]);
-    return { thread, prefs, watchBar, humanVoice, rows, watch };
+    return { thread, prefs, watchBar, humanVoice, personality, rows, watch };
   })();
   loading.catch(() => {}); // awaited below; the transcription may return first
 
@@ -420,7 +441,7 @@ export async function POST(request: NextRequest) {
     await settle("transient");
     return NextResponse.json({ error: "Your assistant is unavailable right now." }, { status: 503 });
   }
-  const { thread, prefs, watchBar, humanVoice, watch } = loaded;
+  const { thread, prefs, watchBar, humanVoice, personality, watch } = loaded;
   let rows = loaded.rows;
 
   // What they heard of her last answer, as the sheet reports it — used only
@@ -445,6 +466,7 @@ export async function POST(request: NextRequest) {
       watch,
       watchBar,
       focus: body?.focus,
+      personality,
       spoken: spoken || speakReplies,
       // Nothing they said is dropped (history.ts): what never got an answer
       // comes back with this turn, and a cut-off answer is named — by what
@@ -454,9 +476,13 @@ export async function POST(request: NextRequest) {
       cutAnswer: heardOf(rs) === null ? lastAnswerCut(rs) : null,
     });
   };
-  // Talking out loud runs at low effort — the first word sooner; typing at
-  // the usual medium. Only a CHANGE is written (history.ts).
-  const wantEffort: Effort = spoken || speakReplies ? "low" : TOP_LEVEL_EFFORT;
+  // Every turn runs at the usual medium effort (2026-09-28, operator: "She
+  // almost never has an answer to the question. Make her as good as you").
+  // Talking out loud used to run at low effort for a sooner first word; the
+  // spoken acknowledgement (ack.ts) now covers that wait, so a spoken question
+  // gets the same thought as a typed one. Only a CHANGE is written (history.ts),
+  // so a conversation left at low moves back once.
+  const wantEffort: Effort = TOP_LEVEL_EFFORT;
   const openingFor = (rs: typeof rows, state: Awaited<ReturnType<typeof noteFor>>) => {
     const stored: StoredMessage[] = rs.map((r) => ({ role: r.role, content: r.content }));
     return [
@@ -536,9 +562,14 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       const enc = new TextEncoder();
+      // Her real answer has started speaking: the acknowledgement then isn't sent.
+      let answerSpoke = false;
       let closed = false;
       const emit = (event: string, data: unknown) => {
         if (closed) return;
+        if (event === "audio" || (event === "audio_stream" && typeof (data as { data?: unknown } | null)?.data === "string")) {
+          answerSpoke = true;
+        }
         try {
           controller.enqueue(enc.encode(sse(event, data)));
         } catch {
@@ -682,6 +713,24 @@ export async function POST(request: NextRequest) {
           })()
         : writeOpening(true);
       opened.catch(() => {});
+      // SAID AT ONCE (ack.ts; 2026-09-28, operator: "Make her respond with
+      // something while she gets an answer"). Once a spoken message is known
+      // to be for her, a short phrase in her voice and personality goes out
+      // straight away — unless her real answer is already speaking by then.
+      if (spoken && speakReplies && humanVoice) {
+        const voiceId = humanVoice.elevenLabsVoiceId;
+        void opened
+          .then(async (ok) => {
+            if (!ok || answerSpoke || upstream.signal.aborted) return;
+            const text = pickAck(personality, lastAck());
+            const made = await speakAck(text, voiceId, { signal: upstream.signal });
+            if (!made || answerSpoke || upstream.signal.aborted || !speakReplies) return;
+            // A phrase already made (the server remembers it) costs nothing again.
+            if (!made.cached) totals.cost += speechCostUsd(text.length, "human");
+            emit("ack", { data: made.data, text });
+          })
+          .catch(() => {});
+      }
       const failureText = (f: typeof openFailure) =>
         f === "busy" ? "Still answering your last message." : f === "limited" ? "Slow down a moment." : "That didn't go through. Try again.";
       if (!holding && !(await opened)) {
@@ -951,7 +1000,10 @@ export async function POST(request: NextRequest) {
           for await (const event of s) {
             if (event.type === "message_start") {
               cutCall = event.message.usage as CallUsage;
-            } else if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
+            } else if (
+              event.type === "content_block_start" &&
+              (event.content_block.type === "tool_use" || event.content_block.type === "server_tool_use")
+            ) {
               // What she said before looking something up is spoken now,
               // not after the lookup.
               sayAllNow();
@@ -1004,12 +1056,16 @@ export async function POST(request: NextRequest) {
       };
 
       try {
+        // A web search that runs long pauses the turn (stop_reason "pause_turn"):
+        // the paused answer is sent back as it is and the model carries on;
+        // the pieces are saved together as one answer.
+        let paused: StoredBlock[] = [];
         for (let i = 0; i < MAX_CALLS; i++) {
           const answerNow = i === MAX_CALLS - 1 || totals.cost >= BRAKE_USD;
           const answer = await call(answerNow);
           cutCall = null;
           const usage = answer.usage as CallUsage;
-          const callCost = costOfCallUsd(usage, answer.model);
+          const callCost = costOfCallUsd(usage, answer.model) + webSearchCostUsd(answer.usage);
           totals.cost += callCost;
           totals.lastCall = callCost;
           totals.calls += 1;
@@ -1039,7 +1095,16 @@ export async function POST(request: NextRequest) {
             break;
           }
 
-          const content = answer.content as unknown as StoredBlock[];
+          const fresh = answer.content as unknown as StoredBlock[];
+          if (answer.stop_reason === "pause_turn") {
+            if (paused.length > 0) turns.pop();
+            paused = [...paused, ...fresh];
+            turns.push({ role: "assistant", content: paused });
+            continue;
+          }
+          if (paused.length > 0) turns.pop();
+          const content = paused.length > 0 ? [...paused, ...fresh] : fresh;
+          paused = [];
           const calls: ToolCall[] = content
             .filter((b) => b.type === "tool_use")
             .map((b) => ({ id: b.id as string, name: b.name as string, input: b.input }));
@@ -1058,7 +1123,7 @@ export async function POST(request: NextRequest) {
                 const id = (c.input as { render_id?: unknown } | null)?.render_id;
                 if (typeof id === "string") send("spot", { spot: "render", id });
               }
-              const o = await runTool({ supabase, admin, userId: user.id }, c);
+              const o = await runTool({ supabase, admin, userId: user.id, topUpUnits: reserved.topUp }, c);
               if (o.card) {
                 cards.push(o.card);
                 send("card", o.card);
@@ -1100,13 +1165,15 @@ export async function POST(request: NextRequest) {
           }
 
           const text = [...shown, visibleText(content)].filter(Boolean).join("\n\n");
+          const sources = citedSources(content);
+          if (sources.length > 0) send("sources", { sources });
           if (answer.stop_reason === "max_tokens") send("delta", { text: "\n\n(I ran out of room there.)" });
           if (!(await opened)) throw new Error("producer: not opened");
           const savedAnswer = await appendMessages(admin, {
             threadId: thread.id,
             userId: user.id,
             fromSeq: seq,
-            messages: [{ role: "assistant", content, display: { text, cards } }],
+            messages: [{ role: "assistant", content, display: { text, cards, ...(sources.length > 0 ? { sources } : {}) } }],
           });
           // Shown and heard already, so not an error for the person; the next
           // turn's note will list the question as unanswered.

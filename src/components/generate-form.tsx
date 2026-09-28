@@ -1581,6 +1581,11 @@ type AskChatItem = {
    * the chip fills the box instead of pressing the button.
    */
   renderablePrompt?: string | null;
+  /**
+   * Refused because the month's assistant allowance is used up, on the web:
+   * a link to the top-ups under the message (lib/agent/topups.ts, 2026-09-28).
+   */
+  topUp?: boolean;
 };
 
 type ChatItem = ({ kind: "single" } & ChatTurn) | MultiAngleChatItem | AskChatItem;
@@ -1868,6 +1873,14 @@ function AskTurnBubble({
           )}
           {!item.failed && (
             <p className="mt-3 text-[11px] leading-snug text-atelier-muted/80">{g.askDisclaimer}</p>
+          )}
+          {item.failed && item.topUp && (
+            <Link
+              href="/app/settings?tab=billing#assistant-topup"
+              className="mt-3 inline-flex items-center rounded-full px-3 py-1.5 text-[12px] font-semibold text-atelier-accent shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] transition-colors hover:bg-atelier-accent/10"
+            >
+              {g.askTopUp}
+            </Link>
           )}
         </div>
       </div>
@@ -5501,6 +5514,7 @@ function GenerateFormInner({
     let answer = "";
     let failed = false;
     let failure = "";
+    let topUp = false;
 
     try {
       const response = await fetch("/api/agent/chat", {
@@ -5520,6 +5534,8 @@ function GenerateFormInner({
         const payload = await response.json().catch(() => null);
         failed = true;
         failure = (payload as { error?: string } | null)?.error ?? g.askFailed;
+        // The route says so only on the web, for a monthly allowance.
+        topUp = response.status === 402 && (payload as { topUp?: unknown } | null)?.topUp === true;
       } else {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -5573,7 +5589,7 @@ function GenerateFormInner({
         // Only offered on an answer that actually arrived — a chip under a
         // failure message would be asking someone to spend a credit on the
         // back of an error.
-        ...(failed ? { failed: true } : { renderablePrompt }),
+        ...(failed ? { failed: true, ...(topUp ? { topUp: true } : {}) } : { renderablePrompt }),
       },
     ]);
     setLiveAsk(null);

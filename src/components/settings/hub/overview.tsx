@@ -223,8 +223,34 @@ export function PlanCard({
   );
 }
 
+// Under the assistant's meter (2026-09-28): what is topped up, and — once the
+// month's allowance is nearly gone — the way to buy more (web only).
+function AssistantTopUpLine({
+  a,
+  topUp,
+  h,
+}: {
+  a: Allowances["items"][number];
+  topUp: NonNullable<Allowances["topUp"]>;
+  h: Messages["settingsHub"];
+}) {
+  const low = a.left !== null && a.cap !== null && a.cap > 0 && a.left / a.cap <= 0.1;
+  if (topUp.balance <= 0 && !(low && topUp.href)) return null;
+  return (
+    <span className="flex flex-wrap items-baseline gap-x-2 text-xs text-atelier-muted">
+      {topUp.balance > 0 && <span className="tabular-nums">{formatMsg(h.assistantTopUpLeft, { n: topUp.balance })}</span>}
+      {low && topUp.href && (
+        <Link href={topUp.href} className="font-medium text-atelier-ink underline underline-offset-2 hover:text-atelier-accent">
+          {h.assistantTopUpCta}
+        </Link>
+      )}
+    </span>
+  );
+}
+
 export function AllowancesCard({ allowances, h }: { allowances: Allowances; h: Messages["settingsHub"] }) {
   if (allowances.items.length === 0) return null;
+  const topUp = allowances.topUp;
   const label: Record<Allowances["items"][number]["key"], string> = {
     helios: h.allowHelios,
     photos: h.allowPhotos,
@@ -259,6 +285,7 @@ export function AllowancesCard({ allowances, h }: { allowances: Allowances; h: M
                   />
                 </div>
               )}
+              {a.key === "assistant" && topUp && <AssistantTopUpLine a={a} topUp={topUp} h={h} />}
             </div>
           );
         })}

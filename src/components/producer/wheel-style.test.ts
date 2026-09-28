@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_WHEEL_STYLE, WHEEL_STYLES, WHEEL_STYLE_LABELS, parseWheelStyle, usageFraction, wheelGeometry } from "./wheel-style";
+import { DEFAULT_WHEEL_STYLE, WHEEL_STYLES, WHEEL_STYLE_LABELS, parseWheelStyle, usageFraction, usageState, wheelGeometry } from "./wheel-style";
 
 describe("the lamp's wheel", () => {
   it("defaults to Filament, the one picked first", () => {
@@ -41,5 +41,17 @@ describe("the lamp's wheel", () => {
     expect(usageFraction(3000, 2500)).toBe(1);
     expect(usageFraction(-5, 2500)).toBe(0);
     expect(usageFraction(10, 0)).toBe(1);
+  });
+
+  it("carries on past the month's allowance while a top-up lasts", () => {
+    // No top-up: the old words.
+    expect(usageState(1250, 2500)).toMatchObject({ pct: 0.5, full: false, onTopUp: false, label: "1,250 of 2,500 assistant units used this period" });
+    expect(usageState(2500, 2500)).toMatchObject({ full: true, onTopUp: false, label: "Allowance used up for this period" });
+    // A 500 top-up, month not used up yet.
+    expect(usageState(1000, 2500, 500)).toMatchObject({ full: false, onTopUp: false, label: "1,000 of 2,500 assistant units used this period, plus 500 topped up" });
+    // Into the top-up: 2,700 used of 2,500 + 500.
+    expect(usageState(2700, 2500, 500)).toMatchObject({ pct: 1, full: false, onTopUp: true, topUpLeft: 300, label: "This month's allowance is used; 300 topped-up units left" });
+    // All of it used.
+    expect(usageState(3000, 2500, 500)).toMatchObject({ full: true, onTopUp: false, topUpLeft: 0 });
   });
 });

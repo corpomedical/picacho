@@ -1,5 +1,6 @@
 "use server";
 
+import { parseSources, type Source } from "@/lib/producer/sources";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { after } from "next/server";
 import {
@@ -25,18 +26,21 @@ import { isStreamableVoiceId, isVoiceStreamConfigured } from "./voice-stream";
 import { LAMP_LOOKS, parseLampLook, type LampLook } from "@/components/producer/lamp-look";
 import { WHEEL_STYLES, parseWheelStyle, type WheelStyle } from "@/components/producer/wheel-style";
 import { CHAT_STYLES, parseChatStyle, type ChatStyle } from "@/components/producer/chat-style";
+import { PERSONALITIES, type Personality } from "@/lib/producer/personality";
+import { loadPersonality } from "@/lib/producer/store";
 import { rateLimited } from "@/lib/rate-limit";
 import { MAX_NOTE_CHARS, normalizeNotePath, type Note } from "./notes";
 import { loadWatchBar, loadWatchList, type WatchItem } from "./watch";
 import type { PreparedSend } from "./tools";
 import { monthlyWindowStart } from "@/lib/generations/core";
+import { readAssistantTopUp } from "@/lib/agent/allowance";
 
 // The sheet's server actions (2026-09-24). Each one re-checks the same gate
 // as the route: a hidden lamp is not an access control.
 
 export type ProducerLine =
   | { seq: number; role: "user"; text: string; /** Typed during an answer: goes when it finishes. */ queued?: boolean }
-  | { seq: number; role: "assistant"; text: string; cards: PreparedSend[] };
+  | { seq: number; role: "assistant"; text: string; cards: PreparedSend[]; sources?: Source[] };
 
 export type ProducerSnapshot = {
   name: string;
@@ -44,8 +48,12 @@ export type ProducerSnapshot = {
   notes: Note[];
   watch: WatchItem[];
   watchBar: number;
-  /** Assistant units used this period and the plan's cap (the wheel's light). */
-  usage: { used: number; cap: number };
+  /**
+   * Assistant units used this period and the plan's cap (the wheel's light).
+   * extra: what top-ups add to this month's ceiling — the units still bought
+   * and unspent plus those this month already took (they are in `used`).
+   */
+  usage: { used: number; cap: number; extra: number };
 };
 
 async function gate() {
@@ -83,10 +91,11 @@ export async function loadProducer(): Promise<{ error: string } | { error: null;
       notesStore(g.admin, g.userId).list(),
       loadWatchBar(g.supabase),
     ]);
-    const [rows, watch, usageRows] = await Promise.all([
+    const [rows, watch, usageRows, topUp] = await Promise.all([
       loadMessages(g.admin, thread.id),
       loadWatchList(g.supabase, g.userId, prefs.watchSeenAt, watchBar),
       g.admin.from("agent_usage").select("units").eq("user_id", g.userId).gte("created_at", g.since).limit(10000),
+      readAssistantTopUp(g.admin, g.userId, g.since),
     ]);
     const used = (usageRows.data ?? []).reduce((a, r) => a + (Number(r.units) || 0), 0);
     const lines: ProducerLine[] = [];
@@ -96,12 +105,19 @@ export async function loadProducer(): Promise<{ error: string } | { error: null;
       const text = typeof d.text === "string" ? d.text : "";
       if (r.role === "user") lines.push({ seq: r.seq, role: "user", text });
       else if (r.role === "assistant") {
-        lines.push({ seq: r.seq, role: "assistant", text, cards: Array.isArray(d.cards) ? (d.cards as PreparedSend[]) : [] });
+        const sources = parseSources((d as { sources?: unknown }).sources);
+        lines.push({
+          seq: r.seq,
+          role: "assistant",
+          text,
+          cards: Array.isArray(d.cards) ? (d.cards as PreparedSend[]) : [],
+          ...(sources.length > 0 ? { sources } : {}),
+        });
       }
     }
     return {
       error: null,
-      snapshot: { name: prefs.name, lines, notes, watch, watchBar, usage: { used, cap: g.cap } },
+      snapshot: { name: prefs.name, lines, notes, watch, watchBar, usage: { used, cap: g.cap, extra: topUp.balance + topUp.spent } },
     };
   } catch (err) {
     console.error("producer: load failed —", err);
@@ -346,4 +362,24 @@ export async function setProducerChat(style: string): Promise<{ error: string | 
   const r = await savePrefs(g.admin, g.userId, { chat_style: style });
   if (r.error) console.error("producer: chat style save failed", r.error);
   return { error: r.error ? "The chat style didn't save. Try again." : null };
+}
+
+// Her personality (2026-09-28, operator: "Give Aly different personalities,
+// the default that is the actual one, the sarcastic and the rude").
+// personality.ts lists them; prompt.ts says how each talks.
+
+/** For Settings: her personality now (null = this account has no Producer). */
+export async function loadProducerPersonality(): Promise<Personality | null> {
+  const g = await gate();
+  if (!g.ok) return null;
+  return loadPersonality(g.admin, g.userId);
+}
+
+export async function setProducerPersonality(personality: string): Promise<{ error: string | null }> {
+  const g = await gate();
+  if (!g.ok) return { error: g.error };
+  if (!(PERSONALITIES as readonly string[]).includes(personality)) return { error: "That personality isn't available." };
+  const r = await savePrefs(g.admin, g.userId, { personality });
+  if (r.error) console.error("producer: personality save failed", r.error);
+  return { error: r.error ? "The personality didn't save. Try again." : null };
 }

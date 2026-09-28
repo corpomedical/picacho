@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { PLAN_LABELS, PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import { getMonthlyUsageWith } from "@/lib/generations/core";
 import type { WatchItem } from "./watch";
+import { PERSONALITY_LABELS, type Personality } from "./personality";
 
 // The app's note to the Producer, appended after every message the person
 // sends (2026-09-24) — a mid-conversation system message, which keeps the
@@ -51,6 +52,8 @@ export async function buildStateNote(
     watchBar: number;
     /** A render the person pointed at from the sheet ("Ask why"). */
     focus?: unknown;
+    /** The personality they picked for her (personality.ts). */
+    personality?: Personality;
     /** They spoke this message and/or hear the answer read aloud. */
     spoken?: boolean;
     /** Their earlier messages that never got an answer (history.ts unansweredBefore). */
@@ -168,6 +171,7 @@ export async function buildStateNote(
   const lines = [
     `App note (written by Picacho, not by the person), ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC.`,
     `They call you: ${clean(a.name, 24)}.`,
+    `Personality they picked for you: ${PERSONALITY_LABELS[a.personality ?? "default"].name} (see PERSONALITY).`,
     page ? `They are on: ${page}` : null,
     `Plan: ${PLAN_LABELS[plan] ?? plan}${isAdmin ? " (admin)" : ""}. Credits: ${credits}.`,
     a.previous?.cast === next.cast ? "Their cast: unchanged since the last note." : `Their cast:\n${castText}`,
@@ -207,6 +211,7 @@ export async function buildStateNote(
         // named phrases, and a lone chirpy fragment spoken on its own set a
         // different tone from the sentence after it.
         "They are talking to you out loud and hear your answer spoken (see WHEN YOU ARE TALKING OUT LOUD). Their words were transcribed from speech, so allow for a misheard word. Prepared cards still appear on their screen. If they asked more than one thing, answer each of them, in order, briefly. " +
+        "The app has already said a short acknowledgement out loud for you while you think (like \"Okay, one sec\"), so start straight with the answer: no \"Sure\", \"Let me check\", \"Good question\" or other opener. " +
         "Write only the words you will say. It is heard once, in order: no lists, headings, markdown, emoji, brackets, slashes, ids or links. " +
         "One idea per sentence, the way people talk: most sentences six to eighteen words, none over twenty-five, and open with a full sentence rather than a lone word or two. " +
         "A simple answer is one or two sentences; an explanation three or four, then stop and offer the rest. Ask at most one question, at the end. " +

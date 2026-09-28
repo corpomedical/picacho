@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { DEFAULT_PERSONALITY, parsePersonality, type Personality } from "./personality";
 import { currentProducerSetup, isProducerSetup, type ProducerSetup } from "./prompt";
 import type { StoredBlock } from "./history";
 import type { Note, NotesStore } from "./notes";
@@ -159,6 +160,16 @@ export async function loadPrefs(admin: SupabaseClient, userId: string): Promise<
   };
 }
 
+/**
+ * Her personality (personality.ts), read on its own: before the column exists
+ * (producer-aly.sql) the read errors and she is the default.
+ */
+export async function loadPersonality(admin: SupabaseClient, userId: string): Promise<Personality> {
+  const { data, error } = await admin.from("producer_prefs").select("personality").eq("user_id", userId).maybeSingle();
+  if (error) return DEFAULT_PERSONALITY;
+  return parsePersonality((data as { personality?: unknown } | null)?.personality);
+}
+
 // ---------------------------------------------------------------------------
 // The voice (2026-09-25)
 
@@ -195,6 +206,7 @@ export async function savePrefs(
     lamp_look?: string | null;
     wheel_style?: string | null;
     chat_style?: string | null;
+    personality?: string | null;
   },
 ): Promise<{ error: string | null }> {
   const { error } = await admin

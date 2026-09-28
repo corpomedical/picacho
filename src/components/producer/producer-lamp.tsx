@@ -23,7 +23,10 @@ import { PRODUCER_ASK_EVENT, producerAskDraft, producerAskText } from "@/lib/pro
 import styles from "./producer-lamp.module.css";
 import { Wheel } from "./wheel";
 import { wheelGeometry, type WheelStyle } from "./wheel-style";
-import { countWords, subtitleView, type ChatStyle } from "./chat-style";
+import { DEFAULT_CHAT_STYLE, countWords, subtitleView, type ChatStyle } from "./chat-style";
+import { parseSources, type Source } from "@/lib/producer/sources";
+import { ASSISTANT_TOPUPS, topUpCheckoutHref } from "@/lib/agent/topups";
+import { useIsNativeApp } from "@/lib/native/use-native";
 import {
   clearVoiceLog,
   connectionNote,
@@ -40,7 +43,7 @@ import { writeLampHidden } from "./lamp-place";
 import { lampMood, type LampLook } from "./lamp-look";
 import { LookMark } from "./lamp-looks";
 import { Spotlight, type LitSpot } from "./spotlight";
-import { useHandsFree, type SpokenAudio, type UtteranceMeta } from "./use-hands-free";
+import { useHandsFree, warmEars, type SpokenAudio, type UtteranceMeta } from "./use-hands-free";
 
 // The Producer's lamp and sheet (2026-09-24; operator: "A lamp on every
 // page", "Prepares, you send", "User picks" the name).
@@ -108,6 +111,9 @@ const W = {
   endVoice: "End",
   endVoiceLabel: "End the voice conversation",
   typeInstead: "Type instead",
+  lampHearing: "Hearing you…",
+  gotIt: "Got it · thinking…",
+  ignoredClosed: "Not for me? Open me to answer it",
   sendTimedOut: "Couldn't reach Picacho. The signal may be too weak here. Try again, or type it.",
   voiceLog: "Voice log",
   pushOpening: "Opening the mic…",
@@ -122,6 +128,9 @@ const W = {
   backgroundTip: "There's a lot of talk around you. Headphones help, or type to me.",
   queued: "Next",
   limitReached: "You've used this period's assistant allowance.",
+  topUpLead: "Top up to keep going. Bought units come after the month's allowance and stay until used.",
+  limitClosed: (canBuy: boolean) => (canBuy ? "Allowance used up · open me to top up" : "This month's allowance is used up"),
+  topUpUnits: (n: number) => `${n.toLocaleString("en-US")} units`,
   hideLamp: "Hide the lamp",
 };
 
@@ -168,7 +177,7 @@ function readStoredBool(key: string): boolean {
 // whole conversation — cheaply, from cache, but not for free).
 const LONG_CONVERSATION = 120;
 
-type Streaming = { text: string; cards: PreparedSend[]; status: string | null };
+type Streaming = { text: string; cards: PreparedSend[]; status: string | null; sources?: Source[] };
 type SendInput = { text?: string; audio?: SpokenAudio; focus?: string };
 /**
  * One request to the Producer. A spoken one is `accepted` only once the
@@ -191,8 +200,9 @@ export function ProducerLamp({
   voiceAvailable,
   look,
   wheelStyle,
-  chatStyle = "card",
+  chatStyle = DEFAULT_CHAT_STYLE,
   diagnostics = false,
+  currency = "$",
 }: {
   name: string;
   watchCount: number;
@@ -206,6 +216,8 @@ export function ProducerLamp({
   chatStyle?: ChatStyle;
   /** An admin's readouts: how much of her voice the mic hears (2026-09-26, "I still cant interrupt her"). */
   diagnostics?: boolean;
+  /** What the top-ups are priced in for this visitor ("€" in the EU), lib/agent/topups.ts. */
+  currency?: string;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -242,7 +254,12 @@ export function ProducerLamp({
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lampRef = useRef<HTMLButtonElement>(null);
-  const [usage, setUsage] = useState<{ used: number; cap: number } | null>(null);
+  const [usage, setUsage] = useState<{ used: number; cap: number; extra: number } | null>(null);
+  // At the ceiling: the month's allowance and any top-up (lib/agent/topups.ts).
+  const atLimit = usage !== null && usage.used >= usage.cap + usage.extra;
+  // Never a way to buy inside the Android app (lib/native/use-native.ts).
+  const native = useIsNativeApp();
+  const [topUpOffered, setTopUpOffered] = useState(false);
   const [readAloud, setReadAloud] = useState(false);
   const [lit, setLit] = useState<LitSpot[]>([]);
   const [typing, setTyping] = useState(false);
@@ -264,6 +281,10 @@ export function ProducerLamp({
   }, [closing]);
   // Talking turns the text box into a voice bar; "Type" brings the box back.
   const [typeInVoice, setTypeInVoice] = useState(false);
+  // A moment's note beside the closed lamp (a spoken message let be).
+  const [lampNote, setLampNote] = useState<string | null>(null);
+  const lampNoteTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(lampNoteTimer.current), []);
   const [center, setCenter] = useState<{ cx: number; cy: number; vw: number; vh: number; phone: boolean } | null>(null);
 
   useEffect(() => setReadAloud(readStoredBool(READ_ALOUD_KEY)), []);
@@ -320,6 +341,12 @@ export function ProducerLamp({
   // ElevenLabs hasn't used for a while took 6-11 s to start (warmProducerVoice;
   // the server does it at most once every two minutes).
   const wantWarm = (open && readAloud && loaded) || voice.active;
+  // Opening the chat starts fetching the speech model (use-hands-free.ts warmEars).
+  const canHear = voiceAvailable && voice.supported;
+  useEffect(() => {
+    if (open && canHear) warmEars();
+  }, [open, canHear]);
+
   // The voice log (voice-log.ts): admins only, on this device.
   useEffect(() => {
     enableVoiceLog(diagnostics);
@@ -582,12 +609,24 @@ export function ProducerLamp({
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
+  // The allowance is used up: say so and, on the web, offer the top-ups. With
+  // the chat closed (a hands-free turn), the lamp says it for a moment.
+  function limitHit(offer: boolean) {
+    setError(W.limitReached);
+    setTopUpOffered(offer);
+    if (!openRef.current) {
+      setLampNote(W.limitClosed(offer && !native));
+      window.clearTimeout(lampNoteTimer.current);
+      lampNoteTimer.current = window.setTimeout(() => setLampNote(null), 8000);
+    }
+  }
+
   function send({ text, audio, focus }: SendInput) {
     if (audio) return sendSpoken(audio, { interrupting: currentRef.current !== null });
     const message = (text ?? "").trim();
     if (!message) return;
-    if (usage && usage.used >= usage.cap) {
-      setError(W.limitReached);
+    if (atLimit) {
+      limitHit(true);
       return;
     }
     setInput("");
@@ -603,8 +642,8 @@ export function ProducerLamp({
   }
 
   async function sendSpoken(audio: SpokenAudio, meta: UtteranceMeta) {
-    if (usage && usage.used >= usage.cap) {
-      setError(W.limitReached);
+    if (atLimit) {
+      limitHit(true);
       voice.stop();
       return;
     }
@@ -635,7 +674,13 @@ export function ProducerLamp({
     if (text || turn.live.cards.length > 0) {
       setLines((prev) => [
         ...prev,
-        { seq: -Date.now() - 1, role: "assistant", text: cut && text ? `${text} —` : text, cards: turn.live.cards },
+        {
+          seq: -Date.now() - 1,
+          role: "assistant",
+          text: cut && text ? `${text} —` : text,
+          cards: turn.live.cards,
+          ...(turn.live.sources?.length ? { sources: turn.live.sources } : {}),
+        },
       ]);
     }
   }
@@ -751,8 +796,11 @@ export function ProducerLamp({
       window.clearTimeout(noReply);
       vlog("send.reply", { status: res.status, ms: since() });
       if (!res.ok || !res.body) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        if (res.status === 402 && usage) setUsage({ ...usage, used: usage.cap });
+        const body = (await res.json().catch(() => null)) as { error?: string; topUp?: boolean } | null;
+        if (res.status === 402) {
+          if (usage) setUsage({ ...usage, used: usage.cap + usage.extra });
+          limitHit(body?.topUp === true);
+        }
         if (res.status === 403) goneIfRefused(body?.error);
         throw new Error(body?.error ?? "That didn't go through. Try again.");
       }
@@ -783,6 +831,12 @@ export function ProducerLamp({
             const words = typeof ev.data.text === "string" ? ev.data.text : "";
             if (words) {
               setIgnored(words);
+              // With the chat closed, the lamp says so for a moment.
+              if (!openRef.current) {
+                setLampNote(W.ignoredClosed);
+                window.clearTimeout(lampNoteTimer.current);
+                lampNoteTimer.current = window.setTimeout(() => setLampNote(null), 6000);
+              }
               setIgnoredWhy(typeof ev.data.why === "string" ? ev.data.why : null);
               const now = Date.now();
               ignoredTimes.current = [...ignoredTimes.current.filter((t) => now - t < 60_000), now];
@@ -809,7 +863,10 @@ export function ProducerLamp({
             live.cards = [...live.cards, ev.data as unknown as PreparedSend];
             if (!openRef.current) setUnseenCards((n) => n + 1);
           } else if (ev.event === "voice" && typeof ev.data.action === "string") {
-            if (ev.data.action === "end_voice") voice.endAfterPlayback();
+            // Told to shut down: after her goodbye the mic and speaker close,
+            // and so do the subtitles (operator, 2026-09-28: "When giving Aly
+            // the order to shut down, close the subtitles").
+            if (ev.data.action === "end_voice") voice.endAfterPlayback(subsRef.current ? () => setOpen(false) : undefined);
             else if (ev.data.action === "mute_replies") setAloud(false);
             else if (ev.data.action === "unmute_replies") setAloud(true);
           } else if (ev.event === "audio" && typeof ev.data.url === "string") {
@@ -823,6 +880,12 @@ export function ProducerLamp({
               typeof ev.data.text === "string" ? ev.data.text : "",
               ev.data.end === true,
             );
+          } else if (ev.event === "ack" && typeof ev.data.data === "string") {
+            // Said at once while the answer is prepared (ack.ts).
+            vlog("ack", { ms: since(), text: typeof ev.data.text === "string" ? ev.data.text : null });
+            voice.playAck(ev.data.data);
+          } else if (ev.event === "sources") {
+            live.sources = parseSources(ev.data.sources);
           } else if (ev.event === "set_changed" && typeof ev.data.setId === "string") {
             setReloadFor(ev.data.setId);
           } else if (ev.event === "spot" && isSpot(ev.data.spot)) {
@@ -919,6 +982,22 @@ export function ProducerLamp({
   // steady middle strength instead of its dimmest.
   const glow = voice.metered ? voice.level : mood === "talking" ? 0.7 : 0;
   const sheetShown = open || closing;
+  // Beside the lamp (2026-09-28, operator: "If the chatbox is closed and the
+  // mic is on it feels like she didnt get the msg"): what she's doing with
+  // what they said — push to talk's own steps, then, with the chat closed,
+  // hearing them, and got it (until her voice starts), or that it wasn't for her.
+  const lampLine =
+    voice.pushing === "opening"
+      ? W.pushOpening
+      : voice.pushing === "on"
+        ? W.pushListening
+        : open
+          ? null
+          : voice.phase === "hearing" && !voice.held
+            ? W.lampHearing
+            : voice.phase === "sending" || (busy && voice.phase !== "speaking" && (voice.active || readAloud))
+              ? W.gotIt
+              : lampNote;
   const wheelShown = (open ? wheelReady : closing) && center !== null && !(center.phone && typing);
   // The card ends just above the wheel's reach; with the keyboard up on a
   // phone the wheel tucks away and the card reaches down to the keyboard.
@@ -948,6 +1027,10 @@ export function ProducerLamp({
   // what she hasn't said aloud yet dimmed; your last words above it; the
   // answer before that fading out above those.
   const subs = chatStyle === "subtitles" && view === "chat" && !forceCard;
+  const subsRef = useRef(subs);
+  useEffect(() => {
+    subsRef.current = subs;
+  }, [subs]);
   const [spokenWords, setSpokenWords] = useState(0);
   const speaking = subs && sheetShown && voice.phase === "speaking";
   const { heardText } = voice;
@@ -1150,7 +1233,7 @@ export function ProducerLamp({
         // Push to talk: hold the lamp (not while hands-free has the mic).
         onHoldStart={voice.supported && voiceAvailable && !voice.handsFree ? () => void voice.pushStart() : undefined}
         onHoldEnd={() => voice.pushEnd(true)}
-        holdText={voice.pushing === "opening" ? W.pushOpening : voice.pushing === "on" ? W.pushListening : null}
+        holdText={lampLine}
         holdKeyName={pttKey !== "off" && canPush ? pttKeyName(pttKey, mac) : null}
       />
 
@@ -1173,6 +1256,7 @@ export function ProducerLamp({
           cy={center.cy}
           used={usage?.used ?? 0}
           cap={usage?.cap ?? 0}
+          extra={usage?.extra ?? 0}
           phase={voice.phase}
           level={voice.level}
           readAloud={readAloud}
@@ -1266,6 +1350,11 @@ export function ProducerLamp({
                 {subtitle.rest && <span className={styles.subsRest}>{subtitle.said ? ` ${subtitle.rest}` : subtitle.rest}</span>}
               </p>
             ) : null}
+            {current?.sources && current.sources.length > 0 && (
+              <div className="flex justify-center">
+                <SourceLinks sources={current.sources} />
+              </div>
+            )}
             {streaming?.status && (
               <p className="flex items-center gap-2 text-[13px] text-atelier-muted">
                 <span className={styles.statusDot} aria-hidden="true" />
@@ -1289,6 +1378,7 @@ export function ProducerLamp({
               </div>
             )}
             {error && <p className="text-sm text-[#ff8a80]">{error}</p>}
+            {error && atLimit && topUpOffered && !native && <TopUpOffer currency={currency} returnTo={pathname} centered />}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1470,6 +1560,7 @@ export function ProducerLamp({
                     ) : (
                       <div key={l.seq} className="max-w-[96%] space-y-3">
                         {l.text && <p className="whitespace-pre-wrap text-[14.5px] leading-relaxed">{l.text}</p>}
+                        {l.sources && l.sources.length > 0 && <SourceLinks sources={l.sources} />}
                         {l.cards.length > 0 && (
                           <Cards
                             cards={l.cards}
@@ -1486,6 +1577,7 @@ export function ProducerLamp({
                   {streaming && (
                     <div className="max-w-[96%] space-y-3">
                       {streaming.text && <p className="whitespace-pre-wrap text-[14.5px] leading-relaxed">{streaming.text}</p>}
+                      {streaming.sources && streaming.sources.length > 0 && <SourceLinks sources={streaming.sources} />}
                       {streaming.cards.length > 0 && <Cards cards={streaming.cards} onOpen={() => light("composer", null, 3500)} />}
                       {streaming.status && (
                         <p className="flex items-center gap-2 text-[13px] text-atelier-muted">
@@ -1509,6 +1601,7 @@ export function ProducerLamp({
                     ))}
 
                   {error && <p className="text-sm text-[#ff8a80]">{error}</p>}
+                  {error && atLimit && topUpOffered && !native && <TopUpOffer currency={currency} returnTo={pathname} />}
                   {lines.length >= LONG_CONVERSATION && !busy && (
                     <p className="text-[13px] text-atelier-muted">{W.longConversation}</p>
                   )}
@@ -1607,6 +1700,52 @@ function VoiceLogView() {
             </div>
           ))
         )}
+      </div>
+    </div>
+  );
+}
+
+// Where a web-searched answer came from (sources.ts): the links, never read aloud.
+function SourceLinks({ sources }: { sources: Source[] }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-atelier-muted">
+      <span>Sources:</span>
+      {sources.map((s) => (
+        <a
+          key={s.url}
+          href={s.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="max-w-[16rem] truncate underline decoration-atelier-rule underline-offset-2 hover:text-atelier-ink"
+          title={s.url}
+        >
+          {s.title}
+        </a>
+      ))}
+    </div>
+  );
+}
+
+// At the ceiling, the way on (2026-09-28, operator: "When a user reaches 100%
+// of monthly consumption, give them the chance to recharge by payment"): the
+// three top-ups, each opening the embedded checkout and coming back to this
+// page. Web only — the caller checks, and the checkout refuses the app too.
+function TopUpOffer({ currency, returnTo, centered = false }: { currency: string; returnTo: string; centered?: boolean }) {
+  const back = returnTo === "/app" ? "/app/" : returnTo;
+  return (
+    <div className={`flex flex-col gap-2 text-[13px] ${centered ? "items-center text-center" : ""}`}>
+      <span className="text-atelier-muted">{W.topUpLead}</span>
+      <div className={`flex flex-wrap gap-2 ${centered ? "justify-center" : ""}`}>
+        {ASSISTANT_TOPUPS.map((t) => (
+          <Link
+            key={t.id}
+            href={topUpCheckoutHref(t.id, back)}
+            className="rounded-full border border-atelier-rule px-3 py-1.5 font-semibold tabular-nums text-atelier-ink transition-colors hover:border-atelier-accent hover:text-atelier-accent"
+          >
+            {W.topUpUnits(t.units)} · {currency}
+            {t.price}
+          </Link>
+        ))}
       </div>
     </div>
   );

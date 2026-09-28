@@ -6,6 +6,7 @@ import {
   isDormantVideoModel,
   requiresReferenceImage,
 } from "../generations/providers/video-models";
+import { WEB_SEARCH_MAX_USES } from "./prices";
 
 // The Producer's tools (2026-09-24). Alias-free so the validation can be
 // unit-tested.
@@ -33,6 +34,8 @@ export const TOOL_NAMES = {
   readSet: "read_set",
   fixSet: "fix_set_thing",
   undoSet: "undo_set_change",
+  account: "read_account",
+  web: "web_search",
 } as const;
 
 // What voice_control can do (2026-09-25, operator: the mic and speaker stay on
@@ -182,6 +185,18 @@ export const PRODUCER_TOOLS = [
     },
   },
   { type: "memory_20250818", name: TOOL_NAMES.memory },
+  {
+    // 2026-09-28 (operator: "Make her as good as you"): the person's own
+    // account, read the way Settings reads it (account-tool.ts).
+    name: TOOL_NAMES.account,
+    description:
+      "Read the person's own account right now: their plan, when it renews, plan credits left and used this month (and bought credits), where this month's credits went, and what's left of the month's other allowances — Helios 3D set builds, AI character photos, prompt assists and your own assistant allowance. Use it for any question about their credits, limits, plan or billing. Free.",
+    strict: true,
+    input_schema: { type: "object", additionalProperties: false, required: [], properties: {} },
+  },
+  // Web search (Anthropic's server tool; prices.ts WEB_SEARCH_*): current
+  // facts, news, trends, other tools. The API runs it; nothing here does.
+  { type: "web_search_20250305", name: TOOL_NAMES.web, max_uses: WEB_SEARCH_MAX_USES },
 ] as const;
 
 // ---------------------------------------------------------------------------

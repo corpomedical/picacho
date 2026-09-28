@@ -10,9 +10,11 @@ import { HUMAN_SPEECH_ENDPOINT, MAX_SPOKEN_SECONDS, SPEECH_MODEL, TRANSCRIBE_MOD
 // and the human voice's file is the one fal hosts for every render (privacy
 // policy, "Voice and the assistant", names both providers).
 
-// The sheet sends 16 kHz mono WAV (32 KB a second, so 2 MB is ~65 s — it
-// keeps merged recordings under ~55 s); a minute of Opus-in-WebM from an
-// older sheet is ~240 KB. 2 MB never lets one request carry a podcast.
+// The sheet sends 16 kHz mono Ogg Opus where the browser can make it (about
+// 3 KB a second, since 2026-09-28) and WAV where it can't (32 KB a second,
+// so 2 MB is ~65 s — it keeps merged recordings under ~55 s); a minute of
+// Opus-in-WebM from an older sheet is ~240 KB. The length of WAV and Ogg is
+// read from the file (readSpokenInput), so a small file can't carry a podcast.
 export const MAX_AUDIO_BYTES = 2 * 1024 * 1024;
 const ALLOWED_MIME = /^audio\/(webm|mp4|mpeg|ogg|wav|x-m4a|m4a|aac)(;.*)?$/;
 // The voice (2026-09-25, operator: "must speak and interact like ChatGPT"):
@@ -44,11 +46,34 @@ export function readSpokenInput(raw: unknown): { input: SpokenInput } | { error:
   }
   if (bytes.length === 0) return { error: "Didn't catch any sound." };
   if (bytes.length > MAX_AUDIO_BYTES) return { error: "That was too long. Keep it under a minute." };
-  // A WAV's length is its own (16 kHz mono 16-bit, as the sheet records):
-  // the client's figure is only trusted for compressed formats.
-  const claimed = mime.includes("wav") ? (bytes.length - 44) / 32000 : Number(a.seconds);
+  // A WAV's length is its own (16 kHz mono 16-bit, as the sheet records),
+  // and so is an Ogg Opus file's (its last page's granule, the sheet's
+  // default since 2026-09-28): the client's figure is only trusted for the
+  // other compressed formats. Opus is about a tenth of WAV's size, so the
+  // byte cap alone would let ten minutes through where WAV fit one.
+  const ogg = mime.includes("ogg") ? oggOpusSeconds(bytes) : null;
+  if (ogg !== null && ogg > MAX_SPOKEN_SECONDS + 5) return { error: "That was too long. Keep it under a minute." };
+  const claimed = mime.includes("wav") ? (bytes.length - 44) / 32000 : (ogg ?? Number(a.seconds));
   const seconds = Math.min(MAX_SPOKEN_SECONDS, Math.max(1, Math.ceil(claimed) || MAX_SPOKEN_SECONDS));
   return { input: { bytes, mime, seconds } };
+}
+
+/**
+ * An Ogg Opus file's length in seconds, read from the file itself: the last
+ * page's granule position less the OpusHead pre-skip, on Opus's 48 kHz clock
+ * (RFC 7845). null when it isn't a well-formed Ogg Opus file.
+ */
+export function oggOpusSeconds(bytes: Uint8Array): number | null {
+  const b = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (b.length < 47 || b.toString("latin1", 0, 4) !== "OggS") return null;
+  const bodyAt = 27 + b[26];
+  if (b.length < bodyAt + 19 || b.toString("latin1", bodyAt, bodyAt + 8) !== "OpusHead") return null;
+  const preSkip = b.readUInt16LE(bodyAt + 10);
+  const last = b.lastIndexOf("OggS", b.length - 4, "latin1");
+  if (last < 0 || last + 14 > b.length) return null;
+  const granule = Number(b.readBigUInt64LE(last + 6));
+  if (!Number.isFinite(granule) || granule <= preSkip) return null;
+  return (granule - preSkip) / 48000;
 }
 
 function extensionFor(mime: string): string {

@@ -14,6 +14,7 @@ import { parseLampLook, type LampLook } from "@/components/producer/lamp-look";
 import { parseWheelStyle, type WheelStyle } from "@/components/producer/wheel-style";
 import { parseChatStyle, type ChatStyle } from "@/components/producer/chat-style";
 import { isVoiceConfigured } from "@/lib/producer/speech";
+import { isEUVisitor } from "@/lib/geo";
 import { setsEligible } from "@/lib/sets/set-config";
 import { RatePrompt } from "@/components/rate-prompt";
 import { NativePush } from "@/components/native-push";
@@ -118,7 +119,7 @@ export default async function AppLayout({
   // (lib/producer/enabled.ts producerVisible,
   // which a set's page asks too). Eligibility first, so every other account
   // skips the flag reads and the watch count.
-  let producer: { name: string; watchCount: number; look: LampLook; wheel: WheelStyle; chat: ChatStyle } | null = null;
+  let producer: { name: string; watchCount: number; look: LampLook; wheel: WheelStyle; chat: ChatStyle; currency: string } | null = null;
   if (await producerVisible(supabase, profile, isAdmin)) {
     const [{ data: prefs }, { data: lookRow }, { data: wheelRow }, { data: chatRow }, watchBar] = await Promise.all([
       supabase.from("producer_prefs").select("display_name, watch_seen_at").eq("user_id", data.user.id).maybeSingle(),
@@ -136,6 +137,8 @@ export default async function AppLayout({
       look: parseLampLook((lookRow as { lamp_look?: unknown } | null)?.lamp_look),
       wheel: parseWheelStyle((wheelRow as { wheel_style?: unknown } | null)?.wheel_style),
       chat: parseChatStyle((chatRow as { chat_style?: unknown } | null)?.chat_style),
+      // What her top-ups are priced in for this visitor (lib/agent/topups.ts).
+      currency: (await isEUVisitor()) ? "€" : "$",
     };
   }
 
@@ -213,6 +216,7 @@ export default async function AppLayout({
           wheelStyle={producer.wheel}
           chatStyle={producer.chat}
           diagnostics={isAdmin}
+          currency={producer.currency}
         />
       )}
       {/* data-app-scroll: the app's one real scroller — the native quick

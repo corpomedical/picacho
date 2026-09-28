@@ -127,7 +127,10 @@ const nextConfig: NextConfig = {
         // but missed every root-level image — logo.png, the og image, the
         // showcase posters, the Play badge — which were re-validated on
         // every single page view.
-        source: "/:path((?:presets|templates|course|models|studio)/.*|.*\\.(?:mp4|png|jpg|jpeg|webp|svg|ico))",
+        // vad/ added 2026-09-28: Aly's speech model (12 MB engine + 2.3 MB
+        // model) was re-checked on every visit; outdoors on mobile data a
+        // hands-free session could sit on the loudness stand-in instead.
+        source: "/:path((?:presets|templates|course|models|studio|vad)/.*|.*\\.(?:mp4|png|jpg|jpeg|webp|svg|ico))",
         headers: [
           {
             key: "Cache-Control",

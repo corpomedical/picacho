@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import type { VoicePhase } from "./use-hands-free";
-import { usageFraction, wheelGeometry, type WheelStyle } from "./wheel-style";
+import { usageState, wheelGeometry, type WheelStyle } from "./wheel-style";
 import styles from "./wheel.module.css";
 
 // The wheel that opens out of the lamp (2026-09-25, operator: "a wheel that
@@ -35,6 +35,8 @@ export type WheelProps = {
   demo?: boolean;
   used: number;
   cap: number;
+  /** What top-ups add to this month's ceiling (lib/agent/topups.ts); 0 without one. */
+  extra?: number;
   phase: VoicePhase;
   level: number;
   readAloud: boolean;
@@ -102,13 +104,14 @@ export function Wheel(p: WheelProps) {
   // names to the left of Filament's arc.
   const half = g.reach + 150;
   const size = half * 2;
-  const pct = usageFraction(p.used, p.cap);
-  const full = pct >= 1;
-  const usageLabel = full
-    ? "Allowance used up for this period"
-    : `${p.used.toLocaleString()} of ${p.cap.toLocaleString()} assistant units used this period`;
+  // Past the month's allowance a top-up carries on (wheel-style.ts usageState).
+  const { pct, full, onTopUp, topUpLeft, label: usageLabel } = usageState(p.used, p.cap, p.extra ?? 0);
   const usageText = full ? (
     <b>Limit reached</b>
+  ) : onTopUp ? (
+    <>
+      <b>Top-up</b> {topUpLeft.toLocaleString("en-US")} left
+    </>
   ) : (
     <>
       <b>{Math.round(pct * 100)}%</b> this month

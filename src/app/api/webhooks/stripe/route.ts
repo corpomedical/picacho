@@ -5,6 +5,7 @@ import { planIdForPriceId } from "@/lib/stripe/plans";
 import { creditsForPriceId } from "@/lib/stripe/credit-packs";
 import { createAdminClient } from "@/lib/supabase/server";
 import { notifyAdmins } from "@/lib/push/web-push";
+import { isMissingInDatabase } from "@/lib/agent/allowance";
 
 // Stripe → us. No user session here (Stripe calls this directly), so the
 // signature check below is the only auth — never skip it. Register this
@@ -153,9 +154,11 @@ async function clawbackCreditPurchase(
     return false;
   }
 
-  // Not a credit purchase (an ordinary subscription refund/dispute), or one
-  // already reversed.
-  if (!purchase || purchase.refunded_at) return true;
+  // Not a credit purchase: maybe an assistant top-up, or an ordinary
+  // subscription refund/dispute.
+  if (!purchase) return clawbackAssistantTopUp(supabase, sessionId);
+  // Already reversed.
+  if (purchase.refunded_at) return true;
 
   // Atomic mark-and-decrement (public.clawback_credit_purchase): claims the
   // row with a refunded_at IS NULL guard and decrements the balance in ONE
@@ -172,6 +175,25 @@ async function clawbackCreditPurchase(
   if (clawed !== true) {
     console.log("Stripe webhook: duplicate clawback ignored", sessionId);
   }
+  return true;
+}
+
+// The assistant top-up twin of the credit clawback (2026-09-28): whatever of
+// the top-up's units is still unspent comes off the balance, once
+// (clawback_assistant_topup claims the row first). False only for a real
+// database error, so Stripe retries; a session that bought no top-up, or a
+// database without producer-aly.sql (no top-up can exist there), is done.
+async function clawbackAssistantTopUp(
+  supabase: ReturnType<typeof createAdminClient>,
+  sessionId: string,
+): Promise<boolean> {
+  const { data: clawed, error } = await supabase.rpc("clawback_assistant_topup", { p_session_id: sessionId });
+  if (error) {
+    if (isMissingInDatabase(error)) return true;
+    console.error("Stripe webhook: assistant top-up clawback failed", error.message);
+    return false;
+  }
+  if (clawed === true) console.log("Stripe webhook: assistant top-up taken back", sessionId);
   return true;
 }
 
@@ -306,6 +328,43 @@ export async function POST(request: Request) {
               session.id,
               session.payment_status,
             );
+            break;
+          }
+
+          // An assistant top-up (lib/agent/topups.ts, 2026-09-28), not a
+          // credit pack: its price is inline, so there is no price id to map;
+          // the units ride on the session's metadata, written by
+          // startAssistantTopUpCheckout (only our server creates sessions).
+          // grant_assistant_topup is idempotent on the session, like
+          // record_credit_purchase.
+          if (session.metadata?.assistant_topup) {
+            const units = Number(session.metadata.assistant_units);
+            if (!Number.isInteger(units) || units <= 0 || units > 100_000) {
+              console.error("Stripe webhook: assistant top-up without units", session.id, session.metadata.assistant_topup);
+              break;
+            }
+            const { data: granted, error: grantError } = await supabase.rpc("grant_assistant_topup", {
+              p_user_id: userId,
+              p_session_id: session.id,
+              p_units: units,
+              p_amount_cents: session.amount_total ?? 0,
+              p_currency: session.currency ?? "usd",
+            });
+            if (grantError) {
+              // Let Stripe retry — including before producer-aly.sql has run:
+              // the grant lands once it has.
+              console.error("Stripe webhook: couldn't record assistant top-up", grantError.message);
+              return NextResponse.json({ received: false }, { status: 500 });
+            }
+            if (granted !== true) {
+              console.log("Stripe webhook: duplicate assistant top-up ignored", session.id);
+            } else {
+              await notifyAdmins({
+                title: "Payment received",
+                body: `${((session.amount_total ?? 0) / 100).toFixed(2)} ${(session.currency ?? "usd").toUpperCase()} — assistant top-up, ${units} units`,
+                path: "#money",
+              });
+            }
             break;
           }
 
@@ -625,7 +684,7 @@ export async function POST(request: Request) {
           title: "Payment disputed (chargeback)",
           body: `${(dispute.amount / 100).toFixed(2)} ${dispute.currency.toUpperCase()}. Answer it in Stripe → Disputes${
             dueBy ? ` by ${dueBy}` : ""
-          }. Any credit pack it bought was taken back.`,
+          }. Any credit pack or assistant top-up it bought was taken back.`,
           path: "#money",
         });
         break;
