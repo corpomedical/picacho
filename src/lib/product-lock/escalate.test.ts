@@ -43,8 +43,9 @@ function message(over: Partial<Anthropic.Message> = {}): Anthropic.Message {
 }
 
 function client(impl: () => Promise<Anthropic.Message>) {
-  const create = vi.fn(async (body: Anthropic.MessageCreateParamsNonStreaming) => {
+  const create = vi.fn(async (body: Anthropic.MessageCreateParamsNonStreaming, options?: { timeout?: number; maxRetries?: number }) => {
     void body;
+    void options;
     return impl();
   });
   return { client: { messages: { create } } as unknown as MessagesClient, create };
@@ -85,6 +86,8 @@ describe("the answer", () => {
     expect(out.usd).toBeCloseTo(sonnetUsd(4487, 200));
     expect(out.usd).toBeCloseTo(0.010974, 5);
     expect(c.create.mock.calls[0][0].model).toBe("claude-sonnet-5");
+    // Sent once: a retry could bill twice while it is booked once (P1 pre-flight §5).
+    expect(c.create.mock.calls[0][1]).toMatchObject({ maxRetries: 0 });
   });
 
   it("no client (no key) is not_configured and sends nothing", async () => {

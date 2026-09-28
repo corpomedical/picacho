@@ -60,6 +60,11 @@ export const STILL_REPAINT_LIMIT = "That still has been repainted as many times 
  * person's) was refused: the ad goes on, and the still keeps its painting.
  */
 export const STILL_REPAINT_REFUSED = "This still couldn't be repainted under our content and ad rules, so it keeps the painting it had.";
+/**
+ * A painted still our checker could not read (the reader was down or out of
+ * time): said plainly, never left as a quiet "Not checked" (P1 pre-flight G5).
+ */
+export const STILL_NOT_CHECKED = "We couldn't check this still just now. Look at it closely yourself: keep it as it is, or repaint it.";
 export const SHOT_NOT_IN_AD = "That shot isn't in this ad.";
 export const CANCEL_WAIT = "Your stills are being painted. Try again in a moment.";
 
@@ -93,6 +98,12 @@ export const PICTURE_SERVICE_REFUSED_AFTER =
   "The picture service we use painted one of your stills, then blocked it under its own safety rules, not ours: our checks had passed it. This ad stopped. Nothing was charged for the ones that didn't paint.";
 export const PICTURE_SERVICE_REFUSED_CHARGED =
   "The picture service we use blocked one of your stills under its own safety rules, not ours: our checks had passed it. This ad stopped. A still that failed partway through painting was still charged.";
+/** The three charged closings when MORE than one still kept its charge (failWords picks by the count). */
+export const PAINT_FAILED_CHARGED_MANY = "We couldn't paint your stills. The stills that failed partway through painting were still charged.";
+export const STILL_REFUSED_CHARGED_MANY =
+  "One of your stills couldn't be shown under our content rules, so this ad stopped. The stills that failed partway through painting were still charged.";
+export const PICTURE_SERVICE_REFUSED_CHARGED_MANY =
+  "The picture service we use blocked one of your stills under its own safety rules, not ours: our checks had passed it. This ad stopped. The stills that failed partway through painting were still charged.";
 export const CAMPAIGN_EXPIRED = "This ad waited 7 days for your decision and was closed. Filming was never charged.";
 
 // --- What blocks the next step (CampaignView.blocker) --------------------------
@@ -137,6 +148,7 @@ export const CAMPAIGN_MESSAGES = [
   STILL_NOT_READY,
   STILL_REPAINT_LIMIT,
   STILL_REPAINT_REFUSED,
+  STILL_NOT_CHECKED,
   SHOT_NOT_IN_AD,
   CANCEL_WAIT,
   PAINT_FAILED,
@@ -146,6 +158,9 @@ export const CAMPAIGN_MESSAGES = [
   PICTURE_SERVICE_REFUSED_BEFORE,
   PICTURE_SERVICE_REFUSED_AFTER,
   PICTURE_SERVICE_REFUSED_CHARGED,
+  PAINT_FAILED_CHARGED_MANY,
+  STILL_REFUSED_CHARGED_MANY,
+  PICTURE_SERVICE_REFUSED_CHARGED_MANY,
   CAMPAIGN_EXPIRED,
   BLOCK_PLANNING,
   BLOCK_PAINTING,

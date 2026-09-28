@@ -120,7 +120,10 @@ export async function escalateFrame(
   try {
     message = await deps.client.messages.create(escalationRequest(input), {
       timeout: Math.max(1, Math.min(ESCALATION_TIMEOUT_MS, deps.timeoutMs ?? ESCALATION_TIMEOUT_MS)),
-      maxRetries: 1,
+      // One send, booked once: the SDK's own retry could send a timed-out
+      // reading a second time (both may bill) while it is booked at one
+      // ceiling (P1 pre-flight §5). A reading that fails is "not checked".
+      maxRetries: 0,
     });
   } catch (err) {
     const status = (err as { status?: unknown } | null)?.status;

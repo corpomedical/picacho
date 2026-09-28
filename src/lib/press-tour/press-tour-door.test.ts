@@ -199,9 +199,11 @@ describe("the Press Tour door", () => {
       const at = text.indexOf("} catch (err) {");
       expect(at, name).toBeGreaterThan(-1);
       const caught = text.slice(at);
-      expect(caught, name).toContain(GUARD);
+      // The poll reloads once per 10 minutes at most (door-view.ts doorMayReload), then says it couldn't reach us.
+      const guard = name === "poll" ? "if (doorMayReload(sessionStore(), Date.now()) && reloadForNewDeploy()) return;" : GUARD;
+      expect(caught, name).toContain(guard);
       // In the poll, the guard runs before the next ask is scheduled.
-      if (name === "poll") expect(caught.indexOf(GUARD), name).toBeLessThan(caught.indexOf("setPollTick((n) => n + 1);"));
+      if (name === "poll") expect(caught.indexOf(guard), name).toBeLessThan(caught.indexOf("setPollTick((n) => n + 1);"));
     }
   });
 
@@ -333,6 +335,11 @@ describe("the Press Tour door", () => {
 
   it("fires the flashbulb when the star matched and every applicable check matched, and not at all under reduced motion", () => {
     expect(read("components", "press-tour", "running-order.tsx")).toContain("flashes ? s.flash : clear ? s.glow : waits ? s.waiting : null");
+    // A refused repaint on a still that no longer waits (approved, kept, all clear) says why,
+    // on the computer and the phone; a stopped ad's unpainted still says so instead of shimmering.
+    const order = read("components", "press-tour", "running-order.tsx");
+    expect(order.match(/\{!waits && still\.reason && <ReasonNote reason=\{still\.reason\} t=\{t\} \/>\}/g)).toHaveLength(2);
+    expect(order).toContain("!painted && !stopped && s.painting");
     const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
     expect(reduced).toMatch(/\.flash::after,\s*\.flash > img,\s*\.flash \.land/);
     expect(reduced).toContain("animation: none;");

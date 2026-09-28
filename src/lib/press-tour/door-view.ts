@@ -55,6 +55,29 @@ export function isClosed(stage: CampaignStage): boolean {
   return CLOSED.includes(stage);
 }
 
+/**
+ * The door reloads itself onto a new deploy at most once in this window.
+ * The shared guard (stale-deploy.ts) allows one every 30 s, and a poll error
+ * that only LOOKS like a stale deploy ("an unexpected response", which a
+ * flaky network can give too) would then reload the door every ~30 s while
+ * stills paint (P1 pre-flight minors). Past the first, the door says it
+ * couldn't reach us and keeps asking.
+ */
+export const DOOR_RELOAD_WINDOW_MS = 10 * 60 * 1000;
+export const DOOR_RELOAD_KEY = "press-tour:door-reloaded-at";
+
+/** Whether the door may reload now; records the reload when it may. Storage that throws allows one (the shared guard still holds). */
+export function doorMayReload(storage: Pick<Storage, "getItem" | "setItem"> | null, nowMs: number): boolean {
+  try {
+    const last = Number(storage?.getItem(DOOR_RELOAD_KEY)) || 0;
+    if (nowMs - last <= DOOR_RELOAD_WINDOW_MS) return false;
+    storage?.setItem(DOOR_RELOAD_KEY, String(nowMs));
+  } catch {
+    /* no storage: the shared 30 s guard is the only one */
+  }
+  return true;
+}
+
 /** How often the door asks for the ad again while the engine works. */
 export const POLL_MS = 4000;
 
@@ -177,12 +200,18 @@ export function networkStates(sw: {
 
 export type StarAnswer = "me" | "permission" | "not_a_person";
 
-export type PlanBlock = "email" | "star" | "starPhoto" | "starAnswer" | "product" | "productRefused" | "productCard" | null;
+export type PlanBlock = "email" | "star" | "starPhoto" | "starAnswer" | "product" | "productRefused" | "productCard" | "productPhotos" | null;
+
+/** The product's short state in the door's list: ready, a draft, or confirmed with its photos gone. */
+export function productState(card: Pick<ProductCard, "status"> & { photos: readonly string[] }): "ready" | "draft" | "photosMissing" {
+  if (card.status !== "confirmed") return "draft";
+  return card.photos.length === 0 ? "photosMissing" : "ready";
+}
 
 export function planBlock(input: {
   emailConfirmed: boolean;
   star: { photoCount: number; adAnswer: StarAnswer | null } | null;
-  product: Pick<ProductCard, "status" | "category"> | null;
+  product: Pick<ProductCard, "status" | "category"> & { photos?: readonly string[] } | null;
 }): PlanBlock {
   if (!input.emailConfirmed) return "email";
   if (!input.star) return "star";
@@ -191,6 +220,9 @@ export function planBlock(input: {
   if (!input.product) return "product";
   if (input.product.category === "regulated") return "productRefused";
   if (input.product.status !== "confirmed") return "productCard";
+  // A confirmed card whose photos all went missing from storage has nothing
+  // to paint from: it is not ready, whatever its status says (P1 pre-flight §5).
+  if (input.product.photos && input.product.photos.length === 0) return "productPhotos";
   return null;
 }
 

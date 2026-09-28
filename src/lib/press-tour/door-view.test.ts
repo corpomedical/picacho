@@ -32,6 +32,9 @@ import {
   networkStates,
   nextSpend,
   planBlock,
+  doorMayReload,
+  DOOR_RELOAD_WINDOW_MS,
+  productState,
   plannedSeconds,
   routeIndex,
   shotNumber,
@@ -223,6 +226,14 @@ describe("what blocks a plan", () => {
     expect(planBlock({ emailConfirmed: true, star, product: { status: "confirmed", category: "regulated" } })).toBe("productRefused");
     expect(planBlock({ emailConfirmed: true, star, product: { status: "draft", category: "food" } })).toBe("productCard");
     expect(planBlock({ emailConfirmed: true, star, product })).toBeNull();
+  });
+
+  it("a confirmed card whose photos all went missing is not ready, in the list or for planning (P1 pre-flight §5)", () => {
+    expect(planBlock({ emailConfirmed: true, star, product: { ...product, photos: [] } })).toBe("productPhotos");
+    expect(planBlock({ emailConfirmed: true, star, product: { ...product, photos: ["u/p/a.jpg"] } })).toBeNull();
+    expect(productState({ status: "confirmed", photos: [] })).toBe("photosMissing");
+    expect(productState({ status: "confirmed", photos: ["u/p/a.jpg"] })).toBe("ready");
+    expect(productState({ status: "draft", photos: [] })).toBe("draft");
   });
 });
 
@@ -444,5 +455,20 @@ describe("the press wall", () => {
     expect(clockTenths(null)).toBe("–");
     expect(clockSeconds(15)).toBe("0:15");
     expect(clockSeconds(null)).toBe("–");
+  });
+});
+
+describe("the door's own reload guard", () => {
+  it("reloads onto a new deploy once, then not again within 10 minutes, so a look-alike error can't reload every 30 s", () => {
+    const store = new Map<string, string>();
+    const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
+    const t0 = Date.parse("2026-09-28T10:00:00Z");
+    expect(doorMayReload(storage, t0)).toBe(true);
+    expect(doorMayReload(storage, t0 + 31_000)).toBe(false);
+    expect(doorMayReload(storage, t0 + DOOR_RELOAD_WINDOW_MS)).toBe(false);
+    expect(doorMayReload(storage, t0 + DOOR_RELOAD_WINDOW_MS + 1)).toBe(true);
+    const throwing = { getItem: () => { throw new Error("blocked"); }, setItem: () => undefined };
+    expect(doorMayReload(throwing, t0)).toBe(true);
+    expect(doorMayReload(null, t0)).toBe(true);
   });
 });

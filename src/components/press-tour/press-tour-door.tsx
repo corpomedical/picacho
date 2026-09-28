@@ -22,6 +22,8 @@ import {
   decidedCount,
   firstWaiting,
   isClosed,
+  doorMayReload,
+  productState,
   isMiss,
   isWorking,
   nextSpend,
@@ -154,6 +156,13 @@ type Key = {
 // (door-data.ts pickDoorCampaign). "Start over" lets it go on this device:
 // a convenience only, so storage that is blocked or empty just shows it again.
 const DISMISSED_KEY = "press-tour:dismissed-stopped-ad";
+function sessionStore(): Storage | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
 function stoppedAdDismissed(id: string): boolean {
   try {
     return window.localStorage.getItem(DISMISSED_KEY) === id;
@@ -261,12 +270,16 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
         // A deploy that lands while stills paint makes every ask throw from
         // this tab, so asking again would spin on a frozen ad forever: the
         // shared guard reloads it onto the new build, once (stale-deploy.ts).
-        if (isStaleDeployError(err) && reloadForNewDeploy()) return;
+        if (isStaleDeployError(err)) {
+          if (doorMayReload(sessionStore(), Date.now()) && reloadForNewDeploy()) return;
+          // Reloaded once already: say so rather than reloading again, and keep asking.
+          setError(m.failed);
+        }
         setPollTick((n) => n + 1);
       }
     }, POLL_MS);
     return () => clearTimeout(timer);
-  }, [campaign, pollTick, actions]);
+  }, [campaign, pollTick, actions, m.failed]);
 
   const run = useCallback(
     async (label: string, work: () => Promise<CampaignResult>, shot: number | null = null, campaignId: string | null = null) => {
@@ -370,6 +383,7 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
     product: m.needProduct,
     productRefused: m.needOtherProduct,
     productCard: m.needProductCard,
+    productPhotos: m.needProductPhotos,
   };
   const server = (text: string | null) => (text ? localizeServerText(text, t) : null);
   const priceTag = (credits: number) => (quote?.trial ? m.onUs : formatMsg(m.creditsTag, { n: credits }));
@@ -803,7 +817,7 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
                           <span aria-hidden="true" className="h-8 w-8 flex-none rounded-lg bg-[rgba(255,255,255,0.05)]" />
                         )}
                         <span className="min-w-0 flex-1 truncate">{p.card.name || m.untitledProduct}</span>
-                        <span className="flex-none text-[11px] text-[#858994]">{p.card.status === "confirmed" ? m.productReady : m.productDraftShort}</span>
+                        <span className="flex-none text-[11px] text-[#858994]">{{ ready: m.productReady, draft: m.productDraftShort, photosMissing: m.productPhotosMissing }[productState(p.card)]}</span>
                       </button>
                     </li>
                   );

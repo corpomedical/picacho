@@ -124,6 +124,15 @@ function Print({ still, m, small, stopped }: { still: StillView; m: PressWords; 
   );
 }
 
+/**
+ * Why a still that no longer waits says something: a repaint of an approved
+ * or kept still that our rules refused (the still keeps its painting), or its
+ * check's reason. It was silent there before (P1 pre-flight minors).
+ */
+function ReasonNote({ reason, t }: { reason: string; t: Messages }) {
+  return <p className="mt-1.5 text-[11.5px] leading-[1.4] text-[#eed6a0]">{localizeServerText(reason, t)}</p>;
+}
+
 /** The reason a still waits, in the person's language (the engine sends English). */
 function waitTitle(still: StillView, t: Messages): string {
   if (still.reason) return localizeServerText(still.reason, t);
@@ -153,6 +162,7 @@ export function RunningOrder({ stills, canAct, busyShot, canRepaint, act, t, sto
             <Print still={still} m={m} stopped={stopped} />
             <h3 className="mt-2.5 text-[14px] font-semibold text-[#ecedf1]">{roleName(still.role, m)}</h3>
             {!waits && <p className="mt-[3px] min-h-[34px] text-[12px] leading-[1.42] text-[#9aa0ad]">{still.direction}</p>}
+            {!waits && still.reason && <ReasonNote reason={still.reason} t={t} />}
             {still.houseRepainted && (
               <p className="mt-1.5 flex gap-1.5 text-[11.5px] leading-[1.4] text-[#b9b2a6]">
                 <RefreshIcon className="mt-px h-3 w-3 flex-none text-[#e0a468]" />
@@ -271,6 +281,7 @@ export function PhoneRunningOrder({ stills, canAct, busyShot, canRepaint, act, t
           </p>
           <h3 className="mt-1.5 text-[15px] font-semibold text-[#ecedf1]">{waits ? waitTitle(still, t) : still.direction}</h3>
           {waits && <p className="mt-[3px] text-[12.5px] leading-[1.42] text-[#9aa0ad]">{m.waitsBody}</p>}
+          {!waits && still.reason && <ReasonNote reason={still.reason} t={t} />}
           {still.houseRepainted && (
             <p className="mt-1.5 flex gap-1.5 text-[12px] leading-[1.4] text-[#b9b2a6]">
               <RefreshIcon className="mt-px h-3.5 w-3.5 flex-none text-[#e0a468]" />

@@ -138,9 +138,12 @@ export const FREE_IMPORTS_APP_PER_DAY = 300;
 export const HOST_FETCHES_PER_MINUTE = 60;
 /**
  * Card self-tests a day, per person (admins included). Each is every chosen
- * photo read by the product checker: ≤ 5 × (two judge calls + one word
- * reading) + the reference words + ≤ 2 second readings ≈ $0.05 at most
- * (product-lock/check.ts selfTestCard).
+ * photo read by the product checker (product-lock/check.ts selfTestCard), at
+ * the ceilings in source:
+ *   5 photos × (2 × JUDGE_CALL_CEILING_USD $0.004572 + WORDS_USD $0.0015) = $0.0532
+ *   + the reference words, 5 × $0.0015                                   = $0.0075
+ *   + ≤ 2 second readings × ESCALATION_CEILING_USD $0.02624             = $0.0525
+ *   ≈ $0.11 at most; with cut-outs, + 5 × SEGMENT_USD $0.024 = $0.12 → ≈ $0.23.
  */
 export const SELF_TESTS_PER_DAY = 20;
 /**

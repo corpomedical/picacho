@@ -17,12 +17,16 @@ import {
   PICTURE_SERVICE_REFUSED_AFTER,
   PICTURE_SERVICE_REFUSED_BEFORE,
   PICTURE_SERVICE_REFUSED_CHARGED,
+  PICTURE_SERVICE_REFUSED_CHARGED_MANY,
+  PAINT_FAILED_CHARGED_MANY,
+  STILL_REFUSED_CHARGED_MANY,
   PLAN_REFUSED_AD_RULES,
   PLAN_REFUSED_LABEL_CLAIM,
   PLAN_STALLED,
   STILL_REFUSED,
   STILL_REFUSED_CHARGED,
   STILL_REPAINT_REFUSED,
+  STILL_NOT_CHECKED,
   blockDecide,
 } from "./campaign-messages";
 import { CHARACTER_A, PRODUCT_A, USER_A, fakeDb, type Row } from "./campaign-fixtures";
@@ -55,6 +59,7 @@ import {
   pressTick,
   readCampaign,
   repaintRefusal,
+  notCheckedReason,
   repaintRowId,
   stepCampaign,
   stepOnce,
@@ -67,6 +72,7 @@ import {
   type StillState,
 } from "./campaign-machine";
 import { normaliseAdPlan, type AdPlan } from "./planner";
+import { stillCredits } from "./quote";
 
 // The stage machine (spec §1.12 up to awaiting_approval in Cut 2): the
 // stage list pinned to press-tour-03-campaigns.sql, the ids made from a
@@ -869,15 +875,31 @@ describe("the machine", () => {
     expect(creditsKept([delivered, back])).toBe(0);
     expect(failWords(PAINT_FAILED, 0)).toBe(PAINT_FAILED);
     expect(failWords(PAINT_FAILED, 1)).toBe(PAINT_FAILED_CHARGED);
-    expect(failWords(STILL_REFUSED, 2)).toBe(STILL_REFUSED_CHARGED);
+    expect(failWords(STILL_REFUSED, stillCredits())).toBe(STILL_REFUSED_CHARGED);
     // The picture service's own refusal keeps saying whose rule it was when a credit stayed.
     expect(failWords(PICTURE_SERVICE_REFUSED_AFTER, 0)).toBe(PICTURE_SERVICE_REFUSED_AFTER);
     expect(failWords(PICTURE_SERVICE_REFUSED_AFTER, 1)).toBe(PICTURE_SERVICE_REFUSED_CHARGED);
     expect(failWords(PICTURE_SERVICE_REFUSED_BEFORE, 1)).toBe(PICTURE_SERVICE_REFUSED_CHARGED);
     expect(PICTURE_SERVICE_REFUSED_CHARGED).not.toMatch(/nothing was charged/i);
+    // More than one still kept its charge: the plural twin, never "a still".
+    const two = 2 * stillCredits();
+    expect(failWords(PAINT_FAILED, two)).toBe(PAINT_FAILED_CHARGED_MANY);
+    expect(failWords(STILL_REFUSED, two)).toBe(STILL_REFUSED_CHARGED_MANY);
+    expect(failWords(PICTURE_SERVICE_REFUSED_AFTER, two)).toBe(PICTURE_SERVICE_REFUSED_CHARGED_MANY);
+    expect(failWords(PAINT_FAILED, stillCredits())).toBe(PAINT_FAILED_CHARGED);
     // Words that never said "nothing was charged" stay as they are.
     expect(failWords(AD_CONSENT_NEEDED, 1)).toBe(AD_CONSENT_NEEDED);
     for (const w of [PAINT_FAILED_CHARGED, STILL_REFUSED_CHARGED]) expect(w).not.toMatch(/nothing was charged/i);
+  });
+
+  it("a painted still whose check couldn't run says so plainly, never a quiet 'Not checked' (P1 pre-flight G5)", () => {
+    const withStar = { star: true, productVisibility: "required_label" as const };
+    expect(notCheckedReason({ face: "not_checked", product: "match" }, withStar)).toBe(STILL_NOT_CHECKED);
+    expect(notCheckedReason({ face: "match", product: "not_checked" }, withStar)).toBe(STILL_NOT_CHECKED);
+    expect(notCheckedReason({ face: "match", product: "match" }, withStar)).toBeNull();
+    // A check that does not apply is not "not checked": no star, or no product in the shot.
+    expect(notCheckedReason({ face: "not_checked", product: "match" }, { star: false, productVisibility: "required_label" })).toBeNull();
+    expect(notCheckedReason({ face: "match", product: "not_checked" }, { star: true, productVisibility: "absent" })).toBeNull();
   });
 
   it("a refused repaint's words last only until a later painting replaces them", () => {

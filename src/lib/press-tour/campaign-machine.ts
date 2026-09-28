@@ -105,13 +105,18 @@ import {
   PICTURE_SERVICE_REFUSED_AFTER,
   PICTURE_SERVICE_REFUSED_BEFORE,
   PICTURE_SERVICE_REFUSED_CHARGED,
+  PICTURE_SERVICE_REFUSED_CHARGED_MANY,
+  PAINT_FAILED_CHARGED_MANY,
+  STILL_REFUSED_CHARGED_MANY,
+  STILL_NOT_CHECKED,
   STILL_REFUSED,
   STILL_REFUSED_CHARGED,
   STILL_REPAINT_REFUSED,
   blockDecide,
 } from "./campaign-messages";
+import { REASON_NOT_CHECKED } from "../product-lock/messages";
 import { parseAdPlan, type AdPlan, type PlannedShot } from "./planner";
-import { parsePressQuote, shotCredits } from "./quote";
+import { parsePressQuote, shotCredits, stillCredits } from "./quote";
 import {
   BLOCK_CUTTING,
   BLOCK_FILMING,
@@ -633,8 +638,17 @@ const CHARGED_WORDS: Readonly<Record<string, string>> = {
  * as they are when they never spoke of a charge.
  */
 export function failWords(error: string, keptCredits: number, charged: string = CHARGED_WORDS[error] ?? error): string {
-  return keptCredits > 0 ? charged : error;
+  if (keptCredits <= 0) return error;
+  // More credits kept than one still costs (quote.ts stillCredits) is more than one still.
+  return keptCredits > stillCredits() ? (CHARGED_MANY[charged] ?? charged) : charged;
 }
+
+/** The plural twin of each charged closing. */
+const CHARGED_MANY: Readonly<Record<string, string>> = {
+  [PAINT_FAILED_CHARGED]: PAINT_FAILED_CHARGED_MANY,
+  [STILL_REFUSED_CHARGED]: STILL_REFUSED_CHARGED_MANY,
+  [PICTURE_SERVICE_REFUSED_CHARGED]: PICTURE_SERVICE_REFUSED_CHARGED_MANY,
+};
 
 /** Whether a failed attempt of this kind gets its one retry (only the paid paintings do, once per still; paid or on the house: v2 #11). */
 export function retryDue(still: StillState, failed: StillAttempt): boolean {
@@ -893,6 +907,13 @@ export function blockerFor(row: Pick<CampaignRow, "stage" | "stills"> & Partial<
   }
 }
 
+/** A painted still whose check that applies could not run says so (G5): the star's face, or the product where the shot shows it. */
+export function notCheckedReason(kept: Pick<StillAttempt, "face" | "product">, shot: Pick<PlannedShot, "star" | "productVisibility">): string | null {
+  const faceUnread = Boolean(shot.star) && kept.face === "not_checked";
+  const productUnread = shot.productVisibility !== "absent" && kept.product === "not_checked";
+  return faceUnread || productUnread ? STILL_NOT_CHECKED : null;
+}
+
 function stillView(shot: PlannedShot, still: StillState | null, imageUrl: (path: string) => string | null): StillView {
   const busy = still ? inFlight(still) : true;
   const kept = still && !busy ? keptAttempt(still) : null;
@@ -905,7 +926,8 @@ function stillView(shot: PlannedShot, still: StillState | null, imageUrl: (path:
     face: kept ? kept.face : shot.star ? "not_checked" : "no_one_in_shot",
     product: kept ? kept.product : "not_checked",
     // A refused repaint says why first; the painting kept is shown as it was.
-    reason: still && kept ? (repaintRefusal(still) ?? kept.reason ?? null) : null,
+    // A specific miss says why; a check that couldn't run says so plainly (G5).
+    reason: still && kept ? (repaintRefusal(still) ?? (kept.reason !== REASON_NOT_CHECKED ? kept.reason : null) ?? notCheckedReason(kept, shot) ?? kept.reason ?? null) : null,
     // A shot planned without the product (a hook) has no product check to clear (PT-01).
     productExpected: shot.productVisibility !== "absent",
     decision: still && kept ? still.decision : "pending",
