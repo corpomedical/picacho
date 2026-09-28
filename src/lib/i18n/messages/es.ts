@@ -5000,6 +5000,16 @@ const es = {
     modeLight: "Light",
     modeAdvanced: "Avanzado (estudio completo)",
     modeSaved: "Guardado",
+    searchChats: "Buscar chats",
+    searchPlaceholder: "Busca lo que has creado…",
+    searchNone: "Todavía no hay coincidencias.",
+    images: "Imágenes",
+    library: "Biblioteca",
+    foldMenu: "Plegar menú",
+    unfoldMenu: "Abrir menú",
+    look: "Aspecto",
+    switchToLight: "Cambiar a Picacho Light",
+    switchToLightHint: "Un solo chat, para principiantes",
   },
 } satisfies Messages;
 

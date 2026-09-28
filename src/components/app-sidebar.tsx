@@ -12,6 +12,7 @@ import { VoiceRecorderButton } from "@/components/voice-recorder-button";
 import { parseVoiceCommand } from "@/lib/voice/commands";
 import { updateUsername } from "@/lib/profile/actions";
 import { logout } from "@/lib/auth/actions";
+import { SwitchToLightRow } from "@/components/light/switch-to-light-row";
 import { useTheme, type ThemeMode } from "@/lib/theme/theme-provider";
 import { useLocale } from "@/lib/i18n/provider";
 import type { Messages } from "@/lib/i18n/messages";
@@ -1429,6 +1430,10 @@ export function AppSidebar({
                 <GaugeIcon className="h-4 w-4 flex-shrink-0" />
                 {t.settingsHub.tabBilling}
               </Link>
+              <SwitchToLightRow
+                onDone={() => setSettingsOpen(false)}
+                className="flex items-center gap-2.5 rounded-control px-2.5 py-2 text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
+              />
             </div>
 
             <div className="border-t border-atelier-rule/60 py-1">

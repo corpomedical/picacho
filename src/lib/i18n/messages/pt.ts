@@ -5000,6 +5000,16 @@ const pt = {
     modeLight: "Light",
     modeAdvanced: "Avançado (estúdio completo)",
     modeSaved: "Salvo",
+    searchChats: "Buscar chats",
+    searchPlaceholder: "Busque o que você criou…",
+    searchNone: "Nada encontrado ainda.",
+    images: "Imagens",
+    library: "Biblioteca",
+    foldMenu: "Recolher menu",
+    unfoldMenu: "Abrir menu",
+    look: "Visual",
+    switchToLight: "Mudar para o Picacho Light",
+    switchToLightHint: "Uma única caixa de chat, para iniciantes",
   },
 } satisfies Messages;
 

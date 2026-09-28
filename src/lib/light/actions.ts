@@ -80,3 +80,26 @@ export async function getLightTake(id: string): Promise<LightTake | null> {
     modelId: (row.model_id as string | null) ?? null,
   };
 }
+
+/**
+ * "Search chats" in Light's rail: this person's own takes whose words match,
+ * newest first. Each take is one chat in Light.
+ */
+export async function searchLightTakes(query: string): Promise<{ id: string; prompt: string }[]> {
+  const words = query.trim().slice(0, 80);
+  if (!words) return [];
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return [];
+  // ilike's own wildcards and escape are taken literally.
+  const pattern = `%${words.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const { data } = await supabase
+    .from("generations")
+    .select("id, prompt_input")
+    .eq("user_id", userData.user.id)
+    .is("deleted_at", null)
+    .ilike("prompt_input", pattern)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  return (data ?? []).map((r) => ({ id: r.id as string, prompt: (r.prompt_input as string | null) ?? "" }));
+}

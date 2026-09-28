@@ -117,7 +117,7 @@ export function LightChat({
   const { t, locale } = useLocale();
   const l = t.light;
   const router = useRouter();
-  const { openMenu } = useLightShell();
+  const { openMenu, newChat } = useLightShell();
   const [kind, setKind] = useState<Kind>(openedTake?.contentType ?? "video");
   const [text, setText] = useState("");
   const [photo, setPhoto] = useState<Photo | null>(null);
@@ -460,12 +460,21 @@ export function LightChat({
         <button type="button" className="pl-iconbtn md:hidden" aria-label={l.openMenu} onClick={openMenu}>
           <MenuIcon />
         </button>
-        <div className="flex items-center gap-2 md:gap-2.5">
+        {/* The logo is home: a new chat (operator, 2026-09-28). */}
+        <Link
+          href="/app/light"
+          onClick={(e) => {
+            e.preventDefault();
+            newChat();
+          }}
+          className="flex items-center gap-2 md:gap-2.5"
+          style={{ color: "var(--pl-ink)", textDecoration: "none" }}
+        >
           <span className="pl-display text-[20px] font-semibold md:text-[22px]">Picacho</span>
           <span className="rounded-[10px] px-2 py-0.5 text-[11px] font-semibold md:px-[9px] md:py-[3px] md:text-xs" style={{ color: "var(--pl-muted)", background: "var(--pl-rail)" }}>
             {l.badge}
           </span>
-        </div>
+        </Link>
         <div className="flex items-center gap-3">
           <Link
             href="/app/settings?tab=billing"
@@ -494,12 +503,9 @@ export function LightChat({
           {/* Desktop: greeting, the box, four ideas, centred (board Main). */}
           <div className="relative hidden flex-grow flex-col items-center justify-center gap-9 px-12 pb-[72px] md:flex">
             <div className="flex w-full max-w-[760px] flex-col gap-1.5">
-              <div className="flex items-center gap-3">
-                <Mark />
-                <span className="pl-display text-[40px] font-semibold leading-tight" style={{ color: "var(--pl-accent)" }}>
-                  {firstName ? formatMsg(l.hiName, { name: firstName }) : l.hiThere}
-                </span>
-              </div>
+              <span className="pl-display text-[40px] font-semibold leading-tight" style={{ color: "var(--pl-accent)" }}>
+                {firstName ? formatMsg(l.hiName, { name: firstName }) : l.hiThere}
+              </span>
               <div className="pl-display text-[40px] font-medium leading-tight" style={{ color: "var(--pl-soft)" }}>
                 {l.whatToday}
               </div>

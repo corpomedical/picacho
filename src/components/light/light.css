@@ -188,3 +188,21 @@ html.dark .pl {
   outline-offset: 2px;
 }
 }
+
+/* The Light frame is the page: pin the document like the studio's
+   [data-app-scroll] rule does (globals.css), or html/body keep their content
+   height and the frame stops short of the window (operator, 2026-09-28:
+   "Page hight has a limit"). */
+html:has(.pl),
+html:has(.pl) body {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* The assistant's lamp on a phone: above Light's typing box, never on its
+   send button (the lamp's own lift only knows the studio's [data-dock]). */
+@media (max-width: 767.98px) {
+  html:has(.pl) [data-producer-lamp-home] {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 250px) !important;
+  }
+}

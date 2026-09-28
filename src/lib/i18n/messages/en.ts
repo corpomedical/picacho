@@ -5298,6 +5298,16 @@ const en = {
     modeLight: "Light",
     modeAdvanced: "Advanced (full studio)",
     modeSaved: "Saved",
+    searchChats: "Search chats",
+    searchPlaceholder: "Search what you've made…",
+    searchNone: "Nothing matches yet.",
+    images: "Images",
+    library: "Library",
+    foldMenu: "Fold menu",
+    unfoldMenu: "Open menu",
+    look: "Look",
+    switchToLight: "Switch to Picacho Light",
+    switchToLightHint: "One chat box, for beginners",
   },
 };
 

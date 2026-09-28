@@ -20,6 +20,21 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.133.0",
+    build: 172,
+    date: "2026-09-28",
+    title: "Picacho Light: full-height page, a Settings menu, a foldable rail, search, and the assistant",
+    items: [
+      "Light now fills the whole window; before, the page stopped short and left a black band at the bottom.",
+      "The rail has New chat, Search chats, Images and Library at the top, and folds to a slim strip of icons (the button at its top; your choice is remembered on this browser).",
+      "Search chats finds your earlier pictures and videos by their words.",
+      "Settings in the rail opens a menu: the look (Light, Dark, Same as my device), Settings, Plan & billing, Help, Switch to full studio, Admin for admins, and Log out.",
+      "The full studio's settings menu has \"Switch to Picacho Light\".",
+      "The assistant's lamp is in Light too, for everyone who has her. On a phone it sits above the typing box, not on the send button.",
+      "Clicking the Picacho logo starts a new chat, and New chat now clears the conversation even when you're already on the chat page. The small P logo beside \"Hi\" is gone.",
+    ],
+  },
+  {
     version: "1.132.0",
     build: 171,
     date: "2026-09-28",

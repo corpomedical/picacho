@@ -96,37 +96,6 @@ export default async function AppLayout({
   const { mode: appMode, needsChoice } = resolveAppMode({ error: modeRead.error, mode: modeRow?.app_mode });
   const accountLook = modeRead.error ? null : parseAppLook(modeRow?.app_look);
 
-  // PICACHO LIGHT (2026-09-28) and the welcome step: their own frame, none of
-  // the studio's sidebar, tab bar or lamp. Returned before the studio's flag
-  // reads, which this frame never shows.
-  if (appMode === "light" || needsChoice) {
-    const recent = (recentJobs ?? []).map((j) => ({ id: j.id as string, prompt: (j.prompt_input as string | null) ?? "" }));
-    return (
-      <div className="frost-ground flex h-full overflow-hidden">
-        <style dangerouslySetInnerHTML={{ __html: SCREENING_FONT_VARS }} />
-        <AppErrorReporter />
-        <ActivityHeartbeat />
-        <ModeGate mode={appMode} needsChoice={needsChoice} />
-        <LookSync look={accountLook} />
-        <NativePush />
-        <WebPushSync />
-        <Suspense fallback={null}>
-          <RouteProgress />
-        </Suspense>
-        <DownloadToasts />
-        {needsChoice ? (
-          <div data-app-scroll className="min-w-0 flex-1 overflow-y-auto">
-            <ChoiceFrame>{children}</ChoiceFrame>
-          </div>
-        ) : (
-          <Suspense fallback={null}>
-            <LightShell recent={recent}>{children}</LightShell>
-          </Suspense>
-        )}
-      </div>
-    );
-  }
-
   const voiceModeEnabled = await isVoiceModeEnabled(supabase);
   // Sets shows in the sidebar only to accounts that can open it (admins in
   // Phase 1). Eligibility first: it costs nothing, and spares everyone else
@@ -182,6 +151,51 @@ export default async function AppLayout({
       // What her top-ups are priced in for this visitor (lib/agent/topups.ts).
       currency: (await isEUVisitor()) ? "€" : "$",
     };
+  }
+
+  // PICACHO LIGHT (2026-09-28) and the welcome step: their own frame, none of
+  // the studio's sidebar or tab bar. Light keeps the assistant's lamp
+  // (operator, 2026-09-28: "Assistant should be available in light mode").
+  if (appMode === "light" || needsChoice) {
+    const recent = (recentJobs ?? []).map((j) => ({ id: j.id as string, prompt: (j.prompt_input as string | null) ?? "" }));
+    return (
+      <div className="frost-ground flex h-full overflow-hidden">
+        <style dangerouslySetInnerHTML={{ __html: SCREENING_FONT_VARS }} />
+        <AppErrorReporter />
+        <ActivityHeartbeat />
+        <ModeGate mode={appMode} needsChoice={needsChoice} />
+        <LookSync look={accountLook} />
+        <NativePush />
+        <WebPushSync />
+        <Suspense fallback={null}>
+          <RouteProgress />
+        </Suspense>
+        <DownloadToasts />
+        {needsChoice ? (
+          <div data-app-scroll className="min-w-0 flex-1 overflow-y-auto">
+            <ChoiceFrame>{children}</ChoiceFrame>
+          </div>
+        ) : (
+          <Suspense fallback={null}>
+            <LightShell recent={recent} isAdmin={isAdmin}>
+              {children}
+            </LightShell>
+          </Suspense>
+        )}
+        {producer && !needsChoice && (
+          <ProducerLamp
+            name={producer.name}
+            watchCount={producer.watchCount}
+            voiceAvailable={isVoiceConfigured()}
+            look={producer.look}
+            wheelStyle={producer.wheel}
+            chatStyle={producer.chat}
+            diagnostics={isAdmin}
+            currency={producer.currency}
+          />
+        )}
+      </div>
+    );
   }
 
   // Ask for a rating only once someone has had enough successful results to
