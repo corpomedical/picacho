@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { stripe } from "@/lib/stripe/client";
 import { requireAdmin } from "@/lib/admin/require-admin";
+import { logAdminAction } from "@/lib/admin/audit";
 
 // Promo code management. Design rule: Stripe owns the discount, we own the
 // bookkeeping. Creating a code here creates a real Stripe coupon + promotion
@@ -21,7 +22,7 @@ function isMissing(err: unknown): boolean {
 }
 
 export async function createPromoCode(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, admin, userId: actingUserId } = await requireAdmin();
 
   const code = ((formData.get("code") as string) ?? "").trim().toUpperCase();
   const repName = ((formData.get("rep_name") as string) ?? "").trim();
@@ -180,18 +181,25 @@ export async function createPromoCode(formData: FormData) {
     fail(failMessage);
   }
 
+  await logAdminAction(admin, actingUserId, {
+    action: "promo.create",
+    targetType: "promo",
+    targetId: code,
+    after: `${discountPercent}% off for ${durationMonths === 0 ? "ever" : `${durationMonths} mo`}, ${commissionPercent}% to ${repName}`,
+  });
+
   revalidatePath("/admin/promo");
   redirect("/admin/promo");
 }
 
 export async function setPromoCodeActive(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, admin, userId: actingUserId } = await requireAdmin();
   const id = formData.get("id") as string;
   const active = formData.get("active") === "true";
 
   const { data: promo } = await supabase
     .from("promo_codes")
-    .select("id, stripe_promotion_code_id")
+    .select("id, code, stripe_promotion_code_id")
     .eq("id", id)
     .single();
   if (!promo) redirect(`/admin/promo?error=${encodeURIComponent("Code not found.")}`);
@@ -231,6 +239,13 @@ export async function setPromoCodeActive(formData: FormData) {
       )}`,
     );
   }
+  await logAdminAction(admin, actingUserId, {
+    action: "promo.active",
+    targetType: "promo",
+    targetId: promo!.code ?? id,
+    before: active ? "off" : "on",
+    after: active ? "on" : "off",
+  });
   revalidatePath("/admin/promo");
 }
 
@@ -248,7 +263,7 @@ export async function setPromoCodeActive(formData: FormData) {
 // rate they were closed at (promo_redemptions.commission_percent), so a rate
 // change can't retroactively alter what a rep is owed.
 export async function updatePromoCode(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, admin, userId: actingUserId } = await requireAdmin();
 
   const id = (formData.get("id") as string) ?? "";
   const repName = ((formData.get("rep_name") as string) ?? "").trim();
@@ -297,6 +312,13 @@ export async function updatePromoCode(formData: FormData) {
     console.error("Promo code Stripe rename failed", err);
   }
 
+  await logAdminAction(admin, actingUserId, {
+    action: "promo.update",
+    targetType: "promo",
+    targetId: promo!.code,
+    after: `${commissionPercent}% to ${repName}`,
+  });
+
   revalidatePath("/admin/promo");
   redirect("/admin/promo");
 }
@@ -317,7 +339,7 @@ export async function updatePromoCode(formData: FormData) {
 // key is ON DELETE SET NULL), so deleting a code never destroys the record of
 // commission owed on business it already brought in.
 export async function deletePromoCode(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, admin, userId: actingUserId } = await requireAdmin();
   const id = (formData.get("id") as string) ?? "";
 
   const { data: promo } = await supabase
@@ -368,6 +390,8 @@ export async function deletePromoCode(formData: FormData) {
       )}`,
     );
   }
+
+  await logAdminAction(admin, actingUserId, { action: "promo.delete", targetType: "promo", targetId: promo!.code, after: "deleted" });
 
   revalidatePath("/admin/promo");
   redirect("/admin/promo");

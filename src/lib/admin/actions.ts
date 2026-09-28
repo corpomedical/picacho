@@ -12,6 +12,7 @@ import { cancelStripeCustomerBilling } from "@/lib/stripe/cancel-customer";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { computeAdminBadgeCounts, MODERATION_CLEARED_KEY, type AdminBadgeCounts } from "@/lib/admin/badges";
 import { requireAdmin } from "@/lib/admin/require-admin";
+import { isMissingAuditTable, logAdminAction } from "@/lib/admin/audit";
 import { VIDEO_MODELS } from "@/lib/generations/providers/video-models";
 import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
 import {
@@ -104,6 +105,15 @@ export async function setUserStatus(formData: FormData) {
       )}`,
     );
   }
+
+  await logAdminAction(admin, actingUserId, {
+    action: status === "suspended" ? "user.suspend" : "user.reinstate",
+    targetType: "user",
+    targetId: userId,
+    subjectUserId: userId,
+    before: status === "suspended" ? "active" : "suspended",
+    after: status,
+  });
 
   revalidatePath("/admin/users");
   revalidatePath(`/admin/users/${userId}`);
@@ -240,12 +250,22 @@ export async function deleteUser(formData: FormData) {
   // The limiter's rows have no foreign key to cascade with (rate-hits.ts).
   await removeUserRateHits(admin, userId);
 
+  // Ids only: the account is gone, so the log keeps no address for it.
+  await logAdminAction(admin, actingUserId, {
+    action: "user.delete",
+    targetType: "user",
+    targetId: userId,
+    subjectUserId: userId,
+    before: billingProfile?.plan_status ? `plan ${billingProfile.plan_status}` : "account",
+    after: "deleted",
+  });
+
   revalidatePath("/admin/users");
   redirect("/admin/users?message=" + encodeURIComponent("User deleted."));
 }
 
 export async function toggleFeatureFlag(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, admin, userId: actingUserId } = await requireAdmin();
   const key = formData.get("key") as string;
   const enabled = formData.get("enabled") === "true";
 
@@ -258,6 +278,14 @@ export async function toggleFeatureFlag(formData: FormData) {
     console.error("toggleFeatureFlag: flag update failed", error);
     redirect(`/admin/flags?error=${encodeURIComponent(error.message)}`);
   }
+
+  await logAdminAction(admin, actingUserId, {
+    action: "flag.toggle",
+    targetType: "flag",
+    targetId: key,
+    before: enabled ? "on" : "off",
+    after: enabled ? "off" : "on",
+  });
 
   revalidatePath("/admin/flags");
 }
@@ -326,7 +354,7 @@ function validateAppSetting(key: string, value: string): string | null {
 }
 
 export async function updateAppSetting(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, admin, userId: actingUserId } = await requireAdmin();
   const key = formData.get("key") as string;
   const value = (formData.get("value") as string)?.trim();
 
@@ -339,6 +367,7 @@ export async function updateAppSetting(formData: FormData) {
     redirect(`/admin/settings?error=${encodeURIComponent(invalid)}`);
   }
 
+  const { data: previous } = await supabase.from("app_settings").select("value").eq("key", key).maybeSingle();
   const { error } = await supabase
     .from("app_settings")
     .update({ value, updated_at: new Date().toISOString() })
@@ -348,6 +377,14 @@ export async function updateAppSetting(formData: FormData) {
     console.error("updateAppSetting: setting update failed", error);
     redirect(`/admin/settings?error=${encodeURIComponent(error.message)}`);
   }
+
+  await logAdminAction(admin, actingUserId, {
+    action: "setting.update",
+    targetType: "setting",
+    targetId: key,
+    before: previous?.value ?? null,
+    after: value,
+  });
 
   revalidatePath("/admin/settings");
 }
@@ -369,19 +406,30 @@ export async function setUserRole(formData: FormData) {
     redirect(`${redirectTo}?error=${encodeURIComponent("You can't remove your own admin role.")}`);
   }
 
+  const { data: previous } = await admin.from("profiles").select("role").eq("id", userId).maybeSingle();
   const { error } = await admin.from("profiles").update({ role }).eq("id", userId);
   if (error) {
     console.error("setUserRole: role update failed", error);
     redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
   }
 
+  await logAdminAction(admin, actingUserId, {
+    action: "user.role",
+    targetType: "user",
+    targetId: userId,
+    subjectUserId: userId,
+    before: previous?.role ?? null,
+    after: role,
+  });
+
   revalidatePath(`/admin/users/${userId}`);
   revalidatePath("/admin/users");
 }
 
 export async function setVideoModel(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, admin, userId: actingUserId } = await requireAdmin();
   const modelId = formData.get("model_id") as string;
+  const { data: previous } = await supabase.from("app_settings").select("value").eq("key", "video_model").maybeSingle();
 
   const { error } = await supabase
     .from("app_settings")
@@ -392,6 +440,14 @@ export async function setVideoModel(formData: FormData) {
     console.error("setVideoModel: video model update failed", error);
     redirect(`/admin/providers?error=${encodeURIComponent(error.message)}`);
   }
+
+  await logAdminAction(admin, actingUserId, {
+    action: "model.video",
+    targetType: "model",
+    targetId: "video_model",
+    before: previous?.value ?? null,
+    after: modelId,
+  });
 
   revalidatePath("/admin/providers");
 }
@@ -405,10 +461,11 @@ export async function setVideoModel(formData: FormData) {
 // requireAdmin has already established the caller is an admin; the service
 // client is the write mechanism, not the authorisation.
 export async function setSeedanceProvider(formData: FormData) {
-  const { admin } = await requireAdmin();
+  const { admin, userId: actingUserId } = await requireAdmin();
   const raw = formData.get("provider");
   // Never trust the form for a value that decides where money is spent.
   const provider = raw === "byteplus" ? "byteplus" : "fal";
+  const { data: previous } = await admin.from("app_settings").select("value").eq("key", SEEDANCE_LANE_KEY).maybeSingle();
 
   const { error } = await admin.from("app_settings").upsert(
     {
@@ -425,13 +482,22 @@ export async function setSeedanceProvider(formData: FormData) {
     redirect(`/admin/providers?error=${encodeURIComponent(error.message)}`);
   }
 
+  await logAdminAction(admin, actingUserId, {
+    action: "model.seedance_lane",
+    targetType: "model",
+    targetId: SEEDANCE_LANE_KEY,
+    before: previous?.value ?? null,
+    after: provider,
+  });
+
   revalidatePath("/admin/providers");
   revalidatePath("/admin/system");
 }
 
 export async function setImageModel(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, admin, userId: actingUserId } = await requireAdmin();
   const modelId = formData.get("model_id") as string;
+  const { data: previous } = await supabase.from("app_settings").select("value").eq("key", "image_model").maybeSingle();
 
   const { error } = await supabase
     .from("app_settings")
@@ -443,6 +509,14 @@ export async function setImageModel(formData: FormData) {
     redirect(`/admin/providers?error=${encodeURIComponent(error.message)}`);
   }
 
+  await logAdminAction(admin, actingUserId, {
+    action: "model.image",
+    targetType: "model",
+    targetId: "image_model",
+    before: previous?.value ?? null,
+    after: modelId,
+  });
+
   revalidatePath("/admin/providers");
 }
 
@@ -452,7 +526,7 @@ export async function setImageModel(formData: FormData) {
 // Wigly picks a voice by ear on ElevenLabs/fal.ai first, then enters its
 // permanent voice_id here.
 export async function addVoicePreset(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, admin, userId: actingUserId } = await requireAdmin();
   const label = (formData.get("label") as string)?.trim();
   const description = (formData.get("description") as string)?.trim() || null;
   const elevenlabsVoiceId = (formData.get("elevenlabs_voice_id") as string)?.trim();
@@ -474,6 +548,13 @@ export async function addVoicePreset(formData: FormData) {
     redirect(`/admin/voices?error=${encodeURIComponent(error.message)}`);
   }
 
+  await logAdminAction(admin, actingUserId, {
+    action: "voice.add",
+    targetType: "voice",
+    targetId: elevenlabsVoiceId,
+    after: label,
+  });
+
   revalidatePath("/admin/voices");
 }
 
@@ -482,7 +563,7 @@ export async function addVoicePreset(formData: FormData) {
 // puts this one first (sort_order below every other) — the only order the
 // list has, so character pickers list it first too.
 export async function makeDefaultVoicePreset(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, admin, userId: actingUserId } = await requireAdmin();
   const id = formData.get("id") as string;
   const { data: all, error: readError } = await supabase.from("voice_presets").select("id, sort_order");
   if (readError) {
@@ -498,12 +579,13 @@ export async function makeDefaultVoicePreset(formData: FormData) {
     console.error("makeDefaultVoicePreset: update failed", error);
     redirect(`/admin/voices?error=${encodeURIComponent(error.message)}`);
   }
+  await logAdminAction(admin, actingUserId, { action: "voice.default", targetType: "voice", targetId: id });
   revalidatePath("/admin/voices");
   revalidatePath("/app/settings");
 }
 
 export async function deleteVoicePreset(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, admin, userId: actingUserId } = await requireAdmin();
   const id = formData.get("id") as string;
 
   // A preset with characters on it is not deletable (2026-09-23). The
@@ -542,6 +624,7 @@ export async function deleteVoicePreset(formData: FormData) {
     console.error("deleteVoicePreset: delete failed", error);
     redirect(`/admin/voices?error=${encodeURIComponent(error.message)}`);
   }
+  await logAdminAction(admin, actingUserId, { action: "voice.delete", targetType: "voice", targetId: id });
 
   revalidatePath("/admin/voices");
   revalidatePath("/app/character");
@@ -553,7 +636,7 @@ export async function deleteVoicePreset(formData: FormData) {
 // too early and needing to walk it back shouldn't require going through the
 // database directly.
 export async function setGenerationReportStatus(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, admin, userId: actingUserId } = await requireAdmin();
   const reportId = formData.get("report_id") as string;
   const status = formData.get("status") as string;
 
@@ -571,13 +654,21 @@ export async function setGenerationReportStatus(formData: FormData) {
     redirect(`/admin/reports?error=${encodeURIComponent(error.message)}`);
   }
 
+  await logAdminAction(admin, actingUserId, {
+    action: "report.status",
+    targetType: "report",
+    targetId: reportId,
+    before: status === "resolved" ? "open" : "resolved",
+    after: status,
+  });
+
   revalidatePath("/admin/reports");
 }
 
 // Same open/resolved toggle as setGenerationReportStatus above, for the
 // general feedback queue instead — see the feedback table and /admin/feedback.
 export async function setFeedbackStatus(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, admin, userId: actingUserId } = await requireAdmin();
   const feedbackId = formData.get("feedback_id") as string;
   const status = formData.get("status") as string;
 
@@ -595,6 +686,14 @@ export async function setFeedbackStatus(formData: FormData) {
     redirect(`/admin/feedback?error=${encodeURIComponent(error.message)}`);
   }
 
+  await logAdminAction(admin, actingUserId, {
+    action: "feedback.status",
+    targetType: "feedback",
+    targetId: feedbackId,
+    before: status === "resolved" ? "open" : "resolved",
+    after: status,
+  });
+
   revalidatePath("/admin/feedback");
 }
 
@@ -611,7 +710,7 @@ export async function setFeedbackStatus(formData: FormData) {
 // else. /gallery re-checks the same rule at read time, so even a
 // featured_at set by some other route on a customer row never renders.
 export async function setGenerationFeatured(formData: FormData) {
-  const { admin } = await requireAdmin();
+  const { admin, userId: actingUserId } = await requireAdmin();
   const generationId = formData.get("generation_id") as string;
   const featured = formData.get("featured") === "true";
   const rawRedirect = (formData.get("redirect_to") as string) || "/admin/users";
@@ -669,12 +768,19 @@ export async function setGenerationFeatured(formData: FormData) {
     redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
   }
 
+  await logAdminAction(admin, actingUserId, {
+    action: featured ? "render.feature" : "render.unfeature",
+    targetType: "render",
+    targetId: generationId,
+    subjectUserId: row.user_id,
+  });
+
   revalidatePath(`/admin/users/${row.user_id}`);
   revalidatePath("/gallery");
 }
 
 export async function setUserPlan(formData: FormData) {
-  const { admin } = await requireAdmin();
+  const { admin, userId: actingUserId } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const plan = formData.get("plan") as string;
   const redirectTo = `/admin/users/${userId}`;
@@ -690,7 +796,7 @@ export async function setUserPlan(formData: FormData) {
   // charging it. Same rule, same instruction as the deletion guard.
   const { data: current } = await admin
     .from("profiles")
-    .select("plan_source, plan_status")
+    .select("plan, plan_source, plan_status")
     .eq("id", userId)
     .maybeSingle();
   if (
@@ -722,6 +828,15 @@ export async function setUserPlan(formData: FormData) {
     redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
   }
 
+  await logAdminAction(admin, actingUserId, {
+    action: "user.plan",
+    targetType: "user",
+    targetId: userId,
+    subjectUserId: userId,
+    before: current ? `${current.plan ?? "none"}${current.plan_status ? ` (${current.plan_status})` : ""}` : null,
+    after: `${plan} (comp)`,
+  });
+
   revalidatePath(`/admin/users/${userId}`);
   revalidatePath("/admin/users");
 }
@@ -735,7 +850,7 @@ export async function setUserPlan(formData: FormData) {
 // its own. A new version applies on their next page; a new look reaches each
 // of their devices once, over that device's own pick (lookToApply).
 export async function setUserAppChoices(formData: FormData) {
-  const { admin } = await requireAdmin();
+  const { admin, userId: actingUserId } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const redirectTo = `/admin/users/${userId}`;
   const mode = formData.get("app_mode") as string;
@@ -760,6 +875,14 @@ export async function setUserAppChoices(formData: FormData) {
     );
   }
 
+  await logAdminAction(admin, actingUserId, {
+    action: "user.app_choices",
+    targetType: "user",
+    targetId: userId,
+    subjectUserId: userId,
+    after: `version ${mode}, look ${look}`,
+  });
+
   revalidatePath(`/admin/users/${userId}`);
   revalidatePath("/admin/users");
 }
@@ -771,7 +894,7 @@ export async function setUserAppChoices(formData: FormData) {
 // above — the field starts on the true current amount, and the page's label
 // names the balance it replaces, so giving 3 back is that number plus 3.
 export async function setBonusCredits(formData: FormData) {
-  const { supabase, admin } = await requireAdmin();
+  const { admin, userId: actingUserId } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const redirectTo = `/admin/users/${userId}`;
   const raw = formData.get("bonus_credits") as string;
@@ -812,13 +935,13 @@ export async function setBonusCredits(formData: FormData) {
       )}`,
     );
   }
-  // The only audit trail this grant has — make it greppable.
-  const { data: adminUser } = await supabase.auth.getUser();
-  console.log("admin: bonus credits set", {
-    userId,
-    to: bonusCredits,
-    from: expected,
-    by: adminUser?.user?.id ?? "unknown",
+  await logAdminAction(admin, actingUserId, {
+    action: "credits.set",
+    targetType: "user",
+    targetId: userId,
+    subjectUserId: userId,
+    before: expected,
+    after: bonusCredits,
   });
 
   revalidatePath(`/admin/users/${userId}`);
@@ -831,7 +954,7 @@ export async function setBonusCredits(formData: FormData) {
 // than a plan bump so it can be given and taken back without touching what
 // they pay or what else they can do.
 export async function setApiAccess(formData: FormData) {
-  const { admin } = await requireAdmin();
+  const { admin, userId: actingUserId } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const enabled = formData.get("api_access") === "true";
 
@@ -844,6 +967,15 @@ export async function setApiAccess(formData: FormData) {
     redirect(`/admin/users/${userId}?error=${encodeURIComponent(error.message)}`);
   }
 
+  await logAdminAction(admin, actingUserId, {
+    action: "user.api_access",
+    targetType: "user",
+    targetId: userId,
+    subjectUserId: userId,
+    before: enabled ? "off" : "granted",
+    after: enabled ? "granted" : "off",
+  });
+
   revalidatePath(`/admin/users/${userId}`);
 }
 
@@ -853,7 +985,7 @@ export async function setApiAccess(formData: FormData) {
 // allowance (lib/producer/enabled.ts). Revoking takes the lamp away on their
 // next page; their conversation and notes are kept.
 export async function setProducerAccess(formData: FormData) {
-  const { admin } = await requireAdmin();
+  const { admin, userId: actingUserId } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const enabled = formData.get("producer_access") === "true";
 
@@ -869,6 +1001,15 @@ export async function setProducerAccess(formData: FormData) {
       : error.message;
     redirect(`/admin/users/${userId}?error=${encodeURIComponent(message)}`);
   }
+
+  await logAdminAction(admin, actingUserId, {
+    action: "user.producer_access",
+    targetType: "user",
+    targetId: userId,
+    subjectUserId: userId,
+    before: enabled ? "off" : "granted",
+    after: enabled ? "granted" : "off",
+  });
 
   revalidatePath(`/admin/users/${userId}`);
   revalidatePath("/admin/users");
@@ -887,7 +1028,7 @@ export async function setProducerAccess(formData: FormData) {
 // The reverse control matters too: taking a model out deliberately, before it
 // has failed three times, when you already know it's broken or expensive.
 export async function restoreModel(formData: FormData): Promise<void> {
-  await requireAdmin();
+  const { userId: actingUserId } = await requireAdmin();
   const modelId = (formData.get("model_id") as string) ?? "";
   if (!modelId) redirect("/admin/providers?error=Missing+model");
 
@@ -919,12 +1060,20 @@ export async function restoreModel(formData: FormData): Promise<void> {
     redirect(`/admin/providers?error=${encodeURIComponent(error.message)}`);
   }
 
+  await logAdminAction(admin, actingUserId, {
+    action: "model.restore",
+    targetType: "model",
+    targetId: modelId,
+    before: "suspended",
+    after: "running",
+  });
+
   revalidatePath("/admin/providers");
   redirect("/admin/providers");
 }
 
 export async function suspendModel(formData: FormData): Promise<void> {
-  await requireAdmin();
+  const { userId: actingUserId } = await requireAdmin();
   const modelId = (formData.get("model_id") as string) ?? "";
   const rawKind = (formData.get("kind") as string) || "video";
   if (!modelId) redirect("/admin/providers?error=Missing+model");
@@ -960,6 +1109,14 @@ export async function suspendModel(formData: FormData): Promise<void> {
     redirect(`/admin/providers?error=${encodeURIComponent(error.message)}`);
   }
 
+  await logAdminAction(admin, actingUserId, {
+    action: "model.suspend",
+    targetType: "model",
+    targetId: modelId,
+    before: "running",
+    after: "suspended",
+  });
+
   revalidatePath("/admin/providers");
   redirect("/admin/providers");
 }
@@ -975,7 +1132,7 @@ export async function suspendModel(formData: FormData): Promise<void> {
 // only failures after it, and "Show cleared" brings the rest back. Upsert
 // through the service client, for the reason setSeedanceProvider gives.
 export async function clearModerationFailures() {
-  const { admin } = await requireAdmin();
+  const { admin, userId: actingUserId } = await requireAdmin();
   const now = new Date().toISOString();
   const { error } = await admin.from("app_settings").upsert(
     {
@@ -992,11 +1149,13 @@ export async function clearModerationFailures() {
     redirect(`/admin/moderation?error=${encodeURIComponent(error.message)}`);
   }
 
+  await logAdminAction(admin, actingUserId, { action: "moderation.clear", targetType: "setting", targetId: MODERATION_CLEARED_KEY });
+
   revalidatePath("/admin", "layout");
 }
 
 export async function setCommunityPostModeration(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, admin, userId: actingUserId } = await requireAdmin();
   const postId = formData.get("post_id") as string;
   const hide = formData.get("hide") === "1";
 
@@ -1010,6 +1169,135 @@ export async function setCommunityPostModeration(formData: FormData) {
     redirect(`/admin/moderation?error=${encodeURIComponent(error.message)}`);
   }
 
+  await logAdminAction(admin, actingUserId, {
+    action: hide ? "post.hide" : "post.show",
+    targetType: "post",
+    targetId: postId,
+    before: hide ? "shown" : "hidden",
+    after: hide ? "hidden" : "shown",
+  });
+
   revalidatePath("/admin/moderation");
   revalidatePath("/app/community");
+}
+
+const RUN_ACTIVITY_SQL = "Run supabase/pending/admin-activity.sql in Supabase first, then try again.";
+
+// Give or take bonus credits, with a reason (2026-09-28 admin redesign,
+// "Give or take credits" on the person's page). Adds to the balance instead
+// of replacing it, through the same atomic RPCs renders and refunds use
+// (add_bonus_credits / spend_bonus_credits), so a render spending at the
+// same moment can't be overwritten. The reason is required: it is what the
+// activity log shows next to the change.
+export async function adjustBonusCredits(formData: FormData) {
+  const { admin, userId: actingUserId } = await requireAdmin();
+  const userId = formData.get("user_id") as string;
+  const redirectTo = `/admin/users/${userId}`;
+  const direction = formData.get("direction") === "take" ? "take" : "give";
+  const amount = Number.parseInt((formData.get("amount") as string) ?? "", 10);
+  const reason = ((formData.get("reason") as string) ?? "").trim();
+
+  if (!Number.isInteger(amount) || amount < 1 || amount > 10_000) {
+    redirect(`${redirectTo}?error=${encodeURIComponent("Credits must be a whole number from 1 to 10,000.")}`);
+  }
+  if (!reason || reason.length > 500) {
+    redirect(`${redirectTo}?error=${encodeURIComponent("Write why (500 characters max) — it goes in the activity log.")}`);
+  }
+
+  const { data: before } = await admin.from("profiles").select("bonus_credits").eq("id", userId).maybeSingle();
+  if (!before) redirect(`/admin/users?error=${encodeURIComponent("That person wasn't found.")}`);
+
+  if (direction === "give") {
+    const { error } = await admin.rpc("add_bonus_credits", { p_user_id: userId, p_amount: amount });
+    if (error) {
+      console.error("adjustBonusCredits: add failed", error);
+      redirect(`${redirectTo}?error=${encodeURIComponent("Couldn't change their credits — nothing was changed. Details are in the server log.")}`);
+    }
+  } else {
+    const { data: spent, error } = await admin.rpc("spend_bonus_credits", { p_user_id: userId, p_amount: amount });
+    if (error) {
+      console.error("adjustBonusCredits: take failed", error);
+      redirect(`${redirectTo}?error=${encodeURIComponent("Couldn't change their credits — nothing was changed. Details are in the server log.")}`);
+    }
+    if (spent !== true) {
+      redirect(`${redirectTo}?error=${encodeURIComponent("They have fewer bonus credits than that — nothing was taken.")}`);
+    }
+  }
+
+  const { data: after } = await admin.from("profiles").select("bonus_credits").eq("id", userId).maybeSingle();
+  await logAdminAction(admin, actingUserId, {
+    action: direction === "give" ? "credits.give" : "credits.take",
+    targetType: "user",
+    targetId: userId,
+    subjectUserId: userId,
+    before: before?.bonus_credits ?? 0,
+    after: after?.bonus_credits ?? null,
+    reason,
+    amount,
+  });
+
+  revalidatePath(redirectTo);
+}
+
+// Refund one render by hand (2026-09-28 admin redesign): everything it took
+// comes back as bonus credits, once. The whole move is one transaction in
+// admin_refund_render (supabase/pending/admin-activity.sql), which also
+// writes the log line; its unique index is what makes a second press, or a
+// second admin, fail instead of paying twice.
+export async function refundRender(formData: FormData) {
+  const { admin, userId: actingUserId } = await requireAdmin();
+  const generationId = formData.get("generation_id") as string;
+  const userId = formData.get("user_id") as string;
+  const redirectTo = `/admin/users/${userId}`;
+  const reason = ((formData.get("reason") as string) ?? "").trim() || "Refunded from the admin";
+
+  if (!generationId) redirect(`${redirectTo}?error=${encodeURIComponent("Missing generation id.")}`);
+
+  const { error } = await admin.rpc("admin_refund_render", {
+    p_generation_id: generationId,
+    p_admin_id: actingUserId,
+    p_reason: reason.slice(0, 500),
+  });
+  if (error) {
+    const message = /already refunded|admin_actions_one_refund_per_render|duplicate key/.test(error.message)
+      ? "This render was already refunded by hand — nothing was given twice."
+      : /nothing to refund/.test(error.message)
+        ? "This render took no credits (or already gave them back) — nothing to refund."
+        : isMissingAuditTable(error)
+          ? RUN_ACTIVITY_SQL
+          : "Couldn't refund the render — nothing was changed. Details are in the server log.";
+    console.error("refundRender: failed", error);
+    redirect(`${redirectTo}?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidatePath(redirectTo);
+}
+
+// Private admin notes on a person (2026-09-28 admin redesign). Only admins
+// read them (service role; the table has no policies), and they go with the
+// account when it is deleted.
+export async function addUserNote(formData: FormData) {
+  const { admin, userId: actingUserId } = await requireAdmin();
+  const userId = formData.get("user_id") as string;
+  const redirectTo = `/admin/users/${userId}`;
+  const body = ((formData.get("body") as string) ?? "").trim();
+
+  if (!body || body.length > 2000) {
+    redirect(`${redirectTo}?error=${encodeURIComponent("A note needs some text (2,000 characters max).")}`);
+  }
+
+  const { error } = await admin.from("admin_user_notes").insert({ user_id: userId, admin_id: actingUserId, body });
+  if (error) {
+    console.error("addUserNote: insert failed", error);
+    redirect(
+      `${redirectTo}?error=${encodeURIComponent(
+        isMissingAuditTable(error)
+          ? RUN_ACTIVITY_SQL
+          : "Couldn't save the note. Details are in the server log.",
+      )}`,
+    );
+  }
+
+  await logAdminAction(admin, actingUserId, { action: "user.note", targetType: "note", targetId: userId, subjectUserId: userId });
+  revalidatePath(redirectTo);
 }

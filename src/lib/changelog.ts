@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.142.0",
+    build: 181,
+    date: "2026-09-28",
+    title: "Admin redesign, part 1: an activity log, give or take credits, refund one render, and notes",
+    items: [
+      "New Admin → Activity log: every change any admin makes (credits, plans, roles, suspensions, deletions, flags, settings, models, voices, reports, posts, promo codes, emails) is recorded with who, when, before → after and why. Nobody can edit or delete a line. Filter by kind, page through it, or export it as a CSV.",
+      "Admin → Users → a person: \"Give or take credits\" adds to or takes from their bonus balance and asks why; the old exact-balance box is still there, folded under it.",
+      "Each recent render that still holds credits has a Refund button: everything it took comes back as bonus credits, once. A second press, or a second admin, can't pay it twice.",
+      "Private admin notes on each person, and an Admin changes list showing what admins did to that account, with a link to the full log.",
+      "\"Open in Stripe\" beside their Stripe customer, and Security now shows in the side menu (it was missing from it).",
+    ],
+  },
+  {
     version: "1.141.0",
     build: 180,
     date: "2026-09-29",

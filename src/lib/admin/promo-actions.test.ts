@@ -95,6 +95,9 @@ const ourSide = {
   rowUpdateError: null as { message: string } | null,
   rowDeleteError: null as { message: string } | null,
 };
+// The activity log's writer is exercised in audit.test.ts; here it must not
+// add console lines the assertions below count.
+vi.mock("@/lib/admin/audit", async () => ({ ...(await import("./audit")), logAdminAction: async () => true }));
 vi.mock("@/lib/admin/require-admin", () => ({
   requireAdmin: async () => ({
     supabase: {

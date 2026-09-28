@@ -259,6 +259,11 @@ const COLUMNS = {
   // Who is in a character's photos (applied/2026-09-22/character-likeness-consent.sql, Helios R1; run in production 2026-09-22).
   character_likeness_consents: ["user_id", "character_id", "answer", "photos_hash", "notice_version", "locale", "method", "place", "consented_at"],
   face_group_deletions: ["group_id", "attempts", "last_error"],
+  // The admin activity log and admin notes (pending/admin-activity.sql,
+  // 2026-09-28 admin redesign). Writers fail soft, so a missing table would
+  // only show as an empty log.
+  admin_actions: ["id", "created_at", "admin_id", "action", "target_type", "target_id", "subject_user_id", "before_value", "after_value", "reason", "amount"],
+  admin_user_notes: ["id", "created_at", "user_id", "admin_id", "body"],
 };
 
 // Feature-flag rows the code reads by key. A missing row reads as OFF
@@ -327,6 +332,8 @@ const RPCS = [
 // 42501 before running; a mis-granted one would run against no row.
 const PRIVATE_RPCS = [
   "add_bonus_credits",
+  // Refund one render by hand (pending/admin-activity.sql): moves credits, the service role's alone.
+  "admin_refund_render",
   "add_purchased_credits",
   "admin_user_auth_activity",
   "api_rate_check",

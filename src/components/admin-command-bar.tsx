@@ -38,6 +38,7 @@ const NAV_ITEMS = [
   { href: "/admin/flags", label: "Feature flags", icon: ToggleIcon },
   { href: "/admin/settings", label: "Settings", icon: GearIcon },
   { href: "/admin/security", label: "Security", icon: ShieldIcon },
+  { href: "/admin/activity", label: "Activity log", icon: ClockIcon },
   { href: "/admin/updates", label: "Updates", icon: SparklesIcon },
 ] as const;
 
@@ -47,7 +48,11 @@ const NAV_GROUPS: { label: string | null; hrefs: string[] }[] = [
   { label: "Trust & Safety", hrefs: ["/admin/reports", "/admin/moderation"] },
   { label: "Money", hrefs: ["/admin/billing", "/admin/promo", "/admin/stats"] },
   { label: "Product", hrefs: ["/admin/providers", "/admin/voices", "/admin/product-checks", "/admin/flags", "/admin/updates", "/admin/emails"] },
-  { label: "System", hrefs: ["/admin/system", "/admin/settings"] },
+  { label: "System", hrefs: ["/admin/system"] },
+  // Admin (2026-09-28 redesign): the log of what admins changed, beside the
+  // settings and the second factor. Security used to be in no group at all,
+  // so the rail never showed it.
+  { label: "Admin", hrefs: ["/admin/activity", "/admin/settings", "/admin/security"] },
 ];
 
 function isActive(pathname: string, href: string): boolean {
@@ -670,6 +675,15 @@ function ToggleIcon(props: SVGProps<SVGSVGElement>) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <rect x="2" y="7" width="20" height="10" rx="5" />
       <circle cx="8" cy="12" r="3.2" />
+    </svg>
+  );
+}
+
+function ClockIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
     </svg>
   );
 }

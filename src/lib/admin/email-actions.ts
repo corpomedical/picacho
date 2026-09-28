@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/admin/require-admin";
+import { logAdminAction } from "@/lib/admin/audit";
 import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { renderTemplate, type TemplateVars } from "@/lib/email/render";
 import { sendEmail, sendBatch, unsubscribeUrl } from "@/lib/email/send";
@@ -93,12 +94,14 @@ export async function saveEmailTemplate(formData: FormData) {
     fail(`Couldn't save the template: ${error.message.slice(0, 160)}`);
   }
 
+  await logAdminAction(admin, userId, { action: "email.template_save", targetType: "email", targetId: key, after: subject });
+
   revalidatePath("/admin/emails");
   succeed("Template saved.");
 }
 
 export async function deleteEmailTemplate(formData: FormData) {
-  const { admin } = await requireAdmin();
+  const { admin, userId } = await requireAdmin();
   const id = (formData.get("id") as string) ?? "";
   if (!id) fail("Template not found.");
 
@@ -111,6 +114,8 @@ export async function deleteEmailTemplate(formData: FormData) {
     console.error("deleteEmailTemplate: delete failed", error);
     fail(`Couldn't delete the template: ${error.message.slice(0, 160)}`);
   }
+
+  await logAdminAction(admin, userId, { action: "email.template_delete", targetType: "email", targetId: id });
 
   revalidatePath("/admin/emails");
   succeed("Template deleted.");
@@ -391,6 +396,14 @@ export async function sendEmailBlast(formData: FormData) {
   if (auditError) {
     console.error("sendEmailBlast: audit finalize failed", { key, audience, serviceNotice, auditError });
   }
+
+  await logAdminAction(admin, userId, {
+    action: "email.blast",
+    targetType: "email",
+    targetId: key,
+    after: `${serviceNotice ? `${audience} (service notice)` : audience}: ${result.sent} sent${result.failed > 0 ? `, ${result.failed} failed` : ""}`,
+    amount: result.sent,
+  });
 
   revalidatePath("/admin/emails");
   if (result.failed > 0) {

@@ -3,6 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import {
+  addUserNote,
+  adjustBonusCredits,
+  refundRender,
   setApiAccess,
   setBonusCredits,
   setGenerationFeatured,
@@ -27,6 +30,13 @@ import { DeleteUserButton } from "@/components/delete-user-button";
 import { LocalDate } from "@/components/local-date";
 import { getUserActivity, formatDuration } from "@/lib/admin/activity";
 import { ADMIN_LOOK_LABELS, ADMIN_MODE_LABELS, parseAppLook, parseAppMode } from "@/lib/light/mode";
+import {
+  ADMIN_ACTION_COLUMNS,
+  actionLabel,
+  emailsForIds,
+  isMissingAuditTable,
+  type AdminActionRow,
+} from "@/lib/admin/audit";
 
 function timeAgo(dateStr: string) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -156,6 +166,36 @@ export default async function AdminUserDetailPage({
         .then((r) => r.data.user)
         .catch(() => null),
     ]);
+  // The admin redesign's reads (2026-09-28): private notes, this person's
+  // lines in the activity log, and which of the listed renders an admin
+  // already refunded by hand. Service client: both tables are admin-only
+  // with no policies (supabase/pending/admin-activity.sql). Before that file
+  // runs they answer an error, and the cards say so.
+  const serviceClient = createAdminClient();
+  const generationIds = (generations ?? []).map((g) => g.id as string);
+  const [notesResult, changesResult, handRefundsResult] = await Promise.all([
+    serviceClient
+      .from("admin_user_notes")
+      .select("id, created_at, admin_id, body")
+      .eq("user_id", id)
+      .order("created_at", { ascending: false })
+      .limit(20),
+    serviceClient
+      .from("admin_actions")
+      .select(ADMIN_ACTION_COLUMNS)
+      .eq("subject_user_id", id)
+      .order("created_at", { ascending: false })
+      .limit(10),
+    generationIds.length
+      ? serviceClient.from("admin_actions").select("target_id").eq("action", "render.refund").in("target_id", generationIds)
+      : Promise.resolve({ data: [] as { target_id: string | null }[], error: null }),
+  ]);
+  const auditReady = !isMissingAuditTable(changesResult.error) && !isMissingAuditTable(notesResult.error);
+  const notes = (notesResult.data ?? []) as { id: string; created_at: string; admin_id: string | null; body: string }[];
+  const changes = (changesResult.data ?? []) as AdminActionRow[];
+  const handRefunded = new Set((handRefundsResult.data ?? []).map((r) => r.target_id));
+  const adminEmails = await emailsForIds(serviceClient, [...notes.map((n) => n.admin_id), ...changes.map((c) => c.admin_id)]);
+
   const providers: string[] =
     (providerLookup?.app_metadata?.providers as string[] | undefined) ??
     (providerLookup?.app_metadata?.provider ? [providerLookup.app_metadata.provider as string] : []);
@@ -340,11 +380,61 @@ export default async function AdminUserDetailPage({
             </p>
           </div>
 
-          <div className="mt-4">
-            {/* The box SETS the balance (setBonusCredits), so the label says
-                what it replaces: an admin giving N back types that plus N.
-                "(this month)" dated from when a grant renewed every month;
-                since 2026-09-23 it is spent once, like bought credits. */}
+          <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-3">
+            {/* Give or take (2026-09-28 admin redesign): adds to the balance
+                through the same atomic RPCs renders use, and asks why — the
+                reason is what the activity log shows next to the change. */}
+            <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+              Give or take credits
+            </p>
+            <p className="mt-1 text-sm text-neutral-700">
+              Bonus balance now: <span className="font-semibold text-atelier-accent">{bonusCredits}</span>
+            </p>
+            <form action={adjustBonusCredits} className="mt-2 flex flex-col gap-2">
+              <input type="hidden" name="user_id" value={user.id} />
+              <div className="flex gap-2">
+                <select
+                  name="direction"
+                  aria-label="Give or take"
+                  defaultValue="give"
+                  className="rounded-[10px] border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-400"
+                >
+                  <option value="give">Give</option>
+                  <option value="take">Take away</option>
+                </select>
+                <input
+                  type="number"
+                  name="amount"
+                  aria-label="How many credits"
+                  min={1}
+                  max={10000}
+                  required
+                  placeholder="How many"
+                  className="w-full min-w-0 flex-1 rounded-[10px] border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-400"
+                />
+              </div>
+              <input
+                type="text"
+                name="reason"
+                aria-label="Why"
+                required
+                maxLength={500}
+                placeholder="Why? (only admins see this)"
+                className="w-full rounded-[10px] border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-400"
+              />
+              <SubmitButton size="sm" className="w-full" pendingLabel="Saving…">
+                Save
+              </SubmitButton>
+            </form>
+            <p className="mt-1.5 text-xs text-neutral-400">
+              Adds to (or takes from) their bonus balance: spent once the plan&apos;s monthly credits run out,
+              before bought ones, and kept until spent.
+            </p>
+            <details className="mt-2">
+              <summary className="cursor-pointer text-xs text-neutral-500 hover:text-neutral-800">
+                Set an exact balance instead
+              </summary>
+              <div className="mt-2">
             <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">
               Bonus credits (replaces {bonusCredits})
             </p>
@@ -372,6 +462,8 @@ export default async function AdminUserDetailPage({
               monthly credits run out, before bought ones, and kept until spent — it doesn&apos;t
               reset at the end of the month.
             </p>
+              </div>
+            </details>
           </div>
 
           <div className="mt-4">
@@ -483,6 +575,16 @@ export default async function AdminUserDetailPage({
                   <dt className="text-neutral-400">Customer:</dt>
                   <dd className="font-mono">{user.stripe_customer_id}</dd>
                 </div>
+                <div>
+                  <a
+                    href={`https://dashboard.stripe.com/customers/${user.stripe_customer_id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-atelier-accent hover:underline"
+                  >
+                    Open in Stripe ↗
+                  </a>
+                </div>
                 {user.stripe_subscription_id && (
                   <div className="flex gap-1.5">
                     <dt className="text-neutral-400">Subscription:</dt>
@@ -584,6 +686,85 @@ export default async function AdminUserDetailPage({
               </div>
             </dl>
           </Card>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            <Card className="min-w-0">
+              <h2 className="text-sm font-semibold text-neutral-900">Admin notes</h2>
+              <p className="mt-0.5 text-xs text-neutral-400">Only admins see these.</p>
+              {auditReady ? (
+                <>
+                  {notes.length > 0 && (
+                    <ul className="mt-3 space-y-2">
+                      {notes.map((n) => (
+                        <li key={n.id} className="rounded-lg bg-[#fbf6ee] px-3 py-2 text-sm leading-relaxed text-neutral-800 dark:bg-white/5 dark:text-neutral-200">
+                          <p className="whitespace-pre-wrap break-words">{n.body}</p>
+                          <p className="mt-1 text-xs text-neutral-400">
+                            {(n.admin_id && adminEmails.get(n.admin_id)) || "an admin"} · {timeAgo(n.created_at)}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <form action={addUserNote} className="mt-3 flex flex-col gap-2">
+                    <input type="hidden" name="user_id" value={user.id} />
+                    <textarea
+                      name="body"
+                      aria-label="New note"
+                      required
+                      maxLength={2000}
+                      rows={2}
+                      placeholder="Add a note: a deal you made, what they asked for…"
+                      className="w-full resize-y rounded-[10px] border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-400"
+                    />
+                    <SubmitButton variant="secondary" size="sm" className="self-start" pendingLabel="Saving…">
+                      Add note
+                    </SubmitButton>
+                  </form>
+                </>
+              ) : (
+                <p className="mt-3 text-xs text-neutral-500">
+                  Notes start once supabase/pending/admin-activity.sql has run in Supabase.
+                </p>
+              )}
+            </Card>
+
+            <Card className="min-w-0">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-neutral-900">Admin changes</h2>
+                <Link href={`/admin/activity?user=${user.id}`} className="text-xs text-neutral-400 hover:text-neutral-900">
+                  Full log →
+                </Link>
+              </div>
+              {!auditReady ? (
+                <p className="mt-3 text-xs text-neutral-500">
+                  Recorded once supabase/pending/admin-activity.sql has run in Supabase.
+                </p>
+              ) : changes.length === 0 ? (
+                <p className="mt-3 text-sm text-neutral-500">No admin has changed anything on this account yet.</p>
+              ) : (
+                <ul className="mt-3 divide-y divide-neutral-100">
+                  {changes.map((c) => (
+                    <li key={c.id} className="py-2 text-xs first:pt-0 last:pb-0">
+                      <p className="text-neutral-800">
+                        <span className="font-semibold">{actionLabel(c.action)}</span>
+                        {c.amount !== null && <span className="text-atelier-accent"> {c.amount}</span>}
+                        {(c.before_value !== null || c.after_value !== null) && (
+                          <span className="font-mono text-neutral-500">
+                            {" "}
+                            {c.before_value ?? "—"} → {c.after_value ?? "—"}
+                          </span>
+                        )}
+                      </p>
+                      <p className="mt-0.5 text-neutral-400">
+                        {(c.admin_id && adminEmails.get(c.admin_id)) || "an admin"} · {timeAgo(c.created_at)}
+                        {c.reason && <> · {c.reason}</>}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </div>
 
           <Card>
             <h2 className="text-sm font-semibold text-neutral-900">Usage</h2>
@@ -790,6 +971,24 @@ export default async function AdminUserDetailPage({
                         content-rights rule (customer content is never
                         publishable without consent; see setGenerationFeatured,
                         which enforces the same rule server-side either way). */}
+                    {/* Refund by hand (2026-09-28): anything the render still
+                        holds comes back as bonus credits, once
+                        (admin_refund_render). A render already refunded,
+                        automatically or by hand, shows no button. */}
+                    {auditReady &&
+                      !wasRefunded(g) &&
+                      (g.credits_used ?? 0) + (g.purchased_credits_used ?? 0) + (g.bonus_credits_used ?? 0) > 0 &&
+                      (handRefunded.has(g.id) ? (
+                        <span className="flex-shrink-0 text-xs text-neutral-400">refunded by hand</span>
+                      ) : (
+                        <form action={refundRender} className="flex-shrink-0">
+                          <input type="hidden" name="generation_id" value={g.id} />
+                          <input type="hidden" name="user_id" value={user.id} />
+                          <SubmitButton variant="secondary" size="sm" pendingLabel="Refunding…">
+                            Refund {(g.credits_used ?? 0) + (g.purchased_credits_used ?? 0) + (g.bonus_credits_used ?? 0)} cr
+                          </SubmitButton>
+                        </form>
+                      ))}
                     {user.role === "admin" && g.status === "succeeded" && (
                       <form action={setGenerationFeatured} className="flex-shrink-0">
                         <input type="hidden" name="generation_id" value={g.id} />

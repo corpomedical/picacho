@@ -58,12 +58,16 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 // app_settings as updateAppSetting sees it (Press Tour's settings, below).
 const settings = { updates: [] as { key: string; value: string }[] };
+// The activity log's writer is exercised in audit.test.ts.
+vi.mock("@/lib/admin/audit", async () => ({ ...(await import("./audit")), logAdminAction: async () => true }));
 vi.mock("@/lib/admin/require-admin", () => ({
   requireAdmin: async () => ({
     supabase: {
       from: (table: string) => {
         if (table !== "app_settings") throw new Error(`unexpected table: ${table}`);
         return {
+          // The value before the change, for the activity log's line.
+          select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
           update: (values: { value: string }) => ({
             eq: async (_column: string, key: string) => {
               settings.updates.push({ key, value: values.value });
