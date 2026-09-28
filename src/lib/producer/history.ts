@@ -181,6 +181,16 @@ export function secondsSinceAssistant(rows: TimedRow[], now: number): number | n
  * the Producer's own messages (it ends on the app's note, or mid-way through
  * a tool round).
  */
+/**
+ * Whether everything written at or after `fromSeq` is someone's opening (their
+ * words and the app's note) and no answer: what a recording the sheet
+ * withdrew leaves when it was written just before it was withdrawn (route.ts,
+ * a merged recording's retry).
+ */
+export function onlyOpeningsFrom(rows: (Row & { seq: number })[], fromSeq: number): boolean {
+  return rows.filter((r) => r.seq >= fromSeq).every((r) => r.role !== "assistant");
+}
+
 export function answerPending(rows: Row[]): boolean {
   const last = rows[rows.length - 1];
   if (!last) return false;

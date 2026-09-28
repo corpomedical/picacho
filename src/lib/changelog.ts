@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.143.0",
+    build: 182,
+    date: "2026-09-29",
+    title: "Aly keeps a long request said in pieces, and her voice log says why she's slow",
+    items: [
+      "A long request said in pieces isn't lost any more. In the operator's voice log, 16 seconds of speech came in five pieces with short pauses; they were sent again together each time a new piece came, only the last four fitted (so the first 6.6 seconds were gone), and the final send was refused with \"Still answering your last message\", so nothing was answered. Now up to eight pieces go together, and a message sent again together no longer trips over the piece it replaces.",
+      "For admins, the voice log now says for every spoken turn whether her fast voice and the \"one sec\" are on, and if not, why: no ElevenLabs key on the server, a picked voice with no ElevenLabs id, a server without WebSocket, or a browser that can't play the stream. It also gives the server's timings: transcribed, judged, accepted, one-sec, first words, first sound.",
+    ],
+  },
+  {
     version: "1.142.0",
     build: 181,
     date: "2026-09-28",

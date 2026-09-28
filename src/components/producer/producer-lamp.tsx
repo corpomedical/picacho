@@ -665,7 +665,9 @@ export function ProducerLamp({
     let audios = [audio];
     if (waiting && waiting.spoken) {
       waiting.controller.abort();
-      audios = [...waiting.spoken, audio].slice(-4);
+      // Up to 8 (the route's MAX_RECORDINGS): four dropped the START of a
+      // long request said in pieces (2026-09-28 evening, his voice log).
+      audios = [...waiting.spoken, audio].slice(-8);
       // The newest first, as many as fit in ~55 s (the upload holds ~65 s).
       while (audios.length > 1 && audios.reduce((n, a) => n + a.seconds, 0) > 55) audios = audios.slice(1);
     }
@@ -676,6 +678,7 @@ export function ProducerLamp({
       heard: interrupting && readAloud ? voice.heardText() : null,
       talkedOver: meta.talkedOver === true,
       pushToTalk: meta.pushToTalk === true,
+      merged: audios.length > 1,
     });
   }
   sendSpokenRef.current = sendSpoken;
@@ -724,6 +727,7 @@ export function ProducerLamp({
     heard = null,
     talkedOver = false,
     pushToTalk = false,
+    merged = false,
   }: {
     text?: string;
     focus?: string;
@@ -733,6 +737,8 @@ export function ProducerLamp({
     talkedOver?: boolean;
     /** Held the lamp to say it: answered out loud, and not judged (route.ts). */
     pushToTalk?: boolean;
+    /** Recordings said in a row, sent again together (the one before was withdrawn). */
+    merged?: boolean;
   }) {
     setError(null);
     const turn: Turn = {
@@ -802,6 +808,7 @@ export function ProducerLamp({
           heard: heard ?? undefined,
           talkedOver: spoken ? talkedOver : undefined,
           pushToTalk: spoken && pushToTalk ? true : undefined,
+          merged: spoken && merged ? true : undefined,
         }),
         signal: turn.controller.signal,
       });
@@ -863,6 +870,11 @@ export function ProducerLamp({
               ignoredTimes.current = [...ignoredTimes.current.filter((t) => now - t < 60_000), now];
               if (ignoredTimes.current.length >= 3) setBackgroundTip(true);
             }
+            continue;
+          }
+          // An admin's voice log: the server's own steps and her voice's path (diag.ts).
+          if (ev.event === "diag" && typeof ev.data.text === "string") {
+            vlog("server", ev.data.text);
             continue;
           }
           if (ev.event === "error" && typeof ev.data.error === "string") {

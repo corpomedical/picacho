@@ -54,6 +54,7 @@ import {
   INTERRUPTED_ANSWER,
   TOP_LEVEL_EFFORT,
   answerPending,
+  onlyOpeningsFrom,
   closeTail,
   currentEffort,
   effortMessage,
@@ -75,6 +76,7 @@ import type { PlanId } from "@/lib/plans";
 import { monthlyWindowStart } from "@/lib/generations/core";
 import { classifyTurnFailure, unitsForFailedTurn, type TurnFailure } from "@/lib/agent/failures";
 import { reserveAssistantUnits, settleAssistantTopUp } from "@/lib/agent/allowance";
+import { timingNote, voicePathNote, type TurnTimes } from "@/lib/producer/diag";
 import { isNativeApp } from "@/lib/native/server";
 import { rateLimited } from "@/lib/rate-limit";
 
@@ -128,7 +130,10 @@ export const maxDuration = 300;
 const MAX_MESSAGE_CHARS = 5000;
 // Recordings said in a row, answered as one message (the sheet sends them
 // together when an answer was cut off by the next one).
-const MAX_RECORDINGS = 4;
+// Up to 8 recordings said in a row are answered as one message (2026-09-28
+// evening: four dropped the START of what he said — 16 s in five pieces, the
+// first 6.6 s gone). The upload's own size limit still bounds it.
+const MAX_RECORDINGS = 8;
 const FALLBACK_BETA = "server-side-fallback-2026-07-01";
 const EFFORT_BETA = "mid-conversation-output-config-2026-07-01";
 const REFUSED_TEXT = "I can't help with that one. Ask me another way, or about something else.";
@@ -147,6 +152,8 @@ function toApi(turns: Turn[], withEffort: boolean): ApiMessage[] {
 }
 
 export async function POST(request: NextRequest) {
+  // When each step happened, for an admin's voice log (diag.ts).
+  const times: TurnTimes = { start: Date.now() };
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   const user = userData?.user;
@@ -196,6 +203,8 @@ export async function POST(request: NextRequest) {
     stream?: unknown;
     /** Said while holding the lamp (push to talk): meant for the Producer, not judged. */
     pushToTalk?: unknown;
+    /** The sheet withdrew the recording before this and sends both together. */
+    merged?: unknown;
   } | null;
   // One recording, or several said in a row while an answer was under way
   // (2026-09-25, "several questions at once"): each is transcribed and they
@@ -412,6 +421,7 @@ export async function POST(request: NextRequest) {
         .slice(0, MAX_MESSAGE_CHARS);
       const sure = heardParts.map((h) => h.confidence).filter((c): c is number => c !== null);
       confidence = sure.length ? sure.reduce((a, b) => a + b, 0) / sure.length : null;
+      times.transcribed = Date.now();
       for (const part of spokenParts) totals.cost += transcribeCostUsd(part.seconds);
     } catch {
       await settle("transient");
@@ -511,6 +521,8 @@ export async function POST(request: NextRequest) {
   // could wrongly let it be. Nothing else changes: it is transcribed, charged
   // and answered like any spoken message.
   const pushToTalk = spoken && body?.pushToTalk === true;
+  // The sheet withdrew the recording before this one and sends both together.
+  const merged = spoken && body?.merged === true;
   // An admin sees why a spoken message was let be (on the "Not for me" note),
   // so a wrong call can be read off a screenshot: the judge's own signals.
   const ignoredEvent = () => {
@@ -548,6 +560,7 @@ export async function POST(request: NextRequest) {
         { signal: request.signal },
       ).then((j) => {
         totals.cost += gateCostUsd(j.usage.input, j.usage.output);
+        times.judged = Date.now();
         return j.verdict;
       })
     : Promise.resolve("to_producer");
@@ -571,7 +584,10 @@ export async function POST(request: NextRequest) {
         if (closed) return;
         if (event === "audio" || (event === "audio_stream" && typeof (data as { data?: unknown } | null)?.data === "string")) {
           answerSpoke = true;
+          times.firstSound ??= Date.now();
         }
+        if (event === "delta") times.firstText ??= Date.now();
+        if (event === "ack") times.ack ??= Date.now();
         try {
           controller.enqueue(enc.encode(sse(event, data)));
         } catch {
@@ -579,6 +595,8 @@ export async function POST(request: NextRequest) {
         }
       };
       const finish = (units: number, notes = false) => {
+        // An admin's voice log: how long each step took (diag.ts).
+        if (isAdmin && spoken) emit("diag", { text: timingNote(times) });
         emit("done", { units, notesChanged: notes });
         if (!closed) controller.close();
       };
@@ -650,19 +668,26 @@ export async function POST(request: NextRequest) {
       let turns: Turn[] = [...rows, ...opening];
       let seq = seqAfter(rows) + opening.length;
       let openFailure: "busy" | "transient" | "limited" | null = null;
-      const writeOpening = async (retry: boolean): Promise<boolean> => {
-        let result = await appendMessages(admin, { threadId: thread.id, userId: user.id, fromSeq: seqAfter(rows), messages: opening });
+      const writeOpening = async (retry: "always" | "openings-only" | "never"): Promise<boolean> => {
+        const base = seqAfter(rows);
+        let result = await appendMessages(admin, { threadId: thread.id, userId: user.id, fromSeq: base, messages: opening });
         // A retry rebuilds the opening from what landed first; while the
         // first call is already answering the old one (a spoken message
         // judged alongside it), that would store a history it never saw — so
-        // then a clash fails safe instead.
-        for (let attempt = 1; retry && !result.ok && result.busy && attempt <= 3; attempt++) {
+        // then a clash fails safe instead. Except for a merged recording
+        // (2026-09-28 evening: 16 s he said in five pieces ended "Still
+        // answering your last message" and no answer): the sheet withdrew the
+        // recording before and sent both together, and that one's opening
+        // can land just before it was withdrawn. Only such openings may have
+        // landed — never an answer — and this message holds the same words.
+        for (let attempt = 1; retry !== "never" && !result.ok && result.busy && attempt <= 3; attempt++) {
           await new Promise((r) => setTimeout(r, 150 * attempt));
           try {
             rows = await loadMessages(admin, thread.id);
           } catch {
             break;
           }
+          if (retry === "openings-only" && !onlyOpeningsFrom(rows, base)) break;
           opening = openingFor(rows, await noteFor(rows));
           result = await appendMessages(admin, { threadId: thread.id, userId: user.id, fromSeq: seqAfter(rows), messages: opening });
         }
@@ -703,19 +728,32 @@ export async function POST(request: NextRequest) {
               upstream.abort();
               return false;
             }
-            const ok = await writeOpening(false);
+            const ok = await writeOpening(merged ? "openings-only" : "never");
             if (!ok) {
               upstream.abort();
               return false;
             }
             holding = false;
+            times.opened = Date.now();
             for (const [e, d] of held) emit(e, d);
             held.length = 0;
             flushSpeech();
             return true;
           })()
-        : writeOpening(true);
+        : writeOpening("always");
       opened.catch(() => {});
+      // An admin's voice log: which way her voice goes, and the one-sec (diag.ts).
+      if (isAdmin && spoken) {
+        emit("diag", {
+          text: voicePathNote({
+            speaking: speakReplies,
+            voiceId: humanVoice?.elevenLabsVoiceId ?? null,
+            key: Boolean(process.env.ELEVENLABS_API_KEY),
+            webSocket: typeof globalThis.WebSocket === "function",
+            asked: body?.stream === true,
+          }),
+        });
+      }
       // SAID AT ONCE (ack.ts; 2026-09-28, operator: "Make her respond with
       // something while she gets an answer"). Once a spoken message is known
       // to be for her, a short phrase in her voice and personality goes out
