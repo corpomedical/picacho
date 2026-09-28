@@ -1,6 +1,7 @@
 /* The wheel that opens out of the lamp (wheel.tsx). Two styles, Filament and
    Blossom (wheel-style.ts). Its own module: producer-lamp.module.css is the
-   lamp and the sheet. Dark always, like the lamp itself.
+   lamp and the sheet. Dark, like the lamp itself; in the light theme it
+   swaps its colours (the variables at the end), since 2026-09-28.
 
    --pct (0..100) is the month's use; --level (0..1) the voice's loudness;
    --in / --out a control's delay opening and folding back. */
@@ -34,15 +35,15 @@
   font-size: 11px;
   letter-spacing: 0.06em;
   white-space: nowrap;
-  color: #a89f92;
-  text-shadow: 0 1px 8px #000, 0 0 2px #000;
+  color: var(--wheel-muted, #a89f92);
+  text-shadow: var(--wheel-halo, 0 1px 8px #000, 0 0 2px #000);
 }
 .usageText b {
-  color: #e0a468;
+  color: var(--wheel-accent, #e0a468);
   font-weight: 500;
 }
 .full .usageText b {
-  color: #f0c070;
+  color: var(--wheel-accent-full, #f0c070);
 }
 .usageStack {
   width: 64px;
@@ -59,28 +60,28 @@
 }
 .filTrack {
   fill: none;
-  stroke: rgba(255, 217, 168, 0.2);
+  stroke: var(--wheel-track, rgba(255, 217, 168, 0.2));
   stroke-width: 1.25;
   stroke-linecap: round;
   stroke-dasharray: 100 100;
 }
 .filUse {
   fill: none;
-  stroke: rgba(243, 237, 228, 0.09);
+  stroke: var(--wheel-use, rgba(243, 237, 228, 0.09));
   stroke-width: 3;
   stroke-linecap: round;
 }
 .filFill {
   fill: none;
-  stroke: #e0a468;
+  stroke: var(--wheel-fill, #e0a468);
   stroke-width: 3;
   stroke-linecap: round;
   stroke-dasharray: var(--pct) 100;
-  filter: drop-shadow(0 0 4px rgba(224, 164, 104, 0.9));
+  filter: var(--wheel-fill-glow, drop-shadow(0 0 4px rgba(224, 164, 104, 0.9)));
 }
 .full .filFill {
-  stroke: #f0c070;
-  filter: drop-shadow(0 0 7px rgba(240, 192, 112, 0.95));
+  stroke: var(--wheel-fill-full, #f0c070);
+  filter: var(--wheel-fill-full-glow, drop-shadow(0 0 7px rgba(240, 192, 112, 0.95)));
 }
 .filSpark {
   fill: none;
@@ -104,20 +105,24 @@
   padding: 0;
   border-radius: 9999px;
   cursor: pointer;
-  color: #e6ddd0;
-  background: radial-gradient(circle at 50% 35%, rgba(70, 60, 50, 0.98), rgba(30, 26, 21, 0.98));
-  box-shadow:
+  color: var(--bead-ink, #e6ddd0);
+  background: var(--bead-bg, radial-gradient(circle at 50% 35%, rgba(70, 60, 50, 0.98), rgba(30, 26, 21, 0.98)));
+  box-shadow: var(
+    --bead-shadow,
     inset 0 1px 0 rgba(255, 240, 220, 0.12),
     0 0 0 1px rgba(255, 217, 168, 0.22),
-    0 8px 20px -8px rgba(0, 0, 0, 0.9);
+    0 8px 20px -8px rgba(0, 0, 0, 0.9)
+  );
   transition: box-shadow 160ms ease, color 160ms ease;
 }
 .bead:hover:not(:disabled),
 .bead:focus-visible {
-  box-shadow:
+  box-shadow: var(
+    --bead-shadow-hover,
     inset 0 1px 0 rgba(255, 240, 220, 0.12),
     0 0 0 1.5px rgba(255, 217, 168, 0.75),
-    0 0 16px rgba(224, 164, 104, 0.35);
+    0 0 16px rgba(224, 164, 104, 0.35)
+  );
 }
 .bead:focus-visible {
   outline: 2px solid #e0a468;
@@ -125,10 +130,10 @@
 }
 .bead:disabled {
   cursor: default;
-  color: rgba(230, 221, 208, 0.35);
+  color: var(--bead-dim, rgba(230, 221, 208, 0.35));
 }
 .bead.on {
-  color: #e0a468;
+  color: var(--bead-on, #e0a468);
 }
 .bead.hot {
   color: #1a120a;
@@ -149,8 +154,8 @@
   font-size: 12.5px;
   line-height: 18px;
   white-space: nowrap;
-  color: #f3ede4;
-  text-shadow: 0 1px 8px #000, 0 0 2px #000;
+  color: var(--wheel-ink, #f3ede4);
+  text-shadow: var(--wheel-halo, 0 1px 8px #000, 0 0 2px #000);
 }
 .nameUp {
   text-align: right;
@@ -159,7 +164,7 @@
   font-style: normal;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 11px;
-  color: #e0a468;
+  color: var(--wheel-accent, #e0a468);
 }
 
 /* ── Blossom ──────────────────────────────────────────────────────────── */
@@ -171,19 +176,19 @@
 }
 .ringTrack {
   fill: none;
-  stroke: rgba(243, 237, 228, 0.1);
+  stroke: var(--wheel-ring-track, rgba(243, 237, 228, 0.1));
   stroke-width: 3;
 }
 .ringFill {
   fill: none;
-  stroke: #e0a468;
+  stroke: var(--wheel-fill, #e0a468);
   stroke-width: 3;
   stroke-linecap: round;
   stroke-dasharray: var(--pct) 100;
-  filter: drop-shadow(0 0 4px rgba(224, 164, 104, 0.9));
+  filter: var(--wheel-fill-glow, drop-shadow(0 0 4px rgba(224, 164, 104, 0.9)));
 }
 .full .ringFill {
-  stroke: #f0c070;
+  stroke: var(--wheel-fill-full, #f0c070);
 }
 .arm {
   position: absolute;
@@ -197,18 +202,17 @@
   cursor: pointer;
   transform-origin: 50% 100%;
   border-radius: 50% 50% 46% 46% / 64% 64% 36% 36%;
-  color: #e6ddd0;
-  background: radial-gradient(ellipse at 50% 22%, rgba(255, 217, 168, 0.16), rgba(40, 34, 28, 0.97) 55%, rgba(24, 20, 16, 0.97));
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 217, 168, 0.2),
-    0 10px 26px -10px rgba(0, 0, 0, 0.9);
+  color: var(--bead-ink, #e6ddd0);
+  background: var(
+    --petal-bg,
+    radial-gradient(ellipse at 50% 22%, rgba(255, 217, 168, 0.16), rgba(40, 34, 28, 0.97) 55%, rgba(24, 20, 16, 0.97))
+  );
+  box-shadow: var(--petal-shadow, inset 0 0 0 1px rgba(255, 217, 168, 0.2), 0 10px 26px -10px rgba(0, 0, 0, 0.9));
   transition: box-shadow 160ms ease;
 }
 .petal:hover:not(:disabled),
 .petal:focus-visible {
-  box-shadow:
-    inset 0 0 0 1.5px rgba(255, 217, 168, 0.7),
-    0 0 18px rgba(224, 164, 104, 0.3);
+  box-shadow: var(--petal-shadow-hover, inset 0 0 0 1.5px rgba(255, 217, 168, 0.7), 0 0 18px rgba(224, 164, 104, 0.3));
 }
 .petal:focus-visible {
   outline: 2px solid #e0a468;
@@ -216,10 +220,10 @@
 }
 .petal:disabled {
   cursor: default;
-  color: rgba(230, 221, 208, 0.35);
+  color: var(--bead-dim, rgba(230, 221, 208, 0.35));
 }
 .petal.on {
-  color: #e0a468;
+  color: var(--bead-on, #e0a468);
 }
 .petal.hot {
   color: #1a120a;
@@ -370,4 +374,33 @@
     opacity: 0;
     transform: rotate(-30deg) scale(0.08);
   }
+}
+
+/* ── The light look (2026-09-28, with the subtitles' light look in
+   producer-lamp.module.css): the wheel stands on a white wash there, so its
+   controls turn white with a warm shadow, the names ink, and the ochre deepens
+   to Picacho Light's so the meter reads on white. A lit control (.hot) and
+   the Talk light (.live) keep their own colours. */
+:global(html:not(.dark)) .wheel {
+  --wheel-ink: #1c1c1e;
+  --wheel-muted: #5f5b57;
+  --wheel-halo: 0 0 6px #ffffff, 0 0 2px #ffffff;
+  --wheel-accent: #a84e24;
+  --wheel-accent-full: #8a3d18;
+  --wheel-track: rgba(168, 78, 36, 0.3);
+  --wheel-use: rgba(28, 28, 30, 0.08);
+  --wheel-ring-track: rgba(28, 28, 30, 0.1);
+  --wheel-fill: #c46a2e;
+  --wheel-fill-glow: drop-shadow(0 0 3px rgba(224, 164, 104, 0.6));
+  --wheel-fill-full: #a84e24;
+  --wheel-fill-full-glow: drop-shadow(0 0 5px rgba(224, 164, 104, 0.7));
+  --bead-ink: #3a3530;
+  --bead-dim: rgba(58, 53, 48, 0.35);
+  --bead-on: #a84e24;
+  --bead-bg: radial-gradient(circle at 50% 35%, #ffffff, #f2ede7);
+  --bead-shadow: inset 0 1px 0 #ffffff, 0 0 0 1px rgba(120, 70, 40, 0.18), 0 8px 18px -8px rgba(120, 70, 40, 0.45);
+  --bead-shadow-hover: inset 0 1px 0 #ffffff, 0 0 0 1.5px rgba(168, 78, 36, 0.55), 0 0 14px rgba(224, 164, 104, 0.35);
+  --petal-bg: radial-gradient(ellipse at 50% 22%, #ffffff, #f7f2ec 55%, #efe8e0);
+  --petal-shadow: inset 0 0 0 1px rgba(120, 70, 40, 0.18), 0 10px 24px -10px rgba(120, 70, 40, 0.45);
+  --petal-shadow-hover: inset 0 0 0 1.5px rgba(168, 78, 36, 0.55), 0 0 16px rgba(224, 164, 104, 0.3);
 }

@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.138.0",
+    build: 177,
+    date: "2026-09-28",
+    title: "Aly's subtitles and wheel in the light look",
+    items: [
+      "In the light look, Aly's subtitles now sit on white instead of a black oval: dark words on a soft white ground, her last line in the same serif, your words above in grey with \"You\" in ochre, and the writing box white with a soft shadow, like Picacho Light's own.",
+      "Her wheel matches it in the light look: the controls turn white with a warm shadow, their names dark, and the month's meter a deeper ochre that reads on white. The dark shade that sat behind the wheel is a white one there. Filament and Blossom both.",
+      "Also in the light look: the send button's arrow is white on the ochre (it was dark on dark), and a message like \"You've used this period's assistant allowance\" is a deep red that reads on white. The floating card gets both too.",
+      "The dark look is unchanged: compared pixel by pixel before and after, the only difference was the blinking text cursor.",
+    ],
+  },
+  {
     version: "1.137.0",
     build: 176,
     date: "2026-09-28",

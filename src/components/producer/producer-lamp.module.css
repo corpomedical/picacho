@@ -195,6 +195,17 @@
     opacity: 0;
   }
 }
+/* In the light theme the wheel stands on a white wash, not a dark one (see
+   the light look below the subtitles). */
+:global(html:not(.dark)) .veil {
+  background: radial-gradient(
+    circle at var(--vx) var(--vy),
+    rgba(255, 255, 255, 0.92) 0,
+    rgba(255, 255, 255, 0.8) 210px,
+    rgba(255, 255, 255, 0.25) 460px,
+    rgba(255, 255, 255, 0) 700px
+  );
+}
 @keyframes fadeAway {
   to {
     opacity: 0;
@@ -719,6 +730,68 @@
     opacity: 0;
     transform: translateY(18px);
   }
+}
+
+/* The light look (2026-09-28, operator: "The subtitles on light version and
+   white background looks bad. Fix it."): the cinema's black oval sat on a
+   white page as a dark smudge. In the light theme (html without .dark) the
+   subtitles stand on white instead, in Picacho Light's own palette
+   (components/light/light.css): warm ink, the ochre deepened so it reads on
+   white, the writing box white with its soft warm shadow. The dark theme
+   keeps everything above, untouched. */
+:global(html:not(.dark)) .subs {
+  color: #1c1c1e;
+  --color-atelier-ink: #1c1c1e;
+  --color-atelier-muted: #5f5b57;
+  --color-atelier-rule: rgba(28, 28, 30, 0.12);
+  --color-atelier-surface: #ffffff;
+  --color-atelier-accent: #a84e24;
+}
+:global(html:not(.dark)) .subsInner::before {
+  background: radial-gradient(
+    ellipse 50% 60% at 50% 58%,
+    rgba(255, 255, 255, 0.97) 0%,
+    rgba(255, 255, 255, 0.94) 70%,
+    rgba(255, 255, 255, 0.6) 88%,
+    rgba(255, 255, 255, 0) 100%
+  );
+}
+@media (max-width: 767px) {
+  :global(html:not(.dark)) .subsInner::before {
+    background: linear-gradient(0deg, rgba(255, 255, 255, 0.97) 0%, rgba(255, 255, 255, 0.94) calc(100% - 70px), rgba(255, 255, 255, 0) 100%);
+  }
+}
+:global(html:not(.dark)) .subsInner form {
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(28, 28, 30, 0.06), 0 10px 28px rgba(120, 70, 40, 0.1);
+}
+:global(html:not(.dark)) .subsOld {
+  color: rgba(28, 28, 30, 0.42);
+}
+:global(html:not(.dark)) .subsYou {
+  color: #5f5b57;
+}
+:global(html:not(.dark)) .subsYou b {
+  color: #a84e24;
+}
+:global(html:not(.dark)) .subsLine {
+  text-shadow: 0 1px 16px rgba(255, 255, 255, 0.9);
+}
+:global(html:not(.dark)) .subsRest {
+  color: rgba(28, 28, 30, 0.32);
+}
+
+/* Colours the markup used to fix for the dark: an error line (a pale red
+   that vanishes on white) and the icon or word on an ochre button (dark on
+   the dark theme's light ochre, white on the light theme's deep one). */
+.errorText {
+  color: #ff8a80;
+}
+:global(html:not(.dark)) .errorText {
+  color: #b3261e;
+}
+:global(html:not(.dark)) .onAccent {
+  color: #ffffff;
 }
 
 /* Push to talk (movable-lamp.tsx): while the lamp is held, what it is doing,

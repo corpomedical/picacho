@@ -1197,7 +1197,7 @@ export function ProducerLamp({
                 type="submit"
                 aria-label={W.send}
                 disabled={!input.trim() || !loaded}
-                className="grid h-[34px] w-[34px] flex-none place-items-center rounded-full bg-atelier-accent text-[#1a120a] disabled:opacity-40"
+                className={`grid h-[34px] w-[34px] flex-none place-items-center rounded-full bg-atelier-accent text-[#1a120a] disabled:opacity-40 ${styles.onAccent}`}
               >
                 <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" />
@@ -1320,7 +1320,7 @@ export function ProducerLamp({
                 </svg>
               </button>
             </div>
-            {loadError && <p className="text-sm text-[#ff8a80]">{loadError}</p>}
+            {loadError && <p className={`text-sm ${styles.errorText}`}>{loadError}</p>}
             {!loadError && !loaded && <p className={styles.subsLine}>…</p>}
             {loaded && shownLines.length === 0 && !streaming && (
               <>
@@ -1371,7 +1371,7 @@ export function ProducerLamp({
             {confirmFresh && (
               <div className="flex flex-wrap items-center justify-center gap-2 text-[13px]">
                 <span>{W.freshConfirm}</span>
-                <button type="button" onClick={doFresh} className="rounded-full bg-atelier-accent px-3 py-1 font-semibold text-[#1a120a]">
+                <button type="button" onClick={doFresh} className={`rounded-full bg-atelier-accent px-3 py-1 font-semibold text-[#1a120a] ${styles.onAccent}`}>
                   {W.yes}
                 </button>
                 <button type="button" onClick={() => setConfirmFresh(false)} className="rounded-full px-3 py-1 text-atelier-muted hover:text-atelier-ink">
@@ -1379,7 +1379,7 @@ export function ProducerLamp({
                 </button>
               </div>
             )}
-            {error && <p className="text-sm text-[#ff8a80]">{error}</p>}
+            {error && <p className={`text-sm ${styles.errorText}`}>{error}</p>}
             {error && atLimit && topUpOffered && !native && <TopUpOffer currency={currency} returnTo={pathname} centered />}
             <form
               onSubmit={(e) => {
@@ -1473,7 +1473,7 @@ export function ProducerLamp({
             {confirmFresh && (
               <div className="flex flex-wrap items-center gap-2 border-b border-atelier-rule bg-atelier-ink/[0.03] px-4 py-2.5 text-[13px]">
                 <span className="flex-1">{W.freshConfirm}</span>
-                <button type="button" onClick={doFresh} className="rounded-full bg-atelier-accent px-3 py-1 font-semibold text-[#1a120a]">
+                <button type="button" onClick={doFresh} className={`rounded-full bg-atelier-accent px-3 py-1 font-semibold text-[#1a120a] ${styles.onAccent}`}>
                   {W.yes}
                 </button>
                 <button type="button" onClick={() => setConfirmFresh(false)} className="rounded-full px-3 py-1 text-atelier-muted hover:text-atelier-ink">
@@ -1489,7 +1489,7 @@ export function ProducerLamp({
             ) : (
               <>
                 <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-                  {loadError && <p className="text-sm text-[#ff8a80]">{loadError}</p>}
+                  {loadError && <p className={`text-sm ${styles.errorText}`}>{loadError}</p>}
                   {!loadError && !loaded && <p className="text-sm text-atelier-muted">…</p>}
 
                   {loaded && watch.length > 0 && (
@@ -1602,7 +1602,7 @@ export function ProducerLamp({
                       </div>
                     ))}
 
-                  {error && <p className="text-sm text-[#ff8a80]">{error}</p>}
+                  {error && <p className={`text-sm ${styles.errorText}`}>{error}</p>}
                   {error && atLimit && topUpOffered && !native && <TopUpOffer currency={currency} returnTo={pathname} />}
                   {lines.length >= LONG_CONVERSATION && !busy && (
                     <p className="text-[13px] text-atelier-muted">{W.longConversation}</p>
@@ -1809,7 +1809,7 @@ function NotesView({ notes, setNotes }: { notes: Note[]; setNotes: (n: Note[]) =
                   type="button"
                   disabled={busy === n.path}
                   onClick={() => save(n.path)}
-                  className="rounded-full bg-atelier-accent px-3 py-1 text-[12.5px] font-semibold text-[#1a120a] disabled:opacity-50"
+                  className={`rounded-full bg-atelier-accent px-3 py-1 text-[12.5px] font-semibold text-[#1a120a] disabled:opacity-50 ${styles.onAccent}`}
                 >
                   {W.save}
                 </button>
@@ -1826,7 +1826,7 @@ function NotesView({ notes, setNotes }: { notes: Note[]; setNotes: (n: Note[]) =
           </div>
         );
       })}
-      {error && <p className="text-sm text-[#ff8a80]">{error}</p>}
+      {error && <p className={`text-sm ${styles.errorText}`}>{error}</p>}
       {notes.length > 0 &&
         (confirmAll ? (
           <div className="flex flex-wrap items-center gap-2 text-[13px]">
