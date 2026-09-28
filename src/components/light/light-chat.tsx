@@ -15,6 +15,7 @@ import {
 } from "@/lib/generations/providers/image-resolution";
 import { isStaleDeployError } from "@/lib/stale-deploy";
 import { getLightTake, type LightTake } from "@/lib/light/actions";
+import { LIGHT_HOME, studioHref, type LightPrepared } from "@/lib/light/mode";
 import { MenuIcon, PlusIcon, useLightShell } from "./light-shell";
 
 type Kind = "video" | "image";
@@ -107,19 +108,25 @@ export function LightChat({
   creditsLeft,
   defaults,
   openedTake,
+  prepared = null,
 }: {
   firstName: string | null;
   initial: string;
   creditsLeft: number;
   defaults: LightDefaults;
   openedTake: LightTake | null;
+  /** A send the assistant prepared: fills the box, unsent (app/app/light/page.tsx). */
+  prepared?: LightPrepared | null;
 }) {
   const { t, locale } = useLocale();
   const l = t.light;
   const router = useRouter();
   const { openMenu, newChat } = useLightShell();
-  const [kind, setKind] = useState<Kind>(openedTake?.contentType ?? "video");
-  const [text, setText] = useState("");
+  const [kind, setKind] = useState<Kind>(prepared?.kind ?? openedTake?.contentType ?? "video");
+  const [text, setText] = useState(prepared?.prompt ?? "");
+  // The assistant's character, engine and length ride along on the next send,
+  // so it costs what her card said; ✕ drops them back to Light's defaults.
+  const [fromAssistant, setFromAssistant] = useState<LightPrepared | null>(prepared);
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [uploading, setUploading] = useState(false);
   const [notice, setNotice] = useState("");
@@ -156,6 +163,15 @@ export function LightChat({
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
   }, [turns.length]);
+
+  // The assistant's words now sit in the box; take them out of the address,
+  // so a reload or a shared link doesn't fill the box again.
+  useEffect(() => {
+    if (!prepared) return;
+    window.history.replaceState(null, "", LIGHT_HOME);
+    requestAnimationFrame(() => inputRef.current?.focus());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function updateTake(id: string, patch: Partial<Extract<Turn, { role: "take" }>>) {
     setTurns((prev) => prev.map((x) => (x.role === "take" && x.id === id ? { ...x, ...patch } : x)));
@@ -203,7 +219,8 @@ export function LightChat({
     fd.set("generation_id", id);
     fd.set("prompt", clean);
     fd.set("content_type", kind);
-    fd.set("character_id", "");
+    const aly = fromAssistant;
+    fd.set("character_id", aly?.characterId ?? "");
     fd.set("use_outfit", "0");
     fd.set("payload_version", "2");
     if (sentPhoto) fd.set("attachment_roles", JSON.stringify([{ url: sentPhoto.url, role: "reference" }]));
@@ -215,8 +232,8 @@ export function LightChat({
       fd.set("image_aspect", DEFAULT_IMAGE_ASPECT);
       fd.set("image_quality", DEFAULT_IMAGE_QUALITY);
     } else {
-      fd.set("video_model_id", defaults.videoModelId);
-      fd.set("video_duration_seconds", String(defaults.videoDurationSeconds));
+      fd.set("video_model_id", aly?.videoModelId ?? defaults.videoModelId);
+      fd.set("video_duration_seconds", String(aly?.videoModelId && aly.seconds ? aly.seconds : defaults.videoDurationSeconds));
       if (defaults.videoAspectRatio) fd.set("video_aspect_ratio", defaults.videoAspectRatio);
     }
     setTurns((prev) => [
@@ -226,6 +243,7 @@ export function LightChat({
     ]);
     setText("");
     setPhoto(null);
+    setFromAssistant(null);
 
     let result;
     try {
@@ -336,6 +354,25 @@ export function LightChat({
   const composer = (big: boolean) => (
     <div className={`pl-box w-full ${big ? "rounded-[26px] px-3 pb-2 pt-3.5 md:rounded-[28px] md:px-5 md:pb-3 md:pt-[18px]" : "rounded-[28px] p-2"}`}>
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPhotoPicked} />
+      {fromAssistant && (fromAssistant.characterName || fromAssistant.videoModelName) && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 px-1 text-[13px]" style={{ color: "var(--pl-muted)" }}>
+          <span>
+            {l.fromAssistant}:{" "}
+            <span style={{ color: "var(--pl-ink)" }}>
+              {[
+                fromAssistant.characterName,
+                kind === "video" ? fromAssistant.videoModelName : null,
+                kind === "video" && fromAssistant.videoModelName && fromAssistant.seconds ? `${fromAssistant.seconds} s` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          </span>
+          <button type="button" className="pl-chip-btn h-8 px-3 text-xs" onClick={() => setFromAssistant(null)}>
+            {l.dropAssistant}
+          </button>
+        </div>
+      )}
       {photo && (
         <div className="mb-2 flex items-center gap-2 px-1">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -650,7 +687,7 @@ function TakeTurn({
           {(take || charged) && (
             <div className="flex items-center gap-3 text-[13px]" style={{ color: "var(--pl-muted)" }}>
               {take && (
-                <Link href={`/app/history/${take.id}`} style={{ color: "var(--pl-accent)" }}>
+                <Link href={studioHref(`/app/history/${take.id}`)} style={{ color: "var(--pl-accent)" }}>
                   {l.openInStudio}
                 </Link>
               )}
@@ -711,7 +748,7 @@ function TakeTurn({
               <path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" />
             </svg>
           </button>
-          <Link href={`/app/history/${take.id}`} aria-label={l.openInStudio} title={l.openInStudio} className={actionBtn}>
+          <Link href={studioHref(`/app/history/${take.id}`)} aria-label={l.openInStudio} title={l.openInStudio} className={actionBtn}>
             <svg {...icon}>
               <path d="M14 4h6v6M20 4l-8 8M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
             </svg>

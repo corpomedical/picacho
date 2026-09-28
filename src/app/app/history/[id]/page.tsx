@@ -648,7 +648,7 @@ export default async function HistoryDetailPage({
               <div className="relative flex min-w-0 flex-wrap items-center gap-2">
                 {generation.character_profile_id && (
                   <Link
-                    href={`/app/generate?character=${encodeURIComponent(generation.character_profile_id)}&type=${generation.content_type}&resume=${encodeURIComponent(generation.id)}`}
+                    href={`/app/generate?character=${encodeURIComponent(generation.character_profile_id)}&type=${generation.content_type}&resume=${encodeURIComponent(generation.id)}&studio=1`}
                   >
                     <Button variant="secondary" size="sm">
                       {h.continueChat}
@@ -667,7 +667,7 @@ export default async function HistoryDetailPage({
                       // composer can show continuation's real price BEFORE the
                       // send — the server re-reads it from the row regardless,
                       // so a tampered value changes only the preview.
-                      href={`/app/generate?continue=${encodeURIComponent(generation.id)}&continue_s=${generation.video_duration_seconds ?? ""}`}
+                      href={`/app/generate?continue=${encodeURIComponent(generation.id)}&continue_s=${generation.video_duration_seconds ?? ""}&studio=1`}
                     >
                       <Button variant="secondary" size="sm">
                         {h.continueClipCta}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useInLight, useModeHref } from "@/components/light/in-light";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { PRODUCER_NEEDS_ELITE, PRODUCER_NOT_OPEN, PRODUCER_SUSPENDED, PRODUCER_UNAVAILABLE } from "@/lib/producer/enabled";
@@ -94,6 +95,7 @@ const W = {
   watchTitle: "Came back low",
   askWhy: "Ask why",
   openComposer: "Open in composer",
+  openInChat: "Open in the chat",
   total: (n: number) => `Total ${n} credit${n === 1 ? "" : "s"}`,
   credits: (n: number) => `${n} cr`,
   noNotes: "No notes yet. When you tell it something worth remembering, it writes a note here, and you can edit or delete it.",
@@ -1628,6 +1630,9 @@ export function ProducerLamp({
 
 function Cards({ cards, onOpen }: { cards: PreparedSend[]; onOpen: () => void }) {
   const total = cards.reduce((a, c) => a + c.credits, 0);
+  // In Picacho Light the card fills the Light chat, not the studio's composer.
+  const modeHref = useModeHref();
+  const inLight = useInLight();
   return (
     <div className="overflow-hidden rounded-xl border border-atelier-rule">
       {cards.map((c, i) => (
@@ -1645,11 +1650,11 @@ function Cards({ cards, onOpen }: { cards: PreparedSend[]; onOpen: () => void })
                 .join(" · ")}
             </div>
             <Link
-              href={c.href}
+              href={modeHref(c.href)}
               onClick={onOpen}
               className="mt-1.5 inline-block text-[13px] font-semibold text-atelier-accent hover:underline"
             >
-              {W.openComposer} →
+              {inLight ? W.openInChat : W.openComposer} →
             </Link>
           </div>
           <span className="flex-none pt-0.5 text-[13px] tabular-nums">{W.credits(c.credits)}</span>

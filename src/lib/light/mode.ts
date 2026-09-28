@@ -44,12 +44,26 @@ export const WELCOME_PATH = "/app/welcome";
  * nobody is trapped); a Light account's /app opens the chat instead of the
  * studio's dashboard.
  */
-export function shellRedirect(pathname: string, mode: AppMode, needsChoice: boolean): string | null {
+export function shellRedirect(pathname: string, mode: AppMode, needsChoice: boolean, search = ""): string | null {
   if (needsChoice) {
     return pathname === WELCOME_PATH || pathname.startsWith("/app/settings") ? null : WELCOME_PATH;
   }
-  if (mode === "light" && pathname === "/app") return LIGHT_HOME;
+  if (mode !== "light") return null;
+  if (pathname === "/app") return LIGHT_HOME;
+  // Any other way in (a notification, an email, a bookmark, the assistant)
+  // to the composer or a take's page opens Light's chat instead. A link that
+  // asks for the studio on purpose ("Open in full studio") carries studio=1.
+  const query = search.startsWith("?") ? search.slice(1) : search;
+  if (new URLSearchParams(query).get("studio") === "1") return null;
+  if (pathname === "/app/generate" || /^\/app\/history\/[^/]+$/.test(pathname)) {
+    return lightHref(query ? `${pathname}?${query}` : pathname);
+  }
   return null;
+}
+
+/** A link that opens the studio on purpose, even for a Light account. */
+export function studioHref(href: string): string {
+  return href.includes("?") ? `${href}&studio=1` : `${href}?studio=1`;
 }
 
 /** The greeting's name: the first word of the full name, else nothing ("Hi there"). */
@@ -86,3 +100,30 @@ export function lookToApply(
 /** The two choices in an admin's words ("Studio" is the full studio). */
 export const ADMIN_MODE_LABELS: Record<AppMode, string> = { light: "Picacho Light", advanced: "Studio" };
 export const ADMIN_LOOK_LABELS: Record<AppLook, string> = { light: "Light", dark: "Dark", system: "Same as device" };
+
+/**
+ * A studio link, as Picacho Light should open it (operator, 2026-09-28:
+ * "When I talk to the assistant and give her a job to add a prompt to the
+ * generator in light mode, it takes me to the studio generator").
+ * The composer with a prompt → the Light chat with it filled in (same
+ * query: type, prompt, character, model, seconds); a take's page → that
+ * take in the Light chat. Everything else is left as it is.
+ */
+export function lightHref(href: string): string {
+  const [path, query] = href.split("?", 2) as [string, string | undefined];
+  if (path === "/app/generate") return query ? `${LIGHT_HOME}?${query}` : LIGHT_HOME;
+  const take = /^\/app\/history\/([^/]+)$/.exec(path);
+  if (take) return `${LIGHT_HOME}?take=${take[1]}`;
+  return href;
+}
+
+/** What an Aly-prepared link asks the Light chat to fill in (checked on the server). */
+export type LightPrepared = {
+  kind: "image" | "video";
+  prompt: string;
+  characterId: string | null;
+  characterName: string | null;
+  videoModelId: string | null;
+  videoModelName: string | null;
+  seconds: number | null;
+};

@@ -166,6 +166,12 @@ export async function buildStateNote(
     lastRenderAt: newest ?? since,
   };
 
+  // Picacho Light (2026-09-28, operator: the assistant "takes me to the
+  // studio generator" in light mode). Read on its own so a missing column
+  // (picacho-light.sql not run) leaves the rest of the note untouched.
+  const { data: modeRow } = await supabase.from("profiles").select("app_mode").eq("id", a.userId).maybeSingle();
+  const inLight = (modeRow as { app_mode?: unknown } | null)?.app_mode === "light";
+
   const page = cleanPage(a.page);
   const focus = typeof a.focus === "string" && /^[0-9a-f-]{36}$/i.test(a.focus) ? a.focus : null;
   const lines = [
@@ -173,6 +179,9 @@ export async function buildStateNote(
     `They call you: ${clean(a.name, 24)}.`,
     `Personality they picked for you: ${PERSONALITY_LABELS[a.personality ?? "default"].name} (see PERSONALITY).`,
     page ? `They are on: ${page}` : null,
+    inLight
+      ? "They use Picacho Light, the simple version: one chat box at /app/light where they type what they want and the picture or video comes back in the chat. There is no studio composer, no settings panel for engines, and no Helios, Recast or other studio tools in front of them. Your prepared sends open in that chat, filled in with your character, engine and length. Don't point them to studio pages or controls; if they want more control, they can switch to the full studio from Settings."
+      : null,
     `Plan: ${PLAN_LABELS[plan] ?? plan}${isAdmin ? " (admin)" : ""}. Credits: ${credits}.`,
     a.previous?.cast === next.cast ? "Their cast: unchanged since the last note." : `Their cast:\n${castText}`,
     a.previous?.rules === next.rules

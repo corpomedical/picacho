@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { firstName, lookToApply, resolveAppMode, shellRedirect } from "./mode";
+import { firstName, lightHref, lookToApply, resolveAppMode, shellRedirect, studioHref } from "./mode";
 
 describe("Picacho Light mode", () => {
   it("keeps everyone in the full studio, unasked, before the SQL runs", () => {
@@ -46,5 +46,37 @@ describe("Picacho Light mode", () => {
     // An admin (or another device) changed it: it applies once.
     expect(lookToApply("light", "dark", "dark")).toBe("light");
     expect(lookToApply("system", "dark", "light")).toBe("system");
+  });
+
+  it("keeps Light's links in Light: the composer and a take's page open in the chat", () => {
+    // Aly's prepared send: the same fields, filled into the Light box.
+    expect(lightHref("/app/generate?type=image&character=c1&prompt=a+still")).toBe(
+      "/app/light?type=image&character=c1&prompt=a+still",
+    );
+    expect(lightHref("/app/generate")).toBe("/app/light");
+    // A gallery tile opens the take in the chat, not the studio's take page.
+    expect(lightHref("/app/history/abc-123")).toBe("/app/light?take=abc-123");
+    // Everything else is left alone.
+    expect(lightHref("/app/settings?tab=preferences")).toBe("/app/settings?tab=preferences");
+    expect(lightHref("/app/history")).toBe("/app/history");
+    expect(lightHref("https://example.com/x")).toBe("https://example.com/x");
+  });
+
+  it("sends a Light account's composer and take links to the chat, unless the link asks for the studio", () => {
+    // A notification, an email, a bookmark or Aly's card.
+    expect(shellRedirect("/app/generate", "light", false, "?type=video&prompt=a+dog")).toBe("/app/light?type=video&prompt=a+dog");
+    expect(shellRedirect("/app/generate", "light", false, "")).toBe("/app/light");
+    expect(shellRedirect("/app/history/t1", "light", false, "")).toBe("/app/light?take=t1");
+    // "Open in full studio" and the take page's own studio actions.
+    expect(shellRedirect("/app/history/t1", "light", false, "?studio=1")).toBeNull();
+    expect(shellRedirect("/app/generate", "light", false, "?continue=t1&studio=1")).toBeNull();
+    expect(studioHref("/app/history/t1")).toBe("/app/history/t1?studio=1");
+    expect(studioHref("/app/generate?continue=t1")).toBe("/app/generate?continue=t1&studio=1");
+    // The history list, Settings and the rest stay where they are.
+    expect(shellRedirect("/app/history", "light", false, "")).toBeNull();
+    expect(shellRedirect("/app/images", "light", false, "")).toBeNull();
+    // The studio is never touched.
+    expect(shellRedirect("/app/generate", "advanced", false, "?prompt=x")).toBeNull();
+    expect(shellRedirect("/app/history/t1", "advanced", false, "")).toBeNull();
   });
 });

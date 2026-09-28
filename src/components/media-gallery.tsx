@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useModeHref } from "@/components/light/in-light";
 import { QuietVideo } from "@/components/quiet-video";
 import { useEffect, useRef, useState, type SVGProps } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +72,8 @@ export function MediaGallery({
     angleCountOther: string;
   };
 }) {
+  // In Picacho Light, "Generate one" and a tile open the Light chat, not the studio.
+  const modeHref = useModeHref();
   const { t } = useLocale();
   const [viewer, setViewer] = useState<GalleryItem | null>(null);
   // aria-modal's focus contract — into the dialog, trapped, restored on
@@ -103,7 +106,7 @@ export function MediaGallery({
       <EmptyState
         className="mt-10"
         message={emptyLabel}
-        action={{ href: "/app/generate", label: labels.generateOne }}
+        action={{ href: modeHref("/app/generate"), label: labels.generateOne }}
       />
     );
   }
@@ -222,7 +225,7 @@ export function MediaGallery({
             {overlays}
           </button>
         ) : (
-          <Link key={item.id} href={`/app/history/${item.id}`} aria-label={item.prompt_input} className={tileClass}>
+          <Link key={item.id} href={modeHref(`/app/history/${item.id}`)} aria-label={item.prompt_input} className={tileClass}>
             {tileMedia}
             {overlays}
           </Link>

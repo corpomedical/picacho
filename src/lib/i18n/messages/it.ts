@@ -4938,6 +4938,8 @@ const it = {
     placeholderFollow: "Chiedi modifiche o qualcosa di nuovo…",
     addPhoto: "Aggiungi una foto",
     removePhoto: "Rimuovi foto",
+    fromAssistant: "Dal tuo assistente",
+    dropAssistant: "Usa le impostazioni di Light",
     photoUploading: "Sto aggiungendo la tua foto…",
     uploadFailed: "La foto non è stata caricata. Provane un'altra.",
     whatToMake: "Cosa creare",

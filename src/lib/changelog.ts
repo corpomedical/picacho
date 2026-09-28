@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.137.0",
+    build: 176,
+    date: "2026-09-28",
+    title: "In Picacho Light, the assistant's prompts and every take open in the Light chat, not the studio",
+    items: [
+      "Ask the assistant for a prompt in Picacho Light and her card now opens the Light chat with it typed in, along with her character, engine and length, so it costs what the card says. The card reads \"Open in the chat\", and a note above the box shows what she chose, with a button to use Light's own settings instead.",
+      "Images and Library in Light: \"Generate one\" opens the Light chat, and a picture or video opens in the chat instead of the studio's take page.",
+      "Any other way into the studio composer or a take's page for a Light account (a notification, an email, a bookmark, the history page's \"Try one\") lands in the Light chat. \"Open in full studio\" still opens the studio on purpose, and so do its Resume and Continue.",
+      "The assistant knows when someone uses Picacho Light and no longer points them at studio pages or controls.",
+    ],
+  },
+  {
     version: "1.136.0",
     build: 175,
     date: "2026-09-28",

@@ -61,10 +61,13 @@ function GearIcon() {
 export function ModeGate({ mode, needsChoice }: { mode: AppMode; needsChoice: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
-  const target = shellRedirect(pathname ?? "", mode, needsChoice);
+  // The query is read in the effect (useSearchParams here would need a
+  // Suspense boundary around the whole layout): Aly's card and a take's
+  // link carry what the Light chat needs in it.
   useEffect(() => {
+    const target = shellRedirect(pathname ?? "", mode, needsChoice, window.location.search);
     if (target) router.replace(target);
-  }, [target, router]);
+  }, [pathname, mode, needsChoice, router]);
   return null;
 }
 
@@ -445,6 +448,7 @@ export function LightShell({
   const { t } = useLocale();
   const l = t.light;
   const pathname = usePathname();
+  const params = useSearchParams();
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   // New chat remounts the chat even when the address is already /app/light.
@@ -488,8 +492,9 @@ export function LightShell({
         <div className="relative flex min-w-0 flex-1 flex-col">
           {onChat ? (
             <Fragment key={chatNonce}>{children}</Fragment>
-          ) : pathname === "/app" ? (
-            // The chat opens here in a moment (ModeGate); never flash the studio's dashboard.
+          ) : shellRedirect(pathname ?? "", "light", false, params.toString()) ? (
+            // The chat opens here in a moment (ModeGate); never flash the
+            // studio's dashboard, composer or take page on the way.
             <div className="flex-1" />
           ) : (
             <>

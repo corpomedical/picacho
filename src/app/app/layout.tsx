@@ -33,6 +33,7 @@ import { SUPPORT_EMAIL_FALLBACK } from "@/lib/domains";
 import { SCREENING_FONT_VARS } from "@/lib/theme/screening-fonts";
 import { parseAppLook, resolveAppMode } from "@/lib/light/mode";
 import { ChoiceFrame, LightShell, LookSync, ModeGate } from "@/components/light/light-shell";
+import { InLightProvider } from "@/components/light/in-light";
 
 export default async function AppLayout({
   children,
@@ -159,6 +160,7 @@ export default async function AppLayout({
   if (appMode === "light" || needsChoice) {
     const recent = (recentJobs ?? []).map((j) => ({ id: j.id as string, prompt: (j.prompt_input as string | null) ?? "" }));
     return (
+      <InLightProvider>
       <div className="frost-ground flex h-full overflow-hidden">
         <style dangerouslySetInnerHTML={{ __html: SCREENING_FONT_VARS }} />
         <AppErrorReporter />
@@ -195,6 +197,7 @@ export default async function AppLayout({
           />
         )}
       </div>
+      </InLightProvider>
     );
   }
 

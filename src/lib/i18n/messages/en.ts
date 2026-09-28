@@ -5236,6 +5236,8 @@ const en = {
     placeholderFollow: "Ask for changes, or something new…",
     addPhoto: "Add a photo",
     removePhoto: "Remove photo",
+    fromAssistant: "From your assistant",
+    dropAssistant: "Use Light's own settings",
     photoUploading: "Adding your photo…",
     uploadFailed: "That photo didn't upload. Try another one.",
     whatToMake: "What to make",
