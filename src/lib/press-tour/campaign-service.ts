@@ -181,6 +181,8 @@ export interface CampaignDeps extends PlanBudgetDeps {
   now?: () => Date;
   /** Cut 4: filming's switch and lane, and the links the press wall shows. Absent = filming isn't open. */
   filmDoor?: FilmDoorDeps;
+  /** Today's searches for the planner (trends.ts), only while press_trends is on; absent or [] plans without them. */
+  trends?: () => Promise<readonly string[]>;
 }
 
 /** What the person's presses need from filming (campaign-runtime.ts wires the real ones). */
@@ -202,6 +204,47 @@ const WRITES_PER_HOUR = 120;
 
 const nowOf = (deps: { now?: () => Date }) => (deps.now ? deps.now() : new Date());
 const failure = (error: string): CampaignResult => ({ ok: false, error });
+
+/**
+ * Brand memory: the angles of this person's earlier planned ads for the same
+ * product or brand kit, newest first, at most 5 distinct. Read from the
+ * ads themselves (press_campaigns.plan), so it needs no table of its own and
+ * forgets nothing the person can still see. [] when the read fails.
+ */
+export async function readPastAngles(
+  db: SupabaseClient,
+  userId: string,
+  of: { productId: string; brandKitId: string | null; exceptId?: string },
+): Promise<string[]> {
+  try {
+    const sameThing = of.brandKitId ? `product_id.eq.${of.productId},brand_kit_id.eq.${of.brandKitId}` : `product_id.eq.${of.productId}`;
+    const { data, error } = await db
+      .from("press_campaigns")
+      .select("id, plan")
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .or(sameThing)
+      .order("updated_at", { ascending: false })
+      .limit(12);
+    if (error || !Array.isArray(data)) return [];
+    return pastAnglesFrom(data as { id?: unknown; plan?: unknown }[], of.exceptId);
+  } catch {
+    return [];
+  }
+}
+
+/** Pure: distinct angles, newest first, at most 5. */
+export function pastAnglesFrom(rows: readonly { id?: unknown; plan?: unknown }[], exceptId?: string): string[] {
+  const out: string[] = [];
+  for (const row of rows) {
+    if (row.id === exceptId) continue;
+    const angle = (row.plan as { angle?: unknown } | null)?.angle;
+    if (typeof angle !== "string" || !angle.trim()) continue;
+    if (!out.some((a) => a.toLowerCase() === angle.trim().toLowerCase())) out.push(angle.trim());
+    if (out.length >= 5) break;
+  }
+  return out;
+}
 
 /** In this cut, only admins plan and paint (the operator's rule, admins first). */
 export function campaignGate(caller: CampaignCaller): string | null {
@@ -362,11 +405,17 @@ export async function planCampaign(
   }
 
   const own = await deps.ownRules(caller.userId).catch(() => [] as PolicyRule[]);
+  const [pastAngles, trends] = await Promise.all([
+    readPastAngles(deps.db, caller.userId, { productId, brandKitId, exceptId: id }),
+    deps.trends ? deps.trends().catch(() => [] as readonly string[]) : Promise.resolve([] as readonly string[]),
+  ]);
   const planned = await planAd(deps.planner, {
     length,
     product: card,
     brand: brand ? { name: brand.name, tone: brand.tone, tagline: brand.tagline, defaultCta: brand.defaultCta } : null,
     goal,
+    pastAngles,
+    trends,
     star,
     ownRules: own,
   });

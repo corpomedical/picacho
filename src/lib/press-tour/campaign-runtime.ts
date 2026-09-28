@@ -40,6 +40,8 @@
 //                generated-videos for History, and the adReady / adFailed
 //                pushes as soon as lib/push knows those keys
 
+import { readPressTourSwitches } from "./enabled";
+import { readTrends } from "./trends";
 import { after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { classifyProhibitions } from "@/lib/brand-rules/classify";
@@ -482,6 +484,8 @@ export function campaignDeps(caller: CampaignCaller, personal: SupabaseClient): 
     },
     imageUrl: (path) => mediaUrl(STILL_BUCKET, path),
     filmDoor: filmDoorDeps(db),
+    // Today's searches, only while press_trends is on (read fail-closed, like every switch).
+    trends: async () => ((await readPressTourSwitches(db)).press_trends ? readTrends({ geo: "US" }) : []),
   };
 }
 

@@ -301,6 +301,10 @@ export type PlannerInput = {
   brand: Pick<BrandKit, "name" | "tone" | "tagline" | "defaultCta"> | null;
   /** The person's own words about what they want; data, never instructions. */
   goal: string | null;
+  /** Brand memory: the angles this person's earlier ads for this product or brand used (newest first). */
+  pastAngles?: readonly string[];
+  /** Today's searches (trends.ts, behind press_trends): context only. */
+  trends?: readonly string[];
 };
 
 const BEAT_WORDS: Record<ShotRole, string> = {
@@ -335,6 +339,28 @@ function brandFacts(brand: NonNullable<PlannerInput["brand"]>): string {
     .join("\n");
 }
 
+/**
+ * Brand memory and today's trends, fenced like every other piece of data.
+ * The earlier angles are there so a new ad is not the same ad again; a
+ * trend is used only where it fits, and never names anyone or anything.
+ */
+function memoryAndTrends(input: PlannerInput): string[] {
+  const out: string[] = [];
+  const past = (input.pastAngles ?? []).map((a) => cleanText(a, PLAN_LIMITS.angle)).filter((a): a is string => Boolean(a)).slice(0, 5);
+  if (past.length > 0) {
+    out.push(fenceUntrusted(`Angles of this advertiser's earlier ads for this product or brand:\n${past.map((a) => `- ${a}`).join("\n")}`, "past-angles", 600));
+    out.push("Choose a fresh angle: not one of those earlier ones, while keeping the brand's tone of voice.");
+  }
+  const trends = (input.trends ?? []).map((t) => cleanText(t, 60)).filter((t): t is string => Boolean(t)).slice(0, 8);
+  if (trends.length > 0) {
+    out.push(fenceUntrusted(`What people are searching for today:\n${trends.map((t) => `- ${t}`).join("\n")}`, "trends", 700));
+    out.push(
+      "You may borrow the mood or setting of one of today's searches only where it fits this product and brand naturally. Never name a person, brand, team, show or event from them, and never present one as a claim. Most ads use none.",
+    );
+  }
+  return out;
+}
+
 /** The drafter's whole instruction: the brief, the fenced data, and the JSON it must return. */
 export function buildPlannerInstructions(input: PlannerInput): string {
   const beats = beatsFor(input.length);
@@ -353,6 +379,7 @@ export function buildPlannerInstructions(input: PlannerInput): string {
     fenceUntrusted(productFacts(input.product), "product-card", 1500),
     input.brand ? fenceUntrusted(brandFacts(input.brand), "brand-kit", 1000) : "",
     goal ? fenceUntrusted(`What the advertiser wants: ${goal}`, "advertiser-goal", 700) : "",
+    ...memoryAndTrends(input),
     "",
     "THE SHOTS, in this order:",
     shotLines,

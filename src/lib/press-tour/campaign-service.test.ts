@@ -26,6 +26,7 @@ import {
   getCampaign,
   keepStill,
   paintStills,
+  pastAnglesFrom,
   planCampaign,
   repaintStill,
   undoStill,
@@ -453,5 +454,21 @@ describe("the projection", () => {
     expect(text).not.toContain(`"${stillRowId(PAINT_SEND, 1)}"`);
     expect(text).not.toMatch(/gpt-image|kling|costUsd|cost_usd|faceScore|rowId|credits_charged/);
     expect(v.stills[0].imageUrl).toMatch(/^\/api\/media\/generated-images\//);
+  });
+});
+
+describe("brand memory", () => {
+  it("the planner hears the angles of earlier ads for this product or brand: distinct, newest first, at most 5, never the ad being planned", () => {
+    const rows = [
+      { id: "now", plan: { angle: "Being planned" } },
+      { id: "a", plan: { angle: "Late-night confidence" } },
+      { id: "b", plan: { angle: "late-night confidence " } },
+      { id: "c", plan: null },
+      { id: "d", plan: { angle: "Morning ritual" } },
+      { id: "e", plan: { angle: 7 } },
+      ...["f", "g", "h", "i"].map((id) => ({ id, plan: { angle: `Angle ${id}` } })),
+    ];
+    expect(pastAnglesFrom(rows, "now")).toEqual(["Late-night confidence", "Morning ritual", "Angle f", "Angle g", "Angle h"]);
+    expect(pastAnglesFrom([])).toEqual([]);
   });
 });
