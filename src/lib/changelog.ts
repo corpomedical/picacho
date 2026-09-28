@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.136.0",
+    build: 175,
+    date: "2026-09-28",
+    title: "The studio's phone menu keeps Settings on screen on iPhone",
+    items: [
+      "On an iPhone (the home-screen app or Safari) the studio's side menu was as tall as the largest possible screen, so the Settings gear at its foot slid under the bottom edge. It now matches the visible screen and keeps clear of the notch and the home bar.",
+      "The gear's menu never grows taller than the room above it: on a short screen it scrolls instead of running off the top.",
+    ],
+  },
+  {
     version: "1.135.0",
     build: 174,
     date: "2026-09-28",

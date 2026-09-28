@@ -1067,7 +1067,13 @@ export function AppSidebar({
       <aside
         data-app-sidebar
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex h-screen w-72 flex-shrink-0 flex-col overflow-hidden border-r border-atelier-rule bg-atelier-surface/75 backdrop-blur-xl px-3 py-5 shadow-2xl transition-transform duration-200 ease-in-out",
+          "fixed inset-y-0 left-0 z-40 flex h-dvh w-72 flex-shrink-0 flex-col overflow-hidden border-r border-atelier-rule bg-atelier-surface/75 backdrop-blur-xl px-3 shadow-2xl transition-transform duration-200 ease-in-out md:h-screen",
+          // On a phone the drawer is the visible screen's height (h-dvh, not
+          // h-screen's tallest-possible 100vh) and keeps clear of the notch
+          // and the home bar, so Settings at its foot stays on screen
+          // (operator, 2026-09-28, iPhone home-screen app: "I still cant see
+          // the settings on the studio page on iOS").
+          "pt-[calc(1.25rem+env(safe-area-inset-top))] pb-[calc(1.25rem+env(safe-area-inset-bottom))] md:py-5",
           // Screening Room: the rail is darker than the room it sits beside,
           // so the render reads as the lit thing on the screen.
           "screening-dark:bg-[#0a0907]/95",
@@ -1331,8 +1337,14 @@ export function AppSidebar({
           createPortal(
             <div
               ref={menuRef}
-              style={{ bottom: menuPos.bottom, left: menuPos.left }}
-              className="fixed z-50 w-72 rounded-control bg-atelier-surface/95 backdrop-blur-xl p-2 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.3)]"
+              // Never taller than the room above the gear: on a short phone
+              // screen it ran off the top (2026-09-28), so it scrolls instead.
+              style={{
+                bottom: menuPos.bottom,
+                left: menuPos.left,
+                maxHeight: `calc(100dvh - ${menuPos.bottom}px - 12px - env(safe-area-inset-top))`,
+              }}
+              className="fixed z-50 w-72 overflow-y-auto overscroll-contain rounded-control bg-atelier-surface/95 backdrop-blur-xl p-2 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.3)]"
             >
             <div className="px-2 pb-2 pt-1.5">
               <p className="px-0.5 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.theme}</p>
