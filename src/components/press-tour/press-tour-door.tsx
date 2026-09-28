@@ -150,6 +150,25 @@ type Key = {
   quiet?: boolean;
 };
 
+// A stopped ad comes back on arrival for a day, with its reason
+// (door-data.ts pickDoorCampaign). "Start over" lets it go on this device:
+// a convenience only, so storage that is blocked or empty just shows it again.
+const DISMISSED_KEY = "press-tour:dismissed-stopped-ad";
+function stoppedAdDismissed(id: string): boolean {
+  try {
+    return window.localStorage.getItem(DISMISSED_KEY) === id;
+  } catch {
+    return false;
+  }
+}
+function dismissStoppedAd(id: string): void {
+  try {
+    window.localStorage.setItem(DISMISSED_KEY, id);
+  } catch {
+    /* shown again next visit, with its reason: harmless */
+  }
+}
+
 export function PressTourDoor({ characters, products, brandKits, openCampaignId, emailConfirmed, networks, actions, publish, waitlist, connectNote }: PressTourDoorProps) {
   const { t, locale } = useLocale();
   const m = t.pressTour;
@@ -207,7 +226,8 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
     void (async () => {
       try {
         const res = await actions.getCampaign({ campaignId: openCampaignId });
-        if (live && res.ok) {
+        // A stopped ad the person already let go of ("Start over") stays gone on this device.
+        if (live && res.ok && !(isClosed(res.campaign.stage) && stoppedAdDismissed(res.campaign.id))) {
           setCampaign(res.campaign);
           // The press line opens on arrival only for an ad that is ready now.
           if (res.campaign.stage !== "ready") setLine((l) => (l === "auto" ? "closed" : l));
@@ -383,6 +403,7 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
       price: null,
       disabled: false,
       press: () => {
+        dismissStoppedAd(campaign.id);
         setCampaign(null);
         setError(null);
       },
@@ -1187,7 +1208,7 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
                         1024 px window with the sidebar); narrower, the phone's
                         running order and its one decision card. */}
                     <div className="hidden lg:block">
-                      <RunningOrder stills={stills} canAct={canAct} busyShot={busyShot} canRepaint={canRepaint} act={act} t={t} />
+                      <RunningOrder stills={stills} canAct={canAct} busyShot={busyShot} canRepaint={canRepaint} act={act} t={t} stopped={campaign !== null && isClosed(campaign.stage)} />
                     </div>
                     <div className="lg:hidden">
                       <PhoneRunningOrder
@@ -1197,6 +1218,7 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
                         canRepaint={canRepaint}
                         act={act}
                         t={t}
+                        stopped={campaign !== null && isClosed(campaign.stage)}
                         selected={shownShot}
                         onSelect={setSelectedShot}
                       />

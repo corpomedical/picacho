@@ -42,6 +42,8 @@ type Common = {
   canRepaint: boolean;
   act: StillActions;
   t: Messages;
+  /** The ad stopped: a still with no painting is not being painted, and must not look it. */
+  stopped?: boolean;
 };
 
 export function roleName(role: ShotRole, m: PressWords): string {
@@ -58,7 +60,7 @@ const PILL =
   "inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-[rgba(255,255,255,0.06)] px-3.5 text-[13px] font-medium text-[#ecedf1] shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)] lg:min-h-8";
 
 /** The print itself: image (or the painting sheen), stamps, corner marks, the flashbulb. */
-function Print({ still, m, small }: { still: StillView; m: PressWords; small?: boolean }) {
+function Print({ still, m, small, stopped }: { still: StillView; m: PressWords; small?: boolean; stopped?: boolean }) {
   const painted = stillPainted(still);
   const flashes = stillFlashes(still);
   const clear = stillAllClear(still);
@@ -70,7 +72,7 @@ function Print({ still, m, small }: { still: StillView; m: PressWords; small?: b
         // The same 9:16-ish print at every width (a phone's third of a 390 px screen is 150 px tall).
         "aspect-[188/268]",
         small ? "rounded-xl" : "rounded-[14px]",
-        !painted && s.painting,
+        !painted && !stopped && s.painting,
         flashes ? s.flash : clear ? s.glow : waits ? s.waiting : null,
       )}
     >
@@ -78,7 +80,12 @@ function Print({ still, m, small }: { still: StillView; m: PressWords; small?: b
         // eslint-disable-next-line @next/next/no-img-element -- a short-lived signed link to the person's own still
         <img src={still.imageUrl!} alt={formatMsg(m.stillAlt, { n: still.shot, direction: still.direction })} />
       )}
-      {!painted && <span className="sr-only">{formatMsg(m.stillPainting, { n: still.shot })}</span>}
+      {!painted && !stopped && <span className="sr-only">{formatMsg(m.stillPainting, { n: still.shot })}</span>}
+      {!painted && stopped && (
+        <span className={cn("absolute inset-0 z-[3] flex items-center justify-center px-3 text-center text-[#858994]", small ? "text-[11px]" : "text-[12.5px]")}>
+          {formatMsg(m.stillNotPainted, { n: still.shot })}
+        </span>
+      )}
       {!small && painted && <span className={s.shade} aria-hidden="true" />}
       {clear && (
         <span
@@ -133,7 +140,7 @@ function RepaintButton({ onClick, disabled, m, className }: { onClick: () => voi
 }
 
 /** A computer's running order: the stills side by side, each with its own decision under it. */
-export function RunningOrder({ stills, canAct, busyShot, canRepaint, act, t }: Common) {
+export function RunningOrder({ stills, canAct, busyShot, canRepaint, act, t, stopped }: Common) {
   const m = t.pressTour;
   return (
     <ol className="relative grid grid-cols-3 items-start gap-5" aria-label={m.stillsLabel}>
@@ -143,7 +150,7 @@ export function RunningOrder({ stills, canAct, busyShot, canRepaint, act, t }: C
         const disabled = !canAct || busyShot !== null;
         return (
           <li key={still.shot} className="relative z-[1] min-w-0">
-            <Print still={still} m={m} />
+            <Print still={still} m={m} stopped={stopped} />
             <h3 className="mt-2.5 text-[14px] font-semibold text-[#ecedf1]">{roleName(still.role, m)}</h3>
             {!waits && <p className="mt-[3px] min-h-[34px] text-[12px] leading-[1.42] text-[#9aa0ad]">{still.direction}</p>}
             {still.houseRepainted && (
@@ -211,7 +218,7 @@ export function RunningOrder({ stills, canAct, busyShot, canRepaint, act, t }: C
  * decision card for the still in hand — the first that waits, unless the
  * person taps another.
  */
-export function PhoneRunningOrder({ stills, canAct, busyShot, canRepaint, act, t, selected, onSelect }: Common & { selected: number; onSelect: (shot: number) => void }) {
+export function PhoneRunningOrder({ stills, canAct, busyShot, canRepaint, act, t, selected, onSelect, stopped }: Common & { selected: number; onSelect: (shot: number) => void }) {
   const m = t.pressTour;
   const still = stills.find((x) => x.shot === selected) ?? stills[0];
   const disabled = !canAct || busyShot !== null;
@@ -231,7 +238,7 @@ export function PhoneRunningOrder({ stills, canAct, busyShot, canRepaint, act, t
                 x.shot === still?.shot && stills.length > 1 && "outline outline-1 outline-offset-2 outline-[rgba(240,205,166,0.45)]",
               )}
             >
-              <Print still={x} m={m} small />
+              <Print still={x} m={m} small stopped={stopped} />
             </button>
             <p className="mt-[7px] text-[12.5px] font-semibold leading-[1.3] text-[#ecedf1]">{roleName(x.role, m)}</p>
             {stillPainted(x) && (

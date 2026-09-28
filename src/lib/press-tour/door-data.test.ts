@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { beforeAll, describe, expect, it } from "vitest";
 import { CAMPAIGN_STAGES } from "./campaign-types";
 import { PRESS_KIT_BUCKET } from "./card-service";
-import { CLOSED_STAGES, OPEN_STAGES, getPressTourHome } from "./door-data";
+import { CLOSED_STAGES, FAILED_SHOWN_MS, OPEN_STAGES, getPressTourHome, pickDoorCampaign } from "./door-data";
 import { photosHash } from "../characters/likeness";
 
 // What the Press Tour door opens on, against an in-memory Supabase that
@@ -207,6 +207,24 @@ describe("the Press Tour door's first read", () => {
     expect(home.brandKits[0].logoUrl).toBe(`https://signed/${A}/brand/${K1}/logo-1.png`);
   });
 
+  it("opens on an ad that stopped within a day, so its reason is not lost (operator, 2026-09-26)", async () => {
+    const now = Date.parse("2026-09-27T10:00:00Z");
+    const failedAt = (ms: number) => new Date(now - ms).toISOString();
+    const row = (id: string, stage: string, ms: number | null) => ({ id, stage, updated_at: ms === null ? null : failedAt(ms) });
+    expect(pickDoorCampaign([row("f", "failed", 60_000)], now)).toBe("f");
+    expect(pickDoorCampaign([row("f", "failed", FAILED_SHOWN_MS + 1)], now)).toBeNull();
+    expect(pickDoorCampaign([row("f", "failed", null)], now)).toBeNull();
+    expect(pickDoorCampaign([row("o", "painting", 9 * FAILED_SHOWN_MS)], now)).toBe("o");
+    // An open ad can still be acted on: it wins over a newer one that failed.
+    expect(pickDoorCampaign([row("f", "failed", 1), row("o", "awaiting_approval", 5_000)], now)).toBe("o");
+    expect(pickDoorCampaign([], now)).toBeNull();
+
+    const failed = { id: "camp-f", user_id: A, stage: "failed", deleted_at: null, updated_at: new Date().toISOString() };
+    const tables = { character_profiles: [], products: [], brand_kits: [], press_campaigns: [failed] };
+    const home = await getPressTourHome({ db: fakeClient(tables, [], []), admin: fakeClient(tables, [], []) }, A);
+    expect(home.openCampaignId).toBe("camp-f");
+  });
+
   it("finds the newest campaign that is not closed, and reads none before its table exists", async () => {
     expect(OPEN_STAGES).not.toEqual(expect.arrayContaining(["failed"]));
     expect([...OPEN_STAGES, ...CLOSED_STAGES].sort()).toEqual([...CAMPAIGN_STAGES].sort());
@@ -214,8 +232,9 @@ describe("the Press Tour door's first read", () => {
 
     const open = { id: "camp-1", user_id: A, stage: "awaiting_approval", deleted_at: null };
     const other = { id: "camp-b", user_id: B, stage: "painting", deleted_at: null };
-    const closed = { id: "camp-0", user_id: A, stage: "failed", deleted_at: null };
-    const withTable = { character_profiles: [], products: [], brand_kits: [], press_campaigns: [other, closed, open] };
+    const closed = { id: "camp-0", user_id: A, stage: "cancelled", deleted_at: null };
+    // Newest first, as the real query orders them.
+    const withTable = { character_profiles: [], products: [], brand_kits: [], press_campaigns: [other, open, closed] };
     const home = await getPressTourHome({ db: fakeClient(withTable, [], []), admin: fakeClient(withTable, [], []) }, A);
     expect(home.openCampaignId).toBe("camp-1");
 

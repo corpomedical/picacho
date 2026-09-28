@@ -11,6 +11,8 @@ import {
   PAINT_FREE_SLOT,
   PAINT_OUT_OF_CREDITS,
   PLAN_REFUSED_AD_RULES,
+  PICTURE_SERVICE_REFUSED_AFTER,
+  PICTURE_SERVICE_REFUSED_BEFORE,
   PLAN_REFUSED_ENDORSEMENT,
   STILL_REFUSED,
 } from "./campaign-messages";
@@ -33,6 +35,7 @@ import {
   reservePaidRetry,
   reserveStillRows,
   starReadiness,
+  laneRefusalWords,
   stillDeadlines,
   stillDeliveryMs,
   stillPath,
@@ -641,7 +644,33 @@ describe("paintKeyframe", () => {
     const { db } = world();
     const refusal = Object.assign(new Error("OpenAI's safety system declined this request."), { name: "ImageSafetyRejection", beforeRender: true });
     const deps = painter(db, { generateStill: vi.fn(async () => Promise.reject(refusal)) });
-    expect(await paintKeyframe(deps, { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 })).toMatchObject({ kind: "failed", cause: "refused" });
+    expect(await paintKeyframe(deps, { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 })).toMatchObject({
+      kind: "failed",
+      cause: "refused",
+      error: PICTURE_SERVICE_REFUSED_BEFORE,
+    });
+  });
+
+  it("GPT Image's output-stage block reads as the picture service's own rule, settles by the ordinary rules, and counts its attempt", async () => {
+    const { db, rowId } = world();
+    const refusal = Object.assign(new Error("This image was refused by the image model's safety system, so it can't be shown."), {
+      name: "ImageSafetyRejection",
+      beforeRender: false,
+    });
+    const deps = painter(db, { generateStill: vi.fn(async () => Promise.reject(refusal)) });
+    const out = await paintKeyframe(deps, { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 });
+    expect(out).toMatchObject({ kind: "failed", cause: "refused", error: PICTURE_SERVICE_REFUSED_AFTER });
+    expect(deps.refund).toHaveBeenCalledWith(rowId, { force: false });
+    const row = db.tables.generations.find((r) => r.id === rowId)!;
+    expect(row).toMatchObject({ status: "failed", attempts: 1 });
+  });
+
+  it("says the picture service's own rule only for the GPT lane; another lane keeps its sentence", () => {
+    expect(laneRefusalWords("gpt-image", true)).toBe(PICTURE_SERVICE_REFUSED_BEFORE);
+    expect(laneRefusalWords("gpt-image", false, "anything")).toBe(PICTURE_SERVICE_REFUSED_AFTER);
+    expect(laneRefusalWords("gemini", false, "Gemini said no.")).toBe("Gemini said no.");
+    expect(laneRefusalWords("gemini", true)).toBe(STILL_REFUSED);
+    for (const w of [PICTURE_SERVICE_REFUSED_BEFORE, PICTURE_SERVICE_REFUSED_AFTER]) expect(w).toMatch(/not ours/);
   });
 
   it("the output gate's refusal removes the still and goes through the ordinary refund rules", async () => {

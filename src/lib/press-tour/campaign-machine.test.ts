@@ -14,6 +14,9 @@ import {
   CAMPAIGN_MESSAGES,
   PAINT_FAILED,
   PAINT_FAILED_CHARGED,
+  PICTURE_SERVICE_REFUSED_AFTER,
+  PICTURE_SERVICE_REFUSED_BEFORE,
+  PICTURE_SERVICE_REFUSED_CHARGED,
   PLAN_REFUSED_AD_RULES,
   PLAN_REFUSED_LABEL_CLAIM,
   PLAN_STALLED,
@@ -867,6 +870,11 @@ describe("the machine", () => {
     expect(failWords(PAINT_FAILED, 0)).toBe(PAINT_FAILED);
     expect(failWords(PAINT_FAILED, 1)).toBe(PAINT_FAILED_CHARGED);
     expect(failWords(STILL_REFUSED, 2)).toBe(STILL_REFUSED_CHARGED);
+    // The picture service's own refusal keeps saying whose rule it was when a credit stayed.
+    expect(failWords(PICTURE_SERVICE_REFUSED_AFTER, 0)).toBe(PICTURE_SERVICE_REFUSED_AFTER);
+    expect(failWords(PICTURE_SERVICE_REFUSED_AFTER, 1)).toBe(PICTURE_SERVICE_REFUSED_CHARGED);
+    expect(failWords(PICTURE_SERVICE_REFUSED_BEFORE, 1)).toBe(PICTURE_SERVICE_REFUSED_CHARGED);
+    expect(PICTURE_SERVICE_REFUSED_CHARGED).not.toMatch(/nothing was charged/i);
     // Words that never said "nothing was charged" stay as they are.
     expect(failWords(AD_CONSENT_NEEDED, 1)).toBe(AD_CONSENT_NEEDED);
     for (const w of [PAINT_FAILED_CHARGED, STILL_REFUSED_CHARGED]) expect(w).not.toMatch(/nothing was charged/i);

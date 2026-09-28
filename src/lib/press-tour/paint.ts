@@ -72,6 +72,8 @@ import {
   PAINT_COULDNT_START,
   PAINT_FREE_SLOT,
   PAINT_OUT_OF_CREDITS,
+  PICTURE_SERVICE_REFUSED_AFTER,
+  PICTURE_SERVICE_REFUSED_BEFORE,
   PRODUCT_NOT_CONFIRMED,
   STILL_REFUSED,
 } from "./campaign-messages";
@@ -702,6 +704,18 @@ export async function reserveHouseRowWith<S extends { id: string; credits: numbe
 }
 
 /**
+ * The sentence for a picture lane's own safety refusal. GPT Image's refusal
+ * says it was the picture service's rule and that our checks had passed the
+ * still (they run first), so the person reads whose rule stopped the ad
+ * (vendor names stay out of customer words: spec v2 #34). Any other lane keeps its own
+ * sentence, or ours when it gave none.
+ */
+export function laneRefusalWords(modelId: string, beforeRender: boolean, laneMessage?: string): string {
+  if (modelId === "gpt-image") return beforeRender ? PICTURE_SERVICE_REFUSED_BEFORE : PICTURE_SERVICE_REFUSED_AFTER;
+  return typeof laneMessage === "string" && laneMessage ? laneMessage : STILL_REFUSED;
+}
+
+/**
  * End a still's row that will not be delivered: its credits back when it
  * held any (forced only when nothing was spent on it; the ordinary rules
  * otherwise), THEN failed with the reason in its log. A row whose refund
@@ -726,6 +740,8 @@ export async function endStillRow(
       .update({
         status: "failed",
         progress_stage: null,
+        // One still row is one painting: History and Moderation read the column.
+        attempts: 1,
         pipeline_log: [{ attempt: 1, passed: false, issues: [], compiledPrompt: "", steps: [{ step: "generate", detail: input.detail.slice(0, 300) }] }],
       })
       .eq("id", input.rowId)
@@ -1022,11 +1038,14 @@ export async function paintKeyframe(
     usd += Number.isFinite(made.usd) ? made.usd : 0;
     png = Buffer.from(made.base64, "base64");
   } catch (err) {
-    // A picture lane's own safety refusal is final for this still, never re-tried elsewhere.
+    // A picture lane's own safety refusal is final for this still, never
+    // re-tried elsewhere (image.ts: "NO FALLBACK ON A SAFETY REFUSAL"). It
+    // says whose rule it was: the lane's, after our own gates passed it.
     const e = err as { name?: string; message?: string; beforeRender?: boolean };
     if (e?.name === "ImageSafetyRejection") {
-      const message = typeof e.message === "string" && e.message ? e.message : STILL_REFUSED;
-      return fail("refused", message, message, e.beforeRender !== false ? "before" : "after");
+      const before = e.beforeRender !== false;
+      const message = laneRefusalWords(STILL_LANE.modelId, before, e.message);
+      return fail("refused", message, message, before ? "before" : "after");
     }
     // The lane was called: it may have rendered and billed before failing.
     return fail("provider", "the picture lane failed", "The picture couldn't be painted this time.", "after");
@@ -1106,6 +1125,7 @@ export async function paintKeyframe(
           status: "succeeded",
           result_url: stored,
           progress_stage: null,
+          attempts: 1,
           press_tour: tour,
           pipeline_log: [{ attempt: 1, passed: true, issues: [], compiledPrompt: prompt.slice(0, 4000), steps }],
           ...extra,

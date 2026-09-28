@@ -78,6 +78,21 @@ export const STILL_REFUSED =
 export const PAINT_FAILED_CHARGED = "We couldn't paint your stills. A still that failed partway through painting was still charged.";
 export const STILL_REFUSED_CHARGED =
   "One of your stills couldn't be shown under our content rules, so this ad stopped. A still that failed partway through painting was still charged.";
+/**
+ * The picture service's OWN safety rule stopped a still that our checks had
+ * passed (operator, 2026-09-26: the Climax hoodie ad closed on OpenAI's
+ * output-stage block, and the door said nothing of whose rule it was).
+ * BEFORE: refused on the request, nothing drawn, the still's credit forced
+ * back. AFTER: painted, then blocked; its credit comes back by the ordinary
+ * refund rules, so these words say "nothing was charged" only when the ad
+ * kept no credit, and the CHARGED twin otherwise (failWords).
+ */
+export const PICTURE_SERVICE_REFUSED_BEFORE =
+  "The picture service we use refused one of your stills under its own safety rules, not ours: our checks had passed it. This ad stopped. Nothing was charged for the ones that didn't paint.";
+export const PICTURE_SERVICE_REFUSED_AFTER =
+  "The picture service we use painted one of your stills, then blocked it under its own safety rules, not ours: our checks had passed it. This ad stopped. Nothing was charged for the ones that didn't paint.";
+export const PICTURE_SERVICE_REFUSED_CHARGED =
+  "The picture service we use blocked one of your stills under its own safety rules, not ours: our checks had passed it. This ad stopped. A still that failed partway through painting was still charged.";
 export const CAMPAIGN_EXPIRED = "This ad waited 7 days for your decision and was closed. Filming was never charged.";
 
 // --- What blocks the next step (CampaignView.blocker) --------------------------
@@ -128,6 +143,9 @@ export const CAMPAIGN_MESSAGES = [
   STILL_REFUSED,
   PAINT_FAILED_CHARGED,
   STILL_REFUSED_CHARGED,
+  PICTURE_SERVICE_REFUSED_BEFORE,
+  PICTURE_SERVICE_REFUSED_AFTER,
+  PICTURE_SERVICE_REFUSED_CHARGED,
   CAMPAIGN_EXPIRED,
   BLOCK_PLANNING,
   BLOCK_PAINTING,

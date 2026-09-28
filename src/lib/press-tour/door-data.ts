@@ -189,21 +189,43 @@ async function readBrandKits(db: SupabaseClient, userId: string): Promise<BrandK
   }
 }
 
+/**
+ * How long an ad that stopped on its own is shown on arrival, with its
+ * reason and "Start over", before the door opens on a fresh plan. Without
+ * it a failed ad vanished on the next visit and the door read as if
+ * nothing had happened (operator, 2026-09-26: the Climax hoodie ad).
+ */
+export const FAILED_SHOWN_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Which campaign the door opens on, from the person's newest campaigns
+ * (newest first): the newest OPEN one, which can still be acted on; else
+ * one that FAILED within FAILED_SHOWN_MS. Cancelled and expired ads are not
+ * brought back: the person closed the first, and the second already told
+ * them by waiting 7 days.
+ */
+export function pickDoorCampaign(rows: readonly { id?: unknown; stage?: unknown; updated_at?: unknown }[], nowMs: number): string | null {
+  const open = rows.find((r) => typeof r.id === "string" && OPEN_STAGES.includes(r.stage as CampaignStage));
+  if (open) return open.id as string;
+  const failed = rows.find((r) => typeof r.id === "string" && r.stage === "failed");
+  if (!failed) return null;
+  const at = typeof failed.updated_at === "string" ? Date.parse(failed.updated_at) : NaN;
+  return Number.isFinite(at) && nowMs - at <= FAILED_SHOWN_MS ? (failed.id as string) : null;
+}
+
 async function readOpenCampaignId(admin: SupabaseClient, userId: string): Promise<string | null> {
   try {
     const { data, error } = await admin
       .from("press_campaigns")
-      .select("id")
+      .select("id, stage, updated_at")
       .eq("user_id", userId)
       .is("deleted_at", null)
-      .in("stage", OPEN_STAGES as unknown as string[])
+      .in("stage", [...OPEN_STAGES, "failed"] as unknown as string[])
       .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(5);
     // Before press-tour-03-campaigns.sql the table is not there: no campaign.
-    if (error || !data) return null;
-    const id = (data as { id?: unknown }).id;
-    return typeof id === "string" ? id : null;
+    if (error || !Array.isArray(data)) return null;
+    return pickDoorCampaign(data as { id?: unknown; stage?: unknown; updated_at?: unknown }[], Date.now());
   } catch {
     return null;
   }

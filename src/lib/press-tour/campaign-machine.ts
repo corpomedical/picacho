@@ -102,6 +102,9 @@ import {
   PAINT_FAILED,
   PAINT_FAILED_CHARGED,
   PLAN_STALLED,
+  PICTURE_SERVICE_REFUSED_AFTER,
+  PICTURE_SERVICE_REFUSED_BEFORE,
+  PICTURE_SERVICE_REFUSED_CHARGED,
   STILL_REFUSED,
   STILL_REFUSED_CHARGED,
   STILL_REPAINT_REFUSED,
@@ -619,6 +622,8 @@ export function creditsKept(stills: readonly StillState[]): number {
 const CHARGED_WORDS: Readonly<Record<string, string>> = {
   [PAINT_FAILED]: PAINT_FAILED_CHARGED,
   [STILL_REFUSED]: STILL_REFUSED_CHARGED,
+  [PICTURE_SERVICE_REFUSED_BEFORE]: PICTURE_SERVICE_REFUSED_CHARGED,
+  [PICTURE_SERVICE_REFUSED_AFTER]: PICTURE_SERVICE_REFUSED_CHARGED,
 };
 
 /**
@@ -1295,7 +1300,7 @@ async function paintStep(deps: MachineDeps, row: CampaignRow): Promise<StepResul
     // credit (a painting that failed after the lane was called, whose refund
     // the refund rules held back, then a house retry the lane refused). The
     // ad then closes with our words that say so (M-1).
-    await failCampaign(deps, written.row, error, refused ? STILL_REFUSED_CHARGED : undefined);
+    await failCampaign(deps, written.row, error, refused ? (CHARGED_WORDS[error] ?? STILL_REFUSED_CHARGED) : undefined);
     return "failed";
   }
   if (outcome.kind === "painted") return "painted";
