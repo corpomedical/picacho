@@ -696,6 +696,7 @@ export default async function SettingsPage({
           producerWheel={producerWheel}
           producerChat={producerChat}
           producerPersonality={producerPersonality}
+          producerLiveTest={isAdmin && producerPersonality !== null}
           appMode={appMode}
         />
       )}

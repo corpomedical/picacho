@@ -45,6 +45,8 @@ import { lampMood, type LampLook } from "./lamp-look";
 import { LookMark } from "./lamp-looks";
 import { Spotlight, type LitSpot } from "./spotlight";
 import { useHandsFree, warmEars, type SpokenAudio, type UtteranceMeta } from "./use-hands-free";
+import { useLiveVoice } from "./use-live-voice";
+import { liveVoiceName, liveVoiceOn } from "./live-voice-prefs";
 
 // The Producer's lamp and sheet (2026-09-24; operator: "A lamp on every
 // page", "Prepares, you send", "User picks" the name).
@@ -136,9 +138,13 @@ const W = {
   limitClosed: (canBuy: boolean) => (canBuy ? "Allowance used up · open me to top up" : "This month's allowance is used up"),
   topUpUnits: (n: number) => `${n.toLocaleString("en-US")} units`,
   hideLamp: "Hide the lamp",
+  liveConnecting: "Connecting her live voice…",
+  liveOn: "Live voice",
+  liveHint: "Talk any time: she hears you while she talks",
 };
 
 const READ_ALOUD_KEY = "picacho.producer.readAloud";
+
 // About as loud as the person usually is (the judge's own "about as loud"
 // line, gate.ts): quieter than this is someone further off, and she doesn't
 // say she heard it, got it, or let it be (2026-09-28 evening, operator: "I
@@ -352,6 +358,18 @@ export function ProducerLamp({
   // ElevenLabs hasn't used for a while took 6-11 s to start (warmProducerVoice;
   // the server does it at most once every two minutes).
   const wantWarm = (open && readAloud && loaded) || voice.active;
+  // runTurn, for the live voice's hand-overs (the hook comes before runTurn is declared).
+  const runTurnRef = useRef<(a: Parameters<typeof runTurn>[0]) => Promise<void>>(async () => {});
+  // Her live voice (use-live-voice.ts): admins, when switched on for this device.
+  // What it hands over is answered by her brain like a typed message.
+  const liveVoice = useLiveVoice({
+    onDelegation: (words) =>
+      new Promise<string>((resolve) => {
+        void runTurnRef.current({ text: words || "(they didn't say anything clear)", viaLive: true, onDone: (text, failed) => resolve(failed ? "" : text) });
+      }),
+    onError: (message) => setError(message),
+  });
+
   // Opening the chat starts fetching the speech model (use-hands-free.ts warmEars).
   const canHear = voiceAvailable && voice.supported;
   useEffect(() => {
@@ -682,6 +700,7 @@ export function ProducerLamp({
     });
   }
   sendSpokenRef.current = sendSpoken;
+  runTurnRef.current = runTurn;
 
   /** The answer on screen stops here (a later message cut it off, or Stop). */
   function finalize(turn: Turn, cut: boolean) {
@@ -728,6 +747,8 @@ export function ProducerLamp({
     talkedOver = false,
     pushToTalk = false,
     merged = false,
+    viaLive = false,
+    onDone,
   }: {
     text?: string;
     focus?: string;
@@ -739,6 +760,10 @@ export function ProducerLamp({
     pushToTalk?: boolean;
     /** Recordings said in a row, sent again together (the one before was withdrawn). */
     merged?: boolean;
+    /** Handed over by her live voice (use-live-voice.ts): it says the answer, so nothing is read aloud here. */
+    viaLive?: boolean;
+    /** The answer's text when the turn ends (and why it failed, if it did). */
+    onDone?: (text: string, failed: string | null) => void;
   }) {
     setError(null);
     const turn: Turn = {
@@ -749,8 +774,8 @@ export function ProducerLamp({
       cut: false,
       spoken,
     };
-    // Asked out loud, answered out loud.
-    const speak = readAloud || pushToTalk;
+    // Asked out loud, answered out loud — unless her live voice asked: it speaks.
+    const speak = !viaLive && (readAloud || pushToTalk);
     const accept = (words: string) => {
       if (turn.accepted && currentRef.current === turn) return;
       turn.accepted = true;
@@ -809,6 +834,7 @@ export function ProducerLamp({
           talkedOver: spoken ? talkedOver : undefined,
           pushToTalk: spoken && pushToTalk ? true : undefined,
           merged: spoken && merged ? true : undefined,
+          live: viaLive ? true : undefined,
         }),
         signal: turn.controller.signal,
       });
@@ -938,6 +964,7 @@ export function ProducerLamp({
       vlog("send.failed", { ms: since(), error: timedOut ? "no reply in time" : err instanceof Error ? err.message.slice(0, 80) : "error", aborted: turn.controller.signal.aborted && !timedOut, net: connectionNote() });
     } finally {
       window.clearTimeout(noReply);
+      onDone?.(turn.live.text.trim(), failed);
       if (probeRef.current === turn) probeRef.current = null;
       if (!turn.accepted) {
         // Never became a turn (nothing said, not for the Producer, merged
@@ -1013,7 +1040,7 @@ export function ProducerLamp({
   // The look's light: the voice's loudness while a mic session measures it;
   // a reply read aloud with the mic off has no meter, so it talks at a
   // steady middle strength instead of its dimmest.
-  const glow = voice.metered ? voice.level : mood === "talking" ? 0.7 : 0;
+  const glow = liveVoice.active ? liveVoice.level : voice.metered ? voice.level : mood === "talking" ? 0.7 : 0;
   const sheetShown = open || closing;
   // Beside the lamp (2026-09-28, operator: "If the chatbox is closed and the
   // mic is on it feels like she didnt get the msg"): what she's doing with
@@ -1078,6 +1105,8 @@ export function ProducerLamp({
   const current = streaming ?? (lastLine?.role === "assistant" ? lastLine : null);
   const olderLine = shownLines.slice(0, Math.max(0, lastUser)).findLast((l) => l.role === "assistant");
   const subtitle = subtitleView(current?.text ?? "", speaking ? spokenWords : null);
+  // With her live voice on, the subtitles are what it says and what it heard.
+  const liveSubs = liveVoice.active && (liveVoice.said !== "" || liveVoice.heard !== "");
   // On a wide screen the subtitles sit at the very bottom, clear of the wheel
   // on either side; otherwise just above the wheel, the full width.
   const subsWide = !!center && !center.phone && center.vw >= 1100;
@@ -1085,6 +1114,23 @@ export function ProducerLamp({
   // The writing box and what sits over it: the card and the subtitles both use it.
   const composerBody = (
     <>
+      {liveVoice.active && (
+        <div className="mb-2 flex items-center gap-3 px-1" aria-live="polite" data-live-voice>
+          <LookMark look={look} mood={mood} size={26} glow={glow} />
+          <div className="min-w-0 flex-1 leading-tight">
+            <div className="text-[14px] font-medium text-atelier-ink">{liveVoice.phase === "connecting" ? W.liveConnecting : W.liveOn}</div>
+            <div className="text-[12px] text-atelier-muted">{W.liveHint}</div>
+          </div>
+          <button
+            type="button"
+            onClick={liveVoice.stop}
+            aria-label={W.endVoiceLabel}
+            className="rounded-full border border-atelier-rule px-3.5 py-1.5 text-[13px] font-semibold text-atelier-ink hover:bg-atelier-ink/5"
+          >
+            {W.endVoice}
+          </button>
+        </div>
+      )}
       {ignored && (
         <div className="mb-2 flex items-center gap-2 px-1 text-[12px] text-atelier-muted" role="status">
           <span className="min-w-0 flex-1">
@@ -1250,21 +1296,21 @@ export function ProducerLamp({
         name={name}
         open={open}
         onToggle={() => setOpen((v) => !v)}
-        live={voice.active}
-        endable={voice.handsFree}
+        live={voice.active || liveVoice.active}
+        endable={voice.handsFree || liveVoice.active}
         level={glow}
         look={look}
         mood={mood}
         lift={lift}
         unseenCards={unseenCards}
         dot={dot}
-        onEndVoice={voice.stop}
+        onEndVoice={() => (liveVoice.active ? liveVoice.stop() : voice.stop())}
         lampRef={lampRef}
         openLabel={W.open(name)}
         newCardsLabel={W.newCards(unseenCards)}
         endVoiceLabel={W.endVoiceLabel}
         // Push to talk: hold the lamp (not while hands-free has the mic).
-        onHoldStart={voice.supported && voiceAvailable && !voice.handsFree ? () => void voice.pushStart() : undefined}
+        onHoldStart={voice.supported && voiceAvailable && !voice.handsFree && !liveVoice.active ? () => void voice.pushStart() : undefined}
         onHoldEnd={() => voice.pushEnd(true)}
         holdText={lampLine}
         holdKeyName={pttKey !== "off" && canPush ? pttKeyName(pttKey, mac) : null}
@@ -1290,15 +1336,25 @@ export function ProducerLamp({
           used={usage?.used ?? 0}
           cap={usage?.cap ?? 0}
           extra={usage?.extra ?? 0}
-          phase={voice.phase}
-          level={voice.level}
+          phase={
+            liveVoice.active
+              ? liveVoice.talking === "her"
+                ? "speaking"
+                : liveVoice.talking === "person"
+                  ? "hearing"
+                  : "listening"
+              : voice.phase
+          }
+          level={liveVoice.active ? liveVoice.level : voice.level}
           readAloud={readAloud}
           notesOpen={view === "notes"}
           notesCount={notes.length}
           voiceAvailable={voiceAvailable && voice.supported}
           canFresh={!busy && lines.length > 0}
           onTalk={() => {
-            if (voice.active) voice.stop();
+            if (liveVoice.active) liveVoice.stop();
+            else if (diagnostics && liveVoice.supported && liveVoiceOn() && !voice.active) void liveVoice.start(liveVoiceName());
+            else if (voice.active) voice.stop();
             else {
               // A voice conversation answers out loud, like ChatGPT's.
               setAloud(true);
@@ -1370,19 +1426,36 @@ export function ProducerLamp({
                 </div>
               </>
             )}
-            {olderLine && <p className={styles.subsOld}>{olderLine.text}</p>}
-            {lastUser >= 0 && (
-              <p className={styles.subsYou}>
-                <b>{W.you}</b> · {shownLines[lastUser].text}
-              </p>
+            {liveSubs ? (
+              <>
+                {liveVoice.heard && (
+                  <p className={styles.subsYou}>
+                    <b>{W.you}</b> · {liveVoice.heard}
+                  </p>
+                )}
+                {liveVoice.said && (
+                  <p className={styles.subsLine} aria-live="polite">
+                    {liveVoice.said}
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                {olderLine && <p className={styles.subsOld}>{olderLine.text}</p>}
+                {lastUser >= 0 && (
+                  <p className={styles.subsYou}>
+                    <b>{W.you}</b> · {shownLines[lastUser].text}
+                  </p>
+                )}
+                {current?.text ? (
+                  <p className={styles.subsLine} aria-live="polite">
+                    {subtitle.cut && "… "}
+                    {subtitle.said}
+                    {subtitle.rest && <span className={styles.subsRest}>{subtitle.said ? ` ${subtitle.rest}` : subtitle.rest}</span>}
+                  </p>
+                ) : null}
+              </>
             )}
-            {current?.text ? (
-              <p className={styles.subsLine} aria-live="polite">
-                {subtitle.cut && "… "}
-                {subtitle.said}
-                {subtitle.rest && <span className={styles.subsRest}>{subtitle.said ? ` ${subtitle.rest}` : subtitle.rest}</span>}
-              </p>
-            ) : null}
             {current?.sources && current.sources.length > 0 && (
               <div className="flex justify-center">
                 <SourceLinks sources={current.sources} />

@@ -6,6 +6,7 @@ import { ProducerLookForm } from "@/components/settings/producer-look-form";
 import { ProducerWheelForm } from "@/components/settings/producer-wheel-form";
 import { ProducerChatForm } from "@/components/settings/producer-chat-form";
 import { ProducerPersonalityForm } from "@/components/settings/producer-personality-form";
+import { ProducerLiveForm } from "@/components/settings/producer-live-form";
 import { ProducerPttKeyForm } from "@/components/settings/producer-ptt-key-form";
 import { DEFAULT_LAMP_LOOK, type LampLook } from "@/components/producer/lamp-look";
 import type { WheelStyle } from "@/components/producer/wheel-style";
@@ -156,6 +157,7 @@ export function PreferencesTab({
   producerWheel = null,
   producerChat = null,
   producerPersonality = null,
+  producerLiveTest = false,
   appMode = null,
 }: {
   t: Messages;
@@ -176,6 +178,8 @@ export function PreferencesTab({
   producerChat?: ChatStyle | null;
   /** Her personality, or null when this account has no Producer. */
   producerPersonality?: Personality | null;
+  /** Admins with the assistant: her live voice (GPT-Live) to try, on this device. */
+  producerLiveTest?: boolean;
   /** Light or the full studio; null before picacho-light.sql runs (switch hidden). */
   appMode?: AppMode | null;
 }) {
@@ -243,6 +247,17 @@ export function PreferencesTab({
                 <p className="mt-0.5 text-xs text-atelier-muted">How she talks to you. It never changes what she knows or how carefully she works.</p>
               </div>
               <ProducerPersonalityForm current={producerPersonality} />
+            </div>
+          )}
+          {producerLiveTest && (
+            <div className="space-y-3 border-t border-atelier-rule/60 pt-5">
+              <div>
+                <p className="text-sm font-medium text-atelier-ink">Live voice (test, admins only)</p>
+                <p className="mt-0.5 text-xs text-atelier-muted">
+                  A live speech model talks with you (it hears you while it talks and answers at once) while her own brain works behind it. On this device only. $0.05 a minute while it&apos;s on; it closes after two quiet minutes.
+                </p>
+              </div>
+              <ProducerLiveForm />
             </div>
           )}
           {producerVoices && (

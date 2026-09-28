@@ -205,6 +205,8 @@ export async function POST(request: NextRequest) {
     pushToTalk?: unknown;
     /** The sheet withdrew the recording before this and sends both together. */
     merged?: unknown;
+    /** Handed over by her live voice (GPT-Live, lib/producer/live.ts): typed words, said aloud by it. */
+    live?: unknown;
   } | null;
   // One recording, or several said in a row while an answer was under way
   // (2026-09-25, "several questions at once"): each is transcribed and they
@@ -220,6 +222,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "That was too long. Keep it under a minute." }, { status: 400 });
   }
   const spoken = spokenParts.length > 0;
+  // Her live voice handed this over (live.ts): it talks; this writes what it says.
+  const live = !spoken && body?.live === true;
   if ((spoken || body?.speak === true) && !isVoiceConfigured()) {
     return NextResponse.json({ error: "Voice isn't set up on this server yet." }, { status: 503 });
   }
@@ -478,6 +482,7 @@ export async function POST(request: NextRequest) {
       focus: body?.focus,
       personality,
       spoken: spoken || speakReplies,
+      live,
       // Nothing they said is dropped (history.ts): what never got an answer
       // comes back with this turn, and a cut-off answer is named — by what
       // they heard when the sheet says, else by how far it got.
@@ -494,7 +499,7 @@ export async function POST(request: NextRequest) {
   // to cut in, and a person answers at once. What she knows (the guide, the
   // web, their account) doesn't depend on it. Only a CHANGE is written
   // (history.ts).
-  const wantEffort: Effort = spoken || speakReplies ? "low" : TOP_LEVEL_EFFORT;
+  const wantEffort: Effort = spoken || speakReplies || live ? "low" : TOP_LEVEL_EFFORT;
   const openingFor = (rs: typeof rows, state: Awaited<ReturnType<typeof noteFor>>) => {
     const stored: StoredMessage[] = rs.map((r) => ({ role: r.role, content: r.content }));
     return [

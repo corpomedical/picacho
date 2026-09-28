@@ -56,6 +56,8 @@ export async function buildStateNote(
     personality?: Personality;
     /** They spoke this message and/or hear the answer read aloud. */
     spoken?: boolean;
+    /** Handed over by her live voice (GPT-Live, live.ts), which says the answer in its own words. */
+    live?: boolean;
     /** Their earlier messages that never got an answer (history.ts unansweredBefore). */
     unanswered?: string[];
     /** The last answer they were shown, when it was cut off part-way (history.ts lastAnswerCut). */
@@ -211,6 +213,12 @@ export async function buildStateNote(
       : a.cutAnswer
         ? `Your last answer was cut off part-way, after: "${clean(a.cutAnswer, 400)}". Don't pick it up again unless they ask.`
         : null,
+    a.live
+      ? // Her live voice (2026-09-29, live.ts): GPT-Live talks with them and
+        // handed this over; it says the answer in its own words, so what it
+        // needs is the substance, short, not a script to read.
+        "They are talking with you out loud through your live voice: a voice model talks with them, handed you this request (their words as it heard them, so allow for a misheard word) and will tell them your answer in its own words. Write just what it should tell them: the facts and the outcome, plain and short, one to four sentences, the most important first. No greeting, acknowledgement, lists, markdown, links or ids. Prepared cards still appear on their screen: say what you prepared."
+      : null,
     a.spoken
       ? // Spoken turns (2026-09-26, operator: "She also sounds ai. I want her
         // to sound human"). Text written to be read still sounds read, even in

@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.144.0",
+    build: 183,
+    date: "2026-09-29",
+    title: "Aly's live voice, for admins to try",
+    items: [
+      "Admins can try Aly's live voice: a live speech model (OpenAI's GPT-Live) talks with you the way ChatGPT's voice does. It hears you while it talks, makes small listening sounds, handles pauses and interruptions, and answers at once, while Aly's own brain (her knowledge of your account and work, her tools, web search and notes) works behind it. It says her answers in its own words.",
+      "Switch it on in Settings → Preferences → Your assistant → Live voice (test), pick one of its 13 voices, then press Talk on the lamp. It's on per device and only for admins while it's tried. The chat shows \"Live voice\" with End, and the subtitles are what it says and what it heard you say.",
+      "It costs $0.05 a minute while it's open (billed by the second), plus her answers as usual, and it closes itself after two minutes with nobody talking.",
+      "Tested with the real service: a spoken question (\"What did I render yesterday? Check my account\") got \"Sure, checking.\" half a second after it ended, then her answer read back naturally once her brain replied.",
+    ],
+  },
+  {
     version: "1.143.0",
     build: 182,
     date: "2026-09-29",
