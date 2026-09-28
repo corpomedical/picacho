@@ -36,6 +36,8 @@ export const TOOL_NAMES = {
   undoSet: "undo_set_change",
   account: "read_account",
   web: "web_search",
+  planAd: "plan_press_ad",
+  readAds: "read_press_ads",
 } as const;
 
 // What voice_control can do (2026-09-25, operator: the mic and speaker stay on
@@ -194,6 +196,38 @@ export const PRODUCER_TOOLS = [
     strict: true,
     input_schema: { type: "object", additionalProperties: false, required: [], properties: {} },
   },
+  {
+    // 2026-09-28 (operator's "All three" for Press Tour, 2026-09-25): an ad
+    // planned from here, through the door's own engine. Planning is free;
+    // the card shows the stills' price and the person presses Paint there.
+    name: TOOL_NAMES.planAd,
+    description:
+      "Plan a Press Tour ad: one of the person's characters as the star, one of their confirmed products as the co-star, 10, 15 or 30 seconds, and an optional goal (a launch, a season, a line they want in it). Planning is free and writes each shot; nothing is painted or charged. The person gets a card showing the price of painting the stills, and presses Paint on the Press Tour page themselves. Use names as the person says them; pass null to use their first character or product. If it isn't open to them, or a name doesn't match, the result says so and lists what they have.",
+    strict: true,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["character", "product", "length_seconds", "goal"],
+      properties: {
+        character: { ...nullableString, description: "The star: a character's name, as the person calls them." },
+        product: { ...nullableString, description: "The co-star: a confirmed product's name." },
+        length_seconds: { anyOf: [{ type: "integer", enum: [10, 15, 30] }, { type: "null" }] },
+        goal: { ...nullableString, description: "What the ad should say or be for, in the person's words. Optional." },
+      },
+    },
+  },
+  {
+    name: TOOL_NAMES.readAds,
+    description:
+      "Read the person's recent Press Tour ads: for each, the product, the length, where it stands (planned, painting, waiting on them, filming, ready, stopped) and, for one that stopped, the reason. Free.",
+    strict: true,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["limit"],
+      properties: { limit: { ...nullableInt, description: "How many ads, 1-10. Default 5." } },
+    },
+  },
   // Web search (Anthropic's server tool; prices.ts WEB_SEARCH_*): current
   // facts, news, trends, other tools. The API runs it; nothing here does.
   { type: "web_search_20250305", name: TOOL_NAMES.web, max_uses: WEB_SEARCH_MAX_USES },
@@ -205,7 +239,8 @@ export const PRODUCER_TOOLS = [
 export type PreparedSend = {
   id: string;
   label: string;
-  kind: "image" | "video";
+  /** "ad": a Press Tour ad planned by plan_press_ad; its credits are the stills' paint price, and href opens it on the door. */
+  kind: "image" | "video" | "ad";
   characterId: string | null;
   characterName: string | null;
   prompt: string;
@@ -222,7 +257,8 @@ export const MAX_PREPARED_PROMPT = 1500;
 
 /** The composer link that opens a prepared send, filled in and unsent. */
 export function composerHref(p: {
-  kind: "image" | "video";
+  // An "ad" card never reaches here: its href is the Press Tour page (press-tools.ts).
+  kind: PreparedSend["kind"];
   characterId: string | null;
   prompt: string;
   modelId: string | null;

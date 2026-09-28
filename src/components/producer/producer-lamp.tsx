@@ -96,6 +96,8 @@ const W = {
   askWhy: "Ask why",
   openComposer: "Open in composer",
   openInChat: "Open in the chat",
+  openAd: "Open the ad",
+  pressAd: "Press Tour ad · stills",
   total: (n: number) => `Total ${n} credit${n === 1 ? "" : "s"}`,
   credits: (n: number) => `${n} cr`,
   noNotes: "No notes yet. When you tell it something worth remembering, it writes a note here, and you can edit or delete it.",
@@ -1659,7 +1661,7 @@ function Cards({ cards, onOpen }: { cards: PreparedSend[]; onOpen: () => void })
             <div className="text-[14px] font-semibold leading-snug">{c.label}</div>
             <div className="mt-0.5 text-[12.5px] leading-snug text-atelier-muted">
               {[
-                c.kind === "video" ? c.modelName : "Image",
+                c.kind === "video" ? c.modelName : c.kind === "ad" ? W.pressAd : "Image",
                 c.seconds ? `${c.seconds} s` : null,
                 c.characterName ?? null,
               ]
@@ -1671,7 +1673,7 @@ function Cards({ cards, onOpen }: { cards: PreparedSend[]; onOpen: () => void })
               onClick={onOpen}
               className="mt-1.5 inline-block text-[13px] font-semibold text-atelier-accent hover:underline"
             >
-              {inLight ? W.openInChat : W.openComposer} →
+              {c.kind === "ad" ? W.openAd : inLight ? W.openInChat : W.openComposer} →
             </Link>
           </div>
           <span className="flex-none pt-0.5 text-[13px] tabular-nums">{W.credits(c.credits)}</span>

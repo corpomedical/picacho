@@ -199,6 +199,9 @@ export async function runTool(ctx: ToolContext, call: ToolCall): Promise<ToolOut
       return memory(ctx, call);
     case TOOL_NAMES.account:
       return account(ctx, call);
+    case TOOL_NAMES.planAd:
+    case TOOL_NAMES.readAds:
+      return pressTour(ctx, call);
     default:
       return errorResult(call.id, `There is no tool called ${call.name}.`);
   }
@@ -214,6 +217,24 @@ async function account(ctx: ToolContext, call: ToolCall): Promise<ToolOutcome> {
   } catch (err) {
     console.error("producer: read_account failed —", err instanceof Error ? err.message : err);
     return errorResult(call.id, "Their account couldn't be read just now. Say so, and point them to Settings (Overview).");
+  }
+}
+
+// plan_press_ad and read_press_ads (press-tools.ts): the door's engine is
+// loaded when first used, like read_account.
+async function pressTour(ctx: ToolContext, call: ToolCall): Promise<ToolOutcome> {
+  try {
+    const [{ pressToolDeps }, tools] = await Promise.all([import("./press-runtime"), import("./press-tools")]);
+    const deps = await pressToolDeps(ctx.userId);
+    const input = asRecord(call.input);
+    const answer = call.name === TOOL_NAMES.planAd ? await tools.planPressAd(deps, ctx.userId, input) : await tools.readPressAds(deps, ctx.userId, input);
+    return {
+      result: { type: "tool_result", tool_use_id: call.id, content: answer.text, ...(answer.isError ? { is_error: true } : {}) },
+      ...(answer.card ? { card: answer.card } : {}),
+    };
+  } catch (err) {
+    console.error("producer: press tour tool failed —", err instanceof Error ? err.message : err);
+    return errorResult(call.id, "Press Tour couldn't be reached just now. Say so, and point them to the Press Tour page.");
   }
 }
 
@@ -240,6 +261,10 @@ export function toolStatus(name: string): string {
       return "Reading your account";
     case TOOL_NAMES.web:
       return "Searching the web";
+    case TOOL_NAMES.planAd:
+      return "Planning the ad";
+    case TOOL_NAMES.readAds:
+      return "Reading your ads";
     default:
       return "Working";
   }
