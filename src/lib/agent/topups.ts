@@ -14,7 +14,7 @@
 // Charged in euros at the same figures for EU visitors, like the plans and
 // the credit packs (checkout-core.ts startAssistantTopUpCheckout). Bought
 // units are spent only after the month's own allowance is used up, and they
-// don't run out at the end of the month (supabase/pending/producer-aly.sql).
+// don't run out at the end of the month (supabase/applied/2026-09-28/producer-aly.sql).
 // Client-safe: plain data.
 
 export type AssistantTopUp = {

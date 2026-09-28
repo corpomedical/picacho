@@ -7,8 +7,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // reserve_agent_units is record_agent_units with the top-up in the ceiling;
 // settle_assistant_topup takes what the month used above its allowance off
 // the balance once a turn's real cost is written
-// (supabase/pending/producer-aly.sql). Until that file has run, the old
-// function answers and nobody holds a top-up.
+// (supabase/applied/2026-09-28/producer-aly.sql). On a database without that
+// file the old function answers and nobody holds a top-up.
 
 export type Reservation =
   | { ok: true; /** The reservation row, or null when the limit is reached. */ id: string | null; /** Bought units left. */ topUp: number }

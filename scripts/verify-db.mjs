@@ -49,7 +49,7 @@ const COLUMNS = {
     "notify_render_ready", "notify_render_failed", "notify_low_credits", "low_credit_notified_at",
     "default_video_model", "default_aspect_ratio", "default_video_duration", "video_sound",
     "full_name",
-    // Bought assistant units not yet spent (pending/producer-aly.sql).
+    // Bought assistant units not yet spent (applied/2026-09-28/producer-aly.sql).
     "assistant_topup_units",
   ],
   generations: [
@@ -87,7 +87,7 @@ const COLUMNS = {
   generation_reports: ["reason", "details", "source", "created_at"],
   generation_layers: ["generation_id", "z_index"],
   credit_purchases: ["stripe_session_id", "refunded_at"],
-  // Assistant top-ups (pending/producer-aly.sql, 2026-09-28): the webhook
+  // Assistant top-ups (applied/2026-09-28/producer-aly.sql): the webhook
   // answers 500 on every paid top-up until these exist (Stripe keeps
   // retrying), and every reader of the balance fails open to zero.
   assistant_topups: ["user_id", "units", "stripe_session_id", "refunded_at"],
@@ -337,7 +337,7 @@ const PRIVATE_RPCS = [
   // The posts clock's claim (applied/2026-09-26/press-tour-04-social.sql): the service role's alone.
   "claim_scheduled_posts",
   "claim_job_advance",
-  // Assistant top-ups (pending/producer-aly.sql): each moves someone's units.
+  // Assistant top-ups (applied/2026-09-28/producer-aly.sql): each moves someone's units.
   "clawback_assistant_topup",
   "clawback_credit_purchase",
   "create_api_key_capped",

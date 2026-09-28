@@ -9,12 +9,17 @@
 -- routes (api/producer, api/agent/chat), the Stripe webhook (grant + refund),
 -- lib/stripe/checkout-core.ts startAssistantTopUpCheckout.
 --
--- Run it before the push if you can; the code copes either way. Without it:
--- every personality reads as the default and choosing another in Settings
--- says it didn't save; the top-up buttons still open checkout, but the
--- webhook can't record the purchase and answers 500, so Stripe keeps
--- retrying it until this has run (nothing is lost, the units land then).
--- Idempotent: a second paste is harmless.
+-- APPLIED 2026-09-28, after the push of a9fdea6: the first try applied
+-- nothing (most likely the clipboard command carried nothing into the
+-- editor); a true/false check showed all 8 missing, the operator pasted the
+-- statements from chat, and the check below answered 8 × true. Idempotent: a second paste is
+-- harmless.
+--
+-- What the code does without it (as it ran for that window): every
+-- personality reads as the default and choosing another in Settings says it
+-- didn't save; the top-up buttons still open checkout, but the webhook can't
+-- record the purchase and answers 500, so Stripe keeps retrying it until
+-- this has run (nothing is lost, the units land then).
 --
 -- WRITES: only the server, with the service role. A signed-in user can read
 -- their own top-up purchases and nothing else; the balance is a profiles
@@ -221,23 +226,17 @@ grant execute on function public.grant_assistant_topup(uuid, text, int, int, tex
 revoke execute on function public.clawback_assistant_topup(text) from public, anon, authenticated;
 grant execute on function public.clawback_assistant_topup(text) to service_role;
 
--- Check: expected 8 rows, each with found = 1 — the personality column, the
--- balance column, the two tables and the four functions.
-select 'producer_prefs.personality' as thing, count(*) as found
-  from information_schema.columns
- where table_schema = 'public' and table_name = 'producer_prefs' and column_name = 'personality'
-union all
-select 'profiles.assistant_topup_units', count(*)
-  from information_schema.columns
- where table_schema = 'public' and table_name = 'profiles' and column_name = 'assistant_topup_units'
-union all
-select 'table ' || t, count(*)
-  from (values ('assistant_topups'), ('assistant_topup_spend')) v(t)
-  join information_schema.tables it on it.table_schema = 'public' and it.table_name = v.t
- group by t
-union all
-select 'function ' || p.proname, count(*)
-  from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
- where ns.nspname = 'public'
-   and p.proname in ('reserve_agent_units', 'settle_assistant_topup', 'grant_assistant_topup', 'clawback_assistant_topup')
- group by p.proname;
+-- Check: 8 rows, one per thing, each `true` once this has run. Every row is
+-- always there (true or false); the first version grouped its rows, so a
+-- missing table or function simply didn't show, and an empty result read as
+-- "nothing happened" when nothing had.
+select thing, found from (values
+  ('personality column', exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'producer_prefs' and column_name = 'personality')),
+  ('top-up balance column', exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'profiles' and column_name = 'assistant_topup_units')),
+  ('top-ups table', to_regclass('public.assistant_topups') is not null),
+  ('top-up spend table', to_regclass('public.assistant_topup_spend') is not null),
+  ('reserve function', to_regprocedure('public.reserve_agent_units(uuid, timestamptz, integer, integer)') is not null),
+  ('settle function', to_regprocedure('public.settle_assistant_topup(uuid, timestamptz, integer)') is not null),
+  ('grant function', to_regprocedure('public.grant_assistant_topup(uuid, text, integer, integer, text)') is not null),
+  ('refund function', to_regprocedure('public.clawback_assistant_topup(text)') is not null)
+) as t(thing, found);
