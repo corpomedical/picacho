@@ -6,6 +6,7 @@ import {
   setApiAccess,
   setBonusCredits,
   setGenerationFeatured,
+  setUserAppChoices,
   setUserPlan,
   setUserRole,
   setUserStatus,
@@ -25,6 +26,7 @@ import { AdminErrorBanner } from "@/components/admin-error-banner";
 import { DeleteUserButton } from "@/components/delete-user-button";
 import { LocalDate } from "@/components/local-date";
 import { getUserActivity, formatDuration } from "@/lib/admin/activity";
+import { ADMIN_LOOK_LABELS, ADMIN_MODE_LABELS, parseAppLook, parseAppMode } from "@/lib/light/mode";
 
 function timeAgo(dateStr: string) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -58,6 +60,9 @@ export default async function AdminUserDetailPage({
 
   const { data: user } = await supabase.from("profiles").select("*").eq("id", id).single();
   if (!user) notFound();
+  // Picacho Light's two choices (null before its SQL runs, or not chosen yet).
+  const appMode = parseAppMode((user as { app_mode?: unknown }).app_mode);
+  const appLook = parseAppLook((user as { app_look?: unknown }).app_look);
 
   // The assistant (the Producer) for this account: who has it and why
   // (lib/producer/enabled.ts producerAllowed). The grant's column arrives
@@ -402,6 +407,58 @@ export default async function AdminUserDetailPage({
             eliteUnits={PLAN_CHAT_UNIT_LIMITS.elite}
             eliteUnitsUsd={PLAN_CHAT_UNIT_LIMITS.elite * PRODUCER_UNIT_USD}
           />
+
+          {/* Picacho Light: the version and look this person picked (welcome
+              step or Settings), and the admin's way to change them. */}
+          <div className="mt-6 border-t border-neutral-100 pt-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+              Version and look
+            </p>
+            {"app_mode" in user ? (
+              <>
+                <p className="mt-2 text-sm text-neutral-700">
+                  {appMode ? ADMIN_MODE_LABELS[appMode] : "Not chosen yet"} ·{" "}
+                  {appLook ? `${ADMIN_LOOK_LABELS[appLook]} look` : "look set on each device"}
+                </p>
+                <form action={setUserAppChoices} className="mt-2 flex flex-col gap-2">
+                  <input type="hidden" name="user_id" value={user.id} />
+                  <select
+                    name="app_mode"
+                    aria-label="Version"
+                    key={`mode-${appMode ?? "unset"}`}
+                    defaultValue={appMode ?? "unset"}
+                    className="w-full rounded-[10px] border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-400"
+                  >
+                    <option value="light">{ADMIN_MODE_LABELS.light}</option>
+                    <option value="advanced">{ADMIN_MODE_LABELS.advanced}</option>
+                    <option value="unset">Not chosen (ask again)</option>
+                  </select>
+                  <select
+                    name="app_look"
+                    aria-label="Look"
+                    key={`look-${appLook ?? "unset"}`}
+                    defaultValue={appLook ?? "unset"}
+                    className="w-full rounded-[10px] border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-400"
+                  >
+                    <option value="light">{ADMIN_LOOK_LABELS.light}</option>
+                    <option value="dark">{ADMIN_LOOK_LABELS.dark}</option>
+                    <option value="system">{ADMIN_LOOK_LABELS.system}</option>
+                    <option value="unset">Each device decides</option>
+                  </select>
+                  <SubmitButton variant="secondary" size="sm" className="w-full">Save</SubmitButton>
+                </form>
+                <p className="mt-1.5 text-xs text-neutral-400">
+                  The version changes on their next page. A new look reaches each of their devices
+                  the next time they open the app. &quot;Not chosen&quot; shows them the sign-up
+                  choice again.
+                </p>
+              </>
+            ) : (
+              <p className="mt-2 text-xs text-neutral-400">
+                Shows once supabase/pending/picacho-light.sql has run in Supabase.
+              </p>
+            )}
+          </div>
 
           <div className="mt-6 border-t border-neutral-100 pt-4">
             <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Billing</p>

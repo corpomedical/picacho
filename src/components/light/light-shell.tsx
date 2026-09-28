@@ -5,7 +5,7 @@ import Link from "next/link";
 import { createContext, Fragment, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale } from "@/lib/i18n/provider";
-import { LIGHT_HOME, shellRedirect, type AppLook, type AppMode } from "@/lib/light/mode";
+import { ACCOUNT_LOOK_SEEN_KEY, LIGHT_HOME, lookToApply, shellRedirect, type AppLook, type AppMode } from "@/lib/light/mode";
 import { useTheme } from "@/lib/theme/theme-provider";
 import { THEME_STORAGE_KEY } from "@/lib/theme/screening";
 import { saveAppChoices, searchLightTakes } from "@/lib/light/actions";
@@ -508,20 +508,26 @@ export function LightShell({
 }
 
 /**
- * A device that never picked a look takes the one saved on the account (the
- * welcome step or Settings on another device). A device's own pick wins.
+ * Keeps this device's look in step with the one saved on the account
+ * (lookToApply in lib/light/mode.ts has the rule): a device that never
+ * picked takes it, and a CHANGE to it (an admin set it, or the person saved
+ * a new one elsewhere) applies once over the device's own pick.
  */
 export function LookSync({ look }: { look: AppLook | null }) {
   const { setTheme } = useTheme();
   useEffect(() => {
     if (!look) return;
-    let stored: string | null = "unknown";
     try {
-      stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+      const next = lookToApply(
+        look,
+        window.localStorage.getItem(THEME_STORAGE_KEY),
+        window.localStorage.getItem(ACCOUNT_LOOK_SEEN_KEY),
+      );
+      window.localStorage.setItem(ACCOUNT_LOOK_SEEN_KEY, look);
+      if (next) setTheme(next);
     } catch {
       // Storage blocked: leave the look alone.
     }
-    if (stored === null) setTheme(look);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [look]);
   return null;

@@ -57,3 +57,32 @@ export function firstName(fullName: string | null | undefined): string | null {
   const first = (fullName ?? "").trim().split(/\s+/)[0];
   return first ? first : null;
 }
+
+/**
+ * Where a device remembers the account look it last saw, so a change made
+ * somewhere else (an admin, or Settings on another device) reaches it once.
+ */
+export const ACCOUNT_LOOK_SEEN_KEY = "picacho_account_look_seen";
+
+/**
+ * The look this device should switch to now, or null to leave it alone.
+ * A device that never picked a look takes the account's. After that, the
+ * device's own pick wins until the account's look CHANGES (an admin set it,
+ * or the person saved a new one elsewhere): then the new one applies once.
+ * The first time a device sees the account look it only remembers it, so
+ * nobody's screen flips the day this rule ships.
+ */
+export function lookToApply(
+  account: AppLook | null,
+  deviceStored: string | null,
+  lastSeen: string | null,
+): AppLook | null {
+  if (!account) return null;
+  if (deviceStored === null) return account;
+  if (lastSeen === null) return null;
+  return lastSeen === account ? null : account;
+}
+
+/** The two choices in an admin's words ("Studio" is the full studio). */
+export const ADMIN_MODE_LABELS: Record<AppMode, string> = { light: "Picacho Light", advanced: "Studio" };
+export const ADMIN_LOOK_LABELS: Record<AppLook, string> = { light: "Light", dark: "Dark", system: "Same as device" };

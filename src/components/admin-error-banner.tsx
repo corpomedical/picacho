@@ -35,6 +35,8 @@ const KNOWN_ERRORS = new Set<string>([
   "That voice isn't in the list any more.",
   "You can't remove your own admin role.",
   "Invalid plan.",
+  "Pick a version and a look from the lists.",
+  "Picacho Light's columns aren't in the database yet: run supabase/pending/picacho-light.sql first.",
   "This account is billed through Google Play — comping over it would hide a live Google subscription. Have them cancel in the Play Store first, then set the plan.",
   "Bonus credits must be 0 or more.",
   "That's more than 10,000 bonus credits — if you really mean it, do it in two steps.",

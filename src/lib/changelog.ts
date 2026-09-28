@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.134.0",
+    build: 173,
+    date: "2026-09-28",
+    title: "Admin sees and changes each person's Picacho Light or Studio pick and their look",
+    items: [
+      "Admin → Users: every row now says which version the person picked (Picacho Light or Studio, or not chosen yet) and their look (Light, Dark or Same as device), and a new Picacho Light tab lists only the Light accounts.",
+      "Admin → Users → a person: a Version and look row with two lists and Save changes both for them. \"Not chosen\" shows them the sign-up choice again; \"Each device decides\" leaves the look to each device.",
+      "A look an admin sets (or the person saves on another device) now reaches each of their devices once, the next time they open the app, even on a device that had its own pick. Nobody's screen flips on the day this ships.",
+    ],
+  },
+  {
     version: "1.133.0",
     build: 172,
     date: "2026-09-28",

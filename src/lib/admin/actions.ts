@@ -726,6 +726,44 @@ export async function setUserPlan(formData: FormData) {
   revalidatePath("/admin/users");
 }
 
+// Picacho Light for someone else (operator, 2026-09-28: "Add an option on
+// Admin for me to see the users pick between Picacho light and Studio and
+// dark version and the ability to change it for them"). Writes the same two
+// profile columns the person's own welcome step and Settings write
+// (supabase/pending/picacho-light.sql). "unset" clears one: no version =
+// they are asked again on their next visit; no look = each device keeps
+// its own. A new version applies on their next page; a new look reaches each
+// of their devices once, over that device's own pick (lookToApply).
+export async function setUserAppChoices(formData: FormData) {
+  const { admin } = await requireAdmin();
+  const userId = formData.get("user_id") as string;
+  const redirectTo = `/admin/users/${userId}`;
+  const mode = formData.get("app_mode") as string;
+  const look = formData.get("app_look") as string;
+
+  if (!["light", "advanced", "unset"].includes(mode) || !["light", "dark", "system", "unset"].includes(look)) {
+    redirect(`${redirectTo}?error=${encodeURIComponent("Pick a version and a look from the lists.")}`);
+  }
+
+  const { error } = await admin
+    .from("profiles")
+    .update({ app_mode: mode === "unset" ? null : mode, app_look: look === "unset" ? null : look })
+    .eq("id", userId);
+  if (error) {
+    console.error("setUserAppChoices: update failed", error);
+    redirect(
+      `${redirectTo}?error=${encodeURIComponent(
+        /app_mode|app_look/.test(error.message)
+          ? "Picacho Light's columns aren't in the database yet: run supabase/pending/picacho-light.sql first."
+          : error.message,
+      )}`,
+    );
+  }
+
+  revalidatePath(`/admin/users/${userId}`);
+  revalidatePath("/admin/users");
+}
+
 // "Give this user a token" — the bonus balance: credits spent once the plan's
 // monthly ones run out, before bought ones, and gone once spent (a depleting
 // balance since 2026-09-23; checkGenerationAllowance in generations/core.ts).

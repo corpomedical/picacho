@@ -9,6 +9,7 @@ import { AdminErrorBanner, AdminSuccessBanner } from "@/components/admin-error-b
 import { LocalDate } from "@/components/local-date";
 import { getUserActivity, formatDuration } from "@/lib/admin/activity";
 import { cn } from "@/lib/cn";
+import { ADMIN_LOOK_LABELS, ADMIN_MODE_LABELS, parseAppLook, parseAppMode } from "@/lib/light/mode";
 
 const TABS = [
   { id: "all", label: "All" },
@@ -17,6 +18,8 @@ const TABS = [
   { id: "admin", label: "Admins" },
   // Accounts an admin granted the Producer to (the user page's "Assistant" row).
   { id: "assistant", label: "Assistant" },
+  // Accounts on Picacho Light (the simple chat), picked at sign-up or in Settings.
+  { id: "light", label: "Picacho Light" },
 ] as const;
 
 export default async function AdminUsersPage({
@@ -54,8 +57,30 @@ export default async function AdminUsersPage({
   if (activeTab === "suspended") query = query.eq("status", "suspended");
   if (activeTab === "admin") query = query.eq("role", "admin");
   if (activeTab === "assistant") query = query.eq("producer_access", true);
+  if (activeTab === "light") query = query.eq("app_mode", "light");
 
   const { data: users, error } = await query;
+
+  // Each person's Picacho Light version and look, read on their own so the
+  // list still loads if picacho-light.sql hasn't run (the columns are missing
+  // and this read just errors).
+  const choices = new Map<string, string>();
+  if (users && users.length > 0) {
+    const { data: rows } = await supabase
+      .from("profiles")
+      .select("id, app_mode, app_look")
+      .in("id", users.map((u) => u.id));
+    for (const row of (rows ?? []) as { id: string; app_mode?: unknown; app_look?: unknown }[]) {
+      const mode = parseAppMode(row.app_mode);
+      const look = parseAppLook(row.app_look);
+      choices.set(
+        row.id,
+        [mode ? ADMIN_MODE_LABELS[mode] : "version not chosen", look ? `${ADMIN_LOOK_LABELS[look]} look` : null]
+          .filter(Boolean)
+          .join(" · "),
+      );
+    }
+  }
 
   // Sign-in times, session length and live status, read from auth.users /
   // auth.sessions in one round trip for the whole page (see lib/admin/
@@ -104,7 +129,11 @@ export default async function AdminUsersPage({
       </div>
 
       <div className="mt-4 overflow-hidden rounded-[18px] border border-neutral-100 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03),0_12px_28px_-12px_rgba(0,0,0,0.06)]">
-        {error && activeTab === "assistant" && /producer_access/.test(error.message) ? (
+        {error && activeTab === "light" && /app_mode/.test(error.message) ? (
+          <p className="p-6 text-sm text-neutral-500">
+            Nobody is on Picacho Light until supabase/pending/picacho-light.sql runs in Supabase.
+          </p>
+        ) : error && activeTab === "assistant" && /producer_access/.test(error.message) ? (
           <p className="p-6 text-sm text-neutral-500">
             Nobody can be granted the assistant until supabase/applied/2026-09-26/producer-access.sql runs in Supabase.
           </p>
@@ -145,6 +174,7 @@ export default async function AdminUsersPage({
                       {PLAN_LABELS[(user.plan ?? "none") as PlanId]}
                       {user.role === "admin" && " · admin"} · joined{" "}
                       <LocalDate date={user.created_at} />
+                      {choices.get(user.id) && ` · ${choices.get(user.id)}`}
                     </p>
                   </Link>
 
