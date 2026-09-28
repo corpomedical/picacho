@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.145.0",
+    build: 184,
+    date: "2026-09-29",
+    title: "Helios Studio stage 2: physics, export for 3D printing, path-traced renders",
+    items: [
+      "Physics (admins, in a set's Studio): a Physics tab makes any object an Active rigid body (falls and collides) or a Passive one (solid, follows its own keyframes), with mass, friction, bounciness and a box or sphere shape. Simulate plays the fall on the timeline from the current frame; Bake to keyframes turns it into ordinary keyframes in one undo, so renders, the Graph Editor and saving keep it; Clear bake puts the old keys back. Astra has a new example: \"Drop three boxes onto the car\".",
+      "File ▸ Export… writes GLB (keeps colours), OBJ or STL (millimetres or metres) at real size, for the selection or the whole scene, with a print check: size in mm, triangles, and whether it's one sealed solid. It says plainly when a model won't print well; the set's block models are separate pieces, imported .glb and photo-built models are the ones to print.",
+      "Render ▸ Path traced still and Path traced animation: the same scene, models and materials traced by the graphics card with bounced light and soft shadows, free, in the browser. The still sharpens as you watch and saves as a PNG (128 samples at 1280×720 took about 70–110 s on an M1); the animation traces the playback range and records a video to save. A device that can't trace says so in the window.",
+    ],
+  },
+  {
     version: "1.144.0",
     build: 183,
     date: "2026-09-29",
