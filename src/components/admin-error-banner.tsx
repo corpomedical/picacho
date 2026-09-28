@@ -51,7 +51,7 @@ const KNOWN_ERRORS = new Set<string>([
   "This render was already refunded by hand — nothing was given twice.",
   "This render took no credits (or already gave them back) — nothing to refund.",
   "Couldn't refund the render — nothing was changed. Details are in the server log.",
-  "Run supabase/pending/admin-activity.sql in Supabase first, then try again.",
+  "Run supabase/applied/2026-09-29/admin-activity.sql in Supabase first, then try again.",
   "A note needs some text (2,000 characters max).",
   "Couldn't save the note. Details are in the server log.",
   "Couldn't reach the render's provider — nothing was changed. Details are in the server log.",

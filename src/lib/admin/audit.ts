@@ -3,7 +3,7 @@
 // the only record of an admin changing someone's plan, credits, role or
 // account was a console.log on bonus credits, so "who gave this person 500
 // credits, and why?" had no answer. Every admin action now writes one line
-// to admin_actions (supabase/pending/admin-activity.sql): who, when, what,
+// to admin_actions (supabase/applied/2026-09-29/admin-activity.sql): who, when, what,
 // to whom, before → after, and the reason when one was asked for.
 //
 // Not "use server": nothing here should be callable over the wire. The

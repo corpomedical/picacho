@@ -21,7 +21,7 @@ describe("every line an admin op returns reaches the page", () => {
     ...[...source.matchAll(/\bno\(\s*'([^']*)'\s*\)/g)].map((m) => m[1]),
     ...[...source.matchAll(/\?\s*"((?:[^"\\]|\\.)*)"\s*:/g)].map((m) => JSON.parse(`"${m[1]}"`)),
     ...[...source.matchAll(/:\s*"((?:[^"\\]|\\.)*)",?\s*\)/g)].map((m) => JSON.parse(`"${m[1]}"`)),
-    "Run supabase/pending/admin-activity.sql in Supabase first, then try again.",
+    "Run supabase/applied/2026-09-29/admin-activity.sql in Supabase first, then try again.",
   ]
     .filter((t) => t.length > 12)
     .filter((t) => !okLines.has(t));

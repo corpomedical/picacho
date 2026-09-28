@@ -23,7 +23,7 @@ export type OpResult = { ok: true; message?: string } | { ok: false; error: stri
 const ok = (message?: string): OpResult => ({ ok: true, message });
 const no = (error: string): OpResult => ({ ok: false, error });
 
-export const RUN_ACTIVITY_SQL = "Run supabase/pending/admin-activity.sql in Supabase first, then try again.";
+export const RUN_ACTIVITY_SQL = "Run supabase/applied/2026-09-29/admin-activity.sql in Supabase first, then try again.";
 
 // ---- credits ---------------------------------------------------------------
 
@@ -75,7 +75,7 @@ export async function opAdjustCredits(
 
 // Refund one render by hand: everything it took comes back as bonus
 // credits, once. The whole move is one transaction in admin_refund_render
-// (supabase/pending/admin-activity.sql), which also writes the log line; its
+// (supabase/applied/2026-09-29/admin-activity.sql), which also writes the log line; its
 // unique index is what makes a second press, or a second admin, fail
 // instead of paying twice.
 export async function opRefundRender(

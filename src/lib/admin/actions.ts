@@ -1128,7 +1128,7 @@ export async function adjustBonusCredits(formData: FormData) {
 
 // Refund one render by hand (2026-09-28 admin redesign): everything it took
 // comes back as bonus credits, once. The whole move is one transaction in
-// admin_refund_render (supabase/pending/admin-activity.sql), which also
+// admin_refund_render (supabase/applied/2026-09-29/admin-activity.sql), which also
 // writes the log line; its unique index is what makes a second press, or a
 // second admin, fail instead of paying twice.
 export async function refundRender(formData: FormData) {

@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     return json(request, {
       rows: [],
       notice: isMissingAuditTable(error)
-        ? "The activity log starts once supabase/pending/admin-activity.sql has run in Supabase."
+        ? "The activity log starts once supabase/applied/2026-09-29/admin-activity.sql has run in Supabase."
         : "Couldn't read the log.",
     });
   }

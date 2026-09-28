@@ -108,7 +108,7 @@ export default async function AdminActivityPage({
         {error ? (
           <p className="p-6 text-sm text-atelier-muted">
             {isMissingAuditTable(error)
-              ? "The activity log starts once supabase/pending/admin-activity.sql has run in Supabase. Until then every admin action still works; it just isn't recorded here."
+              ? "The activity log starts once supabase/applied/2026-09-29/admin-activity.sql has run in Supabase. Until then every admin action still works; it just isn't recorded here."
               : `Couldn't load the log: ${error.message}`}
           </p>
         ) : rows.length === 0 ? (

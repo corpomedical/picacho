@@ -170,7 +170,7 @@ export default async function AdminUserDetailPage({
   // The admin redesign's reads (2026-09-28): private notes, this person's
   // lines in the activity log, and which of the listed renders an admin
   // already refunded by hand. Service client: both tables are admin-only
-  // with no policies (supabase/pending/admin-activity.sql). Before that file
+  // with no policies (supabase/applied/2026-09-29/admin-activity.sql). Before that file
   // runs they answer an error, and the cards say so.
   const serviceClient = createAdminClient();
   const generationIds = (generations ?? []).map((g) => g.id as string);
@@ -759,7 +759,7 @@ export default async function AdminUserDetailPage({
                 </>
               ) : (
                 <p className="mt-3 text-xs text-neutral-500">
-                  Notes start once supabase/pending/admin-activity.sql has run in Supabase.
+                  Notes start once supabase/applied/2026-09-29/admin-activity.sql has run in Supabase.
                 </p>
               )}
             </Card>
@@ -773,7 +773,7 @@ export default async function AdminUserDetailPage({
               </div>
               {!auditReady ? (
                 <p className="mt-3 text-xs text-neutral-500">
-                  Recorded once supabase/pending/admin-activity.sql has run in Supabase.
+                  Recorded once supabase/applied/2026-09-29/admin-activity.sql has run in Supabase.
                 </p>
               ) : changes.length === 0 ? (
                 <p className="mt-3 text-sm text-neutral-500">No admin has changed anything on this account yet.</p>
