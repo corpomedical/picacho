@@ -161,7 +161,7 @@ export const SITE_PAGES: readonly SitePage[] = [
   },
   { area: "app", path: "/app/more", name: "More (phone app)", gate: "all", what: "the phone app's fifth tab: the profile card, Tools, Your work, Helios, the course, Share, Settings." },
   { area: "app", path: "/app/tutorial", name: "Tutorial", gate: "all", what: "a walk-through of the studio (stage, characters, composer, transcript)." },
-  { area: "app", path: "/app/welcome", name: "Welcome (Light or the full studio)", gate: "all", light: true, what: "the choice between Picacho Light and the full studio, and the look; Settings changes both later." },
+  { area: "app", path: "/app/welcome", name: "Welcome (the full studio or Picacho Light)", gate: "all", light: true, what: "the sign-up's choice: the full studio (recommended; lists what it gives free and with a plan) or Picacho Light's simple chat. The look follows the device; Settings changes both later." },
   { area: "app", path: "/app/checkout", name: "Checkout", gate: "all", noOpen: true, what: "the payment step, reached from a plan, pack or top-up button; send them to Plan & billing or Pricing instead." },
   { area: "app", path: "/app/profile", name: "(old address of Settings → Profile)", gate: "all", noOpen: true, what: "redirects to Settings → Profile." },
   { area: "app", path: "/app/usage", name: "(old address of Settings → Plan & billing)", gate: "all", noOpen: true, what: "redirects to Settings → Plan & billing." },

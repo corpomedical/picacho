@@ -1,9 +1,10 @@
 // PICACHO LIGHT (operator, 2026-09-27/28: "I mean a light version for
 // unexperienced users that seek Chat gpt and Gemini experience").
 //
-// Two choices a person makes on the welcome step and can change in Settings:
-// how they create (Light = one chat box, Advanced = the full studio) and
-// which look the app wears. Both live on profiles (supabase/pending/
+// Two choices, both changeable in Settings: how a person creates (Light =
+// one chat box, Advanced = the full studio), picked on the welcome step, and
+// which look the app wears, which the welcome step takes from the device
+// (welcomeLook) since it stopped asking (2026-09-29). Both live on profiles (supabase/pending/
 // picacho-light.sql). Pure and alias-free so the rules are unit-testable.
 
 export type AppMode = "light" | "advanced";
@@ -32,6 +33,16 @@ export function resolveAppMode(read: { error: unknown; mode: unknown }): {
   if (read.error) return { mode: "advanced", needsChoice: false };
   const mode = parseAppMode(read.mode);
   return mode ? { mode, needsChoice: false } : { mode: "advanced", needsChoice: true };
+}
+
+/**
+ * The look saved with the welcome step's choice. The step no longer asks
+ * (operator, 2026-09-29, the choice page with the studio first: "Light or
+ * dark follows your device. You can change it in Settings."): a device that
+ * already picked a look keeps it, anything else follows the device.
+ */
+export function welcomeLook(deviceStored: string | null): AppLook {
+  return parseAppLook(deviceStored) ?? "system";
 }
 
 /** Where Light lives, and the welcome step. */

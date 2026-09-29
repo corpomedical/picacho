@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isScreeningPath, readThemeChoice, resolveDark, THEME_INIT_SCRIPT } from "./screening";
+import { isScreeningPath, isWelcomePath, readThemeChoice, resolveDark, THEME_INIT_SCRIPT } from "./screening";
 
 describe("isScreeningPath", () => {
   it("covers the app and everything under it", () => {
@@ -36,6 +36,14 @@ describe("resolveDark", () => {
     expect(resolveDark("default", false, true)).toBe(true);
   });
 
+  it("lets the welcome step follow the device when nothing was picked", () => {
+    expect(resolveDark("default", true, false, true)).toBe(false);
+    expect(resolveDark("default", true, true, true)).toBe(true);
+    // An explicit choice still wins there.
+    expect(resolveDark("dark", true, false, true)).toBe(true);
+    expect(resolveDark("light", true, true, true)).toBe(false);
+  });
+
   it("honours an explicit choice everywhere", () => {
     for (const screening of [true, false]) {
       for (const osDark of [true, false]) {
@@ -43,6 +51,15 @@ describe("resolveDark", () => {
         expect(resolveDark("dark", screening, osDark)).toBe(true);
       }
     }
+  });
+});
+
+describe("isWelcomePath", () => {
+  it("is the welcome step only", () => {
+    expect(isWelcomePath("/app/welcome")).toBe(true);
+    expect(isWelcomePath("/app")).toBe(false);
+    expect(isWelcomePath("/app/welcome-back")).toBe(false);
+    expect(isWelcomePath(null)).toBe(false);
   });
 });
 
@@ -87,13 +104,13 @@ describe("THEME_INIT_SCRIPT", () => {
   }
 
   it("agrees with resolveDark and isScreeningPath on every combination", () => {
-    for (const pathname of ["/", "/pricing", "/app", "/app/generate"]) {
+    for (const pathname of ["/", "/pricing", "/app", "/app/generate", "/app/welcome"]) {
       for (const stored of [null, "default", "light", "dark", "system"]) {
         for (const osDark of [true, false]) {
           const classes = run(pathname, stored, osDark);
           const screening = isScreeningPath(pathname);
           expect(classes.has("screening")).toBe(screening);
-          expect(classes.has("dark")).toBe(resolveDark(readThemeChoice(stored), screening, osDark));
+          expect(classes.has("dark")).toBe(resolveDark(readThemeChoice(stored), screening, osDark, isWelcomePath(pathname)));
         }
       }
     }

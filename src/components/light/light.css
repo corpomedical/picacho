@@ -266,3 +266,105 @@ html.screening.dark .pl h1.marquee {
   text-transform: none;
   letter-spacing: 0;
 }
+
+/* The welcome step with the studio first (2026-09-29, canvas option 2):
+   the page on the rail's warm grey, two cards, the studio's outlined in
+   ochre. In dark the page sits on the ground so the cards still lift. */
+.pl-welcome {
+  background: var(--pl-rail);
+}
+html.dark .pl-welcome {
+  background: var(--pl-ground);
+}
+.pl-welcome-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 22px;
+  background: var(--pl-card);
+  border: 2px solid var(--pl-card-line);
+}
+@media (min-width: 768px) {
+  .pl-welcome-card {
+    border-radius: 24px;
+  }
+}
+.pl-welcome-pick {
+  border-color: var(--pl-accent);
+  box-shadow: 0 12px 32px rgba(120, 70, 40, 0.12);
+}
+html.dark .pl-welcome-pick {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+.pl-welcome-badge {
+  border-radius: 10px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  background: #a84e24;
+  color: #ffffff;
+}
+/* A real screen of what the card opens, cut to the band that tells. */
+.pl-welcome-shot {
+  height: 170px;
+  padding: 12px 12px 0;
+  background: var(--pl-chip);
+  overflow: hidden;
+}
+@media (min-width: 768px) {
+  .pl-welcome-shot {
+    height: clamp(150px, 24vh, 236px);
+    padding: 18px 18px 0;
+  }
+}
+.pl-welcome-shot-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 10px 10px 0 0;
+  background-color: var(--pl-card);
+  background-image: var(--shot-light);
+  background-repeat: no-repeat;
+  background-size: cover;
+  box-shadow: 0 8px 24px rgba(28, 28, 30, 0.14);
+}
+html.dark .pl-welcome-shot-img {
+  background-image: var(--shot-dark);
+}
+/* The studio's shot runs from the take down to the composer: a phone's
+   taller band shows the take and its face-match plate, a wider screen's
+   short band the composer (cast, engine, length, frame) under the take. */
+.pl-welcome-shot-studio {
+  background-position: center 22%;
+}
+.pl-welcome-shot-chat {
+  background-position: center top;
+}
+@media (min-width: 768px) {
+  .pl-welcome-shot-studio {
+    background-position: center bottom;
+  }
+}
+.pl-welcome-go {
+  border: 0;
+  background: #a84e24;
+  color: #ffffff;
+  cursor: pointer;
+}
+.pl-welcome-go:hover:not(:disabled) {
+  background: #8a3d18;
+}
+.pl-welcome-alt {
+  border: 1.5px solid var(--pl-ink);
+  background: transparent;
+  color: var(--pl-ink);
+  cursor: pointer;
+}
+.pl-welcome-alt:hover:not(:disabled) {
+  background: var(--pl-bubble);
+}
+.pl-welcome-go:disabled,
+.pl-welcome-alt:disabled {
+  cursor: default;
+  opacity: 0.7;
+}

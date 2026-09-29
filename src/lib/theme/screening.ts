@@ -14,6 +14,8 @@
 // pre-hydration script and the provider can never disagree: both are built
 // from the functions below.
 
+import { WELCOME_PATH } from "../light/mode";
+
 /** The routes that wear the Screening Room: the logged-in app. */
 export function isScreeningPath(pathname: string | null | undefined): boolean {
   if (!pathname) return false;
@@ -25,6 +27,17 @@ export function isScreeningPath(pathname: string | null | undefined): boolean {
 export type ThemeChoice = "default" | "light" | "dark" | "system";
 
 /**
+ * The sign-up's welcome step. It no longer asks for a look (operator,
+ * 2026-09-29, the choice page with the studio first: "Light or dark follows
+ * your device"), so there a device that never picked one follows the device
+ * from the first paint, not the app's default dark, which flashed dark
+ * before the step's own switch to the device's look on a light device.
+ */
+export function isWelcomePath(pathname: string | null | undefined): boolean {
+  return pathname === WELCOME_PATH;
+}
+
+/**
  * Whether the page renders dark.
  *
  * Inside the app the Screening Room IS the default: "Default" means dark
@@ -32,11 +45,11 @@ export type ThemeChoice = "default" | "light" | "dark" | "system";
  * look back. Everywhere else "Default" still follows the OS, exactly as
  * before, so marketing pages behave the way they always have.
  */
-export function resolveDark(mode: ThemeChoice, screening: boolean, osDark: boolean): boolean {
+export function resolveDark(mode: ThemeChoice, screening: boolean, osDark: boolean, welcome = false): boolean {
   if (mode === "dark") return true;
   if (mode === "light") return false;
   if (mode === "system") return osDark;
-  return screening || osDark;
+  return (screening && !welcome) || osDark;
 }
 
 /** Anything stored that is not one of the three choices reads as "default". */
@@ -57,11 +70,12 @@ export const THEME_INIT_SCRIPT = `
   try {
     var path = window.location.pathname || "";
     var screening = path === "/app" || path.indexOf("/app/") === 0;
+    var welcome = path === "${WELCOME_PATH}";
     var stored = null;
     try { stored = window.localStorage.getItem("${THEME_STORAGE_KEY}"); } catch (e) {}
     var mode = stored === "light" || stored === "dark" || stored === "system" ? stored : "default";
     var osDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    var isDark = mode === "dark" || (mode === "system" && osDark) || (mode === "default" && (screening || osDark));
+    var isDark = mode === "dark" || (mode === "system" && osDark) || (mode === "default" && ((screening && !welcome) || osDark));
     var root = window.document.documentElement;
     if (screening) root.classList.add("screening");
     if (isDark) root.classList.add("dark");

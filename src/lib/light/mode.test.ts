@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { firstName, LIGHT_DIRECT_HREF, lightChatHref, lightHref, lightView, lookToApply, resolveAppMode, shellRedirect, studioHref } from "./mode";
+import { firstName, LIGHT_DIRECT_HREF, lightChatHref, lightHref, lightView, lookToApply, resolveAppMode, shellRedirect, studioHref, welcomeLook } from "./mode";
 
 describe("Picacho Light mode", () => {
   it("keeps everyone in the full studio, unasked, before the SQL runs", () => {
@@ -26,6 +26,15 @@ describe("Picacho Light mode", () => {
     expect(shellRedirect("/app", "light", false)).toBe("/app/light");
     expect(shellRedirect("/app/settings", "light", false)).toBeNull();
     expect(shellRedirect("/app", "advanced", false)).toBeNull();
+  });
+
+  it("saves the device's own look from the welcome step, else follows the device", () => {
+    expect(welcomeLook(null)).toBe("system");
+    expect(welcomeLook("default")).toBe("system");
+    expect(welcomeLook("garbage")).toBe("system");
+    expect(welcomeLook("light")).toBe("light");
+    expect(welcomeLook("dark")).toBe("dark");
+    expect(welcomeLook("system")).toBe("system");
   });
 
   it("greets by first name, or not at all", () => {
