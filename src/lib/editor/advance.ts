@@ -39,6 +39,8 @@ import { transcribeTwice } from "./transcribe";
 import { extractSpeech, probeClip } from "./work";
 import { mediaUrl } from "../media/url";
 import { effectsOf } from "./effects";
+import { fxOf } from "../effects/job";
+import { runFx } from "../effects/run";
 import { footageIndex, PROJECT_ENTRY, projectDir, readTar, type ProjectManifest } from "./project";
 
 type Admin = SupabaseClient;
@@ -62,6 +64,7 @@ const PROGRESS: Record<Step["kind"], string> = {
   listen: "Listening to your footage",
   start: "Handing the footage to the editor",
   watch: "Editing",
+  fx: "Working on your effect",
   none: "",
 };
 
@@ -88,7 +91,8 @@ export async function advanceEdit(editId: string, deps: AdvanceDeps): Promise<Ad
   let outcome: AdvanceOutcome = "idle";
   try {
     for (;;) {
-      const step = nextStep(row);
+      // An effect from the library runs its own steps (lib/effects/run.ts).
+      const step: Step = fxOf(row.director) ? (row.stage === "analyzing" || row.stage === "directing" ? { kind: "fx" } : { kind: "none" }) : nextStep(row);
       if (step.kind === "none") break;
       const elapsed = now() - started;
       if (elapsed > tickBudget || (isHeavy(step) && elapsed > heavyBudget)) break;
@@ -117,7 +121,7 @@ export async function advanceEdit(editId: string, deps: AdvanceDeps): Promise<Ad
       await save(admin, row.id, patch);
       row = { ...row, ...patch } as EditRow;
       outcome = row.stage === "done" ? "done" : row.stage === "failed" ? "failed" : "advanced";
-      if (row.stage === "done" || row.stage === "failed" || step.kind === "watch") break;
+      if (row.stage === "done" || row.stage === "failed" || step.kind === "watch" || step.kind === "fx") break;
     }
   } finally {
     await admin.from("video_edits").update({ locked_at: null }).eq("id", editId);
@@ -241,6 +245,9 @@ async function runStep(step: Step, row: EditRow, deps: AdvanceDeps, now: () => n
       };
     }
 
+    case "fx":
+      return runFx(row, { admin, now, deliver: deliverOne, derivedUuid });
+
     default:
       return "wait";
   }
@@ -324,7 +331,7 @@ export async function deliverOne(
   admin: Admin,
   row: EditRow,
   generationId: string,
-  o: { title: string; summary: string; aspect: string; seconds: number; bytes: Uint8Array },
+  o: { title: string; summary: string; aspect: string; seconds: number; bytes: Uint8Array; modelId?: string },
 ): Promise<void> {
   const path = `${row.user_id}/${generationId}.mp4`;
   const { error: upErr } = await admin.storage.from("generated-videos").upload(path, o.bytes, { contentType: "video/mp4", upsert: true });
@@ -338,7 +345,7 @@ export async function deliverOne(
     prompt_input: prompt.slice(0, 2000),
     status: "succeeded",
     content_type: "video",
-    model_id: "video-editor",
+    model_id: o.modelId ?? "video-editor",
     result_url: mediaUrl("generated-videos", path),
     credits_used: 0,
     video_duration_seconds: Math.round(o.seconds) || null,
@@ -391,6 +398,7 @@ function customerError(step: Step, err: unknown): string {
   if (err instanceof AgentError) return "The editor couldn't take this edit on. Try again.";
   if (step.kind === "probe" || step.kind === "listen") return "We couldn't read one of your files. Try exporting it as MP4.";
   if (step.kind === "start") return "The editor couldn't be started. Try again in a few minutes.";
+  if (step.kind === "fx") return "Something went wrong adding this effect. Try again.";
   return "Something went wrong making this edit. Try again.";
 }
 

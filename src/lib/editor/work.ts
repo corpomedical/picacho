@@ -60,3 +60,23 @@ export async function extractSpeech(file: string, probe: ProbeResult): Promise<U
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
 }
+
+/**
+ * Still frames at the given seconds, as small JPEGs, for Opus to look at
+ * (lib/effects/opus.ts). Each is its own fast seek into the URL; a frame
+ * past the end is left out rather than failing the rest.
+ */
+export async function framesAt(file: string, seconds: number[], width = 640): Promise<Uint8Array[]> {
+  const dir = await mkdtemp(path.join(tmpdir(), "frames-"));
+  try {
+    const out: Uint8Array[] = [];
+    for (const [i, t] of seconds.entries()) {
+      const jpg = path.join(dir, `f${i}.jpg`);
+      await ffmpeg(["-hide_banner", "-loglevel", "error", "-y", "-ss", t.toFixed(2), "-i", file, "-frames:v", "1", "-vf", `scale=${width}:-2`, "-q:v", "4", jpg], 60_000).catch(() => "");
+      if (existsSync(jpg)) out.push(new Uint8Array(await readFile(jpg)));
+    }
+    return out;
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}

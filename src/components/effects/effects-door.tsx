@@ -26,6 +26,7 @@ import {
 } from "@/lib/editor/effects-actions";
 import { EDITOR_BUCKET } from "@/lib/editor/job";
 import { EFFECTS_LIMITS, effectsOn, type EffectKey, type EffectsSpec } from "@/lib/editor/effects";
+import { EffectForm } from "./effects-library";
 
 const WORKING = new Set(["uploading", "analyzing", "directing", "bundling", "rendering"]);
 const POLL_MS = 5000;
@@ -46,18 +47,27 @@ const START: Form = {
 
 type Guard = <T>(work: () => Promise<T>) => Promise<T | null>;
 
+type Tab = "video" | "photo" | "titles";
+
 export function EffectsDoor({
   initialJobs,
   library,
+  pictures = [],
   initialPick = null,
+  initialTab,
 }: {
   initialJobs: EffectsSummary[];
+  /** Their own finished videos. */
   library: LibraryVideo[];
-  /** A History take's "Add effects" door (/app/effects?take=<id>): that video, already picked. */
+  /** Their own finished pictures. */
+  pictures?: LibraryVideo[];
+  /** A History item's "Add an effect" door (/app/effects?take=<id>): that video or picture, already picked. */
   initialPick?: LibraryVideo | null;
+  initialTab?: Tab;
 }) {
   const { t } = useLocale();
   const e = t.effects;
+  const [tab, setTab] = useState<Tab>(initialTab ?? (initialPick?.kind === "image" ? "photo" : "video"));
   const [jobs, setJobs] = useState(initialJobs);
   const [openId, setOpenId] = useState<string | null>(initialJobs[0]?.id ?? null);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -108,21 +118,49 @@ export function EffectsDoor({
           </div>
           <span className="font-mono text-xs text-[#6b6f7a]">{t.directorsCut.testing}</span>
         </div>
-        <NewJob
-          library={library}
-          initialPick={initialPick}
-          guard={guard}
-          onStarted={async (id) => {
-            setOpenId(id);
-            await refresh(id);
-          }}
-        />
+        <div role="tablist" aria-label={e.title} className="flex gap-1 rounded-full bg-[#101116] p-1 ring-1 ring-[rgba(255,255,255,0.08)] sm:self-start">
+          {(["video", "photo", "titles"] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              role="tab"
+              aria-selected={tab === k}
+              onClick={() => setTab(k)}
+              className={`min-h-10 flex-1 rounded-full px-4 text-sm transition-colors sm:flex-none ${tab === k ? "bg-[#e0a468] font-semibold text-[#1a0f07]" : "text-[#c6c9d1] hover:text-[#ecedf1]"}`}
+            >
+              {k === "video" ? e.tabVideo : k === "photo" ? e.tabPhoto : e.tabTitles}
+            </button>
+          ))}
+        </div>
+        {tab === "titles" ? (
+          <NewJob
+            library={library}
+            initialPick={initialPick?.kind === "video" ? initialPick : null}
+            guard={guard}
+            onStarted={async (id) => {
+              setOpenId(id);
+              await refresh(id);
+            }}
+          />
+        ) : (
+          <EffectForm
+            key={tab}
+            kind={tab === "video" ? "shot" : "photo"}
+            library={tab === "video" ? library : pictures}
+            initialPick={initialPick}
+            guard={guard}
+            onStarted={async (id) => {
+              setOpenId(id);
+              await refresh(id);
+            }}
+          />
+        )}
         {error && <p className="text-sm text-[#f0a3a3]">{error}</p>}
       </section>
 
       {jobs.length > 0 && (
-        <section aria-label={e.yourFilms} className="flex flex-col gap-3">
-          <h2 className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">{e.yourFilms}</h2>
+        <section aria-label={e.yourEffects} className="flex flex-col gap-3">
+          <h2 className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">{e.yourEffects}</h2>
           <div className="flex flex-col gap-3">
             {jobs.map((j) => (
               <JobCard
@@ -487,9 +525,11 @@ function JobCard({
         ? d.phase.failed
         : job.stage === "uploading"
           ? d.phase.uploading
-          : job.stage === "analyzing"
-            ? e.reading
-            : e.finishing;
+          : job.fx
+            ? job.progress ?? e.working
+            : job.stage === "analyzing"
+              ? e.reading
+              : e.finishing;
   const activity = detail?.activity ? (detail.activity.code ? d.activity[detail.activity.code] : null) ?? detail.activity.text : null;
 
   return (
@@ -508,12 +548,18 @@ function JobCard({
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[15px] font-medium text-[#ecedf1]">{job.label}</span>
           <span className="mt-1 flex flex-wrap gap-1">
-            {effectsOn(job.spec).map((k) => (
+            {job.fx && (
+              <span className="rounded-full bg-[rgba(224,164,104,0.14)] px-2 py-0.5 font-mono text-[10px] text-[#e0a468]">
+                {job.fx.kind === "shot" ? e.chipOnVideo : e.chipOnPhoto} · {job.fx.effectId ? ((e.shots as Record<string, string>)[job.fx.effectId] ?? job.fx.effectName) : e.chipOwnWords}
+              </span>
+            )}
+            {job.fx && job.fx.tries > 1 && <span className="rounded-full bg-[rgba(255,255,255,0.06)] px-2 py-0.5 font-mono text-[10px] text-[#9aa0ad]">{e.chipSecondTry}</span>}
+            {job.spec && effectsOn(job.spec).map((k) => (
               <span key={k} className="rounded-full bg-[rgba(255,255,255,0.06)] px-2 py-0.5 font-mono text-[10px] text-[#9aa0ad]">
                 {chip(e, k)}
               </span>
             ))}
-            {!job.spec.sound && <span className="rounded-full bg-[rgba(255,255,255,0.06)] px-2 py-0.5 font-mono text-[10px] text-[#9aa0ad]">{e.chipPictureOnly}</span>}
+            {job.spec && !job.spec.sound && <span className="rounded-full bg-[rgba(255,255,255,0.06)] px-2 py-0.5 font-mono text-[10px] text-[#9aa0ad]">{e.chipPictureOnly}</span>}
           </span>
         </span>
         <span className={`shrink-0 font-mono text-[11px] ${job.stage === "failed" ? "text-[#f0a3a3]" : working ? "text-[#e0a468]" : "text-[#9aa0ad]"}`}>{status}</span>
@@ -579,7 +625,7 @@ function JobCard({
               ))}
             </ul>
           )}
-          {job.stage === "done" && <Change editId={job.id} guard={guard} onSent={onChanged} />}
+          {job.stage === "done" && job.spec && <Change editId={job.id} guard={guard} onSent={onChanged} />}
         </div>
       )}
     </article>

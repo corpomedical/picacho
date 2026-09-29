@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.150.0",
+    build: 189,
+    date: "2026-09-29",
+    title: "Effects: put effects into your videos and photos, from a library or in your own words, with Opus 5.5 checking the result",
+    items: [
+      "A new tool, Effects (admins while it's tested, same switch as Director's Cut), with three tabs. On a video: pick one of 29 effects (lightning hands, fire, energy aura, telekinesis, rain, snow, thunderstorm, fog, embers, portal, turn to dust, hologram, day to night, film noir…) or describe any effect in your own words, or both. Opus 5.5 looks at your shot, writes the instruction for the engine, and after the render compares the result with your original; if the effect didn't land or something else changed, it rewrites the instruction and tries once more.",
+      "The engine for effects on a video is FLUX 3 edit, picked by a side-by-side test on LIFT's hands shot: it put strong lightning on her hands and lit her face, face unchanged, for $0.15 in 59 seconds. Kling O3 barely added any, Happy Horse drew lightning on her face, and Gemini refused the clip. Clips up to 15 seconds.",
+      "On a photo: 270 one-tap effects from PixVerse, Wan and Vidu (inflate, cake-ify, dust, liquid metal, earth zoom-out, flying, explosions, wings, 360° spins…), searchable and grouped, with a Popular shelf. Your photo comes back as a 5-second video. Tiles have no preview clips yet.",
+      "Titles & credits: the finishing from LIFT (logo intro, PRESENTS, the title flying into the first shot, a corner badge, end credits, a 9:16 version with your words under the film, a cover picture, sound effects you can switch off), by Opus 5.5 on Director's Cut's engine.",
+      "It's in Tools under \"Edit what you made\", ⌘K, the phone app's Generate lamp, and every History video and picture's Keep going shelf (\"Add an effect\" opens it with that item already picked). Everything lands in History. Nothing new to set up: it runs on Director's Cut's job table, and fal and Opus as they are today.",
+        ],
+  },  {
     version: "1.149.0",
     build: 188,
     date: "2026-09-29",

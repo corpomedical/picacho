@@ -209,7 +209,8 @@ export function songProblem(name: string, probe: ProbeResult | null): string | n
   return null;
 }
 
-export type Step = { kind: "probe" } | { kind: "listen"; clip: number } | { kind: "start" } | { kind: "watch" } | { kind: "none" };
+/** `fx`: an effect from the Effects library (lib/effects/run.ts) — its own steps, one per tick. */
+export type Step = { kind: "probe" } | { kind: "listen"; clip: number } | { kind: "start" } | { kind: "watch" } | { kind: "fx" } | { kind: "none" };
 
 /** The one thing to do next for an edit in this state. */
 export function nextStep(row: Pick<EditRow, "stage" | "clips" | "render">): Step {
@@ -224,7 +225,7 @@ export function nextStep(row: Pick<EditRow, "stage" | "clips" | "render">): Step
 
 /** Steps that can take minutes — only started early in a tick. */
 export function isHeavy(step: Step): boolean {
-  return step.kind === "listen" || step.kind === "start";
+  return step.kind === "listen" || step.kind === "start" || step.kind === "fx";
 }
 
 /** Where a working edit is, as the page's step list reads it. */

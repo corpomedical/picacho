@@ -1273,6 +1273,16 @@ export async function submitChainPiece(endpoint: string, body: Record<string, un
   return submitToQueue(endpoint, body, label, requireApiKey());
 }
 
+/**
+ * An effect from the Effects library (lib/effects/catalog.ts, 2026-09-29):
+ * one of the engines it names, with the body it built from that engine's
+ * own schema. The endpoint is checked the same way as a chain piece's.
+ */
+export async function submitEffectJob(endpoint: string, body: Record<string, unknown>): Promise<QueuedJob> {
+  if (!/^[a-z0-9-]+(\/[a-z0-9.\-]+)+$/i.test(endpoint)) throw new Error(`fal.ai (effects) error: not an endpoint: ${endpoint}`);
+  return submitToQueue(endpoint, body, "effects", requireApiKey());
+}
+
 // One status check. Never throws on a job-level failure — a job that failed on
 // fal's side comes back as { state: "failed" } so the caller can record a real
 // error against the generation. Only genuine transport problems throw, because

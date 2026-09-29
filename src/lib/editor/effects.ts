@@ -61,8 +61,10 @@ export function effectsOf(director: unknown): EffectsSpec | null {
   return d.spec as EffectsSpec;
 }
 
+/** Any row of the Effects door: titles-and-credits finishing, or an effect from the library (lib/effects/job.ts). */
 export function isEffectsRow(row: { director?: unknown }): boolean {
-  return effectsOf(row.director) !== null;
+  const d = row.director as { door?: unknown } | null | undefined;
+  return Boolean(d && typeof d === "object" && d.door === EFFECTS_DOOR);
 }
 
 function text(value: unknown, max: number): string {
