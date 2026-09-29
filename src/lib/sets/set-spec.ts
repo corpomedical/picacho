@@ -17,7 +17,7 @@
 //
 // Relative imports only: vitest has no "@/" alias.
 
-import { clearMarks } from "./marks";
+import { clearMarks, trimRepeatsOnMarks } from "./marks";
 import { normaliseGaze, type Gaze } from "./people";
 
 export const SET_SPEC_VERSION = 1 as const;
@@ -306,7 +306,8 @@ export function parseSetSpecText(text: string): NormaliseResult {
   } catch {
     return { ok: false, reason: "not_json" };
   }
-  return normaliseSetSpec(raw);
+  // A new answer from Astra (a build or an edit): its repeats are held to the marks too.
+  return normaliseSetSpec(raw, { fresh: true });
 }
 
 /**
@@ -342,7 +343,14 @@ function fitInstanceBudget(objects: SetObject[], maxInstances: number): boolean 
   return true;
 }
 
-export function normaliseSetSpec(input: unknown): NormaliseResult {
+/**
+ * `fresh`: the set is a new answer from Astra (parseSetSpecText — a build or
+ * an edit), not one read back from the database. Only a fresh answer has a
+ * repeat whose last copy lands on a mark cut back (marks.ts
+ * trimRepeatsOnMarks, stage 8): every set already saved reads back byte for
+ * byte as it was, with the stills and takes made in it.
+ */
+export function normaliseSetSpec(input: unknown, opts: { fresh?: boolean } = {}): NormaliseResult {
   const root = obj(input);
   if (!root) return { ok: false, reason: "not_object" };
   const notes: string[] = [];
@@ -496,6 +504,8 @@ export function normaliseSetSpec(input: unknown): NormaliseResult {
   // A mark inside something built — a car, a desk, a wall — hides the person
   // the page stands there, so it moves to the nearest open floor (marks.ts;
   // the operator's race track opened with the figure inside the car).
+  // A repeat whose last copy lands on a mark is the builder's step too far (marks.ts trimRepeatsOnMarks).
+  if (opts.fresh === true && trimRepeatsOnMarks(objects, marks) > 0) notes.push("repeat_on_mark_trimmed");
   const cleared = clearMarks(marks, objects, bounds);
   if (cleared.moved > 0) notes.push("marks_moved");
   marks.splice(0, marks.length, ...cleared.marks);

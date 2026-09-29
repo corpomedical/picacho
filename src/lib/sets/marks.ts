@@ -228,3 +228,34 @@ export function clearMarks<M extends Pick<SetMark, "x" | "z" | "facingDeg">>(
   });
   return { marks: out, moved, stuck };
 }
+
+/**
+ * A repeated thing whose LAST copy stands on one of the cast's marks, where
+ * its first copy does not, is cut back to the copies before it (Helios
+ * Studio stage 8, 2026-09-29 — operator: "Pushed, keep going."). That is
+ * the builder repeating a wall one step too far: the operator's race track
+ * has two 20 m side walls repeated with an offset of 50 in a set 100 wide,
+ * so the second landed at x −4…0, through the middle of the track, over its
+ * second mark and half its car. A copy in the middle of a row (a fence post,
+ * a lamp) stays, and the mark steps off it as before (clearMarks). Only what
+ * blocks a standing person counts (blockers). Returns how many repeats were
+ * cut. Deterministic; changes `objects` in place.
+ */
+export function trimRepeatsOnMarks(objects: SetObject[], marks: readonly Pick<SetMark, "x" | "z">[]): number {
+  let trimmed = 0;
+  for (let i = 0; i < objects.length; i++) {
+    const o = objects[i];
+    const count = o.repeat?.count ?? 1;
+    if (!o.repeat || count < 2) continue;
+    const off = o.repeat.offset;
+    const onMark = (k: number) => {
+      const copy: SetObject = { ...o, position: [o.position[0] + k * off[0], o.position[1] + k * off[1], o.position[2] + k * off[2]], repeat: null };
+      const list = blockers([copy]);
+      return list.length > 0 && marks.some((mk) => blockerAt([mk.x, mk.z], list) !== null);
+    };
+    if (onMark(0) || !onMark(count - 1)) continue;
+    objects[i] = { ...o, repeat: count - 1 > 1 ? { count: count - 1, offset: off } : null };
+    trimmed++;
+  }
+  return trimmed;
+}
