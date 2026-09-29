@@ -5,6 +5,7 @@ import { getServerMessages } from "@/lib/i18n/server";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { isNativeApp } from "@/lib/native/server";
 import { getSetPage } from "@/lib/sets/data";
+import { readStudioScene } from "@/lib/sets/studio-scene";
 import { finisherCanRun } from "@/lib/sets/finisher";
 import { buildingHintKey } from "@/lib/sets/leaving";
 import { SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_UNAVAILABLE, SET_NOT_FOUND } from "@/lib/sets/messages";
@@ -95,7 +96,18 @@ export default async function SetPage({
   // Helios Studio (2026-09-26): the Blender-style workspace, admins first.
   const studioOn = data.error === null && (data.modelsOn || HELIOS_STUDIO_FOR_ALL);
   if (ready && data.error === null && data.set.spec && studioOn && first(query.studio) === "1") {
-    return <HeliosStudio setId={data.set.id} title={data.set.title} spec={data.set.editedSpec ?? data.set.spec} />;
+    // The scene kept on the account (stage 3): null when none is kept yet,
+    // or the column isn't there (helios-studio-scene.sql not run) — the
+    // Studio then opens from this browser's copy.
+    const savedScene = await readStudioScene(supabase, data.set.id, userData.user.id);
+    return (
+      <HeliosStudio
+        setId={data.set.id}
+        title={data.set.title}
+        spec={data.set.editedSpec ?? data.set.spec}
+        savedScene={savedScene}
+      />
+    );
   }
   if (ready && data.error === null && data.set.spec && first(query.build) === "1") {
     return (

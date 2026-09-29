@@ -14,7 +14,16 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import * as CANNON from "cannon-es";
 import { setElements } from "@/lib/sets/elements";
 
-export type StudioOptions = { setId: string; title: string; spec: any; backHref: string };
+export type StudioOptions = {
+  setId: string;
+  title: string;
+  spec: any;
+  backHref: string;
+  /** The scene kept on the account (stage 3), or null. */
+  savedScene?: any;
+  /** Keeps the scene on the account; answers { error: null } when it did. */
+  saveScene?: (scene: unknown) => Promise<{ error: string | null }>;
+};
 
 export function startStudio(opts: StudioOptions): () => void {
 const ac = new AbortController();
@@ -1762,17 +1771,57 @@ function openLeavesOut() {
 }
 
 
-// ================= saving (this browser, per set) =================
+// ================= saving (the account, and this browser as the backup) =================
+// Stage 3 (2026-09-29): the scene is kept on the person's account
+// (studio-actions.ts saveStudioScene, location_sets.studio_scene) about 5 s
+// after a change settles, and in this browser at once, as before. Each copy
+// carries when it was written (`at`); the Studio opens from the account's
+// copy unless this browser's is newer (a save that couldn't reach the
+// account), and then sends that one up.
 const SAVE_KEY = "helios.studio." + opts.setId;
 function snapshot() {
   return { v: 1, hour, format, lens: shot.obj.userData.lensMm, skyMode, markers, items: items.filter((i) => i.kind !== "sun" && (i.saveKey || i.addKind)).map((i) => ({ key: i.saveKey || null, add: i.addKind || null, name: i.name, coll: i.coll, t: trs(i.obj), keys: i.keys, interp: i.interp, hidden: i.hidden, noRender: !!i.noRender, color: i.obj.userData.paint?.[0] ? "#" + i.obj.userData.paint[0].color.getHexString() : null, array: i.obj.userData.array || null, mirror: i.obj.userData.mirror || null, track: i.obj.userData.track ? byId(i.obj.userData.track)?.saveKey || null : null, phys: i.phys || null, bake: i.bake || null })) };
 }
-let lastSaved = "";
-function saveNow() { try { const s = JSON.stringify(snapshot()); if (s !== lastSaved) { localStorage.setItem(SAVE_KEY, s); lastSaved = s; } } catch {} }
+let lastSaved = "", lastServer = "", changedAt = 0, serverBusy = false, serverRetryAt = 0;
+const SERVER_DELAY_MS = 5000, SERVER_RETRY_MS = 30000;
+const stamped = (s) => ({ ...JSON.parse(s), at: Date.now() });
+function saveNow() {
+  let s; try { s = JSON.stringify(snapshot()); } catch { return; }
+  if (s !== lastSaved) { lastSaved = s; changedAt = Date.now(); try { localStorage.setItem(SAVE_KEY, JSON.stringify(stamped(s))); } catch {} }
+  saveToAccount(false);
+}
+function saveState(kind, why) {
+  const el = $("saveState"); if (!el) return;
+  el.className = "save" + (kind === "local" ? " local" : "");
+  el.textContent = kind === "account" ? "Saved to your account" : kind === "saving" ? "Saving to your account…" : kind === "browser" ? "Saved in this browser" : "Saved in this browser only — " + (/too big/i.test(why || "") ? "too big for your account" : "couldn't reach your account");
+  el.title = kind === "local" && why && why !== "unreachable" ? why : "";
+}
+/** Sends the latest scene to the account once changes have settled for SERVER_DELAY_MS (`now`: at once, when the Studio closes or the tab hides). */
+function saveToAccount(now) {
+  if (!opts.saveScene || serverBusy || !lastSaved || lastSaved === lastServer) return;
+  const t = Date.now(); if (!now && (t - changedAt < SERVER_DELAY_MS || t < serverRetryAt)) return;
+  const s = lastSaved; serverBusy = true; saveState("saving");
+  Promise.resolve().then(() => opts.saveScene(stamped(s))).then((r) => (r && r.error === null ? { ok: true } : { ok: false, why: r && r.error }), () => ({ ok: false })).then((res) => {
+    serverBusy = false;
+    if (res.ok) { lastServer = s; serverRetryAt = 0; saveState(s === lastSaved ? "account" : "saving"); }
+    else { serverRetryAt = Date.now() + SERVER_RETRY_MS; saveState("local", res.why); }
+  });
+}
 const saveTimer = setInterval(saveNow, 2000);
+dOn("visibilitychange", () => { if (document.hidden) { saveNow(); saveToAccount(true); } });
+/** The copy to open from: the account's, unless this browser holds a newer one. */
+function pickSaved() {
+  let local = null; try { local = JSON.parse(localStorage.getItem(SAVE_KEY) || "null"); } catch {}
+  if (!local || local.v !== 1 || !Array.isArray(local.items)) local = null;
+  const acct = opts.savedScene && opts.savedScene.v === 1 && Array.isArray(opts.savedScene.items) ? opts.savedScene : null;
+  if (acct && !(local && typeof local.at === "number" && local.at > (acct.at || 0))) return { data: acct, from: "account" };
+  if (local) return { data: local, from: acct ? "newer" : "browser" };
+  return null;
+}
 function restoreSaved() {
-  let data = null; try { data = JSON.parse(localStorage.getItem(SAVE_KEY) || "null"); } catch {}
-  if (!data || data.v !== 1) return;
+  const picked = pickSaved();
+  if (!picked) { lastSaved = lastServer = JSON.stringify(snapshot()); saveState(opts.saveScene ? "account" : "browser"); return; }
+  const data = picked.data;
   const keep = new Set(data.items.filter((s) => s.key).map((s) => s.key));
   items.filter((i) => i.saveKey && !keep.has(i.saveKey)).forEach((i) => detachItem(i));
   const made = [];
@@ -1785,7 +1834,11 @@ function restoreSaved() {
   }
   for (const [it, s] of made) if (s.track) { const t = items.find((i) => i.saveKey === s.track); if (t) it.obj.userData.track = t.id; }
   if (typeof data.hour === "number") setHour(data.hour); if (data.format) format = data.format; if (data.lens) setLens(data.lens); if (data.skyMode && data.skyMode !== "simple") setSkyMode(data.skyMode); if (Array.isArray(data.markers)) markers.push(...data.markers);
-  undoStack.length = 0; redoStack.length = 0; evaluate(time); refreshSel(); lastSaved = JSON.stringify(snapshot()); info("Your last session on this set is back · saved in this browser");
+  undoStack.length = 0; redoStack.length = 0; evaluate(time); refreshSel(); lastSaved = JSON.stringify(snapshot());
+  // Opened from the account: that copy is what the account holds. From this browser: sent up once it has settled.
+  if (picked.from === "account" || !opts.saveScene) lastServer = lastSaved; else changedAt = Date.now() - SERVER_DELAY_MS;
+  saveState(!opts.saveScene ? "browser" : picked.from === "account" ? "account" : "saving");
+  info(picked.from === "account" ? "Your last session on this set is back · from your account" : picked.from === "newer" ? "Your last session on this set is back · from this browser, newer than your account's copy" : "Your last session on this set is back · from this browser");
 }
 // ================= wiring =================
 const ACTS = {
@@ -1899,5 +1952,5 @@ raf = requestAnimationFrame(tick);
 
 document.getElementById("sceneTitle").textContent = opts.title;
 document.getElementById("backLink").setAttribute("href", opts.backHref);
-return () => { saveNow(); stopped = true; cancelAnimationFrame(raf); clearInterval(saveTimer); ac.abort(); resizeObs.disconnect(); tc.dispose?.(); orbit.dispose(); renderer.dispose(); offR?.dispose(); ptBusy = false; pt?.dispose(); ptR?.dispose(); };
+return () => { saveNow(); saveToAccount(true); stopped = true; cancelAnimationFrame(raf); clearInterval(saveTimer); ac.abort(); resizeObs.disconnect(); tc.dispose?.(); orbit.dispose(); renderer.dispose(); offR?.dispose(); ptBusy = false; pt?.dispose(); ptR?.dispose(); };
 }

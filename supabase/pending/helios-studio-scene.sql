@@ -1,0 +1,13 @@
+-- Helios Studio stage 3 (2026-09-29): the Studio saves to the account.
+--
+-- location_sets.studio_scene — the set's Helios Studio scene as the Studio
+-- snapshots it (studio-engine.ts snapshot(), version 1): every object's
+-- place, keys, modifiers, physics and bake, the hour, the format, the lens.
+-- Written only by the server (studio-actions.ts saveStudioScene, service
+-- role, owner-checked, 512 KB cap); read by the owner like every other
+-- column of their own set (the table's "Owners read their sets" policy and
+-- its table-level select grant already cover a new column).
+--
+-- The Studio works without it: it reads null and keeps saving in the
+-- browser, saying so in its status bar. Idempotent, like every file here.
+alter table public.location_sets add column if not exists studio_scene jsonb;
