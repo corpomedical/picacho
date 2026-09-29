@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.165.0",
+    build: 204,
+    date: "2026-09-30",
+    title: "Helios Studio: path-traced renders that look like Blender's Cycles",
+    items: [
+      "Render ▸ Path traced still and Path traced animation now clean the grain at the end with Open Image Denoise, the denoiser Blender uses, right on your own device: a quick Draft render comes out clean instead of speckled. Nothing is sent anywhere and it costs nothing.",
+      "Pick Draft, Final or your own number of samples, and ½, 1× or 2× the shot's size. The window shows the sample count, the time left, and an estimate from how fast your device really is; if it would be slow it says so and suggests Draft or ½ size.",
+      "Light like Cycles: the sky you chose in World (simple colour, physical sky or studio) lights the scene, and the sun is a real-size disc with the viewport's strength, so shadows soften with distance. Lamps have soft edges and glass lets light through.",
+      "The shot camera's f-stop and focus distance give depth of field (a tick box turns it off), and the picture is finished with AgX, Blender's look, or ACES like the viewport, with an exposure control.",
+      "Fixed: the sample counter used to run ahead of the picture, and a full-size render could freeze Chrome; it now keeps pace with your graphics card and Stop is immediate.",
+      "In English, Spanish, Portuguese and Italian.",
+    ],
+  },
+  {
     version: "1.164.0",
     build: 203,
     date: "2026-09-29",
