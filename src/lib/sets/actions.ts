@@ -1698,7 +1698,7 @@ async function takeWork(
 // builds and a deleted build was still a build (see the header). The takes
 // shot in it stay in History: they are takes, and deleting one is History's
 // decision. What the set kept about them goes (2026-09-16).
-const CLEAR_SET_WORK = { edited_spec: null, film: null, rig: null } as const;
+const CLEAR_SET_WORK = { edited_spec: null, film: null, rig: null, studio_scene: null } as const;
 
 export async function deleteSet(setId: string): Promise<{ error: string | null }> {
   const supabase = await createClient();
@@ -1771,7 +1771,8 @@ export async function deleteSet(setId: string): Promise<{ error: string | null }
     await removeSetThingModels(admin, userId, setId);
     // What later work kept on the row, cleared like the words and the spec
     // above: the Build editor's working copy (the set itself), the film (the
-    // person's words for each beat, and its camera moves) and the rig. A
+    // person's words for each beat, and its camera moves), the rig and the
+    // Helios Studio scene (every object's name and place, stage 3). A
     // write of its own, so the delete above never names a column that may
     // not exist; a failure is said and the delete stands.
     const { error: workError } = await admin

@@ -48,7 +48,7 @@ describe("deleting a set", () => {
     // stays on the record. None of it is the person's words or the set.
     const kept = ["user_id", "status", "attempts", "failure", "cost_usd"];
     expect([...columns].sort()).toEqual([...new Set([...cleared, ...kept])].sort());
-    expect(work).toEqual(["edited_spec", "film", "rig"]);
+    expect(work).toEqual(["edited_spec", "film", "rig", "studio_scene"]);
   });
 
   it("clears them, and removes the set's shot records, only once the set is marked gone, for this person's set", () => {
