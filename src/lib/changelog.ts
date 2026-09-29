@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.160.0",
+    build: 199,
+    date: "2026-09-29",
+    title: "Sign-up recommends the full studio",
+    items: [
+      "The last step of signing up now recommends the full studio. Its card comes first, marked \"Recommended\", with a real picture of the studio and a list of what it gives: free to start (save your character once and keep their face in every shot, a face-match score on every take, the 16 ready-made scenes, the price shown before anything is made) and with a plan (pick the engine: Seedance, Kling, Veo and more; 19 camera moves and film looks; longer clips with your character saying your lines; several camera angles from one send; Helios).",
+      "The simple chat (Picacho Light) is the second card, with a real picture of a message coming back as a picture. One press on either card saves the choice and opens it.",
+      "The step no longer asks for light or dark: the look follows the device, and Settings still changes it. On a light phone or computer the page no longer shows dark for a moment first.",
+      "In English, Spanish, Portuguese and Italian, on computers, tablets and phones.",
+    ],
+  },
+  {
     version: "1.159.0",
     build: 198,
     date: "2026-09-29",
