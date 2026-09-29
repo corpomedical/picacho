@@ -14,7 +14,7 @@ import { sentenceChunker } from "./sentences";
 import { readSpokenInput, MAX_AUDIO_BYTES } from "./speech";
 import { spotForTool, spotSelector, isSpot } from "./spots";
 import { runNotesCommand, normalizeNotePath, MAX_NOTES, type Note, type NotesStore } from "./notes";
-import { PRODUCER_TOOLS, composerHref, isVoiceAction, readSearchFilters, searchText, validatePreparedSend } from "./tools";
+import { PRODUCER_TOOLS, TOOL_NAMES, composerHref, isVoiceAction, readSearchFilters, searchText, validatePreparedSend } from "./tools";
 import {
   closeTail,
   currentEffort,
@@ -26,6 +26,7 @@ import {
   INTERRUPTED_ANSWER,
 } from "./history";
 import { parseProducerFrames } from "./sse";
+import { DOC_TOOLS } from "../aly-chat/docs";
 import { producerAllowed, PRODUCER_NEEDS_ELITE, PRODUCER_NOT_OPEN, PRODUCER_SUSPENDED } from "./enabled";
 import { VIDEO_MODELS, isDormantVideoModel, requiresReferenceImage } from "../generations/providers/video-models";
 
@@ -139,7 +140,8 @@ describe("tools", () => {
     for (const t of PRODUCER_TOOLS) {
       if (!("input_schema" in t)) continue;
       const schema = t.input_schema as unknown as { required: string[]; properties: Record<string, unknown>; additionalProperties: boolean };
-      expect(t.strict).toBe(true);
+      // search_renders alone is not strict: the API's 16-union limit (below).
+      expect("strict" in t && t.strict).toBe(t.name !== TOOL_NAMES.search);
       expect(schema.additionalProperties).toBe(false);
       expect([...schema.required].sort()).toEqual(Object.keys(schema.properties).sort());
     }
@@ -425,5 +427,41 @@ describe("who may use it", () => {
     expect(producerAllowed({ plan: "elite", plan_status: "past_due" }, true).error).toBe(PRODUCER_NEEDS_ELITE);
     expect(producerAllowed({ plan: "studio" }, true).error).toBe(PRODUCER_NEEDS_ELITE);
     expect(producerAllowed(null, true).error).toBe(PRODUCER_NEEDS_ELITE);
+  });
+});
+
+// The API refuses a request whose strict tools hold more than 16 parameters
+// with union types (type arrays or anyOf): 400 "Schemas contains too many
+// parameters with union types", before the model says a word. Live on
+// 2026-09-29 — the lamp's list reached 22 and the chat page's 18 — so both
+// lists are counted here, the chat page's as the lamp's minus the lamp-only
+// tools (aly-chat/prompt.ts chatTools) plus the document tools.
+describe("strict tool schemas stay under the API's union limit", () => {
+  const UNION_LIMIT = 16;
+  type Schema = { type?: unknown; anyOf?: Schema[]; properties?: Record<string, Schema>; items?: Schema };
+  function unions(schema: Schema | undefined): number {
+    if (!schema || typeof schema !== "object") return 0;
+    let n = Array.isArray(schema.type) || schema.anyOf ? 1 : 0;
+    for (const v of Object.values(schema.properties ?? {})) n += unions(v);
+    n += unions(schema.items);
+    for (const a of schema.anyOf ?? []) n += unions(a);
+    return n;
+  }
+  const strictUnions = (tools: readonly unknown[]) =>
+    (tools as { strict?: boolean; input_schema?: Schema }[])
+      .filter((t) => t.strict)
+      .reduce((sum, t) => sum + unions(t.input_schema), 0);
+  const LAMP_ONLY = new Set<string>([TOOL_NAMES.voice, TOOL_NAMES.readSet, TOOL_NAMES.fixSet, TOOL_NAMES.undoSet]);
+
+  it("the lamp's list", () => {
+    expect(strictUnions(PRODUCER_TOOLS)).toBeLessThanOrEqual(UNION_LIMIT);
+  });
+  it("the chat page's list", () => {
+    const chat = [...(PRODUCER_TOOLS as readonly { name: string }[]).filter((t) => !LAMP_ONLY.has(t.name)), ...DOC_TOOLS];
+    expect(strictUnions(chat)).toBeLessThanOrEqual(UNION_LIMIT);
+  });
+  it("counts the way the API does (the 2026-09-29 lists were 22 and 18)", () => {
+    const allStrict = (PRODUCER_TOOLS as readonly object[]).map((t) => ({ ...t, strict: true }));
+    expect(strictUnions(allStrict)).toBe(22);
   });
 });

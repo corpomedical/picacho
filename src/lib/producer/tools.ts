@@ -59,7 +59,13 @@ export const PRODUCER_TOOLS = [
     name: TOOL_NAMES.search,
     description:
       "Search the person's own renders (newest first). Every filter is optional: pass null for the ones you don't need. `text` matches words in what they asked for and in the score notes. Returns up to `limit` rows (max 20) with id, date, kind, model, length, status, score, credits and the words they asked for.",
-    strict: true,
+    // NOT strict (2026-09-29): the API allows at most 16 union-typed
+    // parameters (type arrays or anyOf) across a request's strict tools, and
+    // this tool alone has 7. With Press Tour's still_engine the lamp reached
+    // 22 and the chat page 18, and every turn came back 400 "Schemas contains
+    // too many parameters with union types". readSearchFilters already treats
+    // every field as untrusted (trimmed, clamped, missing = no filter), so
+    // the grammar adds nothing here. The count is pinned in producer.test.ts.
     input_schema: {
       type: "object",
       additionalProperties: false,
