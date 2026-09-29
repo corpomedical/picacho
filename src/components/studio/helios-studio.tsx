@@ -12,6 +12,10 @@
 // "Photo with your character" (stage 3): Render ▸ sends the shot camera's
 // frame through the set page's own Shoot (shootInSet, one press id per
 // press, studio-press.ts), priced by the same quote the set page shows.
+//
+// Astra for any request (stage 4): the words, the scene summary and the
+// last turns go to askStudioAstra with a fresh press id each; the plan
+// comes back to the engine, which shows it and runs it only on Apply.
 
 import { useEffect, useRef } from "react";
 import { quoteSend } from "@/lib/generations/quote";
@@ -21,9 +25,11 @@ import { readSetPress } from "@/lib/sets/press-actions";
 import type { SetSpec } from "@/lib/sets/set-spec";
 import type { StudioScene } from "@/lib/sets/studio-scene";
 import { saveStudioScene } from "@/lib/sets/studio-actions";
+import { askStudioAstra } from "@/lib/sets/editor-actions";
+import { STUDIO_ASTRA_RESENT } from "@/lib/sets/studio-astra";
 import { stillQuoteInput } from "@/lib/sets/take";
 import type { SetCharacter } from "@/lib/sets/types";
-import { reloadForNewDeploy } from "@/lib/stale-deploy";
+import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { STUDIO_CSS, STUDIO_HTML } from "./studio-markup";
 import { pressStudioStill, type StudioPressPhase, type StudioShootInput } from "./studio-press";
 
@@ -70,6 +76,19 @@ export function HeliosStudio({
             // A dropped connection or a new deploy: the browser copy holds it.
             return { error: "unreachable" };
           }
+        },
+        astra: {
+          unreachable,
+          ask: async (text: string, summary: unknown, turns: { who: "person" | "astra"; text: string }[]) => {
+            try {
+              const out = await askStudioAstra(setId, text, summary, turns, crypto.randomUUID());
+              if (out.error !== null) return { error: "pending" in out && out.pending ? STUDIO_ASTRA_RESENT : out.error };
+              return { error: null, plan: out.plan, answer: out.answer };
+            } catch (err) {
+              if (isStaleDeployError(err)) void reloadForNewDeploy({ delayMs: 1800 });
+              return { error: unreachable };
+            }
+          },
         },
         render: {
           // THE price, from the function the server charges with (set-view.tsx's own).

@@ -16,6 +16,21 @@ import { setElements } from "@/lib/sets/elements";
 import { letterbox } from "@/lib/sets/rig";
 import { SET_DIRECTION_MAX_CHARS } from "@/lib/sets/set-config";
 import { studioShotInput } from "@/lib/sets/studio-shot";
+import {
+  STUDIO_ADD_KINDS,
+  STUDIO_ASTRA_NOTHING,
+  STUDIO_ASTRA_TOP_LINE,
+  STUDIO_FORMATS,
+  STUDIO_TURNS_MAX,
+  besidePosition,
+  knownOf,
+  normaliseStudioSummary,
+  planActs,
+  sizeFactors,
+  toThreeAxes,
+  toThreeSizes,
+  validateStudioPlan,
+} from "@/lib/sets/studio-astra";
 
 export type StudioOptions = {
   setId: string;
@@ -39,6 +54,16 @@ export type StudioOptions = {
     /** What to say when the press itself could not be sent. */
     unreachable: string;
     shoot: (input: any, onPhase: (phase: "sent" | "checking" | "rendering") => void) => Promise<any>;
+  };
+  /**
+   * Astra for any request (stage 4): the Studio's words, scene summary and
+   * last turns go to askStudioAstra (helios-studio.tsx); the answer is a plan
+   * ({ plan, answer }) or { error } in plain words. Absent, only the scripted
+   * examples run.
+   */
+  astra?: {
+    unreachable: string;
+    ask: (text: string, summary: unknown, turns: { who: "person" | "astra"; text: string }[]) => Promise<any>;
   };
 };
 
@@ -785,13 +810,14 @@ function flash(it) {
 function buildAstra() {
   const nb = $("nbody"); nb.innerHTML = `
   <div class="astra">
-    <div class="ahdr"><div class="mark">A</div><div><b>Astra</b><small>GPT-6 · builds and directs this scene</small></div></div>
+    <div class="ahdr"><div class="mark">A</div><div><b>Astra</b><small>GPT-6 · works on this 3D scene</small></div></div>
+    <p class="atop" id="atop">${esc(STUDIO_ASTRA_TOP_LINE)}</p>
     <div class="asees" id="asees"></div>
     <div class="thread" id="thread"></div>
     <div class="exh"><button class="hmenu" id="exToggle">Examples ${examplesOpen ? "▾" : "▸"}</button></div>
     <div class="chips" id="chips" ${examplesOpen ? "" : "hidden"}></div>
     <div class="ainput">
-      <textarea id="astraIn" placeholder="Tell Astra what to build, change or animate…  “this” means the selected object" aria-label="Message to Astra"></textarea>
+      <textarea id="astraIn" placeholder="Tell Astra what to add, move, change or animate in this scene…  “this” means the selected object" aria-label="Message to Astra"></textarea>
       <div class="row"><label class="check"><input type="checkbox" id="askFirst" ${askFirst ? "checked" : ""}> Show the plan before applying</label><button class="pbtn accent" id="astraSend" style="flex:none">Send ⏎</button></div>
     </div>
   </div>`;
@@ -801,7 +827,7 @@ function buildAstra() {
   $("askFirst").onchange = (e) => (askFirst = e.target.checked);
   $("astraSend").onclick = () => sendAstra();
   $("astraIn").addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAstra(); } });
-  if (!astraLog.length) astraLog.push({ who: "a", text: "I can see the whole scene, the selection and the timeline. Ask me to build, move, recolour, light or animate anything. I show every step before I take it, and ⌘Z brings it all back." });
+  if (!astraLog.length) astraLog.push({ who: "a", intro: true, text: "I can see the whole scene, the selection and the timeline. Ask me to add, move, recolour, light or animate anything in it, in your own words. I show every step before I take it, and ⌘Z brings it all back." });
   renderThread(); renderAstraSees();
 }
 function renderAstraSees() {
@@ -814,8 +840,9 @@ function sendAstra(text) {
   astraLog.push({ who: "u", text });
   if (examplesOpen) { examplesOpen = false; $("chips").hidden = true; $("exToggle").textContent = "Examples ▸"; }
   const plan = PLANS.find((p) => p.ask.toLowerCase() === text.toLowerCase().replace(/[.!]+$/, ""));
-  if (!plan) { astraLog.push({ who: "a", text: "In this draft I run the examples (open Examples ▸). In Picacho I read any request, in your words and your language, and turn it into the same visible steps." }); renderThread(); return; }
-  startPlan(plan, {});
+  if (plan) return startPlan(plan, {});
+  if (!opts.astra) { astraLog.push({ who: "a", text: "Here I run the examples only (open Examples ▸). Inside Picacho I read any request, in your words, and turn it into the same visible steps." }); renderThread(); return; }
+  void askModel(text);
 }
 function startPlan(plan, ctx) {
   const r = plan.steps(ctx); const msg = { who: "a", plan, ctx };
@@ -830,7 +857,9 @@ async function runSteps(msg) {
   const outer = txn; txn = []; const touched = new Set();
   try {
     for (let i = 0; i < msg.steps.length; i++) {
-      const r = msg.steps[i].act ? msg.steps[i].act() : null;
+      // One step that breaks never stops the rest, nor leaves the plan half-undoable.
+      let r = null;
+      try { r = msg.steps[i].act ? msg.steps[i].act() : null; } catch (e) { console.warn("[studio] Astra step failed:", e); msg.steps[i].failed = true; r = null; }
       if (r) { touched.add(r); flash(r); }
       msg.at = i + 1; evaluate(time); refreshOutlines(); renderOutliner(); renderThread();
       await wait(320);
@@ -840,7 +869,7 @@ async function runSteps(msg) {
     if (list.length) push({ label: "Astra: " + msg.plan.ask, undo() { [...list].reverse().forEach((c) => c.undo()); }, redo() { list.forEach((c) => c.redo()); } });
     msg.undoIndex = undoStack.length - 1; astraBusy = false;
   }
-  msg.state = "done";
+  msg.state = "done"; renderThread();
   const keep = [...touched].filter((t) => items.includes(t) && t.kind !== "sun");
   if (keep.length) { selection.clear(); keep.forEach((k) => selection.add(k)); active = keep[keep.length - 1]; }
   info(`Astra · ${msg.steps.length} steps applied · ⌘Z undoes them together`);
@@ -851,6 +880,7 @@ function renderThread() {
   astraLog.forEach((m, idx) => {
     if (m.who === "u") { const d = document.createElement("div"); d.className = "msg-u"; d.textContent = m.text; th.appendChild(d); return; }
     const d = document.createElement("div"); d.className = "msg-a"; d.innerHTML = `<span class="who">Astra</span><div>${esc(m.text)}</div>`;
+    if (m.state === "thinking") d.classList.add("thinking");
     if (m.state === "question") {
       const b = document.createElement("div"); b.className = "abtns";
       m.options.forEach((o, j) => { const x = document.createElement("button"); x.className = "pbtn"; x.textContent = o.name; x.dataset.opt = `${idx}:${j}`; b.appendChild(x); });
@@ -861,7 +891,8 @@ function renderThread() {
       const st = document.createElement("div"); st.className = "steps";
       st.innerHTML = m.steps.map((s, i) => {
         const done = m.state === "done" || (m.state === "running" && i < m.at), now = m.state === "running" && i === m.at;
-        return `<div class="step ${done ? "done" : m.state === "dry" ? "skip" : ""}"><span class="st">${done ? "✓" : now ? "…" : m.state === "dry" ? "·" : "○"}</span><span class="tx">${esc(s.tx)}</span></div>`;
+        const skip = m.state === "dry" || s.note;
+        return `<div class="step ${skip ? "skip" : done ? "done" : ""}"><span class="st">${skip ? "·" : s.failed ? "✕" : done ? "✓" : now ? "…" : "○"}</span><span class="tx">${esc(s.tx)}</span></div>`;
       }).join("");
       d.appendChild(st);
       const code = document.createElement("div"); code.className = "code"; code.hidden = !m.showCode;
@@ -887,9 +918,154 @@ function renderThread() {
     else if (t.dataset.cancel) { const m = astraLog[+t.dataset.cancel]; m.state = "cancelled"; m.steps = null; renderThread(); }
     else if (t.dataset.undo) { const m = astraLog[+t.dataset.undo]; if (undoStack.length - 1 === m.undoIndex) { undo(); m.state = "undone"; } else toast("Other changes came after these steps: use Edit ▸ Undo History"); renderThread(); }
     else if (t.dataset.code) { const m = astraLog[+t.dataset.code]; m.showCode = !m.showCode; renderThread(); }
-    else if (t.dataset.opt) { const [i, j] = t.dataset.opt.split(":").map(Number); const m = astraLog[i]; const pick = m.options[j]; m.state = "answered"; m.picked = pick.name; select(pick); startPlan(m.plan, { pick }); }
+    else if (t.dataset.opt) { const [i, j] = t.dataset.opt.split(":").map(Number); const m = astraLog[i]; const pick = m.options[j]; m.state = "answered"; m.picked = pick.name; if (!m.plan) { renderThread(); sendAstra(pick.name); return; } select(pick); startPlan(m.plan, { pick }); }
     else if (t.dataset.next) sendAstra(t.dataset.next);
   };
+}
+
+// ================= Astra, any request (stage 4, 2026-09-29) =================
+// Free words go to Astra (opts.astra → askStudioAstra): she reads the scene
+// summary below and answers with a plan in the same shape as the scripted
+// examples — steps in plain words, Apply / Cancel, one undo for the whole
+// request, ✦ on what she makes. Her answer is checked again here against
+// the scene as it stands when Apply is pressed (validateStudioPlan, the
+// server's own check): an object that has gone since becomes a plain
+// "I can't find …" step, and every number is clamped.
+const sid = (it) => "o" + it.id;
+function sceneSummary() {
+  scene.updateMatrixWorld(true);
+  const objs = items.filter((i) => i.kind !== "sun").map((i) => {
+    const b = new THREE.Box3().setFromObject(i.obj), e = b.isEmpty();
+    const c = e ? i.obj.getWorldPosition(new V3()) : b.getCenter(new V3()), sz = e ? new V3() : b.getSize(new V3());
+    const y = e ? c.y : b.min.y, par = i.obj.parent && i.obj.parent !== scene ? itemOf(i.obj.parent) : null;
+    return { id: sid(i), name: i.name, kind: i.kind === "light" || i.kind === "camera" || i.kind === "empty" ? i.kind : "mesh", at: [c.x, -c.z, y], size: [sz.x, sz.z, sz.y], turn: THREE.MathUtils.radToDeg(i.obj.rotation.y), sel: selection.has(i), hidden: i.hidden, astra: !!i.byAstra, parent: par ? sid(par) : undefined, keys: i.keys.length, physics: i.phys && i.phys.type !== "none" ? i.phys.type : undefined };
+  });
+  const fk = Object.keys(STUDIO_FORMATS).find((k) => STUDIO_FORMATS[k] === format) || "16:9";
+  return normaliseStudioSummary({ frame: frameNo(), hour, sky: skyMode, format: fk, lens: shot.obj.userData.lensMm, camera: sid(shot), aim: shot.obj.userData.track ? "o" + shot.obj.userData.track : null, range: [pStart, pEnd], objects: objs });
+}
+/** The shot camera's right and "towards the camera" on the ground (three.js x, z). */
+function camGround() {
+  const d = new V3(); shot.obj.userData.cam.getWorldDirection(d);
+  const l = Math.hypot(d.x, d.z) || 1, dx = d.x / l, dz = d.z / l;
+  return { right: [-dz, dx], toward: [-dx, -dz] };
+}
+const worldBox = (it) => { it.obj.updateMatrixWorld(true); return new THREE.Box3().setFromObject(it.obj); };
+/** Puts `it` beside `ref` (StudioPlace), base on the ground or on top. */
+function placeBeside(it, ref, pl) {
+  const rb = worldBox(ref), ob = worldBox(it); if (rb.isEmpty()) return;
+  const own = ob.isEmpty() ? [0.5, 0.5, 0.5] : ob.getSize(new V3()).toArray(), g = camGround();
+  const at = besidePosition({ min: rb.min.toArray(), max: rb.max.toArray() }, own, pl.side, pl.gap, g.right, g.toward);
+  const base = ob.isEmpty() ? it.obj.getWorldPosition(new V3()) : new V3((ob.min.x + ob.max.x) / 2, ob.min.y, (ob.min.z + ob.max.z) / 2);
+  it.obj.position.add(new V3(at[0] - base.x, at[1] - base.y, at[2] - base.z));
+}
+/** Moves an object's base centre to (mode "to") or by (mode "by") a Blender-axes vector; null axes keep. */
+function moveBy(it, mode, v) {
+  const t = toThreeAxes(v);
+  if (mode === "by") { it.obj.position.add(new V3(t.x ?? 0, t.y ?? 0, t.z ?? 0)); return; }
+  const b = worldBox(it), base = b.isEmpty() ? it.obj.getWorldPosition(new V3()) : new V3((b.min.x + b.max.x) / 2, b.min.y, (b.min.z + b.max.z) / 2);
+  it.obj.position.add(new V3(t.x === null ? 0 : t.x - base.x, t.y === null ? 0 : t.y - base.y, t.z === null ? 0 : t.z - base.z));
+}
+const DEG2 = Math.PI / 180;
+function codeOf(s) {
+  const { say, op, ...args } = s;
+  const parts = Object.entries(args).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => `${k}=${typeof v === "string" ? `<s>"${v}"</s>` : typeof v === "number" ? `<k>${v}</k>` : JSON.stringify(v)}`);
+  return `helios.ops.${op}(${parts.join(", ")})`;
+}
+function modelSteps(answer) {
+  const plan = validateStudioPlan(answer, knownOf(sceneSummary()));
+  const made = new Map();
+  const get = (ref) => { const it = ref.startsWith("new:") ? made.get(ref.slice(4)) : byId(+ref.slice(1)); return it && items.includes(it) ? it : null; };
+  const all = (refs) => refs.map(get).filter(Boolean);
+  const keep = (it, name) => { if (it && name) made.set(name.toLowerCase(), it); return it; };
+  return plan.steps.map((s) => {
+    const L = () => all(s.targets || []);
+    let act = null;
+    switch (s.op) {
+      case "note": break;
+      case "select": act = () => { const l = L(); if (!l.length) return null; selection.clear(); l.forEach((i) => selection.add(i)); active = l[l.length - 1]; refreshSel(); return active; }; break;
+      case "add": act = () => {
+        let at = null; if (s.at) { const t = toThreeAxes(s.at); at = new V3(t.x ?? cursor3d.position.x, t.y ?? 0, t.z ?? cursor3d.position.z); }
+        const it = addKind(STUDIO_ADD_KINDS[s.kind], at, s.name || undefined); if (!it) return null;
+        if (s.place) { const ref = get(s.place.of); if (ref) placeBeside(it, ref, s.place); }
+        if (s.color) setPaint(it, s.color);
+        return keep(it, s.name);
+      }; break;
+      case "delete": act = () => { const l = L().filter((i) => i !== shot); if (l.length) del(l); return null; }; break;
+      case "duplicate": act = () => {
+        const src = L()[0]; if (!src || src === shot) return null; evaluate(time);
+        const t = s.by ? toThreeAxes(s.by) : null;
+        const it = dupItem(src, t ? new V3(t.x ?? 0, t.y ?? 0, t.z ?? 0) : s.place ? new V3() : undefined, s.name || undefined);
+        if (s.place) { const ref = get(s.place.of); if (ref) placeBeside(it, ref, s.place); }
+        return keep(it, s.name);
+      }; break;
+      case "move": act = () => { let last = null; for (const it of L()) { moveCmd(it, () => { if (s.place) { const ref = get(s.place.of); if (ref && ref !== it) placeBeside(it, ref, s.place); } else if (s.v) moveBy(it, s.mode, s.v); }); last = it; } return last; }; break;
+      case "rotate": act = () => { let last = null; for (const it of L()) { moveCmd(it, (o) => {
+        if (s.face) { const f = get(s.face); if (!f || f === it) return; const fp = f.obj.getWorldPosition(new V3()), p = o.getWorldPosition(new V3()); o.rotation.set(0, Math.atan2(fp.x - p.x, fp.z - p.z), 0); return; }
+        const t = toThreeAxes(s.v), r = [t.x, t.y, t.z].map((v) => (v === null ? null : v * DEG2));
+        ["x", "y", "z"].forEach((k, n) => { if (r[n] === null) return; o.rotation[k] = s.mode === "by" ? o.rotation[k] + r[n] : r[n]; });
+      }); last = it; } return last; }; break;
+      case "scale": act = () => { let last = null; for (const it of L()) { moveCmd(it, (o) => { const t = toThreeSizes(s.v); ["x", "y", "z"].forEach((k) => { if (t[k] === null) return; o.scale[k] = Math.max(0.001, s.mode === "by" ? o.scale[k] * t[k] : t[k]); }); }); last = it; } return last; }; break;
+      case "size": act = () => { let last = null; for (const it of L()) { moveCmd(it, (o) => {
+        const b = worldBox(it); if (b.isEmpty()) return; const sz = b.getSize(new V3()), f = sizeFactors({ x: sz.x, y: sz.y, z: sz.z }, toThreeSizes(s.v)); if (!f) return;
+        const low = b.min.y; o.scale.set(o.scale.x * f.x, o.scale.y * f.y, o.scale.z * f.z); const a = worldBox(it); if (!a.isEmpty()) o.position.y += low - a.min.y;
+      }); last = it; } return last; }; break;
+      case "color": act = () => { let last = null; for (const it of L()) { setPaint(it, s.color); last = it; } return last; }; break;
+      case "material": act = () => { let last = null; for (const it of L()) {
+        const paint = it.obj.userData.paint || []; if (!paint.length) continue;
+        const snap = () => paint.map((m) => [m.metalness, m.roughness, m.emissive.getHex(), m.emissiveIntensity, m.color.getHex()]);
+        const put = (v) => paint.forEach((m, n) => { m.metalness = v[n][0]; m.roughness = v[n][1]; m.emissive.setHex(v[n][2]); m.emissiveIntensity = v[n][3]; m.color.setHex(v[n][4]); });
+        const b = snap();
+        paint.forEach((m) => { if (s.metallic !== null) m.metalness = s.metallic; if (s.roughness !== null) m.roughness = s.roughness; if (s.emission) { m.emissive.set(s.emission); m.emissiveIntensity = Math.max(1, m.emissiveIntensity); } if (s.color) m.color.set(s.color); });
+        const a = snap(); push({ label: "Material", undo() { put(b); }, redo() { put(a); } }); last = it;
+      } return last; }; break;
+      case "hide": case "show": act = () => { let last = null; for (const it of L()) { if (it.hidden !== (s.op === "hide")) setHidden(it, s.op === "hide"); last = it; } return s.op === "show" ? last : null; }; break;
+      case "rename": act = () => { const it = L()[0]; if (!it) return null; rename(it, s.name); return it; }; break;
+      case "parent": act = () => {
+        const par = s.parent ? get(s.parent) : null; if (s.parent && !par) return null;
+        for (const k of L()) {
+          if (!par) { unparentOne(k); continue; }
+          let up = par.obj, loop = false; while (up) { if (up === k.obj) loop = true; up = up.parent; } if (loop || k === par) continue;
+          const was = k.obj.parent, w = trs(k.obj), kk = clone(k.keys); par.obj.attach(k.obj); const now = trs(k.obj); k.keys = [];
+          push({ label: "parent", undo() { was.attach(k.obj); applyTRS(k.obj, w); k.keys = clone(kk); }, redo() { par.obj.attach(k.obj); applyTRS(k.obj, now); k.keys = []; } });
+        }
+        return par;
+      }; break;
+      case "key": act = () => { let last = null; const t = (s.frame - 1) / FPS; for (const it of L()) {
+        keyAtCmd(it, t, () => { if (s.mode && s.v) moveBy(it, s.mode, s.v); });
+        if (s.interp && it.interp !== s.interp) { const b = it.interp, v = s.interp; it.interp = v; push({ label: "interp", undo() { it.interp = b; }, redo() { it.interp = v; } }); }
+        last = it;
+      } evaluate(time); return last; }; break;
+      case "hour": act = () => { setHourCmd(s.hour); return null; }; break;
+      case "sky": act = () => { if (skyMode !== s.sky) setSkyMode(s.sky); return null; }; break;
+      case "lens": act = () => { setLensCmd(s.mm); return shot; }; break;
+      case "format": act = () => { propCmd("Format", () => format, (v) => { format = v; renderVText(); }, STUDIO_FORMATS[s.format]); return shot; }; break;
+      case "aim": act = () => { const t = s.target ? get(s.target) : null; if (s.target && !t) return null; setTrack(shot, t ? t.id : null); return shot; }; break;
+      case "view": act = () => { toggleCam(s.camera); return null; }; break;
+      case "array": act = () => { let last = null; const t = toThreeAxes(s.v); for (const it of L()) { if (it.kind === "camera") continue; const sc = it.obj.scale; setArray(it, s.count > 1 ? { count: s.count, x: (t.x ?? 0) / (sc.x || 1), y: (t.y ?? 0) / (sc.y || 1), z: (t.z ?? 0) / (sc.z || 1) } : undefined); last = it; } return last; }; break;
+      case "mirror": act = () => { let last = null; for (const it of L()) { if (it.kind === "camera") continue; setMirror(it, s.axis ? { axis: s.axis } : undefined); last = it; } return last; }; break;
+      case "physics": act = () => { let last = null; for (const it of L()) { if (it.kind === "camera" || (it.obj.parent && it.obj.parent !== scene)) continue; setPhys(it, { ...physOf(it), type: s.type, ...(s.mass !== null ? { mass: s.mass } : {}) }); last = it; } return last; }; break;
+      case "simulate": act = () => { simulatePhys(time); return null; }; break;
+      case "bake": act = () => { bakePhys(); return null; }; break;
+      case "frame": act = () => { setTime((s.frame - 1) / FPS); return null; }; break;
+      case "range": act = () => { propCmd("Playback range", () => [pStart, pEnd], (v) => { pStart = v[0]; pEnd = v[1]; renderTimeline(); }, [s.start, s.end]); return null; }; break;
+    }
+    return { ...S(s.say, s.op === "note" ? "# skipped" : codeOf(s), act), note: s.op === "note" };
+  });
+}
+async function askModel(text) {
+  const turns = astraLog.slice(0, -1).filter((m) => m.text && !m.intro && m.state !== "thinking").slice(-STUDIO_TURNS_MAX).map((m) => ({ who: m.who === "u" ? "person" : "astra", text: m.text }));
+  const wait1 = { who: "a", text: "Reading the scene and planning…", state: "thinking" };
+  astraLog.push(wait1); astraBusy = true; renderThread();
+  let r;
+  try { r = await opts.astra.ask(text, sceneSummary(), turns); } catch { r = { error: opts.astra.unreachable }; } finally { astraBusy = false; }
+  if (stopped) return;
+  astraLog.splice(astraLog.indexOf(wait1), 1);
+  if (!r || r.error) { astraLog.push({ who: "a", text: (r && r.error) || opts.astra.unreachable, state: "fail" }); renderThread(); return; }
+  const p = r.plan;
+  if (p.question) { astraLog.push({ who: "a", text: p.question, state: "question", options: p.options.map((o) => ({ name: o })) }); renderThread(); return; }
+  const notes = p.steps.filter((s) => s.op === "note").map((s) => s.say);
+  if (!planActs(p)) { astraLog.push({ who: "a", text: [p.reply || STUDIO_ASTRA_NOTHING, ...notes].join(" "), state: "said" }); renderThread(); return; }
+  startPlan({ ask: text, say: p.reply || "Here's my plan.", next: [], steps: () => { const st = modelSteps(r.answer); return st.some((x) => !x.note) ? st : { fail: "The scene changed since I planned this, and nothing in the plan is left to do. Send it again." }; } }, {});
 }
 
 // ================= outliner =================
