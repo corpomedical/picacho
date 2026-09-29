@@ -62,4 +62,23 @@ describe("the page and the finisher ask the one rule (read as source)", () => {
     // "suspended" appears only as the reason it logs, read off the rule's answer.
     expect(finisher).not.toMatch(/status\s*[!=]==\s*"suspended"|setsEligible\(/);
   });
+
+  // The operator, 2026-09-29, opening Helios Studio to everyone: "make sure
+  // users without plans do not get generations". Every Studio door that can
+  // call a model or spend asks setsAccess (which keeps an account on no plan
+  // out, above) before anything else, and refuses on its answer.
+  it.each([
+    ["editor-actions.ts", "askStudioAstra"],
+    ["actions.ts", "shootInSet"],
+    ["studio-actions.ts", "saveStudioScene"],
+    ["studio-actions.ts", "loadStudioScene"],
+  ])("%s's %s asks setsAccess first and stops on its refusal", (file, fn) => {
+    const src = read(file);
+    const start = src.indexOf(`export async function ${fn}(`);
+    expect(start, fn).toBeGreaterThan(-1);
+    const body = src.slice(src.indexOf("{", src.indexOf(")", start) + 1), start + 4000);
+    const firstAwait = body.indexOf("await ");
+    expect(body.slice(firstAwait, firstAwait + 30)).toContain("await setsAccess()");
+    expect(body).toMatch(/if \(access\.error !== null\) return/);
+  });
 });
