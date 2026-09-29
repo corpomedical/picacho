@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.156.0",
+    build: 195,
+    date: "2026-09-29",
+    title: "Helios Studio: what Astra places stays clear of walls and in the camera's view (team first)",
+    items: [
+      "For the team first (admins), like the rest of Helios Studio.",
+      "When Astra adds, moves or copies something, the Studio checks it against the set's walls and the other things in the scene. If it would land inside a wall, or behind one where the shot camera can't see it, it slides to the nearest clear spot: first further the way you asked (further left for \"left of the car\"), then towards the shot camera. It stays on the ground.",
+      "The step says what happened after Apply, for example \"placed 6.5 m towards the shot camera so it isn't inside the wall\". If there's no clear spot nearby, it stays where it was put and the step says it's behind the wall.",
+    ],
+  },
+  {
     version: "1.155.0",
     build: 194,
     date: "2026-09-29",
