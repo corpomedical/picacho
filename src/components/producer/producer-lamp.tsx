@@ -44,6 +44,8 @@ import { writeLampHidden } from "./lamp-place";
 import { lampMood, type LampLook } from "./lamp-look";
 import { LookMark } from "./lamp-looks";
 import { Spotlight, type LitSpot } from "./spotlight";
+import { alyPoint } from "./aly-pointer";
+import { readScreen } from "@/lib/producer/screen";
 import { useHandsFree, warmEars, type SpokenAudio, type UtteranceMeta } from "./use-hands-free";
 import { useLiveVoice } from "./use-live-voice";
 import { liveVoiceName, liveVoiceOn } from "./live-voice-prefs";
@@ -859,6 +861,8 @@ export function ProducerLamp({
           audio: spoken ?? undefined,
           speak,
           page: pathname,
+          // What's on their screen, for read_screen (screen.ts); never what they typed in a field.
+          screen: safeScreen(),
           focus: focus ?? null,
           interrupting: spoken ? interrupting : undefined,
           nearness: last?.nearness ?? null,
@@ -960,6 +964,9 @@ export function ProducerLamp({
           } else if (ev.event === "card") {
             live.cards = [...live.cards, ev.data as unknown as PreparedSend];
             if (!openRef.current) setUnseenCards((n) => n + 1);
+          } else if (ev.event === "navigate" && typeof ev.data.href === "string") {
+            // open_page: the page opens and her light rings the control (aly-pointer.tsx).
+            alyPoint({ href: ev.data.href, words: typeof ev.data.words === "string" ? ev.data.words : null });
           } else if (ev.event === "voice" && typeof ev.data.action === "string") {
             // Told to shut down: after her goodbye the mic and speaker close,
             // and so do the subtitles (operator, 2026-09-28: "When giving Aly
@@ -1327,7 +1334,9 @@ export function ProducerLamp({
   );
 
   return (
-    <>
+    // data-aly-ui: her own interface is never part of the screen she reads
+    // (screen.ts). display: contents, so the lamp's layout is unchanged.
+    <div data-aly-ui="" style={{ display: "contents" }}>
       {/* The lamp: movable, tucks into any edge as a tab, can be hidden
           (movable-lamp.tsx). Voice live with the sheet closed: it glows with
           the sound, and End beside it turns voice off in one tap. */}
@@ -1767,7 +1776,7 @@ export function ProducerLamp({
           </section>
         </>
       )}
-    </>
+    </div>
   );
 }
 
@@ -1988,4 +1997,13 @@ function NotesView({ notes, setNotes }: { notes: Note[]; setNotes: (n: Note[]) =
         ))}
     </div>
   );
+}
+
+/** The screen's reading for this message, or nothing if the page can't be read. */
+function safeScreen(): string | undefined {
+  try {
+    return readScreen();
+  } catch {
+    return undefined;
+  }
 }

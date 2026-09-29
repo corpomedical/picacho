@@ -30,6 +30,9 @@ describe("Aly in Picacho Light", () => {
     expect(rules).toContain('"Change it first" on the card');
     // Everything else she is stays, documents and ads included (Light shows both).
     for (const part of ["web_search", "DOCUMENTS (THE SIDE PANEL)", "MEMORY", "FILES", "plan_press_ad"]) expect(rules).toContain(part);
+    // Taking them to a page (open_page, 2026-09-29) survives Light's rewording too.
+    expect(rules).toContain("FINDING THEIR WAY IN PICACHO");
+    expect(rules).toContain("you never press buttons for them");
     // The chat page's own words are untouched.
     expect(CHAT_RULES).toContain("they press the button on it themselves");
   });

@@ -265,6 +265,41 @@
   }
 }
 
+/* ── Where Aly is pointing (aly-pointer.tsx, 2026-09-29): a ring of her
+   light around the one control she named, on top of the page like .spot,
+   so nothing on the page is restyled. */
+.pointRing {
+  position: fixed;
+  /* Over her subtitles (47), so the ring shows even where they fall. */
+  z-index: 48;
+  pointer-events: none;
+  border-radius: 12px;
+  border: 2px solid rgba(255, 217, 168, 0.95);
+  box-shadow:
+    0 0 0 4px rgba(224, 164, 104, 0.28),
+    0 0 22px 4px rgba(224, 164, 104, 0.55);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pointRing {
+    animation:
+      pointIn 380ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both,
+      pointBreathe 1.6s ease-in-out 380ms infinite;
+  }
+}
+@keyframes pointIn {
+  from {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+@keyframes pointBreathe {
+  50% {
+    box-shadow:
+      0 0 0 7px rgba(224, 164, 104, 0.16),
+      0 0 30px 8px rgba(224, 164, 104, 0.4);
+  }
+}
+
 /* ── Movable lamp, edge tabs, hiding (2026-09-25, operator: "Lets make it
    movable and dismissible. Also, if taken to any edge, its lives as an edge
    tab. Give it nice effects when it transitions to an edge tab"; then "the

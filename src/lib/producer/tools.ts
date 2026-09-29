@@ -38,6 +38,8 @@ export const TOOL_NAMES = {
   web: "web_search",
   planAd: "plan_press_ad",
   readAds: "read_press_ads",
+  openPage: "open_page",
+  readScreen: "read_screen",
 } as const;
 
 // What voice_control can do (2026-09-25, operator: the mic and speaker stay on
@@ -237,6 +239,33 @@ export const PRODUCER_TOOLS = [
       required: ["limit"],
       properties: { limit: { ...nullableInt, description: "How many ads, 1-10. Default 5." } },
     },
+  },
+  {
+    // 2026-09-29 (operator: "Give Aly complete knowledge of the website. Give
+    // her the power to help the user as you do, and switch between pages" →
+    // "Guide + drive"): she opens the page and lights the control; the person
+    // presses it. Plain strings, no unions: the strict tools are near the
+    // API's 16-union limit (producer.test.ts counts them).
+    name: TOOL_NAMES.openPage,
+    description:
+      "Take the person to a page of Picacho — their browser goes there now — and light up one control on it with your light, so they see exactly what to press. path: a path from the SITE MAP, with an [id] filled in from your tools or the app note, and ?tab= where the map lists one; to point at something on the page they're already on, pass that page's path. point_at: the words on the button, tab, link, switch or heading to light, exactly as their screen shows them (in their language: read_screen tells you), or \"\" to light nothing. Free. You never press anything: they do. Public pages (pricing, guides) open outside the app, where you and the lamp aren't. The result says if the page isn't open to them.",
+    strict: true,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["path", "point_at"],
+      properties: {
+        path: { type: "string", description: "A path from the SITE MAP, e.g. /app/settings?tab=billing." },
+        point_at: { type: "string", description: "The control's words as shown on screen, or \"\"." },
+      },
+    },
+  },
+  {
+    name: TOOL_NAMES.readScreen,
+    description:
+      "Read what is on the person's screen right now, as it was when they sent this message: the page's address and title, its headings, the buttons, tabs, links and switches they can see (with on/off and selected), the labels of the fields (never what's typed in them), an open dialog, and short text on the page. Free. Use it when they say \"this\", \"here\" or \"what's this\", when they're stuck on a step, when you need the exact words of a control to point at, or to see where they are before guiding them.",
+    strict: true,
+    input_schema: { type: "object", additionalProperties: false, required: [], properties: {} },
   },
   // Web search (Anthropic's server tool; prices.ts WEB_SEARCH_*): current
   // facts, news, trends, other tools. The API runs it; nothing here does.

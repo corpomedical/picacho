@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.153.0",
+    build: 192,
+    date: "2026-09-29",
+    title: "Aly knows every page of Picacho, takes you there and lights the button",
+    items: [
+      "Aly now knows the whole website: every page of the app, every Settings room, the public pages and (for admins) the admin area, what is on each and who can open it. A test fails if a page is added without telling her, so she can't fall behind.",
+      "She drives: ask \"where do I turn off notifications?\" or \"take me to my invoices\" and she opens the page and rings the exact button, tab or heading with her light, scrolled into the top of the screen so her subtitles never cover it. From her chat page the page opens once her answer is in; from the lamp it opens straight away and she keeps talking.",
+      "She sees your screen: from the lamp she can read what's in front of you (the page, its headings, buttons, tabs, switches and the text on it) when you say \"what's this?\" or get stuck on a step. What you type into fields is never read, and her own lamp and subtitles are left out.",
+      "She guides one step at a time and never presses anything herself: anything that spends, pays, deletes or changes the account stays yours to press (operator's pick: Guide + drive). Pages that aren't open to someone are refused with a plain reason, and a Picacho Light account stays in Light.",
+      "The lamp starts a fresh conversation to pick this up (her notes carry over); on her chat page, new chats have it.",
+    ],
+  },
+  {
     version: "1.152.0",
     build: 191,
     date: "2026-09-29",

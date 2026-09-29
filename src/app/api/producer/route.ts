@@ -80,6 +80,8 @@ import { timingNote, voicePathNote, type TurnTimes } from "@/lib/producer/diag";
 import { parseLiveContext, parseTalk, talkMessages } from "@/lib/producer/live-talk";
 import { isNativeApp } from "@/lib/native/server";
 import { rateLimited } from "@/lib/rate-limit";
+import { cleanScreen } from "@/lib/producer/screen";
+import { pageAccessReader } from "@/lib/producer/page-access";
 
 // The Producer's turn (2026-09-24) — Claude Opus 5.5 with its tools, for
 // Elite (admins first). The chat route (api/agent/chat) is the model for the
@@ -190,6 +192,8 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as {
     message?: unknown;
     page?: unknown;
+    /** The lamp's reading of the screen (screen.ts readScreen), for read_screen. */
+    screen?: unknown;
     focus?: unknown;
     audio?: unknown;
     speak?: unknown;
@@ -244,6 +248,8 @@ export async function POST(request: NextRequest) {
   // They cut in while the last answer was being read aloud: the part they
   // heard, as the sheet played it (absent when nothing was cut off).
   const heard = typeof body?.heard === "string" ? body.heard.slice(0, 4000) : null;
+  const screen = cleanScreen(body?.screen);
+  const pageAccess = pageAccessReader(supabase, user.id);
 
   // Recordings are counted apart from turns: the open mic sends whatever it
   // hears, and a burst of noise must not use up the person's turns. Turns
@@ -1182,7 +1188,10 @@ export async function POST(request: NextRequest) {
                 const id = (c.input as { render_id?: unknown } | null)?.render_id;
                 if (typeof id === "string") send("spot", { spot: "render", id });
               }
-              const o = await runTool({ supabase, admin, userId: user.id, topUpUnits: reserved.topUp }, c);
+              const o = await runTool(
+                { supabase, admin, userId: user.id, topUpUnits: reserved.topUp, screen, pageAccess },
+                c,
+              );
               if (o.card) {
                 cards.push(o.card);
                 send("card", o.card);
@@ -1193,6 +1202,8 @@ export async function POST(request: NextRequest) {
                 setChanges.push(o.setChange);
                 send("set_changed", { setId: o.setChange.setId });
               }
+              // open_page: the browser goes there and her light rings the control (aly-pointer.tsx).
+              if (o.navigate) send("navigate", o.navigate);
               if (o.voice) {
                 // Muting stops the rest of this answer being spoken too; an
                 // ending still plays the goodbye, then the device closes.

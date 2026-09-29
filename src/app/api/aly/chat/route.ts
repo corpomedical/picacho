@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { readProducerGrant } from "@/lib/producer/enabled";
 import { runTool, toolStatus, type ToolCall } from "@/lib/producer/run-tools";
+import { pageAccessReader } from "@/lib/producer/page-access";
 import { citedSources } from "@/lib/producer/sources";
 import { sendableTools, type PreparedSend } from "@/lib/producer/tools";
 import { loadPrefs } from "@/lib/producer/store";
@@ -286,6 +287,7 @@ export async function POST(request: NextRequest) {
 
   const client = new Anthropic();
   const upstream = new AbortController();
+  const pageAccess = pageAccessReader(supabase, user.id);
   const lanes: readonly Brain[] = choice === "all" ? BRAINS : [choice];
 
   const stream = new ReadableStream({
@@ -428,11 +430,13 @@ export async function POST(request: NextRequest) {
               }
               continue;
             }
-            const o = await runTool({ supabase, admin, userId: user.id, topUpUnits: reserved.topUp }, c);
+            const o = await runTool({ supabase, admin, userId: user.id, topUpUnits: reserved.topUp, pageAccess }, c);
             if (o.card) {
               cards.push(o.card);
               send("card", o.card);
             }
+            // open_page: the chat view hands it to the pointer, which opens the page (aly-pointer.tsx).
+            if (o.navigate) send("navigate", o.navigate);
             // In Picacho Light the page starts the card's render the moment it
             // arrives (the person's own send, through runGeneration): Aly is
             // told so, not that it waits for a button.

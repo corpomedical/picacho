@@ -19,6 +19,7 @@ import { RenderCard } from "./render-card";
 import { useLiveVoice } from "@/components/producer/use-live-voice";
 import { liveVoiceName } from "@/components/producer/live-voice-prefs";
 import { ChatMenu } from "./chat-menu";
+import { alyPoint } from "@/components/producer/aly-pointer";
 import { DocGlyph } from "./glyphs";
 import styles from "./aly-chat.module.css";
 
@@ -301,6 +302,7 @@ export function ChatView(props: ChatViewProps) {
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     let gotChat = chatId;
+    let goTo: { href: string; words: string | null } | null = null;
     let answer = "";
     try {
       const res = await fetch("/api/aly/chat", {
@@ -380,6 +382,10 @@ export function ChatView(props: ChatViewProps) {
           case "card":
             patchLast((m) => ({ ...m, renders: [...m.renders, d as unknown as ViewRender] }));
             break;
+          case "navigate":
+            // open_page: go once her answer is in, so leaving the chat never cuts it off.
+            if (typeof d.href === "string") goTo = { href: d.href, words: typeof d.words === "string" ? d.words : null };
+            break;
           case "title":
             setTitle(String(d.title ?? ""));
             window.dispatchEvent(new Event("aly-chats-changed"));
@@ -404,6 +410,7 @@ export function ChatView(props: ChatViewProps) {
       setBusy(false);
       if (gotChat) window.dispatchEvent(new Event("aly-chats-changed"));
       if (gotChat && !props.chatId) router.prefetch(props.light ? props.light.chatHref(gotChat) : `/app/chat/${gotChat}`);
+      if (goTo && !ctrl.signal.aborted) alyPoint(goTo);
     }
     return answer;
   }

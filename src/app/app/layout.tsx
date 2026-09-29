@@ -6,6 +6,7 @@ import { readToolGates } from "@/lib/nav/gates";
 import { countWatch, loadWatchBar } from "@/lib/producer/watch";
 import { DEFAULT_PRODUCER_NAME } from "@/lib/producer/store";
 import { ProducerLamp } from "@/components/producer/producer-lamp";
+import { AlyPointer } from "@/components/producer/aly-pointer";
 import { parseLampLook, type LampLook } from "@/components/producer/lamp-look";
 import { parseWheelStyle, type WheelStyle } from "@/components/producer/wheel-style";
 import { parseChatStyle, type ChatStyle } from "@/components/producer/chat-style";
@@ -172,6 +173,8 @@ export default async function AppLayout({
             </LightShell>
           </Suspense>
         )}
+        {/* Where Aly takes them and what she points at (open_page): her lamp and her chat both use it. */}
+        <AlyPointer />
         {producer && !needsChoice && (
           <ProducerLamp
             name={producer.name}
@@ -269,6 +272,8 @@ export default async function AppLayout({
       />
       {showRatePrompt && <RatePrompt />}
       <DownloadToasts />
+      {/* Where Aly takes them and what she points at (open_page): her lamp and her chat both use it. */}
+      <AlyPointer />
       {producer && (
         <ProducerLamp
           name={producer.name}
