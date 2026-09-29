@@ -109,7 +109,23 @@ export const SITE_PAGES: readonly SitePage[] = [
   { area: "app", path: "/app/layers/[id]", name: "One split (its layers)", gate: "all", what: "one split's stack: change a layer from words, download one or all." },
   { area: "app", path: "/app/notes", name: "Notes", gate: "all", what: "their own free-text notes (ideas, prompts); \"New note\". Not Aly's memory." },
   { area: "app", path: "/app/sets", name: "Helios 3D (Sets)", gate: "setsVisible", what: "describe who, where and what happens; Astra builds the place as a 3D set to keep and reshoot; their sets. Opens on a computer, not in the phone app." },
-  { area: "app", path: "/app/sets/[id]", name: "A Helios set", gate: "setsVisible", what: "one set's workspace: Set · Shoot · Film, Build (fix things by hand), stills, takes, Astra's chat." },
+  {
+    area: "app",
+    path: "/app/sets/[id]",
+    name: "A Helios set",
+    gate: "setsVisible",
+    what: "one set's workspace: Set · Shoot · Film, Build (fix things by hand), stills, takes, Astra's chat; the \"Studio\" button in its top bar opens Helios Studio (?studio=1).",
+    param: {
+      key: "studio",
+      options: [
+        {
+          value: "1",
+          name: "Helios Studio",
+          what: "the Blender-style 3D workspace on this set: objects, keyframes, physics, export and 3D-print check, path-traced renders, Astra in the right sidebar, Render ▸ Photo with your character.",
+        },
+      ],
+    },
+  },
   { area: "app", path: "/app/stage/[id]", name: "Angle stage", gate: "all", what: "one take's 3D stage for new angles of it, from its take page." },
   { area: "app", path: "/app/live", name: "Live", gate: "liveVisible", what: "a take that streams while they keep directing it in typed lines; prepaid 30/60/120 s." },
   { area: "app", path: "/app/press-tour", name: "Press Tour", gate: "pressTourVisible", what: "an ad for their product starring their character: plan (free), paint the stills, film." },
