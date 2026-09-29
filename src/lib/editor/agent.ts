@@ -12,6 +12,8 @@
 
 import Anthropic, { toFile } from "@anthropic-ai/sdk";
 import { changeMessage, jobMessage, type ChangeExtras } from "./agent-prompt";
+import { effectsMessage } from "./effects-prompt";
+import type { EffectsSpec } from "./effects";
 import type { Word } from "./transcribe";
 
 const BETAS = ["managed-agents-2026-04-01"] as const;
@@ -73,7 +75,8 @@ export type SessionView = {
 export type Delivered = {
   /** The result.json this delivery was read from — a later turn must bring a different one. */
   resultId: string;
-  outputs: { file: string; title: string; summary: string; aspect: string; seconds: number; bytes: Uint8Array; project: Uint8Array | null }[];
+  /** `cover`: a cover picture (JPG) the agent saved beside the video, for an Effects job that asked for one. */
+  outputs: { file: string; title: string; summary: string; aspect: string; seconds: number; bytes: Uint8Array; project: Uint8Array | null; cover?: Uint8Array | null }[];
   notes: string;
 };
 
@@ -120,7 +123,15 @@ function budgetCents(): string {
 
 /** Start the edit: transcripts mounted as files, footage fetched by the agent from signed URLs. */
 export async function startSession(
-  job: { editId: string; brief: string; aspectHint: string; lengthHint: number | null; clips: JobClip[] },
+  job: {
+    editId: string;
+    brief: string;
+    aspectHint: string;
+    lengthHint: number | null;
+    clips: JobClip[];
+    /** An Effects job (effects.ts): its film is clip 0, and its first message is the finishing recipe. */
+    effects?: { spec: EffectsSpec; logoUrl: string | null; film: { width: number | null; height: number | null } } | null;
+  },
   client: Anthropic = editorClient(),
 ): Promise<string> {
   const config = agentConfig();
@@ -138,17 +149,26 @@ export async function startSession(
     }
     clips.push({ index: c.index, name: c.name, seconds: c.seconds, hasVideo: c.hasVideo, hasAudio: c.hasAudio, url: c.url, transcript, speech: c.speech });
   }
+  const film = clips[0];
+  const text =
+    job.effects && film
+      ? effectsMessage({
+          spec: job.effects.spec,
+          logoUrl: job.effects.logoUrl,
+          film: { index: film.index, name: film.name, seconds: film.seconds, width: job.effects.film.width, height: job.effects.film.height, hasAudio: film.hasAudio, url: film.url, transcript: film.transcript },
+        })
+      : jobMessage({ brief: job.brief, aspectHint: job.aspectHint, lengthHint: job.lengthHint, clips });
   const session = await client.beta.sessions.create({
     agent: config.agentId,
     environment_id: config.environmentId,
-    title: `Director's Cut ${job.editId}`,
+    title: `${job.effects ? "Effects" : "Director's Cut"} ${job.editId}`,
     metadata: { edit_id: job.editId },
     resources,
     budget: { type: "limit", max_list_cost: { amount: budgetCents(), currency: "USD" } },
     initial_events: [
       {
         type: "user.message",
-        content: [{ type: "text", text: jobMessage({ brief: job.brief, aspectHint: job.aspectHint, lengthHint: job.lengthHint, clips }) }],
+        content: [{ type: "text", text }],
       },
     ],
   });
@@ -233,7 +253,12 @@ export async function collectDelivery(
       ? files.filter((f) => f.filename === o.projectFile).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0]
       : undefined;
     const project = pack ? new Uint8Array(await (await client.beta.files.download(pack.id)).arrayBuffer()) : null;
-    outputs.push({ file: o.file, title: o.title, summary: o.summary, aspect: o.aspect, seconds: o.seconds, bytes, project });
+    // A cover rides along the same way: a missing one costs the cover, never the video.
+    const still = o.coverFile
+      ? files.filter((f) => f.filename === o.coverFile).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0]
+      : undefined;
+    const cover = still ? new Uint8Array(await (await client.beta.files.download(still.id)).arrayBuffer()) : null;
+    outputs.push({ file: o.file, title: o.title, summary: o.summary, aspect: o.aspect, seconds: o.seconds, bytes, project, cover });
   }
   return { resultId: results[0].id, outputs, notes: parsed.notes };
 }
@@ -241,7 +266,7 @@ export async function collectDelivery(
 /** result.json → the delivered list. Tolerant of extra fields; strict about what we store. */
 export function parseResult(
   raw: string,
-): { outputs: (Omit<Delivered["outputs"][number], "bytes" | "project"> & { projectFile: string | null })[]; notes: string } | null {
+): { outputs: (Omit<Delivered["outputs"][number], "bytes" | "project" | "cover"> & { projectFile: string | null; coverFile: string | null })[]; notes: string } | null {
   let body: unknown;
   try {
     body = JSON.parse(raw);
@@ -261,6 +286,7 @@ export function parseResult(
       aspect: o.aspect === "9:16" || o.aspect === "1:1" || o.aspect === "16:9" ? (o.aspect as string) : "16:9",
       seconds: Number.isFinite(Number(o.seconds)) ? Math.max(0, Number(o.seconds)) : 0,
       projectFile: typeof o.project === "string" && /^[\w.-]+\.project\.tar$/.test(o.project) ? o.project : null,
+      coverFile: typeof o.cover === "string" && /^[\w.-]+\.jpe?g$/i.test(o.cover) ? o.cover : null,
     }));
   if (outputs.length === 0) return null;
   return { outputs, notes: typeof b.notes === "string" ? b.notes.slice(0, 1000) : "" };

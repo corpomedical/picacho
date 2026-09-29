@@ -253,6 +253,17 @@ function CutIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function EffectsIcon(props: SVGProps<SVGSVGElement>) {
+  // Effects: a frame with a spark of light over it — titles and finishing.
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3" y="7" width="14" height="13" rx="2" />
+      <path d="M7 16h6" />
+      <path d="M19 2.5v5M16.5 5h5" />
+    </svg>
+  );
+}
+
 function MystiqueIcon(props: SVGProps<SVGSVGElement>) {
   // One performer becoming another: two heads sharing a line.
   return (
@@ -430,6 +441,7 @@ export const TOOL_ICONS: Record<ToolKey, Glyph> = {
   sets: SetsIcon,
   recce: RecceIcon,
   cut: CutIcon,
+  effects: EffectsIcon,
   upscale: UpscaleIcon,
   layers: LayersIcon,
   templates: TemplatesIcon,
@@ -455,6 +467,8 @@ function toolWords(t: Messages, key: ToolKey): { label: string; sub: string } {
       return { label: t.nav.recce, sub: t.recce.headline };
     case "cut":
       return { label: t.nav.directorsCut, sub: t.nav.directorsCutSub };
+    case "effects":
+      return { label: t.nav.effects, sub: t.nav.effectsSub };
     case "upscale":
       return { label: t.nav.upscale, sub: t.moreHub.upscaleSub };
     case "layers":

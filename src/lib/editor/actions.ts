@@ -15,12 +15,13 @@
 //                 changes the project it built) → new versions land in History.
 //   getEdit / listEdits → the bench.
 
-import { after } from "next/server";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
 import { alertEditorOutOfCredit } from "@/lib/push/admin-alerts";
 import { SESSION_EXPIRED_MESSAGE } from "@/lib/generations/user-facing-error";
-import { advanceEdit, deliverOne, derivedUuid, OUT_OF_CREDIT_ERROR } from "./advance";
+import { deliverOne, derivedUuid, OUT_OF_CREDIT_ERROR } from "./advance";
+import { kickEdit } from "./kick";
+import { isEffectsRow } from "./effects";
 import { isBillingError, sendChange, type Activity } from "./agent";
 import type { ChangeExtras } from "./agent-prompt";
 import type { ProbeResult } from "./analyze";
@@ -271,12 +272,14 @@ export async function listEdits(): Promise<{ error: string | null; edits: EditSu
   const access = await editorAccess();
   if (access.error !== null) return { error: access.error, edits: [] };
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const { data: rows, error } = await supabase
     .from("video_edits")
-    .select("id, brief, aspect, target_seconds, stage, progress, error, generation_id, created_at, updated_at, clips, plan")
+    .select("id, brief, aspect, target_seconds, stage, progress, error, generation_id, created_at, updated_at, clips, plan, director")
     .order("created_at", { ascending: false })
-    .limit(20);
+    .limit(40);
   if (error) return { error: "Couldn't load your edits.", edits: [] };
+  // Effects jobs share the table and have their own door (effects.ts); the bench lists edits only.
+  const data = (rows ?? []).filter((r) => !isEffectsRow(r)).slice(0, 20);
   const ids = (data ?? []).map((r) => r.generation_id).filter((v): v is string => typeof v === "string");
   const results = new Map<string, string>();
   if (ids.length) {
@@ -304,7 +307,7 @@ export async function listEdits(): Promise<{ error: string | null; edits: EditSu
 }
 
 /** `editable`: Opus handed over the project, so it opens on the timeline (openProject). */
-export type EditOutput = { title: string; summary: string; aspect: string; seconds: number; turn: number; url: string | null; generationId: string; editable: boolean };
+export type EditOutput = { title: string; summary: string; aspect: string; seconds: number; turn: number; url: string | null; generationId: string; editable: boolean; cover: string | null };
 
 export type EditDetail = {
   id: string;
@@ -367,6 +370,7 @@ export async function getEdit(editId: string): Promise<{ error: string | null; e
           url: urls.get(o.generationId) ?? null,
           generationId: o.generationId,
           editable: Boolean(o.project),
+          cover: o.cover ?? null,
         })),
       notes: row.plan?.history ?? [],
       activity:
@@ -625,11 +629,5 @@ export async function composeTrack(
 }
 
 function kick(editId: string): void {
-  after(async () => {
-    try {
-      await advanceEdit(editId, { admin: createAdminClient(), heavyStartBudgetMs: 5_000, tickBudgetMs: 20_000, onOutOfCredit: alertEditorOutOfCredit });
-    } catch (err) {
-      console.error(`[editor] first tick for ${editId} failed:`, err instanceof Error ? err.message : err);
-    }
-  });
+  kickEdit(editId);
 }

@@ -11,6 +11,7 @@ import { NAV_TOOLS, SEEN_STORAGE_KEY, isToolNew, localDay, parseToolKeys } from 
 import {
   CONTENT_TYPE_EVENT,
   DIRECTORS_CUT_HREF,
+  EFFECTS_HREF,
   GENERATE_HREF,
   GENERATE_VIDEO_HREF,
   LIVE_HREF,
@@ -170,6 +171,17 @@ function CutIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+// Effects' glyph: a frame with a spark of light over it.
+function EffectsIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3" y="7" width="14" height="13" rx="2" />
+      <path d="M7 16h6" />
+      <path d="M19 2.5v5M16.5 5h5" />
+    </svg>
+  );
+}
+
 // The lamp's filament: the Generate bolt, filled, behind the glass.
 function Lamp() {
   return (
@@ -192,7 +204,7 @@ const CLOSE_MS = 200;
 // How long a picked choice is held lit before the lamp goes out.
 const PICK_MS = 300;
 
-type Choice = "video" | "recast" | "pressTour" | "live" | "cut";
+type Choice = "video" | "recast" | "pressTour" | "live" | "cut" | "effects";
 
 const CHOICE_HREF: Record<Choice, string> = {
   video: GENERATE_VIDEO_HREF,
@@ -200,6 +212,7 @@ const CHOICE_HREF: Record<Choice, string> = {
   pressTour: PRESS_TOUR_HREF,
   live: LIVE_HREF,
   cut: DIRECTORS_CUT_HREF,
+  effects: EFFECTS_HREF,
 };
 
 const PRESS_TOUR_TOOL = NAV_TOOLS.find((tool) => tool.key === "pressTour");
@@ -491,6 +504,23 @@ export function NativeTabBar({
                   <span className="pj-txt">
                     <b>{t.nav.directorsCut}</b>
                     <span>{t.nav.directorsCutSub}</span>
+                  </span>
+                </button>
+              )}
+              {/* Effects rides Director's Cut's engine and its gate (lib/nav/tools.ts). */}
+              {cutOn && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={cn("pj-opt", picked === "effects" && "pj-picked")}
+                  onClick={() => choose("effects")}
+                >
+                  <span className="pj-ic">
+                    <EffectsIcon />
+                  </span>
+                  <span className="pj-txt">
+                    <b>{t.nav.effects}</b>
+                    <span>{t.nav.effectsSub}</span>
                   </span>
                 </button>
               )}

@@ -69,8 +69,11 @@ export type SessionRecord = {
 
 /** `song`: the file name of a song sent with that change. */
 export type Note = { role: "editor" | "you"; text: string; song?: string };
-/** `project`: the editable HyperFrames project behind it, when Opus handed one over (project.ts). */
-export type Output = { title: string; summary: string; aspect: string; seconds: number; generationId: string; turn: number; project?: ProjectManifest | null };
+/**
+ * `project`: the editable HyperFrames project behind it, when Opus handed one over (project.ts).
+ * `cover`: the media URL of its cover picture, when an Effects job asked for one (effects.ts).
+ */
+export type Output = { title: string; summary: string; aspect: string; seconds: number; generationId: string; turn: number; project?: ProjectManifest | null; cover?: string | null };
 
 /** A composed music take, kept in the video's project (composer.ts). */
 export type ComposerTake = { id: string; source: string; engine: "eleven" | "ace"; file: string; seconds: number; prompt: string; costUsd: number; createdAt: number };

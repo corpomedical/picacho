@@ -38,6 +38,7 @@ import { whisperCostUsd } from "./prices";
 import { transcribeTwice } from "./transcribe";
 import { extractSpeech, probeClip } from "./work";
 import { mediaUrl } from "../media/url";
+import { effectsOf } from "./effects";
 import { footageIndex, PROJECT_ENTRY, projectDir, readTar, type ProjectManifest } from "./project";
 
 type Admin = SupabaseClient;
@@ -165,8 +166,17 @@ async function runStep(step: Step, row: EditRow, deps: AdvanceDeps, now: () => n
           words: c.words,
         })),
       );
+      // An Effects job (effects.ts): one film, the finishing recipe, and the logo when one was uploaded.
+      const spec = effectsOf(row.director);
+      const effects = spec
+        ? {
+            spec,
+            logoUrl: spec.logo ? await signedUrl(admin, spec.logo.path, FOOTAGE_URL_SECONDS) : null,
+            film: { width: row.clips[0]?.probe?.width || null, height: row.clips[0]?.probe?.height || null },
+          }
+        : null;
       const sessionId = await startSession(
-        { editId: row.id, brief: row.brief, aspectHint: row.aspect, lengthHint: row.target_seconds, clips },
+        { editId: row.id, brief: row.brief, aspectHint: row.aspect, lengthHint: row.target_seconds, clips, effects },
         deps.anthropic,
       );
       const at = now();
@@ -213,7 +223,8 @@ async function runStep(step: Step, row: EditRow, deps: AdvanceDeps, now: () => n
         const generationId = derivedUuid(`video-edit:${row.id}:${session.turn}:${i}`);
         await deliverOne(admin, row, generationId, o);
         const project = o.project ? await keepProject(admin, row, generationId, o.project) : null;
-        outputs.push({ title: o.title, summary: o.summary, aspect: o.aspect, seconds: o.seconds, generationId, turn: session.turn, project });
+        const cover = o.cover ? await keepCover(admin, row, generationId, o.cover) : null;
+        outputs.push({ title: o.title, summary: o.summary, aspect: o.aspect, seconds: o.seconds, generationId, turn: session.turn, project, cover });
       }
       const said = delivery.outputs.map((o) => (o.title ? `${o.title}: ${o.summary}` : o.summary)).filter(Boolean);
       const plan: DeliveryRecord = {
@@ -285,6 +296,25 @@ async function keepProject(admin: Admin, row: EditRow, generationId: string, pac
     return { dir, entry: PROJECT_ENTRY, files: files.map((f) => ({ path: f.path, bytes: f.data.byteLength })) };
   } catch (err) {
     console.error(`[editor] ${row.id} project for ${generationId} not kept:`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/**
+ * An Effects cover picture (effects.ts) into the image bucket, and onto its
+ * video's History row as the poster, so the tile shows it. Best effort: a
+ * cover that can't be kept costs the cover, never the video.
+ */
+async function keepCover(admin: Admin, row: EditRow, generationId: string, jpg: Uint8Array): Promise<string | null> {
+  try {
+    const path = `${row.user_id}/${generationId}-cover.jpg`;
+    const { error } = await admin.storage.from("generated-images").upload(path, jpg, { contentType: "image/jpeg", upsert: true });
+    if (error) throw new Error(error.message);
+    const url = mediaUrl("generated-images", path);
+    await admin.from("generations").update({ poster_url: url }).eq("id", generationId).eq("user_id", row.user_id);
+    return url;
+  } catch (err) {
+    console.error(`[editor] ${row.id} cover for ${generationId} not kept:`, err instanceof Error ? err.message : err);
     return null;
   }
 }

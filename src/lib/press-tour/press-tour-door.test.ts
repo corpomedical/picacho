@@ -103,7 +103,7 @@ describe("the Press Tour door", () => {
 
   it("sits in the phone's lamp beside Generate Video and Recast, behind the same gate", () => {
     expect(layout).toContain("pressTourOn={pressTourVisible}");
-    expect(tabBar).toContain('type Choice = "video" | "recast" | "pressTour" | "live" | "cut";');
+    expect(tabBar).toContain('type Choice = "video" | "recast" | "pressTour" | "live" | "cut" | "effects";');
     expect(tabBar).toContain("pressTour: PRESS_TOUR_HREF,");
     expect(tabBar).toContain("const hasChoices = recastOn || pressTourOn || liveOn || cutOn;");
     expect(tabBar).toContain('onClick={() => choose("pressTour")}');

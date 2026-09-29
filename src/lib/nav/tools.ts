@@ -14,6 +14,7 @@ export type ToolKey =
   | "sets"
   | "recce"
   | "cut"
+  | "effects"
   | "upscale"
   | "layers"
   | "templates"
@@ -46,6 +47,9 @@ export const NAV_TOOLS: readonly NavTool[] = [
   { key: "sets", href: "/app/sets", group: "make", newUntil: "2026-10-03" },
   { key: "recce", href: "/app/recce", group: "make", newUntil: "2026-10-01" },
   { key: "cut", href: "/app/edit", group: "edit", newUntil: "2026-10-08" },
+  // Effects (2026-09-29): titles, credits and sound effects for a finished
+  // film, by Opus 5.5 on Director's Cut's engine — so it shares its gate.
+  { key: "effects", href: "/app/effects", group: "edit", newUntil: "2026-10-13" },
   { key: "upscale", href: "/app/upscale", group: "edit" },
   { key: "layers", href: "/app/layers", group: "edit" },
   { key: "templates", href: "/app/templates", group: "start" },
@@ -69,6 +73,7 @@ const GATE: Partial<Record<ToolKey, keyof ToolGates>> = {
   recast: "mystiqueVisible",
   live: "liveVisible",
   cut: "cutVisible",
+  effects: "cutVisible",
 };
 
 /** The tools this account may open, in panel order. */

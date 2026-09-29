@@ -47,6 +47,7 @@ import { getServerMessages } from "@/lib/i18n/server";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { UpscaleButton } from "@/components/upscale-button";
 import { KeepGoing, type KeepGoingDoor } from "@/components/keep-going";
+import { MAX_FILM_SECONDS as EFFECTS_MAX_FILM_SECONDS } from "@/lib/editor/effects";
 import { readToolGates } from "@/lib/nav/gates";
 import { isPhotoSetsEnabled } from "@/lib/sets/enabled";
 import { isNativeApp } from "@/lib/native/server";
@@ -289,6 +290,11 @@ export default async function HistoryDetailPage({
       const seconds = Number(generation.video_duration_seconds) || 0;
       if (gates.mystiqueVisible && seconds >= RECAST_MIN_SECONDS && seconds <= RECAST_MAX_SECONDS) {
         keepGoingDoors.push({ key: "recast", href: `/app/mystique?clip=${q}`, label: h.doorRecast, sub: h.doorRecastSub, tool: t.nav.mystique });
+      }
+      // Effects (2026-09-29): titles, credits and sound for this video — the
+      // same gate as Director's Cut, whose engine it runs on.
+      if (gates.cutVisible && (seconds === 0 || seconds <= EFFECTS_MAX_FILM_SECONDS)) {
+        keepGoingDoors.push({ key: "effects", href: `/app/effects?take=${q}`, label: h.doorEffects, sub: h.doorEffectsSub, tool: t.nav.effects });
       }
     }
   }

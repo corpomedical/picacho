@@ -54,12 +54,16 @@ describe("the sidebar's tools", () => {
     expect(visibleTools({ ...NONE, mystiqueVisible: true }).map((t) => t.key)).toContain("recast");
     expect(visibleTools({ ...NONE, pressTourVisible: true }).map((t) => t.key)).toContain("pressTour");
     expect(visibleTools({ ...ALL, pressTourVisible: false }).map((t) => t.key)).not.toContain("pressTour");
+    // Effects runs on Director's Cut's engine, so it opens and closes with it.
+    expect(visibleTools({ ...NONE, cutVisible: true }).map((t) => t.key)).toEqual(expect.arrayContaining(["cut", "effects"]));
+    expect(visibleTools({ ...ALL, cutVisible: false }).map((t) => t.key)).not.toContain("effects");
   });
 
   it("knows which tool a page belongs to, without matching a longer neighbour", () => {
     expect(toolForPath("/app/live", NAV_TOOLS)?.key).toBe("live");
     expect(toolForPath("/app/sets/abc", NAV_TOOLS)?.key).toBe("sets");
     expect(toolForPath("/app/edit", NAV_TOOLS)?.key).toBe("cut");
+    expect(toolForPath("/app/effects", NAV_TOOLS)?.key).toBe("effects");
     expect(toolForPath("/app/editor", NAV_TOOLS)).toBeUndefined();
     expect(toolForPath("/app/history", NAV_TOOLS)).toBeUndefined();
     expect(isUnder(null, "/app")).toBe(false);

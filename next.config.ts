@@ -72,6 +72,8 @@ const nextConfig: NextConfig = {
     // the customer presses Edit, inside the editor page's own function.
     "/api/cron/edits": ["./node_modules/ffmpeg-static/ffmpeg"],
     "/app/edit": ["./node_modules/ffmpeg-static/ffmpeg"],
+    // Effects (2026-09-29) runs the same first step inside its own page.
+    "/app/effects": ["./node_modules/ffmpeg-static/ffmpeg"],
     // Press Tour's film, checks and cut (lib/press-tour/film.ts, cut.ts,
     // 2026-09-26): the moments of every filmed shot are taken with the
     // encoder (product-lock/frames.ts), and the cut normalises, captions,

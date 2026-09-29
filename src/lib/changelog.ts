@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.147.0",
+    build: 186,
+    date: "2026-09-29",
+    title: "Effects: opening titles, credits, a badge, a vertical version, a cover and sound effects for a finished film, by Opus 5.5",
+    items: [
+      "A new tool, Effects (admins while it's tested, same switch as Director's Cut): bring a finished film, uploaded or picked from your own videos, and switch on what it needs. Opening titles (your logo, PRESENTS, the title, flying straight into the first shot), a corner badge, end credits with an end card, a 9:16 version for TikTok and Reels with your words under the uncropped film, and a cover picture. The film itself is never re-cut or cropped.",
+      "Sound effects are a switch: on, Opus makes hits, a big boom, a glitch, a swell and an impact in code, timed to the titles, and measures them because it can't listen; off, it's picture only and nothing is added to the sound. It never adds music.",
+      "The recipe is the LIFT intro the operator signed off on 28 September, with that night's fixes built in: its own look (never another studio's), steady sub-pixel motion (no shaking logo or line), no sudden end, and credits that don't repeat the title.",
+      "It's in Tools under \"Edit what you made\", ⌘K, the phone app's Generate lamp, and a History video's Keep going shelf (\"Add effects\" opens it with that video already picked, and its prompt ready as the words for the vertical version). Finished films land in History, with the cover as the video's picture; ask for a change from the page.",
+      "It runs on Director's Cut's engine (same job table, same Opus 5.5 agent, same delivery), so there's nothing new to set up. Director's Cut's own list no longer shows Effects jobs.",
+    ],
+  },
+  {
     version: "1.146.0",
     build: 185,
     date: "2026-09-29",
