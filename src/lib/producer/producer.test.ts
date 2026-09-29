@@ -14,7 +14,7 @@ import { sentenceChunker } from "./sentences";
 import { readSpokenInput, MAX_AUDIO_BYTES } from "./speech";
 import { spotForTool, spotSelector, isSpot } from "./spots";
 import { runNotesCommand, normalizeNotePath, MAX_NOTES, type Note, type NotesStore } from "./notes";
-import { PRODUCER_TOOLS, TOOL_NAMES, composerHref, isVoiceAction, readSearchFilters, searchText, validatePreparedSend } from "./tools";
+import { PRODUCER_TOOLS, TOOL_NAMES, sendableTools, composerHref, isVoiceAction, readSearchFilters, searchText, validatePreparedSend } from "./tools";
 import {
   closeTail,
   currentEffort,
@@ -459,6 +459,14 @@ describe("strict tool schemas stay under the API's union limit", () => {
   it("the chat page's list", () => {
     const chat = [...(PRODUCER_TOOLS as readonly { name: string }[]).filter((t) => !LAMP_ONLY.has(t.name)), ...DOC_TOOLS];
     expect(strictUnions(chat)).toBeLessThanOrEqual(UNION_LIMIT);
+  });
+  it("brings a list saved before the fix (every tool strict) under it, and leaves today's bytes alone", () => {
+    const saved = (PRODUCER_TOOLS as readonly object[]).map((t) => ("input_schema" in t ? { ...t, strict: true } : t));
+    expect(strictUnions(saved)).toBe(22);
+    expect(strictUnions(sendableTools(saved))).toBeLessThanOrEqual(UNION_LIMIT);
+    const savedChat = [...(saved as { name: string }[]).filter((t) => !LAMP_ONLY.has(t.name)), ...DOC_TOOLS];
+    expect(strictUnions(sendableTools(savedChat))).toBeLessThanOrEqual(UNION_LIMIT);
+    expect(JSON.stringify(sendableTools(PRODUCER_TOOLS))).toBe(JSON.stringify(PRODUCER_TOOLS));
   });
   it("counts the way the API does (the 2026-09-29 lists were 22 and 18)", () => {
     const allStrict = (PRODUCER_TOOLS as readonly object[]).map((t) => ({ ...t, strict: true }));

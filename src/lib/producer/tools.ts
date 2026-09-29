@@ -243,6 +243,24 @@ export const PRODUCER_TOOLS = [
   { type: "web_search_20250305", name: TOOL_NAMES.web, max_uses: WEB_SEARCH_MAX_USES },
 ] as const;
 
+/**
+ * A conversation's SAVED tool list, made sendable today. The lamp's threads
+ * and the chat page's chats freeze their tools when they start (so the cache
+ * stays valid), and a list saved before 2026-09-29 still has search_renders
+ * strict, which puts it over the API's 16-union limit: every turn 400 for
+ * good. Dropping `strict` from that one tool, as PRODUCER_TOOLS now does,
+ * brings every saved list under it. One cache miss on an old conversation's
+ * next turn; new ones are unchanged bytes.
+ */
+export function sendableTools<T>(saved: readonly T[]): T[] {
+  return saved.map((t) => {
+    if (!t || typeof t !== "object" || (t as { name?: unknown }).name !== TOOL_NAMES.search || !("strict" in t)) return t;
+    const copy = { ...t } as T & { strict?: unknown };
+    delete copy.strict;
+    return copy;
+  });
+}
+
 // ---------------------------------------------------------------------------
 // prepare_send
 

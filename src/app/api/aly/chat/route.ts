@@ -4,7 +4,7 @@ import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { readProducerGrant } from "@/lib/producer/enabled";
 import { runTool, toolStatus, type ToolCall } from "@/lib/producer/run-tools";
 import { citedSources } from "@/lib/producer/sources";
-import type { PreparedSend } from "@/lib/producer/tools";
+import { sendableTools, type PreparedSend } from "@/lib/producer/tools";
 import { loadPrefs } from "@/lib/producer/store";
 import { PLAN_CHAT_UNIT_LIMITS, FREE_CHAT_UNIT_LIMIT, type PlanId } from "@/lib/plans";
 import { monthlyWindowStart } from "@/lib/generations/core";
@@ -302,7 +302,7 @@ export async function POST(request: NextRequest) {
           text: t,
           ...(i === all.length - 1 ? { cache_control: { type: "ephemeral" as const } } : {}),
         }));
-        const tools = setup.tools as Anthropic.Beta.Messages.BetaToolUnion[];
+        const tools = sendableTools(setup.tools as Anthropic.Beta.Messages.BetaToolUnion[]);
         const history = toClaude(rows, load);
         const turn: ClaudeMessage[] = [];
         let text = "";

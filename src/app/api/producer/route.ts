@@ -71,7 +71,7 @@ import {
 import { buildStateNote, type StateFingerprint } from "@/lib/producer/state";
 import { loadWatchBar, loadWatchList } from "@/lib/producer/watch";
 import { runTool, toolStatus, type ToolCall } from "@/lib/producer/run-tools";
-import type { PreparedSend } from "@/lib/producer/tools";
+import { sendableTools, type PreparedSend } from "@/lib/producer/tools";
 import type { PlanId } from "@/lib/plans";
 import { monthlyWindowStart } from "@/lib/generations/core";
 import { classifyTurnFailure, unitsForFailedTurn, type TurnFailure } from "@/lib/agent/failures";
@@ -590,7 +590,7 @@ export async function POST(request: NextRequest) {
     text,
     ...(i === all.length - 1 ? { cache_control: { type: "ephemeral" as const } } : {}),
   }));
-  const tools = thread.setup.tools as Anthropic.Beta.Messages.BetaToolUnion[];
+  const tools = sendableTools(thread.setup.tools as Anthropic.Beta.Messages.BetaToolUnion[]);
 
   const stream = new ReadableStream({
     async start(controller) {
