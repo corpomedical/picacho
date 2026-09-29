@@ -69,6 +69,7 @@ import {
   parseStudioAnswer,
   planActs,
   studioAstraRequest,
+  studioLanguage,
   studioText,
   type StudioPlan,
 } from "@/lib/sets/studio-astra";
@@ -765,6 +766,7 @@ export async function askStudioAstra(
   scene: unknown,
   turns?: unknown,
   pressId?: string,
+  locale?: unknown,
 ): Promise<
   | { error: string; editsLeft?: number | null; pending?: true; paused?: true }
   | { error: null; plan: StudioPlan; answer: Record<string, unknown>; editsLeft: number | null }
@@ -792,7 +794,7 @@ export async function askStudioAstra(
     const slot = await astraChangeSlot(access, press);
     if (slot.error !== null) return slot;
     try {
-      const answer = await askAstra(setId, studioAstraRequest(text, summary, talk, openAiSafetyId(userId)), "studio plan", STUDIO_ASTRA_NO_ANSWER, startedAt);
+      const answer = await askAstra(setId, studioAstraRequest(text, summary, talk, openAiSafetyId(userId), studioLanguage(locale)), "studio plan", STUDIO_ASTRA_NO_ANSWER, startedAt);
       if (answer.error !== null) {
         if (!answer.billed) await giveBackAstraTry(access, slot);
         return { error: answer.error, editsLeft: await giveBackAstraChange(access, slot) };

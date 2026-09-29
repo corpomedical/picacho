@@ -348,10 +348,20 @@ export const STUDIO_ASTRA_INSTRUCTIONS = [
   "Keep plans short and exact; use the sizes given to place things so they don't overlap. If nothing in the scene can do what they ask, say why in `reply` and give no steps.",
 ].join("\n");
 
-/** The request text: the scene, the last few turns, and the person's words. */
-export function studioAstraInput(text: string, summary: StudioSummary, turns: StudioTurn[]): string {
+/**
+ * The person's language for Astra's words (stage 7): Picacho's locale as its
+ * English name, or null for English or anything unknown. One short line at
+ * the top of the input, after the cached instructions, so the cache holds.
+ */
+export function studioLanguage(locale: unknown): string | null {
+  return locale === "es" ? "Spanish (Spain)" : locale === "pt" ? "Brazilian Portuguese" : locale === "it" ? "Italian" : null;
+}
+
+/** The request text: the person's language (when not English), the scene, the last few turns, and the person's words. */
+export function studioAstraInput(text: string, summary: StudioSummary, turns: StudioTurn[], language: string | null = null): string {
   const talk = turns.map((t) => `${t.who === "person" ? "Person" : "Astra"}: ${t.text}`).join("\n");
   return [
+    ...(language ? [`Write reply, question, options and every say in ${language}; names and ids stay as they are.`, ""] : []),
     "Scene:",
     JSON.stringify(summary),
     ...(talk ? ["", "Earlier in this conversation:", talk] : []),
@@ -361,10 +371,16 @@ export function studioAstraInput(text: string, summary: StudioSummary, turns: St
   ].join("\n");
 }
 
-export function studioAstraRequest(text: string, summary: StudioSummary, turns: StudioTurn[], safetyIdentifier: string | undefined): AstraJobRequest {
+export function studioAstraRequest(
+  text: string,
+  summary: StudioSummary,
+  turns: StudioTurn[],
+  safetyIdentifier: string | undefined,
+  language: string | null = null,
+): AstraJobRequest {
   return {
     instructions: STUDIO_ASTRA_INSTRUCTIONS,
-    input: studioAstraInput(text, summary, turns),
+    input: studioAstraInput(text, summary, turns, language),
     schemaName: STUDIO_PLAN_SCHEMA_NAME,
     schema: STUDIO_PLAN_JSON_SCHEMA as unknown as Record<string, unknown>,
     maxOutputTokens: STUDIO_ASTRA_MAX_OUTPUT_TOKENS,

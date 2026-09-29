@@ -27,6 +27,7 @@ import type { StudioScene } from "@/lib/sets/studio-scene";
 import { saveStudioScene } from "@/lib/sets/studio-actions";
 import { askStudioAstra } from "@/lib/sets/editor-actions";
 import { STUDIO_ASTRA_RESENT } from "@/lib/sets/studio-astra";
+import { studioTranslator } from "./studio-i18n";
 import { stillQuoteInput } from "@/lib/sets/take";
 import type { SetCharacter } from "@/lib/sets/types";
 import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
@@ -46,7 +47,7 @@ export function HeliosStudio({
   savedScene: StudioScene | null;
   characters: SetCharacter[];
 }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   // Read once, when the engine starts: a later render must not restart it.
   const savedRef = useRef(savedScene);
   const charactersRef = useRef(characters);
@@ -67,6 +68,9 @@ export function HeliosStudio({
         setId,
         title,
         spec,
+        // Stage 7: the Studio in the person's language (studio-i18n.ts).
+        locale,
+        t: studioTranslator(locale),
         backHref: `/app/sets/${setId}`,
         savedScene: savedRef.current,
         saveScene: async (scene: unknown) => {
@@ -81,7 +85,7 @@ export function HeliosStudio({
           unreachable,
           ask: async (text: string, summary: unknown, turns: { who: "person" | "astra"; text: string }[]) => {
             try {
-              const out = await askStudioAstra(setId, text, summary, turns, crypto.randomUUID());
+              const out = await askStudioAstra(setId, text, summary, turns, crypto.randomUUID(), locale);
               if (out.error !== null) return { error: "pending" in out && out.pending ? STUDIO_ASTRA_RESENT : out.error };
               return { error: null, plan: out.plan, answer: out.answer };
             } catch (err) {
@@ -117,7 +121,7 @@ export function HeliosStudio({
       dead = true;
       dispose?.();
     };
-  }, [setId, title, spec, unreachable]);
+  }, [setId, title, spec, unreachable, locale]);
   return (
     <div className="fixed inset-0 z-[70]" data-helios-studio>
       <style>{STUDIO_CSS}</style>

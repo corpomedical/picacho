@@ -16,6 +16,7 @@ import { setElements } from "@/lib/sets/elements";
 import { letterbox } from "@/lib/sets/rig";
 import { SET_DIRECTION_MAX_CHARS } from "@/lib/sets/set-config";
 import { studioShotInput } from "@/lib/sets/studio-shot";
+import { watchStudioText } from "./studio-i18n";
 import { GRIP_TAP_PX, LONG_PRESS_MS, LONG_PRESS_SLOP_PX, STUDIO_COMPACT_QUERY, nextSheet, sheetDragHeight, sheetHeights, sheetSnap } from "@/lib/sets/studio-sheets";
 import {
   STUDIO_ADD_KINDS,
@@ -65,6 +66,13 @@ export type StudioOptions = {
    * ({ plan, answer }) or { error } in plain words. Absent, only the scripted
    * examples run.
    */
+  /**
+   * The person's language (stage 7) and its translator (studio-i18n.ts
+   * studioTranslator). The engine writes English; everything it draws is
+   * translated as it appears. Absent, English.
+   */
+  locale?: string;
+  t?: (text: string) => string;
   astra?: {
     unreachable: string;
     ask: (text: string, summary: unknown, turns: { who: "person" | "astra"; text: string }[]) => Promise<any>;
@@ -77,6 +85,9 @@ const withSig = (o) => (typeof o === "object" && o !== null ? { ...o, signal: ac
 const wOn = (t, f, o) => window.addEventListener(t, f, withSig(o));
 const dOn = (t, f, o) => document.addEventListener(t, f, withSig(o));
 let stopped = false, raf = 0;
+// The person's language (stage 7): T() for text the engine puts in a field
+// or sends on; everything drawn is translated by watchStudioText below.
+const T = (s) => (opts.t ? opts.t(s) : s);
 const $ = (id) => document.getElementById(id);
 const DUR = 10, FPS = 24, FRAMES = DUR * FPS;
 const view = $("view"), canvas = $("c");
@@ -482,7 +493,7 @@ function field(value, { step = 0.1, unit = "", dec = 2, min = -Infinity, max = I
   function edit() {
     const inp = document.createElement("input"); inp.value = (+v).toFixed(dec); el.appendChild(inp); inp.focus(); inp.select();
     let fin = false;
-    const done = (ok) => { if (fin) return; fin = true; if (ok) { const n = parseFloat(inp.value); if (!Number.isNaN(n)) { onStart?.(); v = Math.min(max, Math.max(min, n)); show(v); onLive?.(v); onCommit?.(v); } } inp.remove(); show(v); };
+    const done = (ok) => { if (fin) return; fin = true; if (ok) { const n = parseFloat(inp.value.replace(",", ".")); if (!Number.isNaN(n)) { onStart?.(); v = Math.min(max, Math.max(min, n)); show(v); onLive?.(v); onCommit?.(v); } } inp.remove(); show(v); };
     inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") done(true); if (e.key === "Escape") done(false); });
     inp.addEventListener("blur", () => done(true));
   }
@@ -826,7 +837,7 @@ function buildAstra() {
     </div>
   </div>`;
   $("chips").innerHTML = PLANS.map((p, i) => `<button class="chip" data-plan="${i}">${esc(p.ask)}</button>`).join("");
-  $("chips").onclick = (e) => { const b = e.target.closest("[data-plan]"); if (!b) return; $("astraIn").value = PLANS[+b.dataset.plan].ask; $("astraIn").focus(); };
+  $("chips").onclick = (e) => { const b = e.target.closest("[data-plan]"); if (!b) return; $("astraIn").value = T(PLANS[+b.dataset.plan].ask); $("astraIn").focus(); };
   $("exToggle").onclick = () => { examplesOpen = !examplesOpen; $("chips").hidden = !examplesOpen; $("exToggle").textContent = `Examples ${examplesOpen ? "▾" : "▸"}`; };
   $("askFirst").onchange = (e) => (askFirst = e.target.checked);
   $("astraSend").onclick = () => sendAstra();
@@ -843,7 +854,8 @@ function sendAstra(text) {
   const inp = $("astraIn"); text = (text ?? inp.value).trim(); if (!text) return; inp.value = "";
   astraLog.push({ who: "u", text });
   if (examplesOpen) { examplesOpen = false; $("chips").hidden = true; $("exToggle").textContent = "Examples ▸"; }
-  const plan = PLANS.find((p) => p.ask.toLowerCase() === text.toLowerCase().replace(/[.!]+$/, ""));
+  const asked = text.toLowerCase().replace(/[.!]+$/, "");
+  const plan = PLANS.find((p) => p.ask.toLowerCase() === asked || T(p.ask).toLowerCase() === asked);
   if (plan) return startPlan(plan, {});
   if (!opts.astra) { astraLog.push({ who: "a", text: "Here I run the examples only (open Examples ▸). Inside Picacho I read any request, in your words, and turn it into the same visible steps." }); renderThread(); return; }
   void askModel(text);
@@ -882,7 +894,7 @@ async function runSteps(msg) {
 function renderThread() {
   const th = $("thread"); if (!th) return; th.innerHTML = "";
   astraLog.forEach((m, idx) => {
-    if (m.who === "u") { const d = document.createElement("div"); d.className = "msg-u"; d.textContent = m.text; th.appendChild(d); return; }
+    if (m.who === "u") { const d = document.createElement("div"); d.className = "msg-u"; d.translate = false; d.textContent = m.text; th.appendChild(d); return; }
     const d = document.createElement("div"); d.className = "msg-a"; d.innerHTML = `<span class="who">Astra</span><div>${esc(m.text)}</div>`;
     if (m.state === "thinking") d.classList.add("thinking");
     if (m.state === "question") {
@@ -899,7 +911,7 @@ function renderThread() {
         return `<div class="step ${skip ? "skip" : done ? "done" : ""}"><span class="st">${skip ? "·" : s.failed ? "✕" : done ? "✓" : now ? "…" : "○"}</span><span class="tx">${esc(s.tx)}</span></div>`;
       }).join("");
       d.appendChild(st);
-      const code = document.createElement("div"); code.className = "code"; code.hidden = !m.showCode;
+      const code = document.createElement("div"); code.className = "code"; code.translate = false; code.hidden = !m.showCode;
       code.innerHTML = m.steps.map((s) => esc(s.code).replace(/&lt;(\/?)(s|k|c)&gt;/g, (_, sl, t) => (sl ? "</span>" : `<span class="${t}">`))).join("\n");
       d.appendChild(code);
       const b = document.createElement("div"); b.className = "abtns";
@@ -908,7 +920,7 @@ function renderThread() {
       if (m.state !== "running") b.insertAdjacentHTML("beforeend", `<button class="pbtn" data-code="${idx}">${m.showCode ? "Hide" : "Show"} code</button>`);
       d.appendChild(b);
       if (m.state === "done" && m.plan.next?.length) {
-        const nx = document.createElement("div"); nx.className = "abtns"; nx.innerHTML = `<span class="hint" style="margin:0;width:100%">Next?</span>` + m.plan.next.map((n) => `<button class="chip" data-next="${esc(n)}">${esc(n)}</button>`).join(""); d.appendChild(nx);
+        const nx = document.createElement("div"); nx.className = "abtns"; nx.innerHTML = `<span class="hint" style="margin:0;width:100%">Next?</span>` + m.plan.next.map((n) => `<button class="chip" data-next="${esc(T(n))}">${esc(T(n))}</button>`).join(""); d.appendChild(nx);
       }
     }
     if (m.state === "undone") d.insertAdjacentHTML("beforeend", `<div class="hint" style="margin:0">Undone.</div>`);
@@ -1037,7 +1049,7 @@ function modelSteps(answer) {
         if (s.place) { const ref = get(s.place.of); if (ref) placeBeside(it, ref, s.place); }
         if (s.color) setPaint(it, s.color);
         const w = s.place ? sideDirs(s.place) : { dirs: [], words: [] };
-        tell(keepClear(it, w.dirs, w.words));
+        tell(T(keepClear(it, w.dirs, w.words)));
         return keep(it, s.name);
       }; break;
       case "delete": act = () => { const l = L().filter((i) => i !== shot); if (l.length) del(l); return null; }; break;
@@ -1047,14 +1059,14 @@ function modelSteps(answer) {
         const it = dupItem(src, t ? new V3(t.x ?? 0, t.y ?? 0, t.z ?? 0) : s.place ? new V3() : undefined, s.name || undefined);
         if (s.place) { const ref = get(s.place.of); if (ref) placeBeside(it, ref, s.place); }
         const w = s.place ? sideDirs(s.place) : t ? alongDirs(t.x ?? 0, t.z ?? 0) : alongDirs(2.5, 0);
-        tell(keepClear(it, w.dirs, w.words));
+        tell(T(keepClear(it, w.dirs, w.words)));
         return keep(it, s.name);
       }; break;
       case "move": act = () => { let last = null; for (const it of L()) { moveCmd(it, (o) => {
         const was = o.position.clone();
         if (s.place) { const ref = get(s.place.of); if (ref && ref !== it) placeBeside(it, ref, s.place); } else if (s.v) moveBy(it, s.mode, s.v);
         const w = s.place ? sideDirs(s.place) : alongDirs(o.position.x - was.x, o.position.z - was.z);
-        tell(keepClear(it, w.dirs, w.words));
+        tell(T(keepClear(it, w.dirs, w.words)));
       }); last = it; } return last; }; break;
       case "rotate": act = () => { let last = null; for (const it of L()) { moveCmd(it, (o) => {
         if (s.face) { const f = get(s.face); if (!f || f === it) return; const fp = f.obj.getWorldPosition(new V3()), p = o.getWorldPosition(new V3()); o.rotation.set(0, Math.atan2(fp.x - p.x, fp.z - p.z), 0); return; }
@@ -1122,7 +1134,7 @@ async function askModel(text) {
   const p = r.plan;
   if (p.question) { astraLog.push({ who: "a", text: p.question, state: "question", options: p.options.map((o) => ({ name: o })) }); renderThread(); return; }
   const notes = p.steps.filter((s) => s.op === "note").map((s) => s.say);
-  if (!planActs(p)) { astraLog.push({ who: "a", text: [p.reply || STUDIO_ASTRA_NOTHING, ...notes].join(" "), state: "said" }); renderThread(); return; }
+  if (!planActs(p)) { astraLog.push({ who: "a", text: [p.reply || T(STUDIO_ASTRA_NOTHING), ...notes.map(T)].join(" "), state: "said" }); renderThread(); return; }
   startPlan({ ask: text, say: p.reply || "Here's my plan.", next: [], steps: () => { const st = modelSteps(r.answer); return st.some((x) => !x.note) ? st : { fail: "The scene changed since I planned this, and nothing in the plan is left to do. Send it again." }; } }, {});
 }
 
@@ -1148,7 +1160,7 @@ function renderOutliner() {
     if (q && !it.name.toLowerCase().includes(q)) { items.filter((k) => k.obj.parent === it.obj).forEach((k) => draw(k, depth + 1)); return; }
     const li = row(`${"<span class='tw'></span>".repeat(depth)}<span class="oi">${OI[it.kind] || OI.mesh}</span><span class="nm"></span>${it.byAstra ? `<span class="ast" title="Made by Astra">✦</span>` : ""}${it.obj.userData.track ? `<span class="md" title="Track To constraint">⛓</span>` : ""}${it.obj.userData.array ? `<span class="md" title="Array modifier">▦</span>` : ""}${it.keys.length ? `<span class="kf">◆ ${it.keys.length}</span>` : ""}${it.kind !== "sun" ? `<button class="tg" title="Hide in viewport (H)">${it.hidden ? EYE_OFF : EYE}</button><button class="tg rv ${it.noRender ? "off" : ""}" title="${it.noRender ? "Left out of renders" : "Shown in renders"}">${CAM_ICO}</button>` : ""}`,
       (selection.has(it) ? "sel " : "") + (it === active ? "act " : "") + (it.hidden ? "hid" : ""));
-    li.querySelector(".nm").textContent = it.name;
+    li.querySelector(".nm").textContent = it.name; li.querySelector(".nm").translate = false;
     li.onclick = (e) => { if (e.target.closest(".rv")) { setNoRender(it, !it.noRender); renderOutliner(); return; } if (e.target.closest(".tg")) return toggleHide([it]); if (["world", "render", "output"].includes(ptab)) ptab = "object"; select(it, e.shiftKey || e.metaKey || e.ctrlKey); };
     li.ondblclick = (e) => { if (e.target.closest(".nm")) renameInline(li, it); else if (it.kind !== "sun") frameObj(it.obj); };
     items.filter((k) => k.obj.parent === it.obj).forEach((k) => draw(k, depth + 1));
@@ -1921,7 +1933,7 @@ function openSearch() {
   const r = view.getBoundingClientRect(); p.style.left = r.left + r.width / 2 - 170 + "px"; p.style.top = r.top + 40 + "px"; p.style.width = "340px";
   const inp = $("srch"), list = $("srchList"); let hits = [];
   const draw = () => {
-    const qq = inp.value.trim().toLowerCase(); hits = commands().filter(([n]) => !qq || n.toLowerCase().includes(qq)).slice(0, 10);
+    const qq = inp.value.trim().toLowerCase(); hits = commands().filter(([n]) => !qq || n.toLowerCase().includes(qq) || T(n).toLowerCase().includes(qq)).slice(0, 10);
     list.innerHTML = hits.map(([n], i) => `<button data-i="${i}"><span>${esc(n)}</span></button>`).join("") + (qq ? `<div class="sep"></div><button data-astra="1"><span>Ask Astra: “${esc(inp.value.trim())}”</span><small>N</small></button>` : "");
   };
   const run = (btn) => { p.hidden = true; p.style.width = ""; if (btn?.dataset.astra) { ntab = "astra"; toggleN(true); renderN(); sendAstra(inp.value.trim()); } else if (btn) hits[+btn.dataset.i]?.[1](); };
@@ -2225,7 +2237,7 @@ const ACTS = {
   selCam: () => select(shot), showAll, path: togglePath, leaves: openLeavesOut, join: joinSel, moveTo: openMoveTo, xray: toggleXray, local: toggleLocal, parent: parentTo, unparent: clearParent, sidebar: () => toggleN(),
   addAt: () => openPopup(mouse[0], mouse[1], addMenuHTML()),
   astraAbout: () => { ntab = "astra"; toggleN(true); renderN(); const i = $("astraIn"); if (i) { i.value = `About "${active?.name}": `; i.focus(); } },
-  astraModel: () => { ntab = "astra"; toggleN(true); renderN(); const i = $("astraIn"); if (i) { i.value = PLANS[6].ask; i.focus(); } },
+  astraModel: () => { ntab = "astra"; toggleN(true); renderN(); const i = $("astraIn"); if (i) { i.value = T(PLANS[6].ask); i.focus(); } },
 };
 document.querySelectorAll("[data-menu]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); const l = document.querySelector(`[data-list="${b.dataset.menu}"]`); const open = l.hidden; closeMenus(); l.hidden = !open; b.setAttribute("aria-expanded", String(open)); }));
 dOn("click", (e) => { if (!e.target.closest(".list")) { closeMenus(); } if (!e.target.closest("#pie")) $("pie").hidden = true; });
@@ -2401,5 +2413,6 @@ raf = requestAnimationFrame(tick);
 document.getElementById("sceneTitle").textContent = opts.title;
 if (opts.render && $("castMenuLabel")) $("castMenuLabel").textContent = castLabel();
 document.getElementById("backLink").setAttribute("href", opts.backHref);
-return () => { saveNow(); saveToAccount(true); stopped = true; clearInterval(cast.timer); cancelAnimationFrame(raf); clearInterval(saveTimer); ac.abort(); resizeObs.disconnect(); tc.dispose?.(); orbit.dispose(); renderer.dispose(); offR?.dispose(); ptBusy = false; pt?.dispose(); ptR?.dispose(); };
+const stopText = opts.t ? watchStudioText($("app").parentElement || document.body, opts.t) : () => {};
+return () => { stopText(); saveNow(); saveToAccount(true); stopped = true; clearInterval(cast.timer); cancelAnimationFrame(raf); clearInterval(saveTimer); ac.abort(); resizeObs.disconnect(); tc.dispose?.(); orbit.dispose(); renderer.dispose(); offR?.dispose(); ptBusy = false; pt?.dispose(); ptR?.dispose(); };
 }
