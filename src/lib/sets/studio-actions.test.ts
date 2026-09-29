@@ -12,7 +12,7 @@ import {
 } from "./studio-scene";
 
 // Helios Studio stage 3 (2026-09-29): the scene is kept on the account.
-// The doors are the owner's and the admins' (HELIOS_STUDIO_FOR_ALL false),
+// The doors are the owner's (and only the admins' while HELIOS_STUDIO_FOR_ALL is false),
 // a scene is an object with v 1 under 512 KB, and a missing column (the SQL
 // not run yet) never breaks the Studio: a read answers null and a save says
 // it couldn't reach the account, so the browser copy carries on.
@@ -68,7 +68,17 @@ vi.mock("@/lib/sets/access", () => ({
   setsAccess: async () => access,
   UUID_RE: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
 }));
-vi.mock("@/lib/sets/set-config", async () => await import("./set-config"));
+/** The Studio's switch (HELIOS_STUDIO_FOR_ALL): null = the real one; a test sets it to pin either side. */
+let studioForAll: boolean | null = null;
+vi.mock("@/lib/sets/set-config", async () => {
+  const real = await import("./set-config");
+  return {
+    ...real,
+    get HELIOS_STUDIO_FOR_ALL() {
+      return studioForAll ?? real.HELIOS_STUDIO_FOR_ALL;
+    },
+  };
+});
 vi.mock("@/lib/sets/messages", async () => await import("./messages"));
 vi.mock("@/lib/sets/studio-scene", async () => await import("./studio-scene"));
 
@@ -78,6 +88,7 @@ const scene = { v: 1, hour: 14, format: "16:9 · HD", lens: 35, items: [{ key: "
 const quiet = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 beforeEach(() => {
+  studioForAll = null;
   access = { error: null, supabase: reader({ data: { studio_scene: scene }, error: null }), userId: "u1", plan: "studio", isAdmin: true };
   updateAnswer = { data: [{ id: SET }], error: null };
   updates.length = 0;
@@ -126,6 +137,7 @@ describe("loadStudioScene", () => {
     expect(await loadStudioScene(SET)).toEqual({ error: null, scene: null });
   });
   it("is the admins' while the Studio is", async () => {
+    studioForAll = false;
     access = { ...(access as Extract<Access, { error: null }>), isAdmin: false };
     expect(await loadStudioScene(SET)).toEqual({ error: SET_NOT_FOUND });
   });
@@ -152,6 +164,7 @@ describe("saveStudioScene", () => {
     expect(await saveStudioScene("nope", scene)).toEqual({ error: SET_NOT_FOUND });
     expect(await saveStudioScene(SET, { v: 2 })).toEqual({ error: STUDIO_SCENE_UNREADABLE });
     expect(await saveStudioScene(SET, { v: 1, blob: "x".repeat(STUDIO_SCENE_MAX_BYTES) })).toEqual({ error: STUDIO_SCENE_TOO_BIG });
+    studioForAll = false;
     access = { ...(access as Extract<Access, { error: null }>), isAdmin: false };
     expect(await saveStudioScene(SET, scene)).toEqual({ error: SET_NOT_FOUND });
     expect(updates).toHaveLength(0);

@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.158.0",
+    build: 197,
+    date: "2026-09-29",
+    title: "Helios Studio opens to everyone who can use Helios",
+    items: [
+      "Helios Studio, the Blender-style 3D workspace, is no longer for the team only: every account that can open Helios now sees the \"Studio\" button in a set's top bar and can use everything in it — the objects, keyframes, physics, export and 3D-print check, path-traced renders, Astra in its sidebar, the \"Photo with your character\" render, and saving to the account.",
+      "A request to Astra in the Studio uses one of the month's Astra changes, as a change on the set page does (2 on Basic, 4 on Starter, 10 on Growth, 20 on Studio, 50 on Elite); a question back or a plan with nothing to do gives it back. \"Photo with your character\" costs the credits its button shows, as Shoot on the set page does.",
+      "The Studio is still in English only; its translation into Spanish, Portuguese and Italian comes next.",
+    ],
+  },
+  {
     version: "1.157.0",
     build: 196,
     date: "2026-09-29",

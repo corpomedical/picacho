@@ -60,8 +60,9 @@ export const HELIOS_SIMPLE_FOR_ALL = true;
  * Helios Studio (2026-09-26, operator: "Build Helios first"): the Blender-style
  * workspace at /app/sets/<id>?studio=1. Admins only while it is proved on real
  * sets; true opens it, and its button, to every account that can open Helios.
+ * Opened 2026-09-29 (operator: "Open to everyone for now").
  */
-export const HELIOS_STUDIO_FOR_ALL = false;
+export const HELIOS_STUDIO_FOR_ALL = true;
 
 export const SET_BUILDS_MONTHLY_LIMITS = {
   none: 0,

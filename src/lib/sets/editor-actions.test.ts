@@ -296,14 +296,14 @@ vi.mock("@/lib/sets/edit-seal", async () => await import("./edit-seal"));
 vi.stubEnv("MEDIA_SIGNING_SECRET", "test-only");
 vi.mock("@/lib/sets/messages", async () => await import("./messages"));
 vi.mock("@/lib/sets/set-edit-prompt", async () => await import("./set-edit-prompt"));
-/** The Studio's switch (HELIOS_STUDIO_FOR_ALL), opened by the Studio Astra tests to reach a paying plan's month. */
-let studioForAll = false;
+/** The Studio's switch (HELIOS_STUDIO_FOR_ALL): null = the real one; a test sets it to pin either side. */
+let studioForAll: boolean | null = null;
 vi.mock("@/lib/sets/set-config", async () => {
   const real = await import("./set-config");
   return {
     ...real,
     get HELIOS_STUDIO_FOR_ALL() {
-      return studioForAll || real.HELIOS_STUDIO_FOR_ALL;
+      return studioForAll ?? real.HELIOS_STUDIO_FOR_ALL;
     },
   };
 });
@@ -375,7 +375,7 @@ beforeEach(() => {
   sent.length = 0;
   gated.length = 0;
   refusals.length = 0;
-  studioForAll = false;
+  studioForAll = null;
 });
 
 describe("an Astra change", () => {
@@ -1875,7 +1875,14 @@ describe("Astra in the Studio", () => {
     access = { ...access, isAdmin: true };
   });
 
+  it("is every Helios account's while the Studio is open to all (the operator's 2026-09-29 \"Open to everyone for now\")", async () => {
+    studioForAll = null;
+    access = { ...access, isAdmin: false };
+    expect(await askStudioAstra(SET, "put a lamp by the car", SCENE, [], PRESS)).not.toEqual({ error: SET_NOT_FOUND });
+  });
+
   it("is for admins while the Studio is (HELIOS_STUDIO_FOR_ALL off), and never reaches Astra otherwise", async () => {
+    studioForAll = false;
     access = { ...access, isAdmin: false };
     expect(await askStudioAstra(SET, "put a lamp by the car", SCENE, [], PRESS)).toEqual({ error: SET_NOT_FOUND });
     expect(steps).toEqual([]);
