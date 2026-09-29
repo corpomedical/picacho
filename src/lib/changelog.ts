@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.159.0",
+    build: 198,
+    date: "2026-09-29",
+    title: "Helios Studio in Spanish, Portuguese and Italian",
+    items: [
+      "Helios Studio now appears in the language you picked for Picacho: every menu, panel, window, message and Astra's panel, on computers, phones and tablets. For everyone who can open Helios Studio.",
+      "It uses the same words as Blender's own Spanish, Portuguese and Italian versions (Modo Edición, clave, Delineador, fotogramma chiave…), and keeps the ones Blender keeps in English, like Layout, Render and Track To. Keyboard shortcuts stay as keys.",
+      "Numbers are written the way your language writes them (3,25 m), and you can type a comma in a number field.",
+      "Astra answers in your language: her replies, her questions and every step of her plans. The example requests are translated too, and the F3 search finds commands in either language.",
+      "Your object names and what you type are never changed.",
+      "The status bar now always shows whether your scene is saved and the object count, even when the tips don't fit.",
+    ],
+  },
+  {
     version: "1.158.0",
     build: 197,
     date: "2026-09-29",
