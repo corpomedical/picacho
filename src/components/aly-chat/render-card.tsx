@@ -11,6 +11,8 @@ import { isStaleDeployError } from "@/lib/stale-deploy";
 import { linkRender } from "@/lib/aly-chat/actions";
 import type { ViewRender } from "@/lib/aly-chat/view";
 import type { LightDefaults } from "@/components/light/light-chat";
+import { useInLight } from "@/components/light/in-light";
+import { lightHref } from "@/lib/light/mode";
 
 // A picture or clip Aly got ready in the chat (2026-09-29). The card shows
 // the price before anything is spent; "Make it" is the person's own Send,
@@ -35,6 +37,10 @@ export function RenderCard({
 }) {
   const { t } = useLocale();
   const c = t.alyChat;
+  // In Picacho Light the card's second button opens Light's own box with it
+  // filled in, not the studio's composer (2026-09-29, Aly IS the Light chat).
+  const inLight = useInLight();
+  const openHref = inLight ? lightHref(card.href) : card.href;
   const [genId, setGenId] = useState<string | null>(card.generationId ?? null);
   const [state, setState] = useState<State>(card.generationId ? "working" : "ready");
   const [take, setTake] = useState<LightTake | null>(null);
@@ -194,8 +200,8 @@ export function RenderCard({
               <button type="button" onClick={() => void make()} className="rounded-full bg-atelier-accent px-3 py-1.5 text-xs font-medium text-white">
                 {price}
               </button>
-              <Link href={card.href} className="rounded-full border border-atelier-rule px-3 py-1.5 text-xs text-atelier-muted hover:text-atelier-ink">
-                {c.renderOpen}
+              <Link href={openHref} className="rounded-full border border-atelier-rule px-3 py-1.5 text-xs text-atelier-muted hover:text-atelier-ink">
+                {inLight ? t.light.changeFirst : c.renderOpen}
               </Link>
             </>
           ) : state === "working" && genId ? (

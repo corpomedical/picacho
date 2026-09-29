@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
@@ -29,6 +29,23 @@ import styles from "./aly-chat.module.css";
 
 type Attachment = { localId: string; name: string; state: "uploading" | "ready" | "error"; id?: string; error?: string };
 
+/**
+ * PICACHO LIGHT's frame around this chat (operator, 2026-09-29: "Add Aly
+ * capabilities to Light version" → "Aly IS the Light chat"). Light draws its
+ * own empty screen and keeps its own addresses; everything else is this chat.
+ */
+export type LightChatFrame = {
+  /** Light's empty screen around the one box: greeting and ideas. `fill` puts words in the box. */
+  hero: (composer: ReactNode, notice: ReactNode, fill: (text: string) => void) => ReactNode;
+  /** Where a chat lives in Light (the address bar follows it). */
+  chatHref: (id: string) => string;
+  newHref: () => string;
+  /** Light's own box without her: when her allowance runs out, credits still make things. */
+  directHref: string;
+  directLabel: string;
+  placeholder: string;
+};
+
 export type ChatViewProps = {
   chatId: string | null;
   title: string | null;
@@ -46,6 +63,8 @@ export type ChatViewProps = {
   topUpHref: string | null;
   /** Aly's live voice (GPT-Live), for whoever has her lamp (the live route decides). */
   liveVoice: boolean;
+  /** Set when Picacho Light shows this chat. */
+  light?: LightChatFrame;
 };
 
 const PREF_KEY = "picacho.alyChat.brain";
@@ -110,7 +129,7 @@ export function ChatView(props: ChatViewProps) {
   const [text, setText] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<{ text: string; topUp?: boolean } | null>(null);
+  const [notice, setNotice] = useState<NoticeState | null>(null);
   const [menu, setMenu] = useState(false);
   const [dragging, setDragging] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -154,6 +173,17 @@ export function ChatView(props: ChatViewProps) {
     const el = scrollerRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, []);
+
+  // Light's ideas fill the box and put the cursor in it (a state, so the
+  // hero can be drawn during render without touching the ref).
+  const [focusAsk, setFocusAsk] = useState(0);
+  useEffect(() => {
+    if (focusAsk) inputRef.current?.focus();
+  }, [focusAsk]);
+  const fillBox = (words: string) => {
+    setText(words);
+    setFocusAsk((n) => n + 1);
+  };
 
   // The box grows with what's typed, up to a third of the screen.
   useLayoutEffect(() => {
@@ -284,7 +314,8 @@ export function ChatView(props: ChatViewProps) {
         setMessages((prev) => prev.slice(0, -2));
         setText(words);
         setFiles(ready);
-        setNotice({ text: j?.error ?? c.failed, topUp: j?.topUp === true });
+        // 402: the allowance is used up (Light then offers its own box).
+        setNotice({ text: j?.error ?? c.failed, topUp: j?.topUp === true, allowance: res.status === 402 });
         return "";
       }
       for await (const { event, data } of readEvents(res.body)) {
@@ -295,7 +326,7 @@ export function ChatView(props: ChatViewProps) {
             const id = String(d.chatId);
             gotChat = id;
             setChatId(id);
-            if (d.isNew) window.history.replaceState(null, "", `/app/chat/${id}`);
+            if (d.isNew) window.history.replaceState(null, "", props.light ? props.light.chatHref(id) : `/app/chat/${id}`);
             const seq = Number(d.seq);
             setMessages((prev) => prev.map((m, i) => (i === prev.length - 2 ? { ...m, seq } : i === prev.length - 1 ? { ...m, seq: seq + 1 } : m)));
             break;
@@ -358,7 +389,7 @@ export function ChatView(props: ChatViewProps) {
       abortRef.current = null;
       setBusy(false);
       if (gotChat) window.dispatchEvent(new Event("aly-chats-changed"));
-      if (gotChat && !props.chatId) router.prefetch(`/app/chat/${gotChat}`);
+      if (gotChat && !props.chatId) router.prefetch(props.light ? props.light.chatHref(gotChat) : `/app/chat/${gotChat}`);
     }
     return answer;
   }
@@ -391,13 +422,23 @@ export function ChatView(props: ChatViewProps) {
   const openDoc = docs.find((d) => d.id === panelDoc) ?? null;
   const placeholder = props.project
     ? formatMsg(c.placeholderProject, { project: props.project.name })
-    : formatMsg(c.placeholder, { name: props.name });
+    : props.light
+      ? props.light.placeholder
+      : formatMsg(c.placeholder, { name: props.name });
+  const noticeEl = notice && (
+    <Notice
+      notice={notice}
+      topUpHref={props.topUpHref}
+      topUpLabel={c.topUp}
+      direct={props.light ? { href: props.light.directHref, label: props.light.directLabel } : null}
+    />
+  );
 
   const brainName = (b: BrainChoice) =>
     b === "claude" ? c.brainClaude : b === "gpt" ? c.brainGpt : b === "gemini" ? c.brainGemini : c.brainAll;
 
   const composer = (
-    <div className={`${styles.box} relative`}>
+    <div className={`${props.light ? "pl-box rounded-[28px]" : styles.box} relative`}>
       {live.active && (
         <div className="flex items-center gap-3 border-b border-atelier-rule px-4 py-2.5">
           <span
@@ -660,7 +701,7 @@ export function ChatView(props: ChatViewProps) {
                 }}
                 onDeleted={() => {
                   window.dispatchEvent(new Event("aly-chats-changed"));
-                  router.push(`/app/chat?n=${Date.now()}`);
+                  router.push(props.light ? props.light.newHref() : `/app/chat?n=${Date.now()}`);
                 }}
                 onMoved={() => {
                   window.dispatchEvent(new Event("aly-chats-changed"));
@@ -672,7 +713,9 @@ export function ChatView(props: ChatViewProps) {
         )}
 
         <div ref={scrollerRef} onScroll={onScroll} className={styles.scroller}>
-          {empty ? (
+          {empty && props.light ? (
+            props.light.hero(composer, noticeEl, fillBox)
+          ) : empty ? (
             <div className={`${styles.column} flex min-h-full flex-col justify-center pb-10 pt-8`}>
               <div className="mb-6 flex items-center gap-3">
                 <span className={styles.lamp} aria-hidden="true" />
@@ -686,7 +729,7 @@ export function ChatView(props: ChatViewProps) {
                 </div>
               </div>
               {composer}
-              {notice && <Notice notice={notice} topUpHref={props.topUpHref} topUpLabel={c.topUp} />}
+              {noticeEl}
               <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {[c.idea1, c.idea2, c.idea3, c.idea4].map((idea) => (
                   <button
@@ -745,7 +788,7 @@ export function ChatView(props: ChatViewProps) {
         {!empty && (
           <div className="flex-shrink-0 pb-3 pt-1">
             <div className={styles.column}>
-              {notice && <Notice notice={notice} topUpHref={props.topUpHref} topUpLabel={c.topUp} />}
+              {noticeEl}
               {composer}
               <p className="mt-1.5 text-center text-[11px] text-atelier-muted">{formatMsg(c.disclaimer, { name: props.name })}</p>
             </div>
@@ -773,13 +816,30 @@ export function ChatView(props: ChatViewProps) {
   );
 }
 
-function Notice({ notice, topUpHref, topUpLabel }: { notice: { text: string; topUp?: boolean }; topUpHref: string | null; topUpLabel: string }) {
+type NoticeState = { text: string; topUp?: boolean; allowance?: boolean };
+
+function Notice({
+  notice,
+  topUpHref,
+  topUpLabel,
+  direct,
+}: {
+  notice: NoticeState;
+  topUpHref: string | null;
+  topUpLabel: string;
+  direct: { href: string; label: string } | null;
+}) {
   return (
     <p role="status" className="mb-2 flex flex-wrap items-center gap-2 rounded-2xl border border-atelier-rule px-3 py-2 text-sm text-atelier-ink">
       <span>{notice.text}</span>
       {notice.topUp && topUpHref && (
         <Link href={topUpHref} className="font-medium text-atelier-accent underline underline-offset-2">
           {topUpLabel}
+        </Link>
+      )}
+      {notice.allowance && direct && (
+        <Link href={direct.href} className="font-medium text-atelier-accent underline underline-offset-2">
+          {direct.label}
         </Link>
       )}
     </p>

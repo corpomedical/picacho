@@ -351,3 +351,24 @@ export async function listMyChats(): Promise<{ id: string; title: string | null;
   if (error) return [];
   return (rows ?? []).map((r) => ({ id: r.id as string, title: (r.title as string | null) ?? null, projectId: (r.project_id as string | null) ?? null }));
 }
+
+/** Picacho Light's "Search chats" (2026-09-29): the person's chats by their names. */
+export async function searchMyChats(query: string): Promise<{ id: string; title: string | null }[]> {
+  const words = query.trim().slice(0, 80);
+  if (!words) return [];
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return [];
+  // ilike's own wildcards and escape are taken literally.
+  const pattern = `%${words.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+  const { data: rows, error } = await supabase
+    .from("aly_chats")
+    .select("id, title")
+    .eq("user_id", data.user.id)
+    .is("deleted_at", null)
+    .ilike("title", pattern)
+    .order("updated_at", { ascending: false })
+    .limit(20);
+  if (error) return [];
+  return (rows ?? []).map((r) => ({ id: r.id as string, title: (r.title as string | null) ?? null }));
+}

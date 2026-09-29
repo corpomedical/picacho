@@ -39,6 +39,34 @@ export const LIGHT_HOME = "/app/light";
 export const WELCOME_PATH = "/app/welcome";
 
 /**
+ * Light's own box, without Aly (operator, 2026-09-29: "Aly IS the Light
+ * chat"): where her card's "Open" lands, and the way on when her allowance
+ * runs out, since credits still make pictures and videos.
+ */
+export const LIGHT_DIRECT_HREF = `${LIGHT_HOME}?direct=1`;
+
+/** One of Aly's chats, as Light opens it. */
+export function lightChatHref(chatId: string): string {
+  return `${LIGHT_HOME}?chat=${chatId}`;
+}
+
+/**
+ * Which chat /app/light shows. Aly's, when her chat is open, unless the
+ * address asks for Light's own box: a take to show (a notification, Search,
+ * the Library), a send prepared elsewhere (her card's "Open", the lamp), or
+ * direct=1. `chat` is kept only when it looks like a chat id.
+ */
+export function lightView(
+  params: { take?: string; prompt?: string; direct?: string; chat?: string },
+  alyOpen: boolean,
+): { view: "aly"; chatId: string | null } | { view: "direct" } {
+  const own = Boolean(params.take) || Boolean((params.prompt ?? "").trim()) || params.direct === "1";
+  if (!alyOpen || own) return { view: "direct" };
+  const chat = params.chat ?? "";
+  return { view: "aly", chatId: /^[0-9a-f-]{36}$/i.test(chat) ? chat : null };
+}
+
+/**
  * Where the shell sends someone on this path, or null to stay.
  * A new account goes to the welcome step first (Settings stays reachable so
  * nobody is trapped); a Light account's /app opens the chat instead of the
@@ -55,7 +83,7 @@ export function shellRedirect(pathname: string, mode: AppMode, needsChoice: bool
   // asks for the studio on purpose ("Open in full studio") carries studio=1.
   const query = search.startsWith("?") ? search.slice(1) : search;
   if (new URLSearchParams(query).get("studio") === "1") return null;
-  if (pathname === "/app/generate" || /^\/app\/history\/[^/]+$/.test(pathname)) {
+  if (pathname === "/app/generate" || /^\/app\/history\/[^/]+$/.test(pathname) || isAlyChatPath(pathname, query)) {
     return lightHref(query ? `${pathname}?${query}` : pathname);
   }
   return null;
@@ -114,7 +142,19 @@ export function lightHref(href: string): string {
   if (path === "/app/generate") return query ? `${LIGHT_HOME}?${query}` : LIGHT_HOME;
   const take = /^\/app\/history\/([^/]+)$/.exec(path);
   if (take) return `${LIGHT_HOME}?take=${take[1]}`;
+  // Aly's own page: she is Light's chat (2026-09-29), so a new chat or one
+  // of hers opens there. A chat started inside a project keeps her page.
+  if (isAlyChatPath(path, query ?? "")) {
+    const chat = /^\/app\/chat\/([0-9a-f-]{36})$/i.exec(path);
+    return chat ? lightChatHref(chat[1]) : LIGHT_HOME;
+  }
   return href;
+}
+
+/** Aly's chat page, a new chat or one of hers; not her Memory page or a project's new chat. */
+function isAlyChatPath(path: string, query: string): boolean {
+  if (/^\/app\/chat\/[0-9a-f-]{36}$/i.test(path)) return true;
+  return path === "/app/chat" && !new URLSearchParams(query).has("project");
 }
 
 /** What an Aly-prepared link asks the Light chat to fill in (checked on the server). */

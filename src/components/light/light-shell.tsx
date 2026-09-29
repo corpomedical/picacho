@@ -5,11 +5,12 @@ import Link from "next/link";
 import { createContext, Fragment, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale } from "@/lib/i18n/provider";
-import { ACCOUNT_LOOK_SEEN_KEY, LIGHT_HOME, lookToApply, shellRedirect, type AppLook, type AppMode } from "@/lib/light/mode";
+import { ACCOUNT_LOOK_SEEN_KEY, LIGHT_HOME, lightChatHref, lookToApply, shellRedirect, type AppLook, type AppMode } from "@/lib/light/mode";
 import { useTheme } from "@/lib/theme/theme-provider";
 import { THEME_STORAGE_KEY } from "@/lib/theme/screening";
 import { saveAppChoices, searchLightTakes } from "@/lib/light/actions";
 import { logout } from "@/lib/auth/actions";
+import { listMyChats, searchMyChats } from "@/lib/aly-chat/actions";
 
 export type LightRecent = { id: string; prompt: string };
 
@@ -167,12 +168,16 @@ function RailRow({
   );
 }
 
-/** Search chats: this person's takes by their words (each take is a chat here). */
-function SearchDialog({ onClose }: { onClose: () => void }) {
+/**
+ * Search chats: this person's takes by their words (each take is a chat in
+ * Light's own box) and, with Aly, her chats by their names first.
+ */
+function SearchDialog({ onClose, alyChat }: { onClose: () => void; alyChat: boolean }) {
   const { t } = useLocale();
   const l = t.light;
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<LightRecent[] | null>(null);
+  const [chats, setChats] = useState<{ id: string; title: string | null }[]>([]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -184,17 +189,22 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
     if (!query.trim()) return;
     let live = true;
     const timer = window.setTimeout(() => {
-      searchLightTakes(query)
-        .then((rows) => live && setResults(rows))
+      Promise.all([searchLightTakes(query).catch(() => []), alyChat ? searchMyChats(query).catch(() => []) : Promise.resolve([])])
+        .then(([takes, found]) => {
+          if (!live) return;
+          setChats(found);
+          setResults(takes);
+        })
         .catch(() => live && setResults([]));
     }, 250);
     return () => {
       live = false;
       window.clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, alyChat]);
 
   const shown = query.trim() ? results : null;
+  const heading = "px-3 pb-1 pt-2 text-xs font-semibold";
   return (
     <div className="pl fixed inset-0 z-[60] flex items-start justify-center px-4 pt-[12vh]" role="dialog" aria-modal="true" aria-label={l.searchChats}>
       <button type="button" aria-label={l.closeMenu} className="absolute inset-0 bg-black/40" onClick={onClose} />
@@ -205,23 +215,42 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={l.searchPlaceholder}
+            placeholder={alyChat ? l.searchBoth : l.searchPlaceholder}
             aria-label={l.searchChats}
             className="min-w-0 flex-grow border-0 bg-transparent text-[16px] outline-none"
             style={{ color: "var(--pl-ink)" }}
           />
         </div>
         <div className="max-h-[50vh] overflow-y-auto p-2">
-          {shown === null ? null : shown.length === 0 ? (
+          {shown === null ? null : shown.length === 0 && chats.length === 0 ? (
             <p className="px-3 py-3 text-sm" style={{ color: "var(--pl-muted)" }}>
               {l.searchNone}
             </p>
           ) : (
-            shown.map((r) => (
-              <Link key={r.id} href={`${LIGHT_HOME}?take=${r.id}`} onClick={onClose} className="pl-rail-link">
-                <span className="truncate">{r.prompt || "…"}</span>
-              </Link>
-            ))
+            <>
+              {chats.length > 0 && (
+                <>
+                  <p className={heading} style={{ color: "var(--pl-muted)" }}>
+                    {l.chatsHeading}
+                  </p>
+                  {chats.map((c) => (
+                    <Link key={c.id} href={lightChatHref(c.id)} onClick={onClose} className="pl-rail-link">
+                      <span className="truncate">{c.title || "…"}</span>
+                    </Link>
+                  ))}
+                </>
+              )}
+              {alyChat && shown.length > 0 && (
+                <p className={heading} style={{ color: "var(--pl-muted)" }}>
+                  {l.takesHeading}
+                </p>
+              )}
+              {shown.map((r) => (
+                <Link key={r.id} href={`${LIGHT_HOME}?take=${r.id}`} onClick={onClose} className="pl-rail-link">
+                  <span className="truncate">{r.prompt || "…"}</span>
+                </Link>
+              ))}
+            </>
           )}
         </div>
       </div>
@@ -351,14 +380,39 @@ function SettingsMenu({ isAdmin, onClose, onNavigate }: { isAdmin: boolean; onCl
   );
 }
 
+/**
+ * Aly's chats for the rail, newest first (the same list as her own page's
+ * sidebar), refreshed when a chat is started, named, renamed or deleted.
+ */
+function useAlyChats(on: boolean): { id: string; title: string | null }[] | null {
+  const [chats, setChats] = useState<{ id: string; title: string | null }[] | null>(null);
+  useEffect(() => {
+    if (!on) return;
+    let live = true;
+    const load = () =>
+      listMyChats()
+        .then((rows) => live && setChats(rows))
+        .catch(() => {});
+    load();
+    window.addEventListener("aly-chats-changed", load);
+    return () => {
+      live = false;
+      window.removeEventListener("aly-chats-changed", load);
+    };
+  }, [on]);
+  return chats;
+}
+
 function Rail({
   recent,
+  alyChat,
   isAdmin,
   folded,
   inDrawer,
   onNavigate,
 }: {
   recent: LightRecent[];
+  alyChat: boolean;
   isAdmin: boolean;
   folded: boolean;
   inDrawer?: boolean;
@@ -370,6 +424,8 @@ function Rail({
   const pathname = usePathname();
   const params = useSearchParams();
   const activeTake = pathname === LIGHT_HOME ? params.get("take") : null;
+  const activeChat = pathname === LIGHT_HOME ? params.get("chat") : null;
+  const chats = useAlyChats(alyChat);
   const [searching, setSearching] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -403,6 +459,20 @@ function Rail({
           <div className="mt-5 px-4 pb-1 text-[13px] font-semibold" style={{ color: "var(--pl-muted)" }}>
             {l.recent}
           </div>
+          {alyChat ? (
+            <div className="flex min-h-0 flex-col gap-0.5 overflow-y-auto">
+              {chats !== null && chats.length === 0 && (
+                <p className="px-4 py-2 text-[13px]" style={{ color: "var(--pl-muted)" }}>
+                  {l.noChats}
+                </p>
+              )}
+              {(chats ?? []).map((c) => (
+                <Link key={c.id} href={lightChatHref(c.id)} onClick={onNavigate} aria-current={activeChat === c.id ? "page" : undefined} className="pl-rail-link">
+                  <span className="truncate">{c.title || "…"}</span>
+                </Link>
+              ))}
+            </div>
+          ) : (
           <div className="flex min-h-0 flex-col gap-0.5 overflow-y-auto">
             {recent.length === 0 && (
               <p className="px-4 py-2 text-[13px]" style={{ color: "var(--pl-muted)" }}>
@@ -415,6 +485,7 @@ function Rail({
               </Link>
             ))}
           </div>
+          )}
         </>
       )}
       <div className="flex-grow" />
@@ -422,7 +493,7 @@ function Rail({
         {menuOpen && <SettingsMenu isAdmin={isAdmin} onClose={() => setMenuOpen(false)} onNavigate={onNavigate} />}
         <RailRow folded={folded} icon={<GearIcon />} label={l.settings} onClick={() => setMenuOpen((v) => !v)} />
       </div>
-      {searching && <SearchDialog onClose={() => setSearching(false)} />}
+      {searching && <SearchDialog alyChat={alyChat} onClose={() => setSearching(false)} />}
     </nav>
   );
 }
@@ -435,11 +506,14 @@ function Rail({
  */
 export function LightShell({
   recent,
+  alyChat = false,
   isAdmin = false,
   children,
   page,
 }: {
   recent: LightRecent[];
+  /** Aly's chat is open: she is Light's chat, and the rail lists her chats. */
+  alyChat?: boolean;
   isAdmin?: boolean;
   children: React.ReactNode;
   /** Which frame to draw; read from the path unless given. */
@@ -472,7 +546,7 @@ export function LightShell({
     <ShellContext.Provider value={{ openMenu: () => setMenuOpen(true), newChat }}>
       <div className="pl frost-ground relative flex h-full w-full overflow-hidden">
         <aside className={`hidden flex-shrink-0 transition-[width] duration-200 md:block ${folded ? "w-[72px]" : "w-[272px]"}`}>
-          <Rail recent={recent} isAdmin={isAdmin} folded={folded} />
+          <Rail recent={recent} alyChat={alyChat} isAdmin={isAdmin} folded={folded} />
         </aside>
         {menuOpen && (
           // Sized to the Light frame, not the screen (operator, 2026-09-28,
@@ -485,7 +559,7 @@ export function LightShell({
           <div className="absolute inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label={l.recent}>
             <button type="button" aria-label={l.closeMenu} className="absolute inset-0 bg-black/40" onClick={() => setMenuOpen(false)} />
             <div className="pl-drawer absolute inset-y-0 left-0 flex w-[86%] max-w-[320px] flex-col shadow-xl" style={{ background: "var(--pl-rail)" }}>
-              <Rail recent={recent} isAdmin={isAdmin} folded={false} inDrawer onNavigate={() => setMenuOpen(false)} />
+              <Rail recent={recent} alyChat={alyChat} isAdmin={isAdmin} folded={false} inDrawer onNavigate={() => setMenuOpen(false)} />
             </div>
           </div>
         )}

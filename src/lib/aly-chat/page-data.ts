@@ -6,7 +6,7 @@ import { loadPrefs } from "@/lib/producer/store";
 import { createAdminClient } from "@/lib/supabase/server";
 import { firstName } from "@/lib/light/mode";
 import { isNativeApp } from "@/lib/native/server";
-import type { PlanId } from "@/lib/plans";
+import { spendableCredits, type PlanId } from "@/lib/plans";
 import type { LightDefaults } from "@/components/light/light-chat";
 import { availableBrains, isAlyChatEnabled } from "./enabled";
 import type { Brain } from "./brains";
@@ -28,6 +28,9 @@ export type ChatPageBase = {
   topUpHref: string | null;
   /** Aly's live voice: whoever has Aly's lamp (the live route's own rule, api/producer/live). */
   liveVoice: boolean;
+  /** Picacho Light's top bar: credits to spend and the account button's letter. */
+  creditsLeft: number;
+  initial: string;
 };
 
 export async function chatPageBase(): Promise<ChatPageBase> {
@@ -39,7 +42,7 @@ export async function chatPageBase(): Promise<ChatPageBase> {
 
   const [open, { data: profile }, prefs, granted, { data: projects }, workspace, native] = await Promise.all([
     isAlyChatEnabled(supabase),
-    supabase.from("profiles").select("plan, plan_status, full_name, role, status").eq("id", userId).maybeSingle(),
+    supabase.from("profiles").select("plan, plan_status, full_name, username, role, status").eq("id", userId).maybeSingle(),
     loadPrefs(admin, userId),
     readProducerGrant(supabase, userId),
     supabase
@@ -77,5 +80,14 @@ export async function chatPageBase(): Promise<ChatPageBase> {
     },
     topUpHref: native ? null : "/app/settings?tab=billing#assistant-topup",
     liveVoice,
+    creditsLeft: spendableCredits({
+      monthlyLimit: workspace.creditsLimit,
+      used: workspace.creditsUsed,
+      bonus: workspace.bonusCredits,
+      purchased: workspace.purchasedCredits,
+    }),
+    initial: (
+      ((firstName(profile?.full_name as string | null) ?? (profile?.username as string | null) ?? data.user.email ?? "?").trim()[0] ?? "?")
+    ).toUpperCase(),
   };
 }

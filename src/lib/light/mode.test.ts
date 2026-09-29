@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { firstName, lightHref, lookToApply, resolveAppMode, shellRedirect, studioHref } from "./mode";
+import { firstName, LIGHT_DIRECT_HREF, lightChatHref, lightHref, lightView, lookToApply, resolveAppMode, shellRedirect, studioHref } from "./mode";
 
 describe("Picacho Light mode", () => {
   it("keeps everyone in the full studio, unasked, before the SQL runs", () => {
@@ -78,5 +78,39 @@ describe("Picacho Light mode", () => {
     // The studio is never touched.
     expect(shellRedirect("/app/generate", "advanced", false, "?prompt=x")).toBeNull();
     expect(shellRedirect("/app/history/t1", "advanced", false, "")).toBeNull();
+  });
+
+  it("makes Aly the Light chat, and keeps Light's own box where the address asks for it", () => {
+    const id = "0b5a2c1e-6a1d-4c33-9a0e-3f0d2b7c9e11";
+    // Her chat is open: a new chat, or one of hers by its id.
+    expect(lightView({}, true)).toEqual({ view: "aly", chatId: null });
+    expect(lightView({ chat: id }, true)).toEqual({ view: "aly", chatId: id });
+    // A chat id that isn't one starts a new chat rather than failing.
+    expect(lightView({ chat: "../x" }, true)).toEqual({ view: "aly", chatId: null });
+    // A take to show, a prepared send, or direct=1 open Light's own box.
+    expect(lightView({ take: id }, true)).toEqual({ view: "direct" });
+    expect(lightView({ prompt: "a dog surfing" }, true)).toEqual({ view: "direct" });
+    expect(lightView({ prompt: "   " }, true)).toEqual({ view: "aly", chatId: null });
+    expect(lightView({ direct: "1" }, true)).toEqual({ view: "direct" });
+    // Her chat closed (the SQL not run, the switch off, no key): Light as before.
+    expect(lightView({ chat: id }, false)).toEqual({ view: "direct" });
+    // The addresses Light hands out.
+    expect(lightChatHref(id)).toBe(`/app/light?chat=${id}`);
+    expect(lightView({ direct: new URLSearchParams(LIGHT_DIRECT_HREF.split("?")[1]).get("direct") ?? "" }, true)).toEqual({ view: "direct" });
+  });
+
+  it("opens Aly's own chat page inside Light, where she is the chat", () => {
+    const id = "0b5a2c1e-6a1d-4c33-9a0e-3f0d2b7c9e11";
+    expect(lightHref("/app/chat")).toBe("/app/light");
+    expect(lightHref("/app/chat?n=123")).toBe("/app/light");
+    expect(lightHref(`/app/chat/${id}`)).toBe(`/app/light?chat=${id}`);
+    // Her Memory page and a project's new chat stay where they are.
+    expect(lightHref("/app/chat/memory")).toBe("/app/chat/memory");
+    expect(lightHref("/app/chat?project=p1")).toBe("/app/chat?project=p1");
+    expect(shellRedirect(`/app/chat/${id}`, "light", false)).toBe(`/app/light?chat=${id}`);
+    expect(shellRedirect("/app/chat", "light", false, "?n=5")).toBe("/app/light");
+    expect(shellRedirect("/app/chat/memory", "light", false)).toBeNull();
+    // The studio keeps her page.
+    expect(shellRedirect(`/app/chat/${id}`, "advanced", false)).toBeNull();
   });
 });

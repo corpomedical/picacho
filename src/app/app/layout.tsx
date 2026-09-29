@@ -139,6 +139,9 @@ export default async function AppLayout({
   // (operator, 2026-09-28: "Assistant should be available in light mode").
   if (appMode === "light" || needsChoice) {
     const recent = (recentJobs ?? []).map((j) => ({ id: j.id as string, prompt: (j.prompt_input as string | null) ?? "" }));
+    // Aly is Light's chat when her chat is open (2026-09-29): the rail then
+    // lists her chats instead of the latest takes.
+    const lightAly = !needsChoice && (await isAlyChatEnabled(supabase));
     return (
       <InLightProvider>
       <div className="frost-ground flex h-full overflow-hidden">
@@ -159,7 +162,7 @@ export default async function AppLayout({
           </div>
         ) : (
           <Suspense fallback={null}>
-            <LightShell recent={recent} isAdmin={isAdmin}>
+            <LightShell recent={recent} alyChat={lightAly} isAdmin={isAdmin}>
               {children}
             </LightShell>
           </Suspense>

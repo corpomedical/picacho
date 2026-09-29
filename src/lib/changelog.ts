@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.151.0",
+    build: 190,
+    date: "2026-09-29",
+    title: "Picacho Light's chat is Aly: ask anything, and pictures and videos come as her cards",
+    items: [
+      "In Picacho Light the one box is Aly's now, like ChatGPT or Gemini: people ask her anything, and she answers, searches the web with the sources shown, reads attached PDFs, pictures, Word files and spreadsheets, writes documents in a side panel and remembers them. When they ask for a picture or a video she gets it ready on a card with its credit price; Make it renders it right in the chat, and nothing is spent until they press it.",
+      "Light keeps its own look around her: the greeting on the ridge, four ideas (a video, a plan, a picture, a question for her), Light's top bar with the credits, and light, dark or same-as-device. Her brain picker, Think harder and live voice are in the box, as on her own page.",
+      "The rail lists her chats (the same chats as her own page) with New chat, and Search chats finds her chats by name and everything made before by its words. Her chats open at /app/light?chat=…, and a link to her own page opens in Light for a Light account.",
+      "Light's own box is still there for what it did best: a take opened from a notification, Search or the Library, Change it first on her card (fills the box, where a photo can be added), and Make it without Aly when her chat allowance is used up, since credits still make pictures and videos. While her chat is switched off, Light works as before.",
+    ],
+  },
+  {
     version: "1.150.0",
     build: 189,
     date: "2026-09-29",

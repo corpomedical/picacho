@@ -179,6 +179,16 @@ html.dark .pl {
 @media (prefers-reduced-motion: reduce) {
   .pl-progress > div { animation: none; width: 60%; }
 }
+/* Aly's chat inside Light (2026-09-29, light-aly.tsx) wears Light's palette:
+   the studio's tokens it is drawn with point at Light's own. */
+.pl-aly {
+  --color-atelier-ink: var(--pl-ink);
+  --color-atelier-muted: var(--pl-muted);
+  --color-atelier-rule: var(--pl-line);
+  --color-atelier-accent: var(--pl-accent);
+  --color-atelier-paper: var(--pl-card);
+  --color-atelier-surface: var(--pl-box);
+}
 .pl input::placeholder,
 .pl textarea::placeholder {
   color: var(--pl-soft);
@@ -204,6 +214,11 @@ html:has(.pl) body {
 @media (max-width: 767.98px) {
   html:has(.pl) [data-producer-lamp-home] {
     bottom: calc(env(safe-area-inset-bottom, 0px) + 250px) !important;
+  }
+  /* With Aly as the chat (light-aly.tsx) her box is taller and the ideas
+     sit above it: the lamp waits above the ideas row. */
+  html:has(.pl-aly) [data-producer-lamp-home] {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 290px) !important;
   }
 }
 

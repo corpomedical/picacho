@@ -44,7 +44,7 @@ export type LightDefaults = {
 const POLL_MS = 4000;
 const noSubscribe = () => () => {};
 
-function Ridges({ height }: { height: number }) {
+export function Ridges({ height }: { height: number }) {
   return (
     <svg aria-hidden="true" className="pl-ridges" height={height} viewBox="0 0 1168 300" preserveAspectRatio="none">
       <path d="M0 170 L140 122 L260 150 L420 64 L470 96 L560 128 L700 92 L860 150 L1000 104 L1168 140 L1168 300 L0 300Z" fill="var(--pl-ridge-back)" />
@@ -66,7 +66,7 @@ function Mark() {
 
 const icon = { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
 
-function VideoGlyph() {
+export function VideoGlyph() {
   return (
     <svg {...icon} stroke="var(--pl-accent)">
       <rect x="3" y="6" width="13" height="12" rx="2" />
@@ -74,13 +74,68 @@ function VideoGlyph() {
     </svg>
   );
 }
-function PictureGlyph() {
+export function PictureGlyph() {
   return (
     <svg {...icon} stroke="var(--pl-accent)">
       <rect x="3" y="3" width="18" height="18" rx="3" />
       <circle cx="9" cy="9" r="2" />
       <path d="M21 15l-5-5L5 21" />
     </svg>
+  );
+}
+
+/**
+ * Light's top bar: the phone's menu button, the logo (a new chat), credits
+ * and the account. Shared by the chat with Aly and Light's own box.
+ */
+export function LightTopBar({ creditsLeft, initial }: { creditsLeft: number; initial: string }) {
+  const { t, locale } = useLocale();
+  const l = t.light;
+  const { openMenu, newChat } = useLightShell();
+  // "{n} credits" with the number in ochre, as the boards draw it.
+  const [creditsBefore, creditsAfter = ""] = l.creditsLeft.split("{n}");
+  return (
+    <header className="relative flex h-14 flex-shrink-0 items-center justify-between px-2 md:h-[68px] md:px-6">
+      <button type="button" className="pl-iconbtn md:hidden" aria-label={l.openMenu} onClick={openMenu}>
+        <MenuIcon />
+      </button>
+      {/* The logo is home: a new chat (operator, 2026-09-28). */}
+      <Link
+        href="/app/light"
+        onClick={(e) => {
+          e.preventDefault();
+          newChat();
+        }}
+        className="flex items-center gap-2 md:gap-2.5"
+        style={{ color: "var(--pl-ink)", textDecoration: "none" }}
+      >
+        <span className="pl-display text-[20px] font-semibold md:text-[22px]">Picacho</span>
+        <span className="rounded-[10px] px-2 py-0.5 text-[11px] font-semibold md:px-[9px] md:py-[3px] md:text-xs" style={{ color: "var(--pl-muted)", background: "var(--pl-rail)" }}>
+          {l.badge}
+        </span>
+      </Link>
+      <div className="flex items-center gap-3">
+        <Link
+          href="/app/settings?tab=billing"
+          className="hidden rounded-[18px] px-3.5 py-2 text-sm md:inline-block"
+          style={{ border: "1px solid var(--pl-line)", color: "var(--pl-ink)", textDecoration: "none" }}
+        >
+          {creditsBefore}
+          <strong style={{ color: "var(--pl-accent)" }}>{creditsLeft.toLocaleString(locale)}</strong>
+          {creditsAfter}
+        </Link>
+        <Link
+          href="/app/settings"
+          aria-label={l.account}
+          className="flex h-11 w-11 items-center justify-center md:h-10 md:w-10"
+          style={{ textDecoration: "none" }}
+        >
+          <span className="flex h-[34px] w-[34px] items-center justify-center rounded-full text-sm font-semibold text-white md:h-10 md:w-10 md:text-[15px]" style={{ background: "#a84e24" }}>
+            {initial}
+          </span>
+        </Link>
+      </div>
+    </header>
   );
 }
 
@@ -121,7 +176,6 @@ export function LightChat({
   const { t, locale } = useLocale();
   const l = t.light;
   const router = useRouter();
-  const { openMenu, newChat } = useLightShell();
   const [kind, setKind] = useState<Kind>(prepared?.kind ?? openedTake?.contentType ?? "video");
   const [text, setText] = useState(prepared?.prompt ?? "");
   // The assistant's character, engine and length ride along on the next send,
@@ -348,8 +402,6 @@ export function LightChat({
   }
 
   const empty = turns.length === 0;
-  // "{n} credits" with the number in ochre, as the boards draw it.
-  const [creditsBefore, creditsAfter = ""] = l.creditsLeft.split("{n}");
 
   const composer = (big: boolean) => (
     <div className={`pl-box w-full ${big ? "rounded-[26px] px-3 pb-2 pt-3.5 md:rounded-[28px] md:px-5 md:pb-3 md:pt-[18px]" : "rounded-[28px] p-2"}`}>
@@ -493,47 +545,7 @@ export function LightChat({
         <Ridges height={220} />
       </div>
 
-      <header className="relative flex h-14 flex-shrink-0 items-center justify-between px-2 md:h-[68px] md:px-6">
-        <button type="button" className="pl-iconbtn md:hidden" aria-label={l.openMenu} onClick={openMenu}>
-          <MenuIcon />
-        </button>
-        {/* The logo is home: a new chat (operator, 2026-09-28). */}
-        <Link
-          href="/app/light"
-          onClick={(e) => {
-            e.preventDefault();
-            newChat();
-          }}
-          className="flex items-center gap-2 md:gap-2.5"
-          style={{ color: "var(--pl-ink)", textDecoration: "none" }}
-        >
-          <span className="pl-display text-[20px] font-semibold md:text-[22px]">Picacho</span>
-          <span className="rounded-[10px] px-2 py-0.5 text-[11px] font-semibold md:px-[9px] md:py-[3px] md:text-xs" style={{ color: "var(--pl-muted)", background: "var(--pl-rail)" }}>
-            {l.badge}
-          </span>
-        </Link>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/app/settings?tab=billing"
-            className="hidden rounded-[18px] px-3.5 py-2 text-sm md:inline-block"
-            style={{ border: "1px solid var(--pl-line)", color: "var(--pl-ink)", textDecoration: "none" }}
-          >
-            {creditsBefore}
-            <strong style={{ color: "var(--pl-accent)" }}>{creditsLeft.toLocaleString(locale)}</strong>
-            {creditsAfter}
-          </Link>
-          <Link
-            href="/app/settings"
-            aria-label={l.account}
-            className="flex h-11 w-11 items-center justify-center md:h-10 md:w-10"
-            style={{ textDecoration: "none" }}
-          >
-            <span className="flex h-[34px] w-[34px] items-center justify-center rounded-full text-sm font-semibold text-white md:h-10 md:w-10 md:text-[15px]" style={{ background: "#a84e24" }}>
-              {initial}
-            </span>
-          </Link>
-        </div>
-      </header>
+      <LightTopBar creditsLeft={creditsLeft} initial={initial} />
 
       {empty ? (
         <>
