@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.154.0",
+    build: 193,
+    date: "2026-09-29",
+    title: "Helios Studio saves to your account and renders a photo with your character (team first)",
+    items: [
+      "For the team first (admins), like the rest of Helios Studio.",
+      "The Studio now keeps your scene on your account, not just in this browser: about 5 seconds after a change it's saved to the set, with the browser copy kept as a backup. Open the set on another computer and your scene is there. The status bar says \"Saved to your account\", or \"Saved in this browser only — couldn't reach your account\" when it couldn't get through (it tries again). Needs one SQL line run first; until then it keeps saving in the browser as before.",
+      "Render ▸ Photo with your character: the shot camera's frame — its lens, the format, where the stand-in stands and which way they face, and any car you moved — goes to the same photo engine as the set page's Shoot, with the character you pick and an optional line about what happens. The button always shows the price (the same quote the set page uses). You see the progress and the finished photo, with links to History and the set. One press is one charge: if the answer gets lost on the way, the Studio follows that same press instead of sending it again.",
+    ],
+  },
+  {
     version: "1.153.0",
     build: 192,
     date: "2026-09-29",
