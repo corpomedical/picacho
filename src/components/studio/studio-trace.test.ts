@@ -3,12 +3,15 @@ import {
   ENV_H,
   ENV_W,
   SUN_DIAMETER_DEG,
+  SUN_ZENITH_IRRADIANCE,
   TRACE_PRESETS,
   envAddSplit,
   envAddSun,
   envDir,
   envTexelSolidAngle,
   envUpIrradiance,
+  meterExposure,
+  physicalSunIrradiance,
   traceDuration,
   traceEstimate,
   traceSamples,
@@ -81,5 +84,37 @@ describe("Helios Studio path-traced renders (made to look like Cycles)", () => {
     expect(b.diameterDeg).toBeLessThan(1.5);
     expect(strong.reduce((m, v) => Math.max(m, v), 0)).toBeLessThanOrEqual(20000);
     expect(lit(strong)).toBeCloseTo(3, 2);
+  });
+});
+
+describe("Helios Studio traced light: sun and sky from one model, and a camera's metering", () => {
+  const lum = (c: number[]) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+
+  it("the sun is white overhead and warmer and weaker low down, from the viewport sky's own air", () => {
+    const top = physicalSunIrradiance(Math.PI / 2);
+    top.forEach((v) => expect(v).toBeCloseTo(SUN_ZENITH_IRRADIANCE, 5));
+    const low = physicalSunIrradiance((27 * Math.PI) / 180);
+    expect(low[0]).toBeGreaterThan(low[1]);
+    expect(low[1]).toBeGreaterThan(low[2]);
+    expect(lum(low)).toBeLessThan(lum(top));
+    expect(lum(low)).toBeGreaterThan(0.5 * lum(top));
+    const set = physicalSunIrradiance((3 * Math.PI) / 180);
+    expect(set[2] / set[0]).toBeLessThan(low[2] / low[0]);
+  });
+
+  it("metering brings the log-average to mid-grey and stays within −3…+4 EV", () => {
+    const fill = (v: number) => new Float32Array(64 * 4).fill(v);
+    expect(meterExposure(fill(0.18))).toBeCloseTo(1, 3);
+    expect(meterExposure(fill(0.045))).toBeCloseTo(4, 2);
+    expect(meterExposure(fill(0))).toBe(16);
+    expect(meterExposure(fill(100))).toBe(1 / 8);
+    const split = fill(0.02);
+    split.fill(2, 0, split.length / 2);
+    const e = meterExposure(split);
+    expect(e).toBeGreaterThan(0.25);
+    expect(e).toBeLessThan(0.35); // the bright half caps it well under the average's 0.9
+    const nan = fill(0.18);
+    nan[0] = NaN;
+    expect(meterExposure(nan)).toBeCloseTo(1, 3);
   });
 });

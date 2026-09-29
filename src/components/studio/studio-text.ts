@@ -735,4 +735,5 @@ export const STUDIO_TEXT: readonly StudioRow[] = [
   ["this browser has no WebGL 2.", "este navegador no tiene WebGL 2.", "este navegador não tem WebGL 2.", "questo browser non ha WebGL 2."],
   ["this graphics card can't draw into float textures.", "esta tarjeta gráfica no puede dibujar en texturas de coma flotante.", "esta placa de vídeo não consegue desenhar em texturas de ponto flutuante.", "questa scheda grafica non può disegnare su texture in virgola mobile."],
   ["the graphics card didn't start tracing within three minutes.", "la tarjeta gráfica no empezó a trazar en tres minutos.", "a placa de vídeo não começou a traçar em três minutos.", "la scheda grafica non ha iniziato a tracciare entro tre minuti."],
+  ["Exposure metered for this shot: {0} EV (your offset {1} EV).", "Exposición medida para este plano: {0} EV (tu ajuste {1} EV).", "Exposição medida para este plano: {0} EV (seu ajuste {1} EV).", "Esposizione misurata per questa inquadratura: {0} EV (la tua correzione {1} EV)."],
 ];

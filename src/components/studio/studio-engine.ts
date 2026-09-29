@@ -19,7 +19,7 @@ import { SET_DIRECTION_MAX_CHARS } from "@/lib/sets/set-config";
 import { studioShotInput } from "@/lib/sets/studio-shot";
 import { CYCLES_DEFAULT_SAMPLES, CYCLES_EDGES, CYCLES_MAX_FRAMES, CYCLES_MAX_SAMPLES_ANIMATION, CYCLES_MAX_SAMPLES_STILL, CYCLES_MAX_SECONDS, CYCLES_TOO_LONG, HELIOS_CYCLES_GPU, cyclesDollars, cyclesDuration, cyclesSize, estimateCycles } from "@/lib/sets/cycles";
 import { watchStudioText } from "./studio-i18n";
-import { ENV_H, ENV_W, TRACE_MAX_SAMPLES, TRACE_SCALES, TRACE_SLOW_SECONDS, TRACE_SPEED_KEY, envAddSplit, envAddSun, envUpIrradiance, loadOidn, luminance, oidnDenoise, traceDuration, traceEstimate, traceSamples, traceSize } from "./studio-trace";
+import { ENV_H, ENV_W, SKY_DIFFUSE_SHARE, TRACE_MAX_SAMPLES, TRACE_SCALES, TRACE_SLOW_SECONDS, TRACE_SPEED_KEY, envAddSplit, envAddSun, envUpIrradiance, loadOidn, luminance, meterExposure, oidnDenoise, physicalSunIrradiance, traceDuration, traceEstimate, traceSamples, traceSize } from "./studio-trace";
 import { MATERIAL_RECIPES, hslOf, materialOf } from "@/lib/sets/stage-materials";
 import { GRIP_TAP_PX, LONG_PRESS_MS, LONG_PRESS_SLOP_PX, STUDIO_COMPACT_QUERY, nextSheet, sheetDragHeight, sheetHeights, sheetSnap } from "@/lib/sets/studio-sheets";
 import {
@@ -1659,7 +1659,7 @@ function openExport() {
 // ptSnap: a 2D copy of each finished trace, taken in the same task it was drawn (a WebGL canvas reads back empty later on)
 const ptCanvas = document.createElement("canvas"), ptSnap = document.createElement("canvas");
 let ptR = null, pt = null, ptCam = null, ptQuad = null, ptShow = null, ptFilter = null, ptAovT = null, ptNormalMat = null, ptBusy = false;
-let ptWorldKey = "", ptWorldTex = null;
+let ptWorldKey = "", ptWorldTex = null, ptAuto = 1;
 const ptSet = { still: { q: "final", custom: 128 }, animation: { q: "draft", custom: 12 }, scale: { still: 1, animation: 0.5 }, denoise: true, dof: true, look: "agx", ev: 0 };
 const ptSpeed = () => { try { const v = +localStorage.getItem(TRACE_SPEED_KEY); return v > 0 ? v : null; } catch { return null; } };
 const ptKeepSpeed = (v) => { if (!(v > 0) || !Number.isFinite(v)) return; const o = ptSpeed(); try { localStorage.setItem(TRACE_SPEED_KEY, String(o ? o * 0.5 + v * 0.5 : v)); } catch {} };
@@ -1677,7 +1677,7 @@ async function ptEngine(w, h) {
   }
   ptR.setPixelRatio(1); ptR.setSize(w, h, false); return pt;
 }
-function ptLook() { ptR.toneMapping = ptSet.look === "aces" ? THREE.ACESFilmicToneMapping : THREE.AgXToneMapping; ptR.toneMappingExposure = 2 ** ptSet.ev; }
+function ptLook() { ptR.toneMapping = ptSet.look === "aces" ? THREE.ACESFilmicToneMapping : THREE.AgXToneMapping; ptR.toneMappingExposure = ptAuto * 2 ** ptSet.ev; }
 // the World as one HDR dome (radiance), rebuilt only when the sky, the hour or a light changes
 const PT_EQ_VERT = "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }";
 const PT_EQ_FRAG = "uniform samplerCube env; varying vec2 vUv; void main() { float p = (vUv.x - 0.5) * 6.28318530718; float t = (vUv.y - 0.5) * 3.14159265359; gl_FragColor = vec4(textureCube(env, vec3(cos(t) * cos(p), sin(t), cos(t) * sin(p))).rgb, 1.0); }";
@@ -1685,7 +1685,7 @@ function ptWorld() {
   const studio = skyMode === "studio", phys = skyMode === "physical", sp = sun.getWorldPosition(new THREE.Vector3()), tp = sun.target.getWorldPosition(new THREE.Vector3());
   const key = JSON.stringify([skyMode, sun.visible, sp.toArray(), tp.toArray(), sun.color.getHex(), sun.intensity, hemi.color.getHex(), hemi.groundColor.getHex(), hemi.intensity]);
   if (key === ptWorldKey && ptWorldTex) return ptWorldTex;
-  const W = ENV_W, H = ENV_H, data = new Float32Array(W * H * 4), k = hemi.intensity / Math.PI;
+  const W = ENV_W, H = ENV_H, data = new Float32Array(W * H * 4), k = hemi.intensity / Math.PI; let physSun = null;
   const up = [hemi.color.r * k, hemi.color.g * k, hemi.color.b * k], down = [hemi.groundColor.r * k, hemi.groundColor.g * k, hemi.groundColor.b * k];
   if (phys || studio) {
     const world = studio ? new RoomEnvironment() : new THREE.Scene(); let sk = null;
@@ -1700,14 +1700,19 @@ function ptWorld() {
     ptR.setRenderTarget(eq); q.render(ptR); ptR.readRenderTargetPixels(eq, 0, 0, W, H, data); ptR.setRenderTarget(null); ptR.toneMapping = tm;
     q.dispose(); mat.dispose(); eq.dispose(); cube.dispose(); if (sk) { sk.geometry.dispose(); sk.material.dispose(); } world.dispose?.();
     if (phys) {
-      // below the horizon is ground, as in the viewport; the sky above is scaled so a roof gets the viewport's sky light
+      // One model for sun and sky, like Cycles' sky texture: the sun's colour and strength come from the same
+      // Preetham air the viewport's sky is drawn with (orange and weaker as it sinks, white overhead), and the sky's
+      // light on a roof is the clear-sky share of that sun (SKY_DIFFUSE_SHARE), so a low sun still rakes warm and
+      // strong over a softer blue fill. Below the horizon is ground, as in the viewport.
       data.fill(0, 0, (W * H) / 2 * 4);
-      const s = luminance(envUpIrradiance(data, W, H)), want = luminance([hemi.color.r, hemi.color.g, hemi.color.b]) * hemi.intensity, f = s > 0 ? want / s : 0;
+      const dn = sp.clone().sub(tp).normalize(); physSun = physicalSunIrradiance(Math.asin(dn.y));
+      const s = luminance(envUpIrradiance(data, W, H)), want = SKY_DIFFUSE_SHARE * luminance(physSun), f = s > 0 ? want / s : 0;
       for (let i = (W * H) / 2 * 4; i < data.length; i++) data[i] *= f;
       envAddSplit(data, W, H, [0, 0, 0], down, "lower");
     } else envAddSplit(data, W, H, up, down);
   } else envAddSplit(data, W, H, up, down);
-  if (sun.visible && sun.intensity > 0) { const d = sp.clone().sub(tp); envAddSun(data, W, H, [d.x, d.y, d.z], [sun.color.r * sun.intensity, sun.color.g * sun.intensity, sun.color.b * sun.intensity]); }
+  // the sun: the physical sky's own sun, otherwise the viewport sun's colour × strength
+  if (sun.visible && sun.intensity > 0) { const d = sp.clone().sub(tp); envAddSun(data, W, H, [d.x, d.y, d.z], physSun || [sun.color.r * sun.intensity, sun.color.g * sun.intensity, sun.color.b * sun.intensity]); }
   for (let i = 3; i < data.length; i += 4) data[i] = 1;
   ptWorldTex?.dispose();
   const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
@@ -1811,7 +1816,10 @@ function ptTick() {
   const gl = ptR.getContext(), sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); gl.flush();
   return new Promise((ok) => { const poll = () => { const r = gl.clientWaitSync(sync, 0, 0); if (r === gl.TIMEOUT_EXPIRED) return setTimeout(poll, 2); gl.deleteSync(sync); ok(); }; setTimeout(poll, 0); });
 }
-async function ptTrace(w, h, samples, { onSample, onClean } = {}) {
+// meter: expose the picture like a camera would, from its first few samples (Final/Draft alike); the Exposure field
+// is an offset on top. An animation meters its first frame and keeps that for every frame, so it doesn't flicker.
+const ptMeter = (w, h) => { const px = new Float32Array(w * h * 4); ptR.readRenderTargetPixels(pt.target, 0, 0, w, h, px); ptAuto = meterExposure(px); ptLook(); };
+async function ptTrace(w, h, samples, { onSample, onClean, meter = false } = {}) {
   const cam = shot.obj.userData.cam; cam.aspect = w / h; cam.updateProjectionMatrix();
   const engine = await ptEngine(w, h); ptLook(); const restore = ptPrep();
   try {
@@ -1820,6 +1828,7 @@ async function ptTrace(w, h, samples, { onSample, onClean } = {}) {
     const t0 = performance.now(); let lastSnap = 0, t1 = 0, warm = engine.isCompiling;
     while (engine.samples < samples && ptBusy) {
       engine.renderSample(); if (warm && !engine.isCompiling) { warm = false; engine.reset(); continue; } if (!t1 && !warm && engine.samples >= 1) t1 = performance.now();
+      if (meter && !warm && engine.samples >= Math.min(4, samples)) { ptMeter(w, h); meter = false; }
       if (performance.now() - lastSnap > 1000) { ptSnapNow(w, h); lastSnap = performance.now(); }
       if (onSample) onSample(warm ? 0 : engine.samples);
       if ((warm || engine.samples < 1) && performance.now() - t0 > 180000) throw new Error("the graphics card didn't start tracing within three minutes");
@@ -1827,6 +1836,7 @@ async function ptTrace(w, h, samples, { onSample, onClean } = {}) {
     }
     const n = Math.floor(engine.samples); if (t1 && n > 4) ptKeepSpeed((performance.now() - t1) / (n - 1) / ((w * h) / 1e6));
     if (n < 1) return { how: "none", samples: 0 };
+    if (meter) ptMeter(w, h);
     return { how: await ptFinish(w, h, onClean), samples: n };
   } finally { restore(); }
 }
@@ -1869,6 +1879,7 @@ function ptWire(kind, frames = 1) {
 const ptLock = (on) => { ["ptGo", "ptQ", "ptSize", "ptDn", "ptDof", "ptLook"].forEach((id) => { const e = $(id); if (e) e.disabled = on; }); const st = $("ptStop"); if (st) st.disabled = !on; };
 const ptHost = () => { ptCanvas.style.width = "100%"; ptCanvas.style.height = "auto"; ptCanvas.style.display = "block"; $("ptHost").appendChild(ptCanvas); };
 const PT_CLEANED = { oidn: "Cleaned by Open Image Denoise, on this device.", filter: "Cleaned by the simpler built-in filter: this browser has no WebGPU for Open Image Denoise.", none: "" };
+const ptNoteHtml = (how) => `${PT_CLEANED[how] ? `<span>${PT_CLEANED[how]}</span> ` : ""}<span>Exposure metered for this shot: ${(Math.round(Math.log2(ptAuto) * 10) / 10).toFixed(1)} EV (your offset ${ptSet.ev.toFixed(1)} EV).</span>`;
 function ptSlowCheck(kind, left) { const w = $("ptWarn"); if (!w || left < TRACE_SLOW_SECONDS[kind]) return; w.hidden = false; w.textContent = `This device is slow for this: about ${traceDuration(left)} left. Stop, then pick Draft or ½ size for a quicker render.`; }
 async function renderTracedStill() {
   if (ptBusy) return toast("A path-traced render is already running");
@@ -1881,7 +1892,7 @@ async function renderTracedStill() {
     ptBusy = true; ptLock(true); ptHost();
     const t0 = performance.now(); let res;
     try {
-      res = await ptTrace(w, h, n, {
+      res = await ptTrace(w, h, n, { meter: true,
         onSample: (s) => { const el = (performance.now() - t0) / 1000, done = Math.floor(s), pr = $("prog"); if (pr) pr.style.width = Math.min(100, (s / n) * 100) + "%"; const left = done > 0 ? (el / s) * (n - s) : 0; const tx = $("progTxt"); if (tx) tx.textContent = done > 0 ? `Sample ${done} of ${n} · ${traceDuration(el)} · about ${traceDuration(left)} left` : `Starting the graphics card · ${traceDuration(el)}`; if (el > 4 && done > 1) ptSlowCheck("still", left); },
         onClean: () => { const tx = $("progTxt"); if (tx) tx.textContent = "Cleaning the grain…"; },
       });
@@ -1889,7 +1900,7 @@ async function renderTracedStill() {
     const done = ptBusy; ptBusy = false; if (!$("ptGo")) return;
     ptLock(false); if (res.samples) { save.href = ptSnap.toDataURL("image/png"); save.style.pointerEvents = ""; save.style.opacity = ""; }
     const tx = $("progTxt"), el = (performance.now() - t0) / 1000; if (tx) tx.textContent = `${done ? "Done" : "Stopped"} · ${res.samples} samples · ${traceDuration(el)}`;
-    $("ptNote").textContent = PT_CLEANED[res.how]; est();
+    $("ptNote").innerHTML = ptNoteHtml(res.how); est();
   };
   $("ptStop").onclick = ptStop;
 }
@@ -1906,7 +1917,7 @@ async function renderTracedVideo() {
     const was = time; play(false); const shots = [], t0 = performance.now(); let how = "none";
     try {
       for (let f = pStart; f <= pEnd && ptBusy; f++) {
-        evaluate((f - 1) / FPS); const res = await ptTrace(w, h, n); if (!ptBusy && res.samples < n) break; how = res.how;
+        evaluate((f - 1) / FPS); const res = await ptTrace(w, h, n, { meter: f === pStart }); if (!ptBusy && res.samples < n) break; how = res.how;
         shots.push(await new Promise((r) => ptSnap.toBlob(r, "image/jpeg", 0.92)));
         const i = f - pStart + 1, pr = $("prog"); if (pr) pr.style.width = (i / total) * 100 + "%";
         const tx = $("progTxt"), el = (performance.now() - t0) / 1000, left = (el / i) * (total - i); if (tx) tx.textContent = `Frame ${i} of ${total} · ${traceDuration(el)} · about ${traceDuration(left)} left`;
@@ -1915,7 +1926,7 @@ async function renderTracedVideo() {
     } catch (e) { setTime(was); return ptFail(title, e); }
     setTime(was); const stopped = !ptBusy; ptBusy = false;
     if (!$("ptGo")) return;
-    ptLock(false); $("ptNote").textContent = PT_CLEANED[how];
+    ptLock(false); $("ptNote").innerHTML = ptNoteHtml(how);
     if (!shots.length) { const tx = $("progTxt"); if (tx) tx.textContent = "Stopped before the first frame was finished."; return; }
     const tx = $("progTxt"); if (tx) tx.textContent = `${stopped ? "Stopped after" : "Traced"} ${shots.length} frames · recording the video at ${FPS} fps…`;
     const cv = document.createElement("canvas"); cv.width = w; cv.height = h; const ctx = cv.getContext("2d"); const stream = cv.captureStream(FPS);
@@ -1926,7 +1937,7 @@ async function renderTracedVideo() {
     for (const bm of bitmaps) { ctx.drawImage(bm, 0, 0); await new Promise((r) => setTimeout(r, 1000 / FPS)); }
     rec.stop(); await new Promise((r) => (rec.onstop = r)); bitmaps.forEach((b) => b.close());
     const blob = new Blob(chunks, { type: type || "video/webm" }), url = URL.createObjectURL(blob), ext = (type || "video/webm").includes("mp4") ? "mp4" : "webm";
-    openWin(title, `<video src="${url}" controls autoplay loop muted playsinline></video><div class="row-btns"><a class="pbtn accent" style="display:grid;place-items:center;text-decoration:none" download="helios-traced-${pStart}-${pEnd}.${ext}" href="${url}">Save video</a></div><p>${shots.length} path-traced frames, ${w} × ${h}, ${n} samples each${stopped ? ", stopped early" : ""}.</p><p class="hint">${PT_CLEANED[how]}</p>`);
+    openWin(title, `<video src="${url}" controls autoplay loop muted playsinline></video><div class="row-btns"><a class="pbtn accent" style="display:grid;place-items:center;text-decoration:none" download="helios-traced-${pStart}-${pEnd}.${ext}" href="${url}">Save video</a></div><p>${shots.length} path-traced frames, ${w} × ${h}, ${n} samples each${stopped ? ", stopped early" : ""}.</p><p class="hint">${ptNoteHtml(how)}</p>`);
   };
 }
 

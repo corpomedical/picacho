@@ -147,6 +147,64 @@ export function envAddSun(data: Float32Array, w: number, h: number, dir: readonl
   return { diameterDeg: 0, texels: 0 };
 }
 
+// ---------------- sun and sky from one model (physical sky) ----------------
+
+/** The Studio's physical sky settings (studio-engine.ts sets the viewport's Sky.js to these). */
+export const STUDIO_SKY = { turbidity: 5, rayleigh: 1.6, mieCoefficient: 0.005 } as const;
+/** The sun's light at the zenith, straight on: the viewport's midday sun strength. */
+export const SUN_ZENITH_IRRADIANCE = 3;
+/** Clear-sky diffuse light on a roof as a share of the sun's direct-normal light (ASHRAE's clear-sky C, 0.06–0.14; a touch more for a hazier sky). */
+export const SKY_DIFFUSE_SHARE = 0.15;
+
+/**
+ * How much of the sun's light gets through the air at an elevation, per colour: Sky.js's own Preetham terms
+ * (Rayleigh + Mie extinction over the optical path), so the traced sun turns warm and dims as it sinks exactly as
+ * the viewport's physical sky does.
+ */
+export function skyTransmittance(elevationRad: number, sky: { turbidity: number; rayleigh: number; mieCoefficient: number } = STUDIO_SKY): Rgb {
+  const totalRayleigh = [5.804542996261093e-6, 1.3562911419845635e-5, 3.0265902468824876e-5];
+  const mieConst = [1.8399918514433978e14, 2.7798023919660528e14, 4.0790479543861094e14];
+  const c = 0.2 * sky.turbidity * 10e-18;
+  const zenith = Math.acos(Math.max(0, Math.sin(Math.max(elevationRad, 0))));
+  const inverse = 1 / (Math.cos(zenith) + 0.15 * Math.pow(93.885 - (zenith * 180) / Math.PI, -1.253));
+  const sR = 8.4e3 * inverse, sM = 1.25e3 * inverse;
+  return [0, 1, 2].map((k) => Math.exp(-(totalRayleigh[k] * sky.rayleigh * sR + 0.434 * c * mieConst[k] * sky.mieCoefficient * sM))) as Rgb;
+}
+
+/** The sun's direct-normal light (colour × strength) at an elevation: white and SUN_ZENITH_IRRADIANCE overhead, orange and weaker low down. */
+export function physicalSunIrradiance(elevationRad: number): Rgb {
+  const t = skyTransmittance(elevationRad), t0 = skyTransmittance(Math.PI / 2);
+  return [0, 1, 2].map((k) => (SUN_ZENITH_IRRADIANCE * t[k]) / t0[k]) as Rgb;
+}
+
+// ---------------- metering ----------------
+
+/** Where the metered picture's brightest 2 % lands (scene light, before AgX): bright, but short of white. */
+export const METER_HIGHLIGHT = 0.6;
+
+/**
+ * A camera's exposure for a picture: the log-average luminance brought to mid-grey (0.18), but never so far that
+ * the brightest 2 % (a sunlit wall, the sky) passes METER_HIGHLIGHT — a dark foreground under a bright wall would
+ * otherwise wash the wall out. Kept within −3…+4 EV.
+ */
+export function meterExposure(rgba: Float32Array): number {
+  const BINS = 240, LO = -14; // log2 luminance −14…+10 in tenths
+  const hist = new Uint32Array(BINS);
+  let sum = 0, n = 0;
+  for (let k = 0; k < rgba.length; k += 4) {
+    const l = 0.2126 * rgba[k] + 0.7152 * rgba[k + 1] + 0.0722 * rgba[k + 2];
+    if (!Number.isFinite(l)) continue;
+    const g = Math.log2(Math.max(l, 1e-4));
+    sum += g; n++;
+    hist[Math.min(BINS - 1, Math.max(0, Math.floor((g - LO) * 10)))]++;
+  }
+  if (!n) return 1;
+  let seen = 0, top = LO;
+  for (let b = 0; b < BINS; b++) { seen += hist[b]; if (seen >= n * 0.98) { top = LO + (b + 1) / 10; break; } }
+  const byAverage = 0.18 / 2 ** (sum / n), byHighlights = METER_HIGHLIGHT / 2 ** top;
+  return Math.min(16, Math.max(1 / 8, Math.min(byAverage, byHighlights)));
+}
+
 // ---------------- the denoiser ----------------
 
 /** Open Image Denoise's ray-tracing network for HDR colour with albedo and normal guides (Intel, Apache-2.0). */
