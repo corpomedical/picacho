@@ -16,6 +16,7 @@ import { setElements } from "@/lib/sets/elements";
 import { letterbox } from "@/lib/sets/rig";
 import { SET_DIRECTION_MAX_CHARS } from "@/lib/sets/set-config";
 import { studioShotInput } from "@/lib/sets/studio-shot";
+import { GRIP_TAP_PX, LONG_PRESS_MS, LONG_PRESS_SLOP_PX, STUDIO_COMPACT_QUERY, nextSheet, sheetDragHeight, sheetHeights, sheetSnap } from "@/lib/sets/studio-sheets";
 import {
   STUDIO_ADD_KINDS,
   STUDIO_ASTRA_NOTHING,
@@ -2301,6 +2302,78 @@ function renderAll() { if (typeof updatePath === "function") updatePath(); rende
 const bgStudio = new THREE.Color(0x3a3b3f);
 function resize() { const r = view.getBoundingClientRect(); if (!r.width) return; renderer.setSize(r.width, r.height, false); editorCam.aspect = r.width / Math.max(1, r.height); editorCam.updateProjectionMatrix(); }
 const resizeObs = new ResizeObserver(resize); resizeObs.observe(view); resize();
+
+// ================= phones and tablets (stage 6, 2026-09-29) =================
+// Blender-on-iPad style (STUDIO_COMPACT_QUERY): the viewport takes the
+// screen; File/Edit/Render/Help sit behind one menu button; the Outliner,
+// Properties, Astra and the Timeline are bottom sheets from a tab row, each
+// with a grip (drag between half and full, tap to switch); menus open as
+// sheets from the bottom; long-press opens the context menu; Undo, Redo and
+// Search (F3) get buttons. One finger orbits (or drags the gizmo), two
+// fingers pinch-zoom and pan (OrbitControls' own touch), a tap selects.
+// Nothing is hidden, only moved; a desktop window is left exactly as it was.
+const appEl = $("app");
+let sheet = "", sheetSize = "half", compactOnce = false;
+function sheetRoom() { const t = document.querySelector(".top"), m = $("mTabs"); return Math.max(200, appEl.clientHeight - (t ? t.offsetHeight : 48) - (m ? m.offsetHeight : 56)); }
+function sizeSheet(px) { appEl.style.setProperty("--sheet-h", Math.round(px) + "px"); }
+function showSheet(name) {
+  sheet = name; appEl.dataset.sheet = sheet;
+  document.querySelectorAll("#mTabs [data-sheet]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.sheet === sheet)));
+  if (!sheet) return;
+  const h = sheetHeights(sheetRoom()); sizeSheet(sheetSize === "full" ? h.full : h.half);
+  if (sheet === "astra") { ntab = "astra"; toggleN(true); renderN(); }
+  else if (sheet === "props") renderProps();
+  else if (sheet === "outliner") renderOutliner();
+  else if (sheet === "time") renderTimeline();
+}
+const compactMq = matchMedia(STUDIO_COMPACT_QUERY);
+function syncCompact() {
+  const on = compactMq.matches; appEl.classList.toggle("compact", on); appEl.parentElement?.classList.toggle("studio-compact", on);
+  if (!on) { appEl.removeAttribute("data-sheet"); appEl.style.removeProperty("--sheet-h"); sheet = ""; } else {
+    // A half sheet on a phone has room for the thread and the box, not the example list too: it starts folded (one tap opens it).
+    if (examplesOpen && !compactOnce) { if ($("exToggle")) $("exToggle").click(); else examplesOpen = false; }
+    compactOnce = true; showSheet(sheet);
+  }
+  requestAnimationFrame(resize);
+}
+compactMq.addEventListener("change", syncCompact, { signal: ac.signal });
+$("mTabs").addEventListener("click", (e) => { const b = e.target.closest("[data-sheet]"); if (!b) return; closeMenus(); if (b.dataset.sheet !== sheet) sheetSize = "half"; showSheet(nextSheet(sheet, b.dataset.sheet)); }, { signal: ac.signal });
+// The grips: drag to size, let go to settle (closed / half / full), tap to switch half ↔ full.
+document.querySelectorAll("[data-grip]").forEach((g) => {
+  let start = null;
+  g.addEventListener("pointerdown", (e) => { e.preventDefault(); g.setPointerCapture?.(e.pointerId); const sh = g.parentElement.getBoundingClientRect().height; start = { y: e.clientY, h: sh }; }, { signal: ac.signal });
+  g.addEventListener("pointermove", (e) => { if (!start) return; sizeSheet(sheetDragHeight(start.h, e.clientY - start.y, sheetRoom())); }, { signal: ac.signal });
+  const end = (e) => {
+    if (!start) return; const dy = e.clientY - start.y, room = sheetRoom(), h = sheetHeights(room); const was = start; start = null;
+    if (Math.abs(dy) < GRIP_TAP_PX) { sheetSize = sheetSize === "full" ? "half" : "full"; sizeSheet(h[sheetSize]); return; }
+    const snap = sheetSnap(sheetDragHeight(was.h, dy, room), room);
+    if (snap === "closed") { showSheet(""); return; }
+    sheetSize = snap; sizeSheet(h[snap]);
+  };
+  g.addEventListener("pointerup", end, { signal: ac.signal }); g.addEventListener("pointercancel", end, { signal: ac.signal });
+  g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); sheetSize = sheetSize === "full" ? "half" : "full"; sizeSheet(sheetHeights(sheetRoom())[sheetSize]); } }, { signal: ac.signal });
+});
+// The one menu button's list opens the top bar's own menus (as sheets from the bottom).
+document.querySelector('[data-list="mmenu"]').addEventListener("click", (e) => {
+  const b = e.target.closest("[data-open]"); if (!b) return; e.stopPropagation(); closeMenus();
+  document.querySelector(`[data-menu="${b.dataset.open}"]`)?.click();
+}, { signal: ac.signal });
+wireList($("mBar"));
+$("mSearch").addEventListener("click", (e) => { e.stopPropagation(); closeMenus(); openSearch(); }, { signal: ac.signal });
+// Long-press (touch) = right-click: the context menu for what's under the finger.
+let lpress = null, lpFired = false, swallowUntil = 0;
+const lpCancel = () => { if (lpress) { clearTimeout(lpress.t); lpress = null; } };
+canvas.addEventListener("pointerdown", (e) => {
+  if (e.pointerType !== "touch") return;
+  if (!e.isPrimary) { lpCancel(); return; }
+  lpCancel(); const x = e.clientX, y = e.clientY;
+  lpress = { x, y, t: setTimeout(() => { lpress = null; if (tc.dragging || modal) return; downAt = null; lpFired = true; canvas.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y })); }, LONG_PRESS_MS) };
+}, { signal: ac.signal });
+wOn("pointermove", (e) => { if (lpress && Math.hypot(e.clientX - lpress.x, e.clientY - lpress.y) > LONG_PRESS_SLOP_PX) lpCancel(); });
+wOn("pointerup", () => { lpCancel(); if (lpFired) { lpFired = false; swallowUntil = performance.now() + 400; } }); wOn("pointercancel", () => { lpCancel(); lpFired = false; });
+// The click the lifted finger makes after a long-press must not close the menu it opened.
+window.addEventListener("click", (e) => { if (performance.now() < swallowUntil) { swallowUntil = 0; e.stopPropagation(); e.preventDefault(); } }, { capture: true, signal: ac.signal });
+syncCompact();
 function frameBox(w, h) { const a = FORMATS[format], pad = 40; let bh = h - pad * 2, bw = bh * a; if (bw > w - pad * 2) { bw = w - pad * 2; bh = bw / a; } return { x: (w - bw) / 2, y: (h - bh) / 2, w: bw, h: bh }; }
 function tick(now) {
   if (stopped) return; raf = requestAnimationFrame(tick);
