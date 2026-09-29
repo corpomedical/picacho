@@ -9,7 +9,7 @@ import { readStudioScene } from "@/lib/sets/studio-scene";
 import { finisherCanRun } from "@/lib/sets/finisher";
 import { buildingHintKey } from "@/lib/sets/leaving";
 import { SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_UNAVAILABLE, SET_NOT_FOUND } from "@/lib/sets/messages";
-import { HELIOS_STUDIO_FOR_ALL, SETS_OPEN_TO_PLANS } from "@/lib/sets/set-config";
+import { HELIOS_CYCLES_FOR_ALL, HELIOS_STUDIO_FOR_ALL, SETS_OPEN_TO_PLANS } from "@/lib/sets/set-config";
 import { SHOT_WORDS_MAX_CHARS } from "@/lib/sets/shot-words";
 import { tryAgainWords } from "@/lib/sets/try-again";
 import { SetBuilding } from "@/components/sets/set-building";
@@ -107,6 +107,7 @@ export default async function SetPage({
         spec={data.set.editedSpec ?? data.set.spec}
         savedScene={savedScene}
         characters={data.characters}
+        cyclesOn={data.modelsOn || HELIOS_CYCLES_FOR_ALL}
       />
     );
   }

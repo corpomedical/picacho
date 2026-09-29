@@ -16,6 +16,7 @@ import { setElements } from "@/lib/sets/elements";
 import { letterbox } from "@/lib/sets/rig";
 import { SET_DIRECTION_MAX_CHARS } from "@/lib/sets/set-config";
 import { studioShotInput } from "@/lib/sets/studio-shot";
+import { CYCLES_DEFAULT_SAMPLES, CYCLES_EDGES, CYCLES_MAX_FRAMES, CYCLES_MAX_SAMPLES_ANIMATION, CYCLES_MAX_SAMPLES_STILL, CYCLES_MAX_SECONDS, CYCLES_TOO_LONG, HELIOS_CYCLES_GPU, cyclesDollars, cyclesDuration, cyclesSize, estimateCycles } from "@/lib/sets/cycles";
 import { watchStudioText } from "./studio-i18n";
 import { GRIP_TAP_PX, LONG_PRESS_MS, LONG_PRESS_SLOP_PX, STUDIO_COMPACT_QUERY, nextSheet, sheetDragHeight, sheetHeights, sheetSnap } from "@/lib/sets/studio-sheets";
 import {
@@ -73,6 +74,15 @@ export type StudioOptions = {
    */
   locale?: string;
   t?: (text: string) => string;
+  /**
+   * Blender (Cycles) renders on a cloud GPU (2026-09-29): the scene file and
+   * the job go to studio-cycles.ts pressCycles (helios-studio.tsx). Absent or
+   * null, the Render menu's two entries stay hidden.
+   */
+  cycles?: {
+    unreachable: string;
+    run: (glb: Blob, job: unknown, onUpdate: (u: any) => void) => Promise<any>;
+  } | null;
   astra?: {
     unreachable: string;
     ask: (text: string, summary: unknown, turns: { who: "person" | "astra"; text: string }[]) => Promise<any>;
@@ -1729,6 +1739,136 @@ async function renderTracedVideo() {
   };
 }
 
+// ================= Blender (Cycles) render on a cloud GPU (2026-09-29) =================
+// The operator picked "Real Blender renders": the scene (every visible thing, lamps with their lights) goes as
+// a GLB with the job (shot camera per frame, moving things per frame, sun, sky, size, samples) to Blender on a
+// cloud GPU (opts.cycles → studio-cycles.ts → cycles-actions.ts → modal/helios_cycles.py). Admins only for now.
+const cy = { busy: false, kind: "still", edge: { still: 1920, animation: 1280 }, samples: { ...CYCLES_DEFAULT_SAMPLES }, start: null, end: null, t0: 0, upd: null, est: 0, result: null, timer: 0 };
+const CY_TITLE = { still: "Blender render (Cycles) — still", animation: "Blender render (Cycles) — animation" };
+const cyRound = (a) => Array.from(a, (v) => Math.round(v * 1e5) / 1e5 || 0);
+const cyRgb = (c) => [c.r, c.g, c.b].map((v) => Math.round(Math.max(0, v) * 1e4) / 1e4);
+/** What Blender renders: every visible thing that renders (the export's list, less "don't render"). */
+const cyItems = () => items.filter((i) => exportable(i) && !i.noRender);
+/** Like exportGroup, but lamps keep their lights, a spot faces its target, and each thing is named for Blender to find. */
+function cyGroup(list) {
+  const g = new THREE.Group(); scene.updateMatrixWorld(true);
+  list.forEach((it, n) => {
+    const c = it.obj.clone(true); it.obj.matrixWorld.decompose(c.position, c.quaternion, c.scale); c.name = "helios_item_" + n;
+    const drop = []; c.traverse((o) => { if (o !== c && (o.isCamera || o.isLine || o.isPoints || o.isSprite || o.type === "AxesHelper" || o.isHemisphereLight || o.isRectAreaLight)) drop.push(o); });
+    drop.forEach((o) => o.parent?.remove(o));
+    c.traverse((o) => { if (o.isSpotLight && o.target && o.target.parent === o.parent) { const d = o.target.position.clone().sub(o.position); if (d.lengthSq() > 1e-9) o.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), d.normalize()); o.add(o.target); o.target.position.set(0, 0, -1); } });
+    g.add(c);
+  });
+  g.updateMatrixWorld(true); return g;
+}
+function cyPick() {
+  const k = cy.kind, [w, h] = cyclesSize(FORMATS[format], cy.edge[k]);
+  const start = k === "still" ? frameNo() : Math.min(FRAMES - 1, Math.max(1, cy.start ?? pStart));
+  const end = k === "still" ? start : Math.min(FRAMES, Math.max(start + 1, cy.end ?? pEnd), start + CYCLES_MAX_FRAMES - 1);
+  const frames = end - start + 1, est = estimateCycles({ width: w, height: h, samples: cy.samples[k], frames });
+  return { w, h, start, end, frames, samples: cy.samples[k], est };
+}
+/** The scene file and the job, as the door checks it (cycles.ts validateCyclesJob). */
+async function cyPayload(p) {
+  const kind = cy.kind, list = cyItems(), was = time, cam = shot.obj.userData.cam;
+  const { GLTFExporter } = await import("three/examples/jsm/exporters/GLTFExporter.js");
+  let glb, camera = [], per = list.map(() => []);
+  try {
+    if (kind === "animation") evaluate((p.start - 1) / FPS);
+    glb = await new GLTFExporter().parseAsync(cyGroup(list), { binary: true });
+    for (let f = p.start; f <= p.end; f++) {
+      if (kind === "animation") evaluate((f - 1) / FPS);
+      scene.updateMatrixWorld(true); camera.push(cyRound(cam.matrixWorld.elements)); list.forEach((it, n) => per[n].push(cyRound(it.obj.matrixWorld.elements)));
+    }
+  } finally { if (kind === "animation") setTime(was); }
+  const tracks = kind === "animation" ? list.map((it, n) => ({ node: "helios_item_" + n, m: per[n] })).filter((t) => t.m.some((m) => m.some((v, j) => Math.abs(v - t.m[0][j]) > 1e-5))) : [];
+  const studio = skyMode === "studio";
+  const job = {
+    kind, width: p.w, height: p.h, samples: p.samples, frameStart: p.start, frameEnd: p.end, fps: FPS,
+    lensMm: shot.obj.userData.lensMm, sensorMm: 24, camera, tracks, hour,
+    world: { mode: skyMode === "physical" || studio ? skyMode : "simple", background: cyRgb(studio ? studioBg : skyColor), sky: cyRgb(studio ? new THREE.Color(0xffffff) : hemi.color), ground: cyRgb(studio ? new THREE.Color(0x9a9a9a) : hemi.groundColor), strength: Math.round((studio ? 1 : hemi.intensity) * 1e4) / 1e4 },
+    sun: { on: sun.visible && !sunItem.hidden, dir: cyRound(sun.position.clone().normalize().toArray()), color: cyRgb(sun.color), strength: Math.round(sun.intensity * 1e4) / 1e4 },
+  };
+  return { glb: new Blob([glb], { type: "model/gltf-binary" }), job };
+}
+function openCycles(kind) {
+  if (!opts.cycles) return;
+  if (!cy.busy && cy.kind !== kind) { cy.kind = kind; cy.result = null; }
+  showCycles();
+}
+function cyStatus() {
+  const s = Math.round((Date.now() - cy.t0) / 1000), u = cy.upd;
+  if (!u || u.phase === "uploading") return `Sending the scene to the render computer · ${s} s`;
+  if (u.phase === "starting") return `Starting a cloud GPU and Blender · ${s} s`;
+  return cy.kind === "animation" ? `Rendering frame ${u.done} of ${u.total} · ${s} s` : `Rendering in Blender · ${s} s`;
+}
+function cyTick() {
+  const bar = $("cyProg"), txt = $("cyTxt"); if (!bar || !txt || !cy.busy) return;
+  const u = cy.upd, el = (Date.now() - cy.t0) / 1000;
+  bar.style.width = (u && u.phase === "rendering" && u.total > 0 ? (u.done / u.total) * 100 : Math.min(95, (el / Math.max(10, cy.est)) * 100)) + "%";
+  txt.textContent = cyStatus();
+}
+function showCycles() {
+  const C = opts.cycles; if (!C) return;
+  const k = cy.kind, p = cyPick(), r = cy.result;
+  let body = "";
+  if (r && r.error === null) {
+    const media = r.kind === "animation" ? `<video src="${esc(r.url)}" controls autoplay loop muted playsinline></video>` : `<img alt="Blender render" src="${esc(r.url)}">`;
+    const file = r.kind === "animation" ? `helios-cycles-${p.start}-${p.end}.mp4` : `helios-cycles-frame-${p.start}.png`;
+    body = `${media}<div class="row-btns"><a class="pbtn accent" style="display:grid;place-items:center;text-decoration:none" download="${esc(file)}" href="${esc(r.url)}">${r.kind === "animation" ? "Save video" : "Save image"}</a><button class="pbtn" id="cyAgain">Render again</button></div>
+<p>Rendered by Blender Cycles on ${esc(HELIOS_CYCLES_GPU + (r.device ? " · " + r.device : ""))} · ${esc(cyclesDuration(r.seconds))} in all · ${esc(cyclesDollars(r.usd))} of GPU time</p>`;
+  } else if (r) {
+    body = `<p class="cast-note" role="alert">${esc(r.error || C.unreachable)}</p><div class="row-btns"><button class="pbtn" id="cyAgain">Back</button></div>`;
+  } else {
+    const sizes = CYCLES_EDGES[k].map((e) => { const [w, h] = cyclesSize(FORMATS[format], e); return `<option value="${e}"${e === cy.edge[k] ? " selected" : ""}>${w} × ${h}</option>`; }).join("");
+    const tooLong = p.est.seconds > CYCLES_MAX_SECONDS;
+    body = `<p class="hint">Blender renders the shot camera's view with Cycles on a cloud GPU: real bounced light, soft shadows and reflections, from the scene exactly as it is here.</p>
+<div class="fr"><label for="cySize">Size</label><select class="sel2" id="cySize"${cy.busy ? " disabled" : ""}>${sizes}</select></div>
+<div class="fr" style="margin-top:4px"><label>Samples</label><span id="cySampF"></span></div>
+${k === "animation" ? `<div class="fr" style="margin-top:4px"><label>Start</label><span id="cyStartF"></span></div><div class="fr" style="margin-top:4px"><label>End</label><span id="cyEndF"></span></div>` : ""}
+<p id="cyEst">About ${esc(cyclesDuration(p.est.seconds))} on a cloud GPU · about ${esc(cyclesDollars(p.est.usd))} of GPU time</p>
+<p class="hint">An estimate until the first renders are timed. No credits are taken while Blender renders are for the team.</p>
+<p class="cast-note" id="cyLong"${tooLong ? "" : " hidden"}>${esc(CYCLES_TOO_LONG)}</p>
+<div class="row-btns"><button class="pbtn accent" id="cyGo"${cy.busy || tooLong ? " disabled" : ""}>Render in Blender</button></div>
+<div class="prog"${cy.busy ? "" : " hidden"}><i id="cyProg"></i></div><p class="hint" id="cyTxt" role="status"></p>
+<p class="hint"${cy.busy ? "" : " hidden"}>You can close this window: the render keeps going, and Render ▸ opens it again.</p>`;
+  }
+  const open = $("dlgBody") && $("dlgBody").querySelector("[data-cycles-win]");
+  if (!open || $("dlg").hidden || $("dlgTitle").dataset.cy !== k) { openWin(CY_TITLE[k], `<div data-cycles-win></div>`); $("dlgTitle").dataset.cy = k; }
+  const box = $("dlgBody").querySelector("[data-cycles-win]"); box.innerHTML = body;
+  const again = $("cyAgain"); if (again) again.onclick = () => { cy.result = null; showCycles(); };
+  if (!r) {
+    const redo = () => { if (!cy.busy) showCycles(); };
+    $("cySize").onchange = (e) => { cy.edge[k] = +e.target.value; redo(); };
+    const maxS = k === "animation" ? CYCLES_MAX_SAMPLES_ANIMATION : CYCLES_MAX_SAMPLES_STILL;
+    $("cySampF").appendChild(field(p.samples, { step: 1, dec: 0, min: 1, max: maxS, onCommit: (v) => { cy.samples[k] = Math.round(v); redo(); } }));
+    if (k === "animation") {
+      $("cyStartF").appendChild(field(p.start, { step: 1, dec: 0, min: 1, max: FRAMES - 1, onCommit: (v) => { cy.start = Math.round(v); redo(); } }));
+      $("cyEndF").appendChild(field(p.end, { step: 1, dec: 0, min: 2, max: FRAMES, onCommit: (v) => { cy.end = Math.round(v); redo(); } }));
+    }
+    $("cyGo").onclick = cyGo;
+    cyTick();
+  }
+}
+async function cyGo() {
+  const C = opts.cycles; if (!C || cy.busy) return;
+  const p = cyPick(); if (p.est.seconds > CYCLES_MAX_SECONDS) return;
+  cy.busy = true; cy.t0 = Date.now(); cy.upd = null; cy.est = p.est.seconds; cy.result = null;
+  clearInterval(cy.timer); cy.timer = setInterval(cyTick, 1000);
+  showCycles();
+  let res;
+  try {
+    const pay = await cyPayload(p);
+    res = await C.run(pay.glb, pay.job, (u) => { cy.upd = u; cyTick(); });
+  } catch (e) { res = { error: C.unreachable }; }
+  clearInterval(cy.timer); cy.busy = false;
+  if (stopped || (res && res.left)) return;
+  cy.result = res && (res.error !== undefined) ? res : { error: C.unreachable };
+  const here = !$("dlg").hidden && $("dlgBody").querySelector("[data-cycles-win]");
+  if (here) showCycles();
+  else toast(cy.result.error === null ? "Your Blender render is ready · Render ▸" : "Your Blender render didn't come out · Render ▸");
+}
+
 // ================= constraints & motion paths =================
 function setTrack(it, targetId) {
   const b = it.obj.userData.track ?? null; it.obj.userData.track = targetId ?? null;
@@ -2231,8 +2371,10 @@ function restoreSaved() {
   info(picked.from === "account" ? "Your last session on this set is back · from your account" : picked.from === "newer" ? "Your last session on this set is back · from this browser, newer than your account's copy" : "Your last session on this set is back · from this browser");
 }
 // ================= wiring =================
+// Blender renders (2026-09-29): the Render menu's two entries show only when the page hands the door in.
+document.querySelectorAll("[data-cycles]").forEach((el) => (el.hidden = !opts.cycles));
 const ACTS = {
-  import: () => fileIn.click(), exportFile: openExport, renderStill, renderCast: openCast, tracedStill: renderTracedStill, tracedVideo: renderTracedVideo, renderVideo, undo, redo, history: openHistory, keys: openKeys, dup: duplicate, del: () => del(), key: () => keyItems(), delKey: () => delKey(), hide: () => toggleHide(),
+  import: () => fileIn.click(), exportFile: openExport, renderStill, renderCast: openCast, tracedStill: renderTracedStill, tracedVideo: renderTracedVideo, cyclesStill: () => openCycles("still"), cyclesVideo: () => openCycles("animation"), renderVideo, undo, redo, history: openHistory, keys: openKeys, dup: duplicate, del: () => del(), key: () => keyItems(), delKey: () => delKey(), hide: () => toggleHide(),
   frameSel: () => active && frameObj(active.obj), frameAll, camView: () => toggleCam(), camToView, top: () => viewAlong(new THREE.Vector3(0, 1, 0)), front: () => viewAlong(new THREE.Vector3(0, 0, 1)), right: () => viewAlong(new THREE.Vector3(1, 0, 0)),
   selAll: () => { items.filter((i) => !i.hidden && i.kind !== "sun").forEach((i) => selection.add(i)); active = active || [...selection][0]; refreshSel(); },
   selNone: () => select(null), selInvert: () => { const all = items.filter((i) => !i.hidden && i.kind !== "sun"); const was = new Set(selection); selection.clear(); all.forEach((i) => !was.has(i) && selection.add(i)); active = [...selection][0] || null; refreshSel(); },
@@ -2416,5 +2558,5 @@ document.getElementById("sceneTitle").textContent = opts.title;
 if (opts.render && $("castMenuLabel")) $("castMenuLabel").textContent = castLabel();
 document.getElementById("backLink").setAttribute("href", opts.backHref);
 const stopText = opts.t ? watchStudioText($("app").parentElement || document.body, opts.t) : () => {};
-return () => { stopText(); saveNow(); saveToAccount(true); stopped = true; clearInterval(cast.timer); cancelAnimationFrame(raf); clearInterval(saveTimer); ac.abort(); resizeObs.disconnect(); tc.dispose?.(); orbit.dispose(); renderer.dispose(); offR?.dispose(); ptBusy = false; pt?.dispose(); ptR?.dispose(); };
+return () => { stopText(); saveNow(); saveToAccount(true); stopped = true; clearInterval(cast.timer); clearInterval(cy.timer); cancelAnimationFrame(raf); clearInterval(saveTimer); ac.abort(); resizeObs.disconnect(); tc.dispose?.(); orbit.dispose(); renderer.dispose(); offR?.dispose(); ptBusy = false; pt?.dispose(); ptR?.dispose(); };
 }

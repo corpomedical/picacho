@@ -16,6 +16,11 @@
 // Astra for any request (stage 4): the words, the scene summary and the
 // last turns go to askStudioAstra with a fresh press id each; the plan
 // comes back to the engine, which shows it and runs it only on Apply.
+//
+// Blender (Cycles) renders (2026-09-29): Render ▸ "Blender render (Cycles)"
+// sends the scene file and the job through studio-cycles.ts to the doors in
+// cycles-actions.ts, which render it on a cloud GPU. Shown only when the
+// page says so (admins while HELIOS_CYCLES_FOR_ALL is false).
 
 import { useEffect, useRef } from "react";
 import { quoteSend } from "@/lib/generations/quote";
@@ -33,6 +38,10 @@ import type { SetCharacter } from "@/lib/sets/types";
 import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { STUDIO_CSS, STUDIO_HTML } from "./studio-markup";
 import { pressStudioStill, type StudioPressPhase, type StudioShootInput } from "./studio-press";
+import { pressCycles, type CyclesUpdate } from "./studio-cycles";
+import { readCyclesRender, renderCyclesInSet, reserveCyclesScene } from "@/lib/sets/cycles-actions";
+import { CYCLES_BUCKET } from "@/lib/sets/cycles";
+import { createClient as createBrowserClient } from "@/lib/supabase/client";
 
 export function HeliosStudio({
   setId,
@@ -40,12 +49,15 @@ export function HeliosStudio({
   spec,
   savedScene,
   characters,
+  cyclesOn = false,
 }: {
   setId: string;
   title: string;
   spec: SetSpec;
   savedScene: StudioScene | null;
   characters: SetCharacter[];
+  /** Blender renders on a cloud GPU: admins while HELIOS_CYCLES_FOR_ALL is false (the page decides). */
+  cyclesOn?: boolean;
 }) {
   const { t, locale } = useLocale();
   // Read once, when the engine starts: a later render must not restart it.
@@ -94,6 +106,28 @@ export function HeliosStudio({
             }
           },
         },
+        cycles: cyclesOn
+          ? {
+              unreachable,
+              run: (glb: Blob, job: unknown, onUpdate: (u: CyclesUpdate) => void) =>
+                pressCycles(
+                  {
+                    reserve: reserveCyclesScene,
+                    upload: (path: string, token: string, file: Blob) =>
+                      createBrowserClient().storage.from(CYCLES_BUCKET).uploadToSignedUrl(path, token, file, { contentType: "model/gltf-binary" }),
+                    render: renderCyclesInSet,
+                    read: readCyclesRender,
+                    alive: () => !dead,
+                    unreachable,
+                    refresh: wordsRef.current.refresh,
+                    onStale: () => void reloadForNewDeploy({ delayMs: 1800 }),
+                  },
+                  setId,
+                  { glb, job },
+                  onUpdate,
+                ),
+            }
+          : null,
         render: {
           // THE price, from the function the server charges with (set-view.tsx's own).
           credits: quoteSend(stillQuoteInput()).totalCredits,
@@ -121,7 +155,7 @@ export function HeliosStudio({
       dead = true;
       dispose?.();
     };
-  }, [setId, title, spec, unreachable, locale]);
+  }, [setId, title, spec, unreachable, locale, cyclesOn]);
   return (
     <div className="fixed inset-0 z-[70]" data-helios-studio>
       <style>{STUDIO_CSS}</style>
