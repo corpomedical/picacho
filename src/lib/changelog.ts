@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.162.0",
+    build: 201,
+    date: "2026-09-29",
+    title: "A stray repeated wall can't stand through a car in a new set",
+    items: [
+      "Last time, a wall that Astra repeated one step too far was left out when it stood on one of your marks. Now it's also left out when it stands through a car or another thing in the set, even with no mark there. This covers new sets and Astra's changes.",
+      "Walls along the edge of a set stay, whatever is hung on them. Rows stay too, like fences, pillars, seats and dunes, and so does anything a thing is built from. Sets you already have are not changed, and a change from Astra never touches a repeat it handed back as it was.",
+    ],
+  },
+  {
     version: "1.161.0",
     build: 200,
     date: "2026-09-29",
