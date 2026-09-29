@@ -8,9 +8,11 @@ import { saveAppChoices } from "@/lib/light/actions";
 import type { AppMode } from "@/lib/light/mode";
 
 /**
- * Settings → Preferences: Light (one chat box) or the full studio. The
- * switch back from Light's own rail is "Switch to full studio"; this is the
- * way to Light and back from anywhere (operator, 2026-09-27).
+ * Settings → Preferences: the full studio or Picacho Light (one chat box).
+ * The switch back from Light's own rail is "Switch to full studio"; this is
+ * the way to Light and back from anywhere (operator, 2026-09-27). Named and
+ * ordered as the sign-up step's cards, with their own titles, so the two
+ * never drift apart (operator, 2026-09-29: "Rename them to match").
  */
 export function AppModePicker({ current }: { current: AppMode }) {
   const { t } = useLocale();
@@ -38,7 +40,7 @@ export function AppModePicker({ current }: { current: AppMode }) {
       <p className="text-sm font-medium text-atelier-ink">{l.modeTitle}</p>
       <p className="mt-0.5 text-xs text-atelier-muted">{l.modeDesc}</p>
       <div className="mt-3 grid grid-cols-2 gap-2">
-        {(["light", "advanced"] as const).map((value) => (
+        {(["advanced", "light"] as const).map((value) => (
           <button
             key={value}
             type="button"
@@ -52,7 +54,7 @@ export function AppModePicker({ current }: { current: AppMode }) {
                 : "border-atelier-rule text-atelier-muted hover:border-atelier-muted hover:text-atelier-ink",
             )}
           >
-            {value === "light" ? l.modeLight : l.modeAdvanced}
+            {value === "light" ? l.chatTitle : l.studioTitle}
           </button>
         ))}
       </div>

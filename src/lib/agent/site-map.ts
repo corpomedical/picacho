@@ -67,7 +67,7 @@ const SETTINGS_ROOMS: Record<(typeof SETTINGS_TABS)[number], { name: string; wha
   },
   preferences: {
     name: "Preferences",
-    what: "Appearance (light/dark look, language, Picacho Light or the full studio), Your assistant (Aly's name, voice, lamp look, wheel, chat style, personality, live voice, push-to-talk key), Notifications, Email preferences",
+    what: "Appearance (light/dark look, language, \"How you create\": Full studio or Simple chat, which is Picacho Light), Your assistant (Aly's name, voice, lamp look, wheel, chat style, personality, live voice, push-to-talk key), Notifications, Email preferences",
   },
   security: {
     name: "Security",
@@ -316,7 +316,7 @@ export function pageRefusal(page: SitePage, access: PageAccess): string | null {
       : `${page.name} isn't open to this account.`;
   }
   if (access.inLight && page.area === "app" && !page.light) {
-    return `They use Picacho Light, and ${page.name} is part of the full studio. Keep them in Light; if they want the studio, it's Settings → Preferences → Appearance.`;
+    return `They use Picacho Light (the simple chat), and ${page.name} is part of the full studio. Keep them in Light; if they want the studio, it's Settings → Preferences → Appearance → "Full studio", or "Switch to full studio" in Light's menu.`;
   }
   return null;
 }
