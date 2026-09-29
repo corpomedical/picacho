@@ -12,11 +12,15 @@ import {
   STUDIO_SUMMARY_MAX_CHARS,
   STUDIO_TURNS_MAX,
   besidePosition,
+  boxesOverlap,
+  clearNote,
+  clearSpot,
   knownOf,
   normaliseStudioSummary,
   normaliseStudioTurns,
   parseStudioAnswer,
   planActs,
+  sideDirection,
   sizeFactors,
   studioAstraRequest,
   toThreeAxes,
@@ -269,5 +273,72 @@ describe("Blender axes in the Studio", () => {
     for (const label of Object.values(STUDIO_FORMATS)) expect(formats, label).toContain(`"${label}"`);
     const add = engine.slice(engine.indexOf("const ADD = {"), engine.indexOf("function addKind("));
     for (const key of Object.values(STUDIO_ADD_KINDS)) expect(add, key).toMatch(new RegExp(`\\n  ${key}: \\{`));
+  });
+});
+
+// Stage 5 ("Fix walls."): the race track's own trap — a 20 m wall along
+// x −4…0 right beside its car — with the shot camera out at +x, +z.
+describe("keeping what Astra places clear of walls and in view", () => {
+  type B = { min: [number, number, number]; max: [number, number, number] };
+  const WALL = { min: [-4, 0, -68], max: [0, 20, 68], name: "the wall" } as B & { name: string };
+  const CAR = { min: [-1, 0, -2.3], max: [1, 1.5, 2.3], name: '"Car 1"' } as B & { name: string };
+  const lampAt = (x: number, z: number): B => ({ min: [x - 0.45, 0, z - 0.2], max: [x + 0.45, 4, z + 0.2] });
+  const shift = (b: B, dx: number, dz: number): B => ({ min: [b.min[0] + dx, b.min[1], b.min[2] + dz], max: [b.max[0] + dx, b.max[1], b.max[2] + dz] });
+  const LEFT: [number, number] = [-1, 0];
+  const TOWARD: [number, number] = [0.75, 0.65];
+  // From the camera out at +x the wall hides anything whose middle is at x < 0.
+  const seen = (b: B) => (b.min[0] + b.max[0]) / 2 > 0;
+
+  it("a lamp put inside the wall slides out towards the shot camera, where it can be seen, and stays on the ground", () => {
+    const r = clearSpot({ box: lampAt(-3.5, 2.1), obstacles: [WALL, CAR], dirs: [LEFT, TOWARD], visible: seen });
+    expect(r).toMatchObject({ dir: 1, inside: "the wall", hidden: false, stuck: false });
+    const moved = shift(lampAt(-3.5, 2.1), r.dx, r.dz);
+    expect(moved.min[1]).toBe(0);
+    expect(boxesOverlap(moved, WALL)).toBe(false);
+    expect(boxesOverlap(moved, CAR)).toBe(false);
+    expect(seen(moved)).toBe(true);
+    expect(clearNote(r, ["further left", "towards the shot camera"])).toBe(`placed ${r.moved.toFixed(1).replace(/\.0$/, "")} m towards the shot camera so it isn't inside the wall`);
+  });
+
+  it("searches the asked-for side first", () => {
+    const barrier = { min: [4, 0, -60], max: [4.6, 1.4, 60], name: "the wall" } as B & { name: string };
+    const r = clearSpot({ box: lampAt(4.3, 0), obstacles: [barrier], dirs: [[1, 0], TOWARD], visible: () => true });
+    expect(r).toMatchObject({ dir: 0, moved: 0.75, hidden: false });
+    expect(clearNote(r, ["further right", "towards the shot camera"])).toBe("placed 0.8 m further right so it isn't inside the wall");
+  });
+
+  it("free but hidden behind the wall: moved to where the camera sees it, and says why", () => {
+    const r = clearSpot({ box: lampAt(-6, 2), obstacles: [WALL], dirs: [LEFT, TOWARD], visible: seen });
+    expect(r).toMatchObject({ dir: 1, inside: null, hidden: false });
+    expect(seen(shift(lampAt(-6, 2), r.dx, r.dz))).toBe(true);
+    expect(clearNote(r, ["further left", "towards the shot camera"])).toMatch(/^placed [\d.]+ m towards the shot camera so the wall doesn't hide it from the shot camera$/);
+  });
+
+  it("clear and seen: nothing moves and nothing is said", () => {
+    const r = clearSpot({ box: lampAt(5, 0), obstacles: [WALL, CAR], dirs: [LEFT, TOWARD], visible: seen });
+    expect(r).toEqual({ dx: 0, dz: 0, moved: 0, dir: -1, inside: null, hidden: false, stuck: false });
+    expect(clearNote(r, [])).toBe("");
+  });
+
+  it("no spot the camera sees: a free thing stays and says so; one inside a wall goes to the nearest free spot", () => {
+    const hiddenFree = clearSpot({ box: lampAt(-6, 2), obstacles: [WALL], dirs: [LEFT, TOWARD], visible: () => false });
+    expect(hiddenFree).toMatchObject({ moved: 0, hidden: true, stuck: false });
+    expect(clearNote(hiddenFree, [])).toBe("it's behind the wall from the shot camera, and there's no clear spot nearby");
+    const inWall = clearSpot({ box: lampAt(-3.5, 2.1), obstacles: [WALL], dirs: [LEFT, TOWARD], visible: () => false });
+    expect(inWall).toMatchObject({ dir: 0, moved: 1, hidden: true });
+    expect(clearNote(inWall, ["further left", "towards the shot camera"])).toBe("placed 1 m further left so it isn't inside the wall; from the shot camera it's still behind the wall");
+  });
+
+  it("walled in on every side within reach: it stays where it was put", () => {
+    const hall = { min: [-50, 0, -50], max: [50, 30, 50], name: "the wall" } as B & { name: string };
+    const r = clearSpot({ box: lampAt(0, 0), obstacles: [hall], dirs: [LEFT, TOWARD], visible: () => true });
+    expect(r).toMatchObject({ moved: 0, stuck: true, inside: "the wall" });
+    expect(clearNote(r, [])).toBe("it's inside the wall and there's no free spot within 12 m, so it stays there");
+  });
+
+  it("the sides are the shot camera's", () => {
+    expect(sideDirection("left", [1, 0], [0, 1])).toEqual([-1, -0]);
+    expect(sideDirection("front", [1, 0], [0, 1])).toEqual([0, 1]);
+    expect(sideDirection("behind", [1, 0], [0, 1])).toEqual([-0, -1]);
   });
 });

@@ -726,3 +726,104 @@ export function besidePosition(
   const ground = Math.max(0, ref.min[1]);
   return [cx + dir[0] * dist, ground, cz + dir[1] * dist];
 }
+
+// ---------------- clear of walls (stage 5, 2026-09-29 — operator: "Fix walls.") ----------------
+//
+// "Left of the car" can land inside the set's own walls (the race track has
+// a 20 m wall right beside its car), or behind them from the shot camera,
+// where nobody sees it. After Astra adds, moves or copies a thing, the
+// Studio looks for the nearest spot that is clear of the set's solid
+// geometry and of the other things, and that the shot camera can see:
+// first further along the way it was asked to go, then towards the shot
+// camera, in small steps. Pure: the engine hands in the boxes and a
+// visibility check (a ray from the shot camera).
+
+/** An axis-aligned box in the Studio's (three.js) axes: [x, y, z], y up. */
+export type StudioBox = { min: [number, number, number]; max: [number, number, number] };
+export type StudioObstacle = StudioBox & { name: string };
+
+/** The ground direction a side means, from the shot camera's right and "towards the camera". */
+export function sideDirection(side: StudioSide, right: [number, number], toward: [number, number]): [number, number] {
+  if (side === "left") return [-right[0], -right[1]];
+  if (side === "front") return toward;
+  if (side === "behind") return [-toward[0], -toward[1]];
+  return right;
+}
+
+/** Whether two boxes share volume (touching faces, within 2 cm, do not count). */
+export function boxesOverlap(a: StudioBox, b: StudioBox, eps = 0.02): boolean {
+  for (let i = 0; i < 3; i++) if (a.max[i] <= b.min[i] + eps || a.min[i] >= b.max[i] - eps) return false;
+  return true;
+}
+
+export const CLEAR_STEP_M = 0.25;
+export const CLEAR_MAX_M = 12;
+
+export type ClearResult = {
+  /** How far to slide it on the ground (x, z), and the distance. */
+  dx: number;
+  dz: number;
+  moved: number;
+  /** Which of the directions it slid along (-1: none). */
+  dir: number;
+  /** What it stood inside where it was put, or null. */
+  inside: string | null;
+  /** Still hidden from the shot camera where it ends up. */
+  hidden: boolean;
+  /** Inside something, and no free spot within reach: left where it was. */
+  stuck: boolean;
+};
+
+/**
+ * The nearest spot for `box` that overlaps no obstacle and that `visible`
+ * accepts, searched along each of `dirs` in turn (ground vectors),
+ * CLEAR_STEP_M at a time up to CLEAR_MAX_M. Only x and z change, so it
+ * stays on the ground. With no spot both free and seen, the nearest free
+ * one (it is then still hidden); free but hidden where it was put, it
+ * stays; with no free spot at all, it stays (stuck).
+ */
+export function clearSpot(opts: {
+  box: StudioBox;
+  obstacles: StudioObstacle[];
+  dirs: [number, number][];
+  visible?: (box: StudioBox) => boolean;
+  step?: number;
+  max?: number;
+}): ClearResult {
+  const step = opts.step ?? CLEAR_STEP_M, max = opts.max ?? CLEAR_MAX_M;
+  const at = (dx: number, dz: number): StudioBox => ({
+    min: [opts.box.min[0] + dx, opts.box.min[1], opts.box.min[2] + dz],
+    max: [opts.box.max[0] + dx, opts.box.max[1], opts.box.max[2] + dz],
+  });
+  const hit = (b: StudioBox) => opts.obstacles.find((o) => boxesOverlap(b, o)) ?? null;
+  const seen = (b: StudioBox) => !opts.visible || opts.visible(b);
+  const inside = hit(opts.box)?.name ?? null;
+  const none: ClearResult = { dx: 0, dz: 0, moved: 0, dir: -1, inside, hidden: false, stuck: false };
+  if (!inside && seen(opts.box)) return none;
+  let freeOnly: ClearResult | null = null;
+  for (let k = 0; k < opts.dirs.length; k++) {
+    const l = Math.hypot(opts.dirs[k][0], opts.dirs[k][1]);
+    if (l < 1e-6) continue;
+    const ux = opts.dirs[k][0] / l, uz = opts.dirs[k][1] / l;
+    for (let n = 1; n * step <= max + 1e-9; n++) {
+      const d = n * step, b = at(ux * d, uz * d);
+      if (hit(b)) continue;
+      const r: ClearResult = { dx: ux * d, dz: uz * d, moved: Math.round(d * 100) / 100, dir: k, inside, hidden: false, stuck: false };
+      if (seen(b)) return r;
+      if (inside && (!freeOnly || d < freeOnly.moved)) freeOnly = { ...r, hidden: true };
+    }
+  }
+  if (!inside) return { ...none, hidden: true };
+  return freeOnly ?? { ...none, stuck: true };
+}
+
+/** What the plan's step says after Apply when the Studio moved it, or couldn't ("" when there is nothing to say). */
+export function clearNote(r: ClearResult, dirWords: string[]): string {
+  const m = `${r.moved.toFixed(1).replace(/\.0$/, "")} m`;
+  const where = dirWords[r.dir] ?? "aside";
+  if (r.stuck) return `it's inside ${r.inside} and there's no free spot within ${CLEAR_MAX_M} m, so it stays there`;
+  if (r.moved > 0 && !r.hidden) return r.inside ? `placed ${m} ${where} so it isn't inside ${r.inside}` : `placed ${m} ${where} so the wall doesn't hide it from the shot camera`;
+  if (r.moved > 0) return `placed ${m} ${where} so it isn't inside ${r.inside}; from the shot camera it's still behind the wall`;
+  if (r.hidden) return "it's behind the wall from the shot camera, and there's no clear spot nearby";
+  return "";
+}

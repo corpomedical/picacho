@@ -23,9 +23,12 @@ import {
   STUDIO_FORMATS,
   STUDIO_TURNS_MAX,
   besidePosition,
+  clearNote,
+  clearSpot,
   knownOf,
   normaliseStudioSummary,
   planActs,
+  sideDirection,
   sizeFactors,
   toThreeAxes,
   toThreeSizes,
@@ -965,6 +968,48 @@ function moveBy(it, mode, v) {
   const b = worldBox(it), base = b.isEmpty() ? it.obj.getWorldPosition(new V3()) : new V3((b.min.x + b.max.x) / 2, b.min.y, (b.min.z + b.max.z) / 2);
   it.obj.position.add(new V3(t.x === null ? 0 : t.x - base.x, t.y === null ? 0 : t.y - base.y, t.z === null ? 0 : t.z - base.z));
 }
+
+// Stage 5 (2026-09-29 — operator: "Fix walls."): what Astra adds, moves or
+// copies is kept clear of the set's walls (The place's solid meshes, and
+// the other things) and in the shot camera's view — clearSpot searches
+// further the way it was asked to go, then towards the shot camera — and
+// the step says where it went and why.
+function solidMeshes() {
+  const out = []; if (place.hidden || !items.includes(place)) return out;
+  place.obj.updateMatrixWorld(true);
+  place.obj.traverse((o) => { if (!o.isMesh) return; const b = new THREE.Box3().setFromObject(o); if (!b.isEmpty() && b.max.y >= 0.3) out.push({ o, b }); });
+  return out;
+}
+const _clearRay = new THREE.Raycaster();
+function seenFromShot(meshes, box) {
+  if (!meshes.length) return true;
+  const eye = shot.obj.userData.cam.getWorldPosition(new V3()), objs = meshes.map((m) => m.o);
+  const cx = (box.min[0] + box.max[0]) / 2, cz = (box.min[2] + box.max[2]) / 2, h = box.max[1] - box.min[1];
+  for (const f of [0.5, 0.8, 0.97]) {
+    const d = new V3(cx, box.min[1] + h * f, cz).sub(eye), dist = d.length(); if (dist < 0.01) return true;
+    _clearRay.set(eye, d.divideScalar(dist)); _clearRay.near = 0; _clearRay.far = Math.max(0, dist - 0.05);
+    if (!_clearRay.intersectObjects(objs, false).length) return true;
+  }
+  return false;
+}
+const related = (a, b) => { for (let o = a.obj; o; o = o.parent) if (o === b.obj) return true; for (let o = b.obj; o; o = o.parent) if (o === a.obj) return true; return false; };
+const SIDE_WORDS = { left: "further left", right: "further right", front: "closer to the camera", behind: "further back", near: "further aside" };
+function keepClear(it, dirs, words) {
+  if (!it || it.obj.parent !== scene || it.kind === "camera" || it.kind === "sun") return "";
+  const b = worldBox(it); if (b.isEmpty() || b.min.y > 0.5) return "";
+  const meshes = solidMeshes();
+  const obstacles = meshes.map((m) => ({ min: m.b.min.toArray(), max: m.b.max.toArray(), name: "the wall" }));
+  for (const o of items) {
+    if (o === it || o === place || o.hidden || o.kind !== "mesh" || related(o, it)) continue;
+    const ob = worldBox(o); if (!ob.isEmpty()) obstacles.push({ min: ob.min.toArray(), max: ob.max.toArray(), name: `"${o.name}"` });
+  }
+  const g = camGround();
+  const r = clearSpot({ box: { min: b.min.toArray(), max: b.max.toArray() }, obstacles, dirs: [...dirs, g.toward], visible: (bx) => seenFromShot(meshes, bx) });
+  if (r.moved > 0) it.obj.position.add(new V3(r.dx, 0, r.dz));
+  return clearNote(r, [...words, "towards the shot camera"]);
+}
+const sideDirs = (pl) => (pl && SIDE_WORDS[pl.side] ? { dirs: [sideDirection(pl.side, camGround().right, camGround().toward)], words: [SIDE_WORDS[pl.side]] } : { dirs: [], words: [] });
+const alongDirs = (dx, dz) => (Math.hypot(dx, dz) > 0.01 ? { dirs: [[dx, dz]], words: ["further along"] } : { dirs: [], words: [] });
 const DEG2 = Math.PI / 180;
 function codeOf(s) {
   const { say, op, ...args } = s;
@@ -979,7 +1024,9 @@ function modelSteps(answer) {
   const keep = (it, name) => { if (it && name) made.set(name.toLowerCase(), it); return it; };
   return plan.steps.map((s) => {
     const L = () => all(s.targets || []);
-    let act = null;
+    let act = null, st = null;
+    const told = new Set();
+    const tell = (n) => { if (!n || told.has(n)) return; told.add(n); st.tx = `${s.say} — ${[...told].join("; ")}`; };
     switch (s.op) {
       case "note": break;
       case "select": act = () => { const l = L(); if (!l.length) return null; selection.clear(); l.forEach((i) => selection.add(i)); active = l[l.length - 1]; refreshSel(); return active; }; break;
@@ -988,6 +1035,8 @@ function modelSteps(answer) {
         const it = addKind(STUDIO_ADD_KINDS[s.kind], at, s.name || undefined); if (!it) return null;
         if (s.place) { const ref = get(s.place.of); if (ref) placeBeside(it, ref, s.place); }
         if (s.color) setPaint(it, s.color);
+        const w = s.place ? sideDirs(s.place) : { dirs: [], words: [] };
+        tell(keepClear(it, w.dirs, w.words));
         return keep(it, s.name);
       }; break;
       case "delete": act = () => { const l = L().filter((i) => i !== shot); if (l.length) del(l); return null; }; break;
@@ -996,9 +1045,16 @@ function modelSteps(answer) {
         const t = s.by ? toThreeAxes(s.by) : null;
         const it = dupItem(src, t ? new V3(t.x ?? 0, t.y ?? 0, t.z ?? 0) : s.place ? new V3() : undefined, s.name || undefined);
         if (s.place) { const ref = get(s.place.of); if (ref) placeBeside(it, ref, s.place); }
+        const w = s.place ? sideDirs(s.place) : t ? alongDirs(t.x ?? 0, t.z ?? 0) : alongDirs(2.5, 0);
+        tell(keepClear(it, w.dirs, w.words));
         return keep(it, s.name);
       }; break;
-      case "move": act = () => { let last = null; for (const it of L()) { moveCmd(it, () => { if (s.place) { const ref = get(s.place.of); if (ref && ref !== it) placeBeside(it, ref, s.place); } else if (s.v) moveBy(it, s.mode, s.v); }); last = it; } return last; }; break;
+      case "move": act = () => { let last = null; for (const it of L()) { moveCmd(it, (o) => {
+        const was = o.position.clone();
+        if (s.place) { const ref = get(s.place.of); if (ref && ref !== it) placeBeside(it, ref, s.place); } else if (s.v) moveBy(it, s.mode, s.v);
+        const w = s.place ? sideDirs(s.place) : alongDirs(o.position.x - was.x, o.position.z - was.z);
+        tell(keepClear(it, w.dirs, w.words));
+      }); last = it; } return last; }; break;
       case "rotate": act = () => { let last = null; for (const it of L()) { moveCmd(it, (o) => {
         if (s.face) { const f = get(s.face); if (!f || f === it) return; const fp = f.obj.getWorldPosition(new V3()), p = o.getWorldPosition(new V3()); o.rotation.set(0, Math.atan2(fp.x - p.x, fp.z - p.z), 0); return; }
         const t = toThreeAxes(s.v), r = [t.x, t.y, t.z].map((v) => (v === null ? null : v * DEG2));
@@ -1049,7 +1105,8 @@ function modelSteps(answer) {
       case "frame": act = () => { setTime((s.frame - 1) / FPS); return null; }; break;
       case "range": act = () => { propCmd("Playback range", () => [pStart, pEnd], (v) => { pStart = v[0]; pEnd = v[1]; renderTimeline(); }, [s.start, s.end]); return null; }; break;
     }
-    return { ...S(s.say, s.op === "note" ? "# skipped" : codeOf(s), act), note: s.op === "note" };
+    st = { ...S(s.say, s.op === "note" ? "# skipped" : codeOf(s), act), note: s.op === "note" };
+    return st;
   });
 }
 async function askModel(text) {
