@@ -202,17 +202,21 @@ export const PRODUCER_TOOLS = [
     // the card shows the stills' price and the person presses Paint there.
     name: TOOL_NAMES.planAd,
     description:
-      "Plan a Press Tour ad: one of the person's characters as the star, one of their confirmed products as the co-star, 10, 15 or 30 seconds, and an optional goal (a launch, a season, a line they want in it). Planning is free and writes each shot; nothing is painted or charged. The person gets a card showing the price of painting the stills, and presses Paint on the Press Tour page themselves. Use names as the person says them; pass null to use their first character or product. If it isn't open to them, or a name doesn't match, the result says so and lists what they have.",
+      "Plan a Press Tour ad: one of the person's characters as the star, one of their confirmed products as the co-star, 10, 15 or 30 seconds, and an optional goal (a launch, a season, a line they want in it). Planning is free and writes each shot; nothing is painted or charged. The person gets a card showing the price of painting the stills, and presses Paint on the Press Tour page themselves. Use names as the person says them; pass null to use their first character or product. The stills are painted on GPT Image unless the person asked for Gemini (Nano Banana Pro): pass still_engine only then, null otherwise; the person can still change it on the page before painting, and nothing ever switches engines on its own. If it isn't open to them, or a name doesn't match, the result says so and lists what they have.",
     strict: true,
     input_schema: {
       type: "object",
       additionalProperties: false,
-      required: ["character", "product", "length_seconds", "goal"],
+      required: ["character", "product", "length_seconds", "goal", "still_engine"],
       properties: {
         character: { ...nullableString, description: "The star: a character's name, as the person calls them." },
         product: { ...nullableString, description: "The co-star: a confirmed product's name." },
         length_seconds: { anyOf: [{ type: "integer", enum: [10, 15, 30] }, { type: "null" }] },
         goal: { ...nullableString, description: "What the ad should say or be for, in the person's words. Optional." },
+        still_engine: {
+          anyOf: [{ type: "string", enum: ["gpt-image", "gemini"] }, { type: "null" }],
+          description: "The picture engine for the stills: \"gemini\" only when the person asked for Gemini or Nano Banana Pro; null for the default, GPT Image.",
+        },
       },
     },
   },

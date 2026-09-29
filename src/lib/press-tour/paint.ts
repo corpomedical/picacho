@@ -65,7 +65,7 @@ import { OPENAI_IMAGE_TIMEOUT_MS } from "../generations/providers/openai-images"
 import { JUDGE_CALL_CEILING_USD, JUDGE_TIMEOUT_MS } from "../product-lock/judge";
 import { currentStarAnswer } from "./star-consent";
 import { MAX_ESCALATIONS_PER_AD } from "../product-lock/product-lock";
-import type { ShotRole, Verdict } from "./campaign-types";
+import type { ShotRole, StillEngine, Verdict } from "./campaign-types";
 import {
   AD_CONSENT_NEEDED,
   CHARACTER_NEEDS_PHOTO,
@@ -88,7 +88,7 @@ import {
   type ProductVisibility,
   type StarKind,
 } from "./planner";
-import { STILL_LANE } from "./quote";
+import { STILL_LANE, STILL_LANES, stillEngineOf } from "./quote";
 import { PRODUCT_CARD_COLUMNS, cleanText, productCardFromRow, type ProductCard } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -97,6 +97,23 @@ import { PRODUCT_CARD_COLUMNS, cleanText, productCardFromRow, type ProductCard }
 
 /** The picture lane's frame: 2:3 portrait (the GPT lane's own tall size). */
 export const STILL_RENDER = { width: 1024, height: 1536, size: "1024x1536" } as const;
+
+/**
+ * What generateImage is asked for on the person's engine (quote.ts
+ * STILL_LANES): GPT Image at `high` in its tall 1024x1536; Nano Banana Pro
+ * at 2K in 2:3 (the fal lane takes a band and a shape, not pixels). One
+ * lane, one call: never the other engine.
+ */
+export function stillLaneArgs(engine: StillEngine) {
+  const lane = STILL_LANES[engine] ?? STILL_LANE;
+  return {
+    modelId: lane.modelId,
+    imageSize: lane.modelId === "gpt-image" ? STILL_RENDER.size : null,
+    resolution: lane.resolution,
+    aspect: lane.aspect,
+    quality: lane.quality,
+  };
+}
 /** The ad's frame. */
 export const STILL_ASPECT = 9 / 16;
 /** Where stills are kept: the composer's image bucket, so History and the media route serve them as they are. */
@@ -472,6 +489,8 @@ export type PressRowSpec = {
   kind: AttemptKind;
   attempt: number;
   credits: number;
+  /** The picture engine's catalogue id the still is painted on (History and admin show its name); GPT Image when absent. */
+  modelId?: string;
   characterIds: string[];
   /** What History shows as the row's words. */
   label: string;
@@ -490,7 +509,7 @@ export function pressRowPayload(spec: PressRowSpec, spend: { purchased: number; 
     attempts: 0,
     result_url: null,
     pipeline_log: [],
-    model_id: STILL_LANE.modelId,
+    model_id: spec.modelId ?? STILL_LANE.modelId,
     video_model_id: null,
     credits_used: spec.credits,
     purchased_credits_used: spend.purchased,
@@ -712,6 +731,9 @@ export async function reserveHouseRowWith<S extends { id: string; credits: numbe
  */
 export function laneRefusalWords(modelId: string, beforeRender: boolean, laneMessage?: string): string {
   if (modelId === "gpt-image") return beforeRender ? PICTURE_SERVICE_REFUSED_BEFORE : PICTURE_SERVICE_REFUSED_AFTER;
+  // Nano Banana Pro declines in its own words, which name no rule of ours:
+  // the same sentence as GPT Image's refusal (the service's rules, not ours).
+  if (modelId === "gemini") return PICTURE_SERVICE_REFUSED_BEFORE;
   return typeof laneMessage === "string" && laneMessage ? laneMessage : STILL_REFUSED;
 }
 
@@ -763,6 +785,8 @@ export type GateAnswer = { ok: true; scores?: unknown } | { ok: false; reason: "
 export type StillCheckInput = {
   userId: string;
   campaignId: string;
+  /** The picture engine's catalogue id that painted it (the checks run the same on every engine; the record says which). */
+  lane?: string;
   /** The still's own row. */
   generationId: string;
   shot: number;
@@ -802,8 +826,12 @@ export type StillChecker = (input: StillCheckInput) => Promise<StillCheck>;
 export interface PaintDeps {
   /** The service-role client. */
   db: SupabaseClient;
-  /** The picture lane: the prompt and the reference photos in; a 2:3 PNG (base64) and what it cost out. */
-  generateStill: (input: { prompt: string; identityUrl: string | null; productUrls: string[] }) => Promise<{ base64: string; usd: number }>;
+  /**
+   * The picture lane: the prompt, the reference photos and the person's
+   * engine in (quote.ts STILL_LANES); a 2:3 PNG (base64) and what it cost
+   * out. Exactly that engine is called, once: never another on a refusal.
+   */
+  generateStill: (input: { prompt: string; identityUrl: string | null; productUrls: string[]; engine: StillEngine }) => Promise<{ base64: string; usd: number }>;
   /**
    * Where the face and the product sit on the uncropped still, when a
    * locator is available (product-lock/judge.ts locateFraming), and what
@@ -1032,19 +1060,25 @@ export async function paintKeyframe(
   //    what is left of the time to delivery, never less than their floors
   //    (stillDeadlines, PAINT-5).
   const laneStarted = clock();
+  // The person's engine, picked before painting; repaints use the same one.
+  const engine = stillEngineOf(row.plan);
+  const lane = STILL_LANES[engine];
   let png: Buffer;
   try {
-    const made = await deps.generateStill({ prompt, identityUrl, productUrls });
+    const made = await deps.generateStill({ prompt, identityUrl, productUrls, engine });
     usd += Number.isFinite(made.usd) ? made.usd : 0;
     png = Buffer.from(made.base64, "base64");
   } catch (err) {
     // A picture lane's own safety refusal is final for this still, never
     // re-tried elsewhere (image.ts: "NO FALLBACK ON A SAFETY REFUSAL"). It
     // says whose rule it was: the lane's, after our own gates passed it.
+    // Nano Banana Pro's refusal (GeminiImageRefusal) is final the same way;
+    // whether fal bills one is unmeasured, so its charge goes by the
+    // ordinary rules, never forced back (fal-image.ts).
     const e = err as { name?: string; message?: string; beforeRender?: boolean };
-    if (e?.name === "ImageSafetyRejection") {
-      const before = e.beforeRender !== false;
-      const message = laneRefusalWords(STILL_LANE.modelId, before, e.message);
+    if (e?.name === "ImageSafetyRejection" || e?.name === "GeminiImageRefusal") {
+      const before = e.name === "ImageSafetyRejection" && e.beforeRender !== false;
+      const message = laneRefusalWords(lane.modelId, before, e.message);
       return fail("refused", message, message, before ? "before" : "after");
     }
     // The lane was called: it may have rendered and billed before failing.
@@ -1148,6 +1182,7 @@ export async function paintKeyframe(
     check = await deps.checkStill({
       userId,
       campaignId,
+      lane: lane.modelId,
       generationId: attempt.rowId,
       shot,
       still: { url, bytes: cropped, width: crop.width, height: crop.height },

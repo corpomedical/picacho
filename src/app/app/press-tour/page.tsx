@@ -20,6 +20,7 @@ import {
   planCampaign,
   refilmShot,
   repaintStill,
+  setStillEngine,
   undoStill,
 } from "@/lib/press-tour/campaign-actions";
 import {
@@ -102,6 +103,7 @@ export default async function PressTourPage({ searchParams }: { searchParams: Pr
   // CampaignActions): the door is written against the contract alone.
   const actions: CampaignActions = {
     planCampaign,
+    setStillEngine,
     paintStills,
     approveStill,
     keepStill,

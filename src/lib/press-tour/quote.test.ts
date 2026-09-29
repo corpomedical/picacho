@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { quoteSend } from "../generations/quote";
 import { getDurationCreditWeight, getVideoModel } from "../generations/providers/video-models";
-import { imageRenderCreditWeight } from "../generations/providers/image-resolution";
+import { imageRenderCreditWeight, imageResolutionOffers } from "../generations/providers/image-resolution";
 import {
   FILM_LANE,
   PRESS_POLICY,
@@ -11,8 +11,10 @@ import {
   parsePressQuote,
   quotePriceChanged,
   repaintCredits,
+  STILL_LANES,
   shotCredits,
   stillCredits,
+  stillLaneUsd,
 } from "./quote";
 import { beatsFor, SHOT_SECONDS } from "./planner";
 
@@ -26,7 +28,7 @@ const base = { balanceNow: 96, paintPaid: false, animatePaid: false, trial: fals
 
 describe("the prices come from the catalogue", () => {
   it("a still is the picture lane's weight at `high` (1 credit)", () => {
-    expect(STILL_LANE).toEqual({ modelId: "gpt-image", quality: "high" });
+    expect(STILL_LANE).toEqual({ modelId: "gpt-image", quality: "high", resolution: null, aspect: null });
     expect(stillCredits()).toBe(imageRenderCreditWeight("gpt-image", null, "high"));
     expect(stillCredits()).toBe(1);
   });
@@ -126,5 +128,45 @@ describe("a stored quote", () => {
     expect(quotePriceChanged(q, { ...q, paint: 6, total: 12 })).toBe(true);
     expect(quotePriceChanged(q, { ...q, version: q.version + 1 })).toBe(true);
     expect(quotePriceChanged(null, q)).toBe(true);
+  });
+});
+
+describe("the picture engine the person picks (operator, 2026-09-29)", () => {
+  it("prices a still on each engine from its own catalogue row: GPT Image high $0.0909 and Nano Banana Pro 2K $0.15, both 1 credit", () => {
+    expect(STILL_LANES.gemini).toEqual({ modelId: "gemini", quality: null, resolution: "2K", aspect: "2:3" });
+    expect(stillCredits("gemini")).toBe(imageRenderCreditWeight("gemini", "2K", null));
+    // weigh(0.15) = ceil(0.15 / 0.28) = ceil(0.536) = 1 credit.
+    expect(stillCredits("gemini")).toBe(1);
+    expect(stillCredits("gpt-image")).toBe(1);
+    expect(repaintCredits("gemini")).toBe(stillCredits("gemini"));
+    // Booked at the lane's own price (fal reports no usage); never the 4K row.
+    expect(stillLaneUsd("gemini")).toBe(imageResolutionOffers("gemini").find((o) => o.value === "2K")!.costPerImageUsd);
+    expect(stillLaneUsd("gemini")).toBe(0.15);
+    expect(stillLaneUsd("gpt-image")).toBe(0);
+  });
+
+  it("quotes the paint line on the picked engine, and names both with one still's price", () => {
+    const gem = buildPressQuote({ ...base, shots: shots(15), engine: "gemini" });
+    expect(gem.engine).toBe("gemini");
+    expect(gem.paint).toBe(3 * stillCredits("gemini"));
+    expect(gem.engines).toEqual([
+      { id: "gpt-image", name: "GPT Image 2.5", credits: stillCredits("gpt-image") },
+      { id: "gemini", name: "Nano Banana Pro", credits: stillCredits("gemini") },
+    ]);
+    expect(buildPressQuote({ ...base, shots: shots(15) }).engine).toBe("gpt-image");
+  });
+
+  it("a switch of engine is a change of price the person must see again, and a stored quote keeps its engine", () => {
+    const gpt = buildPressQuote({ ...base, shots: shots(15) });
+    const gem = buildPressQuote({ ...base, shots: shots(15), engine: "gemini" });
+    expect(quotePriceChanged(gpt, gem)).toBe(true);
+    expect(quotePriceChanged(gem, gem)).toBe(false);
+    expect(parsePressQuote(JSON.parse(JSON.stringify(gem)))).toEqual(gem);
+    // A quote stored before engines existed reads as GPT Image.
+    const old: Record<string, unknown> = { ...gpt };
+    delete old.engine;
+    delete old.engines;
+    expect(parsePressQuote(old)).toMatchObject({ engine: "gpt-image", engines: [] });
+    expect(quotePriceChanged(parsePressQuote(old), gpt)).toBe(false);
   });
 });

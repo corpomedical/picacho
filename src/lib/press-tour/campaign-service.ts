@@ -30,7 +30,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { adVerdict } from "../product-lock/product-lock";
-import type { CampaignResult, CampaignSource, CampaignView } from "./campaign-types";
+import type { CampaignResult, CampaignSource, CampaignView, StillEngine } from "./campaign-types";
 import {
   CAMPAIGN_BAD_REQUEST,
   CAMPAIGN_CLOSED,
@@ -157,7 +157,7 @@ import {
   type PolicyRule,
   type StarKind,
 } from "./planner";
-import { buildPressQuote, quotePriceChanged, repaintCredits, shotCredits, stillCredits } from "./quote";
+import { STILL_LANES, buildPressQuote, isStillEngine, quotePriceChanged, repaintCredits, shotCredits, stillCredits, stillEngineOf } from "./quote";
 import { BRAND_KIT_COLUMNS, brandKitFromRow, cleanText, type BrandKit } from "./types";
 
 /** The person asking, as the door's pressTourCaller found them. */
@@ -268,6 +268,7 @@ async function viewOf(deps: CampaignDeps, caller: CampaignCaller, row: CampaignR
       animatePaid: row.filmChargedAt !== null,
       trial: row.trialId !== null,
       charged: caller.via !== "admin",
+      engine: stillEngineOf(row.plan),
     });
   }
   // The finished files, each as a short-lived link (press-kit is private).
@@ -338,6 +339,8 @@ export async function planCampaign(
     lengthSeconds?: 10 | 15 | 30;
     goal?: string;
     source?: CampaignSource;
+    /** The picture engine the person picked (default GPT Image). */
+    engine?: StillEngine;
   },
 ): Promise<CampaignResult> {
   const gate = campaignGate(caller);
@@ -348,7 +351,8 @@ export async function planCampaign(
   const brandKitId = input?.brandKitId ? parseUuid(input.brandKitId) : null;
   const length = input?.lengthSeconds === undefined ? DEFAULT_AD_LENGTH : parseAdLength(input.lengthSeconds);
   const source = input?.source ?? DEFAULT_SOURCE;
-  if (!sendId || !productId || !characterId || (input?.brandKitId && !brandKitId) || !length || !PERSON_SOURCES.includes(source)) {
+  const engine = input?.engine === undefined || input.engine === null ? null : isStillEngine(input.engine) ? input.engine : undefined;
+  if (!sendId || !productId || !characterId || (input?.brandKitId && !brandKitId) || !length || !PERSON_SOURCES.includes(source) || engine === undefined) {
     return failure(CAMPAIGN_BAD_REQUEST);
   }
   const goal = cleanText(input?.goal, PLAN_LIMITS.goal);
@@ -427,14 +431,17 @@ export async function planCampaign(
     return failure(planned.error);
   }
 
+  // The person's engine rides on the plan (the default is stored as nothing).
+  const plan = engine && engine !== "gpt-image" ? { ...planned.plan, engine } : planned.plan;
   const balance = await deps.balance(caller.userId).catch(() => 0);
   const quote = buildPressQuote({
-    shots: planned.plan.shots,
+    shots: plan.shots,
     balanceNow: balance,
     paintPaid: false,
     animatePaid: false,
     trial: false,
     charged: caller.via !== "admin",
+    engine: stillEngineOf(plan),
   });
   const written = await mutateCampaign(deps.db, id, caller.userId, (row) =>
     row.stage !== "draft"
@@ -442,15 +449,63 @@ export async function planCampaign(
       : {
           patch: {
             stage: "planned",
-            plan: planned.plan,
+            plan,
             quote,
-            stills: initialStills(planned.plan),
+            stills: initialStills(plan),
             expires_at: new Date(nowOf(deps).getTime() + WAIT_MS).toISOString(),
           },
           value: null,
         },
   );
   if (!written.ok) return written.reason === "refused" ? answer(deps, caller, id) : failure(PLAN_UNAVAILABLE);
+  return { ok: true, campaign: await viewOf(deps, caller, written.row) };
+}
+
+/**
+ * The person's picture engine (operator, 2026-09-29): picked while the ad is
+ * planned, re-quoted at once, and held from the moment painting starts —
+ * the stills and every repaint are painted on it. Free; changes no charge.
+ * No automatic fallback anywhere: a refusal on the pick stays a refusal.
+ */
+export async function setStillEngine(
+  deps: CampaignDeps,
+  caller: CampaignCaller,
+  input: { campaignId: string; engine: StillEngine },
+): Promise<CampaignResult> {
+  const gate = campaignGate(caller);
+  if (gate) return failure(gate);
+  const id = parseUuid(input?.campaignId);
+  const engine = input?.engine;
+  if (!id || !isStillEngine(engine)) return failure(CAMPAIGN_BAD_REQUEST);
+
+  const row = await readCampaign(deps.db, id, caller.userId);
+  if (row === "unavailable") return failure(PLAN_UNAVAILABLE);
+  if (!row) return failure(NOT_YOURS);
+  if (isTerminal(row.stage)) return failure(CAMPAIGN_CLOSED);
+  // Already on it (a second delivery, or a tap on the picked one): as it stands.
+  if (stillEngineOf(row.plan) === engine) return { ok: true, campaign: await viewOf(deps, caller, row) };
+  // Painting has started: the pick holds.
+  if (row.stage !== "planned" || !row.plan) return failure(CAMPAIGN_MOVED_ON);
+
+  const balance = await deps.balance(caller.userId).catch(() => 0);
+  const written = await mutateCampaign(deps.db, id, caller.userId, (r) => {
+    if (r.stage !== "planned" || !r.plan) return { refuse: null };
+    // The default is stored as nothing, as planning stores it.
+    const plan = { ...r.plan };
+    if (engine === "gpt-image") delete plan.engine;
+    else plan.engine = engine;
+    const quote = buildPressQuote({
+      shots: plan.shots,
+      balanceNow: balance,
+      paintPaid: false,
+      animatePaid: false,
+      trial: r.trialId !== null,
+      charged: caller.via !== "admin",
+      engine,
+    });
+    return { patch: { plan, quote }, value: null };
+  });
+  if (!written.ok) return written.reason === "refused" ? failure(CAMPAIGN_MOVED_ON) : failure(PLAN_UNAVAILABLE);
   return { ok: true, campaign: await viewOf(deps, caller, written.row) };
 }
 
@@ -512,13 +567,16 @@ export async function paintStills(
     animatePaid: false,
     trial: row.trialId !== null,
     charged: caller.via !== "admin",
+    engine: stillEngineOf(plan),
   });
   if (quotePriceChanged(row.quote, fresh)) {
     await mutateCampaign(deps.db, id, caller.userId, (r) => (r.stage !== "planned" ? { refuse: null } : { patch: { quote: fresh }, value: null }));
     return failure(priceChanged(fresh.paint));
   }
 
-  const perStill = stillCredits();
+  // From here the engine holds: every still and every repaint is painted on it.
+  const engine = stillEngineOf(plan);
+  const perStill = stillCredits(engine);
   const specs: PressRowSpec[] = plan.shots.map((s) => ({
     id: stillRowId(sendId, s.shot),
     campaignId: row.id,
@@ -527,6 +585,7 @@ export async function paintStills(
     kind: "paint",
     attempt: 1,
     credits: perStill,
+    modelId: STILL_LANES[engine].modelId,
     characterIds: s.star ? row.characterIds : [],
     label: `Press Tour · ${plan.angle} · shot ${s.shot}`,
     trialId: row.trialId,
@@ -744,7 +803,9 @@ export async function repaintStill(
     }
   }
 
-  const credits = repaintCredits();
+  // The same engine the stills were painted on (the person's pick holds).
+  const engine = stillEngineOf(row.plan);
+  const credits = repaintCredits(engine);
   const spec: PressRowSpec = {
     id: rowId,
     campaignId: row.id,
@@ -753,6 +814,7 @@ export async function repaintStill(
     kind: "repaint",
     attempt: still.attempts.length + 1,
     credits,
+    modelId: STILL_LANES[engine].modelId,
     characterIds: planned.star ? row.characterIds : [],
     label: `Press Tour · ${row.plan?.angle ?? "Ad"} · shot ${shot} repainted`,
     trialId: row.trialId,
@@ -1007,7 +1069,15 @@ export async function filmShots(
 
   // The price the person saw must still be the price (N3).
   const balance = await deps.balance(caller.userId).catch(() => 0);
-  const fresh = buildPressQuote({ shots: plan.shots, balanceNow: balance, paintPaid: true, animatePaid: false, trial: false, charged: caller.via !== "admin" });
+  const fresh = buildPressQuote({
+    shots: plan.shots,
+    balanceNow: balance,
+    paintPaid: true,
+    animatePaid: false,
+    trial: false,
+    charged: caller.via !== "admin",
+    engine: stillEngineOf(plan),
+  });
   if (quotePriceChanged(row.quote, fresh)) {
     await mutateCampaign(deps.db, id, caller.userId, (r) => (r.stage !== "awaiting_approval" || filmed(r.shots) ? { refuse: null } : { patch: { quote: fresh }, value: null }));
     return failure(priceChanged(fresh.animate));

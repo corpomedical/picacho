@@ -5,6 +5,7 @@ import {
   AD_CONSENT_NEEDED,
   CAMPAIGN_BAD_REQUEST,
   CAMPAIGN_CLOSED,
+  CAMPAIGN_MOVED_ON,
   CAMPAIGN_READ_FAILED,
   CAMPAIGN_SAVE_FAILED,
   CANCEL_WAIT,
@@ -29,6 +30,7 @@ import {
   pastAnglesFrom,
   planCampaign,
   repaintStill,
+  setStillEngine,
   undoStill,
   type CampaignCaller,
   type CampaignDeps,
@@ -284,6 +286,55 @@ describe("paintStills", () => {
   });
 });
 
+describe("the picture engine (operator, 2026-09-29: the person's pick, made before painting)", () => {
+  it("defaults to GPT Image, re-quotes on a pick while planned, and paints every still on the pick", async () => {
+    const s = await planned();
+    const id = pressCampaignId(SEND);
+    const before = view(await getCampaign(s.deps, ADMIN, { campaignId: id }));
+    expect(before.quote?.engine).toBe("gpt-image");
+    expect(before.quote?.engines.map((e) => [e.id, e.name, e.credits])).toEqual([
+      ["gpt-image", "GPT Image 2.5", 1],
+      ["gemini", "Nano Banana Pro", 1],
+    ]);
+    const picked = view(await setStillEngine(s.deps, ADMIN, { campaignId: id, engine: "gemini" }));
+    expect(picked.quote?.engine).toBe("gemini");
+    expect(picked.quote?.paint).toBe(3);
+    expect((s.db.tables.press_campaigns[0].plan as { engine?: string }).engine).toBe("gemini");
+    expect((s.db.tables.press_campaigns[0].quote as { engine?: string }).engine).toBe("gemini");
+    // The price the person saw is the price: painting goes ahead on it.
+    const v = view(await paintStills(s.deps, ADMIN, { sendId: PAINT_SEND, campaignId: id }));
+    expect(v.stage).toBe("painting");
+    expect(s.db.tables.generations.map((g) => g.model_id)).toEqual(["gemini", "gemini", "gemini"]);
+  });
+
+  it("holds once painting starts: another pick is refused and repaints stay on it", async () => {
+    const s = setup();
+    view(await planCampaign(s.deps, ADMIN, { ...planInput, engine: "gemini" }));
+    const id = pressCampaignId(SEND);
+    view(await paintStills(s.deps, ADMIN, { sendId: PAINT_SEND, campaignId: id }));
+    expect(await setStillEngine(s.deps, ADMIN, { campaignId: id, engine: "gpt-image" })).toEqual({ ok: false, error: CAMPAIGN_MOVED_ON });
+    expect((s.db.tables.press_campaigns[0].plan as { engine?: string }).engine).toBe("gemini");
+    // The same pick again is no change: the ad as it stands.
+    expect(view(await setStillEngine(s.deps, ADMIN, { campaignId: id, engine: "gemini" })).quote?.engine).toBe("gemini");
+    const c = s.db.tables.press_campaigns[0];
+    let stills = c.stills as StillState[];
+    for (const shot of [1, 2, 3]) {
+      stills = withOutcome(stills, shot, 1, { kind: "painted", path: `${USER_A}/press/${c.id}/${shot}.png`, face: "match", product: "match", reason: null, fits: true, faceScore: 80, escalations: 0, usd: 0 }, NOW.toISOString());
+    }
+    c.stills = stills;
+    c.stage = "awaiting_approval";
+    view(await repaintStill(s.deps, ADMIN, { sendId: REPAINT_SEND, campaignId: id, shot: 2 }));
+    expect(s.db.tables.generations.find((g) => g.id === repaintRowId(REPAINT_SEND))).toMatchObject({ model_id: "gemini", credits_used: 1 });
+  });
+
+  it("refuses an engine it does not offer", async () => {
+    const s = await planned();
+    const id = pressCampaignId(SEND);
+    expect(await setStillEngine(s.deps, ADMIN, { campaignId: id, engine: "flux" as never })).toEqual({ ok: false, error: CAMPAIGN_BAD_REQUEST });
+    expect(await planCampaign(s.deps, ADMIN, { ...planInput, sendId: REPAINT_SEND, engine: "seedream-5-pro" as never })).toEqual({ ok: false, error: CAMPAIGN_BAD_REQUEST });
+  });
+});
+
 describe("the person's decisions", () => {
   it("approve, keep and undo, on painted stills only", async () => {
     const s = await awaiting();
@@ -450,7 +501,11 @@ describe("the projection", () => {
   it("never carries a lane, a cost, a raw score or an attempt's row; stills only as signed links", async () => {
     const s = await awaiting();
     const v = view(await getCampaign(s.deps, ADMIN, { campaignId: pressCampaignId(SEND) }));
-    const text = JSON.stringify(v);
+    // The one engine name the person sees is their own pick (operator,
+    // 2026-09-29): the quote's engine and its offers, nothing else.
+    expect(v.quote?.engine).toBe("gpt-image");
+    expect(v.quote?.engines.map((e) => e.id)).toEqual(["gpt-image", "gemini"]);
+    const text = JSON.stringify({ ...v, quote: v.quote ? { ...v.quote, engine: null, engines: null } : null });
     expect(text).not.toContain(`"${stillRowId(PAINT_SEND, 1)}"`);
     expect(text).not.toMatch(/gpt-image|kling|costUsd|cost_usd|faceScore|rowId|credits_charged/);
     expect(v.stills[0].imageUrl).toMatch(/^\/api\/media\/generated-images\//);

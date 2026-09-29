@@ -22,6 +22,7 @@ const contract = readFileSync(join(__dirname, "campaign-types.ts"), "utf8");
 
 const ACTIONS = [
   "planCampaign",
+  "setStillEngine",
   "paintStills",
   "approveStill",
   "keepStill",

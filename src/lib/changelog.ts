@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.146.0",
+    build: 185,
+    date: "2026-09-29",
+    title: "Press Tour: pick the picture engine before painting",
+    items: [
+      "Press Tour's quote now has a \"Paint with\" choice before you paint the stills: GPT Image 2.5 (the default) or Nano Banana Pro, each showing its price (1 credit a still on both). Changing it re-prices the ad at once.",
+      "Once painting starts the choice holds: every still and every repaint is painted on the engine you picked, and History shows that engine's name. If it refuses a still, the ad stops there; it never switches to the other engine on its own.",
+      "Aly can plan an ad on Nano Banana Pro when you ask for it; otherwise ads start on GPT Image.",
+    ],
+  },
+  {
     version: "1.145.0",
     build: 184,
     date: "2026-09-29",

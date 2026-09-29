@@ -105,6 +105,14 @@ describe("the Producer's Press Tour tools", () => {
     expect(out.text).toMatch(/presses Paint on the Press Tour page themselves/);
   });
 
+  it("plans on Gemini only when the person asked for it; GPT Image otherwise (operator, 2026-09-29)", async () => {
+    const deps = open(fakeDb(tables()));
+    await planPressAd(deps, ME, { character: "eva", product: "hoodie", length_seconds: 15, goal: null, still_engine: "gemini" });
+    expect(deps.plan).toHaveBeenLastCalledWith(expect.objectContaining({ engine: "gemini", sendId: producerPlanSendId(ME, "p-hoodie:c-eva:15::2026-09-28:gemini") }));
+    await planPressAd(deps, ME, { character: "eva", product: "hoodie", length_seconds: 15, goal: null, still_engine: null });
+    expect((deps.plan as unknown as { mock: { calls: { engine?: string }[][] } }).mock.calls.at(-1)![0].engine).toBeUndefined();
+  });
+
   it("the same choices on the same day meet the same ad (one send id)", () => {
     expect(producerPlanSendId(ME, "a")).toBe(producerPlanSendId(ME, "a"));
     expect(producerPlanSendId(ME, "a")).not.toBe(producerPlanSendId(OTHER, "a"));

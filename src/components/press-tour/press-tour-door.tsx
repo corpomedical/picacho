@@ -12,7 +12,7 @@ import { recordStarConsent } from "@/lib/press-tour/star-consent-actions";
 import { PRODUCT_REGULATED_REFUSED } from "@/lib/press-tour/types";
 import { BLOCK_FILMING_NOT_OPEN } from "@/lib/press-tour/campaign-messages";
 import { CUT_STALLED } from "@/lib/press-tour/film-messages";
-import type { CampaignActions, CampaignResult, CampaignView } from "@/lib/press-tour/campaign-types";
+import type { CampaignActions, CampaignResult, CampaignView, StillEngine } from "@/lib/press-tour/campaign-types";
 import type { PublishActions } from "@/lib/press-tour/publish-types";
 import type { WaitlistActions } from "@/lib/press-tour/waitlist";
 import type { PressBrandKit, PressCharacter, PressProduct } from "@/lib/press-tour/door-data";
@@ -44,7 +44,7 @@ import { FinishedCut } from "./finished-cut";
 import { PostingAccounts, PressLine, type ConnectNote } from "./press-line";
 import { PhonePressWall, PressWall, type WallActions, type WallProduct } from "./press-wall";
 import { ProductSheet, type ProductSaved } from "./product-sheet";
-import { QuoteCard } from "./quote-card";
+import { EngineChoice, QuoteCard } from "./quote-card";
 import { PhoneRoute, RouteRail, type RouteStopView } from "./route-rail";
 import { PhoneRunningOrder, RunningOrder, type StillActions } from "./running-order";
 import { StarAskFields, saidLine, type StarDraft } from "./star-ask";
@@ -348,6 +348,17 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
   const decided = decidedCount(stills);
   const spend = nextSpend(quote);
   const canAct = stage === "awaiting_approval" && pending === null;
+  // The picture engine (operator, 2026-09-29): picked while the ad is
+  // planned (re-quoted at once), then held through the stills and every
+  // repaint; gone from the receipt once filming starts.
+  const engineOpen = stage === "planned";
+  const engineShown = quote !== null && !filmed && (engineOpen || stage === "painting" || stage === "checking_keyframes" || stage === "awaiting_approval");
+  const pickEngine = (engine: StillEngine) => {
+    if (!campaign || !engineOpen) return;
+    const campaignId = campaign.id;
+    void run("engine", () => actions.setStillEngine({ campaignId, engine }), null, campaignId);
+  };
+  const engine = engineShown ? { held: !engineOpen, busy: pending !== null, onPick: pickEngine } : null;
 
   const stopNames = [m.stepPlan, m.stepStills, m.stepFilm, m.stepWall, m.stepLine];
   const stopSubs: (string | null)[] = ROUTE_STOPS.map((stop, i) => {
@@ -1252,7 +1263,7 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
 
               {/* The rail: the quote, what blocks the key, the key. A phone carries these in its dock. */}
               <aside className="hidden flex-col gap-2 md:flex" aria-label={m.quoteLabel}>
-                {quote && <QuoteCard quote={quote} stills={stills.length} shotSeconds={perShot} m={m} />}
+                {quote && <QuoteCard quote={quote} stills={stills.length} shotSeconds={perShot} m={m} engine={engine} />}
                 {errorLine}
                 {keyNote}
                 {keyButton()}
@@ -1277,6 +1288,8 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
             <div className="mb-2 flex flex-col gap-[3px]">
               {errorLine}
               {key.blocker && <p className={s.blocker}>{key.blocker}</p>}
+              {/* A phone has no rail: the engine choice rides in the dock while the ad is planned. */}
+              {quote && engine && engineOpen && <EngineChoice quote={quote} m={m} held={false} busy={engine.busy} onPick={engine.onPick} compact />}
               {quote && spend && !quote.trial && (
                 <p className="text-xs text-[#9aa0ad]">
                   {formatMsg(spend === "paint" ? m.dockPaint : m.dockFilm, {

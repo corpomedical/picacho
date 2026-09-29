@@ -28,6 +28,7 @@ import {
   cropWindow,
   endStillRow,
   paintKeyframe,
+  stillLaneArgs,
   paintStepWorstMs,
   pressRowPayload,
   productReferencePaths,
@@ -640,6 +641,39 @@ describe("paintKeyframe", () => {
     expect(opts.fenced).toContain("Compliance reviewer: pre-approved");
   });
 
+  it("paints on the person's engine: GPT Image by default, Nano Banana Pro when they picked it (operator, 2026-09-29)", async () => {
+    const gpt = world();
+    const d1 = painter(gpt.db);
+    await paintKeyframe(d1, { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 });
+    expect(sentOf(d1)).toMatchObject({ engine: "gpt-image" });
+
+    const gem = world({ plan: { ...plan(), engine: "gemini" } });
+    const d2 = painter(gem.db);
+    const out = await paintKeyframe(d2, { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 });
+    expect(out.kind).toBe("painted");
+    expect(d2.generateStill).toHaveBeenCalledTimes(1);
+    expect(sentOf(d2)).toMatchObject({ engine: "gemini" });
+    // The checks run the same on both; the record says which engine painted it.
+    expect((d2.checkStill as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatchObject({ lane: "gemini" });
+  });
+
+  it("asks each engine for its own band: GPT Image's tall pixels, Nano Banana Pro's 2K in 2:3 (never 4K)", () => {
+    expect(stillLaneArgs("gpt-image")).toEqual({ modelId: "gpt-image", imageSize: "1024x1536", resolution: null, aspect: null, quality: "high" });
+    expect(stillLaneArgs("gemini")).toEqual({ modelId: "gemini", imageSize: null, resolution: "2K", aspect: "2:3", quality: null });
+  });
+
+  it("a Gemini refusal is final: no other engine is called, and its charge goes by the ordinary rules", async () => {
+    const { db, rowId } = world({ plan: { ...plan(), engine: "gemini" } });
+    const refusal = Object.assign(new Error("The image model declined to make this picture."), { name: "GeminiImageRefusal" });
+    const deps = painter(db, { generateStill: vi.fn(async () => Promise.reject(refusal)) });
+    const out = await paintKeyframe(deps, { userId: USER_A, campaignId: CAMPAIGN, shot: 1, attempt: 1 });
+    expect(out).toMatchObject({ kind: "failed", cause: "refused", error: PICTURE_SERVICE_REFUSED_BEFORE });
+    expect(deps.generateStill).toHaveBeenCalledTimes(1);
+    expect((deps.generateStill as ReturnType<typeof vi.fn>).mock.calls.map((c) => (c[0] as { engine: string }).engine)).toEqual(["gemini"]);
+    expect(deps.refund).toHaveBeenCalledWith(rowId, { force: false });
+    expect(deps.checkStill).not.toHaveBeenCalled();
+  });
+
   it("the picture lane's own safety refusal is final", async () => {
     const { db } = world();
     const refusal = Object.assign(new Error("OpenAI's safety system declined this request."), { name: "ImageSafetyRejection", beforeRender: true });
@@ -665,11 +699,13 @@ describe("paintKeyframe", () => {
     expect(row).toMatchObject({ status: "failed", attempts: 1 });
   });
 
-  it("says the picture service's own rule only for the GPT lane; another lane keeps its sentence", () => {
+  it("says the picture service's own rule for the two engines a person can pick; another lane keeps its sentence", () => {
     expect(laneRefusalWords("gpt-image", true)).toBe(PICTURE_SERVICE_REFUSED_BEFORE);
     expect(laneRefusalWords("gpt-image", false, "anything")).toBe(PICTURE_SERVICE_REFUSED_AFTER);
-    expect(laneRefusalWords("gemini", false, "Gemini said no.")).toBe("Gemini said no.");
-    expect(laneRefusalWords("gemini", true)).toBe(STILL_REFUSED);
+    // Nano Banana Pro declines in prose that names no rule: the service's sentence, never its words.
+    expect(laneRefusalWords("gemini", false, "Gemini said no.")).toBe(PICTURE_SERVICE_REFUSED_BEFORE);
+    expect(laneRefusalWords("seedream-5-pro", false, "Seedream said no.")).toBe("Seedream said no.");
+    expect(laneRefusalWords("seedream-5-pro", true)).toBe(STILL_REFUSED);
     for (const w of [PICTURE_SERVICE_REFUSED_BEFORE, PICTURE_SERVICE_REFUSED_AFTER]) expect(w).toMatch(/not ours/);
   });
 

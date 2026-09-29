@@ -31,7 +31,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PRESS_TOUR_FAILED, pressTourCaller } from "./card-service";
 import { campaignDeps } from "./campaign-runtime";
 import * as service from "./campaign-service";
-import type { CampaignResult, CampaignSource } from "./campaign-types";
+import type { CampaignResult, CampaignSource, StillEngine } from "./campaign-types";
 
 type Door = { ok: true; caller: service.CampaignCaller; deps: service.CampaignDeps } | { ok: false; error: string };
 
@@ -73,8 +73,14 @@ export async function planCampaign(input: {
   lengthSeconds?: 10 | 15 | 30;
   goal?: string;
   source?: CampaignSource;
+  engine?: StillEngine;
 }): Promise<CampaignResult> {
   return behindDoor("plan an ad", (caller, deps) => service.planCampaign(deps, caller, { ...input, source: browserSource(input?.source) }));
+}
+
+/** Pick the picture engine the stills are painted on (free), while the ad is planned; re-quoted at once. */
+export async function setStillEngine(input: { campaignId: string; engine: StillEngine }): Promise<CampaignResult> {
+  return behindDoor("pick the picture engine", (caller, deps) => service.setStillEngine(deps, caller, input));
 }
 
 /** Paint the stills: charges the stills line of the quote, once, whatever the network does to the press. */

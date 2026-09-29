@@ -49,7 +49,7 @@
 //
 // Alias-free (vitest has no "@/"): planner.test.ts imports it as it is.
 
-import type { ShotRole } from "./campaign-types";
+import type { ShotRole, StillEngine } from "./campaign-types";
 import {
   PLAN_BUSY,
   PLAN_LIMIT,
@@ -143,6 +143,12 @@ export type AdPlan = {
   angle: string;
   cta: string;
   shots: PlannedShot[];
+  /**
+   * The picture engine the person picked before painting (quote.ts
+   * STILL_LANES). Absent = GPT Image, the default; never written by the
+   * drafter, only by the person's pick (campaign-service.ts).
+   */
+  engine?: StillEngine;
 };
 
 function words(text: string, max: number): string {
@@ -251,7 +257,8 @@ export function parseAdPlan(raw: unknown): AdPlan | null {
     },
     { length },
   );
-  return again;
+  // Only the one other engine is ever stored; anything else reads as the default.
+  return again && r.engine === "gemini" ? { ...again, engine: "gemini" } : again;
 }
 
 /**

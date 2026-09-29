@@ -88,7 +88,7 @@ import { c2paSigner } from "./sign";
 import { BRAND_KIT_COLUMNS, brandKitFromRow } from "./types";
 import {
   STILL_BUCKET,
-  STILL_RENDER,
+  stillLaneArgs,
   endStillRow,
   paintKeyframe,
   paintStepWorstMs,
@@ -104,7 +104,7 @@ import {
   type StillChecker,
 } from "./paint";
 import type { PlannerDeps, PolicyRule } from "./planner";
-import { STILL_LANE } from "./quote";
+import { STILL_LANE, STILL_LANES, stillEngineOf, stillLaneUsd } from "./quote";
 
 /** The press-tour page's function limit (app/app/press-tour/page.tsx maxDuration): a kick runs inside it, in after(). */
 export const KICK_FUNCTION_MS = 300_000;
@@ -256,7 +256,7 @@ const stillChecker = (db: SupabaseClient): StillChecker => async (input) => {
         generationId: input.generationId,
         shot: input.shot,
         source: "still",
-        lane: STILL_LANE.modelId,
+        lane: input.lane ?? STILL_LANE.modelId,
         // Only an admin's own frames keep their picture (synthesis v2 #32).
         keepFrames: (owner.data as { role?: string } | null)?.role === "admin",
       },
@@ -277,11 +277,14 @@ export function paintDeps(): PaintDeps {
   const db = createAdminClient();
   return {
     db,
-    generateStill: async ({ prompt, identityUrl, productUrls }) => {
+    // Exactly the person's engine, once (quote.ts STILL_LANES): never another
+    // on a refusal (providers/image.ts "NO FALLBACK ON A SAFETY REFUSAL").
+    generateStill: async ({ prompt, identityUrl, productUrls, engine }) => {
+      const lane = stillLaneArgs(engine);
       let captured = "";
       let usd = 0;
       await generateImage(
-        STILL_LANE.modelId,
+        lane.modelId,
         prompt,
         identityUrl,
         async (base64) => {
@@ -298,15 +301,17 @@ export function paintDeps(): PaintDeps {
         (usage) => {
           usd += usage.usd;
         },
-        STILL_RENDER.size,
+        // GPT Image's tall size; the fal lane takes its band and shape below instead.
+        lane.imageSize,
         null,
         productUrls,
-        null,
-        null,
-        STILL_LANE.quality,
+        lane.resolution,
+        lane.aspect,
+        lane.quality,
       );
       if (!captured) throw new Error("The picture lane returned no picture.");
-      return { base64: captured, usd };
+      // fal reports no usage: its own price row is what one picture cost (Nano Banana Pro 2K: $0.15).
+      return { base64: captured, usd: usd + stillLaneUsd(lane.modelId) };
     },
     // The face AND the product, so the crop can keep both (v2 #2, PT-10).
     // Boxes are shares of the picture, so the readers' smaller JPEGs place
@@ -404,6 +409,7 @@ export function machineDeps(): MachineDeps {
         kind,
         attempt: still.attempts.length + 1,
         credits: 0,
+        modelId: STILL_LANES[stillEngineOf(campaign.plan)].modelId,
         characterIds: planned.star ? campaign.characterIds : [],
         label: `Press Tour · ${campaign.plan?.angle ?? "Ad"} · shot ${shot}${kind === "house" ? " repainted free" : " retried"}`,
         trialId: campaign.trialId,
@@ -433,6 +439,7 @@ export function machineDeps(): MachineDeps {
           kind: "retry",
           attempt: still.attempts.length + 1,
           credits,
+          modelId: STILL_LANES[stillEngineOf(campaign.plan)].modelId,
           characterIds: planned.star ? campaign.characterIds : [],
           label: `Press Tour · ${campaign.plan?.angle ?? "Ad"} · shot ${shot} retried`,
           trialId: campaign.trialId,

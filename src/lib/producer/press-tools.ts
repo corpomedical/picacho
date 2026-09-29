@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
-import type { CampaignResult, CampaignStage } from "../press-tour/campaign-types";
+import type { CampaignResult, CampaignStage, CampaignView } from "../press-tour/campaign-types";
 import type { PreparedSend } from "./tools";
 
 // Press Tour from the Producer (2026-09-28; the operator's "All three." of
@@ -19,7 +19,7 @@ export type PressToolDeps = {
   /** Why Press Tour is closed to this person (its own sentence), or null when open. */
   closed: string | null;
   /** The engine's plan, bound to this person (source "producer"); null when closed. */
-  plan: ((input: { sendId: string; productId: string; characterId: string; lengthSeconds: 10 | 15 | 30; goal?: string }) => Promise<CampaignResult>) | null;
+  plan: ((input: { sendId: string; productId: string; characterId: string; lengthSeconds: 10 | 15 | 30; goal?: string; engine?: "gpt-image" | "gemini" }) => Promise<CampaignResult>) | null;
   now?: () => Date;
 };
 
@@ -76,6 +76,8 @@ export async function planPressAd(deps: PressToolDeps, userId: string, input: Re
   }
   const length = input.length_seconds === 10 || input.length_seconds === 30 ? input.length_seconds : 15;
   const goal = typeof input.goal === "string" && input.goal.trim() ? input.goal.trim().slice(0, 500) : undefined;
+  // GPT Image unless the person asked for Gemini (the model passes it only then).
+  const engine = input.still_engine === "gemini" ? ("gemini" as const) : undefined;
   const [cast, products] = await Promise.all([characters(deps.db, userId), readyProducts(deps.db, userId)]);
   if (cast.length === 0) return { text: "They have no characters yet. An ad stars one of their characters: they create one first.", isError: true };
   if (products.length === 0) {
@@ -90,8 +92,8 @@ export async function planPressAd(deps: PressToolDeps, userId: string, input: Re
   if (!product) return { text: `No single ready product matches that name. Their ready products: ${list(products)}.`, isError: true };
 
   const day = (deps.now ? deps.now() : new Date()).toISOString().slice(0, 10);
-  const sendId = producerPlanSendId(userId, `${product.id}:${star.id}:${length}:${goal ?? ""}:${day}`);
-  const planned = await deps.plan({ sendId, productId: product.id, characterId: star.id, lengthSeconds: length, goal });
+  const sendId = producerPlanSendId(userId, `${product.id}:${star.id}:${length}:${goal ?? ""}:${day}${engine ? `:${engine}` : ""}`);
+  const planned = await deps.plan({ sendId, productId: product.id, characterId: star.id, lengthSeconds: length, goal, engine });
   if (!planned.ok) return { text: `The ad couldn't be planned: ${planned.error}`, isError: true };
   const ad = planned.campaign;
   const paint = ad.quote?.paint ?? 0;
@@ -113,9 +115,14 @@ export async function planPressAd(deps: PressToolDeps, userId: string, input: Re
     text:
       `Planned a ${ad.lengthSeconds} s Press Tour ad: ${star.name} with ${product.name}, ${shots} shots` +
       (ad.angle ? `, angle "${ad.angle}"` : "") +
-      `. Nothing is painted or charged. Painting the ${shots} stills costs ${paint} credits; the person sees that on the card and presses Paint on the Press Tour page themselves. Filming is priced there after they approve the stills.`,
+      `. Nothing is painted or charged. Painting the ${shots} stills on ${engineName(ad.quote)} costs ${paint} credits; the person sees that on the card and presses Paint on the Press Tour page themselves. Filming is priced there after they approve the stills.`,
     card,
   };
+}
+
+/** The engine the quote names, by its own name (GPT Image when the quote names none). */
+function engineName(quote: CampaignView["quote"]): string {
+  return quote?.engines?.find((e) => e.id === quote.engine)?.name ?? "GPT Image";
 }
 
 const STAGE_WORDS: Readonly<Record<CampaignStage, string>> = {

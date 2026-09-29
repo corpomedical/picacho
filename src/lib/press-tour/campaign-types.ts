@@ -87,6 +87,22 @@ export interface QuoteRow {
   paid: boolean;
 }
 
+/**
+ * The picture engine a campaign's stills are painted on: the person's pick,
+ * made before painting and kept for every repaint (operator, 2026-09-29).
+ * No automatic fallback: a refusal on the pick stays a refusal.
+ */
+export type StillEngine = "gpt-image" | "gemini";
+
+/** One engine the person can pick, as the quote prints it: its name and one still's price. */
+export interface StillEngineOffer {
+  id: StillEngine;
+  /** The engine's own name, as Generate shows it. */
+  name: string;
+  /** Credits for one still on this engine. */
+  credits: number;
+}
+
 /** N3: one money grammar, sent by the server, printed by every surface. */
 export interface PressQuote {
   version: number;
@@ -108,6 +124,10 @@ export interface PressQuote {
   balanceAfterNextStep: number;
   /** True when this campaign is the account's free first ad (nothing is charged). */
   trial: boolean;
+  /** The engine the stills are (or will be) painted on. */
+  engine: StillEngine;
+  /** Every engine the person can pick, each with one still's price (empty on a stored quote that never had them). */
+  engines: StillEngineOffer[];
 }
 
 /**
@@ -269,7 +289,15 @@ export interface CampaignActions {
     lengthSeconds?: 10 | 15 | 30;
     goal?: string;
     source?: CampaignSource;
+    /** The picture engine (default GPT Image). */
+    engine?: StillEngine;
   }): Promise<CampaignResult>;
+  /**
+   * Pick the picture engine the stills are painted on (free). Only while the
+   * ad is planned: once painting starts the pick holds, repaints included.
+   * Answers with the ad re-quoted on the new engine.
+   */
+  setStillEngine(input: { campaignId: string; engine: StillEngine }): Promise<CampaignResult>;
   /** Paint the stills (charges the paint line, or nothing on the trial). Stage → painting → awaiting_approval. */
   paintStills(input: { sendId: string; campaignId: string }): Promise<CampaignResult>;
   approveStill(input: { campaignId: string; shot: number }): Promise<CampaignResult>;

@@ -158,8 +158,9 @@ describe("the Press Tour door", () => {
     expect(printed.length).toBeGreaterThan(5);
     for (const vars of printed) {
       for (const [, value] of vars.matchAll(/\b(?:n|now|after): ([^,]+?)(?:,|\s*$)/g)) {
-        // A re-film is priced by the contract's own field (ShotView.refilmCredits: the shot's normal film price).
-        expect(value.trim(), vars).toMatch(/^(?:1|r\.credits|shot\.refilmCredits|quote\.(?:total|paint|animate|balanceNow|balanceAfterNextStep)|credits|spend === "paint" \? quote\.paint : quote\.animate)$/);
+        // A re-film is priced by the contract's own field (ShotView.refilmCredits: the shot's normal film price);
+        // an engine's still by the quote's own offer (PressQuote.engines[].credits).
+        expect(value.trim(), vars).toMatch(/^(?:1|r\.credits|offer\.credits|shot\.refilmCredits|quote\.(?:total|paint|animate|balanceNow|balanceAfterNextStep)|credits|spend === "paint" \? quote\.paint : quote\.animate)$/);
       }
     }
   });

@@ -41,6 +41,8 @@ function quote(over: Partial<PressQuote> = {}): PressQuote {
     balanceNow: 99,
     balanceAfterNextStep: 96,
     trial: false,
+    engine: "gpt-image",
+    engines: [],
     ...over,
   };
 }

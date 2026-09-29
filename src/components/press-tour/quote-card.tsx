@@ -1,5 +1,5 @@
 import { formatMsg } from "@/lib/i18n/format";
-import type { PressQuote, QuoteRow } from "@/lib/press-tour/campaign-types";
+import type { PressQuote, QuoteRow, StillEngine } from "@/lib/press-tour/campaign-types";
 import { nextSpend } from "@/lib/press-tour/door-view";
 import { cn } from "@/lib/cn";
 import type { PressWords } from "./verdict";
@@ -12,7 +12,79 @@ import type { PressWords } from "./verdict";
 // and the operator's yes (synthesis §3.4 Cut 9); until then no such line
 // exists, so nothing here can promise one.
 
-export function QuoteCard({ quote, stills, shotSeconds, m }: { quote: PressQuote; stills: number; shotSeconds: number | null; m: PressWords }) {
+/**
+ * The picture engine (operator, 2026-09-29): the person's pick, made before
+ * painting, each engine with one still's price as the server quoted it.
+ * Once painting starts the pick holds (repaints use it too), so the choice
+ * becomes a plain line naming it. Nothing switches engines on its own.
+ */
+export function EngineChoice({
+  quote,
+  m,
+  held,
+  busy,
+  onPick,
+  compact = false,
+}: {
+  quote: PressQuote;
+  m: PressWords;
+  /** Painting has started: the pick holds. */
+  held: boolean;
+  busy: boolean;
+  onPick: (engine: StillEngine) => void;
+  compact?: boolean;
+}) {
+  if (quote.engines.length < 2) return null;
+  const picked = quote.engines.find((offer) => offer.id === quote.engine) ?? quote.engines[0];
+  if (held) return <p className="mt-1 text-[11.5px] leading-[1.4] text-[#858994]">{formatMsg(m.engineHeld, { name: picked.name })}</p>;
+  return (
+    <div className={compact ? undefined : "mb-2"}>
+      {!compact && <p className="text-[12px] text-[#9aa0ad]">{m.engineLabel}</p>}
+      <div role="radiogroup" aria-label={m.engineLabel} className="mt-1 grid grid-cols-2 rounded-[11px] bg-[rgba(255,255,255,0.04)] p-[3px] ring-1 ring-inset ring-[rgba(255,255,255,0.08)]">
+        {quote.engines.map((offer) => {
+          const on = offer.id === quote.engine;
+          return (
+            <button
+              key={offer.id}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              disabled={busy}
+              onClick={() => {
+                if (!on) onPick(offer.id);
+              }}
+              className={cn(
+                "min-h-11 rounded-lg px-2 py-1 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f0cda6] disabled:cursor-wait lg:min-h-9",
+                on ? "bg-[rgba(255,255,255,0.08)] text-[#ecedf1]" : "text-[#9aa0ad]",
+              )}
+            >
+              <span className={cn("block text-[12.5px] leading-[1.25]", on && "font-medium")}>{offer.name}</span>
+              <span className="font-slate block text-[10.5px] tracking-[0.02em] text-[#858994]">
+                {quote.trial ? m.onUs : `${formatMsg(m.creditsShort, { n: offer.credits })} ${m.engineEach}`}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {!compact && <p className="mt-1.5 text-[11.5px] leading-[1.4] text-[#858994]">{m.engineHint}</p>}
+    </div>
+  );
+}
+
+export function QuoteCard({
+  quote,
+  stills,
+  shotSeconds,
+  m,
+  engine,
+}: {
+  quote: PressQuote;
+  stills: number;
+  shotSeconds: number | null;
+  m: PressWords;
+  /** The engine choice, when the ad is planned or painting (the door decides). */
+  engine?: { held: boolean; busy: boolean; onPick: (engine: StillEngine) => void } | null;
+}) {
   const next = nextSpend(quote);
   const row = (key: QuoteRow["key"]) => quote.rows.find((r) => r.key === key) ?? null;
   const stillsRow = row("stills");
@@ -38,6 +110,11 @@ export function QuoteCard({ quote, stills, shotSeconds, m }: { quote: PressQuote
       <h2 id="press-quote" className="font-slate text-[11px] font-medium uppercase tracking-[0.12em] text-[#858994]">
         {m.quoteLabel}
       </h2>
+      {engine && (
+        <div className="mt-1.5">
+          <EngineChoice quote={quote} m={m} held={engine.held} busy={engine.busy} onPick={engine.onPick} />
+        </div>
+      )}
       <dl className="mt-1.5 text-[12.5px] leading-[1.35]">
         {stillsRow && (
           <QuoteLine
