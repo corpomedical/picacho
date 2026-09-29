@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.166.0",
+    build: 205,
+    date: "2026-09-30",
+    title: "Helios Studio: path-traced light balanced like Cycles' sky",
+    items: [
+      "With the physical sky, a path-traced render now takes the sun's colour and strength from the same sky the viewport draws: overhead it is strong and white, low in the evening it turns warm, and the sky's blue fill stays softer underneath, so a late-afternoon shot no longer looks like night.",
+      "Every path-traced still and animation is now exposed like a camera would: it measures the picture from its first samples and sets the brightness, without letting a sunlit wall wash out. The Exposure field is now an adjustment on top, and the window says what it measured.",
+      "In English, Spanish, Portuguese and Italian.",
+    ],
+  },
+  {
     version: "1.165.0",
     build: 204,
     date: "2026-09-30",
