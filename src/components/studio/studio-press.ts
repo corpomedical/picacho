@@ -24,6 +24,8 @@ export type StudioShootInput = {
   rig?: unknown;
   movers?: unknown;
   beat?: boolean;
+  /** Taken by the Studio before a clean traced frame is made, so the trace and the send are one press. */
+  pressId?: string;
 };
 
 /** Where a press is: sent, checking whether a lost answer went through, or following one that did. */
@@ -44,7 +46,7 @@ export type StudioPressDeps = {
 
 export async function pressStudioStill(deps: StudioPressDeps, setId: string, input: StudioShootInput): Promise<ShootResult> {
   const now = deps.now ?? Date.now;
-  const pressId = newPressId();
+  const pressId = input.pressId || newPressId();
   const readBack = async (): Promise<PressRead<ShootResult> | null> => {
     try {
       return pressReadOf(await deps.read(setId, { pressId }), "shot") as PressRead<ShootResult> | null;

@@ -19,7 +19,9 @@ import { SET_DIRECTION_MAX_CHARS } from "@/lib/sets/set-config";
 import { studioShotInput } from "@/lib/sets/studio-shot";
 import { CYCLES_DEFAULT_SAMPLES, CYCLES_EDGES, CYCLES_MAX_FRAMES, CYCLES_MAX_SAMPLES_ANIMATION, CYCLES_MAX_SAMPLES_STILL, CYCLES_MAX_SECONDS, CYCLES_TOO_LONG, HELIOS_CYCLES_GPU, cyclesDollars, cyclesDuration, cyclesSize, estimateCycles } from "@/lib/sets/cycles";
 import { watchStudioText } from "./studio-i18n";
-import { ENV_H, ENV_W, SKY_DIFFUSE_SHARE, TRACE_MAX_SAMPLES, TRACE_SCALES, TRACE_SLOW_SECONDS, TRACE_SPEED_KEY, envAddSplit, envAddSun, envUpIrradiance, loadOidn, luminance, meterExposure, oidnDenoise, physicalSunIrradiance, traceDuration, traceEstimate, traceSamples, traceSize } from "./studio-trace";
+import { studioCastInput } from "./studio-cast";
+import { newPressId } from "@/lib/sets/press-follow";
+import { ENV_H, ENV_W, SKY_DIFFUSE_SHARE, TRACE_MAX_SAMPLES, TRACE_PRESETS, TRACE_SCALES, TRACE_SLOW_SECONDS, TRACE_SPEED_KEY, envAddSplit, envAddSun, envUpIrradiance, loadOidn, luminance, meterExposure, oidnDenoise, physicalSunIrradiance, traceDuration, traceEstimate, traceSamples, traceSize } from "./studio-trace";
 import { MATERIAL_RECIPES, hslOf, materialOf } from "@/lib/sets/stage-materials";
 import { GRIP_TAP_PX, LONG_PRESS_MS, LONG_PRESS_SLOP_PX, STUDIO_COMPACT_QUERY, nextSheet, sheetDragHeight, sheetHeights, sheetSnap } from "@/lib/sets/studio-sheets";
 import {
@@ -1320,7 +1322,7 @@ const CAST_TITLE = "Photo with your character";
 const RIG_NAMES = { square: "square", scope: "Scope 2.39:1", flat: "Flat 1.85:1", wide: "Wide 16:9", classic: "Classic 4:3", vertical: "Vertical 9:16" };
 const credits = (n) => `${n} credit${n === 1 ? "" : "s"}`;
 const castLabel = () => `${CAST_TITLE} · ${credits(opts.render.credits)}`;
-const cast = { busy: false, t0: 0, phase: "sent", result: null, frame: null, charId: null, words: "", timer: 0 };
+const cast = { busy: false, t0: 0, phase: "sent", result: null, frame: null, charId: null, words: "", timer: 0, traced: false, trace: null, sent: null };
 /** The frame and what is sent with it, measured from the scene as it stands now. */
 function castFrame() {
   const cam = shot.obj.userData.cam;
@@ -1379,20 +1381,23 @@ function showCast() {
     const r = cast.result;
     const why = r.error === null ? (r.failure ? `It didn't come out: ${r.failure}` : "It didn't come out.") : r.error || R.unreachable;
     const link = r.error === null && r.generationId ? `<a href="${esc(R.historyHref(r.generationId))}">Open in History</a>` : "";
-    body = `<img class="cast-img" alt="The frame that was sent" src="${f.dataUri}"><p class="cast-note" role="alert">${esc(why)}</p><div class="cast-links">${link}<a href="${esc(R.setHref)}">Open the set</a></div><div class="row-btns"><button class="pbtn" id="castAgain">Back</button></div>`;
+    body = `<img class="cast-img" alt="The frame that was sent" src="${cast.sent || f.dataUri}"><p class="cast-note" role="alert">${esc(why)}</p><div class="cast-links">${link}<a href="${esc(R.setHref)}">Open the set</a></div><div class="row-btns"><button class="pbtn" id="castAgain">Back</button></div>`;
   } else {
     const opts2 = R.characters.map((c) => `<option value="${esc(c.id)}"${c.id === cast.charId ? " selected" : ""}>${esc(c.name || "Your character")}</option>`).join("");
     body = `<img class="cast-img" id="castPrev" alt="The frame that goes to the image engine" src="${f.dataUri}"><p class="hint">Through the shot camera · ${esc(shape)}. The stand-in marks where your character stands; the image engine paints the photo onto this layout.</p>
 <div class="fr" style="margin-top:8px"><label for="castWho">Character</label><select class="sel2" id="castWho"${cast.busy ? " disabled" : ""}>${opts2}</select></div>
 <div class="fr" style="margin-top:6px;align-items:start"><label for="castWords">What happens</label><textarea class="cast-words" id="castWords" maxlength="${SET_DIRECTION_MAX_CHARS}" placeholder="Optional: what they're doing, the mood"${cast.busy ? " disabled" : ""}>${esc(cast.words)}</textarea></div>
+<div class="fr" style="margin-top:6px"><label></label><label class="check"><input type="checkbox" id="castTrace"${cast.traced ? " checked" : ""}${cast.busy ? " disabled" : ""}> <span>${esc(castTraceLabel(f))}</span></label></div>
 <p class="cast-note" id="castNote" hidden></p>
-<div class="row-btns"><button class="pbtn accent" id="castGo"${cast.busy ? " disabled" : ""}>${esc(castLabel())}</button></div>
+<div class="row-btns"><button class="pbtn accent" id="castGo"${cast.busy ? " disabled" : ""}>${esc(castLabel())}</button>${cast.busy && (cast.phase === "tracing" || cast.phase === "cleaning") ? `<button class="pbtn" id="castStop">Stop</button>` : ""}</div>
 <div class="prog"${cast.busy ? "" : " hidden"}><i id="castProg"></i></div><p class="hint" id="castTxt" role="status"></p>`;
   }
   const open = $("dlgBody") && $("dlgBody").querySelector("[data-cast]");
   if (!open || $("dlg").hidden) openWin(CAST_TITLE, `<div data-cast></div>`);
   const box = $("dlgBody").querySelector("[data-cast]"); box.innerHTML = body;
-  const who = $("castWho"), words = $("castWords"), go = $("castGo"), again = $("castAgain");
+  const who = $("castWho"), words = $("castWords"), go = $("castGo"), again = $("castAgain"), tr = $("castTrace"), stop = $("castStop");
+  if (tr) tr.onchange = () => { cast.traced = tr.checked; };
+  if (stop) stop.onclick = () => { ptBusy = false; stop.disabled = true; };
   if (who) who.onchange = () => { cast.charId = who.value; castCheck(); };
   if (words) words.oninput = () => { cast.words = words.value; };
   if (go) go.onclick = castGo;
@@ -1412,18 +1417,51 @@ function castTick() {
   const bar = $("castProg"), txt = $("castTxt"); if (!bar || !txt || !cast.busy) return;
   const s = Math.round((Date.now() - cast.t0) / 1000);
   bar.style.width = Math.min(95, (s / 90) * 100) + "%";
+  if (cast.phase === "tracing" || cast.phase === "cleaning") { bar.style.width = (cast.trace ? Math.min(100, (cast.trace[0] / cast.trace[1]) * 100) : 0) + "%"; txt.textContent = cast.phase === "cleaning" ? "Cleaning the grain…" : cast.trace && cast.trace[0] > 0 ? `Tracing a clean frame · sample ${cast.trace[0]} of ${cast.trace[1]} · ${s} s. Stop sends nothing.` : `Starting the graphics card · ${s} s`; return; }
   txt.textContent = cast.phase === "checking" ? `The answer didn't arrive, so we're checking whether it went through · ${s} s. Don't press again.` : cast.phase === "rendering" ? `Still rendering — following your press · ${s} s. Don't press again.` : `Rendering your photo · ${s} s. It usually takes under a minute or two.`;
+}
+/** "Use a clean traced frame": its label with the time it takes here, once this device has been timed. */
+function castTraceLabel(f) {
+  const fr = f.input.frame, sec = traceEstimate(ptSpeed(), TRACE_PRESETS.still.draft, fr.renderW, fr.renderH, 1, 2);
+  return sec == null ? "Use a clean traced frame (better light; the first one also times this device)" : `Use a clean traced frame (better light, takes about ${traceDuration(sec)})`;
+}
+/** The shot camera's frame at the send size, path-traced at Draft and denoised; null when Stop was pressed. */
+async function castTrace(f) {
+  const fr = f.input.frame, cam = shot.obj.userData.cam, f0 = cam.fov, dn = ptSet.denoise, n = TRACE_PRESETS.still.draft;
+  cam.fov = f.input.renderFovDeg; ptSet.denoise = true; ptBusy = true;
+  try {
+    const res = await ptTrace(fr.renderW, fr.renderH, n, { meter: true, cleanStopped: false, onSample: (x) => { cast.trace = [Math.floor(x), n]; castTick(); }, onClean: () => { cast.phase = "cleaning"; castTick(); } });
+    if (!ptBusy || res.samples < n) return null;
+  } finally { ptBusy = false; ptSet.denoise = dn; cam.fov = f0; cam.updateProjectionMatrix(); }
+  const out = document.createElement("canvas"); out.width = fr.renderW; out.height = fr.renderH;
+  const ctx = out.getContext("2d"); ctx.drawImage(ptSnap, 0, 0, fr.renderW, fr.renderH);
+  ctx.fillStyle = "#0a0a0a"; for (const b of letterbox(fr)) ctx.fillRect(b.x, b.y, b.w, b.h);
+  return out.toDataURL("image/jpeg", 0.9);
 }
 async function castGo() {
   const R = opts.render, f = cast.frame, c = castChar();
   if (!R || !f || !c || c.likenessNeeded || cast.busy) return;
-  cast.busy = true; cast.t0 = Date.now(); cast.phase = "sent"; cast.result = null;
+  if (cast.traced && ptBusy) return toast("A path-traced render is already running");
+  // One press id, taken before any trace: the traced frame and its send are one press, never charged twice.
+  const pressId = newPressId();
+  cast.busy = true; cast.t0 = Date.now(); cast.phase = cast.traced ? "tracing" : "sent"; cast.result = null; cast.sent = null; cast.trace = null;
   clearInterval(cast.timer); cast.timer = setInterval(castTick, 1000);
   showCast();
-  const words = cast.words.trim().slice(0, SET_DIRECTION_MAX_CHARS);
-  const input = { frameDataUri: f.dataUri, characterId: c.id, direction: words, ...(words ? { words } : {}), layout: f.input.layout, lifted: false, canvasAspect: f.input.canvasAspect, rig: f.input.rig, movers: f.input.movers,
-    // The Studio keeps its own scene: the set page's saved arrangement stays as the person left it there (actions.ts saves a layout unless beat).
-    beat: true };
+  let traced = null;
+  if (cast.traced) {
+    try { traced = await castTrace(f); } catch { traced = undefined; }
+    if (stopped) return;
+    if (!traced) {
+      // Stopped, or this device couldn't trace: nothing was sent, nothing was charged.
+      clearInterval(cast.timer); cast.busy = false;
+      if (traced === undefined) cast.result = { error: "This device couldn't trace the frame, so nothing was sent." };
+      showCast(); const tx = $("castTxt"); if (tx && traced === null) tx.textContent = "Stopped before sending: nothing was sent and nothing was charged.";
+      return;
+    }
+    cast.sent = traced; cast.phase = "sent"; cast.t0 = Date.now(); showCast();
+    const pv = $("castPrev"); if (pv) pv.src = traced;
+  }
+  const input = studioCastInput({ viewFrameUri: f.dataUri, tracedFrameUri: traced, characterId: c.id, words: cast.words, maxChars: SET_DIRECTION_MAX_CHARS, frame: f.input, pressId });
   let res;
   try { res = await R.shoot(input, (ph) => { cast.phase = ph; castTick(); }); } catch { res = { error: R.unreachable }; }
   clearInterval(cast.timer); cast.busy = false;
@@ -1819,7 +1857,7 @@ function ptTick() {
 // meter: expose the picture like a camera would, from its first few samples (Final/Draft alike); the Exposure field
 // is an offset on top. An animation meters its first frame and keeps that for every frame, so it doesn't flicker.
 const ptMeter = (w, h) => { const px = new Float32Array(w * h * 4); ptR.readRenderTargetPixels(pt.target, 0, 0, w, h, px); ptAuto = meterExposure(px); ptLook(); };
-async function ptTrace(w, h, samples, { onSample, onClean, meter = false } = {}) {
+async function ptTrace(w, h, samples, { onSample, onClean, meter = false, cleanStopped = true } = {}) {
   const cam = shot.obj.userData.cam; cam.aspect = w / h; cam.updateProjectionMatrix();
   const engine = await ptEngine(w, h); ptLook(); const restore = ptPrep();
   try {
@@ -1835,7 +1873,7 @@ async function ptTrace(w, h, samples, { onSample, onClean, meter = false } = {})
       await ptTick();
     }
     const n = Math.floor(engine.samples); if (t1 && n > 4) ptKeepSpeed((performance.now() - t1) / (n - 1) / ((w * h) / 1e6));
-    if (n < 1) return { how: "none", samples: 0 };
+    if (n < 1 || (!ptBusy && !cleanStopped)) return { how: "none", samples: n };
     if (meter) ptMeter(w, h);
     return { how: await ptFinish(w, h, onClean), samples: n };
   } finally { restore(); }

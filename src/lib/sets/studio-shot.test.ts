@@ -175,7 +175,9 @@ describe("the wiring", () => {
     const engine = read("src/components/studio/studio-engine.ts");
     expect(engine).toContain("const castLabel = () => `${CAST_TITLE} · ${credits(opts.render.credits)}`;");
     expect(engine).toContain("for (const b of letterbox(fr)) ctx.fillRect(b.x, b.y, b.w, b.h);");
-    expect(engine).toContain("beat: true };");
+    // the payload is built in studio-cast.ts since the clean traced frame (2026-09-30); beat still rides on every send
+    expect(engine).toContain("const input = studioCastInput(");
+    expect(read("src/components/studio/studio-cast.ts")).toContain("    beat: true,\n");
     expect(engine).toContain("if (!R || !f || !c || c.likenessNeeded || cast.busy) return;");
     expect(read("src/components/studio/studio-markup.ts")).toContain('data-act=\\"renderCast\\"');
   });
