@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.163.0",
+    build: 202,
+    date: "2026-09-29",
+    title: "Helios Studio: real Blender renders on a cloud GPU (team first)",
+    items: [
+      "Helios Studio's Render menu has two new entries: Blender render (Cycles) — still, and — animation. The scene goes to Blender itself, which renders the shot camera's view with Cycles on an NVIDIA L40S graphics card in the cloud: real bounced light, soft shadows and reflections, the same camera, lens, sun, sky and moving things as in the Studio.",
+      "The window lets you pick the size (up to 4K for a still, 1080p for an animation), the samples and, for an animation, the frames. Before you press, it shows about how long it will take and what the GPU time costs; afterwards, the real seconds and cost. The picture or video comes back in the window with Save.",
+      "For the team first (admins), charged no credits. It stays off until the render machine is set up: until then the window says \"Blender renders aren't switched on yet.\" and nothing is sent. Pressing twice never starts two renders, and one render is always stopped after 100 minutes.",
+    ],
+  },
+  {
     version: "1.162.0",
     build: 201,
     date: "2026-09-29",
