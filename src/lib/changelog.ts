@@ -20,6 +20,22 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.155.0",
+    build: 194,
+    date: "2026-09-29",
+    title: "Astra in Helios Studio understands any request about your scene (team first)",
+    items: [
+      "For the team first (admins), like the rest of Helios Studio.",
+      "Astra's panel now opens with one plain line: \"Astra edits this 3D scene. To make a picture or video, use Render.\" She changes the 3D scene; pictures and videos come from Render.",
+      "Type anything about the scene in your own words — \"put a red lamp post left of the car and make it 4 m tall\", \"drive the car forward over 3 seconds\", \"golden hour\", \"aim the camera at the car at 35 mm\". Astra reads the whole scene and answers with a plan: what she'll do, each step listed, Apply or Cancel. Nothing changes until you press Apply.",
+      "Apply runs the whole request as one step you can undo: ⌘Z (or \"Undo these steps\") takes all of it back. Things she makes carry ✦ in the outliner.",
+      "She can add, delete, copy, move, turn, resize, recolour, change materials, hide, show, rename and parent things; key them at a frame; set the time of day and the sky; set the camera's lens, format and what it follows; add Array and Mirror; set up physics, simulate and bake; and go to a frame or set the playback range.",
+      "If a request could mean more than one thing (two cars and none selected), she asks which one, with the choices as buttons. If something she names isn't in the scene, that step says so and is skipped.",
+      "The example requests are still there as quick buttons. A plan counts as one of the month's Astra changes, like an edit on the set page; a question or a failed try doesn't.",
+      "Deleting a set now also clears its Studio scene.",
+    ],
+  },
+  {
     version: "1.154.0",
     build: 193,
     date: "2026-09-29",
