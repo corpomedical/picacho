@@ -140,20 +140,28 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient();
   const { data: profile } = await admin
     .from("profiles")
-    .select("plan, plan_status, current_period_start, status")
+    .select("plan, plan_status, current_period_start, status, role")
     .eq("id", user.id)
-    .single<{ plan: PlanId | null; plan_status: string | null; current_period_start: string | null; status: string | null }>();
+    .single<{
+      plan: PlanId | null;
+      plan_status: string | null;
+      current_period_start: string | null;
+      status: string | null;
+      role: string | null;
+    }>();
   if (profile?.status === "suspended") {
     return NextResponse.json({ error: "Your account is suspended. Contact support if you think this is a mistake." }, { status: 403 });
   }
 
   // The same allowance rule as the composer's chat (api/agent/chat): a plan's
   // allowance only while the subscription is in good standing; a free account
-  // meters a lifetime total; an account granted Aly has Elite's.
+  // meters a lifetime total; an admin or an account granted Aly has Elite's —
+  // the lamp's rule (producerUnitCap). Without the admin half an admin with no
+  // plan met the free lifetime 25 and every message came back 402.
   const plan: PlanId = profile?.plan ?? "none";
   const planActive = (profile?.plan_status ?? null) === null || profile?.plan_status === "active";
   const isFree = plan === "none" || !planActive;
-  const granted = await readProducerGrant(admin, user.id);
+  const granted = profile?.role === "admin" || (await readProducerGrant(admin, user.id));
   if (isFree && !granted) {
     // The free allowance is about a dozen everyday messages: thinking harder
     // or three brains at once would eat it in two.

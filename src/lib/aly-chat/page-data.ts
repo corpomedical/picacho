@@ -54,9 +54,10 @@ export async function chatPageBase(): Promise<ChatPageBase> {
   ]);
   const plan = ((profile?.plan as PlanId | null) ?? "none") as PlanId;
   const active = ((profile?.plan_status as string | null) ?? null) === null || profile?.plan_status === "active";
-  const limited = !granted && (plan === "none" || !active);
-  const model = workspace.videoModels.find((m) => m.id === workspace.defaultVideoModelId);
   const isAdmin = profile?.role === "admin";
+  // Admins chat on Elite's allowance, like the lamp (the route's own rule).
+  const limited = !isAdmin && !granted && (plan === "none" || !active);
+  const model = workspace.videoModels.find((m) => m.id === workspace.defaultVideoModelId);
   const liveVoice = await producerVisible(supabase, profile ? { ...profile, producer_access: granted } : profile, isAdmin);
 
   return {

@@ -102,13 +102,14 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient();
   const { data: profile } = await admin
     .from("profiles")
-    .select("plan, plan_status, current_period_start, status")
+    .select("plan, plan_status, current_period_start, status, role")
     .eq("id", user.id)
     .single<{
       plan: PlanId | null;
       plan_status: string | null;
       current_period_start: string | null;
       status: string | null;
+      role: string | null;
     }>();
 
   // Suspension was enforced only by the middleware's pathname gate
@@ -144,8 +145,9 @@ export async function POST(request: NextRequest) {
   // allowance, Elite's, each month: the Producer and this chat write to the
   // same ledger (record_agent_units sums every row), so metering this chat
   // against the plan's own cap would let the Producer's turns use it up — for
-  // good on a free account (review of the grant, 2026-09-26).
-  const producerGranted = await readProducerGrant(admin, user.id);
+  // good on a free account (review of the grant, 2026-09-26). An admin meters
+  // the same way, as on the lamp (producerUnitCap).
+  const producerGranted = profile?.role === "admin" || (await readProducerGrant(admin, user.id));
   const cap = producerGranted ? PLAN_CHAT_UNIT_LIMITS.elite : isFree ? FREE_CHAT_UNIT_LIMIT : PLAN_CHAT_UNIT_LIMITS[plan];
   const since =
     isFree && !producerGranted

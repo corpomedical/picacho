@@ -218,7 +218,15 @@ describe("the Producer granted to one account", () => {
     // Settings count the same ledger against Elite's monthly cap, so the
     // Producer's turns can't use up the plan's own (review of the grant).
     const chat = read("../../app/api/agent/chat/route.ts");
-    expect(chat).toContain("const producerGranted = await readProducerGrant(admin, user.id);");
+    // An admin meters the same way, as on the lamp (producerUnitCap) — the
+    // Aly chat page's route too (2026-09-29: an admin with no plan met the
+    // free lifetime 25 there and every message came back 402).
+    expect(chat).toContain(
+      'const producerGranted = profile?.role === "admin" || (await readProducerGrant(admin, user.id));',
+    );
+    const alyChat = read("../../app/api/aly/chat/route.ts");
+    expect(alyChat).toContain('const granted = profile?.role === "admin" || (await readProducerGrant(admin, user.id));');
+    expect(read("../aly-chat/page-data.ts")).toContain("const limited = !isAdmin && !granted &&");
     expect(chat).toContain("const cap = producerGranted ? PLAN_CHAT_UNIT_LIMITS.elite :");
     expect(chat).toContain("isFree && !producerGranted");
     const allowances = read("../settings/account-data.ts");
