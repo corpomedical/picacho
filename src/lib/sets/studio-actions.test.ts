@@ -184,7 +184,7 @@ describe("the wiring", () => {
     expect(wrapper).toContain("return await saveStudioScene(setId, scene);");
   });
   it("the SQL adds the one column, idempotently", () => {
-    expect(read("supabase/pending/helios-studio-scene.sql")).toContain(
+    expect(read("supabase/applied/2026-09-29/helios-studio-scene.sql")).toContain(
       "alter table public.location_sets add column if not exists studio_scene jsonb;",
     );
   });

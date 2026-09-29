@@ -17,7 +17,7 @@ import {
 // is called but the database. The Studio is admins-only while
 // HELIOS_STUDIO_FOR_ALL is false, and these doors follow the same rule —
 // anyone else hears that the set isn't there, as the page's 404 says.
-// The column comes from supabase/pending/helios-studio-scene.sql; until it
+// The column comes from supabase/applied/2026-09-29/helios-studio-scene.sql; until it
 // runs, a load answers null and a save says it couldn't reach the account,
 // and the Studio keeps its browser copy.
 

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 // Helios Studio's scene on the person's account (stage 3, 2026-09-29):
-// `location_sets.studio_scene` (supabase/pending/helios-studio-scene.sql).
+// `location_sets.studio_scene` (supabase/applied/2026-09-29/helios-studio-scene.sql).
 // The Studio's own snapshot (studio-engine.ts snapshot(), v 1) is kept as
 // it is: the engine is the only reader, and it restores defensively,
 // skipping anything it cannot place. Here it is only held to its shape —

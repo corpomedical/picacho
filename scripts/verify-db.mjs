@@ -233,7 +233,7 @@ const COLUMNS = {
     "user_id", "status", "brief", "title", "description", "spec", "layout",
     "response_id", "attempts", "failure", "cost_usd", "thumb_path", "updated_at", "deleted_at",
     "source_photo_path", "source_photo_sha256",
-    "edited_spec", "film", "rig",
+    "edited_spec", "film", "rig", "studio_scene",
     // The Recce's reading of a clip (astra-recce.sql), cleared with the set.
     "recce_read",
   ],
