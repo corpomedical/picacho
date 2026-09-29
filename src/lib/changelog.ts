@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.167.0",
+    build: 206,
+    date: "2026-09-30",
+    title: "Helios Studio: photo with your character from a clean traced frame",
+    items: [
+      "Render ▸ Photo with your character has a new box, \"Use a clean traced frame\": the frame sent to the image engine is path-traced and cleaned on your device first, with the Studio's real light and shadows, instead of the plain viewport picture. It is off by default because it adds time (it says about how long on your device); the price is the same.",
+      "Stop while the frame is being traced sends nothing and charges nothing. The traced frame and its send are one press, so it can never be charged twice.",
+      "In English, Spanish, Portuguese and Italian.",
+    ],
+  },
+  {
     version: "1.166.0",
     build: 205,
     date: "2026-09-30",
