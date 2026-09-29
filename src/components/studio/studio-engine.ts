@@ -1073,10 +1073,12 @@ function modelSteps(answer) {
         const t = toThreeAxes(s.v), r = [t.x, t.y, t.z].map((v) => (v === null ? null : v * DEG2));
         ["x", "y", "z"].forEach((k, n) => { if (r[n] === null) return; o.rotation[k] = s.mode === "by" ? o.rotation[k] + r[n] : r[n]; });
       }); last = it; } return last; }; break;
-      case "scale": act = () => { let last = null; for (const it of L()) { moveCmd(it, (o) => { const t = toThreeSizes(s.v); ["x", "y", "z"].forEach((k) => { if (t[k] === null) return; o.scale[k] = Math.max(0.001, s.mode === "by" ? o.scale[k] * t[k] : t[k]); }); }); last = it; } return last; }; break;
+      case "scale": act = () => { let last = null; for (const it of L()) { moveCmd(it, (o) => { const t = toThreeSizes(s.v); ["x", "y", "z"].forEach((k) => { if (t[k] === null) return; o.scale[k] = Math.max(0.001, s.mode === "by" ? o.scale[k] * t[k] : t[k]); }); tell(T(keepClear(it, [], []))); }); last = it; } return last; }; break;
       case "size": act = () => { let last = null; for (const it of L()) { moveCmd(it, (o) => {
         const b = worldBox(it); if (b.isEmpty()) return; const sz = b.getSize(new V3()), f = sizeFactors({ x: sz.x, y: sz.y, z: sz.z }, toThreeSizes(s.v)); if (!f) return;
         const low = b.min.y; o.scale.set(o.scale.x * f.x, o.scale.y * f.y, o.scale.z * f.z); const a = worldBox(it); if (!a.isEmpty()) o.position.y += low - a.min.y;
+        // Stage 8: grown into a wall, or behind one from the shot camera, it is moved clear like an add or a move.
+        tell(T(keepClear(it, [], [])));
       }); last = it; } return last; }; break;
       case "color": act = () => { let last = null; for (const it of L()) { setPaint(it, s.color); last = it; } return last; }; break;
       case "material": act = () => { let last = null; for (const it of L()) {

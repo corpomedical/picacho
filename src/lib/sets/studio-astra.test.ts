@@ -342,3 +342,26 @@ describe("keeping what Astra places clear of walls and in view", () => {
     expect(sideDirection("behind", [1, 0], [0, 1])).toEqual([-0, -1]);
   });
 });
+
+// Stage 8: a resize is checked like an add or a move.
+describe("a thing Astra resizes", () => {
+  it("that grows into the wall is slid clear towards the shot camera", () => {
+    const WALL = { min: [-4, 0, -68] as [number, number, number], max: [0, 20, 68] as [number, number, number], name: "the wall" };
+    // A 1 m box at x 1.5, made 4 m wide in place: it now reaches x −0.5, into the wall.
+    const grown = { min: [-0.5, 0, -2] as [number, number, number], max: [3.5, 4, 2] as [number, number, number] };
+    const r = clearSpot({ box: grown, obstacles: [WALL], dirs: [[0.75, 0.65]], visible: () => true });
+    expect(r).toMatchObject({ inside: "the wall", hidden: false, stuck: false });
+    expect(grown.min[0] + r.dx).toBeGreaterThanOrEqual(0);
+    expect(clearNote(r, ["towards the shot camera"])).toMatch(/^placed [\d.]+ m towards the shot camera so it isn't inside the wall$/);
+  });
+
+  it("the engine runs that check after its size and scale steps, inside the same undo (read from the source)", () => {
+    const engine = readFileSync(join(__dirname, "../../components/studio/studio-engine.ts"), "utf8");
+    for (const op of ["scale", "size"]) {
+      const at = engine.indexOf(`case "${op}": act = () =>`);
+      const body = engine.slice(at, engine.indexOf("break;", at));
+      expect(body, op).toContain("moveCmd(it,");
+      expect(body.indexOf("keepClear(it, [], [])"), op).toBeGreaterThan(body.indexOf("moveCmd(it,"));
+    }
+  });
+});
