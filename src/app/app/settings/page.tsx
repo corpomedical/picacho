@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { isProducerLiveEnabled, producerVisible, readProducerGrant } from "@/lib/producer/enabled";
 import { isChatAgentEnabled } from "@/lib/agent/enabled";
@@ -55,6 +56,9 @@ import { HelpPanel } from "@/components/settings/hub/help-panel";
 import { GenerationTab, PreferencesTab, PrivacyTab, ProfileTab, SecurityTab } from "@/components/settings/hub/rooms";
 import { loadConnectedApps } from "@/lib/mcp/oauth/connected-apps";
 import { parseAppMode } from "@/lib/light/mode";
+
+// Its name in the browser tab and the home-screen app (2026-09-29 check).
+export const metadata: Metadata = { title: "Settings" };
 
 // Settings, direction A "Front desk" (operator's pick on the Settings &
 // Invoices canvas, 2026-09-19): it opens on an Overview — who is signed in,

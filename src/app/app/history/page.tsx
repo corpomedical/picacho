@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -16,6 +17,9 @@ import { LocalDate } from "@/components/local-date";
 import { HistoryLiveRefresh } from "@/components/history-live-refresh";
 import { Pager } from "@/components/pager";
 import { PAGE_SIZES, pageBounds, pageHref, pageRange, parsePage, takePage } from "@/lib/pagination";
+
+// Its name in the browser tab and the home-screen app (2026-09-29 check).
+export const metadata: Metadata = { title: "History" };
 
 // History as a CONTACT SHEET — direction A from the design canvas, operator
 // pick 2026-09-04 ("Go With A").

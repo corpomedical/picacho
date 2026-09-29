@@ -26,7 +26,7 @@ import { AppErrorReporter } from "@/components/app-error-reporter";
 import { ActivityHeartbeat } from "@/components/activity-heartbeat";
 import { SUPPORT_EMAIL_FALLBACK } from "@/lib/domains";
 import { SCREENING_FONT_VARS } from "@/lib/theme/screening-fonts";
-import { parseAppLook, resolveAppMode } from "@/lib/light/mode";
+import { firstName, parseAppLook, resolveAppMode } from "@/lib/light/mode";
 import { ChoiceFrame, LightShell, LookSync, ModeGate } from "@/components/light/light-shell";
 import { InLightProvider } from "@/components/light/in-light";
 import { isAlyChatEnabled } from "@/lib/aly-chat/enabled";
@@ -60,7 +60,7 @@ export default async function AppLayout({
     producerGranted,
     modeRead,
   ] = await Promise.all([
-    supabase.from("profiles").select("role, username, plan, plan_status, status, skip_ai_refinement, rating_prompted_at").eq("id", data.user.id).single(),
+    supabase.from("profiles").select("role, username, full_name, plan, plan_status, status, skip_ai_refinement, rating_prompted_at").eq("id", data.user.id).single(),
     // Explicit user_id filter below, not just RLS — an admin's SELECT
     // policy on generations intentionally allows reading every user's rows
     // (that's what powers /admin), so without this an admin browsing their
@@ -142,6 +142,11 @@ export default async function AppLayout({
     // Aly is Light's chat when her chat is open (2026-09-29): the rail then
     // lists her chats instead of the latest takes.
     const lightAly = !needsChoice && (await isAlyChatEnabled(supabase));
+    // The account button's letter on Light's other pages, as the chat's top
+    // bar draws it (its first name, else the username or email).
+    const lightInitial = (
+      (firstName((profile as { full_name?: string | null } | null)?.full_name ?? null) ?? profile?.username ?? data.user.email ?? "?").trim()[0] ?? "?"
+    ).toUpperCase();
     return (
       <InLightProvider>
       <div className="frost-ground flex h-full overflow-hidden">
@@ -162,7 +167,7 @@ export default async function AppLayout({
           </div>
         ) : (
           <Suspense fallback={null}>
-            <LightShell recent={recent} alyChat={lightAly} isAdmin={isAdmin}>
+            <LightShell recent={recent} alyChat={lightAly} isAdmin={isAdmin} initial={lightInitial}>
               {children}
             </LightShell>
           </Suspense>

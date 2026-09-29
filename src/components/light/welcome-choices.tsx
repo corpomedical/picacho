@@ -85,6 +85,10 @@ export function WelcomeChoices() {
     <div className="pl pl-surface min-h-full w-full overflow-y-auto" style={{ background: "var(--pl-rail)" }}>
       <div className="mx-auto flex w-full max-w-[880px] flex-col items-center gap-9 px-4 pb-12 pt-10 md:pt-14">
         <div className="flex flex-col items-center gap-2.5 text-center">
+          {/* The first screen after signing up carries the name (2026-09-29 check: it had no logo). */}
+          <span className="pl-display mb-3 text-[22px] font-semibold" style={{ color: "var(--pl-ink)" }}>
+            Picacho
+          </span>
           <span className="text-[13px] font-semibold" style={{ color: "var(--pl-muted)" }}>
             {l.welcomeStep}
           </span>

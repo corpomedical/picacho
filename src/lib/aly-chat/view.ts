@@ -44,6 +44,8 @@ export type ViewMsg =
       streaming?: boolean;
       error?: string;
       topUp?: boolean;
+      /** Picacho Light: the renders of this live answer start by themselves (never stored). */
+      autoStartRenders?: boolean;
     };
 
 export function toView(rows: StoredRow[]): ViewMsg[] {

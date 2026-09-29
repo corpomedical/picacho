@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { toMediaUrl } from "@/lib/media/url";
+import { getServerMessages } from "@/lib/i18n/server";
+import { localizeServerText } from "@/lib/i18n/server-text";
+import { isBudgetExhaustedDetail, isRawProviderError } from "@/lib/generations/user-facing-error";
+import type { AttemptLog } from "@/lib/generations/pipeline";
 import { parseAppLook, parseAppMode } from "./mode";
 
 type SaveResult = { error: string | null };
@@ -48,7 +52,28 @@ export type LightTake = {
   /** The day's free generation paid for it (free accounts). */
   freeGeneration: boolean;
   modelId: string | null;
+  /** Why a failed take stopped, in the person's words (the take page's same rule). */
+  failReason: string | null;
 };
+
+/**
+ * The last thing a failed render's log says, as the take page shows it: a
+ * raw provider dump never reaches the person (the generic line instead),
+ * our own sentences are translated.
+ */
+async function failReasonOf(log: unknown): Promise<string | null> {
+  const attempts = Array.isArray(log) ? (log as AttemptLog[]) : [];
+  const detail = [...attempts]
+    .reverse()
+    .flatMap((a) => [...(Array.isArray(a?.steps) ? a.steps : [])].reverse())
+    .map((step) => (typeof step?.detail === "string" ? step.detail.trim() : ""))
+    .find(Boolean);
+  if (!detail) return null;
+  const { t } = await getServerMessages();
+  if (isRawProviderError(detail)) return t.generate.stepFailedGeneric;
+  if (isBudgetExhaustedDetail(detail)) return t.generate.stepAllAttemptsUsed;
+  return localizeServerText(detail, t);
+}
 
 /**
  * One of this person's own takes, as the Light chat shows it: what was
@@ -62,7 +87,7 @@ export async function getLightTake(id: string): Promise<LightTake | null> {
   if (!userData.user) return null;
   const { data: row } = await supabase
     .from("generations")
-    .select("id, prompt_input, content_type, status, result_url, credits_used, free_generation_used, model_id")
+    .select("id, prompt_input, content_type, status, result_url, credits_used, free_generation_used, model_id, pipeline_log")
     .eq("id", id)
     // An admin's SELECT policy reads every row; this chat is only ever yours.
     .eq("user_id", userData.user.id)
@@ -78,6 +103,7 @@ export async function getLightTake(id: string): Promise<LightTake | null> {
     creditsUsed: (row.credits_used as number | null) ?? 0,
     freeGeneration: row.free_generation_used === true,
     modelId: (row.model_id as string | null) ?? null,
+    failReason: row.status === "failed" ? await failReasonOf(row.pipeline_log) : null,
   };
 }
 

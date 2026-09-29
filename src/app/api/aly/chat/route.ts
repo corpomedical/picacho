@@ -44,7 +44,7 @@ import {
   type StoredRow,
   type UserContent,
 } from "@/lib/aly-chat/history";
-import { newChatSetup, plainSystem, turnNote, type ChatSetup } from "@/lib/aly-chat/prompt";
+import { lightTurnNote, newChatSetup, plainSystem, turnNote, type ChatSetup } from "@/lib/aly-chat/prompt";
 import { isDocTool, runDocTool, type Doc } from "@/lib/aly-chat/docs";
 import { MAX_CHAT_FILE_BYTES, MAX_FILES_PER_MESSAGE } from "@/lib/aly-chat/file-types";
 import { ProviderError, streamGemini, streamGpt } from "@/lib/aly-chat/providers";
@@ -106,6 +106,10 @@ type Body = {
   brain?: unknown;
   harder?: unknown;
   timeZone?: unknown;
+  /** Sent from Picacho Light's box: a new chat gets Light's setup (lib/aly-chat/light-prompt.ts). */
+  light?: unknown;
+  /** Light's own video engine and length, for her renders to cost what Light's would. */
+  lightNote?: { video?: { model?: unknown; seconds?: unknown } | null } | null;
 };
 
 export async function POST(request: NextRequest) {
@@ -186,7 +190,7 @@ export async function POST(request: NextRequest) {
       memorySnapshot(admin, user.id).catch(() => ""),
       projectId ? projectSnapshot(supabase, user.id, projectId) : Promise.resolve(null),
     ]);
-    setup = newChatSetup({ name: prefs.name, memory, project });
+    setup = newChatSetup({ name: prefs.name, memory, project, light: body?.light === true });
     try {
       chatId = await createChat(admin, { userId: user.id, setup, projectId: project?.id ?? null });
     } catch (err) {
@@ -247,7 +251,18 @@ export async function POST(request: NextRequest) {
 
   // ---- The person's message, saved first ----------------------------------------
   const timeZone = typeof body?.timeZone === "string" ? body.timeZone.slice(0, 64) : null;
-  const userContent: UserContent = { text, files: newRefs, note: turnNote(new Date(), timeZone) };
+  // In a Light chat a render she makes starts at once, except in a message
+  // with files (a render can't take a photo from the chat): the note says
+  // which, and the page follows the same rule (chat-view.tsx autoStartRenders).
+  const lightStartsNow = setup.light === true && newRefs.length === 0;
+  const lightNote = setup.light
+    ? lightTurnNote({ files: newRefs.length, video: body?.lightNote && typeof body.lightNote === "object" ? body.lightNote.video : null })
+    : "";
+  const userContent: UserContent = {
+    text,
+    files: newRefs,
+    note: lightNote ? `${turnNote(new Date(), timeZone)}\n${lightNote}` : turnNote(new Date(), timeZone),
+  };
   const userSeq = (rows[rows.length - 1]?.seq ?? -1) + 1;
   const savedUser = await appendRow(admin, {
     chatId: theChat,
@@ -418,7 +433,10 @@ export async function POST(request: NextRequest) {
               cards.push(o.card);
               send("card", o.card);
             }
-            outcomes.push(o.result);
+            // In Picacho Light the page starts the card's render the moment it
+            // arrives (the person's own send, through runGeneration): Aly is
+            // told so, not that it waits for a button.
+            outcomes.push(lightStartsNow && o.card && o.card.kind !== "ad" ? lightStarted(o.result, o.card) : o.result);
           }
           turn.push({ role: "user", content: outcomes });
         }
@@ -575,6 +593,15 @@ export async function POST(request: NextRequest) {
       connection: "keep-alive",
     },
   });
+}
+
+/** The prepare_send outcome as a Light chat reads it: started, not waiting. */
+function lightStarted(result: unknown, card: PreparedSend): unknown {
+  const what = card.kind === "video" ? `a ${card.seconds ? `${card.seconds}-second ` : ""}video` : "a picture";
+  return {
+    ...(result as object),
+    content: `Started "${card.label}" (${what}${card.characterName ? `, with ${card.characterName}` : ""}, ${card.credits} credit${card.credits === 1 ? "" : "s"}). It is being made now and appears in the chat by itself when it's ready.`,
+  };
 }
 
 async function titleFor(client: Anthropic, asked: string, answered: string): Promise<{ text: string; cost: number } | null> {

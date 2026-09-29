@@ -29,11 +29,14 @@ export function RenderCard({
   chatId,
   seq,
   defaults,
+  autoStart = false,
 }: {
   card: ViewRender;
   chatId: string | null;
   seq: number;
   defaults: LightDefaults;
+  /** Picacho Light: start it the moment it arrives ("Start right away", 2026-09-29). */
+  autoStart?: boolean;
 }) {
   const { t } = useLocale();
   const c = t.alyChat;
@@ -96,6 +99,32 @@ export function RenderCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Remembered on Aly's message, so the chat shows it when it's opened again.
+  // A card that starts by itself (Light) can beat the message being saved,
+  // which happens when her answer ends, so it tries again a few times.
+  async function remember(chat: string, at: number, cardId: string, genId: string) {
+    for (const wait of [0, 2000, 5000, 10000, 20000]) {
+      if (wait) await new Promise((r) => setTimeout(r, wait));
+      const r = await linkRender(chat, at, cardId, genId).catch(() => null);
+      if (r && "ok" in r) return;
+    }
+  }
+
+  // "Start right away" in Picacho Light: once, as the card arrives. The flag
+  // is set inside the timer so React's development double mount (effect,
+  // cleanup, effect) still starts it exactly once.
+  const started = useRef(false);
+  useEffect(() => {
+    if (!autoStart || card.generationId || card.kind === "ad") return;
+    const timer = window.setTimeout(() => {
+      if (started.current) return;
+      started.current = true;
+      void make();
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function make() {
     if (card.kind === "ad" || state === "working") return;
     setError(null);
@@ -119,7 +148,7 @@ export function RenderCard({
       fd.set("video_duration_seconds", String(card.seconds ?? defaults.videoDurationSeconds));
       if (defaults.videoAspectRatio) fd.set("video_aspect_ratio", defaults.videoAspectRatio);
     }
-    if (chatId && seq >= 0) void linkRender(chatId, seq, card.id, id).catch(() => {});
+    if (chatId && seq >= 0) void remember(chatId, seq, card.id, id);
 
     let result;
     try {

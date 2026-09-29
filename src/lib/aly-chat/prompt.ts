@@ -2,6 +2,7 @@ import { renderCatalogue } from "@/lib/agent/context";
 import { renderProductGuide } from "@/lib/agent/product-guide";
 import { PRODUCER_TOOLS, TOOL_NAMES } from "@/lib/producer/tools";
 import { DOC_TOOLS } from "./docs";
+import { lightChatToolsFrom, lightRulesFrom, lightTurnNote } from "./light-prompt";
 
 // What Aly is told on her own page, once per chat (2026-09-29).
 //
@@ -85,7 +86,11 @@ export type ChatSetup = {
   system: string[];
   tools: unknown[];
   projectId: string | null;
+  /** Started in Picacho Light: a render she makes starts at once (./light-prompt). */
+  light?: boolean;
 };
+
+export { lightTurnNote };
 
 export function projectBlock(p: ProjectSnapshot): string {
   const lines = [`THIS CHAT IS IN THE PROJECT "${p.name}"`];
@@ -98,17 +103,20 @@ export function projectBlock(p: ProjectSnapshot): string {
 }
 
 /** The setup a NEW chat starts with. Deterministic bytes for the same inputs. */
-export function newChatSetup(a: { name: string; memory: string; project: ProjectSnapshot | null }): ChatSetup {
+export function newChatSetup(a: { name: string; memory: string; project: ProjectSnapshot | null; light?: boolean }): ChatSetup {
   const who = `The person calls you ${a.name}.`;
   const memory = a.memory.trim()
     ? `WHAT YOUR NOTES SAID WHEN THIS CHAT STARTED\n${a.memory}`
     : "Your notes were empty when this chat started.";
-  const perChat = [who, memory, ...(a.project ? [projectBlock(a.project)] : [])].join("\n\n");
+  // A chat started in Picacho Light belongs to no project (Light shows none).
+  const project = a.light ? null : a.project;
+  const perChat = [who, memory, ...(project ? [projectBlock(project)] : [])].join("\n\n");
   return {
     version: CHAT_SETUP_VERSION,
-    system: [CHAT_RULES, `${renderCatalogue()}\n\n${renderProductGuide()}`, perChat],
-    tools: chatTools(),
-    projectId: a.project?.id ?? null,
+    system: [a.light ? lightRulesFrom(CHAT_RULES) : CHAT_RULES, `${renderCatalogue()}\n\n${renderProductGuide()}`, perChat],
+    tools: a.light ? lightChatToolsFrom(chatTools()) : chatTools(),
+    projectId: project?.id ?? null,
+    ...(a.light ? { light: true } : {}),
   };
 }
 

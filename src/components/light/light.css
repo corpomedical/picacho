@@ -234,3 +234,35 @@ html.native-app .pl-drawer {
   padding-top: 0;
   padding-bottom: 0;
 }
+
+/* Studio pages shown inside the Light frame (Images, Library, History,
+   Settings) speak Light's quieter type (2026-09-29 check: their wide
+   capital titles, capital eyebrows and mono labels were the studio's
+   Screening Room lettering). Unlayered on purpose: the studio's marquee and
+   slate are Tailwind utilities, which beat anything in a lower layer. */
+.pl h1.marquee,
+.pl .marquee {
+  font-weight: 600;
+  font-stretch: 100%;
+  font-variation-settings: "wdth" 100;
+  text-transform: none;
+  letter-spacing: -0.01em;
+}
+html.screening.dark .pl h1.marquee {
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  color: var(--pl-ink);
+}
+.pl p:has(+ h1.marquee) {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  color: var(--pl-muted);
+}
+.pl .slate,
+.pl :where(.uppercase.tracking-widest, .uppercase.tracking-wider, .uppercase[class*="tracking-[0."]) {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  text-transform: none;
+  letter-spacing: 0;
+}

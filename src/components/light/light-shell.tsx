@@ -508,6 +508,7 @@ export function LightShell({
   recent,
   alyChat = false,
   isAdmin = false,
+  initial = "?",
   children,
   page,
 }: {
@@ -515,6 +516,8 @@ export function LightShell({
   /** Aly's chat is open: she is Light's chat, and the rail lists her chats. */
   alyChat?: boolean;
   isAdmin?: boolean;
+  /** The account button's letter, as the chat's top bar draws it. */
+  initial?: string;
   children: React.ReactNode;
   /** Which frame to draw; read from the path unless given. */
   page?: "chat" | "other";
@@ -556,7 +559,7 @@ export function LightShell({
           // past the visible bottom while the frame, like the chat box,
           // stays on screen. light.css keeps it clear of the notch and the
           // home indicator on a phone's browser.
-          <div className="absolute inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label={l.recent}>
+          <div className="absolute inset-0 z-[80] md:hidden" role="dialog" aria-modal="true" aria-label={l.recent}>
             <button type="button" aria-label={l.closeMenu} className="absolute inset-0 bg-black/40" onClick={() => setMenuOpen(false)} />
             <div className="pl-drawer absolute inset-y-0 left-0 flex w-[86%] max-w-[320px] flex-col shadow-xl" style={{ background: "var(--pl-rail)" }}>
               <Rail recent={recent} alyChat={alyChat} isAdmin={isAdmin} folded={false} inDrawer onNavigate={() => setMenuOpen(false)} />
@@ -572,14 +575,10 @@ export function LightShell({
             <div className="flex-1" />
           ) : (
             <>
-              <header className="pl-surface flex h-14 flex-shrink-0 items-center gap-2 px-2 md:hidden">
-                <button type="button" className="pl-iconbtn" aria-label={l.openMenu} onClick={() => setMenuOpen(true)}>
-                  <MenuIcon />
-                </button>
-                <Link href={LIGHT_HOME} className="pl-display text-[20px] font-semibold" style={{ color: "var(--pl-ink)", textDecoration: "none" }}>
-                  Picacho
-                </Link>
-              </header>
+              {/* The chat's own top bar on every Light page (2026-09-29 check:
+                  Images, Library, History and Settings had no logo on a
+                  computer, and on a phone no Light badge or account). */}
+              <LightPageBar initial={initial} onMenu={() => setMenuOpen(true)} onHome={newChat} />
               <div data-app-scroll className="min-w-0 flex-1 overflow-y-auto">
                 <div data-app-content className="mx-auto max-w-5xl px-4 py-6 pb-24 sm:px-8 sm:py-12">
                   {children}
@@ -590,6 +589,42 @@ export function LightShell({
         </div>
       </div>
     </ShellContext.Provider>
+  );
+}
+
+/**
+ * The top bar of a Light page that isn't the chat (Images, Library, History,
+ * Settings): the chat's own logo, badge and account button, with the menu
+ * button on a phone. The logo starts a new chat, as the chat's does.
+ */
+function LightPageBar({ initial, onMenu, onHome }: { initial: string; onMenu: () => void; onHome: () => void }) {
+  const { t } = useLocale();
+  const l = t.light;
+  return (
+    <header className="relative flex h-14 flex-shrink-0 items-center justify-between px-2 md:h-[68px] md:px-6" style={{ color: "var(--pl-ink)" }}>
+      <button type="button" className="pl-iconbtn md:hidden" aria-label={l.openMenu} onClick={onMenu}>
+        <MenuIcon />
+      </button>
+      <Link
+        href={LIGHT_HOME}
+        onClick={(e) => {
+          e.preventDefault();
+          onHome();
+        }}
+        className="flex items-center gap-2 md:gap-2.5"
+        style={{ color: "var(--pl-ink)", textDecoration: "none" }}
+      >
+        <span className="pl-display text-[20px] font-semibold md:text-[22px]">Picacho</span>
+        <span className="rounded-[10px] px-2 py-0.5 text-[11px] font-semibold md:px-[9px] md:py-[3px] md:text-xs" style={{ color: "var(--pl-muted)", background: "var(--pl-rail)" }}>
+          {l.badge}
+        </span>
+      </Link>
+      <Link href="/app/settings" aria-label={l.account} className="flex h-11 w-11 items-center justify-center md:h-10 md:w-10" style={{ textDecoration: "none" }}>
+        <span className="flex h-[34px] w-[34px] items-center justify-center rounded-full text-sm font-semibold text-white md:h-10 md:w-10 md:text-[15px]" style={{ background: "#a84e24" }}>
+          {initial}
+        </span>
+      </Link>
+    </header>
   );
 }
 

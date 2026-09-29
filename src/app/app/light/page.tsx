@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getGenerateWorkspaceData } from "@/lib/generations/workspace-data";
@@ -10,6 +11,9 @@ import { getChat, listDocs, loadRows } from "@/lib/aly-chat/store";
 import { toView } from "@/lib/aly-chat/view";
 import { LightChat } from "@/components/light/light-chat";
 import { LightAly } from "@/components/light/light-aly";
+
+// Its name in the browser tab and the home-screen app (2026-09-29 check).
+export const metadata: Metadata = { title: { absolute: "Picacho Light" } };
 
 // The renders start from here (runGeneration is a server action of this
 // page), so it gets the generate page's ceiling.
@@ -78,6 +82,10 @@ export default async function LightPage({
         liveVoice={base.liveVoice}
         creditsLeft={base.creditsLeft}
         letter={base.initial}
+        // A picture or video she makes starts right away in a new chat and in
+        // one started in Light (operator, 2026-09-29: "Start right away"); a
+        // chat from her own page keeps its "Make it" button.
+        autoStart={!chat || chat.setup?.light === true}
       />
     );
   }

@@ -263,8 +263,10 @@ export function LightChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function send(prompt: string) {
+  /** `kindOverride`: "Try again" on a failed take makes the same kind it was. */
+  async function send(prompt: string, kindOverride?: Kind) {
     const clean = prompt.trim();
+    const k = kindOverride ?? kind;
     if (!clean || working || uploading) return;
     setNotice("");
     const id = crypto.randomUUID();
@@ -272,7 +274,7 @@ export function LightChat({
     const fd = new FormData();
     fd.set("generation_id", id);
     fd.set("prompt", clean);
-    fd.set("content_type", kind);
+    fd.set("content_type", k);
     const aly = fromAssistant;
     fd.set("character_id", aly?.characterId ?? "");
     fd.set("use_outfit", "0");
@@ -280,7 +282,7 @@ export function LightChat({
     if (sentPhoto) fd.set("attachment_roles", JSON.stringify([{ url: sentPhoto.url, role: "reference" }]));
     // The very values a new account's composer opens on (generate-form.tsx),
     // so a Light send renders and costs the same as the studio's default.
-    if (kind === "image") {
+    if (k === "image") {
       fd.set("image_model_id", defaults.imageModelId);
       fd.set("image_resolution", defaultImageResolution(defaults.imageModelId));
       fd.set("image_aspect", DEFAULT_IMAGE_ASPECT);
@@ -293,7 +295,7 @@ export function LightChat({
     setTurns((prev) => [
       ...prev,
       { role: "user", key: `u-${id}`, text: clean, photoUrl: sentPhoto?.url ?? null },
-      { role: "take", key: `t-${id}`, id, kind, prompt: clean, state: "working", take: null, error: null },
+      { role: "take", key: `t-${id}`, id, kind: k, prompt: clean, state: "working", take: null, error: null },
     ]);
     setText("");
     setPhoto(null);
@@ -613,6 +615,7 @@ export function LightChat({
                     onShare={share}
                     onAgain={() => prefill(turn.prompt, turn.kind)}
                     onFollow={(chip, nextKind) => prefill(`${turn.prompt}. ${chip}.`, nextKind)}
+                    onRetry={() => void send(turn.prompt, turn.kind)}
                   />
                 ),
               )}
@@ -641,11 +644,14 @@ function TakeTurn({
   onShare,
   onAgain,
   onFollow,
+  onRetry,
 }: {
   turn: Extract<Turn, { role: "take" }>;
   onShare: (take: LightTake) => void;
   onAgain: () => void;
   onFollow: (chip: string, kind: Kind) => void;
+  /** Sends the same words again (it charges again, as a new send). */
+  onRetry: () => void;
 }) {
   const { t, locale } = useLocale();
   const l = t.light;
@@ -694,8 +700,19 @@ function TakeTurn({
               ? l.stopped
               : turn.error
                 ? formatMsg(l.sendFailed, { reason: turn.error })
-                : l.notFinished}
+                : take?.failReason
+                  ? formatMsg(l.notFinishedWhy, { reason: take.failReason })
+                  : l.notFinished}
           </div>
+          {/* Why, and a way on, right here (2026-09-29 check: a beginner was
+              sent to the full studio to find out what went wrong). */}
+          {turn.state !== "stopped" && (
+            <div>
+              <button type="button" className="pl-chip-btn" onClick={onRetry}>
+                {l.tryAgain}
+              </button>
+            </div>
+          )}
           {(take || charged) && (
             <div className="flex items-center gap-3 text-[13px]" style={{ color: "var(--pl-muted)" }}>
               {take && (

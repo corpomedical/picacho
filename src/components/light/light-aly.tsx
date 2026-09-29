@@ -11,16 +11,17 @@ import { LightTopBar, PictureGlyph, Ridges, VideoGlyph } from "./light-chat";
  * PICACHO LIGHT with Aly (operator, 2026-09-29: "Add Aly capabilities to
  * Light version" → "Aly IS the Light chat"). One box, like ChatGPT or Gemini:
  * she answers, searches the web, reads files and remembers; a picture or a
- * video comes as her card with its price, and "Make it" renders it right in
- * the chat. Light's own frame stays: the greeting on the ridge, its ideas,
+ * video she makes starts right away in the chat (operator's pick, "Start
+ * right away"; a message with files keeps the card's "Make it"). Light's own frame stays: the greeting on the ridge, its ideas,
  * its top bar and addresses (/app/light?chat=<id>). Her chats are the same
  * ones as on her own page.
  */
 export function LightAly({
   creditsLeft,
   letter,
+  autoStart,
   ...chat
-}: Omit<ChatViewProps, "light"> & { creditsLeft: number; letter: string }) {
+}: Omit<ChatViewProps, "light"> & { creditsLeft: number; letter: string; autoStart: boolean }) {
   const { t } = useLocale();
   const l = t.light;
   const empty = chat.initial.length === 0;
@@ -38,6 +39,7 @@ export function LightAly({
     directHref: LIGHT_DIRECT_HREF,
     directLabel: formatMsg(l.withoutAly, { name: chat.name }),
     placeholder: formatMsg(l.askPlaceholder, { name: chat.name }),
+    autoStart,
     // One box on the page (its refs and label are single), so the phone and
     // the desktop boards share it: on a phone the greeting fills the middle
     // and the ideas and box sit at the bottom; on a desktop all three centre.

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Pager } from "@/components/pager";
 import { PAGE_SIZES, pageBounds, pageHref, pageRange, parsePage, takePage } from "@/lib/pagination";
@@ -7,6 +8,9 @@ import { createClient } from "@/lib/supabase/server";
 import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
 import { MediaGallery, type GalleryItem } from "@/components/media-gallery";
 import { getServerMessages } from "@/lib/i18n/server";
+
+// Its name in the browser tab and the home-screen app (2026-09-29 check).
+export const metadata: Metadata = { title: "Media" };
 
 // The unified media library — every finished image and video in one grid,
 // filterable with the same chip group History wears (operator-directed,

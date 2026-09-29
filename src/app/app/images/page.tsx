@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
 import { formatMsg } from "@/lib/i18n/format";
 import { Pager } from "@/components/pager";
@@ -5,6 +6,9 @@ import { PAGE_SIZES, pageBounds, pageHref, pageRange, parsePage, takePage } from
 import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
 import { MediaGallery, type GalleryItem } from "@/components/media-gallery";
 import { getServerMessages } from "@/lib/i18n/server";
+
+// Its name in the browser tab and the home-screen app (2026-09-29 check).
+export const metadata: Metadata = { title: "Images" };
 
 export default async function ImagesPage({
   searchParams,

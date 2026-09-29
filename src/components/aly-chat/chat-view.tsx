@@ -44,6 +44,12 @@ export type LightChatFrame = {
   directHref: string;
   directLabel: string;
   placeholder: string;
+  /**
+   * A picture or video Aly makes starts right away (operator, 2026-09-29:
+   * "Start right away"): a new chat, and a chat started in Light. A chat from
+   * her own page keeps its "Make it" button.
+   */
+  autoStart: boolean;
 };
 
 export type ChatViewProps = {
@@ -284,6 +290,9 @@ export function ChatView(props: ChatViewProps) {
         docs: [],
         renders: [],
         streaming: true,
+        // A message with files keeps its cards' "Make it": a render can't take
+        // a photo from the chat, and "Change it first" is how one is added.
+        autoStartRenders: Boolean(props.light && (props.light.autoStart || !chatId) && ready.length === 0),
       },
     ]);
     setText("");
@@ -305,6 +314,11 @@ export function ChatView(props: ChatViewProps) {
           brain: choice,
           harder: props.limited ? false : harder,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          // From Picacho Light: a new chat gets Light's setup, and her video
+          // renders use Light's own engine and length.
+          ...(props.light
+            ? { light: true, lightNote: { video: { model: props.defaults.videoModelId, seconds: props.defaults.videoDurationSeconds } } }
+            : {}),
         }),
         signal: ctrl.signal,
       });
@@ -960,7 +974,7 @@ function Answer({
         {m.renders.length > 0 && (
           <div className="mt-3 grid grid-cols-1 gap-3 @xl:grid-cols-2">
             {m.renders.map((r) => (
-              <RenderCard key={r.id} card={r} chatId={chatId} seq={m.seq} defaults={defaults} />
+              <RenderCard key={r.id} card={r} chatId={chatId} seq={m.seq} defaults={defaults} autoStart={m.autoStartRenders === true} />
             ))}
           </div>
         )}

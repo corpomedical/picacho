@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.152.0",
+    build: 191,
+    date: "2026-09-29",
+    title: "Picacho Light: Aly's pictures and videos start right away, and every Light page looks like Light",
+    items: [
+      "In Picacho Light, a picture or video Aly makes now starts the moment she makes it, and shows up in the chat when it's ready: no extra tap. A message with a photo attached keeps her card's Make it, so \"Change it first\" can add the photo. She is told which, so she never asks people to press a button that isn't there.",
+      "Her videos in Light use Light's own engine and length, so they cost what Light's own do.",
+      "Images, Library, History and Settings in Light now carry the same top bar as the chat (Picacho, the Light badge, your account), and speak Light's quieter lettering instead of the studio's.",
+      "A take that didn't finish says why, right in the chat, with Try again.",
+      "The welcome step shows the Picacho name, the phone menu sits above Aly's lamp, and Light's pages have their own names in the browser tab.",
+    ],
+  },
+  {
     version: "1.151.0",
     build: 190,
     date: "2026-09-29",
