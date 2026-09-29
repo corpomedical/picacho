@@ -157,7 +157,7 @@ export function PreferencesTab({
   producerWheel = null,
   producerChat = null,
   producerPersonality = null,
-  producerLiveTest = false,
+  producerLive = false,
   appMode = null,
 }: {
   t: Messages;
@@ -179,7 +179,7 @@ export function PreferencesTab({
   /** Her personality, or null when this account has no Producer. */
   producerPersonality?: Personality | null;
   /** Admins with the assistant: her live voice (GPT-Live) to try, on this device. */
-  producerLiveTest?: boolean;
+  producerLive?: boolean;
   /** Light or the full studio; null before picacho-light.sql runs (switch hidden). */
   appMode?: AppMode | null;
 }) {
@@ -249,12 +249,12 @@ export function PreferencesTab({
               <ProducerPersonalityForm current={producerPersonality} />
             </div>
           )}
-          {producerLiveTest && (
+          {producerLive && (
             <div className="space-y-3 border-t border-atelier-rule/60 pt-5">
               <div>
-                <p className="text-sm font-medium text-atelier-ink">Live voice (test, admins only)</p>
+                <p className="text-sm font-medium text-atelier-ink">Live voice</p>
                 <p className="mt-0.5 text-xs text-atelier-muted">
-                  A live speech model talks with you (it hears you while it talks and answers at once) while her own brain works behind it. On this device only. $0.05 a minute while it&apos;s on; it closes after two quiet minutes.
+                  When you press Talk, a live voice talks with you: it hears you while it talks and answers at once, while her own brain works behind it. It uses your assistant allowance while it&apos;s on (about 2.5 units a minute) and hangs up after two quiet minutes. Off, Talk uses her usual voice. On this device.
                 </p>
               </div>
               <ProducerLiveForm />

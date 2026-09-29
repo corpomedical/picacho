@@ -141,6 +141,7 @@ const W = {
   liveConnecting: "Connecting her live voice…",
   liveOn: "Live voice",
   liveHint: "Talk any time: she hears you while she talks",
+  liveFallback: "Her live voice couldn't start, so she's using her usual voice.",
 };
 
 const READ_ALOUD_KEY = "picacho.producer.readAloud";
@@ -218,6 +219,7 @@ export function ProducerLamp({
   chatStyle = DEFAULT_CHAT_STYLE,
   diagnostics = false,
   currency = "$",
+  liveVoice: liveAllowed = false,
 }: {
   name: string;
   watchCount: number;
@@ -233,6 +235,8 @@ export function ProducerLamp({
   diagnostics?: boolean;
   /** What the top-ups are priced in for this visitor ("€" in the EU), lib/agent/topups.ts. */
   currency?: string;
+  /** Talk starts her live voice (lib/producer/live.ts): the server's switch is on (enabled.ts). */
+  liveVoice?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -360,14 +364,33 @@ export function ProducerLamp({
   const wantWarm = (open && readAloud && loaded) || voice.active;
   // runTurn, for the live voice's hand-overs (the hook comes before runTurn is declared).
   const runTurnRef = useRef<(a: Parameters<typeof runTurn>[0]) => Promise<void>>(async () => {});
-  // Her live voice (use-live-voice.ts): admins, when switched on for this device.
-  // What it hands over is answered by her brain like a typed message.
+  // Her live voice (use-live-voice.ts): everyone who has her, unless it's
+  // switched off on this device or on the server. What it hands over is
+  // answered by her brain like a typed message, with the small talk before it.
+  const startClassicRef = useRef<() => void>(() => {});
+  const limitHitRef = useRef<(offer: boolean) => void>(() => {});
+  const loadRef = useRef<() => Promise<void>>(async () => {});
   const liveVoice = useLiveVoice({
-    onDelegation: (words) =>
-      new Promise<string>((resolve) => {
-        void runTurnRef.current({ text: words || "(they didn't say anything clear)", viaLive: true, onDone: (text, failed) => resolve(failed ? "" : text) });
+    onDelegation: (words, before, context) =>
+      new Promise<string>((resolve, reject) => {
+        void runTurnRef.current({
+          text: words || "(they didn't say anything clear)",
+          viaLive: true,
+          liveBefore: before,
+          liveContext: context,
+          onDone: (text, failed) => (failed ? reject(new Error(failed)) : resolve(text)),
+        });
       }),
-    onError: (message) => setError(message),
+    onError: (message, failure) => {
+      if (failure.limit) limitHitRef.current(failure.topUp === true);
+      else if (failure.starting) {
+        // It never started (switched off meanwhile, OpenAI busy, no WebRTC): her usual voice.
+        setError(W.liveFallback);
+        startClassicRef.current();
+      } else setError(message);
+    },
+    // Its small talk is in the chat now.
+    onEnded: () => void loadRef.current(),
   });
 
   // Opening the chat starts fetching the speech model (use-hands-free.ts warmEars).
@@ -701,6 +724,14 @@ export function ProducerLamp({
   }
   sendSpokenRef.current = sendSpoken;
   runTurnRef.current = runTurn;
+  limitHitRef.current = limitHit;
+  loadRef.current = load;
+  // Her usual voice, when the live one couldn't start (a voice conversation answers out loud).
+  startClassicRef.current = () => {
+    if (voice.active || !voiceAvailable || !voice.supported) return;
+    setAloud(true);
+    void voice.start();
+  };
 
   /** The answer on screen stops here (a later message cut it off, or Stop). */
   function finalize(turn: Turn, cut: boolean) {
@@ -748,6 +779,8 @@ export function ProducerLamp({
     pushToTalk = false,
     merged = false,
     viaLive = false,
+    liveBefore,
+    liveContext,
     onDone,
   }: {
     text?: string;
@@ -762,6 +795,10 @@ export function ProducerLamp({
     merged?: boolean;
     /** Handed over by her live voice (use-live-voice.ts): it says the answer, so nothing is read aloud here. */
     viaLive?: boolean;
+    /** With viaLive: the small talk said before it, saved ahead of it (live-talk.ts). */
+    liveBefore?: { who: "person" | "her"; text: string }[];
+    /** With viaLive: the recent transcript, so her brain can find the request in it. */
+    liveContext?: string;
     /** The answer's text when the turn ends (and why it failed, if it did). */
     onDone?: (text: string, failed: string | null) => void;
   }) {
@@ -835,6 +872,8 @@ export function ProducerLamp({
           pushToTalk: spoken && pushToTalk ? true : undefined,
           merged: spoken && merged ? true : undefined,
           live: viaLive ? true : undefined,
+          liveBefore: viaLive && liveBefore?.length ? liveBefore : undefined,
+          liveContext: viaLive && liveContext ? liveContext : undefined,
         }),
         signal: turn.controller.signal,
       });
@@ -1353,7 +1392,7 @@ export function ProducerLamp({
           canFresh={!busy && lines.length > 0}
           onTalk={() => {
             if (liveVoice.active) liveVoice.stop();
-            else if (diagnostics && liveVoice.supported && liveVoiceOn() && !voice.active) void liveVoice.start(liveVoiceName());
+            else if (liveAllowed && liveVoice.supported && liveVoiceOn() && !voice.active) void liveVoice.start(liveVoiceName());
             else if (voice.active) voice.stop();
             else {
               // A voice conversation answers out loud, like ChatGPT's.

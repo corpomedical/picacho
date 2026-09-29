@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.148.0",
+    build: 187,
+    date: "2026-09-29",
+    title: "Aly's live voice for everyone who has Aly",
+    items: [
+      "Aly's live voice is for everyone who has Aly now, not just admins. Press Talk and it starts; switch it off in Settings → Preferences → Your assistant → Live voice to get her usual voice instead.",
+      "The server counts each call's minutes: five minutes of your assistant allowance are held when it starts, a heartbeat every minute keeps the hold ahead of the call, and the end charges what it really used ($0.05 a minute, about 2.5 units). When the allowance runs out, the call is hung up and the top-ups are offered. A call whose page goes quiet is hung up within a few minutes and charged up to a minute past its last heartbeat.",
+      "Her small talk is saved in the chat now, in the order it was said, and her brain reads it. Listening sounds, a TV or other voices she didn't answer, and her retelling of an answer (already in the chat) aren't saved twice.",
+      "Her brain gets the call's recent transcript with each question, so a question said over a TV is still found. She says what she's checking (\"Let me look at yesterday's renders\") and plays a soft tone when she's listening.",
+      "If the live voice can't start or can't connect within 15 seconds, Talk falls back to her usual voice and nothing is charged. The page can only send her answers and hang up; changing her instructions from the page is refused.",
+      "The privacy policy says the live voice goes to OpenAI (no audio kept by Picacho; the words are kept in your conversation; each call's length is recorded with your assistant usage), in English, Spanish, Portuguese and Italian.",
+    ],
+  },
+  {
     version: "1.147.0",
     build: 186,
     date: "2026-09-29",

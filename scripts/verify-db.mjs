@@ -91,6 +91,9 @@ const COLUMNS = {
   // answers 500 on every paid top-up until these exist (Stripe keeps
   // retrying), and every reader of the balance fails open to zero.
   assistant_topups: ["user_id", "units", "stripe_session_id", "refunded_at"],
+  // Aly's live calls (pending/producer-live.sql): without the table no live
+  // call may start (nothing runs uncounted) and everyone gets her usual voice.
+  producer_live_sessions: ["user_id", "since", "cap", "beat_at", "reservations", "reserved_units", "closed_at", "seconds", "confirmed"],
   // Both deletion paths erase the buyer's email here by account id and STOP
   // the deletion if they can't (lib/profile/promo-redemptions.ts), so a
   // missing column would block every account deletion.
@@ -280,6 +283,8 @@ const FLAGS = [
   // Press Tour filming (applied/2026-09-26/press-tour-03b-film.sql), inserted OFF;
   // src/lib/press-tour/film.ts FILM_FLAG, pinned here by rollout.test.ts.
   "press_tour_film",
+  // Aly's live voice (pending/producer-live.sql), inserted ON; lib/producer/enabled.ts.
+  "producer_live",
 ];
 
 // app_settings rows the code reads by key, where a missing row changes

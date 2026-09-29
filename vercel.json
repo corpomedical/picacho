@@ -35,6 +35,10 @@
     {
       "path": "/api/cron/press-posts",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/producer-live",
+      "schedule": "* * * * *"
     }
   ]
 }

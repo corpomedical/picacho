@@ -2,29 +2,54 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { commentaryPieces, type LiveVoice } from "@/lib/producer/live";
+import { LiveTalk, mergeTalk, type TalkWho } from "@/lib/producer/live-talk";
+import { playCue } from "./use-hands-free";
 import { vlog } from "./voice-log";
 
 // Aly's live voice in the browser (lib/producer/live.ts): a WebRTC call to
 // GPT-Live, which listens and talks; what it hands over goes to her brain
 // (the sheet's onDelegation → /api/producer, live: true) and the answer
-// comes back as commentary it says in its own words. Admins only while it's
-// tried (the sheet's switch in Settings, and api/producer/live refuses others).
+// comes back as commentary it says in its own words. For everyone who has
+// Aly (2026-09-29); the server counts the minutes (live-ledger.ts) from a
+// heartbeat every minute, and the small talk goes into the chat
+// (live-talk.ts): with the next hand-over, on a heartbeat when no answer is
+// being written, and when the call ends.
 
 export type LivePhase = "off" | "connecting" | "live" | "closing";
 
-/** Two minutes with nobody talking closes the session: it's billed while open. */
+/** Two minutes with nobody talking closes the call: it's billed while open. */
 const IDLE_MS = 120_000;
+/** When the call ends, hand-overs still being answered are waited for this long before the chat is saved. */
+const END_WAIT_MS = 20_000;
+/** A call OpenAI accepted that never connects (a network that blocks it) gives up after this long. */
+const CONNECT_MS = 15_000;
+
+type Talk = { who: TalkWho; text: string }[];
 
 // Read after hydration, like use-hands-free's check (a render-time read made
 // the server's HTML and the browser's differ).
 const noSubscribe = () => () => {};
 const canCall = () => typeof RTCPeerConnection !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
 
+export type LiveFailure = {
+  /** The assistant allowance is used up (the sheet offers top-ups). */
+  limit?: boolean;
+  topUp?: boolean;
+  /** It never started: the sheet can use her usual voice instead. */
+  starting?: boolean;
+};
+
 export function useLiveVoice(opts: {
-  /** Her brain answers what the voice handed over: the person's words since the last hand-over. */
-  onDelegation: (words: string) => Promise<string>;
-  /** It couldn't start (the sheet shows why). */
-  onError?: (message: string) => void;
+  /**
+   * Her brain answers what the voice handed over: the request's words, the
+   * small talk said before it that isn't in the chat yet, and the recent
+   * transcript (live-talk.ts).
+   */
+  onDelegation: (words: string, before: Talk, context: string) => Promise<string>;
+  /** It couldn't start, or the server ended it (the sheet shows why). */
+  onError?: (message: string, failure: LiveFailure) => void;
+  /** The call ended and its small talk was saved: the sheet can reload the chat. */
+  onEnded?: () => void;
 }) {
   const [phase, setPhase] = useState<LivePhase>("off");
   const [level, setLevel] = useState(0);
@@ -34,12 +59,10 @@ export function useLiveVoice(opts: {
   const [talking, setTalking] = useState<"person" | "her" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const onDelegationRef = useRef(opts.onDelegation);
-  const onErrorRef = useRef(opts.onError);
+  const cb = useRef(opts);
   useEffect(() => {
-    onDelegationRef.current = opts.onDelegation;
-    onErrorRef.current = opts.onError;
-  }, [opts.onDelegation, opts.onError]);
+    cb.current = opts;
+  });
 
   const peer = useRef<RTCPeerConnection | null>(null);
   const channel = useRef<RTCDataChannel | null>(null);
@@ -49,14 +72,25 @@ export function useLiveVoice(opts: {
   const raf = useRef<number | null>(null);
   const idle = useRef<number | undefined>(undefined);
   const closeWait = useRef<number | undefined>(undefined);
-  const seconds = useRef(0);
+  const beat = useRef<number | undefined>(undefined);
+  const sessionId = useRef<string | null>(null);
+  const seconds = useRef<number | null>(null);
+  // OpenAI said the call is over (session.closed): the server needn't hang it up.
+  const ended = useRef(false);
+  // It connected (session.started): until then nothing was used, so nothing is charged.
+  const connected = useRef(false);
+  const connectWait = useRef<number | undefined>(undefined);
   const reported = useRef(false);
   const phaseRef = useRef<LivePhase>("off");
-  // Transcript state: the words of the turn under way, and what the brain hasn't been handed yet.
+  // The call's own clock (ms since it started), for pieces that come without one.
+  const t0 = useRef(0);
+  // What was said, sorted (live-talk.ts); small talk a save didn't take yet; hand-overs being answered.
+  const talk = useRef(new LiveTalk());
+  const backlog = useRef<Talk>([]);
+  const inflight = useRef(0);
   const heardBuf = useRef("");
   const saidBuf = useRef("");
   const last = useRef<"person" | "her" | null>(null);
-  const pendingWords = useRef<string[]>([]);
   const eventSeq = useRef(0);
   const quiet = useRef<number | undefined>(undefined);
   const supported = useSyncExternalStore(noSubscribe, canCall, () => false);
@@ -72,22 +106,50 @@ export function useLiveVoice(opts: {
     setPhase(p);
   }, []);
 
-  const report = useCallback(() => {
-    if (reported.current || seconds.current <= 0) return;
-    reported.current = true;
-    // Its minutes on the ledger (admins only while it's tried).
-    void fetch("/api/producer/live", {
+  const post = useCallback((payload: Record<string, unknown>, keepalive = false) => {
+    return fetch("/api/producer/live", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "close", seconds: seconds.current }),
-      keepalive: true,
-    }).catch(() => {});
+      body: JSON.stringify(payload),
+      keepalive,
+    });
   }, []);
+
+  /** Small talk into the chat; what doesn't go in stays for the next try. */
+  const saveTalk = useCallback(
+    async (lines: Talk, keepalive = false) => {
+      const all = mergeTalk([...backlog.current, ...lines]);
+      backlog.current = [];
+      if (all.length === 0) return true;
+      try {
+        const res = await post({ action: "talk", lines: all }, keepalive);
+        const body = (await res.json().catch(() => null)) as { saved?: number } | null;
+        if (res.ok && (body?.saved ?? 0) > 0) return true;
+      } catch {}
+      backlog.current = mergeTalk([...all, ...backlog.current]).slice(-16);
+      return false;
+    },
+    [post],
+  );
+
+  // Its seconds, for the server's count (it keeps them inside what the heartbeats prove).
+  const report = useCallback(
+    (keepalive: boolean) => {
+      const id = sessionId.current;
+      if (reported.current || !id) return;
+      reported.current = true;
+      const used = connected.current ? seconds.current : 0;
+      void post({ action: "close", sessionId: id, seconds: used, ended: ended.current }, keepalive).catch(() => {});
+    },
+    [post],
+  );
 
   const cleanup = useCallback(() => {
     window.clearTimeout(idle.current);
     window.clearTimeout(closeWait.current);
+    window.clearTimeout(connectWait.current);
     window.clearTimeout(quiet.current);
+    window.clearInterval(beat.current);
     if (raf.current !== null) cancelAnimationFrame(raf.current);
     raf.current = null;
     mic.current?.getTracks().forEach((t) => t.stop());
@@ -108,9 +170,23 @@ export function useLiveVoice(opts: {
     ctx.current = null;
     setLevel(0);
     setTalking(null);
-    report();
+    const wasOn = phaseRef.current !== "off";
+    report(true);
     go("off");
-  }, [go, report]);
+    if (!wasOn || !sessionId.current) return;
+    sessionId.current = null;
+    // The rest of the small talk, once the answers still coming have landed.
+    const t = talk.current;
+    const began = Date.now();
+    const finish = () => {
+      if (inflight.current > 0 && Date.now() - began < END_WAIT_MS) {
+        window.setTimeout(finish, 400);
+        return;
+      }
+      void saveTalk(t.flush()).finally(() => cb.current.onEnded?.());
+    };
+    finish();
+  }, [go, report, saveTalk]);
 
   const send = useCallback((event: Record<string, unknown>) => {
     const c = channel.current;
@@ -136,23 +212,50 @@ export function useLiveVoice(opts: {
     }, IDLE_MS);
   }, [stop]);
 
+  // Every minute: the server keeps the allowance ahead of the call (or ends
+  // it), and the small talk so far goes into the chat when no answer is
+  // being written.
+  const heartbeat = useCallback(async () => {
+    const id = sessionId.current;
+    if (!id || phaseRef.current === "off") return;
+    try {
+      const res = await post({ action: "beat", sessionId: id });
+      const body = (await res.json().catch(() => null)) as { closed?: boolean; reason?: string; error?: string; topUp?: boolean } | null;
+      if (body?.closed) {
+        vlog("live.ended", body.reason ?? "");
+        if (body.reason === "allowance") {
+          const message = body.error ?? "You've used this period's assistant allowance.";
+          setError(message);
+          cb.current.onError?.(message, { limit: true, topUp: body.topUp === true });
+        }
+        // The server hung it up: session.closed follows; if not, close here.
+        closeWait.current = window.setTimeout(cleanup, 5000);
+        return;
+      }
+    } catch {}
+    if (inflight.current === 0) void saveTalk(talk.current.flush(performance.now() - t0.current));
+  }, [post, cleanup, saveTalk]);
+
   const handle = useCallback(
     (ev: { type?: string; [k: string]: unknown }) => {
+      const at = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : performance.now() - t0.current);
       switch (ev.type) {
         case "session.started":
           vlog("live.started");
+          connected.current = true;
+          window.clearTimeout(connectWait.current);
+          t0.current = performance.now();
           go("live");
           touch();
+          // She's listening now: what's said before this (while connecting) isn't heard.
+          playCue("ready", ctx.current);
           break;
         case "session.input_transcript.delta": {
           const d = typeof ev.delta === "string" ? ev.delta : "";
-          if (last.current !== "person") {
-            heardBuf.current = "";
-            pendingWords.current.push("");
-          }
+          talk.current.heard(d, at(ev.start_ms), at(ev.end_ms));
+          if (last.current !== "person") heardBuf.current = "";
           last.current = "person";
           heardBuf.current += d;
-          pendingWords.current[pendingWords.current.length - 1] += d;
           setHeard(heardBuf.current);
           speakerNow("person");
           touch();
@@ -160,6 +263,7 @@ export function useLiveVoice(opts: {
         }
         case "session.output_transcript.delta": {
           const d = typeof ev.delta === "string" ? ev.delta : "";
+          talk.current.said(d, at(ev.start_ms), at(ev.end_ms));
           if (last.current !== "her") saidBuf.current = "";
           last.current = "her";
           saidBuf.current += d;
@@ -172,25 +276,29 @@ export function useLiveVoice(opts: {
           const delegation = ev.delegation as { id?: unknown } | undefined;
           const id = typeof delegation?.id === "string" ? delegation.id : null;
           if (!id) break;
-          // What they said since the last hand-over (the voice's own event carries no words).
-          const words = pendingWords.current.map((w) => w.trim()).filter(Boolean).join(" … ").slice(-1500) || heardBuf.current.trim();
-          pendingWords.current = [];
-          const t0 = performance.now();
-          vlog("live.handover", { words: words.split(/\s+/).filter(Boolean).length });
-          onDelegationRef
-            .current(words)
-            .then((answer) => {
-              const pieces = commentaryPieces(answer);
-              vlog("live.answer", { ms: Math.round(performance.now() - t0), chars: answer.length });
-              if (pieces.length === 0) {
-                send({ type: "session.commentary.append", delegation_id: id, content: "I couldn't find anything to say to that. Ask me again another way?" });
-                return;
-              }
-              for (const content of pieces) send({ type: "session.commentary.append", delegation_id: id, content });
+          // Its words, worked out from the transcripts (the event carries none).
+          const { words, before, context } = talk.current.handOver(at(ev.offset_ms));
+          const earlier = mergeTalk([...backlog.current, ...before]);
+          backlog.current = [];
+          inflight.current++;
+          const started = performance.now();
+          vlog("live.handover", { words: words.split(/\s+/).filter(Boolean).length, before: earlier.length });
+          const answer = (content: string) => {
+            talk.current.answered(content);
+            for (const piece of commentaryPieces(content)) send({ type: "session.commentary.append", delegation_id: id, content: piece });
+          };
+          cb.current
+            .onDelegation(words, earlier, context)
+            .then((text) => {
+              vlog("live.answer", { ms: Math.round(performance.now() - started), chars: text.length });
+              answer(text.trim() ? text : "I couldn't find anything to say to that. Ask me again another way?");
             })
             .catch(() => {
               vlog("live.answer", "the brain failed");
-              send({ type: "session.commentary.append", delegation_id: id, content: "Sorry, I couldn't get that just now. Could you ask me again?" });
+              answer("Sorry, I couldn't get that just now. Could you ask me again?");
+            })
+            .finally(() => {
+              inflight.current = Math.max(0, inflight.current - 1);
             });
           break;
         }
@@ -202,12 +310,14 @@ export function useLiveVoice(opts: {
         case "session.closed": {
           const u = ev.usage as { seconds?: unknown } | undefined;
           if (typeof u?.seconds === "number") seconds.current = u.seconds;
+          ended.current = true;
           vlog("live.closed", { s: seconds.current, why: typeof ev.reason === "string" ? ev.reason : null });
           cleanup();
           break;
         }
         case "error": {
-          const message = typeof ev.message === "string" ? ev.message : "error";
+          const e = (ev.error ?? ev) as { message?: unknown };
+          const message = typeof e.message === "string" ? e.message : "error";
           vlog("live.error", message.slice(0, 120));
           break;
         }
@@ -225,9 +335,14 @@ export function useLiveVoice(opts: {
       heardBuf.current = "";
       saidBuf.current = "";
       last.current = null;
-      pendingWords.current = [];
-      seconds.current = 0;
+      talk.current = new LiveTalk();
+      inflight.current = 0;
+      seconds.current = null;
+      sessionId.current = null;
+      ended.current = false;
+      connected.current = false;
       reported.current = false;
+      t0.current = performance.now();
       go("connecting");
       vlog("live.connecting", { voice });
       try {
@@ -299,32 +414,52 @@ export function useLiveVoice(opts: {
         }
         const sdp = pc.localDescription?.sdp;
         if (!sdp) throw new Error("no offer");
-        const res = await fetch("/api/producer/live", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ sdp, voice }),
-        });
-        const body = (await res.json().catch(() => null)) as { sdp?: string; sessionId?: string; error?: string } | null;
-        if (!res.ok || !body?.sdp) throw new Error(body?.error ?? "The live voice couldn't start. Try again.");
-        vlog("live.session", body.sessionId ?? "");
+        const res = await post({ sdp, voice });
+        const body = (await res.json().catch(() => null)) as { sdp?: string; sessionId?: string; beatMs?: number; error?: string; topUp?: boolean } | null;
+        if (!res.ok || !body?.sdp || !body.sessionId) {
+          const message = body?.error ?? "The live voice couldn't start. Try again.";
+          throw Object.assign(new Error(message), { failure: res.status === 402 ? { limit: true, topUp: body?.topUp === true } : { starting: true } });
+        }
+        sessionId.current = body.sessionId;
+        vlog("live.session", body.sessionId);
+        // A page closed without a word still stops being billed: the server
+        // hangs up a call whose heartbeats stop.
+        const every = typeof body.beatMs === "number" && body.beatMs >= 10_000 ? body.beatMs : 60_000;
+        beat.current = window.setInterval(() => void heartbeat(), every);
         await pc.setRemoteDescription({ type: "answer", sdp: body.sdp });
+        // OpenAI took the call but it never connects (a network that blocks
+        // it): her usual voice instead, and nothing charged.
+        const failed = () => {
+          if (connected.current || phaseRef.current !== "connecting") return;
+          const message = "The live voice couldn't connect.";
+          vlog("live.failed", "no connection");
+          setError(message);
+          cleanup();
+          cb.current.onError?.(message, { starting: true });
+        };
+        connectWait.current = window.setTimeout(failed, CONNECT_MS);
+        pc.addEventListener("connectionstatechange", () => {
+          if (pc.connectionState === "failed") failed();
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : "The live voice couldn't start. Try again.";
+        const failure = ((err as { failure?: LiveFailure } | null)?.failure ?? { starting: true }) as LiveFailure;
         vlog("live.failed", message.slice(0, 120));
         setError(message);
-        onErrorRef.current?.(message);
         cleanup();
+        cb.current.onError?.(message, failure);
       }
     },
-    [go, handle, cleanup],
+    [go, handle, cleanup, post, heartbeat],
   );
 
-  // Closing the page ends the call (and its bill).
+  // Closing the page ends the call (and its bill), and saves what it can.
   useEffect(() => {
     const leave = () => {
       if (phaseRef.current !== "off") {
         send({ type: "session.close" });
-        report();
+        report(true);
+        void saveTalk(talk.current.flush(), true);
       }
     };
     window.addEventListener("pagehide", leave);

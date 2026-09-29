@@ -58,6 +58,8 @@ export async function buildStateNote(
     spoken?: boolean;
     /** Handed over by her live voice (GPT-Live, live.ts), which says the answer in its own words. */
     live?: boolean;
+    /** With `live`: the call's recent transcript (live-talk.ts), which the request was worked out from. */
+    liveHeard?: string | null;
     /** Their earlier messages that never got an answer (history.ts unansweredBefore). */
     unanswered?: string[];
     /** The last answer they were shown, when it was cut off part-way (history.ts lastAnswerCut). */
@@ -217,7 +219,20 @@ export async function buildStateNote(
       ? // Her live voice (2026-09-29, live.ts): GPT-Live talks with them and
         // handed this over; it says the answer in its own words, so what it
         // needs is the substance, short, not a script to read.
-        "They are talking with you out loud through your live voice: a voice model talks with them, handed you this request (their words as it heard them, so allow for a misheard word) and will tell them your answer in its own words. Write just what it should tell them: the facts and the outcome, plain and short, one to four sentences, the most important first. No greeting, acknowledgement, lists, markdown, links or ids. Prepared cards still appear on their screen: say what you prepared."
+        "They are talking with you out loud through your live voice: a voice model talks with them, handed you this request (their words as it heard them, so allow for a misheard word) and will tell them your answer in its own words. The small talk it had with them on its own is in the conversation as your lines and theirs. Write just what it should tell them: the facts and the outcome, plain and short, one to four sentences, the most important first. No greeting, acknowledgement, lists, markdown, links or ids. Prepared cards still appear on their screen: say what you prepared."
+      : null,
+    a.live && a.liveHeard
+      ? // The request's words are worked out from the call's transcript
+        // (live-talk.ts), which mixes in whatever the mic heard — a TV
+        // playing, someone else in the room (tested 2026-09-29: a question
+        // said over the news came through only as "…the city council has
+        // can you check whether my render yesterday… which will").
+        `What the call heard since the last thing it handed you, as transcribed ("Them" is everything the microphone picked up, which can include a TV, a video or other people; "You (the voice)" is your live voice):\n${a.liveHeard
+          .split("\n")
+          .map((l) => clean(l, 600))
+          .filter(Boolean)
+          .join("\n")
+          .slice(-3000)}\nWork out what they asked you from this and answer that. Ignore words that are clearly from a TV, a video or other people.`
       : null,
     a.spoken
       ? // Spoken turns (2026-09-26, operator: "She also sounds ai. I want her

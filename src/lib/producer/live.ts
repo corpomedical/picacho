@@ -9,9 +9,10 @@
 // a backend — here, Aly's own brain (api/producer, Claude Opus with her tools
 // and notes) — then says the result in its own words.
 //
-// The browser talks to OpenAI directly over WebRTC; our server only creates
-// the session (POST /v1/live/sessions with the browser's SDP offer, our key)
-// and runs the brain. Admins only while it is tried (api/producer/live).
+// The browser talks to OpenAI directly over WebRTC; our server creates the
+// session (POST /v1/live/sessions with the browser's SDP offer, our key),
+// runs the brain, and counts the minutes (live-ledger.ts). For everyone who
+// has Aly since 2026-09-29 (operator: "Every Aly user, after 3 fixes").
 // Alias-free and pure except createLiveSession, so it can be tested.
 
 import type { Personality } from "./personality";
@@ -63,11 +64,11 @@ export function liveInstructions(a: { name: string; personality: Personality }):
   const name = a.name.trim() || "Aly";
   return `You are ${name}, the personal assistant inside Picacho, an app where people make images and videos of their own characters. You are talking with the person out loud, in a live voice conversation.
 
-How you talk: like a real person, not a voice assistant reading text. Warm, relaxed and quick; contractions; short turns of one to three sentences; plain everyday words. React to what they say. While they talk, you may make brief listening sounds when it's natural. If they interrupt you, stop and listen. If something important was unclear (a name, a number), ask about that part.
+How you talk: like a real person, not a voice assistant reading text. Warm, relaxed and quick; contractions; short turns of one to three sentences; plain everyday words. React to what they say. While they talk, you may make brief listening sounds when it's natural. If they interrupt you, stop and listen. Keep listening while they pause to think. Do not treat a cough, music, a TV or video playing, or other people talking to each other nearby as a new request: answer only what they say to you. If something important was unclear (a name, a number), ask about that part.
 
 Personality: ${PERSONALITY_VOICE[a.personality]} It changes how you talk, never what is true or how carefully you help.
 
-Your backend is ${name}'s own brain. It knows this person's account and plan, their characters, renders, projects and notes, how every part of Picacho works, and it can search the web, look at their renders, prepare renders for them to send, and write notes. Delegate to the backend whenever a request is about their work, their account, the app, anything current or factual, or needs careful thought. Delegate before giving an answer that depends on it, and do not guess the result while waiting: keep the conversation natural (say you're checking, or keep chatting) until it comes back. When the result arrives, tell them in your own words, briefly, most important first. Answer small talk and simple follow-ups about what was just said yourself.
+Your backend is ${name}'s own brain. It knows this person's account and plan, their characters, renders, projects and notes, how every part of Picacho works, and it can search the web, look at their renders, prepare renders for them to send, and write notes. Delegate to the backend whenever a request is about their work, their account, the app, anything current or factual, or needs careful thought. Delegate before giving an answer that depends on it, and do not guess the result while waiting: say in a few words what you're checking ("Let me look at yesterday's renders"), then keep the conversation natural until it comes back. When the result arrives, tell them in your own words, briefly, most important first. Answer small talk and simple follow-ups about what was just said yourself.
 
 You cannot start renders or spend credits: the backend prepares them and the person presses Render. Prepared renders appear on their screen; say so when the result mentions one.
 
@@ -114,6 +115,15 @@ export function commentaryPieces(text: string, maxChars = 1600): string[] {
   return out;
 }
 
+/**
+ * What the browser may send on the call's data channel: her brain's answers
+ * and hanging up. Everything else a page could send — changing her
+ * instructions or settings, quiet context — is refused by OpenAI (the
+ * session's client.data_channel, "for an untrusted frontend", SDK types read
+ * 2026-09-29), so a changed page can't rewrite who she is.
+ */
+export const LIVE_CLIENT_EVENTS = ["session.commentary.append", "session.close"] as const;
+
 /** Creates the live session for the browser's WebRTC offer; our key never leaves the server. */
 export async function createLiveSession(a: {
   sdp: string;
@@ -135,6 +145,7 @@ export async function createLiveSession(a: {
         delegation: { type: "client" },
         // No recording is kept at OpenAI (forking and downloads need it).
         store: false,
+        client: { data_channel: { allowed_client_events: [...LIVE_CLIENT_EVENTS] } },
       },
       transport: { type: "webrtc", sdp: a.sdp },
     }),

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import type { PlanId } from "@/lib/plans";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
-import { producerVisible, readProducerGrant } from "@/lib/producer/enabled";
+import { isProducerLiveEnabled, producerVisible, readProducerGrant } from "@/lib/producer/enabled";
 import { readToolGates } from "@/lib/nav/gates";
 import { countWatch, loadWatchBar } from "@/lib/producer/watch";
 import { DEFAULT_PRODUCER_NAME } from "@/lib/producer/store";
@@ -106,9 +106,10 @@ export default async function AppLayout({
   // (lib/producer/enabled.ts producerVisible,
   // which a set's page asks too). Eligibility first, so every other account
   // skips the flag reads and the watch count.
-  let producer: { name: string; watchCount: number; look: LampLook; wheel: WheelStyle; chat: ChatStyle; currency: string } | null = null;
+  let producer: { name: string; watchCount: number; look: LampLook; wheel: WheelStyle; chat: ChatStyle; currency: string; live: boolean } | null =
+    null;
   if (await producerVisible(supabase, profile, isAdmin)) {
-    const [{ data: prefs }, { data: lookRow }, { data: wheelRow }, { data: chatRow }, watchBar] = await Promise.all([
+    const [{ data: prefs }, { data: lookRow }, { data: wheelRow }, { data: chatRow }, watchBar, live] = await Promise.all([
       supabase.from("producer_prefs").select("display_name, watch_seen_at").eq("user_id", data.user.id).maybeSingle(),
       // On its own: before producer-look.sql runs the column is missing, the
       // read errors, and the lamp simply takes the default look.
@@ -117,6 +118,8 @@ export default async function AppLayout({
       supabase.from("producer_prefs").select("wheel_style").eq("user_id", data.user.id).maybeSingle(),
       supabase.from("producer_prefs").select("chat_style").eq("user_id", data.user.id).maybeSingle(),
       loadWatchBar(supabase),
+      // Her live voice when they press Talk (lib/producer/live.ts).
+      isProducerLiveEnabled(supabase),
     ]);
     producer = {
       name: (prefs?.display_name as string | null)?.trim() || DEFAULT_PRODUCER_NAME,
@@ -126,6 +129,7 @@ export default async function AppLayout({
       chat: parseChatStyle((chatRow as { chat_style?: unknown } | null)?.chat_style),
       // What her top-ups are priced in for this visitor (lib/agent/topups.ts).
       currency: (await isEUVisitor()) ? "€" : "$",
+      live,
     };
   }
 
@@ -169,6 +173,7 @@ export default async function AppLayout({
             chatStyle={producer.chat}
             diagnostics={isAdmin}
             currency={producer.currency}
+            liveVoice={producer.live}
           />
         )}
       </div>
@@ -252,6 +257,7 @@ export default async function AppLayout({
           chatStyle={producer.chat}
           diagnostics={isAdmin}
           currency={producer.currency}
+          liveVoice={producer.live}
         />
       )}
       {/* data-app-scroll: the app's one real scroller — the native quick

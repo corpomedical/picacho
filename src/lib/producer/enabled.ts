@@ -27,6 +27,17 @@ export async function isProducerOpenToElite(supabase: SupabaseClient): Promise<b
   return flagOn(supabase, "producer_elite");
 }
 
+// Her live voice (2026-09-29, lib/producer/live.ts) for everyone who has
+// her, unless PRODUCER_LIVE_DISABLED=1, there's no OpenAI key, or
+// feature_flags.producer_live is off (inserted ON by
+// supabase/pending/producer-live.sql; before it runs this reads as off).
+// Off = pressing Talk gives her usual voice.
+export async function isProducerLiveEnabled(supabase: SupabaseClient): Promise<boolean> {
+  if (process.env.PRODUCER_LIVE_DISABLED === "1") return false;
+  if (!process.env.OPENAI_API_KEY) return false;
+  return flagOn(supabase, "producer_live");
+}
+
 async function flagOn(supabase: SupabaseClient, key: string): Promise<boolean> {
   try {
     const { data, error } = await supabase

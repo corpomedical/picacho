@@ -73,7 +73,14 @@ describe("her live voice (GPT-Live)", () => {
     expect((sent!.init.headers as Record<string, string>).authorization).toBe("Bearer sk-test");
     const body = JSON.parse(String(sent!.init.body));
     expect(body).toEqual({
-      session: { model: "gpt-live-1", instructions: "be Aly", audio: { output: { voice: "willow" } }, delegation: { type: "client" }, store: false },
+      session: {
+        model: "gpt-live-1",
+        instructions: "be Aly",
+        audio: { output: { voice: "willow" } },
+        delegation: { type: "client" },
+        store: false,
+        client: { data_channel: { allowed_client_events: ["session.commentary.append", "session.close"] } },
+      },
       transport: { type: "webrtc", sdp: "offer-sdp" },
     });
   });

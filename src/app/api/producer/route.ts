@@ -77,6 +77,7 @@ import { monthlyWindowStart } from "@/lib/generations/core";
 import { classifyTurnFailure, unitsForFailedTurn, type TurnFailure } from "@/lib/agent/failures";
 import { reserveAssistantUnits, settleAssistantTopUp } from "@/lib/agent/allowance";
 import { timingNote, voicePathNote, type TurnTimes } from "@/lib/producer/diag";
+import { parseLiveContext, parseTalk, talkMessages } from "@/lib/producer/live-talk";
 import { isNativeApp } from "@/lib/native/server";
 import { rateLimited } from "@/lib/rate-limit";
 
@@ -207,6 +208,10 @@ export async function POST(request: NextRequest) {
     merged?: unknown;
     /** Handed over by her live voice (GPT-Live, lib/producer/live.ts): typed words, said aloud by it. */
     live?: unknown;
+    /** With `live`: the small talk said with the voice before this, not yet in the chat (live-talk.ts). */
+    liveBefore?: unknown;
+    /** With `live`: the recent transcript of the call, both of them (live-talk.ts). */
+    liveContext?: unknown;
   } | null;
   // One recording, or several said in a row while an answer was under way
   // (2026-09-25, "several questions at once"): each is transcribed and they
@@ -224,6 +229,12 @@ export async function POST(request: NextRequest) {
   const spoken = spokenParts.length > 0;
   // Her live voice handed this over (live.ts): it talks; this writes what it says.
   const live = !spoken && body?.live === true;
+  // What was said with the voice before it (live-talk.ts), saved just ahead
+  // of this turn's words so the chat keeps the order it was said in.
+  const liveBefore = live ? parseTalk(body?.liveBefore) : [];
+  // The call's recent transcript: the request's words are worked out from
+  // it, and a TV's words can be mixed in, so her brain reads it too.
+  const liveHeard = live ? parseLiveContext(body?.liveContext) : null;
   if ((spoken || body?.speak === true) && !isVoiceConfigured()) {
     return NextResponse.json({ error: "Voice isn't set up on this server yet." }, { status: 503 });
   }
@@ -483,6 +494,7 @@ export async function POST(request: NextRequest) {
       personality,
       spoken: spoken || speakReplies,
       live,
+      liveHeard,
       // Nothing they said is dropped (history.ts): what never got an answer
       // comes back with this turn, and a cut-off answer is named — by what
       // they heard when the sheet says, else by how far it got.
@@ -504,6 +516,7 @@ export async function POST(request: NextRequest) {
     const stored: StoredMessage[] = rs.map((r) => ({ role: r.role, content: r.content }));
     return [
       ...closeTail(stored).map((m) => ({ role: m.role, content: m.content, display: null })),
+      ...talkMessages(liveBefore),
       ...(wantEffort !== currentEffort(rs) ? [effortMessage(wantEffort)] : []),
       { role: "user" as const, content: [{ type: "text", text: message }], display: { text: message } },
       { role: "system" as const, content: state.text, display: { kind: "state", fingerprint: state.fingerprint } },

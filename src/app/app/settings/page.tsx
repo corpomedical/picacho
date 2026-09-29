@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { producerVisible, readProducerGrant } from "@/lib/producer/enabled";
+import { isProducerLiveEnabled, producerVisible, readProducerGrant } from "@/lib/producer/enabled";
 import { isChatAgentEnabled } from "@/lib/agent/enabled";
 import { readAssistantTopUp } from "@/lib/agent/allowance";
 import { AssistantTopUpPanel } from "@/components/settings/assistant-topup-panel";
@@ -392,7 +392,7 @@ export default async function SettingsPage({
   const appMode = appModeRead && !appModeRead.error ? (parseAppMode((appModeRead.data as { app_mode?: unknown } | null)?.app_mode) ?? "advanced") : null;
 
   // The Producer's name row: only for accounts that have the Producer.
-  const [producerName, producerVoices, producerLook, producerWheel, producerChat, producerPersonality] =
+  const [producerName, producerVoices, producerLook, producerWheel, producerChat, producerPersonality, producerLiveOn] =
     activeTab === "preferences"
       ? await Promise.all([
           loadProducerName().then((p) => (p.available ? p.name : null)),
@@ -401,8 +401,10 @@ export default async function SettingsPage({
           loadProducerWheel(),
           loadProducerChat(),
           loadProducerPersonality(),
+          // Her live voice (lib/producer/live.ts), when the server's switch is on.
+          isProducerLiveEnabled(supabase),
         ])
-      : [null, null, null, null, null, null];
+      : [null, null, null, null, null, null, false];
 
   const notifyPrefs = {
     notify_render_ready: (notifyRow as { notify_render_ready?: boolean } | null)?.notify_render_ready !== false,
@@ -696,7 +698,7 @@ export default async function SettingsPage({
           producerWheel={producerWheel}
           producerChat={producerChat}
           producerPersonality={producerPersonality}
-          producerLiveTest={isAdmin && producerPersonality !== null}
+          producerLive={producerLiveOn && producerPersonality !== null}
           appMode={appMode}
         />
       )}

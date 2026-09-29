@@ -4,15 +4,15 @@ import { useState, useSyncExternalStore } from "react";
 import { LIVE_VOICES, type LiveVoice } from "@/lib/producer/live";
 import { liveVoiceName, liveVoiceOn, saveLiveVoice } from "@/components/producer/live-voice-prefs";
 
-// Admins only while it's tried (2026-09-29, lib/producer/live.ts): her live
-// voice on this device, and which of GPT-Live's voices speaks. Talk on the
-// lamp then starts it instead of her usual voice.
+// Her live voice on this device (2026-09-29, lib/producer/live.ts; on
+// unless switched off here), and which of GPT-Live's voices speaks. Talk on
+// the lamp starts it; off, Talk gives her usual voice.
 
 const noSubscribe = () => () => {};
 
 export function ProducerLiveForm() {
   // Read after hydration: the choice lives on this device only.
-  const storedOn = useSyncExternalStore(noSubscribe, liveVoiceOn, () => false);
+  const storedOn = useSyncExternalStore(noSubscribe, liveVoiceOn, () => true);
   const storedVoice = useSyncExternalStore(noSubscribe, liveVoiceName, () => "marin" as LiveVoice);
   const [on, setOn] = useState<boolean | null>(null);
   const [voice, setVoice] = useState<LiveVoice | null>(null);
