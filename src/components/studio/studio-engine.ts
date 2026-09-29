@@ -11,6 +11,7 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import * as CANNON from "cannon-es";
 import { setElements } from "@/lib/sets/elements";
 import { letterbox } from "@/lib/sets/rig";
@@ -18,6 +19,8 @@ import { SET_DIRECTION_MAX_CHARS } from "@/lib/sets/set-config";
 import { studioShotInput } from "@/lib/sets/studio-shot";
 import { CYCLES_DEFAULT_SAMPLES, CYCLES_EDGES, CYCLES_MAX_FRAMES, CYCLES_MAX_SAMPLES_ANIMATION, CYCLES_MAX_SAMPLES_STILL, CYCLES_MAX_SECONDS, CYCLES_TOO_LONG, HELIOS_CYCLES_GPU, cyclesDollars, cyclesDuration, cyclesSize, estimateCycles } from "@/lib/sets/cycles";
 import { watchStudioText } from "./studio-i18n";
+import { ENV_H, ENV_W, TRACE_MAX_SAMPLES, TRACE_SCALES, TRACE_SLOW_SECONDS, TRACE_SPEED_KEY, envAddSplit, envAddSun, envUpIrradiance, loadOidn, luminance, oidnDenoise, traceDuration, traceEstimate, traceSamples, traceSize } from "./studio-trace";
+import { MATERIAL_RECIPES, hslOf, materialOf } from "@/lib/sets/stage-materials";
 import { GRIP_TAP_PX, LONG_PRESS_MS, LONG_PRESS_SLOP_PX, STUDIO_COMPACT_QUERY, nextSheet, sheetDragHeight, sheetHeights, sheetSnap } from "@/lib/sets/studio-sheets";
 import {
   STUDIO_ADD_KINDS,
@@ -197,6 +200,7 @@ function objMesh(o, copy) {
   m.position.set(o.position[0] + off[0] * copy, o.position[1] + off[1] * copy, o.position[2] + off[2] * copy);
   m.rotation.set(THREE.MathUtils.degToRad(o.rotation[0]), THREE.MathUtils.degToRad(o.rotation[1]), THREE.MathUtils.degToRad(o.rotation[2]));
   m.castShadow = o.castShadow !== false;
+  m.userData.word = materialOf(o); // the set's material word: the path tracer adds its physical layers (glass, sheen…)
   return m;
 }
 const SPEC = opts.spec;
@@ -1641,92 +1645,279 @@ function openExport() {
   $("exGlb").onclick = () => exportAs("glb"); $("exObj").onclick = () => exportAs("obj"); $("exStl").onclick = () => exportAs("stl");
 }
 
-// ================= path-traced renders (three-gpu-pathtracer) =================
-// The same scene, models and materials as the viewport, traced by the GPU with real bounced light and soft shadows.
-// The hemisphere fill becomes a sky-to-ground light dome, so a traced frame keeps the viewport's look.
+// ================= path-traced renders, made to look like Blender Cycles (2026-09-29) =================
+// The operator: "something of our own without paying a monthly fee" → "Lets go with A. Build it better."
+// The same scene, models and materials as the viewport, traced on this device's own graphics card
+// (three-gpu-pathtracer, MIT), then cleaned by Open Image Denoise (Intel's network, Apache-2.0 weights in
+// public/studio/oidn, run by oidn-web on WebGPU, MIT) — nothing leaves the device, nothing is paid for.
+// Light like Cycles: the World (simple colour, physical sky or studio room) is baked into one HDR dome the
+// tracer importance-samples, with the sun as a 0.526° disc (Blender's default) carrying the viewport sun's
+// strength, so shadows are soft at the edge and the sky fills them; lamps get Blender's 0.1 m radius.
+// Materials: each set thing's material word (glass, fabric, grass…) adds its physical layers (glass that lets light
+// through, cloth sheen, softer highlights) on top of the colour, roughness and metal the viewport shows. The shot camera's
+// f-stop and focus distance give the depth of field; AgX (Blender's view transform) or ACES, with exposure.
 // ptSnap: a 2D copy of each finished trace, taken in the same task it was drawn (a WebGL canvas reads back empty later on)
-const ptCanvas = document.createElement("canvas"), ptSnap = document.createElement("canvas"); let ptR = null, pt = null, ptEnv = null, ptBusy = false, ptSamples = 128, ptFrameSamples = 12, ptHalf = true;
+const ptCanvas = document.createElement("canvas"), ptSnap = document.createElement("canvas");
+let ptR = null, pt = null, ptCam = null, ptQuad = null, ptShow = null, ptFilter = null, ptAovT = null, ptNormalMat = null, ptBusy = false;
+let ptWorldKey = "", ptWorldTex = null;
+const ptSet = { still: { q: "final", custom: 128 }, animation: { q: "draft", custom: 12 }, scale: { still: 1, animation: 0.5 }, denoise: true, dof: true, look: "agx", ev: 0 };
+const ptSpeed = () => { try { const v = +localStorage.getItem(TRACE_SPEED_KEY); return v > 0 ? v : null; } catch { return null; } };
+const ptKeepSpeed = (v) => { if (!(v > 0) || !Number.isFinite(v)) return; const o = ptSpeed(); try { localStorage.setItem(TRACE_SPEED_KEY, String(o ? o * 0.5 + v * 0.5 : v)); } catch {} };
 async function ptEngine(w, h) {
   if (!pt) {
-    const { WebGLPathTracer, GradientEquirectTexture } = await import("three-gpu-pathtracer");
-    ptR = new THREE.WebGLRenderer({ canvas: ptCanvas, antialias: false, preserveDrawingBuffer: true });
-    if (!ptR.capabilities.isWebGL2) throw new Error("this browser has no WebGL 2");
-    ptR.toneMapping = THREE.ACESFilmicToneMapping;
-    pt = new WebGLPathTracer(ptR); Object.assign(pt, { renderDelay: 0, fadeDuration: 0, minSamples: 1, rasterizeScene: false, dynamicLowRes: false, synchronizeRenderSize: true });
-    pt.bounces = 6; pt.tiles.set(2, 2); ptEnv = new GradientEquirectTexture(64);
+    const lib = await import("three-gpu-pathtracer");
+    const r = new THREE.WebGLRenderer({ canvas: ptCanvas, antialias: false, preserveDrawingBuffer: true });
+    if (!r.capabilities.isWebGL2) { r.dispose(); throw new Error("this browser has no WebGL 2"); }
+    if (!r.extensions.has("EXT_color_buffer_float")) { r.dispose(); throw new Error("this graphics card can't draw into float textures"); }
+    ptR = r;
+    pt = new lib.WebGLPathTracer(ptR); Object.assign(pt, { renderDelay: 0, fadeDuration: 0, minSamples: 1, rasterizeScene: false, dynamicLowRes: false, synchronizeRenderSize: true });
+    pt.bounces = 8; pt.transmissiveBounces = 10; pt.filterGlossyFactor = 0.5; pt.tiles.set(2, 2);
+    ptCam = new lib.PhysicalCamera(); ptFilter = new lib.DenoiseMaterial();
+    ptShow = new THREE.MeshBasicMaterial({ toneMapped: true }); ptQuad = new FullScreenQuad(ptShow);
   }
   ptR.setPixelRatio(1); ptR.setSize(w, h, false); return pt;
 }
-function ptPrep() {
-  const hv = helpers.visible, sv = shot.obj.visible, bg = scene.background, env = scene.environment, ei = scene.environmentIntensity, ov = scene.overrideMaterial, skv = skyObj?.visible, hv2 = hemi.visible;
-  const hid = items.filter((i) => i.noRender && i.obj.visible); hid.forEach((i) => (i.obj.visible = false));
-  // the tracer gathers lights by their own visible flag, not their parents', so a hidden lamp would still shine
-  const dark = []; items.filter((i) => !i.obj.visible).forEach((i) => i.obj.traverse((o) => { if (o.isLight && o.visible) { o.visible = false; dark.push(o); } }));
-  helpers.visible = false; shot.obj.visible = false; if (skyObj) skyObj.visible = false; scene.overrideMaterial = null;
-  scene.background = skyMode === "studio" ? studioBg : skyColor;
-  const studio = skyMode === "studio"; ptEnv.topColor.copy(studio ? new THREE.Color(0xffffff) : hemi.color); ptEnv.bottomColor.copy(studio ? new THREE.Color(0x9a9a9a) : hemi.groundColor); ptEnv.update();
-  scene.environment = ptEnv; scene.environmentIntensity = studio ? 1 : hemi.intensity; hemi.visible = false;
-  return () => { helpers.visible = hv; shot.obj.visible = sv; scene.background = bg; scene.environment = env; scene.environmentIntensity = ei; scene.overrideMaterial = ov; if (skyObj) skyObj.visible = skv; hemi.visible = hv2; hid.forEach((i) => (i.obj.visible = true)); dark.forEach((o) => (o.visible = true)); };
+function ptLook() { ptR.toneMapping = ptSet.look === "aces" ? THREE.ACESFilmicToneMapping : THREE.AgXToneMapping; ptR.toneMappingExposure = 2 ** ptSet.ev; }
+// the World as one HDR dome (radiance), rebuilt only when the sky, the hour or a light changes
+const PT_EQ_VERT = "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }";
+const PT_EQ_FRAG = "uniform samplerCube env; varying vec2 vUv; void main() { float p = (vUv.x - 0.5) * 6.28318530718; float t = (vUv.y - 0.5) * 3.14159265359; gl_FragColor = vec4(textureCube(env, vec3(cos(t) * cos(p), sin(t), cos(t) * sin(p))).rgb, 1.0); }";
+function ptWorld() {
+  const studio = skyMode === "studio", phys = skyMode === "physical", sp = sun.getWorldPosition(new THREE.Vector3()), tp = sun.target.getWorldPosition(new THREE.Vector3());
+  const key = JSON.stringify([skyMode, sun.visible, sp.toArray(), tp.toArray(), sun.color.getHex(), sun.intensity, hemi.color.getHex(), hemi.groundColor.getHex(), hemi.intensity]);
+  if (key === ptWorldKey && ptWorldTex) return ptWorldTex;
+  const W = ENV_W, H = ENV_H, data = new Float32Array(W * H * 4), k = hemi.intensity / Math.PI;
+  const up = [hemi.color.r * k, hemi.color.g * k, hemi.color.b * k], down = [hemi.groundColor.r * k, hemi.groundColor.g * k, hemi.groundColor.b * k];
+  if (phys || studio) {
+    const world = studio ? new RoomEnvironment() : new THREE.Scene(); let sk = null;
+    if (phys) {
+      sk = new Sky(); sk.scale.setScalar(450); const u = sk.material.uniforms, v = skyObj.material.uniforms;
+      for (const n of ["turbidity", "rayleigh", "mieCoefficient", "mieDirectionalG"]) u[n].value = v[n].value;
+      u.sunPosition.value.copy(sp).sub(tp).normalize(); u.showSunDisc.value = 0; world.add(sk);
+    }
+    const cube = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType }), cc = new THREE.CubeCamera(studio ? 0.04 : 1, studio ? 100 : 2000, cube);
+    const tm = ptR.toneMapping; ptR.toneMapping = THREE.NoToneMapping; cc.update(ptR, world);
+    const eq = new THREE.WebGLRenderTarget(W, H, { type: THREE.FloatType }), mat = new THREE.ShaderMaterial({ uniforms: { env: { value: cube.texture } }, vertexShader: PT_EQ_VERT, fragmentShader: PT_EQ_FRAG, depthTest: false, depthWrite: false }), q = new FullScreenQuad(mat);
+    ptR.setRenderTarget(eq); q.render(ptR); ptR.readRenderTargetPixels(eq, 0, 0, W, H, data); ptR.setRenderTarget(null); ptR.toneMapping = tm;
+    q.dispose(); mat.dispose(); eq.dispose(); cube.dispose(); if (sk) { sk.geometry.dispose(); sk.material.dispose(); } world.dispose?.();
+    if (phys) {
+      // below the horizon is ground, as in the viewport; the sky above is scaled so a roof gets the viewport's sky light
+      data.fill(0, 0, (W * H) / 2 * 4);
+      const s = luminance(envUpIrradiance(data, W, H)), want = luminance([hemi.color.r, hemi.color.g, hemi.color.b]) * hemi.intensity, f = s > 0 ? want / s : 0;
+      for (let i = (W * H) / 2 * 4; i < data.length; i++) data[i] *= f;
+      envAddSplit(data, W, H, [0, 0, 0], down, "lower");
+    } else envAddSplit(data, W, H, up, down);
+  } else envAddSplit(data, W, H, up, down);
+  if (sun.visible && sun.intensity > 0) { const d = sp.clone().sub(tp); envAddSun(data, W, H, [d.x, d.y, d.z], [sun.color.r * sun.intensity, sun.color.g * sun.intensity, sun.color.b * sun.intensity]); }
+  for (let i = 3; i < data.length; i += 4) data[i] = 1;
+  ptWorldTex?.dispose();
+  const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
+  tex.mapping = THREE.EquirectangularReflectionMapping; tex.magFilter = tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false; tex.needsUpdate = true;
+  ptWorldKey = key; ptWorldTex = tex; return tex;
 }
-const ptTick = () => new Promise((r) => setTimeout(r, 0));
-async function ptTrace(w, h, samples, onSample) {
+// a set thing's material word → its physical layers, over the viewport's own colour, roughness and metal.
+// Left out on purpose (checked in the harness, 2026-09-30, three-gpu-pathtracer 0.0.25 with three r185): any clear coat
+// renders pitch black, and glass with a thickness turns black inside, so paint keeps the viewport's gloss and glass is
+// thin-walled (a window pane, which is what set glass is).
+function ptMaterial(m, word) {
+  if (m?.isMeshPhysicalMaterial) { if (!(m.clearcoat > 0)) return null; const c = m.clone(); c.clearcoat = 0; return c; } // an imported model's coat
+  const r = word && MATERIAL_RECIPES[word]?.physical;
+  if (!r || Array.isArray(m) || !m?.isMeshStandardMaterial) return null;
+  if (r.transmission === undefined && r.sheen === undefined && r.specularIntensity === undefined) return null;
+  const p = new THREE.MeshPhysicalMaterial(); THREE.MeshStandardMaterial.prototype.copy.call(p, m); p.defines = { STANDARD: "", PHYSICAL: "" };
+  for (const n of ["specularIntensity", "sheen", "sheenRoughness", "ior"]) if (typeof r[n] === "number") p[n] = r[n];
+  if (r.sheenColor) p.sheenColor = r.sheenColor === "self" ? m.color.clone() : new THREE.Color(r.sheenColor);
+  if (r.transmission !== undefined) { p.transmission = r.transmission === "byLightness" ? (hslOf("#" + m.color.getHexString()).l > 0.45 ? 0.9 : 0.2) : r.transmission; p.thickness = 0; p.roughness = Math.min(p.roughness, 0.05); p.metalness = 0; }
+  if (r.doubleSided) p.side = THREE.DoubleSide;
+  return p;
+}
+function ptPrep() {
+  const hv = helpers.visible, sv = shot.obj.visible, bg = scene.background, env = scene.environment, ei = scene.environmentIntensity, ov = scene.overrideMaterial, skv = skyObj?.visible, hv2 = hemi.visible, sunV = sun.visible;
+  const hid = items.filter((i) => i.noRender && i.obj.visible); hid.forEach((i) => (i.obj.visible = false));
+  helpers.visible = false; shot.obj.visible = false; if (skyObj) skyObj.visible = false; scene.overrideMaterial = null;
+  const world = ptWorld();
+  scene.environment = world; scene.environmentIntensity = 1; scene.background = skyMode === "physical" ? world : skyMode === "studio" ? studioBg : skyColor;
+  hemi.visible = false; sun.visible = false; // both live in the dome now (the sun as its disc)
+  // the tracer gathers meshes and lights by their OWN visible flag, not their parents': everything under a hidden parent
+  // (a hidden thing and its lamp, the editor's gizmos) is hidden itself — the move gizmo's invisible 100 km plane
+  // used to sit over the whole set and shade it, in every traced render before 2026-09-30
+  const dark = []; (function walk(o, shown) { const vis = shown && o.visible && !(o.isMesh && o.material?.visible === false); if (!vis && o.visible) { o.visible = false; dark.push(o); } o.children.forEach((c) => walk(c, vis)); })(scene, true);
+  const swaps = []; items.forEach((it) => it.obj.visible && it.obj.traverse((o) => { if (!o.isMesh) return; const pm = ptMaterial(o.material, o.userData.word); if (pm) { swaps.push([o, o.material]); o.material = pm; } }));
+  const soft = []; scene.traverse((o) => { if ((o.isPointLight || o.isSpotLight) && o.radius === undefined) { o.radius = 0.1; soft.push(o); } });
+  return () => {
+    helpers.visible = hv; shot.obj.visible = sv; scene.background = bg; scene.environment = env; scene.environmentIntensity = ei; scene.overrideMaterial = ov; if (skyObj) skyObj.visible = skv; hemi.visible = hv2; sun.visible = sunV;
+    hid.forEach((i) => (i.obj.visible = true)); dark.forEach((o) => (o.visible = true));
+    swaps.forEach(([o, m]) => { o.material.dispose(); o.material = m; }); soft.forEach((o) => delete o.radius);
+  };
+}
+function ptCamSync(w, h) {
+  const cam = shot.obj.userData.cam, u = shot.obj.userData; cam.updateMatrixWorld(true);
+  cam.matrixWorld.decompose(ptCam.position, ptCam.quaternion, ptCam.scale);
+  Object.assign(ptCam, { fov: cam.fov, aspect: w / h, near: cam.near, far: cam.far, focusDistance: Math.max(0.1, u.focus || 7) }); ptCam.updateProjectionMatrix(); ptCam.updateMatrixWorld(true);
+  if (ptSet.dof && u.fstop > 0) ptCam.bokehSize = (u.lensMm || 35) / u.fstop; else ptCam.fStop = Infinity;
+}
+// the denoiser's guides: what colour each pixel's surface is (albedo) and which way it faces (normal), anti-aliased like the trace
+function ptAovs(w, h) {
+  // one target per guide: reading a second pass back from the same multisampled target returned the first pass's pixels
+  if (!ptAovT || ptAovT[0].width !== w || ptAovT[0].height !== h) { ptAovT?.forEach((t) => t.dispose()); ptAovT = [0, 1].map(() => new THREE.WebGLRenderTarget(w, h, { type: THREE.FloatType, samples: 4 })); }
+  const albedo = new Float32Array(w * h * 4), normal = new Float32Array(w * h * 4);
+  const tm = ptR.toneMapping, cc = ptR.getClearColor(new THREE.Color()), ca = ptR.getClearAlpha(), bg = scene.background, fg = scene.fog, ov = scene.overrideMaterial;
+  const swaps = [], off = [];
+  scene.traverseVisible((o) => {
+    if (o.isLine || o.isPoints || o.isSprite) { off.push(o); return; }
+    if (!o.isMesh) return;
+    const one = (m) => new THREE.MeshBasicMaterial({ color: m.color || 0xffffff, map: m.map || null, side: m.side, transparent: m.transparent, opacity: m.opacity, fog: false });
+    swaps.push([o, o.material]); o.material = Array.isArray(o.material) ? o.material.map(one) : one(o.material);
+  });
+  off.forEach((o) => (o.visible = false)); scene.fog = null; ptR.toneMapping = THREE.NoToneMapping; ptR.setRenderTarget(ptAovT[0]);
+  ptR.setClearColor(0x000000, 1); ptR.clear(); ptR.render(scene, ptCam); ptR.readRenderTargetPixels(ptAovT[0], 0, 0, w, h, albedo);
+  swaps.forEach(([o, m]) => { (Array.isArray(o.material) ? o.material : [o.material]).forEach((b) => b.dispose()); o.material = m; });
+  ptNormalMat ||= new THREE.MeshNormalMaterial({ side: THREE.DoubleSide });
+  scene.background = null; scene.overrideMaterial = ptNormalMat; ptR.setRenderTarget(ptAovT[1]); ptR.setClearColor(new THREE.Color(0.5, 0.5, 0.5), 1); ptR.clear(); ptR.render(scene, ptCam); ptR.readRenderTargetPixels(ptAovT[1], 0, 0, w, h, normal);
+  for (let i = 0; i < normal.length; i++) normal[i] = normal[i] * 2 - 1;
+  ptR.setRenderTarget(null); scene.background = bg; scene.fog = fg; scene.overrideMaterial = ov; ptR.toneMapping = tm; ptR.setClearColor(cc, ca); off.forEach((o) => (o.visible = true));
+  return { albedo, normal };
+}
+function ptPresent(tex, filter) {
+  const m = filter ? ptFilter : ptShow;
+  if (m.map !== tex) { m.map = tex; m.needsUpdate = true; }
+  ptQuad.material = m; ptR.setRenderTarget(null); ptR.clear(); ptQuad.render(ptR);
+}
+// cleans the finished trace and shows it: "oidn" (Open Image Denoise), "filter" (the tracer's own smoothing filter, when
+// this browser has no WebGPU) or "none"
+async function ptFinish(w, h, onPhase) {
+  let how = "none";
+  if (ptSet.denoise) {
+    onPhase?.();
+    const unet = await loadOidn();
+    if (unet) {
+      try {
+        const color = new Float32Array(w * h * 4); ptR.readRenderTargetPixels(pt.target, 0, 0, w, h, color);
+        const { albedo, normal } = ptAovs(w, h);
+        const out = await oidnDenoise(unet, color, albedo, normal, w, h);
+        const tex = new THREE.DataTexture(out, w, h, THREE.RGBAFormat, THREE.FloatType); tex.needsUpdate = true;
+        ptLook(); ptPresent(tex, false); ptSnapNow(w, h); tex.dispose(); ptShow.map = null;
+        return "oidn";
+      } catch (e) { console.warn("Helios Studio: Open Image Denoise failed, using the built-in filter", e); how = "filter"; }
+    } else how = "filter";
+  }
+  ptLook(); ptPresent(pt.target.texture, how === "filter"); ptSnapNow(w, h);
+  return how;
+}
+function ptSnapNow(w, h) { const c = ptSnap.getContext("2d"); if (ptSnap.width !== w || ptSnap.height !== h) { ptSnap.width = w; ptSnap.height = h; } c.drawImage(ptCanvas, 0, 0, w, h); }
+// Waits until the graphics card has really finished what was sent. Without it the loop queues samples far faster than
+// the card traces them: the counter runs ahead of the picture, Stop waits for the whole queue, and the next read-back
+// stalls the browser for minutes (it froze Chrome 154 on the race track at full size, 2026-09-30).
+function ptTick() {
+  const gl = ptR.getContext(), sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); gl.flush();
+  return new Promise((ok) => { const poll = () => { const r = gl.clientWaitSync(sync, 0, 0); if (r === gl.TIMEOUT_EXPIRED) return setTimeout(poll, 2); gl.deleteSync(sync); ok(); }; setTimeout(poll, 0); });
+}
+async function ptTrace(w, h, samples, { onSample, onClean } = {}) {
   const cam = shot.obj.userData.cam; cam.aspect = w / h; cam.updateProjectionMatrix();
-  const engine = await ptEngine(w, h), restore = ptPrep();
+  const engine = await ptEngine(w, h); ptLook(); const restore = ptPrep();
   try {
-    engine.setScene(scene, cam); engine.reset(); const t0 = performance.now(), snap = ptSnap.getContext("2d"); let lastSnap = 0; ptSnap.width = w; ptSnap.height = h;
+    ptCamSync(w, h); engine.setScene(scene, ptCam); engine.reset();
+    // while its shader compiles the tracer counts samples it hasn't traced: start counting once it has compiled
+    const t0 = performance.now(); let lastSnap = 0, t1 = 0, warm = engine.isCompiling;
     while (engine.samples < samples && ptBusy) {
-      engine.renderSample(); if (engine.samples >= samples || performance.now() - lastSnap > 1000) { snap.drawImage(ptCanvas, 0, 0, w, h); lastSnap = performance.now(); } if (onSample) onSample(engine.samples);
-      if (engine.samples < 1 && performance.now() - t0 > 60000) throw new Error("the graphics card didn't start tracing within a minute");
+      engine.renderSample(); if (warm && !engine.isCompiling) { warm = false; engine.reset(); continue; } if (!t1 && !warm && engine.samples >= 1) t1 = performance.now();
+      if (performance.now() - lastSnap > 1000) { ptSnapNow(w, h); lastSnap = performance.now(); }
+      if (onSample) onSample(warm ? 0 : engine.samples);
+      if ((warm || engine.samples < 1) && performance.now() - t0 > 180000) throw new Error("the graphics card didn't start tracing within three minutes");
       await ptTick();
     }
+    const n = Math.floor(engine.samples); if (t1 && n > 4) ptKeepSpeed((performance.now() - t1) / (n - 1) / ((w * h) / 1e6));
+    if (n < 1) return { how: "none", samples: 0 };
+    return { how: await ptFinish(w, h, onClean), samples: n };
   } finally { restore(); }
 }
 function ptFail(title, e) {
   ptBusy = false;
-  openWin(title, `<p><b>This device can't path-trace this scene.</b> ${esc(e?.message || String(e))}.</p><p class="hint">Path tracing needs WebGL 2 with float textures, on a computer's graphics card. Render ▸ Render still and Render animation still work here, and give the same framing.</p>`);
+  openWin(title, `<p><b>This device can't path-trace this scene.</b> <span>${esc(e?.message || String(e))}.</span></p><p class="hint">Path tracing needs WebGL 2 with float textures, on a computer's graphics card. Render ▸ Render still and Render animation still work here, and give the same framing.</p>`);
 }
 function ptStop() { ptBusy = false; }
+// the settings both windows share: quality, samples, size, denoise, depth of field, look, exposure, and the estimate
+function ptSettings(kind) {
+  const u = shot.obj.userData, s = ptSet[kind];
+  const sizes = TRACE_SCALES.map((k) => { const [w, h] = traceSize(outSize(), k); return `<option value="${k}" ${ptSet.scale[kind] === k ? "selected" : ""}>${k === 0.5 ? "½" : k + "×"} · ${w} × ${h}</option>`; }).join("");
+  const q = (v, n) => `<option value="${v}" ${s.q === v ? "selected" : ""}>${n}</option>`;
+  return `<div class="fr"><label>Quality</label><select class="sel2" id="ptQ" aria-label="Quality">${q("draft", "Draft")}${q("final", "Final")}${q("custom", "Custom")}</select></div>`
+    + `<div class="fr"><label>${kind === "still" ? "Samples" : "Samples per frame"}</label><span id="ptSampF"></span></div>`
+    + `<div class="fr"><label>Size</label><select class="sel2" id="ptSize" aria-label="Size">${sizes}</select></div>`
+    + `<div class="fr"><label>Denoise</label><label class="check"><input type="checkbox" id="ptDn" ${ptSet.denoise ? "checked" : ""}> <span>Clean the grain</span></label></div>`
+    + `<div class="fr"><label>Depth of Field</label><label class="check"><input type="checkbox" id="ptDof" ${ptSet.dof ? "checked" : ""}> <span>f/${(+u.fstop || 2.8).toFixed(1)} · focus ${(+u.focus || 7).toFixed(1)} m</span></label></div>`
+    + `<div class="fr"><label>Look</label><select class="sel2" id="ptLook" aria-label="Look"><option value="agx" ${ptSet.look === "agx" ? "selected" : ""}>AgX (like Blender)</option><option value="aces" ${ptSet.look === "aces" ? "selected" : ""}>ACES (like the viewport)</option></select></div>`
+    + `<div class="fr"><label>Exposure</label><span id="ptEvF"></span></div>`
+    + `<p class="hint" id="ptEst"></p><p class="hint" id="ptWarn" hidden></p>`;
+}
+function ptWire(kind, frames = 1) {
+  const s = ptSet[kind];
+  const mountSamples = () => { const h = $("ptSampF"); if (!h) return; h.textContent = ""; h.appendChild(field(traceSamples(kind, s.q, s.custom), { step: kind === "still" ? 4 : 1, dec: 0, min: 1, max: TRACE_MAX_SAMPLES[kind], onCommit: (v) => { s.custom = Math.round(v); s.q = "custom"; $("ptQ").value = "custom"; est(); } })); };
+  const est = () => {
+    const [w, h] = traceSize(outSize(), ptSet.scale[kind]), n = traceSamples(kind, s.q, s.custom), sec = traceEstimate(ptSpeed(), n, w, h, frames, ptSet.denoise ? 1 : 0), e = $("ptEst"), warn = $("ptWarn"); if (!e) return;
+    e.textContent = sec == null ? "The time is measured on this device during the first render." : frames > 1 ? `About ${traceDuration(sec)} for ${frames} frames on this device` : `About ${traceDuration(sec)} on this device`;
+    const slow = sec != null && sec > TRACE_SLOW_SECONDS[kind]; warn.hidden = !slow; if (slow) warn.textContent = "That is slow on this device. Draft or ½ size is much quicker.";
+  };
+  mountSamples(); est();
+  $("ptQ").onchange = (e) => { s.q = e.target.value; mountSamples(); est(); };
+  $("ptSize").onchange = (e) => { ptSet.scale[kind] = +e.target.value; est(); };
+  $("ptDn").onchange = (e) => { ptSet.denoise = e.target.checked; est(); };
+  $("ptDof").onchange = (e) => (ptSet.dof = e.target.checked);
+  $("ptLook").onchange = (e) => (ptSet.look = e.target.value);
+  $("ptEvF").appendChild(field(ptSet.ev, { step: 0.05, dec: 1, min: -5, max: 5, onCommit: (v) => (ptSet.ev = Math.round(v * 10) / 10) }));
+  return est;
+}
+const ptLock = (on) => { ["ptGo", "ptQ", "ptSize", "ptDn", "ptDof", "ptLook"].forEach((id) => { const e = $(id); if (e) e.disabled = on; }); const st = $("ptStop"); if (st) st.disabled = !on; };
+const ptHost = () => { ptCanvas.style.width = "100%"; ptCanvas.style.height = "auto"; ptCanvas.style.display = "block"; $("ptHost").appendChild(ptCanvas); };
+const PT_CLEANED = { oidn: "Cleaned by Open Image Denoise, on this device.", filter: "Cleaned by the simpler built-in filter: this browser has no WebGPU for Open Image Denoise.", none: "" };
+function ptSlowCheck(kind, left) { const w = $("ptWarn"); if (!w || left < TRACE_SLOW_SECONDS[kind]) return; w.hidden = false; w.textContent = `This device is slow for this: about ${traceDuration(left)} left. Stop, then pick Draft or ½ size for a quicker render.`; }
 async function renderTracedStill() {
   if (ptBusy) return toast("A path-traced render is already running");
-  const [w, h] = outSize();
-  openWin("Helios Render · path traced still", `<div class="fr"><label>Samples</label><span id="ptSampF"></span></div><div class="row-btns"><button class="pbtn accent" id="ptGo">Trace</button><button class="pbtn" id="ptStop" disabled>Stop</button><a class="pbtn" id="ptSave" style="display:grid;place-items:center;text-decoration:none;pointer-events:none;opacity:.5" download="helios-traced-frame-${frameNo()}.png">Save image</a></div><div class="prog"><i id="prog"></i></div><p id="progTxt" style="font-family:var(--mono)"></p><div id="ptHost"></div><p class="hint">Frame ${frameNo()} through the shot camera, ${w} × ${h}. Light bounces like a real camera would see it: soft shadows, colour bleeding between surfaces, true reflections. More samples mean less grain; the picture sharpens as you watch.</p>`);
-  $("ptSampF").appendChild(field(ptSamples, { step: 4, dec: 0, min: 1, max: 4096, onCommit: (v) => (ptSamples = Math.round(v)) }));
-  const go = async () => {
-    const save = $("ptSave"); save.style.pointerEvents = "none"; save.style.opacity = ".5";
-    ptBusy = true; $("ptGo").disabled = true; $("ptStop").disabled = false; ptCanvas.style.width = "100%"; ptCanvas.style.height = "auto"; ptCanvas.style.display = "block"; $("ptHost").appendChild(ptCanvas);
-    const t0 = performance.now(), n = ptSamples;
+  const title = "Helios Render · path traced still";
+  openWin(title, ptSettings("still") + `<div class="row-btns"><button class="pbtn accent" id="ptGo">Render</button><button class="pbtn" id="ptStop" disabled>Stop</button><a class="pbtn" id="ptSave" style="display:grid;place-items:center;text-decoration:none;pointer-events:none;opacity:.5" download="helios-traced-frame-${frameNo()}.png">Save image</a></div><div class="prog"><i id="prog"></i></div><p id="progTxt" style="font-family:var(--mono)"></p><p class="hint" id="ptNote"></p><div id="ptHost"></div><p class="hint">Frame ${frameNo()} through the shot camera. Light bounces the way it does in Blender's Cycles: soft sun shadows, sky light, colour bleeding, true reflections and glass. The grain is cleaned at the end, on this device; nothing is sent anywhere.</p>`);
+  const est = ptWire("still");
+  $("ptGo").onclick = async () => {
+    const save = $("ptSave"); save.style.pointerEvents = "none"; save.style.opacity = ".5"; $("ptNote").textContent = ""; $("ptWarn").hidden = true;
+    const [w, h] = traceSize(outSize(), ptSet.scale.still), n = traceSamples("still", ptSet.still.q, ptSet.still.custom);
+    ptBusy = true; ptLock(true); ptHost();
+    const t0 = performance.now(); let res;
     try {
-      await ptTrace(w, h, n, (s) => { const pr = $("prog"); if (pr) pr.style.width = Math.min(100, (s / n) * 100) + "%"; const tx = $("progTxt"); if (tx) tx.textContent = `Sample ${Math.floor(s)} / ${n} · ${((performance.now() - t0) / 1000).toFixed(1)} s`; });
-    } catch (e) { return ptFail("Helios Render · path traced still", e); }
+      res = await ptTrace(w, h, n, {
+        onSample: (s) => { const el = (performance.now() - t0) / 1000, done = Math.floor(s), pr = $("prog"); if (pr) pr.style.width = Math.min(100, (s / n) * 100) + "%"; const left = done > 0 ? (el / s) * (n - s) : 0; const tx = $("progTxt"); if (tx) tx.textContent = done > 0 ? `Sample ${done} of ${n} · ${traceDuration(el)} · about ${traceDuration(left)} left` : `Starting the graphics card · ${traceDuration(el)}`; if (el > 4 && done > 1) ptSlowCheck("still", left); },
+        onClean: () => { const tx = $("progTxt"); if (tx) tx.textContent = "Cleaning the grain…"; },
+      });
+    } catch (e) { return ptFail(title, e); }
     const done = ptBusy; ptBusy = false; if (!$("ptGo")) return;
-    $("ptGo").disabled = false; $("ptStop").disabled = true; save.href = ptSnap.toDataURL("image/png"); save.style.pointerEvents = ""; save.style.opacity = "";
-    const tx = $("progTxt"); if (tx) tx.textContent = `${done ? "Done" : "Stopped"} · ${Math.floor(pt.samples)} samples · ${((performance.now() - t0) / 1000).toFixed(1)} s`;
+    ptLock(false); if (res.samples) { save.href = ptSnap.toDataURL("image/png"); save.style.pointerEvents = ""; save.style.opacity = ""; }
+    const tx = $("progTxt"), el = (performance.now() - t0) / 1000; if (tx) tx.textContent = `${done ? "Done" : "Stopped"} · ${res.samples} samples · ${traceDuration(el)}`;
+    $("ptNote").textContent = PT_CLEANED[res.how]; est();
   };
-  $("ptGo").onclick = go; $("ptStop").onclick = ptStop; go();
+  $("ptStop").onclick = ptStop;
 }
 async function renderTracedVideo() {
   if (ptBusy) return toast("A path-traced render is already running");
   if (!("MediaRecorder" in window)) return openWin("Helios Render", "<p>This browser can't record video. Chrome, Edge and Firefox can.</p>");
-  const title = "Helios Render · path traced animation";
-  openWin(title, `<div class="fr"><label>Samples per frame</label><span id="ptSampF"></span></div><div class="fr"><label>Size</label><select class="sel2" id="ptSize" aria-label="Size"><option value="half" ${ptHalf ? "selected" : ""}>Half (faster)</option><option value="full" ${ptHalf ? "" : "selected"}>Full</option></select></div><div class="row-btns"><button class="pbtn accent" id="ptGo">Trace frames ${pStart}–${pEnd}</button><button class="pbtn" id="ptStop" disabled>Stop</button></div><div class="prog"><i id="prog"></i></div><p id="progTxt" style="font-family:var(--mono)"></p><div id="ptHost"></div><p class="hint">Traces every frame of the playback range (set it on the timeline), then plays them back into a video at ${FPS} fps. Few samples per frame keep it quick and leave a little grain; the model, materials and light match the still.</p>`);
-  $("ptSampF").appendChild(field(ptFrameSamples, { step: 1, dec: 0, min: 1, max: 512, onCommit: (v) => (ptFrameSamples = Math.round(v)) }));
-  $("ptSize").onchange = (e) => (ptHalf = e.target.value === "half");
+  const title = "Helios Render · path traced animation", total = pEnd - pStart + 1;
+  openWin(title, ptSettings("animation") + `<div class="row-btns"><button class="pbtn accent" id="ptGo">Render frames ${pStart}–${pEnd}</button><button class="pbtn" id="ptStop" disabled>Stop</button></div><div class="prog"><i id="prog"></i></div><p id="progTxt" style="font-family:var(--mono)"></p><p class="hint" id="ptNote"></p><div id="ptHost"></div><p class="hint">Traces every frame of the playback range (set it on the timeline) and cleans each one, then plays them back into a video at ${FPS} fps. The model, materials and light match the still.</p>`);
+  ptWire("animation", total);
   $("ptStop").onclick = ptStop;
   $("ptGo").onclick = async () => {
-    let [w, h] = outSize(); if (ptHalf) { w = Math.round(w / 2); h = Math.round(h / 2); }
-    ptBusy = true; $("ptGo").disabled = true; $("ptStop").disabled = false; ptCanvas.style.width = "100%"; ptCanvas.style.height = "auto"; ptCanvas.style.display = "block"; $("ptHost").appendChild(ptCanvas);
-    const was = time; play(false); const shots = [], total = pEnd - pStart + 1, t0 = performance.now();
+    const [w, h] = traceSize(outSize(), ptSet.scale.animation), n = traceSamples("animation", ptSet.animation.q, ptSet.animation.custom);
+    ptBusy = true; ptLock(true); ptHost(); $("ptNote").textContent = ""; $("ptWarn").hidden = true;
+    const was = time; play(false); const shots = [], t0 = performance.now(); let how = "none";
     try {
       for (let f = pStart; f <= pEnd && ptBusy; f++) {
-        evaluate((f - 1) / FPS); await ptTrace(w, h, ptFrameSamples);
+        evaluate((f - 1) / FPS); const res = await ptTrace(w, h, n); if (!ptBusy && res.samples < n) break; how = res.how;
         shots.push(await new Promise((r) => ptSnap.toBlob(r, "image/jpeg", 0.92)));
         const i = f - pStart + 1, pr = $("prog"); if (pr) pr.style.width = (i / total) * 100 + "%";
-        const tx = $("progTxt"), el = (performance.now() - t0) / 1000; if (tx) tx.textContent = `Frame ${f} · ${i} / ${total} · ${el.toFixed(0)} s, about ${Math.max(0, (el / i) * (total - i)).toFixed(0)} s left`;
+        const tx = $("progTxt"), el = (performance.now() - t0) / 1000, left = (el / i) * (total - i); if (tx) tx.textContent = `Frame ${i} of ${total} · ${traceDuration(el)} · about ${traceDuration(left)} left`;
+        if (i === 2) ptSlowCheck("animation", left);
       }
     } catch (e) { setTime(was); return ptFail(title, e); }
     setTime(was); const stopped = !ptBusy; ptBusy = false;
-    if (!shots.length || !$("ptGo")) return;
-    const tx = $("progTxt"); if (tx) tx.textContent = `${stopped ? "Stopped" : "Traced"} ${shots.length} frames · recording the video at ${FPS} fps…`;
+    if (!$("ptGo")) return;
+    ptLock(false); $("ptNote").textContent = PT_CLEANED[how];
+    if (!shots.length) { const tx = $("progTxt"); if (tx) tx.textContent = "Stopped before the first frame was finished."; return; }
+    const tx = $("progTxt"); if (tx) tx.textContent = `${stopped ? "Stopped after" : "Traced"} ${shots.length} frames · recording the video at ${FPS} fps…`;
     const cv = document.createElement("canvas"); cv.width = w; cv.height = h; const ctx = cv.getContext("2d"); const stream = cv.captureStream(FPS);
     const type = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm", "video/mp4"].find((t) => MediaRecorder.isTypeSupported(t)) || "";
     const rec = new MediaRecorder(stream, type ? { mimeType: type, videoBitsPerSecond: 8e6 } : undefined); const chunks = []; rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
@@ -1735,7 +1926,7 @@ async function renderTracedVideo() {
     for (const bm of bitmaps) { ctx.drawImage(bm, 0, 0); await new Promise((r) => setTimeout(r, 1000 / FPS)); }
     rec.stop(); await new Promise((r) => (rec.onstop = r)); bitmaps.forEach((b) => b.close());
     const blob = new Blob(chunks, { type: type || "video/webm" }), url = URL.createObjectURL(blob), ext = (type || "video/webm").includes("mp4") ? "mp4" : "webm";
-    openWin(title, `<video src="${url}" controls autoplay loop muted playsinline></video><div class="row-btns"><a class="pbtn accent" style="display:grid;place-items:center;text-decoration:none" download="helios-traced-${pStart}-${pEnd}.${ext}" href="${url}">Save video</a></div><p>${shots.length} path-traced frames, ${w} × ${h}, ${ptFrameSamples} samples each${stopped ? " (stopped early)" : ""}.</p>`);
+    openWin(title, `<video src="${url}" controls autoplay loop muted playsinline></video><div class="row-btns"><a class="pbtn accent" style="display:grid;place-items:center;text-decoration:none" download="helios-traced-${pStart}-${pEnd}.${ext}" href="${url}">Save video</a></div><p>${shots.length} path-traced frames, ${w} × ${h}, ${n} samples each${stopped ? ", stopped early" : ""}.</p><p class="hint">${PT_CLEANED[how]}</p>`);
   };
 }
 
@@ -2558,5 +2749,5 @@ document.getElementById("sceneTitle").textContent = opts.title;
 if (opts.render && $("castMenuLabel")) $("castMenuLabel").textContent = castLabel();
 document.getElementById("backLink").setAttribute("href", opts.backHref);
 const stopText = opts.t ? watchStudioText($("app").parentElement || document.body, opts.t) : () => {};
-return () => { stopText(); saveNow(); saveToAccount(true); stopped = true; clearInterval(cast.timer); clearInterval(cy.timer); cancelAnimationFrame(raf); clearInterval(saveTimer); ac.abort(); resizeObs.disconnect(); tc.dispose?.(); orbit.dispose(); renderer.dispose(); offR?.dispose(); ptBusy = false; pt?.dispose(); ptR?.dispose(); };
+return () => { stopText(); saveNow(); saveToAccount(true); stopped = true; clearInterval(cast.timer); clearInterval(cy.timer); cancelAnimationFrame(raf); clearInterval(saveTimer); ac.abort(); resizeObs.disconnect(); tc.dispose?.(); orbit.dispose(); renderer.dispose(); offR?.dispose(); ptBusy = false; pt?.dispose(); ptR?.dispose(); ptWorldTex?.dispose(); ptAovT?.forEach((t) => t.dispose()); };
 }
