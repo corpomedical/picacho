@@ -308,6 +308,7 @@ vi.mock("@/lib/sets/set-config", async () => {
   };
 });
 vi.mock("@/lib/sets/set-spec", async () => await import("./set-spec"));
+vi.mock("@/lib/sets/answer-guard", async () => await import("./answer-guard"));
 vi.mock("@/lib/sets/studio-astra", async () => await import("./studio-astra"));
 vi.mock("@/lib/sets/elements", async () => await import("./elements"));
 // The rebuild is admins' until its first live proof; `rebuildOpen` opens it

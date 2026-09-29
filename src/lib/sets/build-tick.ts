@@ -10,7 +10,8 @@ import {
   SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS,
   SET_RESERVED_BRIEF,
 } from "@/lib/sets/set-config";
-import { normaliseSetSpec, parseSetSpecText, specTextForGate, type SetSpec } from "@/lib/sets/set-spec";
+import { normaliseSetSpec, specTextForGate, type SetSpec } from "@/lib/sets/set-spec";
+import { parseAstraSetText } from "@/lib/sets/answer-guard";
 import { retryBuildRequest, type SetRetry } from "@/lib/sets/astra-request";
 import { decideAfterValidAnswer } from "@/lib/sets/build-retry";
 import { photoForRetry, readPhotoSources, removeSetPhoto } from "@/lib/sets/photo";
@@ -267,7 +268,7 @@ async function tick(
   }
 
   if (polled.state === "done") {
-    const parsed = parseSetSpecText(polled.text);
+    const parsed = parseAstraSetText(polled.text);
     // A photo set without Astra's own first camera has nothing to lay
     // beside the photo: the normaliser's stand-in camera makes it invalid.
     if (parsed.ok && !(kind === "photo" && parsed.notes.includes("default_camera"))) {

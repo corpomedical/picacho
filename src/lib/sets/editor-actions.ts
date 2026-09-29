@@ -73,7 +73,8 @@ import {
   studioText,
   type StudioPlan,
 } from "@/lib/sets/studio-astra";
-import { cleanText, normaliseSetSpec, parseSetSpecText, specTextForGate, withoutNames, type SetSpec } from "@/lib/sets/set-spec";
+import { cleanText, normaliseSetSpec, specTextForGate, withoutNames, type SetSpec } from "@/lib/sets/set-spec";
+import { parseAstraSetText } from "@/lib/sets/answer-guard";
 import { ELEMENT_KEY_RE, resolvePhotos, setElements, type ElementPhoto } from "@/lib/sets/elements";
 import { listElementPhotos } from "@/lib/sets/references";
 import {
@@ -480,7 +481,7 @@ export async function editSetWithAstra(
         return { error: answer.error, editsLeft: await giveBackAstraChange(access, slot) };
       }
 
-      const parsed = parseSetSpecText(answer.text);
+      const parsed = parseAstraSetText(answer.text, working);
       if (!parsed.ok) return { error: SET_EDIT_FAILED, editsLeft: await giveBackAstraChange(access, slot) };
       // Astra was sent no names and writes none (Helios Cut 4, step B1): any
       // it wrote are dropped, and every block it left as it was takes its
