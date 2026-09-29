@@ -1,0 +1,8 @@
+rt_hdr_alb_nrm.tza — the trained weights of Intel Open Image Denoise's ray-tracing
+network (HDR colour with albedo and normal guides), unchanged, from
+https://github.com/RenderKit/oidn-weights (Git LFS object sha256
+e586ef2ff48d…, 1,841,160 bytes, fetched 2026-09-30).
+
+Copyright Intel Corporation. Licensed under the Apache License, Version 2.0
+(LICENSE.txt in this folder). Helios Studio runs it in the person's own browser
+through oidn-web (MIT) to clean the grain of its path-traced renders.
