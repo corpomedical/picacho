@@ -41,6 +41,7 @@ import {
   SET_EDIT_POLL_MS,
   SET_EDIT_TRIES_MONTH_SCOPE,
   SET_EDITS_MONTH_SCOPE,
+  HELIOS_STUDIO_FOR_ALL,
   setEditPollDeadline,
   setEditTriesMonthlyLimit,
   setEditsMonthlyLimit,
@@ -58,6 +59,19 @@ import {
 } from "@/lib/sets/astra-press";
 import { editUndoOf, heldTextOf, openReaderMeaning, sealedEditText, type EditUndo } from "@/lib/sets/edit-seal";
 import type { AstraEditRead } from "@/lib/sets/astra-follow";
+import {
+  STUDIO_ASTRA_MAX_CHARS,
+  STUDIO_ASTRA_NO_ANSWER,
+  STUDIO_ASTRA_TOO_SHORT,
+  knownOf,
+  normaliseStudioSummary,
+  normaliseStudioTurns,
+  parseStudioAnswer,
+  planActs,
+  studioAstraRequest,
+  studioText,
+  type StudioPlan,
+} from "@/lib/sets/studio-astra";
 import { cleanText, normaliseSetSpec, parseSetSpecText, specTextForGate, withoutNames, type SetSpec } from "@/lib/sets/set-spec";
 import { ELEMENT_KEY_RE, resolvePhotos, setElements, type ElementPhoto } from "@/lib/sets/elements";
 import { listElementPhotos } from "@/lib/sets/references";
@@ -723,4 +737,75 @@ export async function readAstraEdit(setId: string, pressId: string): Promise<Ast
   // page (Helios Cut 4, step A6b): a change read back after a dropped
   // connection keeps its words for a later step back onto it.
   return { error: null, press: state, spec, seal: editUndoOf(setId, access.userId, spec), ...(ended ? { editsLeft: await astraEditsLeft(access) } : {}) };
+}
+
+/**
+ * Astra in Helios Studio (stage 4, 2026-09-29 — operator: "Implement Astra
+ * exactly as its implemented in Blender"): the person's request, the scene
+ * summary the Studio built and the last few turns go to Astra, and her
+ * answer comes back as a PLAN — steps in plain words and the checked
+ * operations (studio-astra.ts). Nothing runs here: the Studio shows the
+ * plan and the person presses Apply, and the whole plan is one undo.
+ *
+ * The same path as the set page's Astra change, end to end: setsAccess and
+ * the set's owner, the Studio's own gate (admins while HELIOS_STUDIO_FOR_ALL
+ * is off), one job per press, the paused month, the gate on the person's
+ * words (and the turns sent with them — the browser wrote those too), the
+ * pace and the month's changes (astraChangeSlot), the one Astra client and
+ * its poll (askAstra). Free to the person, like an edit: a plan with a step
+ * that acts is one of the month's Astra changes; a question, a reply alone
+ * or a failure gives it back, and a try OpenAI never billed gives its try
+ * back too. Her answer's words are shown in the Studio only — no render
+ * prompt reads them (studio-shot.ts sends places, not names) — so they are
+ * not sent through the gate a second time.
+ */
+export async function askStudioAstra(
+  setId: string,
+  request: string,
+  scene: unknown,
+  turns?: unknown,
+  pressId?: string,
+): Promise<
+  | { error: string; editsLeft?: number | null; pending?: true; paused?: true }
+  | { error: null; plan: StudioPlan; answer: Record<string, unknown>; editsLeft: number | null }
+> {
+  const startedAt = new Date().getTime();
+  const access = await setsAccess();
+  if (access.error !== null) return { error: access.error };
+  if (!access.isAdmin && !HELIOS_STUDIO_FOR_ALL) return { error: SET_NOT_FOUND };
+  const { userId } = access;
+  const owned = await ownedSpecs(setId, userId);
+  if (owned.error !== null) return { error: owned.error };
+  const text = studioText(request, STUDIO_ASTRA_MAX_CHARS);
+  if (text.length < 2) return { error: STUDIO_ASTRA_TOO_SHORT };
+  const summary = normaliseStudioSummary(scene);
+  const talk = normaliseStudioTurns(turns);
+
+  return oncePerPress(userId, pressId, async ({ id: press, kept }) => {
+    if (await astraTriesPaused(access)) return { error: SET_EDIT_TRIES_USED, paused: true as const };
+    try {
+      await gatePrompt({ prompt: [...talk.map((t) => t.text), text].join("\n"), userId, hasRealPersonReference: false });
+    } catch (err) {
+      if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
+      throw err;
+    }
+    const slot = await astraChangeSlot(access, press);
+    if (slot.error !== null) return slot;
+    try {
+      const answer = await askAstra(setId, studioAstraRequest(text, summary, talk, openAiSafetyId(userId)), "studio plan", STUDIO_ASTRA_NO_ANSWER, startedAt);
+      if (answer.error !== null) {
+        if (!answer.billed) await giveBackAstraTry(access, slot);
+        return { error: answer.error, editsLeft: await giveBackAstraChange(access, slot) };
+      }
+      const parsed = parseStudioAnswer(answer.text, knownOf(summary));
+      if (!parsed) return { error: STUDIO_ASTRA_NO_ANSWER, editsLeft: await giveBackAstraChange(access, slot) };
+      const { plan } = parsed;
+      if (!planActs(plan)) return { error: null, plan, answer: parsed.answer, editsLeft: await giveBackAstraChange(access, slot) };
+      await kept();
+      return { error: null, plan, answer: parsed.answer, editsLeft: slot.editsLeft };
+    } catch (err) {
+      await giveBackAstraChange(access, slot);
+      throw err;
+    }
+  });
 }

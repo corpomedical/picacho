@@ -296,8 +296,19 @@ vi.mock("@/lib/sets/edit-seal", async () => await import("./edit-seal"));
 vi.stubEnv("MEDIA_SIGNING_SECRET", "test-only");
 vi.mock("@/lib/sets/messages", async () => await import("./messages"));
 vi.mock("@/lib/sets/set-edit-prompt", async () => await import("./set-edit-prompt"));
-vi.mock("@/lib/sets/set-config", async () => await import("./set-config"));
+/** The Studio's switch (HELIOS_STUDIO_FOR_ALL), opened by the Studio Astra tests to reach a paying plan's month. */
+let studioForAll = false;
+vi.mock("@/lib/sets/set-config", async () => {
+  const real = await import("./set-config");
+  return {
+    ...real,
+    get HELIOS_STUDIO_FOR_ALL() {
+      return studioForAll || real.HELIOS_STUDIO_FOR_ALL;
+    },
+  };
+});
 vi.mock("@/lib/sets/set-spec", async () => await import("./set-spec"));
+vi.mock("@/lib/sets/studio-astra", async () => await import("./studio-astra"));
 vi.mock("@/lib/sets/elements", async () => await import("./elements"));
 // The rebuild is admins' until its first live proof; `rebuildOpen` opens it
 // here so its month's arithmetic can be held as a plan will meet it.
@@ -314,7 +325,8 @@ vi.mock("@/lib/sets/thing-model", async () => await import("./thing-model"));
 vi.mock("@/lib/sets/references", () => ({ listElementPhotos: async () => ({ photos, sheets: [] }) }));
 vi.mock("@/lib/sets/thing-model-store", () => ({ listModelFiles: async () => modelFiles }));
 
-import { editSetWithAstra, readAstraEdit, rebuildThingFromPhotos, saveSetEdit, undoAstraEdit } from "./editor-actions";
+import { askStudioAstra, editSetWithAstra, readAstraEdit, rebuildThingFromPhotos, saveSetEdit, undoAstraEdit } from "./editor-actions";
+import { STUDIO_ASTRA_NO_ANSWER, STUDIO_SUMMARY_MAX_CHARS } from "./studio-astra";
 import { SET_EDIT_MEANING_MAX_CHARS, setEditInput } from "./set-edit-prompt";
 import { editTextOf, editUndoOf, openEditSeal, sealReaderMeaning } from "./edit-seal";
 import { fileSeal, sealFor, type SealBook } from "./seal-book";
@@ -363,6 +375,7 @@ beforeEach(() => {
   sent.length = 0;
   gated.length = 0;
   refusals.length = 0;
+  studioForAll = false;
 });
 
 describe("an Astra change", () => {
@@ -1829,5 +1842,107 @@ describe("the editor's prompt bar", () => {
     const shoot = page.slice(page.indexOf("<SetView"), page.indexOf("/>", page.indexOf("<SetView")));
     expect(shoot).toContain("initialSeal={data.set.seal}");
     expect(shoot).toContain("spec={data.set.editedSpec ?? data.set.spec}");
+  });
+});
+
+// Astra in Helios Studio (stage 4, 2026-09-29): the same path as a set's
+// Astra change — access, owner, one job per press, gate, pace, month — with
+// a fake model. Nothing is paid and nothing runs on the server: the answer
+// comes back as a plan.
+describe("Astra in the Studio", () => {
+  const SCENE = {
+    frame: 1,
+    camera: "o3",
+    objects: [
+      { id: "o1", name: "Red sports car", kind: "mesh", at: [0, 0, 0], size: [4.4, 1.9, 1.3], turn: 0 },
+      { id: "o3", name: "Shot camera", kind: "camera", at: [0, -9, 1.6], size: [0.3, 0.5, 0.3], turn: 0 },
+    ],
+  };
+  const step = (f: Record<string, unknown>) => ({ say: "", op: "", targets: [], kind: "", name: "", mode: "", x: null, y: null, z: null, of: "", side: "", value: null, value2: null, color: "", metallic: null, roughness: null, emission: "", ...f });
+  const says = (body: Record<string, unknown>) => {
+    answer = { state: "done", text: JSON.stringify({ reply: "", question: "", options: [], steps: [], ...body }), usage: null, costUsd: 0.05 };
+  };
+  const LAMP = {
+    reply: "I'll stand a red lamp post left of the car, 4 m tall.",
+    steps: [
+      step({ say: "Add a street lamp left of the car", op: "add", kind: "street_lamp", name: "Lamp post", of: "o1", side: "left", value: 1, color: "#c0282d" }),
+      step({ say: "Make it 4 m tall", op: "size", targets: ["new:Lamp post"], z: 4 }),
+      step({ say: "Paint the truck", op: "color", targets: ["o404"], color: "#ffffff" }),
+    ],
+  };
+
+  beforeEach(() => {
+    access = { ...access, isAdmin: true };
+  });
+
+  it("is for admins while the Studio is (HELIOS_STUDIO_FOR_ALL off), and never reaches Astra otherwise", async () => {
+    access = { ...access, isAdmin: false };
+    expect(await askStudioAstra(SET, "put a lamp by the car", SCENE, [], PRESS)).toEqual({ error: SET_NOT_FOUND });
+    expect(steps).toEqual([]);
+  });
+
+  it("answers a free request with a checked plan, runs and saves nothing, and keeps the press", async () => {
+    says(LAMP);
+    const out = await askStudioAstra(SET, "put a red lamp post left of the car and make it 4 m tall", SCENE, [{ who: "person", text: "hello" }], PRESS);
+    if (out.error !== null) throw new Error(out.error);
+    expect(out.plan.reply).toBe(LAMP.reply);
+    expect(out.plan.steps.map((s) => s.op)).toEqual(["add", "size", "note"]);
+    expect(out.plan.steps[2].say).toContain('can\'t find "o404"');
+    expect(out.answer).toMatchObject({ reply: LAMP.reply });
+    expect(steps).toEqual(["claim", "gate", "pace", "astra", "end saved"]);
+    expect(writes).toEqual([]);
+    // The words the gate read include the turns the browser sent with them.
+    expect(gated[0]).toBe("hello\nput a red lamp post left of the car and make it 4 m tall");
+    const sentInput = sent[0].input as string;
+    expect(sentInput).toContain('"id":"o1"');
+    expect(sentInput.endsWith("put a red lamp post left of the car and make it 4 m tall")).toBe(true);
+  });
+
+  it("on a paying plan it rides the month's Astra changes: a question gives its change back, a plan keeps it", async () => {
+    studioForAll = true;
+    access = { ...access, isAdmin: false };
+    says({ question: "Which car?", options: ["Red sports car"] });
+    const q = await askStudioAstra(SET, "paint the car", SCENE, [], PRESS);
+    expect(q.error).toBeNull();
+    expect(steps).toContain("month");
+    expect(steps).toContain("give back");
+    steps.length = 0;
+    says(LAMP);
+    const p = await askStudioAstra(SET, "put a red lamp post left of the car", SCENE, [], LATER);
+    expect(p.error).toBeNull();
+    expect(steps).toContain("month");
+    expect(steps).not.toContain("give back");
+    // The question's change came back (3 used → 2), and this plan's is kept.
+    expect(p).toMatchObject({ editsLeft: setEditsMonthlyLimit("growth", false) - 2 });
+  });
+
+  it("an answer that isn't a plan, or a job never made, gives the change back and says so plainly", async () => {
+    studioForAll = true;
+    access = { ...access, isAdmin: false };
+    answer = { state: "done", text: "not json", usage: null, costUsd: 0.05 };
+    expect(await askStudioAstra(SET, "make it bigger", SCENE, [], PRESS)).toMatchObject({ error: STUDIO_ASTRA_NO_ANSWER });
+    expect(steps).toContain("give back");
+    submit = "unbilled";
+    expect(await askStudioAstra(SET, "make it bigger", SCENE, [], LATER)).toMatchObject({ error: SET_EDIT_UNAVAILABLE });
+    expect(steps).toContain("give back try");
+  });
+
+  it("the person's words are gated before Astra is asked; a repeat delivery never asks twice", async () => {
+    expect(await askStudioAstra(SET, "something forbidden", SCENE, [], PRESS)).toEqual({ error: "Refused by the gate." });
+    expect(sent).toEqual([]);
+    says(LAMP);
+    await askStudioAstra(SET, "put a lamp by the car", SCENE, [], LATER);
+    expect(await askStudioAstra(SET, "put a lamp by the car", SCENE, [], LATER)).toMatchObject({ pending: true });
+    expect(sent).toHaveLength(1);
+  });
+
+  it("caps the scene it is sent, whatever the browser sends", async () => {
+    says(LAMP);
+    const huge = { ...SCENE, objects: Array.from({ length: 3000 }, (_, i) => ({ id: `o${i + 10}`, name: `Thing ${i} `.repeat(4), kind: "mesh", at: [i, 0, 0], size: [1, 1, 1], turn: 0 })) };
+    await askStudioAstra(SET, "tidy the scene", huge, [], PRESS);
+    const input = sent[0].input as string;
+    const json = input.split("\n")[1];
+    expect(json.length).toBeLessThanOrEqual(STUDIO_SUMMARY_MAX_CHARS);
+    expect(JSON.parse(json).omitted).toBeGreaterThan(0);
   });
 });
