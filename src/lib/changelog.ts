@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.161.0",
+    build: 200,
+    date: "2026-09-29",
+    title: "Helios Studio: resized things stay clear of walls, and no stray wall through a new set",
+    items: [
+      "When Astra makes something bigger or smaller in Helios Studio, it's checked against the set's walls the same way as when she adds or moves it. If it grew into a wall, or ended up hidden behind one from the shot camera, it slides to the nearest clear spot, and the step says so. One ⌘Z still undoes the whole request.",
+      "A new set or an Astra change no longer comes back with a wall repeated one step too far, standing through the middle of the set on one of your marks. The first race-track set had one: a 20 m wall copied through the track, over the car. That extra copy is now left out. Sets you already have are not changed.",
+    ],
+  },
+  {
     version: "1.160.0",
     build: 199,
     date: "2026-09-29",
