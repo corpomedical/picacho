@@ -72,6 +72,10 @@ describe("the page and the finisher ask the one rule (read as source)", () => {
     ["actions.ts", "shootInSet"],
     ["studio-actions.ts", "saveStudioScene"],
     ["studio-actions.ts", "loadStudioScene"],
+    // Blender (Cycles) renders on a cloud GPU (2026-09-29): every door, before the admin gate.
+    ["cycles-actions.ts", "reserveCyclesScene"],
+    ["cycles-actions.ts", "renderCyclesInSet"],
+    ["cycles-actions.ts", "readCyclesRender"],
   ])("%s's %s asks setsAccess first and stops on its refusal", (file, fn) => {
     const src = read(file);
     const start = src.indexOf(`export async function ${fn}(`);

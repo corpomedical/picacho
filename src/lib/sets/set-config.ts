@@ -64,6 +64,16 @@ export const HELIOS_SIMPLE_FOR_ALL = true;
  */
 export const HELIOS_STUDIO_FOR_ALL = true;
 
+/**
+ * Blender (Cycles) renders from Helios Studio on a cloud GPU (2026-09-29,
+ * operator picked "Real Blender renders"; cycles.ts, cycles-actions.ts,
+ * modal/helios_cycles.py). Admins only while false: the Render menu shows
+ * the two entries to admins, and the door refuses anyone else. Admins are
+ * charged no credits; opening it to everyone waits for his price
+ * (cycles.ts HELIOS_CYCLES_CREDITS) and the first proof renders.
+ */
+export const HELIOS_CYCLES_FOR_ALL = false;
+
 export const SET_BUILDS_MONTHLY_LIMITS = {
   none: 0,
   basic: 1,
