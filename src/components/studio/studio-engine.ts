@@ -13,6 +13,9 @@ import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import * as CANNON from "cannon-es";
 import { setElements } from "@/lib/sets/elements";
+import { letterbox } from "@/lib/sets/rig";
+import { SET_DIRECTION_MAX_CHARS } from "@/lib/sets/set-config";
+import { studioShotInput } from "@/lib/sets/studio-shot";
 
 export type StudioOptions = {
   setId: string;
@@ -23,6 +26,20 @@ export type StudioOptions = {
   savedScene?: any;
   /** Keeps the scene on the account; answers { error: null } when it did. */
   saveScene?: (scene: unknown) => Promise<{ error: string | null }>;
+  /**
+   * "Photo with your character" (stage 3): the set page's Shoot, handed in
+   * (helios-studio.tsx → studio-press.ts → shootInSet). Absent, the Render
+   * menu says it works inside Picacho.
+   */
+  render?: {
+    credits: number;
+    characters: { id: string; name: string; likenessNeeded: boolean }[];
+    setHref: string;
+    historyHref: (generationId: string) => string;
+    /** What to say when the press itself could not be sent. */
+    unreachable: string;
+    shoot: (input: any, onPhase: (phase: "sent" | "checking" | "rendering") => void) => Promise<any>;
+  };
 };
 
 export function startStudio(opts: StudioOptions): () => void {
@@ -595,7 +612,8 @@ function renderProps() {
     r.innerHTML = `<button class="pbtn accent" id="rStill">Render still</button><button class="pbtn" id="rVideo">Render animation</button>`; const r2 = document.createElement("div"); r2.className = "row-btns"; r2.innerHTML = `<button class="pbtn" id="rTStill">Path traced still</button><button class="pbtn" id="rTVideo">Path traced animation</button>`; rb.append(r, r2); p.appendChild(rp);
     r2.querySelector("#rTStill").onclick = renderTracedStill; r2.querySelector("#rTVideo").onclick = renderTracedVideo;
     r.querySelector("#rStill").onclick = renderStill; r.querySelector("#rVideo").onclick = renderVideo;
-    const [ep, eb] = panel("Engine"); eb.append(fr("Draft", ro("Helios viewport")), fr("Final", ro("AI render · in Picacho")));
+    if (opts.render) { const r3 = document.createElement("div"); r3.className = "row-btns"; r3.innerHTML = `<button class="pbtn accent" id="rCast">${esc(castLabel())}</button>`; rb.append(r3); r3.querySelector("#rCast").onclick = openCast; }
+    const [ep, eb] = panel("Engine"); eb.append(fr("Draft", ro("Helios viewport")), fr("Final", ro(opts.render ? "AI photo · " + credits(opts.render.credits) : "AI render · in Picacho")));
     eb.insertAdjacentHTML("beforeend", `<p class="hint">The final render paints your character and your models onto this exact layout and motion.</p>`); p.appendChild(ep);
   }
 }
@@ -1029,6 +1047,130 @@ function drawShot(r, w, h) {
 function openWin(title, html) { $("dlgTitle").textContent = title; $("dlgBody").innerHTML = html; $("dlg").hidden = false; }
 $("dlgClose").onclick = () => { $("dlg").hidden = true; recording = false; ptBusy = false; };
 function renderStill() { const [w, h] = outSize(); const r = offRenderer(w, h); drawShot(r, w, h); const url = off.toDataURL("image/jpeg", 0.92); openWin("Helios Render · still", `<img alt="Render of the shot camera" src="${url}"><div class="row-btns"><a class="pbtn accent" style="display:grid;place-items:center;text-decoration:none" download="helios-frame-${frameNo()}.jpg" href="${url}">Save image</a></div><p>Frame ${frameNo()} through the shot camera, ${shot.obj.userData.lensMm} mm, ${format}.</p><p>In Picacho this frame, with its depth and every object's place, goes to the image engine with your character's photos and your models. The engine paints the final photo onto this exact layout.</p>`); }
+// ================= photo with your character (stage 3, 2026-09-29) =================
+// The shot camera's frame, drawn at the photo format's render size with the
+// strips outside the band painted dark (as the set page's sketch is), goes
+// through the set page's own Shoot with the chosen character: one press, one
+// charge, followed by its id if the answer is lost (studio-press.ts). What is
+// sent is worked out in studio-shot.ts; the window keeps its state while it
+// is closed, so a press in flight is never pressed again by reopening it.
+const CAST_TITLE = "Photo with your character";
+const RIG_NAMES = { square: "square", scope: "Scope 2.39:1", flat: "Flat 1.85:1", wide: "Wide 16:9", classic: "Classic 4:3", vertical: "Vertical 9:16" };
+const credits = (n) => `${n} credit${n === 1 ? "" : "s"}`;
+const castLabel = () => `${CAST_TITLE} · ${credits(opts.render.credits)}`;
+const cast = { busy: false, t0: 0, phase: "sent", result: null, frame: null, charId: null, words: "", timer: 0 };
+/** The frame and what is sent with it, measured from the scene as it stands now. */
+function castFrame() {
+  const cam = shot.obj.userData.cam;
+  shot.obj.updateMatrixWorld(true); person.obj.updateMatrixWorld(true);
+  const p = shot.obj.getWorldPosition(new THREE.Vector3());
+  // The lens looks along the group's +Z (makeShotCamera).
+  const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(shot.obj.getWorldQuaternion(new THREE.Quaternion()));
+  const fp = person.obj.getWorldPosition(new THREE.Vector3());
+  const fd = new THREE.Vector3(0, 0, 1).applyQuaternion(person.obj.getWorldQuaternion(new THREE.Quaternion()));
+  const moved = [];
+  for (const it of items) {
+    if (!it.saveKey || !it.saveKey.startsWith("el:")) continue;
+    const el = els.find((e) => "el:" + e.key === it.saveKey); if (!el) continue;
+    const wp = it.obj.getWorldPosition(new THREE.Vector3());
+    const turn = THREE.MathUtils.radToDeg(new THREE.Euler().setFromQuaternion(it.obj.getWorldQuaternion(new THREE.Quaternion()), "YXZ").y);
+    const d = Math.hypot(wp.x - el.centre[0], wp.z - el.centre[2]);
+    if (d > 0.05 || Math.abs(turn) > 0.5) moved.push({ key: el.key, x: wp.x, z: wp.z, turnDeg: turn, d });
+  }
+  moved.sort((a, b) => b.d - a.d);
+  const input = studioShotInput({
+    format,
+    camera: { position: [p.x, p.y, p.z], forward: [fwd.x, fwd.y, fwd.z], fovDeg: cam.fov, focusM: shot.obj.userData.focus },
+    figure: { x: fp.x, z: fp.z, facingDeg: THREE.MathUtils.radToDeg(Math.atan2(fd.x, fd.z)) },
+    markId: SPEC.marks?.[0]?.id ?? null,
+    moved: moved.map(({ key, x, z, turnDeg }) => ({ key, x, z, turnDeg })),
+  });
+  const fr = input.frame, f0 = cam.fov;
+  cam.fov = input.renderFovDeg;
+  try { drawShot(offRenderer(fr.renderW, fr.renderH), fr.renderW, fr.renderH); } finally { cam.fov = f0; cam.updateProjectionMatrix(); }
+  const out = document.createElement("canvas"); out.width = fr.renderW; out.height = fr.renderH;
+  const ctx = out.getContext("2d"); ctx.drawImage(off, 0, 0);
+  ctx.fillStyle = "#0a0a0a"; for (const b of letterbox(fr)) ctx.fillRect(b.x, b.y, b.w, b.h);
+  return { dataUri: out.toDataURL("image/jpeg", 0.9), input, lens: shot.obj.userData.lensMm, studioFormat: format };
+}
+function castChar() { return (opts.render?.characters || []).find((c) => c.id === cast.charId) || null; }
+function openCast() {
+  const R = opts.render;
+  if (!R) return openWin(CAST_TITLE, `<p>Rendering with your character works inside Picacho, on your set.</p>`);
+  if (!cast.busy && !cast.result) {
+    if (!R.characters.length) return openWin(CAST_TITLE, `<p>You don't have a character with a photo yet. Make one, then come back — the Studio keeps your scene.</p><div class="cast-links"><a href="/app/character/new">Make a character</a></div>`);
+    if (!person.obj.visible || person.noRender) return openWin(CAST_TITLE, `<p>The stand-in is hidden, so the photo has nowhere to put your character. Show the Stand-in (H / the eye in the outliner) and try again.</p>`);
+    try { cast.frame = castFrame(); } catch (e) { return openWin(CAST_TITLE, `<p>This browser couldn't draw the frame, so nothing was sent. Try again after a reload.</p>`); }
+    if (!cast.charId || !castChar()) cast.charId = R.characters[0].id;
+  }
+  showCast();
+}
+/** The window, drawn from the press's state: pick, sending, or its answer. */
+function showCast() {
+  const R = opts.render, f = cast.frame; if (!R || !f) return;
+  const fmt = f.input.rig.format;
+  const shape = `${f.lens} mm, shot as ${RIG_NAMES[fmt] || fmt}${f.studioFormat === "4:5 · Portrait" ? " (4:5 has no photo format yet)" : ""}`;
+  let body = "";
+  if (cast.result && cast.result.error === null && cast.result.succeeded && cast.result.resultUrl) {
+    body = `<img class="cast-img" alt="Your photo" src="${esc(cast.result.resultUrl)}"><p class="hint">Your photo, from this frame · ${esc(shape)}.</p><div class="cast-links"><a href="${esc(R.historyHref(cast.result.generationId))}">Open in History</a><a href="${esc(R.setHref)}">Open the set</a></div><div class="row-btns"><button class="pbtn" id="castAgain">Make another</button></div>`;
+  } else if (cast.result) {
+    const r = cast.result;
+    const why = r.error === null ? (r.failure ? `It didn't come out: ${r.failure}` : "It didn't come out.") : r.error || R.unreachable;
+    const link = r.error === null && r.generationId ? `<a href="${esc(R.historyHref(r.generationId))}">Open in History</a>` : "";
+    body = `<img class="cast-img" alt="The frame that was sent" src="${f.dataUri}"><p class="cast-note" role="alert">${esc(why)}</p><div class="cast-links">${link}<a href="${esc(R.setHref)}">Open the set</a></div><div class="row-btns"><button class="pbtn" id="castAgain">Back</button></div>`;
+  } else {
+    const opts2 = R.characters.map((c) => `<option value="${esc(c.id)}"${c.id === cast.charId ? " selected" : ""}>${esc(c.name || "Your character")}</option>`).join("");
+    body = `<img class="cast-img" id="castPrev" alt="The frame that goes to the image engine" src="${f.dataUri}"><p class="hint">Through the shot camera · ${esc(shape)}. The stand-in marks where your character stands; the image engine paints the photo onto this layout.</p>
+<div class="fr" style="margin-top:8px"><label for="castWho">Character</label><select class="sel2" id="castWho"${cast.busy ? " disabled" : ""}>${opts2}</select></div>
+<div class="fr" style="margin-top:6px;align-items:start"><label for="castWords">What happens</label><textarea class="cast-words" id="castWords" maxlength="${SET_DIRECTION_MAX_CHARS}" placeholder="Optional: what they're doing, the mood"${cast.busy ? " disabled" : ""}>${esc(cast.words)}</textarea></div>
+<p class="cast-note" id="castNote" hidden></p>
+<div class="row-btns"><button class="pbtn accent" id="castGo"${cast.busy ? " disabled" : ""}>${esc(castLabel())}</button></div>
+<div class="prog"${cast.busy ? "" : " hidden"}><i id="castProg"></i></div><p class="hint" id="castTxt" role="status"></p>`;
+  }
+  const open = $("dlgBody") && $("dlgBody").querySelector("[data-cast]");
+  if (!open || $("dlg").hidden) openWin(CAST_TITLE, `<div data-cast></div>`);
+  const box = $("dlgBody").querySelector("[data-cast]"); box.innerHTML = body;
+  const who = $("castWho"), words = $("castWords"), go = $("castGo"), again = $("castAgain");
+  if (who) who.onchange = () => { cast.charId = who.value; castCheck(); };
+  if (words) words.oninput = () => { cast.words = words.value; };
+  if (go) go.onclick = castGo;
+  if (again) again.onclick = () => { const ok = cast.result && cast.result.error === null && cast.result.succeeded; cast.result = null; if (ok) { try { cast.frame = castFrame(); } catch {} } showCast(); };
+  castCheck(); castTick();
+}
+/** Says why the press can't go yet: this character's photos need an answer first (on the set page, as the Shoot asks). */
+function castCheck() {
+  const note = $("castNote"), go = $("castGo"); if (!note || !go) return;
+  const c = castChar();
+  const block = c && c.likenessNeeded;
+  note.hidden = !block;
+  note.innerHTML = block ? `Say who is in ${esc(c.name || "this character")}'s photos first — on the set page, on the figure's card. <a href="${esc(opts.render.setHref)}">Open the set</a>` : "";
+  go.disabled = cast.busy || !c || !!block;
+}
+function castTick() {
+  const bar = $("castProg"), txt = $("castTxt"); if (!bar || !txt || !cast.busy) return;
+  const s = Math.round((Date.now() - cast.t0) / 1000);
+  bar.style.width = Math.min(95, (s / 90) * 100) + "%";
+  txt.textContent = cast.phase === "checking" ? `The answer didn't arrive, so we're checking whether it went through · ${s} s. Don't press again.` : cast.phase === "rendering" ? `Still rendering — following your press · ${s} s. Don't press again.` : `Rendering your photo · ${s} s. It usually takes under a minute or two.`;
+}
+async function castGo() {
+  const R = opts.render, f = cast.frame, c = castChar();
+  if (!R || !f || !c || c.likenessNeeded || cast.busy) return;
+  cast.busy = true; cast.t0 = Date.now(); cast.phase = "sent"; cast.result = null;
+  clearInterval(cast.timer); cast.timer = setInterval(castTick, 1000);
+  showCast();
+  const words = cast.words.trim().slice(0, SET_DIRECTION_MAX_CHARS);
+  const input = { frameDataUri: f.dataUri, characterId: c.id, direction: words, ...(words ? { words } : {}), layout: f.input.layout, lifted: false, canvasAspect: f.input.canvasAspect, rig: f.input.rig, movers: f.input.movers,
+    // The Studio keeps its own scene: the set page's saved arrangement stays as the person left it there (actions.ts saves a layout unless beat).
+    beat: true };
+  let res;
+  try { res = await R.shoot(input, (ph) => { cast.phase = ph; castTick(); }); } catch { res = { error: R.unreachable }; }
+  clearInterval(cast.timer); cast.busy = false;
+  if (stopped) return;
+  // "left": the Studio closed while following; nothing to say.
+  cast.result = res && (res.error !== "" || res.generationId) ? res : { error: R.unreachable };
+  if (!$("dlg").hidden && $("dlgBody").querySelector("[data-cast]")) showCast();
+  else toast(cast.result.error === null && cast.result.succeeded ? "Your photo is ready · Render ▸ " + CAST_TITLE : "Your photo didn't come out · Render ▸ " + CAST_TITLE);
+}
 let recording = false;
 async function renderVideo() {
   if (!("MediaRecorder" in window) || !off.captureStream) return openWin("Helios Render", "<p>This browser can't record video. Chrome, Edge and Firefox can.</p>");
@@ -1533,7 +1675,7 @@ function commands() {
     ["Insert keyframe", () => keyItems()], ["Delete keyframe", () => delKey()], ["Interpolation: Bézier", () => setInterp("bezier")], ["Interpolation: Linear", () => setInterp("linear")], ["Interpolation: Constant", () => setInterp("constant")],
     ["Parent to active", parentTo], ["Clear parent", clearParent], ["Select all", ACTS.selAll], ["Select none", ACTS.selNone], ["Invert selection", ACTS.selInvert],
     ["Camera view", () => toggleCam()], ["Align camera to view", camToView], ["Frame all", frameAll], ["Frame selected", ACTS.frameSel], ["Top view", ACTS.top], ["Front view", ACTS.front], ["Right view", ACTS.right],
-    ["Toggle motion path", togglePath], ["Toggle sidebar", () => toggleN()], ["Maximize viewport", toggleMax], ["Render still", renderStill], ["Render animation", renderVideo], ["Render: path traced still", renderTracedStill], ["Render: path traced animation", renderTracedVideo], ["Physics: simulate", () => simulatePhys()], ["Physics: bake to keyframes", bakePhys], ["Physics: clear bake", clearBake], ["Import 3D model", () => fileIn.click()], ["Export (GLB, OBJ, STL) + print check", openExport],
+    ["Toggle motion path", togglePath], ["Toggle sidebar", () => toggleN()], ["Maximize viewport", toggleMax], ["Render still", renderStill], ["Render: photo with your character", openCast], ["Render animation", renderVideo], ["Render: path traced still", renderTracedStill], ["Render: path traced animation", renderTracedVideo], ["Physics: simulate", () => simulatePhys()], ["Physics: bake to keyframes", bakePhys], ["Physics: clear bake", clearBake], ["Import 3D model", () => fileIn.click()], ["Export (GLB, OBJ, STL) + print check", openExport],
     ["Edit Mode (vertices)", toggleEdit], ["Join", joinSel], ["Move to collection", openMoveTo], ["X-ray", toggleXray], ["Local view", toggleLocal], ["Snap menu (3D cursor)", openSnapPie], ["Add marker", addMarker], ["Graph Editor", () => setEditor("graph")], ["Timeline", () => setEditor("timeline")], ["Pivot: 3D cursor", () => setPivot("cursor")], ["Pivot: median point", () => setPivot("median")], ["Pivot: individual origins", () => setPivot("individual")], ["Orientation: Local", () => setOrient("local")], ["Orientation: Global", () => setOrient("world")], ["World: physical sky", () => setSkyMode("physical")], ["World: studio lighting", () => setSkyMode("studio")], ["What Helios leaves out", openLeavesOut],
     ["Shading: Rendered", () => setShade("lit")], ["Shading: Solid", () => setShade("clay")], ["Shading: Wireframe", () => setShade("wire")],
   ];
@@ -1842,7 +1984,7 @@ function restoreSaved() {
 }
 // ================= wiring =================
 const ACTS = {
-  import: () => fileIn.click(), exportFile: openExport, renderStill, tracedStill: renderTracedStill, tracedVideo: renderTracedVideo, renderVideo, undo, redo, history: openHistory, keys: openKeys, dup: duplicate, del: () => del(), key: () => keyItems(), delKey: () => delKey(), hide: () => toggleHide(),
+  import: () => fileIn.click(), exportFile: openExport, renderStill, renderCast: openCast, tracedStill: renderTracedStill, tracedVideo: renderTracedVideo, renderVideo, undo, redo, history: openHistory, keys: openKeys, dup: duplicate, del: () => del(), key: () => keyItems(), delKey: () => delKey(), hide: () => toggleHide(),
   frameSel: () => active && frameObj(active.obj), frameAll, camView: () => toggleCam(), camToView, top: () => viewAlong(new THREE.Vector3(0, 1, 0)), front: () => viewAlong(new THREE.Vector3(0, 0, 1)), right: () => viewAlong(new THREE.Vector3(1, 0, 0)),
   selAll: () => { items.filter((i) => !i.hidden && i.kind !== "sun").forEach((i) => selection.add(i)); active = active || [...selection][0]; refreshSel(); },
   selNone: () => select(null), selInvert: () => { const all = items.filter((i) => !i.hidden && i.kind !== "sun"); const was = new Set(selection); selection.clear(); all.forEach((i) => !was.has(i) && selection.add(i)); active = [...selection][0] || null; refreshSel(); },
@@ -1951,6 +2093,7 @@ restoreSaved();
 raf = requestAnimationFrame(tick);
 
 document.getElementById("sceneTitle").textContent = opts.title;
+if (opts.render && $("castMenuLabel")) $("castMenuLabel").textContent = castLabel();
 document.getElementById("backLink").setAttribute("href", opts.backHref);
-return () => { saveNow(); saveToAccount(true); stopped = true; cancelAnimationFrame(raf); clearInterval(saveTimer); ac.abort(); resizeObs.disconnect(); tc.dispose?.(); orbit.dispose(); renderer.dispose(); offR?.dispose(); ptBusy = false; pt?.dispose(); ptR?.dispose(); };
+return () => { saveNow(); saveToAccount(true); stopped = true; clearInterval(cast.timer); cancelAnimationFrame(raf); clearInterval(saveTimer); ac.abort(); resizeObs.disconnect(); tc.dispose?.(); orbit.dispose(); renderer.dispose(); offR?.dispose(); ptBusy = false; pt?.dispose(); ptR?.dispose(); };
 }

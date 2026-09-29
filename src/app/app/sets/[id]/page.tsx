@@ -106,6 +106,7 @@ export default async function SetPage({
         title={data.set.title}
         spec={data.set.editedSpec ?? data.set.spec}
         savedScene={savedScene}
+        characters={data.characters}
       />
     );
   }

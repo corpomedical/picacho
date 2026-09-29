@@ -8,26 +8,50 @@
 // the saved copy (null when none, or the column isn't there yet), and the
 // engine saves back through saveStudioScene about 5 s after a change,
 // keeping its browser copy as the backup.
+//
+// "Photo with your character" (stage 3): Render ▸ sends the shot camera's
+// frame through the set page's own Shoot (shootInSet, one press id per
+// press, studio-press.ts), priced by the same quote the set page shows.
 
 import { useEffect, useRef } from "react";
+import { quoteSend } from "@/lib/generations/quote";
+import { useLocale } from "@/lib/i18n/provider";
+import { shootInSet } from "@/lib/sets/actions";
+import { readSetPress } from "@/lib/sets/press-actions";
 import type { SetSpec } from "@/lib/sets/set-spec";
 import type { StudioScene } from "@/lib/sets/studio-scene";
 import { saveStudioScene } from "@/lib/sets/studio-actions";
+import { stillQuoteInput } from "@/lib/sets/take";
+import type { SetCharacter } from "@/lib/sets/types";
+import { reloadForNewDeploy } from "@/lib/stale-deploy";
 import { STUDIO_CSS, STUDIO_HTML } from "./studio-markup";
+import { pressStudioStill, type StudioPressPhase, type StudioShootInput } from "./studio-press";
 
 export function HeliosStudio({
   setId,
   title,
   spec,
   savedScene,
+  characters,
 }: {
   setId: string;
   title: string;
   spec: SetSpec;
   savedScene: StudioScene | null;
+  characters: SetCharacter[];
 }) {
+  const { t } = useLocale();
   // Read once, when the engine starts: a later render must not restart it.
   const savedRef = useRef(savedScene);
+  const charactersRef = useRef(characters);
+  const wordsRef = useRef({
+    neverStarted: t.sets.pressNeverStarted,
+    stillGoing: t.sets.pressStillGoing,
+    unchecked: t.sets.pressUnchecked,
+    inHistory: t.sets.pressInHistory,
+    refresh: t.generate.refreshNeeded,
+  });
+  const unreachable = t.generate.submitFailed;
   useEffect(() => {
     let dispose: (() => void) | null = null;
     let dead = false;
@@ -47,13 +71,34 @@ export function HeliosStudio({
             return { error: "unreachable" };
           }
         },
+        render: {
+          // THE price, from the function the server charges with (set-view.tsx's own).
+          credits: quoteSend(stillQuoteInput()).totalCredits,
+          characters: charactersRef.current.map((c) => ({ id: c.id, name: c.name, likenessNeeded: c.likenessNeeded === true })),
+          setHref: `/app/sets/${setId}`,
+          historyHref: (generationId: string) => `/app/history/${generationId}`,
+          unreachable,
+          shoot: (input: StudioShootInput, onPhase: (phase: StudioPressPhase) => void) =>
+            pressStudioStill(
+              {
+                shoot: shootInSet,
+                read: readSetPress,
+                alive: () => !dead,
+                words: wordsRef.current,
+                onStale: () => void reloadForNewDeploy({ delayMs: 1800 }),
+                onPhase,
+              },
+              setId,
+              input,
+            ),
+        },
       });
     });
     return () => {
       dead = true;
       dispose?.();
     };
-  }, [setId, title, spec]);
+  }, [setId, title, spec, unreachable]);
   return (
     <div className="fixed inset-0 z-[70]" data-helios-studio>
       <style>{STUDIO_CSS}</style>
