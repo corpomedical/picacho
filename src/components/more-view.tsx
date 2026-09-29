@@ -30,6 +30,7 @@ const TemplatesIcon = svg(<><rect x="3" y="3" width="18" height="18" rx="2.5" />
 const UpscaleIcon = svg(<path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7" />);
 const LayersIcon = svg(<><path d="M12 3.5 3.5 8 12 12.5 20.5 8z" /><path d="M3.5 12 12 16.5 20.5 12" /><path d="M3.5 16 12 20.5 20.5 16" /></>);
 const FolderIcon = svg(<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />);
+const ChatIcon = svg(<><path d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8l-4 3.5V17H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" /><path d="M8 11h.01M12 11h.01M16 11h.01" /></>);
 const NotesIcon = svg(<><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 3v18M4 8h4M4 13h4M4 18h4" /></>);
 const SetsIcon = svg(<><path d="M3 17.5 12 21l9-3.5M3 17.5V6.5L12 3l9 3.5v11" /><circle cx="12" cy="10.5" r="1.6" /><path d="M12 12.5v4" /></>);
 const BookIcon = svg(<><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5v14Z" /><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5" /></>);
@@ -89,6 +90,7 @@ export function MoreView({
   native,
   setsVisible,
   shareUrl,
+  alyChat = null,
 }: {
   t: Messages;
   identity: { name: string; username: string | null; planLabel: string };
@@ -97,6 +99,8 @@ export function MoreView({
   /** Helios 3D is on and this account's plan includes it. */
   setsVisible: boolean;
   shareUrl: string;
+  /** Aly's chat page, when it's open: what the person calls her. */
+  alyChat?: { name: string } | null;
 }) {
   const n = t.nav;
   const m = t.moreHub;
@@ -125,6 +129,7 @@ export function MoreView({
       </Link>
 
       <Group title={n.tools}>
+        {alyChat && <LinkRow href="/app/chat" label={alyChat.name} sub={t.alyChat.ask} Icon={ChatIcon} badge={n.newBadge} />}
         <LinkRow href="/app/templates" label={n.templates} sub={m.templatesSub} Icon={TemplatesIcon} />
         <LinkRow href="/app/upscale" label={n.upscale} sub={m.upscaleSub} Icon={UpscaleIcon} badge={n.newBadge} />
         <LinkRow href="/app/layers" label={n.layers} sub={m.layersSub} Icon={LayersIcon} badge={n.newBadge} />

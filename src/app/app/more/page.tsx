@@ -6,6 +6,8 @@ import { isSetsEnabled } from "@/lib/sets/enabled";
 import { setsEligible } from "@/lib/sets/set-config";
 import { PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { MoreView } from "@/components/more-view";
+import { isAlyChatEnabled } from "@/lib/aly-chat/enabled";
+import { DEFAULT_PRODUCER_NAME } from "@/lib/producer/store";
 
 // The app bar's fifth tab (2026-09-21): see components/more-view.tsx.
 export default async function MorePage() {
@@ -27,6 +29,12 @@ export default async function MorePage() {
   // read happens only for accounts that could see it.
   const setsVisible = setsEligible(plan, isAdmin) && (await isSetsEnabled(supabase));
   const native = await isNativeApp();
+  // Aly's chat page, under her own name (2026-09-29).
+  let alyChat: { name: string } | null = null;
+  if (await isAlyChatEnabled(supabase)) {
+    const { data: prefs } = await supabase.from("producer_prefs").select("display_name").eq("user_id", data.user.id).maybeSingle();
+    alyChat = { name: (prefs?.display_name as string | null)?.trim() || DEFAULT_PRODUCER_NAME };
+  }
 
   const username = profile?.username ?? null;
   const name = profile?.full_name?.trim() || username || (data.user.email ?? "").split("@")[0];
@@ -38,6 +46,7 @@ export default async function MorePage() {
       identity={{ name, username, planLabel }}
       native={native}
       setsVisible={setsVisible}
+      alyChat={alyChat}
       shareUrl={username ? `https://picacho.ai/r/${username}` : "https://picacho.ai"}
     />
   );

@@ -31,6 +31,7 @@ export async function ProjectWorkbench({
   stats,
   pager,
   settings,
+  chats = null,
 }: {
   project: { name: string; description: string | null };
   cast: WorkbenchCast[];
@@ -39,6 +40,8 @@ export async function ProjectWorkbench({
   pager: { prevHref: string | null; nextHref: string | null; label: string };
   /** The forms. They carry server actions, so they are built by the page. */
   settings: React.ReactNode;
+  /** Chats with Aly about this project (2026-09-29), when her chat page is open. */
+  chats?: React.ReactNode;
 }) {
   const { t } = await getServerMessages();
   const p = t.projects;
@@ -141,6 +144,8 @@ export async function ProjectWorkbench({
           {p.newCharacter}
         </Link>
       </div>
+
+      {chats}
 
       {/* THE WORK — everything made in this project. */}
       <h2 className="mt-7 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">

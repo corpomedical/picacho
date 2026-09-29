@@ -8,6 +8,10 @@ import {
 import { SubmitButton } from "@/components/ui/submit-button";
 import { DeleteProjectButton } from "@/components/delete-project-button";
 import { ProjectWorkbench } from "@/components/project-workbench";
+import { ProjectChats } from "@/components/aly-chat/project-chats";
+import { isAlyChatEnabled } from "@/lib/aly-chat/enabled";
+import { listChats } from "@/lib/aly-chat/store";
+import { DEFAULT_PRODUCER_NAME } from "@/lib/producer/store";
 import { PAGE_SIZES, pageBounds, pageHref, pageRange, parsePage, takePage } from "@/lib/pagination";
 import { mediaUrl, thumbUrl, toMediaUrl, isRenderableUrl } from "@/lib/media/url";
 import { getServerMessages } from "@/lib/i18n/server";
@@ -128,9 +132,30 @@ export default async function ProjectDetailPage({
 
   const scored = (statRows ?? []).filter((r) => typeof r.match_score === "number");
 
+  // Aly's chats about this project, and the instructions they follow
+  // (2026-09-29). Each read on its own: before aly-chat.sql runs they error
+  // and the section simply isn't there.
+  let chatsSection: React.ReactNode = null;
+  if (await isAlyChatEnabled(supabase)) {
+    const [chats, { data: instr }, { data: prefs }] = await Promise.all([
+      listChats(supabase, userId, { projectId: project.id, limit: 12 }),
+      supabase.from("projects").select("aly_instructions").eq("id", project.id).eq("user_id", userId).maybeSingle(),
+      supabase.from("producer_prefs").select("display_name").eq("user_id", userId).maybeSingle(),
+    ]);
+    chatsSection = (
+      <ProjectChats
+        projectId={project.id as string}
+        name={(prefs?.display_name as string | null)?.trim() || DEFAULT_PRODUCER_NAME}
+        chats={chats}
+        instructions={(instr as { aly_instructions?: string | null } | null)?.aly_instructions ?? null}
+      />
+    );
+  }
+
   return (
     <ProjectWorkbench
       project={{ name: project.name, description: project.description ?? null }}
+      chats={chatsSection}
       cast={(characters ?? []).map((c) => {
         const first = (c.reference_image_urls as string[] | null)?.[0];
         return {

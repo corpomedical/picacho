@@ -20,6 +20,23 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.149.0",
+    build: 188,
+    date: "2026-09-29",
+    title: "Aly's chat: a full-screen assistant with three brains, files, documents and projects",
+    items: [
+      "Aly has her own page: Aly in the sidebar, under Generate (and in More on the phone), opens a full-screen chat that works like ChatGPT and Claude, for anything: business plans, emails, contracts, homework, maths, code, research, everyday questions and your Picacho work. Chats are listed in the sidebar with New chat, get a name on their own, and can be renamed, moved into a project or deleted. Answers show properly formatted: headings, lists, tables and code blocks with a copy button.",
+      "Pick the brain for each message: Claude (Sonnet 5; Think harder uses Opus 5.5), GPT (GPT-6 Sol) or Gemini (Gemini 3.8 Flash), or Ask all three to see their answers side by side and keep the one you like; the chat continues from it. Claude is the one with Aly's hands: web search with the sources shown, her memory, your account, your renders and Press Tour.",
+      "Attach files: PDFs, pictures, Word files, spreadsheets and text files, by the + button, dragging onto the chat or pasting. Every brain reads them; Word files and spreadsheets are read on our server, and every file is checked to be what its name says.",
+      "Documents in a side panel: when you ask for something you'll keep (a plan, a letter, an essay, a contract, a script, a piece of code), Aly writes it beside the chat, where you can read it, edit it yourself, copy it or download it, and she changes it when you ask.",
+      "Pictures and videos in the chat: Aly gets a picture or clip ready with its credit price on a card; Make it renders it right there through the same checks as Generate, and the finished picture or video appears in the card. Open in Generate is still there for more control.",
+      "Projects and chats are one place now: a project's page lists its chats, has New chat in this project, and a box for instructions Aly follows in every chat there. A chat in a project knows its characters and latest renders.",
+      "Memory you can see: Memory, under your chats in the sidebar, lists what Aly remembers about you (the same notes the lamp uses), each one editable and deletable. Everyone who has Aly's live voice can also talk to her in the chat: what you ask lands in the chat as messages, with her answers.",
+      "Chat allowances went up on every plan (the Generous row): Basic 130, Starter 210, Growth 650, Studio 2,150 and Elite 6,400 units a month, shared with the composer's assistant and the lamp. An everyday message is about 1 unit, Think harder about 2. Every plan still keeps at least 5% of its price in the worst month. Free accounts chat with Claude; Think harder and Ask all three are on paid plans.",
+      "The privacy policy (29 September, all four languages) says what the chat keeps and which AI provider receives your messages and files. Deleting a chat deletes its messages, documents and files, and deleting an account now also clears chat files.",
+    ],
+  },
+  {
     version: "1.148.0",
     build: 187,
     date: "2026-09-29",

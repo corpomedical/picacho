@@ -1,0 +1,152 @@
+/* Aly's chat page (2026-09-29, layout A). Kept in a module, not globals.css,
+   so the branch never touches the shared stylesheet. */
+
+/* The page takes the whole pane, edge to edge, like Generate: the content
+   column's max-width and padding step aside for it. The phone keeps room for
+   the fixed top bar (56 px), and the app for its tab bar. */
+:global([data-app-content]):has(> .root) {
+  max-width: none;
+  height: 100%;
+  padding: 56px 0 0;
+}
+@media (min-width: 768px) {
+  :global([data-app-content]):has(> .root) {
+    padding: 0;
+  }
+}
+:global(html.native-app [data-app-content]):has(> .root) {
+  padding-bottom: calc(var(--native-tab-bar, 18px) - 6px);
+}
+
+.root {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+}
+
+.main {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.scroller {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.column {
+  width: 100%;
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+.box {
+  background: var(--color-atelier-surface);
+  border: 1px solid var(--color-atelier-rule);
+  border-radius: 22px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 12px 32px -18px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(18px);
+}
+:global(html.dark) .box {
+  background: rgba(33, 28, 23, 0.94);
+  box-shadow: inset 0 1px 0 rgba(255, 240, 220, 0.06), 0 18px 40px -20px rgba(0, 0, 0, 0.8);
+}
+
+.lamp {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #fff3d9, #e0a468 45%, #7a4a22);
+  box-shadow: 0 0 12px rgba(224, 164, 104, 0.55);
+}
+.lampThinking {
+  animation: breathe 1.6s ease-in-out infinite;
+}
+@keyframes breathe {
+  50% {
+    box-shadow: 0 0 20px rgba(224, 164, 104, 0.95);
+    transform: scale(1.06);
+  }
+}
+
+.caret::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  border-radius: 2px;
+  background: var(--color-atelier-accent);
+  animation: blink 1s steps(2, start) infinite;
+}
+@keyframes blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+.panel {
+  flex: 0 0 auto;
+  width: min(46vw, 760px);
+  border-left: 1px solid var(--color-atelier-rule);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-atelier-paper);
+}
+@media (max-width: 1023.98px) {
+  .panel {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    width: auto;
+    border-left: 0;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+.drop {
+  position: absolute;
+  inset: 8px;
+  z-index: 50;
+  border: 2px dashed var(--color-atelier-accent);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--color-atelier-paper) 88%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.brainDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.claude {
+  background: #d9a07a;
+}
+.gpt {
+  background: #7fb8a0;
+}
+.gemini {
+  background: #8fa6e0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lampThinking,
+  .caret::after {
+    animation: none;
+  }
+}

@@ -56,6 +56,10 @@ export const USER_STORAGE_BUCKETS = [
   // photos staged for Press Tour, `${userId}/uploads/...`, until the server
   // reads them (or /api/cron/press-uploads sweeps them after 3 hours).
   "press-uploads",
+  // Added 2026-09-29 WITH the bucket (supabase/pending/aly-chat.sql): files
+  // attached in Aly's chat (PDFs, pictures, Word files, spreadsheets),
+  // `${userId}/${fileId}/<name>`. Missing until that file runs; skipped then.
+  "aly-files",
 ];
 
 // The one storage sweep both deletion paths share. This was two hand-copied

@@ -8,7 +8,7 @@ import {
   OPUS_5_INPUT_PER_MTOK,
   OPUS_5_OUTPUT_PER_MTOK,
 } from "./prices";
-import { PLAN_CHAT_UNIT_LIMITS, FREE_CHAT_UNIT_LIMIT } from "../plans";
+import { PLAN_CHAT_UNIT_LIMITS, FREE_CHAT_UNIT_LIMIT, PLAN_LIMITS } from "../plans";
 import { PRICING_TIERS } from "../pricing";
 
 // These are the numbers that decide what a chat turn takes off someone's
@@ -135,15 +135,17 @@ describe("the allowances buy a usable number of questions", () => {
     }
   });
 
-  it("keeps the worst-case spend near a tenth of each plan price", () => {
-    // Prices come from PRICING_TIERS rather than a copy, so a repricing
-    // (Elite moved twice this month) fails this test instead of silently
-    // leaving one tier with three times the chat budget of its neighbours.
+  it("keeps at least 5% of every plan's net price in the worst month", () => {
+    // The rule since 2026-09-29 (operator picked "Generous" for Aly's chat
+    // page; lib/plans.ts shows the table): every credit used at the cost
+    // basis AND every chat unit used, against the price net of 21% VAT and
+    // Stripe's 1.5% + $0.27. Prices come from PRICING_TIERS rather than a
+    // copy, so a repricing fails here instead of quietly selling at a loss.
     for (const tier of PRICING_TIERS) {
-      const cap = PLAN_CHAT_UNIT_LIMITS[tier.id];
-      const share = (cap * AGENT_UNIT_USD) / tier.price;
+      const net = tier.price / 1.21 - (0.015 * tier.price + 0.27);
+      const worst = PLAN_LIMITS[tier.id] * 0.3396 + PLAN_CHAT_UNIT_LIMITS[tier.id] * AGENT_UNIT_USD;
       // Named in the failure message so a break says WHICH tier drifted.
-      expect([tier.id, share > 0.08 && share < 0.12]).toEqual([tier.id, true]);
+      expect([tier.id, (net - worst) / net >= 0.05]).toEqual([tier.id, true]);
     }
   });
 });

@@ -1,0 +1,214 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import { useLocale } from "@/lib/i18n/provider";
+import { formatMsg } from "@/lib/i18n/format";
+import { runGeneration, pollGeneration, requestGenerationCancel } from "@/lib/generations/actions";
+import { getLightTake, type LightTake } from "@/lib/light/actions";
+import { DEFAULT_IMAGE_ASPECT, DEFAULT_IMAGE_QUALITY, defaultImageResolution } from "@/lib/generations/providers/image-resolution";
+import { isStaleDeployError } from "@/lib/stale-deploy";
+import { linkRender } from "@/lib/aly-chat/actions";
+import type { ViewRender } from "@/lib/aly-chat/view";
+import type { LightDefaults } from "@/components/light/light-chat";
+
+// A picture or clip Aly got ready in the chat (2026-09-29). The card shows
+// the price before anything is spent; "Make it" is the person's own Send,
+// through the very runGeneration the studio and Picacho Light use (every
+// credit, policy and identity check stays there). The result comes back into
+// the card, and the card remembers it (linkRender) for next time.
+
+const POLL_MS = 4000;
+
+type State = "ready" | "working" | "done" | "failed" | "stopped";
+
+export function RenderCard({
+  card,
+  chatId,
+  seq,
+  defaults,
+}: {
+  card: ViewRender;
+  chatId: string | null;
+  seq: number;
+  defaults: LightDefaults;
+}) {
+  const { t } = useLocale();
+  const c = t.alyChat;
+  const [genId, setGenId] = useState<string | null>(card.generationId ?? null);
+  const [state, setState] = useState<State>(card.generationId ? "working" : "ready");
+  const [take, setTake] = useState<LightTake | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const alive = useRef(true);
+
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  async function settle(id: string) {
+    const tk = await getLightTake(id);
+    if (!alive.current) return;
+    setTake(tk);
+    setState(tk?.status === "succeeded" ? "done" : tk?.status === "cancelled" ? "stopped" : tk?.status === "generating" || tk?.status === "pending" ? "working" : "failed");
+  }
+
+  async function follow(id: string) {
+    while (alive.current) {
+      await new Promise((r) => setTimeout(r, POLL_MS));
+      let res;
+      try {
+        res = await pollGeneration(id);
+      } catch {
+        continue;
+      }
+      if (res.error !== null || res.state === "pending") continue;
+      await settle(id);
+      return;
+    }
+  }
+
+  // A card opened again: show what it became, and keep following it if it
+  // is still being made.
+  useEffect(() => {
+    if (!card.generationId) return;
+    const id = card.generationId;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const tk = await getLightTake(id);
+        if (!alive.current) return;
+        setTake(tk);
+        if (tk?.status === "succeeded") setState("done");
+        else if (tk?.status === "cancelled") setState("stopped");
+        else if (tk && (tk.status === "generating" || tk.status === "pending")) void follow(id);
+        else setState("failed");
+      })();
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function make() {
+    if (card.kind === "ad" || state === "working") return;
+    setError(null);
+    setState("working");
+    const id = crypto.randomUUID();
+    setGenId(id);
+    const fd = new FormData();
+    fd.set("generation_id", id);
+    fd.set("prompt", card.prompt);
+    fd.set("content_type", card.kind);
+    fd.set("character_id", card.characterId ?? "");
+    fd.set("use_outfit", "0");
+    fd.set("payload_version", "2");
+    if (card.kind === "image") {
+      fd.set("image_model_id", defaults.imageModelId);
+      fd.set("image_resolution", defaultImageResolution(defaults.imageModelId));
+      fd.set("image_aspect", DEFAULT_IMAGE_ASPECT);
+      fd.set("image_quality", DEFAULT_IMAGE_QUALITY);
+    } else {
+      fd.set("video_model_id", card.modelId ?? defaults.videoModelId);
+      fd.set("video_duration_seconds", String(card.seconds ?? defaults.videoDurationSeconds));
+      if (defaults.videoAspectRatio) fd.set("video_aspect_ratio", defaults.videoAspectRatio);
+    }
+    if (chatId && seq >= 0) void linkRender(chatId, seq, card.id, id).catch(() => {});
+
+    let result;
+    try {
+      result = await runGeneration(fd);
+    } catch (err) {
+      setError(isStaleDeployError(err) ? t.generate.refreshNeeded : t.generate.submitFailed);
+      setState("failed");
+      return;
+    }
+    if (result.error !== null) {
+      setError(result.error);
+      setState("failed");
+      return;
+    }
+    if (result.pending) {
+      await follow(result.id);
+      return;
+    }
+    await settle(result.id);
+  }
+
+  const price = card.credits === 1 ? c.renderMakeOne : formatMsg(c.renderMake, { credits: card.credits });
+  const charged = take
+    ? take.freeGeneration
+      ? c.renderFree
+      : take.creditsUsed === 1
+        ? c.renderChargedOne
+        : formatMsg(c.renderCharged, { credits: take.creditsUsed })
+    : "";
+  const meta = [card.characterName, card.modelName, card.seconds ? formatMsg(c.renderSeconds, { n: card.seconds }) : null]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-atelier-rule bg-atelier-ink/[0.02]">
+      {state === "done" && take?.resultUrl ? (
+        take.contentType === "video" ? (
+          <video src={take.resultUrl} controls playsInline className="block aspect-video w-full bg-black object-contain" />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={take.resultUrl} alt={card.label} className="block w-full bg-black/5 object-contain" />
+        )
+      ) : (
+        <div className="flex aspect-video items-center justify-center bg-gradient-to-br from-atelier-accent/25 via-atelier-ink/[0.06] to-atelier-ink/[0.12]">
+          {state === "working" ? (
+            <span className="rounded-full bg-atelier-paper/80 px-3 py-1 text-xs text-atelier-ink">{c.renderWorking}</span>
+          ) : (
+            <svg viewBox="0 0 24 24" className="h-8 w-8 text-atelier-ink/40" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+              {card.kind === "video" ? (
+                <>
+                  <rect x="3" y="5" width="14" height="14" rx="2" />
+                  <path d="m17 10 4-2.5v9L17 14" strokeLinejoin="round" />
+                </>
+              ) : (
+                <>
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <circle cx="9" cy="10" r="1.8" />
+                  <path d="m3 17 5.5-5 4 3.5 3-2.5L21 17" strokeLinejoin="round" />
+                </>
+              )}
+            </svg>
+          )}
+        </div>
+      )}
+      <div className="space-y-1.5 p-3">
+        <p className="text-sm font-medium text-atelier-ink">{card.label}</p>
+        {meta && <p className="text-xs text-atelier-muted">{meta}</p>}
+        {state === "failed" && <p className="text-xs text-red-500">{formatMsg(c.renderFailed, { error: error ?? "" }).trim()}</p>}
+        {state === "stopped" && <p className="text-xs text-atelier-muted">{c.renderStopped}</p>}
+        {state === "done" && charged && <p className="text-xs text-atelier-muted">{charged}</p>}
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          {card.kind === "ad" ? (
+            <Link href={card.href} className="rounded-full bg-atelier-accent px-3 py-1.5 text-xs font-medium text-white">
+              {c.renderAd}
+            </Link>
+          ) : state === "ready" || state === "failed" || state === "stopped" ? (
+            <>
+              <button type="button" onClick={() => void make()} className="rounded-full bg-atelier-accent px-3 py-1.5 text-xs font-medium text-white">
+                {price}
+              </button>
+              <Link href={card.href} className="rounded-full border border-atelier-rule px-3 py-1.5 text-xs text-atelier-muted hover:text-atelier-ink">
+                {c.renderOpen}
+              </Link>
+            </>
+          ) : state === "working" && genId ? (
+            <button
+              type="button"
+              onClick={() => void requestGenerationCancel(genId)}
+              className="rounded-full border border-atelier-rule px-3 py-1.5 text-xs text-atelier-muted hover:text-atelier-ink"
+            >
+              {c.renderStop}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}

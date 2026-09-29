@@ -265,13 +265,33 @@ export const FREE_PROMPT_ASSIST_LIMIT = 10;
 // with a bigger output budget. If a real Elite account ever approaches
 // 2,500 units, raise this number on purpose rather than leaving the hole
 // open by default.
+//
+// RAISED 2026-09-29 for Aly's own chat page (operator picked "Generous" from
+// the draft's margin table: "A and generous. Build"). The rule changed from
+// "a tenth of the price" to "every plan keeps at least 5% gross margin in the
+// worst month": every credit used (× $0.3396, the cost basis above) AND every
+// chat unit used (× $0.02), against the price net of 21% VAT and Stripe's
+// 1.5% + $0.27:
+//
+//   plan     net      credits   room at 5%        units   was
+//   basic    $7.03    $4.08     $2.60 → 130      130      45
+//   starter  $15.15   $10.19    $4.20 → 210      210      95
+//   growth   $63.83   $47.54    $13.10 → 655     650      400
+//   studio   $242.35  $186.78   $43.46 → 2,173   2,150    1,500
+//   elite    $404.64  $254.70   $129.71 → 6,485  6,400    2,500
+//
+// (room = net − credits − 5% of net; units = room ÷ $0.02, rounded down.)
+// An everyday message (Sonnet 5 or GPT-6 Sol) settles at about 1 unit,
+// "Think harder" on Opus 5.5 about 2, Gemini under 1 (the floor is 1).
+// Real accounts use a fraction of both allowances; agent_usage.cost_usd
+// records every turn so these can be re-cut from evidence.
 export const PLAN_CHAT_UNIT_LIMITS = {
   none: 0,
-  basic: 45,
-  starter: 95,
-  growth: 400,
-  studio: 1500,
-  elite: 2500,
+  basic: 130,
+  starter: 210,
+  growth: 650,
+  studio: 2150,
+  elite: 6400,
 } as const satisfies Record<PlanId, number>;
 
 // The free tier's chat allowance is a LIFETIME total, not per period — a

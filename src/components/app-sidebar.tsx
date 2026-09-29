@@ -13,6 +13,7 @@ import { parseVoiceCommand } from "@/lib/voice/commands";
 import { updateUsername } from "@/lib/profile/actions";
 import { logout } from "@/lib/auth/actions";
 import { SwitchToLightRow } from "@/components/light/switch-to-light-row";
+import { SidebarChats } from "@/components/aly-chat/sidebar-chats";
 import { useTheme, type ThemeMode } from "@/lib/theme/theme-provider";
 import { useLocale } from "@/lib/i18n/provider";
 import type { Messages } from "@/lib/i18n/messages";
@@ -44,6 +45,17 @@ type RecentJob = {
   status: string;
   content_type: string | null;
 };
+
+function ChatIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" {...props}>
+      <path d="M4 4.5h12a1.5 1.5 0 0 1 1.5 1.5v7a1.5 1.5 0 0 1-1.5 1.5H9l-3.5 3v-3H4A1.5 1.5 0 0 1 2.5 13V6A1.5 1.5 0 0 1 4 4.5Z" strokeLinejoin="round" />
+      <circle cx="7" cy="9.5" r=".9" fill="currentColor" stroke="none" />
+      <circle cx="10" cy="9.5" r=".9" fill="currentColor" stroke="none" />
+      <circle cx="13" cy="9.5" r=".9" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
 
 function BoltIcon(props: SVGProps<SVGSVGElement>) {
   return (
@@ -672,6 +684,7 @@ export function AppSidebar({
   liveVisible = false,
   cutVisible = false,
   pressTourVisible = false,
+  alyChat = null,
 }: {
   isAdmin: boolean;
   username: string;
@@ -692,6 +705,8 @@ export function AppSidebar({
   cutVisible?: boolean;
   /** Press Tour (ads for your product) — admins only, behind the press_tour flag. */
   pressTourVisible?: boolean;
+  /** Aly's chat page (every plan, behind the aly_chat flag): what the person calls her. */
+  alyChat?: { name: string } | null;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -960,6 +975,7 @@ export function AppSidebar({
   // one people miss.
   const searchPages: SearchPage[] = [
     { href: "/app", label: t.nav.home },
+    ...(alyChat ? [{ href: "/app/chat", label: alyChat.name, sub: t.alyChat.newChat }] : []),
     ...tools.map((tool) => ({ href: tool.href, ...toolWords(t, tool.key) })),
     { href: "/app/character", label: t.nav.characters },
     { href: "/app/media", label: t.nav.media },
@@ -1183,6 +1199,8 @@ export function AppSidebar({
             never a new row here — the list is lib/nav/tools.ts. */}
         {navRow({ href: "/app", label: t.nav.home, Icon: HomeIcon, active: pathname === "/app" })}
         {navRow({ href: "/app/generate", label: t.nav.generate, Icon: BoltIcon, active: isActive("/app/generate") })}
+        {/* Aly's own page (2026-09-29, layout A): her chats, full screen. */}
+        {alyChat && navRow({ href: "/app/chat", label: alyChat.name, Icon: ChatIcon, active: isActive("/app/chat") })}
         <button
           ref={toolsButtonRef}
           type="button"
@@ -1271,6 +1289,10 @@ export function AppSidebar({
 
       {!iconOnly && (
         <div className="mt-6 min-h-0 flex-1 space-y-6 overflow-y-auto pb-2">
+          {/* In Aly's chat the list is her chats, like any chat app's. */}
+          {alyChat && isActive("/app/chat") ? (
+            <SidebarChats pathname={pathname ?? ""} />
+          ) : (
           <div>
             <p className="px-2.5 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
               {s.recent}
@@ -1313,6 +1335,7 @@ export function AppSidebar({
               </ul>
             )}
           </div>
+          )}
         </div>
       )}
 

@@ -29,6 +29,7 @@ import { SCREENING_FONT_VARS } from "@/lib/theme/screening-fonts";
 import { parseAppLook, resolveAppMode } from "@/lib/light/mode";
 import { ChoiceFrame, LightShell, LookSync, ModeGate } from "@/components/light/light-shell";
 import { InLightProvider } from "@/components/light/in-light";
+import { isAlyChatEnabled } from "@/lib/aly-chat/enabled";
 
 export default async function AppLayout({
   children,
@@ -181,6 +182,18 @@ export default async function AppLayout({
     );
   }
 
+  // Aly's own chat page (2026-09-29): every plan, behind the aly_chat flag.
+  // Her name is the one the person gave her (the lamp's, when they have it).
+  let alyChat: { name: string } | null = null;
+  if (await isAlyChatEnabled(supabase)) {
+    let name = producer?.name ?? null;
+    if (!name) {
+      const { data: prefs } = await supabase.from("producer_prefs").select("display_name").eq("user_id", data.user.id).maybeSingle();
+      name = (prefs?.display_name as string | null)?.trim() || DEFAULT_PRODUCER_NAME;
+    }
+    alyChat = { name };
+  }
+
   // Ask for a rating only once someone has had enough successful results to
   // hold an opinion, and only once ever (rating_prompted_at is stamped by
   // both answering and dismissing). head+count so this is a cheap COUNT
@@ -226,6 +239,7 @@ export default async function AppLayout({
         liveVisible={liveVisible}
         cutVisible={cutVisible}
         pressTourVisible={pressTourVisible}
+        alyChat={alyChat}
       />
       {/* Registers this device for push, once there's a session to
           attach it to. No-ops entirely on the web. */}
