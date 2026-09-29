@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.164.0",
+    build: 203,
+    date: "2026-09-29",
+    title: "Settings uses the sign-up's names: Full studio and Simple chat",
+    items: [
+      "Settings now uses the same names as the last step of signing up: under \"How you create\" the two options are \"Full studio\" and \"Simple chat\", with the full studio first. They used to say \"Advanced (full studio)\" and \"Light\".",
+      "In the studio's settings menu, \"Switch to Picacho Light\" now reads \"Switch to simple chat\".",
+      "In English, Spanish, Portuguese and Italian.",
+    ],
+  },
+  {
     version: "1.163.0",
     build: 202,
     date: "2026-09-29",
