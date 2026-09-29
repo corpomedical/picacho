@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.157.0",
+    build: 196,
+    date: "2026-09-29",
+    title: "Helios Studio works on phones and tablets (team first)",
+    items: [
+      "For the team first (admins), like the rest of Helios Studio.",
+      "On a phone or tablet the 3D view now fills the screen, like Blender on an iPad. The top bar is compact: one menu button holds File, Edit, Render and Help, next to Undo, Redo and Search (the F3 search, as a button).",
+      "The Outliner, Properties, Astra and the Timeline open as sheets from a tab row at the bottom. Drag the handle to make a sheet half or full height, or tap it to switch; tap the tab again to close it.",
+      "Touch: one finger turns the view (or drags the arrows of a selected object), two fingers pinch to zoom and slide to pan, a tap selects, and a long press opens the object's menu.",
+      "Every button is at least 40 px on a touch screen, menus open from the bottom so they never fall off the screen, and the notch and home bar are left clear. Nothing was removed, only moved. On a computer the Studio looks and works exactly as before.",
+    ],
+  },
+  {
     version: "1.156.0",
     build: 195,
     date: "2026-09-29",
