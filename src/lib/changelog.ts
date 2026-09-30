@@ -20,6 +20,15 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.192.0",
+    build: 231,
+    date: "2026-10-01",
+    title: "Angle Stage: the angle you turn to is the angle you get",
+    items: [
+      "Render this angle now follows the camera you turned to. The stage tells the picture model where the camera stands in plain words (\"a three-quarter view from her left side, about 45° round\"), keeps your take's own wording from pulling it back to the front, and sends the 3D sketch at its true shape instead of squeezed into 16:9. Before, a turned camera came back as a front-on copy of the take.",
+    ],
+  },
+  {
     version: "1.191.0",
     build: 230,
     date: "2026-09-30",
