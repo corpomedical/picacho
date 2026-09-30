@@ -54,6 +54,14 @@ import { recastStorageObjectUrl, uploadRecastClip } from "@/lib/recast/recast-cl
 import { discardStudioRecast, inspectStudioRecast, listStudioLooks, openStudioRecast, readStudioRecast, reserveStudioRecast, startStudioRecast } from "@/lib/sets/studio-recast-actions";
 import { pressStudioRecast, type RecastPress, type RecastUpdate } from "./studio-recast";
 import { StudioOpening, STUDIO_HIDES_APP_CHROME } from "./studio-opening";
+import { addElementPhoto } from "@/lib/sets/element-actions";
+import { pollNewModelBuild, pollThingBuild, startNewModelBuild, startThingBuild } from "@/lib/sets/model-actions";
+import { keepStudioModel, reserveStudioModel, studioModelUrls } from "@/lib/sets/studio-model-actions";
+import { THING_BUILD_POLL_MS, THING_BUILD_USD, THING_BUILD_WAIT_MS } from "@/lib/sets/thing-build";
+import { THING_MODEL_BUCKET } from "@/lib/sets/thing-model";
+import { THING_BUILD_FAILED, THING_MODEL_SAVE_FAILED } from "@/lib/sets/messages";
+import { keepStudioImport, pressModelBuild, type ModelBuildPhase } from "./studio-model";
+import type { StudioBuildTarget } from "@/lib/sets/studio-models";
 
 /**
  * The engine's code, asked for the moment this module runs in the browser (2026-09-30 — "Speed up the
@@ -92,6 +100,9 @@ export function HeliosStudio({
   cyclesOn = false,
   recastOn = false,
   castId = null,
+  thingModels = [],
+  modelUrls = {},
+  buildOn = false,
 }: {
   setId: string;
   title: string;
@@ -108,6 +119,12 @@ export function HeliosStudio({
   recastOn?: boolean;
   /** Who plays the set's figure (the set page's "Plays the figure"): Video with your character's first choice. */
   castId?: string | null;
+  /** The models kept on the set's things (2026-09-30): drawn in place of their blocks. */
+  thingModels?: { key: string; url: string; flip: boolean }[];
+  /** The model files the saved scene names, signed for this open (studio-models.ts). */
+  modelUrls?: Record<string, string>;
+  /** "Model from a photo" builds (the set page's own build, admins while it is proved). */
+  buildOn?: boolean;
 }) {
   const { t, locale } = useLocale();
   // "Opening the set…" until the engine has drawn its first frame (2026-09-30: the Studio showed an empty grey
@@ -138,6 +155,7 @@ export function HeliosStudio({
     titleRef.current = title;
   });
   const recastRef = useRef(recastOn);
+  const modelsRef = useRef({ thingModels, modelUrls, buildOn });
   // Recast's own words for its lanes and its answers, in the person's language.
   const recastWordsRef = useRef({
     lanes: {
@@ -258,6 +276,60 @@ export function HeliosStudio({
               },
             }
           : null,
+        // Real models (2026-09-30, "Apply this look for the car." · "I also want to see it rendered in 3d."):
+        // the set's thing models, the scene's own files, keeping an import, and the set page's build.
+        models: {
+          things: modelsRef.current.thingModels,
+          fileUrls: modelsRef.current.modelUrls,
+          urls: async (files: string[]) => {
+            try {
+              const out = await studioModelUrls(setId, { files });
+              return out.error === null ? out.urls : {};
+            } catch {
+              return {};
+            }
+          },
+          keepImport: (file: File) =>
+            keepStudioImport(
+              {
+                reserve: reserveStudioModel,
+                upload: (path: string, token: string, blob: Blob) =>
+                  createBrowserClient().storage.from(THING_MODEL_BUCKET).uploadToSignedUrl(path, token, blob, { contentType: "model/gltf-binary" }),
+                keep: keepStudioModel,
+                failed: THING_MODEL_SAVE_FAILED,
+              },
+              setId,
+              file,
+            ).then((r) => (r.error !== null ? { error: recastWordsRef.current.localize(r.error) } : r)),
+          build: modelsRef.current.buildOn
+            ? {
+                usd: THING_BUILD_USD,
+                run: async (target: StudioBuildTarget, photoDataUri: string, onPhase: (p: ModelBuildPhase) => void) => {
+                  const answer = await pressModelBuild(
+                    {
+                      addPhoto: addElementPhoto,
+                      startThing: startThingBuild,
+                      pollThing: pollThingBuild,
+                      startNew: startNewModelBuild,
+                      pollNew: pollNewModelBuild,
+                      alive: () => !dead,
+                      sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
+                      now: () => new Date().getTime(),
+                      waitMs: THING_BUILD_WAIT_MS,
+                      pollMs: THING_BUILD_POLL_MS,
+                      failed: THING_BUILD_FAILED,
+                      unreachable,
+                    },
+                    setId,
+                    target,
+                    photoDataUri,
+                    onPhase,
+                  );
+                  return answer.error !== null ? { error: recastWordsRef.current.localize(answer.error) } : answer;
+                },
+              }
+            : null,
+        },
         render: {
           // THE price, from the function the server charges with (set-view.tsx's own).
           credits: quoteSend(stillQuoteInput()).totalCredits,

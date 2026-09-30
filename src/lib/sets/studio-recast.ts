@@ -210,6 +210,11 @@ function placeKind(title: string, description: string): PlaceKind {
   return PLACE_KINDS.find((k) => k.re.test(text)) ?? ANY_PLACE;
 }
 
+/** Whether the set is a place under a roof (a showroom, a warehouse, a studio…): the Studio's default sky follows it. */
+export function studioPlaceIndoor(title: string, description: string): boolean {
+  return placeKind(title, description).indoor;
+}
+
 /** The place: its kind and its real surfaces ("a real race track with real asphalt, kerbs and grass"). Never the set's own sentences. */
 export function studioPlaceWords(title: string, description: string): string {
   const k = placeKind(title, description);

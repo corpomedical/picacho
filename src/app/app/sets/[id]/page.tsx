@@ -230,6 +230,9 @@ async function StudioRoute({ id }: { id: string }) {
       cyclesOn={data.modelsOn || HELIOS_CYCLES_FOR_ALL}
       recastOn={data.modelsOn}
       castId={data.set.castId}
+      thingModels={data.thingModels}
+      modelUrls={data.modelUrls}
+      buildOn={data.modelsOn}
     />
     </>
   );

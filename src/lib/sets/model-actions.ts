@@ -11,6 +11,10 @@
 // which reads the stored file's first bytes and keeps it only if it is a
 // binary glTF of the size it claims. One model per thing: keeping a new one
 // removes the old. Admins only while our own model builder is proved.
+//
+// Helios Studio (2026-09-30) builds through these same doors: a thing's model
+// from one photo it holds (startThingBuild's refId), and a new object's from
+// a photo of its own (startNewModelBuild), kept as a Studio file.
 
 import { createAdminClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
@@ -24,6 +28,8 @@ import { resolvePhotos, setElements, type ElementPhoto } from "@/lib/sets/elemen
 import { listElementPhotos } from "@/lib/sets/references";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { cutViews, findViews, VIEW_MAX } from "@/lib/sets/thing-views";
+import { checkReferencePhoto, parseReferencePhoto } from "@/lib/sets/reference-upload";
+import { studioModelPath } from "@/lib/sets/studio-models";
 import {
   THING_BUILDS_PER_HOUR,
   THING_BUILD_MULTI_ENDPOINT,
@@ -164,52 +170,10 @@ async function workingSpec(admin: Admin, userId: string, setId: string): Promise
   return first.spec;
 }
 
-/**
- * Build a thing's 3D model from its front photo (thing-build.ts, 2026-09-24,
- * "Everything should be done under one roof"): the photo's bytes go to
- * TRELLIS.2 on fal's queue and the page is handed the job to ask after
- * (pollThingBuild). The key is resolved against the saved set, as a photo's
- * is, and the model is kept under the thing it finds.
- */
-export async function startThingBuild(setId: string, key: string): Promise<{ error: string } | { error: null; key: string; handle: ThingBuildHandle }> {
-  const own = await ownSet(await setsAccess(), setId);
-  if (own.error !== null) return { error: own.error };
-  if (typeof key !== "string" || !ELEMENT_KEY_RE.test(key)) return { error: SET_ELEMENT_GONE };
-  const admin = createAdminClient();
-  const spec = await workingSpec(admin, own.userId, own.setId);
-  if (!spec) return { error: SET_NOT_FOUND };
-  const els = setElements(spec);
-  const probe: ElementPhoto = { refId: "00000000-0000-4000-8000-000000000000", anchor: key, slot: 1, at: 0, url: "" };
-  const thingKey = resolvePhotos(els, [probe]).held[0]?.key ?? null;
-  if (!thingKey) return { error: SET_ELEMENT_GONE };
-  const listing = await listElementPhotos(admin, own.userId, own.setId);
-  // Every photo the thing holds, front first — each can add views of it.
-  const held = resolvePhotos(els, listing.photos).held.find((h) => h.key === thingKey)?.photos ?? [];
-  const paths = held.map((h) => listing.photos.find((p) => p.refId === h.refId)?.path).filter((p): p is string => typeof p === "string");
-  if (!paths.length) return { error: THING_BUILD_NO_PHOTO };
-  if (await rateLimited(own.userId, "thing-build", 60 * 60, THING_BUILDS_PER_HOUR)) return { error: THING_MODEL_TOO_FAST };
+/** fal's queue, asked for one build of these images: the handle to ask after, or why not. */
+async function submitBuild(images: string[], log: Record<string, unknown>): Promise<{ error: string } | { error: null; handle: ThingBuildHandle }> {
   const apiKey = process.env.FAL_KEY;
   if (!apiKey) return { error: THING_BUILD_FAILED };
-  // The views on each photo, cut apart (thing-views.ts): a four-view sheet
-  // sent whole built four small cars. Each photo gives its views — several on
-  // a sheet, one on a product shot, the photo itself when nothing clean can
-  // be cut — and every view of the thing, up to four, goes into ONE build.
-  const images: string[] = [];
-  for (const path of paths) {
-    if (images.length >= VIEW_MAX) break;
-    const { data: photo, error: readError } = await admin.storage.from("generated-images").download(path);
-    if (readError || !photo) continue;
-    const bytes = Buffer.from(await photo.arrayBuffer());
-    let views: string[] = [];
-    try {
-      views = await cutViews(bytes, await findViews(bytes));
-    } catch (err) {
-      console.warn("[sets] a thing photo's views could not be read; sent whole:", err instanceof Error ? err.message : err);
-    }
-    if (!views.length) views = [`data:${sniffImageType(bytes)};base64,${bytes.toString("base64")}`];
-    images.push(...views.slice(0, VIEW_MAX - images.length));
-  }
-  if (!images.length) return { error: THING_BUILD_FAILED };
   const request = thingBuildRequest(images);
   const res = await fetchWithTimeout(
     `https://queue.fal.run/${request.endpoint}`,
@@ -222,20 +186,23 @@ export async function startThingBuild(setId: string, key: string): Promise<{ err
   }
   const handle = readBuildHandle(await res.json());
   if (!handle) return { error: THING_BUILD_FAILED };
-  console.info("[sets] thing build started", { setId: own.setId, key: thingKey, requestId: handle.requestId, usd: THING_BUILD_USD, views: images.length, multi: request.endpoint === THING_BUILD_MULTI_ENDPOINT });
-  return { error: null, key: thingKey, handle };
+  console.info("[sets] thing build started", { ...log, requestId: handle.requestId, usd: THING_BUILD_USD, views: images.length, multi: request.endpoint === THING_BUILD_MULTI_ENDPOINT });
+  return { error: null, handle };
 }
 
-/** Ask after a build: still working, or done — the model kept with the set, one per thing — or failed. */
-export async function pollThingBuild(
-  setId: string,
-  input: { key: string; handle: unknown },
-): Promise<{ error: string } | { error: null; state: "working" } | { error: null; state: "done"; model: KeptThingModel }> {
-  const own = await ownSet(await setsAccess(), setId);
-  if (own.error !== null) return { error: own.error };
-  const key = typeof input?.key === "string" && ELEMENT_KEY_RE.test(input.key) ? input.key : null;
-  if (!key || !buildHandleAllowed(input.handle)) return { error: THING_BUILD_FAILED };
-  const handle = input.handle;
+/** A photo's views, cut apart (thing-views.ts); the photo itself when nothing clean can be cut. */
+async function viewsOf(bytes: Buffer): Promise<string[]> {
+  let views: string[] = [];
+  try {
+    views = await cutViews(bytes, await findViews(bytes));
+  } catch (err) {
+    console.warn("[sets] a thing photo's views could not be read; sent whole:", err instanceof Error ? err.message : err);
+  }
+  return views.length ? views : [`data:${sniffImageType(bytes)};base64,${bytes.toString("base64")}`];
+}
+
+/** fal's answer about a build: still working, failed, or the .glb it made — fetched, and checked to be one. */
+async function readBuilt(handle: ThingBuildHandle): Promise<{ error: string } | { error: null; state: "working" } | { error: null; state: "done"; bytes: Uint8Array }> {
   const apiKey = process.env.FAL_KEY;
   if (!apiKey) return { error: THING_BUILD_FAILED };
   const auth = { authorization: `Key ${apiKey}` };
@@ -253,6 +220,72 @@ export async function pollThingBuild(
   const bytes = new Uint8Array(await glbRes.arrayBuffer());
   if (bytes.byteLength > THING_MODEL_MAX_BYTES) return { error: THING_MODEL_TOO_BIG };
   if (!glbHeaderOk(bytes.subarray(0, 12), bytes.byteLength)) return { error: THING_BUILD_FAILED };
+  return { error: null, state: "done", bytes };
+}
+
+/**
+ * Build a thing's 3D model from its front photo (thing-build.ts, 2026-09-24,
+ * "Everything should be done under one roof"): the photo's bytes go to
+ * TRELLIS.2 on fal's queue and the page is handed the job to ask after
+ * (pollThingBuild). The key is resolved against the saved set, as a photo's
+ * is, and the model is kept under the thing it finds.
+ *
+ * `input.refId` (Helios Studio, 2026-09-30 — "Apply this look for the car."):
+ * built from that ONE photo of the thing, and its one view — the view the
+ * person cropped out of a sheet — so the build is the single-photo endpoint
+ * at its stated price, never the multi-view one whose price unit isn't known.
+ */
+export async function startThingBuild(setId: string, key: string, input?: { refId?: string }): Promise<{ error: string } | { error: null; key: string; handle: ThingBuildHandle }> {
+  const own = await ownSet(await setsAccess(), setId);
+  if (own.error !== null) return { error: own.error };
+  if (typeof key !== "string" || !ELEMENT_KEY_RE.test(key)) return { error: SET_ELEMENT_GONE };
+  const only = typeof input?.refId === "string" ? input.refId : null;
+  if (only !== null && !UUID_RE.test(only)) return { error: THING_BUILD_NO_PHOTO };
+  const admin = createAdminClient();
+  const spec = await workingSpec(admin, own.userId, own.setId);
+  if (!spec) return { error: SET_NOT_FOUND };
+  const els = setElements(spec);
+  const probe: ElementPhoto = { refId: "00000000-0000-4000-8000-000000000000", anchor: key, slot: 1, at: 0, url: "" };
+  const thingKey = resolvePhotos(els, [probe]).held[0]?.key ?? null;
+  if (!thingKey) return { error: SET_ELEMENT_GONE };
+  const listing = await listElementPhotos(admin, own.userId, own.setId);
+  // Every photo the thing holds, front first — each can add views of it (or only the one asked for).
+  const held = (resolvePhotos(els, listing.photos).held.find((h) => h.key === thingKey)?.photos ?? []).filter((h) => only === null || h.refId === only);
+  const paths = held.map((h) => listing.photos.find((p) => p.refId === h.refId)?.path).filter((p): p is string => typeof p === "string");
+  if (!paths.length) return { error: THING_BUILD_NO_PHOTO };
+  if (await rateLimited(own.userId, "thing-build", 60 * 60, THING_BUILDS_PER_HOUR)) return { error: THING_MODEL_TOO_FAST };
+  if (!process.env.FAL_KEY) return { error: THING_BUILD_FAILED };
+  // The views on each photo, cut apart (thing-views.ts): a four-view sheet
+  // sent whole built four small cars. Each photo gives its views — several on
+  // a sheet, one on a product shot, the photo itself when nothing clean can
+  // be cut — and every view of the thing, up to four, goes into ONE build.
+  const images: string[] = [];
+  const most = only !== null ? 1 : VIEW_MAX;
+  for (const path of paths) {
+    if (images.length >= most) break;
+    const { data: photo, error: readError } = await admin.storage.from("generated-images").download(path);
+    if (readError || !photo) continue;
+    const views = await viewsOf(Buffer.from(await photo.arrayBuffer()));
+    images.push(...views.slice(0, most - images.length));
+  }
+  if (!images.length) return { error: THING_BUILD_FAILED };
+  const sent = await submitBuild(images, { setId: own.setId, key: thingKey });
+  if (sent.error !== null) return { error: sent.error };
+  return { error: null, key: thingKey, handle: sent.handle };
+}
+
+/** Ask after a build: still working, or done — the model kept with the set, one per thing — or failed. */
+export async function pollThingBuild(
+  setId: string,
+  input: { key: string; handle: unknown },
+): Promise<{ error: string } | { error: null; state: "working" } | { error: null; state: "done"; model: KeptThingModel }> {
+  const own = await ownSet(await setsAccess(), setId);
+  if (own.error !== null) return { error: own.error };
+  const key = typeof input?.key === "string" && ELEMENT_KEY_RE.test(input.key) ? input.key : null;
+  if (!key || !buildHandleAllowed(input.handle)) return { error: THING_BUILD_FAILED };
+  const built = await readBuilt(input.handle);
+  if (built.error !== null || built.state === "working") return built;
+  const bytes = built.bytes;
   const admin = createAdminClient();
   const path = setModelPath(own.userId, own.setId, key, Date.now(), false);
   const { error: upError } = await admin.storage.from(THING_MODEL_BUCKET).upload(path, bytes, { contentType: "model/gltf-binary", upsert: false });
@@ -262,4 +295,51 @@ export async function pollThingBuild(
   }
   await removeOthers(admin, own.userId, own.setId, key, path);
   return { error: null, state: "done", model: { key, url: mediaUrl(THING_MODEL_BUCKET, path), flip: false } };
+}
+
+/**
+ * A NEW object's model, built from one photo (Helios Studio, 2026-09-30): the
+ * same build as a thing's — the same endpoint at the same price, the same
+ * hourly limit, admins only — from a photo that belongs to no thing yet. The
+ * photo is checked the way a thing's photo is on upload (reference-upload.ts:
+ * its own hourly limit, re-encoded, the picture gate) and only its first view
+ * is sent; it is not kept. The model is kept as a Studio file of the set
+ * (studio-models.ts), which the scene names.
+ */
+export async function startNewModelBuild(setId: string, input: { photoDataUri: string }): Promise<{ error: string } | { error: null; handle: ThingBuildHandle }> {
+  const access = await setsAccess();
+  if (access.error !== null) return { error: access.error };
+  const own = await ownSet(access, setId);
+  if (own.error !== null) return { error: own.error };
+  const parsed = parseReferencePhoto(input?.photoDataUri);
+  if (!parsed.ok) return { error: parsed.error };
+  if (await rateLimited(own.userId, "thing-build", 60 * 60, THING_BUILDS_PER_HOUR)) return { error: THING_MODEL_TOO_FAST };
+  if (!process.env.FAL_KEY) return { error: THING_BUILD_FAILED };
+  const photo = await checkReferencePhoto(own.userId, parsed.bytes);
+  if (photo.error !== null) return { error: photo.error };
+  const images = (await viewsOf(photo.jpeg)).slice(0, 1);
+  const sent = await submitBuild(images, { setId: own.setId, key: "new" });
+  if (sent.error !== null) return { error: sent.error };
+  return { error: null, handle: sent.handle };
+}
+
+/** Ask after a new object's build: still working, or done — kept as a Studio file of the set — or failed. */
+export async function pollNewModelBuild(
+  setId: string,
+  input: { handle: unknown },
+): Promise<{ error: string } | { error: null; state: "working" } | { error: null; state: "done"; file: string; url: string }> {
+  const access = await setsAccess();
+  if (access.error !== null) return { error: access.error };
+  const own = await ownSet(access, setId);
+  if (own.error !== null) return { error: own.error };
+  if (!buildHandleAllowed(input?.handle)) return { error: THING_BUILD_FAILED };
+  const built = await readBuilt(input.handle);
+  if (built.error !== null || built.state === "working") return built;
+  const path = studioModelPath(own.userId, own.setId, Date.now(), crypto.randomUUID().replace(/-/g, "").slice(0, 16));
+  const { error: upError } = await createAdminClient().storage.from(THING_MODEL_BUCKET).upload(path, built.bytes, { contentType: "model/gltf-binary", upsert: false });
+  if (upError) {
+    console.warn("[sets] a built Studio model was not kept:", upError.message);
+    return { error: THING_MODEL_SAVE_FAILED };
+  }
+  return { error: null, state: "done", file: path, url: mediaUrl(THING_MODEL_BUCKET, path) };
 }

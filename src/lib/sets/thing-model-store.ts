@@ -7,6 +7,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { mediaUrl } from "../media/url";
 import { THING_MODEL_BUCKET, parseModelName, setModelPrefix } from "./thing-model";
+import { ownStudioModelPath, studioModelPrefix } from "./studio-models";
 
 /** A kept model as the page gets it: whose it is, where it loads from, whether it is turned round. */
 export type KeptThingModel = { key: string; url: string; flip: boolean };
@@ -50,12 +51,25 @@ export async function listThingModels(admin: SupabaseClient, userId: string, set
   return out;
 }
 
-/** Best-effort, never throws: every model a set kept, gone with the set. */
+/** Best-effort, never throws: every model a set kept, gone with the set — its things' and its Studio's (studio-models.ts). */
 export async function removeSetThingModels(admin: SupabaseClient, userId: string, setId: string): Promise<void> {
   try {
     const paths = (await listModelFiles(admin, userId, setId)).map((f) => f.path);
     if (paths.length) await admin.storage.from(THING_MODEL_BUCKET).remove(paths);
   } catch {
     // Nothing to do: the set is gone either way.
+  }
+  try {
+    const folder = `${userId}/sets`;
+    for (let round = 0; round < 20; round++) {
+      const { data, error } = await admin.storage.from(THING_MODEL_BUCKET).list(folder, { limit: 1000, search: studioModelPrefix(setId) });
+      if (error || !data) break;
+      const paths = (data as { name: string }[]).map((e) => `${folder}/${e.name}`).filter((p) => ownStudioModelPath(userId, setId, p));
+      if (!paths.length) break;
+      await admin.storage.from(THING_MODEL_BUCKET).remove(paths);
+      if (data.length < 1000) break;
+    }
+  } catch {
+    // The same: best-effort.
   }
 }

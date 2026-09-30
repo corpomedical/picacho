@@ -37,6 +37,8 @@ import { readShotTakes, takeSourceOf } from "@/lib/sets/shot-take";
 import { readSetShotIds } from "@/lib/sets/set-shots";
 import { SET_NOT_FOUND, setFailureMessage } from "@/lib/sets/messages";
 import { readStudioScene, type StudioScene } from "@/lib/sets/studio-scene";
+import { ownStudioModelPath, studioModelFiles } from "./studio-models";
+import { THING_MODEL_BUCKET } from "./thing-model";
 import { serverTimer, type ServerTimer } from "@/lib/server-timing";
 import type { SetCharacter, SetPageData, SetShot, SetsHomeData, SetStatus, SetSummary } from "@/lib/sets/types";
 
@@ -601,6 +603,10 @@ export async function getStudioPage<T = null>(
       characters: SetCharacter[];
       savedScene: StudioScene | null;
       also: T | null;
+      /** The models kept on the set's things (admins, as the set page shows them) — the Studio draws them in place of the blocks. */
+      thingModels: { key: string; url: string; flip: boolean }[];
+      /** The model files the saved scene names (studio-models.ts), signed for this open: the person's own only. */
+      modelUrls: Record<string, string>;
     }
 > {
   const access = await tm.step("access", () => setsAccess());
@@ -608,13 +614,15 @@ export async function getStudioPage<T = null>(
   if (!UUID_RE.test(setId)) return { error: SET_NOT_FOUND };
   const db = access.supabase;
   const own = (columns: string) => db.from("location_sets").select(columns).eq("id", setId).eq("user_id", access.userId).is("deleted_at", null).maybeSingle();
-  const [{ data: row }, edited, { shootable: characters }, savedScene, extra] = await Promise.all([
+  const [{ data: row }, edited, { shootable: characters }, savedScene, extra, thingModels] = await Promise.all([
     tm.step("set", () => own("id, title, status, spec, layout")),
     // The working copy on its own read, as getSetPage reads it: a failed read opens the set as built.
     tm.step("edited", () => own("edited_spec")),
     tm.step("characters", () => charactersOf(db, access.userId)),
     tm.step("scene", () => readStudioScene(db, setId, access.userId)),
     tm.step("also", () => (also ? also(db, access.userId).catch(() => null) : null)),
+    // Real models on things (2026-09-30): the set page's own list, for the same people (admins while the builder is proved).
+    tm.step("models", () => (access.isAdmin ? listThingModels(createAdminClient(), access.userId, setId) : Promise.resolve([]))),
   ]);
   const r = row as { id?: string; title?: string; status?: string; spec?: unknown; layout?: unknown } | null;
   if (!r) return { error: SET_NOT_FOUND };
@@ -637,5 +645,11 @@ export async function getStudioPage<T = null>(
     characters,
     savedScene,
     also: extra,
+    thingModels,
+    modelUrls: Object.fromEntries(
+      studioModelFiles(savedScene)
+        .filter((f) => ownStudioModelPath(access.userId, setId, f))
+        .map((f) => [f, mediaUrl(THING_MODEL_BUCKET, f)]),
+    ),
   };
 }

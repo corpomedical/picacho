@@ -11,6 +11,7 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { HDRLoader } from "three/examples/jsm/loaders/HDRLoader.js";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import { setElements } from "@/lib/sets/elements";
 import { letterbox } from "@/lib/sets/rig";
@@ -18,6 +19,10 @@ import { SET_DIRECTION_MAX_CHARS } from "@/lib/sets/set-config";
 import { studioShotInput } from "@/lib/sets/studio-shot";
 import { CYCLES_DEFAULT_SAMPLES, CYCLES_EDGES, CYCLES_MAX_FRAMES, CYCLES_MAX_SAMPLES_ANIMATION, CYCLES_MAX_SAMPLES_STILL, CYCLES_MAX_SECONDS, CYCLES_TOO_LONG, HELIOS_CYCLES_GPU, cyclesDollars, cyclesDuration, cyclesSize, estimateCycles } from "@/lib/sets/cycles";
 import { watchStudioText } from "./studio-i18n";
+import { modelHome } from "@/lib/sets/thing-model";
+import { THING_BUILDS_PER_HOUR } from "@/lib/sets/thing-build";
+import { cropInPixels, dominantColour, studioBuildLabel, studioModelRef, studioViewSuggestion } from "@/lib/sets/studio-models";
+import { cropPhoto, holderForThing, holderLoose, modelPixels, showModel, viewsOfImage } from "./studio-model";
 import { studioCastInput } from "./studio-cast";
 import { boneOfMesh, makeFigure } from "./studio-figure";
 import { addMove, gaitFrame, headingOf, moveAt, moveWords, naturalEnd, normaliseMoves, pathCurve, pathLength, pathRootAt, shortestYaw, turnFrame, turnStart, turnYawAt } from "@/lib/sets/studio-gait";
@@ -30,7 +35,8 @@ import { STUDIO_OUTFIT_MAX, STUDIO_RECAST_BITRATE, STUDIO_RECAST_ENGINES, studio
 import { RECAST_ENGINES, RECAST_JOB_MAX_SECONDS, RECAST_MIN_SECONDS } from "@/lib/recast/recast";
 import { RECAST_DIRECTION_MAX_CHARS } from "@/lib/recast/recast-brief";
 import { ENV_H, ENV_W, SKY_DIFFUSE_SHARE, TRACE_MAX_SAMPLES, TRACE_PRESETS, TRACE_SCALES, TRACE_SLOW_SECONDS, TRACE_SPEED_KEY, envAddSplit, envAddSun, envUpIrradiance, loadOidn, luminance, meterExposure, oidnDenoise, physicalSunIrradiance, traceDuration, traceEstimate, traceSamples, traceSize } from "./studio-trace";
-import { MATERIAL_RECIPES, hslOf, materialOf } from "@/lib/sets/stage-materials";
+import { MATERIAL_RECIPES, groundMaterialOf, hslOf, makeStageTextures, materialOf, stageMaterial } from "@/lib/sets/stage-materials";
+import { STUDIO_SKY_URL, hdriSunLongitude, longitudeOf, normalFromHeight, normalStrength, realWord, resizeEquirect, studioDefaultSky, turnEquirect, worldUv } from "@/lib/sets/studio-realism";
 import { GRIP_TAP_PX, LONG_PRESS_MS, LONG_PRESS_SLOP_PX, STUDIO_COMPACT_QUERY, nextSheet, sheetDragHeight, sheetHeights, sheetSnap } from "@/lib/sets/studio-sheets";
 import {
   STUDIO_ADD_KINDS,
@@ -120,6 +126,18 @@ export type StudioOptions = {
   };
   /** Called once the first frame is drawn: the page takes its "Opening the set…" away. */
   onReady?: () => void;
+  /**
+   * Real models (2026-09-30): the set's thing models (drawn in place of their blocks), the model files the saved
+   * scene names (signed by the page), more of them on request, keeping an imported file, and the set page's build
+   * from a photo (null when this account can't build).
+   */
+  models?: {
+    things: { key: string; url: string; flip: boolean }[];
+    fileUrls: Record<string, string>;
+    urls: (files: string[]) => Promise<Record<string, string>>;
+    keepImport: (file: File) => Promise<{ error: string } | { error: null; file: string; url: string }>;
+    build: { usd: number; run: (target: any, photoDataUri: string, onPhase: (p: string) => void) => Promise<any> } | null;
+  } | null;
 };
 
 export function startStudio(opts: StudioOptions): () => void {
@@ -234,7 +252,7 @@ function objMesh(o, copy) {
   m.position.set(o.position[0] + off[0] * copy, o.position[1] + off[1] * copy, o.position[2] + off[2] * copy);
   m.rotation.set(THREE.MathUtils.degToRad(o.rotation[0]), THREE.MathUtils.degToRad(o.rotation[1]), THREE.MathUtils.degToRad(o.rotation[2]));
   m.castShadow = o.castShadow !== false;
-  m.userData.word = materialOf(o); // the set's material word: the path tracer adds its physical layers (glass, sheen…)
+  m.userData.word = realWord(o); // the set's material word (or its name's): realistic materials and the path tracer's physical layers
   return m;
 }
 const SPEC = opts.spec;
@@ -397,12 +415,14 @@ function del(list = movable()) {
 }
 function dupItem(src, offset = new THREE.Vector3(2.5, 0, 0), name) {
   const obj = src.obj.clone(true), paint = [];
-  obj.traverse((o) => { if (o.isMesh) { const old = o.material; o.material = old.clone(); if (src.obj.userData.paint?.includes(old)) paint.push(o.material); } });
+  obj.traverse((o) => { if (o.isMesh) { const old = o.material; o.material = old.clone(); if (src.obj.userData.paint?.includes(old)) paint.push(o.material); const pl = plainTwin.get(old); if (pl) { const p2 = pl.clone(); o.material.color = p2.color; realTwin.set(p2, o.material); plainTwin.set(o.material, p2); } } });
   obj.children.filter((c) => c.userData.isItem).forEach((c) => obj.remove(c));
   obj.userData.paint = paint; obj.userData.array = src.obj.userData.array ? { ...src.obj.userData.array } : undefined;
   obj.position.add(offset);
   const it = addItem(obj, name || nextName(src.name), src.kind, src.coll);
   if (src.rig && it.rig) { it.pose = clonePose(src.pose); it.poseKeys = clone(src.poseKeys); applyPose(it.rig, it.pose); }
+  // A model's copy is drawn from the same model, and kept the same way (2026-09-30).
+  if (src.model && src.modelState === "model") { it.model = { ...src.model }; it.modelState = "model"; if (src.obj.userData.paint?.[0]?.userData?.wordsOnly) wordsPaint(it, "#" + src.obj.userData.paint[0].color.getHexString()); }
   tagIds(obj, it.id); applyArray(it);
   const idx = items.indexOf(it);
   push({ label: "duplicate", undo() { detachItem(it); }, redo() { reattachItem(it, idx); } });
@@ -488,7 +508,7 @@ function addUI(kind) { const it = addKind(kind); if (!it) return; setTool("trans
 function addMenuHTML() {
   let h = "", last = "";
   for (const [k, d] of Object.entries(ADD)) { if (d.h !== last) { h += `<h4>${d.h}</h4>`; last = d.h; } h += `<button data-add="${k}"><span>${d.l}</span></button>`; }
-  h += `<div class="sep"></div><button data-act="import"><span>Import 3D model…</span><small>.glb</small></button><button data-act="astraModel"><span>Model from a photo</span><small>Astra</small></button>`;
+  h += `<div class="sep"></div><button data-act="import"><span>Import 3D model…</span><small>.glb</small></button><button data-act="astraModel"><span>Model from a photo</span><small>TRELLIS.2</small></button>`;
   return h;
 }
 document.querySelector('[data-list="add"]').innerHTML = addMenuHTML();
@@ -502,17 +522,291 @@ const fileIn = Object.assign(document.createElement("input"), { type: "file", ac
 fileIn.addEventListener("change", async () => {
   const file = fileIn.files?.[0]; if (!file) return; const buf = await file.arrayBuffer(); fileIn.value = "";
   loader.parse(buf, "", (gltf) => {
-    const g = new THREE.Group(), root = gltf.scene; g.add(root);
-    root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-    const b = new THREE.Box3().setFromObject(root), s = b.getSize(new THREE.Vector3()), m = Math.max(s.x, s.y, s.z);
-    if (m > 30 || (m > 0 && m < 0.2)) root.scale.setScalar(4.5 / m);
-    const b2 = new THREE.Box3().setFromObject(root), c2 = b2.getCenter(new THREE.Vector3()); root.position.x -= c2.x; root.position.z -= c2.z; root.position.y -= b2.min.y;
+    const g = new THREE.Group(); let holder;
+    try { holder = holderLoose(THREE, gltf.scene); } catch { return toast("That file has nothing in it to draw"); }
+    holder.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); g.add(holder);
     g.position.set(orbit.target.x, 0, orbit.target.z); g.userData.paint = [];
-    const it = addItem(g, file.name.replace(/\.(glb|gltf)$/i, ""), "mesh", "Cast"); const idx = items.indexOf(it);
+    const it = addItem(g, file.name.replace(/\.(glb|gltf)$/i, ""), "mesh", "Cast"); const idx = items.indexOf(it); it.modelState = "model";
+    try { const px = modelPixels(holder); wordsPaint(it, px ? dominantColour(px.data, px.width, px.height) : null); } catch {}
     push({ label: "Import", undo() { detachItem(it); }, redo() { reattachItem(it, idx); } });
     select(it); frameObj(it.obj); info("Imported " + file.name);
+    // Kept with the scene (2026-09-30): the file goes to the set's storage and the scene names it; until then it's this session's.
+    if (MD && MD.keepImport) {
+      it.model = null; info("Imported " + file.name + " · keeping it with the scene…");
+      MD.keepImport(file).then((r) => {
+        if (stopped) return;
+        if (!r || r.error !== null) { toast(`${it.name} stays for this session only: ${(r && r.error) || "it couldn't be kept"}`); return; }
+        it.model = { file: r.file, ...(it.obj.userData.paint?.[0] ? { colour: "#" + it.obj.userData.paint[0].color.getHexString() } : {}) }; fileUrls[r.file] = r.url; info(`${it.name} is kept with this scene`); saveNow();
+      }, () => { if (!stopped) toast(`${it.name} stays for this session only`); });
+    }
   }, (err) => toast("That file couldn't be read as a 3D model: " + (err?.message || "unknown error")));
 });
+
+
+// ================= real models (2026-09-30: "Apply this look for the car." · "I also want to see it rendered in 3d.") =================
+// A thing with a model kept on the set (built from its photo or loaded on the set page) is drawn from that model
+// here, fitted the set page's way (studio-model.ts → thing-model.ts fitThingModel), and back to its blocks when
+// the model can't load. "Model from a photo" builds one through the set page's own build (opts.models.build →
+// model-actions.ts); imports are kept as files of the set. The scene keeps a REFERENCE to each (studio-models.ts).
+const MD = opts.models || null;
+const modelGet = (url) => new GLTFLoader().loadAsync(url);
+const thingElOf = (it) => (it && it.saveKey && it.saveKey.startsWith("el:") ? els.find((e) => e.key === it.saveKey.slice(3)) || null : null);
+const thingHome = (el) => [el.centre[0], 0, el.centre[2]];
+const modelTargets = () => items.filter((i) => thingElOf(i));
+/** The object's colour for the words (Real scene, "the yellow car"): a material of its own that draws nothing. */
+function wordsPaint(it, hex) { if (!hex) return; const m = new THREE.MeshStandardMaterial({ color: hex }); m.userData.wordsOnly = true; it.obj.userData.paint = [m]; }
+function holderOf(it) { return it.obj.children.find((c) => c.userData.modelHolder) || null; }
+/** Load `url` onto `it`: a thing's model fitted where its blocks stand (`how.thing`), anything else standing on its own. */
+async function putModel(it, url, how = {}) {
+  it.kept = it.kept || { blocks: null }; it.modelState = "loading"; if (active === it) renderProps();
+  const el = how.thing ? els.find((e) => e.key === how.thing) || null : null;
+  const r = await showModel({ THREE, load: modelGet, obj: it.obj, url, kept: it.kept, place: (root) => (el ? holderForThing(THREE, root, el, !!how.flip, thingHome(el)) : holderLoose(THREE, root)), onError: (e) => console.warn("[studio] a model would not load:", e) });
+  if (stopped) return r;
+  it.modelState = r;
+  if (r === "model") {
+    tagIds(it.obj, it.id); if (it.obj.userData.array || it.obj.userData.mirror) applyArray(it); physCache = null;
+    let hex = it.model && it.model.colour; if (!hex) { try { const px = modelPixels(holderOf(it)); hex = px ? dominantColour(px.data, px.width, px.height) : null; } catch { hex = null; } }
+    wordsPaint(it, hex);
+  }
+  evaluate(time); refreshSel();
+  return r;
+}
+/** An object drawn from a model file (an import kept with the scene, a new object built from a photo). */
+function addModelItem(name, coll, ref) { const g = new THREE.Group(); g.userData.paint = []; const it = addItem(g, name, "mesh", coll || "Cast"); it.model = ref; return it; }
+const fileUrls = { ...((MD && MD.fileUrls) || {}) };
+async function urlsFor(files) {
+  const want = files.filter((f) => !fileUrls[f]); if (want.length && MD && MD.urls) { try { Object.assign(fileUrls, (await MD.urls(want)) || {}); } catch {} }
+  return fileUrls;
+}
+const thingModelUrl = (key) => { const m = ((MD && MD.things) || []).find((x) => x.key === key || modelHome(x.key, els) === key); return m ? m.url : null; };
+/** An object the saved scene says is drawn from a model: its file or its thing's model, loaded after the first frame. */
+async function loadSavedModel(it) {
+  const ref = it.model; if (!ref) return;
+  let url = null, how = {};
+  if (ref.file) url = (await urlsFor([ref.file]))[ref.file] || null;
+  else if (ref.thing) { url = thingModelUrl(ref.thing); how = { thing: ref.thing, flip: !!ref.flip }; }
+  if (stopped) return;
+  const r = url ? await putModel(it, url, how) : "blocks";
+  if (r === "blocks") { it.modelState = "missing"; toast(`${it.name}'s model couldn't be loaded`); }
+}
+/** The set's own thing models: every thing that has one is drawn from it (its blocks stay when it can't load). */
+function loadSetModels() {
+  for (const m of (MD && MD.things) || []) {
+    const home = modelHome(m.key, els); if (!home) continue;
+    const it = items.find((i) => i.saveKey === "el:" + home); if (!it) continue;
+    const was = it.savedModel && it.savedModel.thing === home ? it.savedModel : null;
+    it.model = { thing: home, ...(m.flip ? { flip: true } : {}), ...(was && was.colour ? { colour: was.colour } : {}) };
+    void putModel(it, m.url, { thing: home, flip: !!m.flip }).then((r) => { if (r === "blocks" && !stopped) { it.model = null; toast(`${it.name}'s model couldn't load, so it's drawn from its blocks`); } });
+  }
+}
+/** What the saved scene keeps of an object's model: a reference, never the file (studio-models.ts). */
+function modelRefOf(it) { const m = it.model; if (!m || it.modelState === "blocks" || it.modelState === "missing") return null; return studioModelRef(m); }
+
+// ---- Model from a photo ----
+const MP_TITLE = "Model from a photo";
+const mp = { target: null, img: null, url: null, name: "", views: [], crop: null, useCrop: false, busy: false, phase: "", t0: 0, timer: 0, error: "", size: 1, done: null, colour: null };
+const photoIn = Object.assign(document.createElement("input"), { type: "file", accept: "image/*" });
+photoIn.addEventListener("change", () => { const f = photoIn.files && photoIn.files[0]; photoIn.value = ""; if (f) mpLoad(f); }, { signal: ac.signal });
+const mpLabel = () => studioBuildLabel(MD && MD.build ? MD.build.usd : undefined);
+function openModelWin(pref) {
+  const ts = modelTargets();
+  if (!mp.busy) mp.target = pref && thingElOf(pref) ? pref.saveKey : pref === "new" ? "new" : mp.target && (mp.target === "new" || ts.some((t) => t.saveKey === mp.target)) ? mp.target : ((ts.find((t) => /car/i.test(t.name)) || ts[0]) || { saveKey: "new" }).saveKey;
+  mpRender(true);
+}
+function mpLoad(file) {
+  if (mp.busy) return;
+  if (!/^image\//.test(file.type || "") || file.size > 25 * 1024 * 1024) { mp.error = "Pick a photo (JPEG, PNG or WebP) under 25 MB."; return mpRender(); }
+  const url = URL.createObjectURL(file), img = new Image();
+  img.onload = () => {
+    if (mp.url) URL.revokeObjectURL(mp.url);
+    mp.img = img; mp.url = url; mp.name = file.name; mp.error = ""; mp.done = null;
+    try { mp.views = viewsOfImage(img, img.naturalWidth, img.naturalHeight); } catch { mp.views = []; }
+    const s = studioViewSuggestion(mp.views);
+    mp.crop = s || { x: Math.round(img.naturalWidth * 0.1), y: Math.round(img.naturalHeight * 0.1), w: Math.round(img.naturalWidth * 0.8), h: Math.round(img.naturalHeight * 0.8) };
+    mp.useCrop = mp.views.length >= 2;
+    mpRender();
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); mp.error = "That photo couldn't be read here — try a JPEG or PNG."; mpRender(); };
+  img.src = url;
+}
+function mpPhaseText() {
+  const s = Math.max(0, Math.round((Date.now() - mp.t0) / 1000));
+  return mp.phase === "photo" ? `Checking the photo · ${s} s` : mp.phase === "placing" ? "Placing the model…" : `Building the model · ${s} s — usually under a minute. You can close this window; it lands on the stage when it's ready.`;
+}
+function mpTick() { const e = $("mpProg"); if (e && mp.busy) e.textContent = mpPhaseText(); }
+function mpCropStyle() { const W = mp.img.naturalWidth, H = mp.img.naturalHeight, c = mp.crop; return `left:${(c.x / W) * 100}%;top:${(c.y / H) * 100}%;width:${(c.w / W) * 100}%;height:${(c.h / H) * 100}%`; }
+function mpRender(open) {
+  if (!open && !$("mpWin")) return;
+  const B = MD && MD.build, ts = modelTargets();
+  const opt = (v, n) => `<option value="${esc(v)}"${mp.target === v ? " selected" : ""}>${esc(n)}</option>`;
+  const targetSel = `<select class="sel2" id="mpTarget" aria-label="Build for" translate="no"${mp.busy ? " disabled" : ""}>${ts.map((t) => opt(t.saveKey, t.name)).join("")}${opt("new", T("New object"))}</select>`;
+  const n = mp.views.length;
+  const sheetLine = !mp.img ? "" : n >= 2 ? `A sheet with ${n} views. Drag the box round the one to build from — the side view is picked. One view builds one model; the whole sheet would build several small ones.` : n === 1 ? "One thing on a plain background: it's sent as it is, or drag a box round part of it." : "An ordinary photo: it's sent whole, or drag a box round the thing.";
+  const pic = !mp.img
+    ? `<div class="mp-drop" id="mpDrop"><p style="margin:0 0 8px"><b>Drop a photo here</b></p><button class="pbtn" id="mpPick">Choose a photo…</button><p class="hint" style="margin:8px 0 0">One clear view of the whole thing on a plain background builds best. A sheet of several views (side, front, top, back): you pick one.</p></div>`
+    : `<div class="mp-pic" id="mpPic"><img id="mpImg" src="${esc(mp.url)}" alt="Your photo" draggable="false">${mp.useCrop ? `<div class="mp-crop" id="mpCrop" style="${mpCropStyle()}"><span class="mp-hd" data-h="nw"></span><span class="mp-hd" data-h="se"></span></div>` : ""}</div>
+<p class="hint" style="margin:6px 0">${esc(sheetLine)}</p>
+<div class="row-btns"><button class="pbtn${mp.useCrop ? " on" : ""}" id="mpOne"${mp.busy ? " disabled" : ""}>Use one view</button><button class="pbtn${mp.useCrop ? "" : " on"}" id="mpWhole"${mp.busy ? " disabled" : ""}>Use the whole photo</button><button class="pbtn" id="mpOther"${mp.busy ? " disabled" : ""}>Another photo</button></div>`;
+  const sizeRow = mp.target === "new" ? `<div class="fr"><label>Longest side</label><input class="sel2" id="mpSize" type="number" min="0.1" max="30" step="0.1" value="${mp.size}" aria-label="Longest side in metres" style="width:90px"> <span class="hint" style="margin:0 0 0 6px">m</span></div>` : "";
+  const tgt = mp.target === "new" ? null : items.find((i) => i.saveKey === mp.target);
+  const status = mp.busy ? mpPhaseText() : mp.error ? mp.error : mp.done ? (mp.done.ok ? `Built. ${mp.done.name} is drawn from its model now, kept with the set. Render ▸ Path traced still to see it in full light.` : `Built and kept with the set, but ${mp.done.name}'s model couldn't be drawn here. Reopen the Studio to try again.`) : "";
+  const body = !B
+    ? `<p>Building a model from a photo is open to admins while we prove it. You can bring a model of your own now: a .glb file from any 3D tool.</p><div class="row-btns"><button class="pbtn accent" id="mpImport">Import 3D model…</button></div>`
+    : `${pic}${sizeRow}
+<div class="row-btns" style="margin-top:10px"><button class="pbtn accent" id="mpGo"${!mp.img || mp.busy ? " disabled" : ""}>${esc(mpLabel())}</button></div>
+<p class="hint" style="margin:6px 0 0">Built by TRELLIS.2 from this one view, the set page's own build. It costs Picacho about $${(B.usd || 0).toFixed(2)} a build; no credits are taken. Up to ${THING_BUILDS_PER_HOUR} builds an hour.</p>${tgt ? `<p class="hint" style="margin:4px 0 0">It replaces ${esc(tgt.name)}'s blocks, or its older model.</p>` : ""}`;
+  const html = `<div id="mpWin" class="mp"><style>
+.mp-drop{border:1.5px dashed #555861;border-radius:10px;padding:22px 14px;text-align:center;margin:8px 0}
+.mp-drop.over,.mp-pic.over{border-color:#e0a468;background:rgba(224,164,104,.06)}
+.mp-pic{position:relative;display:block;margin:8px auto 0;max-width:100%;border:1px solid #3a3c42;border-radius:6px;overflow:hidden;background:#fff;user-select:none;touch-action:none;cursor:crosshair}
+.mp-pic img{display:block;width:100%;height:auto;max-height:46vh;object-fit:contain;pointer-events:none}
+.mp-crop{position:absolute;border:2px solid #e0a468;box-shadow:0 0 0 9999px rgba(20,20,24,.55);cursor:move;touch-action:none}
+.mp-hd{position:absolute;width:14px;height:14px;background:#e0a468;border-radius:3px}
+.mp-hd[data-h=nw]{left:-8px;top:-8px;cursor:nwse-resize}.mp-hd[data-h=se]{right:-8px;bottom:-8px;cursor:nwse-resize}
+.mp .pbtn.on{border-color:#e0a468;color:#f3c48c}
+</style>
+<div class="fr"><label>Build for</label>${targetSel}</div>${body}
+<p class="hint" id="mpProg" role="status" aria-live="polite" style="margin:8px 0 0${mp.error && !mp.busy ? ";color:#e06a5a" : ""}">${esc(status)}</p></div>`;
+  openWin(MP_TITLE, html);
+  mpWire();
+}
+function mpWire() {
+  const sel = $("mpTarget"); if (sel) sel.onchange = () => { mp.target = sel.value; mp.done = null; mpRender(); };
+  if ($("mpImport")) $("mpImport").onclick = () => fileIn.click();
+  if ($("mpPick")) $("mpPick").onclick = () => photoIn.click();
+  if ($("mpOther")) $("mpOther").onclick = () => photoIn.click();
+  if ($("mpOne")) $("mpOne").onclick = () => { mp.useCrop = true; mpRender(); };
+  if ($("mpWhole")) $("mpWhole").onclick = () => { mp.useCrop = false; mpRender(); };
+  if ($("mpSize")) $("mpSize").onchange = (e) => { const v = +e.target.value; if (v > 0 && v <= 30) mp.size = Math.round(v * 100) / 100; };
+  if ($("mpGo")) $("mpGo").onclick = () => void mpBuild();
+  for (const id of ["mpDrop", "mpPic"]) {
+    const z = $(id); if (!z) continue;
+    z.addEventListener("dragover", (e) => { e.preventDefault(); z.classList.add("over"); });
+    z.addEventListener("dragleave", () => z.classList.remove("over"));
+    z.addEventListener("drop", (e) => { e.preventDefault(); z.classList.remove("over"); const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) mpLoad(f); });
+  }
+  const pic = $("mpPic"); if (!pic || mp.busy) return;
+  // The box: drag it to move, a corner to size it, or draw a new one anywhere on the photo.
+  pic.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    const r = pic.getBoundingClientRect(), W = mp.img.naturalWidth, H = mp.img.naturalHeight, k = W / Math.max(1, r.width), kh = H / Math.max(1, r.height);
+    const px = (e.clientX - r.left) * k, py = (e.clientY - r.top) * kh, h = e.target.dataset && e.target.dataset.h, on = !!e.target.closest(".mp-crop");
+    if (!mp.useCrop) { mp.useCrop = true; mp.crop = { x: px, y: py, w: 1, h: 1 }; mpRender(); }
+    const start = { ...mp.crop }, mode = h || (on ? "move" : "draw");
+    if (mode === "draw") Object.assign(mp.crop, { x: px, y: py, w: 1, h: 1 });
+    e.preventDefault(); pic.setPointerCapture && pic.setPointerCapture(e.pointerId);
+    const move = (ev) => {
+      const qx = (ev.clientX - r.left) * k, qy = (ev.clientY - r.top) * kh, dx = qx - px, dy = qy - py; let c;
+      if (mode === "move") c = { x: start.x + dx, y: start.y + dy, w: start.w, h: start.h };
+      else if (mode === "nw") c = { x: Math.min(start.x + dx, start.x + start.w - 24), y: Math.min(start.y + dy, start.y + start.h - 24), w: start.w - dx, h: start.h - dy };
+      else if (mode === "se") c = { x: start.x, y: start.y, w: start.w + dx, h: start.h + dy };
+      else c = { x: Math.min(px, qx), y: Math.min(py, qy), w: Math.abs(qx - px), h: Math.abs(qy - py) };
+      mp.crop = cropInPixels(c, W, H, W, H); const b = $("mpCrop"); if (b) b.style.cssText = mpCropStyle();
+    };
+    const up = () => { pic.removeEventListener("pointermove", move); pic.removeEventListener("pointerup", up); pic.removeEventListener("pointercancel", up); };
+    pic.addEventListener("pointermove", move); pic.addEventListener("pointerup", up); pic.addEventListener("pointercancel", up);
+  });
+}
+/** The press: the crop to the set page's build, then the model onto the thing (or a new object). One at a time. */
+async function mpBuild() {
+  const B = MD && MD.build; if (!B || mp.busy || !mp.img) return;
+  const W = mp.img.naturalWidth, H = mp.img.naturalHeight, crop = mp.useCrop && mp.crop ? mp.crop : { x: 0, y: 0, w: W, h: H };
+  let photo; try { photo = cropPhoto(mp.img, crop); } catch { mp.error = "That photo couldn't be read here — try a JPEG or PNG."; return mpRender(); }
+  const targetKey = mp.target, target = targetKey === "new" ? { new: true } : { key: targetKey.slice(3) }, size = mp.size;
+  mp.busy = true; mp.error = ""; mp.done = null; mp.phase = "photo"; mp.t0 = Date.now(); mp.colour = photo.colour; mpRender(); clearInterval(mp.timer); mp.timer = setInterval(mpTick, 1000);
+  info("Model from a photo · building…");
+  let r; try { r = await B.run(target, photo.dataUri, (p) => { mp.phase = p; mpTick(); }); } catch { r = { error: "Couldn't reach the server. Nothing was built." }; }
+  clearInterval(mp.timer); if (stopped) return;
+  if (!r || r.error) { mp.busy = false; mp.error = (r && r.error) || "The model couldn't be built."; mpRender(); toast("The model wasn't built · " + mp.error); return; }
+  let it = null, drawn = "blocks";
+  if (r.thing) {
+    const home = modelHome(r.thing.key, els); it = home ? items.find((i) => i.saveKey === "el:" + home) : null;
+    if (it) { it.model = { thing: home, colour: photo.colour || undefined }; drawn = await putModel(it, r.thing.url, { thing: home, flip: false }); if (drawn === "blocks") it.model = null; }
+  } else if (r.file) {
+    it = addModelItem(nextName("Model"), "Cast", { file: r.file.file, colour: photo.colour || undefined }); fileUrls[r.file.file] = r.file.url;
+    it.obj.position.set(orbit.target.x, 0, orbit.target.z); const idx = items.indexOf(it);
+    push({ label: "Add " + it.name, undo() { detachItem(it); }, redo() { reattachItem(it, idx); } });
+    drawn = await putModel(it, r.file.url, {});
+    if (drawn === "model") { const b = new THREE.Box3().setFromObject(holderOf(it)), s = b.getSize(new THREE.Vector3()), m = Math.max(s.x, s.y, s.z); if (m > 0) it.obj.scale.setScalar(size / m); }
+  }
+  if (stopped) return;
+  mp.busy = false; mp.done = { name: it ? it.name : "The thing", ok: drawn === "model" };
+  mpRender();
+  if (it && drawn === "model") { select(it); frameObj(it.obj); info(`${it.name} · drawn from its model, built from your photo`); saveNow(); }
+  else toast("The model was built but couldn't be drawn here");
+}
+
+
+// ================= realistic scenery (2026-09-30, operator: "The scenery must look real.") =================
+// Every block in the set page's own physical material for its word (studio-realism.ts realWord → stage-materials.ts
+// stageMaterial), with the stage's procedural textures at world scale and a normal map from the same heights (the
+// path tracer reads normal maps, not bump maps). Made after the first frame, one word at a time. "Realistic
+// materials" (World tab) is on by default; off draws the flat colours again. The colour object is SHARED between the
+// flat and the real material, so the Material tab's colour is the same in both.
+let realOn = true, stageTex = null, realBusy = 0;
+const realTwin = new WeakMap(), plainTwin = new WeakMap(), uvPlain = new WeakMap(), uvReal = new WeakMap();
+const realNormals = new Map();
+function realNormal(name) {
+  if (realNormals.has(name)) return realNormals.get(name);
+  const src = stageTex.get(name).image, size = src.width, g = src.getContext("2d").getImageData(0, 0, size, size).data;
+  const c = document.createElement("canvas"); c.width = size; c.height = size; const x = c.getContext("2d"), img = x.createImageData(size, size);
+  img.data.set(normalFromHeight(g, size, normalStrength(MATERIAL_RECIPES[realWordNames.get(name)]?.bumpScale || 0.02)));
+  x.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; t.colorSpace = THREE.NoColorSpace;
+  realNormals.set(name, t); return t;
+}
+const realWordNames = new Map(); // a bump texture → a word that uses it (for its strength)
+for (const [w, r] of Object.entries(MATERIAL_RECIPES)) if (r.bump && !realWordNames.has(r.bump)) realWordNames.set(r.bump, w);
+/** The flat material's real twin, made once: the word's physical material, its maps, the same colour object. */
+function realFor(plain, word, share = true) {
+  const hit = realTwin.get(plain); if (hit) return hit;
+  const hex = (c) => "#" + c.getHexString();
+  const real = stageMaterial(THREE, word, { color: hex(plain.color), roughness: plain.roughness, metalness: plain.metalness, emissive: plain.emissiveIntensity > 0 ? hex(plain.emissive) : null, emissiveIntensity: plain.emissiveIntensity, doubleSided: plain.side === THREE.DoubleSide }, stageTex);
+  if (share) real.color = plain.color; else real.color.set(SPEC.ground.color);
+  real.emissiveIntensity = plain.emissiveIntensity; real.opacity = plain.opacity; real.transparent = real.transparent || plain.transparent;
+  const bump = MATERIAL_RECIPES[word]?.bump;
+  if (bump && real.bumpMap) { real.normalMap = realNormal(bump); const k = 1; real.normalScale.set(k, k); real.bumpMap = null; }
+  realTwin.set(plain, real); plainTwin.set(real, plain); return real;
+}
+/** World-scale texture coordinates on a block's own geometry (its size is its scale), kept beside its own. */
+function bakeRealUv(mesh, tile) {
+  const g = mesh.geometry; if (!g?.attributes?.uv || !g.attributes.normal || uvReal.has(g)) return;
+  uvPlain.set(g, g.attributes.uv);
+  const pos = g.attributes.position, nor = g.attributes.normal, uv = g.attributes.uv.clone(), s = [Math.abs(mesh.scale.x) || 1, Math.abs(mesh.scale.y) || 1, Math.abs(mesh.scale.z) || 1];
+  for (let i = 0; i < pos.count; i++) { const [u, v] = worldUv([nor.getX(i), nor.getY(i), nor.getZ(i)], [pos.getX(i) * s[0], pos.getY(i) * s[1], pos.getZ(i) * s[2]], tile); uv.setXY(i, u, v); }
+  uvReal.set(g, uv);
+}
+function realMeshes() { const out = new Set(); for (const it of items) it.obj.traverse((o) => { if (o.isMesh && o.userData.word && !o.userData.isEditPts) out.add(o); }); if (ground.userData.word) out.add(ground); return [...out]; }
+function realSwap(o, on) {
+  const cur = o.material; if (!cur || Array.isArray(cur)) return;
+  if (on) {
+    const plain = plainTwin.get(cur) ? null : cur; if (!plain || !plain.isMeshStandardMaterial) return;
+    const real = realFor(plain, o.userData.word, o !== ground), tile = MATERIAL_RECIPES[o.userData.word]?.tile || 0;
+    if (tile > 0 && (real.map || real.normalMap || real.roughnessMap)) { bakeRealUv(o, tile); if (uvReal.has(o.geometry)) o.geometry.setAttribute("uv", uvReal.get(o.geometry)); }
+    o.material = real;
+  } else {
+    const plain = plainTwin.get(cur); if (!plain) return;
+    plain.emissiveIntensity = cur.emissiveIntensity; o.material = plain;
+    if (uvPlain.has(o.geometry)) o.geometry.setAttribute("uv", uvPlain.get(o.geometry));
+  }
+}
+function realPaint(on) { for (const it of items) { const p = it.obj.userData.paint; if (Array.isArray(p)) it.obj.userData.paint = p.map((m) => (on ? realTwin.get(m) || m : plainTwin.get(m) || m)); } }
+/** On: every block to its real material, a word's textures made at a time (each a few hundred ms), after the first frame. */
+function setReal(on, quiet) {
+  realOn = on; const run = ++realBusy;
+  if (!on) { realMeshes().forEach((o) => realSwap(o, false)); realPaint(false); if (!quiet) info("Realistic materials off · flat colours"); return; }
+  stageTex ||= makeStageTextures(THREE);
+  const byWord = new Map(); for (const o of realMeshes()) { const w = o.userData.word; if (!byWord.has(w)) byWord.set(w, []); byWord.get(w).push(o); }
+  const words = [...byWord.keys()];
+  const step = () => {
+    if (stopped || run !== realBusy || !realOn) return;
+    const w = words.shift(); if (!w) { realPaint(true); if (!quiet) info("Realistic materials on"); renderAll(); return; }
+    try { byWord.get(w).forEach((o) => realSwap(o, true)); } catch (e) { console.warn("[studio] a material couldn't be made:", w, e); }
+    setTimeout(step, 0);
+  };
+  step();
+}
+ground.userData.word = groundMaterialOf(SPEC.ground);
 
 // ================= world, camera, shading =================
 let hour = 15.8, skyColor = new THREE.Color();
@@ -523,6 +817,7 @@ function setHour(h) {
   const warm = 1 - elev; sun.color.setHSL(0.08, 0.5 * warm + 0.05, 0.58 + elev * 0.32); sun.intensity = 0.35 + elev * 2.6;
   const sky = new THREE.Color().setHSL(0.58 - warm * 0.5, 0.36, 0.17 + elev * 0.5); if (h < 6.6 || h > 19.3) sky.setHSL(0.66, 0.35, 0.07);
   skyColor = sky; fog.color.copy(sky); hemi.intensity = 0.22 + elev * 0.78; if (skyObj) skyObj.material.uniforms.sunPosition.value.copy(sun.position).normalize();
+  try { syncSkyPhotoSoon(); syncPhysEnvSoon(); } catch {} // before the sky's own state exists (the first setHour), nothing to follow
 }
 setHour(hour);
 const hourText = (h = hour) => `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.round((h % 1) * 60) % 60).padStart(2, "0")}`;
@@ -591,6 +886,14 @@ function renderProps() {
     nm.addEventListener("change", () => { rename(it, nm.value || it.name); renderAll(); }); t.appendChild(nm); p.appendChild(t);
     const [tp, tb] = panel("Transform"); transformStack(tb, it); p.appendChild(tp);
     if (it.rig) { posePanel(p, it); movePanel(p, it); }
+    // Real models (2026-09-30): what a thing is drawn from, and the way to give it a model from a photo.
+    if (thingElOf(it) || it.model || it.modelState) {
+      const [mp2, mb] = panel("Model");
+      const from = it.modelState === "loading" ? "loading its model…" : it.modelState === "model" ? (it.model && it.model.file ? "a model file, kept with the scene" : it.model && it.model.thing ? "its model, kept with the set" : "a model file, this session only") : it.modelState === "missing" ? "its model couldn't be loaded" : "its blocks";
+      mb.appendChild(fr("Drawn from", ro(from)));
+      if (thingElOf(it)) { const r4 = document.createElement("div"); r4.className = "row-btns"; r4.innerHTML = `<button class="pbtn" id="pModel">Model from a photo…</button>`; mb.appendChild(r4); r4.querySelector("#pModel").onclick = () => openModelWin(it); }
+      p.appendChild(mp2);
+    }
     const [rp, rb] = panel("Relations", false);
     rb.appendChild(fr("Parent", ro(it.obj.parent === scene ? "—" : itemOf(it.obj.parent)?.name || "—")));
     rb.appendChild(fr("Collection", ro(it.coll)));
@@ -708,9 +1011,15 @@ function renderProps() {
     const fc = document.createElement("label"); fc.className = "check"; fc.innerHTML = `<input type="checkbox" id="fogOn" ${scene.fog ? "checked" : ""}> Haze`;
     fc.querySelector("input").onchange = (e) => { scene.fog = e.target.checked ? fog : null; }; wb.appendChild(fr("Atmosphere", fc));
     const sm = document.createElement("select"); sm.className = "sel2"; sm.id = "skyMode"; sm.setAttribute("aria-label", "Sky");
-    [["simple", "Simple sky colour"], ["physical", "Physical sky"], ["studio", "Studio lighting"]].forEach(([v, n]) => sm.add(new Option(n, v, false, v === skyMode)));
-    sm.onchange = () => { setSkyMode(sm.value); info("World · " + sm.options[sm.selectedIndex].text); }; wb.insertBefore(fr("Sky", sm), wb.firstChild); p.appendChild(wp);
-    p.insertAdjacentHTML("beforeend", `<p class="hint">Physical sky scatters sunlight like a real atmosphere; Studio lights everything evenly from soft boxes, for products and cars.</p>`);
+    [["simple", "Simple sky colour"], ["physical", "Physical sky"], ...(skyPhotoAvail || skyMode === "photo" ? [["photo", "Photographed sky"]] : []), ["studio", "Studio lighting"]].forEach(([v, n]) => sm.add(new Option(n, v, false, v === skyMode)));
+    sm.onchange = () => { setSkyMode(sm.value); info("World · " + sm.options[sm.selectedIndex].text); renderProps(); }; wb.insertBefore(fr("Sky", sm), wb.firstChild);
+    if (skyMode === "photo") wb.appendChild(fr("Sky turn", field(skyTurn, { step: 1, dec: 0, unit: "°", min: -180, max: 180, onLive: (v) => { skyTurn = v; syncSkyPhotoSoon(); }, onCommit: (v) => { skyTurn = v; syncSkyPhotoSoon(); } })));
+    p.appendChild(wp);
+    p.insertAdjacentHTML("beforeend", `<p class="hint">Physical sky scatters sunlight like a real atmosphere${skyPhotoAvail ? "; Photographed sky lights the set from a real sky photo, its sun turned to the time of day" : ""}; Studio lights everything evenly from soft boxes, for products and cars.</p>`);
+    // Realistic materials (2026-09-30): the set's surfaces as what they are made of, or the flat colours.
+    const [sp2, sb] = panel("Surfaces"); const rm = document.createElement("label"); rm.className = "check"; rm.innerHTML = `<input type="checkbox" id="realOn" ${realOn ? "checked" : ""}> Realistic materials`;
+    rm.querySelector("input").onchange = (e) => setReal(e.target.checked); sb.appendChild(fr("Materials", rm));
+    sb.insertAdjacentHTML("beforeend", `<p class="hint" style="margin:4px 0 0">Asphalt, grass, concrete, brick, rubber, glass and the rest, drawn at their real size, in the viewport, the path tracer and your videos. Off: flat colours.</p>`); p.appendChild(sp2);
   } else if (ptab === "render") {
     const [rp, rb] = panel("Render"); const r = document.createElement("div"); r.className = "row-btns";
     r.innerHTML = `<button class="pbtn accent" id="rStill">Render still</button><button class="pbtn" id="rVideo">Render animation</button>`; const r2 = document.createElement("div"); r2.className = "row-btns"; r2.innerHTML = `<button class="pbtn" id="rTStill">Path traced still</button><button class="pbtn" id="rTVideo">Path traced animation</button>`; rb.append(r, r2); p.appendChild(rp);
@@ -855,10 +1164,16 @@ const PLANS = [
     },
   },
   {
-    ask: "Build a 3D model of my motorbike from a photo",
-    say: "In Picacho I'd send your photo to our model builder and bring the model onto this stage, painted from the photo. That costs money, so there it runs only on your press. Nothing changes in this draft.",
-    dry: true,
-    steps() { return [S("Ask for a photo of the motorbike", `photo = helios.ui.ask_file(<s>"A photo of the motorbike"</s>)`), S("Build the model from the photo · about $0.30 · your press", `model = helios.ops.model.from_photo(photo, resolution=<k>1024</k>)`), S("Place it on the stage, painted from the photo", `helios.ops.object.import_model(model, paint_from=photo)`)]; },
+    // Real since 2026-09-30 ("Apply this look for the car."): opens Model from a photo for the thing; the build itself
+    // costs money, so it runs only on the window's Build press.
+    ask: "Build a 3D model of the car from a photo",
+    say: "I'll open Model from a photo for it. Pick the photo — on a sheet of several views, drag the box round the side view — then press Build. The build costs money, so it runs only on your press.",
+    steps(ctx) {
+      const ts = modelTargets(), cs = ts.filter((i) => /car/i.test(i.name));
+      const c = ctx.pick || (active && ts.includes(active) ? active : cs.length === 1 ? cs[0] : ts.length === 1 ? ts[0] : null);
+      if (!c && ts.length > 1) return { question: `There are ${ts.length} things on the set. Which one is the model for?`, options: ts };
+      return [S(`Open Model from a photo for ${c ? c.name : "a new object"}`, `helios.ui.model_from_photo(target=<s>"${c ? c.name : "NEW_OBJECT"}"</s>)`, () => { openModelWin(c || "new"); return null; })];
+    },
   },
   {
     ask: "Drop three boxes onto the car",
@@ -967,6 +1282,8 @@ function sendAstra(text) {
   const asked = text.toLowerCase().replace(/[.!]+$/, "");
   const plan = PLANS.find((p) => p.ask.toLowerCase() === asked || T(p.ask).toLowerCase() === asked);
   if (plan) return startPlan(plan, {});
+  // "make a 3D model of the car from this photo" and the like: the real Model from a photo, not a guess (2026-09-30).
+  if (/\bmodel\b/i.test(text) && /\b(photo|picture|image|sheet|blueprint)s?\b/i.test(text)) return startPlan(PLANS[6], {});
   if (!opts.astra) { astraLog.push({ who: "a", text: "Here I run the examples only (open Examples ▸). Inside Picacho I read any request, in your words, and turn it into the same visible steps." }); renderThread(); return; }
   void askModel(text);
 }
@@ -1067,7 +1384,7 @@ function sceneSummary() {
     return { id: sid(i), name: i.name, kind: i.kind === "light" || i.kind === "camera" || i.kind === "empty" ? i.kind : "mesh", at: [c.x, -c.z, y], size: [sz.x, sz.z, sz.y], turn: THREE.MathUtils.radToDeg(i.obj.rotation.y), sel: selection.has(i), hidden: i.hidden, astra: !!i.byAstra, parent: par ? sid(par) : undefined, keys: i.keys.length, physics: i.phys && i.phys.type !== "none" ? i.phys.type : undefined, pose: i.rig ? personWords(i)?.words : undefined, moves: i.rig && i.moves?.length ? i.moves.map(moveWords).join("; ") : undefined };
   });
   const fk = Object.keys(STUDIO_FORMATS).find((k) => STUDIO_FORMATS[k] === format) || "16:9";
-  return normaliseStudioSummary({ frame: frameNo(), hour, sky: skyMode, format: fk, lens: shot.obj.userData.lensMm, camera: sid(shot), aim: shot.obj.userData.track ? "o" + shot.obj.userData.track : null, range: [pStart, pEnd], objects: objs });
+  return normaliseStudioSummary({ frame: frameNo(), hour, sky: skyMode === "photo" ? "physical" : skyMode, format: fk, lens: shot.obj.userData.lensMm, camera: sid(shot), aim: shot.obj.userData.track ? "o" + shot.obj.userData.track : null, range: [pStart, pEnd], objects: objs });
 }
 /** The shot camera's right and "towards the camera" on the ground (three.js x, z). */
 function camGround() {
@@ -2384,6 +2701,12 @@ function ptLook() { ptR.toneMapping = ptSet.look === "aces" ? THREE.ACESFilmicTo
 const PT_EQ_VERT = "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }";
 const PT_EQ_FRAG = "uniform samplerCube env; varying vec2 vUv; void main() { float p = (vUv.x - 0.5) * 6.28318530718; float t = (vUv.y - 0.5) * 3.14159265359; gl_FragColor = vec4(textureCube(env, vec3(cos(t) * cos(p), sin(t), cos(t) * sin(p))).rgb, 1.0); }";
 function ptWorld() {
+  if (skyMode === "photo" && skyPhoto) {
+    const pk = "photo:" + skyPhotoTurn().toFixed(3); if (pk === ptWorldKey && ptWorldTex) return ptWorldTex;
+    const tex = new THREE.DataTexture(skyPhotoDome(ENV_W, ENV_H), ENV_W, ENV_H, THREE.RGBAFormat, THREE.FloatType);
+    tex.mapping = THREE.EquirectangularReflectionMapping; tex.magFilter = tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false; tex.needsUpdate = true;
+    ptWorldTex?.dispose(); ptWorldKey = pk; ptWorldTex = tex; return tex;
+  }
   const studio = skyMode === "studio", phys = skyMode === "physical", sp = sun.getWorldPosition(new THREE.Vector3()), tp = sun.target.getWorldPosition(new THREE.Vector3());
   const key = JSON.stringify([skyMode, sun.visible, sp.toArray(), tp.toArray(), sun.color.getHex(), sun.intensity, hemi.color.getHex(), hemi.groundColor.getHex(), hemi.intensity]);
   if (key === ptWorldKey && ptWorldTex) return ptWorldTex;
@@ -2426,7 +2749,8 @@ function ptWorld() {
 // renders pitch black, and glass with a thickness turns black inside, so paint keeps the viewport's gloss and glass is
 // thin-walled (a window pane, which is what set glass is).
 function ptMaterial(m, word) {
-  if (m?.isMeshPhysicalMaterial) { if (!(m.clearcoat > 0)) return null; const c = m.clone(); c.clearcoat = 0; return c; } // an imported model's coat
+  // an imported model's coat, and a realistic material's (2026-09-30): no coat, and glass thin-walled
+  if (m?.isMeshPhysicalMaterial) { if (!(m.clearcoat > 0) && !(m.transmission > 0 && m.thickness > 0)) return null; const c = m.clone(); c.clearcoat = 0; if (c.transmission > 0) c.thickness = 0; return c; }
   const r = word && MATERIAL_RECIPES[word]?.physical;
   if (!r || Array.isArray(m) || !m?.isMeshStandardMaterial) return null;
   if (r.transmission === undefined && r.sheen === undefined && r.specularIntensity === undefined) return null;
@@ -2442,7 +2766,7 @@ function ptPrep() {
   const hid = items.filter((i) => i.noRender && i.obj.visible); hid.forEach((i) => (i.obj.visible = false));
   helpers.visible = false; shot.obj.visible = false; if (skyObj) skyObj.visible = false; scene.overrideMaterial = null;
   const world = ptWorld();
-  scene.environment = world; scene.environmentIntensity = 1; scene.background = skyMode === "physical" ? world : skyMode === "studio" ? studioBg : skyColor;
+  scene.environment = world; scene.environmentIntensity = 1; scene.background = skyMode === "physical" || skyMode === "photo" ? world : skyMode === "studio" ? studioBg : skyColor;
   hemi.visible = false; sun.visible = false; // both live in the dome now (the sun as its disc)
   // the tracer gathers meshes and lights by their OWN visible flag, not their parents': everything under a hidden parent
   // (a hidden thing and its lamp, the editor's gizmos) is hidden itself — the move gizmo's invisible 100 km plane
@@ -3498,7 +3822,7 @@ function commands() {
     ["Insert keyframe", () => keyItems()], ["Delete keyframe", () => delKey()], ["Interpolation: Bézier", () => setInterp("bezier")], ["Interpolation: Linear", () => setInterp("linear")], ["Interpolation: Constant", () => setInterp("constant")],
     ["Parent to active", parentTo], ["Clear parent", clearParent], ["Select all", ACTS.selAll], ["Select none", ACTS.selNone], ["Invert selection", ACTS.selInvert],
     ["Camera view", () => toggleCam()], ["Align camera to view", camToView], ["Frame all", frameAll], ["Frame selected", ACTS.frameSel], ["Top view", ACTS.top], ["Front view", ACTS.front], ["Right view", ACTS.right],
-    ["Toggle motion path", togglePath], ["Toggle sidebar", () => toggleN()], ["Maximize viewport", toggleMax], ["Render still", renderStill], ["Render: photo with your character", openCast], ["Render animation", renderVideo], ["Render: path traced still", renderTracedStill], ["Render: path traced animation", renderTracedVideo], ["Physics: simulate", () => simulatePhys()], ["Physics: bake to keyframes", bakePhys], ["Physics: clear bake", clearBake], ["Import 3D model", () => fileIn.click()], ["Export (GLB, OBJ, STL) + print check", openExport],
+    ["Toggle motion path", togglePath], ["Toggle sidebar", () => toggleN()], ["Maximize viewport", toggleMax], ["Render still", renderStill], ["Render: photo with your character", openCast], ["Render animation", renderVideo], ["Render: path traced still", renderTracedStill], ["Render: path traced animation", renderTracedVideo], ["Physics: simulate", () => simulatePhys()], ["Physics: bake to keyframes", bakePhys], ["Physics: clear bake", clearBake], ["Import 3D model", () => fileIn.click()], ["Model from a photo", () => openModelWin(active)], ["Export (GLB, OBJ, STL) + print check", openExport],
     ["Edit Mode (vertices)", toggleEdit], ["Join", joinSel], ["Move to collection", openMoveTo], ["X-ray", toggleXray], ["Local view", toggleLocal], ["Snap menu (3D cursor)", openSnapPie], ["Add marker", addMarker], ["Graph Editor", () => setEditor("graph")], ["Timeline", () => setEditor("timeline")], ["Pivot: 3D cursor", () => setPivot("cursor")], ["Pivot: median point", () => setPivot("median")], ["Pivot: individual origins", () => setPivot("individual")], ["Orientation: Local", () => setOrient("local")], ["Orientation: Global", () => setOrient("world")], ["World: physical sky", () => setSkyMode("physical")], ["World: studio lighting", () => setSkyMode("studio")], ["What Helios leaves out", openLeavesOut],
     ["Shading: Rendered", () => setShade("lit")], ["Shading: Solid", () => setShade("clay")], ["Shading: Wireframe", () => setShade("wire")],
   ];
@@ -3602,13 +3926,66 @@ skyObj.material.uniforms.turbidity.value = 5; skyObj.material.uniforms.rayleigh.
 const pmrem = new THREE.PMREMGenerator(renderer); let studioEnv = null;
 let skyMode = "simple";
 const studioBg = new THREE.Color(0x4b4d52);
-function worldBg() { return skyMode === "physical" ? null : skyMode === "studio" ? studioBg : skyColor; }
+function worldBg() { return skyMode === "physical" ? null : skyMode === "studio" ? studioBg : skyMode === "photo" ? skyPhotoTex || skyColor : skyColor; }
+function applySkyMode(v) {
+  skyMode = v; if (v === "studio" && !studioEnv) studioEnv = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environment = v === "studio" ? studioEnv : v === "photo" && skyPhotoEnv ? skyPhotoEnv.texture : null; scene.environmentIntensity = 1; hemi.visible = v !== "photo"; syncSky();
+  if (v === "physical") syncPhysEnv();
+  if (v === "photo") loadSkyPhoto().then(() => { if (skyMode === "photo" && !stopped) { skyPhotoKey = ""; syncSkyPhoto(); } }, () => { if (skyMode === "photo" && !stopped) { toast("The photographed sky couldn't load, so it's the physical sky"); applySkyMode("physical"); } });
+}
 function setSkyMode(m) {
-  const b = skyMode; const apply = (v) => { skyMode = v; if (v === "studio" && !studioEnv) studioEnv = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; scene.environment = v === "studio" ? studioEnv : null; syncSky(); };
-  apply(m); push({ label: "World", undo() { apply(b); }, redo() { apply(m); } });
+  const b = skyMode; applySkyMode(m); push({ label: "World", undo() { applySkyMode(b); }, redo() { applySkyMode(m); } });
 }
 function syncSky() { if (skyObj) skyObj.material.uniforms.sunPosition.value.copy(sun.position).normalize(); }
 syncSky();
+// ---- the photographed sky (2026-09-30, "The scenery must look real.") ----
+// A CC0 HDRI at STUDIO_SKY_URL (studio-realism.ts), offered only when the file is there; lazy-loaded when picked.
+// It is turned so its own sun stands where the hour puts the Studio's sun (plus "Sky turn"), lights the viewport
+// through a PMREM of it, and is the path tracer's dome as it is (its sun is in the photo, so none is added).
+let skyPhotoAvail = false, skyPhoto = null, skyPhotoTex = null, skyPhotoEnv = null, skyPhotoKey = "", skyTurn = 0, skyPhotoTimer = 0;
+async function checkSkyPhoto() {
+  try { const r = await fetch(STUDIO_SKY_URL, { method: "HEAD" }); skyPhotoAvail = r.ok && !/text\/html/i.test(r.headers.get("content-type") || ""); } catch { skyPhotoAvail = false; }
+  if (skyPhotoAvail && !stopped && ptab === "world") renderProps();
+}
+async function loadSkyPhoto() {
+  if (skyPhoto) return skyPhoto;
+  const t = await new HDRLoader().setDataType(THREE.FloatType).loadAsync(STUDIO_SKY_URL);
+  const { data, width, height } = t.image; t.dispose();
+  skyPhoto = { data, w: width, h: height, sunLon: hdriSunLongitude(data, width, height) };
+  return skyPhoto;
+}
+/** How far the photo is turned: its sun to the Studio sun's side of the sky, then the person's own turn. */
+function skyPhotoTurn() { const d = sun.position.clone().sub(sun.target.position); return longitudeOf(d.x, d.z) - skyPhoto.sunLon + THREE.MathUtils.degToRad(skyTurn); }
+function syncSkyPhoto() {
+  if (skyMode !== "photo" || !skyPhoto) return;
+  const turn = skyPhotoTurn(), key = turn.toFixed(3); if (key === skyPhotoKey && skyPhotoTex) return; skyPhotoKey = key;
+  // Bottom row first, as three samples a data texture (a float texture's flipY isn't honoured: the sky came out upside down).
+  const tex = new THREE.DataTexture(bottomFirst(turnEquirect(skyPhoto.data, skyPhoto.w, skyPhoto.h, turn), skyPhoto.w, skyPhoto.h), skyPhoto.w, skyPhoto.h, THREE.RGBAFormat, THREE.FloatType);
+  tex.mapping = THREE.EquirectangularReflectionMapping; tex.magFilter = tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false; tex.colorSpace = THREE.LinearSRGBColorSpace; tex.needsUpdate = true;
+  skyPhotoTex?.dispose(); skyPhotoEnv?.dispose(); skyPhotoTex = tex; skyPhotoEnv = pmrem.fromEquirectangular(tex);
+  // The Studio's own sun still casts the shadows, so the photo's light is taken at a little over half (not tuned on a real photo yet).
+  scene.environment = skyPhotoEnv.texture; scene.environmentIntensity = 0.6;
+}
+// The physical sky lights the viewport too (2026-09-30): its own light as an environment (a PMREM of the same Sky),
+// so the realistic materials read in the viewport as they do in the path tracer instead of going dark.
+let physEnv = null, physEnvKey = "", physEnvTimer = 0;
+const PHYS_ENV_INTENSITY = 0.1;
+function syncPhysEnv() {
+  if (skyMode !== "physical" || !skyObj || stopped) return;
+  const u = skyObj.material.uniforms, key = u.sunPosition.value.toArray().map((v) => v.toFixed(3)).join();
+  if (key !== physEnvKey || !physEnv) {
+    physEnvKey = key; const sc = new THREE.Scene(), sk = new Sky(); sk.scale.setScalar(450); const k = sk.material.uniforms;
+    for (const n of ["turbidity", "rayleigh", "mieCoefficient", "mieDirectionalG"]) k[n].value = u[n].value; k.sunPosition.value.copy(u.sunPosition.value); sc.add(sk);
+    const next = pmrem.fromScene(sc, 0, 1, 1000); sk.geometry.dispose(); sk.material.dispose(); physEnv?.dispose(); physEnv = next;
+  }
+  scene.environment = physEnv.texture; scene.environmentIntensity = PHYS_ENV_INTENSITY;
+}
+function syncPhysEnvSoon() { if (skyMode !== "physical") return; clearTimeout(physEnvTimer); physEnvTimer = setTimeout(syncPhysEnv, 120); }
+function syncSkyPhotoSoon() { if (skyMode !== "photo") return; clearTimeout(skyPhotoTimer); skyPhotoTimer = setTimeout(syncSkyPhoto, 120); }
+/** The tracer's dome from the photo: turned the same way, at ENV_W × ENV_H, bottom row first (as ptWorld's own). */
+function bottomFirst(top, W, H) { const out = new Float32Array(top.length), row = W * 4; for (let y = 0; y < H; y++) out.set(top.subarray((H - 1 - y) * row, (H - y) * row), y * row); return out; }
+function skyPhotoDome(W, H) { return bottomFirst(resizeEquirect(turnEquirect(skyPhoto.data, skyPhoto.w, skyPhoto.h, skyPhotoTurn()), skyPhoto.w, skyPhoto.h, W, H), W, H); }
+
 
 // ================= modifiers: array + mirror =================
 function applyArray(it) {
@@ -3749,7 +4126,7 @@ function openLeavesOut() {
 // account), and then sends that one up.
 const SAVE_KEY = "helios.studio." + opts.setId;
 function snapshot() {
-  return { v: 1, hour, format, lens: shot.obj.userData.lensMm, skyMode, markers, range: [pStart, pEnd], items: items.filter((i) => i.kind !== "sun" && (i.saveKey || i.addKind)).map((i) => ({ key: i.saveKey || null, add: i.addKind || null, name: i.name, coll: i.coll, t: trs(i.obj), keys: i.keys, interp: i.interp, hidden: i.hidden, noRender: !!i.noRender, color: i.obj.userData.paint?.[0] ? "#" + i.obj.userData.paint[0].color.getHexString() : null, array: i.obj.userData.array || null, mirror: i.obj.userData.mirror || null, track: i.obj.userData.track ? byId(i.obj.userData.track)?.saveKey || null : null, phys: i.phys || null, bake: i.bake || null, pose: i.rig ? i.pose : undefined, poseKeys: i.rig && i.poseKeys.length ? i.poseKeys : undefined, moves: i.rig && i.moves?.length ? i.moves : undefined })), recast: { charId: rc.charId, lastChar: rc.lastChar, outfit: rc.outfit, outfitTyped: rc.outfitTyped, lookId: rc.lookId, real: rc.real, engine: rc.engine }, cast: { charId: cast.charId, lastChar: cast.lastChar, outfit: cast.outfit, outfitTyped: cast.outfitTyped, lookId: cast.lookId } };
+  return { v: 1, hour, format, lens: shot.obj.userData.lensMm, skyMode, skyTurn, real: realOn, markers, range: [pStart, pEnd], items: items.filter((i) => i.kind !== "sun" && (i.saveKey || i.addKind || modelRefOf(i))).map((i) => ({ key: i.saveKey || null, add: i.addKind || null, model: modelRefOf(i) || undefined, name: i.name, coll: i.coll, t: trs(i.obj), keys: i.keys, interp: i.interp, hidden: i.hidden, noRender: !!i.noRender, color: i.obj.userData.paint?.[0] ? "#" + i.obj.userData.paint[0].color.getHexString() : null, array: i.obj.userData.array || null, mirror: i.obj.userData.mirror || null, track: i.obj.userData.track ? byId(i.obj.userData.track)?.saveKey || null : null, phys: i.phys || null, bake: i.bake || null, pose: i.rig ? i.pose : undefined, poseKeys: i.rig && i.poseKeys.length ? i.poseKeys : undefined, moves: i.rig && i.moves?.length ? i.moves : undefined })), recast: { charId: rc.charId, lastChar: rc.lastChar, outfit: rc.outfit, outfitTyped: rc.outfitTyped, lookId: rc.lookId, real: rc.real, engine: rc.engine }, cast: { charId: cast.charId, lastChar: cast.lastChar, outfit: cast.outfit, outfitTyped: cast.outfitTyped, lookId: cast.lookId } };
 }
 let lastSaved = "", lastServer = "", changedAt = 0, serverBusy = false, serverRetryAt = 0;
 const SERVER_DELAY_MS = 5000, SERVER_RETRY_MS = 30000;
@@ -3795,8 +4172,10 @@ function restoreSaved() {
   items.filter((i) => i.saveKey && !keep.has(i.saveKey)).forEach((i) => detachItem(i));
   const made = [];
   for (const s of data.items) {
-    let it = s.key ? items.find((i) => i.saveKey === s.key) : s.add ? addKind(s.add) : null;
+    const ref = studioModelRef(s.model);
+    let it = s.key ? items.find((i) => i.saveKey === s.key) : s.add ? addKind(s.add) : ref ? addModelItem(s.name, s.coll, ref) : null;
     if (!it) continue; made.push([it, s]);
+    if (s.key && ref) it.savedModel = ref;
     it.name = s.name; it.obj.name = s.name; it.coll = s.coll; applyTRS(it.obj, s.t); it.keys = s.keys || []; it.interp = s.interp || "bezier"; it.hidden = !!s.hidden; it.obj.visible = !s.hidden; it.noRender = !!s.noRender; it.phys = s.phys || undefined; it.bake = s.bake || undefined;
     if (s.color && it.obj.userData.paint?.length) it.obj.userData.paint.forEach((m) => m.color.set(s.color));
     it.obj.userData.array = s.array || undefined; it.obj.userData.mirror = s.mirror || undefined; if (s.array || s.mirror) applyArray(it);
@@ -3804,7 +4183,7 @@ function restoreSaved() {
     if (it.rig) { it.pose = normalisePose(s.pose) || presetPose("stand"); it.poseKeys = normalisePoseKeys(s.poseKeys, DUR); it.moves = normaliseMoves(s.moves, FRAMES + 1); applyPose(it.rig, it.pose); }
   }
   for (const [it, s] of made) if (s.track) { const t = items.find((i) => i.saveKey === s.track); if (t) it.obj.userData.track = t.id; }
-  if (typeof data.hour === "number") setHour(data.hour); if (data.format) format = data.format; if (data.lens) setLens(data.lens); if (data.skyMode && data.skyMode !== "simple") setSkyMode(data.skyMode); if (Array.isArray(data.markers)) markers.push(...data.markers);
+  if (typeof data.hour === "number") setHour(data.hour); if (data.format) format = data.format; if (data.lens) setLens(data.lens); if (["simple", "physical", "studio", "photo"].includes(data.skyMode)) applySkyMode(data.skyMode); if (typeof data.skyTurn === "number" && Math.abs(data.skyTurn) <= 180) skyTurn = data.skyTurn; if (data.real === false) realOn = false; if (Array.isArray(data.markers)) markers.push(...data.markers);
   // The playback range (2026-09-30): kept with the scene, so a video's length and price are what was set.
   const savedRange = savedPlaybackRange(data.range, FRAMES); if (savedRange) { [pStart, pEnd] = savedRange; renderTimeline(); }
   // Video with your character's choices (2026-09-30): who, their outfit and look, Real scene, the lane.
@@ -3840,7 +4219,7 @@ const ACTS = {
   selCam: () => select(shot), showAll, path: togglePath, leaves: openLeavesOut, join: joinSel, moveTo: openMoveTo, xray: toggleXray, local: toggleLocal, parent: parentTo, unparent: clearParent, sidebar: () => toggleN(),
   addAt: () => openPopup(mouse[0], mouse[1], addMenuHTML()),
   astraAbout: () => { ntab = "astra"; toggleN(true); renderN(); const i = $("astraIn"); if (i) { i.value = `About "${active?.name}": `; i.focus(); } },
-  astraModel: () => { ntab = "astra"; toggleN(true); renderN(); const i = $("astraIn"); if (i) { i.value = T(PLANS[6].ask); i.focus(); } },
+  astraModel: () => openModelWin(active),
 };
 document.querySelectorAll("[data-menu]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); const l = document.querySelector(`[data-list="${b.dataset.menu}"]`); const open = l.hidden; closeMenus(); l.hidden = !open; b.setAttribute("aria-expanded", String(open)); }));
 dOn("click", (e) => { if (!e.target.closest(".list")) { closeMenus(); } if (!e.target.closest("#pie")) $("pie").hidden = true; });
@@ -4024,7 +4403,12 @@ renderN();
 scene.fog = null; // haze is a World-tab choice; a whole track under it reads as fog
 select(car);
 { const b = new THREE.Box3().expandByObject(car.obj).expandByObject(person.obj); const c = b.getCenter(new THREE.Vector3()), size = Math.max(6, b.getSize(new THREE.Vector3()).length()); orbit.target.copy(c); editorCam.position.copy(c.clone().add(new THREE.Vector3(0.6, 0.45, 0.75).normalize().multiplyScalar(size * 1.5))); }
+applySkyMode(studioDefaultSky(SPEC.title || opts.title || "", SPEC.description || "")); // outdoors the physical sky, under a roof studio light (a saved scene keeps its own)
 restoreSaved();
+// Realistic materials and the photographed sky's check (2026-09-30), after the first frame.
+setTimeout(() => { if (stopped) return; if (realOn) setReal(true, true); void checkSkyPhoto(); }, 30);
+// Real models (2026-09-30): the set's thing models and the scene's model objects load after the first frame.
+Promise.resolve().then(() => { if (stopped) return; try { loadSetModels(); } catch (e) { console.warn("[studio] set models:", e); } for (const it of items) if (it.model && !it.saveKey && !it.modelState) void loadSavedModel(it); });
 // The first frame is drawn here and now (tick schedules the ones after it), and the page's "Opening the set…"
 // goes as soon as it is — never waiting on an animation frame or a timer, which a background tab holds back
 // (2026-09-30: a hidden tab took about 20 s to open).

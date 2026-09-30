@@ -81,6 +81,12 @@ describe("the page and the finisher ask the one rule (read as source)", () => {
     ["studio-recast-actions.ts", "inspectStudioRecast"],
     ["studio-recast-actions.ts", "startStudioRecast"],
     ["studio-recast-actions.ts", "readStudioRecast"],
+    // Real models in the Studio (2026-09-30): a new object's build, and keeping and signing its model files.
+    ["model-actions.ts", "startNewModelBuild"],
+    ["model-actions.ts", "pollNewModelBuild"],
+    ["studio-model-actions.ts", "reserveStudioModel"],
+    ["studio-model-actions.ts", "keepStudioModel"],
+    ["studio-model-actions.ts", "studioModelUrls"],
   ])("%s's %s asks setsAccess first and stops on its refusal", (file, fn) => {
     const src = read(file);
     const start = src.indexOf(`export async function ${fn}(`);
