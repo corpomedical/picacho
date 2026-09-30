@@ -423,7 +423,37 @@ describe("posing people", () => {
     expect(s[3]).toMatchObject({ op: "pose", targets: ["new:runner"], preset: "run" });
   });
 
+  it("walk_to / run_to: a thing or a spot, frames checked (an end before the start means their own pace)", () => {
+    const [a] = plan([step({ say: "Walk to the car over 3 s", op: "walk_to", targets: ["o2"], of: "o1", value: 1, value2: 73 })]);
+    expect(a).toEqual({ say: "Walk to the car over 3 s", op: "walk_to", targets: ["o2"], of: "o1", at: null, start: 1, end: 73 });
+    const [b] = plan([step({ say: "Run there", op: "run_to", targets: ["o2"], x: 12, y: -3, value: 50, value2: 20 })]);
+    expect(b).toEqual({ say: "Run there", op: "run_to", targets: ["o2"], of: null, at: { x: 12, y: -3, z: null }, start: 50, end: null });
+    expect(plan([step({ say: "Walk", op: "walk_to", targets: ["o2"] })])[0].op).toBe("note");
+    expect(plan([step({ say: "Walk", op: "walk_to", targets: ["o1"], of: "o2" })])[0].op).toBe("note");
+    expect(plan([step({ say: "Walk", op: "walk_to", targets: ["o2"], of: "o77" })])[0].op).toBe("note");
+    expect(plan([step({ say: "Walk", op: "walk_to", targets: ["o2"], of: "o1", value: 900, value2: -4 })])[0]).toMatchObject({ start: 241, end: null });
+  });
+
+  it("follow_path takes ground points in order (at most 32, clamped); turn_to faces a thing or the camera", () => {
+    const [p] = plan([step({ say: "Run the loop", op: "follow_path", targets: ["o2"], kind: "run", points: [[1, 2], [3, 4, 0], ["x", 1], [9999, 0]], value: 10 })]);
+    expect(p).toEqual({ say: "Run the loop", op: "follow_path", targets: ["o2"], gait: "run", points: [[1, 2], [3, 4], [500, 0]], start: 10, end: null });
+    expect(plan([step({ say: "Walk nowhere", op: "follow_path", targets: ["o2"], points: [] })])[0].op).toBe("note");
+    const [t] = plan([step({ say: "Face the camera", op: "turn_to", targets: ["o2"], of: "camera", value: 73, value2: 85 })]);
+    expect(t).toEqual({ say: "Face the camera", op: "turn_to", targets: ["o2"], of: "o3", at: null, start: 73, end: 85 });
+  });
+
+  it("the summary carries what a person already does, only for people", () => {
+    const s = normaliseStudioSummary({ ...PEOPLE, objects: [...PEOPLE.objects.map((o) => ({ ...o, moves: "walks to (3, -2) frames 1–73" }))] });
+    expect(s.objects.find((o) => o.id === "o2")?.moves).toBe("walks to (3, -2) frames 1–73");
+    expect(s.objects.find((o) => o.id === "o1")?.moves).toBeUndefined();
+  });
+
   it("the engine runs every people op (read from the source)", () => {
+    const src = readFileSync(join(__dirname, "../../components/studio/studio-engine.ts"), "utf8");
+    expect(src).toContain('case "walk_to": case "run_to": case "turn_to": act = () =>');
+    expect(src).toContain('case "follow_path": act = () =>');
+    expect(src).toContain('ask: "Have the stand-in walk to the car over 3 seconds"');
+    expect(src).toContain('ask: "Run across the track"');
     const engine = readFileSync(join(__dirname, "../../components/studio/studio-engine.ts"), "utf8");
     for (const op of ["pose", "add_person"]) expect(engine, op).toContain(`case "${op}": act = () =>`);
     expect(engine).toContain('case "sit_on": case "lean_on": case "look_at": act = () =>');

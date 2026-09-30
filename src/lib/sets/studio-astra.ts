@@ -24,6 +24,7 @@
 
 import type { AstraJobRequest } from "../generations/providers/astra";
 import { POSE_PRESETS, clampRot, isBone, type BoneName, type PosePreset } from "./studio-pose";
+import { PATH_POINTS_MAX, type Gait } from "./studio-gait";
 
 /** The one plain line at the top of Astra's panel — his question, answered. */
 export const STUDIO_ASTRA_TOP_LINE = "Astra edits this 3D scene. To make a picture or video, use Render.";
@@ -85,6 +86,11 @@ export const STUDIO_OPS = [
   "lean_on",
   "look_at",
   "add_person",
+  // People that move (2026-09-30).
+  "walk_to",
+  "run_to",
+  "follow_path",
+  "turn_to",
 ] as const;
 export type StudioOpName = (typeof STUDIO_OPS)[number];
 
@@ -146,6 +152,8 @@ export type StudioSummaryObject = {
   physics?: "active" | "passive";
   /** A person: what their pose is doing, in words ("sitting on the red car, waving with the right hand"). */
   pose?: string;
+  /** A person's walks, runs and turns on the timeline, in words ("walks to (3, -2) frames 1–73"). */
+  moves?: string;
 };
 
 export type StudioSummary = {
@@ -207,6 +215,8 @@ function summaryObject(v: unknown): StudioSummaryObject | null {
   if (o.physics === "active" || o.physics === "passive") out.physics = o.physics;
   const pose = studioText(o.pose, 120);
   if (pose) out.pose = pose;
+  const moves = studioText(o.moves, 160);
+  if (moves && pose) out.moves = moves;
   return out;
 }
 
@@ -290,7 +300,7 @@ const nullableNumber = { type: ["number", "null"] };
 const STEP_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["say", "op", "targets", "kind", "name", "mode", "x", "y", "z", "of", "side", "value", "value2", "color", "metallic", "roughness", "emission"],
+  required: ["say", "op", "targets", "kind", "name", "mode", "x", "y", "z", "of", "side", "value", "value2", "color", "metallic", "roughness", "emission", "points"],
   properties: {
     say: { type: "string" },
     op: { type: "string", enum: [...STUDIO_OPS] },
@@ -309,6 +319,7 @@ const STEP_SCHEMA = {
     metallic: nullableNumber,
     roughness: nullableNumber,
     emission: { type: "string" },
+    points: { type: "array", items: { type: "array", items: { type: "number" } } },
   },
 } as const;
 
@@ -360,6 +371,8 @@ export const STUDIO_ASTRA_INSTRUCTIONS = [
   `- pose: targets = people; kind = a preset (${POSE_PRESETS.join("|")}; wave/point/hips/crossed move the arms only, so a sitting person keeps sitting), OR name = a bone and x,y,z = its angles in degrees (mode "to" or "by"). Bones: pelvis spine chest neck head, shoulder upperArm forearm hand thigh shin foot with .L (their left) or .R (their right). Angles: upperArm z 90 = arm straight out to the side, x -90 = arm straight forward; forearm x -90 = elbow bent; thigh x -90 = leg forward; shin x 90 = knee bent; neck/head y 40 = turn to their left, x -20 = look up. Joint limits hold.`,
   "- sit_on: targets = people, of = what they sit on (they sit on its nearest top, facing out). lean_on: of = what they lean on (hands on it, or their back on a tall thing). look_at: of = an id or \"camera\".",
   "- add_person: name, kind = a preset or \"\", placed like add (x,y,z or of/side). \"The stand-in\" is the person named Stand-in.",
+  "- walk_to, run_to: targets = people; of = a thing to walk up to (they stop at its nearest side), OR x,y = a spot on the ground; value = start frame (null = the current frame), value2 = end frame (null = their own pace: walk 1.4 m/s, run 4 m/s; \"over 3 seconds\" from frame 1 = value 1, value2 73). They face the way they go, feet planted, and ease into a stand.",
+  "- follow_path: targets = people; points = [[x,y], …] spots on the ground in order (from where they stand); kind = walk|run; value/value2 as walk_to. turn_to: of or x,y = what to face; value = start frame, value2 = end frame (null = 12 frames later). `moves` on a person lists what they already do; a new move replaces the ones it overlaps.",
   "Keep plans short and exact; use the sizes given to place things so they don't overlap. If nothing in the scene can do what they ask, say why in `reply` and give no steps.",
 ].join("\n");
 
@@ -439,6 +452,8 @@ export type StudioStep = { say: string } & (
   | { op: "pose"; targets: string[]; preset: PosePreset | null; bone: BoneName | null; mode: "to" | "by"; v: StudioVec | null }
   | { op: "sit_on" | "lean_on" | "look_at"; targets: string[]; of: string }
   | { op: "add_person"; name: string | null; at: StudioVec | null; place: StudioPlace | null; preset: PosePreset | null }
+  | { op: "walk_to" | "run_to" | "turn_to"; targets: string[]; of: string | null; at: StudioVec | null; start: number | null; end: number | null }
+  | { op: "follow_path"; targets: string[]; gait: Gait; points: [number, number][]; start: number | null; end: number | null }
 );
 
 export type StudioPlan = {
@@ -705,6 +720,36 @@ function stepOf(s: unknown, known: StudioKnown, made: Set<string>): StudioStep |
       if (op !== "look_at" && of === known.camera) return { op: "note", say: "Nobody can sit or lean on the shot camera, so this step is skipped." };
       const kept = who.filter((t) => t !== of);
       return kept.length ? { ...base, op, targets: kept, of } : null;
+    }
+    case "walk_to":
+    case "run_to":
+    case "turn_to":
+    case "follow_path": {
+      const miss = needTargets();
+      if (miss) return miss;
+      const who = targets.filter((t) => known.people?.has(t));
+      if (!who.length) return { op: "note", say: `${targets.map((t) => `"${nameOfRef(t, known)}"`).join(", ")} ${targets.length === 1 ? "isn't a person" : "aren't people"}, so this step is skipped.` };
+      // Frames: value = start (null: the current frame), value2 = end (null: the gait's own pace; a turn, 12 frames).
+      const start = num(o.value) === null ? null : frameOf(o.value, 1);
+      let end = num(o.value2) === null ? null : frameOf(o.value2, STUDIO_LAST_FRAME);
+      if (start !== null && end !== null && end <= start) end = null;
+      if (op === "follow_path") {
+        const points = (Array.isArray(o.points) ? o.points : [])
+          .slice(0, PATH_POINTS_MAX)
+          .map((p) => (Array.isArray(p) && num(p[0]) !== null && num(p[1]) !== null ? ([clamp(p[0] as number, -POS, POS), clamp(p[1] as number, -POS, POS)] as [number, number]) : null))
+          .filter((p): p is [number, number] => p !== null);
+        if (!points.length) return { op: "note", say: `"${say || "That path"}" has no points to walk, so this step is skipped.` };
+        return { ...base, op, targets: who, gait: o.kind === "run" ? "run" : "walk", points, start, end };
+      }
+      let of: string | null = null;
+      if (typeof o.of === "string" && o.of.trim()) {
+        of = resolve(o.of, known, made);
+        if (!of) return cantFind([studioText(o.of, 40)]);
+      }
+      const at = of ? null : vecOf(o, -POS, POS);
+      if (!of && !at) return { op: "note", say: `"${say || op}" doesn't say where to, so this step is skipped.` };
+      const kept = who.filter((t) => t !== of);
+      return kept.length ? { ...base, op, targets: kept, of, at, start, end } : null;
     }
     case "add_person": {
       const place = placeOf();
