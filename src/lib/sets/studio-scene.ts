@@ -33,6 +33,19 @@ export function normaliseStudioScene(v: unknown): { ok: true; scene: StudioScene
 }
 
 /**
+ * The timeline's playback range as a saved scene holds it ([start, end],
+ * whole frames, 1 ≤ start < end ≤ lastFrame), or null for a scene saved
+ * before it was kept (2026-09-30: the range reset to 1–240 on every reopen,
+ * which doubled "Video with your character"'s price from 3 credits to 6).
+ */
+export function savedPlaybackRange(raw: unknown, lastFrame: number): [number, number] | null {
+  if (!Array.isArray(raw) || raw.length !== 2) return null;
+  const [s, e] = raw.map((n) => (typeof n === "number" && Number.isFinite(n) ? Math.round(n) : NaN));
+  if (!(s >= 1) || !(e > s) || e > lastFrame) return null;
+  return [s, e];
+}
+
+/**
  * The owner's saved scene for one set, or null. Never throws: a read that
  * fails — the column not there yet (the SQL not run), the network — opens
  * the Studio from the browser's copy, as before stage 3.
