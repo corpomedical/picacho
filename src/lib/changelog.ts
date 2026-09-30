@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.185.0",
+    build: 224,
+    date: "2026-09-30",
+    title: "Faster start on every app page",
+    items: [
+      "Every page in the app starts showing sooner: the sidebar now loads alongside the page instead of before it.",
+      "Helios Studio's \"Opening the set…\" appears almost at once.",
+    ],
+  },
+  {
     version: "1.184.0",
     build: 223,
     date: "2026-09-30",
