@@ -14,6 +14,8 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { HDRLoader } from "three/examples/jsm/loaders/HDRLoader.js";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import { setElements } from "@/lib/sets/elements";
+import { keysAround, rowInterp, segmentInterp } from "@/lib/sets/studio-keyframes";
+import { partGoneInSaved, placeOnSpot, studioRoadLayout, studioSetParts, surfacesOf } from "@/lib/sets/studio-parts";
 import { letterbox } from "@/lib/sets/rig";
 import { SET_DIRECTION_MAX_CHARS } from "@/lib/sets/set-config";
 import { studioShotInput } from "@/lib/sets/studio-shot";
@@ -258,10 +260,23 @@ function objMesh(o, copy) {
 const SPEC = opts.spec;
 const els = setElements(SPEC);
 const inThing = new Set(); els.forEach((el) => el.members.forEach(([o, c]) => inThing.add(o + ":" + c)));
-const placeGroup = new THREE.Group();
-SPEC.objects.forEach((o, oi) => { const n = o.repeat ? o.repeat.count : 1; for (let c = 0; c < n; c++) if (!inThing.has(oi + ":" + c)) placeGroup.add(objMesh(o, c)); });
-placeGroup.userData.paint = [];
-const place = addItem(placeGroup, "The place", "mesh", "Set"); place.saveKey = "place";
+// The set's own parts (2026-09-30 — operator: "remove the garage and put the car on the road."): what isn't a thing
+// is no longer one "The place" but the parts a person names — Track, Kerbs, Pit garage, Grandstand… (studio-parts.ts)
+// — each its own object under Set: selectable, hideable, deletable, movable, keyable. A part is placed at its centre
+// on the ground, like a thing, so it turns and scales about itself.
+const SET_PARTS = studioSetParts(SPEC, inThing);
+const partItems = SET_PARTS.map((p) => {
+  const g = new THREE.Group(); g.position.set((p.min[0] + p.max[0]) / 2, 0, (p.min[2] + p.max[2]) / 2); let big = null, bv = 0;
+  for (const [oi, c] of p.members) { const o = SPEC.objects[oi], m = objMesh(o, c); m.position.sub(g.position); g.add(m); const v = o.size[0] * o.size[1] * o.size[2]; if (v > bv) { bv = v; big = m.material; } }
+  g.userData.paint = big ? [big] : [];
+  const it = addItem(g, p.name, "mesh", "Set"); it.saveKey = p.key; it.part = { kind: p.kind, repeat: p.repeat, rest: !!p.rest };
+  return it;
+});
+const PART_KIND_WORDS = { road: "road", marking: "markings", kerb: "kerbs", grass: "grass", water: "water", ground: "ground", hill: "hills", building: "building", wall: "wall", barrier: "barrier", stand: "grandstand", pole: "posts", tree: "trees", prop: "structure" };
+/** A part of the set itself (not a thing, a person, a camera or something added). */
+const isPart = (it) => !!(it && it.part);
+/** The parts still in the scene. */
+const setParts = () => items.filter(isPart);
 let firstCar = null;
 els.forEach((el) => {
   const g = new THREE.Group(); g.position.set(el.centre[0], 0, el.centre[2]); let big = null, bv = 0;
@@ -275,10 +290,11 @@ els.forEach((el) => {
 const person = addItem(makePerson(), "Stand-in", "mesh", "Cast"); person.saveKey = "person";
 const mark0 = SPEC.marks[0]; if (mark0) { person.obj.position.set(mark0.x, 0, mark0.z); person.obj.rotation.y = THREE.MathUtils.degToRad(mark0.facingDeg); }
 const shot = addItem(makeShotCamera(), "Shot camera", "camera"); shot.saveKey = "shot";
+/** What the Studio opens on (selected and framed with the stand-in): the first car, else the stand-in. */
+const car = firstCar || person;
 const cam0 = SPEC.cameras[0];
 if (cam0) { shot.obj.position.set(...cam0.position); shot.obj.lookAt(new THREE.Vector3(...cam0.target)); } else { shot.obj.position.set(8, 1.5, 8); shot.obj.lookAt(0, 1, 0); }
 const initLens = cam0 ? Math.max(12, Math.min(200, Math.round(12 / Math.tan(THREE.MathUtils.degToRad(cam0.fovDeg) / 2)))) : 35;
-const car = firstCar || place;
 const sunItem = { id: nextId++, name: "Sun", kind: "sun", obj: sun, keys: [], hidden: false, coll: "Lights", interp: "bezier" };
 items.push(sunItem);
 ground.position.y = -0.02;
@@ -290,6 +306,7 @@ const clone = (x) => JSON.parse(JSON.stringify(x));
 const near = (a, b) => Math.abs(a - b) < 0.5 / FPS;
 function setKey(item, t, k = trs(item.obj)) {
   const at = item.keys.findIndex((x) => near(x.t, t)); const key = { t, ...clone(k) };
+  if (at >= 0 && item.keys[at].ip) key.ip = item.keys[at].ip;
   if (at >= 0) item.keys[at] = key; else { item.keys.push(key); item.keys.sort((a, b) => a.t - b.t); }
 }
 const lerp = (a, b, u) => a.map((v, i) => v + (b[i] - v) * u);
@@ -299,12 +316,9 @@ function evaluate(t) {
   for (const it of items) {
     if (it.rig && it.poseKeys.length) { it.pose = poseAt(it.poseKeys, t, it.interp, it.pose); applyPose(it.rig, it.pose); }
     const ks = it.keys; if (!ks.length) continue;
-    if (t <= ks[0].t) { applyTRS(it.obj, ks[0]); continue; }
-    if (t >= ks[ks.length - 1].t) { applyTRS(it.obj, ks[ks.length - 1]); continue; }
-    let i = 0; while (ks[i + 1].t < t) i++;
-    const a = ks[i], b = ks[i + 1];
-    let u = (t - a.t) / (b.t - a.t);
-    if (it.interp === "bezier") u = u * u * (3 - 2 * u); else if (it.interp === "constant") u = 0;
+    // Each key's own interpolation shapes the segment after it (Blender), else the object's (studio-keyframes.ts).
+    const { a, b, u } = keysAround(ks, t, it.interp);
+    if (a === b) { applyTRS(it.obj, a); continue; }
     applyTRS(it.obj, { p: lerp(a.p, b.p, u), r: lerp(a.r, b.r, u), s: lerp(a.s, b.s, u) });
   }
   // People that move (2026-09-30): a walk, run or turn places the figure after its keys.
@@ -356,8 +370,15 @@ tc.addEventListener("dragging-changed", (e) => {
   orbit.enabled = !e.value;
   const sel = movable(); if (!sel.length) return;
   if (e.value) {
-    drag = { before: sel.map((i) => ({ i, t: trs(i.obj), keys: clone(i.keys) })), pivotInv: pivot.matrixWorld.clone().invert(), starts: sel.map((i) => ({ i, m: i.obj.matrixWorld.clone() })) };
-  } else if (drag) { commitMany(drag.before, "Transform"); drag = null; }
+    drag = { before: sel.map((i) => ({ i, t: trs(i.obj), keys: clone(i.keys) })), pivotInv: pivot.matrixWorld.clone().invert(), starts: sel.map((i) => ({ i, m: i.obj.matrixWorld.clone() })), sx: mouse[0], sy: mouse[1] };
+  } else if (drag) {
+    // A press on the gizmo that barely moved (under 4 px — a click, or one landing there as a menu closed) moves
+    // nothing, keys nothing and leaves no undo step (2026-09-30: stray moves of Car 1 and The place, each keyed).
+    const d = drag; drag = null;
+    const same = d.before.every((b) => JSON.stringify(trs(b.i.obj)) === JSON.stringify(b.t));
+    if (same || Math.hypot(mouse[0] - d.sx, mouse[1] - d.sy) < 4) { d.before.forEach((b) => applyTRS(b.i.obj, b.t)); refreshSel(); return; }
+    commitMany(d.before, "Transform");
+  }
 });
 tc.addEventListener("objectChange", () => {
   if (tc.object === pivot && drag) {
@@ -461,7 +482,8 @@ function delKey(list = movable()) {
 }
 function setInterp(mode) {
   const list = movable(); if (!list.length) return toast("Select an animated object");
-  group("Interpolation", () => list.forEach((it) => { const b = it.interp; it.interp = mode; push({ label: "interp", undo() { it.interp = b; }, redo() { it.interp = mode; } }); }));
+  // Every key of each (a key's own interpolation, set by Astra, gives way to the one picked here).
+  group("Interpolation", () => list.forEach((it) => { const b = it.interp, bk = clone(it.keys); it.interp = mode; it.keys.forEach((k) => delete k.ip); const ak = clone(it.keys); push({ label: "interp", undo() { it.interp = b; it.keys = clone(bk); }, redo() { it.interp = mode; it.keys = clone(ak); } }); }));
   evaluate(time); renderAll(); info("Interpolation · " + mode);
 }
 function parentTo() {
@@ -476,8 +498,8 @@ function setPaint(it, hex) { const paint = it.obj.userData.paint || []; if (!pai
 function rename(it, n) { const b = it.name; it.name = n; it.obj.name = n; push({ label: "rename", undo() { it.name = b; it.obj.name = b; }, redo() { it.name = n; it.obj.name = n; } }); }
 function setHourCmd(h) { const b = hour; setHour(h); push({ label: "time of day", undo() { setHour(b); }, redo() { setHour(h); } }); }
 function setLensCmd(mm) { const b = shot.obj.userData.lensMm; setLens(mm); push({ label: "lens", undo() { setLens(b); }, redo() { setLens(mm); } }); }
-function moveCmd(it, fn) { const b = { t: trs(it.obj), keys: clone(it.keys) }; fn(it.obj); if (autoKey) setKey(it, time); const a = { t: trs(it.obj), keys: clone(it.keys) }; push({ label: "move", undo() { it.keys = clone(b.keys); applyTRS(it.obj, b.t); }, redo() { it.keys = clone(a.keys); applyTRS(it.obj, a.t); } }); }
-function keyAtCmd(it, t, fn) { const b = { t: trs(it.obj), keys: clone(it.keys) }; evaluate(t); fn(it.obj); setKey(it, t); const a = clone(it.keys); push({ label: "keyframe", undo() { it.keys = clone(b.keys); applyTRS(it.obj, b.t); }, redo() { it.keys = clone(a); } }); evaluate(time); }
+function moveCmd(it, fn) { const b = { t: trs(it.obj), keys: clone(it.keys) }; fn(it.obj); if (autoKey || (astraMaking && it.keys.length)) setKey(it, time); const a = { t: trs(it.obj), keys: clone(it.keys) }; push({ label: "move", undo() { it.keys = clone(b.keys); applyTRS(it.obj, b.t); }, redo() { it.keys = clone(a.keys); applyTRS(it.obj, a.t); } }); }
+function keyAtCmd(it, t, fn, ip) { const b = { t: trs(it.obj), keys: clone(it.keys) }; evaluate(t); fn(it.obj); setKey(it, t); if (ip) { const k = it.keys.find((x) => near(x.t, t)); if (k) k.ip = ip; } const a = clone(it.keys); push({ label: "keyframe", undo() { it.keys = clone(b.keys); applyTRS(it.obj, b.t); }, redo() { it.keys = clone(a); } }); evaluate(time); }
 function camToView() { moveCmd(shot, (o) => { const d = new THREE.Vector3(); editorCam.getWorldDirection(d); o.position.copy(editorCam.position); o.lookAt(editorCam.position.clone().add(d)); }); toggleCam(true); info("Shot camera aligned to the view"); }
 
 // ---- Add ----
@@ -831,7 +853,9 @@ const clay = new THREE.MeshStandardMaterial({ color: 0xbdb9b2, roughness: 0.85 }
 let shade = "lit";
 function setShade(s) { shade = s; scene.overrideMaterial = s === "clay" ? clay : s === "wire" ? wire : null; document.querySelectorAll("[data-shade]").forEach((b) => b.classList.toggle("on", b.dataset.shade === s)); }
 function setTool(t) { tool = t; orbit.mouseButtons.LEFT = t === "select" || t === "measure" ? -1 : THREE.MOUSE.ROTATE; if (t !== "measure") clearMeasure(); document.querySelectorAll("[data-tool]").forEach((b) => b.classList.toggle("on", b.dataset.tool === t)); if (["translate", "rotate", "scale"].includes(t)) tc.setMode(t); attachGizmo(); }
-let autoKey = true, snapOn = true;
+// Auto keying starts OFF, as in Blender (2026-09-30: twice live a stray click moved Car 1 onto the garage roof and
+// keyed it there, with the red button on from the start). The button says which it is (renderRec).
+let autoKey = false, snapOn = true;
 function applySnap() { tc.setTranslationSnap(snapOn ? 0.25 : null); tc.setRotationSnap(snapOn ? THREE.MathUtils.degToRad(15) : null); tc.setScaleSnap(snapOn ? 0.1 : null); $("snapBtn").classList.toggle("on", snapOn); }
 applySnap();
 
@@ -897,10 +921,12 @@ function renderProps() {
     const [rp, rb] = panel("Relations", false);
     rb.appendChild(fr("Parent", ro(it.obj.parent === scene ? "—" : itemOf(it.obj.parent)?.name || "—")));
     rb.appendChild(fr("Collection", ro(it.coll)));
+    // A part of the set (2026-09-30): what it is, and a repeat kept as one object (like an Array modifier).
+    if (it.part) { rb.appendChild(fr("Part of the set", ro(T(PART_KIND_WORDS[it.part.kind] || "structure")))); if (it.part.repeat > 1) rb.appendChild(fr("Repeats", ro(`${it.part.repeat} copies · one object`))); }
     const r3 = document.createElement("div"); r3.className = "row-btns"; r3.innerHTML = `<button class="pbtn" id="pPar">Parent to active</button><button class="pbtn" id="pUnpar">Clear parent</button>`; rb.appendChild(r3); p.appendChild(rp);
     r3.querySelector("#pPar").onclick = parentTo; r3.querySelector("#pUnpar").onclick = clearParent;
     const [ap, ab] = panel("Animation");
-    ab.innerHTML = `<p class="hint" style="margin-top:0">${it.keys.length ? `${it.keys.length} keyframes · frames ${it.keys.map((k) => Math.round(k.t * FPS) + 1).join(", ")} · ${it.interp}` : "Not animated. Move it, then insert a keyframe (I)."}</p>`;
+    ab.innerHTML = `<p class="hint" style="margin-top:0">${it.keys.length ? `${it.keys.length} keyframes · frames ${it.keys.map((k) => Math.round(k.t * FPS) + 1 + (k.ip ? ` (${k.ip})` : "")).join(", ")} · ${rowInterp(it.keys, it.interp)}` : "Not animated. Move it, then insert a keyframe (I)."}</p>`;
     const r = document.createElement("div"); r.className = "row-btns"; r.innerHTML = `<button class="pbtn accent" id="pKey">Insert keyframe</button><button class="pbtn" id="pDelKey">Delete keyframe</button>`;
     r.insertAdjacentHTML("beforeend", `<button class="pbtn" id="pPath">${pathOn ? "Hide" : "Show"} motion path</button>`);
     ab.appendChild(r); p.appendChild(ap); r.querySelector("#pKey").onclick = () => keyItems(); r.querySelector("#pDelKey").onclick = () => delKey(); r.querySelector("#pPath").onclick = togglePath;
@@ -1064,7 +1090,7 @@ function renderN() {
 const P = (x, y, z) => `(${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)})`;
 const bl = (v) => P(v.x, -v.z, v.y);
 const V3 = THREE.Vector3;
-const cars = () => items.filter((i) => i.kind === "mesh" && /car/i.test(i.name));
+const cars = () => items.filter((i) => i.kind === "mesh" && !isPart(i) && /car/i.test(i.name));
 const S = (tx, code, act) => ({ tx, code, act });
 const PLANS = [
   {
@@ -1227,6 +1253,31 @@ const PLANS = [
     },
   },
   {
+    // The set's own parts (2026-09-30 — operator: "remove the garage and put the car on the road.").
+    ask: "Remove the garage",
+    say: "I'll delete the garage — the whole building, its doors and roof, as one part of the set. ⌘Z brings it back.",
+    next: ["Park the car on the road"],
+    steps() {
+      const ps = setParts().filter((p) => !p.hidden);
+      const g = ps.find((p) => /garage|\bpits?\b/i.test(p.name)) || ps.find((p) => p.part.kind === "building");
+      if (!g) return { fail: "There's no garage in this set." };
+      return [S(`Delete "${g.name}"`, `helios.data.objects.remove(helios.data.objects[<s>"${esc(g.name)}"</s>])`, () => { del([g]); return null; })];
+    },
+  },
+  {
+    ask: "Park the car on the road",
+    say: "I'll park the car on the road, lined up with it, on its surface and clear of the walls and everything else on it.",
+    next: ["Make the camera follow the car"],
+    steps(ctx) {
+      const cs = cars(); if (!cs.length) return { fail: "There's no car in this scene." };
+      const c = ctx.pick || (active && cs.includes(active) ? active : cs.length === 1 ? cs[0] : null);
+      if (!c) return { question: `There are ${cs.length} cars. Which one?`, options: cs };
+      const road = setParts().find((p) => p.part.kind === "road" && !p.hidden); if (!road) return { fail: "There's no road in this set to park on." };
+      const st = S(`Park "${c.name}" on "${road.name}", along it`, `helios.ops.object.place_on(<s>"${esc(c.name)}"</s>, on=<s>"${esc(road.name)}"</s>, align=<s>"ALONG"</s>)`, () => { const r = placeOn(c, road, "along", null); st.tx = `Park "${c.name}" on "${road.name}" — ${r.ok ? r.words : r.why}`; if (!r.ok) throw new Error(r.why); return c; });
+      return [st];
+    },
+  },
+  {
     ask: "Run across the track",
     say: "I'll have the stand-in run 14 m across the shot camera's view at a running pace, from the current frame.",
     next: ["Have the stand-in walk to the car over 3 seconds"],
@@ -1317,6 +1368,9 @@ async function runSteps(msg) {
   if (keep.length) { selection.clear(); keep.forEach((k) => selection.add(k)); active = keep[keep.length - 1]; }
   info(`Astra · ${msg.steps.length} steps applied · ⌘Z undoes them together`);
   refreshSel();
+  // What she keyed is in view on the timeline: its row scrolled to, so the keys she set are seen at once (2026-09-30).
+  const keyed = keep.find((t) => t.keys.length || t.poseKeys?.length);
+  if (keyed) { const row = [...$("tnames").children].find((d) => d.querySelector("span")?.textContent === keyed.name); row?.scrollIntoView?.({ block: "nearest" }); }
 }
 function renderThread() {
   const th = $("thread"); if (!th) return; th.innerHTML = "";
@@ -1378,10 +1432,13 @@ const sid = (it) => "o" + it.id;
 function sceneSummary() {
   scene.updateMatrixWorld(true);
   const objs = items.filter((i) => i.kind !== "sun").map((i) => {
-    const b = new THREE.Box3().setFromObject(i.obj), e = b.isEmpty();
+    const b = new THREE.Box3().setFromObject(i.obj), e = b.isEmpty() || ["camera", "light", "empty"].includes(i.kind);
     const c = e ? i.obj.getWorldPosition(new V3()) : b.getCenter(new V3()), sz = e ? new V3() : b.getSize(new V3());
     const y = e ? c.y : b.min.y, par = i.obj.parent && i.obj.parent !== scene ? itemOf(i.obj.parent) : null;
-    return { id: sid(i), name: i.name, kind: i.kind === "light" || i.kind === "camera" || i.kind === "empty" ? i.kind : "mesh", at: [c.x, -c.z, y], size: [sz.x, sz.z, sz.y], turn: THREE.MathUtils.radToDeg(i.obj.rotation.y), sel: selection.has(i), hidden: i.hidden, astra: !!i.byAstra, parent: par ? sid(par) : undefined, keys: i.keys.length, physics: i.phys && i.phys.type !== "none" ? i.phys.type : undefined, pose: i.rig ? personWords(i)?.words : undefined, moves: i.rig && i.moves?.length ? i.moves.map(moveWords).join("; ") : undefined };
+    // A part of the set (2026-09-30): what it is, its top, and for a road the way it runs and its width.
+    let part = {};
+    if (isPart(i)) { const blocks = partBlocks(i); part = { set: i.part.kind, top: blocks.length ? Math.max(...blocks.map((k) => k.top)) : b.max.y, ...(i.part.kind === "road" ? studioRoadLayout(blocks) || {} : {}) }; }
+    return { id: sid(i), name: i.name, kind: i.kind === "light" || i.kind === "camera" || i.kind === "empty" ? i.kind : "mesh", at: [c.x, -c.z, y], size: [sz.x, sz.z, sz.y], turn: THREE.MathUtils.radToDeg(i.obj.rotation.y), sel: selection.has(i), hidden: i.hidden, astra: !!i.byAstra, parent: par ? sid(par) : undefined, keys: i.keys.length, physics: i.phys && i.phys.type !== "none" ? i.phys.type : undefined, pose: i.rig ? personWords(i)?.words : undefined, moves: i.rig && i.moves?.length ? i.moves.map(moveWords).join("; ") : undefined, ...part };
   });
   const fk = Object.keys(STUDIO_FORMATS).find((k) => STUDIO_FORMATS[k] === format) || "16:9";
   return normaliseStudioSummary({ frame: frameNo(), hour, sky: skyMode === "photo" ? "physical" : skyMode, format: fk, lens: shot.obj.userData.lensMm, camera: sid(shot), aim: shot.obj.userData.track ? "o" + shot.obj.userData.track : null, range: [pStart, pEnd], objects: objs });
@@ -1405,19 +1462,26 @@ function placeBeside(it, ref, pl) {
 function moveBy(it, mode, v) {
   const t = toThreeAxes(v);
   if (mode === "by") { it.obj.position.add(new V3(t.x ?? 0, t.y ?? 0, t.z ?? 0)); return; }
-  const b = worldBox(it), base = b.isEmpty() ? it.obj.getWorldPosition(new V3()) : new V3((b.min.x + b.max.x) / 2, b.min.y, (b.min.z + b.max.z) / 2);
+  // A camera, light or empty is where its origin is (a camera's lens): "key the camera at (−3, −9, 1.6)" puts the lens
+  // there, not the bottom of its body 16 cm lower (2026-09-30). Everything else by its base centre, as the summary says.
+  const b = worldBox(it), origin = ["camera", "light", "empty"].includes(it.kind);
+  const base = origin || b.isEmpty() ? it.obj.getWorldPosition(new V3()) : new V3((b.min.x + b.max.x) / 2, b.min.y, (b.min.z + b.max.z) / 2);
   it.obj.position.add(new V3(t.x === null ? 0 : t.x - base.x, t.y === null ? 0 : t.y - base.y, t.z === null ? 0 : t.z - base.z));
 }
 
 // Stage 5 (2026-09-29 — operator: "Fix walls."): what Astra adds, moves or
-// copies is kept clear of the set's walls (The place's solid meshes, and
+// copies is kept clear of the set's walls (its parts' solid meshes, and
 // the other things) and in the shot camera's view — clearSpot searches
 // further the way it was asked to go, then towards the shot camera — and
 // the step says where it went and why.
 function solidMeshes() {
-  const out = []; if (place.hidden || !items.includes(place)) return out;
-  place.obj.updateMatrixWorld(true);
-  place.obj.traverse((o) => { if (!o.isMesh) return; const b = new THREE.Box3().setFromObject(o); if (!b.isEmpty() && b.max.y >= 0.3) out.push({ o, b }); });
+  // The set's walls: every block of its parts (2026-09-30: one object per part) that stands 0.3 m or more.
+  const out = [];
+  for (const p of setParts()) {
+    if (p.hidden) continue;
+    p.obj.updateMatrixWorld(true);
+    p.obj.traverse((o) => { if (!o.isMesh) return; const b = new THREE.Box3().setFromObject(o); if (!b.isEmpty() && b.max.y >= 0.3) out.push({ o, b }); });
+  }
   return out;
 }
 const _clearRay = new THREE.Raycaster();
@@ -1440,13 +1504,70 @@ function keepClear(it, dirs, words) {
   const meshes = solidMeshes();
   const obstacles = meshes.map((m) => ({ min: m.b.min.toArray(), max: m.b.max.toArray(), name: "the wall" }));
   for (const o of items) {
-    if (o === it || o === place || o.hidden || o.kind !== "mesh" || related(o, it)) continue;
+    if (o === it || isPart(o) || o.hidden || o.kind !== "mesh" || related(o, it)) continue;
     const ob = worldBox(o); if (!ob.isEmpty()) obstacles.push({ min: ob.min.toArray(), max: ob.max.toArray(), name: `"${o.name}"` });
   }
   const g = camGround();
   const r = clearSpot({ box: { min: b.min.toArray(), max: b.max.toArray() }, obstacles, dirs: [...dirs, g.toward], visible: (bx) => seenFromShot(meshes, bx) });
   if (r.moved > 0) it.obj.position.add(new V3(r.dx, 0, r.dz));
   return clearNote(r, [...words, "towards the shot camera"]);
+}
+// Putting a thing ON a part (2026-09-30 — "put the car on the road"): the spot is worked out here, from the part's
+// blocks as they stand — on its top, inside its edges, turned along it when asked, clear of the walls and of every
+// other thing, and seen from the shot camera when a near spot is (studio-parts.ts placeOnSpot).
+/** An object's blocks as they stand (world): centre, sides along their own X and Z, X axis on the ground, top. */
+function partBlocks(it) {
+  const out = []; it.obj.updateMatrixWorld(true);
+  it.obj.traverse((o) => {
+    if (!o.isMesh || !o.geometry || o.userData.isEditPts || !o.visible) return;
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); const gb = o.geometry.boundingBox; if (!gb || gb.isEmpty()) return;
+    const sz = gb.getSize(new V3()), p = new V3(), q = new THREE.Quaternion(), sc = new V3(); o.matrixWorld.decompose(p, q, sc);
+    const c = gb.getCenter(new V3()).applyMatrix4(o.matrixWorld), ax = new V3(1, 0, 0).applyQuaternion(q), l = Math.hypot(ax.x, ax.z) || 1;
+    const wb = new THREE.Box3().setFromObject(o);
+    out.push({ c: [c.x, c.y, c.z], lenX: sz.x * Math.abs(sc.x), lenZ: sz.z * Math.abs(sc.z), ax: [ax.x / l, ax.z / l], top: wb.max.y });
+  });
+  return out;
+}
+/** Where "near X" means on the ground (three x, z): a person's walk end, the camera, or the middle of what's named. */
+function nearPointOf(n) {
+  if (n === shot) { const p = shot.obj.getWorldPosition(new V3()); return [p.x, p.z]; }
+  const walk = (n.moves || []).filter((m) => m.kind === "path").pop();
+  if (walk) { const e = pathRootAt(walk, (walk.f1 - walk.f0) / FPS, FPS); if (e) return [e[0], e[2]]; }
+  const b = worldBox(n); if (!b.isEmpty()) { const c = b.getCenter(new V3()); return [c.x, c.z]; }
+  const p = n.obj.getWorldPosition(new V3()); return [p.x, p.z];
+}
+/** Puts `it` on the top of `surf` (a part, or any object), turned along it ("along"/"across") or not, nearest `nearP`. One undoable move. */
+function placeOn(it, surf, align, nearP) {
+  if (!it || !surf || it === surf || !items.includes(it) || !items.includes(surf)) return { ok: false, why: "" };
+  if (it.kind === "camera" || it.kind === "sun" || it.kind === "light") return { ok: false, why: `"${it.name}" isn't something to put down` };
+  if (it.obj.parent !== scene) return { ok: false, why: `"${it.name}" is parented; clear its parent (Alt+P) first` };
+  if (surf.hidden) return { ok: false, why: `"${surf.name}" is hidden` };
+  const o = it.obj, r0 = o.rotation.clone();
+  // Its own size and base, unturned about Z-up (three's Y).
+  o.rotation.set(r0.x, 0, r0.z); o.updateMatrixWorld(true);
+  const b0 = new THREE.Box3().setFromObject(o); const p0 = o.position.clone();
+  o.rotation.copy(r0); o.updateMatrixWorld(true);
+  if (b0.isEmpty()) return { ok: false, why: `"${it.name}" has nothing to stand on` };
+  const size = b0.getSize(new V3()), cen = b0.getCenter(new V3());
+  const offX = cen.x - p0.x, offZ = cen.z - p0.z, offY = b0.min.y - p0.y, longX = size.x >= size.z;
+  const dirNow = longX ? [Math.cos(r0.y), -Math.sin(r0.y)] : [Math.sin(r0.y), Math.cos(r0.y)];
+  const here = worldBox(it), hc = here.getCenter(new V3());
+  const obstacles = [];
+  for (const x of items) {
+    if (x === it || x === surf || x.hidden || !x.obj.visible || ["camera", "light", "sun", "empty"].includes(x.kind) || related(x, it)) continue;
+    if (isPart(x)) { x.obj.updateMatrixWorld(true); x.obj.traverse((m) => { if (!m.isMesh) return; const b = new THREE.Box3().setFromObject(m); if (!b.isEmpty()) obstacles.push({ min: b.min.toArray(), max: b.max.toArray() }); }); }
+    else { const b = worldBox(x); if (!b.isEmpty()) obstacles.push({ min: b.min.toArray(), max: b.max.toArray() }); }
+  }
+  const walls = solidMeshes();
+  const spot = placeOnSpot({ surfaces: surfacesOf(partBlocks(surf)), foot: { len: Math.max(size.x, size.z), wid: Math.min(size.x, size.z), h: size.y, dir: dirNow }, align: align || null, near: nearP || [hc.x, hc.z], obstacles, visible: (bx) => seenFromShot(walls, bx) });
+  if (!spot) return { ok: false, why: `there's no clear spot on "${surf.name}" big enough for "${it.name}"` };
+  const yaw = longX ? Math.atan2(-spot.dir[1], spot.dir[0]) : Math.atan2(spot.dir[0], spot.dir[1]);
+  moveCmd(it, (ob) => {
+    ob.rotation.set(r0.x, yaw, r0.z);
+    const c = Math.cos(yaw), sn = Math.sin(yaw);
+    ob.position.set(spot.at[0] - (offX * c + offZ * sn), spot.at[1] - offY, spot.at[2] - (-offX * sn + offZ * c));
+  });
+  return { ok: true, words: `set down at ${P(spot.at[0], -spot.at[2], spot.at[1])}${align ? " · lined up" : ""}${spot.seen ? "" : " · out of the shot camera's view"}` };
 }
 const sideDirs = (pl) => (pl && SIDE_WORDS[pl.side] ? { dirs: [sideDirection(pl.side, camGround().right, camGround().toward)], words: [SIDE_WORDS[pl.side]] } : { dirs: [], words: [] });
 const alongDirs = (dx, dz) => (Math.hypot(dx, dz) > 0.01 ? { dirs: [[dx, dz]], words: ["further along"] } : { dirs: [], words: [] });
@@ -1529,8 +1650,9 @@ function modelSteps(answer) {
         return par;
       }; break;
       case "key": act = () => { let last = null; const t = (s.frame - 1) / FPS; for (const it of L()) {
-        keyAtCmd(it, t, () => { if (s.mode && s.v) moveBy(it, s.mode, s.v); });
-        if (s.interp && it.interp !== s.interp) { const b = it.interp, v = s.interp; it.interp = v; push({ label: "interp", undo() { it.interp = b; }, redo() { it.interp = v; } }); }
+        // Its interpolation goes on THIS key (the segment after it), as Blender keeps it (2026-09-30: "constant at 40
+        // and 80" had turned the whole shot camera constant, so it held frame 1's place until 40).
+        keyAtCmd(it, t, () => { if (s.mode && s.v) moveBy(it, s.mode, s.v); }, s.interp || null);
         last = it;
       } evaluate(time); return last; }; break;
       case "hour": act = () => { setHourCmd(s.hour); return null; }; break;
@@ -1562,6 +1684,14 @@ function modelSteps(answer) {
           if (ok) last = it; }
         return last; }; break;
       case "follow_path": act = () => { let last = null; const pts = s.points.map(([x, y]) => new V3(x, 0, -y)); for (const it of L()) { if (it.rig && goAlong(it, pts, s.gait, s.start ?? frameNo(), s.end ?? 0)) last = it; } return last; }; break;
+      case "place_on": act = () => {
+        const surf = get(s.of); if (!surf) return null;
+        let nearP = null;
+        if (s.near) { const n = get(s.near); if (n) nearP = nearPointOf(n); } else if (s.nearAt) { const t = toThreeAxes(s.nearAt); nearP = [t.x ?? 0, t.z ?? 0]; }
+        let last = null;
+        for (const it of L()) { if (it === surf) continue; const r = placeOn(it, surf, s.align, nearP); if (r.ok) { last = it; tell(r.words); } else if (r.why) tell(r.why); }
+        return last;
+      }; break;
       case "add_person": act = () => {
         let at = null; if (s.at) { const t = toThreeAxes(s.at); at = new V3(t.x ?? cursor3d.position.x, t.y ?? 0, t.z ?? cursor3d.position.z); }
         const it = addKind("person", at, s.name || undefined); if (!it) return null;
@@ -1613,7 +1743,7 @@ function renderOutliner() {
   const roots = (coll) => items.filter((i) => i.coll === coll && (i.obj.parent === scene || i.kind === "sun" || !itemOf(i.obj.parent)));
   const draw = (it, depth) => {
     if (q && !it.name.toLowerCase().includes(q)) { items.filter((k) => k.obj.parent === it.obj).forEach((k) => draw(k, depth + 1)); return; }
-    const li = row(`${"<span class='tw'></span>".repeat(depth)}<span class="oi">${OI[it.kind] || OI.mesh}</span><span class="nm"></span>${it.byAstra ? `<span class="ast" title="Made by Astra">✦</span>` : ""}${it.obj.userData.track ? `<span class="md" title="Track To constraint">⛓</span>` : ""}${it.obj.userData.array ? `<span class="md" title="Array modifier">▦</span>` : ""}${it.keys.length ? `<span class="kf">◆ ${it.keys.length}</span>` : ""}${it.kind !== "sun" ? `<button class="tg" title="Hide in viewport (H)">${it.hidden ? EYE_OFF : EYE}</button><button class="tg rv ${it.noRender ? "off" : ""}" title="${it.noRender ? "Left out of renders" : "Shown in renders"}">${CAM_ICO}</button>` : ""}`,
+    const li = row(`${"<span class='tw'></span>".repeat(depth)}<span class="oi">${OI[it.kind] || OI.mesh}</span><span class="nm"></span>${it.byAstra ? `<span class="ast" title="Made by Astra">✦</span>` : ""}${it.obj.userData.track ? `<span class="md" title="Track To constraint">⛓</span>` : ""}${it.obj.userData.array ? `<span class="md" title="Array modifier">▦</span>` : ""}${it.part && it.part.repeat > 1 ? `<span class="md" title="Repeated in the set: ${it.part.repeat} copies">▦ ×${it.part.repeat}</span>` : ""}${it.keys.length ? `<span class="kf">◆ ${it.keys.length}</span>` : ""}${it.kind !== "sun" ? `<button class="tg" title="Hide in viewport (H)">${it.hidden ? EYE_OFF : EYE}</button><button class="tg rv ${it.noRender ? "off" : ""}" title="${it.noRender ? "Left out of renders" : "Shown in renders"}">${CAM_ICO}</button>` : ""}`,
       (selection.has(it) ? "sel " : "") + (it === active ? "act " : "") + (it.hidden ? "hid" : ""));
     li.querySelector(".nm").textContent = it.name; li.querySelector(".nm").translate = false;
     li.onclick = (e) => { if (e.target.closest(".rv")) { setNoRender(it, !it.noRender); renderOutliner(); return; } if (e.target.closest(".tg")) return toggleHide([it]); if (["world", "render", "output"].includes(ptab)) ptab = "object"; select(it, e.shiftKey || e.metaKey || e.ctrlKey); };
@@ -1656,10 +1786,11 @@ function renderTimeline() {
   const sum = document.createElement("div"); sum.className = "lane sum"; lanes.appendChild(sum);
   for (const f of new Set(items.flatMap((i) => [...[...i.keys, ...(i.poseKeys || [])].map((k) => Math.round(k.t * FPS)), ...(i.moves || []).flatMap((m) => [m.f0 - 1, m.f1 - 1])]))) { const d = document.createElement("span"); d.className = "dia"; d.style.left = (f / FRAMES) * 100 + "%"; d.onclick = (e) => { e.stopPropagation(); setTime(f / FPS); }; sum.appendChild(d); }
   for (const it of items.filter((i) => i.keys.length || i.poseKeys?.length || i.moves?.length || selection.has(i))) {
-    const n = document.createElement("div"); n.className = selection.has(it) ? "sel" : ""; n.innerHTML = `<span></span><small>${it.keys.length ? it.interp : ""}</small>`; n.querySelector("span").textContent = it.name; n.onclick = (e) => select(it, e.shiftKey); names.appendChild(n);
+    const n = document.createElement("div"); n.className = selection.has(it) ? "sel" : ""; n.innerHTML = `<span></span><small>${it.keys.length ? rowInterp(it.keys, it.interp) : ""}</small>`; n.querySelector("span").textContent = it.name; n.onclick = (e) => select(it, e.shiftKey); names.appendChild(n);
     const lane = document.createElement("div"); lane.className = "lane" + (selection.has(it) ? " sel" : ""); lanes.appendChild(lane);
     it.keys.forEach((k) => {
-      const d = document.createElement("span"); d.className = "dia" + (selection.has(it) ? " on" : "") + (it.interp === "linear" ? " lin" : it.interp === "constant" ? " con" : ""); d.style.left = (k.t / DUR) * 100 + "%";
+      const ip = segmentInterp(k, it.interp);
+      const d = document.createElement("span"); d.className = "dia" + (selection.has(it) ? " on" : "") + (ip === "linear" ? " lin" : ip === "constant" ? " con" : ""); d.style.left = (k.t / DUR) * 100 + "%";
       d.title = `${it.name} · frame ${Math.round(k.t * FPS) + 1} · drag to retime`;
       d.onpointerdown = (e) => { e.stopPropagation(); dragKey(e, it, k, d); };
       lane.appendChild(d);
@@ -1733,6 +1864,8 @@ function drawGizmo() {
 gz.addEventListener("click", (e) => { const g = e.target.closest("[data-ax]"); if (!g) return; const a = AX.find((x) => x.l === g.dataset.ax[0]); viewAlong(a.v.clone().multiplyScalar(+g.dataset.ax.slice(1))); });
 
 // ================= menus, popups =================
+/** A menu, the popup or the pie is open over the Studio. */
+function overlayOpen() { return [...document.querySelectorAll(".list")].some((l) => !l.hidden) || !$("pie").hidden; }
 function closeMenus() { document.querySelectorAll(".list").forEach((x) => (x.hidden = true)); document.querySelectorAll("[data-menu]").forEach((x) => x.setAttribute("aria-expanded", "false")); }
 function openPopup(x, y, html) {
   const p = $("popup"); p.innerHTML = html; p.hidden = false;
@@ -1782,7 +1915,7 @@ function drawShot(r, w, h) {
   helpers.visible = false; shot.obj.visible = false; scene.background = worldBg(); scene.overrideMaterial = null;
   r.render(scene, cam); helpers.visible = hv; shot.obj.visible = sv; scene.background = bg; scene.overrideMaterial = ov; hid.forEach((i) => (i.obj.visible = true)); skyObj.visible = skv;
 }
-function openWin(title, html) { $("dlgTitle").textContent = title; $("dlgBody").innerHTML = html; $("dlg").hidden = false; }
+function openWin(title, html) { if (modal) endModal(false); $("dlgTitle").textContent = title; $("dlgBody").innerHTML = html; $("dlg").hidden = false; }
 $("dlgClose").onclick = () => { $("dlg").hidden = true; recording = false; ptBusy = false; };
 function renderStill() { const [w, h] = outSize(); const r = offRenderer(w, h); drawShot(r, w, h); const url = off.toDataURL("image/jpeg", 0.92); openWin("Helios Render · still", `<img alt="Render of the shot camera" src="${url}"><div class="row-btns"><a class="pbtn accent" style="display:grid;place-items:center;text-decoration:none" download="helios-frame-${frameNo()}.jpg" href="${url}">Save image</a></div><p>Frame ${frameNo()} through the shot camera, ${shot.obj.userData.lensMm} mm, ${format}.</p><p>In Picacho this frame, with its depth and every object's place, goes to the image engine with your character's photos and your models. The engine paints the final photo onto this exact layout.</p>`); }
 // ================= photo with your character (stage 3, 2026-09-29) =================
@@ -2088,19 +2221,20 @@ function rcRealThings() {
   evaluate((Math.round((r.start + r.end) / 2) - 1) / FPS); cam.aspect = FORMATS[format]; cam.updateProjectionMatrix(); shot.obj.updateMatrixWorld(true);
   const things = [];
   try {
-    const shown = items.filter((o) => o.kind === "mesh" && o !== place && !o.rig && !o.hidden && o.obj.visible && !o.noRender);
+    const shown = items.filter((o) => o.kind === "mesh" && !isPart(o) && !o.rig && !o.hidden && o.obj.visible && !o.noRender);
     const inView = shown.map((o) => { const b = worldBox(o); if (b.isEmpty()) return null; const c = b.getCenter(new V3()).project(cam); const size = b.getSize(new V3()).length(); return Math.abs(c.x) <= 1 && Math.abs(c.y) <= 1 && c.z < 1 ? { o, size } : null; }).filter(Boolean).sort((p, q) => q.size - p.size);
     for (const { o } of inView) things.push(thingWords(o.name, o.obj.userData.paint?.[0]?.color ? "#" + o.obj.userData.paint[0].color.getHexString() : null));
   } finally { cam.aspect = a0; cam.updateProjectionMatrix(); evaluate(was); }
   return things;
 }
-/** How much of the range's first frame a big plain wall of The place fills, close to the camera (studio-walls.ts). */
+/** How much of the range's first frame a big plain wall of the set's parts fills, close to the camera (studio-walls.ts). */
 function rcWallShare() {
   const r = rcRange(), cam = shot.obj.userData.cam, a0 = cam.aspect, was = time;
   evaluate((r.start - 1) / FPS); cam.aspect = FORMATS[format]; cam.updateProjectionMatrix(); shot.obj.updateMatrixWorld(true);
   try {
     const occluders = items.filter((o) => !o.hidden && o.obj.visible && !o.noRender && !["light", "camera", "empty", "sun"].includes(o.kind)).map((o) => o.obj);
-    const inPlace = (m) => { for (let n = m; n; n = n.parent) if (n === place.obj) return true; return false; };
+    const partObjs = new Set(setParts().map((p) => p.obj));
+    const inPlace = (m) => { for (let n = m; n; n = n.parent) if (partObjs.has(n)) return true; return false; };
     return wallShare(cam, occluders, (m) => inPlace(m) && isPlainBlock(m));
   } finally { cam.aspect = a0; cam.updateProjectionMatrix(); evaluate(was); }
 }
@@ -2627,7 +2761,7 @@ function printCheck(list) {
   return { tris, open, over, parts: roots.size, size, closed: tris > 0 && open === 0 && over === 0 };
 }
 function printVerdict(c, list) {
-  const setBlocks = list.some((i) => i.saveKey === "place" || (i.saveKey || "").startsWith("el:") || i.saveKey === "person" || ["car", "person", "lamp"].includes(i.addKind));
+  const setBlocks = list.some((i) => isPart(i) || (i.saveKey || "").startsWith("el:") || i.saveKey === "person" || ["car", "person", "lamp"].includes(i.addKind));
   if (!c.tris) return `<p class="hint">Nothing to check: there's no mesh in what you're exporting.</p>`;
   if (c.closed && c.parts === 1) return `<p><b style="color:#7bc47f">Ready to print.</b> One sealed solid: every edge joins exactly two faces.</p>`;
   if (c.closed) return `<p><b style="color:#e0b050">Sealed, but in ${c.parts} separate pieces.</b> Each piece is closed, so a printer can make them, but as loose or overlapping parts, not one object. Join them into one solid in a 3D tool (a boolean union) for a single print.</p>`;
@@ -3116,13 +3250,8 @@ function trackPointAt(tg, t) {
     if (m?.kind === "turn") return turnStart(tg.moves, m).at;
   }
   const ks = tg.keys; if (!ks.length) return null;
-  if (t <= ks[0].t) return ks[0].p;
-  if (t >= ks[ks.length - 1].t) return ks[ks.length - 1].p;
-  let i = 0; while (ks[i + 1].t < t) i++;
-  const a = ks[i], b = ks[i + 1];
-  let u = (t - a.t) / (b.t - a.t);
-  if (tg.interp === "bezier") u = u * u * (3 - 2 * u); else if (tg.interp === "constant") u = 0;
-  return lerp(a.p, b.p, u);
+  const { a, b, u } = keysAround(ks, t, tg.interp);
+  return a === b ? a.p : lerp(a.p, b.p, u);
 }
 /** Track To, damped (2026-09-30 — "walking weird and jumpy"): the aim follows the target's last few frames, weighted to the newest, so the shot glides after it instead of jolting with every step. The same frame always aims the same way. */
 const TRACK_LAG = [1, 0.61, 0.37, 0.22, 0.14, 0.08];
@@ -3280,7 +3409,7 @@ function lookAtCmd(it, tgt) {
 function personWords(it, o = {}) {
   if (!it?.rig || !items.includes(it)) return null;
   scene.updateMatrixWorld(true);
-  const others = items.filter((o) => o !== it && o.kind === "mesh" && !o.hidden && o !== place);
+  const others = items.filter((o) => o !== it && o.kind === "mesh" && !o.hidden && !isPart(o));
   const nameOf = (o) => thingWords(o.name, o.obj.userData.paint?.[0]?.color ? "#" + o.obj.userData.paint[0].color.getHexString() : null);
   const B = it.rig.bones, wp = (n) => B[n].getWorldPosition(new V3()), P = it.shown?.pose || it.pose;
   const seat = wp("pelvis").sub(new V3(0, SEAT_DROP_M, 0)), seated = (P.rot["thigh.L"]?.[0] ?? 0) < -55 && (P.rot["thigh.R"]?.[0] ?? 0) < -55;
@@ -3452,7 +3581,7 @@ function posePanel(p, it) {
   pb.querySelector("#pMode").onclick = () => (mine ? exitPose() : enterPose(it));
   pb.querySelector("#pKeyPose").onclick = () => keyPoseCmd(null, it);
   pb.querySelector("#pClearPose").onclick = () => presetCmd(it, "stand");
-  const things = items.filter((o) => o !== it && o.kind === "mesh" && !o.hidden && o !== place);
+  const things = items.filter((o) => o !== it && o.kind === "mesh" && !o.hidden && !isPart(o));
   for (const [id, label, fn, cam] of [["pSit", "Sit on…", sitOn, false], ["pLean", "Lean on…", leanOn, false], ["pLook", "Look at…", lookAtCmd, true]]) {
     const s = document.createElement("select"); s.className = "sel2"; s.id = id + "T"; s.setAttribute("aria-label", label);
     if (cam) s.add(new Option("Shot camera", "cam")); things.forEach((o) => s.add(new Option(o.name, String(o.id)))); if (!cam && !things.length) s.disabled = true;
@@ -3609,7 +3738,7 @@ function movePanel(p, it) {
   mb.appendChild(fr("Start frame", field(moveUI.start || frameNo(), { step: 0.3, dec: 0, min: 1, max: FRAMES, onCommit: (v) => { moveUI.start = Math.round(v); renderProps(); } })));
   mb.appendChild(fr("End frame", field(moveUI.end, { step: 0.3, dec: 0, min: 0, max: FRAMES + 1, onCommit: (v) => { moveUI.end = Math.round(v); renderProps(); } })));
   mb.insertAdjacentHTML("beforeend", `<p class="hint" style="margin-top:0">End frame 0: at the gait's own pace (walk about 1.4 m/s, run about 4 m/s). Set one, and the pace fits it.</p>`);
-  const things = items.filter((o) => o !== it && (o.kind === "mesh" || o.rig) && !o.hidden && o !== place);
+  const things = items.filter((o) => o !== it && (o.kind === "mesh" || o.rig) && !o.hidden && !isPart(o));
   const row = (id, label, withCam, go, withPoint = false) => {
     const s = document.createElement("select"); s.className = "sel2"; s.id = id + "T"; s.setAttribute("aria-label", label);
     if (withCam) s.add(new Option("Shot camera", "cam")); things.forEach((o) => s.add(new Option(o.name, String(o.id))));
@@ -4066,8 +4195,7 @@ let editorType = "timeline"; const chOn = [true, true, true];
 const CH = [{ n: "X Location", c: "#ff3352", get: (k) => k.p[0], set: (k, v) => (k.p[0] = v) }, { n: "Y Location", c: "#8bdc00", get: (k) => -k.p[2], set: (k, v) => (k.p[2] = -v) }, { n: "Z Location", c: "#2890ff", get: (k) => k.p[1], set: (k, v) => (k.p[1] = v) }];
 function curveVal(it, t, ch) {
   const ks = it.keys; if (!ks.length) return 0; if (t <= ks[0].t) return CH[ch].get(ks[0]); if (t >= ks[ks.length - 1].t) return CH[ch].get(ks[ks.length - 1]);
-  let i = 0; while (ks[i + 1].t < t) i++; const a = ks[i], b = ks[i + 1]; let u = (t - a.t) / (b.t - a.t);
-  if (it.interp === "bezier") u = u * u * (3 - 2 * u); else if (it.interp === "constant") u = 0; return CH[ch].get(a) + (CH[ch].get(b) - CH[ch].get(a)) * u;
+  const { a, b, u } = keysAround(ks, t, it.interp); return CH[ch].get(a) + (CH[ch].get(b) - CH[ch].get(a)) * u;
 }
 let gView = null;
 function renderGraph() {
@@ -4126,7 +4254,7 @@ function openLeavesOut() {
 // account), and then sends that one up.
 const SAVE_KEY = "helios.studio." + opts.setId;
 function snapshot() {
-  return { v: 1, hour, format, lens: shot.obj.userData.lensMm, skyMode, skyTurn, real: realOn, markers, range: [pStart, pEnd], items: items.filter((i) => i.kind !== "sun" && (i.saveKey || i.addKind || modelRefOf(i))).map((i) => ({ key: i.saveKey || null, add: i.addKind || null, model: modelRefOf(i) || undefined, name: i.name, coll: i.coll, t: trs(i.obj), keys: i.keys, interp: i.interp, hidden: i.hidden, noRender: !!i.noRender, color: i.obj.userData.paint?.[0] ? "#" + i.obj.userData.paint[0].color.getHexString() : null, array: i.obj.userData.array || null, mirror: i.obj.userData.mirror || null, track: i.obj.userData.track ? byId(i.obj.userData.track)?.saveKey || null : null, phys: i.phys || null, bake: i.bake || null, pose: i.rig ? i.pose : undefined, poseKeys: i.rig && i.poseKeys.length ? i.poseKeys : undefined, moves: i.rig && i.moves?.length ? i.moves : undefined })), recast: { charId: rc.charId, lastChar: rc.lastChar, outfit: rc.outfit, outfitTyped: rc.outfitTyped, lookId: rc.lookId, real: rc.real, engine: rc.engine }, cast: { charId: cast.charId, lastChar: cast.lastChar, outfit: cast.outfit, outfitTyped: cast.outfitTyped, lookId: cast.lookId } };
+  return { v: 1, hour, format, lens: shot.obj.userData.lensMm, skyMode, skyTurn, real: realOn, partKeys: SET_PARTS.map((p) => p.key), markers, range: [pStart, pEnd], items: items.filter((i) => i.kind !== "sun" && (i.saveKey || i.addKind || modelRefOf(i))).map((i) => ({ key: i.saveKey || null, add: i.addKind || null, model: modelRefOf(i) || undefined, name: i.name, coll: i.coll, t: trs(i.obj), keys: i.keys, interp: i.interp, hidden: i.hidden, noRender: !!i.noRender, color: i.obj.userData.paint?.[0] ? "#" + i.obj.userData.paint[0].color.getHexString() : null, array: i.obj.userData.array || null, mirror: i.obj.userData.mirror || null, track: i.obj.userData.track ? byId(i.obj.userData.track)?.saveKey || null : null, phys: i.phys || null, bake: i.bake || null, pose: i.rig ? i.pose : undefined, poseKeys: i.rig && i.poseKeys.length ? i.poseKeys : undefined, moves: i.rig && i.moves?.length ? i.moves : undefined })), recast: { charId: rc.charId, lastChar: rc.lastChar, outfit: rc.outfit, outfitTyped: rc.outfitTyped, lookId: rc.lookId, real: rc.real, engine: rc.engine }, cast: { charId: cast.charId, lastChar: cast.lastChar, outfit: cast.outfit, outfitTyped: cast.outfitTyped, lookId: cast.lookId } };
 }
 let lastSaved = "", lastServer = "", changedAt = 0, serverBusy = false, serverRetryAt = 0;
 const SERVER_DELAY_MS = 5000, SERVER_RETRY_MS = 30000;
@@ -4164,12 +4292,37 @@ function pickSaved() {
   if (local) return { data: local, from: acct ? "newer" : "browser" };
   return null;
 }
+/**
+ * A scene saved before the set had parts: its one "The place" (a group at the origin) becomes every part, exactly —
+ * each part's placement is the place's transform times its own, at every key the place had; hidden and
+ * "not in renders" go to them all. Its name, colour and anything else it carried are left behind.
+ */
+function migratePlace(s) {
+  const parts = setParts(); if (!parts.length) return;
+  const mat = (k) => new THREE.Matrix4().compose(new THREE.Vector3(...k.p), new THREE.Quaternion().setFromEuler(new THREE.Euler(k.r[0], k.r[1], k.r[2])), new THREE.Vector3(...k.s));
+  const ok = (k) => k && Array.isArray(k.p) && k.p.length === 3 && Array.isArray(k.r) && k.r.length === 3 && Array.isArray(k.s) && k.s.length === 3 && [...k.p, ...k.r, ...k.s].every((v) => typeof v === "number" && Number.isFinite(v));
+  const keys = (Array.isArray(s.keys) ? s.keys : []).filter((k) => ok(k) && typeof k.t === "number" && Number.isFinite(k.t) && k.t >= 0 && k.t <= DUR);
+  for (const it of parts) {
+    it.obj.updateMatrix(); const own = it.obj.matrix.clone();
+    const put = (k) => { const m = mat(k).multiply(own), p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(); m.decompose(p, q, sc); const e = new THREE.Euler().setFromQuaternion(q); return { p: p.toArray(), r: [e.x, e.y, e.z], s: sc.toArray() }; };
+    if (ok(s.t)) applyTRS(it.obj, put(s.t));
+    it.keys = keys.map((k) => ({ t: k.t, ...put(k) }));
+    if (["linear", "bezier", "constant"].includes(s.interp)) it.interp = s.interp;
+    it.hidden = !!s.hidden; it.obj.visible = !s.hidden; it.noRender = !!s.noRender;
+  }
+}
 function restoreSaved() {
   const picked = pickSaved();
   if (!picked) { lastSaved = lastServer = JSON.stringify(snapshot()); saveState(opts.saveScene ? "account" : "browser"); return; }
   const data = picked.data;
   const keep = new Set(data.items.filter((s) => s.key).map((s) => s.key));
-  items.filter((i) => i.saveKey && !keep.has(i.saveKey)).forEach((i) => detachItem(i));
+  // The set's parts (2026-09-30): a scene saved with parts lists the ones it knew (partKeys) — one of those missing
+  // was deleted; one it never knew is new (the set was edited since) and stays. A scene from before parts has one
+  // "The place": its hide, transform and keys go to every part (below), and a deleted place deletes them all.
+  const seenParts = Array.isArray(data.partKeys) ? new Set(data.partKeys.filter((k) => typeof k === "string")) : null;
+  const oldPlace = seenParts ? null : data.items.find((x) => x && x.key === "place") || null;
+  const dropped = (i) => (!i.saveKey || keep.has(i.saveKey) ? false : !isPart(i) ? true : partGoneInSaved(i.saveKey, { keys: keep, partKeys: seenParts ? [...seenParts] : null, hadPlace: !!oldPlace }));
+  items.filter(dropped).forEach((i) => detachItem(i));
   const made = [];
   for (const s of data.items) {
     const ref = studioModelRef(s.model);
@@ -4183,6 +4336,7 @@ function restoreSaved() {
     if (it.rig) { it.pose = normalisePose(s.pose) || presetPose("stand"); it.poseKeys = normalisePoseKeys(s.poseKeys, DUR); it.moves = normaliseMoves(s.moves, FRAMES + 1); applyPose(it.rig, it.pose); }
   }
   for (const [it, s] of made) if (s.track) { const t = items.find((i) => i.saveKey === s.track); if (t) it.obj.userData.track = t.id; }
+  if (oldPlace) migratePlace(oldPlace);
   if (typeof data.hour === "number") setHour(data.hour); if (data.format) format = data.format; if (data.lens) setLens(data.lens); if (["simple", "physical", "studio", "photo"].includes(data.skyMode)) applySkyMode(data.skyMode); if (typeof data.skyTurn === "number" && Math.abs(data.skyTurn) <= 180) skyTurn = data.skyTurn; if (data.real === false) realOn = false; if (Array.isArray(data.markers)) markers.push(...data.markers);
   // The playback range (2026-09-30): kept with the scene, so a video's length and price are what was set.
   const savedRange = savedPlaybackRange(data.range, FRAMES); if (savedRange) { [pStart, pEnd] = savedRange; renderTimeline(); }
@@ -4223,6 +4377,19 @@ const ACTS = {
 };
 document.querySelectorAll("[data-menu]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); const l = document.querySelector(`[data-list="${b.dataset.menu}"]`); const open = l.hidden; closeMenus(); l.hidden = !open; b.setAttribute("aria-expanded", String(open)); }));
 dOn("click", (e) => { if (!e.target.closest(".list")) { closeMenus(); } if (!e.target.closest("#pie")) $("pie").hidden = true; });
+// A menu, the popup (Add, right-click, T) or the pie open: a press outside it only closes it, as in Blender — it never
+// reaches the viewport (a select, an orbit, or a drag of the gizmo under it), the timeline or a button. A G/R/S move
+// under way is cancelled by a press anywhere but the viewport. (2026-09-30: Car 1 moved onto the garage roof and
+// The place to Z −0.54, each keyed, while menus and windows were opened and closed and the ruler was clicked.)
+let swallowing = false;
+dOn("pointerdown", (e) => {
+  swallowing = false;
+  if (modal && e.target !== canvas) { endModal(false); swallowing = true; }
+  else if (overlayOpen() && !e.target.closest?.(".list, #pie, [data-menu]")) { closeMenus(); $("pie").hidden = true; swallowing = true; }
+  if (!swallowing) return;
+  downAt = null; e.stopPropagation(); e.preventDefault();
+}, true);
+for (const t of ["pointerup", "mousedown", "mouseup", "click", "dblclick", "contextmenu"]) dOn(t, (e) => { if (!swallowing) return; e.stopPropagation(); e.preventDefault(); if (t === "click" || t === "contextmenu") swallowing = false; }, true);
 document.querySelectorAll(".list").forEach(wireList);
 document.querySelectorAll("[data-tool]").forEach((b) => b.addEventListener("click", () => setTool(b.dataset.tool)));
 document.querySelectorAll("[data-shade]").forEach((b) => b.addEventListener("click", () => setShade(b.dataset.shade)));
@@ -4239,7 +4406,9 @@ $("snapBtn").onclick = () => { snapOn = !snapOn; applySnap(); info(snapOn ? "Sna
 $("xrayBtn").onclick = toggleXray; $("modeBtn").onclick = (e) => { e.stopPropagation(); openModeMenu(e.currentTarget); };
 $("modeBtn").title = "Object Mode / Edit Mode (Tab) / Pose Mode (Ctrl+Tab)";
 $("ovlBtn").onclick = () => { overlays.visible = !overlays.visible; $("ovlBtn").classList.toggle("on", overlays.visible); };
-$("rec").onclick = () => { autoKey = !autoKey; $("rec").classList.toggle("on", autoKey); info(autoKey ? "Auto keying on" : "Auto keying off"); };
+function renderRec() { const b = $("rec"); if (!b) return; b.classList.toggle("on", autoKey); b.setAttribute("aria-pressed", String(autoKey)); b.title = autoKey ? "Auto keying: on · click to turn off" : "Auto keying: off · click to turn on"; b.setAttribute("aria-label", b.title); }
+$("rec").onclick = () => { autoKey = !autoKey; renderRec(); info(autoKey ? "Auto keying on" : "Auto keying off"); };
+renderRec();
 $("curFrame").addEventListener("click", editCurFrame, { signal: ac.signal }); $("curFrame").title = "Current frame · click to type one"; $("curFrame").style.cursor = "text";
 $("tPlay").onclick = () => play(); $("tStart").onclick = () => setTime(0); $("tEnd").onclick = () => setTime(DUR); $("tPrevKey").onclick = () => jumpKey(-1); $("tNextKey").onclick = () => jumpKey(1);
 $("find").addEventListener("input", (e) => { q = e.target.value.trim().toLowerCase(); renderOutliner(); });
@@ -4250,6 +4419,8 @@ wOn("keydown", (e) => {
   // turned the view while a frame was being typed) or from an open window (only Escape, which closes it).
   if (e.target.closest?.(".fld, .nfld") && e.key !== "Escape") return;
   if (!$("dlg").hidden && e.key !== "Escape") return;
+  // A menu, popup or pie open, or focus inside one or a window: only Escape (which closes it) — no shortcut reaches the viewport.
+  if ((overlayOpen() || e.target.closest?.(".list, #pie, .dlg")) && e.key !== "Escape") return;
   if (astraBusy) return;
   if (modal) { modalKey(e); return; }
   if (pathDraw && (e.key === "Enter" || e.key === "Escape")) { e.preventDefault(); endPathDraw(e.key === "Enter"); return; }

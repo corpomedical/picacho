@@ -15,6 +15,7 @@ import {
   studioViewSuggestion,
 } from "./studio-models";
 import { THING_BUILD_USD } from "./thing-build";
+import { SET_PHOTO_MAX_ASPECT, SET_PHOTO_MAX_SIDE_PX, SET_PHOTO_MIN_SIDE_PX, photoFit } from "./set-config";
 import { STUDIO_SCENE_MAX_BYTES, normaliseStudioScene } from "./studio-scene";
 
 // Real models in Helios Studio (2026-09-30, operator: "Apply this look for the car." · "I also want to see it
@@ -113,18 +114,43 @@ describe("one view of a sheet", () => {
     expect(cropInPixels({ x: -50, y: 390, w: 2000, h: 5 }, 600, 400, 1200, 800)).toEqual({ x: 0, y: 776, w: 1200, h: 24 });
   });
 
-  it("sends the view with white round it, at most 1024 px, as a JPEG onto the thing — or to a new object's build", () => {
+  it("sends the view with white round it, as a JPEG onto the thing — or to a new object's build", () => {
+    // A square-ish view: 1024 px on its long side, as TRELLIS.2 builds.
+    const sq = cropOut({ x: 40, y: 40, w: 1400, h: 1100 });
+    expect(Math.max(sq.width, sq.height)).toBe(STUDIO_PHOTO_SIDE);
+    // A long side view (3.5 : 1): white above and below until it is no wider than the photo rule allows, 640 px high.
     const out = cropOut({ x: 40, y: 40, w: 1400, h: 400 });
-    expect(Math.max(out.width, out.height)).toBe(STUDIO_PHOTO_SIDE);
+    expect(out.width / out.height).toBeLessThanOrEqual(SET_PHOTO_MAX_ASPECT);
+    expect(Math.min(out.width, out.height)).toBe(SET_PHOTO_MIN_SIDE_PX);
     expect(out.draw.x).toBeGreaterThan(0);
     expect(out.draw.x + out.draw.w).toBeLessThanOrEqual(out.width);
     expect(out.draw.y + out.draw.h).toBeLessThanOrEqual(out.height);
-    expect(cropOut({ x: 0, y: 0, w: 300, h: 100 })).toEqual({ width: 336, height: 136, draw: { x: 18, y: 18, w: 300, h: 100 } });
+    expect(photoFit(out.width, out.height).ok).toBe(true);
+    // A small crop is never enlarged (the server then says it's too small, as it should).
+    expect(cropOut({ x: 0, y: 0, w: 300, h: 100 })).toEqual({ width: 336, height: 147, draw: { x: 18, y: 24, w: 300, h: 100 } });
     const jpeg = "data:image/jpeg;base64,/9j/4AAQ";
     expect(studioPhotoPayload({ key: "c_1a2b3c4d_12_-40" }, jpeg)).toEqual({ kind: "thing", element: "c_1a2b3c4d_12_-40", photoDataUri: jpeg });
     expect(studioPhotoPayload({ new: true }, jpeg)).toEqual({ kind: "new", photoDataUri: jpeg });
     expect(studioPhotoPayload({ key: "Car 1" }, jpeg)).toBeNull();
     expect(studioPhotoPayload({ new: true }, "data:image/png;base64,iVBOR")).toBeNull();
+  });
+});
+
+describe("a wide single view is never too small (2026-09-30: his 2320 × 1010 side view was refused live)", () => {
+  it("keeps the short side at 640 px or more, within the shape and size the server takes", () => {
+    const out = cropOut({ x: 0, y: 0, w: 2320, h: 1010 });
+    expect(Math.min(out.width, out.height)).toBeGreaterThanOrEqual(SET_PHOTO_MIN_SIDE_PX);
+    expect(Math.max(out.width, out.height)).toBeLessThanOrEqual(SET_PHOTO_MAX_SIDE_PX);
+    expect(out.width / out.height).toBeLessThanOrEqual(SET_PHOTO_MAX_ASPECT);
+    expect(photoFit(out.width, out.height)).toEqual({ ok: true, width: out.width, height: out.height });
+    // The view itself is drawn whole, inside the white, and not smaller than 640 px on its short side either way round.
+    expect(out.draw.x + out.draw.w).toBeLessThanOrEqual(out.width);
+    expect(out.draw.y + out.draw.h).toBeLessThanOrEqual(out.height);
+    const tall = cropOut({ x: 0, y: 0, w: 1010, h: 2320 });
+    expect(Math.min(tall.width, tall.height)).toBeGreaterThanOrEqual(SET_PHOTO_MIN_SIDE_PX);
+    // A crop already under 640 on its short side is sent at its own size, never enlarged.
+    const small = cropOut({ x: 0, y: 0, w: 900, h: 420 });
+    expect(small.draw.w).toBe(900);
   });
 });
 

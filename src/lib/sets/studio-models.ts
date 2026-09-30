@@ -19,6 +19,7 @@
 //
 // Pure and relative-import only: the tests, the engine and the server share it.
 
+import { MAX_SET_PHOTO_BYTES, SET_PHOTO_MAX_ASPECT, SET_PHOTO_MAX_SIDE_PX, SET_PHOTO_MIN_SIDE_PX } from "./set-config";
 import { THING_BUILD_USD } from "./thing-build";
 import type { Box } from "./thing-views-find";
 
@@ -98,8 +99,14 @@ export function studioBuildLabel(usd: number = THING_BUILD_USD): string {
   return `Build the 3D model · about $${usd.toFixed(2)}`;
 }
 
-/** The long side a cropped view is sent at: TRELLIS.2 builds at 1024. */
+/** The long side a cropped view is sent at when its short side allows (TRELLIS.2 builds at 1024). */
 export const STUDIO_PHOTO_SIDE = 1024;
+/**
+ * The widest the sent picture may be: under the set's photo rule (SET_PHOTO_MAX_ASPECT, 2.4:1) with room to spare
+ * for rounding, so a long side view (a car's is ≈ 3.5:1) goes with more white above and below instead of being
+ * refused as the wrong shape.
+ */
+export const STUDIO_PHOTO_MAX_ASPECT = SET_PHOTO_MAX_ASPECT - 0.1;
 /** White added round the view, as a share of its long side (the server's own cut adds white, thing-views.ts). */
 export const STUDIO_PHOTO_MARGIN = 0.06;
 /** The smallest crop, in the photo's own pixels. */
@@ -136,18 +143,37 @@ export function cropInPixels(c: Crop, shownW: number, shownH: number, naturalW: 
   return { x, y, w, h };
 }
 
-/** The picture sent for a crop: its size with the white margin, at most STUDIO_PHOTO_SIDE on the long side, and where the view sits in it. */
+/**
+ * The picture sent for a crop: the view with white round it, and where the view sits in it.
+ *
+ * The set's photo rule (set-config.ts photoFit, checked again on the server) refuses a picture whose short side is
+ * under SET_PHOTO_MIN_SIDE_PX (640) or wider than SET_PHOTO_MAX_ASPECT (2.4:1). Until 2026-09-30 the Studio scaled
+ * every crop to 1024 px on its LONG side, so a wide single view (his 2320 × 1010 side view: 1024 × 470 with its
+ * margin) was refused live as "too small". Now: white is added above and below (or at the sides) until the picture
+ * is no wider than STUDIO_PHOTO_MAX_ASPECT; it is brought down to 1024 px on its long side only as far as its short
+ * side stays at 640 px or more (a crop whose short side is already under 640 is sent at its own size, never
+ * enlarged — the server then says it's too small); and it stays within SET_PHOTO_MAX_SIDE_PX on the long side.
+ */
 export function cropOut(c: Crop): { width: number; height: number; draw: Crop } {
   const pad = Math.round(Math.max(c.w, c.h) * STUDIO_PHOTO_MARGIN);
-  const fullW = c.w + pad * 2;
-  const fullH = c.h + pad * 2;
-  const s = Math.min(1, STUDIO_PHOTO_SIDE / Math.max(fullW, fullH));
-  return {
-    width: Math.max(1, Math.round(fullW * s)),
-    height: Math.max(1, Math.round(fullH * s)),
-    draw: { x: Math.round(pad * s), y: Math.round(pad * s), w: Math.max(1, Math.round(c.w * s)), h: Math.max(1, Math.round(c.h * s)) },
-  };
+  let fullW = c.w + pad * 2;
+  let fullH = c.h + pad * 2;
+  // Too wide (or too tall) for the photo rule: more white on the short sides.
+  if (fullW > STUDIO_PHOTO_MAX_ASPECT * fullH) fullH = Math.ceil(fullW / STUDIO_PHOTO_MAX_ASPECT);
+  else if (fullH > STUDIO_PHOTO_MAX_ASPECT * fullW) fullW = Math.ceil(fullH / STUDIO_PHOTO_MAX_ASPECT);
+  const long = Math.max(fullW, fullH), short = Math.min(fullW, fullH);
+  // Down to 1024 on the long side, but never below 640 on the short side; never up; never past 2048 on the long side.
+  let s = Math.min(1, Math.max(STUDIO_PHOTO_SIDE / long, SET_PHOTO_MIN_SIDE_PX / short));
+  s = Math.min(s, SET_PHOTO_MAX_SIDE_PX / long);
+  const width = Math.max(1, Math.round(fullW * s));
+  const height = Math.max(1, Math.round(fullH * s));
+  const w = Math.max(1, Math.round(c.w * s));
+  const h = Math.max(1, Math.round(c.h * s));
+  return { width, height, draw: { x: Math.round((width - w) / 2), y: Math.round((height - h) / 2), w, h } };
 }
+
+/** The largest JPEG the build takes (MAX_SET_PHOTO_BYTES), as base64 characters in a data URI: what the Studio checks before it sends. */
+export const STUDIO_PHOTO_MAX_DATA_URI_CHARS = Math.floor((MAX_SET_PHOTO_BYTES * 4) / 3) + 32;
 
 /** What the build is sent: a thing's photo goes onto the thing (the set page's addElementPhoto), a new object's to its own build. */
 export type StudioBuildTarget = { key: string } | { new: true };

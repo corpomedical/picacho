@@ -9,7 +9,7 @@
 // Relative imports only: vitest has no "@/" alias.
 
 import { fitThingModel, modelUrlAllowed } from "../../lib/sets/thing-model";
-import { cropOut, dominantColour, studioPhotoPayload, type Crop, type StudioBuildTarget } from "../../lib/sets/studio-models";
+import { STUDIO_PHOTO_MAX_DATA_URI_CHARS, cropOut, dominantColour, studioPhotoPayload, type Crop, type StudioBuildTarget } from "../../lib/sets/studio-models";
 import { VIEW_JOIN_RADIUS, VIEW_SCAN_WIDTH, borderColour, borderIsPlain, componentsOf, dilate, inkMask, pickViews, type Box } from "../../lib/sets/thing-views-find";
 
 type Three = typeof import("three");
@@ -299,7 +299,7 @@ export function viewsOfImage(img: CanvasImageSource, naturalW: number, naturalH:
   return views.map((b) => ({ x: Math.round(b.x / scale), y: Math.round(b.y / scale), w: Math.round(b.w / scale), h: Math.round(b.h / scale), area: Math.round(b.area / (scale * scale)) }));
 }
 
-/** The crop as the JPEG the build is sent (white round it, ≤ 1024 px), and its main colour. */
+/** The crop as the JPEG the build is sent (white round it, at least 640 px on its short side — cropOut), and its main colour. */
 export function cropPhoto(img: CanvasImageSource, crop: Crop): { dataUri: string; colour: string | null } {
   const out = cropOut(crop);
   const c = document.createElement("canvas");
@@ -312,5 +312,8 @@ export function cropPhoto(img: CanvasImageSource, crop: Crop): { dataUri: string
   x.imageSmoothingQuality = "high";
   x.drawImage(img, crop.x, crop.y, crop.w, crop.h, out.draw.x, out.draw.y, out.draw.w, out.draw.h);
   const px = x.getImageData(0, 0, out.width, out.height);
-  return { dataUri: c.toDataURL("image/jpeg", 0.92), colour: dominantColour(px.data, out.width, out.height) };
+  // Within the build's byte cap (MAX_SET_PHOTO_BYTES): a busy photo is sent a little more compressed rather than refused.
+  let dataUri = c.toDataURL("image/jpeg", 0.92);
+  for (const q of [0.85, 0.75, 0.6]) if (dataUri.length > STUDIO_PHOTO_MAX_DATA_URI_CHARS) dataUri = c.toDataURL("image/jpeg", q);
+  return { dataUri, colour: dominantColour(px.data, out.width, out.height) };
 }

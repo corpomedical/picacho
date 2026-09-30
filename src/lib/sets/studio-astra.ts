@@ -25,6 +25,7 @@
 import type { AstraJobRequest } from "../generations/providers/astra";
 import { POSE_PRESETS, clampRot, isBone, type BoneName, type PosePreset } from "./studio-pose";
 import { PATH_POINTS_MAX, type Gait } from "./studio-gait";
+import { STUDIO_PART_KINDS, type StudioPartKind } from "./studio-parts";
 
 /** The one plain line at the top of Astra's panel — his question, answered. */
 export const STUDIO_ASTRA_TOP_LINE = "Astra edits this 3D scene. To make a picture or video, use Render.";
@@ -91,6 +92,8 @@ export const STUDIO_OPS = [
   "run_to",
   "follow_path",
   "turn_to",
+  // The set's own parts (2026-09-30 — operator: "remove the garage and put the car on the road.").
+  "place_on",
 ] as const;
 export type StudioOpName = (typeof STUDIO_OPS)[number];
 
@@ -154,6 +157,16 @@ export type StudioSummaryObject = {
   pose?: string;
   /** A person's walks, runs and turns on the timeline, in words ("walks to (3, -2) frames 1–73"). */
   moves?: string;
+  /** A part of the set itself (studio-parts.ts): what it is. */
+  set?: StudioPartKind;
+  /** A part's top surface: its height (Blender Z), metres. */
+  top?: number;
+  /** A road: the way it runs on the ground, a unit [X, Y]. */
+  along?: [number, number];
+  /** A road: its width, metres. */
+  width?: number;
+  /** A road in several pieces: each piece's centre line [x1, y1, x2, y2, width]. */
+  segs?: [number, number, number, number, number][];
 };
 
 export type StudioSummary = {
@@ -217,6 +230,23 @@ function summaryObject(v: unknown): StudioSummaryObject | null {
   if (pose) out.pose = pose;
   const moves = studioText(o.moves, 160);
   if (moves && pose) out.moves = moves;
+  if (typeof o.set === "string" && (STUDIO_PART_KINDS as readonly string[]).includes(o.set)) {
+    out.set = o.set as StudioPartKind;
+    const top = num(o.top);
+    if (top !== null) out.top = r1(clamp(top, -5000, 5000));
+    const along = Array.isArray(o.along) && o.along.length === 2 ? o.along.map((x) => num(x)) : null;
+    if (along && along[0] !== null && along[1] !== null && Math.hypot(along[0], along[1]) > 0.5) {
+      const l = Math.hypot(along[0], along[1]);
+      out.along = [Math.round((along[0] / l) * 100) / 100 || 0, Math.round((along[1] / l) * 100) / 100 || 0];
+    }
+    const width = num(o.width);
+    if (width !== null && width > 0) out.width = r1(clamp(width, 0, 5000));
+    const segs = (Array.isArray(o.segs) ? o.segs : [])
+      .slice(0, 8)
+      .map((g) => (Array.isArray(g) && g.length === 5 && g.every((x) => num(x) !== null) ? (g.map((x) => r1(clamp(x as number, -5000, 5000))) as [number, number, number, number, number]) : null))
+      .filter((g): g is [number, number, number, number, number] => g !== null);
+    if (segs.length > 1) out.segs = segs;
+  }
   return out;
 }
 
@@ -300,7 +330,7 @@ const nullableNumber = { type: ["number", "null"] };
 const STEP_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["say", "op", "targets", "kind", "name", "mode", "x", "y", "z", "of", "side", "value", "value2", "color", "metallic", "roughness", "emission", "points"],
+  required: ["say", "op", "targets", "kind", "name", "mode", "x", "y", "z", "of", "side", "value", "value2", "color", "metallic", "roughness", "emission", "points", "near"],
   properties: {
     say: { type: "string" },
     op: { type: "string", enum: [...STUDIO_OPS] },
@@ -320,6 +350,7 @@ const STEP_SCHEMA = {
     roughness: nullableNumber,
     emission: { type: "string" },
     points: { type: "array", items: { type: "array", items: { type: "number" } } },
+    near: { type: "string" },
   },
 } as const;
 
@@ -338,18 +369,21 @@ export const STUDIO_PLAN_JSON_SCHEMA = {
 
 export const STUDIO_ASTRA_INSTRUCTIONS = [
   "You are Astra, the assistant in the side panel of Helios Studio, a Blender-style 3D workspace in the browser.",
-  "You change THIS 3D scene only, by planning steps the person reviews and applies (one undo for the whole plan). You never make pictures or videos: for those, tell them to use Render ▸ in the top bar. You cannot sculpt, model from photos, edit meshes, paint textures or use nodes; say so plainly with no steps.",
+  "You change THIS 3D scene only, by planning steps the person reviews and applies (one undo for the whole plan). You never make pictures or videos: for those, tell them to use Render ▸ in the top bar. You cannot sculpt, model from photos, edit meshes, paint textures or use nodes; say so plainly with no steps. The set's own parts (a garage, the track, a wall) are whole objects: you can delete, hide, move or key them, and put things on them.",
   "",
   "The scene comes as JSON. Axes are Blender's: X right, Y away, Z up, in metres. `at` is an object's base centre (its lowest point for things on the ground), `size` its [X, Y, Z] dimensions, `turn` its heading in degrees about Z. `sel` marks the selection: \"this\", \"it\", \"these\" mean the selected objects. `camera` is the shot camera's id, `aim` what it tracks. `frame` is the current frame; frames run 1–241 at 24 fps (10 s). Objects past the cap are left out (`omitted`); never guess their ids.",
   "",
   "Answer with JSON: `reply` (one or two plain sentences saying what you will do, in the person's language), `question` (\"\" unless you must ask), `options` (short answers for the question, else []), `steps`.",
   "Ask instead of guessing when a request could mean different objects (for example two cars and none selected): put the question in `question`, the choices in `options` (use the objects' names), and give no steps.",
   "",
+  "The set itself: objects with `set` are its parts, and `set` says what each is (road, marking, kerb, grass, water, ground, hill, building, wall, barrier, stand, pole, tree, prop). `top` is the height of its top surface. A road also has `along` (the way it runs, a unit [X, Y] on the ground), `width` in metres, and `segs` ([x1, y1, x2, y2, width] centre lines) when it is in pieces. \"The garage\", \"the road\", \"the grandstand\" mean these parts, by name or kind.",
+  "",
   "Every step has every field; unused text fields are \"\", unused numbers null. `say` is the step in plain words (\"Add a street lamp left of the car\"). `targets` are ids from the scene, \"camera\" for the shot camera, or \"new:NAME\" for an object an earlier step of this plan added with `name` NAME.",
   "Ops (Blender axes and units throughout):",
   "- select: targets become the selection.",
   "- add: kind = cube|sphere|cylinder|cone|torus|ico_sphere|plane|empty|point_light|spot_light|street_lamp|car|person; name = its name (later steps target \"new:\"+name); place it with x,y,z (mode \"to\") OR relative to another object with of = that id and side = left|right|front|behind|above|on|near (left/right/front/behind as the shot camera sees it) and value = the gap in metres; color = \"#rrggbb\" or \"\". New things stand on the ground.",
-  "- delete, hide, show: targets.",
+  "- delete, hide, show: targets (objects, or parts of the set: \"remove the garage\" deletes the garage part).",
+  "- place_on: targets = what to put down; of = the part (or object) whose top they stand on (\"park the car on the road\" = of the road part); kind = \"along\" (their long side down the road's `along`), \"across\", or \"\" (keep their heading); near = an id or \"camera\" to be as close to as the surface allows, or \"\"; x,y = a spot to be near instead (else null). The Studio finds the exact spot: on the top, inside its edges, clear of walls and other objects. Use it, not move, for anything that goes ON something.",
   "- duplicate: targets[0] is copied; name = the copy's name; place with x,y,z as an offset (mode \"by\") or with of/side/value.",
   "- move: mode \"to\" (x,y,z = where; a null axis keeps its value) or \"by\" (x,y,z = how far); or of/side/value to put it beside something.",
   "- rotate: degrees about X,Y,Z; mode \"to\" or \"by\"; or of = an id to turn it to face that object (\"camera\" to face the camera).",
@@ -359,7 +393,7 @@ export const STUDIO_ASTRA_INSTRUCTIONS = [
   "- material: metallic 0–1, roughness 0–1, emission = \"#rrggbb\" glow or \"\", color optional.",
   "- rename: targets[0], name = the new name.",
   "- parent: targets become children of `of`; of = \"\" clears their parent.",
-  "- key: a keyframe for each target at frame `value`; mode \"to\"/\"by\" with x,y,z moves it there first, or mode \"\" keys it where it stands; kind = linear|bezier|constant sets its interpolation or \"\". To animate \"over 3 seconds\": key it where it is at the current frame, then key it at frame + 72 with the move.",
+  "- key: a keyframe for each target at frame `value`; mode \"to\"/\"by\" with x,y,z moves it there first (a camera, light or empty by its own origin), or mode \"\" with no x,y,z keys it where it stands; kind = linear|bezier|constant is the interpolation from THIS key to the next (Blender keeps it per keyframe: constant holds this key's place until the next key, a cut), or \"\". To animate \"over 3 seconds\": key it where it is at the current frame, then key it at frame + 72 with the move.",
   "- hour: value = time of day 0–24 (sun). sky: kind = simple|physical|studio.",
   "- lens: value = the shot camera's focal length in mm (8–300). format: kind = 16:9|2.39:1|9:16|1:1|4:5.",
   "- aim: the shot camera tracks `of` (Track To); of = \"\" stops tracking. To place the camera, move \"camera\".",
@@ -454,6 +488,7 @@ export type StudioStep = { say: string } & (
   | { op: "add_person"; name: string | null; at: StudioVec | null; place: StudioPlace | null; preset: PosePreset | null }
   | { op: "walk_to" | "run_to" | "turn_to"; targets: string[]; of: string | null; at: StudioVec | null; start: number | null; end: number | null }
   | { op: "follow_path"; targets: string[]; gait: Gait; points: [number, number][]; start: number | null; end: number | null }
+  | { op: "place_on"; targets: string[]; of: string; align: "along" | "across" | null; near: string | null; nearAt: StudioVec | null }
 );
 
 export type StudioPlan = {
@@ -638,7 +673,8 @@ function stepOf(s: unknown, known: StudioKnown, made: Set<string>): StudioStep |
     case "key": {
       const miss = needTargets();
       if (miss) return miss;
-      const keyMode = o.mode === "to" || o.mode === "by" ? o.mode : null;
+      // A key with a place but no mode is keyed THERE ("key the camera at frame 1 at (−3, −9, 1.6)"), never where it stands.
+      const keyMode = o.mode === "to" || o.mode === "by" ? o.mode : vecOf(o, -POS, POS) ? "to" : null;
       const v = keyMode ? vecOf(o, keyMode === "to" ? -POS : -MOVE, keyMode === "to" ? POS : MOVE) : null;
       return { ...base, op, targets, frame: frameOf(o.value, 1), mode: v ? keyMode : null, v, interp: pick(o.kind, STUDIO_INTERPS) };
     }
@@ -750,6 +786,23 @@ function stepOf(s: unknown, known: StudioKnown, made: Set<string>): StudioStep |
       if (!of && !at) return { op: "note", say: `"${say || op}" doesn't say where to, so this step is skipped.` };
       const kept = who.filter((t) => t !== of);
       return kept.length ? { ...base, op, targets: kept, of, at, start, end } : null;
+    }
+    case "place_on": {
+      const miss = needTargets();
+      if (miss) return miss;
+      if (typeof o.of !== "string" || !o.of.trim()) return { op: "note", say: `"${say || "That step"}" doesn't say what to put it on, so this step is skipped.` };
+      const of = resolve(o.of, known, made);
+      if (!of) return cantFind([studioText(o.of, 40)]);
+      if (of === known.camera) return { op: "note", say: "Nothing can stand on the shot camera, so this step is skipped." };
+      const kept = targets.filter((t) => t !== of && t !== known.camera);
+      if (!kept.length) return null;
+      // Near: an id or the camera (one that isn't there is left out, and the spot is nearest where it stands), or x,y.
+      const nearRaw = typeof o.near === "string" && o.near.trim() ? o.near : null;
+      const nearId = nearRaw ? resolve(nearRaw, known, made) : null;
+      const near = nearId && !kept.includes(nearId) ? nearId : null;
+      const at = vecOf(o, -POS, POS);
+      const nearAt = near || !at || at.x === null || at.y === null ? null : { x: at.x, y: at.y, z: null };
+      return { ...base, op, targets: kept, of, align: o.kind === "along" || o.kind === "across" ? o.kind : null, near, nearAt };
     }
     case "add_person": {
       const place = placeOf();
