@@ -410,6 +410,8 @@ export type PoseWordsContext = {
   leaningOn?: string | null;
   /** What its face turns to ("the camera", "the red car"). */
   lookingAt?: string | null;
+  /** Walking or running along a path right now (studio-gait.ts), which the gait's own pose may not show on this frame. */
+  moving?: "walking" | "running" | null;
 };
 
 /** What the figure's body is doing, read from the pose itself. */
@@ -445,7 +447,7 @@ function armWords(j: Record<BoneName, THREE.Vector3>, pose: Pose, s: "L" | "R"):
 export function poseWords(pose: Pose, ctx: PoseWordsContext = {}): string {
   // The arms are read against the body (the pelvis upright, at rest), so a figure lying down still "waves".
   const j = jointsOf({ rot: { ...pose.rot, pelvis: [0, 0, 0] }, loc: [0, 0, 0] });
-  const kind = poseKind(pose);
+  const kind = ctx.moving ?? poseKind(pose);
   const parts: string[] = [];
   if (ctx.sittingOn && kind !== "lying") parts.push(`sitting on ${ctx.sittingOn}`);
   else if (kind === "lying") parts.push("lying down on their back");
@@ -477,6 +479,7 @@ export function poseWords(pose: Pose, ctx: PoseWordsContext = {}): string {
 /** The set's own four stand poses (set-spec.ts STAND_POSES), the nearest to this pose. */
 export function standPoseOf(pose: Pose, ctx: PoseWordsContext = {}): "stand" | "sit" | "walk" | "lean" {
   if (ctx.leaningOn) return "lean";
+  if (ctx.moving) return "walk";
   const k = poseKind(pose);
   if (ctx.sittingOn || k === "sitting") return "sit";
   if (k === "walking" || k === "running") return "walk";
