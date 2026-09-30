@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.176.0",
+    build: 215,
+    date: "2026-09-30",
+    title: "Android app: full screen, and saving to your phone",
+    items: [
+      "In the Android app, Download saves the picture or video to your phone: pictures go to Pictures/Picacho and videos to Movies/Picacho, so they show in your gallery as a Picacho album, and the note says “Saved to your gallery”. It used to open the share sheet, which on Android has no plain save, so nothing ever reached the phone. Share still opens the share sheet.",
+      "Every download in the app now saves the same way: the simple chat, Recast, layers, Live recordings, Press Tour cuts, Helios films and sketches, and Aly's documents (those go to Download/Picacho).",
+      "Pictures and videos open full screen wherever a finished take shows — tap the picture, or the full-screen button in its corner — on Generate, History, the Library, the simple chat, Aly's chat and Recast. It is black edge to edge: pinch or double-tap to zoom, drag to look around, swipe down or press Back to close. A tap hides the controls and the phone's bars, the phone can turn sideways, and a video carries on from where it was.",
+      "Aly's picture and video cards in the chat gain the full-screen and download buttons they were missing, and the Library's viewer now closes with the phone's Back button instead of leaving the page.",
+      "The next Play build (versionCode 22) also brings back the video player's own full-screen button, which the app's code shrinker had quietly switched off.",
+    ],
+  },
+  {
     version: "1.175.0",
     build: 214,
     date: "2026-09-30",
