@@ -23,6 +23,7 @@
 // tests import it directly.
 
 import type { AstraJobRequest } from "../generations/providers/astra";
+import { POSE_PRESETS, clampRot, isBone, type BoneName, type PosePreset } from "./studio-pose";
 
 /** The one plain line at the top of Astra's panel — his question, answered. */
 export const STUDIO_ASTRA_TOP_LINE = "Astra edits this 3D scene. To make a picture or video, use Render.";
@@ -78,6 +79,12 @@ export const STUDIO_OPS = [
   "bake",
   "frame",
   "range",
+  // People (2026-09-30, operator picked "Posable people").
+  "pose",
+  "sit_on",
+  "lean_on",
+  "look_at",
+  "add_person",
 ] as const;
 export type StudioOpName = (typeof STUDIO_OPS)[number];
 
@@ -137,6 +144,8 @@ export type StudioSummaryObject = {
   parent?: string;
   keys?: number;
   physics?: "active" | "passive";
+  /** A person: what their pose is doing, in words ("sitting on the red car, waving with the right hand"). */
+  pose?: string;
 };
 
 export type StudioSummary = {
@@ -196,6 +205,8 @@ function summaryObject(v: unknown): StudioSummaryObject | null {
   const keys = num(o.keys);
   if (keys !== null && keys > 0) out.keys = Math.min(9999, Math.floor(keys));
   if (o.physics === "active" || o.physics === "passive") out.physics = o.physics;
+  const pose = studioText(o.pose, 120);
+  if (pose) out.pose = pose;
   return out;
 }
 
@@ -345,6 +356,10 @@ export const STUDIO_ASTRA_INSTRUCTIONS = [
   "- array: value = count (1–50), x,y,z = spacing in metres between copies. mirror: kind = x|y|z, or \"\" to remove.",
   "- physics: kind = none|active|passive rigid body, value = mass in kg or null. simulate: run physics from the current frame. bake: simulate and keep it as keyframes.",
   "- frame: value = go to that frame. range: value = start frame, value2 = end frame for playback.",
+  "People: objects with `pose` are posable people (a jointed figure; `pose` says what they are doing). Only people take these:",
+  `- pose: targets = people; kind = a preset (${POSE_PRESETS.join("|")}; wave/point/hips/crossed move the arms only, so a sitting person keeps sitting), OR name = a bone and x,y,z = its angles in degrees (mode "to" or "by"). Bones: pelvis spine chest neck head, shoulder upperArm forearm hand thigh shin foot with .L (their left) or .R (their right). Angles: upperArm z 90 = arm straight out to the side, x -90 = arm straight forward; forearm x -90 = elbow bent; thigh x -90 = leg forward; shin x 90 = knee bent; neck/head y 40 = turn to their left, x -20 = look up. Joint limits hold.`,
+  "- sit_on: targets = people, of = what they sit on (they sit on its nearest top, facing out). lean_on: of = what they lean on (hands on it, or their back on a tall thing). look_at: of = an id or \"camera\".",
+  "- add_person: name, kind = a preset or \"\", placed like add (x,y,z or of/side). \"The stand-in\" is the person named Stand-in.",
   "Keep plans short and exact; use the sizes given to place things so they don't overlap. If nothing in the scene can do what they ask, say why in `reply` and give no steps.",
 ].join("\n");
 
@@ -421,6 +436,9 @@ export type StudioStep = { say: string } & (
   | { op: "simulate" | "bake" }
   | { op: "frame"; frame: number }
   | { op: "range"; start: number; end: number }
+  | { op: "pose"; targets: string[]; preset: PosePreset | null; bone: BoneName | null; mode: "to" | "by"; v: StudioVec | null }
+  | { op: "sit_on" | "lean_on" | "look_at"; targets: string[]; of: string }
+  | { op: "add_person"; name: string | null; at: StudioVec | null; place: StudioPlace | null; preset: PosePreset | null }
 );
 
 export type StudioPlan = {
@@ -431,9 +449,9 @@ export type StudioPlan = {
 };
 
 /** What the plan may name: the scene's ids (and their names, for the words), and the shot camera. */
-export type StudioKnown = { ids: Map<string, string>; camera: string | null };
+export type StudioKnown = { ids: Map<string, string>; camera: string | null; people?: Set<string> };
 export function knownOf(summary: StudioSummary): StudioKnown {
-  return { ids: new Map(summary.objects.map((o) => [o.id, o.name])), camera: summary.camera };
+  return { ids: new Map(summary.objects.map((o) => [o.id, o.name])), camera: summary.camera, people: new Set(summary.objects.filter((o) => o.pose).map((o) => o.id)) };
 }
 
 const POS = 500; // metres from the origin, either way
@@ -468,6 +486,8 @@ export function validateStudioPlan(raw: unknown, known: StudioKnown): StudioPlan
   const question = studioText(o.question, 300) || null;
   const options = question ? (Array.isArray(o.options) ? o.options : []).map((x) => studioText(x, 60)).filter(Boolean).slice(0, 6) : [];
   const made = new Set<string>();
+  // The people this plan may pose: the scene's, and any an earlier step adds (their "new:" handles join as they are made).
+  known = { ...known, people: new Set(known.people ?? []) };
   const steps: StudioStep[] = [];
   const rawSteps = question ? [] : Array.isArray(o.steps) ? o.steps.slice(0, STUDIO_PLAN_MAX_STEPS) : [];
   for (const s of rawSteps) {
@@ -531,6 +551,7 @@ function stepOf(s: unknown, known: StudioKnown, made: Set<string>): StudioStep |
       const place = placeOf();
       if (place === "missing") return cantFind([studioText(o.of, 40)]);
       if (name) made.add(name.toLowerCase());
+      if (name && kind === "person") known.people?.add(`new:${name.toLowerCase()}`);
       return { ...base, op, kind, name, at: place ? null : vecOf(o, -POS, POS), place, color: hex(o.color) };
     }
     case "duplicate": {
@@ -539,6 +560,7 @@ function stepOf(s: unknown, known: StudioKnown, made: Set<string>): StudioStep |
       const place = placeOf();
       if (place === "missing") return cantFind([studioText(o.of, 40)]);
       if (name) made.add(name.toLowerCase());
+      if (name && known.people?.has(targets[0])) known.people.add(`new:${name.toLowerCase()}`);
       return { ...base, op, targets: targets.slice(0, 1), name, by: place ? null : vecOf(o, -MOVE, MOVE), place };
     }
     case "move": {
@@ -658,6 +680,40 @@ function stepOf(s: unknown, known: StudioKnown, made: Set<string>): StudioStep |
       const start = frameOf(o.value, 1);
       const end = frameOf(o.value2, STUDIO_LAST_FRAME);
       return end > start ? { ...base, op, start, end } : null;
+    }
+    case "pose":
+    case "sit_on":
+    case "lean_on":
+    case "look_at": {
+      const miss = needTargets();
+      if (miss) return miss;
+      const who = targets.filter((t) => known.people?.has(t));
+      if (!who.length) return { op: "note", say: `${targets.map((t) => `"${nameOfRef(t, known)}"`).join(", ")} ${targets.length === 1 ? "isn't a person" : "aren't people"}, so this step is skipped.` };
+      if (op === "pose") {
+        const preset = pick(o.kind, POSE_PRESETS);
+        const bone = isBone(o.name) ? o.name : null;
+        const v = bone ? vecOf(o, -360, 360) : null;
+        if (!preset && !(bone && v)) return { op: "note", say: `I can't pose "${studioText(o.kind, 30) || studioText(o.name, 30) || "that"}", so this step is skipped.` };
+        // "to" is held inside the bone's limits here; "by" is held there by the Studio, from where the bone is.
+        const held = bone && v && mode === "to" ? clampRot(bone, [v.x ?? 0, v.y ?? 0, v.z ?? 0]) : null;
+        const vv = held && v ? { x: v.x === null ? null : held[0], y: v.y === null ? null : held[1], z: v.z === null ? null : held[2] } : v;
+        return { ...base, op, targets: who, preset, bone, mode, v: vv };
+      }
+      if (typeof o.of !== "string" || !o.of.trim()) return { op: "note", say: `"${say || op}" needs something to ${op === "look_at" ? "look at" : op === "sit_on" ? "sit on" : "lean on"}, so this step is skipped.` };
+      const of = resolve(o.of, known, made);
+      if (!of) return cantFind([studioText(o.of, 40)]);
+      if (op !== "look_at" && of === known.camera) return { op: "note", say: "Nobody can sit or lean on the shot camera, so this step is skipped." };
+      const kept = who.filter((t) => t !== of);
+      return kept.length ? { ...base, op, targets: kept, of } : null;
+    }
+    case "add_person": {
+      const place = placeOf();
+      if (place === "missing") return cantFind([studioText(o.of, 40)]);
+      if (name) {
+        made.add(name.toLowerCase());
+        known.people?.add(`new:${name.toLowerCase()}`);
+      }
+      return { ...base, op, name, at: place ? null : vecOf(o, -POS, POS), place, preset: pick(o.kind, POSE_PRESETS) };
     }
   }
 }

@@ -365,3 +365,69 @@ describe("a thing Astra resizes", () => {
     }
   });
 });
+
+// People (2026-09-30, operator picked "Posable people"): pose, sit_on, lean_on, look_at, add_person.
+describe("posing people", () => {
+  const PEOPLE = { ...SCENE, objects: SCENE.objects.map((o) => (o.id === "o2" ? { ...o, name: "Stand-in", pose: "standing" } : o)) };
+  const K = knownOf(normaliseStudioSummary(PEOPLE));
+  const plan = (steps: unknown[]) => validateStudioPlan(answer(steps), K).steps;
+
+  it("the summary says who is a person and what their pose is doing, within the cap", () => {
+    const s = normaliseStudioSummary({ ...PEOPLE, objects: [...PEOPLE.objects, { id: "o7", name: "Rider", kind: "mesh", at: [0, 0, 0], size: [1, 1, 2], turn: 0, pose: "sitting on the red car, waving with the right hand, " + "x".repeat(300) }] });
+    expect(s.objects.find((o) => o.id === "o2")?.pose).toBe("standing");
+    expect(s.objects.find((o) => o.id === "o7")?.pose?.length).toBe(120);
+    expect(s.objects.find((o) => o.id === "o1")?.pose).toBeUndefined();
+    expect(K.people).toEqual(new Set(["o2"]));
+  });
+
+  it("a scripted-style request becomes sit_on + pose, checked", () => {
+    const s = plan([step({ say: "Sit the stand-in on the car", op: "sit_on", targets: ["o2"], of: "o1" }), step({ say: "Make them wave", op: "pose", targets: ["o2"], kind: "wave" })]);
+    expect(s).toEqual([
+      { say: "Sit the stand-in on the car", op: "sit_on", targets: ["o2"], of: "o1" },
+      { say: "Make them wave", op: "pose", targets: ["o2"], preset: "wave", bone: null, mode: "to", v: null },
+    ]);
+  });
+
+  it("only people are posed; a car is told apart plainly", () => {
+    const [n] = plan([step({ say: "Wave", op: "pose", targets: ["o1"], kind: "wave" })]);
+    expect(n).toEqual({ op: "note", say: '"Red sports car" isn\'t a person, so this step is skipped.' });
+    const [both] = plan([step({ say: "Wave", op: "pose", targets: ["o1", "o2"], kind: "wave" })]);
+    expect(both).toMatchObject({ op: "pose", targets: ["o2"] });
+  });
+
+  it("bone angles are held inside the joint's limits; unknown bones and presets become notes", () => {
+    const [a] = plan([step({ say: "Bend the knee", op: "pose", targets: ["o2"], name: "shin.L", mode: "to", x: -45, y: null, z: 30 })]);
+    expect(a).toMatchObject({ op: "pose", bone: "shin.L", v: { x: 0, y: null, z: 0 } });
+    const [b] = plan([step({ say: "Raise the arm", op: "pose", targets: ["o2"], name: "upperArm.R", mode: "by", z: 45 })]);
+    expect(b).toMatchObject({ op: "pose", bone: "upperArm.R", mode: "by", v: { x: null, y: null, z: 45 } });
+    expect(plan([step({ say: "Moonwalk", op: "pose", targets: ["o2"], kind: "moonwalk" })])[0].op).toBe("note");
+    expect(plan([step({ say: "Tail", op: "pose", targets: ["o2"], name: "tail", x: 10 })])[0].op).toBe("note");
+  });
+
+  it("sit_on and lean_on need a thing that is there; nobody sits on the camera; look_at may look at it", () => {
+    expect(plan([step({ say: "Sit", op: "sit_on", targets: ["o2"], of: "o99" })])[0]).toEqual({ op: "note", say: 'I can\'t find "o99" in the scene, so this step is skipped.' });
+    expect(plan([step({ say: "Sit", op: "sit_on", targets: ["o2"], of: "camera" })])[0].op).toBe("note");
+    expect(plan([step({ say: "Sit", op: "lean_on", targets: ["o2"], of: "" })])[0].op).toBe("note");
+    expect(plan([step({ say: "Look", op: "look_at", targets: ["o2"], of: "camera" })])[0]).toEqual({ say: "Look", op: "look_at", targets: ["o2"], of: "o3" });
+  });
+
+  it("add_person makes a person a later step can pose, and a plain add of a person does too", () => {
+    const s = plan([
+      step({ say: "Add a friend", op: "add_person", name: "Friend", kind: "crossed", of: "o1", side: "left", value: 1 }),
+      step({ say: "Friend looks at the stand-in", op: "look_at", targets: ["new:Friend"], of: "o2" }),
+      step({ say: "Add another", op: "add", kind: "person", name: "Runner" }),
+      step({ say: "Runner runs", op: "pose", targets: ["new:Runner"], kind: "run" }),
+    ]);
+    expect(s[0]).toEqual({ say: "Add a friend", op: "add_person", name: "Friend", at: null, place: { of: "o1", side: "left", gap: 1 }, preset: "crossed" });
+    expect(s[1]).toEqual({ say: "Friend looks at the stand-in", op: "look_at", targets: ["new:friend"], of: "o2" });
+    expect(s[3]).toMatchObject({ op: "pose", targets: ["new:runner"], preset: "run" });
+  });
+
+  it("the engine runs every people op (read from the source)", () => {
+    const engine = readFileSync(join(__dirname, "../../components/studio/studio-engine.ts"), "utf8");
+    for (const op of ["pose", "add_person"]) expect(engine, op).toContain(`case "${op}": act = () =>`);
+    expect(engine).toContain('case "sit_on": case "lean_on": case "look_at": act = () =>');
+    expect(engine).toContain('ask: "Sit the stand-in on the car"');
+    expect(engine).toContain('ask: "Make them wave"');
+  });
+});
