@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.178.0",
+    build: 217,
+    date: "2026-09-30",
+    title: "The iPhone and iPad app is built",
+    items: [
+      "Picacho has an iPhone and iPad app, the same as the Android one: the full site inside, nothing for sale, the Picacho P as its icon, and a launch screen in light or dark to match the phone. It is ready to open in Xcode and run on the iPhone simulator. It is not in the App Store yet.",
+      "In the iPhone app, Download saves pictures and videos to Photos, and the note says “Saved to Photos”. Other files open the share sheet, where Save to Files is. If Picacho isn't allowed to add to Photos, the note says where to allow it.",
+      "Talking to Aly and voice notes work in the iPhone app from its first version. If the microphone is off, the message gives the iPhone's own Settings path.",
+      "A picture or video open full screen can turn sideways on iPhone. iPad turns every way, and a swipe from the left edge goes back a page.",
+      "When a video finishes, the iPhone app gets a notification straight from Apple, once Picacho's Apple push key is added. Android notifications work as before.",
+    ],
+  },
+  {
     version: "1.177.0",
     build: 216,
     date: "2026-09-30",
