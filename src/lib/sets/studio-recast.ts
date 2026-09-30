@@ -159,50 +159,88 @@ export function studioRecastDirection(a: {
   return (kept ? `${kept} ${fixed}` : fixed).slice(0, RECAST_DIRECTION_MAX_CHARS);
 }
 
-// ---------------- "Real scene" (2026-09-30, operator: "Go ahead") ----------------
+// ---------------- "Real scene" (2026-09-30, operator: "Go ahead", then "fix") ----------------
 // Live Test A (8d425291): restyle words in the direction turned the WHOLE
-// recording photoreal on Into the clip — a real track, pit building and
-// yellow supercar, Eva at IDENTITY 92 — for the same engine and price. The
-// words are built from the scene itself and sent beside the person's own.
-// They share Recast's 600-character direction (recast-brief.ts
-// RECAST_DIRECTION_MAX_CHARS; the engine's own prompt stops at 2,500), so
-// the line stays under STUDIO_REAL_SCENE_MAX and the person keeps the rest.
+// recording photoreal on Into the clip — "a real race track with real
+// asphalt, kerbs and grass, a real concrete pit building, a real yellow sports
+// car, natural daylight, shot on a cinema camera" — Eva at IDENTITY 92, same
+// engine and price. The first built line (f997e4ea, IDENTITY 72) was worse:
+// it quoted the set description and was cut inside a clause ("…beside a)"),
+// named no sky or ground (both stayed flat CG), and said nothing of the
+// outfit (the engine invented a black evening dress). So the line is now
+// made only of short whole items — the kind of place with its real surfaces,
+// its buildings and its things by colour, the hour's light and sky, real
+// ground, the outfit from the photos — and when it runs long, whole items
+// go, lowest first; nothing is ever cut mid-phrase. It shares Recast's
+// 600-character direction (recast-brief.ts RECAST_DIRECTION_MAX_CHARS; the
+// engine's own prompt stops at 2,500), so it stays under
+// STUDIO_REAL_SCENE_MAX and the person keeps the rest. Characters carry no
+// pronoun (and the house rule never guesses one): always "the character".
 
 export const STUDIO_REAL_SCENE_MAX = 340;
-const PLACE_DETAIL_MAX = 90;
 const THINGS_MAX = 3;
+const BUILDINGS_MAX = 2;
 
-/** Kinds of place, as the engine should picture them, found in the set's title and description. */
-const PLACE_KINDS: [RegExp, string][] = [
-  [/\b(race ?track|racing circuit|circuit|raceway|speedway|racecourse)\b/, "race track"],
-  [/\bshowroom\b/, "car showroom"],
-  [/\b(parking (lot|garage|structure)|car park)\b/, "parking lot"],
-  [/\bwarehouse\b/, "warehouse"],
-  [/\bgarage\b/, "garage"],
-  [/\brooftop\b/, "rooftop"],
-  [/\b(street|avenue|alley|boulevard|downtown)\b/, "city street"],
-  [/\b(highway|freeway|motorway|country road|desert road)\b/, "road"],
-  [/\bbeach\b/, "beach"],
-  [/\bdesert\b/, "desert"],
-  [/\b(forest|woods|woodland)\b/, "forest"],
-  [/\bstudio\b/, "studio"],
-  [/\boffice\b/, "office"],
-  [/\b(kitchen|living room|bedroom|apartment|loft)\b/, "home interior"],
+type PlaceKind = { re: RegExp; kind: string; surfaces: string; indoor: boolean };
+/** Kinds of place, found in the set's title and description, each with the real surfaces the engine should draw. First match wins. */
+const PLACE_KINDS: PlaceKind[] = [
+  { re: /\b(race ?track|racing circuit|circuit|raceway|speedway|racecourse|grand prix)\b/, kind: "race track", surfaces: "real asphalt, kerbs and grass", indoor: false },
+  { re: /\bshowroom\b/, kind: "car showroom", surfaces: "real polished floors and glass", indoor: true },
+  { re: /\b(parking (lot|garage|structure)|car park)\b/, kind: "parking lot", surfaces: "real concrete and painted lines", indoor: false },
+  { re: /\bwarehouse\b/, kind: "warehouse", surfaces: "real concrete floors and brick walls", indoor: true },
+  { re: /\bgarage\b/, kind: "garage", surfaces: "real concrete floors and walls", indoor: true },
+  { re: /\brooftop\b/, kind: "rooftop", surfaces: "real concrete, railings and a city skyline", indoor: false },
+  { re: /\b(street|avenue|alley|boulevard|downtown|sidewalk|pavement)\b/, kind: "city street", surfaces: "real pavement, kerbs and shopfronts", indoor: false },
+  { re: /\b(highway|freeway|motorway|country road|desert road)\b/, kind: "road", surfaces: "real asphalt, road markings and verges", indoor: false },
+  { re: /\bbeach\b/, kind: "beach", surfaces: "real sand and water", indoor: false },
+  { re: /\bdesert\b/, kind: "desert", surfaces: "real sand, rocks and dust", indoor: false },
+  { re: /\b(forest|woods|woodland)\b/, kind: "forest", surfaces: "real trees, leaves and earth", indoor: false },
+  { re: /\bstudio\b/, kind: "studio", surfaces: "real floors, walls and lights", indoor: true },
+  { re: /\boffice\b/, kind: "office", surfaces: "real desks, floors and windows", indoor: true },
+  { re: /\b(kitchen|living room|bedroom|apartment|loft)\b/, kind: "home", surfaces: "real furniture, floors and walls", indoor: true },
+];
+const ANY_PLACE: PlaceKind = { re: /$^/, kind: "place", surfaces: "real walls, floors and materials", indoor: false };
+
+function placeKind(title: string, description: string): PlaceKind {
+  const text = `${title} ${description}`.toLowerCase();
+  return PLACE_KINDS.find((k) => k.re.test(text)) ?? ANY_PLACE;
+}
+
+/** The place: its kind and its real surfaces ("a real race track with real asphalt, kerbs and grass"). Never the set's own sentences. */
+export function studioPlaceWords(title: string, description: string): string {
+  const k = placeKind(title, description);
+  return `a real ${k.kind} with ${k.surfaces}`;
+}
+
+/** Buildings the set's words name, as real ones. */
+const BUILDINGS: [RegExp, string][] = [
+  [/\bpit (garages?|buildings?|boxes|lane)\b/, "a real concrete pit building"],
+  [/\bgrandstands?\b/, "real grandstands"],
+  [/\b(terminal|facades?|towers?|office blocks?|buildings?)\b/, "real buildings"],
+  [/\b(warehouses?|hangars?|sheds?)\b/, "a real warehouse"],
+  [/\bgarages?\b/, "a real garage"],
+  [/\b(barriers?|walls?)\b/, "real concrete walls"],
 ];
 
-/** The place in a few words: its kind, and the set description's first sentence as detail (gated text, the set's own). */
-export function studioPlaceWords(title: string, description: string): string {
-  const text = `${title} ${description}`.toLowerCase();
-  const kind = PLACE_KINDS.find(([re]) => re.test(text))?.[1] ?? null;
-  let detail = (description.split(/(?<=[.!?])\s/)[0] ?? "").replace(/[.!?]+$/, "").replace(/\s+/g, " ").trim();
-  if (detail.length > PLACE_DETAIL_MAX) {
-    const cut = detail.slice(0, PLACE_DETAIL_MAX);
-    // At the last comma when there is one, so a list is never cut mid-item.
-    detail = cut.slice(0, cut.lastIndexOf(",") > 20 ? cut.lastIndexOf(",") : cut.lastIndexOf(" ")).trim();
+const COLOURS = "yellow|red|scarlet|crimson|orange|blue|navy|teal|green|black|white|silver|grey|gray|gold|bronze|purple|pink|brown|beige";
+/** Longer names first, so "sports coupe" wins over "coupe"; the value is how the engine hears it. */
+const VEHICLES: [string, string][] = [
+  ["sports coupe", "sports car"], ["sports car", "sports car"], ["race car", "race car"], ["racing car", "race car"],
+  ["supercar", "sports car"], ["hypercar", "sports car"], ["coupe", "sports car"], ["sedan", "sedan"], ["convertible", "convertible"],
+  ["pickup truck", "pickup truck"], ["truck", "truck"], ["van", "van"], ["motorcycle", "motorcycle"], ["motorbike", "motorcycle"],
+  ["scooter", "scooter"], ["bus", "bus"], ["taxi", "taxi"], ["jeep", "jeep"], ["suv", "SUV"], ["helicopter", "helicopter"],
+  ["boat", "boat"], ["yacht", "yacht"], ["jet", "jet"], ["bicycle", "bicycle"], ["car", "car"],
+];
+const THING_RE = new RegExp(`\\b(${COLOURS})\\s+(?:[a-z-]+\\s+){0,2}?(${VEHICLES.map(([w]) => w).join("|")})\\b`, "g");
+
+/** The things the set's words name with a colour: "an unbadged scarlet supercar" → "scarlet sports car". */
+export function studioDescribedThings(description: string): string[] {
+  const out: string[] = [];
+  for (const m of description.toLowerCase().matchAll(THING_RE)) {
+    const colour = m[1] === "gray" ? "grey" : m[1];
+    out.push(`${colour} ${VEHICLES.find(([w]) => w === m[2])![1]}`);
   }
-  detail = detail ? detail[0].toLowerCase() + detail.slice(1) : "";
-  if (kind) return detail ? `a real ${kind} (${detail})` : `a real ${kind}`;
-  return detail ? `a real place: ${detail}` : "a real place";
+  return out;
 }
 
 /** The light, from the Studio's hour (sun time, 0–24). */
@@ -215,26 +253,56 @@ export function studioSceneLight(hour: number): string {
   return "dusk light";
 }
 
+/** The sky for the hour — always named, or it stays flat CG (f997e4ea). */
+export function studioSceneSky(hour: number): string {
+  const h = ((hour % 24) + 24) % 24;
+  if (h < 5 || h >= 21) return "a real night sky";
+  if (h < 7.5) return "a real morning sky";
+  if (h < 16.5) return "a real sky with soft clouds";
+  if (h < 19) return "a real golden evening sky";
+  return "a real dusk sky";
+}
+
+export const STUDIO_REAL_OUTFIT_LINE = "The character keeps the outfit and hair from the photos.";
+const KEEP_LINE = "Keep the moves and camera exactly.";
+
 /**
- * The "Real scene" line: the whole scene as real live-action footage — the
- * place, its things by name and colour ("the yellow car" → "a real yellow
- * car"), the light — every surface real, the moves and the camera kept.
+ * The "Real scene" line, in Test A's words: the place with its real surfaces,
+ * its buildings and things (by colour), the hour's light and sky, real
+ * ground, the outfit from the photos, the moves and the camera kept. Over
+ * STUDIO_REAL_SCENE_MAX, whole items go, lowest first: the later things and
+ * buildings, then the first building, then the first thing, then the
+ * surfaces. The sky, the ground and the outfit always stay.
  */
 export function studioRealSceneLine(a: { title: string; description: string; things: string[]; hour: number }): string {
-  const place = studioPlaceWords(a.title, a.description);
-  const things = [...new Set(a.things.map((t) => t.replace(/^the\s+/i, "").trim()).filter(Boolean))].slice(0, THINGS_MAX).map((t) => `a real ${t}`);
-  const build = (n: number, withPlace: string) =>
-    `Make the whole scene real live-action footage: ${[withPlace, ...things.slice(0, n), studioSceneLight(a.hour)].join(", ")}, shot on a cinema camera. Every wall, building and surface becomes real material, never flat grey or blocky. Keep the character's moves and the camera exactly.`;
-  // The things in the shot matter more than the place's detail: the detail
-  // goes first, then the things from the smallest.
-  const bare = place.replace(/\s*\(.*\)$/, "");
-  for (let n = things.length; n >= 0; n--) {
-    for (const p of [place, bare]) {
-      const line = build(n, p);
+  const k = placeKind(a.title, a.description);
+  const norm = (t: string) => t.replace(/^(the|a|an)\s+/i, "").replace(/\s+/g, " ").trim().toLowerCase();
+  const things = [...new Set([...studioDescribedThings(a.description), ...a.things.map(norm)].filter(Boolean))].slice(0, THINGS_MAX).map((t) => `a real ${t}`);
+  const text = `${a.title} ${a.description}`.toLowerCase();
+  const buildings = [...new Set(BUILDINGS.filter(([re]) => re.test(text)).map(([, w]) => w))].slice(0, BUILDINGS_MAX);
+  const sky = k.indoor ? `${studioSceneSky(a.hour)} through the windows` : studioSceneSky(a.hour);
+  // Keep priority, highest first: the first thing, the first building, then the rest in turn.
+  const extras: string[] = [];
+  for (let i = 0; i < Math.max(things.length, buildings.length); i++) {
+    if (things[i]) extras.push(things[i]);
+    if (buildings[i]) extras.push(buildings[i]);
+  }
+  const build = (kept: Set<string>, place: string) =>
+    `Turn the whole scene into real live-action footage: ${[
+      place,
+      ...buildings.filter((b) => kept.has(b)),
+      ...things.filter((t) => kept.has(t)),
+      studioSceneLight(a.hour),
+      sky,
+      "real ground",
+    ].join(", ")}, shot on a cinema camera. ${STUDIO_REAL_OUTFIT_LINE} ${KEEP_LINE}`;
+  for (const place of [`a real ${k.kind} with ${k.surfaces}`, `a real ${k.kind}`]) {
+    for (let n = extras.length; n >= 0; n--) {
+      const line = build(new Set(extras.slice(0, n)), place);
       if (line.length <= STUDIO_REAL_SCENE_MAX) return line;
     }
   }
-  return build(0, bare).slice(0, STUDIO_REAL_SCENE_MAX);
+  return build(new Set(), `a real ${k.kind}`);
 }
 
 /** One step the chosen figure takes inside the range, in seconds from the range's start. */
