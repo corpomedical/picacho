@@ -25,7 +25,8 @@ import { addMove, gaitFrame, headingOf, moveAt, moveWords, naturalEnd, normalise
 import { BONE, BONE_NAMES, LIMBS, POSE_PRESETS, PRESET_LABELS, SEAT_DROP_M, applyPose, applyPreset, clampLoc, clampRot, clonePose, eulerNumbers, findSkeleton, groundFeet, lookRot, normalisePose, normalisePoseKeys, poseAt, poseSentence, poseWords, presetBones, presetPose, setPoseKey, solveLimb, standPoseOf, thingWords } from "@/lib/sets/studio-pose";
 import { newPressId } from "@/lib/sets/press-follow";
 import { savedPlaybackRange } from "@/lib/sets/studio-scene";
-import { STUDIO_RECAST_BITRATE, STUDIO_RECAST_ENGINES, studioFaceReadable, studioFigureSpot, studioRecastCredits, studioRecastDirection, studioRecastHappens, studioRecastRange, studioRecastSize } from "@/lib/sets/studio-recast";
+import { isPlainBlock, wallShare, wallWarns } from "@/lib/sets/studio-walls";
+import { STUDIO_RECAST_BITRATE, STUDIO_RECAST_ENGINES, studioFaceReadable, studioRealSceneLine, studioFigureSpot, studioRecastCredits, studioRecastDirection, studioRecastHappens, studioRecastRange, studioRecastSize } from "@/lib/sets/studio-recast";
 import { RECAST_ENGINES, RECAST_JOB_MAX_SECONDS, RECAST_MIN_SECONDS } from "@/lib/recast/recast";
 import { RECAST_DIRECTION_MAX_CHARS } from "@/lib/recast/recast-brief";
 import { ENV_H, ENV_W, SKY_DIFFUSE_SHARE, TRACE_MAX_SAMPLES, TRACE_PRESETS, TRACE_SCALES, TRACE_SLOW_SECONDS, TRACE_SPEED_KEY, envAddSplit, envAddSun, envUpIrradiance, loadOidn, luminance, meterExposure, oidnDenoise, physicalSunIrradiance, traceDuration, traceEstimate, traceSamples, traceSize } from "./studio-trace";
@@ -117,7 +118,7 @@ const wOn = (t, f, o) => window.addEventListener(t, f, withSig(o));
 const dOn = (t, f, o) => document.addEventListener(t, f, withSig(o));
 let stopped = false, raf = 0;
 // "Video with your character" (2026-09-30): its press state, up here because the timeline reads its price at start-up.
-const rc = { busy: false, stop: false, t0: 0, phase: "", done: 0, total: 0, share: null, progress: "", result: null, charId: null, engine: STUDIO_RECAST_ENGINES[0], fig: null, words: "", autoWords: "", typed: false, id: null, timer: 0, shot: null };
+const rc = { busy: false, stop: false, t0: 0, phase: "", done: 0, total: 0, share: null, progress: "", result: null, charId: null, engine: STUDIO_RECAST_ENGINES[0], fig: null, words: "", autoWords: "", typed: false, id: null, real: true, wall: 0, realLine: "", timer: 0, shot: null };
 // A tab shown again says where the take is at once (a hidden tab's timers run slowly).
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") rcTick(); }, { signal: ac.signal });
 // The person's language (stage 7): T() for text the engine puts in a field
@@ -1664,6 +1665,31 @@ function rcFaceAt(it, frame, frameH) {
     return studioFaceReadable({ headPx: (Math.abs(top.y - bottom.y) / 2) * frameH, frameH, turnDeg, inFrame });
   } finally { cam.aspect = a0; cam.updateProjectionMatrix(); evaluate(was); }
 }
+/**
+ * "Real scene" (2026-09-30, operator: "Go ahead"): the words that make the whole recording real, from the set's
+ * own title and description, the things in the shot by name and colour, and the hour's light.
+ */
+function rcRealLine() {
+  const r = rcRange(), cam = shot.obj.userData.cam, a0 = cam.aspect, was = time;
+  evaluate((Math.round((r.start + r.end) / 2) - 1) / FPS); cam.aspect = FORMATS[format]; cam.updateProjectionMatrix(); shot.obj.updateMatrixWorld(true);
+  const things = [];
+  try {
+    const shown = items.filter((o) => o.kind === "mesh" && o !== place && !o.rig && !o.hidden && o.obj.visible && !o.noRender);
+    const inView = shown.map((o) => { const b = worldBox(o); if (b.isEmpty()) return null; const c = b.getCenter(new V3()).project(cam); const size = b.getSize(new V3()).length(); return Math.abs(c.x) <= 1 && Math.abs(c.y) <= 1 && c.z < 1 ? { o, size } : null; }).filter(Boolean).sort((p, q) => q.size - p.size);
+    for (const { o } of inView) things.push(thingWords(o.name, o.obj.userData.paint?.[0]?.color ? "#" + o.obj.userData.paint[0].color.getHexString() : null));
+  } finally { cam.aspect = a0; cam.updateProjectionMatrix(); evaluate(was); }
+  return studioRealSceneLine({ title: SPEC.title || opts.title || "", description: SPEC.description || "", things, hour });
+}
+/** How much of the range's first frame a big plain wall of The place fills, close to the camera (studio-walls.ts). */
+function rcWallShare() {
+  const r = rcRange(), cam = shot.obj.userData.cam, a0 = cam.aspect, was = time;
+  evaluate((r.start - 1) / FPS); cam.aspect = FORMATS[format]; cam.updateProjectionMatrix(); shot.obj.updateMatrixWorld(true);
+  try {
+    const occluders = items.filter((o) => !o.hidden && o.obj.visible && !o.noRender && !["light", "camera", "empty", "sun"].includes(o.kind)).map((o) => o.obj);
+    const inPlace = (m) => { for (let n = m; n; n = n.parent) if (n === place.obj) return true; return false; };
+    return wallShare(cam, occluders, (m) => inPlace(m) && isPlainBlock(m));
+  } finally { cam.aspect = a0; cam.updateProjectionMatrix(); evaluate(was); }
+}
 /** "What happens", from the figure's pose at the range's start and its moves inside the range. */
 function rcHappens(it) {
   const r = rcRange(), was = time;
@@ -1700,6 +1726,8 @@ function openRecast() {
     if (!rc.charId || !rcChar()) rc.charId = rcChars()[0].id;
     rcPrefill();
     try { rc.shot = rcFrameUri(); } catch { rc.shot = null; }
+    try { rc.realLine = rcRealLine(); } catch { rc.realLine = ""; }
+    try { rc.wall = rcWallShare(); } catch { rc.wall = 0; }
   }
   rcShow();
 }
@@ -1724,13 +1752,15 @@ function rcShow() {
     const chars = rcChars().map((c) => `<option value="${esc(c.id)}"${c.id === rc.charId ? " selected" : ""}>${esc(c.name || "Your character")}</option>`).join("");
     const figOpts = figs.map((f) => `<option value="${esc(f.it.id)}"${f.it === rc.fig ? " selected" : ""}>${esc(f.it.name)} · ${f.spot === "middle" ? "in the middle" : f.spot === "left" ? "on the left" : "on the right"}</option>`).join("");
     const lanes = STUDIO_RECAST_ENGINES.map((e) => { const l = R.lanes[e]; return `<label class="rc-lane${e === rc.engine ? " on" : ""}"><input type="radio" name="rcLane" value="${e}"${e === rc.engine ? " checked" : ""}${rc.busy ? " disabled" : ""}><span><b><span translate="no">${esc(l.title)}</span> <span>· ${credits(rcCreditsFor(e))}</span></b><small translate="no">${esc(l.line)}</small></span></label>`; }).join("");
-    const also = studioRecastDirection({ words: "", several, spot: fig ? fig.spot : "middle", engine: rc.engine });
+    const also = studioRecastDirection({ words: "", several, spot: fig ? fig.spot : "middle", engine: rc.engine, realScene: rc.real ? rc.realLine : null });
     const lim = RECAST_JOB_MAX_SECONDS[RECAST_ENGINES[rc.engine].job];
     body = `${rc.shot ? `<img class="cast-img" id="rcPrev" alt="The shot at the start of the range" src="${rc.shot}">` : ""}<p class="hint">Records frames ${r.start}–${r.end} (${fmtSec(r.seconds)}) through the shot camera · ${esc(format)} · ${size.width} × ${size.height}. Recast then re-shoots it with your character in the figure's place: the same moves, the same camera.</p>${r.clamped ? `<p class="cast-note">Recast takes ${RECAST_MIN_SECONDS}–${Math.min(lim, DUR)} s here, so the playback range was brought inside it.</p>` : ""}
 <div class="fr" style="margin-top:8px"><label for="rcWho">Character</label><select class="sel2" id="rcWho"${rc.busy ? " disabled" : ""}>${chars}</select></div>
 ${several ? `<div class="fr" style="margin-top:6px"><label for="rcFig">Replaces</label><select class="sel2" id="rcFig"${rc.busy ? " disabled" : ""}>${figOpts}</select></div>` : ""}
 <div class="rc-lanes" role="radiogroup" aria-label="What should happen">${lanes}</div>
 <div class="fr" style="margin-top:8px;align-items:start"><label for="rcWords">What happens</label><textarea class="cast-words" id="rcWords" maxlength="${RECAST_DIRECTION_MAX_CHARS}" placeholder="Optional: what they're doing, the mood"${rc.busy ? " disabled" : ""}>${esc(rc.words)}</textarea></div>${rc.autoWords && rc.words === rc.autoWords && !rc.busy ? `<p class="hint" style="margin:2px 0 0">Filled in from the figure's pose and moves, in English for the video engine. Change it freely.</p>` : ""}
+<div class="fr" style="margin-top:6px"><label></label><label class="check"><input type="checkbox" id="rcReal"${rc.real ? " checked" : ""}${rc.busy ? " disabled" : ""}> <span>Real scene: the whole scene becomes real footage, not only your character (same price)</span></label></div>
+${rc.real && wallWarns(rc.wall) ? `<p class="cast-note" id="rcWall">A big plain wall fills part of this shot — move the camera or it may stay flat.</p>` : ""}
 <p class="hint" style="margin:4px 0 0">Sent with it: <span translate="no">${esc(also)}</span></p>
 <div class="row-btns"><button class="pbtn accent" id="rcGo"${rc.busy ? " disabled" : ""}>${esc(rcLabel())}</button>${rc.busy && ["recording", "uploading", "reading"].includes(rc.phase) ? `<button class="pbtn" id="rcStop"${rc.stop ? " disabled" : ""}>Stop</button>` : ""}</div>
 <div class="prog"${rc.busy ? "" : " hidden"}><i id="rcProg"></i></div><p class="hint" id="rcTxt" role="status">${rc.busy ? "" : "Stop before it is sent costs nothing."}</p>${rc.busy && rc.id ? `<div class="cast-links"><a href="${esc(R.historyHref(rc.id))}">Open in History</a><a href="${esc(R.recastHref)}">Open in Recast</a></div>` : ""}`;
@@ -1742,6 +1772,8 @@ ${several ? `<div class="fr" style="margin-top:6px"><label for="rcFig">Replaces<
   if (who) who.onchange = () => { rc.charId = who.value; rcShow(); rcMenuLabel(); };
   if (fg) fg.onchange = () => { rc.fig = items.find((i) => String(i.id) === fg.value) || rc.fig; rcPrefill(); rcShow(); };
   $("dlgBody").querySelectorAll('input[name="rcLane"]').forEach((el) => (el.onchange = () => { rc.engine = el.value; rcShow(); rcMenuLabel(); }));
+  const real = $("rcReal");
+  if (real) real.onchange = () => { rc.real = real.checked; rcShow(); };
   if (words) {
     words.oninput = () => { rc.words = words.value; rc.typed = true; };
     // The first click into the filled-in words selects them, so typing replaces them instead of running on after them.
@@ -1808,7 +1840,7 @@ async function rcGo() {
   if (chosen < 0) return openRecast();
   const r = rcRange(), size = studioRecastSize(FORMATS[format]), engine = rc.engine;
   const price = rcCreditsFor(engine);
-  const direction = studioRecastDirection({ words: rc.words, several: figs.length > 1, spot: figs[chosen].spot, engine });
+  const direction = studioRecastDirection({ words: rc.words, several: figs.length > 1, spot: figs[chosen].spot, engine, realScene: rc.real ? rc.realLine : null });
   let faceAt; try { faceAt = { first: rcFaceAt(rc.fig, r.start, size.height), last: rcFaceAt(rc.fig, r.end, size.height) }; } catch { faceAt = undefined; }
   // ONE id for this press, taken before anything is recorded: the take's row id, never pressed again.
   const sendId = newPressId();

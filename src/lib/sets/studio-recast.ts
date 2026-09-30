@@ -143,12 +143,98 @@ export const STUDIO_RESTAGE_LINE = "Film it as live action: real materials, real
  * from the poses and moves), which figure, and Restage's line — bounded at
  * Recast's own limit, with the person's words shortened first.
  */
-export function studioRecastDirection(a: { words: string; several: boolean; spot: FigureSpot; engine: StudioRecastEngine }): string {
-  const fixed = [studioFigureLine(a.several, a.spot), ...(RECAST_ENGINES[a.engine].restages ? [STUDIO_RESTAGE_LINE] : [])].join(" ");
+export function studioRecastDirection(a: {
+  words: string;
+  several: boolean;
+  spot: FigureSpot;
+  engine: StudioRecastEngine;
+  /** "Real scene" on: the whole scene made real (studioRealSceneLine), in place of Restage's own line. */
+  realScene?: string | null;
+}): string {
+  const scene = a.realScene ? [a.realScene] : RECAST_ENGINES[a.engine].restages ? [STUDIO_RESTAGE_LINE] : [];
+  const fixed = [studioFigureLine(a.several, a.spot), ...scene].join(" ");
   const room = RECAST_DIRECTION_MAX_CHARS - fixed.length - 1;
   const words = a.words.replace(/\s+/g, " ").trim();
   const kept = Array.from(words).slice(0, Math.max(0, room)).join("").trim();
   return (kept ? `${kept} ${fixed}` : fixed).slice(0, RECAST_DIRECTION_MAX_CHARS);
+}
+
+// ---------------- "Real scene" (2026-09-30, operator: "Go ahead") ----------------
+// Live Test A (8d425291): restyle words in the direction turned the WHOLE
+// recording photoreal on Into the clip — a real track, pit building and
+// yellow supercar, Eva at IDENTITY 92 — for the same engine and price. The
+// words are built from the scene itself and sent beside the person's own.
+// They share Recast's 600-character direction (recast-brief.ts
+// RECAST_DIRECTION_MAX_CHARS; the engine's own prompt stops at 2,500), so
+// the line stays under STUDIO_REAL_SCENE_MAX and the person keeps the rest.
+
+export const STUDIO_REAL_SCENE_MAX = 340;
+const PLACE_DETAIL_MAX = 90;
+const THINGS_MAX = 3;
+
+/** Kinds of place, as the engine should picture them, found in the set's title and description. */
+const PLACE_KINDS: [RegExp, string][] = [
+  [/\b(race ?track|racing circuit|circuit|raceway|speedway|racecourse)\b/, "race track"],
+  [/\bshowroom\b/, "car showroom"],
+  [/\b(parking (lot|garage|structure)|car park)\b/, "parking lot"],
+  [/\bwarehouse\b/, "warehouse"],
+  [/\bgarage\b/, "garage"],
+  [/\brooftop\b/, "rooftop"],
+  [/\b(street|avenue|alley|boulevard|downtown)\b/, "city street"],
+  [/\b(highway|freeway|motorway|country road|desert road)\b/, "road"],
+  [/\bbeach\b/, "beach"],
+  [/\bdesert\b/, "desert"],
+  [/\b(forest|woods|woodland)\b/, "forest"],
+  [/\bstudio\b/, "studio"],
+  [/\boffice\b/, "office"],
+  [/\b(kitchen|living room|bedroom|apartment|loft)\b/, "home interior"],
+];
+
+/** The place in a few words: its kind, and the set description's first sentence as detail (gated text, the set's own). */
+export function studioPlaceWords(title: string, description: string): string {
+  const text = `${title} ${description}`.toLowerCase();
+  const kind = PLACE_KINDS.find(([re]) => re.test(text))?.[1] ?? null;
+  let detail = (description.split(/(?<=[.!?])\s/)[0] ?? "").replace(/[.!?]+$/, "").replace(/\s+/g, " ").trim();
+  if (detail.length > PLACE_DETAIL_MAX) {
+    const cut = detail.slice(0, PLACE_DETAIL_MAX);
+    // At the last comma when there is one, so a list is never cut mid-item.
+    detail = cut.slice(0, cut.lastIndexOf(",") > 20 ? cut.lastIndexOf(",") : cut.lastIndexOf(" ")).trim();
+  }
+  detail = detail ? detail[0].toLowerCase() + detail.slice(1) : "";
+  if (kind) return detail ? `a real ${kind} (${detail})` : `a real ${kind}`;
+  return detail ? `a real place: ${detail}` : "a real place";
+}
+
+/** The light, from the Studio's hour (sun time, 0–24). */
+export function studioSceneLight(hour: number): string {
+  const h = ((hour % 24) + 24) % 24;
+  if (h < 5 || h >= 21) return "real night light from real lamps";
+  if (h < 7.5) return "soft early-morning daylight";
+  if (h < 16.5) return "natural daylight";
+  if (h < 19) return "warm golden-hour light";
+  return "dusk light";
+}
+
+/**
+ * The "Real scene" line: the whole scene as real live-action footage — the
+ * place, its things by name and colour ("the yellow car" → "a real yellow
+ * car"), the light — every surface real, the moves and the camera kept.
+ */
+export function studioRealSceneLine(a: { title: string; description: string; things: string[]; hour: number }): string {
+  const place = studioPlaceWords(a.title, a.description);
+  const things = [...new Set(a.things.map((t) => t.replace(/^the\s+/i, "").trim()).filter(Boolean))].slice(0, THINGS_MAX).map((t) => `a real ${t}`);
+  const build = (n: number, withPlace: string) =>
+    `Make the whole scene real live-action footage: ${[withPlace, ...things.slice(0, n), studioSceneLight(a.hour)].join(", ")}, shot on a cinema camera. Every wall, building and surface becomes real material, never flat grey or blocky. Keep the character's moves and the camera exactly.`;
+  // The things in the shot matter more than the place's detail: the detail
+  // goes first, then the things from the smallest.
+  const bare = place.replace(/\s*\(.*\)$/, "");
+  for (let n = things.length; n >= 0; n--) {
+    for (const p of [place, bare]) {
+      const line = build(n, p);
+      if (line.length <= STUDIO_REAL_SCENE_MAX) return line;
+    }
+  }
+  return build(0, bare).slice(0, STUDIO_REAL_SCENE_MAX);
 }
 
 /** One step the chosen figure takes inside the range, in seconds from the range's start. */
