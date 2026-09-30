@@ -1,8 +1,7 @@
 # Helios Studio · Photographed sky
 
 Helios Studio offers **World ▸ Sky ▸ Photographed sky** only when a file is served here as `sky.hdr`
-(`src/lib/sets/studio-realism.ts` `STUDIO_SKY_URL`). The file is not in the repository yet: it is
-added by hand, on the operator's go-ahead.
+(`src/lib/sets/studio-realism.ts` `STUDIO_SKY_URL`). The file was added on the operator's go-ahead (2026-09-30: "yes download the sky"), fetched with the line below.
 
 Suggested file: **Kloofendal 48d Partly Cloudy (Pure Sky)**, 1K `.hdr`, from Poly Haven
 (https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky). Authors: Greg Zaal (original),

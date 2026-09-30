@@ -20,6 +20,15 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.188.0",
+    build: 227,
+    date: "2026-09-30",
+    title: "Helios Studio: a photographed sky",
+    items: [
+      "World ▸ Sky ▸ Photographed sky is now there: a real photographed partly cloudy sky (Poly Haven's Kloofendal 48d, CC0) lights the 3D view and the clean path-traced renders and stands behind the set, so stills and videos start from real daylight instead of a painted gradient.",
+    ],
+  },
+  {
     version: "1.187.0",
     build: 226,
     date: "2026-09-30",
