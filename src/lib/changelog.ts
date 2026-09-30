@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.190.0",
+    build: 229,
+    date: "2026-09-30",
+    title: "No spending without paying",
+    items: [
+      "When a subscription's last payment fails, Helios 3D, the API and Live now pause, the same way the plan's monthly credits already did. They open again as soon as the payment goes through.",
+      "Helios says what happened (\"Your plan's last payment failed…\") with a link to Manage billing, in all four languages.",
+      "A Helios still now checks that you can pay for it before it prepares the look from an earlier shot, so nothing is spent on a still that can't be made.",
+    ],
+  },
+  {
     version: "1.189.0",
     build: 228,
     date: "2026-09-30",
