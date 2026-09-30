@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.186.0",
+    build: 225,
+    date: "2026-09-30",
+    title: "Helios Studio: \"Opening the set…\" at once",
+    items: [
+      "Helios Studio shows \"Opening the set…\" almost the moment the page is asked for, and opens its set without waiting on Video with your character.",
+      "Video with your character gets ready when you open it.",
+    ],
+  },
+  {
     version: "1.185.0",
     build: 224,
     date: "2026-09-30",
