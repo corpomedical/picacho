@@ -149,6 +149,29 @@ async function readTakeLogs(supabase: SupabaseClient, ids: string[]): Promise<Ma
   }
 }
 
+/**
+ * The characters Recast offers, newest first — the door's list, and Helios
+ * Studio's "Video with your character" picker (2026-09-30), so both offer
+ * the same people.
+ */
+export async function readRecastCharacters(supabase: SupabaseClient, userId: string): Promise<RecastCharacter[]> {
+  const { data: characterRows } = await supabase
+    .from("character_profiles")
+    .select("id, name, reference_image_urls")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  return (characterRows ?? []).map((c) => ({
+    id: c.id as string,
+    name: c.name as string,
+    // Tiles only. What a take is given is the PATH, checked server-side
+    // against the character's own list — never this URL.
+    photos: ((c.reference_image_urls as string[] | null) ?? []).map((path) => ({
+      path,
+      url: thumbUrl(mediaUrl("character-references", path), 320) ?? "",
+    })),
+  }));
+}
+
 export async function getRecastHome(
   supabase: SupabaseClient,
   userId: string,
@@ -163,12 +186,8 @@ export async function getRecastHome(
   /** What they have left to spend; null when it could not be read. */
   balance: RecastBalance | null;
 }> {
-  const [{ data: characterRows }, { data: videoRows }, notify, balance] = await Promise.all([
-    supabase
-      .from("character_profiles")
-      .select("id, name, reference_image_urls")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false }),
+  const [characters, { data: videoRows }, notify, balance] = await Promise.all([
+    readRecastCharacters(supabase, userId),
     // One read serves both lists: the takes this door made, and every
     // finished video of theirs that could be performed again.
     supabase
@@ -188,16 +207,6 @@ export async function getRecastHome(
     readRecastBalance(supabase, userId),
   ]);
 
-  const characters: RecastCharacter[] = (characterRows ?? []).map((c) => ({
-    id: c.id as string,
-    name: c.name as string,
-    // Tiles only. What a take is given is the PATH, checked server-side
-    // against the character's own list — never this URL.
-    photos: ((c.reference_image_urls as string[] | null) ?? []).map((path) => ({
-      path,
-      url: thumbUrl(mediaUrl("character-references", path), 320) ?? "",
-    })),
-  }));
   const nameOf = new Map(characters.map((c) => [c.id, c.name]));
 
   const rows = (videoRows ?? []) as Record<string, unknown>[];

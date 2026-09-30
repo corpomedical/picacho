@@ -1378,3 +1378,13 @@ export async function getRecastTakeBriefs(
   if (!take) return { error: RECAST_UPLOAD_UNREADABLE };
   return { error: null, ...recastSentBriefs(take.pipeline_log) };
 }
+
+/**
+ * Whether this person may use Recast at all (2026-09-30): Helios Studio's
+ * "Video with your character" asks before it offers its window and on every
+ * read of a take it follows — Recast's own rule, never a copy of it.
+ */
+export async function canUseRecast(): Promise<{ error: string | null }> {
+  const access = await recastAccess();
+  return { error: access.error };
+}
