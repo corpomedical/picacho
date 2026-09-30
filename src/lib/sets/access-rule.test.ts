@@ -76,6 +76,11 @@ describe("the page and the finisher ask the one rule (read as source)", () => {
     ["cycles-actions.ts", "reserveCyclesScene"],
     ["cycles-actions.ts", "renderCyclesInSet"],
     ["cycles-actions.ts", "readCyclesRender"],
+    // Video with your character (2026-09-30): every door, before Recast's own rule is asked.
+    ["studio-recast-actions.ts", "reserveStudioRecast"],
+    ["studio-recast-actions.ts", "inspectStudioRecast"],
+    ["studio-recast-actions.ts", "startStudioRecast"],
+    ["studio-recast-actions.ts", "readStudioRecast"],
   ])("%s's %s asks setsAccess first and stops on its refusal", (file, fn) => {
     const src = read(file);
     const start = src.indexOf(`export async function ${fn}(`);
