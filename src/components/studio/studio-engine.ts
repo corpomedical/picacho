@@ -20,6 +20,8 @@ import { studioShotInput } from "@/lib/sets/studio-shot";
 import { CYCLES_DEFAULT_SAMPLES, CYCLES_EDGES, CYCLES_MAX_FRAMES, CYCLES_MAX_SAMPLES_ANIMATION, CYCLES_MAX_SAMPLES_STILL, CYCLES_MAX_SECONDS, CYCLES_TOO_LONG, HELIOS_CYCLES_GPU, cyclesDollars, cyclesDuration, cyclesSize, estimateCycles } from "@/lib/sets/cycles";
 import { watchStudioText } from "./studio-i18n";
 import { studioCastInput } from "./studio-cast";
+import { boneOfMesh, makeFigure } from "./studio-figure";
+import { BONE, BONE_NAMES, LIMBS, POSE_PRESETS, PRESET_LABELS, SEAT_DROP_M, applyPose, applyPreset, clampLoc, clampRot, clonePose, eulerNumbers, findSkeleton, groundFeet, lookRot, normalisePose, normalisePoseKeys, poseAt, poseSentence, poseWords, presetBones, presetPose, setPoseKey, solveLimb, standPoseOf, thingWords } from "@/lib/sets/studio-pose";
 import { newPressId } from "@/lib/sets/press-follow";
 import { ENV_H, ENV_W, SKY_DIFFUSE_SHARE, TRACE_MAX_SAMPLES, TRACE_PRESETS, TRACE_SCALES, TRACE_SLOW_SECONDS, TRACE_SPEED_KEY, envAddSplit, envAddSun, envUpIrradiance, loadOidn, luminance, meterExposure, oidnDenoise, physicalSunIrradiance, traceDuration, traceEstimate, traceSamples, traceSize } from "./studio-trace";
 import { MATERIAL_RECIPES, hslOf, materialOf } from "@/lib/sets/stage-materials";
@@ -150,9 +152,8 @@ function makeCar(color = 0xc0282d) {
   g.userData.paint = [paint]; return g;
 }
 function makePerson() {
-  const g = new THREE.Group(), skin = std(0xcfcac4, { roughness: 0.8 });
-  g.add(mesh(new THREE.CapsuleGeometry(0.22, 0.95, 6, 16), skin, 0, 0.8, 0), mesh(new THREE.SphereGeometry(0.13, 24, 16), skin, 0, 1.6, 0), mesh(new THREE.BoxGeometry(0.04, 0.04, 0.08), skin, 0, 1.6, 0.13));
-  g.userData.paint = [skin]; return g;
+  // Helios Studio people (2026-09-30): the grey capsule became a posable mannequin (studio-figure.ts, rig in studio-pose.ts).
+  return makeFigure(std(0xd9d1c5, { roughness: 0.62 }));
 }
 function makeLamp() {
   const g = new THREE.Group(), metal = std(0x2c2f35, { metalness: 0.6 });
@@ -177,6 +178,7 @@ function addItem(obj, name, kind, coll) {
   obj.name = name; obj.userData.isItem = true;
   const item = { id: nextId++, name, kind, obj, keys: [], hidden: false, interp: "bezier", coll: coll || (kind === "camera" ? "Cameras" : kind === "light" ? "Lights" : "Set") };
   if (astraMaking) item.byAstra = true;
+  if (obj.userData.figure) initFigure(item);
   tagIds(obj, item.id); scene.add(obj); items.push(item); return item;
 }
 function detachItem(item) { const i = items.indexOf(item); item.parentObj = item.obj.parent; item.obj.parent?.remove(item.obj); if (i >= 0) items.splice(i, 1); return i; }
@@ -245,6 +247,7 @@ function setKey(item, t, k = trs(item.obj)) {
 const lerp = (a, b, u) => a.map((v, i) => v + (b[i] - v) * u);
 function evaluate(t) {
   for (const it of items) {
+    if (it.rig && it.poseKeys.length) { it.pose = poseAt(it.poseKeys, t, it.interp, it.pose); applyPose(it.rig, it.pose); }
     const ks = it.keys; if (!ks.length) continue;
     if (t <= ks[0].t) { applyTRS(it.obj, ks[0]); continue; }
     if (t >= ks[ks.length - 1].t) { applyTRS(it.obj, ks[ks.length - 1]); continue; }
@@ -269,6 +272,7 @@ function settle() { for (const i of [...selection]) if (!items.includes(i)) sele
 
 // ================= selection & gizmo =================
 const selection = new Set(); let active = null; let tool = "translate";
+let poseMode = false, poseItem = null, poseBone = null; // Pose Mode (people, 2026-09-30)
 const tc = new TransformControls(editorCam, canvas); tc.setSize(0.85);
 const tcHelper = tc.getHelper ? tc.getHelper() : tc; helpers.add(tcHelper);
 const pivot = new THREE.Object3D(); scene.add(pivot);
@@ -280,7 +284,7 @@ function refreshOutlines() {
 }
 function attachGizmo() {
   const sel = movable();
-  if (tool === "select" || tool === "measure" || editMode || !sel.length) { tc.detach(); return; }
+  if (tool === "select" || tool === "measure" || editMode || poseMode || !sel.length) { tc.detach(); return; }
   if (sel.length === 1) { tc.attach(sel[0].obj); return; }
   const c = new THREE.Vector3(); sel.forEach((i) => c.add(i.obj.getWorldPosition(new THREE.Vector3()))); c.divideScalar(sel.length);
   pivot.position.copy(c); pivot.rotation.set(0, 0, 0); pivot.scale.set(1, 1, 1); pivot.updateMatrixWorld(); tc.attach(pivot);
@@ -291,6 +295,7 @@ function select(item, add = false) {
   if (!add) selection.clear();
   if (item) { if (add && selection.has(item) && active === item) { selection.delete(item); active = [...selection].pop() || null; } else { selection.add(item); active = item; } }
   else if (!add) active = null;
+  if (poseMode && active !== poseItem) { if (active?.rig) { poseItem = active; poseBone = null; buildBoneViz(); } else { exitPose(); return; } }
   refreshSel();
 }
 let drag = null;
@@ -334,6 +339,7 @@ canvas.addEventListener("pointerup", (e) => {
   if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4 || tc.dragging) return;
   if (downAt[2] === 2) return;
   if (tool === "measure") return;
+  if (poseMode) { pickBone(e.clientX, e.clientY); return; }
   if (editMode) { pickVertex(e.clientX, e.clientY, e.shiftKey); return; }
   select(pickAt(e.clientX, e.clientY), e.shiftKey);
 });
@@ -361,6 +367,7 @@ function dupItem(src, offset = new THREE.Vector3(2.5, 0, 0), name) {
   obj.userData.paint = paint; obj.userData.array = src.obj.userData.array ? { ...src.obj.userData.array } : undefined;
   obj.position.add(offset);
   const it = addItem(obj, name || nextName(src.name), src.kind, src.coll);
+  if (src.rig && it.rig) { it.pose = clonePose(src.pose); it.poseKeys = clone(src.poseKeys); applyPose(it.rig, it.pose); }
   tagIds(obj, it.id); applyArray(it);
   const idx = items.indexOf(it);
   push({ label: "duplicate", undo() { detachItem(it); }, redo() { reattachItem(it, idx); } });
@@ -383,12 +390,17 @@ function frameAll() { const b = new THREE.Box3(); items.filter((i) => i.kind !==
 function viewAlong(v) { const d = Math.max(12, editorCam.position.distanceTo(orbit.target)); editorCam.position.copy(orbit.target.clone().add(v.clone().multiplyScalar(d))); if (Math.abs(v.y) > 0.99) editorCam.position.z += 0.001; toggleCam(false); }
 function keyItems(list = movable()) {
   if (!list.length) return toast("Select an object to key");
-  group("Insert keyframe", () => list.forEach((it) => { const b = clone(it.keys); setKey(it, time); const a = clone(it.keys); push({ label: "key", undo() { it.keys = clone(b); }, redo() { it.keys = clone(a); } }); }));
+  // A person's key holds its pose too (people, 2026-09-30).
+  group("Insert keyframe", () => list.forEach((it) => { const b = clone(it.keys), bp = it.rig ? clone(it.poseKeys) : null; setKey(it, time); if (it.rig) it.poseKeys = setPoseKey(it.poseKeys, time, it.pose, null, 0.5 / FPS); const a = clone(it.keys), ap = it.rig ? clone(it.poseKeys) : null; push({ label: "key", undo() { it.keys = clone(b); if (bp) it.poseKeys = clone(bp); }, redo() { it.keys = clone(a); if (ap) it.poseKeys = clone(ap); } }); }));
   renderAll(); info(`Keyframe inserted · frame ${frameNo()}`);
 }
 function delKey(list = movable()) {
   let n = 0;
-  group("Delete keyframe", () => list.forEach((it) => { const i = it.keys.findIndex((k) => near(k.t, time)); if (i < 0) return; n++; const b = clone(it.keys); it.keys.splice(i, 1); const a = clone(it.keys); push({ label: "del key", undo() { it.keys = clone(b); }, redo() { it.keys = clone(a); } }); }));
+  group("Delete keyframe", () => list.forEach((it) => {
+    const i = it.keys.findIndex((k) => near(k.t, time)), j = it.rig ? it.poseKeys.findIndex((k) => near(k.t, time)) : -1; if (i < 0 && j < 0) return; n++;
+    const b = [clone(it.keys), it.rig ? clone(it.poseKeys) : null]; if (i >= 0) it.keys.splice(i, 1); if (j >= 0) it.poseKeys.splice(j, 1); const a = [clone(it.keys), it.rig ? clone(it.poseKeys) : null];
+    push({ label: "del key", undo() { it.keys = clone(b[0]); if (b[1]) it.poseKeys = clone(b[1]); }, redo() { it.keys = clone(a[0]); if (a[1]) it.poseKeys = clone(a[1]); } });
+  }));
   if (!n) return toast("No keyframe on frame " + frameNo());
   evaluate(time); renderAll();
 }
@@ -416,7 +428,7 @@ function camToView() { moveCmd(shot, (o) => { const d = new THREE.Vector3(); edi
 // ---- Add ----
 const ADD = {
   car: { l: "Sports car", h: "Things", f: () => [makeCar(0x2b6fd6), "Blue sports car", "mesh", "Cast"] },
-  person: { l: "Person stand-in", h: "Things", f: () => [makePerson(), "Person stand-in", "mesh", "Cast"] },
+  person: { l: "Person", h: "Things", f: () => [makePerson(), "Person", "mesh", "Cast"] },
   lamp: { l: "Street lamp", h: "Things", f: () => [makeLamp(), "Street lamp", "light", "Lights"] },
   box: { l: "Cube", h: "Mesh", f: () => { const g = new THREE.Group(); const m = mesh(new THREE.BoxGeometry(2, 2, 2), std(0xb9b4ac), 0, 1, 0); g.add(m); g.userData.paint = [m.material]; return [g, "Cube", "mesh"]; } },
   sphere: { l: "UV sphere", h: "Mesh", f: () => { const g = new THREE.Group(); const m = mesh(new THREE.SphereGeometry(1, 32, 20), std(0xb9b4ac), 0, 1, 0); g.add(m); g.userData.paint = [m.material]; return [g, "Sphere", "mesh"]; } },
@@ -543,6 +555,7 @@ function renderProps() {
     const nm = document.createElement("input"); nm.id = "objName"; nm.value = it.name; nm.setAttribute("aria-label", "Object name");
     nm.addEventListener("change", () => { rename(it, nm.value || it.name); renderAll(); }); t.appendChild(nm); p.appendChild(t);
     const [tp, tb] = panel("Transform"); transformStack(tb, it); p.appendChild(tp);
+    if (it.rig) posePanel(p, it);
     const [rp, rb] = panel("Relations", false);
     rb.appendChild(fr("Parent", ro(it.obj.parent === scene ? "—" : itemOf(it.obj.parent)?.name || "—")));
     rb.appendChild(fr("Collection", ro(it.coll)));
@@ -829,7 +842,31 @@ const PLANS = [
       ];
     },
   },
+  // People (2026-09-30, operator picked "Posable people").
+  {
+    ask: "Sit the stand-in on the car",
+    say: "I'll sit the stand-in on the top of the car nearest to them, facing out, legs over the edge.",
+    next: ["Make them wave", "Put the camera low behind the car at 24 mm, looking at Anubis"],
+    steps() {
+      const p = standIn(); const c = cars()[0] || null;
+      if (!p) return { fail: "There's no person in this scene. Add one: Add ▸ Person." };
+      if (!c) return { fail: "There's no car in this scene to sit on." };
+      return [S(`Sit "${p.name}" on "${c.name}"`, `helios.ops.pose.sit_on(<s>"${esc(p.name)}"</s>, <s>"${esc(c.name)}"</s>)`, () => (sitOn(p, c) ? p : null))];
+    },
+  },
+  {
+    ask: "Make them wave",
+    say: "Raising the right hand in a wave; the rest of the pose stays as it is.",
+    next: ["Sit the stand-in on the car"],
+    steps() {
+      const p = active?.rig ? active : standIn();
+      if (!p) return { fail: "There's no person in this scene. Add one: Add ▸ Person." };
+      return [S(`Pose "${p.name}": Wave (right hand)`, `helios.ops.pose.preset(<s>"${esc(p.name)}"</s>, <s>"WAVE"</s>)`, () => { presetCmd(p, "wave"); return p; })];
+    },
+  },
 ];
+/** The person the examples mean by "the stand-in" / "them": the set's own stand-in, else the first person. */
+function standIn() { return items.includes(person) ? person : people()[0] || null; }
 const astraLog = [];
 let askFirst = true, examplesOpen = true, astraBusy = false;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -970,7 +1007,7 @@ function sceneSummary() {
     const b = new THREE.Box3().setFromObject(i.obj), e = b.isEmpty();
     const c = e ? i.obj.getWorldPosition(new V3()) : b.getCenter(new V3()), sz = e ? new V3() : b.getSize(new V3());
     const y = e ? c.y : b.min.y, par = i.obj.parent && i.obj.parent !== scene ? itemOf(i.obj.parent) : null;
-    return { id: sid(i), name: i.name, kind: i.kind === "light" || i.kind === "camera" || i.kind === "empty" ? i.kind : "mesh", at: [c.x, -c.z, y], size: [sz.x, sz.z, sz.y], turn: THREE.MathUtils.radToDeg(i.obj.rotation.y), sel: selection.has(i), hidden: i.hidden, astra: !!i.byAstra, parent: par ? sid(par) : undefined, keys: i.keys.length, physics: i.phys && i.phys.type !== "none" ? i.phys.type : undefined };
+    return { id: sid(i), name: i.name, kind: i.kind === "light" || i.kind === "camera" || i.kind === "empty" ? i.kind : "mesh", at: [c.x, -c.z, y], size: [sz.x, sz.z, sz.y], turn: THREE.MathUtils.radToDeg(i.obj.rotation.y), sel: selection.has(i), hidden: i.hidden, astra: !!i.byAstra, parent: par ? sid(par) : undefined, keys: i.keys.length, physics: i.phys && i.phys.type !== "none" ? i.phys.type : undefined, pose: i.rig ? personWords(i)?.words : undefined };
   });
   const fk = Object.keys(STUDIO_FORMATS).find((k) => STUDIO_FORMATS[k] === format) || "16:9";
   return normaliseStudioSummary({ frame: frameNo(), hour, sky: skyMode, format: fk, lens: shot.obj.userData.lensMm, camera: sid(shot), aim: shot.obj.userData.track ? "o" + shot.obj.userData.track : null, range: [pStart, pEnd], objects: objs });
@@ -1134,6 +1171,26 @@ function modelSteps(answer) {
       case "simulate": act = () => { simulatePhys(time); return null; }; break;
       case "bake": act = () => { bakePhys(); return null; }; break;
       case "frame": act = () => { setTime((s.frame - 1) / FPS); return null; }; break;
+      case "pose": act = () => { let last = null; for (const it of L()) {
+        if (!it.rig) continue;
+        if (s.preset) presetCmd(it, s.preset);
+        if (s.bone && s.v) { const n = s.bone, cur = it.pose.rot[n] || [0, 0, 0], v = [s.v.x, s.v.y, s.v.z]; poseAct(it, `Rotate ${boneLabel(n)}`, () => { it.pose.rot[n] = clampRot(n, v.map((x, i) => (x === null ? cur[i] : s.mode === "by" ? cur[i] + x : x))); }, [n]); }
+        last = it;
+      } return last; }; break;
+      case "sit_on": case "lean_on": case "look_at": act = () => { let last = null; const t = get(s.of); if (!t) return null; for (const it of L()) {
+        if (!it.rig || it === t) continue;
+        const ok = s.op === "sit_on" ? sitOn(it, t) : s.op === "lean_on" ? leanOn(it, t) : lookAtCmd(it, t);
+        if (!ok) tell(T(s.op === "sit_on" ? `there's no top on "${t.name}" to sit on` : `"${t.name}" is out of reach`)); else last = it;
+      } return last; }; break;
+      case "add_person": act = () => {
+        let at = null; if (s.at) { const t = toThreeAxes(s.at); at = new V3(t.x ?? cursor3d.position.x, t.y ?? 0, t.z ?? cursor3d.position.z); }
+        const it = addKind("person", at, s.name || undefined); if (!it) return null;
+        if (s.place) { const ref = get(s.place.of); if (ref) placeBeside(it, ref, s.place); }
+        const w = s.place ? sideDirs(s.place) : { dirs: [], words: [] };
+        tell(T(keepClear(it, w.dirs, w.words)));
+        if (s.preset && s.preset !== "stand") presetCmd(it, s.preset);
+        return keep(it, s.name);
+      }; break;
       case "range": act = () => { propCmd("Playback range", () => [pStart, pEnd], (v) => { pStart = v[0]; pEnd = v[1]; renderTimeline(); }, [s.start, s.end]); return null; }; break;
     }
     st = { ...S(s.say, s.op === "note" ? "# skipped" : codeOf(s), act), note: s.op === "note" };
@@ -1202,8 +1259,8 @@ function renderTimeline() {
   for (let f = 0; f <= FRAMES; f += 20) { const t = document.createElement("span"); t.className = "tick"; t.style.left = (f / FRAMES) * 100 + "%"; t.textContent = f === 0 ? 1 : f; ruler.appendChild(t); const g = document.createElement("span"); g.className = "gridln"; g.style.left = (f / FRAMES) * 100 + "%"; lanes.appendChild(g); }
   drawMarkers(ruler); rangeShade(lanes);
   const sum = document.createElement("div"); sum.className = "lane sum"; lanes.appendChild(sum);
-  for (const f of new Set(items.flatMap((i) => i.keys.map((k) => Math.round(k.t * FPS))))) { const d = document.createElement("span"); d.className = "dia"; d.style.left = (f / FRAMES) * 100 + "%"; d.onclick = (e) => { e.stopPropagation(); setTime(f / FPS); }; sum.appendChild(d); }
-  for (const it of items.filter((i) => i.keys.length || selection.has(i))) {
+  for (const f of new Set(items.flatMap((i) => [...i.keys, ...(i.poseKeys || [])].map((k) => Math.round(k.t * FPS))))) { const d = document.createElement("span"); d.className = "dia"; d.style.left = (f / FRAMES) * 100 + "%"; d.onclick = (e) => { e.stopPropagation(); setTime(f / FPS); }; sum.appendChild(d); }
+  for (const it of items.filter((i) => i.keys.length || i.poseKeys?.length || selection.has(i))) {
     const n = document.createElement("div"); n.className = selection.has(it) ? "sel" : ""; n.innerHTML = `<span></span><small>${it.keys.length ? it.interp : ""}</small>`; n.querySelector("span").textContent = it.name; n.onclick = (e) => select(it, e.shiftKey); names.appendChild(n);
     const lane = document.createElement("div"); lane.className = "lane" + (selection.has(it) ? " sel" : ""); lanes.appendChild(lane);
     it.keys.forEach((k) => {
@@ -1212,19 +1269,30 @@ function renderTimeline() {
       d.onpointerdown = (e) => { e.stopPropagation(); dragKey(e, it, k, d); };
       lane.appendChild(d);
     });
+    if (it.poseKeys?.length) {
+      // A person's pose keys, on their own row under its object keys (people, 2026-09-30).
+      const pn = document.createElement("div"); pn.className = selection.has(it) ? "sel" : ""; pn.innerHTML = `<span translate="no"></span><small>Pose</small>`; pn.querySelector("span").textContent = it.name; pn.onclick = (e) => select(it, e.shiftKey); names.appendChild(pn);
+      const pl = document.createElement("div"); pl.className = "lane" + (selection.has(it) ? " sel" : ""); lanes.appendChild(pl);
+      it.poseKeys.forEach((k) => {
+        const d = document.createElement("span"); d.className = "dia" + (selection.has(it) ? " on" : "") + (it.interp === "linear" ? " lin" : it.interp === "constant" ? " con" : ""); d.style.left = (k.t / DUR) * 100 + "%"; d.style.borderRadius = "50%";
+        d.title = `${it.name} · pose · frame ${Math.round(k.t * FPS) + 1} · drag to retime`;
+        d.onpointerdown = (e) => { e.stopPropagation(); dragKey(e, it, k, d, "poseKeys"); };
+        pl.appendChild(d);
+      });
+    }
   }
   const ph = document.createElement("div"); ph.className = "ph"; ph.id = "ph"; ph.innerHTML = `<b></b>`; lanes.appendChild(ph);
   lanes.onpointerdown = (e) => { if (e.target.classList.contains("dia")) return; scrub(e); };
   placePlayhead();
 }
-function dragKey(e, it, k, d) {
-  const lanes = $("tlanes"), r = lanes.getBoundingClientRect(), before = clone(it.keys), sx = e.clientX; let moved = false;
+function dragKey(e, it, k, d, field = "keys") {
+  const lanes = $("tlanes"), r = lanes.getBoundingClientRect(), before = clone(it[field]), sx = e.clientX; let moved = false;
   const mv = (ev) => { if (Math.abs(ev.clientX - sx) > 3) moved = true; if (!moved) return; const t = Math.round(Math.min(DUR, Math.max(0, ((ev.clientX - r.left) / r.width) * DUR)) * FPS) / FPS; k.t = t; d.style.left = (t / DUR) * 100 + "%"; info(`Frame ${Math.round(t * FPS) + 1}`); };
   const up = () => {
     window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up);
     if (!moved) { select(it); setTime(k.t); return; }
-    it.keys.sort((a, b) => a.t - b.t); const after = clone(it.keys);
-    push({ label: "Move keyframe", undo() { it.keys = clone(before); }, redo() { it.keys = clone(after); } });
+    it[field].sort((a, b) => a.t - b.t); const after = clone(it[field]);
+    push({ label: "Move keyframe", undo() { it[field] = clone(before); }, redo() { it[field] = clone(after); } });
     evaluate(time); renderAll();
   };
   wOn("pointermove", mv); wOn("pointerup", up);
@@ -1232,7 +1300,7 @@ function dragKey(e, it, k, d) {
 function placePlayhead() { if (editorType === "graph") { if (gView) renderGraph(); $("curFrame").innerHTML = `<b>${frameNo()}</b>`; return; } const ph = $("ph"); if (!ph) return; ph.style.left = (time / DUR) * 100 + "%"; ph.querySelector("b").textContent = frameNo(); $("curFrame").innerHTML = `<b>${frameNo()}</b>`; }
 function scrub(e) { const lanes = $("tlanes"); const mv = (ev) => { const r = lanes.getBoundingClientRect(); setTime(Math.min(DUR, Math.max(0, ((ev.clientX - r.left) / r.width) * DUR))); }; mv(e); const up = () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); renderAll(); }; wOn("pointermove", mv); wOn("pointerup", up); }
 function setTime(t) { time = Math.round(t * FPS) / FPS; evaluate(time); refreshOutlines(); placePlayhead(); renderVText(); renderAstraSees(); propsSoon(); }
-function jumpKey(dir) { const ts = [...new Set(items.flatMap((i) => i.keys.map((k) => k.t)))].sort((a, b) => a - b); const n = dir > 0 ? ts.find((t) => t > time + 1e-6) : [...ts].reverse().find((t) => t < time - 1e-6); if (n != null) setTime(n); }
+function jumpKey(dir) { const ts = [...new Set(items.flatMap((i) => [...i.keys, ...(i.poseKeys || [])].map((k) => k.t)))].sort((a, b) => a - b); const n = dir > 0 ? ts.find((t) => t > time + 1e-6) : [...ts].reverse().find((t) => t < time - 1e-6); if (n != null) setTime(n); }
 let playing = false, last = 0;
 function play(v = !playing) { playing = v; last = performance.now(); $("playIcon").innerHTML = playing ? `<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>` : `<path d="M7 4v16l13-8z"/>`; if (!playing) renderAll(); }
 
@@ -1342,10 +1410,12 @@ function castFrame() {
     if (d > 0.05 || Math.abs(turn) > 0.5) moved.push({ key: el.key, x: wp.x, z: wp.z, turnDeg: turn, d });
   }
   moved.sort((a, b) => b.d - a.d);
+  // The pose (people, 2026-09-30): the set's nearest stand pose rides the layout; its words fill "What happens".
+  const pw = personWords(person);
   const input = studioShotInput({
     format,
     camera: { position: [p.x, p.y, p.z], forward: [fwd.x, fwd.y, fwd.z], fovDeg: cam.fov, focusM: shot.obj.userData.focus },
-    figure: { x: fp.x, z: fp.z, facingDeg: THREE.MathUtils.radToDeg(Math.atan2(fd.x, fd.z)) },
+    figure: { x: fp.x, z: fp.z, facingDeg: THREE.MathUtils.radToDeg(Math.atan2(fd.x, fd.z)), pose: pw ? pw.stand : "stand" },
     markId: SPEC.marks?.[0]?.id ?? null,
     moved: moved.map(({ key, x, z, turnDeg }) => ({ key, x, z, turnDeg })),
   });
@@ -1355,8 +1425,10 @@ function castFrame() {
   const out = document.createElement("canvas"); out.width = fr.renderW; out.height = fr.renderH;
   const ctx = out.getContext("2d"); ctx.drawImage(off, 0, 0);
   ctx.fillStyle = "#0a0a0a"; for (const b of letterbox(fr)) ctx.fillRect(b.x, b.y, b.w, b.h);
-  return { dataUri: out.toDataURL("image/jpeg", 0.9), input, lens: shot.obj.userData.lensMm, studioFormat: format };
+  return { dataUri: out.toDataURL("image/jpeg", 0.9), input, lens: shot.obj.userData.lensMm, studioFormat: format, poseWords: pw && pw.words !== "standing" ? pw.sentence : "" };
 }
+/** "What happens" starts as the pose's words; once changed by hand it stays as written. */
+function prefillCast() { const w = cast.frame?.poseWords || ""; if (!cast.words || cast.words === cast.autoWords) cast.words = w; cast.autoWords = w; }
 function castChar() { return (opts.render?.characters || []).find((c) => c.id === cast.charId) || null; }
 function openCast() {
   const R = opts.render;
@@ -1365,6 +1437,7 @@ function openCast() {
     if (!R.characters.length) return openWin(CAST_TITLE, `<p>You don't have a character with a photo yet. Make one, then come back — the Studio keeps your scene.</p><div class="cast-links"><a href="/app/character/new">Make a character</a></div>`);
     if (!person.obj.visible || person.noRender) return openWin(CAST_TITLE, `<p>The stand-in is hidden, so the photo has nowhere to put your character. Show the Stand-in (H / the eye in the outliner) and try again.</p>`);
     try { cast.frame = castFrame(); } catch (e) { return openWin(CAST_TITLE, `<p>This browser couldn't draw the frame, so nothing was sent. Try again after a reload.</p>`); }
+    prefillCast();
     if (!cast.charId || !castChar()) cast.charId = R.characters[0].id;
   }
   showCast();
@@ -1386,7 +1459,7 @@ function showCast() {
     const opts2 = R.characters.map((c) => `<option value="${esc(c.id)}"${c.id === cast.charId ? " selected" : ""}>${esc(c.name || "Your character")}</option>`).join("");
     body = `<img class="cast-img" id="castPrev" alt="The frame that goes to the image engine" src="${f.dataUri}"><p class="hint">Through the shot camera · ${esc(shape)}. The stand-in marks where your character stands; the image engine paints the photo onto this layout.</p>
 <div class="fr" style="margin-top:8px"><label for="castWho">Character</label><select class="sel2" id="castWho"${cast.busy ? " disabled" : ""}>${opts2}</select></div>
-<div class="fr" style="margin-top:6px;align-items:start"><label for="castWords">What happens</label><textarea class="cast-words" id="castWords" maxlength="${SET_DIRECTION_MAX_CHARS}" placeholder="Optional: what they're doing, the mood"${cast.busy ? " disabled" : ""}>${esc(cast.words)}</textarea></div>
+<div class="fr" style="margin-top:6px;align-items:start"><label for="castWords">What happens</label><textarea class="cast-words" id="castWords" maxlength="${SET_DIRECTION_MAX_CHARS}" placeholder="Optional: what they're doing, the mood"${cast.busy ? " disabled" : ""}>${esc(cast.words)}</textarea></div>${cast.autoWords && cast.words === cast.autoWords && !cast.busy ? `<p class="hint" id="castPoseHint" style="margin:2px 0 0">Filled in from the stand-in's pose, in English for the image engine. Change it freely.</p>` : ""}
 <div class="fr" style="margin-top:6px"><label></label><label class="check"><input type="checkbox" id="castTrace"${cast.traced ? " checked" : ""}${cast.busy ? " disabled" : ""}> <span>${esc(castTraceLabel(f))}</span></label></div>
 <p class="cast-note" id="castNote" hidden></p>
 <div class="row-btns"><button class="pbtn accent" id="castGo"${cast.busy ? " disabled" : ""}>${esc(castLabel())}</button>${cast.busy && (cast.phase === "tracing" || cast.phase === "cleaning") ? `<button class="pbtn" id="castStop">Stop</button>` : ""}</div>
@@ -1401,7 +1474,7 @@ function showCast() {
   if (who) who.onchange = () => { cast.charId = who.value; castCheck(); };
   if (words) words.oninput = () => { cast.words = words.value; };
   if (go) go.onclick = castGo;
-  if (again) again.onclick = () => { const ok = cast.result && cast.result.error === null && cast.result.succeeded; cast.result = null; if (ok) { try { cast.frame = castFrame(); } catch {} } showCast(); };
+  if (again) again.onclick = () => { const ok = cast.result && cast.result.error === null && cast.result.succeeded; cast.result = null; if (ok) { try { cast.frame = castFrame(); prefillCast(); } catch {} } showCast(); };
   castCheck(); castTick();
 }
 /** Says why the press can't go yet: this character's photos need an answer first (on the set page, as the Shoot asks). */
@@ -2139,6 +2212,334 @@ function updatePath() {
 }
 function togglePath() { pathOn = !pathOn; updatePath(); info(pathOn ? "Motion path on: the line the active object travels" : "Motion path off"); renderProps(); }
 
+// ================= people: the posable figure and Pose Mode (2026-09-30) =================
+// Operator picked "Posable people": the stand-in is an articulated mannequin
+// (studio-figure.ts; the rig, IK, presets and words in studio-pose.ts). Pose
+// Mode (Ctrl+Tab, or the mode menu) works like Blender's: click a joint, R
+// rotates that bone (X Y Z lock its own axes, typed degrees, always inside
+// its joint limits), drag a hand or foot (or G on it) and the whole limb
+// follows by IK, G on the pelvis moves the body, Alt+R / Alt+G clear. The
+// Pose panel in Properties has the presets, Sit on… / Lean on… / Look at…,
+// a joint picker (tap-sized on phones) and the bone's numbers. Poses key per
+// bone or whole (I) and ease between keys; every action is one undo.
+function initFigure(item) { item.rig = findSkeleton(item.obj); if (!item.rig) return; item.pose = presetPose("stand"); item.poseKeys = []; applyPose(item.rig, item.pose); }
+const people = () => items.filter((i) => i.rig);
+const boneLabel = (n) => BONE[n]?.label || n;
+const limbEnd = (n) => Object.keys(LIMBS).find((k) => LIMBS[k].end === n) || null;
+function poseSnap(it) { return { pose: clonePose(it.pose), keys: clone(it.poseKeys), t: trs(it.obj), okeys: clone(it.keys) }; }
+function putPose(it, s) { it.pose = clonePose(s.pose); it.poseKeys = clone(s.keys); it.keys = clone(s.okeys); applyTRS(it.obj, s.t); applyPose(it.rig, it.pose); }
+function setWorldPos(it, wp) { it.obj.position.copy(it.obj.parent === scene ? wp : it.obj.parent.worldToLocal(wp.clone())); it.obj.updateMatrixWorld(true); }
+/** One undoable pose action: `fn` changes it.pose (and may move the figure); auto keying keys the bones it names (all, when null). */
+function poseAct(it, label, fn, bones = null) {
+  if (!it || !it.rig) return;
+  const b = poseSnap(it); fn(); it.pose = { rot: it.pose.rot, loc: clampLoc(it.pose.loc) }; applyPose(it.rig, it.pose);
+  const moved = JSON.stringify(trs(it.obj)) !== JSON.stringify(b.t);
+  if (autoKey) { it.poseKeys = setPoseKey(it.poseKeys, time, it.pose, bones, 0.5 / FPS); if (moved) setKey(it, time); }
+  const a = poseSnap(it);
+  push({ label, undo() { putPose(it, b); }, redo() { putPose(it, a); } });
+  if (!autoKey && (it.poseKeys.length || (moved && it.keys.length))) toast("Auto keying is off: the timeline will move it back. Press I to key it.");
+  updateBoneViz(); renderAll(); info(label + (autoKey ? ` · keyed at frame ${frameNo()}` : ""));
+}
+/** A preset: a gesture poses the arms only; a body preset the whole figure, back on the ground unless it sits where it is. */
+function presetCmd(it, name) {
+  if (!it?.rig) return toast("Select a person first");
+  poseAct(it, `Pose · ${PRESET_LABELS[name]}`, () => {
+    const raised = it.obj.getWorldPosition(new V3()).y > 0.05;
+    let p = applyPreset(it.pose, name);
+    if (!presetBones(name) && raised) {
+      if (name === "sit") p = { rot: p.rot, loc: [0, 0, 0] };
+      else { const w = it.obj.getWorldPosition(new V3()); w.y = 0; setWorldPos(it, w); }
+    }
+    it.pose = p;
+  }, presetBones(name));
+}
+/** The top of `tgt` nearest the figure, where it can sit: a point on an upward face 0.3–1.35 m up, and "outwards" from its middle. */
+function seatOn(tgt, it) {
+  const b = worldBox(tgt); if (b.isEmpty()) return null;
+  const meshes = []; tgt.obj.traverse((o) => { if (o.isMesh && o.visible) meshes.push(o); });
+  const fp = it.obj.getWorldPosition(new V3()), c = b.getCenter(new V3()), rc = new THREE.Raycaster(), hits = [], N = 11;
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+    const x = b.min.x + ((b.max.x - b.min.x) * (i + 0.5)) / N, z = b.min.z + ((b.max.z - b.min.z) * (j + 0.5)) / N;
+    rc.set(new V3(x, b.max.y + 1, z), new V3(0, -1, 0)); const h = rc.intersectObjects(meshes, false)[0]; if (!h) continue;
+    const n = h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld) : new V3(0, 1, 0); if (n.y < 0.7) continue;
+    hits.push(h.point.clone());
+  }
+  if (!hits.length) return null;
+  const ok = hits.filter((p) => p.y >= 0.3 && p.y <= 1.35), pool = ok.length ? ok : hits;
+  pool.sort((p, q) => Math.hypot(p.x - fp.x, p.z - fp.z) - Math.hypot(q.x - fp.x, q.z - fp.z));
+  const at = pool[0]; let out = new V3(at.x - c.x, 0, at.z - c.z); if (out.lengthSq() < 1e-6) out = new V3(fp.x - c.x, 0, fp.z - c.z); if (out.lengthSq() < 1e-6) out.set(0, 0, 1);
+  return { at, out: out.normalize() };
+}
+/** Sits the figure on `tgt`: its seat on the top nearest to it, facing out, legs over the edge. */
+function sitOn(it, tgt) {
+  if (!it?.rig || !tgt || tgt === it || tgt.kind === "camera") return false;
+  const s = seatOn(tgt, it); if (!s) return false;
+  poseAct(it, `Sit on "${tgt.name}"`, () => {
+    const p = applyPreset(it.pose, "sit"); p.loc = [0, 0, 0];
+    // On something low the legs go out straight, as sitting on the ground.
+    if (s.at.y < 0.32) { p.rot["thigh.L"] = [-86, 0, 4]; p.rot["thigh.R"] = [-86, 0, 4]; p.rot["shin.L"] = [0, 0, 0]; p.rot["shin.R"] = [0, 0, 0]; }
+    it.pose = p;
+    const seat = s.at.clone().sub(s.out.clone().multiplyScalar(0.08));
+    it.obj.rotation.set(0, Math.atan2(s.out.x, s.out.z), 0);
+    setWorldPos(it, new V3(seat.x, seat.y + SEAT_DROP_M - BONE.pelvis.at[1], seat.z));
+  });
+  return true;
+}
+/** Leans the figure on `tgt`: hands on its top when that is table-to-chest high, else its back against it, arms crossed. */
+function leanOn(it, tgt) {
+  if (!it?.rig || !tgt || tgt === it || tgt.kind === "camera") return false;
+  const b = worldBox(tgt); if (b.isEmpty()) return false;
+  const fp = it.obj.getWorldPosition(new V3());
+  const q = new V3(THREE.MathUtils.clamp(fp.x, b.min.x, b.max.x), 0, THREE.MathUtils.clamp(fp.z, b.min.z, b.max.z));
+  const n = new V3(fp.x - q.x, 0, fp.z - q.z);
+  if (n.lengthSq() < 1e-6) {
+    const d = [[fp.x - b.min.x, -1, 0], [b.max.x - fp.x, 1, 0], [fp.z - b.min.z, 0, -1], [b.max.z - fp.z, 0, 1]].sort((u, v) => u[0] - v[0])[0];
+    n.set(d[1], 0, d[2]); if (d[1]) q.x = d[1] < 0 ? b.min.x : b.max.x; else q.z = d[2] < 0 ? b.min.z : b.max.z;
+  }
+  n.normalize();
+  const meshes = []; tgt.obj.traverse((o) => { if (o.isMesh && o.visible) meshes.push(o); });
+  const h = new THREE.Raycaster(new V3(q.x - n.x * 0.12, b.max.y + 1, q.z - n.z * 0.12), new V3(0, -1, 0)).intersectObjects(meshes, false)[0];
+  const ground = Math.max(0, b.min.y), top = (h ? h.point.y : b.max.y) - ground;
+  poseAct(it, `Lean on "${tgt.name}"`, () => {
+    let p = presetPose("stand");
+    if (top >= 0.55 && top <= 1.45) {
+      p.rot.spine = clampRot("spine", [-24, 0, 0]); p.rot.chest = clampRot("chest", [-10, 0, 0]); p.rot.neck = clampRot("neck", [12, 0, 0]);
+      it.obj.rotation.set(0, Math.atan2(-n.x, -n.z), 0); setWorldPos(it, new V3(q.x + n.x * 0.38, ground, q.z + n.z * 0.38));
+      it.pose = p; applyPose(it.rig, p);
+      const left = new V3(1, 0, 0).applyQuaternion(it.obj.getWorldQuaternion(new THREE.Quaternion()));
+      for (const [limb, sgn] of [["arm.L", 1], ["arm.R", -1]]) solveLimb(it.rig, p, limb, new V3(q.x - n.x * 0.1, ground + top + 0.05, q.z - n.z * 0.1).add(left.clone().multiplyScalar(0.2 * sgn)));
+    } else {
+      it.obj.rotation.set(0, Math.atan2(n.x, n.z), 0); setWorldPos(it, new V3(q.x + n.x * 0.2, ground, q.z + n.z * 0.2));
+      p.rot.pelvis = clampRot("pelvis", [7, 0, 0]); p.rot["thigh.L"] = clampRot("thigh.L", [-7, 0, 0]); p.rot["thigh.R"] = clampRot("thigh.R", [-14, 0, -4]); p.rot["shin.R"] = clampRot("shin.R", [14, 0, 0]);
+      p = groundFeet(applyPreset(p, "crossed"));
+    }
+    it.pose = p;
+  });
+  return true;
+}
+/** Turns the figure's chest, neck and head so it looks at `tgt` (the shot camera, a person's face, a thing's middle). */
+function lookAtCmd(it, tgt) {
+  if (!it?.rig || !tgt || tgt === it) return false;
+  const tp = tgt === shot ? shot.obj.getWorldPosition(new V3()) : tgt.rig ? tgt.rig.bones.head.getWorldPosition(new V3()).add(new V3(0, 0.1, 0)) : worldBox(tgt).getCenter(new V3());
+  poseAct(it, `Look at "${tgt.name}"`, () => {
+    const p = clonePose(it.pose), c0 = p.rot.chest || [0, 0, 0];
+    p.rot.chest = [c0[0], 0, c0[2]]; p.rot.neck = [0, 0, 0]; p.rot.head = [0, 0, 0]; applyPose(it.rig, p);
+    const eye = it.rig.bones.head.getWorldPosition(new V3()).add(new V3(0, 0.09, 0).applyQuaternion(it.rig.bones.head.getWorldQuaternion(new THREE.Quaternion())));
+    const d = tp.clone().sub(eye).applyQuaternion(it.rig.bones.chest.getWorldQuaternion(new THREE.Quaternion()).invert());
+    const r = lookRot([d.x, d.y, d.z]);
+    p.rot.chest = clampRot("chest", [c0[0], r.chest[1], c0[2]]); p.rot.neck = r.neck; p.rot.head = r.head; it.pose = p;
+  }, ["chest", "neck", "head"]);
+  return true;
+}
+/** What the figure is doing, measured: what it sits or leans on and what it looks at, then the pose's words. */
+function personWords(it) {
+  if (!it?.rig || !items.includes(it)) return null;
+  scene.updateMatrixWorld(true);
+  const others = items.filter((o) => o !== it && o.kind === "mesh" && !o.hidden && o !== place);
+  const nameOf = (o) => thingWords(o.name, o.obj.userData.paint?.[0]?.color ? "#" + o.obj.userData.paint[0].color.getHexString() : null);
+  const B = it.rig.bones, wp = (n) => B[n].getWorldPosition(new V3());
+  const seat = wp("pelvis").sub(new V3(0, SEAT_DROP_M, 0)), seated = (it.pose.rot["thigh.L"]?.[0] ?? 0) < -55 && (it.pose.rot["thigh.R"]?.[0] ?? 0) < -55;
+  let sittingOn = null, leaningOn = null, lookingAt = null;
+  if (seated && seat.y > 0.15) for (const o of others) { const b = worldBox(o); if (!b.isEmpty() && b.distanceToPoint(seat) < 0.12) { sittingOn = nameOf(o); break; } }
+  if (!sittingOn) {
+    // A hand rests on a thing when that thing's surface is just under the wrist; a back leans on a tall thing it touches.
+    const wl = wp("hand.L"), wr = wp("hand.R"), ch = wp("chest"), rc = new THREE.Raycaster();
+    const restsOn = (o, p) => { rc.set(new V3(p.x, p.y + 0.3, p.z), new V3(0, -1, 0)); rc.far = 0.5; const h = rc.intersectObject(o.obj, true).find((x) => x.object.isMesh); return !!h && p.y - h.point.y > -0.06 && p.y - h.point.y < 0.14; };
+    for (const o of others) { const b = worldBox(o); if (b.isEmpty()) continue; if (restsOn(o, wl) || restsOn(o, wr) || (b.max.y > 1.3 && b.distanceToPoint(ch) < 0.22)) { leaningOn = nameOf(o); break; } }
+  }
+  const eye = wp("head").add(new V3(0, 0.09, 0)), fwd = new V3(0, 0, 1).applyQuaternion(B.head.getWorldQuaternion(new THREE.Quaternion()));
+  const ang = (p) => fwd.angleTo(p.clone().sub(eye)) * (180 / Math.PI);
+  if (ang(shot.obj.getWorldPosition(new V3())) < 20) lookingAt = "the camera";
+  else { let best = 12; for (const o of [...others, ...people().filter((x) => x !== it)]) { const c = o.rig ? o.rig.bones.head.getWorldPosition(new V3()) : worldBox(o).getCenter(new V3()); const a = ang(c); if (a < best) { best = a; lookingAt = o.rig ? "the other person" : nameOf(o); } } }
+  const ctx = { sittingOn, leaningOn, lookingAt };
+  return { words: poseWords(it.pose, ctx), sentence: poseSentence(it.pose, ctx), stand: standPoseOf(it.pose, ctx) };
+}
+
+// ---- Pose Mode ----
+const boneViz = new THREE.Group(); boneViz.visible = false; helpers.add(boneViz);
+const bvDot = new THREE.SphereGeometry(1, 14, 10);
+const bvMat = (c) => new THREE.MeshBasicMaterial({ color: c, depthTest: false, transparent: true, opacity: 0.95 });
+const bvMats = { off: bvMat(0xdadce2), on: bvMat(0x4fa3ff), ik: bvMat(0xf3a24a) };
+let bvLines = null, bvDots = {};
+function buildBoneViz() {
+  boneViz.clear(); bvDots = {}; bvLines = null;
+  if (!poseMode || !poseItem) { boneViz.visible = false; return; }
+  for (const n of BONE_NAMES) { const m = new THREE.Mesh(bvDot, bvMats.off); m.renderOrder = 41; boneViz.add(m); bvDots[n] = m; }
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(BONE_NAMES.length * 6), 3));
+  bvLines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xf2f2f4, depthTest: false, transparent: true, opacity: 0.9 })); bvLines.renderOrder = 40; bvLines.frustumCulled = false; boneViz.add(bvLines);
+  boneViz.visible = true; updateBoneViz();
+}
+function updateBoneViz() {
+  if (!bvLines || !poseItem) return;
+  if (!items.includes(poseItem)) { exitPose(); return; }
+  poseItem.obj.updateMatrixWorld(true);
+  const arr = bvLines.geometry.attributes.position.array, cam = viewCam();
+  BONE_NAMES.forEach((n, k) => {
+    const bo = poseItem.rig.bones[n], a = bo.getWorldPosition(new V3()), t = new V3(...BONE[n].tail).applyMatrix4(bo.matrixWorld);
+    arr.set([a.x, a.y, a.z, t.x, t.y, t.z], k * 6);
+    const m = bvDots[n], end = !!limbEnd(n); m.position.copy(a); m.material = n === poseBone ? bvMats.on : end ? bvMats.ik : bvMats.off;
+    m.scale.setScalar(Math.max(0.01, cam.position.distanceTo(a) * (end ? 0.012 : 0.008)));
+  });
+  bvLines.geometry.attributes.position.needsUpdate = true;
+}
+function segDist(px, py, ax, ay, bx, by) { const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy; const u = l ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l)) : 0; return Math.hypot(px - ax - u * dx, py - ay - u * dy); }
+/** The pose item's bone under the pointer: its joint dot within `px`, or its line a little further. */
+function boneAt(cx, cy, px = 16) {
+  if (!poseItem) return null; poseItem.obj.updateMatrixWorld(true); let best = null, bd = px;
+  for (const n of BONE_NAMES) {
+    const bo = poseItem.rig.bones[n], [ax, ay, az] = screenOf(bo.getWorldPosition(new V3())), [tx, ty] = screenOf(new V3(...BONE[n].tail).applyMatrix4(bo.matrixWorld));
+    if (az > 1) continue; const d = Math.min(Math.hypot(ax - cx, ay - cy), segDist(cx, cy, ax, ay, tx, ty) + 5); if (d < bd) { bd = d; best = n; }
+  }
+  return best;
+}
+function pickBone(cx, cy) {
+  let n = boneAt(cx, cy);
+  if (!n) {
+    const r = canvas.getBoundingClientRect(); ray.setFromCamera(new THREE.Vector2(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1), viewCam());
+    const hit = ray.intersectObjects(people().filter((i) => !i.hidden).map((i) => i.obj), true)[0];
+    if (hit) { const it = byId(hit.object.userData.itemId); if (it && it !== poseItem) { selection.clear(); selection.add(it); active = it; poseItem = it; buildBoneViz(); } n = boneOfMesh(hit.object); }
+  }
+  poseBone = n; updateBoneViz(); renderAll();
+  info(n ? `${boneLabel(n)} · R rotates · Alt+R clears${limbEnd(n) ? " · drag it, or G, to move the whole limb" : ""}` : "Pose Mode · click a joint");
+}
+function enterPose(it = active) {
+  if (!it || !it.rig) return toast("Select a person, then Ctrl+Tab for Pose Mode");
+  if (editMode) exitEdit();
+  poseMode = true; poseItem = it; poseBone = null; selection.clear(); selection.add(it); active = it;
+  $("modeBtn").innerHTML = MODE_ICON + "Pose Mode ▾"; $("modeBtn").classList.add("edit");
+  buildBoneViz(); refreshSel(); info(`Pose Mode · ${it.name} · click a joint, R rotates, drag a hand or foot`);
+}
+function exitPose() {
+  if (!poseMode) return; poseMode = false; poseBone = null; buildBoneViz();
+  $("modeBtn").innerHTML = MODE_ICON + "Object Mode ▾"; $("modeBtn").classList.remove("edit"); refreshSel();
+}
+function togglePose() { poseMode ? exitPose() : enterPose(); }
+function openModeMenu(btn) {
+  const r = btn.getBoundingClientRect(), a = active && active.kind !== "sun" ? active : null;
+  openPopup(r.left, r.bottom + 4, `<h4>Mode</h4><button data-act="modeObject"><span>Object Mode</span></button><button data-act="modeEdit" ${a && a.kind !== "camera" && !a.rig ? "" : "disabled"}><span>Edit Mode</span><small>Tab</small></button><button data-act="modePose" ${a?.rig ? "" : "disabled"}><span>Pose Mode</span><small>Ctrl+Tab</small></button>`);
+}
+/** Drags a hand or foot: the whole limb follows by IK, on the plane facing the view through where it was. */
+function startIkDrag(n) {
+  const it = poseItem, limb = limbEnd(n), b = poseSnap(it), cam = viewCam();
+  const end = it.rig.bones[n].getWorldPosition(new V3()), plane = new THREE.Plane().setFromNormalAndCoplanarPoint(cam.getWorldDirection(new V3()).negate(), end);
+  orbit.enabled = false; let moved = false;
+  const mv = (ev) => {
+    const r = canvas.getBoundingClientRect(); ray.setFromCamera(new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1), cam);
+    const p = ray.ray.intersectPlane(plane, new V3()); if (!p) return; moved = true; solveLimb(it.rig, it.pose, limb, p); updateBoneViz();
+  };
+  const up = () => {
+    window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); orbit.enabled = true;
+    if (!moved) { renderAll(); info(`${boneLabel(n)} · drag it to move the whole limb · R rotates`); return; }
+    const after = clonePose(it.pose); putPose(it, b);
+    poseAct(it, `Move ${boneLabel(n)} (IK)`, () => { it.pose = after; }, [LIMBS[limb].upper, LIMBS[limb].lower]);
+  };
+  wOn("pointermove", mv); wOn("pointerup", up);
+}
+canvas.addEventListener("pointerdown", (e) => {
+  if (!poseMode || modal || e.button !== 0 || !poseItem || !e.isPrimary) return;
+  const n = boneAt(e.clientX, e.clientY, 14); if (!n || !limbEnd(n)) return;
+  e.stopImmediatePropagation(); e.preventDefault(); downAt = null; poseBone = n; updateBoneViz(); startIkDrag(n);
+}, { capture: true, signal: ac.signal });
+/** The modal R / G on a bone (startModal hands it here): rotate about its own axes or the view, move a hand or foot by IK, or the pelvis. */
+function poseModalApply(m, d, q) {
+  const it = m.it, p = clonePose(m.start); let label = "";
+  if (m.mode === "rotate") {
+    const dg = THREE.MathUtils.radToDeg(m.ang || 0);
+    if (m.axis) { const i = { x: 0, y: 1, z: 2 }[m.axis], v = [...(p.rot[m.name] || [0, 0, 0])]; v[i] += dg; p.rot[m.name] = clampRot(m.name, v); }
+    else p.rot[m.name] = clampRot(m.name, eulerNumbers(m.name, m.pq.clone().invert().multiply(q.clone().multiply(m.q0))));
+    const v = p.rot[m.name];
+    label = `Rotate ${boneLabel(m.name)}${m.axis ? " " + m.axis.toUpperCase() : ""}  ${dg.toFixed(1)}°  ·  X ${v[0].toFixed(1)}°  Y ${v[1].toFixed(1)}°  Z ${v[2].toFixed(1)}°`;
+  } else {
+    if (m.limb) solveLimb(it.rig, p, m.limb, m.w0.clone().add(d));
+    else { const dl = d.clone().applyQuaternion(it.obj.getWorldQuaternion(new THREE.Quaternion()).invert()).divide(it.obj.getWorldScale(new V3())); p.loc = clampLoc([m.start.loc[0] + dl.x, m.start.loc[1] + dl.y, m.start.loc[2] + dl.z]); }
+    label = `Move ${boneLabel(m.name)}${m.limb ? " (IK)" : ""}  D  ${d.x.toFixed(2)}  ${(-d.z).toFixed(2)}  ${d.y.toFixed(2)} m`;
+  }
+  it.pose = p; applyPose(it.rig, p); updateBoneViz();
+  $("modal").innerHTML = `<b>${esc(label)}</b>${m.typed ? `<span class="typed">${esc(m.typed)}</span>` : ""}<span>X Y Z lock the bone's own axis · type degrees · the joint's limits hold · click or ⏎ confirm · Esc or right-click cancel</span>`;
+}
+function startPoseModal(mode) {
+  if (!poseItem || !poseBone) { toast("Click a joint first (Pose Mode)"); return false; }
+  if (mode === "scale") { toast("Bones keep their length: R rotates, G moves a hand, a foot or the pelvis"); return false; }
+  const limb = limbEnd(poseBone);
+  if (mode === "translate" && !limb && poseBone !== "pelvis") { toast("Only a hand, a foot or the pelvis moves with G; R rotates this bone"); return false; }
+  poseItem.obj.updateMatrixWorld(true);
+  const bo = poseItem.rig.bones[poseBone], c = bo.getWorldPosition(new V3()), [cx, cy] = screenOf(c);
+  modal = { bone: true, it: poseItem, name: poseBone, limb, snap: poseSnap(poseItem), start: clonePose(poseItem.pose), q0: bo.getWorldQuaternion(new THREE.Quaternion()), pq: bo.parent.getWorldQuaternion(new THREE.Quaternion()), w0: c.clone(), mode, sx: mouse[0], sy: mouse[1], center: c, cx, cy, axis: null, typed: "" };
+  orbit.enabled = false; tc.detach(); $("modal").hidden = false; updateModal(); return true;
+}
+function endPoseModal(m, ok) {
+  if (!ok) { putPose(m.it, m.snap); updateBoneViz(); return; }
+  const after = clonePose(m.it.pose); putPose(m.it, m.snap);
+  poseAct(m.it, `${m.mode === "rotate" ? "Rotate" : "Move"} ${boneLabel(m.name)}`, () => { m.it.pose = after; }, m.limb && m.mode === "translate" ? [LIMBS[m.limb].upper, LIMBS[m.limb].lower] : [m.name]);
+}
+/** Alt+R: the selected bone's rotation (every bone's, with none selected); Alt+G: the pelvis back to where it stands. */
+function clearBones(kind) {
+  const it = poseItem || (active?.rig ? active : null); if (!it) return toast("Select a person first");
+  const one = poseMode && poseBone && kind !== "loc" ? poseBone : null;
+  poseAct(it, kind === "loc" ? "Clear location · Pelvis" : one ? `Clear rotation · ${boneLabel(one)}` : "Clear pose", () => {
+    const p = clonePose(it.pose); if (kind === "loc") p.loc = [0, 0, 0]; else if (one) delete p.rot[one]; else p.rot = {}; it.pose = p;
+  }, kind === "loc" ? ["pelvis"] : one ? [one] : null);
+}
+/** I in Pose Mode: the selected bone at this frame, or the whole pose. */
+function keyPoseCmd(bones, it = poseItem || (active?.rig ? active : null)) {
+  if (!it) return toast("Select a person to key their pose");
+  const b = clone(it.poseKeys); it.poseKeys = setPoseKey(it.poseKeys, time, it.pose, bones, 0.5 / FPS); const a = clone(it.poseKeys);
+  push({ label: "Insert pose keyframe", undo() { it.poseKeys = clone(b); }, redo() { it.poseKeys = clone(a); } });
+  renderAll(); info(bones ? `Keyed ${boneLabel(bones[0])} · frame ${frameNo()}` : `Pose keyed · frame ${frameNo()}`);
+}
+// The joint picker (tap-sized on phones, where bones are small): the figure as you face it, its right on your left.
+const JOINT_MAP = [
+  ["head", 3, 1, "Head"], ["neck", 3, 2, "Neck"], ["shoulder.R", 2, 2, "Shoulder"], ["shoulder.L", 4, 2, "Shoulder"],
+  ["upperArm.R", 1, 3, "Upper arm"], ["chest", 3, 3, "Chest"], ["upperArm.L", 5, 3, "Upper arm"],
+  ["forearm.R", 1, 4, "Forearm"], ["spine", 3, 4, "Spine"], ["forearm.L", 5, 4, "Forearm"],
+  ["hand.R", 1, 5, "Hand"], ["pelvis", 3, 5, "Pelvis"], ["hand.L", 5, 5, "Hand"],
+  ["thigh.R", 2, 6, "Thigh"], ["thigh.L", 4, 6, "Thigh"], ["shin.R", 2, 7, "Shin"], ["shin.L", 4, 7, "Shin"], ["foot.R", 2, 8, "Foot"], ["foot.L", 4, 8, "Foot"],
+];
+function posePanel(p, it) {
+  const mine = poseMode && poseItem === it, big = $("app").classList.contains("compact");
+  const [pp, pb] = panel("Pose");
+  pb.insertAdjacentHTML("beforeend", `<div class="row-btns"><button class="pbtn${mine ? " accent" : ""}" id="pMode">${mine ? "Back to Object Mode" : "Pose Mode"}</button><button class="pbtn" id="pKeyPose">Key whole pose</button><button class="pbtn" id="pClearPose">Clear pose</button></div>`);
+  const pr = document.createElement("div"); pr.className = "row-btns"; pr.style.flexWrap = "wrap";
+  pr.innerHTML = POSE_PRESETS.map((k) => `<button class="pbtn" data-preset="${k}" style="flex:1 1 30%">${esc(PRESET_LABELS[k])}</button>`).join(""); pb.appendChild(pr);
+  pr.onclick = (e) => { const b = e.target.closest("[data-preset]"); if (b) presetCmd(it, b.dataset.preset); };
+  pb.querySelector("#pMode").onclick = () => (mine ? exitPose() : enterPose(it));
+  pb.querySelector("#pKeyPose").onclick = () => keyPoseCmd(null, it);
+  pb.querySelector("#pClearPose").onclick = () => presetCmd(it, "stand");
+  const things = items.filter((o) => o !== it && o.kind === "mesh" && !o.hidden && o !== place);
+  for (const [id, label, fn, cam] of [["pSit", "Sit on…", sitOn, false], ["pLean", "Lean on…", leanOn, false], ["pLook", "Look at…", lookAtCmd, true]]) {
+    const s = document.createElement("select"); s.className = "sel2"; s.id = id + "T"; s.setAttribute("aria-label", label);
+    if (cam) s.add(new Option("Shot camera", "cam")); things.forEach((o) => s.add(new Option(o.name, String(o.id)))); if (!cam && !things.length) s.disabled = true;
+    const go = document.createElement("button"); go.className = "pbtn"; go.id = id; go.textContent = "Apply"; go.style.flex = "none";
+    go.onclick = () => { const t = s.value === "cam" ? shot : byId(+s.value); if (!t) return; if (!fn(it, t)) toast(`There's nothing there ${label === "Sit on…" ? "to sit on" : "to lean on"}`); };
+    const w = document.createElement("div"); w.style.cssText = "display:flex;gap:6px;min-width:0"; s.style.flex = "1"; s.style.minWidth = "0"; w.append(s, go); pb.appendChild(fr(label, w));
+  }
+  pb.insertAdjacentHTML("beforeend", `<p class="hint">Ctrl+Tab · click a joint · R rotates it (X Y Z, typed degrees, inside its limits) · drag a hand or foot · Alt+R clears · I keys.</p>`);
+  p.appendChild(pp);
+  const [jp, jb] = panel("Joints");
+  const grid = document.createElement("div"); grid.className = "joint-map"; grid.style.cssText = "display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px";
+  grid.innerHTML = `<small style="grid-column:1;grid-row:1;align-self:end;opacity:.7">Right</small><small style="grid-column:5;grid-row:1;align-self:end;text-align:right;opacity:.7">Left</small>` + JOINT_MAP.map(([n, c, r, short]) => `<button class="pbtn${mine && poseBone === n ? " accent" : ""}" data-bone="${n}" title="${esc(boneLabel(n))}" aria-label="${esc(boneLabel(n))}" style="grid-column:${c};grid-row:${r};padding:2px;font-size:11px;min-height:${big ? 40 : 26}px;white-space:normal;line-height:1.1">${esc(short)}</button>`).join("");
+  grid.onclick = (e) => { const b = e.target.closest("[data-bone]"); if (!b) return; if (!mine) enterPose(it); poseBone = b.dataset.bone; updateBoneViz(); renderAll(); info(`${boneLabel(poseBone)} · R rotates · Alt+R clears${limbEnd(poseBone) ? " · drag it, or G, to move the whole limb" : ""}`); };
+  jb.appendChild(grid); p.appendChild(jp);
+  if (!mine || !poseBone) return;
+  const n = poseBone, lim = BONE[n].limits, v = it.pose.rot[n] || [0, 0, 0];
+  const [bp, bb] = panel("Bone");
+  const nm = document.createElement("div"); nm.className = "ptitle"; nm.textContent = boneLabel(n); bb.appendChild(nm);
+  let snap = null; const commit = (lab) => { const after = clonePose(it.pose); if (snap) putPose(it, snap); snap = null; poseAct(it, lab, () => { it.pose = after; }, [n]); };
+  const st = document.createElement("div"); st.className = "stack";
+  ["X", "Y", "Z"].forEach((ax, i) => st.appendChild(fr(i === 0 ? `Rotation ${ax}` : ax, lim[i][0] === lim[i][1] ? ro(`${lim[i][0].toFixed(1)}°`) : field(v[i], { step: 0.5, unit: "°", dec: 1, min: lim[i][0], max: lim[i][1], onStart: () => { snap = snap || poseSnap(it); }, onLive: (x) => { const r = [...(it.pose.rot[n] || [0, 0, 0])]; r[i] = x; it.pose.rot[n] = clampRot(n, r); applyPose(it.rig, it.pose); updateBoneViz(); }, onCommit: () => commit(`Rotate ${boneLabel(n)}`) }))));
+  bb.appendChild(st);
+  if (n === "pelvis") {
+    const lt = document.createElement("div"); lt.className = "stack"; const L = it.pose.loc;
+    [["Offset X", 0, 1], ["Y", 2, -1], ["Z", 1, 1]].forEach(([lab, i, sg]) => lt.appendChild(fr(lab, field(L[i] * sg, { step: 0.01, unit: " m", dec: 2, min: -2, max: 2, onStart: () => { snap = snap || poseSnap(it); }, onLive: (x) => { const l = [...it.pose.loc]; l[i] = x * sg; it.pose.loc = clampLoc(l); applyPose(it.rig, it.pose); updateBoneViz(); }, onCommit: () => commit("Move Pelvis") }))));
+    bb.appendChild(lt);
+  }
+  bb.appendChild(fr("Limits", ro(lim.map((l, i) => `${"XYZ"[i]} ${l[0]}…${l[1]}°`).join("  "))));
+  const r = document.createElement("div"); r.className = "row-btns";
+  r.innerHTML = `<button class="pbtn" id="bClear">Clear rotation</button><button class="pbtn accent" id="bKey">Key this bone</button><button class="pbtn" id="bDelKey">Delete pose key</button>`;
+  bb.appendChild(r); p.appendChild(bp);
+  r.querySelector("#bClear").onclick = () => clearBones("rot"); r.querySelector("#bKey").onclick = () => keyPoseCmd([n], it); r.querySelector("#bDelKey").onclick = () => delKey([it]);
+}
+
 // ================= modal G / R / S (Blender) =================
 const AXV = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 0, -1), z: new THREE.Vector3(0, 1, 0) };
 let modal = null, pivotMode = "median";
@@ -2146,6 +2547,7 @@ const viewCam = () => (camView ? shot.obj.userData.cam : editorCam);
 function overView() { const r = canvas.getBoundingClientRect(); return mouse[0] >= r.left && mouse[0] <= r.right && mouse[1] >= r.top && mouse[1] <= r.bottom; }
 function screenOf(v) { const r = canvas.getBoundingClientRect(), p = v.clone().project(viewCam()); return [r.left + ((p.x + 1) / 2) * r.width, r.top + ((1 - p.y) / 2) * r.height, p.z]; }
 function startModal(mode) {
+  if (poseMode) return startPoseModal(mode);
   let center = new THREE.Vector3(), m;
   if (editMode) {
     if (!vSel.size) return false;
@@ -2183,6 +2585,7 @@ function updateModal() {
   } else if (m.mode === "rotate") {
     let a = typedV !== null ? THREE.MathUtils.degToRad(typedV) : -(Math.atan2(mouse[1] - m.cy, mouse[0] - m.cx) - Math.atan2(m.sy - m.cy, m.sx - m.cx));
     if (snapOn && typedV === null) a = Math.round(a / THREE.MathUtils.degToRad(5)) * THREE.MathUtils.degToRad(5);
+    m.ang = a;
     const axis = m.axis ? AXV[m.axis].clone() : new THREE.Vector3(); if (!m.axis) cam.getWorldDirection(axis).negate();
     q = new THREE.Quaternion().setFromAxisAngle(axis, a);
     label = `Rotate${m.axis ? " " + m.axis.toUpperCase() : ""}  ${THREE.MathUtils.radToDeg(a).toFixed(1)}°`;
@@ -2192,6 +2595,7 @@ function updateModal() {
     fv = m.axis ? new THREE.Vector3(m.axis === "x" ? f : 1, m.axis === "z" ? f : 1, m.axis === "y" ? f : 1) : new THREE.Vector3(f, f, f);
     label = `Scale${m.axis ? " " + m.axis.toUpperCase() : ""}  ${f.toFixed(3)}`;
   }
+  if (m.bone) { poseModalApply(m, d, q); return; }
   const place = (wp, own) => { if (d) return wp.clone().add(d); const c = pivotMode === "individual" && own ? own : m.center; return q ? wp.clone().sub(c).applyQuaternion(q).add(c) : wp.clone().sub(c).multiply(fv).add(c); };
   if (m.edit) {
     const arr = editMesh.geometry.attributes.position.array; arr.set(m.arr);
@@ -2210,6 +2614,7 @@ function updateModal() {
 }
 function endModal(ok) {
   if (!modal) return; const m = modal; modal = null; $("modal").hidden = true; orbit.enabled = true;
+  if (m.bone) { endPoseModal(m, ok); return; }
   const label = m.mode === "translate" ? "Move" : m.mode === "rotate" ? "Rotate" : "Scale";
   if (m.edit) {
     const geo = editMesh.geometry, attr = geo.attributes.position, before = m.arr, after = attr.array.slice();
@@ -2308,6 +2713,8 @@ function commands() {
     ["Shading: Rendered", () => setShade("lit")], ["Shading: Solid", () => setShade("clay")], ["Shading: Wireframe", () => setShade("wire")],
   ];
   for (const [k, d] of Object.entries(ADD)) c.push(["Add " + d.l, () => addUI(k)]);
+  c.push(["Pose Mode", togglePose], ["Pose: clear pose", () => clearBones("rot")], ["Pose: key whole pose", () => keyPoseCmd(null)]);
+  for (const k of POSE_PRESETS) c.push([`Pose: ${PRESET_LABELS[k]}`, () => { const it = poseItem || (active?.rig ? active : null); if (!it) return toast("Select a person first"); presetCmd(it, k); }]);
   return c;
 }
 function openSearch() {
@@ -2550,7 +2957,7 @@ function openLeavesOut() {
 // account), and then sends that one up.
 const SAVE_KEY = "helios.studio." + opts.setId;
 function snapshot() {
-  return { v: 1, hour, format, lens: shot.obj.userData.lensMm, skyMode, markers, items: items.filter((i) => i.kind !== "sun" && (i.saveKey || i.addKind)).map((i) => ({ key: i.saveKey || null, add: i.addKind || null, name: i.name, coll: i.coll, t: trs(i.obj), keys: i.keys, interp: i.interp, hidden: i.hidden, noRender: !!i.noRender, color: i.obj.userData.paint?.[0] ? "#" + i.obj.userData.paint[0].color.getHexString() : null, array: i.obj.userData.array || null, mirror: i.obj.userData.mirror || null, track: i.obj.userData.track ? byId(i.obj.userData.track)?.saveKey || null : null, phys: i.phys || null, bake: i.bake || null })) };
+  return { v: 1, hour, format, lens: shot.obj.userData.lensMm, skyMode, markers, items: items.filter((i) => i.kind !== "sun" && (i.saveKey || i.addKind)).map((i) => ({ key: i.saveKey || null, add: i.addKind || null, name: i.name, coll: i.coll, t: trs(i.obj), keys: i.keys, interp: i.interp, hidden: i.hidden, noRender: !!i.noRender, color: i.obj.userData.paint?.[0] ? "#" + i.obj.userData.paint[0].color.getHexString() : null, array: i.obj.userData.array || null, mirror: i.obj.userData.mirror || null, track: i.obj.userData.track ? byId(i.obj.userData.track)?.saveKey || null : null, phys: i.phys || null, bake: i.bake || null, pose: i.rig ? i.pose : undefined, poseKeys: i.rig && i.poseKeys.length ? i.poseKeys : undefined })) };
 }
 let lastSaved = "", lastServer = "", changedAt = 0, serverBusy = false, serverRetryAt = 0;
 const SERVER_DELAY_MS = 5000, SERVER_RETRY_MS = 30000;
@@ -2601,6 +3008,8 @@ function restoreSaved() {
     it.name = s.name; it.obj.name = s.name; it.coll = s.coll; applyTRS(it.obj, s.t); it.keys = s.keys || []; it.interp = s.interp || "bezier"; it.hidden = !!s.hidden; it.obj.visible = !s.hidden; it.noRender = !!s.noRender; it.phys = s.phys || undefined; it.bake = s.bake || undefined;
     if (s.color && it.obj.userData.paint?.length) it.obj.userData.paint.forEach((m) => m.color.set(s.color));
     it.obj.userData.array = s.array || undefined; it.obj.userData.mirror = s.mirror || undefined; if (s.array || s.mirror) applyArray(it);
+    // A person: its pose and pose keys; a scene saved before people (a capsule stand-in) stands where the capsule stood.
+    if (it.rig) { it.pose = normalisePose(s.pose) || presetPose("stand"); it.poseKeys = normalisePoseKeys(s.poseKeys, DUR); applyPose(it.rig, it.pose); }
   }
   for (const [it, s] of made) if (s.track) { const t = items.find((i) => i.saveKey === s.track); if (t) it.obj.userData.track = t.id; }
   if (typeof data.hour === "number") setHour(data.hour); if (data.format) format = data.format; if (data.lens) setLens(data.lens); if (data.skyMode && data.skyMode !== "simple") setSkyMode(data.skyMode); if (Array.isArray(data.markers)) markers.push(...data.markers);
@@ -2618,6 +3027,7 @@ const ACTS = {
   frameSel: () => active && frameObj(active.obj), frameAll, camView: () => toggleCam(), camToView, top: () => viewAlong(new THREE.Vector3(0, 1, 0)), front: () => viewAlong(new THREE.Vector3(0, 0, 1)), right: () => viewAlong(new THREE.Vector3(1, 0, 0)),
   selAll: () => { items.filter((i) => !i.hidden && i.kind !== "sun").forEach((i) => selection.add(i)); active = active || [...selection][0]; refreshSel(); },
   selNone: () => select(null), selInvert: () => { const all = items.filter((i) => !i.hidden && i.kind !== "sun"); const was = new Set(selection); selection.clear(); all.forEach((i) => !was.has(i) && selection.add(i)); active = [...selection][0] || null; refreshSel(); },
+  modeObject: () => { exitPose(); exitEdit(); }, modeEdit: () => { exitPose(); if (!editMode) enterEdit(); }, modePose: () => enterPose(),
   selCam: () => select(shot), showAll, path: togglePath, leaves: openLeavesOut, join: joinSel, moveTo: openMoveTo, xray: toggleXray, local: toggleLocal, parent: parentTo, unparent: clearParent, sidebar: () => toggleN(),
   addAt: () => openPopup(mouse[0], mouse[1], addMenuHTML()),
   astraAbout: () => { ntab = "astra"; toggleN(true); renderN(); const i = $("astraIn"); if (i) { i.value = `About "${active?.name}": `; i.focus(); } },
@@ -2638,7 +3048,8 @@ document.querySelectorAll("[data-ws]").forEach((b) => b.addEventListener("click"
 $("shelfAdd").onclick = (e) => { const r = e.currentTarget.getBoundingClientRect(); openPopup(r.right + 6, r.top, addMenuHTML()); e.stopPropagation(); };
 $("shelfCam").onclick = () => toggleCam(); $("navCam").onclick = () => toggleCam(); $("navZoom").onclick = frameAll; $("nBtn").onclick = () => toggleN();
 $("snapBtn").onclick = () => { snapOn = !snapOn; applySnap(); info(snapOn ? "Snapping on · 0.25 m, 15°" : "Snapping off"); };
-$("xrayBtn").onclick = toggleXray; $("modeBtn").onclick = toggleEdit;
+$("xrayBtn").onclick = toggleXray; $("modeBtn").onclick = (e) => { e.stopPropagation(); openModeMenu(e.currentTarget); };
+$("modeBtn").title = "Object Mode / Edit Mode (Tab) / Pose Mode (Ctrl+Tab)";
 $("ovlBtn").onclick = () => { overlays.visible = !overlays.visible; $("ovlBtn").classList.toggle("on", overlays.visible); };
 $("rec").onclick = () => { autoKey = !autoKey; $("rec").classList.toggle("on", autoKey); info(autoKey ? "Auto keying on" : "Auto keying off"); };
 $("tPlay").onclick = () => play(); $("tStart").onclick = () => setTime(0); $("tEnd").onclick = () => setTime(DUR); $("tPrevKey").onclick = () => jumpKey(-1); $("tNextKey").onclick = () => jumpKey(1);
@@ -2651,7 +3062,8 @@ wOn("keydown", (e) => {
   const k = e.key.toLowerCase(), mod = e.metaKey || e.ctrlKey;
   if (e.key === "F3") { e.preventDefault(); openSearch(); return; }
   if (e.ctrlKey && k === " ") { e.preventDefault(); toggleMax(); return; }
-  if (e.key === "Tab") { e.preventDefault(); toggleEdit(); return; }
+  if (e.key === "Tab" && e.ctrlKey) { e.preventDefault(); togglePose(); return; }
+  if (e.key === "Tab") { e.preventDefault(); if (poseMode) exitPose(); else toggleEdit(); return; }
   if (mod && k === "j") { e.preventDefault(); joinSel(); return; }
   if (e.altKey && k === "z") { e.preventDefault(); toggleXray(); return; }
   if (e.shiftKey && k === "s" && !mod) { openSnapPie(); return; }
@@ -2660,6 +3072,12 @@ wOn("keydown", (e) => {
     if (k === "a" && e.altKey) { vSel.clear(); updateEditPoints(); return; }
     if (k === "x" || k === "delete") { toast("Deleting vertices comes with the full build; move them in Edit Mode, or delete the object in Object Mode"); return; }
     if (k === "escape") { exitEdit(); return; }
+  }
+  if (poseMode && !mod) {
+    if (e.altKey && e.code === "KeyR") { e.preventDefault(); clearBones("rot"); return; }
+    if (e.altKey && e.code === "KeyG") { e.preventDefault(); clearBones("loc"); return; }
+    if (k === "i" && !e.altKey) { keyPoseCmd(poseBone ? [poseBone] : null); return; }
+    if (k === "x" || k === "delete" || k === "h") { toast("Back in Object Mode (Tab) to delete or hide"); return; }
   }
   if (mod && k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && k === "y") { e.preventDefault(); redo(); return; }
@@ -2774,7 +3192,7 @@ function frameBox(w, h) { const a = FORMATS[format], pad = 40; let bh = h - pad 
 function tick(now) {
   if (stopped) return; raf = requestAnimationFrame(tick);
   if (playing) { time += (now - last) / 1000; last = now; if (time > (pEnd - 1) / FPS || time < (pStart - 1) / FPS) time = (pStart - 1) / FPS; evaluate(time); placePlayhead(); refreshOutlines(); if (Math.round(time * FPS) % 6 === 0) renderVText(); }
-  orbit.update(); drawGizmo(); cursor3d.userData.face.quaternion.copy(viewCam().quaternion); { const s = viewCam().position.distanceTo(cursor3d.position) * 0.045; cursor3d.scale.setScalar(Math.max(0.2, s)); } placeMeasureLabel();
+  orbit.update(); if (poseMode) updateBoneViz(); drawGizmo(); cursor3d.userData.face.quaternion.copy(viewCam().quaternion); { const s = viewCam().position.distanceTo(cursor3d.position) * 0.045; cursor3d.scale.setScalar(Math.max(0.2, s)); } placeMeasureLabel();
   const r = view.getBoundingClientRect(), w = r.width, h = r.height;
   scene.background = shade === "lit" ? worldBg() : bgStudio; skyObj.visible = shade === "lit" && skyMode === "physical";
   if (camView) {

@@ -6,7 +6,11 @@ import {
   FIGURE_HEIGHT_M,
   POSE_PRESETS,
   applyPose,
+  applyPreset,
   buildSkeleton,
+  colourWord,
+  presetBones,
+  thingWords,
   clampRot,
   findSkeleton,
   jointsOf,
@@ -205,6 +209,24 @@ describe("saving a pose", () => {
     applyPose(sk, normalisePose(undefined) ?? presetPose("stand"));
     expect(poseKind(presetPose("stand"))).toBe("standing");
     expect(sk.bones.pelvis.position.y).toBeCloseTo(0.93, 6);
+  });
+});
+
+describe("presets over a pose", () => {
+  it("a gesture poses the arms only, so a seated figure keeps sitting while it waves", () => {
+    const out = applyPreset(presetPose("sit"), "wave");
+    expect(poseKind(out)).toBe("sitting");
+    expect(poseWords(out)).toBe("sitting, waving with the right hand");
+    expect(presetBones("sit")).toBeNull();
+    expect(applyPreset(presetPose("wave"), "stand")).toEqual(presetPose("stand"));
+  });
+  it("names what the figure is on the way the words say it", () => {
+    expect(thingWords("Red sports car", "#c0282d")).toBe("the red sports car");
+    expect(thingWords("Car 1", "#c0282d")).toBe("the red car");
+    expect(thingWords("Bench.001", "#6a4a2a")).toBe("the brown bench");
+    expect(thingWords("Wall", null)).toBe("the wall");
+    expect(colourWord("#2b6fd6")).toBe("blue");
+    expect(colourWord("#b9bec6")).toBe("silver");
   });
 });
 

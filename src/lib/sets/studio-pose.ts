@@ -488,3 +488,53 @@ export function poseSentence(pose: Pose, ctx: PoseWordsContext = {}): string {
   const w = poseWords(pose, ctx);
   return `The character is ${w}.`;
 }
+
+// ---------------- presets on a pose that already has one ----------------
+
+const ARM_BONES = BONE_NAMES.filter((n) => /^(shoulder|upperArm|forearm|hand)\./.test(n));
+/** The gestures pose the arms only, so a figure sitting on a car keeps sitting while it waves. */
+export const GESTURE_PRESETS: readonly PosePreset[] = ["wave", "point", "hips", "crossed"];
+/** The bones a preset sets on a pose it's applied to: the arms (and the head, for a wave) for a gesture, every bone for the body's own. */
+export function presetBones(name: PosePreset): BoneName[] | null {
+  if (!GESTURE_PRESETS.includes(name)) return null;
+  return name === "wave" ? [...ARM_BONES, "head"] : [...ARM_BONES];
+}
+/** `pose` with a preset applied: a gesture changes the arms only; a body preset changes the whole figure. */
+export function applyPreset(pose: Pose, name: PosePreset): Pose {
+  const p = presetPose(name);
+  const bones = presetBones(name);
+  if (!bones) return p;
+  const out = clonePose(pose);
+  for (const n of bones) {
+    if (p.rot[n]) out.rot[n] = [...p.rot[n]!] as Vec3;
+    else delete out.rot[n];
+  }
+  return out;
+}
+
+// ---------------- naming what the figure is on ----------------
+
+/** A colour in one plain word, from its hex ("#c0282d" → "red"). */
+export function colourWord(hex: string): string | null {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return null;
+  const c = new THREE.Color(hex);
+  const hsl = { h: 0, s: 0, l: 0 };
+  c.getHSL(hsl);
+  if (hsl.s < 0.18 || hsl.l < 0.06) return hsl.l > 0.8 ? "white" : hsl.l < 0.16 ? "black" : hsl.l > 0.5 ? "silver" : "grey";
+  const h = hsl.h * 360;
+  if (h < 15 || h >= 340) return hsl.l > 0.7 ? "pink" : "red";
+  if (h < 42) return hsl.l < 0.35 ? "brown" : "orange";
+  if (h < 70) return "yellow";
+  if (h < 165) return "green";
+  if (h < 200) return "teal";
+  if (h < 255) return "blue";
+  if (h < 290) return "purple";
+  return "pink";
+}
+const COLOUR_WORDS = /\b(red|orange|yellow|green|teal|blue|purple|pink|white|black|grey|gray|silver|brown|gold)\b/i;
+/** A thing's name as the words say it: "Red sports car" → "the red sports car", "Car 1" painted red → "the red car". */
+export function thingWords(name: string, hex?: string | null): string {
+  const base = name.replace(/\.\d{3}$/, "").replace(/\s+\d+$/, "").trim().toLowerCase() || "thing";
+  const colour = hex && !COLOUR_WORDS.test(base) ? colourWord(hex) : null;
+  return `the ${colour ? colour + " " : ""}${base}`;
+}
