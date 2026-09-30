@@ -4,98 +4,19 @@
    critiqued before he chose it: a dark moon before a warm sun with a soft golden corona; the corona flares with the voice, and a diamond of light travels round the rim while it thinks.
    Ported by scratchpad/presence/r4/port_looks.py; states are .idle,
    .listening, .talking, .thinking on the lamp, --glow (0..1) is the voice. */
-/* The dark glass the look sits in and its pool of light on the page (the
-   round-4 shared rules, scoped to this look). */
+/* Since 2026-09-30 every look sits in the same glass, with the same pool of
+   light on the page (lamp-looks.tsx, producer-lamp.module.css); only the
+   light inside is the look's own. Its box is the lamp's frame, a centring
+   grid like the lamp itself. */
 .look.look {
   background: transparent;
 }
-.look .disc {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background:
-    radial-gradient(circle at 32% 24%, rgba(255, 240, 220, 0.1), transparent 42%),
-    radial-gradient(circle at 50% 38%, rgba(36, 30, 24, 0.97), rgba(14, 12, 10, 0.99));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 240, 220, 0.1),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.6);
-  transition: box-shadow 400ms ease;
-}
-.look .pool {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 150px;
-  height: 150px;
-  margin: -75px 0 0 -75px;
-  border-radius: 9999px;
-  pointer-events: none;
-  opacity: 0.35;
-  background: radial-gradient(closest-side, rgba(224, 164, 104, 0.24), rgba(224, 164, 104, 0.08) 42%, transparent 72%);
-  transition:
-    opacity 600ms ease,
-    transform 600ms ease;
-}
-.look.listening .pool {
-  opacity: 0.7;
-}
-.look.talking .pool {
-  opacity: 1;
-  transform: scale(1.3);
-}
-.look.thinking .pool {
-  opacity: 0.45;
-}
-.look.tab .pool {
-  opacity: 0;
-}
-/* The light, drawn for one shape (lamp-looks.tsx keys the box by shape and
-   look, so a change of shape mounts a new one). It arrives from a soft blur
-   at --light-delay, which the lamp's flight sets so the light is in as the
-   shape settles (movable-lamp.tsx); the old light has dimmed out by then
-   (producer-lamp.module.css .lightOut). The round box is the lamp's frame, a
-   centring grid like the lamp itself. */
 .roundBox {
   position: absolute;
   inset: 0;
   border-radius: inherit;
   display: grid;
   place-items: center;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .roundBox,
-  .tabBox {
-    animation: shapeIn 300ms var(--light-delay, 0ms) cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
-  }
-}
-@keyframes shapeIn {
-  from {
-    opacity: 0;
-    filter: blur(3px);
-    scale: 0.82;
-  }
-}
-/* The tab's content is drawn for the right edge (rounded on the page's side);
-   on the other edges the box turns so that side still faces the page. */
-.tabBox {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 12px;
-  height: 64px;
-  margin: -32px 0 0 -6px;
-  border-radius: 12px 0 0 12px;
-  display: grid;
-  place-items: center;
-}
-.tabBox.left {
-  transform: scaleX(-1);
-}
-.tabBox.top {
-  transform: rotate(-90deg);
-}
-.tabBox.bottom {
-  transform: rotate(90deg);
 }
 
 /* The look itself. */
@@ -133,12 +54,6 @@
 .look.thinking .rays{opacity:.35}
 .look.thinking .trail{opacity:1}
 .look.thinking .orb{rotate:-20deg}
-.look.tab .tw{position:absolute;inset:0;border-radius:inherit;overflow:hidden;-webkit-mask:linear-gradient(180deg,transparent 6%,#000 30%,#000 70%,transparent 94%);mask:linear-gradient(180deg,transparent 6%,#000 30%,#000 70%,transparent 94%)}
-.look.tab .tco,.look.tab .tmoon{position:absolute;right:0;top:17px;width:6px;height:30px;border-radius:100% 0 0 100% / 50% 0 0 50%}
-.look.tab .tco{background:#ffe2b0;box-shadow:0 0 1.5px .5px #ffe2b0,0 0 3.5px 1.5px rgba(244,180,106,.95),0 0 7px 2.5px rgba(236,150,80,.5)}
-.look.tab .tmoon{background:radial-gradient(circle at 100% 45%,#3a2414,#140c07 80%);box-shadow:inset .5px 0 0 rgba(255,230,191,.8)}
-.look.tab .tbead{position:absolute;left:6.7px;top:25px;width:9px;height:9px;margin:-4.5px 0 0 -4.5px;border-radius:9999px;background:radial-gradient(closest-side,rgba(255,236,200,.95),rgba(255,196,120,.6) 35%,rgba(244,160,80,.2) 65%,transparent);mix-blend-mode:screen}
-.look.tab .tcore{position:absolute;left:50%;top:50%;width:2px;height:2px;margin:-1px 0 0 -1px;border-radius:9999px;background:#fff;box-shadow:0 0 1.5px .5px #fff}
 @media (prefers-reduced-motion: no-preference){
 .look .halo,.look .rays,.look .co,.look .bead,.look .core,.look .trail,.look .ring,.look .ring2{transition:opacity 450ms ease,transform 350ms ease,box-shadow 300ms ease}
 .look.idle .co{animation:breathe 4.2s ease-in-out infinite}
@@ -151,8 +66,6 @@
 .look.listening .ring2{animation:ripple 1.8s ease-out -.9s infinite}
 .look.talking .co{animation:voice .46s ease-in-out infinite alternate}
 .look.thinking .orb{animation:orbit 5s linear infinite}
-.look.tab .tco{animation:tab 4.2s ease-in-out infinite}
-.look.tab.thinking .tbead{animation:tabo 2.4s ease-in-out infinite alternate}
 }
 @keyframes breathe{0%,100%{opacity:.82;scale:.99}
 50%{opacity:1;scale:1.03}
@@ -173,14 +86,5 @@ to{scale:1.03}
 }
 @keyframes orbit{from{rotate:-20deg}
 to{rotate:340deg}
-}
-@keyframes tab{0%,100%{opacity:.75}
-50%{opacity:1}
-}
-@keyframes tabo{0%{transform:translate(2.3px,-6px)}
-25%{transform:translate(0,0)}
-50%{transform:translate(-.7px,7px)}
-75%{transform:translate(0,14px)}
-100%{transform:translate(2.3px,20px)}
 }
 

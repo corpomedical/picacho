@@ -1337,9 +1337,10 @@ export function ProducerLamp({
     // data-aly-ui: her own interface is never part of the screen she reads
     // (screen.ts). display: contents, so the lamp's layout is unchanged.
     <div data-aly-ui="" style={{ display: "contents" }}>
-      {/* The lamp: movable, tucks into any edge as a tab, can be hidden
-          (movable-lamp.tsx). Voice live with the sheet closed: it glows with
-          the sound, and End beside it turns voice off in one tap. */}
+      {/* The lamp: a glass bead you can throw into a corner or tuck half
+          behind an edge, or hide (movable-lamp.tsx). Voice live with the sheet
+          closed: it glows with the sound, and End beside it turns voice off in
+          one tap. */}
       <MovableLamp
         name={name}
         open={open}

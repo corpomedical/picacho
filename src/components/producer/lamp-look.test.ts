@@ -38,23 +38,29 @@ describe("the lamp's look", () => {
     expect(lampMood("speaking", false)).toBe("talking");
   });
 
-  // Each look's stylesheet must answer every class the lamp hands it, or a
+  // Each look drawn in CSS must answer every class the lamp hands it, or a
   // mood silently shows nothing (CSS Modules gives undefined for a missing
-  // class, and the lamp would sit in its idle look while it talks).
-  it("every look styles every mood, the tab, and the turned tab edges", () => {
-    for (const look of LAMP_LOOKS) {
+  // class, and the lamp would sit in its idle look while it talks). Two
+  // fireflies is drawn on a canvas instead (fireflies-light.tsx).
+  const CSS_LOOKS = LAMP_LOOKS.filter((l) => l !== "fireflies");
+
+  it("every CSS look styles every mood and its light's box", () => {
+    expect(CSS_LOOKS).toEqual(["eclipse", "perfected"]);
+    for (const look of CSS_LOOKS) {
       const css = readFileSync(join(__dirname, "looks", `${look}.module.css`), "utf8");
-      for (const cls of ["look", "idle", "listening", "talking", "thinking", "tab", "tabBox", "roundBox", "left", "top", "bottom", "disc", "pool"]) {
+      for (const cls of ["look", "idle", "listening", "talking", "thinking", "roundBox"]) {
         expect(css, `${look} .${cls}`).toMatch(new RegExp(`\\.${cls}(?![\\w-])`));
       }
+      // The old edge tab is gone with the glass lamp (2026-09-30).
+      expect(css, look).not.toMatch(/\.tab(Box)?(?![\w-])/);
     }
   });
 
   // The same for the pieces inside: every class a look's markup names in
   // lamp-looks.tsx is styled by that look's stylesheet.
-  it("every piece a look's markup draws is styled", () => {
+  it("every piece a CSS look's markup draws is styled", () => {
     const tsx = readFileSync(join(__dirname, "lamp-looks.tsx"), "utf8");
-    const bodies = tsx.split(/\nfunction (Fireflies|Eclipse|Perfected)\(/).slice(1);
+    const bodies = tsx.split(/\nfunction (Eclipse|Perfected)\(/).slice(1);
     const seen: string[] = [];
     for (let i = 0; i < bodies.length; i += 2) {
       const look = bodies[i].toLowerCase();
@@ -64,6 +70,7 @@ describe("the lamp's look", () => {
       expect(tokens.size, look).toBeGreaterThan(0);
       for (const t of tokens) expect(css, `${look} .${t}`).toMatch(new RegExp(`\\.${t}(?![\\w-])`));
     }
-    expect(seen.sort()).toEqual([...LAMP_LOOKS].sort());
+    expect(seen.sort()).toEqual([...CSS_LOOKS].sort());
+    expect(tsx).toMatch(/look === "fireflies"\) return <FirefliesLight/);
   });
 });

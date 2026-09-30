@@ -72,7 +72,7 @@ export function ProducerLookForm({ current }: { current: LampLook }) {
                   className={`${styles.previewLamp} ${lookClasses(look, mood)} grid place-items-center`}
                   style={{ "--glow": 0.7 } as React.CSSProperties}
                 >
-                  <LookInner look={look} />
+                  <LookInner look={look} mood={mood} glow={0.7} />
                 </span>
               </span>
               <span className="min-w-0">

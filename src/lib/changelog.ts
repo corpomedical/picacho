@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.172.0",
+    build: 211,
+    date: "2026-09-30",
+    title: "Aly's lamp: a glass lamp that tucks into the edge",
+    items: [
+      "Aly's lamp is a small glass bead with her light inside: a thin reflection along the top, the light glowing through its lower rim, a soft shadow on the page. Two fireflies, Eclipse and The original perfected all sit in the same glass.",
+      "Throw it at a corner and it settles there. Throw it at a side of the screen and it slides half behind the edge with its light still on, and a thin warm line lights where it went in (before, its light went out and it sat as an empty pill).",
+      "It moves with your hand: it keeps the speed of your throw, lands softly without running past its place, and stays smooth on busy pages. Picked up, it lifts; on a fast move it stretches a little and the light inside lags and swings back.",
+      "With a mouse over a tucked lamp it peeks out; pull it and it comes out under your finger. On a phone it tucks into the left and right sides only, never under the top bar or the dock.",
+      "Two fireflies drift freely instead of running round a fixed path, and change mood without a jump.",
+    ],
+  },
+  {
     version: "1.171.0",
     build: 210,
     date: "2026-09-30",

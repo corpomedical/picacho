@@ -1,77 +1,98 @@
-import fireflies from "./looks/fireflies.module.css";
 import eclipse from "./looks/eclipse.module.css";
 import perfected from "./looks/perfected.module.css";
-import type { Edge } from "./lamp-place";
+import styles from "./producer-lamp.module.css";
+import { FirefliesLight } from "./fireflies-light";
 import type { LampLook, LampMood } from "./lamp-look";
 
-// The Producer's lamp in each of its looks (lamp-look.ts says which and why).
-// Each look is a CSS module holding the round-4 concept it came from, ported
-// as it was rendered and critiqued (scratchpad/presence/r4/port_looks.py):
-// its scope class is .look, its moods are .idle/.listening/.talking/.thinking,
-// its tab is .tab, and --glow (0..1) on the lamp is the voice.
+// The Producer's lamp in each of its looks (lamp-look.ts says which and why),
+// all in the same glass since 2026-09-30 (operator: "The light bulb and how
+// it sticks in the corner, the animation feels cheap"; he picked "A · Tuck"
+// from the draft): a dark glass bead lit along its lower rim by the light
+// inside, a thin reflection on its top rim and a catchlight, a shadow on the
+// page and the light's warm pool around it. Only the light inside differs:
+// Two fireflies is drawn on a canvas (fireflies-light.tsx); Eclipse and The
+// original perfected are their round-4 CSS (looks/), scoped by .look, their
+// moods .idle/.listening/.talking/.thinking, --glow (0..1) the voice.
+//
+// The light sits in a round frame the size of the glass (it never shows
+// outside it), inside a layer the lamp moves on its own: when the lamp is
+// tucked half behind an edge, that layer slides the light into the part still
+// on the screen and shrinks it to fit (movable-lamp.tsx, lamp-motion.ts). The
+// parts the lamp moves carry data-part.
 
 type Classes = Readonly<Record<string, string>>;
-const MODULES: Record<LampLook, Classes> = { fireflies, eclipse, perfected };
+const CSS_LOOKS: Partial<Record<LampLook, Classes>> = { eclipse, perfected };
+const MOOD_CLASS: Record<LampMood, string> = {
+  idle: styles.moodIdle,
+  listening: styles.moodListening,
+  talking: styles.moodTalking,
+  thinking: styles.moodThinking,
+};
 
-/** The classes the lamp itself carries for a look in a mood (and as a tab). */
-export function lookClasses(look: LampLook, mood: LampMood, tab = false): string {
-  const m = MODULES[look];
-  return [m.look, m[mood], tab ? m.tab : ""].filter(Boolean).join(" ");
+/** The classes the lamp itself carries for a look in a mood. */
+export function lookClasses(look: LampLook, mood: LampMood): string {
+  const m = CSS_LOOKS[look];
+  return [MOOD_CLASS[mood], m?.look, m?.[mood]].filter(Boolean).join(" ");
 }
 
-type InnerProps = { c: (names: string) => string; tab: boolean };
-
 /**
- * What goes inside the lamp for a look, in three layers:
- * - the pool of light it throws on the page (it fades out on a tab; none on a mark);
- * - the dark glass (.disc), which fills the lamp and so changes shape with it
- *   when it docks to an edge or leaves one;
- * - the light itself, drawn for one shape: round, or a tab drawn for the right
- *   edge whose box is mirrored or turned so its rounded, lit side still faces
- *   the page. The box is keyed by shape and look, so a change mounts a new one
- *   and it fades in once the lamp has taken its new shape (.roundBox/.tabBox
- *   in the look's stylesheet) instead of sticking out of the old one.
+ * What goes inside the lamp for a look: its shadow and its pool of light on
+ * the page (not on a mark), the glass, the light, the reflection, and the
+ * ring that shows it listening. `glow` is the voice (0..1).
  */
 export function LookInner({
   look,
-  tab = false,
-  edge = null,
+  mood = "idle",
+  glow = 0,
   bare = false,
 }: {
   look: LampLook;
-  tab?: boolean;
-  edge?: Edge | null;
-  /** Without the pool of light it throws on the page (a mark inside the sheet). */
+  mood?: LampMood;
+  glow?: number;
+  /** Without what it throws on the page (a mark inside the sheet). */
   bare?: boolean;
 }) {
-  const m = MODULES[look];
+  return (
+    <>
+      {!bare && (
+        <>
+          <span data-part="shadowRest" className={styles.shadowRest} />
+          <span data-part="shadowLifted" className={styles.shadowLifted} />
+          <span data-part="pool" className={styles.pool} />
+          <span data-part="flash" className={styles.flash} />
+        </>
+      )}
+      <span className={styles.glass} />
+      <span className={styles.lightFrame}>
+        <span data-part="light" className={styles.light}>
+          <Light look={look} mood={mood} glow={glow} />
+        </span>
+      </span>
+      <span data-part="gloss" className={styles.gloss} />
+      {!bare && <span className={styles.ring} />}
+    </>
+  );
+}
+
+function Light({ look, mood, glow }: { look: LampLook; mood: LampMood; glow: number }) {
+  if (look === "fireflies") return <FirefliesLight mood={mood} glow={glow} />;
+  const m = CSS_LOOKS[look] as Classes;
   const c = (names: string) =>
     names
       .split(" ")
       .map((n) => m[n])
       .filter(Boolean)
       .join(" ");
-  const Inner = INNERS[look];
-  const box = tab
-    ? [m.tabBox, edge && edge !== "right" ? m[edge] : ""].filter(Boolean).join(" ")
-    : m.roundBox;
-  return (
-    <>
-      {!bare && <span className={m.pool} />}
-      <span className={m.disc} />
-      <span key={`${look}:${tab ? (edge ?? "right") : "round"}`} data-light className={box}>
-        <Inner c={c} tab={tab} />
-      </span>
-    </>
-  );
+  return <span className={m.roundBox}>{look === "eclipse" ? <Eclipse c={c} /> : <Perfected c={c} />}</span>;
 }
 
 /**
  * The look as a small mark (the sheet's header, the voice line): the 44 px
- * lamp scaled down, without its pool of light, so the one chosen lamp is what
- * shows wherever the Producer does.
+ * lamp scaled down, without what it throws on the page, so the one chosen
+ * lamp is what shows wherever the Producer does.
  */
 export function LookMark({ look, mood, size, glow }: { look: LampLook; mood: LampMood; size: number; glow?: number }) {
+  const level = glow ?? (mood === "talking" ? 0.7 : 0);
   return (
     <span aria-hidden="true" className="relative block flex-none" style={{ width: size, height: size }}>
       <span
@@ -86,60 +107,20 @@ export function LookMark({ look, mood, size, glow }: { look: LampLook; mood: Lam
             margin: -22,
             borderRadius: 9999,
             transform: `scale(${size / 44})`,
-            "--glow": glow ?? (mood === "talking" ? 0.7 : 0),
+            "--glow": level,
           } as React.CSSProperties
         }
       >
-        <LookInner look={look} bare />
+        <LookInner look={look} mood={mood} glow={level} bare />
       </span>
     </span>
   );
 }
 
-function Fireflies({ c, tab }: InnerProps) {
-  return tab ? (
-    <>
-      <span className={c("field")}>
-        <span className={c("haze")} />
-        <span className={c("ff fb hd")} />
-        <span className={c("ff fa hd")} />
-      </span>
-    </>
-  ) : (
-    <>
-      <span className={c("field")}>
-        <span className={c("haze")} />
-        <span className={c("ff fb t t6")} />
-        <span className={c("ff fb t t5")} />
-        <span className={c("ff fb t t4")} />
-        <span className={c("ff fb t t3")} />
-        <span className={c("ff fb t t2")} />
-        <span className={c("ff fb t t1")} />
-        <span className={c("ff fa t t6")} />
-        <span className={c("ff fa t t5")} />
-        <span className={c("ff fa t t4")} />
-        <span className={c("ff fa t t3")} />
-        <span className={c("ff fa t t2")} />
-        <span className={c("ff fa t t1")} />
-        <span className={c("ff fb hd")} />
-        <span className={c("ff fa hd")} />
-      </span>
-    </>
-  );
-}
+type InnerProps = { c: (names: string) => string };
 
-function Eclipse({ c, tab }: InnerProps) {
-  return tab ? (
-    <>
-      <span className={c("tw")}>
-        <span className={c("tco")} />
-        <span className={c("tmoon")} />
-      </span>
-      <span className={c("tbead")}>
-        <span className={c("tcore")} />
-      </span>
-    </>
-  ) : (
+function Eclipse({ c }: InnerProps) {
+  return (
     <>
       <span className={c("halo")} />
       <span className={c("rays")}>
@@ -162,29 +143,15 @@ function Eclipse({ c, tab }: InnerProps) {
   );
 }
 
-function Perfected({ c, tab }: InnerProps) {
-  return tab ? (
-    <>
-      <span className={c("core")}>
-        <span className={c("halo")} />
-        <span className={c("orb")}>
-          <span className={c("sss")} />
-          <span className={c("warm")} />
-        </span>
+function Perfected({ c }: InnerProps) {
+  return (
+    <span className={c("core")}>
+      <span className={c("halo")} />
+      <span className={c("orb")}>
+        <span className={c("sss")} />
+        <span className={c("warm")} />
+        <span className={c("kiss")} />
       </span>
-    </>
-  ) : (
-    <>
-      <span className={c("core")}>
-        <span className={c("halo")} />
-        <span className={c("orb")}>
-          <span className={c("sss")} />
-          <span className={c("warm")} />
-          <span className={c("kiss")} />
-        </span>
-      </span>
-    </>
+    </span>
   );
 }
-
-const INNERS: Record<LampLook, (p: InnerProps) => React.JSX.Element> = { fireflies: Fireflies, eclipse: Eclipse, perfected: Perfected };

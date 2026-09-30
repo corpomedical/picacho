@@ -1,100 +1,141 @@
 // How the lamp moves (2026-09-25, operator: "the animation when sticking to
-// the sides looks cheap. Try to make it look premium"). Pure, no DOM.
+// the sides looks cheap. Try to make it look premium"; redrawn 2026-09-30,
+// operator: "The light bulb and how it sticks in the corner, the animation
+// feels cheap", and he picked "A · Tuck" from the draft). Pure, no DOM.
 //
-// What was cheap, measured (see the commit): about seven easings on eleven
-// timers; a fixed cubic-bezier "spring" that overshot 6.6% of any trip (90 px
-// off-screen on a long one) and ignored the finger's speed; the size a beat
-// behind the position, so the round lamp ran 13-17 px into the wall before it
-// thinned; corners that stayed round until the last 40 ms (9999px → 14px);
-// the light blacked out for 320 ms and popped back from 55%; and a flash that
-// lit before the lamp arrived.
+// What was still cheap, measured frame by frame in slow motion: landing on an
+// edge, the light went out at contact, the round lamp squashed into a capsule,
+// and an empty outlined pill sat on the edge for most of the landing before a
+// faint tube lit. The flights animated left/top/width/height/border-radius,
+// which the browser redraws on the main thread, so a busy page stuttered them.
 //
-// Now there is ONE clock, sampled into keyframes. Real springs (Apple's
-// response/damping pair; the stiffnesses are Material 3's Standard tokens,
-// damped 100% as Apple's fluid-interface talk says to start): GLIDE carries
-// the lamp with the finger's own speed, never past its target; MORPH changes
-// its shape. A landing glides round toward the wall, and only when its rim
-// is close does it flatten into the tab, its wall side pinned to the wall —
-// the flattening is the "squash", there is no bounce. The corners are
-// interpolated so the short side's two radii always add up to its width,
-// so the browser never rescales them (that rescaling was the 40 ms snap).
-// The landing's moments (contact, when the old light should be out and the
-// new one in) come from the same samples, so every effect keeps that clock.
+// Now the lamp never changes shape. It only moves (the translate property, so
+// the compositor plays a flight even while the page is busy), and at an edge
+// it slides half behind it with its light still on. Every move is springs
+// sampled at 60 Hz into keyframes, all on one clock: the position, started
+// with the finger's own speed but capped by the distance left, so it sinks a
+// few px past its place at most; the lift settling; the light inside lagging
+// the glass a little and swinging back; the light keeping to the part of the
+// lamp still on the screen. Apple's response/damping pair names each spring.
 
-export type Box = { left: number; top: number; width: number; height: number };
-export type Edge = "left" | "right" | "top" | "bottom";
-/** Corner radii, top-left, top-right, bottom-right, bottom-left (px). */
-export type Corners = [number, number, number, number];
+import { RADIUS, lensFor, overEdge, type Point, type Stage } from "./lamp-place";
 
-/** A frame of the flight: where the lamp is and how round its corners are. */
-export type Frame = Box & { corners: Corners; offset: number };
+export const FRAME_MS = 1000 / 60;
 
 export type Spring = {
   /** Seconds for one undamped swing: how quick it feels. */
   response: number;
-  /** 1 = no overshoot; lower bounces. */
+  /** 1 = no overshoot; lower settles with a small give. */
   damping: number;
 };
 
-const responseOf = (stiffness: number) => (2 * Math.PI) / Math.sqrt(stiffness);
-/** Position: toward the wall, home, or a free landing (k 300, no overshoot). */
-export const GLIDE: Spring = { response: responseOf(300), damping: 1 };
-/** Shape and size: round ⇄ tab (k 700, no overshoot). */
-export const MORPH: Spring = { response: responseOf(700), damping: 1 };
-/** A calm move with nothing thrown at it (a flight home, a drop in open space). */
-export const SETTLE: Spring = GLIDE;
-/** Swelling from a tab into the round lamp under the finger. */
-export const SWELL: Spring = MORPH;
-/** The round lamp starts to flatten when its rim is this close to the wall (px). */
-export const CONTACT_GAP = 16;
+/** To a corner, home, or a spot in open space. */
+export const FLY: Spring = { response: 0.44, damping: 0.78 };
+/** Into an edge: a touch slower, sinking a few px past its place before it rests. */
+export const TUCK: Spring = { response: 0.5, damping: 0.88 };
+/** Home, when the sheet opens. */
+export const HOME: Spring = { response: 0.42, damping: 0.84 };
+/** A tucked lamp coming out a little under a mouse, and going back. */
+export const PEEK_SPRING: Spring = { response: 0.3, damping: 0.78 };
+/** Lifted in the hand (1), pressed (below 0), set down (0). */
+export const LIFT: Spring = { response: 0.26, damping: 0.72 };
+/** The light inside lagging the glass, and swinging back. */
+export const SLOSH: Spring = { response: 0.34, damping: 0.42 };
 
-/**
- * The fastest a spring may start (in trips per second) and still not pass
- * its target: a critically damped spring started faster than its own
- * frequency crosses the target — here, the wall.
- */
-export function maxStartVelocity(spring: Spring): number {
-  return ((2 * Math.PI) / spring.response) * 0.95;
+/** One step of a spring (semi-implicit Euler, 4 ms substeps). */
+export function stepSpring(p: number, v: number, target: number, dt: number, spring: Spring): [number, number] {
+  const k = ((2 * Math.PI) / spring.response) ** 2;
+  const c = (4 * Math.PI * spring.damping) / spring.response;
+  const n = Math.max(1, Math.ceil(dt / 0.004));
+  const h = dt / n;
+  for (let i = 0; i < n; i++) {
+    v += (-k * (p - target) - c * v) * h;
+    p += v * h;
+  }
+  return [p, v];
 }
 
 /**
- * Samples a spring from 0 to 1, starting at `velocity` (in distances per
- * second: 2 means it starts moving twice the trip each second), every `step`
- * seconds, until it is at rest. Semi-implicit Euler at 1 ms is exact enough
- * for a few hundred milliseconds of motion.
+ * The speed a flight may start with toward a target `d` px away: the throw's
+ * own, but never more than the spring can take without running far past it.
  */
-export function sampleSpring(spring: Spring, velocity = 0, step = 1 / 60, maxSeconds = 1.2): number[] {
-  const stiffness = (2 * Math.PI / spring.response) ** 2;
-  const friction = (4 * Math.PI * spring.damping) / spring.response;
-  const out = [0];
-  let x = 0;
-  let v = velocity;
-  const dt = 0.001;
-  const perStep = Math.max(1, Math.round(step / dt));
-  for (let i = 1; i * step <= maxSeconds; i++) {
-    for (let j = 0; j < perStep; j++) {
-      const a = -stiffness * (x - 1) - friction * v;
-      v += a * dt;
-      x += v * dt;
-    }
-    out.push(x);
-    if (Math.abs(1 - x) < 0.0015 && Math.abs(v) < 0.02) break;
+export function capToward(v: number, d: number, spring: Spring): number {
+  if (d === 0 || Math.sign(v) !== Math.sign(d)) return v;
+  const w = (2 * Math.PI) / spring.response;
+  return Math.sign(v) * Math.min(Math.abs(v), 0.9 * w * Math.abs(d), 2000);
+}
+
+/** Everything that moves: the centre and its speed, the lift, the light's lag. */
+export type Motion = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  lift: number;
+  liftV: number;
+  slx: number;
+  sly: number;
+  slvx: number;
+  slvy: number;
+};
+
+export function still(p: Point, lift = 0): Motion {
+  return { x: p.x, y: p.y, vx: 0, vy: 0, lift, liftV: 0, slx: 0, sly: 0, slvx: 0, slvy: 0 };
+}
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/** Where the light lags to at this speed: a little behind the move. */
+export function sloshTarget(vx: number, vy: number): Point {
+  return { x: clamp(-vx * 0.0026, -4.5, 4.5), y: clamp(-vy * 0.0026, -4.5, 4.5) };
+}
+
+/** Moves the lift toward `lift` and the light toward its lag for the current speed. */
+export function settleParts(m: Motion, dt: number, lift: number): void {
+  [m.lift, m.liftV] = stepSpring(m.lift, m.liftV, lift, dt, LIFT);
+  const s = sloshTarget(m.vx, m.vy);
+  [m.slx, m.slvx] = stepSpring(m.slx, m.slvx, s.x, dt, SLOSH);
+  [m.sly, m.slvy] = stepSpring(m.sly, m.slvy, s.y, dt, SLOSH);
+}
+
+function atRest(m: Motion, to: Point, lift: number): boolean {
+  return (
+    Math.abs(m.x - to.x) < 0.15 &&
+    Math.abs(m.y - to.y) < 0.15 &&
+    Math.abs(m.vx) < 4 &&
+    Math.abs(m.vy) < 4 &&
+    Math.abs(m.lift - lift) < 0.003 &&
+    Math.abs(m.liftV) < 0.05 &&
+    Math.abs(m.slx) < 0.05 &&
+    Math.abs(m.sly) < 0.05 &&
+    Math.abs(m.slvx) < 0.5 &&
+    Math.abs(m.slvy) < 0.5
+  );
+}
+
+/**
+ * A flight from `from` to `to`, one sample per frame at 60 Hz, ending at rest
+ * exactly there. The throw's speed carries over, capped by the distance left.
+ */
+export function flight(from: Motion, to: Point, spring: Spring, lift = 0, maxSeconds = 1.4): Motion[] {
+  const m: Motion = { ...from };
+  m.vx = capToward(m.vx, to.x - m.x, spring);
+  m.vy = capToward(m.vy, to.y - m.y, spring);
+  const out: Motion[] = [{ ...m }];
+  const dt = FRAME_MS / 1000;
+  for (let i = 1; i * dt <= maxSeconds; i++) {
+    [m.x, m.vx] = stepSpring(m.x, m.vx, to.x, dt, spring);
+    [m.y, m.vy] = stepSpring(m.y, m.vy, to.y, dt, spring);
+    settleParts(m, dt, lift);
+    out.push({ ...m });
+    if (atRest(m, to, lift)) break;
   }
-  out[out.length - 1] = 1;
+  out[out.length - 1] = { ...still(to, lift) };
   return out;
 }
 
 /**
- * Where a throw would come to rest (Apple, "Designing Fluid Interfaces",
- * WWDC 2018: project the momentum with the scroll view's normal
- * deceleration). Velocity in px/s.
- */
-export function project(position: number, velocity: number, deceleration = 0.998): number {
-  return position + ((velocity / 1000) * deceleration) / (1 - deceleration);
-}
-
-/**
- * Pointer samples → velocity (px/s) over the last `window` ms before the
+ * Pointer samples → speed (px/s) over the last `window` ms before the
  * release; 0 when the finger had stopped before letting go (it threw nothing).
  */
 export function velocityOf(
@@ -113,128 +154,113 @@ export function velocityOf(
   const dt = (last.t - first.t) / 1000;
   if (dt <= 0.008) return { vx: 0, vy: 0 };
   // Capped: a stray sample must not fling the lamp across a screen.
-  const cap = (v: number) => Math.max(-4000, Math.min(4000, v));
+  const cap = (v: number) => clamp(v, -4200, 4200);
   return { vx: cap((last.x - first.x) / dt), vy: cap((last.y - first.y) / dt) };
 }
 
-/** The round lamp's corners, and a tab's (rounded on the page's side only). */
-export function cornersFor(box: Box, edge: Edge | null): Corners {
-  if (!edge) {
-    const r = Math.min(box.width, box.height) / 2;
-    return [r, r, r, r];
-  }
-  const r = edge === "left" || edge === "right" ? box.width : box.height;
-  if (edge === "right") return [r, 0, 0, r];
-  if (edge === "left") return [0, r, r, 0];
-  if (edge === "top") return [0, 0, r, r];
-  return [r, r, 0, 0];
-}
-
-const mix = (a: number, b: number, p: number) => a + (b - a) * p;
-const at = (a: number[], i: number) => (i < a.length ? a[i] : 1);
-
-function pin(b: Box, wall: { edge: Edge; at: number } | null): Box {
-  if (!wall) return b;
-  const r = { ...b };
-  if (wall.edge === "right" && r.left + r.width > wall.at) r.left = wall.at - r.width;
-  if (wall.edge === "left" && r.left < wall.at) r.left = wall.at;
-  if (wall.edge === "bottom" && r.top + r.height > wall.at) r.top = wall.at - r.height;
-  if (wall.edge === "top" && r.top < wall.at) r.top = wall.at;
-  return r;
-}
-
 /**
- * The flight from one shape and place to another, one frame per sample.
- * `move` drives the centre, `shape` the size and corners (they may be the
- * same progress, or the shape may start later: see landing). When `wall` is
- * set, the lamp never passes it — its wall side stays pinned there.
+ * How the lamp is drawn in a moment of motion, as CSS values: where it is
+ * (translate), its lift and its stretch along a fast move (the inner part's
+ * transform), where its light sits (in the part still on the screen, lagging
+ * a little), and how much of its glass, shadow and reflection shows.
+ * `angle` is the stretch's direction (radians); pass the previous one to keep
+ * a run of frames from spinning when the direction wraps round.
  */
-export function flight(
-  from: Box,
-  fromCorners: Corners,
-  to: Box,
-  toCorners: Corners,
-  move: number[],
-  shape: number[] = move,
-  wall: { edge: Edge; at: number } | null = null,
-): Frame[] {
-  const fcx = from.left + from.width / 2;
-  const fcy = from.top + from.height / 2;
-  const tcx = to.left + to.width / 2;
-  const tcy = to.top + to.height / 2;
-  const n = Math.max(move.length, shape.length);
-  const frames: Frame[] = [];
-  for (let i = 0; i < n; i++) {
-    const p = at(move, i);
-    const m = Math.min(1, Math.max(0, at(shape, i)));
-    const width = mix(from.width, to.width, m);
-    const height = mix(from.height, to.height, m);
-    const cx = mix(fcx, tcx, p);
-    const cy = mix(fcy, tcy, p);
-    const b = pin({ left: cx - width / 2, top: cy - height / 2, width, height }, wall);
-    frames.push({ ...b, corners: fromCorners.map((c, k) => mix(c, toCorners[k], m)) as Corners, offset: 0 });
-  }
-  return frames;
-}
+export type Pose = {
+  translate: string;
+  inner: string;
+  angle: number;
+  lightTranslate: string;
+  lightScale: string;
+  gloss: number;
+  shadowRest: number;
+  shadowLifted: number;
+  poolTranslate: string;
+};
 
-/**
- * A landing on an edge: it glides with the throw (never faster than lands
- * without crossing the wall), stays round until its rim is CONTACT_GAP from
- * the wall, then flattens into the tab with its wall side pinned. Returns
- * the frames and the moments the light and glow are timed by (ms).
- */
-export function landing(
-  from: Box,
-  to: Box,
-  edge: Edge,
-  wallAt: number,
-  velocity: number,
-): { frames: Frame[]; contactMs: number; shapedMs: number } {
-  const move = sampleSpring(GLIDE, Math.min(velocity, maxStartVelocity(GLIDE)));
-  const fcx = from.left + from.width / 2;
-  const fcy = from.top + from.height / 2;
-  const tcx = to.left + to.width / 2;
-  const tcy = to.top + to.height / 2;
-  const rimGap = (p: number) => {
-    const cx = mix(fcx, tcx, p);
-    const cy = mix(fcy, tcy, p);
-    if (edge === "right") return wallAt - (cx + from.width / 2);
-    if (edge === "left") return cx - from.width / 2 - wallAt;
-    if (edge === "bottom") return wallAt - (cy + from.height / 2);
-    return cy - from.height / 2 - wallAt;
+export function poseOf(m: Motion, s: Stage, prevAngle?: number): Pose {
+  const { edge, over } = overEdge(m.x, m.y, s);
+  const lens = lensFor(edge, over);
+  const speed = Math.hypot(m.vx, m.vy);
+  const q = Math.min(0.065, speed / 16000);
+  // A stretch along a direction is the same as along its opposite, so the
+  // angle lives in a half turn, kept next to the previous frame's.
+  let angle = speed > 1 ? Math.atan2(m.vy, m.vx) : (prevAngle ?? 0);
+  if (prevAngle !== undefined) {
+    while (angle - prevAngle > Math.PI / 2) angle -= Math.PI;
+    while (angle - prevAngle < -Math.PI / 2) angle += Math.PI;
+  }
+  const k = 1 + 0.07 * m.lift;
+  const lifted = clamp(m.lift, 0, 1);
+  const f = (n: number) => n.toFixed(2);
+  return {
+    // The lamp is fixed at the screen's top-left corner and moved from there.
+    translate: `${f(m.x - RADIUS)}px ${f(m.y - RADIUS)}px`,
+    inner: `rotate(${angle.toFixed(4)}rad) scale(${(k * (1 + q)).toFixed(4)}, ${(k * (1 - q)).toFixed(4)}) rotate(${(-angle).toFixed(4)}rad)`,
+    angle,
+    lightTranslate: `${f(lens.x + m.slx)}px ${f(lens.y + m.sly)}px`,
+    lightScale: lens.scale.toFixed(4),
+    gloss: Number(smoothstep(lens.vis * 1.6 - 0.5).toFixed(3)),
+    shadowRest: Number(((1 - lifted) * lens.vis).toFixed(3)),
+    shadowLifted: Number((lifted * lens.vis).toFixed(3)),
+    poolTranslate: `${f(lens.x * 1.4)}px ${f(lens.y * 1.4)}px`,
   };
-  let ic = move.findIndex((p) => rimGap(p) <= CONTACT_GAP);
-  if (ic < 0) ic = move.length - 1;
-  const morph = sampleSpring(MORPH);
-  const shape = [...new Array(ic).fill(0), ...morph];
-  const frames = flight(from, cornersFor(from, null), to, cornersFor(to, edge), move, shape, { edge, at: wallAt });
-  const shapedIdx = ic + Math.max(0, morph.findIndex((m) => m >= 0.6));
-  return { frames, contactMs: ic * (1000 / 60), shapedMs: shapedIdx * (1000 / 60) };
 }
 
-/** The first sample at or after progress `p` (for timing the light and the glow). */
-export function timeAt(progress: number[], p: number, step = 1 / 60): number {
-  const i = progress.findIndex((x) => x >= p);
-  return (i < 0 ? progress.length - 1 : i) * step * 1000;
+function smoothstep(t: number): number {
+  const c = clamp(t, 0, 1);
+  return c * c * (3 - 2 * c);
 }
 
-/** Keyframes the Web Animations API takes, from frames. */
-export function keyframes(frames: Frame[]): Keyframe[] {
-  return frames.map((f) => ({
-    left: `${f.left.toFixed(2)}px`,
-    top: `${f.top.toFixed(2)}px`,
-    width: `${f.width.toFixed(2)}px`,
-    height: `${f.height.toFixed(2)}px`,
-    borderRadius: f.corners.map((c) => `${c.toFixed(2)}px`).join(" "),
-  }));
+/** A flight's frames as keyframes for each part, and the frame its rim first crosses a side. */
+export type FlightFrames = {
+  lamp: Keyframe[];
+  inner: Keyframe[];
+  light: Keyframe[];
+  gloss: Keyframe[];
+  shadowRest: Keyframe[];
+  shadowLifted: Keyframe[];
+  pool: Keyframe[];
+  /** When its rim first crosses a side of the stage (ms), or -1. */
+  contactMs: number;
+  durationMs: number;
+};
+
+export function flightFrames(samples: Motion[], s: Stage): FlightFrames {
+  const out: FlightFrames = {
+    lamp: [],
+    inner: [],
+    light: [],
+    gloss: [],
+    shadowRest: [],
+    shadowLifted: [],
+    pool: [],
+    contactMs: -1,
+    durationMs: Math.max(FRAME_MS, (samples.length - 1) * FRAME_MS),
+  };
+  let angle: number | undefined;
+  samples.forEach((m, i) => {
+    const p = poseOf(m, s, angle);
+    angle = p.angle;
+    out.lamp.push({ translate: p.translate });
+    out.inner.push({ transform: p.inner });
+    out.light.push({ translate: p.lightTranslate, scale: p.lightScale });
+    out.gloss.push({ opacity: p.gloss });
+    out.shadowRest.push({ opacity: p.shadowRest });
+    out.shadowLifted.push({ opacity: p.shadowLifted });
+    out.pool.push({ translate: p.poolTranslate });
+    if (out.contactMs < 0 && i > 0 && overEdge(m.x, m.y, s).over > 0.5 && overEdge(samples[0].x, samples[0].y, s).over <= 0.5) {
+      out.contactMs = i * FRAME_MS;
+    }
+  });
+  if (samples.length === 1) {
+    for (const k of [out.lamp, out.inner, out.light, out.gloss, out.shadowRest, out.shadowLifted, out.pool]) k.push({ ...k[0] });
+  }
+  return out;
 }
 
-/**
- * The pull of a nearby edge while dragging, continuous with distance (it was
- * a switch): 0 far away, 1 touching. Squared, so it is felt only close in.
- */
-export function pullOf(gap: number, zone: number): number {
-  if (gap >= zone) return 0;
-  const k = 1 - Math.max(0, gap) / zone;
-  return k * k;
+/** The motion a flight has reached `ms` into it (for picking a lamp up mid-flight). */
+export function sampleAt(samples: Motion[], ms: number): Motion {
+  const i = clamp(Math.round(ms / FRAME_MS), 0, samples.length - 1);
+  return { ...samples[i] };
 }

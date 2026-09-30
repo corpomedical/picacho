@@ -4,98 +4,19 @@
    critiqued before he chose it: the original warm bulb lit from inside, with a breathing glow and a warm swirl while it thinks.
    Ported by scratchpad/presence/r4/port_looks.py; states are .idle,
    .listening, .talking, .thinking on the lamp, --glow (0..1) is the voice. */
-/* The dark glass the look sits in and its pool of light on the page (the
-   round-4 shared rules, scoped to this look). */
+/* Since 2026-09-30 every look sits in the same glass, with the same pool of
+   light on the page (lamp-looks.tsx, producer-lamp.module.css); only the
+   light inside is the look's own. Its box is the lamp's frame, a centring
+   grid like the lamp itself. */
 .look.look {
   background: transparent;
 }
-.look .disc {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background:
-    radial-gradient(circle at 32% 24%, rgba(255, 240, 220, 0.1), transparent 42%),
-    radial-gradient(circle at 50% 38%, rgba(36, 30, 24, 0.97), rgba(14, 12, 10, 0.99));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 240, 220, 0.1),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.6);
-  transition: box-shadow 400ms ease;
-}
-.look .pool {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 150px;
-  height: 150px;
-  margin: -75px 0 0 -75px;
-  border-radius: 9999px;
-  pointer-events: none;
-  opacity: 0.35;
-  background: radial-gradient(closest-side, rgba(224, 164, 104, 0.24), rgba(224, 164, 104, 0.08) 42%, transparent 72%);
-  transition:
-    opacity 600ms ease,
-    transform 600ms ease;
-}
-.look.listening .pool {
-  opacity: 0.7;
-}
-.look.talking .pool {
-  opacity: 1;
-  transform: scale(1.3);
-}
-.look.thinking .pool {
-  opacity: 0.45;
-}
-.look.tab .pool {
-  opacity: 0;
-}
-/* The light, drawn for one shape (lamp-looks.tsx keys the box by shape and
-   look, so a change of shape mounts a new one). It arrives from a soft blur
-   at --light-delay, which the lamp's flight sets so the light is in as the
-   shape settles (movable-lamp.tsx); the old light has dimmed out by then
-   (producer-lamp.module.css .lightOut). The round box is the lamp's frame, a
-   centring grid like the lamp itself. */
 .roundBox {
   position: absolute;
   inset: 0;
   border-radius: inherit;
   display: grid;
   place-items: center;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .roundBox,
-  .tabBox {
-    animation: shapeIn 300ms var(--light-delay, 0ms) cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
-  }
-}
-@keyframes shapeIn {
-  from {
-    opacity: 0;
-    filter: blur(3px);
-    scale: 0.82;
-  }
-}
-/* The tab's content is drawn for the right edge (rounded on the page's side);
-   on the other edges the box turns so that side still faces the page. */
-.tabBox {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 12px;
-  height: 64px;
-  margin: -32px 0 0 -6px;
-  border-radius: 12px 0 0 12px;
-  display: grid;
-  place-items: center;
-}
-.tabBox.left {
-  transform: scaleX(-1);
-}
-.tabBox.top {
-  transform: rotate(-90deg);
-}
-.tabBox.bottom {
-  transform: rotate(90deg);
 }
 
 /* The look itself. */
@@ -121,12 +42,6 @@
 .look.thinking .orb::before{background:rgba(46,18,4,.18)}
 .look.thinking .kiss{opacity:.55}
 .look.thinking .warm{left:5px;top:5px;width:10px;height:10px;background:radial-gradient(closest-side,rgba(255,226,186,.75) 0 20%,rgba(255,196,130,.32) 62%,transparent);filter:blur(1.3px);opacity:.9;transform:rotate(-40deg) translateX(4px)}
-.look.tab .core{width:5px;height:42px}
-.look.tab .orb{width:5px;height:42px;border-radius:5px;background:linear-gradient(180deg,#7a4d23,#e0a468 22%,#ffd9a8 50%,#e0a468 78%,#7a4d23);box-shadow:0 0 2px .5px rgba(255,205,145,.5),0 0 10px rgba(224,164,104,.55)}
-.look.tab .orb::after{border-radius:5px;box-shadow:inset 0 0 1.5px .5px rgba(122,77,35,.5)}
-.look.tab .halo{width:14px;height:56px;margin:-28px 0 0 -7px;opacity:.4}
-.look.tab .sss{border-radius:5px;background:linear-gradient(90deg,transparent,rgba(255,200,140,.25) 50%,transparent)}
-.look.tab .warm{left:-2px;top:6px;width:9px;height:16px;opacity:.6}
 @media (prefers-reduced-motion: no-preference){
 .look.idle .halo{animation:breathe 4.2s ease-in-out infinite}
 .look.idle .warm,.look.talking .warm{animation:drift 11s ease-in-out infinite}
@@ -134,7 +49,6 @@
 .look.talking .halo{animation:voice 1.1s ease-in-out infinite}
 .look.thinking .warm{animation:orbit 2.4s linear infinite}
 .look.thinking .halo{animation:pulse 2.4s ease-in-out infinite}
-.look.tab .warm{animation:slide 7s ease-in-out infinite}
 }
 @keyframes breathe{0%,100%{opacity:.45;transform:scale(.96)}
 50%{opacity:.7;transform:scale(1.04)}
@@ -156,8 +70,5 @@
 }
 @keyframes orbit{0%{transform:rotate(0deg) translateX(4px)}
 100%{transform:rotate(360deg) translateX(4px)}
-}
-@keyframes slide{0%,100%{transform:translateY(0)}
-50%{transform:translateY(18px)}
 }
 

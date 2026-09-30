@@ -15,9 +15,12 @@ import {
 // a moved one can go back to its corner. Per device, like the lamp itself.
 // English only while the Producer is admins-only, like its sheet.
 
+const CORNER_NAMES = { tl: "top-left", tr: "top-right", bl: "bottom-left" } as const;
+
 function describe(hidden: boolean, place: Place): string {
   if (hidden) return "Hidden on this device.";
   if (place.kind === "home") return "In the bottom-right corner.";
+  if (place.kind === "corner") return `In the ${CORNER_NAMES[place.corner]} corner.`;
   if (place.kind === "edge") return `Tucked into the ${place.edge} edge.`;
   return "Where you left it.";
 }
@@ -44,7 +47,7 @@ export function ProducerLampForm() {
       <div className="min-w-0">
         <p className="text-sm font-medium text-atelier-ink">The lamp</p>
         <p className="mt-0.5 text-xs text-atelier-muted">
-          {describe(hidden, place)} Drag it anywhere; let go at an edge to tuck it in, or drop it on × to hide it. Hold it to talk: the mic is open only while you hold.
+          {describe(hidden, place)} Drag it anywhere; throw it at a corner to park it or at an edge to tuck it in, or drop it on × to hide it. Hold it to talk: the mic is open only while you hold.
         </p>
       </div>
       <div className="flex flex-wrap gap-2">

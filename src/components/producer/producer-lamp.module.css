@@ -1,44 +1,61 @@
-/* The Producer's lamp (2026-09-24, operator: "A lamp on every page").
-   Its own module rather than globals.css, so the branch never touches the
-   shared stylesheet other sessions are editing (Director's Cut did the same).
+/* The Producer's lamp (2026-09-24, operator: "A lamp on every page"; a glass
+   bead since 2026-09-30, operator: "The light bulb and how it sticks in the
+   corner, the animation feels cheap", and he picked "A · Tuck" from the
+   draft). Its own module rather than globals.css, so the branch never touches
+   the shared stylesheet other sessions are editing (Director's Cut did the
+   same).
 
-   A small lamp that floats over every /app page and opens the Producer. What
-   it looks like is the person's pick (lamp-look.ts; looks/ draws each one).
-   Bottom-right; on phones the component lifts it above whatever is docked at
-   the bottom, and in the app it sits above the tab bar (--native-tab-bar). */
-.lamp {
+   A small glass lamp that floats over every /app page and opens the
+   Producer. The light inside is the person's pick (lamp-look.ts;
+   lamp-looks.tsx draws the glass round each look's light). Its home is the
+   bottom-right corner: .anchor is that corner, an invisible twin the lamp
+   reads; on phones the component lifts it above whatever is docked at the
+   bottom, and in the app it sits above the tab bar (--native-tab-bar). The
+   lamp itself sits at the screen's top-left and is moved from there
+   (lamp-engine.ts sets its translate), so nothing here positions or
+   transitions it; this sheet only draws it. */
+.anchor {
+  position: fixed;
+  width: 44px;
+  height: 44px;
   right: 20px;
   bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-  background: radial-gradient(circle at 50% 38%, rgba(36, 30, 24, 0.96), rgba(18, 15, 12, 0.98));
-  box-shadow:
-    0 0 0 1px rgba(243, 237, 228, 0.1),
-    0 10px 28px -10px rgba(0, 0, 0, 0.7);
-  transition: transform 160ms ease;
+  visibility: hidden;
+  pointer-events: none;
 }
-/* A pointer that hovers (a finger's "hover" sticks after a drag). */
-@media (hover: hover) {
-  .lamp:hover {
-    transform: scale(1.06);
-  }
+:global(html.native-app) .anchor {
+  bottom: calc(var(--native-tab-bar, 0px) + 14px);
+}
+.lamp {
+  position: fixed;
+  z-index: 45;
+  left: 0;
+  top: 0;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 9999px;
+  background: none;
+  cursor: pointer;
+  /* A finger on it drags it instead of scrolling the page. */
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 .lamp:focus-visible {
   outline: 2px solid #e0a468;
   outline-offset: 3px;
 }
-/* Movable (movable-lamp.tsx): the shape is drawn here, not by a utility
-   class, so an edge tab can round only its inner side; a finger on it drags
-   it instead of scrolling the page. */
-.lamp {
-  /* Half its 44 px, not 9999px: the flight interpolates the corners, and a
-     huge radius stays a full stadium until the very last frames. */
-  border-radius: 22px;
-  touch-action: none;
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
-:global(html.native-app) .lamp {
-  bottom: calc(var(--native-tab-bar, 0px) + 14px);
+/* A tucked lamp shows 18 px of itself: its hit area reaches past its rim. */
+.tucked::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 9999px;
 }
 
 /* The real lamp at its real size, standing still in Settings' look picker. */
@@ -47,9 +64,6 @@
   width: 44px;
   height: 44px;
   border-radius: 9999px;
-  box-shadow:
-    0 0 0 1px rgba(243, 237, 228, 0.1),
-    0 10px 28px -10px rgba(0, 0, 0, 0.7);
 }
 
 .statusDot {
@@ -80,16 +94,16 @@
     0 30px 80px -30px rgba(0, 0, 0, 0.8);
 }
 
-/* ── Live: the bulb follows the sound (2026-09-25, operator: "The light bulb
+/* ── Live: the lamp follows the sound (2026-09-25, operator: "The light bulb
    lights depending on the sound that is spoken or spoken to") ─────────────
    --glow (0..1) is set on the lamp from the voice loop: the person's voice
-   while they talk, the Producer's while it answers. The look inside answers
-   it too (looks/*.module.css); this ring is the lamp's own. */
-.lampLive {
+   while they talk, the Producer's while it answers. The light inside answers
+   it too; this ring round the glass is the lamp's own. */
+.lampLive .ring {
+  opacity: calc(0.45 + var(--glow, 0) * 0.55);
   box-shadow:
-    0 0 0 1px rgba(224, 164, 104, 0.4),
-    0 0 calc(10px + var(--glow, 0) * 34px) rgba(224, 164, 104, calc(0.22 + var(--glow, 0) * 0.45)),
-    0 10px 28px -10px rgba(0, 0, 0, 0.7);
+    0 0 0 1px rgba(255, 214, 170, 0.42),
+    0 0 calc(10px + var(--glow, 0) * 26px) calc(1px + var(--glow, 0) * 2px) rgba(255, 186, 120, calc(0.2 + var(--glow, 0) * 0.45));
 }
 
 /* The one-tap off switch beside a live lamp while the sheet is closed. */
@@ -122,19 +136,16 @@
   bottom: calc(var(--native-tab-bar, 0px) + 21px);
 }
 
-/* ── Open: the bulb and its wheel (2026-09-25) ─────────────────────────────
-   The bulb stays put on desktop; on a phone it drops back to the corner
+/* ── Open: the lamp and its wheel (2026-09-25) ─────────────────────────────
+   The lamp stays put on desktop; on a phone it goes back to the corner
    (above the tab bar in the app) so the wheel has the corner to open into. */
 .lampOpen {
   z-index: 49;
 }
 @media (max-width: 767px) {
-  .lampOpen {
+  .anchorOpen {
     right: 16px;
     bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  }
-  :global(html.native-app) .lampOpen {
-    bottom: calc(var(--native-tab-bar, 0px) + 14px);
   }
 }
 
@@ -300,242 +311,234 @@
   }
 }
 
-/* ── Movable lamp, edge tabs, hiding (2026-09-25, operator: "Lets make it
-   movable and dismissible. Also, if taken to any edge, its lives as an edge
-   tab. Give it nice effects when it transitions to an edge tab"; then "the
-   animation when sticking to the sides looks cheap. Try to make it look
-   premium") ────────────────────────────────────────────────────────────────
-   movable-lamp.tsx sets the final left/top/width/height inline and plays
-   the way there with the Web Animations API: one spring (lamp-motion.ts)
-   moves position, size and corners together. So nothing here transitions
-   those; this sheet only draws the states. */
-.anchor,
-.insetProbe {
-  visibility: hidden;
-  pointer-events: none;
-}
+/* ── The glass lamp (2026-09-30, the draft's "A · Tuck") ───────────────────
+   Everything it draws sits in .inner, which the engine lifts and stretches
+   as one; the light sits in a round frame the size of the glass, in a layer
+   the engine slides and shrinks when the lamp is tucked half behind an edge,
+   so the light stays in the part still on the screen (lamp-looks.tsx). */
 .insetProbe {
   position: fixed;
   left: 0;
   width: 0;
   top: env(safe-area-inset-top, 0px);
   bottom: env(safe-area-inset-bottom, 0px);
+  visibility: hidden;
+  pointer-events: none;
 }
-.placed {
-  transition:
-    background 300ms ease,
-    box-shadow 360ms ease,
-    opacity 300ms ease,
-    transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+.inner {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  transition: scale 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.lamp.dragging {
+  z-index: 50;
+  cursor: grabbing;
+}
+/* A pointer that hovers (a finger's "hover" sticks after a drag): the lamp
+   leans in a touch and its light warms. A tucked lamp peeks out instead. */
+@media (hover: hover) {
+  .lamp:not(.dragging):not(.tucked):hover .inner {
+    scale: 1.045;
+  }
+  .lamp:not(.dragging):hover .light {
+    filter: brightness(1.14);
+  }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .lamp:not(.anchor) {
-    animation: lampIn 460ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  .inner {
+    animation: lampIn 460ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
   }
 }
 @keyframes lampIn {
   from {
     opacity: 0;
-    transform: scale(0.6);
+    scale: 0.6;
     filter: blur(4px);
   }
 }
 
-/* In the hand: it follows the pointer exactly (no flight), lifted a touch
-   and brighter. Near an edge it is drawn toward it — the transform is set
-   inline, growing with closeness (movable-lamp.tsx), eased here so the pull
-   is smooth rather than stepped. */
-.lamp.dragging {
-  z-index: 50;
-  cursor: grabbing;
-  transform: scale(1.06);
+/* Its shadow on the page: close at rest, wider and softer lifted (the engine
+   crossfades the two, and fades both as the lamp tucks away). */
+.shadowRest,
+.shadowLifted {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  pointer-events: none;
+}
+.shadowRest {
   box-shadow:
-    0 0 0 1px rgba(224, 164, 104, 0.5),
-    0 0 28px rgba(224, 164, 104, 0.45),
-    0 18px 36px -12px rgba(0, 0, 0, 0.75);
-  transition:
-    transform 110ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    box-shadow 220ms ease;
+    0 7px 14px -6px rgba(0, 0, 0, 0.8),
+    0 2px 3px rgba(0, 0, 0, 0.55);
 }
-.lamp.dragging.overTarget {
-  transform: scale(0.72);
-  opacity: 0.8;
-}
-
-/* The light between two shapes: the old one dims into a soft blur before
-   the new shape's light is drawn (lamp-looks.tsx marks it data-light; its
-   arrival is the look's .roundBox/.tabBox animation, at --light-delay). */
-.lightOut [data-light] {
+.shadowLifted {
   opacity: 0;
-  filter: blur(2px);
-  scale: 0.84;
+  box-shadow:
+    0 20px 30px -10px rgba(0, 0, 0, 0.62),
+    0 8px 12px -6px rgba(0, 0, 0, 0.5);
+}
+/* Its warm light on the page, stronger while it listens and talks; .flash
+   warms the page once when a thrown lamp settles in a corner. */
+.pool,
+.flash {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 140px;
+  height: 140px;
+  margin: -70px 0 0 -70px;
+  border-radius: 9999px;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+.pool {
+  opacity: 0.44;
+  background: radial-gradient(closest-side, rgba(255, 196, 132, 0.3), rgba(236, 160, 96, 0.11) 44%, rgba(224, 164, 104, 0) 100%);
   transition:
-    opacity 110ms ease-in,
-    filter 110ms ease-in,
-    scale 110ms ease-in;
+    opacity 600ms ease,
+    scale 600ms ease;
 }
-
-/* The tab: a slim tube of light on the edge, rounded on the page's side,
-   warm light spilling onto the page; the look draws what is inside it. */
-.lamp.tab {
-  background: linear-gradient(180deg, rgba(42, 33, 24, 0.97), rgba(20, 16, 12, 0.98));
-  box-shadow:
-    0 0 0 1px rgba(224, 164, 104, 0.38),
-    0 0 20px rgba(224, 164, 104, 0.32);
+.moodListening .pool {
+  opacity: 0.64;
 }
-.lamp.tab:hover {
-  transform: none;
-  box-shadow:
-    0 0 0 1px rgba(224, 164, 104, 0.6),
-    0 0 30px rgba(224, 164, 104, 0.55);
+.moodTalking .pool {
+  opacity: calc(0.62 + var(--glow, 0.7) * 0.38);
+  scale: calc(1.04 + var(--glow, 0.7) * 0.2);
 }
-/* Live: the tab glows with the sound, like the bulb. */
-.lamp.tab.lampLive {
-  box-shadow:
-    0 0 0 1px rgba(224, 164, 104, 0.55),
-    0 0 calc(14px + var(--glow, 0) * 36px) rgba(224, 164, 104, calc(0.3 + var(--glow, 0) * 0.5));
+.moodThinking .pool {
+  opacity: 0.22;
 }
-.lamp.tab_right {
-  border-radius: 12px 0 0 12px;
+.flash {
+  opacity: 0;
+  background: radial-gradient(closest-side, rgba(255, 210, 150, 0.42), rgba(236, 160, 96, 0.14) 46%, rgba(224, 164, 104, 0) 100%);
 }
-.lamp.tab_left {
-  border-radius: 0 12px 12px 0;
+/* The glass: smoked, lit from inside along its lower rim. */
+.glass {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 44'%3E%3Cdefs%3E%3CradialGradient id='f' gradientUnits='userSpaceOnUse' cx='22' cy='32' r='30' fx='22' fy='48'%3E%3Cstop offset='0' stop-color='%233b2a1b'/%3E%3Cstop offset='.42' stop-color='%231b1510'/%3E%3Cstop offset='1' stop-color='%230a0807'/%3E%3C/radialGradient%3E%3Cfilter id='r' x='-20%25' y='-20%25' width='140%25' height='140%25' color-interpolation-filters='sRGB'%3E%3CfeGaussianBlur in='SourceAlpha' stdDeviation='1.8' result='s'/%3E%3CfeOffset in='s' dy='-1.8' result='u'/%3E%3CfeComposite in='SourceAlpha' in2='u' operator='out' result='e'/%3E%3CfeFlood flood-color='%23ffc98f' flood-opacity='.62'/%3E%3CfeComposite in2='e' operator='in' result='m'/%3E%3CfeMerge%3E%3CfeMergeNode in='SourceGraphic'/%3E%3CfeMergeNode in='m'/%3E%3C/feMerge%3E%3C/filter%3E%3C/defs%3E%3Ccircle cx='22' cy='22' r='22' fill='url(%23f)' filter='url(%23r)'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
 }
-.lamp.tab_top {
-  border-radius: 0 0 12px 12px;
+.lightFrame {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  overflow: hidden;
+  pointer-events: none;
 }
-.lamp.tab_bottom {
-  border-radius: 12px 12px 0 0;
+.light {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  transition: filter 200ms ease;
 }
-.tab::after {
+.fireflies {
+  position: absolute;
+  left: -10px;
+  top: -10px;
+  width: 64px;
+  height: 64px;
+  pointer-events: none;
+}
+/* The glass's reflection: a thin sharp line along the top rim and one soft
+   catchlight (the engine fades it as the lamp tucks away). */
+.gloss {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  pointer-events: none;
+}
+.gloss::before {
   content: "";
   position: absolute;
+  inset: 1.5px;
+  border-radius: 9999px;
+  box-shadow: inset 0 2.4px 1.4px -1.2px rgba(255, 248, 238, 0.5);
+  -webkit-mask: linear-gradient(90deg, transparent 10%, #000 34%, #000 62%, transparent 90%);
+  mask: linear-gradient(90deg, transparent 10%, #000 34%, #000 62%, transparent 90%);
+}
+.gloss::after {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 6.5px;
+  width: 7px;
+  height: 3.6px;
+  border-radius: 9999px;
+  background: radial-gradient(closest-side, rgba(255, 253, 248, 0.62), rgba(255, 253, 248, 0));
+  transform: rotate(-27deg);
+}
+/* A ring of light round the glass while it listens (and while it's open). */
+.ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 9999px;
   pointer-events: none;
+  opacity: 0;
+  box-shadow:
+    0 0 0 1px rgba(255, 214, 170, 0.38),
+    0 0 18px 1px rgba(255, 186, 120, 0.22);
+  transition: opacity 400ms ease;
+}
+.moodListening .ring {
+  opacity: 1;
+}
+.lampOpen .ring {
   opacity: 0.9;
 }
-/* The warm spill onto the page arrives with the tab's light, not before. */
 @media (prefers-reduced-motion: no-preference) {
-  .tab::after {
-    animation: spillIn 520ms var(--light-delay, 0ms) cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+  .moodListening .ring {
+    animation: ringBreathe 1.2s ease-in-out infinite;
   }
 }
-@keyframes spillIn {
-  from {
-    opacity: 0;
+@keyframes ringBreathe {
+  50% {
+    scale: 1.035;
+    opacity: 0.8;
   }
 }
-.tab_right::after {
-  right: 100%;
-  top: -40%;
-  width: 54px;
-  height: 180%;
-  background: radial-gradient(ellipse at right center, rgba(224, 164, 104, 0.2), transparent 70%);
+
+/* Tucked: the thin warm line on the screen's edge where it went in (and,
+   while dragging, where it would). The engine places it, lights it at the
+   moment of contact, and brightens it when a mouse makes the lamp peek. */
+.seam {
+  position: fixed;
+  z-index: 44;
+  left: 0;
+  top: 0;
+  width: 2px;
+  height: 88px;
+  border-radius: 2px;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: 0 0 12px 1px rgba(255, 190, 122, 0.45);
 }
-.tab_left::after {
-  left: 100%;
-  top: -40%;
-  width: 54px;
-  height: 180%;
-  background: radial-gradient(ellipse at left center, rgba(224, 164, 104, 0.2), transparent 70%);
-}
-.tab_top::after {
-  top: 100%;
-  left: -40%;
-  height: 54px;
-  width: 180%;
-  background: radial-gradient(ellipse at center top, rgba(224, 164, 104, 0.2), transparent 70%);
-}
-.tab_bottom::after {
-  bottom: 100%;
-  left: -40%;
-  height: 54px;
-  width: 180%;
-  background: radial-gradient(ellipse at center bottom, rgba(224, 164, 104, 0.2), transparent 70%);
-}
-.tabDot {
-  position: absolute;
-  width: 8px;
-  height: 8px;
+/* While dragging near a corner: a faint ring where it would park. */
+.cornerHint {
+  position: fixed;
+  z-index: 44;
+  left: 0;
+  top: 0;
+  width: 44px;
+  height: 44px;
   border-radius: 9999px;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 214, 170, 0.34),
+    0 0 22px rgba(255, 186, 120, 0.16);
+}
+/* New cards while tucked: a small dot in the part still on the screen. */
+.tuckDot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  pointer-events: none;
   background: #e6c46e;
   box-shadow: 0 0 8px rgba(230, 196, 110, 0.9);
-}
-.tab_right .tabDot {
-  left: -4px;
-  top: -4px;
-}
-.tab_left .tabDot {
-  right: -4px;
-  top: -4px;
-}
-.tab_top .tabDot {
-  bottom: -4px;
-  right: -4px;
-}
-.tab_bottom .tabDot {
-  top: -4px;
-  right: -4px;
-}
-
-/* Where it would dock if let go now: a thin warm light on the edge, as
-   strong as the edge's pull (opacity set inline). No pulsing, no ghost. */
-.dockHint {
-  position: fixed;
-  z-index: 44;
-  pointer-events: none;
-  border-radius: 9999px;
-  background: rgba(255, 222, 176, 0.9);
-  box-shadow:
-    0 0 10px 1px rgba(255, 205, 140, 0.55),
-    0 0 26px 4px rgba(224, 164, 104, 0.28);
-  transition: opacity 140ms linear;
-}
-
-/* The moment the tab touches the edge: a soft warm bloom where it touched,
-   opening a little and fading — nothing runs along the edge. One layer,
-   started at the contact (its delay comes from the landing's own spring,
-   movable-lamp.tsx). */
-.contactGlow {
-  position: fixed;
-  z-index: 44;
-  pointer-events: none;
-  border-radius: 9999px;
-  opacity: 0;
-  background: radial-gradient(closest-side, rgba(255, 224, 180, 0.62), rgba(236, 170, 104, 0.2) 58%, transparent);
-}
-@media (prefers-reduced-motion: no-preference) {
-  .contactGlow.alongY {
-    animation: contactAlongY 980ms cubic-bezier(0.16, 0.8, 0.3, 1) both;
-  }
-  .contactGlow.alongX {
-    animation: contactAlongX 980ms cubic-bezier(0.16, 0.8, 0.3, 1) both;
-  }
-}
-@keyframes contactAlongY {
-  0% {
-    opacity: 0;
-    transform: scale(0.8, 0.5);
-  }
-  16% {
-    opacity: 0.85;
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1, 1);
-  }
-}
-@keyframes contactAlongX {
-  0% {
-    opacity: 0;
-    transform: scale(0.5, 0.8);
-  }
-  16% {
-    opacity: 0.85;
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1, 1);
-  }
 }
 
 /* Hiding: the × appears while it is dragged; over it the × swells and the
@@ -586,14 +589,6 @@
     transform: translateY(16px) scale(0.6);
   }
 }
-.lamp.leaving {
-  transform: scale(0.15);
-  opacity: 0;
-  transition:
-    transform 300ms ease-in,
-    opacity 300ms ease-in;
-}
-
 .undoPill {
   position: fixed;
   z-index: 50;
@@ -646,13 +641,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .placed,
-  .lamp.dragging,
-  .lamp.leaving,
-  .lightOut [data-light],
-  .dockHint {
+  .inner,
+  .light,
+  .pool,
+  .ring {
     transition-duration: 1ms !important;
-    transition-delay: 0ms !important;
   }
 }
 

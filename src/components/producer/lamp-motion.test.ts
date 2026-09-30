@@ -1,120 +1,125 @@
 import { describe, expect, it } from "vitest";
 import {
-  CONTACT_GAP,
-  GLIDE,
-  MORPH,
-  cornersFor,
+  FLY,
+  FRAME_MS,
+  TUCK,
+  capToward,
   flight,
-  keyframes,
-  landing,
-  maxStartVelocity,
-  project,
-  pullOf,
-  sampleSpring,
+  flightFrames,
+  poseOf,
+  sampleAt,
+  still,
+  stepSpring,
   velocityOf,
+  type Motion,
 } from "./lamp-motion";
-import { SNAP_GAP, settleThrown, type Stage } from "./lamp-place";
+import { PEEK, RADIUS, dockCentre, tuckableSides, type Stage } from "./lamp-place";
 
-const STAGE: Stage = { left: 0, top: 0, right: 1200, bottom: 800 };
-const round = (cx: number, cy: number) => ({ left: cx - 22, top: cy - 22, width: 44, height: 44 });
-const TAB_RIGHT = { left: 1188, top: 268, width: 12, height: 64 };
+const STAGE: Stage = { left: 0, top: 0, right: 1440, bottom: 900 };
+const SIDES = tuckableSides(STAGE, 1440, 900);
+const thrown = (x: number, y: number, vx: number, vy: number): Motion => ({ ...still({ x, y }), vx, vy, lift: 1 });
 
-describe("the lamp's springs", () => {
-  it("settle at exactly 1 and never overshoot, from rest or thrown", () => {
-    for (const spring of [GLIDE, MORPH]) {
-      for (const v of [0, 2, maxStartVelocity(spring)]) {
-        const p = sampleSpring(spring, v);
-        expect(p[0]).toBe(0);
-        expect(p[p.length - 1]).toBe(1);
-        expect(Math.max(...p)).toBeLessThanOrEqual(1.0005);
-        // Monotonic: a critically damped spring never turns back.
-        for (let i = 1; i < p.length; i++) expect(p[i]).toBeGreaterThanOrEqual(p[i - 1] - 1e-9);
-      }
-    }
+describe("the springs", () => {
+  it("come to rest where they are sent", () => {
+    let p = 0;
+    let v = 0;
+    for (let i = 0; i < 120; i++) [p, v] = stepSpring(p, v, 100, 1 / 60, FLY);
+    expect(p).toBeCloseTo(100, 1);
+    expect(Math.abs(v)).toBeLessThan(0.5);
   });
 
-  it("feel quick: the glide is 95% there within 350 ms and done within 700", () => {
-    const p = sampleSpring(GLIDE);
-    const at95 = p.findIndex((x) => x >= 0.95) * (1000 / 60);
-    expect(at95).toBeLessThan(350);
-    expect(p.length * (1000 / 60)).toBeLessThan(700);
-  });
-
-  it("start faster when thrown", () => {
-    const still = sampleSpring(GLIDE, 0);
-    const thrown = sampleSpring(GLIDE, 8);
-    expect(thrown[3]).toBeGreaterThan(still[3]);
+  it("cap a throw's speed toward the place by the distance left, and leave a speed away from it alone", () => {
+    expect(capToward(3000, 20, TUCK)).toBeLessThan(3000);
+    expect(capToward(3000, 20, TUCK)).toBeCloseTo(0.9 * ((2 * Math.PI) / TUCK.response) * 20, 5);
+    expect(capToward(500, 800, FLY)).toBe(500);
+    expect(capToward(-900, 40, FLY)).toBe(-900);
+    expect(capToward(9000, 5000, FLY)).toBe(2000);
   });
 });
 
-describe("the corners", () => {
-  it("add up to the short side's width at every moment of a morph, so the browser never rescales them", () => {
-    const from = round(1100, 300);
-    const frames = flight(from, cornersFor(from, null), TAB_RIGHT, cornersFor(TAB_RIGHT, "right"), sampleSpring(GLIDE));
-    for (const f of frames) {
-      const [tl, tr] = f.corners;
-      expect(tl + tr).toBeLessThanOrEqual(f.width + 0.01);
-      expect(Math.abs(tl + tr - f.width)).toBeLessThan(0.01);
-    }
-    const last = frames[frames.length - 1];
-    expect(last.corners).toEqual([12, 0, 0, 12]);
-    expect(frames[0].corners).toEqual([22, 22, 22, 22]);
+describe("a flight", () => {
+  it("ends exactly at its place, at rest, lift let go", () => {
+    const f = flight(thrown(700, 400, 1500, -300), { x: 1200, y: 300 }, FLY);
+    const last = f[f.length - 1];
+    expect(last).toEqual(still({ x: 1200, y: 300 }));
+    expect(f.length * FRAME_MS).toBeLessThan(1500);
   });
 
-  it("round the tab on the page's side for every edge", () => {
-    expect(cornersFor({ left: 0, top: 0, width: 12, height: 64 }, "left")).toEqual([0, 12, 12, 0]);
-    expect(cornersFor({ left: 0, top: 0, width: 64, height: 12 }, "top")).toEqual([0, 0, 12, 12]);
-    expect(cornersFor({ left: 0, top: 0, width: 64, height: 12 }, "bottom")).toEqual([12, 12, 0, 0]);
+  it("carries on with the throw", () => {
+    // Thrown up while its place is to the right: it rises before it turns.
+    const f = flight(thrown(700, 400, 0, -900), { x: 1000, y: 400 }, FLY);
+    expect(f[3].y).toBeLessThan(400);
+  });
+
+  it("into a tuck sinks a few px past its place at most, however it was thrown", () => {
+    const at = dockCentre("right", 0.5, STAGE, SIDES);
+    for (const [x, vx] of [
+      [1260, 1500],
+      [1300, 4200],
+      [1395, 4200],
+      [700, 4200],
+      [1150, 300],
+      [200, 2000],
+    ]) {
+      const f = flight(thrown(x, at.y, vx, 0), at, TUCK);
+      const deepest = Math.max(...f.map((m) => m.x));
+      expect(deepest - at.x, `from ${x} at ${vx} px/s`).toBeLessThan(6);
+      // Never out of sight: some of the glass is always on the screen.
+      expect(deepest - RADIUS).toBeLessThan(1440 - 8);
+    }
+  });
+
+  it("leaves its light lagging a little while it moves, and settled when it stops", () => {
+    const f = flight(thrown(300, 400, 2000, 0), { x: 900, y: 400 }, FLY);
+    const moving = f[4];
+    expect(moving.slx).toBeLessThan(0);
+    expect(Math.abs(moving.slx)).toBeLessThanOrEqual(4.5);
+    expect(f[f.length - 1].slx).toBe(0);
   });
 });
 
-describe("a landing on the edge", () => {
-  it("glides round, flattens only near the wall, and never passes it", () => {
-    const from = round(900, 300);
-    const l = landing(from, TAB_RIGHT, "right", 1200, 0);
-    let flattened = false;
-    for (const f of l.frames) {
-      expect(f.left + f.width).toBeLessThanOrEqual(1200 + 1e-6);
-      const rimGap = 1200 - (f.left + f.width);
-      if (f.width < 43.9) {
-        flattened = true;
-      } else {
-        // Still round: it hasn't reached the wall's zone yet.
-        expect(rimGap).toBeGreaterThan(CONTACT_GAP - 12);
-      }
-    }
-    expect(flattened).toBe(true);
-    const last = l.frames[l.frames.length - 1];
-    expect([last.left, last.top, last.width, last.height].map((v) => Math.round(v * 100) / 100)).toEqual([1188, 268, 12, 64]);
-    expect(l.contactMs).toBeGreaterThan(0);
-    expect(l.shapedMs).toBeGreaterThan(l.contactMs);
+describe("drawing a moment of it", () => {
+  it("moves the lamp only by translate, from the screen's corner", () => {
+    const p = poseOf(still({ x: 100, y: 200 }), STAGE);
+    expect(p.translate).toBe(`${(100 - RADIUS).toFixed(2)}px ${(200 - RADIUS).toFixed(2)}px`);
+    expect(p.gloss).toBe(1);
+    expect(p.shadowRest).toBe(1);
+    expect(p.shadowLifted).toBe(0);
   });
 
-  it("flattens at once when let go against the wall, pinned there", () => {
-    const from = round(1200 - 22 - 10, 300);
-    const l = landing(from, TAB_RIGHT, "right", 1200, 0);
-    expect(l.contactMs).toBe(0);
-    for (const f of l.frames) expect(f.left + f.width).toBeLessThanOrEqual(1200 + 1e-6);
+  it("slides a tucked lamp's light into the part on the screen, and fades its reflection", () => {
+    const at = dockCentre("right", 0.5, STAGE, SIDES);
+    const p = poseOf(still(at), STAGE);
+    const [lx] = p.lightTranslate.split(" ").map(parseFloat);
+    expect(lx).toBeCloseTo(-(RADIUS * 2 - PEEK) / 2, 1);
+    expect(parseFloat(p.lightScale)).toBeCloseTo(0.84, 2);
+    expect(p.gloss).toBeLessThan(0.3);
+    expect(p.shadowRest).toBeCloseTo(PEEK / (RADIUS * 2), 2);
   });
 
-  it("with a hard throw still stops at the wall", () => {
-    const from = round(500, 300);
-    const l = landing(from, TAB_RIGHT, "right", 1200, 40);
-    for (const f of l.frames) expect(f.left + f.width).toBeLessThanOrEqual(1200 + 1e-6);
+  it("stretches along a fast move without spinning when its direction turns round", () => {
+    const a = poseOf({ ...still({ x: 500, y: 400 }), vx: -3000, vy: 10 }, STAGE);
+    const b = poseOf({ ...still({ x: 500, y: 400 }), vx: -3000, vy: -10 }, STAGE, a.angle);
+    expect(Math.abs(b.angle - a.angle)).toBeLessThan(0.1);
+    expect(a.inner).toMatch(/scale\(1\.0[0-9]+, 0\.9[0-9]+\)/);
   });
 
-  it("works on the other edges", () => {
-    const top = { left: 568, top: 0, width: 64, height: 12 };
-    const l = landing(round(600, 200), top, "top", 0, 3);
-    for (const f of l.frames) expect(f.top).toBeGreaterThanOrEqual(-1e-6);
-    const last = l.frames[l.frames.length - 1];
-    expect(Math.round(last.height)).toBe(12);
+  it("becomes keyframes for every part, one per frame, with the moment it touches the edge", () => {
+    const at = dockCentre("right", 0.5, STAGE, SIDES);
+    const f = flight(thrown(1100, at.y, 1400, 0), at, TUCK);
+    const fr = flightFrames(f, STAGE);
+    for (const k of [fr.lamp, fr.inner, fr.light, fr.gloss, fr.shadowRest, fr.shadowLifted, fr.pool]) expect(k.length).toBe(f.length);
+    expect(fr.durationMs).toBeCloseTo((f.length - 1) * FRAME_MS, 5);
+    expect(fr.contactMs).toBeGreaterThan(0);
+    expect(fr.contactMs).toBeLessThan(fr.durationMs);
+    expect(fr.lamp[fr.lamp.length - 1]).toEqual({ translate: `${(at.x - RADIUS).toFixed(2)}px ${(at.y - RADIUS).toFixed(2)}px` });
   });
 
-  it("becomes keyframes the Web Animations API takes", () => {
-    const k = keyframes(landing(round(900, 300), TAB_RIGHT, "right", 1200, 0).frames);
-    expect(k[0]).toMatchObject({ width: "44.00px", height: "44.00px", borderRadius: "22.00px 22.00px 22.00px 22.00px" });
-    expect(k[k.length - 1]).toMatchObject({ left: "1188.00px", width: "12.00px", borderRadius: "12.00px 0.00px 0.00px 12.00px" });
+  it("is picked up mid-flight from the frame it had reached", () => {
+    const f = flight(thrown(300, 300, 0, 0), { x: 900, y: 300 }, FLY);
+    expect(sampleAt(f, 5 * FRAME_MS)).toEqual(f[5]);
+    expect(sampleAt(f, 99999)).toEqual(f[f.length - 1]);
+    expect(sampleAt(f, -5)).toEqual(f[0]);
   });
 });
 
@@ -129,30 +134,5 @@ describe("the throw", () => {
     expect(velocityOf(s, 50).vx).toBeCloseTo(1250, 0);
     expect(velocityOf(s, 200)).toEqual({ vx: 0, vy: 0 });
     expect(velocityOf(s.slice(0, 1), 10)).toEqual({ vx: 0, vy: 0 });
-  });
-
-  it("projects like a scroll view (WWDC18)", () => {
-    expect(project(0, 1000)).toBeCloseTo(499, 0);
-    expect(project(0, 1000, 0.99)).toBeCloseTo(99, 0);
-  });
-
-  it("docks a throw toward an edge, and leaves a slow drop where it was put", () => {
-    // Mid-screen, thrown right at 1500 px/s: it would come to rest past the edge.
-    expect(settleThrown(600, 300, 1500, 0, STAGE)).toMatchObject({ kind: "edge", edge: "right" });
-    // The same place, a slow hand: free, where it was let go.
-    expect(settleThrown(600, 300, 200, 0, STAGE)).toEqual({ kind: "free", x: 0.5, y: 0.375 });
-    // Let go against an edge, whatever the speed: that edge.
-    expect(settleThrown(1200 - 22 - SNAP_GAP + 2, 300, -900, 0, STAGE)).toMatchObject({ kind: "edge", edge: "right" });
-    // A modest throw in open space glides a little way on and stops.
-    const free = settleThrown(600, 300, 700, 0, STAGE);
-    expect(free.kind).toBe("free");
-    if (free.kind === "free") expect(free.x).toBeGreaterThan(0.5);
-  });
-
-  it("pulls continuously near an edge, only close in", () => {
-    expect(pullOf(60, 54)).toBe(0);
-    expect(pullOf(27, 54)).toBeCloseTo(0.25, 5);
-    expect(pullOf(0, 54)).toBe(1);
-    expect(pullOf(-5, 54)).toBe(1);
   });
 });
