@@ -522,7 +522,10 @@ export function colourWord(hex: string): string | null {
   if (!/^#[0-9a-f]{6}$/i.test(hex)) return null;
   const c = new THREE.Color(hex);
   const hsl = { h: 0, s: 0, l: 0 };
-  c.getHSL(hsl);
+  // In sRGB, the space the hex is written in (2026-09-30): three keeps colours
+  // linear, and a linear hue pulls a yellow towards red — the Yellow Coupe's
+  // body read as "orange" in the Studio's first real video.
+  c.getHSL(hsl, THREE.SRGBColorSpace);
   if (hsl.s < 0.18 || hsl.l < 0.06) return hsl.l > 0.8 ? "white" : hsl.l < 0.16 ? "black" : hsl.l > 0.5 ? "silver" : "grey";
   const h = hsl.h * 360;
   if (h < 15 || h >= 340) return hsl.l > 0.7 ? "pink" : "red";

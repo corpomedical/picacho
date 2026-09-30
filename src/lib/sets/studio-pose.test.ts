@@ -226,6 +226,11 @@ describe("presets over a pose", () => {
     expect(thingWords("Bench.001", "#6a4a2a")).toBe("the brown bench");
     expect(thingWords("Wall", null)).toBe("the wall");
     expect(colourWord("#2b6fd6")).toBe("blue");
+    // Hues read in sRGB (2026-09-30): in three's linear space every one of these
+    // yellows sat at 31–40° and was named "orange" (the Yellow Coupe).
+    for (const yellow of ["#ffd000", "#f2c230", "#e6b800", "#d4a017", "#ffbf00", "#f5c518", "#ffcc00"]) expect(colourWord(yellow), yellow).toBe("yellow");
+    for (const orange of ["#ffa500", "#ff8c00", "#e67e22"]) expect(colourWord(orange), orange).toBe("orange");
+    expect(thingWords("Car 1", "#e6b800")).toBe("the yellow car");
     expect(colourWord("#b9bec6")).toBe("silver");
   });
 });
