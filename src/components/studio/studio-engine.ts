@@ -12,7 +12,6 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
-import * as CANNON from "cannon-es";
 import { setElements } from "@/lib/sets/elements";
 import { letterbox } from "@/lib/sets/rig";
 import { SET_DIRECTION_MAX_CHARS } from "@/lib/sets/set-config";
@@ -2143,7 +2142,13 @@ function physShape(it, ph) {
   return [shape, new CANNON.Vec3(c.x, c.y, c.z)];
 }
 const physItems = () => items.filter((i) => i.phys && i.phys.type !== "none" && i.kind !== "sun" && i.kind !== "camera" && !i.hidden);
+// The physics engine loads on first use (2026-09-30 — "Speed up the loading"): cannon-es is left out of the
+// Studio's first download, fetched once the scene is up (loadCannon after the first frame) or the moment a
+// simulation is asked for, whichever comes first; a simulation asked for before it arrives runs when it does.
+let CANNON = null, cannonLoading = null;
+function loadCannon() { return (cannonLoading ||= import("cannon-es").then((m) => (CANNON = m))); }
 function simulatePhys(from = time, quiet = false) {
+  if (!CANNON) { loadCannon().then(() => { if (!stopped) simulatePhys(from, quiet); }, () => toast("Physics couldn't load. Check the connection and try again.")); return false; }
   physCache = null;
   const start = Math.round(from * FPS);
   if (start >= FRAMES) { toast("Go back to an earlier frame: the simulation runs from the current frame to the end"); return false; }
@@ -2188,6 +2193,7 @@ function applyPhys(t) {
   }
 }
 function bakePhys() {
+  if (!CANNON) { loadCannon().then(() => { if (!stopped) bakePhys(); }, () => toast("Physics couldn't load. Check the connection and try again.")); return; }
   if (!physCache && !simulatePhys(time, true)) return toast("Nothing to bake: make an object an Active rigid body in the Physics tab");
   const { start, frames } = physCache; let n = 0;
   group("Bake physics", () => {
@@ -3998,9 +4004,13 @@ scene.fog = null; // haze is a World-tab choice; a whole track under it reads as
 select(car);
 { const b = new THREE.Box3().expandByObject(car.obj).expandByObject(person.obj); const c = b.getCenter(new THREE.Vector3()), size = Math.max(6, b.getSize(new THREE.Vector3()).length()); orbit.target.copy(c); editorCam.position.copy(c.clone().add(new THREE.Vector3(0.6, 0.45, 0.75).normalize().multiplyScalar(size * 1.5))); }
 restoreSaved();
-raf = requestAnimationFrame(tick);
-// The page's "Opening the set…" goes once a frame is drawn — or at once where frames don't come (a hidden tab).
-{ let told = false; const ready = () => { if (told || stopped) return; told = true; try { opts.onReady?.(); } catch {} }; requestAnimationFrame(() => requestAnimationFrame(ready)); setTimeout(ready, 1500); }
+// The first frame is drawn here and now (tick schedules the ones after it), and the page's "Opening the set…"
+// goes as soon as it is — never waiting on an animation frame or a timer, which a background tab holds back
+// (2026-09-30: a hidden tab took about 20 s to open).
+tick(performance.now());
+Promise.resolve().then(() => { if (!stopped) { try { opts.onReady?.(); } catch {} } });
+// What the first frame doesn't need comes after it: the physics engine, fetched in the background.
+Promise.resolve().then(() => { if (!stopped) loadCannon().catch(() => {}); });
 
 document.getElementById("sceneTitle").textContent = opts.title;
 if (opts.render && $("castMenuLabel")) $("castMenuLabel").textContent = castLabel();

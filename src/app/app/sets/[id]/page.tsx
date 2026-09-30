@@ -1,11 +1,11 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getServerMessages } from "@/lib/i18n/server";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { isNativeApp } from "@/lib/native/server";
-import { getSetPage } from "@/lib/sets/data";
-import { readStudioScene } from "@/lib/sets/studio-scene";
+import { getSetPage, getStudioPage } from "@/lib/sets/data";
 import { finisherCanRun } from "@/lib/sets/finisher";
 import { buildingHintKey } from "@/lib/sets/leaving";
 import { SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_UNAVAILABLE, SET_NOT_FOUND } from "@/lib/sets/messages";
@@ -17,6 +17,7 @@ import { SetEditor } from "@/components/sets/set-editor";
 import { SetView } from "@/components/sets/set-view";
 import { SetsUpgrade } from "@/components/sets/sets-upgrade";
 import { HeliosStudio } from "@/components/studio/helios-studio";
+import { StudioOpening } from "@/components/studio/studio-opening";
 import { canUseRecast } from "@/lib/recast/actions";
 import { readRecastCharacters } from "@/lib/recast/data";
 
@@ -59,12 +60,22 @@ export default async function SetPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { id } = await params;
+  const [{ id }, query] = await Promise.all([params, searchParams]);
+  // Helios Studio (?studio=1, 2026-09-30 — "Speed up the loading"): "Opening the set…" streams at once, and
+  // the Studio's own few reads fill it in (StudioRoute). Anything it can't open goes to the set page.
+  if (first(query.studio) === "1") {
+    const { t } = await getServerMessages();
+    return (
+      <Suspense fallback={<StudioOpening words={t.sets.studioOpening} />}>
+        <StudioRoute id={id} />
+      </Suspense>
+    );
+  }
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) redirect("/login");
 
-  const [data, query] = await Promise.all([getSetPage(id), searchParams]);
+  const data = await getSetPage(id);
   if (data.error === SETS_SESSION_EXPIRED) redirect("/login");
   const native = await isNativeApp();
   // A free account on the web gets the Sets home's upgrade page (Helios Cut
@@ -91,33 +102,12 @@ export default async function SetPage({
   // threadHref): its place part is built already, never sent to Astra again.
   const askBuilt = ask !== null && first(query.from) === "build";
   const ready = data.error === null && data.set.status === "ready" && data.set.spec !== null && !native;
+  const studioOn = data.error === null && (data.modelsOn || HELIOS_STUDIO_FOR_ALL);
 
   // The set's second life (the Set Editor, drawn on canvas page G and built
   // 2026-09-14): ?build=1 opens the same set as a full-screen editor — Build
   // beside Shoot. It replaces the workspace whole, so only one stage runs.
   // Helios Studio (2026-09-26): the Blender-style workspace, admins first.
-  const studioOn = data.error === null && (data.modelsOn || HELIOS_STUDIO_FOR_ALL);
-  if (ready && data.error === null && data.set.spec && studioOn && first(query.studio) === "1") {
-    // The scene kept on the account (stage 3): null when none is kept yet,
-    // or the column isn't there (helios-studio-scene.sql not run) — the
-    // Studio then opens from this browser's copy.
-    const savedScene = await readStudioScene(supabase, data.set.id, userData.user.id);
-    // Video with your character (2026-09-30): offered when Recast's own rule
-    // lets this account in, with Recast's own list of characters.
-    const recastCharacters = (await canUseRecast()).error === null ? await readRecastCharacters(supabase, userData.user.id) : null;
-    return (
-      <HeliosStudio
-        setId={data.set.id}
-        title={data.set.title}
-        spec={data.set.editedSpec ?? data.set.spec}
-        savedScene={savedScene}
-        characters={data.characters}
-        cyclesOn={data.modelsOn || HELIOS_CYCLES_FOR_ALL}
-        recastCharacters={recastCharacters}
-        castId={data.set.layout?.castId ?? null}
-      />
-    );
-  }
   if (ready && data.error === null && data.set.spec && first(query.build) === "1") {
     return (
       <SetEditor
@@ -213,5 +203,32 @@ export default async function SetPage({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Helios Studio's page (?studio=1): only what it needs, read at once (lib/sets/data.ts getStudioPage) — the
+ * set, its working copy, the characters, the saved scene, Recast's characters when Recast lets them in.
+ * A set it can't open (not ready, not theirs, closed to them, the Android shell) goes to the set page, which
+ * says why.
+ */
+async function StudioRoute({ id }: { id: string }) {
+  const [data, native, recastGate] = await Promise.all([
+    getStudioPage(id, (db, userId) => readRecastCharacters(db, userId)),
+    isNativeApp(),
+    canUseRecast(),
+  ]);
+  if (data.error !== null || native || !data.set.ready || !data.set.spec || !(data.modelsOn || HELIOS_STUDIO_FOR_ALL)) redirect(`/app/sets/${id}`);
+  return (
+    <HeliosStudio
+      setId={data.set.id}
+      title={data.set.title}
+      spec={data.set.spec}
+      savedScene={data.savedScene}
+      characters={data.characters}
+      cyclesOn={data.modelsOn || HELIOS_CYCLES_FOR_ALL}
+      recastCharacters={recastGate.error === null ? data.also : null}
+      castId={data.set.castId}
+    />
   );
 }

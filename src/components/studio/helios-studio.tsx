@@ -54,6 +54,15 @@ import { RECAST_BUCKET } from "@/lib/recast/recast";
 import { recastStorageObjectUrl, uploadRecastClip } from "@/lib/recast/recast-client";
 import { discardStudioRecast, inspectStudioRecast, listStudioLooks, readStudioRecast, reserveStudioRecast, startStudioRecast } from "@/lib/sets/studio-recast-actions";
 import { pressStudioRecast, type RecastPress, type RecastUpdate } from "./studio-recast";
+import { StudioOpening } from "./studio-opening";
+
+/**
+ * The engine's code, asked for the moment this module runs in the browser (2026-09-30 — "Speed up the
+ * loading"): its download overlaps React's hydration instead of starting after the component mounts. Asked
+ * again on mount if this first request failed (a flaky network, a deploy in between).
+ */
+const engineEarly: Promise<typeof import("./studio-engine")> | null =
+  typeof window === "undefined" ? null : import("./studio-engine").catch(() => import("./studio-engine"));
 
 /**
  * The recording to Recast's storage, the way Recast's door sends a clip
@@ -137,7 +146,7 @@ export function HeliosStudio({
   useEffect(() => {
     let dispose: (() => void) | null = null;
     let dead = false;
-    void import("./studio-engine").then((m) => {
+    void (engineEarly ?? import("./studio-engine")).then((m) => {
       if (dead) return;
       dispose = m.startStudio({
         onReady: () => {
@@ -282,22 +291,15 @@ export function HeliosStudio({
     <div className="fixed inset-0 z-[70]" data-helios-studio>
       <style>{STUDIO_CSS}</style>
       <div className="h-full" dangerouslySetInnerHTML={{ __html: STUDIO_HTML }} />
-      {opening !== "ready" ? (
+      {opening === "opening" ? (
+        // The same cover the page streamed while the set was read (studio-opening.tsx), up until the first frame.
+        <StudioOpening words={t.sets.studioOpening} title={title} />
+      ) : opening === "failed" ? (
         <div className="absolute inset-0 z-[5] flex flex-col items-center justify-center gap-3 bg-[#1d1e21] text-[#e6e7ea]" role="status" aria-live="polite" data-studio-opening>
-          {opening === "opening" ? (
-            <>
-              <span className="h-8 w-8 animate-spin rounded-full border-2 border-[#3a3c42] border-t-[#e0a468]" aria-hidden />
-              <p className="text-[15px] font-medium">{t.sets.studioOpening}</p>
-              <p className="text-[13px] text-[#9aa0ad]">{title}</p>
-            </>
-          ) : (
-            <>
-              <p className="text-[15px] font-medium">{t.sets.studioOpenFailed}</p>
-              <button type="button" className="rounded-[10px] border border-[#3a3c42] px-3 py-1.5 text-[13px] hover:border-[#e0a468]" onClick={() => void reloadForNewDeploy({ delayMs: 0 })}>
-                {t.sets.studioOpenRetry}
-              </button>
-            </>
-          )}
+          <p className="text-[15px] font-medium">{t.sets.studioOpenFailed}</p>
+          <button type="button" className="rounded-[10px] border border-[#3a3c42] px-3 py-1.5 text-[13px] hover:border-[#e0a468]" onClick={() => void reloadForNewDeploy({ delayMs: 0 })}>
+            {t.sets.studioOpenRetry}
+          </button>
         </div>
       ) : null}
     </div>

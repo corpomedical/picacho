@@ -182,9 +182,10 @@ describe("saveStudioScene", () => {
 describe("the wiring", () => {
   const read = (p: string) => readFileSync(join(__dirname, "../../..", p), "utf8");
   it("the page hands the Studio the account's copy", () => {
+    // Read with the Studio's other few reads, at once (lib/sets/data.ts getStudioPage, 2026-09-30).
     const page = read("src/app/app/sets/[id]/page.tsx");
-    expect(page).toContain("const savedScene = await readStudioScene(supabase, data.set.id, userData.user.id);");
-    expect(page).toContain("savedScene={savedScene}");
+    expect(read("src/lib/sets/data.ts")).toContain("readStudioScene(db, setId, access.userId),");
+    expect(page).toContain("savedScene={data.savedScene}");
   });
   it("the engine opens from the account unless this browser's copy is newer, saves up ~5 s after a change, and keeps the browser copy", () => {
     const engine = read("src/components/studio/studio-engine.ts");

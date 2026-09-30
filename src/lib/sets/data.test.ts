@@ -100,6 +100,7 @@ vi.mock("@/lib/sets/shot-rig", async () => await import("./shot-rig"));
 vi.mock("@/lib/sets/shot-take", async () => await import("./shot-take"));
 vi.mock("@/lib/sets/set-shots", async () => await import("./set-shots"));
 vi.mock("@/lib/sets/messages", async () => await import("./messages"));
+vi.mock("@/lib/sets/studio-scene", async () => await import("./studio-scene"));
 vi.mock("@/lib/sets/edit-seal", async () => await import("./edit-seal"));
 vi.mock("@/lib/sets/object-ref", async () => await import("./object-ref"));
 // The real rule, reading the fake database's flags (Helios Cut 2, step 12).

@@ -36,6 +36,7 @@ import { readShotRigs } from "@/lib/sets/shot-rig";
 import { readShotTakes, takeSourceOf } from "@/lib/sets/shot-take";
 import { readSetShotIds } from "@/lib/sets/set-shots";
 import { SET_NOT_FOUND, setFailureMessage } from "@/lib/sets/messages";
+import { readStudioScene, type StudioScene } from "@/lib/sets/studio-scene";
 import type { SetCharacter, SetPageData, SetShot, SetsHomeData, SetStatus, SetSummary } from "@/lib/sets/types";
 
 // A photo build's brief column holds the photographer's notes, or this
@@ -572,5 +573,66 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     shots,
     characters,
     unshootable,
+  };
+}
+
+/**
+ * What Helios Studio needs to open a set (?studio=1), and nothing else (2026-09-30, operator: "Speed up the
+ * loading, keep going"). The set page's own read (getSetPage) is some twenty reads one after another — the
+ * film, the rig, the stills and takes with their cameras, words and rigs, the identity bar, the image model,
+ * the Astra month, the element photos — none of which the Studio shows; measured live, the page took about
+ * 2 s to build. This is the set row, its working copy, the person's characters and the Studio's saved scene,
+ * all at once.
+ */
+export async function getStudioPage<T = null>(
+  setId: string,
+  /** One more read the Studio needs, run beside the others with the person's own session (Recast's characters). */
+  also?: (db: SupabaseClient, userId: string) => Promise<T>,
+): Promise<
+  | { error: string }
+  | {
+      error: null;
+      modelsOn: boolean;
+      userId: string;
+      set: { id: string; title: string; ready: boolean; spec: SetSpec | null; castId: string | null };
+      characters: SetCharacter[];
+      savedScene: StudioScene | null;
+      also: T | null;
+    }
+> {
+  const access = await setsAccess();
+  if (access.error !== null) return { error: access.error };
+  if (!UUID_RE.test(setId)) return { error: SET_NOT_FOUND };
+  const db = access.supabase;
+  const own = (columns: string) => db.from("location_sets").select(columns).eq("id", setId).eq("user_id", access.userId).is("deleted_at", null).maybeSingle();
+  const [{ data: row }, edited, { shootable: characters }, savedScene, extra] = await Promise.all([
+    own("id, title, status, spec, layout"),
+    // The working copy on its own read, as getSetPage reads it: a failed read opens the set as built.
+    own("edited_spec"),
+    charactersOf(db, access.userId),
+    readStudioScene(db, setId, access.userId),
+    also ? also(db, access.userId).catch(() => null) : Promise.resolve(null),
+  ]);
+  const r = row as { id?: string; title?: string; status?: string; spec?: unknown; layout?: unknown } | null;
+  if (!r) return { error: SET_NOT_FOUND };
+  const status = asStatus(r.status);
+  const normalised = status === "ready" && r.spec ? normaliseSetSpec(r.spec) : null;
+  const spec = normalised?.ok ? normalised.spec : null;
+  let editedSpec: SetSpec | null = null;
+  if (spec && !edited.error) {
+    const e = (edited.data as { edited_spec?: unknown } | null)?.edited_spec;
+    const n = e ? normaliseSetSpec(e) : null;
+    if (n?.ok) editedSpec = n.spec;
+  }
+  const drawn = editedSpec ?? spec;
+  const layout = drawn && r.layout ? normaliseSetLayout(r.layout, drawn) : null;
+  return {
+    error: null,
+    modelsOn: access.isAdmin,
+    userId: access.userId,
+    set: { id: r.id as string, title: r.title ?? "", ready: status === "ready" && drawn !== null, spec: drawn, castId: layout?.castId ?? null },
+    characters,
+    savedScene,
+    also: extra,
   };
 }

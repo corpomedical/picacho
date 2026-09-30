@@ -94,14 +94,23 @@ export default async function AppLayout({
   const { mode: appMode, needsChoice } = resolveAppMode({ error: modeRead.error, mode: modeRow?.app_mode });
   const accountLook = modeRead.error ? null : parseAppLook(modeRow?.app_look);
 
-  const voiceModeEnabled = await isVoiceModeEnabled(supabase);
+  // The flags and counts below don't depend on each other: read at once, not one after another (2026-09-30 —
+  // "Speed up the loading": every page under /app waited on them in turn).
+  const [voiceModeEnabled, toolGates, producerOk, alyChatOn, ratingCount] = await Promise.all([
+    isVoiceModeEnabled(supabase),
+    readToolGates(supabase, profile),
+    producerVisible(supabase, profile, isAdmin),
+    isAlyChatEnabled(supabase),
+    // Ask for a rating only once someone has had enough successful results to
+    // hold an opinion, and only once ever (rating_prompted_at is stamped by
+    // both answering and dismissing). head+count so this is a cheap COUNT
+    // rather than pulling rows on every page load.
+    supabase.from("generations").select("id", { count: "exact", head: true }).eq("user_id", data.user.id).eq("status", "succeeded"),
+  ]);
   // Which gated tools this account may open: one rule, shared with a take's
   // "Keep going" doors (lib/nav/gates.ts), each tool's plan or role read
   // before its flag.
-  const { setsVisible, recceVisible, mystiqueVisible, liveVisible, cutVisible, pressTourVisible } = await readToolGates(
-    supabase,
-    profile,
-  );
+  const { setsVisible, recceVisible, mystiqueVisible, liveVisible, cutVisible, pressTourVisible } = toolGates;
 
   // The Producer's lamp (2026-09-24): admins, accounts an admin granted it
   // to, and Elite once `producer_elite` is on — the route's own rule
@@ -110,7 +119,7 @@ export default async function AppLayout({
   // skips the flag reads and the watch count.
   let producer: { name: string; watchCount: number; look: LampLook; wheel: WheelStyle; chat: ChatStyle; currency: string; live: boolean } | null =
     null;
-  if (await producerVisible(supabase, profile, isAdmin)) {
+  if (producerOk) {
     const [{ data: prefs }, { data: lookRow }, { data: wheelRow }, { data: chatRow }, watchBar, live] = await Promise.all([
       supabase.from("producer_prefs").select("display_name, watch_seen_at").eq("user_id", data.user.id).maybeSingle(),
       // On its own: before producer-look.sql runs the column is missing, the
@@ -142,7 +151,7 @@ export default async function AppLayout({
     const recent = (recentJobs ?? []).map((j) => ({ id: j.id as string, prompt: (j.prompt_input as string | null) ?? "" }));
     // Aly is Light's chat when her chat is open (2026-09-29): the rail then
     // lists her chats instead of the latest takes.
-    const lightAly = !needsChoice && (await isAlyChatEnabled(supabase));
+    const lightAly = !needsChoice && alyChatOn;
     // The account button's letter on Light's other pages, as the chat's top
     // bar draws it (its first name, else the username or email).
     const lightInitial = (
@@ -196,7 +205,7 @@ export default async function AppLayout({
   // Aly's own chat page (2026-09-29): every plan, behind the aly_chat flag.
   // Her name is the one the person gave her (the lamp's, when they have it).
   let alyChat: { name: string } | null = null;
-  if (await isAlyChatEnabled(supabase)) {
+  if (alyChatOn) {
     let name = producer?.name ?? null;
     if (!name) {
       const { data: prefs } = await supabase.from("producer_prefs").select("display_name").eq("user_id", data.user.id).maybeSingle();
@@ -205,15 +214,7 @@ export default async function AppLayout({
     alyChat = { name };
   }
 
-  // Ask for a rating only once someone has had enough successful results to
-  // hold an opinion, and only once ever (rating_prompted_at is stamped by
-  // both answering and dismissing). head+count so this is a cheap COUNT
-  // rather than pulling rows on every page load.
-  const { count: successfulGenerations } = await supabase
-    .from("generations")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", data.user.id)
-    .eq("status", "succeeded");
+  const successfulGenerations = ratingCount.count;
 
   const showRatePrompt =
     (successfulGenerations ?? 0) >= 3 && !profile?.rating_prompted_at;
@@ -236,6 +237,10 @@ export default async function AppLayout({
       {/* Times how long this person actually uses the app — see the
           component for why it only beats while the tab is visible. */}
       <ActivityHeartbeat />
+      {/* data-app-chrome: the sidebar and the tab bar step out of the way (display: none, globals.css) while
+          Helios Studio covers the screen — so their links, hidden behind it, aren't prefetched against the
+          Studio's own loading (2026-09-30: about fifteen routes, 0.4–0.9 s each, during its load). */}
+      <div data-app-chrome className="contents">
       <AppSidebar
         isAdmin={isAdmin}
         username={profile?.username ?? (data.user.email ?? "").split("@")[0]}
@@ -252,6 +257,7 @@ export default async function AppLayout({
         pressTourVisible={pressTourVisible}
         alyChat={alyChat}
       />
+      </div>
       {/* Registers this device for push, once there's a session to
           attach it to. No-ops entirely on the web. */}
       <NativePush />
@@ -266,10 +272,12 @@ export default async function AppLayout({
       {/* The Generate lamp offers Recast, Press Tour, Live and Director's Cut
           to the accounts that can open them: the same gates as the sidebar's
           entries. */}
-      <NativeTabBar recastOn={mystiqueVisible} pressTourOn={pressTourVisible} liveOn={liveVisible} cutOn={cutVisible} />
-      <NativeQuickPill
-        shareUrl={profile?.username ? `https://picacho.ai/r/${profile.username}` : undefined}
-      />
+      <div data-app-chrome className="contents">
+        <NativeTabBar recastOn={mystiqueVisible} pressTourOn={pressTourVisible} liveOn={liveVisible} cutOn={cutVisible} />
+        <NativeQuickPill
+          shareUrl={profile?.username ? `https://picacho.ai/r/${profile.username}` : undefined}
+        />
+      </div>
       {showRatePrompt && <RatePrompt />}
       <DownloadToasts />
       {/* Where Aly takes them and what she points at (open_page): her lamp and her chat both use it. */}

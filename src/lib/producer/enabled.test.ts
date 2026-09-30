@@ -117,7 +117,9 @@ describe("producerVisible: the layout's rule, lifted", () => {
 
   it("is what the app layout asks now", () => {
     const layout = readFileSync(join(__dirname, "../../app/app/layout.tsx"), "utf8");
-    expect(layout).toContain("if (await producerVisible(supabase, profile, isAdmin)) {");
+    // Read beside the layout's other flags (2026-09-30, "Speed up the loading"), then asked.
+    expect(layout).toContain("producerVisible(supabase, profile, isAdmin),");
+    expect(layout).toContain("if (producerOk) {");
     expect(layout).not.toContain("isProducerOpenToElite");
   });
 });
