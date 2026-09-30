@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.187.0",
+    build: 226,
+    date: "2026-09-30",
+    title: "Helios Studio: real 3D models and real-looking scenery",
+    items: [
+      "A thing with a 3D model on the set (built from its photo or loaded from a file) is drawn from that model in Helios Studio, in the viewport, the path tracer, videos, photos and exports.",
+      "Model from a photo works in the Studio: pick the thing, drop a photo, and on a sheet of several views drag a box round one (the side view is picked for you). Building costs about $0.30 and is open to admins while it is proved.",
+      "Imported and built models are kept with your scene, so they are still there when you come back.",
+      "Realistic materials: asphalt, grass, concrete, brick, rubber, glass and more, at their real size (World tab, on by default). Outdoor sets open with the physical sky, which now lights the viewport too.",
+    ],
+  },
+  {
     version: "1.186.0",
     build: 225,
     date: "2026-09-30",
