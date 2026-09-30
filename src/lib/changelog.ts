@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.169.0",
+    build: 208,
+    date: "2026-09-30",
+    title: "Helios Studio: people that move",
+    items: [
+      "A person can walk or run along a path on the timeline, so your animations and videos have people moving, not just the car. Their feet stay planted on the ground as they go, they turn to face the way they walk, and they ease into a stand at the end.",
+      "In the Move panel: Walk to… anything in the scene, or Draw a path… by clicking the ground; set the start and end frames, or leave the end at 0 for a natural pace (about 1.4 m/s walking, 4 m/s running). Turn to… makes them face something over a few frames.",
+      "Astra can do it in your words: \"Have the stand-in walk to the car over 3 seconds\", \"Run across the track\".",
+      "Moves play in the viewport, in rendered and path-traced animations, are saved with your scene, and export to GLB as an animation.",
+      "In English, Spanish, Portuguese and Italian.",
+    ],
+  },
+  {
     version: "1.168.0",
     build: 207,
     date: "2026-09-30",
