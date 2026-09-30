@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.171.0",
+    build: 210,
+    date: "2026-09-30",
+    title: "Helios Studio: video with your character, fixed",
+    items: [
+      "The Video with your character window now follows your take to the end and shows the finished video, even if you switch to another tab while it renders. While it renders it links to the take in History and in Recast.",
+      "\"What happens\" no longer puts its suggestion in front of what you typed: click into it and type to replace it.",
+      "Yellow things are called yellow, not orange.",
+    ],
+  },
+  {
     version: "1.170.0",
     build: 209,
     date: "2026-09-30",
