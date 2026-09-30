@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.175.0",
+    build: 214,
+    date: "2026-09-30",
+    title: "Helios Studio: Real scene",
+    items: [
+      "Video with your character has a Real scene switch, on by default: the whole scene becomes real footage — the place, the cars, the walls and the light — not only your character, with your moves and camera kept. Same price.",
+      "The words it adds are built from your scene and shown under \"What happens\"; what you type there stays yours.",
+      "If a big plain wall fills part of the shot close to the camera, the window says so, since it may stay flat. Move the camera, or send it anyway.",
+    ],
+  },
+  {
     version: "1.174.0",
     build: 213,
     date: "2026-09-30",
