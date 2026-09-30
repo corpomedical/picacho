@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.179.0",
+    build: 218,
+    date: "2026-09-30",
+    title: "Helios Studio: smooth walks, outfits and looks from your gallery",
+    items: [
+      "Video with your character records every frame of your scene exactly, even if the tab is in the background, so the walk in your video is no longer jumpy.",
+      "People walk more naturally: the feet roll heel to toe, the body no longer drops at each step, and they turn onto their path instead of snapping round. A camera following them glides.",
+      "Add an outfit in words, or pick a look from your character's own pictures; the video uses it. The price shown is the price charged.",
+      "Set the video's start and end right in its window. It opens on the character who plays your set, and describes the walk the way the camera sees it.",
+      "Walk to… now takes the shot camera or a point you click on the ground. The frame counter can be typed into, and typing there no longer moves the view.",
+      "The Studio says \"Opening the set…\" while it loads.",
+    ],
+  },
+  {
     version: "1.178.0",
     build: 217,
     date: "2026-09-30",
