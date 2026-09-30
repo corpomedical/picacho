@@ -50,6 +50,8 @@ describe("studioShotInput", () => {
     expect(out.layout.markId).toBe("m1");
     expect(out.layout.mark).toEqual({ x: 1.2, z: -0.5, facingDeg: 270 });
     expect(out.layout.pose).toBe("stand");
+    // The posed figure's nearest stand pose rides the layout (Helios Studio people, 2026-09-30).
+    expect(studioShotInput(scene({ figure: { x: 1.2, z: -0.5, facingDeg: -90, pose: "sit" } })).layout.pose).toBe("sit");
     expect(out.layout.gaze).toBeNull();
     expect(out.layout.camera.position).toEqual([4, 1.6, 6]);
     expect(out.layout.camera.target).toEqual([4, 1.6, -1]);

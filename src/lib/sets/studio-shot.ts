@@ -1,5 +1,6 @@
 import { formatFrame, type FormatFrame, type RigFormat } from "./rig";
 import { MOVERS_PER_BEAT, type Placement } from "./movers";
+import type { StandPose } from "./set-spec";
 
 // Helios Studio stage 3 (2026-09-29): "Photo with your character". The
 // Studio's shot camera, stand-in and moved things, said the way the set
@@ -41,8 +42,11 @@ export type StudioShotScene = {
   format: string;
   /** The shot camera: where it stands, the way its lens looks (unit), its vertical view, and its focus distance. */
   camera: { position: [number, number, number]; forward: [number, number, number]; fovDeg: number; focusM: number };
-  /** The stand-in where the Studio has it now: facingDeg 0 faces +Z, 90 faces +X (build-scene.ts placeStandIn). */
-  figure: { x: number; z: number; facingDeg: number };
+  /**
+   * The stand-in where the Studio has it now: facingDeg 0 faces +Z, 90 faces +X (build-scene.ts placeStandIn).
+   * `pose` is the set's own stand pose nearest to the figure's (studio-pose.ts standPoseOf, 2026-09-30), "stand" when left out.
+   */
+  figure: { x: number; z: number; facingDeg: number; pose?: StandPose };
   /** The set's first mark's id, the one the Studio's stand-in starts on. */
   markId: string | null;
   /** The set's things the Studio moved or turned, where they stand now. */
@@ -62,7 +66,7 @@ export function studioShotInput(scene: StudioShotScene): {
     markId: string | undefined;
     mark: { x: number; z: number; facingDeg: number };
     camera: { position: [number, number, number]; target: [number, number, number]; fovDeg: number };
-    pose: "stand";
+    pose: StandPose;
     gaze: null;
   };
   rig: { format: RigFormat };
@@ -90,7 +94,7 @@ export function studioShotInput(scene: StudioShotScene): {
         target: [r3(px + (fx / len) * reach), r3(py + (fy / len) * reach), r3(pz + (fz / len) * reach)],
         fovDeg: Math.round(renderFovDeg * 100) / 100,
       },
-      pose: "stand",
+      pose: scene.figure.pose ?? "stand",
       gaze: null,
     },
     rig: { format },
