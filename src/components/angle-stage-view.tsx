@@ -14,6 +14,7 @@ import {
   pollAngleFrame,
 } from "@/lib/generations/angle-stage";
 import { runGeneration } from "@/lib/generations/actions";
+import { measureStageCamera, type StageCameraView } from "@/lib/generations/angle-stage-camera";
 
 // The Angle Stage (2026-09-05, built from the proven prototype). The page
 // is a wizard with one honest job: manufacture a start and an end frame,
@@ -72,7 +73,7 @@ export function AngleStageView({
   const [submitting, setSubmitting] = useState(false);
 
   const canvasHostRef = useRef<HTMLDivElement>(null);
-  const snapshotRef = useRef<(() => string | null) | null>(null);
+  const snapshotRef = useRef<(() => { image: string; view: StageCameraView } | null) | null>(null);
   const resetCameraRef = useRef<(() => void) | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -154,17 +155,32 @@ export function AngleStageView({
       raf = requestAnimationFrame(loop);
 
       snapshotRef.current = () => {
-        // 1280-wide JPEG regardless of the on-screen size, so the guided
-        // re-render always gets the same sketch weight.
+        // 1280 × 720 JPEG regardless of the on-screen size, so the guided
+        // re-render always gets the same sketch weight. Rendered at 16:9
+        // itself: the viewer is much wider than 16:9 on a desktop, and
+        // drawing its canvas into 1280 × 720 used to squeeze the sketch
+        // (a person came out ~1.5× too tall). The vertical framing is the
+        // viewer's; the sides are trimmed to 16:9.
+        const pixelRatio = renderer.getPixelRatio();
+        const canvas = renderer.domElement;
+        const viewW = canvas.width / pixelRatio;
+        const viewH = canvas.height / pixelRatio;
+        const viewAspect = camera.aspect;
+        renderer.setPixelRatio(1);
+        renderer.setSize(1280, 720, false);
+        camera.aspect = 16 / 9;
+        camera.updateProjectionMatrix();
         renderer.render(scene, camera);
-        const src = renderer.domElement;
-        const out = document.createElement("canvas");
-        out.width = 1280;
-        out.height = 720;
-        const ctx = out.getContext("2d");
-        if (!ctx) return null;
-        ctx.drawImage(src, 0, 0, src.width, src.height, 0, 0, 1280, 720);
-        return out.toDataURL("image/jpeg", 0.9);
+        const image = canvas.toDataURL("image/jpeg", 0.9);
+        renderer.setPixelRatio(pixelRatio);
+        renderer.setSize(viewW, viewH, false);
+        camera.aspect = viewAspect;
+        camera.updateProjectionMatrix();
+        renderer.render(scene, camera);
+        // Where the camera stands, as numbers the server words for the edit
+        // model (angle-stage-camera.ts; operator, 2026-09-30, option A).
+        const offset = camera.position.clone().sub(controls.target);
+        return { image, view: measureStageCamera(offset, HOME) };
       };
       resetCameraRef.current = () => {
         camera.position.copy(HOME);
@@ -237,7 +253,7 @@ export function AngleStageView({
     const snapshot = snapshotRef.current?.();
     if (!snapshot) return;
     setRenderingAngle(true);
-    const started = await renderAngleFrame(generationId, snapshot);
+    const started = await renderAngleFrame(generationId, snapshot.image, snapshot.view);
     if (started.error !== null) {
       setError(started.error);
       setRenderingAngle(false);

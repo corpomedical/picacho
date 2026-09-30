@@ -13,6 +13,7 @@ import {
   stageProxyPath,
   stageFramesPrefix,
 } from "@/lib/generations/angle-stage-config";
+import { angleFramePrompt } from "@/lib/generations/angle-stage-camera";
 import type { PlanId } from "@/lib/plans";
 import { ContentPolicyRefusal } from "@/lib/generations/content-policy";
 import { gatePrompt, recordPolicyRefusal } from "@/lib/generations/policy-log";
@@ -265,10 +266,13 @@ export async function pollAngleProxy(
 // the composition, the take's own still carries identity and style. The
 // prompt is built HERE, from the take's stored prompt — a client-authored
 // prompt would let the guided re-render drift from the take it claims to
-// re-shoot.
+// re-shoot. The camera arrives as numbers only (readStageCameraView), and
+// the words are ours (describeStageCamera). A page from before 2026-09-30
+// sends none and gets the old prompt.
 export async function renderAngleFrame(
   generationId: string,
   snapshotDataUri: string,
+  cameraView?: unknown,
 ): Promise<{ error: string } | { error: null; handle: StageJobHandle }> {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
@@ -310,12 +314,7 @@ export async function renderAngleFrame(
   }
 
   return submitToQueue(SEEDREAM_EDIT_ENDPOINT, {
-    prompt:
-      "Recreate the scene from image 2 at exactly the camera angle, subject pose and composition of image 1. " +
-      "Image 1 is a rough 3D sketch of the same scene — follow its framing precisely, but take every detail of " +
-      "the subject's face, hair, clothing, lighting and background from image 2. Photorealistic cinematic film " +
-      "still, same color grade as image 2." +
-      (scene ? ` The scene: ${scene}` : ""),
+    prompt: angleFramePrompt(scene, cameraView),
     image_urls: [snapshotDataUri, providerDownloadUrl(stage.stillUrl)],
     image_size: "landscape_16_9",
   }).then((r) => ("error" in r ? r : { error: null as null, handle: r }));
