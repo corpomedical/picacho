@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { isReply, LiveTalk, MAX_TALK_LINES, parseLiveContext, parseTalk, talkMessages } from "./live-talk";
+import {
+  GOODBYE_MAX_MS,
+  GOODBYE_QUIET_MS,
+  goodbyeSaid,
+  isReply,
+  LiveTalk,
+  MAX_TALK_LINES,
+  parseLiveContext,
+  parseTalk,
+  sayBrainGoodbye,
+  talkMessages,
+} from "./live-talk";
 
 // A line said from `at` ms on the call's timeline, word by word (250 ms
 // each) like GPT-Live's transcript deltas.
@@ -197,5 +208,29 @@ describe("talkMessages", () => {
       { role: "user", content: [{ type: "text", text: "Hi" }], display: { text: "Hi", live: true } },
       { role: "assistant", content: [{ type: "text", text: "Hey!" }], display: { text: "Hey!", cards: [], live: true } },
     ]);
+  });
+});
+
+describe("a goodbye ends the call (2026-09-30, \"she keeps the mic on\")", () => {
+  const told = 10_000;
+  it("waits while she is still saying goodbye", () => {
+    // She spoke 400 ms ago.
+    expect(goodbyeSaid({ now: told + 500, told, herAt: told + 100, callMs: 60_000, herUntil: 59_000 })).toBe(false);
+    // Quiet long enough, but the call's clock hasn't reached the end of her words yet.
+    expect(goodbyeSaid({ now: told + 3000, told, herAt: told, callMs: 60_000, herUntil: 60_500 })).toBe(false);
+  });
+
+  it("closes once she has been quiet and her words have played", () => {
+    expect(goodbyeSaid({ now: told + GOODBYE_QUIET_MS, told, herAt: told, callMs: 61_000, herUntil: 60_500 })).toBe(true);
+  });
+
+  it("closes after the longest wait whatever she's doing", () => {
+    expect(goodbyeSaid({ now: told + GOODBYE_MAX_MS, told, herAt: told + GOODBYE_MAX_MS, callMs: 0, herUntil: 99_000 })).toBe(true);
+  });
+
+  it("says the brain's goodbye only when the voice said nothing since the hand-over", () => {
+    expect(sayBrainGoodbye("Bye for now!", 900, 1000)).toBe(true);
+    expect(sayBrainGoodbye("Bye for now!", 1200, 1000)).toBe(false);
+    expect(sayBrainGoodbye("  ", 0, 1000)).toBe(false);
   });
 });

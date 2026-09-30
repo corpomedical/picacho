@@ -62,3 +62,76 @@ export function subtitleView(
   const saidCount = spokenWords === null ? shown.length : Math.max(0, Math.min(shown.length, spokenWords - start));
   return { cut: start > 0, said: shown.slice(0, saidCount).join(" "), rest: shown.slice(saidCount).join(" ") };
 }
+
+/**
+ * A phone's subtitle, like a film's (2026-09-30, operator: the subtitles
+ * "take more than half the screen" on the Android app → "Lets try B"): at
+ * most `max` characters, about two lines. The answer is cut into pieces at
+ * sentence ends (and at a comma or a word inside a long sentence). While she
+ * speaks (`spokenWords` = words said so far) it is the piece she is saying,
+ * with what she hasn't said yet dimmed; otherwise the last piece, all said.
+ * `cut` = earlier pieces aren't shown (only when she isn't speaking).
+ */
+export function phoneSubtitle(
+  text: string,
+  spokenWords: number | null,
+  max = 84,
+): { cut: boolean; said: string; rest: string } {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return { cut: false, said: "", rest: "" };
+  const pieces = subtitlePieces(words, max);
+  if (spokenWords === null) {
+    const last = pieces[pieces.length - 1];
+    return { cut: pieces.length > 1, said: words.slice(last.start, last.end).join(" "), rest: "" };
+  }
+  const at = Math.max(0, Math.min(words.length - 1, spokenWords - 1));
+  const piece = pieces.find((p) => at < p.end) ?? pieces[pieces.length - 1];
+  const saidEnd = Math.max(piece.start, Math.min(piece.end, spokenWords));
+  return {
+    cut: false,
+    said: words.slice(piece.start, saidEnd).join(" "),
+    rest: words.slice(saidEnd, piece.end).join(" "),
+  };
+}
+
+const SENTENCE_END = /[.!?…]["”’)]?$/;
+
+/** Word ranges [start, end) of at most `max` characters each. */
+function subtitlePieces(words: string[], max: number): { start: number; end: number }[] {
+  const pieces: { start: number; end: number }[] = [];
+  let start = 0;
+  while (start < words.length) {
+    let end = start + 1;
+    let length = words[start].length;
+    let clause = -1;
+    while (end < words.length && length + 1 + words[end].length <= max) {
+      // A sentence ends the piece once it has a few words in it.
+      if (SENTENCE_END.test(words[end - 1]) && length >= max * 0.3) break;
+      if (/[,;:—–]["”’)]?$/.test(words[end - 1])) clause = end;
+      length += 1 + words[end].length;
+      end += 1;
+    }
+    if (end < words.length && !SENTENCE_END.test(words[end - 1])) {
+      // Too long for one piece: break after the last comma when that keeps a fair share.
+      if (clause > start && words.slice(start, clause).join(" ").length >= max * 0.45) end = clause;
+      else {
+        // Or, when only a few words of the sentence would be left over, halve
+        // it evenly instead of leaving them on their own.
+        let stop = end;
+        while (stop < words.length && !SENTENCE_END.test(words[stop - 1])) stop += 1;
+        const text = (a: number, b: number) => words.slice(a, b).join(" ").length;
+        if (text(end, stop) < max * 0.35) {
+          let best = end;
+          for (let k = start + 1; k < stop; k++) {
+            if (text(start, k) > max || text(k, stop) > max) continue;
+            if (Math.abs(text(start, k) - text(k, stop)) < Math.abs(text(start, best) - text(best, stop))) best = k;
+          }
+          end = best;
+        }
+      }
+    }
+    pieces.push({ start, end });
+    start = end;
+  }
+  return pieces;
+}

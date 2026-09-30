@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { commentaryPieces, type LiveVoice } from "@/lib/producer/live";
-import { LiveTalk, mergeTalk, type TalkWho } from "@/lib/producer/live-talk";
+import { goodbyeSaid, LiveTalk, mergeTalk, sayBrainGoodbye, type TalkWho } from "@/lib/producer/live-talk";
 import { playCue } from "./use-hands-free";
 import { vlog } from "./voice-log";
 
@@ -45,11 +45,13 @@ export function useLiveVoice(opts: {
    * small talk said before it that isn't in the chat yet, and the recent
    * transcript (live-talk.ts).
    */
-  onDelegation: (words: string, before: Talk, context: string) => Promise<string>;
+  onDelegation: (words: string, before: Talk, context: string) => Promise<string | { text: string; end: true }>;
   /** It couldn't start, or the server ended it (the sheet shows why). */
   onError?: (message: string, failure: LiveFailure) => void;
   /** The call ended and its small talk was saved: the sheet can reload the chat. */
   onEnded?: () => void;
+  /** Her brain was told to end the call (a goodbye, "stop listening"): it is closing now. */
+  onGoodbye?: () => void;
 }) {
   const [phase, setPhase] = useState<LivePhase>("off");
   const [level, setLevel] = useState(0);
@@ -93,6 +95,10 @@ export function useLiveVoice(opts: {
   const last = useRef<"person" | "her" | null>(null);
   const eventSeq = useRef(0);
   const quiet = useRef<number | undefined>(undefined);
+  // When she last said something (performance.now()), and until when on the call's clock.
+  const herAt = useRef(0);
+  const herUntil = useRef(0);
+  const goodbye = useRef<number | undefined>(undefined);
   const supported = useSyncExternalStore(noSubscribe, canCall, () => false);
   // Who is talking goes back to nobody when the words stop.
   const speakerNow = useCallback((who: "person" | "her") => {
@@ -149,6 +155,7 @@ export function useLiveVoice(opts: {
     window.clearTimeout(closeWait.current);
     window.clearTimeout(connectWait.current);
     window.clearTimeout(quiet.current);
+    window.clearTimeout(goodbye.current);
     window.clearInterval(beat.current);
     if (raf.current !== null) cancelAnimationFrame(raf.current);
     raf.current = null;
@@ -204,6 +211,23 @@ export function useLiveVoice(opts: {
     closeWait.current = window.setTimeout(cleanup, 5000);
   }, [send, cleanup, go]);
 
+  // Told to end: once her goodbye has been said (live-talk.ts), the call
+  // closes, the mic with it.
+  const endAfterGoodbye = useCallback(() => {
+    if (phaseRef.current === "off" || phaseRef.current === "closing") return;
+    window.clearTimeout(goodbye.current);
+    const told = performance.now();
+    vlog("live.goodbye");
+    cb.current.onGoodbye?.();
+    const check = () => {
+      if (phaseRef.current === "off" || phaseRef.current === "closing") return;
+      const now = performance.now();
+      if (goodbyeSaid({ now, told, herAt: herAt.current, callMs: now - t0.current, herUntil: herUntil.current })) stop();
+      else goodbye.current = window.setTimeout(check, 250);
+    };
+    check();
+  }, [stop]);
+
   const touch = useCallback(() => {
     window.clearTimeout(idle.current);
     idle.current = window.setTimeout(() => {
@@ -245,6 +269,8 @@ export function useLiveVoice(opts: {
           connected.current = true;
           window.clearTimeout(connectWait.current);
           t0.current = performance.now();
+          herAt.current = 0;
+          herUntil.current = 0;
           go("live");
           touch();
           // She's listening now: what's said before this (while connecting) isn't heard.
@@ -268,6 +294,8 @@ export function useLiveVoice(opts: {
           last.current = "her";
           saidBuf.current += d;
           setSaid(saidBuf.current);
+          herAt.current = performance.now();
+          herUntil.current = Math.max(herUntil.current, at(ev.end_ms));
           speakerNow("her");
           touch();
           break;
@@ -289,8 +317,18 @@ export function useLiveVoice(opts: {
           };
           cb.current
             .onDelegation(words, earlier, context)
-            .then((text) => {
-              vlog("live.answer", { ms: Math.round(performance.now() - started), chars: text.length });
+            .then((result) => {
+              const text = typeof result === "string" ? result : result.text;
+              vlog("live.answer", { ms: Math.round(performance.now() - started), chars: text.length, end: typeof result !== "string" });
+              if (typeof result !== "string") {
+                // A goodbye (2026-09-30, operator: "when telling Aly bye or
+                // shut down, she keeps the mic on"): her brain chose to end
+                // the call. The voice says its own goodbye as it hands over;
+                // only if it hasn't spoken since is the brain's said for it.
+                if (sayBrainGoodbye(text, herAt.current, started)) answer(text);
+                endAfterGoodbye();
+                return;
+              }
               answer(text.trim() ? text : "I couldn't find anything to say to that. Ask me again another way?");
             })
             .catch(() => {
@@ -323,7 +361,7 @@ export function useLiveVoice(opts: {
         }
       }
     },
-    [go, touch, send, cleanup, speakerNow],
+    [go, touch, send, cleanup, speakerNow, endAfterGoodbye],
   );
 
   const start = useCallback(

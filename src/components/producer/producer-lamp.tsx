@@ -24,7 +24,7 @@ import { PRODUCER_ASK_EVENT, producerAskDraft, producerAskText } from "@/lib/pro
 import styles from "./producer-lamp.module.css";
 import { Wheel } from "./wheel";
 import { wheelGeometry, type WheelStyle } from "./wheel-style";
-import { DEFAULT_CHAT_STYLE, countWords, subtitleView, type ChatStyle } from "./chat-style";
+import { DEFAULT_CHAT_STYLE, countWords, phoneSubtitle, subtitleView, type ChatStyle } from "./chat-style";
 import { parseSources, type Source } from "@/lib/producer/sources";
 import { ASSISTANT_TOPUPS, topUpCheckoutHref } from "@/lib/agent/topups";
 import { useIsNativeApp } from "@/lib/native/use-native";
@@ -290,9 +290,14 @@ export function ProducerLamp({
   const [wasOpen, setWasOpen] = useState(open);
   // Subtitles: "the whole chat" opens the card until the chat closes.
   const [forceCard, setForceCard] = useState(false);
+  // Subtitles on a phone: the wheel folded away while her words have the
+  // corner (`tucked`), and the moment it folds (`folding`).
+  const [tucked, setTucked] = useState(false);
+  const [folding, setFolding] = useState(false);
   if (open !== wasOpen) {
     setWasOpen(open);
     setClosing(!open);
+    setTucked(false);
     if (!open) setForceCard(false);
   }
   useEffect(() => {
@@ -374,13 +379,13 @@ export function ProducerLamp({
   const loadRef = useRef<() => Promise<void>>(async () => {});
   const liveVoice = useLiveVoice({
     onDelegation: (words, before, context) =>
-      new Promise<string>((resolve, reject) => {
+      new Promise<string | { text: string; end: true }>((resolve, reject) => {
         void runTurnRef.current({
           text: words || "(they didn't say anything clear)",
           viaLive: true,
           liveBefore: before,
           liveContext: context,
-          onDone: (text, failed) => (failed ? reject(new Error(failed)) : resolve(text)),
+          onDone: (text, failed, endCall) => (failed ? reject(new Error(failed)) : resolve(endCall ? { text, end: true as const } : text)),
         });
       }),
     onError: (message, failure) => {
@@ -393,6 +398,10 @@ export function ProducerLamp({
     },
     // Its small talk is in the chat now.
     onEnded: () => void loadRef.current(),
+    // Told to shut down: the subtitles close with the call, as with her usual voice.
+    onGoodbye: () => {
+      if (subsRef.current) setOpen(false);
+    },
   });
 
   // Opening the chat starts fetching the speech model (use-hands-free.ts warmEars).
@@ -568,6 +577,11 @@ export function ProducerLamp({
     el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
     el.focus();
   }, [open, loaded, view]);
+
+  // Sent (the field emptied): the box goes back to one line.
+  useEffect(() => {
+    if (input === "" && inputRef.current) inputRef.current.style.height = "";
+  }, [input]);
 
   // A rename in Settings arrives as a new prop after the router refresh.
   useEffect(() => setName(initialName), [initialName]);
@@ -802,7 +816,7 @@ export function ProducerLamp({
     /** With viaLive: the recent transcript, so her brain can find the request in it. */
     liveContext?: string;
     /** The answer's text when the turn ends (and why it failed, if it did). */
-    onDone?: (text: string, failed: string | null) => void;
+    onDone?: (text: string, failed: string | null, endCall: boolean) => void;
   }) {
     setError(null);
     const turn: Turn = {
@@ -829,6 +843,8 @@ export function ProducerLamp({
     if (spoken) probeRef.current = turn;
     else accept(text ?? "");
     let notesChanged = false;
+    // Her live voice's hand-over was a goodbye: the call ends after it (use-live-voice.ts).
+    let endCall = false;
     let failed: string | null = null;
     let wasIgnored = false;
     const last = spoken ? spoken[spoken.length - 1] : null;
@@ -971,7 +987,10 @@ export function ProducerLamp({
             // Told to shut down: after her goodbye the mic and speaker close,
             // and so do the subtitles (operator, 2026-09-28: "When giving Aly
             // the order to shut down, close the subtitles").
-            if (ev.data.action === "end_voice") voice.endAfterPlayback(subsRef.current ? () => setOpen(false) : undefined);
+            // (2026-09-30, operator: "when telling Aly bye or shut down, she
+            // keeps the mic on"): from her live voice, the call itself ends.
+            if (ev.data.action === "end_voice" && viaLive) endCall = true;
+            else if (ev.data.action === "end_voice") voice.endAfterPlayback(subsRef.current ? () => setOpen(false) : undefined);
             else if (ev.data.action === "mute_replies") setAloud(false);
             else if (ev.data.action === "unmute_replies") setAloud(true);
           } else if (ev.event === "audio" && typeof ev.data.url === "string") {
@@ -1010,7 +1029,7 @@ export function ProducerLamp({
       vlog("send.failed", { ms: since(), error: timedOut ? "no reply in time" : err instanceof Error ? err.message.slice(0, 80) : "error", aborted: turn.controller.signal.aborted && !timedOut, net: connectionNote() });
     } finally {
       window.clearTimeout(noReply);
-      onDone?.(turn.live.text.trim(), failed);
+      onDone?.(turn.live.text.trim(), failed, endCall);
       if (probeRef.current === turn) probeRef.current = null;
       if (!turn.accepted) {
         // Never became a turn (nothing said, not for the Producer, merged
@@ -1082,6 +1101,29 @@ export function ProducerLamp({
   }
 
   const busy = streaming !== null;
+  // Subtitles on a phone take turns with the wheel (2026-09-30, operator:
+  // "when clicking the light bulb the menu opens below and above it appears
+  // the subtitles. It takes more than half the screen" → "Lets try B"). The
+  // lamp opens on the wheel and the writing box; when she starts answering
+  // the wheel folds back into the lamp and her words, two lines at a time,
+  // sit beside it; a tap on the lamp brings the wheel back.
+  const subs = chatStyle === "subtitles" && view === "chat" && !forceCard;
+  const turns = subs && !!center?.phone;
+  const answering = busy || voice.phase === "speaking" || (liveVoice.active && liveVoice.talking === "her");
+  const [wasAnswering, setWasAnswering] = useState(answering);
+  if (answering !== wasAnswering) {
+    setWasAnswering(answering);
+    if (answering && turns && !tucked) {
+      setTucked(true);
+      setFolding(true);
+    }
+  }
+  useEffect(() => {
+    if (!folding) return;
+    const t = window.setTimeout(() => setFolding(false), 260);
+    return () => window.clearTimeout(t);
+  }, [folding]);
+  const wordsTurn = !turns || tucked || typing;
   const mood = lampMood(voice.phase, busy);
   // The look's light: the voice's loudness while a mic session measures it;
   // a reply read aloud with the mic off has no meter, so it talks at a
@@ -1104,7 +1146,8 @@ export function ProducerLamp({
             : (voice.phase === "sending" && sentNear) || (busy && voice.phase !== "speaking" && (voice.active || readAloud))
               ? W.gotIt
               : lampNote;
-  const wheelShown = (open ? wheelReady : closing) && center !== null && !(center.phone && typing);
+  const wheelShown =
+    (open ? wheelReady : closing) && center !== null && !(center.phone && typing) && !(turns && tucked && !folding);
   // The card ends just above the wheel's reach; with the keyboard up on a
   // phone the wheel tucks away and the card reaches down to the keyboard.
   // (Kept while a moved lamp is still flying home, so the card doesn't jump
@@ -1132,7 +1175,6 @@ export function ProducerLamp({
   // Subtitles (chat-style.ts): the last thing she said, or is saying, with
   // what she hasn't said aloud yet dimmed; your last words above it; the
   // answer before that fading out above those.
-  const subs = chatStyle === "subtitles" && view === "chat" && !forceCard;
   const subsRef = useRef(subs);
   useEffect(() => {
     subsRef.current = subs;
@@ -1150,12 +1192,18 @@ export function ProducerLamp({
   const lastLine = shownLines[shownLines.length - 1];
   const current = streaming ?? (lastLine?.role === "assistant" ? lastLine : null);
   const olderLine = shownLines.slice(0, Math.max(0, lastUser)).findLast((l) => l.role === "assistant");
-  const subtitle = subtitleView(current?.text ?? "", speaking ? spokenWords : null);
+  // About two lines of the phone's type across the screen's width.
+  const phoneMax = center ? Math.max(48, Math.floor(((center.vw - 32) / 9.5) * 2)) : 84;
+  const subtitle = turns
+    ? phoneSubtitle(current?.text ?? "", speaking ? spokenWords : null, phoneMax)
+    : subtitleView(current?.text ?? "", speaking ? spokenWords : null);
   // With her live voice on, the subtitles are what it says and what it heard.
   const liveSubs = liveVoice.active && (liveVoice.said !== "" || liveVoice.heard !== "");
   // On a wide screen the subtitles sit at the very bottom, clear of the wheel
   // on either side; otherwise just above the wheel, the full width.
   const subsWide = !!center && !center.phone && center.vw >= 1100;
+  // Her words' turn on a phone: the writing box sits on the lamp's row, clear of it.
+  const besideLamp = turns && tucked && !typing && center ? center : null;
 
   // The writing box and what sits over it: the card and the subtitles both use it.
   const composerBody = (
@@ -1344,7 +1392,7 @@ export function ProducerLamp({
       <MovableLamp
         name={name}
         open={open}
-        onToggle={() => setOpen((v) => !v)}
+        onToggle={() => (open && besideLamp ? setTucked(false) : setOpen((v) => !v))}
         live={voice.active || liveVoice.active}
         endable={voice.handsFree || liveVoice.active}
         level={glow}
@@ -1370,7 +1418,7 @@ export function ProducerLamp({
       {wheelShown && center && (
         <div
           aria-hidden="true"
-          className={closing ? `${styles.veil} ${styles.veilClosing}` : styles.veil}
+          className={closing || folding ? `${styles.veil} ${styles.veilClosing}` : styles.veil}
           style={{ "--vx": `${center.cx}px`, "--vy": `${center.cy}px` } as CSSProperties}
         />
       )}
@@ -1379,7 +1427,7 @@ export function ProducerLamp({
         <Wheel
           style={wheelStyle}
           phone={center.phone}
-          closing={closing}
+          closing={closing || folding}
           cx={center.cx}
           cy={center.cy}
           used={usage?.used ?? 0}
@@ -1429,7 +1477,7 @@ export function ProducerLamp({
           inert={closing}
           className={closing ? `${styles.subs} ${styles.subsClosing}` : styles.subs}
           style={{
-            paddingBottom: subsWide ? 28 : (sheetBottom ?? 8),
+            paddingBottom: subsWide ? 28 : besideLamp ? Math.max(8, Math.round(besideLamp.vh - besideLamp.cy - 24)) : (sheetBottom ?? 8),
             paddingInline: subsWide ? wheelGeometry(wheelStyle, false).reach + 150 : 16,
           }}
         >
@@ -1475,48 +1523,48 @@ export function ProducerLamp({
                 </div>
               </>
             )}
-            {liveSubs ? (
+            {!wordsTurn ? null : liveSubs ? (
               <>
-                {liveVoice.heard && (
+                {liveVoice.heard && !turns && (
                   <p className={styles.subsYou}>
                     <b>{W.you}</b> · {liveVoice.heard}
                   </p>
                 )}
                 {liveVoice.said && (
                   <p className={styles.subsLine} aria-live="polite">
-                    {liveVoice.said}
+                    {turns ? phoneSubtitle(liveVoice.said, null, phoneMax).said : liveVoice.said}
                   </p>
                 )}
               </>
             ) : (
               <>
-                {olderLine && <p className={styles.subsOld}>{olderLine.text}</p>}
-                {lastUser >= 0 && (
+                {olderLine && !turns && <p className={styles.subsOld}>{olderLine.text}</p>}
+                {lastUser >= 0 && !turns && (
                   <p className={styles.subsYou}>
                     <b>{W.you}</b> · {shownLines[lastUser].text}
                   </p>
                 )}
                 {current?.text ? (
                   <p className={styles.subsLine} aria-live="polite">
-                    {subtitle.cut && "… "}
+                    {subtitle.cut && !(turns && busy) && "… "}
                     {subtitle.said}
                     {subtitle.rest && <span className={styles.subsRest}>{subtitle.said ? ` ${subtitle.rest}` : subtitle.rest}</span>}
                   </p>
                 ) : null}
               </>
             )}
-            {current?.sources && current.sources.length > 0 && (
+            {wordsTurn && current?.sources && current.sources.length > 0 && (
               <div className="flex justify-center">
                 <SourceLinks sources={current.sources} />
               </div>
             )}
-            {streaming?.status && (
+            {wordsTurn && streaming?.status && (
               <p className="flex items-center gap-2 text-[13px] text-atelier-muted">
                 <span className={styles.statusDot} aria-hidden="true" />
                 {streaming.status}
               </p>
             )}
-            {current && current.cards.length > 0 && (
+            {wordsTurn && current && current.cards.length > 0 && (
               <div className="w-full max-w-[440px] text-left">
                 <Cards cards={current.cards} onOpen={() => light("composer", null, 3500)} />
               </div>
@@ -1540,6 +1588,7 @@ export function ProducerLamp({
                 void send({ text: input });
               }}
               className="w-full max-w-[560px] text-left"
+              style={besideLamp ? { alignSelf: "stretch", width: "auto", marginRight: Math.round(besideLamp.vw - besideLamp.cx + 16) } : undefined}
             >
               {composerBody}
             </form>

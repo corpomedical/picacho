@@ -298,3 +298,25 @@ export function talkMessages(lines: { who: TalkWho; text: string }[]) {
       : { role: "assistant" as const, content: [{ type: "text", text: l.text }], display: { text: l.text, cards: [], live: true } },
   );
 }
+
+// A goodbye (2026-09-30, operator: "when telling Aly bye or shut down, she
+// keeps the mic on"): her brain chose to end the call (end_voice). The call
+// closes once her goodbye has been said: nothing new from her for
+// GOODBYE_QUIET_MS and the call's clock past the end of what she said —
+// or GOODBYE_MAX_MS after it was told, whatever she's doing.
+export const GOODBYE_QUIET_MS = 1200;
+export const GOODBYE_MAX_MS = 12_000;
+
+/**
+ * `now`, `told` and `herAt` (when she last said something) are the page's
+ * clock; `callMs` and `herUntil` (where what she said ends) the call's.
+ */
+export function goodbyeSaid(a: { now: number; told: number; herAt: number; callMs: number; herUntil: number }): boolean {
+  if (a.now - a.told >= GOODBYE_MAX_MS) return true;
+  return a.now - a.herAt >= GOODBYE_QUIET_MS && a.callMs >= a.herUntil + 300;
+}
+
+/** The voice says its own goodbye as it hands over; only if it said nothing since is the brain's said for it. */
+export function sayBrainGoodbye(text: string, herAt: number, handedAt: number): boolean {
+  return text.trim() !== "" && herAt < handedAt;
+}

@@ -72,7 +72,9 @@ Your backend is ${name}'s own brain. It knows this person's account and plan, th
 
 You cannot start renders or spend credits: the backend prepares them and the person presses Render. Prepared renders appear on their screen; say so when the result mentions one.
 
-Speak the language the person speaks. If they say goodbye or want to stop, say a short goodbye.`;
+Speak the language the person speaks.
+
+Ending: only the backend can end this conversation and turn the microphone off. When they say goodbye, or want you to stop listening, hang up, end the conversation or turn the microphone off, in whatever words, delegate it to the backend and say a short goodbye; it closes the call. If they tell you to stop while you are speaking, that means stop talking: stop and listen. Anything else they ask stays in the conversation.`;
 }
 
 /** Earlier lines of the conversation to start from (≤ 10 lines, ≤ ~6,000 characters). */

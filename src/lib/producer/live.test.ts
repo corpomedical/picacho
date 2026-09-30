@@ -37,6 +37,14 @@ describe("her live voice (GPT-Live)", () => {
     expect(liveInstructions({ name: "  ", personality: "default" })).toContain("You are Aly,");
   });
 
+  it("hands a goodbye to her brain, the only one who can end the call (2026-09-30)", () => {
+    const text = liveInstructions({ name: "Aly", personality: "default" });
+    expect(text).toContain("only the backend can end this conversation and turn the microphone off");
+    expect(text).toContain("delegate it to the backend and say a short goodbye");
+    // Stopping her mid-sentence is not hanging up.
+    expect(text).toContain("If they tell you to stop while you are speaking, that means stop talking");
+  });
+
   it("starts from the last lines of the conversation, oldest first, within its limits", () => {
     const lines = Array.from({ length: 14 }, (_, i) => ({ who: i % 2 ? ("assistant" as const) : ("person" as const), text: `line ${i}` }));
     const seed = liveSeed(lines) as { role: string; content: { type: string; text: string }[] }[];

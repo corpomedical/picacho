@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.180.0",
+    build: 219,
+    date: "2026-09-30",
+    title: "Aly on phones: menu or words, one at a time",
+    items: [
+      "On a phone, Aly's menu and her subtitles take turns instead of stacking up: tapping the lamp opens the menu and the writing box; when she answers, the menu folds back into the lamp and her words sit beside it. Tap the lamp to bring the menu back.",
+      "Her subtitles on a phone are two lines at a time, like a film's, following her voice sentence by sentence. The whole conversation is still one tap away in Whole chat.",
+      "Saying goodbye, or asking her to stop listening, now ends her live voice: once she has said bye, the microphone turns off and the subtitles close.",
+      "After you send a long message, the writing box goes back to one line.",
+    ],
+  },
+  {
     version: "1.179.0",
     build: 218,
     date: "2026-09-30",
