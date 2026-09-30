@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.173.0",
+    build: 212,
+    date: "2026-09-30",
+    title: "Helios Studio: the video's range is kept, and a fairer face score",
+    items: [
+      "The timeline's Start and End are saved with your scene, so a Video with your character is the length, and the price, you set.",
+      "A Studio video's identity score is read only from frames where your character's face can be seen: a walk that starts far off or with its back to the camera no longer drags the number down.",
+    ],
+  },
+  {
     version: "1.172.0",
     build: 211,
     date: "2026-09-30",
