@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 import { NATIVE_COOKIE, userAgentIsNativeApp } from "@/lib/native/platform";
 import { isSignedOutAppNavigation } from "@/lib/auth/signed-out-nav";
+import { STUDIO_BOOT_HEADER, isStudioBoot } from "@/lib/studio-boot";
 import { LOCALE_HEADER, matchLocalePrefix } from "@/lib/i18n/routing";
 import { LOCALE_COOKIE } from "@/lib/i18n/locales";
 
@@ -170,6 +171,12 @@ export async function middleware(request: NextRequest) {
   // able to supply its own.
   request.headers.delete(LOCALE_HEADER);
   if (localeRoute) request.headers.set(LOCALE_HEADER, localeRoute.locale);
+  // Helios Studio opening (2026-09-30, operator: "Pushed, measure it"): the root layout streams the Studio's
+  // "Opening the set…" cover in the first flush, before the /app layout's reads (lib/studio-boot.ts). Only a
+  // hint for what to draw while the page is read — it opens nothing and shows nothing private — and never
+  // taken from the client.
+  request.headers.delete(STUDIO_BOOT_HEADER);
+  if (isStudioBoot(request.method, request.nextUrl.pathname, request.nextUrl.searchParams)) request.headers.set(STUDIO_BOOT_HEADER, "1");
   request.headers.set("content-security-policy", csp);
 
   // Auth/session logic is unchanged and still runs on exactly the same

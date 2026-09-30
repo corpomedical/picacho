@@ -49,10 +49,9 @@ import { readCyclesRender, renderCyclesInSet, reserveCyclesScene } from "@/lib/s
 import { CYCLES_BUCKET } from "@/lib/sets/cycles";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import { localizeServerText } from "@/lib/i18n/server-text";
-import type { RecastCharacter } from "@/lib/recast/data";
 import { RECAST_BUCKET } from "@/lib/recast/recast";
 import { recastStorageObjectUrl, uploadRecastClip } from "@/lib/recast/recast-client";
-import { discardStudioRecast, inspectStudioRecast, listStudioLooks, readStudioRecast, reserveStudioRecast, startStudioRecast } from "@/lib/sets/studio-recast-actions";
+import { discardStudioRecast, inspectStudioRecast, listStudioLooks, openStudioRecast, readStudioRecast, reserveStudioRecast, startStudioRecast } from "@/lib/sets/studio-recast-actions";
 import { pressStudioRecast, type RecastPress, type RecastUpdate } from "./studio-recast";
 import { StudioOpening, STUDIO_HIDES_APP_CHROME } from "./studio-opening";
 
@@ -91,7 +90,7 @@ export function HeliosStudio({
   savedScene,
   characters,
   cyclesOn = false,
-  recastCharacters = null,
+  recastOn = false,
   castId = null,
 }: {
   setId: string;
@@ -102,7 +101,11 @@ export function HeliosStudio({
   /** Blender renders on a cloud GPU: admins while HELIOS_CYCLES_FOR_ALL is false (the page decides). */
   cyclesOn?: boolean;
   /** Recast's characters when this account can use Recast (the page asks Recast's own rule); null hides "Video with your character". */
-  recastCharacters?: RecastCharacter[] | null;
+  /**
+   * Whether to offer "Video with your character": the accounts Recast is for (admins today). Its own gate and
+   * its characters are asked when the window opens (openStudioRecast), which is where a refusal is said.
+   */
+  recastOn?: boolean;
   /** Who plays the set's figure (the set page's "Plays the figure"): Video with your character's first choice. */
   castId?: string | null;
 }) {
@@ -134,7 +137,7 @@ export function HeliosStudio({
     specRef.current = spec;
     titleRef.current = title;
   });
-  const recastRef = useRef(recastCharacters);
+  const recastRef = useRef(recastOn);
   // Recast's own words for its lanes and its answers, in the person's language.
   const recastWordsRef = useRef({
     lanes: {
@@ -205,7 +208,14 @@ export function HeliosStudio({
           : null,
         recast: recastRef.current
           ? {
-              characters: recastRef.current.map((c) => ({ id: c.id, name: c.name, photos: c.photos.length })),
+              load: async () => {
+                try {
+                  return await openStudioRecast(setId);
+                } catch (err) {
+                  if (isStaleDeployError(err)) void reloadForNewDeploy({ delayMs: 1800 });
+                  return { error: unreachable, timing: "" };
+                }
+              },
               castId: castIdRef.current ?? null,
               looks: async (characterId: string) => {
                 try {

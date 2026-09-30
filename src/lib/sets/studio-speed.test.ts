@@ -13,7 +13,10 @@ describe("Helios Studio loads fast", () => {
   it("the page streams its cover at once and reads only what the Studio needs, together", () => {
     const page = read("src/app/app/sets/[id]/page.tsx");
     expect(page).toContain("<Suspense fallback={<StudioOpening words={t.sets.studioOpening} />}>");
-    expect(page).toContain("getStudioPage(id, (db, userId) => readRecastCharacters(db, userId), tm),");
+    // Recast's gate and characters wait for the Video window (openStudioRecast), 2026-09-30.
+    expect(page).toContain("getStudioPage(id, undefined, tm)");
+    expect(page).not.toContain("canUseRecast(");
+    expect(page).not.toContain("readRecastCharacters(");
     // The studio branch never reaches the set page's own read.
     expect(page.indexOf('if (first(query.studio) === "1") {')).toBeLessThan(page.indexOf("const data = await getSetPage(id);"));
     const data = read("src/lib/sets/data.ts");

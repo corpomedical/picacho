@@ -32,6 +32,7 @@ import { ChoiceFrame, LightShell, LookSync, ModeGate } from "@/components/light/
 import { InLightProvider } from "@/components/light/in-light";
 import { isAlyChatEnabled } from "@/lib/aly-chat/enabled";
 import { serverTimer, type ServerTimer } from "@/lib/server-timing";
+import { verifiedClaims } from "@/lib/supabase/claims";
 import { ServerTimingMark } from "@/components/server-timing-mark";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
@@ -234,12 +235,14 @@ export default async function AppLayout({
   // an expiring token and falls back to the auth server on a token it can't verify locally). It replaced a
   // getUser() round trip to the auth server that every /app page waited on. Revocation stays where it was: the
   // proxy's own profiles.status check on every /app request. No session: /login, before anything is sent.
-  const { data: claimsData } = await tm.step("auth", () => supabase.auth.getClaims());
-  const userId = typeof claimsData?.claims?.sub === "string" ? claimsData.claims.sub : null;
+  // The signing keys come from the deployment's shared cache, not a fetch per cold instance
+  // (lib/supabase/claims.ts; live the step took ~220 ms).
+  const claims = await tm.step("auth", () => verifiedClaims(supabase));
+  const userId = typeof claims?.sub === "string" ? claims.sub : null;
   if (!userId) {
     redirect("/login");
   }
-  const email = typeof claimsData?.claims?.email === "string" ? claimsData.claims.email : "";
+  const email = typeof claims?.email === "string" ? claims.email : "";
 
   const [{ data: aal }, modeRead] = await Promise.all([
     // Two-step verification: a session whose account has a verified factor

@@ -18,7 +18,7 @@ describe("the /app layout streams its frame", () => {
     const awaited = [...beforeFrame.matchAll(/await ([^\n;]+)/g)].map((m) => m[1]);
     expect(awaited).toHaveLength(3);
     expect(awaited[0]).toContain("createClient()");
-    expect(awaited[1]).toContain('tm.step("auth", () => supabase.auth.getClaims())');
+    expect(awaited[1]).toContain('tm.step("auth", () => verifiedClaims(supabase))');
     expect(awaited[2]).toContain("Promise.all([");
     expect(beforeFrame).toContain('tm.step("aal"');
     expect(beforeFrame).toContain('tm.step("mode"');
@@ -34,9 +34,9 @@ describe("the /app layout streams its frame", () => {
   it("never asks the auth server on the way (the proxy's own locally verified claims), and redirects a missing session before anything is sent", () => {
     expect(body).not.toContain("auth.getUser(");
     const redirectAt = body.indexOf('redirect("/login")');
-    expect(redirectAt).toBeGreaterThan(body.indexOf("supabase.auth.getClaims()"));
+    expect(redirectAt).toBeGreaterThan(body.indexOf("verifiedClaims(supabase)"));
     expect(redirectAt).toBeLessThan(body.indexOf("return ("));
-    expect(body).toContain('const userId = typeof claimsData?.claims?.sub === "string" ? claimsData.claims.sub : null;\n  if (!userId) {\n    redirect("/login");');
+    expect(body).toContain('const userId = typeof claims?.sub === "string" ? claims.sub : null;\n  if (!userId) {\n    redirect("/login");');
     // The two-step gate still stands before the frame.
     expect(body.indexOf('redirect("/verify-2fa")')).toBeLessThan(body.indexOf("return ("));
     // And the proxy still checks the session and the suspension on every /app request.

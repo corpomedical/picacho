@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
 import { headers } from "next/headers";
 import { Archivo } from "next/font/google";
+import { STUDIO_BOOT_HEADER } from "@/lib/studio-boot";
+import { StudioOpening } from "@/components/studio/studio-opening";
 import "./globals.css";
 import { ThemeProvider, THEME_INIT_SCRIPT } from "@/lib/theme/theme-provider";
 import { PageViewTracker } from "@/components/page-view-tracker";
@@ -151,7 +153,9 @@ export default async function RootLayout({
   // rendering constraint here. The JSON-LD block is inert data
   // (type="application/ld+json"), not executable script — CSP doesn't gate
   // it, so it needs no nonce.
-  const nonce = (await headers()).get("x-nonce") ?? undefined;
+  const requestHeaders = await headers();
+  const nonce = requestHeaders.get("x-nonce") ?? undefined;
+  const studioBoot = requestHeaders.get(STUDIO_BOOT_HEADER) === "1";
 
   return (
     <html lang={locale} className={archivo.variable}>
@@ -200,7 +204,10 @@ export default async function RootLayout({
                 on a phone. Web keeps the plain path: no intro sheet exists
                 there to cover the fallback, and the browser has its own
                 loading UI. */}
-            {native ? (
+            {studioBoot && !native ? (
+              // Helios Studio (lib/studio-boot.ts): its cover streams in the first flush, before the /app layout's reads.
+              <Suspense fallback={<StudioOpening words={getMessages(locale).sets.studioOpening} />}>{children}</Suspense>
+            ) : native ? (
               <Suspense fallback={null}>
                 {children}
                 {/* Arrives only when the whole boundary has resolved — the

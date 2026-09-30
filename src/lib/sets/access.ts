@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { verifiedClaims } from "@/lib/supabase/claims";
 import { setsAccessForProfile } from "@/lib/sets/access-rule";
 import { isSetsEnabled } from "@/lib/sets/enabled";
 import { setBuildsMonthlyLimit } from "@/lib/sets/set-config";
@@ -25,22 +26,26 @@ export type SetsAccess =
 
 export async function setsAccess(): Promise<SetsAccess> {
   const supabase = await createClient();
-  // Who, and whether Helios is on, at once (2026-09-30 — "Speed up the loading"): the flag doesn't depend on who.
-  const [{ data }, enabled] = await Promise.all([supabase.auth.getUser(), isSetsEnabled(supabase)]);
-  if (!data.user) return { error: SETS_SESSION_EXPIRED };
+  // Who (2026-09-30, operator: "Pushed, measure it" — live, this took ~1 s): the session's signed claims,
+  // verified locally (lib/supabase/claims.ts) — the proxy's and the /app layout's trust model; the proxy checks
+  // profiles.status on every /app request, server actions included (they post to their /app route), and the
+  // profile read below checks it again. It replaced a getUser() round trip to the auth server. Then the switch
+  // and the profile, at once.
+  const claims = await verifiedClaims(supabase);
+  const userId = typeof claims?.sub === "string" ? claims.sub : null;
+  if (!userId) return { error: SETS_SESSION_EXPIRED };
+  const [enabled, { data: profile }] = await Promise.all([
+    isSetsEnabled(supabase),
+    supabase.from("profiles").select("plan, role, status, current_period_start").eq("id", userId).maybeSingle(),
+  ]);
   if (!enabled) return { error: SETS_UNAVAILABLE };
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("plan, role, status, current_period_start")
-    .eq("id", data.user.id)
-    .maybeSingle();
   const rule = setsAccessForProfile(profile);
   if (rule.error !== null) return { error: rule.error };
   const { plan, isAdmin } = rule;
   return {
     error: null,
     supabase,
-    userId: data.user.id,
+    userId,
     plan,
     isAdmin,
     periodStart: (profile?.current_period_start as string | null) ?? null,

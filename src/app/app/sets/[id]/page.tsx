@@ -20,8 +20,6 @@ import { HeliosStudio } from "@/components/studio/helios-studio";
 import { StudioOpening } from "@/components/studio/studio-opening";
 import { ServerTimingMark } from "@/components/server-timing-mark";
 import { serverTimer } from "@/lib/server-timing";
-import { canUseRecast } from "@/lib/recast/actions";
-import { readRecastCharacters } from "@/lib/recast/data";
 
 // One Set, open (Astra Sets, 2026-09-10; a workspace with Astra since
 // 2026-09-14). Everything the view needs — the normalised set, the person's
@@ -216,11 +214,9 @@ export default async function SetPage({
  */
 async function StudioRoute({ id }: { id: string }) {
   const tm = serverTimer("studio");
-  const [data, native, recastGate] = await Promise.all([
-    getStudioPage(id, (db, userId) => readRecastCharacters(db, userId), tm),
-    tm.step("native", () => isNativeApp()),
-    tm.step("recastgate", () => canUseRecast()),
-  ]);
+  // Recast's gate and characters are asked when "Video with your character" first opens (openStudioRecast),
+  // not here: live, the gate held this page ~1 s (2026-09-30, "Pushed, measure it").
+  const [data, native] = await Promise.all([getStudioPage(id, undefined, tm), tm.step("native", () => isNativeApp())]);
   if (data.error !== null || native || !data.set.ready || !data.set.spec || !(data.modelsOn || HELIOS_STUDIO_FOR_ALL)) redirect(`/app/sets/${id}`);
   return (
     <>
@@ -232,7 +228,7 @@ async function StudioRoute({ id }: { id: string }) {
       savedScene={data.savedScene}
       characters={data.characters}
       cyclesOn={data.modelsOn || HELIOS_CYCLES_FOR_ALL}
-      recastCharacters={recastGate.error === null ? data.also : null}
+      recastOn={data.modelsOn}
       castId={data.set.castId}
     />
     </>

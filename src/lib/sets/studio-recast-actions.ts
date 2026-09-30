@@ -24,6 +24,8 @@ import { inActionRows } from "@/lib/characters/in-action";
 import { recastTakeOutcome } from "@/lib/recast/door-truth";
 import type { RecastRead } from "@/lib/recast/recast-read";
 import { parseStudioRecastEngine, studioOutfitFromPrompt, studioRecastStart } from "@/lib/sets/studio-recast";
+import { readRecastCharacters } from "@/lib/recast/data";
+import { serverTimer } from "@/lib/server-timing";
 
 type Access = Awaited<ReturnType<typeof setsAccess>>;
 
@@ -88,6 +90,27 @@ export type StudioLook = { id: string; url: string; outfit: string };
  * character's own finished pictures, newest first — the character page's "In action" rows, images only — each
  * with a thumbnail and the outfit words its prompt gives (studioOutfitFromPrompt), for the Outfit box.
  */
+/**
+ * "Video with your character", opened (2026-09-30, operator: "Pushed, measure it"): Recast's own gate and its
+ * list of characters, asked when the window first opens — the Studio's page no longer waits on them (live,
+ * the gate alone took ~1 s of the page's server time). Every step of the window's own doors still asks
+ * setsAccess and Recast's gate again, server-side. `timing`: the steps, for our own measurement.
+ */
+export async function openStudioRecast(
+  setId: string,
+): Promise<{ error: string; timing: string } | { error: null; characters: { id: string; name: string; photos: number }[]; timing: string }> {
+  const tm = serverTimer("studio.recast");
+  const access = await tm.step("access", () => setsAccess());
+  if (access.error !== null) return { error: access.error, timing: tm.value() };
+  if (!(await tm.step("owns", () => ownsSet(access, setId)))) return { error: SET_NOT_FOUND, timing: tm.value() };
+  const [gate, characters] = await Promise.all([
+    tm.step("gate", () => canUseRecast()),
+    tm.step("characters", () => readRecastCharacters(access.supabase, access.userId)),
+  ]);
+  if (gate.error !== null) return { error: gate.error, timing: tm.value() };
+  return { error: null, characters: characters.map((c) => ({ id: c.id, name: c.name, photos: c.photos.length })), timing: tm.value() };
+}
+
 export async function listStudioLooks(setId: string, input: { characterId: string }): Promise<{ error: string } | { error: null; looks: StudioLook[] }> {
   const access = await setsAccess();
   if (access.error !== null) return { error: access.error };

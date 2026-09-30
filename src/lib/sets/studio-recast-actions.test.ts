@@ -65,11 +65,15 @@ vi.mock("@/lib/media/url", async () => await import("../media/url"));
 vi.mock("@/lib/supabase/server", () => ({ createAdminClient: () => admin }));
 vi.mock("@/lib/sets/studio-looks", async () => await import("./studio-looks"));
 vi.mock("@/lib/characters/in-action", async () => await import("../characters/in-action"));
+vi.mock("@/lib/server-timing", async () => await import("../server-timing"));
+vi.mock("@/lib/recast/data", () => ({
+  readRecastCharacters: async () => (calls.push("characters"), [{ id: "c1", name: "Eva", photos: [{ path: "p1", url: "u1" }, { path: "p2", url: "u2" }] }]),
+}));
 vi.mock("@/lib/recast/recast", async () => await import("../recast/recast"));
 vi.mock("@/lib/recast/door-truth", async () => await import("../recast/door-truth"));
 vi.mock("@/lib/sets/studio-recast", async () => await import("./studio-recast"));
 
-const { reserveStudioRecast, inspectStudioRecast, startStudioRecast, readStudioRecast, discardStudioRecast, listStudioLooks } = await import("./studio-recast-actions");
+const { reserveStudioRecast, inspectStudioRecast, startStudioRecast, readStudioRecast, discardStudioRecast, listStudioLooks, openStudioRecast } = await import("./studio-recast-actions");
 
 const START = { sendId: SEND, path: `${USER}/x.mp4`, characterId: "c1", engine: "kling-edit", seconds: 5, direction: "d", read: null, castTag: null };
 
@@ -161,6 +165,24 @@ describe("the doors hand Recast the Studio's press", () => {
     expect(filters).toEqual(expect.arrayContaining([`generations.user_id=${USER}`, `generations.character_profile_id=${C1}`, "generations.content_type=image", "generations.status=succeeded"]));
     expect(await listStudioLooks(SET, { characterId: "not-an-id" })).toEqual({ error: null, looks: [] });
     expect(await listStudioLooks("nope", { characterId: C1 })).toEqual({ error: SET_NOT_FOUND });
+  });
+
+  it("open (2026-09-30): Recast's own gate and its characters, asked when the window opens, with the steps' timings", async () => {
+    const out = await openStudioRecast(SET);
+    expect(out).toMatchObject({ error: null, characters: [{ id: "c1", name: "Eva", photos: 2 }] });
+    expect(calls).toEqual(expect.arrayContaining(["canUseRecast", "characters"]));
+    expect(out.timing).toMatch(/^studio\.recast\.access;dur=\d+, studio\.recast\.owns;dur=\d+, .*studio\.recast\.total;dur=\d+$/);
+    // Recast refuses: said in its words, and no characters go back.
+    recastOpen = false;
+    expect(await openStudioRecast(SET)).toMatchObject({ error: RECAST_NOT_OPEN });
+    expect("characters" in (await openStudioRecast(SET))).toBe(false);
+    recastOpen = true;
+    // No plan, or not their set: refused before Recast is asked.
+    calls.length = 0;
+    expect(await openStudioRecast("nope")).toMatchObject({ error: SET_NOT_FOUND });
+    access = { error: SETS_NOT_OPEN };
+    expect(await openStudioRecast(SET)).toMatchObject({ error: SETS_NOT_OPEN });
+    expect(calls).toEqual([]);
   });
 
   it("start: a lane the Studio doesn't offer, a set that isn't there, or no length never reaches Recast", async () => {

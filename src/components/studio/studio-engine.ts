@@ -102,7 +102,8 @@ export type StudioOptions = {
   } | null;
   /** Video with your character (2026-09-30): Recast's characters, its lane words, and one press through its own path. Null when this account can't use Recast. */
   recast?: {
-    characters: { id: string; name: string; photos: number }[];
+    /** Recast's gate and characters, asked when the window first opens (openStudioRecast). */
+    load: () => Promise<{ error: string | null; characters?: { id: string; name: string; photos: number }[]; timing?: string }>;
     /** Who plays the set's figure (the set page's cast): the window's first choice. */
     castId?: string | null;
     /** The character's own gallery pictures, newest first (listStudioLooks). */
@@ -128,7 +129,7 @@ const wOn = (t, f, o) => window.addEventListener(t, f, withSig(o));
 const dOn = (t, f, o) => document.addEventListener(t, f, withSig(o));
 let stopped = false, raf = 0;
 // "Video with your character" (2026-09-30): its press state, up here because the timeline reads its price at start-up.
-const rc = { busy: false, stop: false, t0: 0, phase: "", done: 0, total: 0, share: null, progress: "", result: null, charId: null, engine: STUDIO_RECAST_ENGINES[0], fig: null, words: "", autoWords: "", typed: false, id: null, real: true, wall: 0, realThings: [], timer: 0, shot: null, lastChar: null, outfit: "", outfitTyped: false, lookId: null, looks: null, looksFor: null };
+const rc = { busy: false, stop: false, t0: 0, phase: "", done: 0, total: 0, share: null, progress: "", result: null, charId: null, engine: STUDIO_RECAST_ENGINES[0], fig: null, words: "", autoWords: "", typed: false, id: null, real: true, wall: 0, realThings: [], timer: 0, shot: null, chars: null, loadingChars: false, lastChar: null, outfit: "", outfitTyped: false, lookId: null, looks: null, looksFor: null };
 // A tab shown again says where the take is at once (a hidden tab's timers run slowly).
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") rcTick(); }, { signal: ac.signal });
 // The person's language (stage 7): T() for text the engine puts in a field
@@ -1719,7 +1720,9 @@ async function renderVideo() {
 // in flight is never pressed again by reopening it.
 const RC_TITLE = "Video with your character";
 function rcRange() { return studioRecastRange({ start: pStart, end: pEnd, fps: FPS, lastFrame: FRAMES, engine: rc.engine }); }
-function rcChars() { return (opts.recast?.characters || []).filter((c) => c.photos > 0); }
+function rcChars() { return (rc.chars || []).filter((c) => c.photos > 0); }
+/** The server's timing marks for a lazy step, written where our measurement reads them (lib/server-timing.ts). */
+function timingMark(value) { if (!value) return; const t = document.createElement("template"); t.dataset.serverTiming = value; document.body.appendChild(t); }
 function rcChar() { return rcChars().find((c) => c.id === rc.charId) || null; }
 function rcCreditsFor(engine) { const c = rcChar(); return studioRecastCredits(engine, studioRecastRange({ start: pStart, end: pEnd, fps: FPS, lastFrame: FRAMES, engine }).seconds, c ? c.photos : 1, rc.lookId ? 1 : 0); }
 /** What the character wears, for the engine: the Outfit box and the picked look (studioWearLine). */
@@ -1837,6 +1840,24 @@ function rcFrameUri() {
 function openRecast() {
   const R = opts.recast;
   if (!R) return openWin(RC_TITLE, `<p>Video with your character works inside Picacho, for accounts that can use Recast.</p>`);
+  // Recast's gate and the characters, asked the first time the window opens (2026-09-30): the Studio's page
+  // no longer waits on them. A refusal is said in Recast's words; a lost answer is asked again next time.
+  if (rc.chars === null) {
+    if (!rc.loadingChars) {
+      rc.loadingChars = true;
+      openWin(RC_TITLE, `<div data-recast><p class="hint">Opening…</p></div>`);
+      Promise.resolve().then(() => R.load()).then((out) => out, () => ({ error: R.unreachable })).then((out) => {
+        rc.loadingChars = false; if (stopped) return;
+        timingMark(out.timing);
+        if (out.error === null) rc.chars = out.characters || [];
+        const open = !$("dlg").hidden && $("dlgBody").querySelector("[data-recast]");
+        if (out.error !== null) { if (open) $("dlgBody").querySelector("[data-recast]").innerHTML = `<p class="cast-note" role="alert">${esc(out.error)}</p>`; return; }
+        if (open) openRecast();
+        rcMenuLabel();
+      });
+    }
+    return;
+  }
   if (!rc.busy && !rc.result) {
     if (typeof VideoEncoder === "undefined" && (!("MediaRecorder" in window) || !document.createElement("canvas").captureStream)) return openWin(RC_TITLE, "<p>This browser can't record video. Chrome, Edge and Firefox can.</p>");
     if (!rcChars().length) return openWin(RC_TITLE, `<p>You don't have a character with a photo yet. Make one, then come back — the Studio keeps your scene.</p><div class="cast-links"><a href="/app/character/new">Make a character</a></div>`);
