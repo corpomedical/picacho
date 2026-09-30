@@ -21,6 +21,12 @@
 // sends the scene file and the job through studio-cycles.ts to the doors in
 // cycles-actions.ts, which render it on a cloud GPU. Shown only when the
 // page says so (admins while HELIOS_CYCLES_FOR_ALL is false).
+//
+// Video with your character (2026-09-30): Render ▸ records the playback
+// range through the shot camera and sends it through Recast's own upload,
+// read and start (studio-recast.ts → studio-recast-actions.ts), with this
+// press's sendId. Shown only when the page says this account can use Recast;
+// the characters are Recast's own list.
 
 import { useEffect, useRef } from "react";
 import { quoteSend } from "@/lib/generations/quote";
@@ -42,6 +48,32 @@ import { pressCycles, type CyclesUpdate } from "./studio-cycles";
 import { readCyclesRender, renderCyclesInSet, reserveCyclesScene } from "@/lib/sets/cycles-actions";
 import { CYCLES_BUCKET } from "@/lib/sets/cycles";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
+import { localizeServerText } from "@/lib/i18n/server-text";
+import type { RecastCharacter } from "@/lib/recast/data";
+import { RECAST_BUCKET } from "@/lib/recast/recast";
+import { recastStorageObjectUrl, uploadRecastClip } from "@/lib/recast/recast-client";
+import { discardStudioRecast, inspectStudioRecast, readStudioRecast, reserveStudioRecast, startStudioRecast } from "@/lib/sets/studio-recast-actions";
+import { pressStudioRecast, type RecastPress, type RecastUpdate } from "./studio-recast";
+
+/**
+ * The recording to Recast's storage, the way Recast's door sends a clip
+ * (mystique-door.tsx sendClip): over XMLHttpRequest so it says how much has
+ * gone, and the storage library's own upload when that can't be made.
+ */
+async function sendStudioClip(path: string, contentType: string, clip: Blob, onShare: (share: number | null) => void): Promise<"sent" | "failed" | "aborted"> {
+  const file = new File([clip], path.split("/").pop() || "helios-studio.mp4", { type: contentType });
+  const supabase = createBrowserClient();
+  const projectUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const token = projectUrl && anonKey ? (await supabase.auth.getSession()).data.session?.access_token : undefined;
+  if (projectUrl && anonKey && token) {
+    const sent = await uploadRecastClip({ url: recastStorageObjectUrl(projectUrl, RECAST_BUCKET, path), anonKey, token, file, signal: new AbortController().signal, onProgress: onShare });
+    if (sent.ok) return "sent";
+  }
+  onShare(null);
+  const { error } = await supabase.storage.from(RECAST_BUCKET).upload(path, file, { contentType });
+  return error ? "failed" : "sent";
+}
 
 export function HeliosStudio({
   setId,
@@ -50,6 +82,7 @@ export function HeliosStudio({
   savedScene,
   characters,
   cyclesOn = false,
+  recastCharacters = null,
 }: {
   setId: string;
   title: string;
@@ -58,6 +91,8 @@ export function HeliosStudio({
   characters: SetCharacter[];
   /** Blender renders on a cloud GPU: admins while HELIOS_CYCLES_FOR_ALL is false (the page decides). */
   cyclesOn?: boolean;
+  /** Recast's characters when this account can use Recast (the page asks Recast's own rule); null hides "Video with your character". */
+  recastCharacters?: RecastCharacter[] | null;
 }) {
   const { t, locale } = useLocale();
   // Read once, when the engine starts: a later render must not restart it.
@@ -71,6 +106,15 @@ export function HeliosStudio({
     refresh: t.generate.refreshNeeded,
   });
   const unreachable = t.generate.submitFailed;
+  const recastRef = useRef(recastCharacters);
+  // Recast's own words for its lanes and its answers, in the person's language.
+  const recastWordsRef = useRef({
+    lanes: {
+      "kling-edit": { title: t.mystique.modeScene, line: t.mystique.modeSceneLine },
+      "h3-768": { title: t.mystique.modeRestage, line: t.mystique.modeRestageLine },
+    },
+    localize: (text: string) => localizeServerText(text, t),
+  });
   useEffect(() => {
     let dispose: (() => void) | null = null;
     let dead = false;
@@ -126,6 +170,42 @@ export function HeliosStudio({
                   { glb, job },
                   onUpdate,
                 ),
+            }
+          : null,
+        recast: recastRef.current
+          ? {
+              characters: recastRef.current.map((c) => ({ id: c.id, name: c.name, photos: c.photos.length })),
+              lanes: recastWordsRef.current.lanes,
+              recastHref: "/app/mystique",
+              historyHref: (generationId: string) => `/app/history/${generationId}`,
+              unreachable,
+              run: async (press: RecastPress, onUpdate: (u: RecastUpdate) => void, isStopped: () => boolean) => {
+                const say = recastWordsRef.current.localize;
+                const answer = await pressStudioRecast(
+                  {
+                    reserve: reserveStudioRecast,
+                    upload: sendStudioClip,
+                    inspect: inspectStudioRecast,
+                    start: (id: string, input: Record<string, unknown>) => startStudioRecast(id, input as Parameters<typeof startStudioRecast>[1]),
+                    read: readStudioRecast,
+                    discard: discardStudioRecast,
+                    alive: () => !dead,
+                    stopped: isStopped,
+                    unreachable,
+                    refresh: wordsRef.current.refresh,
+                    changed: "The recording came out different from the range you set, so nothing was sent and nothing was charged. Try again.",
+                    failed: "It didn't come out. If it hadn't started rendering, its credits came back.",
+                    neverStarted: wordsRef.current.neverStarted,
+                    unchecked: wordsRef.current.unchecked,
+                    stillGoing: wordsRef.current.stillGoing,
+                    onStale: () => void reloadForNewDeploy({ delayMs: 1800 }),
+                  },
+                  setId,
+                  press,
+                  onUpdate,
+                );
+                return answer.error ? { ...answer, error: say(answer.error) } : answer;
+              },
             }
           : null,
         render: {

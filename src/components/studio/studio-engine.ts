@@ -24,6 +24,9 @@ import { boneOfMesh, makeFigure } from "./studio-figure";
 import { addMove, gaitFrame, headingOf, moveAt, moveWords, naturalEnd, normaliseMoves, pathCurve, pathLength, shortestYaw, turnStart, turnYawAt } from "@/lib/sets/studio-gait";
 import { BONE, BONE_NAMES, LIMBS, POSE_PRESETS, PRESET_LABELS, SEAT_DROP_M, applyPose, applyPreset, clampLoc, clampRot, clonePose, eulerNumbers, findSkeleton, groundFeet, lookRot, normalisePose, normalisePoseKeys, poseAt, poseSentence, poseWords, presetBones, presetPose, setPoseKey, solveLimb, standPoseOf, thingWords } from "@/lib/sets/studio-pose";
 import { newPressId } from "@/lib/sets/press-follow";
+import { STUDIO_RECAST_BITRATE, STUDIO_RECAST_ENGINES, studioFigureSpot, studioRecastCredits, studioRecastDirection, studioRecastHappens, studioRecastRange, studioRecastSize } from "@/lib/sets/studio-recast";
+import { RECAST_ENGINES, RECAST_JOB_MAX_SECONDS, RECAST_MIN_SECONDS } from "@/lib/recast/recast";
+import { RECAST_DIRECTION_MAX_CHARS } from "@/lib/recast/recast-brief";
 import { ENV_H, ENV_W, SKY_DIFFUSE_SHARE, TRACE_MAX_SAMPLES, TRACE_PRESETS, TRACE_SCALES, TRACE_SLOW_SECONDS, TRACE_SPEED_KEY, envAddSplit, envAddSun, envUpIrradiance, loadOidn, luminance, meterExposure, oidnDenoise, physicalSunIrradiance, traceDuration, traceEstimate, traceSamples, traceSize } from "./studio-trace";
 import { MATERIAL_RECIPES, hslOf, materialOf } from "@/lib/sets/stage-materials";
 import { GRIP_TAP_PX, LONG_PRESS_MS, LONG_PRESS_SLOP_PX, STUDIO_COMPACT_QUERY, nextSheet, sheetDragHeight, sheetHeights, sheetSnap } from "@/lib/sets/studio-sheets";
@@ -91,6 +94,15 @@ export type StudioOptions = {
     unreachable: string;
     run: (glb: Blob, job: unknown, onUpdate: (u: any) => void) => Promise<any>;
   } | null;
+  /** Video with your character (2026-09-30): Recast's characters, its lane words, and one press through its own path. Null when this account can't use Recast. */
+  recast?: {
+    characters: { id: string; name: string; photos: number }[];
+    lanes: Record<string, { title: string; line: string }>;
+    recastHref: string;
+    historyHref: (generationId: string) => string;
+    unreachable: string;
+    run: (press: any, onUpdate: (u: any) => void, isStopped: () => boolean) => Promise<any>;
+  } | null;
   astra?: {
     unreachable: string;
     ask: (text: string, summary: unknown, turns: { who: "person" | "astra"; text: string }[]) => Promise<any>;
@@ -103,6 +115,8 @@ const withSig = (o) => (typeof o === "object" && o !== null ? { ...o, signal: ac
 const wOn = (t, f, o) => window.addEventListener(t, f, withSig(o));
 const dOn = (t, f, o) => document.addEventListener(t, f, withSig(o));
 let stopped = false, raf = 0;
+// "Video with your character" (2026-09-30): its press state, up here because the timeline reads its price at start-up.
+const rc = { busy: false, stop: false, t0: 0, phase: "", done: 0, total: 0, share: null, progress: "", result: null, charId: null, engine: STUDIO_RECAST_ENGINES[0], fig: null, words: "", autoWords: "", timer: 0, shot: null };
 // The person's language (stage 7): T() for text the engine puts in a field
 // or sends on; everything drawn is translated by watchStudioText below.
 const T = (s) => (opts.t ? opts.t(s) : s);
@@ -1283,6 +1297,7 @@ function renderOutliner() {
 const frameNo = () => Math.round(time * FPS) + 1;
 function renderTimeline() {
   $("rangeStart").innerHTML = ""; $("rangeStart").append("Start ", field(pStart, { step: 0.3, dec: 0, min: 1, max: pEnd - 1, onCommit: (v) => { pStart = Math.round(v); renderTimeline(); } })); $("rangeEnd").innerHTML = ""; $("rangeEnd").append("End ", field(pEnd, { step: 0.3, dec: 0, min: pStart + 1, max: FRAMES, onCommit: (v) => { pEnd = Math.round(v); renderTimeline(); } }));
+  rcMenuLabel();
   if (editorType === "graph") { renderGraph(); return; } gView = null;
   const names = $("tnames"), lanes = $("tlanes");
   names.innerHTML = `<div class="rh"></div><div class="sum">Summary</div>`; lanes.innerHTML = "";
@@ -1598,6 +1613,203 @@ async function renderVideo() {
   rec.stop(); await new Promise((res) => (rec.onstop = res)); setTime(was); if (!recording) return; recording = false;
   const url = URL.createObjectURL(new Blob(chunks, { type: type || "video/webm" }));
   openWin("Helios Render · animation", `<video src="${url}" controls autoplay loop muted playsinline></video><p>In Picacho this clip guides the video engine: it follows this exact motion and camera move, with your character and your car in place of the stand-ins.</p>`);
+}
+
+// ================= video with your character (2026-09-30) =================
+// The operator picked Render ▸ "Video with your character": the Studio
+// records the animated scene through the shot camera (the playback range,
+// at Recast's preferred size), and Recast re-shoots that recording with a
+// saved character in a figure's place — same moves, same camera. Recast's
+// own path does the rest (studio-recast.ts: upload, read, start with this
+// press's sendId, follow); its price is Recast's own quote for the range's
+// length and lane (lib/sets/studio-recast.ts). Stop before the take starts
+// costs nothing. The window keeps its state while it is closed, so a press
+// in flight is never pressed again by reopening it.
+const RC_TITLE = "Video with your character";
+function rcRange() { return studioRecastRange({ start: pStart, end: pEnd, fps: FPS, lastFrame: FRAMES, engine: rc.engine }); }
+function rcChars() { return (opts.recast?.characters || []).filter((c) => c.photos > 0); }
+function rcChar() { return rcChars().find((c) => c.id === rc.charId) || null; }
+function rcCreditsFor(engine) { const c = rcChar(); return studioRecastCredits(engine, studioRecastRange({ start: pStart, end: pEnd, fps: FPS, lastFrame: FRAMES, engine }).seconds, c ? c.photos : 1); }
+function rcLabel() { const n = rcCreditsFor(rc.engine); return `Video with your character · ${n} credit${n === 1 ? "" : "s"}`; }
+function rcMenuLabel() { if (opts.recast && $("recastMenuLabel")) $("recastMenuLabel").textContent = rcLabel(); }
+/** The figures that can be replaced: people shown in renders, with where they stand across the shot at the range's middle. */
+function rcFigures() {
+  const r = rcRange(), cam = shot.obj.userData.cam, a = FORMATS[format], was = time, a0 = cam.aspect;
+  evaluate((Math.round((r.start + r.end) / 2) - 1) / FPS); cam.aspect = a; cam.updateProjectionMatrix(); shot.obj.updateMatrixWorld(true);
+  const out = people().filter((it) => !it.hidden && it.obj.visible && !it.noRender).map((it) => {
+    const p = it.rig.bones.pelvis.getWorldPosition(new V3()).project(cam);
+    const x = Math.max(-1, Math.min(1, p.x));
+    return { it, x, spot: studioFigureSpot(x) };
+  });
+  cam.aspect = a0; cam.updateProjectionMatrix(); evaluate(was);
+  return out;
+}
+/** "What happens", from the figure's pose at the range's start and its moves inside the range. */
+function rcHappens(it) {
+  const r = rcRange(), was = time;
+  evaluate((r.start - 1) / FPS);
+  const pw = personWords(it);
+  evaluate(was);
+  const others = items.filter((o) => o !== it && o.kind === "mesh" && !o.hidden && o !== place && !o.rig);
+  const nameOf = (o) => thingWords(o.name, o.obj.userData.paint?.[0]?.color ? "#" + o.obj.userData.paint[0].color.getHexString() : null);
+  const near = (x, z) => { let best = 1.6, hit = null; for (const o of others) { const b = worldBox(o); if (b.isEmpty()) continue; const d = b.distanceToPoint(new V3(x, Math.min(Math.max(0.5, b.min.y), b.max.y), z)); if (d < best) { best = d; hit = o; } } return hit ? nameOf(hit) : null; };
+  const cp = shot.obj.getWorldPosition(new V3());
+  const steps = (it.moves || []).filter((m) => m.f1 >= r.start && m.f0 <= r.end).sort((p, q) => p.f0 - q.f0).map((m) => {
+    const from = Math.max(0, (m.f0 - r.start) / FPS), to = Math.min(r.seconds, (m.f1 - r.start + 1) / FPS);
+    if (m.kind === "turn") { const want = Math.atan2(cp.x - m.at[0], cp.z - m.at[2]); const off = Math.abs(shortestYaw(m.yaw, want)); return { kind: "turn", from, to, toward: off < (25 * Math.PI) / 180 ? "the camera" : null }; }
+    const e = m.path[m.path.length - 1];
+    return { kind: m.gait === "run" ? "run" : "walk", from, to, toward: near(e[0], e[2]) };
+  });
+  const start = pw && pw.words !== "standing" ? pw.sentence : "";
+  return studioRecastHappens(start, steps);
+}
+function rcFrameUri() {
+  const r = rcRange(), { width, height } = studioRecastSize(FORMATS[format]), s = Math.min(1, 480 / Math.max(width, height)), w = Math.round(width * s), h = Math.round(height * s), was = time;
+  evaluate((r.start - 1) / FPS);
+  try { drawShot(offRenderer(w, h), w, h); return off.toDataURL("image/jpeg", 0.85); } finally { evaluate(was); }
+}
+function openRecast() {
+  const R = opts.recast;
+  if (!R) return openWin(RC_TITLE, `<p>Video with your character works inside Picacho, for accounts that can use Recast.</p>`);
+  if (!rc.busy && !rc.result) {
+    if (!("MediaRecorder" in window) || !document.createElement("canvas").captureStream) return openWin(RC_TITLE, "<p>This browser can't record video. Chrome, Edge and Firefox can.</p>");
+    if (!rcChars().length) return openWin(RC_TITLE, `<p>You don't have a character with a photo yet. Make one, then come back — the Studio keeps your scene.</p><div class="cast-links"><a href="/app/character/new">Make a character</a></div>`);
+    const figs = rcFigures();
+    if (!figs.length) return openWin(RC_TITLE, `<p>There's no person in the shot for your character to take the place of. Show the stand-in (H / the eye in the outliner), or add a person, and try again.</p>`);
+    if (!rc.fig || !figs.some((f) => f.it === rc.fig)) rc.fig = (figs.find((f) => selection.has(f.it)) || figs.find((f) => f.it === person) || figs[0]).it;
+    if (!rc.charId || !rcChar()) rc.charId = rcChars()[0].id;
+    rcPrefill();
+    try { rc.shot = rcFrameUri(); } catch { rc.shot = null; }
+  }
+  rcShow();
+}
+/** "What happens" follows the chosen figure; once changed by hand it stays as written. */
+function rcPrefill() { const w = rc.fig ? rcHappens(rc.fig) : ""; if (!rc.words || rc.words === rc.autoWords) rc.words = w; rc.autoWords = w; }
+function rcShow() {
+  const R = opts.recast; if (!R) return;
+  const r = rcRange(), size = studioRecastSize(FORMATS[format]);
+  let body = "";
+  if (rc.result && rc.result.error === null) {
+    const x = rc.result;
+    body = `<video class="cast-img" src="${esc(x.url)}" controls autoplay loop muted playsinline></video><p class="hint">Your video, re-shot by Recast from frames ${r.start}–${r.end} of this scene.</p><div class="cast-links"><a href="${esc(R.recastHref)}">Open in Recast</a><a href="${esc(R.historyHref(x.id))}">Open in History</a><a href="${esc(x.url)}" download="helios-recast-${esc(x.id.slice(0, 8))}.mp4">Save video</a></div><div class="row-btns"><button class="pbtn" id="rcAgain">Make another</button></div>`;
+  } else if (rc.result) {
+    const x = rc.result;
+    const why = x.stopped ? "Stopped before sending: nothing was sent and nothing was charged." : x.error || R.unreachable;
+    const link = x.id ? `<a href="${esc(R.historyHref(x.id))}">Open in History</a><a href="${esc(R.recastHref)}">Open in Recast</a>` : "";
+    body = `${rc.shot ? `<img class="cast-img" alt="The shot at the start of the range" src="${rc.shot}">` : ""}<p class="cast-note" role="alert">${esc(why)}</p>${link ? `<div class="cast-links">${link}</div>` : ""}<div class="row-btns"><button class="pbtn" id="rcAgain">Back</button></div>`;
+  } else {
+    const figs = rcFigures(), several = figs.length > 1, fig = figs.find((f) => f.it === rc.fig) || figs[0];
+    const chars = rcChars().map((c) => `<option value="${esc(c.id)}"${c.id === rc.charId ? " selected" : ""}>${esc(c.name || "Your character")}</option>`).join("");
+    const figOpts = figs.map((f) => `<option value="${esc(f.it.id)}"${f.it === rc.fig ? " selected" : ""}>${esc(f.it.name)} · ${f.spot === "middle" ? "in the middle" : f.spot === "left" ? "on the left" : "on the right"}</option>`).join("");
+    const lanes = STUDIO_RECAST_ENGINES.map((e) => { const l = R.lanes[e]; return `<label class="rc-lane${e === rc.engine ? " on" : ""}"><input type="radio" name="rcLane" value="${e}"${e === rc.engine ? " checked" : ""}${rc.busy ? " disabled" : ""}><span><b><span translate="no">${esc(l.title)}</span> <span>· ${credits(rcCreditsFor(e))}</span></b><small translate="no">${esc(l.line)}</small></span></label>`; }).join("");
+    const also = studioRecastDirection({ words: "", several, spot: fig ? fig.spot : "middle", engine: rc.engine });
+    const lim = RECAST_JOB_MAX_SECONDS[RECAST_ENGINES[rc.engine].job];
+    body = `${rc.shot ? `<img class="cast-img" id="rcPrev" alt="The shot at the start of the range" src="${rc.shot}">` : ""}<p class="hint">Records frames ${r.start}–${r.end} (${fmtSec(r.seconds)}) through the shot camera · ${esc(format)} · ${size.width} × ${size.height}. Recast then re-shoots it with your character in the figure's place: the same moves, the same camera.</p>${r.clamped ? `<p class="cast-note">Recast takes ${RECAST_MIN_SECONDS}–${Math.min(lim, DUR)} s here, so the playback range was brought inside it.</p>` : ""}
+<div class="fr" style="margin-top:8px"><label for="rcWho">Character</label><select class="sel2" id="rcWho"${rc.busy ? " disabled" : ""}>${chars}</select></div>
+${several ? `<div class="fr" style="margin-top:6px"><label for="rcFig">Replaces</label><select class="sel2" id="rcFig"${rc.busy ? " disabled" : ""}>${figOpts}</select></div>` : ""}
+<div class="rc-lanes" role="radiogroup" aria-label="What should happen">${lanes}</div>
+<div class="fr" style="margin-top:8px;align-items:start"><label for="rcWords">What happens</label><textarea class="cast-words" id="rcWords" maxlength="${RECAST_DIRECTION_MAX_CHARS}" placeholder="Optional: what they're doing, the mood"${rc.busy ? " disabled" : ""}>${esc(rc.words)}</textarea></div>${rc.autoWords && rc.words === rc.autoWords && !rc.busy ? `<p class="hint" style="margin:2px 0 0">Filled in from the figure's pose and moves, in English for the video engine. Change it freely.</p>` : ""}
+<p class="hint" style="margin:4px 0 0">Sent with it: <span translate="no">${esc(also)}</span></p>
+<div class="row-btns"><button class="pbtn accent" id="rcGo"${rc.busy ? " disabled" : ""}>${esc(rcLabel())}</button>${rc.busy && ["recording", "uploading", "reading"].includes(rc.phase) ? `<button class="pbtn" id="rcStop"${rc.stop ? " disabled" : ""}>Stop</button>` : ""}</div>
+<div class="prog"${rc.busy ? "" : " hidden"}><i id="rcProg"></i></div><p class="hint" id="rcTxt" role="status">${rc.busy ? "" : "Stop before it is sent costs nothing."}</p>`;
+  }
+  const open = $("dlgBody") && $("dlgBody").querySelector("[data-recast]");
+  if (!open || $("dlg").hidden) openWin(RC_TITLE, `<div data-recast></div>`);
+  $("dlgBody").querySelector("[data-recast]").innerHTML = body;
+  const who = $("rcWho"), fg = $("rcFig"), words = $("rcWords"), go = $("rcGo"), again = $("rcAgain"), stop = $("rcStop");
+  if (who) who.onchange = () => { rc.charId = who.value; rcShow(); rcMenuLabel(); };
+  if (fg) fg.onchange = () => { rc.fig = items.find((i) => String(i.id) === fg.value) || rc.fig; rcPrefill(); rcShow(); };
+  $("dlgBody").querySelectorAll('input[name="rcLane"]').forEach((el) => (el.onchange = () => { rc.engine = el.value; rcShow(); rcMenuLabel(); }));
+  if (words) words.oninput = () => { rc.words = words.value; };
+  if (go) go.onclick = rcGo;
+  if (stop) stop.onclick = () => { rc.stop = true; stop.disabled = true; rcTick(); };
+  if (again) again.onclick = () => { rc.result = null; openRecast(); };
+  rcTick();
+}
+const fmtSec = (s) => `${Math.round(s * 10) / 10} s`;
+function rcTick() {
+  const bar = $("rcProg"), txt = $("rcTxt"); if (!bar || !txt || !rc.busy) return;
+  const s = Math.round((Date.now() - rc.t0) / 1000);
+  if (rc.stop && ["recording", "uploading", "reading"].includes(rc.phase)) { txt.textContent = "Stopping — nothing will be sent."; return; }
+  if (rc.phase === "recording") { bar.style.width = (rc.total ? (rc.done / rc.total) * 100 : 0) + "%"; txt.textContent = `Recording frame ${rc.done} of ${rc.total}. Stop sends nothing.`; return; }
+  if (rc.phase === "uploading") { bar.style.width = (rc.share == null ? 30 : rc.share * 100) + "%"; txt.textContent = rc.share == null ? "Uploading the recording…" : `Uploading the recording · ${Math.round(rc.share * 100)}%`; return; }
+  bar.style.width = Math.min(95, 5 + (s / 600) * 100) + "%";
+  txt.textContent = rc.phase === "reading" ? `Recast is reading the recording · ${s} s. Stop sends nothing.` : rc.phase === "starting" ? `Starting the take · ${s} s. Don't press again.` : rc.phase === "checking" ? `The answer didn't arrive, so we're checking whether it went through · ${s} s. Don't press again.` : rc.progress ? `${rc.progress} · ${s} s. You can close this window; it lands in History and in Recast.` : `Recast is re-shooting it · ${s} s. It usually takes several minutes; you can close this window, it lands in History and in Recast.`;
+}
+/** The range through the shot camera, at Recast's size, in real time (a frame is skipped rather than slowing the motion). */
+async function rcRecord(r, w, h) {
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+  const rr = new THREE.WebGLRenderer({ canvas: cv, antialias: true, preserveDrawingBuffer: true });
+  rr.shadowMap.enabled = true; rr.shadowMap.type = THREE.PCFSoftShadowMap; rr.toneMapping = THREE.ACESFilmicToneMapping; rr.setPixelRatio(1); rr.setSize(w, h, false);
+  // MP4 (H.264) where the browser records it; WebM otherwise — Recast turns either into H.264 on the server.
+  const type = ["video/mp4;codecs=avc1.640028", "video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find((t) => MediaRecorder.isTypeSupported(t)) || "";
+  const stream = cv.captureStream(0), track = stream.getVideoTracks()[0];
+  const rec = new MediaRecorder(stream, { ...(type ? { mimeType: type } : {}), videoBitsPerSecond: STUDIO_RECAST_BITRATE });
+  const chunks = []; rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  const ended = new Promise((res) => (rec.onstop = res));
+  const was = time; play(false);
+  const n = r.end - r.start + 1, dur = n / FPS;
+  const draw = (f) => { evaluate((f - 1) / FPS); drawShot(rr, w, h); track.requestFrame?.(); };
+  rc.total = n; rc.done = 1;
+  try {
+    draw(r.start); rec.start();
+    const t0 = performance.now();
+    for (;;) {
+      if (rc.stop || stopped) break;
+      const el = (performance.now() - t0) / 1000;
+      if (el >= dur) break;
+      const i = Math.min(n - 1, Math.floor(el * FPS));
+      draw(r.start + i); rc.done = i + 1; rcTick();
+      const next = t0 + ((i + 1) * 1000) / FPS;
+      await new Promise((res) => setTimeout(res, Math.max(0, next - performance.now())));
+    }
+    // The last frame held a moment, so the file is never shorter than the range.
+    if (!rc.stop && !stopped) { draw(r.end); await new Promise((res) => setTimeout(res, 200)); track.requestFrame?.(); }
+  } finally {
+    if (rec.state !== "inactive") rec.stop();
+    await ended;
+    rr.dispose(); rr.forceContextLoss?.();
+    setTime(was);
+  }
+  if (rc.stop || stopped) return null;
+  const base = (type || "video/webm").split(";")[0];
+  return { blob: new Blob(chunks, { type: base }), type: base };
+}
+async function rcGo() {
+  const R = opts.recast, c = rcChar();
+  if (!R || !c || rc.busy) return;
+  const figs = rcFigures(), chosen = figs.findIndex((f) => f.it === rc.fig);
+  if (chosen < 0) return openRecast();
+  const r = rcRange(), size = studioRecastSize(FORMATS[format]), engine = rc.engine;
+  const price = rcCreditsFor(engine);
+  const direction = studioRecastDirection({ words: rc.words, several: figs.length > 1, spot: figs[chosen].spot, engine });
+  // ONE id for this press, taken before anything is recorded: the take's row id, never pressed again.
+  const sendId = newPressId();
+  rc.busy = true; rc.stop = false; rc.t0 = Date.now(); rc.phase = "recording"; rc.result = null; rc.progress = ""; rc.share = null;
+  clearInterval(rc.timer); rc.timer = setInterval(rcTick, 1000);
+  rcShow();
+  let rec = null;
+  try { rec = await rcRecord(r, size.width, size.height); } catch { rec = undefined; }
+  if (stopped) return;
+  let res;
+  if (rec === undefined) res = { error: "This browser couldn't record the scene, so nothing was sent." };
+  else if (rec === null) res = { error: "", stopped: true };
+  else {
+    rc.phase = "uploading"; rc.t0 = Date.now(); rcShow();
+    try {
+      res = await R.run({ sendId, clip: rec.blob, type: rec.type, characterId: c.id, photoCount: c.photos, engine, seconds: r.seconds, credits: price, direction, figuresX: figs.map((f) => f.x), chosen }, (u) => {
+        if (u.phase !== rc.phase) { rc.phase = u.phase; if (u.phase === "starting") rc.t0 = Date.now(); if (!$("dlg").hidden && $("dlgBody").querySelector("[data-recast]")) rcShow(); }
+        if (u.phase === "uploading") rc.share = u.share;
+        if (u.phase === "rendering") rc.progress = u.progress || "";
+        rcTick();
+      }, () => rc.stop);
+    } catch { res = { error: R.unreachable }; }
+  }
+  clearInterval(rc.timer); rc.busy = false;
+  if (stopped || (res && res.left)) return;
+  rc.result = res || { error: R.unreachable };
+  if (!$("dlg").hidden && $("dlgBody").querySelector("[data-recast]")) rcShow();
+  else toast(rc.result.error === null ? "Your video is ready · Render ▸ " + RC_TITLE : rc.result.stopped ? "Stopped · nothing was charged" : "Your video didn't come out · Render ▸ " + RC_TITLE);
 }
 
 // ================= physics (rigid bodies) =================
@@ -2904,6 +3116,7 @@ function commands() {
     ["Shading: Rendered", () => setShade("lit")], ["Shading: Solid", () => setShade("clay")], ["Shading: Wireframe", () => setShade("wire")],
   ];
   for (const [k, d] of Object.entries(ADD)) c.push(["Add " + d.l, () => addUI(k)]);
+  if (opts.recast) c.push(["Render: video with your character", openRecast]);
   c.push(["Move: draw a path", () => startPathDraw(poseItem || (active?.rig ? active : null))], ["Move: clear moves", () => { const it = active?.rig ? active : null; if (it) moveAct(it, "Clear moves", () => { it.moves = []; }); }]);
   c.push(["Pose Mode", togglePose], ["Pose: clear pose", () => clearBones("rot")], ["Pose: key whole pose", () => keyPoseCmd(null)]);
   for (const k of POSE_PRESETS) c.push([`Pose: ${PRESET_LABELS[k]}`, () => { const it = poseItem || (active?.rig ? active : null); if (!it) return toast("Select a person first"); presetCmd(it, k); }]);
@@ -3214,8 +3427,10 @@ function restoreSaved() {
 // ================= wiring =================
 // Blender renders (2026-09-29): the Render menu's two entries show only when the page hands the door in.
 document.querySelectorAll("[data-cycles]").forEach((el) => (el.hidden = !opts.cycles));
+// Video with your character (2026-09-30): shown only when the page says this account can use Recast.
+document.querySelectorAll("[data-recast]").forEach((el) => (el.hidden = !opts.recast));
 const ACTS = {
-  import: () => fileIn.click(), exportFile: openExport, renderStill, renderCast: openCast, tracedStill: renderTracedStill, tracedVideo: renderTracedVideo, cyclesStill: () => openCycles("still"), cyclesVideo: () => openCycles("animation"), renderVideo, undo, redo, history: openHistory, keys: openKeys, dup: duplicate, del: () => del(), key: () => keyItems(), delKey: () => delKey(), hide: () => toggleHide(),
+  import: () => fileIn.click(), exportFile: openExport, renderStill, renderCast: openCast, renderRecast: openRecast, tracedStill: renderTracedStill, tracedVideo: renderTracedVideo, cyclesStill: () => openCycles("still"), cyclesVideo: () => openCycles("animation"), renderVideo, undo, redo, history: openHistory, keys: openKeys, dup: duplicate, del: () => del(), key: () => keyItems(), delKey: () => delKey(), hide: () => toggleHide(),
   frameSel: () => active && frameObj(active.obj), frameAll, camView: () => toggleCam(), camToView, top: () => viewAlong(new THREE.Vector3(0, 1, 0)), front: () => viewAlong(new THREE.Vector3(0, 0, 1)), right: () => viewAlong(new THREE.Vector3(1, 0, 0)),
   selAll: () => { items.filter((i) => !i.hidden && i.kind !== "sun").forEach((i) => selection.add(i)); active = active || [...selection][0]; refreshSel(); },
   selNone: () => select(null), selInvert: () => { const all = items.filter((i) => !i.hidden && i.kind !== "sun"); const was = new Set(selection); selection.clear(); all.forEach((i) => !was.has(i) && selection.add(i)); active = [...selection][0] || null; refreshSel(); },
@@ -3407,7 +3622,8 @@ raf = requestAnimationFrame(tick);
 
 document.getElementById("sceneTitle").textContent = opts.title;
 if (opts.render && $("castMenuLabel")) $("castMenuLabel").textContent = castLabel();
+rcMenuLabel();
 document.getElementById("backLink").setAttribute("href", opts.backHref);
 const stopText = opts.t ? watchStudioText($("app").parentElement || document.body, opts.t) : () => {};
-return () => { stopText(); saveNow(); saveToAccount(true); stopped = true; clearInterval(cast.timer); clearInterval(cy.timer); cancelAnimationFrame(raf); clearInterval(saveTimer); ac.abort(); resizeObs.disconnect(); tc.dispose?.(); orbit.dispose(); renderer.dispose(); offR?.dispose(); ptBusy = false; pt?.dispose(); ptR?.dispose(); ptWorldTex?.dispose(); ptAovT?.forEach((t) => t.dispose()); };
+return () => { stopText(); saveNow(); saveToAccount(true); stopped = true; clearInterval(cast.timer); clearInterval(rc.timer); clearInterval(cy.timer); cancelAnimationFrame(raf); clearInterval(saveTimer); ac.abort(); resizeObs.disconnect(); tc.dispose?.(); orbit.dispose(); renderer.dispose(); offR?.dispose(); ptBusy = false; pt?.dispose(); ptR?.dispose(); ptWorldTex?.dispose(); ptAovT?.forEach((t) => t.dispose()); };
 }

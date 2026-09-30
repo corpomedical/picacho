@@ -17,6 +17,8 @@ import { SetEditor } from "@/components/sets/set-editor";
 import { SetView } from "@/components/sets/set-view";
 import { SetsUpgrade } from "@/components/sets/sets-upgrade";
 import { HeliosStudio } from "@/components/studio/helios-studio";
+import { canUseRecast } from "@/lib/recast/actions";
+import { readRecastCharacters } from "@/lib/recast/data";
 
 // One Set, open (Astra Sets, 2026-09-10; a workspace with Astra since
 // 2026-09-14). Everything the view needs — the normalised set, the person's
@@ -100,6 +102,9 @@ export default async function SetPage({
     // or the column isn't there (helios-studio-scene.sql not run) — the
     // Studio then opens from this browser's copy.
     const savedScene = await readStudioScene(supabase, data.set.id, userData.user.id);
+    // Video with your character (2026-09-30): offered when Recast's own rule
+    // lets this account in, with Recast's own list of characters.
+    const recastCharacters = (await canUseRecast()).error === null ? await readRecastCharacters(supabase, userData.user.id) : null;
     return (
       <HeliosStudio
         setId={data.set.id}
@@ -108,6 +113,7 @@ export default async function SetPage({
         savedScene={savedScene}
         characters={data.characters}
         cyclesOn={data.modelsOn || HELIOS_CYCLES_FOR_ALL}
+        recastCharacters={recastCharacters}
       />
     );
   }
