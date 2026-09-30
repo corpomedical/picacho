@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   storyboardFrameExtraCredits,
   KLING_STORYBOARD_PER_SECOND_USD,
+  KLING_STORYBOARD_PRICE_PER_SECOND_USD,
   COST_BASIS_USD_PER_CREDIT,
   pricingAudit,
   getDialogueCreditWeight,
@@ -9,10 +10,17 @@ import {
   DIALOGUE_TTS_ALLOWANCE_USD,
 } from "./providers/video-models";
 
-// The start/end-frame lane renders on fal's v2.1 pro endpoint ($0.49/5s,
-// $0.098/s), not the $0.056/s the Kling 1.6 weights assume. Every render on
-// it before 2026-08-31 was charged 1 credit against $0.49 of provider spend.
+// The start/end-frame lane renders on its own fal endpoint, not the $0.056/s
+// the Kling 1.6 weights assume: v2.1 pro ($0.098/s) until 2026-09-30, then
+// 2.5 Turbo Pro ($0.07/s). Every render on it before 2026-08-31 was charged
+// 1 credit against $0.49 of provider spend.
 describe("storyboardFrameExtraCredits", () => {
+  it("the 2026-09-30 endpoint switch left the price where it was", () => {
+    // Cost down to 2.5 Turbo Pro's rate; the charge still on the old basis.
+    expect(KLING_STORYBOARD_PER_SECOND_USD).toBe(0.07);
+    expect(KLING_STORYBOARD_PRICE_PER_SECOND_USD).toBe(0.098);
+  });
+
   it("prices the 5s and 10s lanes above their real cost", () => {
     // 5s: base 1 + extra must cover $0.49. 10s: base 2 + extra covers $0.98.
     expect(storyboardFrameExtraCredits("kling", 5)).toBe(1);

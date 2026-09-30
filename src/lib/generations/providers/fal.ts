@@ -112,8 +112,10 @@ export type VideoGenerationOptions = {
 // Confirmed directly against fal.ai's published API docs (not guessed):
 // - Elements: https://fal.ai/models/fal-ai/kling-video/v1.6/standard/elements/api
 //   (prompt, input_image_urls[] — up to 4 images, aspect_ratio, no stated minimum on the list)
-// - Storyboard (start/end frame): https://fal.ai/docs/model-api-reference/video-generation-api/kling-video-v2.1-pro
-//   (prompt, image_url required, tail_image_url optional — no aspect_ratio param)
+// - Storyboard (start/end frame): https://fal.ai/models/fal-ai/kling-video/v2.5-turbo/pro/image-to-video/api
+//   (prompt + image_url required, tail_image_url optional, duration "5"|"10",
+//   negative_prompt, cfg_scale — no aspect_ratio param; read off fal's
+//   OpenAPI schema 2026-09-30)
 // - Kling O3 Standard (image-to-video): https://fal.ai/models/fal-ai/kling-video/o3/standard/image-to-video/api
 //   (image_url required, prompt, end_image_url optional, duration, generate_audio —
 //   note it's `image_url`/`end_image_url`, not `start_image_url`/`tail_image_url`
@@ -125,7 +127,14 @@ export type VideoGenerationOptions = {
 //   position, composition, pose, and perspective"; ~$0.04/image per fal.ai's
 //   published pricing)
 const KLING_ELEMENTS_ENDPOINT = "fal-ai/kling-video/v1.6/standard/elements";
-const KLING_STORYBOARD_ENDPOINT = "fal-ai/kling-video/v2.1/pro/image-to-video";
+// The start & end frames lane (Kling 1.6 in the picker, the Angle Stage's
+// move, set film beats on Kling). It ran on v2.1 pro image-to-video until
+// 2026-09-30, when fal's model list showed that endpoint as "deprecated"
+// (every Kling 1.x/2.1 image-to-video endpoint was). 2.5 Turbo Pro is active,
+// takes the same tail_image_url and the same 5/10 s, and is already live
+// here as the kling-2.5 model; fal's price list: $0.07/s against 2.1 pro's
+// $0.098/s. Exported for the routing test.
+export const KLING_STORYBOARD_ENDPOINT = "fal-ai/kling-video/v2.5-turbo/pro/image-to-video";
 const KLING_O3_STANDARD_ENDPOINT = "fal-ai/kling-video/o3/standard/image-to-video";
 const REFRAME_ENDPOINT = "fal-ai/image-editing/reframe";
 const EXTRACT_FRAME_ENDPOINT = "fal-ai/ffmpeg-api/extract-frame";
@@ -933,8 +942,9 @@ async function buildVideoRequest(
     // Explicit user choice (Elite-only advanced option), so it takes
     // priority over the automatic baseline anchor below.
     //
-    // Note: this endpoint (v2.1 pro image-to-video) has no aspect_ratio
-    // parameter either — same class of gap as O3, just not fixed here.
+    // Note: this endpoint (2.5 Turbo Pro image-to-video, v2.1 pro before
+    // 2026-09-30) has no aspect_ratio parameter either — same class of gap
+    // as O3, just not fixed here.
     // Not reframing the start/end frames the way O3's reference photo is
     // reframed above, since this path always uses photos the user picked
     // specifically as a start/end frame — silently altering their framing

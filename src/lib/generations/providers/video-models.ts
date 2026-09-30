@@ -886,7 +886,16 @@ export function maxSingleRenderCostUsd(): number {
 // Re-pointing at the v1.6 image-to-video endpoint was checked first and is
 // NOT possible: fal's docs show it has no tail_image_url, and the end frame
 // is the feature. So the price follows the cost, like the 4K weights.
-export const KLING_STORYBOARD_PER_SECOND_USD = 0.098;
+//
+// 2026-09-30: fal listed v2.1 pro as deprecated, so the lane moved to
+// fal-ai/kling-video/v2.5-turbo/pro/image-to-video (fal.ts
+// KLING_STORYBOARD_ENDPOINT), $0.07/s on fal's price list that day. The COST
+// below is that endpoint's, so pricingAudit measures what is really paid.
+// The PRICE stays on the old $0.098/s basis (5 s: 2 credits, 10 s: 4), so
+// the switch changes no one's bill; the operator's pricing review
+// (2026-09-30, "never lose money") decides whether it comes down.
+export const KLING_STORYBOARD_PER_SECOND_USD = 0.07;
+export const KLING_STORYBOARD_PRICE_PER_SECOND_USD = 0.098;
 
 /**
  * A multi-shot storyboard's credit weight: total seconds at the model's real
@@ -903,7 +912,7 @@ export function storyboardCreditCost(modelId: string, totalSeconds: number): num
 
 /**
  * Extra credits when a Kling render carries a start/end frame — the
- * difference between the storyboard endpoint's real per-second price and the
+ * difference between the storyboard lane's per-second price basis and the
  * base weight already charged, rounded up on the same $0.28 basis as every
  * weight in the catalogue. 5s: +1 (2 total). 10s: +2 (4 total).
  */
@@ -914,7 +923,7 @@ export function storyboardFrameExtraCredits(modelId: string, seconds: number): n
   const base =
     model.durations.find((d) => d.seconds === seconds)?.creditWeight ??
     getDurationCreditWeight(model, seconds);
-  const total = Math.ceil((KLING_STORYBOARD_PER_SECOND_USD * seconds) / COST_BASIS_USD_PER_CREDIT);
+  const total = Math.ceil((KLING_STORYBOARD_PRICE_PER_SECOND_USD * seconds) / COST_BASIS_USD_PER_CREDIT);
   return Math.max(0, total - base);
 }
 
