@@ -21,12 +21,13 @@ import { CYCLES_DEFAULT_SAMPLES, CYCLES_EDGES, CYCLES_MAX_FRAMES, CYCLES_MAX_SAM
 import { watchStudioText } from "./studio-i18n";
 import { studioCastInput } from "./studio-cast";
 import { boneOfMesh, makeFigure } from "./studio-figure";
-import { addMove, gaitFrame, headingOf, moveAt, moveWords, naturalEnd, normaliseMoves, pathCurve, pathLength, shortestYaw, turnStart, turnYawAt } from "@/lib/sets/studio-gait";
+import { addMove, gaitFrame, headingOf, moveAt, moveWords, naturalEnd, normaliseMoves, pathCurve, pathLength, pathRootAt, shortestYaw, turnStart, turnYawAt } from "@/lib/sets/studio-gait";
 import { BONE, BONE_NAMES, LIMBS, POSE_PRESETS, PRESET_LABELS, SEAT_DROP_M, applyPose, applyPreset, clampLoc, clampRot, clonePose, eulerNumbers, findSkeleton, groundFeet, lookRot, normalisePose, normalisePoseKeys, poseAt, poseSentence, poseWords, presetBones, presetPose, setPoseKey, solveLimb, standPoseOf, thingWords } from "@/lib/sets/studio-pose";
 import { newPressId } from "@/lib/sets/press-follow";
 import { savedPlaybackRange } from "@/lib/sets/studio-scene";
 import { isPlainBlock, wallShare, wallWarns } from "@/lib/sets/studio-walls";
-import { STUDIO_RECAST_BITRATE, STUDIO_RECAST_ENGINES, studioFaceReadable, studioRealSceneLine, studioFigureSpot, studioRecastCredits, studioRecastDirection, studioRecastHappens, studioRecastRange, studioRecastSize } from "@/lib/sets/studio-recast";
+import { STUDIO_AVC_CODECS, frameTimeUs, muxMp4 } from "@/lib/sets/studio-mp4";
+import { STUDIO_OUTFIT_MAX, STUDIO_RECAST_BITRATE, STUDIO_RECAST_ENGINES, studioFaceReadable, studioRealSceneLine, studioWalkWords, studioWearLine, studioFigureSpot, studioRecastCredits, studioRecastDirection, studioRecastHappens, studioRecastRange, studioRecastSize } from "@/lib/sets/studio-recast";
 import { RECAST_ENGINES, RECAST_JOB_MAX_SECONDS, RECAST_MIN_SECONDS } from "@/lib/recast/recast";
 import { RECAST_DIRECTION_MAX_CHARS } from "@/lib/recast/recast-brief";
 import { ENV_H, ENV_W, SKY_DIFFUSE_SHARE, TRACE_MAX_SAMPLES, TRACE_PRESETS, TRACE_SCALES, TRACE_SLOW_SECONDS, TRACE_SPEED_KEY, envAddSplit, envAddSun, envUpIrradiance, loadOidn, luminance, meterExposure, oidnDenoise, physicalSunIrradiance, traceDuration, traceEstimate, traceSamples, traceSize } from "./studio-trace";
@@ -99,6 +100,10 @@ export type StudioOptions = {
   /** Video with your character (2026-09-30): Recast's characters, its lane words, and one press through its own path. Null when this account can't use Recast. */
   recast?: {
     characters: { id: string; name: string; photos: number }[];
+    /** Who plays the set's figure (the set page's cast): the window's first choice. */
+    castId?: string | null;
+    /** The character's own gallery pictures, newest first (listStudioLooks). */
+    looks?: (characterId: string) => Promise<{ id: string; url: string; outfit: string }[]>;
     lanes: Record<string, { title: string; line: string }>;
     recastHref: string;
     historyHref: (generationId: string) => string;
@@ -109,6 +114,8 @@ export type StudioOptions = {
     unreachable: string;
     ask: (text: string, summary: unknown, turns: { who: "person" | "astra"; text: string }[]) => Promise<any>;
   };
+  /** Called once the first frame is drawn: the page takes its "Opening the set…" away. */
+  onReady?: () => void;
 };
 
 export function startStudio(opts: StudioOptions): () => void {
@@ -118,7 +125,7 @@ const wOn = (t, f, o) => window.addEventListener(t, f, withSig(o));
 const dOn = (t, f, o) => document.addEventListener(t, f, withSig(o));
 let stopped = false, raf = 0;
 // "Video with your character" (2026-09-30): its press state, up here because the timeline reads its price at start-up.
-const rc = { busy: false, stop: false, t0: 0, phase: "", done: 0, total: 0, share: null, progress: "", result: null, charId: null, engine: STUDIO_RECAST_ENGINES[0], fig: null, words: "", autoWords: "", typed: false, id: null, real: true, wall: 0, realLine: "", timer: 0, shot: null };
+const rc = { busy: false, stop: false, t0: 0, phase: "", done: 0, total: 0, share: null, progress: "", result: null, charId: null, engine: STUDIO_RECAST_ENGINES[0], fig: null, words: "", autoWords: "", typed: false, id: null, real: true, wall: 0, realThings: [], timer: 0, shot: null, lastChar: null, outfit: "", outfitTyped: false, lookId: null, looks: null, looksFor: null };
 // A tab shown again says where the take is at once (a hidden tab's timers run slowly).
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") rcTick(); }, { signal: ac.signal });
 // The person's language (stage 7): T() for text the engine puts in a field
@@ -264,6 +271,8 @@ function setKey(item, t, k = trs(item.obj)) {
   if (at >= 0) item.keys[at] = key; else { item.keys.push(key); item.keys.sort((a, b) => a.t - b.t); }
 }
 const lerp = (a, b, u) => a.map((v, i) => v + (b[i] - v) * u);
+/** The frame-time evaluate last posed (Track To reads it). */
+let time0 = 0;
 function evaluate(t) {
   for (const it of items) {
     if (it.rig && it.poseKeys.length) { it.pose = poseAt(it.poseKeys, t, it.interp, it.pose); applyPose(it.rig, it.pose); }
@@ -279,6 +288,7 @@ function evaluate(t) {
   // People that move (2026-09-30): a walk, run or turn places the figure after its keys.
   for (const it of items) if (it.rig && it.moves?.length) applyMoves(it, t);
   if (physCache) applyPhys(t);
+  time0 = t;
   if (typeof applyConstraints === "function") applyConstraints();
 }
 let time = 0; evaluate(time);
@@ -1299,6 +1309,20 @@ function renderOutliner() {
 
 // ================= timeline =================
 const frameNo = () => Math.round(time * FPS) + 1;
+/** The current frame, typed (2026-09-30): a click on the frame box opens it for a number, Enter jumps there, Esc leaves it. */
+function editCurFrame() {
+  const el = $("curFrame"); if (!el || el.querySelector("input")) return;
+  const inp = document.createElement("input"); inp.value = String(frameNo()); inp.inputMode = "numeric"; inp.setAttribute("aria-label", "Current frame");
+  el.classList.add("edit"); el.innerHTML = ""; el.appendChild(inp); inp.focus(); inp.select();
+  let fin = false;
+  const done = (ok) => {
+    if (fin) return; fin = true;
+    if (ok) { const n = parseInt(inp.value, 10); if (Number.isFinite(n)) setTime((Math.max(1, Math.min(FRAMES, n)) - 1) / FPS); }
+    el.classList.remove("edit"); el.innerHTML = `<b>${frameNo()}</b>`;
+  };
+  inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") done(true); if (e.key === "Escape") done(false); });
+  inp.addEventListener("blur", () => done(true));
+}
 function renderTimeline() {
   $("rangeStart").innerHTML = ""; $("rangeStart").append("Start ", field(pStart, { step: 0.3, dec: 0, min: 1, max: pEnd - 1, onCommit: (v) => { pStart = Math.round(v); renderTimeline(); } })); $("rangeEnd").innerHTML = ""; $("rangeEnd").append("End ", field(pEnd, { step: 0.3, dec: 0, min: pStart + 1, max: FRAMES, onCommit: (v) => { pEnd = Math.round(v); renderTimeline(); } }));
   rcMenuLabel();
@@ -1358,7 +1382,7 @@ function dragKey(e, it, k, d, field = "keys") {
   };
   wOn("pointermove", mv); wOn("pointerup", up);
 }
-function placePlayhead() { if (editorType === "graph") { if (gView) renderGraph(); $("curFrame").innerHTML = `<b>${frameNo()}</b>`; return; } const ph = $("ph"); if (!ph) return; ph.style.left = (time / DUR) * 100 + "%"; ph.querySelector("b").textContent = frameNo(); $("curFrame").innerHTML = `<b>${frameNo()}</b>`; }
+function placePlayhead() { const cf = $("curFrame"), typing = !!cf.querySelector("input"); if (editorType === "graph") { if (gView) renderGraph(); if (!typing) cf.innerHTML = `<b>${frameNo()}</b>`; return; } const ph = $("ph"); if (!ph) return; ph.style.left = (time / DUR) * 100 + "%"; ph.querySelector("b").textContent = frameNo(); if (!typing) cf.innerHTML = `<b>${frameNo()}</b>`; }
 function scrub(e) { const lanes = $("tlanes"); const mv = (ev) => { const r = lanes.getBoundingClientRect(); setTime(Math.min(DUR, Math.max(0, ((ev.clientX - r.left) / r.width) * DUR))); }; mv(e); const up = () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); renderAll(); }; wOn("pointermove", mv); wOn("pointerup", up); }
 function setTime(t) { time = Math.round(t * FPS) / FPS; evaluate(time); refreshOutlines(); placePlayhead(); renderVText(); renderAstraSees(); propsSoon(); }
 function jumpKey(dir) { const ts = [...new Set(items.flatMap((i) => [...[...i.keys, ...(i.poseKeys || [])].map((k) => k.t), ...(i.moves || []).flatMap((m) => [(m.f0 - 1) / FPS, (m.f1 - 1) / FPS])]))].sort((a, b) => a - b); const n = dir > 0 ? ts.find((t) => t > time + 1e-6) : [...ts].reverse().find((t) => t < time - 1e-6); if (n != null) setTime(n); }
@@ -1633,7 +1657,13 @@ const RC_TITLE = "Video with your character";
 function rcRange() { return studioRecastRange({ start: pStart, end: pEnd, fps: FPS, lastFrame: FRAMES, engine: rc.engine }); }
 function rcChars() { return (opts.recast?.characters || []).filter((c) => c.photos > 0); }
 function rcChar() { return rcChars().find((c) => c.id === rc.charId) || null; }
-function rcCreditsFor(engine) { const c = rcChar(); return studioRecastCredits(engine, studioRecastRange({ start: pStart, end: pEnd, fps: FPS, lastFrame: FRAMES, engine }).seconds, c ? c.photos : 1); }
+function rcCreditsFor(engine) { const c = rcChar(); return studioRecastCredits(engine, studioRecastRange({ start: pStart, end: pEnd, fps: FPS, lastFrame: FRAMES, engine }).seconds, c ? c.photos : 1, rc.lookId ? 1 : 0); }
+/** What the character wears, for the engine: the Outfit box and the picked look (studioWearLine). */
+function rcWear() { return studioWearLine({ outfit: rc.outfit, look: !!rc.lookId }); }
+/** The "Real scene" line, with what they wear in it. */
+function rcSceneLine() { return studioRealSceneLine({ title: SPEC.title || opts.title || "", description: SPEC.description || "", things: rc.realThings, hour, wear: rcWear() }); }
+/** Everything sent beside "What happens". */
+function rcAlso(several, spot) { return studioRecastDirection({ words: "", several, spot, engine: rc.engine, realScene: rc.real ? rcSceneLine() : null, wear: rcWear() }); }
 function rcLabel() { const n = rcCreditsFor(rc.engine); return `Video with your character · ${n} credit${n === 1 ? "" : "s"}`; }
 function rcMenuLabel() { if (opts.recast && $("recastMenuLabel")) $("recastMenuLabel").textContent = rcLabel(); }
 /** The figures that can be replaced: people shown in renders, with where they stand across the shot at the range's middle. */
@@ -1669,7 +1699,7 @@ function rcFaceAt(it, frame, frameH) {
  * "Real scene" (2026-09-30, operator: "Go ahead"): the words that make the whole recording real, from the set's
  * own title and description, the things in the shot by name and colour, and the hour's light.
  */
-function rcRealLine() {
+function rcRealThings() {
   const r = rcRange(), cam = shot.obj.userData.cam, a0 = cam.aspect, was = time;
   evaluate((Math.round((r.start + r.end) / 2) - 1) / FPS); cam.aspect = FORMATS[format]; cam.updateProjectionMatrix(); shot.obj.updateMatrixWorld(true);
   const things = [];
@@ -1678,7 +1708,7 @@ function rcRealLine() {
     const inView = shown.map((o) => { const b = worldBox(o); if (b.isEmpty()) return null; const c = b.getCenter(new V3()).project(cam); const size = b.getSize(new V3()).length(); return Math.abs(c.x) <= 1 && Math.abs(c.y) <= 1 && c.z < 1 ? { o, size } : null; }).filter(Boolean).sort((p, q) => q.size - p.size);
     for (const { o } of inView) things.push(thingWords(o.name, o.obj.userData.paint?.[0]?.color ? "#" + o.obj.userData.paint[0].color.getHexString() : null));
   } finally { cam.aspect = a0; cam.updateProjectionMatrix(); evaluate(was); }
-  return studioRealSceneLine({ title: SPEC.title || opts.title || "", description: SPEC.description || "", things, hour });
+  return things;
 }
 /** How much of the range's first frame a big plain wall of The place fills, close to the camera (studio-walls.ts). */
 function rcWallShare() {
@@ -1691,23 +1721,47 @@ function rcWallShare() {
   } finally { cam.aspect = a0; cam.updateProjectionMatrix(); evaluate(was); }
 }
 /** "What happens", from the figure's pose at the range's start and its moves inside the range. */
+// Said as the shot camera sees it (2026-09-30: "walk to the yellow car" while she walked toward the camera, and the
+// engine turned her head to the car): toward / away / across, "looking ahead" unless a Look at… is set, and no
+// "standing" when the range opens mid-walk.
 function rcHappens(it) {
   const r = rcRange(), was = time;
+  const walkingAt = (f) => (it.moves || []).some((m) => m.kind === "path" && m.f0 < f && f < m.f1);
   evaluate((r.start - 1) / FPS);
-  const pw = personWords(it);
+  const looked = rcLooked(it);
+  const pw = personWords(it, { measuredLook: looked });
   evaluate(was);
-  const others = items.filter((o) => o !== it && o.kind === "mesh" && !o.hidden && o !== place && !o.rig);
-  const nameOf = (o) => thingWords(o.name, o.obj.userData.paint?.[0]?.color ? "#" + o.obj.userData.paint[0].color.getHexString() : null);
-  const near = (x, z) => { let best = 1.6, hit = null; for (const o of others) { const b = worldBox(o); if (b.isEmpty()) continue; const d = b.distanceToPoint(new V3(x, Math.min(Math.max(0.5, b.min.y), b.max.y), z)); if (d < best) { best = d; hit = o; } } return hit ? nameOf(hit) : null; };
-  const cp = shot.obj.getWorldPosition(new V3());
-  const steps = (it.moves || []).filter((m) => m.f1 >= r.start && m.f0 <= r.end).sort((p, q) => p.f0 - q.f0).map((m) => {
-    const from = Math.max(0, (m.f0 - r.start) / FPS), to = Math.min(r.seconds, (m.f1 - r.start + 1) / FPS);
-    if (m.kind === "turn") { const want = Math.atan2(cp.x - m.at[0], cp.z - m.at[2]); const off = Math.abs(shortestYaw(m.yaw, want)); return { kind: "turn", from, to, toward: off < (25 * Math.PI) / 180 ? "the camera" : null }; }
-    const e = m.path[m.path.length - 1];
-    return { kind: m.gait === "run" ? "run" : "walk", from, to, toward: near(e[0], e[2]) };
-  });
-  const start = pw && pw.words !== "standing" ? pw.sentence : "";
+  const cam = shot.obj.userData.cam, a0 = cam.aspect;
+  /** Where the figure is as the camera sees it on frame f: its distance, and its place across the frame. */
+  const seen = (f) => {
+    evaluate((f - 1) / FPS); cam.aspect = FORMATS[format]; cam.updateProjectionMatrix(); shot.obj.updateMatrixWorld(true);
+    const p = it.obj.getWorldPosition(new V3()).setY(1), cp = shot.obj.getWorldPosition(new V3());
+    return { depth: p.distanceTo(cp), x: Math.max(-1.5, Math.min(1.5, p.clone().project(cam).x)) };
+  };
+  const gaze = looked === "the camera" ? "looking at the camera" : looked ? `looking at ${looked}` : "looking ahead";
+  const steps = [];
+  try {
+    for (const m of (it.moves || []).filter((m) => m.f1 >= r.start && m.f0 <= r.end).sort((p, q) => p.f0 - q.f0)) {
+      const from = Math.max(0, (m.f0 - r.start) / FPS), to = Math.min(r.seconds, (m.f1 - r.start + 1) / FPS);
+      if (m.kind === "turn") {
+        const cp = shot.obj.getWorldPosition(new V3());
+        const want = Math.atan2(cp.x - m.at[0], cp.z - m.at[2]); const off = Math.abs(shortestYaw(m.yaw, want));
+        steps.push({ kind: "turn", from, to, toward: off < (25 * Math.PI) / 180 ? "the camera" : null });
+        continue;
+      }
+      const a = seen(Math.max(m.f0, r.start)), b = seen(Math.min(m.f1, r.end));
+      steps.push({ kind: m.gait === "run" ? "run" : "walk", from, to, toward: studioWalkWords({ depth0: a.depth, depth1: b.depth, x0: a.x, x1: b.x }), gaze });
+    }
+  } finally { cam.aspect = a0; cam.updateProjectionMatrix(); evaluate(was); }
+  const start = pw && pw.words !== "standing" && !walkingAt(r.start) ? pw.sentence : "";
   return studioRecastHappens(start, steps);
+}
+/** What a Look at… set on the figure aims its head at (null when its head and neck are as the pose left them). */
+function rcLooked(it) {
+  const P = it.pose, turned = ["head", "neck"].some((n) => (P.rot[n] || [0, 0, 0]).some((v) => Math.abs(v) > 3));
+  if (!turned) return null;
+  const pw = personWords(it);
+  return pw && /looking at (.+?)(?:,|$)/.exec(pw.words)?.[1] || null;
 }
 function rcFrameUri() {
   const r = rcRange(), { width, height } = studioRecastSize(FORMATS[format]), s = Math.min(1, 480 / Math.max(width, height)), w = Math.round(width * s), h = Math.round(height * s), was = time;
@@ -1718,18 +1772,48 @@ function openRecast() {
   const R = opts.recast;
   if (!R) return openWin(RC_TITLE, `<p>Video with your character works inside Picacho, for accounts that can use Recast.</p>`);
   if (!rc.busy && !rc.result) {
-    if (!("MediaRecorder" in window) || !document.createElement("canvas").captureStream) return openWin(RC_TITLE, "<p>This browser can't record video. Chrome, Edge and Firefox can.</p>");
+    if (typeof VideoEncoder === "undefined" && (!("MediaRecorder" in window) || !document.createElement("canvas").captureStream)) return openWin(RC_TITLE, "<p>This browser can't record video. Chrome, Edge and Firefox can.</p>");
     if (!rcChars().length) return openWin(RC_TITLE, `<p>You don't have a character with a photo yet. Make one, then come back — the Studio keeps your scene.</p><div class="cast-links"><a href="/app/character/new">Make a character</a></div>`);
     const figs = rcFigures();
     if (!figs.length) return openWin(RC_TITLE, `<p>There's no person in the shot for your character to take the place of. Show the stand-in (H / the eye in the outliner), or add a person, and try again.</p>`);
     if (!rc.fig || !figs.some((f) => f.it === rc.fig)) rc.fig = (figs.find((f) => selection.has(f.it)) || figs.find((f) => f.it === person) || figs[0]).it;
-    if (!rc.charId || !rcChar()) rc.charId = rcChars()[0].id;
-    rcPrefill();
-    try { rc.shot = rcFrameUri(); } catch { rc.shot = null; }
-    try { rc.realLine = rcRealLine(); } catch { rc.realLine = ""; }
-    try { rc.wall = rcWallShare(); } catch { rc.wall = 0; }
+    // Who (2026-09-30: it opened on the first in the list, not the set's own cast): the last one sent from this
+    // Studio, else whoever plays the set's figure, else the first.
+    if (!rc.charId || !rcChar()) {
+      const ok = (id) => !!id && rcChars().some((c) => c.id === id);
+      rc.charId = ok(rc.lastChar) ? rc.lastChar : ok(opts.recast?.castId) ? opts.recast.castId : rcChars()[0].id;
+    }
+    rcMeasure();
+    rcLoadLooks();
   }
   rcShow();
+}
+/** What the window shows of the shot: the words, the first frame, the things in view, the wall. */
+function rcMeasure() {
+  rcPrefill();
+  try { rc.shot = rcFrameUri(); } catch { rc.shot = null; }
+  try { rc.realThings = rcRealThings(); } catch { rc.realThings = []; }
+  try { rc.wall = rcWallShare(); } catch { rc.wall = 0; }
+}
+/** The chosen character's gallery pictures, once per character; the picked look is let go if it isn't among them. */
+function rcLoadLooks() {
+  const id = rc.charId, get = opts.recast?.looks;
+  if (!get || !id || rc.looksFor === id) return;
+  rc.looksFor = id; rc.looks = null;
+  Promise.resolve().then(() => get(id)).then((list) => list, () => []).then((list) => {
+    if (stopped || rc.looksFor !== id) return;
+    rc.looks = Array.isArray(list) ? list : [];
+    if (rc.lookId && !rc.looks.some((l) => l.id === rc.lookId)) rc.lookId = null;
+    if (!rc.busy && !rc.result && !$("dlg").hidden && $("dlgBody").querySelector("[data-recast]")) rcShow();
+    rcMenuLabel();
+  });
+}
+/** The playback range from the window: one undo step, then everything measured again. */
+function rcSetRange(start, end) {
+  const a = Math.max(1, Math.min(FRAMES - 1, Math.round(start))), b = Math.max(a + 1, Math.min(FRAMES, Math.round(end)));
+  if (a === pStart && b === pEnd) return rcShow();
+  propCmd("Playback range", () => [pStart, pEnd], (v) => { pStart = v[0]; pEnd = v[1]; renderTimeline(); }, [a, b]);
+  rcMeasure(); rcShow();
 }
 /** "What happens" follows the chosen figure; once changed by hand it stays as written. */
 // Filled in while the window is drawn, never after (2026-09-30: the first live take sent "…walk to the orange
@@ -1752,16 +1836,21 @@ function rcShow() {
     const chars = rcChars().map((c) => `<option value="${esc(c.id)}"${c.id === rc.charId ? " selected" : ""}>${esc(c.name || "Your character")}</option>`).join("");
     const figOpts = figs.map((f) => `<option value="${esc(f.it.id)}"${f.it === rc.fig ? " selected" : ""}>${esc(f.it.name)} · ${f.spot === "middle" ? "in the middle" : f.spot === "left" ? "on the left" : "on the right"}</option>`).join("");
     const lanes = STUDIO_RECAST_ENGINES.map((e) => { const l = R.lanes[e]; return `<label class="rc-lane${e === rc.engine ? " on" : ""}"><input type="radio" name="rcLane" value="${e}"${e === rc.engine ? " checked" : ""}${rc.busy ? " disabled" : ""}><span><b><span translate="no">${esc(l.title)}</span> <span>· ${credits(rcCreditsFor(e))}</span></b><small translate="no">${esc(l.line)}</small></span></label>`; }).join("");
-    const also = studioRecastDirection({ words: "", several, spot: fig ? fig.spot : "middle", engine: rc.engine, realScene: rc.real ? rc.realLine : null });
+    const also = rcAlso(several, fig ? fig.spot : "middle");
+    const c = rcChar();
+    const looks = rc.looks === null ? `<p class="hint" style="margin:2px 0">Loading their pictures…</p>` : !rc.looks.length ? `<p class="hint" style="margin:2px 0">No pictures of ${esc(c?.name || "them")} in your gallery yet.</p>` : `<div class="rc-looks" id="rcLooks" role="listbox" aria-label="Look from their gallery"><button class="rc-look none${rc.lookId ? "" : " on"}" data-look="" role="option" aria-selected="${!rc.lookId}"${rc.busy ? " disabled" : ""}>Their photos</button>${rc.looks.map((l) => `<button class="rc-look${l.id === rc.lookId ? " on" : ""}" data-look="${esc(l.id)}" role="option" aria-selected="${l.id === rc.lookId}" title="Use this look"${rc.busy ? " disabled" : ""}><img src="${esc(l.url)}" alt="" loading="lazy"></button>`).join("")}</div>`;
     const lim = RECAST_JOB_MAX_SECONDS[RECAST_ENGINES[rc.engine].job];
     body = `${rc.shot ? `<img class="cast-img" id="rcPrev" alt="The shot at the start of the range" src="${rc.shot}">` : ""}<p class="hint">Records frames ${r.start}–${r.end} (${fmtSec(r.seconds)}) through the shot camera · ${esc(format)} · ${size.width} × ${size.height}. Recast then re-shoots it with your character in the figure's place: the same moves, the same camera.</p>${r.clamped ? `<p class="cast-note">Recast takes ${RECAST_MIN_SECONDS}–${Math.min(lim, DUR)} s here, so the playback range was brought inside it.</p>` : ""}
+<div class="fr" style="margin-top:8px"><label>Range</label><div class="rc-range" id="rcRange"></div></div>
 <div class="fr" style="margin-top:8px"><label for="rcWho">Character</label><select class="sel2" id="rcWho"${rc.busy ? " disabled" : ""}>${chars}</select></div>
+${opts.recast?.looks ? `<div class="fr" style="margin-top:6px;align-items:start"><label>Look</label><div style="min-width:0">${looks}<p class="hint" style="margin:0">From their gallery: the video takes the outfit and look of the picture you pick.</p></div></div>` : ""}
+<div class="fr" style="margin-top:6px"><label for="rcOutfit">Outfit</label><input class="rc-in" id="rcOutfit" maxlength="${STUDIO_OUTFIT_MAX}" placeholder="Optional: e.g. a red leather jacket and black jeans" value="${esc(rc.outfit)}"${rc.busy ? " disabled" : ""}></div>
 ${several ? `<div class="fr" style="margin-top:6px"><label for="rcFig">Replaces</label><select class="sel2" id="rcFig"${rc.busy ? " disabled" : ""}>${figOpts}</select></div>` : ""}
 <div class="rc-lanes" role="radiogroup" aria-label="What should happen">${lanes}</div>
 <div class="fr" style="margin-top:8px;align-items:start"><label for="rcWords">What happens</label><textarea class="cast-words" id="rcWords" maxlength="${RECAST_DIRECTION_MAX_CHARS}" placeholder="Optional: what they're doing, the mood"${rc.busy ? " disabled" : ""}>${esc(rc.words)}</textarea></div>${rc.autoWords && rc.words === rc.autoWords && !rc.busy ? `<p class="hint" style="margin:2px 0 0">Filled in from the figure's pose and moves, in English for the video engine. Change it freely.</p>` : ""}
-<div class="fr" style="margin-top:6px"><label></label><label class="check"><input type="checkbox" id="rcReal"${rc.real ? " checked" : ""}${rc.busy ? " disabled" : ""}> <span>Real scene: the whole scene becomes real footage, not only your character (same price)</span></label></div>
+<label class="check" style="display:flex;gap:6px;align-items:flex-start;margin-top:8px;white-space:normal;line-height:1.4"><input type="checkbox" id="rcReal" style="margin-top:2px;flex:none"${rc.real ? " checked" : ""}${rc.busy ? " disabled" : ""}> <span>Real scene: the whole scene becomes real footage, not only your character (same price)</span></label>
 ${rc.real && wallWarns(rc.wall) ? `<p class="cast-note" id="rcWall">A big plain wall fills part of this shot — move the camera or it may stay flat.</p>` : ""}
-<p class="hint" style="margin:4px 0 0">Sent with it: <span translate="no">${esc(also)}</span></p>
+<p class="hint" style="margin:4px 0 0">Sent with it: <span translate="no" id="rcAlso">${esc(also)}</span></p>
 <div class="row-btns"><button class="pbtn accent" id="rcGo"${rc.busy ? " disabled" : ""}>${esc(rcLabel())}</button>${rc.busy && ["recording", "uploading", "reading"].includes(rc.phase) ? `<button class="pbtn" id="rcStop"${rc.stop ? " disabled" : ""}>Stop</button>` : ""}</div>
 <div class="prog"${rc.busy ? "" : " hidden"}><i id="rcProg"></i></div><p class="hint" id="rcTxt" role="status">${rc.busy ? "" : "Stop before it is sent costs nothing."}</p>${rc.busy && rc.id ? `<div class="cast-links"><a href="${esc(R.historyHref(rc.id))}">Open in History</a><a href="${esc(R.recastHref)}">Open in Recast</a></div>` : ""}`;
   }
@@ -1769,7 +1858,33 @@ ${rc.real && wallWarns(rc.wall) ? `<p class="cast-note" id="rcWall">A big plain 
   if (!open || $("dlg").hidden) openWin(RC_TITLE, `<div data-recast></div>`);
   $("dlgBody").querySelector("[data-recast]").innerHTML = body;
   const who = $("rcWho"), fg = $("rcFig"), words = $("rcWords"), go = $("rcGo"), again = $("rcAgain"), stop = $("rcStop");
-  if (who) who.onchange = () => { rc.charId = who.value; rcShow(); rcMenuLabel(); };
+  if (who) who.onchange = () => { rc.charId = who.value; rc.lookId = null; rcLoadLooks(); rcShow(); rcMenuLabel(); };
+  const rg = $("rcRange");
+  if (rg) {
+    const sec = (f) => (f - 1) / FPS, lock = rc.busy;
+    const put = (label, frame, onFrame) => {
+      const w = document.createElement("span"); w.className = "rc-rg"; w.append(label + " ");
+      const ff = field(frame, { step: 0.3, dec: 0, min: 1, max: FRAMES, onCommit: (v) => onFrame(v) });
+      const fs = field(sec(frame), { step: 0.02, dec: 1, unit: " s", min: 0, max: DUR, onCommit: (v) => onFrame(Math.round(v * FPS) + 1) });
+      ff.title = "Frame"; fs.title = "Seconds"; if (lock) { ff.style.pointerEvents = fs.style.pointerEvents = "none"; }
+      w.append(ff, fs); rg.appendChild(w);
+    };
+    put("Start", pStart, (v) => rcSetRange(v, pEnd));
+    put("End", pEnd, (v) => rcSetRange(pStart, v));
+    const len = document.createElement("span"); len.className = "hint"; len.style.margin = "0"; len.id = "rcLen";
+    const lenS = document.createElement("span"), lenC = document.createElement("span"); lenS.textContent = fmtSec(r.seconds); lenC.textContent = credits(rcCreditsFor(rc.engine));
+    len.append(lenS, " · ", lenC); rg.appendChild(len);
+  }
+  const outfit = $("rcOutfit");
+  if (outfit) outfit.oninput = () => { rc.outfit = outfit.value; rc.outfitTyped = true; const a = $("rcAlso"); if (a) { const figs2 = rcFigures(), f2 = figs2.find((f) => f.it === rc.fig) || figs2[0]; a.textContent = rcAlso(figs2.length > 1, f2 ? f2.spot : "middle"); } };
+  $("dlgBody").querySelectorAll("[data-look]").forEach((b) => (b.onclick = () => {
+    if (rc.busy) return;
+    const id = b.dataset.look || null; rc.lookId = id;
+    // Its prompt's outfit words fill an empty Outfit box (never over what the person typed).
+    const l = id ? rc.looks?.find((x) => x.id === id) : null;
+    if (!rc.outfitTyped) rc.outfit = l?.outfit || "";
+    rcShow(); rcMenuLabel();
+  }));
   if (fg) fg.onchange = () => { rc.fig = items.find((i) => String(i.id) === fg.value) || rc.fig; rcPrefill(); rcShow(); };
   $("dlgBody").querySelectorAll('input[name="rcLane"]').forEach((el) => (el.onchange = () => { rc.engine = el.value; rcShow(); rcMenuLabel(); }));
   const real = $("rcReal");
@@ -1794,8 +1909,75 @@ function rcTick() {
   bar.style.width = Math.min(95, 5 + (s / 600) * 100) + "%";
   txt.textContent = rc.phase === "reading" ? `Recast is reading the recording · ${s} s. Stop sends nothing.` : rc.phase === "starting" ? `Starting the take · ${s} s. Don't press again.` : rc.phase === "checking" ? `The answer didn't arrive, so we're checking whether it went through · ${s} s. Don't press again.` : rc.progress ? `${rc.progress} · ${s} s. You can close this window; it lands in History and in Recast.` : `Recast is re-shooting it · ${s} s. It usually takes several minutes; you can close this window, it lands in History and in Recast.`;
 }
-/** The range through the shot camera, at Recast's size, in real time (a frame is skipped rather than slowing the motion). */
+/** A turn of the event loop that a background tab does not slow down (its timers run once a second; messages don't wait). */
+const rcYield = () => new Promise((res) => { const ch = new MessageChannel(); ch.port1.onmessage = () => { ch.port1.close(); res(); }; ch.port2.postMessage(0); });
+/** The first H.264 set-up this browser's WebCodecs encoder takes at this size, or null (no WebCodecs, or no H.264 encoder). */
+async function rcAvcConfig(w, h) {
+  if (typeof VideoEncoder === "undefined" || typeof VideoFrame === "undefined") return null;
+  for (const codec of STUDIO_AVC_CODECS) {
+    const config = { codec, width: w, height: h, bitrate: STUDIO_RECAST_BITRATE, framerate: FPS, avc: { format: "avc" }, latencyMode: "quality" };
+    try { if ((await VideoEncoder.isConfigSupported(config)).supported) return config; } catch { /* the next one */ }
+  }
+  return null;
+}
+/**
+ * The range through the shot camera, at Recast's size, FRAME-EXACT (2026-09-30, operator: "Why is she walking weird
+ * and jumpy?"): every frame drawn in turn at its own time — never the clock — and encoded at exactly 1/FPS each, so
+ * a slow frame or a tab in the background can't drop or bunch frames (studio-mp4.ts has the measurements). Null
+ * where WebCodecs can't encode H.264 here (rcRecord falls back to the real-time recorder); undefined on Stop.
+ */
+async function rcRecordExact(r, w, h) {
+  const config = await rcAvcConfig(w, h); if (!config) return null;
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+  const rr = new THREE.WebGLRenderer({ canvas: cv, antialias: true, preserveDrawingBuffer: true });
+  rr.shadowMap.enabled = true; rr.shadowMap.type = THREE.PCFSoftShadowMap; rr.toneMapping = THREE.ACESFilmicToneMapping; rr.setPixelRatio(1); rr.setSize(w, h, false);
+  const samples = []; let avcC = null, failed = null, lastTs = -1;
+  const encoder = new VideoEncoder({
+    output: (chunk, meta) => {
+      if (meta?.decoderConfig?.description && !avcC) avcC = new Uint8Array(meta.decoderConfig.description instanceof ArrayBuffer ? meta.decoderConfig.description : meta.decoderConfig.description.buffer.slice(meta.decoderConfig.description.byteOffset, meta.decoderConfig.description.byteOffset + meta.decoderConfig.description.byteLength));
+      // Frames reordered (B-frames) would need composition offsets this muxer doesn't write: refuse, and the real-time recorder takes over.
+      if (chunk.timestamp <= lastTs) failed = failed || new Error("reordered"); lastTs = chunk.timestamp;
+      const data = new Uint8Array(chunk.byteLength); chunk.copyTo(data); samples.push({ data, key: chunk.type === "key" });
+    },
+    error: (e) => { failed = failed || e; },
+  });
+  const was = time; play(false);
+  const n = r.end - r.start + 1;
+  rc.total = n; rc.done = 0;
+  try {
+    encoder.configure(config);
+    for (let i = 0; i < n; i++) {
+      if (rc.stop || stopped) return undefined;
+      if (failed) throw failed;
+      evaluate((r.start + i - 1) / FPS); drawShot(rr, w, h);
+      const frame = new VideoFrame(cv, frameTimeUs(i, FPS));
+      try { encoder.encode(frame, { keyFrame: i % (FPS * 2) === 0 }); } finally { frame.close(); }
+      rc.done = i + 1; rcTick();
+      // Never more than a few frames waiting in the encoder; a turn of the loop keeps the page answering.
+      while (encoder.encodeQueueSize > 4 && !failed) await rcYield();
+      await rcYield();
+    }
+    await encoder.flush();
+    if (failed) throw failed;
+    if (!avcC || samples.length !== n) throw new Error("encoder output");
+  } finally {
+    if (encoder.state !== "closed") encoder.close();
+    rr.dispose(); rr.forceContextLoss?.();
+    setTime(was);
+  }
+  return { blob: new Blob([muxMp4({ width: w, height: h, fps: FPS, avcC, samples })], { type: "video/mp4" }), type: "video/mp4" };
+}
+/** The range, frame-exact where the browser can (rcRecordExact), else in real time. Null on Stop. */
 async function rcRecord(r, w, h) {
+  let exact = null;
+  try { exact = await rcRecordExact(r, w, h); } catch { exact = null; }
+  if (exact === undefined) return null;
+  if (exact) return exact;
+  if (rc.stop || stopped) return null;
+  return rcRecordRealtime(r, w, h);
+}
+/** The old way, where WebCodecs can't: MediaRecorder in real time (a frame is skipped rather than slowing the motion). */
+async function rcRecordRealtime(r, w, h) {
   const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
   const rr = new THREE.WebGLRenderer({ canvas: cv, antialias: true, preserveDrawingBuffer: true });
   rr.shadowMap.enabled = true; rr.shadowMap.type = THREE.PCFSoftShadowMap; rr.toneMapping = THREE.ACESFilmicToneMapping; rr.setPixelRatio(1); rr.setSize(w, h, false);
@@ -1840,7 +2022,9 @@ async function rcGo() {
   if (chosen < 0) return openRecast();
   const r = rcRange(), size = studioRecastSize(FORMATS[format]), engine = rc.engine;
   const price = rcCreditsFor(engine);
-  const direction = studioRecastDirection({ words: rc.words, several: figs.length > 1, spot: figs[chosen].spot, engine, realScene: rc.real ? rc.realLine : null });
+  const direction = studioRecastDirection({ words: rc.words, several: figs.length > 1, spot: figs[chosen].spot, engine, realScene: rc.real ? rcSceneLine() : null, wear: rcWear() });
+  const lookId = rc.lookId || null;
+  rc.lastChar = c.id;
   let faceAt; try { faceAt = { first: rcFaceAt(rc.fig, r.start, size.height), last: rcFaceAt(rc.fig, r.end, size.height) }; } catch { faceAt = undefined; }
   // ONE id for this press, taken before anything is recorded: the take's row id, never pressed again.
   const sendId = newPressId();
@@ -1856,7 +2040,7 @@ async function rcGo() {
   else {
     rc.phase = "uploading"; rc.t0 = Date.now(); rcShow();
     try {
-      res = await R.run({ sendId, clip: rec.blob, type: rec.type, characterId: c.id, photoCount: c.photos, engine, seconds: r.seconds, credits: price, direction, figuresX: figs.map((f) => f.x), chosen, faceAt }, (u) => {
+      res = await R.run({ sendId, clip: rec.blob, type: rec.type, characterId: c.id, photoCount: c.photos, engine, seconds: r.seconds, credits: price, direction, figuresX: figs.map((f) => f.x), chosen, faceAt, lookId }, (u) => {
         if (u.phase === "uploading") rc.share = u.share;
         if (u.phase === "rendering") { rc.progress = u.progress || ""; rc.id = u.id || rc.id; }
         if (u.phase !== rc.phase) { rc.phase = u.phase; if (u.phase === "starting") rc.t0 = Date.now(); if (!$("dlg").hidden && $("dlgBody").querySelector("[data-recast]")) rcShow(); }
@@ -2502,11 +2686,41 @@ function setTrack(it, targetId) {
   evaluate(time);
 }
 const _tp = new THREE.Vector3();
+/**
+ * Where a Track To target stands at frame-time `t`, worked out from its own keys or moves (no evaluate, so the scene
+ * isn't disturbed); null when it can't be (physics, a parent, or nothing that moves it) and it stands where it is now.
+ */
+function trackPointAt(tg, t) {
+  if (tg.obj.parent !== scene || physCache) return null;
+  if (tg.rig && tg.moves?.length) {
+    const m = moveAt(tg.moves, t * FPS + 1);
+    if (m?.kind === "path") return pathRootAt(m, (t * FPS + 1 - m.f0) / FPS, FPS);
+    if (m?.kind === "turn") return turnStart(tg.moves, m).at;
+  }
+  const ks = tg.keys; if (!ks.length) return null;
+  if (t <= ks[0].t) return ks[0].p;
+  if (t >= ks[ks.length - 1].t) return ks[ks.length - 1].p;
+  let i = 0; while (ks[i + 1].t < t) i++;
+  const a = ks[i], b = ks[i + 1];
+  let u = (t - a.t) / (b.t - a.t);
+  if (tg.interp === "bezier") u = u * u * (3 - 2 * u); else if (tg.interp === "constant") u = 0;
+  return lerp(a.p, b.p, u);
+}
+/** Track To, damped (2026-09-30 — "walking weird and jumpy"): the aim follows the target's last few frames, weighted to the newest, so the shot glides after it instead of jolting with every step. The same frame always aims the same way. */
+const TRACK_LAG = [1, 0.61, 0.37, 0.22, 0.14, 0.08];
 function applyConstraints() {
   for (const it of items) {
     const id = it.obj.userData.track; if (!id) continue;
     const tg = byId(id); if (!tg || tg.hidden) continue;
-    tg.obj.getWorldPosition(_tp); _tp.y += tg === person ? 1.4 : 0.8;
+    tg.obj.getWorldPosition(_tp);
+    const now = trackPointAt(tg, time0);
+    if (now) {
+      // The damped point, moved by how far the target really is from its keyed place (a parent, an offset) now.
+      const acc = new THREE.Vector3(); let w = 0;
+      TRACK_LAG.forEach((k, i) => { const p = trackPointAt(tg, Math.max(0, time0 - i / FPS)) || now; acc.add(new THREE.Vector3(...p).multiplyScalar(k)); w += k; });
+      _tp.add(acc.multiplyScalar(1 / w).sub(new THREE.Vector3(...now)));
+    }
+    _tp.y += tg === person || tg.rig ? 1.4 : 0.8;
     it.obj.lookAt(_tp);
   }
 }
@@ -2645,7 +2859,7 @@ function lookAtCmd(it, tgt) {
   return true;
 }
 /** What the figure is doing, measured: what it sits or leans on and what it looks at, then the pose's words. */
-function personWords(it) {
+function personWords(it, o = {}) {
   if (!it?.rig || !items.includes(it)) return null;
   scene.updateMatrixWorld(true);
   const others = items.filter((o) => o !== it && o.kind === "mesh" && !o.hidden && o !== place);
@@ -2664,6 +2878,8 @@ function personWords(it) {
   const ang = (p) => fwd.angleTo(p.clone().sub(eye)) * (180 / Math.PI);
   if (ang(shot.obj.getWorldPosition(new V3())) < 20) lookingAt = "the camera";
   else { let best = 12; for (const o of [...others, ...people().filter((x) => x !== it)]) { const c = o.rig ? o.rig.bones.head.getWorldPosition(new V3()) : worldBox(o).getCenter(new V3()); const a = ang(c); if (a < best) { best = a; lookingAt = o.rig ? "the other person" : nameOf(o); } } }
+  // For "What happens" (rcHappens), a head that merely points near something is not "looking at" it: only a Look at… says so.
+  if ("measuredLook" in o) lookingAt = o.measuredLook || null;
   const ctx = { sittingOn, leaningOn, lookingAt, moving: it.shown?.moving || null };
   return { words: poseWords(P, ctx), sentence: poseSentence(P, ctx), stand: standPoseOf(P, ctx) };
 }
@@ -2900,7 +3116,7 @@ function goAlong(it, pts, gait = moveUI.gait, f0 = f0Of(), f1 = 0, label) {
   const s = standingAt(it, f0), path = [[s.at.x, 0, s.at.z], ...pts.map((p) => [p.x, 0, p.z])];
   if (pathLength(path) < 0.2) return toast("That's where they already stand"), false;
   const end = f1 > f0 ? Math.max(f0 + 6, Math.min(FRAMES + 1, Math.round(f1))) : endOf(gait, path, f0);
-  moveAct(it, label || `${gait === "run" ? "Run" : "Walk"} · frames ${f0}–${end}`, () => { it.moves = addMove(it.moves, { kind: "path", gait, f0, f1: end, path }); });
+  moveAct(it, label || `${gait === "run" ? "Run" : "Walk"} · frames ${f0}–${end}`, () => { it.moves = addMove(it.moves, { kind: "path", gait, f0, f1: end, path, yaw0: s.yaw }); });
   return true;
 }
 /** The spot in front of a thing, from where the figure stands: its nearest side, 0.55 m out. */
@@ -2911,10 +3127,19 @@ function spotBy(tgt, from) {
   const n = new V3(from.x - q.x, 0, from.z - q.z); if (n.lengthSq() < 1e-6) n.set(0, 0, 1);
   return q.add(n.normalize().multiplyScalar(0.55));
 }
+/** How far from the shot camera a walk to it stops (2026-09-30: "stopping a sensible distance before a camera target"). */
+const CAM_STOP_M = 2;
 function goTo(it, tgt, gait = moveUI.gait, f0 = f0Of(), f1 = 0) {
   if (!it?.rig || !tgt || tgt === it) return false;
   const s = standingAt(it, f0);
-  return goAlong(it, [tgt.isVector3 ? tgt : spotBy(tgt, s.at)], gait, f0, f1, `${gait === "run" ? "Run" : "Walk"} to "${tgt.isVector3 ? "the point" : tgt.name}"`);
+  const verb = gait === "run" ? "Run" : "Walk";
+  if (tgt === shot) {
+    // Straight at the camera, stopping CAM_STOP_M before it — so it ends facing the camera, the way it walked.
+    const c = shot.obj.getWorldPosition(new V3()).setY(0), d = c.clone().sub(s.at);
+    if (d.length() < CAM_STOP_M + 0.3) return toast("They're already at the camera"), false;
+    return goAlong(it, [c.sub(d.normalize().multiplyScalar(CAM_STOP_M))], gait, f0, f1, `${verb} to the shot camera`);
+  }
+  return goAlong(it, [tgt.isVector3 ? tgt : spotBy(tgt, s.at)], gait, f0, f1, `${verb} to "${tgt.isVector3 ? "the point" : tgt.name}"`);
 }
 function turnTo(it, tgt, f0 = f0Of(), frames = moveUI.turnFrames) {
   if (!it?.rig || !tgt || tgt === it) return false;
@@ -2930,7 +3155,7 @@ function groundAt(cx, cy) {
   const r = canvas.getBoundingClientRect(); ray.setFromCamera(new THREE.Vector2(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1), viewCam());
   return ray.ray.intersectPlane(new THREE.Plane(new V3(0, 1, 0), 0), new V3());
 }
-function startPathDraw(it) { if (!it?.rig) return toast("Select a person first"); pathDraw = { it, pts: [] }; renderAll(); info("Click the ground to add points · ⏎ or Done walks it · Esc stops"); }
+function startPathDraw(it, single = false) { if (!it?.rig) return toast("Select a person first"); pathDraw = { it, pts: [], single }; renderAll(); info(single ? "Click the ground where they should go · Esc stops" : "Click the ground to add points · ⏎ or Done walks it · Esc stops"); }
 function endPathDraw(ok) {
   const d = pathDraw; pathDraw = null; if (!d) return;
   if (ok && d.pts.length) goAlong(d.it, d.pts); else renderAll();
@@ -2947,7 +3172,9 @@ canvas.addEventListener("pointerup", (e) => {
   if (!pathDraw || modal || e.button !== 0) return;
   if (downAt && Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return;
   const p = groundAt(e.clientX, e.clientY); if (!p) return;
-  e.stopImmediatePropagation(); pathDraw.pts.push(p); updatePathViz(); renderProps(); info(`${pathDraw.pts.length} point${pathDraw.pts.length === 1 ? "" : "s"} · ⏎ or Done walks it · Esc stops`);
+  e.stopImmediatePropagation(); pathDraw.pts.push(p);
+  if (pathDraw.single) { const d = pathDraw; pathDraw = null; if (!goTo(d.it, p)) renderAll(); return; }
+  updatePathViz(); renderProps(); info(`${pathDraw.pts.length} point${pathDraw.pts.length === 1 ? "" : "s"} · ⏎ or Done walks it · Esc stops`);
 }, { capture: true, signal: ac.signal });
 function movePanel(p, it) {
   const [mp, mb] = panel("Move");
@@ -2959,15 +3186,16 @@ function movePanel(p, it) {
   mb.appendChild(fr("End frame", field(moveUI.end, { step: 0.3, dec: 0, min: 0, max: FRAMES + 1, onCommit: (v) => { moveUI.end = Math.round(v); renderProps(); } })));
   mb.insertAdjacentHTML("beforeend", `<p class="hint" style="margin-top:0">End frame 0: at the gait's own pace (walk about 1.4 m/s, run about 4 m/s). Set one, and the pace fits it.</p>`);
   const things = items.filter((o) => o !== it && (o.kind === "mesh" || o.rig) && !o.hidden && o !== place);
-  const row = (id, label, withCam, go) => {
+  const row = (id, label, withCam, go, withPoint = false) => {
     const s = document.createElement("select"); s.className = "sel2"; s.id = id + "T"; s.setAttribute("aria-label", label);
-    if (withCam) s.add(new Option("Shot camera", "cam")); things.forEach((o) => s.add(new Option(o.name, String(o.id)))); if (!withCam && !things.length) s.disabled = true;
-    const b = document.createElement("button"); b.className = "pbtn"; b.id = id; b.textContent = "Apply"; b.style.flex = "none"; b.onclick = () => { const t = s.value === "cam" ? shot : byId(+s.value); if (t) go(t); };
+    if (withCam) s.add(new Option("Shot camera", "cam")); things.forEach((o) => s.add(new Option(o.name, String(o.id))));
+    if (withPoint) s.add(new Option("A point: click on the ground", "pt"));
+    const b = document.createElement("button"); b.className = "pbtn"; b.id = id; b.textContent = "Apply"; b.style.flex = "none"; b.onclick = () => { if (s.value === "pt") return startPathDraw(it, true); const t = s.value === "cam" ? shot : byId(+s.value); if (t) go(t); };
     const w = document.createElement("div"); w.style.cssText = "display:flex;gap:6px;min-width:0"; s.style.flex = "1"; s.style.minWidth = "0"; w.append(s, b); mb.appendChild(fr(label, w));
   };
-  row("mGo", moveUI.gait === "run" ? "Run to…" : "Walk to…", false, (t) => goTo(it, t));
+  row("mGo", moveUI.gait === "run" ? "Run to…" : "Walk to…", true, (t) => goTo(it, t), true);
   const dr = document.createElement("div"); dr.className = "row-btns";
-  dr.innerHTML = pathDraw && pathDraw.it === it ? `<button class="pbtn accent" id="mDone"${pathDraw.pts.length ? "" : " disabled"}>Done · walk it (⏎)</button><button class="pbtn" id="mCancel">Cancel (Esc)</button>` : `<button class="pbtn" id="mDraw">Draw a path…</button>`;
+  dr.innerHTML = pathDraw && pathDraw.it === it && pathDraw.single ? `<button class="pbtn" id="mCancel">Cancel picking a point (Esc)</button>` : pathDraw && pathDraw.it === it ? `<button class="pbtn accent" id="mDone"${pathDraw.pts.length ? "" : " disabled"}>Done · walk it (⏎)</button><button class="pbtn" id="mCancel">Cancel (Esc)</button>` : `<button class="pbtn" id="mDraw">Draw a path…</button>`;
   mb.appendChild(dr);
   dr.querySelector("#mDraw")?.addEventListener("click", () => startPathDraw(it)); dr.querySelector("#mDone")?.addEventListener("click", () => endPathDraw(true)); dr.querySelector("#mCancel")?.addEventListener("click", () => endPathDraw(false));
   mb.appendChild(fr("Turn frames", field(moveUI.turnFrames, { step: 0.2, dec: 0, min: 2, max: 120, onCommit: (v) => { moveUI.turnFrames = Math.round(v); } })));
@@ -3421,7 +3649,7 @@ function openLeavesOut() {
 // account), and then sends that one up.
 const SAVE_KEY = "helios.studio." + opts.setId;
 function snapshot() {
-  return { v: 1, hour, format, lens: shot.obj.userData.lensMm, skyMode, markers, range: [pStart, pEnd], items: items.filter((i) => i.kind !== "sun" && (i.saveKey || i.addKind)).map((i) => ({ key: i.saveKey || null, add: i.addKind || null, name: i.name, coll: i.coll, t: trs(i.obj), keys: i.keys, interp: i.interp, hidden: i.hidden, noRender: !!i.noRender, color: i.obj.userData.paint?.[0] ? "#" + i.obj.userData.paint[0].color.getHexString() : null, array: i.obj.userData.array || null, mirror: i.obj.userData.mirror || null, track: i.obj.userData.track ? byId(i.obj.userData.track)?.saveKey || null : null, phys: i.phys || null, bake: i.bake || null, pose: i.rig ? i.pose : undefined, poseKeys: i.rig && i.poseKeys.length ? i.poseKeys : undefined, moves: i.rig && i.moves?.length ? i.moves : undefined })) };
+  return { v: 1, hour, format, lens: shot.obj.userData.lensMm, skyMode, markers, range: [pStart, pEnd], items: items.filter((i) => i.kind !== "sun" && (i.saveKey || i.addKind)).map((i) => ({ key: i.saveKey || null, add: i.addKind || null, name: i.name, coll: i.coll, t: trs(i.obj), keys: i.keys, interp: i.interp, hidden: i.hidden, noRender: !!i.noRender, color: i.obj.userData.paint?.[0] ? "#" + i.obj.userData.paint[0].color.getHexString() : null, array: i.obj.userData.array || null, mirror: i.obj.userData.mirror || null, track: i.obj.userData.track ? byId(i.obj.userData.track)?.saveKey || null : null, phys: i.phys || null, bake: i.bake || null, pose: i.rig ? i.pose : undefined, poseKeys: i.rig && i.poseKeys.length ? i.poseKeys : undefined, moves: i.rig && i.moves?.length ? i.moves : undefined })), recast: { charId: rc.charId, lastChar: rc.lastChar, outfit: rc.outfit, outfitTyped: rc.outfitTyped, lookId: rc.lookId, real: rc.real, engine: rc.engine } };
 }
 let lastSaved = "", lastServer = "", changedAt = 0, serverBusy = false, serverRetryAt = 0;
 const SERVER_DELAY_MS = 5000, SERVER_RETRY_MS = 30000;
@@ -3479,6 +3707,13 @@ function restoreSaved() {
   if (typeof data.hour === "number") setHour(data.hour); if (data.format) format = data.format; if (data.lens) setLens(data.lens); if (data.skyMode && data.skyMode !== "simple") setSkyMode(data.skyMode); if (Array.isArray(data.markers)) markers.push(...data.markers);
   // The playback range (2026-09-30): kept with the scene, so a video's length and price are what was set.
   const savedRange = savedPlaybackRange(data.range, FRAMES); if (savedRange) { [pStart, pEnd] = savedRange; renderTimeline(); }
+  // Video with your character's choices (2026-09-30): who, their outfit and look, Real scene, the lane.
+  const sr = data.recast && typeof data.recast === "object" ? data.recast : null;
+  if (sr) {
+    const str = (v, n) => (typeof v === "string" ? v.slice(0, n) : null);
+    rc.charId = str(sr.charId, 64); rc.lastChar = str(sr.lastChar, 64); rc.outfit = str(sr.outfit, STUDIO_OUTFIT_MAX) || ""; rc.outfitTyped = sr.outfitTyped === true;
+    rc.lookId = str(sr.lookId, 64); if (typeof sr.real === "boolean") rc.real = sr.real; if (STUDIO_RECAST_ENGINES.includes(sr.engine)) rc.engine = sr.engine;
+  }
   undoStack.length = 0; redoStack.length = 0; evaluate(time); refreshSel(); lastSaved = JSON.stringify(snapshot());
   // Opened from the account: that copy is what the account holds. From this browser: sent up once it has settled.
   if (picked.from === "account" || !opts.saveScene) lastServer = lastSaved; else changedAt = Date.now() - SERVER_DELAY_MS;
@@ -3520,11 +3755,16 @@ $("xrayBtn").onclick = toggleXray; $("modeBtn").onclick = (e) => { e.stopPropaga
 $("modeBtn").title = "Object Mode / Edit Mode (Tab) / Pose Mode (Ctrl+Tab)";
 $("ovlBtn").onclick = () => { overlays.visible = !overlays.visible; $("ovlBtn").classList.toggle("on", overlays.visible); };
 $("rec").onclick = () => { autoKey = !autoKey; $("rec").classList.toggle("on", autoKey); info(autoKey ? "Auto keying on" : "Auto keying off"); };
+$("curFrame").addEventListener("click", editCurFrame, { signal: ac.signal }); $("curFrame").title = "Current frame · click to type one"; $("curFrame").style.cursor = "text";
 $("tPlay").onclick = () => play(); $("tStart").onclick = () => setTime(0); $("tEnd").onclick = () => setTime(DUR); $("tPrevKey").onclick = () => jumpKey(-1); $("tNextKey").onclick = () => jumpKey(1);
 $("find").addEventListener("input", (e) => { q = e.target.value.trim().toLowerCase(); renderOutliner(); });
 
 wOn("keydown", (e) => {
-  const tag = (e.target.tagName || "").toLowerCase(); if (tag === "input" || tag === "select" || tag === "textarea") return;
+  const tag = (e.target.tagName || "").toLowerCase(); if (tag === "input" || tag === "select" || tag === "textarea" || e.target.isContentEditable) return;
+  // Keys never reach the viewport from a number field (Blender's: typed digits edit it, 2026-09-30 — "1" and "5"
+  // turned the view while a frame was being typed) or from an open window (only Escape, which closes it).
+  if (e.target.closest?.(".fld, .nfld") && e.key !== "Escape") return;
+  if (!$("dlg").hidden && e.key !== "Escape") return;
   if (astraBusy) return;
   if (modal) { modalKey(e); return; }
   if (pathDraw && (e.key === "Enter" || e.key === "Escape")) { e.preventDefault(); endPathDraw(e.key === "Enter"); return; }
@@ -3680,6 +3920,8 @@ select(car);
 { const b = new THREE.Box3().expandByObject(car.obj).expandByObject(person.obj); const c = b.getCenter(new THREE.Vector3()), size = Math.max(6, b.getSize(new THREE.Vector3()).length()); orbit.target.copy(c); editorCam.position.copy(c.clone().add(new THREE.Vector3(0.6, 0.45, 0.75).normalize().multiplyScalar(size * 1.5))); }
 restoreSaved();
 raf = requestAnimationFrame(tick);
+// The page's "Opening the set…" goes once a frame is drawn — or at once where frames don't come (a hidden tab).
+{ let told = false; const ready = () => { if (told || stopped) return; told = true; try { opts.onReady?.(); } catch {} }; requestAnimationFrame(() => requestAnimationFrame(ready)); setTimeout(ready, 1500); }
 
 document.getElementById("sceneTitle").textContent = opts.title;
 if (opts.render && $("castMenuLabel")) $("castMenuLabel").textContent = castLabel();

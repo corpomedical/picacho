@@ -113,8 +113,8 @@ describe("which figure", () => {
 
 describe("the words", () => {
   it("prefill what happens from the pose and the moves inside the range", () => {
-    expect(studioRecastHappens("", [{ kind: "walk", from: 0, to: 73 / 24, toward: "the red car" }, { kind: "turn", from: 3.04, to: 3.5, toward: "the camera" }])).toBe(
-      "From 0 s to 3 s they walk to the red car. From 3 s to 3.5 s they turn to face the camera.",
+    expect(studioRecastHappens("", [{ kind: "walk", from: 0, to: 73 / 24, toward: "toward the camera", gaze: "looking ahead" }, { kind: "turn", from: 3.04, to: 3.5, toward: "the camera" }])).toBe(
+      "From 0 s to 3 s they walk toward the camera, looking ahead. From 3 s to 3.5 s they turn to face the camera.",
     );
     expect(studioRecastHappens("The character is sitting on the red car.", [])).toBe("The character is sitting on the red car.");
     expect(studioRecastHappens("", [{ kind: "run", from: 1, to: 4, toward: null }])).toBe("From 1 s to 4 s they run.");

@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { buildSkeleton, type Vec3 } from "./studio-pose";
 import {
+  ANKLE_M,
   GAITS,
+  HEEL_M,
+  TOE_M,
   addMove,
   distanceAt,
   gaitFrame,
@@ -24,23 +27,38 @@ import {
 const FPS = 24;
 const ankle = (sk: ReturnType<typeof buildSkeleton>, n: "foot.L" | "foot.R") => sk.bones[n].getWorldPosition(new THREE.Vector3());
 
-/** Runs a move frame by frame and measures how far each planted ankle slides, and how far the root travels. */
+/**
+ * Runs a move frame by frame and measures how far each planted foot slides where it touches the ground
+ * (its heel as it lands, its ball as it rolls off — 2026-09-30), and how far the root travels.
+ */
 function run(m: PathMove) {
   const sk = buildSkeleton();
   let slide = 0, miss = 0, travelled = 0, planted = 0;
-  let prev: { L: THREE.Vector3; R: THREE.Vector3; pL: boolean; pR: boolean; root: THREE.Vector3 } | null = null;
+  type Touch = { heel: THREE.Vector3; ball: THREE.Vector3 };
+  const touch = (n: "foot.L" | "foot.R"): Touch => {
+    const q = sk.bones[n].getWorldQuaternion(new THREE.Quaternion()), a = ankle(sk, n);
+    return { heel: a.clone().add(new THREE.Vector3(0, -ANKLE_M, -HEEL_M).applyQuaternion(q)), ball: a.clone().add(new THREE.Vector3(0, -ANKLE_M, TOE_M).applyQuaternion(q)) };
+  };
+  let prev: { L: Touch; R: Touch; pL: boolean; pR: boolean; aL: number; aR: number; root: THREE.Vector3 } | null = null;
   const frames: ReturnType<typeof gaitFrame>[] = [];
   for (let f = m.f0; f <= m.f1; f++) {
     const g = gaitFrame(sk, m, (f - m.f0) / FPS, FPS);
     frames.push(g);
-    const L = ankle(sk, "foot.L"), R = ankle(sk, "foot.R"), root = sk.root.position.clone();
-    for (const [a, foot] of [[L, g.feet.L], [R, g.feet.R]] as const) if (foot.planted) miss = Math.max(miss, a.distanceTo(foot.at));
+    const L = touch("foot.L"), R = touch("foot.R"), root = sk.root.position.clone();
+    for (const [n, foot] of [["foot.L", g.feet.L], ["foot.R", g.feet.R]] as const) if (foot.planted) miss = Math.max(miss, ankle(sk, n).distanceTo(foot.at));
     if (prev) {
-      if (g.feet.L.planted && prev.pL) { slide = Math.max(slide, L.distanceTo(prev.L)); planted++; }
-      if (g.feet.R.planted && prev.pR) { slide = Math.max(slide, R.distanceTo(prev.R)); planted++; }
+      for (const [now, was, foot, wasPlanted, wasPitch] of [[L, prev.L, g.feet.L, prev.pL, prev.aL], [R, prev.R, g.feet.R, prev.pR, prev.aR]] as const) {
+        if (!foot.planted || !wasPlanted) continue;
+        // The point it rolls on is on the ground, where the gait put it.
+        miss = Math.max(miss, now[foot.pitch >= 0 ? "ball" : "heel"].distanceTo(foot.contact!));
+        // It doesn't slide: the heel between two frames on the heel (or flat), the ball between two on the ball.
+        const k = foot.pitch <= 0 && wasPitch <= 0 ? "heel" : foot.pitch >= 0 && wasPitch >= 0 ? "ball" : null;
+        if (k) slide = Math.max(slide, now[k].distanceTo(was[k]));
+        planted++;
+      }
       travelled += root.distanceTo(prev.root);
     }
-    prev = { L, R, pL: g.feet.L.planted, pR: g.feet.R.planted, root };
+    prev = { L, R, pL: g.feet.L.planted, pR: g.feet.R.planted, aL: g.feet.L.pitch, aR: g.feet.R.pitch, root };
   }
   return { slide, miss, travelled, planted, frames, sk };
 }

@@ -28,7 +28,7 @@
 // press's sendId. Shown only when the page says this account can use Recast;
 // the characters are Recast's own list.
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { quoteSend } from "@/lib/generations/quote";
 import { useLocale } from "@/lib/i18n/provider";
 import { shootInSet } from "@/lib/sets/actions";
@@ -52,7 +52,7 @@ import { localizeServerText } from "@/lib/i18n/server-text";
 import type { RecastCharacter } from "@/lib/recast/data";
 import { RECAST_BUCKET } from "@/lib/recast/recast";
 import { recastStorageObjectUrl, uploadRecastClip } from "@/lib/recast/recast-client";
-import { discardStudioRecast, inspectStudioRecast, readStudioRecast, reserveStudioRecast, startStudioRecast } from "@/lib/sets/studio-recast-actions";
+import { discardStudioRecast, inspectStudioRecast, listStudioLooks, readStudioRecast, reserveStudioRecast, startStudioRecast } from "@/lib/sets/studio-recast-actions";
 import { pressStudioRecast, type RecastPress, type RecastUpdate } from "./studio-recast";
 
 /**
@@ -83,6 +83,7 @@ export function HeliosStudio({
   characters,
   cyclesOn = false,
   recastCharacters = null,
+  castId = null,
 }: {
   setId: string;
   title: string;
@@ -93,8 +94,14 @@ export function HeliosStudio({
   cyclesOn?: boolean;
   /** Recast's characters when this account can use Recast (the page asks Recast's own rule); null hides "Video with your character". */
   recastCharacters?: RecastCharacter[] | null;
+  /** Who plays the set's figure (the set page's "Plays the figure"): Video with your character's first choice. */
+  castId?: string | null;
 }) {
   const { t, locale } = useLocale();
+  // "Opening the set…" until the engine has drawn its first frame (2026-09-30: the Studio showed an empty grey
+  // workspace for 10–15 s while its code and the set loaded, which looked broken). "failed": it couldn't load.
+  const [opening, setOpening] = useState<"opening" | "ready" | "failed">("opening");
+  const castIdRef = useRef(castId);
   // Read once, when the engine starts: a later render must not restart it.
   // The set and its title too (2026-09-30): a server action that revalidates
   // any path (Recast's start does) sends this page again, with a new spec
@@ -133,6 +140,9 @@ export function HeliosStudio({
     void import("./studio-engine").then((m) => {
       if (dead) return;
       dispose = m.startStudio({
+        onReady: () => {
+          if (!dead) setOpening("ready");
+        },
         setId,
         title: titleRef.current,
         spec: specRef.current,
@@ -187,6 +197,15 @@ export function HeliosStudio({
         recast: recastRef.current
           ? {
               characters: recastRef.current.map((c) => ({ id: c.id, name: c.name, photos: c.photos.length })),
+              castId: castIdRef.current ?? null,
+              looks: async (characterId: string) => {
+                try {
+                  const out = await listStudioLooks(setId, { characterId });
+                  return out.error === null ? out.looks : [];
+                } catch {
+                  return [];
+                }
+              },
               lanes: recastWordsRef.current.lanes,
               recastHref: "/app/mystique",
               historyHref: (generationId: string) => `/app/history/${generationId}`,
@@ -242,6 +261,8 @@ export function HeliosStudio({
             ),
         },
       });
+    }).catch(() => {
+      if (!dead) setOpening("failed");
     });
     return () => {
       dead = true;
@@ -252,6 +273,24 @@ export function HeliosStudio({
     <div className="fixed inset-0 z-[70]" data-helios-studio>
       <style>{STUDIO_CSS}</style>
       <div className="h-full" dangerouslySetInnerHTML={{ __html: STUDIO_HTML }} />
+      {opening !== "ready" ? (
+        <div className="absolute inset-0 z-[5] flex flex-col items-center justify-center gap-3 bg-[#1d1e21] text-[#e6e7ea]" role="status" aria-live="polite" data-studio-opening>
+          {opening === "opening" ? (
+            <>
+              <span className="h-8 w-8 animate-spin rounded-full border-2 border-[#3a3c42] border-t-[#e0a468]" aria-hidden />
+              <p className="text-[15px] font-medium">{t.sets.studioOpening}</p>
+              <p className="text-[13px] text-[#9aa0ad]">{title}</p>
+            </>
+          ) : (
+            <>
+              <p className="text-[15px] font-medium">{t.sets.studioOpenFailed}</p>
+              <button type="button" className="rounded-[10px] border border-[#3a3c42] px-3 py-1.5 text-[13px] hover:border-[#e0a468]" onClick={() => void reloadForNewDeploy({ delayMs: 0 })}>
+                {t.sets.studioOpenRetry}
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

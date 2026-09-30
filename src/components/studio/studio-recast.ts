@@ -79,6 +79,8 @@ export type RecastPress = {
   chosen: number;
   /** Whether the chosen figure's face can be read at the recording's first and last frame (studioFaceReadable). */
   faceAt?: { first: boolean; last: boolean };
+  /** A picture from the character's own gallery for the outfit and look: Recast's added image (priced on Restage). */
+  lookId?: string | null;
 };
 
 /** How often a rendering take is asked about, and how long it is followed from this window at most. */
@@ -154,7 +156,7 @@ export async function pressStudioRecast(deps: RecastDeps, setId: string, p: Reca
 
   // The window is the whole range. A recording shorter than it, or a price
   // that no longer matches the one pressed, sends nothing.
-  if (inspected.seconds < p.seconds - 0.05 || studioRecastCredits(p.engine, p.seconds, p.photoCount) !== p.credits) {
+  if (inspected.seconds < p.seconds - 0.05 || studioRecastCredits(p.engine, p.seconds, p.photoCount, p.lookId ? 1 : 0) !== p.credits) {
     await letGo();
     return { error: deps.changed };
   }
@@ -169,6 +171,7 @@ export async function pressStudioRecast(deps: RecastDeps, setId: string, p: Reca
     read: inspected.read,
     castTag: studioRecastTag(inspected.read, p.figuresX, p.chosen),
     ...(p.faceAt ? { faceAt: p.faceAt } : {}),
+    ...(p.lookId ? { lookId: p.lookId } : {}),
   };
   onUpdate({ phase: "starting" });
   const sentAt = now();

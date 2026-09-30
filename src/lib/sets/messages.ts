@@ -15,6 +15,8 @@ export const SETS_NOT_OPEN = "Helios 3D is part of the paid plans. Upgrade in Se
 export const SETS_SUSPENDED = "This account is suspended.";
 export const SET_NOT_FOUND = "That set isn't available.";
 export const SET_NOT_READY = "This set is still being built.";
+/** Helios Studio · Video with your character: the gallery look picked is no longer this person's to use (2026-09-30). */
+export const STUDIO_LOOK_GONE = "That picture from the gallery isn't available any more, so nothing was sent and nothing was charged. Pick another look.";
 
 export const SET_BRIEF_TOO_SHORT = "Describe the place in a few more words.";
 export const SET_BRIEF_TOO_LONG = "Keep the description under 500 characters.";

@@ -88,8 +88,10 @@ export function studioRecastWindow(seconds: number): RecastWindow {
  * engine. Restage bills its reference pictures beside its seconds, and a
  * lone character's photos are all it carries (the Studio adds no images).
  */
-export function studioRecastCredits(engine: StudioRecastEngine, seconds: number, photoCount: number): number {
-  const references = RECAST_ENGINES[engine].restages ? studioRecastPhotos(engine, photoCount) : 0;
+export function studioRecastCredits(engine: StudioRecastEngine, seconds: number, photoCount: number, looks = 0): number {
+  // Recast's own quote (actions.ts startRecastTakes): Restage bills its reference pictures — the character's photos and
+  // every added image (a look from the gallery, 2026-09-30) — beside its seconds; Into the clip bills its seconds only.
+  const references = RECAST_ENGINES[engine].restages ? studioRecastPhotos(engine, photoCount) + Math.max(0, Math.floor(looks) || 0) : 0;
   return recastWindowCredits(engine, { seconds, frames: null }, studioRecastWindow(seconds), references);
 }
 
@@ -150,8 +152,10 @@ export function studioRecastDirection(a: {
   engine: StudioRecastEngine;
   /** "Real scene" on: the whole scene made real (studioRealSceneLine), in place of Restage's own line. */
   realScene?: string | null;
+  /** What the character wears (studioWearLine), sent on its own when Real scene is off — the real-scene line carries it when on. */
+  wear?: string | null;
 }): string {
-  const scene = a.realScene ? [a.realScene] : RECAST_ENGINES[a.engine].restages ? [STUDIO_RESTAGE_LINE] : [];
+  const scene = a.realScene ? [a.realScene] : [...(a.wear ? [a.wear] : []), ...(RECAST_ENGINES[a.engine].restages ? [STUDIO_RESTAGE_LINE] : [])];
   const fixed = [studioFigureLine(a.several, a.spot), ...scene].join(" ");
   const room = RECAST_DIRECTION_MAX_CHARS - fixed.length - 1;
   const words = a.words.replace(/\s+/g, " ").trim();
@@ -264,6 +268,36 @@ export function studioSceneSky(hour: number): string {
 }
 
 export const STUDIO_REAL_OUTFIT_LINE = "The character keeps the outfit and hair from the photos.";
+/** The Outfit box's longest words (the real-scene line still fits: whole items go first). */
+export const STUDIO_OUTFIT_MAX = 90;
+
+/**
+ * What the character wears, for the engine (2026-09-30, operator: "Add outfit and make it so I can pick from eva's
+ * image gallery"): the Outfit box's words, and/or a look picked from their gallery, which rides to Recast as an
+ * added image — "image 1" in the direction (recast-brief.ts imageLines). Neither: null, and the photos' own
+ * outfit holds (STUDIO_REAL_OUTFIT_LINE on a real scene; Recast's brief says so on its own otherwise).
+ */
+export function studioWearLine(a: { outfit: string; look: boolean }): string | null {
+  const words = a.outfit.replace(/\s+/g, " ").trim().replace(/[.!?]+$/, "").slice(0, STUDIO_OUTFIT_MAX).trim();
+  if (words && a.look) return `The character wears: ${words} (as in image 1).`;
+  if (words) return `The character wears: ${words}.`;
+  if (a.look) return "The character wears the outfit and hair from image 1.";
+  return null;
+}
+
+/**
+ * Outfit words from a gallery picture's own prompt, for the Outfit box: what follows "wearing", "dressed in" or
+ * "outfit:" up to the end of that phrase. "" when the prompt says nothing of clothes.
+ */
+export function studioOutfitFromPrompt(prompt: string | null | undefined): string {
+  const text = (prompt ?? "").replace(/\s+/g, " ");
+  const m = text.match(/\b(?:wearing|wears|dressed in|clad in|outfit:|in (?:a|an) (?=(?:[\w-]+ ){1,3}(?:dress|suit|jacket|coat|shirt|t-shirt|hoodie|gown|uniform|jumpsuit)\b))\s*([^.;:!?\n]{3,})/i);
+  if (!m) return "";
+  let words = m[1].split(/,\s*(?:(?:she|he|they|standing|sitting|walking|looking|holding|with (?:her|his|their) (?:back|hands?|arms?))\b)|\s+(?:and )?(?:standing|sitting|walking|looking|posing|holding|smiling|in front of|on a|at the|against|under|beside|next to)\b/i)[0];
+  words = words.replace(/[,\s]+$/, "").trim();
+  if (words.length > STUDIO_OUTFIT_MAX) words = words.slice(0, STUDIO_OUTFIT_MAX).replace(/[,\s][^,\s]*$/, "").trim();
+  return words;
+}
 const KEEP_LINE = "Keep the moves and camera exactly.";
 
 /**
@@ -274,7 +308,8 @@ const KEEP_LINE = "Keep the moves and camera exactly.";
  * buildings, then the first building, then the first thing, then the
  * surfaces. The sky, the ground and the outfit always stay.
  */
-export function studioRealSceneLine(a: { title: string; description: string; things: string[]; hour: number }): string {
+export function studioRealSceneLine(a: { title: string; description: string; things: string[]; hour: number; wear?: string | null }): string {
+  const wear = a.wear || STUDIO_REAL_OUTFIT_LINE;
   const k = placeKind(a.title, a.description);
   const norm = (t: string) => t.replace(/^(the|a|an)\s+/i, "").replace(/\s+/g, " ").trim().toLowerCase();
   const things = [...new Set([...studioDescribedThings(a.description), ...a.things.map(norm)].filter(Boolean))].slice(0, THINGS_MAX).map((t) => `a real ${t}`);
@@ -295,7 +330,7 @@ export function studioRealSceneLine(a: { title: string; description: string; thi
       studioSceneLight(a.hour),
       sky,
       "real ground",
-    ].join(", ")}, shot on a cinema camera. ${STUDIO_REAL_OUTFIT_LINE} ${KEEP_LINE}`;
+    ].join(", ")}, shot on a cinema camera. ${wear} ${KEEP_LINE}`;
   for (const place of [`a real ${k.kind} with ${k.surfaces}`, `a real ${k.kind}`]) {
     for (let n = extras.length; n >= 0; n--) {
       const line = build(new Set(extras.slice(0, n)), place);
@@ -305,8 +340,27 @@ export function studioRealSceneLine(a: { title: string; description: string; thi
   return build(new Set(), `a real ${k.kind}`);
 }
 
-/** One step the chosen figure takes inside the range, in seconds from the range's start. */
-export type StudioRecastStep = { kind: "walk" | "run" | "turn"; from: number; to: number; toward: string | null };
+/**
+ * One step the chosen figure takes inside the range, in seconds from the range's start. For a walk or run,
+ * `toward` is how it goes as the shot camera sees it ("toward the camera", studioWalkWords); for a turn, what it
+ * turns to face. `gaze`: where it looks on the way ("looking ahead" unless a Look at… is set).
+ */
+export type StudioRecastStep = { kind: "walk" | "run" | "turn"; from: number; to: number; toward: string | null; gaze?: string | null };
+
+/**
+ * How a walk goes as the shot camera sees it (2026-09-30: the prefill said "walk to the yellow car" while she
+ * walked TOWARD THE CAMERA — the engine turned her head to the car). From the figure's distance to the camera
+ * (metres) and its place across the frame (−1 left edge … 1 right) at the step's start and end.
+ */
+export function studioWalkWords(a: { depth0: number; depth1: number; x0: number; x1: number }): string | null {
+  const dd = a.depth1 - a.depth0, dx = a.x1 - a.x0;
+  const closer = dd < -0.6 ? "toward the camera" : dd > 0.6 ? "away from the camera" : null;
+  const across = Math.abs(dx) > 0.35 ? (dx > 0 ? "from left to right" : "from right to left") : null;
+  if (closer && across) return `${closer}, crossing the frame ${across}`;
+  if (closer) return closer;
+  if (across) return `across the frame ${across}`;
+  return null;
+}
 
 const secs = (n: number) => `${Math.round(n * 10) / 10} s`;
 
@@ -320,7 +374,7 @@ export function studioRecastHappens(start: string, steps: readonly StudioRecastS
     const when = `From ${secs(s.from)} to ${secs(s.to)}`;
     if (s.kind === "turn") return `${when} they turn${s.toward ? ` to face ${s.toward}` : " on the spot"}.`;
     const verb = s.kind === "run" ? "run" : "walk";
-    return `${when} they ${verb}${s.toward ? ` to ${s.toward}` : ""}.`;
+    return `${when} they ${verb}${s.toward ? ` ${s.toward}` : ""}${s.gaze ? `, ${s.gaze}` : ""}.`;
   });
   return [start.trim(), ...said].filter(Boolean).join(" ");
 }
@@ -354,6 +408,8 @@ export type StudioRecastStart = {
   window: RecastWindow;
   /** Whether the face can be read at the recording's first and last frame. */
   faceAt: { first: boolean; last: boolean };
+  /** The look picked from the character's gallery, as Recast's added image. */
+  imagePaths?: string[];
   rights: true;
 };
 
@@ -368,6 +424,8 @@ export function studioRecastStart(a: {
   castTag: string | null;
   /** Measured by the Studio; left out, both ends are read as before. */
   faceAt?: { first: boolean; last: boolean } | null;
+  /** A look from the character's gallery, copied into Recast's image folder (studio-recast-actions.ts): an added image. */
+  imagePath?: string | null;
 }): StudioRecastStart {
   return {
     sendId: a.sendId,
@@ -381,6 +439,7 @@ export function studioRecastStart(a: {
     read: a.read,
     window: studioRecastWindow(a.seconds),
     faceAt: { first: a.faceAt?.first !== false, last: a.faceAt?.last !== false },
+    ...(a.imagePath ? { imagePaths: [a.imagePath] } : {}),
     // The recording is made here, from the person's own scene.
     rights: true,
   };

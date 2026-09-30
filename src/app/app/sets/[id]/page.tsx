@@ -114,6 +114,7 @@ export default async function SetPage({
         characters={data.characters}
         cyclesOn={data.modelsOn || HELIOS_CYCLES_FOR_ALL}
         recastCharacters={recastCharacters}
+        castId={data.set.layout?.castId ?? null}
       />
     );
   }

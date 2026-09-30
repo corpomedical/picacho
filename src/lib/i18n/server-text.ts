@@ -37,6 +37,8 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   'That didn\'t include anything to generate — describe what you want to see, like "a woman walking through a neon-lit street at night".':
     "nothingToGenerate",
   "Couldn't find that character.": "characterNotFound",
+  // Helios Studio · Video with your character: a gallery look that is no longer theirs to use (2026-09-30).
+  "That picture from the gallery isn't available any more, so nothing was sent and nothing was charged. Pick another look.": "studioLookGone",
   "Pick a character with a voice assigned to add dialogue, or clear the dialogue field.":
     "needsVoiceForDialogue",
   "This character doesn't have a voice assigned yet — add one in Character settings, or clear the dialogue field.":

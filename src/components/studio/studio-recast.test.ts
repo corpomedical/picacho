@@ -122,6 +122,21 @@ describe("pressStudioRecast", () => {
     expect(moved.log).toContain("discard u/clip.mp4");
   });
 
+  it("a look from the gallery rides to the start, and is in the price the window showed (Restage bills it)", async () => {
+    const { studioRecastCredits } = await import("../../lib/sets/studio-recast");
+    const LOOK = "22222222-2222-4222-8222-222222222222";
+    const into = deps();
+    await pressStudioRecast(into.d as never, "set-1", press({ lookId: LOOK }), () => {});
+    expect(into.d.start.mock.calls[0][1]).toMatchObject({ lookId: LOOK });
+    const withLook = studioRecastCredits("h3-768", 5, 4, 1);
+    const restage = deps();
+    expect(await pressStudioRecast(restage.d as never, "set-1", press({ engine: "h3-768", lookId: LOOK, credits: withLook }), () => {})).toMatchObject({ error: null });
+    // Pressed at the price without the look: the look moved it, so nothing is sent.
+    const stale = deps();
+    const without = studioRecastCredits("h3-768", 5, 4, 0);
+    if (without !== withLook) expect(await pressStudioRecast(stale.d as never, "set-1", press({ engine: "h3-768", lookId: LOOK, credits: without }), () => {})).toEqual({ error: "changed" });
+  });
+
   it("the follow never stops on a read that errs, throws or hangs — only on done, stopped or failed", async () => {
     let n = 0;
     const answers = [

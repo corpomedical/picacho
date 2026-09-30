@@ -3931,6 +3931,10 @@ const en = {
     // "try again" (press-follow.ts, Cut 1, 2026-09-25).
     pressFollowing: "Still rendering — it will appear here.",
     pressFollowingShort: "Still rendering…",
+    /** Helios Studio, while its code and the set load (2026-09-30). */
+    studioOpening: "Opening the set…",
+    studioOpenFailed: "The Studio couldn't open.",
+    studioOpenRetry: "Try again",
     pressNeverStarted: "That didn't start, so nothing was charged. You can press it again.",
     pressStillGoing: "It's taking longer than it should. It'll show in History once it's settled — no need to press again.",
     filmBeatFollowing: "Beat {i} of {n} — still rendering, it will appear here…",
@@ -4649,6 +4653,7 @@ const en = {
     planCreditsUsedUp: "You've used all the credits included in your plan this month.",
     describeFirst: "Describe what you want first.",
     nothingToGenerate: "That didn't include anything to generate — describe what you want to see, like \"a woman walking through a neon-lit street at night\".",
+    studioLookGone: "That picture from the gallery isn't available any more, so nothing was sent and nothing was charged. Pick another look.",
     characterNotFound: "Couldn't find that character.",
     needsVoiceForDialogue: "Pick a character with a voice assigned to add dialogue, or clear the dialogue field.",
     characterNoVoice: "This character doesn't have a voice assigned yet — add one in Character settings, or clear the dialogue field.",

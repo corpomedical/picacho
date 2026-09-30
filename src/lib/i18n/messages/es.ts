@@ -3724,6 +3724,10 @@ const es = {
     stillFailedWhy: "Esa foto no pasó:",
     pressFollowing: "Todavía se está generando — aparecerá aquí.",
     pressFollowingShort: "Todavía generando…",
+    /** Helios Studio, while its code and the set load (2026-09-30). */
+    studioOpening: "Abriendo el set…",
+    studioOpenFailed: "No se pudo abrir el Studio.",
+    studioOpenRetry: "Reintentar",
     pressNeverStarted: "No llegó a empezar, así que no se cobró nada. Puedes volver a pulsarlo.",
     pressStillGoing: "Está tardando más de lo normal. Aparecerá en el Historial cuando termine; no hace falta volver a pulsar.",
     filmBeatFollowing: "Tramo {i} de {n} — todavía se está generando, aparecerá aquí…",
@@ -4413,6 +4417,7 @@ const es = {
     planCreditsUsedUp: "Has usado todos los créditos incluidos en tu plan este mes.",
     describeFirst: "Describe primero lo que quieres.",
     nothingToGenerate: "Eso no incluía nada que generar — describe lo que quieres ver, como \"una mujer caminando por una calle de neón de noche\".",
+    studioLookGone: "Esa imagen de la galería ya no está disponible, así que no se envió nada ni se cobró nada. Elige otro look.",
     characterNotFound: "No encontramos ese personaje.",
     needsVoiceForDialogue: "Elige un personaje con voz asignada para añadir diálogo, o borra el campo de diálogo.",
     characterNoVoice: "Este personaje aún no tiene voz asignada — añádela en los ajustes del personaje, o borra el campo de diálogo.",

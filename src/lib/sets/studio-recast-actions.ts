@@ -14,14 +14,15 @@
 // today). Both must say yes.
 
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
-import { SET_NOT_FOUND } from "@/lib/sets/messages";
+import { SET_NOT_FOUND, STUDIO_LOOK_GONE } from "@/lib/sets/messages";
 import { canUseRecast, discardRecastUpload, inspectRecastClip, reserveRecastUpload, startRecastTakes } from "@/lib/recast/actions";
 import { pollGeneration } from "@/lib/generations/actions";
-import { toMediaUrl } from "@/lib/media/url";
-import { RECAST_MODEL_IDS } from "@/lib/recast/recast";
+import { isRenderableUrl, mediaStoragePath, thumbUrl, toMediaUrl } from "@/lib/media/url";
+import { RECAST_IMAGE_BUCKET, RECAST_MODEL_IDS } from "@/lib/recast/recast";
+import { createAdminClient } from "@/lib/supabase/server";
 import { recastTakeOutcome } from "@/lib/recast/door-truth";
 import type { RecastRead } from "@/lib/recast/recast-read";
-import { parseStudioRecastEngine, studioRecastStart } from "@/lib/sets/studio-recast";
+import { parseStudioRecastEngine, studioOutfitFromPrompt, studioRecastStart } from "@/lib/sets/studio-recast";
 
 type Access = Awaited<ReturnType<typeof setsAccess>>;
 
@@ -77,6 +78,69 @@ export async function discardStudioRecast(setId: string, input: { path: string }
   if (typeof input?.path === "string") await discardRecastUpload(input.path);
 }
 
+/** How many of a character's pictures the window's gallery strip shows, newest first. */
+const STUDIO_LOOKS_MAX = 30;
+export type StudioLook = { id: string; url: string; outfit: string };
+
+/**
+ * "Look from their gallery" (2026-09-30, operator: "…pick from eva's image gallery generation"): the chosen
+ * character's own finished pictures, newest first — the character page's "In action" rows, images only — each
+ * with a thumbnail and the outfit words its prompt gives (studioOutfitFromPrompt), for the Outfit box.
+ */
+export async function listStudioLooks(setId: string, input: { characterId: string }): Promise<{ error: string } | { error: null; looks: StudioLook[] }> {
+  const access = await setsAccess();
+  if (access.error !== null) return { error: access.error };
+  if (!(await ownsSet(access, setId))) return { error: SET_NOT_FOUND };
+  if ((await canUseRecast()).error !== null) return { error: null, looks: [] };
+  const characterId = typeof input?.characterId === "string" && UUID_RE.test(input.characterId) ? input.characterId : null;
+  if (!characterId) return { error: null, looks: [] };
+  const { data } = await access.supabase
+    .from("generations")
+    .select("id, result_url, prompt")
+    .eq("user_id", access.userId)
+    .eq("character_profile_id", characterId)
+    .eq("content_type", "image")
+    .eq("status", "succeeded")
+    .is("deleted_at", null)
+    .not("result_url", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(STUDIO_LOOKS_MAX);
+  const looks = (data ?? [])
+    .map((r) => {
+      const url = toMediaUrl(r.result_url as string) ?? "";
+      return { id: r.id as string, url: isRenderableUrl(url) ? (thumbUrl(url, 320) ?? url) : "", outfit: studioOutfitFromPrompt(r.prompt as string | null) };
+    })
+    .filter((l) => l.url);
+  return { error: null, looks };
+}
+
+/**
+ * The look, checked and put where Recast takes added images: the picture must be this person's, of THIS
+ * character, a finished image — then it is copied into their own folder of Recast's image bucket, which is the
+ * only place Recast reads an added image from (actions.ts readAddedImage). Null when it isn't theirs.
+ */
+async function lookForRecast(access: Extract<Access, { error: null }>, lookId: string, characterId: string): Promise<string | null> {
+  if (!UUID_RE.test(lookId)) return null;
+  const { data: row } = await access.supabase
+    .from("generations")
+    .select("id, result_url, content_type, status, character_profile_id")
+    .eq("id", lookId)
+    .eq("user_id", access.userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!row || row.content_type !== "image" || row.status !== "succeeded" || row.character_profile_id !== characterId) return null;
+  const at = mediaStoragePath(row.result_url as string | null);
+  if (!at) return null;
+  const admin = createAdminClient();
+  const { data: blob, error } = await admin.storage.from(at.bucket).download(at.path);
+  if (error || !blob) return null;
+  const ext = (at.path.match(/\.(png|jpe?g|webp)$/i)?.[1] ?? "jpg").toLowerCase().replace("jpeg", "jpg");
+  const path = `${access.userId}/studio-look-${lookId}.${ext}`;
+  const type = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+  const { error: upErr } = await admin.storage.from(RECAST_IMAGE_BUCKET).upload(path, Buffer.from(await blob.arrayBuffer()), { contentType: type, upsert: true });
+  return upErr ? null : path;
+}
+
 /**
  * Step 3: the take, started by Recast's own start with this press's id —
  * the first take's row id, so a second delivery of the same press follows
@@ -96,6 +160,8 @@ export async function startStudioRecast(
     castTag: string | null;
     /** Whether the face can be read at the recording's first and last frame (the Studio measures its figure). */
     faceAt?: { first: boolean; last: boolean } | null;
+    /** A picture from the character's own gallery, for the outfit and look (listStudioLooks). */
+    lookId?: string | null;
   },
 ): Promise<{ error: string } | { error: null; ids: string[] }> {
   const access = await setsAccess();
@@ -104,6 +170,12 @@ export async function startStudioRecast(
   const engine = parseStudioRecastEngine(input?.engine);
   const seconds = typeof input?.seconds === "number" && Number.isFinite(input.seconds) ? input.seconds : 0;
   if (!engine || typeof input?.characterId !== "string" || typeof input?.sendId !== "string" || !(seconds > 0)) return { error: SET_NOT_FOUND };
+  // The look is checked again here — this person's, this character's — and nothing starts on one that isn't.
+  let imagePath: string | null = null;
+  if (typeof input.lookId === "string" && input.lookId) {
+    imagePath = await lookForRecast(access, input.lookId, input.characterId);
+    if (!imagePath) return { error: STUDIO_LOOK_GONE };
+  }
   return startRecastTakes(
     studioRecastStart({
       sendId: input.sendId,
@@ -119,6 +191,7 @@ export async function startStudioRecast(
         input.faceAt && typeof input.faceAt === "object"
           ? { first: input.faceAt.first !== false, last: input.faceAt.last !== false }
           : null,
+      imagePath,
     }),
   );
 }
