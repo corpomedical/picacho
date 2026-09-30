@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.168.0",
+    build: 207,
+    date: "2026-09-30",
+    title: "Helios Studio: posable people",
+    items: [
+      "The grey stand-in is now a person figure you can pose, arm by arm and leg by leg, like Blender's rig. Add ▸ Person adds more people; scenes you saved before open with the figure standing where the stand-in stood.",
+      "Pose Mode (Ctrl+Tab, or the mode menu): click a joint and press R to rotate it (X, Y or Z, or type the degrees; joints only bend the way real ones do), drag a hand or a foot and the whole arm or leg follows, Alt+R clears. On phones, a joint picker shaped like the body makes the small bones easy to tap.",
+      "Ten ready poses in the Pose panel (Stand, Walk, Run, Sit, Wave, Point, Crouch, Lie down, Hands on hips, Arms crossed), plus Sit on…, Lean on… and Look at… anything in the scene. Poses can be keyframed, a bone at a time or the whole pose, and animate between keys.",
+      "Astra can pose people in your words: \"Sit the stand-in on the car\", \"Make them wave\".",
+      "Photo with your character follows the pose: \"What happens\" is filled in with it (\"sitting on the red car, waving with the right hand, looking at the camera\"), and you can change it. Same price.",
+      "In English, Spanish, Portuguese and Italian.",
+    ],
+  },
+  {
     version: "1.167.0",
     build: 206,
     date: "2026-09-30",
