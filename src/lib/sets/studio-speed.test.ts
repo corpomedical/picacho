@@ -31,7 +31,10 @@ describe("Helios Studio loads fast", () => {
   });
 
   it("the app's sidebar and tab bar step out under the Studio, so their links aren't prefetched while it loads", () => {
-    expect(read("src/app/globals.css")).toContain("html:has([data-helios-studio], [data-studio-opening]) [data-app-chrome] {\n  display: none !important;");
+    expect(read("src/components/studio/studio-opening.tsx")).toContain("html:has([data-helios-studio], [data-studio-opening]) [data-app-chrome] { display: none !important; }");
+    expect(read("src/components/studio/studio-opening.tsx")).toContain("<style>{STUDIO_HIDES_APP_CHROME}</style>");
+    expect(read("src/components/studio/helios-studio.tsx")).toContain("<style>{STUDIO_HIDES_APP_CHROME}</style>");
+    expect(read("src/app/globals.css")).not.toContain("data-app-chrome");
     expect(read("src/app/app/layout.tsx").match(/<div data-app-chrome className="contents">/g)).toHaveLength(2);
   });
 });

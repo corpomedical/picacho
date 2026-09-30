@@ -54,7 +54,7 @@ import { RECAST_BUCKET } from "@/lib/recast/recast";
 import { recastStorageObjectUrl, uploadRecastClip } from "@/lib/recast/recast-client";
 import { discardStudioRecast, inspectStudioRecast, listStudioLooks, readStudioRecast, reserveStudioRecast, startStudioRecast } from "@/lib/sets/studio-recast-actions";
 import { pressStudioRecast, type RecastPress, type RecastUpdate } from "./studio-recast";
-import { StudioOpening } from "./studio-opening";
+import { StudioOpening, STUDIO_HIDES_APP_CHROME } from "./studio-opening";
 
 /**
  * The engine's code, asked for the moment this module runs in the browser (2026-09-30 — "Speed up the
@@ -290,6 +290,7 @@ export function HeliosStudio({
   return (
     <div className="fixed inset-0 z-[70]" data-helios-studio>
       <style>{STUDIO_CSS}</style>
+      <style>{STUDIO_HIDES_APP_CHROME}</style>
       <div className="h-full" dangerouslySetInnerHTML={{ __html: STUDIO_HTML }} />
       {opening === "opening" ? (
         // The same cover the page streamed while the set was read (studio-opening.tsx), up until the first frame.

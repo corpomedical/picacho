@@ -539,12 +539,6 @@ html.native-app body {
    100% so the shell's h-full equals viewport minus the safe-area padding
    — the shell no longer pokes below the fold the way h-screen did.
    Browsers without :has() (pre-2022) simply keep the old behavior. */
-/* Helios Studio covers the screen: the app's sidebar and tab bar are taken out of the page under it, so
-   their links are never prefetched while the Studio loads (app/app/layout.tsx data-app-chrome). */
-html:has([data-helios-studio], [data-studio-opening]) [data-app-chrome] {
-  display: none !important;
-}
-
 html:has([data-app-scroll]) {
   height: 100%;
   overflow: hidden;
