@@ -37,8 +37,24 @@ import { capPlugin } from "./bridge";
 // Android 10 and older need WRITE_EXTERNAL_STORAGE, which the manifest does
 // not ask for, so the plugin refuses there — the caller then falls back to
 // the share sheet (download-button.tsx), which is what those phones had.
+//
+// The iPhone app (2026-09-30) has no shared folders to write into: a picture
+// or video belongs in Photos, and the app's own PicachoMedia plugin
+// (ios/App/App/MediaPlugin.swift) puts it there — the file fetched natively
+// when it can be, otherwise fetched here and handed over through a file in
+// the app's cache. What Photos cannot hold (a WebM, a PDF, a 3D model) opens
+// the share sheet on the real file, whose "Save to Files" is iOS's place for
+// those. The Filesystem path below never runs on iOS: its EXTERNAL_STORAGE
+// is the app's private Documents folder there, where nobody would find it.
 
-export type SavedTo = "gallery" | "downloads";
+// "photos": in the iPhone's Photos. "shared": the person picked something in
+// the iPhone share sheet (Save to Files, AirDrop…).
+export type SavedTo = "gallery" | "downloads" | "photos" | "shared";
+
+/** The person has said no to Picacho adding to Photos (iPhone app). */
+export function isPhotosDenied(err: unknown): boolean {
+  return (err as { code?: unknown } | null)?.code === "PHOTOS_DENIED";
+}
 
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "webp", "gif", "avif", "heic"]);
 const VIDEO_EXT = new Set(["mp4", "m4v", "mov", "webm", "3gp", "mkv"]);
@@ -115,20 +131,86 @@ function toBase64(part: Blob): Promise<string> {
 
 /** True when this shell can write into the phone's shared folders at all. */
 export function canSaveToDevice(): boolean {
+  if (capPlugin("PicachoMedia")?.save) return true;
   const fs = capPlugin("Filesystem");
   return Boolean(fs?.writeFile);
 }
 
+type Plugin = ReturnType<typeof capPlugin>;
+
+// The file written in 1.5 MB base64 pieces (writeFile, then appendFile).
+async function writeInPieces(fs: Plugin, blob: Blob, path: string, directory: string): Promise<void> {
+  let offset = 0;
+  do {
+    const data = await toBase64(blob.slice(offset, offset + PIECE));
+    if (offset === 0) await fs.writeFile({ path, data, directory, recursive: true });
+    else await fs.appendFile({ path, data, directory });
+    offset += PIECE;
+  } while (offset < blob.size);
+}
+
+// The iPhone app's answer, in this file's words; null when the person closed
+// the share sheet without picking anything.
+function iosAnswer(result: { savedTo?: string } | null | undefined): SavedTo | null {
+  if (result?.savedTo === "photos") return "photos";
+  if (result?.savedTo === "cancelled") return null;
+  return "shared";
+}
+
+async function saveOnIos(media: Plugin, abs: string, requestedName: string, kind?: "image" | "video"): Promise<SavedTo | null> {
+  let ext = pathExt(abs) ?? extOf(requestedName) ?? (kind === "video" ? "mp4" : kind === "image" ? "png" : null);
+
+  // 1. The app fetches the file itself (no base64 over the bridge).
+  if (/^https?:/i.test(abs) && ext) {
+    const folder = folderFor(ext);
+    try {
+      return iosAnswer(await media.save({ url: abs, name: deviceName(requestedName, ext, folder.kind), kind: folder.kind }));
+    } catch (err) {
+      // A "no" to Photos is the person's answer: fetching again here would
+      // only ask the same question.
+      if (isPhotosDenied(err)) throw err;
+    }
+  }
+
+  // 2. Fetched here (a blob: or data: link, or a file the app couldn't
+  // fetch), written to the app's cache, and handed over by its file:// URI.
+  const fs = capPlugin("Filesystem");
+  if (!fs?.writeFile || !fs?.getUri) throw new Error("This app can't save files");
+  const res = await fetch(abs);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const blob = await res.blob();
+  const type = blob.type.split(";")[0].trim().toLowerCase();
+  ext =
+    ext ??
+    EXT_FOR_TYPE[type] ??
+    (type.startsWith("image/") ? "png" : type.startsWith("video/") ? "mp4" : "bin");
+  const folder = folderFor(ext);
+  const name = deviceName(requestedName, ext, folder.kind);
+  const path = `picacho-save/${name}`;
+  const directory = "CACHE";
+  try {
+    await writeInPieces(fs, blob, path, directory);
+    const { uri } = await fs.getUri({ path, directory });
+    return iosAnswer(await media.save({ url: uri, name, kind: folder.kind }));
+  } finally {
+    await fs.deleteFile?.({ path, directory }).catch(() => {});
+  }
+}
+
 /**
- * Saves `url` into the phone's shared storage and says where it went.
- * Throws when neither way of writing works (no plugin, Android 10's missing
- * permission, a dead URL) — the caller decides what to fall back to.
+ * Saves `url` into the phone's shared storage and says where it went; null
+ * when the person closed the iPhone share sheet without saving. Throws when
+ * neither way of writing works (no plugin, Android 10's missing permission,
+ * a dead URL, a "no" to Photos) — the caller decides what to fall back to.
  */
 export async function saveToDevice(
   url: string,
   requestedName: string,
   kind?: "image" | "video",
-): Promise<SavedTo> {
+): Promise<SavedTo | null> {
+  const media = capPlugin("PicachoMedia");
+  if (media?.save) return saveOnIos(media, new URL(url, window.location.href).toString(), requestedName, kind);
+
   const fs = capPlugin("Filesystem");
   if (!fs?.writeFile) throw new Error("This app can't save files");
   const abs = new URL(url, window.location.href).toString();
@@ -167,13 +249,7 @@ export async function saveToDevice(
   const { dir, savedTo } = folder;
   const path = `${dir}/${deviceName(requestedName, ext, folder.kind)}`;
   try {
-    let offset = 0;
-    do {
-      const data = await toBase64(blob.slice(offset, offset + PIECE));
-      if (offset === 0) await fs.writeFile({ path, data, directory, recursive: true });
-      else await fs.appendFile({ path, data, directory });
-      offset += PIECE;
-    } while (offset < blob.size);
+    await writeInPieces(fs, blob, path, directory);
   } catch (err) {
     await fs.deleteFile?.({ path, directory }).catch(() => {});
     throw err;

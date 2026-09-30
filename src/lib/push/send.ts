@@ -1,13 +1,14 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { pushChannels, type NotifyOptions } from "@/lib/push/channels";
 import { resolvePushText } from "@/lib/push/text";
+import { apnsConfig, apnsPayload, deliverToIphone, isApnsDevice } from "@/lib/push/apns";
 
 // Sending a push notification when a generation finishes.
 //
-// Delivery goes through Firebase Cloud Messaging for both platforms — FCM
-// forwards to APNs for iOS, so there's one integration rather than two, and
-// no Apple certificate handling on our side beyond uploading the APNs key to
-// Firebase once.
+// Delivery to the Android app goes through Firebase Cloud Messaging. The
+// iPhone app (2026-09-30) registers Apple's own device tokens, which FCM
+// can't address without Firebase's SDK inside the app, so those go straight
+// to Apple's push service instead (apns.ts). Browsers get web push.
 //
 // Deliberately fails silently. This is called from the job runner's finish
 // path, which is also what saves the result: a notification problem must never
@@ -193,22 +194,45 @@ export async function notifyUser(
   // A web-only message never reaches the phone app (channels.ts).
   if (!channels.fcm) return;
 
-  const projectId = process.env.FCM_PROJECT_ID;
-  const token = await accessToken();
-  // Not configured yet — see MOBILE_APP.md. Silent, because the web app runs
-  // perfectly well without push and this is called on every completion.
-  if (!projectId || !token) return;
-
   const { data: devices } = await admin
     .from("push_tokens")
-    .select("token, locale")
+    .select("token, locale, platform")
     .eq("user_id", userId)
     .limit(10);
 
   if (!devices?.length) return;
 
-  await Promise.all(
-    devices.map(async (device) => {
+  // The iPhone app's devices go straight to Apple (apns.ts, 2026-09-30);
+  // every other row is the Android app's and goes through FCM, as before.
+  const iphones = devices.filter((device) => isApnsDevice(device.platform, device.token));
+  const androids = devices.filter((device) => !isApnsDevice(device.platform, device.token));
+
+  const apns = iphones.length ? apnsConfig() : null;
+  const projectId = process.env.FCM_PROJECT_ID;
+  const token = androids.length ? await accessToken() : null;
+  // Either may not be configured yet — see MOBILE_APP.md and IOS_APP.md.
+  // Silent, because the web app runs perfectly well without push and this is
+  // called on every completion.
+
+  await Promise.all([
+    ...iphones.map(async (device) => {
+      if (!apns) return;
+      try {
+        const text = resolvePushText(notification.message, device.locale as string | null);
+        const outcome = await deliverToIphone(
+          device.token as string,
+          apnsPayload(text.title, text.body, notification.path),
+          apns,
+        );
+        // Deleted app or notifications switched off for good: same pruning
+        // as FCM's 404/410 below.
+        if (outcome === "gone") await admin.from("push_tokens").delete().eq("token", device.token);
+      } catch {
+        // One device failing must not stop the others.
+      }
+    }),
+    ...androids.map(async (device) => {
+      if (!projectId || !token) return;
       try {
         const text = resolvePushText(notification.message, device.locale as string | null);
         const res = await fetch(`${FCM_ENDPOINT}/${projectId}/messages:send`, {
@@ -239,5 +263,5 @@ export async function notifyUser(
         // One device failing must not stop the others.
       }
     }),
-  );
+  ]);
 }

@@ -6,10 +6,11 @@ import { MIC_MIN_APP_BUILD, appCannotRecord, nativeAppBuild } from "./app-build"
 
 type G = { window?: unknown };
 
-function inApp(build: string | number | undefined) {
+function inApp(build: string | number | undefined, platform = "android") {
   (globalThis as G).window = {
     Capacitor: {
       isNativePlatform: () => true,
+      getPlatform: () => platform,
       Plugins: { App: { getInfo: async () => ({ build, version: `1.${build}.0` }) } },
     },
   };
@@ -36,6 +37,12 @@ describe("which app build the page is in", () => {
     inApp(String(MIC_MIN_APP_BUILD - 1));
     expect(await appCannotRecord()).toBe(true);
     inApp(String(MIC_MIN_APP_BUILD));
+    expect(await appCannotRecord()).toBe(false);
+  });
+
+  it("never tells the iPhone app to update: its builds count from 1 and it always had the microphone", async () => {
+    inApp("1", "ios");
+    expect(await nativeAppBuild()).toBe(1);
     expect(await appCannotRecord()).toBe(false);
   });
 

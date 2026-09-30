@@ -1,4 +1,5 @@
 import { capPlugin } from "./bridge";
+import { nativePlatformClient } from "./platform";
 
 // Which Android build the website is running inside (2026-09-25, operator:
 // "on the app its asking for permission and the app doesnt have an option to
@@ -32,8 +33,15 @@ export async function nativeAppBuild(): Promise<number | null> {
   }
 }
 
-/** In the app, but a build from before the microphone was declared. */
+/**
+ * In the Android app, but a build from before the microphone was declared.
+ * Never in the iPhone app (2026-09-30): its build numbers start again at 1
+ * and it asks for the microphone from its first build
+ * (NSMicrophoneUsageDescription), so "build < 20" there would tell every
+ * iPhone to update an app that is already up to date.
+ */
 export async function appCannotRecord(): Promise<boolean> {
+  if (nativePlatformClient() === "ios") return false;
   const build = await nativeAppBuild();
   return build !== null && build < MIC_MIN_APP_BUILD;
 }

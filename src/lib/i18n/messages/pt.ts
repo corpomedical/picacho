@@ -1405,6 +1405,9 @@ const pt = {
     downloadFailed: "Falha no download — aberto em outra aba",
     savedToGallery: "Salvo na sua galeria",
     savedToDownloads: "Salvo em Downloads",
+    // The iPhone app saves pictures and videos to Photos (MediaPlugin.swift).
+    savedToPhotos: "Salvo em Fotos",
+    photosDenied: "O Picacho não pode adicionar às Fotos. Permita em Ajustes → Apps → Picacho → Fotos e tente de novo.",
     fullScreen: "Tela cheia",
     attachAnchorWarn: "A foto anexada a esta mensagem será usada como o ROSTO de {name}, substituindo a referência salva — não será lida como roupa. Se não é o rosto de {name}, remova-a: fotos de roupa vão na seção Vestuário do personagem, ou outra pessoa pode aparecer.",
     attachAnchorWarnOutfit: "A foto anexada a esta mensagem será usada como o ROSTO de {name}, substituindo a referência salva — não será lida como roupa. Se é a foto da roupa, remova-a: o chip Vestuário abaixo já carrega o vestuário salvo de {name}.",
@@ -2304,6 +2307,8 @@ const pt = {
     micBlocked: "O acesso ao microfone foi bloqueado — permita-o no seu navegador para usar a voz.",
     micNeedsAppUpdate: "A voz precisa da versão mais recente do app Picacho. Atualize pelo Google Play e tente de novo.",
     micBlockedApp: "O microfone está desativado para o Picacho. Ative em Configurações → Apps → Picacho → Permissões e tente de novo.",
+    // The same, in the iPhone/iPad app: iOS keeps the switch under Apps.
+    micBlockedAppIos: "O microfone está desativado para o Picacho. Ative em Ajustes → Apps → Picacho → Microfone e tente de novo.",
     stopRecording: "Parar gravação",
     speak: "Falar",
     transcribing: "Transcrevendo…",

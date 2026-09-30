@@ -1,0 +1,5 @@
+/* Permission prompts in Portuguese (the site's pt catalog; English is in Info.plist). */
+"NSCameraUsageDescription" = "O Picacho usa a câmera quando você escolhe Tirar foto, para usar uma foto nova sua ou de um produto nas suas imagens e vídeos.";
+"NSMicrophoneUsageDescription" = "O Picacho usa o microfone quando você fala com a Aly ou grava uma nota de voz. Nada é gravado até você tocar no microfone.";
+"NSPhotoLibraryAddUsageDescription" = "O Picacho salva nas suas Fotos as imagens e os vídeos que você baixa.";
+"NSPhotoLibraryUsageDescription" = "O Picacho abre suas fotos quando você escolhe uma como referência para suas imagens e vídeos.";

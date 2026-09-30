@@ -1500,6 +1500,9 @@ const en = {
     downloadFailed: "Download failed — opened in a new tab instead",
     savedToGallery: "Saved to your gallery",
     savedToDownloads: "Saved to Downloads",
+    // The iPhone app saves pictures and videos to Photos (MediaPlugin.swift).
+    savedToPhotos: "Saved to Photos",
+    photosDenied: "Picacho can't add to Photos. Allow it in Settings → Apps → Picacho → Photos, then try again.",
     fullScreen: "Full screen",
     attachAnchorWarn: "The photo attached to this message will be used as {name}'s FACE, replacing the saved face reference — it will not be read as clothing. If it isn't {name}'s face, remove it: outfit photos belong in the character's Outfit section, or a different person may appear.",
     attachAnchorWarnOutfit: "The photo attached to this message will be used as {name}'s FACE, replacing the saved face reference — it will not be read as clothing. If it's the outfit photo, remove it: the Outfit chip below already carries {name}'s saved outfit.",
@@ -2424,6 +2427,8 @@ const en = {
     micBlocked: "Microphone access was blocked — allow it in your browser to use voice.",
     micNeedsAppUpdate: "Voice needs the latest Picacho app. Update it from Google Play, then try again.",
     micBlockedApp: "The microphone is off for Picacho. Turn it on in Settings → Apps → Picacho → Permissions, then try again.",
+    // The same, in the iPhone/iPad app: iOS keeps the switch under Apps.
+    micBlockedAppIos: "The microphone is off for Picacho. Turn it on in Settings → Apps → Picacho → Microphone, then try again.",
     stopRecording: "Stop recording",
     speak: "Speak",
     transcribing: "Transcribing…",

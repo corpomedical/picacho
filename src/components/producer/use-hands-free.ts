@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { playableAudioUrl } from "@/lib/audio/playable-url";
 import { appCannotRecord, nativeAppBuild } from "@/lib/native/app-build";
+import { nativePlatformClient } from "@/lib/native/platform";
 import { connectionNote, vlog } from "./voice-log";
 import { encodeOggOpus } from "./opus";
 import {
@@ -24,8 +25,16 @@ const APP_TOO_OLD =
   "Talking needs the latest Picacho app. Update it from Google Play, then tap the mic again. You can type meanwhile.";
 const APP_MIC_DENIED =
   "The microphone is off for Picacho. Turn it on in your phone's Settings → Apps → Picacho → Permissions → Microphone, then tap the mic again.";
+const APP_MIC_DENIED_IOS =
+  "The microphone is off for Picacho. Turn it on in Settings → Apps → Picacho → Microphone, then tap the mic again.";
 const WEB_MIC_DENIED =
   "The microphone is blocked for this site. Allow it from the lock icon next to the address, then tap the mic again.";
+// Said for where the switch actually is: the app's settings on a phone
+// (Android and iOS name the path differently), the address bar on the web.
+async function micDeniedNotice(): Promise<string> {
+  if ((await nativeAppBuild()) === null) return WEB_MIC_DENIED;
+  return nativePlatformClient() === "ios" ? APP_MIC_DENIED_IOS : APP_MIC_DENIED;
+}
 const DEVICE_ECHOES =
   "This device plays my voice back into its mic, so I may not hear you over me. Press Stop to cut me off.";
 
@@ -768,7 +777,7 @@ export function useHandsFree({
         },
       });
     } catch {
-      return giveUp((await nativeAppBuild()) !== null ? APP_MIC_DENIED : WEB_MIC_DENIED);
+      return giveUp(await micDeniedNotice());
     }
     if (push.current !== p) {
       // Let go (or ended) while the mic was opening: close it at once.
@@ -915,7 +924,7 @@ export function useHandsFree({
     } catch (err) {
       go("off");
       vlog("handsfree.micDenied", { name: (err as { name?: string } | null)?.name ?? "error" });
-      setNotice((await nativeAppBuild()) !== null ? APP_MIC_DENIED : WEB_MIC_DENIED);
+      setNotice(await micDeniedNotice());
       return;
     }
     // After the mic (Android gives later output the voice-call path, which

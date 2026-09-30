@@ -65,13 +65,41 @@ const config = {
   },
 
   ios: {
-    contentInset: "always",
+    // "never" (was "always" before the iOS project existed, 2026-09-30): the
+    // page runs edge to edge and keeps itself clear of the notch, the Dynamic
+    // Island and the home indicator with env(safe-area-inset-*) — body's
+    // padding and the html ground under the status bar in globals.css, the
+    // same design the Android shell and the iPhone home-screen app already
+    // run. "always" would make the WebView inset the page a second time, and
+    // the strip under the status bar would be the WebView's own white rather
+    // than the page's colour.
+    contentInset: "never",
     // Marker the middleware reads to switch the site into reader mode: no
     // pricing, no upgrade buttons, no billing portal. See lib/native/platform.ts.
+    // No PicachoAuth token on iOS, on purpose: the OAuth buttons stay hidden
+    // in the iPhone app. App Review requires Sign in with Apple beside Google
+    // sign-in (guideline 4.8), and email and password need neither.
     appendUserAgent: "PicachoApp",
     // Keeps the webview background matching the app's own, so there's no
     // white flash behind the page during navigation on a dark theme.
     backgroundColor: "#ffffff",
+    // The same plugins as the Android binary (see android.includePlugins for
+    // why each is there, and why RevenueCat and the camera plugin are left
+    // out). Without this list `cap sync ios` would compile every Capacitor
+    // package in package.json into the app, the RevenueCat purchase SDK
+    // included, in an app that sells nothing. The app's own plugins
+    // (PicachoOrientation, PicachoMedia) live in ios/App/App and are
+    // registered by PicachoViewController, not through this list.
+    includePlugins: [
+      "@capacitor-community/in-app-review",
+      "@capacitor/app",
+      "@capacitor/browser",
+      "@capacitor/filesystem",
+      "@capacitor/haptics",
+      "@capacitor/push-notifications",
+      "@capacitor/share",
+      "@capacitor/splash-screen",
+    ],
   },
 
   android: {

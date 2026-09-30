@@ -3,6 +3,10 @@
 Everything in the web codebase is done. What's left needs Xcode and Android
 Studio, which only run on your machine.
 
+**iOS (2026-09-30):** the Xcode project now exists (`ios/`). IOS_APP.md covers
+it: what it contains, how to run it, the Apple push key, and App Store
+Connect. The steps below that create the project are done for iOS.
+
 ---
 
 ## What was built, and why it's shaped this way

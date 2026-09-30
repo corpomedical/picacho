@@ -97,3 +97,18 @@ export function isNativeAppClient(): boolean {
   if (cap?.isNativePlatform?.()) return true;
   return userAgentIsNativeApp(window.navigator.userAgent);
 }
+
+// Which shell the page is in, from Capacitor's own answer: "ios" for the
+// iPhone/iPad app (2026-09-30), "android" for the Play app, null on the web.
+// For the few things the two shells do differently — where a setting lives,
+// which build numbers mean what — never for reader-mode gating, which is
+// the same in both.
+export function nativePlatformClient(): "ios" | "android" | null {
+  if (typeof window === "undefined") return null;
+  const cap = (
+    window as unknown as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string } }
+  ).Capacitor;
+  if (!cap?.isNativePlatform?.()) return null;
+  const platform = cap.getPlatform?.();
+  return platform === "ios" || platform === "android" ? platform : null;
+}

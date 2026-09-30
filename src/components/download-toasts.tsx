@@ -15,8 +15,10 @@ type Toast = {
   id: string;
   kind: "image" | "video" | "file";
   state: "downloading" | "done" | "failed";
-  // Where a save in the Android app landed (lib/native/save-media.ts).
-  savedTo?: "gallery" | "downloads";
+  // Where a save in the Android or iPhone app landed (lib/native/save-media.ts).
+  savedTo?: "gallery" | "downloads" | "photos" | "shared";
+  // A failure the person can fix: the iPhone app isn't allowed into Photos.
+  failure?: "photosDenied";
 };
 
 export function DownloadToasts() {
@@ -31,10 +33,13 @@ export function DownloadToasts() {
       setToasts((prev) => [...prev.slice(-3), { id, kind, state: "downloading" }]);
     }
     function onDone(e: Event) {
-      const { id, ok, savedTo } = (e as CustomEvent<{ id: string; ok: boolean; savedTo?: Toast["savedTo"] }>).detail;
-      setToasts((prev) => prev.map((x) => (x.id === id ? { ...x, state: ok ? "done" : "failed", savedTo } : x)));
+      const { id, ok, savedTo, failure } = (
+        e as CustomEvent<{ id: string; ok: boolean; savedTo?: Toast["savedTo"]; failure?: Toast["failure"] }>
+      ).detail;
+      setToasts((prev) => prev.map((x) => (x.id === id ? { ...x, state: ok ? "done" : "failed", savedTo, failure } : x)));
+      // A sentence that says where to go takes longer to read than "Saved".
       timers.push(
-        setTimeout(() => setToasts((prev) => prev.filter((x) => x.id !== id)), 2600),
+        setTimeout(() => setToasts((prev) => prev.filter((x) => x.id !== id)), failure ? 7000 : 2600),
       );
     }
     window.addEventListener("picacho:download-start", onStart);
@@ -80,7 +85,13 @@ export function DownloadToasts() {
               <path d="M6 6l12 12M18 6L6 18" />
             </svg>
           )}
-          <span className={cn("min-w-0 flex-1 truncate text-xs", toast.state === "downloading" ? "text-atelier-ink" : "text-atelier-muted")}>
+          <span
+            className={cn(
+              "min-w-0 flex-1 text-xs",
+              toast.failure ? "text-atelier-ink" : "truncate",
+              !toast.failure && (toast.state === "downloading" ? "text-atelier-ink" : "text-atelier-muted"),
+            )}
+          >
             {toast.state === "downloading"
               ? toast.kind === "video"
                 ? g.downloadingVideo
@@ -92,8 +103,12 @@ export function DownloadToasts() {
                   ? g.savedToGallery
                   : toast.savedTo === "downloads"
                     ? g.savedToDownloads
-                    : g.downloadDone
-                : g.downloadFailed}
+                    : toast.savedTo === "photos"
+                      ? g.savedToPhotos
+                      : g.downloadDone
+                : toast.failure === "photosDenied"
+                  ? g.photosDenied
+                  : g.downloadFailed}
           </span>
           <button
             type="button"

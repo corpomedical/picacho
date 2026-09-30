@@ -1,6 +1,7 @@
 "use client";
 
 import { appCannotRecord, nativeAppBuild } from "@/lib/native/app-build";
+import { nativePlatformClient } from "@/lib/native/platform";
 import { useEffect, useRef, useState, type SVGProps } from "react";
 import { transcribeVoice } from "@/lib/voice/actions";
 import { cn } from "@/lib/cn";
@@ -83,7 +84,13 @@ export function VoiceRecorderButton({
       timeoutRef.current = setTimeout(() => stopRecording(), MAX_RECORDING_MS);
     } catch {
       setStatus("error");
-      setError((await nativeAppBuild()) !== null ? v.micBlockedApp : v.micBlocked);
+      setError(
+        (await nativeAppBuild()) === null
+          ? v.micBlocked
+          : nativePlatformClient() === "ios"
+            ? v.micBlockedAppIos
+            : v.micBlockedApp,
+      );
     }
   }
 

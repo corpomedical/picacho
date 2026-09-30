@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useLocale } from "@/lib/i18n/provider";
 import { isNativeAppClient } from "@/lib/native/platform";
 import { capPlugin } from "@/lib/native/bridge";
-import { canSaveToDevice, saveToDevice, type SavedTo } from "@/lib/native/save-media";
+import { canSaveToDevice, isPhotosDenied, saveToDevice, type SavedTo } from "@/lib/native/save-media";
 import { recordDownload } from "@/lib/generations/actions";
 
 // Shared by the live Generate composer and the History detail page — both
@@ -38,8 +38,10 @@ export function announceDownload(kind: "image" | "video" | "file"): string {
 }
 // `savedTo` names the place a phone save landed, so the toast can say
 // "Saved to your gallery" instead of a bare "Saved" nobody can find.
-export function announceDownloadDone(id: string, ok: boolean, savedTo?: SavedTo) {
-  window.dispatchEvent(new CustomEvent("picacho:download-done", { detail: { id, ok, savedTo } }));
+// `failure` names the one failure the person can fix themselves: the iPhone
+// app not being allowed to add to Photos.
+export function announceDownloadDone(id: string, ok: boolean, savedTo?: SavedTo, failure?: "photosDenied") {
+  window.dispatchEvent(new CustomEvent("picacho:download-done", { detail: { id, ok, savedTo, failure } }));
 }
 // Quietly retract a toast — for the one outcome that is neither success nor
 // failure: the person closed the share sheet themselves.
@@ -91,9 +93,18 @@ export async function downloadResultNative(url: string, filename: string): Promi
   const toastId = announceDownload(kind);
   try {
     const savedTo = await saveToDevice(url, filename, kind === "file" ? undefined : kind);
-    announceDownloadDone(toastId, true, savedTo);
+    // null: the iPhone share sheet was closed without saving — a decision,
+    // like shareFileNative's cancel below.
+    if (savedTo === null) announceDownloadDismiss(toastId);
+    else announceDownloadDone(toastId, true, savedTo);
     return true;
-  } catch {
+  } catch (err) {
+    // The iPhone app may not add to Photos: say where to allow it. The share
+    // sheet's "Save Image" would run into the same "no".
+    if (isPhotosDenied(err)) {
+      announceDownloadDone(toastId, false, undefined, "photosDenied");
+      return true;
+    }
     // Retract this toast; the share sheet announces its own.
     announceDownloadDismiss(toastId);
   }
