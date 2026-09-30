@@ -20,6 +20,7 @@ import { pollGeneration } from "@/lib/generations/actions";
 import { isRenderableUrl, thumbUrl, toMediaUrl } from "@/lib/media/url";
 import { RECAST_MODEL_IDS } from "@/lib/recast/recast";
 import { copyStudioLook } from "@/lib/sets/studio-looks";
+import { inActionRows } from "@/lib/characters/in-action";
 import { recastTakeOutcome } from "@/lib/recast/door-truth";
 import type { RecastRead } from "@/lib/recast/recast-read";
 import { parseStudioRecastEngine, studioOutfitFromPrompt, studioRecastStart } from "@/lib/sets/studio-recast";
@@ -93,21 +94,14 @@ export async function listStudioLooks(setId: string, input: { characterId: strin
   if (!(await ownsSet(access, setId))) return { error: SET_NOT_FOUND };
   const characterId = typeof input?.characterId === "string" && UUID_RE.test(input.characterId) ? input.characterId : null;
   if (!characterId) return { error: null, looks: [] };
-  const { data } = await access.supabase
-    .from("generations")
-    .select("id, result_url, prompt")
-    .eq("user_id", access.userId)
-    .eq("character_profile_id", characterId)
-    .eq("content_type", "image")
-    .eq("status", "succeeded")
-    .is("deleted_at", null)
-    .not("result_url", "is", null)
-    .order("created_at", { ascending: false })
-    .limit(STUDIO_LOOKS_MAX);
-  const looks = (data ?? [])
+  // The character page's "In action" rows, images only — one source and one rule (lib/characters/in-action.ts).
+  const { data, error } = await inActionRows(access.supabase, { userId: access.userId, characterId, limit: STUDIO_LOOKS_MAX, imagesOnly: true });
+  // A read that fails is said in the logs, never passed off as an empty gallery without a trace (2026-09-30).
+  if (error) console.error("listStudioLooks couldn't read the gallery:", (error as { message?: string }).message ?? error);
+  const looks = ((data ?? []) as Record<string, unknown>[])
     .map((r) => {
       const url = toMediaUrl(r.result_url as string) ?? "";
-      return { id: r.id as string, url: isRenderableUrl(url) ? (thumbUrl(url, 320) ?? url) : "", outfit: studioOutfitFromPrompt(r.prompt as string | null) };
+      return { id: r.id as string, url: isRenderableUrl(url) ? (thumbUrl(url, 320) ?? url) : "", outfit: studioOutfitFromPrompt(r.prompt_input as string | null) };
     })
     .filter((l) => l.url);
   return { error: null, looks };

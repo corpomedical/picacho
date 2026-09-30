@@ -12,6 +12,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { mediaStoragePath } from "@/lib/media/url";
 import { createAdminClient } from "@/lib/supabase/server";
+import { IN_ACTION_CHECK_COLUMNS, isInActionImage } from "@/lib/characters/in-action";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const STUDIO_LOOK_BUCKET = "chat-attachments";
@@ -26,13 +27,14 @@ export async function copyStudioLook(db: Db, a: { userId: string; lookId: unknow
   if (typeof a.lookId !== "string" || !UUID.test(a.lookId)) return null;
   const { data: row } = await db
     .from("generations")
-    .select("id, result_url, content_type, status, character_profile_id")
+    .select(IN_ACTION_CHECK_COLUMNS.join(", "))
     .eq("id", a.lookId)
     .eq("user_id", a.userId)
     .is("deleted_at", null)
     .maybeSingle();
-  if (!row || row.content_type !== "image" || row.status !== "succeeded" || row.character_profile_id !== a.characterId) return null;
-  const at = mediaStoragePath(row.result_url as string | null);
+  // The Look strip's own rule, row by row (lib/characters/in-action.ts): exactly the rows it lists.
+  if (!isInActionImage(row as Record<string, unknown> | null, { userId: a.userId, characterId: a.characterId })) return null;
+  const at = mediaStoragePath((row as unknown as { result_url: string }).result_url);
   if (!at) return null;
   const admin = createAdminClient();
   const { data: blob, error } = await admin.storage.from(at.bucket).download(at.path);

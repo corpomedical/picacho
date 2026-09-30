@@ -3,6 +3,7 @@ import { isRenderableUrl, mediaUrl, thumbUrl, toMediaUrl } from "@/lib/media/url
 import { createClient } from "@/lib/supabase/server";
 import { CharacterForm } from "@/components/character-form";
 import { safeReturnTo } from "@/lib/characters/return-to";
+import { inActionRows } from "@/lib/characters/in-action";
 import { needsLikenessAnswer } from "@/lib/characters/likeness";
 import { readLikeness } from "@/lib/characters/likeness-store";
 import { EXPRESSION_SLOTS, isUsable, type ExpressionSlot } from "@/lib/characters/expression-set";
@@ -81,20 +82,8 @@ export default async function EditCharacterPage({
   // video render is exactly the same kind of receipt — and a character whose
   // work is mostly video was looking at an empty profile.
   const [{ data: recentRows }, { data: statRows }] = await Promise.all([
-    supabase
-    .from("generations")
-    .select("id, result_url, poster_url, match_score, content_type")
-    .eq("user_id", userData.user.id)
-    .eq("character_profile_id", id)
-    .eq("status", "succeeded")
-    // deleteGeneration soft-deletes the ROW but hard-deletes the FILE, so a
-    // deleted render still matches every other clause here — and its media
-    // URL 404s. Shipping without this filter put broken tiles on the strip
-    // the first day (operator: "some pictures are not loading").
-    .is("deleted_at", null)
-    .not("result_url", "is", null)
-    .order("created_at", { ascending: false })
-    .limit(15),
+    // One source and rule with Helios Studio's Look strip (lib/characters/in-action.ts).
+    inActionRows(supabase, { userId: userData.user.id, characterId: id, limit: 15 }) as PromiseLike<{ data: Record<string, unknown>[] | null }>,
     // The masthead figures describe the CHARACTER, not the page of work
     // under them, so they are counted separately — bounded at 500 for the
     // same reason the project page bounds its own.
@@ -108,7 +97,7 @@ export default async function EditCharacterPage({
       .order("created_at", { ascending: false })
       .limit(500),
   ]);
-  const recentRenders = (recentRows ?? [])
+  const recentRenders = ((recentRows ?? []) as Record<string, unknown>[])
     .map((r) => {
       const isVideo = r.content_type === "video";
       const url = toMediaUrl(r.result_url as string) ?? "";

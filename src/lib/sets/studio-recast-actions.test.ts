@@ -64,6 +64,7 @@ vi.mock("@/lib/generations/actions", () => ({ pollGeneration: async () => (calls
 vi.mock("@/lib/media/url", async () => await import("../media/url"));
 vi.mock("@/lib/supabase/server", () => ({ createAdminClient: () => admin }));
 vi.mock("@/lib/sets/studio-looks", async () => await import("./studio-looks"));
+vi.mock("@/lib/characters/in-action", async () => await import("../characters/in-action"));
 vi.mock("@/lib/recast/recast", async () => await import("../recast/recast"));
 vi.mock("@/lib/recast/door-truth", async () => await import("../recast/door-truth"));
 vi.mock("@/lib/sets/studio-recast", async () => await import("./studio-recast"));
@@ -133,7 +134,7 @@ describe("the doors hand Recast the Studio's press", () => {
   it("a look from the gallery: re-checked as this person's picture of THIS character, copied to Recast's image folder, sent as its added image", async () => {
     const LOOK = "55555555-5555-4555-8555-555555555555", C1 = "66666666-6666-4666-8666-666666666666";
     const media = `https://x.supabase.co/storage/v1/object/sign/generated-images/${USER}/still.png?token=t`;
-    row = { id: LOOK, result_url: media, content_type: "image", status: "succeeded", character_profile_id: C1 };
+    row = { id: LOOK, user_id: USER, result_url: media, content_type: "image", status: "succeeded", character_profile_id: C1, deleted_at: null };
     filters.length = 0; stored.length = 0;
     expect(await startStudioRecast(SET, { ...START, characterId: C1, lookId: LOOK })).toEqual({ error: null, ids: [SEND] });
     expect(filters).toEqual(expect.arrayContaining([`generations.id=${LOOK}`, `generations.user_id=${USER}`]));
@@ -149,7 +150,7 @@ describe("the doors hand Recast the Studio's press", () => {
 
   it("the gallery strip: this person's finished pictures of the character, each with its prompt's outfit words", async () => {
     const C1 = "66666666-6666-4666-8666-666666666666";
-    looks = [{ id: "g1", result_url: `https://x.supabase.co/storage/v1/object/sign/generated-images/${USER}/a.png?token=t`, prompt: "Eva wearing a red leather jacket, standing in the rain" }];
+    looks = [{ id: "g1", result_url: `https://x.supabase.co/storage/v1/object/sign/generated-images/${USER}/a.png?token=t`, prompt_input: "Eva wearing a red leather jacket, standing in the rain" }];
     filters.length = 0;
     const out = await listStudioLooks(SET, { characterId: C1 });
     expect(out.error).toBeNull();
