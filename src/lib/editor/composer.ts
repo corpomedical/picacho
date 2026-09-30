@@ -83,13 +83,17 @@ export function promptText(req: Pick<ComposeRequest, "prompt" | "styles" | "sect
   return parts.filter(Boolean).join(" ").slice(0, 2000);
 }
 
-/** ElevenLabs Music v2.5 on fal: the prompt route, the one that guarantees an instrumental and an exact length. */
-export function elevenBody(req: ComposeRequest, seed: number) {
+/**
+ * ElevenLabs Music v2.5 on fal: the prompt route, the one that guarantees an
+ * instrumental and an exact length. No seed: fal takes one only with a
+ * composition_plan and answers 422 "seed cannot be used with prompt"
+ * (2026-09-30, every take failed); takes differ without it.
+ */
+export function elevenBody(req: ComposeRequest) {
   return {
     prompt: promptText(req),
     music_length_ms: Math.round(Math.min(ENGINES.eleven.maxSeconds, Math.max(3, req.seconds)) * 1000),
     force_instrumental: req.instrumental,
-    seed,
     output_format: "mp3_48000_192",
   };
 }

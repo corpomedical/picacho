@@ -20,6 +20,15 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.174.0",
+    build: 213,
+    date: "2026-09-30",
+    title: "Edit Bay: ElevenLabs music takes work again",
+    items: [
+      "The Score tab's ElevenLabs takes were all failing: the composer sent a setting ElevenLabs only accepts with a written section plan. It no longer does, and each take still comes out different. ACE-Step drafts were never affected.",
+    ],
+  },
+  {
     version: "1.173.0",
     build: 212,
     date: "2026-09-30",

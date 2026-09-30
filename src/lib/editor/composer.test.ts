@@ -38,7 +38,9 @@ describe("the composer", () => {
     expect(text).toMatch(/Structure: build 0:00–0:0\d/);
     expect(text).toContain("The big hit lands exactly at");
     expect(text).toContain("Instrumental, no vocals.");
-    expect(elevenBody(req, 7)).toMatchObject({ music_length_ms: 32220, force_instrumental: true, seed: 7 });
+    // fal answers 422 "seed cannot be used with prompt, only with composition_plan" (2026-09-30).
+    expect(elevenBody(req)).toEqual({ prompt: text, music_length_ms: 32220, force_instrumental: true, output_format: "mp3_48000_192" });
+    expect(elevenBody(req)).not.toHaveProperty("seed");
     expect(aceBody({ ...req, engine: "ace" }, 7)).toEqual({ prompt: "Dark cinematic trailer, heartbeat kick, Dramatic, Hybrid orchestral", instrumental: true, duration: 32.22, seed: 7 });
   });
 
