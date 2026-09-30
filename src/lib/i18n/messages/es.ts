@@ -993,7 +993,7 @@ const es = {
     howTitle: "Cómo leer el número",
     strongTitle: "85 o más: coincidencia fuerte",
     strongBody:
-      "La cara, el pelo y los rasgos distintivos se mantienen. Se espera que la ropa, la pose y la luz cambien, y eso no baja la puntuación.",
+      "La cara misma se mantiene: su forma, los ojos, la nariz y la boca. El color del pelo, las pecas, la ropa, la pose y la luz no suben la puntuación, así que alguien parecido con el mismo pelo sigue puntuando bajo.",
     driftTitle: "De 70 a 84: se está desviando",
     driftBody:
       "Se reconoce, pero algo se ha movido. Es el rango en el que una serie de planos deja de parecer una persona y empieza a parecer hermanos.",

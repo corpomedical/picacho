@@ -4,30 +4,67 @@
 // than asking the same model to check its own work.
 
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
-import { utilityModel } from "@/lib/generations/providers/openai-model";
+import { identityModel, utilityModel } from "@/lib/generations/providers/openai-model";
+import {
+  IDENTITY_MAX_ANSWER_TOKENS,
+  IDENTITY_MAX_REFERENCES,
+  IDENTITY_TIMEOUT_MS,
+  identityScorePrompt,
+  combineIdentityReadings,
+  parseIdentityReply,
+  type FaceBox,
+} from "@/lib/generations/identity-prompt";
 import { identityScorerVersion } from "@/lib/generations/scorer-version";
 
 // Characters v2: image-level identity verification. Compares a finished
-// generation against the character's identity photo (gallery photo #1) and
-// returns a 0-100 similarity score with a short note. The old pipeline only
-// ever validated PROMPT TEXT — "the word freckles appears" says nothing
-// about the picture — so a wrong face sailed through and users found out by
-// eye ("0 match"). Best-effort by design: any failure returns null and the
-// generation stays fully usable, just unscored.
+// generation against the character's reference photos and returns a 0-100
+// score with a short note. The old pipeline only ever validated PROMPT TEXT —
+// "the word freckles appears" says nothing about the picture — so a wrong
+// face sailed through and users found out by eye ("0 match"). Best-effort by
+// design: any failure returns null and the generation stays fully usable,
+// just unscored.
+//
+// Since p3 (2026-09-30, identity-prompt.ts) it judges the character's FACE
+// DESIGN against up to three of its pictures, on its own model
+// (openai-model.ts identityModel), and no longer takes the character's trait
+// words: those were the look every lookalike shared, and p2 scored a
+// different woman 96 on them.
+export type IdentityScoreOptions = {
+  /** The language for the one sentence in `notes`, e.g. "Español" (the translated free checker). */
+  notesLanguage?: string;
+  /** The picture may hold other people (several characters in one take): judge the one most like this character. */
+  severalPeople?: boolean;
+  /**
+   * How many readings to take, in parallel, and average (identity-prompt.ts
+   * combineIdentityReadings). 1 by default; the image gate asks for 2,
+   * because its score decides whether a re-render is bought and one reading
+   * of the same picture moved by up to 14 points.
+   */
+  readings?: 1 | 2;
+};
+
 export async function scoreIdentityMatch(
   resultImageUrl: string,
-  identityImageUrl: string,
-  traitSummary: string,
-  // The language for the one sentence in `notes`, e.g. "Español" (2026-09-23,
-  // for the translated free checker). Left out everywhere else: the product's
-  // own scoring prompt is unchanged, so a stored score still means what the
-  // scorer version beside it says it means.
-  notesLanguage?: string,
-): Promise<{ score: number; notes: string; unusable: boolean; faceVisible: boolean; scorerVersion: string } | null> {
+  // The character's reference pictures, the identity photo first. Only the
+  // first IDENTITY_MAX_REFERENCES ride.
+  identity: string | readonly string[],
+  opts: IdentityScoreOptions = {},
+): Promise<{
+  score: number;
+  notes: string;
+  unusable: boolean;
+  faceVisible: boolean;
+  faceBox: FaceBox | null;
+  scorerVersion: string;
+} | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
-  try {
-    const model = utilityModel();
+  const references = (typeof identity === "string" ? [identity] : [...identity])
+    .filter((u) => typeof u === "string" && u.length > 0)
+    .slice(0, IDENTITY_MAX_REFERENCES);
+  if (references.length === 0) return null;
+  const model = identityModel();
+  const readOnce = async () => {
     const res = await fetchWithTimeout(
       "https://api.openai.com/v1/chat/completions",
       {
@@ -44,28 +81,14 @@ export async function scoreIdentityMatch(
               content: [
                 {
                   type: "text",
-                  text:
-                    "The first image is a character's identity reference photo. The second is a " +
-                    "newly generated image meant to depict the SAME person" +
-                    (traitSummary ? ` (saved traits: ${traitSummary})` : "") +
-                    ". Score 0-100 how convincingly the generated image shows the same person — " +
-                    "face, hair, and distinguishing features weigh most; clothing, pose, " +
-                    "lighting, and setting are expected to differ and must not lower the score. " +
-                    "Also judge whether the second image is usable AT ALL: set unusable to true " +
-                    "only if it is essentially a solid black/blank frame, corrupted, or failed " +
-                    "to load — never merely because it looks different from the reference. " +
-                    "Also say whether enough of this person's face is visible in the second image to " +
-                    "tell who it is: set faceVisible to false when it is not — seen from behind, the " +
-                    "face turned away or covered, too small or too blurred to make out features, or the " +
-                    "person not in the frame. Lower the score only for features that visibly DIFFER " +
-                    "from the reference, never because less of the face can be seen. " +
-                    'Reply with ONLY minified JSON: {"score": <integer 0-100>, "notes": "<one ' +
-                    'short sentence about what differs, or an empty string>", "unusable": ' +
-                    '<true|false>, "faceVisible": <true|false>}' +
-                    (notesLanguage ? ` Write the "notes" sentence in ${notesLanguage}.` : ""),
+                  text: identityScorePrompt({
+                    references: references.length,
+                    severalPeople: opts.severalPeople,
+                    notesLanguage: opts.notesLanguage,
+                  }),
                 },
-                { type: "image_url", image_url: { url: identityImageUrl } },
-                { type: "image_url", image_url: { url: resultImageUrl } },
+                ...references.map((url) => ({ type: "image_url", image_url: { url, detail: "high" } })),
+                { type: "image_url", image_url: { url: resultImageUrl, detail: "high" } },
               ],
             },
           ],
@@ -73,34 +96,26 @@ export async function scoreIdentityMatch(
           // tokens on internal reasoning first, and a tight cap truncates the
           // visible answer (the exact failure that broke drafting — see
           // anthropic.ts, 2026-08-14).
-          max_completion_tokens: 2000,
+          max_completion_tokens: IDENTITY_MAX_ANSWER_TOKENS,
         }),
       },
-      30_000,
+      IDENTITY_TIMEOUT_MS,
     );
     if (!res.ok) return null;
     const data = await res.json();
-    const text = data?.choices?.[0]?.message?.content as string | undefined;
-    const jsonMatch = text?.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return null;
-    const parsed = JSON.parse(jsonMatch[0]) as {
-      score?: unknown;
-      notes?: unknown;
-      unusable?: unknown;
-      faceVisible?: unknown;
-    };
-    const score = Math.round(Number(parsed.score));
-    if (!Number.isFinite(score) || score < 0 || score > 100) return null;
+    return parseIdentityReply(data?.choices?.[0]?.message?.content as string | undefined);
+  };
+  try {
+    const count = opts.readings === 2 ? 2 : 1;
+    const reading = combineIdentityReadings(
+      await Promise.all(Array.from({ length: count }, () => readOnce().catch(() => null))),
+    );
+    if (!reading) return null;
     return {
-      score,
-      notes: typeof parsed.notes === "string" ? parsed.notes.slice(0, 300) : "",
-      unusable: parsed.unusable === true,
-      // Only an explicit false counts (scorer p2): a reply that leaves it out
-      // is read as a face that was seen and scored, exactly as before.
-      faceVisible: parsed.faceVisible !== false,
+      ...reading,
       // Stamped next to the value it qualifies, so a score is never a bare
       // number whose origin has to be guessed from its timestamp.
-      scorerVersion: identityScorerVersion(utilityModel()),
+      scorerVersion: identityScorerVersion(model),
     };
   } catch {
     return null;

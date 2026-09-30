@@ -29,10 +29,19 @@
 // walks away from the camera scored 18 on the frame showing the back of her
 // head — not a wrong face, no face at all. Once every character clip is
 // judged by its worst frame, that is a false miss on a shot that was fine.
-export const IDENTITY_PROMPT_REVISION = 2;
+//
+// p3 (2026-09-30): the character's FACE DESIGN, judged on facial structure
+// against up to three reference pictures, with hair, freckles, eye colour and
+// the rest named as never raising the score, and no trait summary sent. p2
+// scored a different woman 96 against Eva because she shared the look; on
+// that day's test set p2 read Eva's own photos 85-98 and lookalikes 81-94
+// (identity-prompt.ts has the whole measurement). The model moved with it,
+// to the scorer's own (providers/openai-model.ts identityModel). A p3 number
+// is NOT comparable with a p2 one: the same lookalike reads ~40 points lower.
+export const IDENTITY_PROMPT_REVISION = 3;
 
-/** Fallback when OPENAI_MODEL is unset — must match providers/openai.ts. */
-export const DEFAULT_SCORER_MODEL = "gpt-5.4-mini";
+/** Fallback when IDENTITY_SCORER_MODEL is unset — must match providers/openai-model.ts DEFAULT_IDENTITY_MODEL. */
+export const DEFAULT_SCORER_MODEL = "gpt-5.5";
 
 /**
  * The stamp stored beside every score, e.g. "gpt-5.4-mini/p1".

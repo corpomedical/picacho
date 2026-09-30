@@ -992,7 +992,7 @@ const it = {
     howTitle: "Come leggere il numero",
     strongTitle: "85 o più: forte somiglianza",
     strongBody:
-      "Volto, capelli e tratti distintivi si sono mantenuti. Abiti, posa e luce cambiano per definizione e non abbassano il punteggio.",
+      "Il volto stesso si è mantenuto: la forma, gli occhi, il naso e la bocca. Il colore dei capelli, le lentiggini, gli abiti, la posa e la luce non alzano il punteggio, quindi un sosia con gli stessi capelli ottiene comunque un punteggio basso.",
     driftTitle: "Da 70 a 84: sta scivolando",
     driftBody:
       "Ancora riconoscibile, ma qualcosa si è spostato. È la fascia in cui una serie di inquadrature smette di sembrare una persona e inizia a sembrare due fratelli.",

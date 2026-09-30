@@ -49,8 +49,18 @@ const MAX_PER_WINDOW = 10;
 // So one check costs at most about $0.011, and 2,000 checks a day at most
 // about $22. The typical check writes far fewer than 2,000 tokens; that
 // number is unmeasured. Rolling 24 hours, not a calendar day.
+//
+// SCORER P3 (2026-09-30) moved the check to gpt-5.5 ($5 per 1M input, $30
+// per 1M output, read at developers.openai.com/api/docs/models/gpt-5.5 that
+// day), because the old reader could not tell a character from a lookalike
+// (identity-prompt.ts). Measured on that day's test set with one reference:
+// ~3,053 tokens in and 396 out (median; 583 the most seen) = 3,053 × $5/1M +
+// 396 × $30/1M ≈ $0.027 a check; the answer's ceiling is now 1,500 tokens
+// (identity-prompt.ts), so at most 3,053 × $5/1M + 1,500 × $30/1M ≈ $0.060.
+// 800 checks a day keeps a typical day at about 800 × $0.027 ≈ $22, as
+// before; the worst day is 800 × $0.060 ≈ $48.
 const GLOBAL_WINDOW_SECONDS = 24 * 60 * 60;
-const GLOBAL_MAX_PER_DAY = 2000;
+const GLOBAL_MAX_PER_DAY = 800;
 // One shared bucket: a fixed key in the limiter's uuid-typed column.
 const GLOBAL_KEY = "00000000-0000-4000-8000-1dc4ec000001";
 
@@ -138,7 +148,7 @@ export async function POST(request: NextRequest) {
   // been, so stored scores keep their meaning.
   const noteLanguage =
     locale === DEFAULT_LOCALE ? undefined : LOCALES.find((l) => l.code === locale)?.label;
-  const verdict = await scoreIdentityMatch(candidateUrl, referenceUrl, "", noteLanguage);
+  const verdict = await scoreIdentityMatch(candidateUrl, referenceUrl, { notesLanguage: noteLanguage });
   if (!verdict) {
     return NextResponse.json(
       { error: "Couldn't read one of those images. Try a clearer photo.", code: "unreadable" },

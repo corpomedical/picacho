@@ -70,8 +70,10 @@ export function productCheckDeps(): CheckDeps {
       );
       return cut ? boxFromMask(cut) : null;
     },
-    scoreFace: async (frame, identity, traitSummary) => {
-      const verdict = await scoreIdentityMatch(jpegDataUrl(frame), jpegDataUrl(identity), traitSummary);
+    // The trait words are no longer sent (scorer p3, identity-prompt.ts): they
+    // were the look every lookalike shared.
+    scoreFace: async (frame, identity) => {
+      const verdict = await scoreIdentityMatch(jpegDataUrl(frame), jpegDataUrl(identity));
       return verdict ? { score: verdict.score, unusable: verdict.unusable, faceVisible: verdict.faceVisible } : null;
     },
     sampleMoments: (video, times) => sampleMoments(video, times),

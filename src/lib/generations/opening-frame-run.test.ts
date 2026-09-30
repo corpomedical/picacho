@@ -70,7 +70,6 @@ function deps(overrides: Partial<Parameters<typeof makeOpeningFrame>[0]> = {}) {
     aspectRatio: "16:9" as const,
     anchorUrl: "https://example.test/anchor.png",
     identityUrl: "https://example.test/identity.png",
-    traitSummary: "hair: black bob",
     threshold: 70,
     deadlineAt: 1_000_000,
     persist: async (b64: string) => `/api/media/generated-images/u/${b64}.png`,

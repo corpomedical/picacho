@@ -36,9 +36,11 @@ vi.mock("@/lib/generations/core", () => ({
   persistGeneratedImage: vi.fn(async () => "/plain/second.png"),
 }));
 vi.mock("@/lib/generations/identity-gate", async () => await import("./identity-gate"));
+vi.mock("@/lib/generations/identity-prompt", async () => await import("./identity-prompt"));
 
 import { GATE_WALL_CLOCK_BUDGET_MS, runImageIdentityGate, type GateDeps } from "./identity-gate-run";
 import { OPENAI_IMAGE_TIMEOUT_MS } from "./providers/openai-images";
+import { IDENTITY_TIMEOUT_MS } from "./identity-prompt";
 
 const ABS = (u: string) => `https://picacho.test${u}`;
 
@@ -48,8 +50,7 @@ function deps(over: Partial<GateDeps> = {}): GateDeps {
     userId: "u1",
     resultUrl: "/print/first.png",
     absoluteResultUrl: ABS("/print/first.png"),
-    identityPhotoUrl: "https://picacho.test/identity.jpg",
-    traitSummary: "",
+    identityPhotoUrls: ["https://picacho.test/identity.jpg"],
     threshold: 70,
     rerender: { modelId: "gpt-image-2", compiledPrompt: "a still", referenceImageUrl: null },
     elapsedMs: 0,
@@ -127,9 +128,11 @@ describe("the gate's clock (2026-09-25)", () => {
   // elapsedMs now counts from the request's first line (or a Helios press's,
   // server-press.ts), so the budget is what is left of the platform's 300 s
   // after one more full render and its scoring, storing and last write.
-  it("leaves room for one more full render inside the request's 300 s", () => {
-    expect(GATE_WALL_CLOCK_BUDGET_MS).toBe(300_000 - OPENAI_IMAGE_TIMEOUT_MS - 25_000);
-    expect(GATE_WALL_CLOCK_BUDGET_MS).toBe(125_000);
+  it("leaves room for one more full render and its whole reading inside the request's 300 s", () => {
+    // Scorer p3 (2026-09-30): the reading may take IDENTITY_TIMEOUT_MS, then
+    // ~5 s to store and write.
+    expect(GATE_WALL_CLOCK_BUDGET_MS).toBe(300_000 - OPENAI_IMAGE_TIMEOUT_MS - IDENTITY_TIMEOUT_MS - 5_000);
+    expect(GATE_WALL_CLOCK_BUDGET_MS).toBe(105_000);
   });
 
   it("re-renders a miss inside the budget, and delivers it as it is past it", async () => {

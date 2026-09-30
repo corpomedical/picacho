@@ -421,14 +421,7 @@ export async function runApiImageGeneration(params: {
         .from("character-references")
         .createSignedUrl(firstPhoto, 60 * 10);
       if (signed?.signedUrl) {
-        const traitSummary = [character.traits.hair, character.traits.distinguishing_features]
-          .filter(Boolean)
-          .join(", ");
-        const verdict = await scoreIdentityMatch(
-          absolutizeMediaUrl(resultUrl, params.origin),
-          signed.signedUrl,
-          traitSummary,
-        );
+        const verdict = await scoreIdentityMatch(absolutizeMediaUrl(resultUrl, params.origin), signed.signedUrl);
         // No face visible = nothing compared (scorer p2), not a low score.
         matchScore = verdict && verdict.faceVisible !== false ? verdict.score : null;
 

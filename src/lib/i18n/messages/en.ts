@@ -1054,7 +1054,7 @@ const en = {
     howTitle: "How to read the number",
     strongTitle: "85 and above — strong match",
     strongBody:
-      "Face, hair and distinguishing features carried over. Clothing, pose and lighting are expected to differ and are not counted against it.",
+      "The face itself carried over: its shape, eyes, nose and mouth. Hair colour, freckles, clothing, pose and lighting don't raise the score, so a lookalike with the same hair still reads low.",
     driftTitle: "70 to 84 — drifting",
     driftBody:
       "Recognisable, but something has moved. This is the range where a series of shots stops looking like one person and starts looking like siblings.",

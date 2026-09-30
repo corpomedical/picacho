@@ -993,7 +993,7 @@ const pt = {
     howTitle: "Como ler o número",
     strongTitle: "85 ou mais: correspondência forte",
     strongBody:
-      "Rosto, cabelo e traços distintivos se mantiveram. Roupa, pose e luz devem mudar, e isso não reduz a pontuação.",
+      "O próprio rosto se manteve: o formato, os olhos, o nariz e a boca. A cor do cabelo, as sardas, a roupa, a pose e a luz não aumentam a pontuação, então alguém parecido com o mesmo cabelo continua com nota baixa.",
     driftTitle: "De 70 a 84: começando a mudar",
     driftBody:
       "Ainda é reconhecível, mas algo se deslocou. É a faixa em que uma sequência de planos deixa de parecer uma pessoa e passa a parecer irmãos.",

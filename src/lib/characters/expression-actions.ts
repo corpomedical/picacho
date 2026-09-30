@@ -87,14 +87,7 @@ async function likenessAgainstPhotoOne(
     (await supabase.storage.from("character-references").createSignedUrl(p, 60 * 10)).data?.signedUrl ?? null;
   const [closeUp, photoOne] = await Promise.all([sign(path), sign(character.photos[0])]);
   if (!closeUp || !photoOne) return null;
-  // The same trait summary every render's identity check reads (generations/actions.ts).
-  const traitSummary = [
-    character.traits.hair ? `hair: ${character.traits.hair}` : null,
-    character.traits.distinguishing_features ? `distinguishing features: ${character.traits.distinguishing_features}` : null,
-  ]
-    .filter(Boolean)
-    .join("; ");
-  const verdict = await scoreIdentityMatch(closeUp, photoOne, traitSummary);
+  const verdict = await scoreIdentityMatch(closeUp, photoOne);
   // A close-up of the eyes or the mouth alone can read "face not visible": no
   // verdict on likeness, so none is recorded — it is used, marked unchecked.
   if (!verdict || verdict.unusable || !verdict.faceVisible) return null;

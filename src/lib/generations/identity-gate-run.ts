@@ -1,6 +1,7 @@
 import { generateImage } from "@/lib/generations/providers/image";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { persistGeneratedImage } from "@/lib/generations/core";
+import { IDENTITY_TIMEOUT_MS } from "@/lib/generations/identity-prompt";
 import type { OpenAiImageSize } from "@/lib/generations/providers/openai-images";
 import {
   betterAttemptScore,
@@ -25,15 +26,17 @@ import type { ProviderBudget } from "@/lib/generations/providers/image";
  * (generations/server-press.ts, 2026-09-25), no longer just before the
  * render, because the platform counts its 300 s from there. The re-render
  * must still fit inside them: one more render (GPT Image's full 150 s,
- * openai-images.ts OPENAI_IMAGE_TIMEOUT_MS), ~20 s to score, store and
- * develop it, and ~5 s for the row's last write, so 300 − 150 − 25 = 125 s
- * (identity-gate-run.test.ts holds the sum). It was 110 s counted from just
- * before the render, with runGeneration's own checks on top; re-derived for
- * the earlier start (review, 2026-09-25). A Helios still whose look took
- * long to prepare is now delivered without the re-render rather than cut off
- * mid-way with both renders charged and its row stuck.
+ * openai-images.ts OPENAI_IMAGE_TIMEOUT_MS), the scorer's whole timeout to
+ * read it, and ~5 s to store it and write the row.
+ *
+ * It was 125 s while the scorer was gpt-5.4-mini with ~20 s allowed. Scorer
+ * p3 (2026-09-30) reads on gpt-5.5 with up to three references — ~14 s
+ * typical, 40 s allowed (identity-prompt.ts IDENTITY_TIMEOUT_MS) — so the
+ * budget is 300 − 150 − 40 − 5 = 105 s (identity-gate-run.test.ts holds the
+ * sum). A still that took longer is delivered without the re-render rather
+ * than cut off mid-way with both renders charged and its row stuck.
  */
-export const GATE_WALL_CLOCK_BUDGET_MS = 125_000;
+export const GATE_WALL_CLOCK_BUDGET_MS = 300_000 - 150_000 - IDENTITY_TIMEOUT_MS - 5_000;
 
 export type GateOutcome = {
   /** The URL to actually deliver — the better of the attempts. */
@@ -85,9 +88,11 @@ export type GateDeps = {
   resultUrl: string;
   /** Absolute URL of the render, for the vision call. */
   absoluteResultUrl: string;
-  /** Signed URL of the character's identity photo. */
-  identityPhotoUrl: string;
-  traitSummary: string;
+  /**
+   * Signed URLs of the character's reference photos, the identity photo
+   * first (scorer p3 reads up to three; identity-prompt.ts).
+   */
+  identityPhotoUrls: string[];
   threshold: number;
   /** Everything needed to render the SAME image again. */
   rerender: {
@@ -133,8 +138,7 @@ export type GateDeps = {
 
 async function score(
   imageUrl: string,
-  identityPhotoUrl: string,
-  traitSummary: string,
+  identityPhotoUrls: string[],
 ): Promise<{
   score: number | null;
   notes: string | null;
@@ -142,7 +146,10 @@ async function score(
   scorerVersion: string | null;
 }> {
   try {
-    const verdict = await scoreIdentityMatch(imageUrl, identityPhotoUrl, traitSummary);
+    // Two readings, averaged: this score decides whether a re-render is
+    // bought, and one reading of the same picture moved by up to 14 points
+    // (scorer p3, identity-prompt.ts combineIdentityReadings).
+    const verdict = await scoreIdentityMatch(imageUrl, identityPhotoUrls, { readings: 2 });
     if (!verdict) return { score: null, notes: null, unusable: false, scorerVersion: null };
     // A picture in which none of the person's face is visible (scorer p2) is
     // not a miss — nothing was compared. It reads as "not measured", which
@@ -178,7 +185,7 @@ async function score(
 export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome> {
   const logLines: string[] = [];
   const firstStandIn = deps.scoreAs?.(deps.resultUrl) ?? null;
-  const first = await score(firstStandIn ? deps.absolutize(firstStandIn) : deps.absoluteResultUrl, deps.identityPhotoUrl, deps.traitSummary);
+  const first = await score(firstStandIn ? deps.absolutize(firstStandIn) : deps.absoluteResultUrl, deps.identityPhotoUrls);
 
   // A blank/black frame short-circuits everything. It is not a weak likeness,
   // it is a non-delivery, and it has its own established handling in
@@ -292,7 +299,7 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
     };
   }
 
-  const second = await score(deps.absolutize(deps.scoreAs?.(secondUrl) ?? secondUrl), deps.identityPhotoUrl, deps.traitSummary);
+  const second = await score(deps.absolutize(deps.scoreAs?.(secondUrl) ?? secondUrl), deps.identityPhotoUrls);
 
   const settled: GateDecision = identityGateDecision({
     score: second.score,

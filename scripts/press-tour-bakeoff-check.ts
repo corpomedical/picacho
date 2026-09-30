@@ -88,8 +88,8 @@ async function main(): Promise<number> {
       const read = await readLabelText([image]);
       return read.configured && read.ok ? { lines: read.lines[0] ?? [] } : null;
     },
-    scoreFace: async (frame, identity, traitSummary) => {
-      const v = await scoreIdentityMatch(jpegDataUrl(frame), jpegDataUrl(identity), traitSummary);
+    scoreFace: async (frame, identity) => {
+      const v = await scoreIdentityMatch(jpegDataUrl(frame), jpegDataUrl(identity));
       return v ? { score: v.score, unusable: v.unusable, faceVisible: v.faceVisible } : null;
     },
     sampleMoments: (video, times) => sampleMoments(video, times),

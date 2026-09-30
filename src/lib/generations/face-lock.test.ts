@@ -95,9 +95,14 @@ describe("wiring", () => {
     // runner records what faceRecord decides.
     const runner = read("job-runner.ts");
     expect(runner).toContain("const record = faceRecord({ lock, reads, worstScore });");
-    const scorer = read("providers/openai.ts");
-    expect(scorer).toContain("never because less of the face can be seen");
-    expect(scorer).toContain("faceVisible: parsed.faceVisible !== false,");
+    // Scorer p3 (2026-09-30, identity-prompt.ts): too little of the face to
+    // judge its structure reads faceVisible false — "not measured" — rather
+    // than a low score. p2's "never because less of the face can be seen" is
+    // gone on purpose: it let a small, soft face keep a high score.
+    const words = read("identity-prompt.ts");
+    expect(words).toContain("Set faceVisible to false when too little of the face in the new picture can be seen to judge its structure");
+    expect(words).toContain("faceVisible: parsed.faceVisible !== false,");
+    expect(read("providers/openai.ts")).toContain("parseIdentityReply(");
     // The image gate reads a faceless picture as "not measured", which it passes.
     expect(read("identity-gate-run.ts")).toContain("if (verdict.faceVisible === false) {");
   });

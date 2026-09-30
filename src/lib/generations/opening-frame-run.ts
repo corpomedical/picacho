@@ -54,7 +54,6 @@ export type OpeningFrameDeps = {
   anchorUrl: string;
   /** The identity photo the scorer reads against (reference_image_urls[0]). */
   identityUrl: string | null;
-  traitSummary: string;
   /** The identity gate's bar. 0 = the gate is off: the frame is used unread-for-pass. */
   threshold: number;
   /** When the whole send must have handed its video to the provider by. */
@@ -135,7 +134,7 @@ export async function makeOpeningFrame(deps: OpeningFrameDeps): Promise<OpeningF
     let verdict: Awaited<ReturnType<typeof scoreIdentityMatch>> = null;
     if (deps.identityUrl) {
       try {
-        verdict = await scoreIdentityMatch(deps.absolutize(stored), deps.identityUrl, deps.traitSummary);
+        verdict = await scoreIdentityMatch(deps.absolutize(stored), deps.identityUrl);
       } catch {
         verdict = null;
       }

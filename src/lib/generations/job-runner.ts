@@ -40,6 +40,7 @@ import { mediaUrl } from "@/lib/media/url";
 import { LIVE_MODEL_ID } from "@/lib/live/live";
 import { sweepLiveTakes } from "@/lib/live/store";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
+import { IDENTITY_MAX_REFERENCES } from "@/lib/generations/identity-prompt";
 import { FetchTimeoutError } from "@/lib/generations/providers/fetch-with-timeout";
 import { isRawProviderError } from "@/lib/generations/user-facing-error";
 import type { AttemptLog } from "@/lib/generations/pipeline";
@@ -1767,12 +1768,11 @@ async function readFaces(
     id: string;
     name: string | null;
     reference_image_urls: string[] | null;
-    traits: { hair?: string; distinguishing_features?: string } | null;
   }[] = [];
   try {
     const { data } = await admin
       .from("character_profiles")
-      .select("id, name, reference_image_urls, traits")
+      .select("id, name, reference_image_urls")
       .in(
         "id",
         input.cast.map((m) => m.characterId),
@@ -1801,11 +1801,10 @@ async function readFaces(
     : [null, null];
 
   // With several characters in one take, each is read against a frame that
-  // holds the others too. The scorer is asked about ONE person, so it is
-  // told the frame may hold more and to judge the one who looks most like
-  // this person — otherwise a second face reads as a miss against the first
-  // character's photo. (A proper option on scoreIdentityMatch is the
-  // follow-up; this rides the traits it already takes.)
+  // holds the others too. The scorer is asked about ONE character, so it is
+  // told the frame may hold more and to judge the face most like this one —
+  // otherwise a second face reads as a miss against the first character's
+  // photo (scoreIdentityMatch's severalPeople, since scorer p3).
   const several = input.cast.length > 1;
   return Promise.all(
     input.cast.map(async (member, i): Promise<ScoredRead> => {
@@ -1814,19 +1813,16 @@ async function readFaces(
       const photo = photos[i];
       if (!character || !photo) return unread(member, name);
       try {
-        const { data: signed } = await admin.storage.from("character-references").createSignedUrl(photo, 600);
-        if (!signed?.signedUrl) return unread(member, name);
-        const traitSummary = [
-          character.traits?.hair ? `hair: ${character.traits.hair}` : null,
-          character.traits?.distinguishing_features
-            ? `distinguishing features: ${character.traits.distinguishing_features}`
-            : null,
-          several ? "other people may share the frame; judge the one who looks most like this person" : null,
-        ]
-          .filter(Boolean)
-          .join("; ");
+        // The photo sent for them first, then their next saved photos: scorer
+        // p3 reads the face against up to three (identity-prompt.ts).
+        const others = (character.reference_image_urls ?? []).filter((p) => p !== photo).slice(0, IDENTITY_MAX_REFERENCES - 1);
+        const signedAll = await Promise.all(
+          [photo, ...others].map((p) => admin.storage.from("character-references").createSignedUrl(p, 600)),
+        );
+        if (!signedAll[0]?.data?.signedUrl) return unread(member, name);
+        const references = signedAll.map((r) => r.data?.signedUrl).filter((u): u is string => Boolean(u));
         const score = (frame: string | null) =>
-          frame ? scoreIdentityMatch(frame, signed.signedUrl, traitSummary) : Promise.resolve(null);
+          frame ? scoreIdentityMatch(frame, references, { severalPeople: several }) : Promise.resolve(null);
         const verdicts = await Promise.all([score(firstFrameUrl), score(input.middleFrameUrl), score(lastFrameUrl)]);
         return { characterId: member.characterId, name, verdicts };
       } catch {

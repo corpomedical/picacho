@@ -19,7 +19,8 @@ import {
 
 describe("the stamp stored beside every score", () => {
   it("names the model and the prompt revision", () => {
-    expect(identityScorerVersion("gpt-5.4-mini")).toBe(`gpt-5.4-mini/p${IDENTITY_PROMPT_REVISION}`);
+    expect(identityScorerVersion("gpt-5.5")).toBe(`gpt-5.5/p${IDENTITY_PROMPT_REVISION}`);
+    expect(IDENTITY_PROMPT_REVISION).toBe(3);
   });
 
   it("distinguishes two models", () => {
@@ -53,15 +54,47 @@ describe("the stamp stored beside every score", () => {
 // for modules a test cannot import.
 describe("the fallback model matches the one actually called", () => {
   it("agrees with providers/openai-model.ts, which openai.ts uses for both the request and the stamp", async () => {
-    const { DEFAULT_UTILITY_MODEL } = await import("./providers/openai-model");
-    expect(DEFAULT_UTILITY_MODEL).toBe(DEFAULT_SCORER_MODEL);
+    const { DEFAULT_IDENTITY_MODEL } = await import("./providers/openai-model");
+    expect(DEFAULT_IDENTITY_MODEL).toBe(DEFAULT_SCORER_MODEL);
     const { readFileSync } = await import("node:fs");
     const src = readFileSync(new URL("./providers/openai.ts", import.meta.url), "utf8");
-    // The scorer asks utilityModel() for its model and stamps the same call's
-    // answer — never the raw env var, which can name a model it refused.
-    expect(src).toContain("const model = utilityModel();");
-    expect(src).toContain("scorerVersion: identityScorerVersion(utilityModel())");
+    // The scorer asks identityModel() for its model (p3, 2026-09-30: its own
+    // model, no longer the utility readers') and stamps the SAME value it
+    // sent — never the raw env var, which can name a model it refused.
+    expect(src).toContain("const model = identityModel();");
+    expect(src).toContain("scorerVersion: identityScorerVersion(model)");
     expect(src).not.toContain("process.env.OPENAI_MODEL");
+    expect(src).not.toContain("process.env.IDENTITY_SCORER_MODEL");
+  });
+});
+
+describe("the identity scorer's own model", () => {
+  it("is gpt-5.5 unless IDENTITY_SCORER_MODEL says otherwise, and never a gpt-6 model", async () => {
+    const { identityModel, DEFAULT_IDENTITY_MODEL } = await import("./providers/openai-model");
+    const prev = process.env.IDENTITY_SCORER_MODEL;
+    try {
+      delete process.env.IDENTITY_SCORER_MODEL;
+      expect(identityModel()).toBe("gpt-5.5");
+      process.env.IDENTITY_SCORER_MODEL = "gpt-5.4";
+      expect(identityModel()).toBe("gpt-5.4");
+      process.env.IDENTITY_SCORER_MODEL = "gpt-6-astra";
+      expect(identityModel()).toBe(DEFAULT_IDENTITY_MODEL);
+    } finally {
+      if (prev === undefined) delete process.env.IDENTITY_SCORER_MODEL;
+      else process.env.IDENTITY_SCORER_MODEL = prev;
+    }
+  });
+
+  it("is not moved by OPENAI_MODEL, which the other utility readers follow", async () => {
+    const { identityModel } = await import("./providers/openai-model");
+    const prev = process.env.OPENAI_MODEL;
+    try {
+      process.env.OPENAI_MODEL = "gpt-5.4-nano";
+      expect(identityModel()).toBe("gpt-5.5");
+    } finally {
+      if (prev === undefined) delete process.env.OPENAI_MODEL;
+      else process.env.OPENAI_MODEL = prev;
+    }
   });
 });
 

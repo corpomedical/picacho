@@ -172,6 +172,7 @@ import {
   runImageIdentityGate,
   type GateOutcome,
 } from "@/lib/generations/identity-gate-run";
+import { IDENTITY_MAX_REFERENCES } from "@/lib/generations/identity-prompt";
 import { isTrivialUtterance } from "@/lib/voice/agent";
 import type { BrandRule } from "@/lib/brand-rules/types";
 // Credits and image persistence live in a plain module, not here: this file
@@ -2212,20 +2213,12 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         const { data: signedIdentity } = identityPath
           ? await supabase.storage.from("character-references").createSignedUrl(identityPath, 60 * 10)
           : { data: null };
-        const traits = (character?.traits ?? {}) as { hair?: string; distinguishing_features?: string };
-        const traitSummary = [
-          traits.hair ? `hair: ${traits.hair}` : null,
-          traits.distinguishing_features ? `distinguishing features: ${traits.distinguishing_features}` : null,
-        ]
-          .filter(Boolean)
-          .join("; ");
         makeOpeningFrameForSend = (videoPrompt) =>
           makeOpeningFrame({
             videoPrompt,
             aspectRatio: videoAspectRatio,
             anchorUrl,
             identityUrl: signedIdentity?.signedUrl ?? null,
-            traitSummary,
             threshold: identityThreshold,
             deadlineAt: sendStartedAt + OPENING_FRAME_DEADLINE_MS,
             persist: (base64) => {
@@ -2511,27 +2504,24 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         !consumeFree &&
         isRenderableUrl(resultUrl)
       ) {
-        const identityPath = character?.reference_image_urls?.[0];
-        if (identityPath) {
-          const { data: signedIdentity } = await supabase.storage
-            .from("character-references")
-            .createSignedUrl(identityPath, 600);
-          if (signedIdentity?.signedUrl) {
+        // The identity photo first, then the next saved photos: scorer p3
+        // reads the face against up to three (identity-prompt.ts).
+        const identityPaths = ((character?.reference_image_urls ?? []) as string[]).slice(0, IDENTITY_MAX_REFERENCES);
+        if (identityPaths.length > 0) {
+          const signedIdentity = await Promise.all(
+            identityPaths.map((path) => supabase.storage.from("character-references").createSignedUrl(path, 600)),
+          );
+          // The identity photo must sign; a later one that fails only drops out.
+          const identityPhotoUrls = signedIdentity[0]?.data?.signedUrl
+            ? signedIdentity.map((s) => s.data?.signedUrl).filter((u): u is string => Boolean(u))
+            : [];
+          if (identityPhotoUrls.length > 0) {
             const origin = await getOrigin();
-            const traitSummary = [
-              character?.traits?.hair ? `hair: ${character.traits.hair}` : null,
-              character?.traits?.distinguishing_features
-                ? `distinguishing features: ${character.traits.distinguishing_features}`
-                : null,
-            ]
-              .filter(Boolean)
-              .join("; ");
             gateOutcome = await runImageIdentityGate({
               userId: userData.user.id,
               resultUrl,
               absoluteResultUrl: absolutizeMediaUrl(resultUrl, origin),
-              identityPhotoUrl: signedIdentity.signedUrl,
-              traitSummary,
+              identityPhotoUrls,
               threshold: identityThreshold,
               rerender: {
                 modelId: imageModelId,
@@ -5508,7 +5498,6 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
   // second reference so the edit has the face to hold, and is what the score
   // is measured against afterwards.
   let identityUrl: string | null = null;
-  let traitSummary = "";
   if (split.source_generation_id) {
     const { data: source } = await supabase
       .from("generations")
@@ -5519,7 +5508,7 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
     if (source?.character_profile_id) {
       const { data: character } = await supabase
         .from("character_profiles")
-        .select("reference_image_urls, traits")
+        .select("reference_image_urls")
         .eq("id", source.character_profile_id as string)
         .maybeSingle();
       const identityPath = (character?.reference_image_urls as string[] | null)?.[0];
@@ -5528,11 +5517,6 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
           .from("character-references")
           .createSignedUrl(identityPath, 600);
         identityUrl = signed?.signedUrl ?? null;
-        const traits = character?.traits as { hair?: string; distinguishing_features?: string } | null;
-        traitSummary = [
-          traits?.hair ? `hair: ${traits.hair}` : null,
-          traits?.distinguishing_features ? `distinguishing features: ${traits.distinguishing_features}` : null,
-        ].filter(Boolean).join("; ");
       }
     }
   }
@@ -5593,7 +5577,7 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
     let score: number | null = null;
     if (identityUrl) {
       try {
-        const verdict = await scoreIdentityMatch(editedUrl, identityUrl, traitSummary);
+        const verdict = await scoreIdentityMatch(editedUrl, identityUrl);
         // No face visible = nothing compared (scorer p2), not a miss.
         score = verdict && verdict.faceVisible !== false ? verdict.score : null;
       } catch {
