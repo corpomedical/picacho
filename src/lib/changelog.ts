@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.193.0",
+    build: 232,
+    date: "2026-10-01",
+    title: "Helios Studio: the set in parts, and things put on them",
+    items: [
+      "Helios Studio splits the set into the parts you'd name — the track, the kerbs, the pit garage, the grandstand, a wall — each its own object you can hide, delete, move or animate. Scenes you saved before open with the same edits on every part.",
+      "Astra knows where the road runs, how wide it is and how high everything's top is: \"remove the garage and put the car on the road\" deletes the garage and parks the car on the road, lined up with it and clear of walls. Two new examples show it: \"Remove the garage\" and \"Park the car on the road\".",
+      "Auto keying now starts off, as in Blender, and its button shows when it's on. A click that closes a menu no longer moves or keys what's under it, and a key press never reaches the scene while a menu or window is open.",
+      "Astra's camera cuts work: interpolation is kept per keyframe, so \"constant at 40 and 80\" cuts there instead of freezing the camera from the start, and the camera goes exactly where she keys it.",
+      "Model from a photo takes wide single views (a car's side view) instead of saying the photo is too small.",
+    ],
+  },
+  {
     version: "1.192.0",
     build: 231,
     date: "2026-10-01",
