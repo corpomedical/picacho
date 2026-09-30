@@ -140,6 +140,14 @@ describe("who may use Live", () => {
     expect(liveAllowed({ plan: "none" }, true).code).toBe("needsPlan");
     expect(liveAllowed({ plan: "elite", status: "suspended" }, true).code).toBe("suspended");
   });
+
+  it("a paid plan whose payments aren't in good standing is answered as no plan; admins and paid-up plans are not (2026-09-30)", () => {
+    expect(liveAllowed({ plan: "studio", plan_status: "past_due" }, true).code).toBe("needsPlan");
+    expect(liveAllowed({ plan: "studio", plan_status: "inactive" }, true).code).toBe("needsPlan");
+    expect(liveAllowed({ plan: "studio", plan_status: "active" }, true).error).toBeNull();
+    expect(liveAllowed({ plan: "studio", plan_status: null }, true).error).toBeNull();
+    expect(liveAllowed({ role: "admin", plan: "studio", plan_status: "past_due" }, true).error).toBeNull();
+  });
 });
 
 describe("the meter column", () => {

@@ -335,6 +335,22 @@ export function onDailyFreeTier(
   return (plan ?? "none") === "none" && (bonusCredits ?? 0) === 0;
 }
 
+// Whether a plan's payments are in good standing: the one rule the credit
+// gate has applied since plan_status existed (generations/core.ts
+// planAllowanceActive). "active" covers Stripe's active and trialing;
+// past_due (a failed card), canceled and inactive are not. NULL passes on
+// purpose: comped plans (setUserPlan) and pre-Stripe accounts never had a
+// plan_status, and those are a deliberate grant, not a lapsed payment.
+//
+// Added 2026-09-30 (operator: "Fix both holes now") for the doors that read
+// the plan name alone and so stayed open to an account whose card had
+// failed: Helios (sets/access-rule.ts), the API (api/keys.ts) and Live
+// (live/enabled.ts).
+export function planInGoodStanding(planStatus: unknown): boolean {
+  const status = planStatus ?? null;
+  return status === null || status === "active";
+}
+
 // THE spendable balance, in one place: what is left of the plan's monthly
 // allowance (floored at zero, since balance-funded sends carry `used` past
 // it), plus the two depleting balances, bonus and purchased. It is the

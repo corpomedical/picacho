@@ -27,6 +27,7 @@ const ADMIN_2 = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const SUSPENDED = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const PAYING = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const NO_PROFILE = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+const LAPSED = "ffffffff-ffff-4fff-8fff-ffffffffffff";
 const set = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const ROOT = join(__dirname, "..", "..", "..");
 const readSource = (p: string) => readFileSync(join(ROOT, p), "utf8");
@@ -63,7 +64,7 @@ function fakeAdmin(answer: (call: Call) => Answer) {
 }
 
 type Row = { id: string; user_id: string };
-type Profile = { id: string; plan: string | null; role: string | null; status: string | null };
+type Profile = { id: string; plan: string | null; role: string | null; status: string | null; plan_status?: string | null };
 type Setup = {
   rows?: Row[];
   rowsError?: boolean;
@@ -87,6 +88,8 @@ const PROFILES: Profile[] = [
   { id: ADMIN_2, plan: "starter", role: "admin", status: null },
   { id: SUSPENDED, plan: "elite", role: "admin", status: "suspended" },
   { id: PAYING, plan: "studio", role: "user", status: "active" },
+  // A card that failed (2026-09-30): Stripe keeps the plan while it retries.
+  { id: LAPSED, plan: "growth", role: "user", status: "active", plan_status: "past_due" },
 ];
 
 const building = (): SetBuildTick => ({ result: { error: null, state: "building" }, settledHere: null });
@@ -261,7 +264,7 @@ describe("the same rules as the page, without a session", () => {
     const reads = profileReads(f.calls);
     expect(reads.map((c) => eqOf(c, "id"))).toEqual([ADMIN, SUSPENDED, PAYING, NO_PROFILE, ADMIN_2, SUSPENDED]);
     for (const c of reads) {
-      expect(c.ops).toEqual([["select", ["plan, role, status"]], ["eq", ["id", eqOf(c, "id")]], ["maybeSingle", []]]);
+      expect(c.ops).toEqual([["select", ["plan, plan_status, role, status"]], ["eq", ["id", eqOf(c, "id")]], ["maybeSingle", []]]);
     }
     // The skip is logged by id and reason only.
     const skips = info.mock.calls.filter((c: unknown[]) => String(c[0]).includes("may not use Sets"));
@@ -270,6 +273,15 @@ describe("the same rules as the page, without a session", () => {
       { setId: set(4), userId: NO_PROFILE, reason: "not eligible" },
       { setId: set(6), userId: SUSPENDED, reason: "suspended" },
     ]);
+  });
+
+  it("skips the builds of an owner whose card failed, as the page now refuses them (2026-09-30)", async () => {
+    const f = setup({ rows: [{ id: set(1), user_id: LAPSED }, { id: set(2), user_id: PAYING }] });
+    const out = await runSetsFinisher(f.deps);
+    expect(out.body).toMatchObject({ checked: 2, advanced: 1, skipped: 1, errors: 0 });
+    expect(f.advanced.map((a) => a.userId)).toEqual([PAYING]);
+    const skips = info.mock.calls.filter((c: unknown[]) => String(c[0]).includes("may not use Sets"));
+    expect(skips.map((c: unknown[]) => c[1])).toEqual([{ setId: set(1), userId: LAPSED, reason: "plan paused" }]);
   });
 
   it("a failed profile read is an error for that build alone, and it is not advanced on a guess", async () => {

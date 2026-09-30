@@ -7,6 +7,7 @@ import {
   retryableTakes,
   SET_TAKE_DEFAULT_ENGINE,
   SET_TAKE_ENGINES,
+  stillCredits,
   stillQuoteInput,
   takeAspectRatio,
   takeQuoteInput,
@@ -257,6 +258,8 @@ describe("what takes cost together", () => {
   it("prices a still as the one image the shot action sends", () => {
     expect(stillQuoteInput().contentType).toBe("image");
     expect(quoteSend(stillQuoteInput()).totalCredits).toBe(1);
+    // The price shootInSet asks the balance for before any paid step (2026-09-30).
+    expect(stillCredits()).toBe(quoteSend(stillQuoteInput()).totalCredits);
   });
 
   it("adds a clip for each take and a still for each one that shoots its end", () => {

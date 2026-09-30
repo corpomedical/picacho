@@ -8,7 +8,7 @@ import { isNativeApp } from "@/lib/native/server";
 import { toMediaUrl } from "@/lib/media/url";
 import { getSetsHome } from "@/lib/sets/data";
 import { finisherCanRun } from "@/lib/sets/finisher";
-import { SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_UNAVAILABLE } from "@/lib/sets/messages";
+import { SETS_SESSION_EXPIRED, SETS_UNAVAILABLE, isSetsPlanAnswer } from "@/lib/sets/messages";
 import { SetsHome } from "@/components/sets/sets-home";
 import { SetsUpgrade } from "@/components/sets/sets-upgrade";
 
@@ -62,7 +62,7 @@ export default async function SetsPage({
   // the reader-mode rule (lib/native/platform.ts). Read before the 404 below,
   // which it decides for a free account.
   const native = await isNativeApp();
-  if (data.error === SETS_UNAVAILABLE || (data.error === SETS_NOT_OPEN && (native || !SETS_OPEN_TO_PLANS))) notFound();
+  if (data.error === SETS_UNAVAILABLE || (isSetsPlanAnswer(data.error) && (native || !SETS_OPEN_TO_PLANS))) notFound();
 
   // A take's "Build a 3D set from it" door: their own finished picture only.
   const photoId = first(query.photo);
@@ -82,7 +82,7 @@ export default async function SetsPage({
   }
 
   const { t } = await getServerMessages();
-  if (data.error === SETS_NOT_OPEN) return <SetsUpgrade t={t} native={native} />;
+  if (isSetsPlanAnswer(data.error)) return <SetsUpgrade t={t} native={native} message={data.error} />;
   const s = t.sets;
 
   return (

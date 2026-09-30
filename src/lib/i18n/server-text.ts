@@ -136,6 +136,10 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   // build's card.
   "Helios 3D isn't available right now.": "setsUnavailable",
   "Helios 3D is part of the paid plans. Upgrade in Settings → Plan & billing.": "setsNotOpen",
+  // A plan whose payments aren't in good standing (sets/access-rule.ts, 2026-09-30).
+  "Your plan's last payment failed, so Helios 3D is paused. Update your payment method in Settings → Plan & billing to use it again.":
+    "setsPaymentFailed",
+  "Your plan isn't active anymore, so Helios 3D is paused. Pick a plan in Settings → Plan & billing to use it again.": "setsPlanInactive",
   "That set isn't available.": "setNotFound",
   "This set is still being built.": "setNotReady",
   "Describe the place in a few more words.": "setBriefTooShort",

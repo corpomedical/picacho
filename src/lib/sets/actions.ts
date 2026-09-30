@@ -47,6 +47,7 @@ import {
   SET_TAKE_ENGINES,
   SET_TAKES_PER_10_MIN,
   takeAspectRatio,
+  stillCredits,
   takesCredits,
 } from "@/lib/sets/take";
 import { lookStoragePath } from "@/lib/sets/look";
@@ -711,9 +712,22 @@ export async function shootInSet(setId: string, input: Parameters<typeof shootSt
   const owned = await readyOwnedSpec(setId, access.userId);
   if (owned.error !== null) return { error: owned.error };
   const pressId = parsePressId(input?.pressId);
-  return runPress(createAdminClient(), { id: pressId, userId: access.userId, setId, kind: "shot" }, { deadlineAt: startedAt + REPEAT_FOLLOW_DEADLINE_MS }, () =>
-    withServerPress({ startedAt, skipCooldown: false }, () => shootStill(access, setId, owned, input, { startedAt, generationId: pressId })),
-  );
+  return runPress(createAdminClient(), { id: pressId, userId: access.userId, setId, kind: "shot" }, { deadlineAt: startedAt + REPEAT_FOLLOW_DEADLINE_MS }, async () => {
+    // Can they pay for the still, before anything is spent on it (2026-09-30,
+    // operator: "Fix both holes now")? The look's cutouts and object sheet
+    // (look-cutout-store.ts, look-sheet.ts) are paid calls that run before the
+    // render lane, which is where the credits were first asked for, so an
+    // account with none could still make us pay about $0.07 a look, up to
+    // twelve times in ten minutes. The same read-only check the render lane
+    // runs, on the still's own price; the render lane still reserves the
+    // credit itself. Inside the press, so a resent POST follows the first
+    // delivery (repeat-send.ts) instead of being refused by the credit its
+    // own still has just spent. Takes ask for the whole take before their end
+    // still (takeInSet), so they never reach a look unpaid.
+    const allowance = await checkGenerationAllowance(access.supabase, access.userId, stillCredits(), { skipCooldown: true });
+    if (allowance.error) return { error: allowance.error };
+    return withServerPress({ startedAt, skipCooldown: false }, () => shootStill(access, setId, owned, input, { startedAt, generationId: pressId }));
+  });
 }
 
 /**

@@ -4484,6 +4484,8 @@ const pt = {
     unshareFailed: "Não foi possível remover da comunidade — tente de novo.",
     setsUnavailable: "O Helios 3D não está disponível agora.",
     setsNotOpen: "O Helios 3D faz parte dos planos pagos. Faça upgrade em Configurações → Plano e cobrança.",
+    setsPaymentFailed: "O último pagamento do seu plano falhou, então o Helios 3D está pausado. Atualize sua forma de pagamento em Configurações → Plano e cobrança para usá-lo de novo.",
+    setsPlanInactive: "Seu plano não está mais ativo, então o Helios 3D está pausado. Escolha um plano em Configurações → Plano e cobrança para usá-lo de novo.",
     setNotFound: "Esse set não está disponível.",
     setNotReady: "Este set ainda está sendo construído.",
     setBriefTooShort: "Descreva o lugar com mais algumas palavras.",

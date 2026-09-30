@@ -19,6 +19,7 @@ import { tryAgainWords } from "@/lib/sets/try-again";
 import { latestSetId } from "@/lib/sets/latest-set";
 import {
   SETS_NOT_OPEN,
+  SETS_PAUSED,
   SETS_SESSION_EXPIRED,
   SETS_SUSPENDED,
   SETS_UNAVAILABLE,
@@ -69,7 +70,7 @@ const POLL_MS = 5000;
 const POLL_MAX_MS = 30_000;
 // Answers that mean no set on this page can be collected from here any
 // more: polling stops and the sentence is shown.
-const ACCESS_ERRORS = new Set([SETS_UNAVAILABLE, SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_SUSPENDED]);
+const ACCESS_ERRORS = new Set([SETS_UNAVAILABLE, SETS_NOT_OPEN, ...SETS_PAUSED, SETS_SESSION_EXPIRED, SETS_SUSPENDED]);
 
 type PreparedPhoto = { dataUri: string; width: number; height: number };
 

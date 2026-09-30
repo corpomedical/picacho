@@ -13,6 +13,20 @@ export const SETS_SESSION_EXPIRED = "Your session expired — please log in agai
 export const SETS_UNAVAILABLE = "Helios 3D isn't available right now.";
 export const SETS_NOT_OPEN = "Helios 3D is part of the paid plans. Upgrade in Settings → Plan & billing.";
 export const SETS_SUSPENDED = "This account is suspended.";
+/**
+ * A paid plan whose payments aren't in good standing (plans.ts planInGoodStanding, 2026-09-30):
+ * Helios is paused like the plan's monthly credits, and comes back the moment Stripe says the plan
+ * is active again. Two sentences, as the credit gate words it (generations/core.ts).
+ */
+export const SETS_PAYMENT_FAILED =
+  "Your plan's last payment failed, so Helios 3D is paused. Update your payment method in Settings → Plan & billing to use it again.";
+export const SETS_PLAN_INACTIVE = "Your plan isn't active anymore, so Helios 3D is paused. Pick a plan in Settings → Plan & billing to use it again.";
+/** The answers that mean "this account's plan is paused": the pages show them where they would show SETS_NOT_OPEN. */
+export const SETS_PAUSED: readonly string[] = [SETS_PAYMENT_FAILED, SETS_PLAN_INACTIVE];
+/** An answer about the account's plan (none, or paused), which the pages show on the plan panel (SetsUpgrade) instead of as an error. */
+export function isSetsPlanAnswer(error: string | null | undefined): error is string {
+  return typeof error === "string" && (error === SETS_NOT_OPEN || SETS_PAUSED.includes(error));
+}
 export const SET_NOT_FOUND = "That set isn't available.";
 export const SET_NOT_READY = "This set is still being built.";
 /** Helios Studio · Video with your character: the gallery look picked is no longer this person's to use (2026-09-30). */

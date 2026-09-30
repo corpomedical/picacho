@@ -8,7 +8,7 @@ import { isNativeApp } from "@/lib/native/server";
 import { getSetPage, getStudioPage } from "@/lib/sets/data";
 import { finisherCanRun } from "@/lib/sets/finisher";
 import { buildingHintKey } from "@/lib/sets/leaving";
-import { SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_UNAVAILABLE, SET_NOT_FOUND } from "@/lib/sets/messages";
+import { SETS_SESSION_EXPIRED, SETS_UNAVAILABLE, SET_NOT_FOUND, isSetsPlanAnswer } from "@/lib/sets/messages";
 import { HELIOS_CYCLES_FOR_ALL, HELIOS_STUDIO_FOR_ALL, SETS_OPEN_TO_PLANS } from "@/lib/sets/set-config";
 import { SHOT_WORDS_MAX_CHARS } from "@/lib/sets/shot-words";
 import { tryAgainWords } from "@/lib/sets/try-again";
@@ -86,12 +86,12 @@ export default async function SetPage({
   if (
     data.error === SETS_UNAVAILABLE ||
     data.error === SET_NOT_FOUND ||
-    (data.error === SETS_NOT_OPEN && (native || !SETS_OPEN_TO_PLANS))
+    (isSetsPlanAnswer(data.error) && (native || !SETS_OPEN_TO_PLANS))
   )
     notFound();
 
   const { t } = await getServerMessages();
-  if (data.error === SETS_NOT_OPEN) return <SetsUpgrade t={t} native={native} />;
+  if (isSetsPlanAnswer(data.error)) return <SetsUpgrade t={t} native={native} message={data.error} />;
   const s = t.sets;
   const set = data.error === null ? data.set : null;
   const finisherOn = finisherCanRun();

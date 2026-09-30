@@ -277,12 +277,26 @@ describe("get_usage answers what GET /api/v1/usage answers", () => {
   });
 
   it("MONEY: a lapsed subscription reports no plan allowance, on both doors", async () => {
+    // Since 2026-09-30 a lapsed Elite has no API at all (keys.ts, below); an
+    // account with the per-account grant keeps it, and must still read its
+    // plan's credits as paused.
     db.profiles[0].plan_status = "past_due";
+    db.profiles[0].api_access = true;
     const { mcp, rest } = await both();
     expect(mcp).toEqual(rest);
     expect(mcp.included_this_period).toBe(0);
     expect(mcp.remaining_this_period).toBe(0);
     expect(mcp.purchased_credits).toBe(10);
+  });
+
+  it("an Elite whose last payment failed is refused on both doors, in the same plain words (2026-09-30)", async () => {
+    db.profiles[0].plan_status = "past_due";
+    const mcp = await call("get_usage");
+    const rest = await restUsage(new Request("https://picacho.ai/api/v1/usage", { headers: { authorization: `Bearer ${ELITE_KEY}` } }));
+    expect(mcp.status).toBe(403);
+    expect(rest.status).toBe(403);
+    expect((await mcp.json()).error.message).toBe(API_ACCESS_OFF);
+    expect((await rest.json()).error).toMatchObject({ code: "no_api_access", message: API_ACCESS_OFF });
   });
 });
 

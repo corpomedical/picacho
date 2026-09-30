@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { PLAN_LIMITS } from "../plans";
+import { PLAN_LIMITS, planInGoodStanding } from "../plans";
 
 // Whether Live exists, at three levels — the recast/enabled.ts shape: an env
 // kill switch, the provider key it cannot run without, and its own
@@ -42,12 +42,17 @@ export const LIVE_UNAVAILABLE = "Live is switched off for the moment.";
 
 /**
  * Who may use Live: admins always; with `live_paid_plans` on, any plan with a
- * monthly allowance — Basic through Elite. Credits do the rest of the gating:
- * a take is paid for up front, so a plan with too few left is refused by the
- * allowance check, not here.
+ * monthly allowance — Basic through Elite — whose payments are in good
+ * standing. Credits do the rest of the gating: a take is paid for up front,
+ * so a plan with too few left is refused by the allowance check, not here.
+ *
+ * The standing (2026-09-30, operator: "Fix both holes now"): this read the
+ * plan's name alone, which stays on the row while Stripe retries a failed
+ * card. A paused plan is answered as no plan (needsPlan): the page's own
+ * words point to Plan & billing either way, and Live is admins-only today.
  */
 export function liveAllowed(
-  profile: { plan?: unknown; role?: unknown; status?: unknown } | null | undefined,
+  profile: { plan?: unknown; role?: unknown; status?: unknown; plan_status?: unknown } | null | undefined,
   openToPlans: boolean,
 ): { error: string | null; code: "suspended" | "notOpen" | "needsPlan" | null; isAdmin: boolean } {
   if (profile?.status === "suspended") return { error: LIVE_SUSPENDED, code: "suspended", isAdmin: false };
@@ -56,5 +61,7 @@ export function liveAllowed(
   if (!openToPlans) return { error: LIVE_NOT_OPEN, code: "notOpen", isAdmin };
   const plan = typeof profile?.plan === "string" ? profile.plan : "none";
   const limit = (PLAN_LIMITS as Record<string, number>)[plan] ?? 0;
-  return limit > 0 ? { error: null, code: null, isAdmin } : { error: LIVE_NEEDS_PLAN, code: "needsPlan", isAdmin };
+  return limit > 0 && planInGoodStanding(profile?.plan_status)
+    ? { error: null, code: null, isAdmin }
+    : { error: LIVE_NEEDS_PLAN, code: "needsPlan", isAdmin };
 }

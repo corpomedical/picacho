@@ -22,6 +22,25 @@ const code = (s: string) => s.replace(/^\s*\/\/.*$/gm, "");
 const actions = read("actions.ts");
 const shoot = code(fnOf(actions, "shootInSet"));
 
+// 2026-09-30 (operator: "Fix both holes now"): the look's cutouts and sheet
+// are paid calls that ran before the render lane first asked for credits, so
+// an account with none could still make us pay for them.
+describe("shootInSet: nothing is paid before the still can be paid for", () => {
+  it("asks the balance for one still inside the press, before the burst brake and the look's paid cut and sheet", () => {
+    const press = shoot.indexOf("runPress(");
+    const check = shoot.indexOf("await checkGenerationAllowance(access.supabase, access.userId, stillCredits(), { skipCooldown: true });");
+    const refused = shoot.indexOf("if (allowance.error) return { error: allowance.error };");
+    const still = shoot.indexOf("shootStill(access, setId, owned, input, { startedAt, generationId: pressId })");
+    expect(press).toBeGreaterThan(-1);
+    expect(check).toBeGreaterThan(press);
+    expect(refused).toBeGreaterThan(check);
+    expect(still).toBeGreaterThan(refused);
+    for (const paid of ['rateLimited(userId, "set-shot"', "await lookCutout({", "await lookSheet({"]) {
+      expect(shoot.indexOf(paid), paid).toBeGreaterThan(still);
+    }
+  });
+});
+
 describe("shootInSet: the look", () => {
   it("reads the look's still only after checking it is a finished shot of this set in the person's own folder", () => {
     expect(shoot).toContain('const lookAsked = UUID_RE.test(lookId);');

@@ -4756,6 +4756,8 @@ const en = {
     // is true because a failed build never counts against the monthly cap.
     setsUnavailable: "Helios 3D isn't available right now.",
     setsNotOpen: "Helios 3D is part of the paid plans. Upgrade in Settings → Plan & billing.",
+    setsPaymentFailed: "Your plan's last payment failed, so Helios 3D is paused. Update your payment method in Settings → Plan & billing to use it again.",
+    setsPlanInactive: "Your plan isn't active anymore, so Helios 3D is paused. Pick a plan in Settings → Plan & billing to use it again.",
     setNotFound: "That set isn't available.",
     setNotReady: "This set is still being built.",
     setBriefTooShort: "Describe the place in a few more words.",

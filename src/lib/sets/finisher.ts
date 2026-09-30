@@ -47,7 +47,7 @@ import type { PushMessage } from "../push/send";
 import { setsAccessForProfile } from "./access-rule";
 import type { AdvanceSetBuildInput, SetBuildTick } from "./build-tick";
 import { setNoticePath, setNoticeTag } from "./leaving";
-import { SETS_SUSPENDED } from "./messages";
+import { SETS_PAUSED, SETS_SUSPENDED } from "./messages";
 
 /**
  * How far back a building row is looked for. A live build writes its row at
@@ -198,7 +198,9 @@ export async function runSetsFinisher(deps: FinisherDeps): Promise<FinisherOutco
     }
     const { data: profile, error: profileError } = await admin
       .from("profiles")
-      .select("plan, role, status")
+      // plan_status too (2026-09-30): the rule now pauses a plan whose payments
+      // aren't in good standing, and the finisher asks exactly what the page asks.
+      .select("plan, plan_status, role, status")
       .eq("id", userId)
       .maybeSingle();
     if (profileError) {
@@ -213,7 +215,7 @@ export async function runSetsFinisher(deps: FinisherDeps): Promise<FinisherOutco
     console.info("[sets] finisher: owner may not use Sets; build not collected", {
       setId,
       userId,
-      reason: rule.error === SETS_SUSPENDED ? "suspended" : "not eligible",
+      reason: rule.error === SETS_SUSPENDED ? "suspended" : SETS_PAUSED.includes(rule.error) ? "plan paused" : "not eligible",
     });
     return false;
   };

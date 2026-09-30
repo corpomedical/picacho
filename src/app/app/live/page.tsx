@@ -26,7 +26,7 @@ export default async function LivePage({ searchParams }: { searchParams: Promise
   const userId = userData.user.id;
   if (!(await isLiveEnabled(supabase))) notFound();
 
-  const { data: profile } = await supabase.from("profiles").select("plan, role, status").eq("id", userId).maybeSingle();
+  const { data: profile } = await supabase.from("profiles").select("plan, plan_status, role, status").eq("id", userId).maybeSingle();
   const access = liveAllowed(profile, profile?.role === "admin" || (await isLiveOpenToPlans(supabase)));
   // Admins first (operator, 2026-09-24): until live_paid_plans is on, to
   // anyone else this page does not exist — the Recast door's rule.

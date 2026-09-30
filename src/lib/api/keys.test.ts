@@ -19,7 +19,7 @@ vi.mock("next/server", () => ({ after: () => {} }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 type KeyRow = { id: string; user_id: string; key_hash: string; revoked_at: string | null };
-type ProfileRow = { id: string; plan: string; role: string | null; status: string | null; api_access: boolean };
+type ProfileRow = { id: string; plan: string; role: string | null; status: string | null; api_access: boolean; plan_status?: string | null };
 
 const db = {
   keys: [] as KeyRow[],
@@ -235,5 +235,26 @@ describe("authenticateApiRequest", () => {
     const { error } = await authenticateApiRequest(admin(), "Bearer pic_live_b");
     expect(error).toMatchObject({ status: 403, code: "no_api_access", message: API_ACCESS_OFF });
     expect(error?.message).not.toMatch(/elite|plan|upgrade|contact us|pricing/i);
+  });
+
+  // 2026-09-30 (operator: "Fix both holes now"): the door read the plan's name
+  // alone, so an Elite whose card had failed kept the API.
+  it("an Elite whose last payment failed is 403 like anyone without access, and is let in again once paid", async () => {
+    db.profiles[0].plan_status = "past_due";
+    expect((await authenticateApiRequest(admin(), "Bearer pic_live_a")).error).toMatchObject({
+      status: 403,
+      code: "no_api_access",
+      message: API_ACCESS_OFF,
+    });
+    db.profiles[0].plan_status = "inactive";
+    expect((await authenticateApiRequest(admin(), "Bearer pic_live_a")).error).toMatchObject({ status: 403 });
+    for (const good of ["active", null]) {
+      db.profiles[0].plan_status = good;
+      expect((await authenticateApiRequest(admin(), "Bearer pic_live_a")).caller, String(good)).toMatchObject({ userId: "user-a" });
+    }
+    // The per-account grant is not a plan, so a lapsed card doesn't touch it.
+    db.profiles[0].plan_status = "past_due";
+    db.profiles[0].api_access = true;
+    expect((await authenticateApiRequest(admin(), "Bearer pic_live_a")).caller).toMatchObject({ userId: "user-a" });
   });
 });

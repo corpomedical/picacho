@@ -8,7 +8,8 @@ import { SETS_SESSION_EXPIRED, SETS_UNAVAILABLE } from "@/lib/sets/messages";
 
 // Who may touch Sets, checked on the server in EVERY read and action — the
 // page hiding a button is not a check (2026-09-10). Signed in, the switch
-// on (enabled.ts), not suspended, and eligible (admins only in Phase 1).
+// on (enabled.ts), not suspended, eligible (admins only in Phase 1), and a
+// plan whose payments are in good standing (2026-09-30).
 // The last two are access-rule.ts's, the one rule the finisher applies too
 // to the owner of every build it collects.
 
@@ -36,7 +37,7 @@ export async function setsAccess(): Promise<SetsAccess> {
   if (!userId) return { error: SETS_SESSION_EXPIRED };
   const [enabled, { data: profile }] = await Promise.all([
     isSetsEnabled(supabase),
-    supabase.from("profiles").select("plan, role, status, current_period_start").eq("id", userId).maybeSingle(),
+    supabase.from("profiles").select("plan, plan_status, role, status, current_period_start").eq("id", userId).maybeSingle(),
   ]);
   if (!enabled) return { error: SETS_UNAVAILABLE };
   const rule = setsAccessForProfile(profile);

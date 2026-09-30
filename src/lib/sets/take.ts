@@ -152,6 +152,11 @@ export function stillQuoteInput(): SendQuoteInput {
   };
 }
 
+/** One set still's price in credits, as quoteSend prices it (stillQuoteInput). */
+export function stillCredits(): number {
+  return quoteSend(stillQuoteInput()).totalCredits;
+}
+
 /**
  * What takes cost together, as the server charges them: `clips` clips on
  * the engine, `stills` of them ending on a still shot for them (a take, or
@@ -161,7 +166,7 @@ export function stillQuoteInput(): SendQuoteInput {
  */
 export function takesCredits(engine: SetTakeEngine, count: { clips: number; stills: number }): number {
   return (
-    count.clips * quoteSend(takeQuoteInput(engine)).totalCredits + count.stills * quoteSend(stillQuoteInput()).totalCredits
+    count.clips * quoteSend(takeQuoteInput(engine)).totalCredits + count.stills * stillCredits()
   );
 }
 

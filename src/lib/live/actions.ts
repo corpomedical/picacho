@@ -134,7 +134,7 @@ export async function startLiveTake(input: {
   const { supabase, user } = await signedIn();
   if (!user) return fail("signedOut", "Your session expired — please log in again.");
   const userId = user.id;
-  const { data: profile } = await supabase.from("profiles").select("plan, role, status").eq("id", userId).maybeSingle();
+  const { data: profile } = await supabase.from("profiles").select("plan, plan_status, role, status").eq("id", userId).maybeSingle();
   const access = liveAllowed(profile, profile?.role === "admin" || (await isLiveOpenToPlans(supabase)));
   if (access.error) return fail(access.code ?? "needsPlan", access.error);
   if (!(await isLiveEnabled(supabase))) return fail("off", "Live is switched off for the moment.");

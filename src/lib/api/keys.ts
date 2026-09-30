@@ -2,6 +2,8 @@ import crypto from "crypto";
 import { after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PlanId } from "@/lib/plans";
+// Relative: this module is loaded by its tests, and vitest has no "@/" alias for values.
+import { planInGoodStanding } from "../plans";
 
 // API key handling, shared by the settings UI (which creates keys) and the
 // /api/v1 routes (which verify them). A plain module, not "use server" — the
@@ -95,7 +97,7 @@ export async function authenticateApiRequest(
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("plan, role, status, api_access")
+    .select("plan, plan_status, role, status, api_access")
     .eq("id", row.user_id)
     .single();
 
@@ -107,9 +109,15 @@ export async function authenticateApiRequest(
   }
 
   // Elite includes it; anyone else needs the per-account grant. Admins always
-  // have it, for support and testing.
+  // have it, for support and testing. Elite counts only while its payments
+  // are in good standing (2026-09-30, operator: "Fix both holes now"): the
+  // plan's name stays on the row while Stripe retries a failed card, and the
+  // door used to stay open on the name alone. A lapsed Elite is told the same
+  // plain sentence as anyone without access; the grant and admins are
+  // unaffected.
   const plan = (profile?.plan ?? "none") as PlanId;
-  const allowed = plan === "elite" || profile?.api_access === true || profile?.role === "admin";
+  const allowed =
+    (plan === "elite" && planInGoodStanding(profile?.plan_status)) || profile?.api_access === true || profile?.role === "admin";
   if (!allowed) {
     return {
       caller: null,

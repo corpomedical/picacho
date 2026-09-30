@@ -8,7 +8,7 @@ import itMsgs from "../i18n/messages/it";
 import { localizeServerText } from "../i18n/server-text";
 import { settingsHref } from "../settings/tabs";
 import { renderProductGuide } from "../agent/product-guide";
-import { SETS_NOT_OPEN } from "./messages";
+import { SETS_NOT_OPEN, SETS_PAYMENT_FAILED, SETS_PLAN_INACTIVE, SETS_UNAVAILABLE, isSetsPlanAnswer } from "./messages";
 
 // A free account at /app/sets or /app/sets/<id> (Helios Cut 3, step 3): on
 // the web it gets a page saying Helios 3D is part of the paid plans, with
@@ -24,9 +24,9 @@ const upgrade = read("../../components/sets/sets-upgrade.tsx");
 describe("a free account gets the upgrade page on the web, and 404 in the app", () => {
   it("the Sets home: 404 for the shell or before the launch switch, the upgrade page otherwise", () => {
     expect(home).toContain(
-      "if (data.error === SETS_UNAVAILABLE || (data.error === SETS_NOT_OPEN && (native || !SETS_OPEN_TO_PLANS))) notFound();",
+      "if (data.error === SETS_UNAVAILABLE || (isSetsPlanAnswer(data.error) && (native || !SETS_OPEN_TO_PLANS))) notFound();",
     );
-    expect(home).toContain("if (data.error === SETS_NOT_OPEN) return <SetsUpgrade t={t} native={native} />;");
+    expect(home).toContain("if (isSetsPlanAnswer(data.error)) return <SetsUpgrade t={t} native={native} message={data.error} />;");
     // The shell is known before the 404 that depends on it, and the page is drawn only after it.
     const nativeAt = home.indexOf("const native = await isNativeApp();");
     const notFoundAt = home.indexOf("notFound();");
@@ -40,9 +40,9 @@ describe("a free account gets the upgrade page on the web, and 404 in the app", 
     const gate = setPage.slice(setPage.indexOf("  if (\n    data.error === SETS_UNAVAILABLE"), setPage.indexOf("    notFound();") + "    notFound();".length);
     expect(gate).toContain("data.error === SETS_UNAVAILABLE ||");
     expect(gate).toContain("data.error === SET_NOT_FOUND ||");
-    expect(gate).toContain("(data.error === SETS_NOT_OPEN && (native || !SETS_OPEN_TO_PLANS))");
+    expect(gate).toContain("(isSetsPlanAnswer(data.error) && (native || !SETS_OPEN_TO_PLANS))");
     expect(gate).toContain("notFound();");
-    expect(setPage).toContain("if (data.error === SETS_NOT_OPEN) return <SetsUpgrade t={t} native={native} />;");
+    expect(setPage).toContain("if (isSetsPlanAnswer(data.error)) return <SetsUpgrade t={t} native={native} message={data.error} />;");
     const nativeAt = setPage.indexOf("const native = await isNativeApp();");
     expect(nativeAt).toBeGreaterThan(-1);
     expect(nativeAt).toBeLessThan(setPage.indexOf("notFound();"));
@@ -54,10 +54,12 @@ describe("a free account gets the upgrade page on the web, and 404 in the app", 
   });
 
   it("says the server's own sentence and offers the plans only outside the shell", () => {
-    expect(upgrade).toContain("{localizeServerText(SETS_NOT_OPEN, t)}");
-    const cta = upgrade.slice(upgrade.indexOf("{!native && ("), upgrade.indexOf("{t.stage.upgradeCta}") + "{t.stage.upgradeCta}".length);
+    expect(upgrade).toContain("{localizeServerText(message, t)}");
+    expect(upgrade).toContain("message = SETS_NOT_OPEN");
+    const label = "{paused ? t.settings.manageBilling : t.stage.upgradeCta}";
+    const cta = upgrade.slice(upgrade.indexOf("{!native && ("), upgrade.indexOf(label) + label.length);
     expect(cta).toContain('href={settingsHref("billing")}');
-    expect(cta).toContain("{t.stage.upgradeCta}");
+    expect(cta).toContain(label);
     expect(upgrade.match(/<Link\b/g)).toHaveLength(1);
     expect(upgrade.match(/upgradeCta/g)).toHaveLength(1);
     for (const heading of ["{s.eyebrow}", "{s.title}", "{s.subtitle}"]) expect(upgrade, heading).toContain(heading);
@@ -72,6 +74,21 @@ describe("a free account gets the upgrade page on the web, and 404 in the app", 
     }
     for (const m of [es, pt, itMsgs]) expect(localizeServerText(SETS_NOT_OPEN, m)).not.toBe(SETS_NOT_OPEN);
     expect(localizeServerText(SETS_NOT_OPEN, en)).toBe(en.serverText.setsNotOpen);
+  });
+
+  // 2026-09-30: a paid plan whose payment failed, or that isn't active, is
+  // paused (access-rule.ts). It lands on the same panel with its own sentence
+  // and a way to billing, and the same 404 in the shell.
+  it("a paused plan is a plan answer too, said in every language, with a way to billing", () => {
+    for (const answer of [SETS_NOT_OPEN, SETS_PAYMENT_FAILED, SETS_PLAN_INACTIVE]) expect(isSetsPlanAnswer(answer), answer).toBe(true);
+    for (const other of [SETS_UNAVAILABLE, "", null, undefined]) expect(isSetsPlanAnswer(other), String(other)).toBe(false);
+    expect(localizeServerText(SETS_PAYMENT_FAILED, en)).toBe(en.serverText.setsPaymentFailed);
+    expect(localizeServerText(SETS_PLAN_INACTIVE, en)).toBe(en.serverText.setsPlanInactive);
+    for (const m of [es, pt, itMsgs]) {
+      expect(localizeServerText(SETS_PAYMENT_FAILED, m)).not.toBe(SETS_PAYMENT_FAILED);
+      expect(localizeServerText(SETS_PLAN_INACTIVE, m)).not.toBe(SETS_PLAN_INACTIVE);
+    }
+    for (const m of [en, es, pt, itMsgs]) expect(m.settings.manageBilling).toBeTruthy();
   });
 
   it("the Producer's guide says where a free account is sent", () => {
