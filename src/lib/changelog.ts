@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.182.0",
+    build: 221,
+    date: "2026-09-30",
+    title: "Helios Studio: outfits and looks for photos, turns that step",
+    items: [
+      "Photo with your character now has the video window's Outfit box and the look strip from your character's own pictures. The photo uses the look you pick, at the same price.",
+      "It opens on the character who plays your set (or the last one you used), and describes a walk the way the camera sees it.",
+      "A figure turning on the spot now steps round with small steps instead of swivelling on its feet.",
+    ],
+  },
+  {
     version: "1.181.0",
     build: 220,
     date: "2026-09-30",
