@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.191.0",
+    build: 230,
+    date: "2026-09-30",
+    title: "No spending without paying: the small ones",
+    items: [
+      "The safety check on a prompt now runs only after we know the account can pay for something, so an account with no credits left is told so at once instead of having its words read first.",
+      "After several refused requests in an hour, new ones pause for a while, and an unusually busy account pauses briefly too. Nothing is spent while paused, and admins are never paused.",
+      "Voice typing and voice previews now pause when a plan's payment fails, and each has a daily limit. A voice clip can be at most 2 MB, and clips longer than the recorder allows are limited to two a day.",
+      "Checking an uploaded close-up against your character, reading a character's outfit and style, Helios's chat reader, rig check, photo check and object sheets, and prompt assists now each have limits, set well above normal use.",
+    ],
+  },
+  {
     version: "1.190.0",
     build: 229,
     date: "2026-09-30",
