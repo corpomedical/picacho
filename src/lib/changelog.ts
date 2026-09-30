@@ -20,6 +20,15 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.183.0",
+    build: 222,
+    date: "2026-09-30",
+    title: "Helios Studio: your character's pictures in the Look strip",
+    items: [
+      "The Look strip in Video and Photo with your character now shows your character's finished pictures, the same ones as on their page. It wrongly said there were none.",
+    ],
+  },
+  {
     version: "1.182.0",
     build: 221,
     date: "2026-09-30",
