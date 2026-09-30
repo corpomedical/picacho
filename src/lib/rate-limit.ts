@@ -95,3 +95,30 @@ function isMissingFunctionError(error: { code?: string; message?: string }): boo
     /could not find the function/i.test(message)
   );
 }
+
+const DAY_SECONDS = 24 * 60 * 60;
+
+// A free extra's daily total (2026-09-30, operator: "fix the remaining small
+// ones"). The burst brakes (per minute, per ten minutes) bound a script's
+// pace but not its day: 40 reads every ten minutes is 5,760 a day. Each free
+// extra that calls a paid model now also has a total per rolling 24 hours,
+// in its own bucket (`<scope>-day`), sized well above what a person uses.
+// Same limiter, same fail-closed policy as rateLimited above.
+export function dailyCapReached(userId: string, scope: string, perDay: number): Promise<boolean> {
+  return rateLimited(userId, `${scope}-day`, DAY_SECONDS, perDay);
+}
+
+// How many hits a bucket holds in its window, WITHOUT adding one: for a
+// ceiling that is counted after the fact (dictation's long clips, whose
+// length is known only once Whisper has read them). Fails closed like the
+// limiter: an unreadable count reads as full.
+export async function rateHitCount(userId: string, scope: string, windowSeconds: number): Promise<number> {
+  const { count, error } = await createAdminClient()
+    .from("api_rate_hits")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("scope", scope)
+    .gte("created_at", new Date(Date.now() - windowSeconds * 1000).toISOString());
+  if (error) return Number.POSITIVE_INFINITY;
+  return count ?? 0;
+}

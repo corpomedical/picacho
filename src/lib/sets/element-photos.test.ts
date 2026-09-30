@@ -74,7 +74,7 @@ vi.mock("@/lib/supabase/server", () => ({
     },
   }),
 }));
-vi.mock("@/lib/rate-limit", () => ({ rateLimited: async () => limited }));
+vi.mock("@/lib/rate-limit", () => ({ rateLimited: async () => limited, dailyCapReached: async () => limited }));
 vi.mock("@/lib/generations/core", () => ({ checkGenerationAllowance: async () => ({ error: allowanceError }) }));
 vi.mock("@/lib/generations/quote", async () => await import("../generations/quote"));
 vi.mock("@/lib/sets/take", async () => await import("./take"));

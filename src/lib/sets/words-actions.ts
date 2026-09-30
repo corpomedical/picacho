@@ -1,7 +1,7 @@
 "use server";
 
 import { createAdminClient } from "@/lib/supabase/server";
-import { rateLimited } from "@/lib/rate-limit";
+import { dailyCapReached, rateLimited } from "@/lib/rate-limit";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { countSetBuildsThisMonth } from "@/lib/sets/data";
 import { sealReaderMeaning } from "@/lib/sets/edit-seal";
@@ -14,6 +14,7 @@ import {
   shotWordsInstructions,
   SHOT_WORDS_MAX_CHARS,
   SHOT_WORDS_PER_10_MIN,
+  SHOT_WORDS_PER_DAY,
   type ShotWords,
 } from "@/lib/sets/shot-words";
 import {
@@ -151,7 +152,7 @@ export async function readShotWords(
   const text = cleanText(typeof input?.text === "string" ? input.text : "", SHOT_WORDS_MAX_CHARS);
   if (text.length === 0) return { error: null, words: null };
   // Fails closed like every limiter; a limited reading is simply no reading.
-  if (await rateLimited(userId, "set-words", 60 * 10, SHOT_WORDS_PER_10_MIN)) return { error: null, words: null };
+  if ((await rateLimited(userId, "set-words", 60 * 10, SHOT_WORDS_PER_10_MIN)) || (await dailyCapReached(userId, "set-words", SHOT_WORDS_PER_DAY))) return { error: null, words: null };
   const stage = { spec: owned.spec, characters: await characterNames(userId), askPlace: false };
   const answer = await askShotWords(shotWordsInstructions(stage), text);
   const words = answer === null ? null : parseShotWords(answer, stage);
@@ -173,7 +174,7 @@ export async function readSetRequest(input: { text: string }): Promise<{ error: 
     const used = await countSetBuildsThisMonth(userId, access.periodStart);
     if (used === null || used >= access.monthlyLimit) return { error: null, words: null };
   }
-  if (await rateLimited(userId, "set-words", 60 * 10, SHOT_WORDS_PER_10_MIN)) return { error: null, words: null };
+  if ((await rateLimited(userId, "set-words", 60 * 10, SHOT_WORDS_PER_10_MIN)) || (await dailyCapReached(userId, "set-words", SHOT_WORDS_PER_DAY))) return { error: null, words: null };
   const stage = { spec: null, characters: await characterNames(userId), askPlace: true };
   const answer = await askShotWords(shotWordsInstructions(stage), text);
   const words = answer === null ? null : parseShotWords(answer, stage);
@@ -225,7 +226,7 @@ export async function readShotTurn(
   // Longer than the reader is given: the reply says it read the first 600.
   const cut = Array.from(cleanText(raw, Number.MAX_SAFE_INTEGER)).length > SHOT_WORDS_MAX_CHARS;
   if (message.length === 0) return none("empty");
-  if (await rateLimited(userId, "set-words", 60 * 10, SHOT_WORDS_PER_10_MIN)) return none("limited", cut);
+  if ((await rateLimited(userId, "set-words", 60 * 10, SHOT_WORDS_PER_10_MIN)) || (await dailyCapReached(userId, "set-words", SHOT_WORDS_PER_DAY))) return none("limited", cut);
 
   const spec = owned.spec;
   // The one on the chip is kept in the list even past the newest twenty, so NOW can name them.

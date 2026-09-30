@@ -6,7 +6,7 @@
 // the way a photo set's photo is. A refusal is logged as a picture refusal,
 // which never makes the person's next hour stricter. Server-only.
 
-import { rateLimited } from "@/lib/rate-limit";
+import { dailyCapReached, rateLimited } from "@/lib/rate-limit";
 import { assertOutputAllowed, OutputPolicyRefusal } from "@/lib/generations/output-policy";
 import { recentRefusalCount, recordPolicyRefusal } from "@/lib/generations/policy-log";
 import { normaliseSetPhoto, parseSetPhotoDataUri, photoDataUrl } from "@/lib/sets/photo";
@@ -14,6 +14,8 @@ import { SET_REF_REFUSED, SET_REF_TOO_FAST, SET_REF_UNCHECKED } from "@/lib/sets
 
 /** Uploads an hour: each one is a picture check. */
 export const SET_REFS_PER_HOUR = 20;
+/** And in a rolling day (2026-09-30): 20 an hour is 480 paid checks a day. */
+export const SET_REFS_PER_DAY = 60;
 
 export function parseReferencePhoto(dataUri: unknown): ReturnType<typeof parseSetPhotoDataUri> {
   return parseSetPhotoDataUri(dataUri);
@@ -21,7 +23,9 @@ export function parseReferencePhoto(dataUri: unknown): ReturnType<typeof parseSe
 
 /** The hourly limit, the re-encode and the picture gate, in that order: the JPEG to store, or why not. */
 export async function checkReferencePhoto(userId: string, bytes: Buffer): Promise<{ error: string } | { error: null; jpeg: Buffer }> {
-  if (await rateLimited(userId, "set-ref", 60 * 60, SET_REFS_PER_HOUR)) return { error: SET_REF_TOO_FAST };
+  if ((await rateLimited(userId, "set-ref", 60 * 60, SET_REFS_PER_HOUR)) || (await dailyCapReached(userId, "set-ref", SET_REFS_PER_DAY))) {
+    return { error: SET_REF_TOO_FAST };
+  }
   // Never the browser's bytes: re-encoded here, whatever arrived.
   const photo = await normaliseSetPhoto(bytes);
   if (!photo.ok) return { error: photo.error };

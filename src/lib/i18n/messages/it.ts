@@ -4474,6 +4474,8 @@ const it = {
     policySelfHarm: "Picacho non genera immagini che presentino l'autolesionismo o il suicidio come qualcosa di desiderabile. Se tu o una persona che conosci siete in difficoltà, un aiuto c'è: negli Stati Uniti chiama o scrivi al 988; altrove, findahelpline.com elenca linee gratuite e riservate.",
     policyDeception: "Questa richiesta collocherebbe una persona reale e riconoscibile in un evento mai accaduto, presentato come reale. Picacho non lo genera.",
     policyUnavailable: "Non è stato possibile eseguire il controllo di sicurezza proprio ora, quindi non è stato generato né speso nulla. Riprova tra un momento.",
+    policyRefusalBrake: "Diverse tue richieste sono state rifiutate nell'ultima ora, quindi le nuove sono in pausa per un po'. Non è stato generato né speso nulla.",
+    policyGateBusy: "Hai inviato molte richieste in poco tempo, quindi le nuove sono in pausa per un po'. Non è stato generato né speso nulla — riprova più tardi.",
     outputSexual: "L'immagine generata non ha superato il nostro controllo, quindi non è stata mostrata. La tua richiesta andava bene — il credito ti è stato restituito.",
     outputMinors: "L'immagine generata non ha superato il nostro controllo e non è stata mostrata. Il credito ti è stato restituito.",
     outputUnavailable: "Non siamo riusciti a controllare l'immagine generata, quindi non è stata mostrata. Il credito ti è stato restituito — riprova tra un momento.",

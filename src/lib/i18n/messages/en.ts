@@ -4735,6 +4735,8 @@ const en = {
     policySelfHarm: "Picacho does not generate pictures that present self-harm or suicide as desirable. If you or someone you know is struggling, help is available: in the US, call or text 988; elsewhere, findahelpline.com lists free, confidential lines.",
     policyDeception: "This request would place a real, identifiable person in an event that did not happen, presented as real. Picacho does not generate that.",
     policyUnavailable: "The safety check could not run just now, so nothing was generated and nothing was spent. Please try again in a moment.",
+    policyRefusalBrake: "Several of your requests were refused in the last hour, so new ones are paused for a while. Nothing was generated and nothing was spent.",
+    policyGateBusy: "You've sent a lot of requests in a short time, so new ones are paused for a while. Nothing was generated and nothing was spent — try again later.",
     outputSexual: "The picture that came back didn't pass our check, so it wasn't shown. Your request was fine — the credit is back.",
     outputMinors: "The picture that came back didn't pass our check and wasn't shown. The credit is back.",
     outputUnavailable: "We couldn't check the picture that came back, so it wasn't shown. The credit is back — please try again in a moment.",

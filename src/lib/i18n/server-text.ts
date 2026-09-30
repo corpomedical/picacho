@@ -116,6 +116,11 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
     "policyDeception",
   "The safety check could not run just now, so nothing was generated and nothing was spent. Please try again in a moment.":
     "policyUnavailable",
+  // The gate's own brakes (generations/policy-log.ts, 2026-09-30): no reader is called.
+  "Several of your requests were refused in the last hour, so new ones are paused for a while. Nothing was generated and nothing was spent.":
+    "policyRefusalBrake",
+  "You've sent a lot of requests in a short time, so new ones are paused for a while. Nothing was generated and nothing was spent — try again later.":
+    "policyGateBusy",
   "The picture that came back didn't pass our check, so it wasn't shown. Your request was fine — the credit is back.":
     "outputSexual",
   "The picture that came back didn't pass our check and wasn't shown. The credit is back.": "outputMinors",

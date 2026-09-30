@@ -35,6 +35,32 @@ import {
   type Scores,
 } from "@/lib/generations/content-policy";
 import { refusalProviderFor } from "@/lib/generations/refusal-attribution";
+import { dailyCapReached, rateLimited } from "@/lib/rate-limit";
+
+// The gate's own brakes (2026-09-30, operator: "fix the remaining small
+// ones"). Every reading costs two paid models (and two more at an edge), it
+// runs before any credit is asked for, and a refused prompt makes no
+// generation row, so the 3-second cooldown never slowed a stream of them: a
+// script could keep an account refused and us paying for every refusal. Two
+// stops now answer before any model is asked, and neither is logged as a
+// refusal (they are not a reading of anything the person wrote):
+//   - the refusal brake: PROMPT_REFUSAL_BRAKE refusals of their own words
+//     in the last hour (recentRefusalCount, which the gate reads anyway)
+//     pause new requests until the oldest leaves the hour;
+//   - the gate's budget per account: PROMPT_GATES_PER_10_MIN, and
+//     PROMPT_GATES_PER_DAY in a rolling day. A heavy day of real work is
+//     well under both; a film's beats, a scene's shots, an edit's retries
+//     and each Astra turn in the Studio pass through here once.
+// Both answer with reason "unavailable", which every caller already reads
+// as "we couldn't check it, nothing was spent, try again". Admins pass both
+// (support and testing), read beside the refusal count so nothing waits.
+export const PROMPT_REFUSAL_BRAKE = 8;
+export const PROMPT_GATES_PER_10_MIN = 60;
+export const PROMPT_GATES_PER_DAY = 300;
+export const GATE_REFUSAL_BRAKE_MESSAGE =
+  "Several of your requests were refused in the last hour, so new ones are paused for a while. Nothing was generated and nothing was spent.";
+export const GATE_BUSY_MESSAGE =
+  "You've sent a lot of requests in a short time, so new ones are paused for a while. Nothing was generated and nothing was spent — try again later.";
 
 /** prompt: before a render; output: the rendered picture; feed: a post to the community feed. */
 export type PolicyGate = "prompt" | "output" | "feed";
@@ -56,6 +82,12 @@ export type PolicyRefusalRecord = {
 
 const CONTEXT_WINDOW_MS = 60 * 60 * 1000;
 
+// The server client, loaded once and shared (2026-09-30): the gate now reads
+// the refusal count and the account's role at the same moment, and one load
+// serves both (and the refusal log's write).
+let serverModule: Promise<typeof import("@/lib/supabase/server")> | null = null;
+const supabaseServer = () => (serverModule ??= import("@/lib/supabase/server"));
+
 const warned = new Set<string>();
 function warnOnce(op: string, message: string) {
   if (warned.has(op)) return;
@@ -70,7 +102,7 @@ export function promptDigest(prompt: string): string {
 /** Write one refusal row. Never throws. */
 export async function recordPolicyRefusal(rec: PolicyRefusalRecord): Promise<void> {
   try {
-    const { createAdminClient } = await import("@/lib/supabase/server");
+    const { createAdminClient } = await supabaseServer();
     const { error } = await createAdminClient()
       .from("policy_refusals")
       .insert({
@@ -109,7 +141,7 @@ export async function recordPolicyRefusal(rec: PolicyRefusalRecord): Promise<voi
  */
 export async function recentRefusalCount(userId: string, windowMs = CONTEXT_WINDOW_MS): Promise<number> {
   try {
-    const { createAdminClient } = await import("@/lib/supabase/server");
+    const { createAdminClient } = await supabaseServer();
     const { count, error } = await createAdminClient()
       .from("policy_refusals")
       .select("id", { count: "exact", head: true })
@@ -129,6 +161,17 @@ export async function recentRefusalCount(userId: string, windowMs = CONTEXT_WIND
   }
 }
 
+/** Whether the account is an admin, for the brakes above. A read that fails is "not an admin": the brakes apply. */
+async function isAdminAccount(userId: string): Promise<boolean> {
+  try {
+    const { createAdminClient } = await supabaseServer();
+    const { data } = await createAdminClient().from("profiles").select("role").eq("id", userId).maybeSingle();
+    return (data as { role?: unknown } | null)?.role === "admin";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The prompt gate, with its session context read and its refusals logged.
  * Every entry-point gate goes through here; the pipeline's own re-gate of
@@ -144,7 +187,16 @@ export async function gatePrompt(input: {
   hasRealPersonReference?: boolean;
   generationId?: string | null;
 }): Promise<{ scores: Scores | undefined; priorHits: number }> {
-  const priorHits = await recentRefusalCount(input.userId);
+  const [priorHits, admin] = await Promise.all([recentRefusalCount(input.userId), isAdminAccount(input.userId)]);
+  if (!admin) {
+    if (priorHits >= PROMPT_REFUSAL_BRAKE) throw new ContentPolicyRefusal("unavailable", GATE_REFUSAL_BRAKE_MESSAGE);
+    if (
+      (await rateLimited(input.userId, "prompt-gate", 60 * 10, PROMPT_GATES_PER_10_MIN)) ||
+      (await dailyCapReached(input.userId, "prompt-gate", PROMPT_GATES_PER_DAY))
+    ) {
+      throw new ContentPolicyRefusal("unavailable", GATE_BUSY_MESSAGE);
+    }
+  }
   try {
     const scores = await assertPromptAllowed({
       prompt: input.prompt,

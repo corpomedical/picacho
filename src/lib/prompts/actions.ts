@@ -25,7 +25,11 @@ import {
   type PlanId,
 } from "@/lib/plans";
 import { ContentPolicyRefusal } from "@/lib/generations/content-policy";
-import { gatePrompt } from "@/lib/generations/policy-log";
+import { GATE_BUSY_MESSAGE, gatePrompt } from "@/lib/generations/policy-log";
+import { rateLimited } from "@/lib/rate-limit";
+
+/** Assists one account may ask for in ten minutes, on any plan (2026-09-30). */
+const PROMPT_ASSISTS_PER_10_MIN = 30;
 
 // Prompt Studio — the "Enhance" step.
 //
@@ -74,6 +78,14 @@ async function assistAllowance(
     return { error: "This account is suspended.", remaining: 0, cap: 0, since: null, uncapped: false };
   }
   if (profile?.role === "admin") return { remaining: null, cap: -1, since: null, uncapped: true };
+  // A burst brake for every plan (2026-09-30, operator: "fix the remaining
+  // small ones"). Elite's assists are uncapped by design, which left this
+  // Claude call with no ceiling of any kind for a script; the monthly caps
+  // below bound the other plans' months but not their minutes. Counted once
+  // per assist asked for, before its paid call.
+  if (await rateLimited(userId, "prompt-assist", 60 * 10, PROMPT_ASSISTS_PER_10_MIN)) {
+    return { error: GATE_BUSY_MESSAGE, remaining: 0, cap: 0, since: null, uncapped: false };
+  }
 
   const plan = (profile?.plan ?? "none") as PlanId;
   // Every plan-less account is free-tier for assists, bonus credits or not:
@@ -218,19 +230,6 @@ export async function compilePrompt(formData: FormData): Promise<CompilePromptRe
     return { error: `That's longer than ${MAX_INPUT_LENGTH} characters — trim it a little.` };
   }
 
-  // The platform content policy applies to Enhance too, even though nothing
-  // renders here (compileOnly). Enhance's whole job is to turn a thin line
-  // into a rich, specific one — so left ungated it is an ASSIST toward the
-  // violation, taking "make it more spicy" and handing back the detailed
-  // version that a downstream provider is likelier to act on. Refusing here
-  // also costs the person no assist allowance. See content-policy.ts.
-  try {
-    await gatePrompt({ prompt: userInput, userId: userData.user.id });
-  } catch (err) {
-    if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
-    throw err;
-  }
-
   const [{ data: studioFlag }, { data: providersFlag }] = await Promise.all([
     supabase.from("feature_flags").select("enabled").eq("key", "prompt_studio").single(),
     supabase.from("feature_flags").select("enabled").eq("key", "real_ai_providers").single(),
@@ -247,6 +246,21 @@ export async function compilePrompt(formData: FormData): Promise<CompilePromptRe
 
   const allowance = await assistAllowance(supabase, userData.user.id);
   if (allowance.error) return { error: allowance.error };
+
+  // The platform content policy applies to Enhance too, even though nothing
+  // renders here (compileOnly). Enhance's whole job is to turn a thin line
+  // into a rich, specific one — so left ungated it is an ASSIST toward the
+  // violation, taking "make it more spicy" and handing back the detailed
+  // version that a downstream provider is likelier to act on. Refusing here
+  // also costs the person no assist allowance. See content-policy.ts. After
+  // the switches and the allowance since 2026-09-30: the gate's readers are
+  // paid, and an account with no assists left was read before it was told.
+  try {
+    await gatePrompt({ prompt: userInput, userId: userData.user.id });
+  } catch (err) {
+    if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
+    throw err;
+  }
 
   // Character is optional — the pipeline's empty-name placeholder is what
   // tells it "no specific character for this generation".
@@ -584,18 +598,6 @@ export async function planScene(formData: FormData): Promise<PlanSceneResult> {
     return { error: `That's longer than ${MAX_INPUT_LENGTH} characters — trim it a little.` };
   }
 
-  // Same reasoning as compilePrompt above: the director expands a one-line
-  // idea into a full shot list, so ungated it is an ASSIST toward a violation
-  // — it takes a thin request and hands back the detailed, specific version a
-  // provider is likelier to act on. Refusing here also costs no assist
-  // allowance. See lib/generations/content-policy.ts.
-  try {
-    await gatePrompt({ prompt: idea, userId: userData.user.id });
-  } catch (err) {
-    if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
-    throw err;
-  }
-
   const [{ data: studioFlag }, { data: providersFlag }] = await Promise.all([
     supabase.from("feature_flags").select("enabled").eq("key", "prompt_studio").single(),
     supabase.from("feature_flags").select("enabled").eq("key", "real_ai_providers").single(),
@@ -609,6 +611,19 @@ export async function planScene(formData: FormData): Promise<PlanSceneResult> {
 
   const allowance = await assistAllowance(supabase, userData.user.id);
   if (allowance.error) return { error: allowance.error };
+
+  // Same reasoning as compilePrompt above: the director expands a one-line
+  // idea into a full shot list, so ungated it is an ASSIST toward a violation
+  // — it takes a thin request and hands back the detailed, specific version a
+  // provider is likelier to act on. Refusing here also costs no assist
+  // allowance. See lib/generations/content-policy.ts. After the switches and
+  // the allowance since 2026-09-30, as in compilePrompt.
+  try {
+    await gatePrompt({ prompt: idea, userId: userData.user.id });
+  } catch (err) {
+    if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
+    throw err;
+  }
 
   const { data: character } = characterId
     ? await supabase

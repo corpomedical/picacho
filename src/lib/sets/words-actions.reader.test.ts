@@ -5,7 +5,7 @@ import { SET_NOT_FOUND, SETS_SESSION_EXPIRED } from "./messages";
 import { READER_BUILD_LINE } from "./reader-context";
 import { normaliseSetSpec, type SetSpec } from "./set-spec";
 import { SHOT_READER_MAX_COMPLETION, SHOT_READER_STATIC } from "./shot-reading";
-import { SHOT_READER_FALLBACK_MAX_COMPLETION, SHOT_WORDS_MAX_CHARS, SHOT_WORDS_PER_10_MIN } from "./shot-words";
+import { SHOT_READER_FALLBACK_MAX_COMPLETION, SHOT_WORDS_MAX_CHARS, SHOT_WORDS_PER_10_MIN, SHOT_WORDS_PER_DAY } from "./shot-words";
 
 // Reader v2's server action (Helios Cut 2, step 6, 2026-09-25 — operator:
 // "Run, keep going."). words-actions.ts imports through "@/", which this
@@ -29,6 +29,7 @@ if (!CAR) throw new Error("the race set has its car");
 type Access = { error: null; userId: string; isAdmin: boolean; plan: string; monthlyLimit: number; periodStart: string | null } | { error: string };
 let access: Access;
 let limited: boolean;
+let limitedDay: boolean;
 const limits: { scope: string; windowSeconds: number; max: number }[] = [];
 let characterRows: { id: string; name: string; reference_image_urls: string[] | null }[];
 /** The characters read one by one, by id. */
@@ -65,6 +66,11 @@ vi.mock("@/lib/rate-limit", () => ({
   rateLimited: async (_user: string, scope: string, windowSeconds: number, max: number) => {
     limits.push({ scope, windowSeconds, max });
     return limited;
+  },
+  // The day's total (2026-09-30): recorded like the burst brake, limited by its own flag.
+  dailyCapReached: async (_user: string, scope: string, max: number) => {
+    limits.push({ scope: `${scope}-day`, windowSeconds: 86_400, max });
+    return limitedDay;
   },
 }));
 vi.mock("@/lib/sets/access", () => ({
@@ -118,6 +124,7 @@ const NOW = {
 beforeEach(() => {
   access = { error: null, userId: USER, isAdmin: true, plan: "starter", monthlyLimit: 5, periodStart: null };
   limited = false;
+  limitedDay = false;
   limits.length = 0;
   characterReads.length = 0;
   sent = [];
@@ -178,6 +185,17 @@ describe("readShotTurn: who may read, and when nothing is read", () => {
     const fetchFn = reader("{}");
     expect(await readShotTurn(SET, { text: "golden hour" })).toMatchObject({ error: null, reading: null, why: "limited" });
     expect(limits).toEqual([{ scope: "set-words", windowSeconds: 600, max: SHOT_WORDS_PER_10_MIN }]);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it('is "limited" past the day\'s total too (2026-09-30), and asks nobody', async () => {
+    limitedDay = true;
+    const fetchFn = reader("{}");
+    expect(await readShotTurn(SET, { text: "golden hour" })).toMatchObject({ error: null, reading: null, why: "limited" });
+    expect(limits).toEqual([
+      { scope: "set-words", windowSeconds: 600, max: SHOT_WORDS_PER_10_MIN },
+      { scope: "set-words-day", windowSeconds: 86_400, max: SHOT_WORDS_PER_DAY },
+    ]);
     expect(fetchFn).not.toHaveBeenCalled();
   });
 

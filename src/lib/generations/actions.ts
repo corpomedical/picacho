@@ -800,6 +800,23 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   const judged = [userInput, dialogueText, storyboardJudgeText]
     .filter((t) => typeof t === "string" && t.trim().length > 0)
     .join("\n\n");
+  // Can they pay for anything at all, before the gate reads (2026-09-30,
+  // operator: "fix the remaining small ones")? The gate's readers are paid
+  // and the full allowance check below comes after hundreds of lines of
+  // validation, so an account with nothing to spend (no credits, today's free
+  // render used, a paused plan) had every send read and paid for, then
+  // refused. The same read-only check, at the smallest price anything costs;
+  // the real price is asked below as before. A resent POST follows its first
+  // delivery here too.
+  //
+  // A Helios film's beats skip the 3-second cooldown (server-press.ts,
+  // 2026-09-25): a Render's next beat follows the last one's clip within
+  // seconds by design, bounded by the take limiter and asked for whole
+  // first. Admins were already exempt. Read from server memory, never from a
+  // form field.
+  const cooldown = serverPress()?.skipCooldown ? { skipCooldown: true } : undefined;
+  const canPay = await checkGenerationAllowance(supabase, userData.user.id, 1, cooldown);
+  if (canPay.error) return (await followRepeat()) ?? { error: canPay.error };
   try {
     await gatePrompt({ prompt: judged, userId: userData.user.id, hasRealPersonReference: editingAnUpload });
   } catch (err) {
@@ -1454,12 +1471,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   });
   const creditWeight = sendQuote.totalCredits;
 
-  // A Helios film's beats skip the 3-second cooldown (server-press.ts,
-  // 2026-09-25): a Render's next beat follows the last one's clip within
-  // seconds by design, bounded by the take limiter and asked for whole
-  // first. Admins were already exempt. Read from server memory, never from a
-  // form field.
-  const cooldown = serverPress()?.skipCooldown ? { skipCooldown: true } : undefined;
+  // The cooldown rule was read before the gate (above).
   let allowance = await checkGenerationAllowance(supabase, userData.user.id, creditWeight, cooldown);
   // A first delivery that reserved after the check at the top trips the
   // cooldown, or spent the last credit, just the same.
@@ -3273,6 +3285,10 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
       return sceneRaw.slice(0, 4000);
     }
   })();
+  // Can they pay for anything at all, before the gate reads (2026-09-30):
+  // runGeneration's reason, the batch's own follower.
+  const canPay = await checkGenerationAllowance(supabase, userData.user.id, 1);
+  if (canPay.error) return (await followRepeatBatch()) ?? { error: canPay.error };
   try {
     await gatePrompt({
       prompt: [userInput, scenePlanJudgeText].filter(Boolean).join("\n\n"),
@@ -5456,6 +5472,24 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
   if (ineligible === "too-large") return { error: "That layer is too big to edit." };
   if (ineligible) return { error: "This layer can't be edited." };
 
+  // Versioning is what makes an edit non-destructive, and it lives in
+  // columns a manual migration adds. Without them the insert below would
+  // fail AFTER the provider had been paid, so this is checked before any
+  // money moves — and it is a column check, not a table check: stage 1's
+  // preflight asked only whether generation_layers existed, which was true
+  // in exactly the window this broke (2026-09-04).
+  if ((layer as Record<string, unknown>).version === undefined) {
+    return { error: "Editing layers isn't switched on yet — nothing was charged." };
+  }
+
+  // The price and whether they can pay it come first (2026-09-30): the gate's
+  // readers are paid, and an account that cannot pay for the edit had its
+  // words read before it was told so. Read-only; the reservation below is
+  // unchanged.
+  const creditWeight = layerEditCreditCost(layer.width as number | null, layer.height as number | null);
+  const allowance = await checkGenerationAllowance(supabase, userId, creditWeight);
+  if (allowance.error) return { error: allowance.error };
+
   // The platform content policy, before reserve_generation so a refusal costs
   // no credit. Layers had NO gate at all until the 2026-09-09 review: it is a
   // subject-editing tool that takes free text and hands it to Flux with the
@@ -5469,20 +5503,6 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
     if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
     throw err;
   }
-
-  // Versioning is what makes an edit non-destructive, and it lives in
-  // columns a manual migration adds. Without them the insert below would
-  // fail AFTER the provider had been paid, so this is checked before any
-  // money moves — and it is a column check, not a table check: stage 1's
-  // preflight asked only whether generation_layers existed, which was true
-  // in exactly the window this broke (2026-09-04).
-  if ((layer as Record<string, unknown>).version === undefined) {
-    return { error: "Editing layers isn't switched on yet — nothing was charged." };
-  }
-
-  const creditWeight = layerEditCreditCost(layer.width as number | null, layer.height as number | null);
-  const allowance = await checkGenerationAllowance(supabase, userId, creditWeight);
-  if (allowance.error) return { error: allowance.error };
   const consumePurchased = allowance.consumePurchased ?? 0;
   const consumeBonus = allowance.consumeBonus ?? 0;
   const monthlyPortion = allowance.isAdmin

@@ -35,13 +35,16 @@ describe("runGeneration reads it, and nothing a request carries (generations/act
     expect(run).toContain("deadlineAt: sendStartedAt + OPENING_FRAME_DEADLINE_MS");
   });
 
-  it("skips the cooldown only for a Helios press that asks (a film's beats), on both of its allowance checks", () => {
+  it("skips the cooldown only for a Helios press that asks (a film's beats), on all of its allowance checks", () => {
     const cooldown = run.indexOf("const cooldown = serverPress()?.skipCooldown ? { skipCooldown: true } : undefined;");
     expect(cooldown).toBeGreaterThan(-1);
     expect(cooldown).toBeLessThan(run.indexOf("checkGenerationAllowance("));
     const calls = run.match(/checkGenerationAllowance\([^)]*\)/g) ?? [];
-    expect(calls).toHaveLength(2);
-    for (const c of calls) expect(c).toMatch(/creditWeight, cooldown\)$/);
+    // The first is the pre-gate check (2026-09-30), at the smallest price;
+    // the real price is asked by the other two.
+    expect(calls).toHaveLength(3);
+    expect(calls[0]).toMatch(/, 1, cooldown\)$/);
+    for (const c of calls.slice(1)) expect(c).toMatch(/creditWeight, cooldown\)$/);
     // The repeat follower's pins stay as they were (repeat-send.test.ts).
     expect(run).toContain("if (allowance.error) return (await followRepeat()) ?? { error: allowance.error };");
     expect(run).toContain("if (reAllowance.error) return (await followRepeat()) ?? { error: reAllowance.error };");

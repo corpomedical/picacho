@@ -251,9 +251,11 @@ describe("with an idempotency key", () => {
     expect(world.db.reservations).toBe(1);
     expect(h.pipeline).toHaveBeenCalledTimes(1);
     // Answered before any gate or credit check ran again: the first
-    // request's own charge could be the credit a second check refuses.
+    // request's own charge could be the credit a second check refuses. The
+    // first asked twice (before its gate, 2026-09-30, and after); the retry
+    // not at all.
     expect(h.gate).toHaveBeenCalledTimes(1);
-    expect(h.allowance).toHaveBeenCalledTimes(1);
+    expect(h.allowance).toHaveBeenCalledTimes(2);
   });
 
   it("the image URL is re-signed under today's key, like every other answer", async () => {
@@ -399,7 +401,10 @@ describe("with an idempotency key", () => {
     world.db.hideNextKeyedReads = 1;
     h.allowance.mockResolvedValue({ error: "You've used all 750 credits included in your Elite plan this month.", plan: "elite", isAdmin: false });
     expect(await call({ idempotencyKey: "img-1" })).toEqual(first);
-    expect(h.allowance).toHaveBeenCalledTimes(2);
+    // The first request's two checks, then the retry's first, before its
+    // gate (2026-09-30), which the charge refuses and the follower answers.
+    expect(h.allowance).toHaveBeenCalledTimes(3);
+    expect(h.gate).toHaveBeenCalledTimes(1);
     expect(world.db.reservations).toBe(1);
   });
 
@@ -411,6 +416,16 @@ describe("with an idempotency key", () => {
     } finally {
       vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", SERVICE_KEY);
     }
+  });
+});
+
+describe("MONEY: nothing is read for an account that cannot pay (2026-09-30)", () => {
+  it("is told so before its prompt reaches the paid gate, in the allowance check's own words and status", async () => {
+    h.allowance.mockResolvedValue({ error: "You're out of credits — that request couldn't be covered.", plan: "starter", isAdmin: false });
+    expect(await call()).toEqual({ error: "You're out of credits — that request couldn't be covered.", status: 402 });
+    expect(h.gate).not.toHaveBeenCalled();
+    expect(h.pipeline).not.toHaveBeenCalled();
+    expect(world.db.reservations).toBe(0);
   });
 });
 

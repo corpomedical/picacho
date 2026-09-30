@@ -1,7 +1,7 @@
 "use server";
 
 import { createAdminClient } from "@/lib/supabase/server";
-import { rateLimited } from "@/lib/rate-limit";
+import { dailyCapReached, rateLimited } from "@/lib/rate-limit";
 import { getLocale } from "@/lib/i18n/server";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { lookStoragePath } from "@/lib/sets/look";
@@ -77,7 +77,10 @@ export async function checkShotRig(
   const path =
     gen && gen.status === "succeeded" && !gen.deleted_at && gen.content_type === "image" ? lookStoragePath(gen.result_url, userId) : null;
   if (!path) return { error: SET_NOT_FOUND };
-  if (await rateLimited(userId, "set-rig-check", 60 * 10, 30)) return { error: SET_RIG_CHECK_TOO_FAST };
+  // A rolling day too (2026-09-30): each check is a paid vision reading, and 30 every ten minutes is 4,320 a day.
+  if ((await rateLimited(userId, "set-rig-check", 60 * 10, 30)) || (await dailyCapReached(userId, "set-rig-check", 100))) {
+    return { error: SET_RIG_CHECK_TOO_FAST };
+  }
 
   const admin = createAdminClient();
   // A still the lab developed is READ AS ITS NEGATIVE — the frame the image

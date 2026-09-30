@@ -154,6 +154,13 @@ export async function runApiImageGeneration(params: {
   // would use. A gate the composer calls and the API does not is not a gate.
   // 422 rather than 400 — the request was well-formed, we decline to process
   // what it asks for.
+  //
+  // After one check that costs nothing (2026-09-30, operator: "fix the
+  // remaining small ones"): the gate's readers are paid, so an account with
+  // nothing to spend is told so before its prompt is read, in the same words
+  // and status as the allowance check below, which still decides.
+  const canPay = await checkGenerationAllowance(supabase, userId, 1, { skipCooldown: true });
+  if (canPay.error) return (await followRepeat()) ?? { error: withoutSalesPitch(canPay.error), status: 402 };
   try {
     await gatePrompt({ prompt, userId });
   } catch (err) {

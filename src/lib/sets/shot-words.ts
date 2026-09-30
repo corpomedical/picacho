@@ -40,6 +40,12 @@ export const SHOT_WORDS_TIMEOUT_MS = 20_000;
 export const SHOT_WORDS_MAX_CHARS = 600;
 /** Readings a person may ask for in ten minutes (words-actions.ts). */
 export const SHOT_WORDS_PER_10_MIN = 40;
+/**
+ * And in a rolling day (2026-09-30, operator: "fix the remaining small ones"):
+ * each reading is a paid gpt-5.4-mini call, and 40 every ten minutes is
+ * 5,760 a day. Past it a reading is simply no reading, as when limited.
+ */
+export const SHOT_WORDS_PER_DAY = 300;
 const SEED = 7;
 
 export const SHOT_INTENTS = ["frame", "shoot", "talk", "edit"] as const;

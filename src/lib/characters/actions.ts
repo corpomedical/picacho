@@ -7,6 +7,21 @@ import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { forgetCharacterFaceAssets } from "@/lib/faces/run";
 import { generateImageWithOpenAI } from "@/lib/generations/providers/openai-images";
 import { describeOutfitImage, classifyRenderStyle } from "@/lib/generations/providers/describe-image";
+import { dailyCapReached, rateLimited } from "@/lib/rate-limit";
+
+// The photo reads a save may make (2026-09-30, operator: "fix the remaining
+// small ones"): the outfit description and the render style are paid vision
+// calls, made whenever the photos change, on a save any account can repeat
+// with no limit. Past either ceiling the read is skipped, which both already
+// allow for (a failed read is null, and the composer falls back).
+const CHARACTER_READS_PER_10_MIN = 20;
+const CHARACTER_READS_PER_DAY = 60;
+async function characterReadAllowed(userId: string): Promise<boolean> {
+  return (
+    !(await rateLimited(userId, "character-read", 60 * 10, CHARACTER_READS_PER_10_MIN)) &&
+    !(await dailyCapReached(userId, "character-read", CHARACTER_READS_PER_DAY))
+  );
+}
 import { generateImageWithFlux } from "@/lib/generations/providers/fal-image";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { toUserFacingError } from "@/lib/generations/user-facing-error";
@@ -245,7 +260,7 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
       const { data: signed } = await supabase.storage
         .from("character-references")
         .createSignedUrl(outfitImagePaths[0], 60 * 10);
-      if (signed?.signedUrl) {
+      if (signed?.signedUrl && (await characterReadAllowed(data.user.id))) {
         outfitDescription = await describeOutfitImage(signed.signedUrl);
       }
     }
@@ -268,7 +283,7 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
       const { data: signedRef } = await supabase.storage
         .from("character-references")
         .createSignedUrl(referenceImagePaths[0], 60 * 10);
-      if (signedRef?.signedUrl) {
+      if (signedRef?.signedUrl && (await characterReadAllowed(data.user.id))) {
         renderStyle = await classifyRenderStyle(signedRef.signedUrl);
       }
     }

@@ -3,7 +3,14 @@
 import { createClient } from "@/lib/supabase/server";
 import { generateSpeech } from "@/lib/generations/providers/fal";
 import { speechSeedFor } from "@/lib/generations/voice-lock";
-import { rateLimited } from "@/lib/rate-limit";
+import { dailyCapReached, rateLimited } from "@/lib/rate-limit";
+import { planInGoodStanding } from "@/lib/plans";
+
+// Previews one account may play in a rolling day (2026-09-30, operator: "fix
+// the remaining small ones"). Each is a paid TTS call of PREVIEW_TEXT, about
+// 42 characters at fal's $0.10 per 1,000; the per-minute brake above bounded
+// a script's pace but not its day (20 a minute is 28,800 a day).
+const PREVIEWS_PER_DAY = 40;
 
 // A voice preview is a real, paid TTS call (see providers/fal.ts). The
 // paid-plan gate below stops free signups from scripting it, but a single
@@ -40,7 +47,7 @@ export async function previewVoice(
   // This is the gate that keeps a free signup from scripting paid TTS calls.
   const { data: profile } = await supabase
     .from("profiles")
-    .select("plan, role, status")
+    .select("plan, plan_status, role, status")
     .eq("id", userData.user.id)
     .single();
   // The one paid lane the suspension matrix missed (round-two audit): this
@@ -52,6 +59,10 @@ export async function previewVoice(
   }
   if ((profile?.plan ?? "none") === "none" && profile?.role !== "admin") {
     return { error: "Voice previews are part of a paid plan — upgrade to use them." };
+  }
+  // A plan whose payments aren't in good standing is paused here too (2026-09-30).
+  if (!planInGoodStanding(profile?.plan_status) && profile?.role !== "admin") {
+    return { error: "Voice previews are paused while your plan's last payment is sorted out — update it in Settings → Plan & billing." };
   }
 
   // Per-user rate limit — the shared scoped limiter (lib/rate-limit.ts,
@@ -68,6 +79,9 @@ export async function previewVoice(
     )
   ) {
     return { error: "You're previewing voices a bit fast — wait a moment and try again." };
+  }
+  if (profile?.role !== "admin" && (await dailyCapReached(userData.user.id, "voice-preview", PREVIEWS_PER_DAY))) {
+    return { error: "You've played a lot of voice previews today — more tomorrow." };
   }
 
   const { data: preset } = await supabase

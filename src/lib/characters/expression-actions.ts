@@ -18,6 +18,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { dailyCapReached, rateLimited } from "@/lib/rate-limit";
 import { mediaUrl } from "@/lib/media/url";
 import { generateReferenceImage } from "@/lib/characters/actions";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
@@ -148,6 +149,10 @@ export async function makeExpressionSlot(formData: FormData): Promise<Expression
   return keep(supabase, userId, character.id, slot, { path: made.path, source: "made", likeness, at: new Date().toISOString() });
 }
 
+/** Likeness reads of uploaded close-ups one account may have (2026-09-30): a set is nine slots. */
+const EXPRESSION_SCORES_PER_10_MIN = 20;
+const EXPRESSION_SCORES_PER_DAY = 60;
+
 /** Puts the person's own photo, already uploaded to their folder, in a slot. Free, like every upload. */
 export async function setExpressionSlotUpload(formData: FormData): Promise<ExpressionSlotResult> {
   const slot = String(formData.get("slot") ?? "").trim();
@@ -166,7 +171,15 @@ export async function setExpressionSlotUpload(formData: FormData): Promise<Expre
     await supabase.storage.from("character-references").remove([path]);
     return { error: probe.reason === "missing" ? EXPRESSION_NEEDS_DATABASE : EXPRESSION_SAVE_FAILED };
   }
-  const likeness = await likenessAgainstPhotoOne(supabase, character, path);
+  // The likeness read is a paid scorer call ($0.041 a reading, openai-model.ts)
+  // on a free action any signed-in account can repeat, and it had no limit at
+  // all (2026-09-30, operator: "fix the remaining small ones"). Past
+  // EXPRESSION_SCORES_PER_10_MIN or EXPRESSION_SCORES_PER_DAY the close-up is
+  // kept unchecked, as one whose face can't be read already is.
+  const scoreAllowed =
+    !(await rateLimited(userId, "expression-score", 60 * 10, EXPRESSION_SCORES_PER_10_MIN)) &&
+    !(await dailyCapReached(userId, "expression-score", EXPRESSION_SCORES_PER_DAY));
+  const likeness = scoreAllowed ? await likenessAgainstPhotoOne(supabase, character, path) : null;
   return keep(supabase, userId, character.id, slot, { path, source: "upload", likeness, at: new Date().toISOString() });
 }
 

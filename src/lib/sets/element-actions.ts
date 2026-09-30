@@ -17,7 +17,7 @@
 // render.
 
 import { createAdminClient } from "@/lib/supabase/server";
-import { rateLimited } from "@/lib/rate-limit";
+import { dailyCapReached, rateLimited } from "@/lib/rate-limit";
 import { checkGenerationAllowance } from "@/lib/generations/core";
 import { quoteSend } from "@/lib/generations/quote";
 import { stillQuoteInput } from "@/lib/sets/take";
@@ -237,6 +237,12 @@ export async function settleElementPhotos(setId: string): Promise<{ error: strin
 
 /** Sheets drawn an hour per person: each is one render, absorbed (the operator's call, 2026-09-21). */
 const ELEMENT_SHEETS_PER_HOUR = 24;
+/**
+ * And in a rolling day (2026-09-30, operator: "fix the remaining small ones"):
+ * each sheet is a GPT Image render ($0.0586, admin/economics.ts), and 24 an
+ * hour is 576 a day. A sheet is kept and reused until its photos change.
+ */
+const ELEMENT_SHEETS_PER_DAY = 30;
 /** Sheets one call draws at once; the page asks again for the rest. */
 const SHEETS_AT_ONCE = 4;
 
@@ -285,7 +291,9 @@ export async function prepareElementSheets(setId: string, keys: unknown): Promis
   for (const q of toDraw.slice(SHEETS_AT_ONCE)) out.push({ key: q.key, status: "queued" });
   const drawn = await Promise.all(
     now.map(async (d): Promise<{ key: string; status: SheetStatus }> => {
-      if (await rateLimited(userId, "set-sheet", 60 * 60, ELEMENT_SHEETS_PER_HOUR)) return { key: d.key, status: "too-fast" };
+      if ((await rateLimited(userId, "set-sheet", 60 * 60, ELEMENT_SHEETS_PER_HOUR)) || (await dailyCapReached(userId, "set-sheet", ELEMENT_SHEETS_PER_DAY))) {
+        return { key: d.key, status: "too-fast" };
+      }
       const r = await sheetFromPhotos({ admin, sourcePaths: d.paths, sheetPath: setElementSheetPath(userId, setId, d.hash) });
       if (r.ok) return { key: d.key, status: r.made ? "drawn" : "ready" };
       return { key: d.key, status: r.reason === "sheet refused" ? "refused" : r.reason === "storage" ? "storage" : "failed" };

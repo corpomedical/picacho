@@ -10,7 +10,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
-import { rateLimited } from "@/lib/rate-limit";
+import { dailyCapReached, rateHitCount, rateLimited } from "@/lib/rate-limit";
+import { planInGoodStanding } from "@/lib/plans";
 
 type VoiceResult<T extends object> = { error: string } | ({ error: null } & T);
 
@@ -28,6 +29,22 @@ const TRANSCRIBE_RATE_WINDOW_SECONDS = 60;
 const TRANSCRIBE_RATE_MAX_PER_WINDOW = 10;
 const SYNTHESIZE_RATE_WINDOW_SECONDS = 60;
 const SYNTHESIZE_RATE_MAX_PER_WINDOW = 20;
+
+// Dictation's day (2026-09-30, operator: "fix the remaining small ones").
+// Whisper bills per minute of audio ($0.006, editor/prices.ts), and the only
+// bound on a clip's length was its size: the browser stops at 30 s
+// (voice-recorder-button.tsx MAX_RECORDING_MS), but 20 MB of low-bitrate
+// audio sent straight to this action is hours of billable speech, ten times
+// a minute. Now: 2 MB a clip (30 s of browser audio is well under 1 MB), a
+// daily count of clips, and a clip Whisper reports longer than a recording
+// can be is a strike; two strikes stop dictation for the day, so a crafted
+// long clip is paid for at most twice.
+const MAX_AUDIO_BYTES = 2 * 1024 * 1024;
+const TRANSCRIBES_PER_DAY = 100;
+const LONGEST_REAL_CLIP_SECONDS = 45;
+const LONG_CLIPS_PER_DAY = 2;
+const DAY_SECONDS = 24 * 60 * 60;
+const DICTATION_DAY_USED = "You've used today's voice typing — it comes back tomorrow. Typing works as always.";
 
 // SECURITY: both actions below spend real OpenAI money on every call, and
 // until 2026-08-10 neither checked who was calling — only that the feature
@@ -50,11 +67,13 @@ async function checkVoiceAvailable(): Promise<{ error: string } | { error: null;
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("plan, role")
+    .select("plan, plan_status, role")
     .eq("id", userData.user.id)
     .single();
 
-  const onPaidPlan = (profile?.plan ?? "none") !== "none";
+  // A plan whose payments aren't in good standing counts as none (2026-09-30,
+  // plans.ts planInGoodStanding): its credits pause, and so does its voice.
+  const onPaidPlan = (profile?.plan ?? "none") !== "none" && planInGoodStanding(profile?.plan_status);
   if (!onPaidPlan && profile?.role !== "admin") {
     return { error: "Voice features are part of a paid plan — upgrade to use them." };
   }
@@ -81,8 +100,8 @@ export async function transcribeVoice(formData: FormData): Promise<VoiceResult<{
   const audio = formData.get("audio") as File | null;
   if (!audio || audio.size === 0) return { error: "Didn't catch any audio — try again." };
   // Cap the upload — Whisper is billed per audio-minute, so an uncapped file
-  // POSTed in a loop is an unbounded cost. A spoken prompt is well under this.
-  const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
+  // POSTed in a loop is an unbounded cost. A spoken prompt is well under this
+  // (MAX_AUDIO_BYTES above).
   if (audio.size > MAX_AUDIO_BYTES) {
     return { error: "That audio clip is too large — keep voice prompts short." };
   }
@@ -98,11 +117,20 @@ export async function transcribeVoice(formData: FormData): Promise<VoiceResult<{
   ) {
     return { error: "You're sending voice clips a bit fast — wait a moment and try again." };
   }
+  // The day: too many long clips already, or too many clips.
+  if ((await rateHitCount(available.userId, "voice-long", DAY_SECONDS)) >= LONG_CLIPS_PER_DAY) {
+    return { error: DICTATION_DAY_USED };
+  }
+  if (await dailyCapReached(available.userId, "voice-transcribe", TRANSCRIBES_PER_DAY)) {
+    return { error: DICTATION_DAY_USED };
+  }
 
   const apiKey = process.env.OPENAI_API_KEY!;
   const form = new FormData();
   form.set("model", "whisper-1");
   form.set("file", audio, "voice.webm");
+  // verbose_json carries the clip's length, which is what Whisper bills.
+  form.set("response_format", "verbose_json");
 
   const res = await fetchWithTimeout(
     "https://api.openai.com/v1/audio/transcriptions",
@@ -117,6 +145,13 @@ export async function transcribeVoice(formData: FormData): Promise<VoiceResult<{
   }
 
   const data = await res.json();
+  // A clip longer than any recording the page can make is a strike (the
+  // rate limiter's bucket, counted here and read above). Its max is only
+  // there so the hit is always written.
+  const seconds = Number(data?.duration);
+  if (Number.isFinite(seconds) && seconds > LONGEST_REAL_CLIP_SECONDS) {
+    await rateLimited(available.userId, "voice-long", DAY_SECONDS, 1_000);
+  }
   const text = (data?.text as string | undefined)?.trim();
   if (!text) return { error: "Didn't catch that — try again." };
 
