@@ -98,6 +98,7 @@ import {
   SET_BUILD_TOO_FAST,
   SET_DELETE_FAILED,
   SET_FRAME_SAVE_FAILED,
+  STUDIO_LOOK_GONE,
   SET_FRAME_TOO_LARGE,
   SET_FRAME_UNREADABLE,
   SET_NOT_FOUND,
@@ -129,6 +130,7 @@ import {
   SET_LIKENESS_NEEDED,
   setMonthlyCapMessage,
 } from "@/lib/sets/messages";
+import { copyStudioLook } from "@/lib/sets/studio-looks";
 import { summarizeFailureDetail } from "@/lib/generations/report-constants";
 import { findVehicles, vehicleWords } from "@/lib/sets/vehicles";
 import { ELEMENT_SHEETS_PER_STILL, SHEET_LANES, elementPlaces, planShotSheets, resolvePhotos, setElements, type ShotElementStatus } from "@/lib/sets/elements";
@@ -791,6 +793,13 @@ async function shootStill(
      * generations/actions.ts). Anything else keeps the outfit, as before.
      */
     outfit?: false;
+    /**
+     * A picture from the character's own gallery for the outfit and look (Helios Studio's Photo with your
+     * character, 2026-09-30): checked again as this person's finished picture of THIS character
+     * (studio-looks.ts), copied to their attachments and sent as the still's outfit reference — the
+     * render lane's "outfit" role, which outranks the character's saved outfit photo.
+     */
+    galleryLookId?: unknown;
   },
   opts: ShootOpts,
 ): Promise<ShootResult> {
@@ -1003,11 +1012,21 @@ async function shootStill(
     const stop = await opts.beforePaid();
     if (stop) return { error: stop };
   }
+  // A look from the character's own gallery (Helios Studio, 2026-09-30): checked as this person's finished
+  // picture of THIS character and copied beside the frame, or no shot — nothing is charged for a look that
+  // isn't theirs. It rides as the still's outfit reference (the render lane's "outfit" role: pixels on the
+  // lanes that take extra photos, and it outranks the saved outfit photo).
+  let outfitLookPath: string | null = null;
+  if (typeof input.galleryLookId === "string" && input.galleryLookId) {
+    outfitLookPath = await copyStudioLook(access.supabase, { userId, lookId: input.galleryLookId, characterId, tag: opts.generationId ?? undefined });
+    if (!outfitLookPath) return { error: STUDIO_LOOK_GONE };
+  }
   const { error: uploadError } = await admin.storage
     .from("chat-attachments")
     .upload(framePath, bytes, { contentType: "image/jpeg", upsert: false });
   if (uploadError) {
     console.error("shootInSet frame upload failed:", uploadError.message);
+    if (outfitLookPath) await admin.storage.from("chat-attachments").remove([outfitLookPath]);
     return { error: SET_FRAME_SAVE_FAILED };
   }
 
@@ -1129,6 +1148,7 @@ async function shootStill(
     "attachment_roles",
     JSON.stringify([
       { url: mediaUrl("chat-attachments", framePath), role: "reference" },
+      ...(outfitLookPath ? [{ url: mediaUrl("chat-attachments", outfitLookPath), role: "outfit" as const }] : []),
       ...(look ? [{ url: look.url, role: "look" }] : []),
       // The source photograph rides under the scene role, which a set shot
       // reads as PIXELS (generations/actions.ts placeImageUrl) — the prompt
@@ -1147,7 +1167,7 @@ async function shootStill(
   if (result.error !== null) {
     // Refused or never started: no take holds the frame, so nothing else
     // would ever clean it up.
-    await admin.storage.from("chat-attachments").remove([framePath]);
+    await admin.storage.from("chat-attachments").remove([framePath, ...(outfitLookPath ? [outfitLookPath] : [])]);
     return { error: result.error };
   }
 

@@ -15,13 +15,22 @@ export function studioCastInput(a: {
   maxChars: number;
   frame: { layout: unknown; canvasAspect?: number; rig?: unknown; movers?: unknown };
   pressId: string;
+  /** What the character wears (studioWearLine): said after the person's words, which give way to it. */
+  wear?: string | null;
+  /** A picture from the character's own gallery: the still's outfit reference (shootInSet re-checks it). */
+  galleryLookId?: string | null;
 }): StudioShootInput & { pressId: string } {
-  const words = a.words.trim().slice(0, a.maxChars);
+  const wear = (a.wear ?? "").trim().slice(0, a.maxChars);
+  const words = a.words.trim().slice(0, Math.max(0, a.maxChars - (wear ? wear.length + 1 : 0))).trim();
+  const direction = [words, wear].filter(Boolean).join(" ");
   return {
     frameDataUri: a.tracedFrameUri || a.viewFrameUri,
     characterId: a.characterId,
-    direction: words,
+    direction,
     ...(words ? { words } : {}),
+    // Their outfit this time comes from the words or the picked look: the saved outfit photo sits it out.
+    ...(wear ? { outfit: false as const } : {}),
+    ...(a.galleryLookId ? { galleryLookId: a.galleryLookId } : {}),
     layout: a.frame.layout,
     lifted: false,
     canvasAspect: a.frame.canvasAspect,

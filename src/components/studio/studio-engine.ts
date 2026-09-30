@@ -21,7 +21,7 @@ import { CYCLES_DEFAULT_SAMPLES, CYCLES_EDGES, CYCLES_MAX_FRAMES, CYCLES_MAX_SAM
 import { watchStudioText } from "./studio-i18n";
 import { studioCastInput } from "./studio-cast";
 import { boneOfMesh, makeFigure } from "./studio-figure";
-import { addMove, gaitFrame, headingOf, moveAt, moveWords, naturalEnd, normaliseMoves, pathCurve, pathLength, pathRootAt, shortestYaw, turnStart, turnYawAt } from "@/lib/sets/studio-gait";
+import { addMove, gaitFrame, headingOf, moveAt, moveWords, naturalEnd, normaliseMoves, pathCurve, pathLength, pathRootAt, shortestYaw, turnFrame, turnStart, turnYawAt } from "@/lib/sets/studio-gait";
 import { BONE, BONE_NAMES, LIMBS, POSE_PRESETS, PRESET_LABELS, SEAT_DROP_M, applyPose, applyPreset, clampLoc, clampRot, clonePose, eulerNumbers, findSkeleton, groundFeet, lookRot, normalisePose, normalisePoseKeys, poseAt, poseSentence, poseWords, presetBones, presetPose, setPoseKey, solveLimb, standPoseOf, thingWords } from "@/lib/sets/studio-pose";
 import { newPressId } from "@/lib/sets/press-follow";
 import { savedPlaybackRange } from "@/lib/sets/studio-scene";
@@ -69,6 +69,10 @@ export type StudioOptions = {
   render?: {
     credits: number;
     characters: { id: string; name: string; likenessNeeded: boolean }[];
+    /** Who plays the set's figure (the set page's cast): the window's first choice. */
+    castId?: string | null;
+    /** The character's own gallery pictures, newest first (listStudioLooks). */
+    looks?: (characterId: string) => Promise<{ id: string; url: string; outfit: string }[]>;
     setHref: string;
     historyHref: (generationId: string) => string;
     /** What to say when the press itself could not be sent. */
@@ -1475,7 +1479,7 @@ const CAST_TITLE = "Photo with your character";
 const RIG_NAMES = { square: "square", scope: "Scope 2.39:1", flat: "Flat 1.85:1", wide: "Wide 16:9", classic: "Classic 4:3", vertical: "Vertical 9:16" };
 const credits = (n) => `${n} credit${n === 1 ? "" : "s"}`;
 const castLabel = () => `${CAST_TITLE} · ${credits(opts.render.credits)}`;
-const cast = { busy: false, t0: 0, phase: "sent", result: null, frame: null, charId: null, words: "", timer: 0, traced: false, trace: null, sent: null };
+const cast = { busy: false, t0: 0, phase: "sent", result: null, frame: null, charId: null, words: "", timer: 0, traced: false, trace: null, sent: null, lastChar: null, outfit: "", outfitTyped: false, lookId: null, looks: null, looksFor: null };
 /** The frame and what is sent with it, measured from the scene as it stands now. */
 function castFrame() {
   const cam = shot.obj.userData.cam;
@@ -1496,7 +1500,7 @@ function castFrame() {
   }
   moved.sort((a, b) => b.d - a.d);
   // The pose (people, 2026-09-30): the set's nearest stand pose rides the layout; its words fill "What happens".
-  const pw = personWords(person);
+  const pw = personWords(person, { measuredLook: rcLooked(person) });
   const input = studioShotInput({
     format,
     camera: { position: [p.x, p.y, p.z], forward: [fwd.x, fwd.y, fwd.z], fovDeg: cam.fov, focusM: shot.obj.userData.focus },
@@ -1510,7 +1514,50 @@ function castFrame() {
   const out = document.createElement("canvas"); out.width = fr.renderW; out.height = fr.renderH;
   const ctx = out.getContext("2d"); ctx.drawImage(off, 0, 0);
   ctx.fillStyle = "#0a0a0a"; for (const b of letterbox(fr)) ctx.fillRect(b.x, b.y, b.w, b.h);
-  return { dataUri: out.toDataURL("image/jpeg", 0.9), input, lens: shot.obj.userData.lensMm, studioFormat: format, poseWords: pw && pw.words !== "standing" ? pw.sentence : "" };
+  return { dataUri: out.toDataURL("image/jpeg", 0.9), input, lens: shot.obj.userData.lensMm, studioFormat: format, poseWords: castHappens(pw) };
+}
+/**
+ * "What happens" for the photo (2026-09-30): the pose's own sentence, or — caught mid-walk — the walk as the shot
+ * camera sees it ("The character is walking toward the camera, looking ahead."), like the video window says it.
+ */
+function castHappens(pw) {
+  const it = person, f = frameNo();
+  const m = (it.moves || []).find((x) => x.kind === "path" && x.f0 <= f && f < x.f1);
+  const moving = it.shown?.moving;
+  if (m && moving) {
+    const looked = rcLooked(it), gaze = looked === "the camera" ? "looking at the camera" : looked ? `looking at ${looked}` : "looking ahead";
+    const a = seenBy(it, m.f0), b = seenBy(it, m.f1);
+    const how = studioWalkWords({ depth0: a.depth, depth1: b.depth, x0: a.x, x1: b.x });
+    return `The character is ${moving}${how ? ` ${how}` : ""}, ${gaze}.`;
+  }
+  return pw && pw.words !== "standing" ? pw.sentence : "";
+}
+/** Where a figure is as the shot camera sees it on frame f: its distance, and its place across the frame (the scene put back after). */
+function seenBy(it, f) {
+  const cam = shot.obj.userData.cam, a0 = cam.aspect, was = time;
+  evaluate((f - 1) / FPS); cam.aspect = FORMATS[format]; cam.updateProjectionMatrix(); shot.obj.updateMatrixWorld(true);
+  try {
+    const p = it.obj.getWorldPosition(new V3()).setY(1), cp = shot.obj.getWorldPosition(new V3());
+    return { depth: p.distanceTo(cp), x: Math.max(-1.5, Math.min(1.5, p.clone().project(cam).x)) };
+  } finally { cam.aspect = a0; cam.updateProjectionMatrix(); evaluate(was); }
+}
+/** A strip of the character's gallery pictures ("Their photos" first), for either window. */
+function lookStripHTML(list, selected, busy, name) {
+  if (list === null) return `<p class="hint" style="margin:2px 0">Loading their pictures…</p>`;
+  if (!list.length) return `<p class="hint" style="margin:2px 0">No pictures of ${esc(name || "them")} in your gallery yet.</p>`;
+  return `<div class="rc-looks" role="listbox" aria-label="Look from their gallery"><button class="rc-look none${selected ? "" : " on"}" data-look="" role="option" aria-selected="${!selected}"${busy ? " disabled" : ""}>Their photos</button>${list.map((l) => `<button class="rc-look${l.id === selected ? " on" : ""}" data-look="${esc(l.id)}" role="option" aria-selected="${l.id === selected}" title="Use this look"${busy ? " disabled" : ""}><img src="${esc(l.url)}" alt="" loading="lazy"></button>`).join("")}</div>`;
+}
+/** The photo window's character's pictures, once per character; the picked look is let go if it isn't among them. */
+function castLoadLooks() {
+  const id = cast.charId, get = opts.render?.looks;
+  if (!get || !id || cast.looksFor === id) return;
+  cast.looksFor = id; cast.looks = null;
+  Promise.resolve().then(() => get(id)).then((list) => list, () => []).then((list) => {
+    if (stopped || cast.looksFor !== id) return;
+    cast.looks = Array.isArray(list) ? list : [];
+    if (cast.lookId && !cast.looks.some((l) => l.id === cast.lookId)) cast.lookId = null;
+    if (!cast.busy && !cast.result && !$("dlg").hidden && $("dlgBody").querySelector("[data-cast]")) showCast();
+  });
 }
 /** "What happens" starts as the pose's words; once changed by hand it stays as written. */
 function prefillCast() { const w = cast.frame?.poseWords || ""; if (!cast.words || cast.words === cast.autoWords) cast.words = w; cast.autoWords = w; }
@@ -1523,7 +1570,12 @@ function openCast() {
     if (!person.obj.visible || person.noRender) return openWin(CAST_TITLE, `<p>The stand-in is hidden, so the photo has nowhere to put your character. Show the Stand-in (H / the eye in the outliner) and try again.</p>`);
     try { cast.frame = castFrame(); } catch (e) { return openWin(CAST_TITLE, `<p>This browser couldn't draw the frame, so nothing was sent. Try again after a reload.</p>`); }
     prefillCast();
-    if (!cast.charId || !castChar()) cast.charId = R.characters[0].id;
+    // Who: the last one sent from this Studio, else whoever plays the set's figure, else the first (as the video window).
+    if (!cast.charId || !castChar()) {
+      const ok = (id) => !!id && R.characters.some((c) => c.id === id);
+      cast.charId = ok(cast.lastChar) ? cast.lastChar : ok(R.castId) ? R.castId : R.characters[0].id;
+    }
+    castLoadLooks();
   }
   showCast();
 }
@@ -1544,8 +1596,10 @@ function showCast() {
     const opts2 = R.characters.map((c) => `<option value="${esc(c.id)}"${c.id === cast.charId ? " selected" : ""}>${esc(c.name || "Your character")}</option>`).join("");
     body = `<img class="cast-img" id="castPrev" alt="The frame that goes to the image engine" src="${f.dataUri}"><p class="hint">Through the shot camera · ${esc(shape)}. The stand-in marks where your character stands; the image engine paints the photo onto this layout.</p>
 <div class="fr" style="margin-top:8px"><label for="castWho">Character</label><select class="sel2" id="castWho"${cast.busy ? " disabled" : ""}>${opts2}</select></div>
+${R.looks ? `<div class="fr" style="margin-top:6px;align-items:start"><label>Look</label><div style="min-width:0">${lookStripHTML(cast.looks, cast.lookId, cast.busy, castChar()?.name)}<p class="hint" style="margin:0">From their gallery: the photo takes the outfit and look of the picture you pick.</p></div></div>` : ""}
+<div class="fr" style="margin-top:6px"><label for="castOutfit">Outfit</label><input class="rc-in" id="castOutfit" maxlength="${STUDIO_OUTFIT_MAX}" placeholder="Optional: e.g. a red leather jacket and black jeans" value="${esc(cast.outfit)}"${cast.busy ? " disabled" : ""}></div>
 <div class="fr" style="margin-top:6px;align-items:start"><label for="castWords">What happens</label><textarea class="cast-words" id="castWords" maxlength="${SET_DIRECTION_MAX_CHARS}" placeholder="Optional: what they're doing, the mood"${cast.busy ? " disabled" : ""}>${esc(cast.words)}</textarea></div>${cast.autoWords && cast.words === cast.autoWords && !cast.busy ? `<p class="hint" id="castPoseHint" style="margin:2px 0 0">Filled in from the stand-in's pose, in English for the image engine. Change it freely.</p>` : ""}
-<div class="fr" style="margin-top:6px"><label></label><label class="check"><input type="checkbox" id="castTrace"${cast.traced ? " checked" : ""}${cast.busy ? " disabled" : ""}> <span>${esc(castTraceLabel(f))}</span></label></div>
+<label class="check" style="display:flex;gap:6px;align-items:flex-start;margin-top:8px;white-space:normal;line-height:1.4"><input type="checkbox" id="castTrace" style="margin-top:2px;flex:none"${cast.traced ? " checked" : ""}${cast.busy ? " disabled" : ""}> <span>${esc(castTraceLabel(f))}</span></label>
 <p class="cast-note" id="castNote" hidden></p>
 <div class="row-btns"><button class="pbtn accent" id="castGo"${cast.busy ? " disabled" : ""}>${esc(castLabel())}</button>${cast.busy && (cast.phase === "tracing" || cast.phase === "cleaning") ? `<button class="pbtn" id="castStop">Stop</button>` : ""}</div>
 <div class="prog"${cast.busy ? "" : " hidden"}><i id="castProg"></i></div><p class="hint" id="castTxt" role="status"></p>`;
@@ -1556,7 +1610,17 @@ function showCast() {
   const who = $("castWho"), words = $("castWords"), go = $("castGo"), again = $("castAgain"), tr = $("castTrace"), stop = $("castStop");
   if (tr) tr.onchange = () => { cast.traced = tr.checked; };
   if (stop) stop.onclick = () => { ptBusy = false; stop.disabled = true; };
-  if (who) who.onchange = () => { cast.charId = who.value; castCheck(); };
+  if (who) who.onchange = () => { cast.charId = who.value; cast.lookId = null; castLoadLooks(); showCast(); };
+  const co = $("castOutfit");
+  if (co) co.oninput = () => { cast.outfit = co.value; cast.outfitTyped = true; };
+  box.querySelectorAll("[data-look]").forEach((b) => (b.onclick = () => {
+    if (cast.busy) return;
+    const id = b.dataset.look || null; cast.lookId = id;
+    // Its prompt's outfit words fill an empty Outfit box (never over what the person typed).
+    const l = id ? cast.looks?.find((x) => x.id === id) : null;
+    if (!cast.outfitTyped) cast.outfit = l?.outfit || "";
+    showCast();
+  }));
   if (words) words.oninput = () => { cast.words = words.value; };
   if (go) go.onclick = castGo;
   if (again) again.onclick = () => { const ok = cast.result && cast.result.error === null && cast.result.succeeded; cast.result = null; if (ok) { try { cast.frame = castFrame(); prefillCast(); } catch {} } showCast(); };
@@ -1619,7 +1683,8 @@ async function castGo() {
     cast.sent = traced; cast.phase = "sent"; cast.t0 = Date.now(); showCast();
     const pv = $("castPrev"); if (pv) pv.src = traced;
   }
-  const input = studioCastInput({ viewFrameUri: f.dataUri, tracedFrameUri: traced, characterId: c.id, words: cast.words, maxChars: SET_DIRECTION_MAX_CHARS, frame: f.input, pressId });
+  const input = studioCastInput({ viewFrameUri: f.dataUri, tracedFrameUri: traced, characterId: c.id, words: cast.words, maxChars: SET_DIRECTION_MAX_CHARS, frame: f.input, pressId, wear: studioWearLine({ outfit: cast.outfit, look: !!cast.lookId, photo: true }), galleryLookId: cast.lookId || null });
+  cast.lastChar = c.id;
   let res;
   try { res = await R.shoot(input, (ph) => { cast.phase = ph; castTick(); }); } catch { res = { error: R.unreachable }; }
   clearInterval(cast.timer); cast.busy = false;
@@ -1746,7 +1811,9 @@ function rcHappens(it) {
       if (m.kind === "turn") {
         const cp = shot.obj.getWorldPosition(new V3());
         const want = Math.atan2(cp.x - m.at[0], cp.z - m.at[2]); const off = Math.abs(shortestYaw(m.yaw, want));
-        steps.push({ kind: "turn", from, to, toward: off < (25 * Math.PI) / 180 ? "the camera" : null });
+        // Not to the camera: which way, as the figure feels it (a turn from its own heading, not to a thing, so no head turns at one).
+        const s0 = turnStart(it.moves, m), d = shortestYaw(s0.yaw0, m.yaw) - s0.yaw0;
+        steps.push({ kind: "turn", from, to, toward: off < (25 * Math.PI) / 180 ? "the camera" : Math.abs(d) < 0.05 ? null : d > 0 ? "left" : "right" });
         continue;
       }
       const a = seen(Math.max(m.f0, r.start)), b = seen(Math.min(m.f1, r.end));
@@ -1838,7 +1905,7 @@ function rcShow() {
     const lanes = STUDIO_RECAST_ENGINES.map((e) => { const l = R.lanes[e]; return `<label class="rc-lane${e === rc.engine ? " on" : ""}"><input type="radio" name="rcLane" value="${e}"${e === rc.engine ? " checked" : ""}${rc.busy ? " disabled" : ""}><span><b><span translate="no">${esc(l.title)}</span> <span>· ${credits(rcCreditsFor(e))}</span></b><small translate="no">${esc(l.line)}</small></span></label>`; }).join("");
     const also = rcAlso(several, fig ? fig.spot : "middle");
     const c = rcChar();
-    const looks = rc.looks === null ? `<p class="hint" style="margin:2px 0">Loading their pictures…</p>` : !rc.looks.length ? `<p class="hint" style="margin:2px 0">No pictures of ${esc(c?.name || "them")} in your gallery yet.</p>` : `<div class="rc-looks" id="rcLooks" role="listbox" aria-label="Look from their gallery"><button class="rc-look none${rc.lookId ? "" : " on"}" data-look="" role="option" aria-selected="${!rc.lookId}"${rc.busy ? " disabled" : ""}>Their photos</button>${rc.looks.map((l) => `<button class="rc-look${l.id === rc.lookId ? " on" : ""}" data-look="${esc(l.id)}" role="option" aria-selected="${l.id === rc.lookId}" title="Use this look"${rc.busy ? " disabled" : ""}><img src="${esc(l.url)}" alt="" loading="lazy"></button>`).join("")}</div>`;
+    const looks = lookStripHTML(rc.looks, rc.lookId, rc.busy, c?.name);
     const lim = RECAST_JOB_MAX_SECONDS[RECAST_ENGINES[rc.engine].job];
     body = `${rc.shot ? `<img class="cast-img" id="rcPrev" alt="The shot at the start of the range" src="${rc.shot}">` : ""}<p class="hint">Records frames ${r.start}–${r.end} (${fmtSec(r.seconds)}) through the shot camera · ${esc(format)} · ${size.width} × ${size.height}. Recast then re-shoots it with your character in the figure's place: the same moves, the same camera.</p>${r.clamped ? `<p class="cast-note">Recast takes ${RECAST_MIN_SECONDS}–${Math.min(lim, DUR)} s here, so the playback range was brought inside it.</p>` : ""}
 <div class="fr" style="margin-top:8px"><label>Range</label><div class="rc-range" id="rcRange"></div></div>
@@ -3097,8 +3164,14 @@ function applyMoves(it, t) {
     it.shown = { pose: g.pose, moving: g.v > 0.05 ? (m.gait === "run" ? "running" : "walking") : null };
   } else {
     const s = turnStart(it.moves, m);
-    it.obj.position.set(...s.at); it.obj.rotation.set(0, turnYawAt(s.yaw0, m.yaw, (f - m.f0) / (m.f1 - m.f0)), 0); it.obj.updateMatrixWorld(true);
-    const p = f < m.f1 && Math.abs(shortestYaw(s.yaw0, m.yaw) - s.yaw0) > 0.02 ? presetPose("stand") : it.pose; applyPose(it.rig, p);
+    // A turn steps round (2026-09-30): the feet re-plant in small alternating steps instead of swivelling.
+    if (Math.abs(shortestYaw(s.yaw0, m.yaw) - s.yaw0) > 0.02) {
+      const tf = turnFrame(it.rig, s, m, (f - m.f0) / FPS, FPS, f < m.f1 ? presetPose("stand") : it.pose);
+      it.shown = { pose: tf.pose, moving: null };
+    } else {
+      it.obj.position.set(...s.at); it.obj.rotation.set(0, turnYawAt(s.yaw0, m.yaw, (f - m.f0) / (m.f1 - m.f0)), 0); it.obj.updateMatrixWorld(true);
+      applyPose(it.rig, it.pose);
+    }
   }
 }
 /** One undoable change to a person's moves. */
@@ -3649,7 +3722,7 @@ function openLeavesOut() {
 // account), and then sends that one up.
 const SAVE_KEY = "helios.studio." + opts.setId;
 function snapshot() {
-  return { v: 1, hour, format, lens: shot.obj.userData.lensMm, skyMode, markers, range: [pStart, pEnd], items: items.filter((i) => i.kind !== "sun" && (i.saveKey || i.addKind)).map((i) => ({ key: i.saveKey || null, add: i.addKind || null, name: i.name, coll: i.coll, t: trs(i.obj), keys: i.keys, interp: i.interp, hidden: i.hidden, noRender: !!i.noRender, color: i.obj.userData.paint?.[0] ? "#" + i.obj.userData.paint[0].color.getHexString() : null, array: i.obj.userData.array || null, mirror: i.obj.userData.mirror || null, track: i.obj.userData.track ? byId(i.obj.userData.track)?.saveKey || null : null, phys: i.phys || null, bake: i.bake || null, pose: i.rig ? i.pose : undefined, poseKeys: i.rig && i.poseKeys.length ? i.poseKeys : undefined, moves: i.rig && i.moves?.length ? i.moves : undefined })), recast: { charId: rc.charId, lastChar: rc.lastChar, outfit: rc.outfit, outfitTyped: rc.outfitTyped, lookId: rc.lookId, real: rc.real, engine: rc.engine } };
+  return { v: 1, hour, format, lens: shot.obj.userData.lensMm, skyMode, markers, range: [pStart, pEnd], items: items.filter((i) => i.kind !== "sun" && (i.saveKey || i.addKind)).map((i) => ({ key: i.saveKey || null, add: i.addKind || null, name: i.name, coll: i.coll, t: trs(i.obj), keys: i.keys, interp: i.interp, hidden: i.hidden, noRender: !!i.noRender, color: i.obj.userData.paint?.[0] ? "#" + i.obj.userData.paint[0].color.getHexString() : null, array: i.obj.userData.array || null, mirror: i.obj.userData.mirror || null, track: i.obj.userData.track ? byId(i.obj.userData.track)?.saveKey || null : null, phys: i.phys || null, bake: i.bake || null, pose: i.rig ? i.pose : undefined, poseKeys: i.rig && i.poseKeys.length ? i.poseKeys : undefined, moves: i.rig && i.moves?.length ? i.moves : undefined })), recast: { charId: rc.charId, lastChar: rc.lastChar, outfit: rc.outfit, outfitTyped: rc.outfitTyped, lookId: rc.lookId, real: rc.real, engine: rc.engine }, cast: { charId: cast.charId, lastChar: cast.lastChar, outfit: cast.outfit, outfitTyped: cast.outfitTyped, lookId: cast.lookId } };
 }
 let lastSaved = "", lastServer = "", changedAt = 0, serverBusy = false, serverRetryAt = 0;
 const SERVER_DELAY_MS = 5000, SERVER_RETRY_MS = 30000;
@@ -3713,6 +3786,12 @@ function restoreSaved() {
     const str = (v, n) => (typeof v === "string" ? v.slice(0, n) : null);
     rc.charId = str(sr.charId, 64); rc.lastChar = str(sr.lastChar, 64); rc.outfit = str(sr.outfit, STUDIO_OUTFIT_MAX) || ""; rc.outfitTyped = sr.outfitTyped === true;
     rc.lookId = str(sr.lookId, 64); if (typeof sr.real === "boolean") rc.real = sr.real; if (STUDIO_RECAST_ENGINES.includes(sr.engine)) rc.engine = sr.engine;
+  }
+  // Photo with your character's choices, kept the same way.
+  const sc = data.cast && typeof data.cast === "object" ? data.cast : null;
+  if (sc) {
+    const str = (v, n) => (typeof v === "string" ? v.slice(0, n) : null);
+    cast.charId = str(sc.charId, 64); cast.lastChar = str(sc.lastChar, 64); cast.outfit = str(sc.outfit, STUDIO_OUTFIT_MAX) || ""; cast.outfitTyped = sc.outfitTyped === true; cast.lookId = str(sc.lookId, 64);
   }
   undoStack.length = 0; redoStack.length = 0; evaluate(time); refreshSel(); lastSaved = JSON.stringify(snapshot());
   // Opened from the account: that copy is what the account holds. From this browser: sent up once it has settled.

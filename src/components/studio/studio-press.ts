@@ -26,6 +26,10 @@ export type StudioShootInput = {
   beat?: boolean;
   /** Taken by the Studio before a clean traced frame is made, so the trace and the send are one press. */
   pressId?: string;
+  /** The words or a picked look say what they wear: the character's saved outfit photo sits this one out. */
+  outfit?: false;
+  /** A picture from the character's own gallery, for the outfit and look (shootInSet re-checks it). */
+  galleryLookId?: string;
 };
 
 /** Where a press is: sent, checking whether a lost answer went through, or following one that did. */

@@ -906,7 +906,8 @@ export const STUDIO_TEXT: readonly StudioRow[] = [
   ["Stopping — nothing will be sent.", "Deteniendo: no se enviará nada.", "Parando: nada será enviado.", "Interruzione: non verrà inviato nulla."],
   // ---- Video with your character: range, outfit, look (2026-09-30) ----
   ["Range", "Rango", "Intervalo", "Intervallo"],
-  ["{0} credits", "{0} créditos", "{0} créditos", "{0} crediti"],
+  ["From their gallery: the photo takes the outfit and look of the picture you pick.", "De su galería: la foto toma la ropa y el look de la imagen que elijas.", "Da galeria: a foto usa a roupa e o visual da imagem que você escolher.", "Dalla sua galleria: la foto prende l'outfit e il look dell'immagine che scegli."],
+  ["{0} credits","{0} créditos", "{0} créditos", "{0} crediti"],
   ["1 credit", "1 crédito", "1 crédito", "1 credito"],
   ["Seconds","Segundos", "Segundos", "Secondi"],
   ["From their gallery: the video takes the outfit and look of the picture you pick.", "De su galería: el vídeo toma la ropa y el look de la imagen que elijas.", "Da galeria: o vídeo usa a roupa e o visual da imagem que você escolher.", "Dalla sua galleria: il video prende l'outfit e il look dell'immagine che scegli."],

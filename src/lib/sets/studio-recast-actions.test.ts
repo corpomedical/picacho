@@ -63,6 +63,7 @@ vi.mock("@/lib/recast/actions", () => ({
 vi.mock("@/lib/generations/actions", () => ({ pollGeneration: async () => (calls.push("poll"), { error: null, state: "pending", stage: "video", progress: "Rendering" }) }));
 vi.mock("@/lib/media/url", async () => await import("../media/url"));
 vi.mock("@/lib/supabase/server", () => ({ createAdminClient: () => admin }));
+vi.mock("@/lib/sets/studio-looks", async () => await import("./studio-looks"));
 vi.mock("@/lib/recast/recast", async () => await import("../recast/recast"));
 vi.mock("@/lib/recast/door-truth", async () => await import("../recast/door-truth"));
 vi.mock("@/lib/sets/studio-recast", async () => await import("./studio-recast"));

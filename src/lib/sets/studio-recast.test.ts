@@ -118,6 +118,7 @@ describe("the words", () => {
     );
     expect(studioRecastHappens("The character is sitting on the red car.", [])).toBe("The character is sitting on the red car.");
     expect(studioRecastHappens("", [{ kind: "run", from: 1, to: 4, toward: null }])).toBe("From 1 s to 4 s they run.");
+    expect(studioRecastHappens("", [{ kind: "turn", from: 0, to: 1, toward: "left" }])).toBe("From 0 s to 1 s they turn to their left.");
   });
   it("always say the mannequin is replaced, which one when there are several, and Restage's line", () => {
     expect(studioRecastDirection({ words: " She waves. ", several: false, spot: "middle", engine: "kling-edit" })).toBe(`She waves. ${studioFigureLine(false, "middle")}`);

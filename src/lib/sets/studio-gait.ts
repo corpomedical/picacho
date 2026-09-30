@@ -325,6 +325,87 @@ export function gaitFrame(sk: Skeleton, m: PathMove, t: number, fps: number, upp
   return { pos: [p.x, p.y, p.z], yaw, pose, d, v, feet: { L, R } };
 }
 
+// ---------------- turning on the spot, in steps (2026-09-30, operator: "Pushed keep going") ----------------
+//
+// A turn used to swivel the whole figure on its planted feet. Now it steps round: the feet re-plant in small
+// alternating steps (the foot on the side it turns towards first), each one lifted and set down at its new
+// heading while the other stays exactly where it stands; the body turns smoothly between them, and both feet
+// end side by side facing the new way.
+
+/** The most a foot turns in one step on the spot. */
+const TURN_STEP_RAD = (35 * Math.PI) / 180;
+const TURN_LIFT_M = 0.05;
+
+/** How many steps a turn of `delta` radians takes (at least two: one each foot), and each step's heading, from the start. */
+export function turnSteps(delta: number): number[] {
+  const n = Math.max(2, Math.ceil(Math.abs(delta) / TURN_STEP_RAD) + 1);
+  // Step k takes its foot to yaw0 + delta·min(1, (k+1)/(n−1)): the last two both land on the new heading.
+  return Array.from({ length: n }, (_, k) => delta * Math.min(1, (k + 1) / (n - 1)));
+}
+
+export type TurnFrame = { yaw: number; pose: Pose; feet: { L: { at: THREE.Vector3; planted: boolean; yaw: number }; R: { at: THREE.Vector3; planted: boolean; yaw: number } } };
+
+/**
+ * The figure `t` seconds into a turn on the spot at `start.at`, from `start.yaw0` to the move's yaw (the short
+ * way round). `upper` gives the bones above the legs. The root is placed here (world), so IK solves in the world.
+ */
+export function turnFrame(sk: Skeleton, start: { at: Vec3; yaw0: number }, m: TurnMove, t: number, fps: number, upper: Pose = presetPose("stand")): TurnFrame {
+  const T = Math.max(1 / fps, (m.f1 - m.f0) / fps);
+  const delta = shortestYaw(start.yaw0, m.yaw) - start.yaw0;
+  const u = clamp(t / T, 0, 1);
+  const yaw = start.yaw0 + delta * smooth(u);
+  const at = new THREE.Vector3(...start.at);
+  sk.root.position.copy(at);
+  sk.root.rotation.set(0, yaw, 0);
+  sk.root.updateMatrixWorld(true);
+  const steps = Math.abs(delta) < 1e-3 ? [] : turnSteps(delta);
+  // The foot on the side it turns towards leads: a turn to the left (yaw growing) steps the left foot first.
+  const lead: 1 | -1 = delta >= 0 ? 1 : -1;
+  const slot = steps.length ? 1 / steps.length : 1;
+  const footOf = (side: 1 | -1) => {
+    let from = 0, to = 0, lift = 0, planted = true, w = 0;
+    steps.forEach((h, k) => {
+      const mover: 1 | -1 = k % 2 === 0 ? lead : (-lead as 1 | -1);
+      if (mover !== side) return;
+      const a = k * slot, b = (k + 1) * slot;
+      if (u >= b) from = to = h;
+      else if (u > a) { to = h; w = smooth((u - a) / (b - a)); planted = false; lift = Math.sin(Math.PI * w) * TURN_LIFT_M; }
+    });
+    const heading = start.yaw0 + from + (to - from) * w;
+    const left = new THREE.Vector3(Math.cos(heading), 0, -Math.sin(heading));
+    return { at: at.clone().add(left.multiplyScalar(FOOT_SIDE_M * side)).add(new THREE.Vector3(0, ANKLE_M + lift, 0)), planted, yaw: heading };
+  };
+  const L = footOf(1), R = footOf(-1);
+  const pose: Pose = clonePose(upper);
+  pose.loc = [0, 0, 0];
+  applyPose(sk, pose);
+  // The pelvis only as low as a planted leg needs (the feet stay under the hips, so hardly at all).
+  let drop = 0;
+  for (const [f, hip] of [[L, "thigh.L"], [R, "thigh.R"]] as const) {
+    if (!f.planted) continue;
+    const h = sk.bones[hip].getWorldPosition(new THREE.Vector3());
+    const hd = Math.hypot(h.x - f.at.x, h.z - f.at.z);
+    drop = Math.min(drop, f.at.y + Math.sqrt(Math.max(0, LEG_REACH_M * LEG_REACH_M - hd * hd)) - h.y);
+  }
+  pose.loc = clampLoc([0, Math.min(drop, -0.01 * (steps.length ? Math.sin(Math.PI * u) : 0)), 0]);
+  const kneeTo = (f: { yaw: number }, x: number): Vec3 => {
+    const dy = clamp(shortestYaw(yaw, f.yaw) - yaw, -0.6, 0.6);
+    return [x * Math.cos(dy) + Math.sin(dy), 0, -x * Math.sin(dy) + Math.cos(dy)];
+  };
+  solveLimb(sk, pose, "leg.L", L.at, kneeTo(L, 0.1));
+  solveLimb(sk, pose, "leg.R", R.at, kneeTo(R, -0.1));
+  // Each foot flat and facing its own heading.
+  for (const [f, n] of [[L, "foot.L"], [R, "foot.R"]] as const) {
+    const want = new THREE.Quaternion().setFromEuler(new THREE.Euler(f.planted ? 0 : 0.12 * Math.sin(Math.PI * clamp((f.at.y - ANKLE_M) / TURN_LIFT_M, 0, 1)), shortestYaw(yaw, f.yaw), 0, "YXZ"));
+    const parent = sk.bones[n].parent!.getWorldQuaternion(new THREE.Quaternion());
+    const e = new THREE.Euler().setFromQuaternion(parent.invert().multiply(want), "XYZ");
+    const mirror = n.endsWith(".R") ? -1 : 1;
+    pose.rot[n] = clampRot(n, [(e.x * 180) / Math.PI, ((e.y * 180) / Math.PI) * mirror, ((e.z * 180) / Math.PI) * mirror]);
+  }
+  applyPose(sk, pose);
+  return { yaw, pose, feet: { L, R } };
+}
+
 /** The move that drives a figure at frame `f`: the one running then, else the last one finished (null before the first). */
 export function moveAt(moves: readonly Move[], f: number): Move | null {
   let last: Move | null = null;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { buildSkeleton } from "./studio-pose";
-import { gaitFrame, naturalSeconds, pathRootAt, shortestYaw, type PathMove } from "./studio-gait";
+import { gaitFrame, naturalSeconds, pathRootAt, shortestYaw, turnFrame, turnSteps, type PathMove, type TurnMove } from "./studio-gait";
 
 // "Why is she walking weird and jumpy?" (2026-09-30). Measured frame by frame before the fix (24 fps): the pelvis
 // fell 13–18 cm in ONE frame at each step (a leg counted only while its foot was under 2 cm up), twice a stride, the
@@ -77,5 +77,54 @@ describe("a walk with no jumps", () => {
       const r = pathRootAt(m, (f - m.f0) / FPS, FPS);
       expect(new THREE.Vector3(...r).distanceTo(new THREE.Vector3(...g.pos))).toBeLessThan(1e-9);
     }
+  });
+});
+
+describe("a turn steps round instead of swivelling (2026-09-30)", () => {
+  const ankleOf = (sk: ReturnType<typeof buildSkeleton>, n: "foot.L" | "foot.R") => sk.bones[n].getWorldPosition(new THREE.Vector3());
+  const toeOf = (sk: ReturnType<typeof buildSkeleton>, n: "foot.L" | "foot.R") =>
+    ankleOf(sk, n).add(new THREE.Vector3(0, -0.07, 0.13).applyQuaternion(sk.bones[n].getWorldQuaternion(new THREE.Quaternion())));
+  const yawOf = (sk: ReturnType<typeof buildSkeleton>, n: "foot.L" | "foot.R") => new THREE.Euler().setFromQuaternion(sk.bones[n].getWorldQuaternion(new THREE.Quaternion()), "YXZ").y;
+
+  for (const [label, yaw] of [["a quarter turn to the left", Math.PI / 2], ["a half turn to the right", -Math.PI + 0.01], ["a small one", 0.3]] as const) {
+    it(`${label}: planted feet never slide or twist, the body and each foot turn a little each frame, both end side by side facing the new way`, () => {
+      const m: TurnMove = { kind: "turn", f0: 1, f1: 25, yaw, yaw0: 0, at: [1, 0, 2] };
+      const sk = buildSkeleton();
+      let prev: { L: THREE.Vector3; R: THREE.Vector3; tL: THREE.Vector3; tR: THREE.Vector3; pL: boolean; pR: boolean; yaw: number; yL: number; yR: number } | null = null;
+      let slide = 0, planted = 0, bodyStep = 0, footStep = 0, miss = 0, lifted = 0;
+      for (let f = m.f0; f <= m.f1 + 2; f++) {
+        const g = turnFrame(sk, { at: m.at, yaw0: m.yaw0 }, m, (f - m.f0) / FPS, FPS);
+        const L = ankleOf(sk, "foot.L"), R = ankleOf(sk, "foot.R"), tL = toeOf(sk, "foot.L"), tR = toeOf(sk, "foot.R");
+        miss = Math.max(miss, L.distanceTo(g.feet.L.at), R.distanceTo(g.feet.R.at));
+        if (!g.feet.L.planted || !g.feet.R.planted) lifted++;
+        const now = { L, R, tL, tR, pL: g.feet.L.planted, pR: g.feet.R.planted, yaw: g.yaw, yL: yawOf(sk, "foot.L"), yR: yawOf(sk, "foot.R") };
+        if (prev) {
+          if (now.pL && prev.pL) { slide = Math.max(slide, L.distanceTo(prev.L), tL.distanceTo(prev.tL)); planted++; }
+          if (now.pR && prev.pR) { slide = Math.max(slide, R.distanceTo(prev.R), tR.distanceTo(prev.tR)); planted++; }
+          bodyStep = Math.max(bodyStep, Math.abs(shortestYaw(0, now.yaw - prev.yaw)));
+          footStep = Math.max(footStep, Math.abs(shortestYaw(0, now.yL - prev.yL)), Math.abs(shortestYaw(0, now.yR - prev.yR)));
+        }
+        prev = now;
+      }
+      expect(slide, "planted feet stay put").toBeLessThan(0.002);
+      expect(planted).toBeGreaterThan(20);
+      expect(lifted, "it steps").toBeGreaterThan(0);
+      expect(miss, "the legs reach the feet").toBeLessThan(0.003);
+      expect(bodyStep).toBeLessThan((20 * Math.PI) / 180);
+      expect(footStep).toBeLessThan((30 * Math.PI) / 180);
+      const end = turnFrame(sk, { at: m.at, yaw0: 0 }, m, 1, FPS);
+      expect(Math.abs(shortestYaw(0, end.feet.L.yaw - yaw))).toBeLessThan(1e-6);
+      expect(Math.abs(shortestYaw(0, end.feet.R.yaw - yaw))).toBeLessThan(1e-6);
+      expect(end.feet.L.at.distanceTo(end.feet.R.at)).toBeCloseTo(0.2, 3);
+      expect(end.feet.L.planted && end.feet.R.planted).toBe(true);
+    });
+  }
+
+  it("steps: at least one each foot, more for a bigger turn, the last two landing on the new heading", () => {
+    expect(turnSteps(0.3)).toEqual([0.3, 0.3]);
+    const half = turnSteps(Math.PI);
+    expect(half.length).toBeGreaterThanOrEqual(6);
+    expect(half.slice(-2)).toEqual([Math.PI, Math.PI]);
+    for (let k = 1; k < half.length; k++) expect(half[k]).toBeGreaterThanOrEqual(half[k - 1]);
   });
 });

@@ -17,9 +17,9 @@ import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { SET_NOT_FOUND, STUDIO_LOOK_GONE } from "@/lib/sets/messages";
 import { canUseRecast, discardRecastUpload, inspectRecastClip, reserveRecastUpload, startRecastTakes } from "@/lib/recast/actions";
 import { pollGeneration } from "@/lib/generations/actions";
-import { isRenderableUrl, mediaStoragePath, thumbUrl, toMediaUrl } from "@/lib/media/url";
-import { RECAST_IMAGE_BUCKET, RECAST_MODEL_IDS } from "@/lib/recast/recast";
-import { createAdminClient } from "@/lib/supabase/server";
+import { isRenderableUrl, thumbUrl, toMediaUrl } from "@/lib/media/url";
+import { RECAST_MODEL_IDS } from "@/lib/recast/recast";
+import { copyStudioLook } from "@/lib/sets/studio-looks";
 import { recastTakeOutcome } from "@/lib/recast/door-truth";
 import type { RecastRead } from "@/lib/recast/recast-read";
 import { parseStudioRecastEngine, studioOutfitFromPrompt, studioRecastStart } from "@/lib/sets/studio-recast";
@@ -91,7 +91,6 @@ export async function listStudioLooks(setId: string, input: { characterId: strin
   const access = await setsAccess();
   if (access.error !== null) return { error: access.error };
   if (!(await ownsSet(access, setId))) return { error: SET_NOT_FOUND };
-  if ((await canUseRecast()).error !== null) return { error: null, looks: [] };
   const characterId = typeof input?.characterId === "string" && UUID_RE.test(input.characterId) ? input.characterId : null;
   if (!characterId) return { error: null, looks: [] };
   const { data } = await access.supabase
@@ -120,25 +119,7 @@ export async function listStudioLooks(setId: string, input: { characterId: strin
  * only place Recast reads an added image from (actions.ts readAddedImage). Null when it isn't theirs.
  */
 async function lookForRecast(access: Extract<Access, { error: null }>, lookId: string, characterId: string): Promise<string | null> {
-  if (!UUID_RE.test(lookId)) return null;
-  const { data: row } = await access.supabase
-    .from("generations")
-    .select("id, result_url, content_type, status, character_profile_id")
-    .eq("id", lookId)
-    .eq("user_id", access.userId)
-    .is("deleted_at", null)
-    .maybeSingle();
-  if (!row || row.content_type !== "image" || row.status !== "succeeded" || row.character_profile_id !== characterId) return null;
-  const at = mediaStoragePath(row.result_url as string | null);
-  if (!at) return null;
-  const admin = createAdminClient();
-  const { data: blob, error } = await admin.storage.from(at.bucket).download(at.path);
-  if (error || !blob) return null;
-  const ext = (at.path.match(/\.(png|jpe?g|webp)$/i)?.[1] ?? "jpg").toLowerCase().replace("jpeg", "jpg");
-  const path = `${access.userId}/studio-look-${lookId}.${ext}`;
-  const type = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
-  const { error: upErr } = await admin.storage.from(RECAST_IMAGE_BUCKET).upload(path, Buffer.from(await blob.arrayBuffer()), { contentType: type, upsert: true });
-  return upErr ? null : path;
+  return copyStudioLook(access.supabase, { userId: access.userId, lookId, characterId });
 }
 
 /**

@@ -27,6 +27,9 @@ describe("what they wear", () => {
     expect(studioWearLine({ outfit: "", look: true })).toBe("The character wears the outfit and hair from image 1.");
     expect(studioWearLine({ outfit: "a navy gown", look: true })).toBe("The character wears: a navy gown (as in image 1).");
     expect(studioWearLine({ outfit: "  ", look: false })).toBeNull();
+    // A photo's look is its outfit reference, which the render lane calls the outfit photo.
+    expect(studioWearLine({ outfit: "", look: true, photo: true })).toBe("The character wears the outfit from the outfit photo.");
+    expect(studioWearLine({ outfit: "a navy gown", look: true, photo: true })).toBe("The character wears: a navy gown (as in the outfit photo).");
   });
 
   it("replaces the photos' outfit in the Real scene line, which stays inside its cap by leaving out whole items", () => {

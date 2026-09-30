@@ -243,6 +243,15 @@ export function HeliosStudio({
           // THE price, from the function the server charges with (set-view.tsx's own).
           credits: quoteSend(stillQuoteInput()).totalCredits,
           characters: charactersRef.current.map((c) => ({ id: c.id, name: c.name, likenessNeeded: c.likenessNeeded === true })),
+          castId: castIdRef.current ?? null,
+          looks: async (characterId: string) => {
+            try {
+              const out = await listStudioLooks(setId, { characterId });
+              return out.error === null ? out.looks : [];
+            } catch {
+              return [];
+            }
+          },
           setHref: `/app/sets/${setId}`,
           historyHref: (generationId: string) => `/app/history/${generationId}`,
           unreachable,

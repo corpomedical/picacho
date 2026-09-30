@@ -277,11 +277,14 @@ export const STUDIO_OUTFIT_MAX = 90;
  * added image — "image 1" in the direction (recast-brief.ts imageLines). Neither: null, and the photos' own
  * outfit holds (STUDIO_REAL_OUTFIT_LINE on a real scene; Recast's brief says so on its own otherwise).
  */
-export function studioWearLine(a: { outfit: string; look: boolean }): string | null {
+export function studioWearLine(a: { outfit: string; look: boolean; photo?: boolean }): string | null {
   const words = a.outfit.replace(/\s+/g, " ").trim().replace(/[.!?]+$/, "").slice(0, STUDIO_OUTFIT_MAX).trim();
-  if (words && a.look) return `The character wears: ${words} (as in image 1).`;
+  // A photo's look rides as the still's outfit reference (the render lane's "outfit" role, named "the outfit
+  // photo" in its own notes); a video's as Recast's added image, "image 1" in its brief.
+  const where = a.photo ? "the outfit photo" : "image 1";
+  if (words && a.look) return `The character wears: ${words} (as in ${where}).`;
   if (words) return `The character wears: ${words}.`;
-  if (a.look) return "The character wears the outfit and hair from image 1.";
+  if (a.look) return a.photo ? "The character wears the outfit from the outfit photo." : "The character wears the outfit and hair from image 1.";
   return null;
 }
 
@@ -372,7 +375,7 @@ const secs = (n: number) => `${Math.round(n * 10) / 10} s`;
 export function studioRecastHappens(start: string, steps: readonly StudioRecastStep[]): string {
   const said = steps.map((s) => {
     const when = `From ${secs(s.from)} to ${secs(s.to)}`;
-    if (s.kind === "turn") return `${when} they turn${s.toward ? ` to face ${s.toward}` : " on the spot"}.`;
+    if (s.kind === "turn") return `${when} they turn${s.toward === "left" || s.toward === "right" ? ` to their ${s.toward}` : s.toward ? ` to face ${s.toward}` : " on the spot"}.`;
     const verb = s.kind === "run" ? "run" : "walk";
     return `${when} they ${verb}${s.toward ? ` ${s.toward}` : ""}${s.gaze ? `, ${s.gaze}` : ""}.`;
   });
