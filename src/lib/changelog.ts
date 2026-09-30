@@ -20,6 +20,15 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.189.0",
+    build: 228,
+    date: "2026-09-30",
+    title: "Start & end frames on Kling move to a live engine",
+    items: [
+      "A Kling video with a start and end frame (Generate's Start & end frames, the Angle Stage's camera move, a set's film beats on Kling) now renders on Kling 2.5 Turbo Pro. It used Kling 2.1 Pro, which fal now lists as deprecated and could switch off at any time. Same frames, same 5 or 10 seconds, same price to you (2 credits for 5 s, 4 for 10 s); it costs us $0.07 a second instead of $0.098.",
+    ],
+  },
+  {
     version: "1.188.0",
     build: 227,
     date: "2026-09-30",
