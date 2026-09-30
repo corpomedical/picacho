@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { useLocale } from "@/lib/i18n/provider";
 import type { RecastJob } from "@/lib/recast/recast";
+import { MediaViewer } from "@/components/media-viewer";
 
 // The before/after viewer. Two films, one clock: the TAKE is the master
 // (it carries the sound and the loop); the person's own clip follows it,
@@ -55,6 +56,7 @@ export function TakeViewer({
   const [muted, setMuted] = useState(false);
   const [split, setSplit] = useState(50);
   const [aspect, setAspect] = useState<number | null>(null);
+  const [viewing, setViewing] = useState<{ startAt?: number } | null>(null);
   // Only the job that keeps the clip's own frame can be wiped between: the
   // others hand back a different picture, and a wipe would be comparing two
   // unrelated ones.
@@ -234,6 +236,20 @@ export function TakeViewer({
             {m.recreate}
           </button>
         )}
+        {/* Full screen that works in the Android app too (media-viewer.tsx);
+            the take carries on from here, the pair pauses. */}
+        <button
+          type="button"
+          onClick={() => {
+            const v = takeRef.current;
+            setViewing({ startAt: v?.currentTime || undefined });
+            v?.pause();
+            clipRef.current?.pause();
+          }}
+          className={button}
+        >
+          {t.generate.fullScreen}
+        </button>
         <a href={resultUrl} download className={button}>
           {m.download}
         </a>
@@ -244,6 +260,15 @@ export function TakeViewer({
           {m.close}
         </button>
       </div>
+      {viewing && (
+        <MediaViewer
+          url={resultUrl}
+          contentType="video"
+          alt={title}
+          startAt={viewing.startAt}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </div>
   );
 }

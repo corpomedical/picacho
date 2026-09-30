@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DownloadButton } from "@/components/download-button";
+import { ExpandMediaButton } from "@/components/media-viewer";
 import { ResultActions } from "@/components/result-actions";
 import type { GenerationFeedback } from "@/lib/generations/actions";
 import { type AttemptLog, type PipelineStepLog } from "@/lib/generations/pipeline";
@@ -110,6 +111,13 @@ export function AngleResultViewer({ rows }: { rows: AngleRow[] }) {
                   controls
                   aria-label={getAnglePreset(active.angle ?? "")?.label ?? h.angleFallback}
                   className="aspect-video w-full rounded-[6px] bg-neutral-950"
+                />
+                <ExpandMediaButton
+                  key={active.id}
+                  url={active.result_url}
+                  contentType="video"
+                  alt={getAnglePreset(active.angle ?? "")?.label ?? h.angleFallback}
+                  generationId={active.id}
                 />
                 <DownloadButton url={active.result_url} contentType="video" generationId={active.id} />
               </div>

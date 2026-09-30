@@ -12,6 +12,9 @@ import { linkRender } from "@/lib/aly-chat/actions";
 import type { ViewRender } from "@/lib/aly-chat/view";
 import type { LightDefaults } from "@/components/light/light-chat";
 import { useInLight } from "@/components/light/in-light";
+import { ExpandMediaButton } from "@/components/media-viewer";
+import { DownloadButton } from "@/components/download-button";
+import { ZoomableImage } from "@/components/zoomable-image";
 import { lightHref } from "@/lib/light/mode";
 
 // A picture or clip Aly got ready in the chat (2026-09-29). The card shows
@@ -185,12 +188,24 @@ export function RenderCard({
   return (
     <div className="overflow-hidden rounded-2xl border border-atelier-rule bg-atelier-ink/[0.02]">
       {state === "done" && take?.resultUrl ? (
-        take.contentType === "video" ? (
-          <video src={take.resultUrl} controls playsInline className="block aspect-video w-full bg-black object-contain" />
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={take.resultUrl} alt={card.label} className="block w-full bg-black/5 object-contain" />
-        )
+        // Full screen and download on the frame's corners, as on History
+        // (2026-09-30: the card had neither, so a take made in the chat could
+        // only be seen small and never saved to the phone).
+        <div className="relative">
+          {take.contentType === "video" ? (
+            <video src={take.resultUrl} controls playsInline className="block aspect-video w-full bg-black object-contain" />
+          ) : (
+            // A tap on the picture opens it full screen too.
+            <ZoomableImage src={take.resultUrl} alt={card.label} generationId={take.id} className="block w-full bg-black/5 object-contain" />
+          )}
+          <ExpandMediaButton
+            url={take.resultUrl}
+            contentType={take.contentType === "video" ? "video" : "image"}
+            alt={card.label}
+            generationId={take.id}
+          />
+          <DownloadButton url={take.resultUrl} contentType={take.contentType === "video" ? "video" : "image"} generationId={take.id} />
+        </div>
       ) : (
         <div className="flex aspect-video items-center justify-center bg-gradient-to-br from-atelier-accent/25 via-atelier-ink/[0.06] to-atelier-ink/[0.12]">
           {state === "working" ? (

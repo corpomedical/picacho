@@ -88,6 +88,7 @@ import {
 import { setHasCompletedOnboarding } from "@/lib/profile/actions";
 import { DownloadButton } from "@/components/download-button";
 import { ZoomableImage } from "@/components/zoomable-image";
+import { ExpandIcon, MediaViewer } from "@/components/media-viewer";
 import { NEW_CHAT_EVENT } from "@/components/native-quick-pill";
 import { CONTENT_TYPE_EVENT } from "@/lib/native/tab-routes";
 import { FeedbackLink } from "@/components/feedback-link";
@@ -3418,6 +3419,10 @@ function GenerateFormInner({
   const transcriptScrollRef = useRef<HTMLDivElement | null>(null);
   // The stage's <video>, so the fullscreen ghost can drive it.
   const stageVideoRef = useRef<HTMLVideoElement>(null);
+  // The take open in the full-screen viewer (media-viewer.tsx); startAt
+  // carries a video on from where the Stage's player was. Keyed by URL, so
+  // a new take arriving never reopens a viewer left open on the old one.
+  const [stageViewer, setStageViewer] = useState<{ url: string; startAt?: number } | null>(null);
   // Keyed on the booleans, not the objects, so a streaming answer's token
   // updates don't re-run the effect on every chunk.
   const liveAskActive = liveAsk !== null;
@@ -6785,6 +6790,32 @@ function GenerateFormInner({
       ? stageTake.contentType === "video"
       : true
     : false;
+  // A multi-angle take is several rows; the id here is the representative
+  // the screen is actually showing, which is the one the person is choosing
+  // to keep.
+  const stageTakeGenerationId =
+    stageTake?.kind === "single"
+      ? stageTake.id
+      : (stageTake?.angles.find((a) => a.succeeded && a.resultUrl)?.id ?? undefined);
+  // Full screen for the take on the Stage. A computer's browser has the real
+  // thing for a video; the Android app's WebView has none (R8 took it — see
+  // android/app/proguard-rules.pro), and a picture never had any, so both
+  // open the in-page viewer instead.
+  function openStageViewer() {
+    if (!stageTakeUrl) return;
+    const url = stageTakeUrl;
+    const video = stageTakeIsVideo ? stageVideoRef.current : null;
+    const toViewer = () => {
+      const startAt = video?.currentTime || undefined;
+      video?.pause();
+      setStageViewer({ url, startAt });
+    };
+    if (video && !nativeClient && document.fullscreenEnabled && typeof video.requestFullscreen === "function") {
+      video.requestFullscreen().catch(toViewer);
+      return;
+    }
+    toViewer();
+  }
 
   // ── The Screening Room (operator-chosen direction A, 2026-09-17) ───────
   // The take is the room. On a phone this is an edge-to-edge screen in the
@@ -7367,7 +7398,10 @@ function GenerateFormInner({
                     e.currentTarget.naturalHeight,
                   )
                 }
-                className={stageMediaClass}
+                // A tap opens it full screen — what every phone user tries
+                // first (operator, 2026-09-30: "can't full screen images").
+                onClick={openStageViewer}
+                className={cn(stageMediaClass, "cursor-zoom-in")}
               />
             )}
 
@@ -7453,38 +7487,29 @@ function GenerateFormInner({
 
             {/* The ghost actions, on the frame's own top-right — only the
                 ones that genuinely work: download (both media kinds) and
-                fullscreen (video). No share ghost: a dead control is worse
+                full screen (both). No share ghost: a dead control is worse
                 than a missing one. */}
             <div className="absolute right-3 top-3 z-10 flex gap-2">
               <DownloadButton
                 url={stageTakeUrl}
                 contentType={stageTakeIsVideo ? "video" : "image"}
-                // A multi-angle take is several rows; the id here is the
-                // representative the screen is actually showing, which is the
-                // one the person is choosing to keep.
-                generationId={
-                  stageTake?.kind === "single"
-                    ? stageTake.id
-                    : (stageTake?.angles.find((a) => a.succeeded && a.resultUrl)?.id ?? undefined)
-                }
+                generationId={stageTakeGenerationId}
                 variant="ghost"
               />
-              {/* No expand in the phone app: its WebView has no fullscreen,
-                  so the button did nothing and threw "Fullscreen is not
-                  supported" (auto-filed from a Galaxy A23, 2026-09-18). */}
-              {stageTakeIsVideo && !nativeClient && (
-                <button
-                  type="button"
-                  onClick={() => void stageVideoRef.current?.requestFullscreen?.()?.catch(() => {})}
-                  title={g.expandStage}
-                  aria-label={g.expandStage}
-                  className="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] bg-onmedia/10 text-onmedia/85 transition-colors hover:bg-onmedia/20"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]">
-                    <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" />
-                  </svg>
-                </button>
-              )}
+              {/* Full screen everywhere, pictures too. It was hidden in the
+                  phone app, whose WebView refused the browser's full screen
+                  ("Fullscreen is not supported", auto-filed from a Galaxy
+                  A23, 2026-09-18); openStageViewer takes the app to the
+                  in-page viewer instead. */}
+              <button
+                type="button"
+                onClick={openStageViewer}
+                title={g.fullScreen}
+                aria-label={g.fullScreen}
+                className="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] bg-onmedia/10 text-onmedia/85 transition-colors hover:bg-onmedia/20"
+              >
+                <ExpandIcon className="h-[15px] w-[15px]" />
+              </button>
               {/* Upscale, in the moment of admiring the result (operator-
                   picked placement A + the sidebar group, 2026-09-03).
                   Session takes only — a history-resumed take has no
@@ -7504,6 +7529,16 @@ function GenerateFormInner({
                   />
                 )}
             </div>
+            {stageViewer?.url === stageTakeUrl && (
+              <MediaViewer
+                url={stageTakeUrl}
+                contentType={stageTakeIsVideo ? "video" : "image"}
+                alt={stageTakePrompt || g.resultAlt}
+                startAt={stageViewer.startAt}
+                generationId={stageTakeGenerationId}
+                onClose={() => setStageViewer(null)}
+              />
+            )}
           </div>
         ) : stageTake ? (
           <div className="flex flex-col items-center gap-2 px-6 text-center">

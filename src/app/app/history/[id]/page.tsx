@@ -39,6 +39,7 @@ import { HistoryLiveRefresh } from "@/components/history-live-refresh";
 import { DeleteGenerationButton } from "@/components/delete-generation-button";
 import { DownloadButton } from "@/components/download-button";
 import { ZoomableImage } from "@/components/zoomable-image";
+import { ExpandMediaButton } from "@/components/media-viewer";
 import { CommunityShareButton } from "@/components/community-share-button";
 import { ResultActions } from "@/components/result-actions";
 import { LocalDate } from "@/components/local-date";
@@ -469,6 +470,17 @@ export default async function HistoryDetailPage({
                         ownerActions
                         redirectAfterDelete="/app/history"
                       />
+                      {/* Tapping the picture opens it too; the corner button
+                          is there so people know it can (2026-09-30). */}
+                      <ExpandMediaButton
+                        url={generation.result_url}
+                        displayUrl={thumbUrl(generation.result_url, 1600) ?? generation.result_url}
+                        contentType="image"
+                        alt={generation.prompt_input || t.generate.resultAlt}
+                        generationId={generation.id}
+                        ownerActions
+                        redirectAfterDelete="/app/history"
+                      />
                       <DownloadButton
                         url={generation.result_url}
                         contentType="image"
@@ -488,6 +500,17 @@ export default async function HistoryDetailPage({
                         controls
                         aria-label={generation.prompt_input}
                         className="aspect-video w-full rounded-[6px] bg-neutral-950"
+                      />
+                      {/* Full screen that works in the Android app, whose
+                          WebView has none (media-viewer.tsx). */}
+                      <ExpandMediaButton
+                        url={generation.result_url}
+                        contentType="video"
+                        alt={generation.prompt_input || t.generate.resultAlt}
+                        poster={generation.poster_url ? (thumbUrl(generation.poster_url, 1600) ?? generation.poster_url) : undefined}
+                        generationId={generation.id}
+                        ownerActions
+                        redirectAfterDelete="/app/history"
                       />
                       <DownloadButton
                         url={generation.result_url}

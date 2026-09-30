@@ -13,8 +13,10 @@ import { cn } from "@/lib/cn";
 
 type Toast = {
   id: string;
-  kind: "image" | "video";
+  kind: "image" | "video" | "file";
   state: "downloading" | "done" | "failed";
+  // Where a save in the Android app landed (lib/native/save-media.ts).
+  savedTo?: "gallery" | "downloads";
 };
 
 export function DownloadToasts() {
@@ -25,12 +27,12 @@ export function DownloadToasts() {
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
     function onStart(e: Event) {
-      const { id, kind } = (e as CustomEvent<{ id: string; kind: "image" | "video" }>).detail;
+      const { id, kind } = (e as CustomEvent<{ id: string; kind: Toast["kind"] }>).detail;
       setToasts((prev) => [...prev.slice(-3), { id, kind, state: "downloading" }]);
     }
     function onDone(e: Event) {
-      const { id, ok } = (e as CustomEvent<{ id: string; ok: boolean }>).detail;
-      setToasts((prev) => prev.map((x) => (x.id === id ? { ...x, state: ok ? "done" : "failed" } : x)));
+      const { id, ok, savedTo } = (e as CustomEvent<{ id: string; ok: boolean; savedTo?: Toast["savedTo"] }>).detail;
+      setToasts((prev) => prev.map((x) => (x.id === id ? { ...x, state: ok ? "done" : "failed", savedTo } : x)));
       timers.push(
         setTimeout(() => setToasts((prev) => prev.filter((x) => x.id !== id)), 2600),
       );
@@ -82,9 +84,15 @@ export function DownloadToasts() {
             {toast.state === "downloading"
               ? toast.kind === "video"
                 ? g.downloadingVideo
-                : g.downloadingImage
+                : toast.kind === "file"
+                  ? g.downloadingFile
+                  : g.downloadingImage
               : toast.state === "done"
-                ? g.downloadDone
+                ? toast.savedTo === "gallery"
+                  ? g.savedToGallery
+                  : toast.savedTo === "downloads"
+                    ? g.savedToDownloads
+                    : g.downloadDone
                 : g.downloadFailed}
           </span>
           <button

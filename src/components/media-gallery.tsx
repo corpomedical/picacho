@@ -3,15 +3,12 @@
 import Link from "next/link";
 import { useModeHref } from "@/components/light/in-light";
 import { QuietVideo } from "@/components/quiet-video";
-import { useEffect, useRef, useState, type SVGProps } from "react";
+import { useState, type SVGProps } from "react";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LocalDate } from "@/components/local-date";
-import { MediaActionBar } from "@/components/media-action-bar";
+import { MediaViewer } from "@/components/media-viewer";
 import { formatMsg } from "@/lib/i18n/format";
-import { useLocale } from "@/lib/i18n/provider";
-import { useModalFocus } from "@/lib/use-modal-focus";
-import { useLandscapeWhileOpen } from "@/lib/native/orientation";
 import { thumbUrl } from "@/lib/media/url";
 
 export type GalleryItem = {
@@ -74,30 +71,10 @@ export function MediaGallery({
 }) {
   // In Picacho Light, "Generate one" and a tile open the Light chat, not the studio.
   const modeHref = useModeHref();
-  const { t } = useLocale();
   const [viewer, setViewer] = useState<GalleryItem | null>(null);
-  // aria-modal's focus contract — into the dialog, trapped, restored on
-  // close. See lib/use-modal-focus.ts.
-  const viewerRef = useRef<HTMLDivElement>(null);
-  useModalFocus(viewer !== null, viewerRef);
-  useLandscapeWhileOpen(viewer !== null);
   // Rows deleted from inside the viewer, hidden without a server round-trip —
   // the next server render won't include them anyway (deleted_at filter).
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    if (!viewer) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setViewer(null);
-    };
-    window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [viewer]);
 
   const visibleItems = items.filter((i) => !hiddenIds.has(i.id));
 
@@ -234,59 +211,22 @@ export function MediaGallery({
     </div>
 
     {viewer && viewerUrl && (
-      <div
-        ref={viewerRef}
-        role="dialog"
-        aria-modal="true"
-        onClick={() => setViewer(null)}
-        className="fixed inset-0 z-[95] flex items-center justify-center bg-black/90 p-4"
-        style={{
-          paddingTop: "calc(env(safe-area-inset-top) + 1rem)",
-          paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)",
+      // The shared full-screen viewer (media-viewer.tsx): zoom, swipe down,
+      // Android back, and a download that saves to the phone's gallery.
+      <MediaViewer
+        url={viewerUrl}
+        displayUrl={viewerIsVideo ? undefined : (viewerImageUrl ?? undefined)}
+        contentType={viewerIsVideo ? "video" : "image"}
+        alt={viewer.prompt_input}
+        poster={viewerIsVideo ? (viewer.poster_url ?? undefined) : undefined}
+        generationId={viewer.id}
+        ownerActions
+        onDeleted={() => {
+          setHiddenIds((prev) => new Set(prev).add(viewer.id));
+          setViewer(null);
         }}
-      >
-        {viewerIsVideo ? (
-          <QuietVideo
-            pending="spinner"
-            src={viewerUrl}
-            controls
-            autoPlay
-            playsInline
-            aria-label={viewer.prompt_input}
-            onClick={(e) => e.stopPropagation()}
-            className="max-h-full max-w-full rounded-media"
-          />
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={viewerImageUrl ?? undefined} alt={viewer.prompt_input} className="max-h-full max-w-full rounded-media object-contain" />
-        )}
-        <div
-          className="absolute inset-x-0 z-10 flex justify-center"
-          style={{ bottom: "calc(env(safe-area-inset-bottom) + 1.25rem)" }}
-        >
-          <MediaActionBar
-            url={viewerUrl}
-            contentType={viewerIsVideo ? "video" : "image"}
-            generationId={viewer.id}
-            ownerActions
-            onDeleted={() => {
-              setHiddenIds((prev) => new Set(prev).add(viewer.id));
-              setViewer(null);
-            }}
-          />
-        </div>
-        <button
-          type="button"
-          aria-label={t.common.close}
-          onClick={() => setViewer(null)}
-          className="absolute right-4 flex h-9 w-9 items-center justify-center rounded-full bg-onmedia/10 text-onmedia backdrop-blur-sm"
-          style={{ top: "calc(env(safe-area-inset-top) + 1rem)" }}
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-4 w-4">
-            <path d="M6 6l12 12M18 6L6 18" />
-          </svg>
-        </button>
-      </div>
+        onClose={() => setViewer(null)}
+      />
     )}
     </>
   );

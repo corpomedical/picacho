@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocale } from "@/lib/i18n/provider";
 import { isNativeAppClient } from "@/lib/native/platform";
-import { downloadResult, downloadResultNative } from "@/components/download-button";
+import { downloadResult, downloadResultNative, shareFileNative } from "@/components/download-button";
 import { deleteGeneration } from "@/lib/generations/actions";
 import { reportGenerationProblem } from "@/lib/generations/reports";
 import { REPORT_REASONS, type ReportReason } from "@/lib/generations/report-constants";
@@ -167,11 +167,11 @@ export function MediaActionBar({
   }
 
   async function handleShare() {
-    // Native: the system share sheet with the real file — same plumbing as
-    // download, which is exactly what sharing means on Android.
+    // Native: the system share sheet with the real file, which is exactly
+    // what sharing means on Android (Download saves to the gallery instead).
     if (isNativeAppClient()) {
       try {
-        if (await downloadResultNative(url, filename())) return;
+        if (await shareFileNative(url, filename())) return;
       } catch {
         // fall through to web paths
       }

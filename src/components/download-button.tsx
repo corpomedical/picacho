@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useLocale } from "@/lib/i18n/provider";
 import { isNativeAppClient } from "@/lib/native/platform";
 import { capPlugin } from "@/lib/native/bridge";
+import { canSaveToDevice, saveToDevice, type SavedTo } from "@/lib/native/save-media";
 import { recordDownload } from "@/lib/generations/actions";
 
 // Shared by the live Generate composer and the History detail page — both
@@ -30,13 +31,15 @@ function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
 // takes seconds, people clicked five times and got five files (operator,
 // 2026-08-24). Every path here announces start and finish over these
 // events; the toast stack renders them in the corner.
-export function announceDownload(kind: "image" | "video"): string {
+export function announceDownload(kind: "image" | "video" | "file"): string {
   const id = `dl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   window.dispatchEvent(new CustomEvent("picacho:download-start", { detail: { id, kind } }));
   return id;
 }
-export function announceDownloadDone(id: string, ok: boolean) {
-  window.dispatchEvent(new CustomEvent("picacho:download-done", { detail: { id, ok } }));
+// `savedTo` names the place a phone save landed, so the toast can say
+// "Saved to your gallery" instead of a bare "Saved" nobody can find.
+export function announceDownloadDone(id: string, ok: boolean, savedTo?: SavedTo) {
+  window.dispatchEvent(new CustomEvent("picacho:download-done", { detail: { id, ok, savedTo } }));
 }
 // Quietly retract a toast — for the one outcome that is neither success nor
 // failure: the person closed the share sheet themselves.
@@ -67,12 +70,40 @@ export async function downloadResult(url: string, filename: string) {
 
 // The Android WebView has no download manager: the anchor trick above is
 // simply swallowed (operator-reported, 2026-08-21 — "Download does not work
-// on Android app"). In the shell the file goes through the native layer
-// instead: fetch → base64 → Filesystem cache file → the system share sheet,
-// where "save to device / Photos / Drive / WhatsApp" are all one tap. The
-// plugins arrive with the versionCode-4 build; on an older shell without
-// them this quietly falls back to the web path.
+// on Android app"). In the shell, Download SAVES: the file goes straight
+// into the phone's gallery (Pictures/Picacho, Movies/Picacho) through the
+// Filesystem plugin — see lib/native/save-media.ts. It used to open the
+// share sheet instead, which on Android has no "Save" at all, so nothing
+// ever reached the phone (operator, 2026-09-30: "can't download images and
+// videos"). The share sheet is now only the fallback, for Android 10 and
+// older, where saving needs a permission this app doesn't ask for. On a
+// shell without the plugins (before versionCode 4) this returns false and
+// the caller takes the web path.
 export async function downloadResultNative(url: string, filename: string): Promise<boolean> {
+  if (!canSaveToDevice()) return false;
+  // A document or model from the catch-all (download-intercept.ts) is a
+  // "file", so its toast doesn't call it a photo.
+  const kind = /\.(mp4|mov|webm|m4v)$/i.test(filename)
+    ? "video"
+    : /\.[a-z0-9]{2,5}$/i.test(filename) && !/\.(png|jpe?g|webp|gif|avif|heic)$/i.test(filename)
+      ? "file"
+      : "image";
+  const toastId = announceDownload(kind);
+  try {
+    const savedTo = await saveToDevice(url, filename, kind === "file" ? undefined : kind);
+    announceDownloadDone(toastId, true, savedTo);
+    return true;
+  } catch {
+    // Retract this toast; the share sheet announces its own.
+    announceDownloadDismiss(toastId);
+  }
+  return shareFileNative(url, filename);
+}
+
+// The system share sheet with the real file: fetch → base64 → Filesystem
+// cache file → Share. What Share buttons mean on a phone, and Download's
+// last resort where the phone refuses a save.
+export async function shareFileNative(url: string, filename: string): Promise<boolean> {
   const fs = capPlugin("Filesystem");
   const share = capPlugin("Share");
   if (!fs?.writeFile || !share?.share) return false;

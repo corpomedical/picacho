@@ -17,6 +17,7 @@ import { isStaleDeployError } from "@/lib/stale-deploy";
 import { getLightTake, type LightTake } from "@/lib/light/actions";
 import { LIGHT_HOME, studioHref, type LightPrepared } from "@/lib/light/mode";
 import { MenuIcon, PlusIcon, useLightShell } from "./light-shell";
+import { MediaViewer } from "@/components/media-viewer";
 
 type Kind = "video" | "image";
 type Photo = { url: string; path: string };
@@ -657,6 +658,15 @@ function TakeTurn({
   const l = t.light;
   const take = turn.take;
   const video = turn.kind === "video";
+  // The take open full screen (media-viewer.tsx) — a video carries on from
+  // where the chat's player was.
+  const [viewing, setViewing] = useState<{ startAt?: number } | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const openViewer = () => {
+    const v = videoRef.current;
+    setViewing({ startAt: v?.currentTime || undefined });
+    v?.pause();
+  };
 
   if (turn.state === "working") {
     return (
@@ -748,13 +758,16 @@ function TakeTurn({
         <div className="text-[16px] leading-relaxed">{video ? l.doneVideo : l.donePicture}</div>
         <div className={`overflow-hidden rounded-[20px] bg-black ${video ? "w-full max-w-[600px]" : "w-full max-w-[420px]"}`}>
           {video ? (
-            <video src={take.resultUrl} controls playsInline preload="metadata" aria-label={l.yourVideo} className="block aspect-video w-full object-contain" />
+            <video ref={videoRef} src={take.resultUrl} controls playsInline preload="metadata" aria-label={l.yourVideo} className="block aspect-video w-full object-contain" />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={take.resultUrl} alt={l.yourPicture} className="block h-auto w-full" />
+            <img src={take.resultUrl} alt={l.yourPicture} onClick={openViewer} className="block h-auto w-full cursor-zoom-in" />
           )}
         </div>
         <div className="flex flex-wrap items-center gap-1" style={{ color: "var(--pl-muted)" }}>
+          {/* A plain download link: browsers save it, and in the Android
+              app the shell's catch-all saves it to the phone's gallery
+              (lib/native/download-intercept.ts). */}
           <a
             href={take.resultUrl}
             download
@@ -767,6 +780,11 @@ function TakeTurn({
               <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
             </svg>
           </a>
+          <button type="button" aria-label={t.generate.fullScreen} title={t.generate.fullScreen} className={actionBtn} onClick={openViewer}>
+            <svg {...icon}>
+              <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" />
+            </svg>
+          </button>
           <button type="button" aria-label={l.share} title={l.share} className={actionBtn} onClick={() => onShare(take)}>
             <svg {...icon}>
               <path d="M12 15V4M8 8l4-4 4 4M5 13v6a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-6" />
@@ -796,6 +814,16 @@ function TakeTurn({
           ))}
         </div>
       </div>
+      {viewing && take.resultUrl && (
+        <MediaViewer
+          url={take.resultUrl}
+          contentType={video ? "video" : "image"}
+          alt={video ? l.yourVideo : l.yourPicture}
+          startAt={viewing.startAt}
+          generationId={take.id}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </div>
   );
 }

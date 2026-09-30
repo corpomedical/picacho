@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 import { isNativeAppClient } from "@/lib/native/platform";
 import { capPlugin } from "@/lib/native/bridge";
 import { popBackCloser } from "@/lib/native/back-stack";
+import { canSaveToDevice } from "@/lib/native/save-media";
+import { installDownloadIntercept } from "@/lib/native/download-intercept";
+import { resetSystemBars } from "@/lib/native/system-bars";
+import { allowLandscape } from "@/lib/native/orientation";
+import { downloadResultNative } from "@/components/download-button";
 
 // Applies the native-app class, keeps the Android system bars in the app's
 // own colors, and gives the hardware back button sane in-app behavior.
@@ -135,9 +140,33 @@ export function NativeChrome() {
       backHandle = h as { remove?: () => void };
     });
 
+    // --- Saving files and full screen (2026-09-30) ---
+    // Bars back on after a load that left them hidden (system-bars.ts).
+    resetSystemBars();
+    // Every <a download> saves to the phone (download-intercept.ts).
+    const uninstallDownloads = canSaveToDevice()
+      ? installDownloadIntercept((url, name) => downloadResultNative(url, name))
+      : null;
+    // A video the WebView itself puts in full screen may turn sideways, like
+    // the in-app viewer. Play builds lost the WebView's full screen to R8
+    // (android/app/proguard-rules.pro has the whole story); a build carrying
+    // that fix makes this live.
+    let releaseLandscape: (() => void) | null = null;
+    const onFullscreenChange = () => {
+      if (document.fullscreenElement && !releaseLandscape) releaseLandscape = allowLandscape();
+      else if (!document.fullscreenElement && releaseLandscape) {
+        releaseLandscape();
+        releaseLandscape = null;
+      }
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+
     return () => {
       observer.disconnect();
       backHandle?.remove?.();
+      uninstallDownloads?.();
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      releaseLandscape?.();
     };
   }, [router]);
 
