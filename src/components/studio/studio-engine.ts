@@ -116,7 +116,9 @@ const wOn = (t, f, o) => window.addEventListener(t, f, withSig(o));
 const dOn = (t, f, o) => document.addEventListener(t, f, withSig(o));
 let stopped = false, raf = 0;
 // "Video with your character" (2026-09-30): its press state, up here because the timeline reads its price at start-up.
-const rc = { busy: false, stop: false, t0: 0, phase: "", done: 0, total: 0, share: null, progress: "", result: null, charId: null, engine: STUDIO_RECAST_ENGINES[0], fig: null, words: "", autoWords: "", timer: 0, shot: null };
+const rc = { busy: false, stop: false, t0: 0, phase: "", done: 0, total: 0, share: null, progress: "", result: null, charId: null, engine: STUDIO_RECAST_ENGINES[0], fig: null, words: "", autoWords: "", typed: false, id: null, timer: 0, shot: null };
+// A tab shown again says where the take is at once (a hidden tab's timers run slowly).
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") rcTick(); }, { signal: ac.signal });
 // The person's language (stage 7): T() for text the engine puts in a field
 // or sends on; everything drawn is translated by watchStudioText below.
 const T = (s) => (opts.t ? opts.t(s) : s);
@@ -1684,7 +1686,9 @@ function openRecast() {
   rcShow();
 }
 /** "What happens" follows the chosen figure; once changed by hand it stays as written. */
-function rcPrefill() { const w = rc.fig ? rcHappens(rc.fig) : ""; if (!rc.words || rc.words === rc.autoWords) rc.words = w; rc.autoWords = w; }
+// Filled in while the window is drawn, never after (2026-09-30: the first live take sent "…walk to the orange
+// car.She walks across…"): once the person has typed, the words are theirs and nothing is put in front of them.
+function rcPrefill() { const w = rc.fig ? rcHappens(rc.fig) : ""; if (!rc.typed) rc.words = w; rc.autoWords = w; }
 function rcShow() {
   const R = opts.recast; if (!R) return;
   const r = rcRange(), size = studioRecastSize(FORMATS[format]);
@@ -1711,7 +1715,7 @@ ${several ? `<div class="fr" style="margin-top:6px"><label for="rcFig">Replaces<
 <div class="fr" style="margin-top:8px;align-items:start"><label for="rcWords">What happens</label><textarea class="cast-words" id="rcWords" maxlength="${RECAST_DIRECTION_MAX_CHARS}" placeholder="Optional: what they're doing, the mood"${rc.busy ? " disabled" : ""}>${esc(rc.words)}</textarea></div>${rc.autoWords && rc.words === rc.autoWords && !rc.busy ? `<p class="hint" style="margin:2px 0 0">Filled in from the figure's pose and moves, in English for the video engine. Change it freely.</p>` : ""}
 <p class="hint" style="margin:4px 0 0">Sent with it: <span translate="no">${esc(also)}</span></p>
 <div class="row-btns"><button class="pbtn accent" id="rcGo"${rc.busy ? " disabled" : ""}>${esc(rcLabel())}</button>${rc.busy && ["recording", "uploading", "reading"].includes(rc.phase) ? `<button class="pbtn" id="rcStop"${rc.stop ? " disabled" : ""}>Stop</button>` : ""}</div>
-<div class="prog"${rc.busy ? "" : " hidden"}><i id="rcProg"></i></div><p class="hint" id="rcTxt" role="status">${rc.busy ? "" : "Stop before it is sent costs nothing."}</p>`;
+<div class="prog"${rc.busy ? "" : " hidden"}><i id="rcProg"></i></div><p class="hint" id="rcTxt" role="status">${rc.busy ? "" : "Stop before it is sent costs nothing."}</p>${rc.busy && rc.id ? `<div class="cast-links"><a href="${esc(R.historyHref(rc.id))}">Open in History</a><a href="${esc(R.recastHref)}">Open in Recast</a></div>` : ""}`;
   }
   const open = $("dlgBody") && $("dlgBody").querySelector("[data-recast]");
   if (!open || $("dlg").hidden) openWin(RC_TITLE, `<div data-recast></div>`);
@@ -1720,7 +1724,11 @@ ${several ? `<div class="fr" style="margin-top:6px"><label for="rcFig">Replaces<
   if (who) who.onchange = () => { rc.charId = who.value; rcShow(); rcMenuLabel(); };
   if (fg) fg.onchange = () => { rc.fig = items.find((i) => String(i.id) === fg.value) || rc.fig; rcPrefill(); rcShow(); };
   $("dlgBody").querySelectorAll('input[name="rcLane"]').forEach((el) => (el.onchange = () => { rc.engine = el.value; rcShow(); rcMenuLabel(); }));
-  if (words) words.oninput = () => { rc.words = words.value; };
+  if (words) {
+    words.oninput = () => { rc.words = words.value; rc.typed = true; };
+    // The first click into the filled-in words selects them, so typing replaces them instead of running on after them.
+    words.onfocus = () => { if (!rc.typed && rc.words && rc.words === rc.autoWords) words.select(); };
+  }
   if (go) go.onclick = rcGo;
   if (stop) stop.onclick = () => { rc.stop = true; stop.disabled = true; rcTick(); };
   if (again) again.onclick = () => { rc.result = null; openRecast(); };
@@ -1785,7 +1793,7 @@ async function rcGo() {
   const direction = studioRecastDirection({ words: rc.words, several: figs.length > 1, spot: figs[chosen].spot, engine });
   // ONE id for this press, taken before anything is recorded: the take's row id, never pressed again.
   const sendId = newPressId();
-  rc.busy = true; rc.stop = false; rc.t0 = Date.now(); rc.phase = "recording"; rc.result = null; rc.progress = ""; rc.share = null;
+  rc.busy = true; rc.stop = false; rc.t0 = Date.now(); rc.phase = "recording"; rc.result = null; rc.progress = ""; rc.share = null; rc.id = null;
   clearInterval(rc.timer); rc.timer = setInterval(rcTick, 1000);
   rcShow();
   let rec = null;
@@ -1798,9 +1806,9 @@ async function rcGo() {
     rc.phase = "uploading"; rc.t0 = Date.now(); rcShow();
     try {
       res = await R.run({ sendId, clip: rec.blob, type: rec.type, characterId: c.id, photoCount: c.photos, engine, seconds: r.seconds, credits: price, direction, figuresX: figs.map((f) => f.x), chosen }, (u) => {
-        if (u.phase !== rc.phase) { rc.phase = u.phase; if (u.phase === "starting") rc.t0 = Date.now(); if (!$("dlg").hidden && $("dlgBody").querySelector("[data-recast]")) rcShow(); }
         if (u.phase === "uploading") rc.share = u.share;
-        if (u.phase === "rendering") rc.progress = u.progress || "";
+        if (u.phase === "rendering") { rc.progress = u.progress || ""; rc.id = u.id || rc.id; }
+        if (u.phase !== rc.phase) { rc.phase = u.phase; if (u.phase === "starting") rc.t0 = Date.now(); if (!$("dlg").hidden && $("dlgBody").querySelector("[data-recast]")) rcShow(); }
         rcTick();
       }, () => rc.stop);
     } catch { res = { error: R.unreachable }; }
@@ -1809,7 +1817,7 @@ async function rcGo() {
   if (stopped || (res && res.left)) return;
   rc.result = res || { error: R.unreachable };
   if (!$("dlg").hidden && $("dlgBody").querySelector("[data-recast]")) rcShow();
-  else toast(rc.result.error === null ? "Your video is ready · Render ▸ " + RC_TITLE : rc.result.stopped ? "Stopped · nothing was charged" : "Your video didn't come out · Render ▸ " + RC_TITLE);
+  else toast(rc.result.error === null ? "Your video is ready and in History · Render ▸ " + RC_TITLE : rc.result.stopped ? "Stopped · nothing was charged" : "Your video didn't come out · Render ▸ " + RC_TITLE);
 }
 
 // ================= physics (rigid bodies) =================

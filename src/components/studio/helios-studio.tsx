@@ -96,6 +96,12 @@ export function HeliosStudio({
 }) {
   const { t, locale } = useLocale();
   // Read once, when the engine starts: a later render must not restart it.
+  // The set and its title too (2026-09-30): a server action that revalidates
+  // any path (Recast's start does) sends this page again, with a new spec
+  // object — which restarted the engine under an open window, froze its
+  // "Rendering" line and dropped the finished video of the first live take.
+  const specRef = useRef(spec);
+  const titleRef = useRef(title);
   const savedRef = useRef(savedScene);
   const charactersRef = useRef(characters);
   const wordsRef = useRef({
@@ -106,6 +112,12 @@ export function HeliosStudio({
     refresh: t.generate.refreshNeeded,
   });
   const unreachable = t.generate.submitFailed;
+  // The latest of them, for the next time the engine starts (another set
+  // opened in this same page): this runs before the engine's effect below.
+  useEffect(() => {
+    specRef.current = spec;
+    titleRef.current = title;
+  });
   const recastRef = useRef(recastCharacters);
   // Recast's own words for its lanes and its answers, in the person's language.
   const recastWordsRef = useRef({
@@ -122,8 +134,8 @@ export function HeliosStudio({
       if (dead) return;
       dispose = m.startStudio({
         setId,
-        title,
-        spec,
+        title: titleRef.current,
+        spec: specRef.current,
         // Stage 7: the Studio in the person's language (studio-i18n.ts).
         locale,
         t: studioTranslator(locale),
@@ -235,7 +247,7 @@ export function HeliosStudio({
       dead = true;
       dispose?.();
     };
-  }, [setId, title, spec, unreachable, locale, cyclesOn]);
+  }, [setId, unreachable, locale, cyclesOn]);
   return (
     <div className="fixed inset-0 z-[70]" data-helios-studio>
       <style>{STUDIO_CSS}</style>

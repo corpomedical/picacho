@@ -21,7 +21,7 @@ export type RecastUpdate =
   | { phase: "reading" }
   | { phase: "starting" }
   | { phase: "checking" }
-  | { phase: "rendering"; progress: string };
+  | { phase: "rendering"; progress: string; id: string };
 
 export type RecastAnswer =
   | { error: null; id: string; url: string }
@@ -56,6 +56,8 @@ export type RecastDeps = {
   stillGoing: string;
   onStale?: () => void;
   sleep?: (ms: number) => Promise<void>;
+  /** How long one read is waited on before it is asked again (RECAST_READ_TIMEOUT_MS). */
+  readTimeoutMs?: number;
   now?: () => number;
 };
 
@@ -79,11 +81,34 @@ export type RecastPress = {
 
 /** How often a rendering take is asked about, and how long it is followed from this window at most. */
 export const RECAST_POLL_MS = 5000;
+/** A read that has not answered by then is asked again. */
+export const RECAST_READ_TIMEOUT_MS = 20_000;
+
+/**
+ * The wait between reads: a plain timer, which a hidden tab may slow down
+ * (Chrome holds a background page's timers to about once a minute) — so it
+ * also ends the moment the page is shown again, and the take is read at once.
+ */
+export function wakeableSleep(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const doc = typeof document === "undefined" ? null : document;
+    const done = () => {
+      clearTimeout(timer);
+      doc?.removeEventListener("visibilitychange", onShow);
+      resolve();
+    };
+    const onShow = () => {
+      if (doc?.visibilityState === "visible") done();
+    };
+    const timer = setTimeout(done, ms);
+    doc?.addEventListener("visibilitychange", onShow);
+  });
+}
 export const RECAST_FOLLOW_MS = 45 * 60 * 1000;
 const MISSES = 12;
 
 export async function pressStudioRecast(deps: RecastDeps, setId: string, p: RecastPress, onUpdate: (u: RecastUpdate) => void): Promise<RecastAnswer> {
-  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const sleep = deps.sleep ?? wakeableSleep;
   const now = deps.now ?? Date.now;
   const stale = (err: unknown) => {
     if (!isStaleDeployError(err)) return false;
@@ -183,25 +208,39 @@ export async function pressStudioRecast(deps: RecastDeps, setId: string, p: Reca
     if (found.kind !== "landed") return { error: deps.unchecked, id };
   }
 
+  // THE FOLLOW (2026-09-30, after the first live take: the window sat on
+  // "Rendering" for minutes while the take was already in History). It ends
+  // only on done, stopped, failed or the Studio closing: a read that errs,
+  // throws or hangs is asked again, no read is waited on past
+  // RECAST_READ_TIMEOUT_MS, and the wait between reads ends the moment a
+  // hidden tab is shown again (wakeableSleep).
+  onUpdate({ phase: "rendering", progress: "", id });
   const t0 = now();
   let misses = 0;
+  let lastError = deps.unreachable;
   while (now() - t0 < RECAST_FOLLOW_MS) {
     if (!deps.alive()) return { error: "", left: true };
-    let r: StudioRecastRead;
+    let r: StudioRecastRead | null;
+    let cut: ReturnType<typeof setTimeout> | undefined;
     try {
-      r = await deps.read(setId, { id });
+      r = await Promise.race([deps.read(setId, { id }), new Promise<null>((res) => (cut = setTimeout(() => res(null), deps.readTimeoutMs ?? RECAST_READ_TIMEOUT_MS)))]);
     } catch (err) {
       if (stale(err)) return { error: deps.refresh, id };
-      if (++misses >= MISSES) return { error: deps.unreachable, id };
+      r = null;
+    } finally {
+      clearTimeout(cut);
+    }
+    if (r === null || r.error !== null) {
+      if (r) lastError = r.error;
+      if (++misses >= MISSES) return { error: lastError, id };
       await sleep(RECAST_POLL_MS);
       continue;
     }
     misses = 0;
-    if (r.error !== null) return { error: r.error, id };
     if (r.state === "done") return { error: null, id, url: r.url };
     if (r.state === "stopped") return { error: "", stopped: true };
     if (r.state === "failed") return { error: r.reason ?? deps.failed, id, charged: r.charged };
-    onUpdate({ phase: "rendering", progress: r.state === "working" ? r.progress : "" });
+    onUpdate({ phase: "rendering", progress: r.state === "working" ? r.progress : "", id });
     await sleep(RECAST_POLL_MS);
   }
   // Still going after the window's own wait: it lands in History and in Recast on its own.

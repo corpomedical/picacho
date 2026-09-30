@@ -4,7 +4,7 @@ vi.mock("@/lib/sets/press-follow", async () => await import("../../lib/sets/pres
 vi.mock("@/lib/sets/studio-recast", async () => await import("../../lib/sets/studio-recast"));
 vi.mock("@/lib/stale-deploy", () => ({ isStaleDeployError: (e: unknown) => e instanceof Error && e.message === "stale" }));
 
-const { pressStudioRecast } = await import("./studio-recast");
+const { pressStudioRecast, wakeableSleep } = await import("./studio-recast");
 
 // One "Video with your character" press (studio-recast.ts, 2026-09-30):
 // Recast's reserve → upload → read → start, in that order, with the press's
@@ -120,6 +120,53 @@ describe("pressStudioRecast", () => {
     expect(await pressStudioRecast(moved.d as never, "set-1", press({ credits: 2 }), () => {})).toEqual({ error: "changed" });
     expect(moved.d.start).not.toHaveBeenCalled();
     expect(moved.log).toContain("discard u/clip.mp4");
+  });
+
+  it("the follow never stops on a read that errs, throws or hangs — only on done, stopped or failed", async () => {
+    let n = 0;
+    const answers = [
+      () => ({ error: null, state: "working", progress: "Rendering your video" }),
+      () => ({ error: "Your session expired — please log in again." }),
+      () => { throw new Error("Failed to fetch"); },
+      () => new Promise(() => {}),
+      () => ({ error: null, state: "working", progress: "Rendering your video" }),
+      () => ({ error: null, state: "done", url: "/api/media/take.mp4" }),
+    ];
+    const { d } = deps({ readTimeoutMs: 5, read: vi.fn(async () => answers[Math.min(n++, answers.length - 1)]()) });
+    const seen: string[] = [];
+    const out = await pressStudioRecast(d as never, "set-1", press(), (u) => u.phase === "rendering" && seen.push(`${u.id}:${u.progress}`));
+    expect(out).toEqual({ error: null, id: SEND, url: "/api/media/take.mp4" });
+    expect(n).toBe(6);
+    // The window has the take's id from the first moment it renders (its History link).
+    expect(seen[0]).toBe(`${SEND}:`);
+  });
+
+  it("gives up on reads only after many in a row fail, and says the last reason", async () => {
+    const { d } = deps({}, [{ error: "Recasting is in private testing." }]);
+    expect(await pressStudioRecast(d as never, "set-1", press(), () => {})).toEqual({ error: "Recasting is in private testing.", id: SEND });
+    expect(d.read.mock.calls.length).toBe(12);
+  });
+
+  it("the wait between reads ends the moment a hidden tab is shown again", async () => {
+    const doc = Object.assign(new EventTarget(), { visibilityState: "hidden" });
+    vi.stubGlobal("document", doc);
+    try {
+      const t0 = Date.now();
+      const waiting = wakeableSleep(60_000);
+      doc.visibilityState = "visible";
+      doc.dispatchEvent(new Event("visibilitychange"));
+      await waiting;
+      expect(Date.now() - t0).toBeLessThan(1000);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("the Studio is not restarted by a page re-render (Recast's start revalidates, and the page is sent again)", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL("./helios-studio.tsx", import.meta.url), "utf8");
+    expect(src).toContain("}, [setId, unreachable, locale, cyclesOn]);");
+    expect(src).toContain("spec: specRef.current");
   });
 
   it("a take that failed says why, and whether it cost anything", async () => {
