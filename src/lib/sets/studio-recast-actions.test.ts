@@ -97,7 +97,7 @@ describe("the doors hand Recast the Studio's press", () => {
   });
 
   it("start: one character, the lane, the whole recording as the window, the sendId, the rights", async () => {
-    expect(await startStudioRecast(SET, { ...START, engine: "h3-768", castTag: "A" })).toEqual({ error: null, ids: [SEND] });
+    expect(await startStudioRecast(SET, { ...START, engine: "h3-768", castTag: "A", faceAt: { first: false, last: true } })).toEqual({ error: null, ids: [SEND] });
     expect(JSON.parse(calls[0].slice(6))).toEqual({
       sendId: SEND,
       path: `${USER}/x.mp4`,
@@ -108,6 +108,7 @@ describe("the doors hand Recast the Studio's press", () => {
       castTag: "A",
       read: null,
       window: { start: 0, end: 5 },
+      faceAt: { first: false, last: true },
       rights: true,
     });
   });

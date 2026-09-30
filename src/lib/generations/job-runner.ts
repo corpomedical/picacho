@@ -1796,7 +1796,7 @@ async function readFaces(
         lock.skipFirst
           ? Promise.resolve(null)
           : extractVideoFrame(providerDownloadUrl(outcome.resultUrl), "first"),
-        extractVideoFrame(providerDownloadUrl(outcome.resultUrl), "last"),
+        lock.skipLast ? Promise.resolve(null) : extractVideoFrame(providerDownloadUrl(outcome.resultUrl), "last"),
       ])
     : [null, null];
 

@@ -77,6 +77,8 @@ export type RecastPress = {
   /** Every visible figure's screen x in the shot (−1 … 1), and which one the character replaces. */
   figuresX: number[];
   chosen: number;
+  /** Whether the chosen figure's face can be read at the recording's first and last frame (studioFaceReadable). */
+  faceAt?: { first: boolean; last: boolean };
 };
 
 /** How often a rendering take is asked about, and how long it is followed from this window at most. */
@@ -166,6 +168,7 @@ export async function pressStudioRecast(deps: RecastDeps, setId: string, p: Reca
     direction: p.direction,
     read: inspected.read,
     castTag: studioRecastTag(inspected.read, p.figuresX, p.chosen),
+    ...(p.faceAt ? { faceAt: p.faceAt } : {}),
   };
   onUpdate({ phase: "starting" });
   const sentAt = now();

@@ -24,7 +24,8 @@ import { boneOfMesh, makeFigure } from "./studio-figure";
 import { addMove, gaitFrame, headingOf, moveAt, moveWords, naturalEnd, normaliseMoves, pathCurve, pathLength, shortestYaw, turnStart, turnYawAt } from "@/lib/sets/studio-gait";
 import { BONE, BONE_NAMES, LIMBS, POSE_PRESETS, PRESET_LABELS, SEAT_DROP_M, applyPose, applyPreset, clampLoc, clampRot, clonePose, eulerNumbers, findSkeleton, groundFeet, lookRot, normalisePose, normalisePoseKeys, poseAt, poseSentence, poseWords, presetBones, presetPose, setPoseKey, solveLimb, standPoseOf, thingWords } from "@/lib/sets/studio-pose";
 import { newPressId } from "@/lib/sets/press-follow";
-import { STUDIO_RECAST_BITRATE, STUDIO_RECAST_ENGINES, studioFigureSpot, studioRecastCredits, studioRecastDirection, studioRecastHappens, studioRecastRange, studioRecastSize } from "@/lib/sets/studio-recast";
+import { savedPlaybackRange } from "@/lib/sets/studio-scene";
+import { STUDIO_RECAST_BITRATE, STUDIO_RECAST_ENGINES, studioFaceReadable, studioFigureSpot, studioRecastCredits, studioRecastDirection, studioRecastHappens, studioRecastRange, studioRecastSize } from "@/lib/sets/studio-recast";
 import { RECAST_ENGINES, RECAST_JOB_MAX_SECONDS, RECAST_MIN_SECONDS } from "@/lib/recast/recast";
 import { RECAST_DIRECTION_MAX_CHARS } from "@/lib/recast/recast-brief";
 import { ENV_H, ENV_W, SKY_DIFFUSE_SHARE, TRACE_MAX_SAMPLES, TRACE_PRESETS, TRACE_SCALES, TRACE_SLOW_SECONDS, TRACE_SPEED_KEY, envAddSplit, envAddSun, envUpIrradiance, loadOidn, luminance, meterExposure, oidnDenoise, physicalSunIrradiance, traceDuration, traceEstimate, traceSamples, traceSize } from "./studio-trace";
@@ -1646,6 +1647,23 @@ function rcFigures() {
   cam.aspect = a0; cam.updateProjectionMatrix(); evaluate(was);
   return out;
 }
+/**
+ * Whether the face check can read this figure's face at one frame of the recording (2026-09-30: a walk that
+ * starts far off or with its back turned set the take's IDENTITY from a frame with no face in it): the head's
+ * height on the frame, whether it is in the frame at all, and how far it is turned from the camera.
+ */
+function rcFaceAt(it, frame, frameH) {
+  const cam = shot.obj.userData.cam, a0 = cam.aspect, was = time;
+  evaluate((frame - 1) / FPS); cam.aspect = FORMATS[format]; cam.updateProjectionMatrix(); shot.obj.updateMatrixWorld(true);
+  try {
+    const head = it.rig.bones.head, hp = head.getWorldPosition(new V3());
+    const top = hp.clone().add(new V3(0, 0.23, 0)).project(cam), bottom = hp.clone().project(cam);
+    const inFrame = Math.abs(bottom.x) <= 1 && Math.abs(bottom.y) <= 1 && bottom.z < 1;
+    const fwd = new V3(0, 0, 1).applyQuaternion(head.getWorldQuaternion(new THREE.Quaternion()));
+    const turnDeg = fwd.angleTo(shot.obj.getWorldPosition(new V3()).sub(hp)) * (180 / Math.PI);
+    return studioFaceReadable({ headPx: (Math.abs(top.y - bottom.y) / 2) * frameH, frameH, turnDeg, inFrame });
+  } finally { cam.aspect = a0; cam.updateProjectionMatrix(); evaluate(was); }
+}
 /** "What happens", from the figure's pose at the range's start and its moves inside the range. */
 function rcHappens(it) {
   const r = rcRange(), was = time;
@@ -1791,6 +1809,7 @@ async function rcGo() {
   const r = rcRange(), size = studioRecastSize(FORMATS[format]), engine = rc.engine;
   const price = rcCreditsFor(engine);
   const direction = studioRecastDirection({ words: rc.words, several: figs.length > 1, spot: figs[chosen].spot, engine });
+  let faceAt; try { faceAt = { first: rcFaceAt(rc.fig, r.start, size.height), last: rcFaceAt(rc.fig, r.end, size.height) }; } catch { faceAt = undefined; }
   // ONE id for this press, taken before anything is recorded: the take's row id, never pressed again.
   const sendId = newPressId();
   rc.busy = true; rc.stop = false; rc.t0 = Date.now(); rc.phase = "recording"; rc.result = null; rc.progress = ""; rc.share = null; rc.id = null;
@@ -1805,7 +1824,7 @@ async function rcGo() {
   else {
     rc.phase = "uploading"; rc.t0 = Date.now(); rcShow();
     try {
-      res = await R.run({ sendId, clip: rec.blob, type: rec.type, characterId: c.id, photoCount: c.photos, engine, seconds: r.seconds, credits: price, direction, figuresX: figs.map((f) => f.x), chosen }, (u) => {
+      res = await R.run({ sendId, clip: rec.blob, type: rec.type, characterId: c.id, photoCount: c.photos, engine, seconds: r.seconds, credits: price, direction, figuresX: figs.map((f) => f.x), chosen, faceAt }, (u) => {
         if (u.phase === "uploading") rc.share = u.share;
         if (u.phase === "rendering") { rc.progress = u.progress || ""; rc.id = u.id || rc.id; }
         if (u.phase !== rc.phase) { rc.phase = u.phase; if (u.phase === "starting") rc.t0 = Date.now(); if (!$("dlg").hidden && $("dlgBody").querySelector("[data-recast]")) rcShow(); }
@@ -3370,7 +3389,7 @@ function openLeavesOut() {
 // account), and then sends that one up.
 const SAVE_KEY = "helios.studio." + opts.setId;
 function snapshot() {
-  return { v: 1, hour, format, lens: shot.obj.userData.lensMm, skyMode, markers, items: items.filter((i) => i.kind !== "sun" && (i.saveKey || i.addKind)).map((i) => ({ key: i.saveKey || null, add: i.addKind || null, name: i.name, coll: i.coll, t: trs(i.obj), keys: i.keys, interp: i.interp, hidden: i.hidden, noRender: !!i.noRender, color: i.obj.userData.paint?.[0] ? "#" + i.obj.userData.paint[0].color.getHexString() : null, array: i.obj.userData.array || null, mirror: i.obj.userData.mirror || null, track: i.obj.userData.track ? byId(i.obj.userData.track)?.saveKey || null : null, phys: i.phys || null, bake: i.bake || null, pose: i.rig ? i.pose : undefined, poseKeys: i.rig && i.poseKeys.length ? i.poseKeys : undefined, moves: i.rig && i.moves?.length ? i.moves : undefined })) };
+  return { v: 1, hour, format, lens: shot.obj.userData.lensMm, skyMode, markers, range: [pStart, pEnd], items: items.filter((i) => i.kind !== "sun" && (i.saveKey || i.addKind)).map((i) => ({ key: i.saveKey || null, add: i.addKind || null, name: i.name, coll: i.coll, t: trs(i.obj), keys: i.keys, interp: i.interp, hidden: i.hidden, noRender: !!i.noRender, color: i.obj.userData.paint?.[0] ? "#" + i.obj.userData.paint[0].color.getHexString() : null, array: i.obj.userData.array || null, mirror: i.obj.userData.mirror || null, track: i.obj.userData.track ? byId(i.obj.userData.track)?.saveKey || null : null, phys: i.phys || null, bake: i.bake || null, pose: i.rig ? i.pose : undefined, poseKeys: i.rig && i.poseKeys.length ? i.poseKeys : undefined, moves: i.rig && i.moves?.length ? i.moves : undefined })) };
 }
 let lastSaved = "", lastServer = "", changedAt = 0, serverBusy = false, serverRetryAt = 0;
 const SERVER_DELAY_MS = 5000, SERVER_RETRY_MS = 30000;
@@ -3426,6 +3445,8 @@ function restoreSaved() {
   }
   for (const [it, s] of made) if (s.track) { const t = items.find((i) => i.saveKey === s.track); if (t) it.obj.userData.track = t.id; }
   if (typeof data.hour === "number") setHour(data.hour); if (data.format) format = data.format; if (data.lens) setLens(data.lens); if (data.skyMode && data.skyMode !== "simple") setSkyMode(data.skyMode); if (Array.isArray(data.markers)) markers.push(...data.markers);
+  // The playback range (2026-09-30): kept with the scene, so a video's length and price are what was set.
+  const savedRange = savedPlaybackRange(data.range, FRAMES); if (savedRange) { [pStart, pEnd] = savedRange; renderTimeline(); }
   undoStack.length = 0; redoStack.length = 0; evaluate(time); refreshSel(); lastSaved = JSON.stringify(snapshot());
   // Opened from the account: that copy is what the account holds. From this browser: sent up once it has settled.
   if (picked.from === "account" || !opts.saveScene) lastServer = lastSaved; else changedAt = Date.now() - SERVER_DELAY_MS;

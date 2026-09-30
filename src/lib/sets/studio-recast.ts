@@ -171,6 +171,22 @@ export function studioRecastHappens(start: string, steps: readonly StudioRecastS
   return [start.trim(), ...said].filter(Boolean).join(" ");
 }
 
+/**
+ * Whether the face check can read the figure's face at one frame of the
+ * recording (2026-09-30: both first live takes read IDENTITY 34 while the
+ * face was clearly the character's — the check records its WORST of the
+ * first, middle and last frames, and a walk that starts far off, or with its
+ * back to the camera, hands it a frame with no face to read). The Studio
+ * measures its own figure: the head at least HEAD_MIN_SHARE of the frame's
+ * height, and turned no more than FACE_MAX_TURN_DEG from the camera (a
+ * profile still reads).
+ */
+export const HEAD_MIN_SHARE = 0.05;
+export const FACE_MAX_TURN_DEG = 100;
+export function studioFaceReadable(at: { headPx: number; frameH: number; turnDeg: number; inFrame: boolean }): boolean {
+  return at.inFrame && at.frameH > 0 && at.headPx / at.frameH >= HEAD_MIN_SHARE && at.turnDeg <= FACE_MAX_TURN_DEG;
+}
+
 /** What startRecastTakes is sent from the Studio: one character, the whole recording, this press's id. */
 export type StudioRecastStart = {
   sendId: string;
@@ -182,6 +198,8 @@ export type StudioRecastStart = {
   castTag?: string;
   read: RecastRead | null;
   window: RecastWindow;
+  /** Whether the face can be read at the recording's first and last frame. */
+  faceAt: { first: boolean; last: boolean };
   rights: true;
 };
 
@@ -194,6 +212,8 @@ export function studioRecastStart(a: {
   direction: string;
   read: RecastRead | null;
   castTag: string | null;
+  /** Measured by the Studio; left out, both ends are read as before. */
+  faceAt?: { first: boolean; last: boolean } | null;
 }): StudioRecastStart {
   return {
     sendId: a.sendId,
@@ -206,6 +226,7 @@ export function studioRecastStart(a: {
     ...(a.castTag ? { castTag: a.castTag } : {}),
     read: a.read,
     window: studioRecastWindow(a.seconds),
+    faceAt: { first: a.faceAt?.first !== false, last: a.faceAt?.last !== false },
     // The recording is made here, from the person's own scene.
     rights: true,
   };

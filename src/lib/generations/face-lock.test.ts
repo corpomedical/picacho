@@ -105,6 +105,21 @@ describe("wiring", () => {
   it("the runner does not read frame one when the lock says skip it", () => {
     const runner = read("job-runner.ts");
     expect(runner).toContain("lock.skipFirst\n          ? Promise.resolve(null)");
+    expect(runner).toContain('lock.skipLast ? Promise.resolve(null) : extractVideoFrame(providerDownloadUrl(outcome.resultUrl), "last")');
+  });
+
+  // 2026-09-30: Helios Studio's first two live takes both read IDENTITY 34 —
+  // the WORST of first/middle/last, taken from a frame where the walk had the
+  // figure far off or turned away. The Studio says which ends hold a face.
+  it("a Recast take skips the ends its maker says hold no readable face; the middle is always read", () => {
+    const cast = [{ characterId: "eva", photoPath: "u/eva.jpg" }];
+    expect(recastTakeLock({ cast, threshold: 60, lockOn: false, unreadable: { first: true, last: false } })).toMatchObject({ skipFirst: true });
+    expect(recastTakeLock({ cast, threshold: 60, lockOn: false, unreadable: { first: true, last: false } })).not.toHaveProperty("skipLast");
+    expect(recastTakeLock({ cast, threshold: 60, lockOn: false, unreadable: { first: false, last: true } })).toMatchObject({ skipLast: true });
+    expect(recastTakeLock({ cast, threshold: 60, lockOn: false })).not.toHaveProperty("skipFirst");
+    const actions = readFileSync(join(__dirname, "../recast/actions.ts"), "utf8");
+    expect(actions).toContain("isWholeClip(window, clip.seconds) && (input?.faceAt?.first === false || input?.faceAt?.last === false)");
+    expect(actions).toContain("...(faceUnreadable ? { unreadable: faceUnreadable } : {}),");
   });
 });
 

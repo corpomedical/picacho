@@ -42,6 +42,15 @@ export type IdentityLock = {
    */
   skipFirst?: boolean;
   /**
+   * Don't read the closing frame (2026-09-30). Set only when whoever made the
+   * clip KNOWS no face can be read there: Helios Studio's "Video with your
+   * character" measures its own figure, and a walk that starts or ends far
+   * from the camera, or with its back to it, used to set the take's number
+   * from that frame — both first live takes read 34 while the face was
+   * clearly the character's.
+   */
+  skipLast?: boolean;
+  /**
    * THE PHOTO THAT WAS SENT (2026-09-22). The face used to be read against
    * the character's photo #1 whatever the take was given — while the Recast
    * door lets a person choose which photo goes (recast/actions.ts, the
@@ -87,10 +96,18 @@ function validCast(cast: unknown): CastPhoto[] {
  * face is cast, because with several in the frame a miss cannot be pinned on
  * the take rather than on the reading. Undefined when nobody is cast.
  */
-export function recastTakeLock(input: { cast: CastPhoto[]; threshold: number; lockOn: boolean }): IdentityLock | undefined {
+export function recastTakeLock(input: {
+  cast: CastPhoto[];
+  threshold: number;
+  lockOn: boolean;
+  /** Frames the clip's maker knows hold no readable face (Helios Studio, 2026-09-30); the middle is always read. */
+  unreadable?: { first?: boolean; last?: boolean };
+}): IdentityLock | undefined {
   const cast = validCast(input.cast);
   if (cast.length === 0) return undefined;
   return {
+    ...(input.unreadable?.first === true ? { skipFirst: true } : {}),
+    ...(input.unreadable?.last === true ? { skipLast: true } : {}),
     threshold: input.threshold,
     // The refund needs the whole cast to be one REAL entry: an invalid
     // second entry validCast dropped must not turn a two-character take

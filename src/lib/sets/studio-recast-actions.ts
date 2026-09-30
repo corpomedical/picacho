@@ -94,6 +94,8 @@ export async function startStudioRecast(
     direction: string;
     read: RecastRead | null;
     castTag: string | null;
+    /** Whether the face can be read at the recording's first and last frame (the Studio measures its figure). */
+    faceAt?: { first: boolean; last: boolean } | null;
   },
 ): Promise<{ error: string } | { error: null; ids: string[] }> {
   const access = await setsAccess();
@@ -113,6 +115,10 @@ export async function startStudioRecast(
       // Bounded again by Recast (reboundRecastRead); never trusted for money.
       read: (input.read ?? null) as RecastRead | null,
       castTag: typeof input.castTag === "string" ? input.castTag : null,
+      faceAt:
+        input.faceAt && typeof input.faceAt === "object"
+          ? { first: input.faceAt.first !== false, last: input.faceAt.last !== false }
+          : null,
     }),
   );
 }

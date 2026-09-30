@@ -7,6 +7,7 @@ import {
   STUDIO_RECAST_ENGINES,
   STUDIO_RESTAGE_LINE,
   parseStudioRecastEngine,
+  studioFaceReadable,
   studioFigureLine,
   studioFigureSpot,
   studioRecastCredits,
@@ -145,8 +146,20 @@ describe("the payload", () => {
       castTag: "A",
       read: r,
       window: { start: 0, end: 5 },
+      faceAt: { first: true, last: true },
       rights: true,
     });
+    expect(studioRecastStart({ sendId: "s", path: "p", characterId: "c", engine: "kling-edit", seconds: 3, direction: "", read: null, castTag: null, faceAt: { first: false, last: true } }).faceAt).toEqual({ first: false, last: true });
     expect("castTag" in studioRecastStart({ sendId: "s", path: "p", characterId: "c", engine: "kling-edit", seconds: 3, direction: "", read: null, castTag: null })).toBe(false);
+  });
+});
+
+describe("where the face check can read the face", () => {
+  it("needs the head in the frame, big enough, and not turned away (a profile still reads)", () => {
+    expect(studioFaceReadable({ headPx: 60, frameH: 720, turnDeg: 10, inFrame: true })).toBe(true);
+    expect(studioFaceReadable({ headPx: 60, frameH: 720, turnDeg: 90, inFrame: true })).toBe(true);
+    expect(studioFaceReadable({ headPx: 20, frameH: 720, turnDeg: 10, inFrame: true })).toBe(false);
+    expect(studioFaceReadable({ headPx: 60, frameH: 720, turnDeg: 150, inFrame: true })).toBe(false);
+    expect(studioFaceReadable({ headPx: 60, frameH: 720, turnDeg: 10, inFrame: false })).toBe(false);
   });
 });

@@ -514,6 +514,13 @@ export async function startRecastTakes(input: {
   read?: unknown;
   /** Which stretch of the clip to perform, in seconds of the file. */
   window?: unknown;
+  /**
+   * Whether a face can be read at the clip's first and last frame, when the
+   * clip's maker knows (Helios Studio measures its own figure, 2026-09-30).
+   * False spares the face check a frame that holds no readable face; the
+   * middle is always read. Honoured only for the whole clip.
+   */
+  faceAt?: { first?: boolean; last?: boolean };
   rights: boolean;
 }): Promise<{ error: string } | { error: null; ids: string[] }> {
   // The follower's clock starts on the first line: the page stops this
@@ -683,6 +690,13 @@ export async function startRecastTakes(input: {
   // "over 15.0 seconds" (2026-09-20), the take failed before a credit moved.
   const sendWindow = recastSendWindow(window, spec.maxSendSeconds);
   const cutting = !isWholeClip(sendWindow, clip.seconds);
+  // The face check's opening and closing frames, where the clip's maker knows
+  // no face can be read there — for the whole clip only: a trimmed take's
+  // first and last frames are other moments.
+  const faceUnreadable =
+    isWholeClip(window, clip.seconds) && (input?.faceAt?.first === false || input?.faceAt?.last === false)
+      ? { first: input.faceAt?.first === false, last: input.faceAt?.last === false }
+      : null;
   // Outside the engine's size or frame-rate limits (Kling O3 Edit: 720–3840
   // px, 24–60 fps) the clip is re-encoded to fit, cut or not — the
   // operator's own source was 324 px tall at 61 fps and would have been
@@ -1222,6 +1236,7 @@ export async function startRecastTakes(input: {
             })),
             threshold: RECAST_LOCK_THRESHOLD,
             lockOn,
+            ...(faceUnreadable ? { unreadable: faceUnreadable } : {}),
           }),
           // This lane hands back the uploaded clip's OWN audio on purpose
           // (recast.ts keep_audio / keep_original_sound), so what a viewer
