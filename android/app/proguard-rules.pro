@@ -33,3 +33,26 @@
 # Capacitor passes plugin results as org.json objects across the bridge and
 # reads annotation metadata at runtime.
 -keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
+
+# Full screen in the WebView (2026-09-30, operator: "Android app can't full
+# screen images"). Android's WebView decides whether the page may go full
+# screen BY REFLECTION: WebViewChromium.doesSupportFullscreen walks the
+# chrome client's class chain with getDeclaredMethod and wants BOTH
+# onShowCustomView(View, CustomViewCallback) and onHideCustomView(). Capacitor's
+# BridgeWebChromeClient declares both, but its onHideCustomView() only calls
+# super, so R8 removed it as a redundant override — dexdump of the release
+# versionCode 19 on the emulator shows the class (obfuscated to Lba;) with
+# onShowCustomView and no onHideCustomView. With one half gone the WebView
+# reports full screen unsupported: videos lose their full-screen button,
+# document.fullscreenEnabled is false, and requestFullscreen() rejects with
+# "Fullscreen is not supported" (auto-filed from a Galaxy A23, 2026-09-18).
+# A debug build (no R8) has always had it, which is why it never showed up
+# on the emulator.
+#
+# The website no longer depends on this — pictures and videos open in its own
+# viewer (src/components/media-viewer.tsx) on every shell — but a video's own
+# full-screen button is back from the build that carries this rule.
+-keepclassmembers class * extends android.webkit.WebChromeClient {
+    public void onShowCustomView(android.view.View, android.webkit.WebChromeClient$CustomViewCallback);
+    public void onHideCustomView();
+}

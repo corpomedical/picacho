@@ -18,7 +18,17 @@ android {
         applicationId "ai.picacho.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 21
+        versionCode 22
+        // 22 = full screen in the WebView (2026-09-30, operator: "Android app
+        // can't full screen images"). One R8 keep rule in proguard-rules.pro
+        // for WebChromeClient.onShowCustomView / onHideCustomView: R8 had
+        // removed Capacitor's onHideCustomView as a redundant override, and
+        // Android's WebView only allows full screen when it finds BOTH by
+        // reflection — so Play builds had none (dexdump of 19 shows the
+        // method gone; a local release build with the rule keeps it). No plugin,
+        // no Java, no permission, no manifest change. The website no longer
+        // needs it (its own viewer shows pictures and videos full screen in
+        // every shell); this brings back the video player's own button.
         // 21 = 20 plus <uses-feature microphone required="false">. 20 was
         // uploaded to a Production draft on 2026-09-25 and Play warned "This
         // release no longer supports 20 devices": RECORD_AUDIO implies a
@@ -195,7 +205,7 @@ android {
         // committed to the dark tile in BOTH system themes (operator's call,
         // 2026-08-21: the ink tile reads better and never shifts size with
         // the theme), matching 512 store icon regenerated.
-        versionName "1.21.0"
+        versionName "1.22.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
