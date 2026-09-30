@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.170.0",
+    build: 209,
+    date: "2026-09-30",
+    title: "Helios Studio: video with your character",
+    items: [
+      "Render ▸ Video with your character: the Studio records your animated scene through the shot camera — the car moving, people walking and posing, the camera moving — and Recast re-shoots it with your saved character in a figure's place, with the same moves and the same camera.",
+      "Pick the character, which figure they replace when there are several, and how: Into the clip keeps the scene as it looks, Restage it films it again as live action. \"What happens\" is filled in from the figure's pose and moves; change it freely.",
+      "The price is Recast's own for the length of your playback range (5 seconds into the clip is 3 credits). Stop before it is sent costs nothing, and a press is never charged twice.",
+      "The finished video shows in the window, with Open in Recast, Open in History and Save video. Available wherever Recast is open to your account.",
+      "In English, Spanish, Portuguese and Italian.",
+    ],
+  },
+  {
     version: "1.169.0",
     build: 208,
     date: "2026-09-30",
