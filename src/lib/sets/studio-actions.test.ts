@@ -184,7 +184,7 @@ describe("the wiring", () => {
   it("the page hands the Studio the account's copy", () => {
     // Read with the Studio's other few reads, at once (lib/sets/data.ts getStudioPage, 2026-09-30).
     const page = read("src/app/app/sets/[id]/page.tsx");
-    expect(read("src/lib/sets/data.ts")).toContain("readStudioScene(db, setId, access.userId),");
+    expect(read("src/lib/sets/data.ts")).toContain('tm.step("scene", () => readStudioScene(db, setId, access.userId)),');
     expect(page).toContain("savedScene={data.savedScene}");
   });
   it("the engine opens from the account unless this browser's copy is newer, saves up ~5 s after a change, and keeps the browser copy", () => {

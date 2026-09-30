@@ -37,6 +37,7 @@ import { readShotTakes, takeSourceOf } from "@/lib/sets/shot-take";
 import { readSetShotIds } from "@/lib/sets/set-shots";
 import { SET_NOT_FOUND, setFailureMessage } from "@/lib/sets/messages";
 import { readStudioScene, type StudioScene } from "@/lib/sets/studio-scene";
+import { serverTimer, type ServerTimer } from "@/lib/server-timing";
 import type { SetCharacter, SetPageData, SetShot, SetsHomeData, SetStatus, SetSummary } from "@/lib/sets/types";
 
 // A photo build's brief column holds the photographer's notes, or this
@@ -588,6 +589,8 @@ export async function getStudioPage<T = null>(
   setId: string,
   /** One more read the Studio needs, run beside the others with the person's own session (Recast's characters). */
   also?: (db: SupabaseClient, userId: string) => Promise<T>,
+  /** Times the steps, for our own measurement (lib/server-timing.ts). */
+  tm: ServerTimer = serverTimer("studio"),
 ): Promise<
   | { error: string }
   | {
@@ -600,18 +603,18 @@ export async function getStudioPage<T = null>(
       also: T | null;
     }
 > {
-  const access = await setsAccess();
+  const access = await tm.step("access", () => setsAccess());
   if (access.error !== null) return { error: access.error };
   if (!UUID_RE.test(setId)) return { error: SET_NOT_FOUND };
   const db = access.supabase;
   const own = (columns: string) => db.from("location_sets").select(columns).eq("id", setId).eq("user_id", access.userId).is("deleted_at", null).maybeSingle();
   const [{ data: row }, edited, { shootable: characters }, savedScene, extra] = await Promise.all([
-    own("id, title, status, spec, layout"),
+    tm.step("set", () => own("id, title, status, spec, layout")),
     // The working copy on its own read, as getSetPage reads it: a failed read opens the set as built.
-    own("edited_spec"),
-    charactersOf(db, access.userId),
-    readStudioScene(db, setId, access.userId),
-    also ? also(db, access.userId).catch(() => null) : Promise.resolve(null),
+    tm.step("edited", () => own("edited_spec")),
+    tm.step("characters", () => charactersOf(db, access.userId)),
+    tm.step("scene", () => readStudioScene(db, setId, access.userId)),
+    tm.step("also", () => (also ? also(db, access.userId).catch(() => null) : null)),
   ]);
   const r = row as { id?: string; title?: string; status?: string; spec?: unknown; layout?: unknown } | null;
   if (!r) return { error: SET_NOT_FOUND };

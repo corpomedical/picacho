@@ -13,7 +13,7 @@ describe("Helios Studio loads fast", () => {
   it("the page streams its cover at once and reads only what the Studio needs, together", () => {
     const page = read("src/app/app/sets/[id]/page.tsx");
     expect(page).toContain("<Suspense fallback={<StudioOpening words={t.sets.studioOpening} />}>");
-    expect(page).toContain("getStudioPage(id, (db, userId) => readRecastCharacters(db, userId)),");
+    expect(page).toContain("getStudioPage(id, (db, userId) => readRecastCharacters(db, userId), tm),");
     // The studio branch never reaches the set page's own read.
     expect(page.indexOf('if (first(query.studio) === "1") {')).toBeLessThan(page.indexOf("const data = await getSetPage(id);"));
     const data = read("src/lib/sets/data.ts");
@@ -35,6 +35,7 @@ describe("Helios Studio loads fast", () => {
     expect(read("src/components/studio/studio-opening.tsx")).toContain("<style>{STUDIO_HIDES_APP_CHROME}</style>");
     expect(read("src/components/studio/helios-studio.tsx")).toContain("<style>{STUDIO_HIDES_APP_CHROME}</style>");
     expect(read("src/app/globals.css")).not.toContain("data-app-chrome");
-    expect(read("src/app/app/layout.tsx").match(/<div data-app-chrome className="contents">/g)).toHaveLength(2);
+    // The two in the streamed chrome (AppChrome), and the sidebar's space while it streams (ChromeSpace).
+    expect(read("src/app/app/layout.tsx").match(/<div data-app-chrome className="contents">/g)).toHaveLength(3);
   });
 });

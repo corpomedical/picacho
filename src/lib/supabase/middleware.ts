@@ -63,8 +63,11 @@ export async function updateSession(request: NextRequest) {
   // below is a real server round trip against profiles.status on every
   // authenticated /app request, which is this product's actual revocation
   // mechanism.
+  // Timed for our own measurement (Server-Timing below): step names and milliseconds only.
+  const tAuth = performance.now();
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = claimsData?.claims?.sub;
+  const timing = [`proxy.auth;dur=${Math.round(performance.now() - tAuth)}`];
 
   // Enforce account suspension on every authenticated /app request. The
   // suspended flag lives in profiles.status; it used to be set by the admin
@@ -77,11 +80,13 @@ export async function updateSession(request: NextRequest) {
   // logged-in users on /app paths, so it adds nothing to public/marketing
   // traffic.
   if (userId && request.nextUrl.pathname.startsWith("/app")) {
+    const tStatus = performance.now();
     const { data: profile } = await supabase
       .from("profiles")
       .select("status")
       .eq("id", userId)
       .maybeSingle();
+    timing.push(`proxy.suspension;dur=${Math.round(performance.now() - tStatus)}`);
 
     if (profile?.status === "suspended") {
       const redirectUrl = new URL("/login", request.url);
@@ -102,5 +107,9 @@ export async function updateSession(request: NextRequest) {
     }
   }
 
+  // The proxy's own steps, as a real Server-Timing header — sent before the page streams, so readable from
+  // performance.getEntriesByType("navigation")[0].serverTiming (2026-09-30, "measure it"). The page's own
+  // later steps are written into the page (lib/server-timing.ts).
+  supabaseResponse.headers.set("Server-Timing", timing.join(", "));
   return supabaseResponse;
 }

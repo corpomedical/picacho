@@ -25,9 +25,10 @@ export type SetsAccess =
 
 export async function setsAccess(): Promise<SetsAccess> {
   const supabase = await createClient();
-  const { data } = await supabase.auth.getUser();
+  // Who, and whether Helios is on, at once (2026-09-30 — "Speed up the loading"): the flag doesn't depend on who.
+  const [{ data }, enabled] = await Promise.all([supabase.auth.getUser(), isSetsEnabled(supabase)]);
   if (!data.user) return { error: SETS_SESSION_EXPIRED };
-  if (!(await isSetsEnabled(supabase))) return { error: SETS_UNAVAILABLE };
+  if (!enabled) return { error: SETS_UNAVAILABLE };
   const { data: profile } = await supabase
     .from("profiles")
     .select("plan, role, status, current_period_start")

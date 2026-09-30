@@ -18,6 +18,8 @@ import { SetView } from "@/components/sets/set-view";
 import { SetsUpgrade } from "@/components/sets/sets-upgrade";
 import { HeliosStudio } from "@/components/studio/helios-studio";
 import { StudioOpening } from "@/components/studio/studio-opening";
+import { ServerTimingMark } from "@/components/server-timing-mark";
+import { serverTimer } from "@/lib/server-timing";
 import { canUseRecast } from "@/lib/recast/actions";
 import { readRecastCharacters } from "@/lib/recast/data";
 
@@ -213,13 +215,16 @@ export default async function SetPage({
  * says why.
  */
 async function StudioRoute({ id }: { id: string }) {
+  const tm = serverTimer("studio");
   const [data, native, recastGate] = await Promise.all([
-    getStudioPage(id, (db, userId) => readRecastCharacters(db, userId)),
-    isNativeApp(),
-    canUseRecast(),
+    getStudioPage(id, (db, userId) => readRecastCharacters(db, userId), tm),
+    tm.step("native", () => isNativeApp()),
+    tm.step("recastgate", () => canUseRecast()),
   ]);
   if (data.error !== null || native || !data.set.ready || !data.set.spec || !(data.modelsOn || HELIOS_STUDIO_FOR_ALL)) redirect(`/app/sets/${id}`);
   return (
+    <>
+    <ServerTimingMark value={tm.value()} />
     <HeliosStudio
       setId={data.set.id}
       title={data.set.title}
@@ -230,5 +235,6 @@ async function StudioRoute({ id }: { id: string }) {
       recastCharacters={recastGate.error === null ? data.also : null}
       castId={data.set.castId}
     />
+    </>
   );
 }
