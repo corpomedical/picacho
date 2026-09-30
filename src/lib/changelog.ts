@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.177.0",
+    build: 216,
+    date: "2026-09-30",
+    title: "Helios Studio: Real scene, sharper words",
+    items: [
+      "Real scene now names the real surfaces of your place (a race track gets real asphalt, kerbs and grass; a street, pavement and shopfronts), its buildings and its things by colour, and always a real sky and real ground, so they no longer stay flat.",
+      "It also tells the video engine your character keeps the outfit and hair from their photos.",
+      "When there is a lot to say, whole details are left out instead of cutting a sentence in half.",
+    ],
+  },
+  {
     version: "1.176.0",
     build: 215,
     date: "2026-09-30",
