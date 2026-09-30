@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.181.0",
+    build: 220,
+    date: "2026-09-30",
+    title: "The face score reads the face, not the look",
+    items: [
+      "The identity score now judges the character's face itself: its shape, jaw, cheekbones, eyes, brows, nose and mouth, against three of their saved photos instead of one. Hair colour, freckles, eye colour, clothes and light no longer raise it. The old score gave 96 to a different woman who only shared Eva's hair and freckles; the new one gives that picture 67, and Eva's own photos 82 and 83 (operator, 2026-09-30: \"The image you generated doesn't look like Eva, whats more worrying is that she got a score of 96.\").",
+      "Before the identity gate decides whether a picture gets its free re-render, the picture is read twice and the two scores are averaged, because one reading of the same picture moved by up to 14 points. Video frames, expression close-ups and the free checker are read once.",
+      "Scores from today are stamped as the new scorer (gpt-5.5/p3). On the test pictures a lookalike read 13 to 43 points lower than it did, so today's numbers should not be compared with earlier ones.",
+      "The free checker allows 800 checks a day for everyone together (it was 2,000), which keeps a normal day at about $22 on the new scorer. Its \"85 and above\" line now says hair, freckles and clothes don't raise the score, in English, Spanish, Portuguese and Italian.",
+      "A picture that took more than 105 seconds (it was 125) is delivered without the free re-render, so the slower, more careful reading still fits inside the 300-second limit.",
+    ],
+  },
+  {
     version: "1.180.0",
     build: 219,
     date: "2026-09-30",
