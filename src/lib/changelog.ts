@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.208.0",
+    build: 247,
+    date: "2026-10-02",
+    title: "Admin → Models, laid out as the picked draft",
+    items: [
+      "The Models page now follows layout A as drawn. One card per product holds the model menu and, under it, Behind the scenes. Each model is a single line: name, provider and endpoint, cost, renders in the last 30 days, a default choice, On or Off, and its switch.",
+      "Choosing a model for a behind-the-scenes job saves the moment you pick it; the Switch buttons are gone. The default is chosen in the row, and the separate default dropdown is gone.",
+      "The explanation paragraphs are gone. Why a model can't be turned off is shown when you point at its switch. Suspend and Restore are small links in the model's line, and a model out of service shows a red pill.",
+      "The four tiles match the draft: Products, Models in use, Out of service, and Last switch (how long ago a model was last switched).",
+    ],
+  },
+  {
     version: "1.207.0",
     build: 246,
     date: "2026-10-02",
