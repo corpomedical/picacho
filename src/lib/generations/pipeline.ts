@@ -46,7 +46,8 @@ import type { OpeningFrameResult } from "@/lib/generations/opening-frame-run";
 import { recentRefusalCount, recordPolicyRefusal, refusedOnItsOwn } from "@/lib/generations/policy-log";
 import { refusalProviderFor } from "@/lib/generations/refusal-attribution";
 import { OUTPUT_BLOCKED_ISSUE, REFUSED_BEFORE_RENDER_ISSUE } from "@/lib/generations/refund-rules";
-import { speechSeedFor } from "@/lib/generations/voice-lock";
+import { SYNCED_STEP_DETAIL } from "@/lib/generations/speech-engine";
+import { speechSeedFor, type SpeechEngine } from "@/lib/generations/voice-lock";
 
 export type ContentType = "video" | "image";
 
@@ -655,6 +656,8 @@ export type RealPipelineOptions = {
    * them rather than of the moment (voice-lock.ts speechSeedFor).
    */
   dialogueSeed?: number;
+  /** The character's ElevenLabs engine (voice-lock.ts); absent means v3. */
+  dialogueEngine?: SpeechEngine;
   // Requested clip length in seconds — the caller (actions.ts) is
   // responsible for validating this against the selected model's real
   // duration options (see video-models.ts) before it gets here.
@@ -1855,11 +1858,12 @@ export async function runRealPipeline(
             options.dialogueText.trim(),
             options.dialogueVoiceId,
             options.dialogueSeed ?? speechSeedFor(options.dialogueVoiceId),
+            options.dialogueEngine ?? "v3",
           );
           steps.push({ step: "speech", detail: "Generated dialogue audio via ElevenLabs." });
 
           const syncedUrl = await lipSyncVideo(resultUrl, audioUrl);
-          steps.push({ step: "lipsync", detail: "Synced the character's mouth to the dialogue via Sync Labs." });
+          steps.push({ step: "lipsync", detail: SYNCED_STEP_DETAIL });
           resultUrl = syncedUrl;
         } catch (err) {
           const message = err instanceof Error ? err.message : "Dialogue voice generation failed.";

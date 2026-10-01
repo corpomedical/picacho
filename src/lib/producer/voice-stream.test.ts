@@ -67,10 +67,10 @@ function setup() {
 }
 
 describe("one take per answer (ElevenLabs Text-to-Dialogue)", () => {
-  it("asks for the conversational model, MP3 and the words of each chunk", () => {
+  it("asks for Eleven v4 Turbo, MP3 and the words of each chunk", () => {
     const { sock } = setup();
     expect(sock().url).toBe(
-      "wss://api.elevenlabs.io/v1/text-to-dialogue/stream-input?model_id=eleven_v3_conversational&output_format=mp3_44100_128&sync_alignment=true",
+      "wss://api.elevenlabs.io/v1/text-to-dialogue/stream-input?model_id=eleven_v4_turbo&output_format=mp3_44100_128&sync_alignment=true",
     );
   });
 

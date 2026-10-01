@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { generateSpeech } from "@/lib/generations/providers/fal";
 import { speechSeedFor } from "@/lib/generations/voice-lock";
+import { speechEngineForCharacter } from "@/lib/generations/speech-engine";
 import { dailyCapReached, rateLimited } from "@/lib/rate-limit";
 import { planInGoodStanding } from "@/lib/plans";
 
@@ -38,6 +39,7 @@ const PREVIEW_TEXT = "Hi, this is a quick preview of this voice.";
 // endpoint any throwaway account could loop and bill to us.
 export async function previewVoice(
   voicePresetId: string,
+  characterId: string | null = null,
 ): Promise<{ url?: string; error?: string }> {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
@@ -101,10 +103,20 @@ export async function previewVoice(
     // take is seeded on the CHARACTER instead (voice-lock.ts speechSeedFor),
     // so this is a consistent audition of the voice, not a preview of one
     // character's exact performance.
+    //
+    // On the engine the character would speak on (voice-lock.ts): a saved
+    // character who has spoken keeps v3, so the sample is what their next
+    // line will sound like; a new character, or Admin > Voices, hears v4.
+    // The lookup reads through this user's own client, so another person's
+    // character id finds no takes and is simply v4.
+    const engine = typeof characterId === "string" && characterId
+      ? await speechEngineForCharacter(supabase, characterId)
+      : "v4";
     const url = await generateSpeech(
       PREVIEW_TEXT,
       preset.elevenlabs_voice_id,
       speechSeedFor(voicePresetId),
+      engine,
     );
     return { url };
   } catch (err) {

@@ -805,7 +805,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Read-aloud: sentences go to speech as they complete and are sent in
-      // order. The human voice first, each piece told what was said before it;
+      // order. The human voice first (Eleven v4 Turbo on fal, speech.ts);
       // if it fails, that piece and the rest of the answer use OpenAI's voice —
       // a change of voice beats a silence. Both failing stops the voice for
       // the rest of the turn; the words are still on screen.
@@ -820,13 +820,12 @@ export async function POST(request: NextRequest) {
       // "Her voice changes tones from sentence to sentence"). Two pieces in a
       // row failing both tries means the service is down: the rest falls back.
       let humanFailures = 0;
-      let saidSoFar = "";
       type Speech = { kind: "human"; url: string } | { kind: "openai"; data: string };
-      const synth = async (piece: string, before: string, after: string): Promise<Speech | null> => {
+      const synth = async (piece: string): Promise<Speech | null> => {
         if (!humanBroken && humanVoice) {
           for (let attempt = 0; attempt < 2; attempt++) {
             try {
-              const url = await speakHuman(piece, humanVoice.elevenLabsVoiceId, before, after);
+              const url = await speakHuman(piece, humanVoice.elevenLabsVoiceId);
               humanFailures = 0;
               return { kind: "human", url };
             } catch {
@@ -842,22 +841,10 @@ export async function POST(request: NextRequest) {
           return null;
         }
       };
-      // Each piece after the first waits a moment for the words after it
-      // (the voice's next_text), so it isn't read as the end of the answer.
-      // The first plays at once, told what has arrived after it so far; a
-      // later one waits for the next piece, at most HOLD_FOR_NEXT_MS — while
-      // the piece before it is still playing, so it adds no silence.
-      const HOLD_FOR_NEXT_MS = 350;
-      let heldPiece: string | null = null;
-      let heldTimer: ReturnType<typeof setTimeout> | null = null;
-      const releaseHeld = (after?: string) => {
-        if (heldTimer) clearTimeout(heldTimer);
-        heldTimer = null;
-        if (heldPiece === null) return;
-        const piece = heldPiece;
-        heldPiece = null;
-        speakPiece(piece, after ?? chunker.pending());
-      };
+      // Each piece goes as soon as it is complete. Until 2026-10-01 every
+      // piece after the first waited up to 350 ms for the words after it (the
+      // Turbo v2.5 voice's next_text); Eleven v4 Turbo on fal takes no
+      // surrounding text (speech.ts), so there is nothing to wait for.
       const say = (pieces: string[]) => {
         if (!speakReplies) return;
         if (holding) {
@@ -866,35 +853,19 @@ export async function POST(request: NextRequest) {
           pendingSpeech.push(...pieces);
           return;
         }
-        pieces.forEach((piece, i) => {
-          const next = pieces[i + 1];
-          if (voiceIndex === 0 && heldPiece === null) {
-            speakPiece(piece, next ?? chunker.pending());
-            return;
-          }
-          releaseHeld(piece);
-          if (next !== undefined) {
-            speakPiece(piece, next);
-            return;
-          }
-          heldPiece = piece;
-          heldTimer = setTimeout(() => releaseHeld(), HOLD_FOR_NEXT_MS);
-        });
+        for (const piece of pieces) speakPiece(piece);
       };
       // Everything said so far goes: before a lookup (her words mustn't wait
       // through it) and at the end of the answer.
       const sayAllNow = () => {
         say(chunker.flush());
-        releaseHeld("");
       };
-      function speakPiece(piece: string, after: string) {
-        // Cut off while a piece waited for the words after it: never voiced (or paid for).
+      function speakPiece(piece: string) {
+        // Cut off before this piece was voiced: never voiced (or paid for).
         if (upstream.signal.aborted) return;
         {
           const index = voiceIndex++;
-          const before = saidSoFar;
-          saidSoFar = before ? `${before} ${piece}` : piece;
-          const job = voiceBroken ? Promise.resolve(null) : synth(piece, before, after);
+          const job = voiceBroken ? Promise.resolve(null) : synth(piece);
           voiceChain = voiceChain.then(async () => {
             const audio = await job;
             if (!audio || upstream.signal.aborted) {

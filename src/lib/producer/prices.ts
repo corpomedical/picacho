@@ -108,7 +108,14 @@ export const SPEECH_MODEL = "gpt-4o-mini-tts";
 export const SPEECH_CEILING_USD_PER_MINUTE = 0.05;
 export const SPEECH_CHARS_PER_SECOND = 12;
 export const SPEECH_USD_PER_MCHAR = (SPEECH_CEILING_USD_PER_MINUTE / (60 * SPEECH_CHARS_PER_SECOND)) * 1_000_000;
-export const HUMAN_SPEECH_ENDPOINT = "fal-ai/elevenlabs/tts/turbo-v2.5";
+//
+// ELEVEN V4 TURBO (2026-10-01): her voice is now Eleven v4 Turbo on both
+// paths. Read that day: fal's elevenlabs/tts/eleven-v4-turbo page, "$0.04
+// per 1000 character"; ElevenLabs' API pricing page, v4 Turbo "$0.04" per
+// 1K characters ($0.011 while "72% off until Oct 12"). The meter stays at
+// $0.05 per 1,000 ($50 per 1M), never below what either path costs. 300 characters:
+// we pay 300 × $40/1M = $0.012 and meter $0.015.
+export const HUMAN_SPEECH_ENDPOINT = "elevenlabs/tts/eleven-v4-turbo";
 export const HUMAN_SPEECH_USD_PER_MCHAR = 50;
 // A spoken message is capped at a minute: hands-free turns are sentences,
 // and the cap bounds what one recording can cost ($0.003).

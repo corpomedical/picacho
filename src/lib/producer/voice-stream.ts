@@ -9,10 +9,20 @@
 // no tone reset between sentences. The key stays on the server; the audio
 // reaches the sheet as `audio_stream` events (route.ts), where one element
 // plays it (use-hands-free.ts). It is metered at the same rate as the fal
-// voice ($0.05 per 1,000 characters, prices.ts).
+// voice ($0.05 per 1,000 characters, prices.ts — a ceiling over both).
 //
-// Docs (read 2026-09-26): wss://api.elevenlabs.io/v1/text-to-dialogue/stream-input
-// — first message: voices (exactly one for eleven_v3_conversational) and
+// ELEVEN V4 TURBO (2026-10-01, operator: "Elevenlabs v4 integration in
+// Picacho"). ElevenLabs released Eleven v4 on 2026-09-28; its real-time
+// variant, eleven_v4_turbo ("purpose-built for real-time use cases like
+// conversational agents", ~100 ms median inference against v3
+// conversational's ~280 ms), runs on this same socket with the same
+// protocol — the dialogue WebSocket takes any model_id starting eleven_v3 or
+// eleven_v4, and v4 Turbo, like v3 conversational, registers exactly one
+// voice. Price read that day: "$0.04" per 1K characters for both models
+// ($0.011 for v4 Turbo while "72% off until Oct 12").
+//
+// Docs (read 2026-09-26, the v4 pages 2026-10-01): wss://api.elevenlabs.io/v1/text-to-dialogue/stream-input
+// — first message: voices (exactly one for eleven_v4_turbo) and
 // credentials; then inputs [{ text, voice_id }]; flush; keep_alive (resets a
 // 20 s idle timeout); close_socket (flushes, sends is_final, closes). Server
 // messages: { audio (base64), alignment { chars } }, { is_final_audio_for_turn },
@@ -22,7 +32,7 @@
 // without it, an error, or silence past a deadline is a failure, reported with
 // how many characters were voiced, so the route can hand the rest to fal.
 
-export const VOICE_STREAM_MODEL = "eleven_v3_conversational";
+export const VOICE_STREAM_MODEL = "eleven_v4_turbo";
 const URL_BASE = "wss://api.elevenlabs.io/v1/text-to-dialogue/stream-input";
 /** mp3_44100_128: 16,000 bytes a second — the sheet times what was heard from it. */
 export const VOICE_STREAM_FORMAT = "mp3_44100_128";

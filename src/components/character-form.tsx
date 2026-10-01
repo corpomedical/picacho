@@ -1266,7 +1266,7 @@ export function CharacterForm({
                 </option>
               ))}
             </select>
-            <VoicePreviewButton voicePresetId={voiceId} label={c.previewVoice} />
+            <VoicePreviewButton voicePresetId={voiceId} characterId={initial?.id ?? null} label={c.previewVoice} />
           </div>
         )}
       </section>

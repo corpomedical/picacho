@@ -1,7 +1,7 @@
 import { getVideoModel } from "@/lib/generations/providers/video-models";
 import { LAYERIZE_ENDPOINT, LAYERIZE_LABEL } from "@/lib/generations/layers";
 import { RECAST_ENGINES, recastRequestBody, type RecastEngine } from "@/lib/recast/recast";
-import { SPEECH_ENDPOINT, speechSettings } from "@/lib/generations/voice-lock";
+import { SPEECH_ENDPOINTS, speechRequestBody, type SpeechEngine } from "@/lib/generations/voice-lock";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { canExtractFrameFrom, IDENTITY_FRAME_TYPE } from "@/lib/generations/providers/frame-url";
 import type { VideoResolution } from "@/lib/generations/providers/video-resolution";
@@ -1207,10 +1207,11 @@ export async function submitSpeechJob(
   text: string,
   elevenLabsVoiceId: string,
   seed: number,
+  engine: SpeechEngine,
 ): Promise<QueuedJob> {
   return submitToQueue(
-    SPEECH_ENDPOINT,
-    speechRequestBody(text, elevenLabsVoiceId, seed),
+    SPEECH_ENDPOINTS[engine],
+    speechRequestBody(text, elevenLabsVoiceId, seed, engine),
     "ElevenLabs speech",
     requireApiKey(),
   );
@@ -1507,24 +1508,19 @@ export async function generateVideo(
 //    returns { audio: { url }, seed }) — and probed for real on 2026-09-23,
 //    see voice-lock.ts for what the nine sends measured. We ran
 //    tts/eleven-v3 until then, whose schema has NO seed at all.
+//   And since 2026-10-01, for characters who first speak after the switch:
+//   https://fal.ai/models/elevenlabs/tts/eleven-v4/api (text, voice, seed,
+//   stability, similarity_boost; returns { audio: { url } }) — voice-lock.ts
+//   says which character speaks on which.
 // - Lipsync: https://fal.ai/models/fal-ai/sync-lipsync/v2/pro/api
 //   (video_url, audio_url; returns { video: { url } })
 const SYNC_LIPSYNC_ENDPOINT = "fal-ai/sync-lipsync/v2/pro";
 
 // ONE body for every spoken line in the product — the queued lane, the
-// inline lane and the voice audition alike. Built in one place on purpose:
-// the two call sites had drifted to identical two-field bodies that pinned
-// nothing, and a fix applied to only one of them would have left the other
-// re-rolling the performance.
-function speechRequestBody(text: string, elevenLabsVoiceId: string, seed: number) {
-  const settings = speechSettings(seed);
-  return {
-    inputs: [{ text, voice: elevenLabsVoiceId }],
-    seed: settings.seed,
-    stability: settings.stability,
-    use_speaker_boost: settings.speakerBoost,
-  };
-}
+// inline lane and the voice audition alike — built by voice-lock.ts
+// speechRequestBody. The two call sites had once drifted to identical
+// two-field bodies that pinned nothing, and a fix applied to only one of them
+// would have left the other re-rolling the performance.
 
 function extractAudioUrl(data: unknown): string | undefined {
   const d = data as Record<string, unknown> | undefined;
@@ -1539,6 +1535,7 @@ export async function generateSpeech(
   text: string,
   elevenLabsVoiceId: string,
   seed: number,
+  engine: SpeechEngine,
 ): Promise<string> {
   const apiKey = process.env.FAL_KEY;
   if (!apiKey) {
@@ -1549,14 +1546,14 @@ export async function generateSpeech(
   }
 
   const res = await fetchWithTimeout(
-    `https://fal.run/${SPEECH_ENDPOINT}`,
+    `https://fal.run/${SPEECH_ENDPOINTS[engine]}`,
     {
       method: "POST",
       headers: {
         "content-type": "application/json",
         authorization: `Key ${apiKey}`,
       },
-      body: JSON.stringify(speechRequestBody(text, elevenLabsVoiceId, seed)),
+      body: JSON.stringify(speechRequestBody(text, elevenLabsVoiceId, seed, engine)),
     },
     60_000,
   );

@@ -7,7 +7,7 @@ vi.mock("@/lib/generations/providers/fetch-with-timeout", async () => await impo
 vi.mock("@/lib/generations/providers/frame-url", async () => await import("./frame-url"));
 vi.mock("@/lib/generations/layers", () => ({ LAYERIZE_ENDPOINT: "", LAYERIZE_LABEL: "" }));
 vi.mock("@/lib/recast/recast", () => ({ RECAST_ENGINES: {}, recastRequestBody: () => ({}) }));
-vi.mock("@/lib/generations/voice-lock", () => ({ SPEECH_ENDPOINT: "", speechSettings: () => ({}) }));
+vi.mock("@/lib/generations/voice-lock", () => ({ SPEECH_ENDPOINTS: { v3: "", v4: "" }, speechRequestBody: () => ({}) }));
 
 const { KLING_STORYBOARD_ENDPOINT, submitVideoJob } = await import("./fal");
 

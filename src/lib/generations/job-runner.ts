@@ -61,7 +61,8 @@ import {
   type IdentityLock,
   type ScoredMember,
 } from "@/lib/generations/face-lock";
-import { speechSeedFor, speechSettings, voiceRecord, voiceSourceFor } from "@/lib/generations/voice-lock";
+import { SYNCED_STEP_DETAIL } from "@/lib/generations/speech-engine";
+import { speechSeedFor, speechSettings, voiceRecord, voiceSourceFor, type SpeechEngine } from "@/lib/generations/voice-lock";
 import { removeOpeningFrames } from "@/lib/generations/opening-frame-run";
 import { CHAIN_FPS, CHAIN_PREFIX_FRAMES, chainPieceBody, type ChainState } from "@/lib/generations/chain";
 import {
@@ -137,6 +138,12 @@ type ResumeState = {
    * every character on that voice.
    */
   dialogueSeed?: number;
+  /**
+   * The character's ElevenLabs engine (voice-lock.ts SpeechEngine), chosen
+   * at send time. Absent on rows queued before 2026-10-01, which were sent
+   * when every line was v3 — so absent means v3.
+   */
+  dialogueEngine?: SpeechEngine;
   // The pipeline's attempt log so far. Carried through so the finished
   // generation ends up with the same complete pipeline_log it would have had
   // when this all ran inline, rather than losing the drafting and validation
@@ -1004,6 +1011,8 @@ export async function saveVideoJob(params: {
   dialogueVoiceId?: string | null;
   /** This character's stable speech seed — see ResumeState.dialogueSeed. */
   dialogueSeed?: number;
+  /** This character's ElevenLabs engine — see ResumeState.dialogueEngine. */
+  dialogueEngine?: SpeechEngine;
   attempts: AttemptLog[];
   /** The prompt gate's lane for this render — see JobRow.payload.strictLane. */
   strictLane?: boolean;
@@ -1052,6 +1061,7 @@ export async function saveVideoJob(params: {
       dialogueText: params.dialogueText,
       dialogueVoiceId: params.dialogueVoiceId ?? undefined,
       dialogueSeed: params.dialogueSeed,
+      ...(params.dialogueEngine ? { dialogueEngine: params.dialogueEngine } : {}),
       attempts: params.attempts,
     } satisfies ResumeState,
     started_at: new Date().toISOString(),
@@ -1264,6 +1274,7 @@ async function finish(
             ? speechSettings(
                 jobRow?.resume?.dialogueSeed ??
                   speechSeedFor(jobRow?.resume?.dialogueVoiceId ?? generationId),
+                jobRow?.resume?.dialogueEngine ?? "v3",
               )
             : null,
         })
@@ -2568,6 +2579,7 @@ export async function advanceGeneration(
         spokenLine.length > 0 ? spokenLine : row.resume.dialogueText!.trim(),
         row.resume.dialogueVoiceId!,
         row.resume.dialogueSeed ?? speechSeedFor(row.resume.dialogueVoiceId!),
+        row.resume.dialogueEngine ?? "v3",
       );
       // mustUpdate, not fire-and-forget: the paid TTS job above is already
       // submitted, and if this transition silently failed the row would keep
@@ -2826,7 +2838,7 @@ export async function advanceGeneration(
       resultUrl: syncedUrl,
       attempts: appendStep(
         row.resume.attempts ?? [],
-        "Synced the character's mouth to the dialogue via Sync Labs.",
+        SYNCED_STEP_DETAIL,
         "lipsync",
       ),
       // The one place in the product where our own voice reaches a

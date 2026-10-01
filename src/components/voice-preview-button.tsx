@@ -40,10 +40,13 @@ function SpinnerIcon(props: React.SVGProps<SVGSVGElement>) {
 // clip.
 export function VoicePreviewButton({
   voicePresetId,
+  characterId,
   label,
   className,
 }: {
   voicePresetId: string | null | undefined;
+  /** A saved character: the sample plays on the engine they speak on (v3 or v4). */
+  characterId?: string | null;
   label?: string;
   className?: string;
 }) {
@@ -76,7 +79,7 @@ export function VoicePreviewButton({
     }
 
     setState("loading");
-    const result = await previewVoice(voicePresetId);
+    const result = await previewVoice(voicePresetId, characterId ?? null);
     if (!result.url) {
       setState("error");
       setTimeout(() => setState("idle"), 2500);

@@ -134,30 +134,35 @@ export async function transcribeHeard(
 }
 
 // THE HUMAN VOICE (2026-09-25, operator: "make it sound more human … its
-// sounds ai"): ElevenLabs Turbo v2.5 on fal, speaking with one of the
+// sounds ai"): ElevenLabs on fal (Turbo v2.5 until 2026-10-01, now Eleven v4
+// Turbo — see below), speaking with one of the
 // admin-picked voices in voice_presets (never a named ElevenLabs default —
 // those are being retired, see providers/fal.ts generateSpeech).
 //
-// What makes it sound like one person talking rather than sentences read one
-// by one: every piece is sent with `previous_text`, so the model knows where
-// the reply has come from and carries the intonation on. Stability 0.4 lets
-// the delivery move (ElevenLabs' own guidance: lower is more expressive,
-// higher more monotone); speed 1.05 is conversational rather than read-aloud.
+// On Turbo v2.5 each piece was sent with the reply's text so far, so the
+// model carried the intonation on, at speed 1.05; Eleven v4 takes neither
+// (below).
 //
 // Returns fal's audio URL. The browser plays it straight from fal.media: the
 // site's CSP allows https://*.fal.media for media, and fal serves it with
 // access-control-allow-origin: * (checked 2026-09-25), so it can also run
 // through the page's audio graph for the bulb's light. No download, no
 // re-encoding on our side — the first sound arrives sooner.
-// STEADIER, AND TOLD WHAT COMES NEXT (2026-09-26, operator: "Her voice
-// changes tones from sentence to sentence. She also sounds ai"). Each piece
-// is its own generation; ElevenLabs: lower stability means "a wider range of
-// variability between generations", so 0.4 let every seam land on a new tone
-// — 0.5 is their default. A piece without next_text is read as the END of
-// what's being said (the falling tone at each seam); fal's turbo endpoint
-// takes next_text, so every piece now carries the words after it. style 0,
-// as ElevenLabs recommends, sent rather than assumed.
-export async function speakHuman(text: string, voiceId: string, previousText: string, nextText = ""): Promise<string> {
+// STEADIER (2026-09-26, operator: "Her voice changes tones from sentence to
+// sentence. She also sounds ai"): stability 0.5, ElevenLabs' default, for
+// pieces that are each their own generation.
+//
+// ELEVEN V4 TURBO (2026-10-01, operator: "Elevenlabs v4 integration in
+// Picacho", then "v4 Turbo" for the phone path): the same model as her
+// one-take voice (voice-stream.ts), so a phone and a computer hear one
+// voice, and a take that fails part-way goes on in the same voice. fal's
+// schema for elevenlabs/tts/eleven-v4-turbo (read 2026-10-01): text, voice,
+// stability, similarity_boost, seed, language_code,
+// apply_text_normalization, output_format, timestamps — nothing for the text
+// before or after a piece, and no style or speed ("Style and Speed sliders are not
+// available in Eleven v4", ElevenLabs). Each piece is spoken on its own; he
+// was told the joins may be a little less smooth than Turbo v2.5's.
+export async function speakHuman(text: string, voiceId: string): Promise<string> {
   const res = await fetchWithTimeout(
     `https://fal.run/${HUMAN_SPEECH_ENDPOINT}`,
     {
@@ -168,10 +173,6 @@ export async function speakHuman(text: string, voiceId: string, previousText: st
         voice: voiceId,
         stability: 0.5,
         similarity_boost: 0.75,
-        style: 0,
-        speed: 1.05,
-        ...(previousText ? { previous_text: previousText.slice(-600) } : {}),
-        ...(nextText.trim() ? { next_text: nextText.trim().slice(0, 300) } : {}),
       }),
     },
     20_000,

@@ -362,7 +362,7 @@ describe("voice", () => {
     expect(out.length).toBeLessThanOrEqual(4);
     expect(out.slice(1, -1).every((p) => p.length >= 100)).toBe(true);
     expect(out.join(" ")).toBe(reply.trim());
-    // What has arrived past the last piece is there for the voice's next_text.
+    // What has arrived past the last piece (pending) is still kept.
     const d = sentenceChunker();
     d.push("Right, got it, that's the one. And then the next part is on its way");
     expect(d.pending()).toBe("And then the next part is on its way");

@@ -52,11 +52,15 @@ describe("her voice, one piece to the next", () => {
   const speech = read("./speech.ts");
   const route = read("../../app/api/producer/route.ts");
 
-  it("is steadier and is told the words after each piece", () => {
+  it("is steadier, on Eleven v4 Turbo, and sends only what that model takes", () => {
+    // 2026-10-01: Eleven v4 has no style, speed, previous_text or next_text,
+    // so a piece no longer waits for the words after it.
     expect(speech).toContain("stability: 0.5,");
-    expect(speech).toContain("style: 0,");
-    expect(speech).toContain("next_text: nextText.trim().slice(0, 300)");
-    expect(route).toContain("const url = await speakHuman(piece, humanVoice.elevenLabsVoiceId, before, after);");
+    expect(speech).toContain("similarity_boost: 0.75,");
+    expect(speech).not.toMatch(/(previous_text|next_text|style|speed):/);
+    expect(read("./prices.ts")).toContain('HUMAN_SPEECH_ENDPOINT = "elevenlabs/tts/eleven-v4-turbo"');
+    expect(route).toContain("const url = await speakHuman(piece, humanVoice.elevenLabsVoiceId);");
+    expect(route).not.toContain("HOLD_FOR_NEXT_MS");
   });
 
   it("says what she said before a lookup right away, and never voices a piece after she's cut off", () => {

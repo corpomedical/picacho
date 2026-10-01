@@ -6,7 +6,11 @@ import {
   assignedVoiceFor,
   engineAudioReaches,
   isVoiceSource,
-  SPEECH_ENDPOINT,
+  SPEECH_ENDPOINT_V3,
+  SPEECH_ENDPOINT_V4,
+  speechEngineForHistory,
+  speechEngineOf,
+  speechRequestBody,
   speechSeedFor,
   speechSettings,
   voiceRecord,
@@ -296,10 +300,12 @@ describe("the microphone rule and the record agree", () => {
 });
 
 describe("the pinned speech call", () => {
-  it("points at the endpoint that actually has a seed", () => {
+  it("points at endpoints that actually have a seed", () => {
     // tts/eleven-v3, which we ran until 2026-09-23, has no seed in its
-    // schema at all — the swap is the whole point.
-    expect(SPEECH_ENDPOINT).toBe("fal-ai/elevenlabs/text-to-dialogue/eleven-v3");
+    // schema at all — the swap is the whole point. Eleven v4's TTS route
+    // has one (fal schema, 2026-10-01).
+    expect(SPEECH_ENDPOINT_V3).toBe("fal-ai/elevenlabs/text-to-dialogue/eleven-v3");
+    expect(SPEECH_ENDPOINT_V4).toBe("elevenlabs/tts/eleven-v4");
   });
 
   it("gives one character the same seed every time", () => {
@@ -326,8 +332,8 @@ describe("the pinned speech call", () => {
     }
   });
 
-  it("pins stability at Robust and asks for speaker boost", () => {
-    const s = speechSettings(42);
+  it("pins stability at Robust and asks for speaker boost on v3", () => {
+    const s = speechSettings(42, "v3");
     expect(s).toEqual({
       endpoint: "fal-ai/elevenlabs/text-to-dialogue/eleven-v3",
       seed: 42,
@@ -335,15 +341,66 @@ describe("the pinned speech call", () => {
       speakerBoost: true,
     });
   });
+
+  it("pins stability at the top and similarity at the default on v4", () => {
+    expect(speechSettings(42, "v4")).toEqual({
+      endpoint: "elevenlabs/tts/eleven-v4",
+      seed: 42,
+      stability: 1,
+      similarity: 0.75,
+    });
+  });
+
+  it("builds each engine's own body, every field from the settings", () => {
+    expect(speechRequestBody("Hello there.", "VOICEID", 7, "v3")).toEqual({
+      inputs: [{ text: "Hello there.", voice: "VOICEID" }],
+      seed: 7,
+      stability: 1,
+      use_speaker_boost: true,
+    });
+    // Only fields fal's v4 schema has (text, voice, seed, stability, similarity_boost).
+    expect(speechRequestBody("Hello there.", "VOICEID", 7, "v4")).toEqual({
+      text: "Hello there.",
+      voice: "VOICEID",
+      seed: 7,
+      stability: 1,
+      similarity_boost: 0.75,
+    });
+  });
+});
+
+// "Keep old characters on v3" (operator, 2026-10-01).
+describe("which engine a character speaks on", () => {
+  it("reads the engine a recorded take ran on; no settings means before v4", () => {
+    expect(speechEngineOf({ endpoint: SPEECH_ENDPOINT_V4 })).toBe("v4");
+    expect(speechEngineOf({ endpoint: SPEECH_ENDPOINT_V3 })).toBe("v3");
+    expect(speechEngineOf(null)).toBe("v3");
+    expect(speechEngineOf({})).toBe("v3");
+  });
+
+  it("keeps anyone who has spoken on the engine of their first take", () => {
+    const v3 = { voice_settings: { endpoint: SPEECH_ENDPOINT_V3 } };
+    const v4 = { voice_settings: { endpoint: SPEECH_ENDPOINT_V4 } };
+    expect(speechEngineForHistory({ firstRecorded: v3, spokeBeforeRecords: false })).toBe("v3");
+    // A character who started on v4 stays on v4: their later takes don't pull them back.
+    expect(speechEngineForHistory({ firstRecorded: v4, spokeBeforeRecords: false })).toBe("v4");
+    // A take recorded before the settings column existed was v3.
+    expect(speechEngineForHistory({ firstRecorded: { voice_settings: null }, spokeBeforeRecords: false })).toBe("v3");
+  });
+
+  it("keeps a character who spoke before takes were recorded on v3, and starts a new one on v4", () => {
+    expect(speechEngineForHistory({ firstRecorded: null, spokeBeforeRecords: true })).toBe("v3");
+    expect(speechEngineForHistory({ firstRecorded: null, spokeBeforeRecords: false })).toBe("v4");
+  });
 });
 
 describe("the provider actually sends what we pinned", () => {
   const fal = readFileSync(join(__dirname, "providers/fal.ts"), "utf8");
 
   it("builds one body for every spoken line in the product", () => {
-    expect(fal).toContain("function speechRequestBody(text: string, elevenLabsVoiceId: string, seed: number)");
-    expect(fal).toContain("inputs: [{ text, voice: elevenLabsVoiceId }]");
-    expect(fal).toContain("use_speaker_boost: settings.speakerBoost");
+    expect(fal).toContain("speechRequestBody(text, elevenLabsVoiceId, seed, engine)");
+    expect(fal.match(/speechRequestBody\(/g)?.length).toBe(2);
+    expect(fal).toContain("SPEECH_ENDPOINTS[engine]");
   });
 
   it("no longer posts the bare two-field body that pinned nothing", () => {
@@ -352,8 +409,8 @@ describe("the provider actually sends what we pinned", () => {
   });
 
   it("makes both call sites take a seed, so neither can be fixed alone", () => {
-    expect(fal).toMatch(/submitSpeechJob\(\s*text: string,\s*elevenLabsVoiceId: string,\s*seed: number,\s*\)/);
-    expect(fal).toMatch(/generateSpeech\(\s*text: string,\s*elevenLabsVoiceId: string,\s*seed: number,\s*\)/);
+    expect(fal).toMatch(/submitSpeechJob\(\s*text: string,\s*elevenLabsVoiceId: string,\s*seed: number,\s*engine: SpeechEngine,\s*\)/);
+    expect(fal).toMatch(/generateSpeech\(\s*text: string,\s*elevenLabsVoiceId: string,\s*seed: number,\s*engine: SpeechEngine,\s*\)/);
   });
 });
 

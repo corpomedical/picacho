@@ -1,4 +1,5 @@
 import type { Personality } from "./personality";
+import { isStreamableVoiceId, isVoiceStreamConfigured, openVoiceStream } from "./voice-stream";
 
 // Something said at once (2026-09-28, operator: "when I talk to her it takes
 // a while for her to respond. If the chatbox is closed and the mic is on it
@@ -6,9 +7,11 @@ import type { Personality } from "./personality";
 // with something while she gets an answer").
 //
 // A spoken message is acknowledged out loud as soon as it's known to be for
-// her: a short phrase in her own voice, in her personality, made by
-// ElevenLabs' fastest model (Flash v2.5, the one the warm-up already calls)
-// and remembered per voice, so a phrase said before plays with no wait. It is
+// her: a short phrase in her own voice, in her personality, made on the
+// model her answer streams on (Eleven v4 Turbo since 2026-10-01, over the
+// same dialogue socket, voice-stream.ts — it was Flash v2.5 over HTTP, a
+// different model from the answer's) and remembered per voice, so a phrase
+// said before plays with no wait. It is
 // only sent if her real answer hasn't started speaking by then (route.ts).
 // Never throws: an acknowledgement that can't be made is simply not said.
 
@@ -65,29 +68,45 @@ export function lastAck(): string | null {
 export async function speakAck(
   text: string,
   voiceId: string,
-  opts: { timeoutMs?: number; signal?: AbortSignal; fetchImpl?: typeof fetch } = {},
+  opts: { timeoutMs?: number; signal?: AbortSignal; connect?: (url: string) => WebSocket } = {},
 ): Promise<{ data: string; cached: boolean } | null> {
-  const key = process.env.ELEVENLABS_API_KEY;
-  if (!key || !/^[A-Za-z0-9]{20}$/.test(voiceId)) return null;
+  if (!isStreamableVoiceId(voiceId)) return null;
+  if (!opts.connect && !isVoiceStreamConfigured()) return null;
+  if (!process.env.ELEVENLABS_API_KEY) return null;
   const id = `${voiceId}|${text}`;
   const hit = made.get(id);
   lastSaid = text;
   if (hit) return { data: hit, cached: true };
+  if (opts.signal?.aborted) return null;
+  const chunks: Buffer[] = [];
+  let failed = false;
+  let stopped = false;
   try {
-    const signals = [AbortSignal.timeout(opts.timeoutMs ?? 2500), ...(opts.signal ? [opts.signal] : [])];
-    const res = await (opts.fetchImpl ?? fetch)(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_64`,
-      {
-        method: "POST",
-        headers: { "xi-api-key": key, "content-type": "application/json" },
-        body: JSON.stringify({ text, model_id: "eleven_flash_v2_5", voice_settings: { stability: 0.5, similarity_boost: 0.75 } }),
-        signal: AbortSignal.any(signals),
+    const take = openVoiceStream({
+      voiceId,
+      onAudio: (b64) => chunks.push(Buffer.from(b64, "base64")),
+      onError: () => {
+        failed = true;
       },
-    );
-    if (!res.ok) return null;
-    const bytes = new Uint8Array(await res.arrayBuffer());
+      connect: opts.connect,
+    });
+    const stop = () => {
+      stopped = true;
+      take.abort();
+    };
+    const timer = setTimeout(stop, opts.timeoutMs ?? 2500);
+    opts.signal?.addEventListener("abort", stop, { once: true });
+    try {
+      take.push(text);
+      await take.end();
+    } finally {
+      clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", stop);
+    }
+    if (failed || stopped) return null;
+    const bytes = Buffer.concat(chunks);
     if (bytes.length < 200) return null;
-    const data = Buffer.from(bytes).toString("base64");
+    const data = bytes.toString("base64");
     if (made.size >= CACHE_MAX) made.delete(made.keys().next().value as string);
     made.set(id, data);
     return { data, cached: false };

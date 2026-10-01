@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.194.0",
+    build: 233,
+    date: "2026-10-01",
+    title: "ElevenLabs v4: Aly and new characters speak on it",
+    items: [
+      "Aly now speaks on ElevenLabs' new Eleven v4 Turbo, released on 28 September: her answers, her quick \"one sec\", and the voice she warms up when the lamp opens. Phones use the same model through fal, so a phone and a computer hear the same voice, and a reply that falls back halfway keeps her voice.",
+      "On phones, each part of her answer is now sent as soon as it is ready. Before, each part waited up to a third of a second for the words after it, which the old voice used and v4 can't.",
+      "Characters who speak for the first time now speak on Eleven v4. A character who has already spoken in a video keeps the voice they had (Eleven v3), so their new videos sound like their old ones. Previewing a voice on a saved character plays the engine that character uses.",
+      "A spoken line on v4 costs $0.08 per 1,000 characters on fal, against $0.10 on v3. Aly's voice costs $0.04 per 1,000 characters on both routes and is still metered at $0.05.",
+    ],
+  },
+  {
     version: "1.193.0",
     build: 232,
     date: "2026-10-01",

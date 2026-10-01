@@ -201,7 +201,54 @@ export function voiceSourceFor(input: {
 // character" on both — so this is a free move, and its response is the shape
 // extractAudioUrl() already reads ({ audio: { url } }, plus the seed echoed
 // back).
-export const SPEECH_ENDPOINT = "fal-ai/elevenlabs/text-to-dialogue/eleven-v3";
+export const SPEECH_ENDPOINT_V3 = "fal-ai/elevenlabs/text-to-dialogue/eleven-v3";
+
+// ELEVEN V4 (2026-10-01, operator: "Elevenlabs v4 integration in Picacho",
+// then "Keep old characters on v3"). ElevenLabs released Eleven v4 on
+// 2026-09-28 and calls it "a net upgrade over Eleven v3, delivering better
+// results in almost every case" — but also says it "may sound substantially
+// different from Eleven v3", because it copies the source voice more
+// faithfully. A character who has already spoken in a delivered video would
+// change voice between one take and the next, which is the one thing the
+// lock exists to prevent. So the engine is a property of the CHARACTER,
+// chosen once: whoever spoke before today keeps v3, and everyone whose first
+// line comes after the switch speaks v4 for good (speech-engine.ts).
+//
+// fal's schema for elevenlabs/tts/eleven-v4 (read 2026-10-01): text, voice,
+// stability 0–1 (continuous, default 0.5), similarity_boost 0–1 (default
+// 0.75), seed ("best-effort reproducibility. Identical output is not
+// guaranteed"), language_code, apply_text_normalization, output_format,
+// timestamps; returns { audio: { url } }. No speaker boost, style or speed —
+// ElevenLabs: "Style and Speed sliders are not available in Eleven v4".
+// Price: "$0.08 per 1000 character" on fal, against v3 dialogue's $0.10.
+export const SPEECH_ENDPOINT_V4 = "elevenlabs/tts/eleven-v4";
+
+export type SpeechEngine = "v3" | "v4";
+
+export const SPEECH_ENDPOINTS: Record<SpeechEngine, string> = {
+  v3: SPEECH_ENDPOINT_V3,
+  v4: SPEECH_ENDPOINT_V4,
+};
+
+/** Which engine a recorded take was spoken on. A row with no settings predates them (v3). */
+export function speechEngineOf(settings: { endpoint?: unknown } | null | undefined): SpeechEngine {
+  return settings?.endpoint === SPEECH_ENDPOINT_V4 ? "v4" : "v3";
+}
+
+/**
+ * The engine a character speaks on, from their history: their FIRST
+ * recorded spoken take decides it (so a v4 character's later takes keep
+ * them on v4); a character who spoke before takes were recorded (only the
+ * lip-sync step in the log says so) is v3; a character who never spoke
+ * starts on v4.
+ */
+export function speechEngineForHistory(input: {
+  firstRecorded: { voice_settings?: { endpoint?: unknown } | null } | null;
+  spokeBeforeRecords: boolean;
+}): SpeechEngine {
+  if (input.firstRecorded) return speechEngineOf(input.firstRecorded.voice_settings);
+  return input.spokeBeforeRecords ? "v3" : "v4";
+}
 
 /**
  * ElevenLabs v3 quantises stability to 0.0 / 0.5 / 1.0 — Creative, Natural,
@@ -214,8 +261,18 @@ export const SPEECH_ENDPOINT = "fal-ai/elevenlabs/text-to-dialogue/eleven-v3";
  * which is one recognisable person who sounds the same every time. It is a
  * constant rather than a setting because a per-user knob here would mean the
  * lock is only as good as the least careful person's slider.
+ *
+ * v4's stability is continuous, and its top keeps "the performance closer to
+ * a fixed baseline" (ElevenLabs) — the same trade, taken the same way.
  */
 export const SPEECH_STABILITY = 1.0;
+
+/**
+ * v4's "how closely the output follows the reference voice", at fal's and
+ * ElevenLabs' default: higher "may reduce naturalness", and v4 already
+ * copies the voice more closely than v3 did with speaker boost on.
+ */
+export const SPEECH_SIMILARITY_V4 = 0.75;
 
 /**
  * A stable seed for one character, so their delivery is a property of THEM
@@ -234,17 +291,43 @@ export type VoiceSettings = {
   endpoint: string;
   seed: number;
   stability: number;
-  speakerBoost: boolean;
+  /** v3 only. */
+  speakerBoost?: boolean;
+  /** v4 only. */
+  similarity?: number;
 };
 
-export function speechSettings(seed: number): VoiceSettings {
+export function speechSettings(seed: number, engine: SpeechEngine): VoiceSettings {
+  if (engine === "v4") {
+    return { endpoint: SPEECH_ENDPOINT_V4, seed, stability: SPEECH_STABILITY, similarity: SPEECH_SIMILARITY_V4 };
+  }
   return {
-    endpoint: SPEECH_ENDPOINT,
+    endpoint: SPEECH_ENDPOINT_V3,
     seed,
     stability: SPEECH_STABILITY,
     // "Boosts similarity to original speaker" — the one remaining knob this
     // endpoint offers that points at the character sounding like themselves.
     speakerBoost: true,
+  };
+}
+
+/** The request body for one spoken line on the character's engine — one builder for every call site. */
+export function speechRequestBody(text: string, elevenLabsVoiceId: string, seed: number, engine: SpeechEngine) {
+  const settings = speechSettings(seed, engine);
+  if (engine === "v4") {
+    return {
+      text,
+      voice: elevenLabsVoiceId,
+      seed: settings.seed,
+      stability: settings.stability,
+      similarity_boost: settings.similarity,
+    };
+  }
+  return {
+    inputs: [{ text, voice: elevenLabsVoiceId }],
+    seed: settings.seed,
+    stability: settings.stability,
+    use_speaker_boost: settings.speakerBoost,
   };
 }
 

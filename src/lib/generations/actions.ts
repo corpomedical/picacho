@@ -106,6 +106,7 @@ import {
   VIDEO_FACE_REFUND_FLAG,
 } from "@/lib/generations/face-lock";
 import { ALWAYS_SPEAKS, isVoiceSource, speechSeedFor, type VoiceSource } from "@/lib/generations/voice-lock";
+import { speechEngineForCharacter } from "@/lib/generations/speech-engine";
 import { OPENING_FRAME_FLAG, openingFrameApplies, openingFramePath } from "@/lib/generations/opening-frame";
 import {
   makeOpeningFrame,
@@ -2291,6 +2292,13 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         }
       }
 
+      // The character's ElevenLabs engine, read once for this send: v3 for
+      // anyone who has spoken before, v4 for a first line (voice-lock.ts,
+      // speech-engine.ts). Carried on the job, so a resumed run speaks on
+      // the engine this send chose.
+      const dialogueEngine =
+        wantsDialogue && character ? await speechEngineForCharacter(supabase, character.id) : undefined;
+
       const result = await runRealPipeline(
         promptForPipeline,
         characterForPipeline,
@@ -2332,6 +2340,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           // Seeded on the CHARACTER, so this person's delivery is the same
           // performance today and in six months (voice-lock.ts).
           dialogueSeed: wantsDialogue && character ? speechSeedFor(character.id) : undefined,
+          dialogueEngine,
           videoDurationSeconds: contentType === "video" ? videoDurationSeconds : undefined,
           videoAspectRatio: contentType === "video" ? videoAspectRatio : undefined,
           videoResolution,
@@ -2406,6 +2415,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           // Seeded on the CHARACTER, so this person's delivery is the same
           // performance today and in six months (voice-lock.ts).
           dialogueSeed: wantsDialogue && character ? speechSeedFor(character.id) : undefined,
+          dialogueEngine,
           attempts: result.attempts,
           strictLane: editingAnUpload || continuationFromUpload,
           // Every character clip is judged whole — start, middle and end,

@@ -31,28 +31,56 @@ describe("the acknowledgement", () => {
     }
   });
 
-  it("speaks it in her voice with ElevenLabs Flash, then remembers it for that voice", async () => {
-    const calls: { url: string; body: string }[] = [];
-    const fakeFetch = (async (url: string, init: RequestInit) => {
-      calls.push({ url, body: String(init.body) });
-      return new Response(new Uint8Array(4000), { status: 200 });
-    }) as unknown as typeof fetch;
+  // A stand-in for the dialogue socket: answers the close with one chunk of
+  // audio and is_final (or with `reply`, for the failures).
+  function fakeSocket(reply: "ok" | "error" | "silent" = "ok") {
+    const opened: { url: string; sent: Record<string, unknown>[] }[] = [];
+    const connect = (url: string) => {
+      const rec = { url, sent: [] as Record<string, unknown>[] };
+      opened.push(rec);
+      const sock = {
+        onopen: null as null | (() => void),
+        onmessage: null as null | ((e: { data: string }) => void),
+        onerror: null as null | (() => void),
+        onclose: null as null | (() => void),
+        send(t: string) {
+          const m = JSON.parse(t);
+          rec.sent.push(m);
+          if (!m.close_socket || reply === "silent") return;
+          if (reply === "error") {
+            sock.onmessage?.({ data: JSON.stringify({ error: "bad", message: "nope" }) });
+            return;
+          }
+          sock.onmessage?.({ data: JSON.stringify({ audio: Buffer.alloc(4000, 1).toString("base64"), alignment: { chars: [...String(rec.sent[1]?.inputs ? (rec.sent[1].inputs as { text: string }[])[0].text : "")] } }) });
+          sock.onmessage?.({ data: JSON.stringify({ is_final: true }) });
+        },
+        close() {},
+      };
+      queueMicrotask(() => sock.onopen?.());
+      return sock as unknown as WebSocket;
+    };
+    return { connect, opened };
+  }
+
+  it("speaks it in her voice on the model her answer streams on, then remembers it for that voice", async () => {
+    const { connect, opened } = fakeSocket();
     const voice = "AbCdEfGhIjKlMnOpQrSt";
-    const first = await speakAck("Okay, on it.", voice, { fetchImpl: fakeFetch });
+    const first = await speakAck("Okay, on it.", voice, { connect });
     expect(first?.cached).toBe(false);
-    expect(calls[0].url).toContain(`/v1/text-to-speech/${voice}`);
-    expect(JSON.parse(calls[0].body).model_id).toBe("eleven_flash_v2_5");
-    const again = await speakAck("Okay, on it.", voice, { fetchImpl: fakeFetch });
+    expect(Buffer.from(first!.data, "base64").length).toBe(4000);
+    expect(opened[0].url).toContain("model_id=eleven_v4_turbo");
+    expect(opened[0].sent[0].voices).toEqual([voice]);
+    expect(opened[0].sent[1]).toEqual({ inputs: [{ text: "Okay, on it.", voice_id: voice }] });
+    const again = await speakAck("Okay, on it.", voice, { connect });
     expect(again?.cached).toBe(true);
-    expect(calls.length).toBe(1);
+    expect(opened.length).toBe(1);
   });
 
-  it("says nothing when it can't: no key, a voice id that isn't ElevenLabs', or a failed call", async () => {
-    const ok = (async () => new Response(new Uint8Array(4000), { status: 200 })) as unknown as typeof fetch;
-    expect(await speakAck("Okay.", "Rachel", { fetchImpl: ok })).toBeNull();
-    const failing = (async () => new Response("no", { status: 500 })) as unknown as typeof fetch;
-    expect(await speakAck("Okay.", "AbCdEfGhIjKlMnOpQrSt", { fetchImpl: failing })).toBeNull();
+  it("says nothing when it can't: no key, a voice id that isn't ElevenLabs', a failed take, or too slow", async () => {
+    expect(await speakAck("Okay.", "Rachel", { connect: fakeSocket().connect })).toBeNull();
+    expect(await speakAck("Okay.", "AbCdEfGhIjKlMnOpQrSt", { connect: fakeSocket("error").connect })).toBeNull();
+    expect(await speakAck("Okay.", "AbCdEfGhIjKlMnOpQrSt", { connect: fakeSocket("silent").connect, timeoutMs: 20 })).toBeNull();
     delete process.env.ELEVENLABS_API_KEY;
-    expect(await speakAck("Okay.", "AbCdEfGhIjKlMnOpQrSt", { fetchImpl: ok })).toBeNull();
+    expect(await speakAck("Okay.", "AbCdEfGhIjKlMnOpQrSt", { connect: fakeSocket().connect })).toBeNull();
   });
 });

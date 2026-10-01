@@ -22,7 +22,7 @@ import {
   DEFAULT_PRODUCER_NAME,
 } from "./store";
 import { isHumanVoiceConfigured, speakHuman } from "./speech";
-import { isStreamableVoiceId, isVoiceStreamConfigured } from "./voice-stream";
+import { isStreamableVoiceId, isVoiceStreamConfigured, openVoiceStream } from "./voice-stream";
 import { LAMP_LOOKS, parseLampLook, type LampLook } from "@/components/producer/lamp-look";
 import { WHEEL_STYLES, parseWheelStyle, type WheelStyle } from "@/components/producer/wheel-style";
 import { CHAT_STYLES, parseChatStyle, type ChatStyle } from "@/components/producer/chat-style";
@@ -262,16 +262,16 @@ export async function warmProducerVoice(): Promise<void> {
     // After the action has answered: server actions run one at a time per
     // page, and a cold voice takes up to ~11 s — the sheet's other actions
     // (its conversation, notes, voice) mustn't wait behind it.
+    //
+    // On the model her answers stream on (Eleven v4 Turbo, 2026-10-01): it is
+    // only reachable over the dialogue WebSocket, so the warm-up is a
+    // three-character take on that socket, its audio thrown away.
     const voiceId = voice.elevenLabsVoiceId;
     after(async () => {
       try {
-        const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_22050_32`, {
-          method: "POST",
-          headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY ?? "", "content-type": "application/json" },
-          body: JSON.stringify({ text: "Mm.", model_id: "eleven_flash_v2_5" }),
-          signal: AbortSignal.timeout(15_000),
-        });
-        await res.arrayBuffer().catch(() => null);
+        const take = openVoiceStream({ voiceId, onAudio: () => {}, onError: () => {} });
+        take.push("Mm.");
+        await take.end();
       } catch {}
     });
   } catch {
@@ -290,7 +290,7 @@ export async function previewProducerVoice(presetId: string): Promise<{ url?: st
   if (!preset) return { error: "That voice isn't available any more." };
   const { name } = await loadPrefs(g.admin, g.userId);
   try {
-    const url = await speakHuman(`Hi, I'm ${name}. Tell me what we're making, and I'll set it up for you.`, preset.elevenlabs_voice_id, "");
+    const url = await speakHuman(`Hi, I'm ${name}. Tell me what we're making, and I'll set it up for you.`, preset.elevenlabs_voice_id);
     return { url };
   } catch {
     return { error: "That voice didn't play. Try again." };
