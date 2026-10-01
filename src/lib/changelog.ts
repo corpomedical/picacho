@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.205.0",
+    build: 244,
+    date: "2026-10-01",
+    title: "Helios Studio: a walk without the hop",
+    items: [
+      "A walking figure's body now rides one smooth wave a step, lowest just as each foot lands and highest over the standing foot. It used to sit still at the top, then drop 3.7 cm in a single frame as the front foot landed and climb back over five frames: a hop at every step that Video with your character copied.",
+      "The swinging leg straightens steadily toward the ground and lands with the knee a little bent, instead of snapping straight the frame before landing and folding 24° the frame after.",
+      "Runs keep their own rhythm, highest in the air and lowest over the standing foot.",
+    ],
+  },
+  {
     version: "1.204.0",
     build: 243,
     date: "2026-10-01",

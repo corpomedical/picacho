@@ -20,7 +20,7 @@ import * as THREE from "three";
 import { BONE, applyPose, clampLoc, clampRot, clonePose, presetPose, solveLimb, type BoneName, type Pose, type Skeleton, type Vec3 } from "./studio-pose";
 
 export const GAITS = {
-  walk: { speed: 1.4, stride: 1.24, stance: 0.58, lift: 0.1, arm: 22, forearm: -18, elbow: 16, lean: -3, sway: 0.022, hipYaw: 6, list: 4, ramp: 0.5, heel: 0.85, strike: 0.3, crouch: 0.02 },
+  walk: { speed: 1.4, stride: 1.24, stance: 0.58, lift: 0.1, arm: 22, forearm: -18, elbow: 16, lean: -3, sway: 0.022, hipYaw: 6, list: 4, ramp: 0.5, heel: 0.85, strike: 0.3, crouch: 0.022 },
   run: { speed: 4, stride: 2.8, stance: 0.3, lift: 0.26, arm: 42, forearm: -88, elbow: 6, lean: -11, sway: 0.01, hipYaw: 8, list: 3, ramp: 0.8, heel: 0.6, strike: 0.2, crouch: 0.07 },
 } as const;
 export type Gait = keyof typeof GAITS;
@@ -222,6 +222,59 @@ function legRoom(curve: THREE.Curve<THREE.Vector3>, D: number, d: number, stride
   }
   return room;
 }
+/**
+ * Where a leg reaches for its foot. A swinging leg straightens no faster than a real one at the end of its swing
+ * (2026-10-01, "too jumpy": the knee went from 36° to 2° in one frame just before landing and back to 26° the next):
+ * past 35% of the swing the ankle is kept within the reach of a knee bent at least kneeMin(u), steadily from 70°
+ * to 8° as it lands (about 10° a frame at a walk), pulled straight toward the hip — so the foot arrives a touch later and higher, never somewhere
+ * else, and lands exactly on its spot. A planted foot is never moved.
+ */
+function swingReach(sk: Skeleton, pose: Pose, side: "L" | "R", f: FootAt): THREE.Vector3 {
+  if (f.planted) return f.at;
+  const k = clamp((f.u - 0.35) / 0.65, 0, 1);
+  if (k <= 0) return f.at;
+  const kneeMin = ((8 + 62 * (1 - k)) * Math.PI) / 180;
+  applyPose(sk, pose);
+  const hip = sk.bones[`thigh.${side}`].getWorldPosition(new THREE.Vector3());
+  const a = sk.bones[`shin.${side}`].position.length(), b = sk.bones[`foot.${side}`].position.length();
+  const dMax = Math.sqrt(a * a + b * b + 2 * a * b * Math.cos(kneeMin));
+  const to = f.at.clone().sub(hip), len = to.length();
+  return len > dMax ? hip.add(to.multiplyScalar(dMax / len)) : f.at;
+}
+/**
+ * The pelvis's wave a walking step, 0 at its top and 1 at its lowest: lowest just as each foot lands (φ = 0.21 and
+ * 0.71, where the double supports begin), so the body is already rising as the new leg takes the weight and its knee
+ * bends a few degrees a frame instead of folding at once (measured: lowest mid double support, the knee went 16° → 34°
+ * in the frame after landing; here 18° → 23–31°, and the bob is shallower).
+ */
+const bobWave = (phase: number) => (1 - Math.cos(2 * TAU * (phase + 0.04))) / 2;
+/** Per walk, the depth of the pelvis's wave (bobDepth): computed once for its path, frames and gait. */
+const bobMemo = new Map<string, number>();
+/**
+ * How deep the pelvis's wave must dip at each double support so that, all along this walk, the wave never sits
+ * above what the legs allow (legRoom, 3 mm to spare): the most any frame needs, measured where the wave is at
+ * least a quarter of the way down. Never more than 9 cm.
+ */
+function bobDepth(curve: THREE.Curve<THREE.Vector3>, D: number, m: PathMove, g: (typeof GAITS)[Gait], fps: number, startYaw: number | null): number {
+  const key = JSON.stringify([m.path, m.f0, m.f1, m.gait, m.yaw0 ?? null, fps]);
+  const hit = bobMemo.get(key);
+  if (hit !== undefined) return hit;
+  const T = Math.max(1 / fps, (m.f1 - m.f0) / fps);
+  let A = 0;
+  for (let i = 0; i <= Math.round(T * fps) * 2; i++) {
+    const { d, v, cruise } = distanceAt(i / (2 * fps), T, D, g.ramp);
+    const { stride } = strideFor(m.gait, cruise, D);
+    const s = cruise > 0 ? clamp(v / cruise, 0, 1) : 0;
+    const b = s * bobWave(stride > 0 ? d / stride : 0);
+    if (b < 0.25) continue;
+    const need = -g.crouch * s - (legRoom(curve, D, d, stride, g, s, startYaw) - 0.006);
+    A = Math.max(A, need / b);
+  }
+  A = clamp(A, 0, 0.09);
+  if (bobMemo.size > 64) bobMemo.clear();
+  bobMemo.set(key, A);
+  return A;
+}
 /** How far a swinging leg's hold on the pelvis is relaxed at mid-swing. */
 const SWING_SLACK_M = 0.3;
 /** How much a foot holds the pelvis down: fully while planted, fading out over the first and in over the last fifth of a swing. */
@@ -301,7 +354,16 @@ export function gaitFrame(sk: Skeleton, m: PathMove, t: number, fps: number, upp
     const top = f.at.y + Math.sqrt(Math.max(0, LEG_REACH_M * LEG_REACH_M - hd * hd));
     drop = Math.min(drop, top - h.y + (1 - swingHold(f)) * SWING_SLACK_M);
   }
-  if (D > 0) {
+  // The pelvis rides one smooth wave a step (2026-10-01, operator: "The walk is still very wrong, its too jumpy"):
+  // highest over the standing foot, lowest as each foot lands (bobWave), A deep enough for this whole walk that the legs
+  // reach their feet without pulling it down anywhere. It used to sit flat at the top for four frames, fall 3.7 cm
+  // in one frame as the front foot landed and climb back over five — a hop at every step.
+  // A run has no double support (it is lowest over the standing foot and highest in flight): it keeps the legs' own
+  // limit, taken over a short stretch of the path either side and averaged, as before.
+  if (m.gait === "walk" && D > 0) {
+    const A = bobDepth(curve, D, m, g, fps, startYaw);
+    drop = Math.min(drop, -g.crouch * s - A * s * bobWave(stride > 0 ? d / stride : 0));
+  } else if (D > 0) {
     const W = clamp((0.9 * cruise) / fps, 0.02, 0.2), step = W / 3;
     const raw: number[] = [];
     for (let i = -6; i <= 6; i++) raw.push(legRoom(curve, D, d + i * step, stride, g, s, startYaw));
@@ -314,17 +376,14 @@ export function gaitFrame(sk: Skeleton, m: PathMove, t: number, fps: number, upp
     }
     drop = Math.min(drop, sum / wsum);
   }
-  // A little bounce at a run's flight, none at a stand.
-  // Knees a little soft at pace (the pelvis carried `crouch` lower), so the rise and fall of each step
-  // stays a few centimetres; lower only where a leg needs it.
   pose.loc = clampLoc([pose.loc[0], Math.min(drop, -g.crouch * s), 0]);
   // Knees point the way each foot does, so a foot planted on a curve doesn't have to twist past its ankle's reach.
   const kneeTo = (f: FootAt, x: number): Vec3 => {
     const dy = clamp(shortestYaw(yaw, f.yaw) - yaw, -0.45, 0.45);
     return [x * Math.cos(dy) + Math.sin(dy), 0, -x * Math.sin(dy) + Math.cos(dy)];
   };
-  solveLimb(sk, pose, "leg.L", L.at, kneeTo(L, 0.1));
-  solveLimb(sk, pose, "leg.R", R.at, kneeTo(R, -0.1));
+  solveLimb(sk, pose, "leg.L", swingReach(sk, pose, "L", L), kneeTo(L, 0.1));
+  solveLimb(sk, pose, "leg.R", swingReach(sk, pose, "R", R), kneeTo(R, -0.1));
   // Feet level with the ground and facing the way of travel (toes down a little as a swing foot leaves).
   for (const [f, n] of [[L, "foot.L"], [R, "foot.R"]] as const) {
     const want = new THREE.Quaternion().setFromEuler(new THREE.Euler(f.pitch + (f.planted ? 0 : 0.35 * Math.sin(Math.PI * f.u) * s), shortestYaw(yaw, f.yaw), 0, "YXZ"));

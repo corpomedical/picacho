@@ -174,14 +174,47 @@ describe("a walk that reads as a person walking", () => {
     expect(Math.max(...front)).toBeLessThan(Math.min(...back));
   });
 
-  it("stands tall over a flat foot (knee under 22°), drops the swinging hip a few degrees, steps about a foot's width apart", () => {
+  it("stands over a flat foot with the knee only softly bent (was 25–38°), drops the swinging hip a few degrees, steps about a foot's width apart", () => {
     const r = trace(his);
     const flat = r.filter((x) => x.plantedL).map((x) => x.kneeL);
     expect(flat.length).toBeGreaterThan(10);
-    expect(Math.min(...flat)).toBeLessThan(18);
-    expect(flat.sort((a, b) => a - b)[Math.floor(flat.length / 2)]).toBeLessThan(22);
+    // The pelvis's wave (bobDepth) tops out 2.2 cm below the legs' full reach over the standing foot: a straighter
+    // knee there would deepen the bob past ~7 cm, which reads as bouncing ("too jumpy", 2026-10-01).
+    expect(Math.min(...flat)).toBeLessThan(23);
+    expect(flat.sort((a, b) => a - b)[Math.floor(flat.length / 2)]).toBeLessThan(28);
     expect(Math.max(...r.map((x) => Math.abs(x.list)))).toBeGreaterThan(2.5);
     expect(Math.max(...r.map((x) => x.width))).toBeLessThan(0.2);
+  });
+
+  it("the pelvis rides one smooth wave a step: no flat top and sudden fall (it fell 3.7 cm in one frame), under 7 cm deep", () => {
+    const sk = buildSkeleton();
+    const y: number[] = [];
+    for (let f = 1; f <= 120; f++) { gaitFrame(sk, his, (f - his.f0) / FPS, FPS); y.push(sk.bones.pelvis.getWorldPosition(new THREE.Vector3()).y); }
+    const acc = y.slice(2).map((v, i) => Math.abs(v - 2 * y[i + 1] + y[i]));
+    expect(Math.max(...acc)).toBeLessThan(0.016);
+    expect(Math.max(...steps(y))).toBeLessThan(0.022);
+    const mid = y.slice(30, 90);
+    expect(Math.max(...mid) - Math.min(...mid)).toBeLessThan(0.07);
+  });
+
+  it("the swinging knee straightens steadily and lands bent: never straight just before landing, no snap after", () => {
+    const sk = buildSkeleton();
+    const k: number[] = [], planted: boolean[] = [];
+    for (let f = 1; f <= 120; f++) {
+      const g = gaitFrame(sk, his, (f - his.f0) / FPS, FPS);
+      const hip = P(sk, "thigh.L"), knee = P(sk, "shin.L"), ank = P(sk, "foot.L");
+      const a = hip.sub(knee).normalize(), b = ank.sub(knee).normalize();
+      k.push(180 - (Math.acos(Math.min(1, Math.max(-1, a.dot(b)))) * 180) / Math.PI);
+      planted.push(g.feet.L.planted);
+    }
+    for (let i = 1; i < k.length; i++) {
+      if (planted[i] && !planted[i - 1]) {
+        // Landing: bent at least 8° the frame before, and no more than 18° further the frame after (it went 2° → 26°).
+        expect(k[i - 1]).toBeGreaterThan(8);
+        expect(k[i] - k[i - 1]).toBeLessThan(18);
+      }
+    }
+    expect(Math.max(...steps(k))).toBeLessThan(26);
   });
 
   it("the swinging knee folds once: from the toes leaving to its deepest bend it never opens by more than 8°", () => {
