@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { offered } from "@/lib/models/controls";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
 import { ContentPolicyRefusal, type Scores } from "@/lib/generations/content-policy";
@@ -28,6 +29,7 @@ import {
   RECAST_CLIP_TOO_BIG,
   RECAST_CLIP_UNCHECKED,
   RECAST_COULDNT_START,
+  RECAST_ENGINE_OFF,
   RECAST_CROWD_OWN_TAKE,
   RECAST_IMAGE_UNCHECKED,
   RECAST_IMAGE_UNUSABLE,
@@ -561,6 +563,7 @@ export async function startRecastTakes(input: {
   if (input?.rights !== true) return { error: RECAST_NEEDS_RIGHTS };
   const engine = parseRecastEngine(input?.engine);
   if (!engine) return { error: RECAST_COULDNT_START };
+  if (!(await offered("recast", engine))) return { error: RECAST_ENGINE_OFF };
   const spec = RECAST_ENGINES[engine];
   /** How many of a character’s photos ride: the identity photo and up to three more, where the engine takes them. */
   const photosOfRow = (c: Character) => Math.min(spec.takesMorePhotos ? 4 : 1, Math.max(1, c.reference_image_urls?.length ?? 1));

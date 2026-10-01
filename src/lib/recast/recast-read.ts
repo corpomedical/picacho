@@ -73,6 +73,7 @@
 // Tested with a fake fetch.
 
 import { cleanText } from "../sets/set-spec";
+import { studioReaderModel } from "../models/studio-reader";
 
 /** The reader: the same small model the shot words and the Recce use. */
 export const RECAST_READ_MODEL = "gpt-5.4-mini";
@@ -379,6 +380,7 @@ export async function askRecastRead(
   times: number[],
   opts: { timeoutMs?: number; fetchFn?: typeof fetch } = {},
 ): Promise<string | null> {
+  const model = await studioReaderModel(RECAST_READ_MODEL);
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.warn("[recast] read skipped: OPENAI_API_KEY is not set");
@@ -398,7 +400,7 @@ export async function askRecastRead(
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: RECAST_READ_MODEL,
+        model,
         messages: [
           { role: "system", content: instructions },
           { role: "user", content },
@@ -411,7 +413,7 @@ export async function askRecastRead(
       signal: deadline.signal,
     });
     if (!res.ok) {
-      console.warn(`[recast] read failed: ${RECAST_READ_MODEL} answered ${res.status}`);
+      console.warn(`[recast] read failed: ${model} answered ${res.status}`);
       return null;
     }
     const data = (await res.json()) as { choices?: { message?: { content?: unknown } }[] } | null;

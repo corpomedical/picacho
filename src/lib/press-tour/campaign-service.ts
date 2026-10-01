@@ -33,6 +33,7 @@ import { adVerdict } from "../product-lock/product-lock";
 import type { CampaignResult, CampaignSource, CampaignView, StillEngine } from "./campaign-types";
 import {
   CAMPAIGN_BAD_REQUEST,
+  CAMPAIGN_ENGINE_OFF,
   CAMPAIGN_CLOSED,
   CAMPAIGN_MOVED_ON,
   CAMPAIGN_READ_FAILED,
@@ -205,6 +206,15 @@ const WRITES_PER_HOUR = 120;
 const nowOf = (deps: { now?: () => Date }) => (deps.now ? deps.now() : new Date());
 const failure = (error: string): CampaignResult => ({ ok: false, error });
 
+/** Whether Admin → Models offers this picture engine; read late so this file's tests need no "@/" chain, and on when unreadable. */
+async function stillEngineOffered(engine: string): Promise<boolean> {
+  try {
+    return await (await import("@/lib/models/controls")).offered("press_stills", engine);
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Brand memory: the angles of this person's earlier planned ads for the same
  * product or brand kit, newest first, at most 5 distinct. Read from the
@@ -355,6 +365,7 @@ export async function planCampaign(
   if (!sendId || !productId || !characterId || (input?.brandKitId && !brandKitId) || !length || !PERSON_SOURCES.includes(source) || engine === undefined) {
     return failure(CAMPAIGN_BAD_REQUEST);
   }
+  if (engine && !(await stillEngineOffered(engine))) return failure(CAMPAIGN_ENGINE_OFF);
   const goal = cleanText(input?.goal, PLAN_LIMITS.goal);
   const id = pressCampaignId(sendId);
 
@@ -477,6 +488,7 @@ export async function setStillEngine(
   const id = parseUuid(input?.campaignId);
   const engine = input?.engine;
   if (!id || !isStillEngine(engine)) return failure(CAMPAIGN_BAD_REQUEST);
+  if (!(await stillEngineOffered(engine))) return failure(CAMPAIGN_ENGINE_OFF);
 
   const row = await readCampaign(deps.db, id, caller.userId);
   if (row === "unavailable") return failure(PLAN_UNAVAILABLE);

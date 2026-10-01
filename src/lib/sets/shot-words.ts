@@ -31,6 +31,7 @@ import { fovForLens, LENSES_MM } from "./build-scene";
 import type { CameraPose, ShotMatch } from "./match-shot";
 import { SET_BRIEF_MAX_CHARS, SET_DIRECTION_MAX_CHARS, SET_MAX_TILT_DOWN_DEG, SET_MAX_TILT_UP_DEG } from "./set-config";
 import { cleanText, type SetSpec } from "./set-spec";
+import { studioReaderModel } from "../models/studio-reader";
 
 /** The model that reads the words: the look's people reader (look-people.ts LOOK_PEOPLE_MODEL). */
 export const SHOT_WORDS_MODEL = "gpt-5.4-mini";
@@ -384,6 +385,7 @@ export async function askShotReader(
     reader?: "v2" | "naming";
   },
 ): Promise<ShotReaderAnswer | null> {
+  const model = await studioReaderModel(SHOT_WORDS_MODEL);
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.warn("[sets] shot reader skipped: OPENAI_API_KEY is not set");
@@ -396,7 +398,7 @@ export async function askShotReader(
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: SHOT_WORDS_MODEL,
+        model,
         messages,
         max_completion_tokens: pinned ? opts.maxCompletionTokens : SHOT_READER_FALLBACK_MAX_COMPLETION,
         temperature: 0,
@@ -417,20 +419,20 @@ export async function askShotReader(
         readerEffortRefused = true;
         pinned = false;
         console.warn(
-          `[sets] shot reader: ${SHOT_WORDS_MODEL} refused reasoning_effort; readings now run at its default effort, capped at ${SHOT_READER_FALLBACK_MAX_COMPLETION} tokens`,
+          `[sets] shot reader: ${model} refused reasoning_effort; readings now run at its default effort, capped at ${SHOT_READER_FALLBACK_MAX_COMPLETION} tokens`,
         );
         res = await call(false);
       }
     }
     if (!res.ok) {
-      console.warn(`[sets] shot reader failed: ${SHOT_WORDS_MODEL} answered ${res.status}`);
+      console.warn(`[sets] shot reader failed: ${model} answered ${res.status}`);
       return null;
     }
     const data = (await res.json()) as { choices?: { message?: { content?: unknown } }[] } | null;
     const effort = pinned ? "none" : "default";
-    console.info("[sets] reader usage", { ...readerUsageOf(data, SHOT_WORDS_MODEL), reader: opts.reader ?? "v2", effort });
+    console.info("[sets] reader usage", { ...readerUsageOf(data, model), reader: opts.reader ?? "v2", effort });
     const answer = data?.choices?.[0]?.message?.content;
-    return typeof answer === "string" ? { text: answer, usage: readerUsageOf(data, SHOT_WORDS_MODEL), effort } : null;
+    return typeof answer === "string" ? { text: answer, usage: readerUsageOf(data, model), effort } : null;
   } catch (err) {
     console.warn(`[sets] shot reader failed: ${err instanceof Error ? err.name : "error"}`);
     return null;
@@ -450,6 +452,7 @@ export async function askShotWords(
   text: string,
   opts: { timeoutMs?: number; fetchFn?: typeof fetch } = {},
 ): Promise<string | null> {
+  const model = await studioReaderModel(SHOT_WORDS_MODEL);
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.warn("[sets] shot words skipped: OPENAI_API_KEY is not set");
@@ -462,7 +465,7 @@ export async function askShotWords(
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: SHOT_WORDS_MODEL,
+        model,
         messages: [
           { role: "system", content: instructions },
           { role: "user", content: text },
@@ -475,11 +478,11 @@ export async function askShotWords(
       signal: deadline.signal,
     });
     if (!res.ok) {
-      console.warn(`[sets] shot words failed: ${SHOT_WORDS_MODEL} answered ${res.status}`);
+      console.warn(`[sets] shot words failed: ${model} answered ${res.status}`);
       return null;
     }
     const data = (await res.json()) as { choices?: { message?: { content?: unknown } }[] } | null;
-    console.info("[sets] reader usage", readerUsageOf(data, SHOT_WORDS_MODEL));
+    console.info("[sets] reader usage", readerUsageOf(data, model));
     const answer = data?.choices?.[0]?.message?.content;
     return typeof answer === "string" ? answer : null;
   } catch (err) {

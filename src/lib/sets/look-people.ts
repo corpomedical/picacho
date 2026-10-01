@@ -39,6 +39,7 @@
 // Relative imports only: tested with a fake fetch.
 
 import type { FrameBox } from "./look-cutout";
+import { studioReaderModel } from "../models/studio-reader";
 
 /** The model that reads the still: the output gate's reader (scorer-version.ts DEFAULT_SCORER_MODEL). */
 export const LOOK_PEOPLE_MODEL = "gpt-5.4-mini";
@@ -96,6 +97,7 @@ export function readPeople(text: string): FrameBox[] | null {
  * could not be asked or did not answer (the header: fail closed).
  */
 export async function findPeople(still: Buffer, mime: string, opts: { timeoutMs?: number } = {}): Promise<FrameBox[] | null> {
+  const model = await studioReaderModel(LOOK_PEOPLE_MODEL);
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.warn("[sets] look people skipped: OPENAI_API_KEY is not set");
@@ -108,7 +110,7 @@ export async function findPeople(still: Buffer, mime: string, opts: { timeoutMs?
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: LOOK_PEOPLE_MODEL,
+        model,
         messages: [
           { role: "system", content: LOOK_PEOPLE_INSTRUCTIONS },
           {
@@ -126,7 +128,7 @@ export async function findPeople(still: Buffer, mime: string, opts: { timeoutMs?
       signal: deadline.signal,
     });
     if (!res.ok) {
-      console.warn(`[sets] look people failed: ${LOOK_PEOPLE_MODEL} answered ${res.status}`);
+      console.warn(`[sets] look people failed: ${model} answered ${res.status}`);
       return null;
     }
     const data = (await res.json()) as { choices?: { message?: { content?: unknown } }[] } | null;

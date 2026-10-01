@@ -4,7 +4,7 @@
 // than asking the same model to check its own work.
 
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
-import { identityModel, utilityModel } from "@/lib/generations/providers/openai-model";
+import { faceModel, readerModel } from "@/lib/models/pick";
 import {
   IDENTITY_MAX_ANSWER_TOKENS,
   IDENTITY_MAX_REFERENCES,
@@ -63,7 +63,7 @@ export async function scoreIdentityMatch(
     .filter((u) => typeof u === "string" && u.length > 0)
     .slice(0, IDENTITY_MAX_REFERENCES);
   if (references.length === 0) return null;
-  const model = identityModel();
+  const model = await faceModel();
   const readOnce = async () => {
     const res = await fetchWithTimeout(
       "https://api.openai.com/v1/chat/completions",
@@ -150,7 +150,7 @@ export async function reviewWithOpenAI(
   // `model` lets a caller name a specific reader — the content policy's
   // vote at a band edge asks a second, larger model — without changing the
   // default every other caller relies on.
-  const model = opts.model || utilityModel();
+  const model = opts.model || (await readerModel());
 
   // A 429 is a queue, not an answer. The content policy fails closed on an
   // unreadable reply, so a rate-limit blip under a burst of renders would

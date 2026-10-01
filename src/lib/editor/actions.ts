@@ -16,6 +16,7 @@
 //   getEdit / listEdits → the bench.
 
 import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { offered } from "@/lib/models/controls";
 import { rateLimited } from "@/lib/rate-limit";
 import { alertEditorOutOfCredit } from "@/lib/push/admin-alerts";
 import { SESSION_EXPIRED_MESSAGE } from "@/lib/generations/user-facing-error";
@@ -572,6 +573,7 @@ export async function composeTrack(
   const output = row?.plan?.outputs.find((o) => o.generationId === generationId);
   if (!row || !output?.project) return { error: "That video isn't yours or no longer exists." };
   const engine: ComposerEngine = input?.engine === "ace" ? "ace" : "eleven";
+  if (!(await offered("music", engine))) return { error: "That music engine isn't offered right now. Pick the other one." };
   const prompt = typeof input?.prompt === "string" ? input.prompt.trim().slice(0, 800) : "";
   const styles = (Array.isArray(input?.styles) ? input.styles : []).filter((s): s is string => typeof s === "string").map((s) => s.slice(0, 40)).slice(0, 12);
   if (!prompt && styles.length === 0) return { error: "Describe the music, or pick a mood." };

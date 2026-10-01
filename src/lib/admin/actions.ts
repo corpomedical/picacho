@@ -331,6 +331,13 @@ export async function updateAppSetting(formData: FormData) {
   if (invalid) {
     redirect(`/admin/settings?error=${encodeURIComponent(invalid)}`);
   }
+  // A default must be on the customer menu (Admin → Models), or customers who pick nothing are refused.
+  if (key === "video_model" || key === "image_model") {
+    const { offered } = await import("@/lib/models/controls");
+    if (!(await offered(key === "video_model" ? "video" : "picture", value))) {
+      redirect(`/admin/settings?error=${encodeURIComponent("That model is off the menu on Admin → Models. Put it back on before making it the default.")}`);
+    }
+  }
 
   const { data: previous } = await supabase.from("app_settings").select("value").eq("key", key).maybeSingle();
   const { error } = await supabase
@@ -391,32 +398,6 @@ export async function setUserRole(formData: FormData) {
   revalidatePath("/admin/users");
 }
 
-export async function setVideoModel(formData: FormData) {
-  const { supabase, admin, userId: actingUserId } = await requireAdmin();
-  const modelId = formData.get("model_id") as string;
-  const { data: previous } = await supabase.from("app_settings").select("value").eq("key", "video_model").maybeSingle();
-
-  const { error } = await supabase
-    .from("app_settings")
-    .update({ value: modelId, updated_at: new Date().toISOString() })
-    .eq("key", "video_model");
-
-  if (error) {
-    console.error("setVideoModel: video model update failed", error);
-    redirect(`/admin/providers?error=${encodeURIComponent(error.message)}`);
-  }
-
-  await logAdminAction(admin, actingUserId, {
-    action: "model.video",
-    targetType: "model",
-    targetId: "video_model",
-    before: previous?.value ?? null,
-    after: modelId,
-  });
-
-  revalidatePath("/admin/providers");
-}
-
 // Which provider runs Seedance (2026-09-06). Upsert rather than update: this
 // key has no migration behind it, so the first click has to create the row —
 // and through the SERVICE client, because app_settings carries an admin UPDATE
@@ -457,32 +438,6 @@ export async function setSeedanceProvider(formData: FormData) {
 
   revalidatePath("/admin/providers");
   revalidatePath("/admin/system");
-}
-
-export async function setImageModel(formData: FormData) {
-  const { supabase, admin, userId: actingUserId } = await requireAdmin();
-  const modelId = formData.get("model_id") as string;
-  const { data: previous } = await supabase.from("app_settings").select("value").eq("key", "image_model").maybeSingle();
-
-  const { error } = await supabase
-    .from("app_settings")
-    .update({ value: modelId, updated_at: new Date().toISOString() })
-    .eq("key", "image_model");
-
-  if (error) {
-    console.error("setImageModel: image model update failed", error);
-    redirect(`/admin/providers?error=${encodeURIComponent(error.message)}`);
-  }
-
-  await logAdminAction(admin, actingUserId, {
-    action: "model.image",
-    targetType: "model",
-    targetId: "image_model",
-    before: previous?.value ?? null,
-    after: modelId,
-  });
-
-  revalidatePath("/admin/providers");
 }
 
 // Curated ElevenLabs voices for character dialogue. Admin-entered rather
@@ -956,10 +911,17 @@ export async function setProducerAccess(formData: FormData) {
 //
 // The reverse control matters too: taking a model out deliberately, before it
 // has failed three times, when you already know it's broken or expensive.
+// Model health lives on Admin → Models (2026-10-02); back to the product it was changed from.
+function modelsPage(formData: FormData): string {
+  const p = formData.get("product");
+  const fallback = formData.get("kind") === "image" ? "picture" : "video";
+  return `/admin/models?p=${typeof p === "string" && /^[a-z]{1,20}$/.test(p) ? p : fallback}`;
+}
+
 export async function restoreModel(formData: FormData): Promise<void> {
   const { userId: actingUserId } = await requireAdmin();
   const modelId = (formData.get("model_id") as string) ?? "";
-  if (!modelId) redirect("/admin/providers?error=Missing+model");
+  if (!modelId) redirect(`${modelsPage(formData)}&error=Missing+model`);
 
   // Validate against the actual catalogues instead of trusting the form
   // value: model_health rows are keyed by model_id, and an arbitrary string
@@ -968,7 +930,7 @@ export async function restoreModel(formData: FormData): Promise<void> {
   // ids, so anything else is a hand-crafted request.
   const known =
     VIDEO_MODELS.some((m) => m.id === modelId) || IMAGE_MODELS.some((m) => m.id === modelId);
-  if (!known) redirect("/admin/providers?error=Unknown+model");
+  if (!known) redirect(`${modelsPage(formData)}&error=Unknown+model`);
 
   const admin = createAdminClient();
   const { error } = await admin
@@ -986,7 +948,7 @@ export async function restoreModel(formData: FormData): Promise<void> {
     .eq("model_id", modelId);
   if (error) {
     console.error("restoreModel: model_health update failed — nothing changed", error);
-    redirect(`/admin/providers?error=${encodeURIComponent(error.message)}`);
+    redirect(`${modelsPage(formData)}&error=${encodeURIComponent(error.message)}`);
   }
 
   await logAdminAction(admin, actingUserId, {
@@ -997,15 +959,15 @@ export async function restoreModel(formData: FormData): Promise<void> {
     after: "running",
   });
 
-  revalidatePath("/admin/providers");
-  redirect("/admin/providers");
+  revalidatePath("/admin/models");
+  redirect(modelsPage(formData));
 }
 
 export async function suspendModel(formData: FormData): Promise<void> {
   const { userId: actingUserId } = await requireAdmin();
   const modelId = (formData.get("model_id") as string) ?? "";
   const rawKind = (formData.get("kind") as string) || "video";
-  if (!modelId) redirect("/admin/providers?error=Missing+model");
+  if (!modelId) redirect(`${modelsPage(formData)}&error=Missing+model`);
 
   // kind comes from a closed set and model_id must exist in the catalogue
   // FOR that kind — the old blind `as "video" | "image"` cast let a crafted
@@ -1013,12 +975,12 @@ export async function suspendModel(formData: FormData): Promise<void> {
   // suspendModel writes rows (unlike restore, which only updates existing
   // ones), so junk here would live in model_health indefinitely.
   if (rawKind !== "video" && rawKind !== "image") {
-    redirect("/admin/providers?error=Unknown+model");
+    redirect(`${modelsPage(formData)}&error=Unknown+model`);
   }
   const kind = rawKind as "video" | "image";
   const catalogue = kind === "video" ? VIDEO_MODELS : IMAGE_MODELS;
   if (!catalogue.some((m) => m.id === modelId)) {
-    redirect("/admin/providers?error=Unknown+model");
+    redirect(`${modelsPage(formData)}&error=Unknown+model`);
   }
 
   const admin = createAdminClient();
@@ -1035,7 +997,7 @@ export async function suspendModel(formData: FormData): Promise<void> {
   });
   if (error) {
     console.error("suspendModel: model_health upsert failed — nothing changed", error);
-    redirect(`/admin/providers?error=${encodeURIComponent(error.message)}`);
+    redirect(`${modelsPage(formData)}&error=${encodeURIComponent(error.message)}`);
   }
 
   await logAdminAction(admin, actingUserId, {
@@ -1046,8 +1008,8 @@ export async function suspendModel(formData: FormData): Promise<void> {
     after: "suspended",
   });
 
-  revalidatePath("/admin/providers");
-  redirect("/admin/providers");
+  revalidatePath("/admin/models");
+  redirect(modelsPage(formData));
 }
 
 // Community moderation (operator: "I need a moderation area for it") — the

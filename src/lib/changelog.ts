@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.207.0",
+    build: 246,
+    date: "2026-10-02",
+    title: "Admin → Models: every model in every product, with its switch",
+    items: [
+      "A new Models page under Product lists the 12 products that run a model. Pick one and you see the model menus its customers choose from and every model that runs unseen in it, each with a switch.",
+      "Customer menus (video, picture, Aly's brains, Recast engines, Helios 3D and take engines, effect engines, Edit Bay music, Press Tour pictures): turn any model off and it leaves the menu where customers pick it, and the server refuses it if an open page still sends it. The free tier's model, the defaults and the last engine for a job stay on. The video and picture defaults, model health and Suspend/Restore moved here from AI providers, with 30 days of renders and failures per video model.",
+      "Behind the scenes: nine jobs can switch model (the prompt writer, the policy readers, the face check, the arbiter, the product second opinion, the Effects supervisor, the model behind Aly's Claude brain, voice replies, and the Studio and Recast readers). Each lists only models checked on 2 October to answer that job's exact request, and the safety and face-check switches say what to watch after a change. Jobs with one fitting model are listed with the reason.",
+      "Every switch reaches every server within 15 seconds, is written to the Activity log, and comes back with an Undo.",
+      "Fixed: the Effects supervisor asked Claude Opus 5.5 to turn thinking off in a way that model refuses, so planning and checking an effect on a video never got an answer.",
+    ],
+  },
+  {
     version: "1.206.0",
     build: 245,
     date: "2026-10-02",

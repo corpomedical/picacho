@@ -49,12 +49,12 @@ export function productCheckerConfigured(env: Record<string, string | undefined>
   return Boolean(env.GEMINI_API_KEY && env.GOOGLE_VISION_API_KEY && env.ANTHROPIC_API_KEY);
 }
 
-/** The real providers. */
-export function productCheckDeps(): CheckDeps {
+/** The real providers. `secondOpinionModel` is the Models page's pick (product_second_opinion). */
+export function productCheckDeps(secondOpinionModel: string = ESCALATION_MODEL): CheckDeps {
   return {
     locate: (input) => locateProduct(input),
     judge: (input) => judgeProduct(input),
-    escalate: (input) => escalateFrame(input, { client: escalationClient() }),
+    escalate: (input) => escalateFrame(input, { client: escalationClient(), model: secondOpinionModel }),
     readWords: async (image) => {
       const read = await readLabelText([image]);
       if (!read.configured || !read.ok) return null;
@@ -78,7 +78,7 @@ export function productCheckDeps(): CheckDeps {
     },
     sampleMoments: (video, times) => sampleMoments(video, times),
     record: (ctx, drafts) => writeFrameChecks(createAdminClient(), ctx, drafts),
-    scorerVersion: productScorerVersion(judgeModel(), ESCALATION_MODEL),
+    scorerVersion: productScorerVersion(judgeModel(), secondOpinionModel),
   };
 }
 

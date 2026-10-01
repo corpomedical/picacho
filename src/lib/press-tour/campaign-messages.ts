@@ -35,6 +35,8 @@ export const PLAN_STALLED = "Planning this ad didn't finish. Nothing was charged
 // --- What the ad needs before it can go on ------------------------------------
 
 export const CAMPAIGN_BAD_REQUEST = "Something in that request isn't right. Refresh and try again.";
+/** A picture engine taken off the menu on Admin → Models after the page opened. */
+export const CAMPAIGN_ENGINE_OFF = "That picture engine isn't offered right now. Refresh and pick the other one.";
 export const PRODUCT_NOT_CONFIRMED = "Confirm your product's card before planning an ad.";
 export const CHARACTER_NEEDS_PHOTO = "Add a photo to your character first. Its stills are painted from its photos.";
 export const AD_CONSENT_NEEDED = "Tell us who is in your character's photos, and confirm they may appear in your ads.";

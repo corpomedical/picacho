@@ -194,6 +194,7 @@ export const SITE_PAGES: readonly SitePage[] = [
   { area: "admin", path: "/admin/payments", name: "Admin · Payments", gate: "admin", what: "payments." },
   { area: "admin", path: "/admin/product-checks", name: "Admin · Product checks", gate: "admin", what: "products waiting to be confirmed." },
   { area: "admin", path: "/admin/promo", name: "Admin · Promo codes", gate: "admin", what: "promo codes and partner commissions." },
+  { area: "admin", path: "/admin/models", name: "Admin · Models", gate: "admin", what: "which model runs in each product, with the switches." },
   { area: "admin", path: "/admin/providers", name: "Admin · Providers", gate: "admin", what: "the AI providers and their state." },
   { area: "admin", path: "/admin/renders", name: "Admin · Renders", gate: "admin", what: "the render queue." },
   { area: "admin", path: "/admin/reports", name: "Admin · Reports", gate: "admin", what: "\"Report a problem\" reports and auto-filed failures." },

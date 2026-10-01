@@ -34,6 +34,7 @@ const NAV_ITEMS = [
   { href: "/admin/feedback", label: "Feedback", icon: ChatIcon },
   { href: "/admin/renders", label: "Render queue", icon: PlayIcon },
   { href: "/admin/system", label: "System health", icon: PulseIcon },
+  { href: "/admin/models", label: "Models", icon: SlidersIcon },
   { href: "/admin/providers", label: "AI providers", icon: CpuIcon },
   { href: "/admin/voices", label: "Voices", icon: MicIcon },
   { href: "/admin/product-checks", label: "Product checks", icon: ChartIcon },
@@ -49,7 +50,7 @@ const NAV_GROUPS: { label: string | null; hrefs: string[] }[] = [
   { label: "People", hrefs: ["/admin/users", "/admin/feedback"] },
   { label: "Trust & Safety", hrefs: ["/admin/reports", "/admin/moderation"] },
   { label: "Money", hrefs: ["/admin/billing", "/admin/payments", "/admin/promo", "/admin/stats"] },
-  { label: "Product", hrefs: ["/admin/providers", "/admin/voices", "/admin/product-checks", "/admin/flags", "/admin/updates", "/admin/emails"] },
+  { label: "Product", hrefs: ["/admin/models", "/admin/providers", "/admin/voices", "/admin/product-checks", "/admin/flags", "/admin/updates", "/admin/emails"] },
   { label: "System", hrefs: ["/admin/renders", "/admin/system"] },
   // Admin (2026-09-28 redesign): the log of what admins changed, beside the
   // settings and the second factor. Security used to be in no group at all,
@@ -648,6 +649,17 @@ function PulseIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <path d="M3 12h4l2-7 4 14 2-7h6" />
+    </svg>
+  );
+}
+
+function SlidersIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" />
+      <circle cx="16" cy="6" r="2" />
+      <circle cx="10" cy="12" r="2" />
+      <circle cx="18" cy="18" r="2" />
     </svg>
   );
 }

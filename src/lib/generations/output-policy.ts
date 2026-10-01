@@ -368,7 +368,7 @@ const VISION_SEED = 7;
 async function readVision(image: string, model?: string): Promise<VisionReading | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
-  const which = model || (await import("@/lib/generations/providers/openai-model")).utilityModel();
+  const which = model || (await (await import("@/lib/models/pick")).readerModel());
   try {
     const { fetchWithTimeout } = await import("@/lib/generations/providers/fetch-with-timeout");
     const res = await sendWithOneRetry(() => fetchWithTimeout(
@@ -422,6 +422,10 @@ async function readVisionClaude(image: string): Promise<VisionReading | null> {
   if (!m) return null;
   try {
     const { fetchWithTimeout } = await import("@/lib/generations/providers/fetch-with-timeout");
+    // The Models page's pick (output_arbiter), with thinking off spelled its way.
+    const { modelForJob } = await import("@/lib/models/pick");
+    const { claudeThinkingOff } = await import("@/lib/models/registry");
+    const model = await modelForJob("output_arbiter");
     const call = (withThinkingParam: boolean) =>
       fetchWithTimeout(
         "https://api.anthropic.com/v1/messages",
@@ -429,11 +433,11 @@ async function readVisionClaude(image: string): Promise<VisionReading | null> {
           method: "POST",
           headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
-            model: "claude-sonnet-5",
+            model,
             max_tokens: 1500,
             // No `temperature`: this model rejects it as deprecated (400,
             // measured 2026-09-11).
-            ...(withThinkingParam ? { thinking: { type: "disabled" } } : {}),
+            ...(withThinkingParam ? claudeThinkingOff(model) : {}),
             system: VISION_INSTRUCTIONS,
             messages: [
               {
@@ -785,9 +789,9 @@ export async function assertOutputAllowed(input: {
       // is "unavailable" — not shown, credit back, nobody accused.
       // The unseeded reader is sampled three times here and its own median
       // stands for it — one reader's coin is not a strong reader.
-      const primaryModel = (await import("@/lib/generations/providers/openai-model")).utilityModel();
+      const otherModel = await (await import("@/lib/models/pick")).otherReaderModel();
       const [larger, more] = await Promise.all([
-        readVision(image, primaryModel === "gpt-5.4" ? "gpt-5.4-mini" : "gpt-5.4"),
+        readVision(image, otherModel),
         other ? Promise.all([readVisionClaude(image), readVisionClaude(image)]) : Promise.resolve([null, null]),
       ]);
       const claudeSamples = [other, ...more].filter((v): v is VisionReading => v !== null);

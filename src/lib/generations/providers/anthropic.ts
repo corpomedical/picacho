@@ -5,6 +5,16 @@
 // Relative imports only: anthropic.test.ts imports this module directly.
 
 import { fetchWithTimeout } from "./fetch-with-timeout";
+import { claudeThinkingOff } from "../../models/registry";
+
+/** The Models page's pick for this call (models/pick.ts), imported late so the tests need no "@/" chain. */
+async function writerModel(): Promise<string> {
+  try {
+    return await (await import("@/lib/models/pick")).modelForJob("claude_writer");
+  } catch {
+    return "claude-sonnet-5";
+  }
+}
 
 export async function draftWithClaude(instructions: string): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -15,6 +25,7 @@ export async function draftWithClaude(instructions: string): Promise<string> {
     );
   }
 
+  const model = await writerModel();
   const call = (withThinkingParam: boolean) =>
     fetchWithTimeout(
       "https://api.anthropic.com/v1/messages",
@@ -26,7 +37,7 @@ export async function draftWithClaude(instructions: string): Promise<string> {
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-5",
+          model,
           // 500 was far too small: claude-sonnet-5 spends output tokens on
           // internal reasoning before the visible text, so on harder
           // requests the draft came back cut off after a few words
@@ -41,7 +52,8 @@ export async function draftWithClaude(instructions: string): Promise<string> {
           // deprecated (400, measured 2026-09-11). Determinism on the
           // content policy's readings comes from the OpenAI readers' seed
           // and from the majority vote, not from this call.
-          ...(withThinkingParam ? { thinking: { type: "disabled" } } : {}),
+          // Thinking off, spelled the way the picked model accepts it.
+          ...(withThinkingParam ? claudeThinkingOff(model) : {}),
           messages: [{ role: "user", content: instructions }],
         }),
       },

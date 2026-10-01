@@ -25,12 +25,27 @@ export const READER_PRICES = {
 } as const;
 
 /**
- * What one answered call cost, from the usage it reported: uncached input,
- * cached input and output (hidden reasoning is inside the output) at their
- * own rates. Null when the prompt or completion count is missing.
+ * gpt-5.4, the other model the Models page offers the readers (2026-10-02),
+ * per 1M tokens, read that day at developers.openai.com/api/docs/models/gpt-5.4.
  */
-export function readerCallUsd(usage: { prompt: number | null; cached: number | null; completion: number | null }): number | null {
+export const GPT_5_4_READER_PRICES = {
+  model: "gpt-5.4",
+  inputPer1M: 2.5,
+  cachedInputPer1M: 0.25,
+  outputPer1M: 15,
+  read: "2026-10-02",
+  source: "https://developers.openai.com/api/docs/models/gpt-5.4",
+} as const;
+
+/**
+ * What one answered call cost, from the usage it reported: uncached input,
+ * cached input and output (hidden reasoning is inside the output) at the
+ * rates of the model that answered (gpt-5.4 when the usage names it, else
+ * gpt-5.4-mini). Null when the prompt or completion count is missing.
+ */
+export function readerCallUsd(usage: { model?: string; prompt: number | null; cached: number | null; completion: number | null }): number | null {
   if (usage.prompt === null || usage.completion === null) return null;
+  const p = usage.model === GPT_5_4_READER_PRICES.model ? GPT_5_4_READER_PRICES : READER_PRICES;
   const cached = Math.min(usage.cached ?? 0, usage.prompt);
-  return ((usage.prompt - cached) * READER_PRICES.inputPer1M + cached * READER_PRICES.cachedInputPer1M + usage.completion * READER_PRICES.outputPer1M) / 1_000_000;
+  return ((usage.prompt - cached) * p.inputPer1M + cached * p.cachedInputPer1M + usage.completion * p.outputPer1M) / 1_000_000;
 }

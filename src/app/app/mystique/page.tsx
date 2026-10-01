@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getModelControls } from "@/lib/models/controls";
 import { getRecastHome, sweepRecastOrphans } from "@/lib/recast/data";
 import { isRecastEnabled, isRecastLockOn } from "@/lib/recast/enabled";
 import { MystiqueDoor } from "@/components/mystique/mystique-door";
@@ -43,9 +44,10 @@ export default async function MystiquePage({
   const clipId = typeof clip === "string" && /^[0-9a-f-]{36}$/i.test(clip) ? clip : null;
 
   // Clips that never became a take are cleared on the way in (best-effort).
-  const [home, lockOn] = await Promise.all([
+  const [home, lockOn, modelControls] = await Promise.all([
     getRecastHome(supabase, userData.user.id, clipId),
     isRecastLockOn(supabase),
+    getModelControls(),
     sweepRecastOrphans(supabase, userData.user.id),
   ]);
 
@@ -56,6 +58,7 @@ export default async function MystiquePage({
       initialTakes={home.takes}
       initialClipId={clipId && home.motions.some((mo) => mo.takeId === clipId) ? clipId : null}
       lockOn={lockOn}
+      offEngines={modelControls.off.recast ?? []}
       notify={home.notify}
       balance={home.balance}
     />

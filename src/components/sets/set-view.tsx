@@ -796,6 +796,7 @@ export function SetView({
   savedRig = null,
   initialElementPhotos = { photos: [], sheets: [] },
   stillModel = "gpt-image",
+  offEngines = { still: [], takes: [] },
   unshootable = [],
   astraEditsLeft,
   astraEditsCap,
@@ -848,6 +849,8 @@ export function SetView({
   initialElementPhotos?: { photos: ElementPhoto[]; sheets: string[] };
   /** The picture model stills are drawn with: the things' sheets ride GPT Image only (elements.ts planShotSheets). */
   stillModel?: string;
+  /** Engines taken off the menu on Admin → Models: picture lanes for stills, "veo" for takes. */
+  offEngines?: { still: readonly string[]; takes: readonly string[] };
   /** The person's characters with no photo yet (R1): named when this page is asked to cast one. */
   unshootable?: { id: string; name: string }[];
   /**
@@ -1036,7 +1039,7 @@ export function SetView({
     try {
       const kept = window.localStorage.getItem("helios.stillEngine");
       // eslint-disable-next-line react-hooks/set-state-in-effect -- read once from the browser after hydration
-      if (kept && (SELECTABLE_IMAGE_MODEL_IDS as readonly string[]).includes(kept)) setStillEngine(kept);
+      if (kept && (SELECTABLE_IMAGE_MODEL_IDS as readonly string[]).includes(kept) && !offEngines.still.includes(kept)) setStillEngine(kept);
     } catch {
       // No storage: the default stays.
     }
@@ -10356,7 +10359,7 @@ export function SetView({
                           {/* Lean, the card has no Shoot of its own, so with the person's take armed its Cost says the take's price (review of Cut 3). */}
                           <dd className="text-[#ecedf1] tabular-nums">{lean && genericPress.kind === "take" ? nextPressPrice : formatMsg(s.costLine, { credits })}</dd>
                         </dl>
-                        {takeStart && (
+                        {takeStart && !offEngines.takes.includes("veo") && (
                           <div className="flex flex-wrap items-center gap-1.5 pt-1">
                             <button type="button" onClick={() => setTakeEngine("omni")} className={chip(takeEngine === "omni")}>
                               {formatMsg(s.takeEngineOmni, { s: SET_TAKE_ENGINES.omni.seconds })}
@@ -10642,7 +10645,7 @@ export function SetView({
                     </button>
                     {menu === "engine" && (
                       <div role="listbox" aria-label={s.engineHint} className={DMENU_UP} data-still-engines>
-                        {SELECTABLE_IMAGE_MODEL_IDS.map((id) => (
+                        {SELECTABLE_IMAGE_MODEL_IDS.filter((id) => !offEngines.still.includes(id)).map((id) => (
                           <Option key={id} active={stillEngine === id} onPick={() => pickStillEngine(id)}>
                             {getImageModel(id).name}
                           </Option>
@@ -11507,22 +11510,28 @@ export function SetView({
                   {formatMsg(s.filmLength, { s: filmSeconds(film), n: film.beats.length })}
                 </span>
                 <span className="flex-1" />
-                <button
-                  type="button"
-                  onClick={() => editFilm((f) => ({ ...f, engine: "omni" }))}
-                  disabled={Boolean(filmBusy)}
-                  className={chip(film.engine === "omni")}
-                >
-                  {formatMsg(s.takeEngineOmni, { s: SET_TAKE_ENGINES.omni.seconds })}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => editFilm((f) => ({ ...f, engine: "veo" }))}
-                  disabled={Boolean(filmBusy)}
-                  className={chip(film.engine === "veo")}
-                >
-                  {formatMsg(s.takeEngineVeo, { s: SET_TAKE_ENGINES.veo.seconds })}
-                </button>
+                {(!offEngines.takes.includes("veo") || film.engine === "veo") && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => editFilm((f) => ({ ...f, engine: "omni" }))}
+                      disabled={Boolean(filmBusy)}
+                      className={chip(film.engine === "omni")}
+                    >
+                      {formatMsg(s.takeEngineOmni, { s: SET_TAKE_ENGINES.omni.seconds })}
+                    </button>
+                    {!offEngines.takes.includes("veo") && (
+                      <button
+                        type="button"
+                        onClick={() => editFilm((f) => ({ ...f, engine: "veo" }))}
+                        disabled={Boolean(filmBusy)}
+                        className={chip(film.engine === "veo")}
+                      >
+                        {formatMsg(s.takeEngineVeo, { s: SET_TAKE_ENGINES.veo.seconds })}
+                      </button>
+                    )}
+                  </>
+                )}
                 {reelReady && (
                   <button
                     type="button"

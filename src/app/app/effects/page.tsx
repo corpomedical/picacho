@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getModelControls } from "@/lib/models/controls";
 import { editorAllowed, isEditorEnabled } from "@/lib/editor/enabled";
 import { libraryVideos, listEffects, takeAsLibraryVideo } from "@/lib/editor/effects-actions";
 import { EffectsDoor } from "@/components/effects/effects-door";
@@ -30,11 +31,21 @@ export default async function EffectsPage({ searchParams }: { searchParams: Prom
   const { take, tab } = await searchParams;
   const takeId = typeof take === "string" ? take : null;
   const initialTab = tab === "video" || tab === "photo" || tab === "titles" ? tab : undefined;
-  const [{ jobs }, { videos }, { videos: pictures }, pick] = await Promise.all([
+  const [{ jobs }, { videos }, { videos: pictures }, pick, modelControls] = await Promise.all([
     listEffects(),
     libraryVideos("video"),
     libraryVideos("image"),
     takeId ? takeAsLibraryVideo(takeId) : Promise.resolve(null),
+    getModelControls(),
   ]);
-  return <EffectsDoor initialJobs={jobs} library={videos} pictures={pictures} initialPick={pick} initialTab={initialTab} />;
+  return (
+    <EffectsDoor
+      initialJobs={jobs}
+      library={videos}
+      pictures={pictures}
+      initialPick={pick}
+      initialTab={initialTab}
+      offEngines={modelControls.off.effects ?? []}
+    />
+  );
 }

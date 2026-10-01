@@ -14,6 +14,7 @@
 //   libraryVideos → their own finished videos, for the page's picker.
 
 import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { offered } from "@/lib/models/controls";
 import { rateLimited } from "@/lib/rate-limit";
 import { SESSION_EXPIRED_MESSAGE } from "@/lib/generations/user-facing-error";
 import { mediaStoragePath, thumbUrl, toMediaUrl, isRenderableUrl } from "@/lib/media/url";
@@ -312,10 +313,12 @@ export async function startEffect(input: {
   if (kind === "photo") {
     const preset = photoPreset(input?.effectId);
     if (!preset) return { error: "Pick an effect from the library." };
+    if (!(await offered("effects", preset.engine))) return { error: "That effect isn't offered right now. Pick another one." };
     effectName = preset.name;
   } else {
     const recipe = shotRecipe(input?.effectId);
     if (!recipe && !words) return { error: "Pick an effect, or describe the one you want." };
+    if (!(await offered("effects", "flux3"))) return { error: "Effects on videos aren't offered right now." };
     effectName = recipe?.name ?? (words.length > 40 ? `${words.slice(0, 40)}…` : words);
   }
   const media = kind === "photo" ? "image" : "video";

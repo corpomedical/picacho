@@ -77,7 +77,6 @@
 
 // Relative, not "@/": this file must stay loadable by vitest (the pure
 // halves are unit-tested), and openai-model.ts is alias-free for that reason.
-import { utilityModel } from "./providers/openai-model";
 
 export type Band = "NEGLIGIBLE" | "LOW" | "MEDIUM" | "HIGH";
 
@@ -609,10 +608,10 @@ async function readBackup(instructions: string): Promise<Scores | null> {
   }
 }
 
-/** The larger OpenAI reader for the vote — never the same model as the primary. */
-function largerModel(): string {
-  const primary = utilityModel();
-  return primary === "gpt-5.4" ? "gpt-5.4-mini" : "gpt-5.4";
+/** The larger OpenAI reader for the vote — never the same model as the primary (models/pick.ts). */
+async function largerModel(): Promise<string> {
+  const { otherReaderModel } = await import("@/lib/models/pick");
+  return otherReaderModel();
 }
 
 /**
@@ -659,7 +658,7 @@ export async function score(prompt: string, ctx: PolicyContext): Promise<Scores 
   // The unseeded reader is sampled three times at an edge and its own
   // median stands for it — one reader's coin is not a strong reader.
   const [larger, more] = await Promise.all([
-    readPrimary(instructions, largerModel()),
+    readPrimary(instructions, await largerModel()),
     backup ? Promise.all([readBackup(instructions), readBackup(instructions)]) : Promise.resolve([null, null]),
   ]);
   const claudeSamples = [backup, ...more].filter((r): r is Scores => r !== null);

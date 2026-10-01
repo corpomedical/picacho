@@ -56,7 +56,8 @@ describe("the still's engine", () => {
     // Seedream 5.0 Pro joined 2026-09-28; the picker reads the list, so it is offered here too.
     expect([...SELECTABLE_IMAGE_MODEL_IDS]).toEqual(["gpt-image", "gemini", "seedream-5-pro"]);
     expect(view).toContain('window.localStorage.setItem("helios.stillEngine", id);');
-    expect(view).toContain("{SELECTABLE_IMAGE_MODEL_IDS.map((id) => (");
+    // Less any lane taken off the menu on Admin → Models (2026-10-02).
+    expect(view).toContain("{SELECTABLE_IMAGE_MODEL_IDS.filter((id) => !offEngines.still.includes(id)).map((id) => (");
     expect(view.match(/stillEngine,\n/g)?.length).toBeGreaterThanOrEqual(3);
     expect(actions).toContain('if (pickedEngine) fd.set("image_model_id", pickedEngine);');
   });

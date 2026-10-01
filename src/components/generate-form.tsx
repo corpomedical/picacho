@@ -1411,6 +1411,8 @@ export function GenerateForm(props: {
   // ENGINE cell opens on for an image. Optional so other call sites keep
   // working; the server pins the real default either way.
   defaultImageModelId?: string;
+  // Picture lanes the operator took off the menu (Admin → Models).
+  offImageModels?: string[];
   // The account's own starting point (Settings → Generation, 2026-09-11),
   // already resolved server-side. Optional: every other call site keeps the
   // composer's own defaults.
@@ -1939,6 +1941,7 @@ function GenerateFormInner({
   videoModels,
   defaultVideoModelId,
   defaultImageModelId = "gpt-image",
+  offImageModels = [],
   defaultAspectRatio = null,
   defaultVideoDurationSeconds = null,
   notifyRenderReady = true,
@@ -1969,6 +1972,7 @@ function GenerateFormInner({
   videoModels: VideoModelOption[];
   defaultVideoModelId: string;
   defaultImageModelId?: string;
+  offImageModels?: string[];
   defaultAspectRatio?: "16:9" | "9:16" | null;
   defaultVideoDurationSeconds?: number | null;
   notifyRenderReady?: boolean;
@@ -6397,7 +6401,7 @@ function GenerateFormInner({
   // The upsell version of this (a locked row that says "needs a plan") is a
   // deliberate later call, not an accident: it needs its own copy in four
   // languages to be worth showing.
-  const imageLanes = selectableImageModels();
+  const imageLanes = selectableImageModels().filter((m) => !offImageModels.includes(m.id));
   const currentImageModel = imageLanes.find((m) => m.id === imageModelId);
   const imageModelPicker =
     contentType === "image" && !freeTierClient && imageLanes.length > 1 ? (

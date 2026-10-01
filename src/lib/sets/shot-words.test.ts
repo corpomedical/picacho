@@ -414,7 +414,7 @@ describe("the reader's files log no words", () => {
       const args = source.slice(start, i - 1);
       const expressions = args
         // The one reader of the answer allowed in a log: it keeps counts only (pinned below).
-        .replace(/readerUsageOf\(data, SHOT_WORDS_MODEL\)/g, "")
+        .replace(/readerUsageOf\(data, model\)/g, "")
         // A database error's own message ("timeout") is the database's, not the person's.
         .replace(/\b(\w*[Ee]rror)\.message\b/g, "$1")
         .replace(/`([^`]*)`/g, (_all, body: string) => [...body.matchAll(/\$\{([^}]*)\}/g)].map((e) => e[1]).join(" "))
@@ -435,7 +435,8 @@ describe("the reader's files log no words", () => {
 
   it("logs the usage line from the counts alone", () => {
     const src = readFileSync(join(__dirname, "shot-words.ts"), "utf8");
-    expect(src).toContain('console.info("[sets] reader usage", readerUsageOf(data, SHOT_WORDS_MODEL));');
+    // `model` is the reader's model for this call: the Models page's pick, else SHOT_WORDS_MODEL.
+    expect(src).toContain('console.info("[sets] reader usage", readerUsageOf(data, model));');
     const usageOf = src.slice(src.indexOf("export function readerUsageOf("), src.indexOf("\n}\n", src.indexOf("export function readerUsageOf(")));
     expect(usageOf).not.toMatch(/\bmessage\b|\bcontent\b/);
   });

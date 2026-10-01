@@ -7,6 +7,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { KEEP_THE_SHOT } from "./catalog";
+import { claudeThinkingOff, claudeUsd } from "../models/registry";
 
 export const EFFECTS_MODEL = "claude-opus-5-5";
 const MAX_TOKENS = 1200;
@@ -66,18 +67,18 @@ export type EffectPlan = { instruction: string; title: string; summary: string; 
 export type EffectVerdict = { ok: boolean; note: string; betterInstruction: string };
 export type OpusResult<T> = { ok: true; value: T; usd: number } | { ok: false; error: string; usd: number };
 
-/** Opus 5.5 list price, US dollars per million tokens (in / out). */
-const IN_PER_M = 4;
-const OUT_PER_M = 20;
-
-async function ask<T>(client: MessagesClient, content: Block[], schema: object): Promise<OpusResult<T>> {
+// Priced at the model's own list rates (models/registry.ts CLAUDE_USD_PER_M).
+async function ask<T>(client: MessagesClient, content: Block[], schema: object, model: string): Promise<OpusResult<T>> {
   let message: Anthropic.Message;
   try {
     message = await client.messages.create(
       {
-        model: EFFECTS_MODEL,
+        model,
         max_tokens: MAX_TOKENS,
-        thinking: { type: "disabled" },
+        // Thinking off, spelled the way the model accepts it. Opus 5.5 refuses
+        // {type:"disabled"} with a 400, so until 2026-10-02 every plan and
+        // check here failed before reaching the model (probed that day).
+        ...claudeThinkingOff(model),
         system: SYSTEM,
         output_config: { format: { type: "json_schema", schema: schema as { [key: string]: unknown } } },
         messages: [{ role: "user", content }],
@@ -87,7 +88,7 @@ async function ask<T>(client: MessagesClient, content: Block[], schema: object):
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err), usd: 0 };
   }
-  const usd = ((message.usage?.input_tokens ?? 0) * IN_PER_M + (message.usage?.output_tokens ?? 0) * OUT_PER_M) / 1_000_000;
+  const usd = claudeUsd(model, message.usage?.input_tokens ?? 0, message.usage?.output_tokens ?? 0);
   if (message.stop_reason === "refusal") return { ok: false, error: "declined", usd };
   const text = message.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
@@ -108,6 +109,7 @@ function fenced(words: string): string {
 export async function planEffect(
   client: MessagesClient,
   input: { effect: string; words: string; frames: Uint8Array[] },
+  model: string = EFFECTS_MODEL,
 ): Promise<OpusResult<EffectPlan>> {
   const content: Block[] = [{ type: "text", text: `Frames from the customer's clip, start to end:` }];
   for (const f of input.frames.slice(0, 4)) content.push(picture(f));
@@ -117,7 +119,7 @@ export async function planEffect(
       input.words ? `What they wrote:\n${fenced(input.words)}` : "They wrote nothing else."
     }\n\nWrite the instruction.`,
   });
-  const r = await ask<{ instruction: string; title: string; summary: string; doable: boolean; why_not: string }>(client, content, PLAN_SCHEMA);
+  const r = await ask<{ instruction: string; title: string; summary: string; doable: boolean; why_not: string }>(client, content, PLAN_SCHEMA, model);
   if (!r.ok) return r;
   const v = r.value;
   return {
@@ -131,6 +133,7 @@ export async function planEffect(
 export async function judgeEffect(
   client: MessagesClient,
   input: { effect: string; words: string; instruction: string; before: Uint8Array[]; after: Uint8Array[] },
+  model: string = EFFECTS_MODEL,
 ): Promise<OpusResult<EffectVerdict>> {
   const content: Block[] = [{ type: "text", text: "ORIGINAL frames:" }];
   for (const f of input.before.slice(0, 3)) content.push(picture(f));
@@ -140,7 +143,7 @@ export async function judgeEffect(
     type: "text",
     text: `Asked for: ${input.effect || "(their own words)"}\n${input.words ? fenced(input.words) + "\n" : ""}The instruction the engine got: ${input.instruction}\n\nJudge the result.`,
   });
-  const r = await ask<{ effect_visible: boolean; shot_kept: boolean; note: string; better_instruction: string }>(client, content, JUDGE_SCHEMA);
+  const r = await ask<{ effect_visible: boolean; shot_kept: boolean; note: string; better_instruction: string }>(client, content, JUDGE_SCHEMA, model);
   if (!r.ok) return r;
   const v = r.value;
   return {

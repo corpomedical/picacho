@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { getModelControls } from "@/lib/models/controls";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getServerMessages } from "@/lib/i18n/server";
@@ -125,6 +126,7 @@ export default async function SetPage({
   // A ready set is the workspace itself: the viewport takes the whole
   // screen, the way 3D Jutsu's does, and carries its own bar — the page's
   // frame is only for a set still building, or one that failed.
+  const modelControls = await getModelControls();
   if (ready && data.error === null && data.set.spec) {
     return (
       <SetView
@@ -151,6 +153,7 @@ export default async function SetPage({
         liveOn={data.liveOn}
         initialElementPhotos={data.elementPhotos}
         stillModel={data.stillModel}
+        offEngines={{ still: modelControls.off.picture ?? [], takes: modelControls.off.helios_takes ?? [] }}
         unshootable={data.unshootable}
         initialAsk={ask}
         initialCharacterId={character}

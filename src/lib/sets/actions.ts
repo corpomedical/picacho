@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { offered } from "@/lib/models/controls";
 import { rateLimited } from "@/lib/rate-limit";
 import { mediaUrl, toMediaUrl } from "@/lib/media/url";
 import { clearSetRecce } from "@/lib/sets/recce-store";
@@ -912,7 +913,11 @@ async function shootStill(
   // before the shot (element-actions.ts prepareElementSheets), and one that
   // is not just doesn't ride, and says so. Worked out before anything is
   // shot, so a film's beat that needs one stops here, free.
-  const pickedEngine = (SELECTABLE_IMAGE_MODEL_IDS as readonly unknown[]).includes(input.stillEngine) ? (input.stillEngine as string) : null;
+  // A lane taken off the picture menu on Admin → Models reads as no pick (the set's default lane).
+  const pickedEngine =
+    (SELECTABLE_IMAGE_MODEL_IDS as readonly unknown[]).includes(input.stillEngine) && (await offered("picture", input.stillEngine as string))
+      ? (input.stillEngine as string)
+      : null;
   const els = setElements(owned.spec);
   // The set as this frame shows it: a beat that drives a thing is shot with
   // it driven (movers.ts). The THINGS are the arrangement's — a moved car
@@ -1459,6 +1464,8 @@ async function takeWork(
   const reusedUrl = reuseId ? await finishedStillUrl(access.supabase, setId, userId, reuseId) : null;
   if (reuseId && !reusedUrl) return { error: SET_TAKE_BAD_END };
   const engineKey = isSetTakeEngine(input.engine) ? input.engine : SET_TAKE_DEFAULT_ENGINE;
+  // Veo taken off the menu on Admin → Models (the default engine is locked on there).
+  if (!(await offered("helios_takes", engineKey))) return { error: "Veo takes aren't offered right now. Use the 5-second take." };
   // The whole take is paid for, or none of it. The end still is charged
   // before the clip is asked for, so a person who could pay for the still
   // but not the clip was left with a still they had not asked for on its

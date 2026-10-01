@@ -373,6 +373,8 @@ export function validatePreparedSend(
   input: Record<string, unknown>,
   cast: { id: string; name: string }[],
   newId: () => string,
+  /** Video models taken off the menu on the Models page (model_controls.off.video). */
+  offVideo: readonly string[] = [],
 ): { card: PreparedSend } | { error: string } {
   const kind = input.kind === "image" || input.kind === "video" ? input.kind : null;
   if (!kind) return { error: "kind must be image or video." };
@@ -415,8 +417,8 @@ export function validatePreparedSend(
 
   const modelId = typeof input.video_model_id === "string" ? input.video_model_id : "";
   const model = VIDEO_MODELS.find((m) => m.id === modelId);
-  if (!model || isDormantVideoModel(model.id)) {
-    const ids = VIDEO_MODELS.filter((m) => !isDormantVideoModel(m.id)).map((m) => m.id);
+  if (!model || isDormantVideoModel(model.id) || offVideo.includes(model.id)) {
+    const ids = VIDEO_MODELS.filter((m) => !isDormantVideoModel(m.id) && !offVideo.includes(m.id)).map((m) => m.id);
     return { error: `Unknown video model. Use one of: ${ids.join(", ")}.` };
   }
   if (requiresReferenceImage(model) && !characterId) {

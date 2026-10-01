@@ -36,6 +36,15 @@ import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { fetchWithTimeout } from "../generations/providers/fetch-with-timeout";
 import { utilityModel } from "../generations/providers/openai-model";
+
+/** The Models page's reader pick (models/pick.ts), imported late so this file's tests need no "@/" chain. */
+async function readerModelOrDefault(): Promise<string> {
+  try {
+    return await (await import("@/lib/models/pick")).readerModel();
+  } catch {
+    return utilityModel();
+  }
+}
 import { decodeEntities, extractProductPage } from "./extract-page";
 import { paletteFromImage } from "./palette";
 import { ensureFenced } from "./product-dna";
@@ -695,7 +704,7 @@ export interface BrandVoiceDeps {
 export async function readBrandVoice(fencedPageText: string, deps: BrandVoiceDeps = {}): Promise<BrandVoiceResult> {
   const apiKey = (deps.apiKey === undefined ? process.env.OPENAI_API_KEY : deps.apiKey)?.trim();
   if (!apiKey) return { ok: false, reason: "not_configured" };
-  const model = deps.model || utilityModel();
+  const model = deps.model || (await readerModelOrDefault());
   try {
     const res = await fetchWithTimeout(
       "https://api.openai.com/v1/chat/completions",

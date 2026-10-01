@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getModelControls } from "@/lib/models/controls";
 import { editorAllowed, isEditorEnabled } from "@/lib/editor/enabled";
 import { getEdit, listEdits } from "@/lib/editor/actions";
 import { DirectorsCut } from "@/components/directors-cut/directors-cut";
@@ -24,7 +25,7 @@ export default async function DirectorsCutPage() {
   if (!editorAllowed(profile)) notFound();
   if (!(await isEditorEnabled(supabase))) notFound();
 
-  const { edits } = await listEdits();
+  const [{ edits }, modelControls] = await Promise.all([listEdits(), getModelControls()]);
   const first = edits[0] ? (await getEdit(edits[0].id)).edit : null;
-  return <DirectorsCut initialEdits={edits} initialDetail={first} />;
+  return <DirectorsCut initialEdits={edits} initialDetail={first} offMusic={modelControls.off.music ?? []} />;
 }

@@ -46,6 +46,15 @@
 import sharp from "sharp";
 import { fetchWithTimeout } from "../generations/providers/fetch-with-timeout";
 import { utilityModel } from "../generations/providers/openai-model";
+
+/** The Models page's reader pick (models/pick.ts), imported late so this file's tests need no "@/" chain. */
+async function readerModelOrDefault(): Promise<string> {
+  try {
+    return await (await import("@/lib/models/pick")).readerModel();
+  } catch {
+    return utilityModel();
+  }
+}
 import { FENCE_MAX_CHARS, fenceUntrusted } from "./extract-page";
 import {
   PRODUCT_CATEGORIES,
@@ -331,7 +340,7 @@ export function decideProductDna(parsed: unknown): Extract<ProductDnaResult, { o
 export async function readProductDna(input: ProductDnaInput, deps: ProductDnaDeps = {}): Promise<ProductDnaResult> {
   const apiKey = (deps.apiKey === undefined ? process.env.OPENAI_API_KEY : deps.apiKey)?.trim();
   if (!apiKey) return { ok: false, reason: "not_configured" };
-  const model = deps.model || utilityModel();
+  const model = deps.model || (await readerModelOrDefault());
   const { body, images } = buildProductDnaRequest(input, model);
   if (images.length === 0) return { ok: false, reason: "no_images" };
   const timeoutMs = Math.min(DNA_TIMEOUT_MS, Math.max(1, Math.floor(deps.timeoutMs ?? DNA_TIMEOUT_MS)));

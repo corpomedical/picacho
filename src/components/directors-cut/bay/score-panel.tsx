@@ -26,6 +26,7 @@ export function ScorePanel({
   inUse,
   onComposed,
   onUse,
+  offMusic = [],
 }: {
   editId: string;
   generationId: string;
@@ -37,6 +38,8 @@ export function ScorePanel({
   inUse: string | null;
   onComposed: () => Promise<void>;
   onUse: (take: Take) => void;
+  /** Music engines taken off the menu on Admin → Models (the panel keeps at least one). */
+  offMusic?: string[];
 }) {
   const { t } = useLocale();
   const b = t.directorsCut.bay;
@@ -44,7 +47,7 @@ export function ScorePanel({
   const [prompt, setPrompt] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set(["Dramatic", "Hybrid orchestral"]));
   const [instrumental, setInstrumental] = useState(true);
-  const [engine, setEngine] = useState<ComposerEngine>("eleven");
+  const [engine, setEngine] = useState<ComposerEngine>(offMusic.includes("eleven") ? "ace" : "eleven");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const sections = useMemo(() => sectionsFromCuts(duration, cuts), [duration, cuts]);
@@ -108,8 +111,8 @@ export function ScorePanel({
           onChange={(e) => setEngine(e.target.value as ComposerEngine)}
           className="h-7 rounded-md border border-[rgba(255,255,255,0.08)] bg-[#13151b] px-1.5 font-mono text-[11px] text-[#9aa0ad]"
         >
-          <option value="eleven">{s.engineEleven}</option>
-          <option value="ace">{s.engineAce}</option>
+          {!offMusic.includes("eleven") && <option value="eleven">{s.engineEleven}</option>}
+          {!offMusic.includes("ace") && <option value="ace">{s.engineAce}</option>}
         </select>
       </div>
       <label htmlFor="score-describe" className="font-mono text-[11px] text-[#6b6f7a]">

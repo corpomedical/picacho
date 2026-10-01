@@ -11,6 +11,7 @@ import {
   type VideoDurationOption,
 } from "@/lib/generations/providers/video-models";
 import type { createClient } from "@/lib/supabase/server";
+import { getModelControls } from "@/lib/models/controls";
 import { resolveComposerDefaults, type AspectRatioPref } from "@/lib/generations/generation-defaults";
 import { readGenerationDefaults, readRenderNotifyPrefs } from "@/lib/generations/generation-defaults-server";
 
@@ -43,11 +44,12 @@ export type VideoModelOption = {
 
 /**
  * The video models the composer offers — cheapest first, dormant models only
- * with the experimental_models flag on. Exported so Settings → Generation
- * offers exactly the same list (2026-09-11).
+ * with the experimental_models flag on, and none the operator took off the
+ * menu on the Models page (`off`, model_controls.off.video). Exported so
+ * Settings → Generation offers exactly the same list (2026-09-11).
  */
-export function buildVideoModelOptions(experimentalModels: boolean): VideoModelOption[] {
-  return VIDEO_MODELS_BY_PRICE.filter((m) => experimentalModels || !isDormantVideoModel(m.id)).map((m) => ({
+export function buildVideoModelOptions(experimentalModels: boolean, off: readonly string[] = []): VideoModelOption[] {
+  return VIDEO_MODELS_BY_PRICE.filter((m) => (experimentalModels || !isDormantVideoModel(m.id)) && !off.includes(m.id)).map((m) => ({
     id: m.id,
     name: m.name,
     description: m.description,
@@ -80,6 +82,8 @@ export type GenerateWorkspaceData = {
   // picks nothing. Sending "gpt-image" from the client instead would show
   // the wrong name for the hours after an admin switches the default.
   defaultImageModelId: string;
+  /** Picture lanes taken off the menu on the Models page. */
+  offImageModels: string[];
   // The account's own starting point (Settings → Generation), already
   // resolved against what is offered — null means the composer's default.
   defaultAspectRatio: AspectRatioPref | null;
@@ -241,9 +245,9 @@ export async function getGenerateWorkspaceData(
   //
   // Read failure means OFF: an unreadable flag must never be the thing that
   // reveals an unproven model.
-  const experimentalModels = await readExperimentalModelsFlag(supabase);
+  const [experimentalModels, modelControls] = await Promise.all([readExperimentalModelsFlag(supabase), getModelControls()]);
   // Cheapest first — see VIDEO_MODELS_BY_PRICE.
-  const videoModels: VideoModelOption[] = buildVideoModelOptions(experimentalModels);
+  const videoModels: VideoModelOption[] = buildVideoModelOptions(experimentalModels, modelControls.off.video);
 
   // The account's own defaults, resolved against what is actually offered:
   // a model picked in Settings that has since gone dormant or been retired
@@ -307,6 +311,7 @@ export async function getGenerateWorkspaceData(
     videoModels,
     defaultVideoModelId,
     defaultImageModelId,
+    offImageModels: modelControls.off.picture ?? [],
     defaultAspectRatio: resolvedDefaults.aspectRatio,
     defaultVideoDurationSeconds: resolvedDefaults.durationSeconds,
     notifyRenderReady: notifyPrefs.ready,

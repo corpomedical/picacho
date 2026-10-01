@@ -55,6 +55,8 @@ export const ADMIN_ACTIONS = {
   "model.seedance_lane": { label: "Changed the Seedance lane", group: "system" },
   "model.suspend": { label: "Suspended a model", group: "system" },
   "model.restore": { label: "Restored a model", group: "system" },
+  "model.job": { label: "Switched a behind-the-scenes model", group: "system" },
+  "model.offer": { label: "Changed a customer model menu", group: "system" },
   "voice.add": { label: "Added a voice", group: "system" },
   "voice.default": { label: "Made a voice the default", group: "system" },
   "voice.delete": { label: "Removed a voice", group: "system" },

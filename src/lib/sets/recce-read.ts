@@ -22,6 +22,7 @@
 // count and the clip bounds. Tested with a fake fetch.
 
 import { cleanText } from "./set-spec";
+import { studioReaderModel } from "../models/studio-reader";
 
 /** The reader: the shot words' model (shot-words.ts names it too). */
 export const RECCE_READ_MODEL = "gpt-5.4-mini";
@@ -213,6 +214,7 @@ export async function askRecceRead(
   times: number[],
   opts: { timeoutMs?: number; fetchFn?: typeof fetch } = {},
 ): Promise<string | null> {
+  const model = await studioReaderModel(RECCE_READ_MODEL);
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.warn("[sets] recce read skipped: OPENAI_API_KEY is not set");
@@ -232,7 +234,7 @@ export async function askRecceRead(
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: RECCE_READ_MODEL,
+        model,
         messages: [
           { role: "system", content: instructions },
           { role: "user", content },
@@ -245,7 +247,7 @@ export async function askRecceRead(
       signal: deadline.signal,
     });
     if (!res.ok) {
-      console.warn(`[sets] recce read failed: ${RECCE_READ_MODEL} answered ${res.status}`);
+      console.warn(`[sets] recce read failed: ${model} answered ${res.status}`);
       return null;
     }
     const data = (await res.json()) as { choices?: { message?: { content?: unknown } }[] } | null;

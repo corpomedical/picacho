@@ -17,6 +17,7 @@
 // a photo of its own (startNewModelBuild), kept as a Studio file.
 
 import { createAdminClient } from "@/lib/supabase/server";
+import { offered } from "@/lib/models/controls";
 import { rateLimited } from "@/lib/rate-limit";
 import { mediaUrl } from "@/lib/media/url";
 import { setsAccess, UUID_RE, type SetsAccess } from "@/lib/sets/access";
@@ -480,6 +481,7 @@ export async function startStudioModelBuild(setId: string, input: StudioModelBui
   const engine = modelEngine(input?.engine);
   const kind = KINDS.includes(input?.kind) ? input.kind : null;
   if (!engine || !kind || !engine.endpoints[kind]) return { error: STUDIO_MODEL_ENGINE_UNKNOWN };
+  if (!(await offered("models_3d", engine.id))) return { error: "That 3D engine isn't offered right now. Pick another one." };
   const options = normaliseModelOptions(engine, input?.options);
   const prompt = typeof input?.prompt === "string" ? input.prompt.slice(0, 2_000) : "";
   const sent: ModelImages = {};

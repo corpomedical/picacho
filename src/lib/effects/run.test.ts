@@ -6,7 +6,7 @@ const fal = vi.hoisted(() => ({
   fetchQueuedVideoUrl: vi.fn(),
 }));
 const work = vi.hoisted(() => ({ framesAt: vi.fn(), probeClip: vi.fn() }));
-const opus = vi.hoisted(() => ({ planEffect: vi.fn(), judgeEffect: vi.fn(), effectsClient: vi.fn() }));
+const opus = vi.hoisted(() => ({ planEffect: vi.fn(), judgeEffect: vi.fn(), effectsClient: vi.fn(), EFFECTS_MODEL: "claude-opus-5-5" }));
 vi.mock("../generations/providers/fal", () => fal);
 vi.mock("../editor/work", () => work);
 vi.mock("./opus", () => opus);

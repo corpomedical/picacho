@@ -31,6 +31,7 @@
 
 import { isRigCheckItem, type RigCheckItem } from "./rig";
 import { cleanText } from "./set-spec";
+import { studioReaderModel } from "../models/studio-reader";
 
 export const RIG_CHECK_MODEL = "gpt-5.4-mini";
 export const RIG_CHECK_TIMEOUT_MS = 30_000;
@@ -123,6 +124,7 @@ export async function checkRig(
   locale: string,
   opts: { timeoutMs?: number } = {},
 ): Promise<RigCheckVerdict[] | null> {
+  const model = await studioReaderModel(RIG_CHECK_MODEL);
   if (asks.length === 0) return [];
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -136,7 +138,7 @@ export async function checkRig(
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: RIG_CHECK_MODEL,
+        model,
         messages: [
           { role: "system", content: rigCheckInstructions(locale) },
           {
@@ -154,7 +156,7 @@ export async function checkRig(
       signal: deadline.signal,
     });
     if (!res.ok) {
-      console.warn(`[sets] rig check failed: ${RIG_CHECK_MODEL} answered ${res.status}`);
+      console.warn(`[sets] rig check failed: ${model} answered ${res.status}`);
       return null;
     }
     const data = (await res.json()) as { choices?: { message?: { content?: unknown } }[]; usage?: unknown } | null;

@@ -235,9 +235,11 @@ export function EffectForm({
   library,
   initialPick,
   guard,
+  offEngines = [],
   onStarted,
 }: {
   kind: "shot" | "photo";
+  offEngines?: string[];
   library: LibraryVideo[];
   initialPick: LibraryVideo | null;
   guard: Guard;
@@ -260,11 +262,13 @@ export function EffectForm({
   const catName = (k: string) => (e.cats as Record<string, string>)[k] ?? k;
 
   const photos = useMemo(() => {
-    if (query.trim()) return searchPresets(query);
-    if (photoCat === "featured") return FEATURED_PHOTO.map((id) => PHOTO_PRESETS.find((p) => p.id === id)!).filter(Boolean);
-    if (photoCat === "all") return [...PHOTO_PRESETS];
-    return PHOTO_PRESETS.filter((p) => p.category === photoCat);
-  }, [query, photoCat]);
+    // Effects whose engine was taken off the menu on Admin → Models drop out of the library.
+    const on = (list: readonly (typeof PHOTO_PRESETS)[number][]) => list.filter((p) => !offEngines.includes(p.engine));
+    if (query.trim()) return on(searchPresets(query));
+    if (photoCat === "featured") return on(FEATURED_PHOTO.map((id) => PHOTO_PRESETS.find((p) => p.id === id)!).filter(Boolean));
+    if (photoCat === "all") return on(PHOTO_PRESETS);
+    return on(PHOTO_PRESETS.filter((p) => p.category === photoCat));
+  }, [query, photoCat, offEngines]);
 
   const preset = kind === "photo" ? PHOTO_PRESETS.find((p) => p.id === effectId) ?? null : null;
   const seconds = size?.seconds ?? (picked?.kind === "take" ? picked.item.seconds : null);

@@ -37,7 +37,16 @@ const ASPECTS = ASPECT_HINTS;
 
 type Picked = { file: File; url: string; seconds: number | null };
 
-export function DirectorsCut({ initialEdits, initialDetail = null }: { initialEdits: EditSummary[]; initialDetail?: EditDetail | null }) {
+export function DirectorsCut({
+  initialEdits,
+  initialDetail = null,
+  offMusic = [],
+}: {
+  initialEdits: EditSummary[];
+  initialDetail?: EditDetail | null;
+  /** Music engines taken off the menu on Admin → Models. */
+  offMusic?: string[];
+}) {
   const { t } = useLocale();
   const d = t.directorsCut;
   const [edits, setEdits] = useState(initialEdits);
@@ -127,6 +136,7 @@ export function DirectorsCut({ initialEdits, initialDetail = null }: { initialEd
         onSelectEdit={setSelectedId}
         detail={detail}
         onRefresh={() => refresh(selectedId)}
+        offMusic={offMusic}
         director={<Notes bare detail={detail} guard={guard} onSent={() => refresh(selectedId)} />}
         newEdit={(close) => (
           <div className="flex flex-col gap-6">

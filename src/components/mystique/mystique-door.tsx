@@ -214,6 +214,7 @@ export function MystiqueDoor({
   motions,
   initialTakes,
   lockOn,
+  offEngines = [],
   notify,
   balance,
   initialClipId = null,
@@ -224,6 +225,8 @@ export function MystiqueDoor({
   /** A take's "Recast this clip" door: this motion is picked on arrival, as a tap on its card would. */
   initialClipId?: string | null;
   lockOn: boolean;
+  /** Engines taken off the menu on Admin → Models; every job keeps at least one. */
+  offEngines?: string[];
   /** Their own notification settings (Settings → Notifications), which the in-page notice follows. */
   notify: { ready: boolean; failed: boolean };
   /** What they have left to spend (data.ts), shown beside the price; null when it could not be read. */
@@ -406,7 +409,12 @@ export function MystiqueDoor({
   // required: words alone can make an Into the clip take (recast.ts
   // recastMissing, 2026-09-19 "Do not lock it just on characters").
   const takesCast = recastTakesCast(job);
-  const engine: RecastEngine = recastEngineFor(job, tier);
+  // The engines this door offers for a job: none the operator took off the menu.
+  const offeredEnginesOf = (j: RecastJob): RecastEngine[] => {
+    const on = recastEnginesOf(j).filter((e) => !offEngines.includes(e));
+    return on.length ? on : recastEnginesOf(j);
+  };
+  const engine: RecastEngine = offeredEnginesOf(job).find((e) => RECAST_ENGINES[e].tier === tier) ?? offeredEnginesOf(job)[0] ?? recastEngineFor(job, tier);
   const cast = takesCast
     ? castIds.map((id) => castable.find((c) => c.id === id)).filter((c): c is RecastCharacter => Boolean(c))
     : [];
@@ -1713,11 +1721,11 @@ export function MystiqueDoor({
                 {/* Quality: only where there is a choice (a single "Full" pill
                     chose nothing), and each choice says what it trades — a
                     softer picture only where its resolution is lower (2026-09-22). */}
-                {recastEnginesOf(job).length > 1 && (
+                {offeredEnginesOf(job).length > 1 && (
                   <>
                     <p className={`mt-4 ${label}`}>{m.qualityLabel}</p>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {recastEnginesOf(job).map((e) => {
+                      {offeredEnginesOf(job).map((e) => {
                         const spec = RECAST_ENGINES[e];
                         const q = quoteOf(e);
                         return (

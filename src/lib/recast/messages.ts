@@ -28,6 +28,8 @@ export const RECAST_REFUSED_BRIEF = "This clip can't be recast. Nothing was char
 export const RECAST_CHARACTER_NEEDS_PHOTO = "That character has no photo yet — add one first.";
 export const RECAST_CLIP_UNCHECKED = "That clip couldn't be checked just now — nothing was charged. Try again.";
 export const RECAST_COULDNT_START = "Couldn't start this take — nothing was charged. Try again.";
+/** The engine was taken off the menu on Admin → Models after the page opened. */
+export const RECAST_ENGINE_OFF = "This quality isn't offered right now. Reload and pick the other one — nothing was charged.";
 export const RECAST_ALREADY_STARTED = "That take was already started.";
 // The long take (chain.ts): no placement of its parts lets them meet at a
 // still enough moment inside the engine's limits.

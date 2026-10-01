@@ -27,6 +27,7 @@ export function EditBay({
   onSelectEdit,
   detail,
   onRefresh,
+  offMusic = [],
   director,
   newEdit,
   fallback,
@@ -37,6 +38,7 @@ export function EditBay({
   detail: EditDetail | null;
   /** Re-read the edit (a finished export adds a video to it). */
   onRefresh: () => Promise<void>;
+  offMusic?: string[];
   /** The Director tab: Opus's notes and "ask for a change". */
   director: ReactNode;
   /** The brief form, for a new edit; it calls `close` once the edit has started. */
@@ -199,6 +201,7 @@ export function EditBay({
           rightTab={rightTab}
           setRightTab={setRightTab}
           onRefresh={onRefresh}
+          offMusic={offMusic}
         />
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -248,6 +251,7 @@ function ProjectBay({
   rightTab,
   setRightTab,
   onRefresh,
+  offMusic,
 }: {
   detail: EditDetail;
   generationId: string;
@@ -258,6 +262,7 @@ function ProjectBay({
   rightTab: RightTab;
   setRightTab: (t: RightTab) => void;
   onRefresh: () => Promise<void>;
+  offMusic: string[];
 }) {
   const { t } = useLocale();
   const d = t.directorsCut;
@@ -405,6 +410,7 @@ function ProjectBay({
                   takes={takes}
                   inUse={clips.find((c) => isTake(c.src))?.src ?? null}
                   onComposed={onRefresh}
+                  offMusic={offMusic}
                   onUse={(take) => {
                     setSelected(project.placeMusic(take));
                   }}

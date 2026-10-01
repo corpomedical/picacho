@@ -385,7 +385,7 @@ export async function loadToday(
       at: m.tripped_at,
       actions: [
         { type: "form", label: "Turn back on", action: "restoreModel", fields: { model_id: m.model_id }, primary: true },
-        { type: "link", label: "AI providers", href: "/admin/providers" },
+        { type: "link", label: "Models", href: `/admin/models?p=${m.kind === "image" ? "picture" : "video"}` },
       ],
     });
   }

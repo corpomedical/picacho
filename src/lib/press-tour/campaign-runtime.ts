@@ -75,6 +75,7 @@ import { MAX_SHOT_BYTES } from "@/lib/product-lock/frames";
 import { prepareFrame } from "@/lib/product-lock/crop";
 import { locateFraming } from "@/lib/product-lock/judge";
 import { productCheckDeps } from "@/lib/product-lock/live";
+import { modelForJob } from "@/lib/models/pick";
 import { notifyAdmins } from "@/lib/push/web-push";
 import { hashedRateKey, rateLimited } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -261,7 +262,7 @@ const stillChecker = (db: SupabaseClient): StillChecker => async (input) => {
         keepFrames: (owner.data as { role?: string } | null)?.role === "admin",
       },
     },
-    productCheckDeps(),
+    productCheckDeps(await modelForJob("product_second_opinion")),
   );
   return {
     face: result.face ?? (input.star ? "not_checked" : "no_one_in_shot"),
@@ -629,7 +630,7 @@ const takeChecker =
           keepFrames: (owner.data as { role?: string } | null)?.role === "admin",
         },
       },
-      productCheckDeps(),
+      productCheckDeps(await modelForJob("product_second_opinion")),
     );
     return { check: takeCheckFrom(result, ctx, threshold), usd: result.signals.usd };
   };

@@ -1,4 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { modelForJob } from "@/lib/models/pick";
+import { getModelControls } from "@/lib/models/controls";
 import { createHash } from "crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
@@ -187,6 +189,13 @@ export async function POST(request: NextRequest) {
   // "Think harder" on Luna answers on Claude Opus 5.5, in Claude's lane (the
   // page sends it there already; this is the same rule, brains.ts).
   ({ choice, harder } = routeBrain(choice, harder, false));
+  // A brain taken off the menu on Admin → Models answers as the everyday brain
+  // (an open page can still send it); Ask all three asks the ones still on.
+  const offBrains = (await getModelControls()).off.aly_brains ?? [];
+  if (choice !== "all" && offBrains.includes(choice)) {
+    choice = EVERYDAY_BRAIN;
+    harder = false;
+  }
   const cap = granted ? PLAN_CHAT_UNIT_LIMITS.elite : isFree ? FREE_CHAT_UNIT_LIMIT : PLAN_CHAT_UNIT_LIMITS[plan];
   const since = isFree && !granted ? new Date(0).toISOString() : monthlyWindowStart(profile?.current_period_start).toISOString();
 
@@ -305,7 +314,8 @@ export async function POST(request: NextRequest) {
   const client = new Anthropic();
   const upstream = new AbortController();
   const pageAccess = pageAccessReader(supabase, user.id);
-  const lanes: readonly Brain[] = choice === "all" ? BRAINS : [choice];
+  const onBrains = BRAINS.filter((b) => !offBrains.includes(b));
+  const lanes: readonly Brain[] = choice === "all" ? (onBrains.length ? onBrains : [EVERYDAY_BRAIN]) : [choice];
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -385,7 +395,8 @@ export async function POST(request: NextRequest) {
 
       // ---- Claude, with Aly's tools ------------------------------------------
       const runClaude = async (): Promise<Lane> => {
-        const model = modelFor("claude", harder);
+        // Think harder stays Opus 5.5; the everyday Claude brain is the Models page's pick (aly_claude).
+        const model = harder ? modelFor("claude", true) : await modelForJob("aly_claude");
         const maxTokens = MAX_OUTPUT[harder ? "harder" : "everyday"];
         const brake = BRAKE_USD[harder ? "harder" : "everyday"];
         const system = setup.system.map((t, i, all) => ({

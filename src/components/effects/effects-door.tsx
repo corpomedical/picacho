@@ -55,8 +55,11 @@ export function EffectsDoor({
   pictures = [],
   initialPick = null,
   initialTab,
+  offEngines = [],
 }: {
   initialJobs: EffectsSummary[];
+  /** Effect engines taken off the menu on Admin → Models. */
+  offEngines?: string[];
   /** Their own finished videos. */
   library: LibraryVideo[];
   /** Their own finished pictures. */
@@ -149,6 +152,7 @@ export function EffectsDoor({
             library={tab === "video" ? library : pictures}
             initialPick={initialPick}
             guard={guard}
+            offEngines={offEngines}
             onStarted={async (id) => {
               setOpenId(id);
               await refresh(id);

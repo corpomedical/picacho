@@ -13,7 +13,16 @@ import type { QueuedJob } from "../generations/providers/fal";
 import { EDITOR_BUCKET, FOOTAGE_URL_SECONDS, type DeliveryRecord, type EditRow } from "../editor/job";
 import { framesAt, probeClip } from "../editor/work";
 import { ENGINES, engineUsd, photoPreset, presetBody, shotRecipe } from "./catalog";
-import { effectsClient, judgeEffect, planEffect } from "./opus";
+import { EFFECTS_MODEL, effectsClient, judgeEffect, planEffect } from "./opus";
+
+/** The Models page's pick (effects_supervisor), imported late so this file's tests need no "@/" chain. */
+async function supervisorModel(): Promise<string> {
+  try {
+    return await (await import("@/lib/models/pick")).modelForJob("effects_supervisor");
+  } catch {
+    return EFFECTS_MODEL;
+  }
+}
 import { FX_FAILED, FX_REFUSED, FX_TOO_BIG, FX_TOO_LONG, MAX_TRIES, aspectOf, fxMarker, fxOf, refusalOf, type FxState, type FxTry } from "./job";
 
 type Admin = SupabaseClient;
@@ -82,7 +91,7 @@ export async function runFx(row: EditRow, deps: FxDeps): Promise<Partial<EditRow
     if (!client) throw new Error("effects: no Anthropic key");
     const frames = await framesAt(sourceUrl, moments(probe.duration));
     const recipe = shotRecipe(fx.effectId);
-    const plan = await planEffect(client, { effect: recipe ? `${recipe.name}: ${recipe.add}` : "", words: fx.words, frames });
+    const plan = await planEffect(client, { effect: recipe ? `${recipe.name}: ${recipe.add}` : "", words: fx.words, frames }, await supervisorModel());
     if (!plan.ok) throw new Error(`effects: Opus couldn't read the shot (${plan.error})`);
     if (!plan.value.doable) {
       return { stage: "failed", error: plan.value.whyNot || FX_REFUSED, clips: [{ ...clip, probe }], cost_usd: round4(row.cost_usd + plan.usd) };
@@ -128,7 +137,7 @@ export async function runFx(row: EditRow, deps: FxDeps): Promise<Partial<EditRow
     const [before, after] = await Promise.all([framesAt(sourceUrl, moments(seconds)), framesAt(resultUrl, moments(probe.duration || seconds))]);
     const recipe = shotRecipe(fx.effectId);
     const read = client
-      ? await judgeEffect(client, { effect: recipe ? `${recipe.name}: ${recipe.add}` : "", words: fx.words, instruction: last.instruction, before, after })
+      ? await judgeEffect(client, { effect: recipe ? `${recipe.name}: ${recipe.add}` : "", words: fx.words, instruction: last.instruction, before, after }, await supervisorModel())
       : null;
     extraUsd = read?.usd ?? 0;
     if (read?.ok) {

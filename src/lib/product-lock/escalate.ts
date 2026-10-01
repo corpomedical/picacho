@@ -31,6 +31,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { ESCALATION_INSTRUCTIONS, cardBrief, jsonFromText, parseEscalation, type CardForReaders, type ReaderAnswer } from "./judge";
 import type { EscalationReading } from "./product-lock";
+import { claudeThinkingOff, claudeUsd } from "../models/registry";
 
 export const ESCALATION_MODEL = "claude-sonnet-5";
 export const ESCALATION_TIMEOUT_MS = 30_000;
@@ -83,7 +84,7 @@ export function escalationRequest(input: {
   card: CardForReaders;
   crop: Buffer | null;
   frame: Buffer;
-}): Anthropic.MessageCreateParamsNonStreaming {
+}, model: string = ESCALATION_MODEL): Anthropic.MessageCreateParamsNonStreaming {
   const content: Block[] = [];
   input.references.slice(0, 3).forEach((bytes, i) => {
     content.push({ type: "text", text: i === 0 ? "Reference photo 1 of the product (the front):" : `Reference photo ${i + 1} of the product:` });
@@ -97,9 +98,9 @@ export function escalationRequest(input: {
   content.push({ type: "text", text: "The whole FRAME:" });
   content.push(picture(input.frame));
   return {
-    model: ESCALATION_MODEL,
+    model,
     max_tokens: ESCALATION_MAX_TOKENS,
-    thinking: { type: "disabled" },
+    ...claudeThinkingOff(model),
     system: ESCALATION_INSTRUCTIONS,
     output_config: { format: { type: "json_schema", schema: ESCALATION_SCHEMA as unknown as { [key: string]: unknown } } },
     messages: [{ role: "user", content }],
@@ -113,12 +114,15 @@ export function sonnetUsd(inputTokens: number, outputTokens: number): number {
 /** The second reading of one frame. */
 export async function escalateFrame(
   input: { references: readonly Buffer[]; card: CardForReaders; crop: Buffer | null; frame: Buffer },
-  deps: { client: MessagesClient | null; timeoutMs?: number },
+  deps: { client: MessagesClient | null; timeoutMs?: number; model?: string },
 ): Promise<ReaderAnswer<EscalationReading>> {
+  // The Models page's pick (product_second_opinion), priced at its own rates.
+  const model = deps.model ?? ESCALATION_MODEL;
+  const ceilingUsd = claudeUsd(model, 8000, ESCALATION_MAX_TOKENS);
   if (!deps.client) return { ok: false, reason: "not_configured", usd: 0 };
   let message: Anthropic.Message;
   try {
-    message = await deps.client.messages.create(escalationRequest(input), {
+    message = await deps.client.messages.create(escalationRequest(input, model), {
       timeout: Math.max(1, Math.min(ESCALATION_TIMEOUT_MS, deps.timeoutMs ?? ESCALATION_TIMEOUT_MS)),
       // One send, booked once: the SDK's own retry could send a timed-out
       // reading a second time (both may bill) while it is booked at one
@@ -137,10 +141,10 @@ export async function escalateFrame(
     }
     // No status: a timeout or a dropped connection, which may still bill.
     console.warn(`[product-lock] second reading: ${typeof status === "number" ? `answered ${status}` : "no answer"}`);
-    return { ok: false, reason: "unavailable", usd: typeof status === "number" ? 0 : ESCALATION_CEILING_USD };
+    return { ok: false, reason: "unavailable", usd: typeof status === "number" ? 0 : ceilingUsd };
   }
   const usage = message.usage;
-  const usd = usage ? sonnetUsd(usage.input_tokens ?? 0, usage.output_tokens ?? 0) : ESCALATION_CEILING_USD;
+  const usd = usage ? claudeUsd(model, usage.input_tokens ?? 0, usage.output_tokens ?? 0) : ceilingUsd;
   if (message.stop_reason === "refusal") {
     console.warn("[product-lock] second reading: declined");
     return { ok: false, reason: "unreadable", usd };
@@ -154,5 +158,5 @@ export async function escalateFrame(
     console.warn("[product-lock] second reading: the answer did not fit its shape");
     return { ok: false, reason: "unreadable", usd };
   }
-  return { ok: true, value, usd, model: ESCALATION_MODEL };
+  return { ok: true, value, usd, model };
 }

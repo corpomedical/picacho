@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { offered } from "@/lib/models/controls";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { recordSignal } from "@/lib/generations/record-signal";
@@ -82,6 +83,7 @@ import { submitUpscaleJob, cancelQueuedJob, type QueuedJob,
 import { submitVideoJob } from "@/lib/generations/providers/video-queue";
 import {
   IMAGE_MODELS,
+  getImageModel,
   SELECTABLE_IMAGE_MODEL_IDS,
   IMAGE_LANES_THAT_COMPOSITE,
   imageLaneTakesExtraPhotos,
@@ -1122,6 +1124,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     !isFreeTierAccount &&
     SELECTABLE_IMAGE_MODEL_IDS.includes(requestedImageModelId as (typeof SELECTABLE_IMAGE_MODEL_IDS)[number])
   ) {
+    // Taken off the menu on the Models page: refused, like a video model.
+    if (!(await offered("picture", requestedImageModelId))) {
+      return { error: `${getImageModel(requestedImageModelId).name} isn't offered right now. Pick another model.` };
+    }
     imageModelId = requestedImageModelId;
   }
 
@@ -1407,6 +1413,14 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     }
     continuationSourceSeconds = sourceSeconds;
     continuationSourceUrl = absolutizeMediaUrl(priorUrl, await getOrigin());
+  }
+
+  // Taken off the menu on the Models page (2026-10-02). The composer no longer
+  // lists it, but an open page or a saved form can still send the id, so the
+  // refusal lives here, before any credit is reserved. The free tier's model
+  // is locked on there, so a free account is never refused by this.
+  if (contentType === "video" && !(await offered("video", videoModelId))) {
+    return { error: `${getVideoModel(videoModelId).name} isn't offered right now. Pick another model.` };
   }
 
   // Dormant models (2026-09-06). The composer never lists these unless the

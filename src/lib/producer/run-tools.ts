@@ -17,6 +17,15 @@ import {
   type VoiceAction,
 } from "./tools";
 
+/** Video models off the Models page menu, read late so this file's tests need no "@/" chain. */
+async function offVideoModels(): Promise<string[]> {
+  try {
+    return (await (await import("@/lib/models/controls")).getModelControls()).off.video ?? [];
+  } catch {
+    return [];
+  }
+}
+
 // Runs the Producer's tool calls (2026-09-24). Every one of them is scoped to
 // the person the ROUTE took from the session — never to an id the model
 // wrote — and none of them spends a credit.
@@ -155,7 +164,7 @@ async function look(ctx: ToolContext, call: ToolCall): Promise<ToolOutcome> {
 }
 
 async function prepare(ctx: ToolContext, call: ToolCall): Promise<ToolOutcome> {
-  const checked = validatePreparedSend(asRecord(call.input), await cast(ctx), () => randomUUID().slice(0, 8));
+  const checked = validatePreparedSend(asRecord(call.input), await cast(ctx), () => randomUUID().slice(0, 8), await offVideoModels());
   if ("error" in checked) return errorResult(call.id, checked.error);
   const c = checked.card;
   const what =

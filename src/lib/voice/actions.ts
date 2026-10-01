@@ -8,6 +8,7 @@
 // get a clear message instead of a silent failure or a surprise charge.
 
 import { createClient } from "@/lib/supabase/server";
+import { modelForJob } from "@/lib/models/pick";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { dailyCapReached, rateHitCount, rateLimited } from "@/lib/rate-limit";
@@ -186,12 +187,14 @@ export async function synthesizeVoice(text: string): Promise<VoiceResult<{ audio
   }
 
   const apiKey = process.env.OPENAI_API_KEY!;
+  // The Models page's pick (voice_replies): TTS-1 or GPT-4o mini TTS, both with the alloy voice.
+  const speechModel = await modelForJob("voice_replies");
   const res = await fetchWithTimeout(
     "https://api.openai.com/v1/audio/speech",
     {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: "tts-1", voice: "alloy", input: trimmed.slice(0, 800) }),
+      body: JSON.stringify({ model: speechModel, voice: "alloy", input: trimmed.slice(0, 800) }),
     },
     30_000,
   );

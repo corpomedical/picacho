@@ -58,10 +58,11 @@ describe("the fallback model matches the one actually called", () => {
     expect(DEFAULT_IDENTITY_MODEL).toBe(DEFAULT_SCORER_MODEL);
     const { readFileSync } = await import("node:fs");
     const src = readFileSync(new URL("./providers/openai.ts", import.meta.url), "utf8");
-    // The scorer asks identityModel() for its model (p3, 2026-09-30: its own
+    // The scorer asks faceModel() for its model (models/pick.ts: the Models
+    // page's pick, else identityModel(), 2026-10-02; p3, 2026-09-30: its own
     // model, no longer the utility readers') and stamps the SAME value it
     // sent — never the raw env var, which can name a model it refused.
-    expect(src).toContain("const model = identityModel();");
+    expect(src).toContain("const model = await faceModel();");
     expect(src).toContain("scorerVersion: identityScorerVersion(model)");
     expect(src).not.toContain("process.env.OPENAI_MODEL");
     expect(src).not.toContain("process.env.IDENTITY_SCORER_MODEL");

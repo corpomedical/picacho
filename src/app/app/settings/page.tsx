@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { getModelControls } from "@/lib/models/controls";
 import { isProducerLiveEnabled, producerVisible, readProducerGrant } from "@/lib/producer/enabled";
 import { isChatAgentEnabled } from "@/lib/agent/enabled";
 import { readAssistantTopUp } from "@/lib/agent/allowance";
@@ -363,14 +364,15 @@ export default async function SettingsPage({
   let brandRules: Awaited<ReturnType<typeof getBrandRules>> = [];
   let brandRulesPaused = false;
   if (activeTab === "generation") {
-    const [flagOn, { data: gm }, rules, { data: brandFlag }] = await Promise.all([
+    const [flagOn, { data: gm }, rules, { data: brandFlag }, modelControls] = await Promise.all([
       readExperimentalModelsFlag(supabase),
       supabase.from("app_settings").select("value").eq("key", "video_model").maybeSingle(),
       getBrandRules(),
       // Brand-rule enforcement kill switch — the panel shows a notice when off.
       supabase.from("feature_flags").select("enabled").eq("key", "brand_rules_enforcement").single(),
+      getModelControls(),
     ]);
-    generationModels = buildVideoModelOptions(flagOn);
+    generationModels = buildVideoModelOptions(flagOn, modelControls.off.video);
     generationGlobalModel = (gm?.value as string | undefined) ?? "kling";
     brandRules = rules;
     brandRulesPaused = !brandFlag?.enabled;

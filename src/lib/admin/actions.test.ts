@@ -116,7 +116,7 @@ async function press(action: (form: FormData) => Promise<void>, fields: Record<s
 
 /** The line the banner shows on the page a redirect lands on. */
 function bannerAfter(to: string): string | undefined {
-  expect(to).toMatch(/^\/admin\/providers\?error=/);
+  expect(to).toMatch(/^\/admin\/models\?p=[a-z]+&error=/);
   const error = new URL(to, "https://picacho.test").searchParams.get("error") ?? undefined;
   return AdminErrorBanner({ error })?.props.children;
 }
@@ -157,9 +157,9 @@ describe("Restore now / Suspend when model_health can't be written", () => {
   it("both go straight back to the page when the write works", async () => {
     health.rows.set("video-model", { model_id: "video-model", tripped_at: TRIPPED });
 
-    expect(await press(restoreModel, { model_id: "video-model", kind: "video" })).toBe("/admin/providers");
+    expect(await press(restoreModel, { model_id: "video-model", kind: "video" })).toBe("/admin/models?p=video");
     expect(health.rows.get("video-model")?.tripped_at).toBeNull();
-    expect(await press(suspendModel, { model_id: "image-model", kind: "image" })).toBe("/admin/providers");
+    expect(await press(suspendModel, { model_id: "image-model", kind: "image" })).toBe("/admin/models?p=picture");
     expect(health.rows.get("image-model")?.tripped_at).toEqual(expect.any(String));
     expect(events).toEqual(["redirect", "redirect"]);
   });

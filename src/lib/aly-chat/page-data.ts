@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getModelControls } from "@/lib/models/controls";
 import { getGenerateWorkspaceData } from "@/lib/generations/workspace-data";
 import { producerVisible, readProducerGrant } from "@/lib/producer/enabled";
 import { loadPrefs } from "@/lib/producer/store";
@@ -69,7 +70,7 @@ export async function chatPageBase(): Promise<ChatPageBase> {
     open,
     name: prefs.name,
     firstName: firstName(profile?.full_name as string | null),
-    brains: availableBrains(),
+    brains: offeredBrains(availableBrains(), (await getModelControls()).off.aly_brains ?? []),
     limited,
     projects: (projects ?? []).map((p) => ({ id: p.id as string, name: String(p.name ?? "") })),
     defaults: {
@@ -90,4 +91,9 @@ export async function chatPageBase(): Promise<ChatPageBase> {
       ((firstName(profile?.full_name as string | null) ?? (profile?.username as string | null) ?? data.user.email ?? "?").trim()[0] ?? "?")
     ).toUpperCase(),
   };
+}
+
+/** A brain taken off the menu on Admin → Models reads as unreachable, so the picker greys it out. Luna stays on. */
+function offeredBrains<T extends Record<string, boolean>>(brains: T, off: readonly string[]): T {
+  return Object.fromEntries(Object.entries(brains).map(([k, v]) => [k, v && (k === "luna" || !off.includes(k))])) as T;
 }

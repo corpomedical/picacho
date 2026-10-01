@@ -297,7 +297,7 @@ describe("the door while a take renders, and after", () => {
   });
 
   it("offers quality only where there is a choice, and lengths past 15 s with their prices — keeping today's default", () => {
-    expect(door).toContain("{recastEnginesOf(job).length > 1 && (");
+    expect(door).toContain("{offeredEnginesOf(job).length > 1 && (");
     expect(door).toContain("recastTierIsSofter(e) && <span");
     expect(door).toContain("onClick={() => setClipWindow(lengthChoices.one.window)}");
     expect(door).toContain("onClick={() => setClipWindow(lengthChoices.all.window)}");

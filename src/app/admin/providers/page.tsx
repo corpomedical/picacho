@@ -1,21 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
-import {
-  toggleFeatureFlag,
-  setVideoModel,
-  setImageModel,
-  setSeedanceProvider,
-  restoreModel,
-  suspendModel,
-} from "@/lib/admin/actions";
-import { getAllModelHealth } from "@/lib/generations/model-health";
+import { toggleFeatureFlag, setSeedanceProvider } from "@/lib/admin/actions";
 import {
   VIDEO_MODELS,
   pricingAudit,
   maxSingleRenderCostUsd,
   COST_BASIS_USD_PER_CREDIT,
 } from "@/lib/generations/providers/video-models";
-import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
 import { isByteplusCapable, videoProviderFor } from "@/lib/generations/providers/video-provider";
 import { seedanceLaneChoice } from "@/lib/generations/providers/lane-setting";
 import { ARK_USD_PER_MILLION_TOKENS } from "@/lib/generations/providers/byteplus";
@@ -36,26 +27,13 @@ export default async function AdminProvidersPage({
 }) {
   const { error: actionError } = await searchParams;
 
-  // Re-checked here, not just in the admin layout: getAllModelHealth below
-  // reads through the service role (model_health has no user-facing RLS
-  // story), so this page verifies the caller's role itself rather than
-  // trusting that the layout gate can never be sidestepped. requireAdmin()
-  // can't live inside getAllModelHealth — the generation pipeline's circuit
-  // breaker calls it with no admin (or any) session in scope.
+  // Re-checked here, not just in the admin layout: this page reads through
+  // the service role and the fal Admin key, so it verifies the caller's role
+  // itself rather than trusting that the layout gate can never be sidestepped.
   const { admin } = await requireAdmin();
   const supabase = await createClient();
 
-  const [{ data: flag }, { data: modelSetting }, { data: imageModelSetting }] = await Promise.all([
-    supabase.from("feature_flags").select("*").eq("key", "real_ai_providers").single(),
-    supabase.from("app_settings").select("value").eq("key", "video_model").single(),
-    supabase.from("app_settings").select("value").eq("key", "image_model").single(),
-  ]);
-
-  // Circuit breaker state for every model — see lib/generations/model-health.ts.
-  // Resolved in the data layer, not here: deciding whether a tripped model is
-  // still blocking or merely awaiting its trial retry depends on the current
-  // time, and reading the clock during render isn't pure.
-  const healthById = await getAllModelHealth();
+  const { data: flag } = await supabase.from("feature_flags").select("*").eq("key", "real_ai_providers").single();
 
   // fal's own billing ledger. Best-effort: returns ok:false rather than
   // throwing, so an undocumented provider endpoint moving can never take the
@@ -74,9 +52,6 @@ export default async function AdminProvidersPage({
   // Every other paid provider's balance and top-up link (2026-10-02).
   // fal has its own panel above, so its row is left out here.
   const providerFunds = (await loadProviderFunds(worstRenderUsd, { fal: balance })).filter((p) => p.id !== "fal");
-
-  const activeModel = modelSetting?.value ?? "kling";
-  const activeImageModel = imageModelSetting?.value ?? "gpt-image";
 
   const keyStatus = [
     { name: "Anthropic (draft)", present: Boolean(process.env.ANTHROPIC_API_KEY) },
@@ -361,93 +336,19 @@ export default async function AdminProvidersPage({
         </div>
       </Card>
 
+      {/* The video and picture models, their defaults and health, and every
+          other model moved to Admin → Models (2026-10-02). */}
       <Card className="mt-6">
-        <h2 className="text-sm font-semibold text-neutral-900">Video model</h2>
-        <p className="mt-1 text-xs text-neutral-500">
-          Every model here runs through the same fal.ai key — switching is instant, no new keys
-          needed. The one exception is Seedance, which routes to BytePlus ModelArk when the lane
-          above is on.
-        </p>
-
-        <div className="mt-4 flex flex-wrap gap-2 border-b border-neutral-100">
-          {VIDEO_MODELS.map((model) => (
-            <form key={model.id} action={setVideoModel}>
-              <input type="hidden" name="model_id" value={model.id} />
-              <button
-                type="submit"
-                className={cn(
-                  "-mb-px flex items-center gap-2 border-b-2 px-4 py-3 text-sm transition-colors",
-                  activeModel === model.id
-                    ? "border-neutral-900 font-medium text-neutral-900"
-                    : "border-transparent text-neutral-500 hover:text-neutral-900",
-                )}
-              >
-                {model.name}
-                {model.recommended && <Badge tone="success">Recommended</Badge>}
-              </button>
-            </form>
-          ))}
-        </div>
-
-        <div className="mt-4 space-y-3">
-          {VIDEO_MODELS.filter((m) => m.id === activeModel).map((model) => (
-            <div key={model.id}>
-              <p className="text-sm text-neutral-700">{model.description}</p>
-              <p className="mt-1 text-xs text-neutral-400">{model.falEndpoint}</p>
-              <p className="mt-1 text-xs text-neutral-400">
-                Costs{" "}
-                {model.durations
-                  .map((d) => `${d.creditWeight} credit${d.creditWeight === 1 ? "" : "s"} at ${d.seconds}s`)
-                  .join(", ")}{" "}
-                of a user&apos;s monthly plan allowance per video.
-              </p>
-            </div>
-          ))}
-        </div>
-        <p className="mt-4 border-t border-neutral-100 pt-3 text-xs text-neutral-400">
-          This is the default used when a user hasn&apos;t picked a model themselves — the composer
-          now lets users choose per generation (see the model switcher next to the character
-          picker in Generate), and pricier models cost more of their monthly allowance
-          automatically.
-        </p>
-      </Card>
-
-      <Card className="mt-6">
-        <h2 className="text-sm font-semibold text-neutral-900">Image model</h2>
-        <p className="mt-1 text-xs text-neutral-500">
-          Used for scene generation and character reference photos. GPT Image 2.5 anchors to the
-          character&apos;s saved reference photo for consistency; Flux is faster and cheaper.
-        </p>
-
-        <div className="mt-4 flex flex-wrap gap-2 border-b border-neutral-100">
-          {IMAGE_MODELS.map((model) => (
-            <form key={model.id} action={setImageModel}>
-              <input type="hidden" name="model_id" value={model.id} />
-              <button
-                type="submit"
-                className={cn(
-                  "-mb-px flex items-center gap-2 border-b-2 px-4 py-3 text-sm transition-colors",
-                  activeImageModel === model.id
-                    ? "border-neutral-900 font-medium text-neutral-900"
-                    : "border-transparent text-neutral-500 hover:text-neutral-900",
-                )}
-              >
-                {model.name}
-                {model.recommended && <Badge tone="success">Recommended</Badge>}
-              </button>
-            </form>
-          ))}
-        </div>
-
-        <div className="mt-4 space-y-3">
-          {IMAGE_MODELS.filter((m) => m.id === activeImageModel).map((model) => (
-            <div key={model.id}>
-              <p className="text-sm text-neutral-700">{model.description}</p>
-              <p className="mt-1 text-xs text-neutral-400">
-                {model.provider === "openai" ? "OpenAI Images API" : "fal.ai"}
-              </p>
-            </div>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-neutral-900">Models</h2>
+            <p className="mt-1 text-xs text-neutral-500">
+              Which model runs in each product, the defaults, model health and every switch are on the Models page.
+            </p>
+          </div>
+          <a href="/admin/models" className="text-sm font-medium text-neutral-900 underline">
+            Open Models →
+          </a>
         </div>
       </Card>
 
@@ -615,71 +516,6 @@ export default async function AdminProvidersPage({
         </Card>
       )}
 
-      {/* Circuit breaker.
-
-          A model that fails three times in a row, across at least two
-          accounts, takes itself out of service so a broken provider stops
-          costing money. It heals on its own: after a cooldown one request goes
-          through as a trial, and a success clears it.
-
-          These controls exist for the cases automation gets wrong. Restore is
-          for a false trip — three failures that turned out to be bad inputs,
-          where waiting out a backoff that doubles to six hours isn't
-          acceptable, especially if it's the model every free trial depends on.
-          Suspend is the opposite: take a model out deliberately, before it has
-          failed three times, when you already know it's broken. */}
-      <Card className="mt-6">
-        <h2 className="text-sm font-semibold text-neutral-900">Model health</h2>
-        <p className="mt-1 text-sm text-neutral-500">
-          Models take themselves out of service after 3 consecutive failures from 2 or more
-          accounts, and recover automatically. Override here when that gets it wrong.
-        </p>
-
-        <div className="mt-4 space-y-2">
-          {[
-            ...VIDEO_MODELS.map((m) => ({ id: m.id, name: m.name, kind: "video" as const })),
-            ...IMAGE_MODELS.map((m) => ({ id: m.id, name: m.name, kind: "image" as const })),
-          ].map((model) => {
-            const health = healthById.get(model.id);
-            const state = health?.state ?? "healthy";
-            return (
-              <div
-                key={model.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-neutral-200 px-3.5 py-3"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-neutral-900">{model.name}</p>
-                    <Badge tone={state === "healthy" ? "success" : state === "trial" ? "neutral" : "danger"}>
-                      {state === "healthy" ? "In service" : state === "trial" ? "Trial retry" : "Out of service"}
-                    </Badge>
-                  </div>
-                  <p className="mt-1 text-xs text-neutral-400">
-                    {state === "healthy"
-                      ? health?.lastSuccessAt
-                        ? `Last success ${new Date(health.lastSuccessAt).toLocaleString()}`
-                        : "No failures recorded"
-                      : (health?.lastError ?? "Taken out of service")}
-                  </p>
-                  {state !== "healthy" && (health?.tripCount ?? 0) > 1 && (
-                    <p className="mt-0.5 text-xs text-neutral-400">
-                      Tripped {health?.tripCount} times in a row — backoff is lengthening.
-                    </p>
-                  )}
-                </div>
-
-                <form action={state === "healthy" ? suspendModel : restoreModel}>
-                  <input type="hidden" name="model_id" value={model.id} />
-                  <input type="hidden" name="kind" value={model.kind} />
-                  <Button variant="secondary" type="submit">
-                    {state === "healthy" ? "Suspend" : "Restore now"}
-                  </Button>
-                </form>
-              </div>
-            );
-          })}
-        </div>
-      </Card>
     </div>
   );
 }

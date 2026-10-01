@@ -76,6 +76,7 @@ const KNOWN_ERRORS = new Set<string>([
   "support_email must be a valid email address.",
   "admin_users_last_viewed_at must be a valid timestamp.",
   "Value is too long (500 characters max).",
+  "That model is off the menu on Admin → Models. Put it back on before making it the default.",
   // admin/promo-actions.ts
   "Code must be 3-24 letters/numbers (e.g. MARIA20).",
   "Salesperson name is required.",
