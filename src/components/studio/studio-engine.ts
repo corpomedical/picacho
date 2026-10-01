@@ -5131,7 +5131,7 @@ pbEl.addEventListener("click", (e) => {
     else if (k === "real") rc.real = !rc.real;
     barRender(); return;
   }
-  const plan = t.closest("[data-pbplan]"); if (plan) { pbText.value = T(PLANS[+plan.dataset.pbplan].ask); pb.text.scene = pbText.value; pbText.focus(); return; }
+  const plan = t.closest("[data-pbplan]"); if (plan) { pbText.value = T(PLANS[+plan.dataset.pbplan].ask); pb.text.scene = pbText.value; pbText.focus({ preventScroll: true }); return; }
   if (t.closest("[data-pbrm]")) { e.stopPropagation(); delete pb.model.images[t.closest("[data-pbrm]").dataset.pbrm]; pb.result = null; barRender(); return; }
   const ref = t.closest("[data-pbref]"); if (ref) { pbPhotoFor = ref.dataset.pbref; pbPhotoIn.click(); return; }
   if (t.closest("#pbAddImg")) { pbPhotoFor = nextEmptySlot(); pbPhotoIn.click(); return; }
