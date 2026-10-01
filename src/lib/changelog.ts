@@ -20,6 +20,22 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.200.0",
+    build: 239,
+    date: "2026-10-01",
+    title: "Aly's chat: GPT-6 Luna is the everyday brain",
+    items: [
+      "Aly's chat now answers on GPT-6 Luna unless you pick another brain. Every answer is labelled \"GPT-6 Luna\", and Luna is first in the brain menu. In a blind test on 20 everyday requests, Luna scored 97.8% of Claude Sonnet 5, answered in under half the time, and cost about a twentieth as much.",
+      "Luna has all of Aly's tools: web search with its sources, documents in the side panel, her notes, your account, picture and video cards, starting a card when you ask, and taking you to a page.",
+      "Think harder still answers on Claude Opus 5.5. Claude, GPT and Gemini stay in the menu, and Ask all three is unchanged.",
+      "Aly now knows your saved characters in every chat, so \"a picture of Mila\" puts Mila on the card. Until now the chat couldn't attach a character.",
+      "New chats are named by GPT-6 Luna instead of Claude Haiku 4.5, which Anthropic may retire from 15 October.",
+      "The brain menu fits short windows and phones: it stays below the top bar and scrolls.",
+      "GPT-6 Sol answers are now charged at OpenAI's real price for the part of a prompt written to its cache ($2.50 per million tokens, was $2): a fraction of a cent on a long chat.",
+      "In English, Spanish, Portuguese and Italian.",
+    ],
+  },
+  {
     version: "1.199.0",
     build: 238,
     date: "2026-10-01",
