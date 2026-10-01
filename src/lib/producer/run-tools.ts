@@ -6,6 +6,7 @@ import { runNotesCommand } from "./notes";
 import { notesStore } from "./store";
 import { fixSetTool, readSetTool, undoSetTool, type SetChange, type SetToolResult } from "./set-tools";
 import { pageRefusal, resolvePage, type PageAccess } from "../agent/site-map";
+import { findCard, startRefusal, startResultText, type StartableCard } from "./start-card";
 import {
   TOOL_NAMES,
   readSearchFilters,
@@ -37,6 +38,10 @@ export type ToolOutcome = {
   setChange?: SetChange;
   /** An open_page call: where the browser goes, and the words of the control to light. */
   navigate?: { href: string; words: string | null; label: string };
+  /** A start_render call that went through: the card and its take. */
+  started?: { cardId: string; generationId: string; state: "started" | "done" };
+  /** A press_button call: the words of the control the browser presses. */
+  press?: { words: string };
 };
 
 export type ToolContext = {
@@ -51,6 +56,19 @@ export type ToolContext = {
   screen?: string | null;
   /** Who they are, for open_page: read when she first opens a page in a turn (page-access.ts). */
   pageAccess?: () => Promise<PageAccess>;
+  /**
+   * start_render (2026-10-01): the conversation's saved cards and this
+   * answer's, the cards started in this answer so far (filled in here), and
+   * the route's way of starting one (start-render.ts). Without them the
+   * tool isn't offered here.
+   */
+  hands?: {
+    cards: () => StartableCard[];
+    startedThisTurn: string[];
+    start: (card: StartableCard) => Promise<{ state: "started" | "done" | "failed"; generationId: string; error?: string }>;
+  };
+  /** press_button needs a browser to press in: the lamp has one, the chat page doesn't offer it. */
+  canPress?: boolean;
 };
 
 function asRecord(v: unknown): Record<string, unknown> {
@@ -148,7 +166,7 @@ async function prepare(ctx: ToolContext, call: ToolCall): Promise<ToolOutcome> {
     result: {
       type: "tool_result",
       tool_use_id: call.id,
-      content: `Prepared "${c.label}" (${what}${c.characterName ? `, with ${c.characterName}` : ""}). The person sees it as a card and sends it themselves; nothing has rendered.`,
+      content: `Prepared "${c.label}" (${what}${c.characterName ? `, with ${c.characterName}` : ""}), card id ${c.id}. The person sees it as a card and can send it themselves; nothing has rendered. When they ask you to make it, or say yes to its price, start it with start_render.`,
     },
     card: c,
   };
@@ -213,6 +231,10 @@ export async function runTool(ctx: ToolContext, call: ToolCall): Promise<ToolOut
       return openPage(ctx, call);
     case TOOL_NAMES.readScreen:
       return readScreenTool(ctx, call);
+    case TOOL_NAMES.startRender:
+      return startRender(ctx, call);
+    case TOOL_NAMES.press:
+      return pressButton(ctx, call);
     default:
       return errorResult(call.id, `There is no tool called ${call.name}.`);
   }
@@ -242,6 +264,35 @@ async function openPage(ctx: ToolContext, call: ToolCall): Promise<ToolOutcome> 
   return {
     result: { type: "tool_result", tool_use_id: call.id, content: text },
     navigate: { href: resolved.href, words: words || null, label: resolved.label },
+  };
+}
+
+async function startRender(ctx: ToolContext, call: ToolCall): Promise<ToolOutcome> {
+  if (!ctx.hands) return errorResult(call.id, "Cards can't be started from here. They press the card's button themselves.");
+  const card = findCard(ctx.hands.cards(), asRecord(call.input).card_id);
+  const refusal = startRefusal(card, ctx.hands.startedThisTurn);
+  if (refusal || !card) return errorResult(call.id, refusal ?? "That card isn't there.");
+  ctx.hands.startedThisTurn.push(card.id);
+  const outcome = await ctx.hands.start(card);
+  const text = startResultText(card, outcome);
+  if (outcome.state === "failed") return errorResult(call.id, text);
+  return {
+    result: { type: "tool_result", tool_use_id: call.id, content: text },
+    started: { cardId: card.id, generationId: outcome.generationId, state: outcome.state },
+  };
+}
+
+function pressButton(ctx: ToolContext, call: ToolCall): ToolOutcome {
+  if (!ctx.canPress) return errorResult(call.id, "Nothing can be pressed from here. Tell them what to press, or open the page with your light on it.");
+  const words = typeof asRecord(call.input).words === "string" ? (asRecord(call.input).words as string).replace(/\s+/g, " ").trim().slice(0, 80) : "";
+  if (!words) return errorResult(call.id, "Say which control: its words as the screen shows them.");
+  return {
+    result: {
+      type: "tool_result",
+      tool_use_id: call.id,
+      content: `Pressing "${words}" on their screen, if it's there and safe to press. The next app note says whether it was pressed.`,
+    },
+    press: { words },
   };
 }
 
@@ -320,6 +371,10 @@ export function toolStatus(name: string): string {
       return "Opening the page";
     case TOOL_NAMES.readScreen:
       return "Looking at your screen";
+    case TOOL_NAMES.startRender:
+      return "Starting it";
+    case TOOL_NAMES.press:
+      return "Pressing it";
     default:
       return "Working";
   }

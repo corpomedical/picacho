@@ -502,6 +502,8 @@ export function ExpandMediaButton({
     <>
       <button
         ref={buttonRef}
+        // Aly may press it for them (press_button): it only opens full screen.
+        data-aly-press=""
         type="button"
         onClick={(e) => {
           e.stopPropagation();

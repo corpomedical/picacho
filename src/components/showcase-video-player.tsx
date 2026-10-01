@@ -139,6 +139,7 @@ export function ShowcaseVideoPlayer({
       <div className="absolute bottom-3 right-3 flex items-center gap-2">
         <button
           type="button"
+          data-aly-press=""
           onClick={togglePlay}
           aria-label={playing ? pauseLabel : playLabel}
           title={playing ? pauseLabel : playLabel}

@@ -18,9 +18,11 @@ const LIGHT_PREPARE_DESCRIPTION =
 
 /** The chat page's tools as a Light chat has them: prepare_send says what it does there. */
 export function lightChatToolsFrom(tools: unknown[]): unknown[] {
-  return (tools as { name: string; description?: string }[]).map((t) =>
-    t.name === TOOL_NAMES.prepare ? { ...t, description: LIGHT_PREPARE_DESCRIPTION } : t,
-  );
+  // start_render (2026-10-01) has no place here: in Light, prepare_send
+  // already starts the render.
+  return (tools as { name: string; description?: string }[])
+    .filter((t) => t.name !== TOOL_NAMES.startRender)
+    .map((t) => (t.name === TOOL_NAMES.prepare ? { ...t, description: LIGHT_PREPARE_DESCRIPTION } : t));
 }
 
 const LIGHT_PICTURES = `PICTURES AND VIDEOS (PICACHO LIGHT)
@@ -42,7 +44,7 @@ export function lightRulesFrom(chatRules: string): string {
     .replace("on your full-screen chat page", "in Picacho Light's chat")
     .replace(/PICTURES AND VIDEOS\n[\s\S]*?\n\nMEMORY/, `${LIGHT_PICTURES}\n\nMEMORY`)
     .replace(
-      "You cannot start renders, spend or refund credits,",
+      "Apart from starting your own cards when they ask (start_render), you cannot spend or refund credits,",
       "Apart from the pictures and videos you make with prepare_send, you cannot spend or refund credits,",
     );
   return `${rules}\n\n${LIGHT_BLOCK}`;

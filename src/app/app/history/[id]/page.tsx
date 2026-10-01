@@ -740,6 +740,8 @@ export default async function HistoryDetailPage({
                       // send — the server re-reads it from the row regardless,
                       // so a tampered value changes only the preview.
                       href={`/app/generate?continue=${encodeURIComponent(generation.id)}&continue_s=${generation.video_duration_seconds ?? ""}&studio=1`}
+                      // Aly may press it (press_button): it opens the composer, nothing is spent.
+                      data-aly-press=""
                     >
                       <Button variant="secondary" size="sm">
                         {h.continueClipCta}

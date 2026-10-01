@@ -83,14 +83,27 @@ export function RenderCard({
   }
 
   // A card opened again: show what it became, and keep following it if it
-  // is still being made.
+  // is still being made. A take that arrives later (Aly started it herself,
+  // start_render, 2026-10-01) is read the same way: a finished one shows at
+  // once, one still being made is followed.
+  const atMount = useRef(card.generationId ?? null);
+  const resumed = useRef<string | null>(null);
   useEffect(() => {
-    if (!card.generationId) return;
+    if (!card.generationId || resumed.current === card.generationId) return;
     const id = card.generationId;
+    resumed.current = id;
+    const late = id !== atMount.current;
     const timer = window.setTimeout(() => {
       void (async () => {
+        if (late) {
+          setGenId(id);
+          setError(null);
+          setState("working");
+        }
         const tk = await getLightTake(id);
         if (!alive.current) return;
+        // Just started: its row can be a moment behind.
+        if (!tk && late) return void follow(id);
         setTake(tk);
         if (tk?.status === "succeeded") setState("done");
         else if (tk?.status === "cancelled") setState("stopped");
@@ -100,7 +113,7 @@ export function RenderCard({
     }, 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [card.generationId]);
 
   // Remembered on Aly's message, so the chat shows it when it's opened again.
   // A card that starts by itself (Light) can beat the message being saved,

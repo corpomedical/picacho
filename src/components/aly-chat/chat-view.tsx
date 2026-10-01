@@ -382,6 +382,20 @@ export function ChatView(props: ChatViewProps) {
           case "card":
             patchLast((m) => ({ ...m, renders: [...m.renders, d as unknown as ViewRender] }));
             break;
+          case "started": {
+            // Aly started one of her cards (start_render): the card follows its take.
+            const cardId = String(d.cardId ?? "");
+            const generationId = typeof d.generationId === "string" ? d.generationId : null;
+            if (!cardId || !generationId) break;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.role === "assistant" && m.renders.some((r) => r.id === cardId)
+                  ? { ...m, renders: m.renders.map((r) => (r.id === cardId ? { ...r, generationId } : r)) }
+                  : m,
+              ),
+            );
+            break;
+          }
           case "navigate":
             // open_page: go once her answer is in, so leaving the chat never cuts it off.
             if (typeof d.href === "string") goTo = { href: d.href, words: typeof d.words === "string" ? d.words : null };

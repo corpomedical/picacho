@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { lightChatToolsFrom, lightRulesFrom, lightTurnNote } from "./light-prompt";
 import { PRODUCER_TOOLS, TOOL_NAMES } from "../producer/tools";
+import { ASK_FIRST_ABOVE_CREDITS } from "../producer/start-card";
 
 // Aly in Picacho Light, "start right away" (2026-09-29): the words a chat
 // started in Light reads, its prepare_send wording, and the note each Light
@@ -34,13 +35,17 @@ describe("Aly in Picacho Light", () => {
     expect(rules).toContain("FINDING THEIR WAY IN PICACHO");
     expect(rules).toContain("you never press buttons for them");
     // The chat page's own words are untouched.
-    expect(CHAT_RULES).toContain("they press the button on it themselves");
+    expect(CHAT_RULES).toContain("they can press the button on it themselves");
+    // Hands-free (2026-10-01): the chat page's own price rule, kept in step with the code's threshold.
+    expect(CHAT_RULES).toContain(`more than ${ASK_FIRST_ABOVE_CREDITS} credits`);
+    expect(rules).not.toContain("start_render, you cannot");
   });
 
   it("keeps every tool and only rewords prepare_send", () => {
     const base = PRODUCER_TOOLS as unknown as { name: string; description: string }[];
     const light = lightChatToolsFrom(base) as { name: string; description: string }[];
-    expect(light.map((t) => t.name)).toEqual(base.map((t) => t.name));
+    // start_render isn't offered in Light (2026-10-01): prepare_send starts it there.
+    expect(light.map((t) => t.name)).toEqual(base.map((t) => t.name).filter((n) => n !== TOOL_NAMES.startRender));
     const prepare = light.find((t) => t.name === TOOL_NAMES.prepare)!;
     expect(prepare.description).toContain("STARTS the render at once");
     expect(prepare.description).not.toContain("does not render");

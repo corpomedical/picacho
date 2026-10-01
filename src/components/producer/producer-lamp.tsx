@@ -44,7 +44,7 @@ import { writeLampHidden } from "./lamp-place";
 import { lampMood, type LampLook } from "./lamp-look";
 import { LookMark } from "./lamp-looks";
 import { Spotlight, type LitSpot } from "./spotlight";
-import { alyPoint } from "./aly-pointer";
+import { alyPoint, takeLastPress } from "./aly-pointer";
 import { readScreen } from "@/lib/producer/screen";
 import { useHandsFree, warmEars, type SpokenAudio, type UtteranceMeta } from "./use-hands-free";
 import { useLiveVoice } from "./use-live-voice";
@@ -100,6 +100,9 @@ const W = {
   askWhy: "Ask why",
   openComposer: "Open in composer",
   openInChat: "Open in the chat",
+  // A card she started herself (start_render, 2026-10-01).
+  making: "Started by Aly",
+  openTake: "Open the take",
   openAd: "Open the ad",
   pressAd: "Press Tour ad · stills",
   total: (n: number) => `Total ${n} credit${n === 1 ? "" : "s"}`,
@@ -879,6 +882,8 @@ export function ProducerLamp({
           page: pathname,
           // What's on their screen, for read_screen (screen.ts); never what they typed in a field.
           screen: safeScreen(),
+          // What her last press_button did (aly-pointer.tsx), told to her once.
+          pressed: takeLastPress() ?? undefined,
           focus: focus ?? null,
           interrupting: spoken ? interrupting : undefined,
           nearness: last?.nearness ?? null,
@@ -980,6 +985,20 @@ export function ProducerLamp({
           } else if (ev.event === "card") {
             live.cards = [...live.cards, ev.data as unknown as PreparedSend];
             if (!openRef.current) setUnseenCards((n) => n + 1);
+          } else if (ev.event === "press" && typeof ev.data.words === "string") {
+            // press_button: rung for a moment, then pressed if it's safe to (aly-pointer.tsx).
+            alyPoint({ href: null, words: ev.data.words, press: true });
+          } else if (ev.event === "started" && typeof ev.data.cardId === "string" && typeof ev.data.generationId === "string") {
+            // start_render: her card is being made.
+            const { cardId, generationId } = ev.data as { cardId: string; generationId: string };
+            live.cards = live.cards.map((k) => (k.id === cardId ? { ...k, generationId } : k));
+            setLines((prev) =>
+              prev.map((l) =>
+                l.role === "assistant" && l.cards.some((k) => k.id === cardId)
+                  ? { ...l, cards: l.cards.map((k) => (k.id === cardId ? { ...k, generationId } : k)) }
+                  : l,
+              ),
+            );
           } else if (ev.event === "navigate" && typeof ev.data.href === "string") {
             // open_page: the page opens and her light rings the control (aly-pointer.tsx).
             alyPoint({ href: ev.data.href, words: typeof ev.data.words === "string" ? ev.data.words : null });
@@ -1851,19 +1870,29 @@ function Cards({ cards, onOpen }: { cards: PreparedSend[]; onOpen: () => void })
                 .filter(Boolean)
                 .join(" · ")}
             </div>
-            <Link
-              href={modeHref(c.href)}
-              onClick={onOpen}
-              className="mt-1.5 inline-block text-[13px] font-semibold text-atelier-accent hover:underline"
-            >
-              {c.kind === "ad" ? W.openAd : inLight ? W.openInChat : W.openComposer} →
-            </Link>
+            {c.generationId ? (
+              <Link
+                href={modeHref(`/app/history/${c.generationId}`)}
+                onClick={onOpen}
+                className="mt-1.5 inline-block text-[13px] font-semibold text-atelier-accent hover:underline"
+              >
+                {W.openTake} →
+              </Link>
+            ) : (
+              <Link
+                href={modeHref(c.href)}
+                onClick={onOpen}
+                className="mt-1.5 inline-block text-[13px] font-semibold text-atelier-accent hover:underline"
+              >
+                {c.kind === "ad" ? W.openAd : inLight ? W.openInChat : W.openComposer} →
+              </Link>
+            )}
           </div>
           <span className="flex-none pt-0.5 text-[13px] tabular-nums">{W.credits(c.credits)}</span>
         </div>
       ))}
       <div className="flex items-center justify-between bg-atelier-ink/[0.03] px-3 py-2 text-[12.5px] text-atelier-muted">
-        <span>{W.prepared}</span>
+        <span>{cards.every((c) => c.generationId) ? W.making : W.prepared}</span>
         {cards.length > 1 && <span className="font-semibold tabular-nums text-atelier-ink">{W.total(total)}</span>}
       </div>
     </div>

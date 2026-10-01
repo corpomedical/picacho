@@ -82,6 +82,8 @@ import { isNativeApp } from "@/lib/native/server";
 import { rateLimited } from "@/lib/rate-limit";
 import { cleanScreen } from "@/lib/producer/screen";
 import { pageAccessReader } from "@/lib/producer/page-access";
+import { cardsIn, type StartableCard } from "@/lib/producer/start-card";
+import { startCardRender } from "@/lib/producer/start-render";
 
 // The Producer's turn (2026-09-24) — Claude Opus 5.5 with its tools, for
 // Elite (admins first). The chat route (api/agent/chat) is the model for the
@@ -194,6 +196,8 @@ export async function POST(request: NextRequest) {
     page?: unknown;
     /** The lamp's reading of the screen (screen.ts readScreen), for read_screen. */
     screen?: unknown;
+    /** What her last press_button did (aly-pointer.tsx takeLastPress). */
+    pressed?: unknown;
     focus?: unknown;
     audio?: unknown;
     speak?: unknown;
@@ -497,6 +501,7 @@ export async function POST(request: NextRequest) {
       watch,
       watchBar,
       focus: body?.focus,
+      pressed: body?.pressed,
       personality,
       spoken: spoken || speakReplies,
       live,
@@ -988,6 +993,14 @@ export async function POST(request: NextRequest) {
       };
 
       const cards: PreparedSend[] = [];
+      // Hands-free (2026-10-01): start_render finds a card among this
+      // thread's saved ones and this answer's, and starts it on the server
+      // (start-render.ts); press_button is pressed by this browser.
+      const hands = {
+        cards: () => [...cardsIn(rows.map((r) => r.display), "cards"), ...cardsIn([{ cards }], "cards")],
+        startedThisTurn: [] as string[],
+        start: (card: StartableCard) => startCardRender(supabase, user.id, { ...card, id: `${thread.id}:${card.id}` }),
+      };
       // What the person has been shown this turn: the text of each finished
       // round (a model often answers part of the question, then looks
       // something up), and of the call under way.
@@ -1160,7 +1173,7 @@ export async function POST(request: NextRequest) {
                 if (typeof id === "string") send("spot", { spot: "render", id });
               }
               const o = await runTool(
-                { supabase, admin, userId: user.id, topUpUnits: reserved.topUp, screen, pageAccess },
+                { supabase, admin, userId: user.id, topUpUnits: reserved.topUp, screen, pageAccess, hands, canPress: true },
                 c,
               );
               if (o.card) {
@@ -1175,6 +1188,14 @@ export async function POST(request: NextRequest) {
               }
               // open_page: the browser goes there and her light rings the control (aly-pointer.tsx).
               if (o.navigate) send("navigate", o.navigate);
+              // press_button: the browser rings the control, then presses it if it's safe to.
+              if (o.press) send("press", o.press);
+              if (o.started) {
+                // Kept on this answer's card, so the sheet shows it made after a reload too.
+                const mine = cards.find((k) => k.id === o.started!.cardId);
+                if (mine) mine.generationId = o.started.generationId;
+                send("started", o.started);
+              }
               if (o.voice) {
                 // Muting stops the rest of this answer being spoken too; an
                 // ending still plays the goodbye, then the device closes.

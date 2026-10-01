@@ -4,6 +4,8 @@ import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { readProducerGrant } from "@/lib/producer/enabled";
 import { runTool, toolStatus, type ToolCall } from "@/lib/producer/run-tools";
 import { pageAccessReader } from "@/lib/producer/page-access";
+import { cardsIn, type StartableCard } from "@/lib/producer/start-card";
+import { startCardRender } from "@/lib/producer/start-render";
 import { citedSources } from "@/lib/producer/sources";
 import { sendableTools, type PreparedSend } from "@/lib/producer/tools";
 import { loadPrefs } from "@/lib/producer/store";
@@ -307,6 +309,19 @@ export async function POST(request: NextRequest) {
       const cost = { usd: 0, usage: NO_USAGE as Usage, started: false };
       const docs: Doc[] = [];
       const cards: PreparedSend[] = [];
+      // Hands-free (2026-10-01): start_render finds a card among this chat's
+      // saved ones and this answer's, and starts it on the server
+      // (start-render.ts). Not in Light, where prepare_send already starts it.
+      const hands = setup.light
+        ? undefined
+        : {
+            cards: () => [
+              ...cardsIn(rows.map((r) => (r.role === "assistant" ? r.content : null)), "renders"),
+              ...cardsIn([{ cards }], "cards"),
+            ],
+            startedThisTurn: [] as string[],
+            start: (card: StartableCard) => startCardRender(supabase, user.id, { ...card, id: `${theChat}:${card.id}` }),
+          };
       const results: Partial<Record<Brain, Lane>> = {};
 
       // ---- Claude, with Aly's tools ------------------------------------------
@@ -430,13 +445,22 @@ export async function POST(request: NextRequest) {
               }
               continue;
             }
-            const o = await runTool({ supabase, admin, userId: user.id, topUpUnits: reserved.topUp, pageAccess }, c);
+            const o = await runTool({ supabase, admin, userId: user.id, topUpUnits: reserved.topUp, pageAccess, hands }, c);
             if (o.card) {
               cards.push(o.card);
               send("card", o.card);
             }
             // open_page: the chat view hands it to the pointer, which opens the page (aly-pointer.tsx).
             if (o.navigate) send("navigate", o.navigate);
+            if (o.started) {
+              // This answer's card keeps its take when the answer is saved; an
+              // earlier card's take is written onto its saved message, as the
+              // card's own Make it does (linkRender), so a reload shows it.
+              const mine = cards.find((k) => k.id === o.started!.cardId);
+              if (mine) mine.generationId = o.started.generationId;
+              else await rememberStarted(admin, user.id, theChat, rows, o.started.cardId, o.started.generationId);
+              send("started", o.started);
+            }
             // In Picacho Light the page starts the card's render the moment it
             // arrives (the person's own send, through runGeneration): Aly is
             // told so, not that it waits for a button.
@@ -628,4 +652,29 @@ async function titleFor(client: Anthropic, asked: string, answered: string): Pro
   const t = block && block.type === "text" ? block.text.trim().replace(/^["'“”]+|["'“”.]+$/g, "").slice(0, 80) : "";
   if (!t) return null;
   return { text: t, cost: costUsd(fromClaude(res.usage), TITLE_MODEL) };
+}
+
+/** An earlier card's take, written onto the saved message that holds the card (linkRender's write, done here). */
+async function rememberStarted(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  chatId: string,
+  rows: StoredRow[],
+  cardId: string,
+  generationId: string,
+): Promise<void> {
+  type Card = { id?: unknown };
+  const listOf = (r: StoredRow): Card[] =>
+    r.role === "assistant" && Array.isArray(r.content.renders) ? (r.content.renders as Card[]) : [];
+  const row = [...rows].reverse().find((r) => listOf(r).some((x) => x.id === cardId));
+  if (!row || row.role !== "assistant") return;
+  const renders = listOf(row).map((x) => (x.id === cardId ? { ...x, generationId } : x));
+  const { error } = await admin
+    .from("aly_chat_messages")
+    .update({ content: { ...row.content, renders } })
+    .eq("chat_id", chatId)
+    .eq("seq", row.seq)
+    .eq("user_id", userId);
+  if (error) console.error("aly-chat: couldn't remember a started card —", error.message);
+  else (row.content as { renders?: unknown }).renders = renders;
 }

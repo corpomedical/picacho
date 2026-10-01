@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ALY_POINT_EVENT, findControl, type AlyPointDetail } from "@/lib/producer/screen";
+import { ALY_POINT_EVENT, findControl, pressRefusal, type AlyPointDetail } from "@/lib/producer/screen";
 import styles from "./producer-lamp.module.css";
 
 // Aly takes them there and points (operator, 2026-09-29: "Give her the power
@@ -12,13 +12,35 @@ import styles from "./producer-lamp.module.css";
 // her chat page. Mounted once in the app's layout, so it outlives the page it
 // navigates away from. It opens the page, waits for the named control to
 // appear (a page can take a few seconds to paint), brings it into view and
-// rings it with her light for a while. It never presses anything: the ring is
-// on top of the page with pointer-events off, and a tap on the control itself
-// is what puts the ring away.
+// rings it with her light for a while. The ring is on top of the page with
+// pointer-events off, and a tap on the control itself puts it away.
+//
+// press_button (2026-10-01, operator: "I asked she takes control so the user
+// works hands free" → "Press buttons on the page") comes the same way with
+// press: true. The control is found among the page's pressable ones, rung for
+// a moment so they see what she's about to press, then pressed — only when
+// pressRefusal (screen.ts) allows it. What happened is kept for her next
+// message (takeLastPress), so she hears whether it worked.
 
 const FIND_FOR_MS = 6000;
 const RING_FOR_MS = 14000;
+const PRESS_AFTER_MS = 800;
 const PAD = 6;
+
+// The page an open_page is still on its way to: a press in the same answer
+// waits for it, so it never lands on the page being left.
+let navigating: { path: string; at: number } | null = null;
+const NAV_WAIT_MS = 8000;
+
+export type PressReport = { words: string; outcome: "pressed" | "refused" | "not found"; why?: string };
+let lastPress: PressReport | null = null;
+
+/** What her last press_button did, once: the lamp sends it with the next message. */
+export function takeLastPress(): PressReport | null {
+  const r = lastPress;
+  lastPress = null;
+  return r;
+}
 
 type Ring = { left: number; top: number; width: number; height: number };
 
@@ -33,22 +55,36 @@ export function AlyPointer() {
   useEffect(() => {
     const onPoint = (e: Event) => {
       const detail = (e as CustomEvent<AlyPointDetail>).detail;
-      if (!detail || typeof detail.href !== "string" || !detail.href.startsWith("/") || detail.href.startsWith("//")) return;
+      if (!detail) return;
+      const press = detail.press === true;
+      const href = typeof detail.href === "string" && detail.href.startsWith("/") && !detail.href.startsWith("//") ? detail.href : null;
+      if (!href && !press) return;
       const mine = ++job.current;
       setRing(null);
 
       const here = `${window.location.pathname}${window.location.search}`;
-      const [target] = detail.href.split("#");
-      heading.current = target.split("?")[0];
-      if (target !== here) router.push(detail.href);
-      else if (detail.href.includes("#")) window.location.hash = detail.href.split("#")[1];
+      let target = here;
+      if (href) {
+        target = href.split("#")[0];
+        heading.current = target.split("?")[0];
+        if (target !== here) {
+          navigating = { path: heading.current, at: Date.now() };
+          router.push(href);
+        } else if (href.includes("#")) window.location.hash = href.split("#")[1];
+      } else if (navigating && Date.now() - navigating.at < NAV_WAIT_MS) {
+        target = navigating.path;
+      }
 
       const words = detail.words?.trim();
       if (!words) return;
+      const report = (r: PressReport) => {
+        if (press) lastPress = r;
+      };
       const started = Date.now();
       let el: HTMLElement | null = null;
       let frame = 0;
       let shownAt = 0;
+      let pressed = false;
       const done = () => {
         if (job.current === mine) setRing(null);
         el?.removeEventListener("click", done);
@@ -59,15 +95,30 @@ export function AlyPointer() {
         const now = Date.now();
         // Wait for the new page: the old one may still be showing the same words.
         const arrived = target === here || window.location.pathname === target.split("?")[0];
+        if (arrived && navigating?.path === window.location.pathname) navigating = null;
         if (!el || !el.isConnected) {
-          el = arrived ? findControl(words) : null;
+          el = arrived ? findControl(words, document, press) : null;
           if (el) {
             shownAt = now;
             el.addEventListener("click", done, { once: true });
             bringIntoView(el);
-          } else if (now - started > FIND_FOR_MS) {
+          } else if (now - started > (press ? FIND_FOR_MS + NAV_WAIT_MS : FIND_FOR_MS)) {
+            report({ words, outcome: "not found" });
             return done();
           }
+        }
+        if (el && press && !pressed && now - shownAt > PRESS_AFTER_MS) {
+          // Pressed once, after they've seen where: then the ring goes.
+          const why = pressRefusal(el, window.location.origin);
+          if (why) {
+            report({ words, outcome: "refused", why });
+          } else {
+            report({ words, outcome: "pressed" });
+            el.click();
+          }
+          pressed = true;
+          // A refused one keeps its light on, so they see what's theirs to press.
+          if (!why) return done();
         }
         if (el) {
           if (now - shownAt > RING_FOR_MS) return done();

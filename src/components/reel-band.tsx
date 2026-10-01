@@ -243,6 +243,7 @@ export function ReelBand({
         {videoWelcome && (
           <button
             type="button"
+            data-aly-press=""
             aria-label={paused ? playLabel : pauseLabel}
             onClick={() => {
               const el = videoRef.current;

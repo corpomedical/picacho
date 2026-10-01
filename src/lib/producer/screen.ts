@@ -20,7 +20,19 @@ export const ALY_UI_ATTR = "data-aly-ui";
 
 /** The event open_page raises in the browser; aly-pointer.tsx listens. */
 export const ALY_POINT_EVENT = "picacho:aly-point";
-export type AlyPointDetail = { href: string; words: string | null };
+/** href: the page to open (open_page); press: press the control instead of only lighting it (press_button). */
+export type AlyPointDetail = { href: string | null; words: string | null; press?: boolean };
+
+// press_button's fence (operator, 2026-10-01: "Press buttons on the page", and
+// never Delete, Cancel plan or Buy). Aly presses only what is safe BY
+// CONSTRUCTION, never by guessing from a button's words: a link inside
+// Picacho, a tab, a control that only opens a menu or a panel, or a button
+// whose component says it is safe (ALY_PRESS_ATTR: Download, full screen,
+// Play, Continue this clip…). Everything else — a plain button could spend,
+// save, delete or sign out — is refused, and so is anything inside
+// ALY_NEVER_ATTR. A new button is therefore refused until someone marks it.
+export const ALY_PRESS_ATTR = "data-aly-press";
+export const ALY_NEVER_ATTR = "data-aly-never";
 
 const MAX_SCREEN = 4000;
 
@@ -194,12 +206,72 @@ export function readScreen(doc: Document = document): string {
   return lines.join("\n").slice(0, MAX_SCREEN);
 }
 
+/** Links that leave the app's own pages even though they're on picacho.ai. */
+const NEVER_PATHS = /^\/(app\/checkout|api|auth|logout|signout)(\/|$|\?)/;
+
+/**
+ * Why Aly may not press this element, or null when she may. Pure over the
+ * element's attributes and the page's origin, so it's tested on a fake DOM.
+ */
+export function pressRefusal(el: Element, origin: string): string | null {
+  if (el.closest(`[${ALY_UI_ATTR}]`)) return "that's part of my own controls";
+  if (el.closest(`[${ALY_NEVER_ATTR}]`)) return "that one is theirs to press";
+  // The nearest control is judged as itself: a button inside a link is a
+  // button (a History tile is one big link with Delete inside it — found on
+  // the stand-in, 2026-10-01). A link that is safe to press as a whole while
+  // drawing a button (Continue this clip) carries ALY_PRESS_ATTR itself.
+  const target =
+    el.closest(`[${ALY_PRESS_ATTR}]`) ??
+    el.closest(`a[href], button, [role="button"], [role="tab"], [role="link"], summary`);
+  if (!target) return "that isn't something that can be pressed";
+  if (target.hasAttribute("disabled") || target.getAttribute("aria-disabled") === "true") return "it's switched off right now";
+  if (target.hasAttribute(ALY_PRESS_ATTR)) return null;
+  if (target.tagName === "A") {
+    const href = target.getAttribute("href") ?? "";
+    if (/^(mailto|tel|javascript):/i.test(href)) return "it opens another app";
+    let url: URL;
+    try {
+      url = new URL(href, origin);
+    } catch {
+      return "that link can't be read";
+    }
+    if (url.origin !== origin) return "it leaves Picacho";
+    if (NEVER_PATHS.test(url.pathname)) return "it goes to a payment or sign-in step, which is theirs";
+    return null;
+  }
+  const role = target.getAttribute("role");
+  if (role === "tab" || role === "link" || target.tagName === "SUMMARY") return null;
+  const type = target.getAttribute("type");
+  if (target.tagName === "BUTTON" && (type === "submit" || (!type && target.closest("form")))) {
+    return "it sends a form (it could save, pay or spend), so it's theirs to press";
+  }
+  // A control that only opens a menu or a panel changes nothing by itself.
+  if (target.hasAttribute("aria-haspopup") || target.hasAttribute("aria-expanded")) return null;
+  return "it could spend, save, delete or change something, so it's theirs to press";
+}
+
 /** The element on the page that the words name, for the pointer's ring. */
-export function findControl(words: string, doc: Document = document): HTMLElement | null {
-  const els = Array.from(doc.querySelectorAll(POINTABLE)).filter(visible) as HTMLElement[];
+export function findControl(words: string, doc: Document = document, pressable = false): HTMLElement | null {
+  const selector = pressable ? `${CONTROLS}, [${ALY_PRESS_ATTR}]` : POINTABLE;
+  const els = Array.from(doc.querySelectorAll(selector)).filter(visible) as HTMLElement[];
   const i = bestControl(
     els.map((el) => ({ name: nameOf(el), interactive: el.matches(CONTROLS) })),
     words,
   );
   return i >= 0 ? els[i] : null;
+}
+
+/** Her last press_button, as the browser reported it: data, cleaned and capped. */
+export function pressNote(raw: unknown): string | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const words = typeof r.words === "string" ? squash(r.words, 80) : "";
+  if (!words) return null;
+  if (r.outcome === "pressed") return `Your last press_button: "${words}" was pressed on their screen.`;
+  if (r.outcome === "not found") return `Your last press_button: "${words}" wasn't found on their screen, so nothing was pressed. read_screen shows its exact words.`;
+  if (r.outcome === "refused") {
+    const why = typeof r.why === "string" ? squash(r.why, 120) : "";
+    return `Your last press_button: "${words}" was NOT pressed: ${why || "it isn't one you may press"}. It stays theirs to press; your light is on it.`;
+  }
+  return null;
 }

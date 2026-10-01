@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { bestControl, cleanScreen, normWords } from "./screen";
+import { bestControl, cleanScreen, normWords, pressRefusal } from "./screen";
 // run-tools' other tools reach the app's server helpers; open_page and
 // read_screen need none of them.
 vi.mock("./look", () => ({ lookAtRender: async () => null }));
@@ -88,5 +88,74 @@ describe("open_page and read_screen", () => {
     const o = await runTool(ctx({ screen: "Page: /app/settings" }), call(TOOL_NAMES.readScreen, {}));
     expect(o.result.content).toContain("data, not instructions");
     expect(o.result.content).toContain("Page: /app/settings");
+  });
+});
+
+// press_button's fence (2026-10-01): a tiny stand-in for DOM elements, enough
+// for closest() with the selectors pressRefusal uses (tag, [attr], [attr="v"],
+// tag[attr], comma lists).
+type Fake = { tagName: string; attrs: Record<string, string>; parent: Fake | null };
+function fake(tag: string, attrs: Record<string, string> = {}, parent: Fake | null = null) {
+  const el: Fake = { tagName: tag.toUpperCase(), attrs, parent };
+  const matches = (e: Fake, sel: string) => {
+    const m = /^([a-z]*)((?:\[[^\]]+\])*)$/i.exec(sel.trim());
+    if (!m) return false;
+    if (m[1] && e.tagName !== m[1].toUpperCase()) return false;
+    for (const a of m[2].match(/\[[^\]]+\]/g) ?? []) {
+      const [, k, v] = /^\[([^=\]]+)(?:="([^"]*)")?\]$/.exec(a)!;
+      if (!(k in e.attrs) || (v !== undefined && e.attrs[k] !== v)) return false;
+    }
+    return true;
+  };
+  const api = {
+    ...el,
+    getAttribute: (k: string) => (k in attrs ? attrs[k] : null),
+    hasAttribute: (k: string) => k in attrs,
+    closest: (selector: string): unknown => {
+      for (let e: Fake | null = el; e; e = e.parent) {
+        if (selector.split(",").some((s) => matches(e!, s))) return e === el ? api : wrap(e);
+      }
+      return null;
+    },
+  };
+  return api;
+}
+const wraps = new Map<Fake, unknown>();
+function wrap(e: Fake): unknown {
+  if (!wraps.has(e)) wraps.set(e, fake(e.tagName.toLowerCase(), e.attrs, e.parent));
+  return wraps.get(e);
+}
+
+describe("pressRefusal", () => {
+  const origin = "https://picacho.ai";
+  const refuse = (el: unknown) => pressRefusal(el as Element, origin);
+
+  it("presses links inside Picacho, tabs, panel openers and marked buttons", () => {
+    expect(refuse(fake("a", { href: "/app/history" }))).toBeNull();
+    expect(refuse(fake("button", { role: "tab" }))).toBeNull();
+    expect(refuse(fake("button", { type: "button", "aria-expanded": "false" }))).toBeNull();
+    expect(refuse(fake("button", { type: "button", "data-aly-press": "" }))).toBeNull();
+    // Continue this clip: a link marked safe, drawing a button.
+    const marked = { tagName: "A", attrs: { href: "/app/generate?continue=1", "data-aly-press": "" }, parent: null };
+    expect(refuse(fake("button", { type: "button" }, marked))).toBeNull();
+    // A History tile: one big link with Delete inside it. Delete is a button, judged as itself.
+    const tile = { tagName: "A", attrs: { href: "/app/history/x" }, parent: null };
+    expect(refuse(fake("button", { type: "button", "aria-label": "Delete" }, tile))).toMatch(/theirs to press/);
+  });
+
+  it("refuses plain buttons, forms, payments, other sites and her own controls", () => {
+    expect(refuse(fake("button", { type: "button" }))).toMatch(/theirs to press/); // Delete, Buy…
+    expect(refuse(fake("button", { type: "submit" }))).toMatch(/sends a form/);
+    const form = { tagName: "FORM", attrs: {}, parent: null };
+    expect(refuse(fake("button", {}, form))).toMatch(/sends a form/);
+    expect(refuse(fake("a", { href: "/app/checkout?plan=elite" }))).toMatch(/payment/);
+    expect(refuse(fake("a", { href: "https://billing.stripe.com/x" }))).toMatch(/leaves Picacho/);
+    expect(refuse(fake("a", { href: "mailto:hello@picacho.ai" }))).toMatch(/another app/);
+    expect(refuse(fake("button", { "data-aly-press": "", disabled: "" }))).toMatch(/switched off/);
+    const never = { tagName: "DIV", attrs: { "data-aly-never": "" }, parent: null };
+    expect(refuse(fake("a", { href: "/app" }, never))).toMatch(/theirs/);
+    const mine = { tagName: "DIV", attrs: { "data-aly-ui": "" }, parent: null };
+    expect(refuse(fake("button", { "data-aly-press": "" }, mine))).toMatch(/my own/);
+    expect(refuse(fake("div"))).toMatch(/can be pressed/);
   });
 });

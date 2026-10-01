@@ -1,3 +1,4 @@
+import { pressNote } from "./screen";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { PLAN_LABELS, PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import { getMonthlyUsageWith } from "@/lib/generations/core";
@@ -66,6 +67,8 @@ export async function buildStateNote(
     cutAnswer?: string | null;
     /** They cut in while it was being read aloud: the part of it they heard (the sheet reports it). */
     heard?: string | null;
+    /** What her last press_button did in their browser (aly-pointer.tsx takeLastPress). */
+    pressed?: unknown;
   },
 ): Promise<{ text: string; fingerprint: StateFingerprint }> {
   const [profileResult, castResult, rulesResult, rendersResult] = await Promise.all([
@@ -202,6 +205,7 @@ export async function buildStateNote(
           .join("\n")}`
       : null,
     focus ? `They pressed "Ask why" on render ${focus}: that is the one this message is about.` : null,
+    pressNote(a.pressed),
     // Several things at once (2026-09-25): nothing they said is dropped.
     a.unanswered && a.unanswered.length > 0
       ? `Before this message they also said the following, and your answer was cut off before you replied, so it is still unanswered:\n${a.unanswered

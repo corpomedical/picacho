@@ -40,6 +40,8 @@ export const TOOL_NAMES = {
   readAds: "read_press_ads",
   openPage: "open_page",
   readScreen: "read_screen",
+  startRender: "start_render",
+  press: "press_button",
 } as const;
 
 // What voice_control can do (2026-09-25, operator: the mic and speaker stay on
@@ -103,7 +105,7 @@ export const PRODUCER_TOOLS = [
   {
     name: TOOL_NAMES.prepare,
     description:
-      "Prepare ONE send for the person to review. It does not render and spends nothing: the person gets a card that opens the composer with everything filled in, where they check the receipt and press Send themselves. Call it once per shot. Returns the credit cost, or an error saying what to fix.",
+      "Prepare ONE send for the person to review. It does not render and spends nothing: the person gets a card that opens the composer with everything filled in, where they check the receipt and press Send themselves. To make it for them, start the card afterwards with start_render (your HANDS-FREE rules). Call it once per shot. Returns the card's id and its credit cost, or an error saying what to fix.",
     strict: true,
     input_schema: {
       type: "object",
@@ -267,6 +269,37 @@ export const PRODUCER_TOOLS = [
     strict: true,
     input_schema: { type: "object", additionalProperties: false, required: [], properties: {} },
   },
+  {
+    // 2026-10-01 (operator: "I tell her I cant touch the phone you do it for
+    // me, she says she cant. I asked she takes control so the user works
+    // hands free" → "Say price, then go"): she starts her own card. The card
+    // is found by id in this conversation; nothing she writes sets the price.
+    name: TOOL_NAMES.startRender,
+    description:
+      "Start one of the cards you prepared in this conversation, for the person: the picture or video is made now and its credits (the card's price) are spent, exactly as if they had pressed the button themselves. Use it only when they asked you to make it or said yes to its price (see HANDS-FREE in your rules). card_id: the id prepare_send returned for that card. Returns whether it started, finished or why it couldn't. An ad can't be started here (its stills are painted on the Press Tour page).",
+    strict: true,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["card_id"],
+      properties: { card_id: { type: "string", description: "The card's id, from prepare_send's result." } },
+    },
+  },
+  {
+    // The same day's second pick, "Press buttons on the page": an ordinary
+    // control on their screen, pressed by the browser (aly-pointer.tsx), where
+    // only what's safe by construction can be pressed (screen.ts pressRefusal).
+    name: TOOL_NAMES.press,
+    description:
+      "Press one control on the person's screen for them, as their finger would: a link, a tab, a filter, a menu or panel that opens, Play, Download, full screen, Continue this clip, Show more. words: the control's words exactly as their screen shows them (read_screen tells you). Your light rings it, then it is pressed. Free. The browser refuses anything that could spend, buy, save, delete, sign out or change a setting or a field: those stay theirs, and you never try to get round that. You'll hear in the next app note whether it was pressed; read_screen then shows what changed.",
+    strict: true,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["words"],
+      properties: { words: { type: "string", description: "The control's words as shown on screen." } },
+    },
+  },
   // Web search (Anthropic's server tool; prices.ts WEB_SEARCH_*): current
   // facts, news, trends, other tools. The API runs it; nothing here does.
   { type: "web_search_20250305", name: TOOL_NAMES.web, max_uses: WEB_SEARCH_MAX_USES },
@@ -295,6 +328,8 @@ export function sendableTools<T>(saved: readonly T[]): T[] {
 
 export type PreparedSend = {
   id: string;
+  /** Set once Aly started it (start_render): the take's id. */
+  generationId?: string | null;
   label: string;
   /** "ad": a Press Tour ad planned by plan_press_ad; its credits are the stills' paint price, and href opens it on the door. */
   kind: "image" | "video" | "ad";

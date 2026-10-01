@@ -203,6 +203,8 @@ export function DownloadButton({
   return (
     <button
       type="button"
+      // Aly may press it for them (press_button): it only saves a copy.
+      data-aly-press=""
       disabled={busy}
       onClick={handleClick}
       aria-label={t.generate.download}

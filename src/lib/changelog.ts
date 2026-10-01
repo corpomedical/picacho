@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.195.0",
+    build: 234,
+    date: "2026-10-01",
+    title: "Aly works hands-free: she makes her cards herself and presses buttons for you",
+    items: [
+      "Say \"do it\", \"make it\" or \"I can't touch the phone\" and Aly makes the picture or video on her card herself, through the same Send the studio uses (credits, content rules and identity checks all apply). She says the price as she starts it; if you were only talking about an idea she says the price and starts on your yes; and above 10 credits, or for more than one at once, she always asks first. In the lamp and on her chat page; Picacho Light already starts them by itself.",
+      "It runs on the server, so it finishes even if the phone locks or you change page. A card can't be made twice: a second \"do it\" or a tap on the card's own button follows the same take. Her card then shows \"Started by Aly\" with Open the take, and on her chat page the picture or video appears in the card.",
+      "From the lamp she can press things on the screen for you: links, tabs, filters, menus, Play, Download, full screen, Continue this clip. Her light rings the control for a moment first so you see what she's pressing. Anything that buys, pays, deletes, signs out, sends a form or changes a setting is never pressed (a new button stays off-limits until it's marked safe), and she's told whether each press worked.",
+      "Her lamp starts a fresh conversation to pick this up (her notes carry over); on her chat page, new chats have it.",
+    ],
+  },
+  {
     version: "1.194.0",
     build: 233,
     date: "2026-10-01",
