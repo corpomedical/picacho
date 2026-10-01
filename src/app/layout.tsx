@@ -15,6 +15,7 @@ import { LocaleProvider } from "@/lib/i18n/provider";
 import { getLocale } from "@/lib/i18n/server";
 import { getMessages } from "@/lib/i18n/messages";
 import { isNativeApp } from "@/lib/native/server";
+import { PLAY_LISTING_LIVE, PLAY_STORE_URL } from "@/lib/play-listing";
 
 
 // Marketing display face (see --font-display in globals.css). Downloaded at
@@ -120,8 +121,11 @@ export const metadata: Metadata = {
 // (2026-09-14) had our own name averaging position ~10, with people trying
 // nine misspellings to reach us. sameAs lists only accounts Picacho really
 // runs, as the operator gave them, minus tracking parameters. The Play
-// listing stays out while the app is suspended: it answers 404, and a
-// profile that 404s says nothing.
+// listing joins whenever it is live (PLAY_LISTING_LIVE) and drops out if it
+// goes down again: a profile that 404s says nothing. It belongs here because
+// it is what Google already ranks first for "picacho ai" where it reads the
+// name as a misspelt "pikachu" (2026-10-01, Lebanon), so naming it ties that
+// result to this site.
 const ORGANIZATION_JSON_LD = {
   "@context": "https://schema.org",
   "@type": "Organization",
@@ -133,6 +137,7 @@ const ORGANIZATION_JSON_LD = {
     "https://www.instagram.com/picachoai/",
     "https://www.tiktok.com/@picacho.ai",
     "https://www.youtube.com/@Picacho-ai",
+    ...(PLAY_LISTING_LIVE ? [PLAY_STORE_URL] : []),
   ],
 };
 
