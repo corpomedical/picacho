@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { buildSkeleton } from "./studio-pose";
-import { gaitFrame, naturalSeconds, pathRootAt, shortestYaw, turnFrame, turnSteps, type PathMove, type TurnMove } from "./studio-gait";
+import { buildSkeleton, type BoneName } from "./studio-pose";
+import { FOOT_SIDE_M, gaitFrame, naturalSeconds, pathRootAt, shortestYaw, turnFrame, turnSteps, type PathMove, type TurnMove } from "./studio-gait";
 
 // "Why is she walking weird and jumpy?" (2026-09-30). Measured frame by frame before the fix (24 fps): the pelvis
 // fell 13–18 cm in ONE frame at each step (a leg counted only while its foot was under 2 cm up), twice a stride, the
@@ -115,7 +115,7 @@ describe("a turn steps round instead of swivelling (2026-09-30)", () => {
       const end = turnFrame(sk, { at: m.at, yaw0: 0 }, m, 1, FPS);
       expect(Math.abs(shortestYaw(0, end.feet.L.yaw - yaw))).toBeLessThan(1e-6);
       expect(Math.abs(shortestYaw(0, end.feet.R.yaw - yaw))).toBeLessThan(1e-6);
-      expect(end.feet.L.at.distanceTo(end.feet.R.at)).toBeCloseTo(0.2, 3);
+      expect(end.feet.L.at.distanceTo(end.feet.R.at)).toBeCloseTo(2 * FOOT_SIDE_M, 3);
       expect(end.feet.L.planted && end.feet.R.planted).toBe(true);
     });
   }
@@ -126,5 +126,77 @@ describe("a turn steps round instead of swivelling (2026-09-30)", () => {
     expect(half.length).toBeGreaterThanOrEqual(6);
     expect(half.slice(-2)).toEqual([Math.PI, Math.PI]);
     for (let k = 1; k < half.length; k++) expect(half[k]).toBeGreaterThanOrEqual(half[k - 1]);
+  });
+});
+
+// "She is still walking weird" (2026-10-01, take 701f3155 on the yellow-coupe set). Measured on his walk (6.9 m in
+// 4.8 s, a bend round the car's nose) before the fix: the standing knee never straighter than 25–38° (the pelvis
+// carried 4.5 cm low: a crouch), arms and pelvis a quarter step late (a 0.09 correlation between the left arm and
+// which foot is ahead), no drop of the hip, feet landing 15–26 cm apart, and the swinging knee bending twice.
+describe("a walk that reads as a person walking", () => {
+  const his: PathMove = { kind: "path", gait: "walk", f0: 1, f1: 115, path: [[1.2, 0, 2.6], [4.6, 0, 4.4], [7.6, 0, 4.55]], yaw0: 1.0213616496485884 };
+  const P = (sk: ReturnType<typeof buildSkeleton>, n: BoneName) => sk.bones[n].getWorldPosition(new THREE.Vector3());
+  function trace(m: PathMove) {
+    const sk = buildSkeleton();
+    const rows: { kneeL: number; plantedL: boolean; aheadL: number; armL: number; elbowL: number; pelvisYaw: number; list: number; width: number }[] = [];
+    for (let f = 30; f <= 90; f++) {
+      const g = gaitFrame(sk, m, (f - m.f0) / FPS, FPS);
+      const hip = P(sk, "thigh.L"), knee = P(sk, "shin.L"), ank = P(sk, "foot.L");
+      const a = hip.clone().sub(knee).normalize(), b = ank.clone().sub(knee).normalize();
+      const fwd = new THREE.Vector3(Math.sin(g.yaw), 0, Math.cos(g.yaw)), side = new THREE.Vector3(Math.cos(g.yaw), 0, -Math.sin(g.yaw));
+      rows.push({
+        kneeL: 180 - (Math.acos(Math.min(1, Math.max(-1, a.dot(b)))) * 180) / Math.PI,
+        plantedL: g.feet.L.planted && Math.abs(g.feet.L.pitch) < 0.05,
+        aheadL: P(sk, "foot.L").sub(P(sk, "foot.R")).dot(fwd),
+        armL: g.pose.rot["upperArm.L"]![0],
+        elbowL: g.pose.rot["forearm.L"]![0],
+        pelvisYaw: g.pose.rot.pelvis![1],
+        list: g.pose.rot.pelvis![2],
+        width: Math.abs(P(sk, "foot.L").sub(P(sk, "foot.R")).dot(side)),
+      });
+    }
+    return rows;
+  }
+  const corr = (a: number[], b: number[]) => {
+    const ma = a.reduce((x, y) => x + y) / a.length, mb = b.reduce((x, y) => x + y) / b.length;
+    let n = 0, da = 0, db = 0;
+    a.forEach((v, i) => { n += (v - ma) * (b[i] - mb); da += (v - ma) ** 2; db += (b[i] - mb) ** 2; });
+    return n / Math.sqrt(da * db);
+  };
+
+  it("each arm swings back as its own foot comes forward, and the pelvis turns with the leg in front", () => {
+    const r = trace(his);
+    // Positive upperArm x is back: the left arm furthest back when the left foot is furthest ahead.
+    expect(corr(r.map((x) => x.aheadL), r.map((x) => x.armL))).toBeGreaterThan(0.9);
+    expect(corr(r.map((x) => x.aheadL), r.map((x) => x.pelvisYaw))).toBeLessThan(-0.9);
+    // The elbow bends more in front than behind.
+    const front = r.filter((x) => x.armL < -10).map((x) => x.elbowL), back = r.filter((x) => x.armL > 10).map((x) => x.elbowL);
+    expect(Math.max(...front)).toBeLessThan(Math.min(...back));
+  });
+
+  it("stands tall over a flat foot (knee under 22°), drops the swinging hip a few degrees, steps about a foot's width apart", () => {
+    const r = trace(his);
+    const flat = r.filter((x) => x.plantedL).map((x) => x.kneeL);
+    expect(flat.length).toBeGreaterThan(10);
+    expect(Math.min(...flat)).toBeLessThan(18);
+    expect(flat.sort((a, b) => a - b)[Math.floor(flat.length / 2)]).toBeLessThan(22);
+    expect(Math.max(...r.map((x) => Math.abs(x.list)))).toBeGreaterThan(2.5);
+    expect(Math.max(...r.map((x) => x.width))).toBeLessThan(0.2);
+  });
+
+  it("the swinging knee folds once: from the toes leaving to its deepest bend it never opens by more than 8°", () => {
+    const r = trace(his);
+    let worst = 0;
+    for (let i = 1; i < r.length; i++) {
+      // While the left foot is off the ground and still on its way up to its deepest bend.
+      if (r[i].plantedL) continue;
+      const rest = r.slice(i).findIndex((x) => x.plantedL);
+      const swing = r.slice(i, rest < 0 ? r.length : i + rest).map((x) => x.kneeL);
+      const peak = swing.indexOf(Math.max(...swing));
+      let hi = swing[0];
+      for (let k = 1; k <= peak; k++) { worst = Math.max(worst, hi - swing[k]); hi = Math.max(hi, swing[k]); }
+      i += swing.length;
+    }
+    expect(worst).toBeLessThan(8);
   });
 });

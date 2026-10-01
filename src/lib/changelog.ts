@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.204.0",
+    build: 243,
+    date: "2026-10-01",
+    title: "Helios Studio: people walk like people",
+    items: [
+      "A walking figure's arms now swing in time with the legs: each arm furthest forward as the other foot lands, the elbow bending more in front. They had swung a quarter step late, so the arms moved while the legs passed each other and hung still while they were apart.",
+      "The standing leg straightens over the foot instead of staying bent at about 30°, the hip on the swinging side drops a few degrees, the shoulders stay level, and the steps are a little shorter (about 0.62 m at a walk) and land about a foot's width apart.",
+      "The swinging knee folds once, straight after the toes leave the ground, instead of bending, opening and bending again. Video with your character copies this walk, so it carries into the finished video.",
+    ],
+  },
+  {
     version: "1.203.0",
     build: 242,
     date: "2026-10-01",

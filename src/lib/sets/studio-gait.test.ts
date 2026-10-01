@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { buildSkeleton, type Vec3 } from "./studio-pose";
 import {
   ANKLE_M,
+  FOOT_SIDE_M,
   GAITS,
   HEEL_M,
   TOE_M,
@@ -88,8 +89,10 @@ describe("the pace along a path", () => {
     const a = strideFor("walk", 1.4, 4.2), b = strideFor("walk", 2, 4.2);
     expect(Number.isInteger(a.halfSteps)).toBe(true);
     expect((a.stride * a.halfSteps) / 2).toBeCloseTo(4.2, 9);
-    expect(a.stride).toBeGreaterThan(1.2);
-    expect(a.stride).toBeLessThan(1.6);
+    // About 0.6–0.7 m a step at a 1.4 m/s walk (the gait's own stride is 1.24 m since 2026-10-01: a longer step
+    // sank the pelvis further at each landing).
+    expect(a.stride).toBeGreaterThan(1.1);
+    expect(a.stride).toBeLessThan(1.45);
     expect(b.stride).toBeGreaterThanOrEqual(a.stride);
   });
 });
@@ -118,7 +121,7 @@ describe("feet that don't skate", () => {
     const r = run(m), first = r.frames[0], last = r.frames[r.frames.length - 1];
     for (const g of [first, last]) {
       expect(g.feet.L.planted && g.feet.R.planted).toBe(true);
-      expect(g.feet.L.at.distanceTo(g.feet.R.at)).toBeCloseTo(0.2, 3);
+      expect(g.feet.L.at.distanceTo(g.feet.R.at)).toBeCloseTo(2 * FOOT_SIDE_M, 3);
     }
     expect(last.pos).toEqual([4, 0, 5]);
     expect(last.yaw).toBeCloseTo(Math.atan2(3, 4), 6);

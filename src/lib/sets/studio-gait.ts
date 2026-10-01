@@ -20,8 +20,8 @@ import * as THREE from "three";
 import { BONE, applyPose, clampLoc, clampRot, clonePose, presetPose, solveLimb, type BoneName, type Pose, type Skeleton, type Vec3 } from "./studio-pose";
 
 export const GAITS = {
-  walk: { speed: 1.4, stride: 1.4, stance: 0.58, lift: 0.1, arm: 18, forearm: -20, lean: -3, sway: 0.022, hipYaw: 5, ramp: 0.5, heel: 0.55, strike: 0.3, crouch: 0.045 },
-  run: { speed: 4, stride: 2.8, stance: 0.3, lift: 0.26, arm: 42, forearm: -88, lean: -11, sway: 0.01, hipYaw: 8, ramp: 0.8, heel: 0.6, strike: 0.2, crouch: 0.07 },
+  walk: { speed: 1.4, stride: 1.24, stance: 0.58, lift: 0.1, arm: 22, forearm: -18, elbow: 16, lean: -3, sway: 0.022, hipYaw: 6, list: 4, ramp: 0.5, heel: 0.85, strike: 0.3, crouch: 0.02 },
+  run: { speed: 4, stride: 2.8, stance: 0.3, lift: 0.26, arm: 42, forearm: -88, elbow: 6, lean: -11, sway: 0.01, hipYaw: 8, list: 3, ramp: 0.8, heel: 0.6, strike: 0.2, crouch: 0.07 },
 } as const;
 export type Gait = keyof typeof GAITS;
 export const GAIT_NAMES = Object.keys(GAITS) as Gait[];
@@ -45,7 +45,7 @@ export const PATH_POINTS_MAX = 32;
 /** The ankle joint's height above the sole. */
 export const ANKLE_M = 0.07;
 /** Half the gap between the feet, from the path. */
-export const FOOT_SIDE_M = 0.1;
+export const FOOT_SIDE_M = 0.065;
 const LEG_REACH_M = BONE["shin.L"].at[1] * -1 + BONE["foot.L"].at[1] * -1 - 0.004;
 
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -127,6 +127,8 @@ export const TOE_M = 0.13;
 /** From the ankle back to the heel's contact, along it. */
 export const HEEL_M = 0.05;
 const smooth = (x: number) => { const k = clamp(x, 0, 1); return k * k * (3 - 2 * k); };
+/** A swinging ankle's height through its swing, 0 at both ends and 1 at its top (u ≈ 0.38). */
+export const swingLift = (u: number) => (Math.sin(Math.PI * clamp(u, 0, 1)) * Math.pow(1 - clamp(u, 0, 1), 0.8)) / 0.6334;
 
 /**
  * Where one foot's ankle is when the body has come `d` of `D` metres:
@@ -168,7 +170,9 @@ function footAt(curve: THREE.Curve<THREE.Vector3>, D: number, d: number, stride:
     // The swing leaves from the rolled foot and lands flat, gently (smoothstep), never at full speed from a standstill.
     const th0 = heelAt(w0 - from), th1 = heelAt(w1 - to);
     const a = rolled(from, th0), b = rolled(to, th1);
-    const up = Math.sin(Math.PI * u) * lift * Math.min(1, (to - from) / stride * 1.2);
+    // Highest early in the swing (u ≈ 0.38), as the knee folds straight after the toes leave, then lower as the
+    // leg reaches forward: a single bend of the knee through the swing, not two (2026-10-01).
+    const up = swingLift(u) * lift * Math.min(1, (to - from) / stride * 1.2);
     const y0 = headingAt(from), y1 = shortestYaw(y0, headingAt(to));
     return { at: a.lerp(b, smooth(u)).add(new THREE.Vector3(0, up, 0)), planted: false, lift: up, u, pitch: th0 + (th1 - th0) * smooth(u), yaw: y0 + (y1 - y0) * smooth(u), contact: null };
   }
@@ -205,8 +209,8 @@ function legRoom(curve: THREE.Curve<THREE.Vector3>, D: number, d: number, stride
   const p = curve.getPointAt(dd / D), t = curve.getTangentAt(dd / D).setY(0).normalize();
   const left = new THREE.Vector3(t.z, 0, -t.x).normalize();
   // The pelvis turns with the legs (hipYaw) and sways over the standing foot, as gaitFrame poses it.
-  const c = Math.cos(TAU * (stride > 0 ? dd / stride : 0));
-  const turn = ((g.hipYaw * s * c) * Math.PI) / 180;
+  const c = Math.cos(TAU * (stride > 0 ? dd / stride : 0)), sw = Math.sin(TAU * (stride > 0 ? dd / stride : 0));
+  const turn = ((g.hipYaw * s * sw) * Math.PI) / 180, list = ((g.list * s * c) * Math.PI) / 180;
   const centre = p.clone().add(left.clone().multiplyScalar(g.sway * s * c));
   let room = 0;
   for (const side of [1, -1] as const) {
@@ -214,7 +218,7 @@ function legRoom(curve: THREE.Curve<THREE.Vector3>, D: number, d: number, stride
     const hip = centre.clone().add(left.clone().multiplyScalar(HIP_X * side * Math.cos(turn))).add(t.clone().multiplyScalar(-HIP_X * side * Math.sin(turn)));
     const hd = Math.hypot(hip.x - f.at.x, hip.z - f.at.z);
     const top = f.at.y + Math.sqrt(Math.max(0, LEG_REACH_M * LEG_REACH_M - hd * hd));
-    room = Math.min(room, top - (p.y + HIP_Y) + (1 - swingHold(f)) * SWING_SLACK_M);
+    room = Math.min(room, top - (p.y + HIP_Y + HIP_X * side * Math.sin(list)) + (1 - swingHold(f)) * SWING_SLACK_M);
   }
   return room;
 }
@@ -254,17 +258,25 @@ export function gaitFrame(sk: Skeleton, m: PathMove, t: number, fps: number, upp
   sk.root.rotation.set(0, yaw, 0);
   sk.root.updateMatrixWorld(true);
   const phase = stride > 0 ? d / stride : 0;
-  const c = Math.cos(TAU * phase);
+  // c peaks at each mid-stance (the left foot under the body at +1, the right at -1); sw peaks where the legs are
+  // furthest apart (the right foot ahead at +1, the left at -1). Arms and the pelvis's turn follow sw — each arm
+  // furthest forward as the OTHER foot lands — and the sway and the hip's drop follow c (2026-10-01, operator: "She
+  // is still walking weird": they had followed c, a quarter step late, measured as a 0.09 correlation between the
+  // left arm and which foot is ahead).
+  const c = Math.cos(TAU * phase), sw = Math.sin(TAU * phase);
   // The upper body: the stand, arms swinging against the legs, the spine leaning into the pace.
   const stand = presetPose("stand");
   const pose: Pose = { rot: { ...stand.rot }, loc: [0, 0, 0] };
   const put = (n: BoneName, v3: Vec3) => (pose.rot[n] = clampRot(n, v3));
-  put("upperArm.L", [-g.arm * s * c, 0, 6]);
-  put("upperArm.R", [g.arm * s * c, 0, 6]);
-  put("forearm.L", [-8 + (g.forearm + 8) * s - 6 * s * Math.max(0, -c), 0, 0]);
-  put("forearm.R", [-8 + (g.forearm + 8) * s - 6 * s * Math.max(0, c), 0, 0]);
-  put("pelvis", [0, g.hipYaw * s * c, 0]);
-  put("spine", [g.lean * s, -g.hipYaw * 0.8 * s * c, 0]);
+  put("upperArm.L", [-g.arm * s * sw, 0, 6]);
+  put("upperArm.R", [g.arm * s * sw, 0, 6]);
+  // An elbow bends more as its arm swings forward, and opens as it swings back.
+  put("forearm.L", [-8 + (g.forearm + 8) * s - g.elbow * s * Math.max(0, sw), 0, 0]);
+  put("forearm.R", [-8 + (g.forearm + 8) * s - g.elbow * s * Math.max(0, -sw), 0, 0]);
+  // The pelvis turns with the leg in front and drops a few degrees on the swinging side; the spine turns and
+  // tilts back against both, so the shoulders turn with the arms and stay level.
+  put("pelvis", [0, g.hipYaw * s * sw, g.list * s * c]);
+  put("spine", [g.lean * s, -g.hipYaw * 0.8 * s * sw, -g.list * 0.8 * s * c]);
   for (const n of ARM_KEEP) if (upper.rot[n]) pose.rot[n] = [...upper.rot[n]!] as Vec3;
   for (const n of keyed) if (upper.rot[n] && !/^(thigh|shin|foot)|^pelvis$|^spine$/.test(n)) pose.rot[n] = [...upper.rot[n]!] as Vec3;
   pose.loc = [g.sway * s * c, 0, 0];
