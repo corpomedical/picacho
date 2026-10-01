@@ -28,6 +28,7 @@ export function Monitor({
   onTime,
   handleRef,
   cutPoints,
+  compact = false,
   labels,
 }: {
   base: string;
@@ -37,7 +38,9 @@ export function Monitor({
   onTime: (t: number) => void;
   handleRef: React.MutableRefObject<MonitorHandle | null>;
   cutPoints: number[];
-  labels: { play: string; pause: string; prevCut: string; nextCut: string; loop: string; fullscreen: string; program: string };
+  /** A phone: no header, a shorter transport. */
+  compact?: boolean;
+  labels: { play: string; pause: string; prevCut: string; nextCut: string; loop: string; fullscreen: string; program: string; safeArea: string };
 }) {
   const player = useRef<PlayerEl | null>(null);
   const frame = useRef<HTMLDivElement>(null);
@@ -48,6 +51,8 @@ export function Monitor({
   const [playing, setPlaying] = useState(false);
   const [loop, setLoop] = useState(false);
   const [defined, setDefined] = useState(false);
+  // The title-safe frame, drawn over the picture only (never rendered into the video).
+  const [safe, setSafe] = useState(true);
 
   useEffect(() => {
     let alive = true;
@@ -134,19 +139,30 @@ export function Monitor({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col items-center bg-[#040506] px-4 pb-2 pt-4">
-      <div className="flex min-h-0 w-full flex-1 items-center justify-center">
-        <div ref={frame} className="relative h-full max-h-full overflow-hidden rounded-[4px] bg-black shadow-[0_0_0_1px_rgba(255,255,255,0.06)]" style={{ aspectRatio: `${w} / ${h}`, maxWidth: "100%" }}>
-          <div ref={host} className="absolute inset-0" />
-          <span className="pointer-events-none absolute left-2.5 top-2 rounded-[5px] bg-[rgba(7,8,11,0.7)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[#9aa0ad]">
-            {labels.program}
+    <div className="flex h-full min-h-0 flex-col bg-[#060709]">
+      {!compact && (
+        <div className="flex h-10 shrink-0 items-center justify-between px-4 font-mono text-[11px] text-[#6c717c]">
+          <span className="uppercase tracking-[0.08em]">{labels.program}</span>
+          <span>
+            {aspect} · {w === 16 ? 1920 : 1080} × {h === 16 ? 1920 : 1080}
           </span>
+        </div>
+      )}
+      <div className={`flex min-h-0 w-full flex-1 items-center justify-center ${compact ? "px-3 pt-3" : "px-4"}`}>
+        <div
+          ref={frame}
+          className="relative h-full max-h-full overflow-hidden rounded-[6px] bg-black shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_30px_60px_-20px_rgba(0,0,0,0.9)]"
+          style={{ aspectRatio: `${w} / ${h}`, maxWidth: "100%" }}
+        >
+          <div ref={host} className="absolute inset-0" />
+          {safe && <div className="pointer-events-none absolute inset-[7%] rounded-[2px] border border-dashed border-[rgba(255,255,255,0.16)]" aria-hidden="true" />}
           {!ready && <div className="absolute inset-0 animate-pulse bg-[rgba(255,255,255,0.02)]" aria-hidden="true" />}
         </div>
       </div>
-      <div className="mt-2 flex h-11 w-full max-w-[720px] items-center gap-1.5">
-        <span className="whitespace-nowrap font-mono text-[12px] tabular-nums text-[#ecedf1]">
-          {timecode(time)} <span className="text-[#6b6f7a]">/ {timecode(duration)}</span>
+      <div className={`flex w-full shrink-0 items-center gap-1.5 ${compact ? "h-[52px] px-3" : "mt-1 h-[60px] border-t border-[rgba(255,255,255,0.04)] px-4"}`}>
+        <span className={`whitespace-nowrap font-mono tabular-nums text-[#eceef2] ${compact ? "text-[13px]" : "text-[17px] tracking-[0.02em]"}`}>
+          {compact ? shortTime(time) : longTimecode(time)}
+          <span className={`ml-2 text-[#565a64] ${compact ? "text-[11px]" : "text-[12px]"}`}>/ {compact ? shortTime(duration) : longTimecode(duration)}</span>
         </span>
         <div className="flex-1" />
         <IconButton label={labels.prevCut} onClick={() => jump(-1)} icon="back" />
@@ -154,17 +170,31 @@ export function Monitor({
           type="button"
           aria-label={playing ? labels.pause : labels.play}
           onClick={() => handleRef.current?.toggle()}
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-[#ecedf1] text-[#0b0c10]"
+          className="flex h-[42px] w-[42px] items-center justify-center rounded-full bg-[#eceef2] text-[#0b0c0f]"
         >
           {playing ? <Icon name="pause" size={16} /> : <Icon name="play" size={16} />}
         </button>
         <IconButton label={labels.nextCut} onClick={() => jump(1)} icon="fwd" />
         <div className="flex-1" />
-        <IconButton label={labels.loop} onClick={() => setLoop((l) => !l)} icon="loop" on={loop} />
+        {!compact && <IconButton label={labels.safeArea} onClick={() => setSafe((v) => !v)} icon="safe" on={safe} />}
+        {!compact && <IconButton label={labels.loop} onClick={() => setLoop((l) => !l)} icon="loop" on={loop} />}
         <IconButton label={labels.fullscreen} onClick={() => void frame.current?.requestFullscreen?.()} icon="full" />
       </div>
     </div>
   );
+}
+
+/** A phone's short clock: 0:04.6. */
+function shortTime(t: number): string {
+  const s = Math.max(0, t);
+  return `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
+}
+
+/** Hours:minutes:seconds:frames at 30 fps, as an editor's timecode reads. */
+export function longTimecode(t: number): string {
+  const s = Math.max(0, t);
+  const hr = Math.floor(s / 3600);
+  return `${String(hr).padStart(2, "0")}:${timecode(s - hr * 3600)}`;
 }
 
 export function timecode(t: number): string {
@@ -182,6 +212,7 @@ const PATHS: Record<string, string> = {
   fwd: "M6 6l9 6-9 6V6zM18 6v12",
   loop: "M17 2l4 4-4 4M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H3",
   full: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5",
+  safe: "M3 5h18v14H3zM7 9h10v6H7z",
 };
 
 export function Icon({ name, size = 16 }: { name: keyof typeof PATHS | string; size?: number }) {
@@ -201,7 +232,7 @@ function IconButton({ label, onClick, icon, on = false }: { label: string; onCli
       title={label}
       aria-pressed={on}
       onClick={onClick}
-      className={`flex h-8 w-8 items-center justify-center rounded-lg ${on ? "bg-[rgba(224,164,104,0.14)] text-[#e0a468]" : "text-[#9aa0ad] hover:text-[#ecedf1]"}`}
+      className={`flex h-9 w-9 items-center justify-center rounded-lg ${on ? "text-[#e0a468]" : "text-[#8b909b] hover:text-[#eceef2]"}`}
     >
       <Icon name={icon} />
     </button>

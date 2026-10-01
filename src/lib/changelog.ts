@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.209.0",
+    build: 248,
+    date: "2026-10-02",
+    title: "Director's Cut looks like an editing suite",
+    items: [
+      "One bar across the top: the edit's name (pick another edit from it), its cut (Cut 2 opens with a menu back to Cut 1), whether your changes are saved, an Edit · Score · Deliver switch, New edit, and Export with the shape and size it renders.",
+      "Your footage shows as pictures; a clip the cut doesn't use is dimmed, and pressing one jumps to it on the timeline. The monitor names what it plays (9:16 · 1080 × 1920), draws a title-safe frame you can switch off, and reads full timecode.",
+      "Deliver lists the shape, size and length Export makes, with Export and Download together. Opus's panel reads like a conversation: your words on the right, Opus's notes in its own type, and one box to ask for a change, with a song if you have one. Music engines switched off on Admin → Models stay off the Score menu.",
+      "A new edit is a page of its own: your clips as tall pictures, the song on its own row, one box to write what it should be. While Opus works, the bay shows the three steps across, what Opus is doing now, how long it has been at it, the footage ticked as it is watched, and the empty tracks its cut will fill.",
+      "On a phone: the monitor on top, then Timeline, Opus, Media and Score, with Split, Volume, Undo and Delete under the timeline and the box to ask Opus always at the foot. Opus's notes no longer vanish under the tabs.",
+    ],
+  },
+  {
     version: "1.208.0",
     build: 247,
     date: "2026-10-02",

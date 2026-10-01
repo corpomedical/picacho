@@ -10,11 +10,16 @@ import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } fro
 import { moveClip, snap, trimEnd, trimStart, type LaneKey, type TimelineClip, type TimelineModel, type TimingEdit } from "@/lib/editor/timeline";
 import { frameKey, PEAKS_PER_SECOND, type Previews } from "./media-previews";
 
-export const HEADER_W = 172;
+export const HEADER_W = 184;
+/** A phone: the track's colour and code only. */
+export const HEADER_W_COMPACT = 48;
 
 /** A lane whose clips overlap stacks them in rows of at least this height, like separate tracks. */
 const SUB_ROW = 32;
-const HEIGHT: Record<LaneKey, number> = { graphics: 30, titles: 34, story: 76, backdrop: 0, "clip-sound": 50, music: 56, effects: 40, voice: 46 };
+/** Height of the ruler across the top. */
+const RULER = 30;
+const HEIGHT: Record<LaneKey, number> = { graphics: 32, titles: 38, story: 82, backdrop: 0, "clip-sound": 52, music: 62, effects: 40, voice: 46 };
+const HEIGHT_COMPACT: Record<LaneKey, number> = { graphics: 28, titles: 30, story: 64, backdrop: 0, "clip-sound": 40, music: 44, effects: 30, voice: 36 };
 const COLOR: Record<LaneKey, { solid: string; rgb: string }> = {
   graphics: { solid: "#d58ab5", rgb: "213,138,181" },
   titles: { solid: "#e0a468", rgb: "224,164,104" },
@@ -40,6 +45,7 @@ export function TimelineView({
   onSelect,
   onEdits,
   onSplit,
+  compact = false,
   labels,
 }: {
   model: TimelineModel;
@@ -53,6 +59,8 @@ export function TimelineView({
   onSelect: (id: string | null) => void;
   onEdits: (edits: TimingEdit[]) => void;
   onSplit: (clip: TimelineClip, at: number) => void;
+  /** A phone: a narrow header and shorter tracks. */
+  compact?: boolean;
   labels: { lanes: Record<string, string>; composeHint: string };
 }) {
   const scroller = useRef<HTMLDivElement>(null);
@@ -62,6 +70,8 @@ export function TimelineView({
 
   const width = Math.max(1, model.duration) * pps + 120;
   const lanes = model.lanes;
+  const heights = compact ? HEIGHT_COMPACT : HEIGHT;
+  const headerW = compact ? HEADER_W_COMPACT : HEADER_W;
   // Overlapping clips on one lane get their own rows (the picture track stays one row: its overlaps are dissolves).
   const layout = useMemo(() => {
     const out: { top: number; h: number; rowH: number; rowOf: Map<string, number> }[] = [];
@@ -80,12 +90,12 @@ export function TimelineView({
         }
         rows = Math.max(1, ends.length);
       }
-      const h = rows === 1 ? HEIGHT[l.key] : Math.max(HEIGHT[l.key], rows * SUB_ROW);
+      const h = rows === 1 ? heights[l.key] : Math.max(heights[l.key], rows * SUB_ROW);
       const prev = out.at(-1);
-      out.push({ top: prev ? prev.top + prev.h : 26, h, rowH: h / rows, rowOf });
+      out.push({ top: prev ? prev.top + prev.h : RULER, h, rowH: h / rows, rowOf });
     }
     return out;
-  }, [lanes]);
+  }, [lanes, heights]);
   const total = layout.reduce((n, x) => n + x.h, 0);
 
   const edges = useMemo(() => {
@@ -168,13 +178,13 @@ export function TimelineView({
 
   return (
     <div className="flex min-h-0 flex-1 select-none overflow-y-auto overflow-x-hidden">
-      <div className="shrink-0 border-r border-[rgba(255,255,255,0.07)] bg-[#0d0e13]" style={{ width: HEADER_W }}>
-        <div className="h-[26px] border-b border-[rgba(255,255,255,0.07)]" />
+      <div className="shrink-0 border-r border-[rgba(255,255,255,0.05)] bg-[#0e0f13]" style={{ width: headerW }}>
+        <div className="border-b border-[rgba(255,255,255,0.05)]" style={{ height: RULER }} />
         {lanes.map((l, li) => (
-          <div key={l.key} className="flex items-center gap-2 border-b border-[rgba(255,255,255,0.07)] px-3" style={{ height: layout[li].h }}>
-            <span className="h-[70%] max-h-[30px] w-1 rounded-sm" style={{ background: COLOR[l.key].solid }} />
-            <span className="w-6 font-mono text-[11px] text-[#9aa0ad]">{l.code}</span>
-            <span className="truncate text-[12px] text-[#c6c9d1]">{labels.lanes[l.key] ?? l.name}</span>
+          <div key={l.key} className={`flex items-center border-b border-[rgba(255,255,255,0.035)] ${compact ? "gap-1.5 pl-2.5" : "gap-2.5 px-3"}`} style={{ height: layout[li].h }}>
+            <span className="w-[3px] rounded-sm" style={{ background: COLOR[l.key].solid, height: Math.min(44, layout[li].h - 18) }} />
+            <span className="w-[18px] font-mono text-[10.5px] text-[#6c717c]">{l.code}</span>
+            {!compact && <span className="truncate text-[12px] text-[#d6d9df]">{labels.lanes[l.key] ?? l.name}</span>}
           </div>
         ))}
       </div>
@@ -188,11 +198,11 @@ export function TimelineView({
         onPointerLeave={() => setHoverT(null)}
         onPointerUp={() => setScrubbing(false)}
       >
-        <div className="relative" style={{ width, height: 26 + total }}>
+        <div className="relative" style={{ width, height: RULER + total }}>
           {/* Ruler: click or drag to move the playhead. */}
           <div
-            className="absolute left-0 top-0 h-[26px] border-b border-[rgba(255,255,255,0.07)] bg-[#0d0e13]"
-            style={{ width }}
+            className="absolute left-0 top-0 border-b border-[rgba(255,255,255,0.05)] bg-[#0b0c0f]"
+            style={{ width, height: RULER }}
             onPointerDown={(e) => {
               (e.target as HTMLElement).setPointerCapture(e.pointerId);
               setScrubbing(true);
@@ -204,7 +214,7 @@ export function TimelineView({
             {ticks.map(({ t, major }) => (
               <div key={t} className="absolute bottom-0" style={{ left: t * pps }}>
                 <div className="w-px" style={{ height: major ? 10 : 5, background: major ? "#3a3e48" : "#262930" }} />
-                {major && <span className="absolute left-1 top-[-13px] font-mono text-[10px] text-[#6b6f7a]">{`0:${String(Math.round(t)).padStart(2, "0")}`}</span>}
+                {major && <span className="absolute left-1 top-[-15px] font-mono text-[10.5px] text-[#6c717c]">{`0:${String(Math.round(t)).padStart(2, "0")}`}</span>}
               </div>
             ))}
           </div>
@@ -214,7 +224,7 @@ export function TimelineView({
             return (
               <div
                 key={l.key}
-                className="absolute left-0 border-b border-[rgba(255,255,255,0.07)]"
+                className="absolute left-0 border-b border-[rgba(255,255,255,0.035)]"
                 style={{ top, height: h, width }}
                 onPointerDown={(e) => {
                   onSelect(null);
@@ -254,18 +264,18 @@ export function TimelineView({
 
           {/* Snap guide while dragging. */}
           {drag?.guide !== null && drag?.guide !== undefined && (
-            <div className="pointer-events-none absolute top-0 w-px bg-[#f5d76e]" style={{ left: drag.guide * pps, height: 26 + total }} />
+            <div className="pointer-events-none absolute top-0 w-px bg-[#f5d76e]" style={{ left: drag.guide * pps, height: RULER + total }} />
           )}
           {/* Razor preview line. */}
           {tool === "razor" && hoverT !== null && (
-            <div className="pointer-events-none absolute top-[26px] w-px bg-[rgba(240,122,107,0.9)]" style={{ left: hoverT * pps, height: total }} />
+            <div className="pointer-events-none absolute w-px bg-[rgba(240,122,107,0.9)]" style={{ top: RULER, left: hoverT * pps, height: total }} />
           )}
           {/* Playhead. */}
-          <div className="pointer-events-none absolute top-0" style={{ left: time * pps - 5, height: 26 + total }}>
-            <svg width="11" height="12" viewBox="0 0 11 12" className="absolute left-0 top-0" aria-hidden="true">
-              <path d="M0 0h11v7l-5.5 5L0 7z" fill="#e0a468" />
+          <div className="pointer-events-none absolute top-0" style={{ left: time * pps - 6, height: RULER + total }}>
+            <svg width="13" height="13" viewBox="0 0 13 13" className="absolute left-0 top-0" aria-hidden="true">
+              <path d="M0 0h13v7.8L6.5 13 0 7.8z" fill="#e0a468" />
             </svg>
-            <div className="absolute left-[5px] top-[10px] w-px bg-[#e0a468]" style={{ height: 26 + total - 10 }} />
+            <div className="absolute left-[6px] top-[11px] w-px bg-[#e0a468]" style={{ height: RULER + total - 11 }} />
           </div>
         </div>
       </div>
@@ -311,7 +321,9 @@ function ClipBlock({
   const peaks = clip.src && laneKey !== "story" ? previews.peaks[clip.src] : undefined;
   const bars = peaks ? waveformPath(peaks, mediaStart, len, w, h - 20) : null;
   const volumeY = clip.volume !== null && (clip.kind === "audio" || laneKey === "clip-sound") ? 14 + (1 - clip.volume) * (h - 24) : null;
-  const handle = "absolute top-0 z-10 h-full w-[7px] cursor-ew-resize";
+  const handle = `absolute top-0 z-10 h-full w-[7px] cursor-ew-resize ${selected ? "bg-[#eceef2]" : ""}`;
+  // A shot carries its name on a strip above its frames, so nothing is printed over the picture.
+  const strip = laneKey === "story" && h >= 56 ? 16 : 0;
   const inset = h >= 40 ? 4 : 2;
   const silent = clip.volume === 0;
   return (
@@ -323,8 +335,8 @@ function ClipBlock({
         width: w,
         height: h - inset * 2,
         opacity: silent && !selected ? 0.42 : 1,
-        background: laneKey === "story" ? "#1a1d24" : `rgba(${color.rgb},0.14)`,
-        boxShadow: `inset 0 0 0 1px rgba(${color.rgb},${laneKey === "story" ? 0.25 : 0.55})${selected ? ", 0 0 0 2px #e0a468" : ""}`,
+        background: laneKey === "story" ? "#1a2433" : `rgba(${color.rgb},0.15)`,
+        boxShadow: selected ? "inset 0 0 0 2px #eceef2" : `inset 0 0 0 1px rgba(${color.rgb},${laneKey === "story" ? 0.5 : 0.5})`,
       }}
       onPointerDown={(e) => onDown(e, clip, "move")}
       onPointerMove={onMove}
@@ -335,7 +347,7 @@ function ClipBlock({
       tabIndex={-1}
     >
       {frames.length > 0 && (
-        <div className="absolute inset-0 flex">
+        <div className="absolute inset-x-0 bottom-0 flex" style={{ top: strip }}>
           {frames.map((src, i) => (
             <div key={i} className="h-full flex-1" style={{ backgroundImage: `url(${src})`, backgroundSize: "auto 100%", backgroundRepeat: "repeat-x" }} />
           ))}
@@ -349,15 +361,15 @@ function ClipBlock({
       {volumeY !== null && <div className="pointer-events-none absolute left-0 right-0 h-px bg-[#f4e3cf]" style={{ top: volumeY }} />}
       {w > 30 && (
         <span
-          className="pointer-events-none absolute left-1 top-1 max-w-[calc(100%-8px)] truncate rounded-[4px] px-1.5 text-[10px]"
-          style={{ background: laneKey === "story" ? "rgba(7,8,11,0.72)" : "transparent", color: laneKey === "story" ? "#ecedf1" : color.solid }}
+          className={`pointer-events-none absolute max-w-[calc(100%-8px)] truncate text-[10.5px] ${strip ? "left-[7px] top-[2px]" : laneKey === "story" ? "left-1 top-1 rounded-[4px] bg-[rgba(7,8,11,0.72)] px-1.5" : "left-[7px] top-[3px]"}`}
+          style={{ color: laneKey === "story" ? (selected ? "#eceef2" : "#c8d6ea") : color.solid }}
         >
           {silent && (
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" className="mr-1 inline-block align-[-1px]" aria-hidden="true">
               <path d="M11 5 6 9H2v6h4l5 4zM22 9l-6 6M16 9l6 6" />
             </svg>
           )}
-          {laneKey === "titles" ? `T  ${clip.label}` : clip.label}
+          {clip.label}
         </span>
       )}
       <div className={`${handle} left-0`} onPointerDown={(e) => onDown(e, clip, "start")} onPointerMove={onMove} onPointerUp={onUp} />
