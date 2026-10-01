@@ -147,7 +147,7 @@ export function plainSystem(setup: ChatSetup): string {
     setup.system[0]
       .replace(/\nDOCUMENTS \(THE SIDE PANEL\)[\s\S]*?\n\nPICTURES AND VIDEOS/, "\n\nPICTURES AND VIDEOS")
       .replace(/\nMEMORY\n[\s\S]*?\n\nHOW YOU WRITE/, "\n\nHOW YOU WRITE"),
-    "In this answer you have no tools: no web search, documents, notes or render cards. Answer from the conversation, its files and what you know. If the person needs a search, a document, a picture or to be taken to a page, say that Claude (picked in the brain menu below the text box) can do it.",
+    "In this answer you have no tools: no web search, documents, notes or render cards. Answer from the conversation, its files and what you know. If the person needs a search, a document, a picture or to be taken to a page, say that Luna or Claude (picked in the brain menu below the text box) can do it.",
     setup.system[1] ?? "",
     setup.system[2] ?? "",
   ]

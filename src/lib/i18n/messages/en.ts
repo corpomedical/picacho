@@ -5544,6 +5544,8 @@ const en = {
     send: "Send",
     stop: "Stop",
     brainMenu: "Choose the brain",
+    brainLuna: "Luna",
+    brainLunaSub: "GPT-6 Luna, the everyday brain. Searches the web, writes documents, remembers, prepares pictures. Think harder answers on Claude Opus 5.5.",
     brainClaude: "Claude",
     brainClaudeSub: "Sonnet 5, or Opus 5.5 when thinking harder. Searches the web, writes documents, remembers, prepares pictures.",
     brainGpt: "GPT",

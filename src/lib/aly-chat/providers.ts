@@ -25,7 +25,7 @@ export class ProviderError extends Error {
   }
 }
 
-function kindForStatus(status: number): ProviderError["kind"] {
+export function kindForStatus(status: number): ProviderError["kind"] {
   if (status === 401 || status === 403) return "unavailable";
   if (status === 429 || status >= 500) return "busy";
   return "refused";

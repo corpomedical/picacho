@@ -35,12 +35,24 @@ describe("costs and units", () => {
   });
 
   it("does not double-count the cached part of GPT's and Gemini's totals", () => {
-    const g = fromOpenAI({ prompt_tokens: 10000, completion_tokens: 1000, prompt_tokens_details: { cached_tokens: 8000 } });
-    expect(g).toEqual({ input: 2000, cached: 8000, cacheWrite: 0, output: 1000 });
-    // 2000 × $2/M + 8000 × $0.20/M + 1000 × $10/M
-    expect(costUsd(g, "gpt-6-sol")).toBeCloseTo(0.004 + 0.0016 + 0.01, 6);
+    const g = fromOpenAI({ prompt_tokens: 10000, completion_tokens: 1000, prompt_tokens_details: { cached_tokens: 8000, cache_write_tokens: 1500 } });
+    expect(g).toEqual({ input: 500, cached: 8000, cacheWrite: 1500, output: 1000 });
+    // GPT-6 Sol, read 2026-10-01: "| gpt-6-sol | $2.00 | $0.20 | $2.50 | $10.00 |…"
+    // 500 × $2/M + 8000 × $0.20/M + 1500 × $2.50/M + 1000 × $10/M
+    expect(costUsd(g, "gpt-6-sol")).toBeCloseTo(0.001 + 0.0016 + 0.00375 + 0.01, 6);
     const m = fromGemini({ promptTokenCount: 10000, cachedContentTokenCount: 4000, candidatesTokenCount: 300, thoughtsTokenCount: 200 });
     expect(m).toEqual({ input: 6000, cached: 4000, cacheWrite: 0, output: 500 });
+  });
+
+  it("prices GPT-6 Sol's uncached input as written when the API leaves the write count out", () => {
+    const g = fromOpenAI({ prompt_tokens: 10000, completion_tokens: 1000, prompt_tokens_details: { cached_tokens: 8000 } });
+    expect(g).toEqual({ input: 0, cached: 8000, cacheWrite: 2000, output: 1000 });
+    // 2000 × $2.50/M + 8000 × $0.20/M + 1000 × $10/M: never less than OpenAI's bill
+    expect(costUsd(g, "gpt-6-sol")).toBeCloseTo(0.005 + 0.0016 + 0.01, 6);
+    // A count larger than the uncached part is capped, never negative.
+    expect(fromOpenAI({ prompt_tokens: 100, prompt_tokens_details: { cached_tokens: 90, cache_write_tokens: 50 } })).toEqual({ input: 0, cached: 90, cacheWrite: 10, output: 0 });
+    // Past 272K input tokens the long-context row applies: "$4.00 | $0.40 | $5.00 | $15.00".
+    expect(costUsd({ input: 300_000, cached: 0, cacheWrite: 0, output: 0 }, "gpt-6-sol")).toBeCloseTo(1.2, 9);
   });
 
   it("prices a model it doesn't know as the dearest, never as free", () => {
@@ -396,7 +408,8 @@ describe("providers", () => {
       streamGpt({ messages: [{ role: "system", content: "s" }], harder: true, maxOutput: 100, signal: new AbortController().signal, apiKey: "k", fetchFn }),
     );
     expect(events.map((e) => e.text).join("")).toBe("Hello");
-    expect(result).toEqual({ text: "Hello", model: "gpt-6-sol", usage: { input: 60, cached: 40, cacheWrite: 0, output: 20 } });
+    // No cache_write_tokens in the usage: every uncached token is counted as written (the safe side).
+    expect(result).toEqual({ text: "Hello", model: "gpt-6-sol", usage: { input: 0, cached: 40, cacheWrite: 60, output: 20 } });
     expect(sent!.url).toBe("https://api.openai.com/v1/chat/completions");
     expect(sent!.body).toMatchObject({ model: "gpt-6-sol", reasoning_effort: "high", stream: true, store: false });
   });

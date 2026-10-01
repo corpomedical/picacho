@@ -134,6 +134,9 @@
   border-radius: 50%;
   flex-shrink: 0;
 }
+.luna {
+  background: #b9a7dc;
+}
 .claude {
   background: #d9a07a;
 }

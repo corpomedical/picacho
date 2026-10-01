@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { createHash } from "crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { readProducerGrant } from "@/lib/producer/enabled";
@@ -18,11 +19,13 @@ import { isNativeApp } from "@/lib/native/server";
 import { isAlyChatEnabled } from "@/lib/aly-chat/enabled";
 import {
   BRAINS,
+  BRAIN_LABEL,
   BRAKE_USD,
+  EVERYDAY_BRAIN,
+  LUNA_BRAKE_USD,
   MAX_OUTPUT,
   MAX_TOOL_ROUNDS,
   NO_USAGE,
-  TITLE_MODEL,
   WEB_SEARCH_USD,
   addUsage,
   costUsd,
@@ -30,17 +33,21 @@ import {
   isBrainChoice,
   modelFor,
   reserveUnits,
+  routeBrain,
   unitsForCost,
   type Brain,
   type BrainChoice,
   type Usage,
 } from "@/lib/aly-chat/brains";
 import {
+  castNote,
   fileIdsIn,
   toClaude,
   toGemini,
+  toLuna,
   toOpenAI,
   type AssistantContent,
+  type CastMember,
   type ClaudeMessage,
   type FileLoader,
   type Lane,
@@ -51,6 +58,7 @@ import { lightTurnNote, newChatSetup, plainSystem, turnNote, type ChatSetup } fr
 import { isDocTool, runDocTool, type Doc } from "@/lib/aly-chat/docs";
 import { MAX_CHAT_FILE_BYTES, MAX_FILES_PER_MESSAGE } from "@/lib/aly-chat/file-types";
 import { ProviderError, streamGemini, streamGpt } from "@/lib/aly-chat/providers";
+import { lunaPrompt, lunaText, lunaTools, lunaTurn } from "@/lib/aly-chat/luna";
 import {
   appendRow,
   createChat,
@@ -75,11 +83,12 @@ import {
 // changed (lib/aly-chat/history.ts says why: prompt caches and Opus 5.5's
 // preserved thinking both need the exact same prefix every time).
 //
-// THREE BRAINS. Claude (Sonnet 5; "Think harder" = Opus 5.5) has Aly's
-// hands: web search, memory, account, renders, prepared sends, Press Tour,
-// documents. GPT-6 Sol and Gemini 3.8 Flash answer from the conversation and
-// its files. "Ask all three" runs the three at once; the person keeps one
-// and the chat continues from it.
+// FOUR BRAINS. Luna (GPT-6 Luna, the everyday brain since 2026-10-01,
+// lib/aly-chat/luna.ts) and Claude (Sonnet 5; "Think harder" = Opus 5.5, on
+// Luna too) have Aly's hands: web search, memory, account, renders, prepared
+// sends, Press Tour, documents, pages. GPT-6 Sol and Gemini 3.8 Flash answer
+// from the conversation and its files. "Ask all three" runs Claude, GPT and
+// Gemini at once; the person keeps one and the chat continues from it.
 //
 // ONE ALLOWANCE. Every turn draws on the plan's assistant allowance
 // (PLAN_CHAT_UNIT_LIMITS, shared with the composer's chat and the lamp),
@@ -137,7 +146,7 @@ export async function POST(request: NextRequest) {
   if (newFileIds.length > MAX_FILES_PER_MESSAGE) {
     return NextResponse.json({ error: `Up to ${MAX_FILES_PER_MESSAGE} files a message.` }, { status: 400 });
   }
-  let choice: BrainChoice = isBrainChoice(body?.brain) ? body.brain : "claude";
+  let choice: BrainChoice = isBrainChoice(body?.brain) ? body.brain : EVERYDAY_BRAIN;
   let harder = body?.harder === true;
 
   if (await rateLimited(user.id, "aly-chat", 60, 12)) {
@@ -173,8 +182,11 @@ export async function POST(request: NextRequest) {
     // The free allowance is about a dozen everyday messages: thinking harder
     // or three brains at once would eat it in two.
     harder = false;
-    if (choice === "all") choice = "claude";
+    if (choice === "all") choice = EVERYDAY_BRAIN;
   }
+  // "Think harder" on Luna answers on Claude Opus 5.5, in Claude's lane (the
+  // page sends it there already; this is the same rule, brains.ts).
+  ({ choice, harder } = routeBrain(choice, harder, false));
   const cap = granted ? PLAN_CHAT_UNIT_LIMITS.elite : isFree ? FREE_CHAT_UNIT_LIMIT : PLAN_CHAT_UNIT_LIMITS[plan];
   const since = isFree && !granted ? new Date(0).toISOString() : monthlyWindowStart(profile?.current_period_start).toISOString();
 
@@ -261,10 +273,13 @@ export async function POST(request: NextRequest) {
   const lightNote = setup.light
     ? lightTurnNote({ files: newRefs.length, video: body?.lightNote && typeof body.lightNote === "object" ? body.lightNote.video : null })
     : "";
+  // Their characters with ids, so prepare_send can attach one (history.ts
+  // castNote: in full when the list changed since the last note in this chat).
+  const cast = await loadCast(supabase, user.id);
   const userContent: UserContent = {
     text,
     files: newRefs,
-    note: lightNote ? `${turnNote(new Date(), timeZone)}\n${lightNote}` : turnNote(new Date(), timeZone),
+    note: [turnNote(new Date(), timeZone), cast ? castNote(cast, rows) : "", lightNote].filter(Boolean).join("\n"),
   };
   const userSeq = (rows[rows.length - 1]?.seq ?? -1) + 1;
   const savedUser = await appendRow(admin, {
@@ -323,6 +338,50 @@ export async function POST(request: NextRequest) {
             start: (card: StartableCard) => startCardRender(supabase, user.id, { ...card, id: `${theChat}:${card.id}` }),
           };
       const results: Partial<Record<Brain, Lane>> = {};
+
+      // ---- One tool call, from either brain with Aly's hands ------------------
+      // Run by the route's own runners, with what it does on the page: a
+      // document opens in the panel, a card appears, a page opens, a started
+      // card follows its take. Returns what the brain is told.
+      const runAlyTool = async (c: ToolCall): Promise<{ content: unknown; isError: boolean }> => {
+        if (upstream.signal.aborted) throw new Error("aly-chat: stopped during the tool round");
+        if (isDocTool(c.name)) {
+          try {
+            const o = await runDocTool(docsStore(admin, user.id, theChat), c.name, c.input);
+            if (o.doc) {
+              const i = docs.findIndex((d) => d.id === o.doc!.id);
+              if (i >= 0) docs[i] = o.doc;
+              else docs.push(o.doc);
+              send("doc", o.doc);
+            }
+            return { content: o.text, isError: o.isError };
+          } catch (err) {
+            console.error("aly-chat: document tool failed", err);
+            return { content: "The document couldn't be saved just now. Put it in the chat instead.", isError: true };
+          }
+        }
+        const o = await runTool({ supabase, admin, userId: user.id, topUpUnits: reserved.topUp, pageAccess, hands }, c);
+        if (o.card) {
+          cards.push(o.card);
+          send("card", o.card);
+        }
+        // open_page: the chat view hands it to the pointer, which opens the page (aly-pointer.tsx).
+        if (o.navigate) send("navigate", o.navigate);
+        if (o.started) {
+          // This answer's card keeps its take when the answer is saved; an
+          // earlier card's take is written onto its saved message, as the
+          // card's own Make it does (linkRender), so a reload shows it.
+          const mine = cards.find((k) => k.id === o.started!.cardId);
+          if (mine) mine.generationId = o.started.generationId;
+          else await rememberStarted(admin, user.id, theChat, rows, o.started.cardId, o.started.generationId);
+          send("started", o.started);
+        }
+        // In Picacho Light the page starts the card's render the moment it
+        // arrives (the person's own send, through runGeneration): Aly is
+        // told so, not that it waits for a button.
+        if (lightStartsNow && o.card && o.card.kind !== "ad") return { content: lightStartedText(o.card), isError: false };
+        return { content: o.result.content, isError: o.result.is_error === true };
+      };
 
       // ---- Claude, with Aly's tools ------------------------------------------
       const runClaude = async (): Promise<Lane> => {
@@ -428,47 +487,44 @@ export async function POST(request: NextRequest) {
 
           const outcomes: unknown[] = [];
           for (const c of calls) {
-            if (upstream.signal.aborted) throw new Error("aly-chat: stopped during the tool round");
-            if (isDocTool(c.name)) {
-              try {
-                const o = await runDocTool(docsStore(admin, user.id, theChat), c.name, c.input);
-                if (o.doc) {
-                  const i = docs.findIndex((d) => d.id === o.doc!.id);
-                  if (i >= 0) docs[i] = o.doc;
-                  else docs.push(o.doc);
-                  send("doc", o.doc);
-                }
-                outcomes.push({ type: "tool_result", tool_use_id: c.id, content: o.text, ...(o.isError ? { is_error: true } : {}) });
-              } catch (err) {
-                console.error("aly-chat: document tool failed", err);
-                outcomes.push({ type: "tool_result", tool_use_id: c.id, content: "The document couldn't be saved just now. Put it in the chat instead.", is_error: true });
-              }
-              continue;
-            }
-            const o = await runTool({ supabase, admin, userId: user.id, topUpUnits: reserved.topUp, pageAccess, hands }, c);
-            if (o.card) {
-              cards.push(o.card);
-              send("card", o.card);
-            }
-            // open_page: the chat view hands it to the pointer, which opens the page (aly-pointer.tsx).
-            if (o.navigate) send("navigate", o.navigate);
-            if (o.started) {
-              // This answer's card keeps its take when the answer is saved; an
-              // earlier card's take is written onto its saved message, as the
-              // card's own Make it does (linkRender), so a reload shows it.
-              const mine = cards.find((k) => k.id === o.started!.cardId);
-              if (mine) mine.generationId = o.started.generationId;
-              else await rememberStarted(admin, user.id, theChat, rows, o.started.cardId, o.started.generationId);
-              send("started", o.started);
-            }
-            // In Picacho Light the page starts the card's render the moment it
-            // arrives (the person's own send, through runGeneration): Aly is
-            // told so, not that it waits for a button.
-            outcomes.push(lightStartsNow && o.card && o.card.kind !== "ad" ? lightStarted(o.result, o.card) : o.result);
+            const r = await runAlyTool(c);
+            outcomes.push({ type: "tool_result", tool_use_id: c.id, content: r.content, ...(r.isError ? { is_error: true } : {}) });
           }
           turn.push({ role: "user", content: outcomes });
         }
         return { text, model, claude: turn };
+      };
+
+      // ---- Luna, with Aly's tools (lib/aly-chat/luna.ts) ------------------------
+      // Everyday only: "Think harder" on Luna went to Claude's lane (routeBrain).
+      const runLuna = async (): Promise<Lane> => {
+        const { instructions, head } = lunaPrompt(setup.system);
+        const gen = lunaTurn({
+          instructions,
+          history: [...head, ...toLuna(rows, load)],
+          tools: lunaTools(setup.tools),
+          maxOutput: MAX_OUTPUT.everyday,
+          brakeUsd: LUNA_BRAKE_USD,
+          maxRounds: MAX_TOOL_ROUNDS,
+          signal: upstream.signal,
+          safetyId: createHash("sha256").update(`picacho:${user.id}`).digest("hex").slice(0, 32),
+          onCost: (usd, usage) => {
+            cost.usd += usd;
+            cost.usage = addUsage(cost.usage, usage);
+          },
+          runTool: (c) => runAlyTool(c),
+        });
+        cost.started = true;
+        let step = await gen.next();
+        while (!step.done) {
+          const ev = step.value;
+          if (ev.type === "text") send("delta", { lane: "luna", text: ev.text });
+          else send("status", { lane: "luna", text: isDocTool(ev.name) ? "Writing the document" : toolStatus(ev.name) });
+          step = await gen.next();
+        }
+        const r = step.value;
+        if (r.sources.length) send("sources", { lane: "luna", sources: r.sources });
+        return { text: r.text, model: r.model, openai: r.items, ...(r.sources.length ? { sources: r.sources } : {}) };
       };
 
       // ---- GPT and Gemini: words and files, no tools --------------------------
@@ -498,7 +554,7 @@ export async function POST(request: NextRequest) {
         await Promise.all(
           lanes.map(async (brain) => {
             try {
-              const lane = brain === "claude" ? await runClaude() : await runOther(brain);
+              const lane = brain === "claude" ? await runClaude() : brain === "luna" ? await runLuna() : await runOther(brain);
               results[brain] = lane;
               if (lane.text) deliveredText = true;
               send("lane_done", { lane: brain, model: lane.model });
@@ -509,7 +565,7 @@ export async function POST(request: NextRequest) {
               console.error(`aly-chat: ${brain} failed (status ${status ?? "none"}):`, err instanceof Error ? err.message.slice(0, 300) : err);
               const message =
                 kind === "not_configured"
-                  ? `${brain === "gpt" ? "GPT" : "Gemini"} isn't switched on yet. Pick another brain.`
+                  ? `${BRAIN_LABEL[brain]} isn't switched on yet. Pick another brain.`
                   : kind === "refused"
                     ? "That brain declined to answer this one. Try another."
                     : "That didn't go through. Try again.";
@@ -540,10 +596,11 @@ export async function POST(request: NextRequest) {
           if (!saved.ok) console.error("aly-chat: answer save failed", saved.error);
         }
 
-        // A new chat gets a title from its first exchange (Haiku 4.5, a few
-        // hundred tokens: about $0.0005, inside this turn's charge).
+        // A new chat gets a title from its first exchange (GPT-6 Luna with no
+        // reasoning, TITLE_MODEL: a few hundred tokens, about $0.00003, inside
+        // this turn's charge).
         if (isNew && firstOk) {
-          const title = await titleFor(client, text || newRefs.map((f) => f.name).join(", "), results[firstOk]!.text).catch(() => null);
+          const title = await titleFor(text || newRefs.map((f) => f.name).join(", "), results[firstOk]!.text).catch(() => null);
           if (title) {
             cost.usd += title.cost;
             await setTitle(admin, user.id, theChat, title.text);
@@ -623,35 +680,39 @@ export async function POST(request: NextRequest) {
   });
 }
 
-/** The prepare_send outcome as a Light chat reads it: started, not waiting. */
-function lightStarted(result: unknown, card: PreparedSend): unknown {
-  const what = card.kind === "video" ? `a ${card.seconds ? `${card.seconds}-second ` : ""}video` : "a picture";
-  return {
-    ...(result as object),
-    content: `Started "${card.label}" (${what}${card.characterName ? `, with ${card.characterName}` : ""}, ${card.credits} credit${card.credits === 1 ? "" : "s"}). It is being made now and appears in the chat by itself when it's ready.`,
-  };
+/** Their saved characters, oldest first (a stable order, so an unchanged list reads as unchanged); null if they couldn't be read. */
+async function loadCast(supabase: Awaited<ReturnType<typeof createClient>>, userId: string): Promise<CastMember[] | null> {
+  const { data, error } = await supabase
+    .from("character_profiles")
+    .select("id, name")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true })
+    .limit(50);
+  if (error) {
+    console.error("aly-chat: characters unavailable —", error.message);
+    return null;
+  }
+  return (data ?? []).map((c) => ({ id: String(c.id), name: String(c.name ?? "") }));
 }
 
-async function titleFor(client: Anthropic, asked: string, answered: string): Promise<{ text: string; cost: number } | null> {
-  const res = await client.messages.create(
-    {
-      model: TITLE_MODEL,
-      max_tokens: 30,
-      system:
-        "Name this chat in 2 to 6 words, in the language the person wrote in, the way a chat app's sidebar would. Reply with the name only: no quotes, no full stop.",
-      messages: [
-        {
-          role: "user",
-          content: `The person wrote:\n${asked.slice(0, 1500)}\n\nThe answer began:\n${answered.slice(0, 600)}`,
-        },
-      ],
-    },
-    { timeout: 15_000, maxRetries: 0 },
-  );
-  const block = res.content.find((b) => b.type === "text");
-  const t = block && block.type === "text" ? block.text.trim().replace(/^["'“”]+|["'“”.]+$/g, "").slice(0, 80) : "";
+/** The prepare_send outcome as a Light chat reads it: started, not waiting. */
+function lightStartedText(card: PreparedSend): string {
+  const what = card.kind === "video" ? `a ${card.seconds ? `${card.seconds}-second ` : ""}video` : "a picture";
+  return `Started "${card.label}" (${what}${card.characterName ? `, with ${card.characterName}` : ""}, ${card.credits} credit${card.credits === 1 ? "" : "s"}). It is being made now and appears in the chat by itself when it's ready.`;
+}
+
+/** A new chat's name, from its first exchange (TITLE_MODEL, GPT-6 Luna with no reasoning). */
+async function titleFor(asked: string, answered: string): Promise<{ text: string; cost: number } | null> {
+  const res = await lunaText({
+    instructions:
+      "Name this chat in 2 to 6 words, in the language the person wrote in, the way a chat app's sidebar would. Reply with the name only: no quotes, no full stop.",
+    input: `The person wrote:\n${asked.slice(0, 1500)}\n\nThe answer began:\n${answered.slice(0, 600)}`,
+    maxOutput: 40,
+    signal: AbortSignal.timeout(15_000),
+  });
+  const t = res.text.trim().replace(/^["'“”]+|["'“”.]+$/g, "").slice(0, 80);
   if (!t) return null;
-  return { text: t, cost: costUsd(fromClaude(res.usage), TITLE_MODEL) };
+  return { text: t, cost: costUsd(res.usage, res.model) };
 }
 
 /** An earlier card's take, written onto the saved message that holds the card (linkRender's write, done here). */

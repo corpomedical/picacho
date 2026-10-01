@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
 import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
-import { BRAINS, isBrain, isBrainChoice, modelLabel, type Brain, type BrainChoice } from "@/lib/aly-chat/brains";
+import { BRAINS, EVERYDAY_BRAIN, isBrain, isBrainChoice, modelLabel, routeBrain, type Brain, type BrainChoice } from "@/lib/aly-chat/brains";
 import { ACCEPT_ATTR, MAX_FILES_PER_MESSAGE } from "@/lib/aly-chat/file-types";
 import type { FileRef, Source } from "@/lib/aly-chat/history";
 import type { Doc } from "@/lib/aly-chat/docs";
@@ -61,7 +61,7 @@ export type ChatViewProps = {
   name: string;
   firstName: string | null;
   brains: Record<Brain, boolean>;
-  /** Free accounts: Claude only, no Think harder. */
+  /** Free accounts: no Ask all three, no Think harder. */
   limited: boolean;
   project: { id: string; name: string } | null;
   projects: { id: string; name: string }[];
@@ -74,14 +74,17 @@ export type ChatViewProps = {
   light?: LightChatFrame;
 };
 
-const PREF_KEY = "picacho.alyChat.brain";
+// v2 (2026-10-01): Luna became the everyday brain. A pick saved under the
+// old key was mostly the old default (Claude) saved by a Think harder tap, so
+// every device starts once on Luna and remembers what is picked from there.
+const PREF_KEY = "picacho.alyChat.brain.v2";
 
 function readPref(): { brain: BrainChoice; harder: boolean } {
   try {
     const raw = JSON.parse(localStorage.getItem(PREF_KEY) ?? "null") as { brain?: unknown; harder?: unknown } | null;
-    return { brain: isBrainChoice(raw?.brain) ? raw.brain : "claude", harder: raw?.harder === true };
+    return { brain: isBrainChoice(raw?.brain) ? raw.brain : EVERYDAY_BRAIN, harder: raw?.harder === true };
   } catch {
-    return { brain: "claude", harder: false };
+    return { brain: EVERYDAY_BRAIN, harder: false };
   }
 }
 
@@ -131,13 +134,18 @@ export function ChatView(props: ChatViewProps) {
   const [messages, setMessages] = useState<ViewMsg[]>(props.initial);
   const [docs, setDocs] = useState<Doc[]>(props.docs);
   const [panelDoc, setPanelDoc] = useState<string | null>(null);
-  const [brain, setBrain] = useState<BrainChoice>("claude");
+  const [brain, setBrain] = useState<BrainChoice>(EVERYDAY_BRAIN);
   const [harder, setHarder] = useState(false);
   const [text, setText] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [menu, setMenu] = useState(false);
+  // The brain menu opens upwards; with five brains it can be taller than the
+  // room above the box (a short window, the box in the middle of a new
+  // chat), so it is held to that room and scrolls inside it.
+  const [menuRoom, setMenuRoom] = useState<number | null>(null);
+  const brainButtonRef = useRef<HTMLButtonElement>(null);
   const [dragging, setDragging] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -145,12 +153,14 @@ export function ChatView(props: ChatViewProps) {
   const abortRef = useRef<AbortController | null>(null);
   const stickRef = useRef(true);
 
-  // The brain and Think harder last between visits on this device.
+  // The brain and Think harder last between visits on this device. A brain
+  // this server can't reach falls back to the everyday one, then Claude.
   useEffect(() => {
     const p = readPref();
-    const b = props.limited && (p.brain === "all" || !isBrain(p.brain)) ? "claude" : p.brain;
+    const b = props.limited && (p.brain === "all" || !isBrain(p.brain)) ? EVERYDAY_BRAIN : p.brain;
+    const fallback: Brain = props.brains[EVERYDAY_BRAIN] ? EVERYDAY_BRAIN : "claude";
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setBrain(b === "all" || props.brains[b] ? b : "claude");
+    setBrain(b === "all" || props.brains[b] ? b : fallback);
     setHarder(props.limited ? false : p.harder);
   }, [props.limited, props.brains]);
 
@@ -274,7 +284,9 @@ export function ChatView(props: ChatViewProps) {
     setBusy(true);
     stickRef.current = true;
 
-    const choice: BrainChoice = props.limited && brain === "all" ? "claude" : brain;
+    // Think harder on Luna is Claude Opus 5.5, in Claude's lane (brains.ts
+    // routeBrain, the route's own rule); a free account sends no "all".
+    const { choice, harder: thinkHarder } = routeBrain(brain, harder, props.limited);
     const lanes: Brain[] = choice === "all" ? [...BRAINS] : [choice];
     const refs: FileRef[] = ready.map((f) => ({ id: f.id!, name: f.name, mime: "", kind: "text" }));
     const stamp = Date.now();
@@ -314,7 +326,7 @@ export function ChatView(props: ChatViewProps) {
           text: words,
           fileIds: ready.map((f) => f.id),
           brain: choice,
-          harder: props.limited ? false : harder,
+          harder: thinkHarder,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           // From Picacho Light: a new chat gets Light's setup, and her video
           // renders use Light's own engine and length.
@@ -470,7 +482,7 @@ export function ChatView(props: ChatViewProps) {
   );
 
   const brainName = (b: BrainChoice) =>
-    b === "claude" ? c.brainClaude : b === "gpt" ? c.brainGpt : b === "gemini" ? c.brainGemini : c.brainAll;
+    b === "luna" ? c.brainLuna : b === "claude" ? c.brainClaude : b === "gpt" ? c.brainGpt : b === "gemini" ? c.brainGemini : c.brainAll;
 
   const composer = (
     <div className={`${props.light ? "pl-box rounded-[28px]" : styles.box} relative`}>
@@ -558,10 +570,22 @@ export function ChatView(props: ChatViewProps) {
         <div className="relative">
           <button
             type="button"
+            ref={brainButtonRef}
             aria-haspopup="menu"
             aria-expanded={menu}
             title={c.brainMenu}
-            onClick={() => setMenu((v) => !v)}
+            onClick={() => {
+              const top = brainButtonRef.current?.getBoundingClientRect().top;
+              if (typeof top === "number") {
+                // The menu's foot sits 8 px above the button's top (bottom-11 on a 36 px
+                // button); its head stays below the phone's top bar when that shows,
+                // measured as the lamp measures it (movable-lamp.tsx).
+                const bar = document.querySelector("[data-mobile-topbar]")?.getBoundingClientRect();
+                const ceiling = bar && bar.height > 0 && bar.top <= 1 ? bar.bottom : 0;
+                setMenuRoom(Math.max(160, Math.floor(top - ceiling - 16)));
+              }
+              setMenu((v) => !v);
+            }}
             className="flex h-9 items-center gap-2 rounded-full border border-atelier-rule px-3 text-[13px] text-atelier-ink hover:bg-atelier-ink/[0.05]"
           >
             {brain === "all" ? (
@@ -581,11 +605,23 @@ export function ChatView(props: ChatViewProps) {
           {menu && (
             <>
               <button type="button" aria-hidden="true" tabIndex={-1} className="fixed inset-0 z-40 cursor-default" onClick={() => setMenu(false)} />
-              <div role="menu" className="absolute bottom-11 left-0 z-50 w-[300px] rounded-[20px] border border-atelier-rule bg-atelier-paper p-1.5 shadow-2xl">
-                {(["claude", "gpt", "gemini", "all"] as BrainChoice[]).map((b) => {
+              <div
+                role="menu"
+                style={menuRoom ? { maxHeight: menuRoom } : undefined}
+                className="absolute bottom-11 left-0 z-50 w-[300px] overflow-y-auto overscroll-contain rounded-[20px] border border-atelier-rule bg-atelier-paper p-1.5 shadow-2xl"
+              >
+                {(["luna", "claude", "gpt", "gemini", "all"] as BrainChoice[]).map((b) => {
                   const off = b === "all" ? props.limited : !props.brains[b];
                   const sub =
-                    b === "claude" ? c.brainClaudeSub : b === "gpt" ? c.brainGptSub : b === "gemini" ? c.brainGeminiSub : c.brainAllSub;
+                    b === "luna"
+                      ? c.brainLunaSub
+                      : b === "claude"
+                        ? c.brainClaudeSub
+                        : b === "gpt"
+                          ? c.brainGptSub
+                          : b === "gemini"
+                            ? c.brainGeminiSub
+                            : c.brainAllSub;
                   return (
                     <button
                       key={b}
@@ -902,7 +938,7 @@ function Answer({
   const c = t.alyChat;
   const lanes = (Object.keys(m.lanes) as Brain[]).filter(isBrain);
   const compare = lanes.length > 1;
-  const brainName = (b: Brain) => (b === "claude" ? c.brainClaude : b === "gpt" ? c.brainGpt : c.brainGemini);
+  const brainName = (b: Brain) => (b === "luna" ? c.brainLuna : b === "claude" ? c.brainClaude : b === "gpt" ? c.brainGpt : c.brainGemini);
 
   const laneBody = (l: ViewLane) => (
     <>

@@ -5246,6 +5246,8 @@ const pt = {
     send: "Enviar",
     stop: "Parar",
     brainMenu: "Escolha o cérebro",
+    brainLuna: "Luna",
+    brainLunaSub: "GPT-6 Luna, o cérebro do dia a dia. Pesquisa na web, escreve documentos, lembra e prepara imagens. “Pensar mais a fundo” responde com o Claude Opus 5.5.",
     brainClaude: "Claude",
     brainClaudeSub: "Sonnet 5, ou Opus 5.5 ao pensar mais a fundo. Pesquisa na web, escreve documentos, lembra e prepara imagens.",
     brainGpt: "GPT",

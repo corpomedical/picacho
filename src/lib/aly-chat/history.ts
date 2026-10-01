@@ -30,6 +30,8 @@ export type Lane = {
   model: string;
   /** Claude's own messages for this turn (assistant ↔ tool results), verbatim. */
   claude?: ClaudeMessage[];
+  /** Luna's own items for this turn (reasoning, tool calls and outputs, her message), verbatim (luna.ts). */
+  openai?: unknown[];
   sources?: Source[];
   error?: string;
 };
@@ -179,6 +181,49 @@ export function toOpenAI(system: string, rows: StoredRow[], load: FileLoader): O
 }
 
 // ---------------------------------------------------------------------------
+// Luna (the Responses API, luna.ts). Like Claude, she gets her own turns
+// back exactly as she wrote them (her reasoning, tool calls, our tool
+// outputs, her message); a turn another brain wrote reaches her as its words.
+
+function lunaUserParts(c: UserContent, load: FileLoader): unknown[] {
+  const parts: unknown[] = [];
+  for (const ref of c.files) {
+    const f = load(ref.id);
+    if (!f) {
+      parts.push({ type: "input_text", text: `${fileLabel(ref)} (no longer available)` });
+    } else if (ref.kind === "pdf" && f.base64) {
+      parts.push({ type: "input_file", filename: ref.name, file_data: `data:application/pdf;base64,${f.base64}` });
+    } else if (ref.kind === "image" && f.base64) {
+      parts.push({ type: "input_text", text: fileLabel(ref) });
+      parts.push({ type: "input_image", image_url: `data:${ref.mime};base64,${f.base64}` });
+    } else {
+      parts.push({ type: "input_text", text: `${fileLabel(ref)}\n<file name="${ref.name}">\n${f.text ?? ""}\n</file>` });
+    }
+  }
+  if (c.note) parts.push({ type: "input_text", text: c.note });
+  parts.push({ type: "input_text", text: c.text || "(See the attached files.)" });
+  return parts;
+}
+
+export function toLuna(rows: StoredRow[], load: FileLoader): unknown[] {
+  const out: unknown[] = [];
+  for (const row of rows) {
+    if (row.role === "user") {
+      const parts = lunaUserParts(row.content, load);
+      const last = out[out.length - 1] as { role?: unknown; content?: unknown } | undefined;
+      // Two user messages in a row (a turn that failed) become one, as for the others.
+      if (last && last.role === "user" && Array.isArray(last.content)) last.content.push(...parts);
+      else out.push({ role: "user", content: parts });
+      continue;
+    }
+    const lane = keptLane(row.content);
+    if (lane?.openai?.length) for (const item of lane.openai) out.push(item);
+    else out.push({ role: "assistant", content: keptText(row.content) });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Gemini (generateContent)
 
 export type GeminiContent = { role: "user" | "model"; parts: unknown[] };
@@ -211,6 +256,38 @@ export function toGemini(rows: StoredRow[], load: FileLoader): GeminiContent[] {
     else out.push(msg);
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Their characters, in the turn's note (2026-10-01). prepare_send attaches a
+// character by its id, and the chat page never told Aly the ids (the lamp's
+// state note always has): in the blind vote, asked for "a picture of Mila…
+// go ahead", Claude said it couldn't attach her, and Luna started a picture
+// of no one. The list rides in the person's message, in full when it
+// changed since the last one in this chat, and stays there, so the
+// conversation is replayed the same bytes every time.
+
+export type CastMember = { id: string; name: string };
+
+const CAST_FULL = "[App note: their saved characters";
+const CAST_NONE = "[App note: they have no saved characters yet.]";
+const CAST_SAME = "[App note: their saved characters are the same as in the last note.]";
+
+function castName(name: string): string {
+  return name.replace(/[\u0000-\u001f\u007f[\]]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 60) || "Unnamed";
+}
+
+export function castNote(cast: readonly CastMember[], rows: readonly StoredRow[]): string {
+  const full = cast.length
+    ? `${CAST_FULL} (pass the id as prepare_send's character_id): ${cast.map((c) => `${castName(c.name)} (id ${c.id})`).join(", ")}.]`
+    : CAST_NONE;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i];
+    if (row.role !== "user" || !row.content.note) continue;
+    const last = row.content.note.split("\n").find((l) => (l.startsWith(CAST_FULL) && l !== CAST_SAME) || l === CAST_NONE);
+    if (last) return last === full ? CAST_SAME : full;
+  }
+  return full;
 }
 
 // ---------------------------------------------------------------------------
