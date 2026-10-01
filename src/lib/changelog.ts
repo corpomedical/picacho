@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.210.0",
+    build: 249,
+    date: "2026-10-02",
+    title: "Free downloads carry the Picacho P",
+    items: [
+      "When a free account downloads or shares one of its own pictures or videos, the file now carries the Picacho \"P\" with its orange line, small and see-through in the bottom-right corner, like Gemini's mark. It is the same size on wide and vertical videos.",
+      "Paid plans, comped plans, admins and anyone holding bought credits download the file exactly as it was made. The originals are never changed, so an account that upgrades downloads everything it ever made without the mark, straight away.",
+      "The marked copy is made on the first download (a second or so for a short video) and kept, so the next download of the same file is instant. If marking ever fails, the download still works and gives the original.",
+      "Nothing changes on screen inside Picacho: the mark is only on the file that leaves.",
+    ],
+  },
+  {
     version: "1.209.0",
     build: 248,
     date: "2026-10-02",

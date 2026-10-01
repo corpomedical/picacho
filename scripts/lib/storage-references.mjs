@@ -149,6 +149,14 @@ export function isReferenced(referenced, path) {
   if (ref) return referenced.has(liveSetMarker(ref[1]));
   const wm = path.match(/^(.+)\/wm\/(.+)$/);
   if (wm) return referenced.has(`${wm[1]}/${wm[2]}`);
+  // A free account's marked download copy (src/lib/media/free-mark-export.ts,
+  // 2026-10-02): `<user>/marked/<file>` beside the original, referenced
+  // whenever it is. A .mov original's copy is written as .mp4.
+  const marked = path.match(/^([^/]+)\/marked\/(.+)$/);
+  if (marked) {
+    const original = `${marked[1]}/${marked[2]}`;
+    return referenced.has(original) || referenced.has(original.replace(/\.mp4$/, ".mov"));
+  }
   // A Helios still's negative (src/lib/sets/lab.ts, 2026-09-15): the frame
   // before the lab, `<user>/negatives/<file>.jpg` beside the still's
   // `<user>/<file>.png`, referenced whenever that still is.

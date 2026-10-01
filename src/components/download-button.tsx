@@ -6,6 +6,7 @@ import { isNativeAppClient } from "@/lib/native/platform";
 import { capPlugin } from "@/lib/native/bridge";
 import { canSaveToDevice, isPhotosDenied, saveToDevice, type SavedTo } from "@/lib/native/save-media";
 import { recordDownload } from "@/lib/generations/actions";
+import { exportUrl } from "@/lib/media/export-url";
 
 // Shared by the live Generate composer and the History detail page — both
 // show a generated image/video and both need the same "download it" button
@@ -53,7 +54,8 @@ export async function downloadResult(url: string, filename: string) {
   const kind = filename.endsWith(".mp4") ? "video" : "image";
   const toastId = announceDownload(kind);
   try {
-    const res = await fetch(url);
+    const res = await fetch(exportUrl(url));
+    if (!res.ok) throw new Error(`download ${res.status}`);
     const blob = await res.blob();
     const objectUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -92,7 +94,7 @@ export async function downloadResultNative(url: string, filename: string): Promi
       : "image";
   const toastId = announceDownload(kind);
   try {
-    const savedTo = await saveToDevice(url, filename, kind === "file" ? undefined : kind);
+    const savedTo = await saveToDevice(exportUrl(url), filename, kind === "file" ? undefined : kind);
     // null: the iPhone share sheet was closed without saving — a decision,
     // like shareFileNative's cancel below.
     if (savedTo === null) announceDownloadDismiss(toastId);
@@ -120,7 +122,7 @@ export async function shareFileNative(url: string, filename: string): Promise<bo
   if (!fs?.writeFile || !share?.share) return false;
   const toastId = announceDownload(filename.endsWith(".mp4") ? "video" : "image");
   try {
-    const res = await fetch(url);
+    const res = await fetch(exportUrl(url));
     const blob = await res.blob();
   const base64 = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();

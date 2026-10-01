@@ -87,6 +87,10 @@ const nextConfig: NextConfig = {
     // (lib/billing/invoice-pdf.ts): a path built at runtime, which tracing
     // cannot follow, so the files are named here for that one route.
     "/app/settings/invoices/[id]": ["./src/lib/billing/fonts/*.ttf", "./public/logo.png"],
+    // The download door (2026-10-02): a free account's download carries the
+    // Picacho "P" (lib/media/free-mark.ts), read from disk and, on a video,
+    // burned in with the encoder.
+    "/api/export/[...key]": ["./node_modules/ffmpeg-static/ffmpeg", "./public/mark-p.png"],
   },
 
   // Canonical host: www.picacho.ai permanently redirects to picacho.ai.
@@ -132,7 +136,11 @@ const nextConfig: NextConfig = {
         // vad/ added 2026-09-28: Aly's speech model (12 MB engine + 2.3 MB
         // model) was re-checked on every visit; outdoors on mobile data a
         // hands-free session could sit on the loudness stand-in instead.
-        source: "/:path((?:presets|templates|course|models|studio|vad)/.*|.*\\.(?:mp4|png|jpg|jpeg|webp|svg|ico))",
+        // api/export/ left out (2026-10-02): the download door's answer
+        // depends on who asks (a free account's copy carries the mark), so it
+        // says private, no-store itself, and this public week would let a
+        // shared cache hand one person's answer to another.
+        source: "/:path((?!api/export/)(?:(?:presets|templates|course|models|studio|vad)/.*|.*\\.(?:mp4|png|jpg|jpeg|webp|svg|ico)))",
         headers: [
           {
             key: "Cache-Control",
