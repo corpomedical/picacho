@@ -30,6 +30,7 @@ export const RELEASES: Release[] = [
       "Deliver lists the shape, size and length Export makes, with Export and Download together. Opus's panel reads like a conversation: your words on the right, Opus's notes in its own type, and one box to ask for a change, with a song if you have one. Music engines switched off on Admin → Models stay off the Score menu.",
       "A new edit is a page of its own: your clips as tall pictures, the song on its own row, one box to write what it should be. While Opus works, the bay shows the three steps across, what Opus is doing now, how long it has been at it, the footage ticked as it is watched, and the empty tracks its cut will fill.",
       "On a phone: the monitor on top, then Timeline, Opus, Media and Score, with Split, Volume, Undo and Delete under the timeline and the box to ask Opus always at the foot. Opus's notes no longer vanish under the tabs.",
+      "Fixed: no update had reached the site since 1.207.0. Five Recast and Helios readers that the browser also loads had started asking the Models page for their model, which reads the database, so every build stopped. The server now asks and hands the answer to the reader; the Models page's choice still applies.",
     ],
   },
   {

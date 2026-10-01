@@ -31,7 +31,6 @@ import { fovForLens, LENSES_MM } from "./build-scene";
 import type { CameraPose, ShotMatch } from "./match-shot";
 import { SET_BRIEF_MAX_CHARS, SET_DIRECTION_MAX_CHARS, SET_MAX_TILT_DOWN_DEG, SET_MAX_TILT_UP_DEG } from "./set-config";
 import { cleanText, type SetSpec } from "./set-spec";
-import { studioReaderModel } from "../models/studio-reader";
 
 /** The model that reads the words: the look's people reader (look-people.ts LOOK_PEOPLE_MODEL). */
 export const SHOT_WORDS_MODEL = "gpt-5.4-mini";
@@ -383,9 +382,11 @@ export async function askShotReader(
     fetchFn?: typeof fetch;
     /** Which call the usage line is for: the chat's reading (v2, the default) or a set's naming pass (name-actions.ts, Helios Cut 4, step B4). Only the log line reads it. */
     reader?: "v2" | "naming";
+    /** The reader model, chosen on Admin → Models; the server action looks it up (studio-reader.ts) so this file stays safe to load in the browser. */
+    model?: string;
   },
 ): Promise<ShotReaderAnswer | null> {
-  const model = await studioReaderModel(SHOT_WORDS_MODEL);
+  const model = opts.model ?? SHOT_WORDS_MODEL;
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.warn("[sets] shot reader skipped: OPENAI_API_KEY is not set");
@@ -450,9 +451,10 @@ export async function askShotReader(
 export async function askShotWords(
   instructions: string,
   text: string,
-  opts: { timeoutMs?: number; fetchFn?: typeof fetch } = {},
+  opts: { timeoutMs?: number; fetchFn?: typeof fetch; model?: string } = {},
 ): Promise<string | null> {
-  const model = await studioReaderModel(SHOT_WORDS_MODEL);
+  // The model comes from the caller (a server action reads Admin → Models): the browser loads this file.
+  const model = opts.model ?? SHOT_WORDS_MODEL;
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.warn("[sets] shot words skipped: OPENAI_API_KEY is not set");

@@ -39,7 +39,6 @@
 // Relative imports only: tested with a fake fetch.
 
 import type { FrameBox } from "./look-cutout";
-import { studioReaderModel } from "../models/studio-reader";
 
 /** The model that reads the still: the output gate's reader (scorer-version.ts DEFAULT_SCORER_MODEL). */
 export const LOOK_PEOPLE_MODEL = "gpt-5.4-mini";
@@ -96,8 +95,9 @@ export function readPeople(text: string): FrameBox[] | null {
  * frame grown past them — [] when the model sees none — or null when it
  * could not be asked or did not answer (the header: fail closed).
  */
-export async function findPeople(still: Buffer, mime: string, opts: { timeoutMs?: number } = {}): Promise<FrameBox[] | null> {
-  const model = await studioReaderModel(LOOK_PEOPLE_MODEL);
+export async function findPeople(still: Buffer, mime: string, opts: { timeoutMs?: number; model?: string } = {}): Promise<FrameBox[] | null> {
+  // The model comes from the caller (Admin → Models), so this file stays safe to load in the browser.
+  const model = opts.model ?? LOOK_PEOPLE_MODEL;
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.warn("[sets] look people skipped: OPENAI_API_KEY is not set");

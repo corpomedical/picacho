@@ -81,6 +81,8 @@ vi.mock("@/lib/sets/data", () => ({ countSetBuildsThisMonth: async () => 0 }));
 vi.mock("@/lib/sets/messages", async () => await import("./messages"));
 vi.mock("@/lib/sets/set-spec", async () => await import("./set-spec"));
 vi.mock("@/lib/sets/shot-words", async () => await import("./shot-words"));
+// The Models page's pick reads the database; the readers' own constant stands in.
+vi.mock("@/lib/models/studio-reader", () => ({ studioReaderModel: async (fallback: string) => fallback }));
 vi.mock("@/lib/sets/shot-reading", async () => await import("./shot-reading"));
 vi.mock("@/lib/sets/reader-context", async () => await import("./reader-context"));
 vi.mock("@/lib/sets/edit-seal", async () => await import("./edit-seal"));

@@ -31,7 +31,6 @@
 
 import { isRigCheckItem, type RigCheckItem } from "./rig";
 import { cleanText } from "./set-spec";
-import { studioReaderModel } from "../models/studio-reader";
 
 export const RIG_CHECK_MODEL = "gpt-5.4-mini";
 export const RIG_CHECK_TIMEOUT_MS = 30_000;
@@ -122,9 +121,10 @@ export async function checkRig(
   mime: string,
   asks: readonly RigCheckAsk[],
   locale: string,
-  opts: { timeoutMs?: number } = {},
+  opts: { timeoutMs?: number; model?: string } = {},
 ): Promise<RigCheckVerdict[] | null> {
-  const model = await studioReaderModel(RIG_CHECK_MODEL);
+  // The model comes from the caller (a server action reads Admin → Models): the browser loads this file.
+  const model = opts.model ?? RIG_CHECK_MODEL;
   if (asks.length === 0) return [];
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {

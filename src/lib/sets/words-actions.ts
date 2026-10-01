@@ -1,5 +1,6 @@
 "use server";
 
+import { studioReaderModel } from "@/lib/models/studio-reader";
 import { createAdminClient } from "@/lib/supabase/server";
 import { dailyCapReached, rateLimited } from "@/lib/rate-limit";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
@@ -10,6 +11,7 @@ import { cleanText, normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
 import {
   askShotReader,
   askShotWords,
+  SHOT_WORDS_MODEL,
   parseShotWords,
   shotWordsInstructions,
   SHOT_WORDS_MAX_CHARS,
@@ -154,7 +156,7 @@ export async function readShotWords(
   // Fails closed like every limiter; a limited reading is simply no reading.
   if ((await rateLimited(userId, "set-words", 60 * 10, SHOT_WORDS_PER_10_MIN)) || (await dailyCapReached(userId, "set-words", SHOT_WORDS_PER_DAY))) return { error: null, words: null };
   const stage = { spec: owned.spec, characters: await characterNames(userId), askPlace: false };
-  const answer = await askShotWords(shotWordsInstructions(stage), text);
+  const answer = await askShotWords(shotWordsInstructions(stage), text, { model: await studioReaderModel(SHOT_WORDS_MODEL) });
   const words = answer === null ? null : parseShotWords(answer, stage);
   if (answer !== null && words === null) console.warn("[sets] shot words failed: the answer was not the shape");
   return { error: null, words };
@@ -176,7 +178,7 @@ export async function readSetRequest(input: { text: string }): Promise<{ error: 
   }
   if ((await rateLimited(userId, "set-words", 60 * 10, SHOT_WORDS_PER_10_MIN)) || (await dailyCapReached(userId, "set-words", SHOT_WORDS_PER_DAY))) return { error: null, words: null };
   const stage = { spec: null, characters: await characterNames(userId), askPlace: true };
-  const answer = await askShotWords(shotWordsInstructions(stage), text);
+  const answer = await askShotWords(shotWordsInstructions(stage), text, { model: await studioReaderModel(SHOT_WORDS_MODEL) });
   const words = answer === null ? null : parseShotWords(answer, stage);
   if (answer !== null && words === null) console.warn("[sets] set request failed: the answer was not the shape");
   return { error: null, words };
@@ -241,7 +243,7 @@ export async function readShotTurn(
   const stage = readerStageBlock({ spec, characters, things, parts, keep: now.who });
   const nowLine = readerNowLine(now, { spec, characters, aliases: stage.aliases, things, parts, origin: input?.origin === "build" ? "build" : null });
   const turnsBlock = readerTurnsBlock(normaliseReaderTurns(input?.turns));
-  const reply = await askShotReader(readerMessages(stage.text, nowLine, turnsBlock, message), { maxCompletionTokens: SHOT_READER_MAX_COMPLETION });
+  const reply = await askShotReader(readerMessages(stage.text, nowLine, turnsBlock, message), { maxCompletionTokens: SHOT_READER_MAX_COMPLETION, model: await studioReaderModel(SHOT_WORDS_MODEL) });
   if (!reply) return none("down", cut);
   const parsed = parseShotReading(reply.text, { spec, aliases: stage.aliases, message, nowHappens: now.direction });
   if (!parsed) {

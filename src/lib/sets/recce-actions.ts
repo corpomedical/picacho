@@ -1,5 +1,6 @@
 "use server";
 
+import { studioReaderModel } from "@/lib/models/studio-reader";
 import { createAdminClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
 import { assertPromptAllowed, ContentPolicyRefusal, type Scores } from "@/lib/generations/content-policy";
@@ -34,6 +35,7 @@ import { photoBuildInput } from "@/lib/sets/set-builder-prompt";
 import { isMissingColumn, normaliseSetPhoto, parseSetPhotoDataUri, photoDataUrl, photoSourceColumns, removeSetPhoto } from "@/lib/sets/photo";
 import {
   askRecceRead,
+  RECCE_READ_MODEL,
   parseRecceRead,
   RECCE_FRAME_COUNT,
   RECCE_FRAMES_MIN,
@@ -180,6 +182,7 @@ export async function submitSetRecceBuild(input: {
     recceReadInstructions(times, seconds),
     reencoded.map((b) => photoDataUrl(b)),
     times,
+    { model: await studioReaderModel(RECCE_READ_MODEL) },
   );
   const read = answer === null ? null : parseRecceRead(answer, reencoded.length, seconds);
   if (read === null) return { error: SET_RECCE_COULDNT_READ };

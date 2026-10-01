@@ -212,7 +212,7 @@ describe("one response format, pinned (critic item 19)", () => {
     expect(client).toContain('...(pinned ? { reasoning_effort: "none" } : {}),');
     expect(client).toContain("max_completion_tokens: pinned ? opts.maxCompletionTokens : SHOT_READER_FALLBACK_MAX_COMPLETION,");
     const action = readFileSync(join(__dirname, "name-actions.ts"), "utf8");
-    expect(action).toContain('askShotReader(nameMessages(input), { maxCompletionTokens: NAME_MAX_COMPLETION, reader: "naming" })');
+    expect(action).toContain('askShotReader(nameMessages(input), { maxCompletionTokens: NAME_MAX_COMPLETION, reader: "naming", model: await studioReaderModel(SHOT_WORDS_MODEL) })');
   });
 });
 

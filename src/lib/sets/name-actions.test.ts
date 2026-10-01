@@ -1,3 +1,4 @@
+import { SHOT_WORDS_MODEL } from "./shot-words";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -143,6 +144,8 @@ vi.mock("@/lib/sets/name-prompt", async () => await import("./name-prompt"));
 vi.mock("@/lib/sets/reader-prices", async () => await import("./reader-prices"));
 vi.mock("@/lib/sets/set-config", async () => await import("./set-config"));
 vi.mock("@/lib/sets/set-spec", async () => await import("./set-spec"));
+// The Models page's pick reads the database; the readers' own constant stands in.
+vi.mock("@/lib/models/studio-reader", () => ({ studioReaderModel: async (fallback: string) => fallback }));
 
 import { nameSet } from "./name-actions";
 
@@ -215,7 +218,7 @@ describe("a press", () => {
     expect(steps).toEqual(["read set", "read copy", "claim", "brake", "model", "gate", "read set", "read copy", "save"]);
     // One call, through the reader's own client and format, with the pass's cap and its log tag.
     expect(asked).toHaveLength(1);
-    expect(asked[0].opts).toEqual({ maxCompletionTokens: NAME_MAX_COMPLETION, reader: "naming" });
+    expect(asked[0].opts).toEqual({ maxCompletionTokens: NAME_MAX_COMPLETION, reader: "naming", model: SHOT_WORDS_MODEL });
     const messages = asked[0].messages as { role: string; content: string }[];
     expect(messages[0]).toEqual({ role: "system", content: NAME_INSTRUCTIONS });
     expect(messages[1].content).toContain("BRIEF: A race track with a red car");

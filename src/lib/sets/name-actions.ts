@@ -24,7 +24,8 @@ import { NAME_MAX_COMPLETION, applyNames, nameInput, nameMessages, parseNameAnsw
 import { readerCallUsd } from "@/lib/sets/reader-prices";
 import { SET_NAMING_PER_HOUR } from "@/lib/sets/set-config";
 import { normaliseSetSpec, specTextForGate, type SetSpec } from "@/lib/sets/set-spec";
-import { askShotReader } from "@/lib/sets/shot-words";
+import { studioReaderModel } from "@/lib/models/studio-reader";
+import { askShotReader, SHOT_WORDS_MODEL } from "@/lib/sets/shot-words";
 
 // The naming pass (Helios Cut 4, step B4, 2026-09-26 — operator: "resume";
 // the owner's decision D1 (B)). Its own "use server" file: every export
@@ -139,7 +140,7 @@ export async function nameSet(
 
   const working = first.edited ?? first.spec;
   const input = nameInput(working, first.brief);
-  const answer = await askShotReader(nameMessages(input), { maxCompletionTokens: NAME_MAX_COMPLETION, reader: "naming" });
+  const answer = await askShotReader(nameMessages(input), { maxCompletionTokens: NAME_MAX_COMPLETION, reader: "naming", model: await studioReaderModel(SHOT_WORDS_MODEL) });
   if (!answer) return { error: SET_NAMING_FAILED };
   // What it cost, from the usage it reported (reader-prices.ts): counts and dollars, never words.
   console.info("[sets] naming usage", { setId, lines: input.lines.length, usage: answer.usage, effort: answer.effort, costUsd: readerCallUsd(answer.usage) });

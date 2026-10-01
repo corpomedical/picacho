@@ -73,7 +73,6 @@
 // Tested with a fake fetch.
 
 import { cleanText } from "../sets/set-spec";
-import { studioReaderModel } from "../models/studio-reader";
 
 /** The reader: the same small model the shot words and the Recce use. */
 export const RECAST_READ_MODEL = "gpt-5.4-mini";
@@ -378,9 +377,10 @@ export async function askRecastRead(
   instructions: string,
   frameUrls: string[],
   times: number[],
-  opts: { timeoutMs?: number; fetchFn?: typeof fetch } = {},
+  opts: { timeoutMs?: number; fetchFn?: typeof fetch; model?: string } = {},
 ): Promise<string | null> {
-  const model = await studioReaderModel(RECAST_READ_MODEL);
+  // The model comes from the caller (a server action reads Admin → Models): the browser loads this file.
+  const model = opts.model ?? RECAST_READ_MODEL;
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.warn("[recast] read skipped: OPENAI_API_KEY is not set");

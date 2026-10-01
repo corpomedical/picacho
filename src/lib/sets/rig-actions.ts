@@ -7,7 +7,8 @@ import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { lookStoragePath } from "@/lib/sets/look";
 import { negativePathFor } from "@/lib/sets/lab";
 import { normaliseSetRig, RIG_CHECK_ITEMS, type RigCheckItem } from "@/lib/sets/rig";
-import { checkRig, type RigCheck } from "@/lib/sets/rig-check";
+import { studioReaderModel } from "@/lib/models/studio-reader";
+import { checkRig, RIG_CHECK_MODEL, type RigCheck } from "@/lib/sets/rig-check";
 import { readShotRigs, recordRigCheck } from "@/lib/sets/shot-rig";
 import { SET_NOT_FOUND, SET_RIG_CHECK_FAILED, SET_RIG_CHECK_TOO_FAST, SET_SAVE_FAILED, SET_EDIT_TOO_FAST } from "@/lib/sets/messages";
 
@@ -103,7 +104,7 @@ export async function checkShotRig(
     blob = data;
   }
   const bytes = Buffer.from(await blob.arrayBuffer());
-  const verdicts = await checkRig(bytes, blob.type || "image/png", asks, await getLocale());
+  const verdicts = await checkRig(bytes, blob.type || "image/png", asks, await getLocale(), { model: await studioReaderModel(RIG_CHECK_MODEL) });
   if (!verdicts) return { error: SET_RIG_CHECK_FAILED };
   const check: RigCheck = { checkedAt: new Date().toISOString(), verdicts };
   await recordRigCheck(admin, { setId, generationId, userId }, check);

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { offered } from "@/lib/models/controls";
+import { studioReaderModel } from "@/lib/models/studio-reader";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
 import { ContentPolicyRefusal, type Scores } from "@/lib/generations/content-policy";
@@ -95,6 +96,7 @@ import {
 } from "@/lib/recast/recast-brief";
 import {
   askRecastRead,
+  RECAST_READ_MODEL,
   parseRecastRead,
   RECAST_FRAMES_MIN,
   RECAST_FRAME_COUNT,
@@ -446,7 +448,7 @@ export async function inspectRecastClip(input: {
   if (frames.length >= RECAST_FRAMES_MIN && !(await rateLimited(access.userId, "recast-read", 600, 20))) {
     const used = frames.slice(0, RECAST_FRAME_COUNT);
     const times = recastSampleTimes(clip.seconds, used.length);
-    const answer = await askRecastRead(recastReadInstructions(times, Math.round(clip.seconds * 10) / 10), used, times);
+    const answer = await askRecastRead(recastReadInstructions(times, Math.round(clip.seconds * 10) / 10), used, times, { model: await studioReaderModel(RECAST_READ_MODEL) });
     read = answer === null ? null : parseRecastRead(answer, clip.seconds);
   }
 
