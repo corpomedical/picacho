@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getFalBalance } from "@/lib/generations/providers/fal-ledger";
+import { loadProviderFunds } from "@/lib/admin/provider-funds";
+import { maxSingleRenderCostUsd } from "@/lib/generations/providers/video-models";
+import { ProviderFundsCard } from "@/components/admin/provider-funds-card";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { cn } from "@/lib/cn";
 import { fetchAll } from "@/lib/admin/fetch-all";
@@ -125,7 +126,7 @@ export default async function AdminStatsPage({
     { count: prevGens },
     adoptionRows,
     demographicRows,
-    falBalance,
+    providerFunds,
   ] = await Promise.all([
     supabase.from("profiles").select("*", { count: "exact", head: true }),
     supabase.from("profiles").select("*", { count: "exact", head: true }).gte("last_seen_at", fiveMinAgo),
@@ -186,14 +187,9 @@ export default async function AdminStatsPage({
     fetchAll((from, to) =>
       supabase.from("profiles").select("gender, company").order("created_at", { ascending: true }).range(from, to),
     ),
-    // The ledger's ADMIN-key reader, not fal.ts's FAL_KEY one — verified
-    // live (2026-08-31): FAL_KEY gets 403 on account/billing, FAL_ADMIN_KEY
-    // gets 200, so this panel had been permanently dead since it shipped.
-    getFalBalance().then((b) =>
-      b.ok
-        ? ({ ok: true, balance: b.balanceUsd, currency: b.currency } as const)
-        : ({ ok: false, reason: b.error } as const),
-    ),
+    // Every paid provider (2026-10-02): fal through the ledger's ADMIN-key
+    // reader (FAL_KEY gets 403 on account/billing), the rest as their APIs allow.
+    loadProviderFunds(maxSingleRenderCostUsd(), { now }),
   ]);
 
   // ---- daily buckets for the chart ----
@@ -382,40 +378,7 @@ export default async function AdminStatsPage({
       </div>
 
       {/* Operational extras — unchanged data, below the fold on purpose. */}
-      <Card className="mt-6">
-        <h2 className="text-sm font-semibold text-neutral-900">AI provider funds</h2>
-        <div className="mt-3 divide-y divide-neutral-100">
-          <div className="flex items-center justify-between py-2.5">
-            <div>
-              <p className="text-sm text-neutral-900">fal.ai</p>
-              <p className="mt-0.5 text-xs text-neutral-400">Video, Flux images, ElevenLabs + Sync Labs</p>
-            </div>
-            {falBalance.ok ? (
-              <p className="text-lg font-semibold tabular-nums text-neutral-900">
-                {falBalance.currency === "USD" ? "$" : `${falBalance.currency} `}
-                {falBalance.balance.toFixed(2)}
-              </p>
-            ) : (
-              <div className="text-right">
-                <Badge tone="warning">unavailable</Badge>
-                <p className="mt-1 max-w-64 text-xs text-neutral-400">{falBalance.reason}</p>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center justify-between py-2.5">
-            <p className="text-sm text-neutral-900">OpenAI</p>
-            <a href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noreferrer" className="text-xs text-neutral-500 underline hover:text-neutral-900">
-              Check on OpenAI →
-            </a>
-          </div>
-          <div className="flex items-center justify-between py-2.5">
-            <p className="text-sm text-neutral-900">Anthropic</p>
-            <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noreferrer" className="text-xs text-neutral-500 underline hover:text-neutral-900">
-              Check on Anthropic →
-            </a>
-          </div>
-        </div>
-      </Card>
+      <ProviderFundsCard providers={providerFunds} className="mt-6" />
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <Card>

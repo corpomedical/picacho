@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.206.0",
+    build: 245,
+    date: "2026-10-02",
+    title: "Admin: every provider's balance, with a top-up link",
+    items: [
+      "Admin → Stats and Admin → AI providers now list every provider Picacho pays per use: fal, OpenAI, Anthropic, ElevenLabs, BytePlus, Google Cloud, HeyGen and Modal, each with what it is used for and a Top up link to its billing page. The fal balance panel has its own Top up link too.",
+      "fal, ElevenLabs and HeyGen show the live balance (ElevenLabs as credits left this month and the reset date, amber under a tenth). OpenAI, Anthropic, Google, BytePlus and Modal don't let a server read the balance, so their row says it is on their site, never a guess. A provider whose key isn't set on the server says Not set up.",
+    ],
+  },
+  {
     version: "1.205.0",
     build: 244,
     date: "2026-10-01",

@@ -21,6 +21,8 @@ import { seedanceLaneChoice } from "@/lib/generations/providers/lane-setting";
 import { ARK_USD_PER_MILLION_TOKENS } from "@/lib/generations/providers/byteplus";
 import type { AttemptLog } from "@/lib/generations/pipeline";
 import { getFalBalance, reconcileFalLedger } from "@/lib/generations/providers/fal-ledger";
+import { loadProviderFunds } from "@/lib/admin/provider-funds";
+import { ProviderFundsCard } from "@/components/admin/provider-funds-card";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,6 +70,10 @@ export default async function AdminProvidersPage({
   const worstRenderUsd = maxSingleRenderCostUsd();
   const balanceCritical = balance.ok && balance.balanceUsd < worstRenderUsd;
   const balanceLow = balance.ok && !balanceCritical && balance.balanceUsd < worstRenderUsd * 10;
+
+  // Every other paid provider's balance and top-up link (2026-10-02).
+  // fal has its own panel above, so its row is left out here.
+  const providerFunds = (await loadProviderFunds(worstRenderUsd, { fal: balance })).filter((p) => p.id !== "fal");
 
   const activeModel = modelSetting?.value ?? "kling";
   const activeImageModel = imageModelSetting?.value ?? "gpt-image";
@@ -457,7 +463,17 @@ export default async function AdminProvidersPage({
           Admin-scope key (FAL_ADMIN_KEY) because the ordinary render key is
           not permitted on fal's billing endpoint. */}
       <Card className={cn("mt-6", balanceCritical && "border-red-300", balanceLow && "border-amber-200")}>
-        <h2 className="text-sm font-semibold text-neutral-900">fal balance</h2>
+        <div className="flex items-baseline justify-between gap-4">
+          <h2 className="text-sm font-semibold text-neutral-900">fal balance</h2>
+          <a
+            href="https://fal.ai/dashboard/usage-billing/billing"
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-neutral-500 underline hover:text-neutral-900"
+          >
+            Top up at fal →
+          </a>
+        </div>
         {!balance.ok ? (
           <p className="mt-1 text-sm text-neutral-500">
             Couldn&apos;t read the balance — {balance.error} Renders are unaffected; this panel is
@@ -491,6 +507,8 @@ export default async function AdminProvidersPage({
           </>
         )}
       </Card>
+
+      <ProviderFundsCard providers={providerFunds} className="mt-6" />
 
       {/* Provider billing reconciliation (2026-08-30).
           Answers one question, from fal's own ledger rather than from our
