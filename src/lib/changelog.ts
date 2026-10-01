@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.198.0",
+    build: 237,
+    date: "2026-10-01",
+    title: "Helios Studio: the prompt bar",
+    items: [
+      "Helios Studio has a floating prompt bar over the 3D view, like Higgsfield's Blender add-on: tabs for Scene builder, 3D Model, Animation, Image, Video, Camera and Assets, a box to type in, option chips and a big Generate button that shows the real price. It folds to a pill, drags anywhere in the view, moves out of the way of the move/rotate handles, and on phones is the first bottom sheet (Create). The menus, side panels and Astra's sidebar are all still there.",
+      "Scene builder is Astra: the plan shows in the bar with Apply, and it's the same conversation as the sidebar.",
+      "3D Model builds from words, one photo, or up to four views (front, back, left, right) with the engine you pick: Hunyuan 3D v3.1 Pro, Meshy 7.1, Tripo v2.5 or TRELLIS.2, with PBR, textures, quads or triangles, a target polygon count and auto-rigging where the engine offers them. The model lands on the stage, on the selected thing or as a new object. Admins only while each engine is proved; Picacho pays fal, no credits are taken.",
+      "Animation has one-click moves (walk or run to the camera or a thing, walk to a point, draw a path, turn, look, sit, lean) and the poses. Image and Video make a photo or video with your character with the same choices as their windows (character, look, outfit, traced frame, range, Real scene, lane), shown in the bar.",
+      "Camera writes the shot camera's keys for Orbit, Push in, Pull out, Crane up, Follow or three cut angles, with distance, height and frames. Assets shows the set's parts and things as pictures (click to select) and the character's gallery (click to use a look).",
+      "In English, Spanish, Portuguese and Italian.",
+    ],
+  },
+  {
     version: "1.197.0",
     build: 236,
     date: "2026-10-01",
