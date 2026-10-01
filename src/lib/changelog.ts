@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.202.0",
+    build: 241,
+    date: "2026-10-01",
+    title: "Privacy policy: who answers in Aly's chat",
+    items: [
+      "The privacy policy now says that what you write and attach in Aly's chat goes to OpenAI (GPT-6 Luna) unless you pick another brain. Until now it said Anthropic. Claude, and Think harder on Luna, go to Anthropic; GPT goes to OpenAI and Gemini to Google; Ask all three goes to all three.",
+      "It also says that GPT-6 Luna names every new chat from the start of its first message and answer, whichever brain answered, and that a web search is run by the brain answering: OpenAI for Luna, Anthropic for Claude. GPT and Gemini don't search the web.",
+      "In English, Spanish, Portuguese and Italian. The policy stays dated 1 October 2026.",
+    ],
+  },
+  {
     version: "1.201.0",
     build: 240,
     date: "2026-10-01",
