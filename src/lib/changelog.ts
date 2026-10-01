@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.199.0",
+    build: 238,
+    date: "2026-10-01",
+    title: "Prompt writer: a reply that opens \"Sorry,\" is never sent as the prompt",
+    items: [
+      "When the prompt writer declines with a reply that opens \"Sorry, …\" or \"Sorry. …\", Picacho now treats it as a refusal and carries on from your own words, as it already did for \"I can't…\", \"I'm sorry…\" and \"I apologise…\". Until now that one check could never match, so a refusal worded that way could have been sent to the engine as your prompt.",
+      "The same check now reads curly apostrophes too (I’m sorry, I can’t), not only straight ones.",
+    ],
+  },
+  {
     version: "1.198.0",
     build: 237,
     date: "2026-10-01",
