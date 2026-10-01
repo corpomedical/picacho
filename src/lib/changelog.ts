@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.203.0",
+    build: 242,
+    date: "2026-10-01",
+    title: "Aly's chat: the line for free accounts names Luna",
+    items: [
+      "The line a free account sees under a new chat, in Aly's chat and in Picacho Light, now says free accounts start on Luna and can choose any other brain. It said they chat with Claude, which stopped being true when Luna became the everyday brain in 1.200.0.",
+      "Paid plans still add Think harder and Ask all three. In English, Spanish, Portuguese and Italian, with the brain menu's own names.",
+    ],
+  },
+  {
     version: "1.202.0",
     build: 241,
     date: "2026-10-01",
