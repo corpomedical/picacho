@@ -232,29 +232,104 @@ export function loadOidn(url = OIDN_WEIGHTS_URL): Promise<Unet | null> {
 }
 
 /**
+ * The brightest colour value handed to the denoiser: the largest half float, the precision its network runs in on
+ * most graphics cards. Far past white, so nothing a picture shows is changed by it.
+ */
+export const OIDN_MAX_INPUT = 65504;
+/** How long a denoise may take before it is given up (a lost graphics card never calls back). */
+export const OIDN_TIMEOUT_MS = 180_000;
+
+/**
+ * A colour value as the denoiser must get it: not a number, infinite or below zero is 0, and nothing passes
+ * OIDN_MAX_INPUT (Open Image Denoise's own input rule; oidn-web 0.4.0 doesn't apply it). oidn-web exposes each
+ * tile by the average log brightness of ITS pixels (process.ts avgLogLum), so one NaN, infinite or negative pixel
+ * makes that whole tile's exposure NaN or 0 and the tile comes back black: the live 2026-10-01 still (1280 x 720,
+ * Final 256, photographed sky) lost the top-left 384 x 336 — exactly one of its 384-pixel tiles.
+ */
+export const oidnColorValue = (v: number) => (v > 0 ? (v < OIDN_MAX_INPUT ? v : OIDN_MAX_INPUT) : 0);
+/** Albedo (0-1) x 255 for oidn-web (it divides by 255); not a number is 0. */
+export const oidnAlbedoValue = (v: number) => (v > 0 ? (v < 1 ? v : 1) * 255 : 0);
+/** A normal (-1...1) x 255 for oidn-web; not a number is 0. */
+export const oidnNormalValue = (v: number) => (v > -1 ? (v < 1 ? v : 1) : v <= -1 ? -1 : 0) * 255;
+
+/** The denoise came back with blank patches, or didn't come back: the caller cleans the picture another way. */
+export class OidnFailed extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OidnFailed";
+  }
+}
+
+/**
  * Denoises linear HDR colour (RGBA floats) guided by albedo (0–1) and a
  * normal (−1…1), all the same size and row order. oidn-web 0.4.0 divides its
  * albedo and normal inputs by 255 (it expects bytes), so they are handed in
  * as floats already × 255: the network sees real 0–1 albedo and real −1…1
  * normals, not bytes squeezed into 0–1. The version is pinned for this.
+ *
+ * Every input value is made safe first (oidnColorValue and its siblings), and
+ * the result is checked patch by patch (oidnBlankPatches): where the input has
+ * light and the result is blank, or the network never answers, it rejects
+ * with OidnFailed, so a broken tile is never shown as the picture.
  */
-export function oidnDenoise(unet: Unet, color: Float32Array, albedo01: Float32Array, normal: Float32Array, w: number, h: number): Promise<Float32Array> {
+export function oidnDenoise(unet: Unet, color: Float32Array, albedo01: Float32Array, normal: Float32Array, w: number, h: number, timeoutMs = OIDN_TIMEOUT_MS): Promise<Float32Array> {
   // oidn-web 0.4.0 cuts square tiles and reads past the picture's edge when a side is shorter than a tile (640 × 360
   // came back all NaN; 256 × 256 and 1280 × 720 were fine): the picture goes in as a square, edges repeated, and the
   // result is cut back out.
-  const s = oidnSide(w, h), c = oidnPad(color, w, h, s, (v) => v), a = oidnPad(albedo01, w, h, s, (v) => Math.min(1, Math.max(0, v)) * 255), n = oidnPad(normal, w, h, s, (v) => Math.min(1, Math.max(-1, v)) * 255);
+  const s = oidnSide(w, h), c = oidnPad(color, w, h, s, oidnColorValue), a = oidnPad(albedo01, w, h, s, oidnAlbedoValue), n = oidnPad(normal, w, h, s, oidnNormalValue);
   return new Promise((resolve, reject) => {
+    let abort: (() => void) | null = null, over = false;
+    const timer = setTimeout(() => { over = true; abort?.(); reject(new OidnFailed(`Open Image Denoise didn't finish in ${Math.round(timeoutMs / 1000)} s`)); }, timeoutMs);
     try {
-      unet.tileExecute({
+      abort = unet.tileExecute({
         color: { data: c, width: s, height: s },
         albedo: { data: a, width: s, height: s },
         normal: { data: n, width: s, height: s },
-        done: (out: { data: Float32Array }) => resolve(oidnCrop(out.data, s, w, h)),
+        done: (out: { data: Float32Array }) => {
+          if (over) return;
+          clearTimeout(timer);
+          if (!out?.data || out.data.length < s * s * 4) return reject(new OidnFailed("Open Image Denoise answered with a picture of the wrong size"));
+          const res = oidnCrop(out.data, s, w, h), blank = oidnBlankPatches(color, res, w, h);
+          if (blank.length) return reject(new OidnFailed(`Open Image Denoise left ${blank.length} blank patch${blank.length === 1 ? "" : "es"}, the first at x ${blank[0].x}, row ${blank[0].y}`));
+          resolve(res);
+        },
       });
     } catch (e) {
+      clearTimeout(timer);
       reject(e);
     }
   });
+}
+
+/** The patch size a denoised picture is checked in: well under oidn-web's smallest tile (256 px). */
+export const OIDN_CHECK_PATCH = 32;
+
+/** A pixel with light in it: its red + green + blue finite and above zero. */
+const lit = (d: Float32Array, k: number) => { const v = d[k] + d[k + 1] + d[k + 2]; return v > 0 && v < Infinity; };
+
+/**
+ * The patches (OIDN_CHECK_PATCH square, in the pictures' own row order) where the input has light — at least a
+ * tenth of its pixels lit — and the denoised picture is blank: under 1 % of its pixels lit (black, or not a
+ * number). That is what a tile the denoiser lost looks like; a dark corner of a real picture is dark in its input
+ * too, so it is never taken for one. Each patch's first pixel; empty when the result is whole.
+ */
+export function oidnBlankPatches(input: Float32Array, output: Float32Array, w: number, h: number, patch = OIDN_CHECK_PATCH): { x: number; y: number }[] {
+  const bad: { x: number; y: number }[] = [];
+  for (let y0 = 0; y0 < h; y0 += patch) {
+    for (let x0 = 0; x0 < w; x0 += patch) {
+      let total = 0, litIn = 0, litOut = 0;
+      for (let y = y0; y < Math.min(h, y0 + patch); y++) {
+        for (let x = x0; x < Math.min(w, x0 + patch); x++) {
+          const k = (y * w + x) * 4;
+          total++;
+          if (lit(input, k)) litIn++;
+          if (lit(output, k)) litOut++;
+        }
+      }
+      if (litIn >= total * 0.1 && litOut < total * 0.01) bad.push({ x: x0, y: y0 });
+    }
+  }
+  return bad;
 }
 
 /** The square the denoiser is given: the longer side, rounded up to 16. */

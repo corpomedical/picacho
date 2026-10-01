@@ -137,6 +137,15 @@ export function studioFigureLine(several: boolean, spot: FigureSpot): string {
     : "The character takes the place of the grey mannequin figure and does exactly what it does.";
 }
 
+/**
+ * Whether the recording is sent as a clay clip (2026-10-01 live run: with Realistic materials and the
+ * photographed sky, Kling O3 Edit KEPT the CG look of the car and the track; Test A's flat grey clay clip came
+ * back fully photoreal, IDENTITY 92): the person's own choice when made, else on exactly when Real scene is on.
+ */
+export function studioClayClip(realScene: boolean, choice: boolean | null | undefined): boolean {
+  return typeof choice === "boolean" ? choice : realScene;
+}
+
 /** Restage's own line: the recording is a grey 3D mock-up, and this lane films it for real. */
 export const STUDIO_RESTAGE_LINE = "Film it as live action: real materials, real light and a real place in place of the grey 3D mock-up, with the same camera move.";
 
@@ -282,8 +291,12 @@ export const STUDIO_OUTFIT_MAX = 90;
  * added image — "image 1" in the direction (recast-brief.ts imageLines). Neither: null, and the photos' own
  * outfit holds (STUDIO_REAL_OUTFIT_LINE on a real scene; Recast's brief says so on its own otherwise).
  */
-export function studioWearLine(a: { outfit: string; look: boolean; photo?: boolean }): string | null {
+export function studioWearLine(a: { outfit: string; look: boolean; photo?: boolean; saved?: string | null }): string | null {
   const words = a.outfit.replace(/\s+/g, " ").trim().replace(/[.!?]+$/, "").slice(0, STUDIO_OUTFIT_MAX).trim();
+  // The character's own saved outfit (2026-10-01 live run: nothing typed, no look, and she came out in a black
+  // evening dress again): said in words whenever nothing else is picked, so the engine is never left to guess.
+  const saved = studioSavedOutfitWords(a.saved);
+  if (!words && !a.look && saved) return `The character wears their own outfit: ${saved}.`;
   // A photo's look rides as the still's outfit reference (the render lane's "outfit" role, named "the outfit
   // photo" in its own notes); a video's as Recast's added image, "image 1" in its brief.
   const where = a.photo ? "the outfit photo" : "image 1";
@@ -291,6 +304,24 @@ export function studioWearLine(a: { outfit: string; look: boolean; photo?: boole
   if (words) return `The character wears: ${words}.`;
   if (a.look) return a.photo ? "The character wears the outfit from the outfit photo." : "The character wears the outfit and hair from image 1.";
   return null;
+}
+
+/**
+ * A character's saved default outfit, as the generate lane reads it (generations/actions.ts: the outfit photos'
+ * description when there are outfit photos, else the Outfit trait), trimmed to whole words within
+ * STUDIO_OUTFIT_MAX. "" when there is none.
+ */
+export function studioSavedOutfit(row: { traits?: unknown; outfit_description?: unknown; outfit_image_urls?: unknown } | null | undefined): string {
+  if (!row) return "";
+  const photos = Array.isArray(row.outfit_image_urls) && row.outfit_image_urls.length > 0;
+  const described = photos && typeof row.outfit_description === "string" ? row.outfit_description : "";
+  const trait = row.traits && typeof row.traits === "object" && typeof (row.traits as { outfit?: unknown }).outfit === "string" ? ((row.traits as { outfit: string }).outfit) : "";
+  return studioSavedOutfitWords(described || trait);
+}
+function studioSavedOutfitWords(text: string | null | undefined): string {
+  let w = (text ?? "").replace(/\s+/g, " ").trim().replace(/[.!?]+$/, "").trim();
+  if (w.length > STUDIO_OUTFIT_MAX) w = w.slice(0, STUDIO_OUTFIT_MAX + 1).replace(/[,;\s][^,;\s]*$/, "").replace(/[,;\s]+$/, "").trim();
+  return w;
 }
 
 /**
@@ -316,13 +347,30 @@ const KEEP_LINE = "Keep the moves and camera exactly.";
  * buildings, then the first building, then the first thing, then the
  * surfaces. The sky, the ground and the outfit always stay.
  */
-export function studioRealSceneLine(a: { title: string; description: string; things: string[]; hour: number; wear?: string | null }): string {
+export function studioRealSceneLine(a: {
+  title: string;
+  description: string;
+  things: string[];
+  hour: number;
+  wear?: string | null;
+  /**
+   * The Studio scene as it is now (2026-10-01 live run: "Pit garage", "Wall 2" and "Wall" were deleted, and the
+   * words still sent "a real concrete pit building"): the set's parts not deleted or hidden and in or near the
+   * shot across the range, most prominent first (studioVisibleParts). Given, the buildings and surfaces come
+   * from these parts and the things only from `things` (what is in the shot), never from the set's own
+   * description, which still names what was deleted. Left out: the set's words, as before.
+   */
+  parts?: readonly StudioScenePart[] | null;
+}): string {
   const wear = a.wear || STUDIO_REAL_OUTFIT_LINE;
   const k = placeKind(a.title, a.description);
   const norm = (t: string) => t.replace(/^(the|a|an)\s+/i, "").replace(/\s+/g, " ").trim().toLowerCase();
-  const things = [...new Set([...studioDescribedThings(a.description), ...a.things.map(norm)].filter(Boolean))].slice(0, THINGS_MAX).map((t) => `a real ${t}`);
+  const scene = a.parts ? studioScenePartWords(a.parts) : null;
+  const described = scene ? [] : studioDescribedThings(a.description);
+  const things = [...new Set([...described, ...a.things.map(norm)].filter(Boolean))].slice(0, THINGS_MAX).map((t) => `a real ${t}`);
   const text = `${a.title} ${a.description}`.toLowerCase();
-  const buildings = [...new Set(BUILDINGS.filter(([re]) => re.test(text)).map(([, w]) => w))].slice(0, BUILDINGS_MAX);
+  const buildings = (scene ? scene.buildings : [...new Set(BUILDINGS.filter(([re]) => re.test(text)).map(([, w]) => w))]).slice(0, BUILDINGS_MAX);
+  const surfaces = scene ? (scene.surfaces.length ? `real ${andList(scene.surfaces)}` : null) : k.surfaces;
   const sky = k.indoor ? `${studioSceneSky(a.hour)} through the windows` : studioSceneSky(a.hour);
   // Keep priority, highest first: the first thing, the first building, then the rest in turn.
   const extras: string[] = [];
@@ -339,7 +387,7 @@ export function studioRealSceneLine(a: { title: string; description: string; thi
       sky,
       "real ground",
     ].join(", ")}, shot on a cinema camera. ${wear} ${KEEP_LINE}`;
-  for (const place of [`a real ${k.kind} with ${k.surfaces}`, `a real ${k.kind}`]) {
+  for (const place of surfaces ? [`a real ${k.kind} with ${surfaces}`, `a real ${k.kind}`] : [`a real ${k.kind}`]) {
     for (let n = extras.length; n >= 0; n--) {
       const line = build(new Set(extras.slice(0, n)), place);
       if (line.length <= STUDIO_REAL_SCENE_MAX) return line;
@@ -348,12 +396,104 @@ export function studioRealSceneLine(a: { title: string; description: string; thi
   return build(new Set(), `a real ${k.kind}`);
 }
 
+/** "a", "a and b", "a, b and c". */
+const andList = (xs: readonly string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+
+/** A part of the set as the Studio has it now: its name in the outliner and its kind (studio-parts.ts StudioPartKind). */
+export type StudioScenePart = { name: string; kind: string };
+
+/** What each kind of part is, as a real thing; left out: said as a surface or not at all. */
+const PART_BUILDING_WORDS: Record<string, string> = { wall: "real concrete walls", barrier: "real barriers", stand: "real grandstands", tree: "real trees" };
+/** The surface a flat part is made of, by kind; "ground" is said by its name (Pavement, Sand, Floor...). */
+const PART_SURFACE_WORDS: Record<string, string> = { road: "asphalt", kerb: "kerbs", grass: "grass", water: "water", hill: "hills", marking: "painted lines" };
+
+/**
+ * The buildings and surfaces of the parts in the shot, in the order given (most prominent first): a building
+ * is called by what its name says it is ("Pit garage" is "a real concrete pit building", "Building 2" is
+ * "real buildings"), walls, barriers, grandstands and trees by their kind; surfaces are the flat parts'
+ * materials ("Track" is asphalt, "Kerbs" kerbs). Each said once.
+ */
+export function studioScenePartWords(parts: readonly StudioScenePart[]): { buildings: string[]; surfaces: string[] } {
+  const buildings: string[] = [], surfaces: string[] = [];
+  const add = (list: string[], w: string | null | undefined) => { if (w && !list.includes(w)) list.push(w); };
+  for (const p of parts) {
+    const name = p.name.replace(/\s+\d+$/, "").trim().toLowerCase();
+    if (p.kind === "building") add(buildings, BUILDINGS.find(([re]) => re.test(name))?.[1] ?? "real buildings");
+    else if (PART_BUILDING_WORDS[p.kind]) add(buildings, PART_BUILDING_WORDS[p.kind]);
+    else if (PART_SURFACE_WORDS[p.kind]) add(surfaces, PART_SURFACE_WORDS[p.kind]);
+    else if (p.kind === "ground" && name && !/^(the place|ground|structure)/.test(name)) add(surfaces, name);
+  }
+  return { buildings, surfaces };
+}
+
+/**
+ * The parts in or near the shot camera's view at ANY sampled moment of the range, most prominent first. Each
+ * sample lists, per part, whether it is in (or just outside) the frame and how big it looks (its size over its
+ * distance). Parts never seen are left out; a hidden or deleted part is never sampled (the Studio passes only
+ * what is there).
+ */
+export function studioVisibleParts<P>(samples: readonly (readonly { part: P; inView: boolean; size: number }[])[]): P[] {
+  const best = new Map<P, number>();
+  for (const sample of samples) for (const s of sample) if (s.inView) best.set(s.part, Math.max(best.get(s.part) ?? 0, s.size));
+  return [...best.entries()].sort((p, q) => q[1] - p[1]).map(([p]) => p);
+}
+
 /**
  * One step the chosen figure takes inside the range, in seconds from the range's start. For a walk or run,
  * `toward` is how it goes as the shot camera sees it ("toward the camera", studioWalkWords); for a turn, what it
  * turns to face. `gaze`: where it looks on the way ("looking ahead" unless a Look at… is set).
  */
-export type StudioRecastStep = { kind: "walk" | "run" | "turn"; from: number; to: number; toward: string | null; gaze?: string | null };
+export type StudioRecastStep = {
+  kind: "walk" | "run" | "turn";
+  from: number;
+  to: number;
+  toward: string | null;
+  gaze?: string | null;
+  /**
+   * The walk in world terms (studioWorldWalkWords: "across the track to the yellow car and stop beside it"), said
+   * in place of `toward` when the camera moves or cuts during the range, so no single camera's view is used.
+   */
+  world?: string | null;
+};
+
+/** One frame's shot camera: where it stands and which way it looks (a unit vector). */
+export type StudioCameraSample = { p: readonly [number, number, number]; d: readonly [number, number, number] };
+/** A jump this big between two frames that follow each other is a cut, not a move (metres; 1.5 m a frame is 130 km/h at 24 fps). */
+export const STUDIO_CUT_JUMP_M = 1.5;
+/** ...or a turn this sharp between two frames (degrees). */
+export const STUDIO_CUT_TURN_DEG = 20;
+
+/**
+ * Whether the shot camera cuts or moves over the range (2026-10-01 live run: camera keys hard-cut between three
+ * angles, and the prefill said "they walk away from the camera" from one of them). From the camera on each
+ * frame of the range, in order: a cut is a jump between two frames in a row; a move is any travel or turn
+ * beyond a few centimetres or degrees between the cuts.
+ */
+export function studioCameraCuts(samples: readonly StudioCameraSample[]): { cuts: number; moving: boolean } {
+  let cuts = 0, travel = 0, turn = 0;
+  for (let i = 1; i < samples.length; i++) {
+    const a = samples[i - 1], b = samples[i];
+    const jump = Math.hypot(b.p[0] - a.p[0], b.p[1] - a.p[1], b.p[2] - a.p[2]);
+    const dot = Math.max(-1, Math.min(1, a.d[0] * b.d[0] + a.d[1] * b.d[1] + a.d[2] * b.d[2]));
+    const deg = (Math.acos(dot) * 180) / Math.PI;
+    if (jump > STUDIO_CUT_JUMP_M || deg > STUDIO_CUT_TURN_DEG) { cuts++; continue; }
+    travel += jump; turn += deg;
+  }
+  return { cuts, moving: cuts > 0 || travel > 0.15 || turn > 3 };
+}
+
+/**
+ * A walk said in world terms: what it crosses ("the track"), what it goes to ("the yellow car") and whether it
+ * stops there inside the range. Neither: how far it goes. Lower-case, for "they walk ..." / "they run ...".
+ */
+export function studioWorldWalkWords(a: { over: string | null; to: string | null; stops: boolean; metres: number }): string {
+  const over = a.over ? `across ${a.over}` : "";
+  const to = a.to ? (a.stops ? `to ${a.to} and stop beside it` : `toward ${a.to}`) : "";
+  const parts = [over, to].filter(Boolean);
+  if (!parts.length) parts.push(`about ${Math.max(1, Math.round(a.metres))} m`);
+  if (a.stops && !a.to) parts.push("and stop");
+  return parts.join(" ");
+}
 
 /**
  * How a walk goes as the shot camera sees it (2026-09-30: the prefill said "walk to the yellow car" while she
@@ -377,14 +517,17 @@ const secs = (n: number) => `${Math.round(n * 10) / 10} s`;
  * sentence, studio-pose.ts poseSentence) and what it does over the range.
  * In English, for the video engine; the person may change it freely.
  */
-export function studioRecastHappens(start: string, steps: readonly StudioRecastStep[]): string {
+export function studioRecastHappens(start: string, steps: readonly StudioRecastStep[], camera?: { cuts: number } | null): string {
   const said = steps.map((s) => {
     const when = `From ${secs(s.from)} to ${secs(s.to)}`;
     if (s.kind === "turn") return `${when} they turn${s.toward === "left" || s.toward === "right" ? ` to their ${s.toward}` : s.toward ? ` to face ${s.toward}` : " on the spot"}.`;
     const verb = s.kind === "run" ? "run" : "walk";
+    // In world terms the camera is not a landmark: "looking at the camera" / "looking ahead" say nothing there.
+    if (s.world) return `${when} they ${verb} ${s.world}${s.gaze && /^looking at (?!the camera)/.test(s.gaze) ? `, ${s.gaze}` : ""}.`;
     return `${when} they ${verb}${s.toward ? ` ${s.toward}` : ""}${s.gaze ? `, ${s.gaze}` : ""}.`;
   });
-  return [start.trim(), ...said].filter(Boolean).join(" ");
+  const cuts = camera && camera.cuts > 0 ? [`The camera cuts between ${camera.cuts + 1} angles.`] : [];
+  return [start.trim(), ...said, ...cuts].filter(Boolean).join(" ");
 }
 
 /**

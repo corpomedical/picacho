@@ -23,7 +23,7 @@ import { copyStudioLook } from "@/lib/sets/studio-looks";
 import { inActionRows } from "@/lib/characters/in-action";
 import { recastTakeOutcome } from "@/lib/recast/door-truth";
 import type { RecastRead } from "@/lib/recast/recast-read";
-import { parseStudioRecastEngine, studioOutfitFromPrompt, studioRecastStart } from "@/lib/sets/studio-recast";
+import { parseStudioRecastEngine, studioOutfitFromPrompt, studioRecastStart, studioSavedOutfit } from "@/lib/sets/studio-recast";
 import { readRecastCharacters } from "@/lib/recast/data";
 import { serverTimer } from "@/lib/server-timing";
 
@@ -98,17 +98,24 @@ export type StudioLook = { id: string; url: string; outfit: string };
  */
 export async function openStudioRecast(
   setId: string,
-): Promise<{ error: string; timing: string } | { error: null; characters: { id: string; name: string; photos: number }[]; timing: string }> {
+): Promise<{ error: string; timing: string } | { error: null; characters: { id: string; name: string; photos: number; outfit: string }[]; timing: string }> {
   const tm = serverTimer("studio.recast");
   const access = await tm.step("access", () => setsAccess());
   if (access.error !== null) return { error: access.error, timing: tm.value() };
   if (!(await tm.step("owns", () => ownsSet(access, setId)))) return { error: SET_NOT_FOUND, timing: tm.value() };
-  const [gate, characters] = await Promise.all([
+  // Each character's saved default outfit (2026-10-01 live run: a black evening dress again), said in the words
+  // when nothing else is picked (studioWearLine). Read beside Recast's own list, so it adds no wait; a failed
+  // read only leaves it unsaid.
+  const [gate, characters, outfits] = await Promise.all([
     tm.step("gate", () => canUseRecast()),
     tm.step("characters", () => readRecastCharacters(access.supabase, access.userId)),
+    tm.step("outfits", async () => {
+      const { data } = await access.supabase.from("character_profiles").select("id, traits, outfit_description, outfit_image_urls").eq("user_id", access.userId);
+      return new Map(((data ?? []) as Record<string, unknown>[]).map((r) => [r.id as string, studioSavedOutfit(r)]));
+    }).catch(() => new Map<string, string>()),
   ]);
   if (gate.error !== null) return { error: gate.error, timing: tm.value() };
-  return { error: null, characters: characters.map((c) => ({ id: c.id, name: c.name, photos: c.photos.length })), timing: tm.value() };
+  return { error: null, characters: characters.map((c) => ({ id: c.id, name: c.name, photos: c.photos.length, outfit: outfits.get(c.id) ?? "" })), timing: tm.value() };
 }
 
 export async function listStudioLooks(setId: string, input: { characterId: string }): Promise<{ error: string } | { error: null; looks: StudioLook[] }> {
