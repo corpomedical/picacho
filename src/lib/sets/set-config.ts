@@ -74,6 +74,15 @@ export const HELIOS_STUDIO_FOR_ALL = true;
  */
 export const HELIOS_CYCLES_FOR_ALL = false;
 
+/**
+ * The prompt bar's 3D Model engines (2026-10-01, model-engines.ts: Hunyuan 3D
+ * v3.1 Pro, Meshy 7.1, Tripo v2.5 and TRELLIS.2, text / photo / multi-view).
+ * Admins only while false, like the set page's own build: each build is paid
+ * to fal by Picacho and no credits are taken. Opening it to everyone waits
+ * for his price in credits and the first real build of each engine.
+ */
+export const STUDIO_MODEL_ENGINES_FOR_ALL = false;
+
 export const SET_BUILDS_MONTHLY_LIMITS = {
   none: 0,
   basic: 1,

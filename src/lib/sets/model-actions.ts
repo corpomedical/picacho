@@ -30,6 +30,24 @@ import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout
 import { cutViews, findViews, VIEW_MAX } from "@/lib/sets/thing-views";
 import { checkReferencePhoto, parseReferencePhoto } from "@/lib/sets/reference-upload";
 import { studioModelPath } from "@/lib/sets/studio-models";
+import { STUDIO_MODEL_ENGINES_FOR_ALL } from "@/lib/sets/set-config";
+import { gatePrompt } from "@/lib/generations/policy-log";
+import { ContentPolicyRefusal } from "@/lib/generations/content-policy";
+import {
+  MODEL_VIEWS,
+  modelBuildRequest,
+  modelBuildUsd,
+  modelEngine,
+  modelHandleAllowed,
+  modelInputProblem,
+  modelResultGlb,
+  normaliseModelOptions,
+  readModelHandle,
+  type ModelBuildHandle,
+  type ModelEngine,
+  type ModelImages,
+  type ModelInputKind,
+} from "@/lib/sets/model-engines";
 import {
   THING_BUILDS_PER_HOUR,
   THING_BUILD_MULTI_ENDPOINT,
@@ -50,6 +68,9 @@ import {
   THING_BUILD_FAILED,
   THING_BUILD_NO_PHOTO,
   SET_ELEMENT_GONE,
+  STUDIO_MODEL_BUILD_FAILED,
+  STUDIO_MODEL_ENGINE_UNKNOWN,
+  STUDIO_MODEL_STILL_STARTING,
 } from "@/lib/sets/messages";
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -201,8 +222,15 @@ async function viewsOf(bytes: Buffer): Promise<string[]> {
   return views.length ? views : [`data:${sniffImageType(bytes)};base64,${bytes.toString("base64")}`];
 }
 
-/** fal's answer about a build: still working, failed, or the .glb it made — fetched, and checked to be one. */
-async function readBuilt(handle: ThingBuildHandle): Promise<{ error: string } | { error: null; state: "working" } | { error: null; state: "done"; bytes: Uint8Array }> {
+/**
+ * fal's answer about a build: still working, failed, or the .glb it made — fetched, and checked to be one. `pick`
+ * finds the .glb in the answer (TRELLIS.2's model_glb by default; the prompt bar's engines name theirs,
+ * model-engines.ts modelResultGlb).
+ */
+async function readBuilt(
+  handle: ThingBuildHandle,
+  pick: (result: unknown) => { url: string; size: number | null } | null = builtModelUrl,
+): Promise<{ error: string } | { error: null; state: "working" } | { error: null; state: "done"; bytes: Uint8Array }> {
   const apiKey = process.env.FAL_KEY;
   if (!apiKey) return { error: THING_BUILD_FAILED };
   const auth = { authorization: `Key ${apiKey}` };
@@ -213,7 +241,7 @@ async function readBuilt(handle: ThingBuildHandle): Promise<{ error: string } | 
   if (status !== "COMPLETED") return { error: null, state: "working" };
   const resultRes = await fetchWithTimeout(handle.responseUrl, { headers: auth }, 20_000);
   if (!resultRes.ok) return { error: THING_BUILD_FAILED };
-  const made = builtModelUrl(await resultRes.json());
+  const made = pick(await resultRes.json());
   if (!made || (made.size !== null && made.size > THING_MODEL_MAX_BYTES)) return { error: made ? THING_MODEL_TOO_BIG : THING_BUILD_FAILED };
   const glbRes = await fetchWithTimeout(made.url, {}, 60_000);
   if (!glbRes.ok) return { error: THING_BUILD_FAILED };
@@ -340,6 +368,231 @@ export async function pollNewModelBuild(
   if (upError) {
     console.warn("[sets] a built Studio model was not kept:", upError.message);
     return { error: THING_MODEL_SAVE_FAILED };
+  }
+  return { error: null, state: "done", file: path, url: mediaUrl(THING_MODEL_BUCKET, path) };
+}
+
+// ---------------------------------------------------------------------------
+// The prompt bar's 3D Model engines (Helios Studio, 2026-10-01, operator:
+// "Finalizing the UI to look and work like this")
+// ---------------------------------------------------------------------------
+//
+// One door for every engine in model-engines.ts: text, one photo or up to four
+// views, the options each engine really takes, priced from fal's own pages.
+// The same gates as the set page's build — setsAccess first, admins while
+// STUDIO_MODEL_ENGINES_FOR_ALL is false, the set is theirs, the same hourly
+// limit (THING_BUILDS_PER_HOUR, shared with it) — and no credits: Picacho pays
+// fal, so there is nothing to give back when a build fails. Words go through
+// the prompt gate as the person's own; each photo through the reference
+// photo's checks (its own hourly limit, re-encoded, the picture gate). The
+// result is kept as the thing's model (one per thing) or as a Studio file of
+// the set, as "Model from a photo" keeps it.
+//
+// ONE BUILD PER PRESS: the page sends a fresh press id; the first delivery
+// writes a small ticket under it (upsert off), submits, and writes fal's
+// handle into it. A browser's silent resend of the same press finds the
+// ticket and is answered with the same handle — never a second paid build.
+
+/** Where a press's ticket is kept: the owner's folder, beside the set's models (never read as a model). */
+function modelPressPath(userId: string, setId: string, pressId: string): string {
+  return `${userId}/sets/${setId}.model-press.${pressId}.json`;
+}
+type ModelPressTicket = { v: 1; at: number; engine: string; kind: string; handle?: ModelBuildHandle; failed?: string };
+
+async function readModelTicket(path: string): Promise<ModelPressTicket | null> {
+  const { data, error } = await createAdminClient().storage.from(THING_MODEL_BUCKET).download(path);
+  if (error || !data) return null;
+  try {
+    const t = JSON.parse(await data.text()) as ModelPressTicket;
+    return t && t.v === 1 ? t : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeModelTicket(path: string, ticket: ModelPressTicket, upsert: boolean): Promise<boolean> {
+  const { error } = await createAdminClient()
+    .storage.from(THING_MODEL_BUCKET)
+    .upload(path, JSON.stringify(ticket), { contentType: "application/json", upsert });
+  return !error;
+}
+
+/** A repeat delivery's answer: the first delivery's handle once it is written (up to ~20 s), else "still starting". */
+async function followModelTicket(path: string): Promise<{ error: string } | { error: null; handle: ModelBuildHandle }> {
+  for (let i = 0; i < 10; i++) {
+    const t = await readModelTicket(path);
+    if (t?.handle) return { error: null, handle: t.handle };
+    if (t?.failed) return { error: t.failed };
+    await new Promise((r) => setTimeout(r, 2_000));
+  }
+  return { error: STUDIO_MODEL_STILL_STARTING };
+}
+
+const PRESS_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const KINDS: readonly ModelInputKind[] = ["text", "image", "multi"];
+
+/** A thing of the set, by the key the page sent: the key it resolves to in the working copy, or null. */
+async function thingKeyIn(admin: Admin, userId: string, setId: string, key: unknown): Promise<string | null> {
+  if (typeof key !== "string" || !ELEMENT_KEY_RE.test(key)) return null;
+  const spec = await workingSpec(admin, userId, setId);
+  if (!spec) return null;
+  const probe: ElementPhoto = { refId: "00000000-0000-4000-8000-000000000000", anchor: key, slot: 1, at: 0, url: "" };
+  return resolvePhotos(setElements(spec), [probe]).held[0]?.key ?? null;
+}
+
+/** The set is this person's and not deleted. */
+async function setIsTheirs(admin: Admin, userId: string, setId: unknown): Promise<boolean> {
+  if (typeof setId !== "string" || !UUID_RE.test(setId)) return false;
+  const { data } = await admin.from("location_sets").select("id").eq("id", setId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+  return !!data;
+}
+
+export type StudioModelBuildInput = {
+  pressId: string;
+  engine: string;
+  kind: ModelInputKind;
+  /** Text builds: the description. */
+  prompt?: string;
+  /** Photo builds: data URIs, "front" for one photo; front/back/left/right for multi-view. */
+  images?: ModelImages;
+  options?: unknown;
+  /** The thing whose model it becomes, or a new object of the Studio. */
+  target: { key: string } | { new: true };
+};
+
+export type StudioModelBuildStarted = {
+  error: null;
+  engine: string;
+  kind: ModelInputKind;
+  rig: boolean;
+  key: string | null;
+  handle: ModelBuildHandle;
+  usd: number;
+};
+
+/** Start one build from the prompt bar: checked, gated, priced, sent to fal once per press. */
+export async function startStudioModelBuild(setId: string, input: StudioModelBuildInput): Promise<{ error: string } | StudioModelBuildStarted> {
+  const access = await setsAccess();
+  if (access.error !== null) return { error: access.error };
+  if (!access.isAdmin && !STUDIO_MODEL_ENGINES_FOR_ALL) return { error: THING_MODEL_ADMINS_ONLY };
+  const admin = createAdminClient();
+  if (!(await setIsTheirs(admin, access.userId, setId))) return { error: SET_NOT_FOUND };
+  const engine = modelEngine(input?.engine);
+  const kind = KINDS.includes(input?.kind) ? input.kind : null;
+  if (!engine || !kind || !engine.endpoints[kind]) return { error: STUDIO_MODEL_ENGINE_UNKNOWN };
+  const options = normaliseModelOptions(engine, input?.options);
+  const prompt = typeof input?.prompt === "string" ? input.prompt.slice(0, 2_000) : "";
+  const sent: ModelImages = {};
+  for (const v of MODEL_VIEWS) {
+    const d = input?.images?.[v];
+    if (kind !== "text" && typeof d === "string" && (kind === "multi" || v === "front")) sent[v] = d;
+  }
+  const problem = modelInputProblem(engine, { kind, prompt, images: sent, options });
+  if (problem) return { error: problem };
+  const wantsThing = !!input?.target && "key" in input.target;
+  const key = wantsThing ? await thingKeyIn(admin, access.userId, setId, (input.target as { key: string }).key) : null;
+  if (wantsThing && !key) return { error: SET_ELEMENT_GONE };
+  const pressId = typeof input?.pressId === "string" && PRESS_RE.test(input.pressId) ? input.pressId.toLowerCase() : null;
+  if (!pressId) return { error: STUDIO_MODEL_BUILD_FAILED };
+  const usd = modelBuildUsd(engine, kind, options);
+  const ticketPath = modelPressPath(access.userId, setId, pressId);
+  const ticket: ModelPressTicket = { v: 1, at: Date.now(), engine: engine.id, kind };
+  if (!(await writeModelTicket(ticketPath, ticket, false))) {
+    // Written already: this press was delivered before. Its first delivery's handle — never a second build.
+    if (!(await readModelTicket(ticketPath))) return { error: STUDIO_MODEL_BUILD_FAILED };
+    const again = await followModelTicket(ticketPath);
+    if (again.error !== null) return again;
+    return { error: null, engine: engine.id, kind, rig: options.rig, key, handle: again.handle, usd };
+  }
+  const fail = async (error: string): Promise<{ error: string }> => {
+    await writeModelTicket(ticketPath, { ...ticket, failed: error }, true);
+    return { error };
+  };
+  if (await rateLimited(access.userId, "thing-build", 60 * 60, THING_BUILDS_PER_HOUR)) return fail(THING_MODEL_TOO_FAST);
+  if (!process.env.FAL_KEY) return fail(STUDIO_MODEL_BUILD_FAILED);
+  if (kind === "text") {
+    try {
+      await gatePrompt({ prompt, userId: access.userId, hasRealPersonReference: false });
+    } catch (err) {
+      if (err instanceof ContentPolicyRefusal) return fail(err.userMessage);
+      throw err;
+    }
+  }
+  // Every photo: parsed, then the reference photo's checks (its hourly limit, re-encoded here, the picture gate).
+  const images: ModelImages = {};
+  for (const v of MODEL_VIEWS) {
+    const d = sent[v];
+    if (!d) continue;
+    const parsed = parseReferencePhoto(d);
+    if (!parsed.ok) return fail(parsed.error);
+    const photo = await checkReferencePhoto(access.userId, parsed.bytes);
+    if (photo.error !== null) return fail(photo.error);
+    images[v] = `data:image/jpeg;base64,${photo.jpeg.toString("base64")}`;
+  }
+  const submitted = await submitModelBuild(engine, { kind, prompt, images, options }, { setId, key: key ?? "new", usd });
+  if (submitted.error !== null) return fail(submitted.error);
+  if (!(await writeModelTicket(ticketPath, { ...ticket, handle: submitted.handle }, true))) {
+    console.warn("[sets] a studio model build started but its press ticket wasn't updated:", pressId);
+  }
+  return { error: null, engine: engine.id, kind, rig: options.rig, key, handle: submitted.handle, usd };
+}
+
+/** fal's queue, asked for one build: the handle to ask after, or why not. */
+async function submitModelBuild(
+  engine: ModelEngine,
+  input: Parameters<typeof modelBuildRequest>[1],
+  log: Record<string, unknown>,
+): Promise<{ error: string } | { error: null; handle: ModelBuildHandle }> {
+  const apiKey = process.env.FAL_KEY;
+  if (!apiKey) return { error: STUDIO_MODEL_BUILD_FAILED };
+  const request = modelBuildRequest(engine, input);
+  const res = await fetchWithTimeout(
+    `https://queue.fal.run/${request.endpoint}`,
+    { method: "POST", headers: { authorization: `Key ${apiKey}`, "content-type": "application/json" }, body: JSON.stringify(request.body) },
+    30_000,
+  );
+  if (!res.ok) {
+    console.warn("[sets] studio model build submit failed:", engine.id, res.status, (await res.text()).slice(0, 300));
+    return { error: STUDIO_MODEL_BUILD_FAILED };
+  }
+  const handle = readModelHandle(request.endpoint, await res.json());
+  if (!handle) return { error: STUDIO_MODEL_BUILD_FAILED };
+  console.info("[sets] studio model build started", { ...log, engine: engine.id, kind: input.kind, endpoint: request.endpoint, requestId: handle.requestId });
+  return { error: null, handle };
+}
+
+/** Ask after a prompt-bar build: still working, or done — kept as the thing's model or a Studio file — or failed. */
+export async function pollStudioModelBuild(
+  setId: string,
+  input: { engine: string; kind: ModelInputKind; rig: boolean; key: string | null; handle: unknown },
+): Promise<
+  | { error: string }
+  | { error: null; state: "working" }
+  | { error: null; state: "done"; thing: KeptThingModel }
+  | { error: null; state: "done"; file: string; url: string }
+> {
+  const access = await setsAccess();
+  if (access.error !== null) return { error: access.error };
+  if (!access.isAdmin && !STUDIO_MODEL_ENGINES_FOR_ALL) return { error: THING_MODEL_ADMINS_ONLY };
+  const admin = createAdminClient();
+  if (!(await setIsTheirs(admin, access.userId, setId))) return { error: SET_NOT_FOUND };
+  const engine = modelEngine(input?.engine);
+  const endpoint = engine && KINDS.includes(input?.kind) ? engine.endpoints[input.kind] : undefined;
+  if (!engine || !endpoint || !modelHandleAllowed(endpoint, input.handle)) return { error: STUDIO_MODEL_BUILD_FAILED };
+  const key = input.key === null ? null : typeof input.key === "string" && ELEMENT_KEY_RE.test(input.key) ? input.key : undefined;
+  if (key === undefined) return { error: STUDIO_MODEL_BUILD_FAILED };
+  const built = await readBuilt(input.handle, (result) => modelResultGlb(engine, input.rig === true, result));
+  if (built.error !== null) return { error: built.error === THING_BUILD_FAILED ? STUDIO_MODEL_BUILD_FAILED : built.error };
+  if (built.state === "working") return built;
+  const path = key ? setModelPath(access.userId, setId as string, key, Date.now(), false) : studioModelPath(access.userId, setId as string, Date.now(), crypto.randomUUID().replace(/-/g, "").slice(0, 16));
+  const { error: upError } = await admin.storage.from(THING_MODEL_BUCKET).upload(path, built.bytes, { contentType: "model/gltf-binary", upsert: false });
+  if (upError) {
+    console.warn("[sets] a studio-built model was not kept:", upError.message);
+    return { error: THING_MODEL_SAVE_FAILED };
+  }
+  if (key) {
+    await removeOthers(admin, access.userId, setId as string, key, path);
+    return { error: null, state: "done", thing: { key, url: mediaUrl(THING_MODEL_BUCKET, path), flip: false } };
   }
   return { error: null, state: "done", file: path, url: mediaUrl(THING_MODEL_BUCKET, path) };
 }

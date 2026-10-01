@@ -27,6 +27,10 @@
 // read and start (studio-recast.ts → studio-recast-actions.ts), with this
 // press's sendId. Shown only when the page says this account can use Recast;
 // the characters are Recast's own list.
+//
+// The prompt bar (2026-10-01): the engine's floating bar is the front door to
+// all of the above; its 3D Model tab builds through models.engines below
+// (model-engines.ts, startStudioModelBuild / pollStudioModelBuild).
 
 import { useEffect, useRef, useState } from "react";
 import { quoteSend } from "@/lib/generations/quote";
@@ -55,12 +59,13 @@ import { discardStudioRecast, inspectStudioRecast, listStudioLooks, openStudioRe
 import { pressStudioRecast, type RecastPress, type RecastUpdate } from "./studio-recast";
 import { StudioOpening, STUDIO_HIDES_APP_CHROME } from "./studio-opening";
 import { addElementPhoto } from "@/lib/sets/element-actions";
-import { pollNewModelBuild, pollThingBuild, startNewModelBuild, startThingBuild } from "@/lib/sets/model-actions";
+import { pollNewModelBuild, pollStudioModelBuild, pollThingBuild, startNewModelBuild, startStudioModelBuild, startThingBuild } from "@/lib/sets/model-actions";
+import { STUDIO_MODEL_ENGINES_FOR_ALL } from "@/lib/sets/set-config";
 import { keepStudioModel, reserveStudioModel, studioModelUrls } from "@/lib/sets/studio-model-actions";
 import { THING_BUILD_POLL_MS, THING_BUILD_USD, THING_BUILD_WAIT_MS } from "@/lib/sets/thing-build";
 import { THING_MODEL_BUCKET } from "@/lib/sets/thing-model";
-import { THING_BUILD_FAILED, THING_MODEL_SAVE_FAILED } from "@/lib/sets/messages";
-import { keepStudioImport, pressModelBuild, type ModelBuildPhase } from "./studio-model";
+import { STUDIO_MODEL_BUILD_FAILED, THING_BUILD_FAILED, THING_MODEL_SAVE_FAILED } from "@/lib/sets/messages";
+import { keepStudioImport, pressEngineBuild, pressModelBuild, type EngineBuildStart, type ModelBuildPhase } from "./studio-model";
 import type { StudioBuildTarget } from "@/lib/sets/studio-models";
 
 /**
@@ -329,6 +334,33 @@ export function HeliosStudio({
                 },
               }
             : null,
+          // The prompt bar's 3D Model engines (2026-10-01, model-engines.ts): admins while each engine is proved
+          // (STUDIO_MODEL_ENGINES_FOR_ALL); the door asks the same rule again.
+          engines:
+            modelsRef.current.buildOn || STUDIO_MODEL_ENGINES_FOR_ALL
+              ? {
+                  run: async (pressId: string, input: EngineBuildStart, onPhase: (p: ModelBuildPhase) => void) => {
+                    const answer = await pressEngineBuild(
+                      {
+                        start: startStudioModelBuild,
+                        poll: pollStudioModelBuild,
+                        alive: () => !dead,
+                        sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
+                        now: () => new Date().getTime(),
+                        waitMs: THING_BUILD_WAIT_MS,
+                        pollMs: THING_BUILD_POLL_MS,
+                        failed: STUDIO_MODEL_BUILD_FAILED,
+                        unreachable,
+                      },
+                      setId,
+                      pressId,
+                      input,
+                      onPhase,
+                    );
+                    return answer.error !== null ? { error: recastWordsRef.current.localize(answer.error) } : answer;
+                  },
+                }
+              : null,
         },
         render: {
           // THE price, from the function the server charges with (set-view.tsx's own).

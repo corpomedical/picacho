@@ -240,6 +240,95 @@ export async function pressModelBuild(d: ModelBuildDoors, setId: string, target:
 }
 
 // ---------------------------------------------------------------------------
+// The prompt bar's 3D Model press (2026-10-01): any engine of model-engines.ts
+// ---------------------------------------------------------------------------
+
+export type EngineBuildStart = {
+  engine: string;
+  kind: "text" | "image" | "multi";
+  prompt: string;
+  images: Partial<Record<"front" | "back" | "left" | "right", string>>;
+  options: unknown;
+  target: { key: string } | { new: true };
+};
+
+export type EngineBuildDoors = {
+  start: (setId: string, input: EngineBuildStart & { pressId: string }) => Promise<Err | { error: null; engine: string; kind: EngineBuildStart["kind"]; rig: boolean; key: string | null; handle: Handle; usd: number }>;
+  poll: (
+    setId: string,
+    input: { engine: string; kind: EngineBuildStart["kind"]; rig: boolean; key: string | null; handle: unknown },
+  ) => Promise<Err | { error: null; state: "working" } | { error: null; state: "done"; thing: { key: string; url: string; flip: boolean } } | { error: null; state: "done"; file: string; url: string }>;
+  alive: () => boolean;
+  sleep: (ms: number) => Promise<void>;
+  now: () => number;
+  waitMs: number;
+  pollMs: number;
+  failed: string;
+  unreachable: string;
+};
+
+/**
+ * One prompt-bar build: started once under `pressId` (taken by the caller before anything else, so a resend of the
+ * same press is answered with the same build — model-actions.ts startStudioModelBuild's ticket), then asked after
+ * every pollMs until it lands. A door that throws on the start is followed by asking the start again with the SAME
+ * press id once (never a second build); a poll that throws is simply asked again.
+ */
+export async function pressEngineBuild(d: EngineBuildDoors, setId: string, pressId: string, input: EngineBuildStart, onPhase: (p: ModelBuildPhase) => void): Promise<ModelBuildAnswer> {
+  onPhase("photo");
+  let started: Awaited<ReturnType<EngineBuildDoors["start"]>> | null = null;
+  for (let i = 0; i < 2 && started === null; i++) {
+    try {
+      started = await d.start(setId, { ...input, pressId });
+    } catch {
+      started = null;
+    }
+  }
+  if (started === null) return { error: d.unreachable };
+  if (started.error !== null) return { error: started.error };
+  onPhase("building");
+  const ask = { engine: started.engine, kind: started.kind, rig: started.rig, key: started.key, handle: started.handle };
+  const deadline = d.now() + d.waitMs;
+  while (d.alive() && d.now() < deadline) {
+    await d.sleep(d.pollMs);
+    let res: Awaited<ReturnType<EngineBuildDoors["poll"]>>;
+    try {
+      res = await d.poll(setId, ask);
+    } catch {
+      continue;
+    }
+    if (res.error !== null) return { error: res.error };
+    if (res.state === "done") {
+      onPhase("placing");
+      return "thing" in res ? { error: null, thing: res.thing } : { error: null, file: { file: res.file, url: res.url } };
+    }
+  }
+  return { error: d.failed };
+}
+
+/** A photo for a multi-view build, kept small enough that four of them fit one request (≈ 800 KB each as sent). */
+export const BAR_VIEW_MAX_CHARS = 800_000;
+
+/** The whole photo as a view: cropPhoto's white margin and size, then compressed until it fits `maxChars`. */
+export function viewPhoto(img: HTMLImageElement, maxChars = BAR_VIEW_MAX_CHARS): { dataUri: string; colour: string | null } {
+  const W = img.naturalWidth, H = img.naturalHeight;
+  const first = cropPhoto(img, { x: 0, y: 0, w: W, h: H });
+  if (first.dataUri.length <= maxChars) return first;
+  // Too big: drawn again at a smaller size, stepping the quality down.
+  const s = Math.min(1, 1280 / Math.max(W, H));
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(W * s));
+  c.height = Math.max(1, Math.round(H * s));
+  const x = c.getContext("2d");
+  if (!x) return first;
+  x.fillStyle = "#ffffff";
+  x.fillRect(0, 0, c.width, c.height);
+  x.drawImage(img, 0, 0, c.width, c.height);
+  let dataUri = c.toDataURL("image/jpeg", 0.85);
+  for (const q of [0.75, 0.6, 0.45]) if (dataUri.length > maxChars) dataUri = c.toDataURL("image/jpeg", q);
+  return { dataUri, colour: first.colour };
+}
+
+// ---------------------------------------------------------------------------
 // An imported file, kept (studio-model-actions.ts)
 // ---------------------------------------------------------------------------
 

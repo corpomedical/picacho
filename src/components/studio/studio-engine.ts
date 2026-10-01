@@ -24,7 +24,10 @@ import { watchStudioText } from "./studio-i18n";
 import { modelHome } from "@/lib/sets/thing-model";
 import { THING_BUILDS_PER_HOUR } from "@/lib/sets/thing-build";
 import { cropInPixels, dominantColour, studioBuildLabel, studioModelRef, studioViewSuggestion } from "@/lib/sets/studio-models";
-import { cropPhoto, holderForThing, holderLoose, modelPixels, showModel, viewsOfImage } from "./studio-model";
+import { cropPhoto, holderForThing, holderLoose, modelPixels, showModel, viewPhoto, viewsOfImage } from "./studio-model";
+import { BAR_CSS, BAR_HTML, BAR_ICONS, BAR_SHEET_TAB, selectChip, toggleChip } from "./studio-bar";
+import { ANIM_CHIPS, BAR_MODEL_DEFAULT, BAR_MODES, BAR_PLACEHOLDERS, CAMERA_PRESETS, barAvoid, barModelPayload, cameraMoveKeys, clampBarOffset, isBarMode, normaliseCameraForm } from "@/lib/sets/studio-bar";
+import { MODEL_PRICES_READ, MODEL_VIEWS, modelBuildPrice, modelBuildUsd, modelChoices, modelEngine, modelEngineLabel, normaliseModelOptions, usdText } from "@/lib/sets/model-engines";
 import { studioCastInput } from "./studio-cast";
 import { boneOfMesh, makeFigure } from "./studio-figure";
 import { addMove, gaitFrame, headingOf, moveAt, moveWords, naturalEnd, normaliseMoves, pathCurve, pathLength, pathRootAt, shortestYaw, turnFrame, turnStart, turnYawAt } from "@/lib/sets/studio-gait";
@@ -140,6 +143,11 @@ export type StudioOptions = {
     urls: (files: string[]) => Promise<Record<string, string>>;
     keepImport: (file: File) => Promise<{ error: string } | { error: null; file: string; url: string }>;
     build: { usd: number; run: (target: any, photoDataUri: string, onPhase: (p: string) => void) => Promise<any> } | null;
+    /**
+     * The prompt bar's 3D Model engines (2026-10-01, model-engines.ts): one press = one build under `pressId`, landing as
+     * the thing's model or a Studio file ({ thing } | { file }, as build.run answers). Null when this account can't build.
+     */
+    engines?: { run: (pressId: string, input: any, onPhase: (p: string) => void) => Promise<any> } | null;
   } | null;
 };
 
@@ -153,6 +161,8 @@ let stopped = false, raf = 0;
 const rc = { busy: false, stop: false, t0: 0, phase: "", done: 0, total: 0, share: null, progress: "", result: null, charId: null, engine: STUDIO_RECAST_ENGINES[0], fig: null, words: "", autoWords: "", typed: false, id: null, real: true, clay: null, wall: 0, realThings: [], realParts: null, timer: 0, shot: null, chars: null, loadingChars: false, lastChar: null, outfit: "", outfitTyped: false, lookId: null, looks: null, looksFor: null };
 /** The clay look's sky colour while a clay clip is drawn (rcClayOn); null otherwise. */
 let rcClayBg = null;
+// The prompt bar (2026-10-01): its state, up here because the Astra thread and the windows' ticks refresh it from start-up on.
+let pb = null;
 // A tab shown again says where the take is at once (a hidden tab's timers run slowly).
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") rcTick(); }, { signal: ac.signal });
 // The person's language (stage 7): T() for text the engine puts in a field
@@ -745,22 +755,34 @@ async function mpBuild() {
   let r; try { r = await B.run(target, photo.dataUri, (p) => { mp.phase = p; mpTick(); }); } catch { r = { error: "Couldn't reach the server. Nothing was built." }; }
   clearInterval(mp.timer); if (stopped) return;
   if (!r || r.error) { mp.busy = false; mp.error = (r && r.error) || "The model couldn't be built."; mpRender(); toast("The model wasn't built · " + mp.error); return; }
-  let it = null, drawn = "blocks";
-  if (r.thing) {
-    const home = modelHome(r.thing.key, els); it = home ? items.find((i) => i.saveKey === "el:" + home) : null;
-    if (it) { it.model = { thing: home, colour: photo.colour || undefined }; drawn = await putModel(it, r.thing.url, { thing: home, flip: false }); if (drawn === "blocks") it.model = null; }
-  } else if (r.file) {
-    it = addModelItem(nextName("Model"), "Cast", { file: r.file.file, colour: photo.colour || undefined }); fileUrls[r.file.file] = r.file.url;
-    it.obj.position.set(orbit.target.x, 0, orbit.target.z); const idx = items.indexOf(it);
-    push({ label: "Add " + it.name, undo() { detachItem(it); }, redo() { reattachItem(it, idx); } });
-    drawn = await putModel(it, r.file.url, {});
-    if (drawn === "model") { const b = new THREE.Box3().setFromObject(holderOf(it)), s = b.getSize(new THREE.Vector3()), m = Math.max(s.x, s.y, s.z); if (m > 0) it.obj.scale.setScalar(size / m); }
-  }
+  const { it, drawn } = await placeBuilt(r, photo.colour, size);
   if (stopped) return;
   mp.busy = false; mp.done = { name: it ? it.name : "The thing", ok: drawn === "model" };
   mpRender();
   if (it && drawn === "model") { select(it); frameObj(it.obj); info(`${it.name} · drawn from its model, built from your photo`); saveNow(); }
   else toast("The model was built but couldn't be drawn here");
+}
+/**
+ * A built model onto the stage (Model from a photo, and the prompt bar's engines): a thing's model drawn where its
+ * blocks stand, or a new object of the Cast at the view's centre, `size` m on its longest side — one undo step.
+ */
+async function placeBuilt(r, colour, size) {
+  let it = null, drawn = "blocks";
+  if (r.thing) {
+    const home = modelHome(r.thing.key, els); it = home ? items.find((i) => i.saveKey === "el:" + home) : null;
+    if (it) { it.model = { thing: home, colour: colour || undefined }; drawn = await putModel(it, r.thing.url, { thing: home, flip: false }); if (drawn === "blocks") it.model = null; }
+  } else if (r.file) {
+    it = addModelItem(nextName("Model"), "Cast", { file: r.file.file, colour: colour || undefined }); fileUrls[r.file.file] = r.file.url;
+    it.obj.position.set(orbit.target.x, 0, orbit.target.z); const idx = items.indexOf(it);
+    push({ label: "Add " + it.name, undo() { detachItem(it); }, redo() { reattachItem(it, idx); } });
+    drawn = await putModel(it, r.file.url, {});
+    if (drawn === "model") {
+      const b = new THREE.Box3().setFromObject(holderOf(it)), s = b.getSize(new THREE.Vector3()), m = Math.max(s.x, s.y, s.z); if (m > 0) it.obj.scale.setScalar(size / m);
+      // Not inside what stands at the view's centre (2026-10-01: a new model landed inside the car): the walls' own search.
+      try { keepClear(it, [], []); } catch {}
+    }
+  }
+  return { it, drawn };
 }
 
 
@@ -1332,9 +1354,10 @@ function renderAstraSees() {
 }
 function sendAstra(text) {
   if (astraBusy) return toast("Astra is still working");
-  const inp = $("astraIn"); text = (text ?? inp.value).trim(); if (!text) return; inp.value = "";
+  // The words come from the sidebar's box, or are handed in (the prompt bar, a chip, an option): the sidebar may be on another tab.
+  const inp = $("astraIn"); text = (text ?? (inp ? inp.value : "")).trim(); if (!text) return; if (inp && inp.value.trim() === text) inp.value = "";
   astraLog.push({ who: "u", text });
-  if (examplesOpen) { examplesOpen = false; $("chips").hidden = true; $("exToggle").textContent = "Examples ▸"; }
+  if (examplesOpen && $("chips")) { examplesOpen = false; $("chips").hidden = true; $("exToggle").textContent = "Examples ▸"; }
   const asked = text.toLowerCase().replace(/[.!]+$/, "");
   const plan = PLANS.find((p) => p.ask.toLowerCase() === asked || T(p.ask).toLowerCase() === asked);
   if (plan) return startPlan(plan, {});
@@ -1378,9 +1401,16 @@ async function runSteps(msg) {
   if (keyed) { const row = [...$("tnames").children].find((d) => d.querySelector("span")?.textContent === keyed.name); scrollIntoPane(row?.closest(".tbody"), row); }
 }
 function renderThread() {
+  // The prompt bar's Scene builder shows the same conversation (2026-10-01): it is drawn from the same log.
+  barAstraSync();
   const th = $("thread"); if (!th) return; th.innerHTML = "";
-  astraLog.forEach((m, idx) => {
-    if (m.who === "u") { const d = document.createElement("div"); d.className = "msg-u"; d.translate = false; d.textContent = m.text; th.appendChild(d); return; }
+  astraLog.forEach((m, idx) => th.appendChild(astraMsgEl(m, idx)));
+  th.scrollTop = th.scrollHeight;
+  th.onclick = (e) => astraAct(e.target.closest("button"));
+}
+/** One message of Astra's conversation, as the sidebar and the prompt bar draw it. */
+function astraMsgEl(m, idx) {
+    if (m.who === "u") { const d = document.createElement("div"); d.className = "msg-u"; d.translate = false; d.textContent = m.text; return d; }
     const d = document.createElement("div"); d.className = "msg-a"; d.innerHTML = `<span class="who">Astra</span><div>${esc(m.text)}</div>`;
     if (m.state === "thinking") d.classList.add("thinking");
     if (m.state === "question") {
@@ -1411,18 +1441,17 @@ function renderThread() {
     }
     if (m.state === "undone") d.insertAdjacentHTML("beforeend", `<div class="hint" style="margin:0">Undone.</div>`);
     if (m.state === "cancelled") d.insertAdjacentHTML("beforeend", `<div class="hint" style="margin:0">Cancelled · nothing changed.</div>`);
-    th.appendChild(d);
-  });
-  th.scrollTop = th.scrollHeight;
-  th.onclick = (e) => {
-    const t = e.target.closest("button"); if (!t || astraBusy) return;
+    return d;
+}
+/** A button of a message pressed, in the sidebar or the prompt bar: Apply, Cancel, Undo, Show code, an option, Next. */
+function astraAct(t) {
+    if (!t || astraBusy) return;
     if (t.dataset.apply) { const m = astraLog[+t.dataset.apply]; const r = m.plan.steps(m.ctx || {}); if (r.fail || r.question) { m.state = "fail"; m.text = r.fail || "The scene changed since I planned this; send it again."; m.steps = null; renderThread(); return; } m.steps = r; runSteps(m); }
     else if (t.dataset.cancel) { const m = astraLog[+t.dataset.cancel]; m.state = "cancelled"; m.steps = null; renderThread(); }
     else if (t.dataset.undo) { const m = astraLog[+t.dataset.undo]; if (undoStack.length - 1 === m.undoIndex) { undo(); m.state = "undone"; } else toast("Other changes came after these steps: use Edit ▸ Undo History"); renderThread(); }
     else if (t.dataset.code) { const m = astraLog[+t.dataset.code]; m.showCode = !m.showCode; renderThread(); }
     else if (t.dataset.opt) { const [i, j] = t.dataset.opt.split(":").map(Number); const m = astraLog[i]; const pick = m.options[j]; m.state = "answered"; m.picked = pick.name; if (!m.plan) { renderThread(); sendAstra(pick.name); return; } select(pick); startPlan(m.plan, { pick }); }
     else if (t.dataset.next) sendAstra(t.dataset.next);
-  };
 }
 
 // ================= Astra, any request (stage 4, 2026-09-29) =================
@@ -2011,6 +2040,7 @@ function castLoadLooks() {
     if (stopped || cast.looksFor !== id) return;
     cast.looks = Array.isArray(list) ? list : [];
     if (cast.lookId && !cast.looks.some((l) => l.id === cast.lookId)) cast.lookId = null;
+    if (pb && pb.mode === "image") barRender();
     if (!cast.busy && !cast.result && !$("dlg").hidden && $("dlgBody").querySelector("[data-cast]")) showCast();
   });
 }
@@ -2019,6 +2049,8 @@ function prefillCast() { const w = cast.frame?.poseWords || ""; if (!cast.words 
 function castChar() { return (opts.render?.characters || []).find((c) => c.id === cast.charId) || null; }
 function openCast() {
   const R = opts.render;
+  // Asked for from the Render menu: the window shows the press (a press from the prompt bar reports in the bar).
+  cast.bar = false;
   if (!R) return openWin(CAST_TITLE, `<p>Rendering with your character works inside Picacho, on your set.</p>`);
   if (!cast.busy && !cast.result) {
     if (!R.characters.length) return openWin(CAST_TITLE, `<p>You don't have a character with a photo yet. Make one, then come back — the Studio keeps your scene.</p><div class="cast-links"><a href="/app/character/new">Make a character</a></div>`);
@@ -2060,6 +2092,8 @@ ${R.looks ? `<div class="fr" style="margin-top:6px;align-items:start"><label>Loo
 <div class="prog"${cast.busy ? "" : " hidden"}><i id="castProg"></i></div><p class="hint" id="castTxt" role="status"></p>`;
   }
   const open = $("dlgBody") && $("dlgBody").querySelector("[data-cast]");
+  // Pressed from the prompt bar: its progress and answer are drawn there, no window opens over the viewport.
+  if ((!open || $("dlg").hidden) && cast.bar) { barRefresh(); return; }
   if (!open || $("dlg").hidden) openWin(CAST_TITLE, `<div data-cast></div>`);
   const box = $("dlgBody").querySelector("[data-cast]"); box.innerHTML = body;
   const who = $("castWho"), words = $("castWords"), go = $("castGo"), again = $("castAgain"), tr = $("castTrace"), stop = $("castStop");
@@ -2091,11 +2125,14 @@ function castCheck() {
   go.disabled = cast.busy || !c || !!block;
 }
 function castTick() {
-  const bar = $("castProg"), txt = $("castTxt"); if (!bar || !txt || !cast.busy) return;
+  if (!cast.busy) return;
   const s = Math.round((Date.now() - cast.t0) / 1000);
-  bar.style.width = Math.min(95, (s / 90) * 100) + "%";
-  if (cast.phase === "tracing" || cast.phase === "cleaning") { bar.style.width = (cast.trace ? Math.min(100, (cast.trace[0] / cast.trace[1]) * 100) : 0) + "%"; txt.textContent = cast.phase === "cleaning" ? "Cleaning the grain…" : cast.trace && cast.trace[0] > 0 ? `Tracing a clean frame · sample ${cast.trace[0]} of ${cast.trace[1]} · ${s} s. Stop sends nothing.` : `Starting the graphics card · ${s} s`; return; }
-  txt.textContent = cast.phase === "checking" ? `The answer didn't arrive, so we're checking whether it went through · ${s} s. Don't press again.` : cast.phase === "rendering" ? `Still rendering — following your press · ${s} s. Don't press again.` : `Rendering your photo · ${s} s. It usually takes under a minute or two.`;
+  let w = Math.min(95, (s / 90) * 100) + "%", text;
+  if (cast.phase === "tracing" || cast.phase === "cleaning") { w = (cast.trace ? Math.min(100, (cast.trace[0] / cast.trace[1]) * 100) : 0) + "%"; text = cast.phase === "cleaning" ? "Cleaning the grain…" : cast.trace && cast.trace[0] > 0 ? `Tracing a clean frame · sample ${cast.trace[0]} of ${cast.trace[1]} · ${s} s. Stop sends nothing.` : `Starting the graphics card · ${s} s`; }
+  else text = cast.phase === "checking" ? `The answer didn't arrive, so we're checking whether it went through · ${s} s. Don't press again.` : cast.phase === "rendering" ? `Still rendering — following your press · ${s} s. Don't press again.` : `Rendering your photo · ${s} s. It usually takes under a minute or two.`;
+  const bar = $("castProg"), txt = $("castTxt");
+  if (bar && txt) { bar.style.width = w; txt.textContent = text; }
+  if (cast.bar) barProgress("image", w, text);
 }
 /** "Use a clean traced frame": its label with the time it takes here, once this device has been timed. */
 function castTraceLabel(f) {
@@ -2147,7 +2184,8 @@ async function castGo() {
   // "left": the Studio closed while following; nothing to say.
   cast.result = res && (res.error !== "" || res.generationId) ? res : { error: R.unreachable };
   if (!$("dlg").hidden && $("dlgBody").querySelector("[data-cast]")) showCast();
-  else toast(cast.result.error === null && cast.result.succeeded ? "Your photo is ready · Render ▸ " + CAST_TITLE : "Your photo didn't come out · Render ▸ " + CAST_TITLE);
+  else if (!cast.bar || !pbShown("image")) toast(cast.result.error === null && cast.result.succeeded ? "Your photo is ready · Render ▸ " + CAST_TITLE : "Your photo didn't come out · Render ▸ " + CAST_TITLE);
+  barRefresh();
 }
 let recording = false;
 async function renderVideo() {
@@ -2375,6 +2413,8 @@ function rcFrameDraw() {
 }
 function openRecast() {
   const R = opts.recast;
+  // Asked for from the Render menu: the window shows the press (a press from the prompt bar reports in the bar).
+  rc.bar = false;
   if (!R) return openWin(RC_TITLE, `<p>Video with your character works inside Picacho, for accounts that can use Recast.</p>`);
   // Recast's gate and the characters, asked the first time the window opens (2026-09-30): the Studio's page
   // no longer waits on them. A refusal is said in Recast's words; a lost answer is asked again next time.
@@ -2431,6 +2471,7 @@ function rcLoadLooks() {
     if (stopped || rc.looksFor !== id) return;
     rc.looks = Array.isArray(list) ? list : [];
     if (rc.lookId && !rc.looks.some((l) => l.id === rc.lookId)) rc.lookId = null;
+    if (pb && pb.mode === "video") barRender();
     if (!rc.busy && !rc.result && !$("dlg").hidden && $("dlgBody").querySelector("[data-recast]")) rcShow();
     rcMenuLabel();
   });
@@ -2483,6 +2524,8 @@ ${rc.real && wallWarns(rc.wall) ? `<p class="cast-note" id="rcWall">A big plain 
 <div class="prog"${rc.busy ? "" : " hidden"}><i id="rcProg"></i></div><p class="hint" id="rcTxt" role="status">${rc.busy ? "" : "Stop before it is sent costs nothing."}</p>${rc.busy && rc.id ? `<div class="cast-links"><a href="${esc(R.historyHref(rc.id))}">Open in History</a><a href="${esc(R.recastHref)}">Open in Recast</a></div>` : ""}`;
   }
   const open = $("dlgBody") && $("dlgBody").querySelector("[data-recast]");
+  // Pressed from the prompt bar: its progress and answer are drawn there, no window opens over the viewport.
+  if ((!open || $("dlg").hidden) && rc.bar) { barRefresh(); return; }
   if (!open || $("dlg").hidden) openWin(RC_TITLE, `<div data-recast></div>`);
   $("dlgBody").querySelector("[data-recast]").innerHTML = body;
   const who = $("rcWho"), fg = $("rcFig"), words = $("rcWords"), go = $("rcGo"), again = $("rcAgain"), stop = $("rcStop");
@@ -2531,13 +2574,19 @@ ${rc.real && wallWarns(rc.wall) ? `<p class="cast-note" id="rcWall">A big plain 
 }
 const fmtSec = (s) => `${Math.round(s * 10) / 10} s`;
 function rcTick() {
-  const bar = $("rcProg"), txt = $("rcTxt"); if (!bar || !txt || !rc.busy) return;
+  if (!rc.busy) return;
   const s = Math.round((Date.now() - rc.t0) / 1000);
-  if (rc.stop && ["recording", "uploading", "reading"].includes(rc.phase)) { txt.textContent = "Stopping — nothing will be sent."; return; }
-  if (rc.phase === "recording") { bar.style.width = (rc.total ? (rc.done / rc.total) * 100 : 0) + "%"; txt.textContent = `Recording frame ${rc.done} of ${rc.total}. Stop sends nothing.`; return; }
-  if (rc.phase === "uploading") { bar.style.width = (rc.share == null ? 30 : rc.share * 100) + "%"; txt.textContent = rc.share == null ? "Uploading the recording…" : `Uploading the recording · ${Math.round(rc.share * 100)}%`; return; }
-  bar.style.width = Math.min(95, 5 + (s / 600) * 100) + "%";
-  txt.textContent = rc.phase === "reading" ? `Recast is reading the recording · ${s} s. Stop sends nothing.` : rc.phase === "starting" ? `Starting the take · ${s} s. Don't press again.` : rc.phase === "checking" ? `The answer didn't arrive, so we're checking whether it went through · ${s} s. Don't press again.` : rc.progress ? `${rc.progress} · ${s} s. You can close this window; it lands in History and in Recast.` : `Recast is re-shooting it · ${s} s. It usually takes several minutes; you can close this window, it lands in History and in Recast.`;
+  let w = null, text;
+  if (rc.stop && ["recording", "uploading", "reading"].includes(rc.phase)) text = "Stopping — nothing will be sent.";
+  else if (rc.phase === "recording") { w = (rc.total ? (rc.done / rc.total) * 100 : 0) + "%"; text = `Recording frame ${rc.done} of ${rc.total}. Stop sends nothing.`; }
+  else if (rc.phase === "uploading") { w = (rc.share == null ? 30 : rc.share * 100) + "%"; text = rc.share == null ? "Uploading the recording…" : `Uploading the recording · ${Math.round(rc.share * 100)}%`; }
+  else {
+    w = Math.min(95, 5 + (s / 600) * 100) + "%";
+    text = rc.phase === "reading" ? `Recast is reading the recording · ${s} s. Stop sends nothing.` : rc.phase === "starting" ? `Starting the take · ${s} s. Don't press again.` : rc.phase === "checking" ? `The answer didn't arrive, so we're checking whether it went through · ${s} s. Don't press again.` : rc.progress ? `${rc.progress} · ${s} s. You can close this window; it lands in History and in Recast.` : `Recast is re-shooting it · ${s} s. It usually takes several minutes; you can close this window, it lands in History and in Recast.`;
+  }
+  const bar = $("rcProg"), txt = $("rcTxt");
+  if (bar && txt) { if (w !== null) bar.style.width = w; txt.textContent = text; }
+  if (rc.bar) barProgress("video", w, text);
 }
 /** A turn of the event loop that a background tab does not slow down (its timers run once a second; messages don't wait). */
 const rcYield = () => new Promise((res) => { const ch = new MessageChannel(); ch.port1.onmessage = () => { ch.port1.close(); res(); }; ch.port2.postMessage(0); });
@@ -2685,7 +2734,8 @@ async function rcGo() {
   if (stopped || (res && res.left)) return;
   rc.result = res || { error: R.unreachable };
   if (!$("dlg").hidden && $("dlgBody").querySelector("[data-recast]")) rcShow();
-  else toast(rc.result.error === null ? "Your video is ready and in History · Render ▸ " + RC_TITLE : rc.result.stopped ? "Stopped · nothing was charged" : "Your video didn't come out · Render ▸ " + RC_TITLE);
+  else if (!rc.bar || !pbShown("video")) toast(rc.result.error === null ? "Your video is ready and in History · Render ▸ " + RC_TITLE : rc.result.stopped ? "Stopped · nothing was charged" : "Your video didn't come out · Render ▸ " + RC_TITLE);
+  barRefresh();
 }
 
 // ================= physics (rigid bodies) =================
@@ -4594,6 +4644,637 @@ wOn("keydown", (e) => {
 });
 let toastT = 0; function toast(m) { const t = $("toast"); t.textContent = m; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 2600); }
 function renderAll() { if (typeof updatePath === "function") updatePath(); updatePathViz(); renderOutliner(); renderProps(); renderTimeline(); renderVText(); if (ntab !== "astra") renderN(); else renderAstraSees(); }
+
+// ================= the prompt bar (2026-10-01, operator: "Finalizing the UI to look and work like this") =================
+// Higgsfield's add-on inside Blender, as Picacho: a floating dark bar docked bottom-centre over the viewport, mode tabs
+// on top (Scene builder · 3D Model · Animation · Image · Video · Camera · Assets), a text box with the reference
+// pictures on its left, an option row, and a big Generate button with its real price. It is the front door to what
+// the Studio already has — Astra (the same conversation as the sidebar), the model builders (model-engines.ts),
+// the figure's moves and poses, Photo and Video with your character (the same presses as their windows, reported
+// here), camera moves written as keys, and the scene's parts, things and gallery. Nothing else is hidden or moved:
+// the menus, the N panel, Properties and Astra's sidebar stay. It folds to a pill, drags anywhere in the viewport,
+// steps aside from the gizmo, and on phones is the first bottom sheet ("Create").
+const PB_KEY = "helios.bar";
+const pbSaved = (() => { try { return JSON.parse(localStorage.getItem(PB_KEY) || "null") || {}; } catch { return {}; } })();
+const pbState = {
+  mode: isBarMode(pbSaved.mode) ? pbSaved.mode : "model",
+  folded: pbSaved.folded === true,
+  off: { x: Number.isFinite(pbSaved.x) ? pbSaved.x : 0, y: Number.isFinite(pbSaved.y) ? pbSaved.y : 0 },
+  avoid: { x: 0, y: 0 },
+  text: { scene: "", model: "", anim: "", image: "", video: "", camera: "", assets: "" },
+  astraFrom: null,
+  model: { ...BAR_MODEL_DEFAULT, images: {}, options: { ...BAR_MODEL_DEFAULT.options }, target: "new" },
+  modelSize: 1.5, colour: null, busy: false, phase: "", t0: 0, timer: 0, result: null,
+  anim: { who: null, target: "cam", gait: "walk" },
+  cam: { preset: "orbit", subject: null, form: null },
+  assetsFor: null, gallery: null, thumbs: new Map(), thumbQ: [],
+  videoErr: "",
+};
+pb = pbState;
+const pbSave = () => { try { localStorage.setItem(PB_KEY, JSON.stringify({ mode: pb.mode, folded: pb.folded, x: Math.round(pb.off.x), y: Math.round(pb.off.y) })); } catch {} };
+view.insertAdjacentHTML("beforeend", BAR_HTML);
+{ const st = document.createElement("style"); st.textContent = BAR_CSS; $("pbar").prepend(st); }
+// On phones and tablets the bar is a bottom sheet with its own grip, and the first tab of the sheet row.
+$("pbar").insertAdjacentHTML("afterbegin", `<div class='grip mOnly' data-grip role='button' tabindex='0' aria-label='Drag to resize; tap for half or full height'><i></i></div>`);
+$("mTabs").insertAdjacentHTML("afterbegin", BAR_SHEET_TAB);
+const pbEl = $("pbar"), pbText = $("pbText");
+const pbShown = (mode) => !!pb && pb.mode === mode && (appEl0().classList.contains("compact") ? appEl0().dataset.sheet === "bar" : !pb.folded);
+function appEl0() { return $("app"); }
+const money = (n) => usdText(n);
+const creditsText = (n) => `${n} credit${n === 1 ? "" : "s"}`;
+/** Everything the bar shows, drawn again (the text box is kept as typed). */
+function barRender() {
+  if (!pb) return;
+  pbEl.dataset.mode = pb.mode;
+  pbEl.querySelectorAll("[data-pbmode]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.pbmode === pb.mode)));
+  pbText.placeholder = BAR_PLACEHOLDERS[pb.mode];
+  if (pbText.value !== pb.text[pb.mode] && document.activeElement !== pbText) pbText.value = pb.text[pb.mode];
+  const m = pb.model;
+  pbText.hidden = pb.mode === "model" && m.kind !== "text";
+  pbEl.hidden = pb.folded && !appEl0().classList.contains("compact");
+  $("pbPill").hidden = !pb.folded;
+  $("pbPillMode").textContent = "· " + (BAR_MODES.find((x) => x.id === pb.mode)?.label || "");
+  const refs = $("pbRefs"), row = $("pbRow"), hint = $("pbHint");
+  refs.innerHTML = ""; refs.className = "pb-refs"; row.innerHTML = ""; hint.innerHTML = "";
+  const R = BAR_DRAW[pb.mode]; R(refs, row, hint);
+  barRefresh();
+  pbPlace();
+}
+/** The mode's answer area and its Generate button, drawn again (the ticks call this; nothing typed is touched). */
+function barRefresh() {
+  if (!pb || stopped) return;
+  const res = $("pbResult"), go = $("pbGo"), gl = $("pbGoLabel"), gs = $("pbGoSub");
+  res.innerHTML = ""; go.hidden = false; go.disabled = false; gl.textContent = "Generate"; gs.textContent = "";
+  BAR_STATE[pb.mode](res, go, gl, gs);
+  if (typeof pbKeep === "function") pbKeep();
+}
+/** Progress of a press the bar started, from the windows' own ticks (the same words). */
+function barProgress(mode, w, text) {
+  if (!pb || pb.mode !== mode) return;
+  let p = $("pbProg"), t = $("pbProgTxt");
+  if (!p || !t) { barRefresh(); p = $("pbProg"); t = $("pbProgTxt"); }
+  if (p && w !== null) p.style.width = w;
+  if (t) t.textContent = text;
+}
+/** Astra's side of the bar: what was said since the last request, drawn from the sidebar's own log. */
+function barAstraSync() { if (pb && (pb.mode === "scene" || pb.astraFrom === pb.mode)) barRefresh(); }
+function barAstraTail(res) {
+  let from = -1; for (let i = astraLog.length - 1; i >= 0; i--) if (astraLog[i].who === "u") { from = i; break; }
+  if (from < 0) return false;
+  for (let i = from; i < astraLog.length; i++) res.appendChild(astraMsgEl(astraLog[i], i));
+  res.scrollTop = res.scrollHeight;
+  return true;
+}
+$("pbResult").addEventListener("click", (e) => { const b = e.target.closest("button[data-apply],button[data-cancel],button[data-undo],button[data-code],button[data-opt],button[data-next]"); if (b) { e.stopPropagation(); astraAct(b); } }, { signal: ac.signal });
+function barSendAstra(text, mode) {
+  const t = (text || "").trim(); if (!t) return toast("Write what you want first");
+  if (astraBusy) return toast("Astra is still working");
+  pb.astraFrom = mode; pb.text[mode] = ""; pbText.value = "";
+  sendAstra(t);
+  barRefresh();
+}
+const pbLink = (label, id) => `<button data-pblink="${id}">${label}</button>`;
+function openAstraPanel() { if (appEl0().classList.contains("compact")) { showSheet("astra"); return; } ntab = "astra"; toggleN(true); renderN(); }
+$("pbResult").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-pblink]"); if (!b) return; e.stopPropagation();
+  const id = b.dataset.pblink;
+  if (id === "astra") openAstraPanel();
+  else if (id === "castWin") openCast();
+  else if (id === "rcWin") openRecast();
+  else if (id === "modelWin") openModelWin(active);
+  else if (id === "again") { if (pb.mode === "image") cast.result = null; else if (pb.mode === "video") rc.result = null; else if (pb.mode === "model") pb.result = null; barRefresh(); }
+  else if (id === "import") fileIn.click();
+}, { signal: ac.signal });
+
+// ---- the modes: what each draws (pictures, options, hint) and its answer + button ----
+const who = () => (active && active.rig ? active : person);
+const thingsForTargets = () => items.filter((o) => (o.kind === "mesh" || o.rig) && !o.hidden && !isPart(o) && o.kind !== "sun");
+const BAR_DRAW = {
+  scene(refs, row, hint) {
+    row.innerHTML = `${toggleChip("askFirst", "Show the plan before applying", askFirst)}<span class="pb-sep"></span>${PLANS.slice(0, 4).map((p, i) => `<button class="pb-chip" data-pbplan="${i}">${esc(p.ask)}</button>`).join("")}`;
+    hint.innerHTML = `Astra plans it with the Studio's own steps; ⌘Z brings it all back. The same conversation as the sidebar · ${pbLink("Open the conversation", "astra")}`;
+  },
+  model(refs, row, hint) {
+    const m = pb.model, eng = modelEngine(m.engine), o = normaliseModelOptions(eng, m.options);
+    m.options = o;
+    if (m.kind === "image") refs.innerHTML = refSlot("front", "+ Add image", "");
+    else if (m.kind === "multi") { refs.classList.add("views"); refs.innerHTML = MODEL_VIEWS.map((v) => refSlot(v, "+", v === "front" ? "Front" : v === "back" ? "Back" : v === "left" ? "Left" : "Right")).join(""); }
+    const chips = [];
+    chips.push(`<button class="pb-chip eng" id="pbEngine" aria-haspopup="listbox" aria-expanded="false">${BAR_ICONS.model}<span translate="no">${esc(modelEngineLabel(eng, m.kind))}</span> ▾</button>`);
+    if (m.kind !== "text") chips.push(`<button class="pb-chip" id="pbAddImg">+ Add image</button>`);
+    if (eng.has.detail) chips.push(selectChip("pbDetail", "Detail", [["512", "512"], ["1024", "1024"], ["1536", "1536"]], String(o.detail)));
+    if (eng.has.textures.length > 1) chips.push(selectChip("pbTex", "Textures", eng.has.textures.map((t) => [t, t === "none" ? "None" : t === "hd" ? "HD" : "Standard"]), o.textures));
+    if (eng.has.pbr) chips.push(toggleChip("pbr", "PBR", o.pbr, "Metallic, roughness and normal maps"));
+    if (eng.has.rig) chips.push(toggleChip("rig", "Rigging", o.rig, "A humanoid skeleton with walk and run"));
+    if (eng.has.quad) chips.push(selectChip("pbTopo", "", [["tri", "Tri"], ["quad", "Quad"]], o.quad ? "quad" : "tri", "", "Topology"));
+    if (eng.has.polycount) chips.push(`<span class="pb-chip"><label for="pbPoly">Target ${eng.has.polycount.label}</label><input id="pbPoly" type="number" min="${eng.has.polycount.min}" max="${eng.has.polycount.max}" step="${eng.has.polycount.step}" placeholder="Auto" value="${o.polycount ?? ""}"></span>`);
+    chips.push(selectChip("pbFor", "For", [...modelTargets().map((t) => [esc(t.saveKey), esc(t.name)]), ["new", esc(T("New object"))]], m.target, ' translate="no"'));
+    if (m.target === "new") chips.push(`<span class="pb-chip"><label for="pbSize">Size</label><input id="pbSize" class="w2" type="number" min="0.1" max="30" step="0.1" value="${pb.modelSize}"> m</span>`);
+    row.innerHTML = chips.join("");
+    const lines = modelBuildPrice(eng, m.kind, o);
+    // Each part its own text, so each is translated: the note, every price line's words (its dollars kept), the rule.
+    hint.innerHTML = `<span>${esc(eng.note)}</span> ${lines.map((l) => `<span>${esc(l.what)}</span> <span translate="no">${money(l.usd)}</span>`).join(" + ")} <span>· fal's price, read ${MODEL_PRICES_READ}. Picacho pays it; no credits are taken. Up to ${THING_BUILDS_PER_HOUR} builds an hour.</span>${MD && MD.engines ? "" : ` <span>Building is open to admins while each engine is proved.</span>`}`;
+  },
+  anim(refs, row, hint) {
+    const w = who(), people = items.filter((i) => i.rig && !i.hidden);
+    if (!pb.anim.who || !people.includes(pb.anim.who)) pb.anim.who = w;
+    const tg = thingsForTargets().filter((o) => o !== pb.anim.who);
+    const chips = [];
+    chips.push(selectChip("pbWho", "Who", people.map((p) => [String(p.id), esc(p.name)]), String(pb.anim.who?.id ?? ""), ' translate="no"'));
+    chips.push(selectChip("pbGait", "", [["walk", "Walk"], ["run", "Run"]], pb.anim.gait, "", "Gait"));
+    chips.push(selectChip("pbTarget", "To", [["cam", esc(T("Shot camera"))], ...tg.map((o) => [String(o.id), esc(o.name)])], pb.anim.target, ' translate="no"'));
+    chips.push(`<span class="pb-sep"></span>`);
+    chips.push(...ANIM_CHIPS.map((c) => `<button class="pb-chip" data-pbanim="${c.id}">${c.label}</button>`));
+    chips.push(`<span class="pb-sep"></span>`);
+    chips.push(...POSE_PRESETS.map((p) => `<button class="pb-chip" data-pbpose="${p}">${esc(PRESET_LABELS[p])}</button>`));
+    row.innerHTML = chips.join("");
+    hint.innerHTML = `From frame ${f0Of()} (the playhead). Each is one step ⌘Z undoes; the figure's Move panel lists them. Or write it and Astra plans it.`;
+  },
+  image(refs, row, hint) {
+    const R = opts.render;
+    if (!R) { hint.textContent = "Rendering with your character works inside Picacho, on your set."; return; }
+    if (!R.characters.length) { hint.innerHTML = `You don't have a character with a photo yet. <a href="/app/character/new">Make a character</a>`; return; }
+    if (!cast.charId || !castChar()) { const ok = (id) => !!id && R.characters.some((c) => c.id === id); cast.charId = ok(cast.lastChar) ? cast.lastChar : ok(R.castId) ? R.castId : R.characters[0].id; }
+    castLoadLooks();
+    const lock = cast.busy ? " disabled" : "";
+    row.innerHTML = [
+      selectChip("pbChar", "Character", R.characters.map((c) => [esc(c.id), esc(c.name || T("Your character"))]), cast.charId, ` translate="no"${lock}`),
+      R.looks ? `<span class="pb-chip"><label>Look</label>${barLooks(cast.looks, cast.lookId)}</span>` : "",
+      `<span class="pb-chip"><label for="pbOutfit">Outfit</label><input id="pbOutfit" class="txt" maxlength="${STUDIO_OUTFIT_MAX}" placeholder="Optional: e.g. a red leather jacket" value="${esc(cast.outfit)}"${lock}></span>`,
+      toggleChip("traced", "Clean traced frame", cast.traced, "Better light: a path-traced frame is sent"),
+    ].join("");
+    hint.innerHTML = `Through the shot camera · ${shot.obj.userData.lensMm} mm · ${esc(format)}. The stand-in marks where your character stands. ${pbLink("Open the full window", "castWin")}`;
+  },
+  video(refs, row, hint) {
+    const R = opts.recast;
+    if (!R) { hint.textContent = "Video with your character works inside Picacho, for accounts that can use Recast."; return; }
+    if (rc.chars === null) { barRcLoad(); hint.textContent = pb.videoErr || "Opening…"; return; }
+    if (!rcChars().length) { hint.innerHTML = `You don't have a character with a photo yet. <a href="/app/character/new">Make a character</a>`; return; }
+    if (!rc.charId || !rcChar()) { const ok = (id) => !!id && rcChars().some((c) => c.id === id); rc.charId = ok(rc.lastChar) ? rc.lastChar : ok(opts.recast?.castId) ? opts.recast.castId : rcChars()[0].id; }
+    rcLoadLooks();
+    const lock = rc.busy ? " disabled" : "", r = rcRange();
+    row.innerHTML = [
+      `<span class="pb-chip"><label for="pbFrom">Frames</label><input id="pbFrom" class="w2" type="number" min="1" max="${FRAMES}" value="${pStart}"${lock}>–<input id="pbTo" class="w2" type="number" min="1" max="${FRAMES}" value="${pEnd}"${lock}> <small>${fmtSec(r.seconds)}</small></span>`,
+      selectChip("pbRcChar", "Character", rcChars().map((c) => [esc(c.id), esc(c.name || T("Your character"))]), rc.charId, ` translate="no"${lock}`),
+      R.looks ? `<span class="pb-chip"><label>Look</label>${barLooks(rc.looks, rc.lookId)}</span>` : "",
+      `<span class="pb-chip"><label for="pbRcOutfit">Outfit</label><input id="pbRcOutfit" class="txt" maxlength="${STUDIO_OUTFIT_MAX}" placeholder="Optional: e.g. a red leather jacket" value="${esc(rc.outfit)}"${lock}></span>`,
+      toggleChip("real", "Real scene", rc.real, "The whole scene becomes real footage, not only your character (same price)"),
+      selectChip("pbLane", "", STUDIO_RECAST_ENGINES.map((e) => [e, `${R.lanes[e].title} · ${T(creditsText(rcCreditsFor(e)))}`]), rc.engine, ` translate="no"${lock}`, "What should happen"),
+    ].join("");
+    hint.innerHTML = `Records frames ${r.start}–${r.end} through the shot camera, then Recast re-shoots it with your character in the figure's place. Stop before it is sent costs nothing. ${pbLink("Open the full window", "rcWin")}`;
+  },
+  camera(refs, row, hint) {
+    const c = pb.cam, subj = camSubject(), f = camForm();
+    const tg = thingsForTargets();
+    row.innerHTML = [
+      ...CAMERA_PRESETS.map((p) => `<button class="pb-chip${p.id === c.preset ? " on" : ""}" data-pbcam="${p.id}" aria-pressed="${p.id === c.preset}">${p.label}</button>`),
+      `<span class="pb-sep"></span>`,
+      selectChip("pbSubj", "On", tg.map((o) => [String(o.id), esc(o.name)]), String(subj?.id ?? ""), ' translate="no"'),
+      `<span class="pb-chip"><label for="pbDist">Distance</label><input id="pbDist" class="w2" type="number" min="0.5" max="80" step="0.5" value="${f.distance}"> m</span>`,
+      `<span class="pb-chip"><label for="pbHeight">Height</label><input id="pbHeight" class="w2" type="number" min="0.1" max="60" step="0.1" value="${f.height}"> m</span>`,
+      `<span class="pb-chip"><label for="pbCamFrom">Frames</label><input id="pbCamFrom" class="w2" type="number" min="1" max="${FRAMES}" value="${f.start}">–<input id="pbCamTo" class="w2" type="number" min="2" max="${FRAMES}" value="${f.end}"></span>`,
+    ].join("");
+    hint.innerHTML = `<span>${esc(CAMERA_PRESETS.find((p) => p.id === c.preset)?.line || "")}</span> <span>It writes the shot camera's keys over frames ${f.start}–${f.end} (one step ⌘Z undoes) and looks through it.</span>`;
+  },
+  assets(refs, row, hint) {
+    const R = opts.render;
+    const chars = R?.characters || [];
+    if (chars.length) {
+      if (!pb.assetsFor || !chars.some((c) => c.id === pb.assetsFor)) pb.assetsFor = cast.charId && chars.some((c) => c.id === cast.charId) ? cast.charId : chars[0].id;
+      row.innerHTML = selectChip("pbGalChar", "Gallery of", chars.map((c) => [esc(c.id), esc(c.name || T("Your character"))]), pb.assetsFor, ' translate="no"');
+      barGallery();
+    }
+    hint.textContent = "Click a part or thing to select it; click a picture to use its look for Image and Video.";
+  },
+};
+function refSlot(view0, empty, label) {
+  const u = pb.model.images[view0];
+  return `<button class="pb-ref${u ? " has" : ""}" data-pbref="${view0}" title="${u ? "Replace this picture" : "Add a picture"}"${u ? ` style="background-image:url('${u}')"` : ""}>${u ? `<span class="pb-x" data-pbrm="${view0}" role="button" aria-label="Remove this picture">✕</span>` : esc(empty)}${label ? `<b>${esc(label)}</b>` : ""}</button>`;
+}
+function barLooks(list, sel) {
+  if (list === null || list === undefined) return `<span class="hint" style="margin:0">Loading…</span>`;
+  if (!list.length) return `<span class="hint" style="margin:0">None yet</span>`;
+  return `<span class="pb-looks"><button data-pblook="" class="${sel ? "" : "on"}" title="Their photos">—</button>${list.slice(0, 12).map((l) => `<button data-pblook="${esc(l.id)}" class="${l.id === sel ? "on" : ""}" title="Use this look"><img src="${esc(l.url)}" alt="" loading="lazy"></button>`).join("")}</span>`;
+}
+function barRcLoad() {
+  const R = opts.recast; if (!R || rc.chars !== null || rc.loadingChars) return;
+  rc.loadingChars = true;
+  Promise.resolve().then(() => R.load()).then((o) => o, () => ({ error: R.unreachable })).then((out) => {
+    rc.loadingChars = false; if (stopped) return;
+    timingMark(out.timing);
+    if (out.error === null) { rc.chars = out.characters || []; pb.videoErr = ""; } else pb.videoErr = out.error;
+    rcMenuLabel(); if (pb.mode === "video") barRender();
+  });
+}
+const BAR_STATE = {
+  scene(res, go, gl, gs) {
+    if (!barAstraTail(res)) res.innerHTML = `<p class="pb-hint">Ask for anything in this scene: “put a red lamp left of the car”, “park the car on the road”, “make it sunset”.</p>`;
+    gl.textContent = "Send"; gs.textContent = "Astra plans it"; go.disabled = astraBusy;
+  },
+  model(res, go, gl, gs) {
+    const pay = barModelPayload(pb.model);
+    if (pb.busy) {
+      const s = Math.round((Date.now() - pb.t0) / 1000);
+      res.innerHTML = `<div class="pb-prog"><i id="pbProg" style="width:${Math.min(95, (s / 90) * 100)}%"></i></div><p class="pb-hint" id="pbProgTxt">${esc(pb.phase === "photo" ? `Checking and sending · ${s} s` : pb.phase === "placing" ? "Placing the model…" : `Building the model · ${s} s — usually a minute or two. It lands on the stage when it's ready.`)}</p>`;
+      gl.textContent = "Building…"; go.disabled = true; return;
+    }
+    if (pb.result) {
+      const r = pb.result;
+      res.innerHTML = r.error ? `<p class="pb-note" role="alert">${esc(r.error)}</p>` : `<div class="pb-out"><div><p>${esc(r.ok ? `Built. ${r.name} is drawn from its model now, kept with the set.` : `Built and kept with the set, but ${r.name}'s model couldn't be drawn here. Reopen the Studio to try again.`)}</p><div class="pb-links">${pbLink("Build another", "again")}</div></div></div>`;
+    }
+    if (!MD || !MD.engines) { gl.textContent = "Import"; gs.textContent = "a .glb of your own"; go.dataset.pbimport = "1"; return; }
+    delete go.dataset.pbimport;
+    if (pay.error) { gs.textContent = pay.error; go.disabled = true; return; }
+    gs.textContent = money(pay.usd);
+  },
+  anim(res, go, gl, gs) {
+    if (pb.astraFrom === "anim") barAstraTail(res);
+    gl.textContent = "Send"; gs.textContent = "Astra plans it"; go.disabled = astraBusy;
+  },
+  image(res, go, gl, gs) {
+    const R = opts.render;
+    if (!R || !R.characters.length) { go.disabled = true; return; }
+    gs.textContent = creditsText(R.credits);
+    if (cast.busy && cast.bar) {
+      res.innerHTML = `<div class="pb-prog"><i id="pbProg"></i></div><p class="pb-hint" id="pbProgTxt"></p>`;
+      gl.textContent = "Rendering…"; go.disabled = true; castTick(); return;
+    }
+    const r = cast.result;
+    if (r && cast.bar) {
+      if (r.error === null && r.succeeded && r.resultUrl) res.innerHTML = `<div class="pb-out"><img src="${esc(r.resultUrl)}" alt="Your photo"><div><p>Your photo, from this frame.</p><div class="pb-links"><a href="${esc(R.historyHref(r.generationId))}">Open in History</a>${pbLink("Open the full window", "castWin")}${pbLink("Make another", "again")}</div></div></div>`;
+      else res.innerHTML = `<p class="pb-note" role="alert">${esc(r.error === null ? (r.failure ? `It didn't come out: ${r.failure}` : "It didn't come out.") : r.error || R.unreachable)}</p><div class="pb-links">${r.generationId ? `<a href="${esc(R.historyHref(r.generationId))}">Open in History</a>` : ""}${pbLink("Back", "again")}</div>`;
+    }
+    const c = castChar();
+    if (c && c.likenessNeeded) { go.disabled = true; res.insertAdjacentHTML("beforeend", `<p class="pb-note">Say who is in ${esc(c.name || "this character")}'s photos first — on the set page, on the figure's card. <a href="${esc(R.setHref)}">Open the set</a></p>`); }
+    if (cast.busy) go.disabled = true;
+  },
+  video(res, go, gl, gs) {
+    const R = opts.recast;
+    if (!R || rc.chars === null || !rcChars().length) { go.disabled = true; return; }
+    gs.textContent = creditsText(rcCreditsFor(rc.engine));
+    if (rc.busy && rc.bar) {
+      res.innerHTML = `<div class="pb-prog"><i id="pbProg"></i></div><p class="pb-hint" id="pbProgTxt"></p>${["recording", "uploading", "reading"].includes(rc.phase) ? `<div class="pb-links"><button id="pbStop"${rc.stop ? " disabled" : ""}>Stop</button></div>` : ""}${rc.id ? `<div class="pb-links"><a href="${esc(R.historyHref(rc.id))}">Open in History</a></div>` : ""}`;
+      gl.textContent = "Rendering…"; go.disabled = true; rcTick(); return;
+    }
+    const x = rc.result;
+    if (x && rc.bar) {
+      if (x.error === null) res.innerHTML = `<div class="pb-out"><video src="${esc(x.url)}" autoplay loop muted playsinline></video><div><p>Your video, re-shot by Recast from this scene.</p><div class="pb-links"><a href="${esc(R.historyHref(x.id))}">Open in History</a><a href="${esc(R.recastHref)}">Open in Recast</a>${pbLink("Make another", "again")}</div></div></div>`;
+      else res.innerHTML = `<p class="pb-note" role="alert">${esc(x.stopped ? "Stopped before sending: nothing was sent and nothing was charged." : x.error || R.unreachable)}</p><div class="pb-links">${pbLink("Back", "again")}</div>`;
+    }
+    if (rc.busy) go.disabled = true;
+  },
+  camera(res, go, gl, gs) {
+    if (pb.astraFrom === "camera") barAstraTail(res);
+    const n = camKeys().length;
+    gl.textContent = pbText.value.trim() ? "Send" : "Apply"; gs.textContent = pbText.value.trim() ? "Astra plans it" : `${n} camera key${n === 1 ? "" : "s"}`;
+    if (!camSubject()) { go.disabled = !pbText.value.trim(); }
+  },
+  assets(res, go) {
+    go.hidden = true;
+    const q = pbText.value.trim().toLowerCase();
+    const match = (n) => !q || n.toLowerCase().includes(q);
+    const parts = items.filter((i) => isPart(i) && match(i.name));
+    const things = items.filter((i) => !isPart(i) && (i.kind === "mesh" || i.rig) && i.kind !== "sun" && match(i.name));
+    const tile = (it) => { const u = pb.thumbs.get(it.id); if (u === undefined && !pb.thumbQ.includes(it)) pb.thumbQ.push(it); return `<button class="pb-tile${selection.has(it) ? " on" : ""}" data-pbitem="${it.id}" title="${esc(it.name)}" translate="no"><i data-pbthumb="${it.id}"${u ? ` style="background-image:url('${u}')"` : ""}></i><span translate="no">${esc(it.name)}</span></button>`; };
+    const gal = pb.gallery;
+    const galHtml = !opts.render?.characters?.length ? "" : gal === null ? `<h5>Gallery</h5><p class="pb-hint" style="grid-column:1/-1">Loading their pictures…</p>` : !gal.length ? `<h5>Gallery</h5><p class="pb-hint" style="grid-column:1/-1">No pictures in their gallery yet.</p>` : `<h5>Gallery</h5>${gal.map((l) => `<button class="pb-tile${l.id === cast.lookId ? " on" : ""}" data-pbgal="${esc(l.id)}" title="${esc(l.outfit || T("A look"))}" translate="no"><i style="background-image:url('${esc(l.url)}')"></i><span>${esc(l.outfit || T("A look"))}</span></button>`).join("")}`;
+    res.innerHTML = `<div class="pb-grid">${parts.length ? `<h5>The set's parts</h5>${parts.map(tile).join("")}` : ""}${things.length ? `<h5>Things and people</h5>${things.map(tile).join("")}` : ""}${galHtml}</div>`;
+    barThumbs();
+  },
+};
+// ---- 3D Model: pictures, the engine picker, the press ----
+const pbPhotoIn = Object.assign(document.createElement("input"), { type: "file", accept: "image/*" });
+let pbPhotoFor = "front";
+pbPhotoIn.addEventListener("change", () => { const f = pbPhotoIn.files && pbPhotoIn.files[0]; pbPhotoIn.value = ""; if (f) barPhoto(f, pbPhotoFor); }, { signal: ac.signal });
+/** A picture into a slot: read here, sent as a JPEG small enough that four fit one request (viewPhoto). */
+function barPhoto(file, slot) {
+  if (!/^image\//.test(file.type || "") || file.size > 25 * 1024 * 1024) return toast("Pick a photo (JPEG, PNG or WebP) under 25 MB");
+  const url = URL.createObjectURL(file), img = new Image();
+  img.onload = () => {
+    let p; try { p = viewPhoto(img); } catch { URL.revokeObjectURL(url); return toast("That photo couldn't be read here — try a JPEG or PNG"); }
+    URL.revokeObjectURL(url);
+    pb.model.images[slot] = p.dataUri; if (slot === "front") pb.colour = p.colour;
+    pb.result = null; barRender();
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); toast("That photo couldn't be read here — try a JPEG or PNG"); };
+  img.src = url;
+}
+function nextEmptySlot() { const m = pb.model; if (m.kind !== "multi") return "front"; return MODEL_VIEWS.find((v) => !m.images[v]) || "front"; }
+function engineMenu(btn) {
+  let l = $("pbEngineList");
+  if (l && !l.hidden) { closeMenus(); return; }
+  closeMenus();
+  if (!l) { l = document.createElement("div"); l.className = "list pb-list"; l.id = "pbEngineList"; l.setAttribute("role", "listbox"); l.setAttribute("aria-label", "Engine"); }
+  const m = pb.model;
+  l.innerHTML = modelChoices().map((g) => `<h4>${g.label}</h4>${g.engines.map((e) => {
+    const o = normaliseModelOptions(e, m.options), on = e.id === m.engine && g.kind === m.kind;
+    return `<button class="${on ? "on" : ""}" data-pbeng="${e.id}" data-pbkind="${g.kind}" role="option" aria-selected="${on}"><span translate="no">${esc(modelEngineLabel(e, g.kind))}</span><small>from ${money(modelBuildUsd(e, g.kind, { ...o, pbr: false, rig: false, quad: false, polycount: null, textures: e.has.textures[0], detail: 1024 }))}</small></button>`;
+  }).join("")}`).join("");
+  btn.parentElement.appendChild(l);
+  // Opens upward (the bar sits at the bottom), or downward when there's no room above it.
+  const room = pbEl.getBoundingClientRect().top - view.getBoundingClientRect().top - 12, below = view.getBoundingClientRect().bottom - pbEl.getBoundingClientRect().bottom - 12;
+  l.classList.toggle("down", room < 260 && below > room);
+  l.style.maxHeight = Math.max(160, Math.min(360, l.classList.contains("down") ? below : room)) + "px";
+  l.hidden = false; btn.setAttribute("aria-expanded", "true");
+  l.onclick = (e) => {
+    const b = e.target.closest("[data-pbeng]"); if (!b) return; e.stopPropagation(); closeMenus();
+    const was = pb.model.kind;
+    pb.model.engine = b.dataset.pbeng; pb.model.kind = b.dataset.pbkind;
+    if (was !== pb.model.kind && pb.model.kind === "image") { const f = pb.model.images.front; pb.model.images = f ? { front: f } : {}; }
+    pb.model.options = normaliseModelOptions(modelEngine(pb.model.engine), pb.model.options);
+    pb.result = null; barRender();
+  };
+}
+async function barModelGo() {
+  if (pb.busy) return;
+  if (!MD || !MD.engines) return fileIn.click();
+  if (pb.model.kind === "text") pb.model.prompt = pbText.value;
+  const pay = barModelPayload(pb.model);
+  if (pay.error) { pb.result = { error: pay.error }; return barRefresh(); }
+  // ONE id for this press, before anything is sent: a resend of it is answered with the same build (never a second).
+  const pressId = newPressId();
+  pb.busy = true; pb.phase = "photo"; pb.t0 = Date.now(); pb.result = null; barRefresh();
+  clearInterval(pb.timer); pb.timer = setInterval(() => { if (stopped) return clearInterval(pb.timer); if (pb.mode === "model") barRefresh(); }, 1000);
+  info("3D Model · building…");
+  let r; try { r = await MD.engines.run(pressId, pay.input, (p) => { pb.phase = p; if (pb.mode === "model") barRefresh(); }); } catch { r = { error: "Couldn't reach the server. Nothing was built." }; }
+  clearInterval(pb.timer); if (stopped) return;
+  if (!r || r.error) { pb.busy = false; pb.result = { error: (r && r.error) || "The model couldn't be built." }; barRefresh(); if (!pbShown("model")) toast("The model wasn't built · " + pb.result.error); return; }
+  const colour = pb.model.kind === "text" ? null : pb.colour;
+  const { it, drawn } = await placeBuilt(r, colour, pb.modelSize);
+  if (stopped) return;
+  pb.busy = false; pb.result = { ok: drawn === "model", name: it ? it.name : "The thing" };
+  if (pb.model.kind === "text") { pb.text.model = ""; if (pb.mode === "model") pbText.value = ""; }
+  barRender();
+  if (it && drawn === "model") { select(it); frameObj(it.obj); info(`${it.name} · drawn from its model`); saveNow(); }
+  else toast("The model was built but couldn't be drawn here");
+}
+// ---- Image and Video: the same presses as their windows, reported in the bar ----
+function barImageGo() {
+  const R = opts.render; if (!R || cast.busy) return;
+  const c = castChar(); if (!c || c.likenessNeeded) return;
+  if (!person.obj.visible || person.noRender) { cast.bar = true; cast.result = { error: "The stand-in is hidden, so the photo has nowhere to put your character. Show the Stand-in (H / the eye in the outliner) and try again." }; return barRefresh(); }
+  try { cast.frame = castFrame(); } catch { cast.bar = true; cast.result = { error: "This browser couldn't draw the frame, so nothing was sent. Try again after a reload." }; return barRefresh(); }
+  prefillCast();
+  const typed = pbText.value.trim(); if (typed) cast.words = typed.slice(0, SET_DIRECTION_MAX_CHARS);
+  cast.bar = true; cast.result = null;
+  void castGo();
+}
+function barVideoGo() {
+  const R = opts.recast; if (!R || rc.busy) return;
+  const c = rcChar(); if (!c) return;
+  const say = (m) => { rc.bar = true; rc.result = { error: m }; barRefresh(); };
+  if (typeof VideoEncoder === "undefined" && (!("MediaRecorder" in window) || !document.createElement("canvas").captureStream)) return say("This browser can't record video. Chrome, Edge and Firefox can.");
+  const figs = rcFigures();
+  if (!figs.length) return say("There's no person in the shot for your character to take the place of. Show the stand-in (H / the eye in the outliner), or add a person, and try again.");
+  if (!rc.fig || !figs.some((f) => f.it === rc.fig)) rc.fig = (figs.find((f) => selection.has(f.it)) || figs.find((f) => f.it === person) || figs[0]).it;
+  rcMeasure();
+  const typed = pbText.value.trim(); if (typed) { rc.words = typed.slice(0, RECAST_DIRECTION_MAX_CHARS); rc.typed = true; }
+  rc.bar = true; rc.result = null;
+  void rcGo();
+}
+// ---- Camera: presets written as the shot camera's keys ----
+function camSubject() {
+  const c = pb.cam, list = thingsForTargets();
+  if (c.subject && list.includes(c.subject)) return c.subject;
+  c.subject = (active && active !== shot && list.includes(active) ? active : list.includes(person) ? person : list[0]) || null;
+  return c.subject;
+}
+function camForm() {
+  const s = camSubject(), c = pb.cam;
+  if (!c.form) {
+    const look = s ? worldBox(s).getCenter(new V3()) : new V3(), p = shot.obj.getWorldPosition(new V3());
+    c.form = { distance: Math.round(Math.max(1, Math.hypot(p.x - look.x, p.z - look.z)) * 2) / 2, height: Math.round(Math.max(0.3, p.y) * 10) / 10, start: pStart, end: pEnd };
+  }
+  c.form = normaliseCameraForm(c.form, FRAMES);
+  return c.form;
+}
+function camKeys() {
+  const s = camSubject(); if (!s) return [];
+  const box = worldBox(s), look = box.getCenter(new V3()), root = s.obj.getWorldPosition(new V3()), up = look.clone().sub(root);
+  const p = shot.obj.getWorldPosition(new V3());
+  const lookAt = (f) => { const at = trackPointAt(s, (f - 1) / FPS); return at ? [at[0] + up.x, at[1] + up.y, at[2] + up.z] : [look.x, look.y, look.z]; };
+  return cameraMoveKeys(pb.cam.preset, camForm(), [look.x, look.y, look.z], [p.x, p.y, p.z], lookAt);
+}
+function barCameraGo() {
+  const typed = pbText.value.trim();
+  if (typed) return barSendAstra(typed, "camera");
+  const keys = camKeys(); if (!keys.length) return toast("Pick what the camera looks at");
+  const f = camForm(), label = CAMERA_PRESETS.find((p) => p.id === pb.cam.preset)?.label || "Camera";
+  group(`Camera · ${label}`, () => {
+    // The move aims the camera itself: a Track To on it would turn it elsewhere.
+    if (shot.obj.userData.track) setTrack(shot, null);
+    const b = clone(shot.keys);
+    shot.keys = shot.keys.filter((k) => { const fr = Math.round(k.t * FPS) + 1; return fr < f.start || fr > f.end; });
+    const s0 = shot.obj.scale.toArray();
+    for (const k of keys) { const t = (k.frame - 1) / FPS; setKey(shot, t, { p: k.p, r: k.r, s: s0 }); const kk = shot.keys.find((x) => near(x.t, t)); if (kk) kk.ip = k.ip; }
+    const a = clone(shot.keys);
+    push({ label: "camera keys", undo() { shot.keys = clone(b); }, redo() { shot.keys = clone(a); } });
+  });
+  setTime((f.start - 1) / FPS); toggleCam(true); renderAll();
+  info(`Camera · ${label} · ${keys.length} keys on frames ${f.start}–${f.end} · ⌘Z undoes it`);
+}
+// ---- Assets: thumbnails of the set's parts and things, drawn one a frame, alone in the frame ----
+function barThumb(it) {
+  if (rc.busy || ptBusy || !items.includes(it)) return null;
+  const box = worldBox(it); if (box.isEmpty()) return null;
+  const w = 112, h = 84, r = offRenderer(w, h), c = box.getCenter(new V3()), rad = Math.max(0.25, box.getSize(new V3()).length() / 2);
+  const cam = new THREE.PerspectiveCamera(35, w / h, 0.05, 2000);
+  // Framed on its own corners (a long flat part, a track, fills the tile instead of a speck), from above and a side.
+  const dir = new V3(1, 1, 1.2).normalize(), corners = [];
+  for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) corners.push(new V3(x, y, z));
+  let d = (rad / Math.sin(THREE.MathUtils.degToRad(17.5))) * 1.02;
+  for (let k = 0; k < 3; k++) {
+    cam.position.copy(c).addScaledVector(dir, d); cam.lookAt(c); cam.updateMatrixWorld(true);
+    const m = Math.max(...corners.map((p) => { const q = p.clone().project(cam); return Math.max(Math.abs(q.x), Math.abs(q.y)); }));
+    if (!(m > 0) || !Number.isFinite(m)) break;
+    d = Math.max(0.3, d * (0.5 + 0.5 * (m / 0.86)));
+  }
+  cam.position.copy(c).addScaledVector(dir, d); cam.lookAt(c);
+  const inChain = (a, b) => { for (let o = b; o; o = o.parent) if (o === a) return true; return false; };
+  const hid = [];
+  for (const o of items) if (o !== it && o.obj.visible && !inChain(o.obj, it.obj) && !inChain(it.obj, o.obj)) { hid.push(o.obj); o.obj.visible = false; }
+  const gv = ground.visible, hv = helpers.visible, bg = scene.background, fg = scene.fog, sv = skyObj ? skyObj.visible : false;
+  ground.visible = false; helpers.visible = false; scene.background = new THREE.Color(0x45474d); scene.fog = null; if (skyObj) skyObj.visible = false;
+  try { r.render(scene, cam); return off.toDataURL("image/jpeg", 0.82); } catch { return null; }
+  finally { hid.forEach((o) => (o.visible = true)); ground.visible = gv; helpers.visible = hv; scene.background = bg; scene.fog = fg; if (skyObj) skyObj.visible = sv; }
+}
+let pbThumbing = false;
+function barThumbs() {
+  if (pbThumbing) return; pbThumbing = true;
+  const step = () => {
+    if (stopped || pb.mode !== "assets" || !pb.thumbQ.length) { pbThumbing = false; return; }
+    const it = pb.thumbQ.shift(), u = barThumb(it);
+    pb.thumbs.set(it.id, u || "");
+    const el = pbEl.querySelector(`[data-pbthumb="${it.id}"]`); if (el && u) el.style.backgroundImage = `url('${u}')`;
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function barGallery() {
+  const id = pb.assetsFor, get = opts.render?.looks; if (!get || !id || pb.galleryFor === id) return;
+  pb.galleryFor = id; pb.gallery = null;
+  Promise.resolve().then(() => get(id)).then((l) => l, () => []).then((list) => { if (stopped || pb.galleryFor !== id) return; pb.gallery = Array.isArray(list) ? list : []; if (pb.mode === "assets") barRefresh(); });
+}
+// ---- wiring ----
+pbEl.addEventListener("click", (e) => {
+  const t = e.target;
+  const tab = t.closest("[data-pbmode]");
+  if (tab) { pb.text[pb.mode] = pbText.value; pb.mode = tab.dataset.pbmode; pbText.value = pb.text[pb.mode]; pbSave(); barRender(); return; }
+  if (t.closest("#pbFold")) { pb.folded = true; pbSave(); barRender(); return; }
+  const tg = t.closest("[data-pbtoggle]");
+  if (tg) {
+    const k = tg.dataset.pbtoggle, o = pb.model.options;
+    if (k === "askFirst") { askFirst = !askFirst; const cb = $("askFirst"); if (cb) cb.checked = askFirst; }
+    else if (k === "pbr") o.pbr = !o.pbr;
+    else if (k === "rig") { o.rig = !o.rig; if (o.rig && pb.modelSize < 1.5) pb.modelSize = 1.75; }
+    else if (k === "traced") cast.traced = !cast.traced;
+    else if (k === "real") rc.real = !rc.real;
+    barRender(); return;
+  }
+  const plan = t.closest("[data-pbplan]"); if (plan) { pbText.value = T(PLANS[+plan.dataset.pbplan].ask); pb.text.scene = pbText.value; pbText.focus(); return; }
+  if (t.closest("[data-pbrm]")) { e.stopPropagation(); delete pb.model.images[t.closest("[data-pbrm]").dataset.pbrm]; pb.result = null; barRender(); return; }
+  const ref = t.closest("[data-pbref]"); if (ref) { pbPhotoFor = ref.dataset.pbref; pbPhotoIn.click(); return; }
+  if (t.closest("#pbAddImg")) { pbPhotoFor = nextEmptySlot(); pbPhotoIn.click(); return; }
+  if (t.closest("#pbEngine")) { e.stopPropagation(); engineMenu(t.closest("#pbEngine")); return; }
+  const an = t.closest("[data-pbanim]"); if (an) return barAnim(an.dataset.pbanim);
+  const po = t.closest("[data-pbpose]"); if (po) { presetCmd(pb.anim.who || who(), po.dataset.pbpose); return; }
+  const cm = t.closest("[data-pbcam]"); if (cm) { pb.cam.preset = cm.dataset.pbcam; barRender(); return; }
+  const lk = t.closest("[data-pblook]");
+  if (lk) {
+    const id = lk.dataset.pblook || null;
+    if (pb.mode === "image" && !cast.busy) { cast.lookId = id; const l = id ? cast.looks?.find((x) => x.id === id) : null; if (!cast.outfitTyped) cast.outfit = l?.outfit || ""; }
+    if (pb.mode === "video" && !rc.busy) { rc.lookId = id; const l = id ? rc.looks?.find((x) => x.id === id) : null; if (!rc.outfitTyped) rc.outfit = l?.outfit || ""; rcMenuLabel(); }
+    barRender(); return;
+  }
+  const item = t.closest("[data-pbitem]"); if (item) { const it = byId(+item.dataset.pbitem); if (it) { select(it); frameObj(it.obj); barRefresh(); } return; }
+  const gal = t.closest("[data-pbgal]");
+  if (gal) {
+    const id = gal.dataset.pbgal, l = pb.gallery?.find((x) => x.id === id); if (!l) return;
+    if (!cast.busy) { cast.charId = pb.assetsFor; cast.lookId = id; if (!cast.outfitTyped) cast.outfit = l.outfit || ""; }
+    if (!rc.busy && rcChars().some((c) => c.id === pb.assetsFor)) { rc.charId = pb.assetsFor; rc.lookId = id; if (!rc.outfitTyped) rc.outfit = l.outfit || ""; }
+    toast("Look set for Image and Video"); barRefresh(); return;
+  }
+  if (t.closest("#pbStop")) { rc.stop = true; rcTick(); barRefresh(); return; }
+}, { signal: ac.signal });
+pbEl.addEventListener("change", (e) => {
+  const t = e.target, o = pb.model.options, id = t.id;
+  if (id === "pbDetail") o.detail = +t.value;
+  else if (id === "pbTex") o.textures = t.value;
+  else if (id === "pbTopo") o.quad = t.value === "quad";
+  else if (id === "pbPoly") o.polycount = t.value === "" ? null : +t.value;
+  else if (id === "pbFor") pb.model.target = t.value;
+  else if (id === "pbSize") { const v = +t.value; if (v > 0 && v <= 30) pb.modelSize = Math.round(v * 100) / 100; }
+  else if (id === "pbWho") pb.anim.who = byId(+t.value) || pb.anim.who;
+  else if (id === "pbGait") pb.anim.gait = t.value;
+  else if (id === "pbTarget") pb.anim.target = t.value;
+  else if (id === "pbChar") { cast.charId = t.value; cast.lookId = null; castLoadLooks(); }
+  else if (id === "pbOutfit") { cast.outfit = t.value; cast.outfitTyped = true; }
+  else if (id === "pbRcChar") { rc.charId = t.value; rc.lookId = null; rcLoadLooks(); rcMenuLabel(); }
+  else if (id === "pbRcOutfit") { rc.outfit = t.value; rc.outfitTyped = true; }
+  else if (id === "pbLane") { rc.engine = t.value; rcMenuLabel(); }
+  else if (id === "pbFrom" || id === "pbTo") { const a = +$("pbFrom").value, b = +$("pbTo").value; if (a > 0 && b > a) rcSetRange(a, b); }
+  else if (id === "pbSubj") { pb.cam.subject = byId(+t.value) || null; pb.cam.form = null; }
+  else if (id === "pbDist") pb.cam.form.distance = +t.value;
+  else if (id === "pbHeight") pb.cam.form.height = +t.value;
+  else if (id === "pbCamFrom") pb.cam.form.start = +t.value;
+  else if (id === "pbCamTo") pb.cam.form.end = +t.value;
+  else if (id === "pbGalChar") { pb.assetsFor = t.value; }
+  else return;
+  barRender();
+}, { signal: ac.signal });
+pbText.addEventListener("input", () => { pb.text[pb.mode] = pbText.value; if (pb.mode === "model") pb.model.prompt = pbText.value; if (pb.mode === "assets" || pb.mode === "camera" || pb.mode === "model") barRefresh(); }, { signal: ac.signal });
+pbText.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter" && !e.shiftKey && pb.mode !== "image" && pb.mode !== "video") { e.preventDefault(); barGo(); } }, { signal: ac.signal });
+// A key pressed in the bar's fields or chips never reaches the viewport (Space would play, G would move).
+pbEl.addEventListener("keydown", (e) => { if (e.key !== "Escape") e.stopPropagation(); }, { signal: ac.signal });
+function barGo() {
+  if (pb.mode === "scene") return barSendAstra(pbText.value, "scene");
+  if (pb.mode === "anim") return barSendAstra(pbText.value, "anim");
+  if (pb.mode === "model") return void barModelGo();
+  if (pb.mode === "image") return barImageGo();
+  if (pb.mode === "video") return barVideoGo();
+  if (pb.mode === "camera") return barCameraGo();
+}
+$("pbGo").addEventListener("click", (e) => { e.stopPropagation(); barGo(); }, { signal: ac.signal });
+$("pbPill").addEventListener("click", (e) => { e.stopPropagation(); pb.folded = false; pbSave(); barRender(); }, { signal: ac.signal });
+// Photos dropped on the picture slots (or anywhere on the bar in 3D Model).
+pbEl.addEventListener("dragover", (e) => { if (pb.mode !== "model" || pb.model.kind === "text") return; e.preventDefault(); e.target.closest?.("[data-pbref]")?.classList.add("over"); }, { signal: ac.signal });
+pbEl.addEventListener("dragleave", (e) => e.target.closest?.("[data-pbref]")?.classList.remove("over"), { signal: ac.signal });
+pbEl.addEventListener("drop", (e) => {
+  if (pb.mode !== "model" || pb.model.kind === "text") return; e.preventDefault();
+  const files = [...(e.dataTransfer?.files || [])].filter((f) => /^image\//.test(f.type));
+  const slot = e.target.closest?.("[data-pbref]")?.dataset.pbref;
+  if (slot && files[0]) return barPhoto(files[0], slot);
+  for (const f of files.slice(0, pb.model.kind === "multi" ? 4 : 1)) barPhoto(f, nextEmptySlotAfter(files.indexOf(f)));
+}, { signal: ac.signal });
+function nextEmptySlotAfter(i) { const m = pb.model; if (m.kind !== "multi") return "front"; const free = MODEL_VIEWS.filter((v) => !m.images[v]); return free[i] || MODEL_VIEWS[i] || "front"; }
+// ---- Animation's chips ----
+function barAnim(id) {
+  const it = pb.anim.who && items.includes(pb.anim.who) ? pb.anim.who : who();
+  if (!it?.rig) return toast("Select a person first");
+  const tgt = pb.anim.target === "cam" ? shot : byId(+pb.anim.target);
+  const gait = id === "runTo" ? "run" : pb.anim.gait;
+  if (id === "walkCam") return void goTo(it, shot, gait);
+  if (id === "turnCam") return void turnTo(it, shot);
+  if (id === "lookCam") { if (lookAtCmd(it, shot) === false) toast("They can't look there"); return; }
+  if (id === "walkPoint") return startPathDraw(it, true);
+  if (id === "path") return startPathDraw(it);
+  if (!tgt) return toast("Pick where to, in To");
+  if (id === "walkTo" || id === "runTo") return void goTo(it, tgt, gait);
+  if (id === "turnTo") return void turnTo(it, tgt);
+  if (id === "sitOn") { if (tgt === shot || !sitOn(it, tgt)) toast(`There's nowhere to sit on "${tgt.name}"`); return; }
+  if (id === "leanOn") { if (tgt === shot || !leanOn(it, tgt)) toast(`They can't lean on "${tgt.name}"`); return; }
+}
+// ---- where it stands: dragged, folded, and never over the gizmo ----
+function pbPlace() {
+  pbEl.style.setProperty("--pbx", pb.off.x + "px"); pbEl.style.setProperty("--pby", pb.off.y + "px");
+  pbEl.style.setProperty("--pbax", pb.avoid.x + "px"); pbEl.style.setProperty("--pbay", pb.avoid.y + "px");
+}
+const rectOf = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; };
+/** Where the bar stands with no offset, from layout (never mid-transition): left 50% less half its width, its own top. */
+function pbBase() { const v = rectOf(view); return { left: v.left + pbEl.offsetLeft - pbEl.offsetWidth / 2, top: v.top + pbEl.offsetTop, width: pbEl.offsetWidth, height: pbEl.offsetHeight }; }
+/** Always inside the viewport, whatever its height now (an answer appearing makes it taller): the step-aside offset is corrected first. */
+function pbKeep() {
+  if (!pb || pb.folded || appEl0().classList.contains("compact")) return;
+  const v = rectOf(view), b = pbBase(), top = b.top + pb.off.y + pb.avoid.y, minTop = v.top + 6, maxTop = v.top + v.height - 6 - b.height;
+  const fixed = Math.max(Math.min(minTop, maxTop), Math.min(Math.max(minTop, maxTop), top));
+  if (Math.abs(fixed - top) > 0.5) { pb.avoid = { ...pb.avoid, y: pb.avoid.y + fixed - top }; pbPlace(); }
+}
+{
+  const grip = $("pbGrip"); let drag = null;
+  grip.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); grip.setPointerCapture?.(e.pointerId); pb.off = { x: pb.off.x + pb.avoid.x, y: pb.off.y + pb.avoid.y }; pb.avoid = { x: 0, y: 0 }; pbPlace(); drag = { x: e.clientX, y: e.clientY, o: { ...pb.off } }; pbEl.classList.add("dragging"); }, { signal: ac.signal });
+  grip.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const want = { x: drag.o.x + e.clientX - drag.x, y: drag.o.y + e.clientY - drag.y };
+    pb.off = clampBarOffset(want, pbBase(), rectOf(view)); pbPlace();
+  }, { signal: ac.signal });
+  const end = () => { if (!drag) return; drag = null; pbEl.classList.remove("dragging"); pbSave(); };
+  grip.addEventListener("pointerup", end, { signal: ac.signal }); grip.addEventListener("pointercancel", end, { signal: ac.signal });
+  grip.addEventListener("dblclick", () => { pb.off = { x: 0, y: 0 }; pbPlace(); pbSave(); }, { signal: ac.signal });
+}
+const _gp = new V3();
+/** Every quarter second: the bar steps aside when the gizmo would sit under it, stays inside the viewport, and the toast sits above it. */
+const pbFollow = setInterval(() => {
+  if (stopped) return clearInterval(pbFollow);
+  const compact = appEl0().classList.contains("compact");
+  view.style.setProperty("--pbh", !compact && !pb.folded ? Math.round(view.getBoundingClientRect().bottom - pbEl.getBoundingClientRect().top + 8) + "px" : "12px");
+  if (compact || pb.folded || pbEl.classList.contains("dragging")) return;
+  // Not while the pointer is on the bar or one of its fields is being typed in: it must not move from under a click.
+  const typing = pbEl.contains(document.activeElement) && /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName);
+  if (!tc.dragging && !pbEl.matches(":hover") && !typing) {
+    let pt = null;
+    if (tc.object && tc.object.visible !== false && tool !== "select" && tool !== "measure") {
+      tc.object.getWorldPosition(_gp).project(viewCam());
+      if (_gp.z < 1) { const v = rectOf(view); pt = { x: v.left + ((_gp.x + 1) / 2) * v.width, y: v.top + ((1 - _gp.y) / 2) * v.height }; }
+    }
+    const b = pbBase(), at = { ...b, left: b.left + pb.off.x, top: b.top + pb.off.y };
+    const next = barAvoid(at, pt, rectOf(view));
+    if (next.x !== pb.avoid.x || next.y !== pb.avoid.y) { pb.avoid = next; pbPlace(); }
+  }
+  pbKeep();
+}, 250);
+// The phone layout is decided a moment later (syncCompact), and again whenever the window changes shape.
+barRender(); requestAnimationFrame(() => { if (!stopped) barRender(); });
+matchMedia(STUDIO_COMPACT_QUERY).addEventListener("change", () => requestAnimationFrame(() => { if (!stopped) barRender(); }), { signal: ac.signal });
 
 // ================= loop =================
 const bgStudio = new THREE.Color(0x3a3b3f);

@@ -115,6 +115,10 @@ export const SET_NAMING_SET_CHANGED = "The set changed while its things were bei
 // A thing's 3D model built from its photo (thing-build.ts, 2026-09-24).
 export const THING_BUILD_NO_PHOTO = "Put a photo on this thing first — its model is built from its front photo.";
 export const THING_BUILD_FAILED = "The model couldn't be built from this photo — try a clearer photo of the whole thing.";
+// The prompt bar's 3D Model engines (model-engines.ts, 2026-10-01).
+export const STUDIO_MODEL_ENGINE_UNKNOWN = "That engine can't build this here — pick another one from the list.";
+export const STUDIO_MODEL_BUILD_FAILED = "The model couldn't be built this time — try a clearer photo, or other words.";
+export const STUDIO_MODEL_STILL_STARTING = "That build is still starting — it lands on the stage when it's ready, so don't press again.";
 export const SET_PHOTO_BUILD_FAILED =
   "This set couldn't be built from that photo, and the build is back in your allowance. A photo that shows more of the place may work better.";
 

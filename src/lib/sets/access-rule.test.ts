@@ -119,6 +119,9 @@ describe("the page and the finisher ask the one rule (read as source)", () => {
     ["studio-model-actions.ts", "reserveStudioModel"],
     ["studio-model-actions.ts", "keepStudioModel"],
     ["studio-model-actions.ts", "studioModelUrls"],
+    // The prompt bar's 3D Model engines (2026-10-01): the build and its poll.
+    ["model-actions.ts", "startStudioModelBuild"],
+    ["model-actions.ts", "pollStudioModelBuild"],
   ])("%s's %s asks setsAccess first and stops on its refusal", (file, fn) => {
     const src = read(file);
     const start = src.indexOf(`export async function ${fn}(`);
