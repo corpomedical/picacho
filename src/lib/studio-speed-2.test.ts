@@ -82,7 +82,11 @@ describe("the Studio's page and its doors", () => {
     const id = "f0fe7379-0000-4000-8000-000000000001";
     expect(isStudioBoot("GET", `/app/sets/${id}`, new URLSearchParams("studio=1"))).toBe(true);
     expect(isStudioBoot("GET", `/app/sets/${id}`, new URLSearchParams(""))).toBe(false);
-    expect(isStudioBoot("POST", `/app/sets/${id}`, new URLSearchParams("studio=1"))).toBe(false);
+    // Its server actions too: a revalidating action re-renders the page, and the layout must draw the same tree,
+    // or the Studio is mounted again under its open window (2026-10-01, the video window closed after the send).
+    expect(isStudioBoot("POST", `/app/sets/${id}`, new URLSearchParams("studio=1"))).toBe(true);
+    expect(isStudioBoot("POST", `/app/sets/${id}`, new URLSearchParams(""))).toBe(false);
+    expect(isStudioBoot("OPTIONS", `/app/sets/${id}`, new URLSearchParams("studio=1"))).toBe(false);
     expect(isStudioBoot("GET", "/app/sets/nope", new URLSearchParams("studio=1"))).toBe(false);
     const proxy = read("middleware.ts");
     expect(proxy.indexOf("request.headers.delete(STUDIO_BOOT_HEADER);")).toBeLessThan(proxy.indexOf("request.headers.set(STUDIO_BOOT_HEADER"));
