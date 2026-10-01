@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.201.0",
+    build: 240,
+    date: "2026-10-01",
+    title: "Aly: the check that hears what's said to her runs on GPT-6 Luna",
+    items: [
+      "When Aly listens hands-free, the check that tells whether you were talking to her, and not the TV or someone in the room, now runs on GPT-6 Luna instead of Claude Haiku 4.5, which Anthropic may retire from 15 October.",
+      "Tested before the switch on 49 spoken lines, three times on each model: they agreed on 46. Of 66 checks of lines said to Aly, Haiku dropped 8 and Luna none. Haiku ignored questions like \"How many credits do I have left this month?\" and \"What did we decide about Eva's outfit last week?\"; Luna lets them through to her.",
+      "TV, videos, other people and her own voice in the mic are let be as often as before: 68 of 72 checks on Luna, 69 of 72 on Haiku.",
+      "A check costs about a twentieth of what it did. It takes about 0.2 seconds longer on a typical line, and up to about 0.6 seconds on a slow one.",
+      "If the check fails or runs out of time, what you said always goes through. Until now a quiet line whose check failed could be dropped.",
+      "The privacy policy now names OpenAI for this check, in English, Spanish, Portuguese and Italian.",
+    ],
+  },
+  {
     version: "1.200.0",
     build: 239,
     date: "2026-10-01",
