@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.197.0",
+    build: 236,
+    date: "2026-10-01",
+    title: "Helios Studio: six fixes from the first live run",
+    items: [
+      "Path traced still: no more black patch after cleaning the grain. One unreadable pixel in the trace could blank a whole square of the picture. It is now cleaned up before denoising, the result is checked, and if anything still comes back blank the simpler filter is used and the window says so. \"Show without denoise\" shows the trace as it came out, and Save image saves whichever you are looking at.",
+      "Video with your character: the Real-scene words describe the scene as it is now. Parts you deleted or hid are never mentioned, only what the shot camera sees during the range.",
+      "\"What happens\" now follows camera cuts. When the camera moves or cuts during the range, the walk is described by place (\"across the track to the red car and stop beside it\") and the cuts are named, not described from one camera angle.",
+      "The video window stays open after you press send, showing progress to the end. Before, the Studio restarted once Recast had started the take, and the window disappeared.",
+      "The Studio no longer slides up after using menus and windows. Only its own panels scroll now.",
+      "Real scene sends a clay clip by default: the scene is recorded in plain flat colours, so the video engine repaints all of it as real (you can turn this off under Advanced). If your character has a saved outfit, the words name it; if not, they ask for the outfit from the photos.",
+    ],
+  },
+  {
     version: "1.196.0",
     build: 235,
     date: "2026-10-01",
