@@ -1,8 +1,10 @@
 // Draft step — Claude expands the user's plain-language request into an
 // engineered prompt using the character rulebook. Plain `fetch`, no SDK, so
 // no extra package install is needed.
+//
+// Relative imports only: anthropic.test.ts imports this module directly.
 
-import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
+import { fetchWithTimeout } from "./fetch-with-timeout";
 
 export async function draftWithClaude(instructions: string): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -128,7 +130,13 @@ export async function draftWithClaude(instructions: string): Promise<string> {
   //
   // Deliberately narrow: anchored to the opening of the reply, so a scene
   // description that happens to contain "I can't" in dialogue is untouched.
-  if (/^(?:i(?:'m| am)? ?(?:can'?t|cannot|won'?t|not able|unable|sorry)|sorry[,.]|i apologi[sz]e)\b/i.test(text)) {
+  //
+  // The word boundary ends each word, never the punctuation: until
+  // 2026-10-01 one \b closed the whole group, and after "Sorry," the next
+  // character is a space, so the boundary (two non-word characters) never
+  // held and "Sorry, I can't…" passed as a draft. The apostrophe may be
+  // typographic (U+2019) as well as straight.
+  if (/^(?:i(?:['\u2019]m| am)? ?(?:can['\u2019]?t|cannot|won['\u2019]?t|not able|unable|sorry)\b|sorry[,.]|i apologi[sz]e\b)/i.test(text)) {
     throw new Error(`Claude declined to draft this prompt: ${text.slice(0, 120)}`);
   }
 
