@@ -96,6 +96,11 @@ async function assignVoice(
   const { data, error } = await supabase
     .from("voice_presets")
     .select("id, elevenlabs_voice_id")
+    // The curated catalogue only: a person's own voices (library picks,
+    // generated, cloned — supabase/pending/character-voices.sql) are theirs
+    // to choose, never an automatic assignment, and including them would
+    // move every assignment for that person.
+    .is("owner_id", null)
     // A fixed order, so the pick cannot move with row-return order. See the
     // note in assignedVoiceFor: this decides a voice ONCE and the answer is
     // persisted — it is not a lookup and must not be re-run to read one.

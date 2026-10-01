@@ -215,7 +215,7 @@ export async function loadProducerVoices(): Promise<{ voices: ProducerVoiceChoic
   const g = await gate();
   if (!g.ok) return null;
   const [{ data }, voice] = await Promise.all([
-    g.admin.from("voice_presets").select("id, label, description").order("sort_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true }).limit(50),
+    g.admin.from("voice_presets").select("id, label, description").is("owner_id", null).order("sort_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true }).limit(50),
     loadProducerVoice(g.admin, g.userId).catch(() => null),
   ]);
   const voices = (data ?? []).map((v) => ({
@@ -228,7 +228,7 @@ export async function loadProducerVoices(): Promise<{ voices: ProducerVoiceChoic
 
 async function voiceExists(admin: ReturnType<typeof createAdminClient>, id: string): Promise<{ elevenlabs_voice_id: string } | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const { data } = await admin.from("voice_presets").select("elevenlabs_voice_id").eq("id", id).maybeSingle();
+  const { data } = await admin.from("voice_presets").select("elevenlabs_voice_id").eq("id", id).is("owner_id", null).maybeSingle();
   return (data as { elevenlabs_voice_id: string } | null) ?? null;
 }
 

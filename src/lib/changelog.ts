@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.196.0",
+    build: 235,
+    date: "2026-10-01",
+    title: "Character voices: browse the library, generate a voice, or clone your own",
+    items: [
+      "A character's voice is now a card with ▶ and Change voice, which opens a voice sheet with four tabs: Picacho picks, Library, Generate and My voices.",
+      "Library: ElevenLabs' shared voice library, searchable and filtered by language, gender, age, accent and use, sorted by trending, most used, most added or newest, with each voice's own sample to play. Only voices at the normal price that their owners can't withdraw for at least a year are shown. Every paid plan can choose them.",
+      "Generate (Studio and Elite): describe a voice and hear three options, name the one you like and keep it. You can also clone your own voice from a recording, after agreeing to a consent statement. Studio keeps up to 5 voices you made, Elite up to 10.",
+      "My voices lists what you picked, generated or cloned. A voice a character speaks in can't be removed, and removing a voice you made also deletes it from ElevenLabs, as does deleting your account.",
+    ],
+  },
+  {
     version: "1.195.0",
     build: 234,
     date: "2026-10-01",

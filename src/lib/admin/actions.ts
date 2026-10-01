@@ -6,6 +6,7 @@ import { erasePromoRedemptionEmail } from "@/lib/profile/promo-redemptions";
 import { removeUserRateHits } from "@/lib/rate-hits";
 import { deleteUserFaces } from "@/lib/faces/run";
 import { forgetSocialAccountsOnDelete } from "@/lib/social/forget";
+import { deleteUserVoices } from "@/lib/voices/forget";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/server";
 import { cancelStripeCustomerBilling } from "@/lib/stripe/cancel-customer";
@@ -180,6 +181,9 @@ export async function deleteUser(formData: FormData) {
   // posts cancelled, keys revoked at the network while the rows still exist,
   // a failed revoke owed for the posts clock. Bounded; never blocks.
   await forgetSocialAccountsOnDelete(admin, userId);
+  // Their generated and cloned voices, deleted at ElevenLabs while the rows
+  // that name them still exist (lib/voices/forget.ts). Best-effort; never blocks.
+  await deleteUserVoices(admin, userId);
 
   // Auth delete BEFORE the storage purge — the same fail-loudly-first
   // ordering the self-serve path earned (round-two audit): the purge is
@@ -526,7 +530,7 @@ export async function addVoicePreset(formData: FormData) {
 export async function makeDefaultVoicePreset(formData: FormData) {
   const { supabase, admin, userId: actingUserId } = await requireAdmin();
   const id = formData.get("id") as string;
-  const { data: all, error: readError } = await supabase.from("voice_presets").select("id, sort_order");
+  const { data: all, error: readError } = await supabase.from("voice_presets").select("id, sort_order").is("owner_id", null);
   if (readError) {
     console.error("makeDefaultVoicePreset: read failed", readError);
     redirect(`/admin/voices?error=${encodeURIComponent(readError.message)}`);

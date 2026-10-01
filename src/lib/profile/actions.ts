@@ -18,6 +18,7 @@ import { erasePromoRedemptionEmail } from "@/lib/profile/promo-redemptions";
 import { removeUserRateHits } from "@/lib/rate-hits";
 import { deleteUserFaces } from "@/lib/faces/run";
 import { forgetSocialAccountsOnDelete } from "@/lib/social/forget";
+import { deleteUserVoices } from "@/lib/voices/forget";
 
 type ActionResult = { error: string | null };
 
@@ -509,6 +510,9 @@ export async function deleteAccount(formData: FormData) {
   // outlives the account (lib/social/forget.ts). Best-effort and bounded — it
   // never blocks the deletion.
   await forgetSocialAccountsOnDelete(admin, userId);
+  // Their generated and cloned voices, deleted at ElevenLabs while the rows
+  // that name them still exist (lib/voices/forget.ts). Best-effort; never blocks.
+  await deleteUserVoices(admin, userId);
 
   const { error } = await admin.auth.admin.deleteUser(userId);
 

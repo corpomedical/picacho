@@ -75,7 +75,10 @@ function buildCsp(nonce: string): string {
     // is what this change locks down.
     `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
     `img-src 'self' data: blob:${supabaseOrigin ? ` ${supabaseOrigin}` : ""} https://*.fal.media`,
-    `media-src 'self' blob:${supabaseOrigin ? ` ${supabaseOrigin}` : ""} https://*.fal.media`,
+    // ElevenLabs' public bucket, path-limited (2026-10-01): the voice sheet
+    // plays library voices' own preview clips from there
+    // (lib/voices/elevenlabs.ts PREVIEW_URL_PREFIX), media only.
+    `media-src 'self' blob:${supabaseOrigin ? ` ${supabaseOrigin}` : ""} https://*.fal.media https://storage.googleapis.com/eleven-public-prod/`,
     // Browser-side fetch/XHR/WebSocket targets: our own routes plus Supabase
     // (auth token refresh, storage uploads, realtime). Previously `https:
     // wss:` — i.e. anywhere. fal.media must stay here too: DownloadButton

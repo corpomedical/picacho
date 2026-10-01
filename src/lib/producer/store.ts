@@ -187,7 +187,7 @@ export type ProducerVoice = { presetId: string; label: string; elevenLabsVoiceId
 export async function loadProducerVoice(admin: SupabaseClient, userId: string): Promise<ProducerVoice | null> {
   const [{ data: pref }, { data: presets }] = await Promise.all([
     admin.from("producer_prefs").select("voice_preset_id").eq("user_id", userId).maybeSingle(),
-    admin.from("voice_presets").select("id, label, elevenlabs_voice_id").order("sort_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true }).limit(50),
+    admin.from("voice_presets").select("id, label, elevenlabs_voice_id").is("owner_id", null).order("sort_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true }).limit(50),
   ]);
   const list = (presets ?? []).filter((p) => typeof p.elevenlabs_voice_id === "string" && p.elevenlabs_voice_id);
   if (list.length === 0) return null;

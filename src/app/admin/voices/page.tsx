@@ -16,6 +16,7 @@ export default async function AdminVoicesPage({
   const { data: voices } = await supabase
     .from("voice_presets")
     .select("*")
+    .is("owner_id", null)
     .order("sort_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true });
 
   return (

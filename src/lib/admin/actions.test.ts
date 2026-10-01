@@ -92,6 +92,7 @@ vi.mock("@/lib/profile/promo-redemptions", () => ({ erasePromoRedemptionEmail: a
 vi.mock("@/lib/rate-hits", () => ({ removeUserRateHits: async () => {} }));
 vi.mock("@/lib/faces/run", () => ({ deleteUserFaces: async () => {} }));
 vi.mock("@/lib/social/forget", () => ({ forgetSocialAccountsOnDelete: async () => {} }));
+vi.mock("@/lib/voices/forget", () => ({ deleteUserVoices: async () => {} }));
 vi.mock("@/lib/stripe/cancel-customer", () => ({ cancelStripeCustomerBilling: async () => {} }));
 vi.mock("@/lib/plans", () => ({ PLAN_LIMITS: {} }));
 vi.mock("@/lib/admin/badges", () => ({ computeAdminBadgeCounts: async () => ({}) }));

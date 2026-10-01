@@ -16,7 +16,8 @@ import { useLocale } from "@/lib/i18n/provider";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { formatMsg } from "@/lib/i18n/format";
 import { ImageLightbox } from "@/components/image-lightbox";
-import { VoicePreviewButton } from "@/components/voice-preview-button";
+import { VoiceField } from "@/components/voices/voice-field";
+import type { SheetVoice } from "@/components/voices/voice-sheet";
 import { LocalDate } from "@/components/local-date";
 import { QuietVideo } from "@/components/quiet-video";
 import { ExpressionSetPanel, type ExpressionSlotView } from "@/components/expression-set-panel";
@@ -116,6 +117,7 @@ export function CharacterForm({
   errorMessage,
   projects = [],
   voices = [],
+  ownVoices = [],
   recentRenders,
   stats,
   expressionSet,
@@ -130,6 +132,8 @@ export function CharacterForm({
   errorMessage?: string;
   projects?: ProjectOption[];
   voices?: VoiceOption[];
+  /** This person's own voices (library picks, generated, cloned): the character's current one may be among them. */
+  ownVoices?: SheetVoice[];
   // "In action" (2026-08-27 redesign, case 4): this character's recent
   // succeeded image renders, queried by the edit page. Empty array = show
   // the first-shot nudge; undefined/new-character = no strip at all.
@@ -1240,35 +1244,13 @@ export function CharacterForm({
       <section className={SHEET}>
         <h2 className={SHEET_TITLE}>{c.dialogueVoice}</h2>
         <p className="mt-1 text-sm text-atelier-muted">{c.dialogueVoiceSubtitle}</p>
-        {voices.length === 0 ? (
-          <p className="mt-4 text-sm text-atelier-muted/80">{c.noVoicesYet}</p>
-        ) : (
-          <div className="mt-4 flex items-center gap-2">
-            <select
-              aria-label={c.dialogueVoice}
-              value={voiceId}
-              onChange={(e) => setVoiceId(e.target.value)}
-              className={`w-full ${FIELD}`}
-            >
-              {/* Not a choice — a placeholder for a character whose voice
-                  hasn't been decided yet. Disabled, because "no voice" is no
-                  longer a state a character can be in: saving without a pick
-                  assigns one (assignedVoiceFor, lib/generations/voice-lock.ts).
-                  Offering it as selectable would let the form promise a clear
-                  that the save immediately undoes. */}
-              <option value="" disabled>
-                {c.noVoice}
-              </option>
-              {voices.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.label}
-                  {v.description ? ` — ${v.description}` : ""}
-                </option>
-              ))}
-            </select>
-            <VoicePreviewButton voicePresetId={voiceId} characterId={initial?.id ?? null} label={c.previewVoice} />
-          </div>
-        )}
+        <VoiceField
+          value={voiceId}
+          onChange={setVoiceId}
+          curated={voices}
+          own={ownVoices}
+          characterId={initial?.id ?? null}
+        />
       </section>
 
       <section className={SHEET}>
