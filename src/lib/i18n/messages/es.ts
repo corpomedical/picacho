@@ -5302,7 +5302,7 @@ const es = {
     memoryIntro: "{name} guarda notas breves sobre ti y tu trabajo, y las lee en cada chat y en la lámpara. Puedes editar o eliminar cualquiera.",
     memoryEmpty: "Nada todavía. Cuéntale a {name} algo que valga la pena recordar, como cómo te gustan las respuestas o a qué se dedica tu negocio.",
     closed: "El chat aún no está abierto. Vuelve a intentarlo pronto.",
-    freeNote: "Las cuentas gratuitas chatean con Claude. Los planes de pago añaden Pensar a fondo y Preguntar a los tres.",
+    freeNote: "Las cuentas gratuitas empiezan con Luna y pueden elegir cualquier otro cerebro. Los planes de pago añaden Pensar a fondo y Preguntar a los tres.",
     disclaimer: "{name} puede equivocarse. Comprueba los datos importantes.",
     idea1: "Escribe un plan de lanzamiento de una página para mi cafetería",
     idea2: "Explícame la fotosíntesis como si tuviera 12 años",

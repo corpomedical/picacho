@@ -5600,7 +5600,7 @@ const en = {
     memoryIntro: "{name} keeps short notes about you and your work, and reads them in every chat and in the lamp. You can edit or delete any of them.",
     memoryEmpty: "Nothing yet. Tell {name} something worth remembering, like how you like answers or what your business does.",
     closed: "Chat isn't open yet. Try again soon.",
-    freeNote: "Free accounts chat with Claude. Paid plans add Think harder and Ask all three.",
+    freeNote: "Free accounts start on Luna and can choose any other brain. Paid plans add Think harder and Ask all three.",
     disclaimer: "{name} can make mistakes. Check important facts.",
     idea1: "Write a one-page launch plan for my café",
     idea2: "Explain photosynthesis like I'm 12",
