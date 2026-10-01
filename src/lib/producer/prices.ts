@@ -128,15 +128,24 @@ export function transcribeCostUsd(seconds: number): number {
 
 // THE JUDGE (2026-09-25, operator: "doesnt pick up every voice on the
 // background and processes it"): each spoken message is judged "said to the
-// Producer or not" by Claude Haiku 4.5 before it becomes a turn (gate.ts).
-// Read from Anthropic's pricing page (platform.claude.com/docs/en/about-
-// claude/pricing) on 2026-09-25: $1 per 1M input tokens, $5 per 1M output.
-// A judgement reads ~700 tokens and writes ~20: 700 × $1/1M + 20 × $5/1M =
-// $0.0008. A message it drops costs its transcription, the judgement and the
-// cut-short first call, and is charged nothing (the route settles it at 0).
-export const GATE_MODEL = "claude-haiku-4-5-20251001";
-export const GATE_USD_PER_M_IN = 1;
-export const GATE_USD_PER_M_OUT = 5;
+// Producer or not" before it becomes a turn (gate.ts). A message it drops
+// costs its transcription, the judgement and the cut-short first call, and is
+// charged nothing (the route settles it at 0).
+//
+// On GPT-6 Luna since 2026-10-01 (Claude Haiku 4.5 until then, $1 / $5 per
+// 1M). Read from OpenAI's pricing page (developers.openai.com/api/docs/
+// pricing) on 2026-10-01, Standard, under "Short context input | Short context
+// cached input | Short context cache writes | Short context output | …":
+//   "| gpt-6-luna | $0.10 | $0.01 | $0.125 | $0.50 | $0.20 | $0.02 | $0.25 | $0.75 |"
+// The judgement asks for no caching (gate.ts), so every input token is at
+// $0.10 per 1M; a judgement is far under the 272K tokens where long-context
+// prices start. With no reasoning, output is the verdict's JSON alone. In
+// the 2026-10-01 eval a judgement read 705–793 tokens and wrote about 17:
+// 740 × $0.10/1M + 17 × $0.50/1M = $0.0000825 (Haiku 4.5 read 1,353–1,457,
+// its forced-tool prompt included, and wrote about 36: $0.0016).
+export const GATE_MODEL = "gpt-6-luna";
+export const GATE_USD_PER_M_IN = 0.1;
+export const GATE_USD_PER_M_OUT = 0.5;
 
 export function gateCostUsd(input: number, output: number): number {
   return (Math.max(0, input) * GATE_USD_PER_M_IN + Math.max(0, output) * GATE_USD_PER_M_OUT) / 1_000_000;
