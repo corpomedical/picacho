@@ -28,7 +28,7 @@ export const RELEASES: Release[] = [
       "Click your name at the bottom of the sidebar, your credits on the phone's top bar, the credits on the Generate page, or the credits and letter in Picacho Light, and a menu opens with everything about your balance.",
       "It shows what you can spend, a bar of your plan credits left, spent and your extra credits, when the plan refills, about how many pictures, quick videos and HD videos that still buys, and this month's other allowances.",
       "The bar fills in segment by segment as the menu opens, and the balance counts up with it.",
-      "Upgrade and Buy credits sit under it on the web (not in the phone apps), then Plans and billing, Usage and Log out. The numbers are read the same way Settings reads them, fresh each time it opens.",
+      "Upgrade and Buy credits sit under it on the web (not in the phone apps), then Plans and billing and Usage (Log out stays in the gear's menu). The numbers are read the same way Settings reads them, fresh each time it opens.",
       "The sidebar now shows your letter and your credits under your name, and the phone's top bar shows your credits beside your letter.",
     ],
   },

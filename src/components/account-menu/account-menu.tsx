@@ -8,7 +8,6 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
-import { logout } from "@/lib/auth/actions";
 import { PLAN_LABELS } from "@/lib/plans";
 import { settingsHref } from "@/lib/settings/tabs";
 import { creditSegments, type AccountMenuData } from "@/lib/account-menu/shape";
@@ -412,14 +411,8 @@ function Ledger({
       <div className="border-t border-[var(--am-rule)] p-1.5">
         <MenuLink href={settingsHref("billing")}>{m.plansBilling}</MenuLink>
         <MenuLink href={settingsHref("overview")}>{m.usage}</MenuLink>
-        <form action={logout}>
-          <button
-            type="submit"
-            className="flex w-full items-center rounded-md px-2 py-[7px] text-left text-[var(--am-muted)] transition-colors hover:bg-[var(--am-hover)] hover:text-[var(--am-ink)]"
-          >
-            {m.logOut}
-          </button>
-        </form>
+        {/* No Log out here (operator, 2026-10-02: "Its already in the settings
+            button. Its like we are pushing the user to leave"): the gear's menu has it. */}
       </div>
     </>
   );
