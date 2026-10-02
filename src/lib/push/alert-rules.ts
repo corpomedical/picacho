@@ -18,7 +18,13 @@ import {
 // window. admin-alerts.ts does the sending. Pure and alias-free (relative
 // imports only) so every rule here is unit-tested without Supabase.
 
-export type AdminPush = { title: string; body: string; path: string };
+export type AdminPush = {
+  title: string;
+  body: string;
+  path: string;
+  /** Notification buttons; each opens the phone admin app at its path. */
+  actions?: { action: string; title: string; path: string }[];
+};
 
 /**
  * Seconds each alert stays quiet after it fires, per key. All far under

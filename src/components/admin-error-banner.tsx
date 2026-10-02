@@ -77,6 +77,12 @@ const KNOWN_ERRORS = new Set<string>([
   "admin_users_last_viewed_at must be a valid timestamp.",
   "Value is too long (500 characters max).",
   "That model is off the menu on Admin → Models. Put it back on before making it the default.",
+  // admin/ops.ts — the phone app's Controls tab (2026-10-02)
+  "That isn't on a model menu.",
+  "Couldn't read the model menus. Nothing changed.",
+  "Couldn't save it. Nothing changed; details are in the server log.",
+  "Unknown switch.",
+  "Couldn't switch it — nothing was changed. Details are in the server log.",
   // admin/promo-actions.ts
   "Code must be 3-24 letters/numbers (e.g. MARIA20).",
   "Salesperson name is required.",

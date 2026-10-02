@@ -380,7 +380,7 @@ export async function loadToday(
       group: "system",
       kind: "Model",
       tone: "warn",
-      title: `${m.model_id} is switched off`,
+      title: `${modelName(m.model_id)} is switched off`,
       sub: [m.last_error ? short(m.last_error, 110) : "circuit breaker", ago(m.tripped_at, now)].filter(Boolean).join(" · "),
       at: m.tripped_at,
       actions: [

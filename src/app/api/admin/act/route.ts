@@ -6,6 +6,9 @@ import {
   opEmailPerson,
   opRefundRender,
   opRestoreModel,
+  opSetFlag,
+  opSetOffered,
+  opSuspendModel,
   opSetFeedbackStatus,
   opSetReportStatus,
   opSetUserStatus,
@@ -34,6 +37,9 @@ const ACTIONS: Record<string, (admin: Parameters<typeof opAddNote>[0], actor: st
   checkRender: (a, u, f) => opCheckRender(a, u, { generationId: str(f, "generation_id") }),
   stopRender: (a, u, f) => opStopRender(a, u, { generationId: str(f, "generation_id"), refund: str(f, "refund") === "1" }),
   restoreModel: (a, u, f) => opRestoreModel(a, u, { modelId: str(f, "model_id") }),
+  suspendModel: (a, u, f) => opSuspendModel(a, u, { modelId: str(f, "model_id") }),
+  setOffered: (a, u, f) => opSetOffered(a, u, { menu: str(f, "menu"), item: str(f, "item"), offer: f.offer === true || str(f, "offer") === "1" }),
+  setFlag: (a, u, f) => opSetFlag(a, u, { key: str(f, "key"), enabled: f.enabled === true || str(f, "enabled") === "1" }),
   adjustCredits: (a, u, f) =>
     opAdjustCredits(a, u, {
       userId: str(f, "user_id"),

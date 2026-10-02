@@ -105,12 +105,17 @@ export async function alertModelOff(input: {
       send,
       `model-off:${input.modelId}`,
       ALERT_WINDOWS.modelOff,
-      modelOffAlert({
-        modelLabel: modelLabel(input.modelId),
-        lastError: input.lastError,
-        retryAfter: input.retryAfter,
-        now: Date.now(),
-      }),
+      {
+        ...modelOffAlert({
+          modelLabel: modelLabel(input.modelId),
+          lastError: input.lastError,
+          retryAfter: input.retryAfter,
+          now: Date.now(),
+        }),
+        // The phone app's Controls tab, asking to turn it back on (one tap).
+        path: "#controls",
+        actions: [{ action: "restore", title: "Turn back on", path: `#controls?restore=${encodeURIComponent(input.modelId)}` }],
+      },
     );
   } catch (err) {
     console.error("admin-alerts: model-off alert failed:", err);

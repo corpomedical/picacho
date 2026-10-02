@@ -388,3 +388,84 @@ export async function opEmailPerson(
   });
   return ok("Email sent.");
 }
+
+// ---- models and switches (the phone app's Controls tab, 2026-10-02) --------
+
+/** Offer a model on a customer menu, or take it off (same rule as Admin → Models). */
+export async function opSetOffered(
+  admin: SupabaseClient,
+  actor: string,
+  input: { menu: string; item: string; offer: boolean },
+): Promise<OpResult> {
+  const { menuDef, isOffered } = await import("@/lib/models/registry");
+  const { menuItems, offLock } = await import("@/lib/models/menus");
+  const { readModelDefaults, readStoredControls, saveStoredControls } = await import("@/lib/models/controls-store");
+  const menu = menuDef(input.menu);
+  const item = menu ? menuItems(menu.key).find((i) => i.id === input.item) : undefined;
+  if (!menu || !item) return no("That isn't on a model menu.");
+  let controls;
+  try {
+    controls = await readStoredControls(admin);
+  } catch (err) {
+    console.error("opSetOffered: read failed", err);
+    return no("Couldn't read the model menus. Nothing changed.");
+  }
+  if (isOffered(controls, menu.key, item.id) === input.offer) return ok(input.offer ? "Already on." : "Already off.");
+  if (!input.offer) {
+    const lock = offLock(menu.key, item.id, controls, await readModelDefaults(admin));
+    if (lock) return no(`${item.label} stays on: ${lock}`);
+  }
+  const off = new Set(controls.off[menu.key] ?? []);
+  if (input.offer) off.delete(item.id);
+  else off.add(item.id);
+  const error = await saveStoredControls(admin, { ...controls, off: { ...controls.off, [menu.key]: [...off] } });
+  if (error) {
+    console.error("opSetOffered: save failed", error);
+    return no("Couldn't save it. Nothing changed; details are in the server log.");
+  }
+  await logAdminAction(admin, actor, {
+    action: "model.offer",
+    targetType: "model",
+    targetId: `${menu.key}:${item.id}`,
+    before: input.offer ? "off" : "offered",
+    after: input.offer ? "offered" : "off",
+  });
+  return ok(input.offer ? `${item.label} is back on the menu.` : `${item.label} is off the menu.`);
+}
+
+/** Take a video or picture model out of service now (Admin → Models' Suspend). */
+export async function opSuspendModel(admin: SupabaseClient, actor: string, input: { modelId: string }): Promise<OpResult> {
+  const kind = VIDEO_MODELS.some((m) => m.id === input.modelId) ? "video" : IMAGE_MODELS.some((m) => m.id === input.modelId) ? "image" : null;
+  if (!kind) return no("Unknown model");
+  const now = new Date().toISOString();
+  const { error } = await admin.from("model_health").upsert({
+    model_id: input.modelId,
+    kind,
+    tripped_at: now,
+    retry_after: null,
+    consecutive_failures: 0,
+    last_error: "Suspended manually from the admin app.",
+    updated_at: now,
+  });
+  if (error) {
+    console.error("opSuspendModel: model_health upsert failed — nothing changed", error);
+    return no("Couldn't update it — nothing was changed. Details are in the server log.");
+  }
+  await logAdminAction(admin, actor, { action: "model.suspend", targetType: "model", targetId: input.modelId, before: "running", after: "suspended" });
+  return ok("Suspended. Renders that ask for it move to the cheapest model in service.");
+}
+
+/** Turn a feature switch on or off (Admin → Feature flags). */
+export async function opSetFlag(admin: SupabaseClient, actor: string, input: { key: string; enabled: boolean }): Promise<OpResult> {
+  if (!/^[a-z0-9_]{2,60}$/.test(input.key)) return no("Unknown switch.");
+  const { data: row } = await admin.from("feature_flags").select("enabled").eq("key", input.key).maybeSingle<{ enabled: boolean }>();
+  if (!row) return no("Unknown switch.");
+  if (row.enabled === input.enabled) return ok(input.enabled ? "Already on." : "Already off.");
+  const { error } = await admin.from("feature_flags").update({ enabled: input.enabled, updated_at: new Date().toISOString() }).eq("key", input.key);
+  if (error) {
+    console.error("opSetFlag: flag update failed — nothing changed", error);
+    return no("Couldn't switch it — nothing was changed. Details are in the server log.");
+  }
+  await logAdminAction(admin, actor, { action: "flag.toggle", targetType: "flag", targetId: input.key, before: row.enabled ? "on" : "off", after: input.enabled ? "on" : "off" });
+  return ok(input.enabled ? "Switched on." : "Switched off.");
+}

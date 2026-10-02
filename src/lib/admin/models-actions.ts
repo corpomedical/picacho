@@ -9,13 +9,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { logAdminAction } from "@/lib/admin/audit";
-import { forgetModelControls } from "@/lib/models/controls";
+import { readModelDefaults, readStoredControls, saveStoredControls } from "@/lib/models/controls-store";
 import {
-  MODEL_CONTROLS_KEY,
   isOffered,
   jobSlot,
   menuDef,
-  parseModelControls,
   pickedJobModel,
   type ModelControls,
 } from "@/lib/models/registry";
@@ -35,33 +33,9 @@ const productOf = (fd: FormData) => {
   return typeof p === "string" && /^[a-z]{1,20}$/.test(p) ? p : "video";
 };
 
-async function readControls(admin: Admin): Promise<ModelControls> {
-  const { data, error } = await admin.from("app_settings").select("value").eq("key", MODEL_CONTROLS_KEY).maybeSingle<{ value: string | null }>();
-  if (error) throw new Error(error.message);
-  return parseModelControls(data?.value);
-}
-
-async function saveControls(admin: Admin, controls: ModelControls): Promise<string | null> {
-  // Upsert through the service client: app_settings has an admin UPDATE
-  // policy but no INSERT policy, and this row has no migration behind it.
-  const { error } = await admin.from("app_settings").upsert(
-    {
-      key: MODEL_CONTROLS_KEY,
-      value: JSON.stringify(controls),
-      description: "Admin → Models: behind-the-scenes model picks and models taken off customer menus.",
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "key" },
-  );
-  forgetModelControls();
-  return error ? error.message : null;
-}
-
-async function readDefaults(admin: Admin): Promise<{ video: string; picture: string }> {
-  const { data } = await admin.from("app_settings").select("key, value").in("key", ["video_model", "image_model"]);
-  const get = (k: string) => (data ?? []).find((r) => r.key === k)?.value as string | undefined;
-  return { video: get("video_model") ?? "kling", picture: get("image_model") ?? "gpt-image" };
-}
+const readControls = (admin: Admin) => readStoredControls(admin);
+const saveControls = (admin: Admin, controls: ModelControls) => saveStoredControls(admin, controls);
+const readDefaults = (admin: Admin) => readModelDefaults(admin);
 
 /**
  * Back to the page with what changed, as ids the page turns into words (never

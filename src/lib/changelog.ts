@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.212.0",
+    build: 251,
+    date: "2026-10-02",
+    title: "The admin phone app, rebuilt: Today, Live, People, Controls",
+    items: [
+      "The phone admin app now has four tabs in the website admin's Apple style. Today shows the day's numbers and everything that needs you, each with its button. Live shows payments, sign-ups, renders and issues as they happen. People finds anyone and lets you give credits, refund, email or suspend. Controls turns models on and off, shows every provider balance with Top up, and holds the feature switches.",
+      "Its numbers and buttons are the website admin's own, so the two always agree, and every change lands in the Activity log.",
+      "Alerts arrive with the app closed: payments and top-ups, sign-ups, problems and failed renders. A model that switches itself off now comes with a Turn back on button.",
+      "Today's list names a switched-off model properly (Seedance 2.5, not seedance), on the website too.",
+    ],
+  },
+  {
     version: "1.211.0",
     build: 250,
     date: "2026-10-02",

@@ -24,6 +24,9 @@ type AdminPushMessage = {
   // Where the admin PWA should land when the notification is tapped —
   // a hash route inside the console ("#money", "#content").
   path?: string;
+  // Buttons on the notification (Android shows up to two); each opens the
+  // app at its own path, where the app asks before it acts.
+  actions?: { action: string; title: string; path: string }[];
 };
 
 type WebPushDevice = { endpoint: string; p256dh: string; auth: string };
@@ -81,7 +84,7 @@ export async function notifyAdmins(message: AdminPushMessage): Promise<void> {
     if (!devices?.length) return;
 
     const payload = Buffer.from(
-      JSON.stringify({ title: message.title, body: message.body, path: message.path ?? "" }),
+      JSON.stringify({ title: message.title, body: message.body, path: message.path ?? "", actions: message.actions ?? [] }),
     );
     await Promise.all(devices.map((d) => sendToWebPushDevice(d, payload, "admin_push_subscriptions")));
   } catch {
