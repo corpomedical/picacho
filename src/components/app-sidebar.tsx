@@ -36,6 +36,7 @@ import {
 import { Logo } from "@/components/logo";
 import { EarlyAccessBadge } from "@/components/early-access-badge";
 import { SkipRefinementToggle } from "@/components/settings/skip-refinement-toggle";
+import { AccountMenuButton, useAccountMenu, useMenuCredits } from "@/components/account-menu/account-menu";
 
 const COLLAPSED_STORAGE_KEY = "picacho_sidebar_collapsed";
 
@@ -711,7 +712,7 @@ export function AppSidebar({
   const pathname = usePathname();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const s = t.settings;
   // The tools this account may open, behind the one Tools row.
   const tools = visibleTools({ setsVisible, recceVisible, mystiqueVisible, liveVisible, cutVisible, pressTourVisible });
@@ -750,6 +751,11 @@ export function AppSidebar({
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuPos, setMenuPos] = useState<{ bottom: number; left: number } | null>(null);
   const [displayUsername, setDisplayUsername] = useState(username);
+  const accountMenu = useAccountMenu();
+  const accountMenuOn = accountMenu !== null;
+  const menuCredits = useMenuCredits();
+  // Light's rule for the letter is first name first; the menu's own read has it.
+  const accountLetter = accountMenu?.data?.initial ?? ((displayUsername || "?").trim()[0] ?? "?").toUpperCase();
   const [editingUsername, setEditingUsername] = useState(false);
   const [usernameDraft, setUsernameDraft] = useState(username);
   const [usernameError, setUsernameError] = useState<string | null>(null);
@@ -1076,11 +1082,24 @@ export function AppSidebar({
         >
           <MenuIcon className="h-5 w-5" />
         </button>
-        <Link href="/app/generate" className="flex items-center gap-1">
+        {/* Centred on the bar itself, so the wider account key on the right doesn't push it over. */}
+        <Link href="/app/generate" className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1">
           <Logo className="h-6" />
           <EarlyAccessBadge />
         </Link>
-        <span className="h-9 w-9" aria-hidden="true" />
+        {/* The account menu from the phone (2026-10-02): the balance and the letter. */}
+        {accountMenuOn ? (
+          <AccountMenuButton className="-mr-1 flex h-9 items-center gap-1.5 rounded-full pl-1 pr-1">
+            {menuCredits !== null && (
+              <span className="rounded-full border border-atelier-rule px-2.5 py-1 font-numeral text-[14px] leading-none tabular-nums text-atelier-accent">
+                {menuCredits.toLocaleString(locale)}
+              </span>
+            )}
+            <AccountLetter letter={accountLetter} />
+          </AccountMenuButton>
+        ) : (
+          <span className="h-9 w-9" aria-hidden="true" />
+        )}
       </div>
 
       {/* Backdrop behind the mobile drawer — tapping it closes the menu.
@@ -1346,13 +1365,28 @@ export function AppSidebar({
           iconOnly ? "flex flex-col items-center gap-2" : "flex items-center justify-between gap-2 px-0.5",
         )}
       >
-        {!iconOnly && (
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2">
-            <p className="min-w-0 truncate text-xs text-atelier-muted">{displayUsername}</p>
-            <span className="flex-shrink-0 rounded-full border border-atelier-rule px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-widest text-atelier-muted">
-              {PLAN_LABELS[plan]}
+        {/* The account menu's way in (draft B, 2026-10-02): the letter, the
+            name and plan, and the balance under them. The gear keeps its own
+            menu. Collapsed, the letter alone. */}
+        {iconOnly ? (
+          <AccountMenuButton className="flex h-8 w-8 items-center justify-center rounded-full">
+            <AccountLetter letter={accountLetter} />
+          </AccountMenuButton>
+        ) : (
+          <AccountMenuButton className="-my-1 flex min-w-0 flex-1 items-center gap-2 rounded-control px-1.5 py-1 text-left transition-colors hover:bg-atelier-ink/5">
+            <AccountLetter letter={accountLetter} />
+            <span className="flex min-w-0 flex-col leading-tight">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="min-w-0 truncate text-xs text-atelier-ink">{displayUsername}</span>
+                <span className="flex-shrink-0 rounded-full border border-atelier-rule px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-widest text-atelier-muted">
+                  {PLAN_LABELS[plan]}
+                </span>
+              </span>
+              <span className="mt-0.5 min-h-[14px] text-[11px] text-atelier-muted">
+                {menuCredits !== null && <CreditsWords n={menuCredits} words={t.light.creditsLeft} />}
+              </span>
             </span>
-          </div>
+          </AccountMenuButton>
         )}
         <button
           type="button"
@@ -1561,6 +1595,33 @@ export function AppSidebar({
       </aside>
 
       <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} pages={searchPages} />
+    </>
+  );
+}
+
+/** The account's letter on an ochre disc, as Light draws it. */
+function AccountLetter({ letter }: { letter: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[13px] font-semibold"
+      // Literal white: the Screening Room remaps the white token to a dark ink.
+      style={{ background: "#a84e24", color: "#fff" }}
+    >
+      {letter}
+    </span>
+  );
+}
+
+/** "{n} credits" with the number in ochre numerals. */
+function CreditsWords({ n, words }: { n: number; words: string }) {
+  const { locale } = useLocale();
+  const [before, after = ""] = words.split("{n}");
+  return (
+    <>
+      {before}
+      <b className="font-numeral text-[12.5px] font-medium tabular-nums text-atelier-accent">{n.toLocaleString(locale)}</b>
+      {after}
     </>
   );
 }

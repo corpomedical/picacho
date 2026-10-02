@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.213.0",
+    build: 252,
+    date: "2026-10-02",
+    title: "Your credits at a glance: the account menu",
+    items: [
+      "Click your name at the bottom of the sidebar, your credits on the phone's top bar, the credits on the Generate page, or the credits and letter in Picacho Light, and a menu opens with everything about your balance.",
+      "It shows what you can spend, a bar of your plan credits left, spent and your extra credits, when the plan refills, about how many pictures, quick videos and HD videos that still buys, and this month's other allowances.",
+      "The bar fills in segment by segment as the menu opens, and the balance counts up with it.",
+      "Upgrade and Buy credits sit under it on the web (not in the phone apps), then Plans and billing, Usage and Log out. The numbers are read the same way Settings reads them, fresh each time it opens.",
+      "The sidebar now shows your letter and your credits under your name, and the phone's top bar shows your credits beside your letter.",
+    ],
+  },
+  {
     version: "1.212.0",
     build: 251,
     date: "2026-10-02",

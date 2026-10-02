@@ -1,0 +1,104 @@
+/* The account menu (draft B "The Ledger", 2026-10-02). Its colours are the
+   frame's own: the studio's atelier tokens, or Light's when it opens from
+   Light (the panel then carries .pl, which defines --pl-*). */
+.am {
+  --am-surface: color-mix(in srgb, var(--color-atelier-surface) 96%, transparent);
+  --am-ink: var(--color-atelier-ink);
+  --am-muted: var(--color-atelier-muted);
+  --am-rule: var(--color-atelier-rule);
+  --am-accent: var(--color-atelier-accent);
+  --am-track: color-mix(in srgb, var(--color-atelier-ink) 10%, transparent);
+  --am-extra: color-mix(in srgb, var(--color-atelier-ink) 55%, transparent);
+  --am-mini: color-mix(in srgb, var(--color-atelier-ink) 50%, transparent);
+  --am-hover: color-mix(in srgb, var(--color-atelier-ink) 6%, transparent);
+  --am-solid: var(--color-atelier-ink);
+  --am-solid-ink: var(--color-atelier-paper);
+  --am-avatar: #a84e24;
+  --am-num: var(--font-numeral);
+  background: var(--am-surface);
+  color: var(--am-ink);
+  box-shadow: 0 0 0 1px var(--frost-ring, var(--am-rule)), 0 24px 48px -12px rgba(0, 0, 0, 0.45);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+  animation: am-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.am.pl {
+  --am-surface: var(--pl-card);
+  --am-ink: var(--pl-ink);
+  --am-muted: var(--pl-muted);
+  --am-rule: var(--pl-line);
+  --am-accent: var(--pl-accent);
+  --am-track: color-mix(in srgb, var(--pl-ink) 10%, transparent);
+  --am-extra: color-mix(in srgb, var(--pl-ink) 45%, transparent);
+  --am-mini: color-mix(in srgb, var(--pl-ink) 45%, transparent);
+  --am-hover: color-mix(in srgb, var(--pl-ink) 6%, transparent);
+  --am-solid: var(--pl-ink);
+  --am-solid-ink: var(--pl-card);
+  --am-num: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+
+@keyframes am-in {
+  from { opacity: 0; transform: translateY(var(--am-from, 4px)) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The Ledger's bar: one track per segment, its fill sweeping in from the
+   left one segment after another (operator: "Give an animation to the
+   progress bar"). --i is the segment's place in the row. */
+.am-seg {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--am-track);
+}
+.am-seg > i {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transform-origin: left center;
+  animation: am-fill 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(120ms + var(--i, 0) * 38ms);
+}
+.am-seg[data-kind="plan"] > i { background: var(--am-accent); }
+.am-seg[data-kind="extra"] > i { background: var(--am-extra); }
+/* The last ochre segment breathes once the sweep is done: where the plan's
+   credits stand today. */
+.am-seg[data-edge] > i {
+  animation:
+    am-fill 380ms cubic-bezier(0.22, 1, 0.36, 1) both calc(120ms + var(--i, 0) * 38ms),
+    am-glow 1.6s ease-in-out calc(520ms + var(--i, 0) * 38ms) 2;
+}
+@keyframes am-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@keyframes am-glow {
+  50% { filter: brightness(1.35); }
+}
+
+.am-mini {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--am-track);
+}
+.am-mini > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--am-mini);
+  transform-origin: left center;
+  animation: am-fill 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(420ms + var(--i, 0) * 60ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .am,
+  .am-seg > i,
+  .am-mini > i {
+    animation: none !important;
+  }
+}

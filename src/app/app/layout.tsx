@@ -34,6 +34,7 @@ import { isAlyChatEnabled } from "@/lib/aly-chat/enabled";
 import { serverTimer, type ServerTimer } from "@/lib/server-timing";
 import { verifiedClaims } from "@/lib/supabase/claims";
 import { ServerTimingMark } from "@/components/server-timing-mark";
+import { AccountMenuProvider } from "@/components/account-menu/account-menu";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 type Chrome = Awaited<ReturnType<typeof loadChrome>>;
@@ -283,6 +284,7 @@ export default async function AppLayout({
     ).toUpperCase();
     return (
       <InLightProvider>
+      <AccountMenuProvider>
       <div className="frost-ground flex h-full overflow-hidden">
         <style dangerouslySetInnerHTML={{ __html: SCREENING_FONT_VARS }} />
         <AppErrorReporter />
@@ -311,6 +313,7 @@ export default async function AppLayout({
         {c.producer && !needsChoice && <Lamp producer={c.producer} isAdmin={c.isAdmin} />}
         <ServerTimingMark value={tm.value()} />
       </div>
+      </AccountMenuProvider>
       </InLightProvider>
     );
   }
@@ -326,7 +329,10 @@ export default async function AppLayout({
   // the document has nothing left to scroll. h-screen was 100vh, which
   // overflowed the padded body by the inset sum and gave every app page a
   // second, momentum-killing document scroller (the two-swipe dashboard).
+  // The account menu (2026-10-02) wraps the chrome and the page alike: the
+  // sidebar's name and the Generate header's credits open the same one.
   return (
+    <AccountMenuProvider>
     <div className="frost-ground flex h-full overflow-hidden">
       {/* The Screening Room's faces, published on :root for the whole app,
           portals included (lib/theme/screening-fonts.ts). Inline style is
@@ -374,5 +380,6 @@ export default async function AppLayout({
         </div>
       </div>
     </div>
+    </AccountMenuProvider>
   );
 }

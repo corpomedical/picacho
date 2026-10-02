@@ -10,7 +10,8 @@ import { serverTimer } from "./server-timing";
 const read = (p: string) => readFileSync(join(__dirname, "../..", p), "utf8");
 const layout = read("src/app/app/layout.tsx");
 const body = layout.slice(layout.indexOf("export default async function AppLayout("));
-const frame = body.slice(body.lastIndexOf("  return (\n    <div className=\"frost-ground"));
+// The studio frame, inside the account menu's provider (2026-10-02).
+const frame = body.slice(body.lastIndexOf("  return (\n    <AccountMenuProvider>\n    <div className=\"frost-ground"));
 
 describe("the /app layout streams its frame", () => {
   it("awaits only the session, the two-step check and the frame's mode before sending the frame", () => {

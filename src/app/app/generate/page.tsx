@@ -13,6 +13,7 @@ import { isNativeApp } from "@/lib/native/server";
 import { isEditorEnabled } from "@/lib/editor/enabled";
 import { isPressTourEnabled } from "@/lib/press-tour/enabled";
 import { allowExternalPurchaseLink } from "@/lib/native/external-purchase";
+import { AccountMenuButton } from "@/components/account-menu/account-menu";
 
 // No longer the constraint it used to be.
 //
@@ -225,8 +226,8 @@ export default async function GeneratePage() {
             </div>
           </>
         )}
-        <div
-          data-producer-spot="credits"
+        <AccountMenuButton
+          spot="credits"
           className={`flex items-baseline gap-[7px] ${stats.total > 0 ? "border-l border-[#f3ede4]/15 pl-[22px]" : ""}`}
         >
           {/* Credits — the ochre-numeral proof idiom. Display only, same
@@ -235,7 +236,7 @@ export default async function GeneratePage() {
               re-validates every spend, so this can never oversell. */}
           <span className="font-numeral text-[19px] font-semibold tabular-nums text-[#e0a468]">{creditsNow}</span>
           <span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-widest text-[#cfc6b8]">{g.creditsLabel}</span>
-        </div>
+        </AccountMenuButton>
       </div>
       {upgradeVisible && (
         <Link

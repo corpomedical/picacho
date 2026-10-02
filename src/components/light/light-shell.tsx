@@ -11,6 +11,7 @@ import { THEME_STORAGE_KEY } from "@/lib/theme/screening";
 import { saveAppChoices, searchLightTakes } from "@/lib/light/actions";
 import { logout } from "@/lib/auth/actions";
 import { listMyChats, searchMyChats } from "@/lib/aly-chat/actions";
+import { AccountMenuButton } from "@/components/account-menu/account-menu";
 
 export type LightRecent = { id: string; prompt: string };
 
@@ -619,11 +620,11 @@ function LightPageBar({ initial, onMenu, onHome }: { initial: string; onMenu: ()
           {l.badge}
         </span>
       </Link>
-      <Link href="/app/settings" aria-label={l.account} className="flex h-11 w-11 items-center justify-center md:h-10 md:w-10" style={{ textDecoration: "none" }}>
+      <AccountMenuButton label={l.account} className="flex h-11 w-11 items-center justify-center md:h-10 md:w-10">
         <span className="flex h-[34px] w-[34px] items-center justify-center rounded-full text-sm font-semibold text-white md:h-10 md:w-10 md:text-[15px]" style={{ background: "#a84e24" }}>
           {initial}
         </span>
-      </Link>
+      </AccountMenuButton>
     </header>
   );
 }

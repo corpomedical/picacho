@@ -18,6 +18,7 @@ import { getLightTake, type LightTake } from "@/lib/light/actions";
 import { LIGHT_HOME, studioHref, type LightPrepared } from "@/lib/light/mode";
 import { MenuIcon, PlusIcon, useLightShell } from "./light-shell";
 import { MediaViewer } from "@/components/media-viewer";
+import { AccountMenuButton } from "@/components/account-menu/account-menu";
 
 type Kind = "video" | "image";
 type Photo = { url: string; path: string };
@@ -116,25 +117,20 @@ export function LightTopBar({ creditsLeft, initial }: { creditsLeft: number; ini
         </span>
       </Link>
       <div className="flex items-center gap-3">
-        <Link
-          href="/app/settings?tab=billing"
+        {/* Both open the account menu (draft B, 2026-10-02), in Light's colours. */}
+        <AccountMenuButton
           className="hidden rounded-[18px] px-3.5 py-2 text-sm md:inline-block"
           style={{ border: "1px solid var(--pl-line)", color: "var(--pl-ink)", textDecoration: "none" }}
         >
           {creditsBefore}
           <strong style={{ color: "var(--pl-accent)" }}>{creditsLeft.toLocaleString(locale)}</strong>
           {creditsAfter}
-        </Link>
-        <Link
-          href="/app/settings"
-          aria-label={l.account}
-          className="flex h-11 w-11 items-center justify-center md:h-10 md:w-10"
-          style={{ textDecoration: "none" }}
-        >
+        </AccountMenuButton>
+        <AccountMenuButton label={l.account} className="flex h-11 w-11 items-center justify-center md:h-10 md:w-10">
           <span className="flex h-[34px] w-[34px] items-center justify-center rounded-full text-sm font-semibold text-white md:h-10 md:w-10 md:text-[15px]" style={{ background: "#a84e24" }}>
             {initial}
           </span>
-        </Link>
+        </AccountMenuButton>
       </div>
     </header>
   );

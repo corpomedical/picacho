@@ -132,6 +132,7 @@ import { cn } from "@/lib/cn";
 import { EXTERNAL_PURCHASE_URL } from "@/lib/domains";
 import { useIsNativeApp } from "@/lib/native/use-native";
 import { useBackCloser } from "@/lib/native/back-stack";
+import { AccountMenuButton } from "@/components/account-menu/account-menu";
 
 type VisibleItem =
   | { kind: "step"; attempt: number; step: PipelineStepLog }
@@ -7727,14 +7728,14 @@ function GenerateFormInner({
             short lines first (the ochre number stays whole), and the icon
             keys' glyphs end on the same 16 px gutter as the dock. */}
         <h1 className="marquee flex-shrink-0 whitespace-nowrap text-[17px] leading-none text-atelier-ink">{g.pageTitle}</h1>
-        <div data-producer-spot="credits" className="ml-auto flex min-w-0 items-center gap-[7px]">
+        <AccountMenuButton spot="credits" className="ml-auto flex min-w-0 items-center gap-[7px] text-left">
           <span className="font-numeral text-[17px] font-semibold leading-none tabular-nums text-atelier-accent">
             {creditsAvailable}
           </span>
           <span className="min-w-0 text-[10px] font-medium uppercase leading-[1.2] tracking-widest text-atelier-muted max-[419px]:max-w-[5.25rem]">
             {g.creditsLabel}
           </span>
-        </div>
+        </AccountMenuButton>
         <div className="-mr-[15px] flex flex-shrink-0 items-center">
           <button
             type="button"
