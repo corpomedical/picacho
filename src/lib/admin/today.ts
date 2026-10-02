@@ -13,6 +13,7 @@ import { VIDEO_MODELS, maxSingleRenderCostUsd } from "@/lib/generations/provider
 import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
 import { PLAN_LABELS } from "@/lib/plans";
 import { loadPayments, OPEN_DISPUTE_STATUSES } from "@/lib/admin/payments";
+import { loadRetentionInbox } from "@/lib/retention/inbox";
 
 /** A render that has run this long without finishing is listed as stuck. */
 export const STUCK_AFTER_MIN = 20;
@@ -192,7 +193,7 @@ export async function loadToday(
   startOfDay.setUTCHours(0, 0, 0, 0);
   const since = startOfDay.toISOString();
 
-  const [queue, pastDue, reports, feedback, models, fal, signups, rendersToday, finishedToday, failedToday, topUps, stripeSide] =
+  const [queue, pastDue, reports, feedback, models, fal, signups, rendersToday, finishedToday, failedToday, topUps, stripeSide, quietItems] =
     await Promise.all([
       loadRenderQueue(admin, now),
       admin.from("profiles").select("id, email, plan, current_period_end").eq("plan_status", "past_due").limit(10),
@@ -217,6 +218,8 @@ export async function loadToday(
       admin.from("credit_purchases").select("amount_cents, currency").gte("created_at", since).is("refunded_at", null),
       // Disputes waiting on an answer, and the last 100 charges for Money in (Stripe).
       loadPayments(admin, { limit: 100 }),
+      // Who comes back (2026-10-03): paying customers gone quiet, cancellations, stalled first renders.
+      loadRetentionInbox(admin, now),
     ]);
 
   const reportRows = (reports.data ?? []) as {
@@ -247,7 +250,7 @@ export async function loadToday(
   const genById = new Map(((reportGens ?? []) as (GenRow & { status: string })[]).map((g) => [g.id, g]));
   const refundedByHand = new Set((handRefunds ?? []).map((r) => r.target_id as string));
 
-  const items: InboxItem[] = [];
+  const items: InboxItem[] = [...quietItems];
 
   for (const q of queue.filter((r) => r.state === "stuck")) {
     items.push({

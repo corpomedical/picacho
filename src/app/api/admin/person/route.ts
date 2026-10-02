@@ -1,6 +1,8 @@
 import { json, preflight, requireAdminFromRequest } from "@/lib/admin/api-auth";
 import { ADMIN_ACTION_COLUMNS, actionLabel, emailsForIds, type AdminActionRow } from "@/lib/admin/audit";
 import { creditsHeld, modelName } from "@/lib/admin/today";
+import { loadPersonPath } from "@/lib/retention/load";
+import { pathSummary } from "@/lib/retention/api";
 
 // GET /api/admin/person?id=<uuid> — one person for the phone admin app's
 // person sheet (2026-09-28 admin redesign): who they are, their balances,
@@ -30,7 +32,7 @@ export async function GET(request: Request) {
     .maybeSingle();
   if (!person) return json(request, { error: "That person wasn't found." }, 404);
 
-  const [{ data: gens }, notes, changes, { data: templates }] = await Promise.all([
+  const [{ data: gens }, notes, changes, { data: templates }, path] = await Promise.all([
     admin
       .from("generations")
       .select("id, prompt_input, status, created_at, content_type, video_model_id, model_id, credits_used, purchased_credits_used, bonus_credits_used")
@@ -40,6 +42,8 @@ export async function GET(request: Request) {
     admin.from("admin_user_notes").select("id, created_at, admin_id, body").eq("user_id", id).order("created_at", { ascending: false }).limit(20),
     admin.from("admin_actions").select(ADMIN_ACTION_COLUMNS).eq("subject_user_id", id).order("created_at", { ascending: false }).limit(15),
     admin.from("email_templates").select("key, subject").order("key"),
+    // Who comes back (2026-10-03): their four steps, a banner when they're slipping away, the tools they use.
+    loadPersonPath(admin, id),
   ]);
 
   const genIds = (gens ?? []).map((g) => g.id as string);
@@ -76,5 +80,6 @@ export async function GET(request: Request) {
       admin: (c.admin_id && emails.get(c.admin_id)) || "an admin",
     })),
     templates: templates ?? [],
+    retention: path ? pathSummary(path) : null,
   });
 }

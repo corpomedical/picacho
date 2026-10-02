@@ -30,6 +30,8 @@ import { sendEmailToUser } from "@/lib/admin/email-actions";
 import { DeleteUserButton } from "@/components/delete-user-button";
 import { LocalDate } from "@/components/local-date";
 import { getUserActivity, formatDuration } from "@/lib/admin/activity";
+import { loadPersonPath } from "@/lib/retention/load";
+import { PersonPathCard } from "@/components/admin/person-path-card";
 import { ADMIN_LOOK_LABELS, ADMIN_MODE_LABELS, parseAppLook, parseAppMode } from "@/lib/light/mode";
 import {
   ADMIN_ACTION_COLUMNS,
@@ -205,6 +207,8 @@ export default async function AdminUserDetailPage({
 
   // Sign-in / session facts from auth.users + auth.sessions.
   const activity = (await getUserActivity([user])).get(user.id) ?? null;
+  // Who comes back (2026-10-03): their four steps and the tools they use.
+  const path = await loadPersonPath(serviceClient, user.id);
 
   const plan = (user.plan ?? "none") as PlanId;
 
@@ -647,6 +651,8 @@ export default async function AdminUserDetailPage({
         </Card>
 
         <div className="min-w-0 space-y-6 lg:col-span-2">
+          {path && <PersonPathCard path={path} />}
+
           {/* Sign-in activity. Its own card rather than more lines in the
               identity block: these are the facts you actually come to this
               page to check when someone reports a problem. */}

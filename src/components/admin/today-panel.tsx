@@ -34,7 +34,7 @@ const GROUPS: { id: InboxGroup | "all"; label: string }[] = [
   { id: "system", label: "System" },
 ];
 
-const TONE_CHIP: Record<InboxItem["tone"], string> = {
+export const TONE_CHIP: Record<InboxItem["tone"], string> = {
   urgent: "bg-[#fbe4e1] text-[#8f1d15] dark:bg-[#3a1d1a] dark:text-[#f3b1a8]",
   warn: "bg-[#fbeedd] text-[#7a4a0c] dark:bg-[#3a2c18] dark:text-[#f0c98f]",
   info: "bg-[#e3ecf6] text-[#1f4770] dark:bg-[#1c2a3a] dark:text-[#a9c6e8]",

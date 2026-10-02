@@ -23,6 +23,7 @@ import { Logo } from "@/components/logo";
 const NAV_ITEMS = [
   { href: "/admin", label: "Overview", icon: HomeIcon },
   { href: "/admin/users", label: "Users", icon: UsersIcon },
+  { href: "/admin/retention", label: "Who comes back", icon: ReturnIcon },
   { href: "/admin/stats", label: "Stats", icon: ChartIcon },
   { href: "/admin/billing", label: "Billing", icon: CardIcon },
   { href: "/admin/payments", label: "Payments & disputes", icon: CardIcon },
@@ -48,6 +49,7 @@ const NAV_ITEMS = [
 const TILE: Record<string, string> = {
   "/admin": "#0a84ff",
   "/admin/users": "#5e5ce6",
+  "/admin/retention": "#34c759",
   "/admin/feedback": "#30b0c7",
   "/admin/reports": "#ff453a",
   "/admin/moderation": "#636366",
@@ -71,7 +73,7 @@ const TILE: Record<string, string> = {
 
 const NAV_GROUPS: { label: string | null; hrefs: string[] }[] = [
   { label: null, hrefs: ["/admin"] },
-  { label: "People", hrefs: ["/admin/users", "/admin/feedback"] },
+  { label: "People", hrefs: ["/admin/users", "/admin/retention", "/admin/feedback"] },
   { label: "Trust & Safety", hrefs: ["/admin/reports", "/admin/moderation"] },
   { label: "Money", hrefs: ["/admin/billing", "/admin/payments", "/admin/promo", "/admin/stats"] },
   { label: "Product", hrefs: ["/admin/models", "/admin/providers", "/admin/voices", "/admin/product-checks", "/admin/flags", "/admin/updates", "/admin/emails"] },
@@ -586,6 +588,16 @@ function PlayIcon(props: SVGProps<SVGSVGElement>) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <rect x="3.5" y="5" width="17" height="14" rx="2.5" />
       <path d="m10 9.5 4.5 2.5-4.5 2.5Z" />
+    </svg>
+  );
+}
+
+// Who comes back (2026-10-03): an arrow coming back round.
+function ReturnIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.5" />
+      <path d="M4 4v4.5h4.5" />
     </svg>
   );
 }

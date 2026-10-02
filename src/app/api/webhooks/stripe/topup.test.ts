@@ -19,6 +19,7 @@ vi.mock("@/lib/stripe/client", () => ({
 }));
 vi.mock("@/lib/push/web-push", () => ({ notifyAdmins: (...a: unknown[]) => notifyAdmins(...a) }));
 vi.mock("@/lib/stripe/plans", async () => await import("../../../../lib/stripe/plans"));
+vi.mock("@/lib/retention/subscription-events", () => ({ cancelTransition: () => null, noteSubscriptionEvent: async () => {} }));
 vi.mock("@/lib/stripe/credit-packs", async () => await import("../../../../lib/stripe/credit-packs"));
 vi.mock("@/lib/agent/allowance", async () => await import("../../../../lib/agent/allowance"));
 vi.mock("@/lib/supabase/server", () => {

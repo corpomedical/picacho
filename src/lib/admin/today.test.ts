@@ -10,6 +10,7 @@ vi.mock("@/lib/generations/providers/video-models", () => ({
 }));
 vi.mock("@/lib/generations/providers/image-models", () => ({ IMAGE_MODELS: [{ id: "flux-2-pro", name: "FLUX.2 Pro" }] }));
 vi.mock("@/lib/plans", () => ({ PLAN_LABELS: { starter: "Starter" } }));
+vi.mock("@/lib/retention/inbox", () => ({ loadRetentionInbox: async () => [] }));
 vi.mock("@/lib/admin/payments", () => ({ loadPayments: async () => ({ payments: [], disputes: [], error: null }), OPEN_DISPUTE_STATUSES: new Set() }));
 
 const { creditsHeld, modelName, money, queueState, sortInbox, ORPHAN_AFTER_MIN, STUCK_AFTER_MIN } = await import("./today");

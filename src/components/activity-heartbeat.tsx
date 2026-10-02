@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 
 // Measures how long a signed-in person is actually using the site.
 //
@@ -10,6 +11,11 @@ import { useEffect } from "react";
 // "last seen", "online now" and time-on-site in the admin area. Page-view
 // analytics remain separate and consent-gated (see PageViewTracker).
 //
+// Who comes back (2026-10-03): each beat also names the page it's on, and
+// the server notes which tool that is (Generate, Recast, …) for today —
+// one row per person per tool per day, read only in Admin. Changing page
+// beats at once, so a tool opened for a few seconds still counts.
+//
 // Beats only while the tab is actually visible — a forgotten background tab
 // must not accrue time, or every number here becomes a lie. Each beat credits
 // the gap since the previous one, capped server-side, so a closed laptop
@@ -17,6 +23,12 @@ import { useEffect } from "react";
 const BEAT_MS = 60_000;
 
 export function ActivityHeartbeat() {
+  const pathname = usePathname();
+  const path = useRef(pathname);
+  useEffect(() => {
+    path.current = pathname;
+  }, [pathname]);
+
   useEffect(() => {
     let stopped = false;
 
@@ -24,7 +36,12 @@ export function ActivityHeartbeat() {
       if (stopped || document.visibilityState !== "visible") return;
       // keepalive so the final beat still lands if this fires as the tab is
       // being closed. Fire-and-forget: never surfaces or blocks anything.
-      fetch("/api/activity", { method: "POST", keepalive: true }).catch(() => {});
+      fetch("/api/activity", {
+        method: "POST",
+        keepalive: true,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: path.current ?? "" }),
+      }).catch(() => {});
     }
 
     beat();
@@ -40,6 +57,24 @@ export function ActivityHeartbeat() {
       document.removeEventListener("visibilitychange", beat);
     };
   }, []);
+
+  // A new page beats straight away (the interval keeps its own rhythm). The
+  // server credits time by the gap since the last beat, so an extra beat
+  // adds no time — it only names the tool.
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    if (document.visibilityState !== "visible") return;
+    fetch("/api/activity", {
+      method: "POST",
+      keepalive: true,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: pathname ?? "" }),
+    }).catch(() => {});
+  }, [pathname]);
 
   return null;
 }

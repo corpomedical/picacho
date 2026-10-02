@@ -204,7 +204,8 @@ export const SITE_PAGES: readonly SitePage[] = [
   { area: "admin", path: "/admin/system", name: "Admin · System", gate: "admin", what: "system health, failure rates." },
   { area: "admin", path: "/admin/updates", name: "Admin · Updates", gate: "admin", what: "the changelog of what shipped." },
   { area: "admin", path: "/admin/users", name: "Admin · Users", gate: "admin", what: "accounts: credits, refunds, notes, grants." },
-  { area: "admin", path: "/admin/users/[id]", name: "Admin · One user", gate: "admin", what: "one account: plan, credits, activity, refunds, notes, Aly access." },
+  { area: "admin", path: "/admin/users/[id]", name: "Admin · One user", gate: "admin", what: "one account: plan, credits, activity, its path (joined, first render, came back, paid), refunds, notes, Aly access." },
+  { area: "admin", path: "/admin/retention", name: "Admin · Who comes back", gate: "admin", what: "who returns after joining, which tools people use, and paying customers going quiet." },
   { area: "admin", path: "/admin/voices", name: "Admin · Voices", gate: "admin", what: "voices for characters and Aly." },
 ];
 

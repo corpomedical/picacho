@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { planForPlayProduct, packForPlayProduct, normalizePlayProductId } from "@/lib/play/products";
 import { notifyAdmins } from "@/lib/push/web-push";
+import { noteSubscriptionEvent } from "@/lib/retention/subscription-events";
 
 // RevenueCat webhook — Google Play Billing's server-side truth, the Play
 // counterpart of /api/webhooks/stripe. RevenueCat receives Play's real-time
@@ -32,6 +33,8 @@ type RevenueCatEvent = {
   purchased_at_ms?: number;
   expiration_at_ms?: number | null;
   transaction_id?: string;
+  original_transaction_id?: string;
+  event_timestamp_ms?: number;
   price_in_purchased_currency?: number;
   currency?: string;
   period_type?: string;
@@ -88,6 +91,18 @@ export async function POST(request: Request) {
       case "RENEWAL":
       case "UNCANCELLATION":
       case "PRODUCT_CHANGE": {
+        // Who comes back: a cancellation taken back (never throws).
+        if (event.type === "UNCANCELLATION") {
+          await noteSubscriptionEvent(supabase, {
+            userId,
+            kind: "cancel_undone",
+            source: "play",
+            plan: event.product_id ? (planForPlayProduct(event.product_id) ?? null) : null,
+            subscriptionId: event.original_transaction_id ?? null,
+            endsAt: iso(event.expiration_at_ms),
+            externalId: `play:${event.id ?? `${userId}:${event.type}:${event.event_timestamp_ms ?? Date.now()}`}`,
+          });
+        }
         const productRaw = event.type === "PRODUCT_CHANGE" ? (event.new_product_id ?? event.product_id) : event.product_id;
         if (!productRaw) break;
 
@@ -193,6 +208,16 @@ export async function POST(request: Request) {
       // here (Stripe's cancel_at_period_end behaves the same way).
       case "CANCELLATION":
         console.log("RevenueCat webhook: cancellation noted (access until expiration)", userId);
+        // Who comes back (2026-10-03): written down, and the operator's phone told. Never throws.
+        await noteSubscriptionEvent(supabase, {
+          userId,
+          kind: "cancel_scheduled",
+          source: "play",
+          plan: event.product_id ? (planForPlayProduct(event.product_id) ?? null) : null,
+          subscriptionId: event.original_transaction_id ?? null,
+          endsAt: iso(event.expiration_at_ms),
+          externalId: `play:${event.id ?? `${userId}:${event.type}:${event.event_timestamp_ms ?? Date.now()}`}`,
+        });
         break;
 
       // Renewal failed and Play is retrying — mirror Stripe's past_due,
@@ -238,6 +263,15 @@ export async function POST(request: Request) {
         }
         const ok = await resetPlayPlan(supabase, userId);
         if (!ok) return NextResponse.json({ received: false }, { status: 500 });
+        await noteSubscriptionEvent(supabase, {
+          userId,
+          kind: "ended",
+          source: "play",
+          plan: event.product_id ? (planForPlayProduct(event.product_id) ?? null) : null,
+          subscriptionId: event.original_transaction_id ?? null,
+          endsAt: iso(event.expiration_at_ms),
+          externalId: `play:${event.id ?? `${userId}:${event.type}:${event.event_timestamp_ms ?? Date.now()}`}`,
+        });
         break;
       }
 

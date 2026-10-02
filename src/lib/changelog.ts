@@ -20,6 +20,23 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.219.0",
+    build: 258,
+    date: "2026-10-03",
+    title: "Who comes back: which tools people use, who returns, and who is slipping away",
+    items: [
+      "Admin has a new page under People, Who comes back. Four numbers on top (active this week, made a first render, came back the week after joining, going quiet), then three lists.",
+      "Going quiet lists a paying customer with no visit for 7 days, anyone who cancelled in the last 14 days, and anyone whose first render failed or was refused with nothing since. Each has Write to them (an email from your own mail app, left off for anyone who opted out of marketing email) and Open.",
+      "Tools used shows, per tool, how many people opened it and how many made something there, for the last 7 or 30 days, with the change from the period before. Under it: the tools nobody opened, and the ones people opened but made nothing in.",
+      "Sign-up weeks groups everyone by the week they joined: how many made a first render, came back the next week, and paid. Click a week to see each person with four dots (joined, first render, came back, paid) and a line on where they are.",
+      "A person's page has a new Path card above Activity: the four steps with their dates, a badge when they're going quiet, cancelled or stalled, and the tools they use.",
+      "The same three kinds of row (Paying, Cancelled, Stalled) appear in Overview → Needs you and on the phone admin app's Today.",
+      "Your phone is told: a cancellation the moment it happens (Stripe and Google Play), and every morning at 07:30 UTC any paying customer gone quiet or first render that didn't land. Each person once; past four in one morning they're summed up in one alert.",
+      "To count tools, the app now notes which tool page a signed-in person is on (one row per person, per tool, per day), on Picacho's own server. Cancellations are now written down too; before, a cancelled plan left no trace.",
+      "Needs supabase/pending/who-comes-back.sql run first. Until then nothing is recorded and no alert is sent; the pages still work from renders, chats, edits and sets already saved.",
+    ],
+  },
+  {
     version: "1.218.0",
     build: 257,
     date: "2026-10-02",

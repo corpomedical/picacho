@@ -5,6 +5,7 @@ import { planIdForPriceId } from "@/lib/stripe/plans";
 import { creditsForPriceId } from "@/lib/stripe/credit-packs";
 import { createAdminClient } from "@/lib/supabase/server";
 import { notifyAdmins } from "@/lib/push/web-push";
+import { cancelTransition, noteSubscriptionEvent } from "@/lib/retention/subscription-events";
 import { isMissingInDatabase } from "@/lib/agent/allowance";
 
 // Stripe → us. No user session here (Stripe calls this directly), so the
@@ -583,6 +584,27 @@ export async function POST(request: Request) {
         if (profileError) {
           throw new Error(`couldn't update profile ${userId} from subscription: ${profileError.message}`);
         }
+        // Who comes back (2026-10-03): pressing Cancel (or taking it back)
+        // arrives as an update; write it down and tell the operator's phone.
+        // Never throws — a missing table must not make Stripe redeliver.
+        if (event.type === "customer.subscription.updated") {
+          const change = cancelTransition(
+            (event.data as { previous_attributes?: { cancel_at_period_end?: boolean | null; cancel_at?: number | null } })
+              .previous_attributes,
+            { cancel_at_period_end: subscription.cancel_at_period_end, cancel_at: subscription.cancel_at },
+          );
+          if (change) {
+            await noteSubscriptionEvent(supabase, {
+              userId,
+              kind: change,
+              source: "stripe",
+              plan: planId ?? null,
+              subscriptionId: subscription.id,
+              endsAt: subscription.cancel_at ? new Date(subscription.cancel_at * 1000).toISOString() : currentPeriodEnd,
+              externalId: event.id,
+            });
+          }
+        }
         // A brand-new paying subscriber (not the routine updated-event noise)
         // — the one Stripe moment always worth buzzing the operator's phone.
         if (
@@ -622,6 +644,16 @@ export async function POST(request: Request) {
         }
 
         await resetProfileToFree(supabase, profile.id);
+        await noteSubscriptionEvent(supabase, {
+          userId: profile.id,
+          kind: "ended",
+          source: "stripe",
+          plan: (subscription.metadata?.plan as string | undefined) ??
+            (subscription.items.data[0]?.price.id ? (planIdForPriceId(subscription.items.data[0].price.id) ?? null) : null),
+          subscriptionId: subscription.id,
+          endsAt: subscription.ended_at ? new Date(subscription.ended_at * 1000).toISOString() : null,
+          externalId: event.id,
+        });
         break;
       }
 
