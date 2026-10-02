@@ -8,7 +8,7 @@ import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { renderTemplate, type TemplateVars } from "@/lib/email/render";
 import { sendEmail, sendBatch, unsubscribeUrl } from "@/lib/email/send";
 import { rateLimited } from "@/lib/rate-limit";
-import { opEmailPerson } from "@/lib/admin/ops";
+import { opEmailPerson, opWritePerson } from "@/lib/admin/ops";
 
 // Announcement email management. Design rule: NOTHING in the product sends
 // marketing email on its own — the only two paths that ever hand mail to
@@ -432,4 +432,24 @@ export async function sendEmailToUser(formData: FormData) {
   if (!result.ok) redirect(`${back}?error=${encodeURIComponent(result.error)}`);
   revalidatePath(back);
   redirect(`${back}?message=${encodeURIComponent("Email sent.")}`);
+}
+
+// "Write to them" (2026-10-03, Who comes back): a personal note from
+// Picacho <hello@picacho.ai> with the hello@ signature, sent from the pop-up
+// on Admin → Who comes back, Overview → Needs you and a person's Path card.
+// Answers instead of redirecting: the pop-up shows the result in place.
+export async function writeToPerson(input: {
+  userId: string;
+  subject: string;
+  message: string;
+}): Promise<{ ok: boolean; message: string }> {
+  const { admin, userId: actingUserId } = await requireAdmin();
+  const result = await opWritePerson(admin, actingUserId, {
+    userId: String(input.userId ?? ""),
+    subject: String(input.subject ?? ""),
+    message: String(input.message ?? ""),
+  });
+  if (!result.ok) return { ok: false, message: result.error };
+  revalidatePath(`/admin/users/${input.userId}`);
+  return { ok: true, message: result.message ?? "Sent." };
 }

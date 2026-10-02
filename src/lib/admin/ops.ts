@@ -16,6 +16,8 @@ import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
 import { PLAN_LABELS, PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import { renderTemplate } from "@/lib/email/render";
 import { sendEmail, unsubscribeUrl } from "@/lib/email/send";
+import { renderNote } from "@/lib/email/signature";
+import { NOTE_MESSAGE_MAX, NOTE_SUBJECT_MAX } from "@/lib/admin/note-limits";
 import { getOrigin } from "@/lib/origin";
 
 export type OpResult = { ok: true; message?: string } | { ok: false; error: string };
@@ -387,6 +389,52 @@ export async function opEmailPerson(
     after: input.serviceNotice ? `${what} (service notice)` : what,
   });
   return ok("Email sent.");
+}
+
+
+/**
+ * A personal note to one person, from Picacho <hello@picacho.ai> with the
+ * hello@ signature (2026-10-03: the operator asked for a pop-up that writes
+ * from hello@ with the signature, instead of opening a mail app). The
+ * website's Write to them and the phone app's both land here.
+ * Not for someone who opted out of marketing email: a "we miss you" is what
+ * they said no to (account matters go through Email → Service notice).
+ */
+export async function opWritePerson(
+  admin: SupabaseClient,
+  actor: string,
+  input: { userId: string; subject: string; message: string },
+): Promise<OpResult> {
+  const subject = (input.subject ?? "").replace(/\s+/g, " ").trim();
+  const message = (input.message ?? "").replace(/\r\n/g, "\n").trim();
+  if (!subject) return no("Add a subject.");
+  if (subject.length > NOTE_SUBJECT_MAX) return no(`Keep the subject under ${NOTE_SUBJECT_MAX} characters.`);
+  if (!message) return no("Write a message first.");
+  if (message.length > NOTE_MESSAGE_MAX) return no(`Keep the message under ${NOTE_MESSAGE_MAX.toLocaleString("en")} characters.`);
+
+  const { data: person } = await admin
+    .from("profiles")
+    .select("id, email, marketing_opt_out")
+    .eq("id", input.userId)
+    .maybeSingle();
+  if (!person?.email) return no("That person has no email address on file.");
+  if (person.marketing_opt_out) {
+    return no("They opted out of marketing email. For something about their account, use Email → Service notice.");
+  }
+
+  const unsubscribe = await unsubscribeUrl(person.id as string);
+  const { html, text } = renderNote(message, unsubscribe);
+  const { error } = await sendEmail({ to: person.email as string, subject, html, text, unsubscribeUrl: unsubscribe });
+  if (error) return no("Couldn't send the email. Details are in the server log.");
+
+  await logAdminAction(admin, actor, {
+    action: "email.note",
+    targetType: "email",
+    targetId: subject.slice(0, 80),
+    subjectUserId: input.userId,
+    after: subject,
+  });
+  return ok(`Sent to ${person.email as string}.`);
 }
 
 // ---- models and switches (the phone app's Controls tab, 2026-10-02) --------

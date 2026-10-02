@@ -60,6 +60,10 @@ const KNOWN_ERRORS = new Set<string>([
   "Couldn't send the email. Details are in the server log.",
   "Pick an email to send.",
   "They opted out of marketing email. Tick \"service notice\" only if this is about their account (billing, security, terms).",
+  // Write to them (2026-10-03): the pop-up shows these itself; listed so a page that redirects with one still reads it.
+  "Add a subject.",
+  "Write a message first.",
+  "They opted out of marketing email. For something about their account, use Email → Service notice.",
   "That render isn't running any more — nothing was stopped.",
   "Couldn't stop the render — nothing was changed. Details are in the server log.",
   "The render was stopped, but its credits couldn't be refunded — refund it from the person's page. Details are in the server log.",

@@ -123,6 +123,8 @@ export async function loadRenderQueue(admin: SupabaseClient, now = Date.now()): 
 export type InboxGroup = "renders" | "money" | "people" | "safety" | "system";
 export type InboxAction =
   | { type: "link"; label: string; href: string; primary?: boolean; external?: boolean }
+  // Who comes back's "Write to them": a pop-up that sends from hello@picacho.ai (lib/admin/ops.ts opWritePerson).
+  | { type: "write"; label: string; userId: string; name: string; to: string; subject: string; message: string; primary?: boolean }
   | {
       type: "form";
       label: string;

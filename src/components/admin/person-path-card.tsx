@@ -2,7 +2,8 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { LocalDate } from "@/components/local-date";
 import { planLabel, shortDate, QUIET_AFTER_DAYS, type PersonPath } from "@/lib/retention/model";
-import { writeHref } from "@/lib/retention/inbox";
+import { writeDraft } from "@/lib/retention/inbox";
+import { WriteToThemButton } from "@/components/admin/write-to-them";
 import { madeText } from "@/lib/retention/tools";
 import { cn } from "@/lib/cn";
 
@@ -58,7 +59,7 @@ export function PersonPathCard({ path }: { path: PersonPath }) {
         ? { tone: "warning" as const, text: "Stalled" }
         : null;
   const kind = path.cancel ? "cancelled" : quiet ? "paying" : "stalled";
-  const write = badge ? writeHref({ kind, email: path.email, optedOut: path.optedOut }) : null;
+  const write = badge ? writeDraft({ kind, email: path.email, optedOut: path.optedOut, name: path.name }) : null;
   // The line between the circles is blue as far as the steps run unbroken.
   const unbroken = path.steps.findIndex((s) => s !== 1);
   const reached = (unbroken === -1 ? path.steps.length : unbroken) - 1;
@@ -69,14 +70,12 @@ export function PersonPathCard({ path }: { path: PersonPath }) {
         <h2 className="text-sm font-semibold text-neutral-900">Path</h2>
         {badge && <Badge tone={badge.tone}>{badge.text}</Badge>}
         {write && (
-          <a
-            href={write}
-            data-ui="button"
-            data-variant="primary"
-            className="ml-auto inline-flex h-8 items-center rounded-full px-3.5 text-[12.5px] font-medium no-underline"
-          >
-            Write to them
-          </a>
+          <WriteToThemButton
+            userId={path.id}
+            name={path.name}
+            {...write}
+            className="ml-auto inline-flex h-8 items-center rounded-full bg-[var(--apple-blue)] px-3.5 text-[12.5px] font-medium text-white"
+          />
         )}
       </div>
 

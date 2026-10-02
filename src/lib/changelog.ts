@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.220.0",
+    build: 259,
+    date: "2026-10-03",
+    title: "Write to them opens a pop-up that sends from hello@picacho.ai",
+    items: [
+      "Write to them no longer opens your Mac's Mail app. It opens a pop-up on the page: from Picacho <hello@picacho.ai>, to the person, a subject and a first draft you can edit, and the hello@ signature as it will arrive. Send sends it through the site.",
+      "The signature is the one designed for hello@picacho.ai (the wordmark, the ochre rule, picacho.ai · hello@picacho.ai, the tagline and the company line), signed The Picacho team. Replies come back to hello@picacho.ai, and every note is in the activity log.",
+      "The first drafts are written for each case: a paying customer gone quiet, a cancellation, a first render that didn't land.",
+      "The phone admin app's Write does the same in a sheet, and an alert's Write to them button opens it.",
+    ],
+  },
+  {
     version: "1.219.0",
     build: 258,
     date: "2026-10-03",

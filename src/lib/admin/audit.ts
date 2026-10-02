@@ -68,6 +68,7 @@ export const ADMIN_ACTIONS = {
   "email.template_delete": { label: "Deleted an email template", group: "emails" },
   "email.blast": { label: "Sent an email blast", group: "emails" },
   "email.user": { label: "Emailed a person", group: "emails" },
+  "email.note": { label: "Wrote to a person", group: "emails" },
   "export.users": { label: "Exported the users list", group: "access" },
   "export.payments": { label: "Exported payments", group: "money" },
 } as const;

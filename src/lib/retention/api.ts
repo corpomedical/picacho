@@ -2,7 +2,7 @@
 // People list, the person screen and the This week screen receive. Plain
 // JSON, nothing the phone has to compute.
 import { planLabel, shortDate, type PersonPath, type Retention } from "./model";
-import { writeHref } from "./inbox";
+import { writeDraft } from "./inbox";
 import { QUIET_AFTER_DAYS } from "./model";
 import { madeText } from "./tools";
 
@@ -32,7 +32,8 @@ export function pathSummary(p: PersonPath) {
             : quiet
               ? `Paying · ${p.renders} renders over ${p.activeDays} active days`
               : `First render ${p.firstAttempt?.refused ? "refused" : "failed"} · nothing since`,
-          write: writeHref({ kind, email: p.email, optedOut: p.optedOut }),
+          // The phone's Write opens its own sheet with this draft (sent through /api/admin/act writePerson).
+          write: writeDraft({ kind, email: p.email, optedOut: p.optedOut, name: p.name }),
         }
       : null,
     path: [

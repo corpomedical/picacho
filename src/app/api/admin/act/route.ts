@@ -4,6 +4,7 @@ import {
   opAdjustCredits,
   opCheckRender,
   opEmailPerson,
+  opWritePerson,
   opRefundRender,
   opRestoreModel,
   opSetFlag,
@@ -49,6 +50,8 @@ const ACTIONS: Record<string, (admin: Parameters<typeof opAddNote>[0], actor: st
     }),
   addNote: (a, u, f) => opAddNote(a, u, { userId: str(f, "user_id"), body: str(f, "body") }),
   setStatus: (a, u, f) => opSetUserStatus(a, u, { userId: str(f, "user_id"), status: str(f, "status") }),
+  // Who comes back's "Write to them" (2026-10-03): a note from hello@picacho.ai with the signature.
+  writePerson: (a, u, f) => opWritePerson(a, u, { userId: str(f, "user_id"), subject: str(f, "subject"), message: str(f, "message") }),
   emailPerson: (a, u, f) =>
     opEmailPerson(a, u, {
       userId: str(f, "user_id"),

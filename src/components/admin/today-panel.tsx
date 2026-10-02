@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { SubmitButton } from "@/components/ui/submit-button";
+import { WriteToThemButton } from "@/components/admin/write-to-them";
 import {
   checkRender,
   refundRender,
@@ -47,6 +48,19 @@ export function ActionButton({ action }: { action: InboxAction }) {
       ? "bg-atelier-ink text-atelier-paper hover:opacity-90"
       : "border border-atelier-rule bg-atelier-surface text-atelier-ink hover:border-atelier-ink/30",
   );
+  if (action.type === "write") {
+    return (
+      <WriteToThemButton
+        userId={action.userId}
+        name={action.name}
+        to={action.to}
+        subject={action.subject}
+        message={action.message}
+        label={action.label}
+        className={cls}
+      />
+    );
+  }
   if (action.type === "link") {
     return action.external || action.href.startsWith("mailto:") ? (
       <a href={action.href} className={cls} target={action.external ? "_blank" : undefined} rel="noopener noreferrer">
